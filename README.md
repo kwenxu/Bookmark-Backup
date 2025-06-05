@@ -3,7 +3,7 @@
 
 ---
 
-# <a name="chinese-version"></a>书签备份与提醒
+# <a name="chinese-version"></a>书签备份
 
 ## 项目概述
 
@@ -141,7 +141,7 @@
 ---
 
 
-# <a name="english-version"></a>Bookmark Backup & Reminder
+# <a name="english-version"></a>Bookmark Backup
 
 ## Overview
 

@@ -10,10 +10,16 @@
 书签备份是一款 Chrome/Edge 浏览器扩展程序，旨在提供强大且灵活的书签备份功能。它通过多种备份选项（云端/本地、自动/手动）、完善的手动备份提醒系统、不覆盖时间线式备份体系、智能的活动状态检测和崩溃恢复机制，确保您宝贵的书签数据安全无忧。
 
 ## 图片示例
-![扩展主界面 (中文, 暗色主题)](png/main_ui.png)
-![扩展主界面 (英文, 亮色主题)](png/main_ui_EN_light.png)
-![动态提醒设置界面 (中文, 暗色主题)](png/setting.png)
-![备份提醒通知 (中文, 暗色主题)](png/notification.png)
+<table>
+  <tr>
+    <td><img src="png/main_ui.png" alt="扩展主界面 (中文, 暗色主题)"></td>
+    <td><img src="png/main_ui_EN_light.png" alt="扩展主界面 (英文, 亮色主题)"></td>
+  </tr>
+  <tr>
+    <td><img src="png/setting.png" alt="动态提醒设置界面 (中文, 暗色主题)"></td>
+    <td><img src="png/notification.png" alt="备份提醒通知 (中文, 暗色主题)"></td>
+  </tr>
+</table>
 
 ## 安装指南
 
@@ -151,10 +157,16 @@
 Bookmark Backup & Reminder is a Chrome/Edge browser extension designed to provide robust and flexible bookmark backup functionality. It ensures your valuable bookmark data is safe through multiple backup options (cloud/local, automatic/manual), a comprehensive manual backup reminder system, a non-overwrite timeline-based backup system, intelligent activity state detection, and crash recovery mechanisms.
 
 ## Image Examples
-![Extension Main UI (Chinese, Dark Theme)](png/main_ui.png)
-![Extension Main UI (English, Light Theme)](png/main_ui_EN_light.png)
-![Reminder Settings UI (Chinese, Dark Theme)](png/setting.png)
-![Notification UI (Chinese, Dark Theme)](png/notification.png)
+<table>
+  <tr>
+    <td><img src="png/main_ui.png" alt="Extension Main UI (Chinese, Dark Theme)"></td>
+    <td><img src="png/main_ui_EN_light.png" alt="Extension Main UI (English, Light Theme)"></td>
+  </tr>
+  <tr>
+    <td><img src="png/setting.png" alt="Reminder Settings UI (Chinese, Dark Theme)"></td>
+    <td><img src="png/notification.png" alt="Notification UI (Chinese, Dark Theme)"></td>
+  </tr>
+</table>
 
 ## Installation Guide
 

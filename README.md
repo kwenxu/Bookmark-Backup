@@ -1,9 +1,9 @@
 # 书签备份 Bookmark-Backup
-[English](#english-version) | [中文](#chinese-version)
+[简体中文] | [English](#english-version)
 
 ---
 
-# <a name="chinese-version"></a>书签备份
+# 书签备份
 
 ## 项目概述
 

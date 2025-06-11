@@ -25,7 +25,7 @@
 
 1.  **从 Chrome 网上应用店 / Edge 加载项商店安装：**
     *   [Edge Releases]（https://microsoftedge.microsoft.com/addons/detail/%E4%B9%A6%E7%AD%BE%E5%A4%87%E4%BB%BDbookmark-backup/klopopehpngheikchkjgkmplgmbfodek）
-        [Chrome Releases] 暂时没有（开发者账号申请有问题，绑卡相关）
+    *   [Chrome Releases] 暂时没有（开发者账号申请有问题，绑卡相关）
 2.  **手动安装（开发者模式）：**
     *   从 [GitHub Releases](https://github.com/kwenxu/Bookmark-Backup/releases) 下载nolog生产版本。
     *   打开 Chrome/Edge 浏览器，导航至 `chrome://extensions` 或 `edge://extensions`。

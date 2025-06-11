@@ -1,0 +1,2324 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title></title>
+    <link rel="stylesheet" href="popup.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/5.15.3/css/all.min.css">
+    <!-- 主题管理模块（必须在popup.js前加载） -->
+    <script src="theme.js"></script>
+    <script src="popup.js" type="module" defer></script>
+    <style>
+        /* Theme variables */
+        html {
+            /* Light Theme (Default) */
+            --light-bg-primary: #ffffff;
+            --light-bg-secondary: #f8f9fa;
+            --light-bg-tertiary: #f0f0f0;
+            --light-bg-elevated: #ffffff;
+
+            --light-text-primary: #212529;
+            --light-text-secondary: #6c757d;
+            --light-text-disabled: #adb5bd;
+            --light-text-on-accent: #ffffff;
+
+            --light-border-primary: #dee2e6;
+            --light-border-secondary: #ced4da;
+
+            --light-input-bg: #ffffff;
+            --light-input-text: #495057;
+            --light-input-border: #ced4da;
+            --light-input-placeholder: #adb5bd;
+            --light-input-focus-border: #007AFF;
+            --light-input-focus-shadow: rgba(0, 122, 255, 0.2);
+
+            --light-accent-color: #007AFF;
+            --light-accent-color-hover: #0062cc;
+            --light-accent-text-color: #007AFF;
+
+            --light-success-color: #4CAF50;
+            --light-error-color: #FF3B30;
+            --light-warning-color: #ff9800;
+
+            --light-link-color: #007AFF;
+
+            --light-scrollbar-track: #f1f1f1;
+            --light-scrollbar-thumb: #c1c1c1;
+            --light-scrollbar-thumb-hover: #a8a8a8;
+
+            --light-icon-color: #6c757d;
+            --light-svg-icon-stroke-color-path: "%23666";
+            
+            --light-status-info-bg: #e6f3ff;
+            --light-status-info-text: #007AFF;
+            
+            /* Dark Theme */
+            --dark-bg-primary: #1e1e1e;
+            --dark-bg-secondary: #2d2d2d;
+            --dark-bg-tertiary: #333333;
+            --dark-bg-elevated: #383838;
+
+            --dark-text-primary: #e0e0e0;
+            --dark-text-secondary: #9e9e9e;
+            --dark-text-disabled: #6c6c6c;
+            --dark-text-on-accent: #ffffff;
+
+            --dark-border-primary: #444444;
+            --dark-border-secondary: #555555;
+
+            --dark-input-bg: #2d2d2d;
+            --dark-input-text: #e0e0e0;
+            --dark-input-border: #555555;
+            --dark-input-placeholder: #777777;
+            --dark-input-focus-border: #007AFF;
+            --dark-input-focus-shadow: rgba(0, 122, 255, 0.3);
+
+            --dark-accent-color: #007AFF;
+            --dark-accent-color-hover: #0062cc;
+            --dark-accent-text-color: #3694ff;
+
+            --dark-success-color: #4CAF50;
+            --dark-error-color: #FF3B30;
+            --dark-warning-color: #ff9800;
+
+            --dark-link-color: #3694ff;
+
+            --dark-scrollbar-track: #2d2d2d;
+            --dark-scrollbar-thumb: #555555;
+            --dark-scrollbar-thumb-hover: #666666;
+
+            --dark-icon-color: #9e9e9e;
+            --dark-svg-icon-stroke-color-path: "%23aaa";
+            
+            --dark-status-info-bg: #1a3f5f;
+            --dark-status-info-text: #4da3ff;
+            
+            /* Apply theme variables - defaults to light theme */
+            --theme-bg-primary: var(--light-bg-primary);
+            --theme-bg-secondary: var(--light-bg-secondary);
+            --theme-bg-tertiary: var(--light-bg-tertiary);
+            --theme-bg-elevated: var(--light-bg-elevated);
+
+            --theme-text-primary: var(--light-text-primary);
+            --theme-text-secondary: var(--light-text-secondary);
+            --theme-text-disabled: var(--light-text-disabled);
+            --theme-text-on-accent: var(--light-text-on-accent);
+
+            --theme-border-primary: var(--light-border-primary);
+            --theme-border-secondary: var(--light-border-secondary);
+
+            --theme-input-bg: var(--light-input-bg);
+            --theme-input-text: var(--light-input-text);
+            --theme-input-border: var(--light-input-border);
+            --theme-input-placeholder: var(--light-input-placeholder);
+            --theme-input-focus-border: var(--light-input-focus-border);
+            --theme-input-focus-shadow: var(--light-input-focus-shadow);
+
+            --theme-accent-color: var(--light-accent-color);
+            --theme-accent-color-hover: var(--light-accent-color-hover);
+            --theme-accent-text-color: var(--light-accent-text-color);
+
+            --theme-success-color: var(--light-success-color);
+            --theme-error-color: var(--light-error-color);
+            --theme-warning-color: var(--light-warning-color);
+
+            --theme-link-color: var(--light-link-color);
+
+            --theme-scrollbar-track: var(--light-scrollbar-track);
+            --theme-scrollbar-thumb: var(--light-scrollbar-thumb);
+            --theme-scrollbar-thumb-hover: var(--light-scrollbar-thumb-hover);
+
+            --theme-icon-color: var(--light-icon-color);
+            --theme-svg-icon-stroke-color-path: var(--light-svg-icon-stroke-color-path);
+            
+            --theme-status-info-bg: var(--light-status-info-bg);
+            --theme-status-info-text: var(--light-status-info-text);
+            --theme-status-info-border: #b3d9ff;
+
+            --theme-status-error-bg: #fff2f2;
+            --theme-status-error-text: #FF3B30;
+            --theme-status-error-border: #ffcdd2;
+
+            --theme-hover-bg: #e9ecef;
+            --theme-selected-item-bg: #ddeeff;
+
+            --theme-switch-bg: #ccc;
+            --theme-switch-bg-checked: #007AFF;
+            --theme-switch-slider-bg: #ffffff;
+
+            --theme-backup-mode-auto-gradient: linear-gradient(to right, #e8f5e9, #f0f0f0);
+            --theme-backup-mode-manual-gradient: linear-gradient(to right, #f0f0f0, #e6f7ff);
+            --theme-backup-mode-slider-bg: #ffffff;
+            --theme-backup-mode-auto-text: #4CAF50;
+            --theme-backup-mode-manual-text: #007AFF;
+            --theme-backup-mode-inactive-text: #6c757d;
+
+            --theme-settings-button-bg: #f5f5f5;
+            --theme-settings-button-text: #333;
+            --theme-settings-button-border: #ddd;
+            --theme-settings-button-hover-bg: #eaeaea;
+
+            --theme-dropzone-bg: #f8f9fa;
+            --theme-dropzone-border: #ccc;
+            --theme-dropzone-hover-bg: #f0f7ff;
+            --theme-dropzone-drag-bg: #e8f4fc;
+            --theme-dropzone-success-bg: #f0fff0;
+            --theme-dropzone-error-bg: #fff0f0;
+            --theme-dropzone-text-color: #666;
+
+            color-scheme: light; /* Indicate light scheme */
+        }
+
+        /* Dark Theme */
+        html[data-theme="dark"] {
+            --theme-bg-primary: var(--dark-bg-primary);
+            --theme-bg-secondary: var(--dark-bg-secondary);
+            --theme-bg-tertiary: var(--dark-bg-tertiary);
+            --theme-bg-elevated: var(--dark-bg-elevated);
+
+            --theme-text-primary: var(--dark-text-primary);
+            --theme-text-secondary: var(--dark-text-secondary);
+            --theme-text-disabled: var(--dark-text-disabled);
+            --theme-text-on-accent: var(--dark-text-on-accent);
+
+            --theme-border-primary: var(--dark-border-primary);
+            --theme-border-secondary: var(--dark-border-secondary);
+
+            --theme-input-bg: var(--dark-input-bg);
+            --theme-input-text: var(--dark-input-text);
+            --theme-input-border: var(--dark-input-border);
+            --theme-input-placeholder: var(--dark-input-placeholder);
+            --theme-input-focus-shadow: var(--dark-input-focus-shadow);
+
+            --theme-accent-text-color: #66b3ff; /* Lighter blue for titles in dark mode */
+            
+            --theme-link-color: #66b3ff;
+
+            --theme-scrollbar-track: var(--dark-scrollbar-track);
+            --theme-scrollbar-thumb: var(--dark-scrollbar-thumb);
+            --theme-scrollbar-thumb-hover: var(--dark-scrollbar-thumb-hover);
+
+            --theme-icon-color: var(--dark-icon-color);
+            --theme-svg-icon-stroke-color-path: var(--dark-svg-icon-stroke-color-path);
+            
+            --theme-status-info-bg: var(--dark-status-info-bg);
+            --theme-status-info-text: var(--dark-status-info-text);
+            --theme-status-info-border: #33628f;
+
+            --theme-status-error-bg: #592626;
+            --theme-status-error-text: #ff7066;
+            --theme-status-error-border: #8f4040;
+
+            --theme-hover-bg: #3a3a3a;
+            --theme-selected-item-bg: #2a3f55;
+
+            --theme-switch-bg: #555;
+            /* --theme-switch-bg-checked: #007AFF; /* Stays the same */
+            --theme-switch-slider-bg: #121212;
+
+            --theme-backup-mode-auto-gradient: linear-gradient(to right, #253825, #2c2c2c);
+            --theme-backup-mode-manual-gradient: linear-gradient(to right, #2c2c2c, #253845);
+            --theme-backup-mode-slider-bg: #1e1e1e;
+            --theme-backup-mode-inactive-text: #757575;
+
+            --theme-settings-button-bg: #3a3a3a;
+            --theme-settings-button-text: var(--dark-text-primary);
+            --theme-settings-button-border: #555;
+            --theme-settings-button-hover-bg: #4a4a4a;
+            
+            --theme-dropzone-bg: #2c2c2c;
+            --theme-dropzone-border: #555;
+            --theme-dropzone-hover-bg: #2a3a4f;
+            --theme-dropzone-drag-bg: #25354a;
+            --theme-dropzone-success-bg: #204020;
+            --theme-dropzone-error-bg: #402020;
+            --theme-dropzone-text-color: var(--dark-text-secondary);
+
+            color-scheme: dark; /* Indicate dark scheme */
+        }
+
+        /* 基础页面设置 */
+        body {
+            width: auto;
+            min-width: 750px;     /* 增加最小宽度 */
+            max-width: 850px;     /* 增加最大宽度 */
+            padding: 0;           /* 移除内边距 */
+            margin: 0 auto;       /* 水平居中 */
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            overflow: hidden;
+            background-color: var(--theme-bg-primary); /* Use CSS variable for background color */
+            box-sizing: border-box;  /* 确保padding不会增加总宽度 */
+        }
+
+        /* 主内容区域 */
+        .main-section {
+            flex: 1;
+            width: 100%;
+            padding: 20px 25px;   /* 保留内边距 */
+            background-color: var(--theme-bg-elevated); /* Use CSS variable for background color */
+            border-radius: 0;     /* 移除圆角 */
+            box-shadow: none;     /* 移除阴影 */
+            position: relative;
+            margin: 0 auto;       /* 水平居中 */
+            box-sizing: border-box;  /* 确保padding不会增加总宽度 */
+        }
+
+        /* 确保数字输入框的上下调节按钮始终可见 */
+        input[type="number"]::-webkit-inner-spin-button, 
+        input[type="number"]::-webkit-outer-spin-button { 
+            opacity: 1 !important;
+            height: 24px;
+            width: 18px;
+            margin-right: 4px;
+            background-color: var(--theme-input-border); /* Use CSS variable for background color */
+            position: relative;
+            border-radius: 0 2px 2px 0;
+        }
+
+        /* 标题样式 */
+        h1 {
+            font-size: 20px;
+            color: var(--theme-accent-color); /* Use CSS variable for color */
+            margin: 0 0 20px 0;
+            font-weight: 600;
+            white-space: nowrap;
+        }
+
+        /* 表单组样式 */
+        .form-group {
+            margin-bottom: 15px;
+            width: 100%;
+            display: flex;
+            flex-direction: column;
+            position: relative;
+        }
+
+        /* 表单标签样式 */
+        label {
+            color: var(--theme-text-primary); /* Use CSS variable for color */
+            font-size: 14px;
+            margin-bottom: 8px;
+            font-weight: 500;
+            position: relative;
+            display: inline-block;
+        }
+
+        /* 角标样式 */
+        .badge {
+            position: absolute;
+            top: -5px;
+            right: -5px;
+            background-color: var(--theme-accent-color); /* Use CSS variable for background color */
+            color: var(--theme-text-on-accent); /* Use CSS variable for text color */
+            border-radius: 50%;
+            width: 16px;
+            height: 16px;
+            font-size: 10px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            animation: badgePop 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+
+        @keyframes badgePop {
+            0% { transform: scale(0.8); opacity: 0; }
+            50% { transform: scale(1.1); }
+            100% { transform: scale(1); opacity: 1; }
+        }
+
+        /* 输入框样式 */
+        input {
+            width: 100%;
+            padding: 12px 15px;
+            border: 1px solid var(--theme-input-border); /* Use CSS variable for border color */
+            border-radius: 8px;
+            font-size: 14px;
+            box-sizing: border-box;
+            background-color: var(--theme-input-bg); /* Use CSS variable for background color */
+            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+
+        /* 输入框焦点状态 */
+        input:focus {
+            border-color: var(--theme-input-focus-border); /* Use CSS variable for border color */
+            outline: none;
+            box-shadow: 0 0 0 3px var(--theme-input-focus-shadow); /* Use CSS variable for shadow color */
+            background-color: var(--theme-input-bg); /* Use CSS variable for background color */
+        }
+
+        /* 输入框占位符样式 */
+        input::placeholder {
+            color: var(--theme-input-placeholder); /* Use CSS variable for color */
+            font-size: 13px;
+        }
+
+        /* 按钮组样式 */
+        .button-group {
+            margin-top: 20px;      /* 增加与表单的间距 */
+            display: flex;
+            gap: 15px;            /* 增加按钮间距 */
+            width: 100%;
+        }
+
+        /* 按钮基础样式 */
+        button {
+            flex: 1;
+            padding: 12px 16px;
+            border: none;
+            border-radius: 8px;
+            background-color: var(--theme-accent-color); /* Use CSS variable for background color */
+            color: var(--theme-text-on-accent); /* Use CSS variable for text color */
+            cursor: pointer;
+            font-size: 14px;
+            font-weight: 500;
+            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+        }
+
+        /* 按钮悬停效果 */
+        button:hover {
+            background-color: var(--theme-accent-color-hover); /* Use CSS variable for background color */
+            box-shadow: 0 4px 8px rgba(0, 0, 0, 0.15);  /* 悬停时增加阴影 */
+            transform: translateY(-1px);  /* 轻微上浮效果 */
+        }
+
+        /* 禁用按钮样式 */
+        button:disabled {
+            background-color: var(--theme-text-disabled); /* Use CSS variable for background color */
+            cursor: not-allowed;
+        }
+
+        /* 状态提示框样式 */
+        .status {
+            position: fixed; /* 修改为 fixed 定位 */
+            top: 25px;
+            right: 30px;
+            padding: 12px 15px;
+            border-radius: 8px;
+            font-size: 13px;
+            line-height: 1.5;
+            max-width: 300px;
+            word-break: break-word;
+            white-space: pre-line;  /* 支持换行符 */
+            z-index: 10001; /* 增加z-index，确保在顶层显示, 高于语言切换按钮 */
+            opacity: 0;
+            transform: translateY(-10px);
+            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+            background-color: var(--theme-bg-elevated); /* Use CSS variable for background color */
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+            pointer-events: none; /* 添加此属性使状态提示不会拦截鼠标事件 */
+        }
+
+        .status.info {
+            background-color: var(--theme-status-info-bg); /* Use CSS variable for background color */
+            color: var(--theme-status-info-text); /* Use CSS variable for text color */
+            border: 1px solid var(--theme-status-info-border); /* Use CSS variable for border color */
+        }
+
+        .status.error {
+            background-color: var(--theme-status-error-bg); /* Use CSS variable for background color */
+            color: var(--theme-status-error-text); /* Use CSS variable for text color */
+            border: 1px solid var(--theme-status-error-border); /* Use CSS variable for border color */
+        }
+
+        .status.show {
+            opacity: 1;
+            transform: translateY(0);
+        }
+
+        /* 页面底部样式 */
+        .footer {
+            margin: 12px 0 15px 0;  /* 上右下左边距 */
+            text-align: center;
+            color: var(--theme-text-secondary); /* Use CSS variable for text color */
+            font-size: 12px;
+            border-bottom: 1px solid var(--theme-border-primary);  /* 添加分隔线 */
+            padding-bottom: 12px;           /* 分隔线的间距 */
+        }
+
+        /* 初始备份对话框 */
+        .init-sync-dialog {
+            margin-top: 15px;
+            padding: 12px;
+            background-color: var(--theme-bg-secondary); /* Use CSS variable for background color */
+            border-radius: 8px;
+            border: 1px solid var(--theme-border-primary); /* Use CSS variable for border color */
+        }
+
+        /* 初始化备份按钮组 */
+        .init-sync-buttons {
+            display: flex;
+            gap: 15px;
+            margin: 15px 0;
+        }
+
+        .init-sync-buttons button {
+            flex: 1;
+            padding: 10px 16px;
+            font-size: 14px;
+            border: none;
+            border-radius: 6px;
+            background-color: var(--theme-success-color); /* Use CSS variable for background color */
+            color: var(--theme-text-on-accent); /* Use CSS variable for text color */
+            cursor: pointer;
+            transition: all 0.3s ease;
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+            white-space: nowrap;
+            text-align: center;
+            min-width: 160px;
+        }
+
+        .init-sync-buttons button:hover {
+            background-color: var(--theme-success-color); /* Use CSS variable for background color */
+            box-shadow: 0 4px 8px rgba(0, 0, 0, 0.15);
+            transform: translateY(-1px);
+        }
+
+        .init-sync-buttons button:disabled {
+            background-color: var(--theme-text-disabled); /* Use CSS variable for background color */
+            cursor: not-allowed;
+            transform: none;
+            box-shadow: none;
+        }
+
+        /* 警告文本样式 */
+        .warning {
+            color: var(--theme-error-color); /* Use CSS variable for text color */
+            margin-bottom: 15px;
+            font-size: 13px;
+            font-weight: 500;
+        }
+
+        /* 备份状态区域 */
+        .sync-status {
+            margin-top: 20px;
+            padding: 20px 25px;   /* 增加左右内边距 */
+            background-color: var(--theme-bg-elevated); /* Use CSS variable for background color */
+            border-radius: 8px;
+            border: 1px solid var(--theme-border-primary); /* Use CSS variable for border color */
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);
+            width: 100%;          /* 确保宽度100% */
+            box-sizing: border-box;  /* 确保padding不会增加总宽度 */
+        }
+
+        /* 备份状态信息区块 */
+        .backup-stats {
+            margin-bottom: 15px;
+            padding: 12px 15px;
+            background-color: var(--theme-bg-tertiary); /* Use CSS variable for background color */
+            border-radius: 6px;
+            border: 1px solid var(--theme-border-primary); /* Use CSS variable for border color */
+            line-height: 1.6;  /* 增加行间距 */
+            letter-spacing: 0.5px;  /* 微弱增加字体间距 */
+        }
+        
+        .backup-stats .stats-row {
+            display: flex;
+            margin-bottom: 10px;  /* 增加行间距 */
+        }
+        
+        .backup-stats .stats-label {
+            font-weight: 700;  /* 增大加粗 */
+            font-size: 15px;   /* 增加字号 */
+            margin-right: 10px;
+            color: var(--theme-text-primary); /* Use CSS variable for text color */
+        }
+        
+        .backup-stats .stats-value {
+            color: var(--theme-text-primary); /* Use CSS variable for text color */
+            font-size: 14px;  /* 从 12px 增大到 14px */
+            margin-top: 1.75px;  /* 从1.5px改为1.75px，继续向下移动0.25px */
+        }
+        
+        .backup-stats .time-value {
+            color: var(--theme-success-color);  /* 标记时间为绿色 */
+            font-size: 14px;  /* 从 12px 增大到 14px */
+            margin-top: 1.75px;  /* 从1.5px改为1.75px，继续向下移动0.25px */
+        }
+
+        /* 状态标题样式 */
+        .status-headers {
+            display: flex;
+            justify-content: space-between;
+            margin-top: 10px;
+            margin-bottom: 0;
+            padding: 0 10px;
+        }
+        
+        .status-headers .header-item {
+            flex: 1;
+            font-size: 14px;
+            font-weight: 600;
+            color: var(--theme-text-primary); /* Use CSS variable for text color */
+            min-width: 150px;
+            text-align: center;
+        }
+        
+        .status-headers .header-item:last-child {
+            text-align: right;
+        }
+        
+        /* 备份信息区域 */
+        .sync-info {
+            margin-bottom: 15px;
+        }
+
+        .sync-direction-row {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-top: 5px;
+        }
+
+        .auto-sync-control {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            font-size: 14px;
+            margin: 0;
+            padding: 0;
+            height: 24px;  /* 固定高度 */
+            line-height: 24px;  /* 确保文字垂直居中 */
+        }
+
+        .auto-sync-control .setting-label {
+            font-size: 14px;
+            color: var(--theme-text-primary); /* Use CSS variable for text color */
+            display: flex;
+            align-items: center;
+            margin: 0;
+            padding: 0;
+            height: 24px;  /* 固定高度 */
+            line-height: 24px;  /* 确保文字垂直居中 */
+        }
+
+        .auto-sync-control .setting-tip {
+            font-size: 14px;
+            color: var(--theme-text-secondary); /* Use CSS variable for text color */
+            margin: 0;
+            padding: 0;
+            height: 24px;  /* 固定高度 */
+            line-height: 24px;  /* 确保文字垂直居中 */
+        }
+
+        .highlight-text {
+            color: var(--theme-success-color); /* Use CSS variable for text color */
+            font-weight: 500;
+        }
+
+        /* 开关按钮容器调整 */
+        .switch {
+            position: relative;
+            display: inline-block;
+            width: 36px;
+            height: 18px;
+            margin-left: 10px;
+            margin-top: 6px;  /* 增加顶部外边距到6px */
+        }
+
+        /* 开关按钮的滑块调整 */
+        .slider {
+            position: absolute;
+            cursor: pointer;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background-color: var(--theme-switch-bg); /* Use CSS variable for background color */
+            transition: .4s cubic-bezier(0.4, 0, 0.2, 1);
+            border-radius: 18px;
+        }
+
+        .slider:before {
+            position: absolute;
+            content: "";
+            height: 14px;
+            width: 14px;
+            left: 2px;
+            bottom: 2px;
+            background-color: var(--theme-switch-slider-bg); /* Use CSS variable for background color */
+            transition: .4s cubic-bezier(0.4, 0, 0.2, 1);
+            border-radius: 50%;
+        }
+
+        input:checked + .slider {
+            background-color: var(--theme-switch-bg-checked); /* Use CSS variable for background color */
+        }
+
+        /* 移除开关按钮的焦点框 */
+        .switch input:focus {
+            outline: none;
+            box-shadow: none;
+            border-color: transparent;
+        }
+
+        input:checked + .slider:before {
+            transform: translateX(18px);  /* 调整滑块移动距离 */
+        }
+
+        /* 设置项容器 */
+        .setting-item {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin: 10px 0;
+            padding: 8px;
+        }
+
+        .setting-label {
+            font-size: 14px;
+            color: var(--theme-text-primary); /* Use CSS variable for text color */
+            margin-right: 10px;
+        }
+
+        .setting-tip {
+            font-size: 12px;
+            color: var(--theme-text-secondary); /* Use CSS variable for text color */
+            margin-left: 10px;
+        }
+
+        /* 主要内容区域 */
+        .main-section {
+            flex: 1;
+            width: 100%;
+            padding: 20px 25px;   /* 保留内边距 */
+            background-color: var(--theme-bg-elevated); /* Use CSS variable for background color */
+            border-radius: 0;     /* 移除圆角 */
+            box-shadow: none;     /* 移除阴影 */
+            position: relative;
+            margin: 0 auto;       /* 水平居中 */
+            box-sizing: border-box;  /* 确保padding不会增加总宽度 */
+        }
+
+        /* 备份历史记录区域 */
+        .sync-history {
+            margin-top: 20px;
+            padding: 20px 25px;   /* 增加左右内边距 */
+            background-color: var(--theme-bg-elevated); /* Use CSS variable for background color */
+            border-radius: 8px;
+            border: 1px solid var(--theme-border-primary); /* Use CSS variable for border color */
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);  /* 增加阴影效果 */
+            width: 100%;          /* 确保宽度100% */
+            box-sizing: border-box;  /* 确保padding不会增加总宽度 */
+            position: relative;    /* 添加相对定位 */
+            z-index: 1;           /* 确保阴影效果可见 */
+        }
+
+        .sync-history h3 {
+            font-size: 14px;
+            margin: 0 0 10px 0;
+            color: var(--theme-text-primary); /* Use CSS variable for text color */
+            font-weight: 500;
+            position: relative;    /* 添加相对定位 */
+            z-index: 2;           /* 确保标题在阴影之上 */
+        }
+
+        /* 历史记录列表 */
+        .history-list {
+            height: 250px;       /* 从220px增加到250px */
+            overflow-y: auto;    /* 垂直滚动 */
+            display: flex;
+            flex-direction: column;  /* 改为正常的从上到下排列 */
+            position: relative;      /* 添加相对定位 */
+            z-index: 2;             /* 确保列表在阴影之上 */
+            border: 1px solid var(--theme-border-primary); /* Use CSS variable for border color */
+            border-radius: 4px;     /* 圆角边框 */
+        }
+
+        /* 列表标题行 */
+        .history-header {
+            display: flex;
+            justify-content: space-between;
+            padding: 6px 10px;  /* 缩小区块的内边距 */
+            border-bottom: 2px solid var(--theme-border-primary);
+            position: sticky;
+            top: 0;
+            background-color: var(--theme-bg-secondary);
+            z-index: 3;
+        }
+        
+        .history-header .header-item {
+            flex: 1;
+            text-align: center;
+            font-size: 12px;  /* 缩小字体大小 */
+            font-weight: 600;
+            color: var(--theme-text-primary);
+            min-width: 150px;
+            /* 移除任何可能的边界 */
+            border: none;
+            padding: 0;
+            margin: 0;
+        }
+        
+        /* 将第二列（数量/结构）向右移动10px，并增加宽度 - 移除通用padding */
+        .history-header .header-item:nth-child(2) {
+            /* padding-left: 10px; */
+            flex: 1.5;
+            min-width: 180px;
+        }
+
+        /* 历史记录项 */
+        .history-item {
+            padding: 8px 10px;
+            border-bottom: 1px solid var(--theme-border-primary);
+            display: flex;
+            justify-content: space-between; /* 使元素均匀分布 */
+            align-items: center; /* 垂直居中 */
+        }
+        
+        /* 历史记录项的元素 */
+        .history-item-time, .history-item-count, .history-item-status {
+            flex: 1;
+            text-align: center;
+            /* 移除内部填充 */
+            padding: 0;
+            overflow: visible; /* 修改为visible，防止内容被截断 */
+            min-width: 150px; /* 设置最小宽度 */
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            /* 移除任何可能的边界 */
+            border: none;
+            margin: 0;
+        }
+        
+        /* 将第二列（数量/结构）向右移动10px，并增加宽度 - 移除通用padding */
+        .history-item-count {
+            /* padding-left: 10px; */
+            flex: 1.5; /* 增加占比，给更多空间 */
+            min-width: 180px; /* 增加最小宽度 */
+        }
+        
+        /* 仅中文版本的"数量/结构"栏目向右移动10px */
+        html[lang="zh"] .history-header .header-item:nth-child(2),
+        html[lang="zh"] .history-item-count {
+            padding-left: 28px;
+        }
+        
+        /* 为标题行应用相同的宽度设置 */
+        .history-header .header-item:nth-child(2) {
+            padding-left: 8px;
+            flex: 1.5;
+            min-width: 180px;
+        }
+        
+        /* 确保历史记录内容换行时的对齐 */
+        .history-item-count > div {
+            width: 100%;
+        }
+        
+        /* 历史记录项悬停效果 */
+        .history-item:hover {
+            background-color: var(--theme-hover-bg);
+        }
+        
+        /* 历史记录项最后一项无底部边框 */
+        .history-item:last-child {
+            border-bottom: none;
+        }
+
+        /* NEW: Base style for history columns */
+        .history-col {
+            flex: 1; /* Distribute space equally */
+            display: flex;
+            align-items: center; /* Vertically center content within the column div itself */
+            font-size: 12px;
+            white-space: nowrap;
+            min-width: 0; /* Allow shrinking */
+        }
+
+        /* NEW: Specific styles for each column */
+        .time-col {
+            justify-content: center; /* Align time to the center */
+            color: var(--theme-success-color);
+            min-width: 140px; /* Adjust min-width as needed */
+            flex-shrink: 0; /* Prevent time column from shrinking too much */
+        }
+
+        .stats-col {
+            justify-content: center; /* Center bookmark stats */
+            flex-grow: 2; /* Allow stats column to take more space if needed */
+        }
+        
+        /* Ensure nested stats div aligns correctly */
+        .stats-col .bookmark-stats {
+             display: flex;
+             justify-content: center;
+             align-items: center; /* Center items within the stats div */
+             gap: 4px;
+             margin: 0;
+             padding: 0;
+             width: 100%; /* Ensure it takes full width of its container */
+        }
+        
+        .stats-col .bookmark-stats span {
+             margin: 0;
+             white-space: nowrap;
+             color: var(--theme-text-secondary);
+        }
+
+        .status-col {
+            justify-content: center; /* Align status to the center */
+            color: var(--theme-success-color);
+            min-width: 150px; /* Adjust as needed */
+        }
+
+        /* Apply error/locked colors to status column */
+         .status-col.error {
+            color: var(--theme-error-color);
+        }
+        
+         .status-col.locked {
+            color: var(--theme-warning-color);
+        }
+         .status-col.locked::before {
+             content: "🔒 ";
+             margin-right: 4px;
+         }
+
+        /* 美化滚动条样式 */
+        .history-list::-webkit-scrollbar {
+            width: 6px;         /* 滚动条宽度 */
+        }
+
+        .history-list::-webkit-scrollbar-track {
+            background: var(--theme-scrollbar-track);  /* 滚动条轨道 */
+            border-radius: 3px;
+        }
+
+        .history-list::-webkit-scrollbar-thumb {
+            background: var(--theme-scrollbar-thumb);     /* 滚动条滑块 */
+            border-radius: 3px;
+        }
+
+        .history-list::-webkit-scrollbar-thumb:hover {
+            background: var(--theme-scrollbar-thumb-hover);     /* 滚动条滑块悬停 */
+        }
+
+        /* 配置区域样式 */
+        .config-section {
+            margin-bottom: 20px;
+            border: 1px solid var(--theme-border-primary);
+            border-radius: 8px;
+            overflow: hidden;
+            background-color: var(--theme-bg-elevated);
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);
+            width: 100%;          /* 确保宽度100% */
+            box-sizing: border-box;  /* 确保padding不会增加总宽度 */
+        }
+
+        /* 配置头部样式 */
+        .config-header {
+            padding: 15px;
+            background-color: var(--theme-bg-secondary);
+            cursor: pointer;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+
+        .config-header:hover {
+            background-color: var(--theme-hover-bg);
+        }
+
+        .config-header h2 {
+            margin: 0;
+            font-size: 15px;
+            color: var(--theme-text-primary);
+            font-weight: 500;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        /* 美化状态点样式 */
+        .config-header .status-dot {
+            width: 10px;
+            height: 10px;
+            border-radius: 50%;
+            display: inline-block;
+            box-shadow: 0 0 3px rgba(0,0,0,0.2);
+            transition: all 0.3s ease;
+        }
+
+        .status-dot.configured {
+            background-color: var(--theme-success-color);
+            box-shadow: 0 0 5px rgba(76, 175, 80, 0.5);
+        }
+
+        .status-dot.not-configured {
+            background-color: var(--theme-error-color);
+            box-shadow: 0 0 5px rgba(255, 68, 68, 0.5);
+        }
+
+        .config-content {
+            padding: 20px;
+            border-top: 1px solid var(--theme-border-primary);
+            display: none;
+            animation: slideDown 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+
+        @keyframes slideDown {
+            from { opacity: 0; transform: translateY(-10px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        .toggle-icon {
+            width: 20px;
+            height: 20px;
+            position: relative;
+            transition: transform 0.3s ease;
+        }
+        
+        .toggle-icon::before,
+        .toggle-icon::after {
+            content: '';
+            position: absolute;
+            background-color: var(--theme-icon-color);
+            transition: transform 0.3s ease;
+        }
+        
+        .toggle-icon::before {
+            width: 2px;
+            height: 12px;
+            left: 9px;
+            top: 4px;
+        }
+        
+        .toggle-icon::after {
+            width: 12px;
+            height: 2px;
+            left: 4px;
+            top: 9px;
+        }
+        
+        /* 非折叠状态时隐藏垂直线，形成减号 */
+        .config-header:not(.collapsed) .toggle-icon::before {
+            transform: scaleY(0);
+        }
+        
+        /* 折叠状态时显示垂直线，形成加号 */
+        .config-header.collapsed .toggle-icon::before {
+            transform: scaleY(1);
+        }
+
+        /* 备份信息卡片样式 */
+        .sync-info-card {
+            margin-top: 10px;
+            padding: 10px;
+            background: var(--theme-bg-secondary);
+            border-radius: 8px;
+            border: 1px solid var(--theme-border-primary);
+            text-align: left;
+            width: 100%;
+            box-sizing: border-box;
+        }
+
+        .sync-info-card h3 {
+            margin: 0 0 12px 0;
+            font-size: 14px;
+            color: var(--theme-text-primary);
+            text-align: center;
+            font-weight: 500;
+        }
+
+        .info-item {
+            display: flex;
+            align-items: center;
+            margin-bottom: 8px;
+            font-size: 12px;
+            color: var(--theme-text-secondary);
+            gap: 8px;
+        }
+
+        .info-icon {
+            font-style: normal;
+            font-size: 14px;
+        }
+
+        .info-details {
+            margin-top: 10px;
+            padding-top: 10px;
+            border-top: 1px dashed var(--theme-border-primary);
+            text-align: left;         /* 添加左对齐 */
+            padding-left: 5px;        /* 添加左侧内边距 */
+        }
+
+        .info-details p {
+            margin: 4px 0;
+            font-size: 12px;
+            color: var(--theme-text-secondary);
+            line-height: 1.4;
+            text-align: left;         /* 确保段落也是左对齐 */
+        }
+
+        .bookmark-status {
+            margin-top: 10px;
+            padding: 8px;
+            background: var(--theme-bg-tertiary);
+            border-radius: 4px;
+            font-size: 13px;
+            color: var(--theme-text-primary);
+        }
+        
+        .bookmark-status div {
+            margin: 3px 0;
+        }
+
+        /* 修改标题区域样式 */
+        .header-container {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin-bottom: 15px;   /* 减小底部间距 */
+            gap: 15px;
+        }
+
+        /* 调整搜索容器样式 */
+        .search-container {
+            margin-bottom: 20px;
+            position: relative;
+        }
+
+        /* 调整搜索框样式 */
+        .search-input {
+            width: 100%;
+            padding: 12px 15px;
+            border: 1px solid var(--theme-input-border);
+            border-radius: 8px;
+            font-size: 14px;
+            background-color: var(--theme-input-bg);
+            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+
+        /* 清除按钮样式 */
+        .clear-search {
+            position: absolute;
+            right: 8px;
+            top: 50%;
+            transform: translateY(-50%);
+            width: 16px;
+            height: 16px;
+            cursor: pointer;
+            display: none;  /* 默认隐藏 */
+            opacity: 0.6;
+            transition: opacity 0.3s;
+            background: url('data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--theme-svg-icon-stroke-color-path)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>') no-repeat center;
+        }
+
+        .clear-search:hover {
+            opacity: 1;
+        }
+
+        .clear-search.visible {
+            display: block;
+        }
+
+        .search-input:focus {
+            border-color: var(--theme-input-focus-border);
+            outline: none;
+            box-shadow: 0 4px 8px var(--theme-input-focus-shadow);
+        }
+
+        /* 调整搜索结果容器位置 */
+        .search-results {
+            position: absolute;
+            top: calc(100% + 5px);
+            left: 0;
+            right: 0;
+            max-height: 400px;
+            overflow-y: auto;
+            background: var(--theme-bg-elevated);
+            border: 1px solid var(--theme-border-primary);
+            border-radius: 6px;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+            z-index: 1000;
+            display: none;
+        }
+
+        /* 搜索结果项 */
+        .search-result-item {
+            padding: 10px;
+            display: flex;
+            align-items: center;
+            position: relative;
+            gap: 10px;
+            cursor: pointer;
+            border-bottom: 1px solid var(--theme-border-primary);
+            background-color: var(--theme-bg-elevated);
+            transition: all 0.2s ease;
+        }
+
+        .search-result-item:last-child {
+            border-bottom: none;
+        }
+
+        .search-result-item:hover {
+            background-color: var(--theme-hover-bg);
+        }
+
+        .favicon {
+            width: 16px;
+            height: 16px;
+            flex-shrink: 0;
+        }
+
+        .result-content {
+            flex: 1;
+            min-width: 0;
+        }
+
+        .result-title {
+            font-size: 14px;
+            color: var(--theme-text-primary);
+            margin-bottom: 2px;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        .result-url {
+            font-size: 12px;
+            color: var(--theme-text-secondary);
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        .no-results {
+            padding: 15px;
+            text-align: center;
+            color: var(--theme-text-secondary);
+            font-size: 14px;
+            background-color: var(--theme-bg-elevated);
+            border-radius: 6px;
+        }
+
+        /* 搜索框激活状态时的容器样式 */
+        .search-container:focus-within {
+            z-index: 1000;
+        }
+
+        .search-container:focus-within .search-input {
+            border-color: #4CAF50;
+            box-shadow: 0 4px 8px rgba(76, 175, 80, 0.15);
+        }
+
+        /* 密码输入框容器 */
+        .password-container {
+            position: relative;
+            width: 100%;
+            display: flex;  /* 添加 flex 布局 */
+            align-items: center;  /* 垂直居中 */
+        }
+
+        /* 密码输入框样式 */
+        #password {
+            flex: 1;  /* 让输入框占据剩余空间 */
+            padding-right: 35px;  /* 为图标留出空间 */
+        }
+
+        /* 调整密码显示/隐藏按钮位置 */
+        .password-toggle {
+            position: absolute;
+            right: 8px;
+            top: 50%;
+            transform: translateY(-50%);
+            cursor: pointer;
+            width: 20px;
+            height: 20px;
+            background: none;
+            border: none;
+            padding: 0;
+            opacity: 0;
+            transition: opacity 0.2s ease;  /* 只保留透明度的过渡效果 */
+            z-index: 1;
+        }
+
+        /* 调整眼睛图标样式 */
+        .password-toggle::before {
+            content: '';
+            position: absolute;
+            width: 18px;
+            height: 18px;
+            left: 50%;
+            top: 50%;
+            transform: translate(-50%, -50%);
+            background: url('data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="%23666" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/><line x1="3" y1="3" x2="21" y2="21"/></svg>') center/contain no-repeat;
+        }
+
+        /* 添加睁眼状态 */
+        .password-toggle.show::before {
+            background-image: url('data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="%23666" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>');
+        }
+
+        /* 密码输入框获得焦点时显示切换按钮 */
+        .password-container:focus-within .password-toggle {
+            opacity: 0.6;
+        }
+
+        .password-toggle:hover {
+            opacity: 1;
+        }
+
+        /* 危险按钮样式 */
+        .danger-button {
+            background-color: #dc3545;
+            color: white;
+            padding: 10px 16px;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+            transition: background-color 0.3s;
+        }
+
+        .danger-button:hover {
+            background-color: #c82333;
+        }
+
+        /* 模态框样式 */
+        .modal {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(0, 0, 0, 0.5);
+            z-index: 1000;
+        }
+
+        .modal-content {
+            position: relative;
+            background-color: var(--theme-bg-primary);
+            margin: 15% auto;
+            padding: 20px;
+            width: 80%;
+            max-width: 500px;
+            border-radius: 8px;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+        }
+
+        .modal-content h3 {
+            margin: 0 0 15px 0;
+            color: var(--theme-text-primary);
+        }
+
+        .modal-content ul {
+            margin: 10px 0;
+            padding-left: 20px;
+            color: var(--theme-text-secondary);
+        }
+
+        .warning-text {
+            color: var(--theme-error-color);
+            font-weight: 500;
+            margin: 15px 0;
+        }
+
+        .normal-button {
+            background-color: #6c757d;
+            color: white;
+            padding: 10px 16px;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+            transition: background-color 0.3s;
+        }
+
+        .normal-button:hover {
+            background-color: #5a6268;
+        }
+
+        .direction.locked {
+            color: #ff9800;
+        }
+        
+        .history-item .direction.locked::before {
+            content: "🔒 ";
+            margin-right: 4px;
+        }
+
+        /* 修改选中项的样式 */
+        .search-result-item.selected {
+            background-color: #f0f2f5;
+            position: relative;
+        }
+
+        .search-result-item.selected::after {
+            content: '';
+            position: absolute;
+            left: 0;
+            right: 0;
+            bottom: -1px;
+            height: 2px;
+            background-color: #4CAF50;
+            z-index: 1;
+        }
+
+        /* 修改hover状态的背景色，确保与selected状态区分 */
+        .search-result-item:hover {
+            background-color: #f5f7fa;
+        }
+
+        /* 当选中项是最后一个时，移除原有的底部边框 */
+        .search-result-item.selected:last-child {
+            border-bottom: none;
+        }
+
+        .search-results {
+            /* 确保结果容器有固定高度和滚动条 */
+            max-height: 400px;
+            overflow-y: auto;
+            scrollbar-width: thin;
+        }
+
+        /* 美化滚动条 */
+        .search-results::-webkit-scrollbar {
+            width: 6px;
+        }
+
+        .search-results::-webkit-scrollbar-track {
+            background: #f1f1f1;
+            border-radius: 3px;
+        }
+
+        .search-results::-webkit-scrollbar-thumb {
+            background: #888;
+            border-radius: 3px;
+        }
+
+        .search-results::-webkit-scrollbar-thumb:hover {
+            background: #666;
+        }
+
+        /* 添加操作按钮容器样式 */
+        .result-actions {
+            position: absolute;
+            right: 10px;
+            top: 50%;
+            transform: translateY(-50%);
+            display: none;
+            gap: 8px;
+            background: white;
+            padding: 4px;
+            border-radius: 4px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+
+        .search-result-item:hover .result-actions {
+            display: flex;
+        }
+
+        .action-button {
+            padding: 4px 8px;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 12px;
+            color: white;
+            transition: all 0.2s ease;
+        }
+
+        .edit-button {
+            background-color: #4CAF50;
+        }
+
+        .edit-button:hover {
+            background-color: #45a049;
+        }
+
+        .delete-button {
+            background-color: #f44336;
+        }
+
+        .delete-button:hover {
+            background-color: #d32f2f;
+        }
+
+        /* 编辑对话框样式 */
+        .edit-dialog {
+            position: fixed;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+            z-index: 1001;
+            display: none;
+            width: 90%;
+            max-width: 500px;
+        }
+
+        .edit-dialog input {
+            width: 100%;
+            margin-bottom: 10px;
+        }
+
+        .edit-dialog-buttons {
+            display: flex;
+            justify-content: flex-end;
+            gap: 10px;
+            margin-top: 15px;
+        }
+
+        /* 在 popup.html 的 style 标签中添加 */
+        .sync-info > div:first-child,
+        .sync-direction-row > span:first-child {
+            display: none;
+        }
+
+        .reminder-text {
+            color: #FF8C00;
+            font-weight: 500;
+        }
+
+        .bookmark-stats {
+            display: flex;
+            justify-content: space-between;
+            margin-top: 5px;
+            font-size: 12px;
+            color: #666;
+        }
+        
+        .bookmark-stats span {
+            margin: 0 5px;
+        }
+        
+        .history-item:last-child {
+            border-bottom: none;
+        }
+
+        /* 路径容器样式 */
+        .path-container {
+            display: flex;
+            align-items: center;
+            width: 100%;
+        }
+        
+        .browse-button {
+            margin-left: 8px;
+            padding: 6px 12px;
+            background-color: #f8f9fa;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            color: var(--theme-text-primary);
+            cursor: pointer;
+            font-size: 12px;
+            flex-shrink: 0;
+        }
+        
+        .browse-button:hover {
+            background-color: #e9ecef;
+        }
+        
+        /* 开关按钮位置调整 */
+        .form-group .setting-label {
+            font-size: 14px;
+            color: var(--theme-text-primary);
+            margin-right: 10px;
+        }
+        
+        .form-group .setting-tip {
+            font-size: 12px;
+            color: #666;
+            margin-left: 10px;
+        }
+        
+        /* 本地配置框样式 */
+        #localConfigContent {
+            padding: 10px 20px;
+            border-top: 1px solid #eee;
+            display: none;
+            animation: slideDown 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+
+        /* 文件夹拖放区域样式 */
+        .folder-dropzone {
+            width: 100%;
+            max-width: 500px;
+            margin-left: auto;
+            margin-right: auto;
+            min-height: 120px;
+            border: 2px dashed #ccc;
+            border-radius: 8px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            padding: 20px;
+            margin-bottom: 20px;
+            margin-top: 10px;
+            transition: all 0.3s ease;
+            cursor: pointer;
+            background-color: var(--theme-bg-primary);
+            position: relative;
+        }
+
+        .folder-dropzone:hover {
+            border-color: #4285f4;
+            background-color: var(--theme-bg-primary);
+        }
+
+        .folder-dropzone.drag-over {
+            border-color: #4285f4;
+            background-color: #e8f4fc;
+            box-shadow: 0 0 10px rgba(66, 133, 244, 0.3);
+            transform: scale(1.01);
+        }
+
+        .folder-dropzone.success {
+            border-color: #4CAF50;
+            background-color: #f0fff0;
+            box-shadow: 0 0 8px rgba(76, 175, 80, 0.2);
+        }
+
+        .folder-dropzone.error {
+            border-color: #f44336;
+            background-color: #fff0f0;
+            box-shadow: 0 0 8px rgba(244, 67, 54, 0.2);
+        }
+
+        .dropzone-icon {
+            font-size: 38px;
+            color: #888;
+            margin-bottom: 12px;
+            transition: all 0.3s ease;
+        }
+        
+        .folder-dropzone:hover .dropzone-icon {
+            color: #4285f4;
+        }
+        
+        .folder-dropzone.success .dropzone-icon {
+            color: #4CAF50;
+        }
+        
+        .folder-dropzone.error .dropzone-icon {
+            color: #f44336;
+        }
+
+        .dropzone-text {
+            text-align: center;
+            color: #666;
+            font-size: 14px;
+            line-height: 1.5;
+            transition: all 0.3s ease;
+        }
+        
+        .folder-dropzone.success .dropzone-text {
+            color: #4CAF50;
+            font-weight: 500;
+        }
+        
+        .folder-dropzone.error .dropzone-text {
+            color: #f44336;
+            font-weight: 500;
+        }
+
+        .selected-path {
+            margin-top: 12px;
+            padding: 8px 12px;
+            background-color: var(--theme-bg-primary);
+            border-radius: 4px;
+            font-size: 14px;
+            border: 1px solid #d1e6ff;
+            display: none;
+            word-break: break-all;
+            width: 100%;
+            max-width: 450px;
+            text-align: center;
+            transition: all 0.3s ease;
+        }
+        
+        .folder-dropzone.success .selected-path {
+            background-color: #e8f5e9;
+            border-color: #a5d6a7;
+        }
+
+        @keyframes breathe {
+            0% { border-color: #FFF2CC; box-shadow: 0 0 5px #FFEB99; }
+            50% { border-color: #FFD700; box-shadow: 0 0 15px #FFD700; }
+            100% { border-color: #FFF2CC; box-shadow: 0 0 5px #FFEB99; }
+        }
+        
+        /* @keyframes fadeOutBorder {
+            0% { border: 3px solid #FFF2CC; box-shadow: 0 0 5px #FFEB99; }
+            100% { border: 3px solid transparent; box-shadow: 0 0 0 transparent; }
+        } */ /* Removing this block */
+        
+        .breathe-animation {
+            animation: breathe 1s 1; /* Removed fadeOutBorder */
+            border: 3px solid #FFF2CC;
+        }
+
+        .close-button:hover {
+            background-color: var(--theme-bg-tertiary);
+            color: var(--theme-text-secondary);
+            box-shadow: 0 2px 5px rgba(0,0,0,0.15);
+            transform: translateY(-1px);
+        }
+
+        /* 呼吸动画效果 */
+        @keyframes pulse {
+            0% { box-shadow: 0 0 0 0 rgba(76, 175, 80, 0.4); }
+            70% { box-shadow: 0 0 0 10px rgba(76, 175, 80, 0); }
+            100% { box-shadow: 0 0 0 0 rgba(76, 175, 80, 0); }
+        }
+        
+        .backup-mode-switch.manual ~ .manual-buttons .backup-button:not(.disabled) {
+            animation: pulse 2s infinite;
+        }
+
+        /* 精美的集成开关样式 */
+        .backup-mode-switch {
+            position: relative;
+            width: 100%;
+            height: 42px; /* 进一步减小高度 */
+            background: linear-gradient(to right, #e8f5e9, #f0f0f0);
+            border-radius: 21px;
+            display: flex;
+            align-items: center;
+            cursor: pointer;
+            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+            overflow: hidden;
+            transition: all 0.5s ease;
+        }
+        
+        html[data-theme="dark"] .backup-mode-switch {
+            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.3);
+        }
+        
+        .backup-mode-switch.auto {
+            background: linear-gradient(to right, #e8f5e9, #f0f0f0);
+        }
+        
+        html[data-theme="dark"] .backup-mode-switch.auto {
+            background: linear-gradient(to right, #1a3a1a, #2d2d2d);
+        }
+        
+        .backup-mode-switch.manual {
+            background: linear-gradient(to right, #f0f0f0, #e6f7ff);
+        }
+        
+        html[data-theme="dark"] .backup-mode-switch.manual {
+            background: linear-gradient(to right, #2d2d2d, #1a3a5f);
+        }
+        
+        .backup-mode-slider {
+            position: absolute;
+            width: 50%;
+            height: calc(100% - 6px);
+            border-radius: 18px;
+            top: 3px;
+            left: 3px;
+            background: white;
+            box-shadow: 0 2px 8px rgba(76, 175, 80, 0.2);
+            /* transition: all 0.5s cubic-bezier(0.175, 0.885, 0.32, 1.275); */ /* 移除此行以取消加载时的滑动动画 */
+            z-index: 1;
+        }
+        
+        html[data-theme="dark"] .backup-mode-slider {
+            background: var(--dark-bg-elevated);
+        }
+        
+        .backup-mode-switch.auto .backup-mode-slider {
+            left: 3px;
+            box-shadow: 0 2px 8px rgba(76, 175, 80, 0.2);
+        }
+        
+        .backup-mode-switch.manual .backup-mode-slider {
+            left: calc(50% - 3px);
+            box-shadow: 0 2px 8px rgba(0, 123, 255, 0.2);
+        }
+        
+        .backup-mode-option {
+            flex: 1;
+            /* text-align: center; */ /* Replaced by flex alignment */
+            z-index: 2;
+            font-size: 13px;
+            font-weight: bold;
+            transition: all 0.3s ease;
+            padding: 0 8px; /* Reduced horizontal padding from 15px to 8px */
+            position: relative;
+            display: flex; /* Added for alignment */
+            align-items: center; /* Added for vertical alignment */
+            justify-content: center; /* Added for horizontal centering */
+            white-space: nowrap; /* Added to prevent line breaks */
+            overflow: hidden; /* Added to handle potential overflow */
+            text-overflow: ellipsis; /* Added to show ... if text still overflows */
+        }
+        
+        .backup-mode-switch.auto .auto-option {
+            color: #4CAF50;
+        }
+        
+        .backup-mode-switch.auto .manual-option {
+            color: #999;
+        }
+        
+        .backup-mode-switch.manual .auto-option {
+            color: #999;
+        }
+        
+        .backup-mode-switch.manual .manual-option {
+            color: #007AFF;
+        }
+        
+        /* 微小图标动画 */
+        .option-icon {
+            display: inline-block;
+            margin-right: 5px;
+            transition: all 0.3s ease;
+            /* vertical-align: middle; */ /* Parent flex align-items handles this now */
+        }
+        
+        .backup-mode-switch.auto .auto-option .option-icon {
+            transform: scale(1.2);
+        }
+        
+        .backup-mode-switch.manual .manual-option .option-icon {
+            transform: scale(1.2);
+        }
+        
+        /* 提示文本样式 */
+        .mode-tip {
+            margin-top: 6px; /* 减小上边距 */
+            font-size: 12px; /* 减小字体 */
+            color: var(--theme-text-secondary);
+            text-align: center;
+            padding: 6px 8px; /* 减小内边距 */
+            border-radius: 4px;
+            background-color: var(--theme-bg-secondary);
+            transition: all 0.3s ease;
+        }
+        
+        /* 手动备份按钮区域 */
+        .manual-buttons {
+            margin-top: 12px; /* 减小上边距 */
+            display: flex;
+            gap: 8px; /* 减小间距 */
+            transition: all 0.3s ease;
+        }
+        
+        .manual-buttons button {
+            flex: 1;
+            padding: 7px 10px; /* 减小内边距 */
+            border: none;
+            border-radius: 6px;
+            font-weight: 500;
+            font-size: 13px;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            box-shadow: 0 2px 5px rgba(0, 0, 0, 0.1);
+        }
+
+        /* 手动备份按钮样式 */
+        .backup-button {
+            background-color: #4CAF50;
+            color: white;
+            box-sizing: border-box;
+            height: 32px;   /* 确保两个按钮高度一致 */
+            line-height: 1;
+        }
+        
+        .settings-button {
+            background-color: var(--theme-bg-secondary);
+            color: var(--theme-text-primary);
+            border: 1px solid #ddd;
+            padding: 7px 10px; /* 减小内边距 */
+            border-radius: 6px; /* 减小圆角 */
+            font-size: 13px; /* 减小字体 */
+            cursor: pointer;
+            transition: all 0.3s ease;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            margin-top: 12px; /* 减小上边距 */
+            box-shadow: 0 2px 5px rgba(0, 0, 0, 0.05);
+            box-sizing: border-box;
+            height: 32px;    /* 确保两个按钮高度一致 */
+            margin-bottom: 10px;  /* 增加与下方按钮的间距 */
+        }
+
+        .settings-button:hover {
+            background-color: var(--theme-settings-button-hover-bg);
+            transform: translateY(-1px); /* 减小悬停时的上移距离 */
+        }
+
+        .settings-button:active {
+            transform: translateY(1px);
+        }
+
+        .settings-button.disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+            pointer-events: none;
+        }
+
+        .manual-buttons button:hover {
+            transform: translateY(-1px); /* 减小悬停时的上移距离 */
+            box-shadow: 0 3px 6px rgba(0, 0, 0, 0.15);
+        }
+        
+        .manual-buttons button:active {
+            transform: translateY(1px);
+        }
+        
+        .manual-buttons button.disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+            pointer-events: none;
+        }
+        
+        .mode-tip.auto-tip {
+            display: block;
+        }
+        
+        .mode-tip.manual-tip {
+            display: none;
+        }
+        
+        .backup-mode-switch.manual ~ .mode-tip.auto-tip {
+            display: none;
+        }
+        
+        .backup-mode-switch.manual ~ .mode-tip.manual-tip {
+            display: block;
+        }
+
+        /* 当语言为英语时，调整"回滚至配置页"按钮容器的位置 */
+        html[lang="en"] #configButtonContainer {
+            right: 78.5px !important; /* 从 83.5px 右移 5px (83.5 - 5 = 78.5) */
+        }
+
+        /* 当语言为英语时，校准路径按钮文本左对齐 */
+        html[lang="en"] #calibratePathBtn {
+            text-align: left !important;
+        }
+    </style>
+</head>
+<body>
+    <div id="status" class="status"></div>
+    <div class="main-section">
+        <div id="status" class="status"></div>
+        
+        <!-- 新的标题和搜索框布局 -->
+        <div class="header-container">
+            <!-- 移除空的h1元素 -->
+        </div>
+
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
+            <h2 style="margin: 0; color: #007AFF; font-size: 18px;"><span id="pageTitleElement">书签备份（实时自动/手动，不覆盖）</span></h2>
+            <div style="display: flex; align-items: center;">
+                <button id="scrollToTopBtn" title="回到顶部" style="display: none; margin-right: 5px;">↑</button>
+                <button id="openSourceInfoBtn" title="开源信息" style="font-size: 14px; padding: 5px 8px; margin-right: 8px; background-color: var(--theme-bg-tertiary); border: 1px solid var(--theme-border-primary); border-radius: 4px; color: var(--theme-text-secondary); cursor: pointer; position: relative;">
+                    <i class="fab fa-github"></i>
+                    <span class="tooltip" style="position: absolute; background-color: var(--theme-tooltip-bg, rgba(0,0,0,0.7)); color: var(--theme-tooltip-text, white); padding: 2px 8px; border-radius: 4px; font-size: 12px; white-space: nowrap; visibility: hidden; opacity: 0; transition: opacity 0.3s; pointer-events: none; top: -25px; left: 50%; transform: translateX(-50%);" id="openSourceTooltip">开源信息</span>
+                </button>
+                <button id="themeSwitcher" title="切换主题" style="font-size: 14px; padding: 5px 8px; margin-right: 8px; background-color: var(--theme-bg-tertiary); border: 1px solid var(--theme-border-primary); border-radius: 4px; color: var(--theme-text-secondary); cursor: pointer; position: relative;">
+                    <i class="fas fa-moon" id="darkModeIcon" style="display: none;"></i>
+                    <i class="fas fa-sun" id="lightModeIcon" style="display: none;"></i>
+                    <i class="fas fa-desktop" id="systemModeIcon"></i>
+                    <span class="tooltip" style="position: absolute; background-color: var(--theme-tooltip-bg, rgba(0,0,0,0.7)); color: var(--theme-tooltip-text, white); padding: 2px 8px; border-radius: 4px; font-size: 12px; white-space: nowrap; visibility: hidden; opacity: 0; transition: opacity 0.3s; pointer-events: none; top: -25px; left: 50%; transform: translateX(-50%);" id="themeSwitcherTooltip">切换主题</span>
+                </button>
+                <button id="lang-toggle-btn" title="切换语言" style="font-size: 12px; padding: 5px 8px; margin: 0; z-index: 10000; position: relative; min-width: 90px; min-height: 28px;">中文 / English</button>
+            </div>
+        </div>
+
+        <div class="config-section">
+            <div class="config-header collapsed" id="configHeader">
+                <h2>
+                    <span class="status-dot not-configured" id="configStatus"></span>
+                    <span id="webdavConfigTitle"></span>
+                </h2>
+                <div style="display: flex; align-items: center;">
+                    <label class="switch" style="margin-right: 10px;">
+                        <input type="checkbox" id="webDAVToggle" checked>
+                        <span class="slider"></span>
+                    </label>
+                    <div class="toggle-icon"></div>
+                </div>
+            </div>
+            <div class="config-content" id="configContent">
+                <div class="form-group" style="padding-left: 5px;">
+                    <label for="serverAddress" style="display: block; margin-bottom: 5px;" id="serverAddressLabel"></label>
+                    <input type="text" id="serverAddress" placeholder="" style="width: 100%;">
+                </div>
+                
+                <div class="form-group" style="padding-left: 5px;">
+                    <label for="username" style="display: block; margin-bottom: 5px;" id="usernameLabel"></label>
+                    <input type="text" id="username" placeholder="" style="width: 100%;">
+                </div>
+                
+                <div class="form-group" style="padding-left: 5px;">
+                    <label for="password" style="display: block; margin-bottom: 5px;" id="passwordLabel"></label>
+                    <div class="password-container" style="width: 100%;">
+                        <input type="password" id="password" placeholder="" style="width: 100%;">
+                        <button type="button" class="password-toggle" aria-label="显示/隐藏密码"></button>
+                    </div>
+                </div>
+                
+                <div class="button-group" style="margin-top: 15px; display: flex; justify-content: center; padding-left: 5px; padding-right: 5px; margin-bottom: 5px;">
+                    <button id="saveKey" style="width: auto; min-width: 200px; background-color: #4CAF50; color: white; border: none; border-radius: 4px; padding: 8px 12px; cursor: pointer;"></button>
+                </div>
+            </div>
+        </div>
+
+        <!-- 添加本地备份配置框 -->
+        <div class="config-section">
+            <div class="config-header collapsed" id="localConfigHeader">
+                <h2>
+                    <span class="status-dot not-configured" id="localConfigStatus"></span>
+                    <span id="localConfigTitle"></span>
+                </h2>
+                <div style="display: flex; align-items: center;">
+                    <label class="switch" style="margin-right: 10px;">
+                        <input type="checkbox" id="defaultDownloadToggle" checked=false>
+                        <span class="slider"></span>
+                    </label>
+                    <div class="toggle-icon"></div>
+                </div>
+            </div>
+            <div class="config-content" id="localConfigContent">
+                <div class="form-group" style="margin-bottom: 6px; padding-left: 5px;">
+                    <div class="setting-item" style="display: flex; align-items: center; margin-bottom: 0.75px; margin-top: 0.1px;">
+                        <span class="setting-label" style="font-weight: bold;" id="localBackupPathLabel"></span>
+                    </div>
+                    <div id="downloadPathDisplay" style="margin-top: 5px; padding: 8px 12px; border: 1px solid var(--theme-border-primary); border-radius: 4px; background-color: var(--theme-bg-secondary); font-size: 13px; color: var(--theme-text-primary); margin-bottom: 8px;">
+                        加载中...
+                    </div>
+                    <div style="text-align: left; margin-bottom: 0px;">
+                        <button id="calibratePathBtn" style="background-color: #007AFF; color: white; border: none; border-radius: 4px; padding: 6px 10px; cursor: pointer; font-size: 13px; display: flex; align-items: center;">
+                            <span style="margin-right: 4px;">🔄</span> <span id="calibrateButtonText"></span>
+                        </button>
+                    </div>
+                </div>
+                
+                <!-- 防干扰选项 -->
+                <div class="form-group" style="margin-bottom: 6px; padding-left: 5px;">
+                    <div class="setting-item" style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 0.75px; margin-top: 0.75px;">
+                        <span class="setting-label" style="font-weight: bold;" id="hideDownloadBarLabel"></span>
+                        <label class="switch" style="margin-right: 20px;">
+                            <input type="checkbox" id="hideDownloadShelfToggle" checked>
+                            <span class="slider"></span>
+                        </label>
+                    </div>
+                    <div style="font-size: 12px; color: var(--theme-text-secondary); margin-top: 3px; padding-left: 8px;">
+                        <span></span>
+                    </div>
+                </div>
+                
+                <!-- 分隔线 -->
+                <div style="border-top: 1px solid #eee; margin: 6px 0;"></div>
+                
+                <!-- 区块三：安全规则说明 -->
+                <div class="form-group" style="margin-bottom: 6px; padding-left: 5px;">
+                    <div class="setting-item" style="display: flex; align-items: center; margin-bottom: 0.75px; margin-top: 0.75px;">
+                        <span class="setting-label" style="font-weight: bold;" id="instructionsLabel"></span>
+                    </div>
+                    <div style="font-size: 13px; color: var(--theme-text-secondary); margin-top: 8px; padding-left: 5px;">
+                        <p style="margin-top: 0; margin-bottom: 5px; font-weight: bold; padding-left: 2px;" id="defaultPathExamples"></p>
+                        <ul style="margin-top: 5px; margin-bottom: 15px; padding-left: 20px;">
+                            <li><strong>macOS:</strong> /Users/&lt;username&gt;/Downloads/Bookmarks/</li>
+                            <li><strong>Windows:</strong> C:\Users\&lt;username&gt;\Downloads\Bookmarks\</li>
+                            <li><strong>Linux:</strong> /home/&lt;username&gt;/Downloads/Bookmarks/</li>
+                        </ul>
+                        
+                        <ul style="margin-top: 0; margin-bottom: 0; padding-left: 20px;">
+                            <li id="rulesNoCalibration"></li>
+                            <li id="rulesNonInterference"></li>
+                            <li id="rulesChromeRestriction"></li>
+                            <li id="rulesDownloadAPI"></li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- 替换原来的init-sync-dialog为新的折叠区块 -->
+        <div class="config-section" style="margin-top: 8px;">
+            <div class="config-header" id="initHeader">
+                <h2>
+                    <span class="status-dot configured" style="background-color: #007AFF;"></span>
+                    <span id="initButtonsTitle"></span>
+                </h2>
+                <div style="display: flex; align-items: center;">
+                    <div class="toggle-icon"></div>
+                </div>
+            </div>
+            <div class="config-content" id="initContent" style="display: block; padding: 5px;">
+                <div class="init-sync-buttons" style="display: flex; justify-content: space-between; gap: 10px; margin: 10px 0; padding: 0 20px;">
+                    <button id="resetAll" class="danger-button" style="background-color: #dc3545; flex: 1; height: 38px; font-weight: 500; border-radius: 8px;"></button>
+                    <button id="uploadToCloud" style="background-color: #4CAF50; flex: 1; height: 38px; font-weight: 500; border-radius: 8px;"></button>
+                </div>
+                <div class="setting-item" style="display: none;">
+                    <span class="setting-label">启用自动备份</span>
+                    <label class="switch">
+                        <input type="checkbox" id="autoSyncToggle" checked>
+                        <span class="slider"></span>
+                    </label>
+                    <span class="setting-tip">（大规模修改时建议关闭，下方会弹出手动备份的按钮）</span>
+                </div>
+            </div>
+        </div>
+
+        <div id="syncStatus" class="sync-status" style="display: none;">
+            <!-- 优化后的备份控制区域，移至顶部 -->
+            <div class="sync-controls" style="margin: 0 0 15px 0; background-color: transparent; border-radius: 8px; padding: 15px 20px; border: 1px solid var(--theme-border-primary); box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);">
+                <!-- 删除重复的样式定义 -->
+                
+                <div style="display: flex; align-items: stretch; gap: 15px;">
+                    <!-- 新的合一开关控件和提示文本布局 -->
+                    <div style="flex: 2; display: flex; flex-direction: column; justify-content: center;">
+                        <!-- 开关控件 -->
+                        <div id="backupModeSwitch" class="backup-mode-switch auto">
+                            <div class="backup-mode-slider"></div>
+                            <div class="backup-mode-option auto-option">
+                                <span class="option-icon">⚡</span>实时自动备份
+                            </div>
+                            <div class="backup-mode-option manual-option">
+                                <span class="option-icon">🔄</span>手动备份模式
+                            </div>
+                            <input type="checkbox" id="autoSyncToggle2" style="display:none;" checked>
+                        </div>
+                        
+                        <!-- 提示文本直接放在开关下方 -->
+                        <div style="margin-top: 8px; text-align: center; font-size: 13px; color: var(--theme-text-secondary);">
+                            <div class="mode-tip auto-tip" style="display: inline-block; line-height: 1.3;">
+                                （<span style="color: var(--theme-warning-color);">大规模修改</span>时建议切换至手动模式）
+                            </div>
+                            <div class="mode-tip manual-tip" style="display: none; line-height: 1.3;" id="manualModeTip">
+                                <!-- 通过JS填充国际化内容 -->
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <!-- 添加分隔虚线 -->
+                    <div style="width: 1px; border-left: 1px dashed var(--theme-border-primary); margin: 10px 0;"></div>
+                    
+                    <!-- 手动备份按钮区域 -->
+                    <div id="manualButtonsContainer" class="manual-buttons" style="flex: 1; margin-top: 0; flex-direction: column; display: flex; justify-content: center; gap: 10px;">
+                        <button id="reminderSettingsBtn" class="settings-button disabled" style="margin-bottom: 0; margin-top: 0;">动态提醒设置</button>
+                        <button id="uploadToCloudManual" class="backup-button disabled">手动备份</button>
+                    </div>
+                </div>
+            </div>
+
+            <div class="backup-stats" style="position: relative; margin-top: 0;">
+                <div class="stats-text-container" style="padding-top: 9px; padding-left: 50px;">
+                    <div class="stats-row">
+                        <span class="stats-label" style="display: inline-block; width: 110px; text-align: right;">上次变动:</span>
+                        <span class="stats-value time-value" id="lastBackupTime">未备份</span>
+                    </div>
+                    <div class="stats-row">
+                        <span class="stats-label" style="display: inline-block; width: 110px; text-align: right;">当前数量/结构:</span>
+                        <span class="stats-value" id="bookmarkCount">书签 0 个，文件夹 0 个</span>
+                    </div>
+                    <!-- New dedicated container for change description -->
+                    <div id="change-description-row" style="margin-top: 4px; padding-left: 120px; box-sizing: border-box; min-height: 1em;"></div>
+                </div>
+                
+                <!-- 修改配置按钮 -->
+                <div id="configButtonContainer" style="position: absolute; right: 83.5px; top: 50%; transform: translateY(-50%); display: flex; flex-direction: column; align-items: center;">
+                    <div id="configScrollBtn" style="cursor: pointer; display: flex; flex-direction: column; align-items: center; margin-bottom: 10px; /* Increased from 4px */">
+                        <span style="display: inline-block; transform: rotate(-90deg); font-size: 24px;">⚙️</span>
+                    </div>
+                    <span style="font-size: 10px; color: var(--theme-text-secondary); white-space: nowrap; padding-left: 2px;">回滚至配置页</span>
+                </div>
+            </div>
+
+            <div class="sync-info">
+                <div>最后更新: <span id="lastSyncTime" class="time">未备份</span></div>
+                <div class="sync-direction-row">
+                    <span>备份方向: <span id="syncDirection" class="direction">-</span></span>
+                </div>
+            </div>
+
+            <div class="sync-history" style="margin-top: -13.5px;">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+                    <h3 style="margin: 0;">备份检查记录（至100条记录--静默清空并导出txt）</h3>
+                    <div style="display: flex; gap: 10px; align-items: center;">
+                        <button id="clearHistoryBtn" class="action-button" style="background-color: transparent; color: #666; border: none; border-radius: 4px; padding: 5px 6px; font-size: 11px; cursor: pointer; position: relative;">
+                            <i class="fas fa-trash-alt"></i>
+                            <span class="tooltip" style="position: absolute; background-color: rgba(0,0,0,0.7); color: white; padding: 2px 8px; border-radius: 4px; font-size: 12px; white-space: nowrap; visibility: hidden; opacity: 0; transition: opacity 0.3s; pointer-events: none; top: -25px; left: 50%; transform: translateX(-50%);">清空记录</span>
+                        </button>
+                        <button id="exportHistoryBtn" class="action-button" style="background-color: transparent; color: #666; border: none; border-radius: 4px; padding: 5px 6px; font-size: 11px; cursor: pointer; position: relative;">
+                            <i class="fas fa-download"></i>
+                            <span class="tooltip" style="position: absolute; background-color: rgba(0,0,0,0.7); color: white; padding: 2px 8px; border-radius: 4px; font-size: 12px; white-space: nowrap; visibility: hidden; opacity: 0; transition: opacity 0.3s; pointer-events: none; top: -25px; left: 50%; transform: translateX(-50%);">导出记录</span>
+                        </button>
+                    </div>
+                </div>
+                <div id="syncHistoryList" class="history-list">
+                    <div class="history-header">
+                        <div class="header-item">时间</div>
+                        <div class="header-item">数量/结构</div>
+                        <div class="header-item">状态</div>
+                    </div>
+                    <!-- 历史记录项将通过JavaScript添加 -->
+                </div>
+            </div>
+
+            <!-- 将manualSyncOptions设置为仅用于JS控制显示/隐藏，但实际内容已移到上面 -->
+            <div id="manualSyncOptions" class="manual-sync-options" style="display: none;">
+            </div>
+        </div>
+    </div>
+    </div>
+
+    <!-- 重新设计的重置确认对话框 -->
+    <div id="resetConfirmDialog" class="modal">
+        <div class="modal-content" style="position: relative; top: auto; right: auto; margin: 15% auto; width: 360px; box-shadow: 0 6px 18px rgba(0,0,0,0.15); border-radius: 10px; padding: 20px;">
+            <h3 id="resetDialogTitle" style="font-size: 17px; margin-bottom: 14px; color: var(--theme-text-primary); text-align: left; padding-left: 2px;">恢复初始状态</h3>
+            <p id="resetDialogDescription" style="font-size: 15px; margin-bottom: 10px; text-align: left; padding-left: 2px; color: var(--theme-text-primary);">说明：</p>
+            <ul style="margin-bottom: 14px; padding-left: 22px; font-size: 14px; line-height: 1.5; color: var(--theme-text-secondary);">
+                <li id="resetDialogInfo1">恢复插件到首次安装时的状态</li>
+                <li id="resetDialogInfo2">清除所有配置和备份记录</li>
+                <li id="resetDialogInfo3">您当前的书签不受影响</li>
+            </ul>
+            <p id="resetDialogInfo4" style="color: var(--theme-success-color); font-size: 13px; margin: 14px 0; line-height: 1.4; background-color: var(--theme-status-success-bg); padding: 8px 10px; border-radius: 6px; margin-left: 2px;">适用于：清除缓存、解决配置异常等情况</p>
+            
+            <!-- 添加显示初始备份记录的区域 -->
+            <div id="initialBackupInfo" style="margin: 14px 0; padding: 8px 10px; background-color: var(--theme-status-info-bg); border-radius: 6px; border-left: 3px solid var(--theme-link-color); font-size: 13px; display: none;">
+                <p style="margin: 0 0 5px 0; font-weight: bold; color: var(--theme-text-primary);">您的初始备份文件：</p>
+                <div id="initialBackupFileName" style="word-break: break-all; font-family: monospace; color: var(--theme-text-secondary);"></div>
+            </div>
+            
+            <div class="button-group" style="margin-top: 18px; justify-content: center; gap: 16px;">
+                <button id="confirmReset" style="background-color: var(--theme-error-color); font-size: 14px; padding: 8px 20px; color: white;">确认</button>
+                <button id="cancelReset" class="normal-button" style="font-size: 14px; padding: 8px 20px; background-color: var(--theme-bg-tertiary); color: var(--theme-text-secondary);">取消</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- 添加备份提醒设置对话框 -->
+    <div id="reminderSettingsDialog" class="modal">
+        <div class="modal-content" style="max-width: 480px; max-height: 90vh; position: fixed; padding: 25px; top: 50%; left: 50%; transform: translate(-50%, -50%); margin: 0; overflow-y: auto;">
+            <div style="position: relative; margin-bottom: 12px;">
+                <h3 style="color: #4CAF50; font-size: 20px; margin: 0; display: inline-block;">动态提醒设置</h3>
+                <button id="closeReminderSettings" class="close-button" style="position: absolute; right: 0; top: 50%; transform: translateY(-50%); width: 28px; height: 28px; display: flex; justify-content: center; align-items: center; font-size: 20px; font-weight: bold; background-color: var(--theme-bg-primary); color: #888; border: none; cursor: pointer; border-radius: 50%; box-shadow: 0 1px 3px rgba(0,0,0,0.1); transition: all 0.2s ease;">×</button>
+            </div>
+            
+            <!-- 循环提醒设置 -->
+            <div class="setting-block" style="padding: 12px; background-color: var(--theme-bg-secondary); border-radius: 5px; margin-bottom: 12px;">
+                <div class="setting-row" style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; height: 38px;">
+                    <div class="setting-label" style="display: flex; align-items: center; flex: 1; height: 38px;">
+                        <div id="cyclicReminderLabel" class="setting-label-text" style="font-weight: bold; font-size: 16px; margin-right: 5px; width: 85px; text-align: right; flex-shrink: 0; display: flex; align-items: center; justify-content: flex-end; height: 38px; line-height: 38px;"></div>
+                        <div class="setting-input" style="display: flex; align-items: center; width: 160px;">
+                            <input type="number" id="firstReminderMinutes" min="0" value="30" style="width: 90px; padding: 6px; padding-left: 15px; border-radius: 4px; border: 1px solid #ccc; font-size: 15px; text-align: center; box-sizing: content-box; -moz-appearance: textfield;">
+                            <span class="unit" style="margin-left: 6px; min-width: 36px; font-size: 15px;">分钟</span>
+                        </div>
+                    </div>
+                    <div class="toggle-container" style="margin-left: 15px; display: flex; align-items: center;">
+                        <button id="reminderToggle" class="toggle-button" data-state="on" style="width: 60px; height: 30px; border-radius: 15px; background-color: #4CAF50; border: none; position: relative; cursor: pointer; padding: 0; transition: background-color 0.3s ease;">
+                            <div class="toggle-circle" style="width: 24px; height: 24px; background-color: var(--theme-bg-primary); border-radius: 50%; position: absolute; top: 3px; right: 3px; transition: transform 0.3s ease; box-shadow: 0 1px 3px rgba(0,0,0,0.2);"></div>
+                        </button>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- 准点定时提醒设置 -->
+            <div class="setting-block" style="padding: 12px; background-color: var(--theme-bg-secondary); border-radius: 5px; margin-bottom: 12px;">
+                <div class="setting-row" style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; height: 38px;">
+                    <div class="setting-label" style="display: flex; align-items: center; flex: 1; height: 38px;">
+                        <div id="fixedTime1Label" class="setting-label-text" style="font-weight: bold; font-size: 16px; margin-right: 5px; width: 85px; text-align: right; flex-shrink: 0; display: flex; align-items: center; justify-content: flex-end; height: 38px; line-height: 38px;"></div>
+                        <div class="setting-input" style="display: flex; align-items: center; width: 160px;">
+                            <input type="time" id="fixedTime1" value="09:30" style="width: 90px; padding: 6px; padding-left: 15px; border-radius: 4px; border: 1px solid #ccc; font-size: 15px; text-align: center; font-family: 'Source Code Pro', 'IBM Plex Mono', 'Fira Code', 'Consolas', monospace; font-weight: normal; line-height: 18px; height: 18px; vertical-align: middle; box-sizing: content-box; color: var(--theme-text-primary); letter-spacing: 0.5px;">
+                        </div>
+                    </div>
+                    <div class="toggle-container" style="margin-left: 15px; display: flex; align-items: center;">
+                        <button id="fixedTimeToggle1" class="toggle-button" data-state="on" style="width: 60px; height: 30px; border-radius: 15px; background-color: #4CAF50; border: none; position: relative; cursor: pointer; padding: 0; transition: background-color 0.3s ease;">
+                            <div class="toggle-circle" style="width: 24px; height: 24px; background-color: var(--theme-bg-primary); border-radius: 50%; position: absolute; top: 3px; right: 3px; transition: transform 0.3s ease; box-shadow: 0 1px 3px rgba(0,0,0,0.2);"></div>
+                        </button>
+                    </div>
+                </div>
+                <div class="setting-row" style="display: flex; justify-content: space-between; align-items: center; margin-top: 10px; height: 38px;">
+                    <div class="setting-label" style="display: flex; align-items: center; flex: 1; height: 38px;">
+                        <div id="fixedTime2Label" class="setting-label-text" style="font-weight: bold; font-size: 16px; margin-right: 5px; width: 85px; text-align: right; flex-shrink: 0; display: flex; align-items: center; justify-content: flex-end; height: 38px; line-height: 38px;"></div>
+                        <div class="setting-input" style="display: flex; align-items: center; width: 160px;">
+                            <input type="time" id="fixedTime2" value="16:00" style="width: 90px; padding: 6px; padding-left: 15px; border-radius: 4px; border: 1px solid #ccc; font-size: 15px; text-align: center; font-family: 'Source Code Pro', 'IBM Plex Mono', 'Fira Code', 'Consolas', monospace; font-weight: normal; line-height: 18px; height: 18px; vertical-align: middle; box-sizing: content-box; color: var(--theme-text-primary); letter-spacing: 0.5px;">
+                        </div>
+                    </div>
+                    <div class="toggle-container" style="margin-left: 15px; display: flex; align-items: center;">
+                        <button id="fixedTimeToggle2" class="toggle-button" data-state="off" style="width: 60px; height: 30px; border-radius: 15px; background-color: #ccc; border: none; position: relative; cursor: pointer; padding: 0; transition: background-color 0.3s ease;">
+                            <div class="toggle-circle" style="width: 24px; height: 24px; background-color: var(--theme-bg-primary); border-radius: 50%; position: absolute; top: 3px; left: 3px; transition: transform 0.3s ease; box-shadow: 0 1px 3px rgba(0,0,0,0.2);"></div>
+                        </button>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- 添加声明区块 -->
+            <div class="setting-block" style="padding: 12px; background-color: var(--theme-bg-secondary); border-radius: 5px; margin-bottom: 12px;">
+                <div style="font-size: 14px; line-height: 1.5; color: var(--theme-text-secondary);">
+                    <div id="manualBackupReminderDesc" style="margin-bottom: 6px;">手动备份下，进行操作（数量/结构变化）才会提醒</div>
+                    <div id="reminderExample">示例：(+12 书签，+1 文件夹，书签变动，文件夹变动)</div>
+                </div>
+            </div>
+            
+            <!-- 按钮区域 -->
+            <div class="button-group" style="margin-top: 20px; display: flex; justify-content: space-between; gap: 12px;">
+                <button id="restoreDefaultSettings" class="normal-button" style="flex: 1; padding: 10px 15px; border: none; background-color: var(--theme-bg-tertiary); color: var(--theme-text-secondary); border-radius: 6px; cursor: pointer; font-size: 15px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); transition: all 0.2s ease;">恢复默认</button>
+                <button id="saveReminderSettings" class="action-button" style="flex: 1; padding: 10px 15px; border: none; background-color: #4CAF50; color: white; border-radius: 6px; cursor: pointer; font-size: 15px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); transition: all 0.2s ease;">保存设置</button>
+            </div>
+            
+            <!-- 保存提示 -->
+            <div id="settingsSavedIndicator" style="position: absolute; left: 0; right: 0; bottom: 60px; text-align: center; color: white; opacity: 0; transition: all 0.3s ease; display: none; padding: 8px; font-size: 15px; background-color: rgba(76, 175, 80, 0.9); border-radius: 4px; box-shadow: 0 2px 5px rgba(0, 0, 0, 0.1); max-width: 200px; margin: 0 auto; transform: translateY(0);">
+                设置已保存
+            </div>
+        </div>
+    </div>
+
+    <!-- 添加清空记录确认对话框 -->
+    <div id="clearHistoryConfirmDialog" class="modal">
+        <div class="modal-content" style="position: relative; top: auto; right: auto; margin: 15% auto; width: 360px; box-shadow: 0 6px 18px rgba(0,0,0,0.15); border-radius: 10px; padding: 20px;">
+            <h3 id="clearHistoryDialogTitle" style="font-size: 17px; margin-bottom: 14px; color: var(--theme-text-primary); text-align: left; padding-left: 2px;">确认清空记录</h3>
+            <p id="clearHistoryDialogDescription" style="font-size: 15px; margin-bottom: 10px; text-align: left; padding-left: 2px; color: var(--theme-text-primary);">确定要清空所有备份历史记录吗？</p>
+            <p style="color: var(--theme-error-color); font-size: 13px; margin: 14px 0; line-height: 1.4; background-color: var(--theme-status-error-bg); padding: 8px 10px; border-radius: 6px; margin-left: 2px;">此操作不可撤销，清空后无法恢复这些记录。</p>
+            
+            <div class="button-group" style="margin-top: 18px; justify-content: center; gap: 16px;">
+                <button id="confirmClearHistory" style="background-color: var(--theme-error-color); font-size: 14px; padding: 8px 20px; color: white;">确认清空</button>
+                <button id="cancelClearHistory" class="normal-button" style="font-size: 14px; padding: 8px 20px; background-color: var(--theme-bg-tertiary); color: var(--theme-text-secondary);">取消</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- 开源信息对话框 -->
+    <div id="openSourceInfoDialog" class="modal">
+        <div class="modal-content" style="position: relative; top: auto; right: auto; margin: 15% auto; width: 380px; box-shadow: 0 6px 18px rgba(0,0,0,0.15); border-radius: 10px; padding: 20px;">
+            <!-- 标题和关闭按钮布局 -->
+            <div style="position: relative; margin-bottom: 14px;">
+                <h3 id="openSourceInfoTitle" style="font-size: 17px; margin: 0; color: var(--theme-accent-text-color); text-align: left;">开源信息</h3>
+                <button id="closeOpenSourceDialog" class="close-button" style="position: absolute; right: 0; top: 50%; transform: translateY(-50%); width: 28px; height: 28px; display: flex; justify-content: center; align-items: center; font-size: 20px; font-weight: bold; background-color: var(--theme-bg-primary); color: #888; border: none; cursor: pointer; border-radius: 50%; box-shadow: 0 1px 3px rgba(0,0,0,0.1); transition: all 0.2s ease;">×</button>
+            </div>
+            
+            <div style="background-color: var(--theme-bg-secondary); padding: 14px; border-radius: 8px;">
+                <div style="display: flex; flex-direction: column; gap: 10px;">
+                    <div>
+                        <p id="openSourceGithubLabel" style="font-size: 14px; color: var(--theme-text-secondary); margin: 0 0 4px 0;">GitHub 仓库:</p>
+                        <a id="openSourceGithubLink" href="https://github.com/kwenxu/Bookmark-Backup?tab=readme-ov-file#readme" target="_blank" style="display: block; padding: 8px 12px; background-color: var(--theme-bg-tertiary); border-radius: 6px; color: var(--theme-link-color); text-decoration: none; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">
+                            <i class="fab fa-github" style="margin-right: 5px;"></i>
+                            https://github.com/kwenxu/Bookmark-Backup
+                        </a>
+                    </div>
+                    
+                    <div>
+                        <p id="openSourceIssueLabel" style="font-size: 14px; color: var(--theme-text-secondary); margin: 0 0 4px 0;">问题反馈:</p>
+                        <a id="openSourceIssueLink" href="https://github.com/kwenxu/Bookmark-Backup/issues" target="_blank" style="display: block; padding: 8px 12px; background-color: var(--theme-bg-tertiary); border-radius: 6px; color: var(--theme-link-color); text-decoration: none;">
+                            <i class="fas fa-exclamation-circle" style="margin-right: 5px;"></i>
+                            <span id="openSourceIssueText">提交问题</span>
+                        </a>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 添加外部脚本引用 -->
+    <script src="debug.js"></script>
+</body>
+</html>

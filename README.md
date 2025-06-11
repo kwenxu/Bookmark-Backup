@@ -24,7 +24,8 @@
 ## 安装指南
 
 1.  **从 Chrome 网上应用店 / Edge 加载项商店安装：**
-    *   （发布后添加链接）
+    *   [Edge Releases]（https://microsoftedge.microsoft.com/addons/detail/%E4%B9%A6%E7%AD%BE%E5%A4%87%E4%BB%BDbookmark-backup/klopopehpngheikchkjgkmplgmbfodek）
+        [Chrome Releases] 暂时没有（开发者账号申请有问题，绑卡相关）
 2.  **手动安装（开发者模式）：**
     *   从 [GitHub Releases](https://github.com/kwenxu/Bookmark-Backup/releases) 下载nolog生产版本。
     *   打开 Chrome/Edge 浏览器，导航至 `chrome://extensions` 或 `edge://extensions`。
@@ -171,7 +172,8 @@ Bookmark Backup & Reminder is a Chrome/Edge browser extension designed to provid
 ## Installation Guide
 
 1.  **Install from Chrome Web Store / Edge Add-ons Store:**
-    *   (Link to be added after publication)
+    *   **Edge:** Available on [Microsoft Edge Add-ons](https://microsoftedge.microsoft.com/addons/detail/%E4%B9%A6%E7%AD%BE%E5%A4%87%E4%BB%BDbookmark-backup/klopopehpngheikchkjgkmplgmbfodek).
+    *   **Chrome:** Currently unavailable on the Chrome Web Store due to issues with the developer account application (payment card related).
 2.  **Manual Installation (Developer Mode):**
     *   Download the nolog production version from [GitHub Releases](https://github.com/kwenxu/Bookmark-Backup/releases).
     *   Open Chrome/Edge browser, navigate to `chrome://extensions` or `edge://extensions`.

@@ -37,7 +37,7 @@
 
 *   在执行大规模书签操作（导入、导出、大量重组）时，建议暂时禁用"实时自动备份"。
 *   手动备份模式下将默认启动**备份提醒系统**，进行书签操作（数量/结构变化）时才会提醒。
-    数量/结构变化示例：(<font color="green">+12</font> 书签，<font color="green">+1</font> 文件夹，<font color="orange">书签、文件夹变动</font>)。
+    数量/结构变化示例：(+12 书签，+1 文件夹，**书签、文件夹变动**)。
 
 *   备份的书签数据，显示的文件夹数量比实际的少1个，这是因为根文件夹在界面上不可见，但在API计数中会被统计。
 
@@ -62,7 +62,7 @@
 *   **灵活的备份模式：**
     *   **实时自动备份：** 当检测到书签发生更改（添加、删除、修改、移动）时，扩展程序会自动备份您的书签。在进行大规模书签整理时，建议暂时禁用此功能，以避免不必要的频繁备份。
     *   **手动备份：** 手动备份模式下将默认启动**备份提醒系统**，当进行书签操作（数量/结构变化）时才会提醒。
-    数量/结构变化示例：(<font color="green">+12</font> 书签，<font color="green">+1</font> 文件夹，<font color="orange">书签、文件夹变动</font>)。
+    数量/结构变化示例：(+12 书签，+1 文件夹，**书签、文件夹变动**)。
 
 *   **备份提醒系统（手动备份模式下）：**
     *   **智能激活与提醒：** 仅在用户切换到手动备份模式后启动。提醒会结合书签活动状态——当检测到书签发生实际变动（增、删、改、移动）后（此时角标为黄色），才会发出提醒。
@@ -183,7 +183,7 @@ Bookmark Backup & Reminder is a Chrome/Edge browser extension designed to provid
 *   Workaround for cloud backup: When performing local backups, change the browser\'s default download path to your cloud drive\'s synchronized folder (or link the paths).
 *   When performing large-scale bookmark operations (importing, exporting, extensive reorganization), it is recommended to temporarily disable "Real-time Automatic Backup".
 *   In manual backup mode, the **Backup Reminder System** will be activated by default and will only remind you when bookmark operations (changes in quantity/structure) occur.
-    Example of quantity/structure changes: (<font color="green">+12</font> bookmarks, <font color="green">+1</font> folder, <font color="orange">bookmark/folder changes</font>).
+    Example of quantity/structure changes: (+12 bookmarks, +1 folder, **bookmark/folder changes**).
 *   The number of folders displayed in the backed-up bookmark data is one less than the actual count. This is because the root folder is not visible in the UI but is counted by the API.
 
 ---
@@ -207,7 +207,7 @@ Contributions, issues, and feature requests are welcome! Please feel free to che
 *   **Flexible Backup Modes:**
     *   **Real-time Automatic Backup:** When changes to bookmarks (add, delete, modify, move) are detected, the extension automatically backs up your bookmarks. It is recommended to temporarily disable this feature during large-scale bookmark organization to avoid unnecessary frequent backups.
     *   **Manual Backup:** In manual backup mode, the **Backup Reminder System** is activated by default. It will only issue a reminder when bookmark operations (changes in quantity/structure) occur.
-    Example of quantity/structure changes: (<font color="green">+12</font> bookmarks, <font color="green">+1</font> folder, <font color="orange">bookmark/folder changes</font>).
+    Example of quantity/structure changes: (+12 bookmarks, +1 folder, **bookmark/folder changes**).
 
 *   **Backup Reminder System (in Manual Backup Mode):**
     *   **Smart Activation & Reminders:** Activates only when the user switches to manual backup mode. Reminders are combined with bookmark activity status—a reminder is issued only after actual changes to bookmarks (add, delete, modify, move) are detected (badge turns yellow at this point).

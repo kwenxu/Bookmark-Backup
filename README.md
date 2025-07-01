@@ -13,7 +13,7 @@
 <table>
   <tr>
     <td><img src="png/main_ui.png" alt="扩展主界面 (中文, 暗色主题)"></td>
-    <td><img src="png/main_ui_EN_light.png" alt="扩展主界面 (英文, 亮色主题)"></td>
+    <td><img src="png/v1.5_Backup Records Daily Dividers & Notes Feature Screenshot.png" alt="扩展主界面 (英文, 亮色主题)"></td>
   </tr>
   <tr>
     <td><img src="png/setting.png" alt="动态提醒设置界面 (中文, 暗色主题)"></td>
@@ -166,7 +166,7 @@ Bookmark Backup & Reminder is a Chrome/Edge browser extension designed to provid
 <table>
   <tr>
     <td><img src="png/main_ui.png" alt="Extension Main UI (Chinese, Dark Theme)"></td>
-    <td><img src="png/main_ui_EN_light.png" alt="Extension Main UI (English, Light Theme)"></td>
+    <td><img src="png/v1.5_Backup Records Daily Dividers & Notes Feature Screenshot.png" alt="Extension Main UI (English, Light Theme)"></td>
   </tr>
   <tr>
     <td><img src="png/setting.png" alt="Reminder Settings UI (Chinese, Dark Theme)"></td>

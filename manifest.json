@@ -1,7 +1,7 @@
 {
    "manifest_version": 3,
    "name": "书签备份--Bookmark Backup",
-   "version": "1.5",
+   "version": "1.7",
    "description": "书签备份（云端/本地，自动/手动，时间线，提醒）or Bookmark Backup (Cloud/Local, Auto/Manual, Timeline, Reminder)",
    "author": "kk1",
    "icons": {

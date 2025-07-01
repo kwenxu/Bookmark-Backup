@@ -1,6 +1,20 @@
+# [版本更新日志](#版本更新日志) | [Release Notes](#release-notes)
+
 # 版本更新日志
 
 ---
+
+## 📢 版本更新 v1.7
+
+### 🐞 已修复的Bug
+
+-   **✅ 「手动模式下角标不变黄」**：
+    -   修复了手动备份模式下增加或删除书签后角标不变黄色的问题。
+    -   实现了 `getStructureSignature` 函数，为书签结构生成精确签名，使角标能够准确检测到任何变动。
+-   **✅ 「增删数量相同但内容不同时的变动提示」**：
+    -   修复了手动模式下增删相同数量但不同内容的书签或文件夹时，UI不正确显示变化的问题。
+    -   改进了变动检测逻辑，现在能够准确区分"书签变动"、"文件夹变动"或"书签与文件夹变动"。
+    -   例如：添加书签A并删除书签B时，现在能正确显示"书签变动"。
 
 ## 📢 版本更新 v1.5
 
@@ -30,6 +44,18 @@
 # Release Notes
 
 ---
+
+## 📢 Release Notes v1.7
+
+### 🐞 Bug Fixes
+
+-   **✅ "Badge Color Not Changing in Manual Mode"**:
+    -   Fixed an issue where the badge would not turn yellow after adding or deleting bookmarks in manual backup mode.
+    -   Implemented the `getStructureSignature` function to generate precise signatures of bookmark structures, enabling accurate detection of any changes.
+-   **✅ "Change Detection When Adding and Deleting Equal Numbers of Different Items"**:
+    -   Fixed an issue where the UI didn't correctly display changes when adding and deleting the same number of different bookmarks or folders.
+    -   Enhanced change detection logic to accurately identify and display "Bookmark changed", "Folder changed", or "Bookmark & Folder changed".
+    -   For example: Adding Bookmark A and deleting Bookmark B now correctly shows "Bookmark changed".
 
 ## 📢 Release Notes v1.5
 

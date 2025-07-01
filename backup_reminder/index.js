@@ -142,6 +142,15 @@ async function getBookmarkCount() {
  * 初始化备份提醒系统。
  */
 async function initializeBackupReminder() {
+    try {
+        const { autoSync } = await browserAPI.storage.local.get({ autoSync: true });
+        if (autoSync) {
+            console.log('自动备份模式已开启，跳过备份提醒系统的初始化。');
+            return;
+        }
+    } catch (error) {
+        console.error('检查自动备份状态时出错，将继续初始化:', error);
+    }
     // 添加时间戳检查，防止重复初始化
     const now = Date.now();
     if (now - lastInitAttemptTime < MIN_INIT_INTERVAL) {
@@ -170,16 +179,12 @@ async function initializeBackupReminder() {
     try {
         await initializeReminderTimerSystem(); // 初始化计时器系统
 
-        // 使用浏览器默认的idle/active状态变化，不设置特定的检测时间
-        // 这样任何idle/active状态变化都会立即触发相应处理
-        console.log("使用浏览器默认的idle/active状态变化检测机制");
-
-        // 监听浏览器活跃状态变化
-        if (!browserAPI.idle.onStateChanged.hasListener(handleIdleStateChange)) {
-            browserAPI.idle.onStateChanged.addListener(handleIdleStateChange);
-            console.log("已添加浏览器活跃状态变化监听器");
+        // 监听浏览器窗口焦点变化
+        if (!browserAPI.windows.onFocusChanged.hasListener(handleWindowFocusChange)) {
+            browserAPI.windows.onFocusChanged.addListener(handleWindowFocusChange);
+            console.log("已添加窗口焦点变化监听器");
         } else {
-            console.log("浏览器活跃状态变化监听器已存在，无需重复添加");
+            console.log("窗口焦点变化监听器已存在，无需重复添加");
         }
 
         // 监听来自popup窗口的消息
@@ -214,68 +219,28 @@ async function initializeBackupReminder() {
 // =======================================================
 
 /**
- * 处理浏览器活跃状态变化。
- * @param {string} state - 新的活跃状态 ('active', 'idle', 'locked')。
+ * 处理浏览器窗口焦点变化，以替代idle API，实现更精确的活跃状态检测。
+ * @param {number} windowId - 发生焦点变化的窗口ID。如果所有窗口都失去焦点，则为 -1 (chrome.windows.WINDOW_ID_NONE)。
  */
-async function handleIdleStateChange(state) {
-    console.log(`浏览器状态变化: ${state}`);
+async function handleWindowFocusChange(windowId) {
     try {
-        // 检查自动备份模式状态
-        const { autoSync = true } = await browserAPI.storage.local.get({'autoSync': true });
-        console.log(`[handleIdleStateChange] 当前自动备份状态: ${autoSync}`);
+        const data = await browserAPI.storage.local.get(['isYellowHandActive', 'autoSync', 'reminderSettings']);
+        const { isYellowHandActive, autoSync = true } = data;
+        const reminderSettings = data.reminderSettings || {};
+        const { reminderEnabled = true } = reminderSettings;
 
-        // 只有在手动备份模式下才处理计时器的暂停/恢复
-        if (!autoSync) {
-            // 获取动态提醒设置中的三个开关状态
-            const settings = await browserAPI.storage.local.get('reminderSettings');
-            const reminderSettings = settings.reminderSettings || {};
-            const {
-                reminderEnabled = true,    // 循环提醒开关
-                fixedTimeEnabled1 = true,  // 准点定时1开关
-                fixedTimeEnabled2 = false  // 准点定时2开关
-            } = reminderSettings;
-            
-            console.log(`[handleIdleStateChange] 当前开关状态: 循环提醒=${reminderEnabled}, 准点定时1=${fixedTimeEnabled1}, 准点定时2=${fixedTimeEnabled2}`);
-            
-            if (state === 'active') {
-                // 浏览器变为活跃状态
-                console.log('浏览器变为活跃状态 (手动模式)');
-                
-                // 只有开启了循环提醒时才恢复循环提醒计时器
-                if (reminderEnabled) {
-                    console.log('循环提醒已开启，恢复计时器');
-                    resumeReminderTimer();
-                } else {
-                    console.log('循环提醒未开启，不恢复计时器');
-                }
-                
-                // 只有开启了准点定时时才检查准点定时间间
-                if (fixedTimeEnabled1 || fixedTimeEnabled2) {
-                    console.log('准点定时已开启，检查准点定时设置');
-                    checkFixedTimeAlarmsOnActive().catch(error => { 
-                        console.error('检查准点定时设置失败:', error); 
-                    });
-                } else {
-                    console.log('所有准点定时未开启，不检查准点定时');
-                }
+        // 仅在手动模式、黄手图标激活（有变动）且循环提醒开启时应用此逻辑
+        if (!autoSync && isYellowHandActive && reminderEnabled) {
+            if (windowId === browserAPI.windows.WINDOW_ID_NONE) {
+                console.log('所有窗口失去焦点，暂停循环提醒计时器。');
+                pauseReminderTimer();
             } else {
-                // 浏览器变为非活跃状态
-                console.log('浏览器变为非活跃状态 (手动模式)');
-                
-                // 只有开启了循环提醒时才暂停循环提醒计时器
-                if (reminderEnabled) {
-                    console.log('循环提醒已开启，暂停计时器');
-                    pauseReminderTimer();
-                } else {
-                    console.log('循环提醒未开启，无需暂停计时器');
-                }
-                // 准点定时不需要特殊处理，因为它们由浏览器的间间机制管理
+                console.log('窗口获得焦点，恢复循环提醒计时器。');
+                resumeReminderTimer();
             }
-        } else {
-            console.log('自动备份模式，忽略浏览器状态变化对计时器的影响');
         }
     } catch (error) {
-        console.error('[handleIdleStateChange] 处理浏览器状态变化失败:', error);
+        console.error('处理窗口焦点变化失败:', error);
     }
 }
 
@@ -687,10 +652,8 @@ async function onAutoBackupToggled(isAutoBackupEnabled, shouldCloseWindow = true
                  await clearNotification();
             }
         } else {
-            console.log('自动备份已关闭，启动提醒计时器');
-            await resetReminderState();
-            await startReminderTimer(true);
-            console.log('提醒计时器已启动');
+            console.log('自动备份已关闭，初始化备份提醒系统...');
+            await initializeBackupReminder();
         }
 
         const { autoSync } = await browserAPI.storage.local.get({ autoSync: false });

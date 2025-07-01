@@ -571,20 +571,12 @@ browserAPI.runtime.onMessage.addListener((message, sender, sendResponse) => {
                     // 确保清除活动标志 (无论切换到哪个模式，都清除一次以保证状态正确)
                     await browserAPI.storage.local.remove('hasBookmarkActivitySinceLastCheck');
                     console.log(`切换自动备份状态后，已清除书签活动标志`);
+                    
+                    // 直接调用 onAutoBackupToggled 函数
+                    await onAutoBackupToggled(newAutoSyncState);
 
                     // 更新角标
                     await setBadge();
-
-                    // 通知 backup_reminder/index.js 状态已切换 (使用消息传递)
-                    try {
-                         await browserAPI.runtime.sendMessage({
-                             action: "autoBackupStateChangedInBackground",
-                             enabled: newAutoSyncState
-                         }).catch(err => console.error("发送 autoBackupStateChangedInBackground 消息失败:", err));
-                         console.log('已发送 autoBackupStateChangedInBackground 消息');
-                    } catch (notifyError) {
-                        console.error('通知 backup_reminder 失败:', notifyError);
-                    }
 
                     return { success: true, autoSync: newAutoSyncState, message: '自动备份状态已更新' };
 
@@ -1418,6 +1410,38 @@ browserAPI.runtime.onMessage.addListener((message, sender, sendResponse) => {
             }
 
             return true; // 异步响应
+        } else if (message.action === "autoBackupStateChangedInBackground") {
+            // 此处理器现在可能是多余的，如果所有状态更改都通过 onAutoBackupToggled 处理，请考虑删除。
+            console.log('收到 background 的自动备份状态变更通知:', message.newState);
+            // 如果 popup 打开，则可能会更新 UI 元素
+            return false;
+
+        } else if (message.action === 'showReminderSettings') {
+            // 处理来自 popup 的手动备份通知请求
+            console.log('收到手动备份通知请求，状态文本:', message.statusText);
+            if (message.statusText) {
+                // 使用传递过来的 statusText 创建通知
+                browserAPI.notifications.create({
+                    type: 'basic',
+                    iconUrl: 'icons/icon128.png', // 扩展图标路径
+                    title: '手动备份完成',
+                    message: message.statusText, // 直接使用 popup 传递的文本
+                    priority: 0 // 默认优先级
+                }, (notificationId) => {
+                    if (browserAPI.runtime.lastError) {
+                        console.error('创建通知失败:', browserAPI.runtime.lastError.message);
+                        sendResponse({ success: false, error: browserAPI.runtime.lastError.message });
+                    } else {
+                        console.log('通知已创建，ID:', notificationId);
+                        sendResponse({ success: true, notificationId: notificationId });
+                    }
+                });
+
+                return true; // 异步处理响应
+            } else {
+                console.warn('未收到状态文本，无法创建通知');
+                sendResponse({ success: false, error: '缺少状态文本' });
+            }
         }
     } catch (error) {
         console.error('处理消息时出错:', error);
@@ -2053,8 +2077,33 @@ async function exportHistoryToTxt(records, lang) {
         return val > 0 ? `+${val}` : `${val}`;
     };
 
-    for (const record of records) {
+    // 对记录按时间排序，新的在前
+    const sortedRecords = [...records].sort((a, b) => new Date(b.time) - new Date(a.time));
+    
+    // 添加日期分界线的处理
+    let previousDateStr = null;
+
+    for (const record of sortedRecords) {
+        const recordDate = new Date(record.time);
         const time = formatTimeForExport(record.time);
+        
+        // 检查日期是否变化（年月日）
+        const currentDateStr = `${recordDate.getFullYear()}-${recordDate.getMonth() + 1}-${recordDate.getDate()}`;
+        
+        // 如果日期变化，添加分界线
+        if (previousDateStr && previousDateStr !== currentDateStr) {
+            // 使用Markdown格式添加日期分界线，并入表格中
+            const formattedPreviousDate = lang === 'en' ? 
+                        `${previousDateStr.split('-')[0]}-${previousDateStr.split('-')[1].padStart(2, '0')}-${previousDateStr.split('-')[2].padStart(2, '0')}` :
+                        `${previousDateStr.split('-')[0]}年${previousDateStr.split('-')[1]}月${previousDateStr.split('-')[2]}日`;
+            
+            // 添加简洁的分界线，并入表格中
+            txtContent += `| ${formattedPreviousDate} |  |  |  |  |  |  |  |  |\n`;
+        }
+        
+        // 更新前一个日期
+        previousDateStr = currentDateStr;
+        
         const currentBookmarks = record.bookmarkStats?.currentBookmarkCount ?? record.bookmarkStats?.currentBookmarks ?? t.na;
         const currentFolders = record.bookmarkStats?.currentFolderCount ?? record.bookmarkStats?.currentFolders ?? t.na;
         const bookmarkDiff = record.bookmarkStats?.bookmarkDiff;
@@ -2082,6 +2131,16 @@ async function exportHistoryToTxt(records, lang) {
             statusText = record.status;
         }
         txtContent += `| ${time} | ${currentBookmarks} | ${currentFolders} | ${bookmarkDiffFormatted} | ${folderDiffFormatted} | ${structuralChanges} | ${locationText} | ${typeText} | ${statusText} |\n`;
+    }
+
+    // 添加最后一个日期的分界线
+    if (previousDateStr) {
+        const formattedPreviousDate = lang === 'en' ? 
+                    `${previousDateStr.split('-')[0]}-${previousDateStr.split('-')[1].padStart(2, '0')}-${previousDateStr.split('-')[2].padStart(2, '0')}` :
+                    `${previousDateStr.split('-')[0]}年${previousDateStr.split('-')[1]}月${previousDateStr.split('-')[2]}日`;
+        
+        // 添加简洁的分界线，并入表格中
+        txtContent += `| ${formattedPreviousDate} |  |  |  |  |  |  |  |  |\n`;
     }
 
     const timestamp = new Date().toISOString().replace(/[:.]/g, '-').replace(/T/g, '_').slice(0, -4);
@@ -2851,118 +2910,52 @@ function countAllFolders(bookmarks) {
 // 修改 setBadge 函数
 async function setBadge() { // 不再接收 status 参数
     try {
-        // 获取当前语言
-        const { preferredLang = 'zh_CN' } = await browserAPI.storage.local.get(['preferredLang']);
+        const { autoSync = true } = await browserAPI.storage.local.get('autoSync');
+        const langData = await browserAPI.storage.local.get({ preferredLang: 'zh_CN' });
+        const preferredLang = langData.preferredLang;
 
-        // 获取自动备份状态
-        const { autoSync = true } = await browserAPI.storage.local.get(['autoSync']);
+        let badgeText = '';
+        let badgeColor = '#00FF00'; // 默认亮绿色
+        let isYellowHand = false; // 新增：用于标记黄手状态
 
-        // 获取最后操作信息，检查是否有操作变化
-        const { lastSyncOperations = {} } = await browserAPI.storage.local.get(['lastSyncOperations']);
-        const hasOperationChanges = lastSyncOperations.bookmarkMoved ||
-                                   lastSyncOperations.folderMoved ||
-                                   lastSyncOperations.bookmarkModified ||
-                                   lastSyncOperations.folderModified;
-
-        if (autoSync) { // 自动模式
-            // 常亮绿色
-            await browserAPI.action.setBadgeBackgroundColor({ color: '#00FF00' }); // 亮绿色
-            await browserAPI.action.setBadgeText({ text: badgeTextMap['auto'][preferredLang] || '自' });
-            console.log(`setBadge: 设置角标为自动模式: 显示亮绿色"${badgeTextMap['auto'][preferredLang] || '自'}"`);
-
-            // 如果有操作变化并且自动模式下，闪烁提示
-            if (hasOperationChanges) {
-                console.log('setBadge: 检测到操作变化，启动角标闪烁');
-                await flashBadge(preferredLang);
-            }
+        if (autoSync) {
+            badgeText = badgeTextMap.auto[preferredLang] || badgeTextMap.auto.en;
+            badgeColor = '#00FF00'; // 自动模式为亮绿色
+            await browserAPI.storage.local.set({ isYellowHandActive: false });
         } else { // 手动模式
-            // --- 新增：获取数量变化 ---
-            let hasNumericalChanges = false;
-            let bookmarkDiff = 0; // 用于日志记录
-            let folderDiff = 0; // 用于日志记录
-            try {
-                // 1. 获取当前数量 (调用内部函数)
-                const currentCounts = await getCurrentBookmarkCountsInternal();
+            const changeData = await browserAPI.storage.local.get('lastSyncOperations');
+            const lastSyncOperations = changeData.lastSyncOperations || {};
 
-                // 2. 获取上次备份数量 (优先从 syncHistory 获取)
-                const { syncHistory = [] } = await browserAPI.storage.local.get(['syncHistory']);
-                let prevBookmarkCount = 0;
-                let prevFolderCount = 0;
-                if (syncHistory.length > 0) {
-                     const latestRecord = syncHistory[syncHistory.length - 1];
-                     // 检查记录和统计数据是否存在
-                     if (latestRecord && latestRecord.bookmarkStats) {
-                         // 使用 ?? 安全地获取上次数量
-                         prevBookmarkCount = latestRecord.bookmarkStats.currentBookmarkCount ?? latestRecord.bookmarkStats.currentBookmarks ?? 0;
-                         prevFolderCount = latestRecord.bookmarkStats.currentFolderCount ?? latestRecord.bookmarkStats.currentFolders ?? 0;
-                     } else {
-                         console.log('setBadge (手动模式检查): 最新历史记录缺少 bookmarkStats，无法计算上次数量。');
-                     }
-                } else {
-                    console.log('setBadge (手动模式检查): 没有备份历史记录，无法计算上次数量。');
-                    // 没有历史，可以认为数量差异就是当前总数 (如果是首次运行)
-                    // 或者更保守地认为无数量变化？这里选择后者
-                }
+            const countData = await browserAPI.storage.local.get(['lastBookmarkCount', 'lastFolderCount']);
+            const { lastBookmarkCount = -1, lastFolderCount = -1 } = countData;
 
-                // 3. 计算 diff
-                // 只有在能获取到上次数量时才计算有效 diff
-                if (syncHistory.length > 0 && syncHistory[syncHistory.length - 1]?.bookmarkStats) {
-                     bookmarkDiff = currentCounts.bookmarks - prevBookmarkCount;
-                     folderDiff = currentCounts.folders - prevFolderCount;
-                }
+            const currentCounts = await getCurrentBookmarkCountsInternal();
+            const hasCountChanged = lastBookmarkCount !== -1 && (currentCounts.bookmarkCount !== lastBookmarkCount || currentCounts.folderCount !== lastFolderCount);
 
-                // 4. 判断是否有数量变化
-                if (bookmarkDiff !== 0 || folderDiff !== 0) {
-                    hasNumericalChanges = true;
-                }
-                 console.log(`setBadge (手动模式检查): 数值变化=${hasNumericalChanges} (B:${bookmarkDiff}, F:${folderDiff}), 结构变化=${hasOperationChanges}`);
+            const hasStructuralChanges = lastSyncOperations.bookmarkMoved || lastSyncOperations.folderMoved || lastSyncOperations.bookmarkModified || lastSyncOperations.folderModified;
 
-            } catch (countError) {
-                console.error("setBadge: 获取书签数量变化失败:", countError);
-                // 获取失败时保守处理，不再强制认为有数值变化
-                // 让最终判断依赖于 hasOperationChanges
-                hasNumericalChanges = false;
-            }
-            // --- 结束：获取数量变化 ---
+            badgeText = badgeTextMap.manual[preferredLang] || badgeTextMap.manual.en;
 
-            // --- 修改：结合两种变化判断 ---
-            const hasAnyChange = hasOperationChanges || hasNumericalChanges;
-
-            if (hasAnyChange) { // 如果有任何一种变化
-                // 显示黄色
-                await browserAPI.action.setBadgeBackgroundColor({ color: '#FFFF00' }); // 黄色
-                await browserAPI.action.setBadgeText({ text: badgeTextMap['manual'][preferredLang] || '手' });
-                console.log(`setBadge: 设置角标为手动模式(有变化): 显示黄色"${badgeTextMap['manual'][preferredLang] || '手'}"`);
+            if (hasStructuralChanges || hasCountChanged) {
+                badgeColor = '#FFFF00'; // 黄色，表示有变动
+                await browserAPI.storage.local.set({ isYellowHandActive: true });
+                isYellowHand = true;
             } else {
-                // 无任何变化，显示蓝色
-                await browserAPI.action.setBadgeBackgroundColor({ color: '#0000FF' }); // 蓝色
-                await browserAPI.action.setBadgeText({ text: badgeTextMap['manual'][preferredLang] || '手' });
-                console.log(`setBadge: 设置角标为手动模式(无变化): 显示蓝色"${badgeTextMap['manual'][preferredLang] || '手'}"`);
+                badgeColor = '#0000FF'; // 蓝色，表示无变动
+                await browserAPI.storage.local.set({ isYellowHandActive: false });
             }
         }
+        
+        await browserAPI.action.setBadgeText({ text: badgeText });
+        await browserAPI.action.setBadgeBackgroundColor({ color: badgeColor });
 
-        // 确保角标显示正确
-        setTimeout(async () => {
-            // 再次检查自动备份状态，以防在此期间被更改
-            const { autoSync: currentAutoSync = true } = await browserAPI.storage.local.get(['autoSync']);
-            const { preferredLang: currentLang = 'zh_CN' } = await browserAPI.storage.local.get(['preferredLang']);
-            if (currentAutoSync) {
-                // 自动模式下确保是亮绿色
-                await browserAPI.action.setBadgeBackgroundColor({ color: '#00FF00' }); // 亮绿色
-                await browserAPI.action.setBadgeText({ text: badgeTextMap['auto'][currentLang] || '自' });
-                console.log(`setBadge: 二次确认，设置角标为自动模式亮绿色"${badgeTextMap['auto'][currentLang] || '自'}"`);
-            }
-        }, 500);
+        console.log(`setBadge: 模式=${autoSync ? '自动' : '手动'}, 变动=${isYellowHand}, 设置角标文字='${badgeText}', 颜色='${badgeColor}'`);
+
     } catch (error) {
         console.error('设置角标失败:', error);
-        // 可选：设置错误角标
-        try {
-            const { preferredLang = 'zh_CN' } = await browserAPI.storage.local.get(['preferredLang']);
-            await browserAPI.action.setBadgeBackgroundColor({ color: '#FF0000' }); // Red
-            await browserAPI.action.setBadgeText({ text: badgeTextMap['error'][preferredLang] || '!' });
-        } catch (badgeError) {
-             console.error('设置错误角标失败:', badgeError);
-        }
+        await browserAPI.action.setBadgeText({ text: '!' });
+        await browserAPI.action.setBadgeBackgroundColor({ color: '#FF0000' }); // 红色表示错误
+        await browserAPI.storage.local.set({ isYellowHandActive: false });
     }
 }
 

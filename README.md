@@ -67,14 +67,19 @@
 
 *   **备份提醒系统（手动备份模式下）：**
     *   **智能激活与提醒：** 仅在用户切换到手动备份模式后启动。提醒会结合书签活动状态——当检测到书签发生实际变动（增、删、改、移动）后（此时角标为黄色），才会发出提醒。
-    *   **暂停与恢复：** 依赖浏览器自身`chrome.idle`API，自动检测浏览器是否处于闲置状态（例如用户离开电脑）。当浏览器空闲时，提醒计时器会暂停，避免在用户不在时打扰。
+    *   **暂停与恢复：** 采用 `chrome.windows.onFocusChanged` API 智能检测用户是否正在使用浏览器。只有当所有浏览器窗口都失去焦点时（例如，用户切换到其他应用程序），提醒计时器才会暂停，并在用户返回时恢复。
     *   **崩溃恢复能力：** 利用 `chrome.alarms` API 的持久性，即使浏览器意外关闭或崩溃，在重启后提醒计时器将会重置初始化。
     *   **提醒类型与配置：**
         *   **循环提醒：** 默认30分钟进行检测提醒。
         *   **准点定时提醒：** 固定的时间点（例如上午9:30，下午17:00）进行备份提醒，每日零点后5秒会补充进行日期变更检查。
     *   **快捷备份按钮：** 弹出的提醒窗口的三个按钮可以进行设置、切换、备份。
 
-*   **备份历史与时间线：** 扩展程序会记录备份操作，可能允许您跟踪不同时间的备份版本。当前实现在弹出窗口中包含可查看的同步操作历史记录，记录在100条时自动清除与导出。
+*   **备份历史与时间线：** 扩展程序会详细记录每一次备份操作，并提供功能丰富的历史记录界面。
+    *   **备注功能：** 新增"时间与备注"栏，每条记录均可添加备注（建议20字以内）。备注会显示在历史记录中，并包含在导出的历史文件中。
+    *   **日期分隔：** 为了便于追溯，历史记录在界面上按天分隔，并以蓝色标签高亮显示日期。导出的 `.txt` 文件也包含Markdown格式的日期分隔线。
+    *   **优化导出：** 导出的历史记录中，最新记录会置于顶部，方便查阅。
+    *   **自动归档：** 历史记录达到100条时会自动清除并导出，防止无限增长。
+
 *   **扩展程序图标角标：**
     *   在自动备份模式下显示"自"（中文）或"A"（英文），默认为绿色，备份时角标闪烁。
     *   在手动备份模式下显示"手"（中文）或"M"（英文），默认为蓝色，若数量/结构变化，角标背景将变为黄色以作提示。
@@ -94,7 +99,7 @@
     *   `chrome.notifications` 及 `chrome.windows.create`: 用于向用户显示通知（如备份状态），以及创建提醒相关的窗口界面。
     *   `chrome.downloads` & `chrome.downloads.shelf`: 用于管理本地备份文件下载并可选择隐藏下载栏。
     *   `Fetch API`: 用于执行与 WebDAV 服务器的网络请求，实现云端备份和历史记录导出（通过 `host_permissions` 声明了对任意 HTTPS 域的访问权限，以支持用户配置的 WebDAV 服务器）。
-    *   `chrome.idle`: 用于检测浏览器的闲置状态（例如用户离开电脑）。在手动备份模式下，当浏览器变为空闲时，提醒计时器会暂停，并在浏览器恢复活动状态时继续。
+    *   `chrome.windows.onFocusChanged`: 用于检测浏览器窗口的焦点变化。当所有窗口都失去焦点时，扩展程序会暂停提醒计时器，并在任何窗口重新获得焦点时恢复，从而更精确地判断用户是否正在与浏览器交互。
     *   `chrome.tabs`: 辅助获取标签页信息，支持窗口间的定位与通信，例如在创建或管理通知窗口时确定其上下文。
 
 *   **文件结构概述**
@@ -104,7 +109,7 @@
     *   `popup.html`: 定义了扩展程序弹出窗口的全部UI元素结构，包括各个配置区域、信息显示面板和交互按钮。
     *   `theme.js`: 可能包含与界面主题相关的辅助工具或特定组件的样式逻辑。主弹出窗口的主题切换和偏好管理由 `popup.js` 处理。
     *   `backup_reminder/` 目录: 包含备份提醒功能特有的模块。主要包括：
-        *   `index.js`: 作为备份提醒系统的核心中央协调器，全面负责管理提醒的整体生命周期和状态（例如，当前活动的通知窗口ID、用户对通知的交互状态、计时器是否因设置UI暂停等）。它不仅集成并调用 `timer.js`（处理所有计时逻辑）和 `notification.js`（处理通知窗口的创建与管理）的功能，还包含了健壮的初始化逻辑以防止重复执行。此模块主动响应浏览器的闲置/活动状态 (`chrome.idle`) 来智能地暂停或恢复提醒计时器，并作为消息中枢处理与扩展其他部分（如 `background.js` 进行模式切换通信，或与 `popup.js` 及通知窗口自身进行配置更新、状态查询和用户操作指令）的复杂消息通信。
+        *   `index.js`: 作为备份提醒系统的核心中央协调器，全面负责管理提醒的整体生命周期和状态（例如，当前活动的通知窗口ID、用户对通知的交互状态、计时器是否因设置UI暂停等）。它不仅集成并调用 `timer.js`（处理所有计时逻辑）和 `notification.js`（处理通知窗口的创建与管理）的功能，还包含了健壮的初始化逻辑以防止重复执行。此模块主动响应浏览器窗口的焦点变化 (`chrome.windows.onFocusChanged`) 来智能地暂停或恢复提醒计时器，并作为消息中枢处理与扩展其他部分（如 `background.js` 进行模式切换通信，或与 `popup.js` 及通知窗口自身进行配置更新、状态查询和用户操作指令）的复杂消息通信。
         *   `timer.js`: 此文件是备份提醒系统的核心计时引擎。它完全依赖 `chrome.alarms` API 来管理所有类型的提醒，包括用户可配置的循环提醒和两个独立的准点定时提醒，确保了即使在浏览器关闭后这些提醒也能持久化。它负责精确控制计时器的启动、停止、暂停（例如响应浏览器闲置状态）和恢复，并详细跟踪提醒的当前阶段、已用时间、是否已显示等状态（状态持久化于 `storage.local`）。此模块还包含了每日日期变更检查逻辑，以重置提醒状态或重新安排准点定时，并与 `index.js` 紧密协作以在适当的时候触发通知显示。其内部实现了复杂的逻辑来计算下一次提醒的准确时间和处理各种边缘情况，例如从浏览器非活动状态恢复时检查错过的准点提醒。
         *   `notification.js`: 作为通知显示的直接管理者，此模块使用 `chrome.windows.create` API 来创建和管理提醒通知窗口的生命周期。它主要负责展示由 `notification_popup.html` 定义的交互式HTML通知窗口，但也能够显示一个更简单的 `notification.html` 用于测试或强制提醒。模块会向通知窗口传递必要的参数（如提醒类型、书签变化描述、当前语言等），并管理通知窗口的自动关闭机制（例如20秒后自动关闭，除非用户正在交互）。当通知窗口关闭后（无论是由用户操作、自动关闭还是其他方式），`notification.js` 会与 `timer.js` 协调，以启动下一个提醒周期或重置相应的准点闹钟。
         *   `notification_theme.js`: 此脚本在 `notification_popup.html` 的 `<head>` 中提前加载，主要职责是尽早应用用户选择的主题（浅色/深色/系统默认）。它通过读取存储的偏好并检测系统设置，为 `<html>` 根元素设置 `data-theme` 属性，从而激活 `notification_popup.html` 中定义的相应CSS变量，有效避免了内容加载时的主题闪烁问题。
@@ -213,14 +218,19 @@ Contributions, issues, and feature requests are welcome! Please feel free to che
 
 *   **Backup Reminder System (in Manual Backup Mode):**
     *   **Smart Activation & Reminders:** Activates only when the user switches to manual backup mode. Reminders are combined with bookmark activity status—a reminder is issued only after actual changes to bookmarks (add, delete, modify, move) are detected (badge turns yellow at this point).
-    *   **Pause & Resume:** Relies on the browser\'s native `chrome.idle` API to automatically detect if the browser is idle (e.g., user is away from the computer). When the browser is idle, the reminder timer pauses to avoid disturbing the user. It resumes when the browser becomes active.
+    *   **Pause & Resume:** Uses the `chrome.windows.onFocusChanged` API to intelligently detect if the user is interacting with the browser. The reminder timer will only pause when all browser windows lose focus (e.g., when the user switches to another application) and will resume upon return.
     *   **Crash Recovery Capability:** Utilizes the persistence of the `chrome.alarms` API. Even if the browser closes unexpectedly or crashes, the reminder timer will be re-initialized upon restart.
     *   **Reminder Types & Configuration:**
         *   **Cyclical Reminders:** By default, checks for reminders every 30 minutes.
         *   **Fixed-Time Reminders:** Reminders at fixed times (e.g., 9:30 AM, 5:00 PM). A date change check is performed 5 seconds after midnight daily.
     *   **Quick Backup Buttons:** The three buttons in the reminder popup window allow for settings, mode switching, and backup.
 
-*   **Backup History & Timeline:** The extension records backup operations, potentially allowing you to track backup versions over time. The current implementation includes a viewable history of sync operations in the popup, which is automatically cleared and exported when it reaches 100 entries.
+*   **Backup History & Timeline:** The extension meticulously records every backup operation and provides a feature-rich history interface.
+    *   **Notes Feature:** A new "Time & Notes" column allows you to add a short note to each record (under 20 characters recommended). Notes are displayed in the history and included in the exported file.
+    *   **Date Separators:** To make tracking easier, the history is visually separated by day with a blue tag. The exported `.txt` file also includes Markdown-style date separators.
+    *   **Optimized Export:** In the exported history, the newest records are placed at the top for convenient reviewing.
+    *   **Auto-Archiving:** The history is automatically cleared and exported upon reaching 100 entries to manage its size.
+
 *   **Extension Icon Badge:**
     *   Displays "自" (Chinese) or "A" (English) in automatic backup mode, green by default, flashes during backup.
     *   Displays "手" (Chinese) or "M" (English) in manual backup mode, blue by default. If quantity/structure changes, the badge background turns yellow as a prompt.
@@ -240,7 +250,7 @@ Contributions, issues, and feature requests are welcome! Please feel free to che
     *   `chrome.notifications` & `chrome.windows.create`: Used to display notifications to the user (e.g., backup status) and create reminder-related window interfaces.
     *   `chrome.downloads` & `chrome.downloads.shelf`: Used for managing local backup file downloads and optionally hiding the download shelf.
     *   `Fetch API`: Used for executing network requests with WebDAV servers, enabling cloud backup and history export (declares access to any HTTPS domain via `host_permissions` to support user-configured WebDAV servers).
-    *   `chrome.idle`: Used to detect the browser\'s idle state (e.g., user is away from the computer). In manual backup mode, the reminder timer pauses when the browser becomes idle and resumes when the browser becomes active.
+    *   `chrome.windows.onFocusChanged`: Used to detect focus changes in browser windows. The extension pauses the reminder timer when all windows lose focus and resumes it when any window regains focus, providing a more accurate way to determine user interaction.
     *   `chrome.tabs`: Assists in obtaining tab information, supporting inter-window positioning and communication, such as determining context when creating or managing notification windows.
 
 *   **File Structure Overview**
@@ -250,7 +260,7 @@ Contributions, issues, and feature requests are welcome! Please feel free to che
     *   `popup.html`: Defines the entire UI element structure for the extension's popup window, including various configuration areas, information display panels, and interactive buttons.
     *   `theme.js`: May contain auxiliary tools or styling logic for specific components related to interface themes. The main popup window's theme switching and preference management are handled by `popup.js`.
     *   `backup_reminder/` directory: Contains modules specific to the backup reminder functionality. It mainly includes:
-        *   `index.js`: Serves as the central coordinator for the backup reminder system, comprehensively managing the overall lifecycle and state of reminders (e.g., current active notification window ID, user interaction status with notifications, whether timers are paused by the settings UI). It not only integrates and calls functions from `timer.js` (handling all timing logic) and `notification.js` (handling creation and management of notification windows) but also includes robust initialization logic to prevent duplicate executions. This module proactively responds to browser idle/active states (`chrome.idle`) to intelligently pause or resume reminder timers and acts as a message hub for complex communications with other parts of the extension, such as mode switching with `background.js`, or configuration updates, status queries, and user action commands with `popup.js` and the notification windows themselves.
+        *   `index.js`: Serves as the central coordinator for the backup reminder system, comprehensively managing the overall lifecycle and state of reminders (e.g., current active notification window ID, user interaction status with notifications, whether timers are paused by the settings UI). It not only integrates and calls functions from `timer.js` (handling all timing logic) and `notification.js` (handling creation and management of notification windows) but also includes robust initialization logic to prevent duplicate executions. This module proactively responds to browser window focus changes (`chrome.windows.onFocusChanged`) to intelligently pause or resume reminder timers and acts as a message hub for complex communications with other parts of the extension, such as mode switching with `background.js`, or configuration updates, status queries, and user action commands with `popup.js` and the notification windows themselves.
         *   `timer.js`: This file is the core timing engine of the backup reminder system. It exclusively relies on the `chrome.alarms` API to manage all types of reminders, including user-configurable cyclic reminders and two independent fixed-time reminders, ensuring persistence even after browser closure. It precisely controls the starting, stopping, pausing (e.g., in response to browser idle state), and resuming of timers, and meticulously tracks the current reminder phase, elapsed time, and whether a reminder has been shown (with state persisted to `storage.local`). The module also incorporates logic for daily date change checks to reset reminder states or reschedule fixed-time alarms, and works closely with `index.js` to trigger notification displays at appropriate times. Internally, it implements complex logic to calculate accurate next reminder times and handle various edge cases, such as checking for missed fixed-time alarms when the browser recovers from an inactive state.
         *   `notification.js`: As the direct manager of notification displays, this module uses the `chrome.windows.create` API to create and manage the lifecycle of reminder notification windows. It is primarily responsible for displaying the interactive HTML notification window defined by `notification_popup.html`, but can also show a simpler `notification.html` for test or forced reminders. The module passes necessary parameters to the notification window (like reminder type, bookmark change descriptions, current language) and manages an auto-close mechanism for the window (e.g., closing after 20 seconds unless the user is interacting). After a notification window is closed (whether by user action, auto-close, or other means), `notification.js` coordinates with `timer.js` to initiate the next reminder cycle or reset the corresponding fixed-time alarm.
         *   `notification_theme.js`: This script is pre-loaded in the `<head>` of `notification_popup.html`. Its primary responsibility is to apply the user-selected theme (light/dark/system default) as early as possible. It reads stored preferences, detects system settings, and sets a `data-theme` attribute on the `<html>` root element, thereby activating the corresponding CSS variables defined in `notification_popup.html` and effectively preventing theme flickering during content loading.

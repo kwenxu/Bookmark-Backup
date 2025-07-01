@@ -1168,14 +1168,14 @@ function updateSyncHistory(passedLang) { // Added passedLang parameter
         let headerHTML = '';
         if (currentLang === 'en') {
             headerHTML = `
-                <div class="header-item" style="padding-left: 0px;">Time</div>
-                <div class="header-item" style="padding-left: 20px;">Quantity/Structure</div>
+                <div class="header-item" style="padding-left: 0px;">Time & Notes</div>
+                <div class="header-item" style="padding-left: 20px;">Quantity & Structure</div>
                 <div class="header-item" style="padding-left: 10px;">Status</div>
             `;
         } else {
             headerHTML = `
-                <div class="header-item" style="flex: 4; text-align: center; padding-left: 0px;">时间</div>
-                <div class="header-item" style="flex: 5; text-align: center; padding-left: 0px;">数量/结构</div>
+                <div class="header-item" style="flex: 4; text-align: center; padding-left: 0px;">时间与备注</div>
+                <div class="header-item" style="flex: 5; text-align: center; padding-left: 0px;">数量与结构</div>
                 <div class="header-item" style="flex: 1; text-align: center; padding-left: 0px;">状态</div>
             `;
         }
@@ -1188,11 +1188,65 @@ function updateSyncHistory(passedLang) { // Added passedLang parameter
         if (syncHistory.length > 0) {
             const reversedHistory = [...syncHistory].reverse(); // 最新记录在前
 
+            // 添加一个变量来跟踪上一条记录的日期和上一个元素
+            let previousDate = null;
+            let lastHistoryItem = null;
+
             reversedHistory.forEach((record, index) => {
                 const historyItem = document.createElement('div');
                 historyItem.className = 'history-item';
-
+                
                 const time = new Date(record.time);
+                
+                // 检查日期是否变化（年月日）
+                const currentDateStr = `${time.getFullYear()}-${time.getMonth() + 1}-${time.getDate()}`;
+                const previousDateObj = previousDate ? new Date(previousDate) : null;
+                const previousDateStr = previousDateObj ? `${previousDateObj.getFullYear()}-${previousDateObj.getMonth() + 1}-${previousDateObj.getDate()}` : null;
+                
+                // 如果日期变化且不是第一条记录，为上一个条目添加日期分界线
+                if (previousDateStr && currentDateStr !== previousDateStr && lastHistoryItem) {
+                    // 使用统一的蓝色
+                    const dividerColor = '#007AFF'; // 蓝色
+                    const textColor = '#007AFF';    // 蓝色文字
+                    
+                    // 为上一个条目添加底部边框作为分界线
+                    lastHistoryItem.style.borderBottom = `1px solid ${dividerColor}`;
+                    lastHistoryItem.style.position = 'relative';
+                    lastHistoryItem.style.marginBottom = '15px'; // 添加底部间距
+                    
+                    // 创建日期标签 - 椭圆形状
+                    const dateLabel = document.createElement('div');
+                    
+                    // 根据语言设置不同的位置，使其与"数量/结构"标题居中对齐
+                    const leftPosition = currentLang === 'en' ? '51.2%' : '53%';
+                    
+                    dateLabel.style.cssText = `
+                        position: absolute;
+                        bottom: -8px;
+                        left: ${leftPosition};
+                        transform: translateX(-50%);
+                        background-color: var(--theme-bg-primary, white);
+                        padding: 2px 15px;
+                        font-size: 12px;
+                        color: ${textColor};
+                        border: 1px solid ${dividerColor};
+                        border-radius: 12px;
+                    `;
+                    
+                    // 格式化日期显示
+                    const formattedDate = currentLang === 'en' ? 
+                        `${previousDateObj.getFullYear()}-${(previousDateObj.getMonth() + 1).toString().padStart(2, '0')}-${previousDateObj.getDate().toString().padStart(2, '0')}` :
+                        `${previousDateObj.getFullYear()}年${previousDateObj.getMonth() + 1}月${previousDateObj.getDate()}日`;
+                    dateLabel.textContent = formattedDate;
+                    
+                    // 添加日期标签到上一个条目
+                    lastHistoryItem.appendChild(dateLabel);
+                }
+                
+                // 更新前一条记录的时间和元素引用，用于下次比较
+                previousDate = record.time;
+                lastHistoryItem = historyItem;
+                
                 let statusHTML = '';
                 let statusClass = '';
 
@@ -1426,6 +1480,23 @@ function updateSyncHistory(passedLang) { // Added passedLang parameter
 
                 const formattedTime = `<span style="font-weight: bold; color: #007AFF; text-align: center;">${formatTime(time)}</span>`;
 
+                // 备注部分
+                let noteHtml = '';
+                if (record.note) {
+                    noteHtml = `<div style="margin-top: 4px; text-align: center; font-size: 12px; color: var(--theme-text-primary); max-width: 100%; overflow-wrap: break-word; word-wrap: break-word; word-break: break-all;">${record.note}</div>`;
+                }
+                
+                // 添加备注按钮
+                const addNoteButton = `
+                    <div class="add-note-btn" data-record-time="${record.time}" style="margin-top: 4px; text-align: center; cursor: pointer;">
+                        <span style="color: #777; font-size: 12px; padding: 2px 6px; border: 1px dashed #aaa; border-radius: 3px;">
+                            ${currentLang === 'en' 
+                               ? (record.note ? 'Edit' : 'Add Note') 
+                               : (record.note ? '编辑' : '添加备注')}
+                        </span>
+                    </div>
+                `;
+
                 // 英文版对齐调整
                 let timeColStyle = "flex: 1; text-align: center;";
                 let qtyColStyle = "flex: 1; text-align: center;";
@@ -1442,7 +1513,11 @@ function updateSyncHistory(passedLang) { // Added passedLang parameter
                 }
 
                 historyItem.innerHTML = `
-                    <div class="history-item-time" style="${timeColStyle}">${formattedTime}</div>
+                    <div class="history-item-time" style="${timeColStyle}">
+                        ${formattedTime}
+                        ${noteHtml}
+                        ${addNoteButton}
+                    </div>
                     <div class="history-item-count" style="${qtyColStyle}">${bookmarkStatsHTML}</div>
                     <div class="history-item-status ${statusClass}" style="${statusColStyle}">${statusHTML}</div>
                 `;
@@ -1455,6 +1530,14 @@ function updateSyncHistory(passedLang) { // Added passedLang parameter
                     console.log('cachedRecordAfterClear was used for list OR list has >1 item, now removed.');
                 });
             }
+
+            // 为添加备注按钮绑定事件
+            document.querySelectorAll('.add-note-btn').forEach(btn => {
+                btn.addEventListener('click', function(e) {
+                    const recordTime = this.getAttribute('data-record-time');
+                    showAddNoteDialog(recordTime);
+                });
+            });
 
         } else {
             const emptyItem = document.createElement('div');
@@ -2147,8 +2230,8 @@ function calibrateDownloadPath() {
 
         // 国际化文本
         const openDownloadSettingsButtonStrings = {
-            'zh_CN': "打开下载设置",
-            'en': "Open Download Settings"
+            'zh_CN': "取消",
+            'en': "Cancel"
         };
         openSettingsBtn.textContent = openDownloadSettingsButtonStrings[currentLang] || openDownloadSettingsButtonStrings['zh_CN'];
 
@@ -2188,8 +2271,8 @@ function calibrateDownloadPath() {
         });
 
         // 添加按钮到按钮区域
-        buttonsCell.appendChild(openSettingsBtn);
         buttonsCell.appendChild(cancelBtn);
+        buttonsCell.appendChild(openSettingsBtn);
 
         // 组装网格
         gridContainer.appendChild(mainContentCell);
@@ -2715,6 +2798,7 @@ function exportSyncHistory() {
         };
         const tableHeaders = {
             timestamp: { 'zh_CN': "时间戳", 'en': "Timestamp" },
+            notes: { 'zh_CN': "备注", 'en': "Notes" },
             bookmarkCount: { 'zh_CN': "书签数", 'en': "Bookmarks" },
             folderCount: { 'zh_CN': "文件夹数", 'en': "Folders" },
             bookmarkChange: { 'zh_CN': "书签变化", 'en': "Bookmark Change" },
@@ -2764,12 +2848,37 @@ function exportSyncHistory() {
         txtContent += exportNote[lang] + "\n\n";
 
         // Table Headers
-        txtContent += `| ${tableHeaders.timestamp[lang]} | ${tableHeaders.bookmarkCount[lang]} | ${tableHeaders.folderCount[lang]} | ${tableHeaders.bookmarkChange[lang]} | ${tableHeaders.folderChange[lang]} | ${tableHeaders.structureChange[lang]} | ${tableHeaders.location[lang]} | ${tableHeaders.type[lang]} | ${tableHeaders.status[lang]} |\n`;
-        txtContent += "|---|---|---|---|---|---|---|---|---|\n";
+        txtContent += `| ${tableHeaders.timestamp[lang]} | ${tableHeaders.notes[lang]} | ${tableHeaders.bookmarkCount[lang]} | ${tableHeaders.folderCount[lang]} | ${tableHeaders.bookmarkChange[lang]} | ${tableHeaders.folderChange[lang]} | ${tableHeaders.structureChange[lang]} | ${tableHeaders.location[lang]} | ${tableHeaders.type[lang]} | ${tableHeaders.status[lang]} |\n`;
+        txtContent += "|---|---|---|---|---|---|---|---|---|---|\n";
 
         // Table Rows
-        syncHistory.forEach(record => {
-            const time = formatTimeForExport(new Date(record.time));
+        // 添加日期分界线的处理
+        let previousDateStr = null;
+        
+        // 对记录按时间排序，新的在前
+        const sortedHistory = [...syncHistory].sort((a, b) => new Date(b.time) - new Date(a.time));
+
+        sortedHistory.forEach(record => {
+            const recordDate = new Date(record.time);
+            const time = formatTimeForExport(recordDate);
+
+            // 检查日期是否变化（年月日）
+            const currentDateStr = `${recordDate.getFullYear()}-${recordDate.getMonth() + 1}-${recordDate.getDate()}`;
+            
+            // 如果日期变化，添加分界线
+            if (previousDateStr && previousDateStr !== currentDateStr) {
+                // 使用Markdown格式添加日期分界线
+                const formattedPreviousDate = lang === 'en' ? 
+                    `${previousDateStr.split('-')[0]}-${previousDateStr.split('-')[1].padStart(2, '0')}-${previousDateStr.split('-')[2].padStart(2, '0')}` :
+                    `${previousDateStr.split('-')[0]}年${previousDateStr.split('-')[1]}月${previousDateStr.split('-')[2]}日`;
+                
+                // 添加简洁的分界线，并入表格中
+                txtContent += `| ${formattedPreviousDate} |  |  |  |  |  |  |  |  |  |\n`;
+            }
+            
+            // 更新前一个日期
+            previousDateStr = currentDateStr;
+
             const currentBookmarks = record.bookmarkStats?.currentBookmarks ?? record.bookmarkStats?.currentBookmarkCount ?? 'N/A';
             const currentFolders = record.bookmarkStats?.currentFolders ?? record.bookmarkStats?.currentFolderCount ?? 'N/A';
 
@@ -2836,8 +2945,18 @@ function exportSyncHistory() {
                 statusText = statusValues.locked[lang];
             }
 
-            txtContent += `| ${time} | ${currentBookmarks} | ${currentFolders} | ${bookmarkDiffFormatted} | ${folderDiffFormatted} | ${structuralChanges} | ${locationText} | ${typeText} | ${statusText} |\n`;
+            txtContent += `| ${time} | ${record.note || ''} | ${currentBookmarks} | ${currentFolders} | ${bookmarkDiffFormatted} | ${folderDiffFormatted} | ${structuralChanges} | ${locationText} | ${typeText} | ${statusText} |\n`;
         });
+        
+        // 添加最后一个日期的分界线
+        if (previousDateStr) {
+            const formattedPreviousDate = lang === 'en' ? 
+                `${previousDateStr.split('-')[0]}-${previousDateStr.split('-')[1].padStart(2, '0')}-${previousDateStr.split('-')[2].padStart(2, '0')}` :
+                `${previousDateStr.split('-')[0]}年${previousDateStr.split('-')[1]}月${previousDateStr.split('-')[2]}日`;
+            
+            // 添加简洁的分界线，并入表格中
+            txtContent += `| ${formattedPreviousDate} |  |  |  |  |  |  |  |  |  |\n`;
+        }
 
         // 根据配置决定导出方式
         let exportResults = [];
@@ -3383,13 +3502,13 @@ const applyLocalizedContent = async (lang) => { // Added lang parameter
     };
 
     const timeColumnStrings = {
-        'zh_CN': "时间",
-        'en': "Time"
+        'zh_CN': "时间与备注",
+        'en': "Time & Notes"
     };
 
     const quantityColumnStrings = {
-        'zh_CN': "数量/结构",
-        'en': "Quantity/Structure"
+        'zh_CN': "数量与结构",
+        'en': "Quantity & Structure"
     };
 
     const statusColumnStrings = {
@@ -3636,8 +3755,8 @@ const applyLocalizedContent = async (lang) => { // Added lang parameter
     };
 
     const openDownloadSettingsButtonStrings = {
-        'zh_CN': "打开下载设置",
-        'en': "Open Download Settings"
+        'zh_CN': "取消",
+        'en': "Cancel"
     };
 
     const cancelButtonStrings = {
@@ -3885,7 +4004,7 @@ const applyLocalizedContent = async (lang) => { // Added lang parameter
 
     const clearHistoryWarningStrings = {
         'zh_CN': "此操作不可撤销，清空后无法恢复这些记录。",
-        'en': "This action cannot be undone. Records will be permanently deleted."
+        'en': "This action cannot be undone.<br>Records will be permanently deleted."
     };
 
     const confirmClearButtonStrings = {
@@ -3993,58 +4112,98 @@ const applyLocalizedContent = async (lang) => { // Added lang parameter
         console.log('检测到重置对话框打开，更新其中的初始备份文件信息');
 
         // 获取初始备份记录
-        chrome.storage.local.get(['initialBackupRecord'], function(data) {
+        chrome.storage.local.get(['initialBackupRecord', 'preferredLang'], function(data) {
+            console.log('加载初始备份记录:', data.initialBackupRecord);
+
+            const currentLang = data.preferredLang || 'zh_CN';
+
+            // 确保国际化字符串已经初始化
+            if (!initialBackupFileStrings || !backupTypeStrings || !timeStrings ||
+                !localBackupTypeStrings || !cloudBackupTypeStrings) {
+                // 如果变量尚未初始化，进行初始化
+                initialBackupFileStrings = {
+                    'zh_CN': "您的初始备份文件：",
+                    'en': "Your Initial Backup File:"
+                };
+                backupTypeStrings = {
+                    'zh_CN': "备份类型:",
+                    'en': "Backup Type:"
+                };
+                timeStrings = {
+                    'zh_CN': "时间:",
+                    'en': "Time:"
+                };
+                localBackupTypeStrings = {
+                    'zh_CN': "本地",
+                    'en': "Local"
+                };
+                cloudBackupTypeStrings = {
+                    'zh_CN': "云端",
+                    'en': "Cloud"
+                };
+            }
+
             const initialBackupInfo = document.getElementById('initialBackupInfo');
             const initialBackupFileName = document.getElementById('initialBackupFileName');
 
-            if (initialBackupInfo && initialBackupFileName && data.initialBackupRecord) {
-                // 检查是否已存在备份类型信息元素，如果存在则删除
+            if (initialBackupInfo && initialBackupFileName) {
+                // 清除之前可能存在的内容
+                initialBackupFileName.textContent = '';
                 const oldTypeInfo = initialBackupFileName.nextElementSibling;
                 if (oldTypeInfo) {
                     oldTypeInfo.remove();
                 }
 
-                // 设置文件名（不变）
-                initialBackupFileName.textContent = data.initialBackupRecord.fileName || '未知文件名';
+                if (data.initialBackupRecord) {
+                    // 设置文件名
+                    initialBackupFileName.textContent = data.initialBackupRecord.fileName || '未知文件名';
 
-                // 获取备份类型
-                const backupType = data.initialBackupRecord.backupType || '未知';
-                // 格式化时间
-                let timeStr = '未知时间';
-                if (data.initialBackupRecord.time) {
-                    try {
-                        const date = new Date(data.initialBackupRecord.time);
-                        timeStr = formatTime(date);
-                    } catch (e) {
-                        console.error('格式化时间失败:', e);
+                    // 获取备份类型
+                    const backupType = data.initialBackupRecord.backupType || '未知';
+                    // 格式化时间
+                    let timeStr = '未知时间';
+                    if (data.initialBackupRecord.time) {
+                        try {
+                            const date = new Date(data.initialBackupRecord.time);
+                            timeStr = formatTime(date);
+                        } catch (e) {
+                            console.error('格式化时间失败:', e);
+                        }
                     }
+
+                    // 添加备份类型和时间信息
+                    const backupTypeInfo = document.createElement('div');
+                    backupTypeInfo.style.marginTop = '5px';
+                    backupTypeInfo.style.fontSize = '12px';
+                    backupTypeInfo.style.color = '#666';
+
+                    // 获取对应语言的文本
+                    const backupTypeText = backupTypeStrings[currentLang] || backupTypeStrings['zh_CN'];
+                    const timeText = timeStrings[currentLang] || timeStrings['zh_CN'];
+
+                    // 将本地/云端转换为当前语言
+                    let localizedBackupType = backupType;
+                    if (backupType === '本地') {
+                        localizedBackupType = localBackupTypeStrings[currentLang] || localBackupTypeStrings['zh_CN'];
+                    } else if (backupType === '云端') {
+                        localizedBackupType = cloudBackupTypeStrings[currentLang] || cloudBackupTypeStrings['zh_CN'];
+                    }
+
+                    backupTypeInfo.textContent = `${backupTypeText} ${localizedBackupType}, ${timeText} ${timeStr}`;
+                    initialBackupFileName.after(backupTypeInfo);
+
+                    // 显示备份信息区域
+                    initialBackupInfo.style.display = 'block';
+                    console.log('已显示初始备份信息区域');
+                } else {
+                    // 没有备份记录时，隐藏信息区域
+                    initialBackupInfo.style.display = 'none';
+                    console.log('没有初始备份记录，隐藏信息区域');
                 }
-
-                // 添加备份类型和时间信息
-                const backupTypeInfo = document.createElement('div');
-                backupTypeInfo.style.marginTop = '5px';
-                backupTypeInfo.style.fontSize = '12px';
-                backupTypeInfo.style.color = '#666';
-
-                // 获取对应语言的文本
-                const backupTypeText = backupTypeStrings[lang] || backupTypeStrings['zh_CN'];
-                const timeText = timeStrings[lang] || timeStrings['zh_CN'];
-
-                // 将本地/云端转换为当前语言
-                let localizedBackupType = backupType;
-                if (backupType === '本地') {
-                    localizedBackupType = localBackupTypeStrings[lang] || localBackupTypeStrings['zh_CN'];
-                } else if (backupType === '云端') {
-                    localizedBackupType = cloudBackupTypeStrings[lang] || cloudBackupTypeStrings['zh_CN'];
-                }
-
-                backupTypeInfo.textContent = `${backupTypeText} ${localizedBackupType}, ${timeText} ${timeStr}`;
-                initialBackupFileName.after(backupTypeInfo);
-
-                // 显示备份信息区域
-                initialBackupInfo.style.display = 'block';
-                console.log('已更新初始备份信息区域的语言');
             }
+
+            // 显示重置对话框
+            resetConfirmDialog.style.display = 'block';
         });
     }
 
@@ -4220,9 +4379,9 @@ const applyLocalizedContent = async (lang) => { // Added lang parameter
         clearHistoryDialogDescriptionElement.textContent = clearHistoryDialogDescriptionText;
     }
 
-    const clearHistoryWarningElement = document.querySelector('#clearHistoryConfirmDialog p[style*="color: #dc3545"]');
+    const clearHistoryWarningElement = document.getElementById('clearHistoryWarning');
     if (clearHistoryWarningElement) {
-        clearHistoryWarningElement.textContent = clearHistoryWarningText;
+        clearHistoryWarningElement.innerHTML = clearHistoryWarningText;
     }
 
     const confirmClearHistoryButton = document.getElementById('confirmClearHistory');
@@ -5455,3 +5614,197 @@ document.addEventListener('DOMContentLoaded', function() {
         initializeLanguageSwitcher();
     }
 });
+
+// 添加备注对话框函数
+function showAddNoteDialog(recordTime) {
+    // 先查找是否已有备注对话框，如果有则移除
+    const existingDialog = document.getElementById('noteDialog');
+    if (existingDialog) {
+        document.body.removeChild(existingDialog);
+    }
+    
+    // 获取当前的历史记录
+    chrome.storage.local.get(['syncHistory', 'preferredLang'], (data) => {
+        const syncHistory = data.syncHistory || [];
+        const currentLang = data.preferredLang || 'zh_CN';
+        const record = syncHistory.find(r => r.time === recordTime);
+        
+        if (!record) {
+            console.error('未找到对应的记录:', recordTime);
+            return;
+        }
+        
+        // 创建对话框
+        const dialogOverlay = document.createElement('div');
+        dialogOverlay.id = 'noteDialog';
+        dialogOverlay.style.cssText = `
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(0, 0, 0, 0.5);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            z-index: 1000;
+        `;
+        
+        // 创建对话框内容
+        const dialogContent = document.createElement('div');
+        dialogContent.style.cssText = `
+            background: var(--theme-bg-primary);
+            border-radius: 8px;
+            padding: 20px;
+            width: 300px;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+            position: relative;
+        `;
+        
+        // 标题
+        const title = document.createElement('h3');
+        title.textContent = currentLang === 'en' ? 'Note' : '备注';
+        title.style.cssText = 'margin-top: 0; margin-bottom: 15px;';
+        
+        // 时间提示
+        const timeInfo = document.createElement('div');
+        timeInfo.textContent = `${formatTime(new Date(recordTime))}`;
+        timeInfo.style.cssText = 'margin-bottom: 15px; color: #007AFF; font-weight: bold;';
+        
+        // 文本区域
+        const textarea = document.createElement('textarea');
+        textarea.value = record.note || '';
+        textarea.placeholder = currentLang === 'en' ? 'Enter note (suggested within 20 characters)' : '输入备注（建议20个字符以内）';
+        textarea.style.cssText = `
+            width: 100%;
+            height: 60px;
+            padding: 8px;
+            border: 1px solid #ccc;
+            border-radius: 4px;
+            resize: none;
+            box-sizing: border-box;
+            margin-bottom: 15px;
+            font-size: 14px;
+        `;
+        
+        // 字数提示
+        const charCount = document.createElement('div');
+        const suggestedChars = 20;
+        const updateCharCount = () => {
+            const count = textarea.value.length;
+            const overLimit = count > suggestedChars;
+            
+            if (currentLang === 'en') {
+                charCount.textContent = overLimit ? 
+                    `${count} characters (suggested: ${suggestedChars})` : 
+                    `${count} / ${suggestedChars} characters`;
+            } else {
+                charCount.textContent = overLimit ? 
+                    `${count} 个字符（建议: ${suggestedChars}）` : 
+                    `${count} / ${suggestedChars} 个字符`;
+            }
+            
+            // 只改变颜色提示，不强制限制
+            charCount.style.color = overLimit ? '#FF9800' : '#666';
+        };
+        updateCharCount();
+        textarea.addEventListener('input', updateCharCount);
+        charCount.style.cssText = 'text-align: right; font-size: 12px; margin-bottom: 15px; color: #666;';
+        
+        // 按钮容器
+        const buttonContainer = document.createElement('div');
+        buttonContainer.style.cssText = 'display: flex; justify-content: space-between; gap: 10px;';
+        
+        // 取消按钮
+        const cancelButton = document.createElement('button');
+        cancelButton.textContent = currentLang === 'en' ? 'Cancel' : '取消';
+        cancelButton.style.cssText = `
+            padding: 8px 15px;
+            border: none;
+            border-radius: 4px;
+            background-color: var(--theme-bg-tertiary);
+            color: var(--theme-text-secondary);
+            cursor: pointer;
+            flex: 1;
+        `;
+        cancelButton.onclick = () => {
+            document.body.removeChild(dialogOverlay);
+        };
+        
+        // 保存按钮
+        const saveButton = document.createElement('button');
+        saveButton.textContent = currentLang === 'en' ? 'Save' : '保存';
+        saveButton.style.cssText = `
+            padding: 8px 15px;
+            border: none;
+            border-radius: 4px;
+            background-color: #4CAF50;
+            color: white;
+            cursor: pointer;
+            flex: 1;
+        `;
+        saveButton.onclick = () => {
+            // 不再验证字数限制，直接保存备注
+            saveNoteForRecord(recordTime, textarea.value);
+            document.body.removeChild(dialogOverlay);
+        };
+        
+        // 添加所有元素
+        buttonContainer.appendChild(cancelButton);
+        buttonContainer.appendChild(saveButton);
+        dialogContent.appendChild(title);
+        dialogContent.appendChild(timeInfo);
+        dialogContent.appendChild(textarea);
+        dialogContent.appendChild(charCount);
+        dialogContent.appendChild(buttonContainer);
+        dialogOverlay.appendChild(dialogContent);
+        
+        document.body.appendChild(dialogOverlay);
+        textarea.focus();
+        
+        // 监听语言切换事件
+        const handleLanguageChange = () => {
+            chrome.storage.local.get(['preferredLang'], (result) => {
+                const newLang = result.preferredLang || 'zh_CN';
+                if (newLang !== currentLang) {
+                    // 语言已更改，重新打开对话框
+                    document.body.removeChild(dialogOverlay);
+                    showAddNoteDialog(recordTime);
+                }
+            });
+        };
+        
+        // 添加语言切换事件监听
+        chrome.storage.onChanged.addListener((changes, area) => {
+            if (area === 'local' && changes.preferredLang) {
+                handleLanguageChange();
+            }
+        });
+    });
+}
+
+// 保存备注函数
+function saveNoteForRecord(recordTime, noteText) {
+    chrome.storage.local.get(['syncHistory', 'preferredLang'], (data) => {
+        const syncHistory = data.syncHistory || [];
+        const currentLang = data.preferredLang || 'zh_CN';
+        const updatedHistory = syncHistory.map(record => {
+            if (record.time === recordTime) {
+                return { ...record, note: noteText };
+            }
+            return record;
+        });
+        
+        chrome.storage.local.set({ syncHistory: updatedHistory }, () => {
+            console.log('备注已保存');
+            updateSyncHistory(); // 更新显示
+            
+            // 使用国际化字符串
+            const noteSavedText = {
+                'zh_CN': '备注已保存',
+                'en': 'Note saved'
+            };
+            showStatus(noteSavedText[currentLang] || noteSavedText['zh_CN'], 'success');
+        });
+    });
+}

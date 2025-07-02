@@ -2676,19 +2676,13 @@ async function updateSyncStatus(direction, time, status = 'success', errorMessag
                 folderModified: lastSyncOperations.folderModified || folderModified
             };
 
-            // 在成功备份后，更新书签数据和结构签名
-            const newSignature = await getStructureSignature();
-            const dataToSet = {
+            await browserAPI.storage.local.set({
                 lastBookmarkData: {
                     bookmarkCount: currentBookmarkCount,
                     folderCount: currentFolderCount,
                     timestamp: time
                 }
-            };
-            if (newSignature) {
-                dataToSet.lastSyncStructureSignature = newSignature;
-            }
-            await browserAPI.storage.local.set(dataToSet);
+            });
 
             resetOperationStatus();
         }
@@ -2840,9 +2834,7 @@ function getAllUrls(bookmarks) {
             node.children.forEach(traverse);
         }
     }
-    if (bookmarks && bookmarks.length > 0) {
-        traverse(bookmarks[0]);
-    }
+    traverse(bookmarks[0]);
     return urls;
 }
 
@@ -2931,115 +2923,20 @@ async function setBadge() { // 不再接收 status 参数
             badgeColor = '#00FF00'; // 自动模式为亮绿色
             await browserAPI.storage.local.set({ isYellowHandActive: false });
         } else { // 手动模式
+            const changeData = await browserAPI.storage.local.get('lastSyncOperations');
+            const lastSyncOperations = changeData.lastSyncOperations || {};
+
+            const countData = await browserAPI.storage.local.get(['lastBookmarkCount', 'lastFolderCount']);
+            const { lastBookmarkCount = -1, lastFolderCount = -1 } = countData;
+
+            const currentCounts = await getCurrentBookmarkCountsInternal();
+            const hasCountChanged = lastBookmarkCount !== -1 && (currentCounts.bookmarkCount !== lastBookmarkCount || currentCounts.folderCount !== lastFolderCount);
+
+            const hasStructuralChanges = lastSyncOperations.bookmarkMoved || lastSyncOperations.folderMoved || lastSyncOperations.bookmarkModified || lastSyncOperations.folderModified;
+
             badgeText = badgeTextMap.manual[preferredLang] || badgeTextMap.manual.en;
 
-            // 使用新的结构比较法
-            const { lastSyncStructureSignature } = await browserAPI.storage.local.get('lastSyncStructureSignature');
-            const currentSignature = await getStructureSignature();
-            
-            let hasChanged = false;
-            let bookmarkChanged = false;
-            let folderChanged = false;
-            
-            // 只有在两个签名都有效时才进行比较
-            if (currentSignature && lastSyncStructureSignature) {
-                // 解析上次保存的签名
-                let lastUrls = [];
-                let lastFolders = [];
-                try {
-                    // 兼容旧版格式，旧版只存储了combinedSignature
-                    if (typeof lastSyncStructureSignature === 'string') {
-                        const parsed = JSON.parse(lastSyncStructureSignature);
-                        lastUrls = parsed.urls || [];
-                        lastFolders = parsed.folders || [];
-                    } else {
-                        // 新版格式
-                        lastUrls = JSON.parse(lastSyncStructureSignature.urlsSignature || '[]');
-                        lastFolders = JSON.parse(lastSyncStructureSignature.foldersSignature || '[]');
-                    }
-                } catch (e) {
-                    console.error("解析lastSyncStructureSignature失败:", e);
-                }
-                
-                // 获取当前签名
-                const currentUrls = currentSignature.urls;
-                const currentFolders = currentSignature.folders;
-                
-                // 比较URL和文件夹
-                // 检查是否有书签变动
-                if (currentUrls.length !== lastUrls.length) {
-                    bookmarkChanged = true; // 书签数量变化
-                } else {
-                    // 书签数量相同，检查内容是否相同（是否同一组URL）
-                    for (const url of currentUrls) {
-                        if (!lastUrls.includes(url)) {
-                            bookmarkChanged = true;
-                            break;
-                        }
-                    }
-                    // 反向检查以防某些旧URL消失而新URL出现，导致数量不变但内容不同
-                    if (!bookmarkChanged) {
-                        for (const url of lastUrls) {
-                            if (!currentUrls.includes(url)) {
-                                bookmarkChanged = true;
-                                break;
-                            }
-                        }
-                    }
-                }
-                
-                // 检查是否有文件夹变动
-                if (currentFolders.length !== lastFolders.length) {
-                    folderChanged = true; // 文件夹数量变化
-                } else {
-                    // 文件夹数量相同，检查内容是否相同（是否同一组文件夹）
-                    for (const folder of currentFolders) {
-                        if (!lastFolders.includes(folder)) {
-                            folderChanged = true;
-                            break;
-                        }
-                    }
-                    // 反向检查
-                    if (!folderChanged) {
-                        for (const folder of lastFolders) {
-                            if (!currentFolders.includes(folder)) {
-                                folderChanged = true;
-                                break;
-                            }
-                        }
-                    }
-                }
-                
-                // 总体变动判断
-                hasChanged = bookmarkChanged || folderChanged;
-                
-                // 更新操作状态以供UI使用
-                await browserAPI.storage.local.set({
-                    lastSyncOperations: {
-                        bookmarkMoved: bookmarkChanged,  // 用bookmarkChanged替代bookmarkMoved
-                        folderMoved: folderChanged,      // 用folderChanged替代folderMoved
-                        bookmarkModified: bookmarkChanged, // 用bookmarkChanged替代bookmarkModified
-                        folderModified: folderChanged,     // 用folderChanged替代folderModified
-                        lastUpdateTime: new Date().toISOString()
-                    }
-                });
-                
-            } else if (currentSignature) {
-                // 如果只有当前签名，意味着之前没有记录，也视为变化（首次）
-                hasChanged = true;
-                // 设置所有变动标志为true（首次运行）
-                await browserAPI.storage.local.set({
-                    lastSyncOperations: {
-                        bookmarkMoved: true,
-                        folderMoved: true,
-                        bookmarkModified: true,
-                        folderModified: true,
-                        lastUpdateTime: new Date().toISOString()
-                    }
-                });
-            }
-            
-            if (hasChanged) {
+            if (hasStructuralChanges || hasCountChanged) {
                 badgeColor = '#FFFF00'; // 黄色，表示有变动
                 await browserAPI.storage.local.set({ isYellowHandActive: true });
                 isYellowHand = true;
@@ -3280,55 +3177,3 @@ async function getCurrentBookmarkCountsInternal() {
 // (Most initializations are now grouped at the top or with their respective systems)
 
 console.log("Background script (reordered only) fully loaded and initialized.");
-
-// 新增：获取书签结构签名，用于精确比较变化
-async function getStructureSignature() {
-    try {
-        const tree = await browserAPI.bookmarks.getTree();
-        if (!tree || tree.length === 0) {
-            return {
-                combinedSignature: JSON.stringify({ urls: [], folders: [] }),
-                urlsSignature: JSON.stringify([]),
-                foldersSignature: JSON.stringify([]),
-                urls: [],
-                folders: []
-            };
-        }
-
-        const urls = [];
-        const folders = [];
-
-        function traverse(node, path) {
-            if (node.url) {
-                // 对于书签，我们关心它的URL
-                urls.push(node.url);
-            } else if (node.children) {
-                // 对于文件夹，我们关心它的路径来唯一标识
-                const folderPath = `${path}/${node.title}`;
-                folders.push(folderPath);
-                node.children.forEach(child => traverse(child, folderPath));
-            }
-        }
-
-        // 从根节点的子节点开始遍历
-        if (tree[0].children) {
-            traverse(tree[0], '');
-        }
-
-        // 排序以确保一致性
-        urls.sort();
-        folders.sort();
-
-        // 返回完整结构签名以及单独的URL和文件夹签名，便于细粒度比较
-        return {
-            combinedSignature: JSON.stringify({ urls, folders }),
-            urlsSignature: JSON.stringify(urls),
-            foldersSignature: JSON.stringify(folders),
-            urls: urls,
-            folders: folders
-        };
-    } catch (error) {
-        console.error("获取书签结构签名失败:", error);
-        return null; // 返回null表示失败
-    }
-}

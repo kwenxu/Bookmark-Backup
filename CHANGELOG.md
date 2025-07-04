@@ -33,7 +33,7 @@
     -   用户点击图标时，UI能瞬间从缓存加载数据，实现了"秒开"的流畅体验，同时减少了不必要的重复计算。
 -   **🌟 "循环提醒"计时器与角标状态深度绑定**：
     -   重构了提醒逻辑，将"循环提醒"功能的启动与停止，从原先的"切换模式"事件，改为与"角标颜色"直接关联。
-    -   现在，只有当角标变为黄色（有变化）时，计时器才会启动；当角标变回蓝色（无变化）时，计时器则停止。这使得提醒功能更智能、更节能。
+    -   现在，只有当角标变为黄色（有变化）时，计时器才会启动；当角标变回蓝色（无变化）时，计时器则停止。这使得提醒功能更节能。
 
 ---
 
@@ -95,7 +95,7 @@
     -   When the user clicks the icon, the UI can instantly load data from the cache, achieving a smooth "instant-open" experience while reducing unnecessary repetitive calculations.
 -   **🌟 "Loop Reminder" Timer Deeply Bound to Badge State**:
     -   Refactored the reminder logic, changing the start/stop trigger for the "Loop Reminder" feature from the previous "mode switch" event to a direct association with the "badge color".
-    -   Now, the timer only starts when the badge turns yellow (has changes) and stops when it turns blue (no changes). This makes the reminder feature smarter and more power-efficient.
+    -   Now, the timer only starts when the badge turns yellow (has changes) and stops when it turns blue (no changes). This makes the reminder feature more power-efficient.
 
 ---
 

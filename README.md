@@ -171,7 +171,7 @@ Bookmark Backup & Reminder is a Chrome/Edge browser extension designed to provid
 <table>
   <tr>
     <td><img src="png/main_ui.png" alt="Extension Main UI (Chinese, Dark Theme)"></td>
-    <td><img src="png/v1.5_Backup Records Daily Dividers & Notes Feature Screenshot.png" alt="Extension Main UI (English, Light Theme)"></td>
+    <td><img src="png/v1.5.png" alt="Extension Main UI (English, Light Theme)"></td>
   </tr>
   <tr>
     <td><img src="png/setting.png" alt="Reminder Settings UI (Chinese, Dark Theme)"></td>

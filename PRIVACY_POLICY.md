@@ -5,7 +5,7 @@
 
 # 书签备份扩展程序隐私政策
 
-**最后更新日期:** 2025年01月01日
+**最后更新日期:** 2024年07月03日
 
 本隐私政策描述了"书签备份"扩展程序（以下简称"本扩展"）如何处理您的信息。我们极度重视您的隐私。本扩展的核心原则是：**您的数据，永远属于您自己**。
 
@@ -46,7 +46,7 @@
 
 # Privacy Policy for Bookmark Backup
 
-**Last Updated:** 2025-01-01
+**Last Updated:** 2024-07-03
 
 This Privacy Policy describes how Bookmark Backup ("the Extension") handles your information. Your privacy is critically important to us. The core principle of this extension is that **your data is YOUR data**.
 

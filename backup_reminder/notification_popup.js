@@ -76,8 +76,22 @@ const cyclicReminderStrings = { 'zh_CN': "循环提醒", 'en': "Cyclic Reminder"
 const minutesUnitStrings = { 'zh_CN': "分钟", 'en': "minutes" };
 const fixedTime1Strings = { 'zh_CN': "准点定时1", 'en': "Fixed Time 1" };
 const fixedTime2Strings = { 'zh_CN': "准点定时2", 'en': "Fixed Time 2" };
-const manualBackupReminderDescStrings = { 'zh_CN': "手动备份下，进行操作（数量/结构变化）才会提醒", 'en': "Reminders only trigger after changes (quantity/structure)" };
-const reminderExampleStrings = { 'zh_CN': "示例：(<span style=\"color: #4CAF50;\">+12</span> 书签，<span style=\"color: #4CAF50;\">+1</span> 文件夹，<span style=\"color: orange;\">书签、文件夹变动</span>)", 'en': "Example: (<span style=\"color: #4CAF50;\">+12</span> bookmarks, <span style=\"color: #4CAF50;\">+1</span> folder, <span style=\"color: orange;\">bookmarks & folders changed</span>)" };
+const manualBackupReminderDescStrings = {
+    'zh_CN': `
+        <div class="desc-line">循环提醒的计时：浏览器的<span style="color: #4CAF50;">实际使用时间</span>。</div>
+        <div class="desc-line">手动备份下，进行操作（数量/结构变化）才会提醒，</div>
+        <div class="desc-line">示例：(<span style="color: #4CAF50;">+12</span> 书签，<span style="color: #4CAF50;">+1</span> 文件夹，<span style="color: orange;">书签、文件夹变动</span>)。</div>
+    `,
+    'en': `
+        <div class="desc-line">Cyclic Reminder timing: Browser's <span style="color: #4CAF50;">actual usage time</span>.</div>
+        <div class="desc-line">Reminders only trigger after changes (quantity/structure),</div>
+        <div class="desc-line">example: (<span style="color: #4CAF50;">+12</span> bookmarks, <span style="color: #4CAF50;">+1</span> folder, <span style="color: orange;">Bookmark & Folder changed</span>).</div>
+    `
+};
+const reminderExampleStrings = {
+    'zh_CN': "示例：(<span style=\"color: #4CAF50;\">+12</span> 书签，<span style=\"color: #4CAF50;\">+1</span> 文件夹，<span style=\"color: orange;\">书签、文件夹变动</span>)。",
+    'en': "example: (<span style=\"color: #4CAF50;\">+12</span> bookmarks, <span style=\"color: #4CAF50;\">+1</span> folder, <span style=\"color: orange;\">Bookmark & Folder changed</span>)."
+};
 const restoreDefaultStrings = { 'zh_CN': "恢复默认", 'en': "Restore Default" };
 const saveSettingsStrings = { 'zh_CN': "保存设置", 'en': "Save Settings" };
 const settingsSavedStrings = { 'zh_CN': "设置已保存", 'en': "Settings saved" };
@@ -117,10 +131,11 @@ const statusStrings = {
     settingsSaved: { 'zh_CN': "设置已保存", 'en': "Settings saved" },
     savingSettingsFailed: { 'zh_CN': "保存设置失败", 'en': "Failed to save settings" },
     unknownTime: { 'zh_CN': "未知时间", 'en': "Unknown time" },
-    switchToAutoBackup: { 'zh_CN': "已切换至自动备份", 'en': "Auto backup enabled" },
+    switchToAutoBackup: { 'zh_CN': "已切换为自动备份", 'en': "Switched to auto backup" },
     detectingChangesBackingUp: { 'zh_CN': "检测到修改，正在为您备份...", 'en': "Changes detected, backing up..." },
     requestBackupFailed: { 'zh_CN': "请求备份失败", 'en': "Backup request failed" },
-    manualBackupCompleted: { 'zh_CN': "手动备份已完成", 'en': "Manual backup completed" }
+    manualBackupCompleted: { 'zh_CN': "手动备份已完成", 'en': "Manual backup completed" },
+    switchToAutoBackupSuccess: { 'zh_CN': "切换备份成功", 'en': "Switch backup successful" }
 };
 
 // =======================================================
@@ -128,6 +143,7 @@ const statusStrings = {
 // =======================================================
 let currentLang = 'zh_CN'; // 默认中文语言
 window.isClosing = false; // 全局标记，指示窗口是否正在关闭
+let selfWindowId = null; // 新增：用于存储此窗口自身的ID
 
 // =======================================================
 // 辅助函数
@@ -544,59 +560,17 @@ async function saveReminderSettingsFunc() {
  * 恢复通知窗口的自动关闭计时器。
  */
 async function resumeNotificationAutoCloseTimer() {
-    let currentNotificationId = null;
-    let fallbackApplied = false;
-    const storedId = localStorage.getItem('lastActiveNotificationId');
-    const fallbackId = storedId ? parseInt(storedId, 10) : null;
-
-    try {
-        const timeoutPromise = new Promise((_, reject) => { setTimeout(() => reject(new Error('获取通知窗口ID请求超时')), 2000); });
-        const responsePromise = browserAPI.runtime.sendMessage({ action: "getActiveNotificationId" });
-        const response = await Promise.race([responsePromise, timeoutPromise]);
-
-        if (response && typeof response.notificationId === 'number') {
-            currentNotificationId = response.notificationId;
-            console.log(`尝试恢复计时器时获取到通知窗口ID: ${currentNotificationId}`);
-            localStorage.setItem('lastActiveNotificationId', currentNotificationId.toString());
-        } else {
-            console.warn('恢复计时器：未能从后台获取到有效的通知窗口ID，尝试使用后备ID');
-            if (fallbackId !== null) {
-                currentNotificationId = fallbackId;
-                fallbackApplied = true;
-                console.log(`使用后备通知窗口ID: ${currentNotificationId}`);
-            } else {
-                console.warn('没有可用的后备ID，创建新的临时ID');
-                currentNotificationId = Date.now();
-                console.log(`创建新的临时通知窗口ID: ${currentNotificationId}`);
-                localStorage.setItem('lastActiveNotificationId', currentNotificationId.toString());
-            }
-        }
-    } catch (err) {
-        console.error('恢复计时器：请求当前通知窗口ID失败:', err);
-        if (fallbackId !== null) {
-            currentNotificationId = fallbackId;
-            fallbackApplied = true;
-            console.log(`发生错误后使用后备通知窗口ID: ${currentNotificationId}`);
-        } else {
-            console.warn('错误处理：没有可用的后备ID，创建新的临时ID');
-            currentNotificationId = Date.now();
-            console.log(`错误处理：创建新的临时通知窗口ID: ${currentNotificationId}`);
-            localStorage.setItem('lastActiveNotificationId', currentNotificationId.toString());
-        }
-    }
-
-    if (currentNotificationId !== null) {
+    // 直接使用已经获取的自身窗口ID
+    if (selfWindowId !== null) {
         try {
-            console.log(`请求恢复通知窗口自动关闭计时器，使用ID: ${currentNotificationId}${fallbackApplied ? ' (后备ID)' : ''}`);
-            await browserAPI.runtime.sendMessage({ action: "resumeNotificationAutoClose", windowId: currentNotificationId });
+            console.log(`请求恢复通知窗口自动关闭计时器，使用ID: ${selfWindowId}`);
+            await browserAPI.runtime.sendMessage({ action: "resumeNotificationAutoClose", windowId: selfWindowId });
             console.log('恢复请求已发送');
-            if (fallbackApplied) {
-                localStorage.removeItem('lastActiveNotificationId');
-                console.log('已清除临时存储的后备通知窗口ID');
-            }
         } catch (err) {
             console.error('发送恢复自动关闭请求失败:', err);
         }
+    } else {
+        console.error("无法恢复计时器，因为自身窗口ID未知。");
     }
 }
 
@@ -762,13 +736,24 @@ function applyLocalizedContent(lang) {
     const reminderExample = document.getElementById('reminderExample');
 
     if (manualBackupReminderDesc) { manualBackupReminderDesc.innerHTML = manualBackupReminderDescStrings[lang] || manualBackupReminderDescStrings['zh_CN']; }
-    if (reminderExample) { reminderExample.innerHTML = reminderExampleStrings[lang] || reminderExampleStrings['zh_CN']; }
+    if (reminderExample) { 
+        // 内容已被合并到上面的字符串中，隐藏此元素
+        reminderExample.style.display = 'none';
+    }
 
     if (!manualBackupReminderDesc || !reminderExample) {
         const reminderDescriptionElements = document.querySelectorAll('.setting-block div[style*="margin-bottom: 6px"]');
         if (reminderDescriptionElements.length > 0) { reminderDescriptionElements[0].innerHTML = manualBackupReminderDescStrings[lang] || manualBackupReminderDescStrings['zh_CN']; }
         const exampleElements = document.querySelectorAll('.setting-block div:not([style*="margin-bottom"])');
-        if (exampleElements.length > 0) { exampleElements[0].innerHTML = reminderExampleStrings[lang] || reminderExampleStrings['zh_CN']; }
+        if (exampleElements.length > 0) { 
+            const exampleText = reminderExampleStrings[lang];
+            if (exampleText !== undefined && exampleText !== "") {
+                exampleElements[0].innerHTML = exampleText;
+                exampleElements[0].style.display = '';
+            } else {
+                exampleElements[0].style.display = 'none';
+            }
+        }
     }
 
     const restoreDefaultBtn = document.getElementById('restoreDefaultSettings');
@@ -843,6 +828,19 @@ function applyLocalizedContent(lang) {
 applyTheme();
 
 document.addEventListener('DOMContentLoaded', async () => {
+    // 新增：在窗口加载时立即获取并存储自身的ID
+    try {
+        const currentWindow = await new Promise(resolve => browserAPI.windows.getCurrent({}, resolve));
+        if (currentWindow && typeof currentWindow.id === 'number') {
+            selfWindowId = currentWindow.id;
+            console.log(`通知窗口已获取自身的ID: ${selfWindowId}`);
+        } else {
+            console.error('无法获取当前窗口的ID。');
+        }
+    } catch (error) {
+        console.error('获取自身窗口ID时出错:', error);
+    }
+
     // 获取元素
     const toggleAutoBackupBtn = document.getElementById('toggleAutoBackup');
     const manualBackupBtn = document.getElementById('manualBackup');
@@ -918,60 +916,61 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     // 切换为自动备份按钮点击事件
     toggleAutoBackupBtn.addEventListener('click', async () => {
-        console.log('用户点击了"切换为自动备份"按钮');
-        const urlParams = new URLSearchParams(window.location.search);
-        const changeDescription = urlParams.get('changeDescription') || "";
-        console.log('通知窗口获取到的 changeDescription:', changeDescription);
+        console.log('[notification_popup.js] 用户点击了 "切换为自动备份" 按钮，应用主UI逻辑');
 
-        let notificationHadChanges = false;
-        if (changeDescription && changeDescription.trim() !== "" && !changeDescription.includes('无变化')) { notificationHadChanges = true; }
-        console.log('通知窗口判断是否有变化:', notificationHadChanges);
-
+        // 禁用按钮，防止重复点击
         toggleAutoBackupBtn.disabled = true;
         manualBackupBtn.disabled = true;
         operationStatusElement.style.display = 'none';
 
-        try {
-            await browserAPI.runtime.sendMessage({ action: "toggleAutoSync", enabled: true });
-            console.log('已发送 toggleAutoSync(true) 消息到 background');
-        } catch (error) { console.warn('发送 toggleAutoSync 消息失败:', error); }
+        // 显示"正在备份"的状态信息
+        showOperationStatus(statusStrings.detectingChangesBackingUp[currentLang] || statusStrings.detectingChangesBackingUp['zh_CN'], 'info');
 
-        if (notificationHadChanges) {
-            console.log('通知窗口检测到变化，发送 syncBookmarks(isSwitchToAutoBackup=true) 消息');
-            try {
-                await browserAPI.runtime.sendMessage({ action: "syncBookmarks", isSwitchToAutoBackup: true });
-                console.log('syncBookmarks(isSwitchToAutoBackup=true) 消息已发送');
-                showOperationStatus(statusStrings.detectingChangesBackingUp[currentLang] || statusStrings.detectingChangesBackingUp['zh_CN'], 'success');
-            } catch (error) {
-                console.warn('发送 syncBookmarks 切换备份消息失败:', error);
+        // 1. 发送 `syncBookmarks` 消息，执行"切换备份"
+        // 这是从主UI复刻的关键逻辑
+        browserAPI.runtime.sendMessage({
+            action: 'syncBookmarks',
+            isSwitchToAutoBackup: true,
+            direction: 'upload'
+        }, (syncResponse) => {
+            console.log('[notification_popup.js] `syncBookmarks` 响应:', syncResponse);
+            if (syncResponse && syncResponse.success) {
+                // 备份成功
+                showOperationStatus(statusStrings.switchToAutoBackupSuccess[currentLang] || statusStrings.switchToAutoBackupSuccess['zh_CN'], 'success');
+            } else {
+                // 备份失败
                 showOperationStatus(statusStrings.requestBackupFailed[currentLang] || statusStrings.requestBackupFailed['zh_CN'], 'error');
-                toggleAutoBackupBtn.disabled = false;
-                manualBackupBtn.disabled = false;
-                return;
             }
-        } else {
-            console.log('通知窗口未检测到变化，不触发切换备份');
-            showOperationStatus(statusStrings.switchToAutoBackup[currentLang] || statusStrings.switchToAutoBackup['zh_CN'], 'success');
-        }
 
-        let operationCompleted = false;
-        const forceCloseTimeoutId = setTimeout(() => {
-            console.log('切换/备份操作超时，强制关闭窗口');
-            window.isClosing = true;
-            window.close();
-        }, 5000);
+            // 无论备份成功与否，都准备关闭窗口
+            prepareToClose();
+        });
 
-        const closeTimeoutId = setTimeout(() => {
-            if (!operationCompleted) {
-                console.log('切换/备份请求已发送，关闭窗口');
-                operationCompleted = true;
-                clearTimeout(forceCloseTimeoutId);
+        // 2. 发送 `toggleAutoSync` 消息，将模式切换为自动
+        // 这个消息与上面的 `syncBookmarks` 并行或紧随其后发送
+        browserAPI.runtime.sendMessage({
+            action: "toggleAutoSync",
+            enabled: true
+        }, (toggleResponse) => {
+            console.log('[notification_popup.js] `toggleAutoSync` 响应:', toggleResponse);
+            if (!toggleResponse || !toggleResponse.success) {
+                console.warn('切换到自动模式失败，但这不影响备份操作。');
+                // 可以在这里添加一个不影响主流程的警告
+            }
+        });
 
+        // 准备关闭窗口的辅助函数
+        function prepareToClose() {
+            // 延迟关闭，以确保用户能看到最终的状态消息
+            setTimeout(() => {
+                console.log('操作完成，关闭通知窗口');
                 window.isClosing = true;
-                browserAPI.runtime.sendMessage({ action: "readyToClose", windowId: browserAPI.windows.WINDOW_ID_CURRENT }).catch(error => { console.log('发送readyToClose消息失败，直接关闭窗口:', error); });
-                setTimeout(() => window.close(), 50);
-            }
-        }, notificationHadChanges ? 800 : 400);
+                // 尝试通知后台窗口将要关闭
+                browserAPI.runtime.sendMessage({ action: "readyToClose", windowId: browserAPI.windows.WINDOW_ID_CURRENT }).catch(e => {});
+                // 最终关闭
+                window.close();
+            }, 1200); // 延迟1.2秒，让用户有时间看清"成功/失败"提示
+        }
     });
 
     // 立即手动备份按钮点击事件
@@ -1037,26 +1036,17 @@ document.addEventListener('DOMContentLoaded', async () => {
     if (reminderSettingsBtn) {
         reminderSettingsBtn.addEventListener('click', async () => {
             console.log('用户点击了通知窗口的"设置"按钮');
-            let currentNotificationId = null;
-            try {
-                const response = await browserAPI.runtime.sendMessage({ action: "getActiveNotificationId" });
-                if (response && typeof response.notificationId === 'number') {
-                    currentNotificationId = response.notificationId;
-                    console.log(`获取到当前通知窗口ID: ${currentNotificationId}`);
-                } else {
-                    console.warn('未能从后台获取到有效的通知窗口ID，使用临时ID');
-                    currentNotificationId = Date.now();
-                    localStorage.setItem('lastActiveNotificationId', currentNotificationId.toString());
-                }
-            } catch (err) { console.error('请求当前通知窗口ID失败:', err); }
-
-            if (currentNotificationId !== null) {
+            
+            // 直接使用已经获取的自身窗口ID
+            if (selfWindowId !== null) {
                  try {
                       console.log('请求暂停通知窗口自动关闭计时器');
-                      await browserAPI.runtime.sendMessage({ action: "pauseNotificationAutoClose", windowId: currentNotificationId });
+                      await browserAPI.runtime.sendMessage({ action: "pauseNotificationAutoClose", windowId: selfWindowId });
                       console.log('暂停请求已发送');
                  } catch (err) { console.error('发送暂停自动关闭请求失败:', err); }
-            } else { console.log("无法获取当前通知窗口ID，无法暂停计时器，但仍尝试打开设置对话框"); }
+            } else { 
+                console.error("无法暂停计时器，因为自身窗口ID未知。");
+            }
 
             if (reminderSettingsDialog) {
                  await loadReminderSettings();

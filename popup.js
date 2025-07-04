@@ -2230,8 +2230,8 @@ function calibrateDownloadPath() {
 
         // 国际化文本
         const openDownloadSettingsButtonStrings = {
-            'zh_CN': "取消",
-            'en': "Cancel"
+            'zh_CN': "打开下载设置",
+            'en': "Open Download Settings"
         };
         openSettingsBtn.textContent = openDownloadSettingsButtonStrings[currentLang] || openDownloadSettingsButtonStrings['zh_CN'];
 
@@ -2271,8 +2271,8 @@ function calibrateDownloadPath() {
         });
 
         // 添加按钮到按钮区域
-        buttonsCell.appendChild(cancelBtn);
         buttonsCell.appendChild(openSettingsBtn);
+        buttonsCell.appendChild(cancelBtn);
 
         // 组装网格
         gridContainer.appendChild(mainContentCell);
@@ -3179,24 +3179,7 @@ async function saveReminderSettingsFunc() {
  * @async
  */
 async function pauseTimerForSettings() {
-    console.log('暂停备份提醒计时器 (手动设置窗口)'); // 更新日志
-
-    // 标记计时器已暂停
-    window.reminderTimerPaused = true;
-
-    // 使用安全的消息发送函数
-    sendMessageToBackground({
-        action: "pauseReminderTimer",
-        pausedBy: 'settingsUI' // 添加来源标记
-    }, (success, error) => {
-        if (!success) {
-            console.log('发送暂停计时器消息失败，但本地状态已设置为暂停:', error);
-            // 即使消息发送失败，我们也保留本地暂停标记，以确保状态一致性
-        }
-    });
-
-    // 即使消息发送失败，也返回成功，因为我们已经更新了本地状态
-    return Promise.resolve();
+    // 功能已移除
 }
 
 /**
@@ -3204,46 +3187,19 @@ async function pauseTimerForSettings() {
  * @async
  */
 async function resumeTimerForSettings() {
-    console.log('恢复备份提醒计时器');
-
-    // 如果计时器未被暂停，不执行恢复操作
-    if (!window.reminderTimerPaused) {
-        console.log('计时器未被暂停，跳过恢复操作');
-        return Promise.resolve();
-    }
-
-    // 清除暂停标记（先更新本地状态，确保一致性）
-    window.reminderTimerPaused = false;
-
-    // 使用安全的消息发送函数
-    sendMessageToBackground({
-        action: "resumeReminderTimer"
-    }, (success, error) => {
-        if (!success) {
-            console.log('发送恢复计时器消息失败，但本地状态已更新:', error);
-            // 尝试使用备选方法发送
-            try {
-                chrome.runtime.sendMessage({ action: "resumeReminderTimer" });
-            } catch (fallbackError) {
-                console.log('备选发送恢复计时器消息也失败:', fallbackError);
-                // 即使消息发送失败，我们也已清除本地暂停标记，维持状态一致性
-            }
-        }
-    });
-
-    // 即使消息发送失败，也返回成功，因为我们已经更新了本地状态
-    return Promise.resolve();
+    // 功能已移除
 }
 
 /**
  * 检查URL参数，如果有openReminderDialog=true则自动打开手动备份动态提醒设置。
  */
 function checkUrlParams() {
+    // 检查URL参数，如果包含 openReminderSettings=true，则自动打开提醒设置对话框
     const urlParams = new URLSearchParams(window.location.search);
-    const openDialog = urlParams.get('openReminderDialog');
+    const openDialog = urlParams.get('openReminderSettings');
 
     if (openDialog === 'true') {
-        console.log('检测到openReminderDialog=true参数，准备自动点击手动备份动态提醒设置按钮');
+        console.log('检测到openReminderSettings=true参数，准备自动点击手动备份动态提醒设置按钮');
 
         // 确保页面完全加载后再自动点击按钮
         setTimeout(() => {
@@ -3269,46 +3225,23 @@ function checkUrlParams() {
  */
 async function initializeLanguageSwitcher() {
     const langToggleButton = document.getElementById('lang-toggle-btn');
-    if (langToggleButton) {
-        langToggleButton.removeAttribute('title');
-    }
-    let currentLang = 'zh_CN';
+    let currentLang = 'zh_CN'; // 默认值
 
     try {
-        const result = await new Promise(resolve => chrome.storage.local.get(['preferredLang', 'languageAutoDetected'], resolve));
+        // 直接从存储中获取已设置的语言偏好
+        const result = await new Promise(resolve => chrome.storage.local.get('preferredLang', resolve));
         
-        // 检查是否已经进行过自动语言检测
-        if (!result.languageAutoDetected) {
-            // 获取浏览器默认语言
-            const browserLang = navigator.language.toLowerCase();
-            console.log(`检测到浏览器默认语言: ${browserLang}`);
-            
-            // 如果是中文(简体或繁体)，设置为中文
-            if (browserLang.startsWith('zh-') || browserLang === 'zh') {
-                currentLang = 'zh_CN';
-                console.log('浏览器设置为中文，自动设置扩展语言为中文');
-            } 
-            // 其他语言设置为英文
-            else {
-                currentLang = 'en';
-                console.log('浏览器设置为非中文语言，自动设置扩展语言为英文');
-            }
-            
-            // 保存语言设置并标记已进行自动检测
-            await chrome.storage.local.set({ 
-                preferredLang: currentLang,
-                languageAutoDetected: true 
-            });
-            console.log(`已根据浏览器语言自动设置扩展语言: ${currentLang}`);
-        } 
-        // 如果已经进行过自动检测，使用保存的语言设置
-        else if (result.preferredLang) {
+        if (result.preferredLang) {
             currentLang = result.preferredLang;
+        } else {
+            // 这是一个备用逻辑，正常情况下 background.js 会处理好
+            console.warn('在 popup.js 中未找到 preferredLang，将使用默认中文。');
         }
+
         document.documentElement.setAttribute('lang', currentLang === 'en' ? 'en' : 'zh');
-        await applyLocalizedContent(currentLang); // Pass currentLang on initial load
+        await applyLocalizedContent(currentLang);
     } catch (e) {
-        console.warn("Error loading preferred language on init or applying content", e);
+        console.warn("加载语言偏好或应用本地化内容时出错", e);
         document.documentElement.setAttribute('lang', 'zh'); // Fallback
         await applyLocalizedContent('zh_CN'); // Fallback
     }
@@ -3542,13 +3475,13 @@ const applyLocalizedContent = async (lang) => { // Added lang parameter
     };
 
     const manualBackupReminderDescStrings = {
-        'zh_CN': "手动备份下，进行操作（数量/结构变化）才会提醒",
-        'en': "Reminders only trigger after changes (quantity/structure)"
+        'zh_CN': `循环提醒的计时：浏览器的<span class="highlight-text">实际使用时间</span>，即（多）窗口焦点时间。<br>手动备份下，进行操作（数量/结构变化）才会提醒，`,
+        'en': `Cyclic Reminder timing: Browser's <span class='highlight-text'>actual usage time</span>.<br>Reminders only trigger after changes (quantity/structure),`
     };
 
     const reminderExampleStrings = {
-        'zh_CN': "示例：(<span style=\"color: #4CAF50;\">+12</span> 书签，<span style=\"color: #4CAF50;\">+1</span> 文件夹，<span style=\"color: orange;\">书签、文件夹变动</span>)",
-        'en': "Example: (<span style=\"color: #4CAF50;\">+12</span> bookmarks, <span style=\"color: #4CAF50;\">+1</span> folder, <span style=\"color: orange;\">Bookmark & Folder changed</span>)" // Only text content changed, escaping matches original structure
+        'zh_CN': "示例：(<span style=\"color: #4CAF50;\">+12</span> 书签，<span style=\"color: #4CAF50;\">+1</span> 文件夹，<span style=\"color: orange;\">书签、文件夹变动</span>)。",
+        'en': "example: (<span style=\"color: #4CAF50;\">+12</span> bookmarks, <span style=\"color: #4CAF50;\">+1</span> folder, <span style=\"color: orange;\">Bookmark & Folder changed</span>)." // Only text content changed, escaping matches original structure
     };
 
     const restoreDefaultStrings = {
@@ -3755,8 +3688,8 @@ const applyLocalizedContent = async (lang) => { // Added lang parameter
     };
 
     const openDownloadSettingsButtonStrings = {
-        'zh_CN': "取消",
-        'en': "Cancel"
+        'zh_CN': "打开下载设置",
+        'en': "Open Download Settings"
     };
 
     const cancelButtonStrings = {
@@ -5715,6 +5648,30 @@ function showAddNoteDialog(recordTime) {
         const buttonContainer = document.createElement('div');
         buttonContainer.style.cssText = 'display: flex; justify-content: space-between; gap: 10px;';
         
+        // 监听语言切换事件
+        const handleLanguageChange = (changes, area) => {
+            if (area === 'local' && changes.preferredLang) {
+                chrome.storage.local.get(['preferredLang'], (result) => {
+                    const newLang = result.preferredLang || 'zh_CN';
+                    if (newLang !== currentLang) {
+                        // 语言已更改，重新打开对话框
+                        try {
+                            // 检查对话框是否仍然存在于DOM中
+                            if (document.body.contains(dialogOverlay)) {
+                                document.body.removeChild(dialogOverlay);
+                                showAddNoteDialog(recordTime);
+                            }
+                        } catch (error) {
+                            console.log('对话框已被移除，无需再次移除', error);
+                        }
+                    }
+                });
+            }
+        };
+        
+        // 添加语言切换事件监听
+        chrome.storage.onChanged.addListener(handleLanguageChange);
+        
         // 取消按钮
         const cancelButton = document.createElement('button');
         cancelButton.textContent = currentLang === 'en' ? 'Cancel' : '取消';
@@ -5728,6 +5685,8 @@ function showAddNoteDialog(recordTime) {
             flex: 1;
         `;
         cancelButton.onclick = () => {
+            // 移除事件监听器，然后移除对话框
+            chrome.storage.onChanged.removeListener(handleLanguageChange);
             document.body.removeChild(dialogOverlay);
         };
         
@@ -5744,7 +5703,8 @@ function showAddNoteDialog(recordTime) {
             flex: 1;
         `;
         saveButton.onclick = () => {
-            // 不再验证字数限制，直接保存备注
+            // 移除事件监听器，然后保存并移除对话框
+            chrome.storage.onChanged.removeListener(handleLanguageChange);
             saveNoteForRecord(recordTime, textarea.value);
             document.body.removeChild(dialogOverlay);
         };
@@ -5762,22 +5722,16 @@ function showAddNoteDialog(recordTime) {
         document.body.appendChild(dialogOverlay);
         textarea.focus();
         
-        // 监听语言切换事件
-        const handleLanguageChange = () => {
-            chrome.storage.local.get(['preferredLang'], (result) => {
-                const newLang = result.preferredLang || 'zh_CN';
-                if (newLang !== currentLang) {
-                    // 语言已更改，重新打开对话框
-                    document.body.removeChild(dialogOverlay);
-                    showAddNoteDialog(recordTime);
-                }
-            });
-        };
+        // 确保在对话框被意外关闭时也能清理监听器
+        dialogOverlay.addEventListener('remove', () => {
+            chrome.storage.onChanged.removeListener(handleLanguageChange);
+        });
         
-        // 添加语言切换事件监听
-        chrome.storage.onChanged.addListener((changes, area) => {
-            if (area === 'local' && changes.preferredLang) {
-                handleLanguageChange();
+        // 添加点击空白区域关闭对话框的功能
+        dialogOverlay.addEventListener('click', (event) => {
+            if (event.target === dialogOverlay) {
+                chrome.storage.onChanged.removeListener(handleLanguageChange);
+                document.body.removeChild(dialogOverlay);
             }
         });
     });

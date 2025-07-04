@@ -198,6 +198,8 @@ const reminderState = {
     isActive: true,            // 浏览器是否处于活跃状态
     manualBackupDone: false,   // 是否已完成手动备份
     pauseTime: null,           // 暂停时间戳
+    isPaused: false,           // 是否已暂停
+    remainingTime: 0,          // 暂停时剩余时间
     currentPhase: REMINDER_PHASE.FIRST, // 当前提醒阶段
     progressCheckpoints: []    // 进度检查点时间戳数组
 };
@@ -628,6 +630,8 @@ function saveReminderState() {
             isActive: reminderState.isActive,
             manualBackupDone: reminderState.manualBackupDone,
             pauseTime: reminderState.pauseTime,
+            isPaused: reminderState.isPaused,
+            remainingTime: reminderState.remainingTime,
             currentPhase: reminderState.currentPhase,
             progressCheckpoints: reminderState.progressCheckpoints
         };
@@ -657,7 +661,7 @@ async function loadReminderState() {
             timerController.clearAllTimers();
             reminderState.startTime = null; reminderState.targetTime = null; reminderState.elapsedTime = 0;
             reminderState.reminderShown = false; reminderState.isActive = true; reminderState.manualBackupDone = false;
-            reminderState.pauseTime = null; reminderState.currentPhase = REMINDER_PHASE.FIRST;
+            reminderState.pauseTime = null; reminderState.isPaused = false; reminderState.remainingTime = 0; reminderState.currentPhase = REMINDER_PHASE.FIRST;
             reminderState.progressCheckpoints = [];
             saveReminderState();
             if (!autoSync) {
@@ -686,6 +690,8 @@ async function loadReminderState() {
             reminderState.isActive = data.reminderState.isActive || true;
             reminderState.manualBackupDone = data.reminderState.manualBackupDone || false;
             reminderState.pauseTime = data.reminderState.pauseTime || null;
+            reminderState.isPaused = data.reminderState.isPaused || false;
+            reminderState.remainingTime = data.reminderState.remainingTime || 0;
             reminderState.startTime = data.reminderState.startTime || null;
             reminderState.targetTime = data.reminderState.targetTime || null;
             reminderState.currentPhase = data.reminderState.currentPhase || REMINDER_PHASE.FIRST;
@@ -853,7 +859,7 @@ function stopReminderTimer() {
     timerController.clearAllTimers();
     reminderState.startTime = null; reminderState.targetTime = null; reminderState.elapsedTime = 0;
     reminderState.reminderShown = false; reminderState.isActive = true; reminderState.manualBackupDone = false;
-    reminderState.pauseTime = null; reminderState.currentPhase = REMINDER_PHASE.FIRST;
+    reminderState.pauseTime = null; reminderState.isPaused = false; reminderState.remainingTime = 0; reminderState.currentPhase = REMINDER_PHASE.FIRST;
     reminderState.progressCheckpoints = [];
     saveReminderState();
     addLog("循环提醒计时器已停止");
@@ -864,15 +870,24 @@ function stopReminderTimer() {
  * @returns {void}
  */
 function pauseReminderTimer() {
-    if (reminderState.isActive && reminderState.startTime && !reminderState.reminderShown) {
-        addLog('暂停循环提醒计时器...');
-        timerController.clearAllTimers();
-        reminderState.elapsedTime = Date.now() - reminderState.startTime;
-        reminderState.pauseTime = Date.now();
-        reminderState.isActive = false;
-        saveReminderState();
-        addLog(`循环提醒计时器已暂停，已经过时间: ${reminderState.elapsedTime / 1000}秒`);
-    }
+    browserAPI.alarms.get(BACKUP_REMINDER_ALARM, (alarm) => {
+        if (!alarm) {
+            addLog('没有正在运行的循环提醒计时器，忽略暂停操作');
+            return;
+        }
+        
+        const remainingTime = alarm.scheduledTime - Date.now();
+        if (remainingTime > 0) {
+            timerController.clearAllTimers();
+            reminderState.pauseTime = Date.now();
+            reminderState.remainingTime = remainingTime;
+            reminderState.isPaused = true;
+            saveReminderState();
+            addLog(`循环提醒计时器已暂停，剩余时间: ${(remainingTime / 1000).toFixed(1)}秒`);
+        } else {
+            addLog('计时器已到期或即将到期，无需暂停');
+        }
+    });
 }
 
 /**
@@ -880,54 +895,36 @@ function pauseReminderTimer() {
  * @returns {Promise<boolean>} 是否成功恢复。
  */
 async function resumeReminderTimer() {
-    try {
-        setTimerPausedBySettingsUI(false);
-        addLog('[resumeReminderTimer] 已通知 index.js 计时器不再因设置UI暂停');
-    } catch(e) { addLog(`[resumeReminderTimer] 调用 setTimerPausedBySettingsUI(false) 失败: ${e.message}`); }
+    const { reminderState: storedState } = await browserAPI.storage.local.get('reminderState');
 
-    if (!reminderState.isActive && reminderState.startTime && !reminderState.reminderShown) {
-        addLog('恢复循环提醒计时器...');
-        const pauseDuration = reminderState.pauseTime ? Date.now() - reminderState.pauseTime : 0;
-        reminderState.pauseTime = null;
-        reminderState.isActive = true;
-        const currentSettingDelay = await getCurrentPhaseDelay();
-        let remainingTime = 0;
+    if (storedState && storedState.isPaused && storedState.remainingTime > 0) {
+        addLog(`检测到暂停状态，准备恢复循环提醒计时器，剩余时间: ${(storedState.remainingTime / 1000).toFixed(1)}秒`);
+        
+        // 清除可能存在的旧闹钟
+        timerController.clearMainTimer();
 
-        if (reminderState.targetTime) {
-            if (pauseDuration > 0) {
-                reminderState.targetTime += pauseDuration;
-                addLog(`由于暂停了 ${pauseDuration/1000} 秒，目标时间调整为: ${new Date(reminderState.targetTime).toLocaleString()}`);
-            }
-            remainingTime = Math.max(0, reminderState.targetTime - Date.now());
-            if (remainingTime > currentSettingDelay * 2) {
-                addLog(`剩余时间 (${remainingTime/1000}秒) 异常，超过设置时间的两倍，重置为当前设置: ${currentSettingDelay/1000}秒`);
-                remainingTime = currentSettingDelay;
-                reminderState.targetTime = Date.now() + remainingTime;
-            }
-        } else {
-            addLog(`没有有效的目标时间，使用当前设置的延迟时间: ${currentSettingDelay/1000}秒`);
-            remainingTime = currentSettingDelay;
-            reminderState.targetTime = Date.now() + remainingTime;
-        }
-
-        if (remainingTime < 10000) {
-            addLog(`剩余时间过短 (${remainingTime/1000}秒)，设置为最小延迟10秒`);
-            remainingTime = 10000;
-            reminderState.targetTime = Date.now() + remainingTime;
-        }
-
-        await timerController.setMainTimer(remainingTime);
-        const newCheckpoints = createProgressCheckpoints(remainingTime);
-        reminderState.progressCheckpoints = newCheckpoints;
-        await setNextProgressCheckpoint(newCheckpoints);
-        saveReminderState();
-        addLog(`循环提醒计时器已恢复，暂停时长: ${pauseDuration / 1000}秒，剩余时间: ${remainingTime / 1000}秒，目标时间: ${new Date(reminderState.targetTime).toLocaleString()}`);
+        // 使用剩余时间创建新的闹钟
+        await timerController.setMainTimer(storedState.remainingTime);
+        
+        // 更新状态
+        const newState = {
+            ...storedState,
+            isPaused: false,
+            pauseTime: null,
+            remainingTime: 0,
+            // 重新计算目标时间
+            targetTime: Date.now() + storedState.remainingTime 
+        };
+        await browserAPI.storage.local.set({ reminderState: newState });
+        
+        addLog('循环提醒计时器已成功恢复');
+    } else {
+        addLog('没有检测到有效的暂停状态，无需恢复');
     }
-    return true;
 }
 
 /**
- * 标记手动备份已完成。
+ * 标记手动备份已完成，并根据情况推进提醒阶段。
  * @returns {void}
  */
 function markManualBackupDone() {
@@ -1214,15 +1211,15 @@ function resetReminderState() {
  */
 function getDebugInfo() {
     return {
-        startTime: reminderState.startTime,
-        targetTime: reminderState.targetTime,
-        elapsedTime: reminderState.elapsedTime,
-        reminderShown: reminderState.reminderShown,
-        isActive: reminderState.isActive,
-        manualBackupDone: reminderState.manualBackupDone,
-        pauseTime: reminderState.pauseTime,
-        currentPhase: reminderState.currentPhase,
-        now: Date.now()
+        state: { ...reminderState },
+        initialization: {
+            isReminderTimerSystemInitialized,
+            isInitializationInProgress,
+            initializationAttempts,
+            manualStartupResetHandled,
+            lastTimerStartAttemptTime,
+            MIN_TIMER_START_INTERVAL
+        }
     };
 }
 
@@ -1235,37 +1232,34 @@ function getDebugInfo() {
  * @returns {Promise<boolean>} 是否成功初始化。
  */
 async function initializeReminderTimerSystem() {
+    initializationAttempts++;
+    const logPrefix = `[备份提醒计时器] [${formatDateTimeForLog(new Date().toISOString())}] [准点定时]`;
+    addLog(`${logPrefix} 初始化准点定时系统及监听器...(第${initializationAttempts}次尝试)`);
+
+    if (isInitializationInProgress) {
+        addLog(`${logPrefix} 初始化已在进行中，跳过。`);
+        return;
+    }
+    isInitializationInProgress = true;
+
     try {
-        addLog('初始化备份提醒计时器系统...(第1次尝试)');
-        if (isReminderTimerSystemInitialized) { addLog('备份提醒计时器系统已初始化，跳过重复初始化'); return true; }
-
-        isInitializationInProgress = true;
-        const currentDate = new Date();
-        addLog(`当前日期: ${currentDate.toISOString().split('T')[0]}`);
-
+        // 1. 初始化闹钟监听器 (对所有闹钟都必要)
         initAlarmListeners();
-        globalThis.isReminderBackgroundActive = true;
-        await resetReminderState();
-        isReminderTimerSystemInitialized = true;
-        isInitializationInProgress = false;
-        addLog('全局变量已初始化');
 
-        addLog('初始化循环提醒计时器...');
-        await loadReminderState();
-        const timerResult = await startReminderTimer(true);
-
-        addLog('初始化准点定时闹钟...');
+        // 2. 加载设置并初始化准点定时闹钟
         const settings = await getReminderSettings();
         await setupFixedTimeAlarms(settings);
-        addLog('所有准点定时功能初始化完成');
 
+        // 3. 设置日期变更检查器 (对准点定时必要)
         setupDateChangeChecker();
-        addLog(`计时器系统初始化完成，循环提醒已${settings.reminderEnabled ? '启用' : '禁用'}，准点定时1已${settings.fixedTimeEnabled1 ? '启用' : '禁用'}，准点定时2已${settings.fixedTimeEnabled2 ? '启用' : '禁用'}`);
-        return true;
+        
+        isReminderTimerSystemInitialized = true;
+        addLog(`${logPrefix} 准点定时系统及监听器初始化完成。`);
     } catch (error) {
-        addLog(`初始化备份提醒计时器系统出错: ${error.message}`);
+        addLog(`${logPrefix} 初始化失败: ${error.message}`);
+        isReminderTimerSystemInitialized = false;
+    } finally {
         isInitializationInProgress = false;
-        return false;
     }
 }
 
@@ -1542,3 +1536,41 @@ export {
     checkFixedTimeAlarmsOnActive,
     getReminderSettings
 };
+
+// 添加一个模块级的时间戳，用于startLoopReminder的防抖
+let lastLoopReminderStartTime = 0;
+const MIN_LOOP_REMINDER_INTERVAL = 2000; // 2秒
+
+/**
+ * 启动循环提醒功能。
+ * 这是循环提醒的总入口。
+ */
+export async function startLoopReminder() {
+    const now = Date.now();
+    if (now - lastLoopReminderStartTime < MIN_LOOP_REMINDER_INTERVAL) {
+        addLog(`[循环提醒] 最近已尝试启动 (${Math.round((now - lastLoopReminderStartTime)/1000)}秒前)，跳过此次调用。`);
+        return;
+    }
+    lastLoopReminderStartTime = now;
+
+    addLog('[循环提醒] 启动...');
+    const { autoSync } = await browserAPI.storage.local.get({ autoSync: true });
+    if (autoSync) {
+        addLog('[循环提醒] 自动备份模式开启，跳过启动。');
+        return;
+    }
+
+    // 从 loadReminderState 加载状态，它会处理启动时的状态检查
+    await loadReminderState();
+    
+    // loadReminderState 会在需要时调用 startReminderTimer
+    addLog('[循环提醒] 启动流程完成。');
+}
+
+/**
+ * 停止循环提醒功能。
+ */
+export function stopLoopReminder() {
+    addLog('[循环提醒] 停止...');
+    stopReminderTimer();
+}

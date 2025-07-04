@@ -4,7 +4,7 @@
 // 导入通知模块的相关函数
 import { showBackupReminder, clearNotification, checkNotificationPermission, showTestNotification, showForceBackupReminder, resumeAutoCloseTimer } from './notification.js';
 // 导入计时器模块的相关函数
-import { startReminderTimer, stopReminderTimer, pauseReminderTimer, resumeReminderTimer, markManualBackupDone, resetReminderState, getDebugInfo, initializeReminderTimerSystem, setupFixedTimeAlarms, checkFixedTimeAlarmsOnActive, timerTriggered } from './timer.js';
+import { startReminderTimer, stopReminderTimer, pauseReminderTimer, resumeReminderTimer, markManualBackupDone, resetReminderState, getDebugInfo, initializeReminderTimerSystem, setupFixedTimeAlarms, checkFixedTimeAlarmsOnActive, timerTriggered, stopLoopReminder } from './timer.js';
 
 // =======================================================
 // 浏览器兼容性处理
@@ -610,7 +610,6 @@ async function handleRuntimeMessage(message, sender, sendResponse) {
     } else if (message.action === "getActiveNotificationId") {
         console.log('收到获取活动通知窗口ID的请求');
         sendResponse({ notificationId: activeNotificationWindowId });
-        return false;
     }
     return false; // 未处理的消息
 }
@@ -645,14 +644,18 @@ async function onAutoBackupToggled(isAutoBackupEnabled, shouldCloseWindow = true
     console.log(`备份提醒系统收到自动备份开关切换为 ${isAutoBackupEnabled}`);
     try {
         if (isAutoBackupEnabled) {
-            stopReminderTimer();
-            console.log('自动备份已开启，提醒计时器已停止');
+            // 切换到自动模式时，停止所有提醒
+            stopLoopReminder();
+            console.log('自动备份已开启，循环提醒计时器已停止');
+            // 注意：此处不移除 onFocusChanged 等监听器，因为它们在手动模式下才有实际作用，
+            // 留在自动模式下不会产生影响，且避免了反复增删监听器的复杂性。
             if (shouldCloseWindow && activeNotificationWindowId) {
                  console.log(`自动备份开启，尝试关闭通知窗口 ID: ${activeNotificationWindowId}`);
                  await clearNotification();
             }
         } else {
-            console.log('自动备份已关闭，初始化备份提醒系统...');
+            console.log('自动备份已关闭，重新初始化备份提醒系统...');
+            // 错误修正：调用总初始化函数，以确保所有监听器（包括焦点检测）都被激活。
             await initializeBackupReminder();
         }
 
@@ -686,7 +689,7 @@ async function onManualBackupCompleted() {
     // 备份完成后将角标颜色更新为蓝色（与自动备份模式一致）
     console.log('备份完成，更新角标颜色为蓝色');
     try {
-        const badgeColor = '#4CAF50'; // 蓝色，与自动备份模式相同
+        const badgeColor = '#0000FF'; // 蓝色，表示手动模式无变动
         if (browserAPI.action && typeof browserAPI.action.setBadgeBackgroundColor === 'function') {
             await browserAPI.action.setBadgeBackgroundColor({ color: badgeColor });
         } else if (typeof browserAPI.browserAction.setBadgeBackgroundColor === 'function') {
@@ -734,46 +737,10 @@ async function performManualBackup() {
 browserAPI.runtime.onConnect.addListener((port) => {
     console.log(`收到新的连接请求，端口名: ${port.name}`);
 
-    // 处理来自 Popup UI 的连接
+    // 处理来自 Popup UI 的连接 - 相关功能已移除
     if (port.name === "popupConnect") {
-        popupPort = port;
-        if (port.sender && port.sender.tab && typeof port.sender.tab.windowId === 'number') {
-            popupWindowId = port.sender.tab.windowId;
-        } else {
-            popupWindowId = null; // 明确设置为 null
-        }
-
-        port.onDisconnect.addListener(() => {
-            const disconnectReason = browserAPI.runtime.lastError ? browserAPI.runtime.lastError.message : "正常断开";
-            console.log(`Popup 连接断开。原因: ${disconnectReason}`);
-
-            const disconnectedWindowId = popupWindowId;
-            if (popupPort === port) {
-                popupPort = null;
-                popupWindowId = null;
-            }
-
-            if (isTimerPausedBySettingsUI) {
-                console.log('Popup 关闭时，计时器因设置UI而暂停');
-                let isUserClosed = false;
-                try {
-                    browserAPI.tabs.sendMessage(disconnectedWindowId, {action: "checkDialogUserClosed"}, function(response) {
-                        if (response && response.userClosed) { isUserClosed = true; }
-                    });
-                } catch (error) { console.log('预期的错误：无法检查对话框关闭方式'); }
-
-                const wasPaused = isTimerPausedBySettingsUI;
-                setTimeout(() => {
-                    if (wasPaused && isTimerPausedBySettingsUI) {
-                        console.log('延迟检查后计时器仍然暂停，现在恢复循环计时器');
-                        resumeReminderTimer();
-                        setTimerPausedBySettingsUI(false);
-                    } else if (wasPaused && !isTimerPausedBySettingsUI) {
-                        console.log('计时器已被其他进程恢复，无需操作');
-                    }
-                }, 1000);
-            }
-        });
+        console.log('收到来自 Popup UI 的连接，但相关功能已移除，不作处理。');
+        // 不再保留 port 引用或添加 onDisconnect 监听器
 
     // 处理来自设置窗口 (为某个通知打开) 的连接
     } else if (port.name && port.name.startsWith('settings-for-notification-')) {
@@ -814,12 +781,6 @@ browserAPI.runtime.onConnect.addListener((port) => {
  */
 browserAPI.runtime.onMessage.addListener((message, sender, sendResponse) => {
     console.log('通用消息监听器收到消息:', message);
-    
-    // 处理获取活动通知窗口ID的请求
-    if (message.action === "getActiveNotificationId") {
-        console.log('收到获取活动通知窗口ID的请求');
-        sendResponse({ notificationId: activeNotificationWindowId });
-    }
     
     // 处理手动备份完成消息
     if (message.action === "manualBackupCompleted") {

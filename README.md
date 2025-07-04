@@ -12,11 +12,11 @@
 ## 图片示例
 <table>
   <tr>
-    <td><img src="png/main_ui.png" alt="扩展主界面 (中文, 暗色主题)"></td>
-    <td><img src="png/v1.5_Backup Records Daily Dividers & Notes Feature Screenshot.png" alt="扩展主界面 (英文, 亮色主题)"></td>
+    <td><img src="png/v2.0_main_ui.png" alt="扩展主界面 (中文, 暗色主题)"></td>
+    <td><img src="png/v1.5.png" alt="扩展主界面 (英文, 亮色主题)"></td>
   </tr>
   <tr>
-    <td><img src="png/setting.png" alt="动态提醒设置界面 (中文, 暗色主题)"></td>
+    <td><img src="png/v2.0_setting.png" alt="动态提醒设置界面 (中文, 暗色主题)"></td>
     <td><img src="png/notification.png" alt="备份提醒通知 (中文, 暗色主题)"></td>
   </tr>
 </table>
@@ -67,6 +67,7 @@
 
 *   **备份提醒系统（手动备份模式下）：**
     *   **智能激活与提醒：** 仅在用户切换到手动备份模式后启动。提醒会结合书签活动状态——当检测到书签发生实际变动（增、删、改、移动）后（此时角标为黄色），才会发出提醒。
+    *   **深度逻辑重构：** "循环提醒"的计时器与角标状态深度绑定。现在，只有当角标因书签变化变为黄色时，计时器才会启动；当角标恢复蓝色时则自动停止。这使得提醒更智能、更节能。
     *   **暂停与恢复：** 采用 `chrome.windows.onFocusChanged` API 智能检测用户是否正在使用浏览器。只有当所有浏览器窗口都失去焦点时（例如，用户切换到其他应用程序），提醒计时器才会暂停，并在用户返回时恢复。
     *   **崩溃恢复能力：** 利用 `chrome.alarms` API 的持久性，即使浏览器意外关闭或崩溃，在重启后提醒计时器将会重置初始化。
     *   **提醒类型与配置：**
@@ -87,6 +88,10 @@
 *   **上次变动：** 显示上次成功备份的时间和状态。
 *   **主题支持：** 包括浅色和深色模式主题，默认跟随浏览器主题。
 
+*   **内容与顺序感知的深度变化检测：** 引入了基于内容与顺序的"深度指纹"系统，以取代原有的简单数量对比。系统会为每个书签和文件夹根据其**完整路径、名称、顺序及内容**生成独一无二的指纹。这使得扩展能够极其精确地捕捉任何细微变化，包括仅调整顺序或增删同等数量但不同内容的书签。只有当书签树状态与上次备份**完全一致**时，角标才会恢复为蓝色，确保了状态的绝对准确性。
+
+*   **智能缓存与UI性能优化：** 为优化首次打开或书签数量庞大时的响应速度，引入了中央缓存机制。书签状态分析结果（如是否有变动）会在浏览器启动或书签变动时在后台**静默预热**并缓存。用户点击图标时，UI能瞬间从缓存加载数据，实现了"秒开"的流畅体验。
+
 ---
 
 ## 技术细节
@@ -104,8 +109,8 @@
 
 *   **文件结构概述**
     *   `manifest.json`: 定义扩展程序的元数据、权限、后台脚本、弹出页面、图标等核心配置。此扩展遵循 Manifest V3规范。
-    *   `background.js`: 处理所有后台逻辑，包括备份过程（将书签上传至WebDAV及保存到本地）、与备份输出相关的同步协调、状态管理（如书签变更检测、操作状态）、事件监听（如书签活动、定时任务、下载事件）、提醒调度、动态角标管理、下载防打扰功能以及与弹出窗口的全面消息通信。
-    *   `popup.js`: 构建和管理用户界面，包括 WebDAV 的配置面板、本地自动备份的控制开关、状态显示（同步历史、书签统计、备份模式）、操作按钮和提醒设置；处理所有用户交互（包括界面主题的加载、应用和用户偏好保存），并将用户操作通过消息传递给 `background.js` 执行；通过自定义的字符串管理机制实现国际化支持，可动态更新界面语言；并与 `background.js` 进行双向通信以更新UI和发送指令。
+    *   `background.js`: 处理所有后台逻辑，包括备份过程（将书签上传至WebDAV及保存到本地）、与备份输出相关的同步协调、状态管理（如**基于指纹的深度书签变更检测**、操作状态）、事件监听（如书签活动、定时任务、下载事件）、提醒调度、动态角标管理、**管理UI缓存与初始语言检测**、下载防打扰功能以及与弹出窗口的全面消息通信。
+    *   `popup.js`: 构建和管理用户界面，包括 WebDAV 的配置面板、本地自动备份的控制开关、状态显示（同步历史、书签统计、备份模式）、操作按钮和提醒设置；处理所有用户交互（包括界面主题的加载、应用和用户偏好保存），并将用户操作通过消息传递给 `background.js` 执行；**通过读取后台缓存数据实现UI"秒开"**；通过自定义的字符串管理机制实现国际化支持，可动态更新界面语言；并与 `background.js` 进行双向通信以更新UI和发送指令。
     *   `popup.html`: 定义了扩展程序弹出窗口的全部UI元素结构，包括各个配置区域、信息显示面板和交互按钮。
     *   `theme.js`: 可能包含与界面主题相关的辅助工具或特定组件的样式逻辑。主弹出窗口的主题切换和偏好管理由 `popup.js` 处理。
     *   `backup_reminder/` 目录: 包含备份提醒功能特有的模块。主要包括：
@@ -218,6 +223,7 @@ Contributions, issues, and feature requests are welcome! Please feel free to che
 
 *   **Backup Reminder System (in Manual Backup Mode):**
     *   **Smart Activation & Reminders:** Activates only when the user switches to manual backup mode. Reminders are combined with bookmark activity status—a reminder is issued only after actual changes to bookmarks (add, delete, modify, move) are detected (badge turns yellow at this point).
+    *   **Deep Logic Refactoring:** The "Cyclical Reminder" timer is now deeply bound to the badge state. The timer only starts when the badge turns yellow due to bookmark changes and automatically stops when it reverts to blue. This makes the reminder smarter and more power-efficient.
     *   **Pause & Resume:** Uses the `chrome.windows.onFocusChanged` API to intelligently detect if the user is interacting with the browser. The reminder timer will only pause when all browser windows lose focus (e.g., when the user switches to another application) and will resume upon return.
     *   **Crash Recovery Capability:** Utilizes the persistence of the `chrome.alarms` API. Even if the browser closes unexpectedly or crashes, the reminder timer will be re-initialized upon restart.
     *   **Reminder Types & Configuration:**
@@ -238,6 +244,10 @@ Contributions, issues, and feature requests are welcome! Please feel free to che
 *   **Last Change:** Displays the time and status of the last successful backup.
 *   **Theme Support:** Includes light and dark mode themes. User-set themes are saved; if no user setting is present, a default theme is applied (typically light).
 
+*   **Deep Change Detection with Content & Order Awareness:** Introduced a "deep fingerprint" system based on content and order to replace the previous simple count comparison. The system generates a unique fingerprint for every bookmark and folder based on its **full path, name, order, and content**. This allows the extension to capture any subtle change with extreme precision, including simple reordering or adding/deleting an equal number of different bookmarks. The badge will only revert to blue when the bookmark tree state is **exactly identical** to the last backup, ensuring absolute state accuracy.
+
+*   **Smart Caching & UI Performance Optimization:** To optimize responsiveness when first opening the extension or with a large number of bookmarks, a central caching mechanism has been introduced. The results of bookmark status analysis (e.g., whether there are changes) are **silently pre-heated** and cached in the background on browser start-up or when bookmarks change. When the user clicks the icon, the UI can instantly load data from the cache, achieving a smooth "instant-open" experience.
+
 ---
 
 ## Technical Details
@@ -255,8 +265,8 @@ Contributions, issues, and feature requests are welcome! Please feel free to che
 
 *   **File Structure Overview**
     *   `manifest.json`: Defines the extension\'s metadata, permissions, background scripts, popup page, icons, and other core configurations. This extension follows the Manifest V3 specification.
-    *   `background.js`: Handles all background logic, including the backup process (uploading bookmarks to WebDAV and saving locally), coordination of backup output, state management (e.g., bookmark change detection, operational states), event listening (e.g., bookmark activity, alarms, download events), reminder scheduling, dynamic badge management, download anti-disturbance features, and comprehensive message communication with the popup window.
-    *   `popup.js`: Builds and manages the user interface, including the configuration panel for WebDAV, controls for local automatic backup, status displays (sync history, bookmark statistics, backup mode), action buttons, and reminder settings; handles all user interactions (including loading, applying, and saving user preferences for interface themes) and passes user actions via messages to `background.js` for execution; implements internationalization using a custom string management system, dynamically updating UI language; and communicates bidirectionally with `background.js` to update the UI and send commands.
+    *   `background.js`: Handles all background logic, including the backup process (uploading bookmarks to WebDAV and saving locally), coordination of backup output, state management (e.g., **deep bookmark change detection based on fingerprints**, operational states), event listening (e.g., bookmark activity, alarms, download events), reminder scheduling, dynamic badge management, **managing the UI cache and initial language detection**, download anti-disturbance features, and comprehensive message communication with the popup window.
+    *   `popup.js`: Builds and manages the user interface, including the configuration panel for WebDAV, controls for local automatic backup, status displays (sync history, bookmark statistics, backup mode), action buttons, and reminder settings; handles all user interactions (including loading, applying, and saving user preferences for interface themes) and passes user actions via messages to `background.js` for execution; **achieves an "instant-open" UI by reading cached data from the background**; implements internationalization using a custom string management system, dynamically updating UI language; and communicates bidirectionally with `background.js` to update the UI and send commands.
     *   `popup.html`: Defines the entire UI element structure for the extension's popup window, including various configuration areas, information display panels, and interactive buttons.
     *   `theme.js`: May contain auxiliary tools or styling logic for specific components related to interface themes. The main popup window's theme switching and preference management are handled by `popup.js`.
     *   `backup_reminder/` directory: Contains modules specific to the backup reminder functionality. It mainly includes:

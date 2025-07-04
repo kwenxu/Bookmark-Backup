@@ -29,7 +29,7 @@ import {
 } from './backup_reminder/index.js';
 
 // 从timer.js直接导入函数
-import { pauseReminderTimer, resumeReminderTimer, handleAlarm } from './backup_reminder/timer.js';
+import { pauseReminderTimer, resumeReminderTimer, handleAlarm, startLoopReminder, stopLoopReminder } from './backup_reminder/timer.js';
 
 // 浏览器兼容性处理
 const browserAPI = (function() {
@@ -84,6 +84,8 @@ let bookmarkChangeTimeout = null;
 let isProcessingHistoricalDownloads = false;
 // 记录扩展启动时间，用于区分历史下载和新下载
 const extensionStartupTime = Date.now();
+// 智能缓存书签分析结果
+let cachedBookmarkAnalysis = null;
 
 
 // 重置操作状态的函数
@@ -174,49 +176,32 @@ function initializeOperationTracking() {
 
 // 在初始化时设置角标
 async function initializeBadge() {
+    console.log('初始化角标...');
     try {
-        // 检查是否已经初始化 (读取存储)
-        const {
-            isInitialized = false,
-            serverAddress, username, password, webDAVEnabled, // WebDAV config
-            defaultDownloadEnabled, customFolderEnabled, customFolderPath, // Local config
-            localBackupEnabled, localBackupPath // Old local config
-        } = await browserAPI.storage.local.get([
-            'isInitialized',
-            'serverAddress', 'username', 'password', 'webDAVEnabled',
-            'defaultDownloadEnabled', 'customFolderEnabled', 'customFolderPath',
-            'localBackupEnabled', 'localBackupPath'
-        ]);
+        const { autoSync, lastSyncStatus, isYellowHandActive } = await browserAPI.storage.local.get({
+            autoSync: true,
+            lastSyncStatus: 'success',
+            isYellowHandActive: false // 新增：获取黄色角标状态
+        });
 
-        // --- 新增：更稳健的初始化判断 ---
-        let shouldBeInitialized = isInitialized; // 默认使用存储的值
-
-        // 检查是否存在任何有效的配置
-        const webDAVConfigured = serverAddress && username && password;
-        const newLocalConfigured = defaultDownloadEnabled || (customFolderEnabled && customFolderPath);
-        const oldLocalConfigured = localBackupEnabled && localBackupPath;
-        const anyConfigExists = (webDAVConfigured && webDAVEnabled !== false) || newLocalConfigured || oldLocalConfigured;
-
-        if (!isInitialized && anyConfigExists) {
-            console.log('initializeBadge: isInitialized=false, 但检测到配置存在，强制认为已初始化。');
-            shouldBeInitialized = true;
-            // 可选：将 isInitialized 写回存储
-            await browserAPI.storage.local.set({ isInitialized: true });
+        if (!autoSync) {
+            console.log('手动模式下，检查角标状态...');
+            // 如果是手动模式，根据 isYellowHandActive 状态决定是否启动循环提醒
+            if (isYellowHandActive) {
+                console.log('检测到启动时角标应为黄色，启动循环提醒。');
+                await startLoopReminder();
+            } else {
+                console.log('检测到启动时角标应为蓝色，不启动循环提醒。');
+                await stopLoopReminder(); // 确保是停止状态
+            }
         }
-        // --- 结束新增 ---
-
-        if (!shouldBeInitialized) {
-            // 如果确实未初始化，不显示角标
-            await browserAPI.action.setBadgeText({ text: '' });
-            console.log('initializeBadge: 最终判断未初始化，不显示角标');
-            return;
-        }
-
-        // 已初始化，调用setBadge设置角标
+        
+        // 初始设置角标颜色和文字
         await setBadge();
-        console.log('initializeBadge: 最终判断已初始化，设置正常角标');
     } catch (error) {
         console.error('初始化角标失败:', error);
+        await browserAPI.action.setBadgeText({ text: '!' });
+        await browserAPI.action.setBadgeBackgroundColor({ color: '#FF0000' }); // 红色
     }
 }
 
@@ -361,6 +346,8 @@ browserAPI.runtime.onStartup.addListener(() => {
 
     // 使用主动查询方法同步下载状态，避免大量onCreated日志
     syncDownloadState();
+    // 首次启动时预热缓存
+    updateAndCacheAnalysis();
 });
 
 /**
@@ -558,12 +545,6 @@ browserAPI.runtime.onMessage.addListener((message, sender, sendResponse) => {
                         return { success: true, autoSync: previousAutoSyncState, message: '状态未变化' };
                     }
 
-                    // --- 移除内部检查和触发备份的逻辑 ---
-                    // if (newAutoSyncState === true && previousAutoSyncState === false) {
-                    //     ...
-                    // }
-                    // --- 结束移除 ---
-
                     // 更新存储中的 autoSync 状态
                     await browserAPI.storage.local.set({ autoSync: newAutoSyncState });
                     console.log(`存储中的 autoSync 已更新为 ${newAutoSyncState}`);
@@ -575,8 +556,36 @@ browserAPI.runtime.onMessage.addListener((message, sender, sendResponse) => {
                     // 直接调用 onAutoBackupToggled 函数
                     await onAutoBackupToggled(newAutoSyncState);
 
-                    // 更新角标
-                    await setBadge();
+                    // 如果从自动模式切换到手动模式，需要重置操作状态并更新角标
+                    if (!newAutoSyncState) {
+                        // 重置操作状态跟踪
+                        await browserAPI.storage.local.set({
+                            lastSyncOperations: {
+                                bookmarkMoved: false,
+                                folderMoved: false,
+                                bookmarkModified: false,
+                                folderModified: false,
+                                lastUpdateTime: new Date().toISOString()
+                            }
+                        });
+                        console.log('切换到手动模式时，已重置操作状态跟踪');
+                        
+                        // 强制更新缓存分析数据
+                        await updateAndCacheAnalysis();
+                        
+                        // 获取当前语言设置
+                        const { preferredLang = 'zh_CN' } = await browserAPI.storage.local.get(['preferredLang']);
+                        
+                        // 手动模式下，强制设置角标为蓝色
+                        const badgeText = badgeTextMap.manual[preferredLang] || badgeTextMap.manual.en;
+                        await browserAPI.action.setBadgeText({ text: badgeText });
+                        await browserAPI.action.setBadgeBackgroundColor({ color: '#0000FF' }); // 蓝色
+                        await browserAPI.storage.local.set({ isYellowHandActive: false });
+                        console.log('切换到手动模式时，强制设置角标为蓝色');
+                    } else {
+                        // 自动模式下，使用正常的setBadge
+                        await setBadge();
+                    }
 
                     return { success: true, autoSync: newAutoSyncState, message: '自动备份状态已更新' };
 
@@ -823,8 +832,27 @@ browserAPI.runtime.onMessage.addListener((message, sender, sendResponse) => {
                         }
                     });
 
-                    // 更新角标状态
-                    await setBadge();
+                    // 强制更新缓存分析数据
+                    await updateAndCacheAnalysis();
+                    
+                    // 确保角标显示为蓝色（手动模式无变动）
+                    try {
+                        const { autoSync = false, preferredLang = 'zh_CN' } = await browserAPI.storage.local.get(['autoSync', 'preferredLang']);
+                        if (!autoSync) {
+                            // 手动模式下，确保角标为蓝色
+                            const badgeText = badgeTextMap.manual[preferredLang] || badgeTextMap.manual.en;
+                            await browserAPI.action.setBadgeText({ text: badgeText });
+                            await browserAPI.action.setBadgeBackgroundColor({ color: '#0000FF' }); // 蓝色
+                            await browserAPI.storage.local.set({ isYellowHandActive: false });
+                            console.log('手动备份完成后，强制设置角标为蓝色');
+                        } else {
+                            // 自动模式下，使用正常的setBadge
+                            await setBadge();
+                        }
+                    } catch (badgeError) {
+                        console.error('设置角标失败:', badgeError);
+                        await setBadge(); // 回退到正常的setBadge
+                    }
 
                     console.log('备份提醒系统已重置，操作状态已清空');
                     sendResponse({ success: true });
@@ -1505,6 +1533,9 @@ async function handleBookmarkChange() {
             // 更新角标（无论模式如何）
             await setBadge(); // 使用新的不带参数的setBadge
             console.log('已触发角标更新');
+            
+            // 异步更新缓存，不阻塞当前流程
+            updateAndCacheAnalysis();
 
             // 向Popup页面发送消息，通知书签已更改
             try {
@@ -1528,6 +1559,10 @@ async function handleBookmarkChange() {
                     console.log('自动备份完成 (handleBookmarkChange):', result);
                     // 在备份完成后调用 updateBadgeAfterSync
                     updateBadgeAfterSync(result.success);
+                    // 如果成功，则更新缓存
+                    if (result.success) {
+                        updateAndCacheAnalysis();
+                    }
                 }).catch(error => {
                     console.error('自动备份失败 (handleBookmarkChange):', error);
                     // 备份失败也要更新角标为错误状态
@@ -2545,6 +2580,13 @@ async function resetAllData() {
         // 4. 恢复到初始状态
         console.log('恢复完成，已回到完全初始状态');
 
+        // 5. 重新执行初始化流程，模拟首次安装
+        console.log('数据已清除，正在重新初始化...');
+        await initializeLanguagePreference();
+        await initializeAutoSync();
+        await initializeBadge();
+        console.log('重新初始化完成');
+
         return true;
     } catch (error) {
         console.error('重置数据时出错:', error);
@@ -2910,46 +2952,54 @@ function countAllFolders(bookmarks) {
 // 修改 setBadge 函数
 async function setBadge() { // 不再接收 status 参数
     try {
-        const { autoSync = true } = await browserAPI.storage.local.get('autoSync');
-        const langData = await browserAPI.storage.local.get({ preferredLang: 'zh_CN' });
-        const preferredLang = langData.preferredLang;
-
+        // 首先获取当前模式
+        const { autoSync } = await browserAPI.storage.local.get({ autoSync: true });
+        
         let badgeText = '';
-        let badgeColor = '#00FF00'; // 默认亮绿色
-        let isYellowHand = false; // 新增：用于标记黄手状态
+        let badgeColor = '';
+        let hasChanges = false;
 
         if (autoSync) {
-            badgeText = badgeTextMap.auto[preferredLang] || badgeTextMap.auto.en;
-            badgeColor = '#00FF00'; // 自动模式为亮绿色
-            await browserAPI.storage.local.set({ isYellowHandActive: false });
-        } else { // 手动模式
-            const changeData = await browserAPI.storage.local.get('lastSyncOperations');
-            const lastSyncOperations = changeData.lastSyncOperations || {};
+            // 自动模式
+            const { preferredLang = 'zh_CN' } = await browserAPI.storage.local.get(['preferredLang']);
+            badgeText = badgeTextMap['auto'][preferredLang] || '自';
+            badgeColor = '#00FF00'; // 亮绿色
+        } else {
+            // 手动模式
+            const { preferredLang = 'zh_CN' } = await browserAPI.storage.local.get(['preferredLang']);
+            badgeText = badgeTextMap['manual'][preferredLang] || '手';
+            
+            // 在手动模式下，检查是否有变化
+            const stats = await getBackupStatsInternal();
+            
+            if (stats) {
+                // 任何数量或结构的变化都算作变化
+                if (stats.stats.bookmarkDiff !== 0 || stats.stats.folderDiff !== 0 || stats.stats.bookmarkMoved || stats.stats.bookmarkModified || stats.stats.folderMoved || stats.stats.folderModified) {
+                    hasChanges = true;
+                }
+            }
 
-            const countData = await browserAPI.storage.local.get(['lastBookmarkCount', 'lastFolderCount']);
-            const { lastBookmarkCount = -1, lastFolderCount = -1 } = countData;
-
-            const currentCounts = await getCurrentBookmarkCountsInternal();
-            const hasCountChanged = lastBookmarkCount !== -1 && (currentCounts.bookmarkCount !== lastBookmarkCount || currentCounts.folderCount !== lastFolderCount);
-
-            const hasStructuralChanges = lastSyncOperations.bookmarkMoved || lastSyncOperations.folderMoved || lastSyncOperations.bookmarkModified || lastSyncOperations.folderModified;
-
-            badgeText = badgeTextMap.manual[preferredLang] || badgeTextMap.manual.en;
-
-            if (hasStructuralChanges || hasCountChanged) {
+            if (hasChanges) {
                 badgeColor = '#FFFF00'; // 黄色，表示有变动
                 await browserAPI.storage.local.set({ isYellowHandActive: true });
-                isYellowHand = true;
+                // --- 新增逻辑 ---
+                console.log('角标变为黄色，启动循环提醒。');
+                await startLoopReminder();
+                // --- 结束 ---
             } else {
                 badgeColor = '#0000FF'; // 蓝色，表示无变动
                 await browserAPI.storage.local.set({ isYellowHandActive: false });
+                // --- 新增逻辑 ---
+                console.log('角标变为蓝色，停止循环提醒。');
+                await stopLoopReminder();
+                // --- 结束 ---
             }
         }
-        
+
         await browserAPI.action.setBadgeText({ text: badgeText });
         await browserAPI.action.setBadgeBackgroundColor({ color: badgeColor });
 
-        console.log(`setBadge: 模式=${autoSync ? '自动' : '手动'}, 变动=${isYellowHand}, 设置角标文字='${badgeText}', 颜色='${badgeColor}'`);
+        console.log(`setBadge: 模式=${autoSync ? '自动' : '手动'}, 变化=${hasChanges}, 设置角标文字='${badgeText}', 颜色='${badgeColor}'`);
 
     } catch (error) {
         console.error('设置角标失败:', error);
@@ -3061,56 +3111,84 @@ async function updateBadgeAfterSync(success) {
 }
 
 // --- Internal Helpers for Stats (Original Versions) ---
+/**
+ * 分析当前书签状态与上次备份的差异，返回详细的变更对象。
+ * 这是变化检测的核心函数。
+ * @returns {Promise<object>}
+ */
+async function analyzeBookmarkChanges() {
+    const { lastBookmarkData, lastSyncOperations } = await browserAPI.storage.local.get(['lastBookmarkData', 'lastSyncOperations']);
+
+    // 获取当前书签和文件夹总数
+    const currentCounts = await getCurrentBookmarkCountsInternal();
+    
+    // 获取上次备份时的书签和文件夹总数
+    const prevBookmarkCount = lastBookmarkData?.bookmarkCount ?? 0;
+    const prevFolderCount = lastBookmarkData?.folderCount ?? 0;
+
+    let bookmarkDiff = currentCounts.bookmarks - prevBookmarkCount;
+    let folderDiff = currentCounts.folders - prevFolderCount;
+
+    let bookmarkStructureChanged = lastSyncOperations?.bookmarkMoved || lastSyncOperations?.bookmarkModified || false;
+    let folderStructureChanged = lastSyncOperations?.folderMoved || lastSyncOperations?.folderModified || false;
+
+    // 只有在上次备份数据和指纹都存在时，才进行深度比较
+    if (lastBookmarkData && lastBookmarkData.bookmarkPrints) {
+        const localBookmarks = await new Promise(resolve => browserAPI.bookmarks.getTree(resolve));
+        const currentPrints = generateFingerprints(localBookmarks);
+        
+        const oldBPs = new Set(lastBookmarkData.bookmarkPrints);
+        const newBPs = new Set(currentPrints.bookmarks);
+        if (!areSetsEqual(oldBPs, newBPs)) {
+            bookmarkStructureChanged = true;
+        }
+
+        const oldFPs = new Set(lastBookmarkData.folderPrints);
+        const newFPs = new Set(currentPrints.folders);
+        if (!areSetsEqual(oldFPs, newFPs)) {
+            folderStructureChanged = true;
+        }
+    }
+    
+    // 如果没有上次备份数据，说明是首次运行，差异即为当前总数
+    if (!lastBookmarkData) {
+        bookmarkDiff = currentCounts.bookmarks;
+        folderDiff = currentCounts.folders;
+        // 首次加载时，任何存在的书签都可视为一种"结构变化"以促使用户首次备份
+        if (bookmarkDiff > 0) bookmarkStructureChanged = true;
+        if (folderDiff > 0) folderStructureChanged = true;
+    }
+
+    // 为了兼容popup.js的显示逻辑，我们将更广泛的"结构变化"映射到具体的标志上
+    // 如果指纹检测到结构变化，但它不是由移动(move)操作引起的，我们将其视为修改(modify)，从而涵盖增/删操作
+    const finalBookmarkModified = lastSyncOperations?.bookmarkModified || (bookmarkStructureChanged && !lastSyncOperations?.bookmarkMoved);
+    const finalFolderModified = lastSyncOperations?.folderModified || (folderStructureChanged && !lastSyncOperations?.folderMoved);
+
+    return {
+        bookmarkCount: currentCounts.bookmarks,
+        folderCount: currentCounts.folders,
+        prevBookmarkCount: prevBookmarkCount,
+        prevFolderCount: prevFolderCount,
+        bookmarkDiff: bookmarkDiff,
+        folderDiff: folderDiff,
+        bookmarkMoved: lastSyncOperations?.bookmarkMoved || false,
+        folderMoved: lastSyncOperations?.folderMoved || false,
+        bookmarkModified: finalBookmarkModified,
+        folderModified: finalFolderModified
+    };
+}
+
 // 添加一个内部函数来获取备份统计信息，以便在 background.js 内部调用
 async function getBackupStatsInternal() {
     console.log('内部调用: 获取备份统计数据');
     try {
-        const data = await browserAPI.storage.local.get([
-            'lastSyncTime',
-            'lastBookmarkData', // 使用存储的上次数据
-            'lastSyncOperations',
-            'lastCalculatedDiff' // 获取上次计算的 diff
-        ]);
-
-        // 始终获取最新的书签统计数据
-        const currentCounts = await getCurrentBookmarkCountsInternal(); // 假设有内部版本
-
-        // 获取上次备份时的数量 (来自 lastBookmarkData)
-        const prevBookmarkCount = data.lastBookmarkData?.bookmarkCount ?? 0;
-        const prevFolderCount = data.lastBookmarkData?.folderCount ?? 0;
-
-        // 使用上次计算的 diff (如果存在且较新) 或重新计算
-        let bookmarkDiff = data.lastCalculatedDiff?.bookmarkDiff ?? (currentCounts.bookmarks - prevBookmarkCount);
-        let folderDiff = data.lastCalculatedDiff?.folderDiff ?? (currentCounts.folders - prevFolderCount);
-
-        // 如果没有上次备份数据，diff就是当前总数
-        if (!data.lastBookmarkData) {
-             bookmarkDiff = currentCounts.bookmarks;
-             folderDiff = currentCounts.folders;
-        }
-
-        // 获取操作状态 (来自 lastSyncOperations)
-        const {
-            bookmarkMoved = false,
-            folderMoved = false,
-            bookmarkModified = false,
-            folderModified = false
-        } = data.lastSyncOperations || {};
+        const { lastSyncTime } = await browserAPI.storage.local.get(['lastSyncTime']);
+        // 优先使用缓存，如果缓存不存在（例如首次运行），则触发一次分析和缓存
+        const stats = cachedBookmarkAnalysis || await updateAndCacheAnalysis();
 
         const response = {
-            lastSyncTime: data.lastSyncTime || null,
-            stats: {
-                bookmarkCount: currentCounts.bookmarks, // 当前总数
-                folderCount: currentCounts.folders,   // 当前总数
-                prevBookmarkCount: prevBookmarkCount, // 上次总数
-                prevFolderCount: prevFolderCount,   // 上次总数
-                bookmarkDiff: bookmarkDiff,
-                folderDiff: folderDiff,
-                bookmarkMoved: bookmarkMoved,
-                folderMoved: folderMoved,
-                bookmarkModified: bookmarkModified,
-                folderModified: folderModified
-            },
+            lastSyncTime: lastSyncTime || null,
+            stats: stats,
             success: true
         };
 
@@ -3123,50 +3201,38 @@ async function getBackupStatsInternal() {
     }
 }
 
+// [重构] 不再是async，而是纯粹的计数函数
+function countBookmarksAndFolders(bookmarkNodes) {
+    let bookmarks = 0;
+    let folders = 0;
+
+    function countItemsRecursive(node) {
+        if (node.url) {
+            bookmarks++;
+        } else if (node.children) {
+            folders++;
+            for (const child of node.children) {
+                countItemsRecursive(child);
+            }
+        }
+    }
+
+    if (bookmarkNodes && bookmarkNodes.length > 0) {
+        for (const rootChild of bookmarkNodes[0].children) {
+            countItemsRecursive(rootChild);
+        }
+    }
+    
+    console.log('countBookmarksAndFolders calculated:', { bookmarks, folders });
+    return { bookmarks, folders };
+}
+
 // 假设有一个内部版本的 getCurrentBookmarkCounts
 async function getCurrentBookmarkCountsInternal() {
     return new Promise((resolve) => {
         browserAPI.bookmarks.getTree((nodes) => {
-            let bookmarks = 0;
-            let folders = 0;
-
-            // 修正计数逻辑，使用与getCurrentBookmarkCounts完全相同的计数方法
-            function countItemsRecursive(node) {
-                let bmCount = 0;
-                let fldCount = 0;
-
-                // 检查当前节点是否是书签
-                if (node.url) {
-                    bmCount = 1;
-                }
-                // 检查当前节点是否是文件夹
-                else if (node.children) {
-                    fldCount = 1; // 将此文件夹计入
-                    // 递归计数子节点的内容
-                    for (let i = 0; i < node.children.length; i++) {
-                        const childCounts = countItemsRecursive(node.children[i]);
-                        bmCount += childCounts.bookmarks; // 累加子节点内的书签
-                        fldCount += childCounts.folders;  // 累加子节点内的文件夹
-                    }
-                }
-
-                return { bookmarks: bmCount, folders: fldCount };
-            }
-
-            // 从根节点 ('0') 的子节点开始计数 ('1', '2', '3'等)
-            let totalCounts = { bookmarks: 0, folders: 0 };
-            if (nodes && nodes.length > 0 && nodes[0].children) {
-                for (const rootChild of nodes[0].children) {
-                    // 对每个顶层文件夹调用递归计数
-                    const counts = countItemsRecursive(rootChild);
-                    // 累加它们包含的书签和文件夹数量
-                    totalCounts.bookmarks += counts.bookmarks;
-                    totalCounts.folders += counts.folders;
-                }
-            }
-
-            console.log('getCurrentBookmarkCountsInternal (corrected) calculated:', totalCounts);
-            resolve(totalCounts);
+            const counts = countBookmarksAndFolders(nodes);
+            resolve(counts);
         });
     });
 }
@@ -3177,3 +3243,161 @@ async function getCurrentBookmarkCountsInternal() {
 // (Most initializations are now grouped at the top or with their respective systems)
 
 console.log("Background script (reordered only) fully loaded and initialized.");
+
+/**
+ * 为书签和文件夹生成唯一的、基于路径的指纹。
+ * @param {Array} bookmarkNodes - 浏览器书签树的根节点。
+ * @returns {{bookmarks: Array<string>, folders: Array<string>}} 包含书签和文件夹指纹数组的对象。
+ */
+function generateFingerprints(bookmarkNodes) {
+    const bookmarkPrints = new Set();
+    const folderPrints = new Set();
+
+    /**
+     * 递归遍历书签树，为每个项目生成指纹。
+     * @param {Array} nodes - 当前要遍历的节点数组。
+     * @param {string} path - 父文件夹的完整路径。
+     */
+    function traverse(nodes, path) {
+        for (const node of nodes) {
+            if (node.url) {
+                // 书签的身份 = 它所在的完整路径 + 它的名称 + 它的URL
+                const bookmarkFingerprint = `B:${path}|${node.title}|${node.url}`;
+                bookmarkPrints.add(bookmarkFingerprint);
+            } else if (node.children) {
+                // 文件夹的完整路径
+                const currentPath = path ? `${path}/${node.title}` : node.title;
+
+                // 计算其直接包含的内容数量
+                let directBookmarkCount = 0;
+                let directFolderCount = 0;
+                for (const child of node.children) {
+                    if (child.url) {
+                        directBookmarkCount++;
+                    } else if (child.children) {
+                        directFolderCount++;
+                    }
+                }
+                
+                // 文件夹的身份 = 它的完整路径 + 它的名称 + 它包含的内容（数量限定）
+                const contentQuantitySignature = `c:${directBookmarkCount},${directFolderCount}`;
+                const folderFingerprint = `F:${currentPath}|${contentQuantitySignature}`;
+                folderPrints.add(folderFingerprint);
+
+                // 递归进入子文件夹
+                traverse(node.children, currentPath);
+            }
+        }
+    }
+
+    // 从根目录的子节点开始遍历，初始路径为空
+    if (bookmarkNodes && bookmarkNodes.length > 0 && bookmarkNodes[0].children) {
+        traverse(bookmarkNodes[0].children, '');
+    }
+    
+    return {
+        bookmarks: [...bookmarkPrints],
+        folders: [...folderPrints]
+    };
+}
+
+/**
+ * 比较两个Set对象的内容是否完全相等。
+ * @param {Set<any>} setA - 第一个Set。
+ * @param {Set<any>} setB - 第二个Set。
+ * @returns {boolean} 如果两个Set内容相同则返回true。
+ */
+function areSetsEqual(setA, setB) {
+    if (setA.size !== setB.size) {
+        return false;
+    }
+    for (const item of setA) {
+        if (!setB.has(item)) {
+            return false;
+        }
+    }
+    return true;
+}
+
+/**
+ * [新] 核心分析函数，执行一次遍历，完成所有计算，并更新缓存。
+ * 这是所有状态获取的权威来源。
+ */
+async function updateAndCacheAnalysis() {
+    console.log('正在更新书签分析缓存...');
+    try {
+        const analysis = await analyzeBookmarkChanges();
+        cachedBookmarkAnalysis = analysis;
+        console.log('书签分析缓存已更新。');
+        
+        // 分析完成后，向popup发送消息，如果popup是打开的，可以直接更新UI
+        browserAPI.runtime.sendMessage({ action: "analysisUpdated", ...analysis }).catch(() => {
+            // 忽略错误，因为popup可能未打开
+        });
+        
+        return cachedBookmarkAnalysis;
+    } catch (error) {
+        console.error('更新和缓存分析数据时出错:', error);
+        // 出错时清除缓存，以防数据不一致
+        cachedBookmarkAnalysis = null;
+    }
+}
+
+/**
+ * 新增：初始化语言偏好函数
+ * 在扩展首次启动时检测浏览器语言并存储。
+ */
+async function initializeLanguagePreference() {
+    try {
+        const result = await browserAPI.storage.local.get('languageAutoDetected');
+        if (!result.languageAutoDetected) {
+            const browserLang = browserAPI.i18n.getUILanguage().toLowerCase();
+            let preferredLang;
+
+            // 判断是否为中文，并设置对应语言
+            if (browserLang.startsWith('zh')) {
+                // 浏览器语言是中文
+                preferredLang = 'zh_CN';
+                console.log(`检测到浏览器语言 '${browserLang}' 为中文，设置扩展语言为: ${preferredLang}`);
+            } else {
+                // 浏览器语言为任何非中文语言
+                preferredLang = 'en';
+                console.log(`检测到浏览器语言 '${browserLang}' 非中文，因此设置扩展语言为: ${preferredLang}`);
+            }
+
+            await browserAPI.storage.local.set({ 
+                preferredLang: preferredLang,
+                languageAutoDetected: true 
+            });
+        }
+    } catch (e) {
+        console.error('初始化语言偏好失败:', e);
+    }
+}
+
+// 全局变量
+// ... existing code ...
+// 浏览器启动、安装或更新时执行的初始化
+browserAPI.runtime.onStartup.addListener(async () => {
+    console.log('浏览器启动，执行初始化...');
+    await initializeLanguagePreference(); // 新增：初始化语言偏好
+    await initializeBadge();
+    await initializeAutoSync();
+    initializeOperationTracking();
+});
+
+browserAPI.runtime.onInstalled.addListener(async (details) => {
+    console.log('扩展安装或更新，执行初始化...');
+    await initializeLanguagePreference(); // 新增：初始化语言偏好
+    await initializeBadge();
+    await initializeAutoSync();
+    initializeOperationTracking();
+
+    if (details.reason === 'install') {
+        console.log('首次安装，打开欢迎页面');
+        // browserAPI.tabs.create({ url: 'welcome.html' });
+    } else if (details.reason === 'update') {
+        const previousVersion = details.previousVersion;
+        console.log(`从版本 ${previousVersion} 更新`);
+    }
+});

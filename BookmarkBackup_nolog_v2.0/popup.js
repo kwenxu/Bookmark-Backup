@@ -763,7 +763,8 @@ function initializeWebDAVToggle() {
  */
 function initScrollToTopButton() {
     const 일반scrollToTopBtn = document.getElementById('scrollToTopBtn'); // 通用回到顶部按钮
-    const configScrollBtn = document.getElementById('configScrollBtn');   // 配置区域的回滚按钮
+    const backToConfigFloating = document.getElementById('backToConfigFloating'); // 右下角悬浮容器
+    const backToConfigBtn = document.getElementById('backToConfigBtn'); // 悬浮按钮
 
     // 处理通用回到顶部按钮
     if (일반scrollToTopBtn) {
@@ -772,13 +773,13 @@ function initScrollToTopButton() {
         일반scrollToTopBtn.parentNode.replaceChild(newGeneralScrollBtn, 일반scrollToTopBtn);
 
         newGeneralScrollBtn.addEventListener('click', function() {
-window.scrollTo(0, 0);
+            window.scrollTo(0, 0);
             this.style.transform = 'scale(0.9)';
             setTimeout(() => {
                 this.style.transform = 'scale(1)';
             }, 150);
         });
-// 控制通用回到顶部按钮的显示/隐藏
+        // 控制通用回到顶部按钮的显示/隐藏
         window.addEventListener('scroll', function() {
             if (window.pageYOffset > 200) { // 当滚动超过200px时显示按钮
                 newGeneralScrollBtn.style.display = 'block';
@@ -792,26 +793,33 @@ window.scrollTo(0, 0);
         } else {
             newGeneralScrollBtn.style.display = 'none';
         }
+    }
 
-    } else {
-}
-
-    // 处理配置区域的回滚按钮
-    if (configScrollBtn) {
-        // 移除可能存在的旧监听器
-        const newConfigScrollBtn = configScrollBtn.cloneNode(true);
-        configScrollBtn.parentNode.replaceChild(newConfigScrollBtn, configScrollBtn);
-
-        newConfigScrollBtn.addEventListener('click', function() {
-window.scrollTo(0, 0);
-            // 只对齿轮图标本身应用动画效果
-            this.style.transform = 'scale(0.9)';
-            setTimeout(() => {
-                this.style.transform = 'scale(1)';
-            }, 150);
+    // 右下角悬浮“回滚至配置页”按钮显示/隐藏与点击行为
+    if (backToConfigFloating && backToConfigBtn) {
+        // 点击回滚至配置区（页面顶部配置卡片）
+        backToConfigBtn.addEventListener('click', function() {
+            window.scrollTo({ top: 0, behavior: 'smooth' });
+            this.style.transform = 'scale(0.92)';
+            setTimeout(() => { this.style.transform = 'scale(1)'; }, 150);
         });
-} else {
-}
+
+        // 根据滚动深度控制显示：滚动到页面2/5后显示
+        const updateFloatingVisibility = () => {
+            const doc = document.documentElement;
+            const scrollTop = window.pageYOffset || doc.scrollTop || document.body.scrollTop || 0;
+            const scrollHeight = doc.scrollHeight || document.body.scrollHeight || 0;
+            const clientHeight = doc.clientHeight || window.innerHeight || 0;
+            const maxScrollable = Math.max(0, scrollHeight - clientHeight);
+            const threshold = maxScrollable * 0.4; // 2/5 = 40%
+            backToConfigFloating.style.display = scrollTop > threshold ? 'flex' : 'none';
+        };
+
+        window.addEventListener('scroll', updateFloatingVisibility, { passive: true });
+        window.addEventListener('resize', updateFloatingVisibility);
+        // 初始计算
+        updateFloatingVisibility();
+    }
 }
 
 /**
@@ -1603,7 +1611,7 @@ function updateBookmarkCountDisplay(passedLang) {
     });
 
     // 统一的外部容器样式 (移到顶层作用域，确保在所有分支中可用)
-    const containerStyle = "display: inline-block; margin: 5px 0 5px -15px; padding: 8px 10px 8px 12px; background-color: var(--theme-status-info-bg); border-radius: 6px; border-left: 3px solid var(--theme-accent-color); font-size: 13px; text-align: left;";
+    const containerStyle = "display: inline-block; margin: 5px 0 5px 0; padding: 8px 10px 8px 12px; background-color: var(--theme-status-info-bg); border-radius: 6px; border-left: 3px solid var(--theme-accent-color); font-size: 13px; text-align: left;";
     const mainItemStyle = "word-break: break-all; color: var(--theme-text-primary); text-align: left;";
     const secondaryItemStyle = "margin-top: 5px; font-size: 12px; color: var(--theme-text-secondary); text-align: left;";
 
@@ -1648,7 +1656,7 @@ return;
                 // 2. 更新 "上次变动" 区域为 "自动监测中"
                 const autoBackupText = currentLang === 'en' ? "Auto Monitoring Active" : "自动监测中";
                 const autoBackupStyle = mainItemStyle + " color: var(--theme-success-color); font-weight: bold; text-align: left;";
-                changeDescriptionContainer.innerHTML = `<div style="${containerStyle}"><div style="${autoBackupStyle}">${autoBackupText}</div></div>`;
+                changeDescriptionContainer.innerHTML = `<div style=\"${containerStyle}\"><div style=\"${autoBackupStyle}\">${autoBackupText}</div></div>`;
 
             } else {
                 // --- 手动备份模式 ---
@@ -4277,9 +4285,10 @@ const currentLang = data.preferredLang || 'zh_CN';
         historyHeaders[2].textContent = statusColumnStrings[lang] || statusColumnStrings['zh_CN'];
     }
 
-    const rollbackLabel = document.querySelector('#configButtonContainer > span');
-    if (rollbackLabel) {
-        rollbackLabel.textContent = rollbackToConfigLabel[lang] || rollbackToConfigLabel['zh_CN'];
+    // 浮动回滚按钮文案
+    const backToConfigLabel = document.getElementById('backToConfigLabel');
+    if (backToConfigLabel) {
+        backToConfigLabel.textContent = rollbackToConfigLabel[lang] || rollbackToConfigLabel['zh_CN'];
     }
 
     // 添加新的国际化字符串

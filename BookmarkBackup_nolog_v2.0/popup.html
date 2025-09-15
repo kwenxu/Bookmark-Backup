@@ -519,22 +519,23 @@
         }
         
         .backup-stats .stats-label {
-            font-weight: 700;  /* 增大加粗 */
-            font-size: 15px;   /* 增加字号 */
+            font-weight: 700;  /* 保持加粗 */
+            font-size: 13px;   /* 缩小字号 */
             margin-right: 10px;
             color: var(--theme-text-primary); /* Use CSS variable for text color */
+            white-space: nowrap; /* 防止“当前数量/结构:”和“Last Change:”换行 */
         }
         
         .backup-stats .stats-value {
             color: var(--theme-text-primary); /* Use CSS variable for text color */
-            font-size: 14px;  /* 从 12px 增大到 14px */
-            margin-top: 1.75px;  /* 从1.5px改为1.75px，继续向下移动0.25px */
+            font-size: 12px;  /* 缩小字号 */
+            margin-top: 1.5px;  /* 微调对齐 */
         }
         
         .backup-stats .time-value {
             color: var(--theme-success-color);  /* 标记时间为绿色 */
-            font-size: 14px;  /* 从 12px 增大到 14px */
-            margin-top: 1.75px;  /* 从1.5px改为1.75px，继续向下移动0.25px */
+            font-size: 12px;  /* 缩小字号 */
+            margin-top: 1.5px;  /* 微调对齐 */
         }
 
         /* 状态标题样式 */
@@ -716,7 +717,7 @@
 
         /* 历史记录列表 */
         .history-list {
-            height: 250px;       /* 从220px增加到250px */
+            height: 320px;       /* 从250px增加到320px */
             overflow-y: auto;    /* 垂直滚动 */
             display: flex;
             flex-direction: column;  /* 改为正常的从上到下排列 */
@@ -1892,14 +1893,43 @@
             display: block;
         }
 
-        /* 当语言为英语时，调整"回滚至配置页"按钮容器的位置 */
-        html[lang="en"] #configButtonContainer {
-            right: 78.5px !important; /* 从 83.5px 右移 5px (83.5 - 5 = 78.5) */
+        /* 当语言为英语时，加宽右侧状态容器以避免换行 */
+        html[lang="en"] #rightStatusContainer {
+            max-width: 320px !important;
+        }
+
+        /* 当语言为英语时，调整统计标签宽度与整体位置 */
+        html[lang="en"] .backup-stats .stats-label {
+            width: 90px !important;
+        }
+        html[lang="en"] .stats-text-container {
+            margin-left: 10px !important;
         }
 
         /* 当语言为英语时，校准路径按钮文本左对齐 */
         html[lang="en"] #calibratePathBtn {
             text-align: left !important;
+        }
+
+        /* 悬浮回滚按钮-提示气泡样式 */
+        #backToConfigLabel {
+            position: absolute;
+            background-color: var(--theme-tooltip-bg, rgba(0,0,0,0.7));
+            color: var(--theme-tooltip-text, #fff);
+            padding: 2px 8px;
+            border-radius: 4px;
+            font-size: 12px;
+            white-space: nowrap;
+            visibility: hidden;
+            opacity: 0;
+            transition: opacity 0.3s;
+            pointer-events: none;
+            bottom: 46px; /* 按钮高度上方 */
+            right: 0;
+        }
+        #backToConfigFloating:hover #backToConfigLabel {
+            visibility: visible;
+            opacity: 1;
         }
     </style>
 </head>
@@ -2110,26 +2140,21 @@
                 </div>
             </div>
 
-            <div class="backup-stats" style="position: relative; margin-top: 0;">
-                <div class="stats-text-container" style="padding-top: 9px; padding-left: 50px;">
-                    <div class="stats-row">
-                        <span class="stats-label" style="display: inline-block; width: 110px; text-align: right;">上次变动:</span>
-                        <span class="stats-value time-value" id="lastBackupTime">未备份</span>
+            <div class="backup-stats" style="margin: 0 0 15px 0; background-color: var(--theme-bg-elevated); border-radius: 8px; padding: 18px 24px; border: 1px solid var(--theme-border-primary); box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05); display: grid; grid-template-columns: 1fr auto; align-items: center; column-gap: 20px;">
+                <div class="stats-text-container" style="display: flex; flex-direction: column; gap: 8px; justify-self: start;">
+                    <div class="stats-row" style="display: flex; align-items: center; gap: 12px;">
+                        <span class="stats-label" style="display: inline-block; width: 110px; text-align: right; font-weight: 600; font-size: 13px; color: var(--theme-text-primary); white-space: nowrap;">上次变动:</span>
+                        <span class="stats-value time-value" id="lastBackupTime" style="font-size: 13px; font-weight: 500; color: var(--theme-success-color);">未备份</span>
                     </div>
-                    <div class="stats-row">
-                        <span class="stats-label" style="display: inline-block; width: 110px; text-align: right;">当前数量/结构:</span>
-                        <span class="stats-value" id="bookmarkCount">书签 0 个，文件夹 0 个</span>
+                    <div class="stats-row" style="display: flex; align-items: center; gap: 12px;">
+                        <span class="stats-label" style="display: inline-block; width: 110px; text-align: right; font-weight: 600; font-size: 13px; color: var(--theme-text-primary); white-space: nowrap;">当前数量/结构:</span>
+                        <span class="stats-value" id="bookmarkCount" style="font-size: 13px; font-weight: 500; color: var(--theme-text-primary);">书签 0 个，文件夹 0 个</span>
                     </div>
-                    <!-- New dedicated container for change description -->
-                    <div id="change-description-row" style="margin-top: 4px; padding-left: 120px; box-sizing: border-box; min-height: 1em;"></div>
                 </div>
                 
-                <!-- 修改配置按钮 -->
-                <div id="configButtonContainer" style="position: absolute; right: 83.5px; top: 50%; transform: translateY(-50%); display: flex; flex-direction: column; align-items: center;">
-                    <div id="configScrollBtn" style="cursor: pointer; display: flex; flex-direction: column; align-items: center; margin-bottom: 10px; /* Increased from 4px */">
-                        <span style="display: inline-block; transform: rotate(-90deg); font-size: 24px;">⚙️</span>
-                    </div>
-                    <span style="font-size: 10px; color: var(--theme-text-secondary); white-space: nowrap; padding-left: 2px;">回滚至配置页</span>
+                <!-- 右侧状态容器（用于显示“自动检测中”等蓝色区块） -->
+                <div id="rightStatusContainer" style="display: flex; flex-direction: column; align-items: flex-start; justify-self: end; max-width: 260px; margin-right: 20px;">
+                    <div id="change-description-row" style="margin-top: 0; box-sizing: border-box; min-height: 1em; width: 100%;"></div>
                 </div>
             </div>
 
@@ -2316,6 +2341,14 @@
                 </div>
             </div>
         </div>
+    </div>
+
+    <!-- 右下角悬浮“回滚至配置页”按钮（文字改为仅气泡提示，按钮为向上箭头图标） -->
+    <div id="backToConfigFloating" style="position: fixed; right: 16px; bottom: 16px; display: none; z-index: 10000; align-items: center; gap: 6px;">
+        <button id="backToConfigBtn" style="width: 36px; height: 36px; border-radius: 18px; border: 1px solid var(--theme-border-primary); background-color: var(--theme-bg-secondary); color: var(--theme-text-primary); cursor: pointer; box-shadow: 0 2px 6px rgba(0,0,0,0.15); font-size: 18px; line-height: 1; display: flex; align-items: center; justify-content: center;">
+            <i class="fas fa-chevron-up"></i>
+        </button>
+        <span id="backToConfigLabel">回滚至配置页</span>
     </div>
 
     <!-- 添加外部脚本引用 -->

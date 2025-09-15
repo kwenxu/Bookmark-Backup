@@ -1,0 +1,40 @@
+{
+   "manifest_version": 3,
+   "name": "书签备份--Bookmark Backup",
+   "version": "2.0",
+   "description": "书签备份（云端/本地，自动/手动，时间线，提醒）or Bookmark Backup (Cloud/Local, Auto/Manual, Timeline, Reminder)",
+   "author": "kk1",
+   "icons": {
+      "100": "icons/icon200.png"
+   },
+   "action": {
+      "default_icon": {
+         "200": "icons/icon200.png"
+      },
+      "default_popup": "popup.html"
+   },
+   "background": {
+      "service_worker": "background.js",
+      "type": "module"
+   },
+   "commands": {
+   },
+   "permissions": [
+      "bookmarks",
+      "storage",
+      "alarms",
+      "commands",
+      "scripting",
+      "windows",
+      "downloads",
+      "downloads.shelf",
+      "activeTab"
+   ],
+   "host_permissions": [
+      "https://*/*"
+   ],
+   "web_accessible_resources": [ {
+      "matches": [ "<all_urls>" ],
+      "resources": [ "popup.html", "icons/icon200.png", "backup_reminder/notification_popup.html"]
+   } ]
+}

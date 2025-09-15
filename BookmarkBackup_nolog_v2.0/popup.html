@@ -1911,6 +1911,28 @@
             text-align: left !important;
         }
 
+        /* 中文模式：将右侧蓝色状态容器左移并与上方“手动备份”按钮左边对齐 */
+        html[lang="zh"] .backup-stats {
+            grid-template-columns: 2fr 1fr !important;
+            column-gap: 31px !important; /* 上方区块为左右15px间隔+中间1px分隔线 => 31px */
+        }
+        html[lang="zh"] #rightStatusContainer {
+            justify-self: start !important;
+            margin-right: 0 !important;
+            margin-left: 0 !important;
+        }
+
+        /* 英文模式：同样保证蓝色状态容器左边缘与上方“手动备份”按钮列左边缘对齐 */
+        html[lang="en"] .backup-stats {
+            grid-template-columns: 2fr 1fr !important;
+            column-gap: 31px !important;
+        }
+        html[lang="en"] #rightStatusContainer {
+            justify-self: start !important;
+            margin-right: 0 !important;
+            margin-left: 0 !important;
+        }
+
         /* 悬浮回滚按钮-提示气泡样式 */
         #backToConfigLabel {
             position: absolute;

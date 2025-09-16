@@ -2612,18 +2612,25 @@ updateSyncHistory();
                 });
             }
 
-            // 平滑滚动到备份状态区域的上边缘
+            // 平滑滚动到大边框与第一栏目边框的中间位置
             setTimeout(() => {
                 const syncStatusSection = document.getElementById('syncStatus');
-                if (syncStatusSection) {
-                    // 获取元素的位置
-                    const rect = syncStatusSection.getBoundingClientRect();
+                const syncControlsSection = document.querySelector('.sync-controls');
+                
+                if (syncStatusSection && syncControlsSection) {
+                    // 获取两个元素的位置
+                    const syncStatusRect = syncStatusSection.getBoundingClientRect();
+                    const syncControlsRect = syncControlsSection.getBoundingClientRect();
                     const scrollTop = window.pageYOffset || document.documentElement.scrollTop;
-                    const targetPosition = rect.top + scrollTop - 20; // 留出20px的间距
                     
-                    // 平滑滚动到目标位置
+                    // 计算大边框上边缘和第一栏目上边缘的中间位置
+                    const syncStatusTop = syncStatusRect.top + scrollTop;
+                    const syncControlsTop = syncControlsRect.top + scrollTop;
+                    const middlePosition = (syncStatusTop + syncControlsTop) / 2;
+                    
+                    // 平滑滚动到中间位置
                     window.scrollTo({
-                        top: targetPosition,
+                        top: middlePosition,
                         behavior: 'smooth'
                     });
                 }
@@ -4920,22 +4927,26 @@ console.log('手动备份按钮显示状态:', manualButtonsContainer ? manualBu
             updateLastSyncInfo(); // 新增：加载上次备份信息和书签计数
             initScrollToTopButton(); // 初始化滚动按钮
 
-            // 自动定位到备份状态区域
+            // 自动定位到大边框与第一栏目边框的中间位置（直接显示，无动画）
             setTimeout(() => {
                 const syncStatusSection = document.getElementById('syncStatus');
-                if (syncStatusSection && syncStatusSection.style.display !== 'none') {
-                    // 获取元素的位置
-                    const rect = syncStatusSection.getBoundingClientRect();
+                const syncControlsSection = document.querySelector('.sync-controls');
+                
+                if (syncStatusSection && syncControlsSection && syncStatusSection.style.display !== 'none') {
+                    // 获取两个元素的位置
+                    const syncStatusRect = syncStatusSection.getBoundingClientRect();
+                    const syncControlsRect = syncControlsSection.getBoundingClientRect();
                     const scrollTop = window.pageYOffset || document.documentElement.scrollTop;
-                    const targetPosition = rect.top + scrollTop - 20; // 留出20px的间距
                     
-                    // 直接跳转到目标位置（不使用滚动动画）
-                    window.scrollTo({
-                        top: targetPosition,
-                        behavior: 'auto' // 使用'auto'而不是'smooth'，直接跳转
-                    });
+                    // 计算大边框上边缘和第一栏目上边缘的中间位置
+                    const syncStatusTop = syncStatusRect.top + scrollTop;
+                    const syncControlsTop = syncControlsRect.top + scrollTop;
+                    const middlePosition = (syncStatusTop + syncControlsTop) / 2;
+                    
+                    // 立即跳转到中间位置（无任何动画效果）
+                    window.scrollTo(0, middlePosition); // 使用最简单的方式，确保无动画
                 }
-            }, 50); // 短暂延迟确保DOM渲染完成
+            }, 0); // 立即执行，无延迟
 
         } else {
             if (initHeader && initContent) {

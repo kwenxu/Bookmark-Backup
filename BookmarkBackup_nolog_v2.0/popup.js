@@ -5242,6 +5242,9 @@ const currentLang = data.preferredLang || 'zh_CN';
                 backupModeSwitch.classList.remove('auto');
             }
         }
+        
+        // 修复bug：初始化时正确设置按钮显示状态
+        updateButtonVisibility()
 
         // 初始化提示文本显示状态
         const autoTip = document.querySelector('.mode-tip.auto-tip');
@@ -5792,6 +5795,40 @@ function updateButtonVisibility() {
         manualButtonsContainer.style.display = 'flex';
         autoButtonsContainer.style.display = 'none';
     }
+    
+    // 更新右侧状态卡片
+    updateStatusCard(isAutoMode);
+}
+
+// 新增函数：更新右侧状态卡片
+function updateStatusCard(isAutoMode) {
+    const statusCard = document.getElementById('change-description-row');
+    if (!statusCard) return;
+    
+    chrome.storage.local.get(['preferredLang'], function(data) {
+        const lang = data.preferredLang || 'zh_CN';
+        
+        const autoModeText = {
+            'zh_CN': '实时自动备份已开启',
+            'en': 'Real-time Auto Backup Enabled'
+        };
+        
+        const manualModeText = {
+            'zh_CN': '手动备份模式已开启',
+            'en': 'Manual Backup Mode Enabled'
+        };
+        
+        if (isAutoMode) {
+            statusCard.innerHTML = `<div>${autoModeText[lang] || autoModeText['zh_CN']}</div>`;
+            // 使用CSS变量，自动适配深色模式
+            statusCard.style.background = 'var(--theme-status-card-bg)';
+            statusCard.style.color = 'var(--theme-status-card-text)';
+        } else {
+            statusCard.innerHTML = `<div>${manualModeText[lang] || manualModeText['zh_CN']}</div>`;
+            statusCard.style.background = 'var(--theme-status-card-bg)';
+            statusCard.style.color = 'var(--theme-status-card-text)';
+        }
+    });
 }
 
 /**

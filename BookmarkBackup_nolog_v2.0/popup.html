@@ -1679,8 +1679,8 @@
         /* 精美的集成开关样式 */
         .backup-mode-switch {
             position: relative;
-            width: 85%; /* 缩窄整体宽度 */
-            margin: 0 auto; /* 居中显示 */
+            width: 450px; /* 增加宽度，减少拥挤感 */
+            margin: 0; /* 左对齐 */
             height: 110px; /* 纵向布局高度提升，容纳同排操作按钮 */
             background: linear-gradient(to bottom, #e8f5e9, #f0f0f0);
             border-radius: 21px;
@@ -1903,6 +1903,25 @@
         .backup-mode-option .option-actions { display: flex; gap: 10px; align-items: center; }
         .backup-mode-switch #manualButtonsContainer,
         .backup-mode-switch #autoButtonsContainer { background: transparent; border: none; padding: 0; box-shadow: none; margin: 0; }
+        
+        /* 状态卡片样式 */
+        :root {
+            --theme-status-card-bg: #f0f4ff;
+            --theme-status-card-text: #4a5568;
+            --theme-status-card-border: #cbd5e0;
+            --theme-status-card-shadow: rgba(0, 0, 0, 0.05);
+        }
+        
+        html[data-theme="dark"] {
+            --theme-status-card-bg: #2d3748;
+            --theme-status-card-text: #e2e8f0;
+            --theme-status-card-border: #4a5568;
+            --theme-status-card-shadow: rgba(0, 0, 0, 0.2);
+        }
+        
+        .status-card {
+            transition: all 0.3s ease;
+        }
         
         .mode-tip.auto-tip {
             display: block;
@@ -2130,46 +2149,51 @@
         <div id="syncStatus" class="sync-status" style="display: none;">
             <!-- 优化后的备份控制区域，移至顶部 -->
             <div class="sync-controls" style="margin: 0 0 15px 0; background-color: transparent; border-radius: 8px; padding: 15px 20px; border: 1px solid var(--theme-border-primary); box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);">
-                <!-- 删除重复的样式定义 -->
-                
-                <div style="display: flex; flex-direction: column; gap: 10px;">
-                    <div id="backupModeSwitch" class="backup-mode-switch auto">
-                        <div class="backup-mode-slider"></div>
-                        <div class="backup-mode-option auto-option">
-                            <span class="option-label" id="autoOptionLabel">自动备份</span>
-                            <div id="autoButtonsContainer" class="manual-buttons option-actions" style="display: none;">
-                                <button id="autoBackupSettingsBtn" class="settings-button" style="margin: 0;">自动备份设置</button>
+                <div style="display: flex; align-items: center; gap: 15px;">
+                    <!-- 左侧：开关控件 (增加宽度) -->
+                    <div style="flex: 0 0 450px;">
+                        <div id="backupModeSwitch" class="backup-mode-switch auto">
+                            <div class="backup-mode-slider"></div>
+                            <div class="backup-mode-option auto-option">
+                                <span class="option-label" id="autoOptionLabel">自动备份</span>
+                                <div id="autoButtonsContainer" class="manual-buttons option-actions">
+                                    <button id="autoBackupSettingsBtn" class="settings-button" style="margin: 0;">自动备份设置</button>
+                                </div>
                             </div>
-                        </div>
-                        <div class="backup-mode-option manual-option">
-                            <span class="option-label" id="manualOptionLabel">手动备份</span>
-                            <div id="manualButtonsContainer" class="manual-buttons option-actions">
-                                <button id="reminderSettingsBtn" class="settings-button disabled" style="margin: 0;">动态提醒设置</button>
-                                <button id="uploadToCloudManual" class="backup-button disabled">手动备份</button>
+                            <div class="backup-mode-option manual-option">
+                                <span class="option-label" id="manualOptionLabel">手动备份</span>
+                                <div id="manualButtonsContainer" class="manual-buttons option-actions">
+                                    <button id="reminderSettingsBtn" class="settings-button disabled" style="margin: 0;">动态提醒设置</button>
+                                    <button id="uploadToCloudManual" class="backup-button disabled">手动备份</button>
+                                </div>
                             </div>
+                            <input type="checkbox" id="autoSyncToggle2" style="display:none;" checked>
                         </div>
-                        <input type="checkbox" id="autoSyncToggle2" style="display:none;" checked>
+                    </div>
+                    
+                    <!-- 右侧：状态区块 (减少宽度，调整颜色) -->
+                    <div style="flex: 1; max-width: 280px;">
+                        <div id="change-description-row" class="status-card" style="
+                            background: var(--theme-status-card-bg);
+                            color: var(--theme-status-card-text);
+                            padding: 20px;
+                            border-radius: 12px;
+                            border: 1px solid var(--theme-status-card-border);
+                            box-shadow: 0 2px 8px var(--theme-status-card-shadow);
+                            min-height: 80px;
+                            display: flex;
+                            align-items: center;
+                            justify-content: center;
+                            font-size: 14px;
+                            font-weight: 500;
+                            text-align: center;
+                        ">
+                            <div>实时自动备份已开启</div>
+                        </div>
                     </div>
                 </div>
             </div>
 
-            <div class="backup-stats" style="margin: 0 0 15px 0; background-color: var(--theme-bg-elevated); border-radius: 8px; padding: 18px 24px; border: 1px solid var(--theme-border-primary); box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05); display: grid; grid-template-columns: 1fr auto; align-items: center; column-gap: 20px;">
-                <div class="stats-text-container" style="display: flex; flex-direction: column; gap: 8px; justify-self: start;">
-                        <div class="stats-row" style="display: flex; align-items: center; gap: 6px;">
-                            <span class="stats-label" style="display: inline-block; width: 110px; text-align: right; font-weight: 600; font-size: 13px; color: var(--theme-text-primary); white-space: nowrap;">上次变动:</span>
-                            <span class="stats-value time-value" id="lastBackupTime" style="font-size: 13px; font-weight: 500; color: var(--theme-success-color);">未备份</span>
-                        </div>
-                        <div class="stats-row" style="display: flex; align-items: center; gap: 6px;">
-                            <span class="stats-label" style="display: inline-block; width: 110px; text-align: right; font-weight: 600; font-size: 13px; color: var(--theme-text-primary); white-space: nowrap;">当前数量/结构:</span>
-                            <span class="stats-value" id="bookmarkCount" style="font-size: 13px; font-weight: 500; color: var(--theme-text-primary);">书签 0 个，文件夹 0 个</span>
-                        </div>
-                </div>
-                
-                <!-- 右侧状态容器（用于显示“自动检测中”等蓝色区块） -->
-                <div id="rightStatusContainer" style="display: flex; flex-direction: column; align-items: flex-start; justify-self: end; max-width: 260px; margin-right: 20px;">
-                    <div id="change-description-row" style="margin-top: 0; box-sizing: border-box; min-height: 1em; width: 100%;"></div>
-                </div>
-            </div>
 
             <div class="sync-info">
                 <div>最后更新: <span id="lastSyncTime" class="time">未备份</span></div>

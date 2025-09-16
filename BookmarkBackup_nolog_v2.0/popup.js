@@ -810,16 +810,16 @@ function initScrollToTopButton() {
         // 鼠标悬停效果
         scrollToTopFloating.addEventListener('mouseenter', function() {
             this.style.transform = 'translateX(-50%) scale(1.05)';
-            this.style.background = 'rgba(0, 0, 0, 0.25)';
-            this.style.borderColor = 'rgba(255, 255, 255, 0.3)';
-            this.style.boxShadow = '0 4px 12px rgba(0, 0, 0, 0.2)';
+            this.style.background = 'rgba(120, 120, 120, 0.35)';
+            this.style.borderColor = 'rgba(180, 180, 180, 0.4)';
+            this.style.boxShadow = '0 4px 14px rgba(0, 0, 0, 0.25)';
         });
         
         scrollToTopFloating.addEventListener('mouseleave', function() {
             this.style.transform = 'translateX(-50%) scale(1)';
-            this.style.background = 'rgba(0, 0, 0, 0.15)';
-            this.style.borderColor = 'rgba(255, 255, 255, 0.2)';
-            this.style.boxShadow = '0 2px 8px rgba(0, 0, 0, 0.1)';
+            this.style.background = 'rgba(100, 100, 100, 0.25)';
+            this.style.borderColor = 'rgba(150, 150, 150, 0.3)';
+            this.style.boxShadow = '0 2px 10px rgba(0, 0, 0, 0.15)';
         });
         
         // 初始隐藏
@@ -4501,6 +4501,28 @@ const currentLang = data.preferredLang || 'zh_CN';
     if (autoBackupSettingsBtn) {
         autoBackupSettingsBtn.textContent = autoBackupSettingsBtnStrings[lang] || autoBackupSettingsBtnStrings['zh_CN'];
     }
+    
+    // 更新右侧状态卡片的文本（响应语言切换）
+    const statusCardText = document.getElementById('statusCardText');
+    if (statusCardText) {
+        // 检查当前是自动模式还是手动模式
+        const backupModeSwitch = document.getElementById('backupModeSwitch');
+        const isAutoMode = backupModeSwitch && backupModeSwitch.classList.contains('auto');
+        
+        const autoModeText = {
+            'zh_CN': '实时自动备份已开启',
+            'en': 'Real-time Auto Backup Enabled'
+        };
+        
+        const manualModeText = {
+            'zh_CN': '手动备份模式已开启',
+            'en': 'Manual Backup Mode Enabled'
+        };
+        
+        statusCardText.textContent = isAutoMode ? 
+            (autoModeText[lang] || autoModeText['zh_CN']) : 
+            (manualModeText[lang] || manualModeText['zh_CN']);
+    }
 
     // 国际化提醒设置对话框文本
     // 获取提醒设置对话框中的各元素
@@ -5796,6 +5818,7 @@ function updateButtonVisibility() {
 // 新增函数：更新右侧状态卡片
 function updateStatusCard(isAutoMode) {
     const statusCard = document.getElementById('change-description-row');
+    const statusCardText = document.getElementById('statusCardText');
     if (!statusCard) return;
     
     chrome.storage.local.get(['preferredLang'], function(data) {
@@ -5811,15 +5834,24 @@ function updateStatusCard(isAutoMode) {
             'en': 'Manual Backup Mode Enabled'
         };
         
+        // 更新文本内容
+        const textContent = isAutoMode ? 
+            (autoModeText[lang] || autoModeText['zh_CN']) : 
+            (manualModeText[lang] || manualModeText['zh_CN']);
+        
+        if (statusCardText) {
+            statusCardText.textContent = textContent;
+        } else {
+            statusCard.innerHTML = `<div id="statusCardText">${textContent}</div>`;
+        }
+        
         if (isAutoMode) {
-            statusCard.innerHTML = `<div>${autoModeText[lang] || autoModeText['zh_CN']}</div>`;
             // 自动备份模式 - 使用绿色主题
             statusCard.style.background = 'var(--theme-status-card-auto-bg)';
             statusCard.style.color = 'var(--theme-status-card-auto-text)';
             statusCard.style.border = '1px solid var(--theme-status-card-auto-border)';
             statusCard.style.boxShadow = '0 2px 8px var(--theme-status-card-auto-shadow)';
         } else {
-            statusCard.innerHTML = `<div>${manualModeText[lang] || manualModeText['zh_CN']}</div>`;
             // 手动备份模式 - 使用蓝色主题
             statusCard.style.background = 'var(--theme-status-card-manual-bg)';
             statusCard.style.color = 'var(--theme-status-card-manual-text)';

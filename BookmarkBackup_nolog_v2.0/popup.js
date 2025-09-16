@@ -3346,13 +3346,13 @@ const applyLocalizedContent = async (lang) => { // Added lang parameter
 
     // 新增UI文字的国际化
     const autoSyncDescriptionStrings = {
-        'zh_CN': "实时自动备份",
-        'en': "Real-time Auto Backup"
+        'zh_CN': "自动备份",
+        'en': "Auto Backup"
     };
 
     const manualModeDescriptionStrings = {
-        'zh_CN': "手动备份模式",
-        'en': "Manual Backup Mode"
+        'zh_CN': "手动备份",
+        'en': "Manual Backup"
     };
 
     const autoSyncTipStrings = {
@@ -4485,16 +4485,12 @@ const currentLang = data.preferredLang || 'zh_CN';
     // 应用备份模式开关文本
     const autoOption = document.querySelector('.backup-mode-option.auto-option');
     if (autoOption) {
-        const iconSpan = autoOption.querySelector('.option-icon');
-        const iconHTML = iconSpan ? iconSpan.outerHTML : '<span class="option-icon">⚡</span>';
-        autoOption.innerHTML = iconHTML + (autoSyncDescriptionStrings[lang] || autoSyncDescriptionStrings['zh_CN']);
+        autoOption.textContent = autoSyncDescriptionStrings[lang] || autoSyncDescriptionStrings['zh_CN'];
     }
 
     const manualOption = document.querySelector('.backup-mode-option.manual-option');
     if (manualOption) {
-        const iconSpan = manualOption.querySelector('.option-icon');
-        const iconHTML = iconSpan ? iconSpan.outerHTML : '<span class="option-icon">🔄</span>';
-        manualOption.innerHTML = iconHTML + (manualModeDescriptionStrings[lang] || manualModeDescriptionStrings['zh_CN']);
+        manualOption.textContent = manualModeDescriptionStrings[lang] || manualModeDescriptionStrings['zh_CN'];
     }
 
     // 国际化提醒设置对话框文本

@@ -1680,11 +1680,12 @@
         .backup-mode-switch {
             position: relative;
             width: 100%;
-            height: 42px; /* 进一步减小高度 */
-            background: linear-gradient(to right, #e8f5e9, #f0f0f0);
+            height: 84px; /* 改为纵向布局的高度 */
+            background: linear-gradient(to bottom, #e8f5e9, #f0f0f0);
             border-radius: 21px;
             display: flex;
-            align-items: center;
+            flex-direction: column; /* 纵向排列 */
+            align-items: stretch; /* 占满横向宽度 */
             cursor: pointer;
             box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
             overflow: hidden;
@@ -1696,25 +1697,25 @@
         }
         
         .backup-mode-switch.auto {
-            background: linear-gradient(to right, #e8f5e9, #f0f0f0);
+            background: linear-gradient(to bottom, #e8f5e9, #f0f0f0);
         }
         
         html[data-theme="dark"] .backup-mode-switch.auto {
-            background: linear-gradient(to right, #1a3a1a, #2d2d2d);
+            background: linear-gradient(to bottom, #1a3a1a, #2d2d2d);
         }
         
         .backup-mode-switch.manual {
-            background: linear-gradient(to right, #f0f0f0, #e6f7ff);
+            background: linear-gradient(to bottom, #f0f0f0, #e6f7ff);
         }
         
         html[data-theme="dark"] .backup-mode-switch.manual {
-            background: linear-gradient(to right, #2d2d2d, #1a3a5f);
+            background: linear-gradient(to bottom, #2d2d2d, #1a3a5f);
         }
         
         .backup-mode-slider {
             position: absolute;
-            width: 50%;
-            height: calc(100% - 6px);
+            width: calc(100% - 6px); /* 纵向时占满宽度，留3px边距 */
+            height: calc(50% - 6px); /* 占容器的一半高度，并留上下边距 */
             border-radius: 18px;
             top: 3px;
             left: 3px;
@@ -1729,12 +1730,14 @@
         }
         
         .backup-mode-switch.auto .backup-mode-slider {
+            top: 3px;
             left: 3px;
             box-shadow: 0 2px 8px rgba(76, 175, 80, 0.2);
         }
         
         .backup-mode-switch.manual .backup-mode-slider {
-            left: calc(50% - 3px);
+            top: calc(50% + 3px);
+            left: 3px;
             box-shadow: 0 2px 8px rgba(0, 123, 255, 0.2);
         }
         
@@ -1745,7 +1748,7 @@
             font-size: 13px;
             font-weight: bold;
             transition: all 0.3s ease;
-            padding: 0 8px; /* Reduced horizontal padding from 15px to 8px */
+            padding: 6px 8px; /* 纵向时略增内边距以保持触控面积 */
             position: relative;
             display: flex; /* Added for alignment */
             align-items: center; /* Added for vertical alignment */
@@ -1875,6 +1878,19 @@
             opacity: 0.5;
             cursor: not-allowed;
             pointer-events: none;
+        }
+        
+        /* 栏目卡片化：为左右两个操作容器添加卡片样式 */
+        #manualButtonsContainer,
+        #autoButtonsContainer {
+            background-color: var(--theme-bg-secondary);
+            border: 1px solid var(--theme-border-primary);
+            padding: 10px;
+            border-radius: 8px;
+        }
+        html[data-theme="dark"] #manualButtonsContainer,
+        html[data-theme="dark"] #autoButtonsContainer {
+            border-color: var(--theme-border-secondary);
         }
         
         .mode-tip.auto-tip {
@@ -2112,27 +2128,17 @@
                         <div id="backupModeSwitch" class="backup-mode-switch auto">
                             <div class="backup-mode-slider"></div>
                             <div class="backup-mode-option auto-option">
-                                <span class="option-icon">⚡</span>实时自动备份
+                                自动备份
                             </div>
                             <div class="backup-mode-option manual-option">
-                                <span class="option-icon">🔄</span>手动备份模式
+                                手动备份
                             </div>
                             <input type="checkbox" id="autoSyncToggle2" style="display:none;" checked>
                         </div>
-                        
-                        <!-- 提示文本直接放在开关下方 -->
-                        <div style="margin-top: 8px; text-align: center; font-size: 13px; color: var(--theme-text-secondary);">
-                            <div class="mode-tip auto-tip" style="display: inline-block; line-height: 1.3;">
-                                （<span style="color: var(--theme-warning-color);">大规模修改</span>时建议切换至手动模式）
-                            </div>
-                            <div class="mode-tip manual-tip" style="display: none; line-height: 1.3;" id="manualModeTip">
-                                <!-- 通过JS填充国际化内容 -->
-                            </div>
-                        </div>
                     </div>
                     
-                    <!-- 添加分隔虚线 -->
-                    <div style="width: 1px; border-left: 1px dashed var(--theme-border-primary); margin: 10px 0;"></div>
+                    <!-- 添加分隔线（由虚线改为细实线） -->
+                    <div style="width: 1px; border-left: 1px solid var(--theme-border-primary); margin: 10px 0;"></div>
                     
                     <!-- 手动备份按钮区域 -->
                     <div id="manualButtonsContainer" class="manual-buttons" style="flex: 1; margin-top: 0; flex-direction: column; display: flex; justify-content: center; gap: 10px;">
@@ -2140,7 +2146,7 @@
                         <button id="uploadToCloudManual" class="backup-button disabled">手动备份</button>
                     </div>
                     
-                    <!-- 自动备份设置按钮区域（实时自动备份模式时显示） -->
+                    <!-- 自动备份设置按钮区域（自动备份模式时显示） -->
                     <div id="autoButtonsContainer" class="manual-buttons" style="flex: 1; margin-top: 0; flex-direction: column; display: none; justify-content: center; gap: 10px;">
                         <button id="autoBackupSettingsBtn" class="settings-button" style="margin-bottom: 0; margin-top: 0; background-color: var(--theme-accent-color); color: white;">自动备份设置</button>
                     </div>

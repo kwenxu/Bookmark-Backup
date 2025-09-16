@@ -2169,7 +2169,7 @@
 
             <div class="sync-history" style="margin-top: -13.5px;">
                 <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
-                    <h3 style="margin: 0;">备份检查记录（至100条记录--静默清空并导出txt）</h3>
+                    <h3 style="margin: 0;">备份检查记录</h3>
                     <div style="display: flex; gap: 10px; align-items: center;">
                         <button id="clearHistoryBtn" class="action-button" style="background-color: transparent; color: #666; border: none; border-radius: 4px; padding: 5px 6px; font-size: 11px; cursor: pointer; position: relative;">
                             <i class="fas fa-trash-alt"></i>
@@ -2308,6 +2308,11 @@
             <h3 id="clearHistoryDialogTitle" style="font-size: 17px; margin-bottom: 14px; color: var(--theme-text-primary); text-align: left; padding-left: 2px;">确认清空记录</h3>
             <p id="clearHistoryDialogDescription" style="font-size: 15px; margin-bottom: 10px; text-align: left; padding-left: 2px; color: var(--theme-text-primary);">确定要清空所有备份历史记录吗？</p>
             <p id="clearHistoryWarning" style="color: var(--theme-error-color); font-size: 13px; margin: 14px 0; line-height: 1.4; background-color: var(--theme-status-error-bg); padding: 8px 10px; border-radius: 6px; margin-left: 2px;">此操作不可撤销，清空后无法恢复这些记录。</p>
+            
+            <!-- 添加蓝色信息区块 -->
+            <div id="clearHistoryInfo" style="color: var(--theme-link-color); font-size: 13px; margin: 14px 0; line-height: 1.4; background-color: var(--theme-status-info-bg); padding: 8px 10px; border-radius: 6px; margin-left: 2px; border-left: 3px solid var(--theme-link-color);">
+                <span id="clearHistoryInfoText">备份记录保留至100条记录，<br>超出后将静默清空并自动导出txt文件。</span>
+            </div>
             
             <div class="button-group" style="margin-top: 18px; justify-content: center; gap: 16px;">
                 <button id="confirmClearHistory" style="background-color: var(--theme-error-color); font-size: 14px; padding: 8px 20px; color: white;">确认清空</button>

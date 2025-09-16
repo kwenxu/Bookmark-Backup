@@ -3367,8 +3367,8 @@ const applyLocalizedContent = async (lang) => { // Added lang parameter
     };
 
     const historyRecordsDescriptionStrings = {
-        'zh_CN': "备份检查记录（至100条记录--静默清空并导出txt）",
-        'en': "Backup History (Up to 100 records--silent clear & export txt)"
+        'zh_CN': "备份检查记录",
+        'en': "Backup History"
     };
 
     const clearHistoryStrings = {
@@ -3892,6 +3892,11 @@ const applyLocalizedContent = async (lang) => { // Added lang parameter
         'en': "This action cannot be undone.<br>Records will be permanently deleted."
     };
 
+    const clearHistoryInfoStrings = {
+        'zh_CN': "备份记录保留至100条记录，<br>超出后将静默清空并自动导出txt文件。",
+        'en': "Backup records are kept up to 100 entries,<br>excess records will be automatically cleared and exported to txt file."
+    };
+
     const confirmClearButtonStrings = {
         'zh_CN': "确认清空",
         'en': "Confirm Clear"
@@ -4245,6 +4250,7 @@ const currentLang = data.preferredLang || 'zh_CN';
     const clearHistoryDialogTitleText = clearHistoryDialogTitleStrings[lang] || clearHistoryDialogTitleStrings['zh_CN'];
     const clearHistoryDialogDescriptionText = clearHistoryDialogDescriptionStrings[lang] || clearHistoryDialogDescriptionStrings['zh_CN'];
     const clearHistoryWarningText = clearHistoryWarningStrings[lang] || clearHistoryWarningStrings['zh_CN'];
+    const clearHistoryInfoText = clearHistoryInfoStrings[lang] || clearHistoryInfoStrings['zh_CN'];
     const confirmClearButtonText = confirmClearButtonStrings[lang] || confirmClearButtonStrings['zh_CN'];
 
     const clearHistoryDialogTitleElement = document.getElementById('clearHistoryDialogTitle');
@@ -4270,6 +4276,12 @@ const currentLang = data.preferredLang || 'zh_CN';
     const cancelClearHistoryButton = document.getElementById('cancelClearHistory');
     if (cancelClearHistoryButton) {
         cancelClearHistoryButton.textContent = cancelButtonText;
+    }
+
+    // 更新蓝色信息区块文本
+    const clearHistoryInfoTextElement = document.getElementById('clearHistoryInfoText');
+    if (clearHistoryInfoTextElement) {
+        clearHistoryInfoTextElement.innerHTML = clearHistoryInfoText;
     }
 
     // 应用UI文本到DOM元素

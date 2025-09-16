@@ -2139,6 +2139,11 @@
                         <button id="reminderSettingsBtn" class="settings-button disabled" style="margin-bottom: 0; margin-top: 0;">动态提醒设置</button>
                         <button id="uploadToCloudManual" class="backup-button disabled">手动备份</button>
                     </div>
+                    
+                    <!-- 自动备份设置按钮区域（实时自动备份模式时显示） -->
+                    <div id="autoButtonsContainer" class="manual-buttons" style="flex: 1; margin-top: 0; flex-direction: column; display: none; justify-content: center; gap: 10px;">
+                        <button id="autoBackupSettingsBtn" class="settings-button" style="margin-bottom: 0; margin-top: 0; background-color: var(--theme-accent-color); color: white;">自动备份设置</button>
+                    </div>
                 </div>
             </div>
 
@@ -2302,6 +2307,132 @@
         </div>
     </div>
 
+    <!-- 添加自动备份设置对话框 -->
+    <div id="autoBackupSettingsDialog" class="modal">
+        <div class="modal-content" style="max-width: 520px; max-height: 90vh; position: fixed; padding: 25px; top: 50%; left: 50%; transform: translate(-50%, -50%); margin: 0; overflow-y: auto;">
+            <div style="position: relative; margin-bottom: 12px;">
+                <h3 style="color: #4CAF50; font-size: 20px; margin: 0; display: inline-block;">自动备份设置</h3>
+                <button id="closeAutoBackupSettings" class="close-button" style="position: absolute; right: 0; top: 50%; transform: translateY(-50%); width: 28px; height: 28px; display: flex; justify-content: center; align-items: center; font-size: 20px; font-weight: bold; background-color: var(--theme-bg-primary); color: #888; border: none; cursor: pointer; border-radius: 50%; box-shadow: 0 1px 3px rgba(0,0,0,0.1); transition: all 0.2s ease;">×</button>
+            </div>
+            
+            <!-- 选项卡切换 -->
+            <div class="tab-container" style="margin-bottom: 15px;">
+                <div class="tab-buttons" style="display: flex; border-radius: 6px; background-color: var(--theme-bg-tertiary); padding: 3px;">
+                    <button class="tab-button active" data-tab="realtime" style="flex: 1; padding: 8px 12px; border: none; background-color: var(--theme-accent-color); color: white; border-radius: 4px; cursor: pointer; font-size: 13px; transition: all 0.2s ease;">实时自动</button>
+                    <button class="tab-button" data-tab="cyclic" style="flex: 1; padding: 8px 12px; border: none; background-color: transparent; color: var(--theme-text-secondary); border-radius: 4px; cursor: pointer; font-size: 13px; transition: all 0.2s ease;">循环自动</button>
+                    <button class="tab-button" data-tab="scheduled" style="flex: 1; padding: 8px 12px; border: none; background-color: transparent; color: var(--theme-text-secondary); border-radius: 4px; cursor: pointer; font-size: 13px; transition: all 0.2s ease;">准点定时</button>
+                </div>
+            </div>
+            
+            <!-- 实时自动备份选项卡 -->
+            <div class="tab-content" id="realtimeTab" style="display: block;">
+                <div class="setting-block" style="padding: 15px; background-color: var(--theme-bg-secondary); border-radius: 5px; margin-bottom: 15px;">
+                    <div style="font-size: 14px; line-height: 1.6; color: var(--theme-text-primary);">
+                        <p style="margin: 0 0 10px 0; font-weight: 600;">实时自动备份说明：</p>
+                        <p style="margin: 0 0 8px 0; color: var(--theme-text-secondary);">• 当检测到书签数量或结构变化时立即执行备份</p>
+                        <p style="margin: 0 0 8px 0; color: var(--theme-text-secondary);">• 基于浏览器活跃状态检测（窗口焦点）</p>
+                        <p style="margin: 0; color: var(--theme-text-secondary);">• 无变化时不会执行备份操作</p>
+                    </div>
+                </div>
+                <div class="setting-block" style="padding: 12px; background-color: var(--theme-bg-secondary); border-radius: 5px;">
+                    <div style="text-align: center; color: var(--theme-success-color); font-size: 15px; font-weight: 600;">实时自动备份已开启</div>
+                </div>
+            </div>
+            
+            <!-- 循环自动备份选项卡 -->
+            <div class="tab-content" id="cyclicTab" style="display: none;">
+                <div class="setting-block" style="padding: 15px; background-color: var(--theme-bg-secondary); border-radius: 5px; margin-bottom: 15px;">
+                    <div class="setting-row" style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
+                        <div style="font-weight: bold; font-size: 16px;">循环自动备份：</div>
+                        <button id="cyclicAutoToggle" class="toggle-button" data-state="off" style="width: 60px; height: 30px; border-radius: 15px; background-color: #ccc; border: none; position: relative; cursor: pointer; padding: 0; transition: background-color 0.3s ease;">
+                            <div class="toggle-circle" style="width: 24px; height: 24px; background-color: var(--theme-bg-primary); border-radius: 50%; position: absolute; top: 3px; left: 3px; transition: transform 0.3s ease; box-shadow: 0 1px 3px rgba(0,0,0,0.2);"></div>
+                        </button>
+                    </div>
+                    
+                    <div class="time-input-container" style="display: flex; gap: 12px; align-items: center; justify-content: center;">
+                        <div class="time-input-group" style="display: flex; flex-direction: column; align-items: center;">
+                            <label style="font-size: 14px; margin-bottom: 5px; color: var(--theme-text-secondary);">天</label>
+                            <input type="number" id="cyclicDays" min="0" max="30" value="0" style="width: 70px; padding: 8px; border: 1px solid var(--theme-border-primary); border-radius: 4px; text-align: center; font-size: 14px;">
+                        </div>
+                        <div class="time-input-group" style="display: flex; flex-direction: column; align-items: center;">
+                            <label style="font-size: 14px; margin-bottom: 5px; color: var(--theme-text-secondary);">小时</label>
+                            <input type="number" id="cyclicHours" min="0" max="24" value="0" style="width: 70px; padding: 8px; border: 1px solid var(--theme-border-primary); border-radius: 4px; text-align: center; font-size: 14px;">
+                        </div>
+                        <div class="time-input-group" style="display: flex; flex-direction: column; align-items: center;">
+                            <label style="font-size: 14px; margin-bottom: 5px; color: var(--theme-text-secondary);">分钟</label>
+                            <input type="number" id="cyclicMinutes" min="0" max="60" value="30" style="width: 70px; padding: 8px; border: 1px solid var(--theme-border-primary); border-radius: 4px; text-align: center; font-size: 14px;">
+                        </div>
+                    </div>
+                    
+                    <div style="margin-top: 15px; font-size: 13px; color: var(--theme-text-secondary); text-align: center;">
+                        默认：0 天 0 小时 30 分钟
+                    </div>
+                </div>
+                
+                <div class="setting-block" style="padding: 12px; background-color: var(--theme-bg-secondary); border-radius: 5px; margin-bottom: 12px;">
+                    <div style="font-size: 14px; line-height: 1.5; color: var(--theme-text-secondary);">
+                        <div class="reminder-desc">循环计时基于浏览器的<span style="color: orange;">实际使用时间</span>（窗口焦点时间）。</div>
+                        <div>只有在有实际操作（数量/结构变化）时才会执行自动备份。</div>
+                        <div style="margin-top: 8px;">示例：(<span style="color: #4CAF50;">+12</span> 书签，<span style="color: #4CAF50;">+1</span> 文件夹，<span style="color: orange;">书签、文件夹变动</span>)</div>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- 准点定时备份选项卡 -->
+            <div class="tab-content" id="scheduledTab" style="display: none;">
+                <div class="setting-block" style="padding: 15px; background-color: var(--theme-bg-secondary); border-radius: 5px; margin-bottom: 15px;">
+                    <div class="setting-row" style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px; height: 38px;">
+                        <div class="setting-label" style="display: flex; align-items: center; flex: 1; height: 38px;">
+                            <div class="setting-label-text" style="font-weight: bold; font-size: 16px; margin-right: 5px; width: 85px; text-align: right; flex-shrink: 0; display: flex; align-items: center; justify-content: flex-end; height: 38px; line-height: 38px;">定时1:</div>
+                            <div class="setting-input" style="display: flex; align-items: center; width: 160px;">
+                                <input type="time" id="scheduledTime1" value="09:30" style="width: 120px; padding: 6px; padding-left: 15px; border-radius: 4px; border: 1px solid #ccc; font-size: 15px; text-align: center; font-family: 'Source Code Pro', 'IBM Plex Mono', 'Fira Code', 'Consolas', monospace; font-weight: normal; line-height: 18px; height: 18px; vertical-align: middle; box-sizing: content-box; color: var(--theme-text-primary); letter-spacing: 0.5px;">
+                            </div>
+                        </div>
+                        <div class="toggle-container" style="margin-left: 15px; display: flex; align-items: center;">
+                            <button id="scheduledToggle1" class="toggle-button" data-state="off" style="width: 60px; height: 30px; border-radius: 15px; background-color: #ccc; border: none; position: relative; cursor: pointer; padding: 0; transition: background-color 0.3s ease;">
+                                <div class="toggle-circle" style="width: 24px; height: 24px; background-color: var(--theme-bg-primary); border-radius: 50%; position: absolute; top: 3px; left: 3px; transition: transform 0.3s ease; box-shadow: 0 1px 3px rgba(0,0,0,0.2);"></div>
+                            </button>
+                        </div>
+                    </div>
+                    <div class="setting-row" style="display: flex; justify-content: space-between; align-items: center; margin-top: 10px; height: 38px;">
+                        <div class="setting-label" style="display: flex; align-items: center; flex: 1; height: 38px;">
+                            <div class="setting-label-text" style="font-weight: bold; font-size: 16px; margin-right: 5px; width: 85px; text-align: right; flex-shrink: 0; display: flex; align-items: center; justify-content: flex-end; height: 38px; line-height: 38px;">定时2:</div>
+                            <div class="setting-input" style="display: flex; align-items: center; width: 160px;">
+                                <input type="time" id="scheduledTime2" value="16:00" style="width: 120px; padding: 6px; padding-left: 15px; border-radius: 4px; border: 1px solid #ccc; font-size: 15px; text-align: center; font-family: 'Source Code Pro', 'IBM Plex Mono', 'Fira Code', 'Consolas', monospace; font-weight: normal; line-height: 18px; height: 18px; vertical-align: middle; box-sizing: content-box; color: var(--theme-text-primary); letter-spacing: 0.5px;">
+                            </div>
+                        </div>
+                        <div class="toggle-container" style="margin-left: 15px; display: flex; align-items: center;">
+                            <button id="scheduledToggle2" class="toggle-button" data-state="off" style="width: 60px; height: 30px; border-radius: 15px; background-color: #ccc; border: none; position: relative; cursor: pointer; padding: 0; transition: background-color 0.3s ease;">
+                                <div class="toggle-circle" style="width: 24px; height: 24px; background-color: var(--theme-bg-primary); border-radius: 50%; position: absolute; top: 3px; left: 3px; transition: transform 0.3s ease; box-shadow: 0 1px 3px rgba(0,0,0,0.2);"></div>
+                            </button>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="setting-block" style="padding: 12px; background-color: var(--theme-bg-secondary); border-radius: 5px; margin-bottom: 12px;">
+                    <div style="font-size: 14px; line-height: 1.5; color: var(--theme-text-secondary);">
+                        <div>准点定时备份在指定时间触发，基于浏览器的<span style="color: orange;">实际使用时间</span>。</div>
+                        <div>若错过定时点（浏览器关闭/休眠），恢复后会立即执行补偿备份。</div>
+                        <div>同样只在有实际变化时执行备份，并在备份记录中标注「准点定时自动备份」。</div>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- 按钮区域 -->
+            <div class="button-group" style="margin-top: 20px; display: flex; justify-content: space-between; gap: 12px;">
+                <button id="restoreAutoBackupDefaults" class="normal-button" style="flex: 1; padding: 10px 15px; border: none; background-color: var(--theme-bg-tertiary); color: var(--theme-text-secondary); border-radius: 6px; cursor: pointer; font-size: 15px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); transition: all 0.2s ease;">恢复默认</button>
+                <button id="saveAutoBackupSettings" class="action-button" style="flex: 1; padding: 10px 15px; border: none; background-color: #4CAF50; color: white; border-radius: 6px; cursor: pointer; font-size: 15px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); transition: all 0.2s ease;" aria-label="保存设置" title="保存">
+                    <i class="fas fa-chevron-up"></i>
+                </button>
+            </div>
+            
+            <!-- 保存提示 -->
+            <div id="autoBackupSettingsSavedIndicator" style="position: absolute; left: 0; right: 0; bottom: 60px; text-align: center; color: white; opacity: 0; transition: all 0.3s ease; display: none; padding: 8px; font-size: 15px; background-color: rgba(76, 175, 80, 0.9); border-radius: 4px; box-shadow: 0 2px 5px rgba(0, 0, 0, 0.1); max-width: 200px; margin: 0 auto; transform: translateY(0);">
+                设置已保存
+            </div>
+        </div>
+    </div>
+    
     <!-- 添加清空记录确认对话框 -->
     <div id="clearHistoryConfirmDialog" class="modal">
         <div class="modal-content" style="position: relative; top: auto; right: auto; margin: 15% auto; width: 360px; box-shadow: 0 6px 18px rgba(0,0,0,0.15); border-radius: 10px; padding: 20px;">

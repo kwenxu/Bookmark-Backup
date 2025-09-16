@@ -4817,6 +4817,9 @@ return false; // 阻止错误传播
     initializeLocalConfigSection();
     initializeWebDAVToggle();
     initializeOpenSourceInfo(); // 初始化开源信息功能
+    
+    // 初始化自动备份设置功能
+    initializeAutoBackupFeatures();
 
     // 在确定按钮存在后调用初始化函数
     // 确保在DOM完全加载后执行
@@ -5669,6 +5672,527 @@ return;
             }
         });
     });
+}
+
+// =============================================================================
+// 自动备份设置功能实现
+// =============================================================================
+
+// 自动备份相关的全局变量
+let autoBackupSettingsDialog = null;
+let currentAutoBackupTab = 'realtime';
+
+// 默认设置
+const defaultAutoBackupSettings = {
+    mode: 'realtime',
+    cyclicSettings: {
+        enabled: false,
+        days: 0,
+        hours: 0,
+        minutes: 30
+    },
+    scheduledSettings: {
+        time1: { enabled: false, time: '09:30' },
+        time2: { enabled: false, time: '16:00' }
+    }
+};
+
+/**
+ * 初始化自动备份功能
+ */
+function initializeAutoBackupFeatures() {
+    // 初始化对话框
+    initializeAutoBackupDialog();
+    
+    // 初始化按钮显示逻辑
+    initializeAutoBackupButtonLogic();
+    
+    // 检查并更新自动备份状态显示
+    updateAutoBackupStatusDisplay();
+}
+
+/**
+ * 初始化自动备份设置对话框
+ */
+function initializeAutoBackupDialog() {
+    // 获取对话框元素
+    autoBackupSettingsDialog = document.getElementById('autoBackupSettingsDialog');
+    
+    if (!autoBackupSettingsDialog) {
+        console.error('自动备份设置对话框元素未找到');
+        return;
+    }
+    
+    // 绑定按钮事件
+    bindAutoBackupDialogEvents();
+    
+    // 绑定选项卡切换
+    bindAutoBackupTabSwitchEvents();
+    
+    // 绑定切换开关事件
+    bindAutoBackupToggleEvents();
+    
+    console.log('自动备份设置对话框已初始化');
+}
+
+/**
+ * 初始化自动备份按钮显示逻辑
+ */
+function initializeAutoBackupButtonLogic() {
+    // 监听实时自动备份开关状态变化
+    const backupModeSwitch = document.getElementById('backupModeSwitch');
+    if (backupModeSwitch) {
+        // 监听点击事件来切换按钮显示
+        backupModeSwitch.addEventListener('click', handleBackupModeSwitchChange);
+    }
+    
+    // 初始状态下根据当前模式显示对应按钮
+    updateButtonVisibility();
+}
+
+/**
+ * 处理备份模式开关变化
+ */
+function handleBackupModeSwitchChange() {
+    // 延迟执行，等待开关状态更新
+    setTimeout(() => {
+        updateButtonVisibility();
+    }, 100);
+}
+
+/**
+ * 更新按钮显示状态
+ */
+function updateButtonVisibility() {
+    const backupModeSwitch = document.getElementById('backupModeSwitch');
+    const manualButtonsContainer = document.getElementById('manualButtonsContainer');
+    const autoButtonsContainer = document.getElementById('autoButtonsContainer');
+    
+    if (!backupModeSwitch || !manualButtonsContainer || !autoButtonsContainer) {
+        return;
+    }
+    
+    // 检查是否为自动备份模式
+    const isAutoMode = backupModeSwitch.classList.contains('auto');
+    
+    if (isAutoMode) {
+        // 自动备份模式：显示自动备份设置按钮，隐藏手动备份按钮
+        manualButtonsContainer.style.display = 'none';
+        autoButtonsContainer.style.display = 'flex';
+    } else {
+        // 手动备份模式：显示手动备份按钮，隐藏自动备份设置按钮
+        manualButtonsContainer.style.display = 'flex';
+        autoButtonsContainer.style.display = 'none';
+    }
+}
+
+/**
+ * 绑定对话框基本事件
+ */
+function bindAutoBackupDialogEvents() {
+    // 自动备份设置按钮
+    const autoBackupSettingsBtn = document.getElementById('autoBackupSettingsBtn');
+    if (autoBackupSettingsBtn) {
+        autoBackupSettingsBtn.addEventListener('click', openAutoBackupDialog);
+    }
+    
+    // 关闭按钮
+    const closeBtn = document.getElementById('closeAutoBackupSettings');
+    if (closeBtn) {
+        closeBtn.addEventListener('click', closeAutoBackupDialog);
+    }
+    
+    // 保存按钮
+    const saveBtn = document.getElementById('saveAutoBackupSettings');
+    if (saveBtn) {
+        saveBtn.addEventListener('click', saveAutoBackupSettings);
+    }
+    
+    // 恢复默认按钮
+    const restoreBtn = document.getElementById('restoreAutoBackupDefaults');
+    if (restoreBtn) {
+        restoreBtn.addEventListener('click', restoreAutoBackupDefaults);
+    }
+    
+    // 点击对话框外部关闭
+    if (autoBackupSettingsDialog) {
+        autoBackupSettingsDialog.addEventListener('click', (event) => {
+            if (event.target === autoBackupSettingsDialog) {
+                closeAutoBackupDialog();
+            }
+        });
+    }
+}
+
+/**
+ * 绑定选项卡切换事件
+ */
+function bindAutoBackupTabSwitchEvents() {
+    const tabButtons = document.querySelectorAll('.tab-button');
+    
+    tabButtons.forEach(button => {
+        button.addEventListener('click', () => {
+            const tabName = button.dataset.tab;
+            switchAutoBackupTab(tabName);
+        });
+    });
+}
+
+/**
+ * 绑定切换开关事件
+ */
+function bindAutoBackupToggleEvents() {
+    // 循环自动备份开关
+    const cyclicToggle = document.getElementById('cyclicAutoToggle');
+    if (cyclicToggle) {
+        cyclicToggle.addEventListener('click', toggleCyclicAutoBackup);
+    }
+    
+    // 定时备份开关
+    const scheduled1Toggle = document.getElementById('scheduledToggle1');
+    const scheduled2Toggle = document.getElementById('scheduledToggle2');
+    
+    if (scheduled1Toggle) {
+        scheduled1Toggle.addEventListener('click', () => toggleScheduledBackup(1));
+    }
+    
+    if (scheduled2Toggle) {
+        scheduled2Toggle.addEventListener('click', () => toggleScheduledBackup(2));
+    }
+}
+
+/**
+ * 打开自动备份设置对话框
+ */
+async function openAutoBackupDialog() {
+    if (!autoBackupSettingsDialog) {
+        console.error('自动备份设置对话框未初始化');
+        return;
+    }
+    
+    // 加载当前设置
+    await loadAutoBackupSettings();
+    
+    // 显示对话框
+    autoBackupSettingsDialog.style.display = 'flex';
+    
+    // 设置焦点到第一个输入框
+    const firstInput = autoBackupSettingsDialog.querySelector('input[type="number"], input[type="time"]');
+    if (firstInput) {
+        setTimeout(() => firstInput.focus(), 100);
+    }
+}
+
+/**
+ * 关闭自动备份设置对话框
+ */
+function closeAutoBackupDialog() {
+    if (autoBackupSettingsDialog) {
+        autoBackupSettingsDialog.style.display = 'none';
+    }
+}
+
+/**
+ * 切换选项卡
+ */
+function switchAutoBackupTab(tabName) {
+    currentAutoBackupTab = tabName;
+    
+    // 更新选项卡按钮状态
+    const tabButtons = document.querySelectorAll('.tab-button');
+    tabButtons.forEach(button => {
+        if (button.dataset.tab === tabName) {
+            button.classList.add('active');
+            button.style.backgroundColor = 'var(--theme-accent-color)';
+            button.style.color = 'white';
+        } else {
+            button.classList.remove('active');
+            button.style.backgroundColor = 'transparent';
+            button.style.color = 'var(--theme-text-secondary)';
+        }
+    });
+    
+    // 显示/隐藏对应的选项卡内容
+    const tabContents = document.querySelectorAll('.tab-content');
+    tabContents.forEach(content => {
+        if (content.id === `${tabName}Tab`) {
+            content.style.display = 'block';
+        } else {
+            content.style.display = 'none';
+        }
+    });
+}
+
+/**
+ * 其他必要的函数实现...
+ */
+function toggleCyclicAutoBackup() {
+    const toggle = document.getElementById('cyclicAutoToggle');
+    if (!toggle) return;
+    
+    const isEnabled = toggle.dataset.state === 'on';
+    const newState = isEnabled ? 'off' : 'on';
+    
+    updateAutoBackupToggleButtonState(toggle, newState);
+    updateCyclicInputsState(newState === 'on');
+}
+
+function toggleScheduledBackup(slotNumber) {
+    const toggle = document.getElementById(`scheduledToggle${slotNumber}`);
+    if (!toggle) return;
+    
+    const isEnabled = toggle.dataset.state === 'on';
+    const newState = isEnabled ? 'off' : 'on';
+    
+    updateAutoBackupToggleButtonState(toggle, newState);
+}
+
+function updateAutoBackupToggleButtonState(button, state) {
+    button.dataset.state = state;
+    const circle = button.querySelector('.toggle-circle');
+    
+    if (state === 'on') {
+        button.style.backgroundColor = '#4CAF50';
+        if (circle) {
+            circle.style.transform = 'translateX(18px)';
+            circle.style.right = '3px';
+        }
+    } else {
+        button.style.backgroundColor = '#ccc';
+        if (circle) {
+            circle.style.transform = 'translateX(0px)';
+            circle.style.left = '3px';
+        }
+    }
+}
+
+function updateCyclicInputsState(enabled) {
+    const inputs = ['cyclicDays', 'cyclicHours', 'cyclicMinutes'];
+    
+    inputs.forEach(id => {
+        const input = document.getElementById(id);
+        if (input) {
+            input.disabled = !enabled;
+            input.style.opacity = enabled ? '1' : '0.5';
+        }
+    });
+}
+
+async function loadAutoBackupSettings() {
+    try {
+        const result = await new Promise(resolve => {
+            chrome.storage.local.get([
+                'autoBackupMode',
+                'cyclicAutoBackupSettings',
+                'scheduledAutoBackupSettings'
+            ], resolve);
+        });
+        
+        applyAutoBackupSettingsToUI(result);
+    } catch (error) {
+        console.error('加载自动备份设置失败:', error);
+    }
+}
+
+function applyAutoBackupSettingsToUI(settings) {
+    const mode = settings.autoBackupMode || 'realtime';
+    switchAutoBackupTab(mode);
+    
+    // 应用循环备份设置
+    const cyclicSettings = settings.cyclicAutoBackupSettings || defaultAutoBackupSettings.cyclicSettings;
+    
+    const cyclicDays = document.getElementById('cyclicDays');
+    const cyclicHours = document.getElementById('cyclicHours');
+    const cyclicMinutes = document.getElementById('cyclicMinutes');
+    const cyclicToggle = document.getElementById('cyclicAutoToggle');
+    
+    if (cyclicDays) cyclicDays.value = cyclicSettings.days || 0;
+    if (cyclicHours) cyclicHours.value = cyclicSettings.hours || 0;
+    if (cyclicMinutes) cyclicMinutes.value = cyclicSettings.minutes || 30;
+    
+    if (cyclicToggle) {
+        updateAutoBackupToggleButtonState(cyclicToggle, cyclicSettings.enabled ? 'on' : 'off');
+        updateCyclicInputsState(cyclicSettings.enabled);
+    }
+    
+    // 应用准点定时设置
+    const scheduledSettings = settings.scheduledAutoBackupSettings || defaultAutoBackupSettings.scheduledSettings;
+    
+    const scheduledTime1 = document.getElementById('scheduledTime1');
+    const scheduledTime2 = document.getElementById('scheduledTime2');
+    const toggle1 = document.getElementById('scheduledToggle1');
+    const toggle2 = document.getElementById('scheduledToggle2');
+    
+    if (scheduledTime1) scheduledTime1.value = scheduledSettings.time1.time || '09:30';
+    if (scheduledTime2) scheduledTime2.value = scheduledSettings.time2.time || '16:00';
+    
+    if (toggle1) updateAutoBackupToggleButtonState(toggle1, scheduledSettings.time1.enabled ? 'on' : 'off');
+    if (toggle2) updateAutoBackupToggleButtonState(toggle2, scheduledSettings.time2.enabled ? 'on' : 'off');
+}
+
+async function saveAutoBackupSettings() {
+    try {
+        const settings = collectAutoBackupSettingsFromUI();
+        const validation = validateAutoBackupSettings(settings);
+        
+        if (!validation.valid) {
+            showStatus(validation.errors.join('; '), 'error');
+            return;
+        }
+        
+        showAutoBackupSavedIndicator();
+        
+        await new Promise((resolve, reject) => {
+            chrome.storage.local.set({
+                autoBackupMode: settings.mode,
+                cyclicAutoBackupSettings: settings.cyclicSettings,
+                scheduledAutoBackupSettings: settings.scheduledSettings
+            }, () => {
+                if (chrome.runtime.lastError) reject(chrome.runtime.lastError);
+                else resolve();
+            });
+        });
+        
+        chrome.runtime.sendMessage({
+            action: 'updateAutoBackupSettings',
+            settings: settings
+        });
+        
+        setTimeout(() => closeAutoBackupDialog(), 1000);
+        
+    } catch (error) {
+        console.error('保存自动备份设置失败:', error);
+        showStatus('保存设置失败', 'error');
+    }
+}
+
+function collectAutoBackupSettingsFromUI() {
+    const cyclicToggle = document.getElementById('cyclicAutoToggle');
+    const toggle1 = document.getElementById('scheduledToggle1');
+    const toggle2 = document.getElementById('scheduledToggle2');
+    const cyclicDays = document.getElementById('cyclicDays');
+    const cyclicHours = document.getElementById('cyclicHours');
+    const cyclicMinutes = document.getElementById('cyclicMinutes');
+    const scheduledTime1 = document.getElementById('scheduledTime1');
+    const scheduledTime2 = document.getElementById('scheduledTime2');
+    
+    return {
+        mode: currentAutoBackupTab,
+        cyclicSettings: {
+            enabled: cyclicToggle?.dataset.state === 'on',
+            days: parseInt(cyclicDays?.value) || 0,
+            hours: parseInt(cyclicHours?.value) || 0,
+            minutes: parseInt(cyclicMinutes?.value) || 30
+        },
+        scheduledSettings: {
+            time1: {
+                enabled: toggle1?.dataset.state === 'on',
+                time: scheduledTime1?.value || '09:30'
+            },
+            time2: {
+                enabled: toggle2?.dataset.state === 'on', 
+                time: scheduledTime2?.value || '16:00'
+            }
+        }
+    };
+}
+
+function validateAutoBackupSettings(settings) {
+    const errors = [];
+    
+    if (settings.cyclicSettings.enabled) {
+        const { days, hours, minutes } = settings.cyclicSettings;
+        const totalMinutes = days * 1440 + hours * 60 + minutes;
+        
+        if (totalMinutes <= 0) errors.push('循环备份时间间隔必须大于0');
+        if (days > 30 || hours > 24 || minutes > 60) errors.push('时间输入值超出允许范围');
+    }
+    
+    if (settings.scheduledSettings.time1.enabled || settings.scheduledSettings.time2.enabled) {
+        const timeRegex = /^([01]?[0-9]|2[0-3]):[0-5][0-9]$/;
+        
+        if (settings.scheduledSettings.time1.enabled && !timeRegex.test(settings.scheduledSettings.time1.time)) {
+            errors.push('定时1的时间格式无效');
+        }
+        
+        if (settings.scheduledSettings.time2.enabled && !timeRegex.test(settings.scheduledSettings.time2.time)) {
+            errors.push('定时2的时间格式无效');
+        }
+    }
+    
+    return { valid: errors.length === 0, errors };
+}
+
+async function restoreAutoBackupDefaults() {
+    try {
+        applyAutoBackupSettingsToUI({
+            autoBackupMode: defaultAutoBackupSettings.mode,
+            cyclicAutoBackupSettings: defaultAutoBackupSettings.cyclicSettings,
+            scheduledAutoBackupSettings: defaultAutoBackupSettings.scheduledSettings
+        });
+        
+        showStatus('已恢复默认设置', 'success', 2000);
+    } catch (error) {
+        console.error('恢复默认设置失败:', error);
+        showStatus('恢复默认设置失败', 'error');
+    }
+}
+
+function showAutoBackupSavedIndicator() {
+    const indicator = document.getElementById('autoBackupSettingsSavedIndicator');
+    if (!indicator) return;
+    
+    indicator.style.display = 'block';
+    indicator.style.opacity = '1';
+    indicator.style.transform = 'translateY(0)';
+    
+    setTimeout(() => {
+        indicator.style.opacity = '0';
+        indicator.style.transform = 'translateY(10px)';
+        setTimeout(() => indicator.style.display = 'none', 300);
+    }, 2000);
+}
+
+async function updateAutoBackupStatusDisplay() {
+    try {
+        const result = await new Promise(resolve => {
+            chrome.storage.local.get(['autoSync', 'autoBackupMode'], resolve);
+        });
+        
+        const isAutoSync = result.autoSync !== false;
+        const mode = result.autoBackupMode || 'realtime';
+        
+        if (isAutoSync) updateRightStatusContainer(mode);
+    } catch (error) {
+        console.error('更新自动备份状态显示失败:', error);
+    }
+}
+
+function updateRightStatusContainer(mode) {
+    const container = document.getElementById('change-description-row');
+    if (!container) return;
+    
+    let statusText = '';
+    switch (mode) {
+        case 'realtime': statusText = '实时自动备份已开启'; break;
+        case 'cyclic': statusText = '循环自动备份已开启'; break;
+        case 'scheduled': statusText = '准点定时备份已开启'; break;
+        default: statusText = '实时自动备份已开启';
+    }
+    
+    container.innerHTML = `
+        <div class="status status-info" style="
+            background-color: var(--theme-status-info-bg);
+            color: var(--theme-status-info-text);
+            border: 1px solid var(--theme-status-info-border);
+            padding: 8px 12px;
+            border-radius: 4px;
+            font-size: 13px;
+            text-align: center;
+        ">
+            ${statusText}
+        </div>
+    `;
 }
 
 // 保存备注函数

@@ -1679,7 +1679,8 @@
         /* 精美的集成开关样式 */
         .backup-mode-switch {
             position: relative;
-            width: 100%;
+            width: 85%; /* 缩窄整体宽度 */
+            margin: 0 auto; /* 居中显示 */
             height: 110px; /* 纵向布局高度提升，容纳同排操作按钮 */
             background: linear-gradient(to bottom, #e8f5e9, #f0f0f0);
             border-radius: 21px;
@@ -1895,7 +1896,10 @@
 
         /* 合并至左侧UI：在开关内部对齐操作按钮 */
         .backup-mode-option { justify-content: space-between; }
-        .backup-mode-option .option-label { font-weight: 700; }
+        .backup-mode-option .option-label { 
+            font-weight: 700; 
+            margin-left: 20px; /* 标签右移 */
+        }
         .backup-mode-option .option-actions { display: flex; gap: 10px; align-items: center; }
         .backup-mode-switch #manualButtonsContainer,
         .backup-mode-switch #autoButtonsContainer { background: transparent; border: none; padding: 0; box-shadow: none; margin: 0; }
@@ -2134,7 +2138,7 @@
                         <div class="backup-mode-option auto-option">
                             <span class="option-label" id="autoOptionLabel">自动备份</span>
                             <div id="autoButtonsContainer" class="manual-buttons option-actions" style="display: none;">
-                                <button id="autoBackupSettingsBtn" class="settings-button" style="margin: 0; background-color: var(--theme-accent-color); color: white;">自动备份设置</button>
+                                <button id="autoBackupSettingsBtn" class="settings-button" style="margin: 0;">自动备份设置</button>
                             </div>
                         </div>
                         <div class="backup-mode-option manual-option">

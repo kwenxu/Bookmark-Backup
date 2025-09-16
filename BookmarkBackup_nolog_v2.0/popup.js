@@ -3355,6 +3355,12 @@ const applyLocalizedContent = async (lang) => { // Added lang parameter
         'en': "Manual Backup"
     };
 
+    // 添加自动备份设置按钮的国际化
+    const autoBackupSettingsBtnStrings = {
+        'zh_CN': "自动备份设置",
+        'en': "Auto Backup Settings"
+    };
+
     const autoSyncTipStrings = {
         'zh_CN': "（<span style=\"color: #FFA500;\">大规模修改</span>时建议切换至手动模式）",
         'en': "(Recommended to switch to manual mode during <span style=\"color: #FFA500;\">bulk changes</span>)"
@@ -4491,6 +4497,12 @@ const currentLang = data.preferredLang || 'zh_CN';
     const manualLabelEl = document.getElementById('manualOptionLabel');
     if (manualLabelEl) {
         manualLabelEl.textContent = manualModeDescriptionStrings[lang] || manualModeDescriptionStrings['zh_CN'];
+    }
+
+    // 更新自动备份设置按钮文本
+    const autoBackupSettingsBtn = document.getElementById('autoBackupSettingsBtn');
+    if (autoBackupSettingsBtn) {
+        autoBackupSettingsBtn.textContent = autoBackupSettingsBtnStrings[lang] || autoBackupSettingsBtnStrings['zh_CN'];
     }
 
     // 国际化提醒设置对话框文本

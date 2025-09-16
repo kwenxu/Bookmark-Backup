@@ -727,7 +727,12 @@ function applyLocalizedContent(lang) {
     if (restoreDefaultBtn) { restoreDefaultBtn.textContent = restoreDefaultStrings[lang] || restoreDefaultStrings['zh_CN']; }
 
     const saveReminderSettingsBtn = document.getElementById('saveReminderSettings');
-    if (saveReminderSettingsBtn) { saveReminderSettingsBtn.textContent = saveSettingsStrings[lang] || saveSettingsStrings['zh_CN']; }
+    if (saveReminderSettingsBtn) {
+        // 改为仅显示向上箭头，避免文字被写回
+        saveReminderSettingsBtn.innerHTML = '▲';
+        saveReminderSettingsBtn.setAttribute('aria-label', saveSettingsStrings[lang] || saveSettingsStrings['zh_CN']);
+        saveReminderSettingsBtn.setAttribute('title', saveSettingsStrings[lang] || saveSettingsStrings['zh_CN']);
+    }
 
     const settingsSavedIndicator = document.getElementById('settingsSavedIndicator');
     if (settingsSavedIndicator) { settingsSavedIndicator.textContent = settingsSavedStrings[lang] || settingsSavedStrings['zh_CN']; }

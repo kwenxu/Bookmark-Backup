@@ -4263,6 +4263,14 @@ const currentLang = data.preferredLang || 'zh_CN';
         reminderSettingsBtn.textContent = reminderSettingsStrings[lang] || reminderSettingsStrings['zh_CN'];
     }
 
+    // 调整提醒设置对话框内的“保存”按钮为向上箭头（避免文字被写回）
+    const saveReminderSettingsBtnInMain = document.getElementById('saveReminderSettings');
+    if (saveReminderSettingsBtnInMain) {
+        saveReminderSettingsBtnInMain.innerHTML = '<i class="fas fa-chevron-up"></i>';
+        saveReminderSettingsBtnInMain.setAttribute('aria-label', saveSettingsStrings[lang] || saveSettingsStrings['zh_CN']);
+        saveReminderSettingsBtnInMain.setAttribute('title', saveSettingsStrings[lang] || saveSettingsStrings['zh_CN']);
+    }
+
     const historyTitle = document.querySelector('.sync-history h3');
     if (historyTitle) {
         historyTitle.textContent = historyRecordsDescriptionStrings[lang] || historyRecordsDescriptionStrings['zh_CN'];
@@ -4505,7 +4513,10 @@ const currentLang = data.preferredLang || 'zh_CN';
 
     const saveReminderSettingsBtn = document.getElementById('saveReminderSettings');
     if (saveReminderSettingsBtn) {
-        saveReminderSettingsBtn.textContent = saveSettingsStrings[lang] || saveSettingsStrings['zh_CN'];
+        // 改为仅显示向上箭头，不显示文字
+        saveReminderSettingsBtn.innerHTML = '<i class="fas fa-chevron-up"></i>';
+        saveReminderSettingsBtn.setAttribute('aria-label', saveSettingsStrings[lang] || saveSettingsStrings['zh_CN']);
+        saveReminderSettingsBtn.setAttribute('title', saveSettingsStrings[lang] || saveSettingsStrings['zh_CN']);
     }
 
     // 保存提示文本

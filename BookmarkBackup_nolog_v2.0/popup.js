@@ -2612,25 +2612,22 @@ updateSyncHistory();
                 });
             }
 
-            // 平滑滚动到"当前数量/结构:"部分
+            // 平滑滚动到备份状态区域的上边缘
             setTimeout(() => {
-                const statsLabels = document.querySelectorAll('.stats-label');
-                if (statsLabels.length > 1) {
-                    const currentQuantityElement = statsLabels[1];
-                    const syncStatusSection = document.getElementById('syncStatus');
-                    if (syncStatusSection) {
-syncStatusSection.scrollIntoView({ behavior: 'smooth', block: 'start' });
-                        // 稍微调整位置，确保良好的可视效果
-                        window.scrollTo({
-                            top: syncStatusSection.offsetTop + 5,
-                            behavior: 'smooth'
-                        });
-                    }
-                } else {
-                    // 回退方案：如果找不到"当前数量/结构:"元素，则滚动到页面顶部
-                    window.scrollTo({ top: 0, behavior: 'smooth' });
-}
-            }, 50);
+                const syncStatusSection = document.getElementById('syncStatus');
+                if (syncStatusSection) {
+                    // 获取元素的位置
+                    const rect = syncStatusSection.getBoundingClientRect();
+                    const scrollTop = window.pageYOffset || document.documentElement.scrollTop;
+                    const targetPosition = rect.top + scrollTop - 20; // 留出20px的间距
+                    
+                    // 平滑滚动到目标位置
+                    window.scrollTo({
+                        top: targetPosition,
+                        behavior: 'smooth'
+                    });
+                }
+            }, 100);
 
             // 设置初始化标记
             chrome.storage.local.set({ initialized: true });
@@ -4901,26 +4898,22 @@ console.log('手动备份按钮显示状态:', manualButtonsContainer ? manualBu
             updateLastSyncInfo(); // 新增：加载上次备份信息和书签计数
             initScrollToTopButton(); // 初始化滚动按钮
 
-            // 恢复自动滚动逻辑
-            // 使用setTimeout确保DOM更新和渲染完成后再滚动
+            // 自动定位到备份状态区域
             setTimeout(() => {
-                // 无论自动模式还是手动模式，都滚动到"当前数量/结构:"处
-                const statsLabels = document.querySelectorAll('.stats-label');
-                // 找到"当前数量/结构:"标签元素（通常是第二个.stats-label元素）
-                if (statsLabels.length > 1) {
-                    const currentQuantityElement = statsLabels[1];
-                    const syncStatusSection = document.getElementById('syncStatus');
-                    if (syncStatusSection) {
-// 直接跳转到对应位置，取消平滑滚动效果
-                        syncStatusSection.scrollIntoView({ behavior: 'auto', block: 'start' });
-                        // 立即控制滚动位置，确保页面显示在适当位置
-                        window.scrollTo(0, syncStatusSection.offsetTop + 5);
-                    }
-                } else {
-                    // 回退方案：如果找不到"当前数量/结构:"元素，则滚动到页面顶部
-                    window.scrollTo(0, 0);
-}
-            }, 0); // 将延迟时间降为0，立即执行
+                const syncStatusSection = document.getElementById('syncStatus');
+                if (syncStatusSection && syncStatusSection.style.display !== 'none') {
+                    // 获取元素的位置
+                    const rect = syncStatusSection.getBoundingClientRect();
+                    const scrollTop = window.pageYOffset || document.documentElement.scrollTop;
+                    const targetPosition = rect.top + scrollTop - 20; // 留出20px的间距
+                    
+                    // 直接跳转到目标位置（不使用滚动动画）
+                    window.scrollTo({
+                        top: targetPosition,
+                        behavior: 'auto' // 使用'auto'而不是'smooth'，直接跳转
+                    });
+                }
+            }, 50); // 短暂延迟确保DOM渲染完成
 
         } else {
             if (initHeader && initContent) {
@@ -5820,13 +5813,18 @@ function updateStatusCard(isAutoMode) {
         
         if (isAutoMode) {
             statusCard.innerHTML = `<div>${autoModeText[lang] || autoModeText['zh_CN']}</div>`;
-            // 使用CSS变量，自动适配深色模式
-            statusCard.style.background = 'var(--theme-status-card-bg)';
-            statusCard.style.color = 'var(--theme-status-card-text)';
+            // 自动备份模式 - 使用绿色主题
+            statusCard.style.background = 'var(--theme-status-card-auto-bg)';
+            statusCard.style.color = 'var(--theme-status-card-auto-text)';
+            statusCard.style.border = '1px solid var(--theme-status-card-auto-border)';
+            statusCard.style.boxShadow = '0 2px 8px var(--theme-status-card-auto-shadow)';
         } else {
             statusCard.innerHTML = `<div>${manualModeText[lang] || manualModeText['zh_CN']}</div>`;
-            statusCard.style.background = 'var(--theme-status-card-bg)';
-            statusCard.style.color = 'var(--theme-status-card-text)';
+            // 手动备份模式 - 使用蓝色主题
+            statusCard.style.background = 'var(--theme-status-card-manual-bg)';
+            statusCard.style.color = 'var(--theme-status-card-manual-text)';
+            statusCard.style.border = '1px solid var(--theme-status-card-manual-border)';
+            statusCard.style.boxShadow = '0 2px 8px var(--theme-status-card-manual-shadow)';
         }
     });
 }

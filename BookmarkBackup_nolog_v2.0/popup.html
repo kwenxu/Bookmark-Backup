@@ -1906,17 +1906,31 @@
         
         /* 状态卡片样式 */
         :root {
-            --theme-status-card-bg: #f0f4ff;
-            --theme-status-card-text: #4a5568;
-            --theme-status-card-border: #cbd5e0;
-            --theme-status-card-shadow: rgba(0, 0, 0, 0.05);
+            /* 自动备份模式 - 绿色系 */
+            --theme-status-card-auto-bg: #e8f5e9;
+            --theme-status-card-auto-text: #2e7d32;
+            --theme-status-card-auto-border: #a5d6a7;
+            --theme-status-card-auto-shadow: rgba(76, 175, 80, 0.1);
+            
+            /* 手动备份模式 - 蓝色系 */
+            --theme-status-card-manual-bg: #e3f2fd;
+            --theme-status-card-manual-text: #1976d2;
+            --theme-status-card-manual-border: #90caf9;
+            --theme-status-card-manual-shadow: rgba(33, 150, 243, 0.1);
         }
         
         html[data-theme="dark"] {
-            --theme-status-card-bg: #2d3748;
-            --theme-status-card-text: #e2e8f0;
-            --theme-status-card-border: #4a5568;
-            --theme-status-card-shadow: rgba(0, 0, 0, 0.2);
+            /* 自动备份模式 - 绿色系（深色模式）*/
+            --theme-status-card-auto-bg: #1b3a1b;
+            --theme-status-card-auto-text: #81c784;
+            --theme-status-card-auto-border: #388e3c;
+            --theme-status-card-auto-shadow: rgba(76, 175, 80, 0.2);
+            
+            /* 手动备份模式 - 蓝色系（深色模式）*/
+            --theme-status-card-manual-bg: #1a3a5f;
+            --theme-status-card-manual-text: #64b5f6;
+            --theme-status-card-manual-border: #1976d2;
+            --theme-status-card-manual-shadow: rgba(33, 150, 243, 0.2);
         }
         
         .status-card {
@@ -2172,21 +2186,18 @@
                     </div>
                     
                     <!-- 右侧：状态区块 (减少宽度，调整颜色) -->
-                    <div style="flex: 1; max-width: 280px;">
+                    <div id="rightStatusContainer" style="flex: 1; max-width: 280px;">
                         <div id="change-description-row" class="status-card" style="
-                            background: var(--theme-status-card-bg);
-                            color: var(--theme-status-card-text);
                             padding: 20px;
                             border-radius: 12px;
-                            border: 1px solid var(--theme-status-card-border);
-                            box-shadow: 0 2px 8px var(--theme-status-card-shadow);
                             min-height: 80px;
                             display: flex;
                             align-items: center;
                             justify-content: center;
                             font-size: 14px;
-                            font-weight: 500;
+                            font-weight: 600;
                             text-align: center;
+                            transition: all 0.5s ease;
                         ">
                             <div>实时自动备份已开启</div>
                         </div>

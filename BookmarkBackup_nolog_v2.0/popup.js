@@ -799,27 +799,67 @@ function initScrollToTopButton() {
         // 点击返回页面顶部
         scrollToTopFloating.addEventListener('click', function() {
             window.scrollTo({ top: 0, behavior: 'smooth' });
-            this.style.transform = 'scale(0.95)';
+            this.style.transform = 'translateX(-50%) scale(0.95)';
             setTimeout(() => { 
-                this.style.transform = 'scale(1)'; 
+                this.style.transform = 'translateX(-50%) scale(1)'; 
             }, 200);
         });
 
         // 鼠标悬停效果
         scrollToTopFloating.addEventListener('mouseenter', function() {
-            this.style.transform = 'scale(1.1)';
-            this.style.boxShadow = '0 6px 20px rgba(102, 126, 234, 0.5)';
+            this.style.transform = 'translateX(-50%) scale(1.05)';
+            this.style.background = 'rgba(0, 0, 0, 0.25)';
+            this.style.borderColor = 'rgba(255, 255, 255, 0.3)';
+            this.style.boxShadow = '0 4px 12px rgba(0, 0, 0, 0.2)';
         });
         
         scrollToTopFloating.addEventListener('mouseleave', function() {
-            this.style.transform = 'scale(1)';
-            this.style.boxShadow = '0 4px 12px rgba(102, 126, 234, 0.4)';
+            this.style.transform = 'translateX(-50%) scale(1)';
+            this.style.background = 'rgba(0, 0, 0, 0.15)';
+            this.style.borderColor = 'rgba(255, 255, 255, 0.2)';
+            this.style.boxShadow = '0 2px 8px rgba(0, 0, 0, 0.1)';
         });
 
-        // 根据滚动深度控制显示：滚动超过300px时显示
+        // 记录用户是否已经进行过滚动操作
+        let hasUserScrolled = false;
+        
+        // 监听用户第一次滚动操作
+        const markUserHasScrolled = () => {
+            hasUserScrolled = true;
+            window.removeEventListener('scroll', markUserHasScrolled);
+        };
+        
+        window.addEventListener('scroll', markUserHasScrolled, { passive: true, once: true });
+        
+        // 根据滚动位置控制显示：接近或触底时显示
         const updateFloatingVisibility = () => {
             const scrollTop = window.pageYOffset || document.documentElement.scrollTop || document.body.scrollTop || 0;
-            scrollToTopFloating.style.display = scrollTop > 300 ? 'block' : 'none';
+            const documentHeight = document.documentElement.scrollHeight || document.body.scrollHeight || 0;
+            const windowHeight = window.innerHeight || document.documentElement.clientHeight || 0;
+            
+            // 如果用户还未进行过滚动操作，不显示按钮
+            if (!hasUserScrolled) {
+                scrollToTopFloating.style.display = 'none';
+                return;
+            }
+            
+            // 如果页面太短，不需要显示按钮
+            if (documentHeight <= windowHeight + 100) {
+                scrollToTopFloating.style.display = 'none';
+                return;
+            }
+            
+            // 计算距离底部的距离
+            const distanceFromBottom = documentHeight - (scrollTop + windowHeight);
+            
+            // 计算滚动百分比
+            const maxScrollableDistance = documentHeight - windowHeight;
+            const scrollPercentage = maxScrollableDistance > 0 ? scrollTop / maxScrollableDistance : 0;
+            
+            // 显示条件：距离底部小于150px 或 滚动超过85% 或 已经触底
+            const shouldShow = distanceFromBottom < 150 || scrollPercentage > 0.85 || distanceFromBottom <= 5;
+            
+            scrollToTopFloating.style.display = shouldShow ? 'flex' : 'none';
         };
 
         window.addEventListener('scroll', updateFloatingVisibility, { passive: true });
@@ -3382,6 +3422,11 @@ const applyLocalizedContent = async (lang) => { // Added lang parameter
         'en': "Fixed Time 2"
     };
 
+    const scrollToTopStrings = {
+        'zh_CN': "返回顶部",
+        'en': "Back to Top"
+    };
+
     const manualBackupReminderDescStrings = {
         'zh_CN': `循环提醒的计时：浏览器的<span class="highlight-text">实际使用时间</span>，即（多）窗口焦点时间。<br>手动备份下，进行操作（数量/结构变化）才会提醒，`,
         'en': `Cyclic Reminder timing: Browser's <span class='highlight-text'>actual usage time</span>.<br>Reminders only trigger after changes (quantity/structure),`
@@ -4307,6 +4352,12 @@ const currentLang = data.preferredLang || 'zh_CN';
         'zh_CN': "保存设置失败",
         'en': "Failed to save settings"
     };
+
+    // 更新返回顶部按钮文本
+    const scrollToTopText = document.getElementById('scrollToTopText');
+    if (scrollToTopText) {
+        scrollToTopText.textContent = scrollToTopStrings[lang] || scrollToTopStrings['zh_CN'];
+    }
 
     // 保存国际化标签到全局变量，供其他函数使用
     window.i18nLabels = {

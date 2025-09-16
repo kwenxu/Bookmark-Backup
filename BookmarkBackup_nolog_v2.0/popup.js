@@ -763,8 +763,7 @@ function initializeWebDAVToggle() {
  */
 function initScrollToTopButton() {
     const 일반scrollToTopBtn = document.getElementById('scrollToTopBtn'); // 通用回到顶部按钮
-    const backToConfigFloating = document.getElementById('backToConfigFloating'); // 右下角悬浮容器
-    const backToConfigBtn = document.getElementById('backToConfigBtn'); // 悬浮按钮
+    const scrollToTopFloating = document.getElementById('scrollToTopFloating'); // 新的悬浮向上箭头按钮
 
     // 处理通用回到顶部按钮
     if (일반scrollToTopBtn) {
@@ -795,24 +794,32 @@ function initScrollToTopButton() {
         }
     }
 
-    // 右下角悬浮“回滚至配置页”按钮显示/隐藏与点击行为
-    if (backToConfigFloating && backToConfigBtn) {
-        // 点击回滚至配置区（页面顶部配置卡片）
-        backToConfigBtn.addEventListener('click', function() {
+    // 新的右下角悬浮向上箭头按钮
+    if (scrollToTopFloating) {
+        // 点击返回页面顶部
+        scrollToTopFloating.addEventListener('click', function() {
             window.scrollTo({ top: 0, behavior: 'smooth' });
-            this.style.transform = 'scale(0.92)';
-            setTimeout(() => { this.style.transform = 'scale(1)'; }, 150);
+            this.style.transform = 'scale(0.95)';
+            setTimeout(() => { 
+                this.style.transform = 'scale(1)'; 
+            }, 200);
         });
 
-        // 根据滚动深度控制显示：滚动到页面2/5后显示
+        // 鼠标悬停效果
+        scrollToTopFloating.addEventListener('mouseenter', function() {
+            this.style.transform = 'scale(1.1)';
+            this.style.boxShadow = '0 6px 20px rgba(102, 126, 234, 0.5)';
+        });
+        
+        scrollToTopFloating.addEventListener('mouseleave', function() {
+            this.style.transform = 'scale(1)';
+            this.style.boxShadow = '0 4px 12px rgba(102, 126, 234, 0.4)';
+        });
+
+        // 根据滚动深度控制显示：滚动超过300px时显示
         const updateFloatingVisibility = () => {
-            const doc = document.documentElement;
-            const scrollTop = window.pageYOffset || doc.scrollTop || document.body.scrollTop || 0;
-            const scrollHeight = doc.scrollHeight || document.body.scrollHeight || 0;
-            const clientHeight = doc.clientHeight || window.innerHeight || 0;
-            const maxScrollable = Math.max(0, scrollHeight - clientHeight);
-            const threshold = maxScrollable * 0.4; // 2/5 = 40%
-            backToConfigFloating.style.display = scrollTop > threshold ? 'flex' : 'none';
+            const scrollTop = window.pageYOffset || document.documentElement.scrollTop || document.body.scrollTop || 0;
+            scrollToTopFloating.style.display = scrollTop > 300 ? 'block' : 'none';
         };
 
         window.addEventListener('scroll', updateFloatingVisibility, { passive: true });
@@ -3272,10 +3279,6 @@ const applyLocalizedContent = async (lang) => { // Added lang parameter
         'en': "Details:" // 修改为更简洁的英文翻译
     };
 
-    const rollbackToConfigLabel = {
-        'zh_CN': "回滚至配置页",
-        'en': "Back to Config"
-    };
 
     const bookmarksLabel = {
         'zh_CN': "个书签",
@@ -4293,11 +4296,6 @@ const currentLang = data.preferredLang || 'zh_CN';
         historyHeaders[2].textContent = statusColumnStrings[lang] || statusColumnStrings['zh_CN'];
     }
 
-    // 浮动回滚按钮文案
-    const backToConfigLabel = document.getElementById('backToConfigLabel');
-    if (backToConfigLabel) {
-        backToConfigLabel.textContent = rollbackToConfigLabel[lang] || rollbackToConfigLabel['zh_CN'];
-    }
 
     // 添加新的国际化字符串
     const settingsRestoredStrings = {

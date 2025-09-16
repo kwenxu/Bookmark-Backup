@@ -1933,26 +1933,6 @@
             margin-left: 0 !important;
         }
 
-        /* 悬浮回滚按钮-提示气泡样式 */
-        #backToConfigLabel {
-            position: absolute;
-            background-color: var(--theme-tooltip-bg, rgba(0,0,0,0.7));
-            color: var(--theme-tooltip-text, #fff);
-            padding: 2px 8px;
-            border-radius: 4px;
-            font-size: 12px;
-            white-space: nowrap;
-            visibility: hidden;
-            opacity: 0;
-            transition: opacity 0.3s;
-            pointer-events: none;
-            bottom: 46px; /* 按钮高度上方 */
-            right: 0;
-        }
-        #backToConfigFloating:hover #backToConfigLabel {
-            visibility: visible;
-            opacity: 1;
-        }
     </style>
 </head>
 <body>
@@ -2366,14 +2346,14 @@
             </div>
         </div>
     </div>
-
-    <!-- 右下角悬浮“回滚至配置页”按钮（文字改为仅气泡提示，按钮为向上箭头图标） -->
-    <div id="backToConfigFloating" style="position: fixed; right: 16px; bottom: 16px; display: none; z-index: 10000; align-items: center; gap: 6px;">
-        <button id="backToConfigBtn" style="width: 36px; height: 36px; border-radius: 18px; border: 1px solid var(--theme-border-primary); background-color: var(--theme-bg-secondary); color: var(--theme-text-primary); cursor: pointer; box-shadow: 0 2px 6px rgba(0,0,0,0.15); font-size: 18px; line-height: 1; display: flex; align-items: center; justify-content: center;">
-            <i class="fas fa-chevron-up"></i>
-        </button>
-        <span id="backToConfigLabel">回滚至配置页</span>
     </div>
+
+    <!-- 右下角悬浮向上箭头按钮 -->
+    <button id="scrollToTopFloating" style="position: fixed; right: 20px; bottom: 20px; width: 48px; height: 48px; border-radius: 24px; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); border: none; cursor: pointer; box-shadow: 0 4px 12px rgba(102, 126, 234, 0.4); display: none; z-index: 10000; transition: all 0.3s ease; padding: 0;" aria-label="返回顶部">
+        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" style="margin: auto;">
+            <path d="M7 14L12 9L17 14" stroke="white" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
+        </svg>
+    </button>
 
     <!-- 添加外部脚本引用 -->
     <script src="debug.js"></script>

@@ -764,12 +764,25 @@ function initializeWebDAVToggle() {
 function initScrollToTopButton() {
     const 일반scrollToTopBtn = document.getElementById('scrollToTopBtn'); // 通用回到顶部按钮
     const scrollToTopFloating = document.getElementById('scrollToTopFloating'); // 新的悬浮向上箭头按钮
+    
+    // 统一的按钮显示控制变量
+    let generalScrollBtn = null;
+    let hasUserScrolled = false;
+    
+    // 监听用户第一次滚动操作
+    const markUserHasScrolled = () => {
+        hasUserScrolled = true;
+        window.removeEventListener('scroll', markUserHasScrolled);
+    };
+    
+    window.addEventListener('scroll', markUserHasScrolled, { passive: true, once: true });
 
     // 处理通用回到顶部按钮
     if (일반scrollToTopBtn) {
         // 移除可能存在的旧监听器，以防万一
         const newGeneralScrollBtn = 일반scrollToTopBtn.cloneNode(true);
         일반scrollToTopBtn.parentNode.replaceChild(newGeneralScrollBtn, 일반scrollToTopBtn);
+        generalScrollBtn = newGeneralScrollBtn;
 
         newGeneralScrollBtn.addEventListener('click', function() {
             window.scrollTo(0, 0);
@@ -778,20 +791,9 @@ function initScrollToTopButton() {
                 this.style.transform = 'scale(1)';
             }, 150);
         });
-        // 控制通用回到顶部按钮的显示/隐藏
-        window.addEventListener('scroll', function() {
-            if (window.pageYOffset > 200) { // 当滚动超过200px时显示按钮
-                newGeneralScrollBtn.style.display = 'block';
-            } else {
-                newGeneralScrollBtn.style.display = 'none';
-            }
-        });
-        // 初始检查一次，以防页面加载时就已经滚动超过200px
-        if (window.pageYOffset > 200) {
-            newGeneralScrollBtn.style.display = 'block';
-        } else {
-            newGeneralScrollBtn.style.display = 'none';
-        }
+        
+        // 初始隐藏
+        generalScrollBtn.style.display = 'none';
     }
 
     // 新的右下角悬浮向上箭头按钮
@@ -819,54 +821,51 @@ function initScrollToTopButton() {
             this.style.borderColor = 'rgba(255, 255, 255, 0.2)';
             this.style.boxShadow = '0 2px 8px rgba(0, 0, 0, 0.1)';
         });
-
-        // 记录用户是否已经进行过滚动操作
-        let hasUserScrolled = false;
         
-        // 监听用户第一次滚动操作
-        const markUserHasScrolled = () => {
-            hasUserScrolled = true;
-            window.removeEventListener('scroll', markUserHasScrolled);
-        };
-        
-        window.addEventListener('scroll', markUserHasScrolled, { passive: true, once: true });
-        
-        // 根据滚动位置控制显示：接近或触底时显示
-        const updateFloatingVisibility = () => {
-            const scrollTop = window.pageYOffset || document.documentElement.scrollTop || document.body.scrollTop || 0;
-            const documentHeight = document.documentElement.scrollHeight || document.body.scrollHeight || 0;
-            const windowHeight = window.innerHeight || document.documentElement.clientHeight || 0;
-            
-            // 如果用户还未进行过滚动操作，不显示按钮
-            if (!hasUserScrolled) {
-                scrollToTopFloating.style.display = 'none';
-                return;
-            }
-            
-            // 如果页面太短，不需要显示按钮
-            if (documentHeight <= windowHeight + 100) {
-                scrollToTopFloating.style.display = 'none';
-                return;
-            }
-            
-            // 计算距离底部的距离
-            const distanceFromBottom = documentHeight - (scrollTop + windowHeight);
-            
-            // 计算滚动百分比
-            const maxScrollableDistance = documentHeight - windowHeight;
-            const scrollPercentage = maxScrollableDistance > 0 ? scrollTop / maxScrollableDistance : 0;
-            
-            // 显示条件：距离底部小于150px 或 滚动超过85% 或 已经触底
-            const shouldShow = distanceFromBottom < 150 || scrollPercentage > 0.85 || distanceFromBottom <= 5;
-            
-            scrollToTopFloating.style.display = shouldShow ? 'flex' : 'none';
-        };
-
-        window.addEventListener('scroll', updateFloatingVisibility, { passive: true });
-        window.addEventListener('resize', updateFloatingVisibility);
-        // 初始计算
-        updateFloatingVisibility();
+        // 初始隐藏
+        scrollToTopFloating.style.display = 'none';
     }
+    
+    // 统一的显示控制逻辑 - 基于「备份检查记录」区域的下边缘
+    const updateButtonsVisibility = () => {
+        // 如果用户还未进行过滚动操作，不显示按钮
+        if (!hasUserScrolled) {
+            if (scrollToTopFloating) scrollToTopFloating.style.display = 'none';
+            if (generalScrollBtn) generalScrollBtn.style.display = 'none';
+            return;
+        }
+        
+        // 查找备份检查记录区域
+        const syncHistoryElement = document.querySelector('.sync-history');
+        if (!syncHistoryElement) {
+            // 找不到目标区域，隐藏所有按钮
+            if (scrollToTopFloating) scrollToTopFloating.style.display = 'none';
+            if (generalScrollBtn) generalScrollBtn.style.display = 'none';
+            return;
+        }
+        
+        // 使用getBoundingClientRect检测备份检查记录区域的位置
+        const rect = syncHistoryElement.getBoundingClientRect();
+        const windowHeight = window.innerHeight || document.documentElement.clientHeight || 0;
+        
+        // 仅当「备份检查记录」区域的最下边缘进入视野时才显示按钮
+        // rect.bottom > 0 && rect.bottom <= windowHeight 表示下边缘在视口内
+        const shouldShow = rect.bottom > 0 && rect.bottom <= windowHeight;
+        
+        // 统一控制两个按钮的显示/隐藏
+        if (scrollToTopFloating) {
+            scrollToTopFloating.style.display = shouldShow ? 'flex' : 'none';
+        }
+        if (generalScrollBtn) {
+            generalScrollBtn.style.display = shouldShow ? 'block' : 'none';
+        }
+    };
+
+    // 绑定事件监听器
+    window.addEventListener('scroll', updateButtonsVisibility, { passive: true });
+    window.addEventListener('resize', updateButtonsVisibility);
+    // 初始计算
+    updateButtonsVisibility();
 }
 
 /**

@@ -4483,14 +4483,14 @@ const currentLang = data.preferredLang || 'zh_CN';
     updateLastSyncInfo(lang); // Pass lang here
 
     // 应用备份模式开关文本
-    const autoOption = document.querySelector('.backup-mode-option.auto-option');
-    if (autoOption) {
-        autoOption.textContent = autoSyncDescriptionStrings[lang] || autoSyncDescriptionStrings['zh_CN'];
+    const autoLabelEl = document.getElementById('autoOptionLabel');
+    if (autoLabelEl) {
+        autoLabelEl.textContent = autoSyncDescriptionStrings[lang] || autoSyncDescriptionStrings['zh_CN'];
     }
 
-    const manualOption = document.querySelector('.backup-mode-option.manual-option');
-    if (manualOption) {
-        manualOption.textContent = manualModeDescriptionStrings[lang] || manualModeDescriptionStrings['zh_CN'];
+    const manualLabelEl = document.getElementById('manualOptionLabel');
+    if (manualLabelEl) {
+        manualLabelEl.textContent = manualModeDescriptionStrings[lang] || manualModeDescriptionStrings['zh_CN'];
     }
 
     // 国际化提醒设置对话框文本

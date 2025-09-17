@@ -763,7 +763,14 @@ function initializeWebDAVToggle() {
  */
 function initScrollToTopButton() {
     const 일반scrollToTopBtn = document.getElementById('scrollToTopBtn'); // 通用回到顶部按钮
-    const scrollToTopFloating = document.getElementById('scrollToTopFloating'); // 新的悬浮向上箭头按钮
+    const scrollToTopFloating = document.getElementById('scrollToTopFloating'); // 旧的悬浮向上箭头按钮
+    const scrollToTopEmbedded = document.getElementById('scrollToTopEmbedded'); // 新的内嵌向上箭头按钮
+    
+    
+    if (scrollToTopEmbedded) {
+        const buttonText = scrollToTopEmbedded.querySelector('#scrollToTopTextEmbedded');
+        const buttonSvg = scrollToTopEmbedded.querySelector('svg path');
+    }
     
     // 统一的按钮显示控制变量
     let generalScrollBtn = null;
@@ -796,33 +803,38 @@ function initScrollToTopButton() {
         generalScrollBtn.style.display = 'none';
     }
 
-    // 新的右下角悬浮向上箭头按钮
-    if (scrollToTopFloating) {
+    // 新的内嵌向上箭头按钮
+    if (scrollToTopEmbedded) {
         // 点击返回页面顶部
-        scrollToTopFloating.addEventListener('click', function() {
+        scrollToTopEmbedded.addEventListener('click', function() {
             window.scrollTo({ top: 0, behavior: 'smooth' });
-            this.style.transform = 'translateX(-50%) scale(0.95)';
-            setTimeout(() => { 
-                this.style.transform = 'translateX(-50%) scale(1)'; 
-            }, 200);
+            this.style.transform = 'translate(-50%, -50%) scale(0.9)';
+            setTimeout(() => {
+                this.style.transform = 'translate(-50%, -50%) scale(1)';
+            }, 150);
         });
 
         // 鼠标悬停效果
-        scrollToTopFloating.addEventListener('mouseenter', function() {
-            this.style.transform = 'translateX(-50%) scale(1.05)';
-            this.style.background = 'rgba(120, 120, 120, 0.35)';
-            this.style.borderColor = 'rgba(180, 180, 180, 0.4)';
-            this.style.boxShadow = '0 4px 14px rgba(0, 0, 0, 0.25)';
+        scrollToTopEmbedded.addEventListener('mouseenter', function() {
+            this.style.transform = 'translate(-50%, -50%) scale(1.05)';
+            this.style.backgroundColor = 'var(--theme-bg-secondary)';
+            this.style.borderColor = 'var(--theme-accent-color)';
+            this.style.boxShadow = '0 4px 12px rgba(0, 0, 0, 0.15)';
         });
         
-        scrollToTopFloating.addEventListener('mouseleave', function() {
-            this.style.transform = 'translateX(-50%) scale(1)';
-            this.style.background = 'rgba(100, 100, 100, 0.25)';
-            this.style.borderColor = 'rgba(150, 150, 150, 0.3)';
-            this.style.boxShadow = '0 2px 10px rgba(0, 0, 0, 0.15)';
+        scrollToTopEmbedded.addEventListener('mouseleave', function() {
+            this.style.transform = 'translate(-50%, -50%) scale(1)';
+            this.style.backgroundColor = 'var(--theme-bg-elevated)';
+            this.style.borderColor = 'var(--theme-border-primary)';
+            this.style.boxShadow = '0 2px 6px rgba(0, 0, 0, 0.1)';
         });
         
         // 初始隐藏
+        scrollToTopEmbedded.style.display = 'none';
+    }
+    
+    // 隐藏旧的悬浮按钮
+    if (scrollToTopFloating) {
         scrollToTopFloating.style.display = 'none';
     }
     
@@ -837,6 +849,7 @@ function initScrollToTopButton() {
         
         // 查找备份检查记录区域
         const syncHistoryElement = document.querySelector('.sync-history');
+        
         if (!syncHistoryElement) {
             // 找不到目标区域，隐藏所有按钮
             if (scrollToTopFloating) scrollToTopFloating.style.display = 'none';
@@ -852,12 +865,17 @@ function initScrollToTopButton() {
         // rect.bottom > 0 && rect.bottom <= windowHeight 表示下边缘在视口内
         const shouldShow = rect.bottom > 0 && rect.bottom <= windowHeight;
         
-        // 统一控制两个按钮的显示/隐藏
-        if (scrollToTopFloating) {
-            scrollToTopFloating.style.display = shouldShow ? 'flex' : 'none';
-        }
+        // 统一控制按钮的显示/隐藏
+        if (scrollToTopEmbedded) {
+            scrollToTopEmbedded.style.display = shouldShow ? 'flex' : 'none';
+       }
         if (generalScrollBtn) {
             generalScrollBtn.style.display = shouldShow ? 'block' : 'none';
+        }
+        
+        // 确保旧的悬浮按钮始终隐藏
+        if (scrollToTopFloating) {
+            scrollToTopFloating.style.display = 'none';
         }
     };
 

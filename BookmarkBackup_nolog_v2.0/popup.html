@@ -2237,6 +2237,17 @@
                     <!-- 历史记录项将通过JavaScript添加 -->
                 </div>
             </div>
+            
+            <!-- 内嵌的回到顶部按钮 -->
+            <div style="position: relative; height: 20px; margin-top: 10px;">
+                <div style="position: absolute; left: 0; right: 0; height: 1px; background-color: var(--theme-border-primary); top: 50%; transform: translateY(-50%);"></div>
+                <button id="scrollToTopEmbedded" style="position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); width: 100px; height: 28px; border-radius: 14px; background: var(--theme-bg-elevated); border: 1px solid var(--theme-border-primary); cursor: pointer; box-shadow: 0 2px 6px rgba(0, 0, 0, 0.1); display: none; z-index: 10; transition: all 0.3s ease; padding: 0; align-items: center; justify-content: center; gap: 4px; white-space: nowrap;" aria-label="返回顶部">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                        <path d="M7 14L12 9L17 14" stroke="var(--theme-text-primary)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                    </svg>
+                    <span id="scrollToTopTextEmbedded" style="color: var(--theme-text-primary); font-size: 11px; font-weight: 500; letter-spacing: 0.5px;">返回顶部</span>
+                </button>
+            </div>
 
             <!-- 将manualSyncOptions设置为仅用于JS控制显示/隐藏，但实际内容已移到上面 -->
             <div id="manualSyncOptions" class="manual-sync-options" style="display: none;">
@@ -2529,9 +2540,9 @@
     <!-- 页面底部正中央透明长条向上箭头按钮 -->
     <button id="scrollToTopFloating" style="position: fixed; left: 50%; bottom: 15px; transform: translateX(-50%); width: 120px; height: 36px; border-radius: 18px; background: rgba(100, 100, 100, 0.25); border: 1px solid rgba(150, 150, 150, 0.3); cursor: pointer; box-shadow: 0 2px 10px rgba(0, 0, 0, 0.15); display: none; z-index: 10000; transition: all 0.3s ease; padding: 0; backdrop-filter: blur(15px); align-items: center; justify-content: center; gap: 6px;" aria-label="返回顶部">
         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-            <path d="M7 14L12 9L17 14" stroke="#ffffff" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="filter: drop-shadow(0 1px 2px rgba(0,0,0,0.3));"/>
+            <path d="M7 14L12 9L17 14" stroke="var(--theme-text-primary)" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="filter: drop-shadow(0 1px 2px rgba(0,0,0,0.3));"/>
         </svg>
-        <span id="scrollToTopText" style="color: #ffffff; font-size: 13px; font-weight: 500; letter-spacing: 0.5px; text-shadow: 0 1px 2px rgba(0,0,0,0.3);">返回顶部</span>
+        <span id="scrollToTopText" style="color: var(--theme-text-primary); font-size: 13px; font-weight: 500; letter-spacing: 0.5px; text-shadow: 0 1px 2px rgba(0,0,0,0.3);">返回顶部</span>
     </button>
 
     <!-- 添加外部脚本引用 -->

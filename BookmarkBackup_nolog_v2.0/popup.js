@@ -763,14 +763,7 @@ function initializeWebDAVToggle() {
  */
 function initScrollToTopButton() {
     const 일반scrollToTopBtn = document.getElementById('scrollToTopBtn'); // 通用回到顶部按钮
-    const scrollToTopFloating = document.getElementById('scrollToTopFloating'); // 旧的悬浮向上箭头按钮
-    const scrollToTopEmbedded = document.getElementById('scrollToTopEmbedded'); // 新的内嵌向上箭头按钮
-    
-    
-    if (scrollToTopEmbedded) {
-        const buttonText = scrollToTopEmbedded.querySelector('#scrollToTopTextEmbedded');
-        const buttonSvg = scrollToTopEmbedded.querySelector('svg path');
-    }
+    const scrollToTopFloating = document.getElementById('scrollToTopFloating'); // 新的悬浮向上箭头按钮
     
     // 统一的按钮显示控制变量
     let generalScrollBtn = null;
@@ -803,38 +796,33 @@ function initScrollToTopButton() {
         generalScrollBtn.style.display = 'none';
     }
 
-    // 新的内嵌向上箭头按钮
-    if (scrollToTopEmbedded) {
+    // 新的右下角悬浮向上箭头按钮
+    if (scrollToTopFloating) {
         // 点击返回页面顶部
-        scrollToTopEmbedded.addEventListener('click', function() {
+        scrollToTopFloating.addEventListener('click', function() {
             window.scrollTo({ top: 0, behavior: 'smooth' });
-            this.style.transform = 'translate(-50%, -50%) scale(0.9)';
-            setTimeout(() => {
-                this.style.transform = 'translate(-50%, -50%) scale(1)';
-            }, 150);
+            this.style.transform = 'translateX(-50%) scale(0.95)';
+            setTimeout(() => { 
+                this.style.transform = 'translateX(-50%) scale(1)'; 
+            }, 200);
         });
 
         // 鼠标悬停效果
-        scrollToTopEmbedded.addEventListener('mouseenter', function() {
-            this.style.transform = 'translate(-50%, -50%) scale(1.05)';
-            this.style.backgroundColor = 'var(--theme-bg-secondary)';
-            this.style.borderColor = 'var(--theme-accent-color)';
-            this.style.boxShadow = '0 4px 12px rgba(0, 0, 0, 0.15)';
+        scrollToTopFloating.addEventListener('mouseenter', function() {
+            this.style.transform = 'translateX(-50%) scale(1.05)';
+            this.style.background = 'rgba(0, 0, 0, 0.25)';
+            this.style.borderColor = 'rgba(255, 255, 255, 0.3)';
+            this.style.boxShadow = '0 4px 12px rgba(0, 0, 0, 0.2)';
         });
         
-        scrollToTopEmbedded.addEventListener('mouseleave', function() {
-            this.style.transform = 'translate(-50%, -50%) scale(1)';
-            this.style.backgroundColor = 'var(--theme-bg-elevated)';
-            this.style.borderColor = 'var(--theme-border-primary)';
-            this.style.boxShadow = '0 2px 6px rgba(0, 0, 0, 0.1)';
+        scrollToTopFloating.addEventListener('mouseleave', function() {
+            this.style.transform = 'translateX(-50%) scale(1)';
+            this.style.background = 'rgba(0, 0, 0, 0.15)';
+            this.style.borderColor = 'rgba(255, 255, 255, 0.2)';
+            this.style.boxShadow = '0 2px 8px rgba(0, 0, 0, 0.1)';
         });
         
         // 初始隐藏
-        scrollToTopEmbedded.style.display = 'none';
-    }
-    
-    // 隐藏旧的悬浮按钮
-    if (scrollToTopFloating) {
         scrollToTopFloating.style.display = 'none';
     }
     
@@ -849,7 +837,6 @@ function initScrollToTopButton() {
         
         // 查找备份检查记录区域
         const syncHistoryElement = document.querySelector('.sync-history');
-        
         if (!syncHistoryElement) {
             // 找不到目标区域，隐藏所有按钮
             if (scrollToTopFloating) scrollToTopFloating.style.display = 'none';
@@ -865,17 +852,12 @@ function initScrollToTopButton() {
         // rect.bottom > 0 && rect.bottom <= windowHeight 表示下边缘在视口内
         const shouldShow = rect.bottom > 0 && rect.bottom <= windowHeight;
         
-        // 统一控制按钮的显示/隐藏
-        if (scrollToTopEmbedded) {
-            scrollToTopEmbedded.style.display = shouldShow ? 'flex' : 'none';
-       }
+        // 统一控制两个按钮的显示/隐藏
+        if (scrollToTopFloating) {
+            scrollToTopFloating.style.display = shouldShow ? 'flex' : 'none';
+        }
         if (generalScrollBtn) {
             generalScrollBtn.style.display = shouldShow ? 'block' : 'none';
-        }
-        
-        // 确保旧的悬浮按钮始终隐藏
-        if (scrollToTopFloating) {
-            scrollToTopFloating.style.display = 'none';
         }
     };
 
@@ -2630,29 +2612,25 @@ updateSyncHistory();
                 });
             }
 
-            // 平滑滚动到大边框与第一栏目边框的中间位置
+            // 平滑滚动到"当前数量/结构:"部分
             setTimeout(() => {
-                const syncStatusSection = document.getElementById('syncStatus');
-                const syncControlsSection = document.querySelector('.sync-controls');
-                
-                if (syncStatusSection && syncControlsSection) {
-                    // 获取两个元素的位置
-                    const syncStatusRect = syncStatusSection.getBoundingClientRect();
-                    const syncControlsRect = syncControlsSection.getBoundingClientRect();
-                    const scrollTop = window.pageYOffset || document.documentElement.scrollTop;
-                    
-                    // 计算大边框上边缘和第一栏目上边缘的中间位置
-                    const syncStatusTop = syncStatusRect.top + scrollTop;
-                    const syncControlsTop = syncControlsRect.top + scrollTop;
-                    const middlePosition = (syncStatusTop + syncControlsTop) / 2;
-                    
-                    // 平滑滚动到中间位置
-                    window.scrollTo({
-                        top: middlePosition,
-                        behavior: 'smooth'
-                    });
-                }
-            }, 100);
+                const statsLabels = document.querySelectorAll('.stats-label');
+                if (statsLabels.length > 1) {
+                    const currentQuantityElement = statsLabels[1];
+                    const syncStatusSection = document.getElementById('syncStatus');
+                    if (syncStatusSection) {
+syncStatusSection.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                        // 稍微调整位置，确保良好的可视效果
+                        window.scrollTo({
+                            top: syncStatusSection.offsetTop + 5,
+                            behavior: 'smooth'
+                        });
+                    }
+                } else {
+                    // 回退方案：如果找不到"当前数量/结构:"元素，则滚动到页面顶部
+                    window.scrollTo({ top: 0, behavior: 'smooth' });
+}
+            }, 50);
 
             // 设置初始化标记
             chrome.storage.local.set({ initialized: true });
@@ -3368,19 +3346,13 @@ const applyLocalizedContent = async (lang) => { // Added lang parameter
 
     // 新增UI文字的国际化
     const autoSyncDescriptionStrings = {
-        'zh_CN': "自动备份",
-        'en': "Auto Backup"
+        'zh_CN': "实时自动备份",
+        'en': "Real-time Auto Backup"
     };
 
     const manualModeDescriptionStrings = {
-        'zh_CN': "手动备份",
-        'en': "Manual Backup"
-    };
-
-    // 添加自动备份设置按钮的国际化
-    const autoBackupSettingsBtnStrings = {
-        'zh_CN': "自动备份设置",
-        'en': "Auto Backup Settings"
+        'zh_CN': "手动备份模式",
+        'en': "Manual Backup Mode"
     };
 
     const autoSyncTipStrings = {
@@ -4511,42 +4483,18 @@ const currentLang = data.preferredLang || 'zh_CN';
     updateLastSyncInfo(lang); // Pass lang here
 
     // 应用备份模式开关文本
-    const autoLabelEl = document.getElementById('autoOptionLabel');
-    if (autoLabelEl) {
-        autoLabelEl.textContent = autoSyncDescriptionStrings[lang] || autoSyncDescriptionStrings['zh_CN'];
+    const autoOption = document.querySelector('.backup-mode-option.auto-option');
+    if (autoOption) {
+        const iconSpan = autoOption.querySelector('.option-icon');
+        const iconHTML = iconSpan ? iconSpan.outerHTML : '<span class="option-icon">⚡</span>';
+        autoOption.innerHTML = iconHTML + (autoSyncDescriptionStrings[lang] || autoSyncDescriptionStrings['zh_CN']);
     }
 
-    const manualLabelEl = document.getElementById('manualOptionLabel');
-    if (manualLabelEl) {
-        manualLabelEl.textContent = manualModeDescriptionStrings[lang] || manualModeDescriptionStrings['zh_CN'];
-    }
-
-    // 更新自动备份设置按钮文本
-    const autoBackupSettingsBtn = document.getElementById('autoBackupSettingsBtn');
-    if (autoBackupSettingsBtn) {
-        autoBackupSettingsBtn.textContent = autoBackupSettingsBtnStrings[lang] || autoBackupSettingsBtnStrings['zh_CN'];
-    }
-    
-    // 更新右侧状态卡片的文本（响应语言切换）
-    const statusCardText = document.getElementById('statusCardText');
-    if (statusCardText) {
-        // 检查当前是自动模式还是手动模式
-        const backupModeSwitch = document.getElementById('backupModeSwitch');
-        const isAutoMode = backupModeSwitch && backupModeSwitch.classList.contains('auto');
-        
-        const autoModeText = {
-            'zh_CN': '实时自动备份已开启',
-            'en': 'Real-time Auto Backup Enabled'
-        };
-        
-        const manualModeText = {
-            'zh_CN': '手动备份模式已开启',
-            'en': 'Manual Backup Mode Enabled'
-        };
-        
-        statusCardText.textContent = isAutoMode ? 
-            (autoModeText[lang] || autoModeText['zh_CN']) : 
-            (manualModeText[lang] || manualModeText['zh_CN']);
+    const manualOption = document.querySelector('.backup-mode-option.manual-option');
+    if (manualOption) {
+        const iconSpan = manualOption.querySelector('.option-icon');
+        const iconHTML = iconSpan ? iconSpan.outerHTML : '<span class="option-icon">🔄</span>';
+        manualOption.innerHTML = iconHTML + (manualModeDescriptionStrings[lang] || manualModeDescriptionStrings['zh_CN']);
     }
 
     // 国际化提醒设置对话框文本
@@ -4869,9 +4817,6 @@ return false; // 阻止错误传播
     initializeLocalConfigSection();
     initializeWebDAVToggle();
     initializeOpenSourceInfo(); // 初始化开源信息功能
-    
-    // 初始化自动备份设置功能
-    initializeAutoBackupFeatures();
 
     // 在确定按钮存在后调用初始化函数
     // 确保在DOM完全加载后执行
@@ -4945,26 +4890,26 @@ console.log('手动备份按钮显示状态:', manualButtonsContainer ? manualBu
             updateLastSyncInfo(); // 新增：加载上次备份信息和书签计数
             initScrollToTopButton(); // 初始化滚动按钮
 
-            // 自动定位到大边框与第一栏目边框的中间位置（直接显示，无动画）
+            // 恢复自动滚动逻辑
+            // 使用setTimeout确保DOM更新和渲染完成后再滚动
             setTimeout(() => {
-                const syncStatusSection = document.getElementById('syncStatus');
-                const syncControlsSection = document.querySelector('.sync-controls');
-                
-                if (syncStatusSection && syncControlsSection && syncStatusSection.style.display !== 'none') {
-                    // 获取两个元素的位置
-                    const syncStatusRect = syncStatusSection.getBoundingClientRect();
-                    const syncControlsRect = syncControlsSection.getBoundingClientRect();
-                    const scrollTop = window.pageYOffset || document.documentElement.scrollTop;
-                    
-                    // 计算大边框上边缘和第一栏目上边缘的中间位置
-                    const syncStatusTop = syncStatusRect.top + scrollTop;
-                    const syncControlsTop = syncControlsRect.top + scrollTop;
-                    const middlePosition = (syncStatusTop + syncControlsTop) / 2;
-                    
-                    // 立即跳转到中间位置（无任何动画效果）
-                    window.scrollTo(0, middlePosition); // 使用最简单的方式，确保无动画
-                }
-            }, 0); // 立即执行，无延迟
+                // 无论自动模式还是手动模式，都滚动到"当前数量/结构:"处
+                const statsLabels = document.querySelectorAll('.stats-label');
+                // 找到"当前数量/结构:"标签元素（通常是第二个.stats-label元素）
+                if (statsLabels.length > 1) {
+                    const currentQuantityElement = statsLabels[1];
+                    const syncStatusSection = document.getElementById('syncStatus');
+                    if (syncStatusSection) {
+// 直接跳转到对应位置，取消平滑滚动效果
+                        syncStatusSection.scrollIntoView({ behavior: 'auto', block: 'start' });
+                        // 立即控制滚动位置，确保页面显示在适当位置
+                        window.scrollTo(0, syncStatusSection.offsetTop + 5);
+                    }
+                } else {
+                    // 回退方案：如果找不到"当前数量/结构:"元素，则滚动到页面顶部
+                    window.scrollTo(0, 0);
+}
+            }, 0); // 将延迟时间降为0，立即执行
 
         } else {
             if (initHeader && initContent) {
@@ -5286,9 +5231,6 @@ const currentLang = data.preferredLang || 'zh_CN';
                 backupModeSwitch.classList.remove('auto');
             }
         }
-        
-        // 修复bug：初始化时正确设置按钮显示状态
-        updateButtonVisibility()
 
         // 初始化提示文本显示状态
         const autoTip = document.querySelector('.mode-tip.auto-tip');
@@ -5727,576 +5669,6 @@ return;
             }
         });
     });
-}
-
-// =============================================================================
-// 自动备份设置功能实现
-// =============================================================================
-
-// 自动备份相关的全局变量
-let autoBackupSettingsDialog = null;
-let currentAutoBackupTab = 'realtime';
-
-// 默认设置
-const defaultAutoBackupSettings = {
-    mode: 'realtime',
-    cyclicSettings: {
-        enabled: false,
-        days: 0,
-        hours: 0,
-        minutes: 30
-    },
-    scheduledSettings: {
-        time1: { enabled: false, time: '09:30' },
-        time2: { enabled: false, time: '16:00' }
-    }
-};
-
-/**
- * 初始化自动备份功能
- */
-function initializeAutoBackupFeatures() {
-    // 初始化对话框
-    initializeAutoBackupDialog();
-    
-    // 初始化按钮显示逻辑
-    initializeAutoBackupButtonLogic();
-    
-    // 检查并更新自动备份状态显示
-    updateAutoBackupStatusDisplay();
-}
-
-/**
- * 初始化自动备份设置对话框
- */
-function initializeAutoBackupDialog() {
-    // 获取对话框元素
-    autoBackupSettingsDialog = document.getElementById('autoBackupSettingsDialog');
-    
-    if (!autoBackupSettingsDialog) {
-        console.error('自动备份设置对话框元素未找到');
-        return;
-    }
-    
-    // 绑定按钮事件
-    bindAutoBackupDialogEvents();
-    
-    // 绑定选项卡切换
-    bindAutoBackupTabSwitchEvents();
-    
-    // 绑定切换开关事件
-    bindAutoBackupToggleEvents();
-    
-    console.log('自动备份设置对话框已初始化');
-}
-
-/**
- * 初始化自动备份按钮显示逻辑
- */
-function initializeAutoBackupButtonLogic() {
-    // 监听实时自动备份开关状态变化
-    const backupModeSwitch = document.getElementById('backupModeSwitch');
-    if (backupModeSwitch) {
-        // 监听点击事件来切换按钮显示
-        backupModeSwitch.addEventListener('click', handleBackupModeSwitchChange);
-    }
-    
-    // 初始状态下根据当前模式显示对应按钮
-    updateButtonVisibility();
-}
-
-/**
- * 处理备份模式开关变化
- */
-function handleBackupModeSwitchChange() {
-    // 延迟执行，等待开关状态更新
-    setTimeout(() => {
-        updateButtonVisibility();
-    }, 100);
-}
-
-/**
- * 更新按钮显示状态
- */
-function updateButtonVisibility() {
-    const backupModeSwitch = document.getElementById('backupModeSwitch');
-    const manualButtonsContainer = document.getElementById('manualButtonsContainer');
-    const autoButtonsContainer = document.getElementById('autoButtonsContainer');
-    
-    if (!backupModeSwitch || !manualButtonsContainer || !autoButtonsContainer) {
-        return;
-    }
-    
-    // 检查是否为自动备份模式
-    const isAutoMode = backupModeSwitch.classList.contains('auto');
-    
-    if (isAutoMode) {
-        // 自动备份模式：显示自动备份设置按钮，隐藏手动备份按钮
-        manualButtonsContainer.style.display = 'none';
-        autoButtonsContainer.style.display = 'flex';
-    } else {
-        // 手动备份模式：显示手动备份按钮，隐藏自动备份设置按钮
-        manualButtonsContainer.style.display = 'flex';
-        autoButtonsContainer.style.display = 'none';
-    }
-    
-    // 更新右侧状态卡片
-    updateStatusCard(isAutoMode);
-}
-
-// 新增函数：更新右侧状态卡片
-function updateStatusCard(isAutoMode) {
-    const statusCard = document.getElementById('change-description-row');
-    const statusCardText = document.getElementById('statusCardText');
-    if (!statusCard) return;
-    
-    chrome.storage.local.get(['preferredLang'], function(data) {
-        const lang = data.preferredLang || 'zh_CN';
-        
-        const autoModeText = {
-            'zh_CN': '实时自动备份已开启',
-            'en': 'Real-time Auto Backup Enabled'
-        };
-        
-        const manualModeText = {
-            'zh_CN': '手动备份模式已开启',
-            'en': 'Manual Backup Mode Enabled'
-        };
-        
-        // 更新文本内容
-        const textContent = isAutoMode ? 
-            (autoModeText[lang] || autoModeText['zh_CN']) : 
-            (manualModeText[lang] || manualModeText['zh_CN']);
-        
-        if (statusCardText) {
-            statusCardText.textContent = textContent;
-        } else {
-            statusCard.innerHTML = `<div id="statusCardText">${textContent}</div>`;
-        }
-        
-        if (isAutoMode) {
-            // 自动备份模式 - 使用绿色主题
-            statusCard.style.background = 'var(--theme-status-card-auto-bg)';
-            statusCard.style.color = 'var(--theme-status-card-auto-text)';
-            statusCard.style.border = '1px solid var(--theme-status-card-auto-border)';
-            statusCard.style.boxShadow = '0 2px 8px var(--theme-status-card-auto-shadow)';
-        } else {
-            // 手动备份模式 - 使用蓝色主题
-            statusCard.style.background = 'var(--theme-status-card-manual-bg)';
-            statusCard.style.color = 'var(--theme-status-card-manual-text)';
-            statusCard.style.border = '1px solid var(--theme-status-card-manual-border)';
-            statusCard.style.boxShadow = '0 2px 8px var(--theme-status-card-manual-shadow)';
-        }
-    });
-}
-
-/**
- * 绑定对话框基本事件
- */
-function bindAutoBackupDialogEvents() {
-    // 自动备份设置按钮
-    const autoBackupSettingsBtn = document.getElementById('autoBackupSettingsBtn');
-    if (autoBackupSettingsBtn) {
-        autoBackupSettingsBtn.addEventListener('click', openAutoBackupDialog);
-    }
-    
-    // 关闭按钮
-    const closeBtn = document.getElementById('closeAutoBackupSettings');
-    if (closeBtn) {
-        closeBtn.addEventListener('click', closeAutoBackupDialog);
-    }
-    
-    // 保存按钮
-    const saveBtn = document.getElementById('saveAutoBackupSettings');
-    if (saveBtn) {
-        saveBtn.addEventListener('click', saveAutoBackupSettings);
-    }
-    
-    // 恢复默认按钮
-    const restoreBtn = document.getElementById('restoreAutoBackupDefaults');
-    if (restoreBtn) {
-        restoreBtn.addEventListener('click', restoreAutoBackupDefaults);
-    }
-    
-    // 点击对话框外部关闭
-    if (autoBackupSettingsDialog) {
-        autoBackupSettingsDialog.addEventListener('click', (event) => {
-            if (event.target === autoBackupSettingsDialog) {
-                closeAutoBackupDialog();
-            }
-        });
-    }
-}
-
-/**
- * 绑定选项卡切换事件
- */
-function bindAutoBackupTabSwitchEvents() {
-    const tabButtons = document.querySelectorAll('.tab-button');
-    
-    tabButtons.forEach(button => {
-        button.addEventListener('click', () => {
-            const tabName = button.dataset.tab;
-            switchAutoBackupTab(tabName);
-        });
-    });
-}
-
-/**
- * 绑定切换开关事件
- */
-function bindAutoBackupToggleEvents() {
-    // 循环自动备份开关
-    const cyclicToggle = document.getElementById('cyclicAutoToggle');
-    if (cyclicToggle) {
-        cyclicToggle.addEventListener('click', toggleCyclicAutoBackup);
-    }
-    
-    // 定时备份开关
-    const scheduled1Toggle = document.getElementById('scheduledToggle1');
-    const scheduled2Toggle = document.getElementById('scheduledToggle2');
-    
-    if (scheduled1Toggle) {
-        scheduled1Toggle.addEventListener('click', () => toggleScheduledBackup(1));
-    }
-    
-    if (scheduled2Toggle) {
-        scheduled2Toggle.addEventListener('click', () => toggleScheduledBackup(2));
-    }
-}
-
-/**
- * 打开自动备份设置对话框
- */
-async function openAutoBackupDialog() {
-    if (!autoBackupSettingsDialog) {
-        console.error('自动备份设置对话框未初始化');
-        return;
-    }
-    
-    // 加载当前设置
-    await loadAutoBackupSettings();
-    
-    // 显示对话框
-    autoBackupSettingsDialog.style.display = 'flex';
-    
-    // 设置焦点到第一个输入框
-    const firstInput = autoBackupSettingsDialog.querySelector('input[type="number"], input[type="time"]');
-    if (firstInput) {
-        setTimeout(() => firstInput.focus(), 100);
-    }
-}
-
-/**
- * 关闭自动备份设置对话框
- */
-function closeAutoBackupDialog() {
-    if (autoBackupSettingsDialog) {
-        autoBackupSettingsDialog.style.display = 'none';
-    }
-}
-
-/**
- * 切换选项卡
- */
-function switchAutoBackupTab(tabName) {
-    currentAutoBackupTab = tabName;
-    
-    // 更新选项卡按钮状态
-    const tabButtons = document.querySelectorAll('.tab-button');
-    tabButtons.forEach(button => {
-        if (button.dataset.tab === tabName) {
-            button.classList.add('active');
-            button.style.backgroundColor = 'var(--theme-accent-color)';
-            button.style.color = 'white';
-        } else {
-            button.classList.remove('active');
-            button.style.backgroundColor = 'transparent';
-            button.style.color = 'var(--theme-text-secondary)';
-        }
-    });
-    
-    // 显示/隐藏对应的选项卡内容
-    const tabContents = document.querySelectorAll('.tab-content');
-    tabContents.forEach(content => {
-        if (content.id === `${tabName}Tab`) {
-            content.style.display = 'block';
-        } else {
-            content.style.display = 'none';
-        }
-    });
-}
-
-/**
- * 其他必要的函数实现...
- */
-function toggleCyclicAutoBackup() {
-    const toggle = document.getElementById('cyclicAutoToggle');
-    if (!toggle) return;
-    
-    const isEnabled = toggle.dataset.state === 'on';
-    const newState = isEnabled ? 'off' : 'on';
-    
-    updateAutoBackupToggleButtonState(toggle, newState);
-    updateCyclicInputsState(newState === 'on');
-}
-
-function toggleScheduledBackup(slotNumber) {
-    const toggle = document.getElementById(`scheduledToggle${slotNumber}`);
-    if (!toggle) return;
-    
-    const isEnabled = toggle.dataset.state === 'on';
-    const newState = isEnabled ? 'off' : 'on';
-    
-    updateAutoBackupToggleButtonState(toggle, newState);
-}
-
-function updateAutoBackupToggleButtonState(button, state) {
-    button.dataset.state = state;
-    const circle = button.querySelector('.toggle-circle');
-    
-    if (state === 'on') {
-        button.style.backgroundColor = '#4CAF50';
-        if (circle) {
-            circle.style.transform = 'translateX(18px)';
-            circle.style.right = '3px';
-        }
-    } else {
-        button.style.backgroundColor = '#ccc';
-        if (circle) {
-            circle.style.transform = 'translateX(0px)';
-            circle.style.left = '3px';
-        }
-    }
-}
-
-function updateCyclicInputsState(enabled) {
-    const inputs = ['cyclicDays', 'cyclicHours', 'cyclicMinutes'];
-    
-    inputs.forEach(id => {
-        const input = document.getElementById(id);
-        if (input) {
-            input.disabled = !enabled;
-            input.style.opacity = enabled ? '1' : '0.5';
-        }
-    });
-}
-
-async function loadAutoBackupSettings() {
-    try {
-        const result = await new Promise(resolve => {
-            chrome.storage.local.get([
-                'autoBackupMode',
-                'cyclicAutoBackupSettings',
-                'scheduledAutoBackupSettings'
-            ], resolve);
-        });
-        
-        applyAutoBackupSettingsToUI(result);
-    } catch (error) {
-        console.error('加载自动备份设置失败:', error);
-    }
-}
-
-function applyAutoBackupSettingsToUI(settings) {
-    const mode = settings.autoBackupMode || 'realtime';
-    switchAutoBackupTab(mode);
-    
-    // 应用循环备份设置
-    const cyclicSettings = settings.cyclicAutoBackupSettings || defaultAutoBackupSettings.cyclicSettings;
-    
-    const cyclicDays = document.getElementById('cyclicDays');
-    const cyclicHours = document.getElementById('cyclicHours');
-    const cyclicMinutes = document.getElementById('cyclicMinutes');
-    const cyclicToggle = document.getElementById('cyclicAutoToggle');
-    
-    if (cyclicDays) cyclicDays.value = cyclicSettings.days || 0;
-    if (cyclicHours) cyclicHours.value = cyclicSettings.hours || 0;
-    if (cyclicMinutes) cyclicMinutes.value = cyclicSettings.minutes || 30;
-    
-    if (cyclicToggle) {
-        updateAutoBackupToggleButtonState(cyclicToggle, cyclicSettings.enabled ? 'on' : 'off');
-        updateCyclicInputsState(cyclicSettings.enabled);
-    }
-    
-    // 应用准点定时设置
-    const scheduledSettings = settings.scheduledAutoBackupSettings || defaultAutoBackupSettings.scheduledSettings;
-    
-    const scheduledTime1 = document.getElementById('scheduledTime1');
-    const scheduledTime2 = document.getElementById('scheduledTime2');
-    const toggle1 = document.getElementById('scheduledToggle1');
-    const toggle2 = document.getElementById('scheduledToggle2');
-    
-    if (scheduledTime1) scheduledTime1.value = scheduledSettings.time1.time || '09:30';
-    if (scheduledTime2) scheduledTime2.value = scheduledSettings.time2.time || '16:00';
-    
-    if (toggle1) updateAutoBackupToggleButtonState(toggle1, scheduledSettings.time1.enabled ? 'on' : 'off');
-    if (toggle2) updateAutoBackupToggleButtonState(toggle2, scheduledSettings.time2.enabled ? 'on' : 'off');
-}
-
-async function saveAutoBackupSettings() {
-    try {
-        const settings = collectAutoBackupSettingsFromUI();
-        const validation = validateAutoBackupSettings(settings);
-        
-        if (!validation.valid) {
-            showStatus(validation.errors.join('; '), 'error');
-            return;
-        }
-        
-        showAutoBackupSavedIndicator();
-        
-        await new Promise((resolve, reject) => {
-            chrome.storage.local.set({
-                autoBackupMode: settings.mode,
-                cyclicAutoBackupSettings: settings.cyclicSettings,
-                scheduledAutoBackupSettings: settings.scheduledSettings
-            }, () => {
-                if (chrome.runtime.lastError) reject(chrome.runtime.lastError);
-                else resolve();
-            });
-        });
-        
-        chrome.runtime.sendMessage({
-            action: 'updateAutoBackupSettings',
-            settings: settings
-        });
-        
-        setTimeout(() => closeAutoBackupDialog(), 1000);
-        
-    } catch (error) {
-        console.error('保存自动备份设置失败:', error);
-        showStatus('保存设置失败', 'error');
-    }
-}
-
-function collectAutoBackupSettingsFromUI() {
-    const cyclicToggle = document.getElementById('cyclicAutoToggle');
-    const toggle1 = document.getElementById('scheduledToggle1');
-    const toggle2 = document.getElementById('scheduledToggle2');
-    const cyclicDays = document.getElementById('cyclicDays');
-    const cyclicHours = document.getElementById('cyclicHours');
-    const cyclicMinutes = document.getElementById('cyclicMinutes');
-    const scheduledTime1 = document.getElementById('scheduledTime1');
-    const scheduledTime2 = document.getElementById('scheduledTime2');
-    
-    return {
-        mode: currentAutoBackupTab,
-        cyclicSettings: {
-            enabled: cyclicToggle?.dataset.state === 'on',
-            days: parseInt(cyclicDays?.value) || 0,
-            hours: parseInt(cyclicHours?.value) || 0,
-            minutes: parseInt(cyclicMinutes?.value) || 30
-        },
-        scheduledSettings: {
-            time1: {
-                enabled: toggle1?.dataset.state === 'on',
-                time: scheduledTime1?.value || '09:30'
-            },
-            time2: {
-                enabled: toggle2?.dataset.state === 'on', 
-                time: scheduledTime2?.value || '16:00'
-            }
-        }
-    };
-}
-
-function validateAutoBackupSettings(settings) {
-    const errors = [];
-    
-    if (settings.cyclicSettings.enabled) {
-        const { days, hours, minutes } = settings.cyclicSettings;
-        const totalMinutes = days * 1440 + hours * 60 + minutes;
-        
-        if (totalMinutes <= 0) errors.push('循环备份时间间隔必须大于0');
-        if (days > 30 || hours > 24 || minutes > 60) errors.push('时间输入值超出允许范围');
-    }
-    
-    if (settings.scheduledSettings.time1.enabled || settings.scheduledSettings.time2.enabled) {
-        const timeRegex = /^([01]?[0-9]|2[0-3]):[0-5][0-9]$/;
-        
-        if (settings.scheduledSettings.time1.enabled && !timeRegex.test(settings.scheduledSettings.time1.time)) {
-            errors.push('定时1的时间格式无效');
-        }
-        
-        if (settings.scheduledSettings.time2.enabled && !timeRegex.test(settings.scheduledSettings.time2.time)) {
-            errors.push('定时2的时间格式无效');
-        }
-    }
-    
-    return { valid: errors.length === 0, errors };
-}
-
-async function restoreAutoBackupDefaults() {
-    try {
-        applyAutoBackupSettingsToUI({
-            autoBackupMode: defaultAutoBackupSettings.mode,
-            cyclicAutoBackupSettings: defaultAutoBackupSettings.cyclicSettings,
-            scheduledAutoBackupSettings: defaultAutoBackupSettings.scheduledSettings
-        });
-        
-        showStatus('已恢复默认设置', 'success', 2000);
-    } catch (error) {
-        console.error('恢复默认设置失败:', error);
-        showStatus('恢复默认设置失败', 'error');
-    }
-}
-
-function showAutoBackupSavedIndicator() {
-    const indicator = document.getElementById('autoBackupSettingsSavedIndicator');
-    if (!indicator) return;
-    
-    indicator.style.display = 'block';
-    indicator.style.opacity = '1';
-    indicator.style.transform = 'translateY(0)';
-    
-    setTimeout(() => {
-        indicator.style.opacity = '0';
-        indicator.style.transform = 'translateY(10px)';
-        setTimeout(() => indicator.style.display = 'none', 300);
-    }, 2000);
-}
-
-async function updateAutoBackupStatusDisplay() {
-    try {
-        const result = await new Promise(resolve => {
-            chrome.storage.local.get(['autoSync', 'autoBackupMode'], resolve);
-        });
-        
-        const isAutoSync = result.autoSync !== false;
-        const mode = result.autoBackupMode || 'realtime';
-        
-        if (isAutoSync) updateRightStatusContainer(mode);
-    } catch (error) {
-        console.error('更新自动备份状态显示失败:', error);
-    }
-}
-
-function updateRightStatusContainer(mode) {
-    const container = document.getElementById('change-description-row');
-    if (!container) return;
-    
-    let statusText = '';
-    switch (mode) {
-        case 'realtime': statusText = '实时自动备份已开启'; break;
-        case 'cyclic': statusText = '循环自动备份已开启'; break;
-        case 'scheduled': statusText = '准点定时备份已开启'; break;
-        default: statusText = '实时自动备份已开启';
-    }
-    
-    container.innerHTML = `
-        <div class="status status-info" style="
-            background-color: var(--theme-status-info-bg);
-            color: var(--theme-status-info-text);
-            border: 1px solid var(--theme-status-info-border);
-            padding: 8px 12px;
-            border-radius: 4px;
-            font-size: 13px;
-            text-align: center;
-        ">
-            ${statusText}
-        </div>
-    `;
 }
 
 // 保存备注函数

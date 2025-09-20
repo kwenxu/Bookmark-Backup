@@ -26,11 +26,8 @@ import {
     onManualBackupCompleted
 } from './backup_reminder/index.js';
 
-// 从 timer.js 直接导入函数
+// 从timer.js直接导入函数
 import { pauseReminderTimer, resumeReminderTimer, handleAlarm, startLoopReminder, stopLoopReminder } from './backup_reminder/timer.js';
-
-// 导入自动备份时间管理系统
-import './backup_reminder/auto_backup_timer.js';
 
 // 浏览器兼容性处理
 const browserAPI = (function() {
@@ -298,11 +295,6 @@ hasInitializedBackupReminder = false; // 重置标志以允许未来重试
         });
     } else {
 }
-    
-    // 初始化自动备份系统
-    initializeAutoBackupSystem().catch(error => {
-        console.error('初始化自动备份系统失败:', error);
-    });
 });
 
 // 确保定时器在浏览器启动时也能正确创建
@@ -320,50 +312,11 @@ hasInitializedBackupReminder = false; // 重置标志以允许未来重试
     } else {
 }
 
-    // 初始化自动备份系统
-    initializeAutoBackupSystem().catch(error => {
-        console.error('初始化自动备份系统失败:', error);
-    });
-
     // 使用主动查询方法同步下载状态，避免大量onCreated日志
     syncDownloadState();
     // 首次启动时预热缓存
     updateAndCacheAnalysis();
 });
-
-/**
- * 初始化自动备份系统
- */
-async function initializeAutoBackupSystem() {
-    try {
-        // 获取当前自动备份设置
-        const { autoSync = false } = await browserAPI.storage.local.get(['autoSync']);
-        
-        if (autoSync) {
-            // 动态导入自动备份模块
-            const autoBackupModule = await import('./backup_reminder/auto_backup_timer.js');
-            
-            if (autoBackupModule.loadAutoBackupSettings && autoBackupModule.startAutoBackupSystem) {
-                // 加载配置
-                await autoBackupModule.loadAutoBackupSettings();
-                
-                // 获取当前模式
-                const { autoBackupMode = 'realtime' } = await browserAPI.storage.local.get(['autoBackupMode']);
-                
-                // 启动自动备份系统
-                await autoBackupModule.startAutoBackupSystem(autoBackupMode);
-                
-                console.log('自动备份系统已初始化，模式:', autoBackupMode);
-            } else {
-                console.warn('自动备份模块加载不完整');
-            }
-        } else {
-            console.log('自动备份已禁用，跳过初始化');
-        }
-    } catch (error) {
-        console.error('初始化自动备份系统时出错:', error);
-    }
-}
 
 /**
  * 主动同步下载状态，用于替代依赖onCreated的被动通知方式
@@ -1386,85 +1339,6 @@ sendResponse({ success: true, notificationId: notificationId });
             } else {
 sendResponse({ success: false, error: '缺少状态文本' });
             }
-        } else if (message.action === "updateAutoBackupSettings") {
-            // 处理自动备份设置更新请求
-            (async () => {
-                try {
-                    if (!message.settings) {
-                        throw new Error('缺少设置参数');
-                    }
-
-                    // 动态导入自动备份模块
-                    const autoBackupModule = await import('./backup_reminder/auto_backup_timer.js');
-                    
-                    if (autoBackupModule.updateAutoBackupSettings) {
-                        const result = await autoBackupModule.updateAutoBackupSettings(message.settings);
-                        sendResponse(result);
-                    } else {
-                        throw new Error('自动备份模块未正确加载');
-                    }
-                } catch (error) {
-                    console.error('更新自动备份设置失败:', error);
-                    sendResponse({ 
-                        success: false, 
-                        error: error.message || '更新自动备份设置失败' 
-                    });
-                }
-            })();
-            
-            return true; // 保持消息通道开放
-        } else if (message.action === "updateSyncStatus") {
-            // 处理自动备份的状态更新请求
-            (async () => {
-                try {
-                    await updateSyncStatus(
-                        message.direction,
-                        message.time,
-                        message.status,
-                        message.errorMessage || '',
-                        message.syncType || 'auto'
-                    );
-                    sendResponse({ success: true });
-                } catch (error) {
-                    console.error('更新同步状态失败:', error);
-                    sendResponse({ 
-                        success: false, 
-                        error: error.message || '更新同步状态失败' 
-                    });
-                }
-            })();
-            
-            return true; // 保持消息通道开放
-        } else if (message.action === "uploadBookmarks") {
-            // 处理WebDAV上传请求
-            (async () => {
-                try {
-                    const result = await uploadBookmarks(message.bookmarks);
-                    sendResponse(result);
-                } catch (error) {
-                    sendResponse({ 
-                        success: false, 
-                        error: error.message || 'WebDAV上传失败' 
-                    });
-                }
-            })();
-            
-            return true;
-        } else if (message.action === "uploadBookmarksToLocal") {
-            // 处理本地上传请求
-            (async () => {
-                try {
-                    const result = await uploadBookmarksToLocal(message.bookmarks);
-                    sendResponse(result);
-                } catch (error) {
-                    sendResponse({ 
-                        success: false, 
-                        error: error.message || '本地上传失败' 
-                    });
-                }
-            })();
-            
-            return true;
         }
     } catch (error) {
 sendResponse({ success: false, error: error.message || '未知错误' });
@@ -1476,32 +1350,17 @@ sendResponse({ success: false, error: error.message || '未知错误' });
 
 // 监听计时器警报
 browserAPI.alarms.onAlarm.addListener(async (alarm) => {
-    if (alarm.name === "syncBookmarks") {
-        try {
+if (alarm.name === "syncBookmarks") {
+try {
             // 自动备份时传入 isManual = false
             const result = await syncBookmarks(false);
-            // 在备份完成后调用 updateBadgeAfterSync
+// 在备份完成后调用 updateBadgeAfterSync
             updateBadgeAfterSync(result.success);
         } catch (error) {
-            // 备份失败也要更新角标为错误状态
+// 备份失败也要更新角标为错误状态
             updateBadgeAfterSync(false);
         }
     }
-    
-    // 处理自动备份定时器
-    const autoBackupAlarms = ['cyclicAutoBackupAlarm', 'scheduledAutoBackupAlarm1', 'scheduledAutoBackupAlarm2'];
-    if (autoBackupAlarms.includes(alarm.name)) {
-        try {
-            // 动态导入自动备份处理函数
-            const autoBackupModule = await import('./backup_reminder/auto_backup_timer.js');
-            if (autoBackupModule.handleAutoBackupAlarm) {
-                await autoBackupModule.handleAutoBackupAlarm(alarm);
-            }
-        } catch (error) {
-            console.error('处理自动备份alarm失败:', error);
-        }
-    }
-    
     // 移除对backupReminderAlarm的处理逻辑，防止与timer.js中的handleAlarm重复处理
     // 由timer.js的handleAlarm函数专门处理backupReminderAlarm
 });
@@ -1550,44 +1409,19 @@ async function handleBookmarkChange() {
 
             // 仅在自动备份模式下尝试自动备份
             if (autoSync) {
-                // 检查是否为实时自动备份模式
-                try {
-                    const { autoBackupMode = 'realtime' } = await browserAPI.storage.local.get(['autoBackupMode']);
-                    if (autoBackupMode === 'realtime') {
-                        // 实时自动备份 - 使用新的自动备份系统
-                        const autoBackupModule = await import('./backup_reminder/auto_backup_timer.js');
-                        if (autoBackupModule.triggerRealtimeBackup) {
-                            const result = await autoBackupModule.triggerRealtimeBackup();
-                            updateBadgeAfterSync(result.success);
-                            if (result.success) {
-                                updateAndCacheAnalysis();
-                            }
-                        }
-                    } else {
-                        // 传统自动备份模式
-                        syncBookmarks().then(result => {
-                            updateBadgeAfterSync(result.success);
-                            if (result.success) {
-                                updateAndCacheAnalysis();
-                            }
-                        }).catch(error => {
-                            updateBadgeAfterSync(false);
-                        });
+syncBookmarks().then(result => { // <-- 添加 .then() 处理
+// 在备份完成后调用 updateBadgeAfterSync
+                    updateBadgeAfterSync(result.success);
+                    // 如果成功，则更新缓存
+                    if (result.success) {
+                        updateAndCacheAnalysis();
                     }
-                } catch (error) {
-                    console.error('实时自动备份触发失败:', error);
-                    // 回退到传统方式
-                    syncBookmarks().then(result => {
-                        updateBadgeAfterSync(result.success);
-                        if (result.success) {
-                            updateAndCacheAnalysis();
-                        }
-                    }).catch(error => {
-                        updateBadgeAfterSync(false);
-                    });
-                }
+                }).catch(error => {
+// 备份失败也要更新角标为错误状态
+                    updateBadgeAfterSync(false);
+                });
             } else {
-                // 手动模式下书签变化，直接更新角标状态（如变为黄色）
+// 手动模式下书签变化，直接更新角标状态（如变为黄色）
                 await setBadge();
             }
         } catch (error) {

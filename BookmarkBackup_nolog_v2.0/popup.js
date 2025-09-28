@@ -1657,7 +1657,7 @@ function updateBookmarkCountDisplay(passedLang) {
     });
 
     // 统一的外部容器样式 (移到顶层作用域，确保在所有分支中可用)
-    const containerStyle = "display: inline-block; margin: 5px 0 5px 0; padding: 8px 10px 8px 12px; background-color: var(--theme-status-info-bg); border-radius: 6px; border-left: 3px solid var(--theme-accent-color); font-size: 13px; text-align: left;";
+    const containerStyle = "display: inline-block; margin: 5px 0 5px 0; padding: 8px 10px 8px 12px; background-color: transparent; border-radius: 6px; border-left: 3px solid var(--theme-accent-color); font-size: 13px; text-align: left;";
     const mainItemStyle = "word-break: break-all; color: var(--theme-text-primary); text-align: left;";
     const secondaryItemStyle = "margin-top: 5px; font-size: 12px; color: var(--theme-text-secondary); text-align: left;";
 
@@ -1666,8 +1666,8 @@ function updateBookmarkCountDisplay(passedLang) {
             const bookmarkCountSpan = document.getElementById('bookmarkCount');
             const changeDescriptionContainer = document.getElementById('change-description-row');
 
-            if (!bookmarkCountSpan || !changeDescriptionContainer) {
-return;
+            if (!changeDescriptionContainer) {
+                return;
             }
 
             // 获取国际化标签 (确保 window.i18nLabels 已由 applyLocalizedContent 设置)
@@ -1675,6 +1675,9 @@ return;
             const i18nFoldersLabel = window.i18nLabels?.foldersLabel || (currentLang === 'en' ? "folders" : "个文件夹");
 
             if (isAutoSyncEnabled) {
+                // 设置右侧状态卡片为自动模式样式
+                changeDescriptionContainer.classList.add('auto-mode');
+                changeDescriptionContainer.classList.remove('manual-mode');
                 // --- 自动同步模式 ---
                 // 1. 更新 "当前数量/结构:" (Details)
                 chrome.runtime.sendMessage({ action: "getBackupStats" }, backupResponse => {
@@ -1693,18 +1696,25 @@ return;
                                                 <span style="padding-left: 2px;">${currentFolderCount}${i18nFoldersLabel}</span>
                                             </span>`;
                         }
-                        bookmarkCountSpan.innerHTML = quantityText;
+                        if (bookmarkCountSpan) {
+                            bookmarkCountSpan.innerHTML = quantityText;
+                        }
                     } else {
-                        bookmarkCountSpan.innerHTML = `<span style="color: orange;">${currentLang === 'en' ? 'Counts unavailable' : '数量暂无法获取'}</span>`;
+                        if (bookmarkCountSpan) {
+                            bookmarkCountSpan.innerHTML = `<span style="color: orange;">${currentLang === 'en' ? 'Counts unavailable' : '数量暂无法获取'}</span>`;
+                        }
 }
                 });
 
                 // 2. 更新 "上次变动" 区域为 "自动监测中"
                 const autoBackupText = currentLang === 'en' ? "Auto Monitoring Active" : "自动监测中";
-                const autoBackupStyle = mainItemStyle + " color: var(--theme-success-color); font-weight: bold; text-align: left;";
-                changeDescriptionContainer.innerHTML = `<div style=\"${containerStyle}\"><div style=\"${autoBackupStyle}\">${autoBackupText}</div></div>`;
+                const autoBackupStyle = mainItemStyle + " color: var(--theme-status-card-auto-text); font-weight: bold; text-align: left;";
+                changeDescriptionContainer.innerHTML = `<div style=\"${autoBackupStyle}\">${autoBackupText}</div>`;
 
             } else {
+                // 设置右侧状态卡片为手动模式样式
+                changeDescriptionContainer.classList.add('manual-mode');
+                changeDescriptionContainer.classList.remove('auto-mode');
                 // --- 手动备份模式 ---
                 Promise.all([
                     new Promise((resolve, reject) => {
@@ -1740,9 +1750,9 @@ return;
                                             <span style="padding-left: 2px;">${currentFolderCount}${i18nFoldersLabel}</span>
                                         </span>`;
                     }
-                    bookmarkCountSpan.innerHTML = quantityText;
-
-                    // --- 开始原有的手动模式差异计算和显示逻辑 ---
+                    if (bookmarkCountSpan) {
+                        bookmarkCountSpan.innerHTML = quantityText;
+                    }
                     const hasStructuralChanges = backupResponse.stats.bookmarkMoved ||
                         backupResponse.stats.folderMoved ||
                         backupResponse.stats.bookmarkModified ||
@@ -1874,7 +1884,9 @@ return;
                     changeDescriptionContainer.innerHTML = changeDescriptionContent;
                     // --- 结束原有的手动模式差异计算和显示逻辑 ---
                 }).catch(manualError => {
-bookmarkCountSpan.innerHTML = `<span style="color: red;">${currentLang === 'en' ? 'Details load failed' : '详情加载失败'}</span>`;
+                    if (bookmarkCountSpan) {
+                        bookmarkCountSpan.innerHTML = `<span style="color: red;">${currentLang === 'en' ? 'Details load failed' : '详情加载失败'}</span>`;
+                    }
                     if (changeDescriptionContainer) {
                         changeDescriptionContainer.innerHTML = `<div style="${containerStyle}"><div style="${mainItemStyle} color: red;">${currentLang === 'en' ? 'Change details unavailable' : '变动详情无法加载'}</div></div>`;
                     }
@@ -2348,6 +2360,18 @@ function handleAutoSyncToggle(event) {
         } else {
             backupModeSwitch.classList.add('manual');
             backupModeSwitch.classList.remove('auto');
+        }
+    }
+
+    // 同步右侧状态卡片的配色
+    const changeDescriptionContainerForToggle = document.getElementById('change-description-row');
+    if (changeDescriptionContainerForToggle) {
+        if (isChecked) {
+            changeDescriptionContainerForToggle.classList.add('auto-mode');
+            changeDescriptionContainerForToggle.classList.remove('manual-mode');
+        } else {
+            changeDescriptionContainerForToggle.classList.add('manual-mode');
+            changeDescriptionContainerForToggle.classList.remove('auto-mode');
         }
     }
 
@@ -3353,6 +3377,12 @@ const applyLocalizedContent = async (lang) => { // Added lang parameter
     const manualModeDescriptionStrings = {
         'zh_CN': "手动备份模式",
         'en': "Manual Backup Mode"
+    };
+
+    // 新增：自动备份设置按钮 文案
+    const autoBackupSettingsStrings = {
+        'zh_CN': "自动备份设置",
+        'en': "Auto Backup Settings"
     };
 
     const autoSyncTipStrings = {
@@ -4482,19 +4512,27 @@ const currentLang = data.preferredLang || 'zh_CN';
     // 在所有静态文本应用完毕后，调用此函数来刷新依赖国际化标签的动态内容
     updateLastSyncInfo(lang); // Pass lang here
 
-    // 应用备份模式开关文本
-    const autoOption = document.querySelector('.backup-mode-option.auto-option');
-    if (autoOption) {
-        const iconSpan = autoOption.querySelector('.option-icon');
-        const iconHTML = iconSpan ? iconSpan.outerHTML : '<span class="option-icon">⚡</span>';
-        autoOption.innerHTML = iconHTML + (autoSyncDescriptionStrings[lang] || autoSyncDescriptionStrings['zh_CN']);
+    // 应用备份模式开关文本（仅更新标签，不替换整个容器，避免删除按钮）
+    const autoOptionLabelEl = document.getElementById('autoOptionLabel');
+    if (autoOptionLabelEl) {
+        autoOptionLabelEl.textContent = autoSyncDescriptionStrings[lang] || autoSyncDescriptionStrings['zh_CN'];
     }
 
-    const manualOption = document.querySelector('.backup-mode-option.manual-option');
-    if (manualOption) {
-        const iconSpan = manualOption.querySelector('.option-icon');
-        const iconHTML = iconSpan ? iconSpan.outerHTML : '<span class="option-icon">🔄</span>';
-        manualOption.innerHTML = iconHTML + (manualModeDescriptionStrings[lang] || manualModeDescriptionStrings['zh_CN']);
+    const manualOptionLabelEl = document.getElementById('manualOptionLabel');
+    if (manualOptionLabelEl) {
+        manualOptionLabelEl.textContent = manualModeDescriptionStrings[lang] || manualModeDescriptionStrings['zh_CN'];
+    }
+
+    // 应用自动备份设置按钮文本
+    const autoBackupSettingsBtn = document.getElementById('autoBackupSettingsBtn');
+    if (autoBackupSettingsBtn) {
+        autoBackupSettingsBtn.textContent = autoBackupSettingsStrings[lang] || autoBackupSettingsStrings['zh_CN'];
+    }
+
+    // 初始化右侧状态文本（如果存在静态占位符）
+    const statusCardTextEl = document.getElementById('statusCardText');
+    if (statusCardTextEl) {
+        statusCardTextEl.textContent = autoSyncDescriptionStrings[lang] || autoSyncDescriptionStrings['zh_CN'];
     }
 
     // 国际化提醒设置对话框文本
@@ -5229,6 +5267,18 @@ const currentLang = data.preferredLang || 'zh_CN';
             } else {
                 backupModeSwitch.classList.add('manual');
                 backupModeSwitch.classList.remove('auto');
+            }
+        }
+
+        // 初始化右侧状态卡片的配色
+        const changeDescriptionContainerAtInit = document.getElementById('change-description-row');
+        if (changeDescriptionContainerAtInit) {
+            if (autoSyncEnabled) {
+                changeDescriptionContainerAtInit.classList.add('auto-mode');
+                changeDescriptionContainerAtInit.classList.remove('manual-mode');
+            } else {
+                changeDescriptionContainerAtInit.classList.add('manual-mode');
+                changeDescriptionContainerAtInit.classList.remove('auto-mode');
             }
         }
 

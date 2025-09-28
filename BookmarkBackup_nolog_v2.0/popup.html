@@ -1936,6 +1936,19 @@
         .status-card {
             transition: all 0.3s ease;
         }
+        /* 右侧状态卡片：根据模式着色 */
+        .status-card.auto-mode {
+            background-color: var(--theme-status-card-auto-bg) !important;
+            color: var(--theme-status-card-auto-text) !important;
+            border: 1px solid var(--theme-status-card-auto-border) !important;
+            box-shadow: 0 2px 8px var(--theme-status-card-auto-shadow) !important;
+        }
+        .status-card.manual-mode {
+            background-color: var(--theme-status-card-manual-bg) !important;
+            color: var(--theme-status-card-manual-text) !important;
+            border: 1px solid var(--theme-status-card-manual-border) !important;
+            box-shadow: 0 2px 8px var(--theme-status-card-manual-shadow) !important;
+        }
         
         .mode-tip.auto-tip {
             display: block;

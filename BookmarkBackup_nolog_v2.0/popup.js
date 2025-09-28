@@ -4364,9 +4364,25 @@ const currentLang = data.preferredLang || 'zh_CN';
     }
 
     // 应用动态提醒设置按钮文本
-    const reminderSettingsBtn = document.getElementById('reminderSettingsBtn');
-    if (reminderSettingsBtn) {
-        reminderSettingsBtn.textContent = reminderSettingsStrings[lang] || reminderSettingsStrings['zh_CN'];
+    // 设置提醒设置按钮的 tooltip 文本
+    const reminderSettingsTooltip = document.getElementById('reminderSettingsTooltip');
+    if (reminderSettingsTooltip) {
+        reminderSettingsTooltip.textContent = reminderSettingsStrings[lang] || reminderSettingsStrings['zh_CN'];
+    }
+    const reminderSettingsBtnRef = document.getElementById('reminderSettingsBtn');
+    if (reminderSettingsBtnRef) {
+        const tipTextRem = reminderSettingsStrings[lang] || reminderSettingsStrings['zh_CN'];
+        reminderSettingsBtnRef.setAttribute('title', tipTextRem);
+        reminderSettingsBtnRef.setAttribute('aria-label', tipTextRem);
+        const showRemTip = () => { if (reminderSettingsTooltip) { reminderSettingsTooltip.style.visibility = 'visible'; reminderSettingsTooltip.style.opacity = '1'; } };
+        const hideRemTip = () => { if (reminderSettingsTooltip) { reminderSettingsTooltip.style.visibility = 'hidden'; reminderSettingsTooltip.style.opacity = '0'; } };
+        reminderSettingsBtnRef.addEventListener('mouseenter', showRemTip);
+        reminderSettingsBtnRef.addEventListener('mouseleave', hideRemTip);
+        const manualButtonsContainer = document.getElementById('manualButtonsContainer');
+        if (manualButtonsContainer) {
+            manualButtonsContainer.addEventListener('mouseenter', showRemTip);
+            manualButtonsContainer.addEventListener('mouseleave', hideRemTip);
+        }
     }
 
     // 调整提醒设置对话框内的“保存”按钮为向上箭头（避免文字被写回）
@@ -4541,9 +4557,25 @@ const currentLang = data.preferredLang || 'zh_CN';
     }
 
     // 应用自动备份设置按钮文本
+    // 设置自动备份设置按钮的 tooltip 文本
+    const autoBackupTooltipEl = document.getElementById('autoBackupTooltip');
+    if (autoBackupTooltipEl) {
+        autoBackupTooltipEl.textContent = autoBackupSettingsStrings[lang] || autoBackupSettingsStrings['zh_CN'];
+    }
     const autoBackupSettingsBtn = document.getElementById('autoBackupSettingsBtn');
     if (autoBackupSettingsBtn) {
-        autoBackupSettingsBtn.textContent = autoBackupSettingsStrings[lang] || autoBackupSettingsStrings['zh_CN'];
+        const tipText = autoBackupSettingsStrings[lang] || autoBackupSettingsStrings['zh_CN'];
+        autoBackupSettingsBtn.setAttribute('title', tipText);
+        autoBackupSettingsBtn.setAttribute('aria-label', tipText);
+        const showAutoTip = () => { if (autoBackupTooltipEl) { autoBackupTooltipEl.style.visibility = 'visible'; autoBackupTooltipEl.style.opacity = '1'; } };
+        const hideAutoTip = () => { if (autoBackupTooltipEl) { autoBackupTooltipEl.style.visibility = 'hidden'; autoBackupTooltipEl.style.opacity = '0'; } };
+        autoBackupSettingsBtn.addEventListener('mouseenter', showAutoTip);
+        autoBackupSettingsBtn.addEventListener('mouseleave', hideAutoTip);
+        const autoButtonsContainer = document.getElementById('autoButtonsContainer');
+        if (autoButtonsContainer) {
+            autoButtonsContainer.addEventListener('mouseenter', showAutoTip);
+            autoButtonsContainer.addEventListener('mouseleave', hideAutoTip);
+        }
     }
 
     // 初始化右侧状态文本（如果存在静态占位符）

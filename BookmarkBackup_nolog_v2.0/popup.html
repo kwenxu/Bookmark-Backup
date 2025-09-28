@@ -1679,7 +1679,7 @@
         /* 精美的集成开关样式 */
         .backup-mode-switch {
             position: relative;
-            width: 420px; /* 调整宽度与上面的容器一致 */
+            width: 100%; /* 随容器宽度自适应 */
             margin: 0; /* 左对齐 */
             height: 110px; /* 纵向布局高度提升，容纳同排操作按钮 */
             background: linear-gradient(to bottom, #e8f5e9, #f0f0f0);
@@ -1689,7 +1689,7 @@
             align-items: stretch; /* 占满横向宽度 */
             cursor: default; /* 不再整块切换模式，仅子区域可点击 */
             box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
-            overflow: hidden;
+            overflow: visible; /* 允许内部tooltip溢出 */
             transition: all 0.5s ease;
         }
         
@@ -1864,7 +1864,38 @@
         .settings-button.disabled {
             opacity: 0.5;
             cursor: not-allowed;
-            pointer-events: none;
+            /* 允许悬停以显示tooltip；点击由disabled属性拦截 */
+            pointer-events: auto;
+        }
+
+        /* 通用：设置按钮的气泡说明在悬停时显示 */
+        .settings-button:hover .tooltip {
+            visibility: visible;
+            opacity: 1;
+        }
+
+        /* 允许选项容器溢出以呈现气泡 */
+        .backup-mode-option { overflow: visible; }
+        .backup-mode-option .option-label { overflow: hidden; text-overflow: ellipsis; }
+
+        /* 根据上下半区分别定位tooltip，避免被整体容器裁剪 */
+        .backup-mode-option.auto-option .settings-button .tooltip {
+            /* 改为与下半区一致：气泡显示在按钮上方 */
+            bottom: calc(100% + 6px) !important;
+            left: 50% !important;
+            transform: translateX(-50%) !important;
+            z-index: 10;
+        }
+        .backup-mode-option.manual-option .settings-button .tooltip {
+            bottom: calc(100% + 6px) !important;
+            left: 50% !important;
+            transform: translateX(-50%) !important;
+            z-index: 10;
+        }
+
+        /* 统一两个设置按钮的气泡为半透明背景 */
+        .backup-mode-option .settings-button .tooltip {
+            background-color: rgba(0, 0, 0, 0.6) !important;
         }
 
         .manual-buttons button:hover {
@@ -1967,9 +1998,9 @@
             display: block;
         }
 
-        /* 当语言为英语时，加宽右侧状态容器以避免换行 */
+        /* 当语言为英语时，不再限制右侧状态容器最大宽度，按比例自适应 */
         html[lang="en"] #rightStatusContainer {
-            max-width: 320px !important;
+            max-width: none !important;
         }
 
         /* 当语言为英语时，调整统计标签宽度与整体位置 */
@@ -2178,20 +2209,26 @@
             <!-- 优化后的备份控制区域，移至顶部 -->
             <div class="sync-controls" style="margin: 0 0 15px 0; background-color: transparent; border-radius: 8px; padding: 15px 20px; border: 1px solid var(--theme-border-primary); box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);">
                 <div style="display: flex; align-items: center; gap: 15px;">
-                    <!-- 左侧：开关控件 (减小宽度) -->
-                    <div style="flex: 0 0 420px;">
+                    <!-- 左侧：开关控件 (约占 7 份) -->
+                    <div style="flex: 7 1 0; min-width: 340px;">
                         <div id="backupModeSwitch" class="backup-mode-switch auto">
                             <div class="backup-mode-slider"></div>
                             <div class="backup-mode-option auto-option">
                                 <span class="option-label" id="autoOptionLabel">自动备份</span>
                                 <div id="autoButtonsContainer" class="manual-buttons option-actions">
-                                    <button id="autoBackupSettingsBtn" class="settings-button" style="margin: 0;">自动备份设置</button>
+                                    <button id="autoBackupSettingsBtn" class="settings-button" style="margin: 0; position: relative;" aria-label="自动备份设置">
+                                        <i class="fas fa-cog"></i>
+                                        <span class="tooltip" style="position: absolute; background-color: var(--theme-tooltip-bg, rgba(0,0,0,0.7)); color: var(--theme-tooltip-text, white); padding: 2px 8px; border-radius: 4px; font-size: 12px; white-space: nowrap; visibility: hidden; opacity: 0; transition: opacity 0.3s; pointer-events: none;" id="autoBackupTooltip">自动备份设置</span>
+                                    </button>
                                 </div>
                             </div>
                             <div class="backup-mode-option manual-option">
                                 <span class="option-label" id="manualOptionLabel">手动备份</span>
                                 <div id="manualButtonsContainer" class="manual-buttons option-actions">
-                                    <button id="reminderSettingsBtn" class="settings-button disabled" style="margin: 0;">动态提醒设置</button>
+                                    <button id="reminderSettingsBtn" class="settings-button disabled" style="margin: 0; position: relative;" aria-label="动态提醒设置">
+                                        <i class="fas fa-cog"></i>
+                                        <span class="tooltip" style="position: absolute; background-color: var(--theme-tooltip-bg, rgba(0,0,0,0.7)); color: var(--theme-tooltip-text, white); padding: 2px 8px; border-radius: 4px; font-size: 12px; white-space: nowrap; visibility: hidden; opacity: 0; transition: opacity 0.3s; pointer-events: none;" id="reminderSettingsTooltip">动态提醒设置</span>
+                                    </button>
                                     <button id="uploadToCloudManual" class="backup-button disabled">手动备份</button>
                                 </div>
                             </div>
@@ -2199,8 +2236,8 @@
                         </div>
                     </div>
                     
-                    <!-- 右侧：状态区块 (增加宽度，调整高度与左侧一致) -->
-                    <div id="rightStatusContainer" style="flex: 1;">
+                    <!-- 右侧：状态区块 (约占 4 份) -->
+                    <div id="rightStatusContainer" style="flex: 4 1 0;">
                         <div id="change-description-row" class="status-card" style="
                             padding: 20px;
                             border-radius: 12px;

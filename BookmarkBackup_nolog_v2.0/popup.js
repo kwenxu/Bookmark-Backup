@@ -1666,7 +1666,7 @@ function updateBookmarkCountDisplay(passedLang) {
     });
 
     // 统一的外部容器样式 (移到顶层作用域，确保在所有分支中可用)
-    const containerStyle = "display: inline-block; margin: 5px 0 5px 0; padding: 8px 10px 8px 12px; background-color: transparent; border-radius: 6px; font-size: 13px; text-align: left;";
+    const containerStyle = "display: inline-block; margin: 2px 0 2px 0; padding: 6px 8px 6px 10px; background-color: transparent; border-radius: 6px; font-size: 12.5px; text-align: center;";
     const mainItemStyle = "word-break: break-all; color: var(--theme-text-primary); text-align: left;";
     const secondaryItemStyle = "margin-top: 5px; font-size: 12px; color: var(--theme-text-secondary); text-align: left;";
 
@@ -1695,8 +1695,8 @@ function updateBookmarkCountDisplay(passedLang) {
                         const currentFolderCount = backupResponse.stats.folderCount || 0;
                         let quantityText = '';
                         if (currentLang === 'en') {
-                            const bmDisplayTerm = (currentBookmarkCount === 1 || currentBookmarkCount === -1 || currentBookmarkCount === 0) ? "bookmark" : "bookmarks";
-                            const fldDisplayTerm = (currentFolderCount === 1 || currentFolderCount === -1 || currentFolderCount === 0) ? "folder" : "folders";
+                            const bmDisplayTerm = "BKM";
+                            const fldDisplayTerm = "FLD";
                             quantityText = `<span style="font-weight: bold; color: var(--theme-text-primary);">${currentBookmarkCount} ${bmDisplayTerm}<span style="display:inline-block; width:6px;"></span>,<span style="display:inline-block; width:6px;"></span>${currentFolderCount} ${fldDisplayTerm}</span>`;
                         } else {
                             quantityText = `<span style="font-weight: bold; color: var(--theme-text-primary); display: flex; justify-content: center; align-items: baseline;">
@@ -1717,7 +1717,7 @@ function updateBookmarkCountDisplay(passedLang) {
 
                 // 2. 更新 "上次变动" 区域为 "自动监测中"
                 const autoBackupText = currentLang === 'en' ? "Auto Monitoring Active" : "自动监测中";
-                const autoBackupStyle = mainItemStyle + " color: var(--theme-status-card-auto-text); font-weight: bold; text-align: left;";
+                const autoBackupStyle = mainItemStyle + " color: var(--theme-status-card-auto-text); font-weight: bold; text-align: center;";
                 changeDescriptionContainer.innerHTML = `<div style=\"${autoBackupStyle}\">${autoBackupText}</div>`;
 
             } else {
@@ -1749,8 +1749,8 @@ function updateBookmarkCountDisplay(passedLang) {
                     const currentFolderCount = backupResponse.stats.folderCount || 0;
                     let quantityText = '';
                     if (currentLang === 'en') {
-                        const bmDisplayTerm = (currentBookmarkCount === 1 || currentBookmarkCount === -1 || currentBookmarkCount === 0) ? "bookmark" : "bookmarks";
-                        const fldDisplayTerm = (currentFolderCount === 1 || currentFolderCount === -1 || currentFolderCount === 0) ? "folder" : "folders";
+                        const bmDisplayTerm = "BKM";
+                        const fldDisplayTerm = "FLD";
                         quantityText = `<span style="font-weight: bold; color: var(--theme-text-primary);">${currentBookmarkCount} ${bmDisplayTerm}<span style="display:inline-block; width:6px;"></span>,<span style="display:inline-block; width:6px;"></span>${currentFolderCount} ${fldDisplayTerm}</span>`;
                     } else {
                         quantityText = `<span style="font-weight: bold; color: var(--theme-text-primary); display: flex; justify-content: center; align-items: baseline;">
@@ -1823,9 +1823,9 @@ function updateBookmarkCountDisplay(passedLang) {
                     }
 
                     const hasNumericalChange = canCalculateDiff && (bookmarkDiffManual !== 0 || folderDiffManual !== 0);
-                    const i18nBookmarkChangedLabel = window.i18nLabels?.bookmarkChangedLabel || (currentLang === 'en' ? "Bookmark changed" : "书签变动");
-                    const i18nFolderChangedLabel = window.i18nLabels?.folderChangedLabel || (currentLang === 'en' ? "Folder changed" : "文件夹变动");
-                    const i18nBookmarkAndFolderChangedLabel = window.i18nLabels?.bookmarkAndFolderChangedLabel || (currentLang === 'en' ? "Bookmark & Folder changed" : "书签和文件夹变动");
+                    const i18nBookmarkChangedLabel = window.i18nLabels?.bookmarkChangedLabel || (currentLang === 'en' ? "BKM changed" : "书签变动");
+                    const i18nFolderChangedLabel = window.i18nLabels?.folderChangedLabel || (currentLang === 'en' ? "FLD changed" : "文件夹变动");
+                    const i18nBookmarkAndFolderChangedLabel = window.i18nLabels?.bookmarkAndFolderChangedLabel || (currentLang === 'en' ? "BKM & FLD changed" : "书签和文件夹变动");
 
                     let quantityChangesHTML = "";
                     let structuralChangesHTML = "";
@@ -1836,7 +1836,7 @@ function updateBookmarkCountDisplay(passedLang) {
                             const bookmarkSign = bookmarkDiffManual > 0 ? "+" : "";
                             const bookmarkColor = bookmarkDiffManual > 0 ? "#4CAF50" : (bookmarkDiffManual < 0 ? "#F44336" : "#777777");
                             if (currentLang === 'en') {
-                                const bmDiffTerm = (bookmarkDiffManual === 1 || bookmarkDiffManual === -1 || bookmarkDiffManual === 0) ? "bookmark" : "bookmarks";
+                                const bmDiffTerm = "BKM";
                                 bPartHTML = `<span style="color: ${bookmarkColor}; font-weight: bold;">${bookmarkSign}${bookmarkDiffManual}</span> ${bmDiffTerm}`;
                             } else {
                                 bPartHTML = `<span style="color: ${bookmarkColor}; font-weight: bold;">${bookmarkSign}${bookmarkDiffManual}</span>${i18nBookmarksLabel}`; // Chinese label remains plural form
@@ -1847,7 +1847,7 @@ function updateBookmarkCountDisplay(passedLang) {
                             const folderSign = folderDiffManual > 0 ? "+" : "";
                             const folderColor = folderDiffManual > 0 ? "#4CAF50" : (folderDiffManual < 0 ? "#F44336" : "#777777");
                             if (currentLang === 'en') {
-                                const fldDiffTerm = (folderDiffManual === 1 || folderDiffManual === -1 || folderDiffManual === 0) ? "folder" : "folders";
+                                const fldDiffTerm = "FLD";
                                 fPartHTML = `<span style="color: ${folderColor}; font-weight: bold;">${folderSign}${folderDiffManual}</span> ${fldDiffTerm}`;
                             } else {
                                 fPartHTML = `<span style="color: ${folderColor}; font-weight: bold;">${folderSign}${folderDiffManual}</span>${i18nFoldersLabel}`; // Chinese label remains plural form
@@ -1879,7 +1879,8 @@ function updateBookmarkCountDisplay(passedLang) {
                     }
 
                     let changeDescriptionContent = "";
-                    const manualMainItemStyle = "word-break: break-all; color: var(--theme-status-card-manual-text); text-align: left;";
+                    const manualMainItemStyle = "word-break: break-all; color: var(--theme-status-card-manual-text); text-align: center;";
+                    const manualSecondaryItemStyle = "margin-top: 8px; word-break: break-all; color: var(--theme-status-card-manual-text); text-align: center;";
                     if (quantityChangesHTML || structuralChangesHTML) {
                         let mainContent = "";
                         let secondaryContent = "";
@@ -1893,7 +1894,7 @@ function updateBookmarkCountDisplay(passedLang) {
                         }
                         changeDescriptionContent = `<div style="${containerStyle}">`;
                         if (mainContent) changeDescriptionContent += `<div style="${manualMainItemStyle}">${mainContent}</div>`;
-                        if (secondaryContent) changeDescriptionContent += `<div style="${manualMainItemStyle}">${secondaryContent}</div>`;
+                        if (secondaryContent) changeDescriptionContent += `<div style="${manualSecondaryItemStyle}">${secondaryContent}</div>`;
                         changeDescriptionContent += `</div>`;
                     } else {
                         const noChangeText = currentLang === 'en' ? "No changes" : "无变化";
@@ -3363,27 +3364,27 @@ const applyLocalizedContent = async (lang) => { // Added lang parameter
 
     const bookmarksLabel = {
         'zh_CN': "个书签",
-        'en': "bookmarks" // Base plural
+        'en': "BKM"
     };
 
     const foldersLabel = {
         'zh_CN': "个文件夹",
-        'en': "folders" // Base plural
+        'en': "FLD"
     };
 
     const bookmarkChangedLabel = {
         'zh_CN': "书签变动",
-        'en': "Bookmark changed" // Updated
+        'en': "BKM changed"
     };
 
     const folderChangedLabel = {
         'zh_CN': "文件夹变动",
-        'en': "Folder changed" // Updated
+        'en': "FLD changed"
     };
 
     const bookmarkAndFolderChangedLabel = { // New label
         'zh_CN': "书签和文件夹变动",
-        'en': "Bookmark & Folder changed"
+        'en': "BKM & FLD changed"
     };
 
     // 新增UI文字的国际化
@@ -3481,7 +3482,7 @@ const applyLocalizedContent = async (lang) => { // Added lang parameter
 
     const reminderExampleStrings = {
         'zh_CN': "示例：(<span style=\"color: #4CAF50;\">+12</span> 书签，<span style=\"color: #4CAF50;\">+1</span> 文件夹，<span style=\"color: orange;\">书签、文件夹变动</span>)。",
-        'en': "example: (<span style=\"color: #4CAF50;\">+12</span> bookmarks, <span style=\"color: #4CAF50;\">+1</span> folder, <span style=\"color: orange;\">Bookmark & Folder changed</span>)." // Only text content changed, escaping matches original structure
+        'en': "example: (<span style=\"color: #4CAF50;\">+12</span> BKM, <span style=\"color: #4CAF50;\">+1</span> FLD, <span style=\"color: orange;\">BKM & FLD changed</span>)." // Only text content changed, escaping matches original structure
     };
 
     const restoreDefaultStrings = {
@@ -4379,11 +4380,7 @@ const currentLang = data.preferredLang || 'zh_CN';
         const hideRemTip = () => { if (reminderSettingsTooltip) { reminderSettingsTooltip.style.visibility = 'hidden'; reminderSettingsTooltip.style.opacity = '0'; } };
         reminderSettingsBtnRef.addEventListener('mouseenter', showRemTip);
         reminderSettingsBtnRef.addEventListener('mouseleave', hideRemTip);
-        const manualButtonsContainer = document.getElementById('manualButtonsContainer');
-        if (manualButtonsContainer) {
-            manualButtonsContainer.addEventListener('mouseenter', showRemTip);
-            manualButtonsContainer.addEventListener('mouseleave', hideRemTip);
-        }
+        // 不在容器级别触发，避免在手动备份按钮上悬停时显示 tooltip
     }
 
     // 调整提醒设置对话框内的“保存”按钮为向上箭头（避免文字被写回）
@@ -4572,11 +4569,7 @@ const currentLang = data.preferredLang || 'zh_CN';
         const hideAutoTip = () => { if (autoBackupTooltipEl) { autoBackupTooltipEl.style.visibility = 'hidden'; autoBackupTooltipEl.style.opacity = '0'; } };
         autoBackupSettingsBtn.addEventListener('mouseenter', showAutoTip);
         autoBackupSettingsBtn.addEventListener('mouseleave', hideAutoTip);
-        const autoButtonsContainer = document.getElementById('autoButtonsContainer');
-        if (autoButtonsContainer) {
-            autoButtonsContainer.addEventListener('mouseenter', showAutoTip);
-            autoButtonsContainer.addEventListener('mouseleave', hideAutoTip);
-        }
+        // 不再在容器级别触发，避免非齿轮按钮也显示tooltip
     }
 
     // 初始化右侧状态文本（如果存在静态占位符）

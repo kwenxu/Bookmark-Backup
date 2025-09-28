@@ -1080,11 +1080,11 @@ function updateSyncHistory(passedLang) { // Added passedLang parameter
         const dynamicTextStrings = {
             'bookmarksText': {
                 'zh_CN': "个书签",
-                'en': "bookmarks"
+                'en': "BKM"
             },
             'foldersText': {
                 'zh_CN': "个文件夹",
-                'en': "folders"
+                'en': "FLD"
             },
             'cloudText': {
                 'zh_CN': "云端",
@@ -1337,14 +1337,23 @@ function updateSyncHistory(passedLang) { // Added passedLang parameter
                         folderDiff = explicitFolderDiffInRecord !== undefined ? explicitFolderDiffInRecord : 0;
 }
                     // 场景 3: 无缓存覆盖、无记录内显式差异，则尝试与列表中的上一条(时间上更早的)记录比较
-                    else if ((index + 1) < reversedHistory.length) { // index + 1 对应的是时间上更早的那条记录
-                        const prevRecordInList = reversedHistory[index + 1];
-                        if (prevRecordInList && prevRecordInList.bookmarkStats) {
+                    else if ((index + 1) < reversedHistory.length) { // index + 1 起向后寻找最近一条带统计的记录
+                        let prevRecordInList = null;
+                        for (let j = index + 1; j < reversedHistory.length; j++) {
+                            const candidate = reversedHistory[j];
+                            if (candidate && candidate.bookmarkStats &&
+                                (candidate.bookmarkStats.currentBookmarks !== undefined || candidate.bookmarkStats.currentBookmarkCount !== undefined) &&
+                                (candidate.bookmarkStats.currentFolders !== undefined || candidate.bookmarkStats.currentFolderCount !== undefined)) {
+                                prevRecordInList = candidate;
+                                break;
+                            }
+                        }
+                        if (prevRecordInList) {
                             const prevBCount = prevRecordInList.bookmarkStats.currentBookmarks ?? prevRecordInList.bookmarkStats.currentBookmarkCount ?? 0;
                             const prevFCount = prevRecordInList.bookmarkStats.currentFolders ?? prevRecordInList.bookmarkStats.currentFolderCount ?? 0;
                             bookmarkDiff = currentBookmarkCount - prevBCount;
                             folderDiff = currentFolderCount - prevFCount;
-}
+                        }
                     }
                     // 其他情况 (如列表中的第一条记录，但无缓存或不满足缓存条件，且自身无显式差异): diff 保持为 0
                     else {
@@ -1763,22 +1772,30 @@ function updateBookmarkCountDisplay(passedLang) {
                     let canCalculateDiff = false;
 
                     if (syncHistory && syncHistory.length > 0) {
-                        const latestRecord = syncHistory[syncHistory.length - 1];
-                        if (latestRecord && latestRecord.bookmarkStats &&
-                            (latestRecord.bookmarkStats.currentBookmarkCount !== undefined || latestRecord.bookmarkStats.currentBookmarks !== undefined) &&
-                            (latestRecord.bookmarkStats.currentFolderCount !== undefined || latestRecord.bookmarkStats.currentFolders !== undefined))
-                        {
-                            const prevBookmarkCount = latestRecord.bookmarkStats.currentBookmarkCount ?? latestRecord.bookmarkStats.currentBookmarks ?? 0;
-                            const prevFolderCount = latestRecord.bookmarkStats.currentFolderCount ?? latestRecord.bookmarkStats.currentFolders ?? 0;
+                        // 从末尾向前寻找最近一条包含有效统计的记录
+                        let prevRecordWithStats = null;
+                        for (let i = syncHistory.length - 1; i >= 0; i--) {
+                            const rec = syncHistory[i];
+                            const stats = rec && rec.bookmarkStats;
+                            if (stats && (stats.currentBookmarkCount !== undefined || stats.currentBookmarks !== undefined)
+                                       && (stats.currentFolderCount !== undefined || stats.currentFolders !== undefined)) {
+                                prevRecordWithStats = stats;
+                                break;
+                            }
+                        }
+
+                        if (prevRecordWithStats) {
+                            const prevBookmarkCount = prevRecordWithStats.currentBookmarkCount ?? prevRecordWithStats.currentBookmarks ?? 0;
+                            const prevFolderCount = prevRecordWithStats.currentFolderCount ?? prevRecordWithStats.currentFolders ?? 0;
                             bookmarkDiffManual = currentBookmarkCount - prevBookmarkCount;
                             folderDiffManual = currentFolderCount - prevFolderCount;
                             canCalculateDiff = true;
                         } else {
-                            // Try to get diff from backupResponse if latestRecord.bookmarkStats is incomplete
+                            // 回退：使用 background 返回的上次计算差异
                             if (backupResponse.stats.bookmarkDiff !== undefined) bookmarkDiffManual = backupResponse.stats.bookmarkDiff;
                             if (backupResponse.stats.folderDiff !== undefined) folderDiffManual = backupResponse.stats.folderDiff;
                             if (backupResponse.stats.bookmarkDiff !== undefined || backupResponse.stats.folderDiff !== undefined) canCalculateDiff = true;
-                            else console.warn("最新的历史记录缺少必要的统计信息，无法精确计算数量差异，也无法从backupResponse获取。");
+                            else console.warn("历史记录中没有可用统计，且 backupResponse 未提供 diff。" );
                         }
                     } else if (cachedRecordFromStorage) {
                         const cachedStats = cachedRecordFromStorage.bookmarkStats;

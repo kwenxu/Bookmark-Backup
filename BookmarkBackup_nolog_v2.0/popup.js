@@ -5235,24 +5235,39 @@ const currentLang = data.preferredLang || 'zh_CN';
         });
     }
 
-    // 初始化备份模式开关点击事件
+    // 初始化备份模式切换：上半区=自动，下半区=手动；不再整块点击切换
     const backupModeSwitch = document.getElementById('backupModeSwitch');
-    if (backupModeSwitch) {
-        backupModeSwitch.addEventListener('click', function() {
-            // 切换类名
-            this.classList.toggle('auto');
-            this.classList.toggle('manual');
+    const autoOptionEl = document.querySelector('.backup-mode-option.auto-option');
+    const manualOptionEl = document.querySelector('.backup-mode-option.manual-option');
 
-            // 更新复选框状态
+    const shouldIgnoreClick = (evt) => {
+        // 点击操作按钮区域不切换模式
+        const target = evt.target;
+        return !!(target.closest && target.closest('.option-actions'));
+    };
+
+    if (autoOptionEl && !autoOptionEl.hasAttribute('data-mode-listener')) {
+        autoOptionEl.addEventListener('click', function(evt) {
+            if (shouldIgnoreClick(evt)) return;
             const autoSyncToggle2 = document.getElementById('autoSyncToggle2');
-            if (autoSyncToggle2) {
-                autoSyncToggle2.checked = this.classList.contains('auto');
-
-                // 触发原始复选框的change事件
-                const event = new Event('change');
-                autoSyncToggle2.dispatchEvent(event);
+            if (autoSyncToggle2 && !autoSyncToggle2.checked) {
+                autoSyncToggle2.checked = true;
+                autoSyncToggle2.dispatchEvent(new Event('change'));
             }
         });
+        autoOptionEl.setAttribute('data-mode-listener', 'true');
+    }
+
+    if (manualOptionEl && !manualOptionEl.hasAttribute('data-mode-listener')) {
+        manualOptionEl.addEventListener('click', function(evt) {
+            if (shouldIgnoreClick(evt)) return;
+            const autoSyncToggle2 = document.getElementById('autoSyncToggle2');
+            if (autoSyncToggle2 && autoSyncToggle2.checked) {
+                autoSyncToggle2.checked = false;
+                autoSyncToggle2.dispatchEvent(new Event('change'));
+            }
+        });
+        manualOptionEl.setAttribute('data-mode-listener', 'true');
     }
 
     // 初始化备份状态

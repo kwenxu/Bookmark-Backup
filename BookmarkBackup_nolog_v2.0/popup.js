@@ -1666,7 +1666,7 @@ function updateBookmarkCountDisplay(passedLang) {
     });
 
     // 统一的外部容器样式 (移到顶层作用域，确保在所有分支中可用)
-    const containerStyle = "display: inline-block; margin: 5px 0 5px 0; padding: 8px 10px 8px 12px; background-color: transparent; border-radius: 6px; border-left: 3px solid var(--theme-accent-color); font-size: 13px; text-align: left;";
+    const containerStyle = "display: inline-block; margin: 5px 0 5px 0; padding: 8px 10px 8px 12px; background-color: transparent; border-radius: 6px; font-size: 13px; text-align: left;";
     const mainItemStyle = "word-break: break-all; color: var(--theme-text-primary); text-align: left;";
     const secondaryItemStyle = "margin-top: 5px; font-size: 12px; color: var(--theme-text-secondary); text-align: left;";
 
@@ -1879,6 +1879,7 @@ function updateBookmarkCountDisplay(passedLang) {
                     }
 
                     let changeDescriptionContent = "";
+                    const manualMainItemStyle = "word-break: break-all; color: var(--theme-status-card-manual-text); text-align: left;";
                     if (quantityChangesHTML || structuralChangesHTML) {
                         let mainContent = "";
                         let secondaryContent = "";
@@ -1891,12 +1892,12 @@ function updateBookmarkCountDisplay(passedLang) {
                             mainContent = structuralChangesHTML;
                         }
                         changeDescriptionContent = `<div style="${containerStyle}">`;
-                        if (mainContent) changeDescriptionContent += `<div style="${mainItemStyle}">${mainContent}</div>`;
-                        if (secondaryContent) changeDescriptionContent += `<div style="${secondaryItemStyle}">${secondaryContent}</div>`;
+                        if (mainContent) changeDescriptionContent += `<div style="${manualMainItemStyle}">${mainContent}</div>`;
+                        if (secondaryContent) changeDescriptionContent += `<div style="${manualMainItemStyle}">${secondaryContent}</div>`;
                         changeDescriptionContent += `</div>`;
                     } else {
                         const noChangeText = currentLang === 'en' ? "No changes" : "无变化";
-                        changeDescriptionContent = `<div style="${containerStyle}"><div style="${mainItemStyle}">${noChangeText}</div></div>`;
+                        changeDescriptionContent = `<div style="${containerStyle}"><div style="${manualMainItemStyle}">${noChangeText}</div></div>`;
                     }
                     changeDescriptionContainer.innerHTML = changeDescriptionContent;
                     // --- 结束原有的手动模式差异计算和显示逻辑 ---
@@ -3387,13 +3388,13 @@ const applyLocalizedContent = async (lang) => { // Added lang parameter
 
     // 新增UI文字的国际化
     const autoSyncDescriptionStrings = {
-        'zh_CN': "实时自动备份",
-        'en': "Real-time Auto Backup"
+        'zh_CN': "自动备份",
+        'en': "Auto Backup Mode"
     };
 
     const manualModeDescriptionStrings = {
-        'zh_CN': "手动备份模式",
-        'en': "Manual Backup Mode"
+        'zh_CN': "手动备份",
+        'en': "Manual Backup"
     };
 
     // 新增：自动备份设置按钮 文案

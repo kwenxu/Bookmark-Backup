@@ -763,109 +763,55 @@ function initializeWebDAVToggle() {
  */
 function initScrollToTopButton() {
     const 일반scrollToTopBtn = document.getElementById('scrollToTopBtn'); // 通用回到顶部按钮
-    const scrollToTopFloating = document.getElementById('scrollToTopFloating'); // 新的悬浮向上箭头按钮
-    
-    // 统一的按钮显示控制变量
-    let generalScrollBtn = null;
-    let hasUserScrolled = false;
-    
-    // 监听用户第一次滚动操作
-    const markUserHasScrolled = () => {
-        hasUserScrolled = true;
-        window.removeEventListener('scroll', markUserHasScrolled);
-    };
-    
-    window.addEventListener('scroll', markUserHasScrolled, { passive: true, once: true });
+    const configScrollBtn = document.getElementById('configScrollBtn');   // 配置区域的回滚按钮
 
     // 处理通用回到顶部按钮
     if (일반scrollToTopBtn) {
         // 移除可能存在的旧监听器，以防万一
         const newGeneralScrollBtn = 일반scrollToTopBtn.cloneNode(true);
         일반scrollToTopBtn.parentNode.replaceChild(newGeneralScrollBtn, 일반scrollToTopBtn);
-        generalScrollBtn = newGeneralScrollBtn;
 
         newGeneralScrollBtn.addEventListener('click', function() {
-            window.scrollTo(0, 0);
+window.scrollTo(0, 0);
             this.style.transform = 'scale(0.9)';
             setTimeout(() => {
                 this.style.transform = 'scale(1)';
             }, 150);
         });
-        
-        // 初始隐藏
-        generalScrollBtn.style.display = 'none';
-    }
-
-    // 新的右下角悬浮向上箭头按钮
-    if (scrollToTopFloating) {
-        // 点击返回页面顶部
-        scrollToTopFloating.addEventListener('click', function() {
-            window.scrollTo({ top: 0, behavior: 'smooth' });
-            this.style.transform = 'translateX(-50%) scale(0.95)';
-            setTimeout(() => { 
-                this.style.transform = 'translateX(-50%) scale(1)'; 
-            }, 200);
+// 控制通用回到顶部按钮的显示/隐藏
+        window.addEventListener('scroll', function() {
+            if (window.pageYOffset > 200) { // 当滚动超过200px时显示按钮
+                newGeneralScrollBtn.style.display = 'block';
+            } else {
+                newGeneralScrollBtn.style.display = 'none';
+            }
         });
+        // 初始检查一次，以防页面加载时就已经滚动超过200px
+        if (window.pageYOffset > 200) {
+            newGeneralScrollBtn.style.display = 'block';
+        } else {
+            newGeneralScrollBtn.style.display = 'none';
+        }
 
-        // 鼠标悬停效果
-        scrollToTopFloating.addEventListener('mouseenter', function() {
-            this.style.transform = 'translateX(-50%) scale(1.05)';
-            this.style.background = 'rgba(0, 0, 0, 0.25)';
-            this.style.borderColor = 'rgba(255, 255, 255, 0.3)';
-            this.style.boxShadow = '0 4px 12px rgba(0, 0, 0, 0.2)';
-        });
-        
-        scrollToTopFloating.addEventListener('mouseleave', function() {
-            this.style.transform = 'translateX(-50%) scale(1)';
-            this.style.background = 'rgba(0, 0, 0, 0.15)';
-            this.style.borderColor = 'rgba(255, 255, 255, 0.2)';
-            this.style.boxShadow = '0 2px 8px rgba(0, 0, 0, 0.1)';
-        });
-        
-        // 初始隐藏
-        scrollToTopFloating.style.display = 'none';
-    }
-    
-    // 统一的显示控制逻辑 - 基于「备份检查记录」区域的下边缘
-    const updateButtonsVisibility = () => {
-        // 如果用户还未进行过滚动操作，不显示按钮
-        if (!hasUserScrolled) {
-            if (scrollToTopFloating) scrollToTopFloating.style.display = 'none';
-            if (generalScrollBtn) generalScrollBtn.style.display = 'none';
-            return;
-        }
-        
-        // 查找备份检查记录区域
-        const syncHistoryElement = document.querySelector('.sync-history');
-        if (!syncHistoryElement) {
-            // 找不到目标区域，隐藏所有按钮
-            if (scrollToTopFloating) scrollToTopFloating.style.display = 'none';
-            if (generalScrollBtn) generalScrollBtn.style.display = 'none';
-            return;
-        }
-        
-        // 使用getBoundingClientRect检测备份检查记录区域的位置
-        const rect = syncHistoryElement.getBoundingClientRect();
-        const windowHeight = window.innerHeight || document.documentElement.clientHeight || 0;
-        
-        // 仅当「备份检查记录」区域的最下边缘进入视野时才显示按钮
-        // rect.bottom > 0 && rect.bottom <= windowHeight 表示下边缘在视口内
-        const shouldShow = rect.bottom > 0 && rect.bottom <= windowHeight;
-        
-        // 统一控制两个按钮的显示/隐藏
-        if (scrollToTopFloating) {
-            scrollToTopFloating.style.display = shouldShow ? 'flex' : 'none';
-        }
-        if (generalScrollBtn) {
-            generalScrollBtn.style.display = shouldShow ? 'block' : 'none';
-        }
-    };
+    } else {
+}
 
-    // 绑定事件监听器
-    window.addEventListener('scroll', updateButtonsVisibility, { passive: true });
-    window.addEventListener('resize', updateButtonsVisibility);
-    // 初始计算
-    updateButtonsVisibility();
+    // 处理配置区域的回滚按钮
+    if (configScrollBtn) {
+        // 移除可能存在的旧监听器
+        const newConfigScrollBtn = configScrollBtn.cloneNode(true);
+        configScrollBtn.parentNode.replaceChild(newConfigScrollBtn, configScrollBtn);
+
+        newConfigScrollBtn.addEventListener('click', function() {
+window.scrollTo(0, 0);
+            // 只对齿轮图标本身应用动画效果
+            this.style.transform = 'scale(0.9)';
+            setTimeout(() => {
+                this.style.transform = 'scale(1)';
+            }, 150);
+        });
+} else {
+}
 }
 
 /**
@@ -1080,11 +1026,11 @@ function updateSyncHistory(passedLang) { // Added passedLang parameter
         const dynamicTextStrings = {
             'bookmarksText': {
                 'zh_CN': "个书签",
-                'en': "bookmarks"
+                'en': "BKM" // Changed from "bookmarks"
             },
             'foldersText': {
                 'zh_CN': "个文件夹",
-                'en': "folders"
+                'en': "FLD" // Changed from "folders"
             },
             'cloudText': {
                 'zh_CN': "云端",
@@ -1657,7 +1603,7 @@ function updateBookmarkCountDisplay(passedLang) {
     });
 
     // 统一的外部容器样式 (移到顶层作用域，确保在所有分支中可用)
-    const containerStyle = "display: inline-block; margin: 5px 0 5px 0; padding: 8px 10px 8px 12px; background-color: transparent; border-radius: 6px; border-left: 3px solid var(--theme-accent-color); font-size: 13px; text-align: left;";
+    const containerStyle = "display: inline-block; margin: 5px 0 5px -15px; padding: 8px 10px 8px 12px; background-color: var(--theme-status-info-bg); border-radius: 6px; border-left: 3px solid var(--theme-accent-color); font-size: 13px; text-align: left;";
     const mainItemStyle = "word-break: break-all; color: var(--theme-text-primary); text-align: left;";
     const secondaryItemStyle = "margin-top: 5px; font-size: 12px; color: var(--theme-text-secondary); text-align: left;";
 
@@ -1666,8 +1612,8 @@ function updateBookmarkCountDisplay(passedLang) {
             const bookmarkCountSpan = document.getElementById('bookmarkCount');
             const changeDescriptionContainer = document.getElementById('change-description-row');
 
-            if (!changeDescriptionContainer) {
-                return;
+            if (!bookmarkCountSpan || !changeDescriptionContainer) {
+return;
             }
 
             // 获取国际化标签 (确保 window.i18nLabels 已由 applyLocalizedContent 设置)
@@ -1675,9 +1621,6 @@ function updateBookmarkCountDisplay(passedLang) {
             const i18nFoldersLabel = window.i18nLabels?.foldersLabel || (currentLang === 'en' ? "folders" : "个文件夹");
 
             if (isAutoSyncEnabled) {
-                // 设置右侧状态卡片为自动模式样式
-                changeDescriptionContainer.classList.add('auto-mode');
-                changeDescriptionContainer.classList.remove('manual-mode');
                 // --- 自动同步模式 ---
                 // 1. 更新 "当前数量/结构:" (Details)
                 chrome.runtime.sendMessage({ action: "getBackupStats" }, backupResponse => {
@@ -1696,25 +1639,18 @@ function updateBookmarkCountDisplay(passedLang) {
                                                 <span style="padding-left: 2px;">${currentFolderCount}${i18nFoldersLabel}</span>
                                             </span>`;
                         }
-                        if (bookmarkCountSpan) {
-                            bookmarkCountSpan.innerHTML = quantityText;
-                        }
+                        bookmarkCountSpan.innerHTML = quantityText;
                     } else {
-                        if (bookmarkCountSpan) {
-                            bookmarkCountSpan.innerHTML = `<span style="color: orange;">${currentLang === 'en' ? 'Counts unavailable' : '数量暂无法获取'}</span>`;
-                        }
+                        bookmarkCountSpan.innerHTML = `<span style="color: orange;">${currentLang === 'en' ? 'Counts unavailable' : '数量暂无法获取'}</span>`;
 }
                 });
 
                 // 2. 更新 "上次变动" 区域为 "自动监测中"
                 const autoBackupText = currentLang === 'en' ? "Auto Monitoring Active" : "自动监测中";
-                const autoBackupStyle = mainItemStyle + " color: var(--theme-status-card-auto-text); font-weight: bold; text-align: left;";
-                changeDescriptionContainer.innerHTML = `<div style=\"${autoBackupStyle}\">${autoBackupText}</div>`;
+                const autoBackupStyle = mainItemStyle + " color: var(--theme-success-color); font-weight: bold; text-align: left;";
+                changeDescriptionContainer.innerHTML = `<div style="${containerStyle}"><div style="${autoBackupStyle}">${autoBackupText}</div></div>`;
 
             } else {
-                // 设置右侧状态卡片为手动模式样式
-                changeDescriptionContainer.classList.add('manual-mode');
-                changeDescriptionContainer.classList.remove('auto-mode');
                 // --- 手动备份模式 ---
                 Promise.all([
                     new Promise((resolve, reject) => {
@@ -1750,9 +1686,9 @@ function updateBookmarkCountDisplay(passedLang) {
                                             <span style="padding-left: 2px;">${currentFolderCount}${i18nFoldersLabel}</span>
                                         </span>`;
                     }
-                    if (bookmarkCountSpan) {
-                        bookmarkCountSpan.innerHTML = quantityText;
-                    }
+                    bookmarkCountSpan.innerHTML = quantityText;
+
+                    // --- 开始原有的手动模式差异计算和显示逻辑 ---
                     const hasStructuralChanges = backupResponse.stats.bookmarkMoved ||
                         backupResponse.stats.folderMoved ||
                         backupResponse.stats.bookmarkModified ||
@@ -1884,9 +1820,7 @@ function updateBookmarkCountDisplay(passedLang) {
                     changeDescriptionContainer.innerHTML = changeDescriptionContent;
                     // --- 结束原有的手动模式差异计算和显示逻辑 ---
                 }).catch(manualError => {
-                    if (bookmarkCountSpan) {
-                        bookmarkCountSpan.innerHTML = `<span style="color: red;">${currentLang === 'en' ? 'Details load failed' : '详情加载失败'}</span>`;
-                    }
+bookmarkCountSpan.innerHTML = `<span style="color: red;">${currentLang === 'en' ? 'Details load failed' : '详情加载失败'}</span>`;
                     if (changeDescriptionContainer) {
                         changeDescriptionContainer.innerHTML = `<div style="${containerStyle}"><div style="${mainItemStyle} color: red;">${currentLang === 'en' ? 'Change details unavailable' : '变动详情无法加载'}</div></div>`;
                     }
@@ -2360,18 +2294,6 @@ function handleAutoSyncToggle(event) {
         } else {
             backupModeSwitch.classList.add('manual');
             backupModeSwitch.classList.remove('auto');
-        }
-    }
-
-    // 同步右侧状态卡片的配色
-    const changeDescriptionContainerForToggle = document.getElementById('change-description-row');
-    if (changeDescriptionContainerForToggle) {
-        if (isChecked) {
-            changeDescriptionContainerForToggle.classList.add('auto-mode');
-            changeDescriptionContainerForToggle.classList.remove('manual-mode');
-        } else {
-            changeDescriptionContainerForToggle.classList.add('manual-mode');
-            changeDescriptionContainerForToggle.classList.remove('auto-mode');
         }
     }
 
@@ -3342,6 +3264,10 @@ const applyLocalizedContent = async (lang) => { // Added lang parameter
         'en': "Details:" // 修改为更简洁的英文翻译
     };
 
+    const rollbackToConfigLabel = {
+        'zh_CN': "回滚至配置页",
+        'en': "Back to Config"
+    };
 
     const bookmarksLabel = {
         'zh_CN': "个书签",
@@ -3379,12 +3305,6 @@ const applyLocalizedContent = async (lang) => { // Added lang parameter
         'en': "Manual Backup Mode"
     };
 
-    // 新增：自动备份设置按钮 文案
-    const autoBackupSettingsStrings = {
-        'zh_CN': "自动备份设置",
-        'en': "Auto Backup Settings"
-    };
-
     const autoSyncTipStrings = {
         'zh_CN': "（<span style=\"color: #FFA500;\">大规模修改</span>时建议切换至手动模式）",
         'en': "(Recommended to switch to manual mode during <span style=\"color: #FFA500;\">bulk changes</span>)"
@@ -3397,8 +3317,8 @@ const applyLocalizedContent = async (lang) => { // Added lang parameter
     };
 
     const historyRecordsDescriptionStrings = {
-        'zh_CN': "备份检查记录",
-        'en': "Backup History"
+        'zh_CN': "备份检查记录（至100条记录--静默清空并导出txt）",
+        'en': "Backup History (Up to 100 records--silent clear & export txt)"
     };
 
     const clearHistoryStrings = {
@@ -3449,11 +3369,6 @@ const applyLocalizedContent = async (lang) => { // Added lang parameter
     const fixedTime2Strings = {
         'zh_CN': "准点定时2",
         'en': "Fixed Time 2"
-    };
-
-    const scrollToTopStrings = {
-        'zh_CN': "返回顶部",
-        'en': "Back to Top"
     };
 
     const manualBackupReminderDescStrings = {
@@ -3922,11 +3837,6 @@ const applyLocalizedContent = async (lang) => { // Added lang parameter
         'en': "This action cannot be undone.<br>Records will be permanently deleted."
     };
 
-    const clearHistoryInfoStrings = {
-        'zh_CN': "备份记录保留至100条记录，<br>超出后将静默清空并自动导出txt文件。",
-        'en': "Backup records are kept up to 100 entries,<br>excess records will be automatically cleared and exported to txt file."
-    };
-
     const confirmClearButtonStrings = {
         'zh_CN': "确认清空",
         'en': "Confirm Clear"
@@ -4280,7 +4190,6 @@ const currentLang = data.preferredLang || 'zh_CN';
     const clearHistoryDialogTitleText = clearHistoryDialogTitleStrings[lang] || clearHistoryDialogTitleStrings['zh_CN'];
     const clearHistoryDialogDescriptionText = clearHistoryDialogDescriptionStrings[lang] || clearHistoryDialogDescriptionStrings['zh_CN'];
     const clearHistoryWarningText = clearHistoryWarningStrings[lang] || clearHistoryWarningStrings['zh_CN'];
-    const clearHistoryInfoText = clearHistoryInfoStrings[lang] || clearHistoryInfoStrings['zh_CN'];
     const confirmClearButtonText = confirmClearButtonStrings[lang] || confirmClearButtonStrings['zh_CN'];
 
     const clearHistoryDialogTitleElement = document.getElementById('clearHistoryDialogTitle');
@@ -4306,12 +4215,6 @@ const currentLang = data.preferredLang || 'zh_CN';
     const cancelClearHistoryButton = document.getElementById('cancelClearHistory');
     if (cancelClearHistoryButton) {
         cancelClearHistoryButton.textContent = cancelButtonText;
-    }
-
-    // 更新蓝色信息区块文本
-    const clearHistoryInfoTextElement = document.getElementById('clearHistoryInfoText');
-    if (clearHistoryInfoTextElement) {
-        clearHistoryInfoTextElement.innerHTML = clearHistoryInfoText;
     }
 
     // 应用UI文本到DOM元素
@@ -4352,14 +4255,6 @@ const currentLang = data.preferredLang || 'zh_CN';
         reminderSettingsBtn.textContent = reminderSettingsStrings[lang] || reminderSettingsStrings['zh_CN'];
     }
 
-    // 调整提醒设置对话框内的“保存”按钮为向上箭头（避免文字被写回）
-    const saveReminderSettingsBtnInMain = document.getElementById('saveReminderSettings');
-    if (saveReminderSettingsBtnInMain) {
-        saveReminderSettingsBtnInMain.innerHTML = '<i class="fas fa-chevron-up"></i>';
-        saveReminderSettingsBtnInMain.setAttribute('aria-label', saveSettingsStrings[lang] || saveSettingsStrings['zh_CN']);
-        saveReminderSettingsBtnInMain.setAttribute('title', saveSettingsStrings[lang] || saveSettingsStrings['zh_CN']);
-    }
-
     const historyTitle = document.querySelector('.sync-history h3');
     if (historyTitle) {
         historyTitle.textContent = historyRecordsDescriptionStrings[lang] || historyRecordsDescriptionStrings['zh_CN'];
@@ -4382,6 +4277,10 @@ const currentLang = data.preferredLang || 'zh_CN';
         historyHeaders[2].textContent = statusColumnStrings[lang] || statusColumnStrings['zh_CN'];
     }
 
+    const rollbackLabel = document.querySelector('#configButtonContainer > span');
+    if (rollbackLabel) {
+        rollbackLabel.textContent = rollbackToConfigLabel[lang] || rollbackToConfigLabel['zh_CN'];
+    }
 
     // 添加新的国际化字符串
     const settingsRestoredStrings = {
@@ -4393,12 +4292,6 @@ const currentLang = data.preferredLang || 'zh_CN';
         'zh_CN': "保存设置失败",
         'en': "Failed to save settings"
     };
-
-    // 更新返回顶部按钮文本
-    const scrollToTopText = document.getElementById('scrollToTopText');
-    if (scrollToTopText) {
-        scrollToTopText.textContent = scrollToTopStrings[lang] || scrollToTopStrings['zh_CN'];
-    }
 
     // 保存国际化标签到全局变量，供其他函数使用
     window.i18nLabels = {
@@ -4512,27 +4405,19 @@ const currentLang = data.preferredLang || 'zh_CN';
     // 在所有静态文本应用完毕后，调用此函数来刷新依赖国际化标签的动态内容
     updateLastSyncInfo(lang); // Pass lang here
 
-    // 应用备份模式开关文本（仅更新标签，不替换整个容器，避免删除按钮）
-    const autoOptionLabelEl = document.getElementById('autoOptionLabel');
-    if (autoOptionLabelEl) {
-        autoOptionLabelEl.textContent = autoSyncDescriptionStrings[lang] || autoSyncDescriptionStrings['zh_CN'];
+    // 应用备份模式开关文本
+    const autoOption = document.querySelector('.backup-mode-option.auto-option');
+    if (autoOption) {
+        const iconSpan = autoOption.querySelector('.option-icon');
+        const iconHTML = iconSpan ? iconSpan.outerHTML : '<span class="option-icon">⚡</span>';
+        autoOption.innerHTML = iconHTML + (autoSyncDescriptionStrings[lang] || autoSyncDescriptionStrings['zh_CN']);
     }
 
-    const manualOptionLabelEl = document.getElementById('manualOptionLabel');
-    if (manualOptionLabelEl) {
-        manualOptionLabelEl.textContent = manualModeDescriptionStrings[lang] || manualModeDescriptionStrings['zh_CN'];
-    }
-
-    // 应用自动备份设置按钮文本
-    const autoBackupSettingsBtn = document.getElementById('autoBackupSettingsBtn');
-    if (autoBackupSettingsBtn) {
-        autoBackupSettingsBtn.textContent = autoBackupSettingsStrings[lang] || autoBackupSettingsStrings['zh_CN'];
-    }
-
-    // 初始化右侧状态文本（如果存在静态占位符）
-    const statusCardTextEl = document.getElementById('statusCardText');
-    if (statusCardTextEl) {
-        statusCardTextEl.textContent = autoSyncDescriptionStrings[lang] || autoSyncDescriptionStrings['zh_CN'];
+    const manualOption = document.querySelector('.backup-mode-option.manual-option');
+    if (manualOption) {
+        const iconSpan = manualOption.querySelector('.option-icon');
+        const iconHTML = iconSpan ? iconSpan.outerHTML : '<span class="option-icon">🔄</span>';
+        manualOption.innerHTML = iconHTML + (manualModeDescriptionStrings[lang] || manualModeDescriptionStrings['zh_CN']);
     }
 
     // 国际化提醒设置对话框文本
@@ -4611,10 +4496,7 @@ const currentLang = data.preferredLang || 'zh_CN';
 
     const saveReminderSettingsBtn = document.getElementById('saveReminderSettings');
     if (saveReminderSettingsBtn) {
-        // 改为仅显示向上箭头，不显示文字
-        saveReminderSettingsBtn.innerHTML = '<i class="fas fa-chevron-up"></i>';
-        saveReminderSettingsBtn.setAttribute('aria-label', saveSettingsStrings[lang] || saveSettingsStrings['zh_CN']);
-        saveReminderSettingsBtn.setAttribute('title', saveSettingsStrings[lang] || saveSettingsStrings['zh_CN']);
+        saveReminderSettingsBtn.textContent = saveSettingsStrings[lang] || saveSettingsStrings['zh_CN'];
     }
 
     // 保存提示文本
@@ -5235,39 +5117,24 @@ const currentLang = data.preferredLang || 'zh_CN';
         });
     }
 
-    // 初始化备份模式切换：上半区=自动，下半区=手动；不再整块点击切换
+    // 初始化备份模式开关点击事件
     const backupModeSwitch = document.getElementById('backupModeSwitch');
-    const autoOptionEl = document.querySelector('.backup-mode-option.auto-option');
-    const manualOptionEl = document.querySelector('.backup-mode-option.manual-option');
+    if (backupModeSwitch) {
+        backupModeSwitch.addEventListener('click', function() {
+            // 切换类名
+            this.classList.toggle('auto');
+            this.classList.toggle('manual');
 
-    const shouldIgnoreClick = (evt) => {
-        // 点击操作按钮区域不切换模式
-        const target = evt.target;
-        return !!(target.closest && target.closest('.option-actions'));
-    };
-
-    if (autoOptionEl && !autoOptionEl.hasAttribute('data-mode-listener')) {
-        autoOptionEl.addEventListener('click', function(evt) {
-            if (shouldIgnoreClick(evt)) return;
+            // 更新复选框状态
             const autoSyncToggle2 = document.getElementById('autoSyncToggle2');
-            if (autoSyncToggle2 && !autoSyncToggle2.checked) {
-                autoSyncToggle2.checked = true;
-                autoSyncToggle2.dispatchEvent(new Event('change'));
+            if (autoSyncToggle2) {
+                autoSyncToggle2.checked = this.classList.contains('auto');
+
+                // 触发原始复选框的change事件
+                const event = new Event('change');
+                autoSyncToggle2.dispatchEvent(event);
             }
         });
-        autoOptionEl.setAttribute('data-mode-listener', 'true');
-    }
-
-    if (manualOptionEl && !manualOptionEl.hasAttribute('data-mode-listener')) {
-        manualOptionEl.addEventListener('click', function(evt) {
-            if (shouldIgnoreClick(evt)) return;
-            const autoSyncToggle2 = document.getElementById('autoSyncToggle2');
-            if (autoSyncToggle2 && autoSyncToggle2.checked) {
-                autoSyncToggle2.checked = false;
-                autoSyncToggle2.dispatchEvent(new Event('change'));
-            }
-        });
-        manualOptionEl.setAttribute('data-mode-listener', 'true');
     }
 
     // 初始化备份状态
@@ -5282,18 +5149,6 @@ const currentLang = data.preferredLang || 'zh_CN';
             } else {
                 backupModeSwitch.classList.add('manual');
                 backupModeSwitch.classList.remove('auto');
-            }
-        }
-
-        // 初始化右侧状态卡片的配色
-        const changeDescriptionContainerAtInit = document.getElementById('change-description-row');
-        if (changeDescriptionContainerAtInit) {
-            if (autoSyncEnabled) {
-                changeDescriptionContainerAtInit.classList.add('auto-mode');
-                changeDescriptionContainerAtInit.classList.remove('manual-mode');
-            } else {
-                changeDescriptionContainerAtInit.classList.add('manual-mode');
-                changeDescriptionContainerAtInit.classList.remove('auto-mode');
             }
         }
 

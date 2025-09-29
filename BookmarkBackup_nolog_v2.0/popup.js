@@ -402,6 +402,50 @@ function updatePathValidationIndicator(inputElement, status) {
 }
 
 /**
+ * 计算并滚动到“定位A”。
+ * 定义：视口顶部定位在「大边框（#syncStatus）上边缘」与
+ * 「第一栏目（包含自动/手动备份开关的 .sync-controls）上边缘」之间空白的中点。
+ * @param {('auto'|'smooth')} behavior 滚动行为，'auto' 为直接定位，'smooth' 为平滑下滑。
+ */
+function scrollToPositionA(behavior = 'auto') {
+    try {
+        const syncStatus = document.getElementById('syncStatus');
+        if (!syncStatus) return;
+
+        // 确保区域已显示，便于正确计算几何信息
+        const prevDisplay = syncStatus.style.display;
+        if (getComputedStyle(syncStatus).display === 'none') {
+            syncStatus.style.display = 'block';
+        }
+
+        const syncControls = syncStatus.querySelector('.sync-controls');
+        const pageYOffset = window.pageYOffset || document.documentElement.scrollTop || 0;
+
+        const bigTop = syncStatus.getBoundingClientRect().top + pageYOffset;
+        let targetTop = bigTop + 5; // 默认略微下移，保持现有视觉
+
+        if (syncControls) {
+            const firstTop = syncControls.getBoundingClientRect().top + pageYOffset;
+            // 「定位A」= 两个上边缘的中点
+            targetTop = (bigTop + firstTop) / 2;
+        }
+
+        // 恢复原始 display（如果我们暂时更改过）
+        syncStatus.style.display = prevDisplay;
+
+        // 执行滚动
+        if (behavior === 'smooth') {
+            window.scrollTo({ top: Math.max(0, targetTop), behavior: 'smooth' });
+        } else {
+            window.scrollTo(0, Math.max(0, targetTop));
+        }
+    } catch (e) {
+        // 出现异常时回退到顶部，避免无响应
+        window.scrollTo(0, 0);
+    }
+}
+
+/**
  * 调整本地配置中标签的左边距，以达到视觉对齐。
  */
 function adjustLocalConfigLabels() {
@@ -2691,24 +2735,9 @@ updateSyncHistory();
                 });
             }
 
-            // 平滑滚动到"当前数量/结构:"部分
+            // 优化定位1：点击“初始化：上传书签到云端/本地”后，平滑下滑至「定位A」
             setTimeout(() => {
-                const statsLabels = document.querySelectorAll('.stats-label');
-                if (statsLabels.length > 1) {
-                    const currentQuantityElement = statsLabels[1];
-                    const syncStatusSection = document.getElementById('syncStatus');
-                    if (syncStatusSection) {
-syncStatusSection.scrollIntoView({ behavior: 'smooth', block: 'start' });
-                        // 稍微调整位置，确保良好的可视效果
-                        window.scrollTo({
-                            top: syncStatusSection.offsetTop + 5,
-                            behavior: 'smooth'
-                        });
-                    }
-                } else {
-                    // 回退方案：如果找不到"当前数量/结构:"元素，则滚动到页面顶部
-                    window.scrollTo({ top: 0, behavior: 'smooth' });
-}
+                scrollToPositionA('smooth');
             }, 50);
 
             // 设置初始化标记
@@ -5025,22 +5054,8 @@ console.log('手动备份按钮显示状态:', manualButtonsContainer ? manualBu
             // 恢复自动滚动逻辑
             // 使用setTimeout确保DOM更新和渲染完成后再滚动
             setTimeout(() => {
-                // 无论自动模式还是手动模式，都滚动到"当前数量/结构:"处
-                const statsLabels = document.querySelectorAll('.stats-label');
-                // 找到"当前数量/结构:"标签元素（通常是第二个.stats-label元素）
-                if (statsLabels.length > 1) {
-                    const currentQuantityElement = statsLabels[1];
-                    const syncStatusSection = document.getElementById('syncStatus');
-                    if (syncStatusSection) {
-// 直接跳转到对应位置，取消平滑滚动效果
-                        syncStatusSection.scrollIntoView({ behavior: 'auto', block: 'start' });
-                        // 立即控制滚动位置，确保页面显示在适当位置
-                        window.scrollTo(0, syncStatusSection.offsetTop + 5);
-                    }
-                } else {
-                    // 回退方案：如果找不到"当前数量/结构:"元素，则滚动到页面顶部
-                    window.scrollTo(0, 0);
-}
+                // 需求：每次点击插件图标后，直接定位至「定位A」（无动画）
+                scrollToPositionA('auto');
             }, 0); // 将延迟时间降为0，立即执行
 
         } else {

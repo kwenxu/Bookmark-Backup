@@ -2440,6 +2440,18 @@ function handleAutoSyncToggle(event) {
         }
     }
 
+    // 同步自动备份设置按钮禁用状态（手动模式下置灰）
+    const autoBackupSettingsBtn2 = document.getElementById('autoBackupSettingsBtn');
+    if (autoBackupSettingsBtn2) {
+        if (isChecked) {
+            autoBackupSettingsBtn2.disabled = false;
+            autoBackupSettingsBtn2.classList.remove('disabled');
+        } else {
+            autoBackupSettingsBtn2.disabled = true;
+            autoBackupSettingsBtn2.classList.add('disabled');
+        }
+    }
+
     // --- 新增：基于UI内容判断是否触发备份 ---
     if (!wasChecked && isChecked) { // 只有从 OFF -> ON 才检查
 // <--- Log 1
@@ -2537,6 +2549,18 @@ syncStatusSection.scrollIntoView({ behavior: 'smooth', block: 'start' });
                 }
             }
 
+            // 同步自动备份设置按钮禁用状态（手动模式下置灰）
+            const autoBackupSettingsBtn = document.getElementById('autoBackupSettingsBtn');
+            if (autoBackupSettingsBtn) {
+                if (currentAutoSyncState) {
+                    autoBackupSettingsBtn.disabled = false;
+                    autoBackupSettingsBtn.classList.remove('disabled');
+                } else {
+                    autoBackupSettingsBtn.disabled = true;
+                    autoBackupSettingsBtn.classList.add('disabled');
+                }
+            }
+
             showStatus(`自动备份已${currentAutoSyncState ? '启用' : '禁用'}`, 'success');
 
             // 立刻更新书签计数和变动相关的显示区域
@@ -2577,6 +2601,18 @@ if (wasChecked && !currentAutoSyncState) {
                     uploadToCloudManual.classList.remove('disabled');
                     // 添加呼吸动画效果
                     uploadToCloudManual.classList.add('breathe-animation');
+                }
+            }
+
+            // 同步自动备份设置按钮禁用状态（回退到切换前状态）
+            const autoBackupSettingsBtn3 = document.getElementById('autoBackupSettingsBtn');
+            if (autoBackupSettingsBtn3) {
+                if (!isChecked) { // 切换失败且目标是手动 => 仍保持自动模式
+                    autoBackupSettingsBtn3.disabled = false;
+                    autoBackupSettingsBtn3.classList.remove('disabled');
+                } else { // 切换失败且目标是自动 => 仍保持手动模式
+                    autoBackupSettingsBtn3.disabled = true;
+                    autoBackupSettingsBtn3.classList.add('disabled');
                 }
             }
 
@@ -4383,12 +4419,14 @@ const currentLang = data.preferredLang || 'zh_CN';
         // 不在容器级别触发，避免在手动备份按钮上悬停时显示 tooltip
     }
 
-    // 调整提醒设置对话框内的“保存”按钮为向上箭头（避免文字被写回）
+    // 调整提醒设置对话框内的“保存”按钮为文本（中/英）
     const saveReminderSettingsBtnInMain = document.getElementById('saveReminderSettings');
     if (saveReminderSettingsBtnInMain) {
-        saveReminderSettingsBtnInMain.innerHTML = '<i class="fas fa-chevron-up"></i>';
-        saveReminderSettingsBtnInMain.setAttribute('aria-label', saveSettingsStrings[lang] || saveSettingsStrings['zh_CN']);
-        saveReminderSettingsBtnInMain.setAttribute('title', saveSettingsStrings[lang] || saveSettingsStrings['zh_CN']);
+        saveReminderSettingsBtnInMain.textContent = (typeof saveButtonStrings !== 'undefined')
+            ? (saveButtonStrings[lang] || saveButtonStrings['zh_CN'])
+            : (lang === 'en' ? 'Save' : '保存');
+        saveReminderSettingsBtnInMain.setAttribute('aria-label', saveReminderSettingsBtnInMain.textContent);
+        saveReminderSettingsBtnInMain.setAttribute('title', saveReminderSettingsBtnInMain.textContent);
     }
 
     const historyTitle = document.querySelector('.sync-history h3');
@@ -4654,10 +4692,11 @@ const currentLang = data.preferredLang || 'zh_CN';
 
     const saveReminderSettingsBtn = document.getElementById('saveReminderSettings');
     if (saveReminderSettingsBtn) {
-        // 改为仅显示向上箭头，不显示文字
-        saveReminderSettingsBtn.innerHTML = '<i class="fas fa-chevron-up"></i>';
-        saveReminderSettingsBtn.setAttribute('aria-label', saveSettingsStrings[lang] || saveSettingsStrings['zh_CN']);
-        saveReminderSettingsBtn.setAttribute('title', saveSettingsStrings[lang] || saveSettingsStrings['zh_CN']);
+        saveReminderSettingsBtn.textContent = (typeof saveButtonStrings !== 'undefined')
+            ? (saveButtonStrings[lang] || saveButtonStrings['zh_CN'])
+            : (lang === 'en' ? 'Save' : '保存');
+        saveReminderSettingsBtn.setAttribute('aria-label', saveReminderSettingsBtn.textContent);
+        saveReminderSettingsBtn.setAttribute('title', saveReminderSettingsBtn.textContent);
     }
 
     // 保存提示文本
@@ -4931,7 +4970,7 @@ return false; // 阻止错误传播
             manualSyncOptions.style.display = (initialized && !autoSyncEnabled) ? 'block' : 'none';
         }
 
-        // 处理按钮的禁用状态和视觉效果
+        // 处理按钮的禁用状态和视觉效果（初始化时）
         if (initialized && reminderSettingsBtn && uploadToCloudManual) {
             if (autoSyncEnabled) {
                 // 自动备份开启时，禁用按钮并应用玻璃效果/暗化
@@ -4949,6 +4988,18 @@ return false; // 阻止错误传播
                 uploadToCloudManual.classList.remove('disabled');
                 // 添加呼吸动画效果
                 uploadToCloudManual.classList.add('breathe-animation');
+            }
+        }
+
+        // 初始化时同步自动备份设置按钮禁用状态
+        const autoBackupSettingsBtnInit = document.getElementById('autoBackupSettingsBtn');
+        if (autoBackupSettingsBtnInit) {
+            if (autoSyncEnabled) {
+                autoBackupSettingsBtnInit.disabled = false;
+                autoBackupSettingsBtnInit.classList.remove('disabled');
+            } else {
+                autoBackupSettingsBtnInit.disabled = true;
+                autoBackupSettingsBtnInit.classList.add('disabled');
             }
         }
 
@@ -5552,6 +5603,177 @@ const success = await saveReminderSettingsFunc();
             }
         });
     }
+
+    // ================================
+    // 自动备份设置对话框（新UI）
+    // ================================
+    const autoBackupSettingsBtnEl = document.getElementById('autoBackupSettingsBtn');
+    const autoBackupSettingsDialog = document.getElementById('autoBackupSettingsDialog');
+    const closeAutoBackupSettingsBtn = document.getElementById('closeAutoBackupSettings');
+    const autoBackupSettingsTitle = document.getElementById('autoBackupSettingsTitle');
+    const realtimeBackupRow = document.getElementById('realtimeBackupRow');
+    const realtimeBackupTitle = document.getElementById('realtimeBackupTitle');
+    const realtimeBackupDesc1 = document.getElementById('realtimeBackupDesc1');
+    const realtimeBackupDesc2 = document.getElementById('realtimeBackupDesc2');
+    const realtimeBackupSpacer = document.getElementById('realtimeBackupSpacer');
+    const realtimeBackupToggle = document.getElementById('realtimeBackupToggle');
+    const restoreAutoBackupDefaultsBtn = document.getElementById('restoreAutoBackupDefaults');
+    const saveAutoBackupSettingsBtn = document.getElementById('saveAutoBackupSettings');
+
+    function showAutoBackupSettingsSavedIndicator() {
+        const el = document.getElementById('autoBackupSettingsSavedIndicator');
+        if (!el) return;
+        el.style.display = 'block';
+        el.style.opacity = '0';
+        setTimeout(() => {
+            el.style.opacity = '1';
+            setTimeout(() => {
+                el.style.opacity = '0';
+                setTimeout(() => { el.style.display = 'none'; }, 300);
+            }, 1200);
+        }, 10);
+    }
+
+    async function initRealtimeBackupToggle() {
+        try {
+            const data = await new Promise(resolve => chrome.storage.local.get(['realtimeBackupEnabled'], resolve));
+            const enabled = (data && data.realtimeBackupEnabled !== false);
+            updateToggleState(realtimeBackupToggle, !!enabled);
+        } catch (e) {
+            updateToggleState(realtimeBackupToggle, true);
+        }
+    }
+
+    async function applyAutoBackupSettingsLanguage() {
+        try {
+            const { preferredLang } = await new Promise(resolve => chrome.storage.local.get(['preferredLang'], resolve));
+            const isEN = (preferredLang === 'en');
+
+            if (autoBackupSettingsTitle) {
+                autoBackupSettingsTitle.textContent = isEN ? 'Auto Backup Settings' : '自动备份设置';
+            }
+            if (realtimeBackupTitle) {
+                realtimeBackupTitle.textContent = isEN ? 'Realtime Backup' : '实时备份';
+                // 强制左对齐标题文本
+                realtimeBackupTitle.style.textAlign = 'left';
+                realtimeBackupTitle.style.justifyContent = 'flex-start';
+                realtimeBackupTitle.style.whiteSpace = 'nowrap';
+                // 宽度自适应，避免英文换行
+                realtimeBackupTitle.style.width = 'auto';
+                realtimeBackupTitle.style.minWidth = '0';
+            }
+            // 布局已在 HTML 内联样式中就位：左侧标题，右侧开关，与“动态提醒设置”一致
+            if (realtimeBackupDesc1) {
+                realtimeBackupDesc1.textContent = isEN
+                    ? 'Backs up immediately on count/structure changes'
+                    : '当检测到「数量/结构变化」时立即执行备份';
+                // 描述保持单行显示
+                realtimeBackupDesc1.style.whiteSpace = 'nowrap';
+            }
+            if (realtimeBackupDesc2) {
+                // 合并为单行描述，旧元素若存在则清空
+                realtimeBackupDesc2.textContent = '';
+            }
+            if (restoreAutoBackupDefaultsBtn) {
+                restoreAutoBackupDefaultsBtn.textContent = isEN ? 'Restore Defaults' : '恢复默认';
+            }
+            if (saveAutoBackupSettingsBtn) {
+                const saveText = isEN ? 'Save' : '保存';
+                saveAutoBackupSettingsBtn.textContent = saveText;
+                saveAutoBackupSettingsBtn.setAttribute('aria-label', saveText);
+                saveAutoBackupSettingsBtn.setAttribute('title', saveText);
+            }
+            const savedIndicator = document.getElementById('autoBackupSettingsSavedIndicator');
+            if (savedIndicator) {
+                savedIndicator.textContent = isEN ? 'Saved' : '设置已保存';
+            }
+            
+            // 对齐与微调（按语言）：
+            // 目标：标题与描述左对齐；中英文统一向右微移相同距离
+            const cnShift = 4;    // px，中文右移（与英文一致）
+            const enShift = 4;    // px，英文右移
+            const shift = isEN ? enShift : cnShift;
+
+            if (realtimeBackupSpacer) {
+                // 不使用缩进：让描述与标题文本左边对齐
+                realtimeBackupSpacer.style.width = '0px';
+                realtimeBackupSpacer.style.minWidth = '0px';
+            }
+            if (realtimeBackupTitle) {
+                realtimeBackupTitle.style.marginLeft = shift + 'px';
+            }
+            if (realtimeBackupDesc1) {
+                realtimeBackupDesc1.style.marginLeft = shift + 'px';
+            }
+        } catch (e) {
+            // ignore
+        }
+    }
+
+    if (autoBackupSettingsBtnEl && autoBackupSettingsDialog) {
+        autoBackupSettingsBtnEl.addEventListener('click', async function() {
+            await initRealtimeBackupToggle();
+            await applyAutoBackupSettingsLanguage();
+            autoBackupSettingsDialog.style.display = 'block';
+        });
+    }
+
+    if (closeAutoBackupSettingsBtn && autoBackupSettingsDialog) {
+        closeAutoBackupSettingsBtn.addEventListener('click', function() {
+            autoBackupSettingsDialog.style.display = 'none';
+        });
+    }
+
+    if (autoBackupSettingsDialog) {
+        autoBackupSettingsDialog.addEventListener('click', function(event) {
+            const dialogContent = autoBackupSettingsDialog.querySelector('.modal-content');
+            const isOutside = event.target === autoBackupSettingsDialog || (dialogContent && !dialogContent.contains(event.target));
+            if (isOutside) {
+                autoBackupSettingsDialog.style.display = 'none';
+            }
+        });
+    }
+
+    if (realtimeBackupToggle) {
+        realtimeBackupToggle.addEventListener('click', async function() {
+            const current = getToggleState(realtimeBackupToggle);
+            const next = !current;
+            updateToggleState(realtimeBackupToggle, next);
+            try {
+                await new Promise(resolve => chrome.storage.local.set({ realtimeBackupEnabled: next }, resolve));
+            } catch (e) {
+                // ignore
+            }
+        });
+    }
+
+    if (restoreAutoBackupDefaultsBtn) {
+        restoreAutoBackupDefaultsBtn.addEventListener('click', async function() {
+            // 默认：开启实时备份；其它（循环、定时）暂不实现保存逻辑
+            updateToggleState(realtimeBackupToggle, true);
+            try {
+                await new Promise(resolve => chrome.storage.local.set({ realtimeBackupEnabled: true }, resolve));
+            } catch (e) {}
+            showAutoBackupSettingsSavedIndicator();
+        });
+    }
+
+    if (saveAutoBackupSettingsBtn && autoBackupSettingsDialog) {
+        saveAutoBackupSettingsBtn.addEventListener('click', function() {
+            // 目前仅即时保存实时备份开关，其它设置预留
+            showAutoBackupSettingsSavedIndicator();
+            setTimeout(() => { autoBackupSettingsDialog.style.display = 'none'; }, 600);
+        });
+    }
+
+    // 跟随语言切换动态更新“自动备份设置”对话框文案
+    chrome.storage.onChanged.addListener((changes, area) => {
+        if (area === 'local' && changes.preferredLang) {
+            if (autoBackupSettingsDialog && autoBackupSettingsDialog.style.display === 'block') {
+                applyAutoBackupSettingsLanguage();
+            }
+        }
+    });
 
     // 页面加载完成时检查URL参数
     checkUrlParams();

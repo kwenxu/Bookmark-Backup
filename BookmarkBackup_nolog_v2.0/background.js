@@ -1379,7 +1379,8 @@ async function handleBookmarkChange() {
 
     bookmarkChangeTimeout = setTimeout(async () => {
         try {
-            const { autoSync = true } = await browserAPI.storage.local.get(['autoSync']);
+            // 读取自动模式与实时备份子功能开关
+            const { autoSync = true, realtimeBackupEnabled = true } = await browserAPI.storage.local.get(['autoSync', 'realtimeBackupEnabled']);
 
             // 更新最后书签变更时间（无论模式如何）
             await browserAPI.storage.local.set({
@@ -1407,9 +1408,9 @@ async function handleBookmarkChange() {
 }
             }
 
-            // 仅在自动备份模式下尝试自动备份
-            if (autoSync) {
-syncBookmarks().then(result => { // <-- 添加 .then() 处理
+            // 仅在自动备份模式且开启了“实时备份”子功能时尝试自动备份
+            if (autoSync && realtimeBackupEnabled) {
+                syncBookmarks().then(result => { // <-- 添加 .then() 处理
 // 在备份完成后调用 updateBadgeAfterSync
                     updateBadgeAfterSync(result.success);
                     // 如果成功，则更新缓存

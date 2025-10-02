@@ -1,4 +1,19 @@
 // =============================================================================
+// 模块导入 (Module Imports)
+// =============================================================================
+
+console.log('🔵 [popup.js] 开始加载...');
+
+import {
+    createAutoBackupTimerUI,
+    initializeUIEvents as initializeAutoBackupTimerUIEvents,
+    loadAutoBackupSettings,
+    applyLanguageToUI as applyAutoBackupTimerLanguage
+} from './auto_backup_timer/index.js';
+
+console.log('🟢 [popup.js] 模块导入成功!', { createAutoBackupTimerUI, initializeAutoBackupTimerUIEvents, loadAutoBackupSettings });
+
+// =============================================================================
 // 全局状态变量和常量 (Global State Variables and Constants)
 // =============================================================================
 
@@ -1759,10 +1774,59 @@ function updateBookmarkCountDisplay(passedLang) {
 }
                 });
 
-                // 2. 更新 "上次变动" 区域为 "自动监测中"
-                const autoBackupText = currentLang === 'en' ? "Auto Monitoring Active" : "自动监测中";
-                const autoBackupStyle = mainItemStyle + " color: var(--theme-status-card-auto-text); font-weight: bold; text-align: center;";
-                changeDescriptionContainer.innerHTML = `<div style=\"${autoBackupStyle}\">${autoBackupText}</div>`;
+                // 2. 更新 "上次变动" 区域 - 根据备份模式和变化状态显示不同内容
+                chrome.storage.local.get(['autoBackupTimerSettings'], (result) => {
+                    const backupMode = result.autoBackupTimerSettings?.backupMode || 'realtime';
+                    
+                    chrome.runtime.sendMessage({ action: "getBackupStats" }, backupResponse => {
+                        let statusText = '';
+                        
+                        if (backupMode === 'realtime') {
+                            // 实时备份：显示"监测中"
+                            statusText = currentLang === 'en' ? 
+                                '「Realtime」Auto Backup: Monitoring' : 
+                                '「实时」自动备份：监测中';
+                        } else if (backupMode === 'regular' || backupMode === 'specific') {
+                            // 常规时间/特定时间：检查是否有变化
+                            if (backupResponse && backupResponse.success && backupResponse.stats) {
+                                const hasChanges = (
+                                    backupResponse.stats.bookmarkDiff !== 0 ||
+                                    backupResponse.stats.folderDiff !== 0 ||
+                                    backupResponse.stats.bookmarkMoved ||
+                                    backupResponse.stats.bookmarkModified ||
+                                    backupResponse.stats.folderMoved ||
+                                    backupResponse.stats.folderModified
+                                );
+                                
+                                if (hasChanges) {
+                                    // 有变化：显示具体的变化描述
+                                    const changes = [];
+                                    if (backupResponse.stats.bookmarkDiff !== 0) {
+                                        changes.push(`${backupResponse.stats.bookmarkDiff > 0 ? '+' : ''}${backupResponse.stats.bookmarkDiff} ${currentLang === 'en' ? 'bookmarks' : '书签'}`);
+                                    }
+                                    if (backupResponse.stats.folderDiff !== 0) {
+                                        changes.push(`${backupResponse.stats.folderDiff > 0 ? '+' : ''}${backupResponse.stats.folderDiff} ${currentLang === 'en' ? 'folders' : '文件夹'}`);
+                                    }
+                                    if (backupResponse.stats.bookmarkMoved || backupResponse.stats.folderMoved) {
+                                        changes.push(currentLang === 'en' ? 'moved' : '移动');
+                                    }
+                                    if (backupResponse.stats.bookmarkModified || backupResponse.stats.folderModified) {
+                                        changes.push(currentLang === 'en' ? 'modified' : '修改');
+                                    }
+                                    statusText = `(${changes.join('，')})`;
+                                } else {
+                                    // 无变化
+                                    statusText = currentLang === 'en' ? 'No Changes' : '无变化';
+                                }
+                            } else {
+                                statusText = currentLang === 'en' ? 'No Changes' : '无变化';
+                            }
+                        }
+                        
+                        const autoBackupStyle = mainItemStyle + " color: var(--theme-status-card-auto-text); font-weight: bold; text-align: center;";
+                        changeDescriptionContainer.innerHTML = `<div style=\"${autoBackupStyle}\">${statusText}</div>`;
+                    });
+                });
 
             } else {
                 // 设置右侧状态卡片为手动模式样式
@@ -5727,6 +5791,59 @@ const success = await saveReminderSettingsFunc();
 
     if (autoBackupSettingsBtnEl && autoBackupSettingsDialog) {
         autoBackupSettingsBtnEl.addEventListener('click', async function() {
+            // 初始化自动备份定时器UI（首次打开时）
+            console.log('[自动备份设置] 开始初始化UI...');
+            const container = document.getElementById('autoBackupTimerUIContainer');
+            console.log('[自动备份设置] 容器元素:', container);
+            
+            if (!container) {
+                console.error('[自动备份设置] 找不到容器元素 autoBackupTimerUIContainer');
+                alert('错误：找不到UI容器元素');
+            } else {
+                // 检查是否已经初始化（通过查找我们创建的特定元素）
+                const alreadyInitialized = container.querySelector('#autoBackupTimerContainer');
+                
+                if (!alreadyInitialized) {
+                    console.log('[自动备份设置] 首次初始化，开始创建UI');
+                    try {
+                        const lang = await new Promise(resolve => {
+                            chrome.storage.local.get(['preferredLang'], result => {
+                                resolve(result.preferredLang || 'zh_CN');
+                            });
+                        });
+                        console.log('[自动备份设置] 当前语言:', lang);
+                        
+                        // 清空容器（移除测试内容）
+                        container.innerHTML = '';
+                        
+                        // 创建并插入UI
+                        console.log('[自动备份设置] 调用 createAutoBackupTimerUI...');
+                        const ui = createAutoBackupTimerUI(lang);
+                        console.log('[自动备份设置] UI创建成功:', ui);
+                        
+                        container.appendChild(ui);
+                        console.log('[自动备份设置] UI已插入到容器');
+                        
+                        // 初始化UI事件
+                        console.log('[自动备份设置] 初始化UI事件...');
+                        await initializeAutoBackupTimerUIEvents();
+                        
+                        // 加载设置
+                        console.log('[自动备份设置] 加载设置...');
+                        await loadAutoBackupSettings();
+                        console.log('[自动备份设置] 初始化完成！');
+                    } catch (error) {
+                        console.error('[自动备份设置] 初始化失败:', error);
+                        console.error('[自动备份设置] 错误堆栈:', error.stack);
+                        container.innerHTML = `<div style="color: red; padding: 20px;">初始化失败: ${error.message}<br><pre>${error.stack}</pre></div>`;
+                    }
+                } else {
+                    console.log('[自动备份设置] 已初始化，重新加载设置');
+                    // 已初始化，重新加载设置
+                    await loadAutoBackupSettings();
+                }
+            }
+            
             await initRealtimeBackupToggle();
             await applyAutoBackupSettingsLanguage();
             autoBackupSettingsDialog.style.display = 'block';
@@ -5786,6 +5903,8 @@ const success = await saveReminderSettingsFunc();
         if (area === 'local' && changes.preferredLang) {
             if (autoBackupSettingsDialog && autoBackupSettingsDialog.style.display === 'block') {
                 applyAutoBackupSettingsLanguage();
+                // 同时更新动态创建的定时器UI
+                applyAutoBackupTimerLanguage();
             }
         }
     });

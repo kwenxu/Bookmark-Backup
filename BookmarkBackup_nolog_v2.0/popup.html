@@ -2420,24 +2420,10 @@
                 <button id="closeAutoBackupSettings" class="close-button" style="position: absolute; right: 0; top: 50%; transform: translateY(-50%); width: 28px; height: 28px; display: flex; justify-content: center; align-items: center; font-size: 20px; font-weight: bold; background-color: var(--theme-bg-primary); color: #888; border: none; cursor: pointer; border-radius: 50%; box-shadow: 0 1px 3px rgba(0,0,0,0.1); transition: all 0.2s ease;">×</button>
             </div>
 
-            <!-- 实时备份（原自动开关功能） -->
-            <div class="setting-block" style="padding: 15px; background-color: var(--theme-bg-secondary); border-radius: 5px; margin-bottom: 15px;">
-                <div class="setting-row" style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; height: 38px;">
-                    <div class="setting-label" style="display: flex; align-items: center; flex: 1; height: 38px;">
-                        <div id="realtimeBackupTitle" class="setting-label-text" style="font-weight: bold; font-size: 16px; margin-right: 5px; width: 120px; min-width: 120px; white-space: nowrap; text-align: left; flex-shrink: 0; display: flex; align-items: center; justify-content: flex-start; height: 38px; line-height: 38px;">实时备份</div>
-                    </div>
-                    <div class="toggle-container" style="margin-left: 15px; display: flex; align-items: center;">
-                        <button id="realtimeBackupToggle" class="toggle-button" data-state="on" style="width: 60px; height: 30px; border-radius: 15px; background-color: #4CAF50; border: none; position: relative; cursor: pointer; padding: 0; transition: background-color 0.3s ease;">
-                            <div class="toggle-circle" style="width: 24px; height: 24px; background-color: var(--theme-bg-primary); border-radius: 50%; position: absolute; top: 3px; right: 3px; transition: transform 0.3s ease; box-shadow: 0 1px 3px rgba(0,0,0,0.2);"></div>
-                        </button>
-                    </div>
-                </div>
-                <div class="setting-desc-row" style="display: flex; align-items: flex-start;">
-                    <div id="realtimeBackupSpacer" style="width: 120px; min-width: 120px; flex-shrink: 0;"></div>
-                    <div id="realtimeBackupDesc1" style="font-size: 14px; line-height: 1.6; color: var(--theme-text-secondary); white-space: nowrap;">当检测到「数量/结构变化」时立即执行备份</div>
-                </div>
+            <!-- 自动备份定时器UI容器 -->
+            <div id="autoBackupTimerUIContainer">
+                <!-- 三个备份模式的UI会由 JS 动态插入到这里 -->
             </div>
-
 
             <!-- 按钮区域 -->
             <div class="button-group" style="margin-top: 20px; display: flex; justify-content: space-between; gap: 12px;">

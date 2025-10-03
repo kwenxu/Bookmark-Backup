@@ -38,6 +38,20 @@ const ALARM_NAMES = {
 let isInitialized = false;
 let lastBackupCheck = null;
 
+// 回调函数引用（由 background.js 设置）
+let checkBookmarkChangesCallback = null;
+let syncBookmarksCallback = null;
+
+/**
+ * 设置回调函数（由 background.js 调用）
+ * @param {Function} checkChanges - 检查书签变化的函数
+ * @param {Function} syncBookmarks - 执行备份的函数
+ */
+export function setCallbacks(checkChanges, syncBookmarks) {
+    checkBookmarkChangesCallback = checkChanges;
+    syncBookmarksCallback = syncBookmarks;
+}
+
 // =======================================================
 // 辅助函数
 // =======================================================
@@ -98,11 +112,13 @@ function getNextHourIntervalTime(hourInterval) {
     const now = new Date();
     const currentHour = now.getHours();
     const currentMinute = now.getMinutes();
+    const currentSecond = now.getSeconds();
     
     // 计算下一个整点时刻
     let nextHour = Math.ceil(currentHour / hourInterval) * hourInterval;
     
-    if (nextHour === currentHour && currentMinute === 0) {
+    // 如果计算出的小时等于当前小时，且已经过了整点，需要跳到下一个间隔
+    if (nextHour === currentHour && (currentMinute > 0 || currentSecond > 0)) {
         nextHour += hourInterval;
     }
     
@@ -112,6 +128,12 @@ function getNextHourIntervalTime(hourInterval) {
     // 如果超过今天，调整到明天
     if (nextTime.getDate() !== now.getDate()) {
         nextTime.setDate(now.getDate() + 1);
+    }
+    
+    // 最后确保计算出的时间一定是未来时间
+    if (nextTime.getTime() <= now.getTime()) {
+        // 如果还是过去或当前时间，再加一个间隔
+        nextTime.setHours(nextTime.getHours() + hourInterval, 0, 0, 0);
     }
     
     return nextTime.getTime();
@@ -126,9 +148,15 @@ function getNextHourIntervalTime(hourInterval) {
 function getNextMinuteIntervalTime(minuteInterval, includeZeroMinute) {
     const now = new Date();
     const currentMinute = now.getMinutes();
+    const currentSecond = now.getSeconds();
     
     // 计算下一个分钟点
     let nextMinute = Math.ceil(currentMinute / minuteInterval) * minuteInterval;
+    
+    // 如果计算出的分钟点等于当前分钟（且当前秒数>0），说明已经过了这个分钟点，需要跳到下一个
+    if (nextMinute === currentMinute && currentSecond > 0) {
+        nextMinute += minuteInterval;
+    }
     
     // 如果不包含整点，且计算结果是0或60，则跳到下一个间隔
     if (!includeZeroMinute && (nextMinute === 0 || nextMinute === 60)) {
@@ -142,6 +170,12 @@ function getNextMinuteIntervalTime(minuteInterval, includeZeroMinute) {
         nextTime.setMinutes(nextMinute - 60, 0, 0);
     } else {
         nextTime.setMinutes(nextMinute, 0, 0);
+    }
+    
+    // 最后确保计算出的时间一定是未来时间
+    if (nextTime.getTime() <= now.getTime()) {
+        // 如果还是过去或当前时间，再加一个间隔
+        nextTime.setMinutes(nextTime.getMinutes() + minuteInterval, 0, 0);
     }
     
     return nextTime.getTime();
@@ -166,10 +200,16 @@ function getCurrentWeekDayText() {
  */
 async function checkBookmarkChanges() {
     try {
-        // 调用 background.js 的检查函数
-        const response = await browserAPI.runtime.sendMessage({
-            action: 'checkBookmarkChanges'
-        });
+        // 直接调用 background.js 的检查函数（通过回调）
+        if (!checkBookmarkChangesCallback) {
+            addLog(`检查书签变化回调未设置，将假定有变化并执行备份`);
+            return { 
+                hasChanges: true, 
+                changeDescription: '(回调未设置，强制备份)' 
+            };
+        }
+        
+        const response = await checkBookmarkChangesCallback();
         
         if (response && response.success) {
             return {
@@ -180,10 +220,19 @@ async function checkBookmarkChanges() {
         
         return { hasChanges: false, changeDescription: '' };
     } catch (error) {
-        addLog(`检查书签变化失败: ${error.message}`);
-        return { hasChanges: false, changeDescription: '' };
+        // 如果调用失败，假设有变化并执行备份，以避免遗漏变化
+        addLog(`检查书签变化失败: ${error.message}，将假定有变化并执行备份`);
+        return { 
+            hasChanges: true, 
+            changeDescription: '(无法检测变化，强制备份)' 
+        };
     }
 }
+
+// 添加防重复触发的变量
+let isBackupInProgress = false;
+let lastBackupTriggerTime = 0;
+const MIN_BACKUP_INTERVAL = 5000; // 最小备份间隔：5秒
 
 /**
  * 触发自动备份
@@ -192,6 +241,18 @@ async function checkBookmarkChanges() {
  */
 async function triggerAutoBackup(reason) {
     try {
+        // 防止重复触发：如果正在备份中，或者距离上次触发不到5秒，则跳过
+        const now = Date.now();
+        if (isBackupInProgress) {
+            addLog(`备份正在进行中，跳过本次触发 (${reason})`);
+            return false;
+        }
+        if (now - lastBackupTriggerTime < MIN_BACKUP_INTERVAL) {
+            addLog(`距离上次备份触发不到${MIN_BACKUP_INTERVAL/1000}秒，跳过本次触发 (${reason})`);
+            return false;
+        }
+        
+        lastBackupTriggerTime = now;
         addLog(`触发自动备份，原因: ${reason}`);
         
         // 检查是否有变化
@@ -204,13 +265,21 @@ async function triggerAutoBackup(reason) {
         
         addLog(`检测到变化: ${changeDescription}，开始备份`);
         
-        // 调用 background.js 执行备份
-        const response = await browserAPI.runtime.sendMessage({
-            action: 'syncBookmarks',
-            direction: 'upload',
-            isManual: false,
-            autoBackupReason: reason  // 传递备份原因作为备注
-        });
+        // 标记备份正在进行
+        isBackupInProgress = true;
+        
+        // 直接调用 background.js 的备份函数（通过回调）
+        if (!syncBookmarksCallback) {
+            addLog(`备份回调未设置，无法执行备份`);
+            return false;
+        }
+        
+        const response = await syncBookmarksCallback(
+            false,          // isManual
+            'upload',       // direction
+            false,          // showProgress
+            reason          // note (备份原因作为备注)
+        );
         
         if (response && response.success) {
             addLog('自动备份成功');
@@ -223,6 +292,9 @@ async function triggerAutoBackup(reason) {
     } catch (error) {
         addLog(`触发自动备份异常: ${error.message}`);
         return false;
+    } finally {
+        // 无论成功还是失败，都要重置备份进行中的标志
+        isBackupInProgress = false;
     }
 }
 

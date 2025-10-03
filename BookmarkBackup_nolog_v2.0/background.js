@@ -31,6 +31,7 @@ import { pauseReminderTimer, resumeReminderTimer, handleAlarm, startLoopReminder
 
 // 导入自动备份定时器系统
 import {
+    setCallbacks as setAutoBackupCallbacks,
     initializeTimerSystem as initializeAutoBackupTimerSystem,
     restartTimerSystem as restartAutoBackupTimerSystem,
     handleAlarmTrigger as handleAutoBackupAlarmTrigger
@@ -321,6 +322,13 @@ hasInitializedBackupReminder = false; // 重置标志以允许未来重试
     
     // 初始化自动备份定时器系统
     try {
+        // 设置定时器系统的回调函数
+        setAutoBackupCallbacks(
+            checkBookmarkChangesForAutoBackup,  // 检查书签变化
+            syncBookmarks                        // 执行备份
+        );
+        console.log('[自动备份定时器] 回调函数已设置');
+        
         // 只有在自动备份模式下才初始化定时器
         const { autoSync = true } = await browserAPI.storage.local.get(['autoSync']);
         if (autoSync) {
@@ -2380,6 +2388,18 @@ let errorMessage = errorMessages.join('; ');
 }
         }
 
+        // 备份成功后，更新角标和缓存
+        if (syncSuccess) {
+            try {
+                // 更新缓存分析数据
+                await updateAndCacheAnalysis();
+                // 更新角标
+                await setBadge();
+            } catch (updateError) {
+                console.error('[syncBookmarks] 更新角标和缓存失败:', updateError);
+            }
+        }
+
         return {
             success: syncSuccess,
             webDAVSuccess,
@@ -2562,10 +2582,15 @@ async function updateSyncStatus(direction, time, status = 'success', errorMessag
                 folderModified: lastSyncOperations.folderModified || folderModified
             };
 
+            // 生成当前书签指纹（使用已经声明的 localBookmarks 变量）
+            const currentPrints = generateFingerprints(localBookmarks);
+            
             await browserAPI.storage.local.set({
                 lastBookmarkData: {
                     bookmarkCount: currentBookmarkCount,
                     folderCount: currentFolderCount,
+                    bookmarkPrints: currentPrints.bookmarks,
+                    folderPrints: currentPrints.folders,
                     timestamp: time
                 }
             });

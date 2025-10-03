@@ -19,6 +19,7 @@ export {
 
 // 导出定时器模块
 export {
+    setCallbacks,
     initializeTimerSystem,
     stopTimerSystem,
     restartTimerSystem,

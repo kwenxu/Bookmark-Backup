@@ -1787,47 +1787,184 @@ function updateBookmarkCountDisplay(passedLang) {
                                 '「Realtime」Auto Backup: Monitoring' : 
                                 '「实时」自动备份：监测中';
                         } else if (backupMode === 'regular' || backupMode === 'specific' || backupMode === 'both') {
-                            // 常规时间/特定时间：检查是否有变化
-                            if (backupResponse && backupResponse.success && backupResponse.stats) {
-                                const hasChanges = (
-                                    backupResponse.stats.bookmarkDiff !== 0 ||
-                                    backupResponse.stats.folderDiff !== 0 ||
-                                    backupResponse.stats.bookmarkMoved ||
-                                    backupResponse.stats.bookmarkModified ||
-                                    backupResponse.stats.folderMoved ||
-                                    backupResponse.stats.folderModified
-                                );
-                                
-                                if (hasChanges) {
-                                    // 有变化：显示具体的变化描述
-                                    const changes = [];
-                                    if (backupResponse.stats.bookmarkDiff !== 0) {
-                                        changes.push(`${backupResponse.stats.bookmarkDiff > 0 ? '+' : ''}${backupResponse.stats.bookmarkDiff} ${currentLang === 'en' ? 'bookmarks' : '书签'}`);
-                                    }
-                                    if (backupResponse.stats.folderDiff !== 0) {
-                                        changes.push(`${backupResponse.stats.folderDiff > 0 ? '+' : ''}${backupResponse.stats.folderDiff} ${currentLang === 'en' ? 'folders' : '文件夹'}`);
-                                    }
-                                    if (backupResponse.stats.bookmarkMoved || backupResponse.stats.folderMoved) {
-                                        changes.push(currentLang === 'en' ? 'moved' : '移动');
-                                    }
-                                    if (backupResponse.stats.bookmarkModified || backupResponse.stats.folderModified) {
-                                        changes.push(currentLang === 'en' ? 'modified' : '修改');
-                                    }
-                                    statusText = `(${changes.join('，')})`;
-                                } else {
-                                    // 无变化
-                                    statusText = currentLang === 'en' ? 'No Changes' : '无变化';
+                            // 常规时间/特定时间：使用和手动备份完全一致的差异计算逻辑
+                            Promise.all([
+                                new Promise((resolve, reject) => {
+                                    chrome.runtime.sendMessage({ action: "getSyncHistory" }, response => {
+                                        if (response && response.success) resolve(response.syncHistory || []);
+                                        else reject(new Error(response?.error || '获取备份历史失败'));
+                                    });
+                                }),
+                                new Promise((resolve) => {
+                                    chrome.storage.local.get('cachedRecordAfterClear', result => {
+                                        resolve(result.cachedRecordAfterClear);
+                                    });
+                                })
+                            ]).then(([syncHistory, cachedRecordFromStorage]) => {
+                                if (!backupResponse || !backupResponse.success || !backupResponse.stats) {
+                                    const containerStyle = "display: inline-block; margin: 2px 0 2px 0; padding: 6px 8px 6px 10px; background-color: transparent; border-radius: 6px; font-size: 12.5px; text-align: center;";
+                                    const mainItemStyle = "word-break: break-all; color: var(--theme-status-card-auto-text); text-align: center;";
+                                    const noChangeText = currentLang === 'en' ? "No changes" : "无变化";
+                                    changeDescriptionContainer.innerHTML = `<div style="${containerStyle}"><div style="${mainItemStyle}">${noChangeText}</div></div>`;
+                                    return;
                                 }
-                            } else {
-                                statusText = currentLang === 'en' ? 'No Changes' : '无变化';
-                            }
+                                
+                                const currentBookmarkCount = backupResponse.stats.bookmarkCount || 0;
+                                const currentFolderCount = backupResponse.stats.folderCount || 0;
+                                
+                                const hasStructuralChanges = backupResponse.stats.bookmarkMoved ||
+                                    backupResponse.stats.folderMoved ||
+                                    backupResponse.stats.bookmarkModified ||
+                                    backupResponse.stats.folderModified;
+
+                                // 完全复制手动备份的差异计算逻辑
+                                let bookmarkDiff = 0;
+                                let folderDiff = 0;
+                                let canCalculateDiff = false;
+
+                                if (syncHistory && syncHistory.length > 0) {
+                                    // 从末尾向前寻找最近一条包含有效统计的记录
+                                    let prevRecordWithStats = null;
+                                    for (let i = syncHistory.length - 1; i >= 0; i--) {
+                                        const rec = syncHistory[i];
+                                        const stats = rec && rec.bookmarkStats;
+                                        if (stats && (stats.currentBookmarkCount !== undefined || stats.currentBookmarks !== undefined)
+                                                   && (stats.currentFolderCount !== undefined || stats.currentFolders !== undefined)) {
+                                            prevRecordWithStats = stats;
+                                            break;
+                                        }
+                                    }
+
+                                    if (prevRecordWithStats) {
+                                        const prevBookmarkCount = prevRecordWithStats.currentBookmarkCount ?? prevRecordWithStats.currentBookmarks ?? 0;
+                                        const prevFolderCount = prevRecordWithStats.currentFolderCount ?? prevRecordWithStats.currentFolders ?? 0;
+                                        bookmarkDiff = currentBookmarkCount - prevBookmarkCount;
+                                        folderDiff = currentFolderCount - prevFolderCount;
+                                        canCalculateDiff = true;
+                                    } else {
+                                        // 回退：使用 background 返回的上次计算差异
+                                        if (backupResponse.stats.bookmarkDiff !== undefined) bookmarkDiff = backupResponse.stats.bookmarkDiff;
+                                        if (backupResponse.stats.folderDiff !== undefined) folderDiff = backupResponse.stats.folderDiff;
+                                        if (backupResponse.stats.bookmarkDiff !== undefined || backupResponse.stats.folderDiff !== undefined) canCalculateDiff = true;
+                                    }
+                                } else if (cachedRecordFromStorage) {
+                                    const cachedStats = cachedRecordFromStorage.bookmarkStats;
+                                    if (cachedStats &&
+                                        (cachedStats.currentBookmarkCount !== undefined || cachedStats.currentBookmarks !== undefined) &&
+                                        (cachedStats.currentFolderCount !== undefined || cachedStats.currentFolders !== undefined))
+                                    {
+                                        const prevBookmarkCountFromCache = cachedStats.currentBookmarkCount ?? cachedStats.currentBookmarks ?? 0;
+                                        const prevFolderCountFromCache = cachedStats.currentFolderCount ?? cachedStats.currentFolders ?? 0;
+                                        bookmarkDiff = currentBookmarkCount - prevBookmarkCountFromCache;
+                                        folderDiff = currentFolderCount - prevFolderCountFromCache;
+                                        canCalculateDiff = true;
+                                    } else {
+                                        if (backupResponse.stats.bookmarkDiff !== undefined) bookmarkDiff = backupResponse.stats.bookmarkDiff;
+                                        if (backupResponse.stats.folderDiff !== undefined) folderDiff = backupResponse.stats.folderDiff;
+                                        if (backupResponse.stats.bookmarkDiff !== undefined || backupResponse.stats.folderDiff !== undefined) canCalculateDiff = true;
+                                    }
+                                } else {
+                                    if (backupResponse.stats.bookmarkDiff !== undefined) bookmarkDiff = backupResponse.stats.bookmarkDiff;
+                                    if (backupResponse.stats.folderDiff !== undefined) folderDiff = backupResponse.stats.folderDiff;
+                                    if (backupResponse.stats.bookmarkDiff !== undefined || backupResponse.stats.folderDiff !== undefined) canCalculateDiff = true;
+                                }
+
+                                const hasNumericalChange = canCalculateDiff && (bookmarkDiff !== 0 || folderDiff !== 0);
+                                
+                                const i18nBookmarkChangedLabel = window.i18nLabels?.bookmarkChangedLabel || (currentLang === 'en' ? "BKM changed" : "书签变动");
+                                const i18nFolderChangedLabel = window.i18nLabels?.folderChangedLabel || (currentLang === 'en' ? "FLD changed" : "文件夹变动");
+                                const i18nBookmarkAndFolderChangedLabel = window.i18nLabels?.bookmarkAndFolderChangedLabel || (currentLang === 'en' ? "BKM & FLD changed" : "书签和文件夹变动");
+
+                                let quantityChangesHTML = "";
+                                let structuralChangesHTML = "";
+
+                                // 数量变化部分（带红绿色）
+                                if (hasNumericalChange) {
+                                    let bPartHTML = "";
+                                    if (bookmarkDiff !== 0) {
+                                        const bookmarkSign = bookmarkDiff > 0 ? "+" : "";
+                                        const bookmarkColor = bookmarkDiff > 0 ? "#4CAF50" : (bookmarkDiff < 0 ? "#F44336" : "#777777");
+                                        if (currentLang === 'en') {
+                                            const bmDiffTerm = "BKM";
+                                            bPartHTML = `<span style="color: ${bookmarkColor}; font-weight: bold;">${bookmarkSign}${bookmarkDiff}</span> ${bmDiffTerm}`;
+                                        } else {
+                                            bPartHTML = `<span style="color: ${bookmarkColor}; font-weight: bold;">${bookmarkSign}${bookmarkDiff}</span>${i18nBookmarksLabel}`;
+                                        }
+                                    }
+                                    let fPartHTML = "";
+                                    if (folderDiff !== 0) {
+                                        const folderSign = folderDiff > 0 ? "+" : "";
+                                        const folderColor = folderDiff > 0 ? "#4CAF50" : (folderDiff < 0 ? "#F44336" : "#777777");
+                                        if (currentLang === 'en') {
+                                            const fldDiffTerm = "FLD";
+                                            fPartHTML = `<span style="color: ${folderColor}; font-weight: bold;">${folderSign}${folderDiff}</span> ${fldDiffTerm}`;
+                                        } else {
+                                            fPartHTML = `<span style="color: ${folderColor}; font-weight: bold;">${folderSign}${folderDiff}</span>${i18nFoldersLabel}`;
+                                        }
+                                    }
+                                    if (currentLang === 'zh_CN' && bookmarkDiff !== 0 && folderDiff !== 0) {
+                                        quantityChangesHTML = `${bPartHTML}<span style="display:inline;">,</span>${fPartHTML}`;
+                                    } else {
+                                        let temp = "";
+                                        if (bPartHTML) temp += bPartHTML;
+                                        if (bPartHTML && fPartHTML) {
+                                            temp += `<span style="display:inline-block; width:6px;"></span>,<span style="display:inline-block; width:6px;"></span>`;
+                                        }
+                                        if (fPartHTML) temp += fPartHTML;
+                                        quantityChangesHTML = temp;
+                                    }
+                                }
+
+                                // 结构变化部分
+                                if (hasStructuralChanges) {
+                                    const hasBookmarkStructChange = backupResponse.stats.bookmarkMoved || backupResponse.stats.bookmarkModified;
+                                    const hasFolderStructChange = backupResponse.stats.folderMoved || backupResponse.stats.folderModified;
+                                    if (hasBookmarkStructChange && hasFolderStructChange) {
+                                        structuralChangesHTML = `<span style="color: orange; font-weight: bold;">${i18nBookmarkAndFolderChangedLabel}</span>`;
+                                    } else if (hasBookmarkStructChange) {
+                                        structuralChangesHTML = `<span style="color: orange; font-weight: bold;">${i18nBookmarkChangedLabel}</span>`;
+                                    } else if (hasFolderStructChange) {
+                                        structuralChangesHTML = `<span style="color: orange; font-weight: bold;">${i18nFolderChangedLabel}</span>`;
+                                    }
+                                }
+
+                                // 组合显示内容（和手动备份完全一致）
+                                const containerStyle = "display: inline-block; margin: 2px 0 2px 0; padding: 6px 8px 6px 10px; background-color: transparent; border-radius: 6px; font-size: 12.5px; text-align: center;";
+                                const mainItemStyle = "word-break: break-all; color: var(--theme-status-card-auto-text); text-align: center;";
+                                const secondaryItemStyle = "margin-top: 8px; word-break: break-all; color: var(--theme-status-card-auto-text); text-align: center;";
+                                
+                                let statusText = "";
+                                if (quantityChangesHTML || structuralChangesHTML) {
+                                    let mainContent = "";
+                                    let secondaryContent = "";
+                                    if (quantityChangesHTML && structuralChangesHTML) {
+                                        mainContent = quantityChangesHTML;
+                                        secondaryContent = structuralChangesHTML;
+                                    } else if (quantityChangesHTML) {
+                                        mainContent = quantityChangesHTML;
+                                    } else if (structuralChangesHTML) {
+                                        mainContent = structuralChangesHTML;
+                                    }
+                                    statusText = `<div style="${containerStyle}">`;
+                                    if (mainContent) statusText += `<div style="${mainItemStyle}">${mainContent}</div>`;
+                                    if (secondaryContent) statusText += `<div style="${secondaryItemStyle}">${secondaryContent}</div>`;
+                                    statusText += `</div>`;
+                                } else {
+                                    const noChangeText = currentLang === 'en' ? "No changes" : "无变化";
+                                    statusText = `<div style="${containerStyle}"><div style="${mainItemStyle}">${noChangeText}</div></div>`;
+                                }
+                                
+                                // 直接设置HTML内容
+                                changeDescriptionContainer.innerHTML = statusText;
+                            });
                         } else {
                             // 其他情况（如 'none' 或未设置）：显示无变化
-                            statusText = currentLang === 'en' ? 'No Changes' : '无变化';
+                            const containerStyle = "display: inline-block; margin: 2px 0 2px 0; padding: 6px 8px 6px 10px; background-color: transparent; border-radius: 6px; font-size: 12.5px; text-align: center;";
+                            const mainItemStyle = "word-break: break-all; color: var(--theme-status-card-auto-text); text-align: center;";
+                            const noChangeText = currentLang === 'en' ? 'No changes' : '无变化';
+                            const statusText = `<div style="${containerStyle}"><div style="${mainItemStyle}">${noChangeText}</div></div>`;
+                            changeDescriptionContainer.innerHTML = statusText;
                         }
-                        
-                        const autoBackupStyle = mainItemStyle + " color: var(--theme-status-card-auto-text); font-weight: bold; text-align: center;";
-                        changeDescriptionContainer.innerHTML = `<div style=\"${autoBackupStyle}\">${statusText}</div>`;
                     });
                 });
 
@@ -2564,41 +2701,68 @@ function handleAutoSyncToggle(event) {
     }
 
     // --- 新增：基于UI内容判断是否触发备份 ---
-    if (!wasChecked && isChecked) { // 只有从 OFF -> ON 才检查
-// <--- Log 1
-        const changeDescriptionElement = document.getElementById('change-description-row');
-        let uiShowsChanges = false;
-        if (changeDescriptionElement) {
-            const changeText = changeDescriptionElement.textContent || changeDescriptionElement.innerText || "";
-// <--- Log 2
-            // 简单的检查：如果文本包含括号、加减号或"变动"，或者该文本非空且不是明确的"无变化"或"No changes"，则认为有变化
-            if (changeText.includes('(') ||
-                changeText.includes('+') ||
-                changeText.includes('-') ||
-                changeText.includes('变动') ||
-                (changeText.trim() !== "" && !changeText.includes('无变化') && !changeText.includes('No changes'))) {
-                uiShowsChanges = true;
-            }
+    const changeDescriptionElement = document.getElementById('change-description-row');
+    let uiShowsChanges = false;
+    if (changeDescriptionElement) {
+        const changeText = changeDescriptionElement.textContent || changeDescriptionElement.innerText || "";
+        
+        // 首先排除明确的"无变化"情况
+        if (changeText.includes('无变化') || changeText.includes('No changes') || 
+            changeText.includes('监测中') || changeText.includes('Monitoring')) {
+            uiShowsChanges = false;
         }
-// <--- Log 3
+        // 只有明确显示了变化标记（+/-、变动、括号）才认为有变化
+        else if (changeText.includes('(') || changeText.includes('+') || 
+                 changeText.includes('-') || changeText.includes('变动') ||
+                 changeText.includes('changed') || changeText.includes('moved') ||
+                 changeText.includes('modified') || changeText.includes('移动') ||
+                 changeText.includes('修改')) {
+            uiShowsChanges = true;
+        }
+        // 其他情况（空文本或其他未知文本）都认为没有变化
+        else {
+            uiShowsChanges = false;
+        }
+    }
 
-        if (uiShowsChanges) {
-// <--- Log 4
-            showStatus('检测到修改，正在为您备份...', 'info', 5000);
-            chrome.runtime.sendMessage({
-                action: 'syncBookmarks',
-                isSwitchToAutoBackup: true
-            }, (syncResponse) => {
-// <--- Log 5
-                if (syncResponse && syncResponse.success) {
-                    showStatus('切换备份成功！', 'success');
-                    updateSyncHistory();
-                } else {
-                    showStatus('切换备份失败: ' + (syncResponse?.error || '未知错误'), 'error');
-                }
-            });
-        } else {
-}
+    // 情况1：从手动模式切换到自动模式（OFF -> ON），且有变化
+    if (!wasChecked && isChecked && uiShowsChanges) {
+        showStatus('检测到修改，正在为您备份...', 'info', 5000);
+        chrome.runtime.sendMessage({
+            action: 'syncBookmarks',
+            isSwitchToAutoBackup: true
+        }, (syncResponse) => {
+            if (syncResponse && syncResponse.success) {
+                showStatus('切换备份成功！', 'success');
+                updateSyncHistory();
+            } else {
+                showStatus('切换备份失败: ' + (syncResponse?.error || '未知错误'), 'error');
+            }
+        });
+    }
+    
+    // 情况2：从自动模式切换到手动模式（ON -> OFF），且有变化
+    // 需要检查是否是常规/特定时间模式（而非实时备份模式）
+    else if (wasChecked && !isChecked && uiShowsChanges) {
+        // 检查是否是常规/特定时间模式
+        chrome.storage.local.get(['autoBackupTimerSettings'], (result) => {
+            const backupMode = result.autoBackupTimerSettings?.backupMode || 'regular';
+            // 只有在常规时间或特定时间模式下才触发切换备份
+            if (backupMode === 'regular' || backupMode === 'specific' || backupMode === 'both') {
+                showStatus('检测到修改，正在为您备份...', 'info', 5000);
+                chrome.runtime.sendMessage({
+                    action: 'syncBookmarks',
+                    isSwitchToAutoBackup: true
+                }, (syncResponse) => {
+                    if (syncResponse && syncResponse.success) {
+                        showStatus('切换备份成功！', 'success');
+                        updateSyncHistory();
+                    } else {
+                        showStatus('切换备份失败: ' + (syncResponse?.error || '未知错误'), 'error');
+                    }
+                });
+            }
+        });
     }
     // --- 结束新增 ---
 
@@ -2674,8 +2838,11 @@ syncStatusSection.scrollIntoView({ behavior: 'smooth', block: 'start' });
 
             showStatus(`自动备份已${currentAutoSyncState ? '启用' : '禁用'}`, 'success');
 
-            // 立刻更新书签计数和变动相关的显示区域
-            updateBookmarkCountDisplay();
+            // 延迟更新状态卡片，确保所有状态更新完成后再刷新显示
+            setTimeout(() => {
+                updateBookmarkCountDisplay();
+            }, 100);
+            
 if (wasChecked && !currentAutoSyncState) {
 }
 
@@ -5491,8 +5658,11 @@ const currentLang = data.preferredLang || 'zh_CN';
     // 监听来自后台的书签变化消息和获取变化描述请求
     chrome.runtime.onMessage.addListener(function(message, sender, sendResponse) {
         if (message && message.action === "bookmarkChanged") {
-// 更新书签计数和状态显示
+            // 更新书签计数和状态显示
             updateBookmarkCountDisplay();
+            // 返回成功响应
+            sendResponse({ success: true });
+            return true;
         } else if (message && message.action === "getChangeDescription") {
             // 获取变化描述内容
             try {
@@ -5949,6 +6119,12 @@ sendResponse({ success: false, error: '找不到设置对话框元素' });
     } else {
         initializeLanguageSwitcher();
     }
+    
+    // 在popup打开时，主动刷新一次状态卡片，确保显示最新的变化状态
+    // 延迟执行以确保所有初始化完成
+    setTimeout(() => {
+        updateBookmarkCountDisplay();
+    }, 300);
 });
 
 // 添加备注对话框函数

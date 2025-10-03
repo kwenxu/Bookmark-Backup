@@ -817,6 +817,9 @@ function initializeWebDAVToggle() {
     }
 }
 
+// 全局变量：跟踪是否有对话框打开
+let isDialogOpen = false;
+
 /**
  * 初始化"回到顶部"按钮。
  */
@@ -887,6 +890,13 @@ function initScrollToTopButton() {
     
     // 统一的显示控制逻辑 - 基于「备份检查记录」区域的下边缘
     const updateButtonsVisibility = () => {
+        // 如果有对话框打开，不显示按钮
+        if (isDialogOpen) {
+            if (scrollToTopFloating) scrollToTopFloating.style.display = 'none';
+            if (generalScrollBtn) generalScrollBtn.style.display = 'none';
+            return;
+        }
+        
         // 如果用户还未进行过滚动操作，不显示按钮
         if (!hasUserScrolled) {
             if (scrollToTopFloating) scrollToTopFloating.style.display = 'none';
@@ -5859,6 +5869,30 @@ const success = await saveReminderSettingsFunc();
     // ================================
     // 自动备份设置对话框（新UI）
     // ================================
+    
+    // 辅助函数：隐藏所有"Back to Top"按钮
+    function hideAllScrollToTopButtons() {
+        // 设置全局标志
+        isDialogOpen = true;
+        
+        const scrollToTopFloating = document.getElementById('scrollToTopFloating');
+        const scrollToTopBtn = document.getElementById('scrollToTopBtn');
+        const scrollToTopEmbedded = document.getElementById('scrollToTopEmbedded');
+        
+        if (scrollToTopFloating) scrollToTopFloating.style.display = 'none';
+        if (scrollToTopBtn) scrollToTopBtn.style.display = 'none';
+        if (scrollToTopEmbedded) scrollToTopEmbedded.style.display = 'none';
+    }
+    
+    // 辅助函数：恢复"Back to Top"按钮的自动显示逻辑
+    function restoreScrollToTopButtons() {
+        // 清除全局标志
+        isDialogOpen = false;
+        
+        // 触发一次滚动事件来重新计算按钮的显示状态
+        window.dispatchEvent(new Event('scroll'));
+    }
+    
     const autoBackupSettingsBtnEl = document.getElementById('autoBackupSettingsBtn');
     const autoBackupSettingsDialog = document.getElementById('autoBackupSettingsDialog');
     const closeAutoBackupSettingsBtn = document.getElementById('closeAutoBackupSettings');
@@ -6020,12 +6054,18 @@ const success = await saveReminderSettingsFunc();
             await initRealtimeBackupToggle();
             await applyAutoBackupSettingsLanguage();
             autoBackupSettingsDialog.style.display = 'block';
+            
+            // 隐藏"Back to Top"按钮
+            hideAllScrollToTopButtons();
         });
     }
 
     if (closeAutoBackupSettingsBtn && autoBackupSettingsDialog) {
         closeAutoBackupSettingsBtn.addEventListener('click', function() {
             autoBackupSettingsDialog.style.display = 'none';
+            
+            // 恢复"Back to Top"按钮
+            restoreScrollToTopButtons();
         });
     }
 
@@ -6035,6 +6075,9 @@ const success = await saveReminderSettingsFunc();
             const isOutside = event.target === autoBackupSettingsDialog || (dialogContent && !dialogContent.contains(event.target));
             if (isOutside) {
                 autoBackupSettingsDialog.style.display = 'none';
+                
+                // 恢复"Back to Top"按钮
+                restoreScrollToTopButtons();
             }
         });
     }
@@ -6067,7 +6110,12 @@ const success = await saveReminderSettingsFunc();
         saveAutoBackupSettingsBtn.addEventListener('click', function() {
             // 目前仅即时保存实时备份开关，其它设置预留
             showAutoBackupSettingsSavedIndicator();
-            setTimeout(() => { autoBackupSettingsDialog.style.display = 'none'; }, 600);
+            setTimeout(() => { 
+                autoBackupSettingsDialog.style.display = 'none';
+                
+                // 恢复"Back to Top"按钮
+                restoreScrollToTopButtons();
+            }, 600);
         });
     }
 

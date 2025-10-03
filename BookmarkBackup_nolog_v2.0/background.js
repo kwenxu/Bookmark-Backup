@@ -1457,8 +1457,9 @@ async function handleBookmarkChange() {
 
     bookmarkChangeTimeout = setTimeout(async () => {
         try {
-            // 读取自动模式与实时备份子功能开关
-            const { autoSync = true, realtimeBackupEnabled = true } = await browserAPI.storage.local.get(['autoSync', 'realtimeBackupEnabled']);
+            // 读取自动模式和自动备份定时器设置
+            const { autoSync = true, autoBackupTimerSettings } = await browserAPI.storage.local.get(['autoSync', 'autoBackupTimerSettings']);
+            const backupMode = autoBackupTimerSettings?.backupMode || 'regular';
 
             // 更新最后书签变更时间（无论模式如何）
             await browserAPI.storage.local.set({
@@ -1486,8 +1487,9 @@ async function handleBookmarkChange() {
 }
             }
 
-            // 仅在自动备份模式且开启了“实时备份”子功能时尝试自动备份
-            if (autoSync && realtimeBackupEnabled) {
+            // 仅在自动备份模式且备份模式为“实时”时才立即触发自动备份
+            // 常规时间和特定时间模式下，备份由定时器触发，而非书签变化立即触发
+            if (autoSync && backupMode === 'realtime') {
                 syncBookmarks(false, null, false, null).then(result => { // 传递完整参数
 // 在备份完成后调用 updateBadgeAfterSync
                     updateBadgeAfterSync(result.success);
@@ -1500,7 +1502,7 @@ async function handleBookmarkChange() {
                     updateBadgeAfterSync(false);
                 });
             } else {
-// 手动模式下书签变化，直接更新角标状态（如变为黄色）
+// 手动模式或常规/特定时间模式下书签变化，直接更新角标状态（如变为黄色）
                 await setBadge();
             }
         } catch (error) {
@@ -2541,10 +2543,11 @@ async function updateSyncStatus(direction, time, status = 'success', errorMessag
             bookmarkDiff = currentBookmarkCount - prevBookmarkCount;
             folderDiff = currentFolderCount - prevFolderCount;
 
-if (!lastBookmarkData || (!lastBookmarkData.bookmarkCount && !lastBookmarkData.folderCount)) {
-                bookmarkDiff = currentBookmarkCount;
-                folderDiff = currentFolderCount;
-}
+            // 如果是第一次备份（没有历史数据），不显示差异，保持为0
+            if (!lastBookmarkData || (!lastBookmarkData.bookmarkCount && !lastBookmarkData.folderCount)) {
+                bookmarkDiff = 0;
+                folderDiff = 0;
+            }
 
             bookmarkStats = {
                 currentBookmarkCount: currentBookmarkCount,
@@ -2807,7 +2810,7 @@ async function setBadge() { // 不再接收 status 参数
             badgeText = badgeTextMap['auto'][preferredLang] || '自';
             
             // 获取备份模式
-            const backupMode = autoBackupTimerSettings?.backupMode || 'realtime';
+            const backupMode = autoBackupTimerSettings?.backupMode || 'regular';
             
             if (backupMode === 'realtime') {
                 // 实时备份：绿色角标（会在备份时闪烁）
@@ -3004,13 +3007,13 @@ async function analyzeBookmarkChanges() {
         }
     }
     
-    // 如果没有上次备份数据，说明是首次运行，差异即为当前总数
+    // 如果没有上次备份数据，说明是首次运行或还未进行过备份
+    // 此时不应该显示为"有变化"，而应该等待用户进行第一次备份
     if (!lastBookmarkData) {
-        bookmarkDiff = currentCounts.bookmarks;
-        folderDiff = currentCounts.folders;
-        // 首次加载时，任何存在的书签都可视为一种"结构变化"以促使用户首次备份
-        if (bookmarkDiff > 0) bookmarkStructureChanged = true;
-        if (folderDiff > 0) folderStructureChanged = true;
+        bookmarkDiff = 0;
+        folderDiff = 0;
+        bookmarkStructureChanged = false;
+        folderStructureChanged = false;
     }
 
     // 为了兼容popup.js的显示逻辑，我们将更广泛的"结构变化"映射到具体的标志上

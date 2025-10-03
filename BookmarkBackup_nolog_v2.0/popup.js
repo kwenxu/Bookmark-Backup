@@ -1776,7 +1776,7 @@ function updateBookmarkCountDisplay(passedLang) {
 
                 // 2. 更新 "上次变动" 区域 - 根据备份模式和变化状态显示不同内容
                 chrome.storage.local.get(['autoBackupTimerSettings'], (result) => {
-                    const backupMode = result.autoBackupTimerSettings?.backupMode || 'realtime';
+                    const backupMode = result.autoBackupTimerSettings?.backupMode || 'regular';
                     
                     chrome.runtime.sendMessage({ action: "getBackupStats" }, backupResponse => {
                         let statusText = '';
@@ -1786,7 +1786,7 @@ function updateBookmarkCountDisplay(passedLang) {
                             statusText = currentLang === 'en' ? 
                                 '「Realtime」Auto Backup: Monitoring' : 
                                 '「实时」自动备份：监测中';
-                        } else if (backupMode === 'regular' || backupMode === 'specific') {
+                        } else if (backupMode === 'regular' || backupMode === 'specific' || backupMode === 'both') {
                             // 常规时间/特定时间：检查是否有变化
                             if (backupResponse && backupResponse.success && backupResponse.stats) {
                                 const hasChanges = (
@@ -1821,6 +1821,9 @@ function updateBookmarkCountDisplay(passedLang) {
                             } else {
                                 statusText = currentLang === 'en' ? 'No Changes' : '无变化';
                             }
+                        } else {
+                            // 其他情况（如 'none' 或未设置）：显示无变化
+                            statusText = currentLang === 'en' ? 'No Changes' : '无变化';
                         }
                         
                         const autoBackupStyle = mainItemStyle + " color: var(--theme-status-card-auto-text); font-weight: bold; text-align: center;";

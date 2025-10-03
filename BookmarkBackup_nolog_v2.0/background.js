@@ -551,7 +551,20 @@ return { success: true, autoSync: previousAutoSyncState, message: '状态未变�
                         await browserAPI.action.setBadgeBackgroundColor({ color: '#0000FF' }); // 蓝色
                         await browserAPI.storage.local.set({ isYellowHandActive: false });
 } else {
-                        // 自动模式下，使用正常的setBadge
+                        // 切换到自动模式：初始化定时器系统
+                        try {
+                            // 设置回调函数
+                            setAutoBackupCallbacks(
+                                checkBookmarkChangesForAutoBackup,
+                                syncBookmarks
+                            );
+                            // 初始化定时器系统
+                            await initializeAutoBackupTimerSystem();
+                            console.log('[自动备份定时器] 切换到自动模式，定时器系统已初始化');
+                        } catch (timerError) {
+                            console.error('[自动备份定时器] 初始化失败:', timerError);
+                        }
+                        // 使用正常的setBadge
                         await setBadge();
                     }
 
@@ -1377,6 +1390,11 @@ sendResponse({ success: false, error: '缺少状态文本' });
             (async () => {
                 try {
                     const { mode } = message;
+                    // 重新设置回调函数
+                    setAutoBackupCallbacks(
+                        checkBookmarkChangesForAutoBackup,
+                        syncBookmarks
+                    );
                     await restartAutoBackupTimerSystem();
                     sendResponse({ success: true, mode });
                 } catch (error) {
@@ -1390,6 +1408,11 @@ sendResponse({ success: false, error: '缺少状态文本' });
             // 重启定时器系统
             (async () => {
                 try {
+                    // 重新设置回调函数
+                    setAutoBackupCallbacks(
+                        checkBookmarkChangesForAutoBackup,
+                        syncBookmarks
+                    );
                     await restartAutoBackupTimerSystem();
                     sendResponse({ success: true });
                 } catch (error) {
@@ -1442,6 +1465,11 @@ try {
     // 处理自动备份定时器的 alarms
     else if (alarm.name.startsWith('autoBackup')) {
         try {
+            // Service Worker 唤醒时，重新设置回调函数
+            setAutoBackupCallbacks(
+                checkBookmarkChangesForAutoBackup,
+                syncBookmarks
+            );
             await handleAutoBackupAlarmTrigger(alarm);
         } catch (error) {
             console.error('[自动备份定时器] 处理 alarm 失败:', error);

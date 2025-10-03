@@ -542,7 +542,15 @@ return { success: true, autoSync: previousAutoSyncState, message: '状态未变�
                         // 获取当前语言设置
                         const { preferredLang = 'zh_CN' } = await browserAPI.storage.local.get(['preferredLang']);
                         
-                        // 手动模式下，强制设置角标为蓝色
+                        // 手动模式下，停止自动备份定时器并强制设置角标为蓝色
+                        if (autoBackupTimerRunning) {
+                            try {
+                                await stopAutoBackupTimerSystem();
+                                autoBackupTimerRunning = false;
+                            } catch (error) {
+                                console.error('[自动备份定时器] 切换到手动模式时停止定时器失败:', error);
+                            }
+                        }
                         const badgeText = badgeTextMap.manual[preferredLang] || badgeTextMap.manual.en;
                         await browserAPI.action.setBadgeText({ text: badgeText });
                         await browserAPI.action.setBadgeBackgroundColor({ color: '#0000FF' }); // 蓝色
@@ -1380,7 +1388,8 @@ sendResponse({ success: false, error: '缺少状态文本' });
                         checkBookmarkChangesForAutoBackup,
                         syncBookmarks
                     );
-                    await restartAutoBackupTimerSystem();
+                    // 不再无条件重启，由 setBadge() 根据是否有变化决定
+                    await setBadge();
                     sendResponse({ success: true, mode });
                 } catch (error) {
                     console.error('[自动备份定时器] 模式切换失败:', error);
@@ -1398,7 +1407,8 @@ sendResponse({ success: false, error: '缺少状态文本' });
                         checkBookmarkChangesForAutoBackup,
                         syncBookmarks
                     );
-                    await restartAutoBackupTimerSystem();
+                    // 不再无条件重启，由 setBadge() 根据是否有变化决定
+                    await setBadge();
                     sendResponse({ success: true });
                 } catch (error) {
                     console.error('[自动备份定时器] 重启失败:', error);
@@ -2829,6 +2839,9 @@ return folderCount;
 }
 
 // --- Badge Related Functions ---
+// 模块级变量：追踪自动备份定时器状态（避免race condition）
+let autoBackupTimerRunning = false;
+
 // 修改 setBadge 函数
 async function setBadge() { // 不再接收 status 参数
     try {
@@ -2869,13 +2882,10 @@ async function setBadge() { // 不再接收 status 参数
                     }
                 }
                 
-                // 检查定时器是否需要启动/停止
-                const { autoBackupTimerActive = false } = await browserAPI.storage.local.get(['autoBackupTimerActive']);
-                
                 if (hasChanges) {
                     badgeColor = '#FFFF00'; // 黄色，表示有变动
                     // 有变化且定时器未启动：启动自动备份定时器
-                    if (!autoBackupTimerActive) {
+                    if (!autoBackupTimerRunning) {
                         console.log('[自动备份定时器] 角标变黄（检测到变化），启动定时器');
                         try {
                             // 设置回调函数
@@ -2884,7 +2894,7 @@ async function setBadge() { // 不再接收 status 参数
                                 syncBookmarks
                             );
                             await initializeAutoBackupTimerSystem();
-                            await browserAPI.storage.local.set({ autoBackupTimerActive: true });
+                            autoBackupTimerRunning = true; // 标记为运行中
                         } catch (timerError) {
                             console.error('[自动备份定时器] 启动失败:', timerError);
                         }
@@ -2892,11 +2902,11 @@ async function setBadge() { // 不再接收 status 参数
                 } else {
                     badgeColor = '#00FF00'; // 绿色，表示无变动
                     // 无变化且定时器已启动：停止自动备份定时器
-                    if (autoBackupTimerActive) {
+                    if (autoBackupTimerRunning) {
                         console.log('[自动备份定时器] 角标变绿（无变化），停止定时器');
                         try {
                             await stopAutoBackupTimerSystem();
-                            await browserAPI.storage.local.set({ autoBackupTimerActive: false });
+                            autoBackupTimerRunning = false; // 标记为已停止
                         } catch (timerError) {
                             console.error('[自动备份定时器] 停止失败:', timerError);
                         }

@@ -197,7 +197,7 @@ function createRegularTimeBlock(lang) {
     `).join('');
     
     block.innerHTML = `
-        <div class="config-header" id="regularTimeHeader" data-mode="regular">
+        <div class="config-header collapsed" id="regularTimeHeader" data-mode="regular">
             <h2>
                 <span>${getText('regularTime', lang)}</span>
             </h2>
@@ -208,7 +208,7 @@ function createRegularTimeBlock(lang) {
                 <div class="toggle-icon"></div>
             </div>
         </div>
-        <div class="config-content" id="regularTimeContent" style="display: block; padding: 15px;">
+        <div class="config-content" id="regularTimeContent" style="display: none; padding: 15px;">
             <div style="font-size: 13px; line-height: 1.6; color: var(--theme-text-secondary); margin-bottom: 15px;">
                 ${getText('regularDesc', lang)}
             </div>

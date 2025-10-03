@@ -183,10 +183,14 @@ function getNextMinuteIntervalTime(minuteInterval, includeZeroMinute) {
 
 /**
  * 获取当前星期几的文本
+ * @param {string} lang - 语言 'zh_CN' 或 'en'
  * @returns {string} 周几
  */
-function getCurrentWeekDayText() {
-    const days = ['周日', '周一', '周二', '周三', '周四', '周五', '周六'];
+function getCurrentWeekDayText(lang = 'zh_CN') {
+    const isEn = lang === 'en';
+    const daysZh = ['周日', '周一', '周二', '周三', '周四', '周五', '周六'];
+    const daysEn = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+    const days = isEn ? daysEn : daysZh;
     return days[new Date().getDay()];
 }
 
@@ -450,6 +454,7 @@ async function initializeTimerSystem() {
 async function checkMissedBackups() {
     try {
         const settings = await getAutoBackupSettings();
+        const lang = await getCurrentLanguage();
         
         // 检查特定时间的遗漏任务
         if (settings.backupMode === 'specific' && settings.specificTime.enabled) {
@@ -457,7 +462,8 @@ async function checkMissedBackups() {
             
             for (const schedule of pendingSchedules) {
                 addLog(`发现遗漏的特定时间任务: ${schedule.datetime}`);
-                const success = await triggerAutoBackup(`特定时间: ${schedule.datetime}`);
+                const note = generateBackupNote('specific', schedule.datetime, lang);
+                const success = await triggerAutoBackup(note);
                 
                 if (success) {
                     await markScheduleAsExecuted(schedule.id);
@@ -500,6 +506,51 @@ async function restartTimerSystem() {
 }
 
 // =======================================================
+// 辅助函数 - 生成备注
+// =======================================================
+
+/**
+ * 生成备注（支持中英文）
+ * @param {string} type - 备注类型：'hour', 'minute', 'specific', 'weekly'
+ * @param {*} value - 相关值
+ * @param {string} lang - 语言 'zh_CN' 或 'en'
+ * @returns {string}
+ */
+function generateBackupNote(type, value, lang = 'zh_CN') {
+    const isEn = lang === 'en';
+    
+    switch (type) {
+        case 'hour':
+            return isEn ? `${value}h` : `${value}小时`;
+        case 'minute':
+            return isEn ? `${value}min` : `${value}分钟`;
+        case 'specific':
+            // 从 "2024-01-02T17:23" 提取时间部分
+            const timeMatch = value.match(/T(\d{2}:\d{2})/);
+            const time = timeMatch ? timeMatch[1] : value;
+            return time;
+        case 'weekly':
+            // value 是周几的文本（已经根据语言生成）
+            return value;
+        default:
+            return value;
+    }
+}
+
+/**
+ * 获取当前语言设置
+ * @returns {Promise<string>}
+ */
+async function getCurrentLanguage() {
+    try {
+        const result = await browserAPI.storage.local.get('preferredLang');
+        return result.preferredLang || 'zh_CN';
+    } catch (error) {
+        return 'zh_CN';
+    }
+}
+
+// =======================================================
 // 闹钟处理器
 // =======================================================
 
@@ -511,18 +562,21 @@ async function restartTimerSystem() {
 async function handleAlarmTrigger(alarm) {
     try {
         const settings = await getAutoBackupSettings();
+        const lang = await getCurrentLanguage();
         
         if (alarm.name === ALARM_NAMES.REGULAR_CHECK) {
             // 周定时触发
-            const weekDay = getCurrentWeekDayText();
-            await triggerAutoBackup(`${weekDay}`);
+            const weekDay = getCurrentWeekDayText(lang);
+            const note = generateBackupNote('weekly', weekDay, lang);
+            await triggerAutoBackup(note);
             
             // 重新设置下一个周定时
             await setupRegularTimeAlarms(settings.regularTime);
             
         } else if (alarm.name === ALARM_NAMES.HOUR_INTERVAL) {
             // 小时间隔触发
-            await triggerAutoBackup(`每${settings.regularTime.hourInterval.hours}小时`);
+            const note = generateBackupNote('hour', settings.regularTime.hourInterval.hours, lang);
+            await triggerAutoBackup(note);
             
             // 重新设置下一个小时间隔
             const nextTime = getNextHourIntervalTime(settings.regularTime.hourInterval.hours);
@@ -530,7 +584,8 @@ async function handleAlarmTrigger(alarm) {
             
         } else if (alarm.name === ALARM_NAMES.MINUTE_INTERVAL) {
             // 分钟间隔触发
-            await triggerAutoBackup(`每${settings.regularTime.minuteInterval.minutes}分钟`);
+            const note = generateBackupNote('minute', settings.regularTime.minuteInterval.minutes, lang);
+            await triggerAutoBackup(note);
             
             // 重新设置下一个分钟间隔
             const includeZeroMinute = !settings.regularTime.hourInterval.enabled;
@@ -545,7 +600,8 @@ async function handleAlarmTrigger(alarm) {
             const pendingSchedules = await getPendingSchedules();
             
             for (const schedule of pendingSchedules) {
-                const success = await triggerAutoBackup(`特定时间: ${schedule.datetime}`);
+                const note = generateBackupNote('specific', schedule.datetime, lang);
+                const success = await triggerAutoBackup(note);
                 if (success) {
                     await markScheduleAsExecuted(schedule.id);
                 }

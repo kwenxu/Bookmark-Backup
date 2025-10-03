@@ -855,12 +855,18 @@ function setupSpecificTimeEvents(lang) {
         });
     }
     
-    // 设置datetime-local的默认值为当前时间+1小时
+    // 设置datetime-local的默认值为当前时间+2小时
     const datetimeInput = document.getElementById('newScheduleDatetime');
     if (datetimeInput) {
         const now = new Date();
-        now.setHours(now.getHours() + 1);
-        datetimeInput.value = now.toISOString().slice(0, 16);
+        now.setHours(now.getHours() + 2);
+        // 使用本地时间格式化，避免时区问题
+        const year = now.getFullYear();
+        const month = String(now.getMonth() + 1).padStart(2, '0');
+        const day = String(now.getDate()).padStart(2, '0');
+        const hours = String(now.getHours()).padStart(2, '0');
+        const minutes = String(now.getMinutes()).padStart(2, '0');
+        datetimeInput.value = `${year}-${month}-${day}T${hours}:${minutes}`;
     }
 }
 

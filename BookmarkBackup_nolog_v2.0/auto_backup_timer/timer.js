@@ -521,14 +521,13 @@ function generateBackupNote(type, value, lang = 'zh_CN') {
     
     switch (type) {
         case 'hour':
-            return isEn ? `${value}h` : `${value}小时`;
+            return isEn ? `Every ${value} hours` : `每${value}小时`;
         case 'minute':
-            return isEn ? `${value}min` : `${value}分钟`;
+            return isEn ? `Every ${value} minutes` : `每${value}分钟`;
         case 'specific':
-            // 从 "2024-01-02T17:23" 提取时间部分
-            const timeMatch = value.match(/T(\d{2}:\d{2})/);
-            const time = timeMatch ? timeMatch[1] : value;
-            return time;
+            // 从 "2024-01-02T17:23" 转换为 "2024-01-02 17:23"
+            const formatted = value.replace('T', ' ');
+            return isEn ? `Specific: ${formatted}` : `特定：${formatted}`;
         case 'weekly':
             // value 是周几的文本（已经根据语言生成）
             return value;

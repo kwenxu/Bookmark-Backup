@@ -33,6 +33,7 @@ import { pauseReminderTimer, resumeReminderTimer, handleAlarm, startLoopReminder
 import {
     setCallbacks as setAutoBackupCallbacks,
     initializeTimerSystem as initializeAutoBackupTimerSystem,
+    stopTimerSystem as stopAutoBackupTimerSystem,
     restartTimerSystem as restartAutoBackupTimerSystem,
     handleAlarmTrigger as handleAutoBackupAlarmTrigger
 } from './auto_backup_timer/index.js';
@@ -322,21 +323,17 @@ hasInitializedBackupReminder = false; // 重置标志以允许未来重试
     
     // 初始化自动备份定时器系统
     try {
-        // 设置定时器系统的回调函数
+        // 设置定时器系统的回调函数（必须在任何定时器操作前设置）
         setAutoBackupCallbacks(
             checkBookmarkChangesForAutoBackup,  // 检查书签变化
             syncBookmarks                        // 执行备份
         );
         console.log('[自动备份定时器] 回调函数已设置');
         
-        // 只有在自动备份模式下才初始化定时器
-        const { autoSync = true } = await browserAPI.storage.local.get(['autoSync']);
-        if (autoSync) {
-            await initializeAutoBackupTimerSystem();
-            console.log('[自动备份定时器] 启动时初始化完成');
-        }
+        // 定时器是否启动由 initializeBadge() -> setBadge() 根据是否有变化决定
+        // 不再无条件启动定时器，节省资源
     } catch (error) {
-        console.error('[自动备份定时器] 启动时初始化失败:', error);
+        console.error('[自动备份定时器] 回调函数设置失败:', error);
     }
 
     // 使用主动查询方法同步下载状态，避免大量onCreated日志
@@ -551,20 +548,8 @@ return { success: true, autoSync: previousAutoSyncState, message: '状态未变�
                         await browserAPI.action.setBadgeBackgroundColor({ color: '#0000FF' }); // 蓝色
                         await browserAPI.storage.local.set({ isYellowHandActive: false });
 } else {
-                        // 切换到自动模式：初始化定时器系统
-                        try {
-                            // 设置回调函数
-                            setAutoBackupCallbacks(
-                                checkBookmarkChangesForAutoBackup,
-                                syncBookmarks
-                            );
-                            // 初始化定时器系统
-                            await initializeAutoBackupTimerSystem();
-                            console.log('[自动备份定时器] 切换到自动模式，定时器系统已初始化');
-                        } catch (timerError) {
-                            console.error('[自动备份定时器] 初始化失败:', timerError);
-                        }
-                        // 使用正常的setBadge
+                        // 切换到自动模式：由 setBadge 根据是否有变化决定是否启动定时器
+                        // 使用正常的setBadge（会自动检查变化并启动/停止定时器）
                         await setBadge();
                     }
 
@@ -2884,10 +2869,38 @@ async function setBadge() { // 不再接收 status 参数
                     }
                 }
                 
+                // 检查定时器是否需要启动/停止
+                const { autoBackupTimerActive = false } = await browserAPI.storage.local.get(['autoBackupTimerActive']);
+                
                 if (hasChanges) {
                     badgeColor = '#FFFF00'; // 黄色，表示有变动
+                    // 有变化且定时器未启动：启动自动备份定时器
+                    if (!autoBackupTimerActive) {
+                        console.log('[自动备份定时器] 角标变黄（检测到变化），启动定时器');
+                        try {
+                            // 设置回调函数
+                            setAutoBackupCallbacks(
+                                checkBookmarkChangesForAutoBackup,
+                                syncBookmarks
+                            );
+                            await initializeAutoBackupTimerSystem();
+                            await browserAPI.storage.local.set({ autoBackupTimerActive: true });
+                        } catch (timerError) {
+                            console.error('[自动备份定时器] 启动失败:', timerError);
+                        }
+                    }
                 } else {
                     badgeColor = '#00FF00'; // 绿色，表示无变动
+                    // 无变化且定时器已启动：停止自动备份定时器
+                    if (autoBackupTimerActive) {
+                        console.log('[自动备份定时器] 角标变绿（无变化），停止定时器');
+                        try {
+                            await stopAutoBackupTimerSystem();
+                            await browserAPI.storage.local.set({ autoBackupTimerActive: false });
+                        } catch (timerError) {
+                            console.error('[自动备份定时器] 停止失败:', timerError);
+                        }
+                    }
                 }
             }
         } else {

@@ -560,6 +560,12 @@ async function getCurrentLanguage() {
  */
 async function handleAlarmTrigger(alarm) {
     try {
+        // 检查定时器系统是否仍在运行（如果已停止则不处理）
+        if (!isInitialized) {
+            addLog(`定时器系统已停止，忽略 alarm: ${alarm.name}`);
+            return;
+        }
+        
         const settings = await getAutoBackupSettings();
         const lang = await getCurrentLanguage();
         
@@ -569,30 +575,36 @@ async function handleAlarmTrigger(alarm) {
             const note = generateBackupNote('weekly', weekDay, lang);
             await triggerAutoBackup(note);
             
-            // 重新设置下一个周定时
-            await setupRegularTimeAlarms(settings.regularTime);
+            // 只有在定时器系统仍在运行时才重新设置
+            if (isInitialized) {
+                await setupRegularTimeAlarms(settings.regularTime);
+            }
             
         } else if (alarm.name === ALARM_NAMES.HOUR_INTERVAL) {
             // 小时间隔触发
             const note = generateBackupNote('hour', settings.regularTime.hourInterval.hours, lang);
             await triggerAutoBackup(note);
             
-            // 重新设置下一个小时间隔
-            const nextTime = getNextHourIntervalTime(settings.regularTime.hourInterval.hours);
-            await browserAPI.alarms.create(ALARM_NAMES.HOUR_INTERVAL, { when: nextTime });
+            // 只有在定时器系统仍在运行时才重新设置
+            if (isInitialized) {
+                const nextTime = getNextHourIntervalTime(settings.regularTime.hourInterval.hours);
+                await browserAPI.alarms.create(ALARM_NAMES.HOUR_INTERVAL, { when: nextTime });
+            }
             
         } else if (alarm.name === ALARM_NAMES.MINUTE_INTERVAL) {
             // 分钟间隔触发
             const note = generateBackupNote('minute', settings.regularTime.minuteInterval.minutes, lang);
             await triggerAutoBackup(note);
             
-            // 重新设置下一个分钟间隔
-            const includeZeroMinute = !settings.regularTime.hourInterval.enabled;
-            const nextTime = getNextMinuteIntervalTime(
-                settings.regularTime.minuteInterval.minutes,
-                includeZeroMinute
-            );
-            await browserAPI.alarms.create(ALARM_NAMES.MINUTE_INTERVAL, { when: nextTime });
+            // 只有在定时器系统仍在运行时才重新设置
+            if (isInitialized) {
+                const includeZeroMinute = !settings.regularTime.hourInterval.enabled;
+                const nextTime = getNextMinuteIntervalTime(
+                    settings.regularTime.minuteInterval.minutes,
+                    includeZeroMinute
+                );
+                await browserAPI.alarms.create(ALARM_NAMES.MINUTE_INTERVAL, { when: nextTime });
+            }
             
         } else if (alarm.name === ALARM_NAMES.SPECIFIC_CHECK) {
             // 特定时间触发
@@ -606,8 +618,10 @@ async function handleAlarmTrigger(alarm) {
                 }
             }
             
-            // 设置下一个特定时间
-            await setupSpecificTimeAlarms(settings.specificTime);
+            // 只有在定时器系统仍在运行时才重新设置
+            if (isInitialized) {
+                await setupSpecificTimeAlarms(settings.specificTime);
+            }
         }
     } catch (error) {
         addLog(`处理定时器触发失败: ${error.message}`);

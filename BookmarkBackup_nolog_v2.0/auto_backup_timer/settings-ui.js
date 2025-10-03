@@ -35,8 +35,8 @@ const UI_TEXT = {
         specificTime: '特定时间',
         
         realtimeDesc: '当检测到「数量/结构变化」时立即执行备份',
-        regularDesc: '按照设定的时间规则定期执行备份',
-        specificDesc: '在指定的特定时间点执行备份',
+        regularDesc: '按照设定的时间规则定期执行备份（仅在角标变黄时启用计时器）',
+        specificDesc: '在指定的特定时间点执行备份（仅在角标变黄时启用计时器，最多可添加5个计划）',
         
         weekDays: ['周日', '周一', '周二', '周三', '周四', '周五', '周六'],
         defaultTime: '默认时间',
@@ -62,8 +62,8 @@ const UI_TEXT = {
         specificTime: 'Specific Time',
         
         realtimeDesc: 'Backup immediately when quantity/structure changes are detected',
-        regularDesc: 'Backup periodically according to set time rules',
-        specificDesc: 'Backup at specified time points',
+        regularDesc: 'Backup periodically according to set time rules (timer only starts when badge turns yellow)',
+        specificDesc: 'Backup at specified time points (timer only starts when badge turns yellow, max 5 schedules)',
         
         weekDays: ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'],
         defaultTime: 'Default Time',

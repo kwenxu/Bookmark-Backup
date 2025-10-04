@@ -36,7 +36,11 @@ const DEFAULT_SETTINGS = {
         minuteInterval: {
             enabled: true,
             minutes: 30  // 每N分钟
-        }
+        },
+        // 补充备份记录（防止重复补充）
+        lastMissedBackupDate: null,  // 格式：'YYYY-MM-DD'
+        // 上次检查遗漏的时间（用于检测休眠恢复）
+        lastMissedCheckTime: null  // 时间戳
     },
     
     // 特定时间配置（最多5个）
@@ -223,6 +227,79 @@ async function getPendingSchedules() {
     }
 }
 
+/**
+ * 记录今天已经执行过补充备份
+ * @returns {Promise<boolean>}
+ */
+async function markMissedBackupExecuted() {
+    try {
+        const settings = await getAutoBackupSettings();
+        const today = new Date().toISOString().split('T')[0]; // YYYY-MM-DD
+        settings.regularTime.lastMissedBackupDate = today;
+        return await saveAutoBackupSettings(settings);
+    } catch (error) {
+        console.error('记录补充备份失败:', error);
+        return false;
+    }
+}
+
+/**
+ * 检查今天是否已经执行过补充备份
+ * @returns {Promise<boolean>}
+ */
+async function isMissedBackupExecutedToday() {
+    try {
+        const settings = await getAutoBackupSettings();
+        const today = new Date().toISOString().split('T')[0]; // YYYY-MM-DD
+        return settings.regularTime.lastMissedBackupDate === today;
+    } catch (error) {
+        console.error('检查补充备份记录失败:', error);
+        return false;
+    }
+}
+
+/**
+ * 更新上次检查遗漏的时间
+ * @returns {Promise<boolean>}
+ */
+async function updateLastMissedCheckTime() {
+    try {
+        const settings = await getAutoBackupSettings();
+        settings.regularTime.lastMissedCheckTime = Date.now();
+        return await saveAutoBackupSettings(settings);
+    } catch (error) {
+        console.error('更新检查时间失败:', error);
+        return false;
+    }
+}
+
+/**
+ * 检查是否需要检查遗漏（距离上次检查超过阈值）
+ * @param {number} thresholdMinutes - 时间阈值（分钟），默认10分钟
+ * @returns {Promise<boolean>}
+ */
+async function shouldCheckMissed(thresholdMinutes = 10) {
+    try {
+        const settings = await getAutoBackupSettings();
+        const lastCheckTime = settings.regularTime.lastMissedCheckTime;
+        
+        // 如果从未检查过，需要检查
+        if (!lastCheckTime) {
+            return true;
+        }
+        
+        // 检查距离上次检查的时间
+        const now = Date.now();
+        const elapsed = now - lastCheckTime;
+        const thresholdMs = thresholdMinutes * 60 * 1000;
+        
+        return elapsed >= thresholdMs;
+    } catch (error) {
+        console.error('检查遗漏检查条件失败:', error);
+        return true; // 出错时默认需要检查
+    }
+}
+
 // =======================================================
 // 模块导出
 // =======================================================
@@ -237,5 +314,9 @@ export {
     removeSpecificTimeSchedule,
     updateSpecificTimeSchedule,
     markScheduleAsExecuted,
-    getPendingSchedules
+    getPendingSchedules,
+    markMissedBackupExecuted,
+    isMissedBackupExecutedToday,
+    updateLastMissedCheckTime,
+    shouldCheckMissed
 };

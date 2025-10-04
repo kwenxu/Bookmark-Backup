@@ -7,7 +7,11 @@ import {
     getAutoBackupSettings,
     updateBackupMode,
     markScheduleAsExecuted,
-    getPendingSchedules
+    getPendingSchedules,
+    markMissedBackupExecuted,
+    isMissedBackupExecutedToday,
+    updateLastMissedCheckTime,
+    shouldCheckMissed
 } from './storage.js';
 
 const browserAPI = (function() {
@@ -333,23 +337,34 @@ async function setupRegularTimeAlarms(regularConfig) {
             return false;
         }
         
-        // 第二级：小时间隔
+        // 检查今天是否在周勾选范围内
+        const todayEnabled = isTodayEnabled(regularConfig.weekDays);
+        
+        // 第二级：小时间隔（受周勾选影响）
         if (regularConfig.hourInterval.enabled && regularConfig.hourInterval.hours > 0) {
-            const nextTime = getNextHourIntervalTime(regularConfig.hourInterval.hours);
-            await browserAPI.alarms.create(ALARM_NAMES.HOUR_INTERVAL, { when: nextTime });
-            addLog(`已设置小时间隔定时器: ${new Date(nextTime).toLocaleString()}`);
+            if (todayEnabled) {
+                const nextTime = getNextHourIntervalTime(regularConfig.hourInterval.hours);
+                await browserAPI.alarms.create(ALARM_NAMES.HOUR_INTERVAL, { when: nextTime });
+                addLog(`已设置小时间隔定时器: ${new Date(nextTime).toLocaleString()}`);
+            } else {
+                addLog('今天未在周勾选范围内，跳过小时间隔定时器设置');
+            }
         }
         
-        // 第三级：分钟间隔
+        // 第三级：分钟间隔（受周勾选影响）
         if (regularConfig.minuteInterval.enabled && regularConfig.minuteInterval.minutes > 0) {
-            // 判断是否包含整点：只有第三级开启且第二级关闭时，才包含整点
-            const includeZeroMinute = !regularConfig.hourInterval.enabled;
-            const nextTime = getNextMinuteIntervalTime(
-                regularConfig.minuteInterval.minutes, 
-                includeZeroMinute
-            );
-            await browserAPI.alarms.create(ALARM_NAMES.MINUTE_INTERVAL, { when: nextTime });
-            addLog(`已设置分钟间隔定时器: ${new Date(nextTime).toLocaleString()}`);
+            if (todayEnabled) {
+                // 判断是否包含整点：只有第三级开启且第二级关闭时，才包含整点
+                const includeZeroMinute = !regularConfig.hourInterval.enabled;
+                const nextTime = getNextMinuteIntervalTime(
+                    regularConfig.minuteInterval.minutes, 
+                    includeZeroMinute
+                );
+                await browserAPI.alarms.create(ALARM_NAMES.MINUTE_INTERVAL, { when: nextTime });
+                addLog(`已设置分钟间隔定时器: ${new Date(nextTime).toLocaleString()}`);
+            } else {
+                addLog('今天未在周勾选范围内，跳过分钟间隔定时器设置');
+            }
         }
         
         // 第一级：周+默认时间
@@ -411,9 +426,13 @@ async function setupSpecificTimeAlarms(specificConfig) {
 
 /**
  * 初始化定时器系统
+ * @param {boolean} checkMissed - 是否检查遗漏的备份
+ *   - true: 强制检查（浏览器启动时）
+ *   - false: 不检查
+ *   - 'auto': 根据时间间隔自动判断（休眠恢复时）
  * @returns {Promise<boolean>} 是否成功
  */
-async function initializeTimerSystem() {
+async function initializeTimerSystem(checkMissed = false) {
     if (isInitialized) {
         addLog('定时器系统已初始化');
         return true;
@@ -435,8 +454,29 @@ async function initializeTimerSystem() {
             await setupSpecificTimeAlarms(settings.specificTime);
         }
         
-        // 检查是否有遗漏的备份任务
-        await checkMissedBackups();
+        // 决定是否检查遗漏
+        let shouldCheck = false;
+        
+        if (checkMissed === true) {
+            // 强制检查（浏览器启动时）
+            shouldCheck = true;
+            addLog('浏览器启动，检查遗漏的备份任务');
+        } else if (checkMissed === 'auto') {
+            // 根据时间间隔自动判断（可能是休眠恢复）
+            shouldCheck = await shouldCheckMissed(10); // 10分钟阈值
+            if (shouldCheck) {
+                addLog('距离上次检查超过10分钟（可能休眠恢复），检查遗漏的备份任务');
+            } else {
+                addLog('距离上次检查不到10分钟，跳过遗漏检查');
+            }
+        } else {
+            // 明确不检查
+            addLog('跳过遗漏检查');
+        }
+        
+        if (shouldCheck) {
+            await checkMissedBackups();
+        }
         
         isInitialized = true;
         addLog('定时器系统初始化完成');
@@ -448,30 +488,116 @@ async function initializeTimerSystem() {
 }
 
 /**
- * 检查遗漏的备份任务（浏览器休眠后恢复时）
+ * 检查是否有书签变化（角标是否黄）
+ * @returns {Promise<boolean>}
+ */
+async function hasBookmarkChanges() {
+    try {
+        const response = await checkBookmarkChanges();
+        return response.hasChanges;
+    } catch (error) {
+        addLog(`检查书签变化状态失败: ${error.message}`);
+        // 失败时假定有变化，以避免遗漏备份
+        return true;
+    }
+}
+
+/**
+ * 检查当前日期是否在周勾选范围内
+ * @param {Array<boolean>} weekDays - 周开关数组
+ * @returns {boolean}
+ */
+function isTodayEnabled(weekDays) {
+    const today = new Date().getDay();
+    return weekDays[today] === true;
+}
+
+/**
+ * 检查遗漏的备份任务（浏览器休眠后恢复时或打开浏览器时）
  * @returns {Promise<void>}
  */
 async function checkMissedBackups() {
     try {
+        addLog('开始检查遗漏的备份任务...');
+        
+        // === 前提条件：检查是否有书签变化（角标是否黄）===
+        const hasChanges = await hasBookmarkChanges();
+        if (!hasChanges) {
+            addLog('未检测到书签变化（角标未变黄），跳过遗漏检查');
+            // 即使跳过，也更新检查时间，避免频繁检查
+            await updateLastMissedCheckTime();
+            return;
+        }
+        
+        addLog('检测到书签变化（角标变黄），继续检查遗漏任务');
+        
+        // 更新检查时间戳（无论是否补充备份）
+        await updateLastMissedCheckTime();
+        
         const settings = await getAutoBackupSettings();
         const lang = await getCurrentLanguage();
+        const now = new Date();
         
-        // 检查特定时间的遗漏任务
+        // === 场景1：常规时间的遗漏检查 ===
+        if (settings.backupMode === 'regular' && settings.regularTime.enabled) {
+            // 首先检查今天是否已经补充过备份
+            const alreadyBackedUp = await isMissedBackupExecutedToday();
+            if (alreadyBackedUp) {
+                addLog(`今天已经执行过补充备份，跳过重复补充`);
+            } else {
+                // 检查今天是否在周勾选范围内
+                if (!isTodayEnabled(settings.regularTime.weekDays)) {
+                    addLog(`今天(${getCurrentWeekDayText(lang)})未在周勾选范围内，跳过常规时间遗漏检查`);
+                } else {
+                    // 检查默认时间是否已过
+                    const [hours, minutes] = settings.regularTime.defaultTime.split(':').map(Number);
+                    const defaultTime = new Date(now);
+                    defaultTime.setHours(hours, minutes, 0, 0);
+                    
+                    if (now.getTime() > defaultTime.getTime()) {
+                        addLog(`已过默认时间 ${settings.regularTime.defaultTime}，执行补充备份`);
+                        const weekDay = getCurrentWeekDayText(lang);
+                        const note = generateBackupNote('weekly', weekDay, lang);
+                        const success = await triggerAutoBackup(note);
+                        
+                        // 补充备份成功后，记录今天已经补充过
+                        if (success) {
+                            await markMissedBackupExecuted();
+                            addLog(`已记录今天的补充备份，避免重复执行`);
+                        }
+                    } else {
+                        addLog(`未过默认时间 ${settings.regularTime.defaultTime}，无需补充备份`);
+                    }
+                }
+            }
+        }
+        
+        // === 场景3：特定时间的遗漏检查 ===
         if (settings.backupMode === 'specific' && settings.specificTime.enabled) {
             const pendingSchedules = await getPendingSchedules();
+            const today = now.toISOString().split('T')[0]; // 获取今天的日期 YYYY-MM-DD
             
             for (const schedule of pendingSchedules) {
-                addLog(`发现遗漏的特定时间任务: ${schedule.datetime}`);
-                const note = generateBackupNote('specific', schedule.datetime, lang);
-                const success = await triggerAutoBackup(note);
+                const scheduleDate = schedule.datetime.split('T')[0];
                 
-                if (success) {
+                // 只处理当日的任务
+                if (scheduleDate === today) {
+                    addLog(`发现当日遗漏的特定时间任务: ${schedule.datetime}`);
+                    const note = generateBackupNote('specific', schedule.datetime, lang);
+                    const success = await triggerAutoBackup(note);
+                    
+                    if (success) {
+                        await markScheduleAsExecuted(schedule.id);
+                    }
+                } else if (scheduleDate < today) {
+                    // 过期任务：标记为已执行但不备份
+                    addLog(`跳过过期任务: ${schedule.datetime}`);
                     await markScheduleAsExecuted(schedule.id);
                 }
             }
         }
         
-        // 常规时间的遗漏逻辑由 alarm 触发处理
+        addLog('遗漏备份任务检查完成');
     } catch (error) {
         addLog(`检查遗漏备份任务失败: ${error.message}`);
     }
@@ -560,11 +686,17 @@ async function getCurrentLanguage() {
  */
 async function handleAlarmTrigger(alarm) {
     try {
-        // 检查定时器系统是否仍在运行（如果已停止则不处理）
-        if (!isInitialized) {
-            addLog(`定时器系统已停止，忽略 alarm: ${alarm.name}`);
+        // ⭐ 核心前提：检查是否有书签变化（角标是否黄）
+        const hasChanges = await hasBookmarkChanges();
+        if (!hasChanges) {
+            addLog('角标未变黄（无书签变化），停止定时器');
+            // 清除所有定时器（无变化时不应该继续定时备份）
+            await clearAllAlarms();
+            isInitialized = false;
             return;
         }
+        
+        addLog('角标变黄（有书签变化），继续执行定时任务');
         
         const settings = await getAutoBackupSettings();
         const lang = await getCurrentLanguage();
@@ -575,34 +707,58 @@ async function handleAlarmTrigger(alarm) {
             const note = generateBackupNote('weekly', weekDay, lang);
             await triggerAutoBackup(note);
             
-            // 只有在定时器系统仍在运行时才重新设置
-            if (isInitialized) {
-                await setupRegularTimeAlarms(settings.regularTime);
-            }
+            // 重新设置下一个周定时器
+            await setupRegularTimeAlarms(settings.regularTime);
             
         } else if (alarm.name === ALARM_NAMES.HOUR_INTERVAL) {
             // 小时间隔触发
+            // 检查今天是否在周勾选范围内
+            if (!isTodayEnabled(settings.regularTime.weekDays)) {
+                addLog('今天未在周勾选范围内，停止小时间隔定时器');
+                await browserAPI.alarms.clear(ALARM_NAMES.HOUR_INTERVAL);
+                return;
+            }
+            
             const note = generateBackupNote('hour', settings.regularTime.hourInterval.hours, lang);
             await triggerAutoBackup(note);
             
-            // 只有在定时器系统仍在运行时才重新设置
-            if (isInitialized) {
-                const nextTime = getNextHourIntervalTime(settings.regularTime.hourInterval.hours);
+            // 重新设置下一个小时间隔定时器
+            const nextTime = getNextHourIntervalTime(settings.regularTime.hourInterval.hours);
+            // 检查下一个时间点是否还在今天
+            const now = new Date();
+            const nextDate = new Date(nextTime);
+            if (now.getDate() !== nextDate.getDate()) {
+                addLog('下一个小时间隔已跨天，停止定时器，等待周定时器重新设置');
+                await browserAPI.alarms.clear(ALARM_NAMES.HOUR_INTERVAL);
+            } else {
                 await browserAPI.alarms.create(ALARM_NAMES.HOUR_INTERVAL, { when: nextTime });
             }
             
         } else if (alarm.name === ALARM_NAMES.MINUTE_INTERVAL) {
             // 分钟间隔触发
+            // 检查今天是否在周勾选范围内
+            if (!isTodayEnabled(settings.regularTime.weekDays)) {
+                addLog('今天未在周勾选范围内，停止分钟间隔定时器');
+                await browserAPI.alarms.clear(ALARM_NAMES.MINUTE_INTERVAL);
+                return;
+            }
+            
             const note = generateBackupNote('minute', settings.regularTime.minuteInterval.minutes, lang);
             await triggerAutoBackup(note);
             
-            // 只有在定时器系统仍在运行时才重新设置
-            if (isInitialized) {
-                const includeZeroMinute = !settings.regularTime.hourInterval.enabled;
-                const nextTime = getNextMinuteIntervalTime(
-                    settings.regularTime.minuteInterval.minutes,
-                    includeZeroMinute
-                );
+            // 重新设置下一个分钟间隔定时器
+            const includeZeroMinute = !settings.regularTime.hourInterval.enabled;
+            const nextTime = getNextMinuteIntervalTime(
+                settings.regularTime.minuteInterval.minutes,
+                includeZeroMinute
+            );
+            // 检查下一个时间点是否还在今天
+            const now = new Date();
+            const nextDate = new Date(nextTime);
+            if (now.getDate() !== nextDate.getDate()) {
+                addLog('下一个分钟间隔已跨天，停止定时器，等待周定时器重新设置');
+                await browserAPI.alarms.clear(ALARM_NAMES.MINUTE_INTERVAL);
+            } else {
                 await browserAPI.alarms.create(ALARM_NAMES.MINUTE_INTERVAL, { when: nextTime });
             }
             
@@ -618,10 +774,8 @@ async function handleAlarmTrigger(alarm) {
                 }
             }
             
-            // 只有在定时器系统仍在运行时才重新设置
-            if (isInitialized) {
-                await setupSpecificTimeAlarms(settings.specificTime);
-            }
+            // 重新设置下一个特定时间定时器
+            await setupSpecificTimeAlarms(settings.specificTime);
         }
     } catch (error) {
         addLog(`处理定时器触发失败: ${error.message}`);

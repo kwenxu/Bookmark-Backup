@@ -14,7 +14,11 @@ export {
     removeSpecificTimeSchedule,
     updateSpecificTimeSchedule,
     markScheduleAsExecuted,
-    getPendingSchedules
+    getPendingSchedules,
+    markMissedBackupExecuted,
+    isMissedBackupExecutedToday,
+    updateLastMissedCheckTime,
+    shouldCheckMissed
 } from './storage.js';
 
 // 导出定时器模块

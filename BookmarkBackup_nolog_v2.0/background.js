@@ -35,7 +35,8 @@ import {
     initializeTimerSystem as initializeAutoBackupTimerSystem,
     stopTimerSystem as stopAutoBackupTimerSystem,
     restartTimerSystem as restartAutoBackupTimerSystem,
-    handleAlarmTrigger as handleAutoBackupAlarmTrigger
+    handleAlarmTrigger as handleAutoBackupAlarmTrigger,
+    checkMissedBackups as checkMissedBackupsFromTimer
 } from './auto_backup_timer/index.js';
 
 // 浏览器兼容性处理
@@ -307,9 +308,10 @@ hasInitializedBackupReminder = false; // 重置标志以允许未来重试
 });
 
 // 确保定时器在浏览器启动时也能正确创建
+// 注意：此处不调用 initializeBadge()，避免与下方统一的 onStartup 重复
 browserAPI.runtime.onStartup.addListener(async () => {
 updateSyncAlarm();
-    initializeBadge(); // Not awaiting it as per original structure potentially
+    // initializeBadge(); // 已移除：避免重复调用（下方统一的 onStartup 会调用）
     // initializeAutoSync(); // Not awaiting it as per original structure potentially
 
     // 初始化备份提醒系统（如果尚未初始化）
@@ -329,9 +331,6 @@ hasInitializedBackupReminder = false; // 重置标志以允许未来重试
             syncBookmarks                        // 执行备份
         );
         console.log('[自动备份定时器] 回调函数已设置');
-        
-        // 定时器是否启动由 initializeBadge() -> setBadge() 根据是否有变化决定
-        // 不再无条件启动定时器，节省资源
     } catch (error) {
         console.error('[自动备份定时器] 回调函数设置失败:', error);
     }
@@ -339,7 +338,28 @@ hasInitializedBackupReminder = false; // 重置标志以允许未来重试
     // 使用主动查询方法同步下载状态，避免大量onCreated日志
     syncDownloadState();
     // 首次启动时预热缓存
-    updateAndCacheAnalysis();
+    await updateAndCacheAnalysis();
+    
+    // 浏览器启动后，直接初始化定时器系统（包含遗漏检查）
+    try {
+        const { autoSync = true } = await browserAPI.storage.local.get(['autoSync']);
+        if (autoSync) {
+            console.log('[自动备份定时器] 浏览器启动，初始化定时器并检查遗漏任务');
+            
+            // 检查是否有变化（角标是否应该黄）
+            const changeResult = await checkBookmarkChangesForAutoBackup();
+            if (changeResult && changeResult.hasChanges) {
+                console.log('[自动备份定时器] 检测到书签变化，启动定时器系统');
+                // 直接初始化定时器系统，传入 true 强制检查遗漏
+                await initializeAutoBackupTimerSystem(true);
+                autoBackupTimerRunning = true; // 标记为运行中
+            } else {
+                console.log('[自动备份定时器] 无书签变化，跳过遗漏检查和定时器启动');
+            }
+        }
+    } catch (error) {
+        console.error('[自动备份定时器] 定时器初始化失败:', error);
+    }
 });
 
 /**
@@ -2619,6 +2639,10 @@ async function updateSyncStatus(direction, time, status = 'success', errorMessag
             });
 
             resetOperationStatus();
+            
+            // 备份成功后，差异应该重置为 0（因为 lastBookmarkData 已经更新为当前值）
+            bookmarkDiff = 0;
+            folderDiff = 0;
         }
 
         const newSyncRecord = {
@@ -2884,8 +2908,15 @@ async function setBadge() { // 不再接收 status 参数
                 
                 if (hasChanges) {
                     badgeColor = '#FFFF00'; // 黄色，表示有变动
-                    // 有变化且定时器未启动：启动自动备份定时器
-                    if (!autoBackupTimerRunning) {
+                    
+                    // 检查定时器是否真的在运行（通过检查alarm是否存在）
+                    const alarms = await browserAPI.alarms.getAll();
+                    const hasAlarm = alarms.some(alarm => 
+                        alarm.name.startsWith('autoBackup_')
+                    );
+                    
+                    // 有变化但定时器未运行：启动自动备份定时器
+                    if (!hasAlarm) {
                         console.log('[自动备份定时器] 角标变黄（检测到变化），启动定时器');
                         try {
                             // 设置回调函数
@@ -2893,16 +2924,30 @@ async function setBadge() { // 不再接收 status 参数
                                 checkBookmarkChangesForAutoBackup,
                                 syncBookmarks
                             );
-                            await initializeAutoBackupTimerSystem();
+                            // 使用 'auto' 模式：根据时间间隔自动判断是否检查遗漏
+                            // 这样可以处理休眠恢复的情况（距离上次检查超过10分钟则检查）
+                            await initializeAutoBackupTimerSystem('auto');
                             autoBackupTimerRunning = true; // 标记为运行中
                         } catch (timerError) {
                             console.error('[自动备份定时器] 启动失败:', timerError);
+                            autoBackupTimerRunning = false;
                         }
+                    } else if (!autoBackupTimerRunning) {
+                        // alarm存在但标志为false，说明浏览器重启后alarm持久化了
+                        console.log('[自动备份定时器] 检测到持久化的alarm，更新运行标志');
+                        autoBackupTimerRunning = true;
                     }
                 } else {
                     badgeColor = '#00FF00'; // 绿色，表示无变动
-                    // 无变化且定时器已启动：停止自动备份定时器
-                    if (autoBackupTimerRunning) {
+                    
+                    // 检查是否有alarm在运行
+                    const alarms = await browserAPI.alarms.getAll();
+                    const hasAlarm = alarms.some(alarm => 
+                        alarm.name.startsWith('autoBackup_')
+                    );
+                    
+                    // 无变化但定时器仍在运行：停止自动备份定时器
+                    if (hasAlarm) {
                         console.log('[自动备份定时器] 角标变绿（无变化），停止定时器');
                         try {
                             await stopAutoBackupTimerSystem();
@@ -2910,6 +2955,10 @@ async function setBadge() { // 不再接收 status 参数
                         } catch (timerError) {
                             console.error('[自动备份定时器] 停止失败:', timerError);
                         }
+                    } else if (autoBackupTimerRunning) {
+                        // 没有alarm但标志为true，说明定时器已被清除但标志未更新
+                        console.log('[自动备份定时器] 检测到定时器已停止，更新运行标志');
+                        autoBackupTimerRunning = false;
                     }
                 }
             }

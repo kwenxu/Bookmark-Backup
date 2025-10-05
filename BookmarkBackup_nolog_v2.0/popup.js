@@ -2257,8 +2257,8 @@ function calibrateDownloadPath() {
 
         // 国际化文本
         const calibratePathInstruction1Strings = {
-            'zh_CN': "点击\"打开下载设置\"按钮，查看下载路径",
-            'en': "Click the \"Open Download Settings\" button to view download path"
+            'zh_CN': "点击右下角的\"打开下载设置\"按钮",
+            'en': "Click the \"Open Download Settings\" button in the bottom right corner"
         };
         const calibratePathInstruction2Strings = {
             'zh_CN': "将显示的下载路径复制下来",
@@ -2481,8 +2481,8 @@ function calibrateDownloadPath() {
 
         // 国际化文本
         const hideDownloadBarGuide1Strings = {
-            'zh_CN': "点击\"打开下载设置\"按钮",
-            'en': "Click the \"Open Download Settings\" button"
+            'zh_CN': "点击右下角的\"打开下载设置\"按钮",
+            'en': "Click the \"Open Download Settings\" button in the bottom right corner"
         };
         const hideDownloadBarGuide2Strings = {
             'zh_CN': "关闭「下载完成后显示下载内容」",
@@ -3933,8 +3933,8 @@ const applyLocalizedContent = async (lang) => { // Added lang parameter
     };
 
     const calibratePathInstruction1Strings = {
-        'zh_CN': "点击\"打开下载设置\"按钮，查看下载路径",
-        'en': "Click the \"Open Download Settings\" button to view download path"
+        'zh_CN': "点击右下角的\"打开下载设置\"按钮",
+        'en': "Click the \"Open Download Settings\" button in the bottom right corner"
     };
 
     const calibratePathInstruction2Strings = {
@@ -3988,8 +3988,8 @@ const applyLocalizedContent = async (lang) => { // Added lang parameter
     };
 
     const hideDownloadBarGuide1Strings = {
-        'zh_CN': "点击\"打开下载设置\"按钮",
-        'en': "Click the \"Open Download Settings\" button"
+        'zh_CN': "点击右下角的\"打开下载设置\"按钮",
+        'en': "Click the \"Open Download Settings\" button in the bottom right corner"
     };
 
     const hideDownloadBarGuide2Strings = {
@@ -5901,7 +5901,6 @@ const success = await saveReminderSettingsFunc();
     const realtimeBackupTitle = document.getElementById('realtimeBackupTitle');
     const realtimeBackupDesc1 = document.getElementById('realtimeBackupDesc1');
     const realtimeBackupDesc2 = document.getElementById('realtimeBackupDesc2');
-    const realtimeBackupSpacer = document.getElementById('realtimeBackupSpacer');
     const realtimeBackupToggle = document.getElementById('realtimeBackupToggle');
     const restoreAutoBackupDefaultsBtn = document.getElementById('restoreAutoBackupDefaults');
     const saveAutoBackupSettingsBtn = document.getElementById('saveAutoBackupSettings');
@@ -5940,25 +5939,17 @@ const success = await saveReminderSettingsFunc();
             }
             if (realtimeBackupTitle) {
                 realtimeBackupTitle.textContent = isEN ? 'Realtime Backup' : '实时备份';
-                // 强制左对齐标题文本
-                realtimeBackupTitle.style.textAlign = 'left';
-                realtimeBackupTitle.style.justifyContent = 'flex-start';
-                realtimeBackupTitle.style.whiteSpace = 'nowrap';
-                // 宽度自适应，避免英文换行
-                realtimeBackupTitle.style.width = 'auto';
-                realtimeBackupTitle.style.minWidth = '0';
             }
-            // 布局已在 HTML 内联样式中就位：左侧标题，右侧开关，与“动态提醒设置”一致
             if (realtimeBackupDesc1) {
                 realtimeBackupDesc1.textContent = isEN
-                    ? 'Backs up immediately on count/structure changes'
-                    : '当检测到「数量/结构变化」时立即执行备份';
-                // 描述保持单行显示
-                realtimeBackupDesc1.style.whiteSpace = 'nowrap';
+                    ? 'Backs up immediately on count/structure changes*,'
+                    : '当检测到「数量/结构变化」* 时立即执行备份，';
             }
             if (realtimeBackupDesc2) {
-                // 合并为单行描述，旧元素若存在则清空
-                realtimeBackupDesc2.textContent = '';
+                // 添加示例文本（与动态提醒设置的示例一致）
+                realtimeBackupDesc2.innerHTML = isEN
+                    ? "example: (<span style=\"color: #4CAF50;\">+12</span> BKM, <span style=\"color: #4CAF50;\">+1</span> FLD, <span style=\"color: orange;\">BKM & FLD changed</span>)."
+                    : "示例：(<span style=\"color: #4CAF50;\">+12</span> 书签，<span style=\"color: #4CAF50;\">+1</span> 文件夹，<span style=\"color: orange;\">书签、文件夹变动</span>)。";
             }
             if (restoreAutoBackupDefaultsBtn) {
                 restoreAutoBackupDefaultsBtn.textContent = isEN ? 'Restore Defaults' : '恢复默认';
@@ -5973,24 +5964,7 @@ const success = await saveReminderSettingsFunc();
             if (savedIndicator) {
                 savedIndicator.textContent = isEN ? 'Saved' : '设置已保存';
             }
-            
-            // 对齐与微调（按语言）：
-            // 目标：标题与描述左对齐；中英文统一向右微移相同距离
-            const cnShift = 4;    // px，中文右移（与英文一致）
-            const enShift = 4;    // px，英文右移
-            const shift = isEN ? enShift : cnShift;
 
-            if (realtimeBackupSpacer) {
-                // 不使用缩进：让描述与标题文本左边对齐
-                realtimeBackupSpacer.style.width = '0px';
-                realtimeBackupSpacer.style.minWidth = '0px';
-            }
-            if (realtimeBackupTitle) {
-                realtimeBackupTitle.style.marginLeft = shift + 'px';
-            }
-            if (realtimeBackupDesc1) {
-                realtimeBackupDesc1.style.marginLeft = shift + 'px';
-            }
         } catch (e) {
             // ignore
         }

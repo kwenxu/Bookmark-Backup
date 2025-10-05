@@ -35,8 +35,8 @@ const UI_TEXT = {
         specificTime: '特定时间',
         
         realtimeDesc: '当检测到「数量/结构变化」时立即执行备份',
-        regularDesc: '按照设定的时间规则定期执行备份（仅在角标变黄时启用计时器）',
-        specificDesc: '在指定的特定时间点执行备份（仅在角标变黄时启用计时器，最多可添加5个计划）',
+        regularDesc: '按照设定的时间规则定期执行备份（仅在有「数量/结构变化」* 的时候）',
+        specificDesc: '在特定时间点执行备份（仅在有「数量/结构变化」* 的时候）（最多可添加5个计划）',
         
         weekDays: ['周日', '周一', '周二', '周三', '周四', '周五', '周六'],
         defaultTime: '默认时间',
@@ -62,8 +62,8 @@ const UI_TEXT = {
         specificTime: 'Specific Time',
         
         realtimeDesc: 'Backup immediately when quantity/structure changes are detected',
-        regularDesc: 'Backup periodically according to set time rules (timer only starts when badge turns yellow)',
-        specificDesc: 'Backup at specified time points (timer only starts when badge turns yellow, max 5 schedules)',
+        regularDesc: 'Backup periodically according to set time rules (only when there are quantity/structure changes*)',
+        specificDesc: 'Backup at specific time points (only when there are quantity/structure changes*) (max 5 schedules)',
         
         weekDays: ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'],
         defaultTime: 'Default Time',
@@ -162,12 +162,10 @@ function createRealtimeBackupBlock(lang) {
                 <div class="toggle-icon"></div>
             </div>
         </div>
-        <div class="config-content" id="realtimeBackupContent" style="display: none;">
-            <div class="setting-desc-row" style="padding: 15px 15px 10px 15px;">
-                <div id="realtimeBackupSpacer" style="width: 0px; min-width: 0px; flex-shrink: 0;"></div>
-                <div id="realtimeBackupDesc1" style="font-size: 14px; line-height: 1.5; color: var(--theme-text-secondary);">
-                    ${getText('realtimeDesc', lang)}
-                </div>
+        <div class="config-content" id="realtimeBackupContent" style="display: none; padding: 15px;">
+            <div style="font-size: 13px; line-height: 1.6; color: var(--theme-text-secondary); margin-bottom: 15px;">
+                <div id="realtimeBackupDesc1">${lang === 'en' ? 'Backs up immediately on count/structure changes*,' : '当检测到「数量/结构变化」* 时立即执行备份，'}</div>
+                <div id="realtimeBackupDesc2" style="margin-top: 5px;">${lang === 'en' ? 'example: (<span style="color: #4CAF50;">+12</span> BKM, <span style="color: #4CAF50;">+1</span> FLD, <span style="color: orange;">BKM & FLD changed</span>).' : '示例：(<span style="color: #4CAF50;">+12</span> 书签，<span style="color: #4CAF50;">+1</span> 文件夹，<span style="color: orange;">书签、文件夹变动</span>)。'}</div>
             </div>
         </div>
     `;
@@ -323,7 +321,7 @@ function createSpecificTimeBlock(lang) {
         </div>
         <div class="config-content" id="specificTimeContent" style="display: none; padding: 15px;">
             <div style="font-size: 13px; line-height: 1.6; color: var(--theme-text-secondary); margin-bottom: 15px;">
-                ${getText('specificDesc', lang)}（${getText('maxSchedules', lang)}）
+                ${getText('specificDesc', lang)}
             </div>
             
             <!-- 添加计划区域 -->
@@ -976,8 +974,19 @@ async function applyLanguageToUI() {
     }
     
     // 更新实时备份描述
-    const realtimeDesc = document.getElementById('realtimeBackupDesc1');
-    if (realtimeDesc) realtimeDesc.textContent = getText('realtimeDesc', lang);
+    const realtimeDesc1 = document.getElementById('realtimeBackupDesc1');
+    if (realtimeDesc1) {
+        realtimeDesc1.textContent = (lang === 'en') 
+            ? 'Backs up immediately on count/structure changes*,' 
+            : '当检测到「数量/结构变化」* 时立即执行备份，';
+    }
+    
+    const realtimeDesc2 = document.getElementById('realtimeBackupDesc2');
+    if (realtimeDesc2) {
+        realtimeDesc2.innerHTML = (lang === 'en')
+            ? 'example: (<span style="color: #4CAF50;">+12</span> BKM, <span style="color: #4CAF50;">+1</span> FLD, <span style="color: orange;">BKM & FLD changed</span>).'
+            : '示例：(<span style="color: #4CAF50;">+12</span> 书签，<span style="color: #4CAF50;">+1</span> 文件夹，<span style="color: orange;">书签、文件夹变动</span>)。';
+    }
     
     // 更新常规时间的文本标签
     const weekDaysLabel = document.querySelector('.week-days-label');
@@ -1029,7 +1038,7 @@ async function applyLanguageToUI() {
     if (specificContent) {
         const descDiv = specificContent.querySelector('div[style*="margin-bottom: 15px"]');
         if (descDiv) {
-            descDiv.textContent = getText('specificDesc', lang) + '（' + getText('maxSchedules', lang) + '）';
+            descDiv.textContent = getText('specificDesc', lang);
         }
         
         const addScheduleTitle = specificContent.querySelector('div[style*="font-weight: 500"]');

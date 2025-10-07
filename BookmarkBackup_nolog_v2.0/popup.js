@@ -1509,40 +1509,29 @@ function updateSyncHistory(passedLang) { // Added passedLang parameter
                             }
                         }
 
-                        // 结构变动部分 (structuralDiffHTML)
+                        // 结构变动部分 (structuralDiffHTML) - 显示具体变化类型而非通用标签
                         if (hasStructuralChange) {
-                            let structDiffPart = "";
-                            const bookmarkChangedTextLabel = window.i18nLabels?.bookmarkChangedLabel || dynamicTextStrings.bookmarkChangedText[currentLang] || '书签变动';
-                            const folderChangedTextLabel = window.i18nLabels?.folderChangedLabel || dynamicTextStrings.folderChangedText[currentLang] || '文件夹变动';
-                            const hasBookmarkStructChange = bookmarkMoved || bookmarkModified;
-                            const hasFolderStructChange = folderMoved || folderModified;
-
-                            if (hasBookmarkStructChange && hasFolderStructChange) {
-                                // Prefer using dynamicTextStrings if available and currentLang is 'en'
-                                if (currentLang === 'en' && dynamicTextStrings.bookmarksAndFoldersChangedText && dynamicTextStrings.bookmarksAndFoldersChangedText[currentLang]) {
-                                    structDiffPart = `<span style="color: orange; font-weight: bold;">${dynamicTextStrings.bookmarksAndFoldersChangedText[currentLang]}</span>`;
-                                } else {
-                                    structDiffPart = `<span style="color: orange; font-weight: bold;">${currentLang === 'en' ? 'BKM & FLD changed' : '书签、文件夹变动'}</span>`; // Directly changed for 'en'
-                                }
-                            } else if (hasBookmarkStructChange) {
-                                // Prefer using dynamicTextStrings if available and currentLang is 'en'
-                                if (currentLang === 'en' && dynamicTextStrings.bookmarksChangedText && dynamicTextStrings.bookmarksChangedText[currentLang]) {
-                                    structDiffPart = `<span style="color: #FF9800; font-weight: bold;">${dynamicTextStrings.bookmarksChangedText[currentLang]}</span>`;
-                                } else {
-                                    structDiffPart = `<span style="color: #FF9800; font-weight: bold;">${currentLang === 'en' ? 'BKM changed' : '书签变动'}</span>`; // Directly changed for 'en'
-                                }
-                            } else if (hasFolderStructChange) {
-                                // Prefer using dynamicTextStrings if available and currentLang is 'en'
-                                if (currentLang === 'en' && dynamicTextStrings.foldersChangedText && dynamicTextStrings.foldersChangedText[currentLang]) {
-                                    structDiffPart = `<span style="color: #2196F3; font-weight: bold;">${dynamicTextStrings.foldersChangedText[currentLang]}</span>`;
-                                } else {
-                                    structDiffPart = `<span style="color: #2196F3; font-weight: bold;">${currentLang === 'en' ? 'FLD changed' : '文件夹变动'}</span>`; // Directly changed for 'en'
-                                }
+                            const structDiffParts = [];
+                            
+                            // 根据具体的结构变化类型构建标签
+                            if (bookmarkMoved) {
+                                structDiffParts.push(`<span style="color: #FF9800; font-weight: bold;">${currentLang === 'en' ? 'BKM moved' : '书签移动'}</span>`);
                             }
+                            if (folderMoved) {
+                                structDiffParts.push(`<span style="color: #2196F3; font-weight: bold;">${currentLang === 'en' ? 'FLD moved' : '文件夹移动'}</span>`);
+                            }
+                            if (bookmarkModified) {
+                                structDiffParts.push(`<span style="color: #FF9800; font-weight: bold;">${currentLang === 'en' ? 'BKM modified' : '书签修改'}</span>`);
+                            }
+                            if (folderModified) {
+                                structDiffParts.push(`<span style="color: #2196F3; font-weight: bold;">${currentLang === 'en' ? 'FLD modified' : '文件夹修改'}</span>`);
+                            }
+                            
+                            const separator = currentLang === 'en' ? '<span style="display:inline-block; width:4px;"></span>|<span style="display:inline-block; width:4px;"></span>' : '、';
+                            const structDiffPart = structDiffParts.join(separator);
 
                             const marginTop = numericalDiffHTML ? 'margin-top: 2px;' : 'margin-top: 4px;';
-                            const widthStyle = currentLang === 'en' ? 'width: auto; overflow: visible;' : ''; // 英文版允许溢出
-                            // 结构变动行本身是文本居中，不需要flex处理逗号，因为它现在是顿号或&
+                            const widthStyle = currentLang === 'en' ? 'width: auto; overflow: visible;' : '';
                             if (structDiffPart) structuralDiffHTML = `<div style="${marginTop} text-align: center; white-space: nowrap; font-size: inherit; ${widthStyle}">(${structDiffPart})</div>`;
                         }
 
@@ -1822,10 +1811,12 @@ function updateBookmarkCountDisplay(passedLang) {
                                 const currentBookmarkCount = backupResponse.stats.bookmarkCount || 0;
                                 const currentFolderCount = backupResponse.stats.folderCount || 0;
                                 
-                                const hasStructuralChanges = backupResponse.stats.bookmarkMoved ||
-                                    backupResponse.stats.folderMoved ||
-                                    backupResponse.stats.bookmarkModified ||
-                                    backupResponse.stats.folderModified;
+                                // 使用和备份检查记录完全相同的判断逻辑
+                                const bookmarkMoved = backupResponse.stats.bookmarkMoved || false;
+                                const folderMoved = backupResponse.stats.folderMoved || false;
+                                const bookmarkModified = backupResponse.stats.bookmarkModified || false;
+                                const folderModified = backupResponse.stats.folderModified || false;
+                                const hasStructuralChanges = bookmarkMoved || folderMoved || bookmarkModified || folderModified;
 
                                 // 完全复制手动备份的差异计算逻辑
                                 let bookmarkDiff = 0;
@@ -1925,17 +1916,25 @@ function updateBookmarkCountDisplay(passedLang) {
                                     }
                                 }
 
-                                // 结构变化部分
+                                // 结构变化部分 - 显示具体变化类型而非通用标签（使用本地变量）
                                 if (hasStructuralChanges) {
-                                    const hasBookmarkStructChange = backupResponse.stats.bookmarkMoved || backupResponse.stats.bookmarkModified;
-                                    const hasFolderStructChange = backupResponse.stats.folderMoved || backupResponse.stats.folderModified;
-                                    if (hasBookmarkStructChange && hasFolderStructChange) {
-                                        structuralChangesHTML = `<span style="color: orange; font-weight: bold;">${i18nBookmarkAndFolderChangedLabel}</span>`;
-                                    } else if (hasBookmarkStructChange) {
-                                        structuralChangesHTML = `<span style="color: orange; font-weight: bold;">${i18nBookmarkChangedLabel}</span>`;
-                                    } else if (hasFolderStructChange) {
-                                        structuralChangesHTML = `<span style="color: orange; font-weight: bold;">${i18nFolderChangedLabel}</span>`;
+                                    const structuralParts = [];
+                                    
+                                    if (bookmarkMoved) {
+                                        structuralParts.push(`<span style="color: #FF9800; font-weight: bold;">${currentLang === 'en' ? 'BKM moved' : '书签移动'}</span>`);
                                     }
+                                    if (folderMoved) {
+                                        structuralParts.push(`<span style="color: #2196F3; font-weight: bold;">${currentLang === 'en' ? 'FLD moved' : '文件夹移动'}</span>`);
+                                    }
+                                    if (bookmarkModified) {
+                                        structuralParts.push(`<span style="color: #FF9800; font-weight: bold;">${currentLang === 'en' ? 'BKM modified' : '书签修改'}</span>`);
+                                    }
+                                    if (folderModified) {
+                                        structuralParts.push(`<span style="color: #2196F3; font-weight: bold;">${currentLang === 'en' ? 'FLD modified' : '文件夹修改'}</span>`);
+                                    }
+                                    
+                                    const separator = currentLang === 'en' ? '<span style="display:inline-block; width:4px;"></span>|<span style="display:inline-block; width:4px;"></span>' : '、';
+                                    structuralChangesHTML = structuralParts.join(separator);
                                 }
 
                                 // 组合显示内容（和手动备份完全一致）
@@ -2020,10 +2019,13 @@ function updateBookmarkCountDisplay(passedLang) {
                     if (bookmarkCountSpan) {
                         bookmarkCountSpan.innerHTML = quantityText;
                     }
-                    const hasStructuralChanges = backupResponse.stats.bookmarkMoved ||
-                        backupResponse.stats.folderMoved ||
-                        backupResponse.stats.bookmarkModified ||
-                        backupResponse.stats.folderModified;
+                    
+                    // 使用和备份检查记录完全相同的判断逻辑
+                    const bookmarkMoved = backupResponse.stats.bookmarkMoved || false;
+                    const folderMoved = backupResponse.stats.folderMoved || false;
+                    const bookmarkModified = backupResponse.stats.bookmarkModified || false;
+                    const folderModified = backupResponse.stats.folderModified || false;
+                    const hasStructuralChanges = bookmarkMoved || folderMoved || bookmarkModified || folderModified;
 
                     let bookmarkDiffManual = 0; // Renamed to avoid conflict
                     let folderDiffManual = 0;   // Renamed to avoid conflict
@@ -2124,16 +2126,25 @@ function updateBookmarkCountDisplay(passedLang) {
                         }
                     }
 
+                    // 结构变化部分 - 显示具体变化类型而非通用标签（使用本地变量）
                     if (hasStructuralChanges) {
-                        const hasBookmarkStructChange = backupResponse.stats.bookmarkMoved || backupResponse.stats.bookmarkModified;
-                        const hasFolderStructChange = backupResponse.stats.folderMoved || backupResponse.stats.folderModified;
-                        if (hasBookmarkStructChange && hasFolderStructChange) {
-                            structuralChangesHTML = `<span style="color: orange; font-weight: bold;">${i18nBookmarkAndFolderChangedLabel}</span>`;
-                        } else if (hasBookmarkStructChange) {
-                            structuralChangesHTML = `<span style="color: orange; font-weight: bold;">${i18nBookmarkChangedLabel}</span>`;
-                        } else if (hasFolderStructChange) {
-                            structuralChangesHTML = `<span style="color: orange; font-weight: bold;">${i18nFolderChangedLabel}</span>`;
+                        const structuralParts = [];
+                        
+                        if (bookmarkMoved) {
+                            structuralParts.push(`<span style="color: #FF9800; font-weight: bold;">${currentLang === 'en' ? 'BKM moved' : '书签移动'}</span>`);
                         }
+                        if (folderMoved) {
+                            structuralParts.push(`<span style="color: #2196F3; font-weight: bold;">${currentLang === 'en' ? 'FLD moved' : '文件夹移动'}</span>`);
+                        }
+                        if (bookmarkModified) {
+                            structuralParts.push(`<span style="color: #FF9800; font-weight: bold;">${currentLang === 'en' ? 'BKM modified' : '书签修改'}</span>`);
+                        }
+                        if (folderModified) {
+                            structuralParts.push(`<span style="color: #2196F3; font-weight: bold;">${currentLang === 'en' ? 'FLD modified' : '文件夹修改'}</span>`);
+                        }
+                        
+                        const separator = currentLang === 'en' ? '<span style="display:inline-block; width:4px;"></span>|<span style="display:inline-block; width:4px;"></span>' : '、';
+                        structuralChangesHTML = structuralParts.join(separator);
                     }
 
                     let changeDescriptionContent = "";
@@ -3729,6 +3740,11 @@ const applyLocalizedContent = async (lang) => { // Added lang parameter
         'en': "Backup History"
     };
 
+    const openHistoryViewerStrings = {
+        'zh_CN': "详细查看器",
+        'en': "Detail Viewer"
+    };
+
     const clearHistoryStrings = {
         'zh_CN': "清空记录",
         'en': "Clear History"
@@ -4742,6 +4758,12 @@ const currentLang = data.preferredLang || 'zh_CN';
         scrollToTopText.textContent = scrollToTopStrings[lang] || scrollToTopStrings['zh_CN'];
     }
 
+    // 更新历史查看器按钮文本
+    const openHistoryViewerText = document.getElementById('openHistoryViewerText');
+    if (openHistoryViewerText) {
+        openHistoryViewerText.textContent = openHistoryViewerStrings[lang] || openHistoryViewerStrings['zh_CN'];
+    }
+
     // 保存国际化标签到全局变量，供其他函数使用
     window.i18nLabels = {
         bookmarksLabel: bookmarksLabel[lang] || bookmarksLabel['zh_CN'],
@@ -5564,6 +5586,66 @@ const currentLang = data.preferredLang || 'zh_CN';
                 tooltip.style.visibility = 'hidden';
                 tooltip.style.opacity = '0';
             }
+        });
+    }
+
+    // 添加「详细查看器」按钮事件监听
+    const openHistoryViewerBtn = document.getElementById('openHistoryViewerBtn');
+    if (openHistoryViewerBtn) {
+        openHistoryViewerBtn.addEventListener('click', function() {
+            // 打开历史查看器页面
+            chrome.tabs.create({ url: chrome.runtime.getURL('history_html/history.html') });
+        });
+
+        // 添加悬停提示
+        openHistoryViewerBtn.addEventListener('mouseenter', function() {
+            const tooltip = document.getElementById('historyViewerTooltip');
+            if (tooltip) {
+                tooltip.style.visibility = 'visible';
+                tooltip.style.opacity = '1';
+            }
+        });
+
+        openHistoryViewerBtn.addEventListener('mouseleave', function() {
+            const tooltip = document.getElementById('historyViewerTooltip');
+            if (tooltip) {
+                tooltip.style.visibility = 'hidden';
+                tooltip.style.opacity = '0';
+            }
+        });
+
+        // 添加 hover 效果
+        openHistoryViewerBtn.addEventListener('mouseenter', function() {
+            this.style.backgroundColor = 'var(--theme-accent-color-hover)';
+            this.style.transform = 'translateY(-1px)';
+            this.style.boxShadow = '0 2px 8px rgba(0, 122, 255, 0.3)';
+        });
+
+        openHistoryViewerBtn.addEventListener('mouseleave', function() {
+            this.style.backgroundColor = 'var(--theme-accent-color)';
+            this.style.transform = 'translateY(0)';
+            this.style.boxShadow = 'none';
+        });
+    }
+
+    // 添加状态卡片点击事件 - 直接跳转到当前变化视图
+    const statusCard = document.getElementById('change-description-row');
+    if (statusCard) {
+        statusCard.addEventListener('click', function() {
+            // 打开历史查看器的当前变化视图
+            const url = chrome.runtime.getURL('history_html/history.html');
+            chrome.tabs.create({ url: url });
+        });
+
+        // 添加 hover 效果
+        statusCard.addEventListener('mouseenter', function() {
+            this.style.transform = 'scale(1.02)';
+            this.style.boxShadow = '0 4px 12px rgba(0, 0, 0, 0.15)';
+        });
+
+        statusCard.addEventListener('mouseleave', function() {
+            this.style.transform = 'scale(1)';
+            this.style.boxShadow = '';
         });
     }
 

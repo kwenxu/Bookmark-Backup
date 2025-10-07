@@ -1032,101 +1032,42 @@ sendResponse({
                 });
             return true;  // 保持消息通道开放
         } else if (message.action === 'getBackupStats') {
-// 获取当前书签数量的函数
-            function getCurrentBookmarkCounts(callback) {
-                // 使用浏览器API直接获取最新的书签数量
-                browserAPI.bookmarks.getTree(function(bookmarks) {
-                    // 递归遍历书签树并计数 (最终修正 countItemsRecursive)
-                    function countItemsRecursive(node) {
-                        let bmCount = 0;
-                        let fldCount = 0;
-
-                        // 检查当前节点是否是书签
-                        if (node.url) {
-                            bmCount = 1;
-                        }
-                        // 检查当前节点是否是文件夹
-                        else if (node.children) {
-                            fldCount = 1; // 将此文件夹计入
-                            // 递归计数子节点的内容
-                            for (let i = 0; i < node.children.length; i++) {
-                                const childCounts = countItemsRecursive(node.children[i]);
-                                bmCount += childCounts.bookmarks; // 累加子节点内的书签
-                                fldCount += childCounts.folders;   // 累加子节点内的文件夹
-                            }
-                        }
-                        // 其他类型节点（如分隔符）忽略
-
-                        return { bookmarks: bmCount, folders: fldCount };
-                    }
-
-                    // 从根节点 ('0') 的子节点开始计数 ('1', '2', '3'等)
-                    let totalCounts = { bookmarks: 0, folders: 0 };
-                    if (bookmarks && bookmarks.length > 0 && bookmarks[0].children) {
-                         for (const rootChild of bookmarks[0].children) {
-                              // 对每个顶层文件夹 ('1', '2', '3') 调用递归计数
-                              const counts = countItemsRecursive(rootChild);
-                              // 累加它们包含的书签和文件夹数量
-                              totalCounts.bookmarks += counts.bookmarks;
-                              totalCounts.folders += counts.folders;
-                         }
-                    }
-callback(totalCounts);
-                });
-            }
-
-            // 获取最后备份时间和统计数据
-            browserAPI.storage.local.get(['lastSyncTime', 'lastSyncStats', 'lastSyncOperations', 'lastCalculatedDiff'], (data) => {
-                // 始终获取最新的书签统计数据
-                getCurrentBookmarkCounts((counts) => {
-                    // 检查是否有上次操作记录
-                    const lastOps = data.lastSyncOperations || {};
-
-                    // 获取上次记录的操作状态
-                    const bookmarkMoved = lastOps.bookmarkMoved || false;
-                    const folderMoved = lastOps.folderMoved || false;
-                    const bookmarkModified = lastOps.bookmarkModified || false;
-                    const folderModified = lastOps.folderModified || false;
-
-                    // 新逻辑：直接使用上次备份时计算并存储的 diff
-                    const lastDiff = data.lastCalculatedDiff || { bookmarkDiff: 0, folderDiff: 0 };
-                    const bookmarkDiff = lastDiff.bookmarkDiff;
-                    const folderDiff = lastDiff.folderDiff;
-
-                    // 获取上次记录的总数（如果存在），用于在 stats 中返回 prev 值（可选）
-                    const prevBookmarkCount = data.lastSyncStats ? data.lastSyncStats.currentBookmarks : counts.bookmarks; // 仍然获取一下，但不用于计算diff
-                    const prevFolderCount = data.lastSyncStats ? data.lastSyncStats.currentFolders : counts.folders;
-
-                    const response = {
-                        lastSyncTime: data.lastSyncTime || null,
-                        stats: {
-                            bookmarkCount: counts.bookmarks, // 当前总数
-                            folderCount: counts.folders,   // 当前总数 (来自 getCurrentBookmarkCounts)
-                            prevBookmarkCount: prevBookmarkCount, // 上次总数
-                            prevFolderCount: prevFolderCount,   // 上次总数
-                            // 添加差异值 (从存储中读取)
-                            bookmarkDiff: bookmarkDiff,
-                            folderDiff: folderDiff,
-                            // 添加操作状态
-                            bookmarkMoved: bookmarkMoved,
-                            folderMoved: folderMoved,
-                            bookmarkModified: bookmarkModified,
-                            folderModified: folderModified
-                        },
-                        success: true
-                    };
-
-sendResponse(response);
-
-                    // 同时更新storage中的统计数据 (只更新总数)
-                    browserAPI.storage.local.set({
-                        lastSyncStats: {
-                            currentBookmarks: counts.bookmarks,
-                            currentFolders: counts.folders // 使用 getCurrentBookmarkCounts 的结果更新
-                        }
+            // 使用统一的内部函数，确保数据一致性和缓存机制
+            // 支持 forceRefresh 参数，强制重新计算（用于History Viewer初始化）
+            const forceRefresh = message.forceRefresh === true;
+            
+            if (forceRefresh) {
+                console.log('[getBackupStats] 强制刷新缓存...');
+                updateAndCacheAnalysis()
+                    .then(stats => {
+                        browserAPI.storage.local.get(['lastSyncTime'], (data) => {
+                            sendResponse({
+                                lastSyncTime: data.lastSyncTime || null,
+                                stats: stats,
+                                success: true
+                            });
+                        });
+                    })
+                    .catch(error => {
+                        sendResponse({
+                            success: false,
+                            error: error.message || '获取备份统计失败',
+                            stats: null
+                        });
                     });
-                });
-            });
+            } else {
+                getBackupStatsInternal()
+                    .then(response => {
+                        sendResponse(response);
+                    })
+                    .catch(error => {
+                        sendResponse({
+                            success: false,
+                            error: error.message || '获取备份统计失败',
+                            stats: null
+                        });
+                    });
+            }
             return true; // 保持消息通道开放
         } else if (message.action === "getSyncHistory") {
 // 从存储中获取备份历史记录
@@ -3101,15 +3042,21 @@ await setBadge();
 async function analyzeBookmarkChanges() {
     const { lastBookmarkData, lastSyncOperations } = await browserAPI.storage.local.get(['lastBookmarkData', 'lastSyncOperations']);
 
+    console.log('[analyzeBookmarkChanges] lastBookmarkData:', lastBookmarkData);
+    console.log('[analyzeBookmarkChanges] lastSyncOperations:', lastSyncOperations);
+
     // 获取当前书签和文件夹总数
     const currentCounts = await getCurrentBookmarkCountsInternal();
+    console.log('[analyzeBookmarkChanges] currentCounts:', currentCounts);
     
     // 获取上次备份时的书签和文件夹总数
     const prevBookmarkCount = lastBookmarkData?.bookmarkCount ?? 0;
     const prevFolderCount = lastBookmarkData?.folderCount ?? 0;
+    console.log('[analyzeBookmarkChanges] prevBookmarkCount:', prevBookmarkCount, 'prevFolderCount:', prevFolderCount);
 
     let bookmarkDiff = currentCounts.bookmarks - prevBookmarkCount;
     let folderDiff = currentCounts.folders - prevFolderCount;
+    console.log('[analyzeBookmarkChanges] 计算差异 bookmarkDiff:', bookmarkDiff, 'folderDiff:', folderDiff);
 
     let bookmarkStructureChanged = lastSyncOperations?.bookmarkMoved || lastSyncOperations?.bookmarkModified || false;
     let folderStructureChanged = lastSyncOperations?.folderMoved || lastSyncOperations?.folderModified || false;
@@ -3141,10 +3088,10 @@ async function analyzeBookmarkChanges() {
         folderStructureChanged = false;
     }
 
-    // 为了兼容popup.js的显示逻辑，我们将更广泛的"结构变化"映射到具体的标志上
-    // 如果指纹检测到结构变化，但它不是由移动(move)操作引起的，我们将其视为修改(modify)，从而涵盖增/删操作
-    const finalBookmarkModified = lastSyncOperations?.bookmarkModified || (bookmarkStructureChanged && !lastSyncOperations?.bookmarkMoved);
-    const finalFolderModified = lastSyncOperations?.folderModified || (folderStructureChanged && !lastSyncOperations?.folderMoved);
+    // 只有真正的修改操作才算"修改"，增加/删除只体现在数量变化中
+    // 不应该把所有结构变化都归类为"修改"
+    const finalBookmarkModified = lastSyncOperations?.bookmarkModified || false;
+    const finalFolderModified = lastSyncOperations?.folderModified || false;
 
     return {
         bookmarkCount: currentCounts.bookmarks,
@@ -3361,18 +3308,28 @@ function areSetsEqual(setA, setB) {
  * 这是所有状态获取的权威来源。
  */
 async function updateAndCacheAnalysis() {
-try {
+    try {
+        console.log('[updateAndCacheAnalysis] 开始分析书签变化...');
         const analysis = await analyzeBookmarkChanges();
         cachedBookmarkAnalysis = analysis;
-// 分析完成后，向popup发送消息，如果popup是打开的，可以直接更新UI
+        console.log('[updateAndCacheAnalysis] 分析完成:', {
+            bookmarkDiff: analysis.bookmarkDiff,
+            folderDiff: analysis.folderDiff,
+            bookmarkCount: analysis.bookmarkCount,
+            folderCount: analysis.folderCount
+        });
+        
+        // 分析完成后，向popup发送消息，如果popup是打开的，可以直接更新UI
         browserAPI.runtime.sendMessage({ action: "analysisUpdated", ...analysis }).catch(() => {
             // 忽略错误，因为popup可能未打开
         });
         
         return cachedBookmarkAnalysis;
     } catch (error) {
-// 出错时清除缓存，以防数据不一致
+        console.error('[updateAndCacheAnalysis] 分析失败:', error);
+        // 出错时清除缓存，以防数据不一致
         cachedBookmarkAnalysis = null;
+        throw error; // 重新抛出错误
     }
 }
 

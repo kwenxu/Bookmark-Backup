@@ -607,6 +607,7 @@ async function saveCollapseState(headerId, isCollapsed) {
  */
 async function loadCollapseStates() {
     const headers = ['realtimeBackupHeader', 'regularTimeHeader', 'specificTimeHeader'];
+    let hasExpandedItem = false;
     
     for (const headerId of headers) {
         try {
@@ -625,12 +626,23 @@ async function loadCollapseStates() {
                     } else {
                         header.classList.remove('collapsed');
                         content.style.display = 'block';
+                        hasExpandedItem = true;
                     }
                 }
             }
         } catch (error) {
             console.error('加载折叠状态失败:', headerId, error);
         }
+    }
+    
+    // 如果有展开的项，直接显示保存按钮，确保在视野中能看到
+    if (hasExpandedItem) {
+        setTimeout(() => {
+            const saveButton = document.getElementById('saveAutoBackupSettings');
+            if (saveButton) {
+                saveButton.scrollIntoView({ behavior: 'auto', block: 'end' });
+            }
+        }, 100);
     }
 }
 

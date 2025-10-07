@@ -26,6 +26,8 @@ const DEFAULT_SETTINGS = {
         enabled: true,
         // 周开关：0=周日, 1=周一, ..., 6=周六
         weekDays: [true, true, true, true, true, true, true],
+        // 默认时间配置（浏览器打开时、从休眠中恢复时的补充备份）
+        defaultTimeEnabled: false,  // 默认关闭
         defaultTime: '10:00',
         // 小时间隔配置
         hourInterval: {

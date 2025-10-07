@@ -40,6 +40,7 @@ const UI_TEXT = {
         
         weekDays: ['周日', '周一', '周二', '周三', '周四', '周五', '周六'],
         defaultTime: '默认时间',
+        defaultTimeBlock: '默认时间',
         hourInterval: '小时间隔',
         minuteInterval: '分钟间隔',
         every: '每',
@@ -67,6 +68,7 @@ const UI_TEXT = {
         
         weekDays: ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'],
         defaultTime: 'Default Time',
+        defaultTimeBlock: 'Default Time',
         hourInterval: 'Hour Interval',
         minuteInterval: 'Minute Interval',
         every: 'Every',
@@ -214,7 +216,7 @@ function createRegularTimeBlock(lang) {
             <!-- 整体居中容器 -->
             <div style="max-width: 600px; margin: 0 auto;">
                 
-                <!-- 周开关和默认时间区域 -->
+                <!-- 选择备份日期区域 -->
                 <div style="margin-bottom: 15px; padding: 12px; background-color: var(--theme-bg-secondary); border-radius: 6px;">
                     <!-- 选择备份日期 -->
                     <div style="margin-bottom: 10px;">
@@ -224,14 +226,16 @@ function createRegularTimeBlock(lang) {
                     </div>
                     
                     <!-- 周勾选框 -->
-                    <div style="display: flex; justify-content: center; flex-wrap: wrap; gap: 8px; margin-bottom: 10px;">
+                    <div style="display: flex; justify-content: center; flex-wrap: wrap; gap: 8px;">
                         ${weekCheckboxes}
                     </div>
-                    
-                    <!-- 默认时间行 -->
+                </div>
+                
+                <!-- 默认时间区域（独立区块） -->
+                <div style="margin-bottom: 15px; padding: 12px; background-color: var(--theme-bg-secondary); border-radius: 6px;">
                     <div style="display: grid; grid-template-columns: 120px 1fr 80px; gap: 10px; align-items: center;">
-                        <span class="default-time-label" style="font-size: 13px; color: var(--theme-text-primary);">
-                            ${getText('defaultTime', lang)}:
+                        <span class="default-time-block-label" style="font-weight: 500; font-size: 13px; color: var(--theme-text-primary);">
+                            ${getText('defaultTimeBlock', lang)}:
                         </span>
                         <div style="display: grid; grid-template-columns: 25px 100px 45px; justify-content: center; gap: 6px;">
                             <div></div>
@@ -240,7 +244,12 @@ function createRegularTimeBlock(lang) {
                                           font-size: 13px; color: var(--theme-text-primary); background-color: var(--theme-input-bg); width: 100px;">
                             <div></div>
                         </div>
-                        <div></div>
+                        <div style="display: flex; justify-content: center;">
+                            <label class="switch">
+                                <input type="checkbox" id="defaultTimeSwitch">
+                                <span class="slider"></span>
+                            </label>
+                        </div>
                     </div>
                 </div>
                 
@@ -562,6 +571,14 @@ function setupCollapseEvents() {
             if (isCollapsed) {
                 header.classList.remove('collapsed');
                 content.style.display = 'block';
+                
+                // 展开后，滚动到保存按钮，确保在视野中能看到
+                setTimeout(() => {
+                    const saveButton = document.getElementById('saveAutoBackupSettings');
+                    if (saveButton) {
+                        saveButton.scrollIntoView({ behavior: 'smooth', block: 'end' });
+                    }
+                }, 100); // 等待内容展开完成
             } else {
                 header.classList.add('collapsed');
                 content.style.display = 'none';
@@ -754,6 +771,12 @@ function setupRegularTimeEvents() {
         cb.addEventListener('change', () => saveRegularTimeConfig());
     });
     
+    // 默认时间开关
+    const defaultTimeSwitch = document.getElementById('defaultTimeSwitch');
+    if (defaultTimeSwitch) {
+        defaultTimeSwitch.addEventListener('change', () => saveRegularTimeConfig());
+    }
+    
     // 默认时间
     const defaultTimeInput = document.getElementById('regularDefaultTime');
     if (defaultTimeInput) {
@@ -792,6 +815,7 @@ async function saveRegularTimeConfig() {
     const weekCheckboxes = document.querySelectorAll('.week-day-checkbox');
     const weekDays = Array.from(weekCheckboxes).map(cb => cb.checked);
     
+    const defaultTimeEnabled = document.getElementById('defaultTimeSwitch')?.checked || false;
     const defaultTime = document.getElementById('regularDefaultTime')?.value || '10:00';
     const hourEnabled = document.getElementById('hourIntervalSwitch')?.checked || false;
     const hourValue = parseInt(document.getElementById('hourIntervalValue')?.value) || 2;
@@ -801,6 +825,7 @@ async function saveRegularTimeConfig() {
     const config = {
         enabled: true,
         weekDays,
+        defaultTimeEnabled,
         defaultTime,
         hourInterval: {
             enabled: hourEnabled,
@@ -916,6 +941,11 @@ async function loadSettings() {
                 cb.checked = settings.regularTime.weekDays[index];
             });
             
+            const defaultTimeSwitch = document.getElementById('defaultTimeSwitch');
+            if (defaultTimeSwitch) {
+                defaultTimeSwitch.checked = settings.regularTime.defaultTimeEnabled || false;
+            }
+            
             const defaultTimeInput = document.getElementById('regularDefaultTime');
             if (defaultTimeInput) {
                 defaultTimeInput.value = settings.regularTime.defaultTime;
@@ -992,8 +1022,8 @@ async function applyLanguageToUI() {
     const weekDaysLabel = document.querySelector('.week-days-label');
     if (weekDaysLabel) weekDaysLabel.textContent = getText('selectWeekDays', lang) + ':';
     
-    const defaultTimeLabel = document.querySelector('.default-time-label');
-    if (defaultTimeLabel) defaultTimeLabel.textContent = getText('defaultTime', lang) + ':';
+    const defaultTimeBlockLabel = document.querySelector('.default-time-block-label');
+    if (defaultTimeBlockLabel) defaultTimeBlockLabel.textContent = getText('defaultTimeBlock', lang) + ':';
     
     const hourIntervalLabel = document.querySelector('.hour-interval-label');
     if (hourIntervalLabel) hourIntervalLabel.textContent = getText('hourInterval', lang) + ':';

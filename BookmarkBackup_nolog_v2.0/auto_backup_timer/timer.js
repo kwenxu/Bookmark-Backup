@@ -540,33 +540,38 @@ async function checkMissedBackups() {
         
         // === 场景1：常规时间的遗漏检查 ===
         if (settings.backupMode === 'regular' && settings.regularTime.enabled) {
-            // 首先检查今天是否已经补充过备份
-            const alreadyBackedUp = await isMissedBackupExecutedToday();
-            if (alreadyBackedUp) {
-                addLog(`今天已经执行过补充备份，跳过重复补充`);
+            // 检查「默认时间」功能是否启用
+            if (!settings.regularTime.defaultTimeEnabled) {
+                addLog('「默认时间」功能未启用，跳过常规时间遗漏检查');
             } else {
-                // 检查今天是否在周勾选范围内
-                if (!isTodayEnabled(settings.regularTime.weekDays)) {
-                    addLog(`今天(${getCurrentWeekDayText(lang)})未在周勾选范围内，跳过常规时间遗漏检查`);
+                // 首先检查今天是否已经补充过备份
+                const alreadyBackedUp = await isMissedBackupExecutedToday();
+                if (alreadyBackedUp) {
+                    addLog(`今天已经执行过补充备份，跳过重复补充`);
                 } else {
-                    // 检查默认时间是否已过
-                    const [hours, minutes] = settings.regularTime.defaultTime.split(':').map(Number);
-                    const defaultTime = new Date(now);
-                    defaultTime.setHours(hours, minutes, 0, 0);
-                    
-                    if (now.getTime() > defaultTime.getTime()) {
-                        addLog(`已过默认时间 ${settings.regularTime.defaultTime}，执行补充备份`);
-                        const weekDay = getCurrentWeekDayText(lang);
-                        const note = generateBackupNote('weekly', weekDay, lang);
-                        const success = await triggerAutoBackup(note);
-                        
-                        // 补充备份成功后，记录今天已经补充过
-                        if (success) {
-                            await markMissedBackupExecuted();
-                            addLog(`已记录今天的补充备份，避免重复执行`);
-                        }
+                    // 检查今天是否在周勾选范围内
+                    if (!isTodayEnabled(settings.regularTime.weekDays)) {
+                        addLog(`今天(${getCurrentWeekDayText(lang)})未在周勾选范围内，跳过常规时间遗漏检查`);
                     } else {
-                        addLog(`未过默认时间 ${settings.regularTime.defaultTime}，无需补充备份`);
+                        // 检查默认时间是否已过
+                        const [hours, minutes] = settings.regularTime.defaultTime.split(':').map(Number);
+                        const defaultTime = new Date(now);
+                        defaultTime.setHours(hours, minutes, 0, 0);
+                        
+                        if (now.getTime() > defaultTime.getTime()) {
+                            addLog(`已过默认时间 ${settings.regularTime.defaultTime}，执行补充备份`);
+                            const weekDay = getCurrentWeekDayText(lang);
+                            const note = generateBackupNote('weekly', weekDay, lang);
+                            const success = await triggerAutoBackup(note);
+                            
+                            // 补充备份成功后，记录今天已经补充过
+                            if (success) {
+                                await markMissedBackupExecuted();
+                                addLog(`已记录今天的补充备份，避免重复执行`);
+                            }
+                        } else {
+                            addLog(`未过默认时间 ${settings.regularTime.defaultTime}，无需补充备份`);
+                        }
                     }
                 }
             }

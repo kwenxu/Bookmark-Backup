@@ -49,6 +49,10 @@
                     <i class="fas fa-exchange-alt"></i>
                     <span id="navCurrentChangesText">当前 数量/结构 变化</span>
                 </button>
+                <button class="nav-tab" data-view="tree">
+                    <i class="fas fa-code-branch"></i>
+                    <span id="navTreeText">书签树与JSON</span>
+                </button>
                 <button class="nav-tab" data-view="history">
                     <i class="fas fa-history"></i>
                     <span id="navHistoryText">备份历史</span>
@@ -56,10 +60,6 @@
                 <button class="nav-tab" data-view="additions">
                     <i class="fas fa-plus-circle"></i>
                     <span id="navAdditionsText">书签添加记录</span>
-                </button>
-                <button class="nav-tab" data-view="tree">
-                    <i class="fas fa-sitemap"></i>
-                    <span id="navTreeText">书签树</span>
                 </button>
             </nav>
 
@@ -124,14 +124,29 @@
                 </div>
             </div>
 
-            <!-- 书签树视图 -->
+            <!-- 书签树与JSON视图 -->
             <div id="treeView" class="view">
                 <div class="view-header">
-                    <h2 id="treeViewTitle">书签树</h2>
-                    <p class="view-description" id="treeViewDesc">查看完整的书签结构及备份状态</p>
+                    <div class="view-header-left">
+                        <h2 id="treeViewTitle">书签树与JSON</h2>
+                        <p class="view-description" id="treeViewDesc">查看完整的书签结构及变动状态</p>
+                    </div>
+                    <div class="view-header-right">
+                        <button id="toggleTreeJsonBtn" class="view-toggle-btn active" data-mode="tree">
+                            <span class="toggle-option active" data-mode="tree">
+                                <i class="fas fa-sitemap"></i> 树形视图
+                            </span>
+                            <span class="toggle-option" data-mode="json">
+                                <i class="fas fa-code"></i> JSON
+                            </span>
+                        </button>
+                    </div>
                 </div>
                 <div id="bookmarkTree" class="bookmark-tree">
                     <!-- 动态加载书签树 -->
+                </div>
+                <div id="bookmarkJson" class="bookmark-json" style="display: none;">
+                    <!-- 动态加载JSON -->
                 </div>
             </div>
         </main>

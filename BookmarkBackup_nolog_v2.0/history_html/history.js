@@ -2457,7 +2457,7 @@ function renderBookmarkItem(bookmark) {
         <div class="addition-item">
             ${favicon ? `<img class="addition-icon" src="${favicon}" alt="" onerror="this.src='${fallbackIcon}'">` : ''}
             <div class="addition-info">
-                <div class="addition-title">${escapeHtml(bookmark.title)}</div>
+                <a href="${escapeHtml(bookmark.url)}" target="_blank" class="addition-title" rel="noopener noreferrer">${escapeHtml(bookmark.title)}</a>
                 <div class="addition-url">${escapeHtml(bookmark.url)}</div>
             </div>
             <span class="addition-status ${isBackedUp ? 'backed-up' : 'not-backed-up'}">
@@ -3262,7 +3262,7 @@ function renderTreeNodeWithChanges(node, level = 0) {
                     <div class="tree-item">
                         <span class="tree-toggle" style="opacity: 0"></span>
                         ${favicon ? `<img class="tree-icon" src="${favicon}" alt="" onerror="this.src='${fallbackIcon}'">` : `<i class="tree-icon fas fa-bookmark"></i>`}
-                        <span class="tree-label">${escapeHtml(node.title)}</span>
+                        <a href="${escapeHtml(node.url)}" target="_blank" class="tree-label tree-bookmark-link" rel="noopener noreferrer">${escapeHtml(node.title)}</a>
                         <span class="change-badges">${statusIcon}</span>
                     </div>
                 </div>

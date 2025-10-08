@@ -2759,9 +2759,18 @@ async function renderTreeView(forceRefresh = false) {
     });
 }
 
+// 树事件处理器（避免重复绑定）
+let treeClickHandler = null;
+
 // 绑定树的展开/折叠事件
 function attachTreeEvents(treeContainer) {
-    treeContainer.addEventListener('click', (e) => {
+    // 移除旧的事件监听器
+    if (treeClickHandler) {
+        treeContainer.removeEventListener('click', treeClickHandler);
+    }
+    
+    // 创建新的事件处理器
+    treeClickHandler = (e) => {
         // 处理移动标记的点击
         const moveBadge = e.target.closest('.change-badge.moved');
         if (moveBadge) {
@@ -2777,20 +2786,39 @@ function attachTreeEvents(treeContainer) {
         // 点击整个文件夹行都可以展开
         const treeItem = e.target.closest('.tree-item');
         if (treeItem) {
-            const node = treeItem.closest('.tree-node');
+            // 找到包含这个tree-item的tree-node
+            const node = treeItem.parentElement;
+            if (!node || !node.classList.contains('tree-node')) {
+                console.log('[树事件] 未找到tree-node');
+                return;
+            }
+            
             const children = node.querySelector('.tree-children');
             const toggle = node.querySelector('.tree-toggle');
+            
+            console.log('[树事件] 点击节点:', {
+                hasChildren: !!children,
+                hasToggle: !!toggle,
+                nodeHTML: node.outerHTML.substring(0, 200)
+            });
             
             if (children && toggle) {
                 e.stopPropagation();
                 children.classList.toggle('expanded');
                 toggle.classList.toggle('expanded');
                 
+                console.log('[树事件] 切换展开状态:', toggle.classList.contains('expanded'));
+                
                 // 保存展开状态
                 saveTreeExpandState(treeContainer);
             }
         }
-    });
+    };
+    
+    // 绑定新的事件监听器
+    treeContainer.addEventListener('click', treeClickHandler);
+    
+    console.log('[树事件] 事件绑定完成');
     
     // 恢复展开状态
     restoreTreeExpandState(treeContainer);

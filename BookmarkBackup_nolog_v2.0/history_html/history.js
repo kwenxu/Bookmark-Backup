@@ -6,6 +6,7 @@ let currentLang = 'zh_CN';
 let currentTheme = 'light';
 let currentView = 'current-changes';
 let currentFilter = 'all';
+let currentTimeFilter = 'all'; // 'all', 'year', 'month', 'day'
 let allBookmarks = [];
 let syncHistory = [];
 let lastBackupTime = null;
@@ -269,6 +270,38 @@ const i18n = {
     deletedFolders: {
         'zh_CN': '删除文件夹',
         'en': 'Deleted Folders'
+    },
+    filterStatus: {
+        'zh_CN': '状态',
+        'en': 'Status'
+    },
+    filterTime: {
+        'zh_CN': '时间',
+        'en': 'Time'
+    },
+    timeFilterAll: {
+        'zh_CN': '全部',
+        'en': 'All'
+    },
+    timeFilterYear: {
+        'zh_CN': '按年',
+        'en': 'By Year'
+    },
+    timeFilterMonth: {
+        'zh_CN': '按月',
+        'en': 'By Month'
+    },
+    timeFilterDay: {
+        'zh_CN': '按日',
+        'en': 'By Day'
+    },
+    treeViewMode: {
+        'zh_CN': '树形视图',
+        'en': 'Tree View'
+    },
+    jsonViewMode: {
+        'zh_CN': 'JSON',
+        'en': 'JSON'
     }
 };
 
@@ -353,17 +386,80 @@ document.addEventListener('DOMContentLoaded', async () => {
 // 用户设置
 // =============================================================================
 
+// 检查是否有覆盖设置
+function hasThemeOverride() {
+    try {
+        return localStorage.getItem('historyViewerHasCustomTheme') === 'true';
+    } catch (e) {
+        return false;
+    }
+}
+
+function hasLangOverride() {
+    try {
+        return localStorage.getItem('historyViewerHasCustomLang') === 'true';
+    } catch (e) {
+        return false;
+    }
+}
+
+// 获取覆盖设置
+function getThemeOverride() {
+    try {
+        return localStorage.getItem('historyViewerCustomTheme');
+    } catch (e) {
+        return null;
+    }
+}
+
+function getLangOverride() {
+    try {
+        return localStorage.getItem('historyViewerCustomLang');
+    } catch (e) {
+        return null;
+    }
+}
+
 async function loadUserSettings() {
     return new Promise((resolve) => {
         browserAPI.storage.local.get(['preferredLang', 'currentTheme'], (result) => {
-            currentLang = result.preferredLang || 'zh_CN';
-            currentTheme = result.currentTheme || 'light';
+            const mainUILang = result.preferredLang || 'zh_CN';
+            const mainUITheme = result.currentTheme || 'light';
+            
+            // 优先使用覆盖设置，否则使用主UI设置
+            if (hasThemeOverride()) {
+                currentTheme = getThemeOverride() || mainUITheme;
+                console.log('[加载用户设置] 使用History Viewer的主题覆盖:', currentTheme);
+            } else {
+                currentTheme = mainUITheme;
+                console.log('[加载用户设置] 跟随主UI主题:', currentTheme);
+            }
+            
+            if (hasLangOverride()) {
+                currentLang = getLangOverride() || mainUILang;
+                console.log('[加载用户设置] 使用History Viewer的语言覆盖:', currentLang);
+            } else {
+                currentLang = mainUILang;
+                console.log('[加载用户设置] 跟随主UI语言:', currentLang);
+            }
             
             // 应用主题
             document.documentElement.setAttribute('data-theme', currentTheme);
             
+            // 更新主题切换按钮图标
+            const themeIcon = document.querySelector('#themeToggle i');
+            if (themeIcon) {
+                themeIcon.className = currentTheme === 'dark' ? 'fas fa-sun' : 'fas fa-moon';
+            }
+            
             // 应用语言
             applyLanguage();
+            
+            // 更新语言切换按钮文本
+            const langText = document.querySelector('#langToggle .lang-text');
+            if (langText) {
+                langText.textContent = currentLang === 'zh_CN' ? 'EN' : '中';
+            }
             
             resolve();
         });
@@ -394,6 +490,14 @@ function applyLanguage() {
     document.getElementById('filterAll').textContent = i18n.filterAll[currentLang];
     document.getElementById('filterBackedUp').textContent = i18n.filterBackedUp[currentLang];
     document.getElementById('filterNotBackedUp').textContent = i18n.filterNotBackedUp[currentLang];
+    document.getElementById('filterStatusLabel').textContent = i18n.filterStatus[currentLang];
+    document.getElementById('filterTimeLabel').textContent = i18n.filterTime[currentLang];
+    document.getElementById('timeFilterAll').textContent = i18n.timeFilterAll[currentLang];
+    document.getElementById('timeFilterYear').textContent = i18n.timeFilterYear[currentLang];
+    document.getElementById('timeFilterMonth').textContent = i18n.timeFilterMonth[currentLang];
+    document.getElementById('timeFilterDay').textContent = i18n.timeFilterDay[currentLang];
+    document.getElementById('treeViewModeText').textContent = i18n.treeViewMode[currentLang];
+    document.getElementById('jsonViewModeText').textContent = i18n.jsonViewMode[currentLang];
     document.getElementById('modalTitle').textContent = i18n.modalTitle[currentLang];
     
     // 更新工具按钮气泡
@@ -423,11 +527,21 @@ function initializeUI() {
         tab.addEventListener('click', () => switchView(tab.dataset.view));
     });
     
-    // 过滤按钮
+    // 状态过滤按钮
     document.querySelectorAll('.filter-btn').forEach(btn => {
         btn.addEventListener('click', () => {
             currentFilter = btn.dataset.filter;
             document.querySelectorAll('.filter-btn').forEach(b => b.classList.remove('active'));
+            btn.classList.add('active');
+            renderAdditionsView();
+        });
+    });
+    
+    // 时间过滤按钮
+    document.querySelectorAll('.time-filter-btn').forEach(btn => {
+        btn.addEventListener('click', () => {
+            currentTimeFilter = btn.dataset.timeFilter;
+            document.querySelectorAll('.time-filter-btn').forEach(b => b.classList.remove('active'));
             btn.classList.add('active');
             renderAdditionsView();
         });
@@ -490,7 +604,8 @@ async function loadAllData(options = {}) {
         ]);
         
         syncHistory = storageData.syncHistory || [];
-        lastBackupTime = storageData.lastSyncTime || null;
+        // 将 ISO 字符串格式转换为时间戳（毫秒）
+        lastBackupTime = storageData.lastSyncTime ? new Date(storageData.lastSyncTime).getTime() : null;
         allBookmarks = flattenBookmarkTree(bookmarkTree);
         cachedBookmarkTree = bookmarkTree;
         
@@ -2212,29 +2327,53 @@ function renderAdditionsView() {
         return;
     }
     
-    // 按日期分组
-    const groupedByDate = groupBookmarksByDate(allBookmarks);
+    // 按时间范围分组（年、月、日）
+    const groupedByTime = groupBookmarksByTime(allBookmarks, currentTimeFilter);
     
     // 过滤
-    const filtered = filterBookmarks(groupedByDate);
+    const filtered = filterBookmarks(groupedByTime);
     
-    container.innerHTML = renderBookmarkGroups(filtered);
+    container.innerHTML = renderBookmarkGroups(filtered, currentTimeFilter);
+    
+    // 绑定折叠/展开事件
+    attachAdditionGroupEvents();
 }
 
-function groupBookmarksByDate(bookmarks) {
+function groupBookmarksByTime(bookmarks, timeFilter) {
     const groups = {};
     
     bookmarks.forEach(bookmark => {
         const date = new Date(bookmark.dateAdded);
-        const dateKey = date.toLocaleDateString(currentLang === 'en' ? 'en-US' : 'zh-CN');
+        let groupKey;
         
-        if (!groups[dateKey]) {
-            groups[dateKey] = [];
+        switch (timeFilter) {
+            case 'year':
+                groupKey = date.getFullYear().toString();
+                break;
+            case 'month':
+                groupKey = currentLang === 'zh_CN' 
+                    ? `${date.getFullYear()}年${date.getMonth() + 1}月`
+                    : `${date.toLocaleDateString('en-US', { year: 'numeric', month: 'long' })}`;
+                break;
+            case 'day':
+            case 'all':
+            default:
+                groupKey = date.toLocaleDateString(currentLang === 'en' ? 'en-US' : 'zh-CN');
+                break;
         }
-        groups[dateKey].push(bookmark);
+        
+        if (!groups[groupKey]) {
+            groups[groupKey] = [];
+        }
+        groups[groupKey].push(bookmark);
     });
     
     return groups;
+}
+
+// 保留旧函数用于兼容
+function groupBookmarksByDate(bookmarks) {
+    return groupBookmarksByTime(bookmarks, 'day');
 }
 
 function filterBookmarks(groups) {
@@ -2258,28 +2397,56 @@ function filterBookmarks(groups) {
 
 function isBookmarkBackedUp(bookmark) {
     if (!lastBackupTime) return false;
-    return bookmark.dateAdded < lastBackupTime;
+    // 书签添加时间早于或等于最后备份时间，说明已备份
+    return bookmark.dateAdded <= lastBackupTime;
 }
 
-function renderBookmarkGroups(groups) {
+function renderBookmarkGroups(groups, timeFilter) {
     const sortedDates = Object.keys(groups).sort((a, b) => {
+        // 根据timeFilter决定排序方式
+        if (timeFilter === 'year') {
+            return parseInt(b) - parseInt(a);
+        }
         return new Date(b) - new Date(a);
     });
     
-    return sortedDates.map(date => {
+    return sortedDates.map((date, index) => {
         const bookmarks = groups[date];
+        const groupId = `group-${index}`;
+        // 默认折叠
+        const isExpanded = false;
+        
         return `
-            <div class="addition-group">
-                <div class="addition-group-header">
-                    <span>${date}</span>
-                    <span class="addition-count">${bookmarks.length} ${i18n.bookmarks[currentLang]}</span>
+            <div class="addition-group" data-group-id="${groupId}">
+                <div class="addition-group-header" data-group-id="${groupId}">
+                    <div class="addition-group-title">
+                        <i class="fas fa-chevron-right addition-group-toggle ${isExpanded ? 'expanded' : ''}"></i>
+                        <span class="addition-group-date">${date}</span>
+                        <span class="addition-count">${bookmarks.length} ${i18n.bookmarks[currentLang]}</span>
+                    </div>
                 </div>
-                <div class="addition-items">
+                <div class="addition-items ${isExpanded ? 'expanded' : ''}" data-group-id="${groupId}">
                     ${bookmarks.map(renderBookmarkItem).join('')}
                 </div>
             </div>
         `;
     }).join('');
+}
+
+// 绑定折叠/展开事件
+function attachAdditionGroupEvents() {
+    document.querySelectorAll('.addition-group-header').forEach(header => {
+        header.addEventListener('click', (e) => {
+            const groupId = header.getAttribute('data-group-id');
+            const items = document.querySelector(`.addition-items[data-group-id="${groupId}"]`);
+            const toggle = header.querySelector('.addition-group-toggle');
+            
+            if (items && toggle) {
+                items.classList.toggle('expanded');
+                toggle.classList.toggle('expanded');
+            }
+        });
+    });
 }
 
 function renderBookmarkItem(bookmark) {
@@ -3277,23 +3444,40 @@ function searchTree(query) {
 // 主题和语言切换
 // =============================================================================
 
+// 主题和语言切换 - 独立设置，主UI优先
+// 设置覆盖后会显示重置按钮
+
 function toggleTheme() {
     currentTheme = currentTheme === 'light' ? 'dark' : 'light';
     document.documentElement.setAttribute('data-theme', currentTheme);
     
-    // 同步到主 UI
-    browserAPI.storage.local.set({ currentTheme: currentTheme });
+    // 设置覆盖标志
+    try {
+        localStorage.setItem('historyViewerHasCustomTheme', 'true');
+        localStorage.setItem('historyViewerCustomTheme', currentTheme);
+        console.log('[History Viewer] 设置主题覆盖:', currentTheme);
+    } catch (e) {
+        console.error('[History Viewer] 无法保存主题覆盖:', e);
+    }
     
     // 更新图标
     const icon = document.querySelector('#themeToggle i');
-    icon.className = currentTheme === 'dark' ? 'fas fa-sun' : 'fas fa-moon';
+    if (icon) {
+        icon.className = currentTheme === 'dark' ? 'fas fa-sun' : 'fas fa-moon';
+    }
 }
 
 function toggleLanguage() {
     currentLang = currentLang === 'zh_CN' ? 'en' : 'zh_CN';
     
-    // 同步到主 UI
-    browserAPI.storage.local.set({ preferredLang: currentLang });
+    // 设置覆盖标志
+    try {
+        localStorage.setItem('historyViewerHasCustomLang', 'true');
+        localStorage.setItem('historyViewerCustomLang', currentLang);
+        console.log('[History Viewer] 设置语言覆盖:', currentLang);
+    } catch (e) {
+        console.error('[History Viewer] 无法保存语言覆盖:', e);
+    }
     
     applyLanguage();
     renderCurrentView();
@@ -3335,6 +3519,18 @@ function handleStorageChange(changes, namespace) {
                 console.log('[存储监听] 刷新书签树视图');
                 await renderTreeView(true);
             }
+            
+            // 如果当前在 additions 视图，刷新添加记录视图
+            if (currentView === 'additions') {
+                console.log('[存储监听] 刷新书签添加记录视图');
+                await renderAdditionsView();
+            }
+            
+            // 如果当前在 history 视图，刷新历史记录视图
+            if (currentView === 'history') {
+                console.log('[存储监听] 刷新历史记录视图');
+                await renderHistoryView();
+            }
         });
         
         // 并行预加载其他视图
@@ -3343,17 +3539,36 @@ function handleStorageChange(changes, namespace) {
         }, 500);
     }
     
-    // 主题变化
-    if (changes.currentTheme) {
-        currentTheme = changes.currentTheme.newValue;
+    // 主题变化（只在没有覆盖设置时跟随主UI）
+    if (changes.currentTheme && !hasThemeOverride()) {
+        const newTheme = changes.currentTheme.newValue;
+        console.log('[存储监听] 主题变化，跟随主UI:', newTheme);
+        currentTheme = newTheme;
         document.documentElement.setAttribute('data-theme', currentTheme);
-        applyLanguage();
+        
+        // 更新主题切换按钮图标
+        const icon = document.querySelector('#themeToggle i');
+        if (icon) {
+            icon.className = currentTheme === 'dark' ? 'fas fa-sun' : 'fas fa-moon';
+        }
     }
     
-    // 语言变化
-    if (changes.preferredLang) {
-        currentLang = changes.preferredLang.newValue;
+    // 语言变化（只在没有覆盖设置时跟随主UI）
+    if (changes.preferredLang && !hasLangOverride()) {
+        const newLang = changes.preferredLang.newValue;
+        console.log('[存储监听] 语言变化，跟随主UI:', newLang);
+        currentLang = newLang;
+        
+        // 更新语言切换按钮文本
+        const langText = document.querySelector('#langToggle .lang-text');
+        if (langText) {
+            langText.textContent = currentLang === 'zh_CN' ? 'EN' : '中';
+        }
+        
+        // 应用新语言到所有UI元素
         applyLanguage();
+        
+        // 重新渲染当前视图以应用语言
         renderCurrentView();
     }
 }

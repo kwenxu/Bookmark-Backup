@@ -46,6 +46,21 @@
     function saveThemePreference(themeType) {
         try {
             localStorage.setItem('themePreference', themeType);
+            
+            // 同时保存到chrome.storage，以便History Viewer可以同步
+            if (chrome && chrome.storage && chrome.storage.local) {
+                // 获取实际应用的主题（如果是system，则转换为实际的light/dark）
+                const actualTheme = themeType === ThemeType.SYSTEM ? 
+                    getSystemThemePreference() : themeType;
+                
+                chrome.storage.local.set({ currentTheme: actualTheme }, () => {
+                    if (chrome.runtime.lastError) {
+                        console.error('无法保存主题到chrome.storage:', chrome.runtime.lastError);
+                    } else {
+                        console.log('[主UI] 主题已保存到storage:', actualTheme);
+                    }
+                });
+            }
         } catch (e) {
             console.error('无法保存主题偏好:', e);
         }
@@ -100,6 +115,15 @@
             document.documentElement.setAttribute('data-theme', 'dark');
         } else {
             document.documentElement.removeAttribute('data-theme');
+        }
+        
+        // 同步实际主题到chrome.storage，以便History Viewer可以同步
+        if (chrome && chrome.storage && chrome.storage.local) {
+            chrome.storage.local.set({ currentTheme: actualTheme }, () => {
+                if (chrome.runtime.lastError) {
+                    console.error('[主UI] 无法同步主题到storage:', chrome.runtime.lastError);
+                }
+            });
         }
         
         // 更新图标显示

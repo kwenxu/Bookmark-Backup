@@ -28,10 +28,12 @@
                     <i class="fas fa-sync-alt"></i>
                     <span class="btn-tooltip" id="refreshTooltip"></span>
                 </button>
+                <!-- 主题切换按钮 - 独立设置，主UI优先 -->
                 <button id="themeToggle" class="tool-btn">
                     <i class="fas fa-moon"></i>
                     <span class="btn-tooltip" id="themeTooltip"></span>
                 </button>
+                <!-- 语言切换按钮 - 独立设置，主UI优先 -->
                 <button id="langToggle" class="tool-btn">
                     <span class="lang-text">EN</span>
                     <span class="btn-tooltip" id="langTooltip"></span>
@@ -114,9 +116,19 @@
                 
                 <!-- 过滤器 -->
                 <div class="filter-bar">
-                    <button class="filter-btn active" data-filter="all" id="filterAll">全部</button>
-                    <button class="filter-btn" data-filter="backed-up" id="filterBackedUp">已备份</button>
-                    <button class="filter-btn" data-filter="not-backed-up" id="filterNotBackedUp">未备份</button>
+                    <div class="filter-group">
+                        <label class="filter-label" id="filterStatusLabel">状态</label>
+                        <button class="filter-btn active" data-filter="all" id="filterAll">全部</button>
+                        <button class="filter-btn" data-filter="backed-up" id="filterBackedUp">已备份</button>
+                        <button class="filter-btn" data-filter="not-backed-up" id="filterNotBackedUp">未备份</button>
+                    </div>
+                    <div class="filter-group">
+                        <label class="filter-label" id="filterTimeLabel">时间</label>
+                        <button class="time-filter-btn active" data-time-filter="all" id="timeFilterAll">全部</button>
+                        <button class="time-filter-btn" data-time-filter="year" id="timeFilterYear">按年</button>
+                        <button class="time-filter-btn" data-time-filter="month" id="timeFilterMonth">按月</button>
+                        <button class="time-filter-btn" data-time-filter="day" id="timeFilterDay">按日</button>
+                    </div>
                 </div>
 
                 <div id="additionsList" class="additions-container">
@@ -134,10 +146,10 @@
                     <div class="view-header-right">
                         <button id="toggleTreeJsonBtn" class="view-toggle-btn active" data-mode="tree">
                             <span class="toggle-option active" data-mode="tree">
-                                <i class="fas fa-sitemap"></i> 树形视图
+                                <i class="fas fa-sitemap"></i> <span id="treeViewModeText">树形视图</span>
                             </span>
                             <span class="toggle-option" data-mode="json">
-                                <i class="fas fa-code"></i> JSON
+                                <i class="fas fa-code"></i> <span id="jsonViewModeText">JSON</span>
                             </span>
                         </button>
                     </div>

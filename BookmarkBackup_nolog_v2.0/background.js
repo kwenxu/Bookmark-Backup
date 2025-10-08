@@ -2575,6 +2575,7 @@ async function updateSyncStatus(direction, time, status = 'success', errorMessag
                     folderCount: currentFolderCount,
                     bookmarkPrints: currentPrints.bookmarks,
                     folderPrints: currentPrints.folders,
+                    bookmarkTree: localBookmarks,  // 保存完整的书签树，用于生成 Git diff
                     timestamp: time
                 }
             });

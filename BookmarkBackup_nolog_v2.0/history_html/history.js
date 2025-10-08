@@ -959,100 +959,217 @@ async function renderCurrentChangesView(forceRefresh = false) {
         const hasStructureChange = summary.hasStructuralChange;
         
         if (hasQuantityChange || hasStructureChange) {
-            // 创建一个网格容器来并排显示两个卡片
-            html += '<div class="changes-grid">';
+            // Git diff 风格的容器
+            html += '<div class="git-diff-container">';
             
-            // 数量变化卡片
-            html += '<div class="change-card quantity-change">';
-            html += `<div class="change-card-header">`;
-            html += `<i class="fas fa-chart-line change-icon"></i>`;
-            html += `<h3 class="change-title">${currentLang === 'zh_CN' ? '数量变化' : 'Quantity Changes'}</h3>`;
-            html += `</div>`;
-            html += `<div class="change-card-body">`;
+            // diff 头部
+            html += '<div class="diff-header">';
+            html += '<span class="diff-icon">📊</span>';
+            html += `<span class="diff-title">${currentLang === 'zh_CN' ? '书签变化统计' : 'Bookmark Changes'}</span>`;
+            html += `<span class="diff-stats">${summary.quantityTotalLine}</span>`;
+            html += '</div>';
             
-            html += `<div class="change-summary">${summary.quantityTotalLine}</div>`;
-            if (hasQuantityChange && summary.quantityDiffLine) {
-                html += `<div class="change-details">${summary.quantityDiffLine}</div>`;
-            } else {
-                html += `<div class="change-empty">`;
-                html += `<i class="fas fa-check-circle"></i>`;
-                html += `<span>${currentLang === 'zh_CN' ? '无数量变化' : 'No quantity changes'}</span>`;
-                html += `</div>`;
-            }
-            html += `</div>`; // 结束 change-card-body
-            html += '</div>'; // 结束 change-card
+            // diff 主体
+            html += '<div class="diff-body">';
             
-            // 结构变化卡片
-            html += '<div class="change-card structure-change">';
-            html += `<div class="change-card-header">`;
-            html += `<i class="fas fa-random change-icon"></i>`;
-            html += `<h3 class="change-title">${currentLang === 'zh_CN' ? '结构变化' : 'Structure Changes'}</h3>`;
-            html += `</div>`;
-            html += `<div class="change-card-body">`;
-            
-            if (hasStructureChange && summary.structuralLine) {
-                html += `<div class="change-details">${summary.structuralLine}</div>`;
-
-                if (summary.structuralItems && summary.structuralItems.length > 0) {
-                    html += '<ul class="change-list">';
-                    summary.structuralItems.forEach(item => {
-                        html += `<li>${item}</li>`;
-                    });
-                    html += '</ul>';
+            // 数量变化部分
+            if (hasQuantityChange) {
+                const bookmarkDiff = diffMeta.bookmarkDiff || 0;
+                const folderDiff = diffMeta.folderDiff || 0;
+                
+                if (bookmarkDiff > 0) {
+                    html += '<div class="diff-line added">';
+                    html += '<span class="diff-prefix">+</span>';
+                    html += `<span class="diff-content">${bookmarkDiff} ${currentLang === 'zh_CN' ? '个书签' : 'bookmarks'}</span>`;
+                    html += '</div>';
+                } else if (bookmarkDiff < 0) {
+                    html += '<div class="diff-line deleted">';
+                    html += '<span class="diff-prefix">-</span>';
+                    html += `<span class="diff-content">${Math.abs(bookmarkDiff)} ${currentLang === 'zh_CN' ? '个书签' : 'bookmarks'}</span>`;
+                    html += '</div>';
                 }
-            } else {
-                html += `<div class="change-empty">`;
-                html += `<i class="fas fa-check-circle"></i>`;
-                html += `<span>${currentLang === 'zh_CN' ? '无结构变化' : 'No structure changes'}</span>`;
-                html += `</div>`;
+                
+                if (folderDiff > 0) {
+                    html += '<div class="diff-line added">';
+                    html += '<span class="diff-prefix">+</span>';
+                    html += `<span class="diff-content">${folderDiff} ${currentLang === 'zh_CN' ? '个文件夹' : 'folders'}</span>`;
+                    html += '</div>';
+                } else if (folderDiff < 0) {
+                    html += '<div class="diff-line deleted">';
+                    html += '<span class="diff-prefix">-</span>';
+                    html += `<span class="diff-content">${Math.abs(folderDiff)} ${currentLang === 'zh_CN' ? '个文件夹' : 'folders'}</span>`;
+                    html += '</div>';
+                }
             }
-            html += `</div>`; // 结束 change-card-body
-            html += '</div>'; // 结束 change-card
             
-            html += '</div>'; // 结束 changes-grid
+            // 结构变化部分
+            if (hasStructureChange && summary.structuralItems && summary.structuralItems.length > 0) {
+                summary.structuralItems.forEach(item => {
+                    let diffClass = 'modified';
+                    let prefix = '~';
+                    
+                    if (item.includes('moved') || item.includes('移动')) {
+                        diffClass = 'moved';
+                        prefix = '↔';
+                    } else if (item.includes('modified') || item.includes('修改')) {
+                        diffClass = 'modified';
+                        prefix = '~';
+                    }
+                    
+                    html += `<div class="diff-line ${diffClass}">`;
+                    html += `<span class="diff-prefix">${prefix}</span>`;
+                    html += `<span class="diff-content">${item}</span>`;
+                    html += '</div>';
+                });
+            }
+            
+            // 如果没有任何变化
+            if (!hasQuantityChange && !hasStructureChange) {
+                html += '<div class="diff-line unchanged">';
+                html += '<span class="diff-prefix">=</span>';
+                html += `<span class="diff-content">${currentLang === 'zh_CN' ? '无变化' : 'No changes'}</span>`;
+                html += '</div>';
+            }
+            
+            html += '</div>'; // 结束 diff-body
+            html += '</div>'; // 结束 git-diff-container
         }
         
-        // 2. 再显示详细列表（如果有）
-        let detailsHtml = '';
-        
-        // 新增的书签
-        if (changeData.added && changeData.added.length > 0) {
-            detailsHtml += renderChangeCategory('added', changeData.added);
-        }
-        
-        // 删除的书签
-        if (changeData.deleted && changeData.deleted.length > 0) {
-            detailsHtml += renderChangeCategory('deleted', changeData.deleted);
-        }
-        
-        // 移动的书签
-        if (changeData.moved && changeData.moved.length > 0) {
-            detailsHtml += renderChangeCategory('moved', changeData.moved);
-        }
-        
-        // 修改的书签  
-        if (changeData.modified && changeData.modified.length > 0) {
-            detailsHtml += renderChangeCategory('modified', changeData.modified);
-        }
-        
-        if (detailsHtml === '') {
-            // 只有数量/结构变化，没有详细列表
-            html += `
-                <div class="no-changes-message" style="margin-top: 20px;">
-                    <div class="no-changes-icon"><i class="fas fa-info-circle"></i></div>
-                    <div class="no-changes-title">${currentLang === 'zh_CN' ? '无详细列表' : 'No Detailed List'}</div>
-                    <div class="no-changes-desc">
-                        <small style="color: var(--text-tertiary);">
-                            ${currentLang === 'zh_CN' ? '由于浏览器扩展限制，只能显示统计信息。请进行一次备份以记录当前状态。' : 'Due to browser extension limitations, only statistics are shown. Please perform a backup to record the current state.'}
-                        </small>
-                    </div>
-                </div>
-            `;
-        } else {
-            html += detailsHtml;
-        }
-        
-        container.innerHTML = html;
+        // 2. 智能分析书签变化 + 生成 Git diff
+        browserAPI.storage.local.get(['lastBookmarkData'], async (lastData) => {
+            // 获取当前书签树（working directory）
+            browserAPI.bookmarks.getTree(async (currentTree) => {
+                // 获取上次备份的书签树（HEAD / last commit）
+                let oldTree = null;
+                if (lastData.lastBookmarkData && lastData.lastBookmarkData.bookmarkTree) {
+                    oldTree = lastData.lastBookmarkData.bookmarkTree;
+                }
+                
+                // 按路径分别生成 diff（确保移动的书签在两个路径都显示）
+                const oldLines = oldTree ? bookmarkTreeToLines(oldTree) : [];
+                const newLines = bookmarkTreeToLines(currentTree);
+                const groupedHunks = generateDiffByPath(oldLines, newLines);
+                let diffHtml = '';
+                
+                if (groupedHunks.length === 0) {
+                    diffHtml += `
+                        <div class="no-changes-message" style="margin-top: 20px;">
+                            <div class="no-changes-icon"><i class="fas fa-check-circle"></i></div>
+                            <div class="no-changes-title">${currentLang === 'zh_CN' ? '无变化' : 'No Changes'}</div>
+                        </div>
+                    `;
+                } else if (groupedHunks.length > 0) {
+                    // 渲染 Git diff（带折叠）
+                    diffHtml += '<div class="git-diff-viewer">';
+                    diffHtml += '<div class="diff-file-header">';
+                    diffHtml += '<span class="diff-file-path">diff --git a/bookmarks.html b/bookmarks.html</span>';
+                    diffHtml += '</div>';
+                    
+                    let hunkIndex = 0;
+                    groupedHunks.forEach((group, groupIdx) => {
+                        diffHtml += '<div class="diff-folder-group">';
+                        
+                        // 文件夹头部（面包屑导航样式）
+                        diffHtml += `<div class="diff-folder-header-static">`;
+                        diffHtml += renderBreadcrumb(group.path, currentLang);
+                        diffHtml += '</div>';
+                        
+                        group.hunks.forEach(hunk => {
+                            const hunkId = `hunk-${hunkIndex++}`;
+                            const hunkLines = hunk.contextBefore.length + hunk.changes.length + hunk.contextAfter.length;
+                            const shouldCollapse = hunkLines > 15; // 超过15行的片段默认折叠
+                            
+                            // 计算 +/- 统计
+                            const addCount = hunk.changes.filter(c => c.type === 'add').length;
+                            const deleteCount = hunk.changes.filter(c => c.type === 'delete').length;
+                            
+                            diffHtml += '<div class="diff-hunk">';
+                            
+                            // Hunk 头部（可点击折叠）
+                            const iconClass = shouldCollapse ? 'fa-chevron-right' : 'fa-chevron-down';
+                            diffHtml += `<div class="diff-hunk-header collapsible" data-hunk-id="${hunkId}">`;
+                            diffHtml += `<i class="fas ${iconClass} collapse-icon" id="${hunkId}-icon"></i>`;
+                            diffHtml += `<span class="hunk-location">@@ -${hunk.oldStart},${hunk.oldCount} +${hunk.newStart},${hunk.newCount} @@</span>`;
+                            diffHtml += `<span class="hunk-stats">`;
+                            if (addCount > 0) diffHtml += `<span class="stat-add">+${addCount}</span>`;
+                            if (deleteCount > 0) diffHtml += `<span class="stat-delete">-${deleteCount}</span>`;
+                            diffHtml += `</span>`;
+                            diffHtml += '</div>';
+                            
+                            // Hunk 内容（可折叠）
+                            diffHtml += `<div class="diff-hunk-content ${shouldCollapse ? 'collapsed' : ''}" id="${hunkId}">`;
+                            
+                            // 前置上下文
+                            hunk.contextBefore.forEach(ctx => {
+                                diffHtml += `<div class="diff-line-wrapper context">`;
+                                diffHtml += `<span class="diff-line-num old">${ctx.oldIdx + 1}</span>`;
+                                diffHtml += `<span class="diff-line-num new">${ctx.oldIdx + 1}</span>`;
+                                diffHtml += `<span class="diff-line-prefix"> </span>`;
+                                diffHtml += `<span class="diff-line-content">${escapeHtml(ctx.line.line)}</span>`;
+                                diffHtml += `</div>`;
+                            });
+                            
+                            // 变化
+                            hunk.changes.forEach(change => {
+                                if (change.type === 'delete') {
+                                    diffHtml += `<div class="diff-line-wrapper deleted">`;
+                                    diffHtml += `<span class="diff-line-num old">${change.oldIdx + 1}</span>`;
+                                    diffHtml += `<span class="diff-line-num new"></span>`;
+                                    diffHtml += `<span class="diff-line-prefix">-</span>`;
+                                    diffHtml += `<span class="diff-line-content">${escapeHtml(change.line.line)}</span>`;
+                                    diffHtml += `</div>`;
+                                } else if (change.type === 'add') {
+                                    diffHtml += `<div class="diff-line-wrapper added">`;
+                                    diffHtml += `<span class="diff-line-num old"></span>`;
+                                    diffHtml += `<span class="diff-line-num new">${change.newIdx + 1}</span>`;
+                                    diffHtml += `<span class="diff-line-prefix">+</span>`;
+                                    diffHtml += `<span class="diff-line-content">${escapeHtml(change.line.line)}</span>`;
+                                    diffHtml += `</div>`;
+                                } else if (change.type === 'context') {
+                                    diffHtml += `<div class="diff-line-wrapper context">`;
+                                    diffHtml += `<span class="diff-line-num old">${change.oldIdx + 1}</span>`;
+                                    diffHtml += `<span class="diff-line-num new">${change.newIdx + 1}</span>`;
+                                    diffHtml += `<span class="diff-line-prefix"> </span>`;
+                                    diffHtml += `<span class="diff-line-content">${escapeHtml(change.line.line)}</span>`;
+                                    diffHtml += `</div>`;
+                                }
+                            });
+                            
+                            // 后置上下文
+                            hunk.contextAfter.forEach(ctx => {
+                                diffHtml += `<div class="diff-line-wrapper context">`;
+                                diffHtml += `<span class="diff-line-num old">${ctx.oldIdx + 1}</span>`;
+                                diffHtml += `<span class="diff-line-num new">${ctx.oldIdx + 1}</span>`;
+                                diffHtml += `<span class="diff-line-prefix"> </span>`;
+                                diffHtml += `<span class="diff-line-content">${escapeHtml(ctx.line.line)}</span>`;
+                                diffHtml += `</div>`;
+                            });
+                            
+                            diffHtml += '</div>'; // 结束 diff-hunk-content
+                            diffHtml += '</div>'; // 结束 diff-hunk
+                        });
+                        
+                        diffHtml += '</div>'; // 结束 diff-folder-group
+                    });
+                    
+                    diffHtml += '</div>'; // 结束 git-diff-viewer
+                }
+                
+                container.innerHTML = html + diffHtml;
+                
+                // 添加 hunk 折叠按钮事件监听器
+                setTimeout(() => {
+                    document.querySelectorAll('.diff-hunk-header.collapsible').forEach(header => {
+                        const hunkId = header.getAttribute('data-hunk-id');
+                        if (hunkId) {
+                            header.addEventListener('click', function() {
+                                toggleHunk(hunkId);
+                            });
+                        }
+                    });
+                }, 0);
+            });
+        });
     } catch (error) {
         console.error('加载变化数据失败:', error);
         container.innerHTML = `
@@ -1339,59 +1456,528 @@ function groupBookmarksByFolder(bookmarks, lastBackupTime) {
     return result;
 }
 
+// 按路径分别生成 diff（确保移动的书签在两个路径都显示）
+function generateDiffByPath(oldLines, newLines) {
+    // 收集所有路径
+    const allPaths = new Set();
+    oldLines.forEach(line => {
+        if (line.path) allPaths.add(line.path);
+    });
+    newLines.forEach(line => {
+        if (line.path) allPaths.add(line.path);
+    });
+    
+    const result = [];
+    
+    // 为每个路径单独生成 diff
+    allPaths.forEach(path => {
+        // 提取该路径下的行，保留全局索引
+        const pathOldLines = [];
+        const pathNewLines = [];
+        
+        oldLines.forEach((line, globalIdx) => {
+            if (line.path === path || (!line.path && !path)) {
+                // 保留全局索引
+                pathOldLines.push({ ...line, globalIdx });
+            }
+        });
+        
+        newLines.forEach((line, globalIdx) => {
+            if (line.path === path || (!line.path && !path)) {
+                // 保留全局索引
+                pathNewLines.push({ ...line, globalIdx });
+            }
+        });
+        
+        // 如果这个路径下有内容，生成 diff
+        if (pathOldLines.length > 0 || pathNewLines.length > 0) {
+            const hunks = generateGitDiff(pathOldLines, pathNewLines, true);
+            
+            if (hunks.length > 0) {
+                result.push({
+                    path: path,
+                    hunks: hunks
+                });
+            }
+        }
+    });
+    
+    return result;
+}
+
+// 智能分析书签结构变化（移动、重命名、修改）
+function analyzeStructuralChanges(oldTree, newTree) {
+    const changes = {
+        renamed: [],   // 重命名：{type: 'bookmark'|'folder', oldTitle, newTitle, url}
+        moved: [],     // 移动：{type: 'bookmark'|'folder', title, oldPath, newPath, url}
+        modified: []   // URL修改：{title, oldUrl, newUrl}
+    };
+    
+    if (!oldTree) {
+        return changes;
+    }
+    
+    // 提取所有书签和文件夹的信息（带路径）
+    const extractItems = (nodes, path = []) => {
+        const items = { bookmarks: [], folders: [] };
+        
+        const traverse = (node, currentPath) => {
+            if (!node) return;
+            
+            if (node.url) {
+                // 书签
+                items.bookmarks.push({
+                    id: node.id,
+                    title: node.title,
+                    url: node.url,
+                    path: currentPath.join(' > ')
+                });
+            } else if (node.children) {
+                // 文件夹
+                if (node.title) {  // 排除根节点
+                    items.folders.push({
+                        id: node.id,
+                        title: node.title,
+                        path: currentPath.join(' > ')
+                    });
+                }
+                
+                const newPath = node.title ? [...currentPath, node.title] : currentPath;
+                node.children.forEach(child => traverse(child, newPath));
+            }
+        };
+        
+        nodes.forEach(node => traverse(node, path));
+        return items;
+    };
+    
+    const oldItems = extractItems(oldTree);
+    const newItems = extractItems(newTree);
+    
+    // 1. 检测书签的重命名、移动、修改
+    oldItems.bookmarks.forEach(oldBm => {
+        // 通过 URL 匹配（URL 是书签的唯一标识）
+        const newBm = newItems.bookmarks.find(n => n.url === oldBm.url);
+        
+        if (newBm) {
+            // 书签存在
+            if (oldBm.title !== newBm.title) {
+                // 重命名
+                changes.renamed.push({
+                    type: 'bookmark',
+                    oldTitle: oldBm.title,
+                    newTitle: newBm.title,
+                    url: oldBm.url
+                });
+            }
+            if (oldBm.path !== newBm.path) {
+                // 移动
+                changes.moved.push({
+                    type: 'bookmark',
+                    title: newBm.title,
+                    oldPath: oldBm.path,
+                    newPath: newBm.path,
+                    url: oldBm.url
+                });
+            }
+        }
+    });
+    
+    // 检测 URL 修改（通过标题匹配，但 URL 不同）
+    oldItems.bookmarks.forEach(oldBm => {
+        const newBm = newItems.bookmarks.find(n => 
+            n.title === oldBm.title && 
+            n.path === oldBm.path && 
+            n.url !== oldBm.url
+        );
+        
+        if (newBm) {
+            changes.modified.push({
+                title: oldBm.title,
+                oldUrl: oldBm.url,
+                newUrl: newBm.url
+            });
+        }
+    });
+    
+    // 2. 检测文件夹的重命名、移动（简化版）
+    oldItems.folders.forEach(oldFolder => {
+        const newFolder = newItems.folders.find(n => n.title === oldFolder.title);
+        
+        if (newFolder && oldFolder.path !== newFolder.path) {
+            changes.moved.push({
+                type: 'folder',
+                title: oldFolder.title,
+                oldPath: oldFolder.path,
+                newPath: newFolder.path
+            });
+        }
+    });
+    
+    return changes;
+}
+
+// 渲染结构变化摘要
+function renderStructuralChangesSummary(changes, lang) {
+    const isZh = lang === 'zh_CN';
+    let html = '<div class="structural-changes-summary">';
+    html += `<div class="summary-header"><i class="fas fa-info-circle"></i> ${isZh ? '结构变化摘要' : 'Structural Changes'}</div>`;
+    html += '<div class="summary-body">';
+    
+    // 重命名
+    if (changes.renamed.length > 0) {
+        html += '<div class="change-group">';
+        html += `<div class="change-type"><i class="fas fa-pen"></i> ${isZh ? '重命名' : 'Renamed'} (${changes.renamed.length})</div>`;
+        changes.renamed.slice(0, 5).forEach(item => {
+            const icon = item.type === 'bookmark' ? '🔖' : '📁';
+            html += `<div class="change-item">${icon} "${escapeHtml(item.oldTitle)}" → "${escapeHtml(item.newTitle)}"</div>`;
+        });
+        if (changes.renamed.length > 5) {
+            html += `<div class="change-item-more">... ${isZh ? '等' : 'and'} ${changes.renamed.length - 5} ${isZh ? '项' : 'more'}</div>`;
+        }
+        html += '</div>';
+    }
+    
+    // 移动
+    if (changes.moved.length > 0) {
+        html += '<div class="change-group">';
+        html += `<div class="change-type"><i class="fas fa-arrows-alt"></i> ${isZh ? '移动' : 'Moved'} (${changes.moved.length})</div>`;
+        changes.moved.slice(0, 5).forEach(item => {
+            const icon = item.type === 'bookmark' ? '🔖' : '📁';
+            html += `<div class="change-item">${icon} "${escapeHtml(item.title)}"<br>`;
+            html += `<span style="margin-left: 20px; font-size: 0.9em; color: var(--text-tertiary);">`;
+            html += `${escapeHtml(item.oldPath || 'Root')} → ${escapeHtml(item.newPath || 'Root')}`;
+            html += `</span></div>`;
+        });
+        if (changes.moved.length > 5) {
+            html += `<div class="change-item-more">... ${isZh ? '等' : 'and'} ${changes.moved.length - 5} ${isZh ? '项' : 'more'}</div>`;
+        }
+        html += '</div>';
+    }
+    
+    // URL 修改
+    if (changes.modified.length > 0) {
+        html += '<div class="change-group">';
+        html += `<div class="change-type"><i class="fas fa-edit"></i> ${isZh ? 'URL修改' : 'URL Modified'} (${changes.modified.length})</div>`;
+        changes.modified.slice(0, 5).forEach(item => {
+            html += `<div class="change-item">🔖 "${escapeHtml(item.title)}"<br>`;
+            html += `<span style="margin-left: 20px; font-size: 0.85em; color: var(--text-tertiary); word-break: break-all;">`;
+            html += `<span style="color: #dc3545;">- ${escapeHtml(item.oldUrl)}</span><br>`;
+            html += `<span style="color: #28a745;">+ ${escapeHtml(item.newUrl)}</span>`;
+            html += `</span></div>`;
+        });
+        if (changes.modified.length > 5) {
+            html += `<div class="change-item-more">... ${isZh ? '等' : 'and'} ${changes.modified.length - 5} ${isZh ? '项' : 'more'}</div>`;
+        }
+        html += '</div>';
+    }
+    
+    html += '</div></div>';
+    return html;
+}
+
+// 将书签树转换为类似HTML文件的行数组
+function bookmarkTreeToLines(tree, parentPath = '') {
+    const lines = [];
+    
+    function traverse(nodes, path) {
+        if (!nodes) return;
+        
+        nodes.forEach(node => {
+            // 使用 ' > ' 作为路径分隔符，避免和文件夹名称中的 '/' 冲突
+            const currentPath = path ? `${path} > ${node.title}` : node.title;
+            
+            if (node.url) {
+                // 书签节点 - 类似 HTML 的 <DT><A> 行
+                lines.push({
+                    type: 'bookmark',
+                    path: path || (currentLang === 'zh_CN' ? '根目录' : 'Root'),
+                    title: node.title,
+                    url: node.url,
+                    line: `<DT><A HREF="${node.url}" ADD_DATE="${node.dateAdded || ''}">${node.title}</A>`,
+                    id: node.id
+                });
+            } else if (node.children) {
+                // 文件夹节点
+                lines.push({
+                    type: 'folder',
+                    path: path || (currentLang === 'zh_CN' ? '根目录' : 'Root'),
+                    title: node.title,
+                    line: `<DT><H3 ADD_DATE="${node.dateAdded || ''}">${node.title}</H3>`,
+                    id: node.id
+                });
+                lines.push({ type: 'tag', line: '<DL><p>' });
+                traverse(node.children, currentPath);
+                lines.push({ type: 'tag', line: '</DL><p>' });
+            }
+        });
+    }
+    
+    if (tree && tree[0] && tree[0].children) {
+        traverse(tree[0].children, '');
+    }
+    
+    return lines;
+}
+
+// 生成真正的 Git diff（像 GitHub Desktop）
+function generateGitDiff(oldLines, newLines, useGlobalIndex = false) {
+    const hunks = [];
+    const contextLines = 3; // 上下文行数
+    
+    // 使用简单的逐行比对
+    let i = 0;
+    let j = 0;
+    
+    while (i < oldLines.length || j < newLines.length) {
+        // 找到下一个差异点
+        const matchStart = { old: i, new: j };
+        
+        // 跳过相同的行
+        while (i < oldLines.length && j < newLines.length && 
+               oldLines[i].line === newLines[j].line) {
+            i++;
+            j++;
+        }
+        
+        // 如果没有差异了，结束
+        if (i >= oldLines.length && j >= newLines.length) {
+            break;
+        }
+        
+        // 找到了差异，记录差异的起始位置（减去上下文）
+        const hunkOldStart = Math.max(0, i - contextLines);
+        const hunkNewStart = Math.max(0, j - contextLines);
+        
+        // 添加前置上下文
+        const contextBefore = [];
+        for (let k = hunkOldStart; k < i; k++) {
+            if (k < oldLines.length) {
+                const actualOldIdx = useGlobalIndex && oldLines[k].globalIdx !== undefined ? oldLines[k].globalIdx : k;
+                const actualNewIdx = useGlobalIndex && newLines[j - (i - k)] && newLines[j - (i - k)].globalIdx !== undefined ? newLines[j - (i - k)].globalIdx : (j - (i - k));
+                contextBefore.push({ 
+                    type: 'context', 
+                    line: oldLines[k], 
+                    oldIdx: actualOldIdx, 
+                    newIdx: actualNewIdx
+                });
+            }
+        }
+        
+        // 收集变化
+        const changes = [];
+        const changeStartOld = i;
+        const changeStartNew = j;
+        
+        // 找变化的范围（继续往前直到再次匹配或结束）
+        while (i < oldLines.length || j < newLines.length) {
+            // 检查是否重新匹配（连续匹配几行）
+            let matchCount = 0;
+            let ti = i, tj = j;
+            while (ti < oldLines.length && tj < newLines.length && 
+                   oldLines[ti].line === newLines[tj].line && matchCount < contextLines + 1) {
+                matchCount++;
+                ti++;
+                tj++;
+            }
+            
+            // 如果连续匹配了足够多行，说明差异段结束
+            if (matchCount >= contextLines + 1) {
+                break;
+            }
+            
+            // 否则继续收集差异
+            if (i < oldLines.length && (j >= newLines.length || oldLines[i].line !== newLines[j].line)) {
+                // 检查这行是否在 newLines 的后面出现（可能是新增导致的偏移）
+                let foundInNew = -1;
+                for (let search = j; search < Math.min(j + 10, newLines.length); search++) {
+                    if (oldLines[i].line === newLines[search].line) {
+                        foundInNew = search;
+                        break;
+                    }
+                }
+                
+                if (foundInNew > j) {
+                    // 说明中间有新增的行
+                    while (j < foundInNew) {
+                        const actualOldIdx = useGlobalIndex && oldLines[i] && oldLines[i].globalIdx !== undefined ? oldLines[i].globalIdx : i;
+                        const actualNewIdx = useGlobalIndex && newLines[j].globalIdx !== undefined ? newLines[j].globalIdx : j;
+                        changes.push({ type: 'add', line: newLines[j], oldIdx: actualOldIdx, newIdx: actualNewIdx });
+                        j++;
+                    }
+                } else {
+                    // 这是删除的行
+                    const actualOldIdx = useGlobalIndex && oldLines[i].globalIdx !== undefined ? oldLines[i].globalIdx : i;
+                    const actualNewIdx = useGlobalIndex && newLines[j] && newLines[j].globalIdx !== undefined ? newLines[j].globalIdx : j;
+                    changes.push({ type: 'delete', line: oldLines[i], oldIdx: actualOldIdx, newIdx: actualNewIdx });
+                    i++;
+                }
+            } else if (j < newLines.length && (i >= oldLines.length || oldLines[i].line !== newLines[j].line)) {
+                // 新增的行
+                const actualOldIdx = useGlobalIndex && oldLines[i] && oldLines[i].globalIdx !== undefined ? oldLines[i].globalIdx : i;
+                const actualNewIdx = useGlobalIndex && newLines[j].globalIdx !== undefined ? newLines[j].globalIdx : j;
+                changes.push({ type: 'add', line: newLines[j], oldIdx: actualOldIdx, newIdx: actualNewIdx });
+                j++;
+            } else if (i < oldLines.length && j < newLines.length && oldLines[i].line === newLines[j].line) {
+                // 相同的行（但在差异段内）
+                const actualOldIdx = useGlobalIndex && oldLines[i].globalIdx !== undefined ? oldLines[i].globalIdx : i;
+                const actualNewIdx = useGlobalIndex && newLines[j].globalIdx !== undefined ? newLines[j].globalIdx : j;
+                changes.push({ type: 'context', line: oldLines[i], oldIdx: actualOldIdx, newIdx: actualNewIdx });
+                i++;
+                j++;
+            } else {
+                break;
+            }
+        }
+        
+        // 添加后置上下文
+        const contextAfter = [];
+        const afterStart = { old: i, new: j };
+        for (let k = 0; k < contextLines && (i + k) < oldLines.length && (j + k) < newLines.length; k++) {
+            if (oldLines[i + k].line === newLines[j + k].line) {
+                const actualOldIdx = useGlobalIndex && oldLines[i + k].globalIdx !== undefined ? oldLines[i + k].globalIdx : (i + k);
+                const actualNewIdx = useGlobalIndex && newLines[j + k].globalIdx !== undefined ? newLines[j + k].globalIdx : (j + k);
+                contextAfter.push({ 
+                    type: 'context', 
+                    line: oldLines[i + k], 
+                    oldIdx: actualOldIdx, 
+                    newIdx: actualNewIdx
+                });
+            }
+        }
+        
+        // 跳过后置上下文的行数
+        const skipCount = contextAfter.length;
+        i += skipCount;
+        j += skipCount;
+        
+        // 如果有变化，添加 hunk
+        if (changes.length > 0) {
+            const deleteCount = changes.filter(c => c.type === 'delete').length;
+            const addCount = changes.filter(c => c.type === 'add').length;
+            const contextInChanges = changes.filter(c => c.type === 'context').length;
+            
+            // 提取路径信息（从变化的行或上下文中）
+            let hunkPath = null;
+            for (const change of changes) {
+                if (change.line && change.line.path) {
+                    hunkPath = change.line.path;
+                    break;
+                }
+            }
+            if (!hunkPath && contextBefore.length > 0) {
+                hunkPath = contextBefore[0].line.path;
+            }
+            
+            hunks.push({
+                oldStart: hunkOldStart + 1,
+                oldCount: contextBefore.length + deleteCount + contextInChanges + contextAfter.length,
+                newStart: hunkNewStart + 1,
+                newCount: contextBefore.length + addCount + contextInChanges + contextAfter.length,
+                path: hunkPath,  // 添加路径信息
+                contextBefore,
+                changes,
+                contextAfter
+            });
+        }
+    }
+    
+    return hunks;
+}
+
+// 简化的 LCS 算法
+function computeLCS(oldLines, newLines) {
+    const m = oldLines.length;
+    const n = newLines.length;
+    const dp = Array(m + 1).fill(null).map(() => Array(n + 1).fill(0));
+    
+    for (let i = 1; i <= m; i++) {
+        for (let j = 1; j <= n; j++) {
+            if (oldLines[i - 1].line === newLines[j - 1].line) {
+                dp[i][j] = dp[i - 1][j - 1] + 1;
+            } else {
+                dp[i][j] = Math.max(dp[i - 1][j], dp[i][j - 1]);
+            }
+        }
+    }
+    
+    // 回溯
+    const lcs = [];
+    let i = m, j = n;
+    while (i > 0 && j > 0) {
+        if (oldLines[i - 1].line === newLines[j - 1].line) {
+            lcs[i - 1] = newLines[j - 1].line;
+            i--;
+            j--;
+        } else if (dp[i - 1][j] > dp[i][j - 1]) {
+            i--;
+        } else {
+            j--;
+        }
+    }
+    
+    return lcs;
+}
+
+// ==================== Git Diff 辅助函数 ====================
+
+// 渲染文件夹路径为面包屑导航
+function renderBreadcrumb(path, lang) {
+    if (!path) {
+        return `<div class="breadcrumb">
+            <span class="breadcrumb-item root">
+                <i class="fas fa-home"></i>
+                <span>${lang === 'zh_CN' ? '根目录' : 'Root'}</span>
+            </span>
+        </div>`;
+    }
+    
+    // 只按 ' > ' 拆分路径（避免误拆文件夹名称中的 '/'）
+    const parts = path.split(' > ').filter(p => p.trim());
+    
+    let html = '<div class="breadcrumb">';
+    
+    parts.forEach((part, index) => {
+        if (index > 0) {
+            html += '<span class="breadcrumb-separator"><i class="fas fa-chevron-right"></i></span>';
+        }
+        
+        html += `<span class="breadcrumb-item">`;
+        html += `<i class="fas fa-folder"></i>`;
+        html += `<span class="breadcrumb-text">${escapeHtml(part.trim())}</span>`;
+        html += `</span>`;
+    });
+    
+    html += '</div>';
+    return html;
+}
+
+// 折叠/展开单个 hunk（片段）
+function toggleHunk(hunkId) {
+    const content = document.getElementById(hunkId);
+    const icon = document.getElementById(hunkId + '-icon');
+    
+    if (!content || !icon) {
+        console.error('[toggleHunk] 找不到元素:', hunkId);
+        return;
+    }
+    
+    if (content.classList.contains('collapsed')) {
+        content.classList.remove('collapsed');
+        icon.classList.remove('fa-chevron-right');
+        icon.classList.add('fa-chevron-down');
+    } else {
+        content.classList.add('collapsed');
+        icon.classList.remove('fa-chevron-down');
+        icon.classList.add('fa-chevron-right');
+    }
+}
+
 function renderChangeCategory(type, bookmarks) {
     if (bookmarks.length === 0) return '';
     
-    const icons = {
-        'added': 'fa-plus',
-        'deleted': 'fa-minus',
-        'modified': 'fa-edit',
-        'moved': 'fa-arrows-alt'
-    };
-    
-    const titles = {
-        'added': { 'zh_CN': '新增书签', 'en': 'Added Bookmarks' },
-        'deleted': { 'zh_CN': '删除书签', 'en': 'Deleted Bookmarks' },
-        'modified': { 'zh_CN': '修改书签', 'en': 'Modified Bookmarks' },
-        'moved': { 'zh_CN': '移动书签', 'en': 'Moved Bookmarks' }
-    };
-    
-    // 按文件夹路径分组
-    const byFolder = {};
-    bookmarks.forEach(bookmark => {
-        // 使用 path 字段作为文件夹路径
-        const folderPath = bookmark.path || (currentLang === 'zh_CN' ? '根目录' : 'Root');
-        if (!byFolder[folderPath]) {
-            byFolder[folderPath] = [];
-        }
-        byFolder[folderPath].push(bookmark);
-    });
-    
-    return `
-        <div class="change-category">
-            <div class="change-category-header">
-                <div class="change-category-icon ${type}">
-                    <i class="fas ${icons[type]}"></i>
-                </div>
-                <div class="change-category-title">${titles[type][currentLang]}</div>
-                <div class="change-category-count">${bookmarks.length} ${i18n.bookmarks[currentLang]}</div>
-            </div>
-            <div class="change-tree">
-                ${Object.entries(byFolder).map(([folder, items]) => `
-                    <div class="change-tree-node">
-                        <div class="change-tree-folder">
-                            <i class="fas fa-folder"></i>
-                            <span class="change-tree-folder-name">${escapeHtml(folder)}</span>
-                            <span style="color: var(--text-tertiary); font-size: 12px;">${items.length}</span>
-                        </div>
-                        <div class="change-tree-items">
-                            ${items.map(item => renderChangeTreeItem(item, type)).join('')}
-                        </div>
-                    </div>
-                `).join('')}
-            </div>
-        </div>
-    `;
+    // 这个函数现在不再使用，因为我们要渲染完整的 diff
+    return '';
 }
 
 function renderChangeTreeItem(bookmark, type) {

@@ -374,12 +374,8 @@ body {
 .commit-actions {
     display: flex;
     gap: 6px;
-    opacity: 0;
-    transition: opacity 0.2s ease;
-}
-
-.commit-item:hover .commit-actions {
     opacity: 1;
+    transition: all 0.2s ease;
 }
 
 /* 单个操作按钮 */

@@ -1252,7 +1252,7 @@ async function renderCurrentChangesView(forceRefresh = false) {
                     diffHtml += '<div class="git-diff-viewer">';
                     diffHtml += '<div class="diff-file-header">';
                     diffHtml += '<span class="diff-file-path">diff --git a/bookmarks.html b/bookmarks.html</span>';
-                    diffHtml += `<button class="copy-diff-btn" onclick="copyCurrentDiff()" title="${currentLang === 'zh_CN' ? '复制Diff(JSON格式)' : 'Copy Diff (JSON)'}">`;
+                    diffHtml += `<button class="copy-diff-btn" onclick="window.copyCurrentDiff()" title="${currentLang === 'zh_CN' ? '复制Diff(JSON格式)' : 'Copy Diff (JSON)'}">`;
                     diffHtml += '<i class="fas fa-copy"></i>';
                     diffHtml += `<span>${currentLang === 'zh_CN' ? '复制Diff' : 'Copy Diff'}</span>`;
                     diffHtml += '</button>';
@@ -2250,10 +2250,10 @@ function renderHistoryView() {
                         ${record.note || (isSuccess ? i18n.success[currentLang] : i18n.error[currentLang])}
                     </div>
                     <div class="commit-actions">
-                        <button class="action-btn" onclick="event.stopPropagation(); copyHistoryDiff('${record.time}');" title="${currentLang === 'zh_CN' ? '复制Diff' : 'Copy Diff'}">
+                        <button class="action-btn" onclick="event.stopPropagation(); window.copyHistoryDiff('${record.time}');" title="${currentLang === 'zh_CN' ? '复制Diff' : 'Copy Diff'}">
                             <i class="fas fa-copy"></i>
                         </button>
-                        <button class="action-btn" onclick="event.stopPropagation(); exportHistoryDiffToHTML('${record.time}');" title="${currentLang === 'zh_CN' ? '导出HTML' : 'Export HTML'}">
+                        <button class="action-btn" onclick="event.stopPropagation(); window.exportHistoryDiffToHTML('${record.time}');" title="${currentLang === 'zh_CN' ? '导出HTML' : 'Export HTML'}">
                             <i class="fas fa-file-export"></i>
                         </button>
                     </div>

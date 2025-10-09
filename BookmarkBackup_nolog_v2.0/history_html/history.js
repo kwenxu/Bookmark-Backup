@@ -509,8 +509,9 @@ function applyLanguage() {
     document.getElementById('timeFilterYear').textContent = i18n.timeFilterYear[currentLang];
     document.getElementById('timeFilterMonth').textContent = i18n.timeFilterMonth[currentLang];
     document.getElementById('timeFilterDay').textContent = i18n.timeFilterDay[currentLang];
-    document.getElementById('treeViewModeText').textContent = i18n.treeViewMode[currentLang];
-    document.getElementById('jsonViewModeText').textContent = i18n.jsonViewMode[currentLang];
+    // 已删除JSON视图，不再需要更新这些元素
+    // document.getElementById('treeViewModeText').textContent = i18n.treeViewMode[currentLang];
+    // document.getElementById('jsonViewModeText').textContent = i18n.jsonViewMode[currentLang];
     document.getElementById('modalTitle').textContent = i18n.modalTitle[currentLang];
     
     // 更新工具按钮气泡

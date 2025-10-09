@@ -618,6 +618,21 @@ async function loadAllData(options = {}) {
         ]);
         
         syncHistory = storageData.syncHistory || [];
+        
+        // 清理bookmarkTree以减少内存占用和防止复制时卡顿
+        // 只保留最近3条记录的bookmarkTree用于显示详情
+        syncHistory = syncHistory.map((record, index) => {
+            // 保留最新的3条记录的bookmarkTree
+            if (index >= syncHistory.length - 3) {
+                return record;
+            }
+            // 其他记录删除bookmarkTree
+            const { bookmarkTree, ...recordWithoutTree } = record;
+            return recordWithoutTree;
+        });
+        
+        console.log('[loadAllData] 已清理历史记录中的大数据，保留最新3条的bookmarkTree');
+        
         // 将 ISO 字符串格式转换为时间戳（毫秒）
         lastBackupTime = storageData.lastSyncTime ? new Date(storageData.lastSyncTime).getTime() : null;
         allBookmarks = flattenBookmarkTree(bookmarkTree);
@@ -3473,7 +3488,14 @@ async function generateDetailContent(record) {
                 <div class="detail-section">
                     <div class="detail-empty">
                         <i class="fas fa-info-circle"></i>
-                        ${currentLang === 'zh_CN' ? '无详细变化记录' : 'No detailed changes available'}
+                        ${currentLang === 'zh_CN' 
+                            ? '无详细变化记录（旧记录的详细数据已清理以优化性能）' 
+                            : 'No detailed changes available (old records cleaned for performance)'}
+                        <div style="margin-top: 10px; font-size: 0.9em; color: var(--text-tertiary);">
+                            ${currentLang === 'zh_CN' 
+                                ? '提示：只保留最新3条记录的详细变化数据' 
+                                : 'Note: Only the latest 3 records retain detailed change data'}
+                        </div>
                     </div>
                 </div>
             `;
@@ -4176,31 +4198,60 @@ document.head.appendChild(style);
 // 复制Diff功能
 // =============================================================================
 
-// 复制当前Changes视图的diff（JSON格式）
+// 复制当前Changes视图的diff（JSON格式，限制数量以防止卡顿）
 window.copyCurrentDiff = async function() {
     try {
         const changeData = await getDetailedChanges(false);
+        
+        // 限制每个数组最多100项，防止数据过大
+        const maxItems = 100;
+        const added = (changeData.added || []).slice(0, maxItems);
+        const deleted = (changeData.deleted || []).slice(0, maxItems);
+        const modified = (changeData.modified || []).slice(0, maxItems);
+        const moved = (changeData.moved || []).slice(0, maxItems);
+        
         const diffData = {
             timestamp: new Date().toISOString(),
             type: 'current-changes',
             hasChanges: changeData.hasChanges,
             diffMeta: changeData.diffMeta,
-            added: changeData.added || [],
-            deleted: changeData.deleted || [],
-            modified: changeData.modified || [],
-            moved: changeData.moved || []
+            added: added,
+            deleted: deleted,
+            modified: modified,
+            moved: moved,
+            // 添加计数信息
+            counts: {
+                addedTotal: (changeData.added || []).length,
+                deletedTotal: (changeData.deleted || []).length,
+                modifiedTotal: (changeData.modified || []).length,
+                movedTotal: (changeData.moved || []).length,
+                addedShown: added.length,
+                deletedShown: deleted.length,
+                modifiedShown: modified.length,
+                movedShown: moved.length,
+                note: maxItems < Math.max(
+                    (changeData.added || []).length,
+                    (changeData.deleted || []).length,
+                    (changeData.modified || []).length,
+                    (changeData.moved || []).length
+                ) ? (currentLang === 'zh_CN' ? '数据已截断，每类最多显示100项' : 'Data truncated, max 100 items per category') : ''
+            }
         };
         
         const jsonString = JSON.stringify(diffData, null, 2);
         await navigator.clipboard.writeText(jsonString);
-        showToast(currentLang === 'zh_CN' ? 'Diff已复制到剪贴板' : 'Diff copied to clipboard');
+        
+        const message = diffData.counts.note 
+            ? (currentLang === 'zh_CN' ? 'Diff已复制（部分数据）' : 'Diff copied (partial data)')
+            : (currentLang === 'zh_CN' ? 'Diff已复制到剪贴板' : 'Diff copied to clipboard');
+        showToast(message);
     } catch (error) {
         console.error('[复制Diff] 失败:', error);
         showToast(currentLang === 'zh_CN' ? '复制失败' : 'Copy failed');
     }
 };
 
-// 复制历史记录的diff（JSON格式）
+// 复制历史记录的diff（JSON格式，排除bookmarkTree以防止卡顿）
 window.copyHistoryDiff = async function(recordTime) {
     try {
         const record = syncHistory.find(r => r.time === recordTime);
@@ -4209,6 +4260,7 @@ window.copyHistoryDiff = async function(recordTime) {
             return;
         }
         
+        // 明确排除bookmarkTree，只保留统计信息
         const diffData = {
             timestamp: record.time,
             type: 'history-record',
@@ -4216,8 +4268,21 @@ window.copyHistoryDiff = async function(recordTime) {
             status: record.status,
             syncType: record.type,
             note: record.note || '',
-            bookmarkStats: record.bookmarkStats || null,
-            isFirstBackup: record.isFirstBackup || false
+            errorMessage: record.errorMessage || '',
+            isFirstBackup: record.isFirstBackup || false,
+            // 只保留统计数字，不包含完整树结构
+            bookmarkStats: record.bookmarkStats ? {
+                currentBookmarkCount: record.bookmarkStats.currentBookmarkCount,
+                currentFolderCount: record.bookmarkStats.currentFolderCount,
+                prevBookmarkCount: record.bookmarkStats.prevBookmarkCount,
+                prevFolderCount: record.bookmarkStats.prevFolderCount,
+                bookmarkDiff: record.bookmarkStats.bookmarkDiff,
+                folderDiff: record.bookmarkStats.folderDiff,
+                bookmarkMoved: record.bookmarkStats.bookmarkMoved,
+                folderMoved: record.bookmarkStats.folderMoved,
+                bookmarkModified: record.bookmarkStats.bookmarkModified,
+                folderModified: record.bookmarkStats.folderModified
+            } : null
         };
         
         const jsonString = JSON.stringify(diffData, null, 2);
@@ -4229,7 +4294,7 @@ window.copyHistoryDiff = async function(recordTime) {
     }
 };
 
-// 复制所有历史记录的diff（JSON格式）
+// 复制所有历史记录的diff（JSON格式，排除bookmarkTree以防止卡顿）
 window.copyAllHistoryDiff = async function() {
     try {
         const allDiffs = syncHistory.map(record => ({
@@ -4238,8 +4303,21 @@ window.copyAllHistoryDiff = async function() {
             status: record.status,
             syncType: record.type,
             note: record.note || '',
-            bookmarkStats: record.bookmarkStats || null,
-            isFirstBackup: record.isFirstBackup || false
+            errorMessage: record.errorMessage || '',
+            isFirstBackup: record.isFirstBackup || false,
+            // 只保留统计数字，不包含完整树结构
+            bookmarkStats: record.bookmarkStats ? {
+                currentBookmarkCount: record.bookmarkStats.currentBookmarkCount,
+                currentFolderCount: record.bookmarkStats.currentFolderCount,
+                prevBookmarkCount: record.bookmarkStats.prevBookmarkCount,
+                prevFolderCount: record.bookmarkStats.prevFolderCount,
+                bookmarkDiff: record.bookmarkStats.bookmarkDiff,
+                folderDiff: record.bookmarkStats.folderDiff,
+                bookmarkMoved: record.bookmarkStats.bookmarkMoved,
+                folderMoved: record.bookmarkStats.folderMoved,
+                bookmarkModified: record.bookmarkStats.bookmarkModified,
+                folderModified: record.bookmarkStats.folderModified
+            } : null
         }));
         
         const jsonString = JSON.stringify(allDiffs, null, 2);

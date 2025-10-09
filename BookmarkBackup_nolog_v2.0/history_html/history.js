@@ -4409,41 +4409,337 @@ window.copyAllHistoryDiff = async function() {
     }
 };
 
-// 导出历史记录为标准书签HTML（浏览器可导入格式）
+// 导出历史记录的diff为HTML（可视化格式）
 window.exportHistoryDiffToHTML = async function(recordTime) {
     try {
-        const record = syncHistory.find(r => r.time === recordTime);
-        if (!record) {
+        const recordIndex = syncHistory.findIndex(r => r.time === recordTime);
+        if (recordIndex === -1) {
             showToast(currentLang === 'zh_CN' ? '未找到记录' : 'Record not found');
             return;
         }
         
-        // 检查是否有bookmarkTree
-        if (!record.bookmarkTree) {
-            showToast(currentLang === 'zh_CN' ? '该记录无书签数据' : 'No bookmark data available');
-            return;
+        const record = syncHistory[recordIndex];
+        
+        // 获取diff数据（与copyHistoryDiff相同的逻辑）
+        let diffData;
+        
+        if (record.isFirstBackup && record.bookmarkTree) {
+            // 第一次备份：完整的书签列表
+            const bookmarksList = extractBookmarksFromTree(record.bookmarkTree);
+            diffData = {
+                timestamp: record.time,
+                type: 'first-backup',
+                direction: record.direction,
+                status: record.status,
+                syncType: record.type,
+                note: record.note || '',
+                isFirstBackup: true,
+                totalBookmarks: bookmarksList.length,
+                totalFolders: record.bookmarkStats?.currentFolderCount || 0,
+                bookmarks: bookmarksList
+            };
+        } else if (record.bookmarkTree && recordIndex > 0) {
+            // 有完整书签树，可以计算详细diff
+            const prevRecord = syncHistory[recordIndex - 1];
+            if (prevRecord && prevRecord.bookmarkTree) {
+                // 计算diff
+                const oldTree = prevRecord.bookmarkTree;
+                const newTree = record.bookmarkTree;
+                
+                const oldPrints = generateFingerprintsFromTree(oldTree);
+                const newPrints = generateFingerprintsFromTree(newTree);
+                
+                const oldBookmarkPrints = new Set(oldPrints.bookmarks);
+                const newBookmarkPrints = new Set(newPrints.bookmarks);
+                
+                const added = [];
+                const deleted = [];
+                const moved = [];
+                
+                // 检测新增和移动
+                for (const print of newBookmarkPrints) {
+                    if (!oldBookmarkPrints.has(print)) {
+                        const bookmark = parseBookmarkFingerprint(print);
+                        if (bookmark) {
+                            let isMoved = false;
+                            for (const oldPrint of oldBookmarkPrints) {
+                                const oldBookmark = parseBookmarkFingerprint(oldPrint);
+                                if (oldBookmark && oldBookmark.url === bookmark.url) {
+                                    if (oldBookmark.path !== bookmark.path || oldBookmark.title !== bookmark.title) {
+                                        isMoved = true;
+                                        moved.push({
+                                            ...bookmark,
+                                            oldPath: oldBookmark.path,
+                                            oldTitle: oldBookmark.title
+                                        });
+                                    }
+                                    break;
+                                }
+                            }
+                            if (!isMoved) {
+                                added.push(bookmark);
+                            }
+                        }
+                    }
+                }
+                
+                // 检测删除
+                for (const print of oldBookmarkPrints) {
+                    if (!newBookmarkPrints.has(print)) {
+                        const bookmark = parseBookmarkFingerprint(print);
+                        if (bookmark) {
+                            const isInMoved = moved.some(m => m.url === bookmark.url);
+                            if (!isInMoved) {
+                                deleted.push(bookmark);
+                            }
+                        }
+                    }
+                }
+                
+                diffData = {
+                    timestamp: record.time,
+                    type: 'history-diff',
+                    direction: record.direction,
+                    status: record.status,
+                    syncType: record.type,
+                    note: record.note || '',
+                    bookmarkStats: record.bookmarkStats,
+                    added: added,
+                    deleted: deleted,
+                    moved: moved,
+                    hasDetailedDiff: true
+                };
+            } else {
+                // 没有前一条记录的树，只能显示统计信息
+                diffData = {
+                    timestamp: record.time,
+                    type: 'history-record',
+                    direction: record.direction,
+                    status: record.status,
+                    syncType: record.type,
+                    note: record.note || '',
+                    bookmarkStats: record.bookmarkStats,
+                    hasDetailedDiff: false
+                };
+            }
+        } else {
+            // 没有书签树，只显示统计信息
+            diffData = {
+                timestamp: record.time,
+                type: 'history-record',
+                direction: record.direction,
+                status: record.status,
+                syncType: record.type,
+                note: record.note || '',
+                bookmarkStats: record.bookmarkStats,
+                hasDetailedDiff: false
+            };
         }
         
-        // 生成标准Netscape书签HTML格式
-        const htmlContent = convertBookmarkTreeToNetscapeHTML(record.bookmarkTree, record.time);
+        // 将diff数据转换为HTML
+        const htmlContent = convertDiffDataToHTML(diffData);
         
         // 创建下载
         const blob = new Blob([htmlContent], { type: 'text/html;charset=utf-8' });
         const url = URL.createObjectURL(blob);
         const a = document.createElement('a');
         a.href = url;
-        a.download = `bookmarks-${new Date(record.time).toISOString().replace(/[:.]/g, '-')}.html`;
+        a.download = `bookmark-diff-${new Date(record.time).toISOString().replace(/[:.]/g, '-')}.html`;
         document.body.appendChild(a);
         a.click();
         document.body.removeChild(a);
         URL.revokeObjectURL(url);
         
-        showToast(currentLang === 'zh_CN' ? '书签HTML已导出' : 'Bookmarks HTML exported');
+        showToast(currentLang === 'zh_CN' ? 'Diff HTML已导出' : 'Diff HTML exported');
     } catch (error) {
-        console.error('[导出HTML] 失败:', error);
+        console.error('[导出Diff HTML] 失败:', error);
         showToast(currentLang === 'zh_CN' ? '导出失败' : 'Export failed');
     }
 };
+
+// 将diff数据转换为标准Netscape书签HTML格式（浏览器可导入）
+function convertDiffDataToHTML(diffData) {
+    const lang = currentLang || 'zh_CN';
+    const isZh = lang === 'zh_CN';
+    const timestamp = new Date(diffData.timestamp).toISOString();
+    const dateAdded = Math.floor(new Date(diffData.timestamp).getTime() / 1000);
+    
+    // 标准Netscape书签HTML头部
+    let html = `<!DOCTYPE NETSCAPE-Bookmark-file-1>
+<!-- This is an automatically generated file.
+     It will be read and overwritten.
+     DO NOT EDIT! -->
+<!-- Bookmark Backup Extension - Diff Export -->
+<!-- Timestamp: ${timestamp} -->
+<!-- Type: ${diffData.type} -->
+<!-- Status: ${diffData.status} -->
+<META HTTP-EQUIV="Content-Type" CONTENT="text/html; charset=UTF-8">
+<TITLE>Bookmarks</TITLE>
+<H1>Bookmarks</H1>
+<DL><p>
+`;
+    
+    // 如果是首次备份，导出所有书签
+    if (diffData.type === 'first-backup' && diffData.bookmarks) {
+        // 按文件夹分组
+        const folderMap = {};
+        diffData.bookmarks.forEach(bookmark => {
+            const folder = bookmark.folder || (isZh ? '根目录' : 'Root');
+            if (!folderMap[folder]) {
+                folderMap[folder] = [];
+            }
+            folderMap[folder].push(bookmark);
+        });
+        
+        // 生成HTML
+        Object.keys(folderMap).sort().forEach(folder => {
+            const bookmarks = folderMap[folder];
+            
+            // 文件夹标题
+            if (folder && folder !== (isZh ? '根目录' : 'Root')) {
+                html += `    <DT><H3 ADD_DATE="${dateAdded}">${escapeHtml(folder)}</H3>\n`;
+                html += `    <DL><p>\n`;
+                
+                bookmarks.forEach(bookmark => {
+                    const bookmarkDate = bookmark.dateAdded ? Math.floor(new Date(bookmark.dateAdded).getTime() / 1000) : dateAdded;
+                    html += `        <DT><A HREF="${escapeHtml(bookmark.url)}" ADD_DATE="${bookmarkDate}">${escapeHtml(bookmark.title)}</A>\n`;
+                });
+                
+                html += `    </DL><p>\n`;
+            } else {
+                // 根目录的书签
+                bookmarks.forEach(bookmark => {
+                    const bookmarkDate = bookmark.dateAdded ? Math.floor(new Date(bookmark.dateAdded).getTime() / 1000) : dateAdded;
+                    html += `    <DT><A HREF="${escapeHtml(bookmark.url)}" ADD_DATE="${bookmarkDate}">${escapeHtml(bookmark.title)}</A>\n`;
+                });
+            }
+        });
+    } 
+    // 如果有详细diff，按类别导出
+    else if (diffData.hasDetailedDiff) {
+        // 新增的书签
+        if (diffData.added && diffData.added.length > 0) {
+            html += `    <DT><H3 ADD_DATE="${dateAdded}">${isZh ? '新增书签' : 'Added Bookmarks'}</H3>\n`;
+            html += `    <DL><p>\n`;
+            
+            // 按路径分组
+            const folderMap = {};
+            diffData.added.forEach(bookmark => {
+                const folder = bookmark.path || (isZh ? '根目录' : 'Root');
+                if (!folderMap[folder]) {
+                    folderMap[folder] = [];
+                }
+                folderMap[folder].push(bookmark);
+            });
+            
+            Object.keys(folderMap).sort().forEach(folder => {
+                const bookmarks = folderMap[folder];
+                
+                if (folder && folder !== (isZh ? '根目录' : 'Root')) {
+                    html += `        <DT><H3 ADD_DATE="${dateAdded}">${escapeHtml(folder)}</H3>\n`;
+                    html += `        <DL><p>\n`;
+                    bookmarks.forEach(bookmark => {
+                        html += `            <DT><A HREF="${escapeHtml(bookmark.url)}" ADD_DATE="${dateAdded}">${escapeHtml(bookmark.title)}</A>\n`;
+                    });
+                    html += `        </DL><p>\n`;
+                } else {
+                    bookmarks.forEach(bookmark => {
+                        html += `        <DT><A HREF="${escapeHtml(bookmark.url)}" ADD_DATE="${dateAdded}">${escapeHtml(bookmark.title)}</A>\n`;
+                    });
+                }
+            });
+            
+            html += `    </DL><p>\n`;
+        }
+        
+        // 删除的书签
+        if (diffData.deleted && diffData.deleted.length > 0) {
+            html += `    <DT><H3 ADD_DATE="${dateAdded}">${isZh ? '删除书签' : 'Deleted Bookmarks'}</H3>\n`;
+            html += `    <DL><p>\n`;
+            
+            // 按路径分组
+            const folderMap = {};
+            diffData.deleted.forEach(bookmark => {
+                const folder = bookmark.path || (isZh ? '根目录' : 'Root');
+                if (!folderMap[folder]) {
+                    folderMap[folder] = [];
+                }
+                folderMap[folder].push(bookmark);
+            });
+            
+            Object.keys(folderMap).sort().forEach(folder => {
+                const bookmarks = folderMap[folder];
+                
+                if (folder && folder !== (isZh ? '根目录' : 'Root')) {
+                    html += `        <DT><H3 ADD_DATE="${dateAdded}">${escapeHtml(folder)}</H3>\n`;
+                    html += `        <DL><p>\n`;
+                    bookmarks.forEach(bookmark => {
+                        html += `            <DT><A HREF="${escapeHtml(bookmark.url)}" ADD_DATE="${dateAdded}">${escapeHtml(bookmark.title)}</A>\n`;
+                    });
+                    html += `        </DL><p>\n`;
+                } else {
+                    bookmarks.forEach(bookmark => {
+                        html += `        <DT><A HREF="${escapeHtml(bookmark.url)}" ADD_DATE="${dateAdded}">${escapeHtml(bookmark.title)}</A>\n`;
+                    });
+                }
+            });
+            
+            html += `    </DL><p>\n`;
+        }
+        
+        // 移动的书签
+        if (diffData.moved && diffData.moved.length > 0) {
+            html += `    <DT><H3 ADD_DATE="${dateAdded}">${isZh ? '移动书签' : 'Moved Bookmarks'}</H3>\n`;
+            html += `    <DL><p>\n`;
+            
+            // 按新路径分组
+            const folderMap = {};
+            diffData.moved.forEach(bookmark => {
+                const folder = bookmark.path || (isZh ? '根目录' : 'Root');
+                if (!folderMap[folder]) {
+                    folderMap[folder] = [];
+                }
+                folderMap[folder].push(bookmark);
+            });
+            
+            Object.keys(folderMap).sort().forEach(folder => {
+                const bookmarks = folderMap[folder];
+                
+                if (folder && folder !== (isZh ? '根目录' : 'Root')) {
+                    html += `        <DT><H3 ADD_DATE="${dateAdded}">${escapeHtml(folder)}</H3>\n`;
+                    html += `        <DL><p>\n`;
+                    bookmarks.forEach(bookmark => {
+                        const titleWithNote = bookmark.oldPath !== bookmark.path 
+                            ? `${escapeHtml(bookmark.title)} [${isZh ? '从' : 'from'}: ${escapeHtml(bookmark.oldPath)}]`
+                            : escapeHtml(bookmark.title);
+                        html += `            <DT><A HREF="${escapeHtml(bookmark.url)}" ADD_DATE="${dateAdded}">${titleWithNote}</A>\n`;
+                    });
+                    html += `        </DL><p>\n`;
+                } else {
+                    bookmarks.forEach(bookmark => {
+                        const titleWithNote = bookmark.oldPath !== bookmark.path 
+                            ? `${escapeHtml(bookmark.title)} [${isZh ? '从' : 'from'}: ${escapeHtml(bookmark.oldPath)}]`
+                            : escapeHtml(bookmark.title);
+                        html += `        <DT><A HREF="${escapeHtml(bookmark.url)}" ADD_DATE="${dateAdded}">${titleWithNote}</A>\n`;
+                    });
+                }
+            });
+            
+            html += `    </DL><p>\n`;
+        }
+    }
+    // 如果没有详细数据，添加一个说明
+    else {
+        html += `    <DT><H3 ADD_DATE="${dateAdded}">${isZh ? '无详细变化数据' : 'No Detailed Changes'}</H3>\n`;
+        html += `    <DL><p>\n`;
+        html += `        <DT>${isZh ? '此记录仅包含统计信息，无法导出具体书签' : 'This record only contains statistics, no bookmarks available'}\n`;
+        html += `    </DL><p>\n`;
+    }
+    
+    html += `</DL><p>\n`;
+    
+    return html;
+}
 
 // 将书签树转换为Netscape标准HTML格式（浏览器可导入）
 function convertBookmarkTreeToNetscapeHTML(bookmarkTree, timestamp) {

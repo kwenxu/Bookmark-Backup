@@ -4409,7 +4409,7 @@ window.copyAllHistoryDiff = async function() {
     }
 };
 
-// 导出历史记录diff为HTML
+// 导出历史记录diff为HTML（简单的JSON格式化显示）
 window.exportHistoryDiffToHTML = async function(recordTime) {
     try {
         const record = syncHistory.find(r => r.time === recordTime);
@@ -4418,61 +4418,117 @@ window.exportHistoryDiffToHTML = async function(recordTime) {
             return;
         }
         
-        // 生成HTML内容
-        let htmlContent = `
-<!DOCTYPE html>
+        // 生成JSON diff数据（与copyHistoryDiff相同的逻辑）
+        let diffData;
+        
+        // 第一次备份：提供完整的书签列表
+        if (record.isFirstBackup && record.bookmarkTree) {
+            const bookmarksList = extractBookmarksFromTree(record.bookmarkTree);
+            diffData = {
+                timestamp: record.time,
+                type: 'first-backup',
+                direction: record.direction,
+                status: record.status,
+                syncType: record.type,
+                note: record.note || '',
+                isFirstBackup: true,
+                totalBookmarks: bookmarksList.length,
+                totalFolders: record.bookmarkStats?.currentFolderCount || 0,
+                bookmarks: bookmarksList
+            };
+        } else {
+            // 普通备份：只保留统计信息
+            diffData = {
+                timestamp: record.time,
+                type: 'history-record',
+                direction: record.direction,
+                status: record.status,
+                syncType: record.type,
+                note: record.note || '',
+                errorMessage: record.errorMessage || '',
+                isFirstBackup: record.isFirstBackup || false,
+                bookmarkStats: record.bookmarkStats ? {
+                    currentBookmarkCount: record.bookmarkStats.currentBookmarkCount,
+                    currentFolderCount: record.bookmarkStats.currentFolderCount,
+                    prevBookmarkCount: record.bookmarkStats.prevBookmarkCount,
+                    prevFolderCount: record.bookmarkStats.prevFolderCount,
+                    bookmarkDiff: record.bookmarkStats.bookmarkDiff,
+                    folderDiff: record.bookmarkStats.folderDiff,
+                    bookmarkMoved: record.bookmarkStats.bookmarkMoved,
+                    folderMoved: record.bookmarkStats.folderMoved,
+                    bookmarkModified: record.bookmarkStats.bookmarkModified,
+                    folderModified: record.bookmarkStats.folderModified
+                } : null
+            };
+        }
+        
+        // 格式化JSON为HTML
+        const jsonString = JSON.stringify(diffData, null, 2);
+        const htmlContent = `<!DOCTYPE html>
 <html lang="${currentLang === 'zh_CN' ? 'zh' : 'en'}">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>${currentLang === 'zh_CN' ? '备份历史' : 'Backup History'} - ${new Date(record.time).toLocaleString()}</title>
+    <title>Bookmark Diff - ${new Date(record.time).toLocaleString()}</title>
     <style>
-        body { font-family: system-ui, -apple-system, sans-serif; padding: 20px; max-width: 1200px; margin: 0 auto; }
-        .header { border-bottom: 2px solid #e0e0e0; padding-bottom: 20px; margin-bottom: 20px; }
-        .header h1 { margin: 0; color: #333; }
-        .meta { color: #666; margin-top: 10px; }
-        .stats { display: flex; gap: 20px; margin-top: 15px; }
-        .stat-item { background: #f5f5f5; padding: 10px 15px; border-radius: 5px; }
-        .stat-label { font-size: 0.9em; color: #666; }
-        .stat-value { font-size: 1.5em; font-weight: bold; color: #333; margin-top: 5px; }
+        body {
+            font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
+            padding: 20px;
+            background: #1e1e1e;
+            color: #d4d4d4;
+            line-height: 1.6;
+        }
+        .header {
+            background: #252526;
+            padding: 15px;
+            border-radius: 5px;
+            margin-bottom: 20px;
+            border-left: 4px solid #007acc;
+        }
+        .header h1 {
+            margin: 0 0 10px 0;
+            color: #4ec9b0;
+            font-size: 18px;
+        }
+        .header .info {
+            color: #858585;
+            font-size: 13px;
+        }
+        pre {
+            background: #252526;
+            padding: 20px;
+            border-radius: 5px;
+            overflow-x: auto;
+            white-space: pre-wrap;
+            word-wrap: break-word;
+            border: 1px solid #3c3c3c;
+        }
+        .json-key { color: #9cdcfe; }
+        .json-string { color: #ce9178; }
+        .json-number { color: #b5cea8; }
+        .json-boolean { color: #569cd6; }
+        .json-null { color: #569cd6; }
     </style>
 </head>
 <body>
     <div class="header">
-        <h1>${currentLang === 'zh_CN' ? '书签备份历史记录' : 'Bookmark Backup History'}</h1>
-        <div class="meta">
-            <div>${currentLang === 'zh_CN' ? '时间' : 'Time'}: ${new Date(record.time).toLocaleString()}</div>
-            <div>${currentLang === 'zh_CN' ? '方向' : 'Direction'}: ${record.direction}</div>
-            <div>${currentLang === 'zh_CN' ? '状态' : 'Status'}: ${record.status}</div>
-            ${record.note ? `<div>${currentLang === 'zh_CN' ? '备注' : 'Note'}: ${record.note}</div>` : ''}
+        <h1>${currentLang === 'zh_CN' ? '书签备份 Diff 数据' : 'Bookmark Backup Diff Data'}</h1>
+        <div class="info">
+            ${currentLang === 'zh_CN' ? '时间' : 'Time'}: ${new Date(record.time).toLocaleString()} | 
+            ${currentLang === 'zh_CN' ? '类型' : 'Type'}: ${diffData.type} | 
+            ${currentLang === 'zh_CN' ? '状态' : 'Status'}: ${diffData.status}
         </div>
-        ${record.bookmarkStats ? `
-        <div class="stats">
-            <div class="stat-item">
-                <div class="stat-label">${currentLang === 'zh_CN' ? '书签' : 'Bookmarks'}</div>
-                <div class="stat-value">${record.bookmarkStats.currentBookmarkCount}</div>
-            </div>
-            <div class="stat-item">
-                <div class="stat-label">${currentLang === 'zh_CN' ? '文件夹' : 'Folders'}</div>
-                <div class="stat-value">${record.bookmarkStats.currentFolderCount}</div>
-            </div>
-            <div class="stat-item">
-                <div class="stat-label">${currentLang === 'zh_CN' ? '变化' : 'Changes'}</div>
-                <div class="stat-value">${record.bookmarkStats.bookmarkDiff > 0 ? '+' : ''}${record.bookmarkStats.bookmarkDiff}</div>
-            </div>
-        </div>
-        ` : ''}
     </div>
+    <pre>${escapeHtml(jsonString)}</pre>
 </body>
-</html>
-        `;
+</html>`;
         
         // 创建下载
-        const blob = new Blob([htmlContent], { type: 'text/html' });
+        const blob = new Blob([htmlContent], { type: 'text/html;charset=utf-8' });
         const url = URL.createObjectURL(blob);
         const a = document.createElement('a');
         a.href = url;
-        a.download = `bookmark-history-${new Date(record.time).toISOString().replace(/[:.]/g, '-')}.html`;
+        a.download = `bookmark-diff-${new Date(record.time).toISOString().replace(/[:.]/g, '-')}.html`;
         document.body.appendChild(a);
         a.click();
         document.body.removeChild(a);

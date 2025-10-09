@@ -2242,22 +2242,35 @@ function renderHistoryView() {
         // 计算变化
         const changes = calculateChanges(record, index, reversedHistory);
         
+        // 方向标识
+        const directionIcon = record.direction === 'upload' 
+            ? '<i class="fas fa-cloud-upload-alt"></i>' 
+            : '<i class="fas fa-cloud-download-alt"></i>';
+        const directionText = record.direction === 'upload' 
+            ? (currentLang === 'zh_CN' ? '上传' : 'Upload')
+            : (currentLang === 'zh_CN' ? '下载' : 'Download');
+        
         // 构建提交项
         return `
             <div class="commit-item" data-record-time="${record.time}">
                 <div class="commit-header">
-                    <div class="commit-title">
-                        ${record.note || (isSuccess ? i18n.success[currentLang] : i18n.error[currentLang])}
+                    <div class="commit-title-group">
+                        <div class="commit-title">${record.note || time}</div>
+                        <div class="commit-time">
+                            <i class="fas fa-clock"></i> ${time}
+                        </div>
                     </div>
                     <div class="commit-actions">
-                        <button class="action-btn" onclick="event.stopPropagation(); window.copyHistoryDiff('${record.time}');" title="${currentLang === 'zh_CN' ? '复制Diff' : 'Copy Diff'}">
+                        <button class="action-btn copy-btn" data-time="${record.time}" title="${currentLang === 'zh_CN' ? '复制Diff (JSON格式)' : 'Copy Diff (JSON)'}">
                             <i class="fas fa-copy"></i>
                         </button>
-                        <button class="action-btn" onclick="event.stopPropagation(); window.exportHistoryDiffToHTML('${record.time}');" title="${currentLang === 'zh_CN' ? '导出HTML' : 'Export HTML'}">
+                        <button class="action-btn export-btn" data-time="${record.time}" title="${currentLang === 'zh_CN' ? '导出为HTML文件' : 'Export as HTML'}">
                             <i class="fas fa-file-export"></i>
                         </button>
+                        <button class="action-btn detail-btn" data-time="${record.time}" title="${currentLang === 'zh_CN' ? '查看详情' : 'View Details'}">
+                            <i class="fas fa-info-circle"></i>
+                        </button>
                     </div>
-                    <div class="commit-time">${time}</div>
                 </div>
                 <div class="commit-meta">
                     <span class="commit-badge ${isAuto ? 'auto' : 'manual'}">
@@ -2268,18 +2281,31 @@ function renderHistoryView() {
                         <i class="fas ${isSuccess ? 'fa-check-circle' : 'fa-exclamation-circle'}"></i>
                         ${isSuccess ? i18n.success[currentLang] : i18n.error[currentLang]}
                     </span>
+                    <span class="commit-badge direction">
+                        ${directionIcon}
+                        ${directionText}
+                    </span>
                 </div>
                 ${renderCommitStats(changes)}
             </div>
         `;
     }).join('');
     
-    // 添加点击事件
-    container.querySelectorAll('.commit-item').forEach(item => {
-        item.addEventListener('click', () => {
-            const recordTime = item.dataset.recordTime;
-            const record = syncHistory.find(r => r.time === recordTime);
-            if (record) showDetailModal(record);
+    // 添加按钮事件（使用事件委托）
+    container.querySelectorAll('.action-btn').forEach(btn => {
+        btn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            e.preventDefault();
+            const recordTime = btn.dataset.time;
+            
+            if (btn.classList.contains('copy-btn')) {
+                window.copyHistoryDiff(recordTime);
+            } else if (btn.classList.contains('export-btn')) {
+                window.exportHistoryDiffToHTML(recordTime);
+            } else if (btn.classList.contains('detail-btn')) {
+                const record = syncHistory.find(r => r.time === recordTime);
+                if (record) showDetailModal(record);
+            }
         });
     });
 }

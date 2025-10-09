@@ -52,8 +52,8 @@
                     <span id="navCurrentChangesText">当前 数量/结构 变化</span>
                 </button>
                 <button class="nav-tab" data-view="tree">
-                    <i class="fas fa-code-branch"></i>
-                    <span id="navTreeText">书签树与JSON</span>
+                    <i class="fas fa-sitemap"></i>
+                    <span id="navTreeText">书签树</span>
                 </button>
                 <button class="nav-tab" data-view="history">
                     <i class="fas fa-history"></i>
@@ -99,8 +99,16 @@
             <!-- 备份历史视图 -->
             <div id="historyView" class="view">
                 <div class="view-header">
-                    <h2 id="historyViewTitle">备份历史记录</h2>
-                    <p class="view-description" id="historyViewDesc">查看所有备份记录及其详细变化</p>
+                    <div class="view-header-left">
+                        <h2 id="historyViewTitle">备份历史记录</h2>
+                        <p class="view-description" id="historyViewDesc">查看所有备份记录及其详细变化</p>
+                    </div>
+                    <div class="view-header-right">
+                        <button id="copyAllHistoryBtn" class="view-action-btn" onclick="copyAllHistoryDiff()">
+                            <i class="fas fa-copy"></i> 
+                            <span id="copyAllHistoryText">复制所有记录</span>
+                        </button>
+                    </div>
                 </div>
                 <div id="historyList" class="history-commits">
                     <!-- 动态加载历史记录 -->
@@ -136,29 +144,16 @@
                 </div>
             </div>
 
-            <!-- 书签树与JSON视图 -->
+            <!-- 书签树视图 -->
             <div id="treeView" class="view">
                 <div class="view-header">
                     <div class="view-header-left">
-                        <h2 id="treeViewTitle">书签树与JSON</h2>
+                        <h2 id="treeViewTitle">书签树</h2>
                         <p class="view-description" id="treeViewDesc">查看完整的书签结构及变动状态</p>
-                    </div>
-                    <div class="view-header-right">
-                        <button id="toggleTreeJsonBtn" class="view-toggle-btn active" data-mode="tree">
-                            <span class="toggle-option active" data-mode="tree">
-                                <i class="fas fa-sitemap"></i> <span id="treeViewModeText">树形视图</span>
-                            </span>
-                            <span class="toggle-option" data-mode="json">
-                                <i class="fas fa-code"></i> <span id="jsonViewModeText">JSON</span>
-                            </span>
-                        </button>
                     </div>
                 </div>
                 <div id="bookmarkTree" class="bookmark-tree">
                     <!-- 动态加载书签树 -->
-                </div>
-                <div id="bookmarkJson" class="bookmark-json" style="display: none;">
-                    <!-- 动态加载JSON -->
                 </div>
             </div>
         </main>

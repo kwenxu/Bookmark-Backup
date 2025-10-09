@@ -88,8 +88,8 @@ const i18n = {
         'en': 'Bookmark Additions'
     },
     navTree: {
-        'zh_CN': '书签树与JSON',
-        'en': 'Tree & JSON'
+        'zh_CN': '书签树',
+        'en': 'Bookmark Tree'
     },
     statsTitle: {
         'zh_CN': '统计信息',
@@ -132,8 +132,8 @@ const i18n = {
         'en': 'View new bookmarks by time and folder'
     },
     treeViewTitle: {
-        'zh_CN': '书签树与JSON',
-        'en': 'Tree & JSON'
+        'zh_CN': '书签树',
+        'en': 'Bookmark Tree'
     },
     treeViewDesc: {
         'zh_CN': '查看完整的书签结构及变动状态',
@@ -214,6 +214,10 @@ const i18n = {
     emptyHistory: {
         'zh_CN': '暂无备份记录',
         'en': 'No backup records'
+    },
+    copyAllHistory: {
+        'zh_CN': '复制所有记录',
+        'en': 'Copy All Records'
     },
     emptyAdditions: {
         'zh_CN': '暂无书签添加记录',
@@ -490,6 +494,12 @@ function applyLanguage() {
     document.getElementById('additionsViewDesc').textContent = i18n.additionsViewDesc[currentLang];
     document.getElementById('treeViewTitle').textContent = i18n.treeViewTitle[currentLang];
     document.getElementById('treeViewDesc').textContent = i18n.treeViewDesc[currentLang];
+    
+    // 更新按钮文本
+    const copyAllHistoryText = document.getElementById('copyAllHistoryText');
+    if (copyAllHistoryText) {
+        copyAllHistoryText.textContent = i18n.copyAllHistory[currentLang];
+    }
     document.getElementById('filterAll').textContent = i18n.filterAll[currentLang];
     document.getElementById('filterBackedUp').textContent = i18n.filterBackedUp[currentLang];
     document.getElementById('filterNotBackedUp').textContent = i18n.filterNotBackedUp[currentLang];
@@ -1226,6 +1236,10 @@ async function renderCurrentChangesView(forceRefresh = false) {
                     diffHtml += '<div class="git-diff-viewer">';
                     diffHtml += '<div class="diff-file-header">';
                     diffHtml += '<span class="diff-file-path">diff --git a/bookmarks.html b/bookmarks.html</span>';
+                    diffHtml += `<button class="copy-diff-btn" onclick="copyCurrentDiff()" title="${currentLang === 'zh_CN' ? '复制Diff(JSON格式)' : 'Copy Diff (JSON)'}">`;
+                    diffHtml += '<i class="fas fa-copy"></i>';
+                    diffHtml += `<span>${currentLang === 'zh_CN' ? '复制Diff' : 'Copy Diff'}</span>`;
+                    diffHtml += '</button>';
                     diffHtml += '</div>';
                     
                     let hunkIndex = 0;
@@ -2219,6 +2233,14 @@ function renderHistoryView() {
                     <div class="commit-title">
                         ${record.note || (isSuccess ? i18n.success[currentLang] : i18n.error[currentLang])}
                     </div>
+                    <div class="commit-actions">
+                        <button class="action-btn" onclick="event.stopPropagation(); copyHistoryDiff('${record.time}');" title="${currentLang === 'zh_CN' ? '复制Diff' : 'Copy Diff'}">
+                            <i class="fas fa-copy"></i>
+                        </button>
+                        <button class="action-btn" onclick="event.stopPropagation(); exportHistoryDiffToHTML('${record.time}');" title="${currentLang === 'zh_CN' ? '导出HTML' : 'Export HTML'}">
+                            <i class="fas fa-file-export"></i>
+                        </button>
+                    </div>
                     <div class="commit-time">${time}</div>
                 </div>
                 <div class="commit-meta">
@@ -2471,11 +2493,11 @@ function renderBookmarkItem(bookmark) {
 }
 
 // =============================================================================
-// 书签树与JSON视图
+// 书签树视图
 // =============================================================================
 
 let treeChangeMap = null; // 缓存变动映射
-let cachedTreeData = null; // 缓存树数据和JSON Diff
+let cachedTreeData = null; // 缓存树数据
 let cachedOldTree = null; // 缓存旧树数据
 let lastTreeFingerprint = null; // 上次树的指纹
 
@@ -2505,115 +2527,25 @@ async function renderTreeView(forceRefresh = false) {
     console.log('[renderTreeView] 开始渲染, forceRefresh:', forceRefresh);
     
     const treeContainer = document.getElementById('bookmarkTree');
-    const jsonContainer = document.getElementById('bookmarkJson');
     
-    if (!treeContainer || !jsonContainer) {
+    if (!treeContainer) {
         console.error('[renderTreeView] 容器元素未找到');
         return;
     }
     
     console.log('[renderTreeView] 容器元素已找到');
     
-    // 添加切换按钮事件（只初始化一次）
-    const toggleBtn = document.getElementById('toggleTreeJsonBtn');
-    if (toggleBtn && !toggleBtn.hasListener) {
-        toggleBtn.hasListener = true;
-        
-        // 恢复上次的树/JSON模式
-        try {
-            const lastMode = localStorage.getItem('treeViewMode') || 'tree';
-            console.log('[树视图] 恢复模式:', lastMode);
-            
-            toggleBtn.querySelectorAll('.toggle-option').forEach(opt => {
-                if (opt.getAttribute('data-mode') === lastMode) {
-                    opt.classList.add('active');
-                } else {
-                    opt.classList.remove('active');
-                }
-            });
-            
-            // 注意：不在这里设置display，让renderTreeView的逻辑处理
-        } catch (e) {
-            console.error('[树视图] 恢复模式失败:', e);
-        }
-        
-        toggleBtn.querySelectorAll('.toggle-option').forEach(option => {
-            option.addEventListener('click', () => {
-                const mode = option.getAttribute('data-mode');
-                toggleBtn.querySelectorAll('.toggle-option').forEach(opt => opt.classList.remove('active'));
-                option.classList.add('active');
-                
-                // 保存模式选择
-                try {
-                    localStorage.setItem('treeViewMode', mode);
-                } catch (e) {
-                    console.error('[树视图] 保存模式失败:', e);
-                }
-                
-                if (mode === 'tree') {
-                    // 保存JSON滚动位置
-                    saveJSONScrollPosition(jsonContainer);
-                    
-                    treeContainer.style.display = 'block';
-                    jsonContainer.style.display = 'none';
-                } else {
-                    treeContainer.style.display = 'none';
-                    jsonContainer.style.display = 'block';
-                    // 延迟加载JSON Diff
-                    if (!jsonDiffRendered && cachedOldTree && cachedTreeData) {
-                        jsonDiffRendered = true;
-                        renderJSONDiff(jsonContainer, cachedOldTree, cachedTreeData.currentTree);
-                    }
-                    
-                    // 恢复JSON滚动位置
-                    setTimeout(() => {
-                        restoreJSONScrollPosition(jsonContainer);
-                    }, 100);
-                }
-            });
-        });
-    }
-    
     // 如果已有缓存且不强制刷新，直接使用（快速路径）
     if (!forceRefresh && cachedTreeData && cachedTreeData.treeFragment) {
         console.log('[renderTreeView] 使用现有缓存（快速显示）');
         treeContainer.innerHTML = '';
         treeContainer.appendChild(cachedTreeData.treeFragment.cloneNode(true));
-        
-        // 确保JSON容器已初始化
-        if (!jsonContainer.innerHTML || jsonContainer.innerHTML.trim() === '') {
-            renderJSONDiff(jsonContainer, cachedOldTree, cachedTreeData.currentTree);
-        }
-        
-        // 检查是否应该显示JSON模式
-        let shouldShowJson = false;
-        try {
-            const lastMode = localStorage.getItem('treeViewMode');
-            if (lastMode === 'json') {
-                shouldShowJson = true;
-                treeContainer.style.display = 'none';
-                jsonContainer.style.display = 'block';
-                
-                // 如果JSON还没渲染，先渲染
-                if (!jsonDiffRendered) {
-                    jsonDiffRendered = true;
-                    renderJSONDiff(jsonContainer, cachedOldTree, cachedTreeData.currentTree);
-                }
-            }
-        } catch (e) {
-            console.error('[树视图缓存] 恢复模式失败:', e);
-        }
-        
-        // 如果不显示JSON，显示树
-        if (!shouldShowJson) {
-            treeContainer.style.display = 'block';
-            jsonContainer.style.display = 'none';
-        }
+        treeContainer.style.display = 'block';
         
         // 重新绑定事件
         attachTreeEvents(treeContainer);
         
-        console.log('[renderTreeView] 缓存显示完成, 模式:', shouldShowJson ? 'JSON' : 'Tree');
+        console.log('[renderTreeView] 缓存显示完成');
         return;
     }
     
@@ -2621,7 +2553,6 @@ async function renderTreeView(forceRefresh = false) {
     console.log('[renderTreeView] 无缓存，开始加载数据');
     treeContainer.innerHTML = `<div class="loading">${i18n.loading[currentLang]}</div>`;
     treeContainer.style.display = 'block';
-    jsonContainer.style.display = 'none';
     
     // 获取数据并行处理
     Promise.all([
@@ -2647,29 +2578,6 @@ async function renderTreeView(forceRefresh = false) {
             treeContainer.innerHTML = '';
             treeContainer.appendChild(cachedTreeData.treeFragment.cloneNode(true));
             treeContainer.style.display = 'block';
-            jsonContainer.style.display = 'none';
-            
-            // 确保JSON容器已初始化
-            if (!jsonContainer.innerHTML || jsonContainer.innerHTML.trim() === '') {
-                renderJSONDiff(jsonContainer, cachedOldTree, cachedTreeData.currentTree);
-            }
-            
-            // 检查是否应该显示JSON模式
-            try {
-                const lastMode = localStorage.getItem('treeViewMode');
-                if (lastMode === 'json') {
-                    treeContainer.style.display = 'none';
-                    jsonContainer.style.display = 'block';
-                    
-                    // 如果JSON还没渲染，先渲染
-                    if (!jsonDiffRendered) {
-                        jsonDiffRendered = true;
-                        renderJSONDiff(jsonContainer, cachedOldTree, cachedTreeData.currentTree);
-                    }
-                }
-            } catch (e) {
-                console.error('[树视图缓存] 恢复模式失败:', e);
-            }
             
             // 重新绑定事件
             attachTreeEvents(treeContainer);
@@ -2678,7 +2586,6 @@ async function renderTreeView(forceRefresh = false) {
         
         // 树有变化，重新渲染
         console.log('[renderTreeView] 检测到书签变化，重新渲染');
-        jsonDiffRendered = false; // 重置标志，需要重新渲染JSON
         
         const oldTree = storageData.lastBookmarkData && storageData.lastBookmarkData.bookmarkTree;
         cachedOldTree = oldTree;
@@ -2747,39 +2654,12 @@ async function renderTreeView(forceRefresh = false) {
         
         treeContainer.innerHTML = '';
         treeContainer.appendChild(fragment);
-        
-        // 初始化JSON容器（延迟加载，不预渲染）
-        renderJSONDiff(jsonContainer, oldTree, currentTree);
-        
-        // 检查是否应该显示JSON模式
-        let shouldShowJson = false;
-        try {
-            const lastMode = localStorage.getItem('treeViewMode');
-            if (lastMode === 'json') {
-                shouldShowJson = true;
-                treeContainer.style.display = 'none';
-                jsonContainer.style.display = 'block';
-                
-                // 如果JSON还没渲染，先渲染
-                if (!jsonDiffRendered) {
-                    jsonDiffRendered = true;
-                    renderJSONDiff(jsonContainer, oldTree, currentTree);
-                }
-            }
-        } catch (e) {
-            console.error('[树视图] 恢复模式失败:', e);
-        }
-        
-        // 如果不显示JSON，显示树
-        if (!shouldShowJson) {
-            treeContainer.style.display = 'block';
-            jsonContainer.style.display = 'none';
-        }
+        treeContainer.style.display = 'block';
         
         // 绑定事件
         attachTreeEvents(treeContainer);
         
-        console.log('[renderTreeView] 渲染完成, 模式:', shouldShowJson ? 'JSON' : 'Tree');
+        console.log('[renderTreeView] 渲染完成');
     }).catch(error => {
         console.error('[renderTreeView] 错误:', error);
         treeContainer.innerHTML = `<div class="error">加载失败: ${error.message}</div>`;
@@ -4290,3 +4170,158 @@ style.textContent = `
     }
 `;
 document.head.appendChild(style);
+
+// =============================================================================
+// 复制Diff功能
+// =============================================================================
+
+// 复制当前Changes视图的diff（JSON格式）
+window.copyCurrentDiff = async function() {
+    try {
+        const changeData = await getDetailedChanges(false);
+        const diffData = {
+            timestamp: new Date().toISOString(),
+            type: 'current-changes',
+            hasChanges: changeData.hasChanges,
+            diffMeta: changeData.diffMeta,
+            added: changeData.added || [],
+            deleted: changeData.deleted || [],
+            modified: changeData.modified || [],
+            moved: changeData.moved || []
+        };
+        
+        const jsonString = JSON.stringify(diffData, null, 2);
+        await navigator.clipboard.writeText(jsonString);
+        showToast(currentLang === 'zh_CN' ? 'Diff已复制到剪贴板' : 'Diff copied to clipboard');
+    } catch (error) {
+        console.error('[复制Diff] 失败:', error);
+        showToast(currentLang === 'zh_CN' ? '复制失败' : 'Copy failed');
+    }
+};
+
+// 复制历史记录的diff（JSON格式）
+window.copyHistoryDiff = async function(recordTime) {
+    try {
+        const record = syncHistory.find(r => r.time === recordTime);
+        if (!record) {
+            showToast(currentLang === 'zh_CN' ? '未找到记录' : 'Record not found');
+            return;
+        }
+        
+        const diffData = {
+            timestamp: record.time,
+            type: 'history-record',
+            direction: record.direction,
+            status: record.status,
+            syncType: record.type,
+            note: record.note || '',
+            bookmarkStats: record.bookmarkStats || null,
+            isFirstBackup: record.isFirstBackup || false
+        };
+        
+        const jsonString = JSON.stringify(diffData, null, 2);
+        await navigator.clipboard.writeText(jsonString);
+        showToast(currentLang === 'zh_CN' ? 'Diff已复制到剪贴板' : 'Diff copied to clipboard');
+    } catch (error) {
+        console.error('[复制历史Diff] 失败:', error);
+        showToast(currentLang === 'zh_CN' ? '复制失败' : 'Copy failed');
+    }
+};
+
+// 复制所有历史记录的diff（JSON格式）
+window.copyAllHistoryDiff = async function() {
+    try {
+        const allDiffs = syncHistory.map(record => ({
+            timestamp: record.time,
+            direction: record.direction,
+            status: record.status,
+            syncType: record.type,
+            note: record.note || '',
+            bookmarkStats: record.bookmarkStats || null,
+            isFirstBackup: record.isFirstBackup || false
+        }));
+        
+        const jsonString = JSON.stringify(allDiffs, null, 2);
+        await navigator.clipboard.writeText(jsonString);
+        showToast(currentLang === 'zh_CN' ? `已复制${allDiffs.length}条历史记录` : `Copied ${allDiffs.length} records`);
+    } catch (error) {
+        console.error('[复制所有历史Diff] 失败:', error);
+        showToast(currentLang === 'zh_CN' ? '复制失败' : 'Copy failed');
+    }
+};
+
+// 导出历史记录diff为HTML
+window.exportHistoryDiffToHTML = async function(recordTime) {
+    try {
+        const record = syncHistory.find(r => r.time === recordTime);
+        if (!record) {
+            showToast(currentLang === 'zh_CN' ? '未找到记录' : 'Record not found');
+            return;
+        }
+        
+        // 生成HTML内容
+        let htmlContent = `
+<!DOCTYPE html>
+<html lang="${currentLang === 'zh_CN' ? 'zh' : 'en'}">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>${currentLang === 'zh_CN' ? '备份历史' : 'Backup History'} - ${new Date(record.time).toLocaleString()}</title>
+    <style>
+        body { font-family: system-ui, -apple-system, sans-serif; padding: 20px; max-width: 1200px; margin: 0 auto; }
+        .header { border-bottom: 2px solid #e0e0e0; padding-bottom: 20px; margin-bottom: 20px; }
+        .header h1 { margin: 0; color: #333; }
+        .meta { color: #666; margin-top: 10px; }
+        .stats { display: flex; gap: 20px; margin-top: 15px; }
+        .stat-item { background: #f5f5f5; padding: 10px 15px; border-radius: 5px; }
+        .stat-label { font-size: 0.9em; color: #666; }
+        .stat-value { font-size: 1.5em; font-weight: bold; color: #333; margin-top: 5px; }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>${currentLang === 'zh_CN' ? '书签备份历史记录' : 'Bookmark Backup History'}</h1>
+        <div class="meta">
+            <div>${currentLang === 'zh_CN' ? '时间' : 'Time'}: ${new Date(record.time).toLocaleString()}</div>
+            <div>${currentLang === 'zh_CN' ? '方向' : 'Direction'}: ${record.direction}</div>
+            <div>${currentLang === 'zh_CN' ? '状态' : 'Status'}: ${record.status}</div>
+            ${record.note ? `<div>${currentLang === 'zh_CN' ? '备注' : 'Note'}: ${record.note}</div>` : ''}
+        </div>
+        ${record.bookmarkStats ? `
+        <div class="stats">
+            <div class="stat-item">
+                <div class="stat-label">${currentLang === 'zh_CN' ? '书签' : 'Bookmarks'}</div>
+                <div class="stat-value">${record.bookmarkStats.currentBookmarkCount}</div>
+            </div>
+            <div class="stat-item">
+                <div class="stat-label">${currentLang === 'zh_CN' ? '文件夹' : 'Folders'}</div>
+                <div class="stat-value">${record.bookmarkStats.currentFolderCount}</div>
+            </div>
+            <div class="stat-item">
+                <div class="stat-label">${currentLang === 'zh_CN' ? '变化' : 'Changes'}</div>
+                <div class="stat-value">${record.bookmarkStats.bookmarkDiff > 0 ? '+' : ''}${record.bookmarkStats.bookmarkDiff}</div>
+            </div>
+        </div>
+        ` : ''}
+    </div>
+</body>
+</html>
+        `;
+        
+        // 创建下载
+        const blob = new Blob([htmlContent], { type: 'text/html' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `bookmark-history-${new Date(record.time).toISOString().replace(/[:.]/g, '-')}.html`;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+        
+        showToast(currentLang === 'zh_CN' ? 'HTML已导出' : 'HTML exported');
+    } catch (error) {
+        console.error('[导出HTML] 失败:', error);
+        showToast(currentLang === 'zh_CN' ? '导出失败' : 'Export failed');
+    }
+};

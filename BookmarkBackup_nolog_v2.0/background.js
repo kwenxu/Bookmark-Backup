@@ -2532,9 +2532,10 @@ async function updateSyncStatus(direction, time, status = 'success', errorMessag
         let bookmarkStats = null;
         let bookmarkDiff = 0; // 初始化 diff 变量
         let folderDiff = 0;
+        let localBookmarks = null; // 声明在外部作用域，以便在 newSyncRecord 中使用
 
         if (status === 'success' && (direction === 'upload' || direction === 'download' || direction === 'webdav' || direction === 'local' || direction === 'both')) {
-            const localBookmarks = await new Promise((resolve) => {
+            localBookmarks = await new Promise((resolve) => {
                 browserAPI.bookmarks.getTree((bookmarks) => resolve(bookmarks));
             });
 

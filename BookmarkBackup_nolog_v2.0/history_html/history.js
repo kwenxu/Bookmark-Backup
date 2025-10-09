@@ -4260,39 +4260,93 @@ window.copyHistoryDiff = async function(recordTime) {
             return;
         }
         
-        // 明确排除bookmarkTree，只保留统计信息
-        const diffData = {
-            timestamp: record.time,
-            type: 'history-record',
-            direction: record.direction,
-            status: record.status,
-            syncType: record.type,
-            note: record.note || '',
-            errorMessage: record.errorMessage || '',
-            isFirstBackup: record.isFirstBackup || false,
-            // 只保留统计数字，不包含完整树结构
-            bookmarkStats: record.bookmarkStats ? {
-                currentBookmarkCount: record.bookmarkStats.currentBookmarkCount,
-                currentFolderCount: record.bookmarkStats.currentFolderCount,
-                prevBookmarkCount: record.bookmarkStats.prevBookmarkCount,
-                prevFolderCount: record.bookmarkStats.prevFolderCount,
-                bookmarkDiff: record.bookmarkStats.bookmarkDiff,
-                folderDiff: record.bookmarkStats.folderDiff,
-                bookmarkMoved: record.bookmarkStats.bookmarkMoved,
-                folderMoved: record.bookmarkStats.folderMoved,
-                bookmarkModified: record.bookmarkStats.bookmarkModified,
-                folderModified: record.bookmarkStats.folderModified
-            } : null
-        };
+        let diffData;
+        
+        // 第一次备份：提供完整的书签列表（简化格式）
+        if (record.isFirstBackup && record.bookmarkTree) {
+            const bookmarksList = extractBookmarksFromTree(record.bookmarkTree);
+            diffData = {
+                timestamp: record.time,
+                type: 'first-backup',
+                direction: record.direction,
+                status: record.status,
+                syncType: record.type,
+                note: record.note || '',
+                isFirstBackup: true,
+                totalBookmarks: bookmarksList.length,
+                totalFolders: record.bookmarkStats?.currentFolderCount || 0,
+                // 完整的书签列表（不分段）
+                bookmarks: bookmarksList
+            };
+        } else {
+            // 普通备份：只保留统计信息
+            diffData = {
+                timestamp: record.time,
+                type: 'history-record',
+                direction: record.direction,
+                status: record.status,
+                syncType: record.type,
+                note: record.note || '',
+                errorMessage: record.errorMessage || '',
+                isFirstBackup: record.isFirstBackup || false,
+                // 只保留统计数字，不包含完整树结构
+                bookmarkStats: record.bookmarkStats ? {
+                    currentBookmarkCount: record.bookmarkStats.currentBookmarkCount,
+                    currentFolderCount: record.bookmarkStats.currentFolderCount,
+                    prevBookmarkCount: record.bookmarkStats.prevBookmarkCount,
+                    prevFolderCount: record.bookmarkStats.prevFolderCount,
+                    bookmarkDiff: record.bookmarkStats.bookmarkDiff,
+                    folderDiff: record.bookmarkStats.folderDiff,
+                    bookmarkMoved: record.bookmarkStats.bookmarkMoved,
+                    folderMoved: record.bookmarkStats.folderMoved,
+                    bookmarkModified: record.bookmarkStats.bookmarkModified,
+                    folderModified: record.bookmarkStats.folderModified
+                } : null
+            };
+        }
         
         const jsonString = JSON.stringify(diffData, null, 2);
         await navigator.clipboard.writeText(jsonString);
-        showToast(currentLang === 'zh_CN' ? 'Diff已复制到剪贴板' : 'Diff copied to clipboard');
+        
+        const message = record.isFirstBackup 
+            ? (currentLang === 'zh_CN' ? `已复制首次备份（${diffData.bookmarks?.length || 0}个书签）` : `Copied first backup (${diffData.bookmarks?.length || 0} bookmarks)`)
+            : (currentLang === 'zh_CN' ? 'Diff已复制到剪贴板' : 'Diff copied to clipboard');
+        showToast(message);
     } catch (error) {
         console.error('[复制历史Diff] 失败:', error);
         showToast(currentLang === 'zh_CN' ? '复制失败' : 'Copy failed');
     }
 };
+
+// 从书签树提取书签列表（扁平化，包含路径信息）
+function extractBookmarksFromTree(tree) {
+    const bookmarks = [];
+    
+    function traverse(nodes, path = []) {
+        if (!nodes) return;
+        
+        nodes.forEach(node => {
+            if (node.url) {
+                // 这是一个书签
+                bookmarks.push({
+                    title: node.title,
+                    url: node.url,
+                    folder: path.join(' > ') || (currentLang === 'zh_CN' ? '根目录' : 'Root'),
+                    dateAdded: node.dateAdded ? new Date(node.dateAdded).toISOString() : null
+                });
+            } else if (node.children) {
+                // 这是一个文件夹，递归处理
+                traverse(node.children, [...path, node.title]);
+            }
+        });
+    }
+    
+    if (tree && tree[0] && tree[0].children) {
+        traverse(tree[0].children);
+    }
+    
+    return bookmarks;
+}
 
 // 复制所有历史记录的diff（JSON格式，排除bookmarkTree以防止卡顿）
 window.copyAllHistoryDiff = async function() {

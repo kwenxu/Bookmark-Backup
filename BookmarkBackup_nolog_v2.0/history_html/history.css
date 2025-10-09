@@ -360,12 +360,56 @@ body {
     justify-content: space-between;
     align-items: center;
     margin-bottom: 12px;
+    gap: 12px;
 }
 
 .commit-title {
     font-size: 16px;
     font-weight: 600;
     color: var(--text-primary);
+    flex: 1;
+}
+
+/* 历史记录操作按钮组 */
+.commit-actions {
+    display: flex;
+    gap: 6px;
+    opacity: 0;
+    transition: opacity 0.2s ease;
+}
+
+.commit-item:hover .commit-actions {
+    opacity: 1;
+}
+
+/* 单个操作按钮 */
+.action-btn {
+    padding: 6px 10px;
+    background: var(--bg-secondary);
+    color: var(--text-secondary);
+    border: 1px solid var(--border-color);
+    border-radius: 6px;
+    font-size: 12px;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.action-btn:hover {
+    background: var(--accent-light);
+    color: var(--accent-primary);
+    border-color: var(--accent-primary);
+    transform: translateY(-1px);
+}
+
+.action-btn:active {
+    transform: translateY(0);
+}
+
+.action-btn i {
+    font-size: 13px;
 }
 
 .commit-time {
@@ -640,6 +684,37 @@ body {
 .view-header-right {
     display: flex;
     align-items: center;
+    gap: 10px;
+}
+
+/* 视图操作按钮（复制所有记录按钮） */
+.view-action-btn {
+    padding: 8px 16px;
+    background: var(--accent-primary);
+    color: #ffffff;
+    border: none;
+    border-radius: 8px;
+    font-size: 14px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.view-action-btn:hover {
+    background: var(--accent-hover);
+    transform: translateY(-1px);
+    box-shadow: var(--shadow-sm);
+}
+
+.view-action-btn:active {
+    transform: translateY(0);
+}
+
+.view-action-btn i {
+    font-size: 13px;
 }
 
 /* 切换按钮 */
@@ -1701,6 +1776,43 @@ a.tree-label.tree-bookmark-link:hover {
     border-bottom: 1px solid var(--border-color);
     font-weight: 600;
     color: var(--text-secondary);
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.diff-file-path {
+    flex: 1;
+}
+
+/* 复制diff按钮（Current Changes中） */
+.copy-diff-btn {
+    padding: 6px 12px;
+    background: var(--accent-primary);
+    color: #ffffff;
+    border: none;
+    border-radius: 6px;
+    font-size: 13px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.copy-diff-btn:hover {
+    background: var(--accent-hover);
+    transform: translateY(-1px);
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+}
+
+.copy-diff-btn:active {
+    transform: translateY(0);
+}
+
+.copy-diff-btn i {
+    font-size: 12px;
 }
 
 /* 文件夹分组 */

@@ -4409,7 +4409,7 @@ window.copyAllHistoryDiff = async function() {
     }
 };
 
-// 导出历史记录diff为HTML（简单的JSON格式化显示）
+// 导出历史记录为标准书签HTML（浏览器可导入格式）
 window.exportHistoryDiffToHTML = async function(recordTime) {
     try {
         const record = syncHistory.find(r => r.time === recordTime);
@@ -4418,125 +4418,86 @@ window.exportHistoryDiffToHTML = async function(recordTime) {
             return;
         }
         
-        // 生成JSON diff数据（与copyHistoryDiff相同的逻辑）
-        let diffData;
-        
-        // 第一次备份：提供完整的书签列表
-        if (record.isFirstBackup && record.bookmarkTree) {
-            const bookmarksList = extractBookmarksFromTree(record.bookmarkTree);
-            diffData = {
-                timestamp: record.time,
-                type: 'first-backup',
-                direction: record.direction,
-                status: record.status,
-                syncType: record.type,
-                note: record.note || '',
-                isFirstBackup: true,
-                totalBookmarks: bookmarksList.length,
-                totalFolders: record.bookmarkStats?.currentFolderCount || 0,
-                bookmarks: bookmarksList
-            };
-        } else {
-            // 普通备份：只保留统计信息
-            diffData = {
-                timestamp: record.time,
-                type: 'history-record',
-                direction: record.direction,
-                status: record.status,
-                syncType: record.type,
-                note: record.note || '',
-                errorMessage: record.errorMessage || '',
-                isFirstBackup: record.isFirstBackup || false,
-                bookmarkStats: record.bookmarkStats ? {
-                    currentBookmarkCount: record.bookmarkStats.currentBookmarkCount,
-                    currentFolderCount: record.bookmarkStats.currentFolderCount,
-                    prevBookmarkCount: record.bookmarkStats.prevBookmarkCount,
-                    prevFolderCount: record.bookmarkStats.prevFolderCount,
-                    bookmarkDiff: record.bookmarkStats.bookmarkDiff,
-                    folderDiff: record.bookmarkStats.folderDiff,
-                    bookmarkMoved: record.bookmarkStats.bookmarkMoved,
-                    folderMoved: record.bookmarkStats.folderMoved,
-                    bookmarkModified: record.bookmarkStats.bookmarkModified,
-                    folderModified: record.bookmarkStats.folderModified
-                } : null
-            };
+        // 检查是否有bookmarkTree
+        if (!record.bookmarkTree) {
+            showToast(currentLang === 'zh_CN' ? '该记录无书签数据' : 'No bookmark data available');
+            return;
         }
         
-        // 格式化JSON为HTML
-        const jsonString = JSON.stringify(diffData, null, 2);
-        const htmlContent = `<!DOCTYPE html>
-<html lang="${currentLang === 'zh_CN' ? 'zh' : 'en'}">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Bookmark Diff - ${new Date(record.time).toLocaleString()}</title>
-    <style>
-        body {
-            font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
-            padding: 20px;
-            background: #1e1e1e;
-            color: #d4d4d4;
-            line-height: 1.6;
-        }
-        .header {
-            background: #252526;
-            padding: 15px;
-            border-radius: 5px;
-            margin-bottom: 20px;
-            border-left: 4px solid #007acc;
-        }
-        .header h1 {
-            margin: 0 0 10px 0;
-            color: #4ec9b0;
-            font-size: 18px;
-        }
-        .header .info {
-            color: #858585;
-            font-size: 13px;
-        }
-        pre {
-            background: #252526;
-            padding: 20px;
-            border-radius: 5px;
-            overflow-x: auto;
-            white-space: pre-wrap;
-            word-wrap: break-word;
-            border: 1px solid #3c3c3c;
-        }
-        .json-key { color: #9cdcfe; }
-        .json-string { color: #ce9178; }
-        .json-number { color: #b5cea8; }
-        .json-boolean { color: #569cd6; }
-        .json-null { color: #569cd6; }
-    </style>
-</head>
-<body>
-    <div class="header">
-        <h1>${currentLang === 'zh_CN' ? '书签备份 Diff 数据' : 'Bookmark Backup Diff Data'}</h1>
-        <div class="info">
-            ${currentLang === 'zh_CN' ? '时间' : 'Time'}: ${new Date(record.time).toLocaleString()} | 
-            ${currentLang === 'zh_CN' ? '类型' : 'Type'}: ${diffData.type} | 
-            ${currentLang === 'zh_CN' ? '状态' : 'Status'}: ${diffData.status}
-        </div>
-    </div>
-    <pre>${escapeHtml(jsonString)}</pre>
-</body>
-</html>`;
+        // 生成标准Netscape书签HTML格式
+        const htmlContent = convertBookmarkTreeToNetscapeHTML(record.bookmarkTree, record.time);
         
         // 创建下载
         const blob = new Blob([htmlContent], { type: 'text/html;charset=utf-8' });
         const url = URL.createObjectURL(blob);
         const a = document.createElement('a');
         a.href = url;
-        a.download = `bookmark-diff-${new Date(record.time).toISOString().replace(/[:.]/g, '-')}.html`;
+        a.download = `bookmarks-${new Date(record.time).toISOString().replace(/[:.]/g, '-')}.html`;
         document.body.appendChild(a);
         a.click();
         document.body.removeChild(a);
         URL.revokeObjectURL(url);
         
-        showToast(currentLang === 'zh_CN' ? 'HTML已导出' : 'HTML exported');
+        showToast(currentLang === 'zh_CN' ? '书签HTML已导出' : 'Bookmarks HTML exported');
     } catch (error) {
         console.error('[导出HTML] 失败:', error);
         showToast(currentLang === 'zh_CN' ? '导出失败' : 'Export failed');
     }
 };
+
+// 将书签树转换为Netscape标准HTML格式（浏览器可导入）
+function convertBookmarkTreeToNetscapeHTML(bookmarkTree, timestamp) {
+    const dateAdded = Math.floor(new Date(timestamp).getTime() / 1000);
+    
+    let html = `<!DOCTYPE NETSCAPE-Bookmark-file-1>
+<!-- This is an automatically generated file.
+     It will be read and overwritten.
+     DO NOT EDIT! -->
+<META HTTP-EQUIV="Content-Type" CONTENT="text/html; charset=UTF-8">
+<TITLE>Bookmarks</TITLE>
+<H1>Bookmarks</H1>
+<DL><p>
+`;
+    
+    // 递归处理书签树
+    function processNode(node, indent = '    ') {
+        if (!node) return '';
+        
+        let result = '';
+        
+        if (node.url) {
+            // 这是一个书签
+            const addDate = node.dateAdded ? Math.floor(node.dateAdded / 1000) : dateAdded;
+            const title = escapeHtml(node.title || 'Untitled');
+            const url = escapeHtml(node.url);
+            result += `${indent}<DT><A HREF="${url}" ADD_DATE="${addDate}">${title}</A>\n`;
+        } else if (node.children) {
+            // 这是一个文件夹
+            const folderDate = node.dateAdded ? Math.floor(node.dateAdded / 1000) : dateAdded;
+            const folderTitle = escapeHtml(node.title || 'Untitled Folder');
+            
+            result += `${indent}<DT><H3 ADD_DATE="${folderDate}">${folderTitle}</H3>\n`;
+            result += `${indent}<DL><p>\n`;
+            
+            // 处理子节点
+            for (const child of node.children) {
+                result += processNode(child, indent + '    ');
+            }
+            
+            result += `${indent}</DL><p>\n`;
+        }
+        
+        return result;
+    }
+    
+    // 处理根节点的children
+    if (bookmarkTree && bookmarkTree[0] && bookmarkTree[0].children) {
+        for (const child of bookmarkTree[0].children) {
+            html += processNode(child);
+        }
+    }
+    
+    html += `</DL><p>\n`;
+    
+    return html;
+}

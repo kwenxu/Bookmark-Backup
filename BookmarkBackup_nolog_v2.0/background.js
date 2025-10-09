@@ -2587,6 +2587,9 @@ async function updateSyncStatus(direction, time, status = 'success', errorMessag
             folderDiff = 0;
         }
 
+        // 只为成功的备份保存 bookmarkTree（用于生成历史详情）
+        const shouldSaveTree = status === 'success';
+        
         const newSyncRecord = {
             time: time,
             direction: direction,
@@ -2595,10 +2598,24 @@ async function updateSyncStatus(direction, time, status = 'success', errorMessag
             errorMessage: errorMessage,
             bookmarkStats: bookmarkStats,
             isFirstBackup: !syncHistory || syncHistory.length === 0,
-            note: autoBackupReason || '' // 添加备注字段
+            note: autoBackupReason || '', // 添加备注字段
+            bookmarkTree: shouldSaveTree ? localBookmarks : null // 只保存最近10条的书签树
         };
 
         let currentSyncHistory = [...syncHistory, newSyncRecord];
+        
+        // 清理旧记录的 bookmarkTree 以节省空间（保留最近20条）
+        if (currentSyncHistory.length > 20) {
+            currentSyncHistory = currentSyncHistory.map((record, index) => {
+                if (index < currentSyncHistory.length - 20 && record.bookmarkTree) {
+                    // 删除旧记录的 bookmarkTree
+                    const { bookmarkTree, ...recordWithoutTree } = record;
+                    return recordWithoutTree;
+                }
+                return record;
+            });
+        }
+        
         let historyToStore = currentSyncHistory;
 
         if (currentSyncHistory.length >= 100) {

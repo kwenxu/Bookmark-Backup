@@ -22,6 +22,7 @@
    "permissions": [
       "bookmarks",
       "storage",
+      "unlimitedStorage",
       "alarms",
       "commands",
       "scripting",

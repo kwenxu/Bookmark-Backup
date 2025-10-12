@@ -2920,10 +2920,19 @@ function detectTreeChangesFast(oldTree, newTree) {
             let changeType = null;
             let changeDetails = {};
             
-            // 检测跨文件夹移动（parentId改变）
-            const isMoved = oldNode.parentId !== newNode.parentId;
             // 检测内容修改（标题或URL改变）
             const isModified = oldNode.title !== newNode.title || oldNode.url !== newNode.url;
+            
+            // 检测移动：
+            // 1. 跨文件夹移动（parentId改变）
+            // 2. 同级位置移动（index变化量大于1）- 只标记"明显移动"的书签，减少误报
+            //    例如：书签从位置0移到位置5（变化5），很可能是主动移动
+            //         书签从位置1移到位置0（变化1），很可能是被动改变
+            // 注意：不检测路径变化，这样可以避免误标记因父节点移动而"被动"改变路径的子项
+            const parentChanged = oldNode.parentId !== newNode.parentId;
+            const indexDelta = Math.abs((oldNode.index || 0) - (newNode.index || 0));
+            const significantIndexChange = indexDelta > 1; // 变化量>1才认为是主动移动
+            const isMoved = parentChanged || (indexDelta > 0 && significantIndexChange);
             
             if (isMoved || isModified) {
                 const types = [];
@@ -2941,6 +2950,7 @@ function detectTreeChangesFast(oldTree, newTree) {
                 
                 if (isMoved) {
                     types.push('moved');
+                    // 计算路径用于显示
                     const oldPath = getNodePath(oldTree, id);
                     const newPath = getNodePath(newTree, id);
                     console.log(`[移动检测] ID:${id}, 旧路径:${oldPath}, 新路径:${newPath}`);

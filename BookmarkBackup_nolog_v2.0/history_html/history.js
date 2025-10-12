@@ -3346,8 +3346,8 @@ function renderTreeNodeWithChanges(node, level = 0) {
             }
             
             return `
-                <div class="tree-node ${changeClass}" style="padding-left: ${level * 12}px">
-                    <div class="tree-item">
+                <div class="tree-node" style="padding-left: ${level * 12}px">
+                    <div class="tree-item ${changeClass}">
                         <span class="tree-toggle" style="opacity: 0"></span>
                         ${favicon ? `<img class="tree-icon" src="${favicon}" alt="" onerror="this.src='${fallbackIcon}'">` : `<i class="tree-icon fas fa-bookmark"></i>`}
                         <a href="${escapeHtml(node.url)}" target="_blank" class="tree-label tree-bookmark-link" rel="noopener noreferrer">${escapeHtml(node.title)}</a>
@@ -3410,8 +3410,8 @@ function renderTreeNodeWithChanges(node, level = 0) {
     }
     
     return `
-        <div class="tree-node ${folderChangeClass}" style="padding-left: ${level * 12}px">
-            <div class="tree-item">
+        <div class="tree-node" style="padding-left: ${level * 12}px">
+            <div class="tree-item ${folderChangeClass}">
                 <span class="tree-toggle ${level === 0 ? 'expanded' : ''}">
                     <i class="fas fa-chevron-right"></i>
                 </span>

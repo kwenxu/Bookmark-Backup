@@ -1029,36 +1029,36 @@ a.tree-label.tree-bookmark-link:hover {
     border-color: rgba(76, 175, 80, 0.25);
 }
 
-/* 变动节点文字颜色 */
-.tree-change-added .tree-label,
-.tree-change-added a.tree-label {
+/* 变动节点文字颜色 - 使用直接子选择器，只影响当前项，不影响子项 */
+.tree-change-added > .tree-label,
+.tree-change-added > a.tree-label {
     color: #28a745;
     font-weight: 500;
 }
 
-.tree-change-deleted .tree-label,
-.tree-change-deleted a.tree-label {
+.tree-change-deleted > .tree-label,
+.tree-change-deleted > a.tree-label {
     color: #dc3545;
     font-weight: 500;
     text-decoration: line-through;
     opacity: 0.7;
 }
 
-.tree-change-modified .tree-label,
-.tree-change-modified a.tree-label {
+.tree-change-modified > .tree-label,
+.tree-change-modified > a.tree-label {
     color: #fd7e14;
     font-weight: 500;
 }
 
-.tree-change-moved .tree-label,
-.tree-change-moved a.tree-label {
+.tree-change-moved > .tree-label,
+.tree-change-moved > a.tree-label {
     color: #0d6efd;
     font-weight: 500;
 }
 
 /* 混合类型（modified+moved）*/
-.tree-change-mixed .tree-label,
-.tree-change-mixed a.tree-label {
+.tree-change-mixed > .tree-label,
+.tree-change-mixed > a.tree-label {
     background: linear-gradient(90deg, #fd7e14 0%, #0d6efd 100%);
     -webkit-background-clip: text;
     -webkit-text-fill-color: transparent;

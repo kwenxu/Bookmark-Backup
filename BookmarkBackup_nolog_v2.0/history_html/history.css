@@ -968,6 +968,20 @@ a.tree-label.tree-bookmark-link:hover {
 }
 
 .change-badge.moved:hover .move-tooltip {
+    display: block;
+}
+
+/* 双路径显示的分隔线 */
+.move-tooltip .path-separator {
+    height: 1px;
+    background: var(--border-color);
+    margin: 8px 0;
+    width: 100%;
+}
+
+/* 每个路径占一行 */
+.move-tooltip > span,
+.move-tooltip > .path-separator {
     display: flex;
     align-items: center;
     gap: 8px;

@@ -2541,6 +2541,7 @@ function renderBookmarkItem(bookmark) {
 let treeChangeMap = null; // 缓存变动映射
 let cachedTreeData = null; // 缓存树数据
 let cachedOldTree = null; // 缓存旧树数据
+let cachedCurrentTree = null; // 缓存当前树数据（用于智能路径检测）
 let lastTreeFingerprint = null; // 上次树的指纹
 
 // 生成书签树指纹（快速哈希）
@@ -2631,6 +2632,7 @@ async function renderTreeView(forceRefresh = false) {
         
         const oldTree = storageData.lastBookmarkData && storageData.lastBookmarkData.bookmarkTree;
         cachedOldTree = oldTree;
+        cachedCurrentTree = currentTree; // 缓存当前树，用于智能路径检测
         
         // 快速检测变动（只在有备份数据时才检测）
         console.log('[renderTreeView] oldTree 存在:', !!oldTree);
@@ -3207,13 +3209,42 @@ window.copyJSONDiff = function() {
 }
 
 // 生成面包屑式的路径显示（用于移动tooltip）
-function generateBreadcrumbForTooltip(path) {
+// 支持显示单个路径或双路径（原始+当前）
+function generateBreadcrumbForTooltip(pathInfo) {
+    // 兼容旧的字符串参数
+    if (typeof pathInfo === 'string') {
+        return generateSinglePathBreadcrumb(pathInfo, currentLang === 'zh_CN' ? '从' : 'From');
+    }
+    
+    // 新的对象参数：{ originalPath, currentPath, hasChanges }
+    if (!pathInfo || !pathInfo.originalPath) return '';
+    
+    let html = '';
+    
+    if (pathInfo.hasChanges && pathInfo.currentPath) {
+        // 显示两个路径：原始路径 + 当前路径
+        const originalLabel = currentLang === 'zh_CN' ? '原位置' : 'Original';
+        const currentLabel = currentLang === 'zh_CN' ? '现在位置' : 'Current';
+        
+        html += generateSinglePathBreadcrumb(pathInfo.originalPath, originalLabel);
+        html += '<div class="path-separator"></div>'; // 分隔线
+        html += generateSinglePathBreadcrumb(pathInfo.currentPath, currentLabel);
+    } else {
+        // 只显示一个路径
+        const prefix = currentLang === 'zh_CN' ? '从' : 'From';
+        html += generateSinglePathBreadcrumb(pathInfo.originalPath, prefix);
+    }
+    
+    return html;
+}
+
+// 生成单个路径的面包屑
+function generateSinglePathBreadcrumb(path, label) {
     if (!path) return '';
     
     const parts = path.split(' > ');
-    const prefix = currentLang === 'zh_CN' ? '从' : 'From';
     
-    let html = `<span class="move-tooltip-label">${prefix}:</span>`;
+    let html = `<span class="move-tooltip-label">${label}:</span>`;
     
     parts.forEach((part, index) => {
         const isRoot = index === 0;
@@ -3388,6 +3419,141 @@ function getParentFolderPath(fullPath, lang = 'zh_CN') {
     return parts.join(' > ');
 }
 
+// 智能检测父路径是否发生变化（重命名、移动、删除等）
+// 返回 { originalPath, currentPath, hasChanges }
+function detectParentPathChanges(fullOldPath, oldTree, newTree, lang = 'zh_CN') {
+    const parentPath = getParentFolderPath(fullOldPath, lang);
+    
+    // 如果是根目录，不需要检测
+    if (parentPath === '根目录' || parentPath === 'Root') {
+        return {
+            originalPath: parentPath,
+            currentPath: null,
+            hasChanges: false
+        };
+    }
+    
+    // 分解父路径中的文件夹名称
+    const folderNames = parentPath.split(' > ').filter(p => p.trim());
+    
+    if (folderNames.length === 0) {
+        return {
+            originalPath: parentPath,
+            currentPath: null,
+            hasChanges: false
+        };
+    }
+    
+    // 在旧树中找到这些文件夹对应的ID
+    const folderIds = findFolderIdsByPath(oldTree, folderNames);
+    
+    if (folderIds.length === 0) {
+        return {
+            originalPath: parentPath,
+            currentPath: null,
+            hasChanges: false
+        };
+    }
+    
+    // 检查这些文件夹在新树中的路径
+    let hasChanges = false;
+    const currentPaths = [];
+    
+    folderIds.forEach(folderId => {
+        if (treeChangeMap && treeChangeMap.has(folderId)) {
+            const change = treeChangeMap.get(folderId);
+            // 如果文件夹被移动、重命名或删除
+            if (change.type === 'moved' || change.type === 'modified' || change.type === 'deleted' || 
+                change.type.includes('moved') || change.type.includes('modified')) {
+                hasChanges = true;
+            }
+        }
+    });
+    
+    // 如果有变化，构建当前路径
+    let currentPath = null;
+    if (hasChanges && newTree) {
+        // 尝试在新树中找到最后一个文件夹（最深层的父文件夹）
+        const lastFolderId = folderIds[folderIds.length - 1];
+        currentPath = findNodePathInTree(newTree, lastFolderId);
+        
+        if (currentPath) {
+            // 去掉最后一级（这是找到的文件夹自己）
+            currentPath = getParentFolderPath(currentPath + ' > dummy', lang);
+        }
+    }
+    
+    return {
+        originalPath: parentPath,
+        currentPath: currentPath,
+        hasChanges: hasChanges && currentPath && currentPath !== parentPath
+    };
+}
+
+// 根据路径中的文件夹名称找到对应的ID
+function findFolderIdsByPath(tree, folderNames) {
+    const ids = [];
+    
+    if (!tree || !tree[0] || folderNames.length === 0) {
+        return ids;
+    }
+    
+    let currentNodes = [tree[0]];
+    
+    for (const folderName of folderNames) {
+        let found = false;
+        
+        for (const node of currentNodes) {
+            if (node.children) {
+                const folder = node.children.find(child => 
+                    child.title === folderName && !child.url
+                );
+                
+                if (folder) {
+                    ids.push(folder.id);
+                    currentNodes = [folder];
+                    found = true;
+                    break;
+                }
+            }
+        }
+        
+        if (!found) break;
+    }
+    
+    return ids;
+}
+
+// 在树中根据ID找到节点的完整路径
+function findNodePathInTree(tree, nodeId) {
+    if (!tree || !tree[0]) return null;
+    
+    const path = [];
+    
+    function traverse(node, currentPath) {
+        if (node.id === nodeId) {
+            path.push(...currentPath, node.title);
+            return true;
+        }
+        
+        if (node.children) {
+            for (const child of node.children) {
+                if (traverse(child, [...currentPath, node.title])) {
+                    return true;
+                }
+            }
+        }
+        
+        return false;
+    }
+    
+    if (traverse(tree[0], [])) {
+        return path.join(' > ');
+    }
+    
+    return null;
+}
+
 // 渲染带变动标记的树节点
 function renderTreeNodeWithChanges(node, level = 0) {
     const change = treeChangeMap ? treeChangeMap.get(node.id) : null;
@@ -3421,10 +3587,13 @@ function renderTreeNodeWithChanges(node, level = 0) {
                     // 移动标记
                     if (types.includes('moved') && change.moved) {
                         const fullOldPath = change.moved.oldPath || (currentLang === 'zh_CN' ? '未知位置' : 'Unknown');
-                        const fromPath = getParentFolderPath(fullOldPath, currentLang);
+                        // 智能检测父路径是否也发生变化
+                        const pathInfo = detectParentPathChanges(fullOldPath, cachedOldTree, cachedCurrentTree, currentLang);
                         const moveId = `move-${node.id}`;
-                        const breadcrumbHtml = generateBreadcrumbForTooltip(fromPath);
-                        statusIcon += `<span class="change-badge moved" data-move-from="${escapeHtml(fromPath)}" data-move-id="${moveId}">
+                        const breadcrumbHtml = generateBreadcrumbForTooltip(pathInfo);
+                        const dataFromPath = pathInfo.hasChanges ? 
+                            `${pathInfo.originalPath} → ${pathInfo.currentPath}` : pathInfo.originalPath;
+                        statusIcon += `<span class="change-badge moved" data-move-from="${escapeHtml(dataFromPath)}" data-move-id="${moveId}">
                             <i class="fas fa-arrows-alt"></i>
                             <span class="move-tooltip">${breadcrumbHtml}</span>
                         </span>`;
@@ -3435,10 +3604,13 @@ function renderTreeNodeWithChanges(node, level = 0) {
                 } else if (change.type === 'moved') {
                     changeClass = 'tree-change-moved';
                     const fullOldPath = change.moved.oldPath || (currentLang === 'zh_CN' ? '未知位置' : 'Unknown');
-                    const fromPath = getParentFolderPath(fullOldPath, currentLang);
+                    // 智能检测父路径是否也发生变化
+                    const pathInfo = detectParentPathChanges(fullOldPath, cachedOldTree, cachedCurrentTree, currentLang);
                     const moveId = `move-${node.id}`;
-                    const breadcrumbHtml = generateBreadcrumbForTooltip(fromPath);
-                    statusIcon = `<span class="change-badge moved" data-move-from="${escapeHtml(fromPath)}" data-move-id="${moveId}">
+                    const breadcrumbHtml = generateBreadcrumbForTooltip(pathInfo);
+                    const dataFromPath = pathInfo.hasChanges ? 
+                        `${pathInfo.originalPath} → ${pathInfo.currentPath}` : pathInfo.originalPath;
+                    statusIcon = `<span class="change-badge moved" data-move-from="${escapeHtml(dataFromPath)}" data-move-id="${moveId}">
                         <i class="fas fa-arrows-alt"></i>
                         <span class="move-tooltip">${breadcrumbHtml}</span>
                     </span>`;
@@ -3484,10 +3656,13 @@ function renderTreeNodeWithChanges(node, level = 0) {
             // 移动标记
             if (types.includes('moved') && change.moved) {
                 const fullOldPath = change.moved.oldPath || (currentLang === 'zh_CN' ? '未知位置' : 'Unknown');
-                const fromPath = getParentFolderPath(fullOldPath, currentLang);
+                // 智能检测父路径是否也发生变化
+                const pathInfo = detectParentPathChanges(fullOldPath, cachedOldTree, cachedCurrentTree, currentLang);
                 const moveId = `move-${node.id}`;
-                const breadcrumbHtml = generateBreadcrumbForTooltip(fromPath);
-                statusIcon += `<span class="change-badge moved" data-move-from="${escapeHtml(fromPath)}" data-move-id="${moveId}">
+                const breadcrumbHtml = generateBreadcrumbForTooltip(pathInfo);
+                const dataFromPath = pathInfo.hasChanges ? 
+                    `${pathInfo.originalPath} → ${pathInfo.currentPath}` : pathInfo.originalPath;
+                statusIcon += `<span class="change-badge moved" data-move-from="${escapeHtml(dataFromPath)}" data-move-id="${moveId}">
                     <i class="fas fa-arrows-alt"></i>
                     <span class="move-tooltip">${breadcrumbHtml}</span>
                 </span>`;
@@ -3498,10 +3673,13 @@ function renderTreeNodeWithChanges(node, level = 0) {
         } else if (change.type === 'moved') {
             folderChangeClass = 'tree-change-moved';
             const fullOldPath = change.moved.oldPath || (currentLang === 'zh_CN' ? '未知位置' : 'Unknown');
-            const fromPath = getParentFolderPath(fullOldPath, currentLang);
+            // 智能检测父路径是否也发生变化
+            const pathInfo = detectParentPathChanges(fullOldPath, cachedOldTree, cachedCurrentTree, currentLang);
             const moveId = `move-${node.id}`;
-            const breadcrumbHtml = generateBreadcrumbForTooltip(fromPath);
-            statusIcon = `<span class="change-badge moved" data-move-from="${escapeHtml(fromPath)}" data-move-id="${moveId}">
+            const breadcrumbHtml = generateBreadcrumbForTooltip(pathInfo);
+            const dataFromPath = pathInfo.hasChanges ? 
+                `${pathInfo.originalPath} → ${pathInfo.currentPath}` : pathInfo.originalPath;
+            statusIcon = `<span class="change-badge moved" data-move-from="${escapeHtml(dataFromPath)}" data-move-id="${moveId}">
                 <i class="fas fa-arrows-alt"></i>
                 <span class="move-tooltip">${breadcrumbHtml}</span>
             </span>`;

@@ -2474,3 +2474,249 @@ a.tree-label.tree-bookmark-link:hover {
         padding: 10px;
     }
 }
+
+/* ==================== 右键菜单样式 ==================== */
+
+.bookmark-context-menu {
+    position: relative;
+    z-index: 10000;
+    background: var(--bg-elevated);
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.15);
+    min-width: 200px;
+    max-width: 250px;
+    padding: 6px 0;
+    font-size: 13px;
+    margin-left: 20px;
+    margin-top: 5px;
+    margin-bottom: 5px;
+}
+
+[data-theme="dark"] .bookmark-context-menu {
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4);
+}
+
+.context-menu-item {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 10px 16px;
+    cursor: pointer;
+    color: var(--text-primary);
+    transition: background-color 0.2s;
+    user-select: none;
+}
+
+.context-menu-item:hover {
+    background: var(--bg-secondary);
+}
+
+.context-menu-item.disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
+.context-menu-item.disabled:hover {
+    background: transparent;
+}
+
+.context-menu-item i {
+    width: 16px;
+    text-align: center;
+    color: var(--text-secondary);
+}
+
+.context-menu-separator {
+    height: 1px;
+    background: var(--border-color);
+    margin: 6px 0;
+}
+
+/* ==================== 拖拽样式 ==================== */
+
+.tree-item[draggable="true"] {
+    cursor: move;
+}
+
+.tree-item.dragging {
+    opacity: 0.5;
+}
+
+.tree-item.drag-over {
+    background: var(--accent-light);
+    border-radius: 4px;
+}
+
+[data-theme="dark"] .tree-item.drag-over {
+    background: rgba(24, 119, 242, 0.2);
+}
+
+.drop-indicator {
+    position: absolute;
+    background: var(--accent-primary);
+    pointer-events: none;
+    z-index: 1000;
+    border-radius: 1px;
+}
+
+/* 拖拽时禁止选择文本 */
+.dragging-active {
+    user-select: none;
+}
+
+/* ==================== 右键菜单和拖拽动画 ==================== */
+
+@keyframes contextMenuFadeIn {
+    from {
+        opacity: 0;
+        transform: scale(0.95);
+    }
+    to {
+        opacity: 1;
+        transform: scale(1);
+    }
+}
+
+.bookmark-context-menu {
+    animation: contextMenuFadeIn 0.15s ease-out;
+}
+
+/* ==================== 树节点额外样式 ==================== */
+
+.tree-item {
+    position: relative;
+}
+
+/* 拖拽提示 */
+.tree-item::after {
+    content: '';
+    position: absolute;
+    right: 8px;
+    top: 50%;
+    transform: translateY(-50%);
+    width: 4px;
+    height: 12px;
+    background: linear-gradient(to bottom, 
+        var(--text-tertiary) 0px, 
+        var(--text-tertiary) 2px, 
+        transparent 2px, 
+        transparent 4px,
+        var(--text-tertiary) 4px, 
+        var(--text-tertiary) 6px, 
+        transparent 6px, 
+        transparent 8px,
+        var(--text-tertiary) 8px, 
+        var(--text-tertiary) 10px,
+        transparent 10px,
+        transparent 12px
+    );
+    opacity: 0;
+    transition: opacity 0.2s;
+}
+
+.tree-item:hover::after {
+    opacity: 0.3;
+}
+
+.tree-item.dragging::after {
+    opacity: 0;
+}
+
+/* ==================== 剪切标记样式 ==================== */
+
+.tree-item.cut-marked {
+    opacity: 0.5;
+    position: relative;
+}
+
+.tree-item.cut-marked::before {
+    content: '✂';
+    position: absolute;
+    left: 4px;
+    top: 50%;
+    transform: translateY(-50%);
+    font-size: 12px;
+    color: var(--warning);
+}
+
+.tree-item.cut-marked .tree-label {
+    text-decoration: line-through;
+}
+
+/* ==================== 多选样式 ==================== */
+
+.tree-item.selected {
+    background: var(--accent-light);
+    border-left: 3px solid var(--accent-primary);
+    padding-left: calc(12px - 3px); /* 补偿边框宽度 */
+}
+
+[data-theme="dark"] .tree-item.selected {
+    background: rgba(24, 119, 242, 0.2);
+}
+
+.tree-item.selected .tree-label {
+    font-weight: 500;
+}
+
+/* 多选计数器（可选，显示在页面顶部） */
+.selection-counter {
+    position: fixed;
+    top: 60px;
+    right: 20px;
+    background: var(--accent-primary);
+    color: white;
+    padding: 8px 16px;
+    border-radius: 20px;
+    font-size: 13px;
+    font-weight: 500;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
+    z-index: 1000;
+    animation: slideIn 0.3s ease-out;
+}
+
+@keyframes slideIn {
+    from {
+        transform: translateX(100px);
+        opacity: 0;
+    }
+    to {
+        transform: translateX(0);
+        opacity: 1;
+    }
+}
+
+.selection-counter .count {
+    font-weight: 700;
+}
+
+.selection-counter .clear-btn {
+    margin-left: 12px;
+    cursor: pointer;
+    opacity: 0.8;
+    transition: opacity 0.2s;
+}
+
+.selection-counter .clear-btn:hover {
+    opacity: 1;
+}
+
+/* ==================== 右键选中标识 ==================== */
+
+.tree-item.context-selected {
+    outline: 2px solid var(--accent-primary);
+    outline-offset: -2px;
+    background: var(--accent-light);
+    border-radius: 4px;
+}
+
+[data-theme="dark"] .tree-item.context-selected {
+    background: rgba(24, 119, 242, 0.15);
+}
+
+/* 嵌入式右键菜单 */
+.bookmark-context-menu {
+    position: relative !important;
+    will-change: auto;
+}

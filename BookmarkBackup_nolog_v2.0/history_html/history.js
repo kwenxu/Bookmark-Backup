@@ -336,6 +336,14 @@ document.addEventListener('DOMContentLoaded', async () => {
     
     // 初始化 UI（此时currentView已经是正确的值）
     initializeUI();
+    
+    // 初始化右键菜单和拖拽功能
+    if (typeof initContextMenu === 'function') {
+        initContextMenu();
+    }
+    if (typeof initDragDrop === 'function') {
+        initDragDrop();
+    }
 
     // 注册消息监听
     setupRealtimeMessageListener();
@@ -2770,6 +2778,21 @@ function attachTreeEvents(treeContainer) {
     // 绑定新的事件监听器
     treeContainer.addEventListener('click', treeClickHandler);
     
+    // 绑定右键菜单事件
+    const treeItems = treeContainer.querySelectorAll('.tree-item[data-node-id]');
+    treeItems.forEach(item => {
+        item.addEventListener('contextmenu', (e) => {
+            if (typeof showContextMenu === 'function') {
+                showContextMenu(e, item);
+            }
+        });
+    });
+    
+    // 绑定拖拽事件
+    if (typeof attachDragEvents === 'function') {
+        attachDragEvents(treeContainer);
+    }
+    
     console.log('[树事件] 事件绑定完成');
     
     // 恢复展开状态
@@ -3619,7 +3642,7 @@ function renderTreeNodeWithChanges(node, level = 0) {
             
             return `
                 <div class="tree-node" style="padding-left: ${level * 12}px">
-                    <div class="tree-item ${changeClass}">
+                    <div class="tree-item ${changeClass}" data-node-id="${node.id}" data-node-title="${escapeHtml(node.title)}" data-node-url="${escapeHtml(node.url || '')}" data-node-type="bookmark">
                         <span class="tree-toggle" style="opacity: 0"></span>
                         ${favicon ? `<img class="tree-icon" src="${favicon}" alt="" onerror="this.src='${fallbackIcon}'">` : `<i class="tree-icon fas fa-bookmark"></i>`}
                         <a href="${escapeHtml(node.url)}" target="_blank" class="tree-label tree-bookmark-link" rel="noopener noreferrer">${escapeHtml(node.title)}</a>
@@ -3698,7 +3721,7 @@ function renderTreeNodeWithChanges(node, level = 0) {
     
     return `
         <div class="tree-node" style="padding-left: ${level * 12}px">
-            <div class="tree-item ${folderChangeClass}">
+            <div class="tree-item ${folderChangeClass}" data-node-id="${node.id}" data-node-title="${escapeHtml(node.title)}" data-node-type="folder">
                 <span class="tree-toggle ${level === 0 ? 'expanded' : ''}">
                     <i class="fas fa-chevron-right"></i>
                 </span>

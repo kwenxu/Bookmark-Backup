@@ -2910,7 +2910,82 @@ function detectTreeChangesFast(oldTree, newTree) {
     if (oldTree[0]) traverse(oldTree[0], oldNodes, null, oldParentChildren);
     if (newTree[0]) traverse(newTree[0], newNodes, null, newParentChildren);
     
-    // 检测真正的变化
+    // 第一步：收集所有有 index 变化的节点（按父节点分组）
+    const indexChanges = new Map(); // parentId -> [{id, oldIndex, newIndex, indexDelta, indexChange}]
+    
+    newNodes.forEach((newNode, id) => {
+        const oldNode = oldNodes.get(id);
+        if (oldNode && !newNodes.has(id + '_deleted')) {
+            const parentId = newNode.parentId;
+            const parentChanged = oldNode.parentId !== newNode.parentId;
+            
+            if (!parentChanged) { // 只看同级移动
+                const oldIndex = typeof oldNode.index === 'number' ? oldNode.index : 0;
+                const newIndex = typeof newNode.index === 'number' ? newNode.index : 0;
+                const indexDelta = Math.abs(oldIndex - newIndex);
+                const indexChange = newIndex - oldIndex; // 正数=向后移，负数=向前移
+                
+                if (indexDelta > 0) {
+                    if (!indexChanges.has(parentId)) {
+                        indexChanges.set(parentId, []);
+                    }
+                    indexChanges.get(parentId).push({
+                        id,
+                        oldIndex,
+                        newIndex,
+                        indexDelta,
+                        indexChange,
+                        title: newNode.title
+                    });
+                }
+            }
+        }
+    });
+    
+    // 第二步：智能判断哪些是真正的主动移动
+    const confirmedMoves = new Set();
+    
+    indexChanges.forEach((changes, parentId) => {
+        if (changes.length === 0) return;
+        
+        // 找出变化量最大的节点
+        const maxDelta = Math.max(...changes.map(c => c.indexDelta));
+        
+        // 策略：
+        // 1. 如果有节点的 indexDelta 明显大于其他（>=2 且是其他的2倍以上），肯定是主动移动
+        // 2. 如果所有节点 indexDelta 都是 1，标记向后移动的（index增加的）
+        // 3. 如果有节点 indexDelta >= 2，标记它们
+        
+        const largeChanges = changes.filter(c => c.indexDelta >= 2);
+        const smallChanges = changes.filter(c => c.indexDelta === 1);
+        
+        if (largeChanges.length > 0) {
+            // 有明显大范围移动，标记它们
+            largeChanges.forEach(c => {
+                confirmedMoves.add(c.id);
+                console.log(`[移动检测-大范围] ID:${c.id}, 标题:"${c.title}", indexDelta:${c.indexDelta}, oldIndex:${c.oldIndex}→${c.newIndex}`);
+            });
+        } else if (smallChanges.length > 0) {
+            // 都是小范围移动（indexDelta=1），只标记向后移动的（index增加的）
+            // 因为通常是把一个书签拖到后面，导致中间的书签向前挤
+            const movedBackward = smallChanges.filter(c => c.indexChange > 0);
+            
+            if (movedBackward.length > 0 && movedBackward.length < smallChanges.length) {
+                // 只有部分向后移动，标记它们
+                movedBackward.forEach(c => {
+                    confirmedMoves.add(c.id);
+                    console.log(`[移动检测-小范围] ID:${c.id}, 标题:"${c.title}", indexDelta:${c.indexDelta}, oldIndex:${c.oldIndex}→${c.newIndex} (向后移动)`);
+                });
+            } else if (movedBackward.length === 1) {
+                // 只有一个向后移动，很可能是主动移动
+                confirmedMoves.add(movedBackward[0].id);
+                console.log(`[移动检测-单个] ID:${movedBackward[0].id}, 标题:"${movedBackward[0].title}", indexDelta:${movedBackward[0].indexDelta}, oldIndex:${movedBackward[0].oldIndex}→${movedBackward[0].newIndex}`);
+            }
+            // 如果所有都向后移动或所有都向前移动，可能是批量操作，不标记
+        }
+    });
+    
+    // 第三步：检测真正的变化
     newNodes.forEach((newNode, id) => {
         const oldNode = oldNodes.get(id);
         if (!oldNode) {
@@ -2925,14 +3000,10 @@ function detectTreeChangesFast(oldTree, newTree) {
             
             // 检测移动：
             // 1. 跨文件夹移动（parentId改变）
-            // 2. 同级位置移动（index变化量大于1）- 只标记"明显移动"的书签，减少误报
-            //    例如：书签从位置0移到位置5（变化5），很可能是主动移动
-            //         书签从位置1移到位置0（变化1），很可能是被动改变
-            // 注意：不检测路径变化，这样可以避免误标记因父节点移动而"被动"改变路径的子项
+            // 2. 同级位置移动（在 confirmedMoves 中）
             const parentChanged = oldNode.parentId !== newNode.parentId;
-            const indexDelta = Math.abs((oldNode.index || 0) - (newNode.index || 0));
-            const significantIndexChange = indexDelta > 1; // 变化量>1才认为是主动移动
-            const isMoved = parentChanged || (indexDelta > 0 && significantIndexChange);
+            const sameLevelMove = confirmedMoves.has(id);
+            const isMoved = parentChanged || sameLevelMove;
             
             if (isMoved || isModified) {
                 const types = [];
@@ -3300,6 +3371,23 @@ function rebuildTreeWithDeleted(oldTree, newTree, changeMap) {
     return [rebuiltRoot];
 }
 
+// 从完整路径中提取父文件夹路径（去掉最后一级）
+function getParentFolderPath(fullPath, lang = 'zh_CN') {
+    if (!fullPath) return lang === 'zh_CN' ? '未知位置' : 'Unknown';
+    
+    // 分割路径（使用 ' > ' 作为分隔符）
+    const parts = fullPath.split(' > ').filter(p => p.trim());
+    
+    // 如果只有一级（根目录），直接返回
+    if (parts.length <= 1) {
+        return lang === 'zh_CN' ? '根目录' : 'Root';
+    }
+    
+    // 去掉最后一级（书签/文件夹自己的名称），保留父文件夹路径
+    parts.pop();
+    return parts.join(' > ');
+}
+
 // 渲染带变动标记的树节点
 function renderTreeNodeWithChanges(node, level = 0) {
     const change = treeChangeMap ? treeChangeMap.get(node.id) : null;
@@ -3332,7 +3420,8 @@ function renderTreeNodeWithChanges(node, level = 0) {
                     
                     // 移动标记
                     if (types.includes('moved') && change.moved) {
-                        const fromPath = change.moved.oldPath || (currentLang === 'zh_CN' ? '未知位置' : 'Unknown');
+                        const fullOldPath = change.moved.oldPath || (currentLang === 'zh_CN' ? '未知位置' : 'Unknown');
+                        const fromPath = getParentFolderPath(fullOldPath, currentLang);
                         const moveId = `move-${node.id}`;
                         const breadcrumbHtml = generateBreadcrumbForTooltip(fromPath);
                         statusIcon += `<span class="change-badge moved" data-move-from="${escapeHtml(fromPath)}" data-move-id="${moveId}">
@@ -3345,7 +3434,8 @@ function renderTreeNodeWithChanges(node, level = 0) {
                     statusIcon = '<span class="change-badge modified">~</span>';
                 } else if (change.type === 'moved') {
                     changeClass = 'tree-change-moved';
-                    const fromPath = change.moved.oldPath || (currentLang === 'zh_CN' ? '未知位置' : 'Unknown');
+                    const fullOldPath = change.moved.oldPath || (currentLang === 'zh_CN' ? '未知位置' : 'Unknown');
+                    const fromPath = getParentFolderPath(fullOldPath, currentLang);
                     const moveId = `move-${node.id}`;
                     const breadcrumbHtml = generateBreadcrumbForTooltip(fromPath);
                     statusIcon = `<span class="change-badge moved" data-move-from="${escapeHtml(fromPath)}" data-move-id="${moveId}">
@@ -3393,7 +3483,8 @@ function renderTreeNodeWithChanges(node, level = 0) {
             
             // 移动标记
             if (types.includes('moved') && change.moved) {
-                const fromPath = change.moved.oldPath || (currentLang === 'zh_CN' ? '未知位置' : 'Unknown');
+                const fullOldPath = change.moved.oldPath || (currentLang === 'zh_CN' ? '未知位置' : 'Unknown');
+                const fromPath = getParentFolderPath(fullOldPath, currentLang);
                 const moveId = `move-${node.id}`;
                 const breadcrumbHtml = generateBreadcrumbForTooltip(fromPath);
                 statusIcon += `<span class="change-badge moved" data-move-from="${escapeHtml(fromPath)}" data-move-id="${moveId}">
@@ -3406,7 +3497,8 @@ function renderTreeNodeWithChanges(node, level = 0) {
             statusIcon = '<span class="change-badge modified">~</span>';
         } else if (change.type === 'moved') {
             folderChangeClass = 'tree-change-moved';
-            const fromPath = change.moved.oldPath || (currentLang === 'zh_CN' ? '未知位置' : 'Unknown');
+            const fullOldPath = change.moved.oldPath || (currentLang === 'zh_CN' ? '未知位置' : 'Unknown');
+            const fromPath = getParentFolderPath(fullOldPath, currentLang);
             const moveId = `move-${node.id}`;
             const breadcrumbHtml = generateBreadcrumbForTooltip(fromPath);
             statusIcon = `<span class="change-badge moved" data-move-from="${escapeHtml(fromPath)}" data-move-id="${moveId}">
@@ -3419,6 +3511,13 @@ function renderTreeNodeWithChanges(node, level = 0) {
         }
     }
     
+    // 按照 index 排序子节点，确保显示顺序和存储顺序一致（避免Chrome排序选项干扰）
+    const sortedChildren = node.children ? [...node.children].sort((a, b) => {
+        const indexA = typeof a.index === 'number' ? a.index : 0;
+        const indexB = typeof b.index === 'number' ? b.index : 0;
+        return indexA - indexB;
+    }) : [];
+    
     return `
         <div class="tree-node" style="padding-left: ${level * 12}px">
             <div class="tree-item ${folderChangeClass}">
@@ -3430,7 +3529,7 @@ function renderTreeNodeWithChanges(node, level = 0) {
                 <span class="change-badges">${statusIcon}</span>
             </div>
             <div class="tree-children ${level === 0 ? 'expanded' : ''}">
-                ${node.children.map(child => renderTreeNodeWithChanges(child, level + 1)).join('')}
+                ${sortedChildren.map(child => renderTreeNodeWithChanges(child, level + 1)).join('')}
             </div>
         </div>
     `;

@@ -206,7 +206,7 @@ body {
     visibility: hidden;
     opacity: 0;
     transition: all 0.2s ease;
-    pointer-events: none;
+    pointer-events: auto; /* 改为auto以接收点击和右键事件 */
     z-index: 1000;
     box-shadow: var(--shadow-md);
 }
@@ -2555,7 +2555,7 @@ a.tree-label.tree-bookmark-link:hover {
 .drop-indicator {
     position: absolute;
     background: var(--accent-primary);
-    pointer-events: none;
+    pointer-events: auto; /* 改为auto以接收点击和右键事件 */
     z-index: 1000;
     border-radius: 1px;
 }
@@ -2715,8 +2715,229 @@ a.tree-label.tree-bookmark-link:hover {
     background: rgba(24, 119, 242, 0.15);
 }
 
-/* 嵌入式右键菜单 */
+/* 右键菜单定位 */
 .bookmark-context-menu {
-    position: relative !important;
+    /* 不强制relative，允许JS动态设置为fixed（批量菜单）或relative（常规菜单） */
     will-change: auto;
+}
+
+/* ==================== 批量操作工具栏 ==================== */
+
+.batch-toolbar {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 10px 15px;
+    background: linear-gradient(135deg, var(--accent-light) 0%, rgba(24, 119, 242, 0.1) 100%);
+    border: 1px solid var(--accent-primary);
+    border-radius: 8px;
+    margin: 15px 0;
+    flex-wrap: wrap;
+    animation: toolbarSlideIn 0.3s ease-out;
+}
+
+@keyframes toolbarSlideIn {
+    from {
+        transform: translateY(-10px);
+        opacity: 0;
+    }
+    to {
+        transform: translateY(0);
+        opacity: 1;
+    }
+}
+
+[data-theme="dark"] .batch-toolbar {
+    background: linear-gradient(135deg, rgba(24, 119, 242, 0.2) 0%, rgba(24, 119, 242, 0.05) 100%);
+}
+
+.selected-count {
+    font-weight: 600;
+    color: var(--accent-primary);
+    font-size: 14px;
+    padding: 4px 12px;
+    background: white;
+    border-radius: 16px;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+}
+
+[data-theme="dark"] .selected-count {
+    background: rgba(255, 255, 255, 0.1);
+    color: var(--accent-light);
+}
+
+.batch-btn {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 8px 14px;
+    background: white;
+    border: 1px solid var(--border-color);
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 13px;
+    font-weight: 500;
+    color: var(--text-primary);
+    transition: all 0.2s ease;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
+}
+
+.batch-btn:hover {
+    background: var(--accent-primary);
+    color: white;
+    border-color: var(--accent-primary);
+    transform: translateY(-1px);
+    box-shadow: 0 4px 8px rgba(24, 119, 242, 0.3);
+}
+
+.batch-btn:active {
+    transform: translateY(0);
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.15);
+}
+
+.batch-btn i {
+    font-size: 12px;
+}
+
+[data-theme="dark"] .batch-btn {
+    background: rgba(255, 255, 255, 0.05);
+    color: var(--text-primary);
+    border-color: rgba(255, 255, 255, 0.1);
+}
+
+[data-theme="dark"] .batch-btn:hover {
+    background: var(--accent-primary);
+    color: white;
+}
+
+/* ==================== Select模式蓝框 ==================== */
+
+.select-mode-overlay {
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    border: 3px solid var(--accent-primary);
+    border-radius: 12px;
+    background: transparent; /* 移除淡蓝色蒙版，保持透明 */
+    pointer-events: auto; /* 改为auto以接收点击和右键事件 */
+    z-index: 100;
+    animation: selectModeIn 0.3s ease-out;
+}
+
+@keyframes selectModeIn {
+    from {
+        opacity: 0;
+        transform: scale(0.98);
+    }
+    to {
+        opacity: 1;
+        transform: scale(1);
+    }
+}
+
+[data-theme="dark"] .select-mode-overlay {
+    background: transparent; /* 暗色主题也保持透明 */
+}
+
+.select-mode-tip {
+    position: fixed;
+    top: 20px;
+    left: 50%;
+    transform: translateX(-50%);
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 12px 24px;
+    background: var(--accent-primary);
+    color: white;
+    border-radius: 24px;
+    box-shadow: 0 4px 16px rgba(24, 119, 242, 0.4);
+    font-size: 14px;
+    font-weight: 500;
+    pointer-events: auto;
+    z-index: 10001;
+    animation: tipSlideDown 0.3s ease-out;
+}
+
+@keyframes tipSlideDown {
+    from {
+        transform: translateX(-50%) translateY(-20px);
+        opacity: 0;
+    }
+    to {
+        transform: translateX(-50%) translateY(0);
+        opacity: 1;
+    }
+}
+
+.select-mode-tip i {
+    font-size: 16px;
+}
+
+.exit-select-btn {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 6px 12px;
+    background: rgba(255, 255, 255, 0.2);
+    border: 1px solid rgba(255, 255, 255, 0.3);
+    border-radius: 16px;
+    color: white;
+    font-size: 13px;
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+
+.exit-select-btn:hover {
+    background: rgba(255, 255, 255, 0.3);
+    transform: scale(1.05);
+}
+
+.exit-select-btn:active {
+    transform: scale(0.98);
+}
+
+/* ==================== 工具栏样式更新 ==================== */
+
+.batch-toolbar {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
+}
+
+/* 移除之前的独立样式，改为内联显示 */
+.batch-toolbar .selected-count {
+    font-size: 13px;
+    margin-right: 4px;
+}
+
+.batch-toolbar .batch-btn {
+    padding: 6px 12px;
+    font-size: 12px;
+}
+
+/* 退出按钮特殊样式 - 红色 */
+.batch-toolbar .exit-select-btn {
+    background: #ff4444 !important;
+    color: white !important;
+    border-color: #cc0000 !important;
+    margin-left: 12px;
+}
+
+.batch-toolbar .exit-select-btn:hover {
+    background: #cc0000 !important;
+    border-color: #990000 !important;
+}
+
+[data-theme="dark"] .batch-toolbar .exit-select-btn {
+    background: #ff4444 !important;
+    border-color: #cc0000 !important;
+}
+
+[data-theme="dark"] .batch-toolbar .exit-select-btn:hover {
+    background: #cc0000 !important;
+    border-color: #990000 !important;
 }

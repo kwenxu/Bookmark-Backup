@@ -344,6 +344,20 @@ document.addEventListener('DOMContentLoaded', async () => {
     if (typeof initDragDrop === 'function') {
         initDragDrop();
     }
+    
+    // 初始化批量操作相关功能
+    if (typeof initBatchToolbar === 'function') {
+        initBatchToolbar();
+        console.log('[主程序] 批量工具栏已初始化');
+    }
+    if (typeof initKeyboardShortcuts === 'function') {
+        initKeyboardShortcuts();
+        console.log('[主程序] 快捷键已初始化');
+    }
+    if (typeof initClickSelect === 'function') {
+        initClickSelect();
+        console.log('[主程序] 点击选择已初始化');
+    }
 
     // 注册消息监听
     setupRealtimeMessageListener();

@@ -8,6 +8,7 @@ let bookmarkClipboard = null; // 剪贴板 { action: 'cut'|'copy', nodeId, nodeD
 let clipboardOperation = null; // 'cut' | 'copy'
 let selectedNodes = new Set(); // 多选节点集合
 let lastClickedNode = null; // 上次点击的节点（用于Shift选择）
+let selectMode = false; // 是否处于Select模式
 
 // 初始化右键菜单
 function initContextMenu() {
@@ -42,29 +43,8 @@ function initContextMenu() {
         }
     });
     
-    // Resize时调整菜单位置（如果超出视口）
-    window.addEventListener('resize', () => {
-        // Resize时如果菜单可见，检查是否超出视口
-        if (contextMenu && contextMenu.style.display !== 'none') {
-            const rect = contextMenu.getBoundingClientRect();
-            const viewportWidth = window.innerWidth;
-            const viewportHeight = window.innerHeight;
-            
-            let left = parseInt(contextMenu.style.left);
-            let top = parseInt(contextMenu.style.top);
-            
-            // 如果超出视口，调整位置
-            if (rect.right > viewportWidth) {
-                left = viewportWidth - rect.width - 10;
-                contextMenu.style.left = left + 'px';
-            }
-            
-            if (rect.bottom > viewportHeight) {
-                top = viewportHeight - rect.height - 10;
-                contextMenu.style.top = top + 'px';
-            }
-        }
-    });
+    // Resize时不调整菜单位置（保持嵌入式相对定位）
+    // 嵌入式菜单会随DOM自然调整，无需手动处理
     
     console.log('[右键菜单] 初始化完成');
 }
@@ -133,24 +113,37 @@ function buildMenuItems(nodeId, nodeTitle, nodeUrl, isFolder) {
     const lang = currentLang || 'zh_CN';
     const items = [];
     
-    // 检查是否有多选
-    const hasMultiSelection = selectedNodes.size > 1;
+    // 检查是否有选中项
+    const hasSelection = selectedNodes.size > 0;
     
-    if (hasMultiSelection) {
-        // 多选菜单
+    // 检查当前右键的项是否已被选中
+    const isNodeSelected = selectedNodes.has(nodeId);
+    
+    // 如果右键的是已选中的项，且有多个选中项，显示批量操作菜单
+    if (isNodeSelected && selectedNodes.size > 0) {
         items.push(
-            { action: 'open-selected', label: lang === 'zh_CN' ? `打开选中的 ${selectedNodes.size} 项` : `Open ${selectedNodes.size} Selected`, icon: 'folder-open' },
-            { action: 'open-selected-tab-group', label: lang === 'zh_CN' ? `在新标签页组中打开` : `Open in New Tab Group`, icon: 'object-group' },
+            { action: 'batch-open', label: lang === 'zh_CN' ? `打开选中的 ${selectedNodes.size} 项` : `Open ${selectedNodes.size} Selected`, icon: 'folder-open' },
+            { action: 'batch-open-tab-group', label: lang === 'zh_CN' ? '在新标签页组中打开' : 'Open in New Tab Group', icon: 'object-group' },
             { separator: true },
-            { action: 'cut-selected', label: lang === 'zh_CN' ? '剪切选中项' : 'Cut Selected', icon: 'cut' },
-            { action: 'copy-selected', label: lang === 'zh_CN' ? '复制选中项' : 'Copy Selected', icon: 'copy' },
-            { action: 'delete-selected', label: lang === 'zh_CN' ? '删除选中项' : 'Delete Selected', icon: 'trash-alt' },
+            { action: 'batch-cut', label: lang === 'zh_CN' ? '剪切选中项' : 'Cut Selected', icon: 'cut' },
+            { action: 'batch-delete', label: lang === 'zh_CN' ? '删除选中项' : 'Delete Selected', icon: 'trash-alt' },
+            { action: 'batch-rename', label: lang === 'zh_CN' ? '批量重命名' : 'Batch Rename', icon: 'edit' },
+            { separator: true },
+            { action: 'batch-export-html', label: lang === 'zh_CN' ? '导出为HTML' : 'Export to HTML', icon: 'file-code' },
+            { action: 'batch-export-json', label: lang === 'zh_CN' ? '导出为JSON' : 'Export to JSON', icon: 'file-alt' },
+            { action: 'batch-merge-folder', label: lang === 'zh_CN' ? '合并为新文件夹' : 'Merge to New Folder', icon: 'folder-plus' },
             { separator: true },
             { action: 'deselect-all', label: lang === 'zh_CN' ? '取消全选' : 'Deselect All', icon: 'times' }
         );
-    } else if (isFolder) {
+        return items;
+    }
+    
+    // 普通单项菜单
+    if (isFolder) {
         // 文件夹菜单
         items.push(
+            { action: 'select-item', label: lang === 'zh_CN' ? '选择' : 'Select', icon: 'check-square' },
+            { separator: true },
             { action: 'open-all', label: lang === 'zh_CN' ? '打开全部' : 'Open All Bookmarks', icon: 'folder-open' },
             { action: 'open-all-tab-group', label: lang === 'zh_CN' ? '在新标签页组中打开全部' : 'Open All in New Tab Group', icon: 'object-group' },
             { action: 'open-all-new-window', label: lang === 'zh_CN' ? '在新窗口中打开全部' : 'Open All in New Window', icon: 'window-restore' },
@@ -170,6 +163,8 @@ function buildMenuItems(nodeId, nodeTitle, nodeUrl, isFolder) {
     } else {
         // 书签菜单
         items.push(
+            { action: 'select-item', label: lang === 'zh_CN' ? '选择' : 'Select', icon: 'check-square' },
+            { separator: true },
             { action: 'open', label: lang === 'zh_CN' ? '打开' : 'Open', icon: 'external-link-alt' },
             { action: 'open-new-tab', label: lang === 'zh_CN' ? '在新标签页中打开' : 'Open in New Tab', icon: 'window-maximize' },
             { action: 'open-new-window', label: lang === 'zh_CN' ? '在新窗口中打开' : 'Open in New Window', icon: 'window-restore' },
@@ -293,21 +288,47 @@ async function handleMenuAction(action, nodeId, nodeTitle, nodeUrl, isFolder) {
             case 'open-selected-tab-group':
                 await openSelectedInTabGroup();
                 break;
-                
-            case 'cut-selected':
-                await cutSelected();
+            
+            // 批量操作
+            case 'batch-open':
+                await batchOpen();
                 break;
                 
-            case 'copy-selected':
-                await copySelected();
+            case 'batch-open-tab-group':
+                await batchOpenTabGroup();
                 break;
                 
-            case 'delete-selected':
-                await deleteSelected();
+            case 'batch-cut':
+                await batchCut();
+                break;
+                
+            case 'batch-delete':
+                await batchDelete();
+                break;
+                
+            case 'batch-rename':
+                await batchRename();
+                break;
+                
+            case 'batch-export-html':
+                await batchExportHTML();
+                break;
+                
+            case 'batch-export-json':
+                await batchExportJSON();
+                break;
+                
+            case 'batch-merge-folder':
+                await batchMergeFolder();
+                break;
+                
+            case 'select-item':
+                enterSelectMode();
                 break;
                 
             case 'deselect-all':
                 deselectAll();
+                updateBatchToolbar();
                 break;
                 
             case 'edit':
@@ -969,11 +990,712 @@ async function getSelectedUrls() {
     return urls;
 }
 
-// 刷新书签树
+// 刷新书签树（批量操作后专用，不显示变更标记）
 async function refreshBookmarkTree() {
+    console.log('[批量操作] 开始刷新书签树（无diff模式）');
+    
     if (typeof renderTreeView === 'function') {
+        // 临时清空旧数据，避免显示变更标记
+        const storageData = await chrome.storage.local.get(['lastBookmarkData']);
+        const oldLastBookmarkData = storageData.lastBookmarkData;
+        
+        // 临时移除旧数据
+        await chrome.storage.local.set({ lastBookmarkData: null });
+        console.log('[批量操作] 已临时清除旧数据，避免diff');
+        
+        // 渲染当前书签树（不会检测变更）
         await renderTreeView(true);
+        
+        // 恢复旧数据（供其他功能使用）
+        await chrome.storage.local.set({ lastBookmarkData: oldLastBookmarkData });
+        console.log('[批量操作] 书签树已刷新，已恢复旧数据');
+    } else {
+        console.warn('[批量操作] renderTreeView 函数不存在');
     }
+}
+
+// ==================== Select模式 ====================
+
+// 进入Select模式
+function enterSelectMode() {
+    selectMode = true;
+    
+    // 显示全局蓝框和提示
+    showSelectModeOverlay();
+    
+    // 显示批量工具栏
+    updateBatchToolbar();
+    
+    // 关闭右键菜单
+    hideContextMenu();
+    
+    console.log('[Select模式] 已进入');
+}
+
+// 退出Select模式
+function exitSelectMode() {
+    selectMode = false;
+    
+    // 隐藏蓝框
+    hideSelectModeOverlay();
+    
+    // 清空选中
+    deselectAll();
+    updateBatchToolbar();
+    
+    console.log('[Select模式] 已退出');
+}
+
+// 显示Select模式蓝框（不再显示顶部提示）
+function showSelectModeOverlay() {
+    // 检查是否已存在
+    let overlay = document.getElementById('select-mode-overlay');
+    if (overlay) {
+        overlay.style.display = 'block';
+        return;
+    }
+    
+    // 创建蓝框（不包含顶部提示）
+    overlay = document.createElement('div');
+    overlay.id = 'select-mode-overlay';
+    overlay.className = 'select-mode-overlay';
+    
+    // 找到树容器
+    const treeContainer = document.getElementById('bookmarkTree') || 
+                         document.querySelector('.bookmark-tree') || 
+                         document.querySelector('.tree-view-container') || 
+                         document.body;
+    treeContainer.style.position = 'relative';
+    treeContainer.appendChild(overlay);
+    
+    console.log('[Select模式] 蓝框已添加到:', treeContainer.id || treeContainer.className);
+    
+    // 绑定点击事件 - 点击overlay上的位置，找到下面的书签元素
+    overlay.addEventListener('click', (e) => {
+        console.log('[Select模式] overlay点击事件:', e.target);
+        
+        // 暂时隐藏overlay以获取下面的元素
+        overlay.style.pointerEvents = 'none';
+        const elementBelow = document.elementFromPoint(e.clientX, e.clientY);
+        overlay.style.pointerEvents = 'auto';
+        
+        console.log('[Select模式] 下面的元素:', elementBelow);
+        
+        // 检查是否点击折叠按钮或其附近区域
+        const toggleBtn = elementBelow?.closest('.tree-toggle');
+        if (toggleBtn) {
+            console.log('[Select模式] 点击折叠按钮，触发展开/收起');
+            // 触发折叠按钮的点击
+            toggleBtn.click();
+            return;
+        }
+        
+        // 检查是否点击在折叠按钮右侧30px范围内
+        const treeItem = elementBelow?.closest('.tree-item[data-node-id]');
+        if (treeItem) {
+            const toggle = treeItem.querySelector('.tree-toggle');
+            if (toggle) {
+                const toggleRect = toggle.getBoundingClientRect();
+                // 点击位置在折叠按钮右侧30px范围内，也触发折叠
+                if (e.clientX >= toggleRect.left && e.clientX <= toggleRect.right + 30 &&
+                    e.clientY >= toggleRect.top && e.clientY <= toggleRect.bottom) {
+                    console.log('[Select模式] 点击折叠按钮附近区域，触发展开/收起');
+                    toggle.click();
+                    return;
+                }
+            }
+        }
+        
+        // 找到最近的tree-item
+        if (!treeItem) {
+            console.log('[Select模式] 未找到tree-item');
+            return;
+        }
+        
+        const nodeId = treeItem.dataset.nodeId;
+        console.log('[Select模式] 找到节点:', nodeId);
+        
+        // Ctrl/Cmd + Click: 多选
+        if (e.ctrlKey || e.metaKey) {
+            toggleSelectItem(nodeId);
+            lastClickedNode = nodeId;
+            console.log('[Select模式] Ctrl+Click多选');
+            return;
+        }
+        
+        // Shift + Click: 范围选择
+        if (e.shiftKey && lastClickedNode) {
+            selectRange(lastClickedNode, nodeId);
+            console.log('[Select模式] Shift+Click范围选择');
+            return;
+        }
+        
+        // 普通点击: 切换选择
+        toggleSelectItem(nodeId);
+        lastClickedNode = nodeId;
+        console.log('[Select模式] 普通点击');
+    });
+    
+    // 绑定右键事件 - 在蓝框区域右键显示批量菜单
+    overlay.addEventListener('contextmenu', (e) => {
+        console.log('[Select模式] 右键事件:', { selectedCount: selectedNodes.size });
+        if (selectedNodes.size > 0) {
+            e.preventDefault();
+            e.stopPropagation();
+            showBatchContextMenu(e);
+        }
+    });
+    
+    // 使overlay可以接收点击和右键事件
+    overlay.style.pointerEvents = 'auto';
+}
+
+// 隐藏Select模式蓝框
+function hideSelectModeOverlay() {
+    const overlay = document.getElementById('select-mode-overlay');
+    if (overlay) {
+        overlay.style.display = 'none';
+    }
+}
+
+// 显示批量操作右键菜单
+function showBatchContextMenu(e) {
+    e.preventDefault();
+    e.stopPropagation();
+    
+    console.log('[批量菜单] 显示菜单，位置:', { x: e.clientX, y: e.clientY });
+    
+    const lang = currentLang || 'zh_CN';
+    
+    // 确保菜单在body上，使用fixed定位（不嵌入DOM流）
+    if (contextMenu.parentElement !== document.body) {
+        document.body.appendChild(contextMenu);
+        console.log('[批量菜单] 菜单已移回body');
+    }
+    
+    // 构建批量菜单
+    const items = [
+        { action: 'batch-open', label: lang === 'zh_CN' ? `打开选中的 ${selectedNodes.size} 项` : `Open ${selectedNodes.size} Selected`, icon: 'folder-open' },
+        { action: 'batch-open-tab-group', label: lang === 'zh_CN' ? '在新标签页组中打开' : 'Open in New Tab Group', icon: 'object-group' },
+        { separator: true },
+        { action: 'batch-cut', label: lang === 'zh_CN' ? '剪切选中项' : 'Cut Selected', icon: 'cut' },
+        { action: 'batch-delete', label: lang === 'zh_CN' ? '删除选中项' : 'Delete Selected', icon: 'trash-alt' },
+        { action: 'batch-rename', label: lang === 'zh_CN' ? '批量重命名' : 'Batch Rename', icon: 'edit' },
+        { separator: true },
+        { action: 'batch-export-html', label: lang === 'zh_CN' ? '导出为HTML' : 'Export to HTML', icon: 'file-code' },
+        { action: 'batch-export-json', label: lang === 'zh_CN' ? '导出为JSON' : 'Export to JSON', icon: 'file-alt' },
+        { action: 'batch-merge-folder', label: lang === 'zh_CN' ? '合并为新文件夹' : 'Merge to New Folder', icon: 'folder-plus' },
+        { separator: true },
+        { action: 'exit-select-mode', label: lang === 'zh_CN' ? '退出Select模式' : 'Exit Select Mode', icon: 'times' }
+    ];
+    
+    contextMenu.innerHTML = items.map(item => {
+        if (item.separator) {
+            return '<div class="context-menu-separator"></div>';
+        }
+        
+        const icon = item.icon ? `<i class="fas fa-${item.icon}"></i>` : '';
+        return `
+            <div class="context-menu-item" data-action="${item.action}">
+                ${icon}
+                <span>${item.label}</span>
+            </div>
+        `;
+    }).join('');
+    
+    // 绑定点击事件
+    contextMenu.querySelectorAll('.context-menu-item').forEach(item => {
+        item.addEventListener('click', async (e) => {
+            e.stopPropagation();
+            const action = item.dataset.action;
+            console.log('[批量菜单] 点击操作:', action);
+            
+            if (action === 'exit-select-mode') {
+                exitSelectMode();
+            } else {
+                await handleMenuAction(action, null, null, null, false);
+            }
+            hideContextMenu();
+        });
+    });
+    
+    // 使用fixed定位显示在鼠标位置（确保不随滚动移动）
+    contextMenu.style.cssText = `
+        position: fixed !important;
+        left: ${e.clientX}px !important;
+        top: ${e.clientY}px !important;
+        display: block !important;
+        z-index: 10001 !important;
+    `;
+    
+    console.log('[批量菜单] 菜单已显示，定位:', contextMenu.style.position);
+}
+
+// ==================== 批量操作功能 ====================
+
+// 切换选择单个项目
+function toggleSelectItem(nodeId) {
+    const nodeElement = document.querySelector(`.tree-item[data-node-id="${nodeId}"]`);
+    if (!nodeElement) {
+        console.log('[批量] 未找到节点元素:', nodeId);
+        return;
+    }
+    
+    if (selectedNodes.has(nodeId)) {
+        selectedNodes.delete(nodeId);
+        nodeElement.classList.remove('selected');
+        console.log('[批量] 取消选中:', nodeId);
+    } else {
+        selectedNodes.add(nodeId);
+        nodeElement.classList.add('selected');
+        console.log('[批量] 选中:', nodeId);
+    }
+    
+    updateBatchToolbar();
+    console.log('[批量] 选中状态:', selectedNodes.size, '个');
+}
+
+// 批量打开
+async function batchOpen() {
+    if (!chrome || !chrome.tabs) {
+        alert('此功能需要Chrome扩展环境');
+        return;
+    }
+    
+    const lang = currentLang || 'zh_CN';
+    const urls = await getSelectedUrls();
+    
+    if (urls.length === 0) {
+        alert(lang === 'zh_CN' ? '没有可打开的书签' : 'No bookmarks to open');
+        return;
+    }
+    
+    if (urls.length > 10) {
+        const message = lang === 'zh_CN' 
+            ? `确定要打开 ${urls.length} 个书签吗？` 
+            : `Open ${urls.length} bookmarks?`;
+        if (!confirm(message)) return;
+    }
+    
+    for (const url of urls) {
+        await chrome.tabs.create({ url: url, active: false });
+    }
+    
+    console.log('[批量] 已打开:', urls.length, '个书签');
+}
+
+// 批量打开（标签页组）
+async function batchOpenTabGroup() {
+    if (!chrome || !chrome.tabs) {
+        alert('此功能需要Chrome扩展环境');
+        return;
+    }
+    
+    const lang = currentLang || 'zh_CN';
+    const urls = await getSelectedUrls();
+    
+    if (urls.length === 0) {
+        alert(lang === 'zh_CN' ? '没有可打开的书签' : 'No bookmarks to open');
+        return;
+    }
+    
+    try {
+        // 创建标签页
+        const tabIds = [];
+        for (const url of urls) {
+            const tab = await chrome.tabs.create({ url: url, active: false });
+            tabIds.push(tab.id);
+        }
+        
+        // 创建标签页组
+        if (chrome.tabs.group) {
+            const groupId = await chrome.tabs.group({ tabIds: tabIds });
+            
+            if (chrome.tabGroups) {
+                await chrome.tabGroups.update(groupId, {
+                    title: lang === 'zh_CN' ? `选中的书签 (${urls.length})` : `Selected (${urls.length})`,
+                    collapsed: false
+                });
+            }
+        }
+        
+        console.log('[批量] 已在标签页组中打开:', urls.length, '个书签');
+    } catch (error) {
+        console.error('[批量] 打开失败:', error);
+        alert(lang === 'zh_CN' ? `打开失败: ${error.message}` : `Failed to open: ${error.message}`);
+    }
+}
+
+// 批量剪切
+async function batchCut() {
+    const lang = currentLang || 'zh_CN';
+    console.log('[批量] 剪切:', selectedNodes.size, '个');
+    alert(lang === 'zh_CN' ? '批量剪切功能开发中' : 'Batch cut feature coming soon');
+}
+
+// 批量删除
+async function batchDelete() {
+    if (!chrome || !chrome.bookmarks) {
+        alert('此功能需要Chrome扩展环境');
+        return;
+    }
+    
+    const lang = currentLang || 'zh_CN';
+    const count = selectedNodes.size;
+    
+    // 二次确认
+    const message = lang === 'zh_CN' 
+        ? `确定要删除选中的 ${count} 项吗？此操作不可撤销！` 
+        : `Delete ${count} selected items? This cannot be undone!`;
+    
+    if (!confirm(message)) return;
+    
+    try {
+        let successCount = 0;
+        let failCount = 0;
+        
+        for (const nodeId of selectedNodes) {
+            try {
+                const [node] = await chrome.bookmarks.get(nodeId);
+                if (node.url) {
+                    await chrome.bookmarks.remove(nodeId);
+                } else {
+                    await chrome.bookmarks.removeTree(nodeId);
+                }
+                successCount++;
+            } catch (error) {
+                console.error('[批量] 删除失败:', nodeId, error);
+                failCount++;
+            }
+        }
+        
+        // 先清空选择状态（重要：避免残留蓝色标记）
+        deselectAll();
+        updateBatchToolbar();
+        
+        // 刷新书签树（这会重新渲染，确保没有残留的状态）
+        await refreshBookmarkTree();
+        
+        const result = lang === 'zh_CN' 
+            ? `已删除 ${successCount} 项${failCount > 0 ? `，失败 ${failCount} 项` : ''}` 
+            : `Deleted ${successCount} items${failCount > 0 ? `, failed ${failCount}` : ''}`;
+        
+        alert(result);
+        console.log('[批量] 删除完成:', { successCount, failCount });
+        
+    } catch (error) {
+        console.error('[批量] 删除失败:', error);
+        alert(lang === 'zh_CN' ? `删除失败: ${error.message}` : `Delete failed: ${error.message}`);
+    }
+}
+
+// 批量重命名
+async function batchRename() {
+    const lang = currentLang || 'zh_CN';
+    
+    const prefix = prompt(
+        lang === 'zh_CN' ? '请输入统一前缀（可选）:' : 'Enter prefix (optional):',
+        ''
+    );
+    
+    const suffix = prompt(
+        lang === 'zh_CN' ? '请输入统一后缀（可选）:' : 'Enter suffix (optional):',
+        ''
+    );
+    
+    if (prefix === null && suffix === null) return;
+    
+    if (!chrome || !chrome.bookmarks) {
+        alert('此功能需要Chrome扩展环境');
+        return;
+    }
+    
+    try {
+        let count = 0;
+        for (const nodeId of selectedNodes) {
+            const [node] = await chrome.bookmarks.get(nodeId);
+            const newTitle = `${prefix || ''}${node.title}${suffix || ''}`;
+            await chrome.bookmarks.update(nodeId, { title: newTitle });
+            count++;
+        }
+        
+        await refreshBookmarkTree();
+        alert(lang === 'zh_CN' ? `已重命名 ${count} 项` : `Renamed ${count} items`);
+        console.log('[批量] 重命名完成:', count);
+        
+    } catch (error) {
+        console.error('[批量] 重命名失败:', error);
+        alert(lang === 'zh_CN' ? `重命名失败: ${error.message}` : `Rename failed: ${error.message}`);
+    }
+}
+
+// 导出为HTML
+async function batchExportHTML() {
+    if (!chrome || !chrome.bookmarks) {
+        alert('此功能需要Chrome扩展环境');
+        return;
+    }
+    
+    const lang = currentLang || 'zh_CN';
+    
+    try {
+        let html = '<!DOCTYPE NETSCAPE-Bookmark-file-1>\n';
+        html += '<META HTTP-EQUIV="Content-Type" CONTENT="text/html; charset=UTF-8">\n';
+        html += '<TITLE>Bookmarks</TITLE>\n';
+        html += '<H1>Bookmarks</H1>\n';
+        html += '<DL><p>\n';
+        
+        for (const nodeId of selectedNodes) {
+            const [node] = await chrome.bookmarks.get(nodeId);
+            if (node.url) {
+                html += `    <DT><A HREF="${node.url}">${node.title}</A>\n`;
+            } else {
+                html += `    <DT><H3>${node.title}</H3>\n`;
+                html += `    <DL><p>\n`;
+                // 递归获取子项
+                const children = await chrome.bookmarks.getChildren(nodeId);
+                for (const child of children) {
+                    if (child.url) {
+                        html += `        <DT><A HREF="${child.url}">${child.title}</A>\n`;
+                    }
+                }
+                html += `    </DL><p>\n`;
+            }
+        }
+        
+        html += '</DL><p>\n';
+        
+        // 下载文件
+        const blob = new Blob([html], { type: 'text/html' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = 'bookmarks.html';
+        a.click();
+        URL.revokeObjectURL(url);
+        
+        alert(lang === 'zh_CN' ? '导出成功！' : 'Export successful!');
+        console.log('[批量] 导出HTML完成');
+        
+    } catch (error) {
+        console.error('[批量] 导出HTML失败:', error);
+        alert(lang === 'zh_CN' ? `导出失败: ${error.message}` : `Export failed: ${error.message}`);
+    }
+}
+
+// 导出为JSON
+async function batchExportJSON() {
+    if (!chrome || !chrome.bookmarks) {
+        alert('此功能需要Chrome扩展环境');
+        return;
+    }
+    
+    const lang = currentLang || 'zh_CN';
+    
+    try {
+        const bookmarks = [];
+        
+        for (const nodeId of selectedNodes) {
+            const [node] = await chrome.bookmarks.get(nodeId);
+            const bookmark = {
+                id: node.id,
+                title: node.title,
+                url: node.url || null,
+                dateAdded: node.dateAdded,
+                dateGroupModified: node.dateGroupModified
+            };
+            
+            if (!node.url) {
+                // 如果是文件夹，获取子项
+                const children = await chrome.bookmarks.getChildren(nodeId);
+                bookmark.children = children.map(child => ({
+                    id: child.id,
+                    title: child.title,
+                    url: child.url || null
+                }));
+            }
+            
+            bookmarks.push(bookmark);
+        }
+        
+        const json = JSON.stringify(bookmarks, null, 2);
+        
+        // 下载文件
+        const blob = new Blob([json], { type: 'application/json' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = 'bookmarks.json';
+        a.click();
+        URL.revokeObjectURL(url);
+        
+        alert(lang === 'zh_CN' ? '导出成功！' : 'Export successful!');
+        console.log('[批量] 导出JSON完成');
+        
+    } catch (error) {
+        console.error('[批量] 导出JSON失败:', error);
+        alert(lang === 'zh_CN' ? `导出失败: ${error.message}` : `Export failed: ${error.message}`);
+    }
+}
+
+// 合并为新文件夹
+async function batchMergeFolder() {
+    if (!chrome || !chrome.bookmarks) {
+        alert('此功能需要Chrome扩展环境');
+        return;
+    }
+    
+    const lang = currentLang || 'zh_CN';
+    
+    const folderName = prompt(
+        lang === 'zh_CN' ? '请输入新文件夹名称:' : 'Enter new folder name:',
+        lang === 'zh_CN' ? '合并的文件夹' : 'Merged Folder'
+    );
+    
+    if (!folderName) return;
+    
+    try {
+        // 创建新文件夹（默认在根目录的"其他书签"中）
+        const bookmarkBar = (await chrome.bookmarks.getTree())[0].children.find(n => n.id === '1');
+        const newFolder = await chrome.bookmarks.create({
+            parentId: bookmarkBar.id,
+            title: folderName
+        });
+        
+        // 移动所有选中项到新文件夹
+        let count = 0;
+        for (const nodeId of selectedNodes) {
+            try {
+                await chrome.bookmarks.move(nodeId, { parentId: newFolder.id });
+                count++;
+            } catch (error) {
+                console.error('[批量] 移动失败:', nodeId, error);
+            }
+        }
+        
+        deselectAll();
+        updateBatchToolbar();
+        await refreshBookmarkTree();
+        
+        alert(lang === 'zh_CN' ? `已将 ${count} 项合并到新文件夹` : `Merged ${count} items to new folder`);
+        console.log('[批量] 合并完成:', count);
+        
+    } catch (error) {
+        console.error('[批量] 合并失败:', error);
+        alert(lang === 'zh_CN' ? `合并失败: ${error.message}` : `Merge failed: ${error.message}`);
+    }
+}
+
+// ==================== 顶部批量操作工具栏 ====================
+
+// 初始化批量操作工具栏
+function initBatchToolbar() {
+    // 查找书签树视图的标题
+    const pageTitle = document.querySelector('#treeViewTitle') || 
+                     document.querySelector('#treeView h2') ||
+                     document.querySelector('h2');
+    if (!pageTitle) {
+        console.warn('[批量工具栏] 未找到页面标题');
+        return;
+    }
+    
+    console.log('[批量工具栏] 找到标题:', pageTitle.textContent);
+    
+    // 创建工具栏容器（在标题同一行）
+    const titleContainer = pageTitle.parentElement;
+    titleContainer.style.display = 'flex';
+    titleContainer.style.alignItems = 'center';
+    titleContainer.style.gap = '20px';
+    titleContainer.style.flexWrap = 'wrap';
+    
+    // 创建工具栏
+    const toolbar = document.createElement('div');
+    toolbar.id = 'batch-toolbar';
+    toolbar.className = 'batch-toolbar';
+    toolbar.style.display = 'none';
+    toolbar.innerHTML = `
+        <span class="selected-count">已选中 0 项</span>
+        <button class="batch-btn" data-action="batch-open"><i class="fas fa-folder-open"></i> 打开</button>
+        <button class="batch-btn" data-action="batch-open-tab-group"><i class="fas fa-object-group"></i> 标签组</button>
+        <button class="batch-btn" data-action="batch-cut"><i class="fas fa-cut"></i> 剪切</button>
+        <button class="batch-btn" data-action="batch-delete"><i class="fas fa-trash-alt"></i> 删除</button>
+        <button class="batch-btn" data-action="batch-rename"><i class="fas fa-edit"></i> 重命名</button>
+        <button class="batch-btn" data-action="batch-export-html"><i class="fas fa-file-code"></i> HTML</button>
+        <button class="batch-btn" data-action="batch-export-json"><i class="fas fa-file-alt"></i> JSON</button>
+        <button class="batch-btn" data-action="batch-merge-folder"><i class="fas fa-folder-plus"></i> 合并</button>
+        <button class="batch-btn exit-select-btn" data-action="exit-select-mode"><i class="fas fa-times"></i> 退出</button>
+    `;
+    
+    // 插入到标题旁边
+    titleContainer.appendChild(toolbar);
+    
+    // 绑定按钮事件
+    toolbar.querySelectorAll('.batch-btn').forEach(btn => {
+        btn.addEventListener('click', async (e) => {
+            const action = btn.dataset.action;
+            if (action === 'exit-select-mode') {
+                exitSelectMode();
+            } else {
+                await handleMenuAction(action, null, null, null, false);
+            }
+        });
+    });
+    
+    console.log('[批量工具栏] 初始化完成');
+}
+
+// 更新批量操作工具栏
+function updateBatchToolbar() {
+    const toolbar = document.getElementById('batch-toolbar');
+    if (!toolbar) {
+        console.warn('[批量工具栏] 未找到工具栏元素');
+        return;
+    }
+    
+    const lang = currentLang || 'zh_CN';
+    const count = selectedNodes.size;
+    
+    console.log('[批量工具栏] 更新:', { selectMode, count });
+    
+    // 只在Select模式下显示
+    if (selectMode && count >= 0) {
+        toolbar.style.display = 'flex';
+        const countText = lang === 'zh_CN' ? `已选中 ${count} 项` : `${count} Selected`;
+        toolbar.querySelector('.selected-count').textContent = countText;
+        console.log('[批量工具栏] 已显示:', countText);
+    } else {
+        toolbar.style.display = 'none';
+        console.log('[批量工具栏] 已隐藏');
+    }
+}
+
+// ==================== 快捷键支持 ====================
+
+// 初始化快捷键
+function initKeyboardShortcuts() {
+    document.addEventListener('keydown', (e) => {
+        // ESC - 退出Select模式
+        if (e.key === 'Escape' && selectMode) {
+            exitSelectMode();
+            return;
+        }
+        
+        // 只在Select模式下响应其他快捷键
+        if (!selectMode) return;
+        
+        // Ctrl/Cmd + A - 全选
+        if ((e.ctrlKey || e.metaKey) && e.key === 'a') {
+            e.preventDefault();
+            selectAll();
+        }
+    });
+    
+    console.log('[快捷键] 初始化完成');
+}
+
+// 初始化点击选择 - 现在改为在overlay上处理，不需要这个函数了
+function initClickSelect() {
+    console.log('[点击选择] 初始化完成（点击事件现在在overlay上处理）');
 }
 
 // 导出函数
@@ -985,4 +1707,10 @@ if (typeof window !== 'undefined') {
     window.selectRange = selectRange;
     window.selectAll = selectAll;
     window.deselectAll = deselectAll;
+    window.initBatchToolbar = initBatchToolbar;
+    window.updateBatchToolbar = updateBatchToolbar;
+    window.initKeyboardShortcuts = initKeyboardShortcuts;
+    window.initClickSelect = initClickSelect;
+    window.enterSelectMode = enterSelectMode;
+    window.exitSelectMode = exitSelectMode;
 }

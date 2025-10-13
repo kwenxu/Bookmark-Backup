@@ -2623,7 +2623,7 @@ async function renderTreeView(forceRefresh = false) {
     Promise.all([
         new Promise(resolve => browserAPI.bookmarks.getTree(resolve)),
         new Promise(resolve => browserAPI.storage.local.get(['lastBookmarkData'], resolve))
-    ]).then(([currentTree, storageData]) => {
+    ]).then(async ([currentTree, storageData]) => {
         if (!currentTree || currentTree.length === 0) {
             treeContainer.innerHTML = `
                 <div class="empty-state">
@@ -2662,7 +2662,7 @@ async function renderTreeView(forceRefresh = false) {
         
         if (oldTree && oldTree[0]) {
             console.log('[renderTreeView] 开始检测变动...');
-            treeChangeMap = detectTreeChangesFast(oldTree, currentTree);
+            treeChangeMap = await detectTreeChangesFast(oldTree, currentTree);
             console.log('[renderTreeView] 检测到的变动数量:', treeChangeMap.size);
             
             // 打印前5个变动
@@ -2889,7 +2889,7 @@ function restoreTreeExpandState(treeContainer) {
 }
 
 // 快速检测书签树变动（性能优化版 + 智能移动检测）
-function detectTreeChangesFast(oldTree, newTree) {
+async function detectTreeChangesFast(oldTree, newTree) {
     const changes = new Map();
     const parentMap = new Map(); // id -> parentId 映射
     const moveInfo = new Map(); // id -> {oldParent, newParent, oldPath, newPath}
@@ -2951,6 +2951,25 @@ function detectTreeChangesFast(oldTree, newTree) {
     
     // 第一步：收集所有有 index 变化的节点（按父节点分组）
     const indexChanges = new Map(); // parentId -> [{id, oldIndex, newIndex, indexDelta, indexChange}]
+    const deletedInParent = new Map(); // parentId -> 该父节点下被删除的节点数量
+    const addedInParent = new Map(); // parentId -> 该父节点下新增的节点数量
+    
+    // 统计每个父节点下的删除和新增
+    oldNodes.forEach((oldNode, id) => {
+        if (!newNodes.has(id)) {
+            // 被删除的节点
+            const parentId = oldNode.parentId;
+            deletedInParent.set(parentId, (deletedInParent.get(parentId) || 0) + 1);
+        }
+    });
+    
+    newNodes.forEach((newNode, id) => {
+        if (!oldNodes.has(id)) {
+            // 新增的节点
+            const parentId = newNode.parentId;
+            addedInParent.set(parentId, (addedInParent.get(parentId) || 0) + 1);
+        }
+    });
     
     newNodes.forEach((newNode, id) => {
         const oldNode = oldNodes.get(id);
@@ -2984,8 +3003,84 @@ function detectTreeChangesFast(oldTree, newTree) {
     // 第二步：智能判断哪些是真正的主动移动
     const confirmedMoves = new Set();
     
+    // 获取临时删除标记（批量删除时设置）
+    let tempDeletedParents = [];
+    let tempDeleteTimestamp = 0;
+    try {
+        const tempData = await new Promise(resolve => {
+            if (typeof chrome !== 'undefined' && chrome.storage) {
+                chrome.storage.local.get(['tempDeletedParents', 'tempDeleteTimestamp'], resolve);
+            } else {
+                resolve({});
+            }
+        });
+        tempDeletedParents = tempData.tempDeletedParents || [];
+        tempDeleteTimestamp = tempData.tempDeleteTimestamp || 0;
+        
+        // 检查标记是否在有效期内（5秒内）
+        if (tempDeleteTimestamp && (Date.now() - tempDeleteTimestamp > 5000)) {
+            console.log('[移动检测] 临时删除标记已过期，忽略');
+            tempDeletedParents = [];
+        } else if (tempDeletedParents.length > 0) {
+            console.log('[移动检测] 检测到批量删除标记，受影响的父文件夹:', tempDeletedParents);
+        }
+    } catch (error) {
+        console.error('[移动检测] 获取临时删除标记失败:', error);
+    }
+    
     indexChanges.forEach((changes, parentId) => {
         if (changes.length === 0) return;
+        
+        // 如果该父文件夹在批量删除受影响列表中，跳过所有移动检测
+        if (tempDeletedParents.includes(parentId)) {
+            console.log(`[移动检测-批量删除] 父节点:${parentId} 在批量删除列表中，跳过所有移动检测（${changes.length}个index变化）`);
+            changes.forEach(c => {
+                console.log(`[移动检测-跳过] ID:${c.id}, 标题:"${c.title}", 因父文件夹${parentId}发生批量删除`);
+            });
+            return; // 跳过该父文件夹下的所有移动检测
+        }
+        
+        // 检查该父节点下是否有删除或新增操作
+        const hasDeleted = (deletedInParent.get(parentId) || 0) > 0;
+        const hasAdded = (addedInParent.get(parentId) || 0) > 0;
+        
+        console.log(`[移动检测] 父节点:${parentId}, index变化数:${changes.length}, 删除:${deletedInParent.get(parentId) || 0}, 新增:${addedInParent.get(parentId) || 0}`);
+        
+        // 如果有删除操作，其他节点的index自然会变化（向前移），不应标记为移动
+        if (hasDeleted) {
+            const deletedCount = deletedInParent.get(parentId);
+            // 过滤掉可能因删除导致的index变化
+            const potentialMoves = changes.filter(c => {
+                // 如果index变化量等于删除数量，且是向前移动（indexChange < 0），很可能是因为删除导致的
+                if (c.indexChange < 0 && Math.abs(c.indexChange) <= deletedCount) {
+                    console.log(`[移动检测-跳过] ID:${c.id}, 标题:"${c.title}", 可能因删除${deletedCount}项导致index从${c.oldIndex}→${c.newIndex}`);
+                    return false; // 不标记为移动
+                }
+                return true;
+            });
+            
+            // 只处理剩余的潜在移动
+            if (potentialMoves.length === 0) return;
+            changes = potentialMoves;
+        }
+        
+        // 如果有新增操作，其他节点的index也可能自然变化
+        if (hasAdded) {
+            const addedCount = addedInParent.get(parentId);
+            // 过滤掉可能因新增导致的index变化
+            const potentialMoves = changes.filter(c => {
+                // 如果index变化量等于新增数量，且是向后移动（indexChange > 0），很可能是因为新增导致的
+                if (c.indexChange > 0 && c.indexChange <= addedCount) {
+                    console.log(`[移动检测-跳过] ID:${c.id}, 标题:"${c.title}", 可能因新增${addedCount}项导致index从${c.oldIndex}→${c.newIndex}`);
+                    return false; // 不标记为移动
+                }
+                return true;
+            });
+            
+            // 只处理剩余的潜在移动
+            if (potentialMoves.length === 0) return;
+            changes = potentialMoves;
+        }
         
         // 找出变化量最大的节点
         const maxDelta = Math.max(...changes.map(c => c.indexDelta));

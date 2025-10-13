@@ -76,7 +76,8 @@ function showContextMenu(e, node) {
     const menuItems = buildMenuItems(nodeId, nodeTitle, nodeUrl, isFolder);
     
     // 渲染菜单
-    contextMenu.innerHTML = menuItems.map(item => {
+    const lang = currentLang || 'zh_CN';
+    const menuHTML = menuItems.map(item => {
         if (item.separator) {
             return '<div class="context-menu-separator"></div>';
         }
@@ -92,11 +93,14 @@ function showContextMenu(e, node) {
         `;
     }).join('');
     
+    contextMenu.innerHTML = menuHTML;
+    
     // 绑定点击事件
     contextMenu.querySelectorAll('.context-menu-item:not(.disabled)').forEach(item => {
         item.addEventListener('click', (e) => {
             e.stopPropagation();
             const action = item.dataset.action;
+            
             handleMenuAction(action, nodeId, nodeTitle, nodeUrl, isFolder);
             hideContextMenu();
         });
@@ -142,7 +146,7 @@ function buildMenuItems(nodeId, nodeTitle, nodeUrl, isFolder) {
     if (isFolder) {
         // 文件夹菜单
         items.push(
-            { action: 'select-item', label: lang === 'zh_CN' ? '选择' : 'Select', icon: 'check-square' },
+            { action: 'select-item', label: lang === 'zh_CN' ? '选择（批量操作）' : 'Select (Batch)', icon: 'check-square' },
             { separator: true },
             { action: 'open-all', label: lang === 'zh_CN' ? '打开全部' : 'Open All Bookmarks', icon: 'folder-open' },
             { action: 'open-all-tab-group', label: lang === 'zh_CN' ? '在新标签页组中打开全部' : 'Open All in New Tab Group', icon: 'object-group' },
@@ -163,7 +167,7 @@ function buildMenuItems(nodeId, nodeTitle, nodeUrl, isFolder) {
     } else {
         // 书签菜单
         items.push(
-            { action: 'select-item', label: lang === 'zh_CN' ? '选择' : 'Select', icon: 'check-square' },
+            { action: 'select-item', label: lang === 'zh_CN' ? '选择（批量操作）' : 'Select (Batch)', icon: 'check-square' },
             { separator: true },
             { action: 'open', label: lang === 'zh_CN' ? '打开' : 'Open', icon: 'external-link-alt' },
             { action: 'open-new-tab', label: lang === 'zh_CN' ? '在新标签页中打开' : 'Open in New Tab', icon: 'window-maximize' },
@@ -996,19 +1000,18 @@ async function refreshBookmarkTree() {
     
     if (typeof renderTreeView === 'function') {
         // 临时清空旧数据，避免显示变更标记
-        const storageData = await chrome.storage.local.get(['lastBookmarkData']);
-        const oldLastBookmarkData = storageData.lastBookmarkData;
-        
-        // 临时移除旧数据
         await chrome.storage.local.set({ lastBookmarkData: null });
         console.log('[批量操作] 已临时清除旧数据，避免diff');
         
         // 渲染当前书签树（不会检测变更）
         await renderTreeView(true);
         
-        // 恢复旧数据（供其他功能使用）
-        await chrome.storage.local.set({ lastBookmarkData: oldLastBookmarkData });
-        console.log('[批量操作] 书签树已刷新，已恢复旧数据');
+        // 获取当前书签数据并更新为新的基准数据（重要：这样下次对比就基于删除后的状态）
+        if (chrome && chrome.bookmarks) {
+            const bookmarkTree = await chrome.bookmarks.getTree();
+            await chrome.storage.local.set({ lastBookmarkData: bookmarkTree });
+            console.log('[批量操作] 已将当前状态设为新的基准数据，避免后续误标记为moved');
+        }
     } else {
         console.warn('[批量操作] renderTreeView 函数不存在');
     }
@@ -1023,11 +1026,25 @@ function enterSelectMode() {
     // 显示全局蓝框和提示
     showSelectModeOverlay();
     
-    // 显示批量工具栏
+    // 隐藏顶部工具栏
+    const toolbar = document.getElementById('batch-toolbar');
+    if (toolbar) {
+        toolbar.style.display = 'none';
+        console.log('[Select模式] 隐藏顶部工具栏');
+    }
+    
+    // 更新批量工具栏（但不显示，因为我们要显示批量菜单）
     updateBatchToolbar();
     
     // 关闭右键菜单
     hideContextMenu();
+    
+    // 自动显示批量菜单
+    setTimeout(() => {
+        const fakeEvent = { preventDefault: () => {}, stopPropagation: () => {} };
+        showBatchContextMenu(fakeEvent);
+        console.log('[Select模式] 自动显示批量菜单');
+    }, 100);
     
     console.log('[Select模式] 已进入');
 }
@@ -1039,11 +1056,23 @@ function exitSelectMode() {
     // 隐藏蓝框
     hideSelectModeOverlay();
     
+    // 隐藏批量操作面板
+    hideBatchActionPanel();
+    
     // 清空选中
     deselectAll();
     updateBatchToolbar();
     
     console.log('[Select模式] 已退出');
+}
+
+// 隐藏批量操作面板
+function hideBatchActionPanel() {
+    const batchPanel = document.getElementById('batch-action-panel');
+    if (batchPanel) {
+        batchPanel.style.display = 'none';
+        console.log('[批量面板] 已隐藏');
+    }
 }
 
 // 显示Select模式蓝框（不再显示顶部提示）
@@ -1158,53 +1187,112 @@ function hideSelectModeOverlay() {
     }
 }
 
-// 显示批量操作右键菜单
+// 显示批量操作固定面板
 function showBatchContextMenu(e) {
     e.preventDefault();
     e.stopPropagation();
     
-    console.log('[批量菜单] 显示菜单，位置:', { x: e.clientX, y: e.clientY });
+    console.log('[批量菜单] 显示固定面板');
+    
+    // 检查是否已存在批量面板
+    let batchPanel = document.getElementById('batch-action-panel');
+    if (batchPanel) {
+        // 如果已存在，只需确保显示
+        batchPanel.style.display = 'block';
+        console.log('[批量菜单] 面板已存在，直接显示');
+        return;
+    }
+    
+    // 创建固定位置的批量操作面板
+    batchPanel = document.createElement('div');
+    batchPanel.id = 'batch-action-panel';
+    batchPanel.className = 'batch-action-panel horizontal-batch-layout'; // 默认横向布局
     
     const lang = currentLang || 'zh_CN';
     
-    // 确保菜单在body上，使用fixed定位（不嵌入DOM流）
-    if (contextMenu.parentElement !== document.body) {
-        document.body.appendChild(contextMenu);
-        console.log('[批量菜单] 菜单已移回body');
-    }
-    
-    // 构建批量菜单
-    const items = [
-        { action: 'batch-open', label: lang === 'zh_CN' ? `打开选中的 ${selectedNodes.size} 项` : `Open ${selectedNodes.size} Selected`, icon: 'folder-open' },
-        { action: 'batch-open-tab-group', label: lang === 'zh_CN' ? '在新标签页组中打开' : 'Open in New Tab Group', icon: 'object-group' },
-        { separator: true },
-        { action: 'batch-cut', label: lang === 'zh_CN' ? '剪切选中项' : 'Cut Selected', icon: 'cut' },
-        { action: 'batch-delete', label: lang === 'zh_CN' ? '删除选中项' : 'Delete Selected', icon: 'trash-alt' },
-        { action: 'batch-rename', label: lang === 'zh_CN' ? '批量重命名' : 'Batch Rename', icon: 'edit' },
-        { separator: true },
-        { action: 'batch-export-html', label: lang === 'zh_CN' ? '导出为HTML' : 'Export to HTML', icon: 'file-code' },
-        { action: 'batch-export-json', label: lang === 'zh_CN' ? '导出为JSON' : 'Export to JSON', icon: 'file-alt' },
-        { action: 'batch-merge-folder', label: lang === 'zh_CN' ? '合并为新文件夹' : 'Merge to New Folder', icon: 'folder-plus' },
-        { separator: true },
-        { action: 'exit-select-mode', label: lang === 'zh_CN' ? '退出Select模式' : 'Exit Select Mode', icon: 'times' }
+    // 构建批量菜单 - 分组显示（简化版本）
+    const itemGroups = [
+        // 打开组
+        {
+            name: lang === 'zh_CN' ? '打开' : 'Open',
+            items: [
+                { action: 'batch-open', label: lang === 'zh_CN' ? `打开(${selectedNodes.size})` : `Open(${selectedNodes.size})`, icon: 'folder-open' },
+                { action: 'batch-open-tab-group', label: lang === 'zh_CN' ? '标签组' : 'Group', icon: 'object-group' }
+            ]
+        },
+        // 编辑组
+        {
+            name: lang === 'zh_CN' ? '编辑' : 'Edit',
+            items: [
+                { action: 'batch-cut', label: lang === 'zh_CN' ? '剪切' : 'Cut', icon: 'cut' },
+                { action: 'batch-delete', label: lang === 'zh_CN' ? '删除' : 'Del', icon: 'trash-alt' },
+                { action: 'batch-rename', label: lang === 'zh_CN' ? '改名' : 'Rename', icon: 'edit' }
+            ]
+        },
+        // 导出组
+        {
+            name: lang === 'zh_CN' ? '导出' : 'Export',
+            items: [
+                { action: 'batch-export-html', label: 'HTML', icon: 'file-code' },
+                { action: 'batch-export-json', label: 'JSON', icon: 'file-alt' },
+                { action: 'batch-merge-folder', label: lang === 'zh_CN' ? '合并' : 'Merge', icon: 'folder-plus' }
+            ]
+        },
+        // 控制组
+        {
+            name: lang === 'zh_CN' ? '控制' : 'Control',
+            items: [
+                { action: 'toggle-batch-layout', label: lang === 'zh_CN' ? '纵向' : 'Vert', icon: 'exchange-alt' },
+                { action: 'hide-batch-panel', label: lang === 'zh_CN' ? '隐藏' : 'Hide', icon: 'eye-slash' }
+            ]
+        }
     ];
     
-    contextMenu.innerHTML = items.map(item => {
-        if (item.separator) {
-            return '<div class="context-menu-separator"></div>';
-        }
-        
-        const icon = item.icon ? `<i class="fas fa-${item.icon}"></i>` : '';
-        return `
-            <div class="context-menu-item" data-action="${item.action}">
-                ${icon}
-                <span>${item.label}</span>
-            </div>
-        `;
-    }).join('');
+    batchPanel.innerHTML = `
+        <div class="batch-panel-header" id="batch-panel-header">
+            <span class="batch-panel-title" title="${lang === 'zh_CN' ? '拖动移动窗口' : 'Drag to move'}">${lang === 'zh_CN' ? '批量操作' : 'Batch Actions'}</span>
+            <span class="batch-panel-count" id="batch-panel-count">${selectedNodes.size} ${lang === 'zh_CN' ? '项已选' : 'selected'}</span>
+            <button class="batch-panel-exit-btn" data-action="exit-select-mode" title="${lang === 'zh_CN' ? '退出Select模式' : 'Exit Select Mode'}">
+                <i class="fas fa-times"></i> ${lang === 'zh_CN' ? '退出' : 'Exit'}
+            </button>
+        </div>
+        <div class="batch-panel-resize-handles">
+            <div class="resize-handle resize-n" data-direction="n"></div>
+            <div class="resize-handle resize-s" data-direction="s"></div>
+            <div class="resize-handle resize-w" data-direction="w"></div>
+            <div class="resize-handle resize-e" data-direction="e"></div>
+            <div class="resize-handle resize-nw" data-direction="nw"></div>
+            <div class="resize-handle resize-ne" data-direction="ne"></div>
+            <div class="resize-handle resize-sw" data-direction="sw"></div>
+            <div class="resize-handle resize-se" data-direction="se"></div>
+        </div>
+        <div class="batch-panel-content">
+            ${itemGroups.map((group, groupIndex) => {
+                const groupItems = group.items.map(item => {
+                    const icon = item.icon ? `<i class="fas fa-${item.icon}"></i>` : '';
+                    const exitClass = item.isExit ? 'exit-item' : '';
+                    return `
+                        <div class="context-menu-item ${exitClass}" data-action="${item.action}">
+                            ${icon}
+                            <span>${item.label}</span>
+                        </div>
+                    `;
+                }).join('');
+                
+                return `
+                    <div class="batch-menu-group" data-group="${group.name}">
+                        <div class="batch-group-label">${group.name}</div>
+                        <div class="batch-group-items">
+                            ${groupItems}
+                        </div>
+                    </div>
+                `;
+            }).join('')}
+        </div>
+    `;
     
     // 绑定点击事件
-    contextMenu.querySelectorAll('.context-menu-item').forEach(item => {
+    batchPanel.querySelectorAll('.context-menu-item').forEach(item => {
         item.addEventListener('click', async (e) => {
             e.stopPropagation();
             const action = item.dataset.action;
@@ -1212,23 +1300,51 @@ function showBatchContextMenu(e) {
             
             if (action === 'exit-select-mode') {
                 exitSelectMode();
+            } else if (action === 'hide-batch-panel') {
+                hideBatchPanel();
+            } else if (action === 'toggle-batch-layout') {
+                toggleBatchPanelLayout();
             } else {
                 await handleMenuAction(action, null, null, null, false);
             }
-            hideContextMenu();
         });
     });
     
-    // 使用fixed定位显示在鼠标位置（确保不随滚动移动）
-    contextMenu.style.cssText = `
-        position: fixed !important;
-        left: ${e.clientX}px !important;
-        top: ${e.clientY}px !important;
-        display: block !important;
-        z-index: 10001 !important;
-    `;
+    // 绑定标题栏退出按钮事件
+    const headerExitBtn = batchPanel.querySelector('.batch-panel-exit-btn');
+    if (headerExitBtn) {
+        headerExitBtn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            exitSelectMode();
+            console.log('[批量菜单] 点击标题栏退出按钮');
+        });
+    }
     
-    console.log('[批量菜单] 菜单已显示，定位:', contextMenu.style.position);
+    // 添加拖拽移动功能
+    initBatchPanelDrag(batchPanel);
+    
+    // 添加调整大小功能（四边和四角）
+    initBatchPanelResize(batchPanel);
+    
+    // 将面板添加到书签树容器
+    const treeContainer = document.getElementById('bookmarkTree') || 
+                         document.querySelector('.bookmark-tree') || 
+                         document.querySelector('.tree-view-container');
+    
+    if (treeContainer) {
+        treeContainer.style.position = 'relative';
+        treeContainer.appendChild(batchPanel);
+        console.log('[批量菜单] 固定面板已添加到树容器');
+    } else {
+        document.body.appendChild(batchPanel);
+        console.log('[批量菜单] 固定面板已添加到body');
+    }
+    
+    // 恢复保存的位置和大小，或设置初始居中位置
+    const treeContainerForPosition = document.getElementById('bookmarkTree') || 
+                                      document.querySelector('.bookmark-tree') || 
+                                      document.querySelector('.tree-view-container');
+    restoreBatchPanelState(batchPanel, treeContainerForPosition);
 }
 
 // ==================== 批量操作功能 ====================
@@ -1252,6 +1368,7 @@ function toggleSelectItem(nodeId) {
     }
     
     updateBatchToolbar();
+    updateBatchPanelCount(); // 实时更新批量面板计数
     console.log('[批量] 选中状态:', selectedNodes.size, '个');
 }
 
@@ -1353,7 +1470,21 @@ async function batchDelete() {
     try {
         let successCount = 0;
         let failCount = 0;
+        const affectedParentIds = new Set(); // 记录受影响的父文件夹ID
         
+        // 先收集所有要删除的节点的父ID
+        for (const nodeId of selectedNodes) {
+            try {
+                const [node] = await chrome.bookmarks.get(nodeId);
+                if (node.parentId) {
+                    affectedParentIds.add(node.parentId);
+                }
+            } catch (error) {
+                console.error('[批量] 获取节点信息失败:', nodeId, error);
+            }
+        }
+        
+        // 执行删除
         for (const nodeId of selectedNodes) {
             try {
                 const [node] = await chrome.bookmarks.get(nodeId);
@@ -1373,8 +1504,23 @@ async function batchDelete() {
         deselectAll();
         updateBatchToolbar();
         
+        // 存储受影响的父文件夹列表到临时存储，供比较算法使用
+        if (affectedParentIds.size > 0) {
+            await chrome.storage.local.set({ 
+                tempDeletedParents: Array.from(affectedParentIds),
+                tempDeleteTimestamp: Date.now()
+            });
+            console.log('[批量删除] 已记录受影响的父文件夹:', Array.from(affectedParentIds));
+        }
+        
         // 刷新书签树（这会重新渲染，确保没有残留的状态）
         await refreshBookmarkTree();
+        
+        // 清除临时标记（延迟清除，给渲染留出时间）
+        setTimeout(async () => {
+            await chrome.storage.local.remove(['tempDeletedParents', 'tempDeleteTimestamp']);
+            console.log('[批量删除] 已清除临时标记');
+        }, 1000);
         
         const result = lang === 'zh_CN' 
             ? `已删除 ${successCount} 项${failCount > 0 ? `，失败 ${failCount} 项` : ''}` 
@@ -1657,16 +1803,23 @@ function updateBatchToolbar() {
     
     console.log('[批量工具栏] 更新:', { selectMode, count });
     
-    // 只在Select模式下显示
-    if (selectMode && count >= 0) {
-        toolbar.style.display = 'flex';
-        const countText = lang === 'zh_CN' ? `已选中 ${count} 项` : `${count} Selected`;
-        toolbar.querySelector('.selected-count').textContent = countText;
-        console.log('[批量工具栏] 已显示:', countText);
-    } else {
+    // 在Select模式下，默认不显示工具栏（显示批量菜单）
+    // 除非用户点击了"隐藏批量菜单"按钮
+    // 如果不在Select模式，也隐藏
+    if (!selectMode) {
         toolbar.style.display = 'none';
-        console.log('[批量工具栏] 已隐藏');
+        console.log('[批量工具栏] 已隐藏（非Select模式）');
+        return;
     }
+    
+    // 更新计数文本
+    const countText = lang === 'zh_CN' ? `已选中 ${count} 项` : `${count} Selected`;
+    const countElement = toolbar.querySelector('.selected-count');
+    if (countElement) {
+        countElement.textContent = countText;
+    }
+    
+    console.log('[批量工具栏] 已更新计数:', countText);
 }
 
 // ==================== 快捷键支持 ====================
@@ -1698,6 +1851,433 @@ function initClickSelect() {
     console.log('[点击选择] 初始化完成（点击事件现在在overlay上处理）');
 }
 
+// 更新批量面板的选择计数
+function updateBatchPanelCount() {
+    const batchPanel = document.getElementById('batch-action-panel');
+    if (!batchPanel) return;
+    
+    const countElement = batchPanel.querySelector('#batch-panel-count');
+    if (!countElement) return;
+    
+    const lang = currentLang || 'zh_CN';
+    const count = selectedNodes.size;
+    countElement.textContent = `${count} ${lang === 'zh_CN' ? '项已选' : 'selected'}`;
+    
+    console.log('[批量面板] 更新计数:', count);
+}
+
+// 初始化批量面板的拖拽移动功能
+function initBatchPanelDrag(panel) {
+    const header = panel.querySelector('#batch-panel-header');
+    if (!header) return;
+    
+    let isDragging = false;
+    let startX, startY, startLeft, startTop;
+    
+    // 整个标题栏都可拖动
+    header.style.cursor = 'grab';
+    
+    header.addEventListener('mousedown', (e) => {
+        isDragging = true;
+        startX = e.clientX;
+        startY = e.clientY;
+        
+        // 获取当前实际位置
+        const rect = panel.getBoundingClientRect();
+        startLeft = rect.left;
+        startTop = rect.top;
+        
+        // 立即清除transform并设置固定位置，防止拖动时跳变
+        panel.style.transform = 'none';
+        panel.style.left = startLeft + 'px';
+        panel.style.top = startTop + 'px';
+        panel.style.bottom = 'auto';
+        panel.style.right = 'auto';
+        
+        // 改变光标样式
+        header.style.cursor = 'grabbing';
+        
+        // 防止文字选中
+        e.preventDefault();
+        
+        console.log('[批量面板] 开始拖动');
+    });
+    
+    document.addEventListener('mousemove', (e) => {
+        if (!isDragging) return;
+        
+        const deltaX = e.clientX - startX;
+        const deltaY = e.clientY - startY;
+        
+        panel.style.left = (startLeft + deltaX) + 'px';
+        panel.style.top = (startTop + deltaY) + 'px';
+        panel.style.right = 'auto'; // 取消右侧固定
+    });
+    
+    document.addEventListener('mouseup', () => {
+        if (isDragging) {
+            isDragging = false;
+            header.style.cursor = 'grab';
+            // 保存位置
+            saveBatchPanelState(panel);
+            console.log('[批量面板] 拖动完成');
+        }
+    });
+    
+    console.log('[批量面板] 拖拽移动功能已初始化');
+}
+
+// 根据高度更新tall-layout类（横向布局专用）
+function updateTallLayoutClass(panel, height) {
+    const threshold = 200; // 高度阈值：200px
+    
+    if (height >= threshold) {
+        if (!panel.classList.contains('tall-layout')) {
+            panel.classList.add('tall-layout');
+            console.log('[批量面板] 高度>=200px，切换到纵向单列布局');
+        }
+    } else {
+        if (panel.classList.contains('tall-layout')) {
+            panel.classList.remove('tall-layout');
+            console.log('[批量面板] 高度<200px，切换到横向多列布局');
+        }
+    }
+}
+
+// 初始化批量面板的调整大小功能（四边和四角）
+function initBatchPanelResize(panel) {
+    const handles = panel.querySelectorAll('.resize-handle');
+    if (handles.length === 0) return;
+    
+    let isResizing = false;
+    let startX, startY, startWidth, startHeight, startLeft, startTop;
+    let direction = '';
+    
+    handles.forEach(handle => {
+        handle.addEventListener('mousedown', (e) => {
+            isResizing = true;
+            startX = e.clientX;
+            startY = e.clientY;
+            
+            const rect = panel.getBoundingClientRect();
+            startWidth = rect.width;
+            startHeight = rect.height;
+            startLeft = rect.left;
+            startTop = rect.top;
+            
+            direction = handle.dataset.direction;
+            
+            // 防止文字选中
+            e.preventDefault();
+            e.stopPropagation();
+            
+            console.log('[批量面板] 开始调整大小:', direction);
+        });
+    });
+    
+    document.addEventListener('mousemove', (e) => {
+        if (!isResizing) return;
+        
+        const deltaX = e.clientX - startX;
+        const deltaY = e.clientY - startY;
+        
+        const isVertical = panel.classList.contains('vertical-batch-layout');
+        const minWidth = isVertical ? 200 : 800;
+        const maxWidth = isVertical ? 500 : 2000;
+        const minHeight = isVertical ? 200 : 10; // 横向布局最小高度10px，真正极限
+        const maxHeight = window.innerHeight * 0.8;
+        
+        let newWidth = startWidth;
+        let newHeight = startHeight;
+        let newLeft = startLeft;
+        let newTop = startTop;
+        
+        // 根据方向调整
+        if (direction.includes('e')) {
+            newWidth = Math.min(maxWidth, Math.max(minWidth, startWidth + deltaX));
+        }
+        if (direction.includes('w')) {
+            newWidth = Math.min(maxWidth, Math.max(minWidth, startWidth - deltaX));
+            newLeft = startLeft + (startWidth - newWidth);
+        }
+        if (direction.includes('s')) {
+            newHeight = Math.min(maxHeight, Math.max(minHeight, startHeight + deltaY));
+        }
+        if (direction.includes('n')) {
+            newHeight = Math.min(maxHeight, Math.max(minHeight, startHeight - deltaY));
+            newTop = startTop + (startHeight - newHeight);
+        }
+        
+        panel.style.width = newWidth + 'px';
+        panel.style.height = newHeight + 'px';  // 始终设置高度为计算值，实现无极调整
+        
+        // 根据高度动态切换横向/纵向布局（只对横向布局生效）
+        if (!isVertical) {
+            updateTallLayoutClass(panel, newHeight);
+        }
+        
+        if (direction.includes('w')) {
+            panel.style.left = newLeft + 'px';
+            panel.style.right = 'auto';
+        }
+        if (direction.includes('n')) {
+            panel.style.top = newTop + 'px';
+            panel.style.bottom = 'auto';
+        }
+    });
+    
+    document.addEventListener('mouseup', () => {
+        if (isResizing) {
+            isResizing = false;
+            
+            // 最终确认布局类型
+            const isVertical = panel.classList.contains('vertical-batch-layout');
+            if (!isVertical) {
+                const currentHeight = parseFloat(panel.style.height) || panel.offsetHeight;
+                updateTallLayoutClass(panel, currentHeight);
+            }
+            
+            // 保存大小
+            saveBatchPanelState(panel);
+            console.log('[批量面板] 调整大小完成，当前高度:', panel.style.height);
+        }
+    });
+    
+    console.log('[批量面板] 四边四角调整大小功能已初始化');
+}
+
+// 切换批量面板布局（横向/纵向）
+let batchPanelHorizontal = true; // 默认横向
+function toggleBatchPanelLayout() {
+    const batchPanel = document.getElementById('batch-action-panel');
+    if (!batchPanel) return;
+    
+    batchPanelHorizontal = !batchPanelHorizontal;
+    
+    if (batchPanelHorizontal) {
+        batchPanel.classList.add('horizontal-batch-layout');
+        batchPanel.classList.remove('vertical-batch-layout');
+        
+        // 恢复横向布局的默认样式
+        batchPanel.style.width = '1000px';
+        batchPanel.style.height = 'auto'; // 初始高度自适应，之后可无极调整
+        batchPanel.style.minWidth = '800px';
+        batchPanel.style.maxWidth = '95vw';
+        batchPanel.style.minHeight = '10px'; // 真正的极限压缩，最小10px
+        batchPanel.style.maxHeight = '80vh';
+        batchPanel.style.left = '50%';
+        batchPanel.style.right = 'auto';
+        batchPanel.style.transform = 'translateX(-50%)';
+        batchPanel.style.bottom = '80px';
+        batchPanel.style.top = 'auto';
+        
+        // 延迟检查高度并设置tall-layout类
+        setTimeout(() => {
+            const currentHeight = batchPanel.offsetHeight;
+            updateTallLayoutClass(batchPanel, currentHeight);
+        }, 50);
+        
+        console.log('[批量面板] 切换到横向布局');
+        // 更新按钮文字
+        const btn = batchPanel.querySelector('[data-action="toggle-batch-layout"] span');
+        if (btn) {
+            const lang = currentLang || 'zh_CN';
+            btn.textContent = lang === 'zh_CN' ? '纵向' : 'Vert';
+        }
+    } else {
+        batchPanel.classList.remove('horizontal-batch-layout');
+        batchPanel.classList.add('vertical-batch-layout');
+        batchPanel.classList.remove('tall-layout'); // 纵向布局不需要tall-layout
+        
+        // 设置纵向布局的默认样式
+        batchPanel.style.width = '280px';
+        batchPanel.style.height = 'auto'; // 初始高度自适应，之后可无极调整
+        batchPanel.style.minWidth = '200px';
+        batchPanel.style.maxWidth = '500px';
+        batchPanel.style.minHeight = '200px';
+        batchPanel.style.maxHeight = '80vh';
+        batchPanel.style.left = 'auto';
+        batchPanel.style.right = '20px';
+        batchPanel.style.transform = 'none';
+        batchPanel.style.bottom = '80px';
+        batchPanel.style.top = 'auto';
+        
+        console.log('[批量面板] 切换到纵向布局');
+        // 更新按钮文字
+        const btn = batchPanel.querySelector('[data-action="toggle-batch-layout"] span');
+        if (btn) {
+            const lang = currentLang || 'zh_CN';
+            btn.textContent = lang === 'zh_CN' ? '横向' : 'Horiz';
+        }
+    }
+    
+    // 保存状态
+    try {
+        localStorage.setItem('batchPanelLayout', batchPanelHorizontal ? 'horizontal' : 'vertical');
+        // 保存当前位置和大小
+        saveBatchPanelState(batchPanel);
+    } catch (e) {
+        console.error('[批量面板] 保存布局状态失败:', e);
+    }
+}
+
+// 保存批量面板的位置和大小
+function saveBatchPanelState(panel) {
+    try {
+        const isVertical = panel.classList.contains('vertical-batch-layout');
+        const state = {
+            left: panel.style.left,
+            top: panel.style.top,
+            bottom: panel.style.bottom,
+            right: panel.style.right,
+            width: panel.style.width,
+            height: panel.style.height,
+            transform: panel.style.transform,
+            layout: isVertical ? 'vertical' : 'horizontal'
+        };
+        localStorage.setItem('batchPanelState', JSON.stringify(state));
+        console.log('[批量面板] 状态已保存:', state);
+    } catch (e) {
+        console.error('[批量面板] 保存状态失败:', e);
+    }
+}
+
+// 恢复批量面板的位置和大小
+function restoreBatchPanelState(panel, treeContainer) {
+    try {
+        const savedState = localStorage.getItem('batchPanelState');
+        const savedLayout = localStorage.getItem('batchPanelLayout');
+        
+        if (savedState) {
+            const state = JSON.parse(savedState);
+            console.log('[批量面板] 恢复状态:', state);
+            
+            // 先恢复布局类型
+            if (savedLayout === 'vertical' || state.layout === 'vertical') {
+                panel.classList.remove('horizontal-batch-layout');
+                panel.classList.add('vertical-batch-layout');
+                batchPanelHorizontal = false;
+                
+                // 纵向布局恢复
+                panel.style.width = state.width || '280px';
+                panel.style.height = state.height || 'auto';
+                panel.style.minWidth = '200px';
+                panel.style.maxWidth = '500px';
+                panel.style.minHeight = '200px';
+                panel.style.maxHeight = '80vh';
+                panel.style.right = state.right || '20px';
+                panel.style.left = 'auto';
+                panel.style.transform = 'none';
+                if (state.top) panel.style.top = state.top;
+                if (state.bottom) panel.style.bottom = state.bottom;
+            } else {
+                // 横向布局恢复
+                panel.classList.add('horizontal-batch-layout');
+                panel.classList.remove('vertical-batch-layout');
+                batchPanelHorizontal = true;
+                
+                panel.style.width = state.width || '1000px';
+                panel.style.height = state.height || 'auto';
+                panel.style.minWidth = '800px';
+                panel.style.maxWidth = '95vw';
+                panel.style.minHeight = '150px';
+                panel.style.maxHeight = '80vh';
+                panel.style.left = state.left || '50%';
+                panel.style.right = 'auto';
+                panel.style.transform = state.transform || 'translateX(-50%)';
+                if (state.top) panel.style.top = state.top;
+                if (state.bottom) panel.style.bottom = state.bottom;
+            }
+            
+            console.log('[批量面板] 状态恢复完成');
+        } else {
+            console.log('[批量面板] 没有保存的状态，计算相对容器的居中位置');
+            
+            // 首次显示，计算相对于treeContainer的居中位置
+            if (treeContainer) {
+                const containerRect = treeContainer.getBoundingClientRect();
+                const panelWidth = 1000; // 默认横向宽度
+                const panelHeight = 150; // 估算高度
+                
+                // 计算居中位置（相对于容器底部中央）
+                const centerX = containerRect.left + (containerRect.width / 2);
+                const bottomY = containerRect.bottom - 100; // 距离容器底部100px
+                
+                panel.style.left = centerX + 'px';
+                panel.style.top = (bottomY - panelHeight) + 'px';
+                panel.style.transform = 'translateX(-50%)';
+                panel.style.bottom = 'auto';
+                
+                console.log('[批量面板] 首次居中位置已设置:', {
+                    containerRect,
+                    centerX,
+                    bottomY
+                });
+            }
+        }
+    } catch (e) {
+        console.error('[批量面板] 恢复状态失败:', e);
+    }
+}
+
+// 隐藏批量面板，显示顶部工具栏
+function hideBatchPanel() {
+    const batchPanel = document.getElementById('batch-action-panel');
+    if (batchPanel) {
+        batchPanel.style.display = 'none';
+    }
+    
+    // 显示顶部工具栏
+    updateBatchToolbar();
+    const toolbar = document.getElementById('batch-toolbar');
+    if (toolbar) {
+        toolbar.style.display = 'flex';
+    }
+    
+    console.log('[批量面板] 已隐藏，显示顶部工具栏');
+}
+
+// 切换右键菜单布局（横向/纵向）
+let contextMenuHorizontal = false;
+function toggleContextMenuLayout() {
+    contextMenuHorizontal = !contextMenuHorizontal;
+    
+    const contextMenu = document.getElementById('bookmark-context-menu');
+    if (!contextMenu) return;
+    
+    if (contextMenuHorizontal) {
+        contextMenu.classList.add('horizontal-layout');
+        console.log('[右键菜单] 切换到横向布局');
+    } else {
+        contextMenu.classList.remove('horizontal-layout');
+        console.log('[右键菜单] 切换到纵向布局');
+    }
+    
+    // 保存状态到localStorage
+    try {
+        localStorage.setItem('contextMenuLayout', contextMenuHorizontal ? 'horizontal' : 'vertical');
+    } catch (e) {
+        console.error('[右键菜单] 保存布局状态失败:', e);
+    }
+}
+
+// 恢复保存的右键菜单布局状态
+function restoreContextMenuLayout() {
+    try {
+        const savedLayout = localStorage.getItem('contextMenuLayout');
+        if (savedLayout === 'horizontal') {
+            contextMenuHorizontal = true;
+            const contextMenu = document.getElementById('bookmark-context-menu');
+            if (contextMenu) {
+                contextMenu.classList.add('horizontal-layout');
+                console.log('[右键菜单] 恢复横向布局');
+            }
+        }
+    } catch (e) {
+        console.error('[右键菜单] 恢复布局状态失败:', e);
+    }
+}
+
 // 导出函数
 if (typeof window !== 'undefined') {
     window.initContextMenu = initContextMenu;
@@ -1713,4 +2293,13 @@ if (typeof window !== 'undefined') {
     window.initClickSelect = initClickSelect;
     window.enterSelectMode = enterSelectMode;
     window.exitSelectMode = exitSelectMode;
+    window.toggleContextMenuLayout = toggleContextMenuLayout;
+    window.restoreContextMenuLayout = restoreContextMenuLayout;
+    
+    // 页面加载时恢复布局
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', restoreContextMenuLayout);
+    } else {
+        restoreContextMenuLayout();
+    }
 }

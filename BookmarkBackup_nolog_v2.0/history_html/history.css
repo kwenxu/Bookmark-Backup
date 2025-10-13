@@ -2941,3 +2941,548 @@ a.tree-label.tree-bookmark-link:hover {
     background: #cc0000 !important;
     border-color: #990000 !important;
 }
+
+/* ==================== 批量操作固定面板 ==================== */
+
+.batch-action-panel {
+    position: fixed;
+    bottom: 80px;
+    left: 50%;
+    transform: translateX(-50%);
+    width: 1000px;
+    height: auto;
+    min-width: 150px;
+    max-width: 95vw;
+    max-height: 200px;
+    background: rgba(255, 255, 255, 0.08) !important;
+    backdrop-filter: none !important;
+    -webkit-backdrop-filter: none !important;
+    border: 2px solid rgba(74, 144, 226, 0.15);
+    border-radius: 12px;
+    box-shadow: 0 -4px 24px rgba(0, 0, 0, 0.15);
+    z-index: 10000;
+    animation: panelFadeIn 0.3s ease-out;
+    display: flex;
+    flex-direction: column;
+    resize: none;
+    overflow: visible;
+}
+
+@keyframes panelFadeIn {
+    from {
+        opacity: 0;
+    }
+    to {
+        opacity: 1;
+    }
+}
+
+.batch-panel-header {
+    position: relative;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 8px;
+    padding: 4px 12px; /* 极小padding，允许极限压缩 */
+    background: rgba(74, 144, 226, 0.05) !important;
+    backdrop-filter: none !important;
+    -webkit-backdrop-filter: none !important;
+    color: white;
+    text-shadow: 0 1px 4px rgba(0, 0, 0, 1), 0 0 8px rgba(0, 0, 0, 0.8);
+    border-radius: 10px 10px 0 0;
+    flex-shrink: 0;
+    min-height: 0; /* 移除最小高度 */
+    user-select: none;
+    cursor: grab;
+}
+
+.batch-panel-header:active {
+    cursor: grabbing;
+}
+
+.batch-panel-title {
+    font-weight: 600;
+    font-size: 12px; /* 更小的字体 */
+    margin-right: auto;
+    line-height: 1.2; /* 紧凑行高 */
+}
+
+.batch-panel-count {
+    font-size: 11px; /* 更小的字体 */
+    padding: 2px 8px; /* 更小的padding */
+    background: rgba(255, 255, 255, 0.2);
+    border-radius: 10px;
+    line-height: 1.2;
+}
+
+.batch-panel-exit-btn {
+    background: rgba(244, 67, 54, 0.9);
+    color: white;
+    border: 1px solid rgba(255, 255, 255, 0.5);
+    border-radius: 4px;
+    padding: 2px 8px; /* 更小的padding */
+    font-size: 11px; /* 更小的字体 */
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    gap: 2px; /* 更小的gap */
+    transition: all 0.2s;
+    font-weight: 500;
+    line-height: 1.2;
+}
+
+.batch-panel-exit-btn:hover {
+    background: rgba(244, 67, 54, 1);
+    border-color: rgba(255, 255, 255, 0.8);
+    transform: scale(1.05);
+}
+
+.batch-panel-exit-btn:active {
+    transform: scale(0.98);
+}
+
+.batch-panel-exit-btn i {
+    font-size: 13px;
+}
+
+[data-theme="dark"] .batch-menu-group {
+    border-right-color: rgba(255, 255, 255, 0.1);
+}
+
+[data-theme="dark"] .batch-group-label {
+    color: rgba(255, 255, 255, 0.6);
+    border-bottom-color: rgba(255, 255, 255, 0.1);
+}
+
+/* 调整大小句柄 - 四边和四角 */
+.batch-panel-resize-handles {
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    z-index: 10002;
+}
+
+.resize-handle {
+    position: absolute;
+    pointer-events: auto !important;
+    z-index: 10003 !important;
+    background: transparent;
+    transition: all 0.2s ease;
+}
+
+/* 四边 - 增加可拖动区域的宽度 */
+.resize-n { 
+    top: -4px; 
+    left: 0; 
+    right: 0; 
+    height: 12px; 
+    cursor: ns-resize; 
+}
+.resize-s { 
+    bottom: -4px; 
+    left: 0; 
+    right: 0; 
+    height: 12px; 
+    cursor: ns-resize; 
+}
+.resize-w { 
+    left: -4px; 
+    top: 0; 
+    bottom: 0; 
+    width: 12px; 
+    cursor: ew-resize; 
+}
+.resize-e { 
+    right: -4px; 
+    top: 0; 
+    bottom: 0; 
+    width: 12px; 
+    cursor: ew-resize; 
+}
+
+/* 四角 - 更大的可拖动区域 */
+.resize-nw { 
+    top: -4px; 
+    left: -4px; 
+    width: 20px; 
+    height: 20px; 
+    cursor: nwse-resize; 
+    z-index: 10004 !important;
+}
+.resize-ne { 
+    top: -4px; 
+    right: -4px; 
+    width: 20px; 
+    height: 20px; 
+    cursor: nesw-resize; 
+    z-index: 10004 !important;
+}
+.resize-sw { 
+    bottom: -4px; 
+    left: -4px; 
+    width: 20px; 
+    height: 20px; 
+    cursor: nesw-resize; 
+    z-index: 10004 !important;
+}
+.resize-se { 
+    bottom: -4px; 
+    right: -4px; 
+    width: 20px; 
+    height: 20px; 
+    cursor: nwse-resize; 
+    z-index: 10004 !important;
+}
+
+/* 视觉提示 - 悬停时显示边框 */
+.resize-handle:hover {
+    background: rgba(74, 144, 226, 0.15);
+}
+
+.resize-n:hover,
+.resize-s:hover {
+    border-top: 2px solid rgba(74, 144, 226, 0.6);
+}
+
+.resize-w:hover,
+.resize-e:hover {
+    border-left: 2px solid rgba(74, 144, 226, 0.6);
+}
+
+.resize-nw:hover,
+.resize-ne:hover,
+.resize-sw:hover,
+.resize-se:hover {
+    background: rgba(74, 144, 226, 0.25);
+    border-radius: 4px;
+}
+
+/* 右下角的可见调整大小指示器 */
+.resize-se::after {
+    content: '';
+    position: absolute;
+    bottom: 4px;
+    right: 4px;
+    width: 10px;
+    height: 10px;
+    background: linear-gradient(
+        135deg,
+        transparent 0%,
+        transparent 46%,
+        rgba(74, 144, 226, 0.4) 46%,
+        rgba(74, 144, 226, 0.4) 50%,
+        transparent 50%,
+        transparent 96%,
+        rgba(74, 144, 226, 0.4) 96%
+    );
+    background-size: 5px 5px;
+    opacity: 0.6;
+    transition: opacity 0.2s ease;
+}
+
+.resize-se:hover::after {
+    opacity: 1;
+}
+
+/* 其他角落的指示器 */
+.resize-nw::after,
+.resize-ne::after,
+.resize-sw::after {
+    content: '';
+    position: absolute;
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: rgba(74, 144, 226, 0.3);
+    opacity: 0;
+    transition: opacity 0.2s ease;
+}
+
+.resize-nw::after {
+    top: 4px;
+    left: 4px;
+}
+
+.resize-ne::after {
+    top: 4px;
+    right: 4px;
+}
+
+.resize-sw::after {
+    bottom: 4px;
+    left: 4px;
+}
+
+.resize-nw:hover::after,
+.resize-ne:hover::after,
+.resize-sw:hover::after {
+    opacity: 1;
+}
+
+[data-theme="dark"] .resize-se::after {
+    background: linear-gradient(
+        135deg,
+        transparent 0%,
+        transparent 46%,
+        rgba(88, 166, 255, 0.5) 46%,
+        rgba(88, 166, 255, 0.5) 50%,
+        transparent 50%,
+        transparent 96%,
+        rgba(88, 166, 255, 0.5) 96%
+    );
+    background-size: 5px 5px;
+}
+
+[data-theme="dark"] .resize-nw::after,
+[data-theme="dark"] .resize-ne::after,
+[data-theme="dark"] .resize-sw::after {
+    background: rgba(88, 166, 255, 0.4);
+}
+
+.batch-panel-content {
+    padding: 8px;
+    flex: 1;
+    overflow-y: auto;
+    overflow-x: hidden;
+    background: transparent;
+}
+
+.batch-panel-content .context-menu-item {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 10px 12px;
+    border-radius: 6px;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    font-size: 13px;
+    color: var(--text-primary);
+    background: rgba(255, 255, 255, 0.05) !important;
+    backdrop-filter: blur(2px) !important;
+    -webkit-backdrop-filter: blur(2px) !important;
+}
+
+.batch-panel-content .context-menu-item:hover {
+    background: rgba(255, 255, 255, 0.25) !important;
+}
+
+.batch-panel-content .context-menu-item i {
+    width: 16px;
+    font-size: 14px;
+    color: var(--accent-primary);
+}
+
+/* 退出按钮红色样式 */
+.batch-panel-content .context-menu-item.exit-item,
+.batch-panel-content .context-menu-item[data-action="exit-select-mode"] {
+    background: #ffebee;
+    color: #c62828;
+    border: 1px solid #ef5350;
+}
+
+.batch-panel-content .context-menu-item.exit-item:hover,
+.batch-panel-content .context-menu-item[data-action="exit-select-mode"]:hover {
+    background: #ffcdd2;
+}
+
+.batch-panel-content .context-menu-item.exit-item i,
+.batch-panel-content .context-menu-item[data-action="exit-select-mode"] i {
+    color: #c62828;
+}
+
+[data-theme="dark"] .batch-panel-content .context-menu-item.exit-item,
+[data-theme="dark"] .batch-panel-content .context-menu-item[data-action="exit-select-mode"] {
+    background: rgba(244, 67, 54, 0.15);
+    color: #ff5252;
+    border-color: #ff5252;
+}
+
+[data-theme="dark"] .batch-panel-content .context-menu-item.exit-item:hover,
+[data-theme="dark"] .batch-panel-content .context-menu-item[data-action="exit-select-mode"]:hover {
+    background: rgba(244, 67, 54, 0.25);
+}
+
+[data-theme="dark"] .batch-panel-content .context-menu-item.exit-item i,
+[data-theme="dark"] .batch-panel-content .context-menu-item[data-action="exit-select-mode"] i {
+    color: #ff5252;
+}
+
+.batch-panel-content .context-menu-separator {
+    height: 1px;
+    background: var(--border-color);
+    margin: 4px 0;
+}
+
+[data-theme="dark"] .batch-action-panel {
+    background: rgba(30, 30, 30, 0.08) !important;
+    backdrop-filter: none !important;
+    -webkit-backdrop-filter: none !important;
+    border-color: rgba(74, 144, 226, 0.15);
+    box-shadow: 0 -4px 24px rgba(0, 0, 0, 0.5);
+}
+
+[data-theme="dark"] .batch-panel-header {
+    background: rgba(74, 144, 226, 0.05) !important;
+    backdrop-filter: none !important;
+    -webkit-backdrop-filter: none !important;
+}
+
+[data-theme="dark"] .batch-panel-content .context-menu-item {
+    background: rgba(50, 50, 50, 0.05) !important;
+    backdrop-filter: blur(2px) !important;
+    -webkit-backdrop-filter: blur(2px) !important;
+    color: rgba(255, 255, 255, 0.9);
+}
+
+[data-theme="dark"] .batch-panel-content .context-menu-item:hover {
+    background: rgba(70, 70, 70, 0.25) !important;
+}
+
+/* 横向布局样式 - 默认一行显示 */
+.batch-action-panel.horizontal-batch-layout {
+    /* 移除 !important 和固定样式，允许JavaScript动态调整大小 */
+    /* 这些值会被JavaScript在切换布局时设置 */
+}
+
+.batch-action-panel.horizontal-batch-layout .batch-panel-content {
+    display: flex;
+    flex-direction: row;
+    flex-wrap: wrap; /* 允许区域换行，根据宽度自动布局 */
+    gap: 8px; /* 区域之间的紧凑间距 */
+    padding: 6px 12px; /* 极小的padding，紧凑布局 */
+    overflow-x: auto;
+    overflow-y: auto; /* 允许纵向滚动 */
+    min-height: 0; /* 移除最小高度限制，完全由内容决定 */
+    align-items: flex-start; /* 顶部对齐 */
+}
+
+/* 横向布局：当高度较大时（>=200px），每个区域内按钮变为纵向排列，但区域之间仍可换行 */
+.batch-action-panel.horizontal-batch-layout.tall-layout .batch-panel-content {
+    flex-direction: row; /* 保持主容器横向，区域横向排列 */
+    flex-wrap: wrap; /* 区域可以换行 */
+    align-items: flex-start; /* 顶部对齐 */
+    gap: 12px; /* 纵向布局时稍大的区域间距 */
+}
+
+.batch-action-panel.horizontal-batch-layout.tall-layout .batch-menu-group {
+    flex-direction: column; /* 每个分组内部变为纵向 */
+    border-right: 1px solid rgba(var(--border-color-rgb, 200, 200, 200), 0.3); /* 细边框 */
+    padding-right: 12px; /* 纵向时稍大padding */
+    flex: 1 1 auto; /* 允许区域自动增长 */
+    min-width: 0; /* 允许收缩 */
+}
+
+.batch-action-panel.horizontal-batch-layout.tall-layout .batch-menu-group:last-child {
+    border-right: none;
+    padding-right: 0;
+}
+
+.batch-action-panel.horizontal-batch-layout.tall-layout .batch-group-items {
+    flex-direction: column; /* 按钮组变为纵向 */
+    gap: 4px; /* 纵向时稍大间距 */
+    align-items: stretch; /* 按钮拉伸到组宽度 */
+}
+
+.batch-action-panel.horizontal-batch-layout.tall-layout .context-menu-item {
+    width: 100%; /* 按钮占满分组宽度 */
+    padding: 8px 12px; /* 纵向时稍大padding，更容易点击 */
+    font-size: 13px; /* 纵向时稍大字体 */
+}
+
+.batch-action-panel.horizontal-batch-layout.tall-layout .context-menu-item i {
+    font-size: 14px; /* 纵向时稍大图标 */
+}
+
+/* 分组样式 */
+.batch-menu-group {
+    display: flex;
+    flex-direction: column;
+    gap: 0; /* 移除间隙，让分组更紧凑 */
+    padding-right: 8px; /* 紧凑的右padding */
+    border-right: 1px solid rgba(var(--border-color-rgb, 200, 200, 200), 0.3); /* 更细的分隔线 */
+    align-items: stretch; /* 子元素拉伸填充 */
+}
+
+.batch-menu-group:last-child {
+    border-right: none;
+    padding-right: 0;
+}
+
+.batch-group-label {
+    display: none;
+    height: 0; /* 确保隐藏时不占空间 */
+    margin: 0;
+    padding: 0;
+}
+
+.batch-group-items {
+    display: flex;
+    flex-direction: row;
+    gap: 2px; /* 极小的按钮间距，紧凑布局 */
+    flex-wrap: wrap; /* 允许换行，根据宽度自适应 */
+    min-height: 0; /* 移除默认最小高度，允许完全收缩 */
+}
+
+.batch-action-panel.horizontal-batch-layout .context-menu-item {
+    flex: 0 0 auto;
+    min-width: auto;
+    padding: 4px 8px; /* 更紧凑的padding */
+    margin: 0;
+    white-space: nowrap;
+    font-size: 12px;
+    line-height: 1.2; /* 紧凑的行高 */
+}
+
+.batch-action-panel.horizontal-batch-layout .context-menu-item i {
+    font-size: 13px;
+}
+
+.batch-action-panel.horizontal-batch-layout .context-menu-separator {
+    display: none;
+}
+
+/* 纵向布局样式 */
+.batch-action-panel.vertical-batch-layout {
+    /* 移除 !important，允许JavaScript动态调整大小 */
+    /* 这些值会被JavaScript在切换布局时设置 */
+    max-height: 80vh;
+}
+
+.batch-action-panel.vertical-batch-layout .batch-panel-content {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    padding: 8px;
+    overflow-y: auto;
+    overflow-x: hidden;
+}
+
+.batch-action-panel.vertical-batch-layout .batch-menu-group {
+    flex-direction: column;
+    border-right: none;
+    border-bottom: 1px solid var(--border-color);
+    padding-right: 0;
+    padding-bottom: 8px;
+    margin-bottom: 4px;
+}
+
+.batch-action-panel.vertical-batch-layout .batch-menu-group:last-child {
+    border-bottom: none;
+    padding-bottom: 0;
+    margin-bottom: 0;
+}
+
+.batch-action-panel.vertical-batch-layout .batch-group-items {
+    flex-direction: column;
+    gap: 4px;
+}
+
+.batch-action-panel.vertical-batch-layout .context-menu-item {
+    display: flex;
+    width: 100%;
+    padding: 10px 12px;
+}
+
+.batch-action-panel.vertical-batch-layout .context-menu-separator {
+    display: block;
+}

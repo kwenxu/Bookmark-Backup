@@ -1762,8 +1762,12 @@ function initBatchToolbar() {
     toolbar.id = 'batch-toolbar';
     toolbar.className = 'batch-toolbar';
     toolbar.style.display = 'none';
+    const lang = currentLang || 'zh_CN';
     toolbar.innerHTML = `
         <span class="selected-count">已选中 0 项</span>
+        <button class="batch-btn" data-action="show-batch-panel" title="${lang === 'zh_CN' ? '显示悬浮窗菜单' : 'Show Floating Panel'}">
+            <i class="fas fa-window-restore"></i> ${lang === 'zh_CN' ? '悬浮窗' : 'Float'}
+        </button>
         <button class="batch-btn" data-action="batch-open"><i class="fas fa-folder-open"></i> 打开</button>
         <button class="batch-btn" data-action="batch-open-tab-group"><i class="fas fa-object-group"></i> 标签组</button>
         <button class="batch-btn" data-action="batch-cut"><i class="fas fa-cut"></i> 剪切</button>
@@ -1784,6 +1788,8 @@ function initBatchToolbar() {
             const action = btn.dataset.action;
             if (action === 'exit-select-mode') {
                 exitSelectMode();
+            } else if (action === 'show-batch-panel') {
+                showBatchPanel();
             } else {
                 await handleMenuAction(action, null, null, null, false);
             }
@@ -2277,6 +2283,30 @@ function hideBatchPanel() {
     console.log('[批量面板] 已隐藏，显示顶部工具栏');
 }
 
+// 显示批量面板，隐藏顶部工具栏
+function showBatchPanel() {
+    const batchPanel = document.getElementById('batch-action-panel');
+    
+    // 如果面板不存在，创建它
+    if (!batchPanel) {
+        const fakeEvent = { preventDefault: () => {}, stopPropagation: () => {} };
+        showBatchContextMenu(fakeEvent);
+        console.log('[批量面板] 重新创建批量菜单');
+    } else {
+        // 如果面板已存在，直接显示
+        batchPanel.style.display = 'block';
+        console.log('[批量面板] 显示已有面板');
+    }
+    
+    // 隐藏顶部工具栏
+    const toolbar = document.getElementById('batch-toolbar');
+    if (toolbar) {
+        toolbar.style.display = 'none';
+    }
+    
+    console.log('[批量面板] 已显示，隐藏顶部工具栏');
+}
+
 // 切换右键菜单布局（横向/纵向）
 let contextMenuHorizontal = false;
 function toggleContextMenuLayout() {
@@ -2329,6 +2359,8 @@ if (typeof window !== 'undefined') {
     window.deselectAll = deselectAll;
     window.initBatchToolbar = initBatchToolbar;
     window.updateBatchToolbar = updateBatchToolbar;
+    window.showBatchPanel = showBatchPanel;
+    window.hideBatchPanel = hideBatchPanel;
     window.initKeyboardShortcuts = initKeyboardShortcuts;
     window.initClickSelect = initClickSelect;
     window.enterSelectMode = enterSelectMode;

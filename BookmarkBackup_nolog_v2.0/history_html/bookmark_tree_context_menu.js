@@ -1516,11 +1516,11 @@ async function batchDelete() {
         // 刷新书签树（这会重新渲染，确保没有残留的状态）
         await refreshBookmarkTree();
         
-        // 清除临时标记（延迟清除，给渲染留出时间）
+        // 清除临时标记（延迟清除，给渲染留出更长时间，从1秒增加到5秒）
         setTimeout(async () => {
             await chrome.storage.local.remove(['tempDeletedParents', 'tempDeleteTimestamp']);
             console.log('[批量删除] 已清除临时标记');
-        }, 1000);
+        }, 5000);
         
         const result = lang === 'zh_CN' 
             ? `已删除 ${successCount} 项${failCount > 0 ? `，失败 ${failCount} 项` : ''}` 

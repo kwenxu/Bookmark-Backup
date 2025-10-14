@@ -3017,8 +3017,8 @@ async function detectTreeChangesFast(oldTree, newTree) {
         tempDeletedParents = tempData.tempDeletedParents || [];
         tempDeleteTimestamp = tempData.tempDeleteTimestamp || 0;
         
-        // 检查标记是否在有效期内（5秒内）
-        if (tempDeleteTimestamp && (Date.now() - tempDeleteTimestamp > 5000)) {
+        // 检查标记是否在有效期内（15秒内，从5秒增加到15秒，确保渲染完成前不会过期）
+        if (tempDeleteTimestamp && (Date.now() - tempDeleteTimestamp > 15000)) {
             console.log('[移动检测] 临时删除标记已过期，忽略');
             tempDeletedParents = [];
         } else if (tempDeletedParents.length > 0) {

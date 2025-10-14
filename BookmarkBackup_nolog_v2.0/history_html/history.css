@@ -2950,7 +2950,7 @@ a.tree-label.tree-bookmark-link:hover {
     left: 50%;
     transform: translateX(-50%);
     width: 1000px;
-    height: auto;
+    height: fit-content; /* 改为fit-content，完全贴合内容 */
     min-width: 150px;
     max-width: 95vw;
     max-height: 200px;
@@ -2965,7 +2965,7 @@ a.tree-label.tree-bookmark-link:hover {
     display: flex;
     flex-direction: column;
     resize: none;
-    overflow: visible;
+    overflow: hidden; /* 改为hidden，避免内容溢出产生滚动条和空白 */
 }
 
 @keyframes panelFadeIn {
@@ -2983,7 +2983,7 @@ a.tree-label.tree-bookmark-link:hover {
     justify-content: space-between;
     align-items: center;
     gap: 8px;
-    padding: 4px 12px; /* 极小padding，允许极限压缩 */
+    padding: 3px 8px; /* 更小的padding，极致紧凑 */
     background: rgba(74, 144, 226, 0.05) !important;
     backdrop-filter: none !important;
     -webkit-backdrop-filter: none !important;
@@ -2992,6 +2992,7 @@ a.tree-label.tree-bookmark-link:hover {
     border-radius: 10px 10px 0 0;
     flex-shrink: 0;
     min-height: 0; /* 移除最小高度 */
+    line-height: 1; /* 紧凑行高 */
     user-select: none;
     cursor: grab;
 }
@@ -3241,7 +3242,7 @@ a.tree-label.tree-bookmark-link:hover {
 
 .batch-panel-content {
     padding: 8px;
-    flex: 1;
+    flex: 0 1 auto; /* 改为不自动增长，只根据内容大小 */
     overflow-y: auto;
     overflow-x: hidden;
     background: transparent;
@@ -3349,10 +3350,13 @@ a.tree-label.tree-bookmark-link:hover {
     flex-direction: row;
     flex-wrap: wrap; /* 允许区域换行，根据宽度自动布局 */
     gap: 8px; /* 区域之间的紧凑间距 */
-    padding: 6px 12px; /* 极小的padding，紧凑布局 */
+    padding: 4px 8px; /* 更小的padding，极致紧凑 */
     overflow-x: auto;
-    overflow-y: auto; /* 允许纵向滚动 */
-    min-height: 0; /* 移除最小高度限制，完全由内容决定 */
+    overflow-y: hidden; /* 横向布局不需要纵向滚动 */
+    min-height: 0 !important; /* 强制移除最小高度限制，完全由内容决定 */
+    max-height: fit-content; /* 高度完全贴合内容 */
+    height: auto !important; /* 强制自适应高度 */
+    flex: 0 0 auto !important; /* 强制不增长，只根据内容大小 */
     align-items: flex-start; /* 顶部对齐 */
 }
 
@@ -3399,8 +3403,13 @@ a.tree-label.tree-bookmark-link:hover {
     flex-direction: column;
     gap: 0; /* 移除间隙，让分组更紧凑 */
     padding-right: 8px; /* 紧凑的右padding */
+    padding-top: 0; /* 移除上padding */
+    padding-bottom: 0; /* 移除下padding，避免额外空白 */
+    margin: 0; /* 移除所有margin，避免额外空白 */
     border-right: 1px solid rgba(var(--border-color-rgb, 200, 200, 200), 0.3); /* 更细的分隔线 */
     align-items: stretch; /* 子元素拉伸填充 */
+    min-height: 0; /* 移除最小高度 */
+    height: auto; /* 高度自适应内容 */
 }
 
 .batch-menu-group:last-child {
@@ -3421,11 +3430,15 @@ a.tree-label.tree-bookmark-link:hover {
     gap: 2px; /* 极小的按钮间距，紧凑布局 */
     flex-wrap: wrap; /* 允许换行，根据宽度自适应 */
     min-height: 0; /* 移除默认最小高度，允许完全收缩 */
+    margin: 0; /* 移除margin，避免额外空白 */
+    padding: 0; /* 移除padding，避免额外空白 */
 }
 
 .batch-action-panel.horizontal-batch-layout .context-menu-item {
     flex: 0 0 auto;
     min-width: auto;
+    min-height: 0; /* 移除最小高度 */
+    height: auto; /* 高度自适应 */
     padding: 4px 8px; /* 更紧凑的padding */
     margin: 0;
     white-space: nowrap;

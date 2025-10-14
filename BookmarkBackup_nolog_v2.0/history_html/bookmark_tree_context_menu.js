@@ -1206,7 +1206,7 @@ function showBatchContextMenu(e) {
     // 创建固定位置的批量操作面板
     batchPanel = document.createElement('div');
     batchPanel.id = 'batch-action-panel';
-    batchPanel.className = 'batch-action-panel horizontal-batch-layout'; // 默认横向布局
+    batchPanel.className = 'batch-action-panel vertical-batch-layout'; // 默认纵向布局
     
     const lang = currentLang || 'zh_CN';
     
@@ -1242,7 +1242,7 @@ function showBatchContextMenu(e) {
         {
             name: lang === 'zh_CN' ? '控制' : 'Control',
             items: [
-                { action: 'toggle-batch-layout', label: lang === 'zh_CN' ? '纵向' : 'Vert', icon: 'exchange-alt' },
+                { action: 'toggle-batch-layout', label: lang === 'zh_CN' ? '横向' : 'Horiz', icon: 'exchange-alt' },
                 { action: 'hide-batch-panel', label: lang === 'zh_CN' ? '隐藏' : 'Hide', icon: 'eye-slash' }
             ]
         }
@@ -1325,6 +1325,9 @@ function showBatchContextMenu(e) {
     
     // 添加调整大小功能（四边和四角）
     initBatchPanelResize(batchPanel);
+    
+    // 添加窗口大小变化监听器（用于横向布局自适应）
+    initBatchPanelWindowResize(batchPanel);
     
     // 将面板添加到书签树容器
     const treeContainer = document.getElementById('bookmarkTree') || 
@@ -2046,8 +2049,40 @@ function initBatchPanelResize(panel) {
     console.log('[批量面板] 四边四角调整大小功能已初始化');
 }
 
+// 初始化窗口大小变化监听器（横向布局自适应）
+function initBatchPanelWindowResize(panel) {
+    let resizeTimer;
+    window.addEventListener('resize', () => {
+        // 使用防抖，避免频繁触发
+        clearTimeout(resizeTimer);
+        resizeTimer = setTimeout(() => {
+            const batchPanel = document.getElementById('batch-action-panel');
+            if (!batchPanel) return;
+            
+            // 只在横向布局时自动调整宽度
+            if (batchPanel.classList.contains('horizontal-batch-layout')) {
+                const viewportWidth = window.innerWidth;
+                const currentWidth = parseFloat(batchPanel.style.width) || 1000;
+                const maxPanelWidth = Math.min(viewportWidth * 0.95, 2000);
+                
+                // 如果当前宽度超过了新的最大宽度，自动调整
+                if (currentWidth > maxPanelWidth) {
+                    batchPanel.style.width = `${maxPanelWidth}px`;
+                    console.log('[批量面板] 窗口缩小，自动调整宽度:', maxPanelWidth);
+                }
+                
+                // 确保面板仍然居中
+                batchPanel.style.left = '50%';
+                batchPanel.style.transform = 'translateX(-50%)';
+            }
+        }, 200); // 防抖延迟200ms
+    });
+    
+    console.log('[批量面板] 窗口大小变化监听器已初始化');
+}
+
 // 切换批量面板布局（横向/纵向）
-let batchPanelHorizontal = true; // 默认横向
+let batchPanelHorizontal = false; // 默认纵向
 function toggleBatchPanelLayout() {
     const batchPanel = document.getElementById('batch-action-panel');
     if (!batchPanel) return;
@@ -2058,8 +2093,13 @@ function toggleBatchPanelLayout() {
         batchPanel.classList.add('horizontal-batch-layout');
         batchPanel.classList.remove('vertical-batch-layout');
         
+        // 根据当前窗口大小计算合适的宽度
+        const viewportWidth = window.innerWidth;
+        const maxPanelWidth = Math.min(viewportWidth * 0.95, 2000); // 最大不超过窗口95%或2000px
+        const defaultWidth = Math.min(1000, maxPanelWidth); // 默认1000px或更小
+        
         // 恢复横向布局的默认样式
-        batchPanel.style.width = '1000px';
+        batchPanel.style.width = `${defaultWidth}px`;
         batchPanel.style.height = 'auto'; // 初始高度自适应，之后可无极调整
         batchPanel.style.minWidth = '800px';
         batchPanel.style.maxWidth = '95vw';
@@ -2070,6 +2110,8 @@ function toggleBatchPanelLayout() {
         batchPanel.style.transform = 'translateX(-50%)';
         batchPanel.style.bottom = '80px';
         batchPanel.style.top = 'auto';
+        
+        console.log('[批量面板] 横向布局宽度自适应:', { viewportWidth, defaultWidth, maxPanelWidth });
         
         // 延迟检查高度并设置tall-layout类
         setTimeout(() => {
@@ -2191,29 +2233,27 @@ function restoreBatchPanelState(panel, treeContainer) {
             
             console.log('[批量面板] 状态恢复完成');
         } else {
-            console.log('[批量面板] 没有保存的状态，计算相对容器的居中位置');
+            console.log('[批量面板] 没有保存的状态，使用默认纵向布局');
             
-            // 首次显示，计算相对于treeContainer的居中位置
-            if (treeContainer) {
-                const containerRect = treeContainer.getBoundingClientRect();
-                const panelWidth = 1000; // 默认横向宽度
-                const panelHeight = 150; // 估算高度
-                
-                // 计算居中位置（相对于容器底部中央）
-                const centerX = containerRect.left + (containerRect.width / 2);
-                const bottomY = containerRect.bottom - 100; // 距离容器底部100px
-                
-                panel.style.left = centerX + 'px';
-                panel.style.top = (bottomY - panelHeight) + 'px';
-                panel.style.transform = 'translateX(-50%)';
-                panel.style.bottom = 'auto';
-                
-                console.log('[批量面板] 首次居中位置已设置:', {
-                    containerRect,
-                    centerX,
-                    bottomY
-                });
-            }
+            // 首次显示，使用默认纵向布局设置
+            panel.classList.remove('horizontal-batch-layout');
+            panel.classList.add('vertical-batch-layout');
+            batchPanelHorizontal = false;
+            
+            // 设置纵向布局的默认样式
+            panel.style.width = '280px';
+            panel.style.height = 'auto';
+            panel.style.minWidth = '200px';
+            panel.style.maxWidth = '500px';
+            panel.style.minHeight = '200px';
+            panel.style.maxHeight = '80vh';
+            panel.style.left = 'auto';
+            panel.style.right = '20px';
+            panel.style.transform = 'none';
+            panel.style.bottom = '80px';
+            panel.style.top = 'auto';
+            
+            console.log('[批量面板] 首次显示使用默认纵向布局');
         }
     } catch (e) {
         console.error('[批量面板] 恢复状态失败:', e);

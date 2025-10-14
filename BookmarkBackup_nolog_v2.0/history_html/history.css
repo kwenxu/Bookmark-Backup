@@ -2763,7 +2763,7 @@ a.tree-label.tree-bookmark-link:hover {
 
 [data-theme="dark"] .selected-count {
     background: rgba(255, 255, 255, 0.1);
-    color: var(--accent-light);
+    color: #e4e6eb; /* 使用浅色文字，确保在深色背景下可读 */
 }
 
 .batch-btn {

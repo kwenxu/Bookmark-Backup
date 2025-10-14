@@ -1039,7 +1039,26 @@ function enterSelectMode() {
     // 关闭右键菜单
     hideContextMenu();
     
-    // 自动显示批量菜单
+    // 检查上次的显示状态，决定是显示批量菜单还是工具栏
+    try {
+        const savedState = localStorage.getItem('batchPanelState');
+        if (savedState) {
+            const state = JSON.parse(savedState);
+            if (state.visible === false) {
+                // 上次是隐藏状态，显示工具栏
+                console.log('[Select模式] 恢复上次状态：显示工具栏');
+                updateBatchToolbar();
+                if (toolbar) {
+                    toolbar.style.display = 'flex';
+                }
+                return;
+            }
+        }
+    } catch (e) {
+        console.error('[Select模式] 读取保存状态失败:', e);
+    }
+    
+    // 默认或上次是显示状态，自动显示批量菜单
     setTimeout(() => {
         const fakeEvent = { preventDefault: () => {}, stopPropagation: () => {} };
         showBatchContextMenu(fakeEvent);
@@ -2173,6 +2192,7 @@ function toggleBatchPanelLayout() {
 function saveBatchPanelState(panel) {
     try {
         const isVertical = panel.classList.contains('vertical-batch-layout');
+        const isVisible = panel && panel.style.display !== 'none';
         const state = {
             left: panel.style.left,
             top: panel.style.top,
@@ -2181,7 +2201,8 @@ function saveBatchPanelState(panel) {
             width: panel.style.width,
             height: panel.style.height,
             transform: panel.style.transform,
-            layout: isVertical ? 'vertical' : 'horizontal'
+            layout: isVertical ? 'vertical' : 'horizontal',
+            visible: isVisible
         };
         localStorage.setItem('batchPanelState', JSON.stringify(state));
         console.log('[批量面板] 状态已保存:', state);
@@ -2271,6 +2292,8 @@ function hideBatchPanel() {
     const batchPanel = document.getElementById('batch-action-panel');
     if (batchPanel) {
         batchPanel.style.display = 'none';
+        // 保存隐藏状态
+        saveBatchPanelState(batchPanel);
     }
     
     // 显示顶部工具栏
@@ -2296,6 +2319,8 @@ function showBatchPanel() {
         // 如果面板已存在，直接显示
         batchPanel.style.display = 'block';
         console.log('[批量面板] 显示已有面板');
+        // 保存显示状态
+        saveBatchPanelState(batchPanel);
     }
     
     // 隐藏顶部工具栏

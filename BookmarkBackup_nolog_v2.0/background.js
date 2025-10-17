@@ -850,6 +850,123 @@ sendResponse({ success: false, error: error.message || '重置失败' });
 
             return true;  // 保持消息通道开放，异步响应
 
+        } else if (message.action === 'revertAllToLastBackup') {
+            // 撤销全部变化：将当前书签恢复到 lastBookmarkData.bookmarkTree
+            (async () => {
+                try {
+                    const { lastBookmarkData = null, preferredLang = 'zh_CN' } = await browserAPI.storage.local.get(['lastBookmarkData', 'preferredLang']);
+                    if (!lastBookmarkData || !lastBookmarkData.bookmarkTree || !Array.isArray(lastBookmarkData.bookmarkTree)) {
+                        sendResponse({ success: false, error: preferredLang === 'en' ? 'No last backup snapshot' : '没有上次备份快照' });
+                        return;
+                    }
+
+                    // 获取当前整棵书签
+                    const currentTree = await new Promise((resolve) => {
+                        browserAPI.bookmarks.getTree((bookmarks) => resolve(bookmarks));
+                    });
+
+                    // 计算需要清空的根下内容（保留根节点）
+                    const currentRoots = currentTree && currentTree[0] && currentTree[0].children ? currentTree[0].children : [];
+
+                    // 构建快照根映射（按平台根ID或标题归一化）
+                    const snapshotRootChildren = (lastBookmarkData.bookmarkTree[0] && lastBookmarkData.bookmarkTree[0].children) ? lastBookmarkData.bookmarkTree[0].children : [];
+                    const normalizeKey = (id, title) => {
+                        if (!id && !title) return 'unknown';
+                        // 常见平台根ID映射
+                        if (id === '1' || id === 'toolbar_____') return 'toolbar';
+                        if (id === '2' || id === 'menu________') return 'menu';
+                        if (id === '3' || id === 'unfiled_____') return 'unfiled';
+                        if (id === 'mobile______') return 'mobile';
+                        const t = (title || '').toLowerCase();
+                        if (t.includes('toolbar') || t.includes('书签栏')) return 'toolbar';
+                        if (t.includes('menu') || t.includes('菜单') || t.includes('其他书签')) return 'menu';
+                        if (t.includes('unfiled')) return 'unfiled';
+                        if (t.includes('mobile') || t.includes('移动')) return 'mobile';
+                        return id || t || 'unknown';
+                    };
+                    const snapshotRootMap = new Map();
+                    for (const sRoot of snapshotRootChildren) {
+                        snapshotRootMap.set(normalizeKey(sRoot.id, sRoot.title), sRoot);
+                    }
+
+                    // 递归创建函数：根据快照还原
+                    const createNodeRecursive = async (parentId, snapshotNode) => {
+                        if (!snapshotNode) return;
+                        if (snapshotNode.url) {
+                            await browserAPI.bookmarks.create({ parentId, title: snapshotNode.title || '', url: snapshotNode.url, index: snapshotNode.index });
+                        } else {
+                            const folder = await browserAPI.bookmarks.create({ parentId, title: snapshotNode.title || '', index: snapshotNode.index });
+                            if (snapshotNode.children && snapshotNode.children.length) {
+                                for (const child of snapshotNode.children) {
+                                    await createNodeRecursive(folder.id, child);
+                                }
+                            }
+                        }
+                    };
+
+                    // 删除所有根下节点，并按匹配的快照根恢复
+                    for (const root of currentRoots) {
+                        if (!root || !root.id) continue;
+
+                        // 先清空该根下的所有子节点
+                        if (root.children && root.children.length > 0) {
+                            for (const child of [...root.children]) {
+                                try {
+                                    if (child.children && child.children.length) {
+                                        await browserAPI.bookmarks.removeTree(child.id);
+                                    } else {
+                                        await browserAPI.bookmarks.remove(child.id);
+                                    }
+                                } catch (_) {}
+                            }
+                        }
+
+                        // 查找对应的快照根
+                        const key = normalizeKey(root.id, root.title);
+                        const snapshotRoot = snapshotRootMap.get(key);
+                        if (snapshotRoot && snapshotRoot.children && snapshotRoot.children.length) {
+                            for (const child of snapshotRoot.children) {
+                                await createNodeRecursive(root.id, child);
+                            }
+                        }
+                    }
+
+                    // 更新 lastBookmarkData 为当前还原后的树，避免视图根据旧ID计算出大量标识/diff
+                    try {
+                        const restoredTree = await new Promise((resolve) => {
+                            browserAPI.bookmarks.getTree((bookmarks) => resolve(bookmarks));
+                        });
+                        const currentBookmarkCount = countAllBookmarks(restoredTree);
+                        const currentFolderCount = countAllFolders(restoredTree);
+                        const currentPrints = generateFingerprints(restoredTree);
+                        await browserAPI.storage.local.set({
+                            lastBookmarkData: {
+                                bookmarkCount: currentBookmarkCount,
+                                folderCount: currentFolderCount,
+                                bookmarkPrints: currentPrints.bookmarks,
+                                folderPrints: currentPrints.folders,
+                                bookmarkTree: restoredTree,
+                                // 保留原来的时间戳，避免被误认为新备份
+                                timestamp: lastBookmarkData.timestamp || new Date().toISOString()
+                            }
+                        });
+                    } catch (e) {
+                        // 不影响主流程
+                    }
+
+                    // 清理状态并更新角标与缓存
+                    resetOperationStatus();
+                    try { await browserAPI.storage.local.remove('hasBookmarkActivitySinceLastCheck'); } catch (_) {}
+                    await updateAndCacheAnalysis();
+                    await setBadge();
+
+                    sendResponse({ success: true });
+                } catch (error) {
+                    sendResponse({ success: false, error: error && error.message ? error.message : String(error) });
+                }
+            })();
+            return true;
+
         } else if (message.action === "initSync") {
 if (message.direction === "upload") {
                 // 上传本地书签到云端/本地
@@ -1479,7 +1596,7 @@ async function handleBookmarkChange() {
 }
             }
 
-            // 仅在自动备份模式且备份模式为“实时”时才立即触发自动备份
+            // 仅在自动备份模式且备份模式为"实时"时才立即触发自动备份
             // 常规时间和特定时间模式下，备份由定时器触发，而非书签变化立即触发
             if (autoSync && backupMode === 'realtime') {
                 syncBookmarks(false, null, false, null).then(result => { // 传递完整参数
@@ -2590,7 +2707,29 @@ async function updateSyncStatus(direction, time, status = 'success', errorMessag
 
         // 只为成功的备份保存 bookmarkTree（用于生成历史详情）
         const shouldSaveTree = status === 'success';
-        
+
+        // Generate a simple commit fingerprint (deterministic per record content)
+        const fingerprint = (() => {
+            try {
+                const payload = JSON.stringify({
+                    time,
+                    direction,
+                    status,
+                    syncType,
+                    errorMessage: errorMessage || '',
+                    stats: bookmarkStats || null
+                });
+                // Simple non-crypto hash
+                let h = 2166136261 >>> 0;
+                for (let i = 0; i < payload.length; i++) {
+                    h ^= payload.charCodeAt(i);
+                    h = Math.imul(h, 16777619) >>> 0;
+                }
+                // Return short hex
+                return ('00000000' + h.toString(16)).slice(-8);
+            } catch (_) { return (Date.now() % 0xffffffff).toString(16); }
+        })();
+
         const newSyncRecord = {
             time: time,
             direction: direction,
@@ -2600,7 +2739,8 @@ async function updateSyncStatus(direction, time, status = 'success', errorMessag
             bookmarkStats: bookmarkStats,
             isFirstBackup: !syncHistory || syncHistory.length === 0,
             note: autoBackupReason || '', // 添加备注字段
-            bookmarkTree: shouldSaveTree ? localBookmarks : null // 只保存最近10条的书签树
+            bookmarkTree: shouldSaveTree ? localBookmarks : null, // 只保存最近10条的书签树
+            fingerprint: fingerprint
         };
 
         let currentSyncHistory = [...syncHistory, newSyncRecord];

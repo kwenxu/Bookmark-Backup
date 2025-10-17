@@ -219,6 +219,30 @@ const i18n = {
         'zh_CN': '复制所有记录',
         'en': 'Copy All Records'
     },
+    revertAll: {
+        'zh_CN': '全部撤销',
+        'en': 'Revert All'
+    },
+    revertConfirmTitle: {
+        'zh_CN': '确认撤销全部变化？',
+        'en': 'Revert all changes?'
+    },
+    revertConfirmDesc: {
+        'zh_CN': '这将撤销所有未提交的变化（新增/删除/修改/移动），并恢复到上次备份状态。此操作不可撤销。',
+        'en': 'This will revert all uncommitted changes (add/delete/modify/move) and restore to the last backup. This cannot be undone.'
+    },
+    revertConfirmSecondary: {
+        'zh_CN': '再次确认：是否撤销全部变化？',
+        'en': 'Confirm again: revert all changes?'
+    },
+    revertSuccess: {
+        'zh_CN': '已撤销全部变化，已恢复到上次备份',
+        'en': 'All changes reverted. Restored to last backup.'
+    },
+    revertFailed: {
+        'zh_CN': '撤销失败：',
+        'en': 'Revert failed: '
+    },
     emptyAdditions: {
         'zh_CN': '暂无书签添加记录',
         'en': 'No bookmark additions'
@@ -522,6 +546,10 @@ function applyLanguage() {
     if (copyAllHistoryText) {
         copyAllHistoryText.textContent = i18n.copyAllHistory[currentLang];
     }
+    const revertAllCurrentText = document.getElementById('revertAllCurrentText');
+    if (revertAllCurrentText) revertAllCurrentText.textContent = i18n.revertAll[currentLang];
+    const revertAllTreeText = document.getElementById('revertAllTreeText');
+    if (revertAllTreeText) revertAllTreeText.textContent = i18n.revertAll[currentLang];
     document.getElementById('filterAll').textContent = i18n.filterAll[currentLang];
     document.getElementById('filterBackedUp').textContent = i18n.filterBackedUp[currentLang];
     document.getElementById('filterNotBackedUp').textContent = i18n.filterNotBackedUp[currentLang];
@@ -587,6 +615,16 @@ function initializeUI() {
     document.getElementById('refreshBtn').addEventListener('click', refreshData);
     document.getElementById('themeToggle').addEventListener('click', toggleTheme);
     document.getElementById('langToggle').addEventListener('click', toggleLanguage);
+
+    // 撤销全部按钮（当前变化和书签树）
+    const revertAllCurrentBtn = document.getElementById('revertAllCurrentBtn');
+    if (revertAllCurrentBtn) {
+        revertAllCurrentBtn.addEventListener('click', () => handleRevertAll('current'));
+    }
+    const revertAllTreeBtn = document.getElementById('revertAllTreeBtn');
+    if (revertAllTreeBtn) {
+        revertAllTreeBtn.addEventListener('click', () => handleRevertAll('tree'));
+    }
     
     // 搜索
     document.getElementById('searchInput').addEventListener('input', handleSearch);
@@ -599,6 +637,42 @@ function initializeUI() {
     
     // 更新UI以反映当前视图状态
     updateUIForCurrentView();
+}
+
+// 二次确认并触发撤销全部
+async function handleRevertAll(source) {
+    try {
+        // 第一次确认
+        const first = confirm(`${i18n.revertConfirmTitle[currentLang]}\n\n${i18n.revertConfirmDesc[currentLang]}`);
+        if (!first) return;
+        // 第二次确认
+        const second = confirm(i18n.revertConfirmSecondary[currentLang]);
+        if (!second) return;
+
+        // 发送到 background 执行撤销
+        const response = await new Promise(resolve => {
+            browserAPI.runtime.sendMessage({ action: 'revertAllToLastBackup' }, (res) => {
+                resolve(res || { success: false, error: 'no response' });
+            });
+        });
+
+        if (response && response.success) {
+            showToast(i18n.revertSuccess[currentLang]);
+            // 刷新状态卡片与角标：background 会更新缓存与角标，这里刷新视图
+            try {
+                await refreshData();
+                await renderTreeView(true);
+                await renderCurrentChangesView(true);
+            } catch (e) {
+                // 忽略渲染异常
+            }
+        } else {
+            const msg = response && response.error ? response.error : 'Unknown error';
+            showToast(i18n.revertFailed[currentLang] + msg);
+        }
+    } catch (error) {
+        showToast(i18n.revertFailed[currentLang] + (error && error.message ? error.message : String(error)));
+    }
 }
 
 // 更新UI以反映当前视图
@@ -2260,6 +2334,7 @@ function renderHistoryView() {
         const time = formatTime(record.time);
         const isAuto = record.isAutoBackup !== false;
         const isSuccess = record.status === 'success';
+        const fingerprint = record.fingerprint || '';
         
         // 计算变化
         const changes = calculateChanges(record, index, reversedHistory);
@@ -2281,6 +2356,7 @@ function renderHistoryView() {
                         <div class="commit-time">
                             <i class="fas fa-clock"></i> ${time}
                         </div>
+                        ${fingerprint ? `<div class="commit-fingerprint" title="Fingerprint">#${fingerprint}</div>` : ''}
                     </div>
                     <div class="commit-actions">
                         <button class="action-btn copy-btn" data-time="${record.time}" title="${currentLang === 'zh_CN' ? '复制Diff (JSON格式)' : 'Copy Diff (JSON)'}">

@@ -7,6 +7,7 @@ let draggedNodeId = null;
 let dropIndicator = null;
 let autoScrollInterval = null;
 let lastScrollTime = 0;
+let hoverExpandTimer = null;
 
 // 初始化拖拽功能
 function initDragDrop() {
@@ -106,6 +107,23 @@ function handleDragEnter(e) {
     if (targetNode !== draggedNode && !isDescendant(targetNode, draggedNode)) {
         targetNode.classList.add('drag-over');
     }
+
+    // 悬停自动展开文件夹（提升可用性）
+    try {
+        clearTimeout(hoverExpandTimer);
+    } catch(_) {}
+    if (targetNode.dataset.nodeType === 'folder') {
+        hoverExpandTimer = setTimeout(() => {
+            try {
+                const children = targetNode.nextElementSibling;
+                const toggle = targetNode.querySelector('.tree-toggle');
+                if (children && children.classList.contains('tree-children') && !children.classList.contains('expanded')) {
+                    children.classList.add('expanded');
+                    if (toggle) toggle.classList.add('expanded');
+                }
+            } catch(_) {}
+        }, 400);
+    }
 }
 
 // 拖拽离开
@@ -115,6 +133,7 @@ function handleDragLeave(e) {
     
     const targetNode = e.currentTarget;
     targetNode.classList.remove('drag-over');
+    try { clearTimeout(hoverExpandTimer); } catch(_) {}
 }
 
 // 放下
@@ -181,14 +200,18 @@ function showDropIndicator(targetNode, e) {
     
     // 判断放置位置：上方、内部还是下方
     let position;
-    const threshold = rect.height / 3;
+    // 扩大上下边缘的可投放区域（同级移动更容易）
+    const minBand = 12; // 最小边缘带高度
+    const threshold = Math.max(minBand, Math.min(rect.height / 3, 24));
     
+    const allowInside = (targetNode.dataset.nodeType === 'folder') && rect.height >= 30;
+
     if (mouseY < rect.top + threshold) {
         position = 'before';
     } else if (mouseY > rect.bottom - threshold) {
         position = 'after';
     } else {
-        position = 'inside';
+        position = allowInside ? 'inside' : (mouseY < targetMiddle ? 'before' : 'after');
     }
     
     // 如果目标不是文件夹，不能放到内部
@@ -271,8 +294,12 @@ async function moveBookmark(sourceId, targetId, targetIsFolder, e) {
             });
         }
         
-        // 刷新书签树
-        await refreshBookmarkTree();
+        // 立刻触发蓝色移动标识（无需等待事件返回）
+        try {
+            if (typeof explicitMovedIds !== 'undefined') {
+                explicitMovedIds.set(sourceId, Date.now() + 5000);
+            }
+        } catch(_) {}
         
     } catch (error) {
         console.error('[拖拽] 移动失败:', error);

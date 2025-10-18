@@ -31,6 +31,8 @@ let messageListenerRegistered = false;
 let realtimeUpdateInProgress = false;
 let pendingAnalysisMessage = null;
 let lastAnalysisSignature = null;
+// 显式移动集合（基于 onMoved 事件），用于同级移动标识，设置短期有效期
+let explicitMovedIds = new Map(); // id -> expiryTimestamp
 
 // =============================================================================
 // 辅助函数 - URL 处理
@@ -2967,308 +2969,99 @@ function restoreTreeExpandState(treeContainer) {
 // 快速检测书签树变动（性能优化版 + 智能移动检测）
 async function detectTreeChangesFast(oldTree, newTree) {
     const changes = new Map();
-    const parentMap = new Map(); // id -> parentId 映射
-    const moveInfo = new Map(); // id -> {oldParent, newParent, oldPath, newPath}
-    
-    if (!oldTree || !newTree) {
-        return changes;
-    }
-    
+    if (!oldTree || !newTree) return changes;
+
     const oldNodes = new Map();
     const newNodes = new Map();
-    const oldParentChildren = new Map(); // parentId -> [childIds]
-    const newParentChildren = new Map();
-    
-    // 获取节点完整路径
-    const getNodePath = (tree, targetId) => {
-        const path = [];
-        const traverse = (node, currentPath) => {
-            if (node.id === targetId) {
-                path.push(...currentPath, node.title);
-                return true;
-            }
-            if (node.children) {
-                for (const child of node.children) {
-                    if (traverse(child, [...currentPath, node.title])) {
-                        return true;
-                    }
-                }
-            }
-            return false;
-        };
-        if (tree[0]) traverse(tree[0], []);
-        return path.join(' > ');
-    };
-    
-    // 单次遍历提取所有节点并记录父子关系
-    const traverse = (node, map, parentId = null, parentChildrenMap) => {
-        if (node.id) {
-            map.set(node.id, {
+    const oldByParent = new Map(); // parentId -> [{id,index}]
+    const newByParent = new Map();
+
+    const traverse = (node, map, byParent, parentId = null) => {
+        if (node && node.id) {
+            const record = {
                 title: node.title,
                 url: node.url,
                 parentId: node.parentId || parentId,
                 index: node.index
-            });
-            if (parentId) {
-                parentMap.set(node.id, parentId);
-                if (!parentChildrenMap.has(parentId)) {
-                    parentChildrenMap.set(parentId, []);
-                }
-                parentChildrenMap.get(parentId).push(node.id);
+            };
+            map.set(node.id, record);
+            if (record.parentId) {
+                if (!byParent.has(record.parentId)) byParent.set(record.parentId, []);
+                byParent.get(record.parentId).push({ id: node.id, index: record.index });
             }
         }
-        if (node.children) {
-            node.children.forEach(child => traverse(child, map, node.id, parentChildrenMap));
-        }
+        if (node && node.children) node.children.forEach(child => traverse(child, map, byParent, node.id));
     };
-    
-    if (oldTree[0]) traverse(oldTree[0], oldNodes, null, oldParentChildren);
-    if (newTree[0]) traverse(newTree[0], newNodes, null, newParentChildren);
-    
-    // 第一步：收集所有有 index 变化的节点（按父节点分组）
-    const indexChanges = new Map(); // parentId -> [{id, oldIndex, newIndex, indexDelta, indexChange}]
-    const deletedInParent = new Map(); // parentId -> 该父节点下被删除的节点数量
-    const addedInParent = new Map(); // parentId -> 该父节点下新增的节点数量
-    
-    // 统计每个父节点下的删除和新增
-    oldNodes.forEach((oldNode, id) => {
-        if (!newNodes.has(id)) {
-            // 被删除的节点
-            const parentId = oldNode.parentId;
-            deletedInParent.set(parentId, (deletedInParent.get(parentId) || 0) + 1);
+
+    if (oldTree[0]) traverse(oldTree[0], oldNodes, oldByParent, null);
+    if (newTree[0]) traverse(newTree[0], newNodes, newByParent, null);
+
+    const getNodePath = (tree, targetId) => {
+        const path = [];
+        const dfs = (node, cur) => {
+            if (!node) return false;
+            if (node.id === targetId) { path.push(...cur, node.title); return true; }
+            if (node.children) {
+                for (const c of node.children) { if (dfs(c, [...cur, node.title])) return true; }
+            }
+            return false;
+        };
+        if (tree[0]) dfs(tree[0], []);
+        return path.join(' > ');
+    };
+
+    // 新增 / 修改 / 跨级移动
+    newNodes.forEach((n, id) => {
+        const o = oldNodes.get(id);
+        if (!o) { changes.set(id, { type: 'added' }); return; }
+        const modified = (o.title !== n.title) || (o.url !== n.url);
+        const crossMove = o.parentId !== n.parentId;
+        if (modified || crossMove) {
+            const types = [];
+            const detail = {};
+            if (modified) types.push('modified');
+            if (crossMove) {
+                types.push('moved');
+                detail.moved = { oldPath: getNodePath(oldTree, id), newPath: getNodePath(newTree, id) };
+            }
+            changes.set(id, { type: types.join('+'), ...detail });
         }
     });
-    
-    newNodes.forEach((newNode, id) => {
-        if (!oldNodes.has(id)) {
-            // 新增的节点
-            const parentId = newNode.parentId;
-            addedInParent.set(parentId, (addedInParent.get(parentId) || 0) + 1);
-        }
-    });
-    
-    newNodes.forEach((newNode, id) => {
-        const oldNode = oldNodes.get(id);
-        if (oldNode && !newNodes.has(id + '_deleted')) {
-            const parentId = newNode.parentId;
-            const parentChanged = oldNode.parentId !== newNode.parentId;
-            
-            if (!parentChanged) { // 只看同级移动
-                const oldIndex = typeof oldNode.index === 'number' ? oldNode.index : 0;
-                const newIndex = typeof newNode.index === 'number' ? newNode.index : 0;
-                const indexDelta = Math.abs(oldIndex - newIndex);
-                const indexChange = newIndex - oldIndex; // 正数=向后移，负数=向前移
-                
-                if (indexDelta > 0) {
-                    if (!indexChanges.has(parentId)) {
-                        indexChanges.set(parentId, []);
-                    }
-                    indexChanges.get(parentId).push({
-                        id,
-                        oldIndex,
-                        newIndex,
-                        indexDelta,
-                        indexChange,
-                        title: newNode.title
-                    });
-                }
+
+    // 删除
+    oldNodes.forEach((_, id) => { if (!newNodes.has(id)) changes.set(id, { type: 'deleted' }); });
+
+    // 同级移动（仅标记真正被拖动的那个）
+    newByParent.forEach((newList, parentId) => {
+        const oldList = oldByParent.get(parentId) || [];
+        if (oldList.length === 0 || newList.length === 0) return;
+        // 构建索引映射
+        const oldIndexMap = new Map(oldList.map(({ id, index }) => [id, index]));
+        const candidates = [];
+        for (const { id, index } of newList) {
+            if (!oldIndexMap.has(id)) continue;
+            const oldIdx = oldIndexMap.get(id);
+            if (typeof oldIdx === 'number' && typeof index === 'number' && oldIdx !== index) {
+                candidates.push({ id, delta: Math.abs(index - oldIdx), dir: index - oldIdx });
             }
         }
-    });
-    
-    // 第二步：智能判断哪些是真正的主动移动
-    const confirmedMoves = new Set();
-    
-    // 获取临时删除标记（批量删除时设置）
-    let tempDeletedParents = [];
-    let tempDeleteTimestamp = 0;
-    try {
-        const tempData = await new Promise(resolve => {
-            if (typeof chrome !== 'undefined' && chrome.storage) {
-                chrome.storage.local.get(['tempDeletedParents', 'tempDeleteTimestamp'], resolve);
-            } else {
-                resolve({});
-            }
-        });
-        tempDeletedParents = tempData.tempDeletedParents || [];
-        tempDeleteTimestamp = tempData.tempDeleteTimestamp || 0;
-        
-        // 检查标记是否在有效期内（15秒内，从5秒增加到15秒，确保渲染完成前不会过期）
-        if (tempDeleteTimestamp && (Date.now() - tempDeleteTimestamp > 15000)) {
-            console.log('[移动检测] 临时删除标记已过期，忽略');
-            tempDeletedParents = [];
-        } else if (tempDeletedParents.length > 0) {
-            console.log('[移动检测] 检测到批量删除标记，受影响的父文件夹:', tempDeletedParents);
+        if (candidates.length === 0) return;
+        // 优先使用显式移动集合中的 id
+        let pick = candidates.find(c => explicitMovedIds && explicitMovedIds.has(c.id) && explicitMovedIds.get(c.id) > Date.now());
+        if (!pick) {
+            // 否则选择位移量最大的一个；若并列，选择 dir>0 的
+            candidates.sort((a, b) => b.delta - a.delta || b.dir - a.dir);
+            pick = candidates[0];
         }
-    } catch (error) {
-        console.error('[移动检测] 获取临时删除标记失败:', error);
-    }
-    
-    indexChanges.forEach((changes, parentId) => {
-        if (changes.length === 0) return;
-        
-        // 如果该父文件夹在批量删除受影响列表中，跳过所有移动检测
-        if (tempDeletedParents.includes(parentId)) {
-            console.log(`[移动检测-批量删除] 父节点:${parentId} 在批量删除列表中，跳过所有移动检测（${changes.length}个index变化）`);
-            changes.forEach(c => {
-                console.log(`[移动检测-跳过] ID:${c.id}, 标题:"${c.title}", 因父文件夹${parentId}发生批量删除`);
-            });
-            return; // 跳过该父文件夹下的所有移动检测
-        }
-        
-        // 检查该父节点下是否有删除或新增操作
-        const hasDeleted = (deletedInParent.get(parentId) || 0) > 0;
-        const hasAdded = (addedInParent.get(parentId) || 0) > 0;
-        
-        console.log(`[移动检测] 父节点:${parentId}, index变化数:${changes.length}, 删除:${deletedInParent.get(parentId) || 0}, 新增:${addedInParent.get(parentId) || 0}`);
-        
-        // 如果有删除操作，其他节点的index自然会变化（向前移），不应标记为移动
-        if (hasDeleted) {
-            const deletedCount = deletedInParent.get(parentId);
-            // 过滤掉可能因删除导致的index变化
-            const potentialMoves = changes.filter(c => {
-                // 如果index变化量等于删除数量，且是向前移动（indexChange < 0），很可能是因为删除导致的
-                if (c.indexChange < 0 && Math.abs(c.indexChange) <= deletedCount) {
-                    console.log(`[移动检测-跳过] ID:${c.id}, 标题:"${c.title}", 可能因删除${deletedCount}项导致index从${c.oldIndex}→${c.newIndex}`);
-                    return false; // 不标记为移动
-                }
-                return true;
-            });
-            
-            // 只处理剩余的潜在移动
-            if (potentialMoves.length === 0) return;
-            changes = potentialMoves;
-        }
-        
-        // 如果有新增操作，其他节点的index也可能自然变化
-        if (hasAdded) {
-            const addedCount = addedInParent.get(parentId);
-            // 过滤掉可能因新增导致的index变化
-            const potentialMoves = changes.filter(c => {
-                // 如果index变化量等于新增数量，且是向后移动（indexChange > 0），很可能是因为新增导致的
-                if (c.indexChange > 0 && c.indexChange <= addedCount) {
-                    console.log(`[移动检测-跳过] ID:${c.id}, 标题:"${c.title}", 可能因新增${addedCount}项导致index从${c.oldIndex}→${c.newIndex}`);
-                    return false; // 不标记为移动
-                }
-                return true;
-            });
-            
-            // 只处理剩余的潜在移动
-            if (potentialMoves.length === 0) return;
-            changes = potentialMoves;
-        }
-        
-        // 找出变化量最大的节点
-        const maxDelta = Math.max(...changes.map(c => c.indexDelta));
-        
-        // 策略：
-        // 1. 如果有节点的 indexDelta 明显大于其他（>=2 且是其他的2倍以上），肯定是主动移动
-        // 2. 如果所有节点 indexDelta 都是 1，标记向后移动的（index增加的）
-        // 3. 如果有节点 indexDelta >= 2，标记它们
-        
-        const largeChanges = changes.filter(c => c.indexDelta >= 2);
-        const smallChanges = changes.filter(c => c.indexDelta === 1);
-        
-        if (largeChanges.length > 0) {
-            // 有明显大范围移动，标记它们
-            largeChanges.forEach(c => {
-                confirmedMoves.add(c.id);
-                console.log(`[移动检测-大范围] ID:${c.id}, 标题:"${c.title}", indexDelta:${c.indexDelta}, oldIndex:${c.oldIndex}→${c.newIndex}`);
-            });
-        } else if (smallChanges.length > 0) {
-            // 都是小范围移动（indexDelta=1），只标记向后移动的（index增加的）
-            // 因为通常是把一个书签拖到后面，导致中间的书签向前挤
-            const movedBackward = smallChanges.filter(c => c.indexChange > 0);
-            
-            if (movedBackward.length > 0 && movedBackward.length < smallChanges.length) {
-                // 只有部分向后移动，标记它们
-                movedBackward.forEach(c => {
-                    confirmedMoves.add(c.id);
-                    console.log(`[移动检测-小范围] ID:${c.id}, 标题:"${c.title}", indexDelta:${c.indexDelta}, oldIndex:${c.oldIndex}→${c.newIndex} (向后移动)`);
-                });
-            } else if (movedBackward.length === 1) {
-                // 只有一个向后移动，很可能是主动移动
-                confirmedMoves.add(movedBackward[0].id);
-                console.log(`[移动检测-单个] ID:${movedBackward[0].id}, 标题:"${movedBackward[0].title}", indexDelta:${movedBackward[0].indexDelta}, oldIndex:${movedBackward[0].oldIndex}→${movedBackward[0].newIndex}`);
-            }
-            // 如果所有都向后移动或所有都向前移动，可能是批量操作，不标记
+        if (pick) {
+            const existing = changes.get(pick.id);
+            const types = existing && existing.type ? new Set(existing.type.split('+')) : new Set();
+            types.add('moved');
+            const movedDetail = { oldPath: getNodePath(oldTree, pick.id), newPath: getNodePath(newTree, pick.id) };
+            changes.set(pick.id, { type: Array.from(types).join('+'), moved: movedDetail });
         }
     });
-    
-    // 第三步：检测真正的变化
-    newNodes.forEach((newNode, id) => {
-        const oldNode = oldNodes.get(id);
-        if (!oldNode) {
-            // 新增
-            changes.set(id, { type: 'added' });
-        } else {
-            let changeType = null;
-            let changeDetails = {};
-            
-            // 检测内容修改（标题或URL改变）
-            const isModified = oldNode.title !== newNode.title || oldNode.url !== newNode.url;
-            
-            // 检测移动：
-            // 1. 跨文件夹移动（parentId改变）
-            // 2. 同级位置移动（在 confirmedMoves 中）
-            const parentChanged = oldNode.parentId !== newNode.parentId;
-            const sameLevelMove = confirmedMoves.has(id);
-            const isMoved = parentChanged || sameLevelMove;
-            
-            if (isMoved || isModified) {
-                const types = [];
-                
-                // 按固定顺序：modified 在前，moved 在后
-                if (isModified) {
-                    types.push('modified');
-                    changeDetails.modified = {
-                        titleChanged: oldNode.title !== newNode.title,
-                        urlChanged: oldNode.url !== newNode.url,
-                        oldTitle: oldNode.title,
-                        newTitle: newNode.title
-                    };
-                }
-                
-                if (isMoved) {
-                    types.push('moved');
-                    // 计算路径用于显示
-                    const oldPath = getNodePath(oldTree, id);
-                    const newPath = getNodePath(newTree, id);
-                    console.log(`[移动检测] ID:${id}, 旧路径:${oldPath}, 新路径:${newPath}`);
-                    changeDetails.moved = {
-                        oldParentId: oldNode.parentId,
-                        newParentId: newNode.parentId,
-                        oldPath: oldPath,
-                        newPath: newPath
-                    };
-                    moveInfo.set(id, changeDetails.moved);
-                }
-                
-                // 组合类型：modified+moved 或单一类型
-                changeType = types.join('+');
-                changes.set(id, { type: changeType, ...changeDetails });
-            }
-        }
-    });
-    
-    oldNodes.forEach((_, id) => {
-        if (!newNodes.has(id)) {
-            changes.set(id, { type: 'deleted' });
-        }
-    });
-    
-    // 向上标记父文件夹（如果子节点有变化）
-    const changedIds = new Set(changes.keys());
-    changedIds.forEach(id => {
-        let parentId = parentMap.get(id);
-        while (parentId) {
-            if (!changes.has(parentId)) {
-                changes.set(parentId, { type: 'has-changes', childChanged: true });
-            }
-            parentId = parentMap.get(parentId);
-        }
-    });
-    
+
     return changes;
 }
 
@@ -3765,66 +3558,36 @@ function findNodePathInTree(tree, nodeId) {
 // 渲染带变动标记的树节点
 function renderTreeNodeWithChanges(node, level = 0) {
     const change = treeChangeMap ? treeChangeMap.get(node.id) : null;
-    const changeClass = change ? `tree-change-${change.type}` : '';
-    
+    let statusIcon = '';
+    let changeClass = '';
+
     if (!node.children || node.children.length === 0) {
-        // 叶子节点（书签）
+        // 叶子（书签）
         if (node.url) {
-            const favicon = getFaviconUrl(node.url);
-            let statusIcon = '';
-            let changeClass = '';
-            
             if (change) {
-                // 优先级：added/deleted > modified+moved
                 if (change.type === 'added') {
                     changeClass = 'tree-change-added';
                     statusIcon = '<span class="change-badge added">+</span>';
                 } else if (change.type === 'deleted') {
                     changeClass = 'tree-change-deleted';
                     statusIcon = '<span class="change-badge deleted">-</span>';
-                } else if (change.type.includes('+')) {
-                    // 组合类型：modified+moved
-                    changeClass = 'tree-change-mixed';
+                } else {
                     const types = change.type.split('+');
-                    
-                    // 修改标记
                     if (types.includes('modified')) {
                         statusIcon += '<span class="change-badge modified">~</span>';
                     }
-                    
-                    // 移动标记
+                    const explicit = explicitMovedIds.has(node.id) && explicitMovedIds.get(node.id) > Date.now();
                     if (types.includes('moved') && change.moved) {
-                        const fullOldPath = change.moved.oldPath || (currentLang === 'zh_CN' ? '未知位置' : 'Unknown');
-                        // 智能检测父路径是否也发生变化
-                        const pathInfo = detectParentPathChanges(fullOldPath, cachedOldTree, cachedCurrentTree, currentLang);
-                        const moveId = `move-${node.id}`;
-                        const breadcrumbHtml = generateBreadcrumbForTooltip(pathInfo);
-                        const dataFromPath = pathInfo.hasChanges ? 
-                            `${pathInfo.originalPath} → ${pathInfo.currentPath}` : pathInfo.originalPath;
-                        statusIcon += `<span class="change-badge moved" data-move-from="${escapeHtml(dataFromPath)}" data-move-id="${moveId}">
-                            <i class="fas fa-arrows-alt"></i>
-                            <span class="move-tooltip">${breadcrumbHtml}</span>
-                        </span>`;
+                        const tip = (change.moved.oldPath && change.moved.newPath) ? `${change.moved.oldPath} → ${change.moved.newPath}` : '';
+                        changeClass = 'tree-change-moved';
+                        statusIcon += `<span class="change-badge moved"><i class="fas fa-arrows-alt"></i><span class="move-tooltip">${escapeHtml(tip)}</span></span>`;
+                    } else if (explicit) {
+                        changeClass = 'tree-change-moved';
+                        statusIcon += `<span class="change-badge moved"><i class="fas fa-arrows-alt"></i></span>`;
                     }
-                } else if (change.type === 'modified') {
-                    changeClass = 'tree-change-modified';
-                    statusIcon = '<span class="change-badge modified">~</span>';
-                } else if (change.type === 'moved') {
-                    changeClass = 'tree-change-moved';
-                    const fullOldPath = change.moved.oldPath || (currentLang === 'zh_CN' ? '未知位置' : 'Unknown');
-                    // 智能检测父路径是否也发生变化
-                    const pathInfo = detectParentPathChanges(fullOldPath, cachedOldTree, cachedCurrentTree, currentLang);
-                    const moveId = `move-${node.id}`;
-                    const breadcrumbHtml = generateBreadcrumbForTooltip(pathInfo);
-                    const dataFromPath = pathInfo.hasChanges ? 
-                        `${pathInfo.originalPath} → ${pathInfo.currentPath}` : pathInfo.originalPath;
-                    statusIcon = `<span class="change-badge moved" data-move-from="${escapeHtml(dataFromPath)}" data-move-id="${moveId}">
-                        <i class="fas fa-arrows-alt"></i>
-                        <span class="move-tooltip">${breadcrumbHtml}</span>
-                    </span>`;
                 }
             }
-            
+            const favicon = getFaviconUrl(node.url);
             return `
                 <div class="tree-node" style="padding-left: ${level * 12}px">
                     <div class="tree-item ${changeClass}" data-node-id="${node.id}" data-node-title="${escapeHtml(node.title)}" data-node-url="${escapeHtml(node.url || '')}" data-node-type="bookmark">
@@ -3838,78 +3601,42 @@ function renderTreeNodeWithChanges(node, level = 0) {
         }
         return '';
     }
-    
-    // 文件夹节点
-    let statusIcon = '';
-    let folderChangeClass = '';
-    
+
+    // 文件夹
     if (change) {
-        // 优先级：added/deleted > modified+moved > has-changes
         if (change.type === 'added') {
-            folderChangeClass = 'tree-change-added';
+            changeClass = 'tree-change-added';
             statusIcon = '<span class="change-badge added">+</span>';
         } else if (change.type === 'deleted') {
-            folderChangeClass = 'tree-change-deleted';
+            changeClass = 'tree-change-deleted';
             statusIcon = '<span class="change-badge deleted">-</span>';
-        } else if (change.type.includes('+')) {
-            // 组合类型：modified+moved
-            folderChangeClass = 'tree-change-mixed';
+        } else {
             const types = change.type.split('+');
-            
-            // 修改标记
             if (types.includes('modified')) {
                 statusIcon += '<span class="change-badge modified">~</span>';
             }
-            
-            // 移动标记
+            const explicit = explicitMovedIds.has(node.id) && explicitMovedIds.get(node.id) > Date.now();
             if (types.includes('moved') && change.moved) {
-                const fullOldPath = change.moved.oldPath || (currentLang === 'zh_CN' ? '未知位置' : 'Unknown');
-                // 智能检测父路径是否也发生变化
-                const pathInfo = detectParentPathChanges(fullOldPath, cachedOldTree, cachedCurrentTree, currentLang);
-                const moveId = `move-${node.id}`;
-                const breadcrumbHtml = generateBreadcrumbForTooltip(pathInfo);
-                const dataFromPath = pathInfo.hasChanges ? 
-                    `${pathInfo.originalPath} → ${pathInfo.currentPath}` : pathInfo.originalPath;
-                statusIcon += `<span class="change-badge moved" data-move-from="${escapeHtml(dataFromPath)}" data-move-id="${moveId}">
-                    <i class="fas fa-arrows-alt"></i>
-                    <span class="move-tooltip">${breadcrumbHtml}</span>
-                </span>`;
+                const tip = (change.moved.oldPath && change.moved.newPath) ? `${change.moved.oldPath} → ${change.moved.newPath}` : '';
+                changeClass = 'tree-change-moved';
+                statusIcon += `<span class="change-badge moved"><i class="fas fa-arrows-alt"></i><span class="move-tooltip">${escapeHtml(tip)}</span></span>`;
+            } else if (explicit) {
+                changeClass = 'tree-change-moved';
+                statusIcon += `<span class="change-badge moved"><i class="fas fa-arrows-alt"></i></span>`;
             }
-        } else if (change.type === 'modified') {
-            folderChangeClass = 'tree-change-modified';
-            statusIcon = '<span class="change-badge modified">~</span>';
-        } else if (change.type === 'moved') {
-            folderChangeClass = 'tree-change-moved';
-            const fullOldPath = change.moved.oldPath || (currentLang === 'zh_CN' ? '未知位置' : 'Unknown');
-            // 智能检测父路径是否也发生变化
-            const pathInfo = detectParentPathChanges(fullOldPath, cachedOldTree, cachedCurrentTree, currentLang);
-            const moveId = `move-${node.id}`;
-            const breadcrumbHtml = generateBreadcrumbForTooltip(pathInfo);
-            const dataFromPath = pathInfo.hasChanges ? 
-                `${pathInfo.originalPath} → ${pathInfo.currentPath}` : pathInfo.originalPath;
-            statusIcon = `<span class="change-badge moved" data-move-from="${escapeHtml(dataFromPath)}" data-move-id="${moveId}">
-                <i class="fas fa-arrows-alt"></i>
-                <span class="move-tooltip">${breadcrumbHtml}</span>
-            </span>`;
-        } else if (change.type === 'has-changes' && change.childChanged) {
-            // 父文件夹：子节点有变化
-            statusIcon = '<span class="change-badge has-changes"><i class="fas fa-circle" style="font-size: 6px;"></i></span>';
         }
     }
-    
-    // 按照 index 排序子节点，确保显示顺序和存储顺序一致（避免Chrome排序选项干扰）
+
     const sortedChildren = node.children ? [...node.children].sort((a, b) => {
         const indexA = typeof a.index === 'number' ? a.index : 0;
         const indexB = typeof b.index === 'number' ? b.index : 0;
         return indexA - indexB;
     }) : [];
-    
+
     return `
         <div class="tree-node" style="padding-left: ${level * 12}px">
-            <div class="tree-item ${folderChangeClass}" data-node-id="${node.id}" data-node-title="${escapeHtml(node.title)}" data-node-type="folder">
-                <span class="tree-toggle ${level === 0 ? 'expanded' : ''}">
-                    <i class="fas fa-chevron-right"></i>
-                </span>
+            <div class="tree-item ${changeClass}" data-node-id="${node.id}" data-node-title="${escapeHtml(node.title)}" data-node-type="folder">
+                <span class="tree-toggle ${level === 0 ? 'expanded' : ''}"><i class="fas fa-chevron-right"></i></span>
                 <i class="tree-icon fas fa-folder"></i>
                 <span class="tree-label">${escapeHtml(node.title)}</span>
                 <span class="change-badges">${statusIcon}</span>
@@ -3919,6 +3646,108 @@ function renderTreeNodeWithChanges(node, level = 0) {
             </div>
         </div>
     `;
+}
+
+// ===== 增量更新：创建 =====
+async function applyIncrementalCreateToTree(id, bookmark) {
+    const container = document.getElementById('bookmarkTree');
+    if (!container) return;
+    // 获取父节点 DOM
+    const parentId = bookmark.parentId;
+    const parentItem = container.querySelector(`.tree-item[data-node-id="${parentId}"]`);
+    if (!parentItem) { await renderTreeView(true); return; }
+    const parentNode = parentItem.nextElementSibling && parentItem.nextElementSibling.classList.contains('tree-children')
+        ? parentItem.nextElementSibling : null;
+    if (!parentNode) { await renderTreeView(true); return; }
+    // 生成新节点 HTML（简单，无变更标记）
+    const favicon = getFaviconUrl(bookmark.url || '');
+    const html = `
+        <div class="tree-node" style="padding-left: ${(parseInt(parentItem.style.paddingLeft||'0',10)+12)||12}px">
+            <div class="tree-item" data-node-id="${id}" data-node-title="${escapeHtml(bookmark.title||'')}" data-node-url="${escapeHtml(bookmark.url||'')}" data-node-type="${bookmark.url ? 'bookmark' : 'folder'}">
+                <span class="tree-toggle" style="opacity: 0"></span>
+                ${bookmark.url ? (favicon ? `<img class="tree-icon" src="${favicon}" alt="" onerror="this.src='${fallbackIcon}'">` : `<i class="tree-icon fas fa-bookmark"></i>`) : `<i class="tree-icon fas fa-folder"></i>`}
+                ${bookmark.url ? `<a href="${escapeHtml(bookmark.url)}" target="_blank" class="tree-label tree-bookmark-link" rel="noopener noreferrer">${escapeHtml(bookmark.title||'')}</a>` : `<span class="tree-label">${escapeHtml(bookmark.title||'')}</span>`}
+                <span class="change-badges"></span>
+            </div>
+            ${bookmark.url ? '' : '<div class="tree-children"></div>'}
+        </div>
+    `;
+    // 插入（末尾）
+    parentNode.insertAdjacentHTML('beforeend', html);
+}
+
+// ===== 增量更新：删除 =====
+function applyIncrementalRemoveFromTree(id) {
+    const container = document.getElementById('bookmarkTree');
+    if (!container) return;
+    const item = container.querySelector(`.tree-item[data-node-id="${id}"]`);
+    if (!item) return;
+    const node = item.closest('.tree-node');
+    if (node) node.remove();
+}
+
+// ===== 增量更新：修改 =====
+async function applyIncrementalChangeToTree(id, changeInfo) {
+    const container = document.getElementById('bookmarkTree');
+    if (!container) return;
+    const item = container.querySelector(`.tree-item[data-node-id="${id}"]`);
+    if (!item) { await renderTreeView(true); return; }
+    if (changeInfo.title) {
+        const labelLink = item.querySelector('.tree-bookmark-link');
+        const labelSpan = item.querySelector('.tree-label');
+        if (labelLink) labelLink.textContent = changeInfo.title;
+        if (labelSpan) labelSpan.textContent = changeInfo.title;
+        item.setAttribute('data-node-title', escapeHtml(changeInfo.title));
+    }
+    if (changeInfo.url !== undefined) {
+        const link = item.querySelector('.tree-bookmark-link');
+        if (link) link.href = changeInfo.url || '';
+        const icon = item.querySelector('img.tree-icon');
+        if (icon) {
+            const fav = getFaviconUrl(changeInfo.url || '');
+            if (fav) icon.src = fav;
+        }
+        item.setAttribute('data-node-url', escapeHtml(changeInfo.url||''));
+    }
+    // 给该节点增加“modified”标识（轻量）
+    const badges = item.querySelector('.change-badges');
+    if (badges && !badges.querySelector('.modified')) {
+        badges.insertAdjacentHTML('beforeend', '<span class="change-badge modified">~</span>');
+    }
+}
+
+// ===== 增量更新：移动 =====
+async function applyIncrementalMoveToTree(id, moveInfo) {
+    const container = document.getElementById('bookmarkTree');
+    if (!container) return;
+    const item = container.querySelector(`.tree-item[data-node-id="${id}"]`);
+    if (!item) { await renderTreeView(true); return; }
+    const node = item.closest('.tree-node');
+    const oldParentItem = container.querySelector(`.tree-item[data-node-id="${moveInfo.oldParentId}"]`);
+    const newParentItem = container.querySelector(`.tree-item[data-node-id="${moveInfo.parentId}"]`);
+    const newParentChildren = newParentItem && newParentItem.nextElementSibling && newParentItem.nextElementSibling.classList.contains('tree-children')
+        ? newParentItem.nextElementSibling : null;
+    if (!newParentChildren) { await renderTreeView(true); return; }
+    // 从旧位置移除并插入新父下
+    if (node) node.remove();
+    // 按目标 index 插入更准确
+    const targetIndex = (moveInfo && typeof moveInfo.index === 'number') ? moveInfo.index : null;
+    if (targetIndex === null) {
+        newParentChildren.insertAdjacentElement('beforeend', node);
+    } else {
+        const siblings = Array.from(newParentChildren.querySelectorAll(':scope > .tree-node'));
+        const anchor = siblings[targetIndex] || null;
+        if (anchor) newParentChildren.insertBefore(node, anchor); else newParentChildren.appendChild(node);
+    }
+    // 仅对该节点标记移动（蓝色），确保在同级移动也能显示
+    const badges = item.querySelector('.change-badges');
+    if (badges) {
+        // 去重
+        const existing = badges.querySelector('.change-badge.moved');
+        if (existing) existing.remove();
+        badges.insertAdjacentHTML('beforeend', '<span class="change-badge moved"><i class="fas fa-arrows-alt"></i></span>');
+        item.classList.add('tree-change-moved');
+    }
 }
 
 
@@ -4472,27 +4301,66 @@ function setupBookmarkListener() {
     console.log('[书签监听] 设置书签API监听器');
     
     // 书签创建
-    browserAPI.bookmarks.onCreated.addListener((id, bookmark) => {
+    browserAPI.bookmarks.onCreated.addListener(async (id, bookmark) => {
         console.log('[书签监听] 书签创建:', bookmark.title);
-        refreshTreeViewIfVisible();
+        try {
+            if (currentView === 'tree') {
+                await applyIncrementalCreateToTree(id, bookmark);
+            }
+            // 立即刷新当前变化（轻量重绘容器，不刷新页面）
+            if (currentView === 'current-changes') {
+                await renderCurrentChangesViewWithRetry(1, true);
+            }
+        } catch (e) {
+            refreshTreeViewIfVisible();
+        }
     });
     
     // 书签删除
-    browserAPI.bookmarks.onRemoved.addListener((id, removeInfo) => {
+    browserAPI.bookmarks.onRemoved.addListener(async (id, removeInfo) => {
         console.log('[书签监听] 书签删除:', id);
-        refreshTreeViewIfVisible();
+        try {
+            if (currentView === 'tree') {
+                applyIncrementalRemoveFromTree(id);
+            }
+            if (currentView === 'current-changes') {
+                await renderCurrentChangesViewWithRetry(1, true);
+            }
+        } catch (e) {
+            refreshTreeViewIfVisible();
+        }
     });
     
     // 书签修改
-    browserAPI.bookmarks.onChanged.addListener((id, changeInfo) => {
+    browserAPI.bookmarks.onChanged.addListener(async (id, changeInfo) => {
         console.log('[书签监听] 书签修改:', changeInfo);
-        refreshTreeViewIfVisible();
+        try {
+            if (currentView === 'tree') {
+                await applyIncrementalChangeToTree(id, changeInfo);
+            }
+            if (currentView === 'current-changes') {
+                await renderCurrentChangesViewWithRetry(1, true);
+            }
+        } catch (e) {
+            refreshTreeViewIfVisible();
+        }
     });
     
     // 书签移动
-    browserAPI.bookmarks.onMoved.addListener((id, moveInfo) => {
+    browserAPI.bookmarks.onMoved.addListener(async (id, moveInfo) => {
         console.log('[书签监听] 书签移动:', id);
-        refreshTreeViewIfVisible();
+        try {
+            // 记录显式移动id，5秒内显示蓝标（避免仅靠diff遗漏同级移动）
+            explicitMovedIds.set(id, Date.now() + 5000);
+            if (currentView === 'tree') {
+                await applyIncrementalMoveToTree(id, moveInfo);
+            }
+            if (currentView === 'current-changes') {
+                await renderCurrentChangesViewWithRetry(1, true);
+            }
+        } catch (e) {
+            refreshTreeViewIfVisible();
+        }
     });
 }
 
@@ -4536,6 +4404,25 @@ function setupRealtimeMessageListener() {
                 return;
             }
             handleAnalysisUpdatedMessage(message);
+        } else if (message.action === 'recentMovedBroadcast' && message.id) {
+            // 后台广播的最近移动ID，立即记入显式集合（续期）
+            explicitMovedIds.set(message.id, Date.now() + 120000);
+            // 若在树视图，尽力给该节点补蓝标
+            if (currentView === 'tree') {
+                try {
+                    const container = document.getElementById('bookmarkTree');
+                    const item = container && container.querySelector(`.tree-item[data-node-id="${message.id}"]`);
+                    if (item) {
+                        const badges = item.querySelector('.change-badges');
+                        if (badges) {
+                            const existing = badges.querySelector('.change-badge.moved');
+                            if (existing) existing.remove();
+                            badges.insertAdjacentHTML('beforeend', '<span class="change-badge moved"><i class="fas fa-arrows-alt"></i></span>');
+                            item.classList.add('tree-change-moved');
+                        }
+                    }
+                } catch(_) {}
+            }
         }
     });
 }
@@ -4593,7 +4480,8 @@ async function processAnalysisUpdatedMessage(message) {
     updateStatsFromAnalysisMessage(message);
 
     if (currentView === 'current-changes') {
-        await renderCurrentChangesViewWithRetry(3, false);
+        // 直接轻量刷新当前变化视图
+        await renderCurrentChangesViewWithRetry(1, false);
     }
 
     setTimeout(() => {

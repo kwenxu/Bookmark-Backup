@@ -95,6 +95,9 @@ const extensionStartupTime = Date.now();
 // 智能缓存书签分析结果
 let cachedBookmarkAnalysis = null;
 
+// 最近移动的节点（用于前端稳定显示蓝色移动标识）
+const RECENT_MOVED_TTL_MS = 120000; // 2分钟内视为最近移动
+
 
 // 重置操作状态的函数
 function resetOperationStatus() {
@@ -131,6 +134,22 @@ function initializeOperationTracking() {
                     folderMoved = true;
 }
 
+// 记录最近移动的节点到 storage（供前端读取做稳定标识）
+async function recordRecentMovedId(movedId, info) {
+    try {
+        const now = Date.now();
+        const data = await browserAPI.storage.local.get(['recentMovedIds']);
+        const list = Array.isArray(data.recentMovedIds) ? data.recentMovedIds : [];
+        const filtered = list.filter(r => (now - (r.time || 0)) < RECENT_MOVED_TTL_MS);
+        filtered.push({ id: movedId, time: now, parentId: info && info.parentId, oldParentId: info && info.oldParentId, index: info && info.index });
+        // 限制长度
+        const limited = filtered.slice(-50);
+        await browserAPI.storage.local.set({ recentMovedIds: limited });
+    } catch (e) {
+        // 忽略
+    }
+}
+
                 // 保存状态
                 browserAPI.storage.local.set({
                     lastSyncOperations: {
@@ -141,6 +160,8 @@ function initializeOperationTracking() {
                         lastUpdateTime: new Date().toISOString()
                     }
                 });
+                // 记录最近移动的节点，供前端稳定打标
+                try { recordRecentMovedId(id, { parentId: moveInfo.parentId, oldParentId: moveInfo.oldParentId, index: moveInfo.index }); } catch(_) {}
             }
         });
     });
@@ -904,30 +925,46 @@ sendResponse({ success: false, error: error.message || '重置失败' });
                         }
                     };
 
-                    // 删除所有根下节点，并按匹配的快照根恢复
+                    // 限流并发的批处理工具
+                    const runBatched = async (items, worker, concurrency = 8) => {
+                        let idx = 0; const running = new Set();
+                        const runNext = () => {
+                            if (idx >= items.length) return Promise.resolve();
+                            const i = idx++; const p = Promise.resolve().then(() => worker(items[i])).catch(() => {}).finally(() => running.delete(p));
+                            running.add(p);
+                            if (running.size >= concurrency) {
+                                return Promise.race(running).then(runNext);
+                            }
+                            return runNext();
+                        };
+                        await runNext();
+                        await Promise.allSettled([...running]);
+                    };
+
+                    // 删除所有根下节点（分批并发）
                     for (const root of currentRoots) {
                         if (!root || !root.id) continue;
+                        const children = (root.children && root.children.length > 0) ? [...root.children] : [];
+                        await runBatched(children, async (child) => {
+                            try {
+                                if (child.children && child.children.length) {
+                                    await browserAPI.bookmarks.removeTree(child.id);
+                                } else {
+                                    await browserAPI.bookmarks.remove(child.id);
+                                }
+                            } catch (_) {}
+                        }, 10);
+                    }
 
-                        // 先清空该根下的所有子节点
-                        if (root.children && root.children.length > 0) {
-                            for (const child of [...root.children]) {
-                                try {
-                                    if (child.children && child.children.length) {
-                                        await browserAPI.bookmarks.removeTree(child.id);
-                                    } else {
-                                        await browserAPI.bookmarks.remove(child.id);
-                                    }
-                                } catch (_) {}
-                            }
-                        }
-
-                        // 查找对应的快照根
+                    // 恢复：按根匹配并分批创建
+                    for (const root of currentRoots) {
+                        if (!root || !root.id) continue;
                         const key = normalizeKey(root.id, root.title);
                         const snapshotRoot = snapshotRootMap.get(key);
                         if (snapshotRoot && snapshotRoot.children && snapshotRoot.children.length) {
-                            for (const child of snapshotRoot.children) {
+                            await runBatched(snapshotRoot.children, async (child) => {
                                 await createNodeRecursive(root.id, child);
-                            }
+                            }, 6);
                         }
                     }
 
@@ -3478,10 +3515,20 @@ async function updateAndCacheAnalysis() {
             folderCount: analysis.folderCount
         });
         
-        // 分析完成后，向popup发送消息，如果popup是打开的，可以直接更新UI
+        // 分析完成后，向前端发送消息（analysis + 最近移动兜底）
         browserAPI.runtime.sendMessage({ action: "analysisUpdated", ...analysis }).catch(() => {
             // 忽略错误，因为popup可能未打开
         });
+
+        // 同步广播最近移动ID，增加前端打标稳定性
+        try {
+            const { recentMovedIds = [] } = await browserAPI.storage.local.get(['recentMovedIds']);
+            const now = Date.now();
+            const fresh = recentMovedIds.filter(r => (now - (r.time || 0)) < RECENT_MOVED_TTL_MS);
+            for (const r of fresh) {
+                browserAPI.runtime.sendMessage({ action: 'recentMovedBroadcast', id: r.id }).catch(() => {});
+            }
+        } catch(_) {}
         
         return cachedBookmarkAnalysis;
     } catch (error) {

@@ -3031,12 +3031,33 @@ async function detectTreeChangesFast(oldTree, newTree) {
     // 删除
     oldNodes.forEach((_, id) => { if (!newNodes.has(id)) changes.set(id, { type: 'deleted' }); });
 
-    // 同级移动（仅标记真正被拖动的那个）
+    // 建立"有add/delete操作的父级"集合（关键优化：避免因为add/delete导致的被动位置改变被错误标记为moved）
+    const parentsWithAddDelete = new Set();
+    changes.forEach((change, id) => {
+        if (change.type.includes('added') || change.type.includes('deleted')) {
+            const node = change.type.includes('added') ? newNodes.get(id) : oldNodes.get(id);
+            if (node && node.parentId) {
+                parentsWithAddDelete.add(node.parentId);
+            }
+        }
+    });
+
+    // 同级移动（重要：仅标记真正被拖动的那个，其他由于位置改变的项不标记）
+    // 原因：这里只是视觉标识，不是实际diff。只标记用户拖拽的对象
+    // 优化：如果该父级有add/delete操作，则不标记任何同级节点为moved（因为这些位置改变是被动的）
     newByParent.forEach((newList, parentId) => {
+        // 优化：如果该父级有add/delete操作，跳过同级移动判断（避免被动位置改变被标记为moved）
+        if (parentsWithAddDelete.has(parentId)) {
+            return;
+        }
+        
         const oldList = oldByParent.get(parentId) || [];
         if (oldList.length === 0 || newList.length === 0) return;
-        // 构建索引映射
+        
+        // 构建旧索引映射
         const oldIndexMap = new Map(oldList.map(({ id, index }) => [id, index]));
+        
+        // 收集所有位置改变的候选项
         const candidates = [];
         for (const { id, index } of newList) {
             if (!oldIndexMap.has(id)) continue;
@@ -3046,19 +3067,26 @@ async function detectTreeChangesFast(oldTree, newTree) {
             }
         }
         if (candidates.length === 0) return;
-        // 优先使用显式移动集合中的 id
-        let pick = candidates.find(c => explicitMovedIds && explicitMovedIds.has(c.id) && explicitMovedIds.get(c.id) > Date.now());
-        if (!pick) {
-            // 否则选择位移量最大的一个；若并列，选择 dir>0 的
+        
+        // 选择唯一的"被移动"节点：
+        // 1. 优先从显式移动集合中选取（用户拖拽时设置）
+        // 2. 否则选择位移量最大的（最有可能是被拖拽的）
+        let picked = candidates.find(c => 
+            explicitMovedIds && explicitMovedIds.has(c.id) && explicitMovedIds.get(c.id) > Date.now()
+        );
+        
+        if (!picked) {
             candidates.sort((a, b) => b.delta - a.delta || b.dir - a.dir);
-            pick = candidates[0];
+            picked = candidates[0];
         }
-        if (pick) {
-            const existing = changes.get(pick.id);
+        
+        // 只标记选中的节点为'moved'，其他位置改变的项完全忽略
+        if (picked) {
+            const existing = changes.get(picked.id);
             const types = existing && existing.type ? new Set(existing.type.split('+')) : new Set();
             types.add('moved');
-            const movedDetail = { oldPath: getNodePath(oldTree, pick.id), newPath: getNodePath(newTree, pick.id) };
-            changes.set(pick.id, { type: Array.from(types).join('+'), moved: movedDetail });
+            const movedDetail = { oldPath: getNodePath(oldTree, picked.id), newPath: getNodePath(newTree, picked.id) };
+            changes.set(picked.id, { type: Array.from(types).join('+'), moved: movedDetail });
         }
     });
 
@@ -3576,14 +3604,18 @@ function renderTreeNodeWithChanges(node, level = 0) {
                     if (types.includes('modified')) {
                         statusIcon += '<span class="change-badge modified">~</span>';
                     }
-                    const explicit = explicitMovedIds.has(node.id) && explicitMovedIds.get(node.id) > Date.now();
-                    if (types.includes('moved') && change.moved) {
-                        const tip = (change.moved.oldPath && change.moved.newPath) ? `${change.moved.oldPath} → ${change.moved.newPath}` : '';
+                    // 检查该节点是否被标记为'moved'（只有被拖拽的那个节点会被标记）
+                    const isMoved = types.includes('moved');
+                    const isExplicitMoved = explicitMovedIds.has(node.id) && explicitMovedIds.get(node.id) > Date.now();
+                    
+                    if (isMoved || isExplicitMoved) {
                         changeClass = 'tree-change-moved';
-                        statusIcon += `<span class="change-badge moved"><i class="fas fa-arrows-alt"></i><span class="move-tooltip">${escapeHtml(tip)}</span></span>`;
-                    } else if (explicit) {
-                        changeClass = 'tree-change-moved';
-                        statusIcon += `<span class="change-badge moved"><i class="fas fa-arrows-alt"></i></span>`;
+                        if (isMoved && change.moved) {
+                            const tip = (change.moved.oldPath && change.moved.newPath) ? `${change.moved.oldPath} → ${change.moved.newPath}` : '';
+                            statusIcon += `<span class="change-badge moved"><i class="fas fa-arrows-alt"></i><span class="move-tooltip">${escapeHtml(tip)}</span></span>`;
+                        } else {
+                            statusIcon += `<span class="change-badge moved"><i class="fas fa-arrows-alt"></i></span>`;
+                        }
                     }
                 }
             }
@@ -3615,14 +3647,18 @@ function renderTreeNodeWithChanges(node, level = 0) {
             if (types.includes('modified')) {
                 statusIcon += '<span class="change-badge modified">~</span>';
             }
-            const explicit = explicitMovedIds.has(node.id) && explicitMovedIds.get(node.id) > Date.now();
-            if (types.includes('moved') && change.moved) {
-                const tip = (change.moved.oldPath && change.moved.newPath) ? `${change.moved.oldPath} → ${change.moved.newPath}` : '';
+            // 检查该节点是否被标记为'moved'（只有被拖拽的那个节点会被标记）
+            const isMoved = types.includes('moved');
+            const isExplicitMoved = explicitMovedIds.has(node.id) && explicitMovedIds.get(node.id) > Date.now();
+            
+            if (isMoved || isExplicitMoved) {
                 changeClass = 'tree-change-moved';
-                statusIcon += `<span class="change-badge moved"><i class="fas fa-arrows-alt"></i><span class="move-tooltip">${escapeHtml(tip)}</span></span>`;
-            } else if (explicit) {
-                changeClass = 'tree-change-moved';
-                statusIcon += `<span class="change-badge moved"><i class="fas fa-arrows-alt"></i></span>`;
+                if (isMoved && change.moved) {
+                    const tip = (change.moved.oldPath && change.moved.newPath) ? `${change.moved.oldPath} → ${change.moved.newPath}` : '';
+                    statusIcon += `<span class="change-badge moved"><i class="fas fa-arrows-alt"></i><span class="move-tooltip">${escapeHtml(tip)}</span></span>`;
+                } else {
+                    statusIcon += `<span class="change-badge moved"><i class="fas fa-arrows-alt"></i></span>`;
+                }
             }
         }
     }
@@ -3739,10 +3775,10 @@ async function applyIncrementalMoveToTree(id, moveInfo) {
         const anchor = siblings[targetIndex] || null;
         if (anchor) newParentChildren.insertBefore(node, anchor); else newParentChildren.appendChild(node);
     }
-    // 仅对该节点标记移动（蓝色），确保在同级移动也能显示
+    // 关键：仅对这个被拖拽的节点标记为蓝色"moved"
+    // 其他由于这次移动而位置改变的兄弟节点不标记，因为我们只标识用户直接操作的对象
     const badges = item.querySelector('.change-badges');
     if (badges) {
-        // 去重
         const existing = badges.querySelector('.change-badge.moved');
         if (existing) existing.remove();
         badges.insertAdjacentHTML('beforeend', '<span class="change-badge moved"><i class="fas fa-arrows-alt"></i></span>');
@@ -4405,9 +4441,10 @@ function setupRealtimeMessageListener() {
             }
             handleAnalysisUpdatedMessage(message);
         } else if (message.action === 'recentMovedBroadcast' && message.id) {
-            // 后台广播的最近移动ID，立即记入显式集合（续期）
+            // 后台广播的最近被移动的ID，立即记入显式集合（仅标记这个节点）
+            // 这确保用户拖拽的节点优先被标识为蓝色"moved"
             explicitMovedIds.set(message.id, Date.now() + 120000);
-            // 若在树视图，尽力给该节点补蓝标
+            // 若在树视图，立即给这个被拖拽的节点补蓝标（不影响其他节点）
             if (currentView === 'tree') {
                 try {
                     const container = document.getElementById('bookmarkTree');

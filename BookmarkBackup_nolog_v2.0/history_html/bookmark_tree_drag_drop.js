@@ -4,6 +4,9 @@
 // 全局变量
 let draggedNode = null;
 let draggedNodeId = null;
+let draggedNodeParent = null;
+let draggedNodePrev = null;  // 被拖动节点的前一个同级节点
+let draggedNodeNext = null;  // 被拖动节点的后一个同级节点
 let dropIndicator = null;
 let autoScrollInterval = null;
 let lastScrollTime = 0;
@@ -56,7 +59,33 @@ function attachDragEvents(treeContainer) {
 // 拖拽开始
 function handleDragStart(e) {
     draggedNode = e.currentTarget;
-    draggedNodeId = draggedNode.dataset.nodeId;
+    draggedNodeId = draggedNode?.dataset?.nodeId;
+    
+    // 获取被拖动节点的父级（tree-node 容器）
+    draggedNodeParent = draggedNode.parentElement;
+    
+    // 获取同级节点中相邻的上下节点
+    // tree-item 的上一个兄弟是 tree-children 或另一个 tree-node
+    // 需要找到前一个 tree-item 和后一个 tree-item
+    let prevSibling = draggedNodeParent?.previousElementSibling;
+    let nextSibling = draggedNodeParent?.nextElementSibling;
+    
+    // 如果前一个是 tree-children，继续往前找
+    while (prevSibling && prevSibling.classList.contains('tree-children')) {
+        prevSibling = prevSibling.previousElementSibling;
+    }
+    
+    // 如果后一个是 tree-children，继续往后找
+    while (nextSibling && nextSibling.classList.contains('tree-children')) {
+        nextSibling = nextSibling.nextElementSibling;
+    }
+    
+    // 找到前一个节点的 tree-item
+    draggedNodePrev = prevSibling?.querySelector('.tree-item') || null;
+    
+    // 后一个节点的 tree-item 就是 nextSibling（如果存在的话）
+    draggedNodeNext = nextSibling?.classList.contains('tree-node') ? 
+        nextSibling.querySelector('.tree-item') : null;
     
     // 设置拖拽数据
     e.dataTransfer.effectAllowed = 'move';
@@ -65,7 +94,11 @@ function handleDragStart(e) {
     // 添加拖拽样式
     draggedNode.classList.add('dragging');
     
-    console.log('[拖拽] 开始拖拽:', draggedNodeId, draggedNode.dataset.nodeTitle);
+    console.log('[拖拽] ===== 开始拖拽 =====');
+    console.log('[拖拽] 被拖动节点ID:', draggedNodeId);
+    console.log('[拖拽] 被拖动节点标题:', draggedNode?.dataset?.nodeTitle);
+    console.log('[拖拽] 上一个同级节点ID:', draggedNodePrev?.dataset?.nodeId);
+    console.log('[拖拽] 下一个同级节点ID:', draggedNodeNext?.dataset?.nodeId);
     
     // 启动自动滚动检测
     startAutoScroll();
@@ -76,22 +109,12 @@ function handleDragOver(e) {
     e.preventDefault();
     e.stopPropagation();
     
-    // 不能拖到自己上
     const targetNode = e.currentTarget;
-    if (targetNode === draggedNode) {
-        e.dataTransfer.dropEffect = 'none';
-        return;
-    }
-    
-    // 不能拖到自己的子节点上
-    if (isDescendant(targetNode, draggedNode)) {
-        e.dataTransfer.dropEffect = 'none';
-        return;
-    }
+    const targetNodeId = targetNode?.dataset?.nodeId;
     
     e.dataTransfer.dropEffect = 'move';
     
-    // 显示拖拽指示器
+    // 显示拖拽指示器（包含屏蔽逻辑）
     showDropIndicator(targetNode, e);
     
     // 更新自动滚动
@@ -144,12 +167,6 @@ async function handleDrop(e) {
     const targetNode = e.currentTarget;
     targetNode.classList.remove('drag-over');
     
-    // 不能拖到自己上
-    if (targetNode === draggedNode) return;
-    
-    // 不能拖到自己的子节点上
-    if (isDescendant(targetNode, draggedNode)) return;
-    
     const targetNodeId = targetNode.dataset.nodeId;
     const targetIsFolder = targetNode.dataset.nodeType === 'folder';
     
@@ -162,7 +179,7 @@ async function handleDrop(e) {
     // 隐藏拖拽指示器
     hideDropIndicator();
     
-    // 执行移动
+    // 执行移动（移除验证，让Chrome API处理）
     await moveBookmark(draggedNodeId, targetNodeId, targetIsFolder, e);
 }
 
@@ -186,6 +203,9 @@ function handleDragEnd(e) {
     
     draggedNode = null;
     draggedNodeId = null;
+    draggedNodeParent = null;
+    draggedNodePrev = null;
+    draggedNodeNext = null;
     
     console.log('[拖拽] 拖拽结束');
 }
@@ -200,41 +220,98 @@ function showDropIndicator(targetNode, e) {
     
     // 判断放置位置：上方、内部还是下方
     let position;
-    // 扩大上下边缘的可投放区域（同级移动更容易）
-    const minBand = 12; // 最小边缘带高度
-    const threshold = Math.max(minBand, Math.min(rect.height / 3, 24));
+    // 增加边缘检测敏感度，使同级移动更容易准确
+    const minBand = 6; // 减小最小边缘带高度，提高灵敏度
+    const threshold = Math.max(minBand, Math.min(rect.height / 4, 12)); // 调整为1/4并减小上限
     
-    const allowInside = (targetNode.dataset.nodeType === 'folder') && rect.height >= 30;
-
-    if (mouseY < rect.top + threshold) {
-        position = 'before';
-    } else if (mouseY > rect.bottom - threshold) {
-        position = 'after';
-    } else {
-        position = allowInside ? 'inside' : (mouseY < targetMiddle ? 'before' : 'after');
+    // 使用基于 data-node-id 的比较（比 DOM 元素引用更可靠）
+    const draggedNodeId = draggedNode?.dataset?.nodeId;
+    const targetNodeId = targetNode?.dataset?.nodeId;
+    const prevNodeId = draggedNodePrev?.dataset?.nodeId;
+    const nextNodeId = draggedNodeNext?.dataset?.nodeId;
+    
+    // 检查目标节点是否是被拖动节点
+    const isTargetDraggedNode = draggedNodeId && draggedNodeId === targetNodeId;
+    
+    // 检查目标节点是否是被拖动节点的子节点
+    const isTargetDescendant = draggedNode && isDescendant(targetNode, draggedNode);
+    
+    // 检查目标节点是否是前一个同级节点
+    const isTargetPrev = prevNodeId && prevNodeId === targetNodeId;
+    
+    // 检查目标节点是否是后一个同级节点
+    const isTargetNext = nextNodeId && nextNodeId === targetNodeId;
+    
+    // 确定是否需要屏蔽以及屏蔽哪个边缘
+    let blockBeforeEdge = false;  // 是否屏蔽 before 边缘
+    let blockAfterEdge = false;   // 是否屏蔽 after 边缘
+    
+    if (isTargetDraggedNode || isTargetDescendant) {
+        // 屏蔽被拖动节点和其子节点的所有上下边缘
+        blockBeforeEdge = true;
+        blockAfterEdge = true;
+        console.log('[拖拽指示器] 屏蔽被拖节点的所有上下边缘');
+    } else if (isTargetPrev) {
+        // 屏蔽前一个同级节点的下边缘 (after)
+        blockAfterEdge = true;
+        console.log('[拖拽指示器] 屏蔽前一个同级节点的下边缘');
+    } else if (isTargetNext) {
+        // 屏蔽后一个同级节点的上边缘 (before)
+        blockBeforeEdge = true;
+        console.log('[拖拽指示器] 屏蔽后一个同级节点的上边缘');
     }
     
-    // 如果目标不是文件夹，不能放到内部
-    if (position === 'inside' && targetNode.dataset.nodeType !== 'folder') {
-        position = mouseY < targetMiddle ? 'before' : 'after';
+    // 允许任意位置放置
+    const allowInside = true;
+
+    // 根据屏蔽规则确定最终位置
+    if (mouseY < rect.top + threshold) {
+        // 鼠标在上边缘
+        position = blockBeforeEdge ? 'inside' : 'before';
+    } else if (mouseY > rect.bottom - threshold) {
+        // 鼠标在下边缘
+        position = blockAfterEdge ? 'inside' : 'after';
+    } else {
+        // 鼠标在中间
+        position = 'inside';
+    }
+    
+    // 如果上下边缘都被屏蔽，强制为 inside
+    if (blockBeforeEdge && blockAfterEdge && (mouseY < rect.top + threshold || mouseY > rect.bottom - threshold)) {
+        position = 'inside';
     }
     
     // 设置指示器位置
     if (position === 'before') {
+        console.log('[拖拽指示器] 显示 before 线条');
         dropIndicator.style.top = (rect.top + window.scrollY) + 'px';
         dropIndicator.style.left = rect.left + 'px';
         dropIndicator.style.width = rect.width + 'px';
         dropIndicator.style.height = '2px';
         dropIndicator.style.display = 'block';
+        dropIndicator.style.visibility = 'visible';
+        dropIndicator.style.pointerEvents = 'auto';
+        // 添加闪烁效果提示可以吸附
+        dropIndicator.classList.add('flashing');
     } else if (position === 'after') {
+        console.log('[拖拽指示器] 显示 after 线条');
         dropIndicator.style.top = (rect.bottom + window.scrollY) + 'px';
         dropIndicator.style.left = rect.left + 'px';
         dropIndicator.style.width = rect.width + 'px';
         dropIndicator.style.height = '2px';
         dropIndicator.style.display = 'block';
+        dropIndicator.style.visibility = 'visible';
+        dropIndicator.style.pointerEvents = 'auto';
+        // 添加闪烁效果提示可以吸附
+        dropIndicator.classList.add('flashing');
     } else {
-        // inside - 高亮整个节点，不显示线条
+        // inside - 隐藏线条
+        console.log('[拖拽指示器] 屏蔽线条（inside 位置）');
         dropIndicator.style.display = 'none';
+        dropIndicator.style.visibility = 'hidden';
+        dropIndicator.style.pointerEvents = 'none';
+        // 隐藏时移除闪烁效果
+        dropIndicator.classList.remove('flashing');
     }
     
     // 保存位置信息
@@ -261,7 +338,7 @@ function isDescendant(potentialDescendant, ancestor) {
 // 移动书签
 async function moveBookmark(sourceId, targetId, targetIsFolder, e) {
     if (!chrome || !chrome.bookmarks) {
-        alert('此功能需要Chrome扩展环境');
+        console.warn('[拖拽] Chrome扩展环境不可用');
         return;
     }
     
@@ -294,17 +371,17 @@ async function moveBookmark(sourceId, targetId, targetIsFolder, e) {
             });
         }
         
-        // 立刻触发蓝色移动标识（无需等待事件返回）
+        // 标记这个被直接拖拽的对象（永久标记，不设过期时间）
         try {
             if (typeof explicitMovedIds !== 'undefined') {
-                explicitMovedIds.set(sourceId, Date.now() + 5000);
+                // 使用Infinity表示永久标记，这样只有被主动拖拽的对象会显示蓝色标识
+                explicitMovedIds.set(sourceId, Date.now() + Infinity);
             }
         } catch(_) {}
         
     } catch (error) {
-        console.error('[拖拽] 移动失败:', error);
-        const lang = currentLang || 'zh_CN';
-        alert(lang === 'zh_CN' ? `移动失败: ${error.message}` : `Move failed: ${error.message}`);
+        // 静默处理错误（例如系统根文件夹无法移动），不弹出alert
+        console.debug('[拖拽] 移动操作信息:', error.message);
     }
 }
 
@@ -314,13 +391,13 @@ function startAutoScroll() {
     
     autoScrollInterval = setInterval(() => {
         // 由 updateAutoScroll 控制实际滚动
-    }, 16); // 约60fps
+    }, 10); // 100fps，更高的帧率提供更流畅的拖拽体验
 }
 
 // 更新自动滚动
 function updateAutoScroll(e) {
-    const scrollZone = 50; // 触发滚动的边缘区域大小
-    const scrollSpeed = 10; // 滚动速度
+    const scrollZone = 40; // 触发滚动的边缘区域大小，减小触发区域
+    const scrollSpeed = 15; // 滚动速度，增加到15使滚动更快更流畅
     
     const viewportHeight = window.innerHeight;
     const mouseY = e.clientY;
@@ -339,8 +416,8 @@ function updateAutoScroll(e) {
     // 执行滚动
     if (scrollDelta !== 0) {
         const now = Date.now();
-        // 限制滚动频率
-        if (now - lastScrollTime > 16) { // 约60fps
+        // 限制滚动频率，提高为100fps
+        if (now - lastScrollTime > 10) {
             window.scrollBy(0, scrollDelta);
             
             // 如果在树容器内，也滚动树容器

@@ -2558,6 +2558,25 @@ a.tree-label.tree-bookmark-link:hover {
     pointer-events: auto; /* 改为auto以接收点击和右键事件 */
     z-index: 1000;
     border-radius: 1px;
+    transition: opacity 0.1s ease-in-out;
+}
+
+/* 吸附提示闪烁动画 */
+@keyframes dropIndicatorFlash {
+    0%, 100% {
+        opacity: 1;
+        box-shadow: 0 0 8px rgba(24, 119, 242, 0.8);
+    }
+    50% {
+        opacity: 0.4;
+        box-shadow: 0 0 4px rgba(24, 119, 242, 0.4);
+    }
+}
+
+/* 应用闪烁效果的类 */
+.drop-indicator.flashing {
+    animation: dropIndicatorFlash 0.6s ease-in-out infinite;
+    box-shadow: 0 0 8px rgba(24, 119, 242, 0.8);
 }
 
 /* 拖拽时禁止选择文本 */

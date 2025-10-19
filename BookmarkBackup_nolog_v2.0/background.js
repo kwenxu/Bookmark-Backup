@@ -96,7 +96,7 @@ const extensionStartupTime = Date.now();
 let cachedBookmarkAnalysis = null;
 
 // 最近移动的节点（用于前端稳定显示蓝色移动标识）
-const RECENT_MOVED_TTL_MS = 120000; // 2分钟内视为最近移动
+const RECENT_MOVED_TTL_MS = Infinity; // 永久记录移动历史，取消2分钟限制
 
 
 // 重置操作状态的函数
@@ -142,9 +142,8 @@ async function recordRecentMovedId(movedId, info) {
         const list = Array.isArray(data.recentMovedIds) ? data.recentMovedIds : [];
         const filtered = list.filter(r => (now - (r.time || 0)) < RECENT_MOVED_TTL_MS);
         filtered.push({ id: movedId, time: now, parentId: info && info.parentId, oldParentId: info && info.oldParentId, index: info && info.index });
-        // 限制长度
-        const limited = filtered.slice(-50);
-        await browserAPI.storage.local.set({ recentMovedIds: limited });
+        // 取消限制，记录所有历史移动
+        await browserAPI.storage.local.set({ recentMovedIds: filtered });
     } catch (e) {
         // 忽略
     }

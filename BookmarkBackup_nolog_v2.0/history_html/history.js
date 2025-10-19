@@ -3338,13 +3338,30 @@ function rebuildTreeWithDeleted(oldTree, newTree, changeMap) {
         return newTree;
     }
     
+    // 防止循环引用的集合
+    const visitedIds = new Set();
+    const MAX_DEPTH = 50;
+    
     // 基于旧树重建，添加新节点和保留删除节点
-    function rebuildNode(oldNode, newNodes) {
+    function rebuildNode(oldNode, newNodes, depth = 0) {
         // 安全检查
         if (!oldNode || typeof oldNode.id === 'undefined') {
             console.log('[树重建] 跳过无效节点:', oldNode);
             return null;
         }
+        
+        // 深度限制
+        if (depth > MAX_DEPTH) {
+            console.warn('[树重建] 超过最大深度限制:', depth);
+            return null;
+        }
+        
+        // 循环引用检测
+        if (visitedIds.has(oldNode.id)) {
+            console.warn('[树重建] 检测到循环引用:', oldNode.id);
+            return null;
+        }
+        visitedIds.add(oldNode.id);
         
         // 在新树中查找对应的节点
         const newNode = newNodes ? newNodes.find(n => n && n.id === oldNode.id) : null;
@@ -3357,7 +3374,7 @@ function rebuildTreeWithDeleted(oldTree, newTree, changeMap) {
             
             // 递归处理子节点
             if (oldNode.children && oldNode.children.length > 0) {
-                deletedNodeCopy.children = oldNode.children.map(child => rebuildNode(child, null));
+                deletedNodeCopy.children = oldNode.children.map(child => rebuildNode(child, null, depth + 1)).filter(n => n !== null);
             }
             
             return deletedNodeCopy;
@@ -3393,7 +3410,7 @@ function rebuildTreeWithDeleted(oldTree, newTree, changeMap) {
                         
                         const childInfo = childrenMap.get(oldChild.id);
                         if (childInfo) {
-                            const rebuiltChild = rebuildNode(oldChild, newNode.children);
+                            const rebuiltChild = rebuildNode(oldChild, newNode.children, depth + 1);
                             if (rebuiltChild) {
                                 rebuiltChildren.push(rebuiltChild);
                             }
@@ -3418,9 +3435,21 @@ function rebuildTreeWithDeleted(oldTree, newTree, changeMap) {
             }
             
             return nodeCopy;
+        } else if (newNodes === null && change && change.type === 'deleted') {
+            // 父节点已删除，这个子节点也视为删除，保留但标记
+            console.log('[树重建] 保留已删除节点的子节点:', oldNode.title);
+            const deletedNodeCopy = JSON.parse(JSON.stringify(oldNode));
+            
+            // 递归处理子节点
+            if (oldNode.children && oldNode.children.length > 0) {
+                deletedNodeCopy.children = oldNode.children.map(child => rebuildNode(child, null, depth + 1)).filter(n => n !== null);
+            }
+            
+            return deletedNodeCopy;
         } else {
-            // 节点在新树中不存在，可能被删除
-            return rebuildNode(oldNode, null);
+            // 节点在新树中不存在，不是删除，跳过它
+            console.log('[树重建] 节点在新树中不存在，跳过:', oldNode.title);
+            return null;
         }
     }
     
@@ -3584,7 +3613,29 @@ function findNodePathInTree(tree, nodeId) {
 }
 
 // 渲染带变动标记的树节点
-function renderTreeNodeWithChanges(node, level = 0) {
+function renderTreeNodeWithChanges(node, level = 0, maxDepth = 50, visitedIds = new Set()) {
+    // 防止无限递归的保护机制
+    const MAX_DEPTH = maxDepth;
+    const MAX_NODES = 10000;
+    
+    if (!node) return '';
+    if (level > MAX_DEPTH) {
+        console.warn('[renderTreeNodeWithChanges] 超过最大深度限制:', level);
+        return '';
+    }
+    
+    // 检测循环引用
+    if (visitedIds.has(node.id)) {
+        console.warn('[renderTreeNodeWithChanges] 检测到循环引用:', node.id);
+        return '';
+    }
+    visitedIds.add(node.id);
+    
+    if (visitedIds.size > MAX_NODES) {
+        console.warn('[renderTreeNodeWithChanges] 超过最大节点限制');
+        return '';
+    }
+    
     const change = treeChangeMap ? treeChangeMap.get(node.id) : null;
     let statusIcon = '';
     let changeClass = '';
@@ -3678,7 +3729,7 @@ function renderTreeNodeWithChanges(node, level = 0) {
                 <span class="change-badges">${statusIcon}</span>
             </div>
             <div class="tree-children ${level === 0 ? 'expanded' : ''}">
-                ${sortedChildren.map(child => renderTreeNodeWithChanges(child, level + 1)).join('')}
+                ${sortedChildren.map(child => renderTreeNodeWithChanges(child, level + 1, maxDepth, visitedIds)).join('')}
             </div>
         </div>
     `;
@@ -4386,8 +4437,16 @@ function setupBookmarkListener() {
     browserAPI.bookmarks.onMoved.addListener(async (id, moveInfo) => {
         console.log('[书签监听] 书签移动:', id);
         try {
-            // 记录显式移动id，5秒内显示蓝标（避免仅靠diff遗漏同级移动）
-            explicitMovedIds.set(id, Date.now() + 5000);
+            // 只保持已经存在的主动拖拽标记（蓝色标识规则：只有主动拖拽的对象才显示）
+            // 如果这个对象不在explicitMovedIds中，说明是被动的移动，不添加标记
+            if (!explicitMovedIds.has(id)) {
+                // 这是被动的移动，不标记为蓝色"moved"
+                console.log('[书签监听] 检测到被动移动（不标记为蓝色）:', id);
+            } else {
+                // 这是主动拖拽，继续保持标记
+                explicitMovedIds.set(id, Date.now() + Infinity);
+            }
+            
             if (currentView === 'tree') {
                 await applyIncrementalMoveToTree(id, moveInfo);
             }
@@ -4443,7 +4502,8 @@ function setupRealtimeMessageListener() {
         } else if (message.action === 'recentMovedBroadcast' && message.id) {
             // 后台广播的最近被移动的ID，立即记入显式集合（仅标记这个节点）
             // 这确保用户拖拽的节点优先被标识为蓝色"moved"
-            explicitMovedIds.set(message.id, Date.now() + 120000);
+            // 永久记录，不再有时间限制
+            explicitMovedIds.set(message.id, Date.now() + Infinity);
             // 若在树视图，立即给这个被拖拽的节点补蓝标（不影响其他节点）
             if (currentView === 'tree') {
                 try {

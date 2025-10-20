@@ -3742,15 +3742,15 @@ async function applyIncrementalCreateToTree(id, bookmark) {
     const parentNode = parentItem.nextElementSibling && parentItem.nextElementSibling.classList.contains('tree-children')
         ? parentItem.nextElementSibling : null;
     if (!parentNode) { await renderTreeView(true); return; }
-    // 生成新节点 HTML（简单，无变更标记）
+    // 生成新节点 HTML（添加绿色变更标记）
     const favicon = getFaviconUrl(bookmark.url || '');
     const html = `
         <div class="tree-node" style="padding-left: ${(parseInt(parentItem.style.paddingLeft||'0',10)+12)||12}px">
-            <div class="tree-item" data-node-id="${id}" data-node-title="${escapeHtml(bookmark.title||'')}" data-node-url="${escapeHtml(bookmark.url||'')}" data-node-type="${bookmark.url ? 'bookmark' : 'folder'}">
+            <div class="tree-item tree-change-added" data-node-id="${id}" data-node-title="${escapeHtml(bookmark.title||'')}" data-node-url="${escapeHtml(bookmark.url||'')}" data-node-type="${bookmark.url ? 'bookmark' : 'folder'}">
                 <span class="tree-toggle" style="opacity: 0"></span>
                 ${bookmark.url ? (favicon ? `<img class="tree-icon" src="${favicon}" alt="" onerror="this.src='${fallbackIcon}'">` : `<i class="tree-icon fas fa-bookmark"></i>`) : `<i class="tree-icon fas fa-folder"></i>`}
                 ${bookmark.url ? `<a href="${escapeHtml(bookmark.url)}" target="_blank" class="tree-label tree-bookmark-link" rel="noopener noreferrer">${escapeHtml(bookmark.title||'')}</a>` : `<span class="tree-label">${escapeHtml(bookmark.title||'')}</span>`}
-                <span class="change-badges"></span>
+                <span class="change-badges"><span class="change-badge added">+</span></span>
             </div>
             ${bookmark.url ? '' : '<div class="tree-children"></div>'}
         </div>
@@ -3765,8 +3765,27 @@ function applyIncrementalRemoveFromTree(id) {
     if (!container) return;
     const item = container.querySelector(`.tree-item[data-node-id="${id}"]`);
     if (!item) return;
+
+    // 先添加红色标识和删除类
+    item.classList.add('tree-change-deleted');
+    const badges = item.querySelector('.change-badges');
+    if (badges) {
+        badges.innerHTML = '<span class="change-badge deleted">-</span>';
+    } else {
+        item.insertAdjacentHTML('beforeend', '<span class="change-badges"><span class="change-badge deleted">-</span></span>');
+    }
+
+    // 然后移除节点
     const node = item.closest('.tree-node');
-    if (node) node.remove();
+    if (node) {
+        // 添加淡出效果后删除
+        node.style.opacity = '0.5';
+        setTimeout(() => {
+            if (node.parentNode) {
+                node.remove();
+            }
+        }, 300);
+    }
 }
 
 // ===== 增量更新：修改 =====
@@ -3792,7 +3811,11 @@ async function applyIncrementalChangeToTree(id, changeInfo) {
         }
         item.setAttribute('data-node-url', escapeHtml(changeInfo.url||''));
     }
-    // 给该节点增加“modified”标识（轻量）
+    // 添加修改类（如果还没有）
+    if (!item.classList.contains('tree-change-modified')) {
+        item.classList.add('tree-change-modified');
+    }
+    // 给该节点增加"modified"标识（轻量）
     const badges = item.querySelector('.change-badges');
     if (badges && !badges.querySelector('.modified')) {
         badges.insertAdjacentHTML('beforeend', '<span class="change-badge modified">~</span>');

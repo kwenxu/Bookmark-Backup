@@ -383,7 +383,10 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     // 注册消息监听
     setupRealtimeMessageListener();
-    
+
+    // 设置事件委托处理所有按钮的data-action属性
+    setupEventDelegation();
+
     // 先加载基础数据
     console.log('[初始化] 加载基础数据...');
     await loadAllData();
@@ -1442,7 +1445,7 @@ async function renderCurrentChangesView(forceRefresh = false) {
                     diffHtml += '<div class="git-diff-viewer">';
                     diffHtml += '<div class="diff-file-header">';
                     diffHtml += '<span class="diff-file-path">diff --git a/bookmarks.html b/bookmarks.html</span>';
-                    diffHtml += `<button class="copy-diff-btn" onclick="window.copyCurrentDiff()" title="${currentLang === 'zh_CN' ? '复制Diff(JSON格式)' : 'Copy Diff (JSON)'}">`;
+                    diffHtml += `<button class="copy-diff-btn" data-action="copyCurrentDiff" title="${currentLang === 'zh_CN' ? '复制Diff(Git格式)' : 'Copy Diff (Git format)'}">`;
                     diffHtml += '<i class="fas fa-copy"></i>';
                     diffHtml += `<span>${currentLang === 'zh_CN' ? '复制Diff' : 'Copy Diff'}</span>`;
                     diffHtml += '</button>';
@@ -2267,6 +2270,206 @@ function generateGitDiff(oldLines, newLines, useGlobalIndex = false) {
     }
     
     return hunks;
+}
+
+// ==================== 将hunks转换为真正的Git Diff文本格式 ====================
+function hunksToGitDiffText(hunks, oldFileName = 'bookmarks.json', newFileName = 'bookmarks.json', lang = 'zh_CN') {
+    if (!hunks || hunks.length === 0) {
+        return '';
+    }
+
+    let diffText = '';
+
+    // 生成diff文件头
+    diffText += `diff --git a/${oldFileName} b/${newFileName}\n`;
+    diffText += `index 000000..111111 100644\n`;
+    diffText += `--- a/${oldFileName}\n`;
+    diffText += `+++ b/${newFileName}\n`;
+
+    let fileIndex = 0;
+    hunks.forEach((hunk, index) => {
+        // 生成hunk头
+        diffText += `@@ -${hunk.oldStart},${hunk.oldCount} +${hunk.newStart},${hunk.newCount} @@`;
+
+        // 添加路径作为hunk标题（如果有的话）
+        if (hunk.path) {
+            diffText += ` ${hunk.path}`;
+        }
+        diffText += '\n';
+
+        // 添加上下文
+        if (hunk.contextBefore) {
+            hunk.contextBefore.forEach(ctx => {
+                diffText += ` ${ctx.line.line}\n`;
+            });
+        }
+
+        // 添加变化
+        if (hunk.changes) {
+            hunk.changes.forEach(change => {
+                if (change.type === 'add') {
+                    diffText += `+${change.line.line}\n`;
+                } else if (change.type === 'delete') {
+                    diffText += `-${change.line.line}\n`;
+                } else if (change.type === 'context') {
+                    diffText += ` ${change.line.line}\n`;
+                }
+            });
+        }
+
+        // 添加后置上下文
+        if (hunk.contextAfter) {
+            hunk.contextAfter.forEach(ctx => {
+                diffText += ` ${ctx.line.line}\n`;
+            });
+        }
+    });
+
+    return diffText;
+}
+
+// ==================== 生成JSON对比的Git Diff ====================
+// 对比两个JSON对象并生成git diff格式
+function generateJsonGitDiff(oldData, newData, fileName = 'bookmarks.json', lang = 'zh_CN') {
+    if (!oldData || !newData) {
+        return '';
+    }
+
+    // 将JSON对象格式化为行
+    const oldJson = JSON.stringify(oldData, null, 2).split('\n');
+    const newJson = JSON.stringify(newData, null, 2).split('\n');
+
+    // 转换为generateGitDiff需要的格式
+    const oldLines = oldJson.map(line => ({ line, type: 'text' }));
+    const newLines = newJson.map(line => ({ line, type: 'text' }));
+
+    // 生成hunks
+    const hunks = generateGitDiff(oldLines, newLines);
+
+    // 转换为文本格式
+    return hunksToGitDiffText(hunks, fileName, fileName, lang);
+}
+
+// ==================== 深度对比两个书签树 ====================
+// 对比两个书签树，生成详细的变化列表
+function deepCompareBookmarkTrees(oldTree, newTree, lang = 'zh_CN') {
+    if (!oldTree || !newTree) {
+        return {
+            added: [],
+            deleted: [],
+            modified: [],
+            moved: [],
+            hasChanges: false
+        };
+    }
+
+    // 生成书签指纹映射
+    function generateBookmarkMap(tree, parentPath = '') {
+        const map = new Map(); // id -> { title, url, path, dateAdded }
+        const pathMap = new Map(); // path+title+url -> id
+
+        function traverse(nodes, path) {
+            if (!nodes) return;
+            nodes.forEach(node => {
+                const currentPath = path ? `${path}/${node.title}` : node.title;
+                if (node.url) {
+                    const key = `${currentPath}|${node.url}`;
+                    map.set(node.id, {
+                        title: node.title,
+                        url: node.url,
+                        path: currentPath,
+                        dateAdded: node.dateAdded,
+                        id: node.id
+                    });
+                    pathMap.set(key, node.id);
+                } else if (node.children) {
+                    traverse(node.children, currentPath);
+                }
+            });
+        }
+
+        if (tree && tree[0] && tree[0].children) {
+            traverse(tree[0].children, '');
+        }
+
+        return { map, pathMap };
+    }
+
+    const { map: oldMap, pathMap: oldPathMap } = generateBookmarkMap(oldTree);
+    const { map: newMap, pathMap: newPathMap } = generateBookmarkMap(newTree);
+
+    const added = [];
+    const deleted = [];
+    const modified = [];
+    const moved = [];
+
+    // 检查新增和修改
+    newMap.forEach((newBkm, newId) => {
+        const oldBkm = oldMap.get(newId);
+        if (!oldBkm) {
+            // 检查是否是移动（相同URL，不同位置）
+            let foundMoved = false;
+            oldMap.forEach((oldItem, oldId) => {
+                if (oldItem.url === newBkm.url && oldItem.path !== newBkm.path) {
+                    moved.push({
+                        title: newBkm.title,
+                        url: newBkm.url,
+                        oldPath: oldItem.path,
+                        newPath: newBkm.path
+                    });
+                    foundMoved = true;
+                }
+            });
+            if (!foundMoved) {
+                added.push({
+                    title: newBkm.title,
+                    url: newBkm.url,
+                    path: newBkm.path
+                });
+            }
+        } else {
+            // 检查是否修改
+            if (oldBkm.title !== newBkm.title || oldBkm.url !== newBkm.url || oldBkm.path !== newBkm.path) {
+                modified.push({
+                    title: newBkm.title,
+                    url: newBkm.url,
+                    oldTitle: oldBkm.title,
+                    oldPath: oldBkm.path,
+                    newPath: newBkm.path
+                });
+            }
+        }
+    });
+
+    // 检查删除
+    oldMap.forEach((oldBkm, oldId) => {
+        const newBkm = newMap.get(oldId);
+        if (!newBkm) {
+            // 检查是否是移动
+            let foundMoved = moved.some(m => m.url === oldBkm.url && m.oldPath === oldBkm.path);
+            if (!foundMoved) {
+                deleted.push({
+                    title: oldBkm.title,
+                    url: oldBkm.url,
+                    path: oldBkm.path
+                });
+            }
+        }
+    });
+
+    const hasChanges = added.length > 0 || deleted.length > 0 || modified.length > 0 || moved.length > 0;
+
+    return {
+        added,
+        deleted,
+        modified,
+        moved,
+        hasChanges,
+        addedCount: added.length,
+        deletedCount: deleted.length,
+        modifiedCount: modified.length,
+        movedCount: moved.length
+    };
 }
 
 // 简化的 LCS 算法
@@ -3193,7 +3396,7 @@ function renderJSONDiff(container, oldTree, newTree) {
     if (!jsonDiffRendered) {
         container.innerHTML = `
             <div class="json-header">
-                <button class="json-copy-btn" onclick="copyJSONDiff()">
+                <button class="json-copy-btn" data-action="copyJSONDiff">
                     <i class="fas fa-copy"></i> ${currentLang === 'zh_CN' ? '复制Diff' : 'Copy Diff'}
                 </button>
             </div>
@@ -3219,7 +3422,7 @@ function renderJSONDiff(container, oldTree, newTree) {
     // 分批渲染
     const header = `
         <div class="json-header">
-            <button class="json-copy-btn" onclick="copyJSONDiff()">
+            <button class="json-copy-btn" data-action="copyJSONDiff">
                 <i class="fas fa-copy"></i> ${currentLang === 'zh_CN' ? '复制Diff' : 'Copy Diff'}
             </button>
         </div>
@@ -4696,6 +4899,44 @@ function setupRealtimeMessageListener() {
     });
 }
 
+// ==================== 事件委托设置 ====================
+// 使用事件委托处理所有按钮的data-action属性，避免CSP错误
+function setupEventDelegation() {
+    // 使用事件委托处理按钮点击
+    document.addEventListener('click', async (event) => {
+        const button = event.target.closest('button[data-action]');
+        if (!button) return;
+
+        const action = button.dataset.action;
+        console.log('[事件委托] 处理按钮点击:', action);
+
+        try {
+            switch (action) {
+                case 'copyCurrentDiff':
+                    await window.copyCurrentDiff();
+                    break;
+                case 'copyHistoryDiff':
+                    // 获取recordTime（可能在button上或父元素上）
+                    const recordTime = button.dataset.recordTime || button.closest('[data-record-time]')?.dataset.recordTime;
+                    if (recordTime) {
+                        await window.copyHistoryDiff(recordTime);
+                    }
+                    break;
+                case 'copyAllHistory':
+                    await window.copyAllHistoryDiff();
+                    break;
+                case 'copyJSONDiff':
+                    await copyJSONDiff();
+                    break;
+                default:
+                    console.warn('[事件委托] 未知的action:', action);
+            }
+        } catch (error) {
+            console.error('[事件委托] 处理按钮点击失败:', action, error);
+        }
+    });
+}
+
 async function handleAnalysisUpdatedMessage(message) {
     if (realtimeUpdateInProgress) {
         pendingAnalysisMessage = message;
@@ -4880,121 +5121,171 @@ document.head.appendChild(style);
 window.copyCurrentDiff = async function() {
     try {
         const changeData = await getDetailedChanges(false);
-        
-        // 限制每个数组最多100项，防止数据过大
-        const maxItems = 100;
-        const added = (changeData.added || []).slice(0, maxItems);
-        const deleted = (changeData.deleted || []).slice(0, maxItems);
-        const modified = (changeData.modified || []).slice(0, maxItems);
-        const moved = (changeData.moved || []).slice(0, maxItems);
-        
-        const diffData = {
-            timestamp: new Date().toISOString(),
-            type: 'current-changes',
-            hasChanges: changeData.hasChanges,
-            diffMeta: changeData.diffMeta,
-            added: added,
-            deleted: deleted,
-            modified: modified,
-            moved: moved,
-            // 添加计数信息
-            counts: {
-                addedTotal: (changeData.added || []).length,
-                deletedTotal: (changeData.deleted || []).length,
-                modifiedTotal: (changeData.modified || []).length,
-                movedTotal: (changeData.moved || []).length,
-                addedShown: added.length,
-                deletedShown: deleted.length,
-                modifiedShown: modified.length,
-                movedShown: moved.length,
-                note: maxItems < Math.max(
-                    (changeData.added || []).length,
-                    (changeData.deleted || []).length,
-                    (changeData.modified || []).length,
-                    (changeData.moved || []).length
-                ) ? (currentLang === 'zh_CN' ? '数据已截断，每类最多显示100项' : 'Data truncated, max 100 items per category') : ''
+
+        // 获取当前书签树用于生成git diff
+        const currentTree = await new Promise(resolve => {
+            browserAPI.bookmarks.getTree(resolve);
+        });
+
+        // 获取上一次备份的树
+        let oldTree = null;
+        const lastData = await new Promise(resolve => {
+            browserAPI.storage.local.get(['lastBookmarkData'], (data) => {
+                resolve(data.lastBookmarkData);
+            });
+        });
+
+        if (lastData && lastData.bookmarkTree) {
+            oldTree = lastData.bookmarkTree;
+        }
+
+        // 生成Git diff格式
+        let diffText = '';
+
+        if (oldTree && currentTree) {
+            // 生成文件树的git diff
+            const oldLines = bookmarkTreeToLines(oldTree);
+            const newLines = bookmarkTreeToLines(currentTree);
+            const hunks = generateGitDiff(oldLines, newLines);
+            diffText = hunksToGitDiffText(hunks, 'bookmarks.html', 'bookmarks.html', currentLang);
+        }
+
+        // 添加变化统计头部
+        let result = '';
+        result += `# 书签变化统计\n`;
+        result += `# 生成时间: ${new Date().toLocaleString()}\n`;
+        result += `#\n`;
+
+        if (changeData.stats) {
+            result += `# 数量变化: `;
+            if (changeData.stats.bookmarkDiff !== 0) {
+                result += `书签 ${changeData.stats.bookmarkDiff > 0 ? '+' : ''}${changeData.stats.bookmarkDiff}`;
             }
-        };
-        
-        const jsonString = JSON.stringify(diffData, null, 2);
-        await navigator.clipboard.writeText(jsonString);
-        
-        const message = diffData.counts.note 
-            ? (currentLang === 'zh_CN' ? 'Diff已复制（部分数据）' : 'Diff copied (partial data)')
-            : (currentLang === 'zh_CN' ? 'Diff已复制到剪贴板' : 'Diff copied to clipboard');
-        showToast(message);
+            if (changeData.stats.folderDiff !== 0) {
+                if (changeData.stats.bookmarkDiff !== 0) result += ', ';
+                result += `文件夹 ${changeData.stats.folderDiff > 0 ? '+' : ''}${changeData.stats.folderDiff}`;
+            }
+            result += `\n`;
+        }
+
+        // 变化明细
+        if (changeData.added && changeData.added.length > 0) {
+            result += `# 新增: ${changeData.added.length}项\n`;
+        }
+        if (changeData.deleted && changeData.deleted.length > 0) {
+            result += `# 删除: ${changeData.deleted.length}项\n`;
+        }
+        if (changeData.moved && changeData.moved.length > 0) {
+            result += `# 移动: ${changeData.moved.length}项\n`;
+        }
+        if (changeData.modified && changeData.modified.length > 0) {
+            result += `# 修改: ${changeData.modified.length}项\n`;
+        }
+        result += `#\n`;
+
+        result += diffText;
+
+        await navigator.clipboard.writeText(result);
+        showToast(currentLang === 'zh_CN' ? 'Git Diff已复制到剪贴板' : 'Git Diff copied to clipboard');
     } catch (error) {
         console.error('[复制Diff] 失败:', error);
         showToast(currentLang === 'zh_CN' ? '复制失败' : 'Copy failed');
     }
 };
 
+
+
 // 复制历史记录的diff（JSON格式，排除bookmarkTree以防止卡顿）
 window.copyHistoryDiff = async function(recordTime) {
     try {
-        const record = syncHistory.find(r => r.time === recordTime);
-        if (!record) {
+        const recordIndex = syncHistory.findIndex(r => r.time === recordTime);
+        if (recordIndex === -1) {
             showToast(currentLang === 'zh_CN' ? '未找到记录' : 'Record not found');
             return;
         }
-        
-        let diffData;
-        
-        // 第一次备份：提供完整的书签列表（简化格式）
-        if (record.isFirstBackup && record.bookmarkTree) {
-            const bookmarksList = extractBookmarksFromTree(record.bookmarkTree);
-            diffData = {
-                timestamp: record.time,
-                type: 'first-backup',
-                direction: record.direction,
-                status: record.status,
-                syncType: record.type,
-                note: record.note || '',
-                isFirstBackup: true,
-                totalBookmarks: bookmarksList.length,
-                totalFolders: record.bookmarkStats?.currentFolderCount || 0,
-                // 完整的书签列表（不分段）
-                bookmarks: bookmarksList
-            };
-        } else {
-            // 普通备份：只保留统计信息
-            diffData = {
-                timestamp: record.time,
-                type: 'history-record',
-                direction: record.direction,
-                status: record.status,
-                syncType: record.type,
-                note: record.note || '',
-                errorMessage: record.errorMessage || '',
-                isFirstBackup: record.isFirstBackup || false,
-                // 只保留统计数字，不包含完整树结构
-                bookmarkStats: record.bookmarkStats ? {
-                    currentBookmarkCount: record.bookmarkStats.currentBookmarkCount,
-                    currentFolderCount: record.bookmarkStats.currentFolderCount,
-                    prevBookmarkCount: record.bookmarkStats.prevBookmarkCount,
-                    prevFolderCount: record.bookmarkStats.prevFolderCount,
-                    bookmarkDiff: record.bookmarkStats.bookmarkDiff,
-                    folderDiff: record.bookmarkStats.folderDiff,
-                    bookmarkMoved: record.bookmarkStats.bookmarkMoved,
-                    folderMoved: record.bookmarkStats.folderMoved,
-                    bookmarkModified: record.bookmarkStats.bookmarkModified,
-                    folderModified: record.bookmarkStats.folderModified
-                } : null
-            };
+
+        const record = syncHistory[recordIndex];
+        let result = '';
+
+        // 生成diff文件头
+        result += `# 备份历史记录 - Git Diff\n`;
+        result += `# 备份时间: ${record.time || new Date().toLocaleString()}\n`;
+        result += `# 备份类型: ${record.type || 'unknown'}\n`;
+        result += `# 备份方向: ${record.direction || 'unknown'}\n`;
+        result += `# 备份状态: ${record.status || 'unknown'}\n`;
+        if (record.note) {
+            result += `# 备份备注: ${record.note}\n`;
         }
-        
-        const jsonString = JSON.stringify(diffData, null, 2);
-        await navigator.clipboard.writeText(jsonString);
-        
-        const message = record.isFirstBackup 
-            ? (currentLang === 'zh_CN' ? `已复制首次备份（${diffData.bookmarks?.length || 0}个书签）` : `Copied first backup (${diffData.bookmarks?.length || 0} bookmarks)`)
-            : (currentLang === 'zh_CN' ? 'Diff已复制到剪贴板' : 'Diff copied to clipboard');
+        result += `#\n`;
+
+        // 添加统计信息
+        if (record.bookmarkStats) {
+            result += `# 当前统计:\n`;
+            result += `# - 书签数: ${record.bookmarkStats.currentBookmarkCount || 0}\n`;
+            result += `# - 文件夹数: ${record.bookmarkStats.currentFolderCount || 0}\n`;
+            if (record.bookmarkStats.prevBookmarkCount !== undefined) {
+                result += `# - 书签变化: ${record.bookmarkStats.bookmarkDiff > 0 ? '+' : ''}${record.bookmarkStats.bookmarkDiff || 0}\n`;
+            }
+            if (record.bookmarkStats.prevFolderCount !== undefined) {
+                result += `# - 文件夹变化: ${record.bookmarkStats.folderDiff > 0 ? '+' : ''}${record.bookmarkStats.folderDiff || 0}\n`;
+            }
+            result += `#\n`;
+        }
+
+        // 如果是第一次备份
+        if (record.isFirstBackup) {
+            result += `# ===== 首次备份 - 初始内容 =====\n`;
+            if (record.bookmarkTree) {
+                const lines = bookmarkTreeToLines(record.bookmarkTree);
+                result += `diff --git a/bookmarks.html b/bookmarks.html\n`;
+                result += `new file mode 100644\n`;
+                result += `index 0000000..1111111\n`;
+                result += `--- /dev/null\n`;
+                result += `+++ b/bookmarks.html\n`;
+
+                // 生成所有行为新增
+                lines.forEach((line, idx) => {
+                    result += `+${line.line}\n`;
+                });
+            }
+        } else if (recordIndex > 0) {
+            // 获取前一个备份
+            const prevRecord = syncHistory[recordIndex - 1];
+            if (prevRecord && record.bookmarkTree && prevRecord.bookmarkTree) {
+                // 对比两个备份
+                const oldLines = bookmarkTreeToLines(prevRecord.bookmarkTree);
+                const newLines = bookmarkTreeToLines(record.bookmarkTree);
+                const hunks = generateGitDiff(oldLines, newLines);
+                const diffText = hunksToGitDiffText(hunks, 'bookmarks.html', 'bookmarks.html', currentLang);
+                result += diffText;
+            } else {
+                result += `# 无法生成完整的diff（缺少前一个备份的数据）\n`;
+                if (record.bookmarkStats) {
+                    result += `# 数量变化:\n`;
+                    if (record.bookmarkStats.bookmarkDiff !== 0) {
+                        result += `#   书签: ${record.bookmarkStats.bookmarkDiff > 0 ? '+' : ''}${record.bookmarkStats.bookmarkDiff}\n`;
+                    }
+                    if (record.bookmarkStats.folderDiff !== 0) {
+                        result += `#   文件夹: ${record.bookmarkStats.folderDiff > 0 ? '+' : ''}${record.bookmarkStats.folderDiff}\n`;
+                    }
+                }
+            }
+        } else {
+            result += `# 无法生成diff（这是第一个备份）\n`;
+        }
+
+        await navigator.clipboard.writeText(result);
+
+        const message = record.isFirstBackup
+            ? (currentLang === 'zh_CN' ? '已复制首次备份的Git Diff' : 'Copied first backup Git Diff')
+            : (currentLang === 'zh_CN' ? 'Git Diff已复制到剪贴板' : 'Git Diff copied to clipboard');
         showToast(message);
     } catch (error) {
         console.error('[复制历史Diff] 失败:', error);
         showToast(currentLang === 'zh_CN' ? '复制失败' : 'Copy failed');
     }
 };
+
 
 // 从书签树提取书签列表（扁平化，包含路径信息）
 function extractBookmarksFromTree(tree) {

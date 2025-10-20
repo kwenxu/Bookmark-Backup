@@ -3648,15 +3648,22 @@ function renderTreeNodeWithChanges(node, level = 0, maxDepth = 50, visitedIds = 
                     statusIcon = '<span class="change-badge deleted">-</span>';
                 } else {
                     const types = change.type.split('+');
-                    if (types.includes('modified')) {
-                        statusIcon += '<span class="change-badge modified">~</span>';
-                    }
-                    // 检查该节点是否被标记为'moved'（只有被拖拽的那个节点会被标记）
+                    const hasModified = types.includes('modified');
                     const isMoved = types.includes('moved');
                     const isExplicitMoved = explicitMovedIds.has(node.id) && explicitMovedIds.get(node.id) > Date.now();
-                    
+
+                    if (hasModified) {
+                        changeClass = 'tree-change-modified';
+                        statusIcon += '<span class="change-badge modified">~</span>';
+                    }
+
                     if (isMoved || isExplicitMoved) {
-                        changeClass = 'tree-change-moved';
+                        // 如果既有modified又有moved，添加mixed类
+                        if (hasModified) {
+                            changeClass = 'tree-change-mixed';
+                        } else {
+                            changeClass = 'tree-change-moved';
+                        }
                         if (isMoved && change.moved) {
                             const tip = (change.moved.oldPath && change.moved.newPath) ? `${change.moved.oldPath} → ${change.moved.newPath}` : '';
                             statusIcon += `<span class="change-badge moved"><i class="fas fa-arrows-alt"></i><span class="move-tooltip">${escapeHtml(tip)}</span></span>`;
@@ -3691,15 +3698,22 @@ function renderTreeNodeWithChanges(node, level = 0, maxDepth = 50, visitedIds = 
             statusIcon = '<span class="change-badge deleted">-</span>';
         } else {
             const types = change.type.split('+');
-            if (types.includes('modified')) {
-                statusIcon += '<span class="change-badge modified">~</span>';
-            }
-            // 检查该节点是否被标记为'moved'（只有被拖拽的那个节点会被标记）
+            const hasModified = types.includes('modified');
             const isMoved = types.includes('moved');
             const isExplicitMoved = explicitMovedIds.has(node.id) && explicitMovedIds.get(node.id) > Date.now();
-            
+
+            if (hasModified) {
+                changeClass = 'tree-change-modified';
+                statusIcon += '<span class="change-badge modified">~</span>';
+            }
+
             if (isMoved || isExplicitMoved) {
-                changeClass = 'tree-change-moved';
+                // 如果既有modified又有moved，添加mixed类
+                if (hasModified) {
+                    changeClass = 'tree-change-mixed';
+                } else {
+                    changeClass = 'tree-change-moved';
+                }
                 if (isMoved && change.moved) {
                     const tip = (change.moved.oldPath && change.moved.newPath) ? `${change.moved.oldPath} → ${change.moved.newPath}` : '';
                     statusIcon += `<span class="change-badge moved"><i class="fas fa-arrows-alt"></i><span class="move-tooltip">${escapeHtml(tip)}</span></span>`;
@@ -3744,12 +3758,14 @@ async function applyIncrementalCreateToTree(id, bookmark) {
     if (!parentNode) { await renderTreeView(true); return; }
     // 生成新节点 HTML（添加绿色变更标记）
     const favicon = getFaviconUrl(bookmark.url || '');
+    const labelColor = 'color: #28a745;'; // 绿色
+    const labelFontWeight = 'font-weight: 500;';
     const html = `
         <div class="tree-node" style="padding-left: ${(parseInt(parentItem.style.paddingLeft||'0',10)+12)||12}px">
             <div class="tree-item tree-change-added" data-node-id="${id}" data-node-title="${escapeHtml(bookmark.title||'')}" data-node-url="${escapeHtml(bookmark.url||'')}" data-node-type="${bookmark.url ? 'bookmark' : 'folder'}">
                 <span class="tree-toggle" style="opacity: 0"></span>
                 ${bookmark.url ? (favicon ? `<img class="tree-icon" src="${favicon}" alt="" onerror="this.src='${fallbackIcon}'">` : `<i class="tree-icon fas fa-bookmark"></i>`) : `<i class="tree-icon fas fa-folder"></i>`}
-                ${bookmark.url ? `<a href="${escapeHtml(bookmark.url)}" target="_blank" class="tree-label tree-bookmark-link" rel="noopener noreferrer">${escapeHtml(bookmark.title||'')}</a>` : `<span class="tree-label">${escapeHtml(bookmark.title||'')}</span>`}
+                ${bookmark.url ? `<a href="${escapeHtml(bookmark.url)}" target="_blank" class="tree-label tree-bookmark-link" rel="noopener noreferrer" style="${labelColor} ${labelFontWeight}">${escapeHtml(bookmark.title||'')}</a>` : `<span class="tree-label" style="${labelColor} ${labelFontWeight}">${escapeHtml(bookmark.title||'')}</span>`}
                 <span class="change-badges"><span class="change-badge added">+</span></span>
             </div>
             ${bookmark.url ? '' : '<div class="tree-children"></div>'}
@@ -3768,6 +3784,24 @@ function applyIncrementalRemoveFromTree(id) {
 
     // 先添加红色标识和删除类
     item.classList.add('tree-change-deleted');
+
+    // 直接设置标签的红色样式
+    const labelLink = item.querySelector('.tree-bookmark-link');
+    const labelSpan = item.querySelector('.tree-label');
+    if (labelLink) {
+        labelLink.style.color = '#dc3545';
+        labelLink.style.fontWeight = '500';
+        labelLink.style.textDecoration = 'line-through';
+        labelLink.style.opacity = '0.7';
+    }
+    if (labelSpan) {
+        labelSpan.style.color = '#dc3545';
+        labelSpan.style.fontWeight = '500';
+        labelSpan.style.textDecoration = 'line-through';
+        labelSpan.style.opacity = '0.7';
+    }
+
+    // 添加红色标识
     const badges = item.querySelector('.change-badges');
     if (badges) {
         badges.innerHTML = '<span class="change-badge deleted">-</span>';
@@ -3794,12 +3828,37 @@ async function applyIncrementalChangeToTree(id, changeInfo) {
     if (!container) return;
     const item = container.querySelector(`.tree-item[data-node-id="${id}"]`);
     if (!item) { await renderTreeView(true); return; }
+
+    console.log('[applyIncrementalChangeToTree] 修改书签:', id, changeInfo);
+
+    // 添加修改类
+    if (!item.classList.contains('tree-change-modified')) {
+        item.classList.add('tree-change-modified');
+    }
+
+    // 总是确保橙色样式被应用（即使已经修改过）- 使用!important强制应用
+    const labelLink = item.querySelector('.tree-bookmark-link');
+    const labelSpan = item.querySelector('.tree-label');
+
+    console.log('[applyIncrementalChangeToTree] labelLink:', !!labelLink, 'labelSpan:', !!labelSpan);
+
+    if (labelLink) {
+        labelLink.style.setProperty('color', '#fd7e14', 'important');
+        labelLink.style.setProperty('font-weight', '500', 'important');
+        console.log('[applyIncrementalChangeToTree] 已设置labelLink样式');
+    }
+    if (labelSpan) {
+        labelSpan.style.setProperty('color', '#fd7e14', 'important');
+        labelSpan.style.setProperty('font-weight', '500', 'important');
+        console.log('[applyIncrementalChangeToTree] 已设置labelSpan样式');
+    }
+
+    // 修改内容
     if (changeInfo.title) {
-        const labelLink = item.querySelector('.tree-bookmark-link');
-        const labelSpan = item.querySelector('.tree-label');
         if (labelLink) labelLink.textContent = changeInfo.title;
         if (labelSpan) labelSpan.textContent = changeInfo.title;
         item.setAttribute('data-node-title', escapeHtml(changeInfo.title));
+        console.log('[applyIncrementalChangeToTree] 已修改标题:', changeInfo.title);
     }
     if (changeInfo.url !== undefined) {
         const link = item.querySelector('.tree-bookmark-link');
@@ -3811,11 +3870,8 @@ async function applyIncrementalChangeToTree(id, changeInfo) {
         }
         item.setAttribute('data-node-url', escapeHtml(changeInfo.url||''));
     }
-    // 添加修改类（如果还没有）
-    if (!item.classList.contains('tree-change-modified')) {
-        item.classList.add('tree-change-modified');
-    }
-    // 给该节点增加"modified"标识（轻量）
+
+    // 给该节点增加"modified"标识
     const badges = item.querySelector('.change-badges');
     if (badges && !badges.querySelector('.modified')) {
         badges.insertAdjacentHTML('beforeend', '<span class="change-badge modified">~</span>');

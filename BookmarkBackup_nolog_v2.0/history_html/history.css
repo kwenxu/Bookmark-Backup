@@ -2533,6 +2533,110 @@ a.tree-label.tree-bookmark-link:hover {
     margin: 6px 0;
 }
 
+/* ==================== 右键菜单横向布局 - 按钮并排 ==================== */
+
+.bookmark-context-menu.horizontal-layout {
+    display: flex;
+    flex-direction: row;
+    flex-wrap: wrap;
+    width: auto;
+    max-width: 95vw;
+    min-width: auto;
+    overflow-x: visible;
+    overflow-y: visible;
+    padding: 6px;
+    gap: 0;
+    align-items: center;
+    justify-content: flex-start;
+}
+
+.bookmark-context-menu.horizontal-layout .context-menu-item {
+    flex: 0 0 auto;
+    padding: 6px 10px;
+    white-space: nowrap;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    border-radius: 4px;
+    background: var(--bg-secondary);
+    border: 1px solid var(--border-color);
+    cursor: pointer;
+    transition: all 0.2s;
+    margin: 2px;
+}
+
+.bookmark-context-menu.horizontal-layout .context-menu-item:hover {
+    background: var(--accent-light);
+    border-color: var(--accent-primary);
+}
+
+.bookmark-context-menu.horizontal-layout .context-menu-separator {
+    display: none;
+    width: 0;
+    height: 0;
+}
+
+/* 分组分隔符 - 隐藏 */
+.bookmark-context-menu.horizontal-layout .context-menu-group-separator {
+    display: none;
+}
+
+/* ==================== 右键菜单按钮颜色样式 ==================== */
+
+/* Select按钮 - 蓝色 */
+.context-menu-item.color-blue {
+    background: #2196F3;
+    border-color: #1976D2;
+    color: white;
+}
+
+.context-menu-item.color-blue i {
+    color: white;
+}
+
+.context-menu-item.color-blue:hover {
+    background: #1976D2;
+    border-color: #1565C0;
+}
+
+[data-theme="dark"] .context-menu-item.color-blue {
+    background: #2196F3;
+    border-color: #42A5F5;
+    color: white;
+}
+
+[data-theme="dark"] .context-menu-item.color-blue:hover {
+    background: #42A5F5;
+    border-color: #64B5F6;
+}
+
+/* Delete按钮 - 红色 */
+.context-menu-item.color-red {
+    background: #f44336;
+    border-color: #d32f2f;
+    color: white;
+}
+
+.context-menu-item.color-red i {
+    color: white;
+}
+
+.context-menu-item.color-red:hover {
+    background: #d32f2f;
+    border-color: #c62828;
+}
+
+[data-theme="dark"] .context-menu-item.color-red {
+    background: #f44336;
+    border-color: #ef5350;
+    color: white;
+}
+
+[data-theme="dark"] .context-menu-item.color-red:hover {
+    background: #ef5350;
+    border-color: #f44336;
+}
+
 /* ==================== 拖拽样式 ==================== */
 
 .tree-item[draggable="true"] {

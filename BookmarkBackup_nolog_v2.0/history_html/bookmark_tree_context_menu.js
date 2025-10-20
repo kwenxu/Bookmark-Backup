@@ -17,6 +17,12 @@ function initContextMenu() {
     contextMenu.id = 'bookmark-context-menu';
     contextMenu.className = 'bookmark-context-menu';
     contextMenu.style.display = 'none';
+
+    // 如果默认是横向布局，添加 horizontal-layout 类
+    if (contextMenuHorizontal) {
+        contextMenu.classList.add('horizontal-layout');
+    }
+
     // 初始挂载到body，使用时会动态插入到目标节点附近
     document.body.appendChild(contextMenu);
     
@@ -69,30 +75,72 @@ function showContextMenu(e, node) {
     const nodeTitle = node.dataset.nodeTitle;
     const nodeUrl = node.dataset.nodeUrl;
     const isFolder = node.dataset.nodeType === 'folder';
-    
+
     console.log('[右键菜单] 显示菜单:', { nodeId, nodeTitle, isFolder });
-    
+
     // 构建菜单项
     const menuItems = buildMenuItems(nodeId, nodeTitle, nodeUrl, isFolder);
-    
+
     // 渲染菜单
     const lang = currentLang || 'zh_CN';
-    const menuHTML = menuItems.map(item => {
-        if (item.separator) {
-            return '<div class="context-menu-separator"></div>';
-        }
-        
-        const icon = item.icon ? `<i class="fas fa-${item.icon}"></i>` : '';
-        const disabled = item.disabled ? 'disabled' : '';
-        
-        return `
-            <div class="context-menu-item ${disabled}" data-action="${item.action}">
-                ${icon}
-                <span>${item.label}</span>
-            </div>
-        `;
-    }).join('');
-    
+    let menuHTML;
+
+    if (contextMenuHorizontal) {
+        // 横向布局：按分组渲染
+        const groups = {};
+        const groupOrder = [];
+
+        // 分组菜单项
+        menuItems.forEach(item => {
+            if (item.separator) return;
+
+            const groupName = item.group || 'default';
+            if (!groups[groupName]) {
+                groups[groupName] = [];
+                groupOrder.push(groupName);
+            }
+            groups[groupName].push(item);
+        });
+
+        // 生成HTML
+        const groupElements = groupOrder.map(groupName => {
+            const groupItems = groups[groupName];
+            return groupItems.map(item => {
+                const icon = item.icon ? `<i class="fas fa-${item.icon}"></i>` : '';
+                const disabled = item.disabled ? 'disabled' : '';
+                const colorClass = item.action === 'select-item' ? 'color-blue' : item.action === 'delete' ? 'color-red' : '';
+                const hiddenStyle = item.hidden ? 'style="display:none;"' : '';
+                return `
+                    <div class="context-menu-item ${disabled} ${colorClass}" data-action="${item.action}" ${hiddenStyle}>
+                        ${icon}
+                        <span>${item.label}</span>
+                    </div>
+                `;
+            }).join('');
+        }).join('');
+
+        menuHTML = groupElements;
+    } else {
+        // 纵向布局：原始格式
+        menuHTML = menuItems.map(item => {
+            if (item.separator) {
+                return '<div class="context-menu-separator"></div>';
+            }
+
+            const icon = item.icon ? `<i class="fas fa-${item.icon}"></i>` : '';
+            const disabled = item.disabled ? 'disabled' : '';
+            const colorClass = item.action === 'select-item' ? 'color-blue' : item.action === 'delete' ? 'color-red' : '';
+            const hiddenStyle = item.hidden ? 'style="display:none;"' : '';
+
+            return `
+                <div class="context-menu-item ${disabled} ${colorClass}" data-action="${item.action}" ${hiddenStyle}>
+                    ${icon}
+                    <span>${item.label}</span>
+                </div>
+            `;
+        }).filter(html => html !== '').join('');
+    }
+
     contextMenu.innerHTML = menuHTML;
     
     // 绑定点击事件
@@ -100,7 +148,15 @@ function showContextMenu(e, node) {
         item.addEventListener('click', (e) => {
             e.stopPropagation();
             const action = item.dataset.action;
-            
+
+            // 切换布局时，不关闭菜单
+            if (action === 'toggle-context-menu-layout') {
+                toggleContextMenuLayout();
+                // 重新渲染菜单以更新按钮文字
+                showContextMenu(e, currentContextNode);
+                return;
+            }
+
             handleMenuAction(action, nodeId, nodeTitle, nodeUrl, isFolder);
             hideContextMenu();
         });
@@ -144,45 +200,67 @@ function buildMenuItems(nodeId, nodeTitle, nodeUrl, isFolder) {
     
     // 普通单项菜单
     if (isFolder) {
-        // 文件夹菜单
+        // 文件夹菜单 - 按分组组织
         items.push(
-            { action: 'select-item', label: lang === 'zh_CN' ? '选择（批量操作）' : 'Select (Batch)', icon: 'check-square' },
+            // 选择组
+            { action: 'select-item', label: lang === 'zh_CN' ? '选择（批量操作）' : 'Select (Batch)', icon: 'check-square', group: 'select' },
+
+            // 编辑组 - 紧跟在select后面
+            { action: 'rename', label: lang === 'zh_CN' ? '重命名' : 'Rename', icon: 'edit', group: 'select' },
+            { action: 'cut', label: lang === 'zh_CN' ? '剪切' : 'Cut', icon: 'cut', group: 'select' },
+            { action: 'copy', label: lang === 'zh_CN' ? '复制' : 'Copy', icon: 'copy', group: 'select' },
+            { action: 'paste', label: lang === 'zh_CN' ? '粘贴' : 'Paste', icon: 'paste', disabled: !hasClipboard(), group: 'select', hidden: true },
             { separator: true },
-            { action: 'open-all', label: lang === 'zh_CN' ? '打开全部' : 'Open All Bookmarks', icon: 'folder-open' },
-            { action: 'open-all-tab-group', label: lang === 'zh_CN' ? '在新标签页组中打开全部' : 'Open All in New Tab Group', icon: 'object-group' },
-            { action: 'open-all-new-window', label: lang === 'zh_CN' ? '在新窗口中打开全部' : 'Open All in New Window', icon: 'window-restore' },
-            { action: 'open-all-incognito', label: lang === 'zh_CN' ? '在无痕窗口中打开全部' : 'Open All in Incognito Window', icon: 'user-secret' },
+
+            // 打开组
+            { action: 'open-all', label: lang === 'zh_CN' ? '打开全部' : 'Open All', icon: 'folder-open', group: 'open' },
+            { action: 'open-all-tab-group', label: lang === 'zh_CN' ? '标签页组' : 'Tab Group', icon: 'object-group', group: 'open' },
+            { action: 'open-all-new-window', label: lang === 'zh_CN' ? '新窗口' : 'New Window', icon: 'window-restore', group: 'open' },
+            { action: 'open-all-incognito', label: lang === 'zh_CN' ? '无痕窗口' : 'Incognito', icon: 'user-secret', group: 'open' },
             { separator: true },
-            { action: 'add-page', label: lang === 'zh_CN' ? '添加网页' : 'Add Page', icon: 'plus-circle' },
-            { action: 'add-folder', label: lang === 'zh_CN' ? '添加文件夹' : 'Add Folder', icon: 'folder-plus' },
+
+            // 新增组
+            { action: 'add-page', label: lang === 'zh_CN' ? '添加网页' : 'Add Page', icon: 'plus-circle', group: 'add' },
+            { action: 'add-folder', label: lang === 'zh_CN' ? '添加文件夹' : 'Add Folder', icon: 'folder-plus', group: 'add' },
             { separator: true },
-            { action: 'rename', label: lang === 'zh_CN' ? '重命名' : 'Rename', icon: 'edit' },
+
+            // 删除组
+            { action: 'delete', label: lang === 'zh_CN' ? '删除' : 'Delete', icon: 'trash-alt', group: 'delete' },
             { separator: true },
-            { action: 'cut', label: lang === 'zh_CN' ? '剪切' : 'Cut', icon: 'cut' },
-            { action: 'copy', label: lang === 'zh_CN' ? '复制' : 'Copy', icon: 'copy' },
-            { action: 'paste', label: lang === 'zh_CN' ? '粘贴' : 'Paste', icon: 'paste', disabled: !hasClipboard() },
-            { separator: true },
-            { action: 'delete', label: lang === 'zh_CN' ? '删除' : 'Delete', icon: 'trash-alt' }
+
+            // 设置组
+            { action: 'toggle-context-menu-layout', label: contextMenuHorizontal ? (lang === 'zh_CN' ? '纵向布局' : 'Vertical') : (lang === 'zh_CN' ? '横向布局' : 'Horizontal'), icon: 'exchange-alt', group: 'settings' }
         );
     } else {
-        // 书签菜单
+        // 书签菜单 - 按分组组织
         items.push(
-            { action: 'select-item', label: lang === 'zh_CN' ? '选择（批量操作）' : 'Select (Batch)', icon: 'check-square' },
+            // 选择组
+            { action: 'select-item', label: lang === 'zh_CN' ? '选择（批量操作）' : 'Select (Batch)', icon: 'check-square', group: 'select' },
+
+            // 编辑组 - 紧跟在select后面
+            { action: 'edit', label: lang === 'zh_CN' ? '编辑' : 'Edit', icon: 'edit', group: 'select' },
+            { action: 'cut', label: lang === 'zh_CN' ? '剪切' : 'Cut', icon: 'cut', group: 'select' },
+            { action: 'copy', label: lang === 'zh_CN' ? '复制' : 'Copy', icon: 'copy', group: 'select' },
+            { action: 'paste', label: lang === 'zh_CN' ? '粘贴' : 'Paste', icon: 'paste', disabled: !hasClipboard(), group: 'select', hidden: true },
             { separator: true },
-            { action: 'open', label: lang === 'zh_CN' ? '打开' : 'Open', icon: 'external-link-alt' },
-            { action: 'open-new-tab', label: lang === 'zh_CN' ? '在新标签页中打开' : 'Open in New Tab', icon: 'window-maximize' },
-            { action: 'open-new-window', label: lang === 'zh_CN' ? '在新窗口中打开' : 'Open in New Window', icon: 'window-restore' },
-            { action: 'open-incognito', label: lang === 'zh_CN' ? '在无痕窗口中打开' : 'Open in Incognito Window', icon: 'user-secret' },
+
+            // 打开组
+            { action: 'open', label: lang === 'zh_CN' ? '打开' : 'Open', icon: 'external-link-alt', group: 'open' },
+            { action: 'open-new-tab', label: lang === 'zh_CN' ? '新标签页' : 'New Tab', icon: 'window-maximize', group: 'open' },
+            { action: 'open-new-window', label: lang === 'zh_CN' ? '新窗口' : 'New Window', icon: 'window-restore', group: 'open' },
+            { action: 'open-incognito', label: lang === 'zh_CN' ? '无痕窗口' : 'Incognito', icon: 'user-secret', group: 'open' },
             { separator: true },
-            { action: 'edit', label: lang === 'zh_CN' ? '编辑' : 'Edit', icon: 'edit' },
+
+            // 链接组
+            { action: 'copy-url', label: lang === 'zh_CN' ? '复制链接' : 'Copy Link', icon: 'link', group: 'url' },
             { separator: true },
-            { action: 'cut', label: lang === 'zh_CN' ? '剪切' : 'Cut', icon: 'cut' },
-            { action: 'copy', label: lang === 'zh_CN' ? '复制' : 'Copy', icon: 'copy' },
-            { action: 'paste', label: lang === 'zh_CN' ? '粘贴' : 'Paste', icon: 'paste', disabled: !hasClipboard() },
+
+            // 删除组
+            { action: 'delete', label: lang === 'zh_CN' ? '删除' : 'Delete', icon: 'trash-alt', group: 'delete' },
             { separator: true },
-            { action: 'copy-url', label: lang === 'zh_CN' ? '复制链接地址' : 'Copy Link Address', icon: 'link' },
-            { separator: true },
-            { action: 'delete', label: lang === 'zh_CN' ? '删除' : 'Delete', icon: 'trash-alt' }
+
+            // 设置组
+            { action: 'toggle-context-menu-layout', label: contextMenuHorizontal ? (lang === 'zh_CN' ? '纵向布局' : 'Vertical') : (lang === 'zh_CN' ? '横向布局' : 'Horizontal'), icon: 'exchange-alt', group: 'settings' }
         );
     }
     
@@ -240,6 +318,26 @@ function hideContextMenu() {
     });
     
     currentContextNode = null;
+}
+
+// 显示粘贴按钮
+function showPasteButton() {
+    const pasteBtn = contextMenu.querySelector('[data-action="paste"]');
+    if (pasteBtn) {
+        pasteBtn.style.display = 'inline-flex';
+        pasteBtn.classList.remove('paste-hidden');
+        console.log('[右键菜单] 已显示粘贴按钮');
+    }
+}
+
+// 隐藏粘贴按钮
+function hidePasteButton() {
+    const pasteBtn = contextMenu.querySelector('[data-action="paste"]');
+    if (pasteBtn) {
+        pasteBtn.style.display = 'none';
+        pasteBtn.classList.add('paste-hidden');
+        console.log('[右键菜单] 已隐藏粘贴按钮');
+    }
 }
 
 // 检查是否有剪贴板内容
@@ -350,10 +448,12 @@ async function handleMenuAction(action, nodeId, nodeTitle, nodeUrl, isFolder) {
                 
             case 'cut':
                 await cutBookmark(nodeId, nodeTitle, isFolder);
+                showPasteButton();
                 break;
-                
+
             case 'copy':
                 await copyBookmark(nodeId, nodeTitle, isFolder);
+                showPasteButton();
                 break;
                 
             case 'paste':
@@ -367,7 +467,11 @@ async function handleMenuAction(action, nodeId, nodeTitle, nodeUrl, isFolder) {
             case 'delete':
                 await deleteBookmark(nodeId, nodeTitle, isFolder);
                 break;
-                
+
+            case 'toggle-context-menu-layout':
+                toggleContextMenuLayout();
+                break;
+
             default:
                 console.warn('[右键菜单] 未知操作:', action);
         }
@@ -2333,7 +2437,7 @@ function showBatchPanel() {
 }
 
 // 切换右键菜单布局（横向/纵向）
-let contextMenuHorizontal = false;
+let contextMenuHorizontal = true;  // 默认改为横向布局
 function toggleContextMenuLayout() {
     contextMenuHorizontal = !contextMenuHorizontal;
     
@@ -2360,12 +2464,21 @@ function toggleContextMenuLayout() {
 function restoreContextMenuLayout() {
     try {
         const savedLayout = localStorage.getItem('contextMenuLayout');
-        if (savedLayout === 'horizontal') {
+        if (savedLayout === 'vertical') {
+            // 用户曾经切换到纵向，恢复为纵向
+            contextMenuHorizontal = false;
+            const contextMenu = document.getElementById('bookmark-context-menu');
+            if (contextMenu) {
+                contextMenu.classList.remove('horizontal-layout');
+                console.log('[右键菜单] 恢复纵向布局');
+            }
+        } else {
+            // 默认为横向布局（包括首次访问）
             contextMenuHorizontal = true;
             const contextMenu = document.getElementById('bookmark-context-menu');
             if (contextMenu) {
                 contextMenu.classList.add('horizontal-layout');
-                console.log('[右键菜单] 恢复横向布局');
+                console.log('[右键菜单] 恢复/设置默认横向布局');
             }
         }
     } catch (e) {

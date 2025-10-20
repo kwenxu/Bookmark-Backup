@@ -113,29 +113,17 @@ const i18n = {
         'zh_CN': '当前 数量/结构 变化',
         'en': 'Current Changes'
     },
-    currentChangesViewDesc: {
-        'zh_CN': '查看未备份的书签变化详情'
-    },
     historyViewTitle: {
         'zh_CN': '备份历史记录',
         'en': 'Backup History'
-    },
-    historyViewDesc: {
-        'zh_CN': '查看所有备份记录及其详细变化'
     },
     additionsViewTitle: {
         'zh_CN': '书签添加记录',
         'en': 'Bookmark Additions'
     },
-    additionsViewDesc: {
-        'zh_CN': '按时间和文件夹分类查看新增书签'
-    },
     treeViewTitle: {
         'zh_CN': '书签树',
         'en': 'Bookmark Tree'
-    },
-    treeViewDesc: {
-        'zh_CN': '查看完整的书签结构及变动状态'
     },
     filterAll: {
         'zh_CN': '全部',
@@ -534,13 +522,9 @@ function applyLanguage() {
     document.getElementById('statBookmarksLabel').textContent = i18n.statBookmarks[currentLang];
     document.getElementById('statFoldersLabel').textContent = i18n.statFolders[currentLang];
     document.getElementById('currentChangesViewTitle').textContent = i18n.currentChangesViewTitle[currentLang];
-    document.getElementById('currentChangesViewDesc').textContent = i18n.currentChangesViewDesc[currentLang];
     document.getElementById('historyViewTitle').textContent = i18n.historyViewTitle[currentLang];
-    document.getElementById('historyViewDesc').textContent = i18n.historyViewDesc[currentLang];
     document.getElementById('additionsViewTitle').textContent = i18n.additionsViewTitle[currentLang];
-    document.getElementById('additionsViewDesc').textContent = i18n.additionsViewDesc[currentLang];
     document.getElementById('treeViewTitle').textContent = i18n.treeViewTitle[currentLang];
-    document.getElementById('treeViewDesc').textContent = i18n.treeViewDesc[currentLang];
     
     // 更新按钮文本
     const copyAllHistoryText = document.getElementById('copyAllHistoryText');

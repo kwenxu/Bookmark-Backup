@@ -637,6 +637,10 @@ function initializeUI() {
     updateUIForCurrentView();
 }
 
+// 用于防止Revert结果显示多次的标志
+let revertInProgress = false;
+let lastRevertMessageHandler = null;
+
 // 二次确认并触发撤销全部
 async function handleRevertAll(source) {
     try {
@@ -647,30 +651,122 @@ async function handleRevertAll(source) {
         const second = confirm(i18n.revertConfirmSecondary[currentLang]);
         if (!second) return;
 
-        // 发送到 background 执行撤销
-        const response = await new Promise(resolve => {
-            browserAPI.runtime.sendMessage({ action: 'revertAllToLastBackup' }, (res) => {
-                resolve(res || { success: false, error: 'no response' });
-            });
+        // 防止多次触发
+        if (revertInProgress) {
+            console.warn('[handleRevertAll] Revert已在进行中，忽略本次请求');
+            return;
+        }
+        revertInProgress = true;
+
+        // 立即发送消息，不等待响应（异步处理）
+        // 这样UI会立刻响应，对话框关闭
+        browserAPI.runtime.sendMessage({
+            action: 'revertAllToLastBackup',
+            fromHistoryViewer: true
+        }, (response) => {
+            // 只处理一次响应
+            if (revertInProgress && response) {
+                handleRevertResponse(response);
+                revertInProgress = false;
+            }
         });
 
-        if (response && response.success) {
-            showToast(i18n.revertSuccess[currentLang]);
-            // 刷新状态卡片与角标：background 会更新缓存与角标，这里刷新视图
+        console.log('[handleRevertAll] 已发送revert请求，立即返回');
+
+    } catch (error) {
+        revertInProgress = false;
+        showRevertToast(false, error && error.message ? error.message : String(error));
+    }
+}
+
+// 处理Revert的响应（只显示一次提示）
+async function handleRevertResponse(response) {
+    try {
+        const isSuccess = response && response.success;
+        const message = isSuccess
+            ? i18n.revertSuccess[currentLang]
+            : (i18n.revertFailed[currentLang] + (response && response.error ? response.error : 'Unknown error'));
+
+        // 显示单一的提示（成功绿色，失败红色）
+        showRevertToast(isSuccess, message);
+
+        // 如果成功，刷新视图
+        if (isSuccess) {
             try {
-                await refreshData();
-                await renderTreeView(true);
-                await renderCurrentChangesView(true);
+                // 延迟刷新，让用户先看到成功提示
+                await new Promise(resolve => setTimeout(resolve, 500));
+                await loadAllData({ skipRender: true });
+
+                // 只刷新当前视图，不显示额外提示
+                if (currentView === 'current-changes') {
+                    await renderCurrentChangesViewWithRetry(1, true);
+                } else if (currentView === 'tree') {
+                    await renderTreeView(true);
+                } else if (currentView === 'history') {
+                    await renderHistoryView();
+                } else if (currentView === 'additions') {
+                    await renderAdditionsView();
+                }
             } catch (e) {
-                // 忽略渲染异常
+                console.error('[handleRevertResponse] 渲染异常:', e);
             }
-        } else {
-            const msg = response && response.error ? response.error : 'Unknown error';
-            showToast(i18n.revertFailed[currentLang] + msg);
         }
     } catch (error) {
-        showToast(i18n.revertFailed[currentLang] + (error && error.message ? error.message : String(error)));
+        console.error('[handleRevertResponse] 处理响应异常:', error);
     }
+}
+
+// 显示Revert的提示（单一提示，成功绿色，失败红色）
+function showRevertToast(isSuccess, message) {
+    // 移除之前的提示（只保留一个）
+    const existingToast = document.querySelector('.revert-toast');
+    if (existingToast) {
+        existingToast.remove();
+    }
+
+    // 创建新的提示
+    const toast = document.createElement('div');
+    toast.className = 'revert-toast';
+    toast.style.cssText = `
+        position: fixed;
+        bottom: 20px;
+        right: 20px;
+        padding: 12px 16px;
+        border-radius: 8px;
+        font-size: 14px;
+        z-index: 10000;
+        animation: slideUp 0.3s ease;
+        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+        max-width: 300px;
+        word-break: break-word;
+        display: flex;
+        align-items: center;
+        gap: 8px;
+    `;
+
+    if (isSuccess) {
+        toast.style.backgroundColor = '#d4edda';
+        toast.style.color = '#155724';
+        toast.style.border = '1px solid #c3e6cb';
+        toast.innerHTML = `<i class="fas fa-check-circle" style="color: #28a745;"></i><span>${message}</span>`;
+    } else {
+        toast.style.backgroundColor = '#f8d7da';
+        toast.style.color = '#721c24';
+        toast.style.border = '1px solid #f5c6cb';
+        toast.innerHTML = `<i class="fas fa-exclamation-circle" style="color: #dc3545;"></i><span>${message}</span>`;
+    }
+
+    document.body.appendChild(toast);
+
+    // 3秒后自动移除
+    setTimeout(() => {
+        toast.style.animation = 'slideDown 0.3s ease';
+        setTimeout(() => {
+            if (toast.parentNode) {
+                toast.remove();
+            }
+        }, 300);
+    }, 3000);
 }
 
 // 更新UI以反映当前视图
@@ -1947,10 +2043,11 @@ function renderStructuralChangesSummary(changes, lang) {
         html += '<div class="change-group">';
         html += `<div class="change-type"><i class="fas fa-edit"></i> ${isZh ? 'URL修改' : 'URL Modified'} (${changes.modified.length})</div>`;
         changes.modified.slice(0, 5).forEach(item => {
-            html += `<div class="change-item">🔖 "${escapeHtml(item.title)}"<br>`;
-            html += `<span style="margin-left: 20px; font-size: 0.85em; color: var(--text-tertiary); word-break: break-all;">`;
-            html += `<span style="color: #dc3545;">- ${escapeHtml(item.oldUrl)}</span><br>`;
-            html += `<span style="color: #28a745;">+ ${escapeHtml(item.newUrl)}</span>`;
+            html += `<div class="change-item" style="color: #fd7e14; font-weight: 500;">🔖 "${escapeHtml(item.title)}" <span style="color: #fd7e14; font-weight: 600;">~</span><br>`;
+            html += `<span style="margin-left: 20px; font-size: 0.85em; color: #fd7e14; word-break: break-all;">`;
+            html += `<span style="color: #fd7e14;">Bookmark URL:</span><br>`;
+            html += `<span style="color: #fd7e14; text-decoration: line-through; opacity: 0.7;">- ${escapeHtml(item.oldUrl)}</span><br>`;
+            html += `<span style="color: #fd7e14; font-weight: 600;">+ ${escapeHtml(item.newUrl)}</span>`;
             html += `</span></div>`;
         });
         if (changes.modified.length > 5) {

@@ -1307,8 +1307,8 @@ function updateSyncHistory(passedLang) { // Added passedLang parameter
                     // 创建日期标签 - 椭圆形状
                     const dateLabel = document.createElement('div');
                     
-                    // 根据语言设置不同的位置，使其与"数量/结构"标题居中对齐
-                    const leftPosition = currentLang === 'en' ? '51.2%' : '53%';
+                    // 现在只有两栏，日期标签放在两栏之间的中间位置
+                    const leftPosition = '50%';
                     
                     dateLabel.style.cssText = `
                         position: absolute;
@@ -1578,7 +1578,7 @@ function updateSyncHistory(passedLang) { // Added passedLang parameter
 
                 // 只保留两栏的样式
                 let timeColStyle = "flex: 1; text-align: center;";
-                let qtyColStyle = "flex: 1; text-align: center;";
+                let qtyColStyle = "flex: 1; text-align: center; padding-right: 20px;";
 
                 const detailsBtn = `
                     <button class="details-btn" data-record-time="${record.time}" title="${currentLang === 'en' ? 'View Details' : '查看详情'}" style="position: absolute; right: 3.2px; top: 50%; transform: translateY(-50%); padding: 0; margin: 0; cursor: pointer; background: none; border: none; color: #999; transition: color 0.2s; width: auto; height: auto; display: flex; align-items: center; justify-content: center;">

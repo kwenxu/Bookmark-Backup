@@ -34,6 +34,9 @@ let lastAnalysisSignature = null;
 // 显式移动集合（基于 onMoved 事件），用于同级移动标识，设置短期有效期
 let explicitMovedIds = new Map(); // id -> expiryTimestamp
 
+// 详情面板相关全局变量
+let currentDetailRecordTime = null; // 当前打开的详情面板对应的记录时间
+
 // =============================================================================
 // 辅助函数 - URL 处理
 // =============================================================================
@@ -329,13 +332,22 @@ document.addEventListener('DOMContentLoaded', async () => {
     // 从 URL 参数检查是否直接跳转到详情视图
     const urlParams = new URLSearchParams(window.location.search);
     const recordTime = urlParams.get('record');
+    const viewParam = urlParams.get('view');
+    console.log('[URL参数] 完整URL:', window.location.href);
+    console.log('[URL参数] recordTime:', recordTime, 'viewParam:', viewParam);
     
     // 恢复上次的视图（在初始化UI之前）
     try {
-        const lastView = localStorage.getItem('lastActiveView');
-        if (lastView && ['current-changes', 'history', 'additions', 'tree'].includes(lastView)) {
-            currentView = lastView;
-            console.log('[初始化] 恢复上次视图:', lastView);
+        // 如果URL中指定了view参数，优先使用
+        if (viewParam && ['current-changes', 'history', 'additions', 'tree'].includes(viewParam)) {
+            currentView = viewParam;
+            console.log('[初始化] 从URL参数设置视图:', viewParam);
+        } else {
+            const lastView = localStorage.getItem('lastActiveView');
+            if (lastView && ['current-changes', 'history', 'additions', 'tree'].includes(lastView)) {
+                currentView = lastView;
+                console.log('[初始化] 恢复上次视图:', lastView);
+            }
         }
     } catch (e) {
         console.error('[初始化] 恢复视图失败:', e);
@@ -379,6 +391,17 @@ document.addEventListener('DOMContentLoaded', async () => {
     console.log('[初始化] 加载基础数据...');
     await loadAllData();
     
+    // 如果有 recordTime 参数，立即打开详情弹窗（在UI渲染之前）
+    if (recordTime) {
+        console.log('[初始化] 快速打开详情面板，recordTime:', recordTime);
+        const record = syncHistory.find(r => r.time == recordTime);
+        if (record) {
+            console.log('[初始化] 找到记录，立即打开详情面板');
+            // 立即打开详情面板，不等待UI渲染
+            setTimeout(() => showDetailModal(record), 0);
+        }
+    }
+    
     // 使用智能等待：尝试渲染，如果数据不完整则等待后重试
     // 初始化时强制刷新缓存，确保显示最新数据
     console.log('[初始化] 开始渲染当前视图:', currentView);
@@ -396,14 +419,6 @@ document.addEventListener('DOMContentLoaded', async () => {
         preloadCommonIcons()
     ]).then(() => {
         console.log('[初始化] 所有资源预加载完成');
-        
-        // 如果有 recordTime 参数，直接打开详情弹窗
-        if (recordTime) {
-            const record = syncHistory.find(r => r.time === recordTime);
-            if (record) {
-                showDetailModal(record);
-            }
-        }
     }).catch(error => {
         console.error('[初始化] 预加载失败:', error);
     });
@@ -4417,6 +4432,9 @@ function showDetailModal(record) {
     const modal = document.getElementById('detailModal');
     const body = document.getElementById('modalBody');
     
+    // 保存当前打开的记录时间，用于关闭时滚动
+    currentDetailRecordTime = record.time;
+    
     // 显示加载状态
     body.innerHTML = `<div class="loading">${i18n.loading[currentLang]}</div>`;
     modal.classList.add('show');
@@ -4444,6 +4462,19 @@ function showDetailModal(record) {
 
 function closeModal() {
     document.getElementById('detailModal').classList.remove('show');
+    
+    // 关闭时，如果有打开的记录，滚动到该记录并使其居中
+    if (currentDetailRecordTime) {
+        // 延迟执行以确保DOM已更新
+        setTimeout(() => {
+            const recordElement = document.querySelector(`[data-record-time="${currentDetailRecordTime}"]`);
+            if (recordElement) {
+                // 滚动到该元素并使其在视口中央
+                recordElement.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            }
+            currentDetailRecordTime = null;
+        }, 100);
+    }
 }
 
 // 生成详情内容（异步）

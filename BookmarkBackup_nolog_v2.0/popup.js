@@ -1145,6 +1145,20 @@ function updateSyncHistory(passedLang) { // Added passedLang parameter
         // 强制隐藏横向滚动条
         historyList.style.overflowX = 'hidden';
 
+        // 为详情按钮添加全局事件委托
+        historyList.addEventListener('click', (e) => {
+            if (e.target.closest('.details-btn')) {
+                const btn = e.target.closest('.details-btn');
+                const recordTime = btn.getAttribute('data-record-time');
+                console.log('[详情按钮委托] 点击，recordTime:', recordTime);
+                if (recordTime) {
+                    const historyPageUrl = chrome.runtime.getURL('history_html/history.html') + `?view=history&record=${recordTime}`;
+                    console.log('[详情按钮委托] 打开URL:', historyPageUrl);
+                    window.open(historyPageUrl, '_blank');
+                }
+            }
+        });
+
         // 添加动态内容的翻译
         const dynamicTextStrings = {
             'bookmarksText': {
@@ -1584,13 +1598,22 @@ function updateSyncHistory(passedLang) { // Added passedLang parameter
                     statusColStyle = "flex: 1; text-align: center; padding-left: 0px;"; // 中文版状态列，占比2
                 }
 
+                const detailsBtn = `
+                    <button class="details-btn" data-record-time="${record.time}" title="${currentLang === 'en' ? 'View Details' : '查看详情'}" style="position: absolute; right: 0px; top: 50%; transform: translateY(-50%); padding: 0; margin: 0; cursor: pointer; background: none; border: none; color: #999; transition: color 0.2s; width: auto; height: auto; display: flex; align-items: center; justify-content: center;">
+                        <i class="fas fa-info-circle" style="font-size: 18px;"></i>
+                    </button>
+                `;
+
                 historyItem.innerHTML = `
                     <div class="history-item-time" style="${timeColStyle}">
                         ${formattedTime}
                         ${noteHtml}
                         ${addNoteButton}
                     </div>
-                    <div class="history-item-count" style="${qtyColStyle}">${bookmarkStatsHTML}</div>
+                    <div class="history-item-count" style="${qtyColStyle}; display: flex; align-items: center; justify-content: center; position: relative;">
+                        <div style="flex: 1; text-align: center;">${bookmarkStatsHTML}</div>
+                        ${detailsBtn}
+                    </div>
                     <div class="history-item-status ${statusClass}" style="${statusColStyle}">${statusHTML}</div>
                 `;
                 historyList.appendChild(historyItem);

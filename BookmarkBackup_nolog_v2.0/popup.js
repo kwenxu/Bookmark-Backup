@@ -1581,7 +1581,7 @@ function updateSyncHistory(passedLang) { // Added passedLang parameter
                 let qtyColStyle = "flex: 1; text-align: center;";
 
                 const detailsBtn = `
-                    <button class="details-btn" data-record-time="${record.time}" title="${currentLang === 'en' ? 'View Details' : '查看详情'}" style="position: absolute; right: 10px; top: 50%; transform: translateY(-50%); padding: 0; margin: 0; cursor: pointer; background: none; border: none; color: #999; transition: color 0.2s; width: auto; height: auto; display: flex; align-items: center; justify-content: center;">
+                    <button class="details-btn" data-record-time="${record.time}" title="${currentLang === 'en' ? 'View Details' : '查看详情'}" style="position: absolute; right: 3.2px; top: 50%; transform: translateY(-50%); padding: 0; margin: 0; cursor: pointer; background: none; border: none; color: #999; transition: color 0.2s; width: auto; height: auto; display: flex; align-items: center; justify-content: center;">
                         <i class="fas fa-info-circle" style="font-size: 18px;"></i>
                     </button>
                 `;

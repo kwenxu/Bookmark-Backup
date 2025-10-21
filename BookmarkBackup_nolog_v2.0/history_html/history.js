@@ -2663,7 +2663,7 @@ function renderHistoryView() {
             : '<i class="fas fa-cloud-download-alt"></i>';
         const directionText = record.direction === 'upload'
             ? (currentLang === 'zh_CN' ? '上传' : 'Upload')
-            : (currentLang === 'zh_CN' ? '下载' : 'Download');
+            : (currentLang === 'zh_CN' ? '本地' : 'Local');
 
         // 构建提交项
         return `
@@ -2699,9 +2699,9 @@ function renderHistoryView() {
                         ${directionIcon}
                         ${directionText}
                     </span>
+                    ${renderCommitStatsInline(changes)}
                     <span class="commit-fingerprint" title="提交指纹号">#${fingerprint}</span>
                 </div>
-                ${renderCommitStats(changes)}
             </div>
         `;
     }).join('');
@@ -2903,6 +2903,69 @@ function renderCommitStats(changes) {
     }
 
     return `<div class="commit-stats">${parts.join('')}</div>`;
+}
+
+// 用于在中间行显示的内联变化信息
+function renderCommitStatsInline(changes) {
+    if (changes.isFirst) {
+        return `<span class="stat-badge">${currentLang === 'zh_CN' ? '首次备份' : 'First Backup'}</span>`;
+    }
+
+    // 使用bookmarkStats的数据来判断是否有变化
+    if (changes.hasNoChange) {
+        return `
+            <span class="stat-badge no-change">
+                <i class="fas fa-check-circle" style="color: var(--success);"></i>
+                ${currentLang === 'zh_CN' ? '无变化' : 'No Changes'}
+            </span>
+        `;
+    }
+
+    const parts = [];
+
+    // 显示数量变化
+    if (changes.hasNumericalChange) {
+        const bookmarkParts = [];
+        const folderParts = [];
+
+        if (changes.bookmarkDiff !== 0) {
+            const bookmarkClass = changes.bookmarkDiff > 0 ? 'added' : 'deleted';
+            const bookmarkLabel = currentLang === 'zh_CN' ? '书签' : 'BKM';
+            bookmarkParts.push(`<span class="stat-label">${bookmarkLabel}</span> <span class="stat-color ${bookmarkClass}">${changes.bookmarkDiff > 0 ? '+' : ''}${changes.bookmarkDiff}</span>`);
+        }
+
+        if (changes.folderDiff !== 0) {
+            const folderClass = changes.folderDiff > 0 ? 'added' : 'deleted';
+            const folderLabel = currentLang === 'zh_CN' ? '文件夹' : 'FLD';
+            folderParts.push(`<span class="stat-label">${folderLabel}</span> <span class="stat-color ${folderClass}">${changes.folderDiff > 0 ? '+' : ''}${changes.folderDiff}</span>`);
+        }
+
+        const quantityText = [...bookmarkParts, ...folderParts].join(' ');
+        parts.push(`<span class="stat-badge quantity">${quantityText}</span>`);
+    }
+
+    // 显示结构变化的具体类型
+    if (changes.bookmarkMoved) {
+        parts.push(`<span class="stat-badge struct"><i class="fas fa-arrows-alt"></i> ${currentLang === 'zh_CN' ? '书签移动' : 'BKM Moved'}</span>`);
+    }
+
+    if (changes.folderMoved) {
+        parts.push(`<span class="stat-badge struct"><i class="fas fa-arrows-alt"></i> ${currentLang === 'zh_CN' ? '文件夹移动' : 'FLD Moved'}</span>`);
+    }
+
+    if (changes.bookmarkModified) {
+        parts.push(`<span class="stat-badge struct"><i class="fas fa-edit"></i> ${currentLang === 'zh_CN' ? '书签修改' : 'BKM Mod'}</span>`);
+    }
+
+    if (changes.folderModified) {
+        parts.push(`<span class="stat-badge struct"><i class="fas fa-edit"></i> ${currentLang === 'zh_CN' ? '文件夹修改' : 'FLD Mod'}</span>`);
+    }
+
+    if (parts.length === 0) {
+        parts.push(`<span class="stat-badge no-change">${currentLang === 'zh_CN' ? '无变化' : 'No Changes'}</span>`);
+    }
+
+    return parts.join('');
 }
 
 // =============================================================================

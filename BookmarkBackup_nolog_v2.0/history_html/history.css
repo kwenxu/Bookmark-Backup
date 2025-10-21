@@ -523,6 +523,54 @@ body {
     color: var(--git-modified);
 }
 
+.stat-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 2px 8px;
+    border-radius: 10px;
+    font-size: 11px;
+    font-weight: 500;
+    background: var(--bg-tertiary);
+    color: var(--text-secondary);
+    white-space: nowrap;
+}
+
+.stat-badge.quantity {
+    background: var(--bg-tertiary);
+    color: var(--text-secondary);
+    border: 1px solid var(--border-color);
+}
+
+.stat-color {
+    font-weight: 600;
+}
+
+.stat-color.added {
+    color: var(--git-added);
+}
+
+.stat-color.deleted {
+    color: var(--git-deleted);
+}
+
+.stat-label {
+    font-size: 10px;
+    font-weight: 600;
+    color: var(--text-tertiary);
+    text-transform: uppercase;
+}
+
+.stat-badge.struct {
+    background: var(--git-modified);
+    color: #ffffff;
+}
+
+.stat-badge.no-change {
+    background: var(--success-light);
+    color: var(--success);
+}
+
 .commit-note {
     margin-top: 8px;
     padding: 8px 12px;

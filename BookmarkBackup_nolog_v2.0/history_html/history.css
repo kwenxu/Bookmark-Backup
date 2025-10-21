@@ -576,6 +576,9 @@ body {
     background: var(--bg-tertiary);
     color: var(--text-secondary);
     border: 1px solid var(--border-color);
+    padding: 4px 12px;
+    font-size: 13px;
+    font-weight: 600;
 }
 
 .stat-color {
@@ -599,6 +602,16 @@ body {
 
 .stat-badge.struct {
     background: var(--git-modified);
+    color: #ffffff;
+}
+
+.stat-badge.struct.moved {
+    background: #2196F3;
+    color: #ffffff;
+}
+
+.stat-badge.struct.modified {
+    background: #FF9800;
     color: #ffffff;
 }
 

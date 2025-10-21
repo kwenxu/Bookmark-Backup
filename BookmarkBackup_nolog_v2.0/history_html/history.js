@@ -2702,6 +2702,7 @@ function renderHistoryView() {
                     <div class="commit-time">
                         <i class="fas fa-clock"></i> ${time}
                     </div>
+                    ${renderCommitStatsInline(changes)}
                     <span class="commit-badge ${isAuto ? 'auto' : 'manual'}">
                         <i class="fas ${isAuto ? 'fa-robot' : 'fa-hand-pointer'}"></i>
                         ${isAuto ? i18n.autoBackup[currentLang] : i18n.manualBackup[currentLang]}
@@ -2710,7 +2711,6 @@ function renderHistoryView() {
                         ${directionIcon}
                         ${directionText}
                     </span>
-                    ${renderCommitStatsInline(changes)}
                     <span class="commit-fingerprint" title="提交指纹号">#${fingerprint}</span>
                 </div>
             </div>
@@ -2937,13 +2937,13 @@ function renderCommitStatsInline(changes) {
         parts.push(`<span class="stat-badge quantity">${quantityText}</span>`);
     }
 
-    // 显示结构变化的具体类型
+    // 显示结构变化的具体类型 - 使用不同的颜色
     if (changes.bookmarkMoved || changes.folderMoved) {
-        parts.push(`<span class="stat-badge struct"><i class="fas fa-arrows-alt"></i> ${currentLang === 'zh_CN' ? '移动' : 'Moved'}</span>`);
+        parts.push(`<span class="stat-badge struct moved"><i class="fas fa-arrows-alt"></i> ${currentLang === 'zh_CN' ? '移动' : 'Moved'}</span>`);
     }
 
     if (changes.bookmarkModified || changes.folderModified) {
-        parts.push(`<span class="stat-badge struct"><i class="fas fa-edit"></i> ${currentLang === 'zh_CN' ? '修改' : 'Modified'}</span>`);
+        parts.push(`<span class="stat-badge struct modified"><i class="fas fa-edit"></i> ${currentLang === 'zh_CN' ? '修改' : 'Modified'}</span>`);
     }
 
     if (parts.length === 0) {

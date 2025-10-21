@@ -627,6 +627,7 @@ function initializeUI() {
 // 用于防止Revert结果显示多次的标志
 let revertInProgress = false;
 let lastRevertMessageHandler = null;
+let revertOverlayTimeout = null;
 
 // 二次确认并触发撤销全部
 async function handleRevertAll(source) {
@@ -645,61 +646,96 @@ async function handleRevertAll(source) {
         }
         revertInProgress = true;
 
-        // 立即发送消息，不等待响应（异步处理）
-        // 这样UI会立刻响应，对话框关闭
+        // 显示全屏覆盖层（隐藏下面的所有刷新过程）
+        showRevertOverlay();
+
+        // 发送消息到后台
         browserAPI.runtime.sendMessage({
             action: 'revertAllToLastBackup',
             fromHistoryViewer: true
         }, (response) => {
-            // 只处理一次响应
             if (revertInProgress && response) {
-                handleRevertResponse(response);
-                revertInProgress = false;
+                const isSuccess = response && response.success;
+                const message = isSuccess
+                    ? i18n.revertSuccess[currentLang]
+                    : (i18n.revertFailed[currentLang] + (response && response.error ? response.error : 'Unknown error'));
+
+                // 设置超时处理完成
+                if (revertOverlayTimeout) clearTimeout(revertOverlayTimeout);
+                revertOverlayTimeout = setTimeout(async () => {
+                    // 隐藏覆盖层
+                    hideRevertOverlay();
+                    revertInProgress = false;
+                    revertOverlayTimeout = null;
+
+                    // 显示最终结果提示
+                    showRevertToast(isSuccess, message);
+
+                    // 如果成功，一次性刷新当前视图
+                    if (isSuccess) {
+                        console.log('[handleRevertAll] 撤销成功，进行一次性刷新');
+                        try {
+                            await loadAllData({ skipRender: true });
+
+                            if (currentView === 'current-changes') {
+                                await renderCurrentChangesViewWithRetry(1, true);
+                            } else if (currentView === 'tree') {
+                                await renderTreeView(true);
+                            } else if (currentView === 'history') {
+                                await renderHistoryView();
+                            } else if (currentView === 'additions') {
+                                await renderAdditionsView();
+                            }
+                        } catch (e) {
+                            console.error('[handleRevertAll] 刷新异常:', e);
+                        }
+                    }
+                }, 400); // 极速响应 400ms
             }
         });
 
-        console.log('[handleRevertAll] 已发送revert请求，立即返回');
+        console.log('[handleRevertAll] 已发送revert请求');
 
     } catch (error) {
         revertInProgress = false;
+        hideRevertOverlay();
         showRevertToast(false, error && error.message ? error.message : String(error));
     }
 }
 
-// 处理Revert的响应（只显示一次提示）
-async function handleRevertResponse(response) {
-    try {
-        const isSuccess = response && response.success;
-        const message = isSuccess
-            ? i18n.revertSuccess[currentLang]
-            : (i18n.revertFailed[currentLang] + (response && response.error ? response.error : 'Unknown error'));
+// 显示撤销覆盖层
+function showRevertOverlay() {
+    const overlay = document.getElementById('revertOverlay');
+    const mainContainer = document.querySelector('.main-container');
 
-        // 显示单一的提示（成功绿色，失败红色）
-        showRevertToast(isSuccess, message);
-
-        // 如果成功，刷新视图
-        if (isSuccess) {
-            try {
-                // 延迟刷新，让用户先看到成功提示
-                await new Promise(resolve => setTimeout(resolve, 500));
-                await loadAllData({ skipRender: true });
-
-                // 只刷新当前视图，不显示额外提示
-                if (currentView === 'current-changes') {
-                    await renderCurrentChangesViewWithRetry(1, true);
-                } else if (currentView === 'tree') {
-                    await renderTreeView(true);
-                } else if (currentView === 'history') {
-                    await renderHistoryView();
-                } else if (currentView === 'additions') {
-                    await renderAdditionsView();
-                }
-            } catch (e) {
-                console.error('[handleRevertResponse] 渲染异常:', e);
-            }
+    if (overlay) {
+        overlay.style.display = 'flex';
+        const text = document.getElementById('revertOverlayText');
+        if (text) {
+            text.textContent = currentLang === 'zh_CN' ? '正在处理中...' : 'Processing...';
         }
-    } catch (error) {
-        console.error('[handleRevertResponse] 处理响应异常:', error);
+    }
+
+    // 隐藏主内容区域，防止任何闪烁
+    if (mainContainer) {
+        mainContainer.style.opacity = '0';
+        mainContainer.style.pointerEvents = 'none';
+    }
+}
+
+// 隐藏撤销覆盖层
+function hideRevertOverlay() {
+    const overlay = document.getElementById('revertOverlay');
+    const mainContainer = document.querySelector('.main-container');
+
+    if (overlay) {
+        overlay.style.display = 'none';
+    }
+
+    // 恢复主内容区域
+    if (mainContainer) {
+        mainContainer.style.opacity = '1';
+        mainContainer.style.pointerEvents = 'auto';
     }
 }
 
@@ -4650,13 +4686,19 @@ function toggleLanguage() {
 
 function handleStorageChange(changes, namespace) {
     if (namespace !== 'local') return;
-    
+
     console.log('[存储监听] 检测到变化:', Object.keys(changes));
-    
+
+    // 如果正在撤销过程中，不执行自动刷新，让后台完全完成
+    if (revertInProgress) {
+        console.log('[存储监听] 正在撤销过程中，暂时跳过自动刷新');
+        return;
+    }
+
     // 检查相关数据是否变化 - 实时更新
     if (changes.syncHistory || changes.lastSyncTime || changes.lastBookmarkData || changes.lastSyncOperations) {
         console.log('[存储监听] 书签数据变化，立即重新加载...');
-        
+
         // 清除缓存，强制重新加载
         cachedCurrentChanges = null;
         cachedBookmarkTree = null;
@@ -4664,71 +4706,71 @@ function handleStorageChange(changes, namespace) {
         cachedOldTree = null;
         lastTreeFingerprint = null;
         jsonDiffRendered = false; // 重置JSON渲染标志
-        
+
         // 立即重新加载数据
         loadAllData({ skipRender: true }).then(async () => {
             console.log('[存储监听] 数据重新加载完成');
-            
+
             // 如果当前在 current-changes 视图，使用重试机制刷新
             if (currentView === 'current-changes') {
                 console.log('[存储监听] 刷新当前变化视图（带重试，强制刷新）');
                 await renderCurrentChangesViewWithRetry(3, true);
             }
-            
+
             // 如果当前在 tree 视图，刷新树视图（强制刷新）
             if (currentView === 'tree') {
                 console.log('[存储监听] 刷新书签树与JSON视图');
                 await renderTreeView(true);
             }
-            
+
             // 如果当前在 additions 视图，刷新添加记录视图
             if (currentView === 'additions') {
                 console.log('[存储监听] 刷新书签添加记录视图');
                 await renderAdditionsView();
             }
-            
+
             // 如果当前在 history 视图，刷新历史记录视图
             if (currentView === 'history') {
                 console.log('[存储监听] 刷新历史记录视图');
                 await renderHistoryView();
             }
         });
-        
+
         // 并行预加载其他视图
         setTimeout(() => {
             preloadAllViews();
         }, 500);
     }
-    
+
     // 主题变化（只在没有覆盖设置时跟随主UI）
     if (changes.currentTheme && !hasThemeOverride()) {
         const newTheme = changes.currentTheme.newValue;
         console.log('[存储监听] 主题变化，跟随主UI:', newTheme);
         currentTheme = newTheme;
         document.documentElement.setAttribute('data-theme', currentTheme);
-        
+
         // 更新主题切换按钮图标
         const icon = document.querySelector('#themeToggle i');
         if (icon) {
             icon.className = currentTheme === 'dark' ? 'fas fa-sun' : 'fas fa-moon';
         }
     }
-    
+
     // 语言变化（只在没有覆盖设置时跟随主UI）
     if (changes.preferredLang && !hasLangOverride()) {
         const newLang = changes.preferredLang.newValue;
         console.log('[存储监听] 语言变化，跟随主UI:', newLang);
         currentLang = newLang;
-        
+
         // 更新语言切换按钮文本
         const langText = document.querySelector('#langToggle .lang-text');
         if (langText) {
             langText.textContent = currentLang === 'zh_CN' ? 'EN' : '中';
         }
-        
+
         // 应用新语言到所有UI元素
         applyLanguage();
-        
+
         // 重新渲染当前视图以应用语言
         renderCurrentView();
     }

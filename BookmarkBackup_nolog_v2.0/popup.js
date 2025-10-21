@@ -1528,17 +1528,11 @@ function updateSyncHistory(passedLang) { // Added passedLang parameter
                             const structDiffParts = [];
                             
                             // 根据具体的结构变化类型构建标签
-                            if (bookmarkMoved) {
-                                structDiffParts.push(`<span style="color: #FF9800; font-weight: bold;">${currentLang === 'en' ? 'BKM moved' : '书签移动'}</span>`);
+                            if (bookmarkMoved || folderMoved) {
+                                structDiffParts.push(`<span style="color: #FF9800; font-weight: bold;">${currentLang === 'en' ? 'Moved' : '移动'}</span>`);
                             }
-                            if (folderMoved) {
-                                structDiffParts.push(`<span style="color: #2196F3; font-weight: bold;">${currentLang === 'en' ? 'FLD moved' : '文件夹移动'}</span>`);
-                            }
-                            if (bookmarkModified) {
-                                structDiffParts.push(`<span style="color: #FF9800; font-weight: bold;">${currentLang === 'en' ? 'BKM modified' : '书签修改'}</span>`);
-                            }
-                            if (folderModified) {
-                                structDiffParts.push(`<span style="color: #2196F3; font-weight: bold;">${currentLang === 'en' ? 'FLD modified' : '文件夹修改'}</span>`);
+                            if (bookmarkModified || folderModified) {
+                                structDiffParts.push(`<span style="color: #2196F3; font-weight: bold;">${currentLang === 'en' ? 'Modified' : '修改'}</span>`);
                             }
                             
                             const separator = currentLang === 'en' ? '<span style="display:inline-block; width:4px;"></span>|<span style="display:inline-block; width:4px;"></span>' : '、';
@@ -1943,17 +1937,11 @@ function updateBookmarkCountDisplay(passedLang) {
                                 if (hasStructuralChanges) {
                                     const structuralParts = [];
                                     
-                                    if (bookmarkMoved) {
-                                        structuralParts.push(`<span style="color: #FF9800; font-weight: bold;">${currentLang === 'en' ? 'BKM moved' : '书签移动'}</span>`);
+                                    if (bookmarkMoved || folderMoved) {
+                                        structuralParts.push(`<span style="color: #FF9800; font-weight: bold;">${currentLang === 'en' ? 'Moved' : '移动'}</span>`);
                                     }
-                                    if (folderMoved) {
-                                        structuralParts.push(`<span style="color: #2196F3; font-weight: bold;">${currentLang === 'en' ? 'FLD moved' : '文件夹移动'}</span>`);
-                                    }
-                                    if (bookmarkModified) {
-                                        structuralParts.push(`<span style="color: #FF9800; font-weight: bold;">${currentLang === 'en' ? 'BKM modified' : '书签修改'}</span>`);
-                                    }
-                                    if (folderModified) {
-                                        structuralParts.push(`<span style="color: #2196F3; font-weight: bold;">${currentLang === 'en' ? 'FLD modified' : '文件夹修改'}</span>`);
+                                    if (bookmarkModified || folderModified) {
+                                        structuralParts.push(`<span style="color: #2196F3; font-weight: bold;">${currentLang === 'en' ? 'Modified' : '修改'}</span>`);
                                     }
                                     
                                     const separator = currentLang === 'en' ? '<span style="display:inline-block; width:4px;"></span>|<span style="display:inline-block; width:4px;"></span>' : '、';
@@ -2153,17 +2141,11 @@ function updateBookmarkCountDisplay(passedLang) {
                     if (hasStructuralChanges) {
                         const structuralParts = [];
                         
-                        if (bookmarkMoved) {
-                            structuralParts.push(`<span style="color: #FF9800; font-weight: bold;">${currentLang === 'en' ? 'BKM moved' : '书签移动'}</span>`);
+                        if (bookmarkMoved || folderMoved) {
+                            structuralParts.push(`<span style="color: #FF9800; font-weight: bold;">${currentLang === 'en' ? 'Moved' : '移动'}</span>`);
                         }
-                        if (folderMoved) {
-                            structuralParts.push(`<span style="color: #2196F3; font-weight: bold;">${currentLang === 'en' ? 'FLD moved' : '文件夹移动'}</span>`);
-                        }
-                        if (bookmarkModified) {
-                            structuralParts.push(`<span style="color: #FF9800; font-weight: bold;">${currentLang === 'en' ? 'BKM modified' : '书签修改'}</span>`);
-                        }
-                        if (folderModified) {
-                            structuralParts.push(`<span style="color: #2196F3; font-weight: bold;">${currentLang === 'en' ? 'FLD modified' : '文件夹修改'}</span>`);
+                        if (bookmarkModified || folderModified) {
+                            structuralParts.push(`<span style="color: #2196F3; font-weight: bold;">${currentLang === 'en' ? 'Modified' : '修改'}</span>`);
                         }
                         
                         const separator = currentLang === 'en' ? '<span style="display:inline-block; width:4px;"></span>|<span style="display:inline-block; width:4px;"></span>' : '、';

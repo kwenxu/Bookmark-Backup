@@ -1188,22 +1188,18 @@ function buildChangeSummary(diffMeta, stats, lang) {
         
         // 构建具体的结构变化列表
         const structuralParts = [];
-        if (bookmarkMoved) {
-            structuralParts.push(`${effectiveLang === 'en' ? 'BKM moved' : '书签移动'}${typeof stats?.bookmarkMoved === 'number' ? ` (${stats.bookmarkMoved})` : ''}`);
-            summary.structuralItems.push(`${effectiveLang === 'en' ? 'Bookmark moved' : '书签移动'}${typeof stats?.bookmarkMoved === 'number' ? ` (${stats.bookmarkMoved})` : ''}`);
+        const movedCount = (typeof stats?.bookmarkMoved === 'number' ? stats.bookmarkMoved : 0) + (typeof stats?.folderMoved === 'number' ? stats.folderMoved : 0);
+        const modifiedCount = (typeof stats?.bookmarkModified === 'number' ? stats.bookmarkModified : 0) + (typeof stats?.folderModified === 'number' ? stats.folderModified : 0);
+        
+        if (bookmarkMoved || folderMoved) {
+            structuralParts.push(`${effectiveLang === 'en' ? 'Moved' : '移动'}${movedCount > 0 ? ` (${movedCount})` : ''}`);
+            summary.structuralItems.push(`${effectiveLang === 'en' ? 'Moved' : '移动'}${movedCount > 0 ? ` (${movedCount})` : ''}`);
         }
-        if (folderMoved) {
-            structuralParts.push(`${effectiveLang === 'en' ? 'FLD moved' : '文件夹移动'}${typeof stats?.folderMoved === 'number' ? ` (${stats.folderMoved})` : ''}`);
-            summary.structuralItems.push(`${effectiveLang === 'en' ? 'Folder moved' : '文件夹移动'}${typeof stats?.folderMoved === 'number' ? ` (${stats.folderMoved})` : ''}`);
+        if (bookmarkModified || folderModified) {
+            structuralParts.push(`${effectiveLang === 'en' ? 'Modified' : '修改'}${modifiedCount > 0 ? ` (${modifiedCount})` : ''}`);
+            summary.structuralItems.push(`${effectiveLang === 'en' ? 'Modified' : '修改'}${modifiedCount > 0 ? ` (${modifiedCount})` : ''}`);
         }
-        if (bookmarkModified) {
-            structuralParts.push(`${effectiveLang === 'en' ? 'BKM modified' : '书签修改'}${typeof stats?.bookmarkModified === 'number' ? ` (${stats.bookmarkModified})` : ''}`);
-            summary.structuralItems.push(`${effectiveLang === 'en' ? 'Bookmark modified' : '书签修改'}${typeof stats?.bookmarkModified === 'number' ? ` (${stats.bookmarkModified})` : ''}`);
-        }
-        if (folderModified) {
-            structuralParts.push(`${effectiveLang === 'en' ? 'FLD modified' : '文件夹修改'}${typeof stats?.folderModified === 'number' ? ` (${stats.folderModified})` : ''}`);
-            summary.structuralItems.push(`${effectiveLang === 'en' ? 'Folder modified' : '文件夹修改'}${typeof stats?.folderModified === 'number' ? ` (${stats.folderModified})` : ''}`);
-        }
+
         
         // 用具体的变化类型替代通用的"变动"标签
         const separator = effectiveLang === 'en' ? ' <span style="color:var(--text-tertiary);">|</span> ' : '、';
@@ -2877,38 +2873,20 @@ function renderCommitStats(changes) {
     }
 
     // 显示结构变化的具体类型
-    if (changes.bookmarkMoved) {
+    if (changes.bookmarkMoved || changes.folderMoved) {
         parts.push(`
             <span class="stat-change modified">
                 <i class="fas fa-arrows-alt"></i>
-                ${currentLang === 'zh_CN' ? '书签移动' : 'BKM Moved'}
+                ${currentLang === 'zh_CN' ? '移动' : 'Moved'}
             </span>
         `);
     }
 
-    if (changes.folderMoved) {
-        parts.push(`
-            <span class="stat-change modified">
-                <i class="fas fa-arrows-alt"></i>
-                ${currentLang === 'zh_CN' ? '文件夹移动' : 'FLD Moved'}
-            </span>
-        `);
-    }
-
-    if (changes.bookmarkModified) {
+    if (changes.bookmarkModified || changes.folderModified) {
         parts.push(`
             <span class="stat-change modified">
                 <i class="fas fa-edit"></i>
-                ${currentLang === 'zh_CN' ? '书签修改' : 'BKM Modified'}
-            </span>
-        `);
-    }
-
-    if (changes.folderModified) {
-        parts.push(`
-            <span class="stat-change modified">
-                <i class="fas fa-edit"></i>
-                ${currentLang === 'zh_CN' ? '文件夹修改' : 'FLD Modified'}
+                ${currentLang === 'zh_CN' ? '修改' : 'Modified'}
             </span>
         `);
     }
@@ -2960,20 +2938,12 @@ function renderCommitStatsInline(changes) {
     }
 
     // 显示结构变化的具体类型
-    if (changes.bookmarkMoved) {
-        parts.push(`<span class="stat-badge struct"><i class="fas fa-arrows-alt"></i> ${currentLang === 'zh_CN' ? '书签移动' : 'BKM Moved'}</span>`);
+    if (changes.bookmarkMoved || changes.folderMoved) {
+        parts.push(`<span class="stat-badge struct"><i class="fas fa-arrows-alt"></i> ${currentLang === 'zh_CN' ? '移动' : 'Moved'}</span>`);
     }
 
-    if (changes.folderMoved) {
-        parts.push(`<span class="stat-badge struct"><i class="fas fa-arrows-alt"></i> ${currentLang === 'zh_CN' ? '文件夹移动' : 'FLD Moved'}</span>`);
-    }
-
-    if (changes.bookmarkModified) {
-        parts.push(`<span class="stat-badge struct"><i class="fas fa-edit"></i> ${currentLang === 'zh_CN' ? '书签修改' : 'BKM Mod'}</span>`);
-    }
-
-    if (changes.folderModified) {
-        parts.push(`<span class="stat-badge struct"><i class="fas fa-edit"></i> ${currentLang === 'zh_CN' ? '文件夹修改' : 'FLD Mod'}</span>`);
+    if (changes.bookmarkModified || changes.folderModified) {
+        parts.push(`<span class="stat-badge struct"><i class="fas fa-edit"></i> ${currentLang === 'zh_CN' ? '修改' : 'Modified'}</span>`);
     }
 
     if (parts.length === 0) {

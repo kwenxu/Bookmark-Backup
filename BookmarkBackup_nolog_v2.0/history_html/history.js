@@ -2634,7 +2634,7 @@ function renderChangeTreeItem(bookmark, type) {
 
 function renderHistoryView() {
     const container = document.getElementById('historyList');
-    
+
     if (syncHistory.length === 0) {
         container.innerHTML = `
             <div class="empty-state">
@@ -2644,37 +2644,36 @@ function renderHistoryView() {
         `;
         return;
     }
-    
+
     // 反转数组，最新的在前
     const reversedHistory = [...syncHistory].reverse();
-    
+
     container.innerHTML = reversedHistory.map((record, index) => {
         const time = formatTime(record.time);
-        const isAuto = record.isAutoBackup !== false;
-        const isSuccess = record.status === 'success';
+        // 使用 type 字段代替 isAutoBackup：'manual', 'auto', 'switch'
+        const isAuto = record.type !== 'manual';
         const fingerprint = record.fingerprint || '';
-        
+
         // 计算变化
         const changes = calculateChanges(record, index, reversedHistory);
-        
+
         // 方向标识
-        const directionIcon = record.direction === 'upload' 
-            ? '<i class="fas fa-cloud-upload-alt"></i>' 
+        const directionIcon = record.direction === 'upload'
+            ? '<i class="fas fa-cloud-upload-alt"></i>'
             : '<i class="fas fa-cloud-download-alt"></i>';
-        const directionText = record.direction === 'upload' 
+        const directionText = record.direction === 'upload'
             ? (currentLang === 'zh_CN' ? '上传' : 'Upload')
             : (currentLang === 'zh_CN' ? '下载' : 'Download');
-        
+
         // 构建提交项
         return `
             <div class="commit-item" data-record-time="${record.time}">
                 <div class="commit-header">
                     <div class="commit-title-group">
-                        <div class="commit-title">${record.note || time}</div>
-                        <div class="commit-time">
-                            <i class="fas fa-clock"></i> ${time}
-                        </div>
-                        ${fingerprint ? `<div class="commit-fingerprint" title="Fingerprint">#${fingerprint}</div>` : ''}
+                        <div class="commit-title" title="点击编辑备注">${record.note || time}</div>
+                        <button class="commit-note-edit-btn" data-time="${record.time}" title="${currentLang === 'zh_CN' ? '编辑备注' : 'Edit Note'}">
+                            <i class="fas fa-edit"></i>
+                        </button>
                     </div>
                     <div class="commit-actions">
                         <button class="action-btn copy-btn" data-time="${record.time}" title="${currentLang === 'zh_CN' ? '复制Diff (JSON格式)' : 'Copy Diff (JSON)'}">
@@ -2689,31 +2688,31 @@ function renderHistoryView() {
                     </div>
                 </div>
                 <div class="commit-meta">
+                    <div class="commit-time">
+                        <i class="fas fa-clock"></i> ${time}
+                    </div>
                     <span class="commit-badge ${isAuto ? 'auto' : 'manual'}">
                         <i class="fas ${isAuto ? 'fa-robot' : 'fa-hand-pointer'}"></i>
                         ${isAuto ? i18n.autoBackup[currentLang] : i18n.manualBackup[currentLang]}
-                    </span>
-                    <span class="commit-badge ${isSuccess ? 'success' : 'error'}">
-                        <i class="fas ${isSuccess ? 'fa-check-circle' : 'fa-exclamation-circle'}"></i>
-                        ${isSuccess ? i18n.success[currentLang] : i18n.error[currentLang]}
                     </span>
                     <span class="commit-badge direction">
                         ${directionIcon}
                         ${directionText}
                     </span>
+                    <span class="commit-fingerprint" title="提交指纹号">#${fingerprint}</span>
                 </div>
                 ${renderCommitStats(changes)}
             </div>
         `;
     }).join('');
-    
+
     // 添加按钮事件（使用事件委托）
     container.querySelectorAll('.action-btn').forEach(btn => {
         btn.addEventListener('click', (e) => {
             e.stopPropagation();
             e.preventDefault();
             const recordTime = btn.dataset.time;
-            
+
             if (btn.classList.contains('copy-btn')) {
                 window.copyHistoryDiff(recordTime);
             } else if (btn.classList.contains('export-btn')) {
@@ -2724,32 +2723,100 @@ function renderHistoryView() {
             }
         });
     });
+
+    // 添加备注编辑按钮事件
+    container.querySelectorAll('.commit-note-edit-btn').forEach(btn => {
+        btn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            e.preventDefault();
+            const recordTime = btn.dataset.time;
+            editCommitNote(recordTime);
+        });
+    });
+}
+
+// 编辑备注
+async function editCommitNote(recordTime) {
+    const record = syncHistory.find(r => r.time === recordTime);
+    if (!record) return;
+
+    const currentNote = record.note || '';
+    const newNote = prompt(
+        currentLang === 'zh_CN' ? '输入备注（留空则删除备注）：' : 'Enter note (leave empty to remove):',
+        currentNote
+    );
+
+    // 如果用户取消，返回
+    if (newNote === null) return;
+
+    // 更新本地记录
+    record.note = newNote || '';
+
+    // 同步到存储
+    try {
+        await new Promise((resolve) => {
+            browserAPI.storage.local.get(['syncHistory'], (data) => {
+                const history = data.syncHistory || [];
+                const index = history.findIndex(r => r.time === recordTime);
+                if (index >= 0) {
+                    history[index].note = record.note;
+                    browserAPI.storage.local.set({ syncHistory: history }, resolve);
+                } else {
+                    resolve();
+                }
+            });
+        });
+
+        // 重新渲染历史视图
+        renderHistoryView();
+
+        // 显示成功提示
+        showToast(currentLang === 'zh_CN' ? '备注已更新' : 'Note updated');
+    } catch (error) {
+        console.error('[editCommitNote] 保存备注失败:', error);
+        showToast(currentLang === 'zh_CN' ? '保存备注失败' : 'Failed to save note');
+    }
 }
 
 function calculateChanges(record, index, reversedHistory) {
-    const current = record.bookmarkStats || {};
-    const currentBookmarks = current.currentBookmarkCount || current.currentBookmarks || 0;
-    const currentFolders = current.currentFolderCount || current.currentFolders || 0;
-    
+    const bookmarkStats = record.bookmarkStats || {};
+
     // 如果是第一次备份
     if (record.isFirstBackup || index === reversedHistory.length - 1) {
         return {
-            bookmarkDiff: currentBookmarks,
-            folderDiff: currentFolders,
-            isFirst: true
+            bookmarkDiff: bookmarkStats.currentBookmarkCount || 0,
+            folderDiff: bookmarkStats.currentFolderCount || 0,
+            isFirst: true,
+            hasNoChange: false
         };
     }
-    
-    // 查找前一条记录
-    const prevRecord = reversedHistory[index + 1];
-    const prev = prevRecord?.bookmarkStats || {};
-    const prevBookmarks = prev.currentBookmarkCount || prev.currentBookmarks || 0;
-    const prevFolders = prev.currentFolderCount || prev.currentFolders || 0;
-    
+
+    // 获取数量变化（来自 bookmarkStats）
+    const bookmarkDiff = bookmarkStats.bookmarkDiff || 0;
+    const folderDiff = bookmarkStats.folderDiff || 0;
+
+    // 获取结构变化标记（来自 bookmarkStats）
+    const bookmarkMoved = bookmarkStats.bookmarkMoved || false;
+    const folderMoved = bookmarkStats.folderMoved || false;
+    const bookmarkModified = bookmarkStats.bookmarkModified || false;
+    const folderModified = bookmarkStats.folderModified || false;
+
+    // 判断变化类型
+    const hasNumericalChange = bookmarkDiff !== 0 || folderDiff !== 0;
+    const hasStructuralChange = bookmarkMoved || folderMoved || bookmarkModified || folderModified;
+    const hasNoChange = !hasNumericalChange && !hasStructuralChange;
+
     return {
-        bookmarkDiff: currentBookmarks - prevBookmarks,
-        folderDiff: currentFolders - prevFolders,
-        isFirst: false
+        bookmarkDiff,
+        folderDiff,
+        isFirst: false,
+        hasNoChange,
+        hasNumericalChange,
+        hasStructuralChange,
+        bookmarkMoved,
+        folderMoved,
+        bookmarkModified,
+        folderModified
     };
 }
 
@@ -2761,35 +2828,80 @@ function renderCommitStats(changes) {
             </div>
         `;
     }
-    
+
+    // 使用bookmarkStats的数据来判断是否有变化
+    if (changes.hasNoChange) {
+        return `
+            <div class="commit-stats no-change">
+                <span style="color: var(--text-tertiary);">
+                    <i class="fas fa-check-circle" style="color: var(--success); margin-right: 4px;"></i>
+                    ${currentLang === 'zh_CN' ? '无变化' : 'No Changes'}
+                </span>
+            </div>
+        `;
+    }
+
     const parts = [];
-    
-    if (changes.bookmarkDiff !== 0) {
-        const className = changes.bookmarkDiff > 0 ? 'added' : 'deleted';
-        const icon = changes.bookmarkDiff > 0 ? 'fa-plus' : 'fa-minus';
+
+    // 显示数量变化
+    if (changes.hasNumericalChange) {
+        const bookmarkPart = changes.bookmarkDiff !== 0
+            ? `${changes.bookmarkDiff > 0 ? '+' : ''}${changes.bookmarkDiff} ${i18n.bookmarks[currentLang]}`
+            : '';
+        const folderPart = changes.folderDiff !== 0
+            ? `${changes.folderDiff > 0 ? '+' : ''}${changes.folderDiff} ${i18n.folders[currentLang]}`
+            : '';
+        const quantityText = [bookmarkPart, folderPart].filter(Boolean).join(', ');
+
         parts.push(`
-            <span class="stat-change ${className}">
-                <i class="fas ${icon}"></i>
-                ${Math.abs(changes.bookmarkDiff)} ${i18n.bookmarks[currentLang]}
+            <span class="stat-change added">
+                <i class="fas fa-plus-circle"></i>
+                ${quantityText}
             </span>
         `);
     }
-    
-    if (changes.folderDiff !== 0) {
-        const className = changes.folderDiff > 0 ? 'added' : 'deleted';
-        const icon = changes.folderDiff > 0 ? 'fa-plus' : 'fa-minus';
+
+    // 显示结构变化的具体类型
+    if (changes.bookmarkMoved) {
         parts.push(`
-            <span class="stat-change ${className}">
-                <i class="fas ${icon}"></i>
-                ${Math.abs(changes.folderDiff)} ${i18n.folders[currentLang]}
+            <span class="stat-change modified">
+                <i class="fas fa-arrows-alt"></i>
+                ${currentLang === 'zh_CN' ? '书签移动' : 'BKM Moved'}
             </span>
         `);
     }
-    
+
+    if (changes.folderMoved) {
+        parts.push(`
+            <span class="stat-change modified">
+                <i class="fas fa-arrows-alt"></i>
+                ${currentLang === 'zh_CN' ? '文件夹移动' : 'FLD Moved'}
+            </span>
+        `);
+    }
+
+    if (changes.bookmarkModified) {
+        parts.push(`
+            <span class="stat-change modified">
+                <i class="fas fa-edit"></i>
+                ${currentLang === 'zh_CN' ? '书签修改' : 'BKM Modified'}
+            </span>
+        `);
+    }
+
+    if (changes.folderModified) {
+        parts.push(`
+            <span class="stat-change modified">
+                <i class="fas fa-edit"></i>
+                ${currentLang === 'zh_CN' ? '文件夹修改' : 'FLD Modified'}
+            </span>
+        `);
+    }
+
     if (parts.length === 0) {
-        parts.push(`<span>${i18n.noChanges[currentLang]}</span>`);
+        parts.push(`<span style="color: var(--text-tertiary);">${currentLang === 'zh_CN' ? '无变化' : 'No Changes'}</span>`);
     }
-    
+
     return `<div class="commit-stats">${parts.join('')}</div>`;
 }
 

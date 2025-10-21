@@ -364,21 +364,24 @@ body {
 }
 
 .commit-title-group {
-    flex: 1;
-    display: flex;
-    flex-direction: column;
-    gap: 4px;
+    display: inline-flex;
+    flex-direction: row;
+    align-items: center;
+    gap: 2px;
 }
 
 .commit-title {
     font-size: 16px;
     font-weight: 600;
     color: var(--text-primary);
+    display: inline;
+    word-break: break-word;
+    max-width: 500px;
 }
 
 .commit-time {
-    font-size: 13px;
-    color: var(--text-secondary);
+    font-size: 12px;
+    color: var(--text-tertiary);
     display: flex;
     align-items: center;
     gap: 4px;
@@ -445,9 +448,14 @@ body {
 
 .commit-meta {
     display: flex;
+    align-items: center;
     gap: 12px;
     flex-wrap: wrap;
     margin-bottom: 12px;
+    padding: 12px;
+    border: 1px solid var(--border-color);
+    border-radius: 6px;
+    background: var(--bg-secondary);
 }
 
 .commit-badge {
@@ -493,6 +501,10 @@ body {
     color: var(--text-secondary);
 }
 
+.commit-stats.no-change {
+    gap: 0;
+}
+
 .stat-change {
     display: flex;
     align-items: center;
@@ -520,6 +532,42 @@ body {
     font-size: 13px;
     color: var(--text-secondary);
     font-style: italic;
+}
+
+.commit-note-edit-btn {
+    padding: 2px 6px;
+    margin: 0;
+    border: none;
+    background: transparent;
+    color: var(--accent-primary);
+    font-size: 12px;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    line-height: 1;
+    vertical-align: middle;
+}
+
+.commit-note-edit-btn:hover {
+    background: var(--accent-light);
+    border-radius: 4px;
+}
+
+.commit-footer {
+    display: none;
+}
+
+.commit-fingerprint {
+    font-family: 'Courier New', monospace;
+    color: var(--accent-primary);
+    font-size: 12px;
+    font-weight: 600;
+    letter-spacing: 0.5px;
+    margin-left: auto;
+    flex-shrink: 0;
 }
 
 /* ==================== 书签添加记录 ==================== */

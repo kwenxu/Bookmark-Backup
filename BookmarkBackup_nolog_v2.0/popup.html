@@ -493,12 +493,12 @@
         /* 备份状态区域 */
         .sync-status {
             margin-top: 20px;
-            padding: 20px 25px;   /* 增加左右内边距 */
+            padding: 15px 20px;   /* 减小内边距 */
             background-color: var(--theme-bg-elevated); /* Use CSS variable for background color */
             border-radius: 8px;
             border: 1px solid var(--theme-border-primary); /* Use CSS variable for border color */
             box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);
-            width: 100%;          /* 确保宽度100% */
+            width: 100%;  /* 宽度100% */
             box-sizing: border-box;  /* 确保padding不会增加总宽度 */
         }
 
@@ -695,12 +695,12 @@
         /* 备份历史记录区域 */
         .sync-history {
             margin-top: 20px;
-            padding: 20px 25px;   /* 增加左右内边距 */
+            padding: 12px 10px 12px 20px;   /* 进一步减小右侧padding */
             background-color: var(--theme-bg-elevated); /* Use CSS variable for background color */
             border-radius: 8px;
             border: 1px solid var(--theme-border-primary); /* Use CSS variable for border color */
             box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);  /* 增加阴影效果 */
-            width: 100%;          /* 确保宽度100% */
+            width: 61.5%;  /* 继续压缩宽度到62% */
             box-sizing: border-box;  /* 确保padding不会增加总宽度 */
             position: relative;    /* 添加相对定位 */
             z-index: 1;           /* 确保阴影效果可见 */
@@ -708,7 +708,7 @@
 
         .sync-history h3 {
             font-size: 14px;
-            margin: 0 0 10px 0;
+            margin: 0 0 8px 0;  /* 减小底部间距 */
             color: var(--theme-text-primary); /* Use CSS variable for text color */
             font-weight: 500;
             position: relative;    /* 添加相对定位 */
@@ -731,7 +731,7 @@
         .history-header {
             display: flex;
             justify-content: space-between;
-            padding: 6px 10px;  /* 缩小区块的内边距 */
+            padding: 6px 5px;  /* 进一步减小左右内边距 */
             border-bottom: 2px solid var(--theme-border-primary);
             position: sticky;
             top: 0;
@@ -745,64 +745,35 @@
             font-size: 12px;  /* 缩小字体大小 */
             font-weight: 600;
             color: var(--theme-text-primary);
-            min-width: 150px;
+            min-width: 100px;  /* 进一步减小最小宽度 */
             /* 移除任何可能的边界 */
             border: none;
-            padding: 0;
+            padding: 0 5px;  /* 添加小的左右padding */
             margin: 0;
-        }
-        
-        /* 将第二列（数量/结构）向右移动10px，并增加宽度 - 移除通用padding */
-        .history-header .header-item:nth-child(2) {
-            /* padding-left: 10px; */
-            flex: 1.5;
-            min-width: 180px;
         }
 
         /* 历史记录项 */
         .history-item {
-            padding: 8px 10px;
+            padding: 8px 5px;  /* 减小左右padding */
             border-bottom: 1px solid var(--theme-border-primary);
             display: flex;
             justify-content: space-between; /* 使元素均匀分布 */
             align-items: center; /* 垂直居中 */
         }
         
-        /* 历史记录项的元素 */
-        .history-item-time, .history-item-count, .history-item-status {
+        /* 历史记录项的元素 - 只保留两栏 */
+        .history-item-time, .history-item-count {
             flex: 1;
             text-align: center;
-            /* 移除内部填充 */
-            padding: 0;
-            overflow: visible; /* 修改为visible，防止内容被截断 */
-            min-width: 150px; /* 设置最小宽度 */
+            padding: 0 5px;  /* 添加小的左右padding */
+            overflow: visible;
+            min-width: 100px;  /* 进一步减小最小宽度 */
             display: flex;
             flex-direction: column;
             justify-content: center;
             align-items: center;
-            /* 移除任何可能的边界 */
             border: none;
             margin: 0;
-        }
-        
-        /* 将第二列（数量/结构）向右移动10px，并增加宽度 - 移除通用padding */
-        .history-item-count {
-            /* padding-left: 10px; */
-            flex: 1.5; /* 增加占比，给更多空间 */
-            min-width: 180px; /* 增加最小宽度 */
-        }
-        
-        /* 仅中文版本的"数量/结构"栏目向右移动10px */
-        html[lang="zh"] .history-header .header-item:nth-child(2),
-        html[lang="zh"] .history-item-count {
-            padding-left: 28px;
-        }
-        
-        /* 为标题行应用相同的宽度设置 */
-        .history-header .header-item:nth-child(2) {
-            padding-left: 8px;
-            flex: 1.5;
-            min-width: 180px;
         }
         
         /* 确保历史记录内容换行时的对齐 */

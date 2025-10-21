@@ -1260,15 +1260,13 @@ function updateSyncHistory(passedLang) { // Added passedLang parameter
         let headerHTML = '';
         if (currentLang === 'en') {
             headerHTML = `
-                <div class="header-item" style="padding-left: 0px;">Time & Notes</div>
-                <div class="header-item" style="padding-left: 20px;">Quantity & Structure</div>
-                <div class="header-item" style="padding-left: 10px;">Status</div>
+                <div class="header-item" style="flex: 1; text-align: center;">Time & Notes</div>
+                <div class="header-item" style="flex: 1; text-align: center;">Quantity & Structure</div>
             `;
         } else {
             headerHTML = `
-                <div class="header-item" style="flex: 4; text-align: center; padding-left: 0px;">时间与备注</div>
-                <div class="header-item" style="flex: 5; text-align: center; padding-left: 0px;">数量与结构</div>
-                <div class="header-item" style="flex: 1; text-align: center; padding-left: 0px;">状态</div>
+                <div class="header-item" style="flex: 1; text-align: center;">时间与备注</div>
+                <div class="header-item" style="flex: 1; text-align: center;">数量与结构</div>
             `;
         }
 
@@ -1578,23 +1576,12 @@ function updateSyncHistory(passedLang) { // Added passedLang parameter
                     </div>
                 `;
 
-                // 英文版对齐调整
+                // 只保留两栏的样式
                 let timeColStyle = "flex: 1; text-align: center;";
                 let qtyColStyle = "flex: 1; text-align: center;";
-                let statusColStyle = "flex: 1; text-align: center;";
-
-                if (currentLang === 'en') {
-                    timeColStyle = "flex: 1; text-align: center; padding-right: 40px;"; // 时间列内容向左移（通过增加右padding实现视觉左移）
-                    qtyColStyle = "flex: 1; text-align: center; padding-left: 9.5px;"; // 数量列内容向右移
-                    statusColStyle = "flex: 1; text-align: center; padding-left: 36px;"; // 状态列内容向右移
-                } else {
-                    timeColStyle = "flex: 4; text-align: center; padding-left: 0px;"; // 中文版时间列，占比4
-                    qtyColStyle = "flex: 5; text-align: center; padding-left: 0px;"; // 中文版数量/结构列，占比4
-                    statusColStyle = "flex: 1; text-align: center; padding-left: 0px;"; // 中文版状态列，占比2
-                }
 
                 const detailsBtn = `
-                    <button class="details-btn" data-record-time="${record.time}" title="${currentLang === 'en' ? 'View Details' : '查看详情'}" style="position: absolute; right: 0px; top: 50%; transform: translateY(-50%); padding: 0; margin: 0; cursor: pointer; background: none; border: none; color: #999; transition: color 0.2s; width: auto; height: auto; display: flex; align-items: center; justify-content: center;">
+                    <button class="details-btn" data-record-time="${record.time}" title="${currentLang === 'en' ? 'View Details' : '查看详情'}" style="position: absolute; right: 10px; top: 50%; transform: translateY(-50%); padding: 0; margin: 0; cursor: pointer; background: none; border: none; color: #999; transition: color 0.2s; width: auto; height: auto; display: flex; align-items: center; justify-content: center;">
                         <i class="fas fa-info-circle" style="font-size: 18px;"></i>
                     </button>
                 `;
@@ -1609,7 +1596,6 @@ function updateSyncHistory(passedLang) { // Added passedLang parameter
                         <div style="flex: 1; text-align: center;">${bookmarkStatsHTML}</div>
                         ${detailsBtn}
                     </div>
-                    <div class="history-item-status ${statusClass}" style="${statusColStyle}">${statusHTML}</div>
                 `;
                 historyList.appendChild(historyItem);
             });
@@ -1632,15 +1618,9 @@ function updateSyncHistory(passedLang) { // Added passedLang parameter
             const emptyItem = document.createElement('div');
             emptyItem.className = 'history-item empty-state';
 
-            let emptyStatePadding = "padding-left: 37.5px;"; // 默认中文版向右移动1px
-            if (currentLang === 'en') {
-                emptyStatePadding = "padding-left: 14.5px;"; // 英文版向右移动31px
-            }
-
             emptyItem.innerHTML = `
-                <div class="history-column" style="text-align: center; color: #999;">/</div>
-                <div class="history-column" style="text-align: center; color: #999; ${emptyStatePadding}">${dynamicTextStrings.emptyStateText[currentLang] || '暂无备份记录'}</div>
-                <div class="history-column" style="text-align: center; color: #999;">/</div>
+                <div class="history-column" style="flex: 1; text-align: center; color: #999;">/</div>
+                <div class="history-column" style="flex: 1; text-align: center; color: #999;">${dynamicTextStrings.emptyStateText[currentLang] || '暂无备份记录'}</div>
             `;
             historyList.appendChild(emptyItem);
         }

@@ -4463,7 +4463,7 @@ function showDetailModal(record) {
 function closeModal() {
     document.getElementById('detailModal').classList.remove('show');
     
-    // 关闭时，如果有打开的记录，滚动到该记录并使其居中
+    // 关闭时，如果有打开的记录，滚动到该记录并使其居中，并闪烁突出显示
     if (currentDetailRecordTime) {
         // 延迟执行以确保DOM已更新
         setTimeout(() => {
@@ -4471,6 +4471,27 @@ function closeModal() {
             if (recordElement) {
                 // 滚动到该元素并使其在视口中央
                 recordElement.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                
+                // 添加呼吸效果的蓝色闪烁（1次）
+                const originalBackground = recordElement.style.backgroundColor;
+                
+                // 设置缓慢平滑的过渡
+                recordElement.style.transition = 'background-color 0.8s ease-in-out, box-shadow 0.8s ease-in-out';
+                
+                // 显示蓝色框（呼吸效果 - 淡入）
+                recordElement.style.backgroundColor = 'rgba(0, 122, 255, 0.25)';
+                recordElement.style.boxShadow = '0 0 0 2px #007AFF inset';
+                
+                // 1秒后开始淡出
+                setTimeout(() => {
+                    recordElement.style.backgroundColor = originalBackground;
+                    recordElement.style.boxShadow = 'none';
+                    
+                    // 淡出完成后重置transition
+                    setTimeout(() => {
+                        recordElement.style.transition = '';
+                    }, 800);
+                }, 1200);
             }
             currentDetailRecordTime = null;
         }, 100);

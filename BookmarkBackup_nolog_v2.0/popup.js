@@ -1314,15 +1314,16 @@ function updateSyncHistory(passedLang) { // Added passedLang parameter
                     
                     dateLabel.style.cssText = `
                         position: absolute;
-                        bottom: -8px;
+                        bottom: -12px;
                         left: ${leftPosition};
                         transform: translateX(-50%);
                         background-color: var(--theme-bg-primary, white);
-                        padding: 2px 15px;
+                        padding: 3px 20px;
                         font-size: 12px;
                         color: ${textColor};
                         border: 1px solid ${dividerColor};
                         border-radius: 12px;
+                        z-index: 10;
                     `;
                     
                     // 格式化日期显示

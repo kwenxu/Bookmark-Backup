@@ -205,8 +205,8 @@ body {
     white-space: nowrap;
     visibility: hidden;
     opacity: 0;
-    transition: all 0.2s ease;
-    pointer-events: auto; /* 改为auto以接收点击和右键事件 */
+    transition: opacity 0.05s ease, visibility 0.05s ease;
+    pointer-events: auto;
     z-index: 1000;
     box-shadow: var(--shadow-md);
 }
@@ -444,6 +444,42 @@ body {
     background: var(--accent-hover);
     color: #ffffff;
     border-color: var(--accent-hover);
+}
+
+/* 操作按钮的自定义tooltip - 快速显示 */
+.action-btn::after {
+    content: attr(title);
+    position: absolute;
+    bottom: calc(100% + 8px);
+    left: 50%;
+    transform: translateX(-50%);
+    background: rgba(0, 0, 0, 0.9);
+    color: white;
+    padding: 6px 10px;
+    border-radius: 6px;
+    font-size: 12px;
+    white-space: nowrap;
+    visibility: hidden;
+    opacity: 0;
+    transition: opacity 0.05s ease, visibility 0.05s ease;
+    z-index: 1000;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
+    pointer-events: none;
+}
+
+.action-btn:hover::after {
+    visibility: visible;
+    opacity: 1;
+    transition-delay: 0s;
+}
+
+/* 隐藏浏览器默认tooltip */
+.action-btn[title] {
+    position: relative;
+}
+
+.action-btn[title]:hover {
+    color: inherit;
 }
 
 .commit-meta {

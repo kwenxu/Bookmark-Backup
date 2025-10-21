@@ -5595,9 +5595,18 @@ const currentLang = data.preferredLang || 'zh_CN';
         });
     }
 
-    // 添加「详细查看器」按钮事件监听
+    // 添加「历史查看器」按钮事件监听
     const openHistoryViewerBtn = document.getElementById('openHistoryViewerBtn');
     if (openHistoryViewerBtn) {
+        // 设置 tooltip 文本（根据语言）
+        chrome.storage.local.get(['preferredLang'], function(result) {
+            const currentLang = result.preferredLang || 'zh_CN';
+            const tooltip = document.getElementById('historyViewerTooltip');
+            if (tooltip) {
+                tooltip.textContent = currentLang === 'zh_CN' ? '打开历史查看器' : 'Open History Viewer';
+            }
+        });
+
         openHistoryViewerBtn.addEventListener('click', function() {
             // 打开历史查看器页面
             chrome.tabs.create({ url: chrome.runtime.getURL('history_html/history.html') });
@@ -5610,6 +5619,10 @@ const currentLang = data.preferredLang || 'zh_CN';
                 tooltip.style.visibility = 'visible';
                 tooltip.style.opacity = '1';
             }
+            // hover 效果
+            this.style.backgroundColor = '#0050B3';
+            this.style.boxShadow = '0 2px 6px rgba(0, 122, 255, 0.3)';
+            this.style.transform = 'translateY(-1px)';
         });
 
         openHistoryViewerBtn.addEventListener('mouseleave', function() {
@@ -5618,19 +5631,10 @@ const currentLang = data.preferredLang || 'zh_CN';
                 tooltip.style.visibility = 'hidden';
                 tooltip.style.opacity = '0';
             }
-        });
-
-        // 添加 hover 效果
-        openHistoryViewerBtn.addEventListener('mouseenter', function() {
-            this.style.backgroundColor = 'var(--theme-accent-color-hover)';
-            this.style.transform = 'translateY(-1px)';
-            this.style.boxShadow = '0 2px 8px rgba(0, 122, 255, 0.3)';
-        });
-
-        openHistoryViewerBtn.addEventListener('mouseleave', function() {
-            this.style.backgroundColor = 'var(--theme-accent-color)';
-            this.style.transform = 'translateY(0)';
+            // 恢复样式
+            this.style.backgroundColor = '#007AFF';
             this.style.boxShadow = 'none';
+            this.style.transform = 'translateY(0)';
         });
     }
 

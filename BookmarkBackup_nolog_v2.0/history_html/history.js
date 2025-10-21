@@ -4449,28 +4449,9 @@ function closeModal() {
 // 生成详情内容（异步）
 async function generateDetailContent(record) {
     const stats = record.bookmarkStats || {};
-    const current = {
-        bookmarks: stats.currentBookmarkCount || stats.currentBookmarks || 0,
-        folders: stats.currentFolderCount || stats.currentFolders || 0
-    };
-    
-    let html = `
-        <div class="detail-section">
-            <div class="detail-section-title">
-                <i class="fas fa-info-circle detail-section-icon"></i>
-                ${i18n.statsTitle[currentLang]}
-            </div>
-            <div class="detail-list">
-                <div class="detail-item">
-                    <div class="detail-item-title">${i18n.statBookmarks[currentLang]}: ${current.bookmarks}</div>
-                </div>
-                <div class="detail-item">
-                    <div class="detail-item-title">${i18n.statFolders[currentLang]}: ${current.folders}</div>
-                </div>
-            </div>
-        </div>
-    `;
-    
+
+    let html = '';
+
     if (record.note) {
         html += `
             <div class="detail-section">
@@ -4484,7 +4465,7 @@ async function generateDetailContent(record) {
             </div>
         `;
     }
-    
+
     // 尝试获取详细变化
     try {
         const diffHtml = await generateDetailedChanges(record);
@@ -4495,12 +4476,12 @@ async function generateDetailContent(record) {
                 <div class="detail-section">
                     <div class="detail-empty">
                         <i class="fas fa-info-circle"></i>
-                        ${currentLang === 'zh_CN' 
-                            ? '无详细变化记录（旧记录的详细数据已清理以优化性能）' 
+                        ${currentLang === 'zh_CN'
+                            ? '无详细变化记录（旧记录的详细数据已清理以优化性能）'
                             : 'No detailed changes available (old records cleaned for performance)'}
                         <div style="margin-top: 10px; font-size: 0.9em; color: var(--text-tertiary);">
-                            ${currentLang === 'zh_CN' 
-                                ? '提示：只保留最新3条记录的详细变化数据' 
+                            ${currentLang === 'zh_CN'
+                                ? '提示：只保留最新3条记录的详细变化数据'
                                 : 'Note: Only the latest 3 records retain detailed change data'}
                         </div>
                     </div>
@@ -4518,7 +4499,7 @@ async function generateDetailContent(record) {
             </div>
         `;
     }
-    
+
     return html;
 }
 

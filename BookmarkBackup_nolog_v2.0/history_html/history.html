@@ -186,29 +186,28 @@
                 <div class="canvas-main-container" style="--canvas-scale: 1; --canvas-pan-x: 0px; --canvas-pan-y: 0px;">
                     <!-- Canvas画布工作区 -->
                     <div class="canvas-workspace" id="canvasWorkspace">
+                        <!-- 缩放控制器（固定在画布左上角） -->
+                        <div class="canvas-zoom-indicator" id="canvasZoomIndicator" style="display: none;">
+                            <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 6px;">
+                                <span style="font-size: 11px; color: #57606a; font-weight: 500;" id="canvasZoomLabel">缩放</span>
+                                <span class="zoom-value" id="zoomValue">100%</span>
+                            </div>
+                            <div class="canvas-zoom-controls">
+                                <button class="zoom-btn" id="zoomLocateBtn" title="定位到永久栏目"><span id="zoomLocateText">定位</span></button>
+                                <button class="zoom-btn" id="zoomOutBtn" title="缩小 (10%)">−</button>
+                                <button class="zoom-btn" id="zoomInBtn" title="放大 (10%)">+</button>
+                            </div>
+                            <div style="font-size: 10px; margin-top: 6px; color: #57606a; text-align: center;" id="canvasZoomHint">
+                                <kbd style="font-size: 9px; padding: 2px 4px; background: #f6f8fa; border: 1px solid #d0d7de; border-radius: 3px;">Ctrl</kbd> + 滚轮 | 
+                                <kbd style="font-size: 9px; padding: 2px 4px; background: #f6f8fa; border: 1px solid #d0d7de; border-radius: 3px;">空格</kbd> 拖动
+                            </div>
+                        </div>
+                        
                         <!-- Canvas内容容器（应用缩放和平移） -->
                         <div class="canvas-content" id="canvasContent">
                             <!-- 临时节点和永久栏目都在这里 -->
                         </div>
                     </div>
-                    
-                    <!-- 缩放控制器 -->
-                    <div class="canvas-zoom-indicator" id="canvasZoomIndicator">
-                        <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 6px;">
-                            <span style="font-size: 11px; color: #57606a; font-weight: 500;">缩放</span>
-                            <span class="zoom-value" id="zoomValue">100%</span>
-                        </div>
-                        <div class="canvas-zoom-controls">
-                            <button class="zoom-btn" id="zoomOutBtn" title="缩小 (10%)">−</button>
-                            <button class="zoom-btn" id="zoomResetBtn" title="重置到100%">100%</button>
-                            <button class="zoom-btn" id="zoomInBtn" title="放大 (10%)">+</button>
-                        </div>
-                        <div style="font-size: 10px; margin-top: 6px; color: #57606a; text-align: center;">
-                            <kbd style="font-size: 9px; padding: 2px 4px; background: #f6f8fa; border: 1px solid #d0d7de; border-radius: 3px;">Ctrl</kbd> + 滚轮 | 
-                            <kbd style="font-size: 9px; padding: 2px 4px; background: #f6f8fa; border: 1px solid #d0d7de; border-radius: 3px;">空格</kbd> 拖动
-                        </div>
-                    </div>
-                    
                 </div>
             </div>
             

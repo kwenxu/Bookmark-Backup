@@ -140,6 +140,30 @@ const i18n = {
         'zh_CN': '清空临时节点',
         'en': 'Clear Temp Nodes'
     },
+    canvasZoomLabel: {
+        'zh_CN': '缩放',
+        'en': 'Zoom'
+    },
+    canvasZoomHint: {
+        'zh_CN': '<kbd style="font-size: 9px; padding: 2px 4px; background: #f6f8fa; border: 1px solid #d0d7de; border-radius: 3px;">Ctrl</kbd> + 滚轮 | <kbd style="font-size: 9px; padding: 2px 4px; background: #f6f8fa; border: 1px solid #d0d7de; border-radius: 3px;">空格</kbd> 拖动',
+        'en': '<kbd style="font-size: 9px; padding: 2px 4px; background: #f6f8fa; border: 1px solid #d0d7de; border-radius: 3px;">Ctrl</kbd> + Wheel | <kbd style="font-size: 9px; padding: 2px 4px; background: #f6f8fa; border: 1px solid #d0d7de; border-radius: 3px;">Space</kbd> Drag'
+    },
+    zoomInTitle: {
+        'zh_CN': '放大 (10%)',
+        'en': 'Zoom In (10%)'
+    },
+    zoomOutTitle: {
+        'zh_CN': '缩小 (10%)',
+        'en': 'Zoom Out (10%)'
+    },
+    zoomLocateTitle: {
+        'zh_CN': '定位到永久栏目',
+        'en': 'Locate to Permanent Section'
+    },
+    zoomLocateText: {
+        'zh_CN': '定位',
+        'en': 'Locate'
+    },
     filterAll: {
         'zh_CN': '全部',
         'en': 'All'
@@ -570,6 +594,20 @@ function applyLanguage() {
     if (exportCanvasText) exportCanvasText.textContent = i18n.exportCanvasText[currentLang];
     const clearTempNodesText = document.getElementById('clearTempNodesText');
     if (clearTempNodesText) clearTempNodesText.textContent = i18n.clearTempNodesText[currentLang];
+    
+    // Canvas 缩放控制器
+    const canvasZoomLabel = document.getElementById('canvasZoomLabel');
+    if (canvasZoomLabel) canvasZoomLabel.textContent = i18n.canvasZoomLabel[currentLang];
+    const canvasZoomHint = document.getElementById('canvasZoomHint');
+    if (canvasZoomHint) canvasZoomHint.innerHTML = i18n.canvasZoomHint[currentLang];
+    const zoomInBtn = document.getElementById('zoomInBtn');
+    if (zoomInBtn) zoomInBtn.title = i18n.zoomInTitle[currentLang];
+    const zoomOutBtn = document.getElementById('zoomOutBtn');
+    if (zoomOutBtn) zoomOutBtn.title = i18n.zoomOutTitle[currentLang];
+    const zoomLocateBtn = document.getElementById('zoomLocateBtn');
+    if (zoomLocateBtn) zoomLocateBtn.title = i18n.zoomLocateTitle[currentLang];
+    const zoomLocateText = document.getElementById('zoomLocateText');
+    if (zoomLocateText) zoomLocateText.textContent = i18n.zoomLocateText[currentLang];
     
     // 更新按钮文本
     const copyAllHistoryText = document.getElementById('copyAllHistoryText');
@@ -1294,6 +1332,16 @@ function switchView(view) {
 }
 
 function renderCurrentView() {
+    // 控制缩放控制器的显示/隐藏
+    const zoomIndicator = document.getElementById('canvasZoomIndicator');
+    if (zoomIndicator) {
+        if (currentView === 'canvas') {
+            zoomIndicator.style.display = 'block';
+        } else {
+            zoomIndicator.style.display = 'none';
+        }
+    }
+    
     switch (currentView) {
         case 'current-changes':
             renderCurrentChangesView();

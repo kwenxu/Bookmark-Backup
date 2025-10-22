@@ -33,6 +33,12 @@ const CanvasState = {
 function initCanvasView() {
     console.log('[Canvas] 初始化Obsidian风格的Canvas');
     
+    // 显示缩放控制器
+    const zoomIndicator = document.getElementById('canvasZoomIndicator');
+    if (zoomIndicator) {
+        zoomIndicator.style.display = 'block';
+    }
+    
     // 注意：永久栏目已经在renderCurrentView中从template创建并添加到canvas-content
     // bookmarkTree已经由renderTreeView()渲染了
     // 我们只需要增强它的拖拽功能
@@ -334,11 +340,11 @@ function setupCanvasZoomAndPan() {
     // 缩放按钮
     const zoomInBtn = document.getElementById('zoomInBtn');
     const zoomOutBtn = document.getElementById('zoomOutBtn');
-    const zoomResetBtn = document.getElementById('zoomResetBtn');
+    const zoomLocateBtn = document.getElementById('zoomLocateBtn');
     
     if (zoomInBtn) zoomInBtn.addEventListener('click', () => setCanvasZoom(CanvasState.zoom + 0.1));
     if (zoomOutBtn) zoomOutBtn.addEventListener('click', () => setCanvasZoom(CanvasState.zoom - 0.1));
-    if (zoomResetBtn) zoomResetBtn.addEventListener('click', () => setCanvasZoom(1));
+    if (zoomLocateBtn) zoomLocateBtn.addEventListener('click', locateToPermanentSection);
 }
 
 function setCanvasZoom(zoom) {
@@ -403,6 +409,48 @@ function savePanOffset() {
 }
 
 // =============================================================================
+// 定位到永久栏目
+// =============================================================================
+
+function locateToPermanentSection() {
+    const permanentSection = document.getElementById('permanentSection');
+    const workspace = document.getElementById('canvasWorkspace');
+    
+    if (!permanentSection || !workspace) {
+        console.warn('[Canvas] 找不到永久栏目或工作区');
+        return;
+    }
+    
+    // 获取永久栏目的位置和尺寸（在canvas-content坐标系中）
+    const sectionLeft = parseFloat(permanentSection.style.left) || 0;
+    const sectionTop = parseFloat(permanentSection.style.top) || 0;
+    const sectionWidth = permanentSection.offsetWidth;
+    const sectionHeight = permanentSection.offsetHeight;
+    
+    // 获取workspace的尺寸
+    const workspaceWidth = workspace.clientWidth;
+    const workspaceHeight = workspace.clientHeight;
+    
+    // 计算永久栏目的中心点（在canvas-content坐标系中）
+    const sectionCenterX = sectionLeft + sectionWidth / 2;
+    const sectionCenterY = sectionTop + sectionHeight / 2;
+    
+    // 计算需要的平移量，使永久栏目居中显示
+    // 公式：panOffset = workspace中心 - (section中心 * zoom)
+    CanvasState.panOffsetX = workspaceWidth / 2 - sectionCenterX * CanvasState.zoom;
+    CanvasState.panOffsetY = workspaceHeight / 2 - sectionCenterY * CanvasState.zoom;
+    
+    // 应用平移
+    applyPanOffset();
+    savePanOffset();
+    
+    console.log('[Canvas] 定位到永久栏目:', {
+        sectionCenter: { x: sectionCenterX, y: sectionCenterY },
+        panOffset: { x: CanvasState.panOffsetX, y: CanvasState.panOffsetY }
+    });
+}
+
+// =============================================================================
 // 让永久栏目本身可以拖动
 // =============================================================================
 
@@ -417,11 +465,14 @@ function makePermanentSectionDraggable() {
     
     console.log('[Canvas] 为永久栏目添加拖拽功能');
     
+    // 添加resize功能
+    makePermanentSectionResizable(permanentSection);
+    
     let isDragging = false;
     let startX = 0;
     let startY = 0;
-    let offsetX = 0;
-    let offsetY = 0;
+    let initialLeft = 0;
+    let initialTop = 0;
     
     header.addEventListener('mousedown', (e) => {
         // 只有点击标题栏才能拖动
@@ -434,18 +485,15 @@ function makePermanentSectionDraggable() {
         startX = e.clientX;
         startY = e.clientY;
         
-        // 获取当前位置
-        const rect = permanentSection.getBoundingClientRect();
-        const workspace = document.getElementById('canvasWorkspace');
-        const workspaceRect = workspace.getBoundingClientRect();
+        // 获取当前在canvas-content坐标系中的位置
+        const currentLeft = parseFloat(permanentSection.style.left) || 0;
+        const currentTop = parseFloat(permanentSection.style.top) || 0;
         
-        offsetX = rect.left - workspaceRect.left + workspace.scrollLeft;
-        offsetY = rect.top - workspaceRect.top + workspace.scrollTop;
+        initialLeft = currentLeft;
+        initialTop = currentTop;
         
         permanentSection.classList.add('dragging');
         permanentSection.style.transform = 'none';
-        permanentSection.style.left = offsetX + 'px';
-        permanentSection.style.top = offsetY + 'px';
         
         e.preventDefault();
     });
@@ -453,11 +501,17 @@ function makePermanentSectionDraggable() {
     document.addEventListener('mousemove', (e) => {
         if (!isDragging) return;
         
+        // 计算鼠标在屏幕上的移动距离
         const deltaX = e.clientX - startX;
         const deltaY = e.clientY - startY;
         
-        const newX = offsetX + deltaX;
-        const newY = offsetY + deltaY;
+        // 除以缩放比例得到在canvas-content坐标系中的实际移动距离
+        const scaledDeltaX = deltaX / CanvasState.zoom;
+        const scaledDeltaY = deltaY / CanvasState.zoom;
+        
+        // 计算新位置
+        const newX = initialLeft + scaledDeltaX;
+        const newY = initialTop + scaledDeltaY;
         
         permanentSection.style.left = newX + 'px';
         permanentSection.style.top = newY + 'px';
@@ -480,11 +534,13 @@ function savePermanentSectionPosition() {
     
     const position = {
         left: permanentSection.style.left,
-        top: permanentSection.style.top
+        top: permanentSection.style.top,
+        width: permanentSection.style.width,
+        height: permanentSection.style.height
     };
     
     localStorage.setItem('permanent-section-position', JSON.stringify(position));
-    console.log('[Canvas] 保存永久栏目位置:', position);
+    console.log('[Canvas] 保存永久栏目位置和大小:', position);
 }
 
 function loadPermanentSectionPosition() {
@@ -497,12 +553,244 @@ function loadPermanentSectionPosition() {
                 permanentSection.style.transform = 'none';
                 permanentSection.style.left = position.left;
                 permanentSection.style.top = position.top;
-                console.log('[Canvas] 恢复永久栏目位置:', position);
+                if (position.width) permanentSection.style.width = position.width;
+                if (position.height) permanentSection.style.height = position.height;
+                console.log('[Canvas] 恢复永久栏目位置和大小:', position);
             }
         }
     } catch (error) {
         console.error('[Canvas] 加载永久栏目位置失败:', error);
     }
+}
+
+// =============================================================================
+// 永久栏目和临时节点Resize功能
+// =============================================================================
+
+function makePermanentSectionResizable(element) {
+    // 创建8个resize handles
+    const handles = [
+        { name: 'nw', cursor: 'nw-resize', position: 'top-left' },
+        { name: 'n', cursor: 'n-resize', position: 'top' },
+        { name: 'ne', cursor: 'ne-resize', position: 'top-right' },
+        { name: 'e', cursor: 'e-resize', position: 'right' },
+        { name: 'se', cursor: 'se-resize', position: 'bottom-right' },
+        { name: 's', cursor: 's-resize', position: 'bottom' },
+        { name: 'sw', cursor: 'sw-resize', position: 'bottom-left' },
+        { name: 'w', cursor: 'w-resize', position: 'left' }
+    ];
+    
+    handles.forEach(handleInfo => {
+        const handle = document.createElement('div');
+        handle.className = `resize-handle resize-handle-${handleInfo.name}`;
+        handle.style.cssText = getResizeHandleStyle(handleInfo);
+        element.appendChild(handle);
+        
+        let isResizing = false;
+        let startX, startY, startWidth, startHeight, startLeft, startTop;
+        
+        handle.addEventListener('mousedown', (e) => {
+            e.stopPropagation();
+            e.preventDefault();
+            
+            isResizing = true;
+            startX = e.clientX;
+            startY = e.clientY;
+            startWidth = element.offsetWidth;
+            startHeight = element.offsetHeight;
+            startLeft = parseFloat(element.style.left) || 0;
+            startTop = parseFloat(element.style.top) || 0;
+            
+            element.classList.add('resizing');
+            
+            const onMouseMove = (e) => {
+                if (!isResizing) return;
+                
+                // 计算鼠标移动距离（考虑缩放）
+                const deltaX = (e.clientX - startX) / CanvasState.zoom;
+                const deltaY = (e.clientY - startY) / CanvasState.zoom;
+                
+                // 根据handle位置计算新的尺寸和位置
+                let newWidth = startWidth;
+                let newHeight = startHeight;
+                let newLeft = startLeft;
+                let newTop = startTop;
+                
+                // 处理水平方向
+                if (handleInfo.name.includes('e')) {
+                    newWidth = Math.max(300, startWidth + deltaX);
+                } else if (handleInfo.name.includes('w')) {
+                    newWidth = Math.max(300, startWidth - deltaX);
+                    newLeft = startLeft + (startWidth - newWidth);
+                }
+                
+                // 处理垂直方向
+                if (handleInfo.name.includes('s')) {
+                    newHeight = Math.max(200, startHeight + deltaY);
+                } else if (handleInfo.name.includes('n')) {
+                    newHeight = Math.max(200, startHeight - deltaY);
+                    newTop = startTop + (startHeight - newHeight);
+                }
+                
+                // 应用新的尺寸和位置
+                element.style.width = newWidth + 'px';
+                element.style.height = newHeight + 'px';
+                element.style.left = newLeft + 'px';
+                element.style.top = newTop + 'px';
+                
+                // 调整max-height
+                element.style.maxHeight = newHeight + 'px';
+            };
+            
+            const onMouseUp = () => {
+                if (isResizing) {
+                    isResizing = false;
+                    element.classList.remove('resizing');
+                    savePermanentSectionPosition();
+                    document.removeEventListener('mousemove', onMouseMove);
+                    document.removeEventListener('mouseup', onMouseUp);
+                }
+            };
+            
+            document.addEventListener('mousemove', onMouseMove);
+            document.addEventListener('mouseup', onMouseUp);
+        });
+    });
+}
+
+function getResizeHandleStyle(handleInfo) {
+    const baseStyle = 'position: absolute; z-index: 10; background: transparent;';
+    const cornerSize = '50px'; // 角手柄更大
+    const edgeSize = '10px';   // 边手柄保持原大小
+    
+    let style = baseStyle + `cursor: ${handleInfo.cursor};`;
+    
+    // 角handle - 三角形区域，更大范围
+    if (handleInfo.name.length === 2) {
+        style += `width: ${cornerSize}; height: ${cornerSize};`;
+        
+        // 使用clip-path创建三角形
+        if (handleInfo.name === 'nw') {
+            style += 'top: 0; left: 0;';
+            style += 'clip-path: polygon(0 0, 100% 0, 0 100%);';
+        } else if (handleInfo.name === 'ne') {
+            style += 'top: 0; right: 0;';
+            style += 'clip-path: polygon(100% 0, 100% 100%, 0 0);';
+        } else if (handleInfo.name === 'sw') {
+            style += 'bottom: 0; left: 0;';
+            style += 'clip-path: polygon(0 0, 0 100%, 100% 100%);';
+        } else if (handleInfo.name === 'se') {
+            style += 'bottom: 0; right: 0;';
+            style += 'clip-path: polygon(100% 0, 100% 100%, 0 100%);';
+        }
+    }
+    // 边handle
+    else {
+        if (handleInfo.name === 'n' || handleInfo.name === 's') {
+            style += 'left: 50px; right: 50px; height: ' + edgeSize + '; background: transparent;';
+            if (handleInfo.name === 'n') style += 'top: -5px;';
+            else style += 'bottom: -5px;';
+        } else {
+            style += 'top: 50px; bottom: 50px; width: ' + edgeSize + '; background: transparent;';
+            if (handleInfo.name === 'w') style += 'left: -5px;';
+            else style += 'right: -5px;';
+        }
+    }
+    
+    return style;
+}
+
+function makeTempNodeResizable(element, node) {
+    // 创建8个resize handles
+    const handles = [
+        { name: 'nw', cursor: 'nw-resize' },
+        { name: 'n', cursor: 'n-resize' },
+        { name: 'ne', cursor: 'ne-resize' },
+        { name: 'e', cursor: 'e-resize' },
+        { name: 'se', cursor: 'se-resize' },
+        { name: 's', cursor: 's-resize' },
+        { name: 'sw', cursor: 'sw-resize' },
+        { name: 'w', cursor: 'w-resize' }
+    ];
+    
+    handles.forEach(handleInfo => {
+        const handle = document.createElement('div');
+        handle.className = `resize-handle resize-handle-${handleInfo.name}`;
+        handle.style.cssText = getResizeHandleStyle(handleInfo);
+        element.appendChild(handle);
+        
+        let isResizing = false;
+        let startX, startY, startWidth, startHeight, startLeft, startTop;
+        
+        handle.addEventListener('mousedown', (e) => {
+            e.stopPropagation();
+            e.preventDefault();
+            
+            isResizing = true;
+            startX = e.clientX;
+            startY = e.clientY;
+            startWidth = element.offsetWidth;
+            startHeight = element.offsetHeight;
+            startLeft = node.x;
+            startTop = node.y;
+            
+            element.classList.add('resizing');
+            
+            const onMouseMove = (e) => {
+                if (!isResizing) return;
+                
+                // 计算鼠标移动距离（考虑缩放）
+                const deltaX = (e.clientX - startX) / CanvasState.zoom;
+                const deltaY = (e.clientY - startY) / CanvasState.zoom;
+                
+                // 根据handle位置计算新的尺寸和位置
+                let newWidth = startWidth;
+                let newHeight = startHeight;
+                let newLeft = startLeft;
+                let newTop = startTop;
+                
+                // 处理水平方向
+                if (handleInfo.name.includes('e')) {
+                    newWidth = Math.max(200, startWidth + deltaX);
+                } else if (handleInfo.name.includes('w')) {
+                    newWidth = Math.max(200, startWidth - deltaX);
+                    newLeft = startLeft + (startWidth - newWidth);
+                }
+                
+                // 处理垂直方向
+                if (handleInfo.name.includes('s')) {
+                    newHeight = Math.max(150, startHeight + deltaY);
+                } else if (handleInfo.name.includes('n')) {
+                    newHeight = Math.max(150, startHeight - deltaY);
+                    newTop = startTop + (startHeight - newHeight);
+                }
+                
+                // 应用新的尺寸和位置
+                element.style.width = newWidth + 'px';
+                element.style.left = newLeft + 'px';
+                element.style.top = newTop + 'px';
+                
+                // 更新节点数据
+                node.width = newWidth;
+                node.height = newHeight;
+                node.x = newLeft;
+                node.y = newTop;
+            };
+            
+            const onMouseUp = () => {
+                if (isResizing) {
+                    isResizing = false;
+                    element.classList.remove('resizing');
+                    saveTempNodes();
+                    document.removeEventListener('mousemove', onMouseMove);
+                    document.removeEventListener('mouseup', onMouseUp);
+                }
+            };
+            
+            document.addEventListener('mousemove', onMouseMove);
+            document.addEventListener('mouseup', onMouseUp);
+        });
+    });
 }
 
 // =============================================================================
@@ -565,6 +853,7 @@ function createTempNode(data, x, y) {
         x: x,
         y: y,
         width: 250,
+        height: 200, // 默认高度
         data: data
     };
     
@@ -586,6 +875,9 @@ function renderTempNode(node) {
     nodeElement.style.left = node.x + 'px';
     nodeElement.style.top = node.y + 'px';
     nodeElement.style.width = node.width + 'px';
+    if (node.height) {
+        nodeElement.style.height = node.height + 'px';
+    }
     
     // 节点头部
     const header = document.createElement('div');
@@ -632,7 +924,11 @@ function renderTempNode(node) {
     // 添加拖回永久栏目功能
     makeNodeDroppableBack(nodeElement, node);
     
-    workspace.appendChild(nodeElement);
+    // 添加resize功能
+    makeTempNodeResizable(nodeElement, node);
+    
+    // 添加到容器（使用之前已经声明的container变量）
+    container.appendChild(nodeElement);
 }
 
 function makeNodeDraggable(element, node) {
@@ -647,6 +943,7 @@ function makeNodeDraggable(element, node) {
         CanvasState.dragState.dragStartY = e.clientY;
         CanvasState.dragState.nodeStartX = node.x;
         CanvasState.dragState.nodeStartY = node.y;
+        CanvasState.dragState.dragSource = 'temp-node';
         
         element.classList.add('dragging');
         e.preventDefault();
@@ -794,12 +1091,17 @@ async function addToPermanentBookmarks(nodeData) {
 function setupCanvasEventListeners() {
     // 鼠标移动 - 拖动节点
     document.addEventListener('mousemove', (e) => {
-        if (CanvasState.dragState.isDragging && CanvasState.dragState.draggedElement) {
+        if (CanvasState.dragState.isDragging && CanvasState.dragState.draggedElement && CanvasState.dragState.dragSource === 'temp-node') {
+            // 计算鼠标在屏幕上的移动距离
             const deltaX = e.clientX - CanvasState.dragState.dragStartX;
             const deltaY = e.clientY - CanvasState.dragState.dragStartY;
             
-            const newX = CanvasState.dragState.nodeStartX + deltaX;
-            const newY = CanvasState.dragState.nodeStartY + deltaY;
+            // 除以缩放比例得到在canvas-content坐标系中的实际移动距离
+            const scaledDeltaX = deltaX / CanvasState.zoom;
+            const scaledDeltaY = deltaY / CanvasState.zoom;
+            
+            const newX = CanvasState.dragState.nodeStartX + scaledDeltaX;
+            const newY = CanvasState.dragState.nodeStartY + scaledDeltaY;
             
             CanvasState.dragState.draggedElement.style.left = newX + 'px';
             CanvasState.dragState.draggedElement.style.top = newY + 'px';

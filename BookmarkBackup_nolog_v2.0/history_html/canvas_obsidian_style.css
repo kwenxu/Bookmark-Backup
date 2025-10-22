@@ -8,6 +8,10 @@
     background: linear-gradient(to bottom, #fafbfc 0%, #f6f8fa 100%);
 }
 
+[data-theme="dark"] .canvas-main-container {
+    background: linear-gradient(to bottom, #18191a 0%, #242526 100%);
+}
+
 .canvas-workspace {
     width: 100%;
     height: 100%;
@@ -19,6 +23,13 @@
     background-position: calc(var(--canvas-pan-x)) calc(var(--canvas-pan-y));
     overflow: hidden;
     box-shadow: inset 0 0 0 1px #e1e4e8;
+}
+
+[data-theme="dark"] .canvas-workspace {
+    background-color: #242526;
+    background-image: 
+        radial-gradient(circle, #3a3b3c calc(var(--canvas-scale)*0.5px + 0.5px), transparent 0);
+    box-shadow: inset 0 0 0 1px #3a3b3c;
 }
 
 .canvas-content {

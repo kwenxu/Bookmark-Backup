@@ -3940,11 +3940,21 @@ a.tree-label.tree-bookmark-link:hover {
     cursor: default;
 }
 
+[data-theme="dark"] .permanent-bookmark-section {
+    background: rgba(36, 37, 38, 0.95);
+    border-color: #0969da;
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.6);
+}
+
 .permanent-bookmark-section.dragging {
     opacity: 0.9;
     box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
     cursor: move;
     z-index: 1000;
+}
+
+[data-theme="dark"] .permanent-bookmark-section.dragging {
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.7);
 }
 
 .permanent-bookmark-section.drop-target-highlight {
@@ -4021,10 +4031,21 @@ a.tree-label.tree-bookmark-link:hover {
     z-index: 10;
 }
 
+[data-theme="dark"] .temp-canvas-node {
+    background: linear-gradient(to bottom, #242526, #18191a);
+    border-color: #3a3b3c;
+    box-shadow: 0 3px 12px rgba(0, 0, 0, 0.4), 0 1px 3px rgba(0, 0, 0, 0.3);
+}
+
 .temp-canvas-node:hover {
     box-shadow: 0 6px 20px rgba(0, 0, 0, 0.12), 0 2px 6px rgba(0, 0, 0, 0.08);
     transform: translateY(-1px);
     border-color: #0969da;
+}
+
+[data-theme="dark"] .temp-canvas-node:hover {
+    box-shadow: 0 6px 20px rgba(0, 0, 0, 0.5), 0 2px 6px rgba(0, 0, 0, 0.4);
+    border-color: #58a6ff;
 }
 
 .temp-canvas-node.dragging {
@@ -4033,6 +4054,44 @@ a.tree-label.tree-bookmark-link:hover {
     cursor: grabbing;
     transform: scale(1.02);
     z-index: 1000;
+}
+
+[data-theme="dark"] .temp-canvas-node.dragging {
+    box-shadow: 0 12px 32px rgba(0, 0, 0, 0.6), 0 4px 12px rgba(0, 0, 0, 0.5);
+}
+
+/* Resize handles样式 */
+.resize-handle {
+    background: transparent;
+    transition: none;
+    pointer-events: auto;
+}
+
+/* 角手柄hover时显示半透明提示（可选） */
+.resize-handle:hover {
+    background: transparent;
+}
+
+/* 深色模式 */
+[data-theme="dark"] .resize-handle {
+    background: transparent;
+}
+
+[data-theme="dark"] .resize-handle:hover {
+    background: transparent;
+}
+
+/* 可选：调试时可以取消注释查看识别区域 */
+/*
+.resize-handle {
+    background: rgba(255, 0, 0, 0.1) !important;
+}
+*/
+
+.permanent-bookmark-section.resizing,
+.temp-canvas-node.resizing {
+    user-select: none;
+    transition: none;
 }
 
 .temp-node-header {
@@ -4357,11 +4416,11 @@ a.tree-label.tree-bookmark-link:hover {
     transition: none;
 }
 
-/* 缩放指示器 */
+/* 缩放指示器 - 固定在画布左上角 */
 .canvas-zoom-indicator {
-    position: fixed;
+    position: absolute;
     top: 20px;
-    right: 20px;
+    left: 20px;
     background: rgba(255, 255, 255, 0.95);
     border: 1px solid var(--border-color);
     border-radius: 10px;
@@ -4374,9 +4433,19 @@ a.tree-label.tree-bookmark-link:hover {
     transition: all 0.2s ease;
 }
 
+[data-theme="dark"] .canvas-zoom-indicator {
+    background: rgba(36, 37, 38, 0.95);
+    border-color: var(--border-color);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
+}
+
 .canvas-zoom-indicator:hover {
     box-shadow: 0 6px 16px rgba(0, 0, 0, 0.2);
     transform: translateY(-1px);
+}
+
+[data-theme="dark"] .canvas-zoom-indicator:hover {
+    box-shadow: 0 6px 16px rgba(0, 0, 0, 0.6);
 }
 
 .canvas-zoom-controls {
@@ -4398,11 +4467,23 @@ a.tree-label.tree-bookmark-link:hover {
     color: #24292f;
 }
 
+[data-theme="dark"] .zoom-btn {
+    background: linear-gradient(to bottom, #3a3b3c, #2f3031);
+    border-color: #4a4b4c;
+    color: #e4e6eb;
+}
+
 .zoom-btn:hover {
     background: linear-gradient(to bottom, #f6f8fa, #eaeef2);
     border-color: #0969da;
     transform: translateY(-1px);
     box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+}
+
+[data-theme="dark"] .zoom-btn:hover {
+    background: linear-gradient(to bottom, #4a4b4c, #3a3b3c);
+    border-color: #58a6ff;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.4);
 }
 
 .zoom-btn:active {
@@ -4414,6 +4495,26 @@ a.tree-label.tree-bookmark-link:hover {
     font-weight: 600;
     color: #0969da;
     font-size: 14px;
+}
+
+[data-theme="dark"] .zoom-value {
+    color: #58a6ff;
+}
+
+/* 深色模式下的zoom label颜色 */
+[data-theme="dark"] .canvas-zoom-indicator #canvasZoomLabel {
+    color: #b0b3b8 !important;
+}
+
+/* 深色模式下的kbd元素 */
+[data-theme="dark"] .canvas-zoom-indicator kbd {
+    background: #3a3b3c !important;
+    border-color: #4a4b4c !important;
+    color: #e4e6eb !important;
+}
+
+[data-theme="dark"] .canvas-zoom-indicator #canvasZoomHint {
+    color: #8a8d91 !important;
 }
 
 /* 增强滚动条显示 */

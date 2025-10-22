@@ -93,7 +93,7 @@ const i18n = {
         'en': 'Bookmark Additions'
     },
     navCanvas: {
-        'zh_CN': 'Bookmark Canvas',
+        'zh_CN': '书签画布',
         'en': 'Bookmark Canvas'
     },
     statsTitle: {
@@ -125,7 +125,7 @@ const i18n = {
         'en': 'Bookmark Additions'
     },
     canvasViewTitle: {
-        'zh_CN': 'Bookmark Canvas',
+        'zh_CN': '书签画布',
         'en': 'Bookmark Canvas'
     },
     importCanvasText: {
@@ -163,6 +163,14 @@ const i18n = {
     zoomLocateText: {
         'zh_CN': '定位',
         'en': 'Locate'
+    },
+    permanentSectionTitle: {
+        'zh_CN': '书签树 (永久栏目)',
+        'en': 'Bookmark Tree (Permanent)'
+    },
+    permanentSectionTip: {
+        'zh_CN': '拖动书签/文件夹到画布创建临时节点，拖动标题栏可移动此栏目',
+        'en': 'Drag bookmarks/folders to canvas to create temp nodes, drag title bar to move this section'
     },
     filterAll: {
         'zh_CN': '全部',
@@ -608,6 +616,12 @@ function applyLanguage() {
     if (zoomLocateBtn) zoomLocateBtn.title = i18n.zoomLocateTitle[currentLang];
     const zoomLocateText = document.getElementById('zoomLocateText');
     if (zoomLocateText) zoomLocateText.textContent = i18n.zoomLocateText[currentLang];
+    
+    // Canvas永久栏目文本
+    const permanentSectionTitle = document.getElementById('permanentSectionTitle');
+    if (permanentSectionTitle) permanentSectionTitle.textContent = i18n.permanentSectionTitle[currentLang];
+    const permanentSectionTip = document.getElementById('permanentSectionTip');
+    if (permanentSectionTip) permanentSectionTip.textContent = i18n.permanentSectionTip[currentLang];
     
     // 更新按钮文本
     const copyAllHistoryText = document.getElementById('copyAllHistoryText');
@@ -1364,6 +1378,12 @@ function renderCurrentView() {
                     const permanentSection = template.content.cloneNode(true);
                     canvasContent.appendChild(permanentSection);
                     console.log('[Canvas] 永久栏目已从template创建到canvas-content');
+                    
+                    // 立即应用语言设置（使用主UI的applyLanguage函数）
+                    setTimeout(() => {
+                        applyLanguage();
+                        console.log('[Canvas] 永久栏目语言已应用:', currentLang);
+                    }, 0);
                 } else {
                     console.error('[Canvas] 找不到permanentSectionTemplate');
                 }

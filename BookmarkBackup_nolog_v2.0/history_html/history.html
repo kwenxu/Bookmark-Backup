@@ -216,10 +216,14 @@
                 <div class="permanent-bookmark-section" id="permanentSection">
                     <div class="permanent-section-header" id="permanentSectionHeader">
                         <div class="permanent-section-title">
-                            <h3>Bookmark Tree (永久栏目)</h3>
-                            <span class="permanent-section-drag-hint">可拖动调整位置</span>
+                            <h3 id="permanentSectionTitle">书签树 (永久栏目)</h3>
                         </div>
-                        <p class="permanent-section-tip">拖动书签/文件夹到画布创建临时节点，拖动标题栏可移动此栏目</p>
+                        <div class="permanent-section-tip-container" id="permanentSectionTipContainer">
+                            <p class="permanent-section-tip" id="permanentSectionTip">拖动书签/文件夹到画布创建临时节点，拖动标题栏可移动此栏目</p>
+                            <button class="permanent-section-tip-close" id="permanentSectionTipClose" title="关闭提示">
+                                <i class="fas fa-times"></i>
+                            </button>
+                        </div>
                     </div>
                     <div class="permanent-section-body">
                         <div id="bookmarkTree" class="bookmark-tree">

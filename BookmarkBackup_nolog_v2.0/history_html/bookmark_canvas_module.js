@@ -56,6 +56,9 @@ function initCanvasView() {
     
     // 设置Canvas事件监听
     setupCanvasEventListeners();
+    
+    // 设置永久栏目提示关闭按钮
+    setupPermanentSectionTipClose();
 }
 
 // =============================================================================
@@ -465,6 +468,9 @@ function makePermanentSectionDraggable() {
     
     console.log('[Canvas] 为永久栏目添加拖拽功能');
     
+    // 初始化位置：如果使用transform居中，转换为left/top形式，避免第一次拖动跳动
+    initializePermanentSectionPosition(permanentSection);
+    
     // 添加resize功能
     makePermanentSectionResizable(permanentSection);
     
@@ -473,15 +479,22 @@ function makePermanentSectionDraggable() {
     let startY = 0;
     let initialLeft = 0;
     let initialTop = 0;
+    let hasMoved = false;
     
-    header.addEventListener('mousedown', (e) => {
-        // 只有点击标题栏才能拖动
-        if (e.target.closest('.permanent-section-tip') || 
-            e.target.closest('.permanent-section-drag-hint')) {
+    const onMouseDown = (e) => {
+        // 不要在关闭按钮、提示文本上触发拖动
+        if (e.target.closest('.permanent-section-tip-close') || 
+            e.target.closest('.permanent-section-tip-container')) {
+            return;
+        }
+        
+        // 只允许在标题区域拖动
+        if (!e.target.closest('.permanent-section-header')) {
             return;
         }
         
         isDragging = true;
+        hasMoved = false;
         startX = e.clientX;
         startY = e.clientY;
         
@@ -494,16 +507,23 @@ function makePermanentSectionDraggable() {
         
         permanentSection.classList.add('dragging');
         permanentSection.style.transform = 'none';
+        permanentSection.style.transition = 'none';
         
+        // 立即响应，不阻止默认行为可能更灵敏
         e.preventDefault();
-    });
+    };
     
-    document.addEventListener('mousemove', (e) => {
+    const onMouseMove = (e) => {
         if (!isDragging) return;
         
         // 计算鼠标在屏幕上的移动距离
         const deltaX = e.clientX - startX;
         const deltaY = e.clientY - startY;
+        
+        // 降低移动阈值，提高灵敏度
+        if (Math.abs(deltaX) > 1 || Math.abs(deltaY) > 1) {
+            hasMoved = true;
+        }
         
         // 除以缩放比例得到在canvas-content坐标系中的实际移动距离
         const scaledDeltaX = deltaX / CanvasState.zoom;
@@ -513,19 +533,32 @@ function makePermanentSectionDraggable() {
         const newX = initialLeft + scaledDeltaX;
         const newY = initialTop + scaledDeltaY;
         
+        // 直接更新位置，不使用requestAnimationFrame提高响应速度
         permanentSection.style.left = newX + 'px';
         permanentSection.style.top = newY + 'px';
-    });
+        
+        // 阻止文本选择
+        e.preventDefault();
+    };
     
-    document.addEventListener('mouseup', () => {
+    const onMouseUp = () => {
         if (isDragging) {
             isDragging = false;
             permanentSection.classList.remove('dragging');
             
-            // 保存位置
-            savePermanentSectionPosition();
+            if (hasMoved) {
+                // 保存位置
+                savePermanentSectionPosition();
+            }
+            
+            hasMoved = false;
         }
-    });
+    };
+    
+    // 使用捕获阶段确保事件优先处理，mousemove用冒泡阶段提高性能
+    header.addEventListener('mousedown', onMouseDown, true);
+    document.addEventListener('mousemove', onMouseMove, false);
+    document.addEventListener('mouseup', onMouseUp, true);
 }
 
 function savePermanentSectionPosition() {
@@ -550,17 +583,55 @@ function loadPermanentSectionPosition() {
             const position = JSON.parse(saved);
             const permanentSection = document.getElementById('permanentSection');
             if (permanentSection) {
+                permanentSection.style.transition = 'none';
                 permanentSection.style.transform = 'none';
                 permanentSection.style.left = position.left;
                 permanentSection.style.top = position.top;
                 if (position.width) permanentSection.style.width = position.width;
                 if (position.height) permanentSection.style.height = position.height;
                 console.log('[Canvas] 恢复永久栏目位置和大小:', position);
+                
+                // 强制重排后恢复transition
+                permanentSection.offsetHeight;
+                permanentSection.style.transition = '';
             }
         }
     } catch (error) {
         console.error('[Canvas] 加载永久栏目位置失败:', error);
     }
+}
+
+// 初始化永久栏目位置：转换transform为left/top，避免第一次拖动跳动
+function initializePermanentSectionPosition(permanentSection) {
+    if (!permanentSection) return;
+    
+    // 如果已经有left/top设置，说明已经初始化过了
+    if (permanentSection.style.left && permanentSection.style.top) {
+        return;
+    }
+    
+    // 获取当前的计算位置（使用transform居中）
+    const rect = permanentSection.getBoundingClientRect();
+    const workspace = document.getElementById('canvasWorkspace');
+    if (!workspace) return;
+    
+    const workspaceRect = workspace.getBoundingClientRect();
+    
+    // 计算在canvas-content坐标系中的位置
+    const left = (rect.left - workspaceRect.left) / CanvasState.zoom;
+    const top = (rect.top - workspaceRect.top) / CanvasState.zoom;
+    
+    // 禁用过渡，设置新位置
+    permanentSection.style.transition = 'none';
+    permanentSection.style.transform = 'none';
+    permanentSection.style.left = left + 'px';
+    permanentSection.style.top = top + 'px';
+    
+    // 强制重排后恢复transition
+    permanentSection.offsetHeight;
+    permanentSection.style.transition = '';
+    
+    console.log('[Canvas] 初始化永久栏目位置:', { left, top });
 }
 
 // =============================================================================
@@ -872,6 +943,9 @@ function renderTempNode(node) {
     const nodeElement = document.createElement('div');
     nodeElement.className = 'temp-canvas-node';
     nodeElement.id = node.id;
+    
+    // 禁用初始transition避免创建时的动画
+    nodeElement.style.transition = 'none';
     nodeElement.style.left = node.x + 'px';
     nodeElement.style.top = node.y + 'px';
     nodeElement.style.width = node.width + 'px';
@@ -929,12 +1003,17 @@ function renderTempNode(node) {
     
     // 添加到容器（使用之前已经声明的container变量）
     container.appendChild(nodeElement);
+    
+    // 强制重排后恢复transition
+    nodeElement.offsetHeight;
+    nodeElement.style.transition = '';
 }
 
 function makeNodeDraggable(element, node) {
     const header = element.querySelector('.temp-node-header');
+    let hasMoved = false;
     
-    header.addEventListener('mousedown', (e) => {
+    const onMouseDown = (e) => {
         if (e.target.classList.contains('temp-node-close')) return;
         
         CanvasState.dragState.isDragging = true;
@@ -944,10 +1023,15 @@ function makeNodeDraggable(element, node) {
         CanvasState.dragState.nodeStartX = node.x;
         CanvasState.dragState.nodeStartY = node.y;
         CanvasState.dragState.dragSource = 'temp-node';
+        hasMoved = false;
         
         element.classList.add('dragging');
+        element.style.transition = 'none';
+        
         e.preventDefault();
-    });
+    };
+    
+    header.addEventListener('mousedown', onMouseDown, true);
 }
 
 function makeNodeDroppableBack(element, node) {
@@ -1004,6 +1088,36 @@ function clearAllTempNodes() {
 function movePermanentSectionToCanvas() {
     // 已废弃：永久栏目现在直接从template创建到canvas-content中
     console.log('[Canvas] 永久栏目已在canvas-content中（从template创建）');
+}
+
+// =============================================================================
+// 永久栏目提示关闭功能
+// =============================================================================
+
+function setupPermanentSectionTipClose() {
+    const closeBtn = document.getElementById('permanentSectionTipClose');
+    const tipContainer = document.getElementById('permanentSectionTipContainer');
+    
+    if (!closeBtn || !tipContainer) {
+        console.warn('[Canvas] 找不到提示关闭按钮或容器');
+        return;
+    }
+    
+    // 检查是否已经关闭过
+    const isTipClosed = localStorage.getItem('canvas-permanent-tip-closed') === 'true';
+    if (isTipClosed) {
+        tipContainer.style.display = 'none';
+    }
+    
+    // 点击关闭按钮
+    closeBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        e.preventDefault();
+        
+        tipContainer.style.display = 'none';
+        localStorage.setItem('canvas-permanent-tip-closed', 'true');
+        console.log('[Canvas] 永久栏目提示已关闭');
+    });
 }
 
 // =============================================================================
@@ -1103,6 +1217,7 @@ function setupCanvasEventListeners() {
             const newX = CanvasState.dragState.nodeStartX + scaledDeltaX;
             const newY = CanvasState.dragState.nodeStartY + scaledDeltaY;
             
+            // 直接更新DOM，提高响应速度
             CanvasState.dragState.draggedElement.style.left = newX + 'px';
             CanvasState.dragState.draggedElement.style.top = newY + 'px';
             
@@ -1113,8 +1228,11 @@ function setupCanvasEventListeners() {
                 node.x = newX;
                 node.y = newY;
             }
+            
+            // 阻止文本选择
+            e.preventDefault();
         }
-    });
+    }, false);
     
     // 鼠标释放
     document.addEventListener('mouseup', () => {
@@ -1124,7 +1242,7 @@ function setupCanvasEventListeners() {
             CanvasState.dragState.draggedElement = null;
             saveTempNodes();
         }
-    });
+    }, false);
     
     // 工具栏按钮
     const importBtn = document.getElementById('importCanvasBtn');

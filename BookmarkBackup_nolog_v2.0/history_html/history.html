@@ -5,9 +5,11 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title></title>
     <link rel="stylesheet" href="history.css">
+    <link rel="stylesheet" href="canvas_obsidian_style.css">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/5.15.3/css/all.min.css">
     <script src="bookmark_tree_context_menu.js" defer></script>
     <script src="bookmark_tree_drag_drop.js" defer></script>
+    <script src="bookmark_canvas_module.js" defer></script>
     <script src="history.js" defer></script>
 </head>
 <body>
@@ -65,9 +67,9 @@
                 <!-- Bookmark toolbox 区域组 -->
                 <div class="nav-group">
                     <div class="nav-group-title" id="bookmarkToolboxTitle"></div>
-                    <button class="nav-tab" data-view="tree">
-                        <i class="fas fa-sitemap"></i>
-                        <span id="navTreeText">书签树</span>
+                    <button class="nav-tab" data-view="canvas">
+                        <i class="fas fa-project-diagram"></i>
+                        <span id="navCanvasText">Bookmark Canvas</span>
                     </button>
                     <button class="nav-tab" data-view="additions">
                         <i class="fas fa-plus-circle"></i>
@@ -158,23 +160,75 @@
                 </div>
             </div>
 
-            <!-- 书签树视图 -->
-            <div id="treeView" class="view">
+            <!-- Bookmark Canvas 视图 (原Bookmark Tree改造) -->
+            <div id="canvasView" class="view">
                 <div class="view-header">
                     <div class="view-header-left">
-                        <h2 id="treeViewTitle">书签树</h2>
+                        <h2 id="canvasViewTitle">Bookmark Canvas</h2>
                     </div>
                     <div class="view-header-right">
-                        <button id="revertAllTreeBtn" class="view-action-btn">
-                            <i class="fas fa-undo"></i>
-                            <span id="revertAllTreeText">全部撤销</span>
+                        <button id="importCanvasBtn" class="view-action-btn">
+                            <i class="fas fa-file-import"></i>
+                            <span id="importCanvasText">导入</span>
+                        </button>
+                        <button id="exportCanvasBtn" class="view-action-btn">
+                            <i class="fas fa-file-export"></i>
+                            <span id="exportCanvasText">导出</span>
+                        </button>
+                        <button id="clearTempNodesBtn" class="view-action-btn">
+                            <i class="fas fa-trash-alt"></i>
+                            <span id="clearTempNodesText">清空临时节点</span>
                         </button>
                     </div>
                 </div>
-                <div id="bookmarkTree" class="bookmark-tree">
-                    <!-- 动态加载书签树 -->
+                
+                <!-- Canvas主容器 -->
+                <div class="canvas-main-container" style="--canvas-scale: 1; --canvas-pan-x: 0px; --canvas-pan-y: 0px;">
+                    <!-- Canvas画布工作区 -->
+                    <div class="canvas-workspace" id="canvasWorkspace">
+                        <!-- Canvas内容容器（应用缩放和平移） -->
+                        <div class="canvas-content" id="canvasContent">
+                            <!-- 临时节点和永久栏目都在这里 -->
+                        </div>
+                    </div>
+                    
+                    <!-- 缩放控制器 -->
+                    <div class="canvas-zoom-indicator" id="canvasZoomIndicator">
+                        <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 6px;">
+                            <span style="font-size: 11px; color: #57606a; font-weight: 500;">缩放</span>
+                            <span class="zoom-value" id="zoomValue">100%</span>
+                        </div>
+                        <div class="canvas-zoom-controls">
+                            <button class="zoom-btn" id="zoomOutBtn" title="缩小 (10%)">−</button>
+                            <button class="zoom-btn" id="zoomResetBtn" title="重置到100%">100%</button>
+                            <button class="zoom-btn" id="zoomInBtn" title="放大 (10%)">+</button>
+                        </div>
+                        <div style="font-size: 10px; margin-top: 6px; color: #57606a; text-align: center;">
+                            <kbd style="font-size: 9px; padding: 2px 4px; background: #f6f8fa; border: 1px solid #d0d7de; border-radius: 3px;">Ctrl</kbd> + 滚轮 | 
+                            <kbd style="font-size: 9px; padding: 2px 4px; background: #f6f8fa; border: 1px solid #d0d7de; border-radius: 3px;">空格</kbd> 拖动
+                        </div>
+                    </div>
+                    
                 </div>
             </div>
+            
+            <!-- 永久栏目 - 在canvas-content内部通过JS添加 -->
+            <template id="permanentSectionTemplate">
+                <div class="permanent-bookmark-section" id="permanentSection">
+                    <div class="permanent-section-header" id="permanentSectionHeader">
+                        <div class="permanent-section-title">
+                            <h3>Bookmark Tree (永久栏目)</h3>
+                            <span class="permanent-section-drag-hint">可拖动调整位置</span>
+                        </div>
+                        <p class="permanent-section-tip">拖动书签/文件夹到画布创建临时节点，拖动标题栏可移动此栏目</p>
+                    </div>
+                    <div class="permanent-section-body">
+                        <div id="bookmarkTree" class="bookmark-tree">
+                            <!-- 动态加载书签树 -->
+                        </div>
+                    </div>
+                </div>
+            </template>
         </main>
     </div>
 

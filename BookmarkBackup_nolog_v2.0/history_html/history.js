@@ -92,9 +92,9 @@ const i18n = {
         'zh_CN': '书签添加记录',
         'en': 'Bookmark Additions'
     },
-    navTree: {
-        'zh_CN': '书签树',
-        'en': 'Bookmark Tree'
+    navCanvas: {
+        'zh_CN': 'Bookmark Canvas',
+        'en': 'Bookmark Canvas'
     },
     statsTitle: {
         'zh_CN': '统计信息',
@@ -124,9 +124,21 @@ const i18n = {
         'zh_CN': '书签添加记录',
         'en': 'Bookmark Additions'
     },
-    treeViewTitle: {
-        'zh_CN': '书签树',
-        'en': 'Bookmark Tree'
+    canvasViewTitle: {
+        'zh_CN': 'Bookmark Canvas',
+        'en': 'Bookmark Canvas'
+    },
+    importCanvasText: {
+        'zh_CN': '导入',
+        'en': 'Import'
+    },
+    exportCanvasText: {
+        'zh_CN': '导出',
+        'en': 'Export'
+    },
+    clearTempNodesText: {
+        'zh_CN': '清空临时节点',
+        'en': 'Clear Temp Nodes'
     },
     filterAll: {
         'zh_CN': '全部',
@@ -539,7 +551,7 @@ function applyLanguage() {
     document.getElementById('navCurrentChangesText').textContent = i18n.navCurrentChanges[currentLang];
     document.getElementById('navHistoryText').textContent = i18n.navHistory[currentLang];
     document.getElementById('navAdditionsText').textContent = i18n.navAdditions[currentLang];
-    document.getElementById('navTreeText').textContent = i18n.navTree[currentLang];
+    document.getElementById('navCanvasText').textContent = i18n.navCanvas[currentLang];
     document.getElementById('bookmarkGitTitle').textContent = i18n.bookmarkGitTitle[currentLang];
     document.getElementById('bookmarkToolboxTitle').textContent = i18n.bookmarkToolboxTitle[currentLang];
     document.getElementById('statsTitle').textContent = i18n.statsTitle[currentLang];
@@ -549,7 +561,15 @@ function applyLanguage() {
     document.getElementById('currentChangesViewTitle').textContent = i18n.currentChangesViewTitle[currentLang];
     document.getElementById('historyViewTitle').textContent = i18n.historyViewTitle[currentLang];
     document.getElementById('additionsViewTitle').textContent = i18n.additionsViewTitle[currentLang];
-    document.getElementById('treeViewTitle').textContent = i18n.treeViewTitle[currentLang];
+    // Canvas 视图标题
+    const canvasViewTitle = document.getElementById('canvasViewTitle');
+    if (canvasViewTitle) canvasViewTitle.textContent = i18n.canvasViewTitle[currentLang];
+    const importCanvasText = document.getElementById('importCanvasText');
+    if (importCanvasText) importCanvasText.textContent = i18n.importCanvasText[currentLang];
+    const exportCanvasText = document.getElementById('exportCanvasText');
+    if (exportCanvasText) exportCanvasText.textContent = i18n.exportCanvasText[currentLang];
+    const clearTempNodesText = document.getElementById('clearTempNodesText');
+    if (clearTempNodesText) clearTempNodesText.textContent = i18n.clearTempNodesText[currentLang];
     
     // 更新按钮文本
     const copyAllHistoryText = document.getElementById('copyAllHistoryText');
@@ -558,8 +578,6 @@ function applyLanguage() {
     }
     const revertAllCurrentText = document.getElementById('revertAllCurrentText');
     if (revertAllCurrentText) revertAllCurrentText.textContent = i18n.revertAll[currentLang];
-    const revertAllTreeText = document.getElementById('revertAllTreeText');
-    if (revertAllTreeText) revertAllTreeText.textContent = i18n.revertAll[currentLang];
     document.getElementById('filterAll').textContent = i18n.filterAll[currentLang];
     document.getElementById('filterBackedUp').textContent = i18n.filterBackedUp[currentLang];
     document.getElementById('filterNotBackedUp').textContent = i18n.filterNotBackedUp[currentLang];
@@ -631,10 +649,7 @@ function initializeUI() {
     if (revertAllCurrentBtn) {
         revertAllCurrentBtn.addEventListener('click', () => handleRevertAll('current'));
     }
-    const revertAllTreeBtn = document.getElementById('revertAllTreeBtn');
-    if (revertAllTreeBtn) {
-        revertAllTreeBtn.addEventListener('click', () => handleRevertAll('tree'));
-    }
+    // Canvas 相关事件监听在 Canvas 模块中处理
     
     // 搜索
     document.getElementById('searchInput').addEventListener('input', handleSearch);
@@ -1289,8 +1304,33 @@ function renderCurrentView() {
         case 'additions':
             renderAdditionsView();
             break;
-        case 'tree':
+        case 'canvas':
+            // Canvas视图：包含原Bookmark Tree所有功能 + Canvas画布功能
+            // 1. 先从template创建永久栏目并添加到canvas-content（如果还不存在）
+            const canvasContent = document.getElementById('canvasContent');
+            let permanentSectionExists = document.getElementById('permanentSection');
+            
+            if (!permanentSectionExists && canvasContent) {
+                const template = document.getElementById('permanentSectionTemplate');
+                if (template) {
+                    const permanentSection = template.content.cloneNode(true);
+                    canvasContent.appendChild(permanentSection);
+                    console.log('[Canvas] 永久栏目已从template创建到canvas-content');
+                } else {
+                    console.error('[Canvas] 找不到permanentSectionTemplate');
+                }
+            } else if (!canvasContent) {
+                console.error('[Canvas] 找不到canvasContent');
+            } else {
+                console.log('[Canvas] 永久栏目已存在，跳过创建');
+            }
+            
+            // 2. 渲染原有的书签树功能（到永久栏目中的bookmarkTree容器）
             renderTreeView();
+            // 3. 初始化Canvas功能（缩放、平移、拖拽等）
+            if (window.CanvasModule) {
+                window.CanvasModule.init();
+            }
             break;
     }
 }

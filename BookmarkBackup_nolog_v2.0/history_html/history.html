@@ -49,22 +49,31 @@
         <!-- 左侧导航栏 -->
         <aside class="sidebar">
             <nav class="nav-tabs">
-                <button class="nav-tab active" data-view="current-changes">
-                    <i class="fas fa-exchange-alt"></i>
-                    <span id="navCurrentChangesText">当前 数量/结构 变化</span>
-                </button>
-                <button class="nav-tab" data-view="tree">
-                    <i class="fas fa-sitemap"></i>
-                    <span id="navTreeText">书签树</span>
-                </button>
-                <button class="nav-tab" data-view="history">
-                    <i class="fas fa-history"></i>
-                    <span id="navHistoryText">备份历史</span>
-                </button>
-                <button class="nav-tab" data-view="additions">
-                    <i class="fas fa-plus-circle"></i>
-                    <span id="navAdditionsText">书签添加记录</span>
-                </button>
+                <!-- Bookmark Git 区域组 -->
+                <div class="nav-group">
+                    <div class="nav-group-title" id="bookmarkGitTitle"></div>
+                    <button class="nav-tab active" data-view="current-changes">
+                        <i class="fas fa-exchange-alt"></i>
+                        <span id="navCurrentChangesText">当前 数量/结构 变化</span>
+                    </button>
+                    <button class="nav-tab" data-view="history">
+                        <i class="fas fa-history"></i>
+                        <span id="navHistoryText">备份历史</span>
+                    </button>
+                </div>
+
+                <!-- Bookmark toolbox 区域组 -->
+                <div class="nav-group">
+                    <div class="nav-group-title" id="bookmarkToolboxTitle"></div>
+                    <button class="nav-tab" data-view="tree">
+                        <i class="fas fa-sitemap"></i>
+                        <span id="navTreeText">书签树</span>
+                    </button>
+                    <button class="nav-tab" data-view="additions">
+                        <i class="fas fa-plus-circle"></i>
+                        <span id="navAdditionsText">书签添加记录</span>
+                    </button>
+                </div>
             </nav>
 
             <!-- 统计信息 -->

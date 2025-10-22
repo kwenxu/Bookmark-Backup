@@ -319,6 +319,14 @@ const i18n = {
     jsonViewMode: {
         'zh_CN': 'JSON',
         'en': 'JSON'
+    },
+    bookmarkGitTitle: {
+        'zh_CN': '书签Git',
+        'en': 'Bookmark Git'
+    },
+    bookmarkToolboxTitle: {
+        'zh_CN': '书签工具箱',
+        'en': 'Bookmark Toolbox'
     }
 };
 
@@ -532,6 +540,8 @@ function applyLanguage() {
     document.getElementById('navHistoryText').textContent = i18n.navHistory[currentLang];
     document.getElementById('navAdditionsText').textContent = i18n.navAdditions[currentLang];
     document.getElementById('navTreeText').textContent = i18n.navTree[currentLang];
+    document.getElementById('bookmarkGitTitle').textContent = i18n.bookmarkGitTitle[currentLang];
+    document.getElementById('bookmarkToolboxTitle').textContent = i18n.bookmarkToolboxTitle[currentLang];
     document.getElementById('statsTitle').textContent = i18n.statsTitle[currentLang];
     document.getElementById('statBackupsLabel').textContent = i18n.statBackups[currentLang];
     document.getElementById('statBookmarksLabel').textContent = i18n.statBookmarks[currentLang];

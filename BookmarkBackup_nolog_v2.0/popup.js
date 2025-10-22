@@ -5623,7 +5623,7 @@ const currentLang = data.preferredLang || 'zh_CN';
     if (statusCard) {
         statusCard.addEventListener('click', function() {
             // 打开历史查看器的当前变化视图
-            const url = chrome.runtime.getURL('history_html/history.html');
+            const url = chrome.runtime.getURL('history_html/history.html?view=current-changes');
             chrome.tabs.create({ url: url });
         });
 

@@ -4016,7 +4016,7 @@ a.tree-label.tree-bookmark-link:hover {
     left: 50%;
     transform: translate(-50%, -50%);
     width: 600px;
-    max-height: 70vh;
+    height: 70vh; /* 改为固定高度而不是max-height */
     background: var(--bg-elevated);
     border: 3px solid var(--accent-primary);
     border-radius: 12px;
@@ -4026,6 +4026,8 @@ a.tree-label.tree-bookmark-link:hover {
     transition: box-shadow 0.2s ease;
     cursor: default;
     will-change: left, top;
+    display: flex; /* 使用flex布局 */
+    flex-direction: column; /* 垂直方向 */
 }
 
 [data-theme="dark"] .permanent-bookmark-section {
@@ -4140,19 +4142,25 @@ a.tree-label.tree-bookmark-link:hover {
 
 .permanent-section-body {
     padding: 16px;
-    max-height: calc(70vh - 90px);
-    overflow-y: auto;
+    flex: 1; /* 填充剩余空间 */
+    overflow-y: auto; /* 滚动条在这里，跟随栏目窗口大小 */
+    overflow-x: hidden;
+    display: flex;
+    flex-direction: column;
 }
 
 /* 永久栏目内的书签树样式调整 */
 .permanent-bookmark-section .bookmark-tree {
     /* 继承原有的bookmark-tree样式，不需要额外padding */
+    flex: 1; /* 填充父容器 */
+    overflow: visible; /* 让内容自然扩展 */
 }
 
 /* 临时节点样式 */
 .temp-canvas-node {
     position: absolute;
     width: 300px;
+    height: 250px; /* 默认高度 */
     background: linear-gradient(to bottom, #ffffff, #fafbfc);
     border: 1.5px solid #d0d7de;
     border-radius: 8px;
@@ -4161,6 +4169,8 @@ a.tree-label.tree-bookmark-link:hover {
     transition: box-shadow 0.2s ease, transform 0.2s ease;
     z-index: 10;
     will-change: left, top;
+    display: flex; /* 使用flex布局 */
+    flex-direction: column; /* 垂直方向 */
 }
 
 [data-theme="dark"] .temp-canvas-node {
@@ -4272,8 +4282,9 @@ a.tree-label.tree-bookmark-link:hover {
 
 .temp-node-body {
     padding: 12px 16px;
-    max-height: 300px;
-    overflow-y: auto;
+    flex: 1; /* 填充剩余空间 */
+    overflow-y: auto; /* 滚动条在这里，跟随栏目窗口大小 */
+    overflow-x: hidden;
 }
 
 .temp-node-type-badge {

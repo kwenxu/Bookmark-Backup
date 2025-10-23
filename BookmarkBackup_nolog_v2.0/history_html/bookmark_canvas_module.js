@@ -747,8 +747,7 @@ function makePermanentSectionResizable(element) {
                 element.style.left = newLeft + 'px';
                 element.style.top = newTop + 'px';
                 
-                // 调整max-height
-                element.style.maxHeight = newHeight + 'px';
+                // 不再设置max-height，让内容区域自动填充
             };
             
             const onMouseUp = () => {
@@ -961,8 +960,8 @@ function createTempNode(data, x, y) {
         type: data.type || (data.url ? 'bookmark' : 'folder'),
         x: x,
         y: y,
-        width: 250,
-        height: 200, // 默认高度
+        width: 300,
+        height: 250, // 默认高度（与CSS一致）
         data: data
     };
     

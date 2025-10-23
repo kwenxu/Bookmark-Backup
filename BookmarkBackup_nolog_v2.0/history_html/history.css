@@ -233,6 +233,93 @@ body {
     border-right: 1px solid var(--border-color);
     padding: 16px;
     overflow-y: auto;
+    overflow-x: hidden;
+    position: relative;
+    transition: width 0.3s ease, padding 0.3s ease;
+}
+
+/* 侧边栏收起状态 */
+.sidebar.collapsed {
+    width: 60px;
+    padding: 16px 4px;
+}
+
+/* 收起后隐藏文字 */
+.sidebar.collapsed .nav-tab span,
+.sidebar.collapsed .nav-group-title,
+.sidebar.collapsed .stats-panel h3,
+.sidebar.collapsed .stats-panel .stat-item span:first-child {
+    display: none;
+}
+
+/* 收起后隐藏分组边框 */
+.sidebar.collapsed .nav-group {
+    border-bottom: none;
+    margin-bottom: 8px;
+    padding-bottom: 8px;
+}
+
+/* 收起后调整按钮样式 */
+.sidebar.collapsed .nav-tab {
+    justify-content: center;
+    padding: 12px 0;
+}
+
+.sidebar.collapsed .nav-tab i {
+    margin: 0;
+}
+
+/* 收起后调整统计面板 */
+.sidebar.collapsed .stats-panel {
+    padding: 12px 4px;
+}
+
+.sidebar.collapsed .stats-panel .stat-item {
+    flex-direction: column;
+    align-items: center;
+    gap: 4px;
+}
+
+.sidebar.collapsed .stats-panel .stat-item strong {
+    margin-top: 0;
+}
+
+/* 侧边栏切换按钮 - 圆形设计，水平居中靠近底部 */
+.sidebar-toggle {
+    position: absolute;
+    left: 50%;
+    bottom: 20px;
+    transform: translateX(-50%);
+    width: 32px;
+    height: 32px;
+    background: var(--bg-secondary);
+    border: 1px solid var(--border-color);
+    border-radius: 50%;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 10;
+    transition: all 0.2s ease;
+    color: var(--text-secondary);
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+}
+
+.sidebar-toggle:hover {
+    background: var(--hover-bg);
+    color: var(--primary-color);
+    transform: translateX(-50%) scale(1.1);
+    box-shadow: 0 3px 12px rgba(0, 0, 0, 0.15);
+}
+
+.sidebar-toggle i {
+    font-size: 14px;
+    transition: transform 0.3s ease;
+}
+
+/* 收起状态时旋转图标 */
+.sidebar.collapsed .sidebar-toggle i {
+    transform: rotate(180deg);
 }
 
 .nav-tabs {

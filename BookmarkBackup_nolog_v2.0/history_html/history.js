@@ -451,6 +451,9 @@ document.addEventListener('DOMContentLoaded', async () => {
     // 初始化 UI（此时currentView已经是正确的值）
     initializeUI();
     
+    // 初始化侧边栏收起功能
+    initSidebarToggle();
+    
     // 初始化右键菜单和拖拽功能
     if (typeof initContextMenu === 'function') {
         initContextMenu();
@@ -1323,6 +1326,39 @@ function updateStats() {
     document.getElementById('statBackupsCount').textContent = totalBackups;
     document.getElementById('statBookmarksCount').textContent = currentBookmarks;
     document.getElementById('statFoldersCount').textContent = currentFolders;
+}
+
+// =============================================================================
+// 侧边栏收起功能
+// =============================================================================
+
+function initSidebarToggle() {
+    const sidebar = document.getElementById('sidebar');
+    const toggleBtn = document.getElementById('sidebarToggle');
+    
+    if (!sidebar || !toggleBtn) {
+        console.warn('[侧边栏] 找不到侧边栏或切换按钮');
+        return;
+    }
+    
+    // 从 localStorage 恢复侧边栏状态
+    const savedState = localStorage.getItem('sidebarCollapsed');
+    if (savedState === 'true') {
+        sidebar.classList.add('collapsed');
+        console.log('[侧边栏] 恢复收起状态');
+    }
+    
+    // 点击切换按钮
+    toggleBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        sidebar.classList.toggle('collapsed');
+        
+        // 保存状态到 localStorage
+        const isCollapsed = sidebar.classList.contains('collapsed');
+        localStorage.setItem('sidebarCollapsed', isCollapsed.toString());
+        
+        console.log('[侧边栏]', isCollapsed ? '已收起' : '已展开');
+    });
 }
 
 // =============================================================================

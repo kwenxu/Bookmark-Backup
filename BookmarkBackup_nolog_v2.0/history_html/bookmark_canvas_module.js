@@ -350,16 +350,36 @@ function setupCanvasZoomAndPan() {
     if (zoomLocateBtn) zoomLocateBtn.addEventListener('click', locateToPermanentSection);
 }
 
-function setCanvasZoom(zoom) {
+function setCanvasZoom(zoom, centerX = null, centerY = null) {
     const container = document.querySelector('.canvas-main-container');
-    if (!container) return;
+    const workspace = document.getElementById('canvasWorkspace');
+    if (!container || !workspace) return;
+    
+    const oldZoom = CanvasState.zoom;
     
     // 限制缩放范围
     zoom = Math.max(0.1, Math.min(3, zoom));
-    CanvasState.zoom = zoom;
     
-    // 使用CSS变量应用缩放（Obsidian方式）
+    // 如果没有指定中心点，使用 workspace 的中心点
+    if (centerX === null || centerY === null) {
+        const workspaceRect = workspace.getBoundingClientRect();
+        centerX = workspaceRect.width / 2;
+        centerY = workspaceRect.height / 2;
+    }
+    
+    // 计算中心点在 canvas-content 坐标系中的位置
+    const canvasCenterX = (centerX - CanvasState.panOffsetX) / oldZoom;
+    const canvasCenterY = (centerY - CanvasState.panOffsetY) / oldZoom;
+    
+    // 应用新的缩放
+    CanvasState.zoom = zoom;
     container.style.setProperty('--canvas-scale', zoom);
+    
+    // 调整平移偏移，使中心点保持在相同的视觉位置
+    CanvasState.panOffsetX = centerX - canvasCenterX * zoom;
+    CanvasState.panOffsetY = centerY - canvasCenterY * zoom;
+    applyPanOffset();
+    savePanOffset();
     
     // 更新显示
     const zoomValue = document.getElementById('zoomValue');
@@ -370,7 +390,7 @@ function setCanvasZoom(zoom) {
     // 保存缩放级别
     localStorage.setItem('canvas-zoom', zoom.toString());
     
-    console.log('[Canvas] 缩放:', Math.round(zoom * 100) + '%');
+    console.log('[Canvas] 缩放:', Math.round(zoom * 100) + '%', '中心点:', { canvasCenterX, canvasCenterY });
 }
 
 function applyPanOffset() {

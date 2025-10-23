@@ -71,73 +71,91 @@ function enhanceBookmarkTreeForCanvas() {
     
     console.log('[Canvas] 为书签树添加Canvas拖拽功能');
     
-    // 为所有书签项添加拖拽功能
-    const bookmarkItems = bookmarkTree.querySelectorAll('.bookmark-item');
-    bookmarkItems.forEach(item => {
-        item.draggable = true;
-        item.addEventListener('dragstart', handleExistingBookmarkDragStart);
-        item.addEventListener('dragend', handlePermanentDragEnd);
-    });
+    // 重要：不要覆盖原有的拖拽事件！
+    // 原有的拖拽功能（bookmark_tree_drag_drop.js）已经通过 attachTreeEvents() 绑定了
+    // 我们只需要添加额外的事件监听器来支持拖出到Canvas即可
     
-    // 为所有文件夹添加拖拽功能
-    const folderHeaders = bookmarkTree.querySelectorAll('.folder-header');
-    folderHeaders.forEach(header => {
-        header.draggable = true;
-        header.addEventListener('dragstart', handleExistingFolderDragStart);
-        header.addEventListener('dragend', handlePermanentDragEnd);
-    });
-}
-
-function handleExistingBookmarkDragStart(e) {
-    const item = e.currentTarget;
-    const bookmarkData = {
-        id: item.dataset.bookmarkId,
-        title: item.querySelector('.bookmark-title')?.textContent || item.dataset.title,
-        url: item.dataset.url
-    };
-    
-    CanvasState.dragState.isDragging = true;
-    CanvasState.dragState.draggedData = { ...bookmarkData, type: 'bookmark' };
-    CanvasState.dragState.dragSource = 'permanent';
-    
-    e.dataTransfer.effectAllowed = 'copy';
-    e.dataTransfer.setData('text/plain', bookmarkData.title || '');
-    e.dataTransfer.setData('application/json', JSON.stringify({ ...bookmarkData, type: 'bookmark' }));
-    
-    console.log('[Canvas] 开始拖拽书签:', bookmarkData.title);
-}
-
-function handleExistingFolderDragStart(e) {
-    const header = e.currentTarget;
-    const folderItem = header.closest('.folder-item');
-    
-    // 收集文件夹数据
-    const folderData = {
-        id: folderItem.dataset.folderId,
-        title: header.querySelector('.folder-title')?.textContent || '未命名文件夹',
-        children: []
-    };
-    
-    // 收集子项
-    const childItems = folderItem.querySelectorAll(':scope > .folder-children > .bookmark-item');
-    childItems.forEach(child => {
-        folderData.children.push({
-            id: child.dataset.bookmarkId,
-            title: child.querySelector('.bookmark-title')?.textContent,
-            url: child.dataset.url
+    // 使用正确的选择器：.tree-item（不是.bookmark-item）
+    const treeItems = bookmarkTree.querySelectorAll('.tree-item[data-node-id]');
+    treeItems.forEach(item => {
+        // 添加dragstart监听器，收集节点数据（不干扰原有拖拽）
+        item.addEventListener('dragstart', function(e) {
+            const nodeId = item.dataset.nodeId;
+            const nodeTitle = item.dataset.nodeTitle;
+            const nodeUrl = item.dataset.nodeUrl;
+            const isFolder = item.dataset.nodeType === 'folder';
+            
+            // 收集节点数据，供dragend时使用
+            const nodeData = {
+                id: nodeId,
+                title: nodeTitle,
+                url: nodeUrl,
+                type: isFolder ? 'folder' : 'bookmark',
+                children: []
+            };
+            
+            // 如果是文件夹，收集子项
+            if (isFolder) {
+                const nodeElement = item.parentElement;
+                const childrenContainer = nodeElement.querySelector('.tree-children');
+                if (childrenContainer) {
+                    const childItems = childrenContainer.querySelectorAll(':scope > .tree-node > .tree-item');
+                    childItems.forEach(child => {
+                        nodeData.children.push({
+                            id: child.dataset.nodeId,
+                            title: child.dataset.nodeTitle,
+                            url: child.dataset.nodeUrl
+                        });
+                    });
+                }
+            }
+            
+            // 保存到Canvas状态
+            CanvasState.dragState.draggedData = nodeData;
+            CanvasState.dragState.dragSource = 'permanent';
+            
+            console.log('[Canvas] 拖拽数据已保存:', nodeData);
+        });
+        
+        // 添加dragend监听器，检查是否拖到Canvas
+        item.addEventListener('dragend', function(e) {
+            if (CanvasState.dragState.dragSource !== 'permanent') return;
+            
+            const dropX = e.clientX;
+            const dropY = e.clientY;
+            
+            // 检查是否拖到Canvas工作区
+            const workspace = document.getElementById('canvasWorkspace');
+            if (!workspace) return;
+            
+            const rect = workspace.getBoundingClientRect();
+            
+            if (dropX >= rect.left && dropX <= rect.right && 
+                dropY >= rect.top && dropY <= rect.bottom) {
+                
+                // 计算在canvas-content坐标系中的位置（考虑缩放和平移）
+                const canvasX = (dropX - rect.left - CanvasState.panOffsetX) / CanvasState.zoom;
+                const canvasY = (dropY - rect.top - CanvasState.panOffsetY) / CanvasState.zoom;
+                
+                console.log('[Canvas] 拖到Canvas，创建临时节点:', { canvasX, canvasY });
+                
+                // 在Canvas上创建临时节点
+                if (CanvasState.dragState.draggedData) {
+                    createTempNode(CanvasState.dragState.draggedData, canvasX, canvasY);
+                }
+            }
+            
+            // 清理状态
+            CanvasState.dragState.draggedData = null;
+            CanvasState.dragState.dragSource = null;
         });
     });
     
-    CanvasState.dragState.isDragging = true;
-    CanvasState.dragState.draggedData = { ...folderData, type: 'folder' };
-    CanvasState.dragState.dragSource = 'permanent';
-    
-    e.dataTransfer.effectAllowed = 'copy';
-    e.dataTransfer.setData('text/plain', folderData.title);
-    e.dataTransfer.setData('application/json', JSON.stringify({ ...folderData, type: 'folder' }));
-    
-    console.log('[Canvas] 开始拖拽文件夹:', folderData.title);
+    console.log('[Canvas] 已为', treeItems.length, '个节点添加Canvas拖拽支持');
 }
+
+// 这两个函数已废弃，不再需要，因为原有的拖拽功能已经足够
+// handleExistingBookmarkDragStart 和 handleExistingFolderDragStart 已被移除
 
 function createCanvasBookmarkElement(bookmark, isDraggable = true) {
     if (bookmark.url) {

@@ -3536,6 +3536,12 @@ function attachTreeEvents(treeContainer) {
         attachDragEvents(treeContainer);
     }
     
+    // 如果在Canvas视图，重新绑定Canvas拖出功能
+    if (currentView === 'canvas' && window.CanvasModule && window.CanvasModule.enhance) {
+        console.log('[树事件] 当前在Canvas视图，重新绑定Canvas拖出功能');
+        window.CanvasModule.enhance();
+    }
+    
     console.log('[树事件] 事件绑定完成');
     
     // 恢复展开状态
@@ -4428,6 +4434,27 @@ async function applyIncrementalCreateToTree(id, bookmark) {
     `;
     // 插入（末尾）
     parentNode.insertAdjacentHTML('beforeend', html);
+    
+    // 为新创建的节点绑定事件
+    const newItem = parentNode.lastElementChild?.querySelector('.tree-item');
+    if (newItem) {
+        // 绑定右键菜单
+        newItem.addEventListener('contextmenu', (e) => {
+            if (typeof showContextMenu === 'function') {
+                showContextMenu(e, newItem);
+            }
+        });
+        
+        // 绑定拖拽事件
+        if (typeof attachDragEvents === 'function') {
+            attachDragEvents(container);
+        }
+        
+        // 如果在Canvas视图，绑定Canvas拖出功能
+        if (currentView === 'canvas' && window.CanvasModule && window.CanvasModule.enhance) {
+            window.CanvasModule.enhance();
+        }
+    }
 }
 
 // ===== 增量更新：删除 =====
@@ -5145,7 +5172,8 @@ function setupBookmarkListener() {
     browserAPI.bookmarks.onCreated.addListener(async (id, bookmark) => {
         console.log('[书签监听] 书签创建:', bookmark.title);
         try {
-            if (currentView === 'tree') {
+            // 支持 tree 和 canvas 视图（canvas视图包含永久栏目的书签树）
+            if (currentView === 'tree' || currentView === 'canvas') {
                 await applyIncrementalCreateToTree(id, bookmark);
             }
             // 立即刷新当前变化（轻量重绘容器，不刷新页面）
@@ -5161,7 +5189,8 @@ function setupBookmarkListener() {
     browserAPI.bookmarks.onRemoved.addListener(async (id, removeInfo) => {
         console.log('[书签监听] 书签删除:', id);
         try {
-            if (currentView === 'tree') {
+            // 支持 tree 和 canvas 视图（canvas视图包含永久栏目的书签树）
+            if (currentView === 'tree' || currentView === 'canvas') {
                 applyIncrementalRemoveFromTree(id);
             }
             if (currentView === 'current-changes') {
@@ -5176,7 +5205,8 @@ function setupBookmarkListener() {
     browserAPI.bookmarks.onChanged.addListener(async (id, changeInfo) => {
         console.log('[书签监听] 书签修改:', changeInfo);
         try {
-            if (currentView === 'tree') {
+            // 支持 tree 和 canvas 视图（canvas视图包含永久栏目的书签树）
+            if (currentView === 'tree' || currentView === 'canvas') {
                 await applyIncrementalChangeToTree(id, changeInfo);
             }
             if (currentView === 'current-changes') {
@@ -5201,7 +5231,8 @@ function setupBookmarkListener() {
                 explicitMovedIds.set(id, Date.now() + Infinity);
             }
             
-            if (currentView === 'tree') {
+            // 支持 tree 和 canvas 视图（canvas视图包含永久栏目的书签树）
+            if (currentView === 'tree' || currentView === 'canvas') {
                 await applyIncrementalMoveToTree(id, moveInfo);
             }
             if (currentView === 'current-changes') {
@@ -5213,9 +5244,10 @@ function setupBookmarkListener() {
     });
 }
 
-// 如果当前在树视图，刷新书签树
+// 如果当前在树视图或Canvas视图，刷新书签树
 async function refreshTreeViewIfVisible() {
-    if (currentView === 'tree') {
+    // 支持 tree 和 canvas 视图（canvas视图包含永久栏目的书签树）
+    if (currentView === 'tree' || currentView === 'canvas') {
         console.log('[书签监听] 检测到书签变化，刷新树视图');
         
         // 清除缓存，强制刷新

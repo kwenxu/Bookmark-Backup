@@ -4,7 +4,18 @@
 
 let currentLang = 'zh_CN';
 let currentTheme = 'light';
-let currentView = 'current-changes';
+// 从 localStorage 立即恢复视图，避免页面闪烁
+let currentView = (() => {
+    try {
+        const saved = localStorage.getItem('lastActiveView');
+        console.log('[全局初始化] localStorage中的视图:', saved);
+        return saved || 'current-changes';
+    } catch (e) {
+        console.error('[全局初始化] 读取localStorage失败:', e);
+        return 'current-changes';
+    }
+})();
+console.log('[全局初始化] currentView初始值:', currentView);
 let currentFilter = 'all';
 let currentTimeFilter = 'all'; // 'all', 'year', 'month', 'day'
 let allBookmarks = [];
@@ -381,29 +392,58 @@ const i18n = {
 document.addEventListener('DOMContentLoaded', async () => {
     console.log('历史查看器初始化...');
     
-    // 从 URL 参数检查是否直接跳转到详情视图
+    // ========================================================================
+    // 【关键步骤 1】最优先：立即恢复并应用视图状态
+    // ========================================================================
     const urlParams = new URLSearchParams(window.location.search);
-    const recordTime = urlParams.get('record');
     const viewParam = urlParams.get('view');
+    
+    // 优先级：URL参数 > localStorage > 默认值
+    if (viewParam && ['current-changes', 'history', 'additions', 'tree', 'canvas'].includes(viewParam)) {
+        currentView = viewParam === 'tree' ? 'canvas' : viewParam;
+        console.log('[初始化] 从URL参数设置视图:', currentView);
+        
+        // 【关键】应用 URL 参数后，立即从 URL 中移除 view 参数
+        // 这样刷新页面时就会使用 localStorage，实现持久化
+        const newUrl = new URL(window.location.href);
+        newUrl.searchParams.delete('view');
+        window.history.replaceState({}, '', newUrl.toString());
+        console.log('[初始化] 已从URL中移除view参数，刷新时将使用localStorage');
+    } else {
+        const lastView = localStorage.getItem('lastActiveView');
+        if (lastView && ['current-changes', 'history', 'additions', 'tree', 'canvas'].includes(lastView)) {
+            currentView = lastView === 'tree' ? 'canvas' : lastView;
+            console.log('[初始化] 从localStorage恢复视图:', currentView);
+        } else {
+            console.log('[初始化] 使用默认视图:', currentView);
+        }
+    }
+    
+    // 立即应用视图状态到DOM
+    console.log('[初始化] >>>立即应用视图状态<<<:', currentView);
+    document.querySelectorAll('.nav-tab').forEach(tab => {
+        if (tab.dataset.view === currentView) {
+            tab.classList.add('active');
+        } else {
+            tab.classList.remove('active');
+        }
+    });
+    document.querySelectorAll('.view').forEach(view => {
+        if (view.id === `${currentView}View`) {
+            view.classList.add('active');
+        } else {
+            view.classList.remove('active');
+        }
+    });
+    localStorage.setItem('lastActiveView', currentView);
+    console.log('[初始化] 视图状态已应用完成');
+    
+    // ========================================================================
+    // 其他初始化
+    // ========================================================================
+    const recordTime = urlParams.get('record');
     console.log('[URL参数] 完整URL:', window.location.href);
     console.log('[URL参数] recordTime:', recordTime, 'viewParam:', viewParam);
-    
-    // 恢复上次的视图（在初始化UI之前）
-    try {
-        // 如果URL中指定了view参数，优先使用
-        if (viewParam && ['current-changes', 'history', 'additions', 'tree'].includes(viewParam)) {
-            currentView = viewParam;
-            console.log('[初始化] 从URL参数设置视图:', viewParam);
-        } else {
-            const lastView = localStorage.getItem('lastActiveView');
-            if (lastView && ['current-changes', 'history', 'additions', 'tree'].includes(lastView)) {
-                currentView = lastView;
-                console.log('[初始化] 恢复上次视图:', lastView);
-            }
-        }
-    } catch (e) {
-        console.error('[初始化] 恢复视图失败:', e);
-    }
     
     // 加载用户设置
     await loadUserSettings();
@@ -712,8 +752,8 @@ function initializeUI() {
         if (e.target.id === 'detailModal') closeModal();
     });
     
-    // 更新UI以反映当前视图状态
-    updateUIForCurrentView();
+    // 注意：不再在这里调用 updateUIForCurrentView()，因为已经在 DOMContentLoaded 早期调用了 applyViewState()
+    console.log('[initializeUI] UI事件监听器初始化完成，当前视图:', currentView);
 }
 
 // 用于防止Revert结果显示多次的标志
@@ -882,29 +922,6 @@ function showRevertToast(isSuccess, message) {
             }
         }, 300);
     }, 3000);
-}
-
-// 更新UI以反映当前视图
-function updateUIForCurrentView() {
-    // 更新导航标签
-    document.querySelectorAll('.nav-tab').forEach(tab => {
-        if (tab.dataset.view === currentView) {
-            tab.classList.add('active');
-        } else {
-            tab.classList.remove('active');
-        }
-    });
-    
-    // 更新视图容器
-    document.querySelectorAll('.view').forEach(v => {
-        if (v.id === `${currentView}View`) {
-            v.classList.add('active');
-        } else {
-            v.classList.remove('active');
-        }
-    });
-    
-    console.log('[UI更新] 当前视图:', currentView);
 }
 
 // =============================================================================
@@ -1313,15 +1330,15 @@ function updateStats() {
 // =============================================================================
 
 function switchView(view) {
-    currentView = view;
+    console.log('[switchView] 切换视图到:', view);
     
-    // 保存当前视图到 localStorage
-    try {
-        localStorage.setItem('lastActiveView', view);
-        console.log('[视图切换] 保存视图:', view);
-    } catch (e) {
-        console.error('[视图切换] 保存失败:', e);
+    // 处理旧的 'tree' 命名
+    if (view === 'tree') {
+        view = 'canvas';
     }
+    
+    // 更新全局变量
+    currentView = view;
     
     // 更新导航标签
     document.querySelectorAll('.nav-tab').forEach(tab => {
@@ -1332,7 +1349,7 @@ function switchView(view) {
         }
     });
     
-    // 更新内容区域
+    // 更新视图容器
     document.querySelectorAll('.view').forEach(v => {
         if (v.id === `${view}View`) {
             v.classList.add('active');
@@ -1340,6 +1357,10 @@ function switchView(view) {
             v.classList.remove('active');
         }
     });
+    
+    // 保存到 localStorage
+    localStorage.setItem('lastActiveView', view);
+    console.log('[switchView] 已保存视图到localStorage:', view);
     
     // 渲染当前视图
     renderCurrentView();

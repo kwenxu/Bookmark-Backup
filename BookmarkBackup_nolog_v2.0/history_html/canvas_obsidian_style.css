@@ -97,7 +97,7 @@
     align-self: flex-end;
     order: 0;
     margin-bottom: 10px;
-    transform: translateX(16px);
+    transform: translateX(13px);
 }
 
 .canvas-scrollbar.horizontal .scrollbar-controls {

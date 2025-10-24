@@ -26,13 +26,13 @@ const CanvasState = {
     isSpacePressed: false,
     scrollState: {
         vertical: {
-            hidden: false,
+            hidden: true,
             disabled: false,
             dragging: false,
             dragOffset: 0
         },
         horizontal: {
-            hidden: false,
+            hidden: true,
             disabled: false,
             dragging: false,
             dragOffset: 0
@@ -61,6 +61,10 @@ const CanvasState = {
 let panSaveTimeout = null;
 const CANVAS_SCROLL_MARGIN = 120;
 let suppressScrollSync = false;
+let zoomSaveTimeout = null;
+let zoomUpdateFrame = null;
+let pendingZoomRequest = null;
+const scrollbarHoverState = new WeakMap();
 
 // =============================================================================
 // 初始化Canvas视图
@@ -337,7 +341,7 @@ function setupCanvasZoomAndPan() {
             const zoomSpeed = 0.001;
             const oldZoom = CanvasState.zoom;
             const newZoom = Math.max(0.1, Math.min(3, oldZoom + delta * zoomSpeed));
-            setCanvasZoom(newZoom, mouseX, mouseY);
+            scheduleZoomUpdate(newZoom, mouseX, mouseY, { recomputeBounds: false, skipSave: false });
         } else if (shouldHandleCustomScroll(e)) {
             handleCanvasCustomScroll(e);
         }
@@ -401,10 +405,19 @@ function setupCanvasZoomAndPan() {
     if (zoomLocateBtn) zoomLocateBtn.addEventListener('click', locateToPermanentSection);
 }
 
-function setCanvasZoom(zoom, centerX = null, centerY = null) {
+function setCanvasZoom(zoom, centerX = null, centerY = null, options = {}) {
     const container = document.querySelector('.canvas-main-container');
     const workspace = document.getElementById('canvasWorkspace');
     if (!container || !workspace) return;
+    
+    if (typeof options !== 'object' || options === null) {
+        options = {};
+    }
+    const {
+        recomputeBounds = false,
+        skipSave = false,
+        silent = false
+    } = options;
     
     const oldZoom = CanvasState.zoom;
     
@@ -429,7 +442,7 @@ function setCanvasZoom(zoom, centerX = null, centerY = null) {
     // 调整平移偏移，使中心点保持在相同的视觉位置
     CanvasState.panOffsetX = centerX - canvasCenterX * zoom;
     CanvasState.panOffsetY = centerY - canvasCenterY * zoom;
-    updateCanvasScrollBounds();
+    updateCanvasScrollBounds({ initial: false, recomputeBounds });
     savePanOffsetThrottled();
     
     // 更新显示
@@ -439,9 +452,13 @@ function setCanvasZoom(zoom, centerX = null, centerY = null) {
     }
     
     // 保存缩放级别
-    localStorage.setItem('canvas-zoom', zoom.toString());
+    if (!skipSave) {
+        saveZoomThrottled(zoom);
+    }
     
-    console.log('[Canvas] 缩放:', Math.round(zoom * 100) + '%', '中心点:', { canvasCenterX, canvasCenterY });
+    if (!silent) {
+        console.log('[Canvas] 缩放:', Math.round(zoom * 100) + '%', '中心点:', { canvasCenterX, canvasCenterY });
+    }
 }
 
 function applyPanOffset() {
@@ -467,7 +484,7 @@ function loadCanvasZoom() {
         if (saved) {
             const zoom = parseFloat(saved);
             if (!isNaN(zoom)) {
-                setCanvasZoom(zoom);
+                setCanvasZoom(zoom, null, null, { recomputeBounds: false, skipSave: true, silent: true });
             }
         }
         
@@ -502,6 +519,36 @@ function savePanOffsetThrottled() {
         savePanOffset();
         panSaveTimeout = null;
     }, 160);
+}
+
+function saveZoomThrottled(zoom) {
+    if (zoomSaveTimeout) {
+        clearTimeout(zoomSaveTimeout);
+    }
+    zoomSaveTimeout = setTimeout(() => {
+        localStorage.setItem('canvas-zoom', zoom.toString());
+        zoomSaveTimeout = null;
+    }, 160);
+}
+
+function scheduleZoomUpdate(zoom, centerX, centerY, options = {}) {
+    pendingZoomRequest = {
+        zoom,
+        centerX,
+        centerY,
+        options
+    };
+    
+    if (!zoomUpdateFrame) {
+        zoomUpdateFrame = requestAnimationFrame(() => {
+            zoomUpdateFrame = null;
+            if (!pendingZoomRequest) return;
+            
+            const { zoom, centerX, centerY, options } = pendingZoomRequest;
+            pendingZoomRequest = null;
+            setCanvasZoom(zoom, centerX, centerY, options);
+        });
+    }
 }
 
 function loadCanvasScrollPreferences() {
@@ -555,15 +602,18 @@ function setupCanvasScrollbars() {
         
         element.classList.toggle('is-hidden', CanvasState.scrollState[axis].hidden);
         element.classList.toggle('is-disabled', CanvasState.scrollState[axis].disabled);
+        element.classList.remove('show-controls', 'show-hint');
         
         const hideBtn = element.querySelector('.scrollbar-btn.scroll-hide');
         const disableBtn = element.querySelector('.scrollbar-btn.scroll-disable');
         const thumb = element.querySelector('.scrollbar-thumb');
+        const controls = element.querySelector('.scrollbar-controls');
         
         if (hideBtn) {
             hideBtn.addEventListener('click', (event) => {
                 event.stopPropagation();
                 toggleScrollbarHidden(axis);
+                flashScrollbarControls(element);
             });
         }
         
@@ -571,11 +621,17 @@ function setupCanvasScrollbars() {
             disableBtn.addEventListener('click', (event) => {
                 event.stopPropagation();
                 toggleScrollbarDisabled(axis);
+                flashScrollbarControls(element);
             });
         }
         
         if (thumb) {
             thumb.addEventListener('mousedown', (event) => startScrollbarThumbDrag(event, axis));
+        }
+        
+        attachScrollbarHoverHandlers(element, axis);
+        if (axis === 'horizontal') {
+            ensureHorizontalScrollHint(element, controls);
         }
     });
     
@@ -724,14 +780,117 @@ function stopScrollbarThumbDrag() {
     savePanOffsetThrottled();
 }
 
+function attachScrollbarHoverHandlers(bar, axis) {
+    if (!bar) return;
+    const controls = bar.querySelector('.scrollbar-controls');
+    if (!controls || scrollbarHoverState.has(bar)) return;
+    
+    const state = {
+        axis,
+        hideTimer: null,
+        flashTimer: null,
+        pointerInside: false
+    };
+    
+    const showControls = () => {
+        if (state.hideTimer) {
+            clearTimeout(state.hideTimer);
+            state.hideTimer = null;
+        }
+        bar.classList.add('show-controls');
+        if (state.axis === 'horizontal') {
+            bar.classList.add('show-hint');
+        }
+    };
+    
+    const hideControls = () => {
+        if (state.hideTimer) {
+            clearTimeout(state.hideTimer);
+        }
+        state.hideTimer = setTimeout(() => {
+            if (state.pointerInside) return;
+            bar.classList.remove('show-controls');
+            if (state.axis === 'horizontal') {
+                bar.classList.remove('show-hint');
+            }
+            state.hideTimer = null;
+        }, 220);
+    };
+    
+    const enterControls = () => {
+        state.pointerInside = true;
+        showControls();
+    };
+    
+    const leaveControls = () => {
+        state.pointerInside = false;
+        hideControls();
+    };
+    
+    controls.addEventListener('mouseenter', enterControls);
+    controls.addEventListener('focusin', enterControls);
+    controls.addEventListener('mouseleave', leaveControls);
+    controls.addEventListener('focusout', leaveControls);
+    bar.addEventListener('mouseleave', leaveControls);
+    
+    state.show = showControls;
+    state.hide = hideControls;
+    
+    scrollbarHoverState.set(bar, state);
+}
+
+function flashScrollbarControls(bar, duration = 900) {
+    const state = scrollbarHoverState.get(bar);
+    if (!state) return;
+    
+    state.show();
+    if (state.flashTimer) {
+        clearTimeout(state.flashTimer);
+    }
+    state.flashTimer = setTimeout(() => {
+        if (!state.pointerInside) {
+            bar.classList.remove('show-controls');
+            if (state.axis === 'horizontal') {
+                bar.classList.remove('show-hint');
+            }
+        }
+        state.flashTimer = null;
+    }, duration);
+}
+
+function ensureHorizontalScrollHint(bar, controls) {
+    if (!bar || !controls) return;
+    if (!bar.classList.contains('horizontal')) return;
+    
+    let hint = bar.querySelector('.scrollbar-hint');
+    if (!hint) {
+        hint = document.createElement('div');
+        hint.className = 'scrollbar-hint';
+        hint.textContent = '按住 Shift + 滚轮 进行横向移动';
+        controls.appendChild(hint);
+    }
+}
+
 function shouldHandleCustomScroll(event) {
     const workspace = document.getElementById('canvasWorkspace');
     if (!workspace || !workspace.contains(event.target)) {
         return false;
     }
     
-    if (event.target.closest('.canvas-scrollbar')) {
-        return false;
+    const scrollbarElement = event.target.closest('.canvas-scrollbar');
+    if (scrollbarElement) {
+        const axisKey = scrollbarElement.classList.contains('horizontal') ? 'horizontal' : 'vertical';
+        const axisState = CanvasState.scrollState[axisKey];
+        const controlsArea = event.target.closest('.scrollbar-controls');
+        if (!axisState) {
+            return false;
+        }
+        if (controlsArea) {
+            return false;
+        }
+        if (!axisState.hidden) {
+            return false;
+        }
     }
     
     if (event.target.closest('.permanent-section-body') || event.target.closest('.temp-node-body')) {
@@ -782,8 +941,18 @@ function handleCanvasCustomScroll(event) {
 
 function getScrollFactor(axis) {
     const zoom = Math.max(CanvasState.zoom || 1, 0.1);
-    const base = axis === 'vertical' ? 0.75 : 0.9;
-    return base / Math.pow(zoom, 0.6);
+    const base = axis === 'vertical' ? 1.0 : 1.25;
+    const exponent = 0.55;
+    return base / Math.pow(zoom, exponent);
+}
+
+function getScrollEaseFactor(axis) {
+    const zoom = Math.max(CanvasState.zoom || 1, 0.1);
+    const base = axis === 'horizontal' ? 0.28 : 0.26;
+    const zoomBoost = zoom > 1
+        ? Math.min(0.14, (zoom - 1) * 0.09)
+        : (1 - zoom) * 0.06;
+    return Math.min(0.45, base + zoomBoost);
 }
 
 function schedulePanTo(targetX, targetY) {
@@ -805,7 +974,7 @@ function runScrollAnimation() {
     if (typeof CanvasState.scrollAnimation.targetX === 'number') {
         const diffX = CanvasState.scrollAnimation.targetX - CanvasState.panOffsetX;
         if (Math.abs(diffX) > 0.5) {
-            CanvasState.panOffsetX += diffX * 0.18;
+            CanvasState.panOffsetX += diffX * getScrollEaseFactor('horizontal');
             continueAnimation = true;
         } else {
             CanvasState.panOffsetX = CanvasState.scrollAnimation.targetX;
@@ -815,7 +984,7 @@ function runScrollAnimation() {
     if (typeof CanvasState.scrollAnimation.targetY === 'number') {
         const diffY = CanvasState.scrollAnimation.targetY - CanvasState.panOffsetY;
         if (Math.abs(diffY) > 0.5) {
-            CanvasState.panOffsetY += diffY * 0.18;
+            CanvasState.panOffsetY += diffY * getScrollEaseFactor('vertical');
             continueAnimation = true;
         } else {
             CanvasState.panOffsetY = CanvasState.scrollAnimation.targetY;
@@ -834,12 +1003,30 @@ function runScrollAnimation() {
     }
 }
 
-function updateCanvasScrollBounds(initial = false) {
+function updateCanvasScrollBounds(options = {}) {
     const workspace = document.getElementById('canvasWorkspace');
     if (!workspace) return;
     
-    const bounds = computeCanvasContentBounds();
-    CanvasState.contentBounds = bounds;
+    let initial = false;
+    let recomputeBounds = true;
+    
+    if (typeof options === 'boolean') {
+        initial = options;
+    } else if (options && typeof options === 'object') {
+        initial = Boolean(options.initial);
+        if (Object.prototype.hasOwnProperty.call(options, 'recomputeBounds')) {
+            recomputeBounds = options.recomputeBounds;
+        }
+    }
+    
+    let bounds = CanvasState.contentBounds;
+    if (recomputeBounds || !bounds) {
+        bounds = computeCanvasContentBounds();
+        CanvasState.contentBounds = bounds;
+    } else if (!bounds) {
+        bounds = computeCanvasContentBounds();
+        CanvasState.contentBounds = bounds;
+    }
     
     const zoom = Math.max(CanvasState.zoom || 1, 0.1);
     const workspaceWidth = workspace.clientWidth || 1;
@@ -2096,9 +2283,6 @@ function loadTempNodes() {
             } finally {
                 suppressScrollSync = false;
             }
-            updateCanvasScrollBounds();
-            updateScrollbarThumbs();
-            
             console.log('[Canvas] 加载了', CanvasState.tempNodes.length, '个临时节点');
         }
         

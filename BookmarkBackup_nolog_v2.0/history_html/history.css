@@ -4577,6 +4577,59 @@ a.tree-label.tree-bookmark-link:hover {
     transition: all 0.2s ease;
 }
 
+.canvas-zoom-header {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    justify-content: space-between;
+    margin-bottom: 6px;
+}
+
+.canvas-zoom-label {
+    font-size: 11px;
+    color: #57606a;
+    font-weight: 500;
+    margin-left: 12px;
+    flex: 1;
+    white-space: nowrap;
+}
+
+.canvas-fullscreen-btn {
+    padding: 5px 10px;
+    background: linear-gradient(to bottom, #ffffff, #f8f9fa);
+    border: 1px solid #d0d7de;
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 11px;
+    font-weight: 500;
+    color: #24292f;
+    transition: all 0.15s ease;
+    min-width: fit-content;
+}
+
+.canvas-fullscreen-btn:hover {
+    background: linear-gradient(to bottom, #f6f8fa, #eaeef2);
+    border-color: #0969da;
+    transform: translateY(-1px);
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.08);
+}
+
+.canvas-fullscreen-btn:active {
+    transform: translateY(0);
+    box-shadow: none;
+}
+
+.canvas-fullscreen-btn.fullscreen-active {
+    background: linear-gradient(to bottom, #fee2e2, #fecaca);
+    border-color: #ef4444;
+    color: #b91c1c;
+}
+
+.canvas-fullscreen-btn.fullscreen-active:hover {
+    background: linear-gradient(to bottom, #fecaca, #fca5a5);
+    border-color: #dc2626;
+}
+
 [data-theme="dark"] .canvas-zoom-indicator {
     background: rgba(36, 37, 38, 0.95);
     border-color: var(--border-color);
@@ -4641,6 +4694,33 @@ a.tree-label.tree-bookmark-link:hover {
     font-weight: 600;
     color: #0969da;
     font-size: 14px;
+}
+
+[data-theme="dark"] .canvas-zoom-label {
+    color: #b0b3b8 !important;
+}
+
+[data-theme="dark"] .canvas-fullscreen-btn {
+    background: linear-gradient(to bottom, #3a3b3c, #2f3031);
+    border-color: #4a4b4c;
+    color: #e4e6eb;
+}
+
+[data-theme="dark"] .canvas-fullscreen-btn:hover {
+    background: linear-gradient(to bottom, #4a4b4c, #3a3b3c);
+    border-color: #58a6ff;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.4);
+}
+
+[data-theme="dark"] .canvas-fullscreen-btn.fullscreen-active {
+    background: linear-gradient(to bottom, #7f1d1d, #991b1b);
+    border-color: #ef4444;
+    color: #fca5a5;
+}
+
+[data-theme="dark"] .canvas-fullscreen-btn.fullscreen-active:hover {
+    background: linear-gradient(to bottom, #991b1b, #b91c1c);
+    border-color: #f87171;
 }
 
 [data-theme="dark"] .zoom-value {

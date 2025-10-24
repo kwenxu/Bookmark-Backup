@@ -6,6 +6,7 @@
     height: calc(100vh - 140px);
     overflow: hidden;
     background: linear-gradient(to bottom, #fafbfc 0%, #f6f8fa 100%);
+    margin-bottom: 32px;
 }
 
 [data-theme="dark"] .canvas-main-container {
@@ -63,16 +64,17 @@
 }
 
 .canvas-scrollbar.vertical {
-    top: 16px;
-    right: 12px;
-    height: calc(100% - 32px);
+    top: 20px;
+    right: 20px;
+    height: calc(100% - 40px);
     flex-direction: column;
+    align-items: flex-end;
 }
 
 .canvas-scrollbar.horizontal {
-    left: 12px;
-    bottom: 16px;
-    width: calc(100% - 32px);
+    left: 20px;
+    bottom: 36px;
+    width: calc(100% - 40px);
     flex-direction: row;
 }
 
@@ -81,29 +83,58 @@
     gap: 6px;
     pointer-events: auto;
     opacity: 0;
-    padding: 6px;
+    padding: 0;
     border-radius: 8px;
-    background: rgba(255, 255, 255, 0.75);
-    box-shadow: 0 6px 18px rgba(15, 23, 42, 0.12);
-    transition: opacity 0.2s ease;
+    background: transparent;
+    box-shadow: none;
+    transition: opacity 0.2s ease, background 0.2s ease, box-shadow 0.2s ease, padding 0.2s ease;
 }
 
 .canvas-scrollbar.vertical .scrollbar-controls {
+    flex-direction: column;
+    align-items: flex-end;
+    gap: 8px;
+    align-self: flex-end;
+    order: 0;
+    margin-bottom: 10px;
+    transform: translateX(16px);
+}
+
+.canvas-scrollbar.horizontal .scrollbar-controls {
     flex-direction: row;
     align-items: center;
     gap: 8px;
     align-self: flex-start;
-}
-
-.canvas-scrollbar.horizontal .scrollbar-controls {
-    flex-direction: column;
-    align-items: flex-start;
-    gap: 4px;
-    align-self: flex-start;
+    padding: 0;
+    background: transparent;
+    box-shadow: none;
 }
 
 .canvas-scrollbar.show-controls .scrollbar-controls {
     opacity: 1;
+    padding: 6px;
+    background: rgba(255, 255, 255, 0.85);
+    box-shadow: 0 6px 18px rgba(15, 23, 42, 0.12);
+}
+
+.canvas-scrollbar.horizontal.show-controls .scrollbar-controls {
+    padding: 4px 6px;
+}
+
+.canvas-scrollbar:hover .scrollbar-controls {
+    opacity: 1;
+    padding: 6px;
+    background: rgba(255, 255, 255, 0.85);
+    box-shadow: 0 6px 18px rgba(15, 23, 42, 0.12);
+}
+
+.canvas-scrollbar.horizontal:hover .scrollbar-controls {
+    padding: 4px 6px;
+}
+
+.canvas-scrollbar.is-hidden.show-controls .scrollbar-track {
+    opacity: 1;
+    pointer-events: auto;
 }
 
 .canvas-scrollbar .scrollbar-btn {
@@ -145,6 +176,7 @@
 .canvas-scrollbar.vertical .scrollbar-track {
     width: 12px;
     flex: 1;
+    order: 1;
 }
 
 .canvas-scrollbar.horizontal .scrollbar-track {
@@ -216,34 +248,31 @@
     opacity: 1;
 }
 
-.canvas-scrollbar.horizontal .scrollbar-hint {
-    font-size: 11px;
-    line-height: 1.3;
-    color: #0550ae;
-    background: rgba(255, 255, 255, 0.9);
-    border: 1px solid rgba(9, 105, 218, 0.2);
-    border-radius: 6px;
-    padding: 4px 8px;
-    margin-top: 4px;
-    opacity: 0;
-    transform: translateY(6px);
-    pointer-events: none;
-    transition: opacity 0.18s ease, transform 0.18s ease;
-    box-shadow: 0 4px 12px rgba(15, 23, 42, 0.08);
+.canvas-scrollbar.horizontal .scrollbar-controls .scrollbar-hint {
+    display: none;
 }
 
-.canvas-scrollbar.horizontal.show-hint .scrollbar-hint {
-    opacity: 1;
-    transform: translateY(0);
-}
 
 [data-theme="dark"] .canvas-scrollbar {
     color: #c9d1d9;
 }
 
-[data-theme="dark"] .canvas-scrollbar .scrollbar-controls {
+[data-theme="dark"] .canvas-scrollbar.show-controls .scrollbar-controls {
     background: rgba(27, 32, 45, 0.9);
     box-shadow: 0 8px 20px rgba(0, 0, 0, 0.45);
+}
+
+[data-theme="dark"] .canvas-scrollbar.horizontal.show-controls .scrollbar-controls {
+    background: rgba(27, 32, 45, 0.9);
+}
+
+[data-theme="dark"] .canvas-scrollbar:hover .scrollbar-controls {
+    background: rgba(27, 32, 45, 0.9);
+    box-shadow: 0 8px 20px rgba(0, 0, 0, 0.45);
+}
+
+[data-theme="dark"] .canvas-scrollbar.horizontal:hover .scrollbar-controls {
+    background: rgba(27, 32, 45, 0.9);
 }
 
 [data-theme="dark"] .canvas-scrollbar .scrollbar-btn {
@@ -269,11 +298,8 @@
     background: rgba(48, 129, 247, 0.75);
 }
 
-[data-theme="dark"] .canvas-scrollbar.horizontal .scrollbar-hint {
-    background: rgba(22, 26, 38, 0.92);
-    border-color: rgba(48, 129, 247, 0.35);
-    color: #bcd7ff;
-    box-shadow: 0 8px 20px rgba(0, 0, 0, 0.45);
+[data-theme="dark"] .canvas-scrollbar.horizontal .scrollbar-controls .scrollbar-hint {
+    display: none;
 }
 
 [data-theme="dark"] .canvas-scrollbar.is-disabled .scrollbar-btn.scroll-disable {

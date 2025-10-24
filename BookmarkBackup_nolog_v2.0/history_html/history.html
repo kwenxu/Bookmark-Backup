@@ -192,10 +192,10 @@
                     <!-- 自定义纵向滚动条 -->
                     <div class="canvas-scrollbar vertical" id="canvasVerticalScrollbar">
                         <div class="scrollbar-controls">
-                            <button class="scrollbar-btn scroll-hide" data-axis="vertical" data-action="toggle-hide" title="隐藏纵向滚动条">
+                            <button class="scrollbar-btn scroll-hide" data-axis="vertical" data-action="toggle-hide" aria-label="隐藏纵向滚动条">
                                 <i class="fas fa-eye-slash"></i>
                             </button>
-                            <button class="scrollbar-btn scroll-disable" data-axis="vertical" data-action="toggle-disable" title="禁用纵向滚动">
+                            <button class="scrollbar-btn scroll-disable" data-axis="vertical" data-action="toggle-disable" aria-label="禁用纵向滚动">
                                 <i class="fas fa-ban"></i>
                             </button>
                         </div>
@@ -207,10 +207,10 @@
                     <!-- 自定义横向滚动条 -->
                     <div class="canvas-scrollbar horizontal" id="canvasHorizontalScrollbar">
                         <div class="scrollbar-controls">
-                            <button class="scrollbar-btn scroll-hide" data-axis="horizontal" data-action="toggle-hide" title="隐藏横向滚动条">
+                            <button class="scrollbar-btn scroll-hide" data-axis="horizontal" data-action="toggle-hide" aria-label="隐藏横向滚动条">
                                 <i class="fas fa-eye-slash"></i>
                             </button>
-                            <button class="scrollbar-btn scroll-disable" data-axis="horizontal" data-action="toggle-disable" title="禁用横向滚动">
+                            <button class="scrollbar-btn scroll-disable" data-axis="horizontal" data-action="toggle-disable" aria-label="禁用横向滚动">
                                 <i class="fas fa-ban"></i>
                             </button>
                         </div>
@@ -223,8 +223,9 @@
                     <div class="canvas-workspace" id="canvasWorkspace">
                         <!-- 缩放控制器（固定在画布左上角） -->
                         <div class="canvas-zoom-indicator" id="canvasZoomIndicator" style="display: none;">
-                            <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 6px;">
-                                <span style="font-size: 11px; color: #57606a; font-weight: 500;" id="canvasZoomLabel">缩放</span>
+                            <div class="canvas-zoom-header">
+                                <button class="canvas-fullscreen-btn" id="canvasFullscreenBtn" aria-label="进入全屏" aria-pressed="false">全屏</button>
+                                <span class="canvas-zoom-label" id="canvasZoomLabel">缩放</span>
                                 <span class="zoom-value" id="zoomValue">100%</span>
                             </div>
                             <div class="canvas-zoom-controls">

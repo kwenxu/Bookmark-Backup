@@ -24,6 +24,8 @@ const CanvasState = {
     panStartX: 0,
     panStartY: 0,
     isSpacePressed: false,
+    isFullscreen: false,
+    fullscreenHandlersBound: false,
     scrollState: {
         vertical: {
             hidden: true,
@@ -99,7 +101,6 @@ function initCanvasView() {
     setupCanvasScrollbars();
     updateCanvasScrollBounds(true);
     updateScrollbarThumbs();
-    
     // 设置Canvas事件监听
     setupCanvasEventListeners();
     
@@ -325,6 +326,7 @@ function setupCanvasZoomAndPan() {
     
     // 加载保存的缩放级别
     loadCanvasZoom();
+    setupCanvasFullscreenControls();
     
     // Ctrl + 滚轮缩放（以鼠标位置为中心）
     workspace.addEventListener('wheel', (e) => {
@@ -602,7 +604,7 @@ function setupCanvasScrollbars() {
         
         element.classList.toggle('is-hidden', CanvasState.scrollState[axis].hidden);
         element.classList.toggle('is-disabled', CanvasState.scrollState[axis].disabled);
-        element.classList.remove('show-controls', 'show-hint');
+        element.classList.remove('show-controls');
         
         const hideBtn = element.querySelector('.scrollbar-btn.scroll-hide');
         const disableBtn = element.querySelector('.scrollbar-btn.scroll-disable');
@@ -630,9 +632,6 @@ function setupCanvasScrollbars() {
         }
         
         attachScrollbarHoverHandlers(element, axis);
-        if (axis === 'horizontal') {
-            ensureHorizontalScrollHint(element, controls);
-        }
     });
     
     if (!CanvasState.scrollState.handlersAttached) {
@@ -681,13 +680,17 @@ function updateScrollbarControls(axis) {
     bar.classList.toggle('is-disabled', CanvasState.scrollState[axis].disabled);
     
     if (hideBtn) {
-        hideBtn.title = CanvasState.scrollState[axis].hidden ? `显示${axisLabel}滚动条` : `隐藏${axisLabel}滚动条`;
+        const label = CanvasState.scrollState[axis].hidden ? `显示${axisLabel}滚动条` : `隐藏${axisLabel}滚动条`;
+        hideBtn.setAttribute('aria-label', label);
+        hideBtn.removeAttribute('title');
     }
     if (hideIcon) {
         hideIcon.className = CanvasState.scrollState[axis].hidden ? 'fas fa-eye' : 'fas fa-eye-slash';
     }
     if (disableBtn) {
-        disableBtn.title = CanvasState.scrollState[axis].disabled ? `启用${axisLabel}滚动` : `禁用${axisLabel}滚动`;
+        const label = CanvasState.scrollState[axis].disabled ? `启用${axisLabel}滚动` : `禁用${axisLabel}滚动`;
+        disableBtn.setAttribute('aria-label', label);
+        disableBtn.removeAttribute('title');
     }
     if (disableIcon) {
         disableIcon.className = CanvasState.scrollState[axis].disabled ? 'fas fa-unlock' : 'fas fa-ban';
@@ -798,9 +801,6 @@ function attachScrollbarHoverHandlers(bar, axis) {
             state.hideTimer = null;
         }
         bar.classList.add('show-controls');
-        if (state.axis === 'horizontal') {
-            bar.classList.add('show-hint');
-        }
     };
     
     const hideControls = () => {
@@ -810,9 +810,6 @@ function attachScrollbarHoverHandlers(bar, axis) {
         state.hideTimer = setTimeout(() => {
             if (state.pointerInside) return;
             bar.classList.remove('show-controls');
-            if (state.axis === 'horizontal') {
-                bar.classList.remove('show-hint');
-            }
             state.hideTimer = null;
         }, 220);
     };
@@ -842,7 +839,7 @@ function attachScrollbarHoverHandlers(bar, axis) {
 function flashScrollbarControls(bar, duration = 900) {
     const state = scrollbarHoverState.get(bar);
     if (!state) return;
-    
+
     state.show();
     if (state.flashTimer) {
         clearTimeout(state.flashTimer);
@@ -850,25 +847,110 @@ function flashScrollbarControls(bar, duration = 900) {
     state.flashTimer = setTimeout(() => {
         if (!state.pointerInside) {
             bar.classList.remove('show-controls');
-            if (state.axis === 'horizontal') {
-                bar.classList.remove('show-hint');
-            }
         }
         state.flashTimer = null;
     }, duration);
 }
 
-function ensureHorizontalScrollHint(bar, controls) {
-    if (!bar || !controls) return;
-    if (!bar.classList.contains('horizontal')) return;
-    
-    let hint = bar.querySelector('.scrollbar-hint');
-    if (!hint) {
-        hint = document.createElement('div');
-        hint.className = 'scrollbar-hint';
-        hint.textContent = '按住 Shift + 滚轮 进行横向移动';
-        controls.appendChild(hint);
+function setupCanvasFullscreenControls() {
+    const btn = document.getElementById('canvasFullscreenBtn');
+    const container = document.querySelector('.canvas-main-container');
+    if (!btn || !container) return;
+
+    const canRequestFullscreen = container.requestFullscreen ||
+        container.webkitRequestFullscreen ||
+        container.mozRequestFullScreen ||
+        container.msRequestFullscreen;
+    if (!canRequestFullscreen) {
+        btn.style.display = 'none';
+        return;
     }
+
+    if (!CanvasState.fullscreenHandlersBound) {
+        btn.addEventListener('click', toggleCanvasFullscreen);
+        document.addEventListener('fullscreenchange', handleCanvasFullscreenChange);
+        CanvasState.fullscreenHandlersBound = true;
+    }
+
+    updateFullscreenButtonState();
+}
+
+function toggleCanvasFullscreen() {
+    const container = document.querySelector('.canvas-main-container');
+    if (!container) return;
+
+    const fullscreenElement = getCurrentFullscreenElement();
+    if (fullscreenElement === container) {
+        const exit = document.exitFullscreen ||
+            document.webkitExitFullscreen ||
+            document.mozCancelFullScreen ||
+            document.msExitFullscreen;
+        if (exit) {
+            Promise.resolve(exit.call(document)).catch(error => {
+                console.warn('[Canvas] 退出全屏失败:', error);
+            });
+        }
+        return;
+    }
+
+    const request = container.requestFullscreen ||
+        container.webkitRequestFullscreen ||
+        container.mozRequestFullScreen ||
+        container.msRequestFullscreen;
+    if (request) {
+        Promise.resolve(request.call(container)).catch(error => {
+            console.warn('[Canvas] 进入全屏失败:', error);
+        });
+    }
+}
+
+function handleCanvasFullscreenChange() {
+    const container = document.querySelector('.canvas-main-container');
+    CanvasState.isFullscreen = getCurrentFullscreenElement() === container;
+    updateFullscreenButtonState();
+}
+
+function updateFullscreenButtonState() {
+    const btn = document.getElementById('canvasFullscreenBtn');
+    const container = document.querySelector('.canvas-main-container');
+    if (!btn || !container) return;
+
+    const lang = getCanvasLanguage();
+    const enterLabel = getFullscreenLabel('canvasFullscreenEnter', lang);
+    const exitLabel = getFullscreenLabel('canvasFullscreenExit', lang);
+    const isFullscreen = getCurrentFullscreenElement() === container;
+
+    CanvasState.isFullscreen = isFullscreen;
+    const text = isFullscreen ? exitLabel : enterLabel;
+    btn.textContent = text;
+    btn.setAttribute('aria-label', text);
+    btn.setAttribute('aria-pressed', isFullscreen ? 'true' : 'false');
+    btn.classList.toggle('fullscreen-active', isFullscreen);
+}
+
+function getCanvasLanguage() {
+    if (typeof window !== 'undefined' && window.currentLang) {
+        return window.currentLang === 'en' ? 'en' : 'zh_CN';
+    }
+    const docLang = typeof document !== 'undefined' ? (document.documentElement.getAttribute('lang') || '').toLowerCase() : '';
+    return docLang.startsWith('en') ? 'en' : 'zh_CN';
+}
+
+function getFullscreenLabel(key, lang) {
+    if (window.i18n && window.i18n[key] && window.i18n[key][lang]) {
+        return window.i18n[key][lang];
+    }
+    if (key === 'canvasFullscreenExit') {
+        return lang === 'en' ? 'Exit' : '退出';
+    }
+    return lang === 'en' ? 'Fullscreen' : '全屏';
+}
+
+function getCurrentFullscreenElement() {
+    return document.fullscreenElement ||
+        document.webkitFullscreenElement ||
+        document.mozFullScreenElement ||
+        document.msFullscreenElement || null;
 }
 
 function shouldHandleCustomScroll(event) {
@@ -2302,5 +2384,6 @@ function loadTempNodes() {
 window.CanvasModule = {
     init: initCanvasView,
     enhance: enhanceBookmarkTreeForCanvas, // 增强书签树的Canvas功能
-    clear: clearAllTempNodes
+    clear: clearAllTempNodes,
+    updateFullscreenButton: updateFullscreenButtonState
 };

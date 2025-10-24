@@ -11,6 +11,22 @@ let dropIndicator = null;
 let autoScrollInterval = null;
 let lastScrollTime = 0;
 let hoverExpandTimer = null;
+let draggedNodeTreeType = 'permanent';
+let draggedNodeSectionId = null;
+
+function getTempManager() {
+    return (window.CanvasModule && window.CanvasModule.temp) ? window.CanvasModule.temp : null;
+}
+
+function serializeBookmarkNode(node) {
+    if (!node) return null;
+    return {
+        title: node.title,
+        url: node.url || '',
+        type: node.url ? 'bookmark' : 'folder',
+        children: (node.children || []).map(child => serializeBookmarkNode(child))
+    };
+}
 
 // 初始化拖拽功能
 function initDragDrop() {
@@ -60,6 +76,8 @@ function attachDragEvents(treeContainer) {
 function handleDragStart(e) {
     draggedNode = e.currentTarget;
     draggedNodeId = draggedNode?.dataset?.nodeId;
+    draggedNodeTreeType = draggedNode?.dataset?.treeType || 'permanent';
+    draggedNodeSectionId = draggedNode?.dataset?.sectionId || null;
     
     // 获取被拖动节点的父级（tree-node 容器）
     draggedNodeParent = draggedNode.parentElement;
@@ -179,8 +197,17 @@ async function handleDrop(e) {
     // 隐藏拖拽指示器
     hideDropIndicator();
     
-    // 执行移动（移除验证，让Chrome API处理）
-    await moveBookmark(draggedNodeId, targetNodeId, targetIsFolder, e);
+    const targetTreeType = targetNode.dataset.treeType || 'permanent';
+    const targetSectionId = targetNode.dataset.sectionId || null;
+    const position = dropIndicator ? dropIndicator.dataset.position : null;
+    await moveBookmark(draggedNodeId, targetNodeId, targetIsFolder, {
+        sourceTreeType: draggedNodeTreeType,
+        sourceSectionId: draggedNodeSectionId,
+        targetTreeType,
+        targetSectionId,
+        position,
+        event: e
+    });
 }
 
 // 拖拽结束
@@ -206,6 +233,11 @@ function handleDragEnd(e) {
     draggedNodeParent = null;
     draggedNodePrev = null;
     draggedNodeNext = null;
+    draggedNodeTreeType = 'permanent';
+    draggedNodeSectionId = null;
+    if (typeof clearTreeItemDragging === 'function') {
+        clearTreeItemDragging();
+    }
     
     console.log('[拖拽] 拖拽结束');
 }
@@ -335,52 +367,129 @@ function isDescendant(potentialDescendant, ancestor) {
     return false;
 }
 
-// 移动书签
-async function moveBookmark(sourceId, targetId, targetIsFolder, e) {
+async function computePermanentInsertion(targetId, targetIsFolder, position) {
+    position = position || 'inside';
     if (!chrome || !chrome.bookmarks) {
-        console.warn('[拖拽] Chrome扩展环境不可用');
-        return;
+        return { parentId: targetId, index: null };
     }
-    
+    if (position === 'inside' && targetIsFolder) {
+        return { parentId: targetId, index: null };
+    }
     try {
-        // 获取源节点和目标节点信息
-        const [sourceNode] = await chrome.bookmarks.get(sourceId);
         const [targetNode] = await chrome.bookmarks.get(targetId);
-        
-        const position = dropIndicator.dataset.position;
-        
-        console.log('[拖拽] 移动书签:', {
-            source: sourceNode.title,
-            target: targetNode.title,
-            position
-        });
-        
-        if (position === 'inside') {
-            // 移动到文件夹内部
-            await chrome.bookmarks.move(sourceId, {
-                parentId: targetId
-            });
-        } else {
-            // 移动到目标节点之前或之后
-            const targetIndex = targetNode.index;
-            const newIndex = position === 'before' ? targetIndex : targetIndex + 1;
-            
-            await chrome.bookmarks.move(sourceId, {
-                parentId: targetNode.parentId,
-                index: newIndex
-            });
+        if (!targetNode) {
+            return { parentId: targetId, index: null };
+        }
+        const parentId = targetNode.parentId;
+        const targetIndex = typeof targetNode.index === 'number' ? targetNode.index : null;
+        const index = targetIndex === null ? null : (position === 'before' ? targetIndex : targetIndex + 1);
+        return { parentId, index };
+    } catch (error) {
+        console.warn('[拖拽] 计算插入位置失败:', error);
+        return { parentId: targetId, index: null };
+    }
+}
+
+function computeTempInsertion(sectionId, targetId, position) {
+    position = position || 'inside';
+    const manager = getTempManager();
+    if (!manager) {
+        return { parentId: null, index: null };
+    }
+    const entry = manager.findItem(sectionId, targetId);
+    if (!entry || !entry.item) {
+        return { parentId: null, index: null };
+    }
+    if (position === 'inside' && entry.item.type === 'folder') {
+        const children = entry.item.children || [];
+        return { parentId: entry.item.id, index: children.length };
+    }
+    const parentId = entry.parent ? entry.parent.id : null;
+    const index = position === 'before' ? entry.index : entry.index + 1;
+    return { parentId, index };
+}
+
+async function createBookmarkFromPayload(parentId, index, payload) {
+    if (!chrome || !chrome.bookmarks || !payload) return;
+    const createInfo = {
+        parentId: parentId,
+        title: payload.title || ''
+    };
+    if (payload.url) {
+        createInfo.url = payload.url;
+    }
+    if (typeof index === 'number') {
+        createInfo.index = index;
+    }
+    const created = await chrome.bookmarks.create(createInfo);
+    if (payload.children && payload.children.length) {
+        for (const child of payload.children) {
+            await createBookmarkFromPayload(created.id, null, child);
+        }
+    }
+}
+
+async function moveBookmark(sourceId, targetId, targetIsFolder, context) {
+    const { sourceTreeType = 'permanent', sourceSectionId = null, targetTreeType = 'permanent', targetSectionId = null, position = 'inside' } = context || {};
+    const manager = getTempManager();
+    try {
+        if (sourceTreeType === 'temporary' && targetTreeType === 'temporary' && manager) {
+            const targetInfo = computeTempInsertion(targetSectionId || sourceSectionId, targetId, position);
+            if (sourceSectionId === targetSectionId) {
+                manager.moveWithin(sourceSectionId, [sourceId], targetInfo.parentId, targetInfo.index);
+            } else {
+                manager.moveAcross(sourceSectionId, targetSectionId, [sourceId], targetInfo.parentId, targetInfo.index);
+            }
+            return;
         }
         
-        // 标记这个被直接拖拽的对象（永久标记，不设过期时间）
+        if (sourceTreeType === 'temporary' && targetTreeType === 'permanent' && manager && chrome && chrome.bookmarks) {
+            const payload = manager.extractPayload(sourceSectionId, [sourceId]);
+            const { parentId, index } = await computePermanentInsertion(targetId, targetIsFolder, position);
+            for (const item of payload) {
+                await createBookmarkFromPayload(parentId, index, item);
+            }
+            manager.removeItems(sourceSectionId, [sourceId]);
+            await refreshBookmarkTree();
+            return;
+        }
+        
+        if (sourceTreeType === 'permanent' && targetTreeType === 'temporary' && manager && chrome && chrome.bookmarks) {
+            const nodes = await chrome.bookmarks.getSubTree(sourceId);
+            const payload = nodes && nodes[0] ? [serializeBookmarkNode(nodes[0])] : [];
+            const targetInfo = computeTempInsertion(targetSectionId, targetId, position);
+            manager.insertFromPayload(targetSectionId, targetInfo.parentId, payload, targetInfo.index);
+            return;
+        }
+        
+        if (!chrome || !chrome.bookmarks) {
+            console.warn('[拖拽] Chrome扩展环境不可用');
+            return;
+        }
+        
+        const [sourceNode] = await chrome.bookmarks.get(sourceId);
+        const [targetNode] = await chrome.bookmarks.get(targetId);
+        const insertInfo = await computePermanentInsertion(targetId, targetIsFolder, position);
+        
+        console.log('[拖拽] 移动书签:', {
+            source: sourceNode?.title,
+            target: targetNode?.title,
+            position,
+            insertInfo
+        });
+        
+        await chrome.bookmarks.move(sourceId, {
+            parentId: insertInfo.parentId,
+            index: insertInfo.index
+        });
+        
         try {
             if (typeof explicitMovedIds !== 'undefined') {
-                // 使用Infinity表示永久标记，这样只有被主动拖拽的对象会显示蓝色标识
                 explicitMovedIds.set(sourceId, Date.now() + Infinity);
             }
-        } catch(_) {}
+        } catch (_) {}
         
     } catch (error) {
-        // 静默处理错误（例如系统根文件夹无法移动），不弹出alert
         console.debug('[拖拽] 移动操作信息:', error.message);
     }
 }

@@ -4,8 +4,10 @@
 
 // Canvas状态管理
 const CanvasState = {
-    tempNodes: [],
-    tempNodeCounter: 0,
+    tempSections: [],
+    tempSectionCounter: 0,
+    tempItemCounter: 0,
+    colorCursor: 0,
     dragState: {
         isDragging: false,
         draggedElement: null,
@@ -14,7 +16,9 @@ const CanvasState = {
         dragStartY: 0,
         nodeStartX: 0,
         nodeStartY: 0,
-        dragSource: null // 'permanent' or 'temporary'
+        dragSource: null, // 'permanent' or 'temporary'
+        treeDragItem: null,
+        treeDragCleanupTimeout: null
     },
     // 画布缩放和平移
     zoom: 1,
@@ -57,7 +61,8 @@ const CanvasState = {
         maxX: 400,
         minY: -300,
         maxY: 300
-    }
+    },
+    dropCleanupBound: false
 };
 
 let panSaveTimeout = null;
@@ -67,6 +72,446 @@ let zoomSaveTimeout = null;
 let zoomUpdateFrame = null;
 let pendingZoomRequest = null;
 const scrollbarHoverState = new WeakMap();
+const TEMP_SECTION_STORAGE_KEY = 'bookmark-canvas-temp-sections';
+const LEGACY_TEMP_NODE_STORAGE_KEY = 'bookmark-canvas-temp-nodes';
+const TEMP_SECTION_DEFAULT_WIDTH = 360;
+const TEMP_SECTION_DEFAULT_HEIGHT = 280;
+const TEMP_SECTION_DEFAULT_COLOR = '#2563eb';
+function formatTimestampForTitle(date = new Date()) {
+    const yyyy = date.getFullYear();
+    const mm = String(date.getMonth() + 1).padStart(2, '0');
+    const dd = String(date.getDate()).padStart(2, '0');
+    const hh = String(date.getHours()).padStart(2, '0');
+    const mi = String(date.getMinutes()).padStart(2, '0');
+    const ss = String(date.getSeconds()).padStart(2, '0');
+    return `${yyyy}-${mm}-${dd} ${hh}:${mi}:${ss}`;
+}
+
+function getDefaultTempSectionTitle() {
+    try {
+        return formatTimestampForTitle();
+    } catch (_) {
+        return new Date().toLocaleString();
+    }
+}
+
+function pickTempSectionColor() {
+    CanvasState.colorCursor = (CanvasState.colorCursor + 1) % 1;
+    return TEMP_SECTION_DEFAULT_COLOR;
+}
+
+function cloneBookmarkNode(node) {
+    if (!node) return null;
+    const clone = {
+        id: node.id || null,
+        title: node.title || '',
+        url: node.url || null,
+        parentId: node.parentId || null,
+        type: node.url ? 'bookmark' : 'folder'
+    };
+    if (node.children && Array.isArray(node.children)) {
+        clone.children = node.children.map(child => cloneBookmarkNode(child)).filter(Boolean);
+    } else {
+        clone.children = [];
+    }
+    return clone;
+}
+
+function markTreeItemDragging(treeItem) {
+    if (!treeItem || !treeItem.classList) return;
+    treeItem.classList.add('tree-drag-out');
+    CanvasState.dragState.treeDragItem = treeItem;
+}
+
+function scheduleClearTreeItemDragging(delay = 160) {
+    if (CanvasState.dragState.treeDragCleanupTimeout) {
+        clearTimeout(CanvasState.dragState.treeDragCleanupTimeout);
+    }
+    CanvasState.dragState.treeDragCleanupTimeout = setTimeout(() => {
+        clearTreeItemDragging();
+    }, delay);
+}
+
+function clearTreeItemDragging() {
+    if (CanvasState.dragState.treeDragCleanupTimeout) {
+        clearTimeout(CanvasState.dragState.treeDragCleanupTimeout);
+        CanvasState.dragState.treeDragCleanupTimeout = null;
+    }
+    if (CanvasState.dragState.treeDragItem && CanvasState.dragState.treeDragItem.classList) {
+        CanvasState.dragState.treeDragItem.classList.remove('tree-drag-out');
+    }
+    CanvasState.dragState.treeDragItem = null;
+}
+
+async function resolveBookmarkNode(data) {
+    if (!data) {
+        throw new Error('缺少拖拽数据');
+    }
+    
+    // 数据已经是完整节点
+    if (data.children || data.url) {
+        return cloneBookmarkNode(data);
+    }
+    
+    const targetId = data.id || data.nodeId;
+    if (!targetId) {
+        throw new Error('拖拽数据缺少ID');
+    }
+    
+    if (browserAPI && browserAPI.bookmarks && browserAPI.bookmarks.getSubTree) {
+        const nodes = await browserAPI.bookmarks.getSubTree(targetId);
+        if (nodes && nodes.length > 0) {
+            return cloneBookmarkNode(nodes[0]);
+        }
+    }
+    
+    throw new Error('无法获取书签数据，请确保扩展具有访问书签的权限');
+}
+
+function allocateTempItemId(sectionId) {
+    return `temp-${sectionId}-${++CanvasState.tempItemCounter}`;
+}
+
+function convertBookmarkNodeToTempItem(node, sectionId) {
+    if (!node) return null;
+    
+    const itemId = allocateTempItemId(sectionId);
+    const item = {
+        id: itemId,
+        sectionId,
+        title: node.title || (node.url || '未命名'),
+        url: node.url || '',
+        type: node.url ? 'bookmark' : 'folder',
+        children: [],
+        originalId: node.id || null,
+        createdAt: Date.now()
+    };
+    
+    if (node.children && node.children.length) {
+        item.children = node.children
+            .map(child => convertBookmarkNodeToTempItem(child, sectionId))
+            .filter(Boolean);
+    }
+    
+    return item;
+}
+
+function convertLegacyTempNode(legacyNode, index) {
+    if (!legacyNode) return null;
+    const sectionId = (legacyNode.id && typeof legacyNode.id === 'string')
+        ? legacyNode.id
+        : `temp-section-${index + 1}`;
+    
+    const section = {
+        id: sectionId,
+        title: (legacyNode.data && legacyNode.data.title) ? legacyNode.data.title : getDefaultTempSectionTitle(),
+        color: pickTempSectionColor(),
+        x: legacyNode.x || 0,
+        y: legacyNode.y || 0,
+        width: legacyNode.width || TEMP_SECTION_DEFAULT_WIDTH,
+        height: legacyNode.height || TEMP_SECTION_DEFAULT_HEIGHT,
+        createdAt: Date.now(),
+        items: []
+    };
+    
+    if (legacyNode.data) {
+        const mapped = convertBookmarkNodeToTempItem(legacyNode.data, sectionId);
+        if (mapped) {
+            section.items.push(mapped);
+        }
+    }
+    
+    return section;
+}
+
+function refreshTempSectionCounters() {
+    let maxSection = CanvasState.tempSectionCounter || 0;
+    let maxItem = CanvasState.tempItemCounter || 0;
+    
+    const traverseItems = (items) => {
+        if (!Array.isArray(items)) return;
+        items.forEach(item => {
+            if (item && typeof item.id === 'string') {
+                const matchItem = item.id.match(/temp-[^-]+-(\d+)/);
+                if (matchItem) {
+                    const numericId = parseInt(matchItem[1], 10);
+                    if (!Number.isNaN(numericId)) {
+                        maxItem = Math.max(maxItem, numericId);
+                    }
+                }
+            }
+            if (item && item.children) {
+                traverseItems(item.children);
+            }
+        });
+    };
+    
+    CanvasState.tempSections.forEach(section => {
+        if (section && typeof section.id === 'string') {
+            const matchSection = section.id.match(/temp-section-(\d+)/);
+            if (matchSection) {
+                const numericId = parseInt(matchSection[1], 10);
+                if (!Number.isNaN(numericId)) {
+                    maxSection = Math.max(maxSection, numericId);
+                }
+            }
+        }
+        traverseItems(section.items);
+    });
+    
+    CanvasState.tempSectionCounter = Math.max(CanvasState.tempSectionCounter, maxSection);
+    CanvasState.tempItemCounter = Math.max(CanvasState.tempItemCounter, maxItem);
+}
+
+function getTempSection(sectionId) {
+    if (!sectionId) return null;
+    return CanvasState.tempSections.find(section => section.id === sectionId) || null;
+}
+
+function findTempItemEntry(sectionId, itemId) {
+    const section = getTempSection(sectionId);
+    if (!section || !itemId) return null;
+    
+    const stack = [{ items: section.items, parent: null }];
+    
+    while (stack.length) {
+        const { items, parent } = stack.pop();
+        for (let index = 0; index < items.length; index++) {
+            const item = items[index];
+            if (item.id === itemId) {
+                return { section, item, parent, items, index };
+            }
+            if (item.children && item.children.length) {
+                stack.push({ items: item.children, parent: item });
+            }
+        }
+    }
+    
+    return null;
+}
+
+function serializeTempItemForClipboard(item) {
+    if (!item) return null;
+    return {
+        title: item.title,
+        url: item.url || '',
+        type: item.type,
+        children: (item.children || []).map(child => serializeTempItemForClipboard(child))
+    };
+}
+
+function createTempItemFromPayload(sectionId, payload) {
+    if (!payload) return null;
+    const item = {
+        id: allocateTempItemId(sectionId),
+        sectionId,
+        title: payload.title || (payload.url || '未命名'),
+        url: payload.url || '',
+        type: payload.type === 'folder' ? 'folder' : (payload.url ? 'bookmark' : 'folder'),
+        children: [],
+        originalId: null,
+        createdAt: Date.now()
+    };
+    
+    if (payload.children && payload.children.length) {
+        item.children = payload.children
+            .map(child => createTempItemFromPayload(sectionId, child))
+            .filter(Boolean);
+    }
+    
+    return item;
+}
+
+function reassignTempItemIds(sectionId, item) {
+    if (!item) return;
+    item.id = allocateTempItemId(sectionId);
+    item.sectionId = sectionId;
+    if (item.children && item.children.length) {
+        item.children.forEach(child => reassignTempItemIds(sectionId, child));
+    }
+}
+
+function insertTempItems(sectionId, parentId, items, index = null) {
+    const section = getTempSection(sectionId);
+    if (!section) throw new Error('未找到临时栏目');
+    const targetItems = parentId 
+        ? (findTempItemEntry(sectionId, parentId)?.item?.children || (() => { throw new Error('未找到目标文件夹'); })())
+        : section.items;
+    
+    if (typeof index !== 'number' || index < 0 || index > targetItems.length) {
+        index = targetItems.length;
+    }
+    
+    items.forEach((item, offset) => {
+        targetItems.splice(index + offset, 0, item);
+    });
+    
+    renderTempNode(section);
+    saveTempNodes();
+}
+
+function removeTempItemsById(sectionId, itemIds) {
+    const removed = [];
+    const ids = Array.isArray(itemIds) ? itemIds : [itemIds];
+    
+    ids.forEach(id => {
+        const entry = findTempItemEntry(sectionId, id);
+        if (entry) {
+            const [item] = entry.items.splice(entry.index, 1);
+            removed.push(item);
+        }
+    });
+    
+    const section = getTempSection(sectionId);
+    if (section) {
+        renderTempNode(section);
+        saveTempNodes();
+    }
+    
+    return removed;
+}
+
+function moveTempItemsWithinSection(sectionId, itemIds, targetParentId, index = null) {
+    const section = getTempSection(sectionId);
+    if (!section) throw new Error('未找到临时栏目');
+    
+    const ids = Array.isArray(itemIds) ? itemIds : [itemIds];
+    const movingItems = ids
+        .map(id => findTempItemEntry(sectionId, id))
+        .filter(Boolean)
+        .sort((a, b) => a.index - b.index);
+    
+    if (!movingItems.length) return;
+    
+    const targetEntry = targetParentId ? findTempItemEntry(sectionId, targetParentId) : null;
+    const targetArray = targetEntry ? targetEntry.item.children : section.items;
+    
+    // Remove items from original positions (from bottom to top to keep indexes)
+    for (let i = movingItems.length - 1; i >= 0; i--) {
+        const entry = movingItems[i];
+        entry.items.splice(entry.index, 1);
+    }
+    
+    if (typeof index !== 'number' || index < 0 || index > targetArray.length) {
+        index = targetArray.length;
+    }
+    
+    movingItems.forEach((entry, offset) => {
+        entry.item.sectionId = sectionId;
+        targetArray.splice(index + offset, 0, entry.item);
+    });
+    
+    renderTempNode(section);
+    saveTempNodes();
+}
+
+function moveTempItemsAcrossSections(sourceSectionId, targetSectionId, itemIds, targetParentId, index = null) {
+    const sourceSection = getTempSection(sourceSectionId);
+    const targetSection = getTempSection(targetSectionId);
+    if (!sourceSection || !targetSection) {
+        throw new Error('移动失败：临时栏目不存在');
+    }
+    
+    const ids = Array.isArray(itemIds) ? itemIds : [itemIds];
+    const removedItems = [];
+    ids.forEach(id => {
+        const entry = findTempItemEntry(sourceSectionId, id);
+        if (entry) {
+            const [item] = entry.items.splice(entry.index, 1);
+            if (item) {
+                removedItems.push(item);
+            }
+        }
+    });
+    
+    const targetArray = targetParentId ? (findTempItemEntry(targetSectionId, targetParentId)?.item?.children) : targetSection.items;
+    if (!targetArray) {
+        throw new Error('目标文件夹不存在');
+    }
+    
+    if (typeof index !== 'number' || index < 0 || index > targetArray.length) {
+        index = targetArray.length;
+    }
+    
+    removedItems.forEach(item => reassignTempItemIds(targetSectionId, item));
+    removedItems.forEach((item, offset) => {
+        targetArray.splice(index + offset, 0, item);
+    });
+    
+    renderTempNode(sourceSection);
+    renderTempNode(targetSection);
+    saveTempNodes();
+}
+
+function renameTempItem(sectionId, itemId, newTitle) {
+    const entry = findTempItemEntry(sectionId, itemId);
+    if (!entry) throw new Error('未找到临时节点');
+    entry.item.title = newTitle;
+    const section = entry.section;
+    renderTempNode(section);
+    saveTempNodes();
+}
+
+function updateTempBookmark(sectionId, itemId, updates) {
+    const entry = findTempItemEntry(sectionId, itemId);
+    if (!entry) throw new Error('未找到临时节点');
+    
+    if (typeof updates.title === 'string') {
+        entry.item.title = updates.title;
+    }
+    if (typeof updates.url === 'string') {
+        entry.item.url = updates.url;
+        entry.item.type = updates.url ? 'bookmark' : entry.item.type;
+    }
+    
+    renderTempNode(entry.section);
+    saveTempNodes();
+}
+
+function ensureTempSectionRendered(sectionId) {
+    const section = getTempSection(sectionId);
+    if (section) {
+        renderTempNode(section);
+        saveTempNodes();
+    }
+}
+
+function extractTempItemsPayload(sectionId, itemIds) {
+    const ids = Array.isArray(itemIds) ? itemIds : [itemIds];
+    const payload = [];
+    ids.forEach(id => {
+        const entry = findTempItemEntry(sectionId, id);
+        if (entry) {
+            payload.push(serializeTempItemForClipboard(entry.item));
+        }
+    });
+    return payload;
+}
+
+function insertTempItemsFromPayload(sectionId, parentId, payloadItems, index = null) {
+    const items = (payloadItems || []).map(item => createTempItemFromPayload(sectionId, item)).filter(Boolean);
+    if (!items.length) return;
+    insertTempItems(sectionId, parentId, items, index);
+}
+
+function createTempBookmark(sectionId, parentId, title, url) {
+    const item = createTempItemFromPayload(sectionId, {
+        title: title || '新建书签',
+        url: url || 'https://',
+        type: 'bookmark',
+        children: []
+    });
+    insertTempItems(sectionId, parentId, [item]);
+}
+
+function createTempFolder(sectionId, parentId, title) {
+    const item = createTempItemFromPayload(sectionId, {
+        title: title || '新建文件夹',
+        type: 'folder',
+        children: []
+    });
+    insertTempItems(sectionId, parentId, [item]);
+}
 
 // =============================================================================
 // 初始化Canvas视图
@@ -103,9 +548,37 @@ function initCanvasView() {
     updateScrollbarThumbs();
     // 设置Canvas事件监听
     setupCanvasEventListeners();
+    setupCanvasDropFeedback();
     
     // 设置永久栏目提示关闭按钮
     setupPermanentSectionTipClose();
+}
+
+function setupCanvasDropFeedback() {
+    const workspace = document.getElementById('canvasWorkspace');
+    if (!workspace) return;
+    workspace.addEventListener('dragenter', (e) => {
+        if (CanvasState.dragState.dragSource === 'permanent') {
+            workspace.classList.add('canvas-drop-active');
+        }
+    });
+    workspace.addEventListener('dragleave', (e) => {
+        if (!workspace.contains(e.relatedTarget)) {
+            workspace.classList.remove('canvas-drop-active');
+        }
+    });
+    workspace.addEventListener('dragover', (e) => {
+        if (CanvasState.dragState.dragSource === 'permanent') {
+            const rect = workspace.getBoundingClientRect();
+            const x = ((e.clientX - rect.left) / rect.width) * 100;
+            const y = ((e.clientY - rect.top) / rect.height) * 100;
+            workspace.style.setProperty('--drop-x', `${x}%`);
+            workspace.style.setProperty('--drop-y', `${y}%`);
+        }
+    });
+    workspace.addEventListener('drop', () => {
+        workspace.classList.remove('canvas-drop-active');
+    });
 }
 
 // =============================================================================
@@ -132,40 +605,41 @@ function enhanceBookmarkTreeForCanvas() {
             const nodeUrl = item.dataset.nodeUrl;
             const isFolder = item.dataset.nodeType === 'folder';
             
-            // 收集节点数据，供dragend时使用
-            const nodeData = {
+            // 保存到Canvas状态，仅存储必要的标识信息，完整数据稍后获取
+            CanvasState.dragState.draggedData = {
                 id: nodeId,
                 title: nodeTitle,
                 url: nodeUrl,
                 type: isFolder ? 'folder' : 'bookmark',
-                children: []
+                source: 'permanent',
+                hasSnapshot: false
             };
-            
-            // 如果是文件夹，收集子项
-            if (isFolder) {
-                const nodeElement = item.parentElement;
-                const childrenContainer = nodeElement.querySelector('.tree-children');
-                if (childrenContainer) {
-                    const childItems = childrenContainer.querySelectorAll(':scope > .tree-node > .tree-item');
-                    childItems.forEach(child => {
-                        nodeData.children.push({
-                            id: child.dataset.nodeId,
-                            title: child.dataset.nodeTitle,
-                            url: child.dataset.nodeUrl
-                        });
-                    });
-                }
-            }
-            
-            // 保存到Canvas状态
-            CanvasState.dragState.draggedData = nodeData;
             CanvasState.dragState.dragSource = 'permanent';
             
-            console.log('[Canvas] 拖拽数据已保存:', nodeData);
+            // 设置拖拽数据（供外部系统识别）
+            try {
+                e.dataTransfer.setData('application/json', JSON.stringify({
+                    id: nodeId,
+                    title: nodeTitle,
+                    url: nodeUrl,
+                    type: isFolder ? 'folder' : 'bookmark'
+                }));
+            } catch (err) {
+                console.warn('[Canvas] 设置拖拽数据失败:', err);
+            }
+            
+            console.log('[Canvas] 拖拽数据已保存:', CanvasState.dragState.draggedData);
+
+            markTreeItemDragging(item);
+
+            const permanentSection = document.getElementById('permanentSection');
+            if (permanentSection) {
+                permanentSection.classList.add('drag-origin-active');
+            }
         });
         
         // 添加dragend监听器，检查是否拖到Canvas
-        item.addEventListener('dragend', function(e) {
+        item.addEventListener('dragend', async function(e) {
             if (CanvasState.dragState.dragSource !== 'permanent') return;
             
             const dropX = e.clientX;
@@ -188,13 +662,27 @@ function enhanceBookmarkTreeForCanvas() {
                 
                 // 在Canvas上创建临时节点
                 if (CanvasState.dragState.draggedData) {
-                    createTempNode(CanvasState.dragState.draggedData, canvasX, canvasY);
+                    try {
+                        await createTempNode(CanvasState.dragState.draggedData, canvasX, canvasY);
+                    } catch (err) {
+                        console.error('[Canvas] 创建临时栏目失败:', err);
+                        alert('创建临时栏目失败: ' + err.message);
+                    }
                 }
             }
             
             // 清理状态
             CanvasState.dragState.draggedData = null;
             CanvasState.dragState.dragSource = null;
+            const permanentSection = document.getElementById('permanentSection');
+            if (permanentSection) {
+                permanentSection.classList.remove('drag-origin-active');
+            }
+            if (workspace) {
+                workspace.classList.remove('canvas-drop-active');
+            }
+
+            scheduleClearTreeItemDragging();
         });
     });
     
@@ -1178,13 +1666,13 @@ function computeCanvasContentBounds() {
         hasContent = true;
     }
     
-    CanvasState.tempNodes.forEach(node => {
-        const width = node.width || 300;
-        const height = node.height || 250;
-        minX = Math.min(minX, node.x);
-        maxX = Math.max(maxX, node.x + width);
-        minY = Math.min(minY, node.y);
-        maxY = Math.max(maxY, node.y + height);
+    CanvasState.tempSections.forEach(section => {
+        const width = section.width || TEMP_SECTION_DEFAULT_WIDTH;
+        const height = section.height || TEMP_SECTION_DEFAULT_HEIGHT;
+        minX = Math.min(minX, section.x);
+        maxX = Math.max(maxX, section.x + width);
+        minY = Math.min(minY, section.y);
+        maxY = Math.max(maxY, section.y + height);
         hasContent = true;
     });
     
@@ -1694,6 +2182,7 @@ function makeTempNodeResizable(element, node) {
                 
                 // 应用新的尺寸和位置
                 element.style.width = newWidth + 'px';
+                element.style.height = newHeight + 'px';
                 element.style.left = newLeft + 'px';
                 element.style.top = newTop + 'px';
                 
@@ -1728,12 +2217,28 @@ function makeTempNodeResizable(element, node) {
 
 function handlePermanentDragStart(e, data, type) {
     CanvasState.dragState.isDragging = true;
-    CanvasState.dragState.draggedData = { ...data, type: type };
+    CanvasState.dragState.draggedData = {
+        id: data.id,
+        title: data.title,
+        url: data.url,
+        type,
+        source: 'permanent',
+        hasSnapshot: !!data.children
+    };
     CanvasState.dragState.dragSource = 'permanent';
     
     e.dataTransfer.effectAllowed = 'copy';
     e.dataTransfer.setData('text/plain', data.title || '');
-    e.dataTransfer.setData('application/json', JSON.stringify({ ...data, type: type }));
+    try {
+        e.dataTransfer.setData('application/json', JSON.stringify({
+            id: data.id,
+            title: data.title,
+            url: data.url,
+            type
+        }));
+    } catch (err) {
+        console.warn('[Canvas] 设置拖拽数据失败:', err);
+    }
     
     // 创建拖拽预览
     const preview = document.createElement('div');
@@ -1745,7 +2250,7 @@ function handlePermanentDragStart(e, data, type) {
     setTimeout(() => preview.remove(), 0);
 }
 
-function handlePermanentDragEnd(e) {
+async function handlePermanentDragEnd(e) {
     if (!CanvasState.dragState.isDragging) return;
     
     const dropX = e.clientX;
@@ -1761,108 +2266,225 @@ function handlePermanentDragEnd(e) {
         // 在Canvas上创建临时节点
         const x = dropX - rect.left + workspace.scrollLeft;
         const y = dropY - rect.top + workspace.scrollTop;
-        createTempNode(CanvasState.dragState.draggedData, x, y);
+        try {
+            await createTempNode(CanvasState.dragState.draggedData, x, y);
+        } catch (error) {
+            console.error('[Canvas] 创建临时栏目失败:', error);
+            alert('创建临时栏目失败: ' + error.message);
+        }
     }
     
     CanvasState.dragState.isDragging = false;
     CanvasState.dragState.draggedData = null;
     CanvasState.dragState.dragSource = null;
+    const permanentSection = document.getElementById('permanentSection');
+    if (permanentSection) {
+        permanentSection.classList.remove('drag-origin-active');
+    }
+    if (workspace) {
+        workspace.classList.remove('canvas-drop-active');
+    }
+
+    scheduleClearTreeItemDragging();
 }
 
 // =============================================================================
 // 临时节点管理
 // =============================================================================
 
-function createTempNode(data, x, y) {
-    const nodeId = `temp-node-${++CanvasState.tempNodeCounter}`;
-    
-    const node = {
-        id: nodeId,
-        type: data.type || (data.url ? 'bookmark' : 'folder'),
-        x: x,
-        y: y,
-        width: 300,
-        height: 250, // 默认高度（与CSS一致）
-        data: data
+async function createTempNode(data, x, y) {
+    const sectionId = `temp-section-${++CanvasState.tempSectionCounter}`;
+    const section = {
+        id: sectionId,
+        title: getDefaultTempSectionTitle(),
+        color: pickTempSectionColor(),
+        x,
+        y,
+        width: TEMP_SECTION_DEFAULT_WIDTH,
+        height: TEMP_SECTION_DEFAULT_HEIGHT,
+        createdAt: Date.now(),
+        items: []
     };
     
-    CanvasState.tempNodes.push(node);
-    renderTempNode(node);
+    try {
+        let resolvedNode = null;
+        try {
+            resolvedNode = await resolveBookmarkNode(data);
+        } catch (error) {
+            console.warn('[Canvas] 实时获取书签数据失败，使用一次性快照:', error);
+            resolvedNode = cloneBookmarkNode(data);
+        }
+        if (resolvedNode) {
+            const tempRoot = convertBookmarkNodeToTempItem(resolvedNode, sectionId);
+            if (tempRoot) {
+                section.items.push(tempRoot);
+            }
+        }
+    } catch (error) {
+        console.error('[Canvas] 转换拖拽节点失败:', error);
+    }
+    
+    CanvasState.tempSections.push(section);
+    renderTempNode(section);
     saveTempNodes();
 }
 
-function renderTempNode(node) {
+function renderTempNode(section) {
     const container = document.getElementById('canvasContent');
     if (!container) {
         console.warn('[Canvas] 找不到canvasContent容器');
         return;
     }
     
-    const nodeElement = document.createElement('div');
-    nodeElement.className = 'temp-canvas-node';
-    nodeElement.id = node.id;
+    section.color = section.color || TEMP_SECTION_DEFAULT_COLOR;
     
-    // 禁用初始transition避免创建时的动画
-    nodeElement.style.transition = 'none';
-    nodeElement.style.left = node.x + 'px';
-    nodeElement.style.top = node.y + 'px';
-    nodeElement.style.width = node.width + 'px';
-    if (node.height) {
-        nodeElement.style.height = node.height + 'px';
+    let nodeElement = document.getElementById(section.id);
+    const isNew = !nodeElement;
+    
+    if (!nodeElement) {
+        nodeElement = document.createElement('div');
+        nodeElement.className = 'temp-canvas-node';
+        nodeElement.id = section.id;
+        nodeElement.dataset.sectionId = section.id;
+        container.appendChild(nodeElement);
+    } else {
+        nodeElement.innerHTML = '';
     }
     
-    // 节点头部
+    nodeElement.style.transition = 'none';
+    nodeElement.style.left = section.x + 'px';
+    nodeElement.style.top = section.y + 'px';
+    nodeElement.style.width = (section.width || TEMP_SECTION_DEFAULT_WIDTH) + 'px';
+    nodeElement.style.height = (section.height || TEMP_SECTION_DEFAULT_HEIGHT) + 'px';
+    nodeElement.style.setProperty('--section-color', section.color || TEMP_SECTION_DEFAULT_COLOR);
+    
     const header = document.createElement('div');
     header.className = 'temp-node-header';
+    header.dataset.sectionId = section.id;
+    header.style.setProperty('--section-color', section.color || TEMP_SECTION_DEFAULT_COLOR);
     
-    const title = document.createElement('div');
-    title.className = 'temp-node-title';
-    title.textContent = node.data.title || '未命名';
+    const titleInput = document.createElement('input');
+    titleInput.type = 'text';
+    titleInput.className = 'temp-node-title temp-node-title-input';
+    titleInput.value = section.title || getDefaultTempSectionTitle();
+    titleInput.placeholder = '临时栏目';
+    titleInput.readOnly = true;
+    titleInput.setAttribute('readonly', 'readonly');
+    titleInput.tabIndex = -1;
+    titleInput.dataset.sectionId = section.id;
     
+    const actions = document.createElement('div');
+    actions.className = 'temp-node-actions';
+    
+    const renameBtn = document.createElement('button');
+    renameBtn.type = 'button';
+    renameBtn.className = 'temp-node-action-btn temp-node-rename-btn';
+    const renameLabel = (typeof currentLang !== 'undefined' && currentLang === 'en') ? 'Rename section' : '重命名栏目';
+    renameBtn.title = renameLabel;
+    renameBtn.innerHTML = '<i class="fas fa-edit"></i>';
+    
+    const colorLabel = (typeof currentLang !== 'undefined' && currentLang === 'en') ? 'Change color' : '调整栏目颜色';
+
+    const colorInput = document.createElement('input');
+    colorInput.type = 'color';
+    colorInput.className = 'temp-node-color-input';
+    colorInput.value = section.color || TEMP_SECTION_DEFAULT_COLOR;
+    colorInput.title = colorLabel;
+    
+    const colorBtn = document.createElement('button');
+    colorBtn.type = 'button';
+    colorBtn.className = 'temp-node-action-btn temp-node-color-btn';
+    colorBtn.title = colorLabel;
+    colorBtn.innerHTML = '<i class="fas fa-palette"></i>';
+    colorBtn.addEventListener('click', (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        colorInput.click();
+    });
+    
+    colorInput.addEventListener('input', (event) => {
+        section.color = event.target.value || TEMP_SECTION_DEFAULT_COLOR;
+        applyTempSectionColor(section, nodeElement, header, colorBtn, colorInput);
+        saveTempNodes();
+    });
+
+    renameBtn.addEventListener('click', (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        if (titleInput.classList.contains('editing')) {
+            finishTempSectionTitleEdit(section, titleInput, renameBtn, true);
+        } else {
+            beginTempSectionTitleEdit(section, titleInput, renameBtn);
+        }
+    });
+
+    titleInput.addEventListener('blur', () => {
+        if (!titleInput.classList.contains('editing')) return;
+        finishTempSectionTitleEdit(section, titleInput, renameBtn, true);
+    });
+
+    titleInput.addEventListener('keydown', (ev) => {
+        if (!titleInput.classList.contains('editing')) return;
+        if (ev.key === 'Enter') {
+            ev.preventDefault();
+            finishTempSectionTitleEdit(section, titleInput, renameBtn, true);
+        } else if (ev.key === 'Escape') {
+            ev.preventDefault();
+            finishTempSectionTitleEdit(section, titleInput, renameBtn, false);
+        }
+    });
+
+    titleInput.addEventListener('mousedown', (ev) => {
+        if (!titleInput.classList.contains('editing')) {
+            ev.preventDefault();
+        }
+    });
+
     const closeBtn = document.createElement('button');
-    closeBtn.className = 'temp-node-close';
+    closeBtn.className = 'temp-node-action-btn temp-node-delete-btn temp-node-close';
     closeBtn.innerHTML = '&times;';
-    closeBtn.addEventListener('click', () => removeTempNode(node.id));
+    closeBtn.title = (typeof currentLang !== 'undefined' && currentLang === 'en') ? 'Remove section' : '删除临时栏目';
+    closeBtn.addEventListener('click', () => removeTempNode(section.id));
+
+    actions.appendChild(renameBtn);
+    actions.appendChild(colorBtn);
+    actions.appendChild(colorInput);
+    actions.appendChild(closeBtn);
     
-    header.appendChild(title);
-    header.appendChild(closeBtn);
+    header.appendChild(titleInput);
+    header.appendChild(actions);
     
-    // 节点内容
     const body = document.createElement('div');
     body.className = 'temp-node-body';
     
-    // 类型标记
-    const badge = document.createElement('div');
-    badge.className = 'temp-node-type-badge';
-    badge.textContent = node.type === 'bookmark' ? '书签' : '文件夹';
-    body.appendChild(badge);
+    const treeContainer = document.createElement('div');
+    treeContainer.className = 'bookmark-tree temp-bookmark-tree';
+    treeContainer.dataset.sectionId = section.id;
+    treeContainer.dataset.treeType = 'temporary';
     
-    if (node.type === 'bookmark' && node.data.url) {
-        const bookmarkItem = createCanvasBookmarkItem(node.data, false);
-        body.appendChild(bookmarkItem);
-    } else if (node.type === 'folder' && node.data.children) {
-        node.data.children.forEach(child => {
-            const item = createCanvasBookmarkElement(child, false);
-            body.appendChild(item);
-        });
-    }
+    const treeFragment = document.createDocumentFragment();
+    section.items.forEach(item => {
+        const node = buildTempTreeNode(section, item, 0);
+        if (node) treeFragment.appendChild(node);
+    });
+    treeContainer.appendChild(treeFragment);
+    body.appendChild(treeContainer);
     
     nodeElement.appendChild(header);
     nodeElement.appendChild(body);
     
-    // 添加拖拽功能
-    makeNodeDraggable(nodeElement, node);
+    applyTempSectionColor(section, nodeElement, header, colorBtn, colorInput);
+    makeNodeDraggable(nodeElement, section);
+    makeTempNodeResizable(nodeElement, section);
+    setupTempSectionTreeInteractions(treeContainer, section);
+    setupTempSectionDropTargets(section, nodeElement, treeContainer, header);
+    if (typeof attachTreeEvents === 'function') {
+        attachTreeEvents(treeContainer);
+    }
+    if (typeof attachDragEvents === 'function') {
+        attachDragEvents(treeContainer);
+    }
     
-    // 添加拖回永久栏目功能
-    makeNodeDroppableBack(nodeElement, node);
-    
-    // 添加resize功能
-    makeTempNodeResizable(nodeElement, node);
-    
-    // 添加到容器（使用之前已经声明的container变量）
-    container.appendChild(nodeElement);
-    
-    // 强制重排后恢复transition
     nodeElement.offsetHeight;
     nodeElement.style.transition = '';
     
@@ -1870,23 +2492,430 @@ function renderTempNode(node) {
         updateCanvasScrollBounds();
         updateScrollbarThumbs();
     }
+    
+    if (isNew) {
+        nodeElement.classList.add('temp-node-enter');
+        requestAnimationFrame(() => {
+            nodeElement.classList.remove('temp-node-enter');
+        });
+    }
 }
 
-function makeNodeDraggable(element, node) {
+function applyTempSectionColor(section, nodeElement, header, colorButton, colorInput) {
+    const color = section.color || TEMP_SECTION_DEFAULT_COLOR;
+    if (nodeElement) {
+        nodeElement.style.setProperty('--section-color', color);
+    }
+    if (header) {
+        header.style.setProperty('--section-color', color);
+    }
+    if (colorButton) {
+        colorButton.style.background = color;
+        colorButton.style.borderColor = color;
+        colorButton.style.color = '#ffffff';
+        colorButton.style.boxShadow = '0 0 0 2px rgba(255, 255, 255, 0.35)';
+    }
+    if (colorInput) {
+        colorInput.value = color;
+    }
+}
+
+function beginTempSectionTitleEdit(section, input, renameButton) {
+    if (!input) return;
+    input.classList.add('editing');
+    input.readOnly = false;
+    input.removeAttribute('readonly');
+    input.tabIndex = 0;
+    input.focus();
+    input.select();
+    if (renameButton) {
+        renameButton.classList.add('active');
+    }
+}
+
+function finishTempSectionTitleEdit(section, input, renameButton, commit) {
+    if (!input) return;
+    if (commit) {
+        const newTitle = input.value.trim() || getDefaultTempSectionTitle();
+        section.title = newTitle;
+        input.value = newTitle;
+        saveTempNodes();
+    } else {
+        input.value = section.title || getDefaultTempSectionTitle();
+    }
+    input.classList.remove('editing');
+    input.readOnly = true;
+    input.setAttribute('readonly', 'readonly');
+    input.tabIndex = -1;
+    if (document.activeElement === input) {
+        input.blur();
+    }
+    if (renameButton) {
+        renameButton.classList.remove('active');
+    }
+}
+
+function buildTempTreeNode(section, item, level) {
+    if (!item) return null;
+    
+    const wrapper = document.createElement('div');
+    wrapper.className = 'tree-node';
+    wrapper.style.paddingLeft = `${level * 12}px`;
+    
+    const treeItem = document.createElement('div');
+    treeItem.className = 'tree-item';
+    treeItem.dataset.nodeId = item.id;
+    treeItem.dataset.nodeTitle = item.title || '';
+    treeItem.dataset.nodeType = item.type;
+    treeItem.dataset.sectionId = section.id;
+    treeItem.dataset.treeType = 'temporary';
+    treeItem.dataset.originalId = item.originalId || '';
+    if (item.url) {
+        treeItem.dataset.nodeUrl = item.url;
+    }
+    
+    const toggle = document.createElement('span');
+    toggle.className = 'tree-toggle';
+    if (item.type === 'folder' && item.children && item.children.length) {
+        toggle.classList.add('expanded');
+    } else {
+        toggle.style.opacity = '0';
+    }
+    
+    let icon;
+    if (item.type === 'folder') {
+        icon = document.createElement('i');
+        icon.className = 'tree-icon fas fa-folder-open';
+    } else {
+        icon = document.createElement('img');
+        icon.className = 'tree-icon';
+        const favicon = getFaviconUrl(item.url);
+        if (favicon) {
+            icon.src = favicon;
+            icon.onerror = () => { icon.src = fallbackIcon; };
+        } else {
+            icon.src = fallbackIcon;
+        }
+    }
+    
+    let label;
+    if (item.type === 'bookmark') {
+        const link = document.createElement('a');
+        link.className = 'tree-label tree-bookmark-link';
+        link.href = item.url || '#';
+        link.target = '_blank';
+        link.rel = 'noopener noreferrer';
+        link.textContent = item.title || item.url || '未命名书签';
+        label = link;
+    } else {
+        const span = document.createElement('span');
+        span.className = 'tree-label';
+        span.textContent = item.title || '未命名文件夹';
+        label = span;
+    }
+
+    const badges = document.createElement('span');
+    badges.className = 'change-badges';
+    
+    treeItem.appendChild(toggle);
+    treeItem.appendChild(icon);
+    treeItem.appendChild(label);
+    treeItem.appendChild(badges);
+    wrapper.appendChild(treeItem);
+
+    setupTempTreeNodeDropHandlers(treeItem, section, item);
+
+    if (item.type === 'folder') {
+        const childrenContainer = document.createElement('div');
+        childrenContainer.className = 'tree-children expanded';
+        childrenContainer.dataset.sectionId = section.id;
+        
+        if (item.children && item.children.length) {
+            item.children.forEach(child => {
+                const childNode = buildTempTreeNode(section, child, level + 1);
+                if (childNode) childrenContainer.appendChild(childNode);
+            });
+        } else {
+            toggle.style.opacity = '0';
+        }
+        
+        wrapper.appendChild(childrenContainer);
+    }
+    
+    return wrapper;
+}
+
+function setupTempSectionTreeInteractions(treeContainer, section) {
+    if (!treeContainer) return;
+}
+
+function setupTempSectionDropTargets(section, sectionElement, treeContainer, header) {
+    if (!sectionElement) return;
+    const highlight = () => sectionElement.classList.add('temp-drop-highlight');
+    const clearHighlight = () => sectionElement.classList.remove('temp-drop-highlight');
+
+    const allowDrop = () => {
+        const source = getCurrentDragSourceType();
+        return source === 'permanent' || source === 'temporary';
+    };
+
+    const handleDrop = async (event) => {
+        if (!allowDrop()) return;
+        event.preventDefault();
+        clearHighlight();
+        try {
+            const source = getCurrentDragSourceType();
+            if (source === 'permanent') {
+                const fallbackId = (typeof draggedNodeId !== 'undefined') ? draggedNodeId : null;
+                const ids = collectPermanentSelectionIds(fallbackId);
+                if (!ids.length) return;
+                const payload = await resolvePermanentPayload(ids);
+                if (payload && payload.length) {
+                    insertTempItemsFromPayload(section.id, null, payload);
+                    if (typeof deselectAll === 'function') {
+                        deselectAll();
+                    }
+                }
+            } else if (source === 'temporary') {
+                const sourceSectionId = getTempDragSourceSectionId();
+                if (!sourceSectionId) return;
+                const fallbackId = (typeof draggedNodeId !== 'undefined') ? draggedNodeId : null;
+                const ids = collectTemporarySelectionIds(sourceSectionId, fallbackId);
+                if (!ids.length) return;
+                if (sourceSectionId === section.id) {
+                    moveTempItemsWithinSection(section.id, ids, null, null);
+                } else {
+                    moveTempItemsAcrossSections(sourceSectionId, section.id, ids, null, null);
+                }
+                if (typeof deselectAll === 'function') {
+                    deselectAll();
+                }
+            }
+        } catch (error) {
+            console.error('[Canvas] 临时栏目接收拖拽失败:', error);
+            alert('拖拽失败: ' + (error && error.message ? error.message : error));
+        }
+    };
+
+    const handleDragOver = (event) => {
+        if (!allowDrop()) return;
+        event.preventDefault();
+        event.dataTransfer.dropEffect = getCurrentDragSourceType() === 'permanent' ? 'copy' : 'move';
+        highlight();
+    };
+
+    const handleDragLeave = (event) => {
+        if (!sectionElement.contains(event.relatedTarget)) {
+            clearHighlight();
+        }
+    };
+
+    const targets = [treeContainer, header];
+    targets.forEach(target => {
+        if (!target) return;
+        target.addEventListener('dragover', handleDragOver);
+        target.addEventListener('dragleave', handleDragLeave);
+        target.addEventListener('drop', handleDrop);
+    });
+
+    if (!CanvasState.dropCleanupBound) {
+        document.addEventListener('dragend', () => {
+            document.querySelectorAll('.temp-drop-highlight').forEach(el => el.classList.remove('temp-drop-highlight'));
+            document.querySelectorAll('.temp-tree-drop-highlight').forEach(el => el.classList.remove('temp-tree-drop-highlight'));
+            const workspaceEl = document.getElementById('canvasWorkspace');
+            if (workspaceEl) {
+                workspaceEl.classList.remove('canvas-drop-active');
+            }
+            clearTreeItemDragging();
+        }, true);
+        CanvasState.dropCleanupBound = true;
+    }
+}
+
+function getCurrentDragSourceType() {
+    if (typeof draggedNodeTreeType !== 'undefined' && draggedNodeTreeType) {
+        return draggedNodeTreeType;
+    }
+    if (CanvasState.dragState && CanvasState.dragState.dragSource) {
+        return CanvasState.dragState.dragSource;
+    }
+    return null;
+}
+
+function getTempDragSourceSectionId() {
+    if (typeof draggedNodeSectionId !== 'undefined' && draggedNodeSectionId) {
+        return draggedNodeSectionId;
+    }
+    if (typeof draggedNodeId !== 'undefined' && draggedNodeId) {
+        const meta = getSelectionMeta(draggedNodeId);
+        if (meta && meta.sectionId) {
+            return meta.sectionId;
+        }
+    }
+    if (CanvasState.dragState && CanvasState.dragState.draggedData && CanvasState.dragState.draggedData.sectionId) {
+        return CanvasState.dragState.draggedData.sectionId;
+    }
+    return null;
+}
+
+function collectPermanentSelectionIds(fallbackId) {
+    const ids = [];
+    const selection = (typeof selectedNodes !== 'undefined') ? selectedNodes : null;
+    if (selection && typeof selection.forEach === 'function' && selection.size) {
+        selection.forEach(id => {
+            const meta = getSelectionMeta(id);
+            const treeType = meta ? meta.treeType : 'permanent';
+            if (treeType !== 'temporary') {
+                ids.push(id);
+            }
+        });
+    }
+    if (fallbackId) {
+        const meta = getSelectionMeta(fallbackId);
+        if (!meta || meta.treeType !== 'temporary') {
+            ids.push(fallbackId);
+        }
+    }
+    return Array.from(new Set(ids.filter(Boolean)));
+}
+
+function collectTemporarySelectionIds(sectionId, fallbackId) {
+    const ids = [];
+    const selection = (typeof selectedNodes !== 'undefined') ? selectedNodes : null;
+    if (selection && typeof selection.forEach === 'function' && selection.size) {
+        selection.forEach(id => {
+            const meta = getSelectionMeta(id);
+            if (meta && meta.treeType === 'temporary' && meta.sectionId === sectionId) {
+                ids.push(id);
+            }
+        });
+    }
+    if (fallbackId) {
+        const meta = getSelectionMeta(fallbackId);
+        if (meta && meta.treeType === 'temporary' && meta.sectionId === sectionId) {
+            ids.push(fallbackId);
+        } else if ((!meta || !meta.sectionId) && typeof draggedNodeId !== 'undefined' && draggedNodeId === fallbackId && draggedNodeSectionId === sectionId) {
+            ids.push(fallbackId);
+        }
+    }
+    return Array.from(new Set(ids.filter(Boolean)));
+}
+
+function setupTempTreeNodeDropHandlers(treeItem, section, item) {
+    if (!treeItem || !section || !item || item.type !== 'folder') return;
+    const allowDrop = () => getCurrentDragSourceType() === 'permanent' || getCurrentDragSourceType() === 'temporary';
+    const highlight = () => treeItem.classList.add('temp-tree-drop-highlight');
+    const clear = () => treeItem.classList.remove('temp-tree-drop-highlight');
+
+    const handleDropToFolder = async () => {
+        const source = getCurrentDragSourceType();
+        if (source === 'permanent') {
+            const fallbackId = (typeof draggedNodeId !== 'undefined') ? draggedNodeId : null;
+            const ids = collectPermanentSelectionIds(fallbackId);
+            if (!ids.length) return;
+            const payload = await resolvePermanentPayload(ids);
+            if (!payload || !payload.length) return;
+            insertTempItemsFromPayload(section.id, item.id, payload);
+            if (typeof deselectAll === 'function') {
+                deselectAll();
+            }
+        } else if (source === 'temporary') {
+            const sourceSectionId = getTempDragSourceSectionId();
+            if (!sourceSectionId) return;
+            const fallbackId = (typeof draggedNodeId !== 'undefined') ? draggedNodeId : null;
+            const ids = collectTemporarySelectionIds(sourceSectionId, fallbackId);
+            if (!ids.length) return;
+            if (sourceSectionId === section.id) {
+                moveTempItemsWithinSection(section.id, ids, item.id, null);
+            } else {
+                moveTempItemsAcrossSections(sourceSectionId, section.id, ids, item.id, null);
+            }
+            if (typeof deselectAll === 'function') {
+                deselectAll();
+            }
+        }
+    };
+
+    treeItem.addEventListener('dragover', (event) => {
+        if (!allowDrop()) return;
+        if (getCurrentDragSourceType() === 'temporary' && item.type !== 'folder') return;
+        event.preventDefault();
+        event.dataTransfer.dropEffect = getCurrentDragSourceType() === 'permanent' ? 'copy' : 'move';
+        highlight();
+    });
+
+    treeItem.addEventListener('dragleave', (event) => {
+        if (!treeItem.contains(event.relatedTarget)) {
+            clear();
+        }
+    });
+
+    treeItem.addEventListener('drop', async (event) => {
+        if (!allowDrop()) return;
+        if (item.type !== 'folder') return;
+        event.preventDefault();
+        clear();
+        try {
+            await handleDropToFolder();
+        } catch (error) {
+            console.error('[Canvas] 临时栏目节点接收拖拽失败:', error);
+            alert('拖拽失败: ' + (error && error.message ? error.message : error));
+        }
+    });
+}
+
+async function resolvePermanentPayload(nodeIds) {
+    const results = [];
+    if (!Array.isArray(nodeIds) || !nodeIds.length) return results;
+    const api = (typeof browserAPI !== 'undefined' && browserAPI.bookmarks) ? browserAPI.bookmarks : (chrome && chrome.bookmarks ? chrome.bookmarks : null);
+    if (api && typeof api.getSubTree === 'function') {
+        for (const id of nodeIds) {
+            try {
+                const nodes = await api.getSubTree(id);
+                if (nodes && nodes[0]) {
+                    results.push(cloneBookmarkNode(nodes[0]));
+                }
+            } catch (error) {
+                console.warn('[Canvas] 获取书签数据失败:', error);
+            }
+        }
+    }
+    if (!results.length && CanvasState.dragState && CanvasState.dragState.draggedData) {
+        const data = CanvasState.dragState.draggedData;
+        if (data && data.id && nodeIds.includes(data.id) && (data.url || data.children)) {
+            results.push(cloneBookmarkNode(data));
+        }
+    }
+    return results.filter(Boolean);
+}
+
+function getSelectionMeta(nodeId) {
+    if (typeof selectedNodeMeta !== 'undefined' && selectedNodeMeta && typeof selectedNodeMeta.get === 'function') {
+        return selectedNodeMeta.get(nodeId) || null;
+    }
+    return null;
+}
+
+function makeNodeDraggable(element, section) {
     const header = element.querySelector('.temp-node-header');
-    let hasMoved = false;
+    if (!header) return;
     
     const onMouseDown = (e) => {
-        if (e.target.classList.contains('temp-node-close')) return;
+        const target = e.target;
+        if (!target) return;
+        if (target.closest('.temp-node-action-btn') ||
+            target.classList.contains('temp-node-color-input') ||
+            (target.classList.contains('temp-node-title') && target.classList.contains('editing'))) {
+            return;
+        }
         
         CanvasState.dragState.isDragging = true;
         CanvasState.dragState.draggedElement = element;
         CanvasState.dragState.dragStartX = e.clientX;
         CanvasState.dragState.dragStartY = e.clientY;
-        CanvasState.dragState.nodeStartX = node.x;
-        CanvasState.dragState.nodeStartY = node.y;
+        CanvasState.dragState.nodeStartX = section.x;
+        CanvasState.dragState.nodeStartY = section.y;
         CanvasState.dragState.dragSource = 'temp-node';
-        hasMoved = false;
         
         element.classList.add('dragging');
         element.style.transition = 'none';
@@ -1897,54 +2926,27 @@ function makeNodeDraggable(element, node) {
     header.addEventListener('mousedown', onMouseDown, true);
 }
 
-function makeNodeDroppableBack(element, node) {
-    const body = element.querySelector('.temp-node-body');
-    
-    body.draggable = true;
-    body.addEventListener('dragstart', (e) => {
-        CanvasState.dragState.dragSource = 'temporary';
-        CanvasState.dragState.draggedData = node;
-        e.dataTransfer.effectAllowed = 'move';
-        e.dataTransfer.setData('application/json', JSON.stringify(node));
-        
-        // 高亮永久栏目
-        const permanentSection = document.getElementById('permanentSection');
-        if (permanentSection) {
-            permanentSection.classList.add('drop-target-highlight');
-        }
-    });
-    
-    body.addEventListener('dragend', () => {
-        const permanentSection = document.getElementById('permanentSection');
-        if (permanentSection) {
-            permanentSection.classList.remove('drop-target-highlight');
-        }
-        CanvasState.dragState.dragSource = null;
-    });
-}
-
-function removeTempNode(nodeId) {
-    const element = document.getElementById(nodeId);
+function removeTempNode(sectionId) {
+    const element = document.getElementById(sectionId);
     if (element) {
         element.remove();
     }
     
-    CanvasState.tempNodes = CanvasState.tempNodes.filter(n => n.id !== nodeId);
+    CanvasState.tempSections = CanvasState.tempSections.filter(section => section.id !== sectionId);
     saveTempNodes();
     updateCanvasScrollBounds();
     updateScrollbarThumbs();
 }
 
 function clearAllTempNodes() {
-    if (!confirm('确定要清空所有临时节点吗？')) return;
+    if (!confirm('确定要清空所有临时栏目吗？')) return;
     
     const container = document.getElementById('canvasContent');
     if (container) {
-        const nodes = container.querySelectorAll('.temp-canvas-node');
-        nodes.forEach(node => node.remove());
+        container.querySelectorAll('.temp-canvas-node').forEach(node => node.remove());
     }
     
-    CanvasState.tempNodes = [];
+    CanvasState.tempSections = [];
     saveTempNodes();
     updateCanvasScrollBounds();
     updateScrollbarThumbs();
@@ -1995,73 +2997,81 @@ function setupPermanentDropTarget() {
     const permanentSection = document.getElementById('permanentSection');
     if (!permanentSection) return;
     
+    const allowDrop = () => getCurrentDragSourceType() === 'temporary';
+    const clearHighlight = () => permanentSection.classList.remove('drop-target-highlight');
+    
     permanentSection.addEventListener('dragover', (e) => {
-        if (CanvasState.dragState.dragSource === 'temporary') {
-            e.preventDefault();
-            e.dataTransfer.dropEffect = 'move';
+        if (!allowDrop()) return;
+        e.preventDefault();
+        e.dataTransfer.dropEffect = 'move';
+    });
+    
+    permanentSection.addEventListener('dragleave', (e) => {
+        if (!permanentSection.contains(e.relatedTarget)) {
+            clearHighlight();
         }
     });
     
     permanentSection.addEventListener('drop', async (e) => {
+        if (!allowDrop()) return;
         e.preventDefault();
-        
-        if (CanvasState.dragState.dragSource !== 'temporary') return;
-        
+        clearHighlight();
         try {
-            const nodeData = CanvasState.dragState.draggedData;
-            await addToPermanentBookmarks(nodeData);
-            
-            // 移除临时节点
-            removeTempNode(nodeData.id);
-            
-            // 刷新永久栏目
+            const sourceSectionId = getTempDragSourceSectionId();
+            if (!sourceSectionId) return;
+            const fallbackId = (typeof draggedNodeId !== 'undefined') ? draggedNodeId : null;
+            const ids = collectTemporarySelectionIds(sourceSectionId, fallbackId);
+            let payload = [];
+            let sectionRemoved = false;
+            if (ids.length) {
+                payload = extractTempItemsPayload(sourceSectionId, ids);
+                if (!payload || !payload.length) return;
+                removeTempItemsById(sourceSectionId, ids);
+                ensureTempSectionRendered(sourceSectionId);
+            } else if (CanvasState.dragState && CanvasState.dragState.draggedData && CanvasState.dragState.draggedData.id === sourceSectionId) {
+                const sectionData = CanvasState.dragState.draggedData;
+                const children = (sectionData.items || []).map(item => serializeTempItemForClipboard(item));
+                payload = [{
+                    title: sectionData.title || getDefaultTempSectionTitle(),
+                    type: 'folder',
+                    children
+                }];
+                removeTempNode(sectionData.id);
+                sectionRemoved = true;
+            }
+
+            if (!payload || !payload.length) return;
+            await addToPermanentBookmarks(payload);
+            if (!sectionRemoved) {
+                ensureTempSectionRendered(sourceSectionId);
+            }
+            if (typeof deselectAll === 'function') {
+                deselectAll();
+            }
             await renderPermanentBookmarkTree();
-            
-            alert('已添加到浏览器书签！');
         } catch (error) {
             console.error('[Canvas] 添加到书签失败:', error);
-            alert('添加到书签失败: ' + error.message);
+            alert('添加到书签失败: ' + (error && error.message ? error.message : error));
         }
-        
-        permanentSection.classList.remove('drop-target-highlight');
     });
+    
+    document.addEventListener('dragend', clearHighlight, true);
 }
 
-async function addToPermanentBookmarks(nodeData) {
-    const bookmarkData = nodeData.data;
-    
-    // 获取书签栏ID
+async function addToPermanentBookmarks(payload, parentIdOverride = null) {
+    const items = Array.isArray(payload) ? payload : [payload];
+    if (!items.length) return;
+    if (!browserAPI || !browserAPI.bookmarks || typeof browserAPI.bookmarks.create !== 'function') {
+        throw new Error('当前环境不支持书签操作');
+    }
     const tree = await browserAPI.bookmarks.getTree();
     const bookmarkBar = tree[0].children.find(child => child.title === '书签栏' || child.id === '1');
-    
     if (!bookmarkBar) {
         throw new Error('找不到书签栏');
     }
-    
-    if (bookmarkData.url) {
-        // 添加书签
-        await browserAPI.bookmarks.create({
-            parentId: bookmarkBar.id,
-            title: bookmarkData.title,
-            url: bookmarkData.url
-        });
-    } else if (bookmarkData.children) {
-        // 添加文件夹
-        const folder = await browserAPI.bookmarks.create({
-            parentId: bookmarkBar.id,
-            title: bookmarkData.title
-        });
-        
-        // 递归添加子项
-        for (const child of bookmarkData.children) {
-            if (child.url) {
-                await browserAPI.bookmarks.create({
-                    parentId: folder.id,
-                    title: child.title,
-                    url: child.url
-                });
-            }
-        }
+    const parentId = parentIdOverride || bookmarkBar.id;
+    for (const item of items) {
+        await createBookmarkFromPayload(parentId, null, item);
     }
 }
 
@@ -2090,10 +3100,10 @@ function setupCanvasEventListeners() {
             
             // 更新节点数据
             const nodeId = CanvasState.dragState.draggedElement.id;
-            const node = CanvasState.tempNodes.find(n => n.id === nodeId);
-            if (node) {
-                node.x = newX;
-                node.y = newY;
+            const section = CanvasState.tempSections.find(n => n.id === nodeId);
+            if (section) {
+                section.x = newX;
+                section.y = newY;
             }
             
             // 阻止文本选择
@@ -2196,9 +3206,9 @@ async function handleFileImport(e) {
         const text = await file.text();
         
         if (type === 'html') {
-            importHtmlBookmarks(text);
+            await importHtmlBookmarks(text);
         } else {
-            importJsonBookmarks(text);
+            await importJsonBookmarks(text);
         }
         
         document.getElementById('canvasImportDialog').remove();
@@ -2211,7 +3221,7 @@ async function handleFileImport(e) {
     e.target.value = '';
 }
 
-function importHtmlBookmarks(html) {
+async function importHtmlBookmarks(html) {
     const parser = new DOMParser();
     const doc = parser.parseFromString(html, 'text/html');
     const links = doc.querySelectorAll('a[href]');
@@ -2219,7 +3229,7 @@ function importHtmlBookmarks(html) {
     let x = 100;
     let y = 100;
     
-    links.forEach((link, index) => {
+    for (const [index, link] of Array.from(links).entries()) {
         const bookmark = {
             id: 'imported-' + Date.now() + '-' + index,
             title: link.textContent,
@@ -2227,19 +3237,19 @@ function importHtmlBookmarks(html) {
             type: 'bookmark'
         };
         
-        createTempNode(bookmark, x, y);
+        await createTempNode(bookmark, x, y);
         x += 30;
         y += 30;
-    });
+    }
 }
 
-function importJsonBookmarks(json) {
+async function importJsonBookmarks(json) {
     const data = JSON.parse(json);
     
     let x = 100;
     let y = 100;
     
-    const processNode = (node) => {
+    const processNode = async (node) => {
         if (node.url) {
             const bookmark = {
                 id: node.id || 'imported-' + Date.now(),
@@ -2247,24 +3257,28 @@ function importJsonBookmarks(json) {
                 url: node.url,
                 type: 'bookmark'
             };
-            createTempNode(bookmark, x, y);
+            await createTempNode(bookmark, x, y);
             x += 30;
             y += 30;
         }
         
         if (node.children) {
-            node.children.forEach(processNode);
+            for (const child of node.children) {
+                await processNode(child);
+            }
         }
     };
     
     if (data.roots) {
-        Object.values(data.roots).forEach(root => {
+        for (const root of Object.values(data.roots)) {
             if (root.children) {
-                root.children.forEach(processNode);
+                for (const child of root.children) {
+                    await processNode(child);
+                }
             }
-        });
+        }
     } else {
-        processNode(data);
+        await processNode(data);
     }
 }
 
@@ -2287,22 +3301,18 @@ function exportCanvas() {
     });
     
     // 添加临时节点
-    CanvasState.tempNodes.forEach(node => {
-        const canvasNode = {
-            id: node.id,
+    CanvasState.tempSections.forEach(section => {
+        const textNode = {
+            id: `${section.id}-text`,
             type: 'text',
-            x: node.x,
-            y: node.y,
-            width: node.width,
-            height: 150,
-            text: formatNodeText(node)
+            x: section.x,
+            y: section.y,
+            width: section.width || TEMP_SECTION_DEFAULT_WIDTH,
+            height: section.height || TEMP_SECTION_DEFAULT_HEIGHT,
+            text: formatSectionText(section),
+            color: section.color
         };
-        
-        if (node.type === 'folder') {
-            canvasNode.color = '2';
-        }
-        
-        canvasData.nodes.push(canvasNode);
+        canvasData.nodes.push(textNode);
     });
     
     // 生成并下载文件
@@ -2319,20 +3329,26 @@ function exportCanvas() {
     alert('Canvas已导出为 .canvas 文件！');
 }
 
-function formatNodeText(node) {
-    let text = `# ${node.data.title}\n\n`;
+function formatSectionText(section) {
+    const lines = [`# ${section.title || '临时栏目'}`, ''];
     
-    if (node.type === 'bookmark' && node.data.url) {
-        text += `[${node.data.title}](${node.data.url})`;
-    } else if (node.type === 'folder' && node.data.children) {
-        node.data.children.forEach(child => {
-            if (child.url) {
-                text += `- [${child.title}](${child.url})\n`;
+    const appendItem = (item, depth = 0) => {
+        const indent = '  '.repeat(depth);
+        if (item.type === 'bookmark') {
+            const title = item.title || item.url || '未命名书签';
+            const url = item.url || '#';
+            lines.push(`${indent}- [${title}](${url})`);
+        } else {
+            lines.push(`${indent}- ${item.title || '未命名文件夹'}`);
+            if (item.children && item.children.length) {
+                item.children.forEach(child => appendItem(child, depth + 1));
             }
-        });
-    }
+        }
+    };
     
-    return text;
+    section.items.forEach(item => appendItem(item, 0));
+    
+    return lines.join('\n');
 }
 
 // =============================================================================
@@ -2340,40 +3356,78 @@ function formatNodeText(node) {
 // =============================================================================
 
 function saveTempNodes() {
-    const state = {
-        nodes: CanvasState.tempNodes,
-        timestamp: Date.now()
-    };
-    
-    localStorage.setItem('bookmark-canvas-temp-nodes', JSON.stringify(state));
+    try {
+        const state = {
+            sections: CanvasState.tempSections,
+            tempSectionCounter: CanvasState.tempSectionCounter,
+            tempItemCounter: CanvasState.tempItemCounter,
+            colorCursor: CanvasState.colorCursor,
+            timestamp: Date.now()
+        };
+        localStorage.setItem(TEMP_SECTION_STORAGE_KEY, JSON.stringify(state));
+    } catch (error) {
+        console.error('[Canvas] 保存临时栏目失败:', error);
+    }
 }
 
 function loadTempNodes() {
     try {
-        const saved = localStorage.getItem('bookmark-canvas-temp-nodes');
+        CanvasState.tempSections = [];
+        CanvasState.tempSectionCounter = 0;
+        CanvasState.tempItemCounter = 0;
+        CanvasState.colorCursor = 0;
+        
+        let loaded = false;
+        const saved = localStorage.getItem(TEMP_SECTION_STORAGE_KEY);
         if (saved) {
             const state = JSON.parse(saved);
-            CanvasState.tempNodes = state.nodes || [];
-            CanvasState.tempNodeCounter = CanvasState.tempNodes.length;
-            
-            // 渲染保存的临时节点
-            suppressScrollSync = true;
-            try {
-                CanvasState.tempNodes.forEach(node => {
-                    renderTempNode(node);
+            CanvasState.tempSections = Array.isArray(state.sections) ? state.sections : [];
+            CanvasState.tempSectionCounter = state.tempSectionCounter || CanvasState.tempSections.length;
+            CanvasState.tempItemCounter = state.tempItemCounter || 0;
+            CanvasState.colorCursor = state.colorCursor || 0;
+            loaded = true;
+        } else {
+            const legacy = localStorage.getItem(LEGACY_TEMP_NODE_STORAGE_KEY);
+            if (legacy) {
+                const legacyState = JSON.parse(legacy);
+                const legacyNodes = Array.isArray(legacyState.nodes) ? legacyState.nodes : [];
+                legacyNodes.forEach((legacyNode, index) => {
+                    const section = convertLegacyTempNode(legacyNode, index);
+                    if (section) {
+                        CanvasState.tempSections.push(section);
+                    }
                 });
-            } finally {
-                suppressScrollSync = false;
+                loaded = CanvasState.tempSections.length > 0;
+                if (loaded) {
+                    saveTempNodes();
+                }
             }
-            console.log('[Canvas] 加载了', CanvasState.tempNodes.length, '个临时节点');
         }
         
-        // 加载永久栏目位置
+        if (!loaded) {
+            CanvasState.tempSections = [];
+        }
+        
+        // 根据已有ID刷新计数
+        refreshTempSectionCounters();
+        
+        suppressScrollSync = true;
+        try {
+            CanvasState.tempSections.forEach(section => {
+                section.width = section.width || TEMP_SECTION_DEFAULT_WIDTH;
+                section.height = section.height || TEMP_SECTION_DEFAULT_HEIGHT;
+                renderTempNode(section);
+            });
+        } finally {
+            suppressScrollSync = false;
+        }
+        console.log(`[Canvas] 加载了 ${CanvasState.tempSections.length} 个临时栏目`);
+        
         loadPermanentSectionPosition();
         updateCanvasScrollBounds();
         updateScrollbarThumbs();
     } catch (error) {
-        console.error('[Canvas] 加载临时节点失败:', error);
+        console.error('[Canvas] 加载临时栏目失败:', error);
     }
 }
 
@@ -2385,5 +3439,19 @@ window.CanvasModule = {
     init: initCanvasView,
     enhance: enhanceBookmarkTreeForCanvas, // 增强书签树的Canvas功能
     clear: clearAllTempNodes,
-    updateFullscreenButton: updateFullscreenButtonState
+    updateFullscreenButton: updateFullscreenButtonState,
+    temp: {
+        getSection: getTempSection,
+        findItem: findTempItemEntry,
+        renameItem: renameTempItem,
+        updateBookmark: updateTempBookmark,
+        createBookmark: createTempBookmark,
+        createFolder: createTempFolder,
+        removeItems: removeTempItemsById,
+        insertFromPayload: insertTempItemsFromPayload,
+        extractPayload: extractTempItemsPayload,
+        moveWithin: moveTempItemsWithinSection,
+        moveAcross: moveTempItemsAcrossSections,
+        ensureRendered: ensureTempSectionRendered
+    }
 };

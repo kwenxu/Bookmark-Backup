@@ -4007,6 +4007,27 @@ a.tree-label.tree-bookmark-link:hover {
     background-size: 20px 20px;
     overflow: auto;
     cursor: default;
+    --drop-x: 50%;
+    --drop-y: 50%;
+}
+
+.canvas-workspace.canvas-drop-active::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    background: radial-gradient(circle at var(--drop-x, 50%) var(--drop-y, 50%), rgba(37, 99, 235, 0.18), rgba(37, 99, 235, 0));
+    opacity: 1;
+    animation: canvasDropPulse 0.35s ease-out;
+}
+
+@keyframes canvasDropPulse {
+    from {
+        opacity: 0;
+    }
+    to {
+        opacity: 1;
+    }
 }
 
 /* 永久栏目样式 */
@@ -4023,7 +4044,7 @@ a.tree-label.tree-bookmark-link:hover {
     box-shadow: var(--shadow-lg);
     overflow: hidden;
     z-index: 100;
-    transition: box-shadow 0.2s ease;
+    transition: box-shadow 0.18s ease, transform 0.28s cubic-bezier(0.16, 1, 0.3, 1), border-color 0.18s ease;
     cursor: default;
     will-change: left, top;
     display: flex; /* 使用flex布局 */
@@ -4049,10 +4070,24 @@ a.tree-label.tree-bookmark-link:hover {
 }
 
 .permanent-bookmark-section.drop-target-highlight {
-    border-color: var(--success);
-    border-width: 4px;
-    box-shadow: 0 0 0 4px rgba(66, 183, 42, 0.2), var(--shadow-lg);
-    transform: translate(-50%, -50%) scale(1.02);
+    border-color: var(--accent-primary);
+    border-width: 3px;
+    box-shadow: var(--shadow-lg);
+    transform: translate(-50%, -50%);
+}
+
+.permanent-bookmark-section.drag-origin-active {
+    border-color: rgba(9, 105, 218, 0.6);
+    box-shadow: 0 0 0 4px rgba(9, 105, 218, 0.06), 0 12px 30px rgba(9, 105, 218, 0.18);
+}
+
+@keyframes dropTargetPulse {
+    from {
+        box-shadow: 0 0 0 0 rgba(66, 183, 42, 0.16), var(--shadow-lg);
+    }
+    to {
+        box-shadow: 0 0 0 4px rgba(66, 183, 42, 0.2), var(--shadow-lg);
+    }
 }
 
 .permanent-section-header {
@@ -4159,35 +4194,36 @@ a.tree-label.tree-bookmark-link:hover {
 /* 临时节点样式 */
 .temp-canvas-node {
     position: absolute;
-    width: 300px;
-    height: 250px; /* 默认高度 */
-    background: linear-gradient(to bottom, #ffffff, #fafbfc);
-    border: 1.5px solid #d0d7de;
-    border-radius: 8px;
-    box-shadow: 0 3px 12px rgba(0, 0, 0, 0.08), 0 1px 3px rgba(0, 0, 0, 0.06);
-    cursor: move;
-    transition: box-shadow 0.2s ease, transform 0.2s ease;
+    width: 360px;
+    min-height: 180px;
+    background: linear-gradient(to bottom, #ffffff 0%, #f8fafc 100%);
+    border: 1.5px solid rgba(9, 105, 218, 0.18);
+    border-top: 4px solid var(--section-color, #2563eb);
+    border-radius: 12px;
+    box-shadow: 0 6px 18px rgba(15, 23, 42, 0.12), 0 2px 6px rgba(15, 23, 42, 0.08);
+    transition: box-shadow 0.18s ease, transform 0.28s cubic-bezier(0.16, 1, 0.3, 1), opacity 0.32s cubic-bezier(0.16, 1, 0.3, 1);
     z-index: 10;
     will-change: left, top;
-    display: flex; /* 使用flex布局 */
-    flex-direction: column; /* 垂直方向 */
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
 }
 
 [data-theme="dark"] .temp-canvas-node {
-    background: linear-gradient(to bottom, #242526, #18191a);
-    border-color: #3a3b3c;
-    box-shadow: 0 3px 12px rgba(0, 0, 0, 0.4), 0 1px 3px rgba(0, 0, 0, 0.3);
+    background: linear-gradient(to bottom, #1f242b 0%, #14171c 100%);
+    border-color: rgba(56, 139, 253, 0.25);
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.55), 0 2px 8px rgba(0, 0, 0, 0.45);
 }
 
 .temp-canvas-node:hover {
-    box-shadow: 0 6px 20px rgba(0, 0, 0, 0.12), 0 2px 6px rgba(0, 0, 0, 0.08);
+    box-shadow: 0 12px 28px rgba(15, 23, 42, 0.18), 0 4px 12px rgba(15, 23, 42, 0.12);
     transform: translateY(-1px);
-    border-color: #0969da;
+    border-color: rgba(9, 105, 218, 0.28);
 }
 
 [data-theme="dark"] .temp-canvas-node:hover {
-    box-shadow: 0 6px 20px rgba(0, 0, 0, 0.5), 0 2px 6px rgba(0, 0, 0, 0.4);
-    border-color: #58a6ff;
+    box-shadow: 0 14px 32px rgba(0, 0, 0, 0.65), 0 4px 12px rgba(0, 0, 0, 0.55);
+    border-color: rgba(88, 166, 255, 0.4);
 }
 
 .temp-canvas-node.dragging {
@@ -4201,6 +4237,29 @@ a.tree-label.tree-bookmark-link:hover {
 
 [data-theme="dark"] .temp-canvas-node.dragging {
     box-shadow: 0 12px 32px rgba(0, 0, 0, 0.6), 0 4px 12px rgba(0, 0, 0, 0.5);
+}
+
+.temp-canvas-node.temp-drop-highlight {
+    border-color: rgba(37, 99, 235, 0.55);
+    box-shadow: 0 0 0 4px rgba(37, 99, 235, 0.12), 0 8px 24px rgba(15, 23, 42, 0.18);
+}
+
+.temp-tree-drop-highlight {
+    background: rgba(37, 99, 235, 0.12);
+}
+
+.tree-item.temp-tree-drop-highlight {
+    background: rgba(37, 99, 235, 0.12);
+    border-radius: 6px;
+}
+
+[data-theme="dark"] .tree-item.temp-tree-drop-highlight {
+    background: rgba(59, 130, 246, 0.18);
+}
+
+.tree-item.tree-drag-out {
+    opacity: 0.3;
+    transition: opacity 0.18s ease;
 }
 
 /* Resize handles样式 */
@@ -4238,53 +4297,171 @@ a.tree-label.tree-bookmark-link:hover {
 }
 
 .temp-node-header {
-    background: linear-gradient(135deg, #24292f 0%, #1c2128 100%);
-    color: white;
-    padding: 10px 14px;
+    background: linear-gradient(135deg, rgba(255, 255, 255, 0.15), rgba(0, 0, 0, 0.2)), var(--section-color, #2563eb);
+    background-blend-mode: overlay;
+    color: #ffffff;
+    padding: 10px 16px;
     display: flex;
     align-items: center;
     justify-content: space-between;
     cursor: move;
     user-select: none;
-    border-bottom: 1px solid rgba(0, 0, 0, 0.1);
+    gap: 10px;
 }
 
 .temp-node-title {
+    flex: 1;
     font-size: 13px;
     font-weight: 600;
-    flex: 1;
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
+    background: transparent;
+    border: none;
+    color: inherit;
+    outline: none;
     letter-spacing: -0.1px;
+    min-width: 0;
 }
 
-.temp-node-close {
-    background: rgba(255, 255, 255, 0.15);
-    border: none;
-    color: white;
-    width: 22px;
-    height: 22px;
+.temp-node-title::placeholder {
+    color: rgba(255, 255, 255, 0.65);
+}
+
+[data-theme="dark"] .temp-node-title::placeholder {
+    color: rgba(248, 250, 252, 0.55);
+}
+
+.temp-node-title-input[readonly] {
+    pointer-events: none;
+}
+
+.temp-node-title-input.editing {
+    pointer-events: auto;
+    background: rgba(255, 255, 255, 0.18);
+    color: #0f172a;
     border-radius: 6px;
-    cursor: pointer;
+    padding: 2px 6px;
+    min-height: 24px;
+}
+
+[data-theme="dark"] .temp-node-title-input.editing {
+    background: rgba(248, 250, 252, 0.15);
+    color: #f8fafc;
+}
+
+.temp-node-title-input.editing::placeholder {
+    color: rgba(15, 23, 42, 0.45);
+}
+
+[data-theme="dark"] .temp-node-title-input.editing::placeholder {
+    color: rgba(248, 250, 252, 0.55);
+}
+
+.temp-node-actions {
     display: flex;
     align-items: center;
-    justify-content: center;
-    font-size: 16px;
-    font-weight: 500;
-    transition: all 0.15s ease;
+    gap: 6px;
 }
 
-.temp-node-close:hover {
-    background: rgba(255, 77, 77, 0.9);
+
+.temp-node-action-btn {
+    width: 18px;
+    height: 18px;
+    border-radius: 999px;
+    border: none;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    transition: transform 0.15s ease, box-shadow 0.2s ease;
+    font-size: 10px;
+    line-height: 1;
+    background: rgba(255, 255, 255, 0.18);
+    color: #ffffff;
+    margin-left: 2px;
+}
+
+.temp-node-action-btn i {
+    pointer-events: none;
+}
+
+.temp-node-action-btn:hover,
+.temp-node-action-btn:focus-visible,
+.temp-node-action-btn.active {
     transform: scale(1.05);
 }
 
+.temp-node-color-btn,
+.temp-node-rename-btn {
+    background: var(--section-color, #2563eb);
+    box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.28);
+}
+
+.temp-node-color-btn:hover,
+.temp-node-rename-btn:hover,
+.temp-node-rename-btn.active,
+.temp-node-color-btn:focus-visible,
+.temp-node-rename-btn:focus-visible {
+    box-shadow: 0 4px 12px rgba(37, 99, 235, 0.28);
+}
+
+.temp-node-action-btn:focus-visible {
+    outline: 2px solid rgba(255, 255, 255, 0.85);
+    outline-offset: 2px;
+}
+
+[data-theme="dark"] .temp-node-action-btn {
+    background: rgba(255, 255, 255, 0.16);
+    color: #f8fafc;
+}
+
+[data-theme="dark"] .temp-node-color-btn,
+[data-theme="dark"] .temp-node-rename-btn {
+    background: var(--section-color, #2563eb);
+}
+
+[data-theme="dark"] .temp-node-color-btn:hover,
+[data-theme="dark"] .temp-node-rename-btn:hover,
+[data-theme="dark"] .temp-node-rename-btn.active {
+    box-shadow: 0 4px 12px rgba(88, 166, 255, 0.24);
+}
+
+.temp-node-delete-btn {
+    background: rgba(248, 113, 113, 0.85);
+}
+
+.temp-node-delete-btn:hover,
+.temp-node-delete-btn:focus-visible {
+    box-shadow: 0 4px 12px rgba(239, 68, 68, 0.35);
+}
+
+[data-theme="dark"] .temp-node-delete-btn {
+    background: rgba(239, 68, 68, 0.8);
+}
+
+[data-theme="dark"] .temp-node-delete-btn:hover,
+[data-theme="dark"] .temp-node-delete-btn:focus-visible {
+    box-shadow: 0 4px 12px rgba(239, 68, 68, 0.4);
+}
+
+.temp-node-color-input {
+    position: absolute;
+    width: 0;
+    height: 0;
+    opacity: 0;
+    pointer-events: none;
+}
+
+.temp-node-close {
+    border: none;
+    color: inherit;
+    font-size: 14px;
+}
+
 .temp-node-body {
-    padding: 12px 16px;
-    flex: 1; /* 填充剩余空间 */
-    overflow-y: auto; /* 滚动条在这里，跟随栏目窗口大小 */
+    padding: 12px 16px 16px;
+    flex: 1;
+    overflow-y: auto;
     overflow-x: hidden;
+    backdrop-filter: blur(0px);
 }
 
 .temp-node-type-badge {
@@ -4296,6 +4473,16 @@ a.tree-label.tree-bookmark-link:hover {
     font-size: 11px;
     font-weight: 600;
     margin-bottom: 8px;
+}
+
+.temp-canvas-node.temp-node-enter {
+    opacity: 0;
+    transform: translateY(18px) scale(0.82);
+}
+
+[data-theme="dark"] .temp-canvas-node.temp-node-enter {
+    opacity: 0;
+    transform: translateY(18px) scale(0.82);
 }
 
 /* Canvas中的书签项样式 */

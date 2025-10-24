@@ -3486,18 +3486,19 @@ async function renderTreeView(forceRefresh = false) {
     });
 }
 
-// 树事件处理器（避免重复绑定）
-let treeClickHandler = null;
+// 树事件处理器映射（避免重复绑定）
+const treeClickHandlers = new WeakMap();
 
 // 绑定树的展开/折叠事件
 function attachTreeEvents(treeContainer) {
     // 移除旧的事件监听器
-    if (treeClickHandler) {
-        treeContainer.removeEventListener('click', treeClickHandler);
+    const existingHandler = treeClickHandlers.get(treeContainer);
+    if (existingHandler) {
+        treeContainer.removeEventListener('click', existingHandler);
     }
     
     // 创建新的事件处理器
-    treeClickHandler = (e) => {
+    const clickHandler = (e) => {
         // 处理移动标记的点击
         const moveBadge = e.target.closest('.change-badge.moved');
         if (moveBadge) {
@@ -3543,7 +3544,8 @@ function attachTreeEvents(treeContainer) {
     };
     
     // 绑定新的事件监听器
-    treeContainer.addEventListener('click', treeClickHandler);
+    treeContainer.addEventListener('click', clickHandler);
+    treeClickHandlers.set(treeContainer, clickHandler);
     
     // 绑定右键菜单事件
     const treeItems = treeContainer.querySelectorAll('.tree-item[data-node-id]');

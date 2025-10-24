@@ -23,8 +23,44 @@ const CanvasState = {
     isPanning: false,
     panStartX: 0,
     panStartY: 0,
-    isSpacePressed: false
+    isSpacePressed: false,
+    scrollState: {
+        vertical: {
+            hidden: false,
+            disabled: false,
+            dragging: false,
+            dragOffset: 0
+        },
+        horizontal: {
+            hidden: false,
+            disabled: false,
+            dragging: false,
+            dragOffset: 0
+        },
+        activeDragAxis: null,
+        dragInfo: null,
+        handlersAttached: false
+    },
+    scrollBounds: {
+        vertical: { min: -600, max: 600 },
+        horizontal: { min: -800, max: 800 }
+    },
+    scrollAnimation: {
+        frameId: null,
+        targetX: null,
+        targetY: null
+    },
+    contentBounds: {
+        minX: -400,
+        maxX: 400,
+        minY: -300,
+        maxY: 300
+    }
 };
+
+let panSaveTimeout = null;
+const CANVAS_SCROLL_MARGIN = 120;
+let suppressScrollSync = false;
 
 // =============================================================================
 // 初始化Canvas视图
@@ -53,6 +89,12 @@ function initCanvasView() {
     
     // 加载临时节点
     loadTempNodes();
+    
+    // 初始化滚动条状态和事件
+    loadCanvasScrollPreferences();
+    setupCanvasScrollbars();
+    updateCanvasScrollBounds(true);
+    updateScrollbarThumbs();
     
     // 设置Canvas事件监听
     setupCanvasEventListeners();
@@ -290,23 +332,14 @@ function setupCanvasZoomAndPan() {
             const mouseX = e.clientX - rect.left;
             const mouseY = e.clientY - rect.top;
             
-            // 计算鼠标在canvas内容中的实际位置（考虑当前缩放和平移）
-            const canvasX = (mouseX - CanvasState.panOffsetX) / CanvasState.zoom;
-            const canvasY = (mouseY - CanvasState.panOffsetY) / CanvasState.zoom;
-            
             // 计算新的缩放级别
             const delta = -e.deltaY;
             const zoomSpeed = 0.001;
             const oldZoom = CanvasState.zoom;
             const newZoom = Math.max(0.1, Math.min(3, oldZoom + delta * zoomSpeed));
-            
-            // 应用新的缩放
-            setCanvasZoom(newZoom);
-            
-            // 调整平移偏移，使鼠标位置保持在canvas中的相同点
-            CanvasState.panOffsetX = mouseX - canvasX * newZoom;
-            CanvasState.panOffsetY = mouseY - canvasY * newZoom;
-            applyPanOffset();
+            setCanvasZoom(newZoom, mouseX, mouseY);
+        } else if (shouldHandleCustomScroll(e)) {
+            handleCanvasCustomScroll(e);
         }
     }, { passive: false });
     
@@ -354,7 +387,7 @@ function setupCanvasZoomAndPan() {
         if (CanvasState.isPanning) {
             CanvasState.isPanning = false;
             workspace.classList.remove('panning');
-            savePanOffset();
+            savePanOffsetThrottled();
         }
     });
     
@@ -396,8 +429,8 @@ function setCanvasZoom(zoom, centerX = null, centerY = null) {
     // 调整平移偏移，使中心点保持在相同的视觉位置
     CanvasState.panOffsetX = centerX - canvasCenterX * zoom;
     CanvasState.panOffsetY = centerY - canvasCenterY * zoom;
-    applyPanOffset();
-    savePanOffset();
+    updateCanvasScrollBounds();
+    savePanOffsetThrottled();
     
     // 更新显示
     const zoomValue = document.getElementById('zoomValue');
@@ -415,8 +448,17 @@ function applyPanOffset() {
     const container = document.querySelector('.canvas-main-container');
     if (!container) return;
     
+    CanvasState.panOffsetX = clampPan('horizontal', CanvasState.panOffsetX);
+    CanvasState.panOffsetY = clampPan('vertical', CanvasState.panOffsetY);
+    
     container.style.setProperty('--canvas-pan-x', `${CanvasState.panOffsetX}px`);
     container.style.setProperty('--canvas-pan-y', `${CanvasState.panOffsetY}px`);
+    updateScrollbarThumbs();
+    
+    if (!CanvasState.scrollAnimation.frameId) {
+        CanvasState.scrollAnimation.targetX = CanvasState.panOffsetX;
+        CanvasState.scrollAnimation.targetY = CanvasState.panOffsetY;
+    }
 }
 
 function loadCanvasZoom() {
@@ -440,6 +482,9 @@ function loadCanvasZoom() {
     } catch (error) {
         console.error('[Canvas] 加载画布状态失败:', error);
     }
+    
+    updateCanvasScrollBounds(true);
+    updateScrollbarThumbs();
 }
 
 function savePanOffset() {
@@ -447,6 +492,507 @@ function savePanOffset() {
         x: CanvasState.panOffsetX,
         y: CanvasState.panOffsetY
     }));
+}
+
+function savePanOffsetThrottled() {
+    if (panSaveTimeout) {
+        clearTimeout(panSaveTimeout);
+    }
+    panSaveTimeout = setTimeout(() => {
+        savePanOffset();
+        panSaveTimeout = null;
+    }, 160);
+}
+
+function loadCanvasScrollPreferences() {
+    try {
+        const stored = localStorage.getItem('canvas-scroll-preferences');
+        if (!stored) return;
+        
+        const parsed = JSON.parse(stored);
+        ['vertical', 'horizontal'].forEach(axis => {
+            if (parsed[axis]) {
+                CanvasState.scrollState[axis].hidden = Boolean(parsed[axis].hidden);
+                CanvasState.scrollState[axis].disabled = Boolean(parsed[axis].disabled);
+            }
+        });
+    } catch (error) {
+        console.error('[Canvas] 加载滚动条偏好失败:', error);
+    }
+}
+
+function persistCanvasScrollPreferences() {
+    try {
+        const payload = {
+            vertical: {
+                hidden: CanvasState.scrollState.vertical.hidden,
+                disabled: CanvasState.scrollState.vertical.disabled
+            },
+            horizontal: {
+                hidden: CanvasState.scrollState.horizontal.hidden,
+                disabled: CanvasState.scrollState.horizontal.disabled
+            }
+        };
+        localStorage.setItem('canvas-scroll-preferences', JSON.stringify(payload));
+    } catch (error) {
+        console.error('[Canvas] 保存滚动条偏好失败:', error);
+    }
+}
+
+function setupCanvasScrollbars() {
+    const verticalBar = document.getElementById('canvasVerticalScrollbar');
+    const horizontalBar = document.getElementById('canvasHorizontalScrollbar');
+    
+    if (!verticalBar && !horizontalBar) return;
+    
+    const bars = [
+        { axis: 'vertical', element: verticalBar },
+        { axis: 'horizontal', element: horizontalBar }
+    ];
+    
+    bars.forEach(({ axis, element }) => {
+        if (!element) return;
+        
+        element.classList.toggle('is-hidden', CanvasState.scrollState[axis].hidden);
+        element.classList.toggle('is-disabled', CanvasState.scrollState[axis].disabled);
+        
+        const hideBtn = element.querySelector('.scrollbar-btn.scroll-hide');
+        const disableBtn = element.querySelector('.scrollbar-btn.scroll-disable');
+        const thumb = element.querySelector('.scrollbar-thumb');
+        
+        if (hideBtn) {
+            hideBtn.addEventListener('click', (event) => {
+                event.stopPropagation();
+                toggleScrollbarHidden(axis);
+            });
+        }
+        
+        if (disableBtn) {
+            disableBtn.addEventListener('click', (event) => {
+                event.stopPropagation();
+                toggleScrollbarDisabled(axis);
+            });
+        }
+        
+        if (thumb) {
+            thumb.addEventListener('mousedown', (event) => startScrollbarThumbDrag(event, axis));
+        }
+    });
+    
+    if (!CanvasState.scrollState.handlersAttached) {
+        document.addEventListener('mousemove', handleScrollbarThumbDrag);
+        document.addEventListener('mouseup', stopScrollbarThumbDrag);
+        CanvasState.scrollState.handlersAttached = true;
+    }
+    
+    updateScrollbarControls('vertical');
+    updateScrollbarControls('horizontal');
+    updateScrollbarThumbs();
+}
+
+function toggleScrollbarHidden(axis) {
+    CanvasState.scrollState[axis].hidden = !CanvasState.scrollState[axis].hidden;
+    const bar = axis === 'vertical' ? document.getElementById('canvasVerticalScrollbar') : document.getElementById('canvasHorizontalScrollbar');
+    if (bar) {
+        bar.classList.toggle('is-hidden', CanvasState.scrollState[axis].hidden);
+    }
+    updateScrollbarControls(axis);
+    updateScrollbarThumbs();
+    persistCanvasScrollPreferences();
+}
+
+function toggleScrollbarDisabled(axis) {
+    CanvasState.scrollState[axis].disabled = !CanvasState.scrollState[axis].disabled;
+    const bar = axis === 'vertical' ? document.getElementById('canvasVerticalScrollbar') : document.getElementById('canvasHorizontalScrollbar');
+    if (bar) {
+        bar.classList.toggle('is-disabled', CanvasState.scrollState[axis].disabled);
+    }
+    updateScrollbarControls(axis);
+    persistCanvasScrollPreferences();
+}
+
+function updateScrollbarControls(axis) {
+    const bar = axis === 'vertical' ? document.getElementById('canvasVerticalScrollbar') : document.getElementById('canvasHorizontalScrollbar');
+    if (!bar) return;
+    
+    const hideBtn = bar.querySelector('.scrollbar-btn.scroll-hide');
+    const hideIcon = hideBtn ? hideBtn.querySelector('i') : null;
+    const disableBtn = bar.querySelector('.scrollbar-btn.scroll-disable');
+    const disableIcon = disableBtn ? disableBtn.querySelector('i') : null;
+    const axisLabel = axis === 'vertical' ? '纵向' : '横向';
+    
+    bar.classList.toggle('is-hidden', CanvasState.scrollState[axis].hidden);
+    bar.classList.toggle('is-disabled', CanvasState.scrollState[axis].disabled);
+    
+    if (hideBtn) {
+        hideBtn.title = CanvasState.scrollState[axis].hidden ? `显示${axisLabel}滚动条` : `隐藏${axisLabel}滚动条`;
+    }
+    if (hideIcon) {
+        hideIcon.className = CanvasState.scrollState[axis].hidden ? 'fas fa-eye' : 'fas fa-eye-slash';
+    }
+    if (disableBtn) {
+        disableBtn.title = CanvasState.scrollState[axis].disabled ? `启用${axisLabel}滚动` : `禁用${axisLabel}滚动`;
+    }
+    if (disableIcon) {
+        disableIcon.className = CanvasState.scrollState[axis].disabled ? 'fas fa-unlock' : 'fas fa-ban';
+    }
+}
+
+function startScrollbarThumbDrag(event, axis) {
+    if (CanvasState.scrollState[axis].disabled) return;
+    
+    const bar = axis === 'vertical' ? document.getElementById('canvasVerticalScrollbar') : document.getElementById('canvasHorizontalScrollbar');
+    if (!bar) return;
+    
+    const track = bar.querySelector('.scrollbar-track');
+    const thumb = bar.querySelector('.scrollbar-thumb');
+    if (!track || !thumb) return;
+    
+    event.preventDefault();
+    
+    const trackRect = track.getBoundingClientRect();
+    const thumbRect = thumb.getBoundingClientRect();
+    const offset = axis === 'vertical' ? event.clientY - thumbRect.top : event.clientX - thumbRect.left;
+    
+    if (CanvasState.scrollAnimation.frameId) {
+        cancelAnimationFrame(CanvasState.scrollAnimation.frameId);
+        CanvasState.scrollAnimation.frameId = null;
+    }
+    CanvasState.scrollAnimation.targetX = CanvasState.panOffsetX;
+    CanvasState.scrollAnimation.targetY = CanvasState.panOffsetY;
+    
+    CanvasState.scrollState.activeDragAxis = axis;
+    CanvasState.scrollState.dragInfo = {
+        offset,
+        trackSize: axis === 'vertical' ? trackRect.height : trackRect.width,
+        thumbSize: axis === 'vertical' ? thumbRect.height : thumbRect.width
+    };
+    
+    CanvasState.scrollState[axis].dragging = true;
+    thumb.classList.add('dragging');
+}
+
+function handleScrollbarThumbDrag(event) {
+    const axis = CanvasState.scrollState.activeDragAxis;
+    if (!axis) return;
+    
+    if (CanvasState.scrollState[axis].disabled) return;
+    
+    const bar = axis === 'vertical' ? document.getElementById('canvasVerticalScrollbar') : document.getElementById('canvasHorizontalScrollbar');
+    if (!bar) return;
+    
+    const track = bar.querySelector('.scrollbar-track');
+    const thumb = bar.querySelector('.scrollbar-thumb');
+    const info = CanvasState.scrollState.dragInfo;
+    if (!track || !thumb || !info) return;
+    
+    event.preventDefault();
+    
+    const trackRect = track.getBoundingClientRect();
+    const coord = axis === 'vertical'
+        ? event.clientY - trackRect.top - info.offset
+        : event.clientX - trackRect.left - info.offset;
+    const maxTravel = Math.max(0, info.trackSize - info.thumbSize);
+    const clampedCoord = Math.min(Math.max(coord, 0), maxTravel);
+    const ratio = maxTravel === 0 ? 0 : clampedCoord / maxTravel;
+    const bounds = axis === 'vertical' ? CanvasState.scrollBounds.vertical : CanvasState.scrollBounds.horizontal;
+    const target = bounds.max - ratio * (bounds.max - bounds.min);
+    
+    if (axis === 'vertical') {
+        CanvasState.panOffsetY = target;
+    } else {
+        CanvasState.panOffsetX = target;
+    }
+    
+    applyPanOffset();
+}
+
+function stopScrollbarThumbDrag() {
+    const axis = CanvasState.scrollState.activeDragAxis;
+    if (!axis) return;
+    
+    const bar = axis === 'vertical' ? document.getElementById('canvasVerticalScrollbar') : document.getElementById('canvasHorizontalScrollbar');
+    const thumb = bar ? bar.querySelector('.scrollbar-thumb') : null;
+    
+    if (thumb) {
+        thumb.classList.remove('dragging');
+    }
+    
+    CanvasState.scrollState[axis].dragging = false;
+    CanvasState.scrollState.activeDragAxis = null;
+    CanvasState.scrollState.dragInfo = null;
+    savePanOffsetThrottled();
+}
+
+function shouldHandleCustomScroll(event) {
+    const workspace = document.getElementById('canvasWorkspace');
+    if (!workspace || !workspace.contains(event.target)) {
+        return false;
+    }
+    
+    if (event.target.closest('.canvas-scrollbar')) {
+        return false;
+    }
+    
+    if (event.target.closest('.permanent-section-body') || event.target.closest('.temp-node-body')) {
+        return false;
+    }
+    
+    if (CanvasState.scrollState.vertical.disabled && CanvasState.scrollState.horizontal.disabled) {
+        return false;
+    }
+    
+    return true;
+}
+
+function handleCanvasCustomScroll(event) {
+    let consumed = false;
+    
+    const horizontalEnabled = !CanvasState.scrollState.horizontal.disabled;
+    const verticalEnabled = !CanvasState.scrollState.vertical.disabled;
+    
+    if (!horizontalEnabled && !verticalEnabled) {
+        return;
+    }
+    
+    let horizontalDelta = event.deltaX;
+    let verticalDelta = event.deltaY;
+    
+    if (event.shiftKey && horizontalEnabled) {
+        horizontalDelta = horizontalDelta !== 0 ? horizontalDelta : verticalDelta;
+        verticalDelta = 0;
+    }
+    
+    if (horizontalEnabled && Math.abs(horizontalDelta) > 0.01) {
+        const targetX = CanvasState.panOffsetX - horizontalDelta * getScrollFactor('horizontal');
+        schedulePanTo(targetX, null);
+        consumed = true;
+    }
+    
+    if (verticalEnabled && Math.abs(verticalDelta) > 0.01) {
+        const targetY = CanvasState.panOffsetY - verticalDelta * getScrollFactor('vertical');
+        schedulePanTo(null, targetY);
+        consumed = true;
+    }
+    
+    if (consumed) {
+        event.preventDefault();
+    }
+}
+
+function getScrollFactor(axis) {
+    const zoom = Math.max(CanvasState.zoom || 1, 0.1);
+    const base = axis === 'vertical' ? 0.75 : 0.9;
+    return base / Math.pow(zoom, 0.6);
+}
+
+function schedulePanTo(targetX, targetY) {
+    if (typeof targetX === 'number') {
+        CanvasState.scrollAnimation.targetX = clampPan('horizontal', targetX);
+    }
+    if (typeof targetY === 'number') {
+        CanvasState.scrollAnimation.targetY = clampPan('vertical', targetY);
+    }
+    
+    if (!CanvasState.scrollAnimation.frameId) {
+        CanvasState.scrollAnimation.frameId = requestAnimationFrame(runScrollAnimation);
+    }
+}
+
+function runScrollAnimation() {
+    let continueAnimation = false;
+    
+    if (typeof CanvasState.scrollAnimation.targetX === 'number') {
+        const diffX = CanvasState.scrollAnimation.targetX - CanvasState.panOffsetX;
+        if (Math.abs(diffX) > 0.5) {
+            CanvasState.panOffsetX += diffX * 0.18;
+            continueAnimation = true;
+        } else {
+            CanvasState.panOffsetX = CanvasState.scrollAnimation.targetX;
+        }
+    }
+    
+    if (typeof CanvasState.scrollAnimation.targetY === 'number') {
+        const diffY = CanvasState.scrollAnimation.targetY - CanvasState.panOffsetY;
+        if (Math.abs(diffY) > 0.5) {
+            CanvasState.panOffsetY += diffY * 0.18;
+            continueAnimation = true;
+        } else {
+            CanvasState.panOffsetY = CanvasState.scrollAnimation.targetY;
+        }
+    }
+    
+    applyPanOffset();
+    
+    if (continueAnimation) {
+        CanvasState.scrollAnimation.frameId = requestAnimationFrame(runScrollAnimation);
+    } else {
+        CanvasState.scrollAnimation.frameId = null;
+        CanvasState.scrollAnimation.targetX = CanvasState.panOffsetX;
+        CanvasState.scrollAnimation.targetY = CanvasState.panOffsetY;
+        savePanOffsetThrottled();
+    }
+}
+
+function updateCanvasScrollBounds(initial = false) {
+    const workspace = document.getElementById('canvasWorkspace');
+    if (!workspace) return;
+    
+    const bounds = computeCanvasContentBounds();
+    CanvasState.contentBounds = bounds;
+    
+    const zoom = Math.max(CanvasState.zoom || 1, 0.1);
+    const workspaceWidth = workspace.clientWidth || 1;
+    const workspaceHeight = workspace.clientHeight || 1;
+    
+    const minPanX = workspaceWidth - CANVAS_SCROLL_MARGIN - bounds.maxX * zoom;
+    const maxPanX = CANVAS_SCROLL_MARGIN - bounds.minX * zoom;
+    const minPanY = workspaceHeight - CANVAS_SCROLL_MARGIN - bounds.maxY * zoom;
+    const maxPanY = CANVAS_SCROLL_MARGIN - bounds.minY * zoom;
+    
+    CanvasState.scrollBounds.horizontal = normalizeScrollBounds(minPanX, maxPanX, workspaceWidth);
+    CanvasState.scrollBounds.vertical = normalizeScrollBounds(minPanY, maxPanY, workspaceHeight);
+    
+    CanvasState.panOffsetX = clampPan('horizontal', CanvasState.panOffsetX);
+    CanvasState.panOffsetY = clampPan('vertical', CanvasState.panOffsetY);
+    
+    if (!initial) {
+        applyPanOffset();
+    }
+}
+
+function normalizeScrollBounds(min, max, fallbackSize) {
+    if (!isFinite(min) || !isFinite(max)) {
+        const half = fallbackSize * 0.5;
+        return { min: -half, max: half };
+    }
+    
+    if (min === max) {
+        const half = Math.max(fallbackSize * 0.5, 200);
+        return { min: min - half, max: max + half };
+    }
+    
+    if (min > max) {
+        const center = (min + max) / 2;
+        const half = Math.max(fallbackSize * 0.5, 200);
+        return { min: center - half, max: center + half };
+    }
+    
+    const span = max - min;
+    if (span < fallbackSize * 0.3) {
+        const center = (min + max) / 2;
+        const half = Math.max(span / 2, fallbackSize * 0.3);
+        return { min: center - half, max: center + half };
+    }
+    
+    return { min, max };
+}
+
+function computeCanvasContentBounds() {
+    const permanentSection = document.getElementById('permanentSection');
+    
+    let minX = 0;
+    let maxX = 0;
+    let minY = 0;
+    let maxY = 0;
+    let hasContent = false;
+    
+    if (permanentSection) {
+        const left = parseFloat(permanentSection.style.left) || 0;
+        const top = parseFloat(permanentSection.style.top) || 0;
+        const width = permanentSection.offsetWidth || 0;
+        const height = permanentSection.offsetHeight || 0;
+        minX = Math.min(minX, left);
+        maxX = Math.max(maxX, left + width);
+        minY = Math.min(minY, top);
+        maxY = Math.max(maxY, top + height);
+        hasContent = true;
+    }
+    
+    CanvasState.tempNodes.forEach(node => {
+        const width = node.width || 300;
+        const height = node.height || 250;
+        minX = Math.min(minX, node.x);
+        maxX = Math.max(maxX, node.x + width);
+        minY = Math.min(minY, node.y);
+        maxY = Math.max(maxY, node.y + height);
+        hasContent = true;
+    });
+    
+    if (!hasContent) {
+        minX = -400;
+        maxX = 400;
+        minY = -300;
+        maxY = 300;
+    }
+    
+    return {
+        minX: minX - 80,
+        maxX: maxX + 80,
+        minY: minY - 80,
+        maxY: maxY + 80
+    };
+}
+
+function clampPan(axis, value) {
+    const bounds = axis === 'horizontal'
+        ? CanvasState.scrollBounds.horizontal
+        : CanvasState.scrollBounds.vertical;
+    
+    if (!bounds) return value;
+    if (value < bounds.min) return bounds.min;
+    if (value > bounds.max) return bounds.max;
+    return value;
+}
+
+function updateScrollbarThumbs() {
+    const workspace = document.getElementById('canvasWorkspace');
+    if (!workspace) return;
+    
+    const verticalBar = document.getElementById('canvasVerticalScrollbar');
+    const horizontalBar = document.getElementById('canvasHorizontalScrollbar');
+    
+    if (verticalBar) {
+        const track = verticalBar.querySelector('.scrollbar-track');
+        const thumb = verticalBar.querySelector('.scrollbar-thumb');
+        if (track && thumb) {
+            const trackSize = track.clientHeight;
+            const bounds = CanvasState.scrollBounds.vertical;
+            if (trackSize > 0 && bounds && isFinite(bounds.min) && isFinite(bounds.max)) {
+                const range = bounds.max - bounds.min;
+                const contentSpan = Math.max(1, (CanvasState.contentBounds.maxY - CanvasState.contentBounds.minY) * CanvasState.zoom);
+                const visibleRatio = Math.min(1, workspace.clientHeight / (contentSpan + CANVAS_SCROLL_MARGIN));
+                const thumbSize = Math.max(32, trackSize * visibleRatio);
+                const maxTravel = Math.max(0, trackSize - thumbSize);
+                const normalized = range === 0 ? 0 : (bounds.max - CanvasState.panOffsetY) / range;
+                const position = Math.min(maxTravel, Math.max(0, normalized * maxTravel));
+                
+                thumb.style.height = `${thumbSize}px`;
+                thumb.style.transform = `translateY(${position}px)`;
+            }
+        }
+    }
+    
+    if (horizontalBar) {
+        const track = horizontalBar.querySelector('.scrollbar-track');
+        const thumb = horizontalBar.querySelector('.scrollbar-thumb');
+        if (track && thumb) {
+            const trackSize = track.clientWidth;
+            const bounds = CanvasState.scrollBounds.horizontal;
+            if (trackSize > 0 && bounds && isFinite(bounds.min) && isFinite(bounds.max)) {
+                const range = bounds.max - bounds.min;
+                const contentSpan = Math.max(1, (CanvasState.contentBounds.maxX - CanvasState.contentBounds.minX) * CanvasState.zoom);
+                const visibleRatio = Math.min(1, workspace.clientWidth / (contentSpan + CANVAS_SCROLL_MARGIN));
+                const thumbSize = Math.max(32, trackSize * visibleRatio);
+                const maxTravel = Math.max(0, trackSize - thumbSize);
+                const normalized = range === 0 ? 0 : (bounds.max - CanvasState.panOffsetX) / range;
+                const position = Math.min(maxTravel, Math.max(0, normalized * maxTravel));
+                
+                thumb.style.width = `${thumbSize}px`;
+                thumb.style.transform = `translateX(${position}px)`;
+            }
+        }
+    }
 }
 
 // =============================================================================
@@ -482,8 +1028,8 @@ function locateToPermanentSection() {
     CanvasState.panOffsetY = workspaceHeight / 2 - sectionCenterY * CanvasState.zoom;
     
     // 应用平移
-    applyPanOffset();
-    savePanOffset();
+    updateCanvasScrollBounds();
+    savePanOffsetThrottled();
     
     console.log('[Canvas] 定位到永久栏目:', {
         sectionCenter: { x: sectionCenterX, y: sectionCenterY },
@@ -587,6 +1133,8 @@ function makePermanentSectionDraggable() {
             if (hasMoved) {
                 // 保存位置
                 savePermanentSectionPosition();
+                updateCanvasScrollBounds();
+                updateScrollbarThumbs();
             }
             
             hasMoved = false;
@@ -755,6 +1303,8 @@ function makePermanentSectionResizable(element) {
                     isResizing = false;
                     element.classList.remove('resizing');
                     savePermanentSectionPosition();
+                    updateCanvasScrollBounds();
+                    updateScrollbarThumbs();
                     document.removeEventListener('mousemove', onMouseMove);
                     document.removeEventListener('mouseup', onMouseUp);
                 }
@@ -890,6 +1440,8 @@ function makeTempNodeResizable(element, node) {
                     isResizing = false;
                     element.classList.remove('resizing');
                     saveTempNodes();
+                    updateCanvasScrollBounds();
+                    updateScrollbarThumbs();
                     document.removeEventListener('mousemove', onMouseMove);
                     document.removeEventListener('mouseup', onMouseUp);
                 }
@@ -1044,6 +1596,11 @@ function renderTempNode(node) {
     // 强制重排后恢复transition
     nodeElement.offsetHeight;
     nodeElement.style.transition = '';
+    
+    if (!suppressScrollSync) {
+        updateCanvasScrollBounds();
+        updateScrollbarThumbs();
+    }
 }
 
 function makeNodeDraggable(element, node) {
@@ -1105,6 +1662,8 @@ function removeTempNode(nodeId) {
     
     CanvasState.tempNodes = CanvasState.tempNodes.filter(n => n.id !== nodeId);
     saveTempNodes();
+    updateCanvasScrollBounds();
+    updateScrollbarThumbs();
 }
 
 function clearAllTempNodes() {
@@ -1118,6 +1677,8 @@ function clearAllTempNodes() {
     
     CanvasState.tempNodes = [];
     saveTempNodes();
+    updateCanvasScrollBounds();
+    updateScrollbarThumbs();
 }
 
 // 注意：这个函数已经不需要了，因为永久栏目在renderCurrentView中直接创建到canvas-content中
@@ -1278,6 +1839,8 @@ function setupCanvasEventListeners() {
             CanvasState.dragState.isDragging = false;
             CanvasState.dragState.draggedElement = null;
             saveTempNodes();
+            updateCanvasScrollBounds();
+            updateScrollbarThumbs();
         }
     }, false);
     
@@ -1525,15 +2088,24 @@ function loadTempNodes() {
             CanvasState.tempNodeCounter = CanvasState.tempNodes.length;
             
             // 渲染保存的临时节点
-            CanvasState.tempNodes.forEach(node => {
-                renderTempNode(node);
-            });
+            suppressScrollSync = true;
+            try {
+                CanvasState.tempNodes.forEach(node => {
+                    renderTempNode(node);
+                });
+            } finally {
+                suppressScrollSync = false;
+            }
+            updateCanvasScrollBounds();
+            updateScrollbarThumbs();
             
             console.log('[Canvas] 加载了', CanvasState.tempNodes.length, '个临时节点');
         }
         
         // 加载永久栏目位置
         loadPermanentSectionPosition();
+        updateCanvasScrollBounds();
+        updateScrollbarThumbs();
     } catch (error) {
         console.error('[Canvas] 加载临时节点失败:', error);
     }

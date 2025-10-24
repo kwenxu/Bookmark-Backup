@@ -50,6 +50,205 @@
     user-select: none;
 }
 
+.canvas-scrollbar {
+    position: absolute;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    z-index: 5;
+    color: #57606a;
+    pointer-events: auto;
+    transition: opacity 0.2s ease;
+    opacity: 0.92;
+}
+
+.canvas-scrollbar.vertical {
+    top: 16px;
+    right: 12px;
+    height: calc(100% - 32px);
+    flex-direction: column;
+}
+
+.canvas-scrollbar.horizontal {
+    left: 12px;
+    bottom: 16px;
+    width: calc(100% - 32px);
+    flex-direction: row;
+}
+
+.canvas-scrollbar .scrollbar-controls {
+    display: flex;
+    gap: 6px;
+    pointer-events: auto;
+}
+
+.canvas-scrollbar.vertical .scrollbar-controls {
+    flex-direction: row;
+    align-items: center;
+    gap: 8px;
+}
+
+.canvas-scrollbar.horizontal .scrollbar-controls {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 4px;
+}
+
+.canvas-scrollbar .scrollbar-btn {
+    width: 26px;
+    height: 26px;
+    border-radius: 6px;
+    border: 1px solid rgba(9, 105, 218, 0.18);
+    background: rgba(9, 105, 218, 0.08);
+    color: #0550ae;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    font-size: 12px;
+}
+
+.canvas-scrollbar .scrollbar-btn:hover {
+    background: rgba(9, 105, 218, 0.15);
+    border-color: rgba(9, 105, 218, 0.35);
+}
+
+.canvas-scrollbar .scrollbar-btn:active {
+    transform: translateY(1px);
+}
+
+.canvas-scrollbar .scrollbar-btn i {
+    pointer-events: none;
+}
+
+.canvas-scrollbar .scrollbar-track {
+    position: relative;
+    background: rgba(27, 31, 36, 0.08);
+    border-radius: 6px;
+    pointer-events: auto;
+    overflow: hidden;
+}
+
+.canvas-scrollbar.vertical .scrollbar-track {
+    width: 12px;
+    flex: 1;
+}
+
+.canvas-scrollbar.horizontal .scrollbar-track {
+    height: 12px;
+    flex: 1;
+}
+
+.canvas-scrollbar .scrollbar-thumb {
+    position: absolute;
+    background: rgba(9, 105, 218, 0.5);
+    border-radius: 6px;
+    cursor: pointer;
+    transition: background 0.2s ease;
+}
+
+.canvas-scrollbar.vertical .scrollbar-thumb {
+    width: 100%;
+    min-height: 32px;
+    top: 0;
+}
+
+.canvas-scrollbar.horizontal .scrollbar-thumb {
+    height: 100%;
+    min-width: 32px;
+    left: 0;
+}
+
+.canvas-scrollbar .scrollbar-thumb:hover,
+.canvas-scrollbar .scrollbar-thumb.dragging {
+    background: rgba(9, 105, 218, 0.65);
+}
+
+.canvas-scrollbar.is-hidden {
+    opacity: 0.35;
+}
+
+.canvas-scrollbar.is-hidden .scrollbar-track {
+    opacity: 0;
+    pointer-events: none;
+}
+
+.canvas-scrollbar.is-hidden .scrollbar-thumb {
+    display: none;
+}
+
+.canvas-scrollbar.is-disabled .scrollbar-track {
+    opacity: 0.4;
+    pointer-events: none;
+}
+
+.canvas-scrollbar.is-disabled .scrollbar-thumb {
+    cursor: not-allowed;
+}
+
+.canvas-scrollbar.is-disabled .scrollbar-btn.scroll-disable {
+    background: rgba(9, 105, 218, 0.12);
+    color: rgba(9, 105, 218, 0.6);
+}
+
+.canvas-scrollbar .scrollbar-btn.scroll-hide {
+    background: rgba(9, 105, 218, 0.1);
+}
+
+.canvas-scrollbar:hover {
+    opacity: 1;
+}
+
+[data-theme="dark"] .canvas-scrollbar {
+    color: #c9d1d9;
+}
+
+[data-theme="dark"] .canvas-scrollbar .scrollbar-btn {
+    border-color: rgba(48, 129, 247, 0.35);
+    background: rgba(48, 129, 247, 0.18);
+    color: #9bc1ff;
+}
+
+[data-theme="dark"] .canvas-scrollbar .scrollbar-btn:hover {
+    background: rgba(48, 129, 247, 0.28);
+}
+
+[data-theme="dark"] .canvas-scrollbar .scrollbar-track {
+    background: rgba(255, 255, 255, 0.08);
+}
+
+[data-theme="dark"] .canvas-scrollbar .scrollbar-thumb {
+    background: rgba(48, 129, 247, 0.55);
+}
+
+[data-theme="dark"] .canvas-scrollbar .scrollbar-thumb:hover,
+[data-theme="dark"] .canvas-scrollbar .scrollbar-thumb.dragging {
+    background: rgba(48, 129, 247, 0.75);
+}
+
+[data-theme="dark"] .canvas-scrollbar.is-disabled .scrollbar-btn.scroll-disable {
+    background: rgba(48, 129, 247, 0.24);
+    color: #bcd7ff;
+}
+
+[data-theme="dark"] .canvas-scrollbar .scrollbar-btn.scroll-hide {
+    background: rgba(48, 129, 247, 0.24);
+}
+
+[data-theme="dark"] .canvas-scrollbar .scrollbar-btn.scroll-hide:hover {
+    background: rgba(48, 129, 247, 0.3);
+}
+
+[data-theme="dark"] .canvas-scrollbar.is-disabled .scrollbar-track {
+    opacity: 0.5;
+}
+
+[data-theme="dark"] .canvas-scrollbar.is-hidden {
+    opacity: 0.45;
+}
+
+
 /* 优化缩放动画 */
 .canvas-content {
     transition: transform 0.05s ease-out;

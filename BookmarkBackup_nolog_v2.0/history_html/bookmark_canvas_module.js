@@ -2381,6 +2381,7 @@ function renderTempNode(section) {
     renameBtn.className = 'temp-node-action-btn temp-node-rename-btn';
     const renameLabel = (typeof currentLang !== 'undefined' && currentLang === 'en') ? 'Rename section' : '重命名栏目';
     renameBtn.title = renameLabel;
+    renameBtn.setAttribute('aria-label', renameLabel);
     renameBtn.innerHTML = '<i class="fas fa-edit"></i>';
     
     const colorLabel = (typeof currentLang !== 'undefined' && currentLang === 'en') ? 'Change color' : '调整栏目颜色';
@@ -2395,13 +2396,23 @@ function renderTempNode(section) {
     colorBtn.type = 'button';
     colorBtn.className = 'temp-node-action-btn temp-node-color-btn';
     colorBtn.title = colorLabel;
+    colorBtn.setAttribute('aria-label', colorLabel);
     colorBtn.innerHTML = '<i class="fas fa-palette"></i>';
     colorBtn.addEventListener('click', (event) => {
         event.preventDefault();
         event.stopPropagation();
         colorInput.click();
     });
-    
+
+    const closeBtn = document.createElement('button');
+    closeBtn.type = 'button';
+    closeBtn.className = 'temp-node-action-btn temp-node-delete-btn temp-node-close';
+    closeBtn.innerHTML = '<i class="fas fa-times"></i>';
+    const closeLabel = (typeof currentLang !== 'undefined' && currentLang === 'en') ? 'Remove section' : '删除临时栏目';
+    closeBtn.title = closeLabel;
+    closeBtn.setAttribute('aria-label', closeLabel);
+    closeBtn.addEventListener('click', () => removeTempNode(section.id));
+
     colorInput.addEventListener('input', (event) => {
         section.color = event.target.value || TEMP_SECTION_DEFAULT_COLOR;
         applyTempSectionColor(section, nodeElement, header, colorBtn, colorInput);
@@ -2439,12 +2450,6 @@ function renderTempNode(section) {
             ev.preventDefault();
         }
     });
-
-    const closeBtn = document.createElement('button');
-    closeBtn.className = 'temp-node-action-btn temp-node-delete-btn temp-node-close';
-    closeBtn.innerHTML = '&times;';
-    closeBtn.title = (typeof currentLang !== 'undefined' && currentLang === 'en') ? 'Remove section' : '删除临时栏目';
-    closeBtn.addEventListener('click', () => removeTempNode(section.id));
 
     actions.appendChild(renameBtn);
     actions.appendChild(colorBtn);
@@ -2501,22 +2506,156 @@ function renderTempNode(section) {
     }
 }
 
+function normalizeHexColor(hex) {
+    if (!hex || typeof hex !== 'string') return null;
+    let sanitized = hex.trim();
+    if (!sanitized) return null;
+    sanitized = sanitized.startsWith('#') ? sanitized.slice(1) : sanitized;
+    if (sanitized.length === 3) {
+        sanitized = sanitized.split('').map((ch) => ch + ch).join('');
+    }
+    if (sanitized.length !== 6 || /[^0-9a-f]/i.test(sanitized)) {
+        return null;
+    }
+    return sanitized.toLowerCase();
+}
+
+function hexToRgb(hex) {
+    const normalized = normalizeHexColor(hex);
+    if (!normalized) return null;
+    const intVal = parseInt(normalized, 16);
+    return {
+        r: (intVal >> 16) & 255,
+        g: (intVal >> 8) & 255,
+        b: intVal & 255
+    };
+}
+
+function rgbToHex(r, g, b) {
+    const clamp = (value) => Math.max(0, Math.min(255, Math.round(value)));
+    return `#${[clamp(r), clamp(g), clamp(b)]
+        .map((channel) => channel.toString(16).padStart(2, '0'))
+        .join('')}`;
+}
+
+function blendChannel(channel, target, factor) {
+    const ratio = Math.max(0, Math.min(1, factor));
+    return channel + (target - channel) * ratio;
+}
+
+function lightenHexColor(hex, amount) {
+    const rgb = hexToRgb(hex);
+    if (!rgb) return hex;
+    const ratio = Math.max(0, Math.min(1, amount));
+    return rgbToHex(
+        blendChannel(rgb.r, 255, ratio),
+        blendChannel(rgb.g, 255, ratio),
+        blendChannel(rgb.b, 255, ratio)
+    );
+}
+
+function darkenHexColor(hex, amount) {
+    const rgb = hexToRgb(hex);
+    if (!rgb) return hex;
+    const ratio = Math.max(0, Math.min(1, amount));
+    return rgbToHex(
+        blendChannel(rgb.r, 0, ratio),
+        blendChannel(rgb.g, 0, ratio),
+        blendChannel(rgb.b, 0, ratio)
+    );
+}
+
+function calculateRelativeLuminance({ r, g, b }) {
+    const toLinear = (channel) => {
+        const normalized = channel / 255;
+        return normalized <= 0.03928
+            ? normalized / 12.92
+            : Math.pow((normalized + 0.055) / 1.055, 2.4);
+    };
+    const linearR = toLinear(r);
+    const linearG = toLinear(g);
+    const linearB = toLinear(b);
+    return 0.2126 * linearR + 0.7152 * linearG + 0.0722 * linearB;
+}
+
+function pickReadableTextColor(hex) {
+    const rgb = hexToRgb(hex);
+    if (!rgb) return '#0f172a';
+    const luminance = calculateRelativeLuminance(rgb);
+    return luminance > 0.6 ? '#0f172a' : '#ffffff';
+}
+
+function buildAdaptivePalette(baseColor, preferLightening) {
+    const adjust = preferLightening ? lightenHexColor : darkenHexColor;
+    const base = adjust(baseColor, preferLightening ? 0.38 : 0.22);
+    const hover = adjust(baseColor, preferLightening ? 0.5 : 0.32);
+    const border = adjust(baseColor, preferLightening ? 0.58 : 0.45);
+    const outline = adjust(baseColor, preferLightening ? 0.68 : 0.55);
+    const muted = adjust(baseColor, preferLightening ? 0.22 : 0.12);
+
+    const baseRgb = hexToRgb(baseColor) || { r: 37, g: 99, b: 235 };
+    const shadowAlpha = preferLightening ? 0.24 : 0.3;
+    const shadow = `rgba(${baseRgb.r}, ${baseRgb.g}, ${baseRgb.b}, ${shadowAlpha})`;
+
+    return {
+        base,
+        hover,
+        border,
+        outline,
+        subtle: muted,
+        icon: pickReadableTextColor(base),
+        hoverIcon: pickReadableTextColor(hover),
+        shadow
+    };
+}
+
+function createTempSectionPalettes(color) {
+    const normalizedValue = normalizeHexColor(color);
+    const normalizedColor = normalizedValue ? `#${normalizedValue}` : TEMP_SECTION_DEFAULT_COLOR;
+    const sectionRgb = hexToRgb(normalizedColor) || hexToRgb(TEMP_SECTION_DEFAULT_COLOR);
+    const sectionLuminance = sectionRgb ? calculateRelativeLuminance(sectionRgb) : 0.5;
+    const preferLightening = sectionLuminance < 0.45;
+
+    return {
+        primary: buildAdaptivePalette(normalizedColor, preferLightening),
+        danger: buildAdaptivePalette('#ef4444', preferLightening)
+    };
+}
+
 function applyTempSectionColor(section, nodeElement, header, colorButton, colorInput) {
-    const color = section.color || TEMP_SECTION_DEFAULT_COLOR;
+    const rawColor = section.color || TEMP_SECTION_DEFAULT_COLOR;
+    const normalizedValue = normalizeHexColor(rawColor);
+    const safeColor = normalizedValue ? `#${normalizedValue}` : TEMP_SECTION_DEFAULT_COLOR;
+    const palettes = createTempSectionPalettes(safeColor);
+
     if (nodeElement) {
-        nodeElement.style.setProperty('--section-color', color);
+        nodeElement.style.setProperty('--section-color', safeColor);
     }
     if (header) {
-        header.style.setProperty('--section-color', color);
+        header.style.setProperty('--section-color', safeColor);
     }
-    if (colorButton) {
-        colorButton.style.background = color;
-        colorButton.style.borderColor = color;
-        colorButton.style.color = '#ffffff';
-        colorButton.style.boxShadow = '0 0 0 2px rgba(255, 255, 255, 0.35)';
+
+    const target = nodeElement || header;
+    if (target) {
+        target.style.setProperty('--temp-action-bg', palettes.primary.base);
+        target.style.setProperty('--temp-action-hover-bg', palettes.primary.hover);
+        target.style.setProperty('--temp-action-border', palettes.primary.border);
+        target.style.setProperty('--temp-action-icon', palettes.primary.icon);
+        target.style.setProperty('--temp-action-hover-icon', palettes.primary.hoverIcon);
+        target.style.setProperty('--temp-action-shadow', palettes.primary.shadow);
+        target.style.setProperty('--temp-action-outline', palettes.primary.outline);
+        target.style.setProperty('--temp-action-muted-bg', palettes.primary.subtle);
+
+        target.style.setProperty('--temp-action-danger-bg', palettes.danger.base);
+        target.style.setProperty('--temp-action-danger-hover-bg', palettes.danger.hover);
+        target.style.setProperty('--temp-action-danger-border', palettes.danger.border);
+        target.style.setProperty('--temp-action-danger-icon', palettes.danger.icon);
+        target.style.setProperty('--temp-action-danger-hover-icon', palettes.danger.hoverIcon);
+        target.style.setProperty('--temp-action-danger-shadow', palettes.danger.shadow);
     }
+
     if (colorInput) {
-        colorInput.value = color;
+        colorInput.value = safeColor;
     }
 }
 

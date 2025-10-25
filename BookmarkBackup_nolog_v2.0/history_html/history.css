@@ -4358,88 +4358,66 @@ a.tree-label.tree-bookmark-link:hover {
 .temp-node-actions {
     display: flex;
     align-items: center;
-    gap: 6px;
+    gap: 8px;
 }
 
-
 .temp-node-action-btn {
-    width: 18px;
-    height: 18px;
-    border-radius: 999px;
-    border: none;
+    background: var(--temp-action-bg, rgba(255, 255, 255, 0.2));
+    border: 1px solid var(--temp-action-border, rgba(255, 255, 255, 0.4));
+    border-radius: 8px;
+    width: 28px;
+    height: 28px;
+    padding: 0;
     display: inline-flex;
     align-items: center;
     justify-content: center;
     cursor: pointer;
-    transition: transform 0.15s ease, box-shadow 0.2s ease;
-    font-size: 10px;
+    color: var(--temp-action-icon, #ffffff);
+    font-size: 12px;
     line-height: 1;
-    background: rgba(255, 255, 255, 0.18);
-    color: #ffffff;
-    margin-left: 2px;
+    position: relative;
+    transition: background 0.18s ease, color 0.18s ease, box-shadow 0.2s ease, transform 0.12s ease;
+    box-shadow: 0 6px 18px var(--temp-action-shadow, rgba(15, 23, 42, 0.18));
 }
 
 .temp-node-action-btn i {
     pointer-events: none;
+    font-size: 12px;
 }
 
 .temp-node-action-btn:hover,
 .temp-node-action-btn:focus-visible,
 .temp-node-action-btn.active {
-    transform: scale(1.05);
+    background: var(--temp-action-hover-bg, rgba(255, 255, 255, 0.32));
+    color: var(--temp-action-hover-icon, var(--temp-action-icon, #ffffff));
+    transform: translateY(-1px);
+    box-shadow: 0 10px 22px var(--temp-action-shadow, rgba(15, 23, 42, 0.22));
 }
 
-.temp-node-color-btn,
-.temp-node-rename-btn {
-    background: var(--section-color, #2563eb);
-    box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.28);
-}
-
-.temp-node-color-btn:hover,
-.temp-node-rename-btn:hover,
-.temp-node-rename-btn.active,
-.temp-node-color-btn:focus-visible,
-.temp-node-rename-btn:focus-visible {
-    box-shadow: 0 4px 12px rgba(37, 99, 235, 0.28);
+.temp-node-action-btn:active {
+    transform: translateY(0);
+    background: var(--temp-action-muted-bg, rgba(255, 255, 255, 0.24));
+    box-shadow: 0 4px 12px var(--temp-action-shadow, rgba(15, 23, 42, 0.2));
 }
 
 .temp-node-action-btn:focus-visible {
-    outline: 2px solid rgba(255, 255, 255, 0.85);
+    outline: 2px solid var(--temp-action-outline, rgba(255, 255, 255, 0.82));
     outline-offset: 2px;
 }
 
-[data-theme="dark"] .temp-node-action-btn {
-    background: rgba(255, 255, 255, 0.16);
-    color: #f8fafc;
-}
-
-[data-theme="dark"] .temp-node-color-btn,
-[data-theme="dark"] .temp-node-rename-btn {
-    background: var(--section-color, #2563eb);
-}
-
-[data-theme="dark"] .temp-node-color-btn:hover,
-[data-theme="dark"] .temp-node-rename-btn:hover,
-[data-theme="dark"] .temp-node-rename-btn.active {
-    box-shadow: 0 4px 12px rgba(88, 166, 255, 0.24);
+.temp-node-rename-btn.active {
+    background: var(--temp-action-hover-bg, rgba(255, 255, 255, 0.32));
+    color: var(--temp-action-hover-icon, var(--temp-action-icon, #ffffff));
+    box-shadow: 0 0 0 2px var(--temp-action-outline, rgba(255, 255, 255, 0.82));
 }
 
 .temp-node-delete-btn {
-    background: rgba(248, 113, 113, 0.85);
-}
-
-.temp-node-delete-btn:hover,
-.temp-node-delete-btn:focus-visible {
-    box-shadow: 0 4px 12px rgba(239, 68, 68, 0.35);
-}
-
-[data-theme="dark"] .temp-node-delete-btn {
-    background: rgba(239, 68, 68, 0.8);
-}
-
-[data-theme="dark"] .temp-node-delete-btn:hover,
-[data-theme="dark"] .temp-node-delete-btn:focus-visible {
-    box-shadow: 0 4px 12px rgba(239, 68, 68, 0.4);
+    --temp-action-bg: var(--temp-action-danger-bg, rgba(239, 68, 68, 0.85));
+    --temp-action-hover-bg: var(--temp-action-danger-hover-bg, rgba(239, 68, 68, 0.93));
+    --temp-action-border: var(--temp-action-danger-border, rgba(239, 68, 68, 0.55));
+    --temp-action-icon: var(--temp-action-danger-icon, #ffffff);
+    --temp-action-hover-icon: var(--temp-action-danger-hover-icon, #ffffff);
+    --temp-action-shadow: var(--temp-action-danger-shadow, rgba(239, 68, 68, 0.3));
 }
 
 .temp-node-color-input {
@@ -4451,9 +4429,7 @@ a.tree-label.tree-bookmark-link:hover {
 }
 
 .temp-node-close {
-    border: none;
     color: inherit;
-    font-size: 14px;
 }
 
 .temp-node-body {

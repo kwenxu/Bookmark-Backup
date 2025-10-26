@@ -66,7 +66,7 @@
 .canvas-scrollbar.vertical {
     top: 20px;
     right: 20px;
-    height: calc(100% - 40px);
+    height: calc(100% - 116px);
     flex-direction: column;
     align-items: flex-end;
 }
@@ -74,8 +74,9 @@
 .canvas-scrollbar.horizontal {
     left: 20px;
     bottom: 36px;
-    width: calc(100% - 40px);
-    flex-direction: row;
+    width: calc(100% - 80px);
+    flex-direction: column;
+    align-items: flex-start;
 }
 
 .canvas-scrollbar .scrollbar-controls {
@@ -95,9 +96,11 @@
     align-items: flex-end;
     gap: 8px;
     align-self: flex-end;
-    order: 0;
-    margin-bottom: 10px;
-    transform: translateX(13px);
+    order: -1;
+    margin-bottom: 8px;
+    padding: 0;
+    background: transparent;
+    box-shadow: none;
 }
 
 .canvas-scrollbar.horizontal .scrollbar-controls {
@@ -121,6 +124,10 @@
     padding: 4px 6px;
 }
 
+.canvas-scrollbar.vertical.show-controls .scrollbar-controls {
+    padding: 6px 4px;
+}
+
 .canvas-scrollbar:hover .scrollbar-controls {
     opacity: 1;
     padding: 6px;
@@ -130,6 +137,10 @@
 
 .canvas-scrollbar.horizontal:hover .scrollbar-controls {
     padding: 4px 6px;
+}
+
+.canvas-scrollbar.vertical:hover .scrollbar-controls {
+    padding: 6px 4px;
 }
 
 .canvas-scrollbar.is-hidden.show-controls .scrollbar-track {
@@ -181,7 +192,8 @@
 
 .canvas-scrollbar.horizontal .scrollbar-track {
     height: 12px;
-    flex: 1;
+    width: 100%;
+    flex: none;
 }
 
 .canvas-scrollbar .scrollbar-thumb {
@@ -248,8 +260,17 @@
     opacity: 1;
 }
 
-.canvas-scrollbar.horizontal .scrollbar-controls .scrollbar-hint {
+.canvas-scrollbar.horizontal .scrollbar-hint {
     display: none;
+    font-size: 12px;
+    color: #57606a;
+    white-space: nowrap;
+    text-align: left;
+    margin-bottom: 6px;
+}
+
+.canvas-scrollbar.horizontal.show-controls .scrollbar-hint {
+    display: block;
 }
 
 
@@ -298,8 +319,8 @@
     background: rgba(48, 129, 247, 0.75);
 }
 
-[data-theme="dark"] .canvas-scrollbar.horizontal .scrollbar-controls .scrollbar-hint {
-    display: none;
+[data-theme="dark"] .canvas-scrollbar.horizontal .scrollbar-hint {
+    color: #8b949e;
 }
 
 [data-theme="dark"] .canvas-scrollbar.is-disabled .scrollbar-btn.scroll-disable {

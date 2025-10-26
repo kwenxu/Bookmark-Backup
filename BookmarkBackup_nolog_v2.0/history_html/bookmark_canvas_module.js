@@ -1510,18 +1510,18 @@ function handleCanvasCustomScroll(event) {
 
 function getScrollFactor(axis) {
     const zoom = Math.max(CanvasState.zoom || 1, 0.1);
-    const base = axis === 'vertical' ? 1.0 : 1.25;
+    const base = axis === 'vertical' ? 2.5 : 3.0;
     const exponent = 0.55;
     return base / Math.pow(zoom, exponent);
 }
 
 function getScrollEaseFactor(axis) {
     const zoom = Math.max(CanvasState.zoom || 1, 0.1);
-    const base = axis === 'horizontal' ? 0.28 : 0.26;
+    const base = axis === 'horizontal' ? 0.35 : 0.33;
     const zoomBoost = zoom > 1
-        ? Math.min(0.14, (zoom - 1) * 0.09)
-        : (1 - zoom) * 0.06;
-    return Math.min(0.45, base + zoomBoost);
+        ? Math.min(0.18, (zoom - 1) * 0.12)
+        : (1 - zoom) * 0.08;
+    return Math.min(0.52, base + zoomBoost);
 }
 
 function schedulePanTo(targetX, targetY) {
@@ -1716,9 +1716,12 @@ function updateScrollbarThumbs() {
             const bounds = CanvasState.scrollBounds.vertical;
             if (trackSize > 0 && bounds && isFinite(bounds.min) && isFinite(bounds.max)) {
                 const range = bounds.max - bounds.min;
-                const contentSpan = Math.max(1, (CanvasState.contentBounds.maxY - CanvasState.contentBounds.minY) * CanvasState.zoom);
-                const visibleRatio = Math.min(1, workspace.clientHeight / (contentSpan + CANVAS_SCROLL_MARGIN));
-                const thumbSize = Math.max(32, trackSize * visibleRatio);
+                // 使用scrollBounds中的范围来计算可见比例，而不是contentBounds
+                const totalScrollableHeight = Math.abs(range);
+                // 内容总高度 = 滚动范围 + 可见窗口
+                const totalHeight = Math.max(1, totalScrollableHeight + workspace.clientHeight);
+                const visibleRatio = Math.max(0.05, Math.min(1, workspace.clientHeight / totalHeight));
+                const thumbSize = Math.max(20, trackSize * visibleRatio);
                 const maxTravel = Math.max(0, trackSize - thumbSize);
                 const normalized = range === 0 ? 0 : (bounds.max - CanvasState.panOffsetY) / range;
                 const position = Math.min(maxTravel, Math.max(0, normalized * maxTravel));
@@ -1737,9 +1740,12 @@ function updateScrollbarThumbs() {
             const bounds = CanvasState.scrollBounds.horizontal;
             if (trackSize > 0 && bounds && isFinite(bounds.min) && isFinite(bounds.max)) {
                 const range = bounds.max - bounds.min;
-                const contentSpan = Math.max(1, (CanvasState.contentBounds.maxX - CanvasState.contentBounds.minX) * CanvasState.zoom);
-                const visibleRatio = Math.min(1, workspace.clientWidth / (contentSpan + CANVAS_SCROLL_MARGIN));
-                const thumbSize = Math.max(32, trackSize * visibleRatio);
+                // 使用scrollBounds中的范围来计算可见比例，而不是contentBounds
+                const totalScrollableWidth = Math.abs(range);
+                // 内容总宽度 = 滚动范围 + 可见窗口
+                const totalWidth = Math.max(1, totalScrollableWidth + workspace.clientWidth);
+                const visibleRatio = Math.max(0.05, Math.min(1, workspace.clientWidth / totalWidth));
+                const thumbSize = Math.max(20, trackSize * visibleRatio);
                 const maxTravel = Math.max(0, trackSize - thumbSize);
                 const normalized = range === 0 ? 0 : (bounds.max - CanvasState.panOffsetX) / range;
                 const position = Math.min(maxTravel, Math.max(0, normalized * maxTravel));

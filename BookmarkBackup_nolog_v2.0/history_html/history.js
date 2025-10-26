@@ -390,6 +390,10 @@ const i18n = {
     bookmarkToolboxTitle: {
         'zh_CN': '书签工具箱',
         'en': 'Bookmark Toolbox'
+    },
+    horizontalScrollHint: {
+        'zh_CN': '按住 Shift + 滚轮',
+        'en': 'Hold Shift + Wheel'
     }
 };
 
@@ -716,6 +720,10 @@ function applyLanguage() {
     document.getElementById('refreshTooltip').textContent = i18n.refreshTooltip[currentLang];
     document.getElementById('themeTooltip').textContent = i18n.themeTooltip[currentLang];
     document.getElementById('langTooltip').textContent = i18n.langTooltip[currentLang];
+    
+    // 更新横向滚动条提示文字
+    const scrollbarHint = document.querySelector('.canvas-scrollbar.horizontal .scrollbar-hint');
+    if (scrollbarHint) scrollbarHint.textContent = i18n.horizontalScrollHint[currentLang];
     
     // 更新语言切换按钮
     document.querySelector('#langToggle .lang-text').textContent = currentLang === 'zh_CN' ? 'EN' : '中';

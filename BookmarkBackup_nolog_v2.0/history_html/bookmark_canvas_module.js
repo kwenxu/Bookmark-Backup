@@ -1420,8 +1420,7 @@ function getCanvasLanguage() {
     if (typeof window !== 'undefined' && window.currentLang) {
         return window.currentLang === 'en' ? 'en' : 'zh_CN';
     }
-    const docLang = typeof document !== 'undefined' ? (document.documentElement.getAttribute('lang') || '').toLowerCase() : '';
-    return docLang.startsWith('en') ? 'en' : 'zh_CN';
+    return 'zh_CN';
 }
 
 function getFullscreenLabel(key, lang) {

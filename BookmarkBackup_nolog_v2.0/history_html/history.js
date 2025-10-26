@@ -669,19 +669,20 @@ function applyLanguage() {
     if (zoomLocateText) zoomLocateText.textContent = i18n.zoomLocateText[currentLang];
     const fullscreenBtn = document.getElementById('canvasFullscreenBtn');
     if (fullscreenBtn) {
+        // Always update fullscreen button to ensure language changes are applied
         if (window.CanvasModule && typeof window.CanvasModule.updateFullscreenButton === 'function') {
             window.CanvasModule.updateFullscreenButton();
-        } else {
-            const container = document.querySelector('.canvas-main-container');
-            const fullscreenElement = document.fullscreenElement || document.webkitFullscreenElement || document.mozFullScreenElement || document.msFullscreenElement;
-            const isFullscreen = container && fullscreenElement === container;
-            const key = isFullscreen ? 'canvasFullscreenExit' : 'canvasFullscreenEnter';
-            const text = i18n[key][currentLang] || (key === 'canvasFullscreenExit' ? (currentLang === 'en' ? 'Exit' : '退出') : (currentLang === 'en' ? 'Fullscreen' : '全屏'));
-            fullscreenBtn.textContent = text;
-            fullscreenBtn.setAttribute('aria-label', text);
-            fullscreenBtn.classList.toggle('fullscreen-active', Boolean(isFullscreen));
-            fullscreenBtn.setAttribute('aria-pressed', isFullscreen ? 'true' : 'false');
         }
+        // Also apply text directly to ensure it's set in current language
+        const container = document.querySelector('.canvas-main-container');
+        const fullscreenElement = document.fullscreenElement || document.webkitFullscreenElement || document.mozFullScreenElement || document.msFullscreenElement;
+        const isFullscreen = container && fullscreenElement === container;
+        const key = isFullscreen ? 'canvasFullscreenExit' : 'canvasFullscreenEnter';
+        const text = i18n[key] && i18n[key][currentLang] ? i18n[key][currentLang] : (key === 'canvasFullscreenExit' ? (currentLang === 'en' ? 'Exit' : '退出') : (currentLang === 'en' ? 'Fullscreen' : '全屏'));
+        fullscreenBtn.textContent = text;
+        fullscreenBtn.setAttribute('aria-label', text);
+        fullscreenBtn.classList.toggle('fullscreen-active', Boolean(isFullscreen));
+        fullscreenBtn.setAttribute('aria-pressed', isFullscreen ? 'true' : 'false');
     }
     
     // Canvas永久栏目文本

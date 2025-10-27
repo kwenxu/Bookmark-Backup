@@ -392,8 +392,8 @@ const i18n = {
         'en': 'Bookmark Toolbox'
     },
     horizontalScrollHint: {
-        'zh_CN': '按住 Shift + 滚轮',
-        'en': 'Hold Shift + Wheel'
+        'zh_CN': 'Shift + 滚轮',
+        'en': 'Shift + Wheel'
     }
 };
 

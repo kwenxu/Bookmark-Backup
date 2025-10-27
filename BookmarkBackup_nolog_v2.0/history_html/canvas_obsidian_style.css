@@ -68,15 +68,14 @@
     right: 20px;
     height: calc(100% - 116px);
     flex-direction: column;
-    align-items: flex-end;
+    align-items: center;
 }
 
 .canvas-scrollbar.horizontal {
     left: 20px;
     bottom: 36px;
     width: calc(100% - 80px);
-    flex-direction: column;
-    align-items: flex-start;
+    position: absolute;
 }
 
 .canvas-scrollbar .scrollbar-controls {
@@ -93,9 +92,9 @@
 
 .canvas-scrollbar.vertical .scrollbar-controls {
     flex-direction: column;
-    align-items: flex-end;
+    align-items: center;
     gap: 8px;
-    align-self: flex-end;
+    align-self: center;
     order: -1;
     margin-bottom: 8px;
     padding: 0;
@@ -107,10 +106,10 @@
     flex-direction: row;
     align-items: center;
     gap: 8px;
-    align-self: flex-start;
     padding: 0;
     background: transparent;
     box-shadow: none;
+    flex-shrink: 0;
 }
 
 .canvas-scrollbar.show-controls .scrollbar-controls {
@@ -192,8 +191,13 @@
 
 .canvas-scrollbar.horizontal .scrollbar-track {
     height: 12px;
-    width: 100%;
-    flex: none;
+    width: 50%;
+    min-width: 200px;
+    max-width: 500px;
+    position: absolute;
+    left: 50%;
+    transform: translateX(-50%);
+    bottom: 10.5px;
 }
 
 .canvas-scrollbar .scrollbar-thumb {
@@ -265,12 +269,11 @@
     font-size: 12px;
     color: #57606a;
     white-space: nowrap;
-    text-align: left;
-    margin-bottom: 6px;
+    flex-shrink: 0;
 }
 
 .canvas-scrollbar.horizontal.show-controls .scrollbar-hint {
-    display: block;
+    display: inline-block;
 }
 
 

@@ -356,3 +356,35 @@
 .canvas-workspace {
     transition: background-position 0.05s ease-out;
 }
+
+/* 拖出永久栏目边界时的“替代UI”样式（隐藏原图标并显示简洁提示） */
+.tree-item.tree-drag-leaving {
+    position: relative;
+    opacity: 0.5;
+}
+.tree-item.tree-drag-leaving .tree-icon {
+    opacity: 0;
+}
+.tree-item.tree-drag-leaving::after {
+    content: '+';
+    position: absolute;
+    right: 8px;
+    top: 50%;
+    transform: translateY(-50%);
+    width: 18px;
+    height: 18px;
+    line-height: 18px;
+    text-align: center;
+    border-radius: 50%;
+    background: rgba(37, 99, 235, 0.15);
+    color: #2563eb;
+    border: 1px solid rgba(37, 99, 235, 0.35);
+    font-weight: 700;
+    font-size: 12px;
+}
+
+[data-theme="dark"] .tree-item.tree-drag-leaving::after {
+    background: rgba(88, 166, 255, 0.18);
+    color: #9bc1ff;
+    border-color: rgba(88, 166, 255, 0.45);
+}

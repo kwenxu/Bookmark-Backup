@@ -139,6 +139,7 @@ function clearTreeItemDragging() {
     }
     if (CanvasState.dragState.treeDragItem && CanvasState.dragState.treeDragItem.classList) {
         CanvasState.dragState.treeDragItem.classList.remove('tree-drag-out');
+        CanvasState.dragState.treeDragItem.classList.remove('tree-drag-leaving');
     }
     CanvasState.dragState.treeDragItem = null;
 }
@@ -549,6 +550,7 @@ function initCanvasView() {
     // 设置Canvas事件监听
     setupCanvasEventListeners();
     setupCanvasDropFeedback();
+    setupPermanentSectionEdgeFeedback();
     
     // 设置永久栏目提示关闭按钮
     setupPermanentSectionTipClose();
@@ -569,6 +571,9 @@ function setupCanvasDropFeedback() {
     });
     workspace.addEventListener('dragover', (e) => {
         if (CanvasState.dragState.dragSource === 'permanent') {
+            e.preventDefault();
+            try { if (e.dataTransfer) e.dataTransfer.dropEffect = 'copy'; } catch(_) {}
+            workspace.classList.add('canvas-drop-active');
             const rect = workspace.getBoundingClientRect();
             const x = ((e.clientX - rect.left) / rect.width) * 100;
             const y = ((e.clientY - rect.top) / rect.height) * 100;
@@ -576,9 +581,41 @@ function setupCanvasDropFeedback() {
             workspace.style.setProperty('--drop-y', `${y}%`);
         }
     });
-    workspace.addEventListener('drop', () => {
+    workspace.addEventListener('drop', (e) => {
+        try { e.preventDefault(); } catch(_) {}
         workspace.classList.remove('canvas-drop-active');
     });
+}
+
+// 当从永久栏目边界拖出时，给原条目切换为“替代UI”样式
+function setupPermanentSectionEdgeFeedback() {
+    const permanentSection = document.getElementById('permanentSection');
+    if (!permanentSection) return;
+
+    permanentSection.addEventListener('dragover', (e) => {
+        if (CanvasState.dragState.dragSource === 'permanent' && CanvasState.dragState.treeDragItem) {
+            CanvasState.dragState.treeDragItem.classList.remove('tree-drag-leaving');
+        }
+    });
+
+    permanentSection.addEventListener('dragleave', (e) => {
+        if (!permanentSection.contains(e.relatedTarget)) {
+            if (CanvasState.dragState.dragSource === 'permanent' && CanvasState.dragState.treeDragItem) {
+                CanvasState.dragState.treeDragItem.classList.add('tree-drag-leaving');
+            }
+        }
+    });
+}
+
+// 复用的透明拖拽图片（1x1透明像素），用于隐藏原生回弹动画
+let __transparentDragImg;
+function getTransparentDragImage() {
+    if (__transparentDragImg) return __transparentDragImg;
+    const canvas = document.createElement('canvas');
+    canvas.width = 1;
+    canvas.height = 1;
+    __transparentDragImg = canvas;
+    return __transparentDragImg;
 }
 
 // =============================================================================
@@ -618,6 +655,9 @@ function enhanceBookmarkTreeForCanvas() {
             
             // 设置拖拽数据（供外部系统识别）
             try {
+                if (e.dataTransfer) {
+                    e.dataTransfer.effectAllowed = 'copyMove';
+                }
                 e.dataTransfer.setData('application/json', JSON.stringify({
                     id: nodeId,
                     title: nodeTitle,
@@ -636,6 +676,14 @@ function enhanceBookmarkTreeForCanvas() {
             if (permanentSection) {
                 permanentSection.classList.add('drag-origin-active');
             }
+
+            // 使用透明拖拽预览，避免原生拖拽松手时的回弹动画可见
+            try {
+                if (e.dataTransfer && typeof e.dataTransfer.setDragImage === 'function') {
+                    const img = getTransparentDragImage();
+                    e.dataTransfer.setDragImage(img, 0, 0);
+                }
+            } catch (_) {}
         });
         
         // 添加dragend监听器，检查是否拖到Canvas
@@ -650,6 +698,7 @@ function enhanceBookmarkTreeForCanvas() {
             if (!workspace) return;
             
             const rect = workspace.getBoundingClientRect();
+            let accepted = false;
             
             if (dropX >= rect.left && dropX <= rect.right && 
                 dropY >= rect.top && dropY <= rect.bottom) {
@@ -664,6 +713,7 @@ function enhanceBookmarkTreeForCanvas() {
                 if (CanvasState.dragState.draggedData) {
                     try {
                         await createTempNode(CanvasState.dragState.draggedData, canvasX, canvasY);
+                        accepted = true;
                     } catch (err) {
                         console.error('[Canvas] 创建临时栏目失败:', err);
                         alert('创建临时栏目失败: ' + err.message);
@@ -682,7 +732,8 @@ function enhanceBookmarkTreeForCanvas() {
                 workspace.classList.remove('canvas-drop-active');
             }
 
-            scheduleClearTreeItemDragging();
+            // 接受落点后延迟还原树条目外观，避免“松手瞬间回弹”感
+            scheduleClearTreeItemDragging(accepted ? 380 : 160);
         });
     });
     
@@ -2870,7 +2921,11 @@ function setupTempSectionDropTargets(section, sectionElement, treeContainer, hea
             if (workspaceEl) {
                 workspaceEl.classList.remove('canvas-drop-active');
             }
-            clearTreeItemDragging();
+            if (CanvasState.dragState && CanvasState.dragState.dragSource === 'permanent') {
+                scheduleClearTreeItemDragging(380);
+            } else {
+                clearTreeItemDragging();
+            }
         }, true);
         CanvasState.dropCleanupBound = true;
     }

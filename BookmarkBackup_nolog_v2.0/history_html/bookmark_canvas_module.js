@@ -677,11 +677,25 @@ function enhanceBookmarkTreeForCanvas() {
                 permanentSection.classList.add('drag-origin-active');
             }
 
-            // 使用透明拖拽预览，避免原生拖拽松手时的回弹动画可见
+            // 自定义替代UI：
+            // - 单项拖出显示名称
+            // - 批量选择拖出显示英文标识 "Multiple items"
             try {
                 if (e.dataTransfer && typeof e.dataTransfer.setDragImage === 'function') {
-                    const img = getTransparentDragImage();
-                    e.dataTransfer.setDragImage(img, 0, 0);
+                    let previewText = nodeTitle || nodeUrl || '';
+                    try {
+                        const ids = collectPermanentSelectionIds(nodeId);
+                        if (Array.isArray(ids) && ids.length > 1) {
+                            previewText = 'Multiple items';
+                        }
+                    } catch (_) {}
+                    const preview = document.createElement('div');
+                    preview.className = 'drag-preview';
+                    preview.textContent = previewText || '';
+                    preview.style.left = '-9999px';
+                    document.body.appendChild(preview);
+                    e.dataTransfer.setDragImage(preview, 0, 0);
+                    setTimeout(() => preview.remove(), 0);
                 }
             } catch (_) {}
         });
@@ -2296,10 +2310,17 @@ function handlePermanentDragStart(e, data, type) {
         console.warn('[Canvas] 设置拖拽数据失败:', err);
     }
     
-    // 创建拖拽预览
+    // 创建拖拽预览（替代UI规则同上）
+    let previewText = data && (data.title || data.url) ? (data.title || data.url) : '';
+    try {
+        const ids = collectPermanentSelectionIds(data && data.id ? data.id : null);
+        if (Array.isArray(ids) && ids.length > 1) {
+            previewText = 'Multiple items';
+        }
+    } catch (_) {}
     const preview = document.createElement('div');
     preview.className = 'drag-preview';
-    preview.textContent = data.title || '未命名';
+    preview.textContent = previewText || '';
     preview.style.left = '-9999px';
     document.body.appendChild(preview);
     e.dataTransfer.setDragImage(preview, 0, 0);

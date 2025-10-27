@@ -723,10 +723,18 @@ function enhanceBookmarkTreeForCanvas() {
                 
                 console.log('[Canvas] 拖到Canvas，创建临时节点:', { canvasX, canvasY });
                 
-                // 在Canvas上创建临时节点
+                // 在Canvas上创建临时节点（支持多选合集）
                 if (CanvasState.dragState.draggedData) {
                     try {
-                        await createTempNode(CanvasState.dragState.draggedData, canvasX, canvasY);
+                        let ids = [];
+                        try {
+                            ids = collectPermanentSelectionIds(CanvasState.dragState.draggedData.id || null) || [];
+                        } catch(_) {}
+                        if (Array.isArray(ids) && ids.length > 1) {
+                            await createTempNode({ multi: true, permanentIds: ids }, canvasX, canvasY);
+                        } else {
+                            await createTempNode(CanvasState.dragState.draggedData, canvasX, canvasY);
+                        }
                         accepted = true;
                     } catch (err) {
                         console.error('[Canvas] 创建临时栏目失败:', err);
@@ -2344,7 +2352,13 @@ async function handlePermanentDragEnd(e) {
         const x = dropX - rect.left + workspace.scrollLeft;
         const y = dropY - rect.top + workspace.scrollTop;
         try {
-            await createTempNode(CanvasState.dragState.draggedData, x, y);
+            let ids = [];
+            try { ids = collectPermanentSelectionIds((CanvasState.dragState.draggedData && CanvasState.dragState.draggedData.id) || null) || []; } catch(_) {}
+            if (Array.isArray(ids) && ids.length > 1) {
+                await createTempNode({ multi: true, permanentIds: ids }, x, y);
+            } else {
+                await createTempNode(CanvasState.dragState.draggedData, x, y);
+            }
         } catch (error) {
             console.error('[Canvas] 创建临时栏目失败:', error);
             alert('创建临时栏目失败: ' + error.message);
@@ -2384,18 +2398,28 @@ async function createTempNode(data, x, y) {
     };
     
     try {
-        let resolvedNode = null;
-        try {
-            resolvedNode = await resolveBookmarkNode(data);
-        } catch (error) {
-            console.warn('[Canvas] 实时获取书签数据失败，使用一次性快照:', error);
-            resolvedNode = cloneBookmarkNode(data);
-        }
-        if (resolvedNode) {
-            const tempRoot = convertBookmarkNodeToTempItem(resolvedNode, sectionId);
-            if (tempRoot) {
-                section.items.push(tempRoot);
+        let payload = [];
+        if (data && data.multi && Array.isArray(data.permanentIds) && data.permanentIds.length) {
+            // 多选合集：从永久栏收集所有选中的节点
+            payload = await resolvePermanentPayload(data.permanentIds);
+        } else {
+            let resolvedNode = null;
+            try {
+                resolvedNode = await resolveBookmarkNode(data);
+            } catch (error) {
+                console.warn('[Canvas] 实时获取书签数据失败，使用一次性快照:', error);
+                resolvedNode = cloneBookmarkNode(data);
             }
+            if (resolvedNode) {
+                payload = [resolvedNode];
+            }
+        }
+
+        if (payload && payload.length) {
+            payload.forEach(node => {
+                const tempItem = convertBookmarkNodeToTempItem(node, sectionId);
+                if (tempItem) section.items.push(tempItem);
+            });
         }
     } catch (error) {
         console.error('[Canvas] 转换拖拽节点失败:', error);

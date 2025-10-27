@@ -1818,6 +1818,62 @@ function showSelectModeOverlay() {
     
     console.log('[Select模式] 蓝框已添加到:', treeContainer.id || treeContainer.className);
     
+    // 允许拖动穿透：按住左键准备拖动时，让事件传递给下方的书签项
+    overlay.addEventListener('mousedown', (e) => {
+        // 仅处理左键
+        if (e.button !== 0) return;
+        // 探测下方元素
+        let elementBelow;
+        try {
+            overlay.style.pointerEvents = 'none';
+            elementBelow = document.elementFromPoint(e.clientX, e.clientY);
+        } finally {
+            overlay.style.pointerEvents = 'auto';
+        }
+        const treeItem = elementBelow && elementBelow.closest ? elementBelow.closest('.tree-item[data-node-id]') : null;
+        const isTreeItem = !!treeItem;
+        const hasMultiSelection = (typeof selectedNodes !== 'undefined' && selectedNodes && selectedNodes.size > 1);
+        const isSelectedItem = !!(treeItem && treeItem.classList && treeItem.classList.contains('selected'));
+        if (!isTreeItem || !hasMultiSelection) return;
+
+        // 若点在已选中的项上，优先认为是拖拽：立即穿透
+        if (isSelectedItem) {
+            overlay.style.pointerEvents = 'none';
+            const restore = () => {
+                overlay.style.pointerEvents = 'auto';
+                document.removeEventListener('mouseup', restore, true);
+                document.removeEventListener('dragend', restore, true);
+            };
+            document.addEventListener('mouseup', restore, true);
+            document.addEventListener('dragend', restore, true);
+            return;
+        }
+
+        // 否则保留点击选择能力：只有移动超过阈值再开启穿透，允许继续点选更多项
+        const startX = e.clientX;
+        const startY = e.clientY;
+        let dragging = false;
+        const DRAG_THRESHOLD = 4;
+        const onMove = (ev) => {
+            if (dragging) return;
+            const dx = Math.abs(ev.clientX - startX);
+            const dy = Math.abs(ev.clientY - startY);
+            if (dx > DRAG_THRESHOLD || dy > DRAG_THRESHOLD) {
+                dragging = true;
+                overlay.style.pointerEvents = 'none';
+            }
+        };
+        const restore = () => {
+            overlay.style.pointerEvents = 'auto';
+            document.removeEventListener('mousemove', onMove, true);
+            document.removeEventListener('mouseup', restore, true);
+            document.removeEventListener('dragend', restore, true);
+        };
+        document.addEventListener('mousemove', onMove, true);
+        document.addEventListener('mouseup', restore, true);
+        document.addEventListener('dragend', restore, true);
+    }, true);
+
     // 绑定点击事件 - 点击overlay上的位置，找到下面的书签元素
     overlay.addEventListener('click', (e) => {
         console.log('[Select模式] overlay点击事件:', e.target);
@@ -2034,7 +2090,16 @@ function showBatchContextMenu(e) {
     if (headerExitBtn) {
         headerExitBtn.addEventListener('click', (e) => {
             e.stopPropagation();
-            exitSelectMode();
+            try {
+                exitSelectMode();
+            } catch (_) {
+                // 兜底：显式关闭面板与蓝框并清空选择
+                try { selectMode = false; } catch(_) {}
+                try { hideBatchActionPanel(); } catch(_) {}
+                try { hideSelectModeOverlay(); } catch(_) {}
+                try { if (typeof deselectAll === 'function') deselectAll(); } catch(_) {}
+                try { updateBatchToolbar(); } catch(_) {}
+            }
             console.log('[批量菜单] 点击标题栏退出按钮');
         });
     }
@@ -2656,6 +2721,15 @@ function initBatchPanelDrag(panel) {
     header.style.cursor = 'grab';
     
     header.addEventListener('mousedown', (e) => {
+        // 避免与交互控件冲突：在按钮/链接/输入/退出按钮上按下不触发拖动
+        if (e.target && (e.target.closest('.batch-panel-exit-btn') ||
+                         e.target.closest('.context-menu-item') ||
+                         e.target.closest('button') ||
+                         e.target.closest('a') ||
+                         e.target.closest('input') ||
+                         e.target.closest('.resize-handle'))) {
+            return;
+        }
         isDragging = true;
         startX = e.clientX;
         startY = e.clientY;
@@ -3010,27 +3084,43 @@ function restoreBatchPanelState(panel, treeContainer) {
             
             console.log('[批量面板] 状态恢复完成');
         } else {
-            console.log('[批量面板] 没有保存的状态，使用默认纵向布局');
-            
-            // 首次显示，使用默认纵向布局设置
+            console.log('[批量面板] 没有保存的状态，锚定在栏目右侧');
+
+            // 首次显示：纵向布局，锚定树容器右侧
             panel.classList.remove('horizontal-batch-layout');
             panel.classList.add('vertical-batch-layout');
             batchPanelHorizontal = false;
-            
-            // 设置纵向布局的默认样式
+
+            // 基本尺寸
             panel.style.width = '280px';
             panel.style.height = 'auto';
             panel.style.minWidth = '200px';
             panel.style.maxWidth = '500px';
             panel.style.minHeight = '200px';
             panel.style.maxHeight = '80vh';
-            panel.style.left = 'auto';
-            panel.style.right = '20px';
             panel.style.transform = 'none';
-            panel.style.bottom = '80px';
-            panel.style.top = 'auto';
-            
-            console.log('[批量面板] 首次显示使用默认纵向布局');
+            panel.style.position = 'fixed';
+
+            // 计算位置：树容器右侧
+            const containerRect = (treeContainer && typeof treeContainer.getBoundingClientRect === 'function')
+                ? treeContainer.getBoundingClientRect()
+                : { top: 100, right: 260 };
+            const gap = 12;
+            const defaultWidth = 280;
+            const panelWidth = parseFloat(panel.style.width) || defaultWidth;
+            let left = containerRect.right + gap;
+            let top = Math.max(20, containerRect.top);
+            const maxLeft = window.innerWidth - panelWidth - 20;
+            const maxTop = window.innerHeight - 80; // 留出底部空间
+            left = Math.min(left, maxLeft);
+            top = Math.min(top, maxTop);
+
+            panel.style.left = `${left}px`;
+            panel.style.top = `${top}px`;
+            panel.style.right = 'auto';
+            panel.style.bottom = 'auto';
+
+            console.log('[批量面板] 首次定位', { left, top });
         }
     } catch (e) {
         console.error('[批量面板] 恢复状态失败:', e);

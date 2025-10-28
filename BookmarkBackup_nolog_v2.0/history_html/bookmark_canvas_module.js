@@ -72,6 +72,35 @@ let zoomSaveTimeout = null;
 let zoomUpdateFrame = null;
 let pendingZoomRequest = null;
 const scrollbarHoverState = new WeakMap();
+
+// 性能优化：滚动条更新去抖
+let scrollbarUpdateFrame = null;
+let scrollbarUpdatePending = false;
+let boundsUpdateFrame = null;
+let boundsUpdatePending = false;
+
+// 性能优化：滚动/缩放停止检测
+let scrollStopTimer = null;
+let isScrolling = false;
+const SCROLL_STOP_DELAY = 150; // 滚动停止后延迟加载时间
+
+// 性能优化：缓存 DOM 元素引用，避免重复查询
+let cachedCanvasContainer = null;
+let cachedCanvasContent = null;
+
+function getCachedContainer() {
+    if (!cachedCanvasContainer) {
+        cachedCanvasContainer = document.querySelector('.canvas-main-container');
+    }
+    return cachedCanvasContainer;
+}
+
+function getCachedContent() {
+    if (!cachedCanvasContent) {
+        cachedCanvasContent = document.getElementById('canvasContent');
+    }
+    return cachedCanvasContent;
+}
 const TEMP_SECTION_STORAGE_KEY = 'bookmark-canvas-temp-sections';
 const LEGACY_TEMP_NODE_STORAGE_KEY = 'bookmark-canvas-temp-nodes';
 const TEMP_SECTION_DEFAULT_WIDTH = 360;
@@ -521,6 +550,10 @@ function createTempFolder(sectionId, parentId, title) {
 function initCanvasView() {
     console.log('[Canvas] 初始化Obsidian风格的Canvas');
     
+    // 清除缓存的 DOM 引用（防止过期）
+    cachedCanvasContainer = null;
+    cachedCanvasContent = null;
+    
     // 显示缩放控制器
     const zoomIndicator = document.getElementById('canvasZoomIndicator');
     if (zoomIndicator) {
@@ -889,22 +922,27 @@ function setupCanvasZoomAndPan() {
     loadCanvasZoom();
     setupCanvasFullscreenControls();
     
-    // Ctrl + 滚轮缩放（以鼠标位置为中心）
+    // Ctrl + 滚轮缩放（以鼠标位置为中心）- 性能优化版本
     workspace.addEventListener('wheel', (e) => {
         if (e.ctrlKey || e.metaKey) {
             e.preventDefault();
+            
+            // 标记正在滚动
+            markScrolling();
             
             // 获取鼠标在viewport中的位置
             const rect = workspace.getBoundingClientRect();
             const mouseX = e.clientX - rect.left;
             const mouseY = e.clientY - rect.top;
             
-            // 计算新的缩放级别
+            // 计算新的缩放级别 - 优化：更平滑的缩放速度
             const delta = -e.deltaY;
-            const zoomSpeed = 0.001;
+            const zoomSpeed = 0.0008; // 降低缩放速度，更平滑
             const oldZoom = CanvasState.zoom;
             const newZoom = Math.max(0.1, Math.min(3, oldZoom + delta * zoomSpeed));
-            scheduleZoomUpdate(newZoom, mouseX, mouseY, { recomputeBounds: false, skipSave: false });
+            
+            // 使用优化的缩放更新，滚动时跳过边界计算
+            scheduleZoomUpdate(newZoom, mouseX, mouseY, { recomputeBounds: false, skipSave: false, skipScrollbarUpdate: true });
         } else if (shouldHandleCustomScroll(e)) {
             handleCanvasCustomScroll(e);
         }
@@ -979,7 +1017,8 @@ function setCanvasZoom(zoom, centerX = null, centerY = null, options = {}) {
     const {
         recomputeBounds = false,
         skipSave = false,
-        silent = false
+        silent = false,
+        skipScrollbarUpdate = false // 新增：跳过滚动条更新（滚动时使用）
     } = options;
     
     const oldZoom = CanvasState.zoom;
@@ -1000,13 +1039,20 @@ function setCanvasZoom(zoom, centerX = null, centerY = null, options = {}) {
     
     // 应用新的缩放
     CanvasState.zoom = zoom;
-    container.style.setProperty('--canvas-scale', zoom);
     
     // 调整平移偏移，使中心点保持在相同的视觉位置
     CanvasState.panOffsetX = centerX - canvasCenterX * zoom;
     CanvasState.panOffsetY = centerY - canvasCenterY * zoom;
-    updateCanvasScrollBounds({ initial: false, recomputeBounds });
-    savePanOffsetThrottled();
+    
+    // 优化：滚动时延迟更新边界
+    if (!skipScrollbarUpdate) {
+        container.style.setProperty('--canvas-scale', zoom);
+        updateCanvasScrollBounds({ initial: false, recomputeBounds });
+        savePanOffsetThrottled();
+    } else {
+        // 滚动时使用极速平移（直接 transform）
+        applyPanOffsetFast();
+    }
     
     // 更新显示
     const zoomValue = document.getElementById('zoomValue');
@@ -1025,20 +1071,119 @@ function setCanvasZoom(zoom, centerX = null, centerY = null, options = {}) {
 }
 
 function applyPanOffset() {
-    const container = document.querySelector('.canvas-main-container');
-    if (!container) return;
+    const container = getCachedContainer();
+    const content = getCachedContent();
+    if (!container || !content) return;
     
     CanvasState.panOffsetX = clampPan('horizontal', CanvasState.panOffsetX);
     CanvasState.panOffsetY = clampPan('vertical', CanvasState.panOffsetY);
     
-    container.style.setProperty('--canvas-pan-x', `${CanvasState.panOffsetX}px`);
-    container.style.setProperty('--canvas-pan-y', `${CanvasState.panOffsetY}px`);
-    updateScrollbarThumbs();
+    // 优化：滚动时使用 transform 直接操作，停止时才用 CSS 变量
+    if (isScrolling) {
+        const scale = CanvasState.zoom;
+        const translateX = CanvasState.panOffsetX / scale;
+        const translateY = CanvasState.panOffsetY / scale;
+        // 使用 translate3d 启用硬件加速
+        content.style.transform = `scale(${scale}) translate3d(${translateX}px, ${translateY}px, 0)`;
+    } else {
+        // 停止时使用 CSS 变量（兼容性）
+        container.style.setProperty('--canvas-pan-x', `${CanvasState.panOffsetX}px`);
+        container.style.setProperty('--canvas-pan-y', `${CanvasState.panOffsetY}px`);
+        content.style.transform = ''; // 清除直接 transform
+        
+        // 调度滚动条更新
+        scheduleScrollbarUpdate();
+    }
     
     if (!CanvasState.scrollAnimation.frameId) {
         CanvasState.scrollAnimation.targetX = CanvasState.panOffsetX;
         CanvasState.scrollAnimation.targetY = CanvasState.panOffsetY;
     }
+}
+
+// 性能优化：极速平移（使用 transform，完全跳过边界检查和滚动条）
+function applyPanOffsetFast() {
+    const content = getCachedContent();
+    if (!content) return;
+    
+    // 直接使用 transform，跳过 clampPan 和 CSS 变量
+    // transform 只触发合成，性能最优
+    const scale = CanvasState.zoom;
+    const translateX = CanvasState.panOffsetX / scale;
+    const translateY = CanvasState.panOffsetY / scale;
+    
+    // 使用 translate3d 启用硬件加速
+    content.style.transform = `scale(${scale}) translate3d(${translateX}px, ${translateY}px, 0)`;
+}
+
+// 性能优化：标记正在滚动
+function markScrolling() {
+    isScrolling = true;
+    
+    // 清除之前的停止计时器
+    if (scrollStopTimer) {
+        clearTimeout(scrollStopTimer);
+    }
+    
+    // 设置新的停止计时器
+    scrollStopTimer = setTimeout(() => {
+        isScrolling = false;
+        onScrollStop();
+    }, SCROLL_STOP_DELAY);
+}
+
+// 性能优化：滚动停止后的处理
+function onScrollStop() {
+    // 滚动停止后，恢复 CSS 变量模式
+    const container = getCachedContainer();
+    const content = getCachedContent();
+    
+    if (container && content) {
+        // 恢复使用 CSS 变量
+        container.style.setProperty('--canvas-scale', CanvasState.zoom);
+        container.style.setProperty('--canvas-pan-x', `${CanvasState.panOffsetX}px`);
+        container.style.setProperty('--canvas-pan-y', `${CanvasState.panOffsetY}px`);
+        content.style.transform = ''; // 清除直接 transform
+    }
+    
+    // 更新边界和滚动条
+    scheduleBoundsUpdate();
+    scheduleScrollbarUpdate();
+    savePanOffsetThrottled();
+}
+
+// 性能优化：调度滚动条更新（使用 RAF 去抖）
+function scheduleScrollbarUpdate() {
+    if (scrollbarUpdatePending) return;
+    
+    scrollbarUpdatePending = true;
+    
+    if (scrollbarUpdateFrame) {
+        cancelAnimationFrame(scrollbarUpdateFrame);
+    }
+    
+    scrollbarUpdateFrame = requestAnimationFrame(() => {
+        scrollbarUpdateFrame = null;
+        scrollbarUpdatePending = false;
+        updateScrollbarThumbs();
+    });
+}
+
+// 性能优化：调度边界更新（使用 RAF 去抖）
+function scheduleBoundsUpdate() {
+    if (boundsUpdatePending) return;
+    
+    boundsUpdatePending = true;
+    
+    if (boundsUpdateFrame) {
+        cancelAnimationFrame(boundsUpdateFrame);
+    }
+    
+    boundsUpdateFrame = requestAnimationFrame(() => {
+        boundsUpdateFrame = null;
+        boundsUpdatePending = false;
+        updateCanvasScrollBounds({ initial: false, recomputeBounds: true });
+    });
 }
 
 function loadCanvasZoom() {
@@ -1547,14 +1692,15 @@ function shouldHandleCustomScroll(event) {
 }
 
 function handleCanvasCustomScroll(event) {
-    let consumed = false;
-    
     const horizontalEnabled = !CanvasState.scrollState.horizontal.disabled;
     const verticalEnabled = !CanvasState.scrollState.vertical.disabled;
     
     if (!horizontalEnabled && !verticalEnabled) {
         return;
     }
+    
+    // 标记正在滚动
+    markScrolling();
     
     let horizontalDelta = event.deltaX;
     let verticalDelta = event.deltaY;
@@ -1564,28 +1710,33 @@ function handleCanvasCustomScroll(event) {
         verticalDelta = 0;
     }
     
-    if (horizontalEnabled && Math.abs(horizontalDelta) > 0.01) {
-        const targetX = CanvasState.panOffsetX - horizontalDelta * getScrollFactor('horizontal');
-        schedulePanTo(targetX, null);
-        consumed = true;
+    // 极简处理：直接更新，不做任何判断
+    let hasUpdate = false;
+    const scrollFactor = 1.0 / (CanvasState.zoom || 1); // 内联计算
+    
+    if (horizontalEnabled && horizontalDelta !== 0) {
+        CanvasState.panOffsetX -= horizontalDelta * scrollFactor;
+        hasUpdate = true;
     }
     
-    if (verticalEnabled && Math.abs(verticalDelta) > 0.01) {
-        const targetY = CanvasState.panOffsetY - verticalDelta * getScrollFactor('vertical');
-        schedulePanTo(null, targetY);
-        consumed = true;
+    if (verticalEnabled && verticalDelta !== 0) {
+        CanvasState.panOffsetY -= verticalDelta * scrollFactor;
+        hasUpdate = true;
     }
     
-    if (consumed) {
+    if (hasUpdate) {
+        // 直接应用，最快路径
+        applyPanOffsetFast();
         event.preventDefault();
     }
 }
 
 function getScrollFactor(axis) {
-    const zoom = Math.max(CanvasState.zoom || 1, 0.1);
-    const base = axis === 'vertical' ? 2.5 : 3.0;
-    const exponent = 0.55;
-    return base / Math.pow(zoom, exponent);
+    // 极简计算，提升性能
+    const zoom = CanvasState.zoom || 1;
+    // 直接线性缩放，避免 Math.pow 计算
+    const base = axis === 'vertical' ? 1.0 : 1.0;
+    return base / zoom;
 }
 
 function getScrollEaseFactor(axis) {
@@ -1633,7 +1784,8 @@ function runScrollAnimation() {
         }
     }
     
-    applyPanOffset();
+    // 优化：使用快速平移（不更新滚动条）
+    applyPanOffsetFast();
     
     if (continueAnimation) {
         CanvasState.scrollAnimation.frameId = requestAnimationFrame(runScrollAnimation);
@@ -1641,6 +1793,9 @@ function runScrollAnimation() {
         CanvasState.scrollAnimation.frameId = null;
         CanvasState.scrollAnimation.targetX = CanvasState.panOffsetX;
         CanvasState.scrollAnimation.targetY = CanvasState.panOffsetY;
+        
+        // 动画结束后更新滚动条
+        scheduleScrollbarUpdate();
         savePanOffsetThrottled();
     }
 }
@@ -1899,6 +2054,8 @@ function makePermanentSectionDraggable() {
     let initialLeft = 0;
     let initialTop = 0;
     let hasMoved = false;
+    let lastClientX = 0; // 记录最后的鼠标位置
+    let lastClientY = 0;
     
     const onMouseDown = (e) => {
         // 不要在关闭按钮、提示文本上触发拖动
@@ -1935,6 +2092,10 @@ function makePermanentSectionDraggable() {
     const onMouseMove = (e) => {
         if (!isDragging) return;
         
+        // 记录最后的鼠标位置
+        lastClientX = e.clientX;
+        lastClientY = e.clientY;
+        
         // 计算鼠标在屏幕上的移动距离
         const deltaX = e.clientX - startX;
         const deltaY = e.clientY - startY;
@@ -1952,9 +2113,8 @@ function makePermanentSectionDraggable() {
         const newX = initialLeft + scaledDeltaX;
         const newY = initialTop + scaledDeltaY;
         
-        // 直接更新位置，不使用requestAnimationFrame提高响应速度
-        permanentSection.style.left = newX + 'px';
-        permanentSection.style.top = newY + 'px';
+        // 使用 transform 替代 left/top 以提升性能
+        permanentSection.style.transform = `translate(${newX - initialLeft}px, ${newY - initialTop}px)`;
         
         // 阻止文本选择
         e.preventDefault();
@@ -1966,10 +2126,22 @@ function makePermanentSectionDraggable() {
             permanentSection.classList.remove('dragging');
             
             if (hasMoved) {
+                // 应用最终位置（从 transform 转回 left/top）
+                const deltaX = lastClientX - startX;
+                const deltaY = lastClientY - startY;
+                const scaledDeltaX = deltaX / CanvasState.zoom;
+                const scaledDeltaY = deltaY / CanvasState.zoom;
+                const finalX = initialLeft + scaledDeltaX;
+                const finalY = initialTop + scaledDeltaY;
+                
+                permanentSection.style.transform = 'none';
+                permanentSection.style.left = finalX + 'px';
+                permanentSection.style.top = finalY + 'px';
+                
                 // 保存位置
                 savePermanentSectionPosition();
-                updateCanvasScrollBounds();
-                updateScrollbarThumbs();
+                scheduleBoundsUpdate();
+                scheduleScrollbarUpdate();
             }
             
             hasMoved = false;
@@ -3144,6 +3316,9 @@ function makeNodeDraggable(element, section) {
     const header = element.querySelector('.temp-node-header');
     if (!header) return;
     
+    let lastClientX = 0;
+    let lastClientY = 0;
+    
     const onMouseDown = (e) => {
         const target = e.target;
         if (!target) return;
@@ -3152,6 +3327,9 @@ function makeNodeDraggable(element, section) {
             (target.classList.contains('temp-node-title') && target.classList.contains('editing'))) {
             return;
         }
+        
+        lastClientX = e.clientX;
+        lastClientY = e.clientY;
         
         CanvasState.dragState.isDragging = true;
         CanvasState.dragState.draggedElement = element;
@@ -3178,8 +3356,8 @@ function removeTempNode(sectionId) {
     
     CanvasState.tempSections = CanvasState.tempSections.filter(section => section.id !== sectionId);
     saveTempNodes();
-    updateCanvasScrollBounds();
-    updateScrollbarThumbs();
+    scheduleBoundsUpdate();
+    scheduleScrollbarUpdate();
 }
 
 function clearAllTempNodes() {
@@ -3324,7 +3502,7 @@ async function addToPermanentBookmarks(payload, parentIdOverride = null) {
 // =============================================================================
 
 function setupCanvasEventListeners() {
-    // 鼠标移动 - 拖动节点
+    // 鼠标移动 - 拖动节点（性能优化版）
     document.addEventListener('mousemove', (e) => {
         if (CanvasState.dragState.isDragging && CanvasState.dragState.draggedElement && CanvasState.dragState.dragSource === 'temp-node') {
             // 计算鼠标在屏幕上的移动距离
@@ -3338,11 +3516,10 @@ function setupCanvasEventListeners() {
             const newX = CanvasState.dragState.nodeStartX + scaledDeltaX;
             const newY = CanvasState.dragState.nodeStartY + scaledDeltaY;
             
-            // 直接更新DOM，提高响应速度
-            CanvasState.dragState.draggedElement.style.left = newX + 'px';
-            CanvasState.dragState.draggedElement.style.top = newY + 'px';
+            // 使用 transform 替代 left/top 提升性能
+            CanvasState.dragState.draggedElement.style.transform = `translate(${scaledDeltaX}px, ${scaledDeltaY}px)`;
             
-            // 更新节点数据
+            // 更新节点数据（实际位置）
             const nodeId = CanvasState.dragState.draggedElement.id;
             const section = CanvasState.tempSections.find(n => n.id === nodeId);
             if (section) {
@@ -3358,12 +3535,24 @@ function setupCanvasEventListeners() {
     // 鼠标释放
     document.addEventListener('mouseup', () => {
         if (CanvasState.dragState.isDragging && CanvasState.dragState.draggedElement) {
-            CanvasState.dragState.draggedElement.classList.remove('dragging');
+            const element = CanvasState.dragState.draggedElement;
+            element.classList.remove('dragging');
+            
+            // 应用最终位置（从 transform 转回 left/top）
+            const nodeId = element.id;
+            const section = CanvasState.tempSections.find(n => n.id === nodeId);
+            if (section) {
+                element.style.transform = 'none';
+                element.style.left = section.x + 'px';
+                element.style.top = section.y + 'px';
+            }
+            
             CanvasState.dragState.isDragging = false;
             CanvasState.dragState.draggedElement = null;
+            
             saveTempNodes();
-            updateCanvasScrollBounds();
-            updateScrollbarThumbs();
+            scheduleBoundsUpdate();
+            scheduleScrollbarUpdate();
         }
     }, false);
     

@@ -40,6 +40,11 @@
     transform-origin: left top;
     position: relative;
     will-change: transform;
+    /* 强制硬件加速 */
+    backface-visibility: hidden;
+    -webkit-backface-visibility: hidden;
+    perspective: 1000px;
+    -webkit-perspective: 1000px;
 }
 
 .canvas-workspace.space-pressed {

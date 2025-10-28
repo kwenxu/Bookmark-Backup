@@ -4544,20 +4544,20 @@ a.tree-label.tree-bookmark-link:hover {
     display: none;
 }
 
-/* 拖拽预览 */
+/* 拖拽预览 - 简洁样式，避免显示过大 */
 .drag-preview {
     position: fixed;
     pointer-events: none;
     z-index: 10000;
-    opacity: 0.8;
+    opacity: 0.85;
     background: var(--bg-elevated);
-    border: 2px solid var(--accent-primary);
-    border-radius: 6px;
-    padding: 8px 12px;
-    box-shadow: var(--shadow-lg);
+    border: 1px solid var(--accent-primary);
+    border-radius: 4px;
+    padding: 4px 8px;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
     color: var(--text-primary);
-    font-size: 13px;
-    max-width: 200px;
+    font-size: 12px;
+    max-width: 150px;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;

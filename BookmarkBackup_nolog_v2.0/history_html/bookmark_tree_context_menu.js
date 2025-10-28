@@ -11,6 +11,304 @@ let selectedNodeMeta = new Map(); // 节点元信息：nodeId -> { treeType, sec
 let lastClickedNode = null; // 上次点击的节点（用于Shift选择）
 let selectMode = false; // 是否处于Select模式
 
+const BATCH_PANEL_STATE_MAP_KEY = 'batchPanelStateMap';
+const BATCH_PANEL_LEGACY_KEY = 'batchPanelState';
+const PERMANENT_SECTION_ANCHOR_ID = 'permanent-root';
+let currentBatchPanelAnchorInfo = null; // 当前批量面板定位信息
+let lastBatchSelectionInfo = null; // 最近一次选择所属栏目
+
+function clampValue(value, min, max) {
+    if (!Number.isFinite(value)) return min;
+    if (min > max) return min;
+    return Math.min(Math.max(value, min), max);
+}
+
+function getCurrentBatchPanelZoom() {
+    let zoom = 1;
+    try {
+        if (typeof CanvasState !== 'undefined' && CanvasState && typeof CanvasState.zoom === 'number' && CanvasState.zoom > 0) {
+            zoom = CanvasState.zoom;
+        } else {
+            const container = document.querySelector('.canvas-main-container');
+            if (container) {
+                const inlineZoom = parseFloat(container.style.getPropertyValue('--canvas-scale'));
+                if (Number.isFinite(inlineZoom) && inlineZoom > 0) {
+                    zoom = inlineZoom;
+                } else {
+                    const computed = getComputedStyle(container).getPropertyValue('--canvas-scale');
+                    const computedZoom = parseFloat(computed);
+                    if (Number.isFinite(computedZoom) && computedZoom > 0) {
+                        zoom = computedZoom;
+                    }
+                }
+            }
+        }
+    } catch (err) {
+        console.warn('[批量面板] 读取缩放比例失败:', err);
+    }
+    return clampValue(zoom, 0.2, 3);
+}
+
+function computeBatchPanelSizing(anchorRect, zoom, viewportWidth, viewportHeight, margin) {
+    const normalizedZoom = clampValue(zoom, 0.25, 2.5);
+    const safeViewportWidth = Math.max(viewportWidth || 1280, 320);
+    const safeViewportHeight = Math.max(viewportHeight || 720, 320);
+    const baseMinWidth = 240;
+    const baseMaxWidth = 640;
+    const baseMinHeight = 200;
+    const baseMaxHeight = safeViewportHeight - margin * 2;
+    const baseDefaultWidth = 280;
+    const baseDefaultHeight = 360;
+
+    const minWidth = clampValue(baseMinWidth * normalizedZoom, 140, safeViewportWidth - margin * 2);
+    const maxWidth = clampValue(baseMaxWidth * normalizedZoom, Math.max(minWidth + 1, 200), safeViewportWidth - margin * 2);
+    const minHeight = clampValue(baseMinHeight * normalizedZoom, 140, baseMaxHeight);
+    const maxHeight = clampValue(baseMaxHeight, Math.max(minHeight + 1, 140), safeViewportHeight - margin);
+
+    const widthFromAnchor = anchorRect ? anchorRect.width * 0.52 : baseDefaultWidth * normalizedZoom;
+    const heightFromAnchor = anchorRect ? Math.max(anchorRect.height - 48, baseMinHeight * 0.75) : baseDefaultHeight * normalizedZoom;
+
+    const defaultWidth = clampValue(widthFromAnchor, minWidth, maxWidth);
+    const defaultHeight = clampValue(heightFromAnchor, minHeight, maxHeight);
+    const gap = Math.max(8, 12 * normalizedZoom);
+
+    return {
+        minWidth,
+        maxWidth,
+        minHeight,
+        maxHeight,
+        defaultWidth,
+        defaultHeight,
+        gap,
+        normalizedZoom
+    };
+}
+
+function applyBatchPanelTransform(panel, options = {}) {
+    if (!panel) return;
+    const baseTransform = options.baseTransform !== undefined
+        ? (options.baseTransform || 'none')
+        : (panel.dataset.baseTransform || 'none');
+    panel.dataset.baseTransform = baseTransform;
+    panel.style.transformOrigin = 'top left';
+    panel.style.transform = baseTransform && baseTransform !== 'none' ? baseTransform : 'none';
+}
+
+function fitBatchPanelToContent(panel, options = {}) {
+    if (!panel) return;
+    const delay = options.delay || 0;
+    const margin = options.margin || 16;
+    const retries = options.retries !== undefined ? options.retries : 2;
+    const attemptFit = () => {
+        const content = panel.querySelector('.batch-panel-content');
+        if (!content) return;
+        const viewportWidth = window.innerWidth || 1920;
+        const viewportHeight = window.innerHeight || 1080;
+        const panelRect = panel.getBoundingClientRect();
+        const contentRect = content.getBoundingClientRect();
+        const widthPadding = panelRect.width - contentRect.width;
+        const heightPadding = panelRect.height - contentRect.height;
+        let desiredWidth = panelRect.width;
+        let desiredHeight = panelRect.height;
+
+        if (content.scrollWidth > content.clientWidth + 1) {
+            desiredWidth = Math.min(content.scrollWidth + widthPadding, viewportWidth - margin * 2);
+        }
+        if (content.scrollHeight > content.clientHeight + 1) {
+            desiredHeight = Math.min(content.scrollHeight + heightPadding, viewportHeight - margin * 2);
+        }
+
+        const minWidth = parseFloat(panel.style.minWidth) || 200;
+        const maxWidth = parseFloat(panel.style.maxWidth) || (viewportWidth - margin * 2);
+        const minHeight = parseFloat(panel.style.minHeight) || 200;
+        const maxHeight = parseFloat(panel.style.maxHeight) || (viewportHeight - margin * 2);
+
+        desiredWidth = Math.max(minWidth, Math.min(maxWidth, desiredWidth));
+        desiredHeight = Math.max(minHeight, Math.min(maxHeight, desiredHeight));
+
+        if (Math.abs(desiredWidth - panelRect.width) > 1) {
+            panel.style.width = `${desiredWidth.toFixed(2)}px`;
+        }
+        if (Math.abs(desiredHeight - panelRect.height) > 1) {
+            panel.style.height = `${desiredHeight.toFixed(2)}px`;
+        }
+
+        const updatedRect = panel.getBoundingClientRect();
+        let left = updatedRect.left;
+        let top = updatedRect.top;
+        if (updatedRect.right > viewportWidth - margin) {
+            left = Math.max(margin, viewportWidth - margin - updatedRect.width);
+        }
+        if (updatedRect.left < margin) {
+            left = margin;
+        }
+        if (updatedRect.bottom > viewportHeight - margin) {
+            top = Math.max(margin, viewportHeight - margin - updatedRect.height);
+        }
+        if (updatedRect.top < margin) {
+            top = margin;
+        }
+        if (left !== updatedRect.left) {
+            panel.style.left = `${left}px`;
+            panel.style.right = 'auto';
+        }
+        if (top !== updatedRect.top) {
+            panel.style.top = `${top}px`;
+            panel.style.bottom = 'auto';
+        }
+        if (retries > 0) {
+            setTimeout(() => fitBatchPanelToContent(panel, {
+                delay: 0,
+                margin,
+                retries: retries - 1
+            }), 60);
+        }
+    };
+
+    if (delay > 0) {
+        setTimeout(attemptFit, delay);
+    } else {
+        requestAnimationFrame(attemptFit);
+    }
+}
+
+function getBatchPanelAnchorKey(info) {
+    if (!info) return 'global';
+    const type = info.treeType || 'permanent';
+    const sectionId = info.sectionId || (type === 'permanent' ? PERMANENT_SECTION_ANCHOR_ID : 'global');
+    return `${type}:${sectionId}`;
+}
+
+function findBatchPanelColumnElement(treeType, sectionId) {
+    if (treeType === 'temporary' && sectionId) {
+        return document.getElementById(sectionId) ||
+               document.querySelector(`.temp-canvas-node[data-section-id="${sectionId}"]`) ||
+               document.querySelector(`.bookmark-tree[data-section-id="${sectionId}"][data-tree-type="temporary"]`);
+    }
+    if (treeType === 'permanent') {
+        return document.querySelector('.permanent-bookmark-section') ||
+               document.getElementById('bookmarkTree')?.closest('.permanent-bookmark-section') ||
+               document.getElementById('bookmarkTree');
+    }
+    return document.getElementById('bookmarkTree') ||
+           document.querySelector('.bookmark-tree');
+}
+
+function getBatchPanelAnchorInfoFromElement(element) {
+    if (!element) return null;
+
+    const tempColumn = element.closest('.temp-canvas-node[data-section-id]');
+    if (tempColumn) {
+        return {
+            treeType: 'temporary',
+            sectionId: tempColumn.dataset.sectionId,
+            element: tempColumn
+        };
+    }
+
+    const tempTree = element.closest('.bookmark-tree[data-tree-type="temporary"][data-section-id]');
+    if (tempTree) {
+        const column = tempTree.closest('.temp-canvas-node[data-section-id]') || tempTree;
+        return {
+            treeType: 'temporary',
+            sectionId: tempTree.dataset.sectionId,
+            element: column
+        };
+    }
+
+    const permanentColumn = element.closest('.permanent-bookmark-section');
+    if (permanentColumn) {
+        return {
+            treeType: 'permanent',
+            sectionId: PERMANENT_SECTION_ANCHOR_ID,
+            element: permanentColumn
+        };
+    }
+
+    const permanentTree = element.closest('#bookmarkTree, .bookmark-tree[data-tree-type="permanent"]');
+    if (permanentTree) {
+        const column = permanentTree.closest('.permanent-bookmark-section') || permanentTree;
+        return {
+            treeType: 'permanent',
+            sectionId: PERMANENT_SECTION_ANCHOR_ID,
+            element: column
+        };
+    }
+
+    return null;
+}
+
+function getBatchPanelAnchorInfoFromSelection() {
+    if (lastClickedNode) {
+        const clickedElement = document.querySelector(`.tree-item[data-node-id="${lastClickedNode}"]`);
+        const info = getBatchPanelAnchorInfoFromElement(clickedElement);
+        if (info) return info;
+    }
+
+    if (lastBatchSelectionInfo) {
+        const element = findBatchPanelColumnElement(lastBatchSelectionInfo.treeType, lastBatchSelectionInfo.sectionId);
+        if (element) {
+            return {
+                treeType: lastBatchSelectionInfo.treeType,
+                sectionId: lastBatchSelectionInfo.sectionId,
+                element
+            };
+        }
+    }
+
+    const firstSelectedEntry = selectedNodes.values().next();
+    if (!firstSelectedEntry.done) {
+        const firstSelectedId = firstSelectedEntry.value;
+        const nodeElement = document.querySelector(`.tree-item[data-node-id="${firstSelectedId}"]`);
+        const info = getBatchPanelAnchorInfoFromElement(nodeElement);
+        if (info) return info;
+    }
+
+    const permanentColumn = findBatchPanelColumnElement('permanent', PERMANENT_SECTION_ANCHOR_ID);
+    if (permanentColumn) {
+        return {
+            treeType: 'permanent',
+            sectionId: PERMANENT_SECTION_ANCHOR_ID,
+            element: permanentColumn
+        };
+    }
+    return null;
+}
+
+function resolveBatchPanelAnchorInfo(event) {
+    let info = null;
+    if (event && event.target) {
+        info = getBatchPanelAnchorInfoFromElement(event.target);
+    }
+
+    if (!info && event && typeof event.clientX === 'number' && typeof event.clientY === 'number') {
+        const elementBelow = document.elementFromPoint(event.clientX, event.clientY);
+        info = getBatchPanelAnchorInfoFromElement(elementBelow);
+    }
+
+    if (!info) {
+        info = getBatchPanelAnchorInfoFromSelection();
+    }
+
+    if (info && !info.element) {
+        info.element = findBatchPanelColumnElement(info.treeType, info.sectionId);
+    }
+
+    return info;
+}
+
+function rememberBatchSelection(nodeElement) {
+    if (!nodeElement) return;
+    const treeType = nodeElement.dataset.treeType || 'permanent';
+    const sectionId = treeType === 'temporary'
+        ? (nodeElement.dataset.sectionId || null)
+        : PERMANENT_SECTION_ANCHOR_ID;
+    lastBatchSelectionInfo = {
+        treeType,
+        sectionId
+    };
+}
+
 // 初始化右键菜单
 function initContextMenu() {
     // 创建菜单容器
@@ -1465,6 +1763,9 @@ function toggleNodeSelection(nodeId, nodeElement) {
         selectedNodes.delete(nodeId);
         selectedNodeMeta.delete(nodeId);
         if (nodeElement) nodeElement.classList.remove('selected');
+        if (selectedNodes.size === 0) {
+            lastBatchSelectionInfo = null;
+        }
     } else {
         selectedNodes.add(nodeId);
         if (nodeElement) {
@@ -1473,6 +1774,7 @@ function toggleNodeSelection(nodeId, nodeElement) {
                 treeType: nodeElement.dataset.treeType || 'permanent',
                 sectionId: nodeElement.dataset.sectionId || null
             });
+            rememberBatchSelection(nodeElement);
         } else {
             selectedNodeMeta.delete(nodeId);
         }
@@ -1504,6 +1806,8 @@ function selectRange(startNodeId, endNodeId) {
         node.classList.add('selected');
     }
     
+    rememberBatchSelection(allNodes[end]);
+    
     console.log('[多选] 范围选择:', selectedNodes.size, '个');
 }
 
@@ -1518,6 +1822,9 @@ function selectAll() {
         node.classList.add('selected');
     });
     
+    const firstNode = document.querySelector('.tree-item[data-node-id]');
+    rememberBatchSelection(firstNode);
+    
     console.log('[多选] 全选:', selectedNodes.size, '个');
 }
 
@@ -1528,6 +1835,7 @@ function deselectAll() {
     });
     selectedNodes.clear();
     selectedNodeMeta.clear();
+    lastBatchSelectionInfo = null;
     
     console.log('[多选] 已取消全选');
 }
@@ -1969,12 +2277,34 @@ function showBatchContextMenu(e) {
     
     console.log('[批量菜单] 显示固定面板');
     
+    let anchorInfo = resolveBatchPanelAnchorInfo(e);
+    if (!anchorInfo) {
+        anchorInfo = {
+            treeType: 'permanent',
+            sectionId: PERMANENT_SECTION_ANCHOR_ID,
+            element: findBatchPanelColumnElement('permanent', PERMANENT_SECTION_ANCHOR_ID)
+        };
+    }
+    currentBatchPanelAnchorInfo = anchorInfo;
+    const anchorKey = getBatchPanelAnchorKey(anchorInfo);
+    
     // 检查是否已存在批量面板
     let batchPanel = document.getElementById('batch-action-panel');
     if (batchPanel) {
         // 如果已存在，只需确保显示
         batchPanel.style.display = 'block';
-        console.log('[批量菜单] 面板已存在，直接显示');
+        if (batchPanel.parentNode !== document.body) {
+            document.body.appendChild(batchPanel);
+        }
+        batchPanel.dataset.anchorKey = anchorKey;
+        batchPanel.dataset.treeType = anchorInfo.treeType || 'permanent';
+        if (anchorInfo.sectionId) {
+            batchPanel.dataset.sectionId = anchorInfo.sectionId;
+        } else {
+            delete batchPanel.dataset.sectionId;
+        }
+        restoreBatchPanelState(batchPanel, anchorInfo);
+        console.log('[批量菜单] 面板已存在，直接显示并更新定位');
         return;
     }
     
@@ -1982,6 +2312,11 @@ function showBatchContextMenu(e) {
     batchPanel = document.createElement('div');
     batchPanel.id = 'batch-action-panel';
     batchPanel.className = 'batch-action-panel vertical-batch-layout'; // 默认纵向布局
+    batchPanel.dataset.anchorKey = anchorKey;
+    batchPanel.dataset.treeType = anchorInfo.treeType || 'permanent';
+    if (anchorInfo.sectionId) {
+        batchPanel.dataset.sectionId = anchorInfo.sectionId;
+    }
     
     const lang = currentLang || 'zh_CN';
     
@@ -2113,25 +2448,14 @@ function showBatchContextMenu(e) {
     // 添加窗口大小变化监听器（用于横向布局自适应）
     initBatchPanelWindowResize(batchPanel);
     
-    // 将面板添加到书签树容器
-    const treeContainer = document.getElementById('bookmarkTree') || 
-                         document.querySelector('.bookmark-tree') || 
-                         document.querySelector('.tree-view-container');
-    
-    if (treeContainer) {
-        treeContainer.style.position = 'relative';
-        treeContainer.appendChild(batchPanel);
-        console.log('[批量菜单] 固定面板已添加到树容器');
-    } else {
+    // 始终挂载到 body，避免祖先 transform 影响定位
+    if (batchPanel.parentNode !== document.body) {
         document.body.appendChild(batchPanel);
         console.log('[批量菜单] 固定面板已添加到body');
     }
     
-    // 恢复保存的位置和大小，或设置初始居中位置
-    const treeContainerForPosition = document.getElementById('bookmarkTree') || 
-                                      document.querySelector('.bookmark-tree') || 
-                                      document.querySelector('.tree-view-container');
-    restoreBatchPanelState(batchPanel, treeContainerForPosition);
+    // 恢复保存的位置和大小，或设置初始定位
+    restoreBatchPanelState(batchPanel, anchorInfo);
 }
 
 // ==================== 批量操作功能 ====================
@@ -2149,6 +2473,9 @@ function toggleSelectItem(nodeId) {
         selectedNodeMeta.delete(nodeId);
         nodeElement.classList.remove('selected');
         console.log('[批量] 取消选中:', nodeId);
+        if (selectedNodes.size === 0) {
+            lastBatchSelectionInfo = null;
+        }
     } else {
         selectedNodes.add(nodeId);
         selectedNodeMeta.set(nodeId, {
@@ -2156,6 +2483,7 @@ function toggleSelectItem(nodeId) {
             sectionId: nodeElement.dataset.sectionId || null
         });
         nodeElement.classList.add('selected');
+        rememberBatchSelection(nodeElement);
         console.log('[批量] 选中:', nodeId);
     }
     
@@ -2714,67 +3042,112 @@ function initBatchPanelDrag(panel) {
     const header = panel.querySelector('#batch-panel-header');
     if (!header) return;
     
-    let isDragging = false;
-    let startX, startY, startLeft, startTop;
+    let dragState = null;
+    let rafId = null;
     
-    // 整个标题栏都可拖动
+    const shouldIgnoreTarget = (target) => {
+        if (!target) return false;
+        return target.closest('.batch-panel-exit-btn') ||
+               target.closest('.context-menu-item') ||
+               target.closest('button') ||
+               target.closest('a') ||
+               target.closest('input') ||
+               target.closest('.resize-handle');
+    };
+    
+    const clamp = (value, min, max) => Math.min(Math.max(value, min), max);
+    
     header.style.cursor = 'grab';
+    header.style.touchAction = 'none';
     
-    header.addEventListener('mousedown', (e) => {
-        // 避免与交互控件冲突：在按钮/链接/输入/退出按钮上按下不触发拖动
-        if (e.target && (e.target.closest('.batch-panel-exit-btn') ||
-                         e.target.closest('.context-menu-item') ||
-                         e.target.closest('button') ||
-                         e.target.closest('a') ||
-                         e.target.closest('input') ||
-                         e.target.closest('.resize-handle'))) {
-            return;
-        }
-        isDragging = true;
-        startX = e.clientX;
-        startY = e.clientY;
-        
-        // 获取当前实际位置
-        const rect = panel.getBoundingClientRect();
-        startLeft = rect.left;
-        startTop = rect.top;
-        
-        // 立即清除transform并设置固定位置，防止拖动时跳变
-        panel.style.transform = 'none';
-        panel.style.left = startLeft + 'px';
-        panel.style.top = startTop + 'px';
-        panel.style.bottom = 'auto';
+    const applyDragPosition = () => {
+        if (!dragState) return;
+        rafId = null;
+        const viewportWidth = window.innerWidth;
+        const viewportHeight = window.innerHeight;
+        const panelWidth = panel.offsetWidth || 280;
+        const panelHeight = panel.offsetHeight || 200;
+        const margin = 8;
+        const maxLeft = viewportWidth - panelWidth - margin;
+        const maxTop = viewportHeight - panelHeight - margin;
+        const newLeft = clamp(dragState.pendingLeft, margin, Math.max(margin, maxLeft));
+        const newTop = clamp(dragState.pendingTop, margin, Math.max(margin, maxTop));
+        panel.style.left = `${newLeft}px`;
+        panel.style.top = `${newTop}px`;
         panel.style.right = 'auto';
-        
-        // 改变光标样式
+        panel.style.bottom = 'auto';
+    };
+    
+    const scheduleUpdate = () => {
+        if (rafId !== null) return;
+        rafId = requestAnimationFrame(applyDragPosition);
+    };
+    
+    const finishDrag = () => {
+        if (!dragState) return;
+        try {
+            header.releasePointerCapture(dragState.pointerId);
+        } catch (_) {
+            // ignore
+        }
+        header.style.cursor = 'grab';
+        if (dragState.previousBaseTransform !== undefined) {
+            applyBatchPanelTransform(panel, { baseTransform: dragState.previousBaseTransform });
+        }
+        panel.dataset.manualPosition = 'true';
+        saveBatchPanelState(panel, currentBatchPanelAnchorInfo);
+        dragState = null;
+        if (rafId !== null) {
+            cancelAnimationFrame(rafId);
+            rafId = null;
+        }
+        console.log('[批量面板] 拖动完成');
+    };
+    
+    header.addEventListener('pointerdown', (e) => {
+        if (shouldIgnoreTarget(e.target)) return;
+        const rect = panel.getBoundingClientRect();
+        dragState = {
+            pointerId: e.pointerId,
+            offsetX: e.clientX - rect.left,
+            offsetY: e.clientY - rect.top,
+            pendingLeft: rect.left,
+            pendingTop: rect.top,
+            previousBaseTransform: panel.dataset.baseTransform || 'none'
+        };
+        applyBatchPanelTransform(panel, { baseTransform: 'none' });
+        panel.style.left = `${rect.left}px`;
+        panel.style.top = `${rect.top}px`;
+        panel.style.right = 'auto';
+        panel.style.bottom = 'auto';
+
+        try {
+            header.setPointerCapture(e.pointerId);
+        } catch (_) {
+            // ignore capture failures
+        }
+
         header.style.cursor = 'grabbing';
-        
-        // 防止文字选中
+        applyDragPosition();
         e.preventDefault();
-        
         console.log('[批量面板] 开始拖动');
     });
     
-    document.addEventListener('mousemove', (e) => {
-        if (!isDragging) return;
-        
-        const deltaX = e.clientX - startX;
-        const deltaY = e.clientY - startY;
-        
-        panel.style.left = (startLeft + deltaX) + 'px';
-        panel.style.top = (startTop + deltaY) + 'px';
-        panel.style.right = 'auto'; // 取消右侧固定
+    header.addEventListener('pointermove', (e) => {
+        if (!dragState || e.pointerId !== dragState.pointerId) return;
+        dragState.pendingLeft = e.clientX - dragState.offsetX;
+        dragState.pendingTop = e.clientY - dragState.offsetY;
+        scheduleUpdate();
     });
     
-    document.addEventListener('mouseup', () => {
-        if (isDragging) {
-            isDragging = false;
-            header.style.cursor = 'grab';
-            // 保存位置
-            saveBatchPanelState(panel);
-            console.log('[批量面板] 拖动完成');
-        }
-    });
+    const onPointerUp = (e) => {
+        if (!dragState || e.pointerId !== dragState.pointerId) return;
+        finishDrag();
+    };
+    
+    header.addEventListener('pointerup', onPointerUp);
+    header.addEventListener('pointercancel', onPointerUp);
+    window.addEventListener('pointerup', onPointerUp);
     
     console.log('[批量面板] 拖拽移动功能已初始化');
 }
@@ -2832,12 +3205,11 @@ function initBatchPanelResize(panel) {
         
         const deltaX = e.clientX - startX;
         const deltaY = e.clientY - startY;
-        
         const isVertical = panel.classList.contains('vertical-batch-layout');
         const minWidth = isVertical ? 200 : 800;
-        const maxWidth = isVertical ? 500 : 2000;
-        const minHeight = isVertical ? 200 : 10; // 横向布局最小高度10px，真正极限
-        const maxHeight = window.innerHeight * 0.8;
+        const maxWidth = isVertical ? 500 : Math.min((window.innerWidth || 1920) * 0.95, 2000);
+        const minHeight = isVertical ? 200 : 10;
+        const maxHeight = (window.innerHeight || 1080) * 0.8;
         
         let newWidth = startWidth;
         let newHeight = startHeight;
@@ -2881,7 +3253,6 @@ function initBatchPanelResize(panel) {
     document.addEventListener('mouseup', () => {
         if (isResizing) {
             isResizing = false;
-            
             // 最终确认布局类型
             const isVertical = panel.classList.contains('vertical-batch-layout');
             if (!isVertical) {
@@ -2911,18 +3282,14 @@ function initBatchPanelWindowResize(panel) {
             // 只在横向布局时自动调整宽度
             if (batchPanel.classList.contains('horizontal-batch-layout')) {
                 const viewportWidth = window.innerWidth;
-                const currentWidth = parseFloat(batchPanel.style.width) || 1000;
                 const maxPanelWidth = Math.min(viewportWidth * 0.95, 2000);
-                
-                // 如果当前宽度超过了新的最大宽度，自动调整
+                const currentWidth = parseFloat(batchPanel.style.width) || 1000;
                 if (currentWidth > maxPanelWidth) {
                     batchPanel.style.width = `${maxPanelWidth}px`;
                     console.log('[批量面板] 窗口缩小，自动调整宽度:', maxPanelWidth);
                 }
-                
-                // 确保面板仍然居中
                 batchPanel.style.left = '50%';
-                batchPanel.style.transform = 'translateX(-50%)';
+                applyBatchPanelTransform(batchPanel, { baseTransform: 'translateX(-50%)' });
             }
         }, 200); // 防抖延迟200ms
     });
@@ -2944,29 +3311,32 @@ function toggleBatchPanelLayout() {
         
         // 根据当前窗口大小计算合适的宽度
         const viewportWidth = window.innerWidth;
-        const maxPanelWidth = Math.min(viewportWidth * 0.95, 2000); // 最大不超过窗口95%或2000px
-        const defaultWidth = Math.min(1000, maxPanelWidth); // 默认1000px或更小
+        const viewportHeight = window.innerHeight;
+        const maxPanelWidthScreen = Math.min(viewportWidth * 0.95, 2000);
+        const defaultWidthScreen = Math.min(1000, maxPanelWidthScreen);
         
         // 恢复横向布局的默认样式
-        batchPanel.style.width = `${defaultWidth}px`;
+        batchPanel.style.width = `${defaultWidthScreen}px`;
         batchPanel.style.height = 'auto'; // 初始高度自适应，之后可无极调整
         batchPanel.style.minWidth = '800px';
-        batchPanel.style.maxWidth = '95vw';
-        batchPanel.style.minHeight = '10px'; // 真正的极限压缩，最小10px
-        batchPanel.style.maxHeight = '80vh';
+        batchPanel.style.maxWidth = `${maxPanelWidthScreen}px`;
+        batchPanel.style.minHeight = '10px';
+        batchPanel.style.maxHeight = `${(viewportHeight || 1080) * 0.8}px`;
         batchPanel.style.left = '50%';
         batchPanel.style.right = 'auto';
-        batchPanel.style.transform = 'translateX(-50%)';
         batchPanel.style.bottom = '80px';
         batchPanel.style.top = 'auto';
-        
-        console.log('[批量面板] 横向布局宽度自适应:', { viewportWidth, defaultWidth, maxPanelWidth });
-        
+        applyBatchPanelTransform(batchPanel, { baseTransform: 'translateX(-50%)' });
+
+        console.log('[批量面板] 横向布局宽度自适应:', { viewportWidth, defaultWidth: defaultWidthScreen, maxPanelWidth: maxPanelWidthScreen });
+
         // 延迟检查高度并设置tall-layout类
         setTimeout(() => {
-            const currentHeight = batchPanel.offsetHeight;
+            const currentHeight = batchPanel.offsetHeight || 0;
             updateTallLayoutClass(batchPanel, currentHeight);
+            fitBatchPanelToContent(batchPanel, { delay: 0, retries: 2 });
         }, 50);
+        fitBatchPanelToContent(batchPanel, { delay: 0, retries: 2 });
         
         console.log('[批量面板] 切换到横向布局');
         // 更新按钮文字
@@ -2981,18 +3351,25 @@ function toggleBatchPanelLayout() {
         batchPanel.classList.remove('tall-layout'); // 纵向布局不需要tall-layout
         
         // 设置纵向布局的默认样式
-        batchPanel.style.width = '280px';
+        const viewportHeight = window.innerHeight;
+        const viewportWidth = window.innerWidth || 1920;
+        const margin = 16;
+        const availableWidth = Math.max(200, viewportWidth - margin * 2);
+        const minWidthPx = Math.max(240, Math.min(320, availableWidth));
+        const maxWidthPx = Math.max(minWidthPx, Math.min(640, viewportWidth * 0.6));
+        const targetWidth = Math.min(Math.max(minWidthPx, parseFloat(batchPanel.style.width) || 320), maxWidthPx);
+        batchPanel.style.width = `${targetWidth}px`;
         batchPanel.style.height = 'auto'; // 初始高度自适应，之后可无极调整
-        batchPanel.style.minWidth = '200px';
-        batchPanel.style.maxWidth = '500px';
+        batchPanel.style.minWidth = `${minWidthPx}px`;
+        batchPanel.style.maxWidth = `${maxWidthPx}px`;
         batchPanel.style.minHeight = '200px';
-        batchPanel.style.maxHeight = '80vh';
+        batchPanel.style.maxHeight = `${(viewportHeight || 1080) * 0.8}px`;
         batchPanel.style.left = 'auto';
         batchPanel.style.right = '20px';
-        batchPanel.style.transform = 'none';
         batchPanel.style.bottom = '80px';
         batchPanel.style.top = 'auto';
-        
+        applyBatchPanelTransform(batchPanel, { baseTransform: 'none' });
+
         console.log('[批量面板] 切换到纵向布局');
         // 更新按钮文字
         const btn = batchPanel.querySelector('[data-action="toggle-batch-layout"] span');
@@ -3000,6 +3377,7 @@ function toggleBatchPanelLayout() {
             const lang = currentLang || 'zh_CN';
             btn.textContent = lang === 'zh_CN' ? '横向' : 'Horiz';
         }
+        fitBatchPanelToContent(batchPanel, { delay: 0, retries: 2 });
     }
     
     // 保存状态
@@ -3013,8 +3391,18 @@ function toggleBatchPanelLayout() {
 }
 
 // 保存批量面板的位置和大小
-function saveBatchPanelState(panel) {
+function saveBatchPanelState(panel, anchorInfo) {
     try {
+        if (!panel) return;
+        const info = anchorInfo || currentBatchPanelAnchorInfo || getBatchPanelAnchorInfoFromSelection();
+        const inferredKey = getBatchPanelAnchorKey(info);
+        const anchorKey = panel.dataset.anchorKey || inferredKey;
+        if (!anchorKey) return;
+        const anchorRect = info && info.element && typeof info.element.getBoundingClientRect === 'function'
+            ? info.element.getBoundingClientRect()
+            : null;
+        const currentZoom = getCurrentBatchPanelZoom();
+        
         const isVertical = panel.classList.contains('vertical-batch-layout');
         const isVisible = panel && panel.style.display !== 'none';
         const state = {
@@ -3026,102 +3414,286 @@ function saveBatchPanelState(panel) {
             height: panel.style.height,
             transform: panel.style.transform,
             layout: isVertical ? 'vertical' : 'horizontal',
-            visible: isVisible
+            visible: isVisible,
+            treeType: (info && info.treeType) || panel.dataset.treeType || 'permanent',
+            sectionId: (info && info.sectionId) || panel.dataset.sectionId || null,
+            anchorKey,
+            baseTransform: panel.dataset.baseTransform || (isVertical ? 'none' : 'translateX(-50%)'),
+            manualPosition: panel.dataset.manualPosition === 'true',
+            zoom: currentZoom,
+            anchorRect: anchorRect ? {
+                left: anchorRect.left,
+                top: anchorRect.top,
+                width: anchorRect.width,
+                height: anchorRect.height,
+                right: anchorRect.right,
+                bottom: anchorRect.bottom
+            } : null
         };
-        localStorage.setItem('batchPanelState', JSON.stringify(state));
-        console.log('[批量面板] 状态已保存:', state);
+        
+        const stateMapRaw = localStorage.getItem(BATCH_PANEL_STATE_MAP_KEY);
+        const stateMap = stateMapRaw ? JSON.parse(stateMapRaw) : {};
+        stateMap[anchorKey] = state;
+        localStorage.setItem(BATCH_PANEL_STATE_MAP_KEY, JSON.stringify(stateMap));
+        localStorage.setItem(BATCH_PANEL_LEGACY_KEY, JSON.stringify(state));
+        console.log('[批量面板] 状态已保存:', anchorKey, state);
     } catch (e) {
         console.error('[批量面板] 保存状态失败:', e);
     }
 }
 
 // 恢复批量面板的位置和大小
-function restoreBatchPanelState(panel, treeContainer) {
+function restoreBatchPanelState(panel, anchorInfo) {
     try {
-        const savedState = localStorage.getItem('batchPanelState');
-        const savedLayout = localStorage.getItem('batchPanelLayout');
+        if (!panel) return;
+        const info = anchorInfo || currentBatchPanelAnchorInfo || getBatchPanelAnchorInfoFromSelection();
+        if (!info) {
+            console.warn('[批量面板] 缺少定位信息，维持默认位置');
+            return;
+        }
         
-        if (savedState) {
-            const state = JSON.parse(savedState);
-            console.log('[批量面板] 恢复状态:', state);
+        const resolvedElement = info.element || findBatchPanelColumnElement(info.treeType, info.sectionId);
+        const anchorKey = getBatchPanelAnchorKey({ treeType: info.treeType, sectionId: info.sectionId });
+        
+        currentBatchPanelAnchorInfo = {
+            treeType: info.treeType || 'permanent',
+            sectionId: info.sectionId || (info.treeType === 'permanent' ? PERMANENT_SECTION_ANCHOR_ID : null),
+            element: resolvedElement
+        };
+        
+        panel.dataset.anchorKey = anchorKey;
+        panel.dataset.treeType = currentBatchPanelAnchorInfo.treeType;
+        if (currentBatchPanelAnchorInfo.sectionId) {
+        panel.dataset.sectionId = currentBatchPanelAnchorInfo.sectionId;
+    } else {
+        delete panel.dataset.sectionId;
+    }
+    
+    panel.style.position = 'fixed';
+    const margin = 16;
+    
+    const anchorRect = resolvedElement && typeof resolvedElement.getBoundingClientRect === 'function'
+        ? resolvedElement.getBoundingClientRect()
+        : null;
+    const viewportWidth = window.innerWidth || 1920;
+    const viewportHeight = window.innerHeight || 1080;
+    const currentZoom = getCurrentBatchPanelZoom();
+    const sizing = computeBatchPanelSizing(anchorRect, currentZoom, viewportWidth, viewportHeight, margin);
+    const {
+        minWidth,
+        maxWidth,
+        minHeight,
+        maxHeight,
+        defaultWidth,
+        defaultHeight,
+        gap,
+        normalizedZoom
+    } = sizing;
+    panel.dataset.anchorZoom = String(normalizedZoom);
+
+    const computeAnchorAlignedPosition = (rect, panelWidth, panelHeight) => {
+        let left = clampValue(viewportWidth - panelWidth - margin, margin, viewportWidth - panelWidth - margin);
+        let top = clampValue(margin, margin, viewportHeight - panelHeight - margin);
+        if (!rect) {
+            return { left, top };
+        }
+        const spaceOnRight = viewportWidth - rect.right - margin;
+        const spaceOnLeft = rect.left - margin;
+        if (spaceOnRight >= panelWidth + gap || spaceOnRight >= spaceOnLeft) {
+            left = clampValue(rect.right + gap, margin, viewportWidth - panelWidth - margin);
+        } else if (spaceOnLeft >= panelWidth + gap) {
+            left = clampValue(rect.left - gap - panelWidth, margin, viewportWidth - panelWidth - margin);
+        } else {
+            left = clampValue(rect.right + gap, margin, viewportWidth - panelWidth - margin);
+        }
+        const idealTop = rect.top;
+        top = clampValue(idealTop, margin, viewportHeight - panelHeight - margin);
+        return { left, top };
+    };
+
+    const deriveManualCoordinate = (primary, secondary, viewportSize, panelSize) => {
+        if (primary && primary !== 'auto') {
+            const numeric = parseFloat(primary);
+            if (Number.isFinite(numeric)) {
+                return clampValue(numeric, margin, viewportSize - panelSize - margin);
+            }
+        }
+        if (secondary && secondary !== 'auto') {
+            const numeric = parseFloat(secondary);
+            if (Number.isFinite(numeric)) {
+                const inferred = viewportSize - panelSize - numeric;
+                return clampValue(inferred, margin, viewportSize - panelSize - margin);
+            }
+        }
+        return null;
+    };
+        
+        let state = null;
+        const stateMapRaw = localStorage.getItem(BATCH_PANEL_STATE_MAP_KEY);
+        if (stateMapRaw) {
+            try {
+                const stateMap = JSON.parse(stateMapRaw);
+                state = stateMap ? stateMap[anchorKey] : null;
+            } catch (err) {
+                console.warn('[批量面板] 状态映射解析失败，忽略:', err);
+            }
+        }
+        
+        if (!state) {
+            const legacyRaw = localStorage.getItem(BATCH_PANEL_LEGACY_KEY);
+            if (legacyRaw) {
+                try {
+                    const legacyState = JSON.parse(legacyRaw);
+                    if (!legacyState.anchorKey || legacyState.anchorKey === anchorKey) {
+                        state = legacyState;
+                    }
+                } catch (err) {
+                    console.warn('[批量面板] 兼容状态解析失败，忽略:', err);
+                }
+            }
+        }
+        
+        if (state) {
+            console.log('[批量面板] 恢复状态:', anchorKey, state);
+            const storedWidth = parseFloat(state.width);
+            const storedHeight = parseFloat(state.height);
+            const storedBaseTransform = state.baseTransform
+                || (state.transform && state.transform.includes('translateX(-50%)') ? 'translateX(-50%)' : 'none');
+            const storedZoom = Number.isFinite(state.zoom) && state.zoom > 0 ? clampValue(state.zoom, 0.2, 3) : normalizedZoom;
+            const zoomDelta = Math.abs(normalizedZoom - storedZoom);
+            const zoomRatio = storedZoom > 0 ? normalizedZoom / storedZoom : 1;
+            const storedManual = state.manualPosition === true;
+            const previousAnchorRect = state.anchorRect || null;
+            const anchorShift = anchorRect && previousAnchorRect
+                ? Math.hypot(
+                    (anchorRect.left || 0) - (previousAnchorRect.left || 0),
+                    (anchorRect.top || 0) - (previousAnchorRect.top || 0)
+                )
+                : 0;
+            const sizeShift = anchorRect && previousAnchorRect
+                ? Math.abs((anchorRect.width || 0) - (previousAnchorRect.width || 0))
+                : 0;
+            const shouldSnapToAnchor = !storedManual || zoomDelta > 0.05 || sizeShift > 24 || anchorShift > 48 || !anchorRect;
             
-            // 先恢复布局类型
-            if (savedLayout === 'vertical' || state.layout === 'vertical') {
-                panel.classList.remove('horizontal-batch-layout');
-                panel.classList.add('vertical-batch-layout');
+            if (state.layout === 'vertical') {
                 batchPanelHorizontal = false;
+                panel.classList.remove('horizontal-batch-layout', 'tall-layout');
+                panel.classList.add('vertical-batch-layout');
+                let widthCandidate = Number.isFinite(storedWidth) ? storedWidth * zoomRatio : defaultWidth;
+                let heightCandidate = Number.isFinite(storedHeight) ? storedHeight * zoomRatio : defaultHeight;
+                if (shouldSnapToAnchor) {
+                    widthCandidate = defaultWidth;
+                    heightCandidate = defaultHeight;
+                }
+                const widthValue = clampValue(widthCandidate, minWidth, maxWidth);
+                const heightValue = Number.isFinite(heightCandidate)
+                    ? clampValue(heightCandidate, minHeight, maxHeight)
+                    : null;
+                panel.style.width = `${widthValue}px`;
+                panel.style.minWidth = `${minWidth}px`;
+                panel.style.maxWidth = `${maxWidth}px`;
+                panel.style.minHeight = `${minHeight}px`;
+                panel.style.maxHeight = `${maxHeight}px`;
+                if (!Number.isFinite(heightValue) || shouldSnapToAnchor || !storedManual) {
+                    panel.style.height = 'auto';
+                } else {
+                    panel.style.height = `${heightValue}px`;
+                }
                 
-                // 纵向布局恢复
-                panel.style.width = state.width || '280px';
-                panel.style.height = state.height || 'auto';
-                panel.style.minWidth = '200px';
-                panel.style.maxWidth = '500px';
-                panel.style.minHeight = '200px';
-                panel.style.maxHeight = '80vh';
-                panel.style.right = state.right || '20px';
-                panel.style.left = 'auto';
-                panel.style.transform = 'none';
-                if (state.top) panel.style.top = state.top;
-                if (state.bottom) panel.style.bottom = state.bottom;
+                let left;
+                let top;
+                const alignHeight = Number.isFinite(heightValue) ? heightValue : minHeight;
+                if (shouldSnapToAnchor) {
+                    panel.dataset.manualPosition = 'false';
+                    const aligned = computeAnchorAlignedPosition(anchorRect, widthValue, alignHeight);
+                    left = aligned.left;
+                    top = aligned.top;
+                } else {
+                    let usedManualPosition = storedManual;
+                    left = deriveManualCoordinate(state.left, state.right, viewportWidth, widthValue);
+                    top = deriveManualCoordinate(state.top, state.bottom, viewportHeight, alignHeight);
+                    if (left === null || top === null) {
+                        const fallback = computeAnchorAlignedPosition(anchorRect, widthValue, alignHeight);
+                        if (left === null) left = fallback.left;
+                        if (top === null) top = fallback.top;
+                        usedManualPosition = false;
+                    }
+                    panel.dataset.manualPosition = usedManualPosition ? 'true' : 'false';
+                }
+                panel.style.left = `${left}px`;
+                panel.style.top = `${top}px`;
+                panel.style.right = 'auto';
+                panel.style.bottom = 'auto';
+                applyBatchPanelTransform(panel, { baseTransform: storedBaseTransform || 'none' });
             } else {
-                // 横向布局恢复
+                batchPanelHorizontal = true;
                 panel.classList.add('horizontal-batch-layout');
                 panel.classList.remove('vertical-batch-layout');
-                batchPanelHorizontal = true;
-                
-                panel.style.width = state.width || '1000px';
-                panel.style.height = state.height || 'auto';
+                panel.dataset.manualPosition = storedManual ? 'true' : 'false';
+                const ratioWidth = Number.isFinite(storedWidth) ? storedWidth * zoomRatio : parseFloat(state.width);
+                const ratioHeight = Number.isFinite(storedHeight) ? storedHeight * zoomRatio : parseFloat(state.height);
+                if (Number.isFinite(ratioWidth)) {
+                    panel.style.width = `${ratioWidth.toFixed(2)}px`;
+                } else {
+                    panel.style.width = state.width || '1000px';
+                }
+                if (Number.isFinite(ratioHeight)) {
+                    panel.style.height = `${ratioHeight.toFixed(2)}px`;
+                } else {
+                    panel.style.height = state.height || 'auto';
+                }
+                const horizontalMaxWidth = Math.min(viewportWidth * 0.95, 2000);
                 panel.style.minWidth = '800px';
-                panel.style.maxWidth = '95vw';
+                panel.style.maxWidth = `${horizontalMaxWidth}px`;
                 panel.style.minHeight = '150px';
-                panel.style.maxHeight = '80vh';
-                panel.style.left = state.left || '50%';
-                panel.style.right = 'auto';
-                panel.style.transform = state.transform || 'translateX(-50%)';
-                if (state.top) panel.style.top = state.top;
-                if (state.bottom) panel.style.bottom = state.bottom;
+                panel.style.maxHeight = `${viewportHeight * 0.8}px`;
+                if (shouldSnapToAnchor) {
+                    panel.style.left = '50%';
+                    panel.style.right = 'auto';
+                    panel.style.top = 'auto';
+                    panel.style.bottom = '80px';
+                    panel.dataset.manualPosition = 'false';
+                } else {
+                    panel.style.left = state.left || '50%';
+                    panel.style.right = 'auto';
+                    panel.style.top = state.top || 'auto';
+                    panel.style.bottom = state.bottom || '80px';
+                }
+                applyBatchPanelTransform(panel, {
+                    baseTransform: storedBaseTransform || 'translateX(-50%)'
+                });
+                if (panel.classList.contains('horizontal-batch-layout')) {
+                    const currentHeight = parseFloat(panel.style.height) || panel.offsetHeight;
+                    updateTallLayoutClass(panel, currentHeight);
+                }
             }
-            
-            console.log('[批量面板] 状态恢复完成');
-        } else {
-            console.log('[批量面板] 没有保存的状态，锚定在栏目右侧');
-
-            // 首次显示：纵向布局，锚定树容器右侧
-            panel.classList.remove('horizontal-batch-layout');
-            panel.classList.add('vertical-batch-layout');
-            batchPanelHorizontal = false;
-
-            // 基本尺寸
-            panel.style.width = '280px';
-            panel.style.height = 'auto';
-            panel.style.minWidth = '200px';
-            panel.style.maxWidth = '500px';
-            panel.style.minHeight = '200px';
-            panel.style.maxHeight = '80vh';
-            panel.style.transform = 'none';
-            panel.style.position = 'fixed';
-
-            // 计算位置：树容器右侧
-            const containerRect = (treeContainer && typeof treeContainer.getBoundingClientRect === 'function')
-                ? treeContainer.getBoundingClientRect()
-                : { top: 100, right: 260 };
-            const gap = 12;
-            const defaultWidth = 280;
-            const panelWidth = parseFloat(panel.style.width) || defaultWidth;
-            let left = containerRect.right + gap;
-            let top = Math.max(20, containerRect.top);
-            const maxLeft = window.innerWidth - panelWidth - 20;
-            const maxTop = window.innerHeight - 80; // 留出底部空间
-            left = Math.min(left, maxLeft);
-            top = Math.min(top, maxTop);
-
-            panel.style.left = `${left}px`;
-            panel.style.top = `${top}px`;
-            panel.style.right = 'auto';
-            panel.style.bottom = 'auto';
-
-            console.log('[批量面板] 首次定位', { left, top });
+            fitBatchPanelToContent(panel);
+            return;
         }
+        
+        console.log('[批量面板] 没有保存的状态，使用默认定位');
+        batchPanelHorizontal = false;
+        panel.classList.remove('horizontal-batch-layout', 'tall-layout');
+        panel.classList.add('vertical-batch-layout');
+        panel.dataset.manualPosition = 'false';
+        const widthValue = defaultWidth;
+        const heightValue = defaultHeight;
+        const alignHeight = Number.isFinite(heightValue) ? heightValue : minHeight;
+        panel.style.width = `${widthValue}px`;
+        panel.style.height = 'auto';
+        panel.style.minWidth = `${minWidth}px`;
+        panel.style.maxWidth = `${maxWidth}px`;
+        panel.style.minHeight = `${minHeight}px`;
+        panel.style.maxHeight = `${maxHeight}px`;
+        const aligned = computeAnchorAlignedPosition(anchorRect, widthValue, alignHeight);
+        panel.style.left = `${aligned.left}px`;
+        panel.style.top = `${aligned.top}px`;
+        panel.style.right = 'auto';
+        panel.style.bottom = 'auto';
+        applyBatchPanelTransform(panel, { baseTransform: 'none' });
+        
+        console.log('[批量面板] 默认定位完成:', { left: aligned.left, top: aligned.top, anchorKey });
+        fitBatchPanelToContent(panel, { delay: 0 });
     } catch (e) {
         console.error('[批量面板] 恢复状态失败:', e);
     }
@@ -3158,9 +3730,15 @@ function showBatchPanel() {
     } else {
         // 如果面板已存在，直接显示
         batchPanel.style.display = 'block';
+        const anchorInfo = getBatchPanelAnchorInfoFromSelection();
+        if (anchorInfo) {
+            currentBatchPanelAnchorInfo = anchorInfo;
+            restoreBatchPanelState(batchPanel, anchorInfo);
+        }
         console.log('[批量面板] 显示已有面板');
         // 保存显示状态
         saveBatchPanelState(batchPanel);
+        fitBatchPanelToContent(batchPanel, { delay: 0 });
     }
     
     // 隐藏顶部工具栏

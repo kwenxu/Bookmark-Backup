@@ -3343,14 +3343,14 @@ a.tree-label.tree-bookmark-link:hover {
     min-width: 150px;
     max-width: 95vw;
     max-height: 200px;
-    background: rgba(255, 255, 255, 0.08) !important;
-    backdrop-filter: none !important;
-    -webkit-backdrop-filter: none !important;
-    border: 2px solid rgba(74, 144, 226, 0.15);
-    border-radius: 12px;
-    box-shadow: 0 -4px 24px rgba(0, 0, 0, 0.15);
+    background: rgba(248, 250, 252, 0.96) !important;
+    backdrop-filter: blur(22px) saturate(125%) !important;
+    -webkit-backdrop-filter: blur(22px) saturate(125%) !important;
+    border: 1px solid rgba(148, 163, 184, 0.4);
+    border-radius: 14px;
+    box-shadow: 0 12px 40px rgba(15, 23, 42, 0.22);
     z-index: 10000;
-    animation: panelFadeIn 0.3s ease-out;
+    animation: panelFadeIn 0.25s ease-out;
     display: flex;
     flex-direction: column;
     resize: none;
@@ -3373,9 +3373,9 @@ a.tree-label.tree-bookmark-link:hover {
     align-items: center;
     gap: 8px;
     padding: 3px 8px; /* 更小的padding，极致紧凑 */
-    background: rgba(74, 144, 226, 0.05) !important;
-    backdrop-filter: none !important;
-    -webkit-backdrop-filter: none !important;
+    background: rgba(37, 99, 235, 0.12) !important;
+    backdrop-filter: blur(10px) !important;
+    -webkit-backdrop-filter: blur(10px) !important;
     color: white;
     text-shadow: 0 1px 4px rgba(0, 0, 0, 1), 0 0 8px rgba(0, 0, 0, 0.8);
     border-radius: 10px 10px 0 0;
@@ -3406,9 +3406,9 @@ a.tree-label.tree-bookmark-link:hover {
 }
 
 .batch-panel-exit-btn {
-    background: rgba(244, 67, 54, 0.9);
+    background: rgba(244, 67, 54, 0.92);
     color: white;
-    border: 1px solid rgba(255, 255, 255, 0.5);
+    border: 1px solid rgba(255, 255, 255, 0.7);
     border-radius: 4px;
     padding: 2px 8px; /* 更小的padding */
     font-size: 11px; /* 更小的字体 */
@@ -3642,18 +3642,19 @@ a.tree-label.tree-bookmark-link:hover {
     align-items: center;
     gap: 10px;
     padding: 10px 12px;
-    border-radius: 6px;
+    border-radius: 8px;
     cursor: pointer;
     transition: all 0.2s ease;
     font-size: 13px;
     color: var(--text-primary);
-    background: rgba(255, 255, 255, 0.05) !important;
-    backdrop-filter: blur(2px) !important;
-    -webkit-backdrop-filter: blur(2px) !important;
+    background: rgba(255, 255, 255, 0.75) !important;
+    border: 1px solid rgba(148, 163, 184, 0.24);
+    backdrop-filter: blur(8px) !important;
+    -webkit-backdrop-filter: blur(8px) !important;
 }
 
 .batch-panel-content .context-menu-item:hover {
-    background: rgba(255, 255, 255, 0.25) !important;
+    background: rgba(226, 232, 240, 0.92) !important;
 }
 
 .batch-panel-content .context-menu-item i {
@@ -3704,28 +3705,29 @@ a.tree-label.tree-bookmark-link:hover {
 }
 
 [data-theme="dark"] .batch-action-panel {
-    background: rgba(30, 30, 30, 0.08) !important;
-    backdrop-filter: none !important;
-    -webkit-backdrop-filter: none !important;
-    border-color: rgba(74, 144, 226, 0.15);
-    box-shadow: 0 -4px 24px rgba(0, 0, 0, 0.5);
+    background: rgba(15, 23, 42, 0.84) !important;
+    backdrop-filter: blur(26px) saturate(140%) !important;
+    -webkit-backdrop-filter: blur(26px) saturate(140%) !important;
+    border-color: rgba(59, 130, 246, 0.45);
+    box-shadow: 0 18px 50px rgba(2, 6, 23, 0.6);
 }
 
 [data-theme="dark"] .batch-panel-header {
-    background: rgba(74, 144, 226, 0.05) !important;
-    backdrop-filter: none !important;
-    -webkit-backdrop-filter: none !important;
+    background: rgba(59, 130, 246, 0.18) !important;
+    backdrop-filter: blur(12px) !important;
+    -webkit-backdrop-filter: blur(12px) !important;
 }
 
 [data-theme="dark"] .batch-panel-content .context-menu-item {
-    background: rgba(50, 50, 50, 0.05) !important;
-    backdrop-filter: blur(2px) !important;
-    -webkit-backdrop-filter: blur(2px) !important;
-    color: rgba(255, 255, 255, 0.9);
+    background: rgba(30, 41, 59, 0.6) !important;
+    backdrop-filter: blur(10px) !important;
+    -webkit-backdrop-filter: blur(10px) !important;
+    color: rgba(226, 232, 240, 0.95);
+    border-color: rgba(96, 165, 250, 0.35);
 }
 
 [data-theme="dark"] .batch-panel-content .context-menu-item:hover {
-    background: rgba(70, 70, 70, 0.25) !important;
+    background: rgba(59, 130, 246, 0.24) !important;
 }
 
 /* 横向布局样式 - 默认一行显示 */

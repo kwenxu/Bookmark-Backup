@@ -3800,10 +3800,122 @@ function restoreContextMenuLayout() {
     }
 }
 
+// 显示空白区域右键菜单
+function showBlankAreaContextMenu(e, sectionId, treeType) {
+    e.preventDefault();
+    e.stopPropagation();
+    
+    const lang = currentLang || 'zh_CN';
+    const menuItems = [];
+    
+    // 粘贴选项（如果剪贴板有内容）
+    if (hasClipboard()) {
+        menuItems.push({
+            action: 'paste-blank',
+            label: lang === 'zh_CN' ? '粘贴' : 'Paste',
+            icon: 'paste',
+            sectionId,
+            treeType
+        });
+    }
+    
+    // 新建文件夹选项
+    if (treeType === 'temporary') {
+        menuItems.push({
+            action: 'create-folder-blank',
+            label: lang === 'zh_CN' ? '新建文件夹' : 'New Folder',
+            icon: 'folder-plus',
+            sectionId
+        });
+        menuItems.push({
+            action: 'create-bookmark-blank',
+            label: lang === 'zh_CN' ? '新建书签' : 'New Bookmark',
+            icon: 'bookmark',
+            sectionId
+        });
+    } else if (treeType === 'permanent') {
+        // 永久栏目暂不支持在空白处创建，因为需要 parentId
+        // 用户可以右键文件夹来创建
+    }
+    
+    if (menuItems.length === 0) {
+        return; // 没有可用的菜单项
+    }
+    
+    // 渲染菜单
+    const contextMenu = document.getElementById('bookmark-context-menu');
+    if (!contextMenu) return;
+    
+    const menuHTML = menuItems.map(item => {
+        const icon = item.icon ? `<i class="fas fa-${item.icon}"></i>` : '';
+        return `
+            <div class="context-menu-item" data-action="${item.action}" data-section-id="${item.sectionId || ''}" data-tree-type="${item.treeType || ''}">
+                ${icon}
+                <span>${item.label}</span>
+            </div>
+        `;
+    }).join('');
+    
+    contextMenu.innerHTML = menuHTML;
+    
+    // 绑定点击事件
+    contextMenu.querySelectorAll('.context-menu-item').forEach(item => {
+        item.addEventListener('click', async (clickEvent) => {
+            clickEvent.stopPropagation();
+            const action = item.dataset.action;
+            const sid = item.dataset.sectionId;
+            const ttype = item.dataset.treeType;
+            
+            hideContextMenu();
+            
+            if (action === 'paste-blank') {
+                if (ttype === 'temporary' && sid) {
+                    await pasteIntoTemp({ sectionId: sid, parentId: null, index: null });
+                } else if (ttype === 'permanent') {
+                    // 粘贴到书签栏根目录
+                    if (chrome && chrome.bookmarks) {
+                        const tree = await chrome.bookmarks.getTree();
+                        const bookmarkBar = tree[0].children.find(child => child.title === '书签栏' || child.id === '1');
+                        if (bookmarkBar) {
+                            await pasteBookmark(bookmarkBar.id);
+                        }
+                    }
+                }
+            } else if (action === 'create-folder-blank' && sid) {
+                const manager = ensureTempManager();
+                const title = prompt(lang === 'zh_CN' ? '文件夹名称:' : 'Folder name:');
+                if (title) {
+                    manager.createFolder(sid, null, title.trim());
+                }
+            } else if (action === 'create-bookmark-blank' && sid) {
+                const manager = ensureTempManager();
+                const title = prompt(lang === 'zh_CN' ? '书签名称:' : 'Bookmark name:');
+                const url = prompt(lang === 'zh_CN' ? '书签链接:' : 'Bookmark URL:', 'https://');
+                if (title && url) {
+                    manager.createBookmark(sid, null, title.trim(), url.trim());
+                }
+            }
+        });
+    });
+    
+    // 使用固定定位显示菜单（不嵌入DOM）
+    contextMenu.style.position = 'fixed';
+    contextMenu.style.left = e.clientX + 'px';
+    contextMenu.style.top = e.clientY + 'px';
+    contextMenu.style.display = 'block';
+    
+    // 移除之前的嵌入样式
+    contextMenu.style.position = 'fixed';
+    if (contextMenu.parentElement && contextMenu.parentElement !== document.body) {
+        document.body.appendChild(contextMenu);
+    }
+}
+
 // 导出函数
 if (typeof window !== 'undefined') {
     window.initContextMenu = initContextMenu;
     window.showContextMenu = showContextMenu;
+    window.showBlankAreaContextMenu = showBlankAreaContextMenu;
     window.hideContextMenu = hideContextMenu;
     window.toggleNodeSelection = toggleNodeSelection;
     window.selectRange = selectRange;

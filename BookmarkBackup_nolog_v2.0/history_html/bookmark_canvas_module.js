@@ -750,28 +750,40 @@ function enhanceBookmarkTreeForCanvas() {
             if (dropX >= rect.left && dropX <= rect.right && 
                 dropY >= rect.top && dropY <= rect.bottom) {
                 
-                // 计算在canvas-content坐标系中的位置（考虑缩放和平移）
-                const canvasX = (dropX - rect.left - CanvasState.panOffsetX) / CanvasState.zoom;
-                const canvasY = (dropY - rect.top - CanvasState.panOffsetY) / CanvasState.zoom;
+                // 优先检查是否拖到现有的临时栏目上（通过 drop 事件处理）
+                // 如果已经被 drop 事件处理过（拖到临时栏目），就不创建新栏目
+                const elementAtPoint = document.elementFromPoint(dropX, dropY);
+                const tempNode = elementAtPoint?.closest('.temp-canvas-node');
+                const tempTree = elementAtPoint?.closest('.temp-bookmark-tree');
                 
-                console.log('[Canvas] 拖到Canvas，创建临时节点:', { canvasX, canvasY });
-                
-                // 在Canvas上创建临时节点（支持多选合集）
-                if (CanvasState.dragState.draggedData) {
-                    try {
-                        let ids = [];
+                if (tempNode || tempTree) {
+                    // 已经拖到现有临时栏目，由 drop 事件处理
+                    console.log('[Canvas] 拖到现有临时栏目，不创建新栏目');
+                    accepted = true;
+                } else {
+                    // 拖到空白区域，创建新临时栏目
+                    const canvasX = (dropX - rect.left - CanvasState.panOffsetX) / CanvasState.zoom;
+                    const canvasY = (dropY - rect.top - CanvasState.panOffsetY) / CanvasState.zoom;
+                    
+                    console.log('[Canvas] 拖到Canvas空白区域，创建新临时栏目:', { canvasX, canvasY });
+                    
+                    // 在Canvas上创建临时节点（支持多选合集）
+                    if (CanvasState.dragState.draggedData) {
                         try {
-                            ids = collectPermanentSelectionIds(CanvasState.dragState.draggedData.id || null) || [];
-                        } catch(_) {}
-                        if (Array.isArray(ids) && ids.length > 1) {
-                            await createTempNode({ multi: true, permanentIds: ids }, canvasX, canvasY);
-                        } else {
-                            await createTempNode(CanvasState.dragState.draggedData, canvasX, canvasY);
+                            let ids = [];
+                            try {
+                                ids = collectPermanentSelectionIds(CanvasState.dragState.draggedData.id || null) || [];
+                            } catch(_) {}
+                            if (Array.isArray(ids) && ids.length > 1) {
+                                await createTempNode({ multi: true, permanentIds: ids }, canvasX, canvasY);
+                            } else {
+                                await createTempNode(CanvasState.dragState.draggedData, canvasX, canvasY);
+                            }
+                            accepted = true;
+                        } catch (err) {
+                            console.error('[Canvas] 创建临时栏目失败:', err);
+                            alert('创建临时栏目失败: ' + err.message);
                         }
-                        accepted = true;
-                    } catch (err) {
-                        console.error('[Canvas] 创建临时栏目失败:', err);
-                        alert('创建临时栏目失败: ' + err.message);
                     }
                 }
             }
@@ -2152,6 +2164,20 @@ function makePermanentSectionDraggable() {
     header.addEventListener('mousedown', onMouseDown, true);
     document.addEventListener('mousemove', onMouseMove, false);
     document.addEventListener('mouseup', onMouseUp, true);
+    
+    // 添加永久栏目空白区域右键菜单
+    const bookmarkTree = permanentSection.querySelector('.bookmark-tree');
+    if (bookmarkTree) {
+        bookmarkTree.addEventListener('contextmenu', (e) => {
+            // 检查是否点击在空白区域（不是树节点）
+            const treeItem = e.target.closest('.tree-item[data-node-id]');
+            if (!treeItem) {
+                e.preventDefault();
+                e.stopPropagation();
+                showBlankAreaContextMenu(e, null, 'permanent');
+            }
+        });
+    }
 }
 
 function savePermanentSectionPosition() {
@@ -3059,6 +3085,17 @@ function buildTempTreeNode(section, item, level) {
 
 function setupTempSectionTreeInteractions(treeContainer, section) {
     if (!treeContainer) return;
+    
+    // 添加空白区域右键菜单
+    treeContainer.addEventListener('contextmenu', (e) => {
+        // 检查是否点击在空白区域（不是树节点）
+        const treeItem = e.target.closest('.tree-item[data-node-id]');
+        if (!treeItem) {
+            e.preventDefault();
+            e.stopPropagation();
+            showBlankAreaContextMenu(e, section.id, 'temporary');
+        }
+    });
 }
 
 function setupTempSectionDropTargets(section, sectionElement, treeContainer, header) {

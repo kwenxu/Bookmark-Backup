@@ -1308,7 +1308,7 @@ async function handleMenuAction(action, context) {
                 break;
                 
             case 'paste':
-                await pasteBookmark(nodeId);
+                await pasteBookmark(nodeId, isFolder);
                 break;
                 
             case 'copy-url':
@@ -1591,7 +1591,7 @@ async function copyBookmark(nodeId, nodeTitle, isFolder) {
 }
 
 // 粘贴书签
-async function pasteBookmark(targetFolderId) {
+async function pasteBookmark(targetNodeId, isFolder) {
     if (!chrome || !chrome.bookmarks) {
         alert('此功能需要Chrome扩展环境');
         return;
@@ -1602,6 +1602,22 @@ async function pasteBookmark(targetFolderId) {
     }
     
     try {
+        // 确定目标文件夹ID
+        let targetFolderId;
+        
+        if (isFolder) {
+            // 如果目标是文件夹，粘贴到文件夹内
+            targetFolderId = targetNodeId;
+        } else {
+            // 如果目标是书签，获取其父文件夹ID，粘贴到书签下方
+            const nodes = await chrome.bookmarks.get(targetNodeId);
+            if (nodes && nodes[0] && nodes[0].parentId) {
+                targetFolderId = nodes[0].parentId;
+            } else {
+                throw new Error('无法找到父文件夹');
+            }
+        }
+        
         if (bookmarkClipboard.source === 'temporary') {
             const payload = bookmarkClipboard.payload || [];
             if (payload.length) {
@@ -3888,7 +3904,7 @@ function showBlankAreaContextMenu(e, sectionId, treeType) {
                         const tree = await chrome.bookmarks.getTree();
                         const bookmarkBar = tree[0].children.find(child => child.title === '书签栏' || child.id === '1');
                         if (bookmarkBar) {
-                            await pasteBookmark(bookmarkBar.id);
+                            await pasteBookmark(bookmarkBar.id, true); // true 表示是文件夹
                         }
                     }
                 }

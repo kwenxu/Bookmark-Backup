@@ -4032,7 +4032,7 @@ a.tree-label.tree-bookmark-link:hover {
     }
 }
 
-/* 永久栏目样式 */
+/* 永久栏目样式 - 绿色框体 */
 .permanent-bookmark-section {
     position: absolute;
     top: 50%;
@@ -4041,7 +4041,7 @@ a.tree-label.tree-bookmark-link:hover {
     width: 600px;
     height: 70vh; /* 改为固定高度而不是max-height */
     background: var(--bg-elevated);
-    border: 3px solid var(--accent-primary);
+    border: 3px solid #10b981;
     border-radius: 12px;
     box-shadow: var(--shadow-lg);
     overflow: hidden;
@@ -4055,7 +4055,7 @@ a.tree-label.tree-bookmark-link:hover {
 
 [data-theme="dark"] .permanent-bookmark-section {
     background: rgba(36, 37, 38, 0.95);
-    border-color: #0969da;
+    border-color: #10b981;
     box-shadow: 0 8px 32px rgba(0, 0, 0, 0.6);
 }
 
@@ -4079,8 +4079,8 @@ a.tree-label.tree-bookmark-link:hover {
 }
 
 .permanent-bookmark-section.drag-origin-active {
-    border-color: rgba(9, 105, 218, 0.6);
-    box-shadow: 0 0 0 4px rgba(9, 105, 218, 0.06), 0 12px 30px rgba(9, 105, 218, 0.18);
+    border-color: rgba(16, 185, 129, 0.6);
+    box-shadow: 0 0 0 4px rgba(16, 185, 129, 0.06), 0 12px 30px rgba(16, 185, 129, 0.18);
 }
 
 @keyframes dropTargetPulse {
@@ -4093,16 +4093,16 @@ a.tree-label.tree-bookmark-link:hover {
 }
 
 .permanent-section-header {
-    background: linear-gradient(135deg, #0969da 0%, #0550ae 100%);
+    background: linear-gradient(135deg, #10b981 0%, #059669 100%);
     color: white;
     padding: 14px 18px;
     cursor: move;
     user-select: none;
-    border-bottom: 1px solid rgba(9, 105, 218, 0.2);
+    border-bottom: 1px solid rgba(16, 185, 129, 0.2);
 }
 
 .permanent-section-header:hover {
-    background: linear-gradient(135deg, #0550ae 0%, #0969da 100%);
+    background: linear-gradient(135deg, #059669 0%, #10b981 100%);
 }
 
 .permanent-section-title {
@@ -4117,6 +4117,39 @@ a.tree-label.tree-bookmark-link:hover {
     font-size: 15px;
     font-weight: 600;
     letter-spacing: -0.2px;
+    flex: 1;
+}
+
+.permanent-section-actions {
+    display: flex;
+    gap: 6px;
+    align-items: center;
+}
+
+.permanent-section-action-btn {
+    background: rgba(255, 255, 255, 0.2);
+    border: 1px solid rgba(255, 255, 255, 0.3);
+    color: white;
+    width: 26px;
+    height: 26px;
+    border-radius: 4px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    padding: 0;
+    font-size: 12px;
+    transition: all 0.2s ease;
+}
+
+.permanent-section-action-btn:hover {
+    background: rgba(255, 255, 255, 0.3);
+    transform: translateY(-1px);
+}
+
+.permanent-section-action-btn.pinned {
+    background: rgba(255, 255, 255, 0.35);
+    border-color: rgba(255, 255, 255, 0.5);
 }
 
 .permanent-section-tip-container {
@@ -4309,6 +4342,29 @@ a.tree-label.tree-bookmark-link:hover {
     cursor: move;
     user-select: none;
     gap: 10px;
+}
+
+.temp-node-title-container {
+    flex: 1;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    min-width: 0;
+}
+
+.temp-node-sequence-badge {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 22px;
+    height: 22px;
+    border-radius: 50%;
+    background: rgba(255, 255, 255, 0.25);
+    font-size: 11px;
+    font-weight: 700;
+    color: white;
+    flex-shrink: 0;
+    border: 1.5px solid rgba(255, 255, 255, 0.4);
 }
 
 .temp-node-title {

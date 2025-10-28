@@ -7,6 +7,7 @@ const CanvasState = {
     tempSections: [],
     tempSectionCounter: 0,
     tempItemCounter: 0,
+    tempSectionSequenceNumber: 0,
     colorCursor: 0,
     dragState: {
         isDragging: false,
@@ -587,6 +588,9 @@ function initCanvasView() {
     
     // 设置永久栏目提示关闭按钮
     setupPermanentSectionTipClose();
+    
+    // 设置永久栏目置顶按钮
+    setupPermanentSectionPinButton();
 }
 
 function setupCanvasDropFeedback() {
@@ -2583,9 +2587,11 @@ async function handlePermanentDragEnd(e) {
 
 async function createTempNode(data, x, y) {
     const sectionId = `temp-section-${++CanvasState.tempSectionCounter}`;
+    const sequenceNumber = ++CanvasState.tempSectionSequenceNumber;
     const section = {
         id: sectionId,
         title: getDefaultTempSectionTitle(),
+        sequenceNumber: sequenceNumber,
         color: pickTempSectionColor(),
         x,
         y,
@@ -2682,6 +2688,18 @@ function renderTempNode(section) {
     header.dataset.sectionId = section.id;
     header.style.setProperty('--section-color', section.color || TEMP_SECTION_DEFAULT_COLOR);
     
+    // 创建标题容器（包含序号标签和标题输入框）
+    const titleContainer = document.createElement('div');
+    titleContainer.className = 'temp-node-title-container';
+    
+    // 添加序号标签（如果有）
+    if (section.sequenceNumber) {
+        const sequenceBadge = document.createElement('span');
+        sequenceBadge.className = 'temp-node-sequence-badge';
+        sequenceBadge.textContent = section.sequenceNumber;
+        titleContainer.appendChild(sequenceBadge);
+    }
+    
     const titleInput = document.createElement('input');
     titleInput.type = 'text';
     titleInput.className = 'temp-node-title temp-node-title-input';
@@ -2691,6 +2709,8 @@ function renderTempNode(section) {
     titleInput.setAttribute('readonly', 'readonly');
     titleInput.tabIndex = -1;
     titleInput.dataset.sectionId = section.id;
+    
+    titleContainer.appendChild(titleInput);
     
     const actions = document.createElement('div');
     actions.className = 'temp-node-actions';
@@ -2770,12 +2790,38 @@ function renderTempNode(section) {
         }
     });
 
+    // 置顶按钮
+    const pinBtn = document.createElement('button');
+    pinBtn.type = 'button';
+    pinBtn.className = 'temp-node-action-btn temp-node-pin-btn';
+    const pinLabel = (typeof currentLang !== 'undefined' && currentLang === 'en') ? 'Pin section' : '置顶栏目';
+    const unpinLabel = (typeof currentLang !== 'undefined' && currentLang === 'en') ? 'Unpin section' : '取消置顶';
+    const isPinned = section.pinned || false;
+    pinBtn.title = isPinned ? unpinLabel : pinLabel;
+    pinBtn.setAttribute('aria-label', pinBtn.title);
+    pinBtn.innerHTML = isPinned ? '<i class="fas fa-thumbtack"></i>' : '<i class="fas fa-thumbtack" style="opacity: 0.5;"></i>';
+    if (isPinned) {
+        pinBtn.classList.add('pinned');
+    }
+    pinBtn.addEventListener('click', (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        section.pinned = !section.pinned;
+        pinBtn.classList.toggle('pinned', section.pinned);
+        pinBtn.title = section.pinned ? unpinLabel : pinLabel;
+        pinBtn.setAttribute('aria-label', pinBtn.title);
+        pinBtn.innerHTML = section.pinned ? '<i class="fas fa-thumbtack"></i>' : '<i class="fas fa-thumbtack" style="opacity: 0.5;"></i>';
+        updateSectionZIndex(section.id, section.pinned);
+        saveTempNodes();
+    });
+
     actions.appendChild(renameBtn);
+    actions.appendChild(pinBtn);
     actions.appendChild(colorBtn);
     actions.appendChild(colorInput);
     actions.appendChild(closeBtn);
     
-    header.appendChild(titleInput);
+    header.appendChild(titleContainer);
     header.appendChild(actions);
     
     const body = document.createElement('div');
@@ -3445,6 +3491,18 @@ function makeNodeDraggable(element, section) {
     header.addEventListener('mousedown', onMouseDown, true);
 }
 
+function updateSectionZIndex(sectionId, isPinned) {
+    const element = document.getElementById(sectionId);
+    if (!element) return;
+    
+    // 置顶的栏目 z-index 更高
+    if (isPinned) {
+        element.style.zIndex = '200';
+    } else {
+        element.style.zIndex = '100';
+    }
+}
+
 function removeTempNode(sectionId) {
     const element = document.getElementById(sectionId);
     if (element) {
@@ -3506,6 +3564,61 @@ function setupPermanentSectionTipClose() {
         localStorage.setItem('canvas-permanent-tip-closed', 'true');
         console.log('[Canvas] 永久栏目提示已关闭');
     });
+}
+
+function setupPermanentSectionPinButton() {
+    const pinBtn = document.getElementById('permanentSectionPinBtn');
+    const permanentSection = document.getElementById('permanentSection');
+    
+    if (!pinBtn || !permanentSection) {
+        console.warn('[Canvas] 找不到永久栏目置顶按钮或栏目元素');
+        return;
+    }
+    
+    // 加载置顶状态（默认为true）
+    let isPinned = true;
+    try {
+        const savedState = localStorage.getItem('permanent-section-pinned');
+        if (savedState !== null) {
+            isPinned = savedState === 'true';
+        }
+    } catch (error) {
+        console.error('[Canvas] 加载永久栏目置顶状态失败:', error);
+    }
+    
+    // 应用初始状态
+    updatePermanentSectionPinState(isPinned, pinBtn, permanentSection);
+    
+    // 添加点击事件
+    pinBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        isPinned = !isPinned;
+        updatePermanentSectionPinState(isPinned, pinBtn, permanentSection);
+        
+        // 保存状态
+        try {
+            localStorage.setItem('permanent-section-pinned', isPinned.toString());
+        } catch (error) {
+            console.error('[Canvas] 保存永久栏目置顶状态失败:', error);
+        }
+    });
+}
+
+function updatePermanentSectionPinState(isPinned, pinBtn, permanentSection) {
+    const pinLabel = (typeof currentLang !== 'undefined' && currentLang === 'en') ? 'Pin section' : '置顶栏目';
+    const unpinLabel = (typeof currentLang !== 'undefined' && currentLang === 'en') ? 'Unpin section' : '取消置顶';
+    
+    if (isPinned) {
+        pinBtn.classList.add('pinned');
+        pinBtn.title = unpinLabel;
+        pinBtn.innerHTML = '<i class="fas fa-thumbtack"></i>';
+        permanentSection.style.zIndex = '200';
+    } else {
+        pinBtn.classList.remove('pinned');
+        pinBtn.title = pinLabel;
+        pinBtn.innerHTML = '<i class="fas fa-thumbtack" style="opacity: 0.5;"></i>';
+        permanentSection.style.zIndex = '100';
+    }
 }
 
 // =============================================================================
@@ -3943,6 +4056,15 @@ function loadTempNodes() {
         
         // 根据已有ID刷新计数
         refreshTempSectionCounters();
+        
+        // 恢复序号计数器（找到最大的序号）
+        let maxSequenceNumber = 0;
+        CanvasState.tempSections.forEach(section => {
+            if (section.sequenceNumber && section.sequenceNumber > maxSequenceNumber) {
+                maxSequenceNumber = section.sequenceNumber;
+            }
+        });
+        CanvasState.tempSectionSequenceNumber = maxSequenceNumber;
         
         suppressScrollSync = true;
         try {

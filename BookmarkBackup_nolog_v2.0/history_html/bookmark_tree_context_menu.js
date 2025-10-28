@@ -796,15 +796,26 @@ function getTempPasteTarget(context) {
     const sectionId = context.sectionId;
     if (!sectionId) throw new Error('未找到临时栏目');
     
+    // 如果没有 nodeId，说明是在空白处粘贴，粘贴到根目录
+    if (!context.nodeId) {
+        return { sectionId, parentId: null, index: null };
+    }
+    
     let parentId = context.nodeId;
     let index = null;
     
-    if (!context.isFolder) {
+    // 如果是文件夹，粘贴到文件夹内部
+    if (context.isFolder) {
+        parentId = context.nodeId;
+        index = null; // 添加到文件夹末尾
+    } else {
+        // 如果是书签，粘贴到书签的下面
         const entry = manager.findItem(sectionId, context.nodeId);
         if (entry && entry.parent) {
             parentId = entry.parent.id || null;
-            index = entry.index + 1;
+            index = entry.index + 1; // 插入到当前书签的下一个位置
         } else {
+            // 如果找不到父节点，粘贴到根目录
             parentId = null;
             index = null;
         }

@@ -2165,11 +2165,11 @@ function makePermanentSectionDraggable() {
     document.addEventListener('mousemove', onMouseMove, false);
     document.addEventListener('mouseup', onMouseUp, true);
     
-    // 添加永久栏目空白区域右键菜单
-    const bookmarkTree = permanentSection.querySelector('.bookmark-tree');
-    if (bookmarkTree) {
-        bookmarkTree.addEventListener('contextmenu', (e) => {
-            // 检查是否点击在空白区域（不是树节点）
+    // 添加永久栏目空白区域右键菜单（整个栏目body区域）
+    const permanentBody = permanentSection.querySelector('.permanent-section-body');
+    if (permanentBody) {
+        permanentBody.addEventListener('contextmenu', (e) => {
+            // 检查是否点击在树节点上
             const treeItem = e.target.closest('.tree-item[data-node-id]');
             if (!treeItem) {
                 e.preventDefault();
@@ -2646,16 +2646,23 @@ function renderTempNode(section) {
         nodeElement.id = section.id;
         nodeElement.dataset.sectionId = section.id;
         container.appendChild(nodeElement);
+        
+        // 只在新建时设置位置和大小
+        nodeElement.style.transition = 'none';
+        nodeElement.style.left = section.x + 'px';
+        nodeElement.style.top = section.y + 'px';
+        nodeElement.style.width = (section.width || TEMP_SECTION_DEFAULT_WIDTH) + 'px';
+        nodeElement.style.height = (section.height || TEMP_SECTION_DEFAULT_HEIGHT) + 'px';
     } else {
+        // 更新时清空内容，但保持位置和大小不变
         nodeElement.innerHTML = '';
+        // 只更新颜色
+        nodeElement.style.setProperty('--section-color', section.color || TEMP_SECTION_DEFAULT_COLOR);
     }
     
-    nodeElement.style.transition = 'none';
-    nodeElement.style.left = section.x + 'px';
-    nodeElement.style.top = section.y + 'px';
-    nodeElement.style.width = (section.width || TEMP_SECTION_DEFAULT_WIDTH) + 'px';
-    nodeElement.style.height = (section.height || TEMP_SECTION_DEFAULT_HEIGHT) + 'px';
-    nodeElement.style.setProperty('--section-color', section.color || TEMP_SECTION_DEFAULT_COLOR);
+    if (isNew) {
+        nodeElement.style.setProperty('--section-color', section.color || TEMP_SECTION_DEFAULT_COLOR);
+    }
     
     const header = document.createElement('div');
     header.className = 'temp-node-header';
@@ -2781,6 +2788,7 @@ function renderTempNode(section) {
     makeNodeDraggable(nodeElement, section);
     makeTempNodeResizable(nodeElement, section);
     setupTempSectionTreeInteractions(treeContainer, section);
+    setupTempSectionBlankAreaMenu(nodeElement, section); // 新增：空白区域右键菜单
     setupTempSectionDropTargets(section, nodeElement, treeContainer, header);
     if (typeof attachTreeEvents === 'function') {
         attachTreeEvents(treeContainer);
@@ -3086,11 +3094,22 @@ function buildTempTreeNode(section, item, level) {
 function setupTempSectionTreeInteractions(treeContainer, section) {
     if (!treeContainer) return;
     
-    // 添加空白区域右键菜单
-    treeContainer.addEventListener('contextmenu', (e) => {
-        // 检查是否点击在空白区域（不是树节点）
+    // 注意：空白区域右键菜单已移至 setupTempSectionBlankAreaMenu
+}
+
+function setupTempSectionBlankAreaMenu(sectionElement, section) {
+    if (!sectionElement) return;
+    
+    // 在整个栏目容器上监听右键菜单
+    sectionElement.addEventListener('contextmenu', (e) => {
+        // 检查是否点击在树节点上
         const treeItem = e.target.closest('.tree-item[data-node-id]');
-        if (!treeItem) {
+        // 检查是否点击在操作按钮上
+        const actionBtn = e.target.closest('.temp-node-action-btn');
+        const headerArea = e.target.closest('.temp-node-header');
+        
+        // 如果不是树节点、不是操作按钮，则显示空白区域菜单
+        if (!treeItem && !actionBtn) {
             e.preventDefault();
             e.stopPropagation();
             showBlankAreaContextMenu(e, section.id, 'temporary');
@@ -3159,7 +3178,8 @@ function setupTempSectionDropTargets(section, sectionElement, treeContainer, hea
         }
     };
 
-    const targets = [treeContainer, header];
+    // 扩大drop区域：整个栏目节点都可以接收拖放
+    const targets = [sectionElement, treeContainer, header];
     targets.forEach(target => {
         if (!target) return;
         target.addEventListener('dragover', handleDragOver);

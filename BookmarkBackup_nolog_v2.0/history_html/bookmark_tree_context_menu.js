@@ -528,7 +528,7 @@ function buildMenuItems(context) {
             { action: 'rename', label: lang === 'zh_CN' ? '重命名' : 'Rename', icon: 'edit', group: 'select' },
             { action: 'cut', label: lang === 'zh_CN' ? '剪切' : 'Cut', icon: 'cut', group: 'select' },
             { action: 'copy', label: lang === 'zh_CN' ? '复制' : 'Copy', icon: 'copy', group: 'select' },
-            { action: 'paste', label: lang === 'zh_CN' ? '粘贴' : 'Paste', icon: 'paste', disabled: !hasClipboard(), group: 'select', hidden: true },
+            { action: 'paste', label: lang === 'zh_CN' ? '粘贴到文件夹内' : 'Paste into Folder', icon: 'paste', disabled: !hasClipboard(), group: 'select' },
             { separator: true },
 
             // 打开组
@@ -560,7 +560,7 @@ function buildMenuItems(context) {
             { action: 'edit', label: lang === 'zh_CN' ? '编辑' : 'Edit', icon: 'edit', group: 'select' },
             { action: 'cut', label: lang === 'zh_CN' ? '剪切' : 'Cut', icon: 'cut', group: 'select' },
             { action: 'copy', label: lang === 'zh_CN' ? '复制' : 'Copy', icon: 'copy', group: 'select' },
-            { action: 'paste', label: lang === 'zh_CN' ? '粘贴' : 'Paste', icon: 'paste', disabled: !hasClipboard(), group: 'select', hidden: true },
+            { action: 'paste', label: lang === 'zh_CN' ? '粘贴到下方' : 'Paste Below', icon: 'paste', disabled: !hasClipboard(), group: 'select' },
             { separator: true },
 
             // 打开组

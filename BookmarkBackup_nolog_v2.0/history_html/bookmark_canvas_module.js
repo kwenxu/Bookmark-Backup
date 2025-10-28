@@ -2640,6 +2640,19 @@ function renderTempNode(section) {
     let nodeElement = document.getElementById(section.id);
     const isNew = !nodeElement;
     
+    // 保存滚动位置（如果是更新现有节点）
+    // 注意：滚动容器是 temp-node-body，而不是 bookmark-tree
+    let savedScrollTop = 0;
+    let savedScrollLeft = 0;
+    if (!isNew && nodeElement) {
+        const existingBody = nodeElement.querySelector('.temp-node-body');
+        if (existingBody) {
+            savedScrollTop = existingBody.scrollTop || 0;
+            savedScrollLeft = existingBody.scrollLeft || 0;
+            console.log('[Canvas] 保存滚动位置:', { sectionId: section.id, scrollTop: savedScrollTop, scrollLeft: savedScrollLeft });
+        }
+    }
+    
     if (!nodeElement) {
         nodeElement = document.createElement('div');
         nodeElement.className = 'temp-canvas-node';
@@ -2795,6 +2808,33 @@ function renderTempNode(section) {
     }
     if (typeof attachDragEvents === 'function') {
         attachDragEvents(treeContainer);
+    }
+    
+    // 恢复滚动位置（在所有事件绑定之后，使用多次尝试确保成功）
+    // 即使滚动位置是0也需要恢复，因为可能从非0位置变为0
+    // 注意：滚动容器是 body (temp-node-body)，而不是 treeContainer
+    if (!isNew) {
+        const restoreScroll = () => {
+            body.scrollTop = savedScrollTop;
+            body.scrollLeft = savedScrollLeft;
+            console.log('[Canvas] 恢复滚动位置:', { 
+                sectionId: section.id, 
+                target: { top: savedScrollTop, left: savedScrollLeft },
+                actual: { top: body.scrollTop, left: body.scrollLeft }
+            });
+        };
+        
+        // 立即尝试
+        restoreScroll();
+        
+        // 使用 requestAnimationFrame 延迟尝试
+        requestAnimationFrame(() => {
+            restoreScroll();
+            // 再次延迟尝试（确保 DOM 完全渲染和事件绑定完成）
+            setTimeout(restoreScroll, 10);
+            setTimeout(restoreScroll, 50);
+            setTimeout(restoreScroll, 100);
+        });
     }
     
     nodeElement.offsetHeight;

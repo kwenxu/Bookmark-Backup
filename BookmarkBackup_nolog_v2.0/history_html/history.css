@@ -4153,11 +4153,18 @@ a.tree-label.tree-bookmark-link:hover {
 }
 
 .permanent-section-tip-container {
-    display: inline-flex;
-    align-items: center;
-    gap: 4px;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
     margin-top: 6px;
     position: relative;
+    width: 100%;
+}
+
+.permanent-section-tip-content {
+    display: flex;
+    align-items: center;
+    gap: 4px;
 }
 
 .permanent-section-tip {
@@ -4165,7 +4172,80 @@ a.tree-label.tree-bookmark-link:hover {
     font-size: 11px;
     opacity: 0.95;
     line-height: 1.4;
-    display: inline;
+    flex: 1;
+}
+
+/* 永久栏目 Markdown 渲染样式 */
+.permanent-section-tip p {
+    margin: 0;
+    padding: 0;
+}
+
+.permanent-section-tip h1,
+.permanent-section-tip h2,
+.permanent-section-tip h3,
+.permanent-section-tip h4,
+.permanent-section-tip h5,
+.permanent-section-tip h6 {
+    margin: 4px 0;
+    font-size: 11px;
+    font-weight: 600;
+}
+
+.permanent-section-tip ul,
+.permanent-section-tip ol {
+    margin: 2px 0;
+    padding-left: 16px;
+}
+
+.permanent-section-tip li {
+    margin: 2px 0;
+}
+
+.permanent-section-tip code {
+    background: rgba(255, 255, 255, 0.15);
+    padding: 2px 4px;
+    border-radius: 2px;
+    font-family: 'Courier New', monospace;
+    font-size: 10px;
+}
+
+.permanent-section-tip blockquote {
+    margin: 4px 0;
+    padding-left: 8px;
+    border-left: 2px solid rgba(255, 255, 255, 0.3);
+}
+
+.permanent-section-tip strong {
+    font-weight: 600;
+}
+
+.permanent-section-tip em {
+    font-style: italic;
+}
+
+.permanent-section-tip-controls {
+    display: flex;
+    align-items: center;
+    gap: 2px;
+}
+
+.permanent-section-tip-edit-btn {
+    background: rgba(255, 255, 255, 0.25);
+    border: none;
+    color: white;
+    width: 16px;
+    height: 16px;
+    border-radius: 3px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    padding: 0;
+    font-size: 10px;
+    transition: all 0.2s ease;
+    opacity: 0;
+    pointer-events: none;
 }
 
 .permanent-section-tip-close {
@@ -4184,30 +4264,74 @@ a.tree-label.tree-bookmark-link:hover {
     transition: all 0.2s ease;
     opacity: 0;
     pointer-events: none;
-    margin-left: 2px;
 }
 
-/* hover在容器上时显示关闭按钮 */
+/* hover在容器上时显示编辑和关闭按钮 */
+.permanent-section-tip-container:hover .permanent-section-tip-edit-btn,
 .permanent-section-tip-container:hover .permanent-section-tip-close {
     opacity: 1;
     pointer-events: auto;
 }
 
+.permanent-section-tip-edit-btn:hover,
 .permanent-section-tip-close:hover {
     background: rgba(255, 255, 255, 0.4);
     transform: scale(1.15);
 }
 
+.permanent-section-tip-edit-btn:active,
 .permanent-section-tip-close:active {
     transform: scale(0.9);
+}
+
+.permanent-section-tip-editor {
+    width: 100%;
+    padding: 8px;
+    border: 1px solid rgba(255, 255, 255, 0.3);
+    border-radius: 4px;
+    background: rgba(255, 255, 255, 0.1);
+    color: white;
+    font-size: 11px;
+    font-family: inherit;
+    line-height: 1.4;
+    resize: vertical;
+    min-height: 50px;
+    max-height: 100px;
+    transition: all 0.2s ease;
+}
+
+.permanent-section-tip-editor:focus {
+    outline: none;
+    background: rgba(255, 255, 255, 0.15);
+    border-color: rgba(255, 255, 255, 0.5);
+    box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.2);
+}
+
+[data-theme="dark"] .permanent-section-tip-edit-btn {
+    opacity: 0;
+    pointer-events: none;
 }
 
 [data-theme="dark"] .permanent-section-tip-close {
     background: rgba(255, 255, 255, 0.2);
 }
 
+[data-theme="dark"] .permanent-section-tip-edit-btn:hover,
 [data-theme="dark"] .permanent-section-tip-close:hover {
     background: rgba(255, 255, 255, 0.35);
+}
+
+[data-theme="dark"] .permanent-section-tip-editor {
+    background: rgba(0, 0, 0, 0.3);
+    color: rgba(255, 255, 255, 0.8);
+    border-color: rgba(255, 255, 255, 0.25);
+}
+
+[data-theme="dark"] .permanent-section-tip-editor:focus {
+    outline: none;
+    background: rgba(0, 0, 0, 0.5);
+    border-color: rgba(255, 255, 255, 0.4);
+    box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.15);
 }
 
 .permanent-section-body {
@@ -4496,6 +4620,161 @@ a.tree-label.tree-bookmark-link:hover {
     overflow-y: auto;
     overflow-x: hidden;
     backdrop-filter: blur(0px);
+}
+
+.temp-node-description-container {
+    padding: 8px 16px;
+    background: rgba(0, 0, 0, 0.05);
+    border-top: 1px solid rgba(0, 0, 0, 0.08);
+    border-bottom: 1px solid rgba(0, 0, 0, 0.08);
+    display: flex;
+    align-items: flex-start;
+    gap: 8px;
+}
+
+.temp-node-description-content {
+    flex: 1;
+}
+
+.temp-node-description {
+    margin: 0;
+    padding: 0;
+    font-size: 11px;
+    color: rgba(0, 0, 0, 0.65);
+    line-height: 1.4;
+    word-wrap: break-word;
+}
+
+/* Markdown 渲染样式 */
+.temp-node-description p {
+    margin: 0;
+    padding: 0;
+}
+
+.temp-node-description h1,
+.temp-node-description h2,
+.temp-node-description h3,
+.temp-node-description h4,
+.temp-node-description h5,
+.temp-node-description h6 {
+    margin: 4px 0;
+    font-size: 11px;
+    font-weight: 600;
+}
+
+.temp-node-description ul,
+.temp-node-description ol {
+    margin: 2px 0;
+    padding-left: 16px;
+}
+
+.temp-node-description li {
+    margin: 2px 0;
+}
+
+.temp-node-description code {
+    background: rgba(0, 0, 0, 0.08);
+    padding: 2px 4px;
+    border-radius: 2px;
+    font-family: 'Courier New', monospace;
+    font-size: 10px;
+}
+
+.temp-node-description blockquote {
+    margin: 4px 0;
+    padding-left: 8px;
+    border-left: 2px solid rgba(0, 0, 0, 0.2);
+}
+
+.temp-node-description strong {
+    font-weight: 600;
+}
+
+.temp-node-description em {
+    font-style: italic;
+}
+
+.temp-node-description-editor {
+    width: calc(100% - 16px);
+    padding: 8px;
+    margin: 8px 0;
+    border: 1px solid rgba(0, 0, 0, 0.15);
+    border-radius: 3px;
+    background: rgba(255, 255, 255, 0.8);
+    color: rgba(0, 0, 0, 0.7);
+    font-size: 11px;
+    font-family: inherit;
+    line-height: 1.4;
+    resize: vertical;
+    min-height: 40px;
+    max-height: 80px;
+}
+
+.temp-node-description-editor:focus {
+    outline: none;
+    border-color: rgba(37, 99, 235, 0.5);
+    background: white;
+    box-shadow: 0 0 0 2px rgba(37, 99, 235, 0.1);
+}
+
+.temp-node-description-controls {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+}
+
+.temp-node-desc-action-btn {
+    background: transparent;
+    border: none;
+    color: rgba(0, 0, 0, 0.45);
+    width: 16px;
+    height: 16px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    padding: 0;
+    font-size: 10px;
+    transition: all 0.2s ease;
+}
+
+.temp-node-desc-action-btn:hover {
+    color: rgba(0, 0, 0, 0.65);
+    transform: scale(1.15);
+}
+
+.temp-node-desc-action-btn:active {
+    transform: scale(0.9);
+}
+
+[data-theme="dark"] .temp-node-description {
+    color: rgba(255, 255, 255, 0.65);
+}
+
+[data-theme="dark"] .temp-node-description-container {
+    background: rgba(255, 255, 255, 0.05);
+    border-top-color: rgba(255, 255, 255, 0.1);
+    border-bottom-color: rgba(255, 255, 255, 0.1);
+}
+
+[data-theme="dark"] .temp-node-description-editor {
+    background: rgba(0, 0, 0, 0.3);
+    color: rgba(255, 255, 255, 0.7);
+    border-color: rgba(255, 255, 255, 0.15);
+}
+
+[data-theme="dark"] .temp-node-description-editor:focus {
+    border-color: rgba(59, 130, 246, 0.5);
+    background: rgba(0, 0, 0, 0.5);
+    box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.1);
+}
+
+[data-theme="dark"] .temp-node-desc-action-btn {
+    color: rgba(255, 255, 255, 0.45);
+}
+
+[data-theme="dark"] .temp-node-desc-action-btn:hover {
+    color: rgba(255, 255, 255, 0.65);
 }
 
 .temp-node-type-badge {

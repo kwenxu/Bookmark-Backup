@@ -7,6 +7,7 @@
     <link rel="stylesheet" href="history.css">
     <link rel="stylesheet" href="canvas_obsidian_style.css">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/5.15.3/css/all.min.css">
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
     <script src="bookmark_tree_context_menu.js" defer></script>
     <script src="bookmark_tree_drag_drop.js" defer></script>
     <script src="bookmark_canvas_module.js" defer></script>
@@ -261,10 +262,18 @@
                             </div>
                         </div>
                         <div class="permanent-section-tip-container" id="permanentSectionTipContainer">
-                            <p class="permanent-section-tip" id="permanentSectionTip">拖动书签/文件夹至空白处，创建书签型临时节点；临时节点的修改不计入核心数据，可用来对比查看/整理；栏目间可互相拖动/粘贴</p>
-                            <button class="permanent-section-tip-close" id="permanentSectionTipClose" title="关闭提示">
-                                <i class="fas fa-times"></i>
-                            </button>
+                            <div class="permanent-section-tip-content">
+                                <p class="permanent-section-tip" id="permanentSectionTip">拖动书签/文件夹至空白处，创建书签型临时节点；临时节点的修改不计入核心数据，可用来对比查看/整理；栏目间可互相拖动/粘贴</p>
+                                <div class="permanent-section-tip-controls">
+                                    <button class="permanent-section-tip-edit-btn" id="permanentSectionTipEditBtn" title="编辑说明">
+                                        <i class="fas fa-edit"></i>
+                                    </button>
+                                    <button class="permanent-section-tip-close" id="permanentSectionTipClose" title="关闭提示">
+                                        <i class="fas fa-times"></i>
+                                    </button>
+                                </div>
+                            </div>
+                            <textarea class="permanent-section-tip-editor" id="permanentSectionTipEditor" style="display: none;" placeholder="输入说明文字"></textarea>
                         </div>
                     </div>
                     <div class="permanent-section-body">

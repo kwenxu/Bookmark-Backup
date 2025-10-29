@@ -693,7 +693,14 @@ function applyLanguage() {
     const permanentSectionTitle = document.getElementById('permanentSectionTitle');
     if (permanentSectionTitle) permanentSectionTitle.textContent = i18n.permanentSectionTitle[currentLang];
     const permanentSectionTip = document.getElementById('permanentSectionTip');
-    if (permanentSectionTip) permanentSectionTip.textContent = i18n.permanentSectionTip[currentLang];
+    if (permanentSectionTip) {
+        // 若用户已自定义说明，则保留用户内容；仅在无自定义时应用默认文案
+        let savedTip = '';
+        try { savedTip = localStorage.getItem('canvas-permanent-tip-text') || ''; } catch {}
+        if (!savedTip.trim()) {
+            permanentSectionTip.textContent = i18n.permanentSectionTip[currentLang];
+        }
+    }
     
     // 更新按钮文本
     const copyAllHistoryText = document.getElementById('copyAllHistoryText');

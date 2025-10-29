@@ -2991,7 +2991,7 @@ function renderTempNode(section) {
     
     const descriptionEditor = document.createElement('textarea');
     descriptionEditor.className = 'temp-node-description-editor';
-    descriptionEditor.placeholder = '添加说明文字...';
+    descriptionEditor.placeholder = '';
     descriptionEditor.value = section.description || '';
     descriptionEditor.style.display = 'none';
     descriptionContent.appendChild(descriptionEditor);
@@ -3000,7 +3000,7 @@ function renderTempNode(section) {
     
     const descriptionControls = document.createElement('div');
     descriptionControls.className = 'temp-node-description-controls';
-    descriptionControls.style.display = section.description ? 'flex' : 'none';
+    descriptionControls.style.display = 'flex';
     
     const editDescBtn = document.createElement('button');
     editDescBtn.type = 'button';
@@ -3029,11 +3029,8 @@ function renderTempNode(section) {
         // 重新渲染 Markdown
         renderTempDescription();
         
-        if (newDesc) {
-            descriptionControls.style.display = 'flex';
-        } else {
-            descriptionControls.style.display = 'none';
-        }
+        // 结束编辑后交给CSS通过hover/状态控制按钮显隐
+        descriptionContainer.classList.remove('editing');
         
         descriptionEditor.style.display = 'none';
         descriptionText.style.display = 'block';
@@ -3051,6 +3048,8 @@ function renderTempNode(section) {
             // 进入编辑模式
             descriptionEditor.style.display = 'block';
             descriptionText.style.display = 'none';
+            // 编辑状态下强制显示按钮（CSS 通过 .editing 控制）
+            descriptionContainer.classList.add('editing');
             descriptionEditor.focus();
             descriptionEditor.select();
         }
@@ -3073,7 +3072,7 @@ function renderTempNode(section) {
         renderTempDescription();
         descriptionEditor.style.display = 'none';
         descriptionText.style.display = 'block';
-        descriptionControls.style.display = 'none';
+        descriptionContainer.classList.remove('editing');
         saveTempNodes();
         console.log('[Canvas] 临时栏目说明已删除:', section.id);
     });
@@ -3088,6 +3087,7 @@ function renderTempNode(section) {
             descriptionEditor.value = section.description || '';
             descriptionEditor.style.display = 'none';
             descriptionText.style.display = 'block';
+            descriptionContainer.classList.remove('editing');
         }
     });
     
@@ -4065,32 +4065,55 @@ function setupPermanentSectionTipClose() {
         return;
     }
     
+    // 折叠栏（像临时栏说明的占位小栏）
+    let collapsedBar = tipContainer.querySelector('.permanent-section-tip-collapsed');
+    if (!collapsedBar) {
+        collapsedBar = document.createElement('div');
+        collapsedBar.className = 'permanent-section-tip-collapsed';
+        const lang = typeof currentLang !== 'undefined' ? currentLang : 'zh';
+        const text = lang === 'en' ? 'Click to add description...' : '点击添加说明...';
+        collapsedBar.innerHTML = `<i class="fas fa-info-circle" style="font-size:12px;"></i><span>${text}</span>`;
+        tipContainer.appendChild(collapsedBar);
+    }
+    
     // 检查是否已经关闭过
     const isTipClosed = localStorage.getItem('canvas-permanent-tip-closed') === 'true';
     if (isTipClosed) {
-        tipContainer.style.display = 'none';
+        tipContainer.classList.add('collapsed');
+    } else {
+        tipContainer.classList.remove('collapsed');
     }
     
-    // 加载保存的说明文字
+    // 多语言占位文本
+    const getPlaceholderText = () => {
+        const lang = typeof currentLang !== 'undefined' ? currentLang : 'zh';
+        return lang === 'en' ? 'Click to add description...' : '点击添加说明...';
+    };
+
+    // 加载保存的说明文字并渲染（空内容显示占位提示）
     const savedTip = localStorage.getItem('canvas-permanent-tip-text');
-    const rawTipContent = savedTip || tipText.textContent;
-    tipEditor.value = rawTipContent;
-    
-    // 渲染 Markdown 内容
-    const renderTipMarkdown = () => {
-        if (typeof marked !== 'undefined') {
-            try {
-                const html = marked.parse(rawTipContent);
-                tipText.innerHTML = html;
-            } catch (e) {
-                tipText.textContent = rawTipContent;
+    tipEditor.value = (savedTip || '');
+
+    const renderTipContent = (text) => {
+        const val = (text || '').trim();
+        if (val) {
+            if (typeof marked !== 'undefined') {
+                try {
+                    tipText.innerHTML = marked.parse(val);
+                } catch (e) {
+                    tipText.textContent = val;
+                }
+            } else {
+                tipText.textContent = val;
             }
+            tipText.title = '双击编辑说明';
         } else {
-            tipText.textContent = rawTipContent;
+            tipText.innerHTML = `<span style="opacity: 0.6;">${getPlaceholderText()}</span>`;
+            tipText.title = '点击添加说明';
         }
     };
-    
-    renderTipMarkdown();
+
+    renderTipContent(savedTip || '');
     
     // 为说明文字添加双击编辑功能
     tipText.style.cursor = 'pointer';
@@ -4103,18 +4126,136 @@ function setupPermanentSectionTipClose() {
         }
     });
     
-    // 点击关闭按钮
+    // 点击关闭按钮 -> 折叠而不是隐藏容器
     closeBtn.addEventListener('click', (e) => {
         e.stopPropagation();
         e.preventDefault();
-        
-        tipContainer.style.display = 'none';
+        if (isEditingTip) {
+            // 提交并退出编辑
+            const newText = tipEditor.value.trim();
+            if (newText) {
+                localStorage.setItem('canvas-permanent-tip-text', newText);
+            } else {
+                try { localStorage.removeItem('canvas-permanent-tip-text'); } catch {}
+            }
+            renderTipContent(newText);
+            isEditingTip = false;
+            const tipContent = tipContainer.querySelector('.permanent-section-tip-content');
+            tipEditor.style.display = 'none';
+            if (tipContent) tipContent.style.display = 'flex';
+            if (editBtn) {
+                editBtn.innerHTML = '<i class="fas fa-edit"></i>';
+                editBtn.title = '编辑说明';
+            }
+            detachOutsideListener();
+        }
+        tipContainer.classList.add('collapsed');
         localStorage.setItem('canvas-permanent-tip-closed', 'true');
         console.log('[Canvas] 永久栏目提示已关闭');
+    });
+
+    // 点击折叠栏 -> 展开并进入编辑
+    collapsedBar.addEventListener('click', (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        tipContainer.classList.remove('collapsed');
+        try { localStorage.setItem('canvas-permanent-tip-closed', 'false'); } catch {}
+        // 进入编辑模式
+        const tipContent = tipContainer.querySelector('.permanent-section-tip-content');
+        if (tipContent) tipContent.style.display = 'none';
+        tipEditor.style.display = 'block';
+        tipEditor.focus();
+        tipEditor.select();
+        // 标记为编辑中并启用外部点击监听，确保可点击外部退出
+        isEditingTip = true;
+        attachOutsideListener();
+        if (editBtn) {
+            // 同步按钮状态为“保存”
+            editBtn.innerHTML = '<i class="fas fa-save"></i>';
+            editBtn.title = '保存说明（Ctrl/Cmd+Enter）';
+        }
     });
     
     // 编辑功能
     let isEditingTip = false;
+    let outsideHandlers = [];
+    let clickAwayOverlay = null;
+
+    const commitAndExit = () => {
+        if (!isEditingTip) return;
+        const newText = tipEditor.value.trim();
+        if (newText) {
+            localStorage.setItem('canvas-permanent-tip-text', newText);
+        } else {
+            try { localStorage.removeItem('canvas-permanent-tip-text'); } catch {}
+        }
+        renderTipContent(newText);
+        isEditingTip = false;
+        const tipContent = tipContainer.querySelector('.permanent-section-tip-content');
+        tipEditor.style.display = 'none';
+        if (tipContent) tipContent.style.display = 'flex';
+        if (editBtn) {
+            editBtn.innerHTML = '<i class="fas fa-edit"></i>';
+            editBtn.title = '编辑说明';
+        }
+        detachOutsideListener();
+        console.log('[Canvas] 点击外部自动保存永久栏目说明');
+    };
+
+    const addCapture = (node, type, handler) => {
+        if (!node) return;
+        node.addEventListener(type, handler, true);
+        outsideHandlers.push(() => node.removeEventListener(type, handler, true));
+    };
+
+    const attachOutsideListener = () => {
+        if (outsideHandlers.length) return;
+        // 仅使用捕获监听检测外部点击，不使用覆盖层，避免遮挡输入框
+        // 1) 在容器上捕获：点击容器内部但非输入框也算“外部”
+        const containerCap = (e) => {
+            if (!isEditingTip) return;
+            const t = e.target;
+            if (t === tipEditor || (tipEditor && tipEditor.contains(t))) return;
+            if (editBtn && (t === editBtn || editBtn.contains(t))) return;
+            if (closeBtn && (t === closeBtn || closeBtn.contains(t))) return;
+            commitAndExit();
+        };
+        addCapture(tipContainer, 'pointerdown', containerCap);
+
+        // 2) 全局捕获：window/document/body/html 以及主要画布区域
+        const globalCap = (e) => {
+            if (!isEditingTip) return;
+            if (!tipContainer.contains(e.target)) commitAndExit();
+        };
+        addCapture(window, 'pointerdown', globalCap);
+        addCapture(document, 'pointerdown', globalCap);
+        addCapture(document.body, 'pointerdown', globalCap);
+        addCapture(document.documentElement, 'pointerdown', globalCap);
+        const ws = document.getElementById('canvasWorkspace');
+        const cc = document.getElementById('canvasContent');
+        addCapture(ws, 'pointerdown', globalCap);
+        addCapture(cc, 'pointerdown', globalCap);
+
+        // 兼容触摸/鼠标事件
+        addCapture(window, 'mousedown', globalCap);
+        addCapture(window, 'touchstart', globalCap);
+    };
+    const detachOutsideListener = () => {
+        while (outsideHandlers.length) {
+            const off = outsideHandlers.pop();
+            try { off(); } catch {}
+        }
+        if (clickAwayOverlay && clickAwayOverlay.parentNode) {
+            try { clickAwayOverlay.parentNode.removeChild(clickAwayOverlay); } catch {}
+        }
+        clickAwayOverlay = null;
+        if (tipContainer) {
+            if (typeof tipContainer.__oldZIndex !== 'undefined') {
+                tipContainer.style.zIndex = tipContainer.__oldZIndex || '';
+                delete tipContainer.__oldZIndex;
+            }
+        }
+    };
     
     if (editBtn) {
         editBtn.addEventListener('click', (e) => {
@@ -4124,47 +4265,22 @@ function setupPermanentSectionTipClose() {
             const tipContent = tipContainer.querySelector('.permanent-section-tip-content');
             
             if (isEditingTip) {
-                // 保存编辑（需要明确的保存动作）
-                const newText = tipEditor.value.trim();
-                if (newText !== rawTipContent) {
-                    // 更新内容变量
-                    Object.defineProperty(window, '__tempRawTip', {
-                        value: newText,
-                        writable: true,
-                        configurable: true
-                    });
-                    // 需要使用eval来更新rawTipContent，但这里我们直接保存到localStorage
-                    localStorage.setItem('canvas-permanent-tip-text', newText);
-                    
-                    // 重新渲染
-                    if (typeof marked !== 'undefined') {
-                        try {
-                            const html = marked.parse(newText);
-                            tipText.innerHTML = html;
-                        } catch (err) {
-                            tipText.textContent = newText;
-                        }
-                    } else {
-                        tipText.textContent = newText;
-                    }
-                    console.log('[Canvas] 永久栏目说明已保存');
-                }
-                
-                isEditingTip = false;
-                tipEditor.style.display = 'none';
-                tipContent.style.display = 'flex';
-                editBtn.innerHTML = '<i class="fas fa-edit"></i>';
-                editBtn.title = '编辑说明';
+                // 保存编辑（点击按钮明确保存）
+                commitAndExit();
             } else {
                 // 进入编辑模式
                 isEditingTip = true;
                 tipContent.style.display = 'none';
                 tipEditor.style.display = 'block';
+                // 每次进入编辑时，用已保存内容或空值填充
+                const saved = localStorage.getItem('canvas-permanent-tip-text');
+                tipEditor.value = (saved || '');
                 tipEditor.focus();
                 tipEditor.select();
                 editBtn.innerHTML = '<i class="fas fa-save"></i>';
                 editBtn.title = '保存说明（Ctrl/Cmd+Enter）';
                 console.log('[Canvas] 进入永久栏目说明编辑模式');
+                attachOutsideListener();
             }
         });
         
@@ -4176,32 +4292,50 @@ function setupPermanentSectionTipClose() {
             } else if (e.key === 'Escape') {
                 e.preventDefault();
                 if (isEditingTip) {
+                    // 取消编辑，不保存
                     isEditingTip = false;
                     const tipContent = tipContainer.querySelector('.permanent-section-tip-content');
                     tipEditor.style.display = 'none';
                     tipContent.style.display = 'flex';
                     editBtn.innerHTML = '<i class="fas fa-edit"></i>';
                     editBtn.title = '编辑说明';
-                    // 恢复原来的值
-                    tipEditor.value = localStorage.getItem('canvas-permanent-tip-text') || tipText.textContent;
+                    const saved = localStorage.getItem('canvas-permanent-tip-text');
+                    tipEditor.value = (saved || '');
+                    detachOutsideListener();
                     console.log('[Canvas] 取消编辑永久栏目说明');
                 }
             }
         });
         
-        // 点击外部时自动退出编辑（不保存）
+        // 点击外部时自动保存并退出（空内容显示占位提示）
         tipEditor.addEventListener('blur', () => {
             if (isEditingTip) {
                 isEditingTip = false;
                 const tipContent = tipContainer.querySelector('.permanent-section-tip-content');
                 tipEditor.style.display = 'none';
-                tipContent.style.display = 'flex';
-                editBtn.innerHTML = '<i class="fas fa-edit"></i>';
-                editBtn.title = '编辑说明';
-                // 恢复原来的值（不保存）
-                tipEditor.value = localStorage.getItem('canvas-permanent-tip-text') || tipText.textContent;
-                console.log('[Canvas] 点击外部退出永久栏目编辑');
+                if (tipContent) tipContent.style.display = 'flex';
+                if (editBtn) {
+                    editBtn.innerHTML = '<i class="fas fa-edit"></i>';
+                    editBtn.title = '编辑说明';
+                }
+                const newText = tipEditor.value.trim();
+                if (newText) {
+                    localStorage.setItem('canvas-permanent-tip-text', newText);
+                } else {
+                    try { localStorage.removeItem('canvas-permanent-tip-text'); } catch {}
+                }
+                renderTipContent(newText);
+                detachOutsideListener();
+                console.log('[Canvas] 点击外部自动保存永久栏目说明');
             }
+        });
+    }
+
+    // 折叠栏点击进入编辑时，确保文本为保存值或空
+    if (collapsedBar) {
+        collapsedBar.addEventListener('click', () => {
+            const saved = localStorage.getItem('canvas-permanent-tip-text');
+            tipEditor.value = (saved || '');
         });
     }
 }

@@ -95,6 +95,7 @@ const CanvasState = {
 
 let panSaveTimeout = null;
 const CANVAS_SCROLL_MARGIN = 120;
+const CANVAS_SCROLL_EXTRA_SPACE = 2000; // 允许滚动到内容外2000px的空白区域
 let suppressScrollSync = false;
 let zoomSaveTimeout = null;
 let zoomUpdateFrame = null;
@@ -1141,8 +1142,9 @@ function applyPanOffset() {
     const content = getCachedContent();
     if (!container || !content) return;
     
-    CanvasState.panOffsetX = clampPan('horizontal', CanvasState.panOffsetX);
-    CanvasState.panOffsetY = clampPan('vertical', CanvasState.panOffsetY);
+    // 不要自动限制滚动位置，允许用户自由滚动到空白区域
+    // CanvasState.panOffsetX = clampPan('horizontal', CanvasState.panOffsetX);
+    // CanvasState.panOffsetY = clampPan('vertical', CanvasState.panOffsetY);
     
     // 优化：滚动时使用 transform 直接操作，停止时才用 CSS 变量
     if (isScrolling) {
@@ -1836,6 +1838,7 @@ function getScrollEaseFactor(axis) {
 
 function schedulePanTo(targetX, targetY) {
     if (typeof targetX === 'number') {
+        // 只在动画滚动到特定位置时才限制（比如双击居中），允许一定的边界
         CanvasState.scrollAnimation.targetX = clampPan('horizontal', targetX);
     }
     if (typeof targetY === 'number') {
@@ -1915,16 +1918,18 @@ function updateCanvasScrollBounds(options = {}) {
     const workspaceWidth = workspace.clientWidth || 1;
     const workspaceHeight = workspace.clientHeight || 1;
     
-    const minPanX = workspaceWidth - CANVAS_SCROLL_MARGIN - bounds.maxX * zoom;
-    const maxPanX = CANVAS_SCROLL_MARGIN - bounds.minX * zoom;
-    const minPanY = workspaceHeight - CANVAS_SCROLL_MARGIN - bounds.maxY * zoom;
-    const maxPanY = CANVAS_SCROLL_MARGIN - bounds.minY * zoom;
+    // 允许滚动到内容区域外的空白区域
+    const minPanX = workspaceWidth - CANVAS_SCROLL_MARGIN - bounds.maxX * zoom - CANVAS_SCROLL_EXTRA_SPACE;
+    const maxPanX = CANVAS_SCROLL_MARGIN - bounds.minX * zoom + CANVAS_SCROLL_EXTRA_SPACE;
+    const minPanY = workspaceHeight - CANVAS_SCROLL_MARGIN - bounds.maxY * zoom - CANVAS_SCROLL_EXTRA_SPACE;
+    const maxPanY = CANVAS_SCROLL_MARGIN - bounds.minY * zoom + CANVAS_SCROLL_EXTRA_SPACE;
     
     CanvasState.scrollBounds.horizontal = normalizeScrollBounds(minPanX, maxPanX, workspaceWidth);
     CanvasState.scrollBounds.vertical = normalizeScrollBounds(minPanY, maxPanY, workspaceHeight);
     
-    CanvasState.panOffsetX = clampPan('horizontal', CanvasState.panOffsetX);
-    CanvasState.panOffsetY = clampPan('vertical', CanvasState.panOffsetY);
+    // 不要自动限制滚动位置，允许用户滚动到空白区域
+    // CanvasState.panOffsetX = clampPan('horizontal', CanvasState.panOffsetX);
+    // CanvasState.panOffsetY = clampPan('vertical', CanvasState.panOffsetY);
     
     if (!initial) {
         applyPanOffset();

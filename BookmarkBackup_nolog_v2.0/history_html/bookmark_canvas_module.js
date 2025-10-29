@@ -33,6 +33,12 @@ const CanvasState = {
             description: '渲染所有栏目，适合少量栏目'
         }
     },
+    // 延迟休眠机制
+    dormancyTimers: new Map(), // 存储每个栏目的休眠定时器 sectionId -> { type, timer, scheduledAt }
+    dormancyDelays: {
+        viewport: 120000,  // 离开视口2分钟后休眠
+        occlusion: 120000  // 被遮挡2分钟后休眠（暂未启用）
+    },
     // 防重复创建
     isCreatingTempNode: false, // 标记是否正在创建临时节点
     lastDragEndTime: 0, // 上次 dragend 事件的时间戳
@@ -3593,6 +3599,62 @@ function updateSectionZIndex(sectionId, isPinned) {
 // 栏目休眠管理（性能优化）- 基于视口可见性
 // =============================================================================
 
+// 取消栏目的休眠定时器
+function cancelDormancyTimer(sectionId) {
+    const timerInfo = CanvasState.dormancyTimers.get(sectionId);
+    if (timerInfo && timerInfo.timer) {
+        clearTimeout(timerInfo.timer);
+        CanvasState.dormancyTimers.delete(sectionId);
+    }
+}
+
+// 调度延迟休眠
+function scheduleDormancy(section, reason) {
+    const sectionId = section.id;
+    
+    // 取消之前的定时器
+    cancelDormancyTimer(sectionId);
+    
+    // 确定延迟时间
+    const delay = reason === 'viewport' 
+        ? CanvasState.dormancyDelays.viewport 
+        : CanvasState.dormancyDelays.occlusion;
+    
+    // 设置新的定时器
+    const timer = setTimeout(() => {
+        // 再次检查栏目是否仍然应该休眠
+        const element = document.getElementById(sectionId);
+        if (element && !section.dormant) {
+            section.dormant = true;
+            element.style.display = 'none';
+        }
+        CanvasState.dormancyTimers.delete(sectionId);
+    }, delay);
+    
+    CanvasState.dormancyTimers.set(sectionId, {
+        type: reason,
+        timer: timer,
+        scheduledAt: Date.now()
+    });
+}
+
+// 立即唤醒栏目（取消定时器）
+function wakeSection(section) {
+    const sectionId = section.id;
+    
+    // 取消休眠定时器
+    cancelDormancyTimer(sectionId);
+    
+    // 如果已经休眠，立即唤醒
+    if (section.dormant) {
+        section.dormant = false;
+        const element = document.getElementById(sectionId);
+        if (element) {
+            element.style.display = '';
+        }
+    }
+}
+
 function manageSectionDormancy() {
     const workspace = document.getElementById('canvasWorkspace');
     if (!workspace) return;
@@ -3604,6 +3666,7 @@ function manageSectionDormancy() {
     // 无限制模式：不执行休眠
     if (margin === Infinity) {
         CanvasState.tempSections.forEach(section => {
+            cancelDormancyTimer(section.id);
             if (section.dormant) {
                 section.dormant = false;
                 const element = document.getElementById(section.id);
@@ -3612,7 +3675,6 @@ function manageSectionDormancy() {
                 }
             }
         });
-        console.log(`[Canvas] 性能模式：无限制 - 所有栏目保持活跃`);
         return;
     }
     
@@ -3628,114 +3690,61 @@ function manageSectionDormancy() {
     
     let dormantCount = 0;
     let activeCount = 0;
-    let occludedCount = 0;
+    let scheduledCount = 0;
     
-    // 先计算所有栏目的矩形区域和z-index
-    const sectionRects = CanvasState.tempSections.map(section => {
+    CanvasState.tempSections.forEach(section => {
         const element = document.getElementById(section.id);
+        if (!element) return;
+        
+        // 置顶的栏目永远不休眠
+        if (section.pinned) {
+            wakeSection(section);
+            activeCount++;
+            return;
+        }
+        
+        // 计算栏目的位置（考虑缩放和平移）
         const scale = CanvasState.zoom || 1;
         const x = section.x * scale + CanvasState.panOffsetX + workspaceRect.left;
         const y = section.y * scale + CanvasState.panOffsetY + workspaceRect.top;
         const width = (section.width || 360) * scale;
         const height = (section.height || 280) * scale;
-        const zIndex = element ? parseInt(element.style.zIndex || '100', 10) : 100;
-        
-        return {
-            section,
-            element,
-            x,
-            y,
-            width,
-            height,
-            zIndex,
-            rect: { left: x, top: y, right: x + width, bottom: y + height }
-        };
-    });
-    
-    // 按z-index排序（z-index大的在上面，会遮挡小的）
-    sectionRects.sort((a, b) => a.zIndex - b.zIndex);
-    
-    sectionRects.forEach((current, index) => {
-        const { section, element, x, y, width, height, rect } = current;
-        
-        if (!element) return;
-        
-        // 置顶的栏目永远不休眠
-        if (section.pinned) {
-            if (section.dormant) {
-                section.dormant = false;
-                element.style.display = '';
-            }
-            activeCount++;
-            return;
-        }
         
         // 检查是否在可见区域内
         const isInViewport = !(
-            rect.right < visibleArea.left ||
-            rect.left > visibleArea.right ||
-            rect.bottom < visibleArea.top ||
-            rect.top > visibleArea.bottom
+            x + width < visibleArea.left ||
+            x > visibleArea.right ||
+            y + height < visibleArea.top ||
+            y > visibleArea.bottom
         );
         
-        // 如果不在视口内，直接休眠
-        if (!isInViewport) {
-            if (!section.dormant) {
-                section.dormant = true;
-                element.style.display = 'none';
-                console.log(`[Canvas] 栏目 ${section.id} 离开视口，进入休眠`);
-            }
-            dormantCount++;
-            return;
-        }
-        
-        // 在视口内，检查是否被遮挡90%以上
-        let occludedArea = 0;
-        const totalArea = width * height;
-        
-        // 检查所有z-index更大的栏目（在当前栏目上面的）
-        for (let i = index + 1; i < sectionRects.length; i++) {
-            const upper = sectionRects[i];
-            
-            // 跳过休眠的栏目（不参与遮挡计算）
-            if (upper.section.dormant) continue;
-            
-            // 计算交集区域
-            const overlapLeft = Math.max(rect.left, upper.rect.left);
-            const overlapTop = Math.max(rect.top, upper.rect.top);
-            const overlapRight = Math.min(rect.right, upper.rect.right);
-            const overlapBottom = Math.min(rect.bottom, upper.rect.bottom);
-            
-            if (overlapLeft < overlapRight && overlapTop < overlapBottom) {
-                const overlapArea = (overlapRight - overlapLeft) * (overlapBottom - overlapTop);
-                occludedArea += overlapArea;
-            }
-        }
-        
-        // 计算遮挡比例
-        const occlusionRatio = totalArea > 0 ? occludedArea / totalArea : 0;
-        
-        // 被遮挡90%以上，进入休眠
-        if (occlusionRatio >= 0.90) {
-            if (!section.dormant) {
-                section.dormant = true;
-                element.style.display = 'none';
-                console.log(`[Canvas] 栏目 ${section.id} 被遮挡${Math.round(occlusionRatio * 100)}%，进入休眠`);
-            }
-            occludedCount++;
-            dormantCount++;
-        } else {
-            // 可见且遮挡不足90%，保持活跃
-            if (section.dormant) {
-                section.dormant = false;
-                element.style.display = '';
-                console.log(`[Canvas] 栏目 ${section.id} 进入视口，已唤醒`);
-            }
+        if (isInViewport) {
+            // 在视口内，立即唤醒（如果已休眠）或取消休眠定时器
+            wakeSection(section);
             activeCount++;
+        } else {
+            // 不在视口内，调度延迟休眠
+            if (!section.dormant) {
+                // 检查是否已经调度了休眠
+                const timerInfo = CanvasState.dormancyTimers.get(section.id);
+                if (!timerInfo) {
+                    // 还没调度，现在调度
+                    scheduleDormancy(section, 'viewport');
+                    scheduledCount++;
+                    activeCount++; // 还未休眠，仍然活跃
+                } else {
+                    // 已经调度了，等待定时器触发
+                    activeCount++; // 还未休眠，仍然活跃
+                }
+            } else {
+                // 已经休眠
+                dormantCount++;
+            }
         }
     });
     
-    console.log(`[Canvas] 性能模式：${currentSettings.name} (缓冲${margin}px) - 活跃 ${activeCount}，休眠 ${dormantCount} (视口外: ${dormantCount - occludedCount}, 遮挡: ${occludedCount})`);
+    // 性能统计（不输出日志）
+    // 活跃: activeCount, 休眠: dormantCount, 已调度: scheduledCount
 }
 
 function isSectionDormant(sectionId) {

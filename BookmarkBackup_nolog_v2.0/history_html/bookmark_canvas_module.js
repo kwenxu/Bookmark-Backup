@@ -9,6 +9,33 @@ const CanvasState = {
     tempItemCounter: 0,
     tempSectionSequenceNumber: 0,
     colorCursor: 0,
+    // 栏目休眠管理（性能优化）- 阶梯式性能模式
+    performanceMode: 'balanced', // 性能模式：'maximum' | 'balanced' | 'smooth' | 'unlimited'
+    performanceSettings: {
+        maximum: {
+            name: '极致性能',
+            margin: 0,
+            description: '仅渲染视口内可见栏目，最省资源'
+        },
+        balanced: {
+            name: '平衡模式',
+            margin: 50,
+            description: '平衡性能和体验（推荐）'
+        },
+        smooth: {
+            name: '流畅模式',
+            margin: 200,
+            description: '预加载更多栏目，滚动更流畅'
+        },
+        unlimited: {
+            name: '无限制',
+            margin: Infinity,
+            description: '渲染所有栏目，适合少量栏目'
+        }
+    },
+    // 防重复创建
+    isCreatingTempNode: false, // 标记是否正在创建临时节点
+    lastDragEndTime: 0, // 上次 dragend 事件的时间戳
     dragState: {
         isDragging: false,
         draggedElement: null,
@@ -88,6 +115,10 @@ const SCROLL_STOP_DELAY = 150; // 滚动停止后延迟加载时间
 // 性能优化：缓存 DOM 元素引用，避免重复查询
 let cachedCanvasContainer = null;
 let cachedCanvasContent = null;
+
+// 性能优化：休眠管理节流
+let dormancyUpdateTimer = null;
+let dormancyUpdatePending = false;
 
 function getCachedContainer() {
     if (!cachedCanvasContainer) {
@@ -555,6 +586,9 @@ function initCanvasView() {
     cachedCanvasContainer = null;
     cachedCanvasContent = null;
     
+    // 加载性能模式设置
+    loadPerformanceMode();
+    
     // 显示缩放控制器
     const zoomIndicator = document.getElementById('canvasZoomIndicator');
     if (zoomIndicator) {
@@ -741,6 +775,13 @@ function enhanceBookmarkTreeForCanvas() {
         item.addEventListener('dragend', async function(e) {
             if (CanvasState.dragState.dragSource !== 'permanent') return;
             
+            // 防重复：检查是否正在创建或者时间间隔太短
+            const now = Date.now();
+            if (CanvasState.isCreatingTempNode || (now - CanvasState.lastDragEndTime < 300)) {
+                console.log('[Canvas] 防重复：跳过重复的 dragend 事件');
+                return;
+            }
+            
             const dropX = e.clientX;
             const dropY = e.clientY;
             
@@ -774,6 +815,10 @@ function enhanceBookmarkTreeForCanvas() {
                     // 在Canvas上创建临时节点（支持多选合集）
                     if (CanvasState.dragState.draggedData) {
                         try {
+                            // 标记正在创建，防止重复
+                            CanvasState.isCreatingTempNode = true;
+                            CanvasState.lastDragEndTime = now;
+                            
                             let ids = [];
                             try {
                                 ids = collectPermanentSelectionIds(CanvasState.dragState.draggedData.id || null) || [];
@@ -787,6 +832,11 @@ function enhanceBookmarkTreeForCanvas() {
                         } catch (err) {
                             console.error('[Canvas] 创建临时栏目失败:', err);
                             alert('创建临时栏目失败: ' + err.message);
+                        } finally {
+                            // 延迟重置标志，确保所有 dragend 事件都被过滤
+                            setTimeout(() => {
+                                CanvasState.isCreatingTempNode = false;
+                            }, 500);
                         }
                     }
                 }
@@ -1166,6 +1216,26 @@ function onScrollStop() {
     scheduleBoundsUpdate();
     scheduleScrollbarUpdate();
     savePanOffsetThrottled();
+    
+    // 更新休眠状态
+    scheduleDormancyUpdate();
+}
+
+// 性能优化：调度休眠管理更新（节流）
+function scheduleDormancyUpdate() {
+    if (dormancyUpdatePending) return;
+    
+    dormancyUpdatePending = true;
+    
+    if (dormancyUpdateTimer) {
+        clearTimeout(dormancyUpdateTimer);
+    }
+    
+    dormancyUpdateTimer = setTimeout(() => {
+        dormancyUpdateTimer = null;
+        dormancyUpdatePending = false;
+        manageSectionDormancy();
+    }, 200); // 200ms 延迟
 }
 
 // 性能优化：调度滚动条更新（使用 RAF 去抖）
@@ -2630,7 +2700,12 @@ async function createTempNode(data, x, y) {
     }
     
     CanvasState.tempSections.push(section);
+    
     renderTempNode(section);
+    
+    // 延迟管理休眠状态
+    scheduleDormancyUpdate();
+    
     saveTempNodes();
 }
 
@@ -2645,6 +2720,12 @@ function renderTempNode(section) {
     
     let nodeElement = document.getElementById(section.id);
     const isNew = !nodeElement;
+    
+    // 如果栏目处于休眠状态，只隐藏不删除
+    if (section.dormant && nodeElement) {
+        nodeElement.style.display = 'none';
+        return;
+    }
     
     // 保存滚动位置（如果是更新现有节点）
     // 注意：滚动容器是 temp-node-body，而不是 bookmark-tree
@@ -3503,6 +3584,209 @@ function updateSectionZIndex(sectionId, isPinned) {
     }
 }
 
+// =============================================================================
+// 栏目休眠管理（性能优化）- 基于视口可见性
+// =============================================================================
+
+function manageSectionDormancy() {
+    const workspace = document.getElementById('canvasWorkspace');
+    if (!workspace) return;
+    
+    // 获取当前性能模式的缓冲区大小
+    const currentSettings = CanvasState.performanceSettings[CanvasState.performanceMode];
+    const margin = currentSettings ? currentSettings.margin : 50;
+    
+    // 无限制模式：不执行休眠
+    if (margin === Infinity) {
+        CanvasState.tempSections.forEach(section => {
+            if (section.dormant) {
+                section.dormant = false;
+                const element = document.getElementById(section.id);
+                if (element) {
+                    element.style.display = '';
+                }
+            }
+        });
+        console.log(`[Canvas] 性能模式：无限制 - 所有栏目保持活跃`);
+        return;
+    }
+    
+    const workspaceRect = workspace.getBoundingClientRect();
+    
+    // 扩展的可见区域
+    const visibleArea = {
+        left: workspaceRect.left - margin,
+        right: workspaceRect.right + margin,
+        top: workspaceRect.top - margin,
+        bottom: workspaceRect.bottom + margin
+    };
+    
+    let dormantCount = 0;
+    let activeCount = 0;
+    let occludedCount = 0;
+    
+    // 先计算所有栏目的矩形区域和z-index
+    const sectionRects = CanvasState.tempSections.map(section => {
+        const element = document.getElementById(section.id);
+        const scale = CanvasState.zoom || 1;
+        const x = section.x * scale + CanvasState.panOffsetX + workspaceRect.left;
+        const y = section.y * scale + CanvasState.panOffsetY + workspaceRect.top;
+        const width = (section.width || 360) * scale;
+        const height = (section.height || 280) * scale;
+        const zIndex = element ? parseInt(element.style.zIndex || '100', 10) : 100;
+        
+        return {
+            section,
+            element,
+            x,
+            y,
+            width,
+            height,
+            zIndex,
+            rect: { left: x, top: y, right: x + width, bottom: y + height }
+        };
+    });
+    
+    // 按z-index排序（z-index大的在上面，会遮挡小的）
+    sectionRects.sort((a, b) => a.zIndex - b.zIndex);
+    
+    sectionRects.forEach((current, index) => {
+        const { section, element, x, y, width, height, rect } = current;
+        
+        if (!element) return;
+        
+        // 置顶的栏目永远不休眠
+        if (section.pinned) {
+            if (section.dormant) {
+                section.dormant = false;
+                element.style.display = '';
+            }
+            activeCount++;
+            return;
+        }
+        
+        // 检查是否在可见区域内
+        const isInViewport = !(
+            rect.right < visibleArea.left ||
+            rect.left > visibleArea.right ||
+            rect.bottom < visibleArea.top ||
+            rect.top > visibleArea.bottom
+        );
+        
+        // 如果不在视口内，直接休眠
+        if (!isInViewport) {
+            if (!section.dormant) {
+                section.dormant = true;
+                element.style.display = 'none';
+                console.log(`[Canvas] 栏目 ${section.id} 离开视口，进入休眠`);
+            }
+            dormantCount++;
+            return;
+        }
+        
+        // 在视口内，检查是否被遮挡90%以上
+        let occludedArea = 0;
+        const totalArea = width * height;
+        
+        // 检查所有z-index更大的栏目（在当前栏目上面的）
+        for (let i = index + 1; i < sectionRects.length; i++) {
+            const upper = sectionRects[i];
+            
+            // 跳过休眠的栏目（不参与遮挡计算）
+            if (upper.section.dormant) continue;
+            
+            // 计算交集区域
+            const overlapLeft = Math.max(rect.left, upper.rect.left);
+            const overlapTop = Math.max(rect.top, upper.rect.top);
+            const overlapRight = Math.min(rect.right, upper.rect.right);
+            const overlapBottom = Math.min(rect.bottom, upper.rect.bottom);
+            
+            if (overlapLeft < overlapRight && overlapTop < overlapBottom) {
+                const overlapArea = (overlapRight - overlapLeft) * (overlapBottom - overlapTop);
+                occludedArea += overlapArea;
+            }
+        }
+        
+        // 计算遮挡比例
+        const occlusionRatio = totalArea > 0 ? occludedArea / totalArea : 0;
+        
+        // 被遮挡90%以上，进入休眠
+        if (occlusionRatio >= 0.90) {
+            if (!section.dormant) {
+                section.dormant = true;
+                element.style.display = 'none';
+                console.log(`[Canvas] 栏目 ${section.id} 被遮挡${Math.round(occlusionRatio * 100)}%，进入休眠`);
+            }
+            occludedCount++;
+            dormantCount++;
+        } else {
+            // 可见且遮挡不足90%，保持活跃
+            if (section.dormant) {
+                section.dormant = false;
+                element.style.display = '';
+                console.log(`[Canvas] 栏目 ${section.id} 进入视口，已唤醒`);
+            }
+            activeCount++;
+        }
+    });
+    
+    console.log(`[Canvas] 性能模式：${currentSettings.name} (缓冲${margin}px) - 活跃 ${activeCount}，休眠 ${dormantCount} (视口外: ${dormantCount - occludedCount}, 遮挡: ${occludedCount})`);
+}
+
+function isSectionDormant(sectionId) {
+    const section = getTempSection(sectionId);
+    return section && section.dormant === true;
+}
+
+function wakeSectionById(sectionId) {
+    const section = getTempSection(sectionId);
+    if (!section || !section.dormant) return;
+    
+    section.dormant = false;
+    const element = document.getElementById(section.id);
+    if (element) {
+        element.style.display = '';
+    }
+    
+    saveTempNodes();
+}
+
+// 设置性能模式
+function setPerformanceMode(mode) {
+    if (!CanvasState.performanceSettings[mode]) {
+        console.warn(`[Canvas] 无效的性能模式: ${mode}`);
+        return;
+    }
+    
+    CanvasState.performanceMode = mode;
+    const settings = CanvasState.performanceSettings[mode];
+    console.log(`[Canvas] 切换性能模式：${settings.name} - ${settings.description}`);
+    
+    // 保存到 localStorage
+    try {
+        localStorage.setItem('canvas-performance-mode', mode);
+    } catch (error) {
+        console.error('[Canvas] 保存性能模式失败:', error);
+    }
+    
+    // 立即更新休眠状态
+    manageSectionDormancy();
+}
+
+// 加载性能模式设置
+function loadPerformanceMode() {
+    try {
+        const saved = localStorage.getItem('canvas-performance-mode');
+        if (saved && CanvasState.performanceSettings[saved]) {
+            CanvasState.performanceMode = saved;
+            const settings = CanvasState.performanceSettings[saved];
+            console.log(`[Canvas] 加载性能模式：${settings.name}`);
+        }
+    } catch (error) {
+        console.error('[Canvas] 加载性能模式失败:', error);
+    }
+}
+
 function removeTempNode(sectionId) {
     const element = document.getElementById(sectionId);
     if (element) {
@@ -3510,23 +3794,62 @@ function removeTempNode(sectionId) {
     }
     
     CanvasState.tempSections = CanvasState.tempSections.filter(section => section.id !== sectionId);
+    
+    // 重新计算序号：让剩余栏目的序号连续
+    reorderSectionSequenceNumbers();
+    
     saveTempNodes();
     scheduleBoundsUpdate();
     scheduleScrollbarUpdate();
+    
+    // 删除后重新管理休眠状态（可能唤醒休眠的栏目）
+    scheduleDormancyUpdate();
 }
 
 function clearAllTempNodes() {
     if (!confirm('确定要清空所有临时栏目吗？')) return;
     
     const container = document.getElementById('canvasContent');
-    if (container) {
-        container.querySelectorAll('.temp-canvas-node').forEach(node => node.remove());
-    }
+    if (!container) return;
     
+    container.querySelectorAll('.temp-canvas-node').forEach(node => node.remove());
     CanvasState.tempSections = [];
+    
+    // 重置序号计数器
+    CanvasState.tempSectionSequenceNumber = 0;
+    
     saveTempNodes();
     updateCanvasScrollBounds();
     updateScrollbarThumbs();
+}
+
+// 重新计算所有临时栏目的序号，使其连续
+function reorderSectionSequenceNumbers() {
+    // 按当前序号排序
+    const sortedSections = CanvasState.tempSections
+        .filter(s => s.sequenceNumber) // 只处理有序号的
+        .sort((a, b) => a.sequenceNumber - b.sequenceNumber);
+    
+    // 重新分配序号 1, 2, 3, ...
+    sortedSections.forEach((section, index) => {
+        const newSequenceNumber = index + 1;
+        if (section.sequenceNumber !== newSequenceNumber) {
+            section.sequenceNumber = newSequenceNumber;
+            console.log(`[Canvas] 重新编号：${section.id} -> 序号 ${newSequenceNumber}`);
+            
+            // 更新DOM中的序号显示
+            const element = document.getElementById(section.id);
+            if (element) {
+                const badge = element.querySelector('.temp-node-sequence-badge');
+                if (badge) {
+                    badge.textContent = newSequenceNumber;
+                }
+            }
+        }
+    });
+    
+    // 更新全局序号计数器为最大序号
+    CanvasState.tempSectionSequenceNumber = sortedSections.length;
 }
 
 // 注意：这个函数已经不需要了，因为永久栏目在renderCurrentView中直接创建到canvas-content中
@@ -4076,11 +4399,15 @@ function loadTempNodes() {
         } finally {
             suppressScrollSync = false;
         }
+        
         console.log(`[Canvas] 加载了 ${CanvasState.tempSections.length} 个临时栏目`);
         
         loadPermanentSectionPosition();
         updateCanvasScrollBounds();
         updateScrollbarThumbs();
+        
+        // 初始化休眠状态
+        scheduleDormancyUpdate();
     } catch (error) {
         console.error('[Canvas] 加载临时栏目失败:', error);
     }
@@ -4107,6 +4434,10 @@ window.CanvasModule = {
         extractPayload: extractTempItemsPayload,
         moveWithin: moveTempItemsWithinSection,
         moveAcross: moveTempItemsAcrossSections,
-        ensureRendered: ensureTempSectionRendered
+        ensureRendered: ensureTempSectionRendered,
+        // 性能模式管理
+        setPerformanceMode: setPerformanceMode,
+        getPerformanceMode: () => CanvasState.performanceMode,
+        getPerformanceSettings: () => CanvasState.performanceSettings
     }
 };

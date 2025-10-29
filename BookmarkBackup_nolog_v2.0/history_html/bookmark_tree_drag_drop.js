@@ -135,6 +135,14 @@ function handleDragOver(e) {
     // 显示拖拽指示器（包含屏蔽逻辑）
     showDropIndicator(targetNode, e);
     
+    // 当来源为临时栏目时，对永久栏目的文件夹增加蓝色候选高亮
+    try {
+        const src = (typeof getCurrentDragSourceType === 'function') ? getCurrentDragSourceType() : null;
+        if (src === 'temporary' && targetNode.dataset.nodeType === 'folder') {
+            targetNode.classList.add('temp-tree-drop-highlight');
+        }
+    } catch (_) {}
+    
     // 更新自动滚动
     updateAutoScroll(e);
 }
@@ -148,6 +156,14 @@ function handleDragEnter(e) {
     if (targetNode !== draggedNode && !isDescendant(targetNode, draggedNode)) {
         targetNode.classList.add('drag-over');
     }
+
+    // 当来源为临时栏目时，对永久栏目的文件夹增加蓝色候选高亮
+    try {
+        const src = (typeof getCurrentDragSourceType === 'function') ? getCurrentDragSourceType() : null;
+        if (src === 'temporary' && targetNode.dataset.nodeType === 'folder') {
+            targetNode.classList.add('temp-tree-drop-highlight');
+        }
+    } catch (_) {}
 
     // 悬停自动展开文件夹（提升可用性）
     try {
@@ -174,6 +190,7 @@ function handleDragLeave(e) {
     
     const targetNode = e.currentTarget;
     targetNode.classList.remove('drag-over');
+    targetNode.classList.remove('temp-tree-drop-highlight');
     try { clearTimeout(hoverExpandTimer); } catch(_) {}
 }
 
@@ -184,6 +201,7 @@ async function handleDrop(e) {
     
     const targetNode = e.currentTarget;
     targetNode.classList.remove('drag-over');
+    targetNode.classList.remove('temp-tree-drop-highlight');
     
     const targetNodeId = targetNode.dataset.nodeId;
     const targetIsFolder = targetNode.dataset.nodeType === 'folder';
@@ -220,6 +238,10 @@ function handleDragEnd(e) {
     // 移除所有drag-over样式
     document.querySelectorAll('.drag-over').forEach(node => {
         node.classList.remove('drag-over');
+    });
+    // 清理跨栏目的候选高亮
+    document.querySelectorAll('.temp-tree-drop-highlight').forEach(node => {
+        node.classList.remove('temp-tree-drop-highlight');
     });
     
     // 隐藏拖拽指示器

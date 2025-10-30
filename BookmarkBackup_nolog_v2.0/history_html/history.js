@@ -3578,6 +3578,12 @@ function attachTreeEvents(treeContainer) {
         attachDragEvents(treeContainer);
     }
     
+    // 绑定指针拖拽事件（支持滚轮滚动）
+    if (typeof attachPointerDragEvents === 'function') {
+        attachPointerDragEvents(treeContainer);
+        console.log('[树事件] 指针拖拽事件已绑定');
+    }
+    
     // 如果在Canvas视图，重新绑定Canvas拖出功能
     if (currentView === 'canvas' && window.CanvasModule && window.CanvasModule.enhance) {
         console.log('[树事件] 当前在Canvas视图，重新绑定Canvas拖出功能');

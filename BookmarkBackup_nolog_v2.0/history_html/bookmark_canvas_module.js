@@ -3148,6 +3148,11 @@ function renderTempNode(section) {
     if (typeof attachDragEvents === 'function') {
         attachDragEvents(treeContainer);
     }
+    // 绑定指针拖拽事件（支持滚轮滚动）
+    if (typeof attachPointerDragEvents === 'function') {
+        attachPointerDragEvents(treeContainer);
+        console.log('[Canvas] 临时栏目指针拖拽事件已绑定');
+    }
     
     // 恢复滚动位置（在所有事件绑定之后，使用多次尝试确保成功）
     // 即使滚动位置是0也需要恢复，因为可能从非0位置变为0
@@ -4898,6 +4903,8 @@ window.CanvasModule = {
     enhance: enhanceBookmarkTreeForCanvas, // 增强书签树的Canvas功能
     clear: clearAllTempNodes,
     updateFullscreenButton: updateFullscreenButtonState,
+    CanvasState: CanvasState, // 导出状态供外部访问（如指针拖拽）
+    createTempNode: createTempNode, // 导出创建临时节点函数
     temp: {
         getSection: getTempSection,
         findItem: findTempItemEntry,

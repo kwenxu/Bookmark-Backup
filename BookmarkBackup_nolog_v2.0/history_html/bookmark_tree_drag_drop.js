@@ -581,6 +581,37 @@ async function refreshBookmarkTree() {
     }
 }
 
+// =============================================================================
+// 导出共享接口（供指针拖拽复用）
+// =============================================================================
+
+if (typeof window !== 'undefined') {
+    window.__treeDnd = {
+        // 显示放置指示器
+        showIndicator: showDropIndicator,
+        
+        // 隐藏放置指示器
+        hideIndicator: hideDropIndicator,
+        
+        // 获取当前指示器位置
+        getIndicatorPosition: function() {
+            return dropIndicator ? dropIndicator.dataset.position : 'inside';
+        },
+        
+        // 执行移动操作
+        performMove: moveBookmark,
+        
+        // 获取拖拽的节点信息
+        getDraggedNodeInfo: function() {
+            return {
+                nodeId: draggedNodeId,
+                treeType: draggedNodeTreeType,
+                sectionId: draggedNodeSectionId
+            };
+        }
+    };
+}
+
 // 导出函数
 if (typeof window !== 'undefined') {
     window.initDragDrop = initDragDrop;

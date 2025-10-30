@@ -2906,6 +2906,13 @@ a.tree-label.tree-bookmark-link:hover {
 /* ==================== 拖拽样式 ==================== */
 
 .tree-item[draggable="true"] {
+    /* 默认不显示十字光标，避免“选择时总出现拖动按钮”的体验问题 */
+    cursor: default;
+}
+
+/* 仅在“点击按住”或正在拖动时显示移动光标 */
+.tree-item[draggable="true"]:active,
+.tree-item.dragging {
     cursor: move;
 }
 

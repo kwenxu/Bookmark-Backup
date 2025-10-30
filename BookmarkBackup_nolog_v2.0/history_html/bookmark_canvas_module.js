@@ -807,8 +807,20 @@ function enhanceBookmarkTreeForCanvas() {
                 const elementAtPoint = document.elementFromPoint(dropX, dropY);
                 const tempNode = elementAtPoint?.closest('.temp-canvas-node');
                 const tempTree = elementAtPoint?.closest('.temp-bookmark-tree');
+                // 如果落点位于永久栏目内，则视为在永久栏目内部操作，不创建临时栏目
+                const permanentSection = document.getElementById('permanentSection');
+                const insidePermanentDom = !!(elementAtPoint && permanentSection && elementAtPoint.closest('#permanentSection'));
+                let insidePermanentRect = false;
+                if (permanentSection) {
+                    const pRect = permanentSection.getBoundingClientRect();
+                    insidePermanentRect = dropX >= pRect.left && dropX <= pRect.right && dropY >= pRect.top && dropY <= pRect.bottom;
+                }
                 
-                if (tempNode || tempTree) {
+                if (insidePermanentDom || insidePermanentRect) {
+                    // 落点在永久栏目区域内，不创建临时栏目（避免内部移动误触发）
+                    console.log('[Canvas] 拖拽位于永久栏目内，不创建临时栏目');
+                    accepted = true;
+                } else if (tempNode || tempTree) {
                     // 已经拖到现有临时栏目，由 drop 事件处理
                     console.log('[Canvas] 拖到现有临时栏目，不创建新栏目');
                     accepted = true;
@@ -2630,21 +2642,34 @@ async function handlePermanentDragEnd(e) {
     
     if (dropX >= rect.left && dropX <= rect.right && 
         dropY >= rect.top && dropY <= rect.bottom) {
-        
-        // 在Canvas上创建临时节点
-        const x = dropX - rect.left + workspace.scrollLeft;
-        const y = dropY - rect.top + workspace.scrollTop;
-        try {
-            let ids = [];
-            try { ids = collectPermanentSelectionIds((CanvasState.dragState.draggedData && CanvasState.dragState.draggedData.id) || null) || []; } catch(_) {}
-            if (Array.isArray(ids) && ids.length > 1) {
-                await createTempNode({ multi: true, permanentIds: ids }, x, y);
-            } else {
-                await createTempNode(CanvasState.dragState.draggedData, x, y);
+        // 若落点在永久栏目内，则视为永久栏目内部操作，不创建临时栏目
+        const elementAtPoint = document.elementFromPoint(dropX, dropY);
+        const permanentSection = document.getElementById('permanentSection');
+        const insidePermanentDom = !!(elementAtPoint && permanentSection && elementAtPoint.closest('#permanentSection'));
+        let insidePermanentRect = false;
+        if (permanentSection) {
+            const pRect = permanentSection.getBoundingClientRect();
+            insidePermanentRect = dropX >= pRect.left && dropX <= pRect.right && dropY >= pRect.top && dropY <= pRect.bottom;
+        }
+
+        if (!(insidePermanentDom || insidePermanentRect)) {
+            // 在Canvas空白/临时区创建临时节点
+            const x = dropX - rect.left + workspace.scrollLeft;
+            const y = dropY - rect.top + workspace.scrollTop;
+            try {
+                let ids = [];
+                try { ids = collectPermanentSelectionIds((CanvasState.dragState.draggedData && CanvasState.dragState.draggedData.id) || null) || []; } catch(_) {}
+                if (Array.isArray(ids) && ids.length > 1) {
+                    await createTempNode({ multi: true, permanentIds: ids }, x, y);
+                } else {
+                    await createTempNode(CanvasState.dragState.draggedData, x, y);
+                }
+            } catch (error) {
+                console.error('[Canvas] 创建临时栏目失败:', error);
+                alert('创建临时栏目失败: ' + error.message);
             }
-        } catch (error) {
-            console.error('[Canvas] 创建临时栏目失败:', error);
-            alert('创建临时栏目失败: ' + error.message);
+        } else {
+            console.log('[Canvas] 拖拽结束位于永久栏目内，不创建临时栏目');
         }
     }
     

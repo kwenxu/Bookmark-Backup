@@ -4345,7 +4345,7 @@ function renderTreeNodeWithChanges(node, level = 0, maxDepth = 50, visitedIds = 
     let statusIcon = '';
     let changeClass = '';
 
-    if (!node.children || node.children.length === 0) {
+    if (node.url) {
         // 叶子（书签）
         if (node.url) {
             if (change) {
@@ -4385,7 +4385,7 @@ function renderTreeNodeWithChanges(node, level = 0, maxDepth = 50, visitedIds = 
             const favicon = getFaviconUrl(node.url);
             return `
                 <div class="tree-node" style="padding-left: ${level * 12}px">
-                    <div class="tree-item ${changeClass}" data-node-id="${node.id}" data-node-title="${escapeHtml(node.title)}" data-node-url="${escapeHtml(node.url || '')}" data-node-type="bookmark">
+                    <div class="tree-item ${changeClass}" data-node-id="${node.id}" data-node-title="${escapeHtml(node.title)}" data-node-url="${escapeHtml(node.url || '')}" data-node-type="bookmark" data-node-index="${typeof node.index === 'number' ? node.index : ''}">
                         <span class="tree-toggle" style="opacity: 0"></span>
                         ${favicon ? `<img class="tree-icon" src="${favicon}" alt="" onerror="this.src='${fallbackIcon}'">` : `<i class="tree-icon fas fa-bookmark"></i>`}
                         <a href="${escapeHtml(node.url)}" target="_blank" class="tree-label tree-bookmark-link" rel="noopener noreferrer">${escapeHtml(node.title)}</a>
@@ -4394,7 +4394,6 @@ function renderTreeNodeWithChanges(node, level = 0, maxDepth = 50, visitedIds = 
                 </div>
             `;
         }
-        return '';
     }
 
     // 文件夹
@@ -4433,15 +4432,37 @@ function renderTreeNodeWithChanges(node, level = 0, maxDepth = 50, visitedIds = 
         }
     }
 
-    const sortedChildren = node.children ? [...node.children].sort((a, b) => {
-        const indexA = typeof a.index === 'number' ? a.index : 0;
-        const indexB = typeof b.index === 'number' ? b.index : 0;
-        return indexA - indexB;
-    }) : [];
+    // 对子节点排序：
+    // - 优先显示当前存在的节点（非 deleted），严格按 Chrome 的 index 升序
+    // - 被标记为 deleted 的旧节点排在最后，按其旧 index 升序
+    // - 缺少 index 的节点保持原始 children 数组中的相对顺序（稳定）
+    const children = Array.isArray(node.children) ? node.children : [];
+    const originalPos = new Map();
+    for (let i = 0; i < children.length; i++) originalPos.set(children[i]?.id, i);
+
+    const isDeleted = (n) => {
+        if (!treeChangeMap) return false;
+        const ch = treeChangeMap.get(n?.id);
+        return !!(ch && ch.type === 'deleted');
+    };
+
+    const cmpStable = (a, b) => {
+        const ia = (typeof a?.index === 'number') ? a.index : Number.POSITIVE_INFINITY;
+        const ib = (typeof b?.index === 'number') ? b.index : Number.POSITIVE_INFINITY;
+        if (ia !== ib) return ia - ib;
+        // 稳定性：当 index 相同或缺失，按原始出现顺序
+        const pa = originalPos.get(a?.id) ?? 0;
+        const pb = originalPos.get(b?.id) ?? 0;
+        return pa - pb;
+    };
+
+    const present = children.filter(c => !isDeleted(c)).sort(cmpStable);
+    const deleted = children.filter(c => isDeleted(c)).sort(cmpStable);
+    const sortedChildren = present.concat(deleted);
 
     return `
         <div class="tree-node" style="padding-left: ${level * 12}px">
-            <div class="tree-item ${changeClass}" data-node-id="${node.id}" data-node-title="${escapeHtml(node.title)}" data-node-type="folder">
+            <div class="tree-item ${changeClass}" data-node-id="${node.id}" data-node-title="${escapeHtml(node.title)}" data-node-type="folder" data-node-index="${typeof node.index === 'number' ? node.index : ''}">
                 <span class="tree-toggle ${level === 0 ? 'expanded' : ''}"><i class="fas fa-chevron-right"></i></span>
                 <i class="tree-icon fas fa-folder"></i>
                 <span class="tree-label">${escapeHtml(node.title)}</span>
@@ -4480,11 +4501,32 @@ async function applyIncrementalCreateToTree(id, bookmark) {
             ${bookmark.url ? '' : '<div class="tree-children"></div>'}
         </div>
     `;
-    // 插入（末尾）
-    parentNode.insertAdjacentHTML('beforeend', html);
+    // 插入到正确的 index 位置（忽略已删除的占位项）
+    const wrapper = document.createElement('div');
+    wrapper.innerHTML = html;
+    const newNodeEl = wrapper.firstElementChild; // .tree-node
+
+    // 计算锚点：仅统计未被标记为删除的同级节点
+    const siblingsAll = Array.from(parentNode.querySelectorAll(':scope > .tree-node'));
+    const presentSiblings = siblingsAll.filter(n => {
+        const item = n.querySelector(':scope > .tree-item');
+        return !(item && item.classList.contains('tree-change-deleted'));
+    });
+
+    const targetIndex = (typeof bookmark.index === 'number' && bookmark.index >= 0)
+        ? bookmark.index : presentSiblings.length;
+
+    const anchor = presentSiblings[targetIndex] || null;
+    if (anchor) {
+        parentNode.insertBefore(newNodeEl, anchor);
+    } else {
+        // 末尾插入：尽量插在第一个已删除节点之前，避免落到删除分组之后
+        const firstDeleted = siblingsAll.find(n => n.querySelector(':scope > .tree-item')?.classList.contains('tree-change-deleted'));
+        if (firstDeleted) parentNode.insertBefore(newNodeEl, firstDeleted); else parentNode.appendChild(newNodeEl);
+    }
     
     // 为新创建的节点绑定事件
-    const newItem = parentNode.lastElementChild?.querySelector('.tree-item');
+    const newItem = newNodeEl?.querySelector('.tree-item');
     if (newItem) {
         // 绑定右键菜单
         newItem.addEventListener('contextmenu', (e) => {
@@ -4622,14 +4664,22 @@ async function applyIncrementalMoveToTree(id, moveInfo) {
     if (!newParentChildren) { await renderTreeView(true); return; }
     // 从旧位置移除并插入新父下
     if (node) node.remove();
-    // 按目标 index 插入更准确
+    // 按目标 index 插入更准确（忽略已删除的同级节点）
     const targetIndex = (moveInfo && typeof moveInfo.index === 'number') ? moveInfo.index : null;
     if (targetIndex === null) {
-        newParentChildren.insertAdjacentElement('beforeend', node);
+        // 尽量插在第一个已删除节点之前
+        const siblingsAll = Array.from(newParentChildren.querySelectorAll(':scope > .tree-node'));
+        const firstDeleted = siblingsAll.find(n => n.querySelector(':scope > .tree-item')?.classList.contains('tree-change-deleted'));
+        if (firstDeleted) newParentChildren.insertBefore(node, firstDeleted); else newParentChildren.appendChild(node);
     } else {
-        const siblings = Array.from(newParentChildren.querySelectorAll(':scope > .tree-node'));
-        const anchor = siblings[targetIndex] || null;
-        if (anchor) newParentChildren.insertBefore(node, anchor); else newParentChildren.appendChild(node);
+        const siblingsAll = Array.from(newParentChildren.querySelectorAll(':scope > .tree-node'));
+        const presentSiblings = siblingsAll.filter(n => !n.querySelector(':scope > .tree-item')?.classList.contains('tree-change-deleted'));
+        const anchor = presentSiblings[targetIndex] || null;
+        if (anchor) newParentChildren.insertBefore(node, anchor);
+        else {
+            const firstDeleted = siblingsAll.find(n => n.querySelector(':scope > .tree-item')?.classList.contains('tree-change-deleted'));
+            if (firstDeleted) newParentChildren.insertBefore(node, firstDeleted); else newParentChildren.appendChild(node);
+        }
     }
     // 关键：仅对这个被拖拽的节点标记为蓝色"moved"
     // 其他由于这次移动而位置改变的兄弟节点不标记，因为我们只标识用户直接操作的对象

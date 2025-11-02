@@ -3357,6 +3357,115 @@ function getTreeFingerprint(tree) {
     return JSON.stringify(extractKey(tree[0]));
 }
 
+// 计算节点在指定树中的“索引地址路径”（示例：/1/2/3），从根的第一层开始使用 1 基索引
+function getIndexAddressPathFromTree(tree, targetId) {
+    try {
+        if (!tree || !tree[0]) return '';
+        // 构建 id -> node 快速索引
+        const map = new Map();
+        (function build(n){
+            if (!n) return;
+            map.set(n.id, n);
+            if (n.children) n.children.forEach(build);
+        })(tree[0]);
+
+        const target = map.get(targetId);
+        if (!target) return '';
+        const segments = [];
+        let cur = target;
+        // 将当前节点的 index+1 放入，逐层向上直到父为 '0' 或无父
+        while (cur && typeof cur.index === 'number') {
+            segments.push(cur.index + 1);
+            const pid = cur.parentId;
+            if (!pid || pid === '0') break;
+            cur = map.get(pid);
+        }
+        // 如果父为 '0'，还需要把顶层容器自身的 index+1 也包含（cur 即顶层容器）
+        if (cur && typeof cur.parentId !== 'undefined' && cur.parentId === '0' && typeof cur.index === 'number') {
+            // 已经在循环中加入了 cur 的 index+1（作为上一轮child），此处不重复
+        }
+        return segments.length ? ('/' + segments.reverse().join('/')) : '';
+    } catch (_) {
+        return '';
+    }
+}
+
+// 计算“旧位置”的索引地址路径：优先从 cachedOldTree 获取；失败返回空串
+function getOldIndexAddressForNode(nodeId) {
+    if (!nodeId) return '';
+    try {
+        if (cachedOldTree && cachedOldTree[0]) {
+            return getIndexAddressPathFromTree(cachedOldTree, nodeId);
+        }
+    } catch (_) {}
+    return '';
+}
+
+// ============ 名称路径（按文件夹名称，不含数字） ============
+function getNamedPathFromTree(tree, targetId) {
+    try {
+        if (!tree || !tree[0]) return '';
+        const path = [];
+        const dfs = (node, cur) => {
+            if (!node) return false;
+            if (node.id === String(targetId)) { path.push(...cur, node.title); return true; }
+            if (node.children) {
+                for (const c of node.children) {
+                    if (dfs(c, [...cur, node.title])) return true;
+                }
+            }
+            return false;
+        };
+        dfs(tree[0], []);
+        return path.join(' > ');
+    } catch (_) { return ''; }
+}
+
+function breadcrumbToSlashFolders(bc) {
+    if (!bc) return '';
+    const parts = bc.split(' > ').map(s => s.trim()).filter(Boolean);
+    if (parts.length === 0) return '';
+    // 只取文件夹路径：去掉最后一级（当前节点名）
+    if (parts.length > 1) parts.pop(); else return '/';
+    return '/' + parts.join('/');
+}
+
+function breadcrumbToSlashFull(bc) {
+    if (!bc) return '/';
+    const parts = bc.split(' > ').map(s => s.trim()).filter(Boolean);
+    return parts.length ? ('/' + parts.join('/')) : '/';
+}
+
+// 将 "/A/B/C" 转为带矩形片段的 HTML（用于 move tooltip）
+function slashPathToChipsHTML(slashPath) {
+    try {
+        if (!slashPath || typeof slashPath !== 'string') return '<span class="breadcrumb-item">/</span>';
+        const parts = slashPath.split('/').filter(Boolean);
+        if (parts.length === 0) return '<span class="breadcrumb-item">/</span>';
+        const chips = parts.map((p, i) => {
+            const safe = escapeHtml(p);
+            return `<span class="breadcrumb-item">${safe}</span>`;
+        });
+        const sep = '<span class="breadcrumb-separator">/</span>';
+        return chips.join(sep);
+    } catch (_) {
+        return '<span class="breadcrumb-item">/</span>';
+    }
+}
+
+// 基于“旧父ID + 旧index”从当前树推导旧地址（避免必须完整旧树）
+function getOldAddressFromParentAndIndex(oldParentId, oldIndex) {
+    try {
+        if (typeof oldParentId === 'undefined' || oldParentId === null) return '';
+        const base = (cachedCurrentTree && cachedCurrentTree[0]) ? cachedCurrentTree : (cachedOldTree && cachedOldTree[0] ? cachedOldTree : null);
+        if (!base) return '';
+        const parentPath = getIndexAddressPathFromTree(base, String(oldParentId));
+        if (!parentPath) return '';
+        const childSeg = (typeof oldIndex === 'number') ? ('/' + (oldIndex + 1)) : '';
+        return parentPath + childSeg;
+    } catch (_) { return ''; }
+}
+
 async function renderTreeView(forceRefresh = false) {
     console.log('[renderTreeView] 开始渲染, forceRefresh:', forceRefresh);
     
@@ -3727,7 +3836,14 @@ async function detectTreeChangesFast(oldTree, newTree) {
             if (modified) types.push('modified');
             if (crossMove) {
                 types.push('moved');
-                detail.moved = { oldPath: getNodePath(oldTree, id), newPath: getNodePath(newTree, id) };
+                detail.moved = { 
+                    oldPath: getNodePath(oldTree, id), 
+                    newPath: getNodePath(newTree, id),
+                    oldParentId: o.parentId,
+                    oldIndex: o.index,
+                    newParentId: n.parentId,
+                    newIndex: n.index
+                };
             }
             changes.set(id, { type: types.join('+'), ...detail });
         }
@@ -4373,11 +4489,16 @@ function renderTreeNodeWithChanges(node, level = 0, maxDepth = 50, visitedIds = 
                         } else {
                             changeClass = 'tree-change-moved';
                         }
-                        if (isMoved && change.moved) {
-                            const tip = (change.moved.oldPath && change.moved.newPath) ? `${change.moved.oldPath} → ${change.moved.newPath}` : '';
-                            statusIcon += `<span class="change-badge moved"><i class="fas fa-arrows-alt"></i><span class="move-tooltip">${escapeHtml(tip)}</span></span>`;
-                        } else {
-                            statusIcon += `<span class="change-badge moved"><i class="fas fa-arrows-alt"></i></span>`;
+                        {
+                            let slash = '';
+                            if (change.moved && change.moved.oldPath) {
+                                slash = breadcrumbToSlashFolders(change.moved.oldPath);
+                            }
+                            if (!slash && cachedOldTree) {
+                                const bc = getNamedPathFromTree(cachedOldTree, node.id);
+                                slash = breadcrumbToSlashFolders(bc);
+                            }
+                            statusIcon += `<span class="change-badge moved" title="${escapeHtml(slash)}"><i class="fas fa-arrows-alt"></i><span class="move-tooltip">${slashPathToChipsHTML(slash)}</span></span>`;
                         }
                     }
                 }
@@ -4422,11 +4543,16 @@ function renderTreeNodeWithChanges(node, level = 0, maxDepth = 50, visitedIds = 
                 } else {
                     changeClass = 'tree-change-moved';
                 }
-                if (isMoved && change.moved) {
-                    const tip = (change.moved.oldPath && change.moved.newPath) ? `${change.moved.oldPath} → ${change.moved.newPath}` : '';
-                    statusIcon += `<span class="change-badge moved"><i class="fas fa-arrows-alt"></i><span class="move-tooltip">${escapeHtml(tip)}</span></span>`;
-                } else {
-                    statusIcon += `<span class="change-badge moved"><i class="fas fa-arrows-alt"></i></span>`;
+                {
+                    let slash = '';
+                    if (change.moved && change.moved.oldPath) {
+                        slash = breadcrumbToSlashFolders(change.moved.oldPath);
+                    }
+                    if (!slash && cachedOldTree) {
+                        const bc = getNamedPathFromTree(cachedOldTree, node.id);
+                        slash = breadcrumbToSlashFolders(bc);
+                    }
+                    statusIcon += `<span class="change-badge moved" title="${escapeHtml(slash)}"><i class="fas fa-arrows-alt"></i><span class="move-tooltip">${slashPathToChipsHTML(slash)}</span></span>`;
                 }
             }
         }
@@ -4687,7 +4813,18 @@ async function applyIncrementalMoveToTree(id, moveInfo) {
     if (badges) {
         const existing = badges.querySelector('.change-badge.moved');
         if (existing) existing.remove();
-        badges.insertAdjacentHTML('beforeend', '<span class="change-badge moved"><i class="fas fa-arrows-alt"></i></span>');
+        // 计算旧位置（名称路径）：优先用旧父ID从旧树取父路径；回退为旧树中该节点路径的父级
+        let tip = '';
+        if (cachedOldTree && moveInfo && typeof moveInfo.oldParentId !== 'undefined') {
+            const bcParent = getNamedPathFromTree(cachedOldTree, String(moveInfo.oldParentId));
+            if (bcParent) tip = breadcrumbToSlashFull(bcParent);
+        }
+        if (!tip && cachedOldTree) {
+            const bcSelf = getNamedPathFromTree(cachedOldTree, id);
+            if (bcSelf) tip = breadcrumbToSlashFolders(bcSelf);
+        }
+        if (!tip) tip = '/';
+        badges.insertAdjacentHTML('beforeend', `<span class="change-badge moved" title="${escapeHtml(tip)}"><i class="fas fa-arrows-alt"></i><span class="move-tooltip">${slashPathToChipsHTML(tip)}</span></span>`);
         item.classList.add('tree-change-moved');
     }
 }

@@ -16,6 +16,43 @@ let pointerDragState = {
 };
 
 // 暴露给外部的接口：为书签树容器附加指针拖拽事件
+// 悬停展开状态（跨模块共享，二次/后续加速）
+var __hoverExpandState = (typeof window !== 'undefined' && window.__hoverExpandState) ? window.__hoverExpandState : { timers: new Map(), counts: new Map(), lastAt: new Map() };
+if (typeof window !== 'undefined') window.__hoverExpandState = __hoverExpandState;
+
+function getHoverDelayForFolder(folderId) {
+    const now = Date.now();
+    const count = __hoverExpandState.counts.get(folderId) || 0;
+    const lastAt = __hoverExpandState.lastAt.get(folderId) || 0;
+    const since = now - lastAt;
+    // 首次更长，后续更快：600ms → 240ms → 120ms；3 分钟内再次识别加速
+    if (count >= 2 || since < 60_000) return 120;
+    if (count >= 1 || since < 3 * 60_000) return 240;
+    return 600;
+}
+
+function scheduleFolderExpand(targetNode) {
+    if (!targetNode || targetNode.dataset.nodeType !== 'folder') return;
+    const folderId = targetNode.dataset.nodeId;
+    const old = __hoverExpandState.timers.get(folderId);
+    if (old) clearTimeout(old);
+    const delay = getHoverDelayForFolder(folderId);
+    const timer = setTimeout(() => {
+        try {
+            const children = targetNode.nextElementSibling;
+            const toggle = targetNode.querySelector('.tree-toggle');
+            if (children && children.classList.contains('tree-children') && !children.classList.contains('expanded')) {
+                children.classList.add('expanded');
+                if (toggle) toggle.classList.add('expanded');
+            }
+            const prev = __hoverExpandState.counts.get(folderId) || 0;
+            __hoverExpandState.counts.set(folderId, prev + 1);
+            __hoverExpandState.lastAt.set(folderId, Date.now());
+        } catch (_) {}
+    }, delay);
+    __hoverExpandState.timers.set(folderId, timer);
+}
+
 function attachPointerDragEvents(treeContainer) {
     if (!treeContainer) {
         console.warn('[指针拖拽] 未提供树容器');
@@ -51,7 +88,10 @@ function handlePointerDown(e) {
     pointerDragState.draggedElement = treeItem;
     pointerDragState.startX = e.clientX;
     pointerDragState.startY = e.clientY;
-    pointerDragState.treeContainer = treeItem.closest('.bookmark-tree');
+    // 选择最近的可滚动树容器：永久（.permanent-section-body）或临时（.temp-node-body），最后再退化到 .bookmark-tree
+    pointerDragState.treeContainer = treeItem.closest('.permanent-section-body') ||
+                                     treeItem.closest('.temp-node-body') ||
+                                     treeItem.closest('.bookmark-tree');
     pointerDragState.hasMoved = false;
     pointerDragState.isDragging = false; // 还未开始拖拽
     
@@ -102,11 +142,18 @@ function handlePointerMove(e) {
             // 清除旧目标的高亮
             if (pointerDragState.currentTarget) {
                 pointerDragState.currentTarget.classList.remove('drag-over');
+                pointerDragState.currentTarget.classList.remove('temp-tree-drop-highlight');
             }
             
             // 高亮新目标
             pointerDragState.currentTarget = targetTreeItem;
             targetTreeItem.classList.add('drag-over');
+        }
+
+        // 悬停自动展开文件夹（带二次与后续加速），并显示蓝色候选高亮
+        if (targetTreeItem.dataset.nodeType === 'folder') {
+            scheduleFolderExpand(targetTreeItem);
+            targetTreeItem.classList.add('temp-tree-drop-highlight');
         }
         
         // 显示放置指示器（调用共享接口）
@@ -117,6 +164,7 @@ function handlePointerMove(e) {
         // 鼠标不在任何tree-item上
         if (pointerDragState.currentTarget) {
             pointerDragState.currentTarget.classList.remove('drag-over');
+            pointerDragState.currentTarget.classList.remove('temp-tree-drop-highlight');
             pointerDragState.currentTarget = null;
         }
         
@@ -265,26 +313,41 @@ function performDrop(draggedElement, targetElement, event) {
 }
 
 function handleAutoScroll(e) {
-    if (!pointerDragState.treeContainer) return;
-    
-    const rect = pointerDragState.treeContainer.getBoundingClientRect();
-    const scrollZone = 40; // 边缘触发区域
-    const scrollSpeed = 15; // 滚动速度
-    
-    let scrollDelta = 0;
-    
-    // 检查是否在顶部边缘
-    if (e.clientY < rect.top + scrollZone && e.clientY > rect.top) {
-        scrollDelta = -scrollSpeed * ((rect.top + scrollZone - e.clientY) / scrollZone);
+    const baseZone = 96; // 更高的触发高度
+    const scrollSpeed = 18; // 稍快
+    let didScroll = false;
+
+    // 根据指针位置选择容器进行滚动（永久 body + 临时 body）
+    const containers = [];
+    const permanentBody = document.querySelector('.permanent-section-body');
+    if (permanentBody) containers.push(permanentBody);
+    document.querySelectorAll('.temp-node-body').forEach(el => containers.push(el));
+    for (const c of containers) {
+        const rect = c.getBoundingClientRect();
+        if (e.clientX >= rect.left && e.clientX <= rect.right) {
+            const dynamicZone = Math.max(baseZone, Math.min(Math.round(rect.height * 0.12), 160));
+            let delta = 0;
+            if (e.clientY < rect.top + dynamicZone && e.clientY > rect.top) {
+                delta = -scrollSpeed * ((rect.top + dynamicZone - e.clientY) / dynamicZone);
+            } else if (e.clientY > rect.bottom - dynamicZone && e.clientY < rect.bottom) {
+                delta = scrollSpeed * ((e.clientY - (rect.bottom - dynamicZone)) / dynamicZone);
+            }
+            if (delta !== 0) {
+                c.scrollTop += delta;
+                didScroll = true;
+                break;
+            }
+        }
     }
-    // 检查是否在底部边缘
-    else if (e.clientY > rect.bottom - scrollZone && e.clientY < rect.bottom) {
-        scrollDelta = scrollSpeed * ((e.clientY - (rect.bottom - scrollZone)) / scrollZone);
-    }
-    
-    // 执行滚动
-    if (scrollDelta !== 0) {
-        pointerDragState.treeContainer.scrollTop += scrollDelta;
+
+    // 备选：滚动窗口
+    if (!didScroll) {
+        const viewportHeight = window.innerHeight;
+        const dynamicZone = Math.max(baseZone, Math.min(Math.round(viewportHeight * 0.12), 160));
+        let winDelta = 0;
+        if (e.clientY < dynamicZone) winDelta = -scrollSpeed * ((dynamicZone - e.clientY) / dynamicZone);
+        else if (e.clientY > viewportHeight - dynamicZone) winDelta = scrollSpeed * ((e.clientY - (viewportHeight - dynamicZone)) / dynamicZone);
+        if (winDelta !== 0) window.scrollBy(0, winDelta);
     }
 }
 

@@ -11,6 +11,43 @@ let dropIndicator = null;
 let autoScrollInterval = null;
 let lastScrollTime = 0;
 let hoverExpandTimer = null;
+// 记录文件夹被悬停展开的次数和定时器，加快二次与后续展开
+var __hoverExpandState = (typeof window !== 'undefined' && window.__hoverExpandState) ? window.__hoverExpandState : { timers: new Map(), counts: new Map(), lastAt: new Map() };
+if (typeof window !== 'undefined') window.__hoverExpandState = __hoverExpandState;
+
+function getHoverDelayForFolder(folderId) {
+  const now = Date.now();
+  const count = __hoverExpandState.counts.get(folderId) || 0;
+  const lastAt = __hoverExpandState.lastAt.get(folderId) || 0;
+  const since = now - lastAt;
+  // 首次更长，后续加速：首 600ms → 次 240ms → 之后 120ms（若 3 分钟内再次识别则沿用更短延迟）
+  if (count >= 2 || since < 60_000) return 120;
+  if (count >= 1 || since < 3 * 60_000) return 240;
+  return 600;
+}
+
+function scheduleFolderExpand(targetNode) {
+  if (!targetNode || targetNode.dataset.nodeType !== 'folder') return;
+  const folderId = targetNode.dataset.nodeId;
+  // 清理旧计时器
+  const oldTimer = __hoverExpandState.timers.get(folderId);
+  if (oldTimer) clearTimeout(oldTimer);
+  const delay = getHoverDelayForFolder(folderId);
+  const timer = setTimeout(() => {
+    try {
+      const children = targetNode.nextElementSibling;
+      const toggle = targetNode.querySelector('.tree-toggle');
+      if (children && children.classList.contains('tree-children') && !children.classList.contains('expanded')) {
+        children.classList.add('expanded');
+        if (toggle) toggle.classList.add('expanded');
+      }
+      const prev = __hoverExpandState.counts.get(folderId) || 0;
+      __hoverExpandState.counts.set(folderId, prev + 1);
+      __hoverExpandState.lastAt.set(folderId, Date.now());
+    } catch (_) {}
+  }, delay);
+  __hoverExpandState.timers.set(folderId, timer);
+}
 let draggedNodeTreeType = 'permanent';
 let draggedNodeSectionId = null;
 
@@ -70,6 +107,20 @@ function attachDragEvents(treeContainer) {
     });
     
     console.log('[拖拽] 绑定拖拽事件:', draggableNodes.length, '个节点');
+
+    // 额外：在滚动容器层面也监听 dragover，用于容器空白区域的自动滚动
+    try {
+        const scrollContainer = treeContainer.closest('.permanent-section-body') || treeContainer.closest('.temp-node-body');
+        if (scrollContainer && !scrollContainer.__autoScrollHooked) {
+            scrollContainer.addEventListener('dragover', (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                updateAutoScroll(e);
+            });
+            scrollContainer.__autoScrollHooked = true;
+            console.log('[拖拽] 已在滚动容器绑定 dragover 自动滚动监听');
+        }
+    } catch (_) {}
 }
 
 // 拖拽开始
@@ -134,11 +185,16 @@ function handleDragOver(e) {
     
     // 显示拖拽指示器（包含屏蔽逻辑）
     showDropIndicator(targetNode, e);
+
+    // 持续悬停也触发展开（不依赖仅一次的 dragenter）
+    if (targetNode.dataset.nodeType === 'folder') {
+        scheduleFolderExpand(targetNode);
+    }
     
     // 当来源为临时栏目时，对永久栏目的文件夹增加蓝色候选高亮
     try {
-        const src = (typeof getCurrentDragSourceType === 'function') ? getCurrentDragSourceType() : null;
-        if (src === 'temporary' && targetNode.dataset.nodeType === 'folder') {
+        // 无论来源（永久/临时/指针），只要目标是文件夹都蓝色候选高亮
+        if (targetNode.dataset.nodeType === 'folder') {
             targetNode.classList.add('temp-tree-drop-highlight');
         }
     } catch (_) {}
@@ -159,28 +215,14 @@ function handleDragEnter(e) {
 
     // 当来源为临时栏目时，对永久栏目的文件夹增加蓝色候选高亮
     try {
-        const src = (typeof getCurrentDragSourceType === 'function') ? getCurrentDragSourceType() : null;
-        if (src === 'temporary' && targetNode.dataset.nodeType === 'folder') {
+        if (targetNode.dataset.nodeType === 'folder') {
             targetNode.classList.add('temp-tree-drop-highlight');
         }
     } catch (_) {}
 
-    // 悬停自动展开文件夹（提升可用性）
-    try {
-        clearTimeout(hoverExpandTimer);
-    } catch(_) {}
-    if (targetNode.dataset.nodeType === 'folder') {
-        hoverExpandTimer = setTimeout(() => {
-            try {
-                const children = targetNode.nextElementSibling;
-                const toggle = targetNode.querySelector('.tree-toggle');
-                if (children && children.classList.contains('tree-children') && !children.classList.contains('expanded')) {
-                    children.classList.add('expanded');
-                    if (toggle) toggle.classList.add('expanded');
-                }
-            } catch(_) {}
-        }, 400);
-    }
+    // 悬停自动展开文件夹（带二次与后续加速）
+    try { clearTimeout(hoverExpandTimer); } catch(_) {}
+    scheduleFolderExpand(targetNode);
 }
 
 // 拖拽离开
@@ -192,6 +234,10 @@ function handleDragLeave(e) {
     targetNode.classList.remove('drag-over');
     targetNode.classList.remove('temp-tree-drop-highlight');
     try { clearTimeout(hoverExpandTimer); } catch(_) {}
+    if (targetNode && targetNode.dataset && targetNode.dataset.nodeId) {
+        const t = __hoverExpandState.timers.get(targetNode.dataset.nodeId);
+        if (t) { clearTimeout(t); __hoverExpandState.timers.delete(targetNode.dataset.nodeId); }
+    }
 }
 
 // 放下
@@ -260,6 +306,11 @@ function handleDragEnd(e) {
     if (typeof clearTreeItemDragging === 'function') {
         clearTreeItemDragging();
     }
+    // 清理所有悬停展开计时器
+    try {
+        __hoverExpandState.timers.forEach((t) => clearTimeout(t));
+        __hoverExpandState.timers.clear();
+    } catch (_) {}
     
     console.log('[拖拽] 拖拽结束');
 }
@@ -527,43 +578,54 @@ function startAutoScroll() {
 
 // 更新自动滚动
 function updateAutoScroll(e) {
-    const scrollZone = 40; // 触发滚动的边缘区域大小，减小触发区域
-    const scrollSpeed = 15; // 滚动速度，增加到15使滚动更快更流畅
-    
-    const viewportHeight = window.innerHeight;
-    const mouseY = e.clientY;
-    
-    let scrollDelta = 0;
-    
-    // 检查是否在顶部边缘
-    if (mouseY < scrollZone) {
-        scrollDelta = -scrollSpeed * ((scrollZone - mouseY) / scrollZone);
-    }
-    // 检查是否在底部边缘
-    else if (mouseY > viewportHeight - scrollZone) {
-        scrollDelta = scrollSpeed * ((mouseY - (viewportHeight - scrollZone)) / scrollZone);
-    }
-    
-    // 执行滚动
-    if (scrollDelta !== 0) {
-        const now = Date.now();
-        // 限制滚动频率，提高为100fps
-        if (now - lastScrollTime > 10) {
-            window.scrollBy(0, scrollDelta);
-            
-            // 如果在树容器内，也滚动树容器
-            const treeContainer = document.getElementById('bookmarkTree');
-            if (treeContainer) {
-                const rect = treeContainer.getBoundingClientRect();
-                if (e.clientX >= rect.left && e.clientX <= rect.right &&
-                    e.clientY >= rect.top && e.clientY <= rect.bottom) {
-                    treeContainer.scrollTop += scrollDelta;
-                }
+    const baseZone = 96; // 基线高度（更大更容易触发）
+    const scrollSpeed = 18; // 略微加速
+
+    const now = Date.now();
+    if (now - lastScrollTime <= 10) return; // 100fps 节流
+
+    let didScroll = false;
+
+    // 优先滚动鼠标所在的树容器（永久/临时）
+    const containers = [];
+    const permanentBody = document.querySelector('.permanent-section-body');
+    if (permanentBody) containers.push(permanentBody);
+    document.querySelectorAll('.temp-node-body').forEach(el => containers.push(el));
+
+    for (const c of containers) {
+        const rect = c.getBoundingClientRect();
+        if (e.clientX >= rect.left && e.clientX <= rect.right) {
+            // 动态热区：容器高度的 12%，夹在 [baseZone, 160]
+            const dynamicZone = Math.max(baseZone, Math.min(Math.round(rect.height * 0.12), 160));
+            let delta = 0;
+            if (e.clientY < rect.top + dynamicZone && e.clientY > rect.top) {
+                delta = -scrollSpeed * ((rect.top + dynamicZone - e.clientY) / dynamicZone);
+            } else if (e.clientY > rect.bottom - dynamicZone && e.clientY < rect.bottom) {
+                delta = scrollSpeed * ((e.clientY - (rect.bottom - dynamicZone)) / dynamicZone);
             }
-            
-            lastScrollTime = now;
+            if (delta !== 0) {
+                c.scrollTop += delta;
+                didScroll = true;
+                break;
+            }
         }
     }
+
+    // 若不在任何树容器边缘，则回退到窗口滚动
+    if (!didScroll) {
+        const viewportHeight = window.innerHeight;
+        const mouseY = e.clientY;
+        const dynamicZone = Math.max(baseZone, Math.min(Math.round(viewportHeight * 0.12), 160));
+        let winDelta = 0;
+        if (mouseY < dynamicZone) winDelta = -scrollSpeed * ((dynamicZone - mouseY) / dynamicZone);
+        else if (mouseY > viewportHeight - dynamicZone) winDelta = scrollSpeed * ((mouseY - (viewportHeight - dynamicZone)) / dynamicZone);
+        if (winDelta !== 0) {
+            window.scrollBy(0, winDelta);
+            didScroll = true;
+        }
+    }
+
+    if (didScroll) lastScrollTime = now;
 }
 
 // 停止自动滚动

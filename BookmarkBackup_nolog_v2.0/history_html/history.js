@@ -15,6 +15,49 @@ let currentView = (() => {
         return 'current-changes';
     }
 })();
+
+// 用于避免重复在一次备份后多次重置（基于最近一条备份记录的指纹或时间）
+window.__lastResetFingerprint = window.__lastResetFingerprint || null;
+
+// 在 Canvas 永久栏目中，清理所有颜色标识与动作徽标，不改变布局/滚动/展开状态
+function resetPermanentSectionChangeMarkers() {
+    try {
+        const permanentSection = document.getElementById('permanentSection');
+        if (!permanentSection) return;
+
+        // 仅作用于永久栏目的树
+        const tree = permanentSection.querySelector('#bookmarkTree');
+        if (!tree) return;
+
+        // 记录并恢复栏目内滚动位置，避免影响当前位置视图
+        const body = permanentSection.querySelector('.permanent-section-body');
+        const prevScrollTop = body ? body.scrollTop : null;
+
+        // 1) 红色（deleted）项目：直接移除对应的 .tree-node
+        tree.querySelectorAll('.tree-item.tree-change-deleted').forEach(item => {
+            const node = item.closest('.tree-node');
+            if (node && node.parentNode) node.parentNode.removeChild(node);
+        });
+
+        // 2) 清理其余颜色标识类和内联样式、徽标
+        const changeClasses = ['tree-change-added','tree-change-modified','tree-change-moved','tree-change-mixed','tree-change-deleted'];
+        const selector = changeClasses.map(c => `.tree-item.${c}`).join(',');
+        tree.querySelectorAll(selector).forEach(item => {
+            changeClasses.forEach(c => item.classList.remove(c));
+            const link = item.querySelector('.tree-bookmark-link');
+            const label = item.querySelector('.tree-label');
+            if (link) { link.style.color = ''; link.style.fontWeight = ''; link.style.textDecoration = ''; link.style.opacity = ''; }
+            if (label) { label.style.color = ''; label.style.fontWeight = ''; label.style.textDecoration = ''; label.style.opacity = ''; }
+            const badges = item.querySelector('.change-badges');
+            if (badges) badges.innerHTML = '';
+        });
+
+        if (body != null && prevScrollTop != null) body.scrollTop = prevScrollTop;
+        console.log('[Canvas] 永久栏目颜色标识已清理完毕');
+    } catch (e) {
+        console.warn('[Canvas] 清理永久栏目标识时出错:', e);
+    }
+}
 console.log('[全局初始化] currentView初始值:', currentView);
 let currentFilter = 'all';
 let currentTimeFilter = 'all'; // 'all', 'year', 'month', 'day'
@@ -5323,6 +5366,27 @@ function handleStorageChange(changes, namespace) {
     if (namespace !== 'local') return;
 
     console.log('[存储监听] 检测到变化:', Object.keys(changes));
+
+    // 成功备份后（自动/手动/切换），立即清理 Canvas 永久栏目内的颜色标识
+    try {
+        if (currentView === 'canvas' && changes.syncHistory) {
+            const newHistory = changes.syncHistory.newValue || [];
+            const oldHistory = changes.syncHistory.oldValue || [];
+            if (Array.isArray(newHistory) && newHistory.length > 0) {
+                const isAppended = !Array.isArray(oldHistory) || newHistory.length > oldHistory.length;
+                const lastRec = newHistory[newHistory.length - 1];
+                if (isAppended && lastRec && lastRec.status === 'success') {
+                    const fp = lastRec.fingerprint || lastRec.time || String(Date.now());
+                    if (fp !== window.__lastResetFingerprint) {
+                        resetPermanentSectionChangeMarkers();
+                        window.__lastResetFingerprint = fp;
+                    }
+                }
+            }
+        }
+    } catch (e) {
+        console.warn('[存储监听] 备份后清理永久栏目标识失败:', e);
+    }
 
     // 如果正在撤销过程中，不执行自动刷新，让后台完全完成
     if (revertInProgress) {

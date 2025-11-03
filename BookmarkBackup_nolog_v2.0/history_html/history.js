@@ -4807,6 +4807,26 @@ async function applyIncrementalMoveToTree(id, moveInfo) {
             if (firstDeleted) newParentChildren.insertBefore(node, firstDeleted); else newParentChildren.appendChild(node);
         }
     }
+
+    // —— 修正缩进：适配新层级 ——
+    try {
+        if (node && newParentItem) {
+            const parentNodeEl = newParentItem.closest('.tree-node');
+            const parentPad = parseInt(parentNodeEl?.style?.paddingLeft || '0', 10) || 0;
+            const basePad = parentPad + 12;
+
+            const applyIndent = (treeNodeEl, pad) => {
+                if (!treeNodeEl) return;
+                treeNodeEl.style.paddingLeft = pad + 'px';
+                const childrenWrap = treeNodeEl.querySelector(':scope > .tree-children');
+                if (childrenWrap) {
+                    const childNodes = childrenWrap.querySelectorAll(':scope > .tree-node');
+                    childNodes.forEach(child => applyIndent(child, pad + 12));
+                }
+            };
+            applyIndent(node, basePad);
+        }
+    } catch (_) { /* 安静失败，必要时完整重渲染 */ }
     // 关键：仅对这个被拖拽的节点标记为蓝色"moved"
     // 其他由于这次移动而位置改变的兄弟节点不标记，因为我们只标识用户直接操作的对象
     const badges = item.querySelector('.change-badges');

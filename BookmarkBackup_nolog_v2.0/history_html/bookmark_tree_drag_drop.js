@@ -12,38 +12,49 @@ let autoScrollInterval = null;
 let lastScrollTime = 0;
 let hoverExpandTimer = null;
 // 记录文件夹被悬停展开的次数和定时器，加快二次与后续展开
-var __hoverExpandState = (typeof window !== 'undefined' && window.__hoverExpandState) ? window.__hoverExpandState : { timers: new Map(), counts: new Map(), lastAt: new Map() };
+var __hoverExpandState = (typeof window !== 'undefined' && window.__hoverExpandState)
+  ? window.__hoverExpandState
+  : { timers: new Map(), counts: new Map(), lastAt: new Map(), session: 0 };
 if (typeof window !== 'undefined') window.__hoverExpandState = __hoverExpandState;
 
 function getHoverDelayForFolder(folderId) {
-  const now = Date.now();
+  // 仅依赖“本次拖动内”的识别次数：
+  // 0 次 → 2000ms；1 次 → 240ms；≥2 次 → 120ms
+  // 不再使用跨时间的记忆（since/lastAt），以满足“仅限当前一次拖动”。
   const count = __hoverExpandState.counts.get(folderId) || 0;
-  const lastAt = __hoverExpandState.lastAt.get(folderId) || 0;
-  const since = now - lastAt;
-  // 首次更长，后续加速：首 600ms → 次 240ms → 之后 120ms（若 3 分钟内再次识别则沿用更短延迟）
-  if (count >= 2 || since < 60_000) return 120;
-  if (count >= 1 || since < 3 * 60_000) return 240;
-  return 600;
+  if (count >= 2) return 120;
+  if (count >= 1) return 240;
+  return 2000;
 }
 
 function scheduleFolderExpand(targetNode) {
   if (!targetNode || targetNode.dataset.nodeType !== 'folder') return;
   const folderId = targetNode.dataset.nodeId;
-  // 清理旧计时器
-  const oldTimer = __hoverExpandState.timers.get(folderId);
-  if (oldTimer) clearTimeout(oldTimer);
+  // 若已有定时器，仅重置定时而不增加识别计数（避免连续 dragover 快速累加）
+  const hadTimer = __hoverExpandState.timers.has(folderId);
+  // 若已有定时器，保持不变，避免把“首次 3 秒”意外缩短为更快延迟
+  if (hadTimer) return;
+
   const delay = getHoverDelayForFolder(folderId);
+
+  // 在“安排定时器”的时刻记录一次识别，使得：
+  // - 第一次安排 → 使用 3000ms，同时计数从 0→1；
+  // - 第二次（离开后再次悬停并安排）→ 使用 240ms，计数 1→2；
+  // - 后续 → 使用 120ms；
+  const prev = __hoverExpandState.counts.get(folderId) || 0;
+  __hoverExpandState.counts.set(folderId, Math.min(prev + 1, 2));
+  __hoverExpandState.lastAt.set(folderId, Date.now());
+
+  const sessionAtSchedule = __hoverExpandState.session;
   const timer = setTimeout(() => {
     try {
+      if (__hoverExpandState.session !== sessionAtSchedule) return; // 仅限当前拖动会话
       const children = targetNode.nextElementSibling;
       const toggle = targetNode.querySelector('.tree-toggle');
       if (children && children.classList.contains('tree-children') && !children.classList.contains('expanded')) {
         children.classList.add('expanded');
         if (toggle) toggle.classList.add('expanded');
       }
-      const prev = __hoverExpandState.counts.get(folderId) || 0;
-      __hoverExpandState.counts.set(folderId, prev + 1);
-      __hoverExpandState.lastAt.set(folderId, Date.now());
     } catch (_) {}
   }, delay);
   __hoverExpandState.timers.set(folderId, timer);
@@ -171,6 +182,18 @@ function handleDragStart(e) {
     
     // 启动自动滚动检测
     startAutoScroll();
+
+    // 重置悬停展开的加速状态，仅对“当前一次拖动”生效
+    try {
+        if (__hoverExpandState) {
+            __hoverExpandState.session = (__hoverExpandState.session || 0) + 1;
+            // 彻底清理上一拖动残留
+            __hoverExpandState.timers.forEach((t) => clearTimeout(t));
+            __hoverExpandState.timers.clear();
+            __hoverExpandState.counts.clear();
+            __hoverExpandState.lastAt.clear();
+        }
+    } catch (_) {}
 }
 
 // 拖拽经过
@@ -308,8 +331,12 @@ function handleDragEnd(e) {
     }
     // 清理所有悬停展开计时器
     try {
+        __hoverExpandState.session = (__hoverExpandState.session || 0) + 1;
         __hoverExpandState.timers.forEach((t) => clearTimeout(t));
         __hoverExpandState.timers.clear();
+        // 同时重置计数与时间戳，确保下一次拖动从“首 3 秒”开始
+        __hoverExpandState.counts.clear();
+        __hoverExpandState.lastAt.clear();
     } catch (_) {}
     
     console.log('[拖拽] 拖拽结束');

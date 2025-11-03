@@ -17,37 +17,44 @@ let pointerDragState = {
 
 // 暴露给外部的接口：为书签树容器附加指针拖拽事件
 // 悬停展开状态（跨模块共享，二次/后续加速）
-var __hoverExpandState = (typeof window !== 'undefined' && window.__hoverExpandState) ? window.__hoverExpandState : { timers: new Map(), counts: new Map(), lastAt: new Map() };
+var __hoverExpandState = (typeof window !== 'undefined' && window.__hoverExpandState)
+    ? window.__hoverExpandState
+    : { timers: new Map(), counts: new Map(), lastAt: new Map(), session: 0 };
 if (typeof window !== 'undefined') window.__hoverExpandState = __hoverExpandState;
 
 function getHoverDelayForFolder(folderId) {
-    const now = Date.now();
+    // 仅基于“本次拖动内”的识别次数：
+    // 0 次 → 2000ms；1 次 → 240ms；≥2 次 → 120ms
     const count = __hoverExpandState.counts.get(folderId) || 0;
-    const lastAt = __hoverExpandState.lastAt.get(folderId) || 0;
-    const since = now - lastAt;
-    // 首次更长，后续更快：600ms → 240ms → 120ms；3 分钟内再次识别加速
-    if (count >= 2 || since < 60_000) return 120;
-    if (count >= 1 || since < 3 * 60_000) return 240;
-    return 600;
+    if (count >= 2) return 120;
+    if (count >= 1) return 240;
+    return 2000;
 }
 
 function scheduleFolderExpand(targetNode) {
     if (!targetNode || targetNode.dataset.nodeType !== 'folder') return;
     const folderId = targetNode.dataset.nodeId;
-    const old = __hoverExpandState.timers.get(folderId);
-    if (old) clearTimeout(old);
+    const hadTimer = __hoverExpandState.timers.has(folderId);
+    // 若已有定时器，保持不变，避免把“首次 3 秒”意外缩短为更快延迟
+    if (hadTimer) return;
+
     const delay = getHoverDelayForFolder(folderId);
+
+    // 在安排定时器时计数（一次悬停一次识别），连续 dragover 仅重置定时不叠加计数
+    const prev = __hoverExpandState.counts.get(folderId) || 0;
+    __hoverExpandState.counts.set(folderId, Math.min(prev + 1, 2));
+    __hoverExpandState.lastAt.set(folderId, Date.now());
+
+    const sessionAtSchedule = __hoverExpandState.session;
     const timer = setTimeout(() => {
         try {
+            if (__hoverExpandState.session !== sessionAtSchedule) return; // 仅限当前拖动会话
             const children = targetNode.nextElementSibling;
             const toggle = targetNode.querySelector('.tree-toggle');
             if (children && children.classList.contains('tree-children') && !children.classList.contains('expanded')) {
                 children.classList.add('expanded');
                 if (toggle) toggle.classList.add('expanded');
             }
-            const prev = __hoverExpandState.counts.get(folderId) || 0;
-            __hoverExpandState.counts.set(folderId, prev + 1);
-            __hoverExpandState.lastAt.set(folderId, Date.now());
         } catch (_) {}
     }, delay);
     __hoverExpandState.timers.set(folderId, timer);
@@ -139,10 +146,15 @@ function handlePointerMove(e) {
     if (targetTreeItem && targetTreeItem !== pointerDragState.draggedElement) {
         // 更新当前目标
         if (pointerDragState.currentTarget !== targetTreeItem) {
-            // 清除旧目标的高亮
+            // 清除旧目标的高亮，并清理其悬停展开计时器
             if (pointerDragState.currentTarget) {
                 pointerDragState.currentTarget.classList.remove('drag-over');
                 pointerDragState.currentTarget.classList.remove('temp-tree-drop-highlight');
+                try {
+                    const prevId = pointerDragState.currentTarget.dataset?.nodeId;
+                    const t = prevId && __hoverExpandState.timers.get(prevId);
+                    if (t) { clearTimeout(t); __hoverExpandState.timers.delete(prevId); }
+                } catch (_) {}
             }
             
             // 高亮新目标
@@ -165,6 +177,11 @@ function handlePointerMove(e) {
         if (pointerDragState.currentTarget) {
             pointerDragState.currentTarget.classList.remove('drag-over');
             pointerDragState.currentTarget.classList.remove('temp-tree-drop-highlight');
+            try {
+                const prevId = pointerDragState.currentTarget.dataset?.nodeId;
+                const t = prevId && __hoverExpandState.timers.get(prevId);
+                if (t) { clearTimeout(t); __hoverExpandState.timers.delete(prevId); }
+            } catch (_) {}
             pointerDragState.currentTarget = null;
         }
         
@@ -268,7 +285,18 @@ function startPointerDrag(e) {
     
     document.body.appendChild(overlay);
     pointerDragState.dragOverlay = overlay;
-    
+
+    // 重置“本次拖动”的悬停展开加速状态
+    try {
+        if (__hoverExpandState) {
+            __hoverExpandState.session = (__hoverExpandState.session || 0) + 1;
+            __hoverExpandState.timers.forEach((t) => clearTimeout(t));
+            __hoverExpandState.timers.clear();
+            __hoverExpandState.counts.clear();
+            __hoverExpandState.lastAt.clear();
+        }
+    } catch (_) {}
+
     console.log('[指针拖拽] 开始拖拽:', draggedElement.dataset.nodeTitle);
 }
 
@@ -425,6 +453,15 @@ function cleanupPointerDrag() {
     pointerDragState.currentTarget = null;
     pointerDragState.treeContainer = null;
     pointerDragState.hasMoved = false;
+
+    // 结束拖动：清理所有悬停展开计时器与加速计数，确保下一次拖动从首 3 秒开始
+    try {
+        __hoverExpandState.session = (__hoverExpandState.session || 0) + 1;
+        __hoverExpandState.timers.forEach((t) => clearTimeout(t));
+        __hoverExpandState.timers.clear();
+        __hoverExpandState.counts.clear();
+        __hoverExpandState.lastAt.clear();
+    } catch (_) {}
 }
 
 // 导出到全局

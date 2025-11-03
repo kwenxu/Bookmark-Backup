@@ -445,6 +445,15 @@ function cleanupPointerDrag() {
     if (typeof window.__treeDnd !== 'undefined' && typeof window.__treeDnd.hideIndicator === 'function') {
         window.__treeDnd.hideIndicator();
     }
+
+    // 全量清除候选/悬停样式，防止残留需要刷新才消失
+    try {
+        document.querySelectorAll('.temp-tree-drop-highlight').forEach(el => el.classList.remove('temp-tree-drop-highlight'));
+        document.querySelectorAll('.drag-over').forEach(el => el.classList.remove('drag-over'));
+        document.querySelectorAll('.temp-drop-highlight').forEach(el => el.classList.remove('temp-drop-highlight'));
+        const ws = document.getElementById('canvasWorkspace');
+        if (ws) ws.classList.remove('canvas-drop-active');
+    } catch (_) {}
     
     // 重置状态
     pointerDragState.isDragging = false;

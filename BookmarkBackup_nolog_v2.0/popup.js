@@ -1559,20 +1559,22 @@ function updateSyncHistory(passedLang) { // Added passedLang parameter
 
                 const formattedTime = `<span style="font-weight: bold; color: #007AFF; text-align: center;">${formatTime(time)}</span>`;
 
-                // 备注部分
+                // 备注部分：无备注时按类型给出默认备注（中英文）
                 let noteHtml = '';
-                if (record.note) {
-                    noteHtml = `<div style="margin-top: 4px; text-align: center; font-size: 12px; color: var(--theme-text-primary); max-width: 100%; overflow-wrap: break-word; word-wrap: break-word; word-break: break-all;">${record.note}</div>`;
+                const fallbackNote = (() => {
+                    if (record.type === 'switch') return currentLang === 'en' ? 'Switch Backup' : '切换备份';
+                    if (record.type === 'manual') return currentLang === 'en' ? 'Manual Backup' : '手动备份';
+                    return currentLang === 'en' ? 'Auto Backup' : '自动备份';
+                })();
+                const displayNote = (record.note && record.note.trim()) ? record.note : fallbackNote;
+                if (displayNote) {
+                    noteHtml = `<div style="margin-top: 4px; text-align: center; font-size: 12px; color: var(--theme-text-primary); max-width: 100%; overflow-wrap: break-word; word-wrap: break-word; word-break: break-all;">${displayNote}</div>`;
                 }
                 
                 // 添加备注按钮
                 const addNoteButton = `
                     <div class="add-note-btn" data-record-time="${record.time}" style="margin-top: 4px; text-align: center; cursor: pointer;">
-                        <span style="color: #777; font-size: 12px; padding: 2px 6px; border: 1px dashed #aaa; border-radius: 3px;">
-                            ${currentLang === 'en' 
-                               ? (record.note ? 'Edit' : 'Add Note') 
-                               : (record.note ? '编辑' : '添加备注')}
-                        </span>
+                        <span style="color: #777; font-size: 12px; padding: 2px 6px; border: 1px dashed #aaa; border-radius: 3px;">${currentLang === 'en' ? 'Edit' : '编辑'}</span>
                     </div>
                 `;
 

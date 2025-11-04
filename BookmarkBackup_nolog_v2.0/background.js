@@ -2747,6 +2747,20 @@ async function updateSyncStatus(direction, time, status = 'success', errorMessag
             } catch (_) { return (Date.now() % 0xffffffff).toString(16); }
         })();
 
+        // 生成默认备注（区分中英文）
+        let defaultNote = '';
+        try {
+            if (preferredLang === 'en') {
+                defaultNote = (syncType === 'switch') ? 'Switch Backup'
+                              : (syncType === 'manual') ? 'Manual Backup'
+                              : 'Auto Backup';
+            } else {
+                defaultNote = (syncType === 'switch') ? '切换备份'
+                              : (syncType === 'manual') ? '手动备份'
+                              : '自动备份';
+            }
+        } catch (_) {}
+
         const newSyncRecord = {
             time: time,
             direction: direction,
@@ -2755,7 +2769,10 @@ async function updateSyncStatus(direction, time, status = 'success', errorMessag
             errorMessage: errorMessage,
             bookmarkStats: bookmarkStats,
             isFirstBackup: !syncHistory || syncHistory.length === 0,
-            note: autoBackupReason || '', // 添加备注字段
+            // 如果有 autoBackupReason 则附加，否则使用默认备注（中英文）
+            note: (autoBackupReason && typeof autoBackupReason === 'string' && autoBackupReason.trim())
+                    ? `${defaultNote}${preferredLang === 'en' ? ' - ' : ' - '}${autoBackupReason.trim()}`
+                    : defaultNote,
             bookmarkTree: shouldSaveTree ? localBookmarks : null, // 只保存最近10条的书签树
             fingerprint: fingerprint
         };

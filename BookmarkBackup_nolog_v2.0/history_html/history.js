@@ -2946,7 +2946,7 @@ function renderHistoryView() {
             <div class="commit-item" data-record-time="${record.time}">
                 <div class="commit-header">
                     <div class="commit-title-group">
-                        <div class="commit-title" title="点击编辑备注">${record.note || time}</div>
+        <div class="commit-title" title="${currentLang === 'zh_CN' ? '点击编辑备注' : 'Click to edit note'}">${record.note || time}</div>
                         <button class="commit-note-edit-btn" data-time="${record.time}" title="${currentLang === 'zh_CN' ? '编辑备注' : 'Edit Note'}">
                             <i class="fas fa-edit"></i>
                         </button>

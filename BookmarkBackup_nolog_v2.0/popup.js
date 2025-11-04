@@ -2707,55 +2707,27 @@ function handleAutoSyncToggle(event) {
         }
     }
 
-    // --- 新增：基于UI内容判断是否触发备份 ---
-    const changeDescriptionElement = document.getElementById('change-description-row');
-    let uiShowsChanges = false;
-    if (changeDescriptionElement) {
-        const changeText = changeDescriptionElement.textContent || changeDescriptionElement.innerText || "";
-        
-        // 首先排除明确的"无变化"情况
-        if (changeText.includes('无变化') || changeText.includes('No changes') || 
-            changeText.includes('监测中') || changeText.includes('Monitoring')) {
-            uiShowsChanges = false;
-        }
-        // 只有明确显示了变化标记（+/-、变动、括号）才认为有变化
-        else if (changeText.includes('(') || changeText.includes('+') || 
-                 changeText.includes('-') || changeText.includes('变动') ||
-                 changeText.includes('changed') || changeText.includes('moved') ||
-                 changeText.includes('modified') || changeText.includes('移动') ||
-                 changeText.includes('修改')) {
-            uiShowsChanges = true;
-        }
-        // 其他情况（空文本或其他未知文本）都认为没有变化
-        else {
-            uiShowsChanges = false;
-        }
-    }
-
-    // 情况1：从手动模式切换到自动模式（OFF -> ON），且有变化
-    if (!wasChecked && isChecked && uiShowsChanges) {
-        showStatus('检测到修改，正在为您备份...', 'info', 5000);
-        chrome.runtime.sendMessage({
-            action: 'syncBookmarks',
-            isSwitchToAutoBackup: true
-        }, (syncResponse) => {
-            if (syncResponse && syncResponse.success) {
-                showStatus('切换备份成功！', 'success');
-                updateSyncHistory();
-            } else {
-                showStatus('切换备份失败: ' + (syncResponse?.error || '未知错误'), 'error');
+    // --- 新实现：用后台统计判断是否需要“切换备份” ---
+    const maybeRunSwitchBackup = (!wasChecked && isChecked);
+    if (maybeRunSwitchBackup) {
+        // 手动→自动：先判断是否需要“切换备份”；根据结果再决定是否发送最终的 toggleAutoSync
+        chrome.runtime.sendMessage({ action: 'getBackupStats' }, (backupResponse) => {
+            if (!backupResponse || !backupResponse.success || !backupResponse.stats) {
+                // 无法获取统计：直接切换到自动
+                chrome.runtime.sendMessage({ action: 'toggleAutoSync', enabled: isChecked }, () => {
+                    // 即使失败，仍尝试更新UI显示
+                    setTimeout(() => { try { updateBookmarkCountDisplay(); } catch (e) {} }, 120);
+                });
+                return; // 阻断默认流程
             }
-        });
-    }
-    
-    // 情况2：从自动模式切换到手动模式（ON -> OFF），且有变化
-    // 需要检查是否是常规/特定时间模式（而非实时备份模式）
-    else if (wasChecked && !isChecked && uiShowsChanges) {
-        // 检查是否是常规/特定时间模式
-        chrome.storage.local.get(['autoBackupTimerSettings'], (result) => {
-            const backupMode = result.autoBackupTimerSettings?.backupMode || 'regular';
-            // 只有在常规时间或特定时间模式下才触发切换备份
-            if (backupMode === 'regular' || backupMode === 'specific' || backupMode === 'both') {
+            const s = backupResponse.stats;
+            const hasChanges = (
+                s.bookmarkDiff !== 0 ||
+                s.folderDiff !== 0 ||
+                s.bookmarkMoved || s.folderMoved ||
+                s.bookmarkModified || s.folderModified
+            );
+            if (hasChanges) {
                 showStatus('检测到修改，正在为您备份...', 'info', 5000);
                 chrome.runtime.sendMessage({
                     action: 'syncBookmarks',
@@ -2763,17 +2735,36 @@ function handleAutoSyncToggle(event) {
                 }, (syncResponse) => {
                     if (syncResponse && syncResponse.success) {
                         showStatus('切换备份成功！', 'success');
+                        // 刷新备份历史
                         updateSyncHistory();
+                        // 稍候刷新右侧状态卡片/“需要更新的”
+                        setTimeout(() => { try { updateBookmarkCountDisplay(); } catch (e) {} }, 120);
+                        // 切换备份成功后再正式切到自动模式，避免并发触发自动备份
+                        chrome.runtime.sendMessage({ action: 'toggleAutoSync', enabled: true }, () => {
+                            setTimeout(() => { try { updateBookmarkCountDisplay(); } catch (e) {} }, 120);
+                        });
                     } else {
                         showStatus('切换备份失败: ' + (syncResponse?.error || '未知错误'), 'error');
+                        // 回退UI开关到切换前状态
+                        const autoSyncToggle = document.getElementById('autoSyncToggle');
+                        const autoSyncToggle2 = document.getElementById('autoSyncToggle2');
+                        if (autoSyncToggle) autoSyncToggle.checked = wasChecked;
+                        if (autoSyncToggle2) autoSyncToggle2.checked = wasChecked;
                     }
+                });
+            } else {
+                // 没有变化：直接切到自动模式
+                chrome.runtime.sendMessage({ action: 'toggleAutoSync', enabled: true }, () => {
+                    setTimeout(() => { try { updateBookmarkCountDisplay(); } catch (e) {} }, 120);
                 });
             }
         });
+        // 这里直接 return，避免继续走默认的 toggle 逻辑
+        return;
     }
     // --- 结束新增 ---
 
-    // 通知 background.js 状态变化 (始终发送)
+    // 通知 background.js 状态变化（默认路径；手动→自动已在上方 return 掉）
     chrome.runtime.sendMessage({ action: 'toggleAutoSync', enabled: isChecked }, (response) => {
         if (response && response.success) {
             const currentAutoSyncState = response.autoSync;

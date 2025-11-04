@@ -564,25 +564,9 @@ return { success: true, autoSync: previousAutoSyncState, message: '状态未变�
 // 直接调用 onAutoBackupToggled 函数
                     await onAutoBackupToggled(newAutoSyncState);
 
-                    // 如果从自动模式切换到手动模式，需要重置操作状态并更新角标
+                    // 如果从自动模式切换到手动模式：不做切换备份，不重置“需要更新的”状态
                     if (!newAutoSyncState) {
-                        // 重置操作状态跟踪
-                        await browserAPI.storage.local.set({
-                            lastSyncOperations: {
-                                bookmarkMoved: false,
-                                folderMoved: false,
-                                bookmarkModified: false,
-                                folderModified: false,
-                                lastUpdateTime: new Date().toISOString()
-                            }
-                        });
-// 强制更新缓存分析数据
-                        await updateAndCacheAnalysis();
-                        
-                        // 获取当前语言设置
-                        const { preferredLang = 'zh_CN' } = await browserAPI.storage.local.get(['preferredLang']);
-                        
-                        // 手动模式下，停止自动备份定时器并强制设置角标为蓝色
+                        // 手动模式：仅停止自动备份定时器，其他状态交给 setBadge 根据当前变化计算
                         if (autoBackupTimerRunning) {
                             try {
                                 await stopAutoBackupTimerSystem();
@@ -591,13 +575,10 @@ return { success: true, autoSync: previousAutoSyncState, message: '状态未变�
                                 console.error('[自动备份定时器] 切换到手动模式时停止定时器失败:', error);
                             }
                         }
-                        const badgeText = badgeTextMap.manual[preferredLang] || badgeTextMap.manual.en;
-                        await browserAPI.action.setBadgeText({ text: badgeText });
-                        await browserAPI.action.setBadgeBackgroundColor({ color: '#0000FF' }); // 蓝色
-                        await browserAPI.storage.local.set({ isYellowHandActive: false });
-} else {
+                        // 重新计算并设置角标/提醒（保持“需要更新的”不变）
+                        await setBadge();
+                    } else {
                         // 切换到自动模式：由 setBadge 根据是否有变化决定是否启动定时器
-                        // 使用正常的setBadge（会自动检查变化并启动/停止定时器）
                         await setBadge();
                     }
 
@@ -2092,7 +2073,7 @@ async function exportHistoryToTxt(records, lang) {
             },
             structureChangeValues: { yes: "Yes", no: "No" },
             locationValues: { local: "Local", cloud: "Cloud", webdav: "Cloud", both: "Cloud & Local", none: "None", upload: "Cloud", download: "Local" },
-            typeValues: { auto: "Auto", manual: "Manual", auto_switch: "Switch", migration:"Migration", check:"Check" },
+            typeValues: { auto: "Auto", manual: "Manual", switch: "Switch", auto_switch: "Switch", migration:"Migration", check:"Check" },
             statusValues: { success: "Success", error: "Error", locked: "File Locked", no_backup_needed: "No backup needed", check_completed: "Check completed" },
             filenameBase: "Bookmark_Backup_History",
             na: "N/A"
@@ -2116,7 +2097,7 @@ async function exportHistoryToTxt(records, lang) {
             },
             structureChangeValues: { yes: "是", no: "否" },
             locationValues: { local: "本地", cloud: "云端", webdav: "云端", both: "云端与本地", none: "无", upload: "云端", download: "本地" },
-            typeValues: { auto: "自动", manual: "手动", auto_switch: "切换", migration:"迁移", check:"检查" },
+            typeValues: { auto: "自动", manual: "手动", switch: "切换", auto_switch: "切换", migration:"迁移", check:"检查" },
             statusValues: { success: "成功", error: "错误", locked: "文件锁定", no_backup_needed: "无需备份", check_completed: "检查完成" },
             filenameBase: "书签备份历史记录",
             na: "无"

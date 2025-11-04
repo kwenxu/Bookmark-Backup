@@ -651,6 +651,12 @@ body {
     border: 1px solid var(--border-color);
 }
 
+/* 切换备份标识 */
+.commit-badge.switch {
+    background: var(--warning-light);
+    color: var(--warning);
+}
+
 .commit-stats {
     display: flex;
     gap: 16px;

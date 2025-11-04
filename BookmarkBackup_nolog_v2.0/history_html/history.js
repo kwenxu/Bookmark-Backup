@@ -2935,6 +2935,13 @@ function renderHistoryView() {
             : (currentLang === 'zh_CN' ? '本地' : 'Local');
 
         // 构建提交项
+        // 切换标识徽章（可选显示）
+        const typeBadge = (record.type === 'switch')
+            ? `<span class="commit-badge switch" title="${currentLang === 'zh_CN' ? '切换备份' : 'Switch Backup'}">
+                   <i class="fas fa-exchange-alt"></i> ${currentLang === 'zh_CN' ? '切换' : 'Switch'}
+               </span>`
+            : '';
+
         return `
             <div class="commit-item" data-record-time="${record.time}">
                 <div class="commit-header">
@@ -2965,6 +2972,7 @@ function renderHistoryView() {
                         <i class="fas ${isAuto ? 'fa-robot' : 'fa-hand-pointer'}"></i>
                         ${isAuto ? i18n.autoBackup[currentLang] : i18n.manualBackup[currentLang]}
                     </span>
+                    ${typeBadge}
                     <span class="commit-badge direction">
                         ${directionIcon}
                         ${directionText}
@@ -5420,6 +5428,15 @@ function handleStorageChange(changes, namespace) {
             if (currentView === 'tree') {
                 console.log('[存储监听] 刷新书签树与JSON视图');
                 await renderTreeView(true);
+            }
+
+            // 如果当前在 canvas 视图，同步刷新永久栏目（强制刷新）
+            if (currentView === 'canvas') {
+                console.log('[存储监听] 刷新 Canvas 永久栏目');
+                await renderTreeView(true);
+                if (window.CanvasModule && window.CanvasModule.enhance) {
+                    try { window.CanvasModule.enhance(); } catch (e) { console.warn('[Canvas] enhance失败:', e); }
+                }
             }
 
             // 如果当前在 additions 视图，刷新添加记录视图

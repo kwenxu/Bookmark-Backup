@@ -160,7 +160,11 @@ async function recordRecentMovedId(movedId, info) {
                     }
                 });
                 // 记录最近移动的节点，供前端稳定打标
-                try { recordRecentMovedId(id, { parentId: moveInfo.parentId, oldParentId: moveInfo.oldParentId, index: moveInfo.index }); } catch(_) {}
+                try {
+                    recordRecentMovedId(id, { parentId: moveInfo.parentId, oldParentId: moveInfo.oldParentId, index: moveInfo.index });
+                    // 立即广播本次移动，避免依赖后续分析刷新导致的首次后不再标蓝问题
+                    try { browserAPI.runtime.sendMessage({ action: 'recentMovedBroadcast', id }); } catch (_) {}
+                } catch(_) {}
             }
         });
     });

@@ -3519,6 +3519,9 @@ function getOldAddressFromParentAndIndex(oldParentId, oldIndex) {
 
 async function renderTreeView(forceRefresh = false) {
     console.log('[renderTreeView] 开始渲染, forceRefresh:', forceRefresh);
+    // 记录永久栏目滚动位置，渲染后恢复
+    const permBody = document.querySelector('.permanent-section-body');
+    const permScrollTop = permBody ? permBody.scrollTop : null;
     
     const treeContainer = document.getElementById('bookmarkTree');
     
@@ -3540,6 +3543,8 @@ async function renderTreeView(forceRefresh = false) {
         attachTreeEvents(treeContainer);
         
         console.log('[renderTreeView] 缓存显示完成');
+        // 恢复滚动位置
+        if (permBody && permScrollTop !== null) permBody.scrollTop = permScrollTop;
         return;
     }
     
@@ -3575,6 +3580,8 @@ async function renderTreeView(forceRefresh = false) {
             
             // 重新绑定事件
             attachTreeEvents(treeContainer);
+            // 恢复滚动位置
+            if (permBody && permScrollTop !== null) permBody.scrollTop = permScrollTop;
             return;
         }
         
@@ -3655,6 +3662,8 @@ async function renderTreeView(forceRefresh = false) {
         attachTreeEvents(treeContainer);
         
         console.log('[renderTreeView] 渲染完成');
+        // 恢复滚动位置
+        if (permBody && permScrollTop !== null) permBody.scrollTop = permScrollTop;
     }).catch(error => {
         console.error('[renderTreeView] 错误:', error);
         treeContainer.innerHTML = `<div class="error">加载失败: ${error.message}</div>`;
@@ -4515,6 +4524,7 @@ function renderTreeNodeWithChanges(node, level = 0, maxDepth = 50, visitedIds = 
     if (node.url) {
         // 叶子（书签）
         if (node.url) {
+            const isExplicitMovedOnly = explicitMovedIds.has(node.id) && explicitMovedIds.get(node.id) > Date.now();
             if (change) {
                 if (change.type === 'added') {
                     changeClass = 'tree-change-added';
@@ -4526,7 +4536,7 @@ function renderTreeNodeWithChanges(node, level = 0, maxDepth = 50, visitedIds = 
                     const types = change.type.split('+');
                     const hasModified = types.includes('modified');
                     const isMoved = types.includes('moved');
-                    const isExplicitMoved = explicitMovedIds.has(node.id) && explicitMovedIds.get(node.id) > Date.now();
+                    const isExplicitMoved = isExplicitMovedOnly;
 
                     if (hasModified) {
                         changeClass = 'tree-change-modified';
@@ -4553,6 +4563,10 @@ function renderTreeNodeWithChanges(node, level = 0, maxDepth = 50, visitedIds = 
                         }
                     }
                 }
+            } else if (isExplicitMovedOnly) {
+                // 无 diff 记录但存在显式移动标识：也显示蓝色移动徽标
+                changeClass = 'tree-change-moved';
+                statusIcon += `<span class="change-badge moved"><i class="fas fa-arrows-alt"></i></span>`;
             }
             const favicon = getFaviconUrl(node.url);
             return `
@@ -4569,6 +4583,7 @@ function renderTreeNodeWithChanges(node, level = 0, maxDepth = 50, visitedIds = 
     }
 
     // 文件夹
+    const __isExplicitMovedOnlyFolder = explicitMovedIds.has(node.id) && explicitMovedIds.get(node.id) > Date.now();
     if (change) {
         if (change.type === 'added') {
             changeClass = 'tree-change-added';
@@ -4607,6 +4622,10 @@ function renderTreeNodeWithChanges(node, level = 0, maxDepth = 50, visitedIds = 
                 }
             }
         }
+    } else if (__isExplicitMovedOnlyFolder) {
+        // 无 diff 记录但存在显式移动标识：也显示蓝色移动徽标
+        changeClass = 'tree-change-moved';
+        statusIcon += `<span class="change-badge moved"><i class="fas fa-arrows-alt"></i></span>`;
     }
 
     // 对子节点排序：
@@ -4654,6 +4673,8 @@ function renderTreeNodeWithChanges(node, level = 0, maxDepth = 50, visitedIds = 
 
 // ===== 增量更新：创建 =====
 async function applyIncrementalCreateToTree(id, bookmark) {
+    const permBody = document.querySelector('.permanent-section-body');
+    const permScrollTop = permBody ? permBody.scrollTop : null;
     const container = document.getElementById('bookmarkTree');
     if (!container) return;
     // 获取父节点 DOM
@@ -4722,10 +4743,14 @@ async function applyIncrementalCreateToTree(id, bookmark) {
             window.CanvasModule.enhance();
         }
     }
+    // 恢复滚动位置
+    if (permBody && permScrollTop !== null) permBody.scrollTop = permScrollTop;
 }
 
 // ===== 增量更新：删除 =====
 function applyIncrementalRemoveFromTree(id) {
+    const permBody = document.querySelector('.permanent-section-body');
+    const permScrollTop = permBody ? permBody.scrollTop : null;
     const container = document.getElementById('bookmarkTree');
     if (!container) return;
     const item = container.querySelector(`.tree-item[data-node-id="${id}"]`);
@@ -4769,10 +4794,14 @@ function applyIncrementalRemoveFromTree(id) {
             }
         }, 300);
     }
+    // 恢复滚动位置
+    if (permBody && permScrollTop !== null) permBody.scrollTop = permScrollTop;
 }
 
 // ===== 增量更新：修改 =====
 async function applyIncrementalChangeToTree(id, changeInfo) {
+    const permBody = document.querySelector('.permanent-section-body');
+    const permScrollTop = permBody ? permBody.scrollTop : null;
     const container = document.getElementById('bookmarkTree');
     if (!container) return;
     const item = container.querySelector(`.tree-item[data-node-id="${id}"]`);
@@ -4825,10 +4854,14 @@ async function applyIncrementalChangeToTree(id, changeInfo) {
     if (badges && !badges.querySelector('.modified')) {
         badges.insertAdjacentHTML('beforeend', '<span class="change-badge modified">~</span>');
     }
+    // 恢复滚动位置
+    if (permBody && permScrollTop !== null) permBody.scrollTop = permScrollTop;
 }
 
 // ===== 增量更新：移动 =====
 async function applyIncrementalMoveToTree(id, moveInfo) {
+    const permBody = document.querySelector('.permanent-section-body');
+    const permScrollTop = permBody ? permBody.scrollTop : null;
     const container = document.getElementById('bookmarkTree');
     if (!container) return;
     const item = container.querySelector(`.tree-item[data-node-id="${id}"]`);
@@ -4898,6 +4931,8 @@ async function applyIncrementalMoveToTree(id, moveInfo) {
         badges.insertAdjacentHTML('beforeend', `<span class="change-badge moved" title="${escapeHtml(tip)}"><i class="fas fa-arrows-alt"></i><span class="move-tooltip">${slashPathToChipsHTML(tip)}</span></span>`);
         item.classList.add('tree-change-moved');
     }
+    // 恢复滚动位置
+    if (permBody && permScrollTop !== null) permBody.scrollTop = permScrollTop;
 }
 
 
@@ -5557,16 +5592,9 @@ function setupBookmarkListener() {
     browserAPI.bookmarks.onMoved.addListener(async (id, moveInfo) => {
         console.log('[书签监听] 书签移动:', id);
         try {
-            // 只保持已经存在的主动拖拽标记（蓝色标识规则：只有主动拖拽的对象才显示）
-            // 如果这个对象不在explicitMovedIds中，说明是被动的移动，不添加标记
-            if (!explicitMovedIds.has(id)) {
-                // 这是被动的移动，不标记为蓝色"moved"
-                console.log('[书签监听] 检测到被动移动（不标记为蓝色）:', id);
-            } else {
-                // 这是主动拖拽，继续保持标记
-                explicitMovedIds.set(id, Date.now() + Infinity);
-            }
-            
+            // 将本次移动记为显式主动移动，确保稳定显示蓝色标识
+            explicitMovedIds.set(id, Date.now() + Infinity);
+
             // 支持 tree 和 canvas 视图（canvas视图包含永久栏目的书签树）
             if (currentView === 'tree' || currentView === 'canvas') {
                 await applyIncrementalMoveToTree(id, moveInfo);
@@ -5627,7 +5655,7 @@ function setupRealtimeMessageListener() {
             // 永久记录，不再有时间限制
             explicitMovedIds.set(message.id, Date.now() + Infinity);
             // 若在树视图，立即给这个被拖拽的节点补蓝标（不影响其他节点）
-            if (currentView === 'tree') {
+            if (currentView === 'tree' || currentView === 'canvas') {
                 try {
                     const container = document.getElementById('bookmarkTree');
                     const item = container && container.querySelector(`.tree-item[data-node-id="${message.id}"]`);

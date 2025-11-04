@@ -5120,6 +5120,53 @@ a.tree-label.tree-bookmark-link:hover {
     background: var(--bg-tertiary);
 }
 
+/* ------------------------
+   Markdown 文本卡片（Obsidian风格）
+   ------------------------ */
+.md-canvas-node {
+    position: absolute;
+    box-sizing: border-box;
+    background: #ffffff; /* 纯白 */
+    border: 1px solid #d0d7de;
+    border-radius: 8px;
+    box-shadow: none; /* 去掉内填色阴影 */
+    padding: 8px;
+    color: #24292f;
+}
+
+[data-theme="dark"] .md-canvas-node {
+    background: #000000; /* 纯黑 */
+    border-color: #444;
+    color: #ffffff;
+    box-shadow: none;
+}
+
+.md-canvas-node,
+.md-canvas-text {
+    cursor: grab; /* 悬停显示抓手 */
+}
+
+.md-canvas-node.dragging,
+.md-canvas-node.dragging .md-canvas-text {
+    cursor: grabbing; /* 拖动中显示抓手 */
+}
+
+.md-canvas-editor {
+    width: 100%;
+    height: 100%;
+    outline: none;
+    border: none;
+    background: transparent;
+    font-size: 12px;
+    line-height: 1.4;
+    white-space: pre-wrap;
+}
+
+[data-theme="dark"] .md-canvas-editor {
+    color: #ffffff;
+}
+
+
 /* 缩放指示器 */
     cursor: grab;
 }
@@ -5344,4 +5391,33 @@ a.tree-label.tree-bookmark-link:hover {
 
 .canvas-workspace::-webkit-scrollbar-corner {
     background: var(--bg-tertiary);
+}
+[data-theme="dark"] .md-canvas-text a {
+    color: #93c5fd;
+}
+
+.md-canvas-text {
+    width: 100%;
+    height: 100%;
+    overflow: auto;
+    user-select: none; /* 非编辑模式下不可选中，单击拖动 */
+}
+
+.md-canvas-text h1,
+.md-canvas-text h2,
+.md-canvas-text h3 {
+    margin: 6px 0 4px;
+    font-weight: 600;
+}
+
+.md-canvas-text ul,
+.md-canvas-text ol {
+    margin: 4px 0;
+    padding-left: 16px;
+}
+
+.md-canvas-text code {
+    background: rgba(0,0,0,0.06);
+    padding: 2px 4px;
+    border-radius: 3px;
 }

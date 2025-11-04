@@ -9,6 +9,9 @@ const CanvasState = {
     tempItemCounter: 0,
     tempSectionSequenceNumber: 0,
     colorCursor: 0,
+    // 纯 Markdown 文本卡片（Obsidian Canvas 风格）
+    mdNodes: [],
+    mdNodeCounter: 0,
     // 栏目休眠管理（性能优化）- 阶梯式性能模式
     performanceMode: 'balanced', // 性能模式：'maximum' | 'balanced' | 'smooth' | 'unlimited'
     performanceSettings: {
@@ -145,6 +148,9 @@ const LEGACY_TEMP_NODE_STORAGE_KEY = 'bookmark-canvas-temp-nodes';
 const TEMP_SECTION_DEFAULT_WIDTH = 360;
 const TEMP_SECTION_DEFAULT_HEIGHT = 280;
 const TEMP_SECTION_DEFAULT_COLOR = '#2563eb';
+// Obsidian Canvas 文本节点默认尺寸（参考 sample.canvas）
+const MD_NODE_DEFAULT_WIDTH = 250;
+const MD_NODE_DEFAULT_HEIGHT = 160;
 function formatTimestampForTitle(date = new Date()) {
     const yyyy = date.getFullYear();
     const mm = String(date.getMonth() + 1).padStart(2, '0');
@@ -2011,6 +2017,18 @@ function computeCanvasContentBounds() {
         maxY = Math.max(maxY, section.y + height);
         hasContent = true;
     });
+    // 计算 Markdown 文本节点范围
+    if (Array.isArray(CanvasState.mdNodes)) {
+        CanvasState.mdNodes.forEach(node => {
+            const width = node.width || MD_NODE_DEFAULT_WIDTH;
+            const height = node.height || MD_NODE_DEFAULT_HEIGHT;
+            minX = Math.min(minX, node.x);
+            maxX = Math.max(maxX, node.x + width);
+            minY = Math.min(minY, node.y);
+            maxY = Math.max(maxY, node.y + height);
+            hasContent = true;
+        });
+    }
     
     if (!hasContent) {
         minX = -400;
@@ -2745,6 +2763,191 @@ async function createTempNode(data, x, y) {
     saveTempNodes();
 }
 
+// =============================================================================
+// Markdown 文本节点（Obsidian Canvas 风格）
+// =============================================================================
+
+function makeMdNodeDraggable(element, node) {
+    let dragPending = false;
+    let startX = 0;
+    let startY = 0;
+
+    const onMouseDown = (e) => {
+        const target = e.target;
+        if (!target) return;
+        // 编辑或 resize 时不拖动
+        if (target.closest('.md-canvas-editor') || target.closest('.resize-handle')) return;
+
+        dragPending = true;
+        startX = e.clientX;
+        startY = e.clientY;
+
+        const onMove = (ev) => {
+            if (!dragPending) return;
+            const dx = Math.abs(ev.clientX - startX);
+            const dy = Math.abs(ev.clientY - startY);
+            if (dx + dy < 3) return; // 小阈值，模拟单击拖动体验
+
+            dragPending = false;
+            document.removeEventListener('mousemove', onMove, true);
+            document.removeEventListener('mouseup', onUp, true);
+
+            // 真正开始拖动
+            CanvasState.dragState.isDragging = true;
+            CanvasState.dragState.draggedElement = element;
+            CanvasState.dragState.dragStartX = startX;
+            CanvasState.dragState.dragStartY = startY;
+            CanvasState.dragState.nodeStartX = node.x;
+            CanvasState.dragState.nodeStartY = node.y;
+            CanvasState.dragState.dragSource = 'temp-node';
+            element.classList.add('dragging');
+            element.style.transition = 'none';
+            ev.preventDefault();
+        };
+
+        const onUp = () => {
+            if (dragPending) {
+                // 单击释放，不进入拖动
+                dragPending = false;
+            }
+            document.removeEventListener('mousemove', onMove, true);
+            document.removeEventListener('mouseup', onUp, true);
+        };
+
+        document.addEventListener('mousemove', onMove, true);
+        document.addEventListener('mouseup', onUp, true);
+    };
+    element.addEventListener('mousedown', onMouseDown, true);
+}
+
+function renderMdNode(node) {
+    const container = document.getElementById('canvasContent');
+    if (!container) return;
+    
+    let el = document.getElementById(node.id);
+    const isNew = !el;
+    if (!el) {
+        el = document.createElement('div');
+        el.id = node.id;
+        el.className = 'md-canvas-node';
+        container.appendChild(el);
+        el.style.left = node.x + 'px';
+        el.style.top = node.y + 'px';
+        el.style.width = (node.width || MD_NODE_DEFAULT_WIDTH) + 'px';
+        el.style.height = (node.height || MD_NODE_DEFAULT_HEIGHT) + 'px';
+    } else {
+        el.innerHTML = '';
+    }
+    
+    // 视图（渲染 Markdown）
+    const view = document.createElement('div');
+    view.className = 'md-canvas-text';
+    const raw = typeof node.text === 'string' ? node.text : '';
+    if (raw) {
+        if (typeof marked !== 'undefined') {
+            try { view.innerHTML = marked.parse(raw); } catch { view.textContent = raw; }
+        } else {
+            view.textContent = raw;
+        }
+    } else {
+        view.textContent = '';
+    }
+
+    // 编辑器
+    const editor = document.createElement('textarea');
+    editor.className = 'md-canvas-editor';
+    editor.spellcheck = false;
+    editor.style.display = node.isEditing ? 'block' : 'none';
+    editor.value = raw;
+
+    const enterEdit = () => {
+        if (node.isEditing) return;
+        node.isEditing = true;
+        editor.value = typeof node.text === 'string' ? node.text : '';
+        editor.style.display = 'block';
+        view.style.display = 'none';
+        el.classList.add('editing');
+        requestAnimationFrame(() => editor.focus());
+    };
+
+    const applyEdit = () => {
+        const val = editor.value || '';
+        node.text = val;
+        if (typeof marked !== 'undefined') {
+            try { view.innerHTML = val ? marked.parse(val) : ''; } catch { view.textContent = val; }
+        } else {
+            view.textContent = val;
+        }
+        node.isEditing = false;
+        editor.style.display = 'none';
+        view.style.display = 'block';
+        el.classList.remove('editing');
+        saveTempNodes();
+    };
+
+    const cancelEdit = () => {
+        node.isEditing = false;
+        editor.style.display = 'none';
+        view.style.display = 'block';
+        el.classList.remove('editing');
+    };
+
+    // 交互：双击进入编辑；编辑框 blur/快捷键提交
+    el.addEventListener('dblclick', (e) => {
+        if (e.target.closest('.resize-handle')) return;
+        enterEdit();
+        e.stopPropagation();
+        e.preventDefault();
+    });
+
+    editor.addEventListener('blur', () => { if (node.isEditing) applyEdit(); });
+    editor.addEventListener('keydown', (e) => {
+        if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') { e.preventDefault(); applyEdit(); }
+        else if (e.key === 'Escape') { e.preventDefault(); cancelEdit(); }
+    });
+
+    // 阻止编辑器事件冒泡
+    ['mousedown','dblclick','click'].forEach(evt => editor.addEventListener(evt, ev => ev.stopPropagation()));
+
+    el.appendChild(view);
+    el.appendChild(editor);
+    
+    makeMdNodeDraggable(el, node);
+    makeTempNodeResizable(el, node);
+    
+    if (isNew) {
+        el.classList.add('temp-node-enter');
+        requestAnimationFrame(() => el.classList.remove('temp-node-enter'));
+    }
+}
+
+async function createMdNode(x, y, text = '') {
+    const id = `md-node-${++CanvasState.mdNodeCounter}`;
+    const node = {
+        id,
+        x,
+        y,
+        width: MD_NODE_DEFAULT_WIDTH,
+        height: MD_NODE_DEFAULT_HEIGHT,
+        text,
+        color: null,
+        createdAt: Date.now()
+    };
+    CanvasState.mdNodes.push(node);
+    renderMdNode(node);
+    scheduleBoundsUpdate();
+    saveTempNodes();
+    return id;
+}
+
+function removeMdNode(id) {
+    const el = document.getElementById(id);
+    if (el) el.remove();
+    CanvasState.mdNodes = CanvasState.mdNodes.filter(n => n.id !== id);
+    saveTempNodes();
+    scheduleBoundsUpdate();
+}
+
 function renderTempNode(section) {
     const container = document.getElementById('canvasContent');
     if (!container) {
@@ -2989,8 +3192,13 @@ function renderTempNode(section) {
                 descriptionText.title = getEditTitle();
             }
         } else {
-            descriptionText.innerHTML = `<span style="color: inherit; opacity: 0.6;">${getPlaceholderText()}</span>`;
-            descriptionText.title = getAddTitle();
+            if (section.suppressPlaceholder) {
+                descriptionText.innerHTML = '';
+                descriptionText.title = '';
+            } else {
+                descriptionText.innerHTML = `<span style="color: inherit; opacity: 0.6;">${getPlaceholderText()}</span>`;
+                descriptionText.title = getAddTitle();
+            }
         }
     };
     
@@ -4033,10 +4241,13 @@ function clearAllTempNodes() {
     if (!container) return;
     
     container.querySelectorAll('.temp-canvas-node').forEach(node => node.remove());
+    container.querySelectorAll('.md-canvas-node').forEach(node => node.remove());
     CanvasState.tempSections = [];
+    CanvasState.mdNodes = [];
     
     // 重置序号计数器
     CanvasState.tempSectionSequenceNumber = 0;
+    CanvasState.mdNodeCounter = 0;
     
     saveTempNodes();
     updateCanvasScrollBounds();
@@ -4538,7 +4749,8 @@ function setupCanvasEventListeners() {
             
             // 更新节点数据（实际位置）
             const nodeId = CanvasState.dragState.draggedElement.id;
-            const section = CanvasState.tempSections.find(n => n.id === nodeId);
+            const section = CanvasState.tempSections.find(n => n.id === nodeId) ||
+                            (Array.isArray(CanvasState.mdNodes) ? CanvasState.mdNodes.find(n => n.id === nodeId) : null);
             if (section) {
                 section.x = newX;
                 section.y = newY;
@@ -4557,7 +4769,8 @@ function setupCanvasEventListeners() {
             
             // 应用最终位置（从 transform 转回 left/top）
             const nodeId = element.id;
-            const section = CanvasState.tempSections.find(n => n.id === nodeId);
+            const section = CanvasState.tempSections.find(n => n.id === nodeId) ||
+                            (Array.isArray(CanvasState.mdNodes) ? CanvasState.mdNodes.find(n => n.id === nodeId) : null);
             if (section) {
                 element.style.transform = 'none';
                 element.style.left = section.x + 'px';
@@ -4584,6 +4797,40 @@ function setupCanvasEventListeners() {
     
     // 设置永久栏目拖放目标
     setupPermanentDropTarget();
+
+    // 空白画布双击：创建 Obsidian Canvas 风格的“空白栏目”（纯 Markdown 文本卡片）
+    const workspace = document.getElementById('canvasWorkspace');
+    if (workspace) {
+        workspace.addEventListener('dblclick', async (e) => {
+            // 忽略在已有临时栏目、永久栏目、滚动条、缩放控件、输入控件内的双击
+            const target = e.target;
+            const isInsideTemp = !!target.closest('.temp-canvas-node');
+            const isInsidePermanent = !!target.closest('#permanentSection');
+            const isUI = !!target.closest('.canvas-scrollbar, .canvas-zoom-indicator, .view-actions');
+            const isForm = ['INPUT', 'TEXTAREA', 'BUTTON', 'SELECT', 'LABEL'].includes(target.tagName);
+            if (isInsideTemp || isInsidePermanent || isUI || isForm) return;
+
+            // 计算在 canvas-content 坐标系中的点击位置
+            const rect = workspace.getBoundingClientRect();
+            const clickX = e.clientX;
+            const clickY = e.clientY;
+            const canvasX = (clickX - rect.left - CanvasState.panOffsetX) / CanvasState.zoom;
+            const canvasY = (clickY - rect.top - CanvasState.panOffsetY) / CanvasState.zoom;
+
+            try {
+                const nodeId = await createMdNode(canvasX, canvasY, '');
+                // 自动聚焦到编辑器，保持内容为空（真正的空白）
+                requestAnimationFrame(() => {
+                    const el = document.getElementById(nodeId);
+                    if (!el) return;
+                    const editor = el.querySelector('.md-canvas-editor');
+                    if (editor) editor.focus();
+                });
+            } catch (err) {
+                console.error('[Canvas] 双击创建空白栏目失败:', err);
+            }
+        });
+    }
 }
 
 // =============================================================================
@@ -4750,8 +4997,54 @@ function exportCanvas() {
         color: '4'
     });
     
-    // 添加临时节点
+    // 添加临时节点（书签栏目 -> 导出为文本）
     CanvasState.tempSections.forEach(section => {
+        const hasDesc = section.description && typeof section.description === 'string' && section.description.trim().length > 0;
+        const hasItems = Array.isArray(section.items) && section.items.length > 0;
+
+        // 当说明与条目都为空：导出空文本，确保“什么都没有”
+        let mdText = '';
+        if (hasDesc && !hasItems) {
+            mdText = section.description;
+        } else if (!hasDesc && hasItems) {
+            // 仅导出条目列表为 Markdown（不加标题行）
+            const lines = [];
+            const appendItem = (item, depth = 0) => {
+                const indent = '  '.repeat(depth);
+                if (item.type === 'bookmark') {
+                    const title = item.title || item.url || '未命名书签';
+                    const url = item.url || '#';
+                    lines.push(`${indent}- [${title}](${url})`);
+                } else {
+                    lines.push(`${indent}- ${item.title || '未命名文件夹'}`);
+                    if (item.children && item.children.length) {
+                        item.children.forEach(child => appendItem(child, depth + 1));
+                    }
+                }
+            };
+            section.items.forEach(item => appendItem(item, 0));
+            mdText = lines.join('\n');
+        } else if (hasDesc && hasItems) {
+            // 两者都存在时，保留说明并在其后追加条目列表
+            const lines = [];
+            const appendItem = (item, depth = 0) => {
+                const indent = '  '.repeat(depth);
+                if (item.type === 'bookmark') {
+                    const title = item.title || item.url || '未命名书签';
+                    const url = item.url || '#';
+                    lines.push(`${indent}- [${title}](${url})`);
+                } else {
+                    lines.push(`${indent}- ${item.title || '未命名文件夹'}`);
+                    if (item.children && item.children.length) {
+                        item.children.forEach(child => appendItem(child, depth + 1));
+                    }
+                }
+            };
+            section.items.forEach(item => appendItem(item, 0));
+            const listText = lines.join('\n');
+            mdText = `${section.description.trim()}\n\n${listText}`;
+        }
+
         const textNode = {
             id: `${section.id}-text`,
             type: 'text',
@@ -4759,11 +5052,28 @@ function exportCanvas() {
             y: section.y,
             width: section.width || TEMP_SECTION_DEFAULT_WIDTH,
             height: section.height || TEMP_SECTION_DEFAULT_HEIGHT,
-            text: formatSectionText(section),
+            text: mdText,
             color: section.color
         };
         canvasData.nodes.push(textNode);
     });
+    
+    // 添加 Markdown 文本卡片（与 Obsidian Canvas 文本节点一致）
+    if (Array.isArray(CanvasState.mdNodes)) {
+        CanvasState.mdNodes.forEach(node => {
+            canvasData.nodes.push({
+                id: node.id,
+                type: 'text',
+                x: node.x,
+                y: node.y,
+                width: node.width || MD_NODE_DEFAULT_WIDTH,
+                height: node.height || MD_NODE_DEFAULT_HEIGHT,
+                text: typeof node.text === 'string' ? node.text : '',
+                // 颜色可选，遵循规范可省略
+                ...(node.color ? { color: node.color } : {})
+            });
+        });
+    }
     
     // 生成并下载文件
     const blob = new Blob([JSON.stringify(canvasData, null, 2)], { 
@@ -4812,6 +5122,9 @@ function saveTempNodes() {
             tempSectionCounter: CanvasState.tempSectionCounter,
             tempItemCounter: CanvasState.tempItemCounter,
             colorCursor: CanvasState.colorCursor,
+            // 新增：保存 Markdown 文本卡片
+            mdNodes: CanvasState.mdNodes,
+            mdNodeCounter: CanvasState.mdNodeCounter,
             timestamp: Date.now()
         };
         localStorage.setItem(TEMP_SECTION_STORAGE_KEY, JSON.stringify(state));
@@ -4826,6 +5139,8 @@ function loadTempNodes() {
         CanvasState.tempSectionCounter = 0;
         CanvasState.tempItemCounter = 0;
         CanvasState.colorCursor = 0;
+        CanvasState.mdNodes = [];
+        CanvasState.mdNodeCounter = 0;
         
         let loaded = false;
         const saved = localStorage.getItem(TEMP_SECTION_STORAGE_KEY);
@@ -4835,6 +5150,8 @@ function loadTempNodes() {
             CanvasState.tempSectionCounter = state.tempSectionCounter || CanvasState.tempSections.length;
             CanvasState.tempItemCounter = state.tempItemCounter || 0;
             CanvasState.colorCursor = state.colorCursor || 0;
+            CanvasState.mdNodes = Array.isArray(state.mdNodes) ? state.mdNodes : [];
+            CanvasState.mdNodeCounter = state.mdNodeCounter || CanvasState.mdNodes.length || 0;
             loaded = true;
         } else {
             const legacy = localStorage.getItem(LEGACY_TEMP_NODE_STORAGE_KEY);
@@ -4877,6 +5194,12 @@ function loadTempNodes() {
                 section.height = section.height || TEMP_SECTION_DEFAULT_HEIGHT;
                 renderTempNode(section);
             });
+            // 渲染 Markdown 文本卡片
+            CanvasState.mdNodes.forEach(node => {
+                node.width = node.width || MD_NODE_DEFAULT_WIDTH;
+                node.height = node.height || MD_NODE_DEFAULT_HEIGHT;
+                renderMdNode(node);
+            });
         } finally {
             suppressScrollSync = false;
         }
@@ -4905,6 +5228,7 @@ window.CanvasModule = {
     updateFullscreenButton: updateFullscreenButtonState,
     CanvasState: CanvasState, // 导出状态供外部访问（如指针拖拽）
     createTempNode: createTempNode, // 导出创建临时节点函数
+    createMdNode: createMdNode,
     temp: {
         getSection: getTempSection,
         findItem: findTempItemEntry,

@@ -2517,6 +2517,13 @@ let errorMessage = errorMessages.join('; ');
                 await updateAndCacheAnalysis();
                 // 更新角标
                 await setBadge();
+                // 清理移动历史，避免备份后仍然出现蓝色移动标识
+                try {
+                    await browserAPI.storage.local.set({ recentMovedIds: [] });
+                } catch (_) {}
+                try {
+                    browserAPI.runtime.sendMessage({ action: 'clearExplicitMoved' });
+                } catch (_) {}
             } catch (updateError) {
                 console.error('[syncBookmarks] 更新角标和缓存失败:', updateError);
             }

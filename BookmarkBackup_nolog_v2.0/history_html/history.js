@@ -5410,7 +5410,7 @@ function handleStorageChange(changes, namespace) {
 
     console.log('[存储监听] 检测到变化:', Object.keys(changes));
 
-    // 成功备份后（自动/手动/切换），立即清理 Canvas 永久栏目内的颜色标识
+    // 成功备份后（自动/手动/切换），立即清理 Canvas 永久栏目内的颜色标识，并清空显式移动集合
     try {
         if (currentView === 'canvas' && changes.syncHistory) {
             const newHistory = changes.syncHistory.newValue || [];
@@ -5421,6 +5421,8 @@ function handleStorageChange(changes, namespace) {
                 if (isAppended && lastRec && lastRec.status === 'success') {
                     const fp = lastRec.fingerprint || lastRec.time || String(Date.now());
                     if (fp !== window.__lastResetFingerprint) {
+                        // 清空显式移动集合，避免蓝标残留
+                        try { explicitMovedIds = new Map(); } catch(_) {}
                         resetPermanentSectionChangeMarkers();
                         window.__lastResetFingerprint = fp;
                     }
@@ -5649,6 +5651,13 @@ function setupRealtimeMessageListener() {
                 return;
             }
             handleAnalysisUpdatedMessage(message);
+        } else if (message.action === 'clearExplicitMoved') {
+            try {
+                explicitMovedIds = new Map();
+                if (currentView === 'canvas') {
+                    resetPermanentSectionChangeMarkers();
+                }
+            } catch(e) { /* 忽略 */ }
         } else if (message.action === 'recentMovedBroadcast' && message.id) {
             // 后台广播的最近被移动的ID，立即记入显式集合（仅标记这个节点）
             // 这确保用户拖拽的节点优先被标识为蓝色"moved"

@@ -5126,18 +5126,16 @@ a.tree-label.tree-bookmark-link:hover {
 .md-canvas-node {
     position: absolute;
     box-sizing: border-box;
-    background: #ffffff; /* 纯白 */
-    border: 1px solid #d0d7de;
+    background: #ffffff; /* 与画布背景一致（亮色） */
+    border: 2px solid rgba(27, 31, 36, 0.35); /* 边框更重 */
     border-radius: 8px;
-    box-shadow: none; /* 去掉内填色阴影 */
+    box-shadow: none;
     padding: 8px;
-    color: #24292f;
 }
 
 [data-theme="dark"] .md-canvas-node {
-    background: #000000; /* 纯黑 */
-    border-color: #444;
-    color: #ffffff;
+    background: #242526; /* 与画布背景一致（暗色） */
+    border-color: rgba(255, 255, 255, 0.4); /* 边框更重 */
     box-shadow: none;
 }
 

@@ -17,8 +17,9 @@
     width: 100%;
     height: 100%;
     position: relative;
+    /* 恢复 Obsidian 风格网格点背景 */
     background-color: #ffffff;
-    background-image: 
+    background-image:
         radial-gradient(circle, #d0d7de calc(var(--canvas-scale)*0.5px + 0.5px), transparent 0);
     background-size: calc(var(--canvas-scale) * 24px) calc(var(--canvas-scale) * 24px);
     background-position: calc(var(--canvas-pan-x)) calc(var(--canvas-pan-y));
@@ -28,7 +29,7 @@
 
 [data-theme="dark"] .canvas-workspace {
     background-color: #242526;
-    background-image: 
+    background-image:
         radial-gradient(circle, #3a3b3c calc(var(--canvas-scale)*0.5px + 0.5px), transparent 0);
     box-shadow: inset 0 0 0 1px #3a3b3c;
 }

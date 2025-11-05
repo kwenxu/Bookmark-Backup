@@ -99,7 +99,9 @@ const CanvasState = {
         minY: -300,
         maxY: 300
     },
-    dropCleanupBound: false
+    dropCleanupBound: false,
+    // 选中状态（仅 Markdown 空白栏目）
+    selectedMdNodeId: null
 };
 
 let panSaveTimeout = null;
@@ -2395,6 +2397,7 @@ function makePermanentSectionResizable(element) {
         let startX, startY, startWidth, startHeight, startLeft, startTop;
         
         handle.addEventListener('mousedown', (e) => {
+            if (node && node.locked) return; // 锁定不允许缩放
             e.stopPropagation();
             e.preventDefault();
             
@@ -2767,12 +2770,55 @@ async function createTempNode(data, x, y) {
 // Markdown 文本节点（Obsidian Canvas 风格）
 // =============================================================================
 
+function clearMdSelection() {
+    try {
+        if (CanvasState.selectedMdNodeId) {
+            const prev = document.getElementById(CanvasState.selectedMdNodeId);
+            if (prev) prev.classList.remove('selected');
+        }
+    } catch(_) {}
+    CanvasState.selectedMdNodeId = null;
+}
+
+function selectMdNode(nodeId) {
+    if (!nodeId) return;
+    if (CanvasState.selectedMdNodeId === nodeId) return;
+    clearMdSelection();
+    const el = document.getElementById(nodeId);
+    if (el) {
+        el.classList.add('selected');
+        CanvasState.selectedMdNodeId = nodeId;
+    }
+}
+
+function duplicateMdNode(nodeId) {
+    const node = (Array.isArray(CanvasState.mdNodes) ? CanvasState.mdNodes.find(n => n.id === nodeId) : null);
+    if (!node) return null;
+    const id = `md-node-${++CanvasState.mdNodeCounter}`;
+    const copy = {
+        id,
+        x: (node.x || 0) + 24,
+        y: (node.y || 0) + 24,
+        width: node.width || MD_NODE_DEFAULT_WIDTH,
+        height: node.height || MD_NODE_DEFAULT_HEIGHT,
+        text: node.text || '',
+        color: node.color || null,
+        createdAt: Date.now()
+    };
+    CanvasState.mdNodes.push(copy);
+    renderMdNode(copy);
+    scheduleBoundsUpdate();
+    saveTempNodes();
+    return id;
+}
+
 function makeMdNodeDraggable(element, node) {
     let dragPending = false;
     let startX = 0;
     let startY = 0;
 
     const onMouseDown = (e) => {
+        if (node && node.locked) return; // 锁定不允许拖动
         const target = e.target;
         if (!target) return;
         // 编辑或 resize 时不拖动
@@ -2838,6 +2884,17 @@ function renderMdNode(node) {
     } else {
         el.innerHTML = '';
     }
+
+    // 顶部工具栏（选中/悬停可见）
+    const toolbar = document.createElement('div');
+    toolbar.className = 'md-node-toolbar';
+    toolbar.innerHTML = `
+        <button class="md-node-toolbar-btn" data-action="md-edit" title="编辑"><i class="far fa-edit"></i></button>
+        <button class="md-node-toolbar-btn" data-action="md-duplicate" title="复制"><i class="far fa-copy"></i></button>
+        <button class="md-node-toolbar-btn" data-action="md-lock" title="锁定/解锁"><i class="fas fa-lock"></i></button>
+        <button class="md-node-toolbar-btn" data-action="md-color-toggle" title="颜色"><i class="fas fa-palette"></i></button>
+        <button class="md-node-toolbar-btn" data-action="md-delete" title="删除"><i class="far fa-trash-alt"></i></button>
+    `;
     
     // 视图（渲染 Markdown）
     const view = document.createElement('div');
@@ -2909,8 +2966,48 @@ function renderMdNode(node) {
     // 阻止编辑器事件冒泡
     ['mousedown','dblclick','click'].forEach(evt => editor.addEventListener(evt, ev => ev.stopPropagation()));
 
+    el.appendChild(toolbar);
     el.appendChild(view);
     el.appendChild(editor);
+
+    // 选择逻辑：单击选中，空白点击清除
+    el.addEventListener('mousedown', (e) => {
+        // 忽略在编辑、resize、小工具栏按钮上的按下
+        if (e.target.closest('.md-canvas-editor') || e.target.closest('.resize-handle') || e.target.closest('.md-node-toolbar-btn')) return;
+        selectMdNode(node.id);
+    }, true);
+
+    // 工具栏事件
+    toolbar.addEventListener('click', (e) => {
+        const btn = e.target.closest('.md-node-toolbar-btn, .md-color-chip, .md-color-custom');
+        if (!btn) return;
+        e.preventDefault();
+        e.stopPropagation();
+        const action = btn.getAttribute('data-action');
+        if (action === 'md-edit') {
+            selectMdNode(node.id);
+            enterEdit();
+        } else if (action === 'md-duplicate') {
+            const newId = duplicateMdNode(node.id);
+            if (newId) selectMdNode(newId);
+        } else if (action === 'md-delete') {
+            removeMdNode(node.id);
+            clearMdSelection();
+        } else if (action === 'md-color-toggle') {
+            toggleMdColorPopover(el, node, btn);
+        } else if (action === 'md-color-preset') {
+            const preset = String(btn.getAttribute('data-color') || '').trim();
+            setMdNodeColor(node, preset);
+            closeMdColorPopover(el);
+        } else if (action === 'md-color-custom') {
+            // handled by input change event
+        } else if (action === 'md-lock') {
+            node.locked = !node.locked;
+            const icon = toolbar.querySelector('[data-action="md-lock"] i');
+            if (icon) icon.className = node.locked ? 'fas fa-lock' : 'fas fa-lock-open';
+            saveTempNodes();
+        }
+    });
     
     makeMdNodeDraggable(el, node);
     makeTempNodeResizable(el, node);
@@ -2919,6 +3016,104 @@ function renderMdNode(node) {
         el.classList.add('temp-node-enter');
         requestAnimationFrame(() => el.classList.remove('temp-node-enter'));
     }
+
+    // 如果当前选中的是该节点，恢复选中外观
+    if (CanvasState.selectedMdNodeId === node.id) {
+        el.classList.add('selected');
+    }
+
+    // 初始颜色与层级、锁定图标
+    applyMdNodeColor(el, node);
+    if (node && typeof node.z === 'number') {
+        el.style.zIndex = String(node.z);
+    }
+    // 初始化锁图标
+    const lockBtnIcon = toolbar.querySelector('[data-action="md-lock"] i');
+    if (lockBtnIcon) lockBtnIcon.className = node.locked ? 'fas fa-lock' : 'fas fa-lock-open';
+}
+
+// —— 工具栏动作实现 ——
+function presetToHex(preset) {
+    switch (String(preset)) {
+        case '1': return '#dc2626'; // red
+        case '2': return '#ea580c'; // orange
+        case '3': return '#ca8a04'; // yellow
+        case '4': return '#16a34a'; // green
+        case '5': return '#0891b2'; // cyan
+        case '6': return '#7c3aed'; // purple
+        default: return null;
+    }
+}
+
+function applyMdNodeColor(el, node) {
+    const hex = node && (node.colorHex || presetToHex(node.color) || null);
+    if (!el) return;
+    if (hex) {
+        el.style.borderColor = hex;
+        // 背景保持当前主题，仅强调描边以显得更“高级”
+    }
+}
+
+function setMdNodeColor(node, presetOrHex) {
+    if (!node) return;
+    // 支持预设编号或十六进制颜色
+    const isPreset = /^[1-6]$/.test(String(presetOrHex));
+    if (isPreset) {
+        node.color = String(presetOrHex);
+        node.colorHex = presetToHex(node.color);
+    } else if (typeof presetOrHex === 'string' && presetOrHex.startsWith('#')) {
+        node.color = null;
+        node.colorHex = presetOrHex;
+    }
+    const el = document.getElementById(node.id);
+    if (el) applyMdNodeColor(el, node);
+    saveTempNodes();
+}
+
+// 色盘弹层逻辑
+function ensureMdColorPopover(el, node) {
+    let pop = el.querySelector('.md-color-popover');
+    if (pop) return pop;
+    pop = document.createElement('div');
+    pop.className = 'md-color-popover';
+    pop.innerHTML = `
+        <span class="md-color-chip" data-action="md-color-preset" data-color="1" style="background:#dc2626"></span>
+        <span class="md-color-chip" data-action="md-color-preset" data-color="2" style="background:#ea580c"></span>
+        <span class="md-color-chip" data-action="md-color-preset" data-color="3" style="background:#ca8a04"></span>
+        <span class="md-color-chip" data-action="md-color-preset" data-color="4" style="background:#16a34a"></span>
+        <span class="md-color-chip" data-action="md-color-preset" data-color="5" style="background:#0891b2"></span>
+        <span class="md-color-chip" data-action="md-color-preset" data-color="6" style="background:#7c3aed"></span>
+        <div class="md-color-divider"></div>
+        <input class="md-node-toolbar-btn md-color-custom" data-action="md-color-custom" type="color" value="#2563eb" title="自定义颜色" />
+    `;
+    // 自定义颜色变化
+    const input = pop.querySelector('.md-color-custom');
+    input.addEventListener('input', (ev) => {
+        setMdNodeColor(node, ev.target.value);
+    });
+    input.addEventListener('change', () => closeMdColorPopover(el));
+    el.appendChild(pop);
+    return pop;
+}
+
+function toggleMdColorPopover(el, node, anchorBtn) {
+    const pop = ensureMdColorPopover(el, node);
+    const isOpen = pop.classList.contains('open');
+    if (isOpen) { closeMdColorPopover(el); return; }
+    pop.classList.add('open');
+    // 监听外部点击关闭
+    const onDoc = (e) => {
+        if (!el.contains(e.target)) {
+            closeMdColorPopover(el);
+            document.removeEventListener('mousedown', onDoc, true);
+        }
+    };
+    document.addEventListener('mousedown', onDoc, true);
+}
+
+function closeMdColorPopover(el) {
+    const pop = el.querySelector('.md-color-popover');
+    if (pop) pop.classList.remove('open');
 }
 
 async function createMdNode(x, y, text = '') {
@@ -4801,6 +4996,19 @@ function setupCanvasEventListeners() {
     // 空白画布双击：创建 Obsidian Canvas 风格的“空白栏目”（纯 Markdown 文本卡片）
     const workspace = document.getElementById('canvasWorkspace');
     if (workspace) {
+        // 空白处单击：清除 Markdown 节点选中
+        workspace.addEventListener('mousedown', (e) => {
+            const target = e.target;
+            // 在已有节点/永久栏目/滚动条/缩放控件内不清除
+            const inMd = !!target.closest('.md-canvas-node');
+            const inTemp = !!target.closest('.temp-canvas-node');
+            const inPermanent = !!target.closest('#permanentSection');
+            const isUI = !!target.closest('.canvas-scrollbar, .canvas-zoom-indicator, .view-actions');
+            const isForm = ['INPUT', 'TEXTAREA', 'BUTTON', 'SELECT', 'LABEL'].includes(target.tagName);
+            if (inMd || inTemp || inPermanent || isUI || isForm) return;
+            clearMdSelection();
+        }, true);
+
         workspace.addEventListener('dblclick', async (e) => {
             // 忽略在已有临时栏目、永久栏目、滚动条、缩放控件、输入控件内的双击
             const target = e.target;

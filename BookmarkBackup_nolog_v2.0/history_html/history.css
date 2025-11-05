@@ -5127,7 +5127,7 @@ a.tree-label.tree-bookmark-link:hover {
     position: absolute;
     box-sizing: border-box;
     background: #ffffff; /* 与画布背景一致（亮色） */
-    border: 2px solid rgba(27, 31, 36, 0.35); /* 边框更重 */
+    border: 2px solid rgba(27, 31, 36, 0.35); /* 默认边框，更重 */
     border-radius: 8px;
     box-shadow: none;
     padding: 8px;
@@ -5135,13 +5135,24 @@ a.tree-label.tree-bookmark-link:hover {
 
 [data-theme="dark"] .md-canvas-node {
     background: #242526; /* 与画布背景一致（暗色） */
-    border-color: rgba(255, 255, 255, 0.4); /* 边框更重 */
+    border-color: rgba(255, 255, 255, 0.4); /* 默认边框，更重 */
     box-shadow: none;
 }
 
 .md-canvas-node,
 .md-canvas-text {
     cursor: grab; /* 悬停显示抓手 */
+}
+
+/* 选中状态：高亮边缘并添加轻微投影（参考 Obsidian Canvas is-active 效果） */
+.md-canvas-node.selected {
+    border-color: rgba(9, 105, 218, 0.9);
+    box-shadow: 0 0 0 2px rgba(9, 105, 218, 0.35);
+}
+
+[data-theme="dark"] .md-canvas-node.selected {
+    border-color: rgba(88, 166, 255, 0.95);
+    box-shadow: 0 0 0 2px rgba(88, 166, 255, 0.45);
 }
 
 .md-canvas-node.dragging,
@@ -5163,6 +5174,99 @@ a.tree-label.tree-bookmark-link:hover {
 [data-theme="dark"] .md-canvas-editor {
     color: #ffffff;
 }
+
+/* 顶部工具栏（空白栏目/Markdown 卡片） */
+.md-node-toolbar {
+    position: absolute;
+    top: -28px;
+    left: 50%;
+    transform: translateX(-50%);
+    height: 24px;
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 0;
+    border: none;
+    background: transparent;
+    box-shadow: none;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.12s ease;
+}
+
+.md-canvas-node.selected .md-node-toolbar,
+.md-canvas-node:hover .md-node-toolbar {
+    opacity: 1;
+    pointer-events: auto;
+}
+
+.md-node-toolbar-btn {
+    width: 24px;
+    height: 24px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 6px;
+    border: 1px solid rgba(27, 31, 36, 0.25);
+    background: transparent;
+    color: #57606a;
+    cursor: pointer;
+    transition: border-color 0.12s ease, color 0.12s ease, background 0.12s ease;
+    font-size: 12px;
+}
+
+.md-node-toolbar-btn:hover {
+    border-color: rgba(9, 105, 218, 0.55);
+    color: #24292f;
+    background: rgba(9, 105, 218, 0.06);
+}
+
+.md-node-toolbar-btn:active {
+    transform: translateY(1px);
+}
+
+[data-theme="dark"] .md-node-toolbar-btn {
+    border-color: rgba(99, 110, 123, 0.45);
+    background: transparent;
+    color: #b0b3b8;
+}
+
+[data-theme="dark"] .md-node-toolbar-btn:hover {
+    background: rgba(88, 166, 255, 0.08);
+    color: #e4e6eb;
+    border-color: rgba(88, 166, 255, 0.55);
+}
+
+/* 色盘弹出层 */
+.md-color-popover {
+    position: absolute;
+    top: -6px;
+    right: 0;
+    transform: translateY(-100%);
+    background: #ffffff;
+    border: 1px solid rgba(27, 31, 36, 0.25);
+    border-radius: 8px;
+    box-shadow: 0 6px 18px rgba(15, 23, 42, 0.12);
+    padding: 8px;
+    display: none;
+    gap: 8px;
+    z-index: 300;
+}
+.md-color-popover.open { display: grid; grid-template-columns: repeat(6, 18px); align-items: center; }
+.md-color-chip {
+    width: 16px;
+    height: 16px;
+    border-radius: 50%;
+    border: 1px solid rgba(0,0,0,0.2);
+    cursor: pointer;
+}
+.md-color-divider { grid-column: 1 / -1; height: 1px; background: rgba(140,149,159,0.35); margin: 4px 0; }
+.md-color-custom { grid-column: 1 / -1; }
+[data-theme="dark"] .md-color-popover {
+    background: #2c2d2e;
+    border-color: rgba(99, 110, 123, 0.45);
+}
+[data-theme="dark"] .md-color-chip { border-color: rgba(255,255,255,0.25); }
 
 
 /* 缩放指示器 */

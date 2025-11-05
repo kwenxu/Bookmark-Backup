@@ -2888,11 +2888,19 @@ function renderMdNode(node) {
     // 顶部工具栏（选中/悬停可见）
     const toolbar = document.createElement('div');
     toolbar.className = 'md-node-toolbar';
+    
+    // 多语言支持
+    const lang = typeof currentLang !== 'undefined' ? currentLang : 'zh';
+    const deleteTitle = lang === 'en' ? 'Delete' : '删除';
+    const colorTitle = lang === 'en' ? 'Color' : '颜色';
+    const focusTitle = lang === 'en' ? 'Locate and zoom' : '定位并放大';
+    const editTitle = lang === 'en' ? 'Edit' : '编辑';
+    
     toolbar.innerHTML = `
-        <button class="md-node-toolbar-btn" data-action="md-delete" title="删除"><i class="far fa-trash-alt"></i></button>
-        <button class="md-node-toolbar-btn" data-action="md-color-toggle" title="颜色"><i class="fas fa-palette"></i></button>
-        <button class="md-node-toolbar-btn" data-action="md-focus" title="定位并放大"><i class="fas fa-search-plus"></i></button>
-        <button class="md-node-toolbar-btn" data-action="md-edit" title="编辑"><i class="far fa-edit"></i></button>
+        <button class="md-node-toolbar-btn" data-action="md-delete" title="${deleteTitle}"><i class="far fa-trash-alt"></i></button>
+        <button class="md-node-toolbar-btn" data-action="md-color-toggle" title="${colorTitle}"><i class="fas fa-palette"></i></button>
+        <button class="md-node-toolbar-btn" data-action="md-focus" title="${focusTitle}"><i class="fas fa-search-plus"></i></button>
+        <button class="md-node-toolbar-btn" data-action="md-edit" title="${editTitle}"><i class="far fa-edit"></i></button>
     `;
     
     // 视图（渲染 Markdown）
@@ -3070,6 +3078,12 @@ function ensureMdColorPopover(toolbar, node) {
     if (pop) return pop;
     pop = document.createElement('div');
     pop.className = 'md-color-popover';
+    
+    // 多语言支持
+    const lang = typeof currentLang !== 'undefined' ? currentLang : 'zh';
+    const rgbPickerTitle = lang === 'en' ? 'RGB Color Picker' : 'RGB颜色选择器';
+    const customColorTitle = lang === 'en' ? 'Select custom color' : '选择自定义颜色';
+    
     // 使用 Obsidian Canvas 风格的颜色
     pop.innerHTML = `
         <span class="md-color-chip" data-action="md-color-preset" data-color="1" style="background:#ff6666"></span>
@@ -3078,7 +3092,7 @@ function ensureMdColorPopover(toolbar, node) {
         <span class="md-color-chip" data-action="md-color-preset" data-color="4" style="background:#66dd99"></span>
         <span class="md-color-chip" data-action="md-color-preset" data-color="5" style="background:#66bbff"></span>
         <span class="md-color-chip" data-action="md-color-preset" data-color="6" style="background:#bb99ff"></span>
-        <button class="md-color-chip md-color-picker-btn" data-action="md-color-picker-toggle" title="RGB颜色选择器">
+        <button class="md-color-chip md-color-picker-btn" data-action="md-color-picker-toggle" title="${rgbPickerTitle}">
             <svg viewBox="0 0 24 24" width="14" height="14">
                 <circle cx="12" cy="12" r="10" fill="url(#rainbow-gradient)" />
                 <defs>
@@ -3100,7 +3114,7 @@ function ensureMdColorPopover(toolbar, node) {
     const rgbPicker = document.createElement('div');
     rgbPicker.className = 'md-rgb-picker';
     rgbPicker.innerHTML = `
-        <input class="md-color-input" type="color" value="${node.colorHex || '#2563eb'}" title="选择自定义颜色" />
+        <input class="md-color-input" type="color" value="${node.colorHex || '#2563eb'}" title="${customColorTitle}" />
     `;
     pop.appendChild(rgbPicker);
     

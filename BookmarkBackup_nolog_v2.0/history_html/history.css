@@ -5192,6 +5192,7 @@ a.tree-label.tree-bookmark-link:hover {
     opacity: 0;
     pointer-events: none;
     transition: opacity 0.12s ease;
+    z-index: 100;
 }
 
 .md-canvas-node.selected .md-node-toolbar,
@@ -5240,9 +5241,9 @@ a.tree-label.tree-bookmark-link:hover {
 /* 色盘弹出层 */
 .md-color-popover {
     position: absolute;
-    top: -6px;
-    right: 0;
-    transform: translateY(-100%);
+    bottom: 100%;
+    left: 50%;
+    transform: translateX(-50%) translateY(-8px);
     background: #ffffff;
     border: 1px solid rgba(27, 31, 36, 0.25);
     border-radius: 8px;
@@ -5252,24 +5253,86 @@ a.tree-label.tree-bookmark-link:hover {
     gap: 8px;
     z-index: 300;
 }
-.md-color-popover.open { display: grid; grid-template-columns: repeat(6, 18px); align-items: center; }
+.md-color-popover.open { 
+    display: grid; 
+    grid-template-columns: repeat(7, 18px); 
+    align-items: center; 
+}
 .md-color-chip {
     width: 16px;
     height: 16px;
     border-radius: 50%;
     border: 1px solid rgba(0,0,0,0.2);
     cursor: pointer;
+    transition: transform 0.12s ease, box-shadow 0.12s ease;
 }
-.md-color-divider { grid-column: 1 / -1; height: 1px; background: rgba(140,149,159,0.35); margin: 4px 0; }
-.md-color-custom { grid-column: 1 / -1; }
+.md-color-chip:hover {
+    transform: scale(1.15);
+    box-shadow: 0 2px 6px rgba(0,0,0,0.2);
+}
+
+/* 彩色圆盘按钮 */
+.md-color-picker-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: white;
+    padding: 0;
+    border: 1px solid rgba(0,0,0,0.2);
+}
+.md-color-picker-btn:hover {
+    border-color: rgba(0,0,0,0.4);
+}
+.md-color-picker-btn svg {
+    display: block;
+}
+
+/* RGB选择器容器 */
+.md-rgb-picker {
+    position: absolute;
+    bottom: 100%;
+    left: 50%;
+    transform: translateX(-50%) translateY(-8px);
+    background: #ffffff;
+    border: 1px solid rgba(27, 31, 36, 0.25);
+    border-radius: 8px;
+    box-shadow: 0 6px 18px rgba(15, 23, 42, 0.12);
+    padding: 8px;
+    display: none;
+    z-index: 301;
+}
+.md-rgb-picker.open {
+    display: block;
+}
+.md-color-custom { 
+    width: 120px;
+    height: 32px;
+    border: 1px solid rgba(27, 31, 36, 0.25);
+    border-radius: 6px;
+    cursor: pointer;
+}
+
 [data-theme="dark"] .md-color-popover {
     background: #2c2d2e;
     border-color: rgba(99, 110, 123, 0.45);
 }
-[data-theme="dark"] .md-color-chip { border-color: rgba(255,255,255,0.25); }
-
+[data-theme="dark"] .md-color-chip { 
+    border-color: rgba(255,255,255,0.25); 
+}
+[data-theme="dark"] .md-color-picker-btn {
+    background: #2c2d2e;
+    border-color: rgba(255,255,255,0.25);
+}
+[data-theme="dark"] .md-rgb-picker {
+    background: #2c2d2e;
+    border-color: rgba(99, 110, 123, 0.45);
+}
+[data-theme="dark"] .md-color-custom {
+    border-color: rgba(99, 110, 123, 0.45);
+}
 
 /* 缩放指示器 */
+.canvas-workspace {
     cursor: grab;
 }
 

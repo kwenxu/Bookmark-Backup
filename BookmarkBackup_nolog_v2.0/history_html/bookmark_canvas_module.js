@@ -2978,7 +2978,7 @@ function renderMdNode(node) {
 
     // 工具栏事件
     toolbar.addEventListener('click', (e) => {
-        const btn = e.target.closest('.md-node-toolbar-btn, .md-color-chip, .md-color-custom');
+        const btn = e.target.closest('.md-node-toolbar-btn, .md-color-chip, .md-color-custom, .md-color-picker-btn');
         if (!btn) return;
         e.preventDefault();
         e.stopPropagation();
@@ -2995,6 +2995,8 @@ function renderMdNode(node) {
             const preset = String(btn.getAttribute('data-color') || '').trim();
             setMdNodeColor(node, preset);
             closeMdColorPopover(el);
+        } else if (action === 'md-color-picker-toggle') {
+            // RGB选择器切换由ensureMdColorPopover中的事件处理
         } else if (action === 'md-color-custom') {
             // handled by input change event
         } else if (action === 'md-focus') {
@@ -3025,13 +3027,14 @@ function renderMdNode(node) {
 
 // —— 工具栏动作实现 ——
 function presetToHex(preset) {
+    // Obsidian Canvas 风格颜色
     switch (String(preset)) {
-        case '1': return '#dc2626'; // red
-        case '2': return '#ea580c'; // orange
-        case '3': return '#ca8a04'; // yellow
-        case '4': return '#16a34a'; // green
-        case '5': return '#0891b2'; // cyan
-        case '6': return '#7c3aed'; // purple
+        case '1': return '#ff6666'; // red
+        case '2': return '#ffaa66'; // orange
+        case '3': return '#ffdd66'; // yellow
+        case '4': return '#66dd99'; // green
+        case '5': return '#66bbff'; // blue
+        case '6': return '#bb99ff'; // purple
         default: return null;
     }
 }
@@ -3067,22 +3070,57 @@ function ensureMdColorPopover(el, node) {
     if (pop) return pop;
     pop = document.createElement('div');
     pop.className = 'md-color-popover';
+    // 使用 Obsidian Canvas 风格的颜色
     pop.innerHTML = `
-        <span class="md-color-chip" data-action="md-color-preset" data-color="1" style="background:#dc2626"></span>
-        <span class="md-color-chip" data-action="md-color-preset" data-color="2" style="background:#ea580c"></span>
-        <span class="md-color-chip" data-action="md-color-preset" data-color="3" style="background:#ca8a04"></span>
-        <span class="md-color-chip" data-action="md-color-preset" data-color="4" style="background:#16a34a"></span>
-        <span class="md-color-chip" data-action="md-color-preset" data-color="5" style="background:#0891b2"></span>
-        <span class="md-color-chip" data-action="md-color-preset" data-color="6" style="background:#7c3aed"></span>
-        <div class="md-color-divider"></div>
-        <input class="md-node-toolbar-btn md-color-custom" data-action="md-color-custom" type="color" value="#2563eb" title="自定义颜色" />
+        <span class="md-color-chip" data-action="md-color-preset" data-color="1" style="background:#ff6666"></span>
+        <span class="md-color-chip" data-action="md-color-preset" data-color="2" style="background:#ffaa66"></span>
+        <span class="md-color-chip" data-action="md-color-preset" data-color="3" style="background:#ffdd66"></span>
+        <span class="md-color-chip" data-action="md-color-preset" data-color="4" style="background:#66dd99"></span>
+        <span class="md-color-chip" data-action="md-color-preset" data-color="5" style="background:#66bbff"></span>
+        <span class="md-color-chip" data-action="md-color-preset" data-color="6" style="background:#bb99ff"></span>
+        <button class="md-color-chip md-color-picker-btn" data-action="md-color-picker-toggle" title="RGB颜色选择器">
+            <svg viewBox="0 0 24 24" width="14" height="14">
+                <circle cx="12" cy="12" r="10" fill="url(#rainbow-gradient)" />
+                <defs>
+                    <linearGradient id="rainbow-gradient" x1="0%" y1="0%" x2="100%" y2="100%">
+                        <stop offset="0%" style="stop-color:#ff0000" />
+                        <stop offset="16.67%" style="stop-color:#ff9900" />
+                        <stop offset="33.33%" style="stop-color:#ffff00" />
+                        <stop offset="50%" style="stop-color:#00ff00" />
+                        <stop offset="66.67%" style="stop-color:#0099ff" />
+                        <stop offset="83.33%" style="stop-color:#9900ff" />
+                        <stop offset="100%" style="stop-color:#ff0099" />
+                    </linearGradient>
+                </defs>
+            </svg>
+        </button>
     `;
+    
+    // RGB选择器容器
+    const rgbPicker = document.createElement('div');
+    rgbPicker.className = 'md-rgb-picker';
+    rgbPicker.innerHTML = `
+        <input class="md-color-custom" data-action="md-color-custom" type="color" value="#2563eb" title="自定义颜色" />
+    `;
+    pop.appendChild(rgbPicker);
+    
+    // 彩色圆盘按钮点击事件
+    const pickerBtn = pop.querySelector('.md-color-picker-btn');
+    pickerBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        rgbPicker.classList.toggle('open');
+    });
+    
     // 自定义颜色变化
     const input = pop.querySelector('.md-color-custom');
     input.addEventListener('input', (ev) => {
         setMdNodeColor(node, ev.target.value);
     });
-    input.addEventListener('change', () => closeMdColorPopover(el));
+    input.addEventListener('change', () => {
+        rgbPicker.classList.remove('open');
+        closeMdColorPopover(el);
+    });
+    
     el.appendChild(pop);
     return pop;
 }

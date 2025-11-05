@@ -2990,11 +2990,11 @@ function renderMdNode(node) {
             removeMdNode(node.id);
             clearMdSelection();
         } else if (action === 'md-color-toggle') {
-            toggleMdColorPopover(el, node, btn);
+            toggleMdColorPopover(toolbar, node, btn);
         } else if (action === 'md-color-preset') {
             const preset = String(btn.getAttribute('data-color') || '').trim();
             setMdNodeColor(node, preset);
-            closeMdColorPopover(el);
+            closeMdColorPopover(toolbar);
         } else if (action === 'md-color-picker-toggle') {
             // RGB选择器切换由ensureMdColorPopover中的事件处理
         } else if (action === 'md-color-custom') {
@@ -3065,8 +3065,8 @@ function setMdNodeColor(node, presetOrHex) {
 }
 
 // 色盘弹层逻辑
-function ensureMdColorPopover(el, node) {
-    let pop = el.querySelector('.md-color-popover');
+function ensureMdColorPopover(toolbar, node) {
+    let pop = toolbar.querySelector('.md-color-popover');
     if (pop) return pop;
     pop = document.createElement('div');
     pop.className = 'md-color-popover';
@@ -3096,52 +3096,60 @@ function ensureMdColorPopover(el, node) {
         </button>
     `;
     
-    // RGB选择器容器
+    // RGB选择器UI（显示在色盘上方）
     const rgbPicker = document.createElement('div');
     rgbPicker.className = 'md-rgb-picker';
     rgbPicker.innerHTML = `
-        <input class="md-color-custom" data-action="md-color-custom" type="color" value="#2563eb" title="自定义颜色" />
+        <input class="md-color-input" type="color" value="${node.colorHex || '#2563eb'}" title="选择自定义颜色" />
     `;
     pop.appendChild(rgbPicker);
     
-    // 彩色圆盘按钮点击事件
+    // 彩色圆盘按钮点击事件 - 切换RGB选择器显示
     const pickerBtn = pop.querySelector('.md-color-picker-btn');
+    const colorInput = rgbPicker.querySelector('.md-color-input');
+    
     pickerBtn.addEventListener('click', (e) => {
         e.stopPropagation();
-        rgbPicker.classList.toggle('open');
+        const isOpen = rgbPicker.classList.contains('open');
+        if (isOpen) {
+            rgbPicker.classList.remove('open');
+        } else {
+            rgbPicker.classList.add('open');
+            // 延迟触发点击，确保UI已显示
+            setTimeout(() => colorInput.click(), 50);
+        }
     });
     
     // 自定义颜色变化
-    const input = pop.querySelector('.md-color-custom');
-    input.addEventListener('input', (ev) => {
+    colorInput.addEventListener('input', (ev) => {
         setMdNodeColor(node, ev.target.value);
     });
-    input.addEventListener('change', () => {
+    
+    colorInput.addEventListener('change', () => {
         rgbPicker.classList.remove('open');
-        closeMdColorPopover(el);
     });
     
-    el.appendChild(pop);
+    toolbar.appendChild(pop);
     return pop;
 }
 
-function toggleMdColorPopover(el, node, anchorBtn) {
-    const pop = ensureMdColorPopover(el, node);
+function toggleMdColorPopover(toolbar, node, anchorBtn) {
+    const pop = ensureMdColorPopover(toolbar, node);
     const isOpen = pop.classList.contains('open');
-    if (isOpen) { closeMdColorPopover(el); return; }
+    if (isOpen) { closeMdColorPopover(toolbar); return; }
     pop.classList.add('open');
     // 监听外部点击关闭
     const onDoc = (e) => {
-        if (!el.contains(e.target)) {
-            closeMdColorPopover(el);
+        if (!toolbar.contains(e.target)) {
+            closeMdColorPopover(toolbar);
             document.removeEventListener('mousedown', onDoc, true);
         }
     };
     document.addEventListener('mousedown', onDoc, true);
 }
 
-function closeMdColorPopover(el) {
-    const pop = el.querySelector('.md-color-popover');
+function closeMdColorPopover(toolbar) {
+    const pop = toolbar.querySelector('.md-color-popover');
     if (pop) pop.classList.remove('open');
 }
 

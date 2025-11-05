@@ -27,12 +27,12 @@
 ### 2. 🌈 彩色圆盘RGB选择器按钮
 在6个预设颜色最右边添加了一个彩色圆盘按钮：
 - 使用SVG彩虹渐变图标
-- 点击后弹出RGB颜色选择器
+- **点击后直接打开原生RGB颜色选择器**（无需二次点击）
 - 支持自定义任意颜色
 
 ### 3. 📍 UI布局优化
 - **工具栏二级UI位置**：色盘弹出层现在出现在工具栏的正上方（而非右上角）
-- **RGB选择器位置**：RGB颜色选择器出现在色盘的正上方
+- **RGB选择器交互**：点击彩色圆盘按钮直接触发原生颜色选择器，无需额外UI层
 - 使用 `bottom: 100%` 和 `transform: translateX(-50%)` 实现居中对齐
 
 ### 4. 🎯 交互优化
@@ -46,8 +46,8 @@
 ### 1. `history_html/bookmark_canvas_module.js`
 - 更新 `ensureMdColorPopover()` 函数：
   - 添加彩色圆盘按钮（带SVG彩虹渐变）
-  - 添加RGB选择器容器
-  - 添加按钮点击事件处理
+  - 添加隐藏的原生颜色输入框
+  - 彩色圆盘按钮点击直接触发 `colorInput.click()`
 - 更新 `presetToHex()` 函数：使用新的Obsidian风格颜色值
 - 更新工具栏事件处理：支持RGB选择器按钮
 
@@ -57,8 +57,7 @@
   - 改为 `left: 50%` + `translateX(-50%)` 居中
   - 网格列数从6改为7（增加RGB按钮）
 - 添加 `.md-color-picker-btn` 样式：彩色圆盘按钮
-- 添加 `.md-rgb-picker` 样式：RGB选择器容器
-- 添加 `.md-color-custom` 样式：颜色输入框
+- 添加 `.md-color-custom-hidden` 样式：隐藏的原生颜色输入框
 - 添加悬停动画效果
 
 ### 3. `history_html/test_color_picker.html`（新增）
@@ -72,8 +71,8 @@
 ### 在空白栏目中使用
 1. 双击画布空白处创建"空白栏目"（Markdown卡片）
 2. 悬停或选中卡片，工具栏出现在顶部
-3. 点击调色板按钮（🎨）打开色盘
-4. 选择预设颜色或点击彩色圆盘使用RGB选择器
+3. 点击调色板按钮（🎨）打开色盘，色盘出现在工具栏正上方
+4. 选择预设颜色或点击彩色圆盘**直接打开**原生RGB选择器
 5. 颜色会立即应用到卡片边框
 
 ### 测试
@@ -91,12 +90,13 @@
     transform: translateX(-50%) translateY(-8px);
 }
 
-/* RGB选择器：色盘正上方 */
-.md-rgb-picker {
+/* 隐藏的原生颜色输入框 */
+.md-color-custom-hidden {
     position: absolute;
-    bottom: 100%;
-    left: 50%;
-    transform: translateX(-50%) translateY(-8px);
+    opacity: 0;
+    pointer-events: none;
+    width: 0;
+    height: 0;
 }
 ```
 

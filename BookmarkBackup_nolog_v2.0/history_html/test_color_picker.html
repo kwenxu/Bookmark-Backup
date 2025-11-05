@@ -51,7 +51,9 @@
             padding: 20px;
         }
         
-        .md-canvas-node:hover .md-node-toolbar {
+        .md-canvas-node:hover .md-node-toolbar,
+        .md-node-toolbar:hover,
+        .md-node-toolbar:has(.md-color-popover.open) {
             opacity: 1;
             pointer-events: auto;
         }
@@ -97,12 +99,12 @@
             background: rgba(9, 105, 218, 0.06);
         }
         
-        /* 色盘弹出层 */
+        /* 色盘弹出层 - 相对于工具栏定位 */
         .md-color-popover {
             position: absolute;
-            bottom: 100%;
+            bottom: calc(100% + 4px);
             left: 50%;
-            transform: translateX(-50%) translateY(-8px);
+            transform: translateX(-50%);
             background: #ffffff;
             border: 1px solid rgba(27, 31, 36, 0.25);
             border-radius: 8px;
@@ -110,7 +112,8 @@
             padding: 8px;
             display: none;
             gap: 8px;
-            z-index: 300;
+            z-index: 10;
+            white-space: nowrap;
         }
         
         .md-color-popover.open { 
@@ -151,31 +154,32 @@
             display: block;
         }
         
-        /* RGB选择器容器 */
+        /* RGB选择器UI - 显示在色盘正上方 */
         .md-rgb-picker {
             position: absolute;
-            bottom: 100%;
+            bottom: calc(100% + 4px);
             left: 50%;
-            transform: translateX(-50%) translateY(-8px);
+            transform: translateX(-50%);
             background: #ffffff;
             border: 1px solid rgba(27, 31, 36, 0.25);
             border-radius: 8px;
             box-shadow: 0 6px 18px rgba(15, 23, 42, 0.12);
             padding: 8px;
             display: none;
-            z-index: 301;
+            z-index: 20;
         }
         
         .md-rgb-picker.open {
             display: block;
         }
         
-        .md-color-custom { 
+        .md-color-input {
             width: 120px;
             height: 32px;
             border: 1px solid rgba(27, 31, 36, 0.25);
             border-radius: 6px;
             cursor: pointer;
+            display: block;
         }
         
         .color-info {
@@ -237,7 +241,7 @@
                         </button>
                         
                         <div class="md-rgb-picker" id="rgbPicker">
-                            <input class="md-color-custom" id="customColor" type="color" value="#2563eb" title="自定义颜色" />
+                            <input type="color" class="md-color-input" id="customColor" value="#2563eb" />
                         </div>
                     </div>
                 </div>
@@ -258,7 +262,7 @@
             <ul>
                 <li><strong>6种Obsidian风格预设颜色：</strong>红、橙、黄、绿、蓝、紫</li>
                 <li><strong>彩色圆盘按钮：</strong>位于6个预设颜色最右边，带有彩虹渐变图标</li>
-                <li><strong>RGB颜色选择器：</strong>点击彩色圆盘后出现在色盘正上方</li>
+                <li><strong>RGB颜色选择器：</strong>点击彩色圆盘后<strong>直接打开</strong>原生颜色选择器</li>
                 <li><strong>工具栏位置：</strong>二级UI（色盘）出现在工具栏正上方</li>
             </ul>
         </div>
@@ -268,7 +272,6 @@
         const colorBtn = document.getElementById('colorBtn');
         const colorPopover = document.getElementById('colorPopover');
         const rgbBtn = document.getElementById('rgbBtn');
-        const rgbPicker = document.getElementById('rgbPicker');
         const customColor = document.getElementById('customColor');
         const selectedColorSpan = document.getElementById('selectedColor');
         const colorPreview = document.getElementById('colorPreview');
@@ -277,13 +280,20 @@
         colorBtn.addEventListener('click', (e) => {
             e.stopPropagation();
             colorPopover.classList.toggle('open');
-            rgbPicker.classList.remove('open');
         });
         
-        // 切换RGB选择器
+        // 彩色圆盘按钮 - 切换RGB选择器显示
+        const rgbPicker = document.getElementById('rgbPicker');
         rgbBtn.addEventListener('click', (e) => {
             e.stopPropagation();
-            rgbPicker.classList.toggle('open');
+            const isOpen = rgbPicker.classList.contains('open');
+            if (isOpen) {
+                rgbPicker.classList.remove('open');
+            } else {
+                rgbPicker.classList.add('open');
+                // 延迟触发点击，确保UI已显示
+                setTimeout(() => customColor.click(), 50);
+            }
         });
         
         // 预设颜色点击
@@ -305,14 +315,12 @@
         
         customColor.addEventListener('change', () => {
             rgbPicker.classList.remove('open');
-            colorPopover.classList.remove('open');
         });
         
         // 点击外部关闭
         document.addEventListener('click', (e) => {
             if (!colorPopover.contains(e.target) && e.target !== colorBtn) {
                 colorPopover.classList.remove('open');
-                rgbPicker.classList.remove('open');
             }
         });
     </script>

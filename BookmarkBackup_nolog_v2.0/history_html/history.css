@@ -5196,7 +5196,9 @@ a.tree-label.tree-bookmark-link:hover {
 }
 
 .md-canvas-node.selected .md-node-toolbar,
-.md-canvas-node:hover .md-node-toolbar {
+.md-canvas-node:hover .md-node-toolbar,
+.md-node-toolbar:hover,
+.md-node-toolbar:has(.md-color-popover.open) {
     opacity: 1;
     pointer-events: auto;
 }
@@ -5238,12 +5240,12 @@ a.tree-label.tree-bookmark-link:hover {
     border-color: rgba(88, 166, 255, 0.55);
 }
 
-/* 色盘弹出层 */
+/* 色盘弹出层 - 相对于工具栏定位 */
 .md-color-popover {
     position: absolute;
-    bottom: 100%;
+    bottom: calc(100% + 4px);
     left: 50%;
-    transform: translateX(-50%) translateY(-8px);
+    transform: translateX(-50%);
     background: #ffffff;
     border: 1px solid rgba(27, 31, 36, 0.25);
     border-radius: 8px;
@@ -5251,7 +5253,8 @@ a.tree-label.tree-bookmark-link:hover {
     padding: 8px;
     display: none;
     gap: 8px;
-    z-index: 300;
+    z-index: 10;
+    white-space: nowrap;
 }
 .md-color-popover.open { 
     display: grid; 
@@ -5287,29 +5290,41 @@ a.tree-label.tree-bookmark-link:hover {
     display: block;
 }
 
-/* RGB选择器容器 */
+/* RGB选择器UI - 显示在色盘正上方 */
 .md-rgb-picker {
     position: absolute;
-    bottom: 100%;
+    bottom: calc(100% + 4px);
     left: 50%;
-    transform: translateX(-50%) translateY(-8px);
+    transform: translateX(-50%);
     background: #ffffff;
     border: 1px solid rgba(27, 31, 36, 0.25);
     border-radius: 8px;
     box-shadow: 0 6px 18px rgba(15, 23, 42, 0.12);
     padding: 8px;
     display: none;
-    z-index: 301;
+    z-index: 20;
 }
+
 .md-rgb-picker.open {
     display: block;
 }
-.md-color-custom { 
+
+.md-color-input {
     width: 120px;
     height: 32px;
     border: 1px solid rgba(27, 31, 36, 0.25);
     border-radius: 6px;
     cursor: pointer;
+    display: block;
+}
+
+[data-theme="dark"] .md-rgb-picker {
+    background: #2c2d2e;
+    border-color: rgba(99, 110, 123, 0.45);
+}
+
+[data-theme="dark"] .md-color-input {
+    border-color: rgba(99, 110, 123, 0.45);
 }
 
 [data-theme="dark"] .md-color-popover {
@@ -5322,13 +5337,6 @@ a.tree-label.tree-bookmark-link:hover {
 [data-theme="dark"] .md-color-picker-btn {
     background: #2c2d2e;
     border-color: rgba(255,255,255,0.25);
-}
-[data-theme="dark"] .md-rgb-picker {
-    background: #2c2d2e;
-    border-color: rgba(99, 110, 123, 0.45);
-}
-[data-theme="dark"] .md-color-custom {
-    border-color: rgba(99, 110, 123, 0.45);
 }
 
 /* 缩放指示器 */

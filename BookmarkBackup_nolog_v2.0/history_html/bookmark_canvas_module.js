@@ -2889,11 +2889,10 @@ function renderMdNode(node) {
     const toolbar = document.createElement('div');
     toolbar.className = 'md-node-toolbar';
     toolbar.innerHTML = `
-        <button class="md-node-toolbar-btn" data-action="md-edit" title="编辑"><i class="far fa-edit"></i></button>
-        <button class="md-node-toolbar-btn" data-action="md-duplicate" title="复制"><i class="far fa-copy"></i></button>
-        <button class="md-node-toolbar-btn" data-action="md-lock" title="锁定/解锁"><i class="fas fa-lock"></i></button>
-        <button class="md-node-toolbar-btn" data-action="md-color-toggle" title="颜色"><i class="fas fa-palette"></i></button>
         <button class="md-node-toolbar-btn" data-action="md-delete" title="删除"><i class="far fa-trash-alt"></i></button>
+        <button class="md-node-toolbar-btn" data-action="md-color-toggle" title="颜色"><i class="fas fa-palette"></i></button>
+        <button class="md-node-toolbar-btn" data-action="md-focus" title="定位并放大"><i class="fas fa-search-plus"></i></button>
+        <button class="md-node-toolbar-btn" data-action="md-edit" title="编辑"><i class="far fa-edit"></i></button>
     `;
     
     // 视图（渲染 Markdown）
@@ -2987,9 +2986,6 @@ function renderMdNode(node) {
         if (action === 'md-edit') {
             selectMdNode(node.id);
             enterEdit();
-        } else if (action === 'md-duplicate') {
-            const newId = duplicateMdNode(node.id);
-            if (newId) selectMdNode(newId);
         } else if (action === 'md-delete') {
             removeMdNode(node.id);
             clearMdSelection();
@@ -3001,11 +2997,9 @@ function renderMdNode(node) {
             closeMdColorPopover(el);
         } else if (action === 'md-color-custom') {
             // handled by input change event
-        } else if (action === 'md-lock') {
-            node.locked = !node.locked;
-            const icon = toolbar.querySelector('[data-action="md-lock"] i');
-            if (icon) icon.className = node.locked ? 'fas fa-lock' : 'fas fa-lock-open';
-            saveTempNodes();
+        } else if (action === 'md-focus') {
+            selectMdNode(node.id);
+            locateAndZoomToMdNode(node.id);
         }
     });
     
@@ -3022,14 +3016,11 @@ function renderMdNode(node) {
         el.classList.add('selected');
     }
 
-    // 初始颜色与层级、锁定图标
+    // 初始颜色与层级
     applyMdNodeColor(el, node);
     if (node && typeof node.z === 'number') {
         el.style.zIndex = String(node.z);
     }
-    // 初始化锁图标
-    const lockBtnIcon = toolbar.querySelector('[data-action="md-lock"] i');
-    if (lockBtnIcon) lockBtnIcon.className = node.locked ? 'fas fa-lock' : 'fas fa-lock-open';
 }
 
 // —— 工具栏动作实现 ——
@@ -3114,6 +3105,32 @@ function toggleMdColorPopover(el, node, anchorBtn) {
 function closeMdColorPopover(el) {
     const pop = el.querySelector('.md-color-popover');
     if (pop) pop.classList.remove('open');
+}
+
+// 定位并放大到指定 Markdown 节点
+function locateAndZoomToMdNode(nodeId, targetZoom = 1.2) {
+    const el = document.getElementById(nodeId);
+    const workspace = document.getElementById('canvasWorkspace');
+    if (!el || !workspace) return;
+
+    const zoom = Math.max(0.1, Math.min(3, Math.max(CanvasState.zoom, targetZoom)));
+    if (zoom !== CanvasState.zoom) {
+        const rect = workspace.getBoundingClientRect();
+        setCanvasZoom(zoom, rect.left + rect.width / 2, rect.top + rect.height / 2, { recomputeBounds: true });
+    }
+
+    const nodeLeft = parseFloat(el.style.left) || 0;
+    const nodeTop = parseFloat(el.style.top) || 0;
+    const nodeCenterX = nodeLeft + el.offsetWidth / 2;
+    const nodeCenterY = nodeTop + el.offsetHeight / 2;
+
+    const workspaceWidth = workspace.clientWidth;
+    const workspaceHeight = workspace.clientHeight;
+    CanvasState.panOffsetX = workspaceWidth / 2 - nodeCenterX * CanvasState.zoom;
+    CanvasState.panOffsetY = workspaceHeight / 2 - nodeCenterY * CanvasState.zoom;
+
+    updateCanvasScrollBounds();
+    savePanOffsetThrottled();
 }
 
 async function createMdNode(x, y, text = '') {

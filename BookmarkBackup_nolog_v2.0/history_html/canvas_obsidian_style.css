@@ -416,7 +416,8 @@
     transition: stroke 0.2s, stroke-width 0.2s;
 }
 
-.canvas-edge:hover {
+.canvas-edge:hover,
+.canvas-edge.hover {
     stroke: #666;
     stroke-width: 3px;
 }
@@ -431,6 +432,40 @@
 }
 [data-theme="dark"] .canvas-edge:hover {
     stroke: #888;
+}
+
+/* 连接线标签样式 */
+.canvas-edge-label {
+    font-size: 12px;
+    font-weight: 500;
+    fill: #666;
+    pointer-events: all;
+    cursor: pointer;
+    user-select: none;
+    text-shadow: 
+        -1px -1px 0 #fff,
+        1px -1px 0 #fff,
+        -1px 1px 0 #fff,
+        1px 1px 0 #fff,
+        0 0 3px #fff;
+}
+
+[data-theme="dark"] .canvas-edge-label {
+    fill: #aaa;
+    text-shadow: 
+        -1px -1px 0 #1a1a1a,
+        1px -1px 0 #1a1a1a,
+        -1px 1px 0 #1a1a1a,
+        1px 1px 0 #1a1a1a,
+        0 0 3px #1a1a1a;
+}
+
+.canvas-edge-label:hover {
+    fill: #333;
+}
+
+[data-theme="dark"] .canvas-edge-label:hover {
+    fill: #ddd;
 }
 
 /* Anchors & Zones - Strictly OUTSIDE node to prevent conflicts */

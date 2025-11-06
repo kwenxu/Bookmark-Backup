@@ -2800,6 +2800,8 @@ function selectMdNode(nodeId) {
     if (!nodeId) return;
     if (CanvasState.selectedMdNodeId === nodeId) return;
     clearMdSelection();
+    // 清除连接线的选择
+    clearEdgeSelection();
     const el = document.getElementById(nodeId);
     if (el) {
         el.classList.add('selected');
@@ -5599,6 +5601,9 @@ function startConnection(e, nodeId, side) {
     const workspace = document.getElementById('canvasWorkspace');
     if (workspace) workspace.classList.add('connecting');
     
+    // 隐藏连接线工具栏
+    hideEdgeToolbar();
+    
     // Create temporary path for dragging
     const svg = document.querySelector('.canvas-edges');
     if (svg) {
@@ -5698,7 +5703,16 @@ function addEdge(fromNode, fromSide, toNode, toSide) {
     if (exists) return;
     
     const id = `edge-${++CanvasState.edgeCounter}-${Date.now()}`;
-    CanvasState.edges.push({ id, fromNode, fromSide, toNode, toSide });
+    CanvasState.edges.push({ 
+        id, 
+        fromNode, 
+        fromSide, 
+        toNode, 
+        toSide,
+        color: null, // 预设颜色编号 (1-6) 或 null
+        colorHex: null, // 自定义十六进制颜色
+        label: '' // 连接线文字标签
+    });
     renderEdges();
     saveTempNodes();
 }
@@ -5717,26 +5731,98 @@ function renderEdges() {
     if (!svg) return;
     
     // Clear existing edges (except temp path if any)
-    Array.from(svg.querySelectorAll('.canvas-edge')).forEach(el => {
+    Array.from(svg.querySelectorAll('.canvas-edge, .canvas-edge-label, .canvas-edge-hit-area')).forEach(el => {
         if (el.id !== 'temp-connection-path') el.remove();
     });
     
     CanvasState.edges.forEach(edge => {
+        // 创建不可见的宽点击区域（用于扩大点击识别范围）
+        const hitArea = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+        hitArea.setAttribute('class', 'canvas-edge-hit-area');
+        hitArea.dataset.edgeId = edge.id;
+        hitArea.setAttribute('stroke', 'transparent');
+        hitArea.setAttribute('stroke-width', '20'); // 更宽的点击区域
+        hitArea.setAttribute('fill', 'none');
+        hitArea.style.cursor = 'pointer';
+        hitArea.style.pointerEvents = 'stroke';
+        
+        updateEdgePath(edge, hitArea);
+        svg.appendChild(hitArea);
+        
+        // 创建可见的连接线路径
         const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
         path.setAttribute('class', 'canvas-edge');
         path.dataset.edgeId = edge.id;
+        path.style.pointerEvents = 'none'; // 可见路径不响应点击，由 hitArea 处理
         if (edge.id === CanvasState.selectedEdgeId) {
             path.classList.add('selected');
+        }
+        
+        // 应用颜色
+        const edgeColor = edge.colorHex || presetToHex(edge.color) || null;
+        if (edgeColor) {
+            path.setAttribute('stroke', edgeColor);
         }
         
         updateEdgePath(edge, path);
         svg.appendChild(path);
         
-        // Edge interaction
-        path.addEventListener('click', (e) => {
+        // 点击事件绑定到不可见的宽区域
+        hitArea.addEventListener('click', (e) => {
+            console.log('[Edge] Edge clicked:', edge.id);
             e.stopPropagation();
             selectEdge(edge.id, e.clientX, e.clientY);
         });
+        
+        // 悬停效果也应用到 hitArea
+        hitArea.addEventListener('mouseenter', () => {
+            path.classList.add('hover');
+        });
+        hitArea.addEventListener('mouseleave', () => {
+            path.classList.remove('hover');
+        });
+        
+        // 渲染标签（如果有）
+        if (edge.label && edge.label.trim()) {
+            renderEdgeLabel(svg, edge);
+        }
+    });
+    
+    // 更新工具栏位置（如果工具栏正在显示）
+    updateEdgeToolbarPosition();
+}
+
+function renderEdgeLabel(svg, edge) {
+    const start = getAnchorPosition(edge.fromNode, edge.fromSide);
+    const end = getAnchorPosition(edge.toNode, edge.toSide);
+    
+    if (!start || !end) return;
+    
+    // 计算标签位置（连接线中点）
+    const midX = (start.x + end.x) / 2;
+    const midY = (start.y + end.y) / 2;
+    
+    // 创建标签文本元素
+    const text = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+    text.setAttribute('class', 'canvas-edge-label');
+    text.setAttribute('x', midX);
+    text.setAttribute('y', midY);
+    text.setAttribute('text-anchor', 'middle');
+    text.setAttribute('dominant-baseline', 'middle');
+    text.textContent = edge.label;
+    
+    // 应用颜色
+    const edgeColor = edge.colorHex || presetToHex(edge.color) || null;
+    if (edgeColor) {
+        text.setAttribute('fill', edgeColor);
+    }
+    
+    svg.appendChild(text);
+    
+    // 标签点击事件
+    text.addEventListener('click', (e) => {
+        e.stopPropagation();
+        selectEdge(edge.id, e.clientX, e.clientY);
     });
 }
 
@@ -5820,12 +5906,16 @@ function setupCanvasConnectionInteractions() {
             // If clicking on workspace background (not on a node or edge)
             if (e.target === workspace || e.target.classList.contains('canvas-content')) {
                 clearEdgeSelection();
+                clearMdSelection();
             }
         });
     }
 }
 
 function selectEdge(edgeId, clientX, clientY) {
+    // 清除空白栏目的选择
+    clearMdSelection();
+    
     CanvasState.selectedEdgeId = edgeId;
     renderEdges(); // Re-render to show selection state
     showEdgeToolbar(edgeId, clientX, clientY);
@@ -5840,45 +5930,327 @@ function clearEdgeSelection() {
 }
 
 function showEdgeToolbar(edgeId, x, y) {
+    console.log('[Edge Toolbar] showEdgeToolbar called:', edgeId);
+    const edge = CanvasState.edges.find(e => e.id === edgeId);
+    if (!edge) {
+        console.warn('[Edge Toolbar] Edge not found:', edgeId);
+        return;
+    }
+    
+    const canvasContent = document.getElementById('canvasContent');
+    if (!canvasContent) {
+        console.warn('[Edge Toolbar] canvasContent not found');
+        return;
+    }
+    
     let toolbar = document.getElementById('edge-toolbar');
     if (!toolbar) {
+        console.log('[Edge Toolbar] Creating new toolbar');
         toolbar = document.createElement('div');
         toolbar.id = 'edge-toolbar';
-        toolbar.className = 'md-node-toolbar'; // Reuse existing toolbar style
-        toolbar.style.position = 'fixed';
-        toolbar.style.zIndex = '1000';
-        document.body.appendChild(toolbar);
+        toolbar.className = 'md-node-toolbar edge-toolbar'; // 添加专属类名
+        toolbar.style.position = 'absolute'; // 使用 absolute 定位，吸附在 canvas-content 上
+        toolbar.style.zIndex = '100';
+        toolbar.style.display = 'flex'; // 确保显示
+        toolbar.style.opacity = '1'; // 确保可见
+        toolbar.style.pointerEvents = 'auto'; // 确保可交互
+        canvasContent.appendChild(toolbar); // 添加到 canvas-content 中
+        console.log('[Edge Toolbar] Toolbar created and appended');
+    } else {
+        console.log('[Edge Toolbar] Using existing toolbar');
+        toolbar.style.display = 'flex';
+        toolbar.style.opacity = '1';
+        toolbar.style.pointerEvents = 'auto';
     }
+    
+    // 保存当前选中的连接线 ID
+    toolbar.dataset.edgeId = edgeId;
     
     // Multi-language support
     const lang = typeof currentLang !== 'undefined' ? currentLang : 'zh';
-    const deleteTitle = lang === 'en' ? 'Delete Connection' : '删除连接';
+    const deleteTitle = lang === 'en' ? 'Delete' : '删除';
+    const colorTitle = lang === 'en' ? 'Color' : '颜色';
+    const focusTitle = lang === 'en' ? 'Locate and zoom' : '定位并放大';
+    const directionTitle = lang === 'en' ? 'Line direction' : '直线方向';
+    const labelTitle = lang === 'en' ? 'Edit label' : '编辑文字';
     
     toolbar.innerHTML = `
-        <button class="md-node-toolbar-btn" id="delete-edge-btn" title="${deleteTitle}">
+        <button class="md-node-toolbar-btn" data-action="edge-delete" title="${deleteTitle}">
             <i class="far fa-trash-alt"></i>
+        </button>
+        <button class="md-node-toolbar-btn" data-action="edge-color-toggle" title="${colorTitle}">
+            <i class="fas fa-palette"></i>
+        </button>
+        <button class="md-node-toolbar-btn" data-action="edge-focus" title="${focusTitle}">
+            <i class="fas fa-search-plus"></i>
+        </button>
+        <button class="md-node-toolbar-btn" data-action="edge-direction" title="${directionTitle}">
+            <i class="fas fa-arrows-alt-h"></i>
+        </button>
+        <button class="md-node-toolbar-btn" data-action="edge-label" title="${labelTitle}">
+            <i class="far fa-edit"></i>
         </button>
     `;
     
-    toolbar.style.display = 'flex';
-    // Adjust position to be near the click but not under cursor
-    toolbar.style.left = `${x - 20}px`;
-    toolbar.style.top = `${y - 50}px`;
+    // 更新工具栏位置（基于连接线中点，使用 canvas-content 坐标系）
+    updateEdgeToolbarPosition();
     
-    const deleteBtn = document.getElementById('delete-edge-btn');
-    if (deleteBtn) {
-        deleteBtn.onclick = (e) => {
+    // Attach event handlers (使用事件委托，只绑定一次)
+    if (!toolbar.dataset.eventsBound) {
+        toolbar.addEventListener('click', (e) => {
+            const btn = e.target.closest('.md-node-toolbar-btn, .md-color-chip, .md-color-picker-btn');
+            if (!btn) return;
+            e.preventDefault();
             e.stopPropagation();
-            removeEdge(edgeId);
-            hideEdgeToolbar();
-        };
+            
+            const currentEdgeId = toolbar.dataset.edgeId;
+            const currentEdge = CanvasState.edges.find(ed => ed.id === currentEdgeId);
+            if (!currentEdge) return;
+            
+            const action = btn.getAttribute('data-action');
+            
+            if (action === 'edge-delete') {
+                removeEdge(currentEdgeId);
+                hideEdgeToolbar();
+            } else if (action === 'edge-color-toggle') {
+                // 复用空白栏目的色盘弹层逻辑
+                toggleEdgeColorPopover(toolbar, currentEdge, btn);
+            } else if (action === 'edge-focus') {
+                // 复用空白栏目的定位逻辑
+                locateAndZoomToEdge(currentEdgeId);
+            } else if (action === 'edge-direction') {
+                toggleEdgeDirection(currentEdgeId);
+            } else if (action === 'edge-label') {
+                editEdgeLabel(currentEdgeId);
+            } else if (action === 'md-color-preset') {
+                const preset = String(btn.getAttribute('data-color') || '').trim();
+                setEdgeColor(currentEdge, preset);
+                closeEdgeColorPopover(toolbar);
+            }
+        });
+        toolbar.dataset.eventsBound = 'true';
     }
+}
+
+// 更新连接线工具栏位置（使用 canvas-content 坐标系）
+function updateEdgeToolbarPosition() {
+    const toolbar = document.getElementById('edge-toolbar');
+    if (!toolbar || !toolbar.parentElement) return;
+    
+    const edgeId = toolbar.dataset.edgeId;
+    if (!edgeId) return;
+    
+    const edge = CanvasState.edges.find(e => e.id === edgeId);
+    if (!edge) return;
+    
+    const start = getAnchorPosition(edge.fromNode, edge.fromSide);
+    const end = getAnchorPosition(edge.toNode, edge.toSide);
+    
+    if (!start || !end) return;
+    
+    // 计算连接线中点在 canvas-content 坐标系中的位置
+    const midX = (start.x + end.x) / 2;
+    const midY = (start.y + end.y) / 2;
+    
+    // 工具栏显示在中点上方（使用 canvas-content 坐标系）
+    toolbar.style.left = `${midX}px`;
+    toolbar.style.top = `${midY - 40}px`;
+    toolbar.style.transform = 'translateX(-50%)'; // 居中对齐
 }
 
 function hideEdgeToolbar() {
     const toolbar = document.getElementById('edge-toolbar');
     if (toolbar) {
         toolbar.style.display = 'none';
+        toolbar.style.opacity = '0';
+        toolbar.style.pointerEvents = 'none';
+    }
+}
+
+// =============================================================================
+// 连接线工具栏功能实现
+// =============================================================================
+
+// 色盘弹层逻辑（完全复用空白栏目的实现）
+function ensureEdgeColorPopover(toolbar, edge) {
+    let pop = toolbar.querySelector('.md-color-popover');
+    if (pop) return pop;
+    
+    pop = document.createElement('div');
+    pop.className = 'md-color-popover';
+    
+    // 多语言支持
+    const lang = typeof currentLang !== 'undefined' ? currentLang : 'zh';
+    const rgbPickerTitle = lang === 'en' ? 'RGB Color Picker' : 'RGB颜色选择器';
+    const customColorTitle = lang === 'en' ? 'Select custom color' : '选择自定义颜色';
+    
+    // 使用 Obsidian Canvas 风格的颜色（与空白栏目完全一致）
+    pop.innerHTML = `
+        <span class="md-color-chip" data-action="md-color-preset" data-color="1" style="background:#ff6666"></span>
+        <span class="md-color-chip" data-action="md-color-preset" data-color="2" style="background:#ffaa66"></span>
+        <span class="md-color-chip" data-action="md-color-preset" data-color="3" style="background:#ffdd66"></span>
+        <span class="md-color-chip" data-action="md-color-preset" data-color="4" style="background:#66dd99"></span>
+        <span class="md-color-chip" data-action="md-color-preset" data-color="5" style="background:#66bbff"></span>
+        <span class="md-color-chip" data-action="md-color-preset" data-color="6" style="background:#bb99ff"></span>
+        <button class="md-color-chip md-color-picker-btn" data-action="md-color-picker-toggle" title="${rgbPickerTitle}">
+            <svg viewBox="0 0 24 24" width="14" height="14">
+                <circle cx="12" cy="12" r="10" fill="url(#rainbow-gradient-edge)" />
+                <defs>
+                    <linearGradient id="rainbow-gradient-edge" x1="0%" y1="0%" x2="100%" y2="100%">
+                        <stop offset="0%" style="stop-color:#ff0000" />
+                        <stop offset="16.67%" style="stop-color:#ff9900" />
+                        <stop offset="33.33%" style="stop-color:#ffff00" />
+                        <stop offset="50%" style="stop-color:#00ff00" />
+                        <stop offset="66.67%" style="stop-color:#0099ff" />
+                        <stop offset="83.33%" style="stop-color:#9900ff" />
+                        <stop offset="100%" style="stop-color:#ff0099" />
+                    </linearGradient>
+                </defs>
+            </svg>
+        </button>
+    `;
+    
+    // RGB选择器UI（显示在色盘上方，与空白栏目完全一致）
+    const rgbPicker = document.createElement('div');
+    rgbPicker.className = 'md-rgb-picker';
+    rgbPicker.innerHTML = `
+        <input class="md-color-input" type="color" value="${edge.colorHex || '#66bbff'}" title="${customColorTitle}" />
+    `;
+    pop.appendChild(rgbPicker);
+    
+    // 彩色圆盘按钮点击事件 - 切换RGB选择器显示
+    const pickerBtn = pop.querySelector('.md-color-picker-btn');
+    const colorInput = rgbPicker.querySelector('.md-color-input');
+    
+    pickerBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const isOpen = rgbPicker.classList.contains('open');
+        if (isOpen) {
+            rgbPicker.classList.remove('open');
+        } else {
+            rgbPicker.classList.add('open');
+            // 延迟触发点击，确保UI已显示
+            setTimeout(() => colorInput.click(), 50);
+        }
+    });
+    
+    // 自定义颜色变化
+    colorInput.addEventListener('input', (ev) => {
+        setEdgeColor(edge, ev.target.value);
+    });
+    
+    colorInput.addEventListener('change', () => {
+        rgbPicker.classList.remove('open');
+    });
+    
+    toolbar.appendChild(pop);
+    return pop;
+}
+
+function toggleEdgeColorPopover(toolbar, edge, anchorBtn) {
+    const pop = ensureEdgeColorPopover(toolbar, edge);
+    const isOpen = pop.classList.contains('open');
+    if (isOpen) { 
+        closeEdgeColorPopover(toolbar); 
+        return; 
+    }
+    pop.classList.add('open');
+    // 监听外部点击关闭
+    const onDoc = (e) => {
+        if (!toolbar.contains(e.target)) {
+            closeEdgeColorPopover(toolbar);
+            document.removeEventListener('mousedown', onDoc, true);
+        }
+    };
+    document.addEventListener('mousedown', onDoc, true);
+}
+
+function closeEdgeColorPopover(toolbar) {
+    const pop = toolbar.querySelector('.md-color-popover');
+    if (pop) pop.classList.remove('open');
+}
+
+function setEdgeColor(edge, presetOrHex) {
+    if (!edge) return;
+    
+    // 支持预设编号或十六进制颜色
+    const isPreset = /^[1-6]$/.test(String(presetOrHex));
+    if (isPreset) {
+        edge.color = String(presetOrHex);
+        edge.colorHex = presetToHex(edge.color);
+    } else if (typeof presetOrHex === 'string' && presetOrHex.startsWith('#')) {
+        edge.color = null;
+        edge.colorHex = presetOrHex;
+    }
+    
+    renderEdges();
+    saveTempNodes();
+}
+
+// 定位并放大到连接线（复用空白栏目的定位逻辑）
+function locateAndZoomToEdge(edgeId, targetZoom = 1.2) {
+    const edge = CanvasState.edges.find(e => e.id === edgeId);
+    const workspace = document.getElementById('canvasWorkspace');
+    if (!edge || !workspace) return;
+    
+    const start = getAnchorPosition(edge.fromNode, edge.fromSide);
+    const end = getAnchorPosition(edge.toNode, edge.toSide);
+    if (!start || !end) return;
+    
+    // 先调整缩放（与空白栏目逻辑一致）
+    const zoom = Math.max(0.1, Math.min(3, Math.max(CanvasState.zoom, targetZoom)));
+    if (zoom !== CanvasState.zoom) {
+        const rect = workspace.getBoundingClientRect();
+        setCanvasZoom(zoom, rect.left + rect.width / 2, rect.top + rect.height / 2, { recomputeBounds: true });
+    }
+    
+    // 计算连接线中心点
+    const centerX = (start.x + end.x) / 2;
+    const centerY = (start.y + end.y) / 2;
+    
+    // 平移到中心点（与空白栏目逻辑一致）
+    const workspaceWidth = workspace.clientWidth;
+    const workspaceHeight = workspace.clientHeight;
+    CanvasState.panOffsetX = workspaceWidth / 2 - centerX * CanvasState.zoom;
+    CanvasState.panOffsetY = workspaceHeight / 2 - centerY * CanvasState.zoom;
+    
+    updateCanvasScrollBounds();
+    savePanOffsetThrottled();
+}
+
+// 切换连接线方向（交换起点和终点）
+function toggleEdgeDirection(edgeId) {
+    const edge = CanvasState.edges.find(e => e.id === edgeId);
+    if (!edge) return;
+    
+    // 交换起点和终点
+    const tempNode = edge.fromNode;
+    const tempSide = edge.fromSide;
+    edge.fromNode = edge.toNode;
+    edge.fromSide = edge.toSide;
+    edge.toNode = tempNode;
+    edge.toSide = tempSide;
+    
+    renderEdges();
+    saveTempNodes();
+    
+    console.log('[Canvas] 切换连接线方向:', edgeId);
+}
+
+// 编辑连接线标签
+function editEdgeLabel(edgeId) {
+    const edge = CanvasState.edges.find(e => e.id === edgeId);
+    if (!edge) return;
+    
+    const lang = typeof currentLang !== 'undefined' ? currentLang : 'zh';
+    const promptText = lang === 'en' ? 'Enter label for this connection:' : '输入连接线标签：';
+    const newLabel = prompt(promptText, edge.label || '');
+    
+    if (newLabel !== null) {
+        edge.label = newLabel;
+        renderEdges();
+        saveTempNodes();
+        console.log('[Canvas] 更新连接线标签:', edgeId, newLabel);
     }
 }
 

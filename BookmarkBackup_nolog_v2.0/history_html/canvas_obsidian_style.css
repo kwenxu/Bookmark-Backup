@@ -561,3 +561,31 @@
 }
 
 /* Removed edge-tight positions to keep anchors clear of toolbars */
+
+/* ===== Direction popover (for Line direction) ===== */
+.md-direction-popover {
+    display: flex;
+    gap: 6px;
+    justify-content: space-between;
+    min-width: 132px;
+}
+.md-direction-popover .dir-chip {
+    flex: 1 1 0;
+    height: 26px;
+    min-width: 26px;
+    border-radius: 6px;
+    border: 1px solid rgba(9, 105, 218, 0.18);
+    background: rgba(255, 255, 255, 0.95);
+    color: #57606a;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+}
+.md-direction-popover .dir-chip i {
+    font-size: 12px;
+}
+[data-theme="dark"] .md-direction-popover .dir-chip {
+    border-color: rgba(48, 129, 247, 0.35);
+    background: rgba(27, 32, 45, 0.95);
+    color: #c9d1d9;
+}

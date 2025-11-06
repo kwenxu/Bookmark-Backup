@@ -5392,13 +5392,24 @@ function exportCanvas() {
     
     // 添加连接线
     if (Array.isArray(CanvasState.edges)) {
-        canvasData.edges = CanvasState.edges.map(edge => ({
-            id: edge.id,
-            fromNode: edge.fromNode,
-            fromSide: edge.fromSide,
-            toNode: edge.toNode,
-            toSide: edge.toSide
-        }));
+        canvasData.edges = CanvasState.edges.map(edge => {
+            const dir = edge.direction || 'none';
+            const fromEnd = (dir === 'both') ? 'arrow' : 'none';
+            const toEnd = (dir === 'forward' || dir === 'both') ? 'arrow' : 'none';
+            const colorHex = edge.colorHex || presetToHex(edge.color) || null;
+            const base = {
+                id: edge.id,
+                fromNode: edge.fromNode,
+                fromSide: edge.fromSide,
+                toNode: edge.toNode,
+                toSide: edge.toSide,
+                fromEnd,
+                toEnd
+            };
+            if (edge.label && String(edge.label).trim()) base.label = edge.label;
+            if (colorHex) base.color = colorHex;
+            return base;
+        });
     }
     
     // 生成并下载文件
@@ -5566,6 +5577,29 @@ function setupCanvasEdgesLayer() {
     svg.setAttribute('class', 'canvas-edges');
     // Insert as first child so it's behind everything
     content.insertBefore(svg, content.firstChild);
+
+    // Create arrowhead marker once for edge directions
+    try {
+        if (!svg.querySelector('#edge-arrowhead')) {
+            const defs = document.createElementNS('http://www.w3.org/2000/svg', 'defs');
+            const marker = document.createElementNS('http://www.w3.org/2000/svg', 'marker');
+            marker.setAttribute('id', 'edge-arrowhead');
+            // Smaller, subtler arrowhead
+            marker.setAttribute('markerWidth', '8');
+            marker.setAttribute('markerHeight', '8');
+            marker.setAttribute('refX', '7');
+            marker.setAttribute('refY', '4');
+            marker.setAttribute('orient', 'auto-start-reverse');
+            marker.setAttribute('markerUnits', 'strokeWidth');
+            const p = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+            p.setAttribute('d', 'M0,0 L8,4 L0,8 z');
+            p.setAttribute('fill', 'context-stroke');
+            p.setAttribute('stroke', 'none');
+            marker.appendChild(p);
+            defs.appendChild(marker);
+            svg.appendChild(defs);
+        }
+    } catch (_) {}
 }
 
 function addAnchorsToNode(nodeElement, nodeId) {
@@ -5709,6 +5743,7 @@ function addEdge(fromNode, fromSide, toNode, toSide) {
         fromSide, 
         toNode, 
         toSide,
+        direction: 'none', // 'none' | 'forward' | 'both'
         color: null, // 预设颜色编号 (1-6) 或 null
         colorHex: null, // 自定义十六进制颜色
         label: '' // 连接线文字标签
@@ -5758,10 +5793,31 @@ function renderEdges() {
             path.classList.add('selected');
         }
         
-        // 应用颜色
+        // 应用颜色（使用 inline style 优先级高于样式表）
         const edgeColor = edge.colorHex || presetToHex(edge.color) || null;
         if (edgeColor) {
-            path.setAttribute('stroke', edgeColor);
+            path.style.stroke = edgeColor;
+        } else {
+            path.style.stroke = '';
+        }
+        // Apply arrow markers according to direction
+        const dir = edge.direction || 'none';
+        if (dir === 'forward') {
+            path.setAttribute('marker-end', 'url(#edge-arrowhead)');
+            path.removeAttribute('marker-start');
+        } else if (dir === 'both') {
+            path.setAttribute('marker-end', 'url(#edge-arrowhead)');
+            path.setAttribute('marker-start', 'url(#edge-arrowhead)');
+        } else {
+            path.removeAttribute('marker-end');
+            path.removeAttribute('marker-start');
+        }
+        // 选中时发光（使用与线条相同的颜色）
+        if (edge.id === CanvasState.selectedEdgeId) {
+            const glow = edgeColor || '#66bbff';
+            path.style.filter = `drop-shadow(0 0 2px ${glow}66) drop-shadow(0 0 6px ${glow}99)`;
+        } else {
+            path.style.filter = '';
         }
         
         updateEdgePath(edge, path);
@@ -5811,10 +5867,12 @@ function renderEdgeLabel(svg, edge) {
     text.setAttribute('dominant-baseline', 'middle');
     text.textContent = edge.label;
     
-    // 应用颜色
+    // 应用颜色（inline style 覆盖样式表）
     const edgeColor = edge.colorHex || presetToHex(edge.color) || null;
     if (edgeColor) {
-        text.setAttribute('fill', edgeColor);
+        text.style.fill = edgeColor;
+    } else {
+        text.style.fill = '';
     }
     
     svg.appendChild(text);
@@ -5865,7 +5923,10 @@ function getEdgePathD(x1, y1, x2, y2, side1, side2) {
     const dy = Math.abs(y2 - y1);
     const dist = Math.sqrt(dx * dx + dy * dy);
     // Dynamic smoothing based on distance, with min/max limits for better aesthetics
-    const smooth = Math.min(400, Math.max(60, dist * 0.4));
+    let smooth = Math.min(400, Math.max(60, dist * 0.4));
+    // Adjust curvature to remain visually consistent across zoom levels
+    const z = (CanvasState && CanvasState.zoom) ? CanvasState.zoom : 1;
+    smooth = smooth / z;
     
     let cp1x = x1, cp1y = y1, cp2x = x2, cp2y = y2;
     
@@ -6015,17 +6076,31 @@ function showEdgeToolbar(edgeId, x, y) {
             } else if (action === 'edge-color-toggle') {
                 // 复用空白栏目的色盘弹层逻辑
                 toggleEdgeColorPopover(toolbar, currentEdge, btn);
+            } else if (action === 'md-color-picker-toggle') {
+                // 通过委托打开原生颜色选择器
+                const pop = ensureEdgeColorPopover(toolbar, currentEdge);
+                const picker = pop.querySelector('.md-rgb-picker');
+                const input = pop.querySelector('.md-color-input');
+                if (picker && input) {
+                    picker.classList.add('open');
+                    setTimeout(() => input.click(), 30);
+                }
             } else if (action === 'edge-focus') {
                 // 复用空白栏目的定位逻辑
                 locateAndZoomToEdge(currentEdgeId);
             } else if (action === 'edge-direction') {
-                toggleEdgeDirection(currentEdgeId);
+                // 打开方向选择器
+                toggleEdgeDirectionPopover(toolbar, currentEdge, btn);
             } else if (action === 'edge-label') {
                 editEdgeLabel(currentEdgeId);
             } else if (action === 'md-color-preset') {
                 const preset = String(btn.getAttribute('data-color') || '').trim();
                 setEdgeColor(currentEdge, preset);
                 closeEdgeColorPopover(toolbar);
+            } else if (action === 'edge-direction-set') {
+                const dir = String(btn.getAttribute('data-dir') || 'none');
+                setEdgeDirection(currentEdge, dir);
+                closeEdgeDirectionPopover(toolbar);
             }
         });
         toolbar.dataset.eventsBound = 'true';
@@ -6052,9 +6127,10 @@ function updateEdgeToolbarPosition() {
     const midX = (start.x + end.x) / 2;
     const midY = (start.y + end.y) / 2;
     
-    // 工具栏显示在中点上方（使用 canvas-content 坐标系）
+    // 工具栏显示在中点上方（使用 canvas-content 坐标系），根据缩放比例调整偏移
+    const z = (CanvasState && CanvasState.zoom) ? CanvasState.zoom : 1;
     toolbar.style.left = `${midX}px`;
-    toolbar.style.top = `${midY - 40}px`;
+    toolbar.style.top = `${midY - (40 / z)}px`;
     toolbar.style.transform = 'translateX(-50%)'; // 居中对齐
 }
 
@@ -6166,7 +6242,7 @@ function toggleEdgeColorPopover(toolbar, edge, anchorBtn) {
 }
 
 function closeEdgeColorPopover(toolbar) {
-    const pop = toolbar.querySelector('.md-color-popover');
+    const pop = toolbar.querySelector('.md-color-popover:not(.md-direction-popover)');
     if (pop) pop.classList.remove('open');
 }
 
@@ -6183,6 +6259,57 @@ function setEdgeColor(edge, presetOrHex) {
         edge.colorHex = presetOrHex;
     }
     
+    renderEdges();
+    saveTempNodes();
+}
+
+// 方向弹层（与色盘风格一致）
+function ensureEdgeDirectionPopover(toolbar, edge) {
+    let pop = toolbar.querySelector('.md-direction-popover');
+    if (pop) return pop;
+    pop = document.createElement('div');
+    pop.className = 'md-color-popover md-direction-popover';
+    const lang = typeof currentLang !== 'undefined' ? currentLang : 'zh';
+    const noneText = lang === 'en' ? 'None' : '无方向';
+    const singleText = lang === 'en' ? 'Single' : '单向';
+    const bothText = lang === 'en' ? 'Both' : '双向';
+    pop.innerHTML = `
+        <span class="md-color-chip dir-chip" data-action="edge-direction-set" data-dir="none" title="${noneText}"><i class="fas fa-minus"></i></span>
+        <span class="md-color-chip dir-chip" data-action="edge-direction-set" data-dir="forward" title="${singleText}"><i class="fas fa-long-arrow-alt-right"></i></span>
+        <span class="md-color-chip dir-chip" data-action="edge-direction-set" data-dir="both" title="${bothText}"><i class="fas fa-arrows-alt-h"></i></span>
+    `;
+    toolbar.appendChild(pop);
+    return pop;
+}
+
+function toggleEdgeDirectionPopover(toolbar, edge, anchorBtn) {
+    const pop = ensureEdgeDirectionPopover(toolbar, edge);
+    const isOpen = pop.classList.contains('open');
+    // 关闭色盘，避免重叠
+    closeEdgeColorPopover(toolbar);
+    if (isOpen) {
+        pop.classList.remove('open');
+        return;
+    }
+    pop.classList.add('open');
+    const onDoc = (e) => {
+        if (!toolbar.contains(e.target)) {
+            closeEdgeDirectionPopover(toolbar);
+            document.removeEventListener('mousedown', onDoc, true);
+        }
+    };
+    document.addEventListener('mousedown', onDoc, true);
+}
+
+function closeEdgeDirectionPopover(toolbar) {
+    const pop = toolbar.querySelector('.md-direction-popover');
+    if (pop) pop.classList.remove('open');
+}
+
+function setEdgeDirection(edge, dir) {
+    if (!edge) return;
+    const v = (dir === 'forward' || dir === 'both') ? dir : 'none';
+    edge.direction = v;
     renderEdges();
     saveTempNodes();
 }

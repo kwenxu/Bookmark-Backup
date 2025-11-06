@@ -101,7 +101,13 @@ const CanvasState = {
     },
     dropCleanupBound: false,
     // 选中状态（仅 Markdown 空白栏目）
-    selectedMdNodeId: null
+    selectedMdNodeId: null,
+    // 连接线
+    edges: [],
+    edgeCounter: 0,
+    isConnecting: false,
+    connectionStart: null, // { nodeId, side, anchorEl }
+    selectedEdgeId: null
 };
 
 let panSaveTimeout = null;
@@ -604,6 +610,9 @@ function initCanvasView() {
     // 加载性能模式设置
     loadPerformanceMode();
     
+    // 初始化连接线层
+    setupCanvasEdgesLayer();
+    
     // 显示缩放控制器
     const zoomIndicator = document.getElementById('canvasZoomIndicator');
     if (zoomIndicator) {
@@ -640,6 +649,10 @@ function initCanvasView() {
     
     // 设置永久栏目置顶按钮
     setupPermanentSectionPinButton();
+    
+    // 设置连接线交互
+    setupCanvasConnectionInteractions();
+    addAnchorsToNode(document.getElementById('permanentSection'), 'permanent-section');
 }
 
 function setupCanvasDropFeedback() {
@@ -2187,6 +2200,9 @@ function makePermanentSectionDraggable() {
     let lastClientY = 0;
     
     const onMouseDown = (e) => {
+        // 不要在连接点上触发拖动
+        if (e.target.closest('.canvas-node-anchor')) return;
+        
         // 不要在关闭按钮、提示文本上触发拖动
         if (e.target.closest('.permanent-section-tip-close') || 
             e.target.closest('.permanent-section-tip-container')) {
@@ -2821,8 +2837,8 @@ function makeMdNodeDraggable(element, node) {
         if (node && node.locked) return; // 锁定不允许拖动
         const target = e.target;
         if (!target) return;
-        // 编辑或 resize 时不拖动
-        if (target.closest('.md-canvas-editor') || target.closest('.resize-handle')) return;
+        // 编辑、resize、连接点时不拖动
+        if (target.closest('.md-canvas-editor') || target.closest('.resize-handle') || target.closest('.canvas-node-anchor')) return;
 
         dragPending = true;
         startX = e.clientX;
@@ -3031,6 +3047,8 @@ function renderMdNode(node) {
     if (node && typeof node.z === 'number') {
         el.style.zIndex = String(node.z);
     }
+    
+    addAnchorsToNode(el, node.id);
 }
 
 // —— 工具栏动作实现 ——
@@ -3675,6 +3693,8 @@ function renderTempNode(section) {
             nodeElement.classList.remove('temp-node-enter');
         });
     }
+    
+    addAnchorsToNode(nodeElement, section.id);
 }
 
 function normalizeHexColor(hex) {
@@ -4245,7 +4265,8 @@ function makeNodeDraggable(element, section) {
         if (!target) return;
         if (target.closest('.temp-node-action-btn') ||
             target.classList.contains('temp-node-color-input') ||
-            (target.classList.contains('temp-node-title') && target.classList.contains('editing'))) {
+            (target.classList.contains('temp-node-title') && target.classList.contains('editing')) ||
+            target.closest('.canvas-node-anchor')) {
             return;
         }
         
@@ -5028,6 +5049,9 @@ function setupCanvasEventListeners() {
                 section.y = newY;
             }
             
+            // 实时更新连接线
+            renderEdges();
+            
             // 阻止文本选择
             e.preventDefault();
         }
@@ -5360,6 +5384,17 @@ function exportCanvas() {
         });
     }
     
+    // 添加连接线
+    if (Array.isArray(CanvasState.edges)) {
+        canvasData.edges = CanvasState.edges.map(edge => ({
+            id: edge.id,
+            fromNode: edge.fromNode,
+            fromSide: edge.fromSide,
+            toNode: edge.toNode,
+            toSide: edge.toSide
+        }));
+    }
+    
     // 生成并下载文件
     const blob = new Blob([JSON.stringify(canvasData, null, 2)], { 
         type: 'application/json' 
@@ -5410,6 +5445,9 @@ function saveTempNodes() {
             // 新增：保存 Markdown 文本卡片
             mdNodes: CanvasState.mdNodes,
             mdNodeCounter: CanvasState.mdNodeCounter,
+            // 新增：保存连接线
+            edges: CanvasState.edges,
+            edgeCounter: CanvasState.edgeCounter,
             timestamp: Date.now()
         };
         localStorage.setItem(TEMP_SECTION_STORAGE_KEY, JSON.stringify(state));
@@ -5426,6 +5464,8 @@ function loadTempNodes() {
         CanvasState.colorCursor = 0;
         CanvasState.mdNodes = [];
         CanvasState.mdNodeCounter = 0;
+        CanvasState.edges = [];
+        CanvasState.edgeCounter = 0;
         
         let loaded = false;
         const saved = localStorage.getItem(TEMP_SECTION_STORAGE_KEY);
@@ -5437,6 +5477,8 @@ function loadTempNodes() {
             CanvasState.colorCursor = state.colorCursor || 0;
             CanvasState.mdNodes = Array.isArray(state.mdNodes) ? state.mdNodes : [];
             CanvasState.mdNodeCounter = state.mdNodeCounter || CanvasState.mdNodes.length || 0;
+            CanvasState.edges = Array.isArray(state.edges) ? state.edges : [];
+            CanvasState.edgeCounter = state.edgeCounter || CanvasState.edges.length || 0;
             loaded = true;
         } else {
             const legacy = localStorage.getItem(LEGACY_TEMP_NODE_STORAGE_KEY);
@@ -5497,8 +5539,316 @@ function loadTempNodes() {
         
         // 初始化休眠状态
         scheduleDormancyUpdate();
+        
+        // 渲染连接线
+        renderEdges();
     } catch (error) {
         console.error('[Canvas] 加载临时栏目失败:', error);
+    }
+}
+
+// =============================================================================
+// 连接线功能 (Obsidian Canvas 风格)
+// =============================================================================
+
+function setupCanvasEdgesLayer() {
+    const content = document.getElementById('canvasContent');
+    if (!content) return;
+    if (content.querySelector('.canvas-edges')) return;
+    
+    const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+    svg.setAttribute('class', 'canvas-edges');
+    // Insert as first child so it's behind everything
+    content.insertBefore(svg, content.firstChild);
+}
+
+function addAnchorsToNode(nodeElement, nodeId) {
+    if (!nodeElement) return;
+    // Remove existing anchors and zones if any to avoid duplicates
+    nodeElement.querySelectorAll('.canvas-node-anchor, .canvas-anchor-zone').forEach(el => el.remove());
+    
+    ['top', 'right', 'bottom', 'left'].forEach(side => {
+        // Create hover zone first (so it can affect anchor via sibling selector if needed, 
+        // though we might use JS for more reliable hover handling if CSS is tricky)
+        const zone = document.createElement('div');
+        zone.className = `canvas-anchor-zone zone-${side}`;
+        nodeElement.appendChild(zone);
+        
+        const anchor = document.createElement('div');
+        anchor.className = 'canvas-node-anchor';
+        anchor.dataset.nodeId = nodeId;
+        anchor.dataset.side = side;
+        nodeElement.appendChild(anchor);
+        
+        anchor.addEventListener('mousedown', (e) => {
+            startConnection(e, nodeId, side);
+        }, true);
+    });
+}
+
+function startConnection(e, nodeId, side) {
+    e.stopPropagation();
+    e.preventDefault();
+    CanvasState.isConnecting = true;
+    CanvasState.connectionStart = { nodeId, side, x: e.clientX, y: e.clientY };
+    const workspace = document.getElementById('canvasWorkspace');
+    if (workspace) workspace.classList.add('connecting');
+    
+    // Create temporary path for dragging
+    const svg = document.querySelector('.canvas-edges');
+    if (svg) {
+        let tempPath = document.getElementById('temp-connection-path');
+        if (!tempPath) {
+            tempPath = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+            tempPath.setAttribute('id', 'temp-connection-path');
+            tempPath.setAttribute('class', 'canvas-edge');
+            tempPath.style.opacity = '0.5';
+            svg.appendChild(tempPath);
+        }
+    }
+}
+
+function updateConnection(e) {
+    if (!CanvasState.isConnecting || !CanvasState.connectionStart) return;
+    e.preventDefault();
+    
+    const svg = document.querySelector('.canvas-edges');
+    const tempPath = document.getElementById('temp-connection-path');
+    if (!svg || !tempPath) return;
+    
+    const startPos = getAnchorPosition(CanvasState.connectionStart.nodeId, CanvasState.connectionStart.side);
+    if (!startPos) return;
+    
+    // Calculate end position in canvas coordinates
+    const rect = svg.getBoundingClientRect();
+    const zoom = CanvasState.zoom || 1;
+    const endX = (e.clientX - rect.left) / zoom;
+    const endY = (e.clientY - rect.top) / zoom;
+    
+    const d = getEdgePathD(startPos.x, startPos.y, endX, endY, CanvasState.connectionStart.side, null);
+    tempPath.setAttribute('d', d);
+}
+
+function endConnection(e) {
+    if (!CanvasState.isConnecting) return;
+    CanvasState.isConnecting = false;
+    const workspace = document.getElementById('canvasWorkspace');
+    if (workspace) workspace.classList.remove('connecting');
+    
+    const tempPath = document.getElementById('temp-connection-path');
+    if (tempPath) tempPath.remove();
+    
+    // Find if dropped on an anchor
+    // Since anchors might be small, we can check elements under cursor
+    // or use a small radius if needed. For now, exact hit on anchor.
+    const target = document.elementFromPoint(e.clientX, e.clientY);
+    const anchor = target ? target.closest('.canvas-node-anchor') : null;
+    
+    if (anchor && CanvasState.connectionStart) {
+        const toNodeId = anchor.dataset.nodeId;
+        const toSide = anchor.dataset.side;
+        // Don't allow self-connection to same side, but allow same node different side if desired?
+        // User said "can also connect to itself". Okay.
+        if (toNodeId && toSide) {
+             // Optional: prevent exact same anchor connection
+             if (toNodeId !== CanvasState.connectionStart.nodeId || toSide !== CanvasState.connectionStart.side) {
+                 addEdge(CanvasState.connectionStart.nodeId, CanvasState.connectionStart.side, toNodeId, toSide);
+             }
+        }
+    }
+    CanvasState.connectionStart = null;
+}
+
+function addEdge(fromNode, fromSide, toNode, toSide) {
+    // Check for existing identical edge
+    const exists = CanvasState.edges.some(e => 
+        e.fromNode === fromNode && e.fromSide === fromSide &&
+        e.toNode === toNode && e.toSide === toSide
+    );
+    if (exists) return;
+    
+    const id = `edge-${++CanvasState.edgeCounter}-${Date.now()}`;
+    CanvasState.edges.push({ id, fromNode, fromSide, toNode, toSide });
+    renderEdges();
+    saveTempNodes();
+}
+
+function removeEdge(edgeId) {
+    CanvasState.edges = CanvasState.edges.filter(e => e.id !== edgeId);
+    if (CanvasState.selectedEdgeId === edgeId) {
+        clearEdgeSelection();
+    }
+    renderEdges();
+    saveTempNodes();
+}
+
+function renderEdges() {
+    const svg = document.querySelector('.canvas-edges');
+    if (!svg) return;
+    
+    // Clear existing edges (except temp path if any)
+    Array.from(svg.querySelectorAll('.canvas-edge')).forEach(el => {
+        if (el.id !== 'temp-connection-path') el.remove();
+    });
+    
+    CanvasState.edges.forEach(edge => {
+        const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+        path.setAttribute('class', 'canvas-edge');
+        path.dataset.edgeId = edge.id;
+        if (edge.id === CanvasState.selectedEdgeId) {
+            path.classList.add('selected');
+        }
+        
+        updateEdgePath(edge, path);
+        svg.appendChild(path);
+        
+        // Edge interaction
+        path.addEventListener('click', (e) => {
+            e.stopPropagation();
+            selectEdge(edge.id, e.clientX, e.clientY);
+        });
+    });
+}
+
+function updateEdgePath(edge, pathElement) {
+    const start = getAnchorPosition(edge.fromNode, edge.fromSide);
+    const end = getAnchorPosition(edge.toNode, edge.toSide);
+    
+    if (start && end) {
+        const d = getEdgePathD(start.x, start.y, end.x, end.y, edge.fromSide, edge.toSide);
+        pathElement.setAttribute('d', d);
+    } else {
+        pathElement.setAttribute('d', '');
+    }
+}
+
+function getAnchorPosition(nodeId, side) {
+    let el = document.getElementById(nodeId);
+    // Special case mapping for permanent section
+    if (nodeId === 'permanent-section') el = document.getElementById('permanentSection');
+    
+    if (!el) return null;
+    
+    // Must use style.left/top because they are in canvas-content coordinates
+    const left = parseFloat(el.style.left) || 0;
+    const top = parseFloat(el.style.top) || 0;
+    const width = el.offsetWidth;
+    const height = el.offsetHeight;
+    
+    switch (side) {
+        case 'top': return { x: left + width / 2, y: top };
+        case 'bottom': return { x: left + width / 2, y: top + height };
+        case 'left': return { x: left, y: top + height / 2 };
+        case 'right': return { x: left + width, y: top + height / 2 };
+        default: return { x: left + width / 2, y: top + height / 2 };
+    }
+}
+
+function getEdgePathD(x1, y1, x2, y2, side1, side2) {
+    const dx = Math.abs(x2 - x1);
+    const dy = Math.abs(y2 - y1);
+    const dist = Math.sqrt(dx * dx + dy * dy);
+    // Dynamic smoothing based on distance, with min/max limits for better aesthetics
+    const smooth = Math.min(400, Math.max(60, dist * 0.4));
+    
+    let cp1x = x1, cp1y = y1, cp2x = x2, cp2y = y2;
+    
+    switch (side1) {
+        case 'top': cp1y -= smooth; break;
+        case 'bottom': cp1y += smooth; break;
+        case 'left': cp1x -= smooth; break;
+        case 'right': cp1x += smooth; break;
+    }
+    
+    if (side2) {
+        switch (side2) {
+            case 'top': cp2y -= smooth; break;
+            case 'bottom': cp2y += smooth; break;
+            case 'left': cp2x -= smooth; break;
+            case 'right': cp2x += smooth; break;
+        }
+    } else {
+        // For temp connection, keep end control point near the end point (mouse)
+        // but maybe align it slightly with the start direction for a "seeking" feel
+         switch (side1) {
+            case 'top': case 'bottom': cp2x = x2; cp2y = y2; break;
+            case 'left': case 'right': cp2x = x2; cp2y = y2; break;
+        }
+    }
+    
+    return `M ${x1} ${y1} C ${cp1x} ${cp1y}, ${cp2x} ${cp2y}, ${x2} ${y2}`;
+}
+
+function setupCanvasConnectionInteractions() {
+    document.addEventListener('mousemove', updateConnection);
+    document.addEventListener('mouseup', endConnection);
+    
+    // Clear edge selection on canvas click
+    const workspace = document.getElementById('canvasWorkspace');
+    if (workspace) {
+        workspace.addEventListener('click', (e) => {
+            // If clicking on workspace background (not on a node or edge)
+            if (e.target === workspace || e.target.classList.contains('canvas-content')) {
+                clearEdgeSelection();
+            }
+        });
+    }
+}
+
+function selectEdge(edgeId, clientX, clientY) {
+    CanvasState.selectedEdgeId = edgeId;
+    renderEdges(); // Re-render to show selection state
+    showEdgeToolbar(edgeId, clientX, clientY);
+}
+
+function clearEdgeSelection() {
+    if (CanvasState.selectedEdgeId) {
+        CanvasState.selectedEdgeId = null;
+        renderEdges();
+        hideEdgeToolbar();
+    }
+}
+
+function showEdgeToolbar(edgeId, x, y) {
+    let toolbar = document.getElementById('edge-toolbar');
+    if (!toolbar) {
+        toolbar = document.createElement('div');
+        toolbar.id = 'edge-toolbar';
+        toolbar.className = 'md-node-toolbar'; // Reuse existing toolbar style
+        toolbar.style.position = 'fixed';
+        toolbar.style.zIndex = '1000';
+        document.body.appendChild(toolbar);
+    }
+    
+    // Multi-language support
+    const lang = typeof currentLang !== 'undefined' ? currentLang : 'zh';
+    const deleteTitle = lang === 'en' ? 'Delete Connection' : '删除连接';
+    
+    toolbar.innerHTML = `
+        <button class="md-node-toolbar-btn" id="delete-edge-btn" title="${deleteTitle}">
+            <i class="far fa-trash-alt"></i>
+        </button>
+    `;
+    
+    toolbar.style.display = 'flex';
+    // Adjust position to be near the click but not under cursor
+    toolbar.style.left = `${x - 20}px`;
+    toolbar.style.top = `${y - 50}px`;
+    
+    const deleteBtn = document.getElementById('delete-edge-btn');
+    if (deleteBtn) {
+        deleteBtn.onclick = (e) => {
+            e.stopPropagation();
+            removeEdge(edgeId);
+            hideEdgeToolbar();
+        };
+    }
+}
+
+function hideEdgeToolbar() {
+    const toolbar = document.getElementById('edge-toolbar');
+    if (toolbar) {
+        toolbar.style.display = 'none';
     }
 }
 

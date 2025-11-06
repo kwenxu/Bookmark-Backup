@@ -394,3 +394,154 @@
     color: #9bc1ff;
     border-color: rgba(88, 166, 255, 0.45);
 }
+
+/* ==================== Canvas Connections ==================== */
+.canvas-edges {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    pointer-events: none; /* Let clicks pass through to nodes */
+    z-index: 0; /* Behind nodes (nodes usually have z-index 1+) */
+    overflow: visible;
+}
+
+.canvas-edge {
+    fill: none;
+    stroke: #999;
+    stroke-width: 2px;
+    pointer-events: stroke; /* Allow interaction with the line itself */
+    cursor: pointer;
+    transition: stroke 0.2s, stroke-width 0.2s;
+}
+
+.canvas-edge:hover {
+    stroke: #666;
+    stroke-width: 3px;
+}
+
+.canvas-edge.selected {
+    stroke: var(--accent-primary, #1877f2);
+    stroke-width: 3px;
+}
+
+[data-theme="dark"] .canvas-edge {
+    stroke: #555;
+}
+[data-theme="dark"] .canvas-edge:hover {
+    stroke: #888;
+}
+
+/* Anchors & Zones - Strictly OUTSIDE node to prevent conflicts */
+.canvas-anchor-zone {
+    position: absolute;
+    z-index: 98;
+}
+/* Zones restricted to center 50% and strictly outside the node boundary */
+.zone-top { top: -40px; height: 40px; left: 25%; width: 50%; }
+.zone-bottom { bottom: -40px; height: 40px; left: 25%; width: 50%; }
+.zone-left { left: -40px; width: 40px; top: 25%; height: 50%; }
+.zone-right { right: -40px; width: 40px; top: 25%; height: 50%; }
+
+.canvas-node-anchor {
+    position: absolute;
+    width: 12px;
+    height: 12px;
+    background-color: var(--bg-primary, #fff);
+    border: 2px solid #777;
+    border-radius: 50%;
+    z-index: 100;
+    opacity: 0;
+    transition: opacity 0.15s ease, transform 0.15s ease;
+    cursor: crosshair;
+    pointer-events: none;
+}
+
+/* Anchors pushed out away from borders */
+.canvas-node-anchor[data-side="top"] {
+    top: -18px;
+    left: 50%;
+    transform: translateX(-50%);
+    --anchor-translate-x: -50%;
+}
+.canvas-node-anchor[data-side="bottom"] {
+    bottom: -18px;
+    left: 50%;
+    transform: translateX(-50%);
+    --anchor-translate-x: -50%;
+}
+.canvas-node-anchor[data-side="left"] {
+    left: -18px;
+    top: 50%;
+    transform: translateY(-50%);
+    --anchor-translate-y: -50%;
+}
+.canvas-node-anchor[data-side="right"] {
+    right: -18px;
+    top: 50%;
+    transform: translateY(-50%);
+    --anchor-translate-y: -50%;
+}
+
+/* Hit area centered on the now-outside anchor */
+.canvas-node-anchor::after {
+    content: '';
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    width: 36px;
+    height: 36px;
+    transform: translate(-50%, -50%);
+    border-radius: 50%;
+}
+
+[data-theme="dark"] .canvas-node-anchor {
+    background-color: var(--bg-secondary, #242526);
+    border-color: #999;
+}
+
+/* Smart Hover: Show specific anchor when its zone is hovered */
+.zone-top:hover ~ .canvas-node-anchor[data-side="top"],
+.zone-bottom:hover ~ .canvas-node-anchor[data-side="bottom"],
+.zone-left:hover ~ .canvas-node-anchor[data-side="left"],
+.zone-right:hover ~ .canvas-node-anchor[data-side="right"],
+/* Also show all when dragging a connection to help finding targets */
+.canvas-workspace.connecting .canvas-node-anchor,
+/* Keep showing if hovering the anchor itself */
+.canvas-node-anchor:hover {
+    opacity: 1;
+    pointer-events: auto; /* Enable interaction when visible */
+}
+
+.canvas-node-anchor:hover {
+    background-color: var(--accent-primary, #1877f2);
+    border-color: var(--accent-primary, #1877f2);
+    transform: scale(1.3) translateX(var(--anchor-translate-x, 0)) translateY(var(--anchor-translate-y, 0));
+}
+
+/* Anchor positions - precisely on the edge */
+.canvas-node-anchor[data-side="top"] {
+    top: -6px;
+    left: 50%;
+    transform: translateX(-50%);
+    --anchor-translate-x: -50%;
+}
+.canvas-node-anchor[data-side="bottom"] {
+    bottom: -6px;
+    left: 50%;
+    transform: translateX(-50%);
+    --anchor-translate-x: -50%;
+}
+.canvas-node-anchor[data-side="left"] {
+    left: -6px;
+    top: 50%;
+    transform: translateY(-50%);
+    --anchor-translate-y: -50%;
+}
+.canvas-node-anchor[data-side="right"] {
+    right: -6px;
+    top: 50%;
+    transform: translateY(-50%);
+    --anchor-translate-y: -50%;
+}

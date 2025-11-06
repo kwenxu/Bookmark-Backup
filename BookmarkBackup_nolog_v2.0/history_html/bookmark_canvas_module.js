@@ -5968,6 +5968,38 @@ function getEdgePathD(x1, y1, x2, y2, side1, side2) {
     return `M ${x1} ${y1} C ${cp1x} ${cp1y}, ${cp2x} ${cp2y}, ${x2} ${y2}`;
 }
 
+// 计算边曲线在 t=0.5 处的中点（与 getEdgePathD 使用相同的控制点逻辑）
+function getEdgeCurveMidpoint(edge) {
+    const start = getAnchorPosition(edge.fromNode, edge.fromSide);
+    const end = getAnchorPosition(edge.toNode, edge.toSide);
+    if (!start || !end) return null;
+    const x1 = start.x, y1 = start.y;
+    const x2 = end.x, y2 = end.y;
+    const dx = Math.abs(x2 - x1);
+    const dy = Math.abs(y2 - y1);
+    const dist = Math.sqrt(dx * dx + dy * dy);
+    let smooth = Math.min(400, Math.max(60, dist * 0.4));
+    const z = (CanvasState && CanvasState.zoom) ? CanvasState.zoom : 1;
+    smooth = smooth / z;
+    let cp1x = x1, cp1y = y1, cp2x = x2, cp2y = y2;
+    switch (edge.fromSide) {
+        case 'top': cp1y -= smooth; break;
+        case 'bottom': cp1y += smooth; break;
+        case 'left': cp1x -= smooth; break;
+        case 'right': cp1x += smooth; break;
+    }
+    switch (edge.toSide) {
+        case 'top': cp2y -= smooth; break;
+        case 'bottom': cp2y += smooth; break;
+        case 'left': cp2x -= smooth; break;
+        case 'right': cp2x += smooth; break;
+    }
+    // cubic Bezier midpoint at t=0.5: (P0 + 3P1 + 3P2 + P3) / 8
+    const midX = (x1 + 3 * cp1x + 3 * cp2x + x2) / 8;
+    const midY = (y1 + 3 * cp1y + 3 * cp2y + y2) / 8;
+    return { x: midX, y: midY };
+}
+
 function setupCanvasConnectionInteractions() {
     document.addEventListener('mousemove', updateConnection);
     document.addEventListener('mouseup', endConnection);
@@ -6141,9 +6173,16 @@ function updateEdgeToolbarPosition() {
     
     if (!start || !end) return;
     
-    // 计算连接线中点在 canvas-content 坐标系中的位置
-    const midX = (start.x + end.x) / 2;
-    const midY = (start.y + end.y) / 2;
+    // 锚点直线中点
+    const anchorMidX = (start.x + end.x) / 2;
+    const anchorMidY = (start.y + end.y) / 2;
+    // 曲线中点（基于贝塞尔控制点）
+    const curveMid = getEdgeCurveMidpoint(edge);
+    const curveMidX = curveMid ? curveMid.x : anchorMidX;
+    const curveMidY = curveMid ? curveMid.y : anchorMidY;
+    // 最终位置为两者的中点
+    const midX = (anchorMidX + curveMidX) / 2;
+    const midY = (anchorMidY + curveMidY) / 2;
     
     // 工具栏显示在中点上方（使用 canvas-content 坐标系），根据缩放比例调整偏移
     const z = (CanvasState && CanvasState.zoom) ? CanvasState.zoom : 1;

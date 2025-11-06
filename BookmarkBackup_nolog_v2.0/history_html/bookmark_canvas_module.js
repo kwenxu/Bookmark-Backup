@@ -6635,6 +6635,8 @@ function startEdgeLabelInlineEdit(edgeId) {
     div.style.cursor = 'text';
     div.style.userSelect = 'text';
     div.style.WebkitUserSelect = 'text';
+    div.style.minWidth = 'max-content'; // 确保内容完全显示
+    div.style.width = 'max-content'; // 自动适应内容宽度
     // 字体样式与SVG文本一致
     div.style.fontSize = '16px';
     div.style.fontWeight = '500';
@@ -6660,8 +6662,10 @@ function startEdgeLabelInlineEdit(edgeId) {
 
     const layout = () => {
         const z = (CanvasState && CanvasState.zoom) ? CanvasState.zoom : 1;
+        // 使用 scrollWidth 获取实际内容宽度，而不是被截断的宽度
         const r = div.getBoundingClientRect();
-        const w = Math.max(12, r.width / z);
+        const actualWidth = Math.max(r.width, div.scrollWidth);
+        const w = Math.max(12, actualWidth / z);
         const h = Math.max(14, r.height / z);
         fo.setAttribute('x', (mid.x - w / 2).toString());
         fo.setAttribute('y', (mid.y - h / 2).toString());

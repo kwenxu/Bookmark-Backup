@@ -5195,12 +5195,22 @@ a.tree-label.tree-bookmark-link:hover {
     z-index: 100;
 }
 
+/* When drawing a connection, disable node toolbars to avoid intercepting top anchors */
+.canvas-workspace.connecting .md-node-toolbar {
+    pointer-events: none;
+}
+
 .md-canvas-node.selected .md-node-toolbar,
 .md-canvas-node:hover .md-node-toolbar,
 .md-node-toolbar:hover,
 .md-node-toolbar:has(.md-color-popover.open) {
     opacity: 1;
     pointer-events: auto;
+}
+
+/* Strong override: while connecting, toolbars never capture events */
+.canvas-workspace.connecting .md-canvas-node .md-node-toolbar {
+    pointer-events: none !important;
 }
 
 .md-node-toolbar-btn {

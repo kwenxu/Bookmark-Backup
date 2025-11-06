@@ -436,67 +436,70 @@
 /* Anchors & Zones - Strictly OUTSIDE node to prevent conflicts */
 .canvas-anchor-zone {
     position: absolute;
-    z-index: 98;
+    z-index: 240; /* Layer for hover reveal only */
+    pointer-events: none; /* Do not block resize/drag; circle does */
 }
 /* Huge zones for easiest triggering */
-.zone-top { top: -80px; height: 80px; left: 10%; width: 80%; }
-.zone-bottom { bottom: -80px; height: 80px; left: 10%; width: 80%; }
-.zone-left { left: -80px; width: 80px; top: 10%; height: 80%; }
-.zone-right { right: -80px; width: 80px; top: 10%; height: 80%; }
+/* Large hover-only zones to reveal anchors (non-interactive) */
+.zone-top { top: -64px; height: 64px; left: 10%; width: 80%; }
+.zone-bottom { bottom: -64px; height: 64px; left: 10%; width: 80%; }
+.zone-left { left: -64px; width: 64px; top: 10%; height: 80%; }
+.zone-right { right: -64px; width: 64px; top: 10%; height: 80%; }
 
 .canvas-node-anchor {
     position: absolute;
-    width: 14px; /* Slightly larger visible dot */
-    height: 14px;
-    background-color: var(--bg-primary, #fff);
-    border: 2px solid #777;
+    /* Invisible circular hit area that suppresses drag/resize */
+    width: 84px;
+    height: 84px;
     border-radius: 50%;
-    z-index: 100;
-    opacity: 0;
+    z-index: 11000; /* Above resize handles (10003) */
+    opacity: 0; /* keep invisible but clickable */
     transition: opacity 0.15s ease, transform 0.15s ease;
     cursor: crosshair;
-    pointer-events: none;
+    pointer-events: auto;
 }
 
 /* Anchors pushed out further */
 .canvas-node-anchor[data-side="top"] {
-    top: -22px;
+    top: -42px; /* center on top edge */
     left: 50%;
     transform: translateX(-50%);
     --anchor-translate-x: -50%;
 }
 .canvas-node-anchor[data-side="bottom"] {
-    bottom: -22px;
+    bottom: -42px;
     left: 50%;
     transform: translateX(-50%);
     --anchor-translate-x: -50%;
 }
 .canvas-node-anchor[data-side="left"] {
-    left: -22px;
+    left: -42px;
     top: 50%;
     transform: translateY(-50%);
     --anchor-translate-y: -50%;
 }
 .canvas-node-anchor[data-side="right"] {
-    right: -22px;
+    right: -42px;
     top: 50%;
     transform: translateY(-50%);
     --anchor-translate-y: -50%;
 }
 
-/* Massive 80px circular hit area */
-.canvas-node-anchor::after {
+/* Visible inner dot inside large hit circle */
+.canvas-node-anchor::before {
     content: '';
     position: absolute;
     top: 50%;
     left: 50%;
-    width: 80px;
-    height: 80px;
+    width: 12px;
+    height: 12px;
     transform: translate(-50%, -50%);
     border-radius: 50%;
+    background-color: var(--bg-primary, #fff);
+    border: 2px solid #777;
 }
 
-[data-theme="dark"] .canvas-node-anchor {
+[data-theme="dark"] .canvas-node-anchor::before {
     background-color: var(--bg-secondary, #242526);
     border-color: #999;
 }
@@ -514,34 +517,12 @@
     pointer-events: auto; /* Enable interaction when visible */
 }
 
-.canvas-node-anchor:hover {
+.canvas-node-anchor:hover::before {
     background-color: var(--accent-primary, #1877f2);
     border-color: var(--accent-primary, #1877f2);
-    transform: scale(1.3) translateX(var(--anchor-translate-x, 0)) translateY(var(--anchor-translate-y, 0));
+}
+.canvas-node-anchor:hover {
+    transform: scale(1.1) translateX(var(--anchor-translate-x, 0)) translateY(var(--anchor-translate-y, 0));
 }
 
-/* Anchor positions - precisely on the edge */
-.canvas-node-anchor[data-side="top"] {
-    top: -6px;
-    left: 50%;
-    transform: translateX(-50%);
-    --anchor-translate-x: -50%;
-}
-.canvas-node-anchor[data-side="bottom"] {
-    bottom: -6px;
-    left: 50%;
-    transform: translateX(-50%);
-    --anchor-translate-x: -50%;
-}
-.canvas-node-anchor[data-side="left"] {
-    left: -6px;
-    top: 50%;
-    transform: translateY(-50%);
-    --anchor-translate-y: -50%;
-}
-.canvas-node-anchor[data-side="right"] {
-    right: -6px;
-    top: 50%;
-    transform: translateY(-50%);
-    --anchor-translate-y: -50%;
-}
+/* Removed edge-tight positions to keep anchors clear of toolbars */

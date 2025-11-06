@@ -2200,8 +2200,8 @@ function makePermanentSectionDraggable() {
     let lastClientY = 0;
     
     const onMouseDown = (e) => {
-        // 不要在连接点上触发拖动
-        if (e.target.closest('.canvas-node-anchor')) return;
+        // 不要在连接点或其触发区上触发拖动
+        if (e.target.closest('.canvas-node-anchor') || e.target.closest('.canvas-anchor-zone')) return;
         
         // 不要在关闭按钮、提示文本上触发拖动
         if (e.target.closest('.permanent-section-tip-close') || 
@@ -2838,7 +2838,7 @@ function makeMdNodeDraggable(element, node) {
         const target = e.target;
         if (!target) return;
         // 编辑、resize、连接点时不拖动
-        if (target.closest('.md-canvas-editor') || target.closest('.resize-handle') || target.closest('.canvas-node-anchor')) return;
+        if (target.closest('.md-canvas-editor') || target.closest('.resize-handle') || target.closest('.canvas-node-anchor') || target.closest('.canvas-anchor-zone')) return;
 
         dragPending = true;
         startX = e.clientX;
@@ -4266,7 +4266,8 @@ function makeNodeDraggable(element, section) {
         if (target.closest('.temp-node-action-btn') ||
             target.classList.contains('temp-node-color-input') ||
             (target.classList.contains('temp-node-title') && target.classList.contains('editing')) ||
-            target.closest('.canvas-node-anchor')) {
+            target.closest('.canvas-node-anchor') ||
+            target.closest('.canvas-anchor-zone')) {
             return;
         }
         
@@ -5575,6 +5576,7 @@ function addAnchorsToNode(nodeElement, nodeId) {
         // though we might use JS for more reliable hover handling if CSS is tricky)
         const zone = document.createElement('div');
         zone.className = `canvas-anchor-zone zone-${side}`;
+        zone.dataset.side = side;
         nodeElement.appendChild(zone);
         
         const anchor = document.createElement('div');

@@ -3251,6 +3251,8 @@ function removeMdNode(id) {
     const el = document.getElementById(id);
     if (el) el.remove();
     CanvasState.mdNodes = CanvasState.mdNodes.filter(n => n.id !== id);
+    // Remove edges connected to this markdown node
+    removeEdgesForNode(id);
     saveTempNodes();
     scheduleBoundsUpdate();
 }
@@ -4533,6 +4535,8 @@ function removeTempNode(sectionId) {
     }
     
     CanvasState.tempSections = CanvasState.tempSections.filter(section => section.id !== sectionId);
+    // Remove all edges connected to this section
+    removeEdgesForNode(sectionId);
     
     // 重新计算序号：让剩余栏目的序号连续
     reorderSectionSequenceNumbers();
@@ -4555,6 +4559,12 @@ function clearAllTempNodes() {
     container.querySelectorAll('.md-canvas-node').forEach(node => node.remove());
     CanvasState.tempSections = [];
     CanvasState.mdNodes = [];
+    // 清空与临时/文本节点相关的所有连接线
+    if (CanvasState.edges && CanvasState.edges.length) {
+        CanvasState.edges = [];
+        CanvasState.selectedEdgeId = null;
+        renderEdges();
+    }
     
     // 重置序号计数器
     CanvasState.tempSectionSequenceNumber = 0;
@@ -5722,10 +5732,14 @@ function endConnection(e) {
         }
 
         if (toNodeId && toSide) {
-             // Prevent duplicate connection to exact same point (optional, but good)
-             if (toNodeId !== CanvasState.connectionStart.nodeId || toSide !== CanvasState.connectionStart.side) {
-                 addEdge(CanvasState.connectionStart.nodeId, CanvasState.connectionStart.side, toNodeId, toSide);
-             }
+            const fromNodeId = CanvasState.connectionStart.nodeId;
+            const fromSide = CanvasState.connectionStart.side;
+            // Block same-node connections entirely
+            if (toNodeId === fromNodeId) {
+                console.log('[Canvas] 忽略同栏目的锚点连接');
+            } else if (toNodeId !== fromNodeId || toSide !== fromSide) {
+                addEdge(fromNodeId, fromSide, toNodeId, toSide);
+            }
         }
     }
     CanvasState.connectionStart = null;
@@ -5750,6 +5764,11 @@ function addEdge(fromNode, fromSide, toNode, toSide) {
         e.toNode === toNode && e.toSide === toSide
     );
     if (exists) return;
+    // Block self-connections between anchors of the same node
+    if (fromNode === toNode) {
+        console.log('[Canvas] 忽略同栏目的锚点连接');
+        return;
+    }
     
     const id = `edge-${++CanvasState.edgeCounter}-${Date.now()}`;
     CanvasState.edges.push({ 
@@ -5765,6 +5784,26 @@ function addEdge(fromNode, fromSide, toNode, toSide) {
     });
     renderEdges();
     saveTempNodes();
+}
+
+// Remove all edges attached to a given node (section/md/permanent)
+function removeEdgesForNode(nodeId) {
+    const before = CanvasState.edges.length;
+    const removed = [];
+    CanvasState.edges = CanvasState.edges.filter(e => {
+        const match = (e.fromNode === nodeId) || (e.toNode === nodeId);
+        if (match) removed.push(e.id);
+        return !match;
+    });
+    if (removed.includes(CanvasState.selectedEdgeId)) {
+        CanvasState.selectedEdgeId = null;
+        hideEdgeToolbar();
+    }
+    if (removed.length) {
+        renderEdges();
+        saveTempNodes();
+        console.log(`[Canvas] 已移除与节点 ${nodeId} 相连的连接线: ${removed.length}/${before}`);
+    }
 }
 
 function removeEdge(edgeId) {

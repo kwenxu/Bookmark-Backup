@@ -436,7 +436,7 @@
 
 /* 连接线标签样式 */
 .canvas-edge-label {
-    font-size: 12px;
+    font-size: 16px; /* 放大标签字体，提升可读性 */
     font-weight: 500;
     fill: #666;
     pointer-events: all;
@@ -466,6 +466,47 @@
 
 [data-theme="dark"] .canvas-edge-label:hover {
     fill: #ddd;
+}
+
+/* 连接线标签就地编辑输入框（跟随主题） */
+.edge-label-editor {
+    position: absolute;
+    z-index: 10000;
+    padding: 6px 10px;
+    min-width: 140px;
+    max-width: 360px;
+    border-radius: 8px;
+    border: 1px solid #c9d1d9;
+    background: #ffffff;
+    color: #111111;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.12);
+    outline: none;
+    pointer-events: auto;
+    white-space: nowrap;
+    font-size: 16px; /* 输入字体更大 */
+    line-height: 20px;
+}
+
+[data-theme="dark"] .edge-label-editor {
+    background: #1f2022;
+    color: #e6e6e6;
+    border-color: #3a3b3c;
+    box-shadow: 0 2px 10px rgba(0,0,0,0.5);
+}
+
+/* 连接线标签内联编辑（foreignObject中的div） */
+.edge-label-inline {
+    font-size: 16px;
+    font-weight: 500;
+    white-space: nowrap;
+    color: inherit; /* 会被行内样式设置为连线颜色 */
+    background: transparent;
+    outline: none;
+    border: none;
+    padding: 0;
+    margin: 0;
+    line-height: 1.05;
+    cursor: text;
 }
 
 /* Anchors & Zones - Strictly OUTSIDE node to prevent conflicts */

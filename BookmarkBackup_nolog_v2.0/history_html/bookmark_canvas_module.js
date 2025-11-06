@@ -5820,7 +5820,7 @@ function renderEdges() {
     if (!svg) return;
     
     // Clear existing edges (except temp path if any)
-    Array.from(svg.querySelectorAll('.canvas-edge, .canvas-edge-label, .canvas-edge-hit-area')).forEach(el => {
+    Array.from(svg.querySelectorAll('.canvas-edge, .canvas-edge-label, .canvas-edge-label-bg, .canvas-edge-hit-area, foreignObject.edge-label-fo')).forEach(el => {
         if (el.id !== 'temp-connection-path') el.remove();
     });
     
@@ -5918,9 +5918,69 @@ function renderEdgeLabel(svg, edge) {
     const midX = curveMid ? curveMid.x : (start.x + end.x) / 2;
     const midY = curveMid ? curveMid.y : (start.y + end.y) / 2;
     
-    // 创建标签文本元素
+    // 先创建背景挖空矩形（让连线在文字区域下方留出空白）
+    const textProbe = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+    textProbe.setAttribute('class', 'canvas-edge-label');
+    textProbe.setAttribute('x', midX);
+    textProbe.setAttribute('y', midY);
+    textProbe.setAttribute('text-anchor', 'middle');
+    textProbe.setAttribute('dominant-baseline', 'middle');
+    textProbe.textContent = edge.label;
+    svg.appendChild(textProbe);
+
+    // 计算文字尺寸
+    let textWidth = 0;
+    try { textWidth = textProbe.getComputedTextLength ? textProbe.getComputedTextLength() : 0; } catch(_) {}
+    // 优先用BBox高度，回退到估算
+    let textHeight = 16;
+    try {
+        const bb = textProbe.getBBox ? textProbe.getBBox() : null;
+        if (bb && bb.height) textHeight = Math.ceil(bb.height);
+    } catch(_) {}
+    const padX = 6;
+    const padY = 2;
+
+    // 读取画布背景色，尽量与当前画布背景一致，形成“挖空”效果
+    const getCanvasBg = () => {
+        try {
+            const ws = document.getElementById('canvasWorkspace');
+            if (ws) {
+                const cs = getComputedStyle(ws);
+                const bg = cs && cs.backgroundColor ? cs.backgroundColor : null;
+                if (bg && bg !== 'rgba(0, 0, 0, 0)' && bg !== 'transparent') return bg;
+            }
+            const container = document.querySelector('.canvas-main-container');
+            if (container) {
+                const cs = getComputedStyle(container);
+                const bg = cs && cs.backgroundColor ? cs.backgroundColor : null;
+                if (bg && bg !== 'rgba(0, 0, 0, 0)' && bg !== 'transparent') return bg;
+            }
+        } catch(_) {}
+        return '#ffffff';
+    };
+    const bgColor = getCanvasBg();
+
+    const rect = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
+    rect.setAttribute('x', (midX - textWidth / 2 - padX).toString());
+    rect.setAttribute('y', (midY - textHeight / 2 - padY).toString());
+    rect.setAttribute('width', (textWidth + padX * 2).toString());
+    rect.setAttribute('height', (textHeight + padY * 2).toString());
+    rect.setAttribute('rx', '4');
+    rect.setAttribute('ry', '4');
+    rect.setAttribute('fill', bgColor);
+    rect.setAttribute('class', 'canvas-edge-label-bg');
+    rect.setAttribute('data-edge-id', edge.id);
+    rect.style.pointerEvents = 'none';
+
+    // 计算完成后移除探针文本
+    try { textProbe.remove(); } catch(_) {}
+    // 将背景矩形插入到真实文本之前（盖住连线）
+    svg.appendChild(rect);
+
+    // 创建标签文本元素（放在矩形之上）
     const text = document.createElementNS('http://www.w3.org/2000/svg', 'text');
     text.setAttribute('class', 'canvas-edge-label');
+    text.setAttribute('data-edge-id', edge.id);
     text.setAttribute('x', midX);
     text.setAttribute('y', midY);
     text.setAttribute('text-anchor', 'middle');
@@ -5936,11 +5996,12 @@ function renderEdgeLabel(svg, edge) {
     }
     
     svg.appendChild(text);
-    
-    // 标签点击事件
+
+    // 标签点击事件：直接进入就地编辑
     text.addEventListener('click', (e) => {
         e.stopPropagation();
-        selectEdge(edge.id, e.clientX, e.clientY);
+        try { selectEdge(edge.id, e.clientX, e.clientY); } catch(_) {}
+        startEdgeLabelInlineEdit(edge.id);
     });
 }
 
@@ -6223,7 +6284,26 @@ function showEdgeToolbar(edgeId, x, y) {
 // 更新连接线工具栏位置（使用 canvas-content 坐标系）
 function updateEdgeToolbarPosition() {
     const toolbar = document.getElementById('edge-toolbar');
-    if (!toolbar || !toolbar.parentElement) return;
+    if (!toolbar || !toolbar.parentElement) {
+        // 即使工具栏不存在，也尝试更新编辑器位置（在缩放/移动时）
+        const editorOnly = document.getElementById('edge-label-editor');
+        if (editorOnly && editorOnly.dataset.edgeId) {
+            const edge = CanvasState.edges.find(e => e.id === editorOnly.dataset.edgeId);
+            if (!edge) return;
+            const start = getAnchorPosition(edge.fromNode, edge.fromSide);
+            const end = getAnchorPosition(edge.toNode, edge.toSide);
+            if (!start || !end) return;
+            const curveMid = getEdgeCurveMidpoint(edge);
+            const midX = curveMid ? curveMid.x : (start.x + end.x) / 2;
+            const midY = curveMid ? curveMid.y : (start.y + end.y) / 2;
+            const z = (CanvasState && CanvasState.zoom) ? CanvasState.zoom : 1;
+            const offsetPx = 18;
+            editorOnly.style.left = `${midX}px`;
+            editorOnly.style.top = `${midY - (offsetPx / z)}px`;
+            editorOnly.style.transform = `translate(-50%, -50%) scale(${(1 / z).toFixed(5)})`;
+        }
+        return;
+    }
     
     const edgeId = toolbar.dataset.edgeId;
     if (!edgeId) return;
@@ -6246,6 +6326,15 @@ function updateEdgeToolbarPosition() {
     toolbar.style.left = `${midX}px`;
     toolbar.style.top = `${midY - (40 / z)}px`;
     toolbar.style.transform = 'translateX(-50%)'; // 居中对齐
+
+    // 同步更新正在编辑的输入框位置
+    const editor = document.getElementById('edge-label-editor');
+    if (editor && editor.dataset.edgeId === edgeId) {
+        const offsetPx = 18;
+        editor.style.left = `${midX}px`;
+        editor.style.top = `${midY - (offsetPx / z)}px`;
+        editor.style.transform = `translate(-50%, -50%) scale(${(1 / z).toFixed(5)})`;
+    }
 }
 
 function hideEdgeToolbar() {
@@ -6482,19 +6571,142 @@ function toggleEdgeDirection(edgeId) {
 
 // 编辑连接线标签
 function editEdgeLabel(edgeId) {
+    // 向后兼容：按钮调用改为就地编辑
+    startEdgeLabelInlineEdit(edgeId);
+}
+
+// 就地编辑连接线标签（不再使用 prompt）
+function startEdgeLabelInlineEdit(edgeId) {
     const edge = CanvasState.edges.find(e => e.id === edgeId);
-    if (!edge) return;
-    
-    const lang = typeof currentLang !== 'undefined' ? currentLang : 'zh';
-    const promptText = lang === 'en' ? 'Enter label for this connection:' : '输入连接线标签：';
-    const newLabel = prompt(promptText, edge.label || '');
-    
-    if (newLabel !== null) {
-        edge.label = newLabel;
+    const svg = document.querySelector('.canvas-edges');
+    if (!edge || !svg) return;
+
+    // 清除已有的编辑器
+    const existingFo = svg.querySelector(`foreignObject[data-edge-id="${edgeId}"]`);
+    if (existingFo) { try { existingFo.remove(); } catch(_) {} }
+
+    // 移除原文字（若存在）
+    const textEl = svg.querySelector(`text.canvas-edge-label[data-edge-id="${edgeId}"]`);
+    if (textEl) { try { textEl.remove(); } catch(_) {} }
+
+    // 计算放置位置
+    const start = getAnchorPosition(edge.fromNode, edge.fromSide);
+    const end = getAnchorPosition(edge.toNode, edge.toSide);
+    if (!start || !end) return;
+    const mid = getEdgeCurveMidpoint(edge) || { x: (start.x + end.x) / 2, y: (start.y + end.y) / 2 };
+
+    // 使用探针测量当前文本尺寸（用户单位）
+    const probe = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+    probe.setAttribute('class', 'canvas-edge-label');
+    probe.textContent = edge.label || '';
+    probe.setAttribute('x', mid.x);
+    probe.setAttribute('y', mid.y);
+    probe.setAttribute('text-anchor', 'middle');
+    probe.setAttribute('dominant-baseline', 'middle');
+    svg.appendChild(probe);
+    let textW = 30, textH = 16;
+    try {
+        textW = Math.max(30, probe.getComputedTextLength ? probe.getComputedTextLength() : 30);
+        const bb = probe.getBBox ? probe.getBBox() : null;
+        textH = Math.max(16, bb && bb.height ? Math.ceil(bb.height) : 16);
+    } catch(_) {}
+    try { probe.remove(); } catch(_) {}
+
+    const fo = document.createElementNS('http://www.w3.org/2000/svg', 'foreignObject');
+    fo.setAttribute('data-edge-id', edgeId);
+    fo.setAttribute('class', 'edge-label-fo');
+    fo.setAttribute('x', (mid.x - textW / 2).toString());
+    fo.setAttribute('y', (mid.y - textH / 2).toString());
+    fo.setAttribute('width', (textW).toString());
+    fo.setAttribute('height', (textH).toString());
+    fo.style.pointerEvents = 'all';
+
+    const div = document.createElement('div');
+    div.setAttribute('xmlns', 'http://www.w3.org/1999/xhtml');
+    div.className = 'edge-label-inline';
+    div.contentEditable = 'true';
+    div.textContent = edge.label || '';
+    div.style.whiteSpace = 'nowrap';
+    div.style.padding = '0';
+    div.style.margin = '0';
+    div.style.background = 'transparent';
+    div.style.outline = 'none';
+    div.style.border = 'none';
+    div.style.cursor = 'text';
+    div.style.userSelect = 'text';
+    div.style.WebkitUserSelect = 'text';
+    // 字体样式与SVG文本一致
+    div.style.fontSize = '16px';
+    div.style.fontWeight = '500';
+    const edgeColor = edge.colorHex || presetToHex(edge.color) || '';
+    if (edgeColor) div.style.color = edgeColor;
+
+    // 挖空矩形（如未存在则创建）
+    let rect = svg.querySelector(`rect.canvas-edge-label-bg[data-edge-id="${edgeId}"]`);
+    if (!rect) {
+        rect = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
+        rect.setAttribute('class', 'canvas-edge-label-bg');
+        rect.setAttribute('data-edge-id', edgeId);
+        rect.setAttribute('rx', '4');
+        rect.setAttribute('ry', '4');
+        rect.style.pointerEvents = 'none';
+        try {
+            const ws = document.getElementById('canvasWorkspace');
+            const bg = ws ? getComputedStyle(ws).backgroundColor : getComputedStyle(document.querySelector('.canvas-main-container')).backgroundColor;
+            rect.setAttribute('fill', bg || '#fff');
+        } catch(_) { rect.setAttribute('fill', '#fff'); }
+        svg.appendChild(rect);
+    }
+
+    const layout = () => {
+        const z = (CanvasState && CanvasState.zoom) ? CanvasState.zoom : 1;
+        const r = div.getBoundingClientRect();
+        const w = Math.max(12, r.width / z);
+        const h = Math.max(14, r.height / z);
+        fo.setAttribute('x', (mid.x - w / 2).toString());
+        fo.setAttribute('y', (mid.y - h / 2).toString());
+        fo.setAttribute('width', w.toString());
+        fo.setAttribute('height', h.toString());
+        rect.setAttribute('x', (mid.x - (w / 2) - 4).toString());
+        rect.setAttribute('y', (mid.y - (h / 2) - 2).toString());
+        rect.setAttribute('width', (w + 8).toString());
+        rect.setAttribute('height', (h + 4).toString());
+    };
+
+    const apply = () => {
+        const val = (div.textContent || '').trim();
+        edge.label = val;
+        try { fo.remove(); } catch(_) {}
         renderEdges();
         saveTempNodes();
-        console.log('[Canvas] 更新连接线标签:', edgeId, newLabel);
-    }
+    };
+    const cancel = () => {
+        try { fo.remove(); } catch(_) {}
+        renderEdges();
+    };
+
+    div.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') { e.preventDefault(); apply(); }
+        else if (e.key === 'Escape') { e.preventDefault(); cancel(); }
+    });
+    div.addEventListener('input', () => layout());
+    div.addEventListener('blur', () => apply());
+    ['mousedown','click','dblclick'].forEach(evt => div.addEventListener(evt, ev => ev.stopPropagation()));
+
+    fo.appendChild(div);
+    svg.appendChild(fo);
+    requestAnimationFrame(() => {
+        layout();
+        div.focus();
+        try {
+            const range = document.createRange();
+            range.selectNodeContents(div);
+            range.collapse(false);
+            const sel = window.getSelection();
+            sel.removeAllRanges();
+            sel.addRange(range);
+        } catch(_) {}
+    });
 }
 
 // =============================================================================

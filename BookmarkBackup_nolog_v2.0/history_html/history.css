@@ -5192,7 +5192,7 @@ a.tree-label.tree-bookmark-link:hover {
     opacity: 0;
     pointer-events: none;
     transition: opacity 0.12s ease;
-    z-index: 100;
+    z-index: 12000; /* Above anchors (11000) so toolbar remains clickable on top edge */
 }
 
 /* When drawing a connection, disable node toolbars to avoid intercepting top anchors */
@@ -5266,10 +5266,10 @@ a.tree-label.tree-bookmark-link:hover {
     z-index: 10;
     white-space: nowrap;
 }
-.md-color-popover.open { 
-    display: grid; 
-    grid-template-columns: repeat(7, 18px); 
-    align-items: center; 
+.md-color-popover.open {
+    display: flex;
+    align-items: center;
+    flex-wrap: nowrap;
 }
 .md-color-chip {
     width: 16px;

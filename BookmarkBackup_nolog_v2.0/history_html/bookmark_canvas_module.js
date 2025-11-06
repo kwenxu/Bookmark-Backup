@@ -1174,6 +1174,9 @@ function setCanvasZoom(zoom, centerX = null, centerY = null, options = {}) {
     if (!silent) {
         console.log('[Canvas] 缩放:', Math.round(zoom * 100) + '%', '中心点:', { canvasCenterX, canvasCenterY });
     }
+
+    // 缩放变化后，更新连接线工具栏位置以保持固定像素偏移
+    updateEdgeToolbarPosition();
 }
 
 function applyPanOffset() {
@@ -5782,7 +5785,13 @@ function renderEdges() {
         if (el.id !== 'temp-connection-path') el.remove();
     });
     
-    CanvasState.edges.forEach(edge => {
+    // Stable z-order: render selected edge last to keep it on top
+    const selectedId = CanvasState.selectedEdgeId || null;
+    const edgesToRender = selectedId
+        ? CanvasState.edges.filter(e => e.id !== selectedId).concat(CanvasState.edges.filter(e => e.id === selectedId))
+        : CanvasState.edges.slice();
+    
+    edgesToRender.forEach(edge => {
         // 创建不可见的宽点击区域（用于扩大点击识别范围）
         const hitArea = document.createElementNS('http://www.w3.org/2000/svg', 'path');
         hitArea.setAttribute('class', 'canvas-edge-hit-area');
@@ -5863,12 +5872,12 @@ function renderEdges() {
 function renderEdgeLabel(svg, edge) {
     const start = getAnchorPosition(edge.fromNode, edge.fromSide);
     const end = getAnchorPosition(edge.toNode, edge.toSide);
-    
     if (!start || !end) return;
     
-    // 计算标签位置（连接线中点）
-    const midX = (start.x + end.x) / 2;
-    const midY = (start.y + end.y) / 2;
+    // 使用贝塞尔曲线中点放置标签，和曲线保持一致
+    const curveMid = getEdgeCurveMidpoint(edge);
+    const midX = curveMid ? curveMid.x : (start.x + end.x) / 2;
+    const midY = curveMid ? curveMid.y : (start.y + end.y) / 2;
     
     // 创建标签文本元素
     const text = document.createElementNS('http://www.w3.org/2000/svg', 'text');
@@ -5930,41 +5939,75 @@ function getAnchorPosition(nodeId, side) {
     }
 }
 
-function getEdgePathD(x1, y1, x2, y2, side1, side2) {
-    const dx = Math.abs(x2 - x1);
-    const dy = Math.abs(y2 - y1);
-    const dist = Math.sqrt(dx * dx + dy * dy);
-    // Dynamic smoothing based on distance, with min/max limits for better aesthetics
-    let smooth = Math.min(400, Math.max(60, dist * 0.4));
-    // Adjust curvature to remain visually consistent across zoom levels
+// Compute Bezier control points for an edge with aesthetics tuned for long distances
+function computeEdgeControlPoints(x1, y1, x2, y2, side1, side2) {
+    const ddx = x2 - x1;
+    const ddy = y2 - y1;
+    const adx = Math.abs(ddx);
+    const ady = Math.abs(ddy);
+    const dist = Math.hypot(ddx, ddy);
     const z = (CanvasState && CanvasState.zoom) ? CanvasState.zoom : 1;
-    smooth = smooth / z;
-    
+
+    const isHoriz = s => (s === 'left' || s === 'right');
+    const isVert  = s => (s === 'top'  || s === 'bottom');
+    const offsetAlongSide = (side, x, y, amt) => {
+        switch (side) {
+            case 'top':    return { x, y: y - amt };
+            case 'bottom': return { x, y: y + amt };
+            case 'left':   return { x: x - amt, y };
+            case 'right':  return { x: x + amt, y };
+            default:       return { x, y };
+        }
+    };
+
+    // Near: compact "bracket" curve; Far: gentle curve with capped offset (avoid ugly large bows)
+    const nearThreshold = 220 / z;
+    const nearAmt = Math.min(Math.max(dist * 0.45, 24 / z), 80 / z);
+    const alongAmt = Math.min(Math.max(dist * 0.22, 40 / z), 160 / z);
+
     let cp1x = x1, cp1y = y1, cp2x = x2, cp2y = y2;
-    
-    switch (side1) {
-        case 'top': cp1y -= smooth; break;
-        case 'bottom': cp1y += smooth; break;
-        case 'left': cp1x -= smooth; break;
-        case 'right': cp1x += smooth; break;
-    }
-    
-    if (side2) {
-        switch (side2) {
-            case 'top': cp2y -= smooth; break;
-            case 'bottom': cp2y += smooth; break;
-            case 'left': cp2x -= smooth; break;
-            case 'right': cp2x += smooth; break;
+
+    if (dist < nearThreshold) {
+        ({ x: cp1x, y: cp1y } = offsetAlongSide(side1, x1, y1, nearAmt));
+        if (side2) ({ x: cp2x, y: cp2y } = offsetAlongSide(side2, x2, y2, nearAmt));
+        const mx = (x1 + x2) / 2;
+        const my = (y1 + y2) / 2;
+        if (isHoriz(side1) && isHoriz(side2)) {
+            cp1y = y1 + (my - y1) * 0.12;
+            cp2y = y2 + (my - y2) * 0.12;
+        } else if (isVert(side1) && isVert(side2)) {
+            cp1x = x1 + (mx - x1) * 0.12;
+            cp2x = x2 + (mx - x2) * 0.12;
         }
     } else {
-        // For temp connection, keep end control point near the end point (mouse)
-        // but maybe align it slightly with the start direction for a "seeking" feel
-         switch (side1) {
-            case 'top': case 'bottom': cp2x = x2; cp2y = y2; break;
-            case 'left': case 'right': cp2x = x2; cp2y = y2; break;
-        }
+        ({ x: cp1x, y: cp1y } = offsetAlongSide(side1, x1, y1, alongAmt));
+        if (side2) ({ x: cp2x, y: cp2y } = offsetAlongSide(side2, x2, y2, alongAmt));
+        // Very subtle perpendicular bend to avoid perfectly flat arcs and reduce crossings
+        const bend = Math.min(12 / z, alongAmt * 0.15);
+        if (isHoriz(side1)) { cp1y += (ddy === 0 ? 1 : Math.sign(ddy)) * bend; }
+        else {                cp1x += (ddx === 0 ? 1 : Math.sign(ddx)) * bend; }
+        if (isHoriz(side2)) { cp2y -= (ddy === 0 ? 1 : Math.sign(ddy)) * bend; }
+        else {                cp2x -= (ddx === 0 ? 1 : Math.sign(ddx)) * bend; }
     }
-    
+
+    // Stable jitter to avoid perfect overlap; skip for temp preview (side2 may be null)
+    const sideCode = s => (s === 'top' ? 1 : s === 'bottom' ? 2 : s === 'left' ? 3 : s === 'right' ? 4 : 0);
+    const c1 = sideCode(side1) | 0; const c2 = sideCode(side2) | 0;
+    const pairCode = (Math.min(c1, c2) * 31 + Math.max(c1, c2)) | 0;
+    const sx = Math.floor(x1 + x2) | 0;
+    const sy = Math.floor(y1 + y2) | 0;
+    const seed = (((sx * 73856093) ^ (sy * 19349663) ^ (pairCode * 83492791)) >>> 0) % 1000;
+    const jitterFactor = seed / 1000 - 0.5;
+    const jitterAmp = side2 ? Math.min(6, alongAmt * 0.2) : 0;
+    const jx = jitterFactor * jitterAmp;
+    const jy = -jitterFactor * jitterAmp;
+    if (adx >= ady) { cp1y += jy; cp2y += jy; } else { cp1x += jx; cp2x += jx; }
+
+    return { cp1x, cp1y, cp2x, cp2y };
+}
+
+function getEdgePathD(x1, y1, x2, y2, side1, side2) {
+    const { cp1x, cp1y, cp2x, cp2y } = computeEdgeControlPoints(x1, y1, x2, y2, side1, side2);
     return `M ${x1} ${y1} C ${cp1x} ${cp1y}, ${cp2x} ${cp2y}, ${x2} ${y2}`;
 }
 
@@ -5975,26 +6018,7 @@ function getEdgeCurveMidpoint(edge) {
     if (!start || !end) return null;
     const x1 = start.x, y1 = start.y;
     const x2 = end.x, y2 = end.y;
-    const dx = Math.abs(x2 - x1);
-    const dy = Math.abs(y2 - y1);
-    const dist = Math.sqrt(dx * dx + dy * dy);
-    let smooth = Math.min(400, Math.max(60, dist * 0.4));
-    const z = (CanvasState && CanvasState.zoom) ? CanvasState.zoom : 1;
-    smooth = smooth / z;
-    let cp1x = x1, cp1y = y1, cp2x = x2, cp2y = y2;
-    switch (edge.fromSide) {
-        case 'top': cp1y -= smooth; break;
-        case 'bottom': cp1y += smooth; break;
-        case 'left': cp1x -= smooth; break;
-        case 'right': cp1x += smooth; break;
-    }
-    switch (edge.toSide) {
-        case 'top': cp2y -= smooth; break;
-        case 'bottom': cp2y += smooth; break;
-        case 'left': cp2x -= smooth; break;
-        case 'right': cp2x += smooth; break;
-    }
-    // cubic Bezier midpoint at t=0.5: (P0 + 3P1 + 3P2 + P3) / 8
+    const { cp1x, cp1y, cp2x, cp2y } = computeEdgeControlPoints(x1, y1, x2, y2, edge.fromSide, edge.toSide);
     const midX = (x1 + 3 * cp1x + 3 * cp2x + x2) / 8;
     const midY = (y1 + 3 * cp1y + 3 * cp2y + y2) / 8;
     return { x: midX, y: midY };
@@ -6173,16 +6197,10 @@ function updateEdgeToolbarPosition() {
     
     if (!start || !end) return;
     
-    // 锚点直线中点
-    const anchorMidX = (start.x + end.x) / 2;
-    const anchorMidY = (start.y + end.y) / 2;
-    // 曲线中点（基于贝塞尔控制点）
+    // 工具栏定位于贝塞尔曲线中点
     const curveMid = getEdgeCurveMidpoint(edge);
-    const curveMidX = curveMid ? curveMid.x : anchorMidX;
-    const curveMidY = curveMid ? curveMid.y : anchorMidY;
-    // 最终位置为两者的中点
-    const midX = (anchorMidX + curveMidX) / 2;
-    const midY = (anchorMidY + curveMidY) / 2;
+    const midX = curveMid ? curveMid.x : (start.x + end.x) / 2;
+    const midY = curveMid ? curveMid.y : (start.y + end.y) / 2;
     
     // 工具栏显示在中点上方（使用 canvas-content 坐标系），根据缩放比例调整偏移
     const z = (CanvasState && CanvasState.zoom) ? CanvasState.zoom : 1;

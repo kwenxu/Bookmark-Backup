@@ -3021,6 +3021,13 @@ function renderMdNode(node) {
             const preset = String(btn.getAttribute('data-color') || '').trim();
             setMdNodeColor(node, preset);
             closeMdColorPopover(toolbar);
+        } else if (action === 'md-color-default') {
+            node.color = null;
+            node.colorHex = null;
+            const el2 = document.getElementById(node.id);
+            if (el2) applyMdNodeColor(el2, node);
+            saveTempNodes();
+            closeMdColorPopover(toolbar);
         } else if (action === 'md-color-picker-toggle') {
             // RGB选择器切换由ensureMdColorPopover中的事件处理
         } else if (action === 'md-color-custom') {
@@ -3073,6 +3080,9 @@ function applyMdNodeColor(el, node) {
     if (hex) {
         el.style.borderColor = hex;
         // 背景保持当前主题，仅强调描边以显得更“高级”
+    } else {
+        // 恢复默认样式
+        el.style.borderColor = '';
     }
 }
 
@@ -3103,9 +3113,11 @@ function ensureMdColorPopover(toolbar, node) {
     const lang = typeof currentLang !== 'undefined' ? currentLang : 'zh';
     const rgbPickerTitle = lang === 'en' ? 'RGB Color Picker' : 'RGB颜色选择器';
     const customColorTitle = lang === 'en' ? 'Select custom color' : '选择自定义颜色';
+    const defaultTitle = lang === 'en' ? 'Default color' : '默认颜色';
     
     // 使用 Obsidian Canvas 风格的颜色
     pop.innerHTML = `
+        <span class="md-color-chip" data-action="md-color-default" title="${defaultTitle}" style="background: repeating-linear-gradient(45deg, #eee, #eee 4px, #fff 4px, #fff 8px); border:1px solid #c9d1d9;"></span>
         <span class="md-color-chip" data-action="md-color-preset" data-color="1" style="background:#ff6666"></span>
         <span class="md-color-chip" data-action="md-color-preset" data-color="2" style="background:#ffaa66"></span>
         <span class="md-color-chip" data-action="md-color-preset" data-color="3" style="background:#ffdd66"></span>
@@ -6097,6 +6109,12 @@ function showEdgeToolbar(edgeId, x, y) {
                 const preset = String(btn.getAttribute('data-color') || '').trim();
                 setEdgeColor(currentEdge, preset);
                 closeEdgeColorPopover(toolbar);
+            } else if (action === 'edge-color-default') {
+                currentEdge.color = null;
+                currentEdge.colorHex = null;
+                renderEdges();
+                saveTempNodes();
+                closeEdgeColorPopover(toolbar);
             } else if (action === 'edge-direction-set') {
                 const dir = String(btn.getAttribute('data-dir') || 'none');
                 setEdgeDirection(currentEdge, dir);
@@ -6159,9 +6177,11 @@ function ensureEdgeColorPopover(toolbar, edge) {
     const lang = typeof currentLang !== 'undefined' ? currentLang : 'zh';
     const rgbPickerTitle = lang === 'en' ? 'RGB Color Picker' : 'RGB颜色选择器';
     const customColorTitle = lang === 'en' ? 'Select custom color' : '选择自定义颜色';
+    const defaultTitle = lang === 'en' ? 'Default color' : '默认颜色';
     
     // 使用 Obsidian Canvas 风格的颜色（与空白栏目完全一致）
     pop.innerHTML = `
+        <span class="md-color-chip" data-action="edge-color-default" title="${defaultTitle}" style="background: repeating-linear-gradient(45deg, #eee, #eee 4px, #fff 4px, #fff 8px); border:1px solid #c9d1d9;"></span>
         <span class="md-color-chip" data-action="md-color-preset" data-color="1" style="background:#ff6666"></span>
         <span class="md-color-chip" data-action="md-color-preset" data-color="2" style="background:#ffaa66"></span>
         <span class="md-color-chip" data-action="md-color-preset" data-color="3" style="background:#ffdd66"></span>

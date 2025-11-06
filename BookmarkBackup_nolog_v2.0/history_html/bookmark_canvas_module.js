@@ -5037,8 +5037,11 @@ function setupCanvasEventListeners() {
             const newX = CanvasState.dragState.nodeStartX + scaledDeltaX;
             const newY = CanvasState.dragState.nodeStartY + scaledDeltaY;
             
-            // 使用 transform 替代 left/top 提升性能
-            CanvasState.dragState.draggedElement.style.transform = `translate(${scaledDeltaX}px, ${scaledDeltaY}px)`;
+            // Directly update left/top for real-time edge following
+            CanvasState.dragState.draggedElement.style.left = newX + 'px';
+            CanvasState.dragState.draggedElement.style.top = newY + 'px';
+            // Remove transform as we are updating left/top directly
+            CanvasState.dragState.draggedElement.style.transform = 'none';
             
             // 更新节点数据（实际位置）
             const nodeId = CanvasState.dragState.draggedElement.id;
@@ -5638,25 +5641,50 @@ function endConnection(e) {
     const tempPath = document.getElementById('temp-connection-path');
     if (tempPath) tempPath.remove();
     
-    // Find if dropped on an anchor
-    // Since anchors might be small, we can check elements under cursor
-    // or use a small radius if needed. For now, exact hit on anchor.
+    // Use composedPath if available to get all elements under cursor, 
+    // or just elementFromPoint. elementFromPoint might hit the dragging line if not careful,
+    // but we removed it just above.
     const target = document.elementFromPoint(e.clientX, e.clientY);
     const anchor = target ? target.closest('.canvas-node-anchor') : null;
+    const nodeEl = target ? target.closest('.temp-canvas-node, .md-canvas-node, #permanentSection') : null;
     
-    if (anchor && CanvasState.connectionStart) {
-        const toNodeId = anchor.dataset.nodeId;
-        const toSide = anchor.dataset.side;
-        // Don't allow self-connection to same side, but allow same node different side if desired?
-        // User said "can also connect to itself". Okay.
+    if (CanvasState.connectionStart) {
+        let toNodeId = null;
+        let toSide = null;
+
+        if (anchor) {
+            toNodeId = anchor.dataset.nodeId;
+            toSide = anchor.dataset.side;
+        } else if (nodeEl) {
+            // Dropped on a node but not an anchor -> auto-connect to nearest side
+            toNodeId = nodeEl.id;
+            // Special case for permanent section ID normalization
+            if (toNodeId === 'permanentSection') toNodeId = 'permanent-section';
+            
+            const rect = nodeEl.getBoundingClientRect();
+            toSide = getNearestSide(rect, e.clientX, e.clientY);
+        }
+
         if (toNodeId && toSide) {
-             // Optional: prevent exact same anchor connection
+             // Prevent duplicate connection to exact same point (optional, but good)
              if (toNodeId !== CanvasState.connectionStart.nodeId || toSide !== CanvasState.connectionStart.side) {
                  addEdge(CanvasState.connectionStart.nodeId, CanvasState.connectionStart.side, toNodeId, toSide);
              }
         }
     }
     CanvasState.connectionStart = null;
+}
+
+function getNearestSide(rect, x, y) {
+    const distTop = Math.abs(y - rect.top);
+    const distBottom = Math.abs(y - rect.bottom);
+    const distLeft = Math.abs(x - rect.left);
+    const distRight = Math.abs(x - rect.right);
+    const min = Math.min(distTop, distBottom, distLeft, distRight);
+    if (min === distTop) return 'top';
+    if (min === distBottom) return 'bottom';
+    if (min === distLeft) return 'left';
+    return 'right';
 }
 
 function addEdge(fromNode, fromSide, toNode, toSide) {

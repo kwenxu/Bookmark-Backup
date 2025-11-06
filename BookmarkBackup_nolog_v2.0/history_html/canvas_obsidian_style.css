@@ -438,16 +438,16 @@
     position: absolute;
     z-index: 98;
 }
-/* Zones restricted to center 50% and strictly outside the node boundary */
-.zone-top { top: -40px; height: 40px; left: 25%; width: 50%; }
-.zone-bottom { bottom: -40px; height: 40px; left: 25%; width: 50%; }
-.zone-left { left: -40px; width: 40px; top: 25%; height: 50%; }
-.zone-right { right: -40px; width: 40px; top: 25%; height: 50%; }
+/* Huge zones for easiest triggering */
+.zone-top { top: -80px; height: 80px; left: 10%; width: 80%; }
+.zone-bottom { bottom: -80px; height: 80px; left: 10%; width: 80%; }
+.zone-left { left: -80px; width: 80px; top: 10%; height: 80%; }
+.zone-right { right: -80px; width: 80px; top: 10%; height: 80%; }
 
 .canvas-node-anchor {
     position: absolute;
-    width: 12px;
-    height: 12px;
+    width: 14px; /* Slightly larger visible dot */
+    height: 14px;
     background-color: var(--bg-primary, #fff);
     border: 2px solid #777;
     border-radius: 50%;
@@ -458,40 +458,40 @@
     pointer-events: none;
 }
 
-/* Anchors pushed out away from borders */
+/* Anchors pushed out further */
 .canvas-node-anchor[data-side="top"] {
-    top: -18px;
+    top: -22px;
     left: 50%;
     transform: translateX(-50%);
     --anchor-translate-x: -50%;
 }
 .canvas-node-anchor[data-side="bottom"] {
-    bottom: -18px;
+    bottom: -22px;
     left: 50%;
     transform: translateX(-50%);
     --anchor-translate-x: -50%;
 }
 .canvas-node-anchor[data-side="left"] {
-    left: -18px;
+    left: -22px;
     top: 50%;
     transform: translateY(-50%);
     --anchor-translate-y: -50%;
 }
 .canvas-node-anchor[data-side="right"] {
-    right: -18px;
+    right: -22px;
     top: 50%;
     transform: translateY(-50%);
     --anchor-translate-y: -50%;
 }
 
-/* Hit area centered on the now-outside anchor */
+/* Massive 80px circular hit area */
 .canvas-node-anchor::after {
     content: '';
     position: absolute;
     top: 50%;
     left: 50%;
-    width: 36px;
-    height: 36px;
+    width: 80px;
+    height: 80px;
     transform: translate(-50%, -50%);
     border-radius: 50%;
 }

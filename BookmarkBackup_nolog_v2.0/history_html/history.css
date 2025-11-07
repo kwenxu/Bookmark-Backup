@@ -4708,6 +4708,75 @@ a.tree-label.tree-bookmark-link:hover {
     font-style: italic;
 }
 
+/* 支持Obsidian风格的HTML标签（临时栏目描述） */
+.temp-node-description font {
+    /* font标签的color属性会自动应用 */
+}
+
+.temp-node-description u {
+    text-decoration: underline;
+}
+
+.temp-node-description b {
+    font-weight: 600;
+}
+
+.temp-node-description i {
+    font-style: italic;
+}
+
+.temp-node-description del,
+.temp-node-description s {
+    text-decoration: line-through;
+}
+
+.temp-node-description sub {
+    vertical-align: sub;
+    font-size: 0.8em;
+}
+
+.temp-node-description sup {
+    vertical-align: super;
+    font-size: 0.8em;
+}
+
+.temp-node-description mark {
+    background: #fef08a;
+    color: inherit;
+    padding: 0 2px;
+    border-radius: 2px;
+}
+
+.temp-node-description a {
+    color: #2563eb;
+    text-decoration: none;
+    border-bottom: 1px solid rgba(37, 99, 235, 0.3);
+}
+
+.temp-node-description a:hover {
+    border-bottom-color: rgba(37, 99, 235, 0.6);
+}
+
+[data-theme="dark"] .temp-node-description a {
+    color: #93c5fd;
+    border-bottom-color: rgba(147, 197, 253, 0.4);
+}
+
+[data-theme="dark"] .temp-node-description a:hover {
+    border-bottom-color: rgba(147, 197, 253, 0.7);
+}
+
+[data-theme="dark"] .temp-node-description mark {
+    background: #854d0e;
+    color: #fef08a;
+}
+
+/* 任务列表样式（临时栏目描述） */
+.temp-node-description input[type="checkbox"] {
+    margin-right: 6px;
+    cursor: pointer;
+}
+
 .temp-node-description-editor {
     width: 100%;
     box-sizing: border-box;
@@ -5603,4 +5672,205 @@ a.tree-label.tree-bookmark-link:hover {
     background: rgba(0,0,0,0.06);
     padding: 2px 4px;
     border-radius: 3px;
+}
+
+.md-canvas-text mark {
+    background: #fef08a;
+    color: inherit;
+    padding: 0 2px;
+    border-radius: 2px;
+}
+
+/* 支持Obsidian风格的HTML标签 */
+.md-canvas-text font {
+    /* font标签的color属性会自动应用 */
+}
+
+.md-canvas-text u {
+    text-decoration: underline;
+}
+
+.md-canvas-text strong,
+.md-canvas-text b {
+    font-weight: 600;
+}
+
+.md-canvas-text em,
+.md-canvas-text i {
+    font-style: italic;
+}
+
+.md-canvas-text del,
+.md-canvas-text s {
+    text-decoration: line-through;
+}
+
+.md-canvas-text sub {
+    vertical-align: sub;
+    font-size: 0.8em;
+}
+
+.md-canvas-text sup {
+    vertical-align: super;
+    font-size: 0.8em;
+}
+
+.md-canvas-text p {
+    margin: 4px 0;
+}
+
+.md-canvas-text a {
+    color: #2563eb;
+    text-decoration: none;
+    border-bottom: 1px solid rgba(37, 99, 235, 0.3);
+}
+
+.md-canvas-text a:hover {
+    border-bottom-color: rgba(37, 99, 235, 0.6);
+}
+
+[data-theme="dark"] .md-canvas-text a {
+    color: #93c5fd;
+    border-bottom-color: rgba(147, 197, 253, 0.4);
+}
+
+[data-theme="dark"] .md-canvas-text a:hover {
+    border-bottom-color: rgba(147, 197, 253, 0.7);
+}
+
+/* 任务列表样式 */
+.md-canvas-text input[type="checkbox"] {
+    margin-right: 6px;
+    cursor: pointer;
+}
+
+.md-canvas-text li {
+    margin: 2px 0;
+}
+
+.md-wikilink {
+    color: #2563eb;
+    font-weight: 600;
+    cursor: default;
+    border-bottom: 1px dashed rgba(37, 99, 235, 0.4);
+}
+
+[data-theme="dark"] .md-wikilink {
+    color: #93c5fd;
+    border-bottom-color: rgba(147, 197, 253, 0.5);
+}
+
+.md-callout {
+    border-left: 4px solid #2563eb;
+    background: rgba(37, 99, 235, 0.08);
+    border-radius: 8px;
+    padding: 8px 12px;
+    margin: 8px 0;
+    box-shadow: inset 0 0 0 1px rgba(37, 99, 235, 0.1);
+}
+
+.md-callout-header {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-weight: 600;
+    margin-bottom: 6px;
+}
+
+.md-callout-body {
+    font-weight: 400;
+}
+
+.md-callout.collapsed .md-callout-body {
+    display: none;
+}
+
+.md-callout-toggle {
+    width: 18px;
+    height: 18px;
+    border: 1px solid rgba(38, 38, 38, 0.2);
+    border-radius: 50%;
+    background: linear-gradient(to bottom, #fff, #f3f4f6);
+    cursor: pointer;
+    position: relative;
+}
+
+.md-callout-toggle::after {
+    content: '';
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    width: 8px;
+    height: 2px;
+    background: #1f2937;
+    transform: translate(-50%, -50%);
+}
+
+.md-callout:not(.collapsed) .md-callout-toggle::before {
+    content: '';
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    width: 2px;
+    height: 8px;
+    background: #1f2937;
+    transform: translate(-50%, -50%);
+}
+
+[data-theme="dark"] .md-callout-toggle {
+    border-color: rgba(148, 163, 184, 0.4);
+    background: linear-gradient(to bottom, #1f2937, #111827);
+}
+
+[data-theme="dark"] .md-callout-toggle::after,
+[data-theme="dark"] .md-callout-toggle::before {
+    background: #f8fafc;
+}
+
+.md-callout-icon {
+    font-size: 16px;
+}
+
+.md-callout-title {
+    text-transform: capitalize;
+}
+
+.md-callout-tip {
+    border-color: #14b8a6;
+    background: rgba(20, 184, 166, 0.08);
+    box-shadow: inset 0 0 0 1px rgba(20, 184, 166, 0.12);
+}
+
+.md-callout-warning {
+    border-color: #f59e0b;
+    background: rgba(245, 158, 11, 0.09);
+    box-shadow: inset 0 0 0 1px rgba(245, 158, 11, 0.18);
+}
+
+.md-callout-danger {
+    border-color: #ef4444;
+    background: rgba(239, 68, 68, 0.08);
+    box-shadow: inset 0 0 0 1px rgba(239, 68, 68, 0.15);
+}
+
+.md-callout-success {
+    border-color: #22c55e;
+    background: rgba(34, 197, 94, 0.08);
+    box-shadow: inset 0 0 0 1px rgba(34, 197, 94, 0.12);
+}
+
+.md-callout-note,
+.md-callout-info,
+.md-callout-question,
+.md-callout-example,
+.md-callout-quote,
+.md-callout-bug {
+    border-color: rgba(37, 99, 235, 0.9);
+    background: rgba(59, 130, 246, 0.08);
+    box-shadow: inset 0 0 0 1px rgba(59, 130, 246, 0.15);
+}
+
+[data-theme="dark"] .md-callout {
+    box-shadow: inset 0 0 0 1px rgba(148, 163, 184, 0.2);
+    background: rgba(148, 163, 184, 0.08);
 }

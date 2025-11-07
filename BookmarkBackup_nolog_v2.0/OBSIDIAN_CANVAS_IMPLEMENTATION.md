@@ -166,6 +166,11 @@ document.addEventListener('mousemove', (e) => {
 - 平移位置保存到localStorage
 - 页面刷新后自动恢复状态
 
+### 5. **Obsidian Markdown 渲染（2025-11-07）**
+- 内置官方 `marked` 解析器并叠加 Obsidian 特有语法（Callout、任务列表、`[[Wiki 链接]]`、`==高亮==` 等）。
+- 所有「空白栏目」与临时栏目说明默认以 Obsidian Markdown 渲染，新增可折叠 Callout 行为与安全的链接/图片处理。
+- 通过统一的 renderer 拦截自定义 HTML，避免脚本注入，同时保持 Obsidian 风格的视觉配色。
+
 ## 🔧 使用方法
 
 ### 初始化

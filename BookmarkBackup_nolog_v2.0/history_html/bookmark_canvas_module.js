@@ -2944,6 +2944,11 @@ function renderMdNode(node) {
     editor.spellcheck = false;
     editor.style.display = node.isEditing ? 'block' : 'none';
     editor.value = raw;
+    const mdPlaceholder = (lang === 'en')
+        ? 'Supports Obsidian Markdown (callouts, tasks, [[links]])'
+        : '支持 Obsidian Markdown 语法（callout、任务列表、[[链接]]）';
+    editor.placeholder = mdPlaceholder;
+    editor.setAttribute('aria-label', mdPlaceholder);
 
     const enterEdit = () => {
         if (node.isEditing) return;

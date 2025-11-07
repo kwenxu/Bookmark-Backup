@@ -2860,23 +2860,8 @@ function makeMdNodeDraggable(element, node) {
             return;
         }
         
-        // md-canvas-text 需要独立处理滚动 - 关键修复
-        const textContainer = target.closest('.md-canvas-text');
-        if (textContainer) {
-            // 检查是否有滚动条（内容超过容器）
-            const hasVerticalScroll = textContainer.scrollHeight > textContainer.clientHeight;
-            const hasHorizontalScroll = textContainer.scrollWidth > textContainer.clientWidth;
-            
-            // 如果有滚动条，不拦截任何事件，允许浏览器原生滚动
-            if (hasVerticalScroll || hasHorizontalScroll) {
-                // 完全不干预，让滚动条和滚动功能正常工作
-                return;
-            }
-            
-            // 即使没有滚动条，如果点击在滚动区域内，也要小心
-            // 防止在 md-canvas-text 内误触发拖拽
-            // 只有当用户明显在拖动时才开始拖拽
-        }
+        // 在查看态区域内也允许按下后拖动（滚动用 wheel 事件处理；链接在下方单独保护）
+        // 不再因存在滚动条而提前 return；通过移动阈值来区分点击/拖动
 
         dragPending = true;
         startX = e.clientX;
@@ -3078,19 +3063,14 @@ function renderMdNode(node) {
         e.stopPropagation();
     }, { passive: true });
     
-    // 关键修复：在 view 上禁用拖拽，让滚动条和滚动完全接管
+    // 允许在查看态内按下后触发节点级拖动；仍保护链接点击
     view.addEventListener('mousedown', (e) => {
-        // 如果点击的是链接，阻止拖拽
         if (e.target.closest('a')) {
             e.stopPropagation();
             return;
         }
-        
-        // 关键：无条件地阻止在 md-canvas-text 上的拖拽启动
-        // md-canvas-text 内的所有交互（滚动、文本选择等）都应该被保护
-        e.stopPropagation();
-        return;
-    }, true); // 使用捕获阶段确保最高优先级
+        // 其余情况不拦截，让事件冒泡到节点容器，配合移动阈值启动拖动
+    }, true);
 
     // 选择逻辑：单击选中，空白点击清除
     el.addEventListener('mousedown', (e) => {

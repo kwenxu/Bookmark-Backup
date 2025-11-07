@@ -5749,7 +5749,7 @@ a.tree-label.tree-bookmark-link:hover {
     flex: 1 1 auto; /* 填充剩余空间，明确 flex 属性 */
     overflow: auto !important; /* 重要：确保滚动启用 */
     user-select: text; /* 允许选中文本，方便点击链接 */
-    cursor: default; /* 默认光标，不是抓手 */
+    cursor: grab; /* 悬停在空白栏目上显示拖动光标 */
     padding: 8px; /* 增加内边距，避免内容贴边 */
     box-sizing: border-box;
     /* 关键：让滚动正常工作，不被父元素的拖拽事件干扰 */
@@ -5764,6 +5764,11 @@ a.tree-label.tree-bookmark-link:hover {
     overscroll-behavior: contain;
     will-change: scroll-position;
     contain: layout paint;
+}
+
+/* 编辑模式下仍显示文本光标，避免与拖动光标冲突 */
+.md-canvas-node.editing .md-canvas-text {
+    cursor: text !important;
 }
 
 /* 鼠标悬停时滚动条更明显 */

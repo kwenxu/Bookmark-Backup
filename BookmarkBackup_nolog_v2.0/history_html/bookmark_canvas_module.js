@@ -1793,6 +1793,13 @@ function shouldHandleCustomScroll(event) {
     if (!workspace || !workspace.contains(event.target)) {
         return false;
     }
+
+    // 在 Markdown 空白栏目内（查看/编辑区）时，不拦截滚轮，让其自身垂直滚动
+    // - .md-canvas-text: 查看态的滚动容器
+    // - .md-canvas-editor: 编辑态的文本域
+    if (event.target.closest('.md-canvas-text') || event.target.closest('.md-canvas-editor')) {
+        return false;
+    }
     
     const scrollbarElement = event.target.closest('.canvas-scrollbar');
     if (scrollbarElement) {
@@ -2487,9 +2494,9 @@ function makePermanentSectionResizable(element) {
 }
 
 function getResizeHandleStyle(handleInfo) {
-    const baseStyle = 'position: absolute; z-index: 10; background: transparent;';
-    const cornerSize = '50px'; // 角手柄更大
-    const edgeSize = '10px';   // 边手柄保持原大小
+    const baseStyle = 'position: absolute; z-index: 10003; background: transparent;';
+    const cornerSize = '60px'; // 角手柄更大，更容易触发
+    const edgeThickness = '16px'; // 边手柄加厚，更容易触发
     
     let style = baseStyle + `cursor: ${handleInfo.cursor};`;
     
@@ -2499,29 +2506,29 @@ function getResizeHandleStyle(handleInfo) {
         
         // 使用clip-path创建三角形
         if (handleInfo.name === 'nw') {
-            style += 'top: 0; left: 0;';
+            style += 'top: -8px; left: -8px;'; // 向外扩展
             style += 'clip-path: polygon(0 0, 100% 0, 0 100%);';
         } else if (handleInfo.name === 'ne') {
-            style += 'top: 0; right: 0;';
+            style += 'top: -8px; right: -8px;';
             style += 'clip-path: polygon(100% 0, 100% 100%, 0 0);';
         } else if (handleInfo.name === 'sw') {
-            style += 'bottom: 0; left: 0;';
+            style += 'bottom: -8px; left: -8px;';
             style += 'clip-path: polygon(0 0, 0 100%, 100% 100%);';
         } else if (handleInfo.name === 'se') {
-            style += 'bottom: 0; right: 0;';
+            style += 'bottom: -8px; right: -8px;';
             style += 'clip-path: polygon(100% 0, 100% 100%, 0 100%);';
         }
     }
-    // 边handle
+    // 边handle - 加厚并向外扩展
     else {
         if (handleInfo.name === 'n' || handleInfo.name === 's') {
-            style += 'left: 50px; right: 50px; height: ' + edgeSize + '; background: transparent;';
-            if (handleInfo.name === 'n') style += 'top: -5px;';
-            else style += 'bottom: -5px;';
+            style += `left: ${cornerSize}; right: ${cornerSize}; height: ${edgeThickness};`;
+            if (handleInfo.name === 'n') style += 'top: -8px;';
+            else style += 'bottom: -8px;';
         } else {
-            style += 'top: 50px; bottom: 50px; width: ' + edgeSize + '; background: transparent;';
-            if (handleInfo.name === 'w') style += 'left: -5px;';
-            else style += 'right: -5px;';
+            style += `top: ${cornerSize}; bottom: ${cornerSize}; width: ${edgeThickness};`;
+            if (handleInfo.name === 'w') style += 'left: -8px;';
+            else style += 'right: -8px;';
         }
     }
     
@@ -2840,10 +2847,36 @@ function makeMdNodeDraggable(element, node) {
 
     const onMouseDown = (e) => {
         if (node && node.locked) return; // 锁定不允许拖动
+        if (node && node.isEditing) return; // 编辑模式下不允许拖动
         const target = e.target;
         if (!target) return;
-        // 编辑、resize、连接点时不拖动
-        if (target.closest('.md-canvas-editor') || target.closest('.resize-handle') || target.closest('.canvas-node-anchor') || target.closest('.canvas-anchor-zone')) return;
+        
+        // 编辑、resize、连接点、链接时不拖动
+        if (target.closest('.md-canvas-editor') || 
+            target.closest('.resize-handle') || 
+            target.closest('.canvas-node-anchor') || 
+            target.closest('.canvas-anchor-zone') || 
+            target.closest('a')) {
+            return;
+        }
+        
+        // md-canvas-text 需要独立处理滚动 - 关键修复
+        const textContainer = target.closest('.md-canvas-text');
+        if (textContainer) {
+            // 检查是否有滚动条（内容超过容器）
+            const hasVerticalScroll = textContainer.scrollHeight > textContainer.clientHeight;
+            const hasHorizontalScroll = textContainer.scrollWidth > textContainer.clientWidth;
+            
+            // 如果有滚动条，不拦截任何事件，允许浏览器原生滚动
+            if (hasVerticalScroll || hasHorizontalScroll) {
+                // 完全不干预，让滚动条和滚动功能正常工作
+                return;
+            }
+            
+            // 即使没有滚动条，如果点击在滚动区域内，也要小心
+            // 防止在 md-canvas-text 内误触发拖拽
+            // 只有当用户明显在拖动时才开始拖拽
+        }
 
         dragPending = true;
         startX = e.clientX;
@@ -2856,8 +2889,8 @@ function makeMdNodeDraggable(element, node) {
             if (dx + dy < 3) return; // 小阈值，模拟单击拖动体验
 
             dragPending = false;
-            document.removeEventListener('mousemove', onMove, true);
-            document.removeEventListener('mouseup', onUp, true);
+            document.removeEventListener('mousemove', onMove);
+            document.removeEventListener('mouseup', onUp);
 
             // 真正开始拖动
             CanvasState.dragState.isDragging = true;
@@ -2877,14 +2910,16 @@ function makeMdNodeDraggable(element, node) {
                 // 单击释放，不进入拖动
                 dragPending = false;
             }
-            document.removeEventListener('mousemove', onMove, true);
-            document.removeEventListener('mouseup', onUp, true);
+            document.removeEventListener('mousemove', onMove);
+            document.removeEventListener('mouseup', onUp);
         };
 
-        document.addEventListener('mousemove', onMove, true);
-        document.addEventListener('mouseup', onUp, true);
+        // 不使用捕获阶段，让滚动事件正常工作
+        document.addEventListener('mousemove', onMove);
+        document.addEventListener('mouseup', onUp);
     };
-    element.addEventListener('mousedown', onMouseDown, true);
+    // 不使用捕获阶段，让滚动事件正常工作
+    element.addEventListener('mousedown', onMouseDown, false);
 }
 
 function renderMdNode(node) {
@@ -2957,6 +2992,15 @@ function renderMdNode(node) {
         editor.style.display = 'block';
         view.style.display = 'none';
         el.classList.add('editing');
+        
+        // 编辑模式下禁用拖拽和resize
+        el.style.pointerEvents = 'auto';
+        const resizeHandles = el.querySelectorAll('.resize-handle');
+        resizeHandles.forEach(handle => {
+            handle.style.pointerEvents = 'none';
+            handle.style.opacity = '0';
+        });
+        
         requestAnimationFrame(() => editor.focus());
     };
 
@@ -2972,6 +3016,14 @@ function renderMdNode(node) {
         editor.style.display = 'none';
         view.style.display = 'block';
         el.classList.remove('editing');
+        
+        // 恢复拖拽和resize
+        const resizeHandles = el.querySelectorAll('.resize-handle');
+        resizeHandles.forEach(handle => {
+            handle.style.pointerEvents = 'auto';
+            handle.style.opacity = '';
+        });
+        
         saveTempNodes();
     };
 
@@ -2980,6 +3032,13 @@ function renderMdNode(node) {
         editor.style.display = 'none';
         view.style.display = 'block';
         el.classList.remove('editing');
+        
+        // 恢复拖拽和resize
+        const resizeHandles = el.querySelectorAll('.resize-handle');
+        resizeHandles.forEach(handle => {
+            handle.style.pointerEvents = 'auto';
+            handle.style.opacity = '';
+        });
     };
 
     // 交互：双击进入编辑；编辑框 blur/快捷键提交
@@ -3002,11 +3061,41 @@ function renderMdNode(node) {
     el.appendChild(toolbar);
     el.appendChild(view);
     el.appendChild(editor);
+    
+    // 链接点击处理
+    view.addEventListener('click', (e) => {
+        const link = e.target.closest('a');
+        if (link && link.href) {
+            e.preventDefault();
+            e.stopPropagation();
+            window.open(link.href, '_blank', 'noopener,noreferrer');
+        }
+    });
+
+    // 降低滚动链和事件冒泡带来的卡顿：
+    // 在 Markdown 视图内滚动时，阻止事件冒泡到画布层（但不阻止默认滚动）
+    view.addEventListener('wheel', (e) => {
+        e.stopPropagation();
+    }, { passive: true });
+    
+    // 关键修复：在 view 上禁用拖拽，让滚动条和滚动完全接管
+    view.addEventListener('mousedown', (e) => {
+        // 如果点击的是链接，阻止拖拽
+        if (e.target.closest('a')) {
+            e.stopPropagation();
+            return;
+        }
+        
+        // 关键：无条件地阻止在 md-canvas-text 上的拖拽启动
+        // md-canvas-text 内的所有交互（滚动、文本选择等）都应该被保护
+        e.stopPropagation();
+        return;
+    }, true); // 使用捕获阶段确保最高优先级
 
     // 选择逻辑：单击选中，空白点击清除
     el.addEventListener('mousedown', (e) => {
-        // 忽略在编辑、resize、小工具栏按钮上的按下
-        if (e.target.closest('.md-canvas-editor') || e.target.closest('.resize-handle') || e.target.closest('.md-node-toolbar-btn')) return;
+        // 忽略在编辑、resize、小工具栏按钮、链接上的按下
+        if (e.target.closest('.md-canvas-editor') || e.target.closest('.resize-handle') || e.target.closest('.md-node-toolbar-btn') || e.target.closest('a')) return;
         selectMdNode(node.id);
     }, true);
 

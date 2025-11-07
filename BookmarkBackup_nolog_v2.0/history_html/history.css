@@ -5159,21 +5159,24 @@ a.tree-label.tree-bookmark-link:hover {
 /* 滚动条样式 - 增强显示 */
 .canvas-workspace::-webkit-scrollbar,
 .permanent-section-body::-webkit-scrollbar,
-.temp-node-body::-webkit-scrollbar {
+.temp-node-body::-webkit-scrollbar,
+.md-canvas-text::-webkit-scrollbar {
     width: 12px;
     height: 12px;
 }
 
 .canvas-workspace::-webkit-scrollbar-track,
 .permanent-section-body::-webkit-scrollbar-track,
-.temp-node-body::-webkit-scrollbar-track {
+.temp-node-body::-webkit-scrollbar-track,
+.md-canvas-text::-webkit-scrollbar-track {
     background: var(--bg-tertiary);
     border-radius: 6px;
 }
 
 .canvas-workspace::-webkit-scrollbar-thumb,
 .permanent-section-body::-webkit-scrollbar-thumb,
-.temp-node-body::-webkit-scrollbar-thumb {
+.temp-node-body::-webkit-scrollbar-thumb,
+.md-canvas-text::-webkit-scrollbar-thumb {
     background: var(--border-hover);
     border-radius: 6px;
     border: 2px solid var(--bg-tertiary);
@@ -5181,7 +5184,8 @@ a.tree-label.tree-bookmark-link:hover {
 
 .canvas-workspace::-webkit-scrollbar-thumb:hover,
 .permanent-section-body::-webkit-scrollbar-thumb:hover,
-.temp-node-body::-webkit-scrollbar-thumb:hover {
+.temp-node-body::-webkit-scrollbar-thumb:hover,
+.md-canvas-text::-webkit-scrollbar-thumb:hover {
     background: var(--text-tertiary);
 }
 
@@ -5199,7 +5203,13 @@ a.tree-label.tree-bookmark-link:hover {
     border: 2px solid rgba(27, 31, 36, 0.35); /* 默认边框，更重 */
     border-radius: 8px;
     box-shadow: none;
-    padding: 8px;
+    padding: 0; /* 移除padding，让md-canvas-text自己处理 */
+    display: flex; /* 使用flex布局，让子元素可以正确计算高度 */
+    flex-direction: column; /* 垂直布局 */
+    overflow: hidden; /* 隐藏溢出，让md-canvas-text处理滚动 */
+    /* 确保高度约束生效 */
+    flex-shrink: 0;
+    flex-basis: auto;
 }
 
 [data-theme="dark"] .md-canvas-node {
@@ -5208,9 +5218,90 @@ a.tree-label.tree-bookmark-link:hover {
     box-shadow: none;
 }
 
-.md-canvas-node,
-.md-canvas-text {
+.md-canvas-node {
     cursor: grab; /* 悬停显示抓手 */
+}
+
+/* 编辑模式下禁用拖拽光标 */
+.md-canvas-node.editing {
+    cursor: default;
+}
+
+.md-canvas-node.editing .md-canvas-text {
+    cursor: default;
+}
+
+/* Resize handles 样式优化 */
+.resize-handle {
+    position: absolute;
+    z-index: 10003; /* 高于其他元素 */
+    background: transparent;
+    transition: background 0.15s ease, opacity 0.15s ease;
+}
+
+/* 悬停时显示视觉反馈 */
+.resize-handle:hover {
+    background: rgba(9, 105, 218, 0.15) !important;
+}
+
+[data-theme="dark"] .resize-handle:hover {
+    background: rgba(88, 166, 255, 0.2) !important;
+}
+
+/* 编辑模式下隐藏resize handles */
+.md-canvas-node.editing .resize-handle {
+    pointer-events: none !important;
+    opacity: 0 !important;
+}
+
+/* 角handle增强视觉效果 */
+.resize-handle-nw,
+.resize-handle-ne,
+.resize-handle-sw,
+.resize-handle-se {
+    /* 角handle在悬停时显示小圆点 */
+}
+
+.resize-handle-nw:hover::after,
+.resize-handle-ne:hover::after,
+.resize-handle-sw:hover::after,
+.resize-handle-se:hover::after {
+    content: '';
+    position: absolute;
+    width: 5px;
+    height: 5px;
+    background: #0969da;
+    border-radius: 50%;
+    border: 1.5px solid white;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.2);
+}
+
+[data-theme="dark"] .resize-handle-nw:hover::after,
+[data-theme="dark"] .resize-handle-ne:hover::after,
+[data-theme="dark"] .resize-handle-sw:hover::after,
+[data-theme="dark"] .resize-handle-se:hover::after {
+    background: #58a6ff;
+    border-color: #242526;
+}
+
+.resize-handle-nw:hover::after {
+    top: 6px;
+    left: 6px;
+}
+
+.resize-handle-ne:hover::after {
+    top: 6px;
+    right: 6px;
+}
+
+.resize-handle-sw:hover::after {
+    bottom: 6px;
+    left: 6px;
+}
+
+.resize-handle-se:hover::after {
+    bottom: 6px;
+    right: 6px;
 }
 
 /* 选中状态：高亮边缘并添加轻微投影（参考 Obsidian Canvas is-active 效果） */
@@ -5231,13 +5322,18 @@ a.tree-label.tree-bookmark-link:hover {
 
 .md-canvas-editor {
     width: 100%;
-    height: 100%;
+    flex: 1; /* 填充剩余空间 */
     outline: none;
     border: none;
     background: transparent;
     font-size: 12px;
     line-height: 1.4;
     white-space: pre-wrap;
+    padding: 8px; /* 增加内边距，与view保持一致 */
+    box-sizing: border-box;
+    resize: none; /* 禁用textarea自带的resize */
+    overflow: auto; /* 允许滚动 */
+    min-height: 0; /* 允许flex子元素缩小 */
 }
 
 [data-theme="dark"] .md-canvas-editor {
@@ -5650,9 +5746,92 @@ a.tree-label.tree-bookmark-link:hover {
 
 .md-canvas-text {
     width: 100%;
-    height: 100%;
-    overflow: auto;
-    user-select: none; /* 非编辑模式下不可选中，单击拖动 */
+    flex: 1 1 auto; /* 填充剩余空间，明确 flex 属性 */
+    overflow: auto !important; /* 重要：确保滚动启用 */
+    user-select: text; /* 允许选中文本，方便点击链接 */
+    cursor: default; /* 默认光标，不是抓手 */
+    padding: 8px; /* 增加内边距，避免内容贴边 */
+    box-sizing: border-box;
+    /* 关键：让滚动正常工作，不被父元素的拖拽事件干扰 */
+    pointer-events: auto;
+    position: relative;
+    z-index: 1;
+    min-height: 0; /* 允许flex子元素缩小，关键用于使滚动条工作 */
+    max-height: 100%; /* 确保不超过容器高度 */
+    /* 确保滚动条总是可见轨道 */
+    scrollbar-width: thin;
+    /* 平滑滚动与隔离，减少滚动链导致的卡顿 */
+    overscroll-behavior: contain;
+    will-change: scroll-position;
+    contain: layout paint;
+}
+
+/* 鼠标悬停时滚动条更明显 */
+.md-canvas-node:hover .md-canvas-text::-webkit-scrollbar-thumb {
+    background: var(--border-color);
+}
+
+/* 编辑模式下滚动条始终可见 */
+.md-canvas-node.editing .md-canvas-text::-webkit-scrollbar-thumb {
+    background: var(--border-hover);
+}
+
+/* 深色主题：优化右侧垂直轨道颜色（更暗、更低干扰） */
+[data-theme="dark"] .md-canvas-text::-webkit-scrollbar-track {
+    /* 更深的轨道色，避免在深色主题下显得偏亮，且与自定义滚动条风格一致 */
+    background: #0f1012 !important;
+}
+[data-theme="dark"] .md-canvas-text::-webkit-scrollbar-thumb {
+    background: #3a3d40 !important; /* 深色thumb，避免看起来偏亮 */
+    border-color: #0f1012 !important; /* 与轨道统一，避免边缘亮线 */
+}
+
+/* 明确声明深色配色方案，促使浏览器原生滚动条与控件采用深色渲染，减少初次渲染时的浅色闪烁 */
+[data-theme="dark"] .md-canvas-text,
+[data-theme="dark"] .md-canvas-editor {
+    color-scheme: dark;
+}
+
+/* 统一 Canvas 视图内所有滚动条为更深配色（包括工作区、临时/永久栏目等）*/
+[data-theme="dark"] #canvasView ::-webkit-scrollbar-track {
+    background: #121315 !important;
+}
+[data-theme="dark"] #canvasView ::-webkit-scrollbar-thumb {
+    background: #3b3f43 !important;
+    border-color: #121315 !important;
+}
+
+/* 关键：内容区（右侧主滚动容器）的滚动条设为深色（未进入编辑时看到的“外侧”轨道） */
+[data-theme="dark"] .content-area::-webkit-scrollbar-track {
+    background: #121315 !important;
+}
+[data-theme="dark"] .content-area::-webkit-scrollbar-thumb {
+    background: #3b3f43 !important;
+    border: 2px solid #121315 !important;
+}
+
+/* 编辑模式（textarea）的滚动条也改为深色 */
+[data-theme="dark"] .md-canvas-editor::-webkit-scrollbar-track {
+    background: #121315 !important;
+}
+[data-theme="dark"] .md-canvas-editor::-webkit-scrollbar-thumb {
+    background: #3b3f43 !important;
+    border-color: #121315 !important;
+}
+
+/* 全局兜底：在深色主题下，所有原生滚动条都使用深色轨道与滑块（覆盖未被单独指定的容器） */
+[data-theme="dark"] html::-webkit-scrollbar-track,
+[data-theme="dark"] body::-webkit-scrollbar-track,
+[data-theme="dark"] .view::-webkit-scrollbar-track,
+[data-theme="dark"] .main-container::-webkit-scrollbar-track {
+    background: #0f1012 !important;
+}
+[data-theme="dark"] html::-webkit-scrollbar-thumb,
+[data-theme="dark"] body::-webkit-scrollbar-thumb,
+[data-theme="dark"] .view::-webkit-scrollbar-thumb,
+[data-theme="dark"] .main-container::-webkit-scrollbar-thumb {
+    background: #3a3e42 !important;
+    border: 2px solid #0f1012 !important;
 }
 
 .md-canvas-text h1,
@@ -5723,10 +5902,16 @@ a.tree-label.tree-bookmark-link:hover {
     color: #2563eb;
     text-decoration: none;
     border-bottom: 1px solid rgba(37, 99, 235, 0.3);
+    cursor: pointer;
+    padding: 2px 4px; /* 增加点击区域 */
+    margin: -2px -4px; /* 抵消padding，保持视觉位置 */
+    display: inline-block;
 }
 
 .md-canvas-text a:hover {
     border-bottom-color: rgba(37, 99, 235, 0.6);
+    background: rgba(37, 99, 235, 0.08);
+    border-radius: 3px;
 }
 
 [data-theme="dark"] .md-canvas-text a {
@@ -5736,6 +5921,7 @@ a.tree-label.tree-bookmark-link:hover {
 
 [data-theme="dark"] .md-canvas-text a:hover {
     border-bottom-color: rgba(147, 197, 253, 0.7);
+    background: rgba(147, 197, 253, 0.12);
 }
 
 /* 任务列表样式 */

@@ -316,7 +316,13 @@
 }
 
 [data-theme="dark"] .canvas-scrollbar .scrollbar-track {
-    background: rgba(255, 255, 255, 0.08);
+    /* 改为更深的轨道颜色，避免在深色背景下显得偏亮 */
+    background: #121315 !important;
+}
+
+/* 明确指定纵向滚动条轨道为深色，以覆盖可能的继承样式 */
+[data-theme="dark"] .canvas-scrollbar.vertical .scrollbar-track {
+    background: #0f1012 !important;
 }
 
 [data-theme="dark"] .canvas-scrollbar .scrollbar-thumb {

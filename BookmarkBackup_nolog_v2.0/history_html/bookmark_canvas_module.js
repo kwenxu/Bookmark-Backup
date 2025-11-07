@@ -110,6 +110,36 @@ const CanvasState = {
     selectedEdgeId: null
 };
 
+// 简易本地存储封装（仅用于滚动位置）
+function __readJSON(key, fallback = null) {
+    try {
+        const v = localStorage.getItem(key);
+        if (!v) return fallback;
+        return JSON.parse(v);
+    } catch (_) { return fallback; }
+}
+function __writeJSON(key, obj) {
+    try { localStorage.setItem(key, JSON.stringify(obj)); } catch (_) {}
+}
+
+// 多次尝试恢复滚动，避免首次布局或字体加载导致的覆盖
+function __restoreScroll(el, key) {
+    if (!el || !key) return;
+    const data = __readJSON(key, null);
+    const apply = () => {
+        if (!data) return;
+        if (typeof data.top === 'number') el.scrollTop = data.top || 0;
+        if (typeof data.left === 'number') el.scrollLeft = data.left || 0;
+    };
+    apply();
+    requestAnimationFrame(() => {
+        apply();
+        setTimeout(apply, 10);
+        setTimeout(apply, 50);
+        setTimeout(apply, 100);
+    });
+}
+
 let panSaveTimeout = null;
 const CANVAS_SCROLL_MARGIN = 120;
 const CANVAS_SCROLL_EXTRA_SPACE = 2000; // 允许滚动到内容外2000px的空白区域
@@ -2311,6 +2341,7 @@ function makePermanentSectionDraggable() {
     // 添加永久栏目空白区域右键菜单（整个栏目body区域）
     const permanentBody = permanentSection.querySelector('.permanent-section-body');
     if (permanentBody) {
+        // 右键空白菜单
         permanentBody.addEventListener('contextmenu', (e) => {
             // 检查是否点击在树节点上
             const treeItem = e.target.closest('.tree-item[data-node-id]');
@@ -2320,6 +2351,30 @@ function makePermanentSectionDraggable() {
                 showBlankAreaContextMenu(e, null, 'permanent');
             }
         });
+
+        // 持久化滚动位置（永久栏目）
+        const key = 'permanent-section-scroll';
+        let rafId = 0;
+        permanentBody.addEventListener('scroll', () => {
+            if (rafId) cancelAnimationFrame(rafId);
+            rafId = requestAnimationFrame(() => __writeJSON(key, { top: permanentBody.scrollTop || 0, left: permanentBody.scrollLeft || 0 }));
+        }, { passive: true });
+
+        // 恢复滚动位置（多次尝试，确保树渲染后也能成功）
+        const persisted = __readJSON(key, null);
+        if (persisted && typeof persisted.top === 'number') {
+            const restore = () => {
+                permanentBody.scrollTop = persisted.top || 0;
+                permanentBody.scrollLeft = persisted.left || 0;
+            };
+            restore();
+            requestAnimationFrame(() => {
+                restore();
+                setTimeout(restore, 10);
+                setTimeout(restore, 50);
+                setTimeout(restore, 100);
+            });
+        }
     }
 }
 
@@ -2970,6 +3025,33 @@ function renderMdNode(node) {
     editor.placeholder = mdPlaceholder;
     editor.setAttribute('aria-label', mdPlaceholder);
 
+    // 持久化：空白栏目滚动（查看/编辑分别记忆）
+    const viewScrollKey = `md-node-scroll-v:${node.id}`;
+    const editorScrollKey = `md-node-scroll-e:${node.id}`;
+    // 恢复（先设置，后续进入/退出编辑时再各自恢复一次）
+    const vPersist = __readJSON(viewScrollKey, null);
+    if (vPersist && typeof vPersist.top === 'number') {
+        view.scrollTop = vPersist.top || 0;
+        view.scrollLeft = vPersist.left || 0;
+    }
+    const ePersist = __readJSON(editorScrollKey, null);
+    if (ePersist && typeof ePersist.top === 'number') {
+        editor.scrollTop = ePersist.top || 0;
+        editor.scrollLeft = ePersist.left || 0;
+    }
+    // 保存
+    {
+        let rafV = 0, rafE = 0;
+        view.addEventListener('scroll', () => {
+            if (rafV) cancelAnimationFrame(rafV);
+            rafV = requestAnimationFrame(() => __writeJSON(viewScrollKey, { top: view.scrollTop || 0, left: view.scrollLeft || 0 }));
+        }, { passive: true });
+        editor.addEventListener('scroll', () => {
+            if (rafE) cancelAnimationFrame(rafE);
+            rafE = requestAnimationFrame(() => __writeJSON(editorScrollKey, { top: editor.scrollTop || 0, left: editor.scrollLeft || 0 }));
+        }, { passive: true });
+    }
+
     const enterEdit = () => {
         if (node.isEditing) return;
         node.isEditing = true;
@@ -2977,6 +3059,8 @@ function renderMdNode(node) {
         editor.style.display = 'block';
         view.style.display = 'none';
         el.classList.add('editing');
+        // 恢复编辑器滚动（多次尝试）
+        __restoreScroll(editor, editorScrollKey);
         
         // 编辑模式下禁用拖拽和resize
         el.style.pointerEvents = 'auto';
@@ -3001,6 +3085,8 @@ function renderMdNode(node) {
         editor.style.display = 'none';
         view.style.display = 'block';
         el.classList.remove('editing');
+        // 恢复查看态滚动（多次尝试）
+        __restoreScroll(view, viewScrollKey);
         
         // 恢复拖拽和resize
         const resizeHandles = el.querySelectorAll('.resize-handle');
@@ -3017,6 +3103,7 @@ function renderMdNode(node) {
         editor.style.display = 'none';
         view.style.display = 'block';
         el.classList.remove('editing');
+        __restoreScroll(view, viewScrollKey);
         
         // 恢复拖拽和resize
         const resizeHandles = el.querySelectorAll('.resize-handle');
@@ -3046,6 +3133,9 @@ function renderMdNode(node) {
     el.appendChild(toolbar);
     el.appendChild(view);
     el.appendChild(editor);
+
+    // 初次渲染完成后（元素已插入DOM）再尝试恢复查看态滚动
+    __restoreScroll(view, viewScrollKey);
     
     // 链接点击处理
     view.addEventListener('click', (e) => {
@@ -3360,6 +3450,12 @@ function renderTempNode(section) {
             savedScrollLeft = existingBody.scrollLeft || 0;
             console.log('[Canvas] 保存滚动位置:', { sectionId: section.id, scrollTop: savedScrollTop, scrollLeft: savedScrollLeft });
         }
+    }
+    // 优先使用持久化的滚动位置
+    const persisted = __readJSON(`temp-section-scroll:${section.id}`, null);
+    if (persisted && typeof persisted.top === 'number') {
+        savedScrollTop = persisted.top;
+        savedScrollLeft = typeof persisted.left === 'number' ? persisted.left : 0;
     }
     
     if (!nodeElement) {
@@ -3726,6 +3822,16 @@ function renderTempNode(section) {
     nodeElement.appendChild(header);
     nodeElement.appendChild(descriptionContainer);
     nodeElement.appendChild(body);
+
+    // 持久化滚动：保存
+    {
+        let rafId = 0;
+        const key = `temp-section-scroll:${section.id}`;
+        body.addEventListener('scroll', () => {
+            if (rafId) cancelAnimationFrame(rafId);
+            rafId = requestAnimationFrame(() => __writeJSON(key, { top: body.scrollTop || 0, left: body.scrollLeft || 0 }));
+        }, { passive: true });
+    }
     
     applyTempSectionColor(section, nodeElement, header, colorBtn, colorInput);
     makeNodeDraggable(nodeElement, section);
@@ -3748,7 +3854,7 @@ function renderTempNode(section) {
     // 恢复滚动位置（在所有事件绑定之后，使用多次尝试确保成功）
     // 即使滚动位置是0也需要恢复，因为可能从非0位置变为0
     // 注意：滚动容器是 body (temp-node-body)，而不是 treeContainer
-    if (!isNew) {
+    if (!isNew || savedScrollTop) {
         const restoreScroll = () => {
             body.scrollTop = savedScrollTop;
             body.scrollLeft = savedScrollLeft;

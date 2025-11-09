@@ -3769,6 +3769,8 @@ function attachTreeEvents(treeContainer) {
             if (typeof openBookmarkNewWindow === 'function') openBookmarkNewWindow(url, true); else window.open(url, '_blank');
         } else if (mode === 'specific-window') {
             if (typeof openInSpecificWindow === 'function') openInSpecificWindow(url); else window.open(url, '_blank');
+        } else if (mode === 'specific-group') {
+            if (typeof openInSpecificTabGroup === 'function') openInSpecificTabGroup(url); else window.open(url, '_blank');
         } else {
             if (typeof openBookmarkNewTab === 'function') openBookmarkNewTab(url); else window.open(url, '_blank');
         }

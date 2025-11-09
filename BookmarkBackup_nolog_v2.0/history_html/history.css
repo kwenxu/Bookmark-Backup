@@ -2834,6 +2834,12 @@ a.tree-label.tree-bookmark-link:hover {
     margin-bottom: 3px;
 }
 
+/* 纵向菜单：短分隔线（宽度为标准分隔线的一半） */
+.bookmark-context-menu:not(.horizontal-layout) .context-menu-separator.short {
+    width: 50%;
+    margin-left: 25%;
+}
+
 .bookmark-context-menu.horizontal-layout .context-menu-item {
     flex: 0 0 auto;
     padding: 8px 12px;

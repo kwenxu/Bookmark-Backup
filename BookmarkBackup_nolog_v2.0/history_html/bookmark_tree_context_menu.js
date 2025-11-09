@@ -6,9 +6,11 @@ let contextMenu = null;
 let currentContextNode = null;
 let bookmarkClipboard = null; // 剪贴板 { action: 'cut'|'copy', nodeId, nodeData }
 
-// 全局：默认打开方式与特定窗口ID
-let defaultOpenMode = 'new-tab'; // 'new-tab' | 'new-window' | 'incognito' | 'specific-window'
+// 全局：默认打开方式与特定窗口/分组ID
+let defaultOpenMode = 'new-tab'; // 'new-tab' | 'new-window' | 'incognito' | 'specific-window' | 'specific-group'
 let specificWindowId = null; // chrome.windows Window ID
+let specificTabGroupId = null; // chrome.tabGroups Group ID（在“特定标签组”模式下复用）
+let specificGroupWindowId = null; // 保存分组所在窗口，确保新开的标签在同一窗口
 // 暴露给其他脚本（如 history.js）
 window.getDefaultOpenMode = () => defaultOpenMode;
 
@@ -16,18 +18,33 @@ window.getDefaultOpenMode = () => defaultOpenMode;
 (async function initDefaultOpenMode() {
     try {
         if (typeof chrome !== 'undefined' && chrome.storage && chrome.storage.local) {
-            const data = await chrome.storage.local.get(['bookmarkDefaultOpenMode', 'bookmarkSpecificWindowId']);
+            const data = await chrome.storage.local.get([
+                'bookmarkDefaultOpenMode',
+                'bookmarkSpecificWindowId',
+                'bookmarkSpecificGroupId',
+                'bookmarkSpecificGroupWindowId'
+            ]);
             if (data && typeof data.bookmarkDefaultOpenMode === 'string') {
                 defaultOpenMode = data.bookmarkDefaultOpenMode;
             }
             if (data && Number.isInteger(data.bookmarkSpecificWindowId)) {
                 specificWindowId = data.bookmarkSpecificWindowId;
             }
+            if (data && Number.isInteger(data.bookmarkSpecificGroupId)) {
+                specificTabGroupId = data.bookmarkSpecificGroupId;
+            }
+            if (data && Number.isInteger(data.bookmarkSpecificGroupWindowId)) {
+                specificGroupWindowId = data.bookmarkSpecificGroupWindowId;
+            }
         } else {
             const mode = localStorage.getItem('bookmarkDefaultOpenMode');
             const winId = parseInt(localStorage.getItem('bookmarkSpecificWindowId') || '', 10);
             if (mode) defaultOpenMode = mode;
             if (Number.isInteger(winId)) specificWindowId = winId;
+            const gid = parseInt(localStorage.getItem('bookmarkSpecificGroupId') || '', 10);
+            const gwid = parseInt(localStorage.getItem('bookmarkSpecificGroupWindowId') || '', 10);
+            if (Number.isInteger(gid)) specificTabGroupId = gid;
+            if (Number.isInteger(gwid)) specificGroupWindowId = gwid;
         }
         try { window.defaultOpenMode = defaultOpenMode; } catch(_) {}
     } catch (_) {}
@@ -52,6 +69,35 @@ async function setSpecificWindowId(winId) {
             await chrome.storage.local.set({ bookmarkSpecificWindowId: winId });
         } else {
             localStorage.setItem('bookmarkSpecificWindowId', String(winId));
+        }
+    } catch (_) {}
+}
+
+async function setSpecificGroupInfo(groupId, windowId) {
+    specificTabGroupId = groupId;
+    specificGroupWindowId = windowId;
+    try {
+        if (typeof chrome !== 'undefined' && chrome.storage && chrome.storage.local) {
+            await chrome.storage.local.set({
+                bookmarkSpecificGroupId: groupId,
+                bookmarkSpecificGroupWindowId: windowId
+            });
+        } else {
+            localStorage.setItem('bookmarkSpecificGroupId', String(groupId));
+            localStorage.setItem('bookmarkSpecificGroupWindowId', String(windowId));
+        }
+    } catch (_) {}
+}
+
+async function resetSpecificGroupInfo() {
+    specificTabGroupId = null;
+    specificGroupWindowId = null;
+    try {
+        if (typeof chrome !== 'undefined' && chrome.storage && chrome.storage.local) {
+            await chrome.storage.local.remove(['bookmarkSpecificGroupId', 'bookmarkSpecificGroupWindowId']);
+        } else {
+            localStorage.removeItem('bookmarkSpecificGroupId');
+            localStorage.removeItem('bookmarkSpecificGroupWindowId');
         }
     } catch (_) {}
 }
@@ -490,7 +536,7 @@ function showContextMenu(e, node) {
 
         // 分组菜单项
         menuItems.forEach(item => {
-            if (item.separator) return;
+            if (item.separator || item.separatorShort) return; // 横向布局忽略分隔符
 
             const groupName = item.group || 'default';
             if (!groups[groupName]) {
@@ -537,6 +583,9 @@ function showContextMenu(e, node) {
         menuHTML = menuItems.map(item => {
             if (item.separator) {
                 return '<div class="context-menu-separator"></div>';
+            }
+            if (item.separatorShort) {
+                return '<div class="context-menu-separator short"></div>';
             }
 
             const icon = item.icon ? `<i class="fas fa-${item.icon}"></i>` : '';
@@ -666,9 +715,14 @@ function buildMenuItems(context) {
             // 打开组（移除可点击的 Open，改为标题；英文改为 in ...）
             { action: 'open-label', label: lang === 'zh_CN' ? '打开：' : 'Open:', icon: '', group: 'open', disabled: true },
             { action: 'open-new-tab', label: lang === 'zh_CN' ? '新标签页' : 'in New Tab', icon: 'window-maximize', group: 'open', selected: defaultOpenMode === 'new-tab' },
-            { action: 'open-new-window', label: lang === 'zh_CN' ? '新窗口' : 'in New Window', icon: 'window-restore', group: 'open', selected: defaultOpenMode === 'new-window' },
-            { action: 'open-specific-window', label: lang === 'zh_CN' ? '特定窗口打开' : 'in Specific Window', icon: 'window-restore', group: 'open', selected: defaultOpenMode === 'specific-window' },
-            { action: 'open-incognito', label: lang === 'zh_CN' ? '无痕窗口' : 'in Incognito', icon: 'user-secret', group: 'open', selected: defaultOpenMode === 'incognito' },
+            // 新增：特定标签组（紧跟“新标签页”之后）
+            { action: 'open-specific-group', label: lang === 'zh_CN' ? '特定标签组' : 'in Specific Group', icon: 'object-group', group: 'open', selected: defaultOpenMode === 'specific-group' },
+            // 纵向菜单在“特定标签组”后插入短分隔线（横向布局会被忽略）
+            { separatorShort: true },
+            // 将以下三项排到第三行（横向），分到 open2 组
+            { action: 'open-new-window', label: lang === 'zh_CN' ? '新窗口' : 'in New Window', icon: 'window-restore', group: 'open2', selected: defaultOpenMode === 'new-window' },
+            { action: 'open-specific-window', label: lang === 'zh_CN' ? '特定窗口打开' : 'in Specific Window', icon: 'window-restore', group: 'open2', selected: defaultOpenMode === 'specific-window' },
+            { action: 'open-incognito', label: lang === 'zh_CN' ? '无痕窗口' : 'in Incognito', icon: 'user-secret', group: 'open2', selected: defaultOpenMode === 'incognito' },
             { separator: true },
 
             // 删除组
@@ -1318,6 +1372,14 @@ async function handleMenuAction(action, context) {
                 await setDefaultOpenMode('incognito');
                 break;
 
+            case 'open-specific-group':
+                {
+                    const switching = defaultOpenMode !== 'specific-group';
+                    await openInSpecificTabGroup(nodeUrl, { forceNew: switching });
+                    await setDefaultOpenMode('specific-group');
+                }
+                break;
+
             case 'open-specific-window':
                 {
                     const switching = defaultOpenMode !== 'specific-window';
@@ -1464,6 +1526,54 @@ async function openBookmarkNewWindow(url, incognito = false) {
         chrome.windows.create({ url: url, incognito: incognito });
     } else {
         window.open(url, '_blank');
+    }
+}
+
+// 在特定标签页组中打开：首次创建标签组，后续复用
+async function openInSpecificTabGroup(url, options = {}) {
+    const { forceNew = false } = options;
+    if (!url) return;
+    if (typeof chrome === 'undefined' || !chrome.tabs) {
+        // 回退
+        window.open(url, '_blank');
+        return;
+    }
+    try {
+        if (forceNew) {
+            await resetSpecificGroupInfo();
+        }
+
+        // 如果已有分组，先校验分组与窗口是否有效
+        if (specificTabGroupId && Number.isInteger(specificTabGroupId)) {
+            try {
+                // 校验组是否存在
+                if (chrome.tabGroups && chrome.tabGroups.get) {
+                    await chrome.tabGroups.get(specificTabGroupId);
+                }
+                // 校验窗口是否存在
+                if (specificGroupWindowId && chrome.windows && chrome.windows.get) {
+                    await chrome.windows.get(specificGroupWindowId, { populate: false });
+                }
+                const tab = await chrome.tabs.create({ url, active: false, windowId: specificGroupWindowId || undefined });
+                await chrome.tabs.group({ groupId: specificTabGroupId, tabIds: tab.id });
+                return;
+            } catch (err) {
+                // 可能分组或窗口失效，重置后走创建逻辑
+                await resetSpecificGroupInfo();
+            }
+        }
+
+        // 创建新标签并建立新的分组
+        const tab = await chrome.tabs.create({ url, active: false });
+        const groupId = await chrome.tabs.group({ tabIds: tab.id });
+        await setSpecificGroupInfo(groupId, tab.windowId || null);
+        if (chrome.tabGroups && chrome.tabGroups.update) {
+            try { await chrome.tabGroups.update(groupId, { title: 'Specific Group' }); } catch (_) {}
+        }
+    } catch (error) {
+        console.warn('[特定标签组] 打开失败:', error);
+        // 兜底回退
+        try { window.open(url, '_blank'); } catch (_) {}
     }
 }
 

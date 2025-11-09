@@ -27,6 +27,8 @@
       "commands",
       "scripting",
       "windows",
+      "tabs",
+      "tabGroups",
       "downloads",
       "downloads.shelf",
       "activeTab"

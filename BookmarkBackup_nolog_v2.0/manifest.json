@@ -44,7 +44,8 @@
          "backup_reminder/notification_popup.html",
          "history_html/history.html",
          "history_html/history.css",
-         "history_html/history.js"
+         "history_html/history.js",
+         "history_html/window_marker.html"
       ]
    } ]
 }

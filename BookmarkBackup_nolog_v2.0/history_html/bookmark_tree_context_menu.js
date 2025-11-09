@@ -84,6 +84,17 @@ async function setSpecificWindowId(winId) {
     } catch (_) {}
 }
 
+async function resetSpecificWindowId() {
+    specificWindowId = null;
+    try {
+        if (typeof chrome !== 'undefined' && chrome.storage && chrome.storage.local) {
+            await chrome.storage.local.remove(['bookmarkSpecificWindowId']);
+        } else {
+            localStorage.removeItem('bookmarkSpecificWindowId');
+        }
+    } catch(_) {}
+}
+
 async function setSpecificGroupInfo(groupId, windowId) {
     specificTabGroupId = groupId;
     specificGroupWindowId = windowId;
@@ -120,6 +131,7 @@ const PLUGIN_GROUP_REGISTRY_KEY = 'pluginTabGroupsRegistry';
 const PLUGIN_SCOPED_GROUP_REGISTRY_KEY = 'pluginScopedTabGroupsRegistry';
 let scopedCurrentGroups = {}; // { [scopeKey: string]: { groupId: number, windowId: number|null } }
 let scopedWindows = {}; // { [scopeKey: string]: number /* windowId */ }
+const PLUGIN_SCOPED_WINDOW_REGISTRY_KEY = 'pluginScopedWindowsRegistry';
 
 function getScopeFromContext(context) {
     const type = context && context.treeType ? context.treeType : 'permanent';
@@ -168,6 +180,62 @@ async function writeScopedGroupRegistry(reg) {
             localStorage.setItem(PLUGIN_SCOPED_GROUP_REGISTRY_KEY, JSON.stringify(safe));
         }
     } catch (_) {}
+}
+
+async function readScopedWindowRegistry() {
+    try {
+        if (typeof chrome !== 'undefined' && chrome.storage && chrome.storage.local) {
+            const data = await chrome.storage.local.get([PLUGIN_SCOPED_WINDOW_REGISTRY_KEY]);
+            return Array.isArray(data[PLUGIN_SCOPED_WINDOW_REGISTRY_KEY]) ? data[PLUGIN_SCOPED_WINDOW_REGISTRY_KEY] : [];
+        }
+        const raw = localStorage.getItem(PLUGIN_SCOPED_WINDOW_REGISTRY_KEY);
+        return raw ? JSON.parse(raw) : [];
+    } catch (_) { return []; }
+}
+
+async function writeScopedWindowRegistry(reg) {
+    const safe = Array.isArray(reg) ? reg : [];
+    try {
+        if (typeof chrome !== 'undefined' && chrome.storage && chrome.storage.local) {
+            await chrome.storage.local.set({ [PLUGIN_SCOPED_WINDOW_REGISTRY_KEY]: safe });
+        } else {
+            localStorage.setItem(PLUGIN_SCOPED_WINDOW_REGISTRY_KEY, JSON.stringify(safe));
+        }
+    } catch (_) {}
+}
+
+async function pruneDeadScopedWindows() {
+    let reg = await readScopedWindowRegistry();
+    const alive = [];
+    for (const entry of reg) {
+        const { windowId } = entry || {};
+        if (!Number.isInteger(windowId)) continue;
+        let ok = false;
+        try {
+            if (chrome && chrome.windows && chrome.windows.get) {
+                const w = await chrome.windows.get(windowId, { populate:false });
+                ok = !!(w && w.id === windowId);
+            }
+        } catch (_) { ok = false; }
+        if (ok) alive.push(entry);
+    }
+    await writeScopedWindowRegistry(alive);
+    return alive;
+}
+
+async function allocateNextScopedWindowNumber(scopeKey) {
+    const alive = await pruneDeadScopedWindows();
+    const used = new Set();
+    alive.forEach(e => { if (e && e.scope === scopeKey && Number.isInteger(e.number) && e.number > 0) used.add(e.number); });
+    let n = 1;
+    while (used.has(n)) n++;
+    return n;
+}
+
+async function registerScopedWindow(scopeKey, windowId, number) {
+    const reg = await pruneDeadScopedWindows();
+    reg.push({ scope: scopeKey, windowId, number, createdAt: Date.now() });
+    await writeScopedWindowRegistry(reg);
 }
 
 async function pruneDeadScopedGroups() {
@@ -646,7 +714,7 @@ function getNodeContext(node) {
 }
 
 // 显示右键菜单
-function showContextMenu(e, node) {
+async function showContextMenu(e, node) {
     e.preventDefault();
     e.stopPropagation();
     
@@ -669,6 +737,68 @@ function showContextMenu(e, node) {
 
     const { nodeId, nodeTitle, nodeUrl, isFolder } = context;
     console.log('[右键菜单] 显示菜单:', { nodeId, nodeTitle, isFolder, treeType: context.treeType, sectionId: context.sectionId });
+
+    // ——— 菜单展示前：清理失效的组/窗口并同步徽标状态 ———
+    try {
+        if (typeof chrome !== 'undefined') {
+            // 校验“同一标签组”全局指针
+            if (Number.isInteger(specificTabGroupId) && chrome.tabGroups && chrome.tabGroups.get) {
+                try { await chrome.tabGroups.get(specificTabGroupId); } catch(_) { await resetSpecificGroupInfo(); }
+            }
+            // 校验“同一窗口”全局指针
+            if (Number.isInteger(specificWindowId) && chrome.windows && chrome.windows.get) {
+                try { await chrome.windows.get(specificWindowId, { populate: false }); } catch(_) { await resetSpecificWindowId(); }
+            }
+            // 清理登记簿（作用域化标签组）并同步作用域下的指针
+            const scope = getScopeFromContext(context || {});
+            try { await pruneDeadScopedGroups(); } catch(_) {}
+            // 使用登记簿对齐分组指针：若无存活则清除；若存在但指针失效则迁移到任一存活分组
+            try {
+                const reg = await readScopedGroupRegistry();
+                const alive = (reg || []).filter(e => e && e.scope === scope.key);
+                const current = scopedCurrentGroups ? scopedCurrentGroups[scope.key] : null;
+                if (!alive.length) {
+                    if (current) {
+                        delete scopedCurrentGroups[scope.key];
+                        if (chrome.storage && chrome.storage.local) {
+                            await chrome.storage.local.set({ bookmarkScopedCurrentGroups: scopedCurrentGroups });
+                        } else {
+                            localStorage.setItem('bookmarkScopedCurrentGroups', JSON.stringify(scopedCurrentGroups));
+                        }
+                    }
+                } else if (!current || !Number.isInteger(current.groupId) || !alive.some(a => a.groupId === current.groupId)) {
+                    const pick = alive[0];
+                    await setScopedCurrentGroup(scope.key, pick.groupId, pick.windowId || null);
+                }
+            } catch(_) {}
+            // 校验与对齐作用域窗口指针
+            try {
+                const scope = getScopeFromContext(context || {});
+                const winId = scopedWindows && scopedWindows[scope.key];
+                if (Number.isInteger(winId) && chrome.windows && chrome.windows.get) {
+                    try { await chrome.windows.get(winId, { populate: false }); } catch(_) { /* fallback below */ }
+                }
+                // 通过登记簿迁移/清理
+                try { await pruneDeadScopedWindows(); } catch(_) {}
+                const wreg = await readScopedWindowRegistry();
+                const walive = (wreg || []).filter(e => e && e.scope === scope.key);
+                const hasPointer = scopedWindows && Number.isInteger(scopedWindows[scope.key]);
+                if (!walive.length) {
+                    if (hasPointer) {
+                        delete scopedWindows[scope.key];
+                        if (chrome.storage && chrome.storage.local) {
+                            await chrome.storage.local.set({ bookmarkScopedWindows: scopedWindows });
+                        } else {
+                            localStorage.setItem('bookmarkScopedWindows', JSON.stringify(scopedWindows));
+                        }
+                    }
+                } else if (!hasPointer || !walive.some(a => a.windowId === scopedWindows[scope.key])) {
+                    const pick = walive[0];
+                    await setScopedWindow(scope.key, pick.windowId);
+                }
+            } catch(_) {}
+        }
+    } catch(_) {}
 
     // 根据容器大小自适应布局与密度（若用户手动选择过布局，则尊重“按类型”用户设置）
     const container = node.closest('#permanentSection, .permanent-bookmark-section, .temp-canvas-node, .md-canvas-node, .canvas-main-container') || document.body;
@@ -908,7 +1038,7 @@ function buildMenuItems(context) {
             // 新增：分栏“特定标签组”（放在“同一标签组”之下）
             (() => {
                 const scope = getScopeFromContext(context);
-                const showBadge = !!(scopedCurrentGroups && scopedCurrentGroups[scope.key]);
+                const showBadge = (scope.key === 'permanent') && !!(scopedCurrentGroups && scopedCurrentGroups[scope.key]);
                 const baseLabelZh = '特定标签组';
                 const baseLabelEn = 'in Specific Group';
                 const badge = showBadge ? (lang === 'zh_CN' ? ' <span class="sub-badge">新分组</span>' : ' <span class="sub-badge">New Group</span>') : '';
@@ -928,7 +1058,7 @@ function buildMenuItems(context) {
             })(),
             (() => {
                 const scope = getScopeFromContext(context);
-                const showBadge = !!(scopedWindows && scopedWindows[scope.key]);
+                const showBadge = (scope.key === 'permanent') && !!(scopedWindows && scopedWindows[scope.key]);
                 const baseLabelZh = '特定窗口打开';
                 const baseLabelEn = 'in Specific Window';
                 const badge = showBadge ? (lang === 'zh_CN' ? ' <span class="sub-badge">新窗口</span>' : ' <span class="sub-badge">New Window</span>') : '';
@@ -1889,7 +2019,9 @@ async function openInScopedTabGroup(url, opts = {}) {
         const tab = await chrome.tabs.create({ url, active: false });
         const groupId = await chrome.tabs.group({ tabIds: tab.id });
         const windowId = tab.windowId || null;
-        const title = `${scope.prefix || ''}${nextNumber}`;
+        const title = (scope.key === 'permanent')
+            ? `A-Z ${nextNumber}`
+            : `${scope.prefix || ''}${nextNumber}`;
         if (chrome.tabGroups && chrome.tabGroups.update) {
             try { await chrome.tabGroups.update(groupId, { title, color: 'blue' }); } catch(_) {}
         }
@@ -1931,6 +2063,19 @@ async function openInScopedWindow(url, opts = {}) {
         const created = await chrome.windows.create({ url });
         if (created && created.id) {
             await setScopedWindow(scope.key, created.id);
+            // 仅在永久栏目为窗口添加可见标记页，标题前缀“A-Z ”+编号
+            const markerTitleNumber = await allocateNextScopedWindowNumber(scope.key);
+            await registerScopedWindow(scope.key, created.id, markerTitleNumber);
+            if (scope.key === 'permanent') {
+                try {
+                    const markerUrl = (chrome && chrome.runtime && chrome.runtime.getURL)
+                        ? chrome.runtime.getURL(`history_html/window_marker.html?t=${encodeURIComponent('A-Z ' + markerTitleNumber)}`)
+                        : null;
+                    if (markerUrl && chrome && chrome.tabs && chrome.tabs.create) {
+                        await chrome.tabs.create({ windowId: created.id, url: markerUrl, pinned: true, active: false });
+                    }
+                } catch(_) {}
+            }
         }
     } catch (error) {
         console.error('[分栏特定窗口] 打开失败:', error);

@@ -5872,6 +5872,9 @@ function addAnchorsToNode(nodeElement, nodeId) {
         if (typeof e.stopImmediatePropagation === 'function') e.stopImmediatePropagation();
         if (typeof e.stopPropagation === 'function') e.stopPropagation();
         const url = link.getAttribute('href');
+        // 解析作用域上下文（临时栏目）
+        const tempNode = link.closest('.temp-canvas-node[data-section-id]');
+        const scopedContext = tempNode ? { treeType: 'temporary', sectionId: tempNode.dataset.sectionId } : { treeType: 'permanent' };
         try {
             if (window.defaultOpenMode === undefined && typeof window.getDefaultOpenMode === 'function') {
                 window.defaultOpenMode = window.getDefaultOpenMode();
@@ -5884,8 +5887,12 @@ function addAnchorsToNode(nodeElement, nodeId) {
             if (typeof window.openBookmarkNewWindow === 'function') window.openBookmarkNewWindow(url, true); else window.open(url, '_blank');
         } else if (mode === 'specific-window') {
             if (typeof window.openInSpecificWindow === 'function') window.openInSpecificWindow(url); else window.open(url, '_blank');
+        } else if (mode === 'scoped-window') {
+            if (typeof window.openInScopedWindow === 'function') window.openInScopedWindow(url, { context: scopedContext }); else window.open(url, '_blank');
         } else if (mode === 'specific-group') {
             if (typeof window.openInSpecificTabGroup === 'function') window.openInSpecificTabGroup(url); else window.open(url, '_blank');
+        } else if (mode === 'scoped-group') {
+            if (typeof window.openInScopedTabGroup === 'function') window.openInScopedTabGroup(url, { context: scopedContext }); else window.open(url, '_blank');
         } else {
             if (typeof window.openBookmarkNewTab === 'function') window.openBookmarkNewTab(url); else window.open(url, '_blank');
         }

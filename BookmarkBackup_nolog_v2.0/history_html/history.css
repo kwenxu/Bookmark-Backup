@@ -2875,6 +2875,21 @@ a.tree-label.tree-bookmark-link:hover {
     background: transparent;
 }
 
+/* 右键菜单：次级提示徽标（New Group / New Window） */
+.bookmark-context-menu .context-menu-item .sub-badge {
+    display: inline-block;
+    margin-left: 6px;
+    padding: 1px 6px;
+    border-radius: 10px;
+    font-size: 11px;
+    line-height: 1.6;
+    background: var(--bg-tertiary, rgba(0,0,0,0.06));
+    color: var(--text-secondary);
+}
+[data-theme="dark"] .bookmark-context-menu .context-menu-item .sub-badge {
+    background: rgba(255,255,255,0.08);
+}
+
 .bookmark-context-menu.horizontal-layout .context-menu-item:hover {
     background: var(--accent-light);
     border-color: var(--accent-primary);

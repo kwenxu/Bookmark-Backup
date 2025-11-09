@@ -7,7 +7,7 @@ let currentContextNode = null;
 let bookmarkClipboard = null; // 剪贴板 { action: 'cut'|'copy', nodeId, nodeData }
 
 // 全局：默认打开方式与特定窗口/分组ID
-let defaultOpenMode = 'new-tab'; // 'new-tab' | 'new-window' | 'incognito' | 'specific-window' | 'specific-group'
+let defaultOpenMode = 'new-tab'; // 'new-tab' | 'new-window' | 'incognito' | 'specific-window' | 'specific-group' | 'scoped-window' | 'scoped-group'
 let specificWindowId = null; // chrome.windows Window ID
 let specificTabGroupId = null; // chrome.tabGroups Group ID（在“特定标签组”模式下复用）
 let specificGroupWindowId = null; // 保存分组所在窗口，确保新开的标签在同一窗口
@@ -22,7 +22,9 @@ window.getDefaultOpenMode = () => defaultOpenMode;
                 'bookmarkDefaultOpenMode',
                 'bookmarkSpecificWindowId',
                 'bookmarkSpecificGroupId',
-                'bookmarkSpecificGroupWindowId'
+                'bookmarkSpecificGroupWindowId',
+                'bookmarkScopedCurrentGroups',
+                'bookmarkScopedWindows'
             ]);
             if (data && typeof data.bookmarkDefaultOpenMode === 'string') {
                 defaultOpenMode = data.bookmarkDefaultOpenMode;
@@ -36,6 +38,13 @@ window.getDefaultOpenMode = () => defaultOpenMode;
             if (data && Number.isInteger(data.bookmarkSpecificGroupWindowId)) {
                 specificGroupWindowId = data.bookmarkSpecificGroupWindowId;
             }
+            // 初始化作用域映射（分栏位）
+            if (data && data.bookmarkScopedCurrentGroups && typeof data.bookmarkScopedCurrentGroups === 'object') {
+                try { scopedCurrentGroups = data.bookmarkScopedCurrentGroups || {}; } catch(_) {}
+            }
+            if (data && data.bookmarkScopedWindows && typeof data.bookmarkScopedWindows === 'object') {
+                try { scopedWindows = data.bookmarkScopedWindows || {}; } catch(_) {}
+            }
         } else {
             const mode = localStorage.getItem('bookmarkDefaultOpenMode');
             const winId = parseInt(localStorage.getItem('bookmarkSpecificWindowId') || '', 10);
@@ -45,6 +54,8 @@ window.getDefaultOpenMode = () => defaultOpenMode;
             const gwid = parseInt(localStorage.getItem('bookmarkSpecificGroupWindowId') || '', 10);
             if (Number.isInteger(gid)) specificTabGroupId = gid;
             if (Number.isInteger(gwid)) specificGroupWindowId = gwid;
+            try { scopedCurrentGroups = JSON.parse(localStorage.getItem('bookmarkScopedCurrentGroups') || '{}'); } catch(_) {}
+            try { scopedWindows = JSON.parse(localStorage.getItem('bookmarkScopedWindows') || '{}'); } catch(_) {}
         }
         try { window.defaultOpenMode = defaultOpenMode; } catch(_) {}
     } catch (_) {}
@@ -104,6 +115,116 @@ async function resetSpecificGroupInfo() {
 
 // ==== 插件生成的标签组登记簿（用于编号分配）====
 const PLUGIN_GROUP_REGISTRY_KEY = 'pluginTabGroupsRegistry';
+
+// ==== 作用域化（栏目区分）标签组登记簿 & 当前指针 ====
+const PLUGIN_SCOPED_GROUP_REGISTRY_KEY = 'pluginScopedTabGroupsRegistry';
+let scopedCurrentGroups = {}; // { [scopeKey: string]: { groupId: number, windowId: number|null } }
+let scopedWindows = {}; // { [scopeKey: string]: number /* windowId */ }
+
+function getScopeFromContext(context) {
+    const type = context && context.treeType ? context.treeType : 'permanent';
+    if (type === 'temporary' && context && context.sectionId) {
+        try {
+            const sec = (typeof CanvasModule !== 'undefined' && CanvasModule && CanvasModule.temp && typeof CanvasModule.temp.getSection === 'function')
+                ? CanvasModule.temp.getSection(context.sectionId)
+                : null;
+            const toAlphaLabel = (n) => {
+                let num = parseInt(n, 10);
+                if (!Number.isFinite(num) || num <= 0) return '';
+                let s = '';
+                while (num > 0) {
+                    const rem = (num - 1) % 26;
+                    s = String.fromCharCode(65 + rem) + s;
+                    num = Math.floor((num - 1) / 26);
+                }
+                return s;
+            };
+            const alpha = sec && sec.sequenceNumber ? toAlphaLabel(sec.sequenceNumber) : '';
+            return { key: `temp:${alpha || context.sectionId}`, prefix: alpha };
+        } catch (_) {
+            return { key: `temp:${context.sectionId}`, prefix: '' };
+        }
+    }
+    return { key: 'permanent', prefix: '' };
+}
+
+async function readScopedGroupRegistry() {
+    try {
+        if (typeof chrome !== 'undefined' && chrome.storage && chrome.storage.local) {
+            const data = await chrome.storage.local.get([PLUGIN_SCOPED_GROUP_REGISTRY_KEY]);
+            return Array.isArray(data[PLUGIN_SCOPED_GROUP_REGISTRY_KEY]) ? data[PLUGIN_SCOPED_GROUP_REGISTRY_KEY] : [];
+        }
+        const raw = localStorage.getItem(PLUGIN_SCOPED_GROUP_REGISTRY_KEY);
+        return raw ? JSON.parse(raw) : [];
+    } catch (_) { return []; }
+}
+
+async function writeScopedGroupRegistry(reg) {
+    const safe = Array.isArray(reg) ? reg : [];
+    try {
+        if (typeof chrome !== 'undefined' && chrome.storage && chrome.storage.local) {
+            await chrome.storage.local.set({ [PLUGIN_SCOPED_GROUP_REGISTRY_KEY]: safe });
+        } else {
+            localStorage.setItem(PLUGIN_SCOPED_GROUP_REGISTRY_KEY, JSON.stringify(safe));
+        }
+    } catch (_) {}
+}
+
+async function pruneDeadScopedGroups() {
+    let reg = await readScopedGroupRegistry();
+    const alive = [];
+    for (const entry of reg) {
+        const { groupId } = entry || {};
+        if (!Number.isInteger(groupId)) continue;
+        let ok = false;
+        try {
+            if (chrome && chrome.tabGroups && chrome.tabGroups.get) {
+                const g = await chrome.tabGroups.get(groupId);
+                ok = !!(g && g.id === groupId);
+            }
+        } catch (_) { ok = false; }
+        if (ok) alive.push(entry);
+    }
+    await writeScopedGroupRegistry(alive);
+    return alive;
+}
+
+async function allocateNextScopedNumber(scopeKey) {
+    const alive = await pruneDeadScopedGroups();
+    const used = new Set();
+    alive.forEach(e => { if (e && e.scope === scopeKey && Number.isInteger(e.number) && e.number > 0) used.add(e.number); });
+    let n = 1;
+    while (used.has(n)) n++;
+    return n;
+}
+
+async function registerScopedGroup(scopeKey, groupId, windowId, number) {
+    const reg = await pruneDeadScopedGroups();
+    reg.push({ scope: scopeKey, groupId, windowId, number, createdAt: Date.now() });
+    await writeScopedGroupRegistry(reg);
+}
+
+async function setScopedCurrentGroup(scopeKey, groupId, windowId) {
+    scopedCurrentGroups[scopeKey] = { groupId, windowId: windowId || null };
+    try {
+        if (typeof chrome !== 'undefined' && chrome.storage && chrome.storage.local) {
+            await chrome.storage.local.set({ bookmarkScopedCurrentGroups: scopedCurrentGroups });
+        } else {
+            localStorage.setItem('bookmarkScopedCurrentGroups', JSON.stringify(scopedCurrentGroups));
+        }
+    } catch(_) {}
+}
+
+async function setScopedWindow(scopeKey, windowId) {
+    scopedWindows[scopeKey] = windowId;
+    try {
+        if (typeof chrome !== 'undefined' && chrome.storage && chrome.storage.local) {
+            await chrome.storage.local.set({ bookmarkScopedWindows: scopedWindows });
+        } else {
+            localStorage.setItem('bookmarkScopedWindows', JSON.stringify(scopedWindows));
+        }
+    } catch(_) {}
+}
 
 async function readPluginGroupRegistry() {
     try {
@@ -776,13 +897,43 @@ function buildMenuItems(context) {
             // 打开组（移除可点击的 Open，改为标题；英文改为 in ...）
             { action: 'open-label', label: lang === 'zh_CN' ? '打开：' : 'Open:', icon: '', group: 'open', disabled: true },
             { action: 'open-new-tab', label: lang === 'zh_CN' ? '新标签页' : 'in New Tab', icon: 'window-maximize', group: 'open', selected: defaultOpenMode === 'new-tab' },
-            // 新增：特定标签组（紧跟“新标签页”之后）
-            { action: 'open-specific-group', label: lang === 'zh_CN' ? '特定标签组' : 'in Specific Group', icon: 'object-group', group: 'open', selected: defaultOpenMode === 'specific-group' },
-            // 纵向菜单在“特定标签组”后插入短分隔线（横向布局会被忽略）
+            // 改名：原“特定标签组”改为“同一标签组”/“In Same Group”（带提示徽标）
+            (() => {
+                const showBadge = !!specificTabGroupId;
+                const baseLabelZh = '同一标签组';
+                const baseLabelEn = 'in Same Group';
+                const badge = showBadge ? (lang === 'zh_CN' ? ' <span class="sub-badge">新分组</span>' : ' <span class="sub-badge">New Group</span>') : '';
+                return { action: 'open-specific-group', label: (lang === 'zh_CN' ? baseLabelZh : baseLabelEn) + badge, icon: 'object-group', group: 'open', selected: defaultOpenMode === 'specific-group' };
+            })(),
+            // 新增：分栏“特定标签组”（放在“同一标签组”之下）
+            (() => {
+                const scope = getScopeFromContext(context);
+                const showBadge = !!(scopedCurrentGroups && scopedCurrentGroups[scope.key]);
+                const baseLabelZh = '特定标签组';
+                const baseLabelEn = 'in Specific Group';
+                const badge = showBadge ? (lang === 'zh_CN' ? ' <span class="sub-badge">新分组</span>' : ' <span class="sub-badge">New Group</span>') : '';
+                return { action: 'open-scoped-group', label: (lang === 'zh_CN' ? baseLabelZh : baseLabelEn) + badge, icon: 'object-group', group: 'open', selected: defaultOpenMode === 'scoped-group' };
+            })(),
+            // 纵向菜单在“标签组区域”后插入短分隔线（横向布局会被忽略）
             { separatorShort: true },
-            // 将以下三项排到第三行（横向），分到 open2 组
+            // 第三行：窗口相关
             { action: 'open-new-window', label: lang === 'zh_CN' ? '新窗口' : 'in New Window', icon: 'window-restore', group: 'open2', selected: defaultOpenMode === 'new-window' },
-            { action: 'open-specific-window', label: lang === 'zh_CN' ? '特定窗口打开' : 'in Specific Window', icon: 'window-restore', group: 'open2', selected: defaultOpenMode === 'specific-window' },
+            // 改名：原“特定窗口打开”改为“同一窗口”/“In Same Window”（带提示徽标）
+            (() => {
+                const showBadge = !!specificWindowId;
+                const baseLabelZh = '同一窗口';
+                const baseLabelEn = 'in Same Window';
+                const badge = showBadge ? (lang === 'zh_CN' ? ' <span class="sub-badge">新窗口</span>' : ' <span class="sub-badge">New Window</span>') : '';
+                return { action: 'open-specific-window', label: (lang === 'zh_CN' ? baseLabelZh : baseLabelEn) + badge, icon: 'window-restore', group: 'open2', selected: defaultOpenMode === 'specific-window' };
+            })(),
+            (() => {
+                const scope = getScopeFromContext(context);
+                const showBadge = !!(scopedWindows && scopedWindows[scope.key]);
+                const baseLabelZh = '特定窗口打开';
+                const baseLabelEn = 'in Specific Window';
+                const badge = showBadge ? (lang === 'zh_CN' ? ' <span class="sub-badge">新窗口</span>' : ' <span class="sub-badge">New Window</span>') : '';
+                return { action: 'open-scoped-window', label: (lang === 'zh_CN' ? baseLabelZh : baseLabelEn) + badge, icon: 'window-restore', group: 'open2', selected: defaultOpenMode === 'scoped-window' };
+            })(),
             { action: 'open-incognito', label: lang === 'zh_CN' ? '无痕窗口' : 'in Incognito', icon: 'user-secret', group: 'open2', selected: defaultOpenMode === 'incognito' },
             { separator: true },
 
@@ -1253,18 +1404,20 @@ async function handleTempMenuAction(action, context) {
             await setDefaultOpenMode('incognito');
             break;
         case 'open-specific-window':
-            {
-                const switching = defaultOpenMode !== 'specific-window';
-                await openInSpecificWindow(context.nodeUrl, { forceNew: switching });
-                await setDefaultOpenMode('specific-window');
-            }
+            await openInSpecificWindow(context.nodeUrl, { forceNew: true });
+            await setDefaultOpenMode('specific-window');
             break;
         case 'open-specific-group':
-            {
-                const switching = defaultOpenMode !== 'specific-group';
-                await openInSpecificTabGroup(context.nodeUrl, { forceNew: switching });
-                await setDefaultOpenMode('specific-group');
-            }
+            await openInSpecificTabGroup(context.nodeUrl, { forceNew: true });
+            await setDefaultOpenMode('specific-group');
+            break;
+        case 'open-scoped-window':
+            await openInScopedWindow(context.nodeUrl, { context, forceNew: true });
+            await setDefaultOpenMode('scoped-window');
+            break;
+        case 'open-scoped-group':
+            await openInScopedTabGroup(context.nodeUrl, { context, forceNew: true });
+            await setDefaultOpenMode('scoped-group');
             break;
         case 'open-all':
             await openTempUrls(context.sectionId, context.nodeId, { newWindow: false, incognito: false });
@@ -1451,19 +1604,23 @@ async function handleMenuAction(action, context) {
                 break;
 
             case 'open-specific-group':
-                {
-                    const switching = defaultOpenMode !== 'specific-group';
-                    await openInSpecificTabGroup(nodeUrl, { forceNew: switching });
-                    await setDefaultOpenMode('specific-group');
-                }
+                await openInSpecificTabGroup(nodeUrl, { forceNew: true });
+                await setDefaultOpenMode('specific-group');
                 break;
 
             case 'open-specific-window':
-                {
-                    const switching = defaultOpenMode !== 'specific-window';
-                    await openInSpecificWindow(nodeUrl, { forceNew: switching });
-                    await setDefaultOpenMode('specific-window');
-                }
+                await openInSpecificWindow(nodeUrl, { forceNew: true });
+                await setDefaultOpenMode('specific-window');
+                break;
+
+            case 'open-scoped-group':
+                await openInScopedTabGroup(nodeUrl, { context, forceNew: true });
+                await setDefaultOpenMode('scoped-group');
+                break;
+
+            case 'open-scoped-window':
+                await openInScopedWindow(nodeUrl, { context, forceNew: true });
+                await setDefaultOpenMode('scoped-window');
                 break;
                 
             case 'open-all':
@@ -1692,6 +1849,100 @@ async function openInSpecificWindow(url, options = {}) {
         console.error('[特定窗口] 打开失败:', error);
     }
 }
+
+// ===== 分栏作用域化：在特定（按栏目区分）标签组中打开 =====
+async function openInScopedTabGroup(url, opts = {}) {
+    const { context = null, forceNew = false } = opts || {};
+    if (!url) return;
+    if (typeof chrome === 'undefined' || !chrome.tabs) {
+        window.open(url, '_blank');
+        return;
+    }
+    const scope = getScopeFromContext(context || {});
+    try {
+        // 尝试复用当前作用域的组
+        if (!forceNew) {
+            const entry = scopedCurrentGroups[scope.key];
+            if (entry && Number.isInteger(entry.groupId)) {
+                try {
+                    if (chrome.tabGroups && chrome.tabGroups.get) await chrome.tabGroups.get(entry.groupId);
+                    if (entry.windowId && chrome.windows && chrome.windows.get) await chrome.windows.get(entry.windowId, { populate: false });
+                    const tab = await chrome.tabs.create({ url, active: false, windowId: entry.windowId || undefined });
+                    await chrome.tabs.group({ groupId: entry.groupId, tabIds: tab.id });
+                    return;
+                } catch (_) {
+                    // 失效：清除指针，落到新建逻辑
+                    try {
+                        delete scopedCurrentGroups[scope.key];
+                        if (typeof chrome !== 'undefined' && chrome.storage && chrome.storage.local) {
+                            await chrome.storage.local.set({ bookmarkScopedCurrentGroups: scopedCurrentGroups });
+                        } else {
+                            localStorage.setItem('bookmarkScopedCurrentGroups', JSON.stringify(scopedCurrentGroups));
+                        }
+                    } catch(_) {}
+                }
+            }
+        }
+
+        // 新建：分配本作用域下一可用编号
+        const nextNumber = await allocateNextScopedNumber(scope.key);
+        const tab = await chrome.tabs.create({ url, active: false });
+        const groupId = await chrome.tabs.group({ tabIds: tab.id });
+        const windowId = tab.windowId || null;
+        const title = `${scope.prefix || ''}${nextNumber}`;
+        if (chrome.tabGroups && chrome.tabGroups.update) {
+            try { await chrome.tabGroups.update(groupId, { title, color: 'blue' }); } catch(_) {}
+        }
+        await setScopedCurrentGroup(scope.key, groupId, windowId);
+        await registerScopedGroup(scope.key, groupId, windowId, nextNumber);
+    } catch (error) {
+        console.warn('[分栏特定标签组] 打开失败:', error);
+        try { window.open(url, '_blank'); } catch(_) {}
+    }
+}
+
+// ===== 分栏作用域化：在特定（按栏目区分）窗口中打开 =====
+async function openInScopedWindow(url, opts = {}) {
+    const { context = null, forceNew = false } = opts || {};
+    if (!url) return;
+    try {
+        const scope = getScopeFromContext(context || {});
+        if (!forceNew) {
+            const winId = scopedWindows[scope.key];
+            if (Number.isInteger(winId)) {
+                try {
+                    const win = await chrome.windows.get(winId, { populate: false });
+                    if (win && win.id) {
+                        await chrome.tabs.create({ windowId: win.id, url });
+                        return;
+                    }
+                } catch (_) {
+                    try {
+                        delete scopedWindows[scope.key];
+                        if (typeof chrome !== 'undefined' && chrome.storage && chrome.storage.local) {
+                            await chrome.storage.local.set({ bookmarkScopedWindows: scopedWindows });
+                        } else {
+                            localStorage.setItem('bookmarkScopedWindows', JSON.stringify(scopedWindows));
+                        }
+                    } catch(_) {}
+                }
+            }
+        }
+        const created = await chrome.windows.create({ url });
+        if (created && created.id) {
+            await setScopedWindow(scope.key, created.id);
+        }
+    } catch (error) {
+        console.error('[分栏特定窗口] 打开失败:', error);
+        try { window.open(url, '_blank'); } catch(_) {}
+    }
+}
+
+// 暴露新函数给全局（供临时栏目的左键处理调用）
+try {
+    window.openInScopedTabGroup = openInScopedTabGroup;
+    window.openInScopedWindow = openInScopedWindow;
+} catch(_) {}
 
 // 打开文件夹中所有书签
 async function openAllBookmarks(folderId, newWindow = false, incognito = false) {

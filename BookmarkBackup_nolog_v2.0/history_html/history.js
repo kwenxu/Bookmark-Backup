@@ -3771,6 +3771,10 @@ function attachTreeEvents(treeContainer) {
             if (typeof openInSpecificWindow === 'function') openInSpecificWindow(url); else window.open(url, '_blank');
         } else if (mode === 'specific-group') {
             if (typeof openInSpecificTabGroup === 'function') openInSpecificTabGroup(url); else window.open(url, '_blank');
+        } else if (mode === 'scoped-window') {
+            if (typeof openInScopedWindow === 'function') openInScopedWindow(url, { context: { treeType: 'permanent' } }); else window.open(url, '_blank');
+        } else if (mode === 'scoped-group') {
+            if (typeof openInScopedTabGroup === 'function') openInScopedTabGroup(url, { context: { treeType: 'permanent' } }); else window.open(url, '_blank');
         } else {
             if (typeof openBookmarkNewTab === 'function') openBookmarkNewTab(url); else window.open(url, '_blank');
         }

@@ -442,24 +442,39 @@ function showContextMenu(e, node) {
     const { nodeId, nodeTitle, nodeUrl, isFolder } = context;
     console.log('[右键菜单] 显示菜单:', { nodeId, nodeTitle, isFolder, treeType: context.treeType, sectionId: context.sectionId });
 
-    // 根据容器大小自适应布局与密度
+    // 根据容器大小自适应布局与密度（若用户手动选择过布局，则尊重“按类型”用户设置）
     const container = node.closest('#permanentSection, .permanent-bookmark-section, .temp-canvas-node, .md-canvas-node, .canvas-main-container') || document.body;
     const rect = container.getBoundingClientRect();
     const availableWidth = Math.max(0, rect.width || window.innerWidth || 1024);
 
-    // 宽度阈值：<420 极窄（竖向+紧凑），<640 紧凑横向，其它横向舒适
+    // 宽度阈值：根据栏目的类型（永久/临时）做不同规划
+    const scope = context.treeType === 'temporary' ? 'temporary' : 'permanent';
+    // 永久栏目通常更宽：阈值更高；临时卡片更窄：阈值更低
+    const H_BREAK_PERMANENT = 640; // >= 横向
+    const H_BREAK_TEMP = 520;      // >= 横向
+    const baseBreak = scope === 'permanent' ? H_BREAK_PERMANENT : H_BREAK_TEMP;
+
+    // 密度阈值：<420 极窄（竖向+紧凑），<640 紧凑横向，其它横向舒适
     let density = 'md';
     if (availableWidth < 420) density = 'xs';
     else if (availableWidth < 640) density = 'sm';
     else if (availableWidth > 980) density = 'lg';
 
-    // 自动切换布局（可被用户“纵向/横向”按钮再次切换）
-    contextMenuHorizontal = availableWidth >= 520;
+    // 自动切换布局；如果localStorage有“按类型”的显式偏好，则优先使用
+    try {
+        const savedTypeLayout = localStorage.getItem(`contextMenuLayout_${scope}`);
+        if (savedTypeLayout === 'horizontal') contextMenuHorizontal = true;
+        else if (savedTypeLayout === 'vertical') contextMenuHorizontal = false;
+        else contextMenuHorizontal = availableWidth >= baseBreak;
+    } catch(_) {
+        contextMenuHorizontal = availableWidth >= baseBreak;
+    }
 
-    // 更新容器类名
+    // 更新容器类名，并写入作用域，供切换按钮使用
     contextMenu.classList.toggle('horizontal-layout', contextMenuHorizontal);
     contextMenu.classList.remove('density-xs', 'density-sm', 'density-md', 'density-lg');
     contextMenu.classList.add(`density-${density}`);
+    contextMenu.dataset.menuScope = scope;
 
     // 构建菜单项
     const menuItems = buildMenuItems(context);
@@ -485,8 +500,15 @@ function showContextMenu(e, node) {
             groups[groupName].push(item);
         });
 
-        // 生成HTML（在组之间插入分隔符）
-        const groupElements = groupOrder.map(groupName => {
+        // 指定横向布局行次：
+        // 行1：select；行2：open；行3：其余（delete/settings/structure等）
+        const explicitOrder = [];
+        if (groups.select) explicitOrder.push('select');
+        if (groups.open) explicitOrder.push('open');
+        // 其余分组保持出现顺序
+        groupOrder.forEach(g => { if (!['select','open'].includes(g)) explicitOrder.push(g); });
+
+        const groupElements = explicitOrder.map((groupName, idx) => {
             const groupItems = groups[groupName];
             const inner = groupItems.map(item => {
                 const icon = item.icon ? `<i class="fas fa-${item.icon}"></i>` : '';
@@ -501,7 +523,12 @@ function showContextMenu(e, node) {
                         <span>${item.label}</span>
                     </div>`;
             }).join('');
-            return `<div class="context-menu-group" data-group="${groupName}">${inner}</div>`;
+            const html = `<div class="context-menu-group" data-group="${groupName}">${inner}</div>`;
+            // 在第1组和第2组之后插入换行占位，使 delete/settings 固定到第3行
+            if (idx === 0 || idx === 1) {
+                return html + '<div class="context-menu-break"></div>';
+            }
+            return html;
         }).join('');
 
         menuHTML = groupElements;
@@ -633,7 +660,7 @@ function buildMenuItems(context) {
             { action: 'copy', label: lang === 'zh_CN' ? '复制' : 'Copy', icon: 'copy', group: 'select' },
             // 将 Copy Link 放到 Copy 后面
             { action: 'copy-url', label: lang === 'zh_CN' ? '复制链接' : 'Copy Link', icon: 'link', group: 'select' },
-            { action: 'paste', label: lang === 'zh_CN' ? '粘贴到下方' : 'Paste Below', icon: 'paste', disabled: !hasClipboard(), group: 'select' },
+            { action: 'paste', label: lang === 'zh_CN' ? '粘贴到下方' : 'Paste Below', icon: 'paste', disabled: !hasClipboard(), hidden: !hasClipboard(), group: 'select' },
             { separator: true },
 
             // 打开组（移除可点击的 Open，改为标题；英文改为 in ...）
@@ -3886,13 +3913,14 @@ function showBatchPanel() {
 }
 
 // 切换右键菜单布局（横向/纵向）
-let contextMenuHorizontal = true;  // 默认改为横向布局
+let contextMenuHorizontal = true;  // 默认横向（根据阈值自动，再可被用户覆盖）
 function toggleContextMenuLayout() {
-    contextMenuHorizontal = !contextMenuHorizontal;
-    
     const contextMenu = document.getElementById('bookmark-context-menu');
     if (!contextMenu) return;
-    
+    // 读作用域：permanent | temporary
+    const scope = contextMenu.dataset.menuScope || 'permanent';
+    contextMenuHorizontal = !contextMenuHorizontal;
+
     if (contextMenuHorizontal) {
         contextMenu.classList.add('horizontal-layout');
         console.log('[右键菜单] 切换到横向布局');
@@ -3900,10 +3928,10 @@ function toggleContextMenuLayout() {
         contextMenu.classList.remove('horizontal-layout');
         console.log('[右键菜单] 切换到纵向布局');
     }
-    
-    // 保存状态到localStorage
+
+    // 保存“按类型”的状态到localStorage
     try {
-        localStorage.setItem('contextMenuLayout', contextMenuHorizontal ? 'horizontal' : 'vertical');
+        localStorage.setItem(`contextMenuLayout_${scope}`, contextMenuHorizontal ? 'horizontal' : 'vertical');
     } catch (e) {
         console.error('[右键菜单] 保存布局状态失败:', e);
     }
@@ -3912,23 +3940,20 @@ function toggleContextMenuLayout() {
 // 恢复保存的右键菜单布局状态
 function restoreContextMenuLayout() {
     try {
-        const savedLayout = localStorage.getItem('contextMenuLayout');
+        const contextMenu = document.getElementById('bookmark-context-menu');
+        if (!contextMenu) return;
+        const scope = contextMenu.dataset.menuScope || 'permanent';
+        const savedLayout = localStorage.getItem(`contextMenuLayout_${scope}`);
         if (savedLayout === 'vertical') {
-            // 用户曾经切换到纵向，恢复为纵向
             contextMenuHorizontal = false;
-            const contextMenu = document.getElementById('bookmark-context-menu');
-            if (contextMenu) {
-                contextMenu.classList.remove('horizontal-layout');
-                console.log('[右键菜单] 恢复纵向布局');
-            }
-        } else {
-            // 默认为横向布局（包括首次访问）
+            contextMenu.classList.remove('horizontal-layout');
+            console.log('[右键菜单] 恢复纵向布局（scope=', scope, ')');
+        } else if (savedLayout === 'horizontal') {
             contextMenuHorizontal = true;
-            const contextMenu = document.getElementById('bookmark-context-menu');
-            if (contextMenu) {
-                contextMenu.classList.add('horizontal-layout');
-                console.log('[右键菜单] 恢复/设置默认横向布局');
-            }
+            contextMenu.classList.add('horizontal-layout');
+            console.log('[右键菜单] 恢复横向布局（scope=', scope, ')');
+        } else {
+            // 未指定，保持当前（由自动阈值决定）
         }
     } catch (e) {
         console.error('[右键菜单] 恢复布局状态失败:', e);

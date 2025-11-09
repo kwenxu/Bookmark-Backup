@@ -2898,6 +2898,12 @@ a.tree-label.tree-bookmark-link:hover {
     margin-bottom: 6px; /* 纵向额外留白，确保行与行更明显 */
 }
 
+/* 横向布局的强制换行占位（用于指定行次） */
+.bookmark-context-menu.horizontal-layout .context-menu-break {
+    flex-basis: 100%;
+    height: 0;
+}
+
 /* 相邻分组之间的分隔与内边距 */
 .bookmark-context-menu.horizontal-layout .context-menu-group + .context-menu-group {
     border-left: none;

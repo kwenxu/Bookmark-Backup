@@ -3495,10 +3495,22 @@ function renderTempNode(section) {
     titleContainer.className = 'temp-node-title-container';
     
     // 添加序号标签（如果有）
+    const toAlphaLabel = (n) => {
+        // 1->A, 2->B, ... 26->Z, 27->AA, 28->AB, ... Excel风格
+        let num = parseInt(n, 10);
+        if (!Number.isFinite(num) || num <= 0) return '';
+        let s = '';
+        while (num > 0) {
+            const rem = (num - 1) % 26;
+            s = String.fromCharCode(65 + rem) + s;
+            num = Math.floor((num - 1) / 26);
+        }
+        return s;
+    };
     if (section.sequenceNumber) {
         const sequenceBadge = document.createElement('span');
         sequenceBadge.className = 'temp-node-sequence-badge';
-        sequenceBadge.textContent = section.sequenceNumber;
+        sequenceBadge.textContent = toAlphaLabel(section.sequenceNumber);
         titleContainer.appendChild(sequenceBadge);
     }
     
@@ -4765,7 +4777,18 @@ function reorderSectionSequenceNumbers() {
         .filter(s => s.sequenceNumber) // 只处理有序号的
         .sort((a, b) => a.sequenceNumber - b.sequenceNumber);
     
-    // 重新分配序号 1, 2, 3, ...
+    // 重新分配序号 1, 2, 3, ...（显示为 A, B, C, ...）
+    const toAlphaLabel = (n) => {
+        let num = parseInt(n, 10);
+        if (!Number.isFinite(num) || num <= 0) return '';
+        let s = '';
+        while (num > 0) {
+            const rem = (num - 1) % 26;
+            s = String.fromCharCode(65 + rem) + s;
+            num = Math.floor((num - 1) / 26);
+        }
+        return s;
+    };
     sortedSections.forEach((section, index) => {
         const newSequenceNumber = index + 1;
         if (section.sequenceNumber !== newSequenceNumber) {
@@ -4777,7 +4800,7 @@ function reorderSectionSequenceNumbers() {
             if (element) {
                 const badge = element.querySelector('.temp-node-sequence-badge');
                 if (badge) {
-                    badge.textContent = newSequenceNumber;
+                    badge.textContent = toAlphaLabel(newSequenceNumber);
                 }
             }
         }

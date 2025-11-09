@@ -3746,6 +3746,33 @@ function attachTreeEvents(treeContainer) {
     // 绑定新的事件监听器
     treeContainer.addEventListener('click', clickHandler);
     treeClickHandlers.set(treeContainer, clickHandler);
+
+    // 左键点击书签标签，根据默认打开方式打开
+    treeContainer.addEventListener('click', async (e) => {
+        const link = e.target.closest('a.tree-bookmark-link');
+        if (!link || !treeContainer.contains(link)) return;
+        // 尊重系统快捷键：Ctrl/Cmd/Shift 走浏览器默认行为
+        if (e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
+        e.preventDefault();
+        const url = link.getAttribute('href');
+        try {
+            // 从全局函数中调用（由 context_menu 文件定义）
+            if (window.defaultOpenMode === undefined && typeof window.getDefaultOpenMode === 'function') {
+                // 兼容：如果提供 getter
+                window.defaultOpenMode = window.getDefaultOpenMode();
+            }
+        } catch(_) {}
+        const mode = (typeof window !== 'undefined' && window.defaultOpenMode) || (typeof defaultOpenMode !== 'undefined' ? defaultOpenMode : 'new-tab');
+        if (mode === 'new-window') {
+            if (typeof openBookmarkNewWindow === 'function') openBookmarkNewWindow(url, false); else window.open(url, '_blank');
+        } else if (mode === 'incognito') {
+            if (typeof openBookmarkNewWindow === 'function') openBookmarkNewWindow(url, true); else window.open(url, '_blank');
+        } else if (mode === 'specific-window') {
+            if (typeof openInSpecificWindow === 'function') openInSpecificWindow(url); else window.open(url, '_blank');
+        } else {
+            if (typeof openBookmarkNewTab === 'function') openBookmarkNewTab(url); else window.open(url, '_blank');
+        }
+    });
     
     // 绑定右键菜单事件
     const treeItems = treeContainer.querySelectorAll('.tree-item[data-node-id]');

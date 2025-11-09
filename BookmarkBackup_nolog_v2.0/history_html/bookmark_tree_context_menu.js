@@ -5,6 +5,56 @@
 let contextMenu = null;
 let currentContextNode = null;
 let bookmarkClipboard = null; // 剪贴板 { action: 'cut'|'copy', nodeId, nodeData }
+
+// 全局：默认打开方式与特定窗口ID
+let defaultOpenMode = 'new-tab'; // 'new-tab' | 'new-window' | 'incognito' | 'specific-window'
+let specificWindowId = null; // chrome.windows Window ID
+// 暴露给其他脚本（如 history.js）
+window.getDefaultOpenMode = () => defaultOpenMode;
+
+// 读取持久化默认打开方式
+(async function initDefaultOpenMode() {
+    try {
+        if (typeof chrome !== 'undefined' && chrome.storage && chrome.storage.local) {
+            const data = await chrome.storage.local.get(['bookmarkDefaultOpenMode', 'bookmarkSpecificWindowId']);
+            if (data && typeof data.bookmarkDefaultOpenMode === 'string') {
+                defaultOpenMode = data.bookmarkDefaultOpenMode;
+            }
+            if (data && Number.isInteger(data.bookmarkSpecificWindowId)) {
+                specificWindowId = data.bookmarkSpecificWindowId;
+            }
+        } else {
+            const mode = localStorage.getItem('bookmarkDefaultOpenMode');
+            const winId = parseInt(localStorage.getItem('bookmarkSpecificWindowId') || '', 10);
+            if (mode) defaultOpenMode = mode;
+            if (Number.isInteger(winId)) specificWindowId = winId;
+        }
+        try { window.defaultOpenMode = defaultOpenMode; } catch(_) {}
+    } catch (_) {}
+})();
+
+async function setDefaultOpenMode(mode) {
+    defaultOpenMode = mode;
+    try { window.defaultOpenMode = mode; } catch(_) {}
+    try {
+        if (typeof chrome !== 'undefined' && chrome.storage && chrome.storage.local) {
+            await chrome.storage.local.set({ bookmarkDefaultOpenMode: mode });
+        } else {
+            localStorage.setItem('bookmarkDefaultOpenMode', mode);
+        }
+    } catch (_) {}
+}
+
+async function setSpecificWindowId(winId) {
+    specificWindowId = winId;
+    try {
+        if (typeof chrome !== 'undefined' && chrome.storage && chrome.storage.local) {
+            await chrome.storage.local.set({ bookmarkSpecificWindowId: winId });
+        } else {
+            localStorage.setItem('bookmarkSpecificWindowId', String(winId));
+        }
+    } catch (_) {}
+}
 let clipboardOperation = null; // 'cut' | 'copy'
 let selectedNodes = new Set(); // 多选节点集合
 let selectedNodeMeta = new Map(); // 节点元信息：nodeId -> { treeType, sectionId }
@@ -392,6 +442,25 @@ function showContextMenu(e, node) {
     const { nodeId, nodeTitle, nodeUrl, isFolder } = context;
     console.log('[右键菜单] 显示菜单:', { nodeId, nodeTitle, isFolder, treeType: context.treeType, sectionId: context.sectionId });
 
+    // 根据容器大小自适应布局与密度
+    const container = node.closest('#permanentSection, .permanent-bookmark-section, .temp-canvas-node, .md-canvas-node, .canvas-main-container') || document.body;
+    const rect = container.getBoundingClientRect();
+    const availableWidth = Math.max(0, rect.width || window.innerWidth || 1024);
+
+    // 宽度阈值：<420 极窄（竖向+紧凑），<640 紧凑横向，其它横向舒适
+    let density = 'md';
+    if (availableWidth < 420) density = 'xs';
+    else if (availableWidth < 640) density = 'sm';
+    else if (availableWidth > 980) density = 'lg';
+
+    // 自动切换布局（可被用户“纵向/横向”按钮再次切换）
+    contextMenuHorizontal = availableWidth >= 520;
+
+    // 更新容器类名
+    contextMenu.classList.toggle('horizontal-layout', contextMenuHorizontal);
+    contextMenu.classList.remove('density-xs', 'density-sm', 'density-md', 'density-lg');
+    contextMenu.classList.add(`density-${density}`);
+
     // 构建菜单项
     const menuItems = buildMenuItems(context);
 
@@ -416,21 +485,23 @@ function showContextMenu(e, node) {
             groups[groupName].push(item);
         });
 
-        // 生成HTML
+        // 生成HTML（在组之间插入分隔符）
         const groupElements = groupOrder.map(groupName => {
             const groupItems = groups[groupName];
-            return groupItems.map(item => {
+            const inner = groupItems.map(item => {
                 const icon = item.icon ? `<i class="fas fa-${item.icon}"></i>` : '';
                 const disabled = item.disabled ? 'disabled' : '';
+                const selected = item.selected ? 'selected-open' : '';
+                const labelClass = item.action === 'open-label' ? 'section-label' : '';
                 const colorClass = item.action === 'select-item' ? 'color-blue' : item.action === 'delete' ? 'color-red' : '';
                 const hiddenStyle = item.hidden ? 'style="display:none;"' : '';
                 return `
-                    <div class="context-menu-item ${disabled} ${colorClass}" data-action="${item.action}" ${hiddenStyle}>
+                    <div class="context-menu-item ${disabled} ${colorClass} ${selected} ${labelClass}" data-action="${item.action}" ${hiddenStyle}>
                         ${icon}
                         <span>${item.label}</span>
-                    </div>
-                `;
+                    </div>`;
             }).join('');
+            return `<div class="context-menu-group" data-group="${groupName}">${inner}</div>`;
         }).join('');
 
         menuHTML = groupElements;
@@ -443,11 +514,13 @@ function showContextMenu(e, node) {
 
             const icon = item.icon ? `<i class="fas fa-${item.icon}"></i>` : '';
             const disabled = item.disabled ? 'disabled' : '';
+            const selected = item.selected ? 'selected-open' : '';
+            const labelClass = item.action === 'open-label' ? 'section-label' : '';
             const colorClass = item.action === 'select-item' ? 'color-blue' : item.action === 'delete' ? 'color-red' : '';
             const hiddenStyle = item.hidden ? 'style="display:none;"' : '';
 
             return `
-                <div class="context-menu-item ${disabled} ${colorClass}" data-action="${item.action}" ${hiddenStyle}>
+                <div class="context-menu-item ${disabled} ${colorClass} ${selected} ${labelClass}" data-action="${item.action}" ${hiddenStyle}>
                     ${icon}
                     <span>${item.label}</span>
                 </div>
@@ -468,6 +541,10 @@ function showContextMenu(e, node) {
                 toggleContextMenuLayout();
                 // 重新渲染菜单以更新按钮文字
                 showContextMenu(e, currentContextNode);
+                return;
+            }
+            // 分组标题不处理
+            if (action === 'open-label') {
                 return;
             }
 
@@ -538,17 +615,11 @@ function buildMenuItems(context) {
             { action: 'open-all-incognito', label: lang === 'zh_CN' ? '无痕窗口' : 'Incognito', icon: 'user-secret', group: 'open' },
             { separator: true },
 
-            // 新增组
-            { action: 'add-page', label: lang === 'zh_CN' ? '添加网页' : 'Add Page', icon: 'plus-circle', group: 'add' },
-            { action: 'add-folder', label: lang === 'zh_CN' ? '添加文件夹' : 'Add Folder', icon: 'folder-plus', group: 'add' },
-            { separator: true },
-
-            // 删除组
-            { action: 'delete', label: lang === 'zh_CN' ? '删除' : 'Delete', icon: 'trash-alt', group: 'delete' },
-            { separator: true },
-
-            // 设置组
-            { action: 'toggle-context-menu-layout', label: contextMenuHorizontal ? (lang === 'zh_CN' ? '纵向布局' : 'Vertical') : (lang === 'zh_CN' ? '横向布局' : 'Horizontal'), icon: 'exchange-alt', group: 'settings' }
+            // 结构/设置组（合并第三组）
+            { action: 'add-page', label: lang === 'zh_CN' ? '添加网页' : 'Add Page', icon: 'plus-circle', group: 'structure' },
+            { action: 'add-folder', label: lang === 'zh_CN' ? '添加文件夹' : 'Add Folder', icon: 'folder-plus', group: 'structure' },
+            { action: 'delete', label: lang === 'zh_CN' ? '删除' : 'Delete', icon: 'trash-alt', group: 'structure' },
+            { action: 'toggle-context-menu-layout', label: contextMenuHorizontal ? (lang === 'zh_CN' ? '纵向布局' : 'Vertical') : (lang === 'zh_CN' ? '横向布局' : 'Horizontal'), icon: 'exchange-alt', group: 'structure' }
         );
     } else {
         // 书签菜单 - 按分组组织
@@ -560,18 +631,17 @@ function buildMenuItems(context) {
             { action: 'edit', label: lang === 'zh_CN' ? '编辑' : 'Edit', icon: 'edit', group: 'select' },
             { action: 'cut', label: lang === 'zh_CN' ? '剪切' : 'Cut', icon: 'cut', group: 'select' },
             { action: 'copy', label: lang === 'zh_CN' ? '复制' : 'Copy', icon: 'copy', group: 'select' },
+            // 将 Copy Link 放到 Copy 后面
+            { action: 'copy-url', label: lang === 'zh_CN' ? '复制链接' : 'Copy Link', icon: 'link', group: 'select' },
             { action: 'paste', label: lang === 'zh_CN' ? '粘贴到下方' : 'Paste Below', icon: 'paste', disabled: !hasClipboard(), group: 'select' },
             { separator: true },
 
-            // 打开组
-            { action: 'open', label: lang === 'zh_CN' ? '打开' : 'Open', icon: 'external-link-alt', group: 'open' },
-            { action: 'open-new-tab', label: lang === 'zh_CN' ? '新标签页' : 'New Tab', icon: 'window-maximize', group: 'open' },
-            { action: 'open-new-window', label: lang === 'zh_CN' ? '新窗口' : 'New Window', icon: 'window-restore', group: 'open' },
-            { action: 'open-incognito', label: lang === 'zh_CN' ? '无痕窗口' : 'Incognito', icon: 'user-secret', group: 'open' },
-            { separator: true },
-
-            // 链接组
-            { action: 'copy-url', label: lang === 'zh_CN' ? '复制链接' : 'Copy Link', icon: 'link', group: 'url' },
+            // 打开组（移除可点击的 Open，改为标题；英文改为 in ...）
+            { action: 'open-label', label: lang === 'zh_CN' ? '打开：' : 'Open:', icon: '', group: 'open', disabled: true },
+            { action: 'open-new-tab', label: lang === 'zh_CN' ? '新标签页' : 'in New Tab', icon: 'window-maximize', group: 'open', selected: defaultOpenMode === 'new-tab' },
+            { action: 'open-new-window', label: lang === 'zh_CN' ? '新窗口' : 'in New Window', icon: 'window-restore', group: 'open', selected: defaultOpenMode === 'new-window' },
+            { action: 'open-specific-window', label: lang === 'zh_CN' ? '特定窗口打开' : 'in Specific Window', icon: 'window-restore', group: 'open', selected: defaultOpenMode === 'specific-window' },
+            { action: 'open-incognito', label: lang === 'zh_CN' ? '无痕窗口' : 'in Incognito', icon: 'user-secret', group: 'open', selected: defaultOpenMode === 'incognito' },
             { separator: true },
 
             // 删除组
@@ -1208,14 +1278,22 @@ async function handleMenuAction(action, context) {
                 
             case 'open-new-tab':
                 await openBookmarkNewTab(nodeUrl);
+                await setDefaultOpenMode('new-tab');
                 break;
                 
             case 'open-new-window':
                 await openBookmarkNewWindow(nodeUrl, false);
+                await setDefaultOpenMode('new-window');
                 break;
                 
             case 'open-incognito':
                 await openBookmarkNewWindow(nodeUrl, true);
+                await setDefaultOpenMode('incognito');
+                break;
+
+            case 'open-specific-window':
+                await openInSpecificWindow(nodeUrl);
+                await setDefaultOpenMode('specific-window');
                 break;
                 
             case 'open-all':
@@ -1356,6 +1434,36 @@ async function openBookmarkNewWindow(url, incognito = false) {
         chrome.windows.create({ url: url, incognito: incognito });
     } else {
         window.open(url, '_blank');
+    }
+}
+
+// 在特定窗口中打开：首次创建窗口A，后续复用
+async function openInSpecificWindow(url) {
+    if (!url) return;
+    try {
+        if (typeof chrome !== 'undefined' && chrome.windows && chrome.tabs) {
+            // 检查窗口是否存在
+            if (specificWindowId) {
+                try {
+                    const win = await chrome.windows.get(specificWindowId, { populate: false });
+                    if (win && win.id) {
+                        await chrome.tabs.create({ windowId: specificWindowId, url });
+                        return;
+                    }
+                } catch (_) {
+                    // 窗口不存在，创建新的
+                }
+            }
+            const created = await chrome.windows.create({ url });
+            if (created && created.id) {
+                await setSpecificWindowId(created.id);
+            }
+        } else {
+            // 非扩展环境：退回到新窗口
+            window.open(url, '_blank');
+        }
+    } catch (error) {
+        console.error('[特定窗口] 打开失败:', error);
     }
 }
 

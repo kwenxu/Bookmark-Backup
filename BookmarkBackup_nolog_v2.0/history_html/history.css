@@ -2816,25 +2816,57 @@ a.tree-label.tree-bookmark-link:hover {
     min-width: auto;
     overflow-x: visible;
     overflow-y: visible;
-    padding: 6px;
-    gap: 0;
+    padding: 8px;
+    gap: 10px;          /* 列间距 */
+    row-gap: 16px;      /* 行间距更大一些 */
     align-items: center;
     justify-content: flex-start;
 }
 
+/* ========== 纵向菜单（第一种形态）更紧凑：缩小按钮的上下内边距与分隔的上下间距 ==========
+   仅作用于非横向形态，避免影响第二种形态（横向） */
+.bookmark-context-menu:not(.horizontal-layout) .context-menu-item {
+    padding-top: 5px;   /* 原 10px → 5px，约减半 */
+    padding-bottom: 5px;
+}
+.bookmark-context-menu:not(.horizontal-layout) .context-menu-separator {
+    margin-top: 3px;    /* 原 6px → 3px */
+    margin-bottom: 3px;
+}
+
 .bookmark-context-menu.horizontal-layout .context-menu-item {
     flex: 0 0 auto;
-    padding: 6px 10px;
+    padding: 8px 12px;
     white-space: nowrap;
     display: inline-flex;
     align-items: center;
-    gap: 6px;
-    border-radius: 4px;
+    gap: 8px;
+    border-radius: 6px;
     background: var(--bg-secondary);
     border: 1px solid var(--border-color);
     cursor: pointer;
     transition: all 0.2s;
-    margin: 2px;
+    margin: 0;
+}
+
+/* 选中的默认打开方式：蓝色高亮描边 */
+.bookmark-context-menu .context-menu-item.selected-open {
+    border-color: var(--accent-primary);
+    box-shadow: 0 0 0 2px var(--accent-light);
+}
+
+/* “Open/打开”标签样式：仅作为分组标题，不可点击 */
+.bookmark-context-menu .context-menu-item.section-label {
+    cursor: default;
+    background: transparent;
+    border: none;
+    padding: 2px 6px;
+    margin-right: 4px;
+    color: var(--text-secondary);
+    font-weight: 600;
+}
+.bookmark-context-menu .context-menu-item.section-label:hover {
+    background: transparent;
 }
 
 .bookmark-context-menu.horizontal-layout .context-menu-item:hover {
@@ -2850,7 +2882,101 @@ a.tree-label.tree-bookmark-link:hover {
 
 /* 分组分隔符 - 隐藏 */
 .bookmark-context-menu.horizontal-layout .context-menu-group-separator {
-    display: none;
+    display: inline-block;
+    width: 1px;
+    height: 26px;
+    margin: 0 6px;
+    background: var(--border-color);
+    vertical-align: middle;
+}
+
+/* 分组容器（用于更好地控制间距）*/
+.bookmark-context-menu.horizontal-layout .context-menu-group {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 6px; /* 纵向额外留白，确保行与行更明显 */
+}
+
+/* 相邻分组之间的分隔与内边距 */
+.bookmark-context-menu.horizontal-layout .context-menu-group + .context-menu-group {
+    border-left: none;
+    padding-left: 0;
+    margin-left: 12px;
+}
+
+/* section label 不应用 disabled 的半透明样式 */
+.bookmark-context-menu .context-menu-item.section-label.disabled {
+    opacity: 1;
+    cursor: default;
+}
+
+/* 纵向布局：增加按钮行距 */
+
+
+/* ==================== 自适应密度（根据容器宽度切换） ==================== */
+.bookmark-context-menu.density-xs {
+    font-size: 12px;
+}
+.bookmark-context-menu.density-xs.horizontal-layout {
+    padding: 6px;
+    gap: 6px;
+}
+.bookmark-context-menu.density-xs.horizontal-layout .context-menu-item {
+    padding: 6px 10px;
+    gap: 6px;
+    border-radius: 6px;
+}
+.bookmark-context-menu.density-xs.horizontal-layout .context-menu-group + .context-menu-group {
+    margin-left: 8px;
+}
+
+.bookmark-context-menu.density-sm {
+    font-size: 12.5px;
+}
+.bookmark-context-menu.density-sm.horizontal-layout {
+    padding: 8px;
+    gap: 8px;
+}
+.bookmark-context-menu.density-sm.horizontal-layout .context-menu-item {
+    padding: 7px 11px;
+    gap: 7px;
+    border-radius: 6px;
+}
+.bookmark-context-menu.density-sm.horizontal-layout .context-menu-group + .context-menu-group {
+    margin-left: 10px;
+}
+
+.bookmark-context-menu.density-md {
+    font-size: 13px;
+}
+.bookmark-context-menu.density-md.horizontal-layout {
+    padding: 8px;
+    gap: 10px;
+}
+.bookmark-context-menu.density-md.horizontal-layout .context-menu-item {
+    padding: 8px 12px;
+    gap: 8px;
+    border-radius: 6px;
+}
+.bookmark-context-menu.density-md.horizontal-layout .context-menu-group + .context-menu-group {
+    margin-left: 12px;
+}
+
+.bookmark-context-menu.density-lg {
+    font-size: 13.5px;
+}
+.bookmark-context-menu.density-lg.horizontal-layout {
+    padding: 10px;
+    gap: 12px;
+}
+.bookmark-context-menu.density-lg.horizontal-layout .context-menu-item {
+    padding: 10px 14px;
+    gap: 10px;
+    border-radius: 8px;
+}
+.bookmark-context-menu.density-lg.horizontal-layout .context-menu-group + .context-menu-group {
+    margin-left: 16px;
 }
 
 /* ==================== 右键菜单按钮颜色样式 ==================== */

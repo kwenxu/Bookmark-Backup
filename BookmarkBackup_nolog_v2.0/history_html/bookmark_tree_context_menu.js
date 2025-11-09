@@ -101,6 +101,67 @@ async function resetSpecificGroupInfo() {
         }
     } catch (_) {}
 }
+
+// ==== 插件生成的标签组登记簿（用于编号分配）====
+const PLUGIN_GROUP_REGISTRY_KEY = 'pluginTabGroupsRegistry';
+
+async function readPluginGroupRegistry() {
+    try {
+        if (typeof chrome !== 'undefined' && chrome.storage && chrome.storage.local) {
+            const data = await chrome.storage.local.get([PLUGIN_GROUP_REGISTRY_KEY]);
+            return Array.isArray(data[PLUGIN_GROUP_REGISTRY_KEY]) ? data[PLUGIN_GROUP_REGISTRY_KEY] : [];
+        }
+        const raw = localStorage.getItem(PLUGIN_GROUP_REGISTRY_KEY);
+        return raw ? JSON.parse(raw) : [];
+    } catch (_) { return []; }
+}
+
+async function writePluginGroupRegistry(reg) {
+    const safe = Array.isArray(reg) ? reg : [];
+    try {
+        if (typeof chrome !== 'undefined' && chrome.storage && chrome.storage.local) {
+            await chrome.storage.local.set({ [PLUGIN_GROUP_REGISTRY_KEY]: safe });
+        } else {
+            localStorage.setItem(PLUGIN_GROUP_REGISTRY_KEY, JSON.stringify(safe));
+        }
+    } catch (_) {}
+}
+
+async function pruneDeadPluginGroups() {
+    let reg = await readPluginGroupRegistry();
+    const alive = [];
+    for (const entry of reg) {
+        const { groupId } = entry || {};
+        if (!Number.isInteger(groupId)) continue;
+        let ok = false;
+        try {
+            if (chrome && chrome.tabGroups && chrome.tabGroups.get) {
+                const g = await chrome.tabGroups.get(groupId);
+                ok = !!(g && g.id === groupId);
+            }
+        } catch (_) {
+            ok = false;
+        }
+        if (ok) alive.push(entry);
+    }
+    await writePluginGroupRegistry(alive);
+    return alive;
+}
+
+async function allocateNextGroupNumber() {
+    const alive = await pruneDeadPluginGroups();
+    const used = new Set();
+    alive.forEach(e => { if (Number.isInteger(e.number) && e.number > 0) used.add(e.number); });
+    let n = 1;
+    while (used.has(n)) n++;
+    return n;
+}
+
+async function registerPluginGroup(groupId, windowId, number) {
+    const reg = await pruneDeadPluginGroups();
+    reg.push({ groupId, windowId, number, createdAt: Date.now() });
+    await writePluginGroupRegistry(reg);
+}
 let clipboardOperation = null; // 'cut' | 'copy'
 let selectedNodes = new Set(); // 多选节点集合
 let selectedNodeMeta = new Map(); // 节点元信息：nodeId -> { treeType, sectionId }
@@ -1564,12 +1625,14 @@ async function openInSpecificTabGroup(url, options = {}) {
         }
 
         // 创建新标签并建立新的分组
+        const nextNumber = await allocateNextGroupNumber();
         const tab = await chrome.tabs.create({ url, active: false });
         const groupId = await chrome.tabs.group({ tabIds: tab.id });
         await setSpecificGroupInfo(groupId, tab.windowId || null);
         if (chrome.tabGroups && chrome.tabGroups.update) {
-            try { await chrome.tabGroups.update(groupId, { title: 'Specific Group' }); } catch (_) {}
+            try { await chrome.tabGroups.update(groupId, { title: String(nextNumber), color: 'blue' }); } catch (_) {}
         }
+        await registerPluginGroup(groupId, tab.windowId || null, nextNumber);
     } catch (error) {
         console.warn('[特定标签组] 打开失败:', error);
         // 兜底回退

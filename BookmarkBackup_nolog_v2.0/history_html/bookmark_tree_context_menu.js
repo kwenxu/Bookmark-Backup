@@ -1319,8 +1319,11 @@ async function handleMenuAction(action, context) {
                 break;
 
             case 'open-specific-window':
-                await openInSpecificWindow(nodeUrl);
-                await setDefaultOpenMode('specific-window');
+                {
+                    const switching = defaultOpenMode !== 'specific-window';
+                    await openInSpecificWindow(nodeUrl, { forceNew: switching });
+                    await setDefaultOpenMode('specific-window');
+                }
                 break;
                 
             case 'open-all':
@@ -1465,11 +1468,17 @@ async function openBookmarkNewWindow(url, incognito = false) {
 }
 
 // 在特定窗口中打开：首次创建窗口A，后续复用
-async function openInSpecificWindow(url) {
+async function openInSpecificWindow(url, options = {}) {
+    const { forceNew = false } = options;
     if (!url) return;
     try {
         if (typeof chrome !== 'undefined' && chrome.windows && chrome.tabs) {
-            // 检查窗口是否存在
+            // 若切换回“特定窗口”，则重置，创建一个全新的窗口
+            if (forceNew) {
+                specificWindowId = null;
+            }
+
+            // 检查窗口是否存在（且未被关闭）
             if (specificWindowId) {
                 try {
                     const win = await chrome.windows.get(specificWindowId, { populate: false });

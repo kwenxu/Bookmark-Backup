@@ -2478,7 +2478,8 @@ function makePermanentSectionResizable(element) {
         let startX, startY, startWidth, startHeight, startLeft, startTop;
         
         handle.addEventListener('mousedown', (e) => {
-            if (node && node.locked) return; // 锁定不允许缩放
+            // 永久栏目不使用 node 对象；如需禁用缩放，可通过 data-locked 控制
+            if (element && element.dataset && element.dataset.locked === 'true') return;
             e.stopPropagation();
             e.preventDefault();
             

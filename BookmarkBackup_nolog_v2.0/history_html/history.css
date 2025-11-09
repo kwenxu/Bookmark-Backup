@@ -5515,7 +5515,8 @@ a.tree-label.tree-bookmark-link:hover {
 }
 
 /* 缩放指示器 */
-.canvas-workspace {
+/* 默认使用普通光标；仅按住空格时显示抓手 */
+.canvas-workspace.space-pressed {
     cursor: grab;
 }
 
@@ -5749,7 +5750,7 @@ a.tree-label.tree-bookmark-link:hover {
     flex: 1 1 auto; /* 填充剩余空间，明确 flex 属性 */
     overflow: auto !important; /* 重要：确保滚动启用 */
     user-select: text; /* 允许选中文本，方便点击链接 */
-    cursor: grab; /* 悬停在空白栏目上显示拖动光标 */
+    cursor: default; /* 默认使用普通光标；按空格拖动画布时再切换 */
     padding: 8px; /* 增加内边距，避免内容贴边 */
     box-sizing: border-box;
     /* 关键：让滚动正常工作，不被父元素的拖拽事件干扰 */

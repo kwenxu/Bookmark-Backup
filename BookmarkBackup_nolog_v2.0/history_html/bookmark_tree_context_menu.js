@@ -225,11 +225,9 @@ async function pruneDeadScopedWindows() {
 
 async function allocateNextScopedWindowNumber(scopeKey) {
     const alive = await pruneDeadScopedWindows();
-    const used = new Set();
-    alive.forEach(e => { if (e && e.scope === scopeKey && Number.isInteger(e.number) && e.number > 0) used.add(e.number); });
-    let n = 1;
-    while (used.has(n)) n++;
-    return n;
+    let maxN = 0;
+    alive.forEach(e => { if (e && e.scope === scopeKey && Number.isInteger(e.number) && e.number > 0 && e.number > maxN) maxN = e.number; });
+    return maxN + 1;
 }
 
 async function registerScopedWindow(scopeKey, windowId, number) {
@@ -259,11 +257,9 @@ async function pruneDeadScopedGroups() {
 
 async function allocateNextScopedNumber(scopeKey) {
     const alive = await pruneDeadScopedGroups();
-    const used = new Set();
-    alive.forEach(e => { if (e && e.scope === scopeKey && Number.isInteger(e.number) && e.number > 0) used.add(e.number); });
-    let n = 1;
-    while (used.has(n)) n++;
-    return n;
+    let maxN = 0;
+    alive.forEach(e => { if (e && e.scope === scopeKey && Number.isInteger(e.number) && e.number > 0 && e.number > maxN) maxN = e.number; });
+    return maxN + 1;
 }
 
 async function registerScopedGroup(scopeKey, groupId, windowId, number) {
@@ -339,11 +335,9 @@ async function pruneDeadPluginGroups() {
 
 async function allocateNextGroupNumber() {
     const alive = await pruneDeadPluginGroups();
-    const used = new Set();
-    alive.forEach(e => { if (Number.isInteger(e.number) && e.number > 0) used.add(e.number); });
-    let n = 1;
-    while (used.has(n)) n++;
-    return n;
+    let maxN = 0;
+    alive.forEach(e => { if (Number.isInteger(e.number) && e.number > 0 && e.number > maxN) maxN = e.number; });
+    return maxN + 1;
 }
 
 async function registerPluginGroup(groupId, windowId, number) {

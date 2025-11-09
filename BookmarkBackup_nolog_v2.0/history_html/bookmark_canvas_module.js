@@ -167,6 +167,8 @@ let cachedCanvasContent = null;
 // 性能优化：休眠管理节流
 let dormancyUpdateTimer = null;
 let dormancyUpdatePending = false;
+// 防止重复绑定：临时栏目书签链接点击处理器
+let tempLinkClickHandler = null;
 
 function getCachedContainer() {
     if (!cachedCanvasContainer) {
@@ -5831,6 +5833,41 @@ function addAnchorsToNode(nodeElement, nodeId) {
             startConnection(e, nodeId, side);
         }, true);
     });
+
+    // 左键点击临时栏目（书签型）中的书签链接时，按全局默认打开方式处理
+    if (tempLinkClickHandler) {
+        document.removeEventListener('click', tempLinkClickHandler, true);
+        document.removeEventListener('click', tempLinkClickHandler, false);
+    }
+    tempLinkClickHandler = (e) => {
+        const link = e.target && e.target.closest('.temp-canvas-node a.tree-bookmark-link');
+        if (!link) return;
+        // 修饰键交给浏览器默认行为
+        if (e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
+        e.preventDefault();
+        // 阻止其它监听器重复处理
+        if (typeof e.stopImmediatePropagation === 'function') e.stopImmediatePropagation();
+        if (typeof e.stopPropagation === 'function') e.stopPropagation();
+        const url = link.getAttribute('href');
+        try {
+            if (window.defaultOpenMode === undefined && typeof window.getDefaultOpenMode === 'function') {
+                window.defaultOpenMode = window.getDefaultOpenMode();
+            }
+        } catch(_) {}
+        const mode = (typeof window !== 'undefined' && window.defaultOpenMode) || 'new-tab';
+        if (mode === 'new-window') {
+            if (typeof window.openBookmarkNewWindow === 'function') window.openBookmarkNewWindow(url, false); else window.open(url, '_blank');
+        } else if (mode === 'incognito') {
+            if (typeof window.openBookmarkNewWindow === 'function') window.openBookmarkNewWindow(url, true); else window.open(url, '_blank');
+        } else if (mode === 'specific-window') {
+            if (typeof window.openInSpecificWindow === 'function') window.openInSpecificWindow(url); else window.open(url, '_blank');
+        } else if (mode === 'specific-group') {
+            if (typeof window.openInSpecificTabGroup === 'function') window.openInSpecificTabGroup(url); else window.open(url, '_blank');
+        } else {
+            if (typeof window.openBookmarkNewTab === 'function') window.openBookmarkNewTab(url); else window.open(url, '_blank');
+        }
+    };
+    document.addEventListener('click', tempLinkClickHandler, true);
 }
 
 function startConnection(e, nodeId, side) {

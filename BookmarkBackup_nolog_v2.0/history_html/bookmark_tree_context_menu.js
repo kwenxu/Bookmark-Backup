@@ -1242,12 +1242,29 @@ async function handleTempMenuAction(action, context) {
             break;
         case 'open-new-tab':
             await openBookmarkNewTab(context.nodeUrl);
+            await setDefaultOpenMode('new-tab');
             break;
         case 'open-new-window':
             await openBookmarkNewWindow(context.nodeUrl, false);
+            await setDefaultOpenMode('new-window');
             break;
         case 'open-incognito':
             await openBookmarkNewWindow(context.nodeUrl, true);
+            await setDefaultOpenMode('incognito');
+            break;
+        case 'open-specific-window':
+            {
+                const switching = defaultOpenMode !== 'specific-window';
+                await openInSpecificWindow(context.nodeUrl, { forceNew: switching });
+                await setDefaultOpenMode('specific-window');
+            }
+            break;
+        case 'open-specific-group':
+            {
+                const switching = defaultOpenMode !== 'specific-group';
+                await openInSpecificTabGroup(context.nodeUrl, { forceNew: switching });
+                await setDefaultOpenMode('specific-group');
+            }
             break;
         case 'open-all':
             await openTempUrls(context.sectionId, context.nodeId, { newWindow: false, incognito: false });

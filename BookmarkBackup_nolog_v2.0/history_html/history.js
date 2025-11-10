@@ -561,6 +561,55 @@ document.addEventListener('DOMContentLoaded', async () => {
         await renderCurrentChangesViewWithRetry(3, true);
     } else {
         await renderCurrentView();
+
+        // 如果通过 window_marker.html 传入了定位参数，则在 Canvas 视图渲染后执行一次定位
+        try {
+            const lt = urlParams.get('lt'); // 'permanent' | 'temporary'
+            const sid = urlParams.get('sid');
+            const nid = urlParams.get('nid');
+            const titleParam = urlParams.get('t');
+            if (titleParam && typeof titleParam === 'string' && titleParam.trim()) {
+                // 可选：让内页标题也反映命名，便于区分
+                document.title = titleParam.trim();
+            }
+
+            const waitFor = (predicate, timeout = 5000, interval = 50) => new Promise((resolve, reject) => {
+                const start = Date.now();
+                const tick = () => {
+                    try {
+                        if (predicate()) return resolve(true);
+                        if (Date.now() - start >= timeout) return resolve(false);
+                    } catch (_) {}
+                    setTimeout(tick, interval);
+                };
+                tick();
+            });
+
+            if (currentView === 'canvas' && (lt === 'permanent' || lt === 'temporary')) {
+                // 等待 Canvas 初始化完成
+                await waitFor(() => window.CanvasModule && document.getElementById('canvasWorkspace'));
+                if (lt === 'permanent') {
+                    if (window.CanvasModule && typeof window.CanvasModule.locatePermanent === 'function') {
+                        window.CanvasModule.locatePermanent();
+                    }
+                    if (nid) {
+                        // 等待树节点渲染完成后滚动到对应书签
+                        await waitFor(() => document.querySelector('#permanentSection .permanent-section-body .tree-item'));
+                        const body = document.querySelector('#permanentSection .permanent-section-body');
+                        const target = body ? body.querySelector(`.tree-item[data-node-id="${CSS.escape(nid)}"]`) : null;
+                        if (target && target.scrollIntoView) {
+                            try { target.scrollIntoView({ block: 'center', behavior: 'instant' }); } catch(_) { target.scrollIntoView(); }
+                        }
+                    }
+                } else if (lt === 'temporary' && sid) {
+                    if (window.CanvasModule && typeof window.CanvasModule.locateSection === 'function') {
+                        try { window.CanvasModule.locateSection(sid); } catch(_) {}
+                    }
+                }
+            }
+        } catch (e) {
+            console.warn('[初始化] Canvas 定位参数处理失败:', e);
+        }
     }
     
     // 并行预加载其他视图和图标（不阻塞）

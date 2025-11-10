@@ -2211,6 +2211,33 @@ function locateToPermanentSection() {
     });
 }
 
+// 通用：定位到任意 Canvas 节点（按绝对定位的 left/top + 尺寸）
+function locateToElement(el) {
+    if (!el) return;
+    const workspace = document.getElementById('canvasWorkspace');
+    if (!workspace) return;
+    const left = parseFloat(el.style.left) || 0;
+    const top = parseFloat(el.style.top) || 0;
+    const width = el.offsetWidth || 0;
+    const height = el.offsetHeight || 0;
+    const centerX = left + width / 2;
+    const centerY = top + height / 2;
+    const wsW = workspace.clientWidth;
+    const wsH = workspace.clientHeight;
+    CanvasState.panOffsetX = wsW / 2 - centerX * CanvasState.zoom;
+    CanvasState.panOffsetY = wsH / 2 - centerY * CanvasState.zoom;
+    updateCanvasScrollBounds();
+    savePanOffsetThrottled();
+}
+
+// 定位到临时栏目（通过 sectionId）
+function locateToTempSection(sectionId) {
+    if (!sectionId) return;
+    try { ensureTempSectionRendered(sectionId); } catch(_) {}
+    const el = document.querySelector(`.temp-canvas-node[data-section-id="${CSS.escape(sectionId)}"]`);
+    if (el) locateToElement(el);
+}
+
 // =============================================================================
 // 让永久栏目本身可以拖动
 // =============================================================================
@@ -6973,6 +7000,10 @@ window.CanvasModule = {
     CanvasState: CanvasState, // 导出状态供外部访问（如指针拖拽）
     createTempNode: createTempNode, // 导出创建临时节点函数
     createMdNode: createMdNode,
+    // 定位 API：供外部（history.js / 标记页）调用
+    locatePermanent: locateToPermanentSection,
+    locateSection: locateToTempSection,
+    locateElement: locateToElement,
     temp: {
         getSection: getTempSection,
         findItem: findTempItemEntry,

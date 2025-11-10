@@ -5,21 +5,14 @@
     <title>Marker</title>
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <style>
-      html,body { height:100%; margin:0; font: 14px/1.6 -apple-system,BlinkMacSystemFont,Segoe UI,Roboto,Helvetica,Arial; }
-      .wrap { display:flex; align-items:center; justify-content:center; height:100%; color:#888; }
+      html,body { height:100%; margin:0; }
+      .full { position:fixed; inset:0; border:0; width:100%; height:100%; }
+      .fallback { position:fixed; inset:0; display:flex; align-items:center; justify-content:center; color:#888; font: 14px/1.6 -apple-system,BlinkMacSystemFont,Segoe UI,Roboto,Helvetica,Arial; }
     </style>
-    <script>
-      (function(){
-        try {
-          const usp = new URLSearchParams(location.search);
-          const t = usp.get('t') || '';
-          if (t) document.title = t;
-        } catch(_) {}
-      })();
-    </script>
+    <script src="window_marker.js" defer></script>
   </head>
   <body>
-    <div class="wrap">This tab marks a Specific Window.</div>
+    <iframe id="canvasFrame" class="full" src="about:blank" allow="clipboard-read; clipboard-write"></iframe>
+    <div class="fallback">Loading Bookmark Canvas…</div>
   </body>
   </html>
-

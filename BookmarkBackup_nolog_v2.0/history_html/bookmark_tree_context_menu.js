@@ -126,6 +126,7 @@ async function resetSpecificGroupInfo() {
 
 // ==== 插件生成的标签组登记簿（用于编号分配）====
 const PLUGIN_GROUP_REGISTRY_KEY = 'pluginTabGroupsRegistry';
+const PLUGIN_WINDOW_REGISTRY_KEY = 'pluginWindowsRegistry';
 
 // ==== 作用域化（栏目区分）标签组登记簿 & 当前指针 ====
 const PLUGIN_SCOPED_GROUP_REGISTRY_KEY = 'pluginScopedTabGroupsRegistry';
@@ -310,6 +311,61 @@ async function writePluginGroupRegistry(reg) {
             localStorage.setItem(PLUGIN_GROUP_REGISTRY_KEY, JSON.stringify(safe));
         }
     } catch (_) {}
+}
+
+// ==== 插件生成的（全局"同一窗口"）窗口登记簿 ====
+async function readPluginWindowRegistry() {
+    try {
+        if (typeof chrome !== 'undefined' && chrome.storage && chrome.storage.local) {
+            const data = await chrome.storage.local.get([PLUGIN_WINDOW_REGISTRY_KEY]);
+            return Array.isArray(data[PLUGIN_WINDOW_REGISTRY_KEY]) ? data[PLUGIN_WINDOW_REGISTRY_KEY] : [];
+        }
+        const raw = localStorage.getItem(PLUGIN_WINDOW_REGISTRY_KEY);
+        return raw ? JSON.parse(raw) : [];
+    } catch (_) { return []; }
+}
+
+async function writePluginWindowRegistry(reg) {
+    const safe = Array.isArray(reg) ? reg : [];
+    try {
+        if (typeof chrome !== 'undefined' && chrome.storage && chrome.storage.local) {
+            await chrome.storage.local.set({ [PLUGIN_WINDOW_REGISTRY_KEY]: safe });
+        } else {
+            localStorage.setItem(PLUGIN_WINDOW_REGISTRY_KEY, JSON.stringify(safe));
+        }
+    } catch (_) {}
+}
+
+async function pruneDeadPluginWindows() {
+    let reg = await readPluginWindowRegistry();
+    const alive = [];
+    for (const entry of reg) {
+        const { windowId } = entry || {};
+        if (!Number.isInteger(windowId)) continue;
+        let ok = false;
+        try {
+            if (chrome && chrome.windows && chrome.windows.get) {
+                const w = await chrome.windows.get(windowId, { populate:false });
+                ok = !!(w && w.id === windowId);
+            }
+        } catch (_) { ok = false; }
+        if (ok) alive.push(entry);
+    }
+    await writePluginWindowRegistry(alive);
+    return alive;
+}
+
+async function allocateNextWindowNumber() {
+    const alive = await pruneDeadPluginWindows();
+    let maxN = 0;
+    alive.forEach(e => { if (Number.isInteger(e.number) && e.number > 0 && e.number > maxN) maxN = e.number; });
+    return maxN + 1;
+}
+
+async function registerPluginWindow(windowId, number) {
+    const reg = await pruneDeadPluginWindows();
+    reg.push({ windowId, number, createdAt: Date.now() });
+    await writePluginWindowRegistry(reg);
 }
 
 async function pruneDeadPluginGroups() {
@@ -1528,7 +1584,7 @@ async function handleTempMenuAction(action, context) {
             await setDefaultOpenMode('incognito');
             break;
         case 'open-specific-window':
-            await openInSpecificWindow(context.nodeUrl, { forceNew: true });
+            await openInSpecificWindow(context.nodeUrl, { forceNew: true, context });
             await setDefaultOpenMode('specific-window');
             break;
         case 'open-specific-group':
@@ -1733,7 +1789,7 @@ async function handleMenuAction(action, context) {
                 break;
 
             case 'open-specific-window':
-                await openInSpecificWindow(nodeUrl, { forceNew: true });
+                await openInSpecificWindow(nodeUrl, { forceNew: true, context });
                 await setDefaultOpenMode('specific-window');
                 break;
 
@@ -1940,7 +1996,7 @@ async function openInSpecificTabGroup(url, options = {}) {
 
 // 在特定窗口中打开：首次创建窗口A，后续复用
 async function openInSpecificWindow(url, options = {}) {
-    const { forceNew = false } = options;
+    const { forceNew = false, context = null } = options;
     if (!url) return;
     try {
         if (typeof chrome !== 'undefined' && chrome.windows && chrome.tabs) {
@@ -1964,6 +2020,26 @@ async function openInSpecificWindow(url, options = {}) {
             const created = await chrome.windows.create({ url });
             if (created && created.id) {
                 await setSpecificWindowId(created.id);
+                // 为“同一窗口”创建可见标记页（用于命名），标题使用连续编号
+                try {
+                    const nextNum = await allocateNextWindowNumber();
+                    await registerPluginWindow(created.id, nextNum);
+                    const lt = (context && context.treeType === 'temporary') ? 'temporary' : 'permanent';
+                    const sid = (lt === 'temporary' && context && context.sectionId) ? context.sectionId : '';
+                    const nid = (lt === 'permanent' && context && context.nodeId) ? context.nodeId : '';
+                    const params = new URLSearchParams();
+                    params.set('t', String(nextNum));
+                    if (lt) params.set('lt', lt);
+                    if (sid) params.set('sid', sid);
+                    if (nid) params.set('nid', nid);
+                    const markerUrl = (chrome && chrome.runtime && chrome.runtime.getURL)
+                        ? chrome.runtime.getURL(`history_html/window_marker.html?${params.toString()}`)
+                        : null;
+                    if (markerUrl && chrome && chrome.tabs && chrome.tabs.create) {
+                        const markerTab = await chrome.tabs.create({ windowId: created.id, url: markerUrl, pinned: false, active: false });
+                        try { if (markerTab && markerTab.id != null) await chrome.tabs.move(markerTab.id, { index: 0 }); } catch(_) {}
+                    }
+                } catch(_) {}
             }
         } else {
             // 非扩展环境：退回到新窗口
@@ -2057,19 +2133,30 @@ async function openInScopedWindow(url, opts = {}) {
         const created = await chrome.windows.create({ url });
         if (created && created.id) {
             await setScopedWindow(scope.key, created.id);
-            // 仅在永久栏目为窗口添加可见标记页，标题前缀“A-Z ”+编号
+            // 为不同作用域添加可见标记页：
+            // permanent -> 标题 "A-Z <n>"；temporary(alpha) -> 标题 "<alpha><n>"
             const markerTitleNumber = await allocateNextScopedWindowNumber(scope.key);
             await registerScopedWindow(scope.key, created.id, markerTitleNumber);
-            if (scope.key === 'permanent') {
-                try {
-                    const markerUrl = (chrome && chrome.runtime && chrome.runtime.getURL)
-                        ? chrome.runtime.getURL(`history_html/window_marker.html?t=${encodeURIComponent('A-Z ' + markerTitleNumber)}`)
-                        : null;
-                    if (markerUrl && chrome && chrome.tabs && chrome.tabs.create) {
-                        await chrome.tabs.create({ windowId: created.id, url: markerUrl, pinned: true, active: false });
-                    }
-                } catch(_) {}
-            }
+            try {
+                const titleStr = (scope.key === 'permanent')
+                    ? `A-Z ${markerTitleNumber}`
+                    : `${(scope.prefix || '')}${markerTitleNumber}`;
+                const lt = (scope.key === 'permanent') ? 'permanent' : 'temporary';
+                const sid = (lt === 'temporary' && context && context.sectionId) ? context.sectionId : '';
+                const nid = (lt === 'permanent' && context && context.nodeId) ? context.nodeId : '';
+                const p = new URLSearchParams();
+                p.set('t', titleStr);
+                if (lt) p.set('lt', lt);
+                if (sid) p.set('sid', sid);
+                if (nid) p.set('nid', nid);
+                const markerUrl = (chrome && chrome.runtime && chrome.runtime.getURL)
+                    ? chrome.runtime.getURL(`history_html/window_marker.html?${p.toString()}`)
+                    : null;
+                if (markerUrl && chrome && chrome.tabs && chrome.tabs.create) {
+                    const markerTab = await chrome.tabs.create({ windowId: created.id, url: markerUrl, pinned: false, active: false });
+                    try { if (markerTab && markerTab.id != null) await chrome.tabs.move(markerTab.id, { index: 0 }); } catch(_) {}
+                }
+            } catch(_) {}
         }
     } catch (error) {
         console.error('[分栏特定窗口] 打开失败:', error);

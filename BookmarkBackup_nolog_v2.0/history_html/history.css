@@ -2837,7 +2837,8 @@ a.tree-label.tree-bookmark-link:hover {
 /* 纵向菜单：短分隔线（宽度为标准分隔线的一半） */
 .bookmark-context-menu:not(.horizontal-layout) .context-menu-separator.short {
     width: 50%;
-    margin-left: 25%;
+    margin-left: 0;
+    margin-right: auto;
 }
 
 .bookmark-context-menu.horizontal-layout .context-menu-item {
@@ -2886,8 +2887,13 @@ a.tree-label.tree-bookmark-link:hover {
     background: var(--bg-tertiary, rgba(0,0,0,0.06));
     color: var(--text-secondary);
 }
-[data-theme="dark"] .bookmark-context-menu .context-menu-item .sub-badge {
-    background: rgba(255,255,255,0.08);
+.bookmark-context-menu .context-menu-item .sub-badge[data-sub-action] {
+    cursor: pointer;
+    user-select: none;
+}
+.bookmark-context-menu .context-menu-item .sub-badge[data-sub-action]:hover {
+    background: var(--accent-light, rgba(0,0,0,0.08));
+    color: var(--accent-primary, var(--text-primary));
 }
 
 .bookmark-context-menu.horizontal-layout .context-menu-item:hover {

@@ -7,10 +7,21 @@ let currentContextNode = null;
 let bookmarkClipboard = null; // 剪贴板 { action: 'cut'|'copy', nodeId, nodeData }
 
 // 全局：默认打开方式与特定窗口/分组ID
-let defaultOpenMode = 'new-tab'; // 'new-tab' | 'new-window' | 'incognito' | 'specific-window' | 'specific-group' | 'scoped-window' | 'scoped-group'
+let defaultOpenMode = 'new-tab'; // 'new-tab' | 'new-window' | 'incognito' | 'specific-window' | 'specific-group' | 'scoped-window' | 'scoped-group' | 'same-window-specific-group'
 let specificWindowId = null; // chrome.windows Window ID
 let specificTabGroupId = null; // chrome.tabGroups Group ID（在“特定标签组”模式下复用）
 let specificGroupWindowId = null; // 保存分组所在窗口，确保新开的标签在同一窗口
+const PLUGIN_GROUP_REGISTRY_KEY = 'pluginTabGroupsRegistry';
+const PLUGIN_WINDOW_REGISTRY_KEY = 'pluginWindowsRegistry';
+const PLUGIN_SCOPED_GROUP_REGISTRY_KEY = 'pluginScopedTabGroupsRegistry';
+const PLUGIN_SCOPED_WINDOW_REGISTRY_KEY = 'pluginScopedWindowsRegistry';
+const SAME_WINDOW_SPECIFIC_GROUP_WINDOW_KEY = 'bookmarkSameWindowSpecificGroupWindowId';
+const SAME_WINDOW_SPECIFIC_GROUP_SCOPES_KEY = 'bookmarkSameWindowSpecificGroupScopes';
+
+let scopedCurrentGroups = {}; // { [scopeKey: string]: { groupId: number, windowId: number|null } }
+let scopedWindows = {}; // { [scopeKey: string]: number /* windowId */ }
+let sameWindowSpecificGroupWindowId = null;
+let sameWindowSpecificGroupScopes = {}; // { [scopeKey: string]: { groupId, windowId, number, updatedAt } }
 // 暴露给其他脚本（如 history.js）
 window.getDefaultOpenMode = () => defaultOpenMode;
 
@@ -24,7 +35,9 @@ window.getDefaultOpenMode = () => defaultOpenMode;
                 'bookmarkSpecificGroupId',
                 'bookmarkSpecificGroupWindowId',
                 'bookmarkScopedCurrentGroups',
-                'bookmarkScopedWindows'
+                'bookmarkScopedWindows',
+                SAME_WINDOW_SPECIFIC_GROUP_WINDOW_KEY,
+                SAME_WINDOW_SPECIFIC_GROUP_SCOPES_KEY
             ]);
             if (data && typeof data.bookmarkDefaultOpenMode === 'string') {
                 defaultOpenMode = data.bookmarkDefaultOpenMode;
@@ -38,12 +51,18 @@ window.getDefaultOpenMode = () => defaultOpenMode;
             if (data && Number.isInteger(data.bookmarkSpecificGroupWindowId)) {
                 specificGroupWindowId = data.bookmarkSpecificGroupWindowId;
             }
+            if (data && Number.isInteger(data[SAME_WINDOW_SPECIFIC_GROUP_WINDOW_KEY])) {
+                sameWindowSpecificGroupWindowId = data[SAME_WINDOW_SPECIFIC_GROUP_WINDOW_KEY];
+            }
             // 初始化作用域映射（分栏位）
             if (data && data.bookmarkScopedCurrentGroups && typeof data.bookmarkScopedCurrentGroups === 'object') {
                 try { scopedCurrentGroups = data.bookmarkScopedCurrentGroups || {}; } catch(_) {}
             }
             if (data && data.bookmarkScopedWindows && typeof data.bookmarkScopedWindows === 'object') {
                 try { scopedWindows = data.bookmarkScopedWindows || {}; } catch(_) {}
+            }
+            if (data && data[SAME_WINDOW_SPECIFIC_GROUP_SCOPES_KEY] && typeof data[SAME_WINDOW_SPECIFIC_GROUP_SCOPES_KEY] === 'object') {
+                try { sameWindowSpecificGroupScopes = data[SAME_WINDOW_SPECIFIC_GROUP_SCOPES_KEY] || {}; } catch(_) {}
             }
         } else {
             const mode = localStorage.getItem('bookmarkDefaultOpenMode');
@@ -54,8 +73,16 @@ window.getDefaultOpenMode = () => defaultOpenMode;
             const gwid = parseInt(localStorage.getItem('bookmarkSpecificGroupWindowId') || '', 10);
             if (Number.isInteger(gid)) specificTabGroupId = gid;
             if (Number.isInteger(gwid)) specificGroupWindowId = gwid;
+            const combinedWinId = parseInt(localStorage.getItem(SAME_WINDOW_SPECIFIC_GROUP_WINDOW_KEY) || '', 10);
+            if (Number.isInteger(combinedWinId)) sameWindowSpecificGroupWindowId = combinedWinId;
             try { scopedCurrentGroups = JSON.parse(localStorage.getItem('bookmarkScopedCurrentGroups') || '{}'); } catch(_) {}
             try { scopedWindows = JSON.parse(localStorage.getItem('bookmarkScopedWindows') || '{}'); } catch(_) {}
+            try {
+                const storedScopes = localStorage.getItem(SAME_WINDOW_SPECIFIC_GROUP_SCOPES_KEY);
+                if (storedScopes) {
+                    sameWindowSpecificGroupScopes = JSON.parse(storedScopes) || {};
+                }
+            } catch(_) {}
         }
         try { window.defaultOpenMode = defaultOpenMode; } catch(_) {}
     } catch (_) {}
@@ -123,16 +150,6 @@ async function resetSpecificGroupInfo() {
         }
     } catch (_) {}
 }
-
-// ==== 插件生成的标签组登记簿（用于编号分配）====
-const PLUGIN_GROUP_REGISTRY_KEY = 'pluginTabGroupsRegistry';
-const PLUGIN_WINDOW_REGISTRY_KEY = 'pluginWindowsRegistry';
-
-// ==== 作用域化（栏目区分）标签组登记簿 & 当前指针 ====
-const PLUGIN_SCOPED_GROUP_REGISTRY_KEY = 'pluginScopedTabGroupsRegistry';
-let scopedCurrentGroups = {}; // { [scopeKey: string]: { groupId: number, windowId: number|null } }
-let scopedWindows = {}; // { [scopeKey: string]: number /* windowId */ }
-const PLUGIN_SCOPED_WINDOW_REGISTRY_KEY = 'pluginScopedWindowsRegistry';
 
 function getScopeFromContext(context) {
     const type = context && context.treeType ? context.treeType : 'permanent';
@@ -203,6 +220,78 @@ async function writeScopedWindowRegistry(reg) {
             localStorage.setItem(PLUGIN_SCOPED_WINDOW_REGISTRY_KEY, JSON.stringify(safe));
         }
     } catch (_) {}
+}
+
+function getSameWindowSpecificGroupEntry(scopeKey) {
+    if (!scopeKey || !sameWindowSpecificGroupScopes) return null;
+    const entry = sameWindowSpecificGroupScopes[scopeKey];
+    return entry && typeof entry === 'object' ? entry : null;
+}
+
+async function persistSameWindowSpecificGroupScopes() {
+    const payload = (sameWindowSpecificGroupScopes && typeof sameWindowSpecificGroupScopes === 'object')
+        ? sameWindowSpecificGroupScopes
+        : {};
+    try {
+        if (typeof chrome !== 'undefined' && chrome.storage && chrome.storage.local) {
+            await chrome.storage.local.set({ [SAME_WINDOW_SPECIFIC_GROUP_SCOPES_KEY]: payload });
+        } else {
+            localStorage.setItem(SAME_WINDOW_SPECIFIC_GROUP_SCOPES_KEY, JSON.stringify(payload));
+        }
+    } catch (_) {}
+}
+
+async function setSameWindowSpecificGroupScope(scopeKey, groupId, windowId, number) {
+    if (!scopeKey) return;
+    sameWindowSpecificGroupScopes[scopeKey] = {
+        groupId,
+        windowId: windowId || null,
+        number: Number.isFinite(number) ? number : null,
+        updatedAt: Date.now()
+    };
+    await persistSameWindowSpecificGroupScopes();
+}
+
+async function clearSameWindowSpecificGroupScope(scopeKey) {
+    if (!scopeKey || !sameWindowSpecificGroupScopes) return;
+    if (sameWindowSpecificGroupScopes[scopeKey]) {
+        delete sameWindowSpecificGroupScopes[scopeKey];
+        await persistSameWindowSpecificGroupScopes();
+    }
+}
+
+async function resetSameWindowSpecificGroupScopes() {
+    sameWindowSpecificGroupScopes = {};
+    try {
+        if (typeof chrome !== 'undefined' && chrome.storage && chrome.storage.local) {
+            await chrome.storage.local.remove([SAME_WINDOW_SPECIFIC_GROUP_SCOPES_KEY]);
+        } else {
+            localStorage.removeItem(SAME_WINDOW_SPECIFIC_GROUP_SCOPES_KEY);
+        }
+    } catch (_) {}
+}
+
+async function setSameWindowSpecificGroupWindowId(winId) {
+    sameWindowSpecificGroupWindowId = winId;
+    try {
+        if (typeof chrome !== 'undefined' && chrome.storage && chrome.storage.local) {
+            await chrome.storage.local.set({ [SAME_WINDOW_SPECIFIC_GROUP_WINDOW_KEY]: winId });
+        } else {
+            localStorage.setItem(SAME_WINDOW_SPECIFIC_GROUP_WINDOW_KEY, String(winId));
+        }
+    } catch (_) {}
+}
+
+async function resetSameWindowSpecificGroupState() {
+    sameWindowSpecificGroupWindowId = null;
+    try {
+        if (typeof chrome !== 'undefined' && chrome.storage && chrome.storage.local) {
+            await chrome.storage.local.remove([SAME_WINDOW_SPECIFIC_GROUP_WINDOW_KEY]);
+        } else {
+            localStorage.removeItem(SAME_WINDOW_SPECIFIC_GROUP_WINDOW_KEY);
+        }
+    } catch (_) {}
+    await resetSameWindowSpecificGroupScopes();
 }
 
 async function pruneDeadScopedWindows() {
@@ -967,7 +1056,27 @@ async function showContextMenu(e, node) {
     }
 
     contextMenu.innerHTML = menuHTML;
-    
+
+    contextMenu.querySelectorAll('.sub-badge[data-sub-action]').forEach(badge => {
+        badge.addEventListener('click', async (event) => {
+            const subAction = badge.dataset.subAction;
+            if (!subAction || !context || !context.nodeUrl) return;
+            event.preventDefault();
+            event.stopPropagation();
+            try {
+                await openInSameWindowSpecificGroup(context.nodeUrl, {
+                    context,
+                    forceNewGroup: subAction === 'swsg-new-group' || subAction === 'swsg-new-window',
+                    forceNewWindow: subAction === 'swsg-new-window'
+                });
+                await setDefaultOpenMode('same-window-specific-group');
+            } catch (badgeError) {
+                console.warn('[右键菜单] swsg badge failed', badgeError);
+            }
+            hideContextMenu();
+        });
+    });
+
     // 绑定点击事件
     contextMenu.querySelectorAll('.context-menu-item:not(.disabled)').forEach(item => {
         item.addEventListener('click', (e) => {
@@ -1076,6 +1185,30 @@ function buildMenuItems(context) {
 
             // 打开组（移除可点击的 Open，改为标题；英文改为 in ...）
             { action: 'open-label', label: lang === 'zh_CN' ? '打开：' : 'Open:', icon: '', group: 'open', disabled: true },
+            (() => {
+                const scope = getScopeFromContext(context);
+                const hasWindow = Number.isInteger(sameWindowSpecificGroupWindowId);
+                const scopeEntry = getSameWindowSpecificGroupEntry(scope.key);
+                const canShowNewGroup = hasWindow && scopeEntry && scopeEntry.windowId === sameWindowSpecificGroupWindowId && Number.isInteger(scopeEntry.groupId);
+                const badges = [];
+                if (canShowNewGroup) {
+                    badges.push(`<span class="sub-badge" data-sub-action="swsg-new-group">${lang === 'zh_CN' ? '新分组' : 'New Group'}</span>`);
+                }
+                if (hasWindow) {
+                    badges.push(`<span class="sub-badge" data-sub-action="swsg-new-window">${lang === 'zh_CN' ? '新窗口' : 'New Window'}</span>`);
+                }
+                const baseLabelZh = '同窗特定标签组';
+                const baseLabelEn = 'In Same Window & Specific Group';
+                const badgeHtml = badges.length ? ` ${badges.join('')}` : '';
+                return {
+                    action: 'open-same-window-specific-group',
+                    label: (lang === 'zh_CN' ? baseLabelZh : baseLabelEn) + badgeHtml,
+                    icon: 'layer-group',
+                    group: 'open',
+                    selected: defaultOpenMode === 'same-window-specific-group'
+                };
+            })(),
+            { separatorShort: true },
             { action: 'open-new-tab', label: lang === 'zh_CN' ? '新标签页' : 'in New Tab', icon: 'window-maximize', group: 'open', selected: defaultOpenMode === 'new-tab' },
             // 改名：原“特定标签组”改为“同一标签组”/“In Same Group”（带提示徽标）
             (() => {
@@ -1591,6 +1724,10 @@ async function handleTempMenuAction(action, context) {
             await openInSpecificTabGroup(context.nodeUrl, { forceNew: true });
             await setDefaultOpenMode('specific-group');
             break;
+        case 'open-same-window-specific-group':
+            await openInSameWindowSpecificGroup(context.nodeUrl, { context });
+            await setDefaultOpenMode('same-window-specific-group');
+            break;
         case 'open-scoped-window':
             await openInScopedWindow(context.nodeUrl, { context, forceNew: true });
             await setDefaultOpenMode('scoped-window');
@@ -1786,6 +1923,11 @@ async function handleMenuAction(action, context) {
             case 'open-specific-group':
                 await openInSpecificTabGroup(nodeUrl, { forceNew: true });
                 await setDefaultOpenMode('specific-group');
+                break;
+
+            case 'open-same-window-specific-group':
+                await openInSameWindowSpecificGroup(nodeUrl, { context });
+                await setDefaultOpenMode('same-window-specific-group');
                 break;
 
             case 'open-specific-window':
@@ -2164,10 +2306,111 @@ async function openInScopedWindow(url, opts = {}) {
     }
 }
 
+async function ensureSameWindowSpecificGroupWindow(context) {
+    if (sameWindowSpecificGroupWindowId && chrome && chrome.windows && chrome.windows.get) {
+        try {
+            const existing = await chrome.windows.get(sameWindowSpecificGroupWindowId, { populate: false });
+            if (existing && existing.id) {
+                return existing.id;
+            }
+        } catch (_) {
+            await resetSameWindowSpecificGroupState();
+        }
+    }
+    return await createSameWindowSpecificGroupWindow(context);
+}
+
+async function createSameWindowSpecificGroupWindow(context) {
+    if (typeof chrome === 'undefined' || !chrome.windows) {
+        throw new Error('chrome.windows unavailable');
+    }
+    const nextNumber = await allocateNextWindowNumber();
+    let markerUrl = null;
+    try {
+        const params = new URLSearchParams();
+        params.set('t', String(nextNumber));
+        const treeType = context && context.treeType === 'temporary' ? 'temporary' : 'permanent';
+        if (treeType) params.set('lt', treeType);
+        if (context && context.sectionId) params.set('sid', context.sectionId);
+        if (context && context.nodeId) params.set('nid', context.nodeId);
+        if (chrome.runtime && chrome.runtime.getURL) {
+            markerUrl = chrome.runtime.getURL(`history_html/window_marker.html?${params.toString()}`);
+        }
+    } catch (_) {}
+    const createArgs = markerUrl ? { url: markerUrl } : {};
+    const created = await chrome.windows.create(createArgs);
+    if (!created || created.id == null) {
+        throw new Error('failed to create combined window');
+    }
+    await registerPluginWindow(created.id, nextNumber);
+    await setSameWindowSpecificGroupWindowId(created.id);
+    return created.id;
+}
+
+async function openInSameWindowSpecificGroup(url, opts = {}) {
+    const { context = null, forceNewWindow = false, forceNewGroup = false } = opts || {};
+    if (!url) return;
+    if (typeof chrome === 'undefined' || !chrome.tabs || !chrome.windows) {
+        window.open(url, '_blank');
+        return;
+    }
+    try {
+        if (forceNewWindow) {
+            await resetSameWindowSpecificGroupState();
+        }
+        const scope = getScopeFromContext(context || {});
+        const windowId = await ensureSameWindowSpecificGroupWindow(context);
+        if (forceNewGroup) {
+            await clearSameWindowSpecificGroupScope(scope.key);
+        }
+
+        let reuseGroupId = null;
+        if (!forceNewGroup) {
+            const entry = getSameWindowSpecificGroupEntry(scope.key);
+            if (entry && Number.isInteger(entry.groupId) && entry.windowId === windowId) {
+                try {
+                    if (chrome.tabGroups && chrome.tabGroups.get) {
+                        await chrome.tabGroups.get(entry.groupId);
+                    }
+                    reuseGroupId = entry.groupId;
+                } catch (_) {
+                    await clearSameWindowSpecificGroupScope(scope.key);
+                    reuseGroupId = null;
+                }
+            }
+        }
+
+        const tab = await chrome.tabs.create({ url, active: false, windowId });
+        if (!tab || tab.id == null) {
+            throw new Error('无法创建标签页');
+        }
+
+        if (reuseGroupId) {
+            await chrome.tabs.group({ groupId: reuseGroupId, tabIds: tab.id });
+            return;
+        }
+
+        const nextNumber = await allocateNextScopedNumber(scope.key);
+        const groupId = await chrome.tabs.group({ tabIds: tab.id, createProperties: { windowId } });
+        const title = scope.key === 'permanent'
+            ? `A-Z ${nextNumber}`
+            : `${scope.prefix || ''}${nextNumber}`;
+        if (chrome.tabGroups && chrome.tabGroups.update) {
+            try { await chrome.tabGroups.update(groupId, { title, color: 'blue' }); } catch(_) {}
+        }
+        await registerScopedGroup(scope.key, groupId, windowId, nextNumber);
+        await setSameWindowSpecificGroupScope(scope.key, groupId, windowId, nextNumber);
+    } catch (error) {
+        console.error('[同窗特定标签组] 打开失败:', error);
+        try { window.open(url, '_blank'); } catch(_) {}
+    }
+}
+
 // 暴露新函数给全局（供临时栏目的左键处理调用）
 try {
     window.openInScopedTabGroup = openInScopedTabGroup;
     window.openInScopedWindow = openInScopedWindow;
+    window.openInSameWindowSpecificGroup = openInSameWindowSpecificGroup;
 } catch(_) {}
 
 // 打开文件夹中所有书签

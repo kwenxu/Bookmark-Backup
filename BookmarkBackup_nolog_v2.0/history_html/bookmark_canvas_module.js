@@ -5920,6 +5920,8 @@ function addAnchorsToNode(nodeElement, nodeId) {
             if (typeof window.openInSpecificTabGroup === 'function') window.openInSpecificTabGroup(url); else window.open(url, '_blank');
         } else if (mode === 'scoped-group') {
             if (typeof window.openInScopedTabGroup === 'function') window.openInScopedTabGroup(url, { context: scopedContext }); else window.open(url, '_blank');
+        } else if (mode === 'same-window-specific-group') {
+            if (typeof window.openInSameWindowSpecificGroup === 'function') window.openInSameWindowSpecificGroup(url, { context: scopedContext }); else window.open(url, '_blank');
         } else {
             if (typeof window.openBookmarkNewTab === 'function') window.openBookmarkNewTab(url); else window.open(url, '_blank');
         }

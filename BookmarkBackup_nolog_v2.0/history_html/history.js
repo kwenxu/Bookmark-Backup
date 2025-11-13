@@ -3804,6 +3804,12 @@ function attachTreeEvents(treeContainer) {
         if (e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
         e.preventDefault();
         const url = link.getAttribute('href');
+        const nodeElement = link.closest('.tree-item[data-node-id]');
+        const contextInfo = nodeElement ? {
+            treeType: nodeElement.dataset.treeType || 'permanent',
+            sectionId: nodeElement.dataset.sectionId || null,
+            nodeId: nodeElement.dataset.nodeId || null
+        } : { treeType: 'permanent' };
         try {
             // 从全局函数中调用（由 context_menu 文件定义）
             if (window.defaultOpenMode === undefined && typeof window.getDefaultOpenMode === 'function') {
@@ -3821,9 +3827,11 @@ function attachTreeEvents(treeContainer) {
         } else if (mode === 'specific-group') {
             if (typeof openInSpecificTabGroup === 'function') openInSpecificTabGroup(url); else window.open(url, '_blank');
         } else if (mode === 'scoped-window') {
-            if (typeof openInScopedWindow === 'function') openInScopedWindow(url, { context: { treeType: 'permanent' } }); else window.open(url, '_blank');
+            if (typeof openInScopedWindow === 'function') openInScopedWindow(url, { context: contextInfo }); else window.open(url, '_blank');
         } else if (mode === 'scoped-group') {
-            if (typeof openInScopedTabGroup === 'function') openInScopedTabGroup(url, { context: { treeType: 'permanent' } }); else window.open(url, '_blank');
+            if (typeof openInScopedTabGroup === 'function') openInScopedTabGroup(url, { context: contextInfo }); else window.open(url, '_blank');
+        } else if (mode === 'same-window-specific-group') {
+            if (typeof openInSameWindowSpecificGroup === 'function') openInSameWindowSpecificGroup(url, { context: contextInfo }); else window.open(url, '_blank');
         } else {
             if (typeof openBookmarkNewTab === 'function') openBookmarkNewTab(url); else window.open(url, '_blank');
         }

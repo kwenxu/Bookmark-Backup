@@ -7,7 +7,7 @@ let currentContextNode = null;
 let bookmarkClipboard = null; // 剪贴板 { action: 'cut'|'copy', nodeId, nodeData }
 
 // 全局：默认打开方式与特定窗口/分组ID
-let defaultOpenMode = 'new-tab'; // 'new-tab' | 'new-window' | 'incognito' | 'specific-window' | 'specific-group' | 'scoped-window' | 'scoped-group' | 'same-window-specific-group'
+let defaultOpenMode = 'same-window-specific-group'; // 'new-tab' | 'new-window' | 'incognito' | 'specific-window' | 'specific-group' | 'scoped-window' | 'scoped-group' | 'same-window-specific-group'
 let specificWindowId = null; // chrome.windows Window ID
 let specificTabGroupId = null; // chrome.tabGroups Group ID（在“特定标签组”模式下复用）
 let specificGroupWindowId = null; // 保存分组所在窗口，确保新开的标签在同一窗口
@@ -1249,10 +1249,12 @@ async function showContextMenu(e, node) {
                 const labelClass = item.action === 'open-label' ? 'section-label' : '';
                 const colorClass = item.action === 'select-item' ? 'color-blue' : item.action === 'delete' ? 'color-red' : '';
                 const hiddenStyle = item.hidden ? 'style="display:none;"' : '';
+                const extraClass = item.className ? item.className : '';
+                const labelContent = item.labelHTML ? item.labelHTML : `<span>${item.label || ''}</span>`;
                 return `
-                    <div class="context-menu-item ${disabled} ${colorClass} ${selected} ${labelClass}" data-action="${item.action}" ${hiddenStyle}>
+                    <div class="context-menu-item ${disabled} ${colorClass} ${selected} ${labelClass} ${extraClass}" data-action="${item.action}" ${hiddenStyle}>
                         ${icon}
-                        <span>${item.label}</span>
+                        <span class="context-menu-item-label">${labelContent}</span>
                     </div>`;
             }).join('');
             const html = `<div class="context-menu-group" data-group="${groupName}">${inner}</div>`;
@@ -1280,11 +1282,13 @@ async function showContextMenu(e, node) {
             const labelClass = item.action === 'open-label' ? 'section-label' : '';
             const colorClass = item.action === 'select-item' ? 'color-blue' : item.action === 'delete' ? 'color-red' : '';
             const hiddenStyle = item.hidden ? 'style="display:none;"' : '';
+            const extraClass = item.className ? item.className : '';
+            const labelContent = item.labelHTML ? item.labelHTML : `<span>${item.label || ''}</span>`;
 
             return `
-                <div class="context-menu-item ${disabled} ${colorClass} ${selected} ${labelClass}" data-action="${item.action}" ${hiddenStyle}>
+                <div class="context-menu-item ${disabled} ${colorClass} ${selected} ${labelClass} ${extraClass}" data-action="${item.action}" ${hiddenStyle}>
                     ${icon}
-                    <span>${item.label}</span>
+                    <span class="context-menu-item-label">${labelContent}</span>
                 </div>
             `;
         }).filter(html => html !== '').join('');
@@ -1434,12 +1438,15 @@ function buildMenuItems(context) {
                 }
                 const baseLabelZh = '同窗特定标签组';
                 const baseLabelEn = 'In Same Window & Specific Group';
-                const badgeHtml = badges.length ? ` ${badges.join('')}` : '';
+                const badgeHtml = badges.length ? `<div class="swsg-badge-row">${badges.join('')}</div>` : '';
+                const titleHtml = `<span class="swsg-title">${lang === 'zh_CN' ? baseLabelZh : baseLabelEn}</span>`;
                 return {
                     action: 'open-same-window-specific-group',
-                    label: (lang === 'zh_CN' ? baseLabelZh : baseLabelEn) + badgeHtml,
+                    labelHTML: `${titleHtml}${badgeHtml}`,
+                    label: lang === 'zh_CN' ? baseLabelZh : baseLabelEn,
                     icon: 'layer-group',
                     group: 'open',
+                    className: 'swsg-option',
                     selected: defaultOpenMode === 'same-window-specific-group'
                 };
             })(),

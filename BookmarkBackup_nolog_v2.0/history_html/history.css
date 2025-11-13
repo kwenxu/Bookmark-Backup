@@ -2876,6 +2876,33 @@ a.tree-label.tree-bookmark-link:hover {
     background: transparent;
 }
 
+.bookmark-context-menu .context-menu-item .context-menu-item-label {
+    display: inline-flex;
+    flex-direction: column;
+    gap: 2px;
+    align-items: flex-start;
+}
+
+.bookmark-context-menu .context-menu-item.swsg-option {
+    min-width: 240px;
+    align-items: flex-start;
+}
+
+.bookmark-context-menu.horizontal-layout .context-menu-item.swsg-option {
+    min-width: 260px;
+}
+
+.bookmark-context-menu .context-menu-item .swsg-title {
+    font-weight: 600;
+    line-height: 1.3;
+}
+
+.bookmark-context-menu .context-menu-item .swsg-badge-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+}
+
 /* 右键菜单：次级提示徽标（New Group / New Window） */
 .bookmark-context-menu .context-menu-item .sub-badge {
     display: inline-block;

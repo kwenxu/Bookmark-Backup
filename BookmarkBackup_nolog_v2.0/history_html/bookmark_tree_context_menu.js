@@ -1439,7 +1439,8 @@ function buildMenuItems(context) {
                 const baseLabelZh = '同窗特定标签组';
                 const baseLabelEn = 'In Same Window & Specific Group';
                 const badgeHtml = badges.length ? `<div class="swsg-badge-row">${badges.join('')}</div>` : '';
-                const titleHtml = `<span class="swsg-title">${lang === 'zh_CN' ? baseLabelZh : baseLabelEn}</span>`;
+                const titleClass = lang === 'zh_CN' ? 'swsg-title' : 'swsg-title swsg-title-compact';
+                const titleHtml = `<span class="${titleClass}">${lang === 'zh_CN' ? baseLabelZh : baseLabelEn}</span>`;
                 return {
                     action: 'open-same-window-specific-group',
                     labelHTML: `${titleHtml}${badgeHtml}`,

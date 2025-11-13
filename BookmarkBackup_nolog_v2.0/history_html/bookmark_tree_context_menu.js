@@ -18,11 +18,15 @@ const PLUGIN_SCOPED_WINDOW_REGISTRY_KEY = 'pluginScopedWindowsRegistry';
 const SAME_WINDOW_SPECIFIC_GROUP_WINDOW_KEY = 'bookmarkSameWindowSpecificGroupWindowId';
 const SAME_WINDOW_SPECIFIC_GROUP_SCOPES_KEY = 'bookmarkSameWindowSpecificGroupScopes';
 
+const LIVE_GROUP_SEED_CACHE_TTL = 1200; // ms
+
 let scopedCurrentGroups = {}; // { [scopeKey: string]: { groupId: number, windowId: number|null } }
 let scopedWindows = {}; // { [scopeKey: string]: number /* windowId */ }
 let sameWindowSpecificGroupWindowId = null;
 let sameWindowSpecificGroupScopes = {}; // { [scopeKey: string]: { groupId, windowId, number, updatedAt } }
 let lifecycleGuardsRegistered = false;
+let liveGroupSeedCache = null;
+let liveGroupSeedCacheTs = 0;
 // 暴露给其他脚本（如 history.js）
 window.getDefaultOpenMode = () => defaultOpenMode;
 
@@ -297,6 +301,88 @@ async function resetSameWindowSpecificGroupState() {
     await resetSameWindowSpecificGroupScopes();
 }
 
+function invalidateLiveGroupSeeds() {
+    liveGroupSeedCache = null;
+    liveGroupSeedCacheTs = 0;
+}
+
+function parseGroupFingerprint(title) {
+    if (!title || typeof title !== 'string') return null;
+    const trimmed = title.trim();
+    if (!trimmed) return null;
+    const sameWindowPermanent = /^A-Z\s+(\d+)$/.exec(trimmed);
+    if (sameWindowPermanent) {
+        return { kind: 'scoped', scopeKey: 'permanent', number: parseInt(sameWindowPermanent[1], 10) };
+    }
+    const scopedTemp = /^([A-Z]+)(\d+)$/.exec(trimmed);
+    if (scopedTemp && scopedTemp[1] !== 'A-Z') {
+        const prefix = scopedTemp[1];
+        return {
+            kind: 'scoped',
+            scopeKey: `temp:${prefix}`,
+            number: parseInt(scopedTemp[2], 10)
+        };
+    }
+    const globalMatch = /^(\d+)$/.exec(trimmed);
+    if (globalMatch) {
+        return { kind: 'global', number: parseInt(globalMatch[1], 10) };
+    }
+    return null;
+}
+
+function queryAllTabGroups(filter = {}) {
+    if (typeof chrome === 'undefined' || !chrome.tabGroups || typeof chrome.tabGroups.query !== 'function') {
+        return Promise.resolve([]);
+    }
+    return new Promise((resolve) => {
+        try {
+            chrome.tabGroups.query(filter, (groups) => {
+                if (chrome.runtime && chrome.runtime.lastError) {
+                    console.warn('[tabGroups.query] failed:', chrome.runtime.lastError);
+                    resolve([]);
+                    return;
+                }
+                resolve(Array.isArray(groups) ? groups : []);
+            });
+        } catch (err) {
+            console.warn('[tabGroups.query] exception:', err);
+            resolve([]);
+        }
+    });
+}
+
+async function getLiveGroupSeeds(force = false) {
+    const now = Date.now();
+    if (!force && liveGroupSeedCache && (now - liveGroupSeedCacheTs) < LIVE_GROUP_SEED_CACHE_TTL) {
+        return liveGroupSeedCache;
+    }
+    const seeds = { globalMax: 0, scopedMax: {} };
+    if (typeof chrome === 'undefined' || !chrome.tabGroups || typeof chrome.tabGroups.query !== 'function') {
+        liveGroupSeedCache = seeds;
+        liveGroupSeedCacheTs = now;
+        return seeds;
+    }
+    try {
+        const groups = await queryAllTabGroups({});
+        (groups || []).forEach(group => {
+            if (!group || !group.title) return;
+            const info = parseGroupFingerprint(group.title);
+            if (!info || !Number.isFinite(info.number) || info.number <= 0) return;
+            if (info.kind === 'global') {
+                if (info.number > seeds.globalMax) seeds.globalMax = info.number;
+            } else if (info.kind === 'scoped' && info.scopeKey) {
+                const prev = seeds.scopedMax[info.scopeKey] || 0;
+                if (info.number > prev) seeds.scopedMax[info.scopeKey] = info.number;
+            }
+        });
+    } catch (err) {
+        console.warn('[LiveGroupSeeds] query failed:', err);
+    }
+    liveGroupSeedCache = seeds;
+    liveGroupSeedCacheTs = Date.now();
+    return seeds;
+}
+
 async function isWindowAlive(windowId) {
     if (!Number.isInteger(windowId)) return false;
     if (typeof chrome === 'undefined' || !chrome.windows || !chrome.windows.get) return false;
@@ -407,6 +493,7 @@ async function handleTrackedWindowRemoved(windowId) {
                 await clearSameWindowSpecificGroupScope(scopeKey);
             }
         }
+        invalidateLiveGroupSeeds();
     } catch (err) {
         console.warn('[LifecycleGuards] windowRemoved handler failed:', err);
     }
@@ -437,6 +524,7 @@ async function handleTrackedGroupRemoved(groupInfo) {
                 await clearSameWindowSpecificGroupScope(scopeKey);
             }
         }
+        invalidateLiveGroupSeeds();
     } catch (err) {
         console.warn('[LifecycleGuards] groupRemoved handler failed:', err);
     }
@@ -516,9 +604,14 @@ async function pruneDeadScopedGroups() {
 }
 
 async function allocateNextScopedNumber(scopeKey) {
+    const seeds = await getLiveGroupSeeds();
     const alive = await pruneDeadScopedGroups();
-    let maxN = 0;
-    alive.forEach(e => { if (e && e.scope === scopeKey && Number.isInteger(e.number) && e.number > 0 && e.number > maxN) maxN = e.number; });
+    let maxN = (seeds && seeds.scopedMax && scopeKey) ? (seeds.scopedMax[scopeKey] || 0) : 0;
+    alive.forEach(e => {
+        if (e && e.scope === scopeKey && Number.isInteger(e.number) && e.number > maxN) {
+            maxN = e.number;
+        }
+    });
     return maxN + 1;
 }
 
@@ -526,6 +619,7 @@ async function registerScopedGroup(scopeKey, groupId, windowId, number) {
     const reg = await pruneDeadScopedGroups();
     reg.push({ scope: scopeKey, groupId, windowId, number, createdAt: Date.now() });
     await writeScopedGroupRegistry(reg);
+    invalidateLiveGroupSeeds();
 }
 
 async function setScopedCurrentGroup(scopeKey, groupId, windowId) {
@@ -673,9 +767,14 @@ async function pruneDeadPluginGroups() {
 }
 
 async function allocateNextGroupNumber() {
+    const seeds = await getLiveGroupSeeds();
     const alive = await pruneDeadPluginGroups();
-    let maxN = 0;
-    alive.forEach(e => { if (Number.isInteger(e.number) && e.number > 0 && e.number > maxN) maxN = e.number; });
+    let maxN = seeds && Number.isFinite(seeds.globalMax) ? seeds.globalMax : 0;
+    alive.forEach(e => {
+        if (Number.isInteger(e.number) && e.number > maxN) {
+            maxN = e.number;
+        }
+    });
     return maxN + 1;
 }
 
@@ -683,6 +782,7 @@ async function registerPluginGroup(groupId, windowId, number) {
     const reg = await pruneDeadPluginGroups();
     reg.push({ groupId, windowId, number, createdAt: Date.now() });
     await writePluginGroupRegistry(reg);
+    invalidateLiveGroupSeeds();
 }
 let clipboardOperation = null; // 'cut' | 'copy'
 let selectedNodes = new Set(); // 多选节点集合

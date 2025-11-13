@@ -2887,6 +2887,9 @@ a.tree-label.tree-bookmark-link:hover {
     background: var(--bg-tertiary, rgba(0,0,0,0.06));
     color: var(--text-secondary);
 }
+[data-theme="dark"] .bookmark-context-menu .context-menu-item .sub-badge {
+    background: rgba(255,255,255,0.08);
+}
 .bookmark-context-menu .context-menu-item .sub-badge[data-sub-action] {
     cursor: pointer;
     user-select: none;

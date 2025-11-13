@@ -22,6 +22,7 @@ let scopedCurrentGroups = {}; // { [scopeKey: string]: { groupId: number, window
 let scopedWindows = {}; // { [scopeKey: string]: number /* windowId */ }
 let sameWindowSpecificGroupWindowId = null;
 let sameWindowSpecificGroupScopes = {}; // { [scopeKey: string]: { groupId, windowId, number, updatedAt } }
+let lifecycleGuardsRegistered = false;
 // 暴露给其他脚本（如 history.js）
 window.getDefaultOpenMode = () => defaultOpenMode;
 
@@ -225,7 +226,9 @@ async function writeScopedWindowRegistry(reg) {
 function getSameWindowSpecificGroupEntry(scopeKey) {
     if (!scopeKey || !sameWindowSpecificGroupScopes) return null;
     const entry = sameWindowSpecificGroupScopes[scopeKey];
-    return entry && typeof entry === 'object' ? entry : null;
+    if (!entry || typeof entry !== 'object') return null;
+    if (entry.windowId !== sameWindowSpecificGroupWindowId) return null;
+    return entry;
 }
 
 async function persistSameWindowSpecificGroupScopes() {
@@ -293,6 +296,173 @@ async function resetSameWindowSpecificGroupState() {
     } catch (_) {}
     await resetSameWindowSpecificGroupScopes();
 }
+
+async function isWindowAlive(windowId) {
+    if (!Number.isInteger(windowId)) return false;
+    if (typeof chrome === 'undefined' || !chrome.windows || !chrome.windows.get) return false;
+    try {
+        const win = await chrome.windows.get(windowId, { populate: false });
+        return !!(win && win.id === windowId);
+    } catch (_) {
+        return false;
+    }
+}
+
+async function isTabGroupAlive(groupId) {
+    if (!Number.isInteger(groupId)) return false;
+    if (typeof chrome === 'undefined' || !chrome.tabGroups || !chrome.tabGroups.get) return false;
+    try {
+        const group = await chrome.tabGroups.get(groupId);
+        return !!(group && group.id === groupId);
+    } catch (_) {
+        return false;
+    }
+}
+
+async function refreshTrackedOpenTargets() {
+    if (typeof chrome === 'undefined') return;
+    try {
+        if (specificWindowId && !(await isWindowAlive(specificWindowId))) {
+            await resetSpecificWindowId();
+        }
+        if (specificTabGroupId) {
+            const aliveGroup = await isTabGroupAlive(specificTabGroupId);
+            const aliveWindow = specificGroupWindowId ? await isWindowAlive(specificGroupWindowId) : true;
+            if (!aliveGroup || !aliveWindow) {
+                await resetSpecificGroupInfo();
+            }
+        }
+        if (sameWindowSpecificGroupWindowId && !(await isWindowAlive(sameWindowSpecificGroupWindowId))) {
+            await resetSameWindowSpecificGroupState();
+        }
+
+        const scopedGroupEntries = Object.entries(scopedCurrentGroups || {});
+        for (const [scopeKey, entry] of scopedGroupEntries) {
+            if (!entry || !Number.isInteger(entry.groupId)) {
+                await removeScopedCurrentGroup(scopeKey);
+                continue;
+            }
+            const groupAlive = await isTabGroupAlive(entry.groupId);
+            const windowAlive = entry.windowId ? await isWindowAlive(entry.windowId) : true;
+            if (!groupAlive || !windowAlive) {
+                await removeScopedCurrentGroup(scopeKey);
+            }
+        }
+
+        const scopedWindowEntries = Object.entries(scopedWindows || {});
+        for (const [scopeKey, winId] of scopedWindowEntries) {
+            if (!Number.isInteger(winId)) {
+                await removeScopedWindowEntry(scopeKey);
+                continue;
+            }
+            if (!(await isWindowAlive(winId))) {
+                await removeScopedWindowEntry(scopeKey);
+            }
+        }
+
+        const combinedEntries = Object.entries(sameWindowSpecificGroupScopes || {});
+        for (const [scopeKey, entry] of combinedEntries) {
+            if (!entry) {
+                await clearSameWindowSpecificGroupScope(scopeKey);
+                continue;
+            }
+            const windowAlive = entry.windowId ? await isWindowAlive(entry.windowId) : false;
+            const groupAlive = entry.groupId ? await isTabGroupAlive(entry.groupId) : false;
+            if (!windowAlive || !groupAlive) {
+                await clearSameWindowSpecificGroupScope(scopeKey);
+            }
+        }
+    } catch (refreshError) {
+        console.warn('[OpenTargets] refresh failed:', refreshError);
+    }
+}
+
+async function handleTrackedWindowRemoved(windowId) {
+    if (!Number.isInteger(windowId)) return;
+    try {
+        if (specificWindowId === windowId) {
+            await resetSpecificWindowId();
+        }
+        if (sameWindowSpecificGroupWindowId === windowId) {
+            await resetSameWindowSpecificGroupState();
+        }
+        if (specificGroupWindowId === windowId) {
+            await resetSpecificGroupInfo();
+        }
+        const scopedWindowEntries = Object.entries(scopedWindows || {});
+        for (const [scopeKey, winId] of scopedWindowEntries) {
+            if (winId === windowId) {
+                await removeScopedWindowEntry(scopeKey);
+            }
+        }
+        const scopedGroupEntries = Object.entries(scopedCurrentGroups || {});
+        for (const [scopeKey, entry] of scopedGroupEntries) {
+            if (entry && entry.windowId === windowId) {
+                await removeScopedCurrentGroup(scopeKey);
+            }
+        }
+        const combinedEntries = Object.entries(sameWindowSpecificGroupScopes || {});
+        for (const [scopeKey, entry] of combinedEntries) {
+            if (entry && entry.windowId === windowId) {
+                await clearSameWindowSpecificGroupScope(scopeKey);
+            }
+        }
+    } catch (err) {
+        console.warn('[LifecycleGuards] windowRemoved handler failed:', err);
+    }
+}
+
+async function handleTrackedGroupRemoved(groupInfo) {
+    let groupId = null;
+    if (groupInfo && typeof groupInfo === 'object') {
+        if (Number.isInteger(groupInfo.groupId)) groupId = groupInfo.groupId;
+        if (Number.isInteger(groupInfo.id)) groupId = groupInfo.id;
+    } else if (Number.isInteger(groupInfo)) {
+        groupId = groupInfo;
+    }
+    if (!Number.isInteger(groupId)) return;
+    try {
+        if (specificTabGroupId === groupId) {
+            await resetSpecificGroupInfo();
+        }
+        const scopedGroupEntries = Object.entries(scopedCurrentGroups || {});
+        for (const [scopeKey, entry] of scopedGroupEntries) {
+            if (entry && entry.groupId === groupId) {
+                await removeScopedCurrentGroup(scopeKey);
+            }
+        }
+        const combinedEntries = Object.entries(sameWindowSpecificGroupScopes || {});
+        for (const [scopeKey, entry] of combinedEntries) {
+            if (entry && entry.groupId === groupId) {
+                await clearSameWindowSpecificGroupScope(scopeKey);
+            }
+        }
+    } catch (err) {
+        console.warn('[LifecycleGuards] groupRemoved handler failed:', err);
+    }
+}
+
+function registerLifecycleGuards() {
+    if (lifecycleGuardsRegistered) return;
+    if (typeof chrome === 'undefined') return;
+    try {
+        if (chrome.windows && chrome.windows.onRemoved && typeof chrome.windows.onRemoved.addListener === 'function') {
+            chrome.windows.onRemoved.addListener((windowId) => {
+                handleTrackedWindowRemoved(windowId);
+            });
+        }
+        if (chrome.tabGroups && chrome.tabGroups.onRemoved && typeof chrome.tabGroups.onRemoved.addListener === 'function') {
+            chrome.tabGroups.onRemoved.addListener((group) => {
+                handleTrackedGroupRemoved(group);
+            });
+        }
+        lifecycleGuardsRegistered = true;
+    } catch (err) {
+        console.warn('[LifecycleGuards] 注册失败:', err);
+    }
+}
+
+try { registerLifecycleGuards(); } catch(_) {}
 
 async function pruneDeadScopedWindows() {
     let reg = await readScopedWindowRegistry();
@@ -369,8 +539,32 @@ async function setScopedCurrentGroup(scopeKey, groupId, windowId) {
     } catch(_) {}
 }
 
+async function removeScopedCurrentGroup(scopeKey) {
+    if (!scopeKey || !scopedCurrentGroups || !scopedCurrentGroups[scopeKey]) return;
+    delete scopedCurrentGroups[scopeKey];
+    try {
+        if (typeof chrome !== 'undefined' && chrome.storage && chrome.storage.local) {
+            await chrome.storage.local.set({ bookmarkScopedCurrentGroups: scopedCurrentGroups });
+        } else {
+            localStorage.setItem('bookmarkScopedCurrentGroups', JSON.stringify(scopedCurrentGroups));
+        }
+    } catch(_) {}
+}
+
 async function setScopedWindow(scopeKey, windowId) {
     scopedWindows[scopeKey] = windowId;
+    try {
+        if (typeof chrome !== 'undefined' && chrome.storage && chrome.storage.local) {
+            await chrome.storage.local.set({ bookmarkScopedWindows: scopedWindows });
+        } else {
+            localStorage.setItem('bookmarkScopedWindows', JSON.stringify(scopedWindows));
+        }
+    } catch(_) {}
+}
+
+async function removeScopedWindowEntry(scopeKey) {
+    if (!scopeKey || !scopedWindows || typeof scopedWindows[scopeKey] === 'undefined') return;
+    delete scopedWindows[scopeKey];
     try {
         if (typeof chrome !== 'undefined' && chrome.storage && chrome.storage.local) {
             await chrome.storage.local.set({ bookmarkScopedWindows: scopedWindows });
@@ -877,67 +1071,8 @@ async function showContextMenu(e, node) {
     const { nodeId, nodeTitle, nodeUrl, isFolder } = context;
     console.log('[右键菜单] 显示菜单:', { nodeId, nodeTitle, isFolder, treeType: context.treeType, sectionId: context.sectionId });
 
-    // ——— 菜单展示前：清理失效的组/窗口并同步徽标状态 ———
-    try {
-        if (typeof chrome !== 'undefined') {
-            // 校验“同一标签组”全局指针
-            if (Number.isInteger(specificTabGroupId) && chrome.tabGroups && chrome.tabGroups.get) {
-                try { await chrome.tabGroups.get(specificTabGroupId); } catch(_) { await resetSpecificGroupInfo(); }
-            }
-            // 校验“同一窗口”全局指针
-            if (Number.isInteger(specificWindowId) && chrome.windows && chrome.windows.get) {
-                try { await chrome.windows.get(specificWindowId, { populate: false }); } catch(_) { await resetSpecificWindowId(); }
-            }
-            // 清理登记簿（作用域化标签组）并同步作用域下的指针
-            const scope = getScopeFromContext(context || {});
-            try { await pruneDeadScopedGroups(); } catch(_) {}
-            // 使用登记簿对齐分组指针：若无存活则清除；若存在但指针失效则迁移到任一存活分组
-            try {
-                const reg = await readScopedGroupRegistry();
-                const alive = (reg || []).filter(e => e && e.scope === scope.key);
-                const current = scopedCurrentGroups ? scopedCurrentGroups[scope.key] : null;
-                if (!alive.length) {
-                    if (current) {
-                        delete scopedCurrentGroups[scope.key];
-                        if (chrome.storage && chrome.storage.local) {
-                            await chrome.storage.local.set({ bookmarkScopedCurrentGroups: scopedCurrentGroups });
-                        } else {
-                            localStorage.setItem('bookmarkScopedCurrentGroups', JSON.stringify(scopedCurrentGroups));
-                        }
-                    }
-                } else if (!current || !Number.isInteger(current.groupId) || !alive.some(a => a.groupId === current.groupId)) {
-                    const pick = alive[0];
-                    await setScopedCurrentGroup(scope.key, pick.groupId, pick.windowId || null);
-                }
-            } catch(_) {}
-            // 校验与对齐作用域窗口指针
-            try {
-                const scope = getScopeFromContext(context || {});
-                const winId = scopedWindows && scopedWindows[scope.key];
-                if (Number.isInteger(winId) && chrome.windows && chrome.windows.get) {
-                    try { await chrome.windows.get(winId, { populate: false }); } catch(_) { /* fallback below */ }
-                }
-                // 通过登记簿迁移/清理
-                try { await pruneDeadScopedWindows(); } catch(_) {}
-                const wreg = await readScopedWindowRegistry();
-                const walive = (wreg || []).filter(e => e && e.scope === scope.key);
-                const hasPointer = scopedWindows && Number.isInteger(scopedWindows[scope.key]);
-                if (!walive.length) {
-                    if (hasPointer) {
-                        delete scopedWindows[scope.key];
-                        if (chrome.storage && chrome.storage.local) {
-                            await chrome.storage.local.set({ bookmarkScopedWindows: scopedWindows });
-                        } else {
-                            localStorage.setItem('bookmarkScopedWindows', JSON.stringify(scopedWindows));
-                        }
-                    }
-                } else if (!hasPointer || !walive.some(a => a.windowId === scopedWindows[scope.key])) {
-                    const pick = walive[0];
-                    await setScopedWindow(scope.key, pick.windowId);
-                }
-            } catch(_) {}
-        }
-    } catch(_) {}
+    // 菜单展示前刷新一次所有受管理的窗口/分组指针，避免引用失效对象
+    await refreshTrackedOpenTargets();
 
     // 根据容器大小自适应布局与密度（若用户手动选择过布局，则尊重“按类型”用户设置）
     const container = node.closest('#permanentSection, .permanent-bookmark-section, .temp-canvas-node, .md-canvas-node, .canvas-main-container') || document.body;

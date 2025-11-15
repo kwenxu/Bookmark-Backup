@@ -11,6 +11,17 @@ let defaultOpenMode = 'same-window-specific-group'; // 'new-tab' | 'new-window' 
 let specificWindowId = null; // chrome.windows Window ID
 let specificTabGroupId = null; // chrome.tabGroups Group ID（在“特定标签组”模式下复用）
 let specificGroupWindowId = null; // 保存分组所在窗口，确保新开的标签在同一窗口
+
+// 超链接系统：独立的打开方式与窗口/分组ID（与书签系统完全隔离）
+let hyperlinkDefaultOpenMode = 'new-tab'; // 超链接的默认打开方式（独立于书签）
+let hyperlinkSpecificWindowId = null; // 超链接专用的窗口ID
+let hyperlinkSpecificTabGroupId = null; // 超链接专用的分组ID
+let hyperlinkSpecificGroupWindowId = null; // 超链接分组所在窗口
+let hyperlinkSameWindowSpecificGroupWindowId = null; // 超链接的同窗特定组窗口ID
+let hyperlinkSameWindowSpecificGroupScopes = {}; // 超链接的同窗特定组作用域
+let hyperlinkGroupCounter = 0; // 超链接分组计数器（用于命名 Hyperlink 1, 2, 3...）
+let hyperlinkWindowCounter = 0; // 超链接窗口计数器（用于命名 Hyperlink 1, 2, 3...）
+
 const PLUGIN_GROUP_REGISTRY_KEY = 'pluginTabGroupsRegistry';
 const PLUGIN_WINDOW_REGISTRY_KEY = 'pluginWindowsRegistry';
 const PLUGIN_SCOPED_GROUP_REGISTRY_KEY = 'pluginScopedTabGroupsRegistry';
@@ -466,6 +477,7 @@ async function refreshTrackedOpenTargets() {
 async function handleTrackedWindowRemoved(windowId) {
     if (!Number.isInteger(windowId)) return;
     try {
+        // 书签系统
         if (specificWindowId === windowId) {
             await resetSpecificWindowId();
         }
@@ -475,6 +487,25 @@ async function handleTrackedWindowRemoved(windowId) {
         if (specificGroupWindowId === windowId) {
             await resetSpecificGroupInfo();
         }
+        
+        // 超链接系统：窗口关闭时重置
+        if (hyperlinkSpecificWindowId === windowId) {
+            hyperlinkSpecificWindowId = null;
+            hyperlinkWindowCounter = 0; // 重置窗口计数器
+            console.log('[超链接 LifecycleGuards] 窗口已关闭，重置 ID 和计数器');
+        }
+        if (hyperlinkSpecificGroupWindowId === windowId) {
+            hyperlinkSpecificTabGroupId = null;
+            hyperlinkSpecificGroupWindowId = null;
+            hyperlinkGroupCounter = 0; // 重置分组计数器
+            console.log('[超链接 LifecycleGuards] 分组所在窗口已关闭，重置分组信息和计数器');
+        }
+        if (hyperlinkSameWindowSpecificGroupWindowId === windowId) {
+            hyperlinkSameWindowSpecificGroupWindowId = null;
+            hyperlinkSameWindowSpecificGroupScopes = {};
+            console.log('[超链接 LifecycleGuards] 同窗特定组窗口已关闭，重置');
+        }
+        
         const scopedWindowEntries = Object.entries(scopedWindows || {});
         for (const [scopeKey, winId] of scopedWindowEntries) {
             if (winId === windowId) {
@@ -509,9 +540,28 @@ async function handleTrackedGroupRemoved(groupInfo) {
     }
     if (!Number.isInteger(groupId)) return;
     try {
+        // 书签系统
         if (specificTabGroupId === groupId) {
             await resetSpecificGroupInfo();
         }
+        
+        // 超链接系统：分组关闭时重置
+        if (hyperlinkSpecificTabGroupId === groupId) {
+            hyperlinkSpecificTabGroupId = null;
+            hyperlinkSpecificGroupWindowId = null;
+            hyperlinkGroupCounter = 0; // 重置分组计数器
+            console.log('[超链接 LifecycleGuards] 分组已关闭，重置 ID 和计数器');
+        }
+        
+        // 检查超链接的同窗特定组作用域
+        const hyperlinkScopeEntries = Object.entries(hyperlinkSameWindowSpecificGroupScopes || {});
+        for (const [scopeKey, entry] of hyperlinkScopeEntries) {
+            if (entry && entry.groupId === groupId) {
+                delete hyperlinkSameWindowSpecificGroupScopes[scopeKey];
+                console.log(`[超链接 LifecycleGuards] 作用域 ${scopeKey} 的分组已关闭`);
+            }
+        }
+        
         const scopedGroupEntries = Object.entries(scopedCurrentGroups || {});
         for (const [scopeKey, entry] of scopedGroupEntries) {
             if (entry && entry.groupId === groupId) {
@@ -1088,6 +1138,104 @@ function rememberBatchSelection(nodeElement) {
     };
 }
 
+// 绑定超链接的右键菜单和左键点击（用于描述区域中的链接）
+function attachHyperlinkContextMenu() {
+    // 1. 右键菜单：使用事件委托，监听整个文档的右键点击
+    document.addEventListener('contextmenu', (e) => {
+        const linkElement = e.target.closest('a[href]');
+        if (!linkElement) return;
+        
+        // 检查是否在描述区域内
+        const inPermanentTip = linkElement.closest('.permanent-section-tip, .permanent-section-tip-editor');
+        const inTempDescription = linkElement.closest('.temp-node-description, .temp-node-description-editor');
+        const inMdNodeContent = linkElement.closest('.md-canvas-text, .md-canvas-editor');
+        
+        if (inPermanentTip || inTempDescription || inMdNodeContent) {
+            // 阻止默认右键菜单
+            e.preventDefault();
+            e.stopPropagation();
+            
+            console.log('[右键菜单] 检测到超链接右键:', {
+                url: linkElement.href,
+                text: linkElement.textContent,
+                inPermanentTip: !!inPermanentTip,
+                inTempDescription: !!inTempDescription,
+                inMdNodeContent: !!inMdNodeContent
+            });
+            
+            // 显示超链接专用菜单
+            if (typeof showHyperlinkContextMenu === 'function') {
+                showHyperlinkContextMenu(e, linkElement);
+            } else {
+                console.error('[右键菜单] showHyperlinkContextMenu 函数未定义');
+            }
+        }
+    }, true); // 使用捕获阶段，优先处理
+    
+    // 2. 左键点击：按照勾选的默认方式打开
+    document.addEventListener('click', async (e) => {
+        const linkElement = e.target.closest('a[href]');
+        if (!linkElement) return;
+        
+        // 检查是否在描述区域内
+        const inPermanentTip = linkElement.closest('.permanent-section-tip, .permanent-section-tip-editor');
+        const inTempDescription = linkElement.closest('.temp-node-description, .temp-node-description-editor');
+        const inMdNodeContent = linkElement.closest('.md-canvas-text, .md-canvas-editor');
+        
+        if (inPermanentTip || inTempDescription || inMdNodeContent) {
+            // 如果有系统快捷键，走浏览器默认行为
+            if (e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) {
+                return;
+            }
+            
+            // 阻止默认行为
+            e.preventDefault();
+            e.stopPropagation();
+            
+            const url = linkElement.href;
+            const context = {
+                url: url,
+                title: linkElement.textContent || linkElement.title || url,
+                isHyperlink: true,
+                treeType: linkElement.closest('.temp-canvas-node') ? 'temporary' : 'permanent',
+                sectionId: linkElement.closest('.temp-canvas-node')?.dataset.sectionId || null
+            };
+            
+            console.log('[超链接] 左键点击，使用模式:', hyperlinkDefaultOpenMode);
+            
+            // 根据超链接的默认模式打开（4个选项）
+            try {
+                switch (hyperlinkDefaultOpenMode) {
+                    case 'new-tab':
+                        await openHyperlinkNewTab(url);
+                        break;
+                        
+                    case 'new-window':
+                        await openHyperlinkNewWindow(url);
+                        break;
+                        
+                    case 'specific-window':
+                        await openHyperlinkInSpecificWindow(url);
+                        break;
+                        
+                    case 'specific-group':
+                        await openHyperlinkInSpecificTabGroup(url);
+                        break;
+                        
+                    default:
+                        // 默认使用新标签页
+                        await openHyperlinkNewTab(url);
+                }
+            } catch (error) {
+                console.error('[超链接] 左键打开失败:', error);
+                window.open(url, '_blank'); // 失败时回退
+            }
+        }
+    }, true); // 使用捕获阶段
+    
+    console.log('[右键菜单] 超链接右键菜单和左键点击已绑定');
+}
+
 // 初始化右键菜单
 function initContextMenu() {
     // 创建菜单容器
@@ -1104,6 +1252,9 @@ function initContextMenu() {
     // 初始挂载到body，使用时会动态插入到目标节点附近
     document.body.appendChild(contextMenu);
     
+    // 绑定超链接的右键菜单
+    attachHyperlinkContextMenu();
+    
     // 点击其他地方关闭菜单（使用捕获阶段，优先处理）
     document.addEventListener('click', (e) => {
         // 如果点击的不是菜单内部，关闭菜单
@@ -1114,6 +1265,19 @@ function initContextMenu() {
     
     // 也监听右键事件，关闭已打开的菜单
     document.addEventListener('contextmenu', (e) => {
+        // 检查是否是超链接
+        const linkElement = e.target.closest('a[href]');
+        if (linkElement) {
+            const inPermanentTip = linkElement.closest('.permanent-section-tip, .permanent-section-tip-editor');
+            const inTempDescription = linkElement.closest('.temp-node-description, .temp-node-description-editor');
+            const inMdNodeContent = linkElement.closest('.md-canvas-text, .md-canvas-editor'); // 修复：使用 md-canvas-text
+            
+            // 如果是描述区域的超链接，不要关闭菜单（由超链接处理器处理）
+            if (inPermanentTip || inTempDescription || inMdNodeContent) {
+                return;
+            }
+        }
+        
         // 如果不是在树节点上右键，关闭菜单
         if (!e.target.closest('.tree-item[data-node-id]')) {
             hideContextMenu();
@@ -1144,6 +1308,232 @@ function getNodeContext(node) {
         treeType: node.dataset.treeType || 'permanent',
         sectionId: node.dataset.sectionId || null
     };
+}
+
+// 显示超链接右键菜单（用于描述中的链接）
+async function showHyperlinkContextMenu(e, linkElement) {
+    console.log('[超链接菜单] ========== 开始显示超链接菜单 ==========');
+    console.log('[超链接菜单] linkElement:', linkElement);
+    console.log('[超链接菜单] event:', e);
+    
+    e.preventDefault();
+    e.stopPropagation();
+    
+    const url = linkElement.href;
+    console.log('[超链接菜单] URL:', url);
+    
+    if (!url) {
+        console.warn('[右键菜单] 超链接URL无效');
+        return;
+    }
+    
+    // 获取上下文（判断是永久栏目还是临时栏目）
+    const permanentSection = linkElement.closest('#permanentSection, .permanent-bookmark-section');
+    const tempNode = linkElement.closest('.temp-canvas-node');
+    
+    const context = {
+        url: url,
+        title: linkElement.textContent || linkElement.title || url,
+        isHyperlink: true,
+        treeType: tempNode ? 'temporary' : 'permanent',
+        sectionId: tempNode ? tempNode.dataset.sectionId : null
+    };
+    
+    console.log('[右键菜单] 显示超链接菜单:', context);
+    
+    // 刷新跟踪的打开目标
+    await refreshTrackedOpenTargets();
+    
+    // 构建超链接菜单项
+    const menuItems = buildHyperlinkMenuItems(context);
+    
+    // 渲染菜单
+    const lang = currentLang || 'zh_CN';
+    contextMenu.classList.remove('lang-zh', 'lang-en');
+    contextMenu.classList.add(lang === 'zh_CN' ? 'lang-zh' : 'lang-en');
+    
+    // 超链接菜单始终使用紧凑的纵向布局
+    contextMenu.classList.remove('horizontal-layout');
+    contextMenu.classList.add('density-sm');
+    
+    let menuHTML = menuItems.map(item => {
+        if (item.separator) {
+            return '<div class="context-menu-separator"></div>';
+        }
+        
+        const icon = item.icon ? `<i class="fas fa-${item.icon}"></i>` : '';
+        const disabled = item.disabled ? 'disabled' : '';
+        const selected = item.selected ? 'selected-open' : '';
+        const colorClass = item.action === 'hyperlink-open-label' ? 'section-label' : '';
+        const hiddenStyle = item.hidden ? 'style="display:none;"' : '';
+        const labelContent = item.labelHTML ? item.labelHTML : `<span>${item.label || ''}</span>`;
+        
+        return `
+            <div class="context-menu-item ${disabled} ${colorClass} ${selected}" data-action="${item.action}" ${hiddenStyle}>
+                ${icon}
+                <span class="context-menu-item-label">${labelContent}</span>
+            </div>
+        `;
+    }).join('');
+    
+    contextMenu.innerHTML = menuHTML;
+    
+    // 绑定sub-badge点击事件（同窗特定组的快捷操作）
+    contextMenu.querySelectorAll('.sub-badge[data-sub-action]').forEach(badge => {
+        badge.addEventListener('click', async (event) => {
+            const subAction = badge.dataset.subAction;
+            if (!subAction || !context || !context.url) return;
+            event.preventDefault();
+            event.stopPropagation();
+            try {
+                await openInSameWindowSpecificGroup(context.url, {
+                    context,
+                    isHyperlink: true,
+                    forceNewGroup: subAction === 'swsg-new-group' || subAction === 'swsg-new-window',
+                    forceNewWindow: subAction === 'swsg-new-window'
+                });
+                await setDefaultOpenMode('same-window-specific-group');
+            } catch (badgeError) {
+                console.warn('[超链接菜单] swsg badge failed', badgeError);
+            }
+            hideContextMenu();
+        });
+    });
+    
+    // 绑定点击事件
+    contextMenu.querySelectorAll('.context-menu-item:not(.disabled)').forEach(item => {
+        item.addEventListener('click', (e) => {
+            e.stopPropagation();
+            const action = item.dataset.action;
+            
+            if (action === 'hyperlink-open-label') {
+                return;
+            }
+            
+            handleHyperlinkMenuAction(action, context);
+            hideContextMenu();
+        });
+    });
+    
+    // 将菜单嵌入到DOM中
+    embedContextMenu(linkElement);
+    contextMenu.style.display = 'block';
+}
+
+// 构建超链接菜单项（独立系统，只有4个选项）
+function buildHyperlinkMenuItems(context) {
+    const lang = currentLang || 'zh_CN';
+    const items = [];
+    
+    // 标题：打开超链接
+    items.push({ 
+        action: 'hyperlink-open-label', 
+        label: lang === 'zh_CN' ? '打开超链接：' : 'Open Hyperlink:', 
+        icon: '', 
+        disabled: true 
+    });
+    
+    // === 超链接系统：4个选项 ===
+    
+    // 1. in New Tab（新标签页）
+    items.push({
+        action: 'hyperlink-open-new-tab',
+        label: lang === 'zh_CN' ? '新标签页' : 'in New Tab',
+        icon: 'window-maximize',
+        selected: hyperlinkDefaultOpenMode === 'new-tab'
+    });
+    
+    // 2. in Same Group（同一标签组）
+    (() => {
+        const showBadge = !!hyperlinkSpecificTabGroupId;
+        const baseLabelZh = '同一标签组';
+        const baseLabelEn = 'in Same Group';
+        const badge = showBadge ? (lang === 'zh_CN' ? ' <span class="sub-badge">新分组</span>' : ' <span class="sub-badge">New Group</span>') : '';
+        
+        items.push({
+            action: 'hyperlink-open-same-group',
+            label: (lang === 'zh_CN' ? baseLabelZh : baseLabelEn) + badge,
+            icon: 'object-group',
+            selected: hyperlinkDefaultOpenMode === 'specific-group'
+        });
+    })();
+    
+    items.push({ separatorShort: true });
+    
+    // 3. in New Window（新窗口）
+    items.push({
+        action: 'hyperlink-open-new-window',
+        label: lang === 'zh_CN' ? '新窗口' : 'in New Window',
+        icon: 'window-restore',
+        selected: hyperlinkDefaultOpenMode === 'new-window'
+    });
+    
+    // 4. in Same Window（同一窗口，带提示标识）
+    (() => {
+        const showBadge = !!hyperlinkSpecificWindowId;
+        const baseLabelZh = '同一窗口';
+        const baseLabelEn = 'in Same Window';
+        const badge = showBadge ? (lang === 'zh_CN' ? ' <span class="sub-badge">新窗口</span>' : ' <span class="sub-badge">New Window</span>') : '';
+        
+        items.push({
+            action: 'hyperlink-open-specific-window',
+            label: (lang === 'zh_CN' ? baseLabelZh : baseLabelEn) + badge,
+            icon: 'window-restore',
+            selected: hyperlinkDefaultOpenMode === 'specific-window'
+        });
+    })();
+    
+    return items;
+}
+
+// 处理超链接菜单操作（独立系统，4个选项）
+async function handleHyperlinkMenuAction(action, context) {
+    const url = context.url;
+    const lang = currentLang || 'zh_CN';
+    
+    try {
+        switch (action) {
+            case 'hyperlink-open-new-tab':
+                await openHyperlinkNewTab(url);
+                await setHyperlinkDefaultOpenMode('new-tab');
+                break;
+                
+            case 'hyperlink-open-new-window':
+                await openHyperlinkNewWindow(url);
+                await setHyperlinkDefaultOpenMode('new-window');
+                break;
+                
+            case 'hyperlink-open-same-group':
+                // forceNew: true，每次右键点击都新建分组
+                await openHyperlinkInSpecificTabGroup(url, { forceNew: true });
+                await setHyperlinkDefaultOpenMode('specific-group');
+                break;
+                
+            case 'hyperlink-open-specific-window':
+                // forceNew: true，每次右键点击都新建窗口
+                await openHyperlinkInSpecificWindow(url, { forceNew: true });
+                await setHyperlinkDefaultOpenMode('specific-window');
+                break;
+                
+            default:
+                console.warn('[超链接菜单] 未处理的操作:', action);
+        }
+    } catch (error) {
+        console.error('[超链接菜单] 操作失败:', error);
+        alert((lang === 'zh_CN' ? '操作失败: ' : 'Failed: ') + error.message);
+    }
+}
+
+// 设置超链接默认打开方式（独立于书签系统）
+async function setHyperlinkDefaultOpenMode(mode) {
+    hyperlinkDefaultOpenMode = mode;
+    try {
+        if (typeof chrome !== 'undefined' && chrome.storage && chrome.storage.local) {
+            await chrome.storage.local.set({ hyperlinkDefaultOpenMode: mode });
+        } else {
+            localStorage.setItem('hyperlinkDefaultOpenMode', mode);
+        }
+    } catch (_) {}
 }
 
 // 显示右键菜单
@@ -2324,6 +2714,129 @@ async function openBookmarkNewTab(url) {
     }
 }
 
+// 在新标签页中打开（统一接口，支持超链接标识）
+async function openInNewTab(url, opts = {}) {
+    const { context = null, isHyperlink = false } = opts || {};
+    if (!url) return;
+    
+    if (isHyperlink) {
+        // 超链接打开：暂不添加特殊标识，直接打开
+        // 未来可以考虑创建带标识的组
+        await openBookmarkNewTab(url);
+    } else {
+        await openBookmarkNewTab(url);
+    }
+}
+
+// 在新窗口中打开（统一接口，支持超链接标识）
+async function openInNewWindow(url, opts = {}) {
+    const { context = null, isHyperlink = false, incognito = false } = opts || {};
+    if (!url) return;
+    
+    if (isHyperlink) {
+        // 超链接在新窗口打开：创建带"超链接"标记的窗口
+        try {
+            if (typeof chrome !== 'undefined' && chrome.windows && chrome.tabs) {
+                const lang = currentLang || 'zh_CN';
+                const hyperlinkTitle = lang === 'zh_CN' ? '超链接' : 'Hyperlink';
+                const created = await chrome.windows.create({ url });
+                
+                // 添加标记页
+                if (created && created.id) {
+                    try {
+                        const params = new URLSearchParams();
+                        params.set('t', hyperlinkTitle);
+                        const markerUrl = (chrome && chrome.runtime && chrome.runtime.getURL)
+                            ? chrome.runtime.getURL(`history_html/window_marker.html?${params.toString()}`)
+                            : null;
+                        if (markerUrl) {
+                            const markerTab = await chrome.tabs.create({ 
+                                windowId: created.id, 
+                                url: markerUrl, 
+                                pinned: false, 
+                                active: false 
+                            });
+                            try { 
+                                if (markerTab && markerTab.id != null) {
+                                    await chrome.tabs.move(markerTab.id, { index: 0 }); 
+                                }
+                            } catch(_) {}
+                        }
+                    } catch(_) {}
+                }
+            } else {
+                window.open(url, '_blank');
+            }
+        } catch (error) {
+            console.error('[超链接新窗口] 打开失败:', error);
+            window.open(url, '_blank');
+        }
+    } else {
+        await openBookmarkNewWindow(url, incognito);
+    }
+}
+
+// 在同一标签组中打开（统一接口，支持超链接标识）
+async function openInSameGroup(url, opts = {}) {
+    const { context = null, isHyperlink = false, forceNew = false } = opts || {};
+    if (!url) return;
+    
+    if (isHyperlink) {
+        // 超链接在标签组打开：使用"超链接"标题
+        if (typeof chrome === 'undefined' || !chrome.tabs) {
+            window.open(url, '_blank');
+            return;
+        }
+        
+        try {
+            const lang = currentLang || 'zh_CN';
+            const hyperlinkTitle = lang === 'zh_CN' ? '超链接' : 'Hyperlink';
+            
+            // 检查是否已有超链接专用组（使用特殊标识）
+            const HYPERLINK_GROUP_KEY = '_hyperlink_group_id';
+            let hyperlinkGroupId = null;
+            
+            try {
+                const stored = localStorage.getItem(HYPERLINK_GROUP_KEY);
+                if (stored) {
+                    hyperlinkGroupId = parseInt(stored, 10);
+                    // 验证组是否仍然存在
+                    if (chrome.tabGroups && chrome.tabGroups.get) {
+                        await chrome.tabGroups.get(hyperlinkGroupId);
+                    }
+                }
+            } catch (_) {
+                hyperlinkGroupId = null;
+                localStorage.removeItem(HYPERLINK_GROUP_KEY);
+            }
+            
+            if (hyperlinkGroupId) {
+                // 复用现有超链接组
+                const tab = await chrome.tabs.create({ url, active: false });
+                await chrome.tabs.group({ groupId: hyperlinkGroupId, tabIds: tab.id });
+            } else {
+                // 创建新的超链接组
+                const tab = await chrome.tabs.create({ url, active: false });
+                const groupId = await chrome.tabs.group({ tabIds: tab.id });
+                if (chrome.tabGroups && chrome.tabGroups.update) {
+                    try { 
+                        await chrome.tabGroups.update(groupId, { 
+                            title: hyperlinkTitle, 
+                            color: 'cyan' 
+                        }); 
+                    } catch (_) {}
+                }
+                localStorage.setItem(HYPERLINK_GROUP_KEY, String(groupId));
+            }
+        } catch (error) {
+            console.warn('[超链接标签组] 打开失败:', error);
+            window.open(url, '_blank');
+        }
+    } else {
+        await openInSpecificTabGroup(url, { forceNew });
+    }
+}
+
 // 在新窗口中打开
 async function openBookmarkNewWindow(url, incognito = false) {
     if (!url) return;
@@ -2596,7 +3109,7 @@ async function createSameWindowSpecificGroupWindow(context) {
 }
 
 async function openInSameWindowSpecificGroup(url, opts = {}) {
-    const { context = null, forceNewWindow = false, forceNewGroup = false } = opts || {};
+    const { context = null, forceNewWindow = false, forceNewGroup = false, isHyperlink = false } = opts || {};
     if (!url) return;
     if (typeof chrome === 'undefined' || !chrome.tabs || !chrome.windows) {
         window.open(url, '_blank');
@@ -2606,7 +3119,12 @@ async function openInSameWindowSpecificGroup(url, opts = {}) {
         if (forceNewWindow) {
             await resetSameWindowSpecificGroupState();
         }
-        const scope = getScopeFromContext(context || {});
+        
+        // 如果是超链接，使用特殊的作用域键
+        const scope = isHyperlink 
+            ? { key: '_hyperlink_swsg', prefix: '' }
+            : getScopeFromContext(context || {});
+            
         const windowId = await ensureSameWindowSpecificGroupWindow(context);
         if (forceNewGroup) {
             await clearSameWindowSpecificGroupScope(scope.key);
@@ -2638,16 +3156,34 @@ async function openInSameWindowSpecificGroup(url, opts = {}) {
             return;
         }
 
-        const nextNumber = await allocateNextScopedNumber(scope.key);
+        // 创建标签组
         const groupId = await chrome.tabs.group({ tabIds: tab.id, createProperties: { windowId } });
-        const title = scope.key === 'permanent'
-            ? `A-Z ${nextNumber}`
-            : `${scope.prefix || ''}${nextNumber}`;
-        if (chrome.tabGroups && chrome.tabGroups.update) {
-            try { await chrome.tabGroups.update(groupId, { title, color: 'blue' }); } catch(_) {}
+        
+        // 如果是超链接，使用特殊的标题
+        let title;
+        let groupNumber = null;
+        
+        if (isHyperlink) {
+            const lang = currentLang || 'zh_CN';
+            title = lang === 'zh_CN' ? '超链接' : 'Hyperlink';
+        } else {
+            groupNumber = await allocateNextScopedNumber(scope.key);
+            title = scope.key === 'permanent'
+                ? `A-Z ${groupNumber}`
+                : `${scope.prefix || ''}${groupNumber}`;
+            await registerScopedGroup(scope.key, groupId, windowId, groupNumber);
         }
-        await registerScopedGroup(scope.key, groupId, windowId, nextNumber);
-        await setSameWindowSpecificGroupScope(scope.key, groupId, windowId, nextNumber);
+        
+        if (chrome.tabGroups && chrome.tabGroups.update) {
+            try { 
+                await chrome.tabGroups.update(groupId, { 
+                    title, 
+                    color: isHyperlink ? 'cyan' : 'blue' 
+                }); 
+            } catch(_) {}
+        }
+        
+        await setSameWindowSpecificGroupScope(scope.key, groupId, windowId, groupNumber);
     } catch (error) {
         console.error('[同窗特定标签组] 打开失败:', error);
         try { window.open(url, '_blank'); } catch(_) {}
@@ -5264,5 +5800,244 @@ if (typeof window !== 'undefined') {
         document.addEventListener('DOMContentLoaded', restoreContextMenuLayout);
     } else {
         restoreContextMenuLayout();
+    }
+}
+
+// ========== 超链接系统：独立的打开函数（不与书签共享状态） ==========
+
+// 超链接：新标签页打开
+async function openHyperlinkNewTab(url) {
+    if (!url) return;
+    try {
+        if (typeof chrome !== 'undefined' && chrome.tabs && chrome.tabs.create) {
+            await chrome.tabs.create({ url, active: true });
+        } else {
+            window.open(url, '_blank');
+        }
+    } catch (error) {
+        console.error('[超链接] 新标签页打开失败:', error);
+        window.open(url, '_blank');
+    }
+}
+
+// 超链接：新窗口打开
+async function openHyperlinkNewWindow(url) {
+    if (!url) return;
+    try {
+        if (typeof chrome !== 'undefined' && chrome.windows && chrome.windows.create) {
+            await chrome.windows.create({ url, focused: true });
+        } else {
+            window.open(url, '_blank');
+        }
+    } catch (error) {
+        console.error('[超链接] 新窗口打开失败:', error);
+        window.open(url, '_blank');
+    }
+}
+
+// 超链接：在特定标签组中打开（Group名："Hyperlink 1", "Hyperlink 2"...）
+async function openHyperlinkInSpecificTabGroup(url, options = {}) {
+    const { forceNew = false } = options;
+    const lang = currentLang || 'zh_CN';
+    
+    if (!url) return;
+    if (typeof chrome === 'undefined' || !chrome.tabs) {
+        window.open(url, '_blank');
+        return;
+    }
+    
+    try {
+        if (forceNew) {
+            hyperlinkSpecificTabGroupId = null;
+            hyperlinkSpecificGroupWindowId = null;
+        }
+        
+        // 检查已有分组是否有效
+        if (hyperlinkSpecificTabGroupId && Number.isInteger(hyperlinkSpecificTabGroupId)) {
+            try {
+                if (chrome.tabGroups && chrome.tabGroups.get) {
+                    await chrome.tabGroups.get(hyperlinkSpecificTabGroupId);
+                }
+                if (hyperlinkSpecificGroupWindowId && chrome.windows && chrome.windows.get) {
+                    await chrome.windows.get(hyperlinkSpecificGroupWindowId, { populate: false });
+                }
+                
+                // 分组有效，在该分组中创建标签
+                const tab = await chrome.tabs.create({
+                    url,
+                    windowId: hyperlinkSpecificGroupWindowId || undefined,
+                    active: true
+                });
+                
+                if (chrome.tabs.group) {
+                    await chrome.tabs.group({
+                        tabIds: [tab.id],
+                        groupId: hyperlinkSpecificTabGroupId
+                    });
+                }
+                
+                console.log(`[超链接] 在现有分组中打开: ${url}`);
+                return;
+            } catch (error) {
+                console.warn('[超链接] 分组已失效，创建新分组');
+                hyperlinkSpecificTabGroupId = null;
+                hyperlinkSpecificGroupWindowId = null;
+            }
+        }
+        
+        // 创建新分组，递增计数器
+        hyperlinkGroupCounter++;
+        const groupTitle = `Hyperlink ${hyperlinkGroupCounter}`;
+        
+        const currentWindow = await chrome.windows.getCurrent({ populate: false });
+        const tab = await chrome.tabs.create({
+            url,
+            windowId: currentWindow.id,
+            active: true
+        });
+        
+        if (chrome.tabs.group && chrome.tabGroups && chrome.tabGroups.update) {
+            const groupId = await chrome.tabs.group({ tabIds: [tab.id] });
+            await chrome.tabGroups.update(groupId, {
+                title: groupTitle,
+                collapsed: false
+            });
+            
+            hyperlinkSpecificTabGroupId = groupId;
+            hyperlinkSpecificGroupWindowId = currentWindow.id;
+            
+            console.log(`[超链接] 创建新分组"${groupTitle}": ${url}`);
+        }
+    } catch (error) {
+        console.error('[超链接] 分组打开失败:', error);
+        window.open(url, '_blank');
+    }
+}
+
+// 超链接：在特定窗口中打开（Window名："超链接" / "Hyperlink"）
+async function openHyperlinkInSpecificWindow(url, options = {}) {
+    const { forceNew = false } = options;
+    
+    if (!url) return;
+    try {
+        if (typeof chrome !== 'undefined' && chrome.windows && chrome.tabs) {
+            if (forceNew) {
+                hyperlinkSpecificWindowId = null;
+            }
+            
+            // 检查窗口是否存在
+            if (hyperlinkSpecificWindowId) {
+                try {
+                    const win = await chrome.windows.get(hyperlinkSpecificWindowId, { populate: false });
+                    if (win && win.id) {
+                        await chrome.tabs.create({
+                            url,
+                            windowId: hyperlinkSpecificWindowId,
+                            active: true
+                        });
+                        await chrome.windows.update(hyperlinkSpecificWindowId, { focused: true });
+                        console.log('[超链接] 在现有窗口中打开:', url);
+                        return;
+                    }
+                } catch (error) {
+                    console.warn('[超链接] 窗口已失效，创建新窗口');
+                    hyperlinkSpecificWindowId = null;
+                }
+            }
+            
+            // 创建新窗口（每次创建递增计数器）
+            hyperlinkWindowCounter++;
+            const created = await chrome.windows.create({ url, focused: true });
+            hyperlinkSpecificWindowId = created.id;
+            console.log(`[超链接] 创建新窗口 #${hyperlinkWindowCounter}:`, url);
+        } else {
+            window.open(url, '_blank');
+        }
+    } catch (error) {
+        console.error('[超链接] 特定窗口打开失败:', error);
+        window.open(url, '_blank');
+    }
+}
+
+// 超链接：同窗特定组打开（Group名："超链接" / "Hyperlink"）
+async function openHyperlinkInSameWindowSpecificGroup(url) {
+    const lang = currentLang || 'zh_CN';
+    const groupTitle = lang === 'zh_CN' ? '超链接' : 'Hyperlink';
+    
+    if (!url) return;
+    if (typeof chrome === 'undefined' || !chrome.tabs || !chrome.windows) {
+        window.open(url, '_blank');
+        return;
+    }
+    
+    try {
+        // 确保窗口存在
+        let windowId = hyperlinkSameWindowSpecificGroupWindowId;
+        if (!windowId) {
+            const currentWindow = await chrome.windows.getCurrent({ populate: false });
+            windowId = currentWindow.id;
+            hyperlinkSameWindowSpecificGroupWindowId = windowId;
+        }
+        
+        // 检查窗口是否有效
+        try {
+            await chrome.windows.get(windowId, { populate: false });
+        } catch (error) {
+            const currentWindow = await chrome.windows.getCurrent({ populate: false });
+            windowId = currentWindow.id;
+            hyperlinkSameWindowSpecificGroupWindowId = windowId;
+        }
+        
+        // 检查作用域中的分组
+        const scopeEntry = hyperlinkSameWindowSpecificGroupScopes['_hyperlink'];
+        let groupId = null;
+        
+        if (scopeEntry && scopeEntry.windowId === windowId && Number.isInteger(scopeEntry.groupId)) {
+            try {
+                if (chrome.tabGroups && chrome.tabGroups.get) {
+                    await chrome.tabGroups.get(scopeEntry.groupId);
+                }
+                groupId = scopeEntry.groupId;
+            } catch (error) {
+                console.warn('[超链接] 分组已失效');
+                groupId = null;
+            }
+        }
+        
+        // 创建标签
+        const tab = await chrome.tabs.create({
+            url,
+            windowId: windowId,
+            active: true
+        });
+        
+        if (chrome.tabs.group && chrome.tabGroups && chrome.tabGroups.update) {
+            if (groupId) {
+                // 复用现有分组
+                await chrome.tabs.group({
+                    tabIds: [tab.id],
+                    groupId: groupId
+                });
+            } else {
+                // 创建新分组
+                groupId = await chrome.tabs.group({ tabIds: [tab.id] });
+                await chrome.tabGroups.update(groupId, {
+                    title: groupTitle,
+                    collapsed: false
+                });
+                
+                // 保存到作用域
+                hyperlinkSameWindowSpecificGroupScopes['_hyperlink'] = {
+                    groupId: groupId,
+                    windowId: windowId,
+                    updatedAt: Date.now()
+                };
+            }
+        }
+        
+        console.log(`[超链接] 同窗特定组打开: ${url}`);
+    } catch (error) {
+        console.error('[超链接] 同窗特定组打开失败:', error);
+        window.open(url, '_blank');
     }
 }

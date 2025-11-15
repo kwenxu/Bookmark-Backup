@@ -1833,15 +1833,99 @@ a.tree-label.tree-bookmark-link:hover {
 }
 
 /* ==================== 响应式设计 ==================== */
-@media (max-width: 768px) {
-    .main-container {
-        flex-direction: column;
+/* 在中等屏幕（1024px以下）时，自动收缩侧边栏 */
+@media (max-width: 1024px) {
+    .sidebar {
+        width: 60px;
+        padding: 16px 4px;
     }
     
+    .sidebar .nav-tab span,
+    .sidebar .nav-group-title,
+    .sidebar .stats-panel h3,
+    .sidebar .stats-panel .stat-item span:first-child {
+        display: none;
+    }
+    
+    .sidebar .nav-group {
+        border-bottom: none;
+        margin-bottom: 8px;
+        padding-bottom: 8px;
+    }
+    
+    .sidebar .nav-tab {
+        justify-content: center;
+        padding: 12px 0;
+    }
+    
+    .sidebar .nav-tab i {
+        margin: 0;
+    }
+    
+    .sidebar .stats-panel {
+        padding: 12px 4px;
+    }
+    
+    .sidebar .stats-panel .stat-item {
+        flex-direction: column;
+        align-items: center;
+        gap: 4px;
+    }
+    
+    .sidebar .stats-panel .stat-item strong {
+        margin-top: 0;
+    }
+}
+
+@media (max-width: 768px) {
+    /* 保持横向布局，不要纵向堆叠 */
+    .main-container {
+        flex-direction: row; /* 保持横向 */
+    }
+    
+    /* 自动收缩侧边栏，而不是占满宽度 */
     .sidebar {
-        width: 100%;
-        border-right: none;
-        border-bottom: 1px solid var(--border-color);
+        width: 60px; /* 自动收缩到最小宽度 */
+        padding: 16px 4px;
+        border-right: 1px solid var(--border-color);
+        border-bottom: none;
+    }
+    
+    /* 在小屏幕上自动隐藏侧边栏文字（相当于自动收起） */
+    .sidebar .nav-tab span,
+    .sidebar .nav-group-title,
+    .sidebar .stats-panel h3,
+    .sidebar .stats-panel .stat-item span:first-child {
+        display: none;
+    }
+    
+    .sidebar .nav-group {
+        border-bottom: none;
+        margin-bottom: 8px;
+        padding-bottom: 8px;
+    }
+    
+    .sidebar .nav-tab {
+        justify-content: center;
+        padding: 12px 0;
+    }
+    
+    .sidebar .nav-tab i {
+        margin: 0;
+    }
+    
+    .sidebar .stats-panel {
+        padding: 12px 4px;
+    }
+    
+    .sidebar .stats-panel .stat-item {
+        flex-direction: column;
+        align-items: center;
+        gap: 4px;
+    }
+    
+    .sidebar .stats-panel .stat-item strong {
+        margin-top: 0;
     }
     
     .search-container input {
@@ -5401,7 +5485,7 @@ a.tree-label.tree-bookmark-link:hover {
     padding: 0; /* 移除padding，让md-canvas-text自己处理 */
     display: flex; /* 使用flex布局，让子元素可以正确计算高度 */
     flex-direction: column; /* 垂直布局 */
-    overflow: hidden; /* 隐藏溢出，让md-canvas-text处理滚动 */
+    overflow: visible; /* 改为visible，允许工具栏显示在节点外部 */
     /* 确保高度约束生效 */
     flex-shrink: 0;
     flex-basis: auto;
@@ -5529,6 +5613,7 @@ a.tree-label.tree-bookmark-link:hover {
     resize: none; /* 禁用textarea自带的resize */
     overflow: auto; /* 允许滚动 */
     min-height: 0; /* 允许flex子元素缩小 */
+    border-radius: 0 0 6px 6px; /* 与节点圆角匹配，限制内容溢出 */
 }
 
 [data-theme="dark"] .md-canvas-editor {
@@ -5960,6 +6045,8 @@ a.tree-label.tree-bookmark-link:hover {
     overscroll-behavior: contain;
     will-change: scroll-position;
     contain: layout paint;
+    /* 限制内容不溢出到节点外（因为节点本身是overflow:visible） */
+    border-radius: 0 0 6px 6px; /* 与节点圆角匹配 */
 }
 
 /* 编辑模式下仍显示文本光标，避免与拖动光标冲突 */

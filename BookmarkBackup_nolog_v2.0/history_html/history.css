@@ -2896,7 +2896,7 @@ a.tree-label.tree-bookmark-link:hover {
     flex-direction: row;
     flex-wrap: wrap;
     width: auto;
-    max-width: 95vw;
+    max-width: min(95vw, 640px);  /* 最大宽度：视口95%或700px，取较小值 */
     min-width: auto;
     overflow-x: visible;
     overflow-y: visible;

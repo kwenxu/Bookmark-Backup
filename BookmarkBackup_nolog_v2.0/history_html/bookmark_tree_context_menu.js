@@ -1213,6 +1213,11 @@ async function showContextMenu(e, node) {
 
     // 渲染菜单
     const lang = currentLang || 'zh_CN';
+    
+    // 添加语言class，用于CSS中区分中英文样式
+    contextMenu.classList.remove('lang-zh', 'lang-en');
+    contextMenu.classList.add(lang === 'zh_CN' ? 'lang-zh' : 'lang-en');
+    
     let menuHTML;
 
     if (contextMenuHorizontal) {

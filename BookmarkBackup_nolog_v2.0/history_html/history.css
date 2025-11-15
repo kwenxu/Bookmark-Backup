@@ -2896,7 +2896,7 @@ a.tree-label.tree-bookmark-link:hover {
     flex-direction: row;
     flex-wrap: wrap;
     width: auto;
-    max-width: min(95vw, 640px);  /* 最大宽度：视口95%或700px，取较小值 */
+    max-width: min(95vw, 640px);  /* 中文最大宽度：视口95%或640px，取较小值 */
     min-width: auto;
     overflow-x: visible;
     overflow-y: visible;
@@ -2905,6 +2905,11 @@ a.tree-label.tree-bookmark-link:hover {
     row-gap: 16px;      /* 行间距更大一些 */
     align-items: center;
     justify-content: flex-start;
+}
+
+/* 英文模式下横向布局更宽 */
+.bookmark-context-menu.horizontal-layout.lang-en {
+    max-width: min(95vw, 800px);  /* 英文最大宽度：视口95%或800px，取较小值 */
 }
 
 /* ========== 纵向菜单（第一种形态）更紧凑：缩小按钮的上下内边距与分隔的上下间距 ==========

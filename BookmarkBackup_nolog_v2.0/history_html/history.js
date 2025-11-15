@@ -496,8 +496,8 @@ function updateFaviconImages(url, dataUrl) {
         
         // 查找所有相关的img标签（通过data-favicon-domain或父元素的data-node-url）
         document.querySelectorAll('img.tree-icon, img.addition-icon, img.change-tree-item-icon, img.canvas-bookmark-icon').forEach(img => {
-            // 检查是否是fallback图标且对应的书签URL匹配
-            if (img.src.startsWith('data:image/svg+xml')) {
+            // 检查是否是fallback图标（SVG data URL）且对应的书签URL匹配
+            if (img.src.startsWith('data:image/svg+xml') || img.src === fallbackIcon) {
                 const item = img.closest('[data-node-url], [data-bookmark-url]');
                 if (item) {
                     const itemUrl = item.dataset.nodeUrl || item.dataset.bookmarkUrl;
@@ -528,6 +528,7 @@ function setupGlobalImageErrorHandler() {
              e.target.classList.contains('change-tree-item-icon') ||
              e.target.classList.contains('canvas-bookmark-icon'))) {
             // 只在src不是fallbackIcon时才替换，避免无限循环
+            // fallbackIcon 是 data URL，不会加载失败
             if (e.target.src !== fallbackIcon && !e.target.src.startsWith('data:image/svg+xml')) {
                 e.target.src = fallbackIcon;
             }
@@ -546,8 +547,8 @@ async function getFaviconUrlAsync(url) {
     return await FaviconCache.fetch(url);
 }
 
-// Fallback 图标（SVG 圆圈）
-const fallbackIcon = 'data:image/svg+xml,%3Csvg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="%23999"%3E%3Ccircle cx="12" cy="12" r="10"/%3E%3C/svg%3E';
+// Fallback 图标 - 星标书签图标
+const fallbackIcon = 'data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 16 16%22%3E%3Cpath fill=%22%23999%22 d=%22M8 0l2.8 5.5 6.2 0.5-4.5 4 1.5 6-5.5-3.5-5.5 3.5 1.5-6-4.5-4 6.2-0.5z%22/%3E%3C/svg%3E';
 
 // =============================================================================
 // 国际化文本

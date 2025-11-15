@@ -1052,7 +1052,8 @@ function setupCanvasZoomAndPan() {
         return;
     }
     
-    console.log('[Canvas] 设置Obsidian风格的缩放和平移功能');
+    // 移除初始化日志
+    // console.log('[Canvas] 设置Obsidian风格的缩放和平移功能');
     
     // 加载保存的缩放级别
     loadCanvasZoom();
@@ -1071,11 +1072,25 @@ function setupCanvasZoomAndPan() {
             const mouseX = e.clientX - rect.left;
             const mouseY = e.clientY - rect.top;
             
-            // 计算新的缩放级别 - 优化：更平滑的缩放速度
+            // 计算新的缩放级别 - 优化：触控板双指缩放优化
+            // 检测是否为触控板滚动（触控板的 deltaY 通常较小且连续）
+            const isTouchpad = Math.abs(e.deltaY) < 50 && e.deltaMode === 0;
             const delta = -e.deltaY;
-            const zoomSpeed = 0.0008; // 降低缩放速度，更平滑
+            
+            // 触控板双指缩放：大幅提升速率和平滑曲线
+            const zoomSpeed = isTouchpad ? 0.004 : 0.0008; // 触控板速率大幅提升（5倍）
             const oldZoom = CanvasState.zoom;
-            const newZoom = Math.max(0.1, Math.min(3, oldZoom + delta * zoomSpeed));
+            let newZoom = oldZoom + delta * zoomSpeed;
+            
+            // 应用平滑曲线：在中间缩放级别时更敏感
+            if (isTouchpad) {
+                const zoomDelta = newZoom - oldZoom;
+                // 使用缓动函数：在 0.5-1.5 倍缩放时响应更快
+                const responsiveness = 1 + Math.max(0, 0.5 - Math.abs(oldZoom - 1) * 0.3);
+                newZoom = oldZoom + zoomDelta * responsiveness;
+            }
+            
+            newZoom = Math.max(0.1, Math.min(3, newZoom));
             
             // 使用优化的缩放更新，滚动时跳过边界计算
             scheduleZoomUpdate(newZoom, mouseX, mouseY, { recomputeBounds: false, skipSave: false, skipScrollbarUpdate: true });
@@ -1201,9 +1216,10 @@ function setCanvasZoom(zoom, centerX = null, centerY = null, options = {}) {
         saveZoomThrottled(zoom);
     }
     
-    if (!silent) {
-        console.log('[Canvas] 缩放:', Math.round(zoom * 100) + '%', '中心点:', { canvasCenterX, canvasCenterY });
-    }
+    // 移除缩放日志以减少控制台输出
+    // if (!silent) {
+    //     console.log('[Canvas] 缩放:', Math.round(zoom * 100) + '%', '中心点:', { canvasCenterX, canvasCenterY });
+    // }
 
     // 缩放变化后，更新连接线工具栏位置以保持固定像素偏移
     updateEdgeToolbarPosition();
@@ -1877,9 +1893,25 @@ function handleCanvasCustomScroll(event) {
         verticalDelta = 0;
     }
     
+    // 检测是否为触控板（触控板的 delta 值较小且连续，deltaMode 通常为 0）
+    const isTouchpad = (Math.abs(horizontalDelta) < 50 || Math.abs(verticalDelta) < 50) && event.deltaMode === 0;
+    
+    // 触控板双指拖动优化：提升灵敏度和平滑度
+    let scrollFactor = 1.0 / (CanvasState.zoom || 1);
+    if (isTouchpad) {
+        // 触控板使用更高的滚动系数，提升响应速度
+        scrollFactor *= 1.4; // 提升40%的灵敏度
+        
+        // 根据滚动速度动态调整响应：快速滚动时更敏感
+        const scrollSpeed = Math.sqrt(horizontalDelta * horizontalDelta + verticalDelta * verticalDelta);
+        if (scrollSpeed > 5) {
+            const speedBoost = Math.min(1.3, 1 + (scrollSpeed - 5) / 100);
+            scrollFactor *= speedBoost;
+        }
+    }
+    
     // 极简处理：直接更新，不做任何判断
     let hasUpdate = false;
-    const scrollFactor = 1.0 / (CanvasState.zoom || 1); // 内联计算
     
     if (horizontalEnabled && horizontalDelta !== 0) {
         CanvasState.panOffsetX -= horizontalDelta * scrollFactor;

@@ -2360,6 +2360,11 @@ function makePermanentSectionDraggable() {
         // 使用 transform 替代 left/top 以提升性能
         permanentSection.style.transform = `translate(${newX - initialLeft}px, ${newY - initialTop}px)`;
         
+        // 实时更新连接线位置
+        if (typeof renderEdges === 'function') {
+            renderEdges();
+        }
+        
         // 阻止文本选择
         e.preventDefault();
     };
@@ -2386,6 +2391,11 @@ function makePermanentSectionDraggable() {
                 savePermanentSectionPosition();
                 scheduleBoundsUpdate();
                 scheduleScrollbarUpdate();
+                
+                // 最终更新连接线位置
+                if (typeof renderEdges === 'function') {
+                    renderEdges();
+                }
             }
             
             hasMoved = false;
@@ -6328,8 +6338,21 @@ function getAnchorPosition(nodeId, side) {
     if (!el) return null;
     
     // Must use style.left/top because they are in canvas-content coordinates
-    const left = parseFloat(el.style.left) || 0;
-    const top = parseFloat(el.style.top) || 0;
+    let left = parseFloat(el.style.left) || 0;
+    let top = parseFloat(el.style.top) || 0;
+    
+    // 检查是否有 transform: translate() 应用（拖动过程中）
+    const transform = el.style.transform;
+    if (transform && transform.includes('translate')) {
+        const match = transform.match(/translate\(([^,]+)px,\s*([^)]+)px\)/);
+        if (match) {
+            const translateX = parseFloat(match[1]) || 0;
+            const translateY = parseFloat(match[2]) || 0;
+            left += translateX;
+            top += translateY;
+        }
+    }
+    
     const width = el.offsetWidth;
     const height = el.offsetHeight;
     

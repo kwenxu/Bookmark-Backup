@@ -955,9 +955,7 @@ function createCanvasBookmarkItem(bookmark, isDraggable) {
     const icon = document.createElement('img');
     icon.className = 'canvas-bookmark-icon';
     icon.src = getFaviconUrl(bookmark.url);
-    icon.onerror = () => {
-        icon.src = 'data:image/svg+xml,%3Csvg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="%23999"%3E%3Cpath d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"%3E%3C/path%3E%3C/svg%3E';
-    };
+    // 不再需要 onerror，全局事件处理器会处理
     
     // 标题
     const title = document.createElement('span');
@@ -4161,12 +4159,8 @@ function buildTempTreeNode(section, item, level) {
         icon = document.createElement('img');
         icon.className = 'tree-icon';
         const favicon = getFaviconUrl(item.url);
-        if (favicon) {
-            icon.src = favicon;
-            icon.onerror = () => { icon.src = fallbackIcon; };
-        } else {
-            icon.src = fallbackIcon;
-        }
+        icon.src = favicon || fallbackIcon;
+        // 不再需要 onerror，全局事件处理器会处理
     }
     
     let label;

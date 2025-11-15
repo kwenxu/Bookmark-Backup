@@ -178,6 +178,18 @@ async function recordRecentMovedId(movedId, info) {
                 if (node.url) {
                     // 是书签
                     bookmarkModified = true;
+                    
+                    // 如果URL被修改，通知历史查看器清除favicon缓存
+                    if (changeInfo.url) {
+                        try {
+                            browserAPI.runtime.sendMessage({
+                                action: 'clearFaviconCache',
+                                url: changeInfo.url
+                            });
+                        } catch (e) {
+                            // 如果没有监听器也没关系
+                        }
+                    }
 } else {
                     // 是文件夹
                     folderModified = true;

@@ -75,6 +75,354 @@ let isPreloading = false;
 const preloadedIcons = new Map();
 const iconPreloadQueue = [];
 
+// Favicon 缓存管理（持久化 + 失败缓存）
+const FaviconCache = {
+    db: null,
+    dbName: 'BookmarkFaviconCache',
+    dbVersion: 1,
+    storeName: 'favicons',
+    failureStoreName: 'failures',
+    memoryCache: new Map(), // {url: faviconDataUrl}
+    failureCache: new Set(), // 失败的域名集合
+    pendingRequests: new Map(), // 正在请求的URL，避免重复请求
+    
+    // 初始化 IndexedDB
+    async init() {
+        if (this.db) return;
+        
+        return new Promise((resolve, reject) => {
+            const request = indexedDB.open(this.dbName, this.dbVersion);
+            
+            request.onerror = () => {
+                console.error('[FaviconCache] IndexedDB 打开失败:', request.error);
+                reject(request.error);
+            };
+            
+            request.onsuccess = () => {
+                this.db = request.result;
+                console.log('[FaviconCache] IndexedDB 初始化成功');
+                resolve();
+            };
+            
+            request.onupgradeneeded = (event) => {
+                const db = event.target.result;
+                
+                // 创建成功缓存的存储
+                if (!db.objectStoreNames.contains(this.storeName)) {
+                    const store = db.createObjectStore(this.storeName, { keyPath: 'domain' });
+                    store.createIndex('timestamp', 'timestamp', { unique: false });
+                }
+                
+                // 创建失败缓存的存储
+                if (!db.objectStoreNames.contains(this.failureStoreName)) {
+                    const failureStore = db.createObjectStore(this.failureStoreName, { keyPath: 'domain' });
+                    failureStore.createIndex('timestamp', 'timestamp', { unique: false });
+                }
+                
+                console.log('[FaviconCache] IndexedDB 结构创建完成');
+            };
+        });
+    },
+    
+    // 检查URL是否为本地/内网/明显无效
+    isInvalidUrl(url) {
+        if (!url || typeof url !== 'string') return true;
+        
+        try {
+            const urlObj = new URL(url);
+            const hostname = urlObj.hostname.toLowerCase();
+            
+            // 本地地址
+            if (hostname === 'localhost' || hostname === '127.0.0.1' || hostname === '::1') {
+                return true;
+            }
+            
+            // 内网地址
+            if (hostname.match(/^(10\.|172\.(1[6-9]|2[0-9]|3[01])\.|192\.168\.)/)) {
+                return true;
+            }
+            
+            // .local 域名
+            if (hostname.endsWith('.local')) {
+                return true;
+            }
+            
+            // 文件协议等
+            if (!url.startsWith('http://') && !url.startsWith('https://')) {
+                return true;
+            }
+            
+            return false;
+        } catch (e) {
+            return true;
+        }
+    },
+    
+    // 从缓存获取favicon
+    async get(url) {
+        if (this.isInvalidUrl(url)) {
+            return null;
+        }
+        
+        try {
+            const urlObj = new URL(url);
+            const domain = urlObj.hostname;
+            
+            // 检查失败缓存
+            if (this.failureCache.has(domain)) {
+                return 'failed';
+            }
+            
+            // 检查内存缓存
+            if (this.memoryCache.has(domain)) {
+                return this.memoryCache.get(domain);
+            }
+            
+            // 从 IndexedDB 读取
+            if (!this.db) await this.init();
+            
+            return new Promise((resolve) => {
+                const transaction = this.db.transaction([this.storeName, this.failureStoreName], 'readonly');
+                
+                // 先检查失败缓存
+                const failureStore = transaction.objectStore(this.failureStoreName);
+                const failureRequest = failureStore.get(domain);
+                
+                failureRequest.onsuccess = () => {
+                    if (failureRequest.result) {
+                        // 检查失败缓存是否过期（7天）
+                        const age = Date.now() - failureRequest.result.timestamp;
+                        if (age < 7 * 24 * 60 * 60 * 1000) {
+                            this.failureCache.add(domain);
+                            resolve('failed');
+                            return;
+                        }
+                    }
+                    
+                    // 检查成功缓存
+                    const store = transaction.objectStore(this.storeName);
+                    const request = store.get(domain);
+                    
+                    request.onsuccess = () => {
+                        if (request.result) {
+                            // 检查缓存是否过期（30天）
+                            const age = Date.now() - request.result.timestamp;
+                            if (age < 30 * 24 * 60 * 60 * 1000) {
+                                this.memoryCache.set(domain, request.result.dataUrl);
+                                resolve(request.result.dataUrl);
+                            } else {
+                                resolve(null); // 过期
+                            }
+                        } else {
+                            resolve(null);
+                        }
+                    };
+                    
+                    request.onerror = () => resolve(null);
+                };
+                
+                failureRequest.onerror = () => resolve(null);
+            });
+        } catch (e) {
+            console.warn('[FaviconCache] 获取缓存失败:', e);
+            return null;
+        }
+    },
+    
+    // 保存favicon到缓存
+    async save(url, dataUrl) {
+        if (this.isInvalidUrl(url)) return;
+        
+        try {
+            const urlObj = new URL(url);
+            const domain = urlObj.hostname;
+            
+            // 更新内存缓存
+            this.memoryCache.set(domain, dataUrl);
+            
+            // 保存到 IndexedDB
+            if (!this.db) await this.init();
+            
+            const transaction = this.db.transaction([this.storeName], 'readwrite');
+            const store = transaction.objectStore(this.storeName);
+            
+            store.put({
+                domain: domain,
+                dataUrl: dataUrl,
+                timestamp: Date.now()
+            });
+            
+            // 从失败缓存中移除（如果存在）
+            this.failureCache.delete(domain);
+            this.removeFailure(domain);
+            
+        } catch (e) {
+            console.warn('[FaviconCache] 保存缓存失败:', e);
+        }
+    },
+    
+    // 记录失败
+    async saveFailure(url) {
+        if (this.isInvalidUrl(url)) return;
+        
+        try {
+            const urlObj = new URL(url);
+            const domain = urlObj.hostname;
+            
+            // 更新内存缓存
+            this.failureCache.add(domain);
+            
+            // 保存到 IndexedDB
+            if (!this.db) await this.init();
+            
+            const transaction = this.db.transaction([this.failureStoreName], 'readwrite');
+            const store = transaction.objectStore(this.failureStoreName);
+            
+            store.put({
+                domain: domain,
+                timestamp: Date.now()
+            });
+            
+        } catch (e) {
+            console.warn('[FaviconCache] 保存失败记录失败:', e);
+        }
+    },
+    
+    // 移除失败记录（当URL被修改时）
+    async removeFailure(domain) {
+        try {
+            if (!this.db) await this.init();
+            
+            const transaction = this.db.transaction([this.failureStoreName], 'readwrite');
+            const store = transaction.objectStore(this.failureStoreName);
+            store.delete(domain);
+        } catch (e) {
+            // 静默失败
+        }
+    },
+    
+    // 清除特定URL的缓存（用于书签URL修改时）
+    async clear(url) {
+        if (this.isInvalidUrl(url)) return;
+        
+        try {
+            const urlObj = new URL(url);
+            const domain = urlObj.hostname;
+            
+            // 清除内存缓存
+            this.memoryCache.delete(domain);
+            this.failureCache.delete(domain);
+            
+            // 清除 IndexedDB
+            if (!this.db) await this.init();
+            
+            const transaction = this.db.transaction([this.storeName, this.failureStoreName], 'readwrite');
+            transaction.objectStore(this.storeName).delete(domain);
+            transaction.objectStore(this.failureStoreName).delete(domain);
+            
+        } catch (e) {
+            console.warn('[FaviconCache] 清除缓存失败:', e);
+        }
+    },
+    
+    // 获取favicon（带缓存和请求合并）
+    async fetch(url) {
+        if (this.isInvalidUrl(url)) {
+            return fallbackIcon;
+        }
+        
+        try {
+            const urlObj = new URL(url);
+            const domain = urlObj.hostname;
+            
+            // 1. 检查缓存
+            const cached = await this.get(url);
+            if (cached === 'failed') {
+                return fallbackIcon;
+            }
+            if (cached) {
+                return cached;
+            }
+            
+            // 2. 检查是否已有相同请求在进行中（避免重复请求）
+            if (this.pendingRequests.has(domain)) {
+                return this.pendingRequests.get(domain);
+            }
+            
+            // 3. 发起新请求
+            const requestPromise = this._fetchFavicon(url);
+            this.pendingRequests.set(domain, requestPromise);
+            
+            try {
+                const result = await requestPromise;
+                return result;
+            } finally {
+                this.pendingRequests.delete(domain);
+            }
+            
+        } catch (e) {
+            console.warn('[FaviconCache] fetch 失败:', e);
+            return fallbackIcon;
+        }
+    },
+    
+    // 实际请求favicon
+    async _fetchFavicon(url) {
+        return new Promise((resolve) => {
+            try {
+                const urlObj = new URL(url);
+                const domain = urlObj.hostname;
+                const faviconUrl = `https://www.google.com/s2/favicons?domain=${domain}&sz=32`;
+                
+                const img = new Image();
+                img.crossOrigin = 'anonymous';
+                
+                const timeout = setTimeout(() => {
+                    img.src = '';
+                    this.saveFailure(url);
+                    resolve(fallbackIcon);
+                }, 5000);
+                
+                img.onload = () => {
+                    clearTimeout(timeout);
+                    
+                    // 转换为 Base64
+                    try {
+                        const canvas = document.createElement('canvas');
+                        canvas.width = img.width;
+                        canvas.height = img.height;
+                        const ctx = canvas.getContext('2d');
+                        ctx.drawImage(img, 0, 0);
+                        const dataUrl = canvas.toDataURL('image/png');
+                        
+                        // 保存到缓存
+                        this.save(url, dataUrl);
+                        resolve(dataUrl);
+                    } catch (e) {
+                        // 如果无法转换为Base64（CORS问题），使用原URL
+                        console.warn('[FaviconCache] 无法转换为Base64，使用原URL:', e);
+                        this.save(url, faviconUrl);
+                        resolve(faviconUrl);
+                    }
+                };
+                
+                img.onerror = () => {
+                    clearTimeout(timeout);
+                    this.saveFailure(url);
+                    resolve(fallbackIcon);
+                };
+                
+                img.src = faviconUrl;
+                
+            } catch (e) {
+                console.warn('[FaviconCache] _fetchFavicon 失败:', e);
+                this.saveFailure(url);
+                resolve(fallbackIcon);
+            }
+        });
+    }
+};
+
 // 浏览器 API 兼容性
 const browserAPI = (typeof chrome !== 'undefined') ? chrome : browser;
 
@@ -95,23 +443,107 @@ let currentDetailRecordTime = null; // 当前打开的详情面板对应的记�
 // 辅助函数 - URL 处理
 // =============================================================================
 
-// 安全地获取网站图标 URL
+// 安全地获取网站图标 URL（同步版本，用于兼容旧代码）
+// 注意：这个函数会触发后台异步加载，初次调用返回fallbackIcon
 function getFaviconUrl(url) {
-    if (!url) return '';
+    if (!url) return fallbackIcon;
     
     // 验证是否是有效的 HTTP/HTTPS URL
     if (!url.startsWith('http://') && !url.startsWith('https://')) {
-        return '';
+        return fallbackIcon;
+    }
+    
+    // 检查是否是无效URL
+    if (FaviconCache.isInvalidUrl(url)) {
+        return fallbackIcon;
     }
     
     try {
         const urlObj = new URL(url);
         const domain = urlObj.hostname;
-        return `https://www.google.com/s2/favicons?domain=${domain}&sz=32`;
+        
+        // 先检查内存缓存
+        if (FaviconCache.memoryCache.has(domain)) {
+            return FaviconCache.memoryCache.get(domain);
+        }
+        
+        // 检查失败缓存
+        if (FaviconCache.failureCache.has(domain)) {
+            return fallbackIcon;
+        }
+        
+        // 触发后台异步加载（不等待结果）
+        FaviconCache.fetch(url).then(dataUrl => {
+            // 加载完成后，查找并更新所有使用这个URL的img标签
+            if (dataUrl && dataUrl !== fallbackIcon) {
+                updateFaviconImages(url, dataUrl);
+            }
+        });
+        
+        // 立即返回 fallback 图标作为占位符
+        return fallbackIcon;
     } catch (error) {
         console.warn('[getFaviconUrl] 无效的 URL:', url);
-        return '';
+        return fallbackIcon;
     }
+}
+
+// 更新页面上所有指定URL的favicon图片
+function updateFaviconImages(url, dataUrl) {
+    try {
+        const urlObj = new URL(url);
+        const domain = urlObj.hostname;
+        
+        // 查找所有相关的img标签（通过data-favicon-domain或父元素的data-node-url）
+        document.querySelectorAll('img.tree-icon, img.addition-icon, img.change-tree-item-icon, img.canvas-bookmark-icon').forEach(img => {
+            // 检查是否是fallback图标且对应的书签URL匹配
+            if (img.src.startsWith('data:image/svg+xml')) {
+                const item = img.closest('[data-node-url], [data-bookmark-url]');
+                if (item) {
+                    const itemUrl = item.dataset.nodeUrl || item.dataset.bookmarkUrl;
+                    if (itemUrl) {
+                        try {
+                            const itemDomain = new URL(itemUrl).hostname;
+                            if (itemDomain === domain) {
+                                img.src = dataUrl;
+                            }
+                        } catch (e) {
+                            // 忽略无效URL
+                        }
+                    }
+                }
+            }
+        });
+    } catch (e) {
+        console.warn('[updateFaviconImages] 更新失败:', e);
+    }
+}
+
+// 全局图片错误处理（使用事件委托，避免CSP内联事件处理器）
+function setupGlobalImageErrorHandler() {
+    document.addEventListener('error', (e) => {
+        if (e.target.tagName === 'IMG' && 
+            (e.target.classList.contains('tree-icon') || 
+             e.target.classList.contains('addition-icon') ||
+             e.target.classList.contains('change-tree-item-icon') ||
+             e.target.classList.contains('canvas-bookmark-icon'))) {
+            // 只在src不是fallbackIcon时才替换，避免无限循环
+            if (e.target.src !== fallbackIcon && !e.target.src.startsWith('data:image/svg+xml')) {
+                e.target.src = fallbackIcon;
+            }
+        }
+    }, true); // 使用捕获阶段
+}
+
+// 异步获取favicon（推荐使用，支持完整缓存）
+async function getFaviconUrlAsync(url) {
+    if (!url) return fallbackIcon;
+    
+    if (!url.startsWith('http://') && !url.startsWith('https://')) {
+        return fallbackIcon;
+    }
+    
+    return await FaviconCache.fetch(url);
 }
 
 // Fallback 图标（SVG 圆圈）
@@ -446,6 +878,19 @@ const i18n = {
 
 document.addEventListener('DOMContentLoaded', async () => {
     console.log('历史查看器初始化...');
+    
+    // ========================================================================
+    // 【关键步骤 0】初始化 Favicon 缓存系统
+    // ========================================================================
+    try {
+        await FaviconCache.init();
+        console.log('[初始化] Favicon缓存系统已启动');
+    } catch (error) {
+        console.error('[初始化] Favicon缓存初始化失败:', error);
+    }
+    
+    // 设置全局图片错误处理（避免CSP内联事件处理器）
+    setupGlobalImageErrorHandler();
     
     // ========================================================================
     // 【关键步骤 1】最优先：立即恢复并应用视图状态
@@ -1173,43 +1618,19 @@ async function preloadCommonIcons() {
     }
 }
 
-// 预加载单个图标
-function preloadIcon(url) {
-    return new Promise((resolve) => {
+// 预加载单个图标（使用新的缓存系统）
+async function preloadIcon(url) {
+    try {
         // 基本验证
-        if (!url || preloadedIcons.has(url)) {
-            resolve();
+        if (!url || FaviconCache.isInvalidUrl(url)) {
             return;
         }
         
-        // 验证 URL 格式
-        if (!url.startsWith('http://') && !url.startsWith('https://')) {
-            resolve();
-            return;
-        }
-        
-        try {
-            const urlObj = new URL(url);
-            const domain = urlObj.origin;
-            const faviconUrl = `https://www.google.com/s2/favicons?domain=${domain}&sz=32`;
-            
-            const img = new Image();
-            img.onload = () => {
-                preloadedIcons.set(url, faviconUrl);
-                resolve();
-            };
-            img.onerror = () => {
-                resolve(); // 失败也继续
-            };
-            img.src = faviconUrl;
-            
-            // 超时保护
-            setTimeout(() => resolve(), 2000);
-        } catch (error) {
-            console.warn('[图标预加载] URL 无效:', url, error.message);
-            resolve();
-        }
-    });
+        // 使用缓存系统获取favicon（会自动缓存）
+        await FaviconCache.fetch(url);
+    } catch (error) {
+        console.warn('[图标预加载] URL 预加载失败:', url, error.message);
+    }
 }
 
 function loadStorageData() {
@@ -2928,11 +3349,10 @@ function renderChangeTreeItem(bookmark, type) {
     }
     
     return `
-        <div class="change-tree-item">
+        <div class="change-tree-item" data-bookmark-url="${escapeHtml(bookmark.url || '')}">
             ${favicon ? `<img class="change-tree-item-icon" 
                  src="${favicon}" 
-                 alt=""
-                 onerror="this.src='${fallbackIcon}'">` : ''}
+                 alt="">` : ''}
             <div class="change-tree-item-info">
                 ${displayInfo}
             </div>
@@ -3412,8 +3832,8 @@ function renderBookmarkItem(bookmark) {
     const favicon = getFaviconUrl(bookmark.url);
     
     return `
-        <div class="addition-item">
-            ${favicon ? `<img class="addition-icon" src="${favicon}" alt="" onerror="this.src='${fallbackIcon}'">` : ''}
+        <div class="addition-item" data-bookmark-url="${escapeHtml(bookmark.url)}">
+            <img class="addition-icon" src="${favicon}" alt="">
             <div class="addition-info">
                 <a href="${escapeHtml(bookmark.url)}" target="_blank" class="addition-title" rel="noopener noreferrer">${escapeHtml(bookmark.title)}</a>
                 <div class="addition-url">${escapeHtml(bookmark.url)}</div>
@@ -4683,7 +5103,7 @@ function renderTreeNodeWithChanges(node, level = 0, maxDepth = 50, visitedIds = 
                 <div class="tree-node" style="padding-left: ${level * 12}px">
                     <div class="tree-item ${changeClass}" data-node-id="${node.id}" data-node-title="${escapeHtml(node.title)}" data-node-url="${escapeHtml(node.url || '')}" data-node-type="bookmark" data-node-index="${typeof node.index === 'number' ? node.index : ''}">
                         <span class="tree-toggle" style="opacity: 0"></span>
-                        ${favicon ? `<img class="tree-icon" src="${favicon}" alt="" onerror="this.src='${fallbackIcon}'">` : `<i class="tree-icon fas fa-bookmark"></i>`}
+                        ${favicon ? `<img class="tree-icon" src="${favicon}" alt="">` : `<i class="tree-icon fas fa-bookmark"></i>`}
                         <a href="${escapeHtml(node.url)}" target="_blank" class="tree-label tree-bookmark-link" rel="noopener noreferrer">${escapeHtml(node.title)}</a>
                         <span class="change-badges">${statusIcon}</span>
                     </div>
@@ -4831,7 +5251,7 @@ async function applyIncrementalCreateToTree(id, bookmark) {
         <div class="tree-node" style="padding-left: ${(parseInt(parentItem.style.paddingLeft||'0',10)+12)||12}px">
             <div class="tree-item tree-change-added" data-node-id="${id}" data-node-title="${escapeHtml(bookmark.title||'')}" data-node-url="${escapeHtml(bookmark.url||'')}" data-node-type="${bookmark.url ? 'bookmark' : 'folder'}">
                 <span class="tree-toggle" style="opacity: 0"></span>
-                ${bookmark.url ? (favicon ? `<img class="tree-icon" src="${favicon}" alt="" onerror="this.src='${fallbackIcon}'">` : `<i class="tree-icon fas fa-bookmark"></i>`) : `<i class="tree-icon fas fa-folder"></i>`}
+                ${bookmark.url ? (favicon ? `<img class="tree-icon" src="${favicon}" alt="">` : `<i class="tree-icon fas fa-bookmark"></i>`) : `<i class="tree-icon fas fa-folder"></i>`}
                 ${bookmark.url ? `<a href="${escapeHtml(bookmark.url)}" target="_blank" class="tree-label tree-bookmark-link" rel="noopener noreferrer" style="${labelColor} ${labelFontWeight}">${escapeHtml(bookmark.title||'')}</a>` : `<span class="tree-label" style="${labelColor} ${labelFontWeight}">${escapeHtml(bookmark.title||'')}</span>`}
                 <span class="change-badges"><span class="change-badge added">+</span></span>
             </div>
@@ -5790,6 +6210,12 @@ function setupRealtimeMessageListener() {
                 return;
             }
             handleAnalysisUpdatedMessage(message);
+        } else if (message.action === 'clearFaviconCache') {
+            // 书签URL被修改，清除favicon缓存
+            if (message.url) {
+                FaviconCache.clear(message.url);
+                console.log('[Favicon缓存] 已清除URL的缓存:', message.url);
+            }
         } else if (message.action === 'clearExplicitMoved') {
             try {
                 explicitMovedIds = new Map();

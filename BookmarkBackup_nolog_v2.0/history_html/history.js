@@ -5958,7 +5958,113 @@ function toggleLanguage() {
     }
     
     applyLanguage();
-    renderCurrentView();
+    
+    // 只更新界面文字，不重新渲染内容（避免图标重新加载）
+    // renderCurrentView();
+    
+    // 手动更新需要多语言的UI元素（不涉及书签树内容）
+    updateLanguageDependentUI();
+}
+
+// 更新依赖语言的UI元素（不重新渲染内容，避免图标重新加载）
+function updateLanguageDependentUI() {
+    const isEn = currentLang === 'en';
+    
+    // 只更新图例文字（如果存在）
+    const legends = document.querySelectorAll('.tree-legend');
+    legends.forEach(legend => {
+        legend.innerHTML = `
+            <span class="legend-item"><span class="legend-dot added"></span> ${isEn ? 'Added' : '新增'}</span>
+            <span class="legend-item"><span class="legend-dot deleted"></span> ${isEn ? 'Deleted' : '删除'}</span>
+            <span class="legend-item"><span class="legend-dot modified"></span> ${isEn ? 'Modified' : '修改'}</span>
+            <span class="legend-item"><span class="legend-dot moved"></span> ${isEn ? 'Moved' : '移动'}</span>
+        `;
+    });
+    
+    // 更新加载文本（如果存在）
+    const loadingTexts = document.querySelectorAll('.loading');
+    loadingTexts.forEach(el => {
+        if (el.textContent.includes('Loading') || el.textContent.includes('加载中')) {
+            el.textContent = i18n.loading[currentLang];
+        }
+    });
+    
+    // 更新空状态文本
+    const emptyStates = document.querySelectorAll('.empty-state');
+    emptyStates.forEach(el => {
+        if (el.textContent.includes('No') || el.textContent.includes('没有')) {
+            el.textContent = isEn ? 'No data' : '没有数据';
+        }
+    });
+    
+    // ===== 更新临时栏目相关的多语言元素 =====
+    
+    // 1. 更新临时栏目的按钮tooltip
+    document.querySelectorAll('.temp-node-rename-btn').forEach(btn => {
+        const label = isEn ? 'Rename section' : '重命名栏目';
+        btn.title = label;
+        btn.setAttribute('aria-label', label);
+    });
+    
+    document.querySelectorAll('.temp-node-color-btn, .temp-node-color-input').forEach(btn => {
+        const label = isEn ? 'Change color' : '调整栏目颜色';
+        btn.title = label;
+        btn.setAttribute('aria-label', label);
+    });
+    
+    document.querySelectorAll('.temp-node-close').forEach(btn => {
+        const label = isEn ? 'Remove section' : '删除临时栏目';
+        btn.title = label;
+        btn.setAttribute('aria-label', label);
+    });
+    
+    // 2. 更新临时栏目说明的placeholder和文本
+    document.querySelectorAll('.temp-node-description').forEach(descText => {
+        const text = descText.textContent.trim();
+        const hasPlaceholder = text === 'Click to add description...' || text === '点击添加说明...';
+        const hasSpanChild = descText.querySelector('span[style*="opacity"]');
+        
+        // 如果是占位符文本（检查文本内容或者是否有占位符span）
+        if (hasPlaceholder || (hasSpanChild && !text)) {
+            const placeholder = isEn ? 'Click to add description...' : '点击添加说明...';
+            descText.innerHTML = `<span style="color: inherit; opacity: 0.6;">${placeholder}</span>`;
+            descText.title = isEn ? 'Click to add description' : '点击添加说明';
+        } else if (text && text.length > 0) {
+            // 有内容的，只更新title
+            descText.title = isEn ? 'Double-click to edit' : '双击编辑说明';
+        }
+    });
+    
+    // 3. 更新说明编辑按钮的tooltip
+    document.querySelectorAll('.temp-node-desc-edit-btn').forEach(btn => {
+        btn.title = isEn ? 'Edit description' : '编辑说明';
+    });
+    
+    document.querySelectorAll('.temp-node-desc-delete-btn').forEach(btn => {
+        btn.title = isEn ? 'Delete description' : '删除说明';
+    });
+    
+    // 4. 更新永久栏目的说明提示
+    const permanentTipCollapsed = document.querySelector('.permanent-section-tip-collapsed span');
+    if (permanentTipCollapsed) {
+        const text = isEn ? 'Click to add description...' : '点击添加说明...';
+        permanentTipCollapsed.textContent = text;
+    }
+    
+    const permanentTipText = document.querySelector('.permanent-section-tip');
+    if (permanentTipText) {
+        const text = permanentTipText.textContent.trim();
+        // 只更新占位符，不更新用户输入的内容
+        if (text === 'Click to add description...' || text === '点击添加说明...') {
+            const placeholder = isEn ? 'Click to add description...' : '点击添加说明...';
+            permanentTipText.innerHTML = `<span style="opacity: 0.6;">${placeholder}</span>`;
+            permanentTipText.title = isEn ? 'Click to add description' : '点击添加说明';
+        } else if (text) {
+            permanentTipText.title = isEn ? 'Double-click to edit' : '双击编辑说明';
+        }
+    }
+    
+    console.log('[toggleLanguage] 已更新UI文字（包括临时栏目）');
 }
 
 // =============================================================================

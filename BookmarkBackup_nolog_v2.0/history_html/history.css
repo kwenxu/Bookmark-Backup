@@ -2975,12 +2975,19 @@ a.tree-label.tree-bookmark-link:hover {
 }
 
 .bookmark-context-menu.horizontal-layout .context-menu-item.swsg-option {
-    min-width: 260px;
+    min-width: auto;
+    align-items: center;
 }
 
 .bookmark-context-menu .context-menu-item .swsg-title {
     font-weight: 500;
     line-height: 1.15;
+}
+
+/* 仅中文：字号和字重与其他菜单项一致 */
+.bookmark-context-menu .context-menu-item .swsg-title:not(.swsg-title-compact) {
+    font-weight: normal;
+    font-size: 1.111em;
 }
 
 .bookmark-context-menu:not(.horizontal-layout) .context-menu-item .swsg-title.swsg-title-compact {

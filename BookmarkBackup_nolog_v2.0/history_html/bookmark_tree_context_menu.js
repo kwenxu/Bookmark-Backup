@@ -1436,7 +1436,7 @@ function buildMenuItems(context) {
                 if (hasWindow) {
                     badges.push(`<span class="sub-badge" data-sub-action="swsg-new-window">${lang === 'zh_CN' ? '新窗口' : 'New Window'}</span>`);
                 }
-                const baseLabelZh = '同窗特定标签组';
+                const baseLabelZh = '同窗特定组';
                 const baseLabelEn = 'In Same Window & Specific Group';
                 const badgeHtml = badges.length ? `<div class="swsg-badge-row">${badges.join('')}</div>` : '';
                 const titleClass = lang === 'zh_CN' ? 'swsg-title' : 'swsg-title swsg-title-compact';
@@ -1485,7 +1485,7 @@ function buildMenuItems(context) {
             (() => {
                 const scope = getScopeFromContext(context);
                 const showBadge = (scope.key === 'permanent') && !!(scopedWindows && scopedWindows[scope.key]);
-                const baseLabelZh = '特定窗口打开';
+                const baseLabelZh = '特定窗口';
                 const baseLabelEn = 'in Specific Window';
                 const badge = showBadge ? (lang === 'zh_CN' ? ' <span class="sub-badge">新窗口</span>' : ' <span class="sub-badge">New Window</span>') : '';
                 return { action: 'open-scoped-window', label: (lang === 'zh_CN' ? baseLabelZh : baseLabelEn) + badge, icon: 'window-restore', group: 'open2', selected: defaultOpenMode === 'scoped-window' };

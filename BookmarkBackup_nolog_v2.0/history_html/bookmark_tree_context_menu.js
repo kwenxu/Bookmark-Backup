@@ -3225,10 +3225,15 @@ async function openInSameWindowSpecificGroup(url, opts = {}) {
             }
         }
 
-        const tab = await chrome.tabs.create({ url, active: false, windowId });
+        const tab = await chrome.tabs.create({ url, active: true, windowId });
         if (!tab || tab.id == null) {
             throw new Error('无法创建标签页');
         }
+        
+        // 激活窗口，确保显示最新打开的书签页面（而不是书签画布标识页）
+        try {
+            await chrome.windows.update(windowId, { focused: true });
+        } catch (_) {}
 
         if (reuseGroupId) {
             await chrome.tabs.group({ groupId: reuseGroupId, tabIds: tab.id });

@@ -94,13 +94,11 @@ const FaviconCache = {
             const request = indexedDB.open(this.dbName, this.dbVersion);
             
             request.onerror = () => {
-                console.error('[FaviconCache] IndexedDB 打开失败:', request.error);
                 reject(request.error);
             };
             
             request.onsuccess = () => {
                 this.db = request.result;
-                console.log('[FaviconCache] IndexedDB 初始化成功');
                 resolve();
             };
             
@@ -118,8 +116,6 @@ const FaviconCache = {
                     const failureStore = db.createObjectStore(this.failureStoreName, { keyPath: 'domain' });
                     failureStore.createIndex('timestamp', 'timestamp', { unique: false });
                 }
-                
-                console.log('[FaviconCache] IndexedDB 结构创建完成');
             };
         });
     },
@@ -224,7 +220,6 @@ const FaviconCache = {
                 failureRequest.onerror = () => resolve(null);
             });
         } catch (e) {
-            console.warn('[FaviconCache] 获取缓存失败:', e);
             return null;
         }
     },
@@ -257,7 +252,7 @@ const FaviconCache = {
             this.removeFailure(domain);
             
         } catch (e) {
-            console.warn('[FaviconCache] 保存缓存失败:', e);
+            // 静默处理
         }
     },
     
@@ -284,7 +279,7 @@ const FaviconCache = {
             });
             
         } catch (e) {
-            console.warn('[FaviconCache] 保存失败记录失败:', e);
+            // 静默处理
         }
     },
     
@@ -321,7 +316,7 @@ const FaviconCache = {
             transaction.objectStore(this.failureStoreName).delete(domain);
             
         } catch (e) {
-            console.warn('[FaviconCache] 清除缓存失败:', e);
+            // 静默处理
         }
     },
     
@@ -361,7 +356,6 @@ const FaviconCache = {
             }
             
         } catch (e) {
-            console.warn('[FaviconCache] fetch 失败:', e);
             return fallbackIcon;
         }
     },
@@ -395,13 +389,12 @@ const FaviconCache = {
                     }
                 }
                 
-                // 所有源都失败，记录失败并返回 fallback
-                console.warn('[FaviconCache] 所有 favicon 源都失败:', domain);
+                // 所有源都失败，记录失败并返回 fallback（静默）
                 this.saveFailure(url);
                 resolve(fallbackIcon);
                 
             } catch (e) {
-                console.warn('[FaviconCache] _fetchFavicon 失败:', e);
+                // 静默处理错误
                 this.saveFailure(url);
                 resolve(fallbackIcon);
             }
@@ -412,7 +405,8 @@ const FaviconCache = {
     async _tryLoadFavicon(faviconUrl, originalUrl, sourceName) {
         return new Promise((resolve) => {
             const img = new Image();
-            img.crossOrigin = 'anonymous';
+            // 不设置 crossOrigin，避免 CORS 预检请求导致的错误
+            // img.crossOrigin = 'anonymous';
             
             const timeout = setTimeout(() => {
                 img.src = '';
@@ -424,12 +418,11 @@ const FaviconCache = {
                 
                 // 检查是否是有效的图片（某些服务器返回1x1的占位图）
                 if (img.width < 8 || img.height < 8) {
-                    console.log(`[FaviconCache] ${sourceName} 返回无效图标（太小）:`, img.width, 'x', img.height);
                     resolve(null);
                     return;
                 }
                 
-                // 转换为 Base64
+                // 尝试转换为 Base64（可能因 CORS 失败，但不显示错误）
                 try {
                     const canvas = document.createElement('canvas');
                     canvas.width = img.width;
@@ -440,11 +433,9 @@ const FaviconCache = {
                     
                     // 保存到缓存
                     this.save(originalUrl, dataUrl);
-                    console.log(`[FaviconCache] ✅ ${sourceName} 成功:`, new URL(originalUrl).hostname);
                     resolve(dataUrl);
                 } catch (e) {
-                    // 如果无法转换为Base64（CORS问题），使用原URL
-                    console.log(`[FaviconCache] ${sourceName} CORS限制，使用原URL`);
+                    // CORS 限制，直接使用原 URL（静默处理，不输出日志）
                     this.save(originalUrl, faviconUrl);
                     resolve(faviconUrl);
                 }
@@ -520,7 +511,6 @@ function getFaviconUrl(url) {
         // 立即返回 fallback 图标作为占位符
         return fallbackIcon;
     } catch (error) {
-        console.warn('[getFaviconUrl] 无效的 URL:', url);
         return fallbackIcon;
     }
 }
@@ -557,7 +547,7 @@ function updateFaviconImages(url, dataUrl) {
             }
         });
     } catch (e) {
-        console.warn('[updateFaviconImages] 更新失败:', e);
+        // 静默处理
     }
     return updatedCount;
 }
@@ -928,9 +918,8 @@ document.addEventListener('DOMContentLoaded', async () => {
     // ========================================================================
     try {
         await FaviconCache.init();
-        console.log('[初始化] Favicon缓存系统已启动');
     } catch (error) {
-        console.error('[初始化] Favicon缓存初始化失败:', error);
+        // 静默处理
     }
     
     // 设置全局图片错误处理（避免CSP内联事件处理器）
@@ -6369,27 +6358,18 @@ function setupRealtimeMessageListener() {
             }
             handleAnalysisUpdatedMessage(message);
         } else if (message.action === 'clearFaviconCache') {
-            // 书签URL被修改，清除favicon缓存
+            // 书签URL被修改，清除favicon缓存（静默）
             if (message.url) {
                 FaviconCache.clear(message.url);
-                console.log('[Favicon缓存] 已清除URL的缓存:', message.url);
             }
         } else if (message.action === 'updateFaviconFromTab') {
-            // 从打开的 tab 更新 favicon
+            // 从打开的 tab 更新 favicon（静默）
             if (message.url && message.favIconUrl) {
                 FaviconCache.save(message.url, message.favIconUrl).then(() => {
                     // 更新页面上对应的 favicon 图标
-                    const updated = updateFaviconImages(message.url, message.favIconUrl);
-                    if (updated > 0) {
-                        try {
-                            const domain = new URL(message.url).hostname;
-                            console.log('[Favicon更新]', domain, '→ 更新了', updated, '个图标');
-                        } catch (e) {
-                            console.log('[Favicon更新] 更新了', updated, '个图标');
-                        }
-                    }
-                }).catch(error => {
-                    console.warn('[Favicon更新] 保存失败:', error);
+                    updateFaviconImages(message.url, message.favIconUrl);
+                }).catch(() => {
+                    // 静默处理错误
                 });
             }
         } else if (message.action === 'clearExplicitMoved') {

@@ -3620,34 +3620,29 @@ browserAPI.tabs.onUpdated.addListener(async (tabId, changeInfo, tab) => {
         }
         // 过滤掉扩展页面、chrome:// 等
         if (!tab.url.startsWith('http://') && !tab.url.startsWith('https://')) {
-            console.log('[Favicon更新] 跳过非HTTP URL:', tab.url);
             return;
         }
         
-        // 检查是否是本地/内网地址
+        // 检查是否是本地/内网地址（静默）
         try {
             const urlObj = new URL(tab.url);
             const hostname = urlObj.hostname.toLowerCase();
             
             // 本地地址
             if (hostname === 'localhost' || hostname === '127.0.0.1' || hostname === '::1') {
-                console.log('[Favicon更新] 跳过本地地址:', hostname);
                 return;
             }
             
             // 内网地址
             if (hostname.match(/^(10\.|172\.(1[6-9]|2[0-9]|3[01])\.|192\.168\.)/)) {
-                console.log('[Favicon更新] 跳过内网地址:', hostname);
                 return;
             }
             
             // .local 域名
             if (hostname.endsWith('.local')) {
-                console.log('[Favicon更新] 跳过.local域名:', hostname);
                 return;
             }
         } catch (e) {
-            console.warn('[Favicon更新] URL解析失败:', e);
             return;
         }
         
@@ -3676,14 +3671,9 @@ browserAPI.tabs.onUpdated.addListener(async (tabId, changeInfo, tab) => {
             });
             
             // 简洁日志：只显示域名
-            try {
-                const domain = new URL(tab.url).hostname;
-                console.log('[Favicon更新]', domain, '→ 缓存已更新');
-            } catch (e) {
-                console.log('[Favicon更新] 从 Tab 更新缓存:', tab.url);
-            }
+            // 静默更新缓存
         } catch (error) {
-            console.warn('[Favicon更新] 转换失败:', error);
+            // 静默处理
         }
     }
 });

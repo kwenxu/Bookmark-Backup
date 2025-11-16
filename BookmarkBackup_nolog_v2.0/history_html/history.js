@@ -490,26 +490,31 @@ function getFaviconUrl(url) {
 
 // 更新页面上所有指定URL的favicon图片
 function updateFaviconImages(url, dataUrl) {
+    let updatedCount = 0;
     try {
         const urlObj = new URL(url);
         const domain = urlObj.hostname;
         
         // 查找所有相关的img标签（通过data-favicon-domain或父元素的data-node-url）
-        document.querySelectorAll('img.tree-icon, img.addition-icon, img.change-tree-item-icon, img.canvas-bookmark-icon').forEach(img => {
+        const allImages = document.querySelectorAll('img.tree-icon, img.addition-icon, img.change-tree-item-icon, img.canvas-bookmark-icon');
+        
+        allImages.forEach(img => {
             // 检查是否是fallback图标（SVG data URL）且对应的书签URL匹配
-            if (img.src.startsWith('data:image/svg+xml') || img.src === fallbackIcon) {
-                const item = img.closest('[data-node-url], [data-bookmark-url]');
-                if (item) {
-                    const itemUrl = item.dataset.nodeUrl || item.dataset.bookmarkUrl;
-                    if (itemUrl) {
-                        try {
-                            const itemDomain = new URL(itemUrl).hostname;
-                            if (itemDomain === domain) {
-                                img.src = dataUrl;
-                            }
-                        } catch (e) {
-                            // 忽略无效URL
+            const isFallback = img.src.startsWith('data:image/svg+xml') || img.src === fallbackIcon;
+            const item = img.closest('[data-node-url], [data-bookmark-url]');
+            
+            if (item) {
+                const itemUrl = item.dataset.nodeUrl || item.dataset.bookmarkUrl;
+                if (itemUrl) {
+                    try {
+                        const itemDomain = new URL(itemUrl).hostname;
+                        if (itemDomain === domain) {
+                            // 更新图标（不管是否是fallback，都更新为最新的）
+                            img.src = dataUrl;
+                            updatedCount++;
                         }
+                    } catch (e) {
+                        // 忽略无效URL
                     }
                 }
             }
@@ -517,6 +522,7 @@ function updateFaviconImages(url, dataUrl) {
     } catch (e) {
         console.warn('[updateFaviconImages] 更新失败:', e);
     }
+    return updatedCount;
 }
 
 // 全局图片错误处理（使用事件委托，避免CSP内联事件处理器）
@@ -6330,6 +6336,24 @@ function setupRealtimeMessageListener() {
             if (message.url) {
                 FaviconCache.clear(message.url);
                 console.log('[Favicon缓存] 已清除URL的缓存:', message.url);
+            }
+        } else if (message.action === 'updateFaviconFromTab') {
+            // 从打开的 tab 更新 favicon
+            if (message.url && message.favIconUrl) {
+                FaviconCache.save(message.url, message.favIconUrl).then(() => {
+                    // 更新页面上对应的 favicon 图标
+                    const updated = updateFaviconImages(message.url, message.favIconUrl);
+                    if (updated > 0) {
+                        try {
+                            const domain = new URL(message.url).hostname;
+                            console.log('[Favicon更新]', domain, '→ 更新了', updated, '个图标');
+                        } catch (e) {
+                            console.log('[Favicon更新] 更新了', updated, '个图标');
+                        }
+                    }
+                }).catch(error => {
+                    console.warn('[Favicon更新] 保存失败:', error);
+                });
             }
         } else if (message.action === 'clearExplicitMoved') {
             try {

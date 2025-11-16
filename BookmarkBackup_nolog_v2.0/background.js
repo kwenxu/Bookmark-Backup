@@ -3598,6 +3598,133 @@ await initializeLanguagePreference(); // 新增：初始化语言偏好
     initializeOperationTracking();
 });
 
+// =================================================================================
+// VII. TAB FAVICON UPDATE SYSTEM (Tab Favicon 更新系统)
+// =================================================================================
+
+// 防抖：记录已处理的 URL，避免重复更新
+const processedFavicons = new Map(); // url -> timestamp
+const FAVICON_UPDATE_COOLDOWN = 5000; // 5秒内同一URL不重复更新
+
+/**
+ * 监听 tab 更新，当书签被打开时获取最新的 favicon 并更新缓存
+ */
+browserAPI.tabs.onUpdated.addListener(async (tabId, changeInfo, tab) => {
+    // 只处理 favIconUrl 变化的情况（最精确的触发条件）
+    if (changeInfo.favIconUrl && tab.url) {
+        // 防抖检查：如果最近处理过这个URL，跳过
+        const now = Date.now();
+        const lastProcessed = processedFavicons.get(tab.url);
+        if (lastProcessed && (now - lastProcessed) < FAVICON_UPDATE_COOLDOWN) {
+            return; // 5秒内已处理过，跳过
+        }
+        // 过滤掉扩展页面、chrome:// 等
+        if (!tab.url.startsWith('http://') && !tab.url.startsWith('https://')) {
+            console.log('[Favicon更新] 跳过非HTTP URL:', tab.url);
+            return;
+        }
+        
+        // 检查是否是本地/内网地址
+        try {
+            const urlObj = new URL(tab.url);
+            const hostname = urlObj.hostname.toLowerCase();
+            
+            // 本地地址
+            if (hostname === 'localhost' || hostname === '127.0.0.1' || hostname === '::1') {
+                console.log('[Favicon更新] 跳过本地地址:', hostname);
+                return;
+            }
+            
+            // 内网地址
+            if (hostname.match(/^(10\.|172\.(1[6-9]|2[0-9]|3[01])\.|192\.168\.)/)) {
+                console.log('[Favicon更新] 跳过内网地址:', hostname);
+                return;
+            }
+            
+            // .local 域名
+            if (hostname.endsWith('.local')) {
+                console.log('[Favicon更新] 跳过.local域名:', hostname);
+                return;
+            }
+        } catch (e) {
+            console.warn('[Favicon更新] URL解析失败:', e);
+            return;
+        }
+        
+        // 记录处理时间
+        processedFavicons.set(tab.url, now);
+        
+        // 定期清理旧记录（避免内存泄漏）
+        if (processedFavicons.size > 1000) {
+            const entries = Array.from(processedFavicons.entries());
+            entries.sort((a, b) => a[1] - b[1]); // 按时间排序
+            entries.slice(0, 500).forEach(([url]) => processedFavicons.delete(url)); // 删除一半旧记录
+        }
+        
+        // 将 favicon URL 转换为 Base64
+        try {
+            const faviconUrl = changeInfo.favIconUrl || tab.favIconUrl;
+            const dataUrl = await convertFaviconToBase64(faviconUrl);
+            
+            // 发送消息给 history.js 更新缓存
+            browserAPI.runtime.sendMessage({
+                action: 'updateFaviconFromTab',
+                url: tab.url,
+                favIconUrl: dataUrl || tab.favIconUrl
+            }).catch(() => {
+                // 忽略错误，history.js 可能未打开
+            });
+            
+            // 简洁日志：只显示域名
+            try {
+                const domain = new URL(tab.url).hostname;
+                console.log('[Favicon更新]', domain, '→ 缓存已更新');
+            } catch (e) {
+                console.log('[Favicon更新] 从 Tab 更新缓存:', tab.url);
+            }
+        } catch (error) {
+            console.warn('[Favicon更新] 转换失败:', error);
+        }
+    }
+});
+
+/**
+ * 将 favicon URL 转换为 Base64 Data URL
+ */
+async function convertFaviconToBase64(faviconUrl) {
+    return new Promise((resolve) => {
+        try {
+            // 使用 fetch 获取 favicon
+            fetch(faviconUrl)
+                .then(response => {
+                    if (!response.ok) {
+                        throw new Error('Fetch failed');
+                    }
+                    return response.blob();
+                })
+                .then(blob => {
+                    const reader = new FileReader();
+                    reader.onloadend = () => {
+                        resolve(reader.result);
+                    };
+                    reader.onerror = () => {
+                        resolve(null);
+                    };
+                    reader.readAsDataURL(blob);
+                })
+                .catch(() => {
+                    resolve(null);
+                });
+        } catch (e) {
+            resolve(null);
+        }
+    });
+}
+
+// =================================================================================
+// VIII. INITIALIZATION (初始化)
+// =================================================================================
+
 browserAPI.runtime.onInstalled.addListener(async (details) => {
 await initializeLanguagePreference(); // 新增：初始化语言偏好
     await initializeBadge();

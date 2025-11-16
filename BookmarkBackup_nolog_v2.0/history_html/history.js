@@ -201,14 +201,9 @@ const FaviconCache = {
                     
                     request.onsuccess = () => {
                         if (request.result) {
-                            // 检查缓存是否过期（30天）
-                            const age = Date.now() - request.result.timestamp;
-                            if (age < 30 * 24 * 60 * 60 * 1000) {
-                                this.memoryCache.set(domain, request.result.dataUrl);
-                                resolve(request.result.dataUrl);
-                            } else {
-                                resolve(null); // 过期
-                            }
+                            // 永久缓存，不检查过期（只有删除书签时才删除缓存）
+                            this.memoryCache.set(domain, request.result.dataUrl);
+                            resolve(request.result.dataUrl);
                         } else {
                             resolve(null);
                         }
@@ -6268,6 +6263,12 @@ function setupBookmarkListener() {
     browserAPI.bookmarks.onRemoved.addListener(async (id, removeInfo) => {
         console.log('[书签监听] 书签删除:', id);
         try {
+            // 删除对应的 favicon 缓存
+            // removeInfo.node 包含被删除书签的信息（包括 URL）
+            if (removeInfo.node && removeInfo.node.url) {
+                FaviconCache.clear(removeInfo.node.url);
+            }
+            
             // 支持 tree 和 canvas 视图（canvas视图包含永久栏目的书签树）
             if (currentView === 'tree' || currentView === 'canvas') {
                 applyIncrementalRemoveFromTree(id);

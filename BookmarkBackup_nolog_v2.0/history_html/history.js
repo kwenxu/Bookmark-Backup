@@ -366,59 +366,96 @@ const FaviconCache = {
         }
     },
     
-    // 实际请求favicon
+    // 实际请求favicon - 多源降级策略
     async _fetchFavicon(url) {
-        return new Promise((resolve) => {
+        return new Promise(async (resolve) => {
             try {
                 const urlObj = new URL(url);
                 const domain = urlObj.hostname;
-                const faviconUrl = `https://www.google.com/s2/favicons?domain=${domain}&sz=32`;
                 
-                const img = new Image();
-                img.crossOrigin = 'anonymous';
+                // 定义多个 favicon 源，按优先级尝试
+                const faviconSources = [
+                    // 1. 网站自己的 favicon（最准确，全球可用）
+                    `${urlObj.protocol}//${domain}/favicon.ico`,
+                    // 2. DuckDuckGo（全球可用，国内可访问）
+                    `https://icons.duckduckgo.com/ip3/${domain}.ico`,
+                    // 3. Google S2（功能强大，但中国大陆被墙）
+                    `https://www.google.com/s2/favicons?domain=${domain}&sz=32`
+                ];
                 
-                const timeout = setTimeout(() => {
-                    img.src = '';
-                    this.saveFailure(url);
-                    resolve(fallbackIcon);
-                }, 5000);
-                
-                img.onload = () => {
-                    clearTimeout(timeout);
+                // 尝试每个源
+                for (let i = 0; i < faviconSources.length; i++) {
+                    const faviconUrl = faviconSources[i];
+                    const sourceName = ['网站原生', 'DuckDuckGo', 'Google S2'][i];
                     
-                    // 转换为 Base64
-                    try {
-                        const canvas = document.createElement('canvas');
-                        canvas.width = img.width;
-                        canvas.height = img.height;
-                        const ctx = canvas.getContext('2d');
-                        ctx.drawImage(img, 0, 0);
-                        const dataUrl = canvas.toDataURL('image/png');
-                        
-                        // 保存到缓存
-                        this.save(url, dataUrl);
-                        resolve(dataUrl);
-                    } catch (e) {
-                        // 如果无法转换为Base64（CORS问题），使用原URL
-                        console.warn('[FaviconCache] 无法转换为Base64，使用原URL:', e);
-                        this.save(url, faviconUrl);
-                        resolve(faviconUrl);
+                    const result = await this._tryLoadFavicon(faviconUrl, url, sourceName);
+                    if (result && result !== fallbackIcon) {
+                        resolve(result);
+                        return;
                     }
-                };
+                }
                 
-                img.onerror = () => {
-                    clearTimeout(timeout);
-                    this.saveFailure(url);
-                    resolve(fallbackIcon);
-                };
-                
-                img.src = faviconUrl;
+                // 所有源都失败，记录失败并返回 fallback
+                console.warn('[FaviconCache] 所有 favicon 源都失败:', domain);
+                this.saveFailure(url);
+                resolve(fallbackIcon);
                 
             } catch (e) {
                 console.warn('[FaviconCache] _fetchFavicon 失败:', e);
                 this.saveFailure(url);
                 resolve(fallbackIcon);
             }
+        });
+    },
+    
+    // 尝试从单个源加载 favicon
+    async _tryLoadFavicon(faviconUrl, originalUrl, sourceName) {
+        return new Promise((resolve) => {
+            const img = new Image();
+            img.crossOrigin = 'anonymous';
+            
+            const timeout = setTimeout(() => {
+                img.src = '';
+                resolve(null); // 超时，尝试下一个源
+            }, 3000); // 每个源最多等待3秒
+            
+            img.onload = () => {
+                clearTimeout(timeout);
+                
+                // 检查是否是有效的图片（某些服务器返回1x1的占位图）
+                if (img.width < 8 || img.height < 8) {
+                    console.log(`[FaviconCache] ${sourceName} 返回无效图标（太小）:`, img.width, 'x', img.height);
+                    resolve(null);
+                    return;
+                }
+                
+                // 转换为 Base64
+                try {
+                    const canvas = document.createElement('canvas');
+                    canvas.width = img.width;
+                    canvas.height = img.height;
+                    const ctx = canvas.getContext('2d');
+                    ctx.drawImage(img, 0, 0);
+                    const dataUrl = canvas.toDataURL('image/png');
+                    
+                    // 保存到缓存
+                    this.save(originalUrl, dataUrl);
+                    console.log(`[FaviconCache] ✅ ${sourceName} 成功:`, new URL(originalUrl).hostname);
+                    resolve(dataUrl);
+                } catch (e) {
+                    // 如果无法转换为Base64（CORS问题），使用原URL
+                    console.log(`[FaviconCache] ${sourceName} CORS限制，使用原URL`);
+                    this.save(originalUrl, faviconUrl);
+                    resolve(faviconUrl);
+                }
+            };
+            
+            img.onerror = () => {
+                clearTimeout(timeout);
+                resolve(null); // 失败，尝试下一个源
+            };
+            
+            img.src = faviconUrl;
         });
     }
 };

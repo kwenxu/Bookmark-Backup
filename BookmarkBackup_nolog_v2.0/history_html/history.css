@@ -2849,6 +2849,16 @@ a.tree-label.tree-bookmark-link:hover {
     margin-bottom: 5px;
 }
 
+/* 禁用超链接右键菜单的所有浏览器默认tooltip */
+.bookmark-context-menu .context-menu-item[title]::before {
+    content: '' !important;
+}
+
+.bookmark-context-menu .context-menu-item[title]:hover::after {
+    content: none !important;
+    display: none !important;
+}
+
 [data-theme="dark"] .bookmark-context-menu {
     box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4);
 }

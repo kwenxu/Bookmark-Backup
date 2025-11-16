@@ -20,7 +20,7 @@ let hyperlinkSpecificGroupWindowId = null; // 超链接分组所在窗口
 let hyperlinkSameWindowSpecificGroupWindowId = null; // 超链接的同窗特定组窗口ID
 let hyperlinkSameWindowSpecificGroupScopes = {}; // 超链接的同窗特定组作用域
 let hyperlinkGroupCounter = 0; // 超链接分组计数器（用于命名 Hyperlink 1, 2, 3...）
-let hyperlinkWindowCounter = 0; // 超链接窗口计数器（用于命名 Hyperlink 1, 2, 3...）
+// 注意：超链接的窗口计数器使用独立的注册表系统，通过 allocateNextHyperlinkWindowNumber() 动态分配
 
 const PLUGIN_GROUP_REGISTRY_KEY = 'pluginTabGroupsRegistry';
 const PLUGIN_WINDOW_REGISTRY_KEY = 'pluginWindowsRegistry';
@@ -28,6 +28,9 @@ const PLUGIN_SCOPED_GROUP_REGISTRY_KEY = 'pluginScopedTabGroupsRegistry';
 const PLUGIN_SCOPED_WINDOW_REGISTRY_KEY = 'pluginScopedWindowsRegistry';
 const SAME_WINDOW_SPECIFIC_GROUP_WINDOW_KEY = 'bookmarkSameWindowSpecificGroupWindowId';
 const SAME_WINDOW_SPECIFIC_GROUP_SCOPES_KEY = 'bookmarkSameWindowSpecificGroupScopes';
+
+// 超链接系统专用注册表键
+const HYPERLINK_WINDOW_REGISTRY_KEY = 'hyperlinkWindowsRegistry';
 
 const LIVE_GROUP_SEED_CACHE_TTL = 1200; // ms
 
@@ -491,8 +494,8 @@ async function handleTrackedWindowRemoved(windowId) {
         // 超链接系统：窗口关闭时重置
         if (hyperlinkSpecificWindowId === windowId) {
             hyperlinkSpecificWindowId = null;
-            hyperlinkWindowCounter = 0; // 重置窗口计数器
-            console.log('[超链接 LifecycleGuards] 窗口已关闭，重置 ID 和计数器');
+            // 注意：不重置计数器，计数器由注册表系统管理
+            console.log('[超链接 LifecycleGuards] 窗口已关闭，重置 ID');
         }
         if (hyperlinkSpecificGroupWindowId === windowId) {
             hyperlinkSpecificTabGroupId = null;
@@ -793,6 +796,61 @@ async function registerPluginWindow(windowId, number) {
     const reg = await pruneDeadPluginWindows();
     reg.push({ windowId, number, createdAt: Date.now() });
     await writePluginWindowRegistry(reg);
+}
+
+// ==== 超链接系统专用窗口登记簿 ====
+async function readHyperlinkWindowRegistry() {
+    try {
+        if (typeof chrome !== 'undefined' && chrome.storage && chrome.storage.local) {
+            const data = await chrome.storage.local.get([HYPERLINK_WINDOW_REGISTRY_KEY]);
+            return Array.isArray(data[HYPERLINK_WINDOW_REGISTRY_KEY]) ? data[HYPERLINK_WINDOW_REGISTRY_KEY] : [];
+        }
+        const raw = localStorage.getItem(HYPERLINK_WINDOW_REGISTRY_KEY);
+        return raw ? JSON.parse(raw) : [];
+    } catch (_) { return []; }
+}
+
+async function writeHyperlinkWindowRegistry(reg) {
+    const safe = Array.isArray(reg) ? reg : [];
+    try {
+        if (typeof chrome !== 'undefined' && chrome.storage && chrome.storage.local) {
+            await chrome.storage.local.set({ [HYPERLINK_WINDOW_REGISTRY_KEY]: safe });
+        } else {
+            localStorage.setItem(HYPERLINK_WINDOW_REGISTRY_KEY, JSON.stringify(safe));
+        }
+    } catch (_) {}
+}
+
+async function pruneDeadHyperlinkWindows() {
+    let reg = await readHyperlinkWindowRegistry();
+    const alive = [];
+    for (const entry of reg) {
+        const { windowId } = entry || {};
+        if (!Number.isInteger(windowId)) continue;
+        let ok = false;
+        try {
+            if (chrome && chrome.windows && chrome.windows.get) {
+                const w = await chrome.windows.get(windowId, { populate: false });
+                ok = !!(w && w.id === windowId);
+            }
+        } catch (_) { ok = false; }
+        if (ok) alive.push(entry);
+    }
+    await writeHyperlinkWindowRegistry(alive);
+    return alive;
+}
+
+async function allocateNextHyperlinkWindowNumber() {
+    const alive = await pruneDeadHyperlinkWindows();
+    let maxN = 0;
+    alive.forEach(e => { if (Number.isInteger(e.number) && e.number > 0 && e.number > maxN) maxN = e.number; });
+    return maxN + 1;
+}
+
+async function registerHyperlinkWindow(windowId, number) {
+    const reg = await pruneDeadHyperlinkWindows();
+    reg.push({ windowId, number, createdAt: Date.now() });
+    await writeHyperlinkWindowRegistry(reg);
 }
 
 async function pruneDeadPluginGroups() {
@@ -1327,6 +1385,11 @@ async function showHyperlinkContextMenu(e, linkElement) {
         return;
     }
     
+    // 移除链接元素的title属性，避免显示浏览器默认tooltip
+    if (linkElement.hasAttribute('title')) {
+        linkElement.removeAttribute('title');
+    }
+    
     // 获取上下文（判断是永久栏目还是临时栏目）
     const permanentSection = linkElement.closest('#permanentSection, .permanent-bookmark-section');
     const tempNode = linkElement.closest('.temp-canvas-node');
@@ -1368,8 +1431,9 @@ async function showHyperlinkContextMenu(e, linkElement) {
         const hiddenStyle = item.hidden ? 'style="display:none;"' : '';
         const labelContent = item.labelHTML ? item.labelHTML : `<span>${item.label || ''}</span>`;
         
+        // 添加空title属性以防止浏览器默认tooltip
         return `
-            <div class="context-menu-item ${disabled} ${colorClass} ${selected}" data-action="${item.action}" ${hiddenStyle}>
+            <div class="context-menu-item ${disabled} ${colorClass} ${selected}" data-action="${item.action}" ${hiddenStyle} title="">
                 ${icon}
                 <span class="context-menu-item-label">${labelContent}</span>
             </div>
@@ -5914,9 +5978,10 @@ async function openHyperlinkInSpecificTabGroup(url, options = {}) {
     }
 }
 
-// 超链接：在特定窗口中打开（Window名："超链接" / "Hyperlink"）
+// 超链接：在特定窗口中打开（带书签画布tab + Window名："Hyperlink 1", "Hyperlink 2"...）
 async function openHyperlinkInSpecificWindow(url, options = {}) {
     const { forceNew = false } = options;
+    const lang = currentLang || 'zh_CN';
     
     if (!url) return;
     try {
@@ -5930,6 +5995,7 @@ async function openHyperlinkInSpecificWindow(url, options = {}) {
                 try {
                     const win = await chrome.windows.get(hyperlinkSpecificWindowId, { populate: false });
                     if (win && win.id) {
+                        // 在现有窗口中打开新标签
                         await chrome.tabs.create({
                             url,
                             windowId: hyperlinkSpecificWindowId,
@@ -5945,11 +6011,50 @@ async function openHyperlinkInSpecificWindow(url, options = {}) {
                 }
             }
             
-            // 创建新窗口（每次创建递增计数器）
-            hyperlinkWindowCounter++;
-            const created = await chrome.windows.create({ url, focused: true });
+            // 创建新窗口，使用独立的注册表系统
+            const nextNumber = await allocateNextHyperlinkWindowNumber();
+            const windowTitle = `Hyperlink ${nextNumber}`;
+            
+            // 构建window_marker.html的URL（用于标识窗口）
+            let markerUrl = null;
+            try {
+                const params = new URLSearchParams();
+                params.set('t', String(nextNumber));
+                params.set('type', 'hyperlink'); // 标识这是超链接系统的窗口
+                if (chrome.runtime && chrome.runtime.getURL) {
+                    markerUrl = chrome.runtime.getURL(`history_html/window_marker.html?${params.toString()}`);
+                }
+            } catch (_) {}
+            
+            // 先创建窗口，默认打开目标URL
+            const created = await chrome.windows.create({ 
+                url: url,
+                focused: true 
+            });
             hyperlinkSpecificWindowId = created.id;
-            console.log(`[超链接] 创建新窗口 #${hyperlinkWindowCounter}:`, url);
+            
+            // 注册到超链接窗口注册表
+            await registerHyperlinkWindow(created.id, nextNumber);
+            
+            // 创建书签画布标识tab（固定在第一位）
+            if (markerUrl) {
+                try {
+                    const markerTab = await chrome.tabs.create({ 
+                        windowId: created.id, 
+                        url: markerUrl, 
+                        pinned: false, 
+                        active: false 
+                    });
+                    // 移动到第一位
+                    if (markerTab && markerTab.id != null) {
+                        await chrome.tabs.move(markerTab.id, { index: 0 });
+                    }
+                } catch (markerError) {
+                    console.warn('[超链接] 创建标识标签失败:', markerError);
+                }
+            }
+            
+            console.log(`[超链接] 创建新窗口"${windowTitle}": ${url}`);
         } else {
             window.open(url, '_blank');
         }

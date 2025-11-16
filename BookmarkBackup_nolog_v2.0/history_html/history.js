@@ -1014,9 +1014,17 @@ document.addEventListener('DOMContentLoaded', async () => {
             const sid = urlParams.get('sid');
             const nid = urlParams.get('nid');
             const titleParam = urlParams.get('t');
+            const typeParam = urlParams.get('type'); // 'hyperlink' 或 undefined
+            
             if (titleParam && typeof titleParam === 'string' && titleParam.trim()) {
-                // 可选：让内页标题也反映命名，便于区分
-                document.title = titleParam.trim();
+                // 根据type参数设置不同的标题格式
+                if (typeParam === 'hyperlink') {
+                    // 超链接系统：使用 "Hyperlink N" 格式
+                    document.title = `Hyperlink ${titleParam.trim()}`;
+                } else {
+                    // 书签系统：直接使用数字
+                    document.title = titleParam.trim();
+                }
             }
 
             const waitFor = (predicate, timeout = 5000, interval = 50) => new Promise((resolve, reject) => {

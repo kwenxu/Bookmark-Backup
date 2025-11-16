@@ -7,13 +7,13 @@ let currentContextNode = null;
 let bookmarkClipboard = null; // 剪贴板 { action: 'cut'|'copy', nodeId, nodeData }
 
 // 全局：默认打开方式与特定窗口/分组ID
-let defaultOpenMode = 'same-window-specific-group'; // 'new-tab' | 'new-window' | 'incognito' | 'specific-window' | 'specific-group' | 'scoped-window' | 'scoped-group' | 'same-window-specific-group'
+let defaultOpenMode = 'scoped-group'; // 默认：'scoped-group'（in Specific Group）。可选：'new-tab' | 'new-window' | 'incognito' | 'specific-window' | 'specific-group' | 'scoped-window' | 'scoped-group' | 'same-window-specific-group'
 let specificWindowId = null; // chrome.windows Window ID
 let specificTabGroupId = null; // chrome.tabGroups Group ID（在“特定标签组”模式下复用）
 let specificGroupWindowId = null; // 保存分组所在窗口，确保新开的标签在同一窗口
 
 // 超链接系统：独立的打开方式与窗口/分组ID（与书签系统完全隔离）
-let hyperlinkDefaultOpenMode = 'new-tab'; // 超链接的默认打开方式（独立于书签）
+let hyperlinkDefaultOpenMode = 'specific-group'; // 超链接的默认打开方式：'specific-group'（in Same Group）
 let hyperlinkSpecificWindowId = null; // 超链接专用的窗口ID
 let hyperlinkSpecificTabGroupId = null; // 超链接专用的分组ID
 let hyperlinkSpecificGroupWindowId = null; // 超链接分组所在窗口
@@ -44,7 +44,7 @@ let liveGroupSeedCacheTs = 0;
 // 暴露给其他脚本（如 history.js）
 window.getDefaultOpenMode = () => defaultOpenMode;
 
-// 读取持久化默认打开方式
+// 读取持久化默认打开方式（书签系统）
 (async function initDefaultOpenMode() {
     try {
         if (typeof chrome !== 'undefined' && chrome.storage && chrome.storage.local) {
@@ -104,6 +104,21 @@ window.getDefaultOpenMode = () => defaultOpenMode;
             } catch(_) {}
         }
         try { window.defaultOpenMode = defaultOpenMode; } catch(_) {}
+    } catch (_) {}
+})();
+
+// 读取持久化默认打开方式（超链接系统）
+(async function initHyperlinkDefaultOpenMode() {
+    try {
+        if (typeof chrome !== 'undefined' && chrome.storage && chrome.storage.local) {
+            const data = await chrome.storage.local.get(['hyperlinkDefaultOpenMode']);
+            if (data && typeof data.hyperlinkDefaultOpenMode === 'string') {
+                hyperlinkDefaultOpenMode = data.hyperlinkDefaultOpenMode;
+            }
+        } else {
+            const mode = localStorage.getItem('hyperlinkDefaultOpenMode');
+            if (mode) hyperlinkDefaultOpenMode = mode;
+        }
     } catch (_) {}
 })();
 

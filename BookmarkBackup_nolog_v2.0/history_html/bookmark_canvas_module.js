@@ -55,7 +55,12 @@ const CanvasState = {
         nodeStartY: 0,
         dragSource: null, // 'permanent' or 'temporary'
         treeDragItem: null,
-        treeDragCleanupTimeout: null
+        treeDragCleanupTimeout: null,
+        wheelScrollEnabled: false, // 拖动时是否启用滚轮滚动
+        lastClientX: 0,
+        lastClientY: 0,
+        hasMoved: false,
+        meta: null
     },
     // 画布缩放和平移
     zoom: 1,
@@ -784,6 +789,9 @@ function enhanceBookmarkTreeForCanvas() {
             };
             CanvasState.dragState.dragSource = 'permanent';
             
+            // 启用拖动时的滚轮滚动功能
+            CanvasState.dragState.wheelScrollEnabled = true;
+            
             // 设置拖拽数据（供外部系统识别）
             try {
                 if (e.dataTransfer) {
@@ -834,6 +842,9 @@ function enhanceBookmarkTreeForCanvas() {
         // 添加dragend监听器，检查是否拖到Canvas
         item.addEventListener('dragend', async function(e) {
             if (CanvasState.dragState.dragSource !== 'permanent') return;
+            
+            // 禁用拖动时的滚轮滚动功能
+            CanvasState.dragState.wheelScrollEnabled = false;
             
             // 防重复：检查是否正在创建或者时间间隔太短
             const now = Date.now();
@@ -1061,6 +1072,57 @@ function setupCanvasZoomAndPan() {
     
     // Ctrl + 滚轮缩放（以鼠标位置为中心）- 性能优化版本
     workspace.addEventListener('wheel', (e) => {
+        // 拖动时的滚轮滚动功能：
+        // - 普通滚轮：纵向滚动画布
+        // - Shift + 滚轮：横向滚动画布
+        // 拖动的元素会悬停在更高层级，滚轮滚动画布，松开后元素落下归位
+        if (CanvasState.dragState.wheelScrollEnabled) {
+            e.preventDefault();
+            
+            // 标记正在滚动
+            markScrolling();
+            
+            // 检测是否为触控板
+            const isTouchpad = (Math.abs(e.deltaY) < 50 || Math.abs(e.deltaX) < 50) && e.deltaMode === 0;
+            
+            // 滚动系数
+            let scrollFactor = 1.0 / (CanvasState.zoom || 1);
+            if (isTouchpad) {
+                scrollFactor *= 1.4; // 触控板提升灵敏度
+            }
+            
+            const prevPanX = CanvasState.panOffsetX;
+            const prevPanY = CanvasState.panOffsetY;
+            let hasUpdate = false;
+            
+            // Shift + 滚轮：横向滚动
+            if (e.shiftKey) {
+                const deltaX = e.deltaY; // 将纵向滚动转换为横向
+                if (deltaX !== 0) {
+                    CanvasState.panOffsetX -= deltaX * scrollFactor;
+                    hasUpdate = true;
+                }
+            }
+            // 普通滚轮：纵向滚动
+            else {
+                if (e.deltaY !== 0) {
+                    CanvasState.panOffsetY -= e.deltaY * scrollFactor;
+                    hasUpdate = true;
+                }
+            }
+            
+            if (hasUpdate) {
+                const panDeltaX = CanvasState.panOffsetX - prevPanX;
+                const panDeltaY = CanvasState.panOffsetY - prevPanY;
+                if ((panDeltaX || panDeltaY) && (CanvasState.dragState.dragSource === 'temp-node' || CanvasState.dragState.dragSource === 'permanent-section')) {
+                    adjustDragReferenceForPan(panDeltaX, panDeltaY, e.clientX, e.clientY);
+                }
+                applyPanOffsetFast();
+            }
+            
+            return;
+        }
+        
         if (e.ctrlKey || e.metaKey) {
             e.preventDefault();
             
@@ -1930,6 +1992,155 @@ function handleCanvasCustomScroll(event) {
     }
 }
 
+function adjustDragReferenceForPan(panDeltaX, panDeltaY, clientX, clientY) {
+    if (!CanvasState.dragState.isDragging) return;
+    const source = CanvasState.dragState.dragSource;
+    if (source !== 'temp-node' && source !== 'permanent-section') return;
+    if (!panDeltaX && !panDeltaY) return;
+
+    CanvasState.dragState.dragStartX += panDeltaX;
+    CanvasState.dragState.dragStartY += panDeltaY;
+    CanvasState.dragState.hasMoved = true;
+
+    updateActiveDragPosition(clientX, clientY);
+}
+
+function updateActiveDragPosition(clientX, clientY) {
+    if (!CanvasState.dragState.isDragging || !CanvasState.dragState.draggedElement) {
+        return false;
+    }
+
+    CanvasState.dragState.lastClientX = clientX;
+    CanvasState.dragState.lastClientY = clientY;
+
+    if (CanvasState.dragState.dragSource === 'temp-node') {
+        return applyTempNodeDragPosition(clientX, clientY);
+    }
+
+    if (CanvasState.dragState.dragSource === 'permanent-section') {
+        return applyPermanentSectionDragPosition(clientX, clientY);
+    }
+
+    return false;
+}
+
+function applyTempNodeDragPosition(clientX, clientY) {
+    const element = CanvasState.dragState.draggedElement;
+    if (!element) return false;
+
+    const deltaX = clientX - CanvasState.dragState.dragStartX;
+    const deltaY = clientY - CanvasState.dragState.dragStartY;
+    const scaledDeltaX = deltaX / (CanvasState.zoom || 1);
+    const scaledDeltaY = deltaY / (CanvasState.zoom || 1);
+
+    if (!CanvasState.dragState.hasMoved) {
+        if (Math.abs(deltaX) > 1 || Math.abs(deltaY) > 1) {
+            CanvasState.dragState.hasMoved = true;
+        }
+    }
+
+    const newX = CanvasState.dragState.nodeStartX + scaledDeltaX;
+    const newY = CanvasState.dragState.nodeStartY + scaledDeltaY;
+
+    element.style.left = newX + 'px';
+    element.style.top = newY + 'px';
+    element.style.transform = 'none';
+
+    const nodeId = element.id;
+    const section = CanvasState.tempSections.find(n => n.id === nodeId) ||
+        (Array.isArray(CanvasState.mdNodes) ? CanvasState.mdNodes.find(n => n.id === nodeId) : null);
+    if (section) {
+        section.x = newX;
+        section.y = newY;
+    }
+
+    if (typeof renderEdges === 'function') {
+        renderEdges();
+    }
+
+    return true;
+}
+
+function applyPermanentSectionDragPosition(clientX, clientY) {
+    const element = CanvasState.dragState.draggedElement;
+    if (!element) return false;
+
+    const deltaX = clientX - CanvasState.dragState.dragStartX;
+    const deltaY = clientY - CanvasState.dragState.dragStartY;
+    const scaledDeltaX = deltaX / (CanvasState.zoom || 1);
+    const scaledDeltaY = deltaY / (CanvasState.zoom || 1);
+
+    if (!CanvasState.dragState.hasMoved) {
+        if (Math.abs(deltaX) > 1 || Math.abs(deltaY) > 1) {
+            CanvasState.dragState.hasMoved = true;
+        }
+    }
+
+    element.style.transform = `translate(${scaledDeltaX}px, ${scaledDeltaY}px)`;
+
+    if (typeof renderEdges === 'function') {
+        renderEdges();
+    }
+
+    return true;
+}
+
+function finalizeTempNodeDrag() {
+    const element = CanvasState.dragState.draggedElement;
+    if (!element) return;
+
+    element.classList.remove('dragging');
+
+    const nodeId = element.id;
+    const section = CanvasState.tempSections.find(n => n.id === nodeId) ||
+        (Array.isArray(CanvasState.mdNodes) ? CanvasState.mdNodes.find(n => n.id === nodeId) : null);
+    if (section) {
+        element.style.transform = 'none';
+        element.style.left = section.x + 'px';
+        element.style.top = section.y + 'px';
+    }
+
+    saveTempNodes();
+    scheduleBoundsUpdate();
+    scheduleScrollbarUpdate();
+    CanvasState.dragState.meta = null;
+    CanvasState.dragState.hasMoved = false;
+}
+
+function finalizePermanentSectionDrag() {
+    const element = CanvasState.dragState.draggedElement;
+    if (!element) return;
+
+    element.classList.remove('dragging');
+
+    if (CanvasState.dragState.hasMoved) {
+        const deltaX = CanvasState.dragState.lastClientX - CanvasState.dragState.dragStartX;
+        const deltaY = CanvasState.dragState.lastClientY - CanvasState.dragState.dragStartY;
+        const scaledDeltaX = deltaX / (CanvasState.zoom || 1);
+        const scaledDeltaY = deltaY / (CanvasState.zoom || 1);
+        const finalX = CanvasState.dragState.nodeStartX + scaledDeltaX;
+        const finalY = CanvasState.dragState.nodeStartY + scaledDeltaY;
+
+        element.style.transform = 'none';
+        element.style.left = finalX + 'px';
+        element.style.top = finalY + 'px';
+
+        savePermanentSectionPosition();
+        scheduleBoundsUpdate();
+        scheduleScrollbarUpdate();
+
+        if (typeof renderEdges === 'function') {
+            renderEdges();
+        }
+    } else {
+        element.style.transform = 'none';
+    }
+
+    CanvasState.dragState.hasMoved = false;
+    CanvasState.dragState.meta = null;
+    element.style.transition = '';
+}
+
 function getScrollFactor(axis) {
     // 极简计算，提升性能
     const zoom = CanvasState.zoom || 1;
@@ -2289,15 +2500,6 @@ function makePermanentSectionDraggable() {
     // 添加resize功能
     makePermanentSectionResizable(permanentSection);
     
-    let isDragging = false;
-    let startX = 0;
-    let startY = 0;
-    let initialLeft = 0;
-    let initialTop = 0;
-    let hasMoved = false;
-    let lastClientX = 0; // 记录最后的鼠标位置
-    let lastClientY = 0;
-    
     const onMouseDown = (e) => {
         // 不要在连接点或其触发区上触发拖动
         if (e.target.closest('.canvas-node-anchor') || e.target.closest('.canvas-anchor-zone')) return;
@@ -2313,99 +2515,33 @@ function makePermanentSectionDraggable() {
             return;
         }
         
-        isDragging = true;
-        hasMoved = false;
-        startX = e.clientX;
-        startY = e.clientY;
-        
-        // 获取当前在canvas-content坐标系中的位置
         const currentLeft = parseFloat(permanentSection.style.left) || 0;
         const currentTop = parseFloat(permanentSection.style.top) || 0;
-        
-        initialLeft = currentLeft;
-        initialTop = currentTop;
+
+        CanvasState.dragState.isDragging = true;
+        CanvasState.dragState.draggedElement = permanentSection;
+        CanvasState.dragState.dragSource = 'permanent-section';
+        CanvasState.dragState.dragStartX = e.clientX;
+        CanvasState.dragState.dragStartY = e.clientY;
+        CanvasState.dragState.nodeStartX = currentLeft;
+        CanvasState.dragState.nodeStartY = currentTop;
+        CanvasState.dragState.lastClientX = e.clientX;
+        CanvasState.dragState.lastClientY = e.clientY;
+        CanvasState.dragState.hasMoved = false;
+        CanvasState.dragState.meta = null;
         
         permanentSection.classList.add('dragging');
         permanentSection.style.transform = 'none';
         permanentSection.style.transition = 'none';
+
+        // 启用拖动时的滚轮滚动（Shift + 滚轮横向、普通滚轮纵向）
+        CanvasState.dragState.wheelScrollEnabled = true;
         
-        // 立即响应，不阻止默认行为可能更灵敏
         e.preventDefault();
-    };
-    
-    const onMouseMove = (e) => {
-        if (!isDragging) return;
-        
-        // 记录最后的鼠标位置
-        lastClientX = e.clientX;
-        lastClientY = e.clientY;
-        
-        // 计算鼠标在屏幕上的移动距离
-        const deltaX = e.clientX - startX;
-        const deltaY = e.clientY - startY;
-        
-        // 降低移动阈值，提高灵敏度
-        if (Math.abs(deltaX) > 1 || Math.abs(deltaY) > 1) {
-            hasMoved = true;
-        }
-        
-        // 除以缩放比例得到在canvas-content坐标系中的实际移动距离
-        const scaledDeltaX = deltaX / CanvasState.zoom;
-        const scaledDeltaY = deltaY / CanvasState.zoom;
-        
-        // 计算新位置
-        const newX = initialLeft + scaledDeltaX;
-        const newY = initialTop + scaledDeltaY;
-        
-        // 使用 transform 替代 left/top 以提升性能
-        permanentSection.style.transform = `translate(${newX - initialLeft}px, ${newY - initialTop}px)`;
-        
-        // 实时更新连接线位置
-        if (typeof renderEdges === 'function') {
-            renderEdges();
-        }
-        
-        // 阻止文本选择
-        e.preventDefault();
-    };
-    
-    const onMouseUp = () => {
-        if (isDragging) {
-            isDragging = false;
-            permanentSection.classList.remove('dragging');
-            
-            if (hasMoved) {
-                // 应用最终位置（从 transform 转回 left/top）
-                const deltaX = lastClientX - startX;
-                const deltaY = lastClientY - startY;
-                const scaledDeltaX = deltaX / CanvasState.zoom;
-                const scaledDeltaY = deltaY / CanvasState.zoom;
-                const finalX = initialLeft + scaledDeltaX;
-                const finalY = initialTop + scaledDeltaY;
-                
-                permanentSection.style.transform = 'none';
-                permanentSection.style.left = finalX + 'px';
-                permanentSection.style.top = finalY + 'px';
-                
-                // 保存位置
-                savePermanentSectionPosition();
-                scheduleBoundsUpdate();
-                scheduleScrollbarUpdate();
-                
-                // 最终更新连接线位置
-                if (typeof renderEdges === 'function') {
-                    renderEdges();
-                }
-            }
-            
-            hasMoved = false;
-        }
     };
     
     // 使用捕获阶段确保事件优先处理，mousemove用冒泡阶段提高性能
     header.addEventListener('mousedown', onMouseDown, true);
-    document.addEventListener('mousemove', onMouseMove, false);
-    document.addEventListener('mouseup', onMouseUp, true);
     
     // 添加永久栏目空白区域右键菜单（整个栏目body区域）
     const permanentBody = permanentSection.querySelector('.permanent-section-body');
@@ -3010,6 +3146,10 @@ function makeMdNodeDraggable(element, node) {
             CanvasState.dragState.nodeStartX = node.x;
             CanvasState.dragState.nodeStartY = node.y;
             CanvasState.dragState.dragSource = 'temp-node';
+            
+            // 启用拖动时的滚轮滚动功能
+            CanvasState.dragState.wheelScrollEnabled = true;
+            
             element.classList.add('dragging');
             element.style.transition = 'none';
             ev.preventDefault();
@@ -4559,6 +4699,9 @@ function makeNodeDraggable(element, section) {
         CanvasState.dragState.nodeStartY = section.y;
         CanvasState.dragState.dragSource = 'temp-node';
         
+        // 启用拖动时的滚轮滚动功能
+        CanvasState.dragState.wheelScrollEnabled = true;
+        
         element.classList.add('dragging');
         element.style.transition = 'none';
         
@@ -5320,66 +5463,34 @@ async function addToPermanentBookmarks(payload, parentIdOverride = null) {
 // =============================================================================
 
 function setupCanvasEventListeners() {
-    // 鼠标移动 - 拖动节点（性能优化版）
+    // 鼠标移动 - 拖动节点/永久栏目
     document.addEventListener('mousemove', (e) => {
-        if (CanvasState.dragState.isDragging && CanvasState.dragState.draggedElement && CanvasState.dragState.dragSource === 'temp-node') {
-            // 计算鼠标在屏幕上的移动距离
-            const deltaX = e.clientX - CanvasState.dragState.dragStartX;
-            const deltaY = e.clientY - CanvasState.dragState.dragStartY;
-            
-            // 除以缩放比例得到在canvas-content坐标系中的实际移动距离
-            const scaledDeltaX = deltaX / CanvasState.zoom;
-            const scaledDeltaY = deltaY / CanvasState.zoom;
-            
-            const newX = CanvasState.dragState.nodeStartX + scaledDeltaX;
-            const newY = CanvasState.dragState.nodeStartY + scaledDeltaY;
-            
-            // Directly update left/top for real-time edge following
-            CanvasState.dragState.draggedElement.style.left = newX + 'px';
-            CanvasState.dragState.draggedElement.style.top = newY + 'px';
-            // Remove transform as we are updating left/top directly
-            CanvasState.dragState.draggedElement.style.transform = 'none';
-            
-            // 更新节点数据（实际位置）
-            const nodeId = CanvasState.dragState.draggedElement.id;
-            const section = CanvasState.tempSections.find(n => n.id === nodeId) ||
-                            (Array.isArray(CanvasState.mdNodes) ? CanvasState.mdNodes.find(n => n.id === nodeId) : null);
-            if (section) {
-                section.x = newX;
-                section.y = newY;
-            }
-            
-            // 实时更新连接线
-            renderEdges();
-            
-            // 阻止文本选择
+        if (!CanvasState.dragState.isDragging || !CanvasState.dragState.draggedElement) return;
+        if (CanvasState.dragState.dragSource !== 'temp-node' && CanvasState.dragState.dragSource !== 'permanent-section') {
+            return;
+        }
+        const handled = updateActiveDragPosition(e.clientX, e.clientY);
+        if (handled) {
             e.preventDefault();
         }
     }, false);
     
     // 鼠标释放
     document.addEventListener('mouseup', () => {
-        if (CanvasState.dragState.isDragging && CanvasState.dragState.draggedElement) {
-            const element = CanvasState.dragState.draggedElement;
-            element.classList.remove('dragging');
-            
-            // 应用最终位置（从 transform 转回 left/top）
-            const nodeId = element.id;
-            const section = CanvasState.tempSections.find(n => n.id === nodeId) ||
-                            (Array.isArray(CanvasState.mdNodes) ? CanvasState.mdNodes.find(n => n.id === nodeId) : null);
-            if (section) {
-                element.style.transform = 'none';
-                element.style.left = section.x + 'px';
-                element.style.top = section.y + 'px';
-            }
-            
-            CanvasState.dragState.isDragging = false;
-            CanvasState.dragState.draggedElement = null;
-            
-            saveTempNodes();
-            scheduleBoundsUpdate();
-            scheduleScrollbarUpdate();
+        if (!CanvasState.dragState.isDragging || !CanvasState.dragState.draggedElement) {
+            return;
         }
+
+        if (CanvasState.dragState.dragSource === 'temp-node') {
+            finalizeTempNodeDrag();
+        } else if (CanvasState.dragState.dragSource === 'permanent-section') {
+            finalizePermanentSectionDrag();
+        }
+
+        CanvasState.dragState.isDragging = false;
+        CanvasState.dragState.draggedElement = null;
+        CanvasState.dragState.dragSource = null;
+        CanvasState.dragState.wheelScrollEnabled = false;
     }, false);
     
     // 工具栏按钮

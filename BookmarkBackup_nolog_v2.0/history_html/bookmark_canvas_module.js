@@ -1076,8 +1076,9 @@ function setupCanvasZoomAndPan() {
     // Ctrl + 滚轮缩放（以鼠标位置为中心）- 性能优化版本
     workspace.addEventListener('wheel', (e) => {
         // 拖动时的滚轮滚动功能：
-        // - 普通滚轮：纵向滚动画布
-        // - Shift + 滚轮：横向滚动画布
+        // - 触控板双指滑动：四向自由滚动（横向 + 纵向同时支持）
+        // - 鼠标滚轮：纵向滚动
+        // - Shift + 鼠标滚轮：横向滚动
         // 拖动的元素会悬停在更高层级，滚轮滚动画布，松开后元素落下归位
         if (CanvasState.dragState.wheelScrollEnabled) {
             e.preventDefault();
@@ -1098,18 +1099,31 @@ function setupCanvasZoomAndPan() {
             const prevPanY = CanvasState.panOffsetY;
             let hasUpdate = false;
             
-            if (e.shiftKey) {
-                // Shift + 滚轮：优先使用真实的横向 delta，若不存在则退回纵向
-                const horizontalDelta = e.deltaX !== 0 ? e.deltaX : e.deltaY;
-                if (horizontalDelta !== 0) {
-                    CanvasState.panOffsetX -= horizontalDelta * scrollFactor;
+            // 触控板：同时支持横向和纵向，实现四向自由滚动
+            if (isTouchpad) {
+                if (e.deltaX !== 0) {
+                    CanvasState.panOffsetX -= e.deltaX * scrollFactor;
                     hasUpdate = true;
                 }
-            } else {
-                // 普通滚轮：纵向滚动
                 if (e.deltaY !== 0) {
                     CanvasState.panOffsetY -= e.deltaY * scrollFactor;
                     hasUpdate = true;
+                }
+            } else {
+                // 鼠标滚轮
+                if (e.shiftKey) {
+                    // Shift + 滚轮：横向滚动
+                    const horizontalDelta = e.deltaX !== 0 ? e.deltaX : e.deltaY;
+                    if (horizontalDelta !== 0) {
+                        CanvasState.panOffsetX -= horizontalDelta * scrollFactor;
+                        hasUpdate = true;
+                    }
+                } else {
+                    // 普通滚轮：纵向滚动
+                    if (e.deltaY !== 0) {
+                        CanvasState.panOffsetY -= e.deltaY * scrollFactor;
+                        hasUpdate = true;
+                    }
                 }
             }
             
@@ -1120,6 +1134,9 @@ function setupCanvasZoomAndPan() {
                     adjustDragReferenceForPan(panDeltaX, panDeltaY, e.clientX, e.clientY);
                 }
                 applyPanOffsetFast();
+                
+                // 拖动时也实时更新滚动条
+                updateScrollbarThumbsLightweight();
             }
             
             return;

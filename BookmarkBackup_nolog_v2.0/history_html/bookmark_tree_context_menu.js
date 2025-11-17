@@ -6,6 +6,30 @@ let contextMenu = null;
 let currentContextNode = null;
 let bookmarkClipboard = null; // 剪贴板 { action: 'cut'|'copy', nodeId, nodeData }
 
+// 防抖机制：防止重复打开书签
+const bookmarkOpenDebounce = {
+    lastActionTime: 0,
+    lastActionKey: null,
+    debounceDelay: 300 // 300ms防抖延迟
+};
+
+// 检查是否应该执行操作（防抖）
+function shouldAllowBookmarkOpen(actionKey) {
+    const now = Date.now();
+    const timeSinceLastAction = now - bookmarkOpenDebounce.lastActionTime;
+    
+    // 如果是相同的操作且时间间隔小于防抖延迟，则忽略
+    if (bookmarkOpenDebounce.lastActionKey === actionKey && timeSinceLastAction < bookmarkOpenDebounce.debounceDelay) {
+        console.log(`[防抖] 忽略重复的书签打开操作: ${actionKey}, 距离上次 ${timeSinceLastAction}ms`);
+        return false;
+    }
+    
+    // 更新最后操作时间和key
+    bookmarkOpenDebounce.lastActionTime = now;
+    bookmarkOpenDebounce.lastActionKey = actionKey;
+    return true;
+}
+
 // 全局：默认打开方式与特定窗口/分组ID
 let defaultOpenMode = 'scoped-group'; // 默认：'scoped-group'（in Specific Group）。可选：'new-tab' | 'new-window' | 'incognito' | 'specific-window' | 'specific-group' | 'scoped-window' | 'scoped-group' | 'same-window-specific-group'
 let specificWindowId = null; // chrome.windows Window ID
@@ -2422,34 +2446,42 @@ async function handleTempMenuAction(action, context) {
             await openBookmark(context.nodeUrl);
             break;
         case 'open-new-tab':
+            if (!shouldAllowBookmarkOpen(`${action}-${context.nodeUrl}`)) return;
             await openBookmarkNewTab(context.nodeUrl);
             await setDefaultOpenMode('new-tab');
             break;
         case 'open-new-window':
+            if (!shouldAllowBookmarkOpen(`${action}-${context.nodeUrl}`)) return;
             await openBookmarkNewWindow(context.nodeUrl, false);
             await setDefaultOpenMode('new-window');
             break;
         case 'open-incognito':
+            if (!shouldAllowBookmarkOpen(`${action}-${context.nodeUrl}`)) return;
             await openBookmarkNewWindow(context.nodeUrl, true);
             await setDefaultOpenMode('incognito');
             break;
         case 'open-specific-window':
+            if (!shouldAllowBookmarkOpen(`${action}-${context.nodeUrl}`)) return;
             await openInSpecificWindow(context.nodeUrl, { forceNew: true, context });
             await setDefaultOpenMode('specific-window');
             break;
         case 'open-specific-group':
+            if (!shouldAllowBookmarkOpen(`${action}-${context.nodeUrl}`)) return;
             await openInSpecificTabGroup(context.nodeUrl, { forceNew: true });
             await setDefaultOpenMode('specific-group');
             break;
         case 'open-same-window-specific-group':
+            if (!shouldAllowBookmarkOpen(`${action}-${context.nodeUrl}`)) return;
             await openInSameWindowSpecificGroup(context.nodeUrl, { context });
             await setDefaultOpenMode('same-window-specific-group');
             break;
         case 'open-scoped-window':
+            if (!shouldAllowBookmarkOpen(`${action}-${context.nodeUrl}`)) return;
             await openInScopedWindow(context.nodeUrl, { context, forceNew: true });
             await setDefaultOpenMode('scoped-window');
             break;
         case 'open-scoped-group':
+            if (!shouldAllowBookmarkOpen(`${action}-${context.nodeUrl}`)) return;
             await openInScopedTabGroup(context.nodeUrl, { context, forceNew: true });
             await setDefaultOpenMode('scoped-group');
             break;
@@ -2623,41 +2655,49 @@ async function handleMenuAction(action, context) {
                 break;
                 
             case 'open-new-tab':
+                if (!shouldAllowBookmarkOpen(`${action}-${nodeUrl}`)) return;
                 await openBookmarkNewTab(nodeUrl);
                 await setDefaultOpenMode('new-tab');
                 break;
                 
             case 'open-new-window':
+                if (!shouldAllowBookmarkOpen(`${action}-${nodeUrl}`)) return;
                 await openBookmarkNewWindow(nodeUrl, false);
                 await setDefaultOpenMode('new-window');
                 break;
                 
             case 'open-incognito':
+                if (!shouldAllowBookmarkOpen(`${action}-${nodeUrl}`)) return;
                 await openBookmarkNewWindow(nodeUrl, true);
                 await setDefaultOpenMode('incognito');
                 break;
 
             case 'open-specific-group':
+                if (!shouldAllowBookmarkOpen(`${action}-${nodeUrl}`)) return;
                 await openInSpecificTabGroup(nodeUrl, { forceNew: true });
                 await setDefaultOpenMode('specific-group');
                 break;
 
             case 'open-same-window-specific-group':
+                if (!shouldAllowBookmarkOpen(`${action}-${nodeUrl}`)) return;
                 await openInSameWindowSpecificGroup(nodeUrl, { context });
                 await setDefaultOpenMode('same-window-specific-group');
                 break;
 
             case 'open-specific-window':
+                if (!shouldAllowBookmarkOpen(`${action}-${nodeUrl}`)) return;
                 await openInSpecificWindow(nodeUrl, { forceNew: true, context });
                 await setDefaultOpenMode('specific-window');
                 break;
 
             case 'open-scoped-group':
+                if (!shouldAllowBookmarkOpen(`${action}-${nodeUrl}`)) return;
                 await openInScopedTabGroup(nodeUrl, { context, forceNew: true });
                 await setDefaultOpenMode('scoped-group');
                 break;
 
             case 'open-scoped-window':
+                if (!shouldAllowBookmarkOpen(`${action}-${nodeUrl}`)) return;
                 await openInScopedWindow(nodeUrl, { context, forceNew: true });
                 await setDefaultOpenMode('scoped-window');
                 break;

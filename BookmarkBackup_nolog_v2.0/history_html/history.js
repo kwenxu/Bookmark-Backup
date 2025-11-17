@@ -4274,6 +4274,13 @@ function attachTreeEvents(treeContainer) {
             }
         } catch(_) {}
         const mode = (typeof window !== 'undefined' && window.defaultOpenMode) || (typeof defaultOpenMode !== 'undefined' ? defaultOpenMode : 'new-tab');
+        
+        // 防抖检查：使用与右键菜单相同的防抖机制
+        const actionKey = `left-click-${mode}-${url}`;
+        if (typeof shouldAllowBookmarkOpen === 'function' && !shouldAllowBookmarkOpen(actionKey)) {
+            return; // 被防抖忽略
+        }
+        
         if (mode === 'new-window') {
             if (typeof openBookmarkNewWindow === 'function') openBookmarkNewWindow(url, false); else window.open(url, '_blank');
         } else if (mode === 'incognito') {

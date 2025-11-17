@@ -3454,8 +3454,8 @@ function makePermanentSectionResizable(element) {
 
 function getResizeHandleStyle(handleInfo) {
     const baseStyle = 'position: absolute; z-index: 10003; background: transparent;';
-    const cornerSize = '60px'; // 角手柄更大，更容易触发
-    const edgeThickness = '16px'; // 边手柄加厚，更容易触发
+    const cornerSize = '36px'; // 角手柄再缩小
+    const edgeThickness = '28px'; // 边手柄再增宽
     
     let style = baseStyle + `cursor: ${handleInfo.cursor};`;
     
@@ -3478,16 +3478,17 @@ function getResizeHandleStyle(handleInfo) {
             style += 'clip-path: polygon(100% 0, 100% 100%, 0 100%);';
         }
     }
-    // 边handle - 加厚并向外扩展
+    // 边handle - 居中在边框上（一半在外，一半在内）
     else {
+        const halfThickness = parseInt(edgeThickness) / 2;
         if (handleInfo.name === 'n' || handleInfo.name === 's') {
             style += `left: ${cornerSize}; right: ${cornerSize}; height: ${edgeThickness};`;
-            if (handleInfo.name === 'n') style += 'top: -8px;';
-            else style += 'bottom: -8px;';
+            if (handleInfo.name === 'n') style += `top: -${halfThickness}px;`;
+            else style += `bottom: -${halfThickness}px;`;
         } else {
             style += `top: ${cornerSize}; bottom: ${cornerSize}; width: ${edgeThickness};`;
-            if (handleInfo.name === 'w') style += 'left: -8px;';
-            else style += 'right: -8px;';
+            if (handleInfo.name === 'w') style += `left: -${halfThickness}px;`;
+            else style += `right: -${halfThickness}px;`;
         }
     }
     

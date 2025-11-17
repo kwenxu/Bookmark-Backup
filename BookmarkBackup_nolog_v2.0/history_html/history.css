@@ -3838,27 +3838,33 @@ a.tree-label.tree-bookmark-link:hover {
     z-index: 10004 !important;
 }
 
-/* 视觉提示 - 悬停时显示边框 */
+/* 视觉提示 - 悬停时显示边框（极致扁平化） */
 .resize-handle:hover {
-    background: rgba(74, 144, 226, 0.15);
+    background: rgba(74, 144, 226, 0.05);
+    border-radius: 8px; /* 与栏目一致 */
 }
 
 .resize-n:hover,
 .resize-s:hover {
-    border-top: 2px solid rgba(74, 144, 226, 0.6);
+    border-top: 2px solid rgba(74, 144, 226, 0.25);
 }
 
 .resize-w:hover,
 .resize-e:hover {
-    border-left: 2px solid rgba(74, 144, 226, 0.6);
+    border-left: 2px solid rgba(74, 144, 226, 0.25);
 }
 
 .resize-nw:hover,
 .resize-ne:hover,
 .resize-sw:hover,
 .resize-se:hover {
-    background: rgba(74, 144, 226, 0.25);
-    border-radius: 4px;
+    background: rgba(74, 144, 226, 0.08);
+    border-radius: 12px; /* 角handle更大圆角 */
+}
+
+/* 永久栏目的resize handles - 保持12px圆角 */
+.permanent-bookmark-section .resize-handle:hover {
+    border-radius: 12px;
 }
 
 /* 右下角的可见调整大小指示器 */
@@ -5538,15 +5544,21 @@ a.tree-label.tree-bookmark-link:hover {
     z-index: 10003; /* 高于其他元素 */
     background: transparent;
     transition: background 0.15s ease, opacity 0.15s ease;
+    border-radius: 8px; /* 与栏目边角曲率一致 */
 }
 
-/* 悬停时显示视觉反馈 */
+/* 永久栏目的resize handles - 更大的圆角 */
+.permanent-bookmark-section .resize-handle {
+    border-radius: 12px;
+}
+
+/* 悬停时显示视觉反馈 - 极致扁平化 */
 .resize-handle:hover {
-    background: rgba(9, 105, 218, 0.15) !important;
+    background: rgba(9, 105, 218, 0.05) !important;
 }
 
 [data-theme="dark"] .resize-handle:hover {
-    background: rgba(88, 166, 255, 0.2) !important;
+    background: rgba(88, 166, 255, 0.06) !important;
 }
 
 /* 编辑模式下隐藏resize handles */

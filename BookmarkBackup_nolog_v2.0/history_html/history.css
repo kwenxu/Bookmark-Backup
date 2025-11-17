@@ -5645,7 +5645,7 @@ a.tree-label.tree-bookmark-link:hover {
 /* 顶部工具栏（空白栏目/Markdown 卡片） */
 .md-node-toolbar {
     position: absolute;
-    top: -28px;
+    top: -42px; /* Moved up from -28px to avoid conflict with top anchor */
     left: 50%;
     transform: translateX(-50%);
     height: 24px;
@@ -5662,8 +5662,15 @@ a.tree-label.tree-bookmark-link:hover {
     z-index: 12000; /* Above anchors (11000) so toolbar remains clickable on top edge */
 }
 
-/* When drawing a connection, disable node toolbars to avoid intercepting top anchors */
+/* When drawing a connection, hide toolbar completely to avoid conflict with top anchor zone */
 .canvas-workspace.connecting .md-node-toolbar {
+    opacity: 0 !important;
+    pointer-events: none;
+}
+
+/* After connection finished, delay toolbar appearance for 1 second */
+.md-canvas-node.connection-just-finished .md-node-toolbar {
+    opacity: 0 !important;
     pointer-events: none;
 }
 

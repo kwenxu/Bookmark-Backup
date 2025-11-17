@@ -6924,6 +6924,14 @@ function endConnection(e) {
                 console.log('[Canvas] 忽略同栏目的锚点连接');
             } else if (toNodeId !== fromNodeId || toSide !== fromSide) {
                 addEdge(fromNodeId, fromSide, toNodeId, toSide);
+                
+                // Delay toolbar appearance for md-canvas-node after connection
+                if (nodeEl && nodeEl.classList.contains('md-canvas-node')) {
+                    nodeEl.classList.add('connection-just-finished');
+                    setTimeout(() => {
+                        nodeEl.classList.remove('connection-just-finished');
+                    }, 1000);
+                }
             }
         }
     }

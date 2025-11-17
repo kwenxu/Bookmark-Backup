@@ -2791,10 +2791,14 @@ function finalizePermanentSectionDrag() {
         const scaledDeltaY = deltaY / (CanvasState.zoom || 1);
         const finalX = CanvasState.dragState.nodeStartX + scaledDeltaX;
         const finalY = CanvasState.dragState.nodeStartY + scaledDeltaY;
-
+        // 关闭过渡，避免落下时“果冻”弹动
+        element.style.transition = 'none';
         element.style.transform = 'none';
         element.style.left = finalX + 'px';
         element.style.top = finalY + 'px';
+        // 强制重排，然后恢复 transition（下一帧再允许动画）
+        element.offsetHeight; // reflow
+        requestAnimationFrame(() => { element.style.transition = ''; });
 
         // 优化：拖动结束时重新渲染连接线
         if (typeof renderEdges === 'function') {

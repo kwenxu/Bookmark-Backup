@@ -88,6 +88,24 @@ const CanvasState = {
         hasMoved: false,
         meta: null
     },
+    // Ctrl 专属栏目操作状态（移动/缩放和蒙版）
+    sectionCtrlMode: {
+        active: false,
+        resize: {
+            active: false,
+            element: null,
+            type: null, // 'permanent-section' | 'temp-node'
+            data: null,
+            startX: 0,
+            startY: 0,
+            startWidth: 0,
+            startHeight: 0,
+            startLeft: 0,
+            startTop: 0,
+            minWidth: 0,
+            minHeight: 0
+        }
+    },
     // 画布缩放和平移
     zoom: 1,
     panOffsetX: 0,
@@ -216,6 +234,235 @@ function getCachedContent() {
         cachedCanvasContent = document.getElementById('canvasContent');
     }
     return cachedCanvasContent;
+}
+
+// =============================================================================
+// Ctrl 专属栏目操作（蒙版 + 拖动/尺寸调整入口）
+// =============================================================================
+
+function isSectionCtrlModeEvent(e) {
+    return !!(CanvasState.sectionCtrlMode && CanvasState.sectionCtrlMode.active) || (!!e && (e.ctrlKey || e.metaKey));
+}
+
+function resolveSectionMeta(element) {
+    if (!element) return null;
+    if (element.id === 'permanentSection') {
+        return {
+            type: 'permanent-section',
+            data: null,
+            x: parseFloat(element.style.left) || 0,
+            y: parseFloat(element.style.top) || 0,
+            locked: element.dataset && element.dataset.locked === 'true',
+            isEditing: false
+        };
+    }
+
+    if (element.classList.contains('md-canvas-node')) {
+        const data = Array.isArray(CanvasState.mdNodes) ? CanvasState.mdNodes.find(n => n.id === element.id) : null;
+        if (!data) return null;
+        return {
+            type: 'md-node',
+            data,
+            x: typeof data.x === 'number' ? data.x : (parseFloat(element.style.left) || 0),
+            y: typeof data.y === 'number' ? data.y : (parseFloat(element.style.top) || 0),
+            locked: !!data.locked,
+            isEditing: !!data.isEditing
+        };
+    }
+
+    if (element.classList.contains('temp-canvas-node')) {
+        const data = CanvasState.tempSections.find(n => n.id === element.id);
+        if (!data) return null;
+        return {
+            type: 'temp-node',
+            data,
+            x: typeof data.x === 'number' ? data.x : (parseFloat(element.style.left) || 0),
+            y: typeof data.y === 'number' ? data.y : (parseFloat(element.style.top) || 0),
+            locked: false,
+            isEditing: false
+        };
+    }
+
+    return null;
+}
+
+function registerSectionCtrlOverlay(element) {
+    if (!element) return null;
+    let overlay = element.querySelector('.canvas-section-ctrl-overlay');
+    if (!overlay) {
+        overlay = document.createElement('div');
+        overlay.className = 'canvas-section-ctrl-overlay';
+        overlay.addEventListener('mousedown', handleCtrlOverlayMouseDown, true);
+        overlay.addEventListener('contextmenu', (e) => {
+            if (isSectionCtrlModeEvent(e)) {
+                e.preventDefault();
+                e.stopPropagation();
+            }
+        });
+        overlay.addEventListener('wheel', (e) => {
+            if (CanvasState.sectionCtrlMode && CanvasState.sectionCtrlMode.active) {
+                e.preventDefault();
+                e.stopPropagation();
+            }
+        }, { passive: false });
+        element.appendChild(overlay);
+    }
+
+    overlay.dataset.sectionId = element.id || '';
+    overlay.dataset.sectionType = element.id === 'permanentSection'
+        ? 'permanent-section'
+        : (element.classList.contains('md-canvas-node') ? 'md-node' : 'temp-node');
+    overlay.classList.toggle('active', !!(CanvasState.sectionCtrlMode && CanvasState.sectionCtrlMode.active));
+
+    if (CanvasState.sectionCtrlMode && CanvasState.sectionCtrlMode.resize && CanvasState.sectionCtrlMode.resize.element === element) {
+        overlay.classList.add('ctrl-resize');
+    } else {
+        overlay.classList.remove('ctrl-resize');
+    }
+
+    return overlay;
+}
+
+function refreshSectionCtrlOverlays() {
+    const nodes = document.querySelectorAll('.temp-canvas-node, .md-canvas-node, #permanentSection');
+    nodes.forEach(el => registerSectionCtrlOverlay(el));
+}
+
+function setSectionCtrlModeActive(active) {
+    const wasActive = !!(CanvasState.sectionCtrlMode && CanvasState.sectionCtrlMode.active);
+    if (wasActive === active) return;
+    CanvasState.sectionCtrlMode.active = active;
+    if (!active) {
+        endCtrlResize(false);
+    }
+    refreshSectionCtrlOverlays();
+}
+
+function startSectionDrag(element, event) {
+    if (!isSectionCtrlModeEvent(event)) return false;
+    if (!element || event.button !== 0) return false;
+    if (CanvasState.sectionCtrlMode.resize && CanvasState.sectionCtrlMode.resize.active) return false;
+
+    const meta = resolveSectionMeta(element);
+    if (!meta || meta.locked || meta.isEditing) return false;
+
+    CanvasState.dragState.isDragging = true;
+    CanvasState.dragState.draggedElement = element;
+    CanvasState.dragState.dragStartX = event.clientX;
+    CanvasState.dragState.dragStartY = event.clientY;
+    CanvasState.dragState.nodeStartX = meta.x;
+    CanvasState.dragState.nodeStartY = meta.y;
+    CanvasState.dragState.dragSource = meta.type === 'permanent-section' ? 'permanent-section' : 'temp-node';
+    CanvasState.dragState.lastClientX = event.clientX;
+    CanvasState.dragState.lastClientY = event.clientY;
+    CanvasState.dragState.hasMoved = false;
+    CanvasState.dragState.meta = { ctrlOverlay: !!CanvasState.sectionCtrlMode.active };
+    CanvasState.dragState.wheelScrollEnabled = true;
+
+    element.classList.add('dragging');
+    element.style.transition = 'none';
+
+    if (meta.type === 'permanent-section') {
+        element.style.transform = 'none';
+    }
+
+    event.preventDefault();
+    return true;
+}
+
+function startSectionResize(element, event) {
+    if (!isSectionCtrlModeEvent(event)) return false;
+    if (!element || event.button !== 2) return false;
+    if (CanvasState.dragState && CanvasState.dragState.isDragging) return false;
+
+    const meta = resolveSectionMeta(element);
+    if (!meta || meta.locked || meta.isEditing) return false;
+
+    const state = CanvasState.sectionCtrlMode.resize;
+    state.active = true;
+    state.element = element;
+    state.type = meta.type === 'permanent-section' ? 'permanent-section' : 'temp-node';
+    state.data = meta.data;
+    state.startX = event.clientX;
+    state.startY = event.clientY;
+    state.startWidth = element.offsetWidth;
+    state.startHeight = element.offsetHeight;
+    state.startLeft = meta.x;
+    state.startTop = meta.y;
+    state.minWidth = meta.type === 'permanent-section' ? 300 : (meta.type === 'md-node' ? 180 : 200);
+    state.minHeight = meta.type === 'permanent-section' ? 200 : (meta.type === 'md-node' ? 140 : 150);
+
+    element.classList.add('resizing');
+    const overlay = registerSectionCtrlOverlay(element);
+    if (overlay) overlay.classList.add('ctrl-resize');
+
+    applyCtrlResize(event.clientX, event.clientY);
+
+    event.preventDefault();
+    event.stopPropagation();
+    return true;
+}
+
+function applyCtrlResize(clientX, clientY) {
+    const state = CanvasState.sectionCtrlMode.resize;
+    if (!state || !state.active || !state.element) return;
+
+    const deltaX = (clientX - state.startX) / (CanvasState.zoom || 1);
+    const deltaY = (clientY - state.startY) / (CanvasState.zoom || 1);
+
+    const newWidth = Math.max(state.minWidth, state.startWidth + deltaX);
+    const newHeight = Math.max(state.minHeight, state.startHeight + deltaY);
+
+    state.element.style.width = `${newWidth}px`;
+    state.element.style.height = `${newHeight}px`;
+
+    if (state.type === 'permanent-section') {
+        // 固定左上角，宽高变化即可
+    } else if (state.data) {
+        state.data.width = newWidth;
+        state.data.height = newHeight;
+    }
+}
+
+function endCtrlResize(force) {
+    const state = CanvasState.sectionCtrlMode.resize;
+    if (!state || !state.active) return;
+
+    if (!force) {
+        if (state.type === 'permanent-section') {
+            savePermanentSectionPosition();
+        } else if (state.data) {
+            saveTempNodes();
+        }
+        updateCanvasScrollBounds();
+        updateScrollbarThumbs();
+    }
+
+    if (state.element) {
+        state.element.classList.remove('resizing');
+    }
+
+    const overlay = state.element ? state.element.querySelector('.canvas-section-ctrl-overlay') : null;
+    if (overlay) overlay.classList.remove('ctrl-resize');
+
+    state.active = false;
+    state.element = null;
+    state.type = null;
+    state.data = null;
+}
+
+function handleCtrlOverlayMouseDown(e) {
+    if (!isSectionCtrlModeEvent(e)) return;
+    const host = e.currentTarget ? e.currentTarget.parentElement : null;
+    if (!host) return;
+    e.preventDefault();
+    e.stopPropagation();
+
+    if (e.button === 0) {
+        startSectionDrag(host, e);
+    } else if (e.button === 2) {
+        startSectionResize(host, e);
+    }
 }
 const TEMP_SECTION_STORAGE_KEY = 'bookmark-canvas-temp-sections';
 const LEGACY_TEMP_NODE_STORAGE_KEY = 'bookmark-canvas-temp-nodes';
@@ -2913,6 +3160,9 @@ function makePermanentSectionDraggable() {
     
     // 添加resize功能
     makePermanentSectionResizable(permanentSection);
+
+    // 注册 Ctrl 蒙版
+    registerSectionCtrlOverlay(permanentSection);
     
     const onMouseDown = (e) => {
         // 不要在连接点或其触发区上触发拖动
@@ -2928,30 +3178,10 @@ function makePermanentSectionDraggable() {
         if (!e.target.closest('.permanent-section-header')) {
             return;
         }
-        
-        const currentLeft = parseFloat(permanentSection.style.left) || 0;
-        const currentTop = parseFloat(permanentSection.style.top) || 0;
 
-        CanvasState.dragState.isDragging = true;
-        CanvasState.dragState.draggedElement = permanentSection;
-        CanvasState.dragState.dragSource = 'permanent-section';
-        CanvasState.dragState.dragStartX = e.clientX;
-        CanvasState.dragState.dragStartY = e.clientY;
-        CanvasState.dragState.nodeStartX = currentLeft;
-        CanvasState.dragState.nodeStartY = currentTop;
-        CanvasState.dragState.lastClientX = e.clientX;
-        CanvasState.dragState.lastClientY = e.clientY;
-        CanvasState.dragState.hasMoved = false;
-        CanvasState.dragState.meta = null;
-        
-        permanentSection.classList.add('dragging');
-        permanentSection.style.transform = 'none';
-        permanentSection.style.transition = 'none';
+        if (!isSectionCtrlModeEvent(e) || e.button !== 0) return;
 
-        // 启用拖动时的滚轮滚动（Shift + 滚轮横向、普通滚轮纵向）
-        CanvasState.dragState.wheelScrollEnabled = true;
-        
-        e.preventDefault();
+        startSectionDrag(permanentSection, e);
     };
     
     // 使用捕获阶段确保事件优先处理，mousemove用冒泡阶段提高性能
@@ -3099,6 +3329,8 @@ function makePermanentSectionResizable(element) {
         handle.addEventListener('mousedown', (e) => {
             // 永久栏目不使用 node 对象；如需禁用缩放，可通过 data-locked 控制
             if (element && element.dataset && element.dataset.locked === 'true') return;
+            if (!isSectionCtrlModeEvent(e)) return;
+            if (e.button !== 0 && e.button !== 2) return;
             e.stopPropagation();
             e.preventDefault();
             
@@ -3233,6 +3465,8 @@ function makeTempNodeResizable(element, node) {
         let startX, startY, startWidth, startHeight, startLeft, startTop;
         
         handle.addEventListener('mousedown', (e) => {
+            if (!isSectionCtrlModeEvent(e)) return;
+            if (e.button !== 0 && e.button !== 2) return;
             e.stopPropagation();
             e.preventDefault();
             
@@ -3525,6 +3759,7 @@ function makeMdNodeDraggable(element, node) {
         if (node && node.isEditing) return; // 编辑模式下不允许拖动
         const target = e.target;
         if (!target) return;
+        if (!isSectionCtrlModeEvent(e) || e.button !== 0) return;
         
         // 编辑、resize、连接点、链接时不拖动
         if (target.closest('.md-canvas-editor') || 
@@ -3553,20 +3788,7 @@ function makeMdNodeDraggable(element, node) {
             document.removeEventListener('mouseup', onUp);
 
             // 真正开始拖动
-            CanvasState.dragState.isDragging = true;
-            CanvasState.dragState.draggedElement = element;
-            CanvasState.dragState.dragStartX = startX;
-            CanvasState.dragState.dragStartY = startY;
-            CanvasState.dragState.nodeStartX = node.x;
-            CanvasState.dragState.nodeStartY = node.y;
-            CanvasState.dragState.dragSource = 'temp-node';
-            
-            // 启用拖动时的滚轮滚动功能
-            CanvasState.dragState.wheelScrollEnabled = true;
-            
-            element.classList.add('dragging');
-            element.style.transition = 'none';
-            ev.preventDefault();
+            startSectionDrag(element, ev);
         };
 
         const onUp = () => {
@@ -3849,6 +4071,9 @@ function renderMdNode(node) {
     }
     
     addAnchorsToNode(el, node.id);
+
+    // Ctrl 蒙版同步
+    registerSectionCtrlOverlay(el);
 }
 
 // —— 工具栏动作实现 ——
@@ -4472,6 +4697,7 @@ function renderTempNode(section) {
     applyTempSectionColor(section, nodeElement, header, colorBtn, colorInput);
     makeNodeDraggable(nodeElement, section);
     makeTempNodeResizable(nodeElement, section);
+    registerSectionCtrlOverlay(nodeElement);
     setupTempSectionTreeInteractions(treeContainer, section);
     setupTempSectionBlankAreaMenu(nodeElement, section); // 新增：空白区域右键菜单
     setupTempSectionDropTargets(section, nodeElement, treeContainer, header);
@@ -5094,6 +5320,8 @@ function makeNodeDraggable(element, section) {
     const onMouseDown = (e) => {
         const target = e.target;
         if (!target) return;
+        if (!isSectionCtrlModeEvent(e) || e.button !== 0) return;
+        
         if (target.closest('.temp-node-action-btn') ||
             target.classList.contains('temp-node-color-input') ||
             (target.classList.contains('temp-node-title') && target.classList.contains('editing')) ||
@@ -5101,25 +5329,11 @@ function makeNodeDraggable(element, section) {
             target.closest('.canvas-anchor-zone')) {
             return;
         }
-        
+
         lastClientX = e.clientX;
         lastClientY = e.clientY;
-        
-        CanvasState.dragState.isDragging = true;
-        CanvasState.dragState.draggedElement = element;
-        CanvasState.dragState.dragStartX = e.clientX;
-        CanvasState.dragState.dragStartY = e.clientY;
-        CanvasState.dragState.nodeStartX = section.x;
-        CanvasState.dragState.nodeStartY = section.y;
-        CanvasState.dragState.dragSource = 'temp-node';
-        
-        // 启用拖动时的滚轮滚动功能
-        CanvasState.dragState.wheelScrollEnabled = true;
-        
-        element.classList.add('dragging');
-        element.style.transition = 'none';
-        
-        e.preventDefault();
+
+        startSectionDrag(element, e);
     };
     
     header.addEventListener('mousedown', onMouseDown, true);
@@ -5877,6 +6091,32 @@ async function addToPermanentBookmarks(payload, parentIdOverride = null) {
 // =============================================================================
 
 function setupCanvasEventListeners() {
+    // 初始蒙版同步
+    refreshSectionCtrlOverlays();
+
+    // Ctrl 按下/松开切换专属模式
+    document.addEventListener('keydown', (e) => {
+        if (e.key === 'Control') {
+            setSectionCtrlModeActive(true);
+        }
+    });
+    document.addEventListener('keyup', (e) => {
+        if (e.key === 'Control') {
+            setSectionCtrlModeActive(false);
+        }
+    });
+    window.addEventListener('blur', () => setSectionCtrlModeActive(false));
+
+    // Ctrl 尺寸调整
+    document.addEventListener('mousemove', (e) => {
+        if (CanvasState.sectionCtrlMode && CanvasState.sectionCtrlMode.resize && CanvasState.sectionCtrlMode.resize.active) {
+            applyCtrlResize(e.clientX, e.clientY);
+            e.preventDefault();
+            e.stopPropagation();
+            return;
+        }
+    }, true);
+
     // 鼠标移动 - 拖动节点/永久栏目
     document.addEventListener('mousemove', (e) => {
         if (!CanvasState.dragState.isDragging || !CanvasState.dragState.draggedElement) return;
@@ -5897,7 +6137,14 @@ function setupCanvasEventListeners() {
     }, false);
     
     // 鼠标释放
-    document.addEventListener('mouseup', () => {
+    document.addEventListener('mouseup', (e) => {
+        if (CanvasState.sectionCtrlMode && CanvasState.sectionCtrlMode.resize && CanvasState.sectionCtrlMode.resize.active && e.button === 2) {
+            endCtrlResize(false);
+            e.preventDefault();
+            e.stopPropagation();
+            return;
+        }
+
         if (!CanvasState.dragState.isDragging || !CanvasState.dragState.draggedElement) {
             return;
         }

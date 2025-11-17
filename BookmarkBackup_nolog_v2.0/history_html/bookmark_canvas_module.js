@@ -23,9 +23,12 @@ const CanvasState = {
     // 自动滚动状态（拖动到边缘时）
     autoScrollState: {
         intervalId: null,
-        velocityX: 0,
-        velocityY: 0,
-        isActive: false
+        velocityX: 0,           // 当前实际速度
+        velocityY: 0,           // 当前实际速度
+        targetVelocityX: 0,     // 目标速度
+        targetVelocityY: 0,     // 目标速度
+        isActive: false,
+        smoothing: 0.15         // 速度平滑系数（0-1），值越小越平滑但响应越慢
     },
     // 滚动惯性状态（阻尼延续）
     inertiaState: {
@@ -1546,8 +1549,9 @@ function checkEdgeAutoScroll(clientX, clientY) {
     if (!workspace) return;
     
     const rect = workspace.getBoundingClientRect();
-    const edgeThreshold = 50; // 触发自动滚动的边缘距离（像素）
-    const maxSpeed = 15; // 最大滚动速度
+    const edgeThreshold = 100; // 触发自动滚动的边缘距离（像素）- 增加到100px
+    const maxSpeed = 20; // 最大滚动速度 - 增加基础速度
+    const minSpeed = 2; // 最小滚动速度 - 确保在边缘有基础速度
     
     // 计算距离边缘的距离
     const distLeft = clientX - rect.left;
@@ -1555,48 +1559,59 @@ function checkEdgeAutoScroll(clientX, clientY) {
     const distTop = clientY - rect.top;
     const distBottom = rect.bottom - clientY;
     
-    let velocityX = 0;
-    let velocityY = 0;
+    let targetVelocityX = 0;
+    let targetVelocityY = 0;
+    
+    // 缓动函数：使用三次方缓动（easeInCubic）让加速更平滑
+    const easeInCubic = (t) => t * t * t;
     
     // 横向滚动
     if (distLeft < edgeThreshold && distLeft > 0) {
         // 靠近左边缘，向左滚动（正向）
         const ratio = 1 - (distLeft / edgeThreshold);
-        velocityX = maxSpeed * ratio;
+        const easedRatio = easeInCubic(ratio);
+        targetVelocityX = minSpeed + (maxSpeed - minSpeed) * easedRatio;
     } else if (distRight < edgeThreshold && distRight > 0) {
         // 靠近右边缘，向右滚动（负向）
         const ratio = 1 - (distRight / edgeThreshold);
-        velocityX = -maxSpeed * ratio;
+        const easedRatio = easeInCubic(ratio);
+        targetVelocityX = -(minSpeed + (maxSpeed - minSpeed) * easedRatio);
     }
     
     // 纵向滚动
     if (distTop < edgeThreshold && distTop > 0) {
         // 靠近上边缘，向上滚动（正向）
         const ratio = 1 - (distTop / edgeThreshold);
-        velocityY = maxSpeed * ratio;
+        const easedRatio = easeInCubic(ratio);
+        targetVelocityY = minSpeed + (maxSpeed - minSpeed) * easedRatio;
     } else if (distBottom < edgeThreshold && distBottom > 0) {
         // 靠近下边缘，向下滚动（负向）
         const ratio = 1 - (distBottom / edgeThreshold);
-        velocityY = -maxSpeed * ratio;
+        const easedRatio = easeInCubic(ratio);
+        targetVelocityY = -(minSpeed + (maxSpeed - minSpeed) * easedRatio);
     }
     
     // 启动或更新自动滚动
-    if (velocityX !== 0 || velocityY !== 0) {
-        startEdgeAutoScroll(velocityX, velocityY);
+    if (targetVelocityX !== 0 || targetVelocityY !== 0) {
+        startEdgeAutoScroll(targetVelocityX, targetVelocityY);
     } else {
         stopEdgeAutoScroll();
     }
 }
 
-function startEdgeAutoScroll(velocityX, velocityY) {
-    CanvasState.autoScrollState.velocityX = velocityX;
-    CanvasState.autoScrollState.velocityY = velocityY;
+function startEdgeAutoScroll(targetVelocityX, targetVelocityY) {
+    // 更新目标速度
+    CanvasState.autoScrollState.targetVelocityX = targetVelocityX;
+    CanvasState.autoScrollState.targetVelocityY = targetVelocityY;
     
-    // 如果已经在自动滚动，只更新速度
+    // 如果已经在自动滚动，只更新目标速度
     if (CanvasState.autoScrollState.isActive) {
         return;
     }
     
+    // 首次启动时，将当前速度设置为目标速度的一半，实现平滑启动
+    CanvasState.autoScrollState.velocityX = targetVelocityX * 0.5;
+    CanvasState.autoScrollState.velocityY = targetVelocityY * 0.5;
     CanvasState.autoScrollState.isActive = true;
     runEdgeAutoScroll();
 }
@@ -1606,11 +1621,18 @@ function runEdgeAutoScroll() {
         return;
     }
     
+    const state = CanvasState.autoScrollState;
     const scrollFactor = 1.0 / (CanvasState.zoom || 1);
     
+    // 使用线性插值（lerp）平滑地过渡到目标速度，避免抖动
+    // velocityX = velocityX + (targetVelocityX - velocityX) * smoothing
+    const smoothing = state.smoothing;
+    state.velocityX += (state.targetVelocityX - state.velocityX) * smoothing;
+    state.velocityY += (state.targetVelocityY - state.velocityY) * smoothing;
+    
     // 应用滚动
-    CanvasState.panOffsetX += CanvasState.autoScrollState.velocityX * scrollFactor;
-    CanvasState.panOffsetY += CanvasState.autoScrollState.velocityY * scrollFactor;
+    CanvasState.panOffsetX += state.velocityX * scrollFactor;
+    CanvasState.panOffsetY += state.velocityY * scrollFactor;
     
     // 更新显示
     applyPanOffsetFast();
@@ -1618,23 +1640,29 @@ function runEdgeAutoScroll() {
     
     // 同步更新拖动元素的位置
     if (CanvasState.dragState.isDragging && CanvasState.dragState.draggedElement) {
-        const panDeltaX = CanvasState.autoScrollState.velocityX * scrollFactor;
-        const panDeltaY = CanvasState.autoScrollState.velocityY * scrollFactor;
+        const panDeltaX = state.velocityX * scrollFactor;
+        const panDeltaY = state.velocityY * scrollFactor;
         adjustDragReferenceForPan(panDeltaX, panDeltaY, CanvasState.dragState.lastClientX, CanvasState.dragState.lastClientY);
     }
     
     // 继续动画
-    CanvasState.autoScrollState.intervalId = requestAnimationFrame(runEdgeAutoScroll);
+    state.intervalId = requestAnimationFrame(runEdgeAutoScroll);
 }
 
 function stopEdgeAutoScroll() {
-    if (CanvasState.autoScrollState.intervalId) {
-        cancelAnimationFrame(CanvasState.autoScrollState.intervalId);
-        CanvasState.autoScrollState.intervalId = null;
+    const state = CanvasState.autoScrollState;
+    
+    if (state.intervalId) {
+        cancelAnimationFrame(state.intervalId);
+        state.intervalId = null;
     }
-    CanvasState.autoScrollState.isActive = false;
-    CanvasState.autoScrollState.velocityX = 0;
-    CanvasState.autoScrollState.velocityY = 0;
+    
+    // 重置所有状态
+    state.isActive = false;
+    state.velocityX = 0;
+    state.velocityY = 0;
+    state.targetVelocityX = 0;
+    state.targetVelocityY = 0;
     
     // 停止后进行最终更新
     if (CanvasState.dragState.isDragging) {

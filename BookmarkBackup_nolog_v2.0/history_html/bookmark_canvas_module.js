@@ -152,6 +152,9 @@ let suppressScrollSync = false;
 let zoomSaveTimeout = null;
 let zoomUpdateFrame = null;
 let pendingZoomRequest = null;
+// 性能优化：滚动更新去抖（RAF）
+let scrollUpdateFrame = null;
+let pendingScrollRequest = null;
 const scrollbarHoverState = new WeakMap();
 
 // 性能优化：滚动条更新去抖
@@ -1980,7 +1983,7 @@ function handleCanvasCustomScroll(event) {
         }
     }
     
-    // 极简处理：直接更新，不做任何判断
+    // 累积滚动增量
     let hasUpdate = false;
     
     if (horizontalEnabled && horizontalDelta !== 0) {
@@ -1994,9 +1997,30 @@ function handleCanvasCustomScroll(event) {
     }
     
     if (hasUpdate) {
-        // 直接应用，最快路径
-        applyPanOffsetFast();
+        // 使用 RAF 去抖，合并多个滚动事件为一次渲染
+        scheduleScrollUpdate();
         event.preventDefault();
+    }
+}
+
+// 性能优化：使用 RAF 去抖滚动更新（参考 scheduleZoomUpdate）
+function scheduleScrollUpdate() {
+    // 保存当前的滚动位置
+    pendingScrollRequest = {
+        panOffsetX: CanvasState.panOffsetX,
+        panOffsetY: CanvasState.panOffsetY
+    };
+    
+    // 如果没有正在进行的渲染帧，调度一次
+    if (!scrollUpdateFrame) {
+        scrollUpdateFrame = requestAnimationFrame(() => {
+            scrollUpdateFrame = null;
+            if (!pendingScrollRequest) return;
+            
+            // 应用累积的滚动位置（使用极速平移）
+            applyPanOffsetFast();
+            pendingScrollRequest = null;
+        });
     }
 }
 

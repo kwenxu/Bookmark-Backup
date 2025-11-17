@@ -7097,6 +7097,14 @@ function renderEdges() {
             selectEdge(edge.id, e.clientX, e.clientY);
         });
         
+        // 双击连接线直接进入编辑标签
+        hitArea.addEventListener('dblclick', (e) => {
+            console.log('[Edge] Edge double-clicked:', edge.id);
+            e.stopPropagation();
+            e.preventDefault();
+            editEdgeLabel(edge.id);
+        });
+        
         // 悬停效果也应用到 hitArea
         hitArea.addEventListener('mouseenter', () => {
             path.classList.add('hover');

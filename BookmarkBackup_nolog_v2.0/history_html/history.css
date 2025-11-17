@@ -4358,7 +4358,7 @@ a.tree-label.tree-bookmark-link:hover {
     border: 3px solid #10b981;
     border-radius: 12px;
     box-shadow: var(--shadow-lg);
-    overflow: hidden;
+    overflow: visible; /* Allow external connection anchors to show */
     z-index: 100;
     transition: box-shadow 0.18s ease, transform 0.28s cubic-bezier(0.16, 1, 0.3, 1), border-color 0.18s ease;
     cursor: default;
@@ -4679,7 +4679,7 @@ a.tree-label.tree-bookmark-link:hover {
     will-change: left, top;
     display: flex;
     flex-direction: column;
-    overflow: hidden;
+    overflow: visible; /* Allow external connection anchors to show */
 }
 
 [data-theme="dark"] .temp-canvas-node {

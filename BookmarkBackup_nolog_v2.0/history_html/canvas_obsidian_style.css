@@ -521,69 +521,81 @@
     z-index: 240; /* Layer for hover reveal only */
     pointer-events: none; /* Do not block resize/drag; circle does */
 }
-/* Huge zones for easiest triggering */
-/* Large hover-only zones to reveal anchors (non-interactive) */
-.zone-top { top: -64px; height: 64px; left: 10%; width: 80%; }
-.zone-bottom { bottom: -64px; height: 64px; left: 10%; width: 80%; }
-.zone-left { left: -64px; width: 64px; top: 10%; height: 80%; }
-.zone-right { right: -64px; width: 64px; top: 10%; height: 80%; }
+/* Hover zones completely outside node to reveal anchors (non-interactive) */
+.zone-top { top: -25px; height: 25px; left: 10%; width: 80%; }
+.zone-bottom { bottom: -25px; height: 25px; left: 10%; width: 80%; }
+.zone-left { left: -25px; width: 25px; top: 10%; height: 80%; }
+.zone-right { right: -25px; width: 25px; top: 10%; height: 80%; }
 
 .canvas-node-anchor {
     position: absolute;
-    /* Invisible circular hit area that suppresses drag/resize */
-    width: 84px;
-    height: 84px;
-    border-radius: 50%;
+    /* Half-circle hit area completely outside the node border */
     z-index: 11000; /* Above resize handles (10003) */
-    opacity: 0; /* keep invisible but clickable */
+    opacity: 0; /* Hidden by default, show on hover */
     transition: opacity 0.15s ease, transform 0.15s ease;
     cursor: crosshair;
     pointer-events: auto;
+    /* Show half-circle shape when visible */
+    background-color: rgba(100, 100, 100, 0.25);
+    border: 1px solid rgba(100, 100, 100, 0.4);
 }
 
-/* Anchors pushed out further */
+/* Top anchor: half-circle extending upward from top edge */
 .canvas-node-anchor[data-side="top"] {
-    top: -42px; /* center on top edge */
+    width: 30px;
+    height: 15px;
+    border-radius: 15px 15px 0 0;
+    top: -15px; /* Completely outside */
     left: 50%;
     transform: translateX(-50%);
     --anchor-translate-x: -50%;
+    --anchor-translate-y: 0;
 }
+
+/* Bottom anchor: half-circle extending downward from bottom edge */
 .canvas-node-anchor[data-side="bottom"] {
-    bottom: -42px;
+    width: 30px;
+    height: 15px;
+    border-radius: 0 0 15px 15px;
+    bottom: -15px; /* Completely outside */
     left: 50%;
     transform: translateX(-50%);
     --anchor-translate-x: -50%;
+    --anchor-translate-y: 0;
 }
+
+/* Left anchor: half-circle extending leftward from left edge */
 .canvas-node-anchor[data-side="left"] {
-    left: -42px;
+    width: 15px;
+    height: 30px;
+    border-radius: 15px 0 0 15px;
+    left: -15px; /* Completely outside */
     top: 50%;
     transform: translateY(-50%);
+    --anchor-translate-x: 0;
     --anchor-translate-y: -50%;
 }
+
+/* Right anchor: half-circle extending rightward from right edge */
 .canvas-node-anchor[data-side="right"] {
-    right: -42px;
+    width: 15px;
+    height: 30px;
+    border-radius: 0 15px 15px 0;
+    right: -15px; /* Completely outside */
     top: 50%;
     transform: translateY(-50%);
+    --anchor-translate-x: 0;
     --anchor-translate-y: -50%;
 }
 
-/* Visible inner dot inside large hit circle */
-.canvas-node-anchor::before {
-    content: '';
-    position: absolute;
-    top: 50%;
-    left: 50%;
-    width: 12px;
-    height: 12px;
-    transform: translate(-50%, -50%);
-    border-radius: 50%;
-    background-color: var(--bg-primary, #fff);
-    border: 2px solid #777;
+[data-theme="dark"] .canvas-node-anchor {
+    background-color: rgba(200, 200, 200, 0.15);
+    border-color: rgba(200, 200, 200, 0.3);
 }
 
-[data-theme="dark"] .canvas-node-anchor::before {
-    background-color: var(--bg-secondary, #242526);
-    border-color: #999;
+[data-theme="dark"] .canvas-node-anchor:hover {
+    background-color: rgba(24, 119, 242, 0.25);
+    border-color: rgba(24, 119, 242, 0.6);
 }
 
 /* Smart Hover: Show specific anchor when its zone is hovered */
@@ -599,12 +611,24 @@
     pointer-events: auto; /* Enable interaction when visible */
 }
 
-.canvas-node-anchor:hover::before {
-    background-color: var(--accent-primary, #1877f2);
-    border-color: var(--accent-primary, #1877f2);
-}
+/* Enhanced hover effect for half-circle background */
 .canvas-node-anchor:hover {
-    transform: scale(1.1) translateX(var(--anchor-translate-x, 0)) translateY(var(--anchor-translate-y, 0));
+    background-color: rgba(24, 119, 242, 0.3);
+    border-color: rgba(24, 119, 242, 0.7);
+}
+
+/* Hover scale effect for each side */
+.canvas-node-anchor[data-side="top"]:hover {
+    transform: translateX(-50%) scale(1.15);
+}
+.canvas-node-anchor[data-side="bottom"]:hover {
+    transform: translateX(-50%) scale(1.15);
+}
+.canvas-node-anchor[data-side="left"]:hover {
+    transform: translateY(-50%) scale(1.15);
+}
+.canvas-node-anchor[data-side="right"]:hover {
+    transform: translateY(-50%) scale(1.15);
 }
 
 /* Removed edge-tight positions to keep anchors clear of toolbars */

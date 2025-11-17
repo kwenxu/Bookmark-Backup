@@ -485,7 +485,7 @@ function getFaviconUrl(url) {
         const urlObj = new URL(url);
         const domain = urlObj.hostname;
         
-        // 先检查内存缓存
+        // 【关键修复】先检查内存缓存（在 renderTreeView 时已预热）
         if (FaviconCache.memoryCache.has(domain)) {
             return FaviconCache.memoryCache.get(domain);
         }
@@ -496,6 +496,8 @@ function getFaviconUrl(url) {
         }
         
         // 触发后台异步加载（不等待结果）
+        // 注意：由于在 renderTreeView 时已经预热了缓存，
+        // 这里只是作为兜底机制，处理动态添加的书签
         FaviconCache.fetch(url).then(dataUrl => {
             // 加载完成后，查找并更新所有使用这个URL的img标签
             if (dataUrl && dataUrl !== fallbackIcon) {
@@ -1666,6 +1668,68 @@ async function preloadIcon(url) {
         await FaviconCache.fetch(url);
     } catch (error) {
         console.warn('[图标预加载] URL 预加载失败:', url, error.message);
+    }
+}
+
+// 【关键修复】预热 favicon 内存缓存（从 IndexedDB 批量加载）
+// 用于解决切换视图时图标变成五角星的问题
+async function warmupFaviconCache(bookmarkUrls) {
+    if (!bookmarkUrls || bookmarkUrls.length === 0) return;
+    
+    try {
+        console.log('[Favicon预热] 开始预热内存缓存，书签数量:', bookmarkUrls.length);
+        
+        // 初始化 IndexedDB（如果还没初始化）
+        if (!FaviconCache.db) {
+            await FaviconCache.init();
+        }
+        
+        // 批量从 IndexedDB 读取所有域名的 favicon
+        const domains = new Set();
+        bookmarkUrls.forEach(url => {
+            try {
+                if (!FaviconCache.isInvalidUrl(url)) {
+                    const domain = new URL(url).hostname;
+                    domains.add(domain);
+                }
+            } catch (e) {
+                // 忽略无效URL
+            }
+        });
+        
+        if (domains.size === 0) return;
+        
+        console.log('[Favicon预热] 需要预热的域名数:', domains.size);
+        
+        // 批量读取
+        const transaction = FaviconCache.db.transaction([FaviconCache.storeName], 'readonly');
+        const store = transaction.objectStore(FaviconCache.storeName);
+        
+        let loaded = 0;
+        for (const domain of domains) {
+            // 跳过已在内存缓存中的
+            if (FaviconCache.memoryCache.has(domain)) continue;
+            
+            try {
+                const request = store.get(domain);
+                await new Promise((resolve) => {
+                    request.onsuccess = () => {
+                        if (request.result && request.result.dataUrl) {
+                            FaviconCache.memoryCache.set(domain, request.result.dataUrl);
+                            loaded++;
+                        }
+                        resolve();
+                    };
+                    request.onerror = () => resolve();
+                });
+            } catch (e) {
+                // 忽略单个域名的错误
+            }
+        }
+        
+        console.log('[Favicon预热] 完成，从IndexedDB加载了', loaded, '个favicon到内存');
+    } catch (error) {
+        console.warn('[Favicon预热] 失败:', error);
     }
 }
 
@@ -4050,6 +4114,51 @@ async function renderTreeView(forceRefresh = false) {
         console.log('[renderTreeView] 缓存显示完成');
         // 恢复滚动位置
         if (permBody && permScrollTop !== null) permBody.scrollTop = permScrollTop;
+        
+        // 【关键修复】即使使用缓存，也要预热内存缓存
+        // 因为内存缓存可能在页面刷新后被清空，导致图标显示为五角星
+        // 预热完成后会自动更新页面上的图标
+        (async () => {
+            try {
+                // 获取当前书签树
+                const currentTree = await new Promise(resolve => browserAPI.bookmarks.getTree(resolve));
+                if (currentTree && currentTree.length > 0) {
+                    // 收集所有书签URL
+                    const allBookmarkUrls = [];
+                    const collectUrls = (nodes) => {
+                        if (!nodes) return;
+                        nodes.forEach(node => {
+                            if (node.url) allBookmarkUrls.push(node.url);
+                            if (node.children) collectUrls(node.children);
+                        });
+                    };
+                    collectUrls(currentTree);
+                    
+                    if (allBookmarkUrls.length > 0) {
+                        await warmupFaviconCache(allBookmarkUrls);
+                        
+                        // 预热完成后，更新页面上所有使用fallback图标的img标签
+                        allBookmarkUrls.forEach(url => {
+                            try {
+                                const urlObj = new URL(url);
+                                const domain = urlObj.hostname;
+                                const cachedFavicon = FaviconCache.memoryCache.get(domain);
+                                if (cachedFavicon && cachedFavicon !== fallbackIcon) {
+                                    updateFaviconImages(url, cachedFavicon);
+                                }
+                            } catch (e) {
+                                // 忽略无效URL
+                            }
+                        });
+                        
+                        console.log('[renderTreeView] 快速路径预热完成，已更新图标');
+                    }
+                }
+            } catch (e) {
+                console.warn('[renderTreeView] 快速路径预热失败:', e);
+            }
+        })();
+        
         return;
     }
     
@@ -4096,6 +4205,31 @@ async function renderTreeView(forceRefresh = false) {
         const oldTree = storageData.lastBookmarkData && storageData.lastBookmarkData.bookmarkTree;
         cachedOldTree = oldTree;
         cachedCurrentTree = currentTree; // 缓存当前树，用于智能路径检测
+        
+        // 【关键修复】预热 favicon 缓存 - 从 IndexedDB 批量加载到内存
+        // 收集所有书签URL
+        const allBookmarkUrls = [];
+        const collectUrls = (nodes) => {
+            if (!nodes) return;
+            nodes.forEach(node => {
+                if (node.url) {
+                    allBookmarkUrls.push(node.url);
+                }
+                if (node.children) {
+                    collectUrls(node.children);
+                }
+            });
+        };
+        collectUrls(currentTree);
+        
+        // 批量预热缓存（等待完成，确保渲染时缓存已就绪）
+        if (allBookmarkUrls.length > 0) {
+            try {
+                await warmupFaviconCache(allBookmarkUrls);
+            } catch (e) {
+                console.warn('[renderTreeView] favicon缓存预热失败，继续渲染:', e);
+            }
+        }
         
         // 快速检测变动（只在有备份数据时才检测）
         console.log('[renderTreeView] oldTree 存在:', !!oldTree);

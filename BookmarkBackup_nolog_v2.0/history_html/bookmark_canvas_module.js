@@ -14,6 +14,29 @@ const CanvasState = {
     mdNodeCounter: 0,
     // 栏目休眠管理（性能优化）- 阶梯式性能模式
     performanceMode: 'balanced', // 性能模式：'maximum' | 'balanced' | 'smooth' | 'unlimited'
+    // 双指滑动状态追踪（防止在栏目内触发纵向滚动）
+    touchpadState: {
+        isScrolling: false, // 是否正在画布级别的滚动
+        lastScrollTime: 0,
+        scrollTimeout: null
+    },
+    // 自动滚动状态（拖动到边缘时）
+    autoScrollState: {
+        intervalId: null,
+        velocityX: 0,
+        velocityY: 0,
+        isActive: false
+    },
+    // 滚动惯性状态（阻尼延续）
+    inertiaState: {
+        velocityX: 0,
+        velocityY: 0,
+        isActive: false,
+        animationId: null,
+        lastDeltaX: 0,
+        lastDeltaY: 0,
+        lastTime: 0
+    },
     performanceSettings: {
         maximum: {
             name: '极致性能',
@@ -1395,6 +1418,9 @@ function onScrollStop() {
         content.style.transform = ''; // 清除直接 transform
     }
     
+    // 启动惯性滚动（拖尾阻尼效果）
+    startInertiaScroll();
+    
     // 更新边界和滚动条
     scheduleBoundsUpdate();
     scheduleScrollbarUpdate();
@@ -1419,6 +1445,209 @@ function scheduleDormancyUpdate() {
         dormancyUpdatePending = false;
         manageSectionDormancy();
     }, 200); // 200ms 延迟
+}
+
+// 惯性滚动相关函数
+function startInertiaScroll() {
+    // 检查是否有足够的速度启动惯性滚动
+    const velocityThreshold = 0.5; // 最小速度阈值
+    const timeSinceLastScroll = Date.now() - CanvasState.inertiaState.lastTime;
+    
+    // 如果距离上次滚动太久（超过100ms），不启动惯性滚动
+    if (timeSinceLastScroll > 100) {
+        return;
+    }
+    
+    const absVelocityX = Math.abs(CanvasState.inertiaState.lastDeltaX);
+    const absVelocityY = Math.abs(CanvasState.inertiaState.lastDeltaY);
+    
+    // 如果速度太小，不启动惯性滚动
+    if (absVelocityX < velocityThreshold && absVelocityY < velocityThreshold) {
+        return;
+    }
+    
+    // 设置初始速度（放大系数，让惯性更明显）
+    const inertiaMultiplier = 1.2;
+    CanvasState.inertiaState.velocityX = CanvasState.inertiaState.lastDeltaX * inertiaMultiplier;
+    CanvasState.inertiaState.velocityY = CanvasState.inertiaState.lastDeltaY * inertiaMultiplier;
+    CanvasState.inertiaState.isActive = true;
+    
+    // 启动惯性滚动动画
+    runInertiaScroll();
+}
+
+function runInertiaScroll() {
+    if (!CanvasState.inertiaState.isActive) {
+        return;
+    }
+    
+    const scrollFactor = 1.0 / (CanvasState.zoom || 1);
+    const damping = 0.92; // 阻尼系数，越小减速越快
+    const stopThreshold = 0.1; // 速度低于此值时停止
+    
+    // 应用速度
+    if (Math.abs(CanvasState.inertiaState.velocityX) > stopThreshold) {
+        CanvasState.panOffsetX -= CanvasState.inertiaState.velocityX * scrollFactor;
+    }
+    if (Math.abs(CanvasState.inertiaState.velocityY) > stopThreshold) {
+        CanvasState.panOffsetY -= CanvasState.inertiaState.velocityY * scrollFactor;
+    }
+    
+    // 应用阻尼
+    CanvasState.inertiaState.velocityX *= damping;
+    CanvasState.inertiaState.velocityY *= damping;
+    
+    // 更新显示
+    applyPanOffsetFast();
+    updateScrollbarThumbsLightweight();
+    
+    // 检查是否应该停止
+    const absVelocityX = Math.abs(CanvasState.inertiaState.velocityX);
+    const absVelocityY = Math.abs(CanvasState.inertiaState.velocityY);
+    
+    if (absVelocityX < stopThreshold && absVelocityY < stopThreshold) {
+        // 停止惯性滚动
+        CanvasState.inertiaState.isActive = false;
+        CanvasState.inertiaState.velocityX = 0;
+        CanvasState.inertiaState.velocityY = 0;
+        CanvasState.inertiaState.animationId = null;
+        
+        // 惯性滚动结束后，进行最终更新
+        const container = getCachedContainer();
+        const content = getCachedContent();
+        if (container && content) {
+            container.style.setProperty('--canvas-scale', CanvasState.zoom);
+            container.style.setProperty('--canvas-pan-x', `${CanvasState.panOffsetX}px`);
+            container.style.setProperty('--canvas-pan-y', `${CanvasState.panOffsetY}px`);
+            content.style.transform = '';
+        }
+        scheduleScrollbarUpdate();
+        savePanOffsetThrottled();
+        return;
+    }
+    
+    // 继续动画
+    CanvasState.inertiaState.animationId = requestAnimationFrame(runInertiaScroll);
+}
+
+function cancelInertiaScroll() {
+    if (CanvasState.inertiaState.animationId) {
+        cancelAnimationFrame(CanvasState.inertiaState.animationId);
+        CanvasState.inertiaState.animationId = null;
+    }
+    CanvasState.inertiaState.isActive = false;
+    CanvasState.inertiaState.velocityX = 0;
+    CanvasState.inertiaState.velocityY = 0;
+}
+
+// 边缘自动滚动相关函数
+function checkEdgeAutoScroll(clientX, clientY) {
+    const workspace = document.getElementById('canvasWorkspace');
+    if (!workspace) return;
+    
+    const rect = workspace.getBoundingClientRect();
+    const edgeThreshold = 50; // 触发自动滚动的边缘距离（像素）
+    const maxSpeed = 15; // 最大滚动速度
+    
+    // 计算距离边缘的距离
+    const distLeft = clientX - rect.left;
+    const distRight = rect.right - clientX;
+    const distTop = clientY - rect.top;
+    const distBottom = rect.bottom - clientY;
+    
+    let velocityX = 0;
+    let velocityY = 0;
+    
+    // 横向滚动
+    if (distLeft < edgeThreshold && distLeft > 0) {
+        // 靠近左边缘，向左滚动（正向）
+        const ratio = 1 - (distLeft / edgeThreshold);
+        velocityX = maxSpeed * ratio;
+    } else if (distRight < edgeThreshold && distRight > 0) {
+        // 靠近右边缘，向右滚动（负向）
+        const ratio = 1 - (distRight / edgeThreshold);
+        velocityX = -maxSpeed * ratio;
+    }
+    
+    // 纵向滚动
+    if (distTop < edgeThreshold && distTop > 0) {
+        // 靠近上边缘，向上滚动（正向）
+        const ratio = 1 - (distTop / edgeThreshold);
+        velocityY = maxSpeed * ratio;
+    } else if (distBottom < edgeThreshold && distBottom > 0) {
+        // 靠近下边缘，向下滚动（负向）
+        const ratio = 1 - (distBottom / edgeThreshold);
+        velocityY = -maxSpeed * ratio;
+    }
+    
+    // 启动或更新自动滚动
+    if (velocityX !== 0 || velocityY !== 0) {
+        startEdgeAutoScroll(velocityX, velocityY);
+    } else {
+        stopEdgeAutoScroll();
+    }
+}
+
+function startEdgeAutoScroll(velocityX, velocityY) {
+    CanvasState.autoScrollState.velocityX = velocityX;
+    CanvasState.autoScrollState.velocityY = velocityY;
+    
+    // 如果已经在自动滚动，只更新速度
+    if (CanvasState.autoScrollState.isActive) {
+        return;
+    }
+    
+    CanvasState.autoScrollState.isActive = true;
+    runEdgeAutoScroll();
+}
+
+function runEdgeAutoScroll() {
+    if (!CanvasState.autoScrollState.isActive) {
+        return;
+    }
+    
+    const scrollFactor = 1.0 / (CanvasState.zoom || 1);
+    
+    // 应用滚动
+    CanvasState.panOffsetX += CanvasState.autoScrollState.velocityX * scrollFactor;
+    CanvasState.panOffsetY += CanvasState.autoScrollState.velocityY * scrollFactor;
+    
+    // 更新显示
+    applyPanOffsetFast();
+    updateScrollbarThumbsLightweight();
+    
+    // 同步更新拖动元素的位置
+    if (CanvasState.dragState.isDragging && CanvasState.dragState.draggedElement) {
+        const panDeltaX = CanvasState.autoScrollState.velocityX * scrollFactor;
+        const panDeltaY = CanvasState.autoScrollState.velocityY * scrollFactor;
+        adjustDragReferenceForPan(panDeltaX, panDeltaY, CanvasState.dragState.lastClientX, CanvasState.dragState.lastClientY);
+    }
+    
+    // 继续动画
+    CanvasState.autoScrollState.intervalId = requestAnimationFrame(runEdgeAutoScroll);
+}
+
+function stopEdgeAutoScroll() {
+    if (CanvasState.autoScrollState.intervalId) {
+        cancelAnimationFrame(CanvasState.autoScrollState.intervalId);
+        CanvasState.autoScrollState.intervalId = null;
+    }
+    CanvasState.autoScrollState.isActive = false;
+    CanvasState.autoScrollState.velocityX = 0;
+    CanvasState.autoScrollState.velocityY = 0;
+    
+    // 停止后进行最终更新
+    if (CanvasState.dragState.isDragging) {
+        const container = getCachedContainer();
+        const content = getCachedContent();
+        if (container && content) {
+            container.style.setProperty('--canvas-scale', CanvasState.zoom);
+            container.style.setProperty('--canvas-pan-x', `${CanvasState.panOffsetX}px`);
+            container.style.setProperty('--canvas-pan-y', `${CanvasState.panOffsetY}px`);
+            content.style.transform = '';
+        }
+        scheduleScrollbarUpdate();
+    }
 }
 
 // 性能优化：调度滚动条更新（使用 RAF 去抖）
@@ -1956,7 +2185,18 @@ function shouldHandleCustomScroll(event) {
         }
     }
     
-    if (event.target.closest('.permanent-section-body') || event.target.closest('.temp-node-body')) {
+    // 在栏目内部：如果正在画布级滚动，则拦截处理
+    const sectionBody = event.target.closest('.permanent-section-body') || event.target.closest('.temp-node-body');
+    if (sectionBody) {
+        // 检测是否为触控板双指滑动
+        const isTouchpad = (Math.abs(event.deltaX) < 50 || Math.abs(event.deltaY) < 50) && event.deltaMode === 0;
+        
+        // 如果正在画布级滚动（双指滑动），拦截并让画布处理
+        if (isTouchpad && CanvasState.touchpadState.isScrolling) {
+            return true; // 让画布处理滚动
+        }
+        
+        // 否则让栏目自己处理滚动
         return false;
     }
     
@@ -1978,6 +2218,9 @@ function handleCanvasCustomScroll(event) {
     // 标记正在滚动
     markScrolling();
     
+    // 取消之前的惯性滚动
+    cancelInertiaScroll();
+    
     let horizontalDelta = event.deltaX;
     let verticalDelta = event.deltaY;
     
@@ -1988,6 +2231,30 @@ function handleCanvasCustomScroll(event) {
     
     // 检测是否为触控板（触控板的 delta 值较小且连续，deltaMode 通常为 0）
     const isTouchpad = (Math.abs(horizontalDelta) < 50 || Math.abs(verticalDelta) < 50) && event.deltaMode === 0;
+    
+    // 双指滑动状态追踪：当检测到画布级别的滚动时，标记状态并设置超时清除
+    if (isTouchpad && (Math.abs(horizontalDelta) > 0.5 || Math.abs(verticalDelta) > 0.5)) {
+        CanvasState.touchpadState.isScrolling = true;
+        CanvasState.touchpadState.lastScrollTime = Date.now();
+        
+        // 清除之前的超时
+        if (CanvasState.touchpadState.scrollTimeout) {
+            clearTimeout(CanvasState.touchpadState.scrollTimeout);
+        }
+        
+        // 设置新的超时：滚动停止300ms后恢复栏目内滚动
+        CanvasState.touchpadState.scrollTimeout = setTimeout(() => {
+            CanvasState.touchpadState.isScrolling = false;
+        }, 300);
+    }
+    
+    // 记录滚动速度用于惯性滚动（仅触控板）
+    if (isTouchpad) {
+        const currentTime = Date.now();
+        CanvasState.inertiaState.lastDeltaX = horizontalDelta;
+        CanvasState.inertiaState.lastDeltaY = verticalDelta;
+        CanvasState.inertiaState.lastTime = currentTime;
+    }
     
     // 触控板双指拖动优化：提升灵敏度和平滑度
     let scrollFactor = 1.0 / (CanvasState.zoom || 1);
@@ -5596,6 +5863,9 @@ function setupCanvasEventListeners() {
         if (handled) {
             e.preventDefault();
         }
+        
+        // 检查是否接近边缘，启动自动滚动
+        checkEdgeAutoScroll(e.clientX, e.clientY);
     }, false);
     
     // 鼠标释放
@@ -5614,6 +5884,9 @@ function setupCanvasEventListeners() {
         CanvasState.dragState.draggedElement = null;
         CanvasState.dragState.dragSource = null;
         CanvasState.dragState.wheelScrollEnabled = false;
+        
+        // 停止自动滚动
+        stopEdgeAutoScroll();
         
         // 拖动停止后，触发完整更新
         onScrollStop();

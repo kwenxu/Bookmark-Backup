@@ -1188,15 +1188,21 @@ function setupCanvasZoomAndPan() {
             CanvasState.panStartX = e.clientX - CanvasState.panOffsetX;
             CanvasState.panStartY = e.clientY - CanvasState.panOffsetY;
             workspace.classList.add('panning');
+            // 标记正在拖动/滚动
+            markScrolling();
         }
     });
     
     document.addEventListener('mousemove', (e) => {
         if (CanvasState.isPanning) {
+            // 标记正在拖动/滚动
+            markScrolling();
+            
             CanvasState.panOffsetX = e.clientX - CanvasState.panStartX;
             CanvasState.panOffsetY = e.clientY - CanvasState.panStartY;
             
-            applyPanOffset();
+            // 使用极速平移（降低渲染频率）
+            applyPanOffsetFast();
         }
     });
     
@@ -1204,6 +1210,9 @@ function setupCanvasZoomAndPan() {
         if (CanvasState.isPanning) {
             CanvasState.isPanning = false;
             workspace.classList.remove('panning');
+            
+            // 拖动停止后，触发完整更新
+            onScrollStop();
             savePanOffsetThrottled();
         }
     });
@@ -1295,7 +1304,7 @@ function applyPanOffset() {
     // CanvasState.panOffsetX = clampPan('horizontal', CanvasState.panOffsetX);
     // CanvasState.panOffsetY = clampPan('vertical', CanvasState.panOffsetY);
     
-    // 优化：滚动时使用 transform 直接操作，停止时才用 CSS 变量
+    // 优化：滚动/拖动时使用 transform 直接操作，停止时才用 CSS 变量
     if (isScrolling) {
         const scale = CanvasState.zoom;
         const translateX = CanvasState.panOffsetX / scale;
@@ -1308,7 +1317,7 @@ function applyPanOffset() {
         container.style.setProperty('--canvas-pan-y', `${CanvasState.panOffsetY}px`);
         content.style.transform = ''; // 清除直接 transform
         
-        // 调度滚动条更新
+        // 调度滚动条更新（只在停止时更新）
         scheduleScrollbarUpdate();
     }
     
@@ -2053,7 +2062,11 @@ function applyTempNodeDragPosition(clientX, clientY) {
         section.y = newY;
     }
 
-    if (typeof renderEdges === 'function') {
+    // 优化：拖动时降低连接线渲染频率
+    if (typeof renderEdges === 'function' && isScrolling) {
+        // 只在停止时重新渲染连接线
+        // renderEdges();
+    } else if (typeof renderEdges === 'function') {
         renderEdges();
     }
 
@@ -2077,7 +2090,11 @@ function applyPermanentSectionDragPosition(clientX, clientY) {
 
     element.style.transform = `translate(${scaledDeltaX}px, ${scaledDeltaY}px)`;
 
-    if (typeof renderEdges === 'function') {
+    // 优化：拖动时降低连接线渲染频率
+    if (typeof renderEdges === 'function' && isScrolling) {
+        // 只在停止时重新渲染连接线
+        // renderEdges();
+    } else if (typeof renderEdges === 'function') {
         renderEdges();
     }
 
@@ -2097,6 +2114,11 @@ function finalizeTempNodeDrag() {
         element.style.transform = 'none';
         element.style.left = section.x + 'px';
         element.style.top = section.y + 'px';
+    }
+
+    // 优化：拖动结束时重新渲染连接线
+    if (typeof renderEdges === 'function') {
+        renderEdges();
     }
 
     saveTempNodes();
@@ -2124,13 +2146,14 @@ function finalizePermanentSectionDrag() {
         element.style.left = finalX + 'px';
         element.style.top = finalY + 'px';
 
-        savePermanentSectionPosition();
-        scheduleBoundsUpdate();
-        scheduleScrollbarUpdate();
-
+        // 优化：拖动结束时重新渲染连接线
         if (typeof renderEdges === 'function') {
             renderEdges();
         }
+
+        savePermanentSectionPosition();
+        scheduleBoundsUpdate();
+        scheduleScrollbarUpdate();
     } else {
         element.style.transform = 'none';
     }
@@ -5468,6 +5491,10 @@ function setupCanvasEventListeners() {
         if (CanvasState.dragState.dragSource !== 'temp-node' && CanvasState.dragState.dragSource !== 'permanent-section') {
             return;
         }
+        
+        // 标记正在拖动/滚动
+        markScrolling();
+        
         const handled = updateActiveDragPosition(e.clientX, e.clientY);
         if (handled) {
             e.preventDefault();
@@ -5490,6 +5517,9 @@ function setupCanvasEventListeners() {
         CanvasState.dragState.draggedElement = null;
         CanvasState.dragState.dragSource = null;
         CanvasState.dragState.wheelScrollEnabled = false;
+        
+        // 拖动停止后，触发完整更新
+        onScrollStop();
     }, false);
     
     // 工具栏按钮

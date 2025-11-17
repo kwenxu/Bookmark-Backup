@@ -1095,16 +1095,15 @@ function setupCanvasZoomAndPan() {
             const prevPanY = CanvasState.panOffsetY;
             let hasUpdate = false;
             
-            // Shift + 滚轮：横向滚动
             if (e.shiftKey) {
-                const deltaX = e.deltaY; // 将纵向滚动转换为横向
-                if (deltaX !== 0) {
-                    CanvasState.panOffsetX -= deltaX * scrollFactor;
+                // Shift + 滚轮：优先使用真实的横向 delta，若不存在则退回纵向
+                const horizontalDelta = e.deltaX !== 0 ? e.deltaX : e.deltaY;
+                if (horizontalDelta !== 0) {
+                    CanvasState.panOffsetX -= horizontalDelta * scrollFactor;
                     hasUpdate = true;
                 }
-            }
-            // 普通滚轮：纵向滚动
-            else {
+            } else {
+                // 普通滚轮：纵向滚动
                 if (e.deltaY !== 0) {
                     CanvasState.panOffsetY -= e.deltaY * scrollFactor;
                     hasUpdate = true;

@@ -3427,7 +3427,8 @@ function makePermanentSectionResizable(element) {
                 element.style.left = newLeft + 'px';
                 element.style.top = newTop + 'px';
                 
-                // 不再设置max-height，让内容区域自动填充
+                // Update connected edges in real-time during resize
+                renderEdges();
             };
             
             const onMouseUp = () => {
@@ -3568,6 +3569,9 @@ function makeTempNodeResizable(element, node) {
                 node.height = newHeight;
                 node.x = newLeft;
                 node.y = newTop;
+                
+                // Update connected edges in real-time during resize
+                renderEdges();
             };
             
             const onMouseUp = () => {
@@ -6198,6 +6202,8 @@ function setupCanvasEventListeners() {
     document.addEventListener('mousemove', (e) => {
         if (CanvasState.sectionCtrlMode && CanvasState.sectionCtrlMode.resize && CanvasState.sectionCtrlMode.resize.active) {
             applyCtrlResize(e.clientX, e.clientY);
+            // Update connected edges in real-time during resize
+            renderEdges();
             e.preventDefault();
             e.stopPropagation();
             return;
@@ -6217,6 +6223,8 @@ function setupCanvasEventListeners() {
         const handled = updateActiveDragPosition(e.clientX, e.clientY);
         if (handled) {
             e.preventDefault();
+            // Update connected edges in real-time during drag
+            renderEdges();
         }
         
         // 检查是否接近边缘，启动自动滚动

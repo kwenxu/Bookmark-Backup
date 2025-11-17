@@ -1206,6 +1206,9 @@ function setupCanvasZoomAndPan() {
             
             // 使用极速平移（降低渲染频率）
             applyPanOffsetFast();
+            
+            // 实时更新滚动条位置
+            updateScrollbarThumbsLightweight();
         }
     });
     
@@ -2019,8 +2022,61 @@ function scheduleScrollUpdate() {
             
             // 应用累积的滚动位置（使用极速平移）
             applyPanOffsetFast();
+            
+            // 实时更新滚动条位置（轻量操作，只更新 transform）
+            updateScrollbarThumbsLightweight();
+            
             pendingScrollRequest = null;
         });
+    }
+}
+
+// 轻量级滚动条更新：只更新 thumb 的 transform，不触发边界重计算
+function updateScrollbarThumbsLightweight() {
+    const workspace = document.getElementById('canvasWorkspace');
+    if (!workspace) return;
+    
+    const verticalBar = document.getElementById('canvasVerticalScrollbar');
+    const horizontalBar = document.getElementById('canvasHorizontalScrollbar');
+    
+    // 更新垂直滚动条
+    if (verticalBar) {
+        const track = verticalBar.querySelector('.scrollbar-track');
+        const thumb = verticalBar.querySelector('.scrollbar-thumb');
+        if (track && thumb) {
+            const trackSize = track.clientHeight;
+            const bounds = CanvasState.scrollBounds.vertical;
+            if (trackSize > 0 && bounds && isFinite(bounds.min) && isFinite(bounds.max)) {
+                const range = bounds.max - bounds.min;
+                const thumbSize = parseFloat(thumb.style.height) || 20;
+                const maxTravel = Math.max(0, trackSize - thumbSize);
+                const normalized = range === 0 ? 0 : (bounds.max - CanvasState.panOffsetY) / range;
+                const position = Math.min(maxTravel, Math.max(0, normalized * maxTravel));
+                
+                // 只更新 transform，极轻量
+                thumb.style.transform = `translateY(${position}px)`;
+            }
+        }
+    }
+    
+    // 更新水平滚动条
+    if (horizontalBar) {
+        const track = horizontalBar.querySelector('.scrollbar-track');
+        const thumb = horizontalBar.querySelector('.scrollbar-thumb');
+        if (track && thumb) {
+            const trackSize = track.clientWidth;
+            const bounds = CanvasState.scrollBounds.horizontal;
+            if (trackSize > 0 && bounds && isFinite(bounds.min) && isFinite(bounds.max)) {
+                const range = bounds.max - bounds.min;
+                const thumbSize = parseFloat(thumb.style.width) || 20;
+                const maxTravel = Math.max(0, trackSize - thumbSize);
+                const normalized = range === 0 ? 0 : (bounds.max - CanvasState.panOffsetX) / range;
+                const position = Math.min(maxTravel, Math.max(0, normalized * maxTravel));
+                
+                // 只更新 transform，极轻量
+                thumb.style.transform = `translateX(${position}px)`;
+            }
+        }
     }
 }
 

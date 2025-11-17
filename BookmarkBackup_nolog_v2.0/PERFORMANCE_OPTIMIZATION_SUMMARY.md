@@ -221,3 +221,73 @@ function scheduleScrollUpdate() {
 | 停止后完整更新 | ✅ | ✅ | ✅ |
 
 **现在滚动和缩放使用完全相同的优化策略！**
+
+## 滚动条优化（2025-11-17 第三版）
+
+### 问题
+滚动条在滚动过程中不跟随移动，只有停止后才跳到对应位置，体验不佳。
+
+### 解决方案：轻量级实时更新
+
+在 RAF 渲染帧中，除了更新画布位置，也实时更新滚动条位置。
+
+#### 核心优化
+```javascript
+// 在 scheduleScrollUpdate 的 RAF 回调中
+scrollUpdateFrame = requestAnimationFrame(() => {
+    // 1. 应用累积的滚动（使用极速平移）
+    applyPanOffsetFast();
+    
+    // 2. 实时更新滚动条位置（轻量操作）
+    updateScrollbarThumbsLightweight();
+});
+
+// 轻量级滚动条更新函数
+function updateScrollbarThumbsLightweight() {
+    // 只更新 thumb 的 transform，不触发：
+    // - 边界重计算
+    // - thumb 尺寸重计算
+    // - 布局重排
+    
+    // 垂直滚动条
+    const position = calculateThumbPosition(CanvasState.panOffsetY);
+    thumb.style.transform = `translateY(${position}px)`;
+    
+    // 水平滚动条
+    const position = calculateThumbPosition(CanvasState.panOffsetX);
+    thumb.style.transform = `translateX(${position}px)`;
+}
+```
+
+#### 性能分析
+1. **轻量操作**：
+   - 只读取已缓存的 `thumbSize`（不重新计算）
+   - 只更新 `transform` 属性
+   - 触发浏览器合成层，不触发布局
+
+2. **RAF 限制**：
+   - 每帧最多更新一次（60fps）
+   - 与画布滚动同步
+
+3. **停止后完整更新**：
+   - `onScrollStop()` 调用完整的 `updateScrollbarThumbs()`
+   - 重新计算 thumb 尺寸和边界
+
+#### 应用场景
+- ✅ 普通滚轮滚动
+- ✅ 空格 + 拖动画布
+- ✅ 触控板双指滚动
+
+### 性能影响
+| 操作 | 优化前 | 优化后 | 影响 |
+|-----|--------|--------|------|
+| 滚动条更新 | 停止后一次 | RAF 实时跟随 | 极轻量 |
+| DOM 操作 | - | 60 次/秒 | 仅 transform |
+| 布局重排 | - | 无 | 合成层 |
+| 用户体验 | ❌ 跳跃 | ✅ 流畅 | 大幅提升 |
+
+### 优化效果
+- ✅ **滚动条实时跟随**：不再等到停止才跳跃
+- ✅ **丝滑流畅**：与画布滚动同步
+- ✅ **性能无损**：仅更新 transform
+- ✅ **视觉反馈好**：用户能清楚看到当前位置

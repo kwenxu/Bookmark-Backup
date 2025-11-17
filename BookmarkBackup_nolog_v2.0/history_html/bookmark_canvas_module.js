@@ -1454,8 +1454,8 @@ function setupCanvasZoomAndPan() {
             const isTouchpad = Math.abs(e.deltaY) < 50 && e.deltaMode === 0;
             const delta = -e.deltaY;
             
-            // 触控板双指缩放：大幅提升速率和平滑曲线
-            const zoomSpeed = isTouchpad ? 0.004 : 0.0008; // 触控板速率大幅提升（5倍）
+            // 缩放速率：触控板保持原速率，鼠标滚轮降低灵敏度
+            const zoomSpeed = isTouchpad ? 0.004 : 0.0005; // 触控板0.004（保持原值），鼠标滚轮0.0005（降低约38%）
             const oldZoom = CanvasState.zoom;
             let newZoom = oldZoom + delta * zoomSpeed;
             

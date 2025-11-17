@@ -1378,10 +1378,17 @@ function setupCanvasZoomAndPan() {
             // 检测是否为触控板
             const isTouchpad = (Math.abs(e.deltaY) < 50 || Math.abs(e.deltaX) < 50) && e.deltaMode === 0;
             
-            // 滚动系数
+            // 滚动系数 - 根据缩放比例动态调整
             let scrollFactor = 1.0 / (CanvasState.zoom || 1);
+            
+            // 根据缩放比例动态调整基础系数，让不同缩放级别下的滚动感觉更一致
+            const zoomAdjustment = Math.pow(CanvasState.zoom || 1, 0.3); // 使用较小的指数，减少缩放对速率的影响
+            scrollFactor *= zoomAdjustment;
+            
             if (isTouchpad) {
-                scrollFactor *= 1.4; // 触控板提升灵敏度
+                scrollFactor *= 0.7; // 触控板降低灵敏度（从1.4降到0.7）
+            } else {
+                scrollFactor *= 0.8; // 鼠标滚轮也稍微降低一点灵敏度
             }
             
             const prevPanX = CanvasState.panOffsetX;
@@ -2547,18 +2554,27 @@ function handleCanvasCustomScroll(event) {
         CanvasState.inertiaState.lastTime = currentTime;
     }
     
-    // 触控板双指拖动优化：提升灵敏度和平滑度
+    // 触控板双指拖动优化：根据缩放比例调整灵敏度
     let scrollFactor = 1.0 / (CanvasState.zoom || 1);
+    
+    // 根据缩放比例动态调整基础系数，让不同缩放级别下的滚动感觉更一致
+    // 缩放越大（放大状态），滚动速率应该越慢；缩放越小（缩小状态），滚动速率应该越快
+    const zoomAdjustment = Math.pow(CanvasState.zoom || 1, 0.3); // 使用较小的指数，减少缩放对速率的影响
+    scrollFactor *= zoomAdjustment;
+    
     if (isTouchpad) {
-        // 触控板使用更高的滚动系数，提升响应速度
-        scrollFactor *= 1.4; // 提升40%的灵敏度
+        // 触控板使用适中的滚动系数（降低灵敏度）
+        scrollFactor *= 0.7; // 降低灵敏度（从1.4降到0.7）
         
-        // 根据滚动速度动态调整响应：快速滚动时更敏感
+        // 根据滚动速度动态调整响应：快速滚动时略微提升（减少加成幅度）
         const scrollSpeed = Math.sqrt(horizontalDelta * horizontalDelta + verticalDelta * verticalDelta);
-        if (scrollSpeed > 5) {
-            const speedBoost = Math.min(1.3, 1 + (scrollSpeed - 5) / 100);
+        if (scrollSpeed > 8) { // 提高阈值（从5到8）
+            const speedBoost = Math.min(1.15, 1 + (scrollSpeed - 8) / 200); // 减少加成幅度
             scrollFactor *= speedBoost;
         }
+    } else {
+        // 鼠标滚轮也应用缩放调整，但保持相对较快的响应
+        scrollFactor *= 0.8; // 鼠标滚轮也稍微降低一点灵敏度
     }
     
     // 累积滚动增量

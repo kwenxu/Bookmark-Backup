@@ -103,7 +103,8 @@ const CanvasState = {
             startLeft: 0,
             startTop: 0,
             minWidth: 0,
-            minHeight: 0
+            minHeight: 0,
+            waitForSecondRightClick: false
         }
     },
     // 画布缩放和平移
@@ -391,6 +392,7 @@ function startSectionResize(element, event) {
     state.startTop = meta.y;
     state.minWidth = meta.type === 'permanent-section' ? 300 : (meta.type === 'md-node' ? 180 : 200);
     state.minHeight = meta.type === 'permanent-section' ? 200 : (meta.type === 'md-node' ? 140 : 150);
+    state.waitForSecondRightClick = true; // 第二次右键才结束
 
     element.classList.add('resizing');
     const overlay = registerSectionCtrlOverlay(element);
@@ -449,6 +451,7 @@ function endCtrlResize(force) {
     state.element = null;
     state.type = null;
     state.data = null;
+    state.waitForSecondRightClick = false;
 }
 
 function handleCtrlOverlayMouseDown(e) {
@@ -457,6 +460,14 @@ function handleCtrlOverlayMouseDown(e) {
     if (!host) return;
     e.preventDefault();
     e.stopPropagation();
+
+    const resizeState = CanvasState.sectionCtrlMode && CanvasState.sectionCtrlMode.resize;
+
+    if (resizeState && resizeState.active && resizeState.waitForSecondRightClick && e.button === 2) {
+        // 第二次右键点击，结束缩放
+        endCtrlResize(false);
+        return;
+    }
 
     if (e.button === 0) {
         startSectionDrag(host, e);
@@ -6138,8 +6149,8 @@ function setupCanvasEventListeners() {
     
     // 鼠标释放
     document.addEventListener('mouseup', (e) => {
+        // Ctrl 缩放使用“第二次右键结束”，因此 mouseup 不结束，防止首右键立即结束
         if (CanvasState.sectionCtrlMode && CanvasState.sectionCtrlMode.resize && CanvasState.sectionCtrlMode.resize.active && e.button === 2) {
-            endCtrlResize(false);
             e.preventDefault();
             e.stopPropagation();
             return;

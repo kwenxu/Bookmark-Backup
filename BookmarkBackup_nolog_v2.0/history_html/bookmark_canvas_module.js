@@ -301,6 +301,11 @@ function registerSectionCtrlOverlay(element) {
             }
         });
         overlay.addEventListener('wheel', (e) => {
+            // 允许 Ctrl+滚轮 进行画布缩放，不阻止
+            if (e.ctrlKey || e.metaKey) {
+                return;
+            }
+            // 其他情况下，如果在Ctrl模式中，阻止默认滚动
             if (CanvasState.sectionCtrlMode && CanvasState.sectionCtrlMode.active) {
                 e.preventDefault();
                 e.stopPropagation();
@@ -3194,9 +3199,37 @@ function makePermanentSectionDraggable() {
             return;
         }
 
-        if (!isSectionCtrlModeEvent(e) || e.button !== 0) return;
+        // Ctrl模式下，通过overlay处理；非Ctrl模式下，直接拖动
+        if (isSectionCtrlModeEvent(e)) {
+            // Ctrl模式下的拖动由overlay接管
+            return;
+        }
 
-        startSectionDrag(permanentSection, e);
+        // 正常拖动（非Ctrl模式）
+        if (e.button !== 0) return;
+
+        const currentLeft = parseFloat(permanentSection.style.left) || 0;
+        const currentTop = parseFloat(permanentSection.style.top) || 0;
+
+        CanvasState.dragState.isDragging = true;
+        CanvasState.dragState.draggedElement = permanentSection;
+        CanvasState.dragState.dragSource = 'permanent-section';
+        CanvasState.dragState.dragStartX = e.clientX;
+        CanvasState.dragState.dragStartY = e.clientY;
+        CanvasState.dragState.nodeStartX = currentLeft;
+        CanvasState.dragState.nodeStartY = currentTop;
+        CanvasState.dragState.lastClientX = e.clientX;
+        CanvasState.dragState.lastClientY = e.clientY;
+        CanvasState.dragState.hasMoved = false;
+        CanvasState.dragState.meta = null;
+        
+        permanentSection.classList.add('dragging');
+        permanentSection.style.transform = 'none';
+        permanentSection.style.transition = 'none';
+
+        CanvasState.dragState.wheelScrollEnabled = true;
+        
+        e.preventDefault();
     };
     
     // 使用捕获阶段确保事件优先处理，mousemove用冒泡阶段提高性能
@@ -3774,7 +3807,6 @@ function makeMdNodeDraggable(element, node) {
         if (node && node.isEditing) return; // 编辑模式下不允许拖动
         const target = e.target;
         if (!target) return;
-        if (!isSectionCtrlModeEvent(e) || e.button !== 0) return;
         
         // 编辑、resize、连接点、链接时不拖动
         if (target.closest('.md-canvas-editor') || 
@@ -3784,6 +3816,14 @@ function makeMdNodeDraggable(element, node) {
             target.closest('a')) {
             return;
         }
+
+        // Ctrl模式下，通过overlay处理
+        if (isSectionCtrlModeEvent(e)) {
+            return;
+        }
+
+        // 正常拖动
+        if (e.button !== 0) return;
         
         // 在查看态区域内也允许按下后拖动（滚动用 wheel 事件处理；链接在下方单独保护）
         // 不再因存在滚动条而提前 return；通过移动阈值来区分点击/拖动
@@ -3802,8 +3842,20 @@ function makeMdNodeDraggable(element, node) {
             document.removeEventListener('mousemove', onMove);
             document.removeEventListener('mouseup', onUp);
 
-            // 真正开始拖动
-            startSectionDrag(element, ev);
+            // 真正开始拖动（非Ctrl模式）
+            CanvasState.dragState.isDragging = true;
+            CanvasState.dragState.draggedElement = element;
+            CanvasState.dragState.dragStartX = startX;
+            CanvasState.dragState.dragStartY = startY;
+            CanvasState.dragState.nodeStartX = node.x;
+            CanvasState.dragState.nodeStartY = node.y;
+            CanvasState.dragState.dragSource = 'temp-node';
+            
+            CanvasState.dragState.wheelScrollEnabled = true;
+            
+            element.classList.add('dragging');
+            element.style.transition = 'none';
+            ev.preventDefault();
         };
 
         const onUp = () => {
@@ -5335,7 +5387,6 @@ function makeNodeDraggable(element, section) {
     const onMouseDown = (e) => {
         const target = e.target;
         if (!target) return;
-        if (!isSectionCtrlModeEvent(e) || e.button !== 0) return;
         
         if (target.closest('.temp-node-action-btn') ||
             target.classList.contains('temp-node-color-input') ||
@@ -5345,10 +5396,31 @@ function makeNodeDraggable(element, section) {
             return;
         }
 
+        // Ctrl模式下，通过overlay处理
+        if (isSectionCtrlModeEvent(e)) {
+            return;
+        }
+
+        // 正常拖动
+        if (e.button !== 0) return;
+
         lastClientX = e.clientX;
         lastClientY = e.clientY;
 
-        startSectionDrag(element, e);
+        CanvasState.dragState.isDragging = true;
+        CanvasState.dragState.draggedElement = element;
+        CanvasState.dragState.dragStartX = e.clientX;
+        CanvasState.dragState.dragStartY = e.clientY;
+        CanvasState.dragState.nodeStartX = section.x;
+        CanvasState.dragState.nodeStartY = section.y;
+        CanvasState.dragState.dragSource = 'temp-node';
+        
+        CanvasState.dragState.wheelScrollEnabled = true;
+        
+        element.classList.add('dragging');
+        element.style.transition = 'none';
+        
+        e.preventDefault();
     };
     
     header.addEventListener('mousedown', onMouseDown, true);

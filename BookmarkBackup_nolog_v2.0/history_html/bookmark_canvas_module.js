@@ -3377,8 +3377,11 @@ function makePermanentSectionResizable(element) {
         handle.addEventListener('mousedown', (e) => {
             // 永久栏目不使用 node 对象；如需禁用缩放，可通过 data-locked 控制
             if (element && element.dataset && element.dataset.locked === 'true') return;
-            if (!isSectionCtrlModeEvent(e)) return;
-            if (e.button !== 0 && e.button !== 2) return;
+            
+            // Ctrl模式下，resize由overlay接管
+            if (isSectionCtrlModeEvent(e)) return;
+            
+            if (e.button !== 0) return;
             e.stopPropagation();
             e.preventDefault();
             
@@ -3514,8 +3517,10 @@ function makeTempNodeResizable(element, node) {
         let startX, startY, startWidth, startHeight, startLeft, startTop;
         
         handle.addEventListener('mousedown', (e) => {
-            if (!isSectionCtrlModeEvent(e)) return;
-            if (e.button !== 0 && e.button !== 2) return;
+            // Ctrl模式下，resize由overlay接管
+            if (isSectionCtrlModeEvent(e)) return;
+            
+            if (e.button !== 0) return;
             e.stopPropagation();
             e.preventDefault();
             

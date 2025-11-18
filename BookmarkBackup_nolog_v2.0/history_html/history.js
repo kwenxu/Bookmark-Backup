@@ -2021,9 +2021,20 @@ function initSidebarToggle() {
 function switchView(view) {
     console.log('[switchView] 切换视图到:', view);
     
+    const previousView = currentView;
+    
     // 处理旧的 'tree' 命名
     if (view === 'tree') {
         view = 'canvas';
+    }
+    
+    // 当从 Canvas 视图切换到其他视图时，尝试更新一次缩略图
+    if (previousView === 'canvas' && view !== 'canvas') {
+        try {
+            captureCanvasThumbnail();
+        } catch (e) {
+            console.warn('[Canvas Thumbnail] switchView 捕获失败:', e);
+        }
     }
     
     // 更新全局变量
@@ -2053,6 +2064,33 @@ function switchView(view) {
     
     // 渲染当前视图
     renderCurrentView();
+}
+
+// 捕获当前窗口中 Bookmark Canvas 页面的可见区域，并保存为主界面缩略图
+function captureCanvasThumbnail() {
+    try {
+        // 仅在 Canvas 视图下尝试截屏
+        if (currentView !== 'canvas') return;
+        if (!browserAPI || !browserAPI.tabs || !browserAPI.tabs.captureVisibleTab) return;
+
+        browserAPI.tabs.captureVisibleTab(null, { format: 'png' }, (dataUrl) => {
+            try {
+                if (!dataUrl) return;
+                browserAPI.storage.local.set({ bookmarkCanvasThumbnail: dataUrl }, () => {
+                    const err = browserAPI.runtime && browserAPI.runtime.lastError;
+                    if (err) {
+                        console.warn('[Canvas Thumbnail] 保存缩略图失败:', err.message || err);
+                    } else {
+                        console.log('[Canvas Thumbnail] 缩略图已更新并保存');
+                    }
+                });
+            } catch (e) {
+                console.warn('[Canvas Thumbnail] 保存缩略图时出错:', e);
+            }
+        });
+    } catch (error) {
+        console.warn('[Canvas Thumbnail] 截图失败:', error);
+    }
 }
 
 function renderCurrentView() {
@@ -2109,6 +2147,14 @@ function renderCurrentView() {
             if (window.CanvasModule) {
                 window.CanvasModule.init();
             }
+            // 4. Canvas 视图渲染完成后，尝试捕获一次缩略图
+            setTimeout(() => {
+                try {
+                    captureCanvasThumbnail();
+                } catch (e) {
+                    console.warn('[Canvas Thumbnail] renderCurrentView 捕获失败:', e);
+                }
+            }, 500);
             break;
     }
 }

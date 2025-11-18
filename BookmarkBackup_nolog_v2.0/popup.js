@@ -5331,6 +5331,9 @@ console.log('手动备份按钮显示状态:', manualButtonsContainer ? manualBu
         autoSyncToggle2.setAttribute('data-listener-attached', 'true');
     }
 
+    // 初始化 Bookmark Toolbox（画布缩略图 + 最近添加）
+    initializeBookmarkToolbox();
+
     // 初始化重置按钮 (确保只绑定一次)
     const resetAllButton = document.getElementById('resetAll');
     const resetConfirmDialog = document.getElementById('resetConfirmDialog');
@@ -6423,5 +6426,248 @@ updateSyncHistory(); // 更新显示
             };
             showStatus(noteSavedText[currentLang] || noteSavedText['zh_CN'], 'success');
         });
+    });
+}
+
+// =============================================================================
+// Bookmark Toolbox：画布缩略图 + 最近添加
+// =============================================================================
+
+function initializeBookmarkToolbox() {
+    const canvasContainer = document.getElementById('bookmarkCanvas');
+    const canvasThumbnailContainer = document.getElementById('canvasThumbnail');
+    const recentListContainer = document.getElementById('recentBookmarks');
+
+    if (!canvasContainer || !canvasThumbnailContainer || !recentListContainer) {
+        return;
+    }
+
+    // 点击画布缩略图，直接打开 Bookmark Canvas 视图
+    canvasContainer.addEventListener('click', () => {
+        try {
+            const url = chrome.runtime.getURL('history_html/history.html?view=canvas');
+            chrome.tabs.create({ url });
+        } catch (e) {
+            console.warn('[Bookmark Toolbox] 打开 Canvas 视图失败:', e);
+        }
+    });
+
+    // 加载并显示最新保存的 Canvas 缩略图
+    chrome.storage.local.get(['bookmarkCanvasThumbnail'], (data) => {
+        try {
+            const thumbnail = data.bookmarkCanvasThumbnail;
+            if (!thumbnail || typeof thumbnail !== 'string') {
+                return;
+            }
+
+            canvasThumbnailContainer.innerHTML = '';
+            const img = document.createElement('img');
+            img.src = thumbnail;
+            img.alt = 'Bookmark Canvas Thumbnail';
+            img.style.width = '100%';
+            img.style.height = '100%';
+            img.style.objectFit = 'cover';
+            img.style.borderRadius = '4px';
+            canvasThumbnailContainer.appendChild(img);
+        } catch (e) {
+            console.warn('[Bookmark Toolbox] 显示 Canvas 缩略图失败:', e);
+        }
+    });
+
+    // 加载最近添加的书签（数据来源与历史页面的“书签添加记录”一致）
+    loadRecentBookmarkAdditions(recentListContainer);
+}
+
+function flattenBookmarkTreeForRecent(node, parentPath = '') {
+    const bookmarks = [];
+    const currentPath = parentPath ? `${parentPath}/${node.title}` : node.title;
+
+    if (node.url) {
+        bookmarks.push({
+            id: node.id,
+            title: node.title,
+            url: node.url,
+            dateAdded: node.dateAdded,
+            path: currentPath,
+            parentId: node.parentId
+        });
+    }
+
+    if (node.children) {
+        node.children.forEach(child => {
+            bookmarks.push(...flattenBookmarkTreeForRecent(child, currentPath));
+        });
+    }
+
+    return bookmarks;
+}
+
+function isBookmarkBackedUpForRecent(bookmark, lastBackupTime) {
+    if (!lastBackupTime) return false;
+    if (typeof bookmark.dateAdded !== 'number') return false;
+    return bookmark.dateAdded <= lastBackupTime;
+}
+
+function getRecentFaviconFallback() {
+    return 'data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 16 16%22%3E%3Cpath fill=%22%23999%22 d=%22M8 0l2.8 5.5 6.2 0.5-4.5 4 1.5 6-5.5-3.5-5.5 3.5 1.5-6-4.5-4 6.2-0.5z%22/%3E%3C/svg%3E';
+}
+
+function loadFaviconForRecent(imgElement, url) {
+    try {
+        if (!url || !(url.startsWith('http://') || url.startsWith('https://'))) {
+            imgElement.src = getRecentFaviconFallback();
+            return;
+        }
+
+        const urlObj = new URL(url);
+        const domain = urlObj.hostname;
+        const faviconSources = [
+            `${urlObj.protocol}//${domain}/favicon.ico`,
+            `https://icons.duckduckgo.com/ip3/${domain}.ico`,
+            `https://www.google.com/s2/favicons?domain=${domain}&sz=32`
+        ];
+
+        let index = 0;
+
+        const tryNext = () => {
+            if (index >= faviconSources.length) {
+                imgElement.src = getRecentFaviconFallback();
+                return;
+            }
+
+            const testImg = new Image();
+            const src = faviconSources[index];
+            index += 1;
+
+            let timeoutId = setTimeout(() => {
+                testImg.onload = null;
+                testImg.onerror = null;
+                tryNext();
+            }, 3000);
+
+            testImg.onload = () => {
+                clearTimeout(timeoutId);
+                imgElement.src = src;
+            };
+
+            testImg.onerror = () => {
+                clearTimeout(timeoutId);
+                tryNext();
+            };
+
+            testImg.src = src;
+        };
+
+        // 先使用本地 fallback，异步尝试真实 favicon
+        imgElement.src = getRecentFaviconFallback();
+        tryNext();
+    } catch (e) {
+        imgElement.src = getRecentFaviconFallback();
+    }
+}
+
+function renderRecentBookmarkItems(container, bookmarks, currentLang) {
+    container.innerHTML = '';
+
+    if (!bookmarks || bookmarks.length === 0) {
+        const empty = document.createElement('div');
+        empty.style.textAlign = 'center';
+        empty.style.padding = '10px';
+        empty.style.color = 'var(--theme-text-secondary)';
+        empty.style.fontSize = '11px';
+
+        const icon = document.createElement('i');
+        icon.className = 'fas fa-bookmark';
+        icon.style.fontSize = '18px';
+        icon.style.opacity = '0.3';
+        icon.style.marginBottom = '4px';
+        icon.style.display = 'block';
+
+        const text = document.createElement('div');
+        text.textContent = currentLang === 'en' ? 'No new bookmarks' : '暂无新增书签';
+
+        empty.appendChild(icon);
+        empty.appendChild(text);
+        container.appendChild(empty);
+        return;
+    }
+
+    bookmarks.forEach(bookmark => {
+        const item = document.createElement('div');
+        item.className = 'bookmark-item';
+
+        const iconImg = document.createElement('img');
+        iconImg.alt = '';
+        loadFaviconForRecent(iconImg, bookmark.url);
+
+        const titleDiv = document.createElement('div');
+        titleDiv.className = 'bookmark-item-title';
+        titleDiv.textContent = bookmark.title || bookmark.url || (currentLang === 'en' ? '(No title)' : '（无标题）');
+
+        item.appendChild(iconImg);
+        item.appendChild(titleDiv);
+
+        item.addEventListener('click', () => {
+            try {
+                if (bookmark.url) {
+                    chrome.tabs.create({ url: bookmark.url });
+                }
+            } catch (e) {
+                console.warn('[Bookmark Toolbox] 打开书签失败:', e);
+            }
+        });
+
+        container.appendChild(item);
+    });
+}
+
+function loadRecentBookmarkAdditions(container) {
+    chrome.storage.local.get(['lastSyncTime', 'preferredLang'], (storageData) => {
+        const currentLang = storageData.preferredLang || 'zh_CN';
+        let lastBackupTime = null;
+        if (storageData.lastSyncTime) {
+            try {
+                lastBackupTime = new Date(storageData.lastSyncTime).getTime();
+            } catch (_) {
+                lastBackupTime = null;
+            }
+        }
+
+        try {
+            chrome.bookmarks.getTree((tree) => {
+                try {
+                    if (!tree || !tree.length) {
+                        renderRecentBookmarkItems(container, [], currentLang);
+                        return;
+                    }
+
+                    const root = tree[0];
+                    const allBookmarks = flattenBookmarkTreeForRecent(root);
+
+                    let candidates = allBookmarks.filter(b => b.url);
+
+                    // 与“书签添加记录”视图保持一致：优先展示未备份的新增书签
+                    const additions = candidates.filter(b => !isBookmarkBackedUpForRecent(b, lastBackupTime));
+                    if (additions.length > 0) {
+                        candidates = additions;
+                    }
+
+                    candidates.sort((a, b) => {
+                        const aTime = typeof a.dateAdded === 'number' ? a.dateAdded : 0;
+                        const bTime = typeof b.dateAdded === 'number' ? b.dateAdded : 0;
+                        return bTime - aTime;
+                    });
+
+                    const recent = candidates.slice(0, 3);
+                    renderRecentBookmarkItems(container, recent, currentLang);
+                } catch (e) {
+                    console.warn('[Bookmark Toolbox] 处理书签数据失败:', e);
+                    renderRecentBookmarkItems(container, [], currentLang);
+                }
+            });
+        } catch (e) {
+            console.warn('[Bookmark Toolbox] 获取书签树失败:', e);
+            renderRecentBookmarkItems(container, [], currentLang);
+        }
     });
 }

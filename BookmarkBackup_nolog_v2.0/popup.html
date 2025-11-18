@@ -2374,54 +2374,7 @@
                     
                     <!-- 横向布局：左侧纵向标题 + 右侧内容区 -->
                     <div style="display: flex; flex-direction: row; gap: 4px; flex: 1;">
-                        <!-- 左侧纵向标题栏 -->
-                        <div style="
-                            flex: 0 0 20px;
-                            display: flex;
-                            flex-direction: column;
-                            gap: 10px;
-                        ">
-                            <!-- Canvas 标题 (占70%) -->
-                            <div style="
-                                flex: 7;
-                                display: flex;
-                                align-items: center;
-                                justify-content: center;
-                            ">
-                                <div style="
-                                    writing-mode: vertical-lr;
-                                    text-orientation: mixed;
-                                    font-size: 12px;
-                                    font-weight: 600;
-                                    color: var(--theme-text-primary);
-                                    letter-spacing: 1px;
-                                    transform: rotate(180deg);
-                                ">
-                                    <span>Bookmark Canvas</span>
-                                </div>
-                            </div>
-                            <!-- Addition 标题 (占30%) -->
-                            <div style="
-                                flex: 3;
-                                display: flex;
-                                align-items: center;
-                                justify-content: center;
-                            ">
-                                <div style="
-                                    writing-mode: vertical-lr;
-                                    text-orientation: mixed;
-                                    font-size: 12px;
-                                    font-weight: 600;
-                                    color: var(--theme-text-primary);
-                                    letter-spacing: 1px;
-                                    transform: rotate(180deg);
-                                ">
-                                    <span>Recent Additions</span>
-                                </div>
-                            </div>
-                        </div>
-                        
-                        <!-- 右侧 7/3 纵向内容布局 -->
+                        <!-- 右侧 7/3 纵向内容布局（移除左侧文字标题栏后占满宽度） -->
                         <div style="display: flex; flex-direction: column; gap: 10px; flex: 1;">
                         <!-- Bookmark Canvas 区域 (70% 高度) -->
                         <div id="bookmarkCanvas" class="toolbox-canvas" style="

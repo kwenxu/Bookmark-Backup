@@ -2075,6 +2075,12 @@ function captureCanvasThumbnail() {
 
         browserAPI.tabs.captureVisibleTab(null, { format: 'png' }, (dataUrl) => {
             try {
+                const captureError = browserAPI.runtime && browserAPI.runtime.lastError;
+                if (captureError) {
+                    console.warn('[Canvas Thumbnail] 截图失败:', captureError.message || captureError);
+                    return;
+                }
+
                 if (!dataUrl) return;
                 browserAPI.storage.local.set({ bookmarkCanvasThumbnail: dataUrl }, () => {
                     const err = browserAPI.runtime && browserAPI.runtime.lastError;

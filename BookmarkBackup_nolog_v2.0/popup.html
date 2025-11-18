@@ -2318,7 +2318,7 @@
                 </div>
 
                 <!-- 第二行：C（备份检查记录历史）和 D（书签工具箱）水平对齐 -->
-                <div style="display: flex; gap: 15px; align-items: flex-start;">
+                <div style="display: flex; gap: 15px; align-items: stretch;">
                     <!-- C：备份检查记录历史 -->
                     <div class="sync-history" style="margin: 0; flex: 0 0 calc(60% - 7.5px); padding: 12px 10px 12px 20px;">
                         <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
@@ -2368,7 +2368,7 @@
                         </div>
                         
                         <!-- 内容区域 -->
-                        <div style="display: flex; flex-direction: column; gap: 10px; flex: 1;">
+                        <div style="display: flex; flex-direction: column; gap: 12px; flex: 1;">
                             <!-- Bookmark Canvas 区域 (70% 高度) -->
                             <div style="flex: 7; display: flex; flex-direction: column;">
                                 <h4 style="margin: 0 0 6px 0; font-size: 12px; color: var(--theme-text-primary); font-weight: 500; text-align: left;">
@@ -2408,8 +2408,8 @@
                             </div>
                             
                             <!-- Bookmark Addition 区域 (30% 高度) -->
-                            <div style="flex: 3; display: flex; flex-direction: column;">
-                                <h4 style="margin: 0 0 6px 0; font-size: 12px; color: var(--theme-text-primary); font-weight: 500; text-align: left;">
+                            <div style="flex: 3; display: flex; flex-direction: column; justify-content: space-between;">
+                                <h4 style="margin: 4px 0 6px 0; font-size: 12px; color: var(--theme-text-primary); font-weight: 500; text-align: left;">
                                     <span id="bookmarkAdditionTitle">2. Bookmark Addition</span>
                                 </h4>
                                 <div id="bookmarkAddition" class="toolbox-addition" style="
@@ -2421,6 +2421,7 @@
                                     display: flex;
                                     flex-direction: column;
                                     overflow: hidden;
+                                    margin-bottom: 4px;
                                 ">
                                     <div id="recentBookmarks" class="recent-bookmarks-list" style="
                                         flex: 1;

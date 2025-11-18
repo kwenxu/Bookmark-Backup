@@ -2091,7 +2091,7 @@ function captureCanvasThumbnail() {
 
                 if (!dataUrl) return;
 
-                // 在当前页面内按 canvas-main-container 的 rect 进行裁剪
+                // 在当前页面内按书签画布主容器（不含标题栏）的 rect 进行裁剪
                 try {
                     const container = document.querySelector('.canvas-main-container');
                     if (!container) {
@@ -2190,6 +2190,10 @@ function requestCanvasThumbnailUpdate(reason) {
     }
 }
 
+// Canvas 滚动视图相关截图节流
+let canvasScrollThumbnailBound = false;
+let canvasScrollThumbnailTimer = null;
+
 function renderCurrentView() {
     // 控制缩放控制器的显示/隐藏
     const zoomIndicator = document.getElementById('canvasZoomIndicator');
@@ -2246,14 +2250,32 @@ function renderCurrentView() {
             }
 
             // 4. 首次进入或刷新 Canvas 视图后，延迟截一次图，作为当前会话的基准缩略图
-            if (typeof requestCanvasThumbnailUpdate === 'function') {
-                setTimeout(() => {
+            setTimeout(() => {
+                try {
+                    if (currentView === 'canvas') {
+                        captureCanvasThumbnail();
+                    }
+                } catch (_) {}
+            }, 800);
+
+            // 5. 绑定 Canvas 滚动截图逻辑：只在 Canvas 视图内滚动时触发 B 方案
+            const workspace = document.getElementById('canvasWorkspace');
+            if (workspace && !canvasScrollThumbnailBound) {
+                canvasScrollThumbnailBound = true;
+                workspace.addEventListener('wheel', () => {
                     try {
-                        if (currentView === 'canvas') {
-                            requestCanvasThumbnailUpdate('initial-render');
+                        if (currentView !== 'canvas') return;
+                        if (!requestCanvasThumbnailUpdate) return;
+                        if (canvasScrollThumbnailTimer) {
+                            clearTimeout(canvasScrollThumbnailTimer);
                         }
+                        // 滚动结束约 800ms 后，按 B 方案调度截图
+                        canvasScrollThumbnailTimer = setTimeout(() => {
+                            canvasScrollThumbnailTimer = null;
+                            requestCanvasThumbnailUpdate('scroll');
+                        }, 800);
                     } catch (_) {}
-                }, 800);
+                }, { passive: true });
             }
             break;
     }

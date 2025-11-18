@@ -779,6 +779,7 @@
             display: flex;
             align-items: center;
             gap: 6px;
+            min-height: 28px; /* 略微增高，3 个条目铺满区域更均衡 */
         }
         
         .bookmark-item:hover {
@@ -2423,11 +2424,11 @@
                             ">
                                 <div id="recentBookmarks" class="recent-bookmarks-list" style="
                                     flex: 1;
-                                overflow-y: auto;
-                                display: flex;
-                                flex-direction: column;
-                                gap: 6px;
-                            ">
+                                    overflow-y: hidden;
+                                    display: flex;
+                                    flex-direction: column;
+                                    gap: 6px;
+                                ">
                                 <!-- 最近添加的书签将在这里显示 -->
                                 <div style="
                                     text-align: center;

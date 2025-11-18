@@ -6471,7 +6471,8 @@ function initializeBookmarkToolbox() {
             img.alt = 'Bookmark Canvas Thumbnail';
             img.style.width = '100%';
             img.style.height = '100%';
-            img.style.objectFit = 'cover';
+            // 使用 contain，保证完整显示整个画布截图，不再二次裁剪
+            img.style.objectFit = 'contain';
             img.style.borderRadius = '4px';
             canvasThumbnailContainer.appendChild(img);
         } catch (e) {

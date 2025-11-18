@@ -700,7 +700,6 @@
             border-radius: 8px;
             border: 1px solid var(--theme-border-primary); /* Use CSS variable for border color */
             box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);  /* 增加阴影效果 */
-            width: 61.5%;  /* 继续压缩宽度到62% */
             box-sizing: border-box;  /* 确保padding不会增加总宽度 */
             position: relative;    /* 添加相对定位 */
             z-index: 1;           /* 确保阴影效果可见 */
@@ -2262,13 +2261,13 @@
         </div>
 
         <div id="syncStatus" class="sync-status" style="display: none;">
-            <!-- 新的布局：A组(左侧60%) + B组(右侧40%) -->
-            <div style="display: flex; gap: 15px; align-items: flex-start;">
-                <!-- A组：左侧 60% - 包含备份模式切换和历史记录 -->
-                <div style="flex: 0 0 60%; display: flex; flex-direction: column; gap: 15px;">
-                    <!-- 备份模式切换区域 -->
-                    <div class="sync-controls" style="margin: 0; background-color: transparent; border-radius: 8px; padding: 15px 20px; border: 1px solid var(--theme-border-primary); box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);">
-                        <div id="backupModeSwitch" class="backup-mode-switch auto">
+            <!-- 新的布局：第一行A+B，第二行C+D -->
+            <div style="display: flex; flex-direction: column; gap: 15px;">
+                <!-- 第一行：A（备份模式切换区域，包含B状态卡片在右侧）-->
+                <div class="sync-controls" style="margin: 0; background-color: transparent; border-radius: 8px; padding: 15px 20px; border: 1px solid var(--theme-border-primary); box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05); display: flex; gap: 15px; align-items: stretch;">
+                    <!-- A的主要内容：备份模式切换 -->
+                    <div style="flex: 1; display: flex; align-items: stretch;">
+                        <div id="backupModeSwitch" class="backup-mode-switch auto" style="width: 100%;">
                             <div class="backup-mode-slider"></div>
                             <div class="backup-mode-option auto-option">
                                 <span class="option-label" id="autoOptionLabel">自动备份</span>
@@ -2293,8 +2292,33 @@
                         </div>
                     </div>
 
-                    <!-- 备份检查记录历史 -->
-                    <div class="sync-history" style="margin: 0; width: 100%; padding: 12px 10px 12px 20px;">
+                    <!-- B：状态卡片（移到A的右侧）-->
+                    <div id="rightStatusContainer" style="flex: 0 0 calc(40% - 7.5px);">
+                        <div id="change-description-row" class="status-card" style="
+                            padding: 12px;
+                            border-radius: 12px;
+                            height: 110px;
+                            display: flex;
+                            align-items: center;
+                            justify-content: center;
+                            font-size: 14px;
+                            font-weight: 600;
+                            text-align: center;
+                            transition: all 0.3s ease;
+                            box-sizing: border-box;
+                            cursor: pointer;
+                            position: relative;
+                        " title="点击查看详细变化">
+                            <div id="statusCardText">自动备份模式</div>
+                            <i class="fas fa-chevron-right" style="position: absolute; right: 12px; opacity: 0.5; font-size: 16px;"></i>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 第二行：C（备份检查记录历史）和 D（书签工具箱）水平对齐 -->
+                <div style="display: flex; gap: 15px; align-items: flex-start;">
+                    <!-- C：备份检查记录历史 -->
+                    <div class="sync-history" style="margin: 0; flex: 0 0 calc(60% - 7.5px); padding: 12px 10px 12px 20px;">
                         <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
                             <h3 style="margin: 0;">备份检查记录</h3>
                             <div style="display: flex; align-items: center; gap: 8px;">
@@ -2321,35 +2345,10 @@
                             <!-- 历史记录项将通过JavaScript添加 -->
                         </div>
                     </div>
-                </div>
 
-                <!-- B组：右侧 40% - 包含状态卡片和书签工具箱 -->
-                <div style="flex: 0 0 40%; display: flex; flex-direction: column; gap: 15px;">
-                    <!-- 状态卡片 -->
-                    <div id="rightStatusContainer" style="width: 100%;">
-                        <div id="change-description-row" class="status-card" style="
-                            padding: 12px;
-                            border-radius: 12px;
-                            height: 110px;
-                            display: flex;
-                            align-items: center;
-                            justify-content: center;
-                            font-size: 14px;
-                            font-weight: 600;
-                            text-align: center;
-                            transition: all 0.3s ease;
-                            box-sizing: border-box;
-                            cursor: pointer;
-                            position: relative;
-                        " title="点击查看详细变化">
-                            <div id="statusCardText">自动备份模式</div>
-                            <i class="fas fa-chevron-right" style="position: absolute; right: 12px; opacity: 0.5; font-size: 16px;"></i>
-                        </div>
-                    </div>
-
-                    <!-- Bookmark Toolbox 区块 -->
+                    <!-- D：Bookmark Toolbox 区块 -->
                     <div id="bookmarkToolbox" class="bookmark-toolbox" style="
-                        width: 100%;
+                        flex: 0 0 calc(40% - 7.5px);
                         padding: 12px 20px;
                         background-color: var(--theme-bg-elevated);
                         border-radius: 8px;
@@ -2358,7 +2357,6 @@
                         box-sizing: border-box;
                         display: flex;
                         flex-direction: column;
-                        flex: 1;
                     ">
                         <!-- 大标题 -->
                         <div style="margin-bottom: 12px;">

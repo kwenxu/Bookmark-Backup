@@ -736,9 +736,70 @@
             box-shadow: 0 6px 16px rgba(0, 0, 0, 0.12) !important;
         }
         
-        .toolbox-content {
+        .toolbox-canvas:hover {
+            background-color: var(--theme-bg-tertiary) !important;
+            box-shadow: 0 2px 8px rgba(0, 123, 255, 0.15);
+        }
+        
+        .toolbox-addition {
             scrollbar-width: thin;
             scrollbar-color: var(--theme-scrollbar-thumb) var(--theme-scrollbar-track);
+        }
+        
+        .recent-bookmarks-list {
+            scrollbar-width: thin;
+            scrollbar-color: var(--theme-scrollbar-thumb) var(--theme-scrollbar-track);
+        }
+        
+        .recent-bookmarks-list::-webkit-scrollbar {
+            width: 4px;
+        }
+        
+        .recent-bookmarks-list::-webkit-scrollbar-track {
+            background: var(--theme-scrollbar-track);
+            border-radius: 2px;
+        }
+        
+        .recent-bookmarks-list::-webkit-scrollbar-thumb {
+            background: var(--theme-scrollbar-thumb);
+            border-radius: 2px;
+        }
+        
+        .recent-bookmarks-list::-webkit-scrollbar-thumb:hover {
+            background: var(--theme-scrollbar-thumb-hover);
+        }
+        
+        .bookmark-item {
+            padding: 6px 8px;
+            background-color: var(--theme-bg-elevated);
+            border-radius: 4px;
+            border: 1px solid var(--theme-border-primary);
+            cursor: pointer;
+            transition: all 0.2s ease;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+        
+        .bookmark-item:hover {
+            background-color: var(--theme-bg-tertiary);
+            border-color: #007AFF;
+            transform: translateX(-2px);
+        }
+        
+        .bookmark-item img {
+            width: 14px;
+            height: 14px;
+            flex-shrink: 0;
+        }
+        
+        .bookmark-item-title {
+            font-size: 11px;
+            color: var(--theme-text-primary);
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+            flex: 1;
         }
 
         /* 列表标题行 */
@@ -870,25 +931,21 @@
          }
 
         /* 美化滚动条样式 */
-        .history-list::-webkit-scrollbar,
-        .toolbox-content::-webkit-scrollbar {
+        .history-list::-webkit-scrollbar {
             width: 6px;         /* 滚动条宽度 */
         }
 
-        .history-list::-webkit-scrollbar-track,
-        .toolbox-content::-webkit-scrollbar-track {
+        .history-list::-webkit-scrollbar-track {
             background: var(--theme-scrollbar-track);  /* 滚动条轨道 */
             border-radius: 3px;
         }
 
-        .history-list::-webkit-scrollbar-thumb,
-        .toolbox-content::-webkit-scrollbar-thumb {
+        .history-list::-webkit-scrollbar-thumb {
             background: var(--theme-scrollbar-thumb);     /* 滚动条滑块 */
             border-radius: 3px;
         }
 
-        .history-list::-webkit-scrollbar-thumb:hover,
-        .toolbox-content::-webkit-scrollbar-thumb:hover {
+        .history-list::-webkit-scrollbar-thumb:hover {
             background: var(--theme-scrollbar-thumb-hover);     /* 滚动条滑块悬停 */
         }
 
@@ -2298,36 +2355,138 @@
                 <!-- Bookmark Toolbox 区块 -->
                 <div id="bookmarkToolbox" class="bookmark-toolbox" style="
                     flex: 1;
-                    padding: 12px 15px;
+                    padding: 12px 10px 12px 0;
                     background-color: var(--theme-bg-elevated);
                     border-radius: 8px;
                     border: 1px solid var(--theme-border-primary);
                     box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
                     box-sizing: border-box;
-                    min-height: 370px;
+                    height: 378px;
+                    display: flex;
+                    flex-direction: column;
                 ">
-                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
+                    <!-- 大标题横向显示在上方 -->
+                    <div style="flex: 0 0 auto; margin-bottom: 8px; padding-left: 26px;">
                         <h3 style="margin: 0; font-size: 14px; color: var(--theme-text-primary); font-weight: 500;">
-                            <i class="fas fa-toolbox" style="margin-right: 6px; color: #007AFF;"></i>
                             <span id="bookmarkToolboxTitle">Bookmark Toolbox</span>
                         </h3>
                     </div>
-                    <div id="toolboxContent" class="toolbox-content" style="
-                        height: calc(100% - 38px);
-                        overflow-y: auto;
-                        display: flex;
-                        flex-direction: column;
-                        gap: 8px;
-                    ">
-                        <!-- 工具箱内容将在这里添加 -->
+                    
+                    <!-- 横向布局：左侧纵向标题 + 右侧内容区 -->
+                    <div style="display: flex; flex-direction: row; gap: 4px; flex: 1;">
+                        <!-- 左侧纵向标题栏 -->
                         <div style="
-                            text-align: center;
-                            padding: 40px 20px;
-                            color: var(--theme-text-secondary);
-                            font-size: 13px;
+                            flex: 0 0 20px;
+                            display: flex;
+                            flex-direction: column;
+                            gap: 10px;
                         ">
-                            <i class="fas fa-wrench" style="font-size: 32px; opacity: 0.3; margin-bottom: 12px;"></i>
-                            <div>工具箱功能开发中...</div>
+                            <!-- Canvas 标题 (占70%) -->
+                            <div style="
+                                flex: 7;
+                                display: flex;
+                                align-items: center;
+                                justify-content: center;
+                            ">
+                                <div style="
+                                    writing-mode: vertical-lr;
+                                    text-orientation: mixed;
+                                    font-size: 12px;
+                                    font-weight: 600;
+                                    color: var(--theme-text-primary);
+                                    letter-spacing: 1px;
+                                    transform: rotate(180deg);
+                                ">
+                                    <span>Bookmark Canvas</span>
+                                </div>
+                            </div>
+                            <!-- Addition 标题 (占30%) -->
+                            <div style="
+                                flex: 3;
+                                display: flex;
+                                align-items: center;
+                                justify-content: center;
+                            ">
+                                <div style="
+                                    writing-mode: vertical-lr;
+                                    text-orientation: mixed;
+                                    font-size: 12px;
+                                    font-weight: 600;
+                                    color: var(--theme-text-primary);
+                                    letter-spacing: 1px;
+                                    transform: rotate(180deg);
+                                ">
+                                    <span>Recent Additions</span>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <!-- 右侧 7/3 纵向内容布局 -->
+                        <div style="display: flex; flex-direction: column; gap: 10px; flex: 1;">
+                        <!-- Bookmark Canvas 区域 (70% 高度) -->
+                        <div id="bookmarkCanvas" class="toolbox-canvas" style="
+                            flex: 7;
+                            background-color: var(--theme-bg-secondary);
+                            border-radius: 6px;
+                            border: 1px solid var(--theme-border-primary);
+                            padding: 10px;
+                            cursor: pointer;
+                            transition: all 0.2s ease;
+                            overflow: hidden;
+                            display: flex;
+                            align-items: center;
+                            justify-content: center;
+                        " title="点击进入书签画布">
+                            <div id="canvasThumbnail" style="
+                                width: 100%;
+                                height: 100%;
+                                background-color: var(--theme-bg-primary);
+                                border-radius: 4px;
+                                display: flex;
+                                align-items: center;
+                                justify-content: center;
+                                color: var(--theme-text-secondary);
+                                font-size: 12px;
+                                position: relative;
+                                overflow: hidden;
+                            ">
+                                <div style="text-align: center;">
+                                    <i class="fas fa-images" style="font-size: 24px; opacity: 0.3; margin-bottom: 8px;"></i>
+                                    <div>画布缩略图</div>
+                                </div>
+                            </div>
+                        </div>
+                        
+                            <!-- Bookmark Addition 区域 (30% 高度) -->
+                            <div id="bookmarkAddition" class="toolbox-addition" style="
+                                flex: 3;
+                                background-color: var(--theme-bg-secondary);
+                                border-radius: 6px;
+                                border: 1px solid var(--theme-border-primary);
+                                padding: 10px;
+                                display: flex;
+                                flex-direction: column;
+                                overflow: hidden;
+                            ">
+                                <div id="recentBookmarks" class="recent-bookmarks-list" style="
+                                    flex: 1;
+                                overflow-y: auto;
+                                display: flex;
+                                flex-direction: column;
+                                gap: 6px;
+                            ">
+                                <!-- 最近添加的书签将在这里显示 -->
+                                <div style="
+                                    text-align: center;
+                                    padding: 10px;
+                                    color: var(--theme-text-secondary);
+                                    font-size: 11px;
+                                ">
+                                    <i class="fas fa-bookmark" style="font-size: 18px; opacity: 0.3; margin-bottom: 4px;"></i>
+                                    <div>暂无新增书签</div>
+                                </div>
+                                </div>
+                            </div>
                         </div>
                     </div>
                 </div>

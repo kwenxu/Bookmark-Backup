@@ -6452,18 +6452,20 @@ function initializeBookmarkToolbox() {
         }
     });
 
-    // 加载并显示最新保存的 Canvas 缩略图（含默认占位图）
+    // 直接同步读取最新缩略图，保证主 UI 打开时立即显示
     chrome.storage.local.get(['bookmarkCanvasThumbnail'], (data) => {
         try {
             const thumbnail = data.bookmarkCanvasThumbnail;
             if (!thumbnail || typeof thumbnail !== 'string') {
-                // 没有缩略图时，可以考虑显示一个占位样式（当前保持空白）
+                // 没有缩略图时，显示占位样式
                 canvasThumbnailContainer.innerHTML = '';
-                canvasThumbnailContainer.style.background = 'repeating-linear-gradient(45deg, #f6f8fa, #f6f8fa 10px, #eaeef2 10px, #eaeef2 20px)';
+                canvasThumbnailContainer.style.background =
+                    'repeating-linear-gradient(45deg, #f6f8fa, #f6f8fa 10px, #eaeef2 10px, #eaeef2 20px)';
                 return;
             }
 
             canvasThumbnailContainer.innerHTML = '';
+            canvasThumbnailContainer.style.background = 'none';
             const img = document.createElement('img');
             img.src = thumbnail;
             img.alt = 'Bookmark Canvas Thumbnail';

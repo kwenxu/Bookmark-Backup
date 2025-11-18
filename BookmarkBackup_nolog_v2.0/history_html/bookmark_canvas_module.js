@@ -5713,6 +5713,21 @@ function clearAllTempNodes() {
     CanvasState.mdNodeCounter = 0;
     
     saveTempNodes();
+    // 清空画布内容后，同时清理缩略图（下次主UI会显示占位样式或新的截图）
+    if (typeof window !== 'undefined' && window.browserAPI && window.browserAPI.storage && window.browserAPI.storage.local) {
+        try {
+            window.browserAPI.storage.local.remove('bookmarkCanvasThumbnail', () => {
+                const err = window.browserAPI.runtime && window.browserAPI.runtime.lastError;
+                if (err) {
+                    console.warn('[Canvas Thumbnail] 清理缩略图失败:', err.message || err);
+                } else {
+                    console.log('[Canvas Thumbnail] 已清理缩略图（clearAllTempNodes）');
+                }
+            });
+        } catch (_) {
+            // 忽略清理错误
+        }
+    }
     updateCanvasScrollBounds();
     updateScrollbarThumbs();
 }
@@ -6664,6 +6679,15 @@ function saveTempNodes() {
             timestamp: Date.now()
         };
         localStorage.setItem(TEMP_SECTION_STORAGE_KEY, JSON.stringify(state));
+
+        // 每次画布状态持久化后，尝试调度一次缩略图更新（带去抖）
+        if (typeof window !== 'undefined' && typeof window.requestCanvasThumbnailUpdate === 'function') {
+            try {
+                window.requestCanvasThumbnailUpdate('saveTempNodes');
+            } catch (e) {
+                // 缩略图更新失败不影响正常保存，静默处理
+            }
+        }
     } catch (error) {
         console.error('[Canvas] 保存临时栏目失败:', error);
     }

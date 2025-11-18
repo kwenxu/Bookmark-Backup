@@ -2031,7 +2031,11 @@ function switchView(view) {
     // 当从 Canvas 视图切换到其他视图时，尝试更新一次缩略图
     if (previousView === 'canvas' && view !== 'canvas') {
         try {
-            captureCanvasThumbnail();
+            if (typeof requestCanvasThumbnailUpdate === 'function') {
+                requestCanvasThumbnailUpdate('switch-view');
+            } else {
+                captureCanvasThumbnail();
+            }
         } catch (e) {
             console.warn('[Canvas Thumbnail] switchView 捕获失败:', e);
         }
@@ -2166,6 +2170,26 @@ function captureCanvasThumbnail() {
     }
 }
 
+// 供 Canvas 模块调用的去抖更新入口
+let canvasThumbnailUpdateTimer = null;
+function requestCanvasThumbnailUpdate(reason) {
+    try {
+        if (canvasThumbnailUpdateTimer) {
+            clearTimeout(canvasThumbnailUpdateTimer);
+        }
+        canvasThumbnailUpdateTimer = setTimeout(() => {
+            canvasThumbnailUpdateTimer = null;
+            try {
+                captureCanvasThumbnail();
+            } catch (e) {
+                console.warn('[Canvas Thumbnail] requestCanvasThumbnailUpdate 调用失败:', e, 'reason:', reason);
+            }
+        }, 1500); // 1.5 秒内合并多次修改
+    } catch (e) {
+        // 忽略去抖调度错误
+    }
+}
+
 function renderCurrentView() {
     // 控制缩放控制器的显示/隐藏
     const zoomIndicator = document.getElementById('canvasZoomIndicator');
@@ -2220,14 +2244,17 @@ function renderCurrentView() {
             if (window.CanvasModule) {
                 window.CanvasModule.init();
             }
-            // 4. Canvas 视图渲染完成后，尝试捕获一次缩略图
-            setTimeout(() => {
-                try {
-                    captureCanvasThumbnail();
-                } catch (e) {
-                    console.warn('[Canvas Thumbnail] renderCurrentView 捕获失败:', e);
-                }
-            }, 500);
+
+            // 4. 首次进入或刷新 Canvas 视图后，延迟截一次图，作为当前会话的基准缩略图
+            if (typeof requestCanvasThumbnailUpdate === 'function') {
+                setTimeout(() => {
+                    try {
+                        if (currentView === 'canvas') {
+                            requestCanvasThumbnailUpdate('initial-render');
+                        }
+                    } catch (_) {}
+                }, 800);
+            }
             break;
     }
 }
@@ -6632,6 +6659,15 @@ function setupRealtimeMessageListener() {
                 }).catch(() => {
                     // 静默处理错误
                 });
+            }
+        } else if (message.action === 'captureCanvasThumbnailNow') {
+            // 主 UI 请求当前 Canvas 立即截图
+            if (currentView === 'canvas') {
+                try {
+                    captureCanvasThumbnail();
+                } catch (e) {
+                    console.warn('[Canvas Thumbnail] 即时截图失败:', e);
+                }
             }
         } else if (message.action === 'clearExplicitMoved') {
             try {

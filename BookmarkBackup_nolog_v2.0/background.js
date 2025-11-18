@@ -309,7 +309,8 @@ browserAPI.runtime.onInstalled.addListener(async (details) => { // 添加 async 
             const currentData = await browserAPI.storage.local.get([
                 'lastBookmarkData',
                 'lastCalculatedDiff',
-                'lastSyncStats' // 可选：也初始化 lastSyncStats
+                'lastSyncStats', // 可选：也初始化 lastSyncStats
+                'bookmarkCanvasThumbnail'
             ]);
             const updateObj = {};
             if (!currentData.lastBookmarkData) {
@@ -320,6 +321,42 @@ browserAPI.runtime.onInstalled.addListener(async (details) => { // 添加 async 
             }
             if (!currentData.lastSyncStats) {
                  updateObj.lastSyncStats = null; // 明确设为 null
+            }
+            // 首次安装时，为 Bookmark Canvas 预置一个默认缩略图（简易占位图）
+            if (details.reason === 'install' && !currentData.bookmarkCanvasThumbnail) {
+                try {
+                    const canvas = new OffscreenCanvas(320, 200);
+                    const ctx = canvas.getContext('2d');
+                    if (ctx) {
+                        // 背景
+                        ctx.fillStyle = '#0d1117';
+                        ctx.fillRect(0, 0, 320, 200);
+                        // 网格点（模仿 Canvas 背景）
+                        ctx.fillStyle = '#30363d';
+                        for (let x = 0; x < 320; x += 24) {
+                            for (let y = 0; y < 200; y += 24) {
+                                ctx.beginPath();
+                                ctx.arc(x + 0.5, y + 0.5, 0.5, 0, Math.PI * 2);
+                                ctx.fill();
+                            }
+                        }
+                        // 中央一个简易节点矩形
+                        ctx.fillStyle = '#1f6feb';
+                        ctx.fillRect(80, 60, 160, 80);
+                        ctx.fillStyle = '#f0f6fc';
+                        ctx.font = '14px sans-serif';
+                        ctx.textAlign = 'center';
+                        ctx.textBaseline = 'middle';
+                        ctx.fillText('Bookmark Canvas', 160, 100);
+
+                        const blob = await canvas.convertToBlob({ type: 'image/png' });
+                        const arrayBuffer = await blob.arrayBuffer();
+                        const base64 = btoa(String.fromCharCode(...new Uint8Array(arrayBuffer)));
+                        updateObj.bookmarkCanvasThumbnail = `data:image/png;base64,${base64}`;
+                    }
+                } catch (e) {
+                    // 默认图生成失败就忽略，使用后续真实截图覆盖
+                }
             }
 
             if (Object.keys(updateObj).length > 0) {

@@ -2067,12 +2067,16 @@ function switchView(view) {
 }
 
 // 捕获当前窗口中 Bookmark Canvas 页面的可见区域，并保存为主界面缩略图
+// 注意：为了实现「只截画布容器」，这里采用两级方案：
+// 1）优先在页面内按 .canvas-main-container 的 rect 进行裁剪；
+// 2）若裁剪失败，则退回整页截图（保持兼容性）。
 function captureCanvasThumbnail() {
     try {
         // 仅在 Canvas 视图下尝试截屏
         if (currentView !== 'canvas') return;
         if (!browserAPI || !browserAPI.tabs || !browserAPI.tabs.captureVisibleTab) return;
 
+        // 使用 tabs.captureVisibleTab 先拿整页截图，再在内容页内裁剪
         browserAPI.tabs.captureVisibleTab(null, { format: 'png' }, (dataUrl) => {
             try {
                 const captureError = browserAPI.runtime && browserAPI.runtime.lastError;
@@ -2082,14 +2086,77 @@ function captureCanvasThumbnail() {
                 }
 
                 if (!dataUrl) return;
-                browserAPI.storage.local.set({ bookmarkCanvasThumbnail: dataUrl }, () => {
-                    const err = browserAPI.runtime && browserAPI.runtime.lastError;
-                    if (err) {
-                        console.warn('[Canvas Thumbnail] 保存缩略图失败:', err.message || err);
-                    } else {
-                        console.log('[Canvas Thumbnail] 缩略图已更新并保存');
+
+                // 在当前页面内按 canvas-main-container 的 rect 进行裁剪
+                try {
+                    const container = document.querySelector('.canvas-main-container');
+                    if (!container) {
+                        // 找不到容器，直接保存整页截图作为兜底
+                        browserAPI.storage.local.set({ bookmarkCanvasThumbnail: dataUrl }, () => {
+                            const err = browserAPI.runtime && browserAPI.runtime.lastError;
+                            if (err) {
+                                console.warn('[Canvas Thumbnail] 保存缩略图失败:', err.message || err);
+                            } else {
+                                console.log('[Canvas Thumbnail] 已保存整页缩略图（未找到容器）');
+                            }
+                        });
+                        return;
                     }
-                });
+
+                    const rect = container.getBoundingClientRect();
+                    const pageWidth = window.innerWidth || document.documentElement.clientWidth;
+                    const scale = 1; // 目前默认缩放为1，后续如有需要可读写 storage 中的缩放倍率
+
+                    const img = new Image();
+                    img.onload = () => {
+                        try {
+                            const canvas = document.createElement('canvas');
+                            // 按容器宽高裁剪
+                            canvas.width = rect.width * scale;
+                            canvas.height = rect.height * scale;
+                            const ctx = canvas.getContext('2d');
+                            if (!ctx) {
+                                console.warn('[Canvas Thumbnail] 无法获取 2D 上下文，退回整页截图');
+                                browserAPI.storage.local.set({ bookmarkCanvasThumbnail: dataUrl }, () => {});
+                                return;
+                            }
+
+                            // 计算截图和页面之间的缩放比（captureVisibleTab 生成的图片宽度 / 当前页面宽度）
+                            const ratio = img.width / pageWidth;
+                            const sx = rect.left * ratio;
+                            const sy = rect.top * ratio;
+                            const sw = rect.width * ratio;
+                            const sh = rect.height * ratio;
+
+                            ctx.drawImage(
+                                img,
+                                sx, sy, sw, sh,
+                                0, 0, canvas.width, canvas.height
+                            );
+
+                            const croppedDataUrl = canvas.toDataURL('image/png');
+                            browserAPI.storage.local.set({ bookmarkCanvasThumbnail: croppedDataUrl }, () => {
+                                const err = browserAPI.runtime && browserAPI.runtime.lastError;
+                                if (err) {
+                                    console.warn('[Canvas Thumbnail] 保存裁剪缩略图失败:', err.message || err);
+                                } else {
+                                    console.log('[Canvas Thumbnail] 已保存画布容器裁剪后的缩略图');
+                                }
+                            });
+                        } catch (e) {
+                            console.warn('[Canvas Thumbnail] 裁剪缩略图时出错，退回整页截图:', e);
+                            browserAPI.storage.local.set({ bookmarkCanvasThumbnail: dataUrl }, () => {});
+                        }
+                    };
+                    img.onerror = () => {
+                        console.warn('[Canvas Thumbnail] 缩略图图片加载失败，退回整页截图');
+                        browserAPI.storage.local.set({ bookmarkCanvasThumbnail: dataUrl }, () => {});
+                    };
+                    img.src = dataUrl;
+                } catch (cropError) {
+                    console.warn('[Canvas Thumbnail] 裁剪逻辑异常，退回整页截图:', cropError);
+                    browserAPI.storage.local.set({ bookmarkCanvasThumbnail: dataUrl }, () => {});
+                }
             } catch (e) {
                 console.warn('[Canvas Thumbnail] 保存缩略图时出错:', e);
             }

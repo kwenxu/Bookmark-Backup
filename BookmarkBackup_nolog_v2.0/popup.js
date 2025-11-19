@@ -6517,9 +6517,6 @@ function initializeBookmarkToolbox() {
             const thumbnail = data.bookmarkCanvasThumbnail;
             const lang = data.preferredLang || 'zh_CN';
             const isEN = (lang === 'en');
-            const isMac = typeof navigator !== 'undefined' &&
-                navigator.platform &&
-                navigator.platform.toLowerCase().includes('mac');
 
             canvasThumbnailContainer.innerHTML = '';
 
@@ -6537,9 +6534,32 @@ function initializeBookmarkToolbox() {
 
                 const line2 = document.createElement('div');
                 line2.style.marginTop = '4px';
-                line2.textContent = isEN
-                    ? (isMac ? 'Shortcut: Option + 3' : 'Shortcut: Alt + 3')
-                    : (isMac ? '快捷键：Option + 3' : '快捷键：Alt + 3');
+                // 动态读取当前快捷键（来自浏览器快捷键设置），否则回退到默认描述
+                const fallbackShortcut = 'Alt+3';
+                if (chrome.commands && chrome.commands.getAll) {
+                    try {
+                        chrome.commands.getAll((commands) => {
+                            let shortcut = fallbackShortcut;
+                            if (Array.isArray(commands)) {
+                                const cmd = commands.find(c => c.name === 'open_canvas_view');
+                                if (cmd && cmd.shortcut) {
+                                    shortcut = cmd.shortcut;
+                                }
+                            }
+                            line2.textContent = isEN
+                                ? `Shortcut: ${shortcut}`
+                                : `快捷键：${shortcut}`;
+                        });
+                    } catch (_) {
+                        line2.textContent = isEN
+                            ? `Shortcut: ${fallbackShortcut}`
+                            : `快捷键：${fallbackShortcut}`;
+                    }
+                } else {
+                    line2.textContent = isEN
+                        ? `Shortcut: ${fallbackShortcut}`
+                        : `快捷键：${fallbackShortcut}`;
+                }
 
                 wrapper.appendChild(line1);
                 wrapper.appendChild(line2);

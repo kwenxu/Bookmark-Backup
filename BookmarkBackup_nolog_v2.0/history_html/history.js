@@ -745,6 +745,10 @@ const i18n = {
         'zh_CN': '功能',
         'en': 'Action'
     },
+    shortcutsSettingsTooltip: {
+        'zh_CN': '在浏览器中管理快捷键',
+        'en': 'Manage shortcuts in browser'
+    },
     shortcutCurrentChanges: {
         'zh_CN': '打开「当前 数量/结构 变化」视图',
         'en': 'Open "Current Changes" view'
@@ -1381,44 +1385,7 @@ function applyLanguage() {
     }
     const shortcutsContent = document.getElementById('shortcutsContent');
     if (shortcutsContent) {
-        const isMac = navigator.platform && navigator.platform.toLowerCase().includes('mac');
-        const key1 = isMac ? 'Option + 1' : 'Alt + 1';
-        const key2 = isMac ? 'Option + 2' : 'Alt + 2';
-        const key3 = isMac ? 'Option + 3' : 'Alt + 3';
-        const key4 = isMac ? 'Option + 4' : 'Alt + 4';
-        shortcutsContent.innerHTML = `
-            <div class="shortcuts-card">
-                <div class="shortcuts-section">
-                    <div>${i18n.shortcutsTitle[currentLang]}</div>
-                    <table>
-                        <thead>
-                            <tr>
-                                <th>${i18n.shortcutsTableHeaderKey[currentLang]}</th>
-                                <th>${i18n.shortcutsTableHeaderAction[currentLang]}</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            <tr>
-                                <td><kbd>${key1}</kbd></td>
-                                <td>${i18n.shortcutCurrentChanges[currentLang]}</td>
-                            </tr>
-                            <tr>
-                                <td><kbd>${key2}</kbd></td>
-                                <td>${i18n.shortcutHistory[currentLang]}</td>
-                            </tr>
-                            <tr>
-                                <td><kbd>${key3}</kbd></td>
-                                <td>${i18n.shortcutCanvas[currentLang]}</td>
-                            </tr>
-                            <tr>
-                                <td><kbd>${key4}</kbd></td>
-                                <td>${i18n.shortcutAdditions[currentLang]}</td>
-                            </tr>
-                        </tbody>
-                    </table>
-                </div>
-            </div>
-        `;
+        updateShortcutsDisplay();
     }
     const closeShortcutsText = document.getElementById('closeShortcutsText');
     if (closeShortcutsText) {
@@ -1480,6 +1447,9 @@ function initializeUI() {
     const closeShortcutsModal = document.getElementById('closeShortcutsModal');
     if (helpToggle && shortcutsModal) {
         helpToggle.addEventListener('click', () => {
+            if (typeof updateShortcutsDisplay === 'function') {
+                updateShortcutsDisplay();
+            }
             shortcutsModal.classList.add('show');
         });
     }

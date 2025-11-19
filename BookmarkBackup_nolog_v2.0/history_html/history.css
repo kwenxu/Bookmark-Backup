@@ -251,7 +251,7 @@ body {
 }
 
 .shortcuts-header .modal-close {
-    margin-top: 6px; /* 略向下对齐标题基线 */
+    margin-top: 4px; /* 略向下对齐标题基线 */
 }
 
 .shortcuts-section {
@@ -277,6 +277,34 @@ body {
     border-top: 1px solid var(--border-subtle, rgba(148, 163, 184, 0.6));
 }
 
+.shortcuts-header-row {
+    display: flex;
+    align-items: center;
+    justify-content: flex-start;
+    gap: 6px;
+    margin-bottom: 4px;
+}
+
+.shortcuts-settings-btn {
+    border: none;
+    background: transparent;
+    padding: 0;
+    cursor: pointer;
+    color: var(--accent-primary);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    margin-left: 2px;
+}
+
+.shortcuts-settings-btn:hover {
+    color: var(--accent-hover);
+}
+
+.shortcuts-settings-btn i {
+    font-size: 12px;
+}
+
 .shortcuts-section table {
     width: 100%;
     border-collapse: collapse;
@@ -293,6 +321,21 @@ body {
 .shortcuts-section th {
     color: var(--text-secondary, #9ca3af);
     font-weight: 500;
+}
+
+.shortcuts-section td.shortcuts-key-cell {
+    white-space: nowrap;
+    width: 1%;
+    padding-right: 4px;
+    vertical-align: top;
+}
+
+.shortcuts-section td.shortcuts-action-cell {
+    padding-left: 4px;
+}
+
+.shortcuts-section tbody tr:nth-child(even) {
+    background: var(--bg-tertiary);
 }
 
 .shortcuts-section td kbd {

@@ -3714,9 +3714,36 @@ const applyLocalizedContent = async (lang) => { // Added lang parameter
         'en': "(<span style=\"color: var(--theme-success-color);\">Manual mode</span> requires clicking the right button to backup)"
     };
 
+    // Bookmark Toolbox（D 区域）相关 tooltip
+    const bookmarkCanvasTooltipStrings = {
+        'zh_CN': "点击进入书签画布",
+        'en': "Open Bookmark Canvas"
+    };
+
+    const bookmarkAdditionTooltipStrings = {
+        'zh_CN': "查看最近新增的三个书签",
+        'en': "View 3 most recently added bookmarks"
+    };
+
     const historyRecordsDescriptionStrings = {
         'zh_CN': "备份检查记录",
         'en': "Backup History"
+    };
+
+    // Bookmark Toolbox（D 区域）标题
+    const bookmarkToolboxTitleStrings = {
+        'zh_CN': "书签工具箱",
+        'en': "Bookmark Toolbox"
+    };
+
+    const bookmarkCanvasTitleStrings = {
+        'zh_CN': "1. 书签画布",
+        'en': "1. Bookmark Canvas"
+    };
+
+    const bookmarkAdditionTitleStrings = {
+        'zh_CN': "2. 最近新增书签",
+        'en': "2. Bookmark Addition"
     };
 
     const openHistoryViewerStrings = {
@@ -4717,6 +4744,37 @@ const currentLang = data.preferredLang || 'zh_CN';
         historyHeaders[0].textContent = timeColumnStrings[lang] || timeColumnStrings['zh_CN'];
         historyHeaders[1].textContent = quantityColumnStrings[lang] || quantityColumnStrings['zh_CN'];
         historyHeaders[2].textContent = statusColumnStrings[lang] || statusColumnStrings['zh_CN'];
+    }
+
+    // Bookmark Toolbox（D）区域标题：总标题 + D1 + D2
+    const bookmarkToolboxTitleEl = document.getElementById('bookmarkToolboxTitle');
+    if (bookmarkToolboxTitleEl) {
+        bookmarkToolboxTitleEl.textContent = bookmarkToolboxTitleStrings[lang] || bookmarkToolboxTitleStrings['zh_CN'];
+    }
+
+    const bookmarkCanvasTitleEl = document.getElementById('bookmarkCanvasTitle');
+    if (bookmarkCanvasTitleEl) {
+        bookmarkCanvasTitleEl.textContent = bookmarkCanvasTitleStrings[lang] || bookmarkCanvasTitleStrings['zh_CN'];
+    }
+
+    const bookmarkAdditionTitleEl = document.getElementById('bookmarkAdditionTitle');
+    if (bookmarkAdditionTitleEl) {
+        bookmarkAdditionTitleEl.textContent = bookmarkAdditionTitleStrings[lang] || bookmarkAdditionTitleStrings['zh_CN'];
+    }
+
+    // Bookmark Toolbox（D）区域 tooltip：D1 书签画布 & D2 最近新增的三个书签
+    const bookmarkCanvasElement = document.getElementById('bookmarkCanvas');
+    if (bookmarkCanvasElement) {
+        const canvasTip = bookmarkCanvasTooltipStrings[lang] || bookmarkCanvasTooltipStrings['zh_CN'];
+        bookmarkCanvasElement.setAttribute('title', canvasTip);
+        bookmarkCanvasElement.setAttribute('aria-label', canvasTip);
+    }
+
+    const bookmarkAdditionElement = document.getElementById('bookmarkAddition');
+    if (bookmarkAdditionElement) {
+        const additionTip = bookmarkAdditionTooltipStrings[lang] || bookmarkAdditionTooltipStrings['zh_CN'];
+        bookmarkAdditionElement.setAttribute('title', additionTip);
+        bookmarkAdditionElement.setAttribute('aria-label', additionTip);
     }
 
 

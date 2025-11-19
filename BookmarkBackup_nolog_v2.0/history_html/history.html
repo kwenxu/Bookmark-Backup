@@ -46,6 +46,11 @@
                     <span class="lang-text">EN</span>
                     <span class="btn-tooltip" id="langTooltip"></span>
                 </button>
+                <!-- 说明按钮：快捷键 & 开源信息 -->
+                <button id="helpToggle" class="tool-btn">
+                    <i class="fas fa-question-circle"></i>
+                    <span class="btn-tooltip" id="helpTooltip"></span>
+                </button>
             </div>
         </div>
     </header>
@@ -107,6 +112,41 @@
 
         <!-- 右侧内容区域 -->
         <main class="content-area">
+            <!-- 快捷键与开源信息弹窗 -->
+            <div id="shortcutsModal" class="modal">
+                <div class="modal-content shortcuts-modal">
+                    <h2 id="shortcutsModalTitle"></h2>
+                    <div id="openSourceInfo" class="shortcuts-section open-source-section">
+                        <div class="shortcuts-card">
+                            <div style="display: flex; flex-direction: column; gap: 10px;">
+                                <div>
+                                    <p id="openSourceGithubLabel" style="font-size: 14px; color: var(--text-secondary); margin: 0 0 4px 0;">GitHub 仓库:</p>
+                                    <a id="openSourceGithubLink" href="https://github.com/kwenxu/Bookmark-Backup?tab=readme-ov-file#readme" target="_blank" style="display: block; padding: 8px 12px; background-color: var(--bg-tertiary); border-radius: 6px; color: var(--link-color); text-decoration: none; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">
+                                        <i class="fab fa-github" style="margin-right: 5px;"></i>
+                                        https://github.com/kwenxu/Bookmark-Backup
+                                    </a>
+                                </div>
+                                
+                                <div>
+                                    <p id="openSourceIssueLabel" style="font-size: 14px; color: var(--text-secondary); margin: 0 0 4px 0;">问题反馈:</p>
+                                    <a id="openSourceIssueLink" href="https://github.com/kwenxu/Bookmark-Backup/issues" target="_blank" style="display: block; padding: 8px 12px; background-color: var(--bg-tertiary); border-radius: 6px; color: var(--link-color); text-decoration: none;">
+                                        <i class="fas fa-exclamation-circle" style="margin-right: 5px;"></i>
+                                        <span id="openSourceIssueText">提交问题</span>
+                                    </a>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    <hr class="shortcuts-divider" />
+                    <div id="shortcutsContent" class="shortcuts-section"></div>
+                    <div class="shortcuts-footer">
+                        <button id="closeShortcutsModal" class="view-action-btn">
+                            <span id="closeShortcutsText"></span>
+                        </button>
+                    </div>
+                </div>
+            </div>
+
             <!-- 当前变化视图 -->
             <div id="current-changesView" class="view">
                 <div class="view-header">

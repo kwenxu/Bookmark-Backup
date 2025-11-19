@@ -597,6 +597,10 @@ const i18n = {
         'zh_CN': '搜索书签、文件夹...',
         'en': 'Search bookmarks, folders...'
     },
+    helpTooltip: {
+        'zh_CN': '快捷键与开源信息',
+        'en': 'Shortcuts & Open Source Info'
+    },
     navCurrentChanges: {
         'zh_CN': '当前 数量/结构 变化',
         'en': 'Current Changes'
@@ -712,6 +716,54 @@ const i18n = {
     modalTitle: {
         'zh_CN': '变化详情',
         'en': 'Change Details'
+    },
+    shortcutsModalTitle: {
+        'zh_CN': '开源信息与快捷键',
+        'en': 'Open Source Info & Shortcuts'
+    },
+    openSourceGithubLabel: {
+        'zh_CN': 'GitHub 仓库:',
+        'en': 'GitHub Repository:'
+    },
+    openSourceIssueLabel: {
+        'zh_CN': '问题反馈:',
+        'en': 'Feedback / Issues:'
+    },
+    openSourceIssueText: {
+        'zh_CN': '提交问题',
+        'en': 'Submit Issue'
+    },
+    shortcutsTitle: {
+        'zh_CN': '当前可用快捷键',
+        'en': 'Available Shortcuts'
+    },
+    shortcutsTableHeaderKey: {
+        'zh_CN': '按键',
+        'en': 'Key'
+    },
+    shortcutsTableHeaderAction: {
+        'zh_CN': '功能',
+        'en': 'Action'
+    },
+    shortcutCurrentChanges: {
+        'zh_CN': '打开「当前 数量/结构 变化」视图',
+        'en': 'Open "Current Changes" view'
+    },
+    shortcutHistory: {
+        'zh_CN': '打开「备份历史」视图',
+        'en': 'Open "Backup History" view'
+    },
+    shortcutCanvas: {
+        'zh_CN': '打开「书签画布」视图',
+        'en': 'Open "Bookmark Canvas" view'
+    },
+    shortcutAdditions: {
+        'zh_CN': '打开「书签添加记录」视图',
+        'en': 'Open "Bookmark Additions" view'
+    },
+    closeShortcutsText: {
+        'zh_CN': '关闭',
+        'en': 'Close'
     },
     autoBackup: {
         'zh_CN': '自动',
@@ -1163,7 +1215,10 @@ async function loadUserSettings() {
     return new Promise((resolve) => {
         browserAPI.storage.local.get(['preferredLang', 'currentTheme'], (result) => {
             const mainUILang = result.preferredLang || 'zh_CN';
-            const mainUITheme = result.currentTheme || 'light';
+            const prefersDark = typeof window !== 'undefined'
+                && window.matchMedia
+                && window.matchMedia('(prefers-color-scheme: dark)').matches;
+            const mainUITheme = result.currentTheme || (prefersDark ? 'dark' : 'light');
             
             // 优先使用覆盖设置，否则使用主UI设置
             if (hasThemeOverride()) {
@@ -1302,6 +1357,73 @@ function applyLanguage() {
     document.getElementById('refreshTooltip').textContent = i18n.refreshTooltip[currentLang];
     document.getElementById('themeTooltip').textContent = i18n.themeTooltip[currentLang];
     document.getElementById('langTooltip').textContent = i18n.langTooltip[currentLang];
+    const helpTooltip = document.getElementById('helpTooltip');
+    if (helpTooltip) {
+        helpTooltip.textContent = i18n.helpTooltip[currentLang];
+    }
+
+    // 更新快捷键弹窗文本
+    const shortcutsModalTitle = document.getElementById('shortcutsModalTitle');
+    if (shortcutsModalTitle) {
+        shortcutsModalTitle.textContent = i18n.shortcutsModalTitle[currentLang];
+    }
+    const openSourceGithubLabel = document.getElementById('openSourceGithubLabel');
+    if (openSourceGithubLabel) {
+        openSourceGithubLabel.textContent = i18n.openSourceGithubLabel[currentLang];
+    }
+    const openSourceIssueLabel = document.getElementById('openSourceIssueLabel');
+    if (openSourceIssueLabel) {
+        openSourceIssueLabel.textContent = i18n.openSourceIssueLabel[currentLang];
+    }
+    const openSourceIssueText = document.getElementById('openSourceIssueText');
+    if (openSourceIssueText) {
+        openSourceIssueText.textContent = i18n.openSourceIssueText[currentLang];
+    }
+    const shortcutsContent = document.getElementById('shortcutsContent');
+    if (shortcutsContent) {
+        const isMac = navigator.platform && navigator.platform.toLowerCase().includes('mac');
+        const key1 = isMac ? 'Option + 1' : 'Alt + 1';
+        const key2 = isMac ? 'Option + 2' : 'Alt + 2';
+        const key3 = isMac ? 'Option + 3' : 'Alt + 3';
+        const key4 = isMac ? 'Option + 4' : 'Alt + 4';
+        shortcutsContent.innerHTML = `
+            <div class="shortcuts-card">
+                <div class="shortcuts-section">
+                    <div>${i18n.shortcutsTitle[currentLang]}</div>
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>${i18n.shortcutsTableHeaderKey[currentLang]}</th>
+                                <th>${i18n.shortcutsTableHeaderAction[currentLang]}</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr>
+                                <td><kbd>${key1}</kbd></td>
+                                <td>${i18n.shortcutCurrentChanges[currentLang]}</td>
+                            </tr>
+                            <tr>
+                                <td><kbd>${key2}</kbd></td>
+                                <td>${i18n.shortcutHistory[currentLang]}</td>
+                            </tr>
+                            <tr>
+                                <td><kbd>${key3}</kbd></td>
+                                <td>${i18n.shortcutCanvas[currentLang]}</td>
+                            </tr>
+                            <tr>
+                                <td><kbd>${key4}</kbd></td>
+                                <td>${i18n.shortcutAdditions[currentLang]}</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        `;
+    }
+    const closeShortcutsText = document.getElementById('closeShortcutsText');
+    if (closeShortcutsText) {
+        closeShortcutsText.textContent = i18n.closeShortcutsText[currentLang];
+    }
     
     // 更新横向滚动条提示文字
     const scrollbarHint = document.querySelector('.canvas-scrollbar.horizontal .scrollbar-hint');
@@ -1353,6 +1475,27 @@ function initializeUI() {
     document.getElementById('refreshBtn').addEventListener('click', refreshData);
     document.getElementById('themeToggle').addEventListener('click', toggleTheme);
     document.getElementById('langToggle').addEventListener('click', toggleLanguage);
+    const helpToggle = document.getElementById('helpToggle');
+    const shortcutsModal = document.getElementById('shortcutsModal');
+    const closeShortcutsModal = document.getElementById('closeShortcutsModal');
+    if (helpToggle && shortcutsModal) {
+        helpToggle.addEventListener('click', () => {
+            shortcutsModal.classList.add('show');
+        });
+    }
+    if (closeShortcutsModal && shortcutsModal) {
+        closeShortcutsModal.addEventListener('click', () => {
+            shortcutsModal.classList.remove('show');
+        });
+    }
+    // 点击弹窗外部区域关闭（只在点击遮罩本身时触发）
+    if (shortcutsModal) {
+        shortcutsModal.addEventListener('click', (e) => {
+            if (e.target === shortcutsModal) {
+                shortcutsModal.classList.remove('show');
+            }
+        });
+    }
 
     // 撤销全部按钮（当前变化和书签树）
     const revertAllCurrentBtn = document.getElementById('revertAllCurrentBtn');

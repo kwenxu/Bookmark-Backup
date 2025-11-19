@@ -335,10 +335,12 @@ body {
 
 .shortcuts-key-header {
     min-width: 60px;
+    text-align: center;
 }
 
 .shortcuts-action-header {
     flex: 1;
+    text-align: center;
 }
 
 .shortcuts-list {
@@ -351,22 +353,26 @@ body {
     display: flex;
     align-items: flex-start;
     gap: 16px; /* 按键列与功能列的水平间距 */
+    justify-content: center;
 }
 
 .shortcuts-key {
     min-width: 60px;
+    text-align: center;
 }
 
 .shortcuts-key kbd {
     display: inline-block;
     min-width: 60px;
+    text-align: center;
 }
 
 .shortcuts-action {
     flex: 1;
+    text-align: center;
 }
 
-.shortcuts-section td kbd {
+.shortcuts-section kbd {
     padding: 2px 6px;
     border-radius: 4px;
     border: 1px solid var(--border-color);

@@ -16,6 +16,7 @@
     --accent-primary: #1877f2;
     --accent-hover: #166fe5;
     --accent-light: #e7f3ff;
+    --link-color: #1877f2;
     
     --success: #42b72a;
     --success-light: #e7f5e4;
@@ -57,6 +58,7 @@
     --accent-primary: #2d88ff;
     --accent-hover: #4d9eff;
     --accent-light: #1a3a5f;
+    --link-color: #4d9eff;
     
     --success: #42b72a;
     --success-light: #1b3a1b;
@@ -234,10 +236,22 @@ body {
 }
 
 .shortcuts-modal h2 {
-    margin: 0 0 10px;
+    margin: 0;
     font-size: 18px;
     font-weight: 600;
     color: var(--accent-color, #007AFF);
+}
+
+.shortcuts-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    margin-bottom: 8px;
+}
+
+.shortcuts-header .modal-close {
+    margin-top: 6px; /* 略向下对齐标题基线 */
 }
 
 .shortcuts-section {
@@ -254,11 +268,11 @@ body {
 }
 
 .open-source-section {
-    margin: 0 0 10px 0;
+    margin: 0 0 6px 0;
 }
 
 .shortcuts-divider {
-    margin: 10px 0 12px;
+    margin: 4px 0 6px 0;
     border: 0;
     border-top: 1px solid var(--border-subtle, rgba(148, 163, 184, 0.6));
 }

@@ -115,7 +115,10 @@
             <!-- 快捷键与开源信息弹窗 -->
             <div id="shortcutsModal" class="modal">
                 <div class="modal-content shortcuts-modal">
-                    <h2 id="shortcutsModalTitle"></h2>
+                    <div class="shortcuts-header">
+                        <h2 id="shortcutsModalTitle"></h2>
+                        <button id="closeShortcutsModal" class="modal-close" aria-label="Close">×</button>
+                    </div>
                     <div id="openSourceInfo" class="shortcuts-section open-source-section">
                         <div class="shortcuts-card">
                             <div style="display: flex; flex-direction: column; gap: 10px;">
@@ -139,11 +142,6 @@
                     </div>
                     <hr class="shortcuts-divider" />
                     <div id="shortcutsContent" class="shortcuts-section"></div>
-                    <div class="shortcuts-footer">
-                        <button id="closeShortcutsModal" class="view-action-btn">
-                            <span id="closeShortcutsText"></span>
-                        </button>
-                    </div>
                 </div>
             </div>
 

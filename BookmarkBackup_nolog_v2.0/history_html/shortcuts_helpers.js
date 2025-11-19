@@ -22,32 +22,28 @@ function updateShortcutsDisplay() {
                             <i class="fas fa-external-link-alt"></i>
                         </button>
                     </div>
-                    <table>
-                        <thead>
-                            <tr>
-                                <th>${i18n.shortcutsTableHeaderKey[lang]}</th>
-                                <th>${i18n.shortcutsTableHeaderAction[lang]}</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            <tr>
-                                <td class="shortcuts-key-cell"><kbd>${key1}</kbd></td>
-                                <td class="shortcuts-action-cell">${i18n.shortcutCurrentChanges[lang]}</td>
-                            </tr>
-                            <tr>
-                                <td class="shortcuts-key-cell"><kbd>${key2}</kbd></td>
-                                <td class="shortcuts-action-cell">${i18n.shortcutHistory[lang]}</td>
-                            </tr>
-                            <tr>
-                                <td class="shortcuts-key-cell"><kbd>${key3}</kbd></td>
-                                <td class="shortcuts-action-cell">${i18n.shortcutCanvas[lang]}</td>
-                            </tr>
-                            <tr>
-                                <td class="shortcuts-key-cell"><kbd>${key4}</kbd></td>
-                                <td class="shortcuts-action-cell">${i18n.shortcutAdditions[lang]}</td>
-                            </tr>
-                        </tbody>
-                    </table>
+                    <div class="shortcuts-columns-header">
+                        <span class="shortcuts-key-header">${i18n.shortcutsTableHeaderKey[lang]}</span>
+                        <span class="shortcuts-action-header">${i18n.shortcutsTableHeaderAction[lang]}</span>
+                    </div>
+                    <div class="shortcuts-list">
+                        <div class="shortcuts-row">
+                            <div class="shortcuts-key"><kbd>${key1}</kbd></div>
+                            <div class="shortcuts-action">${i18n.shortcutCurrentChanges[lang]}</div>
+                        </div>
+                        <div class="shortcuts-row">
+                            <div class="shortcuts-key"><kbd>${key2}</kbd></div>
+                            <div class="shortcuts-action">${i18n.shortcutHistory[lang]}</div>
+                        </div>
+                        <div class="shortcuts-row">
+                            <div class="shortcuts-key"><kbd>${key3}</kbd></div>
+                            <div class="shortcuts-action">${i18n.shortcutCanvas[lang]}</div>
+                        </div>
+                        <div class="shortcuts-row">
+                            <div class="shortcuts-key"><kbd>${key4}</kbd></div>
+                            <div class="shortcuts-action">${i18n.shortcutAdditions[lang]}</div>
+                        </div>
+                    </div>
                 </div>
             </div>
         `;

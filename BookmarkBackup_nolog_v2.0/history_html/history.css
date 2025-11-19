@@ -281,7 +281,7 @@ body {
     display: flex;
     align-items: center;
     justify-content: flex-start;
-    gap: 6px;
+    gap: 6px; /* 文字与按钮之间稍微拉开一点，更明显 */
     margin-bottom: 4px;
 }
 
@@ -294,7 +294,7 @@ body {
     display: flex;
     align-items: center;
     justify-content: center;
-    margin-left: 2px;
+    margin-left: 0; /* 几乎紧贴文字 */
 }
 
 .shortcuts-settings-btn:hover {
@@ -323,19 +323,47 @@ body {
     font-weight: 500;
 }
 
-.shortcuts-section td.shortcuts-key-cell {
-    white-space: nowrap;
-    width: 1%;
-    padding-right: 4px;
-    vertical-align: top;
+/* 新的快捷键行布局（使用 flex 而不是表格单元格类） */
+.shortcuts-columns-header {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    font-size: 11px;
+    color: var(--text-secondary, #9ca3af);
+    margin-bottom: 2px;
 }
 
-.shortcuts-section td.shortcuts-action-cell {
-    padding-left: 4px;
+.shortcuts-key-header {
+    min-width: 60px;
 }
 
-.shortcuts-section tbody tr:nth-child(even) {
-    background: var(--bg-tertiary);
+.shortcuts-action-header {
+    flex: 1;
+}
+
+.shortcuts-list {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+}
+
+.shortcuts-row {
+    display: flex;
+    align-items: flex-start;
+    gap: 16px; /* 按键列与功能列的水平间距 */
+}
+
+.shortcuts-key {
+    min-width: 60px;
+}
+
+.shortcuts-key kbd {
+    display: inline-block;
+    min-width: 60px;
+}
+
+.shortcuts-action {
+    flex: 1;
 }
 
 .shortcuts-section td kbd {

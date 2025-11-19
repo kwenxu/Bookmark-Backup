@@ -18,6 +18,42 @@
       "type": "module"
    },
    "commands": {
+      "open_current_changes_view": {
+         "suggested_key": {
+            "default": "Alt+1",
+            "mac": "Alt+1",
+            "windows": "Alt+1",
+            "linux": "Alt+1"
+         },
+         "description": "Open 'Current quantity/structure changes' view"
+      },
+      "open_backup_history_view": {
+         "suggested_key": {
+            "default": "Alt+2",
+            "mac": "Alt+2",
+            "windows": "Alt+2",
+            "linux": "Alt+2"
+         },
+         "description": "Open 'Backup history' view"
+      },
+      "open_canvas_view": {
+         "suggested_key": {
+            "default": "Alt+3",
+            "mac": "Alt+3",
+            "windows": "Alt+3",
+            "linux": "Alt+3"
+         },
+         "description": "Open 'Bookmark Canvas' view"
+      },
+      "open_additions_view": {
+         "suggested_key": {
+            "default": "Alt+4",
+            "mac": "Alt+4",
+            "windows": "Alt+4",
+            "linux": "Alt+4"
+         },
+         "description": "Open 'Bookmark additions' view"
+      }
    },
    "permissions": [
       "bookmarks",

@@ -118,6 +118,40 @@ function resetOperationStatus() {
     });
 }
 
+// =================================================================================
+// Keyboard commands for opening history views (Alt/Option + 1~4)
+// =================================================================================
+
+async function openHistoryViewFromCommand(view) {
+    try {
+        const url = browserAPI.runtime.getURL(`history_html/history.html?view=${view}`);
+        await browserAPI.tabs.create({ url });
+    } catch (e) {
+        console.warn('[Commands] 打开视图失败:', view, e);
+    }
+}
+
+if (browserAPI.commands && browserAPI.commands.onCommand) {
+    browserAPI.commands.onCommand.addListener((command) => {
+        switch (command) {
+            case 'open_current_changes_view':
+                openHistoryViewFromCommand('current-changes');
+                break;
+            case 'open_backup_history_view':
+                openHistoryViewFromCommand('history');
+                break;
+            case 'open_canvas_view':
+                openHistoryViewFromCommand('canvas');
+                break;
+            case 'open_additions_view':
+                openHistoryViewFromCommand('additions');
+                break;
+            default:
+                break;
+        }
+    });
+}
+
 // 初始化操作状态跟踪
 function initializeOperationTracking() {
     // 监听书签移动事件

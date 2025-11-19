@@ -6517,6 +6517,9 @@ function initializeBookmarkToolbox() {
             const thumbnail = data.bookmarkCanvasThumbnail;
             const lang = data.preferredLang || 'zh_CN';
             const isEN = (lang === 'en');
+            const isMac = typeof navigator !== 'undefined' &&
+                navigator.platform &&
+                navigator.platform.toLowerCase().includes('mac');
 
             canvasThumbnailContainer.innerHTML = '';
 
@@ -6535,8 +6538,8 @@ function initializeBookmarkToolbox() {
                 const line2 = document.createElement('div');
                 line2.style.marginTop = '4px';
                 line2.textContent = isEN
-                    ? 'Shortcut: Option + 3'
-                    : '快捷键：Option + 3';
+                    ? (isMac ? 'Shortcut: Option + 3' : 'Shortcut: Alt + 3')
+                    : (isMac ? '快捷键：Option + 3' : '快捷键：Alt + 3');
 
                 wrapper.appendChild(line1);
                 wrapper.appendChild(line2);

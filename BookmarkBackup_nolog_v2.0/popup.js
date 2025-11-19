@@ -6511,18 +6511,40 @@ function initializeBookmarkToolbox() {
     });
 
     // 直接同步读取最新缩略图，保证主 UI 打开时立即显示
-    chrome.storage.local.get(['bookmarkCanvasThumbnail'], (data) => {
+    // 如果还没有缩略图（首次安装、从未打开 Canvas），显示文本提示
+    chrome.storage.local.get(['bookmarkCanvasThumbnail', 'preferredLang'], (data) => {
         try {
             const thumbnail = data.bookmarkCanvasThumbnail;
+            const lang = data.preferredLang || 'zh_CN';
+            const isEN = (lang === 'en');
+
+            canvasThumbnailContainer.innerHTML = '';
+
             if (!thumbnail || typeof thumbnail !== 'string') {
-                // 没有缩略图时，显示占位样式
-                canvasThumbnailContainer.innerHTML = '';
-                canvasThumbnailContainer.style.background =
-                    'repeating-linear-gradient(45deg, #f6f8fa, #f6f8fa 10px, #eaeef2 10px, #eaeef2 20px)';
+                // 没有缩略图时，显示两行文字提示
+                const wrapper = document.createElement('div');
+                wrapper.style.textAlign = 'center';
+                wrapper.style.color = 'var(--theme-text-secondary)';
+                wrapper.style.fontSize = '12px';
+
+                const line1 = document.createElement('div');
+                line1.textContent = isEN
+                    ? 'Bookmark Canvas: click to enter'
+                    : '书签画布：点击进入';
+
+                const line2 = document.createElement('div');
+                line2.style.marginTop = '4px';
+                line2.textContent = isEN
+                    ? 'Shortcut: Option + 3'
+                    : '快捷键：Option + 3';
+
+                wrapper.appendChild(line1);
+                wrapper.appendChild(line2);
+                canvasThumbnailContainer.appendChild(wrapper);
                 return;
             }
 
-            canvasThumbnailContainer.innerHTML = '';
+            // 有缩略图时显示截图
             canvasThumbnailContainer.style.background = 'none';
             const img = document.createElement('img');
             img.src = thumbnail;

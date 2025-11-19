@@ -1599,6 +1599,14 @@ a.tree-label.tree-bookmark-link:hover {
     display: flex;
 }
 
+/* 右上角快捷键二级 UI：定位在头部工具按钮正下方靠右 */
+#shortcutsModal {
+    align-items: flex-start;
+    justify-content: flex-end;
+    padding-top: 72px;  /* 约等于 header 高度，刚好在四个按钮下方 */
+    padding-right: 24px;
+}
+
 .modal-content {
     background: var(--bg-elevated);
     border-radius: 16px;
@@ -1617,6 +1625,8 @@ a.tree-label.tree-bookmark-link:hover {
     display: inline-block;
     border-radius: 10px;
     padding: 10px 10px 8px;
+    margin: 8px 0 0 0; /* 右边缘与 header 右内边距对齐 */
+    align-self: flex-start; /* 在 flex 容器中靠上对齐 */
 }
 
 .modal-header {

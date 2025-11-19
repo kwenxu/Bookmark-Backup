@@ -3742,8 +3742,8 @@ const applyLocalizedContent = async (lang) => { // Added lang parameter
     };
 
     const bookmarkAdditionTitleStrings = {
-        'zh_CN': "2. 最近新增书签",
-        'en': "2. Bookmark Addition"
+        'zh_CN': "2. 书签温故",
+        'en': "2. Bookmark Review"
     };
 
     const openHistoryViewerStrings = {
@@ -6583,7 +6583,7 @@ function initializeBookmarkToolbox() {
         }
     });
 
-    // 加载最近添加的书签（数据来源与历史页面的“书签添加记录”一致）
+    // 加载最近添加的书签（数据来源与历史页面的“书签温故”视图一致）
     loadRecentBookmarkAdditions(recentListContainer);
 }
 
@@ -6755,7 +6755,7 @@ function loadRecentBookmarkAdditions(container) {
 
                     let candidates = allBookmarks.filter(b => b.url);
 
-                    // 与“书签添加记录”视图保持一致：优先展示未备份的新增书签
+                    // 与“书签温故”视图保持一致：优先展示未备份的新增书签
                     const additions = candidates.filter(b => !isBookmarkBackedUpForRecent(b, lastBackupTime));
                     if (additions.length > 0) {
                         candidates = additions;

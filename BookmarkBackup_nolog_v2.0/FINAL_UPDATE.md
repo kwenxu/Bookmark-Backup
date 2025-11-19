@@ -22,7 +22,7 @@ Bookmark Git 区域组
 Bookmark toolbox 区域组
 ├── Bookmark Canvas    (新增！)
 ├── 书签树              (原有，保持不变)
-└── 书签添加记录        (原有)
+└── 书签温故        (原有)
 ```
 
 ## 🎯 两个视图的区别

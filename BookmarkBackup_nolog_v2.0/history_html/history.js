@@ -858,8 +858,8 @@ const i18n = {
         'en': 'Revert failed: '
     },
     emptyAdditions: {
-        'zh_CN': '暂无书签添加记录',
-        'en': 'No bookmark additions'
+        'zh_CN': '暂无书签温故记录',
+        'en': 'No bookmark review records'
     },
     emptyTree: {
         'zh_CN': '无法加载书签树',
@@ -4070,7 +4070,7 @@ function renderCommitStatsInline(changes) {
 }
 
 // =============================================================================
-// 书签添加记录视图
+// 书签温故视图
 // =============================================================================
 
 function renderAdditionsView() {
@@ -6601,7 +6601,7 @@ function handleStorageChange(changes, namespace) {
 
             // 如果当前在 additions 视图，刷新添加记录视图
             if (currentView === 'additions') {
-                console.log('[存储监听] 刷新书签添加记录视图');
+                console.log('[存储监听] 刷新书签温故视图');
                 await renderAdditionsView();
             }
 

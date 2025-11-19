@@ -6,7 +6,7 @@
 ```
 Bookmark toolbox
 ├── Bookmark Canvas  ← 原来的"书签树"改名而来
-└── 书签添加记录
+└── 书签温故
 ```
 
 **只有一个视图：Bookmark Canvas**

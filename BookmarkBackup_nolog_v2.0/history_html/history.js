@@ -610,8 +610,8 @@ const i18n = {
         'en': 'Backup History'
     },
     navAdditions: {
-        'zh_CN': '书签添加记录',
-        'en': 'Bookmark Additions'
+        'zh_CN': '书签温故',
+        'en': 'Bookmark Review'
     },
     navCanvas: {
         'zh_CN': '书签画布',
@@ -642,8 +642,8 @@ const i18n = {
         'en': 'Backup History'
     },
     additionsViewTitle: {
-        'zh_CN': '书签添加记录',
-        'en': 'Bookmark Additions'
+        'zh_CN': '书签温故',
+        'en': 'Bookmark Review'
     },
     canvasViewTitle: {
         'zh_CN': '书签画布',
@@ -762,8 +762,8 @@ const i18n = {
         'en': 'Open "Bookmark Canvas" view'
     },
     shortcutAdditions: {
-        'zh_CN': '打开「书签添加记录」视图',
-        'en': 'Open "Bookmark Additions" view'
+        'zh_CN': '打开「书签温故」视图',
+        'en': 'Open "Bookmark Review" view'
     },
     closeShortcutsText: {
         'zh_CN': '关闭',

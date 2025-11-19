@@ -52,7 +52,7 @@
             "windows": "Alt+4",
             "linux": "Alt+4"
          },
-         "description": "Open 'Bookmark additions' view"
+         "description": "Open 'Bookmark Review' view"
       }
    },
    "permissions": [

@@ -14,7 +14,7 @@ This is a Git-like bookmark change tracking interface that provides detailed boo
 - 区分自动备份和手动备份 / Distinguish between auto and manual backups
 - 点击记录查看详细信息 / Click records to view details
 
-### 2. 书签添加记录 / Bookmark Additions
+### 2. 书签温故 / Bookmark Review
 - 按日期分组显示新增书签 / Display new bookmarks grouped by date
 - 按文件夹分类 / Categorize by folders
 - 显示备份状态（已备份/未备份）/ Show backup status (backed up / not backed up)

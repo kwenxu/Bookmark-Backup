@@ -281,13 +281,24 @@ class BookmarkCalendar {
         column.style.display = 'flex';
         column.style.flexDirection = 'column';
         
+        // 占位：与右侧月份导航对齐
+        const navPlaceholder = document.createElement('div');
+        navPlaceholder.style.display = 'flex';
+        navPlaceholder.style.alignItems = 'center';
+        navPlaceholder.style.justifyContent = 'center';
+        navPlaceholder.style.marginBottom = '20px';
+        navPlaceholder.style.minHeight = '40px'; // 匹配导航按钮的高度
+        column.appendChild(navPlaceholder);
+        
+        // 周标签：与右侧星期标题对齐
         const header = document.createElement('div');
-        header.style.height = '40px';
         header.style.display = 'flex';
         header.style.alignItems = 'center';
         header.style.justifyContent = 'center';
         header.style.fontSize = '12px';
         header.style.color = 'var(--text-tertiary)';
+        header.style.padding = '8px 0';
+        header.style.marginBottom = '10px';
         header.textContent = t('calendarWeekLabel');
         column.appendChild(header);
         
@@ -392,13 +403,13 @@ class BookmarkCalendar {
             this.render();
         });
         
-        // 日历网格
-        const grid = document.createElement('div');
-        grid.style.display = 'grid';
-        grid.style.gridTemplateColumns = 'repeat(7, 1fr)';
-        grid.style.gap = '10px';
+        // 星期标题行（独立于日历网格）
+        const weekdayHeader = document.createElement('div');
+        weekdayHeader.style.display = 'grid';
+        weekdayHeader.style.gridTemplateColumns = 'repeat(7, 1fr)';
+        weekdayHeader.style.gap = '10px';
+        weekdayHeader.style.marginBottom = '10px';
         
-        // 星期标题
         for (let i = 0; i < 7; i++) {
             const weekday = document.createElement('div');
             weekday.style.textAlign = 'center';
@@ -406,8 +417,15 @@ class BookmarkCalendar {
             weekday.style.color = 'var(--text-secondary)';
             weekday.style.padding = '8px 0';
             weekday.textContent = tw(i);
-            grid.appendChild(weekday);
+            weekdayHeader.appendChild(weekday);
         }
+        wrapper.appendChild(weekdayHeader);
+        
+        // 日历网格（仅包含日期单元格）
+        const grid = document.createElement('div');
+        grid.style.display = 'grid';
+        grid.style.gridTemplateColumns = 'repeat(7, 1fr)';
+        grid.style.gap = '10px';
         
         // 空白格
         const firstDay = new Date(this.currentYear, this.currentMonth, 1);

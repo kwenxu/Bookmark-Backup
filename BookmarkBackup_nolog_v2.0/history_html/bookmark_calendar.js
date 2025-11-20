@@ -417,95 +417,255 @@ class BookmarkCalendar {
         title.textContent = `本月共 ${totalCount} 个书签`;
         section.appendChild(title);
         
-        // 按周显示
+        // 左右分栏布局
+        const panelContainer = document.createElement('div');
+        panelContainer.style.display = 'flex';
+        panelContainer.style.gap = '20px';
+        panelContainer.style.minHeight = '400px';
+        
+        // 左侧菜单栏
+        const sidebar = document.createElement('div');
+        sidebar.style.width = '200px';
+        sidebar.style.flexShrink = '0';
+        sidebar.style.borderRight = '1px solid var(--border-color)';
+        sidebar.style.paddingRight = '20px';
+        
+        // 右侧内容区
+        const contentArea = document.createElement('div');
+        contentArea.style.flex = '1';
+        contentArea.style.minWidth = '0';
+        
         const sortedWeeks = Array.from(bookmarksByWeek.keys()).sort((a, b) => a - b);
         
-        sortedWeeks.forEach(weekNum => {
+        // 默认选中第一周的第一天
+        const firstWeekData = bookmarksByWeek.get(sortedWeeks[0]);
+        let selectedDateKey = this.getDateKey(firstWeekData[0].date);
+        const weekdays = ['周日', '周一', '周二', '周三', '周四', '周五', '周六'];
+        
+        sortedWeeks.forEach((weekNum, weekIndex) => {
             const weekData = bookmarksByWeek.get(weekNum);
             const weekCount = weekData.reduce((sum, item) => sum + item.bookmarks.length, 0);
             
-            // 计算这周的开始日期
-            const firstDateInWeek = weekData[0].date;
-            const weekStart = new Date(firstDateInWeek);
-            weekStart.setDate(firstDateInWeek.getDate() - firstDateInWeek.getDay());
+            // 周菜单项容器
+            const weekMenuContainer = document.createElement('div');
+            weekMenuContainer.style.marginBottom = '4px';
             
-            const weekSection = document.createElement('div');
-            weekSection.style.marginBottom = '32px';
+            // 周标题
+            const weekHeader = document.createElement('div');
+            weekHeader.style.padding = '10px 12px';
+            weekHeader.style.borderRadius = '8px';
+            weekHeader.style.cursor = 'pointer';
+            weekHeader.style.transition = 'all 0.2s';
+            weekHeader.style.fontSize = '14px';
+            weekHeader.style.fontWeight = '600';
+            weekHeader.style.background = 'var(--bg-secondary)';
+            weekHeader.style.color = 'var(--text-primary)';
+            weekHeader.dataset.weekNum = weekNum;
+            weekHeader.dataset.expanded = weekIndex === 0 ? 'true' : 'false';
             
-            // 周标题（可点击）
-            const weekTitle = document.createElement('div');
-            weekTitle.style.fontSize = '16px';
-            weekTitle.style.fontWeight = '700';
-            weekTitle.style.color = 'var(--accent-primary)';
-            weekTitle.style.marginBottom = '16px';
-            weekTitle.style.padding = '12px';
-            weekTitle.style.background = 'var(--bg-secondary)';
-            weekTitle.style.borderRadius = '8px';
-            weekTitle.style.cursor = 'pointer';
-            weekTitle.style.transition = 'all 0.2s';
-            weekTitle.innerHTML = `<i class="fas fa-calendar-week"></i> 第${weekNum}周 (${weekCount}个书签)`;
+            weekHeader.innerHTML = `
+                <div style="display:flex;justify-content:space-between;align-items:center;">
+                    <span>
+                        <i class="fas fa-chevron-${weekIndex === 0 ? 'down' : 'right'}" style="font-size:12px;margin-right:6px;"></i>
+                        <i class="fas fa-calendar-week"></i> 第${weekNum}周
+                    </span>
+                    <span style="font-size:12px;opacity:0.8;">${weekCount}个</span>
+                </div>
+            `;
             
-            weekTitle.addEventListener('click', () => {
-                this.currentWeekStart = weekStart;
-                this.viewLevel = 'week';
-                this.render();
+            // 日期子菜单容器
+            const daysContainer = document.createElement('div');
+            daysContainer.style.marginLeft = '12px';
+            daysContainer.style.marginTop = '4px';
+            daysContainer.style.display = weekIndex === 0 ? 'block' : 'none';
+            daysContainer.dataset.weekNum = weekNum;
+            
+            // 为每一天创建菜单项
+            weekData.forEach(({ date, bookmarks }, dayIndex) => {
+                const dateKey = this.getDateKey(date);
+                
+                const dayMenuItem = document.createElement('div');
+                dayMenuItem.style.padding = '8px 12px';
+                dayMenuItem.style.marginBottom = '4px';
+                dayMenuItem.style.borderRadius = '6px';
+                dayMenuItem.style.cursor = 'pointer';
+                dayMenuItem.style.transition = 'all 0.2s';
+                dayMenuItem.style.fontSize = '13px';
+                dayMenuItem.dataset.dateKey = dateKey;
+                
+                // 第一周的第一天默认选中
+                if (weekIndex === 0 && dayIndex === 0) {
+                    dayMenuItem.style.background = 'rgba(33, 150, 243, 0.15)';
+                    dayMenuItem.style.color = 'var(--accent-primary)';
+                    dayMenuItem.style.fontWeight = '600';
+                    dayMenuItem.style.border = '1px solid var(--accent-primary)';
+                } else {
+                    dayMenuItem.style.background = 'transparent';
+                    dayMenuItem.style.color = 'var(--text-primary)';
+                    dayMenuItem.style.border = '1px solid transparent';
+                }
+                
+                dayMenuItem.innerHTML = `
+                    <div style="display:flex;justify-content:space-between;align-items:center;">
+                        <span>${weekdays[date.getDay()]} ${date.getMonth() + 1}/${date.getDate()}</span>
+                        <span style="font-size:12px;opacity:0.8;">${bookmarks.length}个</span>
+                    </div>
+                `;
+                
+                dayMenuItem.addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    
+                    // 更新所有日期菜单的选中状态
+                    sidebar.querySelectorAll('div[data-date-key]').forEach(item => {
+                        item.style.background = 'transparent';
+                        item.style.color = 'var(--text-primary)';
+                        item.style.fontWeight = 'normal';
+                        item.style.border = '1px solid transparent';
+                    });
+                    
+                    dayMenuItem.style.background = 'rgba(33, 150, 243, 0.15)';
+                    dayMenuItem.style.color = 'var(--accent-primary)';
+                    dayMenuItem.style.fontWeight = '600';
+                    dayMenuItem.style.border = '1px solid var(--accent-primary)';
+                    
+                    selectedDateKey = dateKey;
+                    renderDayContent(date, bookmarks);
+                });
+                
+                dayMenuItem.addEventListener('mouseenter', () => {
+                    if (dayMenuItem.dataset.dateKey !== selectedDateKey) {
+                        dayMenuItem.style.background = 'rgba(128, 128, 128, 0.1)';
+                        dayMenuItem.style.border = '1px solid var(--border-color)';
+                    }
+                });
+                
+                dayMenuItem.addEventListener('mouseleave', () => {
+                    if (dayMenuItem.dataset.dateKey !== selectedDateKey) {
+                        dayMenuItem.style.background = 'transparent';
+                        dayMenuItem.style.border = '1px solid transparent';
+                    }
+                });
+                
+                daysContainer.appendChild(dayMenuItem);
             });
             
-            weekTitle.addEventListener('mouseenter', () => {
-                weekTitle.style.background = 'var(--accent-primary)';
-                weekTitle.style.color = 'white';
+            // 周标题点击：展开子菜单 + 显示该周所有内容
+            weekHeader.addEventListener('click', () => {
+                const isExpanded = weekHeader.dataset.expanded === 'true';
+                const icon = weekHeader.querySelector('.fa-chevron-down, .fa-chevron-right');
+                
+                // 展开/收起子菜单
+                if (isExpanded) {
+                    daysContainer.style.display = 'none';
+                    weekHeader.dataset.expanded = 'false';
+                    icon.classList.remove('fa-chevron-down');
+                    icon.classList.add('fa-chevron-right');
+                } else {
+                    daysContainer.style.display = 'block';
+                    weekHeader.dataset.expanded = 'true';
+                    icon.classList.remove('fa-chevron-right');
+                    icon.classList.add('fa-chevron-down');
+                }
+                
+                // 右侧显示该周的所有书签（按日分组）
+                renderWeekContent(weekNum, weekData);
             });
             
-            weekTitle.addEventListener('mouseleave', () => {
-                weekTitle.style.background = 'var(--bg-secondary)';
-                weekTitle.style.color = 'var(--accent-primary)';
+            weekHeader.addEventListener('mouseenter', () => {
+                weekHeader.style.background = 'rgba(128, 128, 128, 0.15)';
+                weekHeader.style.borderLeft = '3px solid var(--accent-primary)';
             });
             
-            weekSection.appendChild(weekTitle);
+            weekHeader.addEventListener('mouseleave', () => {
+                weekHeader.style.background = 'var(--bg-secondary)';
+                weekHeader.style.borderLeft = '3px solid transparent';
+            });
             
-            // 周下的每一天
+            weekMenuContainer.appendChild(weekHeader);
+            weekMenuContainer.appendChild(daysContainer);
+            sidebar.appendChild(weekMenuContainer);
+        });
+        
+        // 渲染右侧内容 - 显示某一天的书签
+        const renderDayContent = (date, bookmarks, wd = weekdays) => {
+            contentArea.innerHTML = '';
+            
+            const dayHeader = document.createElement('div');
+            dayHeader.style.fontSize = '18px';
+            dayHeader.style.fontWeight = '700';
+            dayHeader.style.color = 'var(--text-primary)';
+            dayHeader.style.marginBottom = '20px';
+            dayHeader.style.paddingBottom = '12px';
+            dayHeader.style.borderBottom = '2px solid var(--accent-primary)';
+            dayHeader.style.display = 'flex';
+            dayHeader.style.justifyContent = 'space-between';
+            dayHeader.style.alignItems = 'center';
+            
+            dayHeader.innerHTML = `
+                <span><i class="fas fa-calendar-day"></i> ${wd[date.getDay()]} ${date.getMonth() + 1}月${date.getDate()}日</span>
+                <span style="font-size:14px;color:var(--text-secondary);">${bookmarks.length}个书签</span>
+            `;
+            
+            contentArea.appendChild(dayHeader);
+            
+            // 使用折叠功能
+            const bookmarkList = this.createCollapsibleBookmarkList(bookmarks);
+            contentArea.appendChild(bookmarkList);
+        };
+        
+        // 渲染右侧内容 - 显示某周的所有书签（按日分组）
+        const renderWeekContent = (weekNum, weekData) => {
+            contentArea.innerHTML = '';
+            
+            const weekHeader = document.createElement('div');
+            weekHeader.style.fontSize = '18px';
+            weekHeader.style.fontWeight = '700';
+            weekHeader.style.color = 'var(--text-primary)';
+            weekHeader.style.marginBottom = '20px';
+            weekHeader.style.paddingBottom = '12px';
+            weekHeader.style.borderBottom = '2px solid var(--accent-primary)';
+            weekHeader.style.display = 'flex';
+            weekHeader.style.justifyContent = 'space-between';
+            weekHeader.style.alignItems = 'center';
+            
+            const totalCount = weekData.reduce((sum, item) => sum + item.bookmarks.length, 0);
+            
+            weekHeader.innerHTML = `
+                <span><i class="fas fa-calendar-week"></i> 第${weekNum}周</span>
+                <span style="font-size:14px;color:var(--text-secondary);">${totalCount}个书签</span>
+            `;
+            
+            contentArea.appendChild(weekHeader);
+            
+            // 按日显示
             weekData.forEach(({ date, bookmarks }) => {
-                const weekdays = ['周日', '周一', '周二', '周三', '周四', '周五', '周六'];
                 const daySection = document.createElement('div');
-                daySection.style.marginBottom = '16px';
-                daySection.style.marginLeft = '20px';
+                daySection.style.marginBottom = '24px';
                 
                 const dayTitle = document.createElement('div');
-                dayTitle.style.fontSize = '14px';
+                dayTitle.style.fontSize = '15px';
                 dayTitle.style.fontWeight = '600';
-                dayTitle.style.color = 'var(--text-primary)';
+                dayTitle.style.color = 'var(--accent-primary)';
                 dayTitle.style.marginBottom = '12px';
                 dayTitle.style.paddingBottom = '8px';
-                dayTitle.style.borderBottom = '1px solid var(--border-color)';
-                dayTitle.style.cursor = 'pointer';
-                dayTitle.style.transition = 'color 0.2s';
-                dayTitle.textContent = `${weekdays[date.getDay()]} ${date.getMonth() + 1}月${date.getDate()}日 (${bookmarks.length}个)`;
-                
-                dayTitle.addEventListener('click', () => {
-                    this.currentDay = date;
-                    this.viewLevel = 'day';
-                    this.render();
-                });
-                
-                dayTitle.addEventListener('mouseenter', () => {
-                    dayTitle.style.color = 'var(--accent-primary)';
-                });
-                
-                dayTitle.addEventListener('mouseleave', () => {
-                    dayTitle.style.color = 'var(--text-primary)';
-                });
+                dayTitle.style.borderBottom = '1px solid var(--accent-primary)';
+                dayTitle.innerHTML = `<i class="fas fa-calendar-day"></i> ${weekdays[date.getDay()]} ${date.getMonth() + 1}月${date.getDate()}日 (${bookmarks.length}个)`;
                 
                 daySection.appendChild(dayTitle);
                 
-                // 使用折叠功能
                 const bookmarkList = this.createCollapsibleBookmarkList(bookmarks);
                 daySection.appendChild(bookmarkList);
                 
-                weekSection.appendChild(daySection);
+                contentArea.appendChild(daySection);
             });
-            
-            section.appendChild(weekSection);
-        });
+        };
+        
+        // 初始显示第一周的所有内容
+        renderWeekContent(sortedWeeks[0], firstWeekData);
+        
+        panelContainer.appendChild(sidebar);
+        panelContainer.appendChild(contentArea);
+        section.appendChild(panelContainer);
         
         return section;
     }
@@ -713,45 +873,116 @@ class BookmarkCalendar {
             title.textContent = `本周共 ${totalCount} 个书签`;
             section.appendChild(title);
             
+            // 左右分栏布局
+            const panelContainer = document.createElement('div');
+            panelContainer.style.display = 'flex';
+            panelContainer.style.gap = '20px';
+            panelContainer.style.minHeight = '400px';
+            
+            // 左侧菜单栏
+            const sidebar = document.createElement('div');
+            sidebar.style.width = '180px';
+            sidebar.style.flexShrink = '0';
+            sidebar.style.borderRight = '1px solid var(--border-color)';
+            sidebar.style.paddingRight = '20px';
+            
+            // 右侧内容区
+            const contentArea = document.createElement('div');
+            contentArea.style.flex = '1';
+            contentArea.style.minWidth = '0';
+            
             const weekdays = ['周日', '周一', '周二', '周三', '周四', '周五', '周六'];
             
-            allBookmarks.forEach(({ date, bookmarks }) => {
-                const daySection = document.createElement('div');
-                daySection.style.marginBottom = '24px';
+            // 默认选中第一天
+            let selectedDateKey = this.getDateKey(allBookmarks[0].date);
+            
+            allBookmarks.forEach(({ date, bookmarks }, index) => {
+                const dateKey = this.getDateKey(date);
                 
-                const dayTitle = document.createElement('div');
-                dayTitle.className = 'bookmarks-group-title';
-                dayTitle.style.cursor = 'pointer';
-                dayTitle.style.transition = 'all 0.2s';
-                dayTitle.innerHTML = `<i class="fas fa-calendar-day"></i> ${weekdays[date.getDay()]} ${date.getMonth() + 1}月${date.getDate()}日 (${bookmarks.length}个)`;
+                // 左侧菜单项
+                const menuItem = document.createElement('div');
+                menuItem.style.padding = '12px';
+                menuItem.style.marginBottom = '8px';
+                menuItem.style.borderRadius = '8px';
+                menuItem.style.cursor = 'pointer';
+                menuItem.style.transition = 'all 0.2s';
+                menuItem.style.fontSize = '14px';
+                menuItem.dataset.dateKey = dateKey;
                 
-                dayTitle.addEventListener('click', () => {
-                    this.currentDay = date;
-                    this.viewLevel = 'day';
-                    this.render();
+                if (index === 0) {
+                    menuItem.style.background = 'var(--accent-primary)';
+                    menuItem.style.color = 'white';
+                    menuItem.style.fontWeight = '600';
+                } else {
+                    menuItem.style.background = 'transparent';
+                    menuItem.style.color = 'var(--text-primary)';
+                }
+                
+                menuItem.innerHTML = `
+                    <div style="display:flex;flex-direction:column;gap:4px;">
+                        <div style="font-size:13px;opacity:0.9;">${weekdays[date.getDay()]}</div>
+                        <div style="font-weight:600;">${date.getMonth() + 1}/${date.getDate()}</div>
+                        <div style="font-size:12px;opacity:0.8;">${bookmarks.length}个</div>
+                    </div>
+                `;
+                
+                menuItem.addEventListener('click', () => {
+                    // 更新选中状态
+                    sidebar.querySelectorAll('div[data-date-key]').forEach(item => {
+                        item.style.background = 'transparent';
+                        item.style.color = 'var(--text-primary)';
+                        item.style.fontWeight = 'normal';
+                    });
+                    menuItem.style.background = 'var(--accent-primary)';
+                    menuItem.style.color = 'white';
+                    menuItem.style.fontWeight = '600';
+                    
+                    // 显示对应天的内容
+                    selectedDateKey = dateKey;
+                    renderDayContent(date, bookmarks);
                 });
                 
-                dayTitle.addEventListener('mouseenter', () => {
-                    dayTitle.style.background = 'var(--accent-primary)';
-                    dayTitle.style.color = 'white';
-                    dayTitle.style.padding = '8px 12px';
-                    dayTitle.style.borderRadius = '6px';
+                menuItem.addEventListener('mouseenter', () => {
+                    if (menuItem.dataset.dateKey !== selectedDateKey) {
+                        menuItem.style.background = 'var(--bg-secondary)';
+                    }
                 });
                 
-                dayTitle.addEventListener('mouseleave', () => {
-                    dayTitle.style.background = 'transparent';
-                    dayTitle.style.color = 'var(--accent-primary)';
-                    dayTitle.style.padding = '0';
+                menuItem.addEventListener('mouseleave', () => {
+                    if (menuItem.dataset.dateKey !== selectedDateKey) {
+                        menuItem.style.background = 'transparent';
+                    }
                 });
                 
-                daySection.appendChild(dayTitle);
+                sidebar.appendChild(menuItem);
+            });
+            
+            // 渲染右侧内容
+            const renderDayContent = (date, bookmarks) => {
+                contentArea.innerHTML = '';
+                
+                const dayHeader = document.createElement('div');
+                dayHeader.style.fontSize = '18px';
+                dayHeader.style.fontWeight = '700';
+                dayHeader.style.color = 'var(--text-primary)';
+                dayHeader.style.marginBottom = '20px';
+                dayHeader.style.paddingBottom = '12px';
+                dayHeader.style.borderBottom = '2px solid var(--accent-primary)';
+                dayHeader.innerHTML = `<i class="fas fa-calendar-day"></i> ${weekdays[date.getDay()]} ${date.getMonth() + 1}月${date.getDate()}日`;
+                
+                contentArea.appendChild(dayHeader);
                 
                 // 使用折叠功能
                 const bookmarkList = this.createCollapsibleBookmarkList(bookmarks);
-                daySection.appendChild(bookmarkList);
-                
-                section.appendChild(daySection);
-            });
+                contentArea.appendChild(bookmarkList);
+            };
+            
+            // 初始显示第一天
+            renderDayContent(allBookmarks[0].date, allBookmarks[0].bookmarks);
+            
+            panelContainer.appendChild(sidebar);
+            panelContainer.appendChild(contentArea);
+            section.appendChild(panelContainer);
             
             wrapper.appendChild(section);
         }

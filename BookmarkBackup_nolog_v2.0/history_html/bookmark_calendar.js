@@ -278,6 +278,8 @@ class BookmarkCalendar {
         column.style.minWidth = '50px';
         column.style.borderRight = '1px solid var(--border-color)';
         column.style.paddingRight = '10px';
+        column.style.display = 'flex';
+        column.style.flexDirection = 'column';
         
         const header = document.createElement('div');
         header.style.height = '40px';
@@ -301,15 +303,19 @@ class BookmarkCalendar {
         let currentWeekStart = new Date(firstDay);
         currentWeekStart.setDate(firstDay.getDate() - startDayOfWeek);
         
+        // 创建周数容器，使其与右侧日历单元格对齐
+        const weeksContainer = document.createElement('div');
+        weeksContainer.style.display = 'grid';
+        weeksContainer.style.gridTemplateRows = `repeat(${numRows}, 1fr)`;
+        weeksContainer.style.gap = '10px';
+        weeksContainer.style.flex = '1';
+        
         // 为每一行创建周数
         for (let row = 0; row < numRows; row++) {
             const weekNum = this.getWeekNumber(currentWeekStart);
             const weekStartCopy = new Date(currentWeekStart);
             
             const weekDiv = document.createElement('div');
-            // 高度计算：(日历单元格宽度 + gap) 使其与日历行对齐
-            weekDiv.style.height = 'calc((100% - 40px - ' + (numRows - 1) * 10 + 'px) / ' + numRows + ')';
-            weekDiv.style.minHeight = '60px';
             weekDiv.style.display = 'flex';
             weekDiv.style.alignItems = 'center';
             weekDiv.style.justifyContent = 'center';
@@ -334,10 +340,11 @@ class BookmarkCalendar {
                 weekDiv.style.background = 'transparent';
             });
             
-            column.appendChild(weekDiv);
+            weeksContainer.appendChild(weekDiv);
             currentWeekStart.setDate(currentWeekStart.getDate() + 7);
         }
         
+        column.appendChild(weeksContainer);
         return column;
     }
 
@@ -432,6 +439,9 @@ class BookmarkCalendar {
             if (bookmarks.length > 0) {
                 dayCell.addEventListener('click', () => {
                     this.currentDay = date;
+                    // 更新currentWeekStart为该日期所在周的开始日期（周日）
+                    this.currentWeekStart = new Date(date);
+                    this.currentWeekStart.setDate(date.getDate() - date.getDay());
                     this.viewLevel = 'day';
                     this.render();
                 });
@@ -956,6 +966,7 @@ class BookmarkCalendar {
             if (bookmarks.length > 0) {
                 dayCard.addEventListener('click', () => {
                     this.currentDay = date;
+                    // currentWeekStart已经设置正确，无需更新
                     this.viewLevel = 'day';
                     this.render();
                 });
@@ -1021,9 +1032,9 @@ class BookmarkCalendar {
                 
                 menuItem.innerHTML = `
                     <div style="display:flex;flex-direction:column;gap:4px;">
-                        <div style="font-size:13px;opacity:0.9;">${weekdays[date.getDay()]}</div>
+                        <div style="font-size:13px;opacity:0.9;">${tw(date.getDay())}</div>
                         <div style="font-weight:600;">${date.getMonth() + 1}/${date.getDate()}</div>
-                        <div style="font-size:12px;opacity:0.8;">${bookmarks.length}个</div>
+                        <div style="font-size:12px;opacity:0.8;">${t('calendarBookmarkCount', bookmarks.length)}</div>
                     </div>
                 `;
                 
@@ -1110,11 +1121,17 @@ class BookmarkCalendar {
         
         header.querySelector('#prevDay').addEventListener('click', () => {
             this.currentDay.setDate(this.currentDay.getDate() - 1);
+            // 同步更新currentWeekStart为新日期所在周的开始日期
+            this.currentWeekStart = new Date(this.currentDay);
+            this.currentWeekStart.setDate(this.currentDay.getDate() - this.currentDay.getDay());
             this.render();
         });
         
         header.querySelector('#nextDay').addEventListener('click', () => {
             this.currentDay.setDate(this.currentDay.getDate() + 1);
+            // 同步更新currentWeekStart为新日期所在周的开始日期
+            this.currentWeekStart = new Date(this.currentDay);
+            this.currentWeekStart.setDate(this.currentDay.getDate() - this.currentDay.getDay());
             this.render();
         });
         
@@ -1142,7 +1159,7 @@ class BookmarkCalendar {
             
             const hourSection = document.createElement('div');
             hourSection.style.marginBottom = '24px';
-            hourSection.innerHTML = `<div class="bookmarks-group-title">${String(hour).padStart(2, '0')}:00 - ${String(hour).padStart(2, '0')}:59 (${hourBookmarks.length}个)</div>`;
+            hourSection.innerHTML = `<div class="bookmarks-group-title">${String(hour).padStart(2, '0')}:00 - ${String(hour).padStart(2, '0')}:59 (${t('calendarBookmarkCount', hourBookmarks.length)})</div>`;
             hourBookmarks.sort((a, b) => a.dateAdded - b.dateAdded);
             
             // 使用折叠功能

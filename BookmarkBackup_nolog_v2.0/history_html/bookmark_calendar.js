@@ -15,11 +15,19 @@ function t(key, ...args) {
 }
 
 function tw(index) {
-    // 获取星期几的翻译
+    // 获取星期几的翻译（缩写）
     if (typeof i18n === 'undefined' || typeof currentLang === 'undefined') {
         return ['周日', '周一', '周二', '周三', '周四', '周五', '周六'][index];
     }
     return i18n.calendarWeekdays[currentLang][index] || '';
+}
+
+function twFull(index) {
+    // 获取星期几的完整名称
+    if (typeof i18n === 'undefined' || typeof currentLang === 'undefined') {
+        return ['星期日', '星期一', '星期二', '星期三', '星期四', '星期五', '星期六'][index];
+    }
+    return i18n.calendarWeekdaysFull[currentLang][index] || '';
 }
 
 function tm(index) {
@@ -1171,7 +1179,7 @@ class BookmarkCalendar {
             
             // 左侧菜单栏
             const sidebar = document.createElement('div');
-            sidebar.style.width = '180px';
+            sidebar.style.width = '200px';
             sidebar.style.flexShrink = '0';
             sidebar.style.borderRight = '1px solid var(--border-color)';
             sidebar.style.paddingRight = '20px';
@@ -1213,12 +1221,12 @@ class BookmarkCalendar {
                 
                 menuItem.innerHTML = `
                     <div style="display:flex;flex-direction:column;gap:4px;">
-                        <div style="font-size:13px;opacity:0.9;">
-                            ${hasTimePeriods ? '<i class="fas fa-chevron-right" style="font-size:9px;margin-right:3px;"></i>' : ''}
-                            ${tw(date.getDay())}
+                        <div style="display:flex;align-items:center;gap:4px;">
+                            ${hasTimePeriods ? '<i class="fas fa-chevron-right" style="font-size:9px;"></i>' : ''}
+                            <span style="font-size:14px;font-weight:600;">${twFull(date.getDay())}</span>
                         </div>
-                        <div style="font-weight:600;">${date.getMonth() + 1}/${date.getDate()}</div>
-                        <div style="font-size:12px;opacity:0.8;">${t('calendarBookmarkCount', bookmarks.length)}</div>
+                        <div style="font-size:13px;opacity:0.85;">${t('calendarMonthDay', date.getMonth() + 1, date.getDate())}</div>
+                        <div style="font-size:12px;opacity:0.7;">${t('calendarBookmarkCount', bookmarks.length)}</div>
                     </div>
                 `;
                 
@@ -1367,7 +1375,7 @@ class BookmarkCalendar {
                 dayHeader.style.marginBottom = '20px';
                 dayHeader.style.paddingBottom = '12px';
                 dayHeader.style.borderBottom = '2px solid var(--accent-primary)';
-                dayHeader.innerHTML = `<i class="fas fa-calendar-day"></i> ${tw(date.getDay())} ${t('calendarMonthDay', date.getMonth() + 1, date.getDate())}`;
+                dayHeader.innerHTML = `<i class="fas fa-calendar-day"></i> ${twFull(date.getDay())}, ${t('calendarMonthDay', date.getMonth() + 1, date.getDate())}`;
                 
                 contentArea.appendChild(dayHeader);
                 
@@ -1393,7 +1401,7 @@ class BookmarkCalendar {
                 
                 hourHeader.innerHTML = `
                     <span>
-                        <i class="fas fa-calendar-day"></i> ${tw(date.getDay())} ${t('calendarMonthDay', date.getMonth() + 1, date.getDate())}
+                        <i class="fas fa-calendar-day"></i> ${twFull(date.getDay())}, ${t('calendarMonthDay', date.getMonth() + 1, date.getDate())}
                         <span style="margin-left:12px;">${String(hour).padStart(2, '0')}:00-${String(hour).padStart(2, '0')}:59</span>
                     </span>
                     <span style="font-size:14px;color:var(--text-secondary);">${t('calendarBookmarksCount', hourBookmarks.length)}</span>

@@ -1157,7 +1157,10 @@ class BookmarkCalendar {
         const bookmarks = this.bookmarksByDate.get(dateKey) || [];
         
         if (bookmarks.length === 0) {
-            wrapper.innerHTML += `<div class="calendar-empty-state"><i class="fas fa-calendar-day"></i><p>${t('calendarNoBookmarksThisDay')}</p></div>`;
+            const emptyState = document.createElement('div');
+            emptyState.className = 'calendar-empty-state';
+            emptyState.innerHTML = `<i class="fas fa-calendar-day"></i><p>${t('calendarNoBookmarksThisDay')}</p>`;
+            wrapper.appendChild(emptyState);
             container.appendChild(wrapper);
             return;
         }
@@ -1169,7 +1172,10 @@ class BookmarkCalendar {
             byHour.get(hour).push(bm);
         });
         
-        wrapper.innerHTML += `<h3 style="margin-bottom:20px;">${t('calendarTotalThisDay', bookmarks.length)}</h3>`;
+        const title = document.createElement('h3');
+        title.style.marginBottom = '20px';
+        title.textContent = t('calendarTotalThisDay', bookmarks.length);
+        wrapper.appendChild(title);
         
         for (let hour = 0; hour < 24; hour++) {
             const hourBookmarks = byHour.get(hour);

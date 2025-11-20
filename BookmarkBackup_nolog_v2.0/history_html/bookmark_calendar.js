@@ -655,7 +655,7 @@ class BookmarkCalendar {
         });
         
         // 渲染右侧内容 - 显示某一天的书签
-        const renderDayContent = (date, bookmarks, wd = weekdays) => {
+        const renderDayContent = (date, bookmarks) => {
             contentArea.innerHTML = '';
             
             const dayHeader = document.createElement('div');

@@ -881,6 +881,83 @@ const i18n = {
         'zh_CN': '加载中...',
         'en': 'Loading...'
     },
+    // 日历视图翻译
+    calendarWeekLabel: {
+        'zh_CN': '周',
+        'en': 'Week'
+    },
+    calendarWeek: {
+        'zh_CN': '第{0}周',
+        'en': 'Week {0}'
+    },
+    calendarMonth: {
+        'zh_CN': '{0}月',
+        'en': 'Month {0}'
+    },
+    calendarMonthDay: {
+        'zh_CN': '{0}月{1}日',
+        'en': '{0}/{1}'
+    },
+    calendarYear: {
+        'zh_CN': '{0}年',
+        'en': 'Year {0}'
+    },
+    calendarYearMonthDay: {
+        'zh_CN': '{0}年{1}月{2}日',
+        'en': '{0}/{1}/{2}'
+    },
+    calendarWeekdays: {
+        'zh_CN': ['周日', '周一', '周二', '周三', '周四', '周五', '周六'],
+        'en': ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
+    },
+    calendarMonthNames: {
+        'zh_CN': ['一月', '二月', '三月', '四月', '五月', '六月', '七月', '八月', '九月', '十月', '十一月', '十二月'],
+        'en': ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December']
+    },
+    calendarYearMonth: {
+        'zh_CN': '{0}年{1}月',
+        'en': '{1} {0}'
+    },
+    calendarBookmarkCount: {
+        'zh_CN': '{0}个',
+        'en': '{0}'
+    },
+    calendarBookmarksCount: {
+        'zh_CN': '{0}个书签',
+        'en': '{0} bookmarks'
+    },
+    calendarTotalThisMonth: {
+        'zh_CN': '本月共 {0} 个书签',
+        'en': 'Total {0} bookmarks this month'
+    },
+    calendarTotalThisWeek: {
+        'zh_CN': '本周共 {0} 个书签',
+        'en': 'Total {0} bookmarks this week'
+    },
+    calendarTotalThisDay: {
+        'zh_CN': '共 {0} 个书签',
+        'en': 'Total {0} bookmarks'
+    },
+    calendarExpandMore: {
+        'zh_CN': '展开更多 (还有{0}个)',
+        'en': 'Show more ({0} more)'
+    },
+    calendarCollapse: {
+        'zh_CN': '收起',
+        'en': 'Collapse'
+    },
+    calendarNoBookmarksThisMonth: {
+        'zh_CN': '本月没有书签',
+        'en': 'No bookmarks this month'
+    },
+    calendarNoBookmarksThisDay: {
+        'zh_CN': '这天没有书签',
+        'en': 'No bookmarks on this day'
+    },
+    calendarLoading: {
+        'zh_CN': '正在加载日历...',
+        'en': 'Loading calendar...'
+    },
     refreshTooltip: {
         'zh_CN': '刷新',
         'en': 'Refresh'
@@ -1329,6 +1406,15 @@ function applyLanguage() {
     if (canvasZoomLabel) canvasZoomLabel.textContent = i18n.canvasZoomLabel[currentLang];
     const canvasZoomHint = document.getElementById('canvasZoomHint');
     if (canvasZoomHint) canvasZoomHint.innerHTML = i18n.canvasZoomHint[currentLang];
+    
+    // 日历加载文本
+    const calendarLoadingText = document.getElementById('calendarLoadingText');
+    if (calendarLoadingText) calendarLoadingText.textContent = i18n.calendarLoading[currentLang];
+    
+    // 更新日历视图翻译
+    if (typeof updateBookmarkCalendarLanguage === 'function') {
+        updateBookmarkCalendarLanguage();
+    }
     const zoomInBtn = document.getElementById('zoomInBtn');
     if (zoomInBtn) zoomInBtn.title = i18n.zoomInTitle[currentLang];
     const zoomOutBtn = document.getElementById('zoomOutBtn');

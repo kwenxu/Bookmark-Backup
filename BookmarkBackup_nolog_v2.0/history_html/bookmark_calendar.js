@@ -1,6 +1,44 @@
 // 书签日历 - iOS风格层级导航
 // 默认月视图，每个视图下方显示书签列表
 
+// 翻译辅助函数
+function t(key, ...args) {
+    if (typeof i18n === 'undefined' || typeof currentLang === 'undefined') {
+        return key; // 降级方案
+    }
+    let text = i18n[key] ? i18n[key][currentLang] : key;
+    // 替换占位符 {0}, {1}, etc.
+    args.forEach((arg, index) => {
+        text = text.replace(`{${index}}`, arg);
+    });
+    return text;
+}
+
+function tw(index) {
+    // 获取星期几的翻译
+    if (typeof i18n === 'undefined' || typeof currentLang === 'undefined') {
+        return ['周日', '周一', '周二', '周三', '周四', '周五', '周六'][index];
+    }
+    return i18n.calendarWeekdays[currentLang][index] || '';
+}
+
+function tm(index) {
+    // 获取月份名称的翻译 (0-11)
+    if (typeof i18n === 'undefined' || typeof currentLang === 'undefined') {
+        return ['一月', '二月', '三月', '四月', '五月', '六月', '七月', '八月', '九月', '十月', '十一月', '十二月'][index];
+    }
+    return i18n.calendarMonthNames[currentLang][index] || '';
+}
+
+function formatYearMonth(year, month) {
+    // 格式化年月显示 (month是0-11)
+    if (typeof i18n === 'undefined' || typeof currentLang === 'undefined') {
+        return `${year}年${month + 1}月`;
+    }
+    const monthName = tm(month);
+    return t('calendarYearMonth', year, monthName).replace('{0}', year).replace('{1}', monthName);
+}
+
 class BookmarkCalendar {
     constructor() {
         this.bookmarksByDate = new Map(); // { 'YYYY-MM-DD': [bookmarks] }
@@ -123,7 +161,7 @@ class BookmarkCalendar {
 
     updateBreadcrumb() {
         // 年
-        document.getElementById('breadcrumbYearText').textContent = `${this.currentYear}年`;
+        document.getElementById('breadcrumbYearText').textContent = t('calendarYear', this.currentYear);
         
         // 月
         const monthBtn = document.getElementById('breadcrumbMonth');
@@ -131,7 +169,7 @@ class BookmarkCalendar {
         if (this.viewLevel === 'month' || this.viewLevel === 'week' || this.viewLevel === 'day') {
             monthBtn.style.display = 'block';
             sep1.style.display = 'inline';
-            document.getElementById('breadcrumbMonthText').textContent = `${this.currentMonth + 1}月`;
+            document.getElementById('breadcrumbMonthText').textContent = tm(this.currentMonth);
             monthBtn.classList.toggle('active', this.viewLevel === 'month');
         } else {
             monthBtn.style.display = 'none';
@@ -145,7 +183,7 @@ class BookmarkCalendar {
             weekBtn.style.display = 'block';
             sep2.style.display = 'inline';
             const weekNum = this.getWeekNumber(this.currentWeekStart);
-            document.getElementById('breadcrumbWeekText').textContent = `第${weekNum}周`;
+            document.getElementById('breadcrumbWeekText').textContent = t('calendarWeek', weekNum);
             weekBtn.classList.toggle('active', this.viewLevel === 'week');
         } else {
             weekBtn.style.display = 'none';
@@ -159,7 +197,7 @@ class BookmarkCalendar {
             dayBtn.style.display = 'block';
             sep3.style.display = 'inline';
             document.getElementById('breadcrumbDayText').textContent = 
-                `${this.currentDay.getMonth() + 1}月${this.currentDay.getDate()}日`;
+                t('calendarMonthDay', this.currentDay.getMonth() + 1, this.currentDay.getDate());
             dayBtn.classList.add('active');
         } else {
             dayBtn.style.display = 'none';
@@ -248,7 +286,7 @@ class BookmarkCalendar {
         header.style.justifyContent = 'center';
         header.style.fontSize = '12px';
         header.style.color = 'var(--text-tertiary)';
-        header.textContent = '周';
+        header.textContent = t('calendarWeekLabel');
         column.appendChild(header);
         
         const firstDay = new Date(this.currentYear, this.currentMonth, 1);
@@ -318,8 +356,8 @@ class BookmarkCalendar {
             <button class="calendar-nav-btn" id="prevMonth">
                 <i class="fas fa-chevron-left"></i>
             </button>
-            <div style="font-size: 18px; font-weight: 600;">
-                ${this.currentYear}年${this.currentMonth + 1}月
+            <div style="font-size: 18px; font-weight: 600;" id="monthViewHeaderTitle">
+                ${formatYearMonth(this.currentYear, this.currentMonth)}
             </div>
             <button class="calendar-nav-btn" id="nextMonth">
                 <i class="fas fa-chevron-right"></i>
@@ -354,15 +392,15 @@ class BookmarkCalendar {
         grid.style.gap = '10px';
         
         // 星期标题
-        ['日', '一', '二', '三', '四', '五', '六'].forEach(day => {
+        for (let i = 0; i < 7; i++) {
             const weekday = document.createElement('div');
             weekday.style.textAlign = 'center';
             weekday.style.fontWeight = '600';
             weekday.style.color = 'var(--text-secondary)';
             weekday.style.padding = '8px 0';
-            weekday.textContent = day;
+            weekday.textContent = tw(i);
             grid.appendChild(weekday);
-        });
+        }
         
         // 空白格
         const firstDay = new Date(this.currentYear, this.currentMonth, 1);
@@ -388,7 +426,7 @@ class BookmarkCalendar {
             
             dayCell.innerHTML = `
                 <div style="font-weight: 600;">${day}</div>
-                ${bookmarks.length > 0 ? `<div style="font-size: 12px; color: var(--accent-primary); margin-top: 4px;">${bookmarks.length}个</div>` : ''}
+                ${bookmarks.length > 0 ? `<div style="font-size: 12px; color: var(--accent-primary); margin-top: 4px;">${t('calendarBookmarkCount', bookmarks.length)}</div>` : ''}
             `;
             
             if (bookmarks.length > 0) {
@@ -439,13 +477,13 @@ class BookmarkCalendar {
         }
         
         if (totalCount === 0) {
-            section.innerHTML = '<p style="text-align:center;color:var(--text-secondary);">本月没有书签</p>';
+            section.innerHTML = `<p style="text-align:center;color:var(--text-secondary);">${t('calendarNoBookmarksThisMonth')}</p>`;
             return section;
         }
         
         const title = document.createElement('h3');
         title.style.marginBottom = '20px';
-        title.textContent = `本月共 ${totalCount} 个书签`;
+        title.textContent = t('calendarTotalThisMonth', totalCount);
         section.appendChild(title);
         
         // 左右分栏布局
@@ -471,7 +509,6 @@ class BookmarkCalendar {
         // 默认选中第一周的第一天
         const firstWeekData = bookmarksByWeek.get(sortedWeeks[0]);
         let selectedDateKey = this.getDateKey(firstWeekData[0].date);
-        const weekdays = ['周日', '周一', '周二', '周三', '周四', '周五', '周六'];
         
         sortedWeeks.forEach((weekNum, weekIndex) => {
             const weekData = bookmarksByWeek.get(weekNum);
@@ -498,9 +535,9 @@ class BookmarkCalendar {
                 <div style="display:flex;justify-content:space-between;align-items:center;">
                     <span>
                         <i class="fas fa-chevron-${weekIndex === 0 ? 'down' : 'right'}" style="font-size:12px;margin-right:6px;"></i>
-                        <i class="fas fa-calendar-week"></i> 第${weekNum}周
+                        <i class="fas fa-calendar-week"></i> ${t('calendarWeek', weekNum)}
                     </span>
-                    <span style="font-size:12px;opacity:0.8;">${weekCount}个</span>
+                    <span style="font-size:12px;opacity:0.8;">${t('calendarBookmarkCount', weekCount)}</span>
                 </div>
             `;
             
@@ -538,8 +575,8 @@ class BookmarkCalendar {
                 
                 dayMenuItem.innerHTML = `
                     <div style="display:flex;justify-content:space-between;align-items:center;">
-                        <span>${weekdays[date.getDay()]} ${date.getMonth() + 1}/${date.getDate()}</span>
-                        <span style="font-size:12px;opacity:0.8;">${bookmarks.length}个</span>
+                        <span>${tw(date.getDay())} ${date.getMonth() + 1}/${date.getDate()}</span>
+                        <span style="font-size:12px;opacity:0.8;">${t('calendarBookmarkCount', bookmarks.length)}</span>
                     </div>
                 `;
                 
@@ -633,8 +670,8 @@ class BookmarkCalendar {
             dayHeader.style.alignItems = 'center';
             
             dayHeader.innerHTML = `
-                <span><i class="fas fa-calendar-day"></i> ${wd[date.getDay()]} ${date.getMonth() + 1}月${date.getDate()}日</span>
-                <span style="font-size:14px;color:var(--text-secondary);">${bookmarks.length}个书签</span>
+                <span><i class="fas fa-calendar-day"></i> ${tw(date.getDay())} ${t('calendarMonthDay', date.getMonth() + 1, date.getDate())}</span>
+                <span style="font-size:14px;color:var(--text-secondary);">${t('calendarBookmarksCount', bookmarks.length)}</span>
             `;
             
             contentArea.appendChild(dayHeader);
@@ -662,8 +699,8 @@ class BookmarkCalendar {
             const totalCount = weekData.reduce((sum, item) => sum + item.bookmarks.length, 0);
             
             weekHeader.innerHTML = `
-                <span><i class="fas fa-calendar-week"></i> 第${weekNum}周</span>
-                <span style="font-size:14px;color:var(--text-secondary);">${totalCount}个书签</span>
+                <span><i class="fas fa-calendar-week"></i> ${t('calendarWeek', weekNum)}</span>
+                <span style="font-size:14px;color:var(--text-secondary);">${t('calendarBookmarksCount', totalCount)}</span>
             `;
             
             contentArea.appendChild(weekHeader);
@@ -680,7 +717,7 @@ class BookmarkCalendar {
                 dayTitle.style.marginBottom = '12px';
                 dayTitle.style.paddingBottom = '8px';
                 dayTitle.style.borderBottom = '1px solid var(--accent-primary)';
-                dayTitle.innerHTML = `<i class="fas fa-calendar-day"></i> ${weekdays[date.getDay()]} ${date.getMonth() + 1}月${date.getDate()}日 (${bookmarks.length}个)`;
+                dayTitle.innerHTML = `<i class="fas fa-calendar-day"></i> ${tw(date.getDay())} ${t('calendarMonthDay', date.getMonth() + 1, date.getDate())} (${t('calendarBookmarkCount', bookmarks.length)})`;
                 
                 daySection.appendChild(dayTitle);
                 
@@ -833,18 +870,18 @@ class BookmarkCalendar {
             toggleBtn.style.cursor = 'pointer';
             toggleBtn.style.fontSize = '13px';
             toggleBtn.style.transition = 'all 0.2s';
-            toggleBtn.innerHTML = `<i class="fas fa-chevron-down"></i> 展开更多 (还有${bookmarks.length - COLLAPSE_THRESHOLD}个)`;
+            toggleBtn.innerHTML = `<i class="fas fa-chevron-down"></i> ${t('calendarExpandMore', bookmarks.length - COLLAPSE_THRESHOLD)}`;
             
             toggleBtn.addEventListener('click', () => {
                 const isCollapsed = hiddenContainer.dataset.collapsed === 'true';
                 if (isCollapsed) {
                     hiddenContainer.style.display = 'block';
                     hiddenContainer.dataset.collapsed = 'false';
-                    toggleBtn.innerHTML = `<i class="fas fa-chevron-up"></i> 收起`;
+                    toggleBtn.innerHTML = `<i class="fas fa-chevron-up"></i> ${t('calendarCollapse')}`;
                 } else {
                     hiddenContainer.style.display = 'none';
                     hiddenContainer.dataset.collapsed = 'true';
-                    toggleBtn.innerHTML = `<i class="fas fa-chevron-down"></i> 展开更多 (还有${bookmarks.length - COLLAPSE_THRESHOLD}个)`;
+                    toggleBtn.innerHTML = `<i class="fas fa-chevron-down"></i> ${t('calendarExpandMore', bookmarks.length - COLLAPSE_THRESHOLD)}`;
                 }
             });
             
@@ -879,7 +916,7 @@ class BookmarkCalendar {
         header.style.marginBottom = '20px';
         header.innerHTML = `
             <button class="calendar-nav-btn" id="prevWeek"><i class="fas fa-chevron-left"></i></button>
-            <div style="font-size:18px;font-weight:600;">${this.currentWeekStart.getMonth() + 1}月${this.currentWeekStart.getDate()}日 - ${weekEnd.getMonth() + 1}月${weekEnd.getDate()}日</div>
+            <div style="font-size:18px;font-weight:600;">${t('calendarMonthDay', this.currentWeekStart.getMonth() + 1, this.currentWeekStart.getDate())} - ${t('calendarMonthDay', weekEnd.getMonth() + 1, weekEnd.getDate())}</div>
             <button class="calendar-nav-btn" id="nextWeek"><i class="fas fa-chevron-right"></i></button>
         `;
         wrapper.appendChild(header);
@@ -896,7 +933,6 @@ class BookmarkCalendar {
         
         const weekContainer = document.createElement('div');
         weekContainer.className = 'week-view-container';
-        const weekdays = ['周日', '周一', '周二', '周三', '周四', '周五', '周六'];
         const allBookmarks = [];
         
         for (let i = 0; i < 7; i++) {
@@ -911,10 +947,10 @@ class BookmarkCalendar {
             dayCard.className = 'week-day-card';
             dayCard.innerHTML = `
                 <div class="week-day-header">
-                    <div class="week-day-name">${weekdays[i]}</div>
+                    <div class="week-day-name">${tw(i)}</div>
                     <div class="week-day-date">${date.getDate()}</div>
                 </div>
-                <div class="week-day-count">${bookmarks.length}个</div>
+                <div class="week-day-count">${t('calendarBookmarkCount', bookmarks.length)}</div>
             `;
             
             if (bookmarks.length > 0) {
@@ -937,7 +973,7 @@ class BookmarkCalendar {
             
             const title = document.createElement('h3');
             title.style.marginBottom = '20px';
-            title.textContent = `本周共 ${totalCount} 个书签`;
+            title.textContent = t('calendarTotalThisWeek', totalCount);
             section.appendChild(title);
             
             // 左右分栏布局
@@ -957,8 +993,6 @@ class BookmarkCalendar {
             const contentArea = document.createElement('div');
             contentArea.style.flex = '1';
             contentArea.style.minWidth = '0';
-            
-            const weekdays = ['周日', '周一', '周二', '周三', '周四', '周五', '周六'];
             
             // 默认选中第一天
             let selectedDateKey = this.getDateKey(allBookmarks[0].date);
@@ -1035,7 +1069,7 @@ class BookmarkCalendar {
                 dayHeader.style.marginBottom = '20px';
                 dayHeader.style.paddingBottom = '12px';
                 dayHeader.style.borderBottom = '2px solid var(--accent-primary)';
-                dayHeader.innerHTML = `<i class="fas fa-calendar-day"></i> ${weekdays[date.getDay()]} ${date.getMonth() + 1}月${date.getDate()}日`;
+                dayHeader.innerHTML = `<i class="fas fa-calendar-day"></i> ${tw(date.getDay())} ${t('calendarMonthDay', date.getMonth() + 1, date.getDate())}`;
                 
                 contentArea.appendChild(dayHeader);
                 
@@ -1069,7 +1103,7 @@ class BookmarkCalendar {
         header.style.marginBottom = '20px';
         header.innerHTML = `
             <button class="calendar-nav-btn" id="prevDay"><i class="fas fa-chevron-left"></i></button>
-            <div style="font-size:18px;font-weight:600;">${this.currentDay.getFullYear()}年${this.currentDay.getMonth() + 1}月${this.currentDay.getDate()}日</div>
+            <div style="font-size:18px;font-weight:600;">${t('calendarYearMonthDay', this.currentDay.getFullYear(), this.currentDay.getMonth() + 1, this.currentDay.getDate())}</div>
             <button class="calendar-nav-btn" id="nextDay"><i class="fas fa-chevron-right"></i></button>
         `;
         wrapper.appendChild(header);
@@ -1088,7 +1122,7 @@ class BookmarkCalendar {
         const bookmarks = this.bookmarksByDate.get(dateKey) || [];
         
         if (bookmarks.length === 0) {
-            wrapper.innerHTML += '<div class="calendar-empty-state"><i class="fas fa-calendar-day"></i><p>这天没有书签</p></div>';
+            wrapper.innerHTML += `<div class="calendar-empty-state"><i class="fas fa-calendar-day"></i><p>${t('calendarNoBookmarksThisDay')}</p></div>`;
             container.appendChild(wrapper);
             return;
         }
@@ -1100,7 +1134,7 @@ class BookmarkCalendar {
             byHour.get(hour).push(bm);
         });
         
-        wrapper.innerHTML += `<h3 style="margin-bottom:20px;">共 ${bookmarks.length} 个书签</h3>`;
+        wrapper.innerHTML += `<h3 style="margin-bottom:20px;">${t('calendarTotalThisDay', bookmarks.length)}</h3>`;
         
         for (let hour = 0; hour < 24; hour++) {
             const hourBookmarks = byHour.get(hour);
@@ -1133,7 +1167,7 @@ class BookmarkCalendar {
         header.style.marginBottom = '20px';
         header.innerHTML = `
             <button class="calendar-nav-btn" id="prevYear"><i class="fas fa-chevron-left"></i></button>
-            <div style="font-size:18px;font-weight:600;">${this.currentYear}年</div>
+            <div style="font-size:18px;font-weight:600;">${t('calendarYear', this.currentYear)}</div>
             <button class="calendar-nav-btn" id="nextYear"><i class="fas fa-chevron-right"></i></button>
         `;
         wrapper.appendChild(header);
@@ -1163,9 +1197,9 @@ class BookmarkCalendar {
             const monthCard = document.createElement('div');
             monthCard.className = 'month-card';
             monthCard.innerHTML = `
-                <div class="month-card-title">${month + 1}月</div>
+                <div class="month-card-title">${tm(month)}</div>
                 <div class="month-card-count">${count}</div>
-                <div class="month-card-label">个书签</div>
+                <div class="month-card-label">${t('calendarBookmarksCount', '').replace(/\d+\s*/, '')}</div>
             `;
             
             monthCard.addEventListener('click', () => {
@@ -1190,6 +1224,13 @@ window.initBookmarkCalendar = function() {
     }
     
     window.bookmarkCalendarInstance = new BookmarkCalendar();
+};
+
+// 语言切换时更新日历翻译
+window.updateBookmarkCalendarLanguage = function() {
+    if (window.bookmarkCalendarInstance) {
+        window.bookmarkCalendarInstance.render();
+    }
 };
 
 // 自动初始化

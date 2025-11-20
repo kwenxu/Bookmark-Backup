@@ -39,6 +39,21 @@ function formatYearMonth(year, month) {
     return t('calendarYearMonth', year, monthName).replace('{0}', year).replace('{1}', monthName);
 }
 
+// 按小时分组书签
+function groupBookmarksByHour(bookmarks) {
+    const groups = {}; // { hour: [bookmarks] }
+    
+    bookmarks.forEach(bm => {
+        const hour = bm.dateAdded.getHours();
+        if (!groups[hour]) {
+            groups[hour] = [];
+        }
+        groups[hour].push(bm);
+    });
+    
+    return groups;
+}
+
 class BookmarkCalendar {
     constructor() {
         this.bookmarksByDate = new Map(); // { 'YYYY-MM-DD': [bookmarks] }
@@ -579,15 +594,20 @@ class BookmarkCalendar {
             // 为每一天创建菜单项
             weekData.forEach(({ date, bookmarks }, dayIndex) => {
                 const dateKey = this.getDateKey(date);
+                const hasTimePeriods = bookmarks.length > 10; // 是否需要时间段子菜单
+                
+                // 日期菜单项容器
+                const dayMenuContainer = document.createElement('div');
+                dayMenuContainer.style.marginBottom = '4px';
                 
                 const dayMenuItem = document.createElement('div');
                 dayMenuItem.style.padding = '8px 12px';
-                dayMenuItem.style.marginBottom = '4px';
                 dayMenuItem.style.borderRadius = '6px';
                 dayMenuItem.style.cursor = 'pointer';
                 dayMenuItem.style.transition = 'all 0.2s';
                 dayMenuItem.style.fontSize = '13px';
                 dayMenuItem.dataset.dateKey = dateKey;
+                dayMenuItem.dataset.expanded = 'false';
                 
                 // 第一周的第一天默认选中
                 if (weekIndex === 0 && dayIndex === 0) {
@@ -603,10 +623,82 @@ class BookmarkCalendar {
                 
                 dayMenuItem.innerHTML = `
                     <div style="display:flex;justify-content:space-between;align-items:center;">
-                        <span>${tw(date.getDay())} ${date.getMonth() + 1}/${date.getDate()}</span>
+                        <span>
+                            ${hasTimePeriods ? '<i class="fas fa-chevron-right" style="font-size:10px;margin-right:4px;"></i>' : ''}
+                            ${tw(date.getDay())} ${date.getMonth() + 1}/${date.getDate()}
+                        </span>
                         <span style="font-size:12px;opacity:0.8;">${t('calendarBookmarkCount', bookmarks.length)}</span>
                     </div>
                 `;
+                
+                // 小时子菜单容器（三级菜单）
+                let hoursContainer = null;
+                if (hasTimePeriods) {
+                    hoursContainer = document.createElement('div');
+                    hoursContainer.style.marginLeft = '16px';
+                    hoursContainer.style.marginTop = '4px';
+                    hoursContainer.style.display = 'none';
+                    hoursContainer.dataset.dateKey = dateKey;
+                    
+                    // 按小时分组
+                    const hourGroups = groupBookmarksByHour(bookmarks);
+                    const hours = Object.keys(hourGroups).map(Number).sort((a, b) => a - b);
+                    
+                    hours.forEach(hour => {
+                        const hourBookmarks = hourGroups[hour];
+                        
+                        const hourMenuItem = document.createElement('div');
+                        hourMenuItem.style.padding = '6px 10px';
+                        hourMenuItem.style.marginBottom = '3px';
+                        hourMenuItem.style.borderRadius = '4px';
+                        hourMenuItem.style.cursor = 'pointer';
+                        hourMenuItem.style.transition = 'all 0.2s';
+                        hourMenuItem.style.fontSize = '12px';
+                        hourMenuItem.style.background = 'transparent';
+                        hourMenuItem.style.color = 'var(--text-primary)';
+                        hourMenuItem.style.border = '1px solid transparent';
+                        hourMenuItem.dataset.hour = hour;
+                        hourMenuItem.dataset.parentDateKey = dateKey;
+                        
+                        hourMenuItem.innerHTML = `
+                            <div style="display:flex;justify-content:space-between;align-items:center;">
+                                <span>${String(hour).padStart(2, '0')}:00-${String(hour).padStart(2, '0')}:59</span>
+                                <span style="font-size:11px;opacity:0.8;">${hourBookmarks.length}</span>
+                            </div>
+                        `;
+                        
+                        hourMenuItem.addEventListener('click', (e) => {
+                            e.stopPropagation();
+                            
+                            // 更新所有小时的选中状态
+                            sidebar.querySelectorAll('div[data-hour]').forEach(item => {
+                                item.style.background = 'transparent';
+                                item.style.color = 'var(--text-primary)';
+                                item.style.border = '1px solid transparent';
+                            });
+                            
+                            hourMenuItem.style.background = 'rgba(33, 150, 243, 0.1)';
+                            hourMenuItem.style.color = 'var(--accent-primary)';
+                            hourMenuItem.style.border = '1px solid rgba(33, 150, 243, 0.3)';
+                            
+                            renderHourContent(date, hour, hourBookmarks);
+                        });
+                        
+                        hourMenuItem.addEventListener('mouseenter', () => {
+                            if (hourMenuItem.style.background === 'transparent') {
+                                hourMenuItem.style.background = 'rgba(128, 128, 128, 0.05)';
+                            }
+                        });
+                        
+                        hourMenuItem.addEventListener('mouseleave', () => {
+                            if (hourMenuItem.style.border === '1px solid transparent') {
+                                hourMenuItem.style.background = 'transparent';
+                            }
+                        });
+                        
+                        hoursContainer.appendChild(hourMenuItem);
+                    });
+                }
                 
                 dayMenuItem.addEventListener('click', (e) => {
                     e.stopPropagation();
@@ -625,11 +717,40 @@ class BookmarkCalendar {
                     dayMenuItem.style.border = '1px solid var(--accent-primary)';
                     
                     selectedDateKey = dateKey;
-                    renderDayContent(date, bookmarks);
+                    
+                    if (hasTimePeriods) {
+                        // 有小时子菜单，切换展开/收起
+                        const isExpanded = dayMenuItem.dataset.expanded === 'true';
+                        const icon = dayMenuItem.querySelector('.fa-chevron-right, .fa-chevron-down');
+                        
+                        if (isExpanded) {
+                            // 已展开，收起子菜单
+                            hoursContainer.style.display = 'none';
+                            dayMenuItem.dataset.expanded = 'false';
+                            if (icon) {
+                                icon.classList.remove('fa-chevron-down');
+                                icon.classList.add('fa-chevron-right');
+                            }
+                        } else {
+                            // 未展开，展开子菜单
+                            hoursContainer.style.display = 'block';
+                            dayMenuItem.dataset.expanded = 'true';
+                            if (icon) {
+                                icon.classList.remove('fa-chevron-right');
+                                icon.classList.add('fa-chevron-down');
+                            }
+                        }
+                        
+                        // 无论是否展开，右侧都显示当天所有书签
+                        renderDayContent(date, bookmarks);
+                    } else {
+                        // 没有小时子菜单，直接显示内容
+                        renderDayContent(date, bookmarks);
+                    }
                 });
                 
                 dayMenuItem.addEventListener('mouseenter', () => {
-                    if (dayMenuItem.dataset.dateKey !== selectedDateKey) {
+                    if (dayMenuItem.dataset.dateKey !== selectedDateKey || hasTimePeriods) {
                         dayMenuItem.style.background = 'rgba(128, 128, 128, 0.1)';
                         dayMenuItem.style.border = '1px solid var(--border-color)';
                     }
@@ -639,10 +760,17 @@ class BookmarkCalendar {
                     if (dayMenuItem.dataset.dateKey !== selectedDateKey) {
                         dayMenuItem.style.background = 'transparent';
                         dayMenuItem.style.border = '1px solid transparent';
+                    } else if (!hasTimePeriods) {
+                        dayMenuItem.style.background = 'rgba(33, 150, 243, 0.15)';
+                        dayMenuItem.style.border = '1px solid var(--accent-primary)';
                     }
                 });
                 
-                daysContainer.appendChild(dayMenuItem);
+                dayMenuContainer.appendChild(dayMenuItem);
+                if (hoursContainer) {
+                    dayMenuContainer.appendChild(hoursContainer);
+                }
+                daysContainer.appendChild(dayMenuContainer);
             });
             
             // 周标题点击：展开子菜单 + 显示该周所有内容
@@ -682,7 +810,7 @@ class BookmarkCalendar {
             sidebar.appendChild(weekMenuContainer);
         });
         
-        // 渲染右侧内容 - 显示某一天的书签
+        // 渲染右侧内容 - 显示某一天的书签（<=10个）
         const renderDayContent = (date, bookmarks) => {
             contentArea.innerHTML = '';
             
@@ -704,8 +832,38 @@ class BookmarkCalendar {
             
             contentArea.appendChild(dayHeader);
             
-            // 使用折叠功能
+            // 直接显示书签列表
             const bookmarkList = this.createCollapsibleBookmarkList(bookmarks);
+            contentArea.appendChild(bookmarkList);
+        };
+        
+        // 渲染右侧内容 - 显示某个小时的书签（>10个时）
+        const renderHourContent = (date, hour, hourBookmarks) => {
+            contentArea.innerHTML = '';
+            
+            const hourHeader = document.createElement('div');
+            hourHeader.style.fontSize = '18px';
+            hourHeader.style.fontWeight = '700';
+            hourHeader.style.color = 'var(--text-primary)';
+            hourHeader.style.marginBottom = '20px';
+            hourHeader.style.paddingBottom = '12px';
+            hourHeader.style.borderBottom = '2px solid var(--accent-primary)';
+            hourHeader.style.display = 'flex';
+            hourHeader.style.justifyContent = 'space-between';
+            hourHeader.style.alignItems = 'center';
+            
+            hourHeader.innerHTML = `
+                <span>
+                    <i class="fas fa-calendar-day"></i> ${tw(date.getDay())} ${t('calendarMonthDay', date.getMonth() + 1, date.getDate())}
+                    <span style="margin-left:12px;">${String(hour).padStart(2, '0')}:00-${String(hour).padStart(2, '0')}:59</span>
+                </span>
+                <span style="font-size:14px;color:var(--text-secondary);">${t('calendarBookmarksCount', hourBookmarks.length)}</span>
+            `;
+            
+            contentArea.appendChild(hourHeader);
+            
+            // 显示该小时的书签列表（带折叠）
+            const bookmarkList = this.createCollapsibleBookmarkList(hourBookmarks);
             contentArea.appendChild(bookmarkList);
         };
         
@@ -1028,16 +1186,21 @@ class BookmarkCalendar {
             
             allBookmarks.forEach(({ date, bookmarks }, index) => {
                 const dateKey = this.getDateKey(date);
+                const hasTimePeriods = bookmarks.length > 10; // 是否需要时间段子菜单
+                
+                // 日期菜单项容器
+                const dayMenuContainer = document.createElement('div');
+                dayMenuContainer.style.marginBottom = '8px';
                 
                 // 左侧菜单项
                 const menuItem = document.createElement('div');
                 menuItem.style.padding = '12px';
-                menuItem.style.marginBottom = '8px';
                 menuItem.style.borderRadius = '8px';
                 menuItem.style.cursor = 'pointer';
                 menuItem.style.transition = 'all 0.2s';
                 menuItem.style.fontSize = '14px';
                 menuItem.dataset.dateKey = dateKey;
+                menuItem.dataset.expanded = 'false';
                 
                 if (index === 0) {
                     menuItem.style.background = 'var(--accent-primary)';
@@ -1050,11 +1213,83 @@ class BookmarkCalendar {
                 
                 menuItem.innerHTML = `
                     <div style="display:flex;flex-direction:column;gap:4px;">
-                        <div style="font-size:13px;opacity:0.9;">${tw(date.getDay())}</div>
+                        <div style="font-size:13px;opacity:0.9;">
+                            ${hasTimePeriods ? '<i class="fas fa-chevron-right" style="font-size:9px;margin-right:3px;"></i>' : ''}
+                            ${tw(date.getDay())}
+                        </div>
                         <div style="font-weight:600;">${date.getMonth() + 1}/${date.getDate()}</div>
                         <div style="font-size:12px;opacity:0.8;">${t('calendarBookmarkCount', bookmarks.length)}</div>
                     </div>
                 `;
+                
+                // 小时子菜单容器（二级菜单）
+                let hoursContainer = null;
+                if (hasTimePeriods) {
+                    hoursContainer = document.createElement('div');
+                    hoursContainer.style.marginLeft = '12px';
+                    hoursContainer.style.marginTop = '4px';
+                    hoursContainer.style.display = 'none';
+                    hoursContainer.dataset.dateKey = dateKey;
+                    
+                    // 按小时分组
+                    const hourGroups = groupBookmarksByHour(bookmarks);
+                    const hours = Object.keys(hourGroups).map(Number).sort((a, b) => a - b);
+                    
+                    hours.forEach(hour => {
+                        const hourBookmarks = hourGroups[hour];
+                        
+                        const hourMenuItem = document.createElement('div');
+                        hourMenuItem.style.padding = '6px 10px';
+                        hourMenuItem.style.marginBottom = '3px';
+                        hourMenuItem.style.borderRadius = '4px';
+                        hourMenuItem.style.cursor = 'pointer';
+                        hourMenuItem.style.transition = 'all 0.2s';
+                        hourMenuItem.style.fontSize = '12px';
+                        hourMenuItem.style.background = 'transparent';
+                        hourMenuItem.style.color = 'var(--text-primary)';
+                        hourMenuItem.style.border = '1px solid transparent';
+                        hourMenuItem.dataset.hour = hour;
+                        hourMenuItem.dataset.parentDateKey = dateKey;
+                        
+                        hourMenuItem.innerHTML = `
+                            <div style="display:flex;justify-content:space-between;align-items:center;">
+                                <span>${String(hour).padStart(2, '0')}:00-${String(hour).padStart(2, '0')}:59</span>
+                                <span style="font-size:11px;opacity:0.8;">${hourBookmarks.length}</span>
+                            </div>
+                        `;
+                        
+                        hourMenuItem.addEventListener('click', (e) => {
+                            e.stopPropagation();
+                            
+                            // 更新所有小时的选中状态
+                            sidebar.querySelectorAll('div[data-hour]').forEach(item => {
+                                item.style.background = 'transparent';
+                                item.style.color = 'var(--text-primary)';
+                                item.style.border = '1px solid transparent';
+                            });
+                            
+                            hourMenuItem.style.background = 'rgba(33, 150, 243, 0.1)';
+                            hourMenuItem.style.color = 'var(--accent-primary)';
+                            hourMenuItem.style.border = '1px solid rgba(33, 150, 243, 0.3)';
+                            
+                            renderHourContent(date, hour, hourBookmarks);
+                        });
+                        
+                        hourMenuItem.addEventListener('mouseenter', () => {
+                            if (hourMenuItem.style.background === 'transparent') {
+                                hourMenuItem.style.background = 'rgba(128, 128, 128, 0.05)';
+                            }
+                        });
+                        
+                        hourMenuItem.addEventListener('mouseleave', () => {
+                            if (hourMenuItem.style.border === '1px solid transparent') {
+                                hourMenuItem.style.background = 'transparent';
+                            }
+                        });
+                        
+                        hoursContainer.appendChild(hourMenuItem);
+                    });
+                }
                 
                 menuItem.addEventListener('click', () => {
                     // 更新选中状态
@@ -1067,13 +1302,41 @@ class BookmarkCalendar {
                     menuItem.style.color = 'white';
                     menuItem.style.fontWeight = '600';
                     
-                    // 显示对应天的内容
                     selectedDateKey = dateKey;
-                    renderDayContent(date, bookmarks);
+                    
+                    if (hasTimePeriods) {
+                        // 有小时子菜单，切换展开/收起
+                        const isExpanded = menuItem.dataset.expanded === 'true';
+                        const icon = menuItem.querySelector('.fa-chevron-right, .fa-chevron-down');
+                        
+                        if (isExpanded) {
+                            // 已展开，收起子菜单
+                            hoursContainer.style.display = 'none';
+                            menuItem.dataset.expanded = 'false';
+                            if (icon) {
+                                icon.classList.remove('fa-chevron-down');
+                                icon.classList.add('fa-chevron-right');
+                            }
+                        } else {
+                            // 未展开，展开子菜单
+                            hoursContainer.style.display = 'block';
+                            menuItem.dataset.expanded = 'true';
+                            if (icon) {
+                                icon.classList.remove('fa-chevron-right');
+                                icon.classList.add('fa-chevron-down');
+                            }
+                        }
+                        
+                        // 无论是否展开，右侧都显示当天所有书签
+                        renderDayContent(date, bookmarks);
+                    } else {
+                        // 没有小时子菜单，直接显示内容
+                        renderDayContent(date, bookmarks);
+                    }
                 });
                 
                 menuItem.addEventListener('mouseenter', () => {
-                    if (menuItem.dataset.dateKey !== selectedDateKey) {
+                    if (menuItem.dataset.dateKey !== selectedDateKey || hasTimePeriods) {
                         menuItem.style.background = 'var(--bg-secondary)';
                     }
                 });
@@ -1081,13 +1344,19 @@ class BookmarkCalendar {
                 menuItem.addEventListener('mouseleave', () => {
                     if (menuItem.dataset.dateKey !== selectedDateKey) {
                         menuItem.style.background = 'transparent';
+                    } else if (!hasTimePeriods) {
+                        menuItem.style.background = 'var(--accent-primary)';
                     }
                 });
                 
-                sidebar.appendChild(menuItem);
+                dayMenuContainer.appendChild(menuItem);
+                if (hoursContainer) {
+                    dayMenuContainer.appendChild(hoursContainer);
+                }
+                sidebar.appendChild(dayMenuContainer);
             });
             
-            // 渲染右侧内容
+            // 渲染右侧内容 - 显示某一天的书签（<=10个）
             const renderDayContent = (date, bookmarks) => {
                 contentArea.innerHTML = '';
                 
@@ -1102,8 +1371,38 @@ class BookmarkCalendar {
                 
                 contentArea.appendChild(dayHeader);
                 
-                // 使用折叠功能
+                // 直接显示书签列表
                 const bookmarkList = this.createCollapsibleBookmarkList(bookmarks);
+                contentArea.appendChild(bookmarkList);
+            };
+            
+            // 渲染右侧内容 - 显示某个小时的书签（>10个时）
+            const renderHourContent = (date, hour, hourBookmarks) => {
+                contentArea.innerHTML = '';
+                
+                const hourHeader = document.createElement('div');
+                hourHeader.style.fontSize = '18px';
+                hourHeader.style.fontWeight = '700';
+                hourHeader.style.color = 'var(--text-primary)';
+                hourHeader.style.marginBottom = '20px';
+                hourHeader.style.paddingBottom = '12px';
+                hourHeader.style.borderBottom = '2px solid var(--accent-primary)';
+                hourHeader.style.display = 'flex';
+                hourHeader.style.justifyContent = 'space-between';
+                hourHeader.style.alignItems = 'center';
+                
+                hourHeader.innerHTML = `
+                    <span>
+                        <i class="fas fa-calendar-day"></i> ${tw(date.getDay())} ${t('calendarMonthDay', date.getMonth() + 1, date.getDate())}
+                        <span style="margin-left:12px;">${String(hour).padStart(2, '0')}:00-${String(hour).padStart(2, '0')}:59</span>
+                    </span>
+                    <span style="font-size:14px;color:var(--text-secondary);">${t('calendarBookmarksCount', hourBookmarks.length)}</span>
+                `;
+                
+                contentArea.appendChild(hourHeader);
+                
+                // 显示该小时的书签列表（带折叠）
+                const bookmarkList = this.createCollapsibleBookmarkList(hourBookmarks);
                 contentArea.appendChild(bookmarkList);
             };
             
@@ -1165,32 +1464,147 @@ class BookmarkCalendar {
             return;
         }
         
-        const byHour = new Map();
-        bookmarks.forEach(bm => {
-            const hour = bm.dateAdded.getHours();
-            if (!byHour.has(hour)) byHour.set(hour, []);
-            byHour.get(hour).push(bm);
-        });
-        
         const title = document.createElement('h3');
         title.style.marginBottom = '20px';
         title.textContent = t('calendarTotalThisDay', bookmarks.length);
         wrapper.appendChild(title);
         
-        for (let hour = 0; hour < 24; hour++) {
-            const hourBookmarks = byHour.get(hour);
-            if (!hourBookmarks) continue;
+        // 如果书签数量<=10，直接按小时显示；>10则添加左侧时间段菜单
+        if (bookmarks.length <= 10) {
+            // 直接按小时显示
+            const byHour = new Map();
+            bookmarks.forEach(bm => {
+                const hour = bm.dateAdded.getHours();
+                if (!byHour.has(hour)) byHour.set(hour, []);
+                byHour.get(hour).push(bm);
+            });
             
-            const hourSection = document.createElement('div');
-            hourSection.style.marginBottom = '24px';
-            hourSection.innerHTML = `<div class="bookmarks-group-title">${String(hour).padStart(2, '0')}:00 - ${String(hour).padStart(2, '0')}:59 (${t('calendarBookmarkCount', hourBookmarks.length)})</div>`;
-            hourBookmarks.sort((a, b) => a.dateAdded - b.dateAdded);
+            for (let hour = 0; hour < 24; hour++) {
+                const hourBookmarks = byHour.get(hour);
+                if (!hourBookmarks) continue;
+                
+                const hourSection = document.createElement('div');
+                hourSection.style.marginBottom = '24px';
+                hourSection.innerHTML = `<div class="bookmarks-group-title">${String(hour).padStart(2, '0')}:00 - ${String(hour).padStart(2, '0')}:59 (${t('calendarBookmarkCount', hourBookmarks.length)})</div>`;
+                hourBookmarks.sort((a, b) => a.dateAdded - b.dateAdded);
+                
+                const bookmarkList = this.createCollapsibleBookmarkList(hourBookmarks);
+                hourSection.appendChild(bookmarkList);
+                
+                wrapper.appendChild(hourSection);
+            }
+        } else {
+            // 左右分栏布局：左侧时间段菜单，右侧内容
+            const panelContainer = document.createElement('div');
+            panelContainer.style.display = 'flex';
+            panelContainer.style.gap = '20px';
+            panelContainer.style.minHeight = '400px';
             
-            // 使用折叠功能
-            const bookmarkList = this.createCollapsibleBookmarkList(hourBookmarks);
-            hourSection.appendChild(bookmarkList);
+            // 左侧时间段菜单栏
+            const sidebar = document.createElement('div');
+            sidebar.style.width = '180px';
+            sidebar.style.flexShrink = '0';
+            sidebar.style.borderRight = '1px solid var(--border-color)';
+            sidebar.style.paddingRight = '20px';
             
-            wrapper.appendChild(hourSection);
+            // 右侧内容区
+            const contentArea = document.createElement('div');
+            contentArea.style.flex = '1';
+            contentArea.style.minWidth = '0';
+            
+            // 按小时分组
+            const hourGroups = groupBookmarksByHour(bookmarks);
+            const hours = Object.keys(hourGroups).map(Number).sort((a, b) => a - b);
+            
+            // 默认选中第一个有数据的小时
+            let selectedHour = hours[0];
+            
+            hours.forEach((hour, index) => {
+                const hourBookmarks = hourGroups[hour];
+                
+                // 左侧小时菜单项
+                const menuItem = document.createElement('div');
+                menuItem.style.padding = '12px';
+                menuItem.style.marginBottom = '8px';
+                menuItem.style.borderRadius = '8px';
+                menuItem.style.cursor = 'pointer';
+                menuItem.style.transition = 'all 0.2s';
+                menuItem.style.fontSize = '14px';
+                menuItem.dataset.hour = hour;
+                
+                if (index === 0) {
+                    menuItem.style.background = 'var(--accent-primary)';
+                    menuItem.style.color = 'white';
+                    menuItem.style.fontWeight = '600';
+                } else {
+                    menuItem.style.background = 'transparent';
+                    menuItem.style.color = 'var(--text-primary)';
+                }
+                
+                menuItem.innerHTML = `
+                    <div style="display:flex;flex-direction:column;gap:4px;">
+                        <div style="font-size:13px;opacity:0.9;">${String(hour).padStart(2, '0')}:00-${String(hour).padStart(2, '0')}:59</div>
+                        <div style="font-size:12px;opacity:0.8;">${t('calendarBookmarkCount', hourBookmarks.length)}</div>
+                    </div>
+                `;
+                
+                menuItem.addEventListener('click', () => {
+                    // 更新选中状态
+                    sidebar.querySelectorAll('div[data-hour]').forEach(item => {
+                        item.style.background = 'transparent';
+                        item.style.color = 'var(--text-primary)';
+                        item.style.fontWeight = 'normal';
+                    });
+                    menuItem.style.background = 'var(--accent-primary)';
+                    menuItem.style.color = 'white';
+                    menuItem.style.fontWeight = '600';
+                    
+                    // 显示对应小时的内容
+                    selectedHour = hour;
+                    renderHourContent(hour, hourBookmarks);
+                });
+                
+                menuItem.addEventListener('mouseenter', () => {
+                    if (Number(menuItem.dataset.hour) !== selectedHour) {
+                        menuItem.style.background = 'var(--bg-secondary)';
+                    }
+                });
+                
+                menuItem.addEventListener('mouseleave', () => {
+                    if (Number(menuItem.dataset.hour) !== selectedHour) {
+                        menuItem.style.background = 'transparent';
+                    }
+                });
+                
+                sidebar.appendChild(menuItem);
+            });
+            
+            // 渲染右侧小时内容
+            const renderHourContent = (hour, hourBookmarks) => {
+                contentArea.innerHTML = '';
+                
+                const hourHeader = document.createElement('div');
+                hourHeader.style.fontSize = '18px';
+                hourHeader.style.fontWeight = '700';
+                hourHeader.style.color = 'var(--text-primary)';
+                hourHeader.style.marginBottom = '20px';
+                hourHeader.style.paddingBottom = '12px';
+                hourHeader.style.borderBottom = '2px solid var(--accent-primary)';
+                hourHeader.innerHTML = `${String(hour).padStart(2, '0')}:00-${String(hour).padStart(2, '0')}:59`;
+                
+                contentArea.appendChild(hourHeader);
+                
+                // 显示该小时的书签列表（带折叠）
+                const bookmarkList = this.createCollapsibleBookmarkList(hourBookmarks);
+                contentArea.appendChild(bookmarkList);
+            };
+            
+            // 初始显示第一个小时
+            renderHourContent(selectedHour, hourGroups[selectedHour]);
+            
+            panelContainer.appendChild(sidebar);
+            panelContainer.appendChild(contentArea);
+            wrapper.appendChild(panelContainer);
         }
         
         container.appendChild(wrapper);

@@ -919,7 +919,7 @@ const i18n = {
         'en': ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December']
     },
     calendarYearMonth: {
-        'zh_CN': '{0}年{1}月',
+        'zh_CN': '{0}年{1}',
         'en': '{1} {0}'
     },
     calendarBookmarkCount: {

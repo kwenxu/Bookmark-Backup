@@ -6,6 +6,7 @@
     <title></title>
     <link rel="stylesheet" href="history.css">
     <link rel="stylesheet" href="canvas_obsidian_style.css">
+    <link rel="stylesheet" href="bookmark_calendar.css">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/5.15.3/css/all.min.css">
     <script src="history_bootstrap.js" defer></script>
     <script src="vendor/marked.min.js"></script>
@@ -15,6 +16,7 @@
     <script src="pointer_drag.js" defer></script>
     <script src="bookmark_canvas_module.js" defer></script>
     <script src="shortcuts_helpers.js" defer></script>
+    <script src="bookmark_calendar.js" defer></script>
     <script src="history.js" defer></script>
 </head>
 <body>
@@ -180,31 +182,54 @@
                 </div>
             </div>
 
-            <!-- 书签温故视图 -->
+            <!-- 书签记录视图 -->
             <div id="additionsView" class="view">
                 <div class="view-header">
-                    <h2 id="additionsViewTitle">书签温故</h2>
+                    <h2 id="additionsViewTitle">书签记录</h2>
                 </div>
                 
-                <!-- 书签温故子视图标签 -->
+                <!-- 书签记录子视图标签 -->
                 <div class="additions-tabs">
                     <button id="additionsTabReview" class="additions-tab active" data-tab="review">书签添加记录</button>
                     <button id="additionsTabRanking" class="additions-tab" data-tab="ranking">书签点击排行</button>
                     <button id="additionsTabAnki" class="additions-tab" data-tab="anki">书签Anki</button>
                 </div>
 
-                <!-- 子视图 1：原始 书签温故 列表 -->
+                <!-- 子视图 1：书签添加记录（日历视图） -->
                 <div id="additionsReviewPanel" class="additions-subview active">
-                    <!-- 历史记录快捷入口 -->
-                    <div class="history-link-row">
-                        <button id="openNativeHistoryBtn" class="history-link-btn" type="button">
-                            <i class="fas fa-history"></i>
-                            <span id="nativeHistoryButtonText">历史记录 (chrome://history/)</span>
+                    <!-- 面包屑导航 -->
+                    <div class="calendar-breadcrumb-nav">
+                        <button class="breadcrumb-btn active" id="breadcrumbYear">
+                            <i class="fas fa-calendar"></i>
+                            <span id="breadcrumbYearText">2024年</span>
+                        </button>
+                        <span class="breadcrumb-separator" id="separator1" style="display:none;">/</span>
+                        <button class="breadcrumb-btn" id="breadcrumbMonth" style="display:none;">
+                            <span id="breadcrumbMonthText">11月</span>
+                        </button>
+                        <span class="breadcrumb-separator" id="separator2" style="display:none;">/</span>
+                        <button class="breadcrumb-btn" id="breadcrumbWeek" style="display:none;">
+                            <span id="breadcrumbWeekText">第45周</span>
+                        </button>
+                        <span class="breadcrumb-separator" id="separator3" style="display:none;">/</span>
+                        <button class="breadcrumb-btn" id="breadcrumbDay" style="display:none;">
+                            <span id="breadcrumbDayText">11月20日</span>
                         </button>
                     </div>
 
-                    <!-- 过滤器 -->
-                    <div class="filter-bar">
+                    <!-- 日历容器 -->
+                    <div id="bookmarkCalendarView" class="bookmark-calendar-view">
+                        <div style="padding: 40px; text-align: center; color: var(--text-secondary);">
+                            <i class="fas fa-calendar-alt" style="font-size: 48px; opacity: 0.3; margin-bottom: 16px;"></i>
+                            <p>正在加载日历...</p>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 子视图 2：书签点击排行（保持不变） -->
+                <div id="additionsRankingPanel" class="additions-subview">
+                    <!-- 过滤器（删除旧的，改为简化版） -->
+                    <div class="filter-bar" style="display:none;">
                         <div class="filter-group">
                             <label class="filter-label" id="filterStatusLabel">状态</label>
                             <button class="filter-btn active" data-filter="all" id="filterAll">全部</button>

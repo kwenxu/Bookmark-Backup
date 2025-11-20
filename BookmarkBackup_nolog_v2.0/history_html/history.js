@@ -610,8 +610,8 @@ const i18n = {
         'en': 'Backup History'
     },
     navAdditions: {
-        'zh_CN': '书签温故',
-        'en': 'Bookmark Review'
+        'zh_CN': '书签记录',
+        'en': 'Bookmark Records'
     },
     navCanvas: {
         'zh_CN': '书签画布',
@@ -654,8 +654,8 @@ const i18n = {
         'en': 'Backup History'
     },
     additionsViewTitle: {
-        'zh_CN': '书签温故',
-        'en': 'Bookmark Review'
+        'zh_CN': '书签记录',
+        'en': 'Bookmark Records'
     },
     canvasViewTitle: {
         'zh_CN': '书签画布',
@@ -774,8 +774,8 @@ const i18n = {
         'en': 'Open "Bookmark Canvas" view'
     },
     shortcutAdditions: {
-        'zh_CN': '打开「书签温故」视图',
-        'en': 'Open "Bookmark Review" view'
+        'zh_CN': '打开「书签记录」视图',
+        'en': 'Open "Bookmark Records" view'
     },
     closeShortcutsText: {
         'zh_CN': '关闭',
@@ -870,8 +870,8 @@ const i18n = {
         'en': 'Revert failed: '
     },
     emptyAdditions: {
-        'zh_CN': '暂无书签温故记录',
-        'en': 'No bookmark review records'
+        'zh_CN': '暂无书签记录',
+        'en': 'No bookmark records'
     },
     emptyTree: {
         'zh_CN': '无法加载书签树',

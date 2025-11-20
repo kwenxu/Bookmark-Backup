@@ -15,13 +15,44 @@ class BookmarkCalendar {
 
     async init() {
         console.log('[BookmarkCalendar] 初始化...');
+        
+        // 初始化FaviconCache（如果可用）
+        if (typeof FaviconCache !== 'undefined' && FaviconCache.init) {
+            try {
+                await FaviconCache.init();
+                console.log('[BookmarkCalendar] FaviconCache初始化完成');
+            } catch (error) {
+                console.warn('[BookmarkCalendar] FaviconCache初始化失败:', error);
+            }
+        }
+        
         await this.loadBookmarkData();
         
         // 跳转到最近有书签的月份
         this.jumpToRecentBookmarks();
         
+        // 预热favicon缓存
+        this.preloadFavicons();
+        
         this.setupBreadcrumb();
         this.render();
+    }
+    
+    preloadFavicons() {
+        // 收集所有书签URL
+        const allUrls = [];
+        for (const bookmarks of this.bookmarksByDate.values()) {
+            bookmarks.forEach(bm => {
+                if (bm.url) allUrls.push(bm.url);
+            });
+        }
+        
+        // 预热favicon缓存
+        if (typeof warmupFaviconCache === 'function') {
+            warmupFaviconCache(allUrls).catch(err => {
+                console.warn('[BookmarkCalendar] Favicon预热失败:', err);
+            });
+        }
     }
 
     async loadBookmarkData() {
@@ -681,28 +712,64 @@ class BookmarkCalendar {
         item.style.marginBottom = '8px';
         item.style.cursor = 'pointer';
         item.style.transition = 'all 0.2s';
+        item.dataset.bookmarkUrl = bookmark.url;
         
         const time = bookmark.dateAdded.toLocaleTimeString('zh-CN', { 
             hour: '2-digit', 
             minute: '2-digit'
         });
         
-        item.innerHTML = `
-            <img src="chrome://favicon/${bookmark.url}" 
-                 style="width:16px;height:16px;margin-top:2px;flex-shrink:0;" 
-                 alt="">
-            <div style="flex:1;min-width:0;">
-                <div style="font-size:14px;font-weight:500;margin-bottom:4px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">
-                    ${this.escapeHtml(bookmark.title)}
-                </div>
-                <div style="font-size:12px;color:var(--text-secondary);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">
-                    ${this.escapeHtml(bookmark.url)}
-                </div>
+        // 创建favicon图标
+        const faviconImg = document.createElement('img');
+        faviconImg.className = 'bookmark-favicon';
+        faviconImg.style.width = '16px';
+        faviconImg.style.height = '16px';
+        faviconImg.style.marginTop = '2px';
+        faviconImg.style.flexShrink = '0';
+        faviconImg.alt = '';
+        
+        // 使用全局的 getFaviconUrl 函数（如果存在）
+        if (typeof getFaviconUrl === 'function') {
+            faviconImg.src = getFaviconUrl(bookmark.url);
+        } else {
+            // 降级方案
+            faviconImg.src = `chrome://favicon/${bookmark.url}`;
+        }
+        
+        item.appendChild(faviconImg);
+        
+        // 信息区域
+        const infoDiv = document.createElement('div');
+        infoDiv.style.flex = '1';
+        infoDiv.style.minWidth = '0';
+        infoDiv.innerHTML = `
+            <div style="font-size:14px;font-weight:500;margin-bottom:4px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">
+                ${this.escapeHtml(bookmark.title)}
             </div>
-            <div style="font-size:12px;color:var(--text-tertiary);white-space:nowrap;">
-                ${time}
+            <div style="font-size:12px;color:var(--text-secondary);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">
+                ${this.escapeHtml(bookmark.url)}
             </div>
         `;
+        item.appendChild(infoDiv);
+        
+        // 时间区域
+        const timeDiv = document.createElement('div');
+        timeDiv.style.fontSize = '12px';
+        timeDiv.style.color = 'var(--text-tertiary)';
+        timeDiv.style.whiteSpace = 'nowrap';
+        timeDiv.textContent = time;
+        item.appendChild(timeDiv);
+        
+        // 异步加载高质量favicon（如果FaviconCache可用）
+        if (typeof FaviconCache !== 'undefined' && FaviconCache.fetch) {
+            FaviconCache.fetch(bookmark.url).then(faviconUrl => {
+                if (faviconUrl) {
+                    faviconImg.src = faviconUrl;
+                }
+            }).catch(() => {
+                // 静默处理错误
+            });
+        }
         
         item.addEventListener('click', () => {
             chrome.tabs.create({ url: bookmark.url });

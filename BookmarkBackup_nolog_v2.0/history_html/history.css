@@ -964,6 +964,101 @@ body {
 }
 
 /* ==================== 书签温故 ==================== */
+.additions-tabs {
+    display: flex;
+    gap: 8px;
+    margin-bottom: 16px;
+}
+
+.additions-tab {
+    flex: 1;
+    padding: 6px 10px;
+    border-radius: 999px;
+    border: 1px solid var(--border-color);
+    background: var(--bg-secondary);
+    color: var(--text-secondary);
+    font-size: 13px;
+    cursor: pointer;
+    text-align: center;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    transition: all 0.2s ease;
+}
+
+.additions-tab.active {
+    background: var(--accent-primary);
+    border-color: var(--accent-primary);
+    color: #ffffff;
+    font-weight: 600;
+}
+
+.additions-subview {
+    display: none;
+}
+
+.additions-subview.active {
+    display: block;
+}
+
+.history-link-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-bottom: 12px;
+}
+
+.history-link-btn {
+    padding: 6px 10px;
+    border-radius: 999px;
+    border: 1px solid var(--border-color);
+    background: var(--bg-secondary);
+    color: var(--link-color);
+    font-size: 12px;
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    transition: all 0.2s ease;
+}
+
+.history-link-btn i {
+    font-size: 12px;
+}
+
+.history-link-btn:hover {
+    background: var(--bg-tertiary);
+}
+
+.ranking-list {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.ranking-item {
+    cursor: pointer;
+}
+
+.ranking-item-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 8px;
+}
+
+.ranking-counts {
+    font-size: 12px;
+    color: var(--text-secondary);
+    white-space: nowrap;
+}
+
+.ranking-detail {
+    margin-top: 4px;
+    font-size: 12px;
+    color: var(--text-tertiary);
+}
+
 .filter-bar {
     display: flex;
     flex-direction: column;

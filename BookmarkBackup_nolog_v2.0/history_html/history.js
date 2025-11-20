@@ -617,6 +617,18 @@ const i18n = {
         'zh_CN': '书签画布',
         'en': 'Bookmark Canvas'
     },
+    additionsTabReview: {
+        'zh_CN': '书签添加记录',
+        'en': 'Bookmark additions'
+    },
+    additionsTabRanking: {
+        'zh_CN': '书签点击排行',
+        'en': 'Bookmark click ranking'
+    },
+    additionsTabAnki: {
+        'zh_CN': '书签Anki',
+        'en': 'Bookmark Anki'
+    },
     statsTitle: {
         'zh_CN': '统计信息',
         'en': 'Statistics'
@@ -956,6 +968,26 @@ const i18n = {
     horizontalScrollHint: {
         'zh_CN': 'Shift + 滚轮',
         'en': 'Shift + Wheel'
+    },
+    nativeHistoryButtonText: {
+        'zh_CN': '历史记录 (chrome://history/)',
+        'en': 'History (chrome://history/)'
+    },
+    groupedHistoryButtonText: {
+        'zh_CN': '分组历史 (chrome://history/grouped)',
+        'en': 'Grouped History (chrome://history/grouped)'
+    },
+    bookmarkRankingDescription: {
+        'zh_CN': '结合浏览器历史记录，对当前书签的点击次数进行「书签点击排行」。点击某一行可展开查看不同时间范围的统计。',
+        'en': 'Based on browser history, rank your bookmarks by click counts. Click a row to see statistics for different time ranges.'
+    },
+    additionsAnkiTitle: {
+        'zh_CN': '书签Anki（规划中）',
+        'en': 'Bookmark Anki (planned)'
+    },
+    additionsAnkiDescription: {
+        'zh_CN': '未来会在这里加入基于 Anki 的复习节奏，帮助你按记忆曲线重新回顾书签。',
+        'en': 'An Anki-based review flow will be added here to help you revisit bookmarks along a memory curve.'
     }
 };
 
@@ -1395,6 +1427,27 @@ function applyLanguage() {
     // 更新横向滚动条提示文字
     const scrollbarHint = document.querySelector('.canvas-scrollbar.horizontal .scrollbar-hint');
     if (scrollbarHint) scrollbarHint.textContent = i18n.horizontalScrollHint[currentLang];
+
+    // 书签温故子标签与文案
+    const additionsTabReview = document.getElementById('additionsTabReview');
+    if (additionsTabReview) additionsTabReview.textContent = i18n.additionsTabReview[currentLang];
+    const additionsTabRanking = document.getElementById('additionsTabRanking');
+    if (additionsTabRanking) additionsTabRanking.textContent = i18n.additionsTabRanking[currentLang];
+    const additionsTabAnki = document.getElementById('additionsTabAnki');
+    if (additionsTabAnki) additionsTabAnki.textContent = i18n.additionsTabAnki[currentLang];
+
+    const rankingDesc = document.getElementById('bookmarkRankingDescription');
+    if (rankingDesc) rankingDesc.textContent = i18n.bookmarkRankingDescription[currentLang];
+
+    const nativeHistoryText = document.getElementById('nativeHistoryButtonText');
+    if (nativeHistoryText) nativeHistoryText.textContent = i18n.nativeHistoryButtonText[currentLang];
+    const groupedHistoryText = document.getElementById('groupedHistoryButtonText');
+    if (groupedHistoryText) groupedHistoryText.textContent = i18n.groupedHistoryButtonText[currentLang];
+
+    const additionsAnkiTitle = document.getElementById('additionsAnkiTitle');
+    if (additionsAnkiTitle) additionsAnkiTitle.textContent = i18n.additionsAnkiTitle[currentLang];
+    const additionsAnkiDescription = document.getElementById('additionsAnkiDescription');
+    if (additionsAnkiDescription) additionsAnkiDescription.textContent = i18n.additionsAnkiDescription[currentLang];
     
     // 更新语言切换按钮
     document.querySelector('#langToggle .lang-text').textContent = currentLang === 'zh_CN' ? 'EN' : '中';
@@ -1437,6 +1490,9 @@ function initializeUI() {
             renderAdditionsView();
         });
     });
+
+    // 「书签温故」子视图标签
+    initAdditionsSubTabs();
     
     // 工具按钮
     document.getElementById('refreshBtn').addEventListener('click', refreshData);
@@ -4096,6 +4152,312 @@ function renderAdditionsView() {
     
     // 绑定折叠/展开事件
     attachAdditionGroupEvents();
+}
+
+// 初始化「书签温故」子视图标签和行为
+function initAdditionsSubTabs() {
+    const tabs = document.querySelectorAll('.additions-tab');
+    const reviewPanel = document.getElementById('additionsReviewPanel');
+    const rankingPanel = document.getElementById('additionsRankingPanel');
+    const ankiPanel = document.getElementById('additionsAnkiPanel');
+    const rankingList = document.getElementById('bookmarkRankingList');
+    const historyBtn = document.getElementById('openNativeHistoryBtn');
+    const groupedBtn = document.getElementById('openGroupedHistoryBtn');
+
+    // 历史记录快捷入口
+    if (historyBtn && browserAPI && browserAPI.tabs && typeof browserAPI.tabs.create === 'function') {
+        historyBtn.addEventListener('click', () => {
+            try {
+                browserAPI.tabs.create({ url: 'chrome://history/' });
+            } catch (e) {
+                console.warn('[Additions] 打开历史记录失败:', e);
+            }
+        });
+    }
+    if (groupedBtn && browserAPI && browserAPI.tabs && typeof browserAPI.tabs.create === 'function') {
+        groupedBtn.addEventListener('click', () => {
+            try {
+                browserAPI.tabs.create({ url: 'chrome://history/grouped' });
+            } catch (e) {
+                console.warn('[Additions] 打开分组历史记录失败:', e);
+            }
+        });
+    }
+
+    if (!tabs.length || !reviewPanel || !rankingPanel || !ankiPanel) {
+        return;
+    }
+
+    let rankingInitialized = false;
+
+    tabs.forEach(tab => {
+        tab.addEventListener('click', () => {
+            const target = tab.dataset.tab;
+
+            // 切换标签高亮
+            tabs.forEach(t => t.classList.remove('active'));
+            tab.classList.add('active');
+
+            // 切换子视图
+            reviewPanel.classList.remove('active');
+            rankingPanel.classList.remove('active');
+            ankiPanel.classList.remove('active');
+
+            if (target === 'review') {
+                reviewPanel.classList.add('active');
+            } else if (target === 'ranking') {
+                rankingPanel.classList.add('active');
+                if (!rankingInitialized && rankingList) {
+                    rankingInitialized = true;
+                    try {
+                        loadBookmarkClickRankingForAdditions(rankingList);
+                    } catch (e) {
+                        console.warn('[Additions] 加载点击排行失败:', e);
+                    }
+                }
+            } else if (target === 'anki') {
+                ankiPanel.classList.add('active');
+            }
+        });
+    });
+}
+
+// 基于浏览器历史记录的“书签点击排行榜”（书签温故第二个子视图）
+function loadBookmarkClickRankingForAdditions(container) {
+    if (!container) return;
+
+    container.innerHTML = `
+        <div class="empty-state">
+            <div class="empty-state-icon"><i class="fas fa-clock"></i></div>
+            <div class="empty-state-title">${currentLang === 'zh_CN' ? '正在读取历史记录...' : 'Loading history...'}</div>
+        </div>
+    `;
+
+    if (!browserAPI || !browserAPI.history || typeof browserAPI.history.getVisits !== 'function') {
+        container.innerHTML = `
+            <div class="empty-state">
+                <div class="empty-state-icon"><i class="fas fa-ban"></i></div>
+                <div class="empty-state-title">${currentLang === 'zh_CN' ? '当前环境不支持历史记录统计' : 'History statistics are not available in this environment'}</div>
+                <div class="empty-state-description">${currentLang === 'zh_CN' ? '请确认扩展已获得浏览器的历史记录权限。' : 'Please ensure the extension has permission to access browser history.'}</div>
+            </div>
+        `;
+        return;
+    }
+
+    if (!Array.isArray(allBookmarks) || allBookmarks.length === 0) {
+        container.innerHTML = `
+            <div class="empty-state">
+                <div class="empty-state-icon"><i class="fas fa-bookmark"></i></div>
+                <div class="empty-state-title">${currentLang === 'zh_CN' ? '暂无书签可统计' : 'No bookmarks to analyze'}</div>
+            </div>
+        `;
+        return;
+    }
+
+    // 仅统计有效的 HTTP/HTTPS 书签，限制数量避免开销过大
+    const candidates = allBookmarks
+        .filter(b => b.url && (b.url.startsWith('http://') || b.url.startsWith('https://')))
+        .slice(0, 150);
+
+    if (!candidates.length) {
+        container.innerHTML = `
+            <div class="empty-state">
+                <div class="empty-state-icon"><i class="fas fa-bookmark"></i></div>
+                <div class="empty-state-title">${currentLang === 'zh_CN' ? '暂无可统计的书签' : 'No bookmarks available for statistics'}</div>
+            </div>
+        `;
+        return;
+    }
+
+    const now = Date.now();
+    const oneDay = 24 * 60 * 60 * 1000;
+
+    const rankingMap = new Map(); // url -> stats
+    let pending = candidates.length;
+
+    const finishIfDone = () => {
+        pending -= 1;
+        if (pending > 0) return;
+
+        const items = Array.from(rankingMap.values())
+            // 只保留至少有一次访问的
+            .filter(item =>
+                item.last1d ||
+                item.last3d ||
+                item.last7d ||
+                item.last30d ||
+                item.last90d ||
+                item.last180d ||
+                item.last365d
+            );
+
+        if (!items.length) {
+            container.innerHTML = `
+                <div class="empty-state">
+                    <div class="empty-state-icon"><i class="fas fa-clock"></i></div>
+                    <div class="empty-state-title">${currentLang === 'zh_CN' ? '暂无点击记录' : 'No click records found'}</div>
+                    <div class="empty-state-description">${currentLang === 'zh_CN' ? '浏览器历史记录中尚未找到这些书签的访问记录。' : 'No visit records for these bookmarks were found in browser history.'}</div>
+                </div>
+            `;
+            return;
+        }
+
+        // 排序：优先最近 7 天，再看 30 天
+        items.sort((a, b) => {
+            if (b.last7d !== a.last7d) return b.last7d - a.last7d;
+            if (b.last30d !== a.last30d) return b.last30d - a.last30d;
+            return (b.last365d || 0) - (a.last365d || 0);
+        });
+
+        renderBookmarkClickRankingList(container, items.slice(0, 50));
+    };
+
+    candidates.forEach(bookmark => {
+        try {
+            browserAPI.history.getVisits({ url: bookmark.url }, (visits) => {
+                const runtime = browserAPI.runtime;
+                if (runtime && runtime.lastError) {
+                    finishIfDone();
+                    return;
+                }
+
+                const key = bookmark.url;
+                let info = rankingMap.get(key);
+                if (!info) {
+                    info = {
+                        url: bookmark.url,
+                        title: bookmark.title || bookmark.url,
+                        lastVisitTime: 0,
+                        last1d: 0,
+                        last3d: 0,
+                        last7d: 0,
+                        last30d: 0,
+                        last90d: 0,
+                        last180d: 0,
+                        last365d: 0
+                    };
+                    rankingMap.set(key, info);
+                }
+
+                if (Array.isArray(visits)) {
+                    visits.forEach(v => {
+                        const t = typeof v.visitTime === 'number' ? v.visitTime : 0;
+                        if (!t) return;
+
+                        if (t > info.lastVisitTime) {
+                            info.lastVisitTime = t;
+                        }
+
+                        const diff = now - t;
+                        if (diff <= oneDay) info.last1d += 1;
+                        if (diff <= 3 * oneDay) info.last3d += 1;
+                        if (diff <= 7 * oneDay) info.last7d += 1;
+                        if (diff <= 30 * oneDay) info.last30d += 1;
+                        if (diff <= 90 * oneDay) info.last90d += 1;
+                        if (diff <= 180 * oneDay) info.last180d += 1;
+                        if (diff <= 365 * oneDay) info.last365d += 1;
+                    });
+                }
+
+                finishIfDone();
+            });
+        } catch (e) {
+            finishIfDone();
+        }
+    });
+}
+
+function renderBookmarkClickRankingList(container, items) {
+    container.innerHTML = '';
+
+    items.forEach(entry => {
+        const row = document.createElement('div');
+        row.className = 'addition-item ranking-item';
+
+        const icon = document.createElement('img');
+        icon.className = 'addition-icon';
+        icon.src = getFaviconUrl(entry.url);
+        icon.alt = '';
+
+        const info = document.createElement('div');
+        info.className = 'addition-info';
+
+        const titleLink = document.createElement('a');
+        titleLink.className = 'addition-title';
+        titleLink.href = entry.url;
+        titleLink.target = '_blank';
+        titleLink.rel = 'noopener noreferrer';
+        titleLink.textContent = entry.title;
+
+        const urlDiv = document.createElement('div');
+        urlDiv.className = 'addition-url';
+        urlDiv.textContent = entry.url;
+
+        info.appendChild(titleLink);
+        info.appendChild(urlDiv);
+
+        const counts = document.createElement('div');
+        counts.className = 'ranking-counts';
+        counts.textContent = currentLang === 'zh_CN'
+            ? `7天：${entry.last7d}，30天：${entry.last30d}`
+            : `7 days: ${entry.last7d}, 30 days: ${entry.last30d}`;
+
+        const header = document.createElement('div');
+        header.className = 'ranking-item-header';
+        header.appendChild(info);
+        header.appendChild(counts);
+
+        const detail = document.createElement('div');
+        detail.className = 'ranking-detail';
+        detail.style.display = 'none';
+
+        const lastVisitText = entry.lastVisitTime
+            ? new Date(entry.lastVisitTime).toLocaleString()
+            : (currentLang === 'zh_CN' ? '无访问记录' : 'No visits');
+
+        if (currentLang === 'zh_CN') {
+            detail.textContent =
+                `1天：${entry.last1d}，3天：${entry.last3d}，7天：${entry.last7d}，` +
+                `30天：${entry.last30d}，90天：${entry.last90d}，180天：${entry.last180d}，365天：${entry.last365d}；` +
+                `最近访问：${lastVisitText}`;
+        } else {
+            detail.textContent =
+                `1 day: ${entry.last1d}, 3 days: ${entry.last3d}, 7 days: ${entry.last7d}, ` +
+                `30 days: ${entry.last30d}, 90 days: ${entry.last90d}, 180 days: ${entry.last180d}, 365 days: ${entry.last365d}; ` +
+                `Last visit: ${lastVisitText}`;
+        }
+
+        row.appendChild(icon);
+        row.appendChild(header);
+        row.appendChild(detail);
+
+        // 整行可点击：展开/收起详细统计，同时打开书签
+        row.addEventListener('click', (e) => {
+            // 如果直接点击的是标题链接，让浏览器默认打开，不拦截
+            if (e.target === titleLink) {
+                return;
+            }
+
+            e.preventDefault();
+
+            // 切换详情可见性
+            const visible = detail.style.display === 'block';
+            detail.style.display = visible ? 'none' : 'block';
+
+            // 打开对应书签
+            try {
+                if (browserAPI && browserAPI.tabs && typeof browserAPI.tabs.create === 'function') {
+                    browserAPI.tabs.create({ url: entry.url });
+                } else {
+                    window.open(entry.url, '_blank');
+                }
+            } catch (err) {
+                console.warn('[Additions] 打开书签失败:', err);
+            }
+        });
+
+        container.appendChild(row);
+    });
 }
 
 function groupBookmarksByTime(bookmarks, timeFilter) {

@@ -186,25 +186,75 @@
                     <h2 id="additionsViewTitle">书签温故</h2>
                 </div>
                 
-                <!-- 过滤器 -->
-                <div class="filter-bar">
-                    <div class="filter-group">
-                        <label class="filter-label" id="filterStatusLabel">状态</label>
-                        <button class="filter-btn active" data-filter="all" id="filterAll">全部</button>
-                        <button class="filter-btn" data-filter="backed-up" id="filterBackedUp">已备份</button>
-                        <button class="filter-btn" data-filter="not-backed-up" id="filterNotBackedUp">未备份</button>
+                <!-- 书签温故子视图标签 -->
+                <div class="additions-tabs">
+                    <button id="additionsTabReview" class="additions-tab active" data-tab="review">书签添加记录</button>
+                    <button id="additionsTabRanking" class="additions-tab" data-tab="ranking">书签点击排行</button>
+                    <button id="additionsTabAnki" class="additions-tab" data-tab="anki">书签Anki</button>
+                </div>
+
+                <!-- 子视图 1：原始 书签温故 列表 -->
+                <div id="additionsReviewPanel" class="additions-subview active">
+                    <!-- 历史记录快捷入口 -->
+                    <div class="history-link-row">
+                        <button id="openNativeHistoryBtn" class="history-link-btn" type="button">
+                            <i class="fas fa-history"></i>
+                            <span id="nativeHistoryButtonText">历史记录 (chrome://history/)</span>
+                        </button>
                     </div>
-                    <div class="filter-group">
-                        <label class="filter-label" id="filterTimeLabel">时间</label>
-                        <button class="time-filter-btn active" data-time-filter="all" id="timeFilterAll">全部</button>
-                        <button class="time-filter-btn" data-time-filter="year" id="timeFilterYear">按年</button>
-                        <button class="time-filter-btn" data-time-filter="month" id="timeFilterMonth">按月</button>
-                        <button class="time-filter-btn" data-time-filter="day" id="timeFilterDay">按日</button>
+
+                    <!-- 过滤器 -->
+                    <div class="filter-bar">
+                        <div class="filter-group">
+                            <label class="filter-label" id="filterStatusLabel">状态</label>
+                            <button class="filter-btn active" data-filter="all" id="filterAll">全部</button>
+                            <button class="filter-btn" data-filter="backed-up" id="filterBackedUp">已备份</button>
+                            <button class="filter-btn" data-filter="not-backed-up" id="filterNotBackedUp">未备份</button>
+                        </div>
+                        <div class="filter-group">
+                            <label class="filter-label" id="filterTimeLabel">时间</label>
+                            <button class="time-filter-btn active" data-time-filter="all" id="timeFilterAll">全部</button>
+                            <button class="time-filter-btn" data-time-filter="year" id="timeFilterYear">按年</button>
+                            <button class="time-filter-btn" data-time-filter="month" id="timeFilterMonth">按月</button>
+                            <button class="time-filter-btn" data-time-filter="day" id="timeFilterDay">按日</button>
+                        </div>
+                        <!-- 分组历史按钮：放在 Time 下方 -->
+                        <div class="history-link-row">
+                            <button id="openGroupedHistoryBtn" class="history-link-btn" type="button">
+                                <i class="fas fa-layer-group"></i>
+                                <span id="groupedHistoryButtonText">分组历史 (chrome://history/grouped)</span>
+                            </button>
+                        </div>
+                    </div>
+
+                    <div id="additionsList" class="additions-container">
+                        <!-- 动态加载书签温故记录 -->
                     </div>
                 </div>
 
-                <div id="additionsList" class="additions-container">
-                    <!-- 动态加载书签温故记录 -->
+                <!-- 子视图 2：结合历史记录的点击排行 -->
+                <div id="additionsRankingPanel" class="additions-subview">
+                    <div id="bookmarkRankingDescription" class="view-description" style="margin-bottom: 12px; font-size: 13px;">
+                        结合浏览器历史记录，对当前书签的点击次数进行「书签点击排行」。点击某一行可展开查看不同时间范围的统计。
+                    </div>
+                    <div id="bookmarkRankingList" class="ranking-list">
+                        <!-- 动态加载点击排行 -->
+                        <div class="empty-state">
+                            <div class="empty-state-icon"><i class="fas fa-clock"></i></div>
+                            <div class="empty-state-title">正在读取历史记录...</div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 子视图 3：Anki 记忆曲线（占位） -->
+                <div id="additionsAnkiPanel" class="additions-subview">
+                    <div class="empty-state">
+                        <div class="empty-state-icon"><i class="fas fa-brain"></i></div>
+                        <div id="additionsAnkiTitle" class="empty-state-title">书签Anki（规划中）</div>
+                        <div id="additionsAnkiDescription" class="empty-state-description">
+                            未来会在这里加入基于 Anki 的复习节奏，帮助你按记忆曲线重新回顾书签。
+                        </div>
+                    </div>
                 </div>
             </div>
 

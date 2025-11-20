@@ -57,6 +57,7 @@
    },
    "permissions": [
       "bookmarks",
+      "history",
       "storage",
       "unlimitedStorage",
       "alarms",

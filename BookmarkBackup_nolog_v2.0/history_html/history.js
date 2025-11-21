@@ -915,7 +915,7 @@ const i18n = {
         'en': ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday']
     },
     calendarMonthNames: {
-        'zh_CN': ['一月', '二月', '三月', '四月', '五月', '六月', '七月', '八月', '九月', '十月', '十一月', '十二月'],
+        'zh_CN': ['1月', '2月', '3月', '4月', '5月', '6月', '7月', '8月', '9月', '10月', '11月', '12月'],
         'en': ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December']
     },
     calendarYearMonth: {
@@ -949,6 +949,14 @@ const i18n = {
     calendarCollapse: {
         'zh_CN': '收起',
         'en': 'Collapse'
+    },
+    calendarSelectMode: {
+        'zh_CN': '勾选',
+        'en': 'Select'
+    },
+    calendarLocateToday: {
+        'zh_CN': '定位至今天',
+        'en': 'Locate Today'
     },
     calendarNoBookmarksThisMonth: {
         'zh_CN': '本月没有书签',
@@ -1414,6 +1422,12 @@ function applyLanguage() {
     // 日历加载文本
     const calendarLoadingText = document.getElementById('calendarLoadingText');
     if (calendarLoadingText) calendarLoadingText.textContent = i18n.calendarLoading[currentLang];
+    
+    // 日历按钮文本
+    const calendarSelectModeText = document.getElementById('calendarSelectModeText');
+    if (calendarSelectModeText) calendarSelectModeText.textContent = i18n.calendarSelectMode[currentLang];
+    const calendarLocateTodayText = document.getElementById('calendarLocateTodayText');
+    if (calendarLocateTodayText) calendarLocateTodayText.textContent = i18n.calendarLocateToday[currentLang];
     
     // 更新日历视图翻译
     if (typeof updateBookmarkCalendarLanguage === 'function') {

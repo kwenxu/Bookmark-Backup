@@ -33,7 +33,7 @@ function twFull(index) {
 function tm(index) {
     // 获取月份名称的翻译 (0-11)
     if (typeof i18n === 'undefined' || typeof currentLang === 'undefined') {
-        return ['一月', '二月', '三月', '四月', '五月', '六月', '七月', '八月', '九月', '十月', '十一月', '十二月'][index];
+        return ['1月', '2月', '3月', '4月', '5月', '6月', '7月', '8月', '9月', '10月', '11月', '12月'][index];
     }
     return i18n.calendarMonthNames[currentLang][index] || '';
 }

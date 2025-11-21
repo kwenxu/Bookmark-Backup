@@ -70,6 +70,8 @@ class BookmarkCalendar {
         this.currentWeekStart = null;
         this.currentDay = null;
         this.viewLevel = 'month'; // 默认月视图 'year' | 'month' | 'week' | 'day'
+        this.selectMode = false; // 勾选模式
+        this.selectedDates = new Set(); // 已勾选的日期集合 'YYYY-MM-DD'
         
         this.init();
     }
@@ -187,11 +189,60 @@ class BookmarkCalendar {
         document.getElementById('breadcrumbYear')?.addEventListener('click', () => this.navigateToYear());
         document.getElementById('breadcrumbMonth')?.addEventListener('click', () => this.navigateToMonth());
         document.getElementById('breadcrumbWeek')?.addEventListener('click', () => this.navigateToWeek());
+        
+        // 勾选模式按钮
+        document.getElementById('calendarSelectModeBtn')?.addEventListener('click', () => this.toggleSelectMode());
+        
+        // 定位至今天按钮
+        document.getElementById('calendarLocateTodayBtn')?.addEventListener('click', () => this.locateToToday());
+    }
+    
+    toggleSelectMode() {
+        this.selectMode = !this.selectMode;
+        const btn = document.getElementById('calendarSelectModeBtn');
+        if (this.selectMode) {
+            btn?.classList.add('active');
+        } else {
+            btn?.classList.remove('active');
+            this.selectedDates.clear(); // 退出勾选模式时清空选择
+        }
+        this.render();
+    }
+    
+    locateToToday() {
+        const today = new Date();
+        this.currentYear = today.getFullYear();
+        this.currentMonth = today.getMonth();
+        this.currentDay = today;
+        this.currentWeekStart = new Date(today);
+        this.currentWeekStart.setDate(today.getDate() - today.getDay());
+        this.viewLevel = 'month';
+        this.render();
+        
+        // 添加呼吸动画到今天的格子
+        setTimeout(() => {
+            const todayCell = document.querySelector('.calendar-day[data-is-today="true"]');
+            if (todayCell) {
+                todayCell.classList.add('breathe-animation');
+                setTimeout(() => {
+                    todayCell.classList.remove('breathe-animation');
+                }, 1200);
+            }
+        }, 100);
     }
 
     updateBreadcrumb() {
+        const activeColor = this.selectMode ? '#4CAF50' : 'var(--accent-primary)';
+        
         // 年
+        const yearBtn = document.getElementById('breadcrumbYear');
         document.getElementById('breadcrumbYearText').textContent = t('calendarYear', this.currentYear);
+        yearBtn.classList.toggle('active', this.viewLevel === 'year');
+        if (this.viewLevel === 'year') {
+            yearBtn.style.color = activeColor;
+        } else {
+            yearBtn.style.color = '';
+        }
         
         // 月
         const monthBtn = document.getElementById('breadcrumbMonth');
@@ -201,6 +252,11 @@ class BookmarkCalendar {
             sep1.style.display = 'inline';
             document.getElementById('breadcrumbMonthText').textContent = tm(this.currentMonth);
             monthBtn.classList.toggle('active', this.viewLevel === 'month');
+            if (this.viewLevel === 'month') {
+                monthBtn.style.color = activeColor;
+            } else {
+                monthBtn.style.color = '';
+            }
         } else {
             monthBtn.style.display = 'none';
             sep1.style.display = 'none';
@@ -215,6 +271,11 @@ class BookmarkCalendar {
             const weekNum = this.getWeekNumber(this.currentWeekStart);
             document.getElementById('breadcrumbWeekText').textContent = t('calendarWeek', weekNum);
             weekBtn.classList.toggle('active', this.viewLevel === 'week');
+            if (this.viewLevel === 'week') {
+                weekBtn.style.color = activeColor;
+            } else {
+                weekBtn.style.color = '';
+            }
         } else {
             weekBtn.style.display = 'none';
             sep2.style.display = 'none';
@@ -229,12 +290,11 @@ class BookmarkCalendar {
             document.getElementById('breadcrumbDayText').textContent = 
                 t('calendarMonthDay', this.currentDay.getMonth() + 1, this.currentDay.getDate());
             dayBtn.classList.add('active');
+            dayBtn.style.color = activeColor;
         } else {
             dayBtn.style.display = 'none';
             sep3.style.display = 'none';
         }
-        
-        document.getElementById('breadcrumbYear').classList.toggle('active', this.viewLevel === 'year');
     }
 
     navigateToYear() {
@@ -474,31 +534,51 @@ class BookmarkCalendar {
             const isTodayCell = this.isToday(date);
             
             const dayCell = document.createElement('div');
+            dayCell.className = 'calendar-day';
             dayCell.style.aspectRatio = '1';
             dayCell.style.position = 'relative';
             dayCell.style.border = isTodayCell ? '2px solid #2196F3' : '1px solid var(--border-color)';
             dayCell.style.borderRadius = '8px';
             dayCell.style.padding = '8px';
-            dayCell.style.cursor = bookmarks.length > 0 ? 'pointer' : 'default';
+            dayCell.style.cursor = 'pointer';
             dayCell.style.background = bookmarks.length > 0 ? 'var(--bg-secondary)' : 'var(--bg-primary)';
             dayCell.style.transition = 'all 0.2s';
+            dayCell.dataset.dateKey = dateKey;
+            dayCell.dataset.isToday = isTodayCell ? 'true' : 'false';
             
+            // 勾选模式下的样式
+            if (this.selectedDates.has(dateKey)) {
+                dayCell.classList.add('selected');
+            }
+            
+            const countColor = this.selectMode ? '#4CAF50' : 'var(--accent-primary)';
             dayCell.innerHTML = `
                 <div style="font-weight: 600;">${day}</div>
-                ${bookmarks.length > 0 ? `<div style="font-size: 12px; color: var(--accent-primary); margin-top: 4px;">${t('calendarBookmarkCount', bookmarks.length)}</div>` : ''}
+                ${bookmarks.length > 0 ? `<div style="font-size: 12px; color: ${countColor}; margin-top: 4px;">${t('calendarBookmarkCount', bookmarks.length)}</div>` : ''}
                 ${isTodayCell ? `<div style="position: absolute; bottom: 4px; right: 4px; font-size: 10px; color: #2196F3; font-weight: 600;">${currentLang === 'en' ? 'Today' : '今天'}</div>` : ''}
             `;
             
-            if (bookmarks.length > 0) {
-                dayCell.addEventListener('click', () => {
+            dayCell.addEventListener('click', () => {
+                if (this.selectMode) {
+                    // 勾选模式：切换选中状态
+                    if (this.selectedDates.has(dateKey)) {
+                        this.selectedDates.delete(dateKey);
+                    } else {
+                        this.selectedDates.add(dateKey);
+                    }
+                    this.render();
+                } else if (bookmarks.length > 0) {
+                    // 普通模式：进入日视图
                     this.currentDay = date;
                     // 更新currentWeekStart为该日期所在周的开始日期（周日）
                     this.currentWeekStart = new Date(date);
                     this.currentWeekStart.setDate(date.getDate() - date.getDay());
                     this.viewLevel = 'day';
                     this.render();
-                });
-                
+                }
+            });
+            
+            if (!this.selectMode && bookmarks.length > 0) {
                 dayCell.addEventListener('mouseenter', () => {
                     dayCell.style.transform = 'scale(1.05)';
                 });
@@ -529,6 +609,11 @@ class BookmarkCalendar {
             const dateKey = this.getDateKey(date);
             const bookmarks = this.bookmarksByDate.get(dateKey) || [];
             
+            // 勾选模式下只显示勾选的日期
+            if (this.selectMode && !this.selectedDates.has(dateKey)) {
+                continue;
+            }
+            
             if (bookmarks.length > 0) {
                 const weekNum = this.getWeekNumber(date);
                 if (!bookmarksByWeek.has(weekNum)) {
@@ -540,13 +625,20 @@ class BookmarkCalendar {
         }
         
         if (totalCount === 0) {
-            section.innerHTML = `<p style="text-align:center;color:var(--text-secondary);">${t('calendarNoBookmarksThisMonth')}</p>`;
+            const emptyText = this.selectMode ? (currentLang === 'en' ? 'No selected dates with bookmarks' : '未选中包含书签的日期') : t('calendarNoBookmarksThisMonth');
+            section.innerHTML = `<p style="text-align:center;color:var(--text-secondary);">${emptyText}</p>`;
             return section;
         }
         
         const title = document.createElement('h3');
         title.style.marginBottom = '20px';
-        title.textContent = t('calendarTotalThisMonth', totalCount);
+        // 勾选模式下使用绿色标题
+        if (this.selectMode) {
+            title.className = 'select-mode-title';
+            title.textContent = (currentLang === 'en' ? 'Selected: ' : '已选中：') + totalCount + (currentLang === 'en' ? ' bookmarks' : ' 个书签');
+        } else {
+            title.textContent = t('calendarTotalThisMonth', totalCount);
+        }
         section.appendChild(title);
         
         // 左右分栏布局
@@ -632,10 +724,18 @@ class BookmarkCalendar {
                 
                 // 第一周的第一天默认选中
                 if (weekIndex === 0 && dayIndex === 0) {
-                    dayMenuItem.style.background = 'rgba(33, 150, 243, 0.15)';
-                    dayMenuItem.style.color = 'var(--accent-primary)';
-                    dayMenuItem.style.fontWeight = '600';
-                    dayMenuItem.style.border = '1px solid var(--accent-primary)';
+                    if (this.selectMode) {
+                        dayMenuItem.classList.add('select-mode-menu-active');
+                        dayMenuItem.style.background = '#4CAF50';
+                        dayMenuItem.style.color = 'white';
+                        dayMenuItem.style.fontWeight = '600';
+                        dayMenuItem.style.border = '1px solid #4CAF50';
+                    } else {
+                        dayMenuItem.style.background = 'rgba(33, 150, 243, 0.15)';
+                        dayMenuItem.style.color = 'var(--accent-primary)';
+                        dayMenuItem.style.fontWeight = '600';
+                        dayMenuItem.style.border = '1px solid var(--accent-primary)';
+                    }
                 } else {
                     dayMenuItem.style.background = 'transparent';
                     dayMenuItem.style.color = 'var(--text-primary)';
@@ -698,9 +798,17 @@ class BookmarkCalendar {
                                 item.style.border = '1px solid transparent';
                             });
                             
-                            hourMenuItem.style.background = 'rgba(33, 150, 243, 0.1)';
-                            hourMenuItem.style.color = 'var(--accent-primary)';
-                            hourMenuItem.style.border = '1px solid rgba(33, 150, 243, 0.3)';
+                            if (this.selectMode) {
+                                // 勾选模式：绿色样式
+                                hourMenuItem.style.background = 'rgba(76, 175, 80, 0.1)';
+                                hourMenuItem.style.color = '#4CAF50';
+                                hourMenuItem.style.border = '1px solid rgba(76, 175, 80, 0.3)';
+                            } else {
+                                // 普通模式：蓝色样式
+                                hourMenuItem.style.background = 'rgba(33, 150, 243, 0.1)';
+                                hourMenuItem.style.color = 'var(--accent-primary)';
+                                hourMenuItem.style.border = '1px solid rgba(33, 150, 243, 0.3)';
+                            }
                             
                             renderHourContent(date, hour, hourBookmarks);
                         });
@@ -730,12 +838,23 @@ class BookmarkCalendar {
                         item.style.color = 'var(--text-primary)';
                         item.style.fontWeight = 'normal';
                         item.style.border = '1px solid transparent';
+                        item.classList.remove('select-mode-menu-active');
                     });
                     
-                    dayMenuItem.style.background = 'rgba(33, 150, 243, 0.15)';
-                    dayMenuItem.style.color = 'var(--accent-primary)';
-                    dayMenuItem.style.fontWeight = '600';
-                    dayMenuItem.style.border = '1px solid var(--accent-primary)';
+                    if (this.selectMode) {
+                        // 勾选模式：绿色样式
+                        dayMenuItem.classList.add('select-mode-menu-active');
+                        dayMenuItem.style.background = '#4CAF50';
+                        dayMenuItem.style.color = 'white';
+                        dayMenuItem.style.fontWeight = '600';
+                        dayMenuItem.style.border = '1px solid #4CAF50';
+                    } else {
+                        // 普通模式：蓝色样式
+                        dayMenuItem.style.background = 'rgba(33, 150, 243, 0.15)';
+                        dayMenuItem.style.color = 'var(--accent-primary)';
+                        dayMenuItem.style.fontWeight = '600';
+                        dayMenuItem.style.border = '1px solid var(--accent-primary)';
+                    }
                     
                     selectedDateKey = dateKey;
                     
@@ -818,7 +937,8 @@ class BookmarkCalendar {
             
             weekHeader.addEventListener('mouseenter', () => {
                 weekHeader.style.background = 'rgba(128, 128, 128, 0.15)';
-                weekHeader.style.borderLeft = '3px solid var(--accent-primary)';
+                const borderColor = this.selectMode ? '#4CAF50' : 'var(--accent-primary)';
+                weekHeader.style.borderLeft = `3px solid ${borderColor}`;
             });
             
             weekHeader.addEventListener('mouseleave', () => {
@@ -836,6 +956,8 @@ class BookmarkCalendar {
             contentArea.innerHTML = '';
             
             const isDayToday = this.isToday(date);
+            const themeColor = this.selectMode ? '#4CAF50' : 'var(--accent-primary)';
+            const todayColor = this.selectMode ? '#4CAF50' : '#2196F3';
             
             const dayHeader = document.createElement('div');
             dayHeader.style.fontSize = '18px';
@@ -843,13 +965,13 @@ class BookmarkCalendar {
             dayHeader.style.color = 'var(--text-primary)';
             dayHeader.style.marginBottom = '20px';
             dayHeader.style.paddingBottom = '12px';
-            dayHeader.style.borderBottom = '2px solid var(--accent-primary)';
+            dayHeader.style.borderBottom = `2px solid ${themeColor}`;
             dayHeader.style.display = 'flex';
             dayHeader.style.justifyContent = 'space-between';
             dayHeader.style.alignItems = 'center';
             
             dayHeader.innerHTML = `
-                <span><i class="fas fa-calendar-day"></i> ${tw(date.getDay())} ${t('calendarMonthDay', date.getMonth() + 1, date.getDate())}${isDayToday ? ` <span style="color: #2196F3;">(${currentLang === 'en' ? 'Today' : '今天'})</span>` : ''}</span>
+                <span><i class="fas fa-calendar-day"></i> ${tw(date.getDay())} ${t('calendarMonthDay', date.getMonth() + 1, date.getDate())}${isDayToday ? ` <span style="color: ${todayColor};">(${currentLang === 'en' ? 'Today' : '今天'})</span>` : ''}</span>
                 <span style="font-size:14px;color:var(--text-secondary);">${t('calendarBookmarksCount', bookmarks.length)}</span>
             `;
             
@@ -864,20 +986,24 @@ class BookmarkCalendar {
         const renderHourContent = (date, hour, hourBookmarks) => {
             contentArea.innerHTML = '';
             
+            const isDayToday = this.isToday(date);
+            const themeColor = this.selectMode ? '#4CAF50' : 'var(--accent-primary)';
+            const todayColor = this.selectMode ? '#4CAF50' : '#2196F3';
+            
             const hourHeader = document.createElement('div');
             hourHeader.style.fontSize = '18px';
             hourHeader.style.fontWeight = '700';
             hourHeader.style.color = 'var(--text-primary)';
             hourHeader.style.marginBottom = '20px';
             hourHeader.style.paddingBottom = '12px';
-            hourHeader.style.borderBottom = '2px solid var(--accent-primary)';
+            hourHeader.style.borderBottom = `2px solid ${themeColor}`;
             hourHeader.style.display = 'flex';
             hourHeader.style.justifyContent = 'space-between';
             hourHeader.style.alignItems = 'center';
             
             hourHeader.innerHTML = `
                 <span>
-                    <i class="fas fa-calendar-day"></i> ${tw(date.getDay())} ${t('calendarMonthDay', date.getMonth() + 1, date.getDate())}
+                    <i class="fas fa-calendar-day"></i> ${tw(date.getDay())} ${t('calendarMonthDay', date.getMonth() + 1, date.getDate())}${isDayToday ? ` <span style="color: ${todayColor};">(${currentLang === 'en' ? 'Today' : '今天'})</span>` : ''}
                     <span style="margin-left:12px;">${String(hour).padStart(2, '0')}:00-${String(hour).padStart(2, '0')}:59</span>
                 </span>
                 <span style="font-size:14px;color:var(--text-secondary);">${t('calendarBookmarksCount', hourBookmarks.length)}</span>
@@ -894,13 +1020,15 @@ class BookmarkCalendar {
         const renderWeekContent = (weekNum, weekData) => {
             contentArea.innerHTML = '';
             
+            const themeColor = this.selectMode ? '#4CAF50' : 'var(--accent-primary)';
+            
             const weekHeader = document.createElement('div');
             weekHeader.style.fontSize = '18px';
             weekHeader.style.fontWeight = '700';
             weekHeader.style.color = 'var(--text-primary)';
             weekHeader.style.marginBottom = '20px';
             weekHeader.style.paddingBottom = '12px';
-            weekHeader.style.borderBottom = '2px solid var(--accent-primary)';
+            weekHeader.style.borderBottom = `2px solid ${themeColor}`;
             weekHeader.style.display = 'flex';
             weekHeader.style.justifyContent = 'space-between';
             weekHeader.style.alignItems = 'center';
@@ -920,15 +1048,17 @@ class BookmarkCalendar {
                 daySection.style.marginBottom = '24px';
                 
                 const isDayToday = this.isToday(date);
+                const themeColor = this.selectMode ? '#4CAF50' : 'var(--accent-primary)';
+                const todayColor = this.selectMode ? '#4CAF50' : '#2196F3';
                 
                 const dayTitle = document.createElement('div');
                 dayTitle.style.fontSize = '15px';
                 dayTitle.style.fontWeight = '600';
-                dayTitle.style.color = 'var(--accent-primary)';
+                dayTitle.style.color = themeColor;
                 dayTitle.style.marginBottom = '12px';
                 dayTitle.style.paddingBottom = '8px';
-                dayTitle.style.borderBottom = '1px solid var(--accent-primary)';
-                dayTitle.innerHTML = `<i class="fas fa-calendar-day"></i> ${tw(date.getDay())} ${t('calendarMonthDay', date.getMonth() + 1, date.getDate())} (${t('calendarBookmarkCount', bookmarks.length)})${isDayToday ? ` <span style="color: #2196F3;">(${currentLang === 'en' ? 'Today' : '今天'})</span>` : ''}`;
+                dayTitle.style.borderBottom = `1px solid ${themeColor}`;
+                dayTitle.innerHTML = `<i class="fas fa-calendar-day"></i> ${tw(date.getDay())} ${t('calendarMonthDay', date.getMonth() + 1, date.getDate())} (${t('calendarBookmarkCount', bookmarks.length)})${isDayToday ? ` <span style="color: ${todayColor};">(${currentLang === 'en' ? 'Today' : '今天'})</span>` : ''}`;
                 
                 daySection.appendChild(dayTitle);
                 
@@ -1024,8 +1154,9 @@ class BookmarkCalendar {
         });
         
         item.addEventListener('mouseenter', () => {
+            const borderColor = this.selectMode ? '#4CAF50' : 'var(--accent-primary)';
             item.style.background = 'var(--bg-secondary)';
-            item.style.borderColor = 'var(--accent-primary)';
+            item.style.borderColor = borderColor;
         });
         
         item.addEventListener('mouseleave', () => {
@@ -1075,9 +1206,10 @@ class BookmarkCalendar {
             toggleBtn.style.padding = '8px';
             toggleBtn.style.marginTop = '8px';
             toggleBtn.style.border = '1px dashed var(--border-color)';
+            const btnColor = this.selectMode ? '#4CAF50' : 'var(--accent-primary)';
             toggleBtn.style.borderRadius = '6px';
             toggleBtn.style.background = 'transparent';
-            toggleBtn.style.color = 'var(--accent-primary)';
+            toggleBtn.style.color = btnColor;
             toggleBtn.style.cursor = 'pointer';
             toggleBtn.style.fontSize = '13px';
             toggleBtn.style.transition = 'all 0.2s';
@@ -1097,8 +1229,9 @@ class BookmarkCalendar {
             });
             
             toggleBtn.addEventListener('mouseenter', () => {
+                const hoverColor = this.selectMode ? '#4CAF50' : 'var(--accent-primary)';
                 toggleBtn.style.background = 'var(--bg-secondary)';
-                toggleBtn.style.borderColor = 'var(--accent-primary)';
+                toggleBtn.style.borderColor = hoverColor;
             });
             
             toggleBtn.addEventListener('mouseleave', () => {
@@ -1158,43 +1291,72 @@ class BookmarkCalendar {
             const dayCard = document.createElement('div');
             dayCard.className = 'week-day-card';
             dayCard.style.position = 'relative';
+            dayCard.dataset.dateKey = dateKey;
             
             // 如果是今天，添加蓝色边框
             if (isTodayCard) {
                 dayCard.style.border = '2px solid #2196F3';
             }
             
+            // 勾选模式下的样式
+            if (this.selectedDates.has(dateKey)) {
+                dayCard.classList.add('selected');
+            }
+            
+            const countColor = this.selectMode ? '#4CAF50' : 'var(--accent-primary)';
+            
             dayCard.innerHTML = `
                 <div class="week-day-header">
                     <div class="week-day-name">${tw(i)}</div>
                     <div class="week-day-date">${date.getDate()}</div>
                 </div>
-                <div class="week-day-count">${t('calendarBookmarkCount', bookmarks.length)}</div>
+                <div class="week-day-count" style="color: ${countColor};">${t('calendarBookmarkCount', bookmarks.length)}</div>
                 ${isTodayCard ? `<div style="position: absolute; bottom: 4px; right: 4px; font-size: 11px; color: #2196F3; font-weight: 600;">${currentLang === 'en' ? 'Today' : '今天'}</div>` : ''}
             `;
             
-            if (bookmarks.length > 0) {
-                dayCard.addEventListener('click', () => {
+            dayCard.addEventListener('click', () => {
+                if (this.selectMode) {
+                    // 勾选模式：切换选中状态
+                    if (this.selectedDates.has(dateKey)) {
+                        this.selectedDates.delete(dateKey);
+                    } else {
+                        this.selectedDates.add(dateKey);
+                    }
+                    this.render();
+                } else if (bookmarks.length > 0) {
+                    // 普通模式：进入日视图
                     this.currentDay = date;
                     // currentWeekStart已经设置正确，无需更新
                     this.viewLevel = 'day';
                     this.render();
-                });
-            }
+                }
+            });
             
             weekContainer.appendChild(dayCard);
         }
         
         wrapper.appendChild(weekContainer);
         
-        if (allBookmarks.length > 0) {
+        // 勾选模式下过滤书签
+        let filteredBookmarks = allBookmarks;
+        if (this.selectMode) {
+            filteredBookmarks = allBookmarks.filter(({ date }) => this.selectedDates.has(this.getDateKey(date)));
+        }
+        
+        if (filteredBookmarks.length > 0) {
             const section = document.createElement('div');
             section.style.marginTop = '40px';
-            const totalCount = allBookmarks.reduce((sum, item) => sum + item.bookmarks.length, 0);
+            const totalCount = filteredBookmarks.reduce((sum, item) => sum + item.bookmarks.length, 0);
             
             const title = document.createElement('h3');
             title.style.marginBottom = '20px';
-            title.textContent = t('calendarTotalThisWeek', totalCount);
+            // 勾选模式下使用绿色标题
+            if (this.selectMode) {
+                title.className = 'select-mode-title';
+                title.textContent = (currentLang === 'en' ? 'Selected: ' : '已选中：') + totalCount + (currentLang === 'en' ? ' bookmarks' : ' 个书签');
+            } else {
+                title.textContent = t('calendarTotalThisWeek', totalCount);
+            }
             section.appendChild(title);
             
             // 左右分栏布局
@@ -1216,9 +1378,9 @@ class BookmarkCalendar {
             contentArea.style.minWidth = '0';
             
             // 默认选中第一天
-            let selectedDateKey = this.getDateKey(allBookmarks[0].date);
+            let selectedDateKey = this.getDateKey(filteredBookmarks[0].date);
             
-            allBookmarks.forEach(({ date, bookmarks }, index) => {
+            filteredBookmarks.forEach(({ date, bookmarks }, index) => {
                 const dateKey = this.getDateKey(date);
                 const hasTimePeriods = bookmarks.length > 10; // 是否需要时间段子菜单
                 const isDayToday = this.isToday(date);
@@ -1239,9 +1401,16 @@ class BookmarkCalendar {
                 menuItem.dataset.expanded = 'false';
                 
                 if (index === 0) {
-                    menuItem.style.background = 'var(--accent-primary)';
-                    menuItem.style.color = 'white';
-                    menuItem.style.fontWeight = '600';
+                    if (this.selectMode) {
+                        menuItem.classList.add('select-mode-menu-active');
+                        menuItem.style.background = '#4CAF50';
+                        menuItem.style.color = 'white';
+                        menuItem.style.fontWeight = '600';
+                    } else {
+                        menuItem.style.background = 'var(--accent-primary)';
+                        menuItem.style.color = 'white';
+                        menuItem.style.fontWeight = '600';
+                    }
                 } else {
                     menuItem.style.background = 'transparent';
                     menuItem.style.color = 'var(--text-primary)';
@@ -1305,9 +1474,17 @@ class BookmarkCalendar {
                                 item.style.border = '1px solid transparent';
                             });
                             
-                            hourMenuItem.style.background = 'rgba(33, 150, 243, 0.1)';
-                            hourMenuItem.style.color = 'var(--accent-primary)';
-                            hourMenuItem.style.border = '1px solid rgba(33, 150, 243, 0.3)';
+                            if (this.selectMode) {
+                                // 勾选模式：绿色样式
+                                hourMenuItem.style.background = 'rgba(76, 175, 80, 0.1)';
+                                hourMenuItem.style.color = '#4CAF50';
+                                hourMenuItem.style.border = '1px solid rgba(76, 175, 80, 0.3)';
+                            } else {
+                                // 普通模式：蓝色样式
+                                hourMenuItem.style.background = 'rgba(33, 150, 243, 0.1)';
+                                hourMenuItem.style.color = 'var(--accent-primary)';
+                                hourMenuItem.style.border = '1px solid rgba(33, 150, 243, 0.3)';
+                            }
                             
                             renderHourContent(date, hour, hourBookmarks);
                         });
@@ -1334,10 +1511,21 @@ class BookmarkCalendar {
                         item.style.background = 'transparent';
                         item.style.color = 'var(--text-primary)';
                         item.style.fontWeight = 'normal';
+                        item.classList.remove('select-mode-menu-active');
                     });
-                    menuItem.style.background = 'var(--accent-primary)';
-                    menuItem.style.color = 'white';
-                    menuItem.style.fontWeight = '600';
+                    
+                    if (this.selectMode) {
+                        // 勾选模式：绿色样式
+                        menuItem.classList.add('select-mode-menu-active');
+                        menuItem.style.background = '#4CAF50';
+                        menuItem.style.color = 'white';
+                        menuItem.style.fontWeight = '600';
+                    } else {
+                        // 普通模式：蓝色样式
+                        menuItem.style.background = 'var(--accent-primary)';
+                        menuItem.style.color = 'white';
+                        menuItem.style.fontWeight = '600';
+                    }
                     
                     selectedDateKey = dateKey;
                     
@@ -1398,6 +1586,8 @@ class BookmarkCalendar {
                 contentArea.innerHTML = '';
                 
                 const isDayToday = this.isToday(date);
+                const themeColor = this.selectMode ? '#4CAF50' : 'var(--accent-primary)';
+                const todayColor = this.selectMode ? '#4CAF50' : '#2196F3';
                 
                 const dayHeader = document.createElement('div');
                 dayHeader.style.fontSize = '18px';
@@ -1405,8 +1595,8 @@ class BookmarkCalendar {
                 dayHeader.style.color = 'var(--text-primary)';
                 dayHeader.style.marginBottom = '20px';
                 dayHeader.style.paddingBottom = '12px';
-                dayHeader.style.borderBottom = '2px solid var(--accent-primary)';
-                dayHeader.innerHTML = `<i class="fas fa-calendar-day"></i> ${twFull(date.getDay())}, ${t('calendarMonthDay', date.getMonth() + 1, date.getDate())}${isDayToday ? ` <span style="color: #2196F3;">(${currentLang === 'en' ? 'Today' : '今天'})</span>` : ''}`;
+                dayHeader.style.borderBottom = `2px solid ${themeColor}`;
+                dayHeader.innerHTML = `<i class="fas fa-calendar-day"></i> ${twFull(date.getDay())}, ${t('calendarMonthDay', date.getMonth() + 1, date.getDate())}${isDayToday ? ` <span style="color: ${todayColor};">(${currentLang === 'en' ? 'Today' : '今天'})</span>` : ''}`;
                 
                 contentArea.appendChild(dayHeader);
                 
@@ -1420,6 +1610,8 @@ class BookmarkCalendar {
                 contentArea.innerHTML = '';
                 
                 const isDayToday = this.isToday(date);
+                const themeColor = this.selectMode ? '#4CAF50' : 'var(--accent-primary)';
+                const todayColor = this.selectMode ? '#4CAF50' : '#2196F3';
                 
                 const hourHeader = document.createElement('div');
                 hourHeader.style.fontSize = '18px';
@@ -1427,14 +1619,14 @@ class BookmarkCalendar {
                 hourHeader.style.color = 'var(--text-primary)';
                 hourHeader.style.marginBottom = '20px';
                 hourHeader.style.paddingBottom = '12px';
-                hourHeader.style.borderBottom = '2px solid var(--accent-primary)';
+                hourHeader.style.borderBottom = `2px solid ${themeColor}`;
                 hourHeader.style.display = 'flex';
                 hourHeader.style.justifyContent = 'space-between';
                 hourHeader.style.alignItems = 'center';
                 
                 hourHeader.innerHTML = `
                     <span>
-                        <i class="fas fa-calendar-day"></i> ${twFull(date.getDay())}, ${t('calendarMonthDay', date.getMonth() + 1, date.getDate())}${isDayToday ? ` <span style="color: #2196F3;">(${currentLang === 'en' ? 'Today' : '今天'})</span>` : ''}
+                        <i class="fas fa-calendar-day"></i> ${twFull(date.getDay())}, ${t('calendarMonthDay', date.getMonth() + 1, date.getDate())}${isDayToday ? ` <span style="color: ${todayColor};">(${currentLang === 'en' ? 'Today' : '今天'})</span>` : ''}
                         <span style="margin-left:12px;">${String(hour).padStart(2, '0')}:00-${String(hour).padStart(2, '0')}:59</span>
                     </span>
                     <span style="font-size:14px;color:var(--text-secondary);">${t('calendarBookmarksCount', hourBookmarks.length)}</span>
@@ -1448,7 +1640,7 @@ class BookmarkCalendar {
             };
             
             // 初始显示第一天
-            renderDayContent(allBookmarks[0].date, allBookmarks[0].bookmarks);
+            renderDayContent(filteredBookmarks[0].date, filteredBookmarks[0].bookmarks);
             
             panelContainer.appendChild(sidebar);
             panelContainer.appendChild(contentArea);
@@ -1528,9 +1720,18 @@ class BookmarkCalendar {
                 const hourBookmarks = byHour.get(hour);
                 if (!hourBookmarks) continue;
                 
+                const themeColor = this.selectMode ? '#4CAF50' : 'var(--accent-primary)';
+                
                 const hourSection = document.createElement('div');
                 hourSection.style.marginBottom = '24px';
-                hourSection.innerHTML = `<div class="bookmarks-group-title">${String(hour).padStart(2, '0')}:00 - ${String(hour).padStart(2, '0')}:59 (${t('calendarBookmarkCount', hourBookmarks.length)})</div>`;
+                
+                const hourTitle = document.createElement('div');
+                hourTitle.className = 'bookmarks-group-title';
+                hourTitle.style.color = themeColor;
+                hourTitle.style.borderBottomColor = themeColor;
+                hourTitle.textContent = `${String(hour).padStart(2, '0')}:00 - ${String(hour).padStart(2, '0')}:59 (${t('calendarBookmarkCount', hourBookmarks.length)})`;
+                hourSection.appendChild(hourTitle);
+                
                 hourBookmarks.sort((a, b) => a.dateAdded - b.dateAdded);
                 
                 const bookmarkList = this.createCollapsibleBookmarkList(hourBookmarks);
@@ -1628,13 +1829,15 @@ class BookmarkCalendar {
             const renderHourContent = (hour, hourBookmarks) => {
                 contentArea.innerHTML = '';
                 
+                const themeColor = this.selectMode ? '#4CAF50' : 'var(--accent-primary)';
+                
                 const hourHeader = document.createElement('div');
                 hourHeader.style.fontSize = '18px';
                 hourHeader.style.fontWeight = '700';
                 hourHeader.style.color = 'var(--text-primary)';
                 hourHeader.style.marginBottom = '20px';
                 hourHeader.style.paddingBottom = '12px';
-                hourHeader.style.borderBottom = '2px solid var(--accent-primary)';
+                hourHeader.style.borderBottom = `2px solid ${themeColor}`;
                 hourHeader.innerHTML = `${String(hour).padStart(2, '0')}:00-${String(hour).padStart(2, '0')}:59`;
                 
                 contentArea.appendChild(hourHeader);

@@ -4,6 +4,7 @@
 .calendar-breadcrumb-nav {
     display: flex;
     align-items: center;
+    justify-content: space-between;
     gap: 8px;
     padding: 16px 20px;
     background: var(--bg-primary);
@@ -43,6 +44,39 @@
     color: var(--text-tertiary);
     font-size: 14px;
     user-select: none;
+}
+
+/* 日历操作按钮 */
+.calendar-action-btn {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 8px 14px;
+    border: 1px solid var(--border-color);
+    background: var(--bg-primary);
+    color: var(--text-primary);
+    font-size: 14px;
+    font-weight: 500;
+    cursor: pointer;
+    border-radius: 6px;
+    transition: all 0.2s ease;
+}
+
+.calendar-action-btn:hover {
+    background: var(--bg-secondary);
+    border-color: var(--accent-primary);
+    color: var(--accent-primary);
+}
+
+.calendar-action-btn.active {
+    background: #4CAF50;
+    border-color: #4CAF50;
+    color: white;
+}
+
+.calendar-action-btn.active:hover {
+    background: #45a049;
+    border-color: #45a049;
 }
 
 /* 日历导航按钮 */
@@ -298,4 +332,48 @@
     font-size: 48px;
     opacity: 0.3;
     margin-bottom: 16px;
+}
+
+/* 勾选模式样式 */
+.calendar-day.selected,
+.week-day-card.selected {
+    border: 2px solid #4CAF50 !important;
+    background: rgba(76, 175, 80, 0.1) !important;
+}
+
+.select-mode-title {
+    color: #4CAF50 !important;
+    border-bottom-color: #4CAF50 !important;
+}
+
+/* 勾选模式下的菜单项：只有选中状态才显示绿色 */
+.select-mode-menu-active {
+    background: #4CAF50 !important;
+    color: white !important;
+    border-color: #4CAF50 !important;
+}
+
+/* 勾选模式下右侧内容区的标题和边框 */
+.select-mode-content-header {
+    border-bottom-color: #4CAF50 !important;
+}
+
+.select-mode-content-title {
+    color: #4CAF50 !important;
+}
+
+/* 呼吸动画 */
+@keyframes breathe {
+    0%, 100% {
+        box-shadow: 0 0 0 0 rgba(33, 150, 243, 0.7);
+        border-color: #2196F3;
+    }
+    50% {
+        box-shadow: 0 0 20px 8px rgba(33, 150, 243, 0);
+        border-color: rgba(33, 150, 243, 0.5);
+    }
+}
+
+.breathe-animation {
+    animation: breathe 1.2s ease-in-out;
 }

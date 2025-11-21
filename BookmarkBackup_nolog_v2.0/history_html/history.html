@@ -199,22 +199,34 @@
                 <div id="additionsReviewPanel" class="additions-subview active">
                     <!-- 面包屑导航 -->
                     <div class="calendar-breadcrumb-nav">
-                        <button class="breadcrumb-btn active" id="breadcrumbYear">
-                            <i class="fas fa-calendar"></i>
-                            <span id="breadcrumbYearText">2024年</span>
-                        </button>
-                        <span class="breadcrumb-separator" id="separator1" style="display:none;">/</span>
-                        <button class="breadcrumb-btn" id="breadcrumbMonth" style="display:none;">
-                            <span id="breadcrumbMonthText">11月</span>
-                        </button>
-                        <span class="breadcrumb-separator" id="separator2" style="display:none;">/</span>
-                        <button class="breadcrumb-btn" id="breadcrumbWeek" style="display:none;">
-                            <span id="breadcrumbWeekText">第45周</span>
-                        </button>
-                        <span class="breadcrumb-separator" id="separator3" style="display:none;">/</span>
-                        <button class="breadcrumb-btn" id="breadcrumbDay" style="display:none;">
-                            <span id="breadcrumbDayText">11月20日</span>
-                        </button>
+                        <div style="display: flex; align-items: center; gap: 8px; flex: 1;">
+                            <button class="breadcrumb-btn active" id="breadcrumbYear">
+                                <i class="fas fa-calendar"></i>
+                                <span id="breadcrumbYearText">2024年</span>
+                            </button>
+                            <span class="breadcrumb-separator" id="separator1" style="display:none;">/</span>
+                            <button class="breadcrumb-btn" id="breadcrumbMonth" style="display:none;">
+                                <span id="breadcrumbMonthText">11月</span>
+                            </button>
+                            <span class="breadcrumb-separator" id="separator2" style="display:none;">/</span>
+                            <button class="breadcrumb-btn" id="breadcrumbWeek" style="display:none;">
+                                <span id="breadcrumbWeekText">第45周</span>
+                            </button>
+                            <span class="breadcrumb-separator" id="separator3" style="display:none;">/</span>
+                            <button class="breadcrumb-btn" id="breadcrumbDay" style="display:none;">
+                                <span id="breadcrumbDayText">11月20日</span>
+                            </button>
+                        </div>
+                        <div style="display: flex; align-items: center; gap: 8px;">
+                            <button class="calendar-action-btn" id="calendarSelectModeBtn">
+                                <i class="fas fa-check-square"></i>
+                                <span id="calendarSelectModeText">勾选</span>
+                            </button>
+                            <button class="calendar-action-btn" id="calendarLocateTodayBtn">
+                                <i class="fas fa-crosshairs"></i>
+                                <span id="calendarLocateTodayText">定位至今天</span>
+                            </button>
+                        </div>
                     </div>
 
                     <!-- 日历容器 -->

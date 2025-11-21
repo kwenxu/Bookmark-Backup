@@ -161,12 +161,29 @@ class BookmarkCalendar {
                date.getDate() === today.getDate();
     }
 
+    // ISO 8601 周数计算(全球统一标准)
+    // 规则: 1) 周一为一周开始 2) 第一周包含当年第一个周四
     getWeekNumber(date) {
         const d = new Date(date);
         d.setHours(0, 0, 0, 0);
+        // 将日期调整到当周的周四
         d.setDate(d.getDate() + 4 - (d.getDay() || 7));
+        // 获取该周四所在年份的1月1日
         const yearStart = new Date(d.getFullYear(), 0, 1);
-        return Math.ceil((((d - yearStart) / 86400000) + 1) / 7);
+        // 计算周数
+        const weekNo = Math.ceil((((d - yearStart) / 86400000) + 1) / 7);
+        return weekNo;
+    }
+    
+    // 获取某周的周一日期(ISO 8601标准)
+    getMondayOfWeek(year, weekNum) {
+        const jan4 = new Date(year, 0, 4);
+        const jan4Day = jan4.getDay() || 7; // 1=周一, 7=周日
+        const mondayOfWeek1 = new Date(jan4);
+        mondayOfWeek1.setDate(jan4.getDate() - jan4Day + 1);
+        const targetMonday = new Date(mondayOfWeek1);
+        targetMonday.setDate(mondayOfWeek1.getDate() + (weekNum - 1) * 7);
+        return targetMonday;
     }
 
     jumpToRecentBookmarks() {
@@ -176,9 +193,10 @@ class BookmarkCalendar {
         this.currentMonth = today.getMonth();
         this.currentDay = today;
         
-        // 计算当前周的开始日期（周日为第一天）
+        // 计算当前周的周一(ISO 8601标准)
+        const todayDay = today.getDay() || 7; // 1-7 (周一到周日)
         this.currentWeekStart = new Date(today);
-        this.currentWeekStart.setDate(today.getDate() - today.getDay());
+        this.currentWeekStart.setDate(today.getDate() - todayDay + 1);
         
         console.log('[BookmarkCalendar] 默认显示当月当天:', this.currentYear, '年', this.currentMonth + 1, '月');
     }
@@ -214,8 +232,10 @@ class BookmarkCalendar {
         this.currentYear = today.getFullYear();
         this.currentMonth = today.getMonth();
         this.currentDay = today;
+        // 计算当前周的周一(ISO 8601标准)
+        const todayDay = today.getDay() || 7;
         this.currentWeekStart = new Date(today);
-        this.currentWeekStart.setDate(today.getDate() - today.getDay());
+        this.currentWeekStart.setDate(today.getDate() - todayDay + 1);
         this.viewLevel = 'month';
         this.render();
         
@@ -395,14 +415,21 @@ class BookmarkCalendar {
         const firstDay = new Date(this.currentYear, this.currentMonth, 1);
         const lastDay = new Date(this.currentYear, this.currentMonth + 1, 0);
         
-        // 计算需要显示的周数行
-        const startDayOfWeek = firstDay.getDay();
+        // 获取一周开始日(中文:周一=1, 英文:周日=0)
+        const weekStartDay = (typeof currentLang !== 'undefined' && currentLang === 'zh_CN') ? 1 : 0;
+        
+        // 计算需要显示的周数行(基于显示的周开始日)
+        const firstDayOfWeek = firstDay.getDay();
+        let offset = (firstDayOfWeek - weekStartDay + 7) % 7;
         const daysInMonth = lastDay.getDate();
-        const totalCells = startDayOfWeek + daysInMonth;
+        const totalCells = offset + daysInMonth;
         const numRows = Math.ceil(totalCells / 7);
         
-        let currentWeekStart = new Date(firstDay);
-        currentWeekStart.setDate(firstDay.getDate() - startDayOfWeek);
+        // 计算每行对应的周数(使用ISO 8601标准)
+        // 找到月视图第一行对应的周一(不管显示从周几开始,周数都基于周一)
+        let weekMonday = new Date(firstDay);
+        const firstDayDay = firstDay.getDay() || 7; // 1-7 (周一到周日)
+        weekMonday.setDate(firstDay.getDate() - firstDayDay + 1); // 调整到当周周一
         
         // 创建周数容器，使其与右侧日历单元格对齐
         const weeksContainer = document.createElement('div');
@@ -413,8 +440,8 @@ class BookmarkCalendar {
         
         // 为每一行创建周数
         for (let row = 0; row < numRows; row++) {
-            const weekNum = this.getWeekNumber(currentWeekStart);
-            const weekStartCopy = new Date(currentWeekStart);
+            const weekNum = this.getWeekNumber(weekMonday);
+            const weekMondayCopy = new Date(weekMonday);
             
             const weekDiv = document.createElement('div');
             weekDiv.style.display = 'flex';
@@ -428,7 +455,7 @@ class BookmarkCalendar {
             weekDiv.textContent = weekNum;
             
             weekDiv.addEventListener('click', () => {
-                this.currentWeekStart = weekStartCopy;
+                this.currentWeekStart = weekMondayCopy;
                 this.viewLevel = 'week';
                 this.render();
             });
@@ -442,7 +469,7 @@ class BookmarkCalendar {
             });
             
             weeksContainer.appendChild(weekDiv);
-            currentWeekStart.setDate(currentWeekStart.getDate() + 7);
+            weekMonday.setDate(weekMonday.getDate() + 7); // 下一周的周一
         }
         
         column.appendChild(weeksContainer);
@@ -493,6 +520,9 @@ class BookmarkCalendar {
             this.render();
         });
         
+        // 获取一周开始日(中文:周一=1, 英文:周日=0)
+        const weekStartDay = (typeof currentLang !== 'undefined' && currentLang === 'zh_CN') ? 1 : 0;
+        
         // 星期标题行（独立于日历网格）
         const weekdayHeader = document.createElement('div');
         weekdayHeader.style.display = 'grid';
@@ -506,7 +536,8 @@ class BookmarkCalendar {
             weekday.style.fontWeight = '600';
             weekday.style.color = 'var(--text-secondary)';
             weekday.style.padding = '8px 0';
-            weekday.textContent = tw(i);
+            const dayIndex = (weekStartDay + i) % 7;
+            weekday.textContent = tw(dayIndex);
             weekdayHeader.appendChild(weekday);
         }
         wrapper.appendChild(weekdayHeader);
@@ -517,9 +548,11 @@ class BookmarkCalendar {
         grid.style.gridTemplateColumns = 'repeat(7, 1fr)';
         grid.style.gap = '10px';
         
-        // 空白格
+        // 空白格(根据周开始日调整)
         const firstDay = new Date(this.currentYear, this.currentMonth, 1);
-        for (let i = 0; i < firstDay.getDay(); i++) {
+        const firstDayOfWeek = firstDay.getDay();
+        let blankCells = (firstDayOfWeek - weekStartDay + 7) % 7;
+        for (let i = 0; i < blankCells; i++) {
             grid.appendChild(document.createElement('div'));
         }
         
@@ -570,9 +603,10 @@ class BookmarkCalendar {
                 } else if (bookmarks.length > 0) {
                     // 普通模式：进入日视图
                     this.currentDay = date;
-                    // 更新currentWeekStart为该日期所在周的开始日期（周日）
+                    // 更新currentWeekStart为该日期所在周的周一(ISO 8601标准)
+                    const dateDay = date.getDay() || 7;
                     this.currentWeekStart = new Date(date);
-                    this.currentWeekStart.setDate(date.getDate() - date.getDay());
+                    this.currentWeekStart.setDate(date.getDate() - dateDay + 1);
                     this.viewLevel = 'day';
                     this.render();
                 }
@@ -1421,6 +1455,10 @@ class BookmarkCalendar {
         const wrapper = document.createElement('div');
         wrapper.style.padding = '20px';
         
+        // 获取一周开始日(中文:周一=1, 英文:周日=0)
+        const weekStartDay = (typeof currentLang !== 'undefined' && currentLang === 'zh_CN') ? 1 : 0;
+        
+        // currentWeekStart始终是ISO周一,但显示顺序根据语言调整
         const weekEnd = new Date(this.currentWeekStart);
         weekEnd.setDate(this.currentWeekStart.getDate() + 6);
         
@@ -1449,12 +1487,18 @@ class BookmarkCalendar {
         weekContainer.className = 'week-view-container';
         const allBookmarks = [];
         
+        // 根据语言调整显示顺序
+        // 中文: 周一(i=0)到周日(i=6)
+        // 英文: 周日(i=-1)到周六(i=5)
+        const displayOffset = weekStartDay === 0 ? -1 : 0;
+        
         for (let i = 0; i < 7; i++) {
             const date = new Date(this.currentWeekStart);
-            date.setDate(this.currentWeekStart.getDate() + i);
+            date.setDate(this.currentWeekStart.getDate() + displayOffset + i);
             const dateKey = this.getDateKey(date);
             const bookmarks = this.bookmarksByDate.get(dateKey) || [];
             const isTodayCard = this.isToday(date);
+            const dayOfWeek = date.getDay(); // 0-6 (周日到周六)
             
             if (bookmarks.length > 0) allBookmarks.push({ date, bookmarks });
             
@@ -1477,7 +1521,7 @@ class BookmarkCalendar {
             
             dayCard.innerHTML = `
                 <div class="week-day-header">
-                    <div class="week-day-name">${tw(i)}</div>
+                    <div class="week-day-name">${tw(dayOfWeek)}</div>
                     <div class="week-day-date">${date.getDate()}</div>
                 </div>
                 <div class="week-day-count" style="color: ${countColor};">${t('calendarBookmarkCount', bookmarks.length)}</div>
@@ -1549,10 +1593,11 @@ class BookmarkCalendar {
             
             // 判断是否是当前周（决定默认显示模式）
             const now = new Date();
-            const currentWeekStart = new Date(now);
-            currentWeekStart.setDate(now.getDate() - now.getDay());
-            currentWeekStart.setHours(0, 0, 0, 0);
-            const isCurrentWeek = (this.currentWeekStart.getTime() === currentWeekStart.getTime());
+            const nowDay = now.getDay() || 7;
+            const currentWeekMonday = new Date(now);
+            currentWeekMonday.setDate(now.getDate() - nowDay + 1);
+            currentWeekMonday.setHours(0, 0, 0, 0);
+            const isCurrentWeek = (this.currentWeekStart.getTime() === currentWeekMonday.getTime());
             const shouldShowAllByDefault = !this.selectMode && !isCurrentWeek;
             
             // 默认选中第一天
@@ -2000,17 +2045,19 @@ class BookmarkCalendar {
         
         header.querySelector('#prevDay').addEventListener('click', () => {
             this.currentDay.setDate(this.currentDay.getDate() - 1);
-            // 同步更新currentWeekStart为新日期所在周的开始日期
+            // 同步更新currentWeekStart为新日期所在周的周一(ISO 8601标准)
+            const dayOfWeek = this.currentDay.getDay() || 7;
             this.currentWeekStart = new Date(this.currentDay);
-            this.currentWeekStart.setDate(this.currentDay.getDate() - this.currentDay.getDay());
+            this.currentWeekStart.setDate(this.currentDay.getDate() - dayOfWeek + 1);
             this.render();
         });
         
         header.querySelector('#nextDay').addEventListener('click', () => {
             this.currentDay.setDate(this.currentDay.getDate() + 1);
-            // 同步更新currentWeekStart为新日期所在周的开始日期
+            // 同步更新currentWeekStart为新日期所在周的周一(ISO 8601标准)
+            const dayOfWeek = this.currentDay.getDay() || 7;
             this.currentWeekStart = new Date(this.currentDay);
-            this.currentWeekStart.setDate(this.currentDay.getDate() - this.currentDay.getDay());
+            this.currentWeekStart.setDate(this.currentDay.getDate() - dayOfWeek + 1);
             this.render();
         });
         

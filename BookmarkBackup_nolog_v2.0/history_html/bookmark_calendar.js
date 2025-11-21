@@ -661,13 +661,93 @@ class BookmarkCalendar {
         
         const sortedWeeks = Array.from(bookmarksByWeek.keys()).sort((a, b) => a - b);
         
+        // 判断是否是当前月（决定默认显示模式）
+        const now = new Date();
+        const isCurrentMonth = (this.currentYear === now.getFullYear() && this.currentMonth === now.getMonth());
+        const shouldShowAllByDefault = !this.selectMode && !isCurrentMonth;
+        
         // 默认选中第一周的第一天
         const firstWeekData = bookmarksByWeek.get(sortedWeeks[0]);
         let selectedDateKey = this.getDateKey(firstWeekData[0].date);
         
+        // 添加「All」0级菜单（所有模式下都显示）
+        const allMenuItem = document.createElement('div');
+        allMenuItem.style.padding = '12px';
+        allMenuItem.style.borderRadius = '8px';
+        allMenuItem.style.cursor = 'pointer';
+        allMenuItem.style.transition = 'all 0.2s';
+        allMenuItem.style.fontSize = '14px';
+        allMenuItem.style.fontWeight = '600';
+        allMenuItem.style.marginBottom = '12px';
+        allMenuItem.dataset.menuType = 'all';
+        
+        // 勾选模式下默认选中（绿色），普通模式下未选中（透明）
+        if (this.selectMode) {
+            allMenuItem.style.background = '#4CAF50';
+            allMenuItem.style.color = 'white';
+            allMenuItem.style.border = '1px solid #4CAF50';
+        } else {
+            allMenuItem.style.background = 'transparent';
+            allMenuItem.style.color = 'var(--text-primary)';
+            allMenuItem.style.border = '1px solid transparent';
+        }
+        
+        allMenuItem.innerHTML = `
+            <div style="display:flex;justify-content:space-between;align-items:center;">
+                <span><i class="fas fa-th-large"></i> ${currentLang === 'en' ? 'All' : '全部'}</span>
+                <span style="font-size:12px;opacity:0.9;">${totalCount}</span>
+            </div>
+        `;
+        
+        allMenuItem.addEventListener('click', () => {
+            // 取消其他菜单项的选中状态
+            sidebar.querySelectorAll('[data-date-key]').forEach(item => {
+                item.style.background = 'transparent';
+                item.style.color = 'var(--text-primary)';
+                item.style.fontWeight = 'normal';
+                item.style.border = '1px solid transparent';
+                item.classList.remove('select-mode-menu-active');
+            });
+            
+            // 设置All菜单为选中状态
+            if (this.selectMode) {
+                allMenuItem.style.background = '#4CAF50';
+                allMenuItem.style.color = 'white';
+                allMenuItem.style.border = '1px solid #4CAF50';
+            } else {
+                allMenuItem.style.background = 'rgba(33, 150, 243, 0.15)';
+                allMenuItem.style.color = 'var(--accent-primary)';
+                allMenuItem.style.fontWeight = '600';
+                allMenuItem.style.border = '1px solid var(--accent-primary)';
+            }
+            
+            // 显示所有书签
+            renderAllContent();
+        });
+        
+        allMenuItem.addEventListener('mouseenter', () => {
+            const isSelected = this.selectMode ? 
+                (allMenuItem.style.background === 'rgb(76, 175, 80)') :
+                (allMenuItem.style.background === 'rgba(33, 150, 243, 0.15)');
+            if (!isSelected) {
+                allMenuItem.style.background = 'rgba(128, 128, 128, 0.1)';
+            }
+        });
+        
+        allMenuItem.addEventListener('mouseleave', () => {
+            if (allMenuItem.style.background === 'rgba(128, 128, 128, 0.1)') {
+                allMenuItem.style.background = 'transparent';
+            }
+        });
+        
+        sidebar.appendChild(allMenuItem);
+        
         sortedWeeks.forEach((weekNum, weekIndex) => {
             const weekData = bookmarksByWeek.get(weekNum);
             const weekCount = weekData.reduce((sum, item) => sum + item.bookmarks.length, 0);
+            
+            // 在勾选模式下，默认展开所有周；否则只展开第一周
+            const shouldExpand = this.selectMode ? true : (weekIndex === 0);
             
             // 周菜单项容器
             const weekMenuContainer = document.createElement('div');
@@ -684,12 +764,12 @@ class BookmarkCalendar {
             weekHeader.style.background = 'var(--bg-secondary)';
             weekHeader.style.color = 'var(--text-primary)';
             weekHeader.dataset.weekNum = weekNum;
-            weekHeader.dataset.expanded = weekIndex === 0 ? 'true' : 'false';
+            weekHeader.dataset.expanded = shouldExpand ? 'true' : 'false';
             
             weekHeader.innerHTML = `
                 <div style="display:flex;justify-content:space-between;align-items:center;">
                     <span>
-                        <i class="fas fa-chevron-${weekIndex === 0 ? 'down' : 'right'}" style="font-size:12px;margin-right:6px;"></i>
+                        <i class="fas fa-chevron-${shouldExpand ? 'down' : 'right'}" style="font-size:12px;margin-right:6px;"></i>
                         <i class="fas fa-calendar-week"></i> ${t('calendarWeek', weekNum)}
                     </span>
                     <span style="font-size:12px;opacity:0.8;">${t('calendarBookmarkCount', weekCount)}</span>
@@ -700,7 +780,7 @@ class BookmarkCalendar {
             const daysContainer = document.createElement('div');
             daysContainer.style.marginLeft = '12px';
             daysContainer.style.marginTop = '4px';
-            daysContainer.style.display = weekIndex === 0 ? 'block' : 'none';
+            daysContainer.style.display = shouldExpand ? 'block' : 'none';
             daysContainer.dataset.weekNum = weekNum;
             
             // 为每一天创建菜单项
@@ -720,32 +800,26 @@ class BookmarkCalendar {
                 dayMenuItem.style.transition = 'all 0.2s';
                 dayMenuItem.style.fontSize = '13px';
                 dayMenuItem.dataset.dateKey = dateKey;
-                dayMenuItem.dataset.expanded = 'false';
+                // 在勾选模式下，默认展开所有有小时菜单的日期
+                dayMenuItem.dataset.expanded = (this.selectMode && hasTimePeriods) ? 'true' : 'false';
                 
-                // 第一周的第一天默认选中
-                if (weekIndex === 0 && dayIndex === 0) {
-                    if (this.selectMode) {
-                        dayMenuItem.classList.add('select-mode-menu-active');
-                        dayMenuItem.style.background = '#4CAF50';
-                        dayMenuItem.style.color = 'white';
-                        dayMenuItem.style.fontWeight = '600';
-                        dayMenuItem.style.border = '1px solid #4CAF50';
-                    } else {
-                        dayMenuItem.style.background = 'rgba(33, 150, 243, 0.15)';
-                        dayMenuItem.style.color = 'var(--accent-primary)';
-                        dayMenuItem.style.fontWeight = '600';
-                        dayMenuItem.style.border = '1px solid var(--accent-primary)';
-                    }
+                // 第一周的第一天默认选中（仅在普通模式下且是当前月）
+                if (weekIndex === 0 && dayIndex === 0 && !this.selectMode && !shouldShowAllByDefault) {
+                    dayMenuItem.style.background = 'rgba(33, 150, 243, 0.15)';
+                    dayMenuItem.style.color = 'var(--accent-primary)';
+                    dayMenuItem.style.fontWeight = '600';
+                    dayMenuItem.style.border = '1px solid var(--accent-primary)';
                 } else {
                     dayMenuItem.style.background = 'transparent';
                     dayMenuItem.style.color = 'var(--text-primary)';
                     dayMenuItem.style.border = '1px solid transparent';
                 }
                 
+                const isExpanded = (this.selectMode && hasTimePeriods);
                 dayMenuItem.innerHTML = `
                     <div style="display:flex;justify-content:space-between;align-items:center;">
                         <span>
-                            ${hasTimePeriods ? '<i class="fas fa-chevron-right" style="font-size:10px;margin-right:4px;"></i>' : ''}
+                            ${hasTimePeriods ? `<i class="fas fa-chevron-${isExpanded ? 'down' : 'right'}" style="font-size:10px;margin-right:4px;"></i>` : ''}
                             ${tw(date.getDay())} ${date.getMonth() + 1}/${date.getDate()}${isDayToday ? ` <span style="color: #2196F3;">(${currentLang === 'en' ? 'Today' : '今天'})</span>` : ''}
                         </span>
                         <span style="font-size:12px;opacity:0.8;">${t('calendarBookmarkCount', bookmarks.length)}</span>
@@ -758,7 +832,7 @@ class BookmarkCalendar {
                     hoursContainer = document.createElement('div');
                     hoursContainer.style.marginLeft = '16px';
                     hoursContainer.style.marginTop = '4px';
-                    hoursContainer.style.display = 'none';
+                    hoursContainer.style.display = isExpanded ? 'block' : 'none';
                     hoursContainer.dataset.dateKey = dateKey;
                     
                     // 按小时分组
@@ -831,6 +905,14 @@ class BookmarkCalendar {
                 
                 dayMenuItem.addEventListener('click', (e) => {
                     e.stopPropagation();
+                    
+                    // 取消All菜单的选中状态
+                    const allMenu = sidebar.querySelector('[data-menu-type="all"]');
+                    if (allMenu) {
+                        allMenu.style.background = 'transparent';
+                        allMenu.style.color = 'var(--text-primary)';
+                        allMenu.style.border = '1px solid transparent';
+                    }
                     
                     // 更新所有日期菜单的选中状态
                     sidebar.querySelectorAll('div[data-date-key]').forEach(item => {
@@ -1069,8 +1151,96 @@ class BookmarkCalendar {
             });
         };
         
-        // 初始显示第一周的所有内容
-        renderWeekContent(sortedWeeks[0], firstWeekData);
+        // 渲染右侧内容 - 显示所有日期的书签（勾选模式和普通模式通用）
+        const renderAllContent = () => {
+            contentArea.innerHTML = '';
+            
+            const themeColor = this.selectMode ? '#4CAF50' : 'var(--accent-primary)';
+            
+            const allHeader = document.createElement('div');
+            allHeader.style.fontSize = '18px';
+            allHeader.style.fontWeight = '700';
+            allHeader.style.color = 'var(--text-primary)';
+            allHeader.style.marginBottom = '20px';
+            allHeader.style.paddingBottom = '12px';
+            allHeader.style.borderBottom = `2px solid ${themeColor}`;
+            allHeader.style.display = 'flex';
+            allHeader.style.justifyContent = 'space-between';
+            allHeader.style.alignItems = 'center';
+            
+            const headerIcon = this.selectMode ? 'fa-check-circle' : 'fa-th-large';
+            const headerText = this.selectMode ? 
+                (currentLang === 'en' ? 'All Selected Bookmarks' : '所有选中的书签') :
+                (currentLang === 'en' ? 'All Bookmarks This Month' : '本月所有书签');
+            
+            allHeader.innerHTML = `
+                <span><i class="fas ${headerIcon}"></i> ${headerText}</span>
+                <span style="font-size:14px;color:var(--text-secondary);">${t('calendarBookmarksCount', totalCount)}</span>
+            `;
+            
+            contentArea.appendChild(allHeader);
+            
+            // 按周分组显示
+            sortedWeeks.forEach(weekNum => {
+                const weekData = bookmarksByWeek.get(weekNum);
+                
+                const weekSection = document.createElement('div');
+                weekSection.style.marginBottom = '32px';
+                
+                const weekTitle = document.createElement('div');
+                weekTitle.style.fontSize = '16px';
+                weekTitle.style.fontWeight = '600';
+                weekTitle.style.color = themeColor;
+                weekTitle.style.marginBottom = '16px';
+                weekTitle.style.paddingBottom = '8px';
+                weekTitle.style.borderBottom = `1px solid ${themeColor}`;
+                weekTitle.textContent = t('calendarWeek', weekNum);
+                weekSection.appendChild(weekTitle);
+                
+                // 按日显示
+                weekData.forEach(({ date, bookmarks }) => {
+                    const daySection = document.createElement('div');
+                    daySection.style.marginBottom = '24px';
+                    
+                    const isDayToday = this.isToday(date);
+                    const todayColor = '#4CAF50';
+                    
+                    const dayTitle = document.createElement('div');
+                    dayTitle.style.fontSize = '15px';
+                    dayTitle.style.fontWeight = '600';
+                    dayTitle.style.color = 'var(--text-primary)';
+                    dayTitle.style.marginBottom = '12px';
+                    dayTitle.style.paddingLeft = '8px';
+                    dayTitle.style.borderLeft = `3px solid ${themeColor}`;
+                    dayTitle.innerHTML = `${twFull(date.getDay())}, ${t('calendarMonthDay', date.getMonth() + 1, date.getDate())}${isDayToday ? ` <span style="color: ${todayColor};">(${currentLang === 'en' ? 'Today' : '今天'})</span>` : ''} - ${t('calendarBookmarkCount', bookmarks.length)}`;
+                    daySection.appendChild(dayTitle);
+                    
+                    bookmarks.sort((a, b) => a.dateAdded - b.dateAdded);
+                    const bookmarkList = this.createCollapsibleBookmarkList(bookmarks);
+                    daySection.appendChild(bookmarkList);
+                    
+                    weekSection.appendChild(daySection);
+                });
+                
+                contentArea.appendChild(weekSection);
+            });
+        };
+        
+        // 初始显示逻辑
+        if (this.selectMode) {
+            // 勾选模式：显示所有选中的
+            renderAllContent();
+        } else if (shouldShowAllByDefault) {
+            // 普通模式 + 非当前月：显示All模式
+            allMenuItem.style.background = 'rgba(33, 150, 243, 0.15)';
+            allMenuItem.style.color = 'var(--accent-primary)';
+            allMenuItem.style.fontWeight = '600';
+            allMenuItem.style.border = '1px solid var(--accent-primary)';
+            renderAllContent();
+        } else {
+            // 普通模式 + 当前月：显示第一周
+            renderWeekContent(sortedWeeks[0], firstWeekData);
+        }
         
         panelContainer.appendChild(sidebar);
         panelContainer.appendChild(contentArea);
@@ -1377,8 +1547,89 @@ class BookmarkCalendar {
             contentArea.style.flex = '1';
             contentArea.style.minWidth = '0';
             
+            // 判断是否是当前周（决定默认显示模式）
+            const now = new Date();
+            const currentWeekStart = new Date(now);
+            currentWeekStart.setDate(now.getDate() - now.getDay());
+            currentWeekStart.setHours(0, 0, 0, 0);
+            const isCurrentWeek = (this.currentWeekStart.getTime() === currentWeekStart.getTime());
+            const shouldShowAllByDefault = !this.selectMode && !isCurrentWeek;
+            
             // 默认选中第一天
             let selectedDateKey = this.getDateKey(filteredBookmarks[0].date);
+            
+            // 添加「All」0级菜单（所有模式下都显示）
+            const totalBookmarks = filteredBookmarks.reduce((sum, item) => sum + item.bookmarks.length, 0);
+            
+            const allMenuItem = document.createElement('div');
+            allMenuItem.style.padding = '12px';
+            allMenuItem.style.borderRadius = '8px';
+            allMenuItem.style.cursor = 'pointer';
+            allMenuItem.style.transition = 'all 0.2s';
+            allMenuItem.style.fontSize = '14px';
+            allMenuItem.style.fontWeight = '600';
+            allMenuItem.style.marginBottom = '12px';
+            allMenuItem.dataset.menuType = 'all';
+            
+            // 勾选模式下默认选中（绿色），普通模式下未选中（透明）
+            if (this.selectMode) {
+                allMenuItem.style.background = '#4CAF50';
+                allMenuItem.style.color = 'white';
+                allMenuItem.style.border = '1px solid #4CAF50';
+            } else {
+                allMenuItem.style.background = 'transparent';
+                allMenuItem.style.color = 'var(--text-primary)';
+                allMenuItem.style.border = '1px solid transparent';
+            }
+            
+            allMenuItem.innerHTML = `
+                <div style="display:flex;justify-content:space-between;align-items:center;">
+                    <span><i class="fas fa-th-large"></i> ${currentLang === 'en' ? 'All' : '全部'}</span>
+                    <span style="font-size:12px;opacity:0.9;">${totalBookmarks}</span>
+                </div>
+            `;
+            
+            allMenuItem.addEventListener('click', () => {
+                // 取消其他菜单项的选中状态
+                sidebar.querySelectorAll('[data-date-key]').forEach(item => {
+                    item.style.background = 'transparent';
+                    item.style.color = 'var(--text-primary)';
+                    item.style.fontWeight = 'normal';
+                    item.classList.remove('select-mode-menu-active');
+                });
+                
+                // 设置All菜单为选中状态
+                if (this.selectMode) {
+                    allMenuItem.style.background = '#4CAF50';
+                    allMenuItem.style.color = 'white';
+                    allMenuItem.style.border = '1px solid #4CAF50';
+                } else {
+                    allMenuItem.style.background = 'rgba(33, 150, 243, 0.15)';
+                    allMenuItem.style.color = 'var(--accent-primary)';
+                    allMenuItem.style.fontWeight = '600';
+                    allMenuItem.style.border = '1px solid var(--accent-primary)';
+                }
+                
+                // 显示所有书签
+                renderAllContent();
+            });
+            
+            allMenuItem.addEventListener('mouseenter', () => {
+                const isSelected = this.selectMode ? 
+                    (allMenuItem.style.background === 'rgb(76, 175, 80)') :
+                    (allMenuItem.style.background === 'rgba(33, 150, 243, 0.15)');
+                if (!isSelected) {
+                    allMenuItem.style.background = 'rgba(128, 128, 128, 0.1)';
+                }
+            });
+            
+            allMenuItem.addEventListener('mouseleave', () => {
+                if (allMenuItem.style.background === 'rgba(128, 128, 128, 0.1)') {
+                    allMenuItem.style.background = 'transparent';
+                }
+            });
+            
+            sidebar.appendChild(allMenuItem);
             
             filteredBookmarks.forEach(({ date, bookmarks }, index) => {
                 const dateKey = this.getDateKey(date);
@@ -1398,28 +1649,24 @@ class BookmarkCalendar {
                 menuItem.style.fontSize = '14px';
                 menuItem.style.position = 'relative';
                 menuItem.dataset.dateKey = dateKey;
-                menuItem.dataset.expanded = 'false';
+                // 在勾选模式下，默认展开所有有小时菜单的日期
+                menuItem.dataset.expanded = (this.selectMode && hasTimePeriods) ? 'true' : 'false';
                 
-                if (index === 0) {
-                    if (this.selectMode) {
-                        menuItem.classList.add('select-mode-menu-active');
-                        menuItem.style.background = '#4CAF50';
-                        menuItem.style.color = 'white';
-                        menuItem.style.fontWeight = '600';
-                    } else {
-                        menuItem.style.background = 'var(--accent-primary)';
-                        menuItem.style.color = 'white';
-                        menuItem.style.fontWeight = '600';
-                    }
+                // 第一天默认选中（仅在普通模式下且是当前周）
+                if (index === 0 && !this.selectMode && !shouldShowAllByDefault) {
+                    menuItem.style.background = 'var(--accent-primary)';
+                    menuItem.style.color = 'white';
+                    menuItem.style.fontWeight = '600';
                 } else {
                     menuItem.style.background = 'transparent';
                     menuItem.style.color = 'var(--text-primary)';
                 }
                 
+                const isExpanded = (this.selectMode && hasTimePeriods);
                 menuItem.innerHTML = `
                     <div style="display:flex;flex-direction:column;gap:4px;">
                         <div style="display:flex;align-items:center;gap:4px;">
-                            ${hasTimePeriods ? '<i class="fas fa-chevron-right" style="font-size:9px;"></i>' : ''}
+                            ${hasTimePeriods ? `<i class="fas fa-chevron-${isExpanded ? 'down' : 'right'}" style="font-size:9px;"></i>` : ''}
                             <span style="font-size:14px;font-weight:600;">${twFull(date.getDay())}</span>
                         </div>
                         <div style="font-size:13px;opacity:0.85;">${t('calendarMonthDay', date.getMonth() + 1, date.getDate())}</div>
@@ -1434,7 +1681,7 @@ class BookmarkCalendar {
                     hoursContainer = document.createElement('div');
                     hoursContainer.style.marginLeft = '12px';
                     hoursContainer.style.marginTop = '4px';
-                    hoursContainer.style.display = 'none';
+                    hoursContainer.style.display = isExpanded ? 'block' : 'none';
                     hoursContainer.dataset.dateKey = dateKey;
                     
                     // 按小时分组
@@ -1506,6 +1753,14 @@ class BookmarkCalendar {
                 }
                 
                 menuItem.addEventListener('click', () => {
+                    // 取消All菜单的选中状态
+                    const allMenu = sidebar.querySelector('[data-menu-type="all"]');
+                    if (allMenu) {
+                        allMenu.style.background = 'transparent';
+                        allMenu.style.color = 'var(--text-primary)';
+                        allMenu.style.border = '1px solid transparent';
+                    }
+                    
                     // 更新选中状态
                     sidebar.querySelectorAll('div[data-date-key]').forEach(item => {
                         item.style.background = 'transparent';
@@ -1639,8 +1894,78 @@ class BookmarkCalendar {
                 contentArea.appendChild(bookmarkList);
             };
             
-            // 初始显示第一天
-            renderDayContent(filteredBookmarks[0].date, filteredBookmarks[0].bookmarks);
+            // 渲染右侧内容 - 显示所有日期的书签（勾选模式和普通模式通用）
+            const renderAllContent = () => {
+                contentArea.innerHTML = '';
+                
+                const themeColor = this.selectMode ? '#4CAF50' : 'var(--accent-primary)';
+                
+                const allHeader = document.createElement('div');
+                allHeader.style.fontSize = '18px';
+                allHeader.style.fontWeight = '700';
+                allHeader.style.color = 'var(--text-primary)';
+                allHeader.style.marginBottom = '20px';
+                allHeader.style.paddingBottom = '12px';
+                allHeader.style.borderBottom = `2px solid ${themeColor}`;
+                allHeader.style.display = 'flex';
+                allHeader.style.justifyContent = 'space-between';
+                allHeader.style.alignItems = 'center';
+                
+                const totalBookmarks = filteredBookmarks.reduce((sum, item) => sum + item.bookmarks.length, 0);
+                
+                const headerIcon = this.selectMode ? 'fa-check-circle' : 'fa-th-large';
+                const headerText = this.selectMode ? 
+                    (currentLang === 'en' ? 'All Selected Bookmarks' : '所有选中的书签') :
+                    (currentLang === 'en' ? 'All Bookmarks This Week' : '本周所有书签');
+                
+                allHeader.innerHTML = `
+                    <span><i class="fas ${headerIcon}"></i> ${headerText}</span>
+                    <span style="font-size:14px;color:var(--text-secondary);">${t('calendarBookmarksCount', totalBookmarks)}</span>
+                `;
+                
+                contentArea.appendChild(allHeader);
+                
+                // 按日显示
+                filteredBookmarks.forEach(({ date, bookmarks }) => {
+                    const daySection = document.createElement('div');
+                    daySection.style.marginBottom = '32px';
+                    
+                    const isDayToday = this.isToday(date);
+                    const todayColor = '#4CAF50';
+                    
+                    const dayTitle = document.createElement('div');
+                    dayTitle.style.fontSize = '16px';
+                    dayTitle.style.fontWeight = '600';
+                    dayTitle.style.color = themeColor;
+                    dayTitle.style.marginBottom = '16px';
+                    dayTitle.style.paddingBottom = '8px';
+                    dayTitle.style.borderBottom = `1px solid ${themeColor}`;
+                    dayTitle.innerHTML = `${twFull(date.getDay())}, ${t('calendarMonthDay', date.getMonth() + 1, date.getDate())}${isDayToday ? ` <span style="color: ${todayColor};">(${currentLang === 'en' ? 'Today' : '今天'})</span>` : ''} - ${t('calendarBookmarkCount', bookmarks.length)}`;
+                    daySection.appendChild(dayTitle);
+                    
+                    bookmarks.sort((a, b) => a.dateAdded - b.dateAdded);
+                    const bookmarkList = this.createCollapsibleBookmarkList(bookmarks);
+                    daySection.appendChild(bookmarkList);
+                    
+                    contentArea.appendChild(daySection);
+                });
+            };
+            
+            // 初始显示逻辑
+            if (this.selectMode) {
+                // 勾选模式：显示所有选中的
+                renderAllContent();
+            } else if (shouldShowAllByDefault) {
+                // 普通模式 + 非当前周：显示All模式
+                allMenuItem.style.background = 'rgba(33, 150, 243, 0.15)';
+                allMenuItem.style.color = 'var(--accent-primary)';
+                allMenuItem.style.fontWeight = '600';
+                allMenuItem.style.border = '1px solid var(--accent-primary)';
+                renderAllContent();
+            } else {
+                // 普通模式 + 当前周：显示第一天
+                renderDayContent(filteredBookmarks[0].date, filteredBookmarks[0].bookmarks);
+            }
             
             panelContainer.appendChild(sidebar);
             panelContainer.appendChild(contentArea);

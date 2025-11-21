@@ -152,6 +152,13 @@ class BookmarkCalendar {
         return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
     }
 
+    isToday(date) {
+        const today = new Date();
+        return date.getFullYear() === today.getFullYear() &&
+               date.getMonth() === today.getMonth() &&
+               date.getDate() === today.getDate();
+    }
+
     getWeekNumber(date) {
         const d = new Date(date);
         d.setHours(0, 0, 0, 0);
@@ -458,14 +465,18 @@ class BookmarkCalendar {
         
         // 天数
         const daysInMonth = new Date(this.currentYear, this.currentMonth + 1, 0).getDate();
+        const today = new Date();
+        
         for (let day = 1; day <= daysInMonth; day++) {
             const date = new Date(this.currentYear, this.currentMonth, day);
             const dateKey = this.getDateKey(date);
             const bookmarks = this.bookmarksByDate.get(dateKey) || [];
+            const isTodayCell = this.isToday(date);
             
             const dayCell = document.createElement('div');
             dayCell.style.aspectRatio = '1';
-            dayCell.style.border = '1px solid var(--border-color)';
+            dayCell.style.position = 'relative';
+            dayCell.style.border = isTodayCell ? '2px solid #2196F3' : '1px solid var(--border-color)';
             dayCell.style.borderRadius = '8px';
             dayCell.style.padding = '8px';
             dayCell.style.cursor = bookmarks.length > 0 ? 'pointer' : 'default';
@@ -475,6 +486,7 @@ class BookmarkCalendar {
             dayCell.innerHTML = `
                 <div style="font-weight: 600;">${day}</div>
                 ${bookmarks.length > 0 ? `<div style="font-size: 12px; color: var(--accent-primary); margin-top: 4px;">${t('calendarBookmarkCount', bookmarks.length)}</div>` : ''}
+                ${isTodayCell ? `<div style="position: absolute; bottom: 4px; right: 4px; font-size: 10px; color: #2196F3; font-weight: 600;">${currentLang === 'en' ? 'Today' : '今天'}</div>` : ''}
             `;
             
             if (bookmarks.length > 0) {
@@ -603,6 +615,7 @@ class BookmarkCalendar {
             weekData.forEach(({ date, bookmarks }, dayIndex) => {
                 const dateKey = this.getDateKey(date);
                 const hasTimePeriods = bookmarks.length > 10; // 是否需要时间段子菜单
+                const isDayToday = this.isToday(date);
                 
                 // 日期菜单项容器
                 const dayMenuContainer = document.createElement('div');
@@ -633,7 +646,7 @@ class BookmarkCalendar {
                     <div style="display:flex;justify-content:space-between;align-items:center;">
                         <span>
                             ${hasTimePeriods ? '<i class="fas fa-chevron-right" style="font-size:10px;margin-right:4px;"></i>' : ''}
-                            ${tw(date.getDay())} ${date.getMonth() + 1}/${date.getDate()}
+                            ${tw(date.getDay())} ${date.getMonth() + 1}/${date.getDate()}${isDayToday ? ` <span style="color: #2196F3;">(${currentLang === 'en' ? 'Today' : '今天'})</span>` : ''}
                         </span>
                         <span style="font-size:12px;opacity:0.8;">${t('calendarBookmarkCount', bookmarks.length)}</span>
                     </div>
@@ -822,6 +835,8 @@ class BookmarkCalendar {
         const renderDayContent = (date, bookmarks) => {
             contentArea.innerHTML = '';
             
+            const isDayToday = this.isToday(date);
+            
             const dayHeader = document.createElement('div');
             dayHeader.style.fontSize = '18px';
             dayHeader.style.fontWeight = '700';
@@ -834,7 +849,7 @@ class BookmarkCalendar {
             dayHeader.style.alignItems = 'center';
             
             dayHeader.innerHTML = `
-                <span><i class="fas fa-calendar-day"></i> ${tw(date.getDay())} ${t('calendarMonthDay', date.getMonth() + 1, date.getDate())}</span>
+                <span><i class="fas fa-calendar-day"></i> ${tw(date.getDay())} ${t('calendarMonthDay', date.getMonth() + 1, date.getDate())}${isDayToday ? ` <span style="color: #2196F3;">(${currentLang === 'en' ? 'Today' : '今天'})</span>` : ''}</span>
                 <span style="font-size:14px;color:var(--text-secondary);">${t('calendarBookmarksCount', bookmarks.length)}</span>
             `;
             
@@ -904,6 +919,8 @@ class BookmarkCalendar {
                 const daySection = document.createElement('div');
                 daySection.style.marginBottom = '24px';
                 
+                const isDayToday = this.isToday(date);
+                
                 const dayTitle = document.createElement('div');
                 dayTitle.style.fontSize = '15px';
                 dayTitle.style.fontWeight = '600';
@@ -911,7 +928,7 @@ class BookmarkCalendar {
                 dayTitle.style.marginBottom = '12px';
                 dayTitle.style.paddingBottom = '8px';
                 dayTitle.style.borderBottom = '1px solid var(--accent-primary)';
-                dayTitle.innerHTML = `<i class="fas fa-calendar-day"></i> ${tw(date.getDay())} ${t('calendarMonthDay', date.getMonth() + 1, date.getDate())} (${t('calendarBookmarkCount', bookmarks.length)})`;
+                dayTitle.innerHTML = `<i class="fas fa-calendar-day"></i> ${tw(date.getDay())} ${t('calendarMonthDay', date.getMonth() + 1, date.getDate())} (${t('calendarBookmarkCount', bookmarks.length)})${isDayToday ? ` <span style="color: #2196F3;">(${currentLang === 'en' ? 'Today' : '今天'})</span>` : ''}`;
                 
                 daySection.appendChild(dayTitle);
                 
@@ -1134,17 +1151,26 @@ class BookmarkCalendar {
             date.setDate(this.currentWeekStart.getDate() + i);
             const dateKey = this.getDateKey(date);
             const bookmarks = this.bookmarksByDate.get(dateKey) || [];
+            const isTodayCard = this.isToday(date);
             
             if (bookmarks.length > 0) allBookmarks.push({ date, bookmarks });
             
             const dayCard = document.createElement('div');
             dayCard.className = 'week-day-card';
+            dayCard.style.position = 'relative';
+            
+            // 如果是今天，添加蓝色边框
+            if (isTodayCard) {
+                dayCard.style.border = '2px solid #2196F3';
+            }
+            
             dayCard.innerHTML = `
                 <div class="week-day-header">
                     <div class="week-day-name">${tw(i)}</div>
                     <div class="week-day-date">${date.getDate()}</div>
                 </div>
                 <div class="week-day-count">${t('calendarBookmarkCount', bookmarks.length)}</div>
+                ${isTodayCard ? `<div style="position: absolute; bottom: 4px; right: 4px; font-size: 11px; color: #2196F3; font-weight: 600;">${currentLang === 'en' ? 'Today' : '今天'}</div>` : ''}
             `;
             
             if (bookmarks.length > 0) {
@@ -1195,6 +1221,7 @@ class BookmarkCalendar {
             allBookmarks.forEach(({ date, bookmarks }, index) => {
                 const dateKey = this.getDateKey(date);
                 const hasTimePeriods = bookmarks.length > 10; // 是否需要时间段子菜单
+                const isDayToday = this.isToday(date);
                 
                 // 日期菜单项容器
                 const dayMenuContainer = document.createElement('div');
@@ -1207,6 +1234,7 @@ class BookmarkCalendar {
                 menuItem.style.cursor = 'pointer';
                 menuItem.style.transition = 'all 0.2s';
                 menuItem.style.fontSize = '14px';
+                menuItem.style.position = 'relative';
                 menuItem.dataset.dateKey = dateKey;
                 menuItem.dataset.expanded = 'false';
                 
@@ -1228,6 +1256,7 @@ class BookmarkCalendar {
                         <div style="font-size:13px;opacity:0.85;">${t('calendarMonthDay', date.getMonth() + 1, date.getDate())}</div>
                         <div style="font-size:12px;opacity:0.7;">${t('calendarBookmarkCount', bookmarks.length)}</div>
                     </div>
+                    ${isDayToday ? `<div style="position: absolute; bottom: 4px; right: 4px; font-size: 11px; color: ${index === 0 ? 'white' : '#2196F3'}; font-weight: 600;">${currentLang === 'en' ? 'Today' : '今天'}</div>` : ''}
                 `;
                 
                 // 小时子菜单容器（二级菜单）
@@ -1368,6 +1397,8 @@ class BookmarkCalendar {
             const renderDayContent = (date, bookmarks) => {
                 contentArea.innerHTML = '';
                 
+                const isDayToday = this.isToday(date);
+                
                 const dayHeader = document.createElement('div');
                 dayHeader.style.fontSize = '18px';
                 dayHeader.style.fontWeight = '700';
@@ -1375,7 +1406,7 @@ class BookmarkCalendar {
                 dayHeader.style.marginBottom = '20px';
                 dayHeader.style.paddingBottom = '12px';
                 dayHeader.style.borderBottom = '2px solid var(--accent-primary)';
-                dayHeader.innerHTML = `<i class="fas fa-calendar-day"></i> ${twFull(date.getDay())}, ${t('calendarMonthDay', date.getMonth() + 1, date.getDate())}`;
+                dayHeader.innerHTML = `<i class="fas fa-calendar-day"></i> ${twFull(date.getDay())}, ${t('calendarMonthDay', date.getMonth() + 1, date.getDate())}${isDayToday ? ` <span style="color: #2196F3;">(${currentLang === 'en' ? 'Today' : '今天'})</span>` : ''}`;
                 
                 contentArea.appendChild(dayHeader);
                 
@@ -1387,6 +1418,8 @@ class BookmarkCalendar {
             // 渲染右侧内容 - 显示某个小时的书签（>10个时）
             const renderHourContent = (date, hour, hourBookmarks) => {
                 contentArea.innerHTML = '';
+                
+                const isDayToday = this.isToday(date);
                 
                 const hourHeader = document.createElement('div');
                 hourHeader.style.fontSize = '18px';
@@ -1401,7 +1434,7 @@ class BookmarkCalendar {
                 
                 hourHeader.innerHTML = `
                     <span>
-                        <i class="fas fa-calendar-day"></i> ${twFull(date.getDay())}, ${t('calendarMonthDay', date.getMonth() + 1, date.getDate())}
+                        <i class="fas fa-calendar-day"></i> ${twFull(date.getDay())}, ${t('calendarMonthDay', date.getMonth() + 1, date.getDate())}${isDayToday ? ` <span style="color: #2196F3;">(${currentLang === 'en' ? 'Today' : '今天'})</span>` : ''}
                         <span style="margin-left:12px;">${String(hour).padStart(2, '0')}:00-${String(hour).padStart(2, '0')}:59</span>
                     </span>
                     <span style="font-size:14px;color:var(--text-secondary);">${t('calendarBookmarksCount', hourBookmarks.length)}</span>
@@ -1433,13 +1466,17 @@ class BookmarkCalendar {
         const wrapper = document.createElement('div');
         wrapper.style.padding = '20px';
         
+        // 构建标题,如果是今天则添加标注
+        const dateTitle = t('calendarYearMonthDay', this.currentDay.getFullYear(), this.currentDay.getMonth() + 1, this.currentDay.getDate());
+        const todaySuffix = this.isToday(this.currentDay) ? (currentLang === 'en' ? ' (Today)' : '（今天）') : '';
+        
         const header = document.createElement('div');
         header.style.display = 'flex';
         header.style.justifyContent = 'space-between';
         header.style.marginBottom = '20px';
         header.innerHTML = `
             <button class="calendar-nav-btn" id="prevDay"><i class="fas fa-chevron-left"></i></button>
-            <div style="font-size:18px;font-weight:600;">${t('calendarYearMonthDay', this.currentDay.getFullYear(), this.currentDay.getMonth() + 1, this.currentDay.getDate())}</div>
+            <div style="font-size:18px;font-weight:600;">${dateTitle}${todaySuffix}</div>
             <button class="calendar-nav-btn" id="nextDay"><i class="fas fa-chevron-right"></i></button>
         `;
         wrapper.appendChild(header);

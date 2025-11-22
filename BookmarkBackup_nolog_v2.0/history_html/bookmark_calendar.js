@@ -73,6 +73,11 @@ class BookmarkCalendar {
         this.selectMode = false; // 勾选模式
         this.selectedDates = new Set(); // 已勾选的日期集合 'YYYY-MM-DD'
         
+        // 拖拽勾选相关状态
+        this.isDragging = false; // 是否正在拖拽
+        this.dragStartDate = null; // 拖拽起始的日期key
+        this.hasDragMoved = false; // 是否发生了拖拽移动
+        
         this.init();
     }
 
@@ -98,7 +103,39 @@ class BookmarkCalendar {
         this.preloadFavicons();
         
         this.setupBreadcrumb();
+        this.setupDragEvents();
         this.render();
+    }
+    
+    // 设置全局拖拽事件
+    setupDragEvents() {
+        // 全局mouseup：处理单击取消勾选，或结束拖拽并刷新
+        document.addEventListener('mouseup', (e) => {
+            if (this.isDragging) {
+                // 检查是否是单击行为（没有发生拖拽移动）
+                if (!this.hasDragMoved && this.dragStartDate) {
+                    // 单击已勾选的格子：取消勾选
+                    if (this.selectedDates.has(this.dragStartDate)) {
+                        this.selectedDates.delete(this.dragStartDate);
+                    }
+                }
+                
+                // 重置状态
+                this.isDragging = false;
+                this.dragStartDate = null;
+                this.hasDragMoved = false;
+                
+                // 刷新显示
+                this.render();
+            }
+        });
+        
+        // 防止拖拽时选中文本
+        document.addEventListener('selectstart', (e) => {
+            if (this.isDragging) {
+                e.preventDefault();
+            }
+        });
     }
     
     preloadFavicons() {
@@ -760,41 +797,91 @@ class BookmarkCalendar {
                 ${isTodayCell ? `<div style="position: absolute; bottom: 4px; right: 4px; font-size: 10px; color: #2196F3; font-weight: 600;">${currentLang === 'en' ? 'Today' : '今天'}</div>` : ''}
             `;
             
-            dayCell.addEventListener('click', () => {
-                if (this.selectMode) {
-                    // 勾选模式：切换选中状态
-                    if (this.selectedDates.has(dateKey)) {
-                        this.selectedDates.delete(dateKey);
-                    } else {
-                        this.selectedDates.add(dateKey);
-                    }
-                    this.render();
-                } else if (bookmarks.length > 0) {
-                    // 普通模式：进入日视图
-                    this.currentDay = date;
-                    // 更新currentWeekStart为该日期所在周的周一(ISO 8601标准)
-                    const dateDay = date.getDay() || 7;
-                    this.currentWeekStart = new Date(date);
-                    this.currentWeekStart.setDate(date.getDate() - dateDay + 1);
-                    this.viewLevel = 'day';
-                    this.render();
+            // 勾选模式下的事件处理
+            if (this.selectMode) {
+                // 只有有书签数据的格子才能被勾选
+                if (bookmarks.length > 0) {
+                    // 鼠标进入：拖拽中时勾选（不触发render）
+                    dayCell.addEventListener('mouseenter', () => {
+                        if (this.isDragging) {
+                            // 标记已发生拖拽移动
+                            if (this.dragStartDate !== dateKey) {
+                                this.hasDragMoved = true;
+                            }
+                            
+                            // 直接勾选
+                            this.selectedDates.add(dateKey);
+                            // 立即更新视觉状态，不重新渲染整个日历
+                            dayCell.classList.add('selected');
+                        }
+                    });
+                } else {
+                    // 空白格子：显示为不可用状态
+                    dayCell.style.opacity = '0.5';
                 }
-            });
-            
-            if (!this.selectMode && bookmarks.length > 0) {
-                dayCell.addEventListener('mouseenter', () => {
-                    dayCell.style.transform = 'scale(1.05)';
+            } else {
+                // 普通模式：点击进入日视图
+                dayCell.addEventListener('click', () => {
+                    if (bookmarks.length > 0) {
+                        this.currentDay = date;
+                        // 更新currentWeekStart为该日期所在周的周一(ISO 8601标准)
+                        const dateDay = date.getDay() || 7;
+                        this.currentWeekStart = new Date(date);
+                        this.currentWeekStart.setDate(date.getDate() - dateDay + 1);
+                        this.viewLevel = 'day';
+                        this.render();
+                    }
                 });
                 
-                dayCell.addEventListener('mouseleave', () => {
-                    dayCell.style.transform = 'scale(1)';
-                });
+                if (bookmarks.length > 0) {
+                    dayCell.addEventListener('mouseenter', () => {
+                        dayCell.style.transform = 'scale(1.05)';
+                    });
+                    
+                    dayCell.addEventListener('mouseleave', () => {
+                        dayCell.style.transform = 'scale(1)';
+                    });
+                }
             }
             
             grid.appendChild(dayCell);
         }
         
         wrapper.appendChild(grid);
+        
+        // 勾选模式：在整个日历容器上监听mousedown，允许从任意位置开始拖拽
+        if (this.selectMode) {
+            wrapper.addEventListener('mousedown', (e) => {
+                e.preventDefault();
+                this.isDragging = true;
+                this.hasDragMoved = false;
+                
+                // 检查是否点击在有效格子上，如果是则立即勾选
+                const dayCell = e.target.closest('.calendar-day');
+                if (dayCell && dayCell.dataset.dateKey) {
+                    const dateKey = dayCell.dataset.dateKey;
+                    const bookmarks = this.bookmarksByDate.get(dateKey) || [];
+                    
+                    // 只处理有数据的格子
+                    if (bookmarks.length > 0) {
+                        // 记录起始位置
+                        this.dragStartDate = dateKey;
+                        
+                        // 如果格子未勾选，则立即勾选
+                        if (!this.selectedDates.has(dateKey)) {
+                            this.selectedDates.add(dateKey);
+                            dayCell.classList.add('selected');
+                        }
+                        // 如果格子已勾选，等待mouseup判断是否取消
+                    } else {
+                        this.dragStartDate = null;
+                    }
+                } else {
+                    this.dragStartDate = null;
+                }
+            });
+        }
+        
         return wrapper;
     }
 
@@ -2036,28 +2123,77 @@ class BookmarkCalendar {
                 ${isTodayCard ? `<div style="position: absolute; bottom: 4px; right: 4px; font-size: 11px; color: #2196F3; font-weight: 600;">${currentLang === 'en' ? 'Today' : '今天'}</div>` : ''}
             `;
             
-            dayCard.addEventListener('click', () => {
-                if (this.selectMode) {
-                    // 勾选模式：切换选中状态
-                    if (this.selectedDates.has(dateKey)) {
-                        this.selectedDates.delete(dateKey);
-                    } else {
-                        this.selectedDates.add(dateKey);
-                    }
-                    this.render();
-                } else if (bookmarks.length > 0) {
-                    // 普通模式：进入日视图
-                    this.currentDay = date;
-                    // currentWeekStart已经设置正确，无需更新
-                    this.viewLevel = 'day';
-                    this.render();
+            // 勾选模式下的事件处理
+            if (this.selectMode) {
+                // 只有有书签数据的格子才能被勾选
+                if (bookmarks.length > 0) {
+                    // 鼠标进入：拖拽中时勾选（不触发render）
+                    dayCard.addEventListener('mouseenter', () => {
+                        if (this.isDragging) {
+                            // 标记已发生拖拽移动
+                            if (this.dragStartDate !== dateKey) {
+                                this.hasDragMoved = true;
+                            }
+                            
+                            // 直接勾选
+                            this.selectedDates.add(dateKey);
+                            // 立即更新视觉状态，不重新渲染整个日历
+                            dayCard.classList.add('selected');
+                        }
+                    });
+                } else {
+                    // 空白格子：显示为不可用状态
+                    dayCard.style.opacity = '0.5';
                 }
-            });
+            } else {
+                // 普通模式：点击进入日视图
+                dayCard.addEventListener('click', () => {
+                    if (bookmarks.length > 0) {
+                        this.currentDay = date;
+                        // currentWeekStart已经设置正确，无需更新
+                        this.viewLevel = 'day';
+                        this.render();
+                    }
+                });
+            }
             
             weekContainer.appendChild(dayCard);
         }
         
         wrapper.appendChild(weekContainer);
+        
+        // 勾选模式：在整个周视图容器上监听mousedown，允许从任意位置开始拖拽
+        if (this.selectMode) {
+            weekContainer.addEventListener('mousedown', (e) => {
+                e.preventDefault();
+                this.isDragging = true;
+                this.hasDragMoved = false;
+                
+                // 检查是否点击在有效格子上，如果是则立即勾选
+                const dayCard = e.target.closest('.week-day-card');
+                if (dayCard && dayCard.dataset.dateKey) {
+                    const dateKey = dayCard.dataset.dateKey;
+                    const bookmarks = this.bookmarksByDate.get(dateKey) || [];
+                    
+                    // 只处理有数据的格子
+                    if (bookmarks.length > 0) {
+                        // 记录起始位置
+                        this.dragStartDate = dateKey;
+                        
+                        // 如果格子未勾选，则立即勾选
+                        if (!this.selectedDates.has(dateKey)) {
+                            this.selectedDates.add(dateKey);
+                            dayCard.classList.add('selected');
+                        }
+                        // 如果格子已勾选，等待mouseup判断是否取消
+                    } else {
+                        this.dragStartDate = null;
+                    }
+                } else {
+                    this.dragStartDate = null;
+                }
+            });
+        }
         
         // 勾选模式下过滤书签
         let filteredBookmarks = allBookmarks;

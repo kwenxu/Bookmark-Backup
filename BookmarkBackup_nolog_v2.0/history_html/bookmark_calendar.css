@@ -214,22 +214,22 @@
 .calendar-grid {
     display: grid;
     grid-template-columns: repeat(7, 1fr);
-    gap: 8.5px; /* 10px * 0.85 */
+    gap: 7.225px; /* 8.5px * 0.85 */
 }
 
 .calendar-weekday {
     text-align: center;
     font-weight: 600;
     color: var(--text-secondary);
-    padding: 6.8px 0; /* 8px * 0.85 */
-    font-size: 11.9px; /* 14px * 0.85 */
+    padding: 5.78px 0; /* 6.8px * 0.85 */
+    font-size: 10.115px; /* 11.9px * 0.85 */
 }
 
 .calendar-day {
     aspect-ratio: 1;
     border: 1px solid var(--border-color);
-    border-radius: 6.8px; /* 8px * 0.85 */
-    padding: 6.8px; /* 8px * 0.85 */
+    border-radius: 5.78px; /* 6.8px * 0.85 */
+    padding: 5.78px; /* 6.8px * 0.85 */
     cursor: pointer;
     background: var(--bg-primary);
     transition: all 0.2s ease;
@@ -298,15 +298,15 @@
 /* 年视图卡片 - 缩小15% */
 .year-view-grid {
     display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); /* 200px * 0.85 */
-    gap: 17px; /* 20px * 0.85 */
-    padding: 17px; /* 20px * 0.85 */
+    grid-template-columns: repeat(auto-fit, minmax(144.5px, 1fr)); /* 170px * 0.85 */
+    gap: 14.45px; /* 17px * 0.85 */
+    padding: 14.45px; /* 17px * 0.85 */
 }
 
 .month-card {
     border: 1px solid var(--border-color);
-    border-radius: 10.2px; /* 12px * 0.85 */
-    padding: 17px; /* 20px * 0.85 */
+    border-radius: 8.67px; /* 10.2px * 0.85 */
+    padding: 14.45px; /* 17px * 0.85 */
     background: var(--bg-primary);
     cursor: pointer;
     transition: all 0.2s ease;
@@ -314,26 +314,26 @@
 }
 
 .month-card:hover {
-    transform: translateY(-3.4px); /* -4px * 0.85 */
-    box-shadow: 0 6.8px 20.4px rgba(0,0,0,0.15); /* 8px/24px * 0.85 */
+    transform: translateY(-2.89px); /* -3.4px * 0.85 */
+    box-shadow: 0 5.78px 17.34px rgba(0,0,0,0.15); /* 6.8px/20.4px * 0.85 */
 }
 
 .month-card-title {
-    font-size: 15.3px; /* 18px * 0.85 */
+    font-size: 13.005px; /* 15.3px * 0.85 */
     font-weight: 600;
-    margin-bottom: 10.2px; /* 12px * 0.85 */
+    margin-bottom: 8.67px; /* 10.2px * 0.85 */
 }
 
 .month-card-count {
-    font-size: 27.2px; /* 32px * 0.85 */
+    font-size: 23.12px; /* 27.2px * 0.85 */
     font-weight: 700;
     color: var(--accent-primary);
 }
 
 .month-card-label {
-    font-size: 11.9px; /* 14px * 0.85 */
+    font-size: 10.115px; /* 11.9px * 0.85 */
     color: var(--text-secondary);
-    margin-top: 6.8px; /* 8px * 0.85 */
+    margin-top: 5.78px; /* 6.8px * 0.85 */
 }
 
 /* 书签列表 */

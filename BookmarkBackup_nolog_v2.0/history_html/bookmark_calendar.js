@@ -2830,19 +2830,42 @@ class BookmarkCalendar {
         const scopeText = document.getElementById('exportScopeText');
         if (scopeText) {
             if (this.selectMode) {
-                // 勾选模式：显示所有勾选的日期
-                const dates = Array.from(this.selectedDates).sort();
+                // 勾选模式：过滤掉没有数据的日期
+                const dates = Array.from(this.selectedDates)
+                    .filter(dateKey => {
+                        const bookmarks = this.bookmarksByDate.get(dateKey);
+                        return bookmarks && bookmarks.length > 0;
+                    })
+                    .sort();
+                
                 if (dates.length === 0) {
                     scopeText.textContent = currentLang === 'zh_CN' ? '未选中任何日期' : 'No dates selected';
                 } else {
-                    const formatDate = (dateKey) => {
-                        const [y, m, d] = dateKey.split('-').map(Number);
-                        return `${m}-${d}`;
-                    };
-                    const dateList = dates.map(formatDate).join('、');
-                    scopeText.textContent = currentLang === 'zh_CN' 
-                        ? `当前勾选：${dateList}` 
-                        : `Selected: ${dateList}`;
+                    // 检查是否同月
+                    const months = [...new Set(dates.map(dateKey => dateKey.substring(0, 7)))];
+                    
+                    if (months.length === 1) {
+                        // 同月：显示为 "10月：1、7、8"
+                        const [y, m] = months[0].split('-').map(Number);
+                        const days = dates.map(dateKey => {
+                            const [, , d] = dateKey.split('-').map(Number);
+                            return d;
+                        }).join('、');
+                        
+                        scopeText.textContent = currentLang === 'zh_CN'
+                            ? `当前勾选 ${m}月：${days}`
+                            : `Selected ${months[0]}: ${days}`;
+                    } else {
+                        // 跨月：显示完整日期
+                        const formatDate = (dateKey) => {
+                            const [y, m, d] = dateKey.split('-').map(Number);
+                            return `${m}-${d}`;
+                        };
+                        const dateList = dates.map(formatDate).join('、');
+                        scopeText.textContent = currentLang === 'zh_CN' 
+                            ? `当前勾选：${dateList}` 
+                            : `Selected: ${dateList}`;
+                    }
                 }
             } else {
                 // 非勾选模式：显示当前视图范围
@@ -2960,7 +2983,43 @@ class BookmarkCalendar {
     // 辅助：获取导出范围名称（用于文件夹命名）
     getExportScopeName() {
         if (this.selectMode) {
-            return i18n.exportScopeSelected[currentLang].replace('{0}', this.selectedDates.size);
+            // 勾选模式：过滤掉没有数据的日期，并格式化显示
+            const dates = Array.from(this.selectedDates)
+                .filter(dateKey => {
+                    const bookmarks = this.bookmarksByDate.get(dateKey);
+                    return bookmarks && bookmarks.length > 0;
+                })
+                .sort();
+            
+            if (dates.length === 0) {
+                return currentLang === 'zh_CN' ? '未选中任何日期' : 'No dates selected';
+            }
+            
+            // 检查是否同月
+            const months = [...new Set(dates.map(dateKey => dateKey.substring(0, 7)))];
+            
+            if (months.length === 1) {
+                // 同月：显示为 "当前勾选 10月：1、7、8"
+                const [y, m] = months[0].split('-').map(Number);
+                const days = dates.map(dateKey => {
+                    const [, , d] = dateKey.split('-').map(Number);
+                    return d;
+                }).join('、');
+                
+                return currentLang === 'zh_CN'
+                    ? `当前勾选 ${m}月：${days}`
+                    : `Selected ${months[0]}: ${days}`;
+            } else {
+                // 跨月：显示完整日期
+                const formatDate = (dateKey) => {
+                    const [y, m, d] = dateKey.split('-').map(Number);
+                    return `${m}-${d}`;
+                };
+                const dateList = dates.map(formatDate).join('、');
+                return currentLang === 'zh_CN' 
+                    ? `当前勾选：${dateList}` 
+                    : `Selected: ${dateList}`;
+            }
         }
         switch (this.viewLevel) {
             case 'year': return t('calendarYear', this.currentYear);
@@ -3011,20 +3070,43 @@ class BookmarkCalendar {
     // 获取导出范围后缀（用于文件名）
     getExportScopeSuffix() {
         if (this.selectMode) {
-            // 勾选模式：显示选中的日期（最多5个，超过显示省略号）
-            const dates = Array.from(this.selectedDates).sort();
+            // 勾选模式：过滤掉没有数据的日期
+            const dates = Array.from(this.selectedDates)
+                .filter(dateKey => {
+                    const bookmarks = this.bookmarksByDate.get(dateKey);
+                    return bookmarks && bookmarks.length > 0;
+                })
+                .sort();
+            
             if (dates.length === 0) return '';
             
-            const formatDate = (dateKey) => {
-                const [y, m, d] = dateKey.split('-').map(Number);
-                return `${m}-${d}`;
-            };
+            // 检查是否同月
+            const months = [...new Set(dates.map(dateKey => dateKey.substring(0, 7)))];
             
-            if (dates.length <= 5) {
-                return dates.map(formatDate).join('_');
+            if (months.length === 1) {
+                // 同月：显示为 "10月：1、7、8"
+                const [y, m] = months[0].split('-').map(Number);
+                const days = dates.map(dateKey => {
+                    const [, , d] = dateKey.split('-').map(Number);
+                    return d;
+                }).join('、');
+                
+                return currentLang === 'zh_CN' 
+                    ? `${m}月-${days.replace(/、/g, '_')}`
+                    : `${months[0]}-${days.replace(/、/g, '_')}`;
             } else {
-                const first5 = dates.slice(0, 5).map(formatDate).join('_');
-                return `${first5}_etc`;
+                // 跨月：显示完整日期
+                const formatDate = (dateKey) => {
+                    const [y, m, d] = dateKey.split('-').map(Number);
+                    return `${m}-${d}`;
+                };
+                
+                if (dates.length <= 5) {
+                    return dates.map(formatDate).join('_');
+                } else {
+                    const first5 = dates.slice(0, 5).map(formatDate).join('_');
+                    return `${first5}_etc`;
+                }
             }
         } else {
             // 非勾选模式：根据视图层级显示范围
@@ -3072,9 +3154,12 @@ class BookmarkCalendar {
         // 2. 收集所有符合范围的书签（按日期排序）
         const sortedDateKeys = [...this.bookmarksByDate.keys()].sort();
         let allTargetBookmarks = []; // 用于 collection 和 context 模式
+        
+        // 判断是否是单日导出（不需要日期子文件夹）
+        const isSingleDayExport = !this.selectMode && this.viewLevel === 'day';
 
         if (mode === 'records') {
-            // RECORDS 模式：按照 时间(周->日) -> 原始目录结构 组织
+            // RECORDS 模式：根据导出范围简化层级结构
             const ensurePath = (rootNode, pathArray) => {
                 let current = rootNode;
                 for (const folderName of pathArray) {
@@ -3087,31 +3172,48 @@ class BookmarkCalendar {
                 if (!this.checkDateInScope(dateKey)) continue;
 
                 const bookmarks = this.bookmarksByDate.get(dateKey);
+                if (!bookmarks || bookmarks.length === 0) continue; // 过滤空白日期
+                
                 const [y, m, d] = dateKey.split('-').map(Number);
                 const date = new Date(y, m - 1, d);
                 
-                // 时间分组：周 -> 日
-                const weekNum = this.getWeekNumber(date);
-                const weekName = t('calendarWeek', weekNum);
+                // 判断目标文件夹：单日直接用主文件夹，多日需要创建日期子文件夹
+                let targetFolder;
                 
-                // 格式化日期：例如 "11月05日 周二" 或 "Nov 05 Tue"
-                let dayName;
-                if (currentLang === 'zh_CN') {
-                    dayName = `${String(m).padStart(2,'0')}月${String(d).padStart(2,'0')}日 ${tw(date.getDay())}`;
+                if (isSingleDayExport) {
+                    // 单日导出：直接用主文件夹，不创建日期子文件夹
+                    targetFolder = mainFolder;
                 } else {
-                    // 英文格式: Nov 05 Mon
-                    const monthNamesShort = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-                    const dayOfWeekShort = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
-                    dayName = `${monthNamesShort[m-1]} ${String(d).padStart(2,'0')} ${dayOfWeekShort[date.getDay()]}`;
+                    // 多日导出：创建日期子文件夹
+                    let dayFolderName;
+                    if (currentLang === 'zh_CN') {
+                        // 中文格式
+                        if (this.selectMode || this.viewLevel === 'year' || this.viewLevel === 'month') {
+                            // 跨度大：显示月日+星期 "11月05日 周二"
+                            dayFolderName = `${String(m).padStart(2,'0')}月${String(d).padStart(2,'0')}日 ${tw(date.getDay())}`;
+                        } else {
+                            // 周视图：只显示日期+星期 "05日 周二"
+                            dayFolderName = `${String(d).padStart(2,'0')}日 ${tw(date.getDay())}`;
+                        }
+                    } else {
+                        // 英文格式
+                        const monthNamesShort = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+                        const dayOfWeekShort = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+                        if (this.selectMode || this.viewLevel === 'year' || this.viewLevel === 'month') {
+                            // 跨度大：显示月日+星期 "Nov 05 Mon"
+                            dayFolderName = `${monthNamesShort[m-1]} ${String(d).padStart(2,'0')} ${dayOfWeekShort[date.getDay()]}`;
+                        } else {
+                            // 周视图：只显示日期+星期 "05 Mon"
+                            dayFolderName = `${String(d).padStart(2,'0')} ${dayOfWeekShort[date.getDay()]}`;
+                        }
+                    }
+                    targetFolder = getOrCreateFolder(mainFolder, dayFolderName);
                 }
 
-                const weekFolder = getOrCreateFolder(mainFolder, weekName);
-                const dayFolder = getOrCreateFolder(weekFolder, dayName);
-
-                // 在日期文件夹下，重建原始目录结构
+                // 在目标文件夹下，重建原始目录结构
                 bookmarks.forEach(bm => {
                     const path = bm.folderPath || [];
-                    const parentFolder = ensurePath(dayFolder, path);
+                    const parentFolder = ensurePath(targetFolder, path);
                     
                     parentFolder.children.push({
                         title: bm.title,
@@ -3121,32 +3223,83 @@ class BookmarkCalendar {
                     });
                 });
             }
-            // 如果没有内容，给予提示
-            if (mainFolder.children.length === 0 && sortedDateKeys.length > 0) {
-                 // 可能是范围没匹配到，但理论上 sortedDateKeys 应该包含所有。
-                 // 这里不做特殊处理，返回空文件夹即可。
-            }
 
         } else {
             // COLLECTION 和 CONTEXT 模式：先扁平化收集所有书签
             for (const dateKey of sortedDateKeys) {
                 if (this.checkDateInScope(dateKey)) {
-                    allTargetBookmarks.push(...this.bookmarksByDate.get(dateKey));
+                    const bookmarks = this.bookmarksByDate.get(dateKey);
+                    if (bookmarks && bookmarks.length > 0) { // 过滤空白日期
+                        allTargetBookmarks.push(...bookmarks);
+                    }
                 }
             }
 
             if (allTargetBookmarks.length === 0) return root;
 
             if (mode === 'collection') {
-                // COLLECTION 模式：全部直接放在主文件夹下（扁平）
-                allTargetBookmarks.forEach(bm => {
-                    mainFolder.children.push({
-                        title: bm.title,
-                        url: bm.url,
-                        addDate: bm.dateAdded.getTime() / 1000,
-                        type: 'bookmark'
+                // COLLECTION 模式：按日期分组，扁平化放在日期文件夹下
+                
+                if (isSingleDayExport) {
+                    // 单日导出：直接扁平化放在主文件夹下
+                    allTargetBookmarks.forEach(bm => {
+                        mainFolder.children.push({
+                            title: bm.title,
+                            url: bm.url,
+                            addDate: bm.dateAdded.getTime() / 1000,
+                            type: 'bookmark'
+                        });
                     });
-                });
+                } else {
+                    // 多日导出：按日期创建子文件夹
+                    const bookmarksByDate = new Map();
+                    allTargetBookmarks.forEach(bm => {
+                        const dateKey = this.getDateKey(bm.dateAdded);
+                        if (!bookmarksByDate.has(dateKey)) {
+                            bookmarksByDate.set(dateKey, []);
+                        }
+                        bookmarksByDate.get(dateKey).push(bm);
+                    });
+
+                    // 按日期排序
+                    const sortedDates = [...bookmarksByDate.keys()].sort();
+                    
+                    sortedDates.forEach(dateKey => {
+                        const [y, m, d] = dateKey.split('-').map(Number);
+                        const date = new Date(y, m - 1, d);
+                        const bookmarks = bookmarksByDate.get(dateKey);
+                        
+                        // 格式化日期文件夹名
+                        let dayFolderName;
+                        if (currentLang === 'zh_CN') {
+                            if (this.selectMode || this.viewLevel === 'year' || this.viewLevel === 'month') {
+                                dayFolderName = `${String(m).padStart(2,'0')}月${String(d).padStart(2,'0')}日 ${tw(date.getDay())}`;
+                            } else {
+                                dayFolderName = `${String(d).padStart(2,'0')}日 ${tw(date.getDay())}`;
+                            }
+                        } else {
+                            const monthNamesShort = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+                            const dayOfWeekShort = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+                            if (this.selectMode || this.viewLevel === 'year' || this.viewLevel === 'month') {
+                                dayFolderName = `${monthNamesShort[m-1]} ${String(d).padStart(2,'0')} ${dayOfWeekShort[date.getDay()]}`;
+                            } else {
+                                dayFolderName = `${String(d).padStart(2,'0')} ${dayOfWeekShort[date.getDay()]}`;
+                            }
+                        }
+                        
+                        const dayFolder = getOrCreateFolder(mainFolder, dayFolderName);
+                        
+                        // 扁平化放入书签
+                        bookmarks.forEach(bm => {
+                            dayFolder.children.push({
+                                title: bm.title,
+                                url: bm.url,
+                                addDate: bm.dateAdded.getTime() / 1000,
+                                type: 'bookmark'
+                            });
+                        });
+                    });
+                }
 
             } else if (mode === 'context') {
                 // CONTEXT 模式：按父文件夹分组，并包含兄弟节点

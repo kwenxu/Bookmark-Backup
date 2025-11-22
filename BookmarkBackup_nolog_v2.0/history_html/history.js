@@ -621,13 +621,33 @@ const i18n = {
         'zh_CN': '书签添加记录',
         'en': 'Bookmark additions'
     },
-    additionsTabRanking: {
-        'zh_CN': '书签点击排行',
-        'en': 'Bookmark click ranking'
+    additionsTabBrowsing: {
+        'zh_CN': '书签浏览记录',
+        'en': 'Browsing History'
     },
     additionsTabAnki: {
         'zh_CN': '书签Anki',
         'en': 'Bookmark Anki'
+    },
+    browsingTabHistory: {
+        'zh_CN': '点击记录',
+        'en': 'Click History'
+    },
+    browsingTabRanking: {
+        'zh_CN': '点击排行',
+        'en': 'Click Ranking'
+    },
+    browsingRankingTitle: {
+        'zh_CN': '点击排行（规划中）',
+        'en': 'Click Ranking (Planned)'
+    },
+    browsingRankingDescription: {
+        'zh_CN': '未来会在这里展示书签的点击排行榜。',
+        'en': 'Bookmark click ranking will be displayed here in the future.'
+    },
+    browsingCalendarLoading: {
+        'zh_CN': '正在加载日历...',
+        'en': 'Loading calendar...'
     },
     statsTitle: {
         'zh_CN': '统计信息',
@@ -1526,6 +1546,9 @@ function applyLanguage() {
     if (typeof updateBookmarkCalendarLanguage === 'function') {
         updateBookmarkCalendarLanguage();
     }
+    if (typeof updateBrowsingHistoryCalendarLanguage === 'function') {
+        updateBrowsingHistoryCalendarLanguage();
+    }
     const zoomInBtn = document.getElementById('zoomInBtn');
     if (zoomInBtn) zoomInBtn.title = i18n.zoomInTitle[currentLang];
     const zoomOutBtn = document.getElementById('zoomOutBtn');
@@ -1639,13 +1662,24 @@ function applyLanguage() {
     // 书签温故子标签与文案
     const additionsTabReview = document.getElementById('additionsTabReview');
     if (additionsTabReview) additionsTabReview.textContent = i18n.additionsTabReview[currentLang];
-    const additionsTabRanking = document.getElementById('additionsTabRanking');
-    if (additionsTabRanking) additionsTabRanking.textContent = i18n.additionsTabRanking[currentLang];
+    const additionsTabBrowsing = document.getElementById('additionsTabBrowsing');
+    if (additionsTabBrowsing) additionsTabBrowsing.textContent = i18n.additionsTabBrowsing[currentLang];
     const additionsTabAnki = document.getElementById('additionsTabAnki');
     if (additionsTabAnki) additionsTabAnki.textContent = i18n.additionsTabAnki[currentLang];
 
-    const rankingDesc = document.getElementById('bookmarkRankingDescription');
-    if (rankingDesc) rankingDesc.textContent = i18n.bookmarkRankingDescription[currentLang];
+    // 浏览记录子标签
+    const browsingTabHistory = document.getElementById('browsingTabHistory');
+    if (browsingTabHistory) browsingTabHistory.textContent = i18n.browsingTabHistory[currentLang];
+    const browsingTabRanking = document.getElementById('browsingTabRanking');
+    if (browsingTabRanking) browsingTabRanking.textContent = i18n.browsingTabRanking[currentLang];
+    
+    // 浏览记录相关文本
+    const browsingRankingTitle = document.getElementById('browsingRankingTitle');
+    if (browsingRankingTitle) browsingRankingTitle.textContent = i18n.browsingRankingTitle[currentLang];
+    const browsingRankingDescription = document.getElementById('browsingRankingDescription');
+    if (browsingRankingDescription) browsingRankingDescription.textContent = i18n.browsingRankingDescription[currentLang];
+    const browsingCalendarLoadingText = document.getElementById('browsingCalendarLoadingText');
+    if (browsingCalendarLoadingText) browsingCalendarLoadingText.textContent = i18n.browsingCalendarLoading[currentLang];
 
     const nativeHistoryText = document.getElementById('nativeHistoryButtonText');
     if (nativeHistoryText) nativeHistoryText.textContent = i18n.nativeHistoryButtonText[currentLang];
@@ -4421,37 +4455,15 @@ function renderAdditionsView() {
 function initAdditionsSubTabs() {
     const tabs = document.querySelectorAll('.additions-tab');
     const reviewPanel = document.getElementById('additionsReviewPanel');
-    const rankingPanel = document.getElementById('additionsRankingPanel');
+    const browsingPanel = document.getElementById('additionsBrowsingPanel');
     const ankiPanel = document.getElementById('additionsAnkiPanel');
-    // const rankingList = document.getElementById('bookmarkRankingList'); // UI已删除
-    const historyBtn = document.getElementById('openNativeHistoryBtn');
-    const groupedBtn = document.getElementById('openGroupedHistoryBtn');
 
-    // 历史记录快捷入口（如果需要，可以在后续添加回来）
-    // if (historyBtn && browserAPI && browserAPI.tabs && typeof browserAPI.tabs.create === 'function') {
-    //     historyBtn.addEventListener('click', () => {
-    //         try {
-    //             browserAPI.tabs.create({ url: 'chrome://history/' });
-    //         } catch (e) {
-    //             console.warn('[Additions] 打开历史记录失败:', e);
-    //         }
-    //     });
-    // }
-    // if (groupedBtn && browserAPI && browserAPI.tabs && typeof browserAPI.tabs.create === 'function') {
-    //     groupedBtn.addEventListener('click', () => {
-    //         try {
-    //             browserAPI.tabs.create({ url: 'chrome://history/grouped' });
-    //         } catch (e) {
-    //             console.warn('[Additions] 打开分组历史记录失败:', e);
-    //         }
-    //     });
-    // }
-
-    if (!tabs.length || !reviewPanel || !rankingPanel || !ankiPanel) {
+    if (!tabs.length || !reviewPanel || !browsingPanel || !ankiPanel) {
+        console.warn('[initAdditionsSubTabs] 主标签或面板缺失');
         return;
     }
 
-    // let rankingInitialized = false; // 暂时不需要
+    let browsingHistoryInitialized = false;
 
     tabs.forEach(tab => {
         tab.addEventListener('click', () => {
@@ -4463,24 +4475,59 @@ function initAdditionsSubTabs() {
 
             // 切换子视图
             reviewPanel.classList.remove('active');
-            rankingPanel.classList.remove('active');
+            browsingPanel.classList.remove('active');
             ankiPanel.classList.remove('active');
 
             if (target === 'review') {
                 reviewPanel.classList.add('active');
-            } else if (target === 'ranking') {
-                rankingPanel.classList.add('active');
-                // UI已删除，等待重构
-                // if (!rankingInitialized && rankingList) {
-                //     rankingInitialized = true;
-                //     try {
-                //         loadBookmarkClickRankingForAdditions(rankingList);
-                //     } catch (e) {
-                //         console.warn('[Additions] 加载点击排行失败:', e);
-                //     }
-                // }
+            } else if (target === 'browsing') {
+                browsingPanel.classList.add('active');
+                // 初始化浏览记录日历（首次点击时）
+                if (!browsingHistoryInitialized) {
+                    browsingHistoryInitialized = true;
+                    try {
+                        initBrowsingHistoryCalendar();
+                    } catch (e) {
+                        console.error('[Additions] 初始化浏览记录日历失败:', e);
+                    }
+                }
             } else if (target === 'anki') {
                 ankiPanel.classList.add('active');
+            }
+        });
+    });
+
+    // 初始化浏览记录的子标签
+    initBrowsingSubTabs();
+}
+
+// 初始化浏览记录子标签
+function initBrowsingSubTabs() {
+    const subTabs = document.querySelectorAll('.browsing-sub-tab');
+    const historyPanel = document.getElementById('browsingHistoryPanel');
+    const rankingPanel = document.getElementById('browsingRankingPanel');
+
+    if (!subTabs.length || !historyPanel || !rankingPanel) {
+        console.warn('[initBrowsingSubTabs] 子标签或面板缺失');
+        return;
+    }
+
+    subTabs.forEach(tab => {
+        tab.addEventListener('click', () => {
+            const target = tab.dataset.subTab;
+
+            // 切换子标签高亮
+            subTabs.forEach(t => t.classList.remove('active'));
+            tab.classList.add('active');
+
+            // 切换子面板
+            historyPanel.classList.remove('active');
+            rankingPanel.classList.remove('active');
+
+            if (target === 'history') {
+                historyPanel.classList.add('active');
+            } else if (target === 'ranking') {
+                rankingPanel.classList.add('active');
             }
         });
     });

@@ -17,6 +17,7 @@
     <script src="bookmark_canvas_module.js" defer></script>
     <script src="shortcuts_helpers.js" defer></script>
     <script src="bookmark_calendar.js" defer></script>
+    <script src="browsing_history_calendar.js" defer></script>
     <script src="history.js" defer></script>
 </head>
 <body>
@@ -191,7 +192,7 @@
                 <!-- 书签记录子视图标签 -->
                 <div class="additions-tabs">
                     <button id="additionsTabReview" class="additions-tab active" data-tab="review">书签添加记录</button>
-                    <button id="additionsTabRanking" class="additions-tab" data-tab="ranking">书签点击排行</button>
+                    <button id="additionsTabBrowsing" class="additions-tab" data-tab="browsing">书签浏览记录</button>
                     <button id="additionsTabAnki" class="additions-tab" data-tab="anki">书签Anki</button>
                 </div>
 
@@ -274,9 +275,103 @@
                     </div>
                 </div>
 
-                <!-- 子视图 2：书签点击排行 -->
-                <div id="additionsRankingPanel" class="additions-subview">
-                    <!-- UI内容已删除，等待重构 -->
+                <!-- 子视图 2：书签浏览记录 -->
+                <div id="additionsBrowsingPanel" class="additions-subview">
+                    <!-- 浏览记录子视图标签 -->
+                    <div class="browsing-sub-tabs">
+                        <button id="browsingTabHistory" class="browsing-sub-tab active" data-sub-tab="history">点击记录</button>
+                        <button id="browsingTabRanking" class="browsing-sub-tab" data-sub-tab="ranking">点击排行</button>
+                    </div>
+
+                    <!-- 子视图 2.1：点击记录（日历视图） -->
+                    <div id="browsingHistoryPanel" class="browsing-sub-panel active">
+                        <!-- 面包屑导航 -->
+                        <div class="calendar-breadcrumb-nav">
+                            <div style="display: flex; align-items: center; gap: 8px; flex: 1;">
+                                <div class="breadcrumb-item-wrapper">
+                                    <button class="breadcrumb-btn active" id="browsingBreadcrumbYear">
+                                        <i class="fas fa-calendar"></i>
+                                        <span id="browsingBreadcrumbYearText">2024年</span>
+                                    </button>
+                                    <div class="breadcrumb-dropdown-trigger" data-target="browsingBreadcrumbYear">
+                                        <i class="fas fa-chevron-down"></i>
+                                    </div>
+                                    <div class="breadcrumb-dropdown-menu" id="browsingBreadcrumbYear-menu">
+                                        <!-- 年份候选项将在这里动态生成 -->
+                                    </div>
+                                </div>
+                                <span class="breadcrumb-separator" id="browsingSeparator1" style="display:none;">/</span>
+                                <div class="breadcrumb-item-wrapper">
+                                    <button class="breadcrumb-btn" id="browsingBreadcrumbMonth" style="display:none;">
+                                        <span id="browsingBreadcrumbMonthText">11月</span>
+                                    </button>
+                                    <div class="breadcrumb-dropdown-trigger" data-target="browsingBreadcrumbMonth">
+                                        <i class="fas fa-chevron-down"></i>
+                                    </div>
+                                    <div class="breadcrumb-dropdown-menu" id="browsingBreadcrumbMonth-menu">
+                                        <!-- 月份候选项将在这里动态生成 -->
+                                    </div>
+                                </div>
+                                <span class="breadcrumb-separator" id="browsingSeparator2" style="display:none;">/</span>
+                                <div class="breadcrumb-item-wrapper">
+                                    <button class="breadcrumb-btn" id="browsingBreadcrumbWeek" style="display:none;">
+                                        <span id="browsingBreadcrumbWeekText">第45周</span>
+                                    </button>
+                                    <div class="breadcrumb-dropdown-trigger" data-target="browsingBreadcrumbWeek">
+                                        <i class="fas fa-chevron-down"></i>
+                                    </div>
+                                    <div class="breadcrumb-dropdown-menu" id="browsingBreadcrumbWeek-menu">
+                                        <!-- 周候选项将在这里动态生成 -->
+                                    </div>
+                                </div>
+                                <span class="breadcrumb-separator" id="browsingSeparator3" style="display:none;">/</span>
+                                <div class="breadcrumb-item-wrapper">
+                                    <button class="breadcrumb-btn" id="browsingBreadcrumbDay" style="display:none;">
+                                        <span id="browsingBreadcrumbDayText">11月20日</span>
+                                    </button>
+                                    <div class="breadcrumb-dropdown-trigger" data-target="browsingBreadcrumbDay">
+                                        <i class="fas fa-chevron-down"></i>
+                                    </div>
+                                    <div class="breadcrumb-dropdown-menu" id="browsingBreadcrumbDay-menu">
+                                        <!-- 日期候选项将在这里动态生成 -->
+                                    </div>
+                                </div>
+                            </div>
+                            <div style="display: flex; align-items: center; gap: 8px;">
+                                <button class="calendar-action-btn" id="browsingCalendarExportBtn">
+                                    <i class="fas fa-file-export"></i>
+                                    <span class="btn-tooltip" id="browsingCalendarExportTooltip">导出记录</span>
+                                </button>
+                                <button class="calendar-action-btn" id="browsingCalendarSelectModeBtn">
+                                    <i class="fas fa-check-square"></i>
+                                    <span class="btn-tooltip" id="browsingCalendarSelectModeText">勾选</span>
+                                </button>
+                                <button class="calendar-action-btn" id="browsingCalendarLocateTodayBtn">
+                                    <i class="fas fa-crosshairs"></i>
+                                    <span class="btn-tooltip" id="browsingCalendarLocateTodayText">定位至今天</span>
+                                </button>
+                            </div>
+                        </div>
+
+                        <!-- 日历容器 -->
+                        <div id="browsingCalendarView" class="bookmark-calendar-view">
+                            <div style="padding: 40px; text-align: center; color: var(--text-secondary);">
+                                <i class="fas fa-calendar-alt" style="font-size: 48px; opacity: 0.3; margin-bottom: 16px;"></i>
+                                <p id="browsingCalendarLoadingText">正在加载日历...</p>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- 子视图 2.2：点击排行（占位） -->
+                    <div id="browsingRankingPanel" class="browsing-sub-panel">
+                        <div class="empty-state">
+                            <div class="empty-state-icon"><i class="fas fa-chart-bar"></i></div>
+                            <div id="browsingRankingTitle" class="empty-state-title">点击排行（规划中）</div>
+                            <div id="browsingRankingDescription" class="empty-state-description">
+                                未来会在这里展示书签的点击排行榜。
+                            </div>
+                        </div>
+                    </div>
                 </div>
 
                 <!-- 子视图 3：Anki 记忆曲线（占位） -->

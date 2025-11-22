@@ -52,7 +52,7 @@
             display: flex;
             align-items: center;
             gap: 6px;
-            padding: 8px 12px;
+            padding: 8px 4px;  /* 左右padding改为4px，与折叠按钮对称 */
             border: none;
             background: transparent;
             color: var(--text-secondary);
@@ -88,29 +88,40 @@
             position: relative;
             display: inline-flex;
             align-items: center;
+            gap: 0;  /* 移除容器内的间距，精确控制空白 */
+        }
+
+        /* 在按钮左侧添加对称的空白 */
+        .breadcrumb-item-wrapper::before {
+            content: '';
+            display: block;
+            width: 20px;  /* 与下拉触发器宽度一致 */
+            height: 24px;
+            flex-shrink: 0;
         }
 
         /* 下拉触发按钮 */
         .breadcrumb-dropdown-trigger {
-            display: none;
+            display: flex;  /* 始终显示，占据空间 */
             align-items: center;
             justify-content: center;
-            width: 24px;
+            width: 20px;  /* 缩小宽度 */
             height: 24px;
-            margin-left: -4px;
+            margin-left: 0;  /* 移除负边距 */
             padding: 0;
             border: none;
             background: transparent;
-            color: var(--text-tertiary);
+            color: transparent;  /* 默认透明，不可见 */
             cursor: pointer;
             border-radius: 4px;
             transition: all 0.2s ease;
             font-size: 12px;
+            flex-shrink: 0;  /* 防止收缩 */
         }
 
         /* 当鼠标悬停在容器上时显示下拉图标 */
         .breadcrumb-item-wrapper:hover .breadcrumb-dropdown-trigger {
-            display: flex;
+            color: var(--text-tertiary);  /* 显示图标颜色 */
         }
 
         .breadcrumb-dropdown-trigger:hover {
@@ -221,16 +232,19 @@
         <div style="margin-top: 20px; padding: 15px; background: #f9f9f9; border-radius: 4px;">
             <h3>测试说明：</h3>
             <ol>
+                <li>观察按钮右侧有预留的空白位置（下拉图标的位置）</li>
                 <li>将鼠标悬停在"2024年"或"11月"按钮上</li>
-                <li>会看到右侧出现一个向下的箭头图标</li>
+                <li>会看到预留位置显示出向下的箭头图标</li>
                 <li>点击箭头图标会打开下拉菜单</li>
-                <li>菜单中显示候选项（年份或月份）</li>
-                <li><strong>菜单会自动滚动定位到当前选中的项目</strong></li>
+                <li>菜单会直接定位到当前选中的项目（无滚动动画）</li>
                 <li>点击候选项会更新选中项并关闭菜单</li>
             </ol>
-            <h3>新增功能：</h3>
+            <h3>功能特点：</h3>
             <ul>
-                <li>✅ 打开下拉菜单时，直接定位到当前选中项</li>
+                <li>✅ 左右空白对称且紧凑（各20px）</li>
+                <li>✅ 下拉图标始终占据空间，UI不会跳动</li>
+                <li>✅ 默认透明不可见，悬停时显示</li>
+                <li>✅ 打开菜单时直接定位到当前选中项</li>
                 <li>✅ 无滚动动画，立即显示</li>
                 <li>✅ 选中项居中显示</li>
             </ul>

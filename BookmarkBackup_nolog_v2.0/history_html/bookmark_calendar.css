@@ -15,7 +15,7 @@
     display: flex;
     align-items: center;
     gap: 6px;
-    padding: 8px 12px;
+    padding: 8px 4px;  /* 左右padding改为4px，与折叠按钮对称 */
     border: none;
     background: transparent;
     color: var(--text-secondary);
@@ -51,29 +51,40 @@
     position: relative;
     display: inline-flex;
     align-items: center;
+    gap: 0;  /* 移除容器内的间距，精确控制空白 */
+}
+
+/* 在按钮左侧添加对称的空白 */
+.breadcrumb-item-wrapper::before {
+    content: '';
+    display: block;
+    width: 20px;  /* 与下拉触发器宽度一致（24px - 4px margin） */
+    height: 24px;
+    flex-shrink: 0;
 }
 
 /* 下拉触发按钮 */
 .breadcrumb-dropdown-trigger {
-    display: none;
+    display: flex;  /* 始终显示，占据空间 */
     align-items: center;
     justify-content: center;
-    width: 24px;
+    width: 20px;  /* 缩小宽度 */
     height: 24px;
-    margin-left: -4px;
+    margin-left: 0;  /* 移除负边距 */
     padding: 0;
     border: none;
     background: transparent;
-    color: var(--text-tertiary);
+    color: transparent;  /* 默认透明，不可见 */
     cursor: pointer;
     border-radius: 4px;
     transition: all 0.2s ease;
     font-size: 12px;
+    flex-shrink: 0;  /* 防止收缩 */
 }
 
 /* 当鼠标悬停在容器上时显示下拉图标 */
 .breadcrumb-item-wrapper:hover .breadcrumb-dropdown-trigger {
-    display: flex;
+    color: var(--text-tertiary);  /* 显示图标颜色 */
 }
 
 .breadcrumb-dropdown-trigger:hover {

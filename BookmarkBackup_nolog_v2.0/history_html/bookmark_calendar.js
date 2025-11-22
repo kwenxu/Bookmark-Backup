@@ -76,7 +76,9 @@ class BookmarkCalendar {
         // 拖拽勾选相关状态
         this.isDragging = false; // 是否正在拖拽
         this.dragStartDate = null; // 拖拽起始的日期key
-        this.hasDragMoved = false; // 是否发生了拖拽移动
+        this.dragStartPos = null; // 拖拽起始位置
+        this.dragMinDistance = 10; // 拖拽最小距离(px)
+        this.renderDebounceTimer = null; // 防抖定时器
         
         this.init();
     }
@@ -96,8 +98,23 @@ class BookmarkCalendar {
         
         await this.loadBookmarkData();
         
-        // 跳转到最近有书签的月份
-        this.jumpToRecentBookmarks();
+        // 从localStorage恢复勾选模式和视图状态
+        this.restoreSelectMode();
+        
+        // 如果没有恢复视图状态，则跳转到最近有书签的月份
+        const savedViewState = localStorage.getItem('bookmarkCalendar_viewState');
+        if (!savedViewState) {
+            this.jumpToRecentBookmarks();
+        }
+        
+        // 确保currentWeekStart总是有值（某些视图需要）
+        if (!this.currentWeekStart) {
+            const today = new Date();
+            const todayDay = today.getDay() || 7;
+            this.currentWeekStart = new Date(today);
+            this.currentWeekStart.setDate(today.getDate() - todayDay + 1);
+            this.currentWeekStart.setHours(0, 0, 0, 0);
+        }
         
         // 预热favicon缓存
         this.preloadFavicons();
@@ -105,28 +122,139 @@ class BookmarkCalendar {
         this.setupBreadcrumb();
         this.setupDragEvents();
         this.render();
+        
+        // 恢复后更新按钮状态
+        this.updateSelectModeButton();
+    }
+    
+    // 从localStorage恢复勾选模式和视图状态
+    restoreSelectMode() {
+        const savedSelectMode = localStorage.getItem('bookmarkCalendar_selectMode');
+        const savedSelectedDates = localStorage.getItem('bookmarkCalendar_selectedDates');
+        const savedViewState = localStorage.getItem('bookmarkCalendar_viewState');
+        
+        if (savedSelectMode === 'true') {
+            this.selectMode = true;
+        }
+        
+        if (savedSelectedDates) {
+            try {
+                const dates = JSON.parse(savedSelectedDates);
+                this.selectedDates = new Set(dates);
+                console.log('[BookmarkCalendar] 恢复选中日期:', this.selectedDates.size);
+            } catch (error) {
+                console.warn('[BookmarkCalendar] 恢复选中日期失败:', error);
+                this.selectedDates = new Set();
+            }
+        }
+        
+        // 恢复视图状态（级别、年月周日）
+        if (savedViewState) {
+            try {
+                const viewState = JSON.parse(savedViewState);
+                this.viewLevel = viewState.viewLevel || 'month';
+                this.currentYear = viewState.currentYear || new Date().getFullYear();
+                this.currentMonth = viewState.currentMonth || new Date().getMonth();
+                
+                if (viewState.currentWeekStart) {
+                    this.currentWeekStart = new Date(viewState.currentWeekStart);
+                }
+                if (viewState.currentDay) {
+                    this.currentDay = new Date(viewState.currentDay);
+                }
+                
+                console.log('[BookmarkCalendar] 恢复视图状态:', {
+                    viewLevel: this.viewLevel,
+                    year: this.currentYear,
+                    month: this.currentMonth
+                });
+            } catch (error) {
+                console.warn('[BookmarkCalendar] 恢复视图状态失败:', error);
+            }
+        }
+    }
+    
+    // 保存勾选模式和视图状态到localStorage
+    saveSelectMode() {
+        // 只保存selectMode（不清除selectedDates）
+        localStorage.setItem('bookmarkCalendar_selectMode', this.selectMode ? 'true' : 'false');
+        
+        // 如果在勾选模式下，保存选中的日期
+        if (this.selectMode) {
+            localStorage.setItem('bookmarkCalendar_selectedDates', JSON.stringify(Array.from(this.selectedDates)));
+        }
+        // 如果退出勾选模式，不清除selectedDates（已在toggleSelectMode中处理）
+        
+        // 始终保存视图状态
+        const viewState = {
+            viewLevel: this.viewLevel,
+            currentYear: this.currentYear,
+            currentMonth: this.currentMonth,
+            currentWeekStart: this.currentWeekStart ? this.currentWeekStart.toISOString() : null,
+            currentDay: this.currentDay ? this.currentDay.toISOString() : null
+        };
+        localStorage.setItem('bookmarkCalendar_viewState', JSON.stringify(viewState));
+    }
+    
+    // 清除勾选模式的临时记忆
+    clearSelectModeMemory() {
+        localStorage.removeItem('bookmarkCalendar_selectMode');
+        localStorage.removeItem('bookmarkCalendar_selectedDates');
+        localStorage.removeItem('bookmarkCalendar_viewState');
+    }
+    
+    // 更新勾选模式按钮的视觉状态
+    updateSelectModeButton() {
+        const btn = document.getElementById('calendarSelectModeBtn');
+        if (!btn) return;
+        
+        if (this.selectMode) {
+            btn.classList.add('active');
+        } else {
+            btn.classList.remove('active');
+        }
     }
     
     // 设置全局拖拽事件
     setupDragEvents() {
-        // 全局mouseup：处理单击取消勾选，或结束拖拽并刷新
+        // 全局mousemove：用于计算拖拽距离
+        document.addEventListener('mousemove', (e) => {
+            this.lastMouseEvent = e; // 记录最后的鼠标位置，供mouseenter中使用
+            if (this.isDragging && this.dragStartPos) {
+                // 计算从起始位置的距离
+                const dx = e.clientX - this.dragStartPos.x;
+                const dy = e.clientY - this.dragStartPos.y;
+                const distance = Math.sqrt(dx * dx + dy * dy);
+                
+                // 只有当距离超过阈值时才认为是真正的拖拽
+                if (distance > this.dragMinDistance) {
+                    // 这是真实拖拽，防抖render
+                    this.debouncedRender();
+                }
+            }
+        });
+        
+        // 全局mouseup：结束拖拽
         document.addEventListener('mouseup', (e) => {
             if (this.isDragging) {
-                // 检查是否是单击行为（没有发生拖拽移动）
-                if (!this.hasDragMoved && this.dragStartDate) {
-                    // 单击已勾选的格子：取消勾选
-                    if (this.selectedDates.has(this.dragStartDate)) {
-                        this.selectedDates.delete(this.dragStartDate);
-                    }
+                // 计算最终的拖拽距离
+                const distance = this.dragStartPos ? 
+                    Math.sqrt(Math.pow(e.clientX - this.dragStartPos.x, 2) + 
+                             Math.pow(e.clientY - this.dragStartPos.y, 2)) : 0;
+                
+                // 如果距离小于阈值，说明是单点，执行防抖render
+                // 如果是真实拖拽，则直接render（可能已经防抖过多次了）
+                this.render();
+                
+                // 保存勾选状态
+                if (this.selectMode) {
+                    this.saveSelectMode();
                 }
                 
                 // 重置状态
                 this.isDragging = false;
                 this.dragStartDate = null;
-                this.hasDragMoved = false;
-                
-                // 刷新显示
-                this.render();
+                this.dragStartPos = null;
             }
         });
         
@@ -136,6 +264,17 @@ class BookmarkCalendar {
                 e.preventDefault();
             }
         });
+    }
+    
+    // 防抖render - 拖拽中频繁更新视图
+    debouncedRender() {
+        if (this.renderDebounceTimer) {
+            clearTimeout(this.renderDebounceTimer);
+        }
+        this.renderDebounceTimer = setTimeout(() => {
+            this.render();
+            this.renderDebounceTimer = null;
+        }, 50); // 50ms防抖
     }
     
     preloadFavicons() {
@@ -426,9 +565,11 @@ class BookmarkCalendar {
         const btn = document.getElementById('calendarSelectModeBtn');
         if (this.selectMode) {
             btn?.classList.add('active');
+            this.saveSelectMode(); // 进入勾选模式时保存
         } else {
             btn?.classList.remove('active');
             this.selectedDates.clear(); // 退出勾选模式时清空选择
+            this.clearSelectModeMemory(); // 清除临时记忆
         }
         this.render();
     }
@@ -566,6 +707,9 @@ class BookmarkCalendar {
         }
         
         this.updateBreadcrumb();
+        
+        // 每次render后保存状态（勾选状态和视图状态）
+        this.saveSelectMode();
     }
 
     // 同步月视图左右两侧的高度对齐
@@ -868,18 +1012,42 @@ class BookmarkCalendar {
             if (this.selectMode) {
                 // 只有有书签数据的格子才能被勾选
                 if (bookmarks.length > 0) {
-                    // 鼠标进入：拖拽中时勾选（不触发render）
+                    // 鼠标进入：拖拽中时勾选（不立即render，通过防抖render）
                     dayCell.addEventListener('mouseenter', () => {
-                        if (this.isDragging) {
-                            // 标记已发生拖拽移动
-                            if (this.dragStartDate !== dateKey) {
-                                this.hasDragMoved = true;
-                            }
+                        if (this.isDragging && this.dragStartPos) {
+                            // 计算距离
+                            const pageEvent = this.lastMouseEvent || { clientX: this.dragStartPos.x, clientY: this.dragStartPos.y };
+                            const distance = Math.sqrt(
+                                Math.pow(pageEvent.clientX - this.dragStartPos.x, 2) + 
+                                Math.pow(pageEvent.clientY - this.dragStartPos.y, 2)
+                            );
                             
-                            // 直接勾选
-                            this.selectedDates.add(dateKey);
-                            // 立即更新视觉状态，不重新渲染整个日历
-                            dayCell.classList.add('selected');
+                            // 只有在真实拖拽时（距离>阈值）才添加选中
+                            if (distance > this.dragMinDistance) {
+                                this.selectedDates.add(dateKey);
+                                dayCell.classList.add('selected');
+                                // 防抖render，不要频繁全部重新渲染
+                                this.debouncedRender();
+                            }
+                        }
+                    });
+                    
+                    // mouseup时如果是单击，则切换选中状态
+                    dayCell.addEventListener('mouseup', (e) => {
+                        if (this.isDragging && this.dragStartPos) {
+                            const distance = Math.sqrt(
+                                Math.pow(e.clientX - this.dragStartPos.x, 2) + 
+                                Math.pow(e.clientY - this.dragStartPos.y, 2)
+                            );
+                            
+                            // 单击：距离<阈值，切换选中状态
+                            if (distance <= this.dragMinDistance) {
+                                if (this.selectedDates.has(dateKey)) {
+                                    this.selectedDates.delete(dateKey);
+                                } else {
+                                    this.selectedDates.add(dateKey);
+                                }
+                            }
                         }
                     });
                 } else {
@@ -916,35 +1084,25 @@ class BookmarkCalendar {
         
         wrapper.appendChild(grid);
         
-        // 勾选模式：在整个日历容器上监听mousedown，允许从任意位置开始拖拽
+        // 勾选模式：在整个日历容器上监听mousedown，允许单击和拖拽
         if (this.selectMode) {
             wrapper.addEventListener('mousedown', (e) => {
-                e.preventDefault();
-                this.isDragging = true;
-                this.hasDragMoved = false;
-                
-                // 检查是否点击在有效格子上，如果是则立即勾选
+                // 检查是否点击在有效格子上
                 const dayCell = e.target.closest('.calendar-day');
-                if (dayCell && dayCell.dataset.dateKey) {
-                    const dateKey = dayCell.dataset.dateKey;
-                    const bookmarks = this.bookmarksByDate.get(dateKey) || [];
-                    
-                    // 只处理有数据的格子
-                    if (bookmarks.length > 0) {
-                        // 记录起始位置
-                        this.dragStartDate = dateKey;
-                        
-                        // 如果格子未勾选，则立即勾选
-                        if (!this.selectedDates.has(dateKey)) {
-                            this.selectedDates.add(dateKey);
-                            dayCell.classList.add('selected');
-                        }
-                        // 如果格子已勾选，等待mouseup判断是否取消
-                    } else {
-                        this.dragStartDate = null;
-                    }
-                } else {
-                    this.dragStartDate = null;
+                if (!dayCell || !dayCell.dataset.dateKey) {
+                    // 不是点击在日历格子上，不处理
+                    return;
+                }
+                
+                const dateKey = dayCell.dataset.dateKey;
+                const bookmarks = this.bookmarksByDate.get(dateKey) || [];
+                
+                // 只处理有数据的格子
+                if (bookmarks.length > 0) {
+                    e.preventDefault();  // 只在点击格子时才preventDefault
+                    this.isDragging = true;
+                    this.dragStartPos = { x: e.clientX, y: e.clientY };
+                    this.dragStartDate = dateKey;
                 }
             });
         }
@@ -2194,18 +2352,42 @@ class BookmarkCalendar {
             if (this.selectMode) {
                 // 只有有书签数据的格子才能被勾选
                 if (bookmarks.length > 0) {
-                    // 鼠标进入：拖拽中时勾选（不触发render）
+                    // 鼠标进入：拖拽中时勾选（防抖render）
                     dayCard.addEventListener('mouseenter', () => {
-                        if (this.isDragging) {
-                            // 标记已发生拖拽移动
-                            if (this.dragStartDate !== dateKey) {
-                                this.hasDragMoved = true;
-                            }
+                        if (this.isDragging && this.dragStartPos) {
+                            // 计算距离
+                            const pageEvent = this.lastMouseEvent || { clientX: this.dragStartPos.x, clientY: this.dragStartPos.y };
+                            const distance = Math.sqrt(
+                                Math.pow(pageEvent.clientX - this.dragStartPos.x, 2) + 
+                                Math.pow(pageEvent.clientY - this.dragStartPos.y, 2)
+                            );
                             
-                            // 直接勾选
-                            this.selectedDates.add(dateKey);
-                            // 立即更新视觉状态，不重新渲染整个日历
-                            dayCard.classList.add('selected');
+                            // 只有在真实拖拽时（距离>阈值）才添加选中
+                            if (distance > this.dragMinDistance) {
+                                this.selectedDates.add(dateKey);
+                                dayCard.classList.add('selected');
+                                // 防抖render
+                                this.debouncedRender();
+                            }
+                        }
+                    });
+                    
+                    // mouseup时如果是单击，则切换选中状态
+                    dayCard.addEventListener('mouseup', (e) => {
+                        if (this.isDragging && this.dragStartPos) {
+                            const distance = Math.sqrt(
+                                Math.pow(e.clientX - this.dragStartPos.x, 2) + 
+                                Math.pow(e.clientY - this.dragStartPos.y, 2)
+                            );
+                            
+                            // 单击：距离<阈值，切换选中状态
+                            if (distance <= this.dragMinDistance) {
+                                if (this.selectedDates.has(dateKey)) {
+                                    this.selectedDates.delete(dateKey);
+                                } else {
+                                    this.selectedDates.add(dateKey);
+                                }
+                            }
                         }
                     });
                 } else {
@@ -2229,35 +2411,25 @@ class BookmarkCalendar {
         
         wrapper.appendChild(weekContainer);
         
-        // 勾选模式：在整个周视图容器上监听mousedown，允许从任意位置开始拖拽
+        // 勾选模式：在整个周视图容器上监听mousedown，允许单击和拖拽
         if (this.selectMode) {
             weekContainer.addEventListener('mousedown', (e) => {
-                e.preventDefault();
-                this.isDragging = true;
-                this.hasDragMoved = false;
-                
-                // 检查是否点击在有效格子上，如果是则立即勾选
+                // 检查是否点击在有效格子上
                 const dayCard = e.target.closest('.week-day-card');
-                if (dayCard && dayCard.dataset.dateKey) {
-                    const dateKey = dayCard.dataset.dateKey;
-                    const bookmarks = this.bookmarksByDate.get(dateKey) || [];
-                    
-                    // 只处理有数据的格子
-                    if (bookmarks.length > 0) {
-                        // 记录起始位置
-                        this.dragStartDate = dateKey;
-                        
-                        // 如果格子未勾选，则立即勾选
-                        if (!this.selectedDates.has(dateKey)) {
-                            this.selectedDates.add(dateKey);
-                            dayCard.classList.add('selected');
-                        }
-                        // 如果格子已勾选，等待mouseup判断是否取消
-                    } else {
-                        this.dragStartDate = null;
-                    }
-                } else {
-                    this.dragStartDate = null;
+                if (!dayCard || !dayCard.dataset.dateKey) {
+                    // 不是点击在周卡片上，不处理
+                    return;
+                }
+                
+                const dateKey = dayCard.dataset.dateKey;
+                const bookmarks = this.bookmarksByDate.get(dateKey) || [];
+                
+                // 只处理有数据的格子
+                if (bookmarks.length > 0) {
+                    e.preventDefault();  // 只在点击格子时才preventDefault
+                    this.isDragging = true;
+                    this.dragStartPos = { x: e.clientX, y: e.clientY };
+                    this.dragStartDate = dateKey;
                 }
             });
         }

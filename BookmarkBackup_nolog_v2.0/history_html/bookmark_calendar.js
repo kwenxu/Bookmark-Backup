@@ -2830,9 +2830,22 @@ class BookmarkCalendar {
         const scopeText = document.getElementById('exportScopeText');
         if (scopeText) {
             if (this.selectMode) {
-                const count = this.selectedDates.size;
-                scopeText.textContent = i18n.exportScopeSelected[currentLang].replace('{0}', count);
+                // 勾选模式：显示所有勾选的日期
+                const dates = Array.from(this.selectedDates).sort();
+                if (dates.length === 0) {
+                    scopeText.textContent = currentLang === 'zh_CN' ? '未选中任何日期' : 'No dates selected';
+                } else {
+                    const formatDate = (dateKey) => {
+                        const [y, m, d] = dateKey.split('-').map(Number);
+                        return `${m}-${d}`;
+                    };
+                    const dateList = dates.map(formatDate).join('、');
+                    scopeText.textContent = currentLang === 'zh_CN' 
+                        ? `当前勾选：${dateList}` 
+                        : `Selected: ${dateList}`;
+                }
             } else {
+                // 非勾选模式：显示当前视图范围
                 let text = '';
                 switch (this.viewLevel) {
                     case 'year': text = t('calendarYear', this.currentYear); break;
@@ -2877,8 +2890,8 @@ class BookmarkCalendar {
                 return;
             }
             
-            const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
-            const filenameBase = `bookmarks_export_${timestamp}`;
+            // 生成文件名（不包含时间戳）
+            const filenameBase = this.generateExportFilename(mode);
             
             // 导出 HTML
             if (formats.includes('html') || formats.includes('copy')) {
@@ -2959,6 +2972,75 @@ class BookmarkCalendar {
             case 'day': 
                 return t('calendarYearMonthDay', this.currentYear, this.currentMonth + 1, this.currentDay.getDate()).replace('{0}', this.currentYear).replace('{1}', this.currentMonth + 1).replace('{2}', this.currentDay.getDate());
             default: return i18n.exportRootTitle[currentLang];
+        }
+    }
+    
+    // 生成导出文件名（根据模式和范围）
+    generateExportFilename(mode) {
+        // 根据模式确定前缀
+        let prefix = '';
+        let prefixEn = '';
+        switch (mode) {
+            case 'records':
+                prefix = '现记录';
+                prefixEn = 'Records Only';
+                break;
+            case 'context':
+                prefix = '现记录+上下文';
+                prefixEn = 'Context Export';
+                break;
+            case 'collection':
+                prefix = '集合导出';
+                prefixEn = 'Collection Export';
+                break;
+            default:
+                prefix = '现记录';
+                prefixEn = 'Records Only';
+        }
+        
+        // 根据当前语言选择前缀
+        const modePrefix = currentLang === 'zh_CN' ? prefix : prefixEn;
+        
+        // 获取范围后缀
+        const scopeSuffix = this.getExportScopeSuffix();
+        
+        // 组合文件名
+        return scopeSuffix ? `${modePrefix}_${scopeSuffix}` : modePrefix;
+    }
+    
+    // 获取导出范围后缀（用于文件名）
+    getExportScopeSuffix() {
+        if (this.selectMode) {
+            // 勾选模式：显示选中的日期（最多5个，超过显示省略号）
+            const dates = Array.from(this.selectedDates).sort();
+            if (dates.length === 0) return '';
+            
+            const formatDate = (dateKey) => {
+                const [y, m, d] = dateKey.split('-').map(Number);
+                return `${m}-${d}`;
+            };
+            
+            if (dates.length <= 5) {
+                return dates.map(formatDate).join('_');
+            } else {
+                const first5 = dates.slice(0, 5).map(formatDate).join('_');
+                return `${first5}_etc`;
+            }
+        } else {
+            // 非勾选模式：根据视图层级显示范围
+            switch (this.viewLevel) {
+                case 'year': 
+                    return `${this.currentYear}`;
+                case 'month': 
+                    return `${this.currentYear}-${String(this.currentMonth + 1).padStart(2, '0')}`;
+                case 'week': 
+                    const weekNum = this.getWeekNumber(this.currentWeekStart);
+                    return `${this.currentYear}-W${String(weekNum).padStart(2, '0')}`;
+                case 'day': 
+                    return `${this.currentYear}-${String(this.currentMonth + 1).padStart(2, '0')}-${String(this.currentDay.getDate()).padStart(2, '0')}`;
+                default: 
+                    return '';
+            }
         }
     }
 

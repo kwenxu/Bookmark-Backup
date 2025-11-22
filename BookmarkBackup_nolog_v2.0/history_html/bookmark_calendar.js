@@ -3174,26 +3174,26 @@ class BookmarkCalendar {
             
             contentArea.appendChild(allHeader);
             
-            // 按小时顺序，把所有书签分段展示
+            // 「全部」模式下：把当天所有书签合在一起显示为一个整体列表
+            const allBookmarks = [];
             hours.forEach(hour => {
                 const hourBookmarks = hourGroups[hour];
-                if (!hourBookmarks || hourBookmarks.length === 0) return;
-                
-                const hourSection = document.createElement('div');
-                hourSection.style.marginBottom = '24px';
-                
-                const hourTitle = document.createElement('div');
-                hourTitle.className = 'bookmarks-group-title';
-                hourTitle.style.color = themeColor;
-                hourTitle.style.borderBottomColor = themeColor;
-                hourTitle.textContent = `${String(hour).padStart(2, '0')}:00 - ${String(hour).padStart(2, '0')}:59 (${t('calendarBookmarkCount', hourBookmarks.length)})`;
-                hourSection.appendChild(hourTitle);
-                
-                const list = this.createCollapsibleBookmarkList(hourBookmarks);
-                hourSection.appendChild(list);
-                
-                contentArea.appendChild(hourSection);
+                if (hourBookmarks && hourBookmarks.length) {
+                    allBookmarks.push(...hourBookmarks);
+                }
             });
+            
+            if (!allBookmarks.length) {
+                const empty = document.createElement('p');
+                empty.style.marginTop = '12px';
+                empty.style.color = 'var(--text-secondary)';
+                empty.textContent = t('calendarNoBookmarksThisDay');
+                contentArea.appendChild(empty);
+                return;
+            }
+            
+            const list = this.createCollapsibleBookmarkList(allBookmarks);
+            contentArea.appendChild(list);
         };
         
         const renderHourContent = (hour, hourBookmarks) => {

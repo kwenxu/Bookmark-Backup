@@ -1595,20 +1595,25 @@ class BookmarkCalendar {
     }
     
     // 渲染树节点（递归）
-    renderTreeNode(node, level = 0, autoExpand = false, isLastChild = false) {
+    renderTreeNode(node, level = 0, expandToLevel = 0, isLastChild = false) {
         const nodeContainer = document.createElement('div');
         const themeColor = this.selectMode ? '#4CAF50' : 'var(--accent-primary)';
+        
+        // 判断当前层级是否应该展开：
+        // expandToLevel 指定展开到哪一层
+        // level 0 是根节点（虚拟的），level 1 是书签栏/其他书签，level 2 是用户文件夹
+        const shouldExpandThisLevel = level > 0 && level <= expandToLevel;
         
         // 如果是根节点，直接渲染子节点
         if (level === 0) {
             node.children.forEach((child, index) => {
                 const isLast = index === node.children.length - 1 && node.bookmarks.length === 0;
-                nodeContainer.appendChild(this.renderTreeNode(child, level + 1, autoExpand, isLast));
+                nodeContainer.appendChild(this.renderTreeNode(child, level + 1, expandToLevel, isLast));
             });
             // 根节点的书签（未分类）
             if (node.bookmarks.length > 0) {
                 const uncategorizedFolder = document.createElement('div');
-                uncategorizedFolder.style.marginBottom = autoExpand ? '12px' : '0';
+                uncategorizedFolder.style.marginBottom = shouldExpandThisLevel ? '12px' : '0';
                 
                 const folderHeader = this.createFolderHeader(
                     currentLang === 'en' ? 'Uncategorized' : '未分类',
@@ -1620,11 +1625,11 @@ class BookmarkCalendar {
                 
                 const bookmarksContainer = document.createElement('div');
                 bookmarksContainer.style.paddingLeft = `${(level + 1) * 16}px`;
-                bookmarksContainer.style.display = autoExpand ? 'block' : 'none';
+                bookmarksContainer.style.display = shouldExpandThisLevel ? 'block' : 'none';
                 bookmarksContainer.appendChild(this.renderBookmarkList(node.bookmarks));
                 uncategorizedFolder.appendChild(bookmarksContainer);
                 
-                this.attachFolderToggle(folderHeader, bookmarksContainer, uncategorizedFolder, !autoExpand);
+                this.attachFolderToggle(folderHeader, bookmarksContainer, uncategorizedFolder, !shouldExpandThisLevel);
                 nodeContainer.appendChild(uncategorizedFolder);
             }
             return nodeContainer;
@@ -1633,7 +1638,7 @@ class BookmarkCalendar {
         // 文件夹容器（添加树状线）
         const folderContainer = document.createElement('div');
         folderContainer.style.position = 'relative';
-        folderContainer.style.marginBottom = autoExpand ? '12px' : '0';
+        folderContainer.style.marginBottom = shouldExpandThisLevel ? '12px' : '0';
         folderContainer.dataset.treeLevel = level;
         
         // 添加树状连接线
@@ -1686,7 +1691,7 @@ class BookmarkCalendar {
         
         // 子内容容器
         const childrenContainer = document.createElement('div');
-        childrenContainer.style.display = autoExpand ? 'block' : 'none';
+        childrenContainer.style.display = shouldExpandThisLevel ? 'block' : 'none';
         childrenContainer.style.paddingLeft = '20px'; // 缩进与树状线对齐
         childrenContainer.style.position = 'relative';
         
@@ -1714,13 +1719,13 @@ class BookmarkCalendar {
         // 再渲染子文件夹
         node.children.forEach((child, index) => {
             const isLast = index === node.children.length - 1;
-            childrenContainer.appendChild(this.renderTreeNode(child, level + 1, autoExpand, isLast));
+            childrenContainer.appendChild(this.renderTreeNode(child, level + 1, expandToLevel, isLast));
         });
         
         folderContainer.appendChild(childrenContainer);
         
         // 添加折叠功能
-        this.attachFolderToggle(folderHeader, childrenContainer, folderContainer, !autoExpand);
+        this.attachFolderToggle(folderHeader, childrenContainer, folderContainer, !shouldExpandThisLevel);
         
         return folderContainer;
     }
@@ -1737,7 +1742,7 @@ class BookmarkCalendar {
         folderHeader.style.cursor = 'pointer';
         folderHeader.style.marginBottom = '6px';
         folderHeader.style.transition = 'all 0.2s';
-        folderHeader.dataset.collapsed = 'false';
+        // 不在这里设置 collapsed 状态，由 attachFolderToggle 控制
         
         const themeColor = this.selectMode ? '#4CAF50' : 'var(--accent-primary)';
         
@@ -1776,6 +1781,10 @@ class BookmarkCalendar {
                 chevron.classList.remove('fa-chevron-down');
                 chevron.classList.add('fa-chevron-right');
             }
+        } else {
+            // 展开状态
+            folderHeader.dataset.collapsed = 'false';
+            // chevron 已经是 fa-chevron-down，不需要修改
         }
         
         folderHeader.addEventListener('click', () => {
@@ -1919,14 +1928,24 @@ class BookmarkCalendar {
         
         if (bookmarks.length === 0) return container;
         
-        // 判断是否自动展开（总书签数<=20）
-        const autoExpand = bookmarks.length <= 20;
+        // 根据书签总数决定展开到哪个层级
+        // ≤10个: 展开到书签层级（全部展开，包括书签）
+        // 11-25个: 展开到第三层级（文件夹的子文件夹）
+        // >25个: 展开到第二层级（只展开顶层文件夹）
+        let expandToLevel;
+        if (bookmarks.length <= 10) {
+            expandToLevel = 999; // 全部展开（包括书签）
+        } else if (bookmarks.length <= 25) {
+            expandToLevel = 3; // 展开到第三层级
+        } else {
+            expandToLevel = 2; // 展开到第二层级
+        }
         
         // 构建树结构
         const tree = this.buildBookmarkTree(bookmarks);
         
-        // 渲染树（传入autoExpand参数）
-        const treeContainer = this.renderTreeNode(tree, 0, autoExpand);
+        // 渲染树（传入展开层级参数）
+        const treeContainer = this.renderTreeNode(tree, 0, expandToLevel);
         container.appendChild(treeContainer);
         
         return container;

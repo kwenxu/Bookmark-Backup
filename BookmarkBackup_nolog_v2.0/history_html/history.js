@@ -1572,15 +1572,26 @@ function applyLanguage() {
     }
     const revertAllCurrentText = document.getElementById('revertAllCurrentText');
     if (revertAllCurrentText) revertAllCurrentText.textContent = i18n.revertAll[currentLang];
-    document.getElementById('filterAll').textContent = i18n.filterAll[currentLang];
-    document.getElementById('filterBackedUp').textContent = i18n.filterBackedUp[currentLang];
-    document.getElementById('filterNotBackedUp').textContent = i18n.filterNotBackedUp[currentLang];
-    document.getElementById('filterStatusLabel').textContent = i18n.filterStatus[currentLang];
-    document.getElementById('filterTimeLabel').textContent = i18n.filterTime[currentLang];
-    document.getElementById('timeFilterAll').textContent = i18n.timeFilterAll[currentLang];
-    document.getElementById('timeFilterYear').textContent = i18n.timeFilterYear[currentLang];
-    document.getElementById('timeFilterMonth').textContent = i18n.timeFilterMonth[currentLang];
-    document.getElementById('timeFilterDay').textContent = i18n.timeFilterDay[currentLang];
+    
+    // 以下元素在「书签点击排行」UI中，已被删除，需要安全检查
+    const filterAll = document.getElementById('filterAll');
+    if (filterAll) filterAll.textContent = i18n.filterAll[currentLang];
+    const filterBackedUp = document.getElementById('filterBackedUp');
+    if (filterBackedUp) filterBackedUp.textContent = i18n.filterBackedUp[currentLang];
+    const filterNotBackedUp = document.getElementById('filterNotBackedUp');
+    if (filterNotBackedUp) filterNotBackedUp.textContent = i18n.filterNotBackedUp[currentLang];
+    const filterStatusLabel = document.getElementById('filterStatusLabel');
+    if (filterStatusLabel) filterStatusLabel.textContent = i18n.filterStatus[currentLang];
+    const filterTimeLabel = document.getElementById('filterTimeLabel');
+    if (filterTimeLabel) filterTimeLabel.textContent = i18n.filterTime[currentLang];
+    const timeFilterAll = document.getElementById('timeFilterAll');
+    if (timeFilterAll) timeFilterAll.textContent = i18n.timeFilterAll[currentLang];
+    const timeFilterYear = document.getElementById('timeFilterYear');
+    if (timeFilterYear) timeFilterYear.textContent = i18n.timeFilterYear[currentLang];
+    const timeFilterMonth = document.getElementById('timeFilterMonth');
+    if (timeFilterMonth) timeFilterMonth.textContent = i18n.timeFilterMonth[currentLang];
+    const timeFilterDay = document.getElementById('timeFilterDay');
+    if (timeFilterDay) timeFilterDay.textContent = i18n.timeFilterDay[currentLang];
     // 已删除JSON视图，不再需要更新这些元素
     // document.getElementById('treeViewModeText').textContent = i18n.treeViewMode[currentLang];
     // document.getElementById('jsonViewModeText').textContent = i18n.jsonViewMode[currentLang];
@@ -1717,7 +1728,7 @@ function initializeUI() {
         tab.addEventListener('click', () => switchView(tab.dataset.view));
     });
     
-    // 状态过滤按钮
+    // 状态过滤按钮（已删除，但保留代码以防恢复）
     document.querySelectorAll('.filter-btn').forEach(btn => {
         btn.addEventListener('click', () => {
             currentFilter = btn.dataset.filter;
@@ -1727,7 +1738,7 @@ function initializeUI() {
         });
     });
     
-    // 时间过滤按钮
+    // 时间过滤按钮（已删除，但保留代码以防恢复）
     document.querySelectorAll('.time-filter-btn').forEach(btn => {
         btn.addEventListener('click', () => {
             currentTimeFilter = btn.dataset.timeFilter;
@@ -4378,6 +4389,12 @@ function renderCommitStatsInline(changes) {
 function renderAdditionsView() {
     const container = document.getElementById('additionsList');
     
+    // 【修复】容器已被删除（在UI重构中），直接返回
+    if (!container) {
+        console.log('[renderAdditionsView] additionsList容器不存在，跳过渲染');
+        return;
+    }
+    
     if (allBookmarks.length === 0) {
         container.innerHTML = `
             <div class="empty-state">
@@ -4406,35 +4423,35 @@ function initAdditionsSubTabs() {
     const reviewPanel = document.getElementById('additionsReviewPanel');
     const rankingPanel = document.getElementById('additionsRankingPanel');
     const ankiPanel = document.getElementById('additionsAnkiPanel');
-    const rankingList = document.getElementById('bookmarkRankingList');
+    // const rankingList = document.getElementById('bookmarkRankingList'); // UI已删除
     const historyBtn = document.getElementById('openNativeHistoryBtn');
     const groupedBtn = document.getElementById('openGroupedHistoryBtn');
 
-    // 历史记录快捷入口
-    if (historyBtn && browserAPI && browserAPI.tabs && typeof browserAPI.tabs.create === 'function') {
-        historyBtn.addEventListener('click', () => {
-            try {
-                browserAPI.tabs.create({ url: 'chrome://history/' });
-            } catch (e) {
-                console.warn('[Additions] 打开历史记录失败:', e);
-            }
-        });
-    }
-    if (groupedBtn && browserAPI && browserAPI.tabs && typeof browserAPI.tabs.create === 'function') {
-        groupedBtn.addEventListener('click', () => {
-            try {
-                browserAPI.tabs.create({ url: 'chrome://history/grouped' });
-            } catch (e) {
-                console.warn('[Additions] 打开分组历史记录失败:', e);
-            }
-        });
-    }
+    // 历史记录快捷入口（如果需要，可以在后续添加回来）
+    // if (historyBtn && browserAPI && browserAPI.tabs && typeof browserAPI.tabs.create === 'function') {
+    //     historyBtn.addEventListener('click', () => {
+    //         try {
+    //             browserAPI.tabs.create({ url: 'chrome://history/' });
+    //         } catch (e) {
+    //             console.warn('[Additions] 打开历史记录失败:', e);
+    //         }
+    //     });
+    // }
+    // if (groupedBtn && browserAPI && browserAPI.tabs && typeof browserAPI.tabs.create === 'function') {
+    //     groupedBtn.addEventListener('click', () => {
+    //         try {
+    //             browserAPI.tabs.create({ url: 'chrome://history/grouped' });
+    //         } catch (e) {
+    //             console.warn('[Additions] 打开分组历史记录失败:', e);
+    //         }
+    //     });
+    // }
 
     if (!tabs.length || !reviewPanel || !rankingPanel || !ankiPanel) {
         return;
     }
 
-    let rankingInitialized = false;
+    // let rankingInitialized = false; // 暂时不需要
 
     tabs.forEach(tab => {
         tab.addEventListener('click', () => {
@@ -4453,14 +4470,15 @@ function initAdditionsSubTabs() {
                 reviewPanel.classList.add('active');
             } else if (target === 'ranking') {
                 rankingPanel.classList.add('active');
-                if (!rankingInitialized && rankingList) {
-                    rankingInitialized = true;
-                    try {
-                        loadBookmarkClickRankingForAdditions(rankingList);
-                    } catch (e) {
-                        console.warn('[Additions] 加载点击排行失败:', e);
-                    }
-                }
+                // UI已删除，等待重构
+                // if (!rankingInitialized && rankingList) {
+                //     rankingInitialized = true;
+                //     try {
+                //         loadBookmarkClickRankingForAdditions(rankingList);
+                //     } catch (e) {
+                //         console.warn('[Additions] 加载点击排行失败:', e);
+                //     }
+                // }
             } else if (target === 'anki') {
                 ankiPanel.classList.add('active');
             }
@@ -4468,6 +4486,13 @@ function initAdditionsSubTabs() {
     });
 }
 
+/*
+ * ============================================================================
+ * 以下「书签点击排行」相关代码已注释，UI已删除，等待重构
+ * ============================================================================
+ */
+
+/*
 // 基于浏览器历史记录的“书签点击排行榜”（书签温故第二个子视图）
 function loadBookmarkClickRankingForAdditions(container) {
     if (!container) return;
@@ -4705,6 +4730,13 @@ function renderBookmarkClickRankingList(container, items) {
         container.appendChild(row);
     });
 }
+*/
+
+/*
+ * ============================================================================
+ * 以上「书签点击排行」相关代码已注释，UI已删除，等待重构
+ * ============================================================================
+ */
 
 function groupBookmarksByTime(bookmarks, timeFilter) {
     const groups = {};

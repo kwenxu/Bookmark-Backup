@@ -274,49 +274,9 @@
                     </div>
                 </div>
 
-                <!-- 子视图 2：书签点击排行（保持不变） -->
+                <!-- 子视图 2：书签点击排行 -->
                 <div id="additionsRankingPanel" class="additions-subview">
-                    <!-- 过滤器（删除旧的，改为简化版） -->
-                    <div class="filter-bar" style="display:none;">
-                        <div class="filter-group">
-                            <label class="filter-label" id="filterStatusLabel">状态</label>
-                            <button class="filter-btn active" data-filter="all" id="filterAll">全部</button>
-                            <button class="filter-btn" data-filter="backed-up" id="filterBackedUp">已备份</button>
-                            <button class="filter-btn" data-filter="not-backed-up" id="filterNotBackedUp">未备份</button>
-                        </div>
-                        <div class="filter-group">
-                            <label class="filter-label" id="filterTimeLabel">时间</label>
-                            <button class="time-filter-btn active" data-time-filter="all" id="timeFilterAll">全部</button>
-                            <button class="time-filter-btn" data-time-filter="year" id="timeFilterYear">按年</button>
-                            <button class="time-filter-btn" data-time-filter="month" id="timeFilterMonth">按月</button>
-                            <button class="time-filter-btn" data-time-filter="day" id="timeFilterDay">按日</button>
-                        </div>
-                        <!-- 分组历史按钮：放在 Time 下方 -->
-                        <div class="history-link-row">
-                            <button id="openGroupedHistoryBtn" class="history-link-btn" type="button">
-                                <i class="fas fa-layer-group"></i>
-                                <span id="groupedHistoryButtonText">分组历史 (chrome://history/grouped)</span>
-                            </button>
-                        </div>
-                    </div>
-
-                    <div id="additionsList" class="additions-container">
-                        <!-- 动态加载书签温故记录 -->
-                    </div>
-                </div>
-
-                <!-- 子视图 2：结合历史记录的点击排行 -->
-                <div id="additionsRankingPanel" class="additions-subview">
-                    <div id="bookmarkRankingDescription" class="view-description" style="margin-bottom: 12px; font-size: 13px;">
-                        结合浏览器历史记录，对当前书签的点击次数进行「书签点击排行」。点击某一行可展开查看不同时间范围的统计。
-                    </div>
-                    <div id="bookmarkRankingList" class="ranking-list">
-                        <!-- 动态加载点击排行 -->
-                        <div class="empty-state">
-                            <div class="empty-state-icon"><i class="fas fa-clock"></i></div>
-                            <div class="empty-state-title">正在读取历史记录...</div>
-                        </div>
-                    </div>
+                    <!-- UI内容已删除，等待重构 -->
                 </div>
 
                 <!-- 子视图 3：Anki 记忆曲线（占位） -->

@@ -128,7 +128,7 @@ class BookmarkCalendar {
         }
     }
 
-    parseBookmarks(node) {
+    parseBookmarks(node, parentPath = []) {
         if (node.url && node.dateAdded) {
             const date = new Date(node.dateAdded);
             const dateKey = this.getDateKey(date);
@@ -141,12 +141,14 @@ class BookmarkCalendar {
                 id: node.id,
                 title: node.title,
                 url: node.url,
-                dateAdded: date
+                dateAdded: date,
+                folderPath: parentPath.slice() // 记录父文件夹路径
             });
         }
         
         if (node.children) {
-            node.children.forEach(child => this.parseBookmarks(child));
+            const newPath = node.title ? [...parentPath, node.title] : parentPath;
+            node.children.forEach(child => this.parseBookmarks(child, newPath));
         }
     }
 
@@ -1444,15 +1446,33 @@ class BookmarkCalendar {
         return section;
     }
 
-    createBookmarkItem(bookmark) {
+    createBookmarkItem(bookmark, showTreeLines = false, isLast = false) {
+        const wrapper = document.createElement('div');
+        wrapper.style.position = 'relative';
+        wrapper.style.paddingLeft = showTreeLines ? '20px' : '0';
+        
+        // 添加树状连接线
+        if (showTreeLines) {
+            // 横向连接线
+            const horizontalLine = document.createElement('div');
+            horizontalLine.style.position = 'absolute';
+            horizontalLine.style.left = '0';
+            horizontalLine.style.top = '18px';
+            horizontalLine.style.width = '12px';
+            horizontalLine.style.height = '1px';
+            horizontalLine.style.background = 'var(--border-color)';
+            horizontalLine.style.opacity = '0.5';
+            wrapper.appendChild(horizontalLine);
+        }
+        
         const item = document.createElement('div');
         item.style.display = 'flex';
-        item.style.alignItems = 'flex-start';
-        item.style.gap = '12px';
-        item.style.padding = '10px';
+        item.style.alignItems = 'center';
+        item.style.gap = '8px';
+        item.style.padding = '6px 10px';
         item.style.border = '1px solid var(--border-color)';
         item.style.borderRadius = '6px';
-        item.style.marginBottom = '8px';
+        item.style.marginBottom = '6px';
         item.style.cursor = 'pointer';
         item.style.transition = 'all 0.2s';
         item.dataset.bookmarkUrl = bookmark.url;
@@ -1467,7 +1487,6 @@ class BookmarkCalendar {
         faviconImg.className = 'bookmark-favicon';
         faviconImg.style.width = '16px';
         faviconImg.style.height = '16px';
-        faviconImg.style.marginTop = '2px';
         faviconImg.style.flexShrink = '0';
         faviconImg.alt = '';
         
@@ -1481,23 +1500,20 @@ class BookmarkCalendar {
         
         item.appendChild(faviconImg);
         
-        // 信息区域
+        // 信息区域（只显示标题，移除URL）
         const infoDiv = document.createElement('div');
         infoDiv.style.flex = '1';
         infoDiv.style.minWidth = '0';
         infoDiv.innerHTML = `
-            <div style="font-size:14px;font-weight:500;margin-bottom:4px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">
+            <div style="font-size:13px;font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${this.escapeHtml(bookmark.title)}">
                 ${this.escapeHtml(bookmark.title)}
-            </div>
-            <div style="font-size:12px;color:var(--text-secondary);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">
-                ${this.escapeHtml(bookmark.url)}
             </div>
         `;
         item.appendChild(infoDiv);
         
         // 时间区域
         const timeDiv = document.createElement('div');
-        timeDiv.style.fontSize = '12px';
+        timeDiv.style.fontSize = '11px';
         timeDiv.style.color = 'var(--text-tertiary)';
         timeDiv.style.whiteSpace = 'nowrap';
         timeDiv.textContent = time;
@@ -1529,7 +1545,8 @@ class BookmarkCalendar {
             item.style.borderColor = 'var(--border-color)';
         });
         
-        return item;
+        wrapper.appendChild(item);
+        return wrapper;
     }
 
     escapeHtml(text) {
@@ -1538,74 +1555,385 @@ class BookmarkCalendar {
         return div.innerHTML;
     }
 
-    // 创建可折叠的书签列表
-    createCollapsibleBookmarkList(bookmarks, containerId) {
-        const container = document.createElement('div');
-        const COLLAPSE_THRESHOLD = 10; // 超过10个就折叠
+    // 构建书签树结构
+    buildBookmarkTree(bookmarks) {
+        const root = {
+            title: 'Root',
+            children: [],
+            bookmarks: [],
+            path: []
+        };
         
-        if (bookmarks.length === 0) return container;
+        bookmarks.forEach(bookmark => {
+            let currentNode = root;
+            
+            // 遍历文件夹路径，构建树
+            bookmark.folderPath.forEach((folderName, index) => {
+                let childNode = currentNode.children.find(child => child.title === folderName);
+                
+                if (!childNode) {
+                    childNode = {
+                        title: folderName,
+                        children: [],
+                        bookmarks: [],
+                        path: bookmark.folderPath.slice(0, index + 1)
+                    };
+                    currentNode.children.push(childNode);
+                }
+                
+                currentNode = childNode;
+            });
+            
+            // 将书签添加到对应的叶子节点
+            currentNode.bookmarks.push(bookmark);
+        });
         
-        const shouldCollapse = bookmarks.length > COLLAPSE_THRESHOLD;
-        const initialShowCount = shouldCollapse ? COLLAPSE_THRESHOLD : bookmarks.length;
+        return root;
+    }
+    
+    // 渲染树节点（递归）
+    renderTreeNode(node, level = 0, autoExpand = false, isLastChild = false) {
+        const nodeContainer = document.createElement('div');
+        const themeColor = this.selectMode ? '#4CAF50' : 'var(--accent-primary)';
         
-        // 显示初始的书签
-        for (let i = 0; i < initialShowCount; i++) {
-            container.appendChild(this.createBookmarkItem(bookmarks[i]));
+        // 如果是根节点，直接渲染子节点
+        if (level === 0) {
+            node.children.forEach((child, index) => {
+                const isLast = index === node.children.length - 1 && node.bookmarks.length === 0;
+                nodeContainer.appendChild(this.renderTreeNode(child, level + 1, autoExpand, isLast));
+            });
+            // 根节点的书签（未分类）
+            if (node.bookmarks.length > 0) {
+                const uncategorizedFolder = document.createElement('div');
+                uncategorizedFolder.style.marginBottom = autoExpand ? '12px' : '0';
+                
+                const folderHeader = this.createFolderHeader(
+                    currentLang === 'en' ? 'Uncategorized' : '未分类',
+                    [],
+                    node.bookmarks.length,
+                    level
+                );
+                uncategorizedFolder.appendChild(folderHeader);
+                
+                const bookmarksContainer = document.createElement('div');
+                bookmarksContainer.style.paddingLeft = `${(level + 1) * 16}px`;
+                bookmarksContainer.style.display = autoExpand ? 'block' : 'none';
+                bookmarksContainer.appendChild(this.renderBookmarkList(node.bookmarks));
+                uncategorizedFolder.appendChild(bookmarksContainer);
+                
+                this.attachFolderToggle(folderHeader, bookmarksContainer, uncategorizedFolder, !autoExpand);
+                nodeContainer.appendChild(uncategorizedFolder);
+            }
+            return nodeContainer;
         }
         
-        // 如果需要折叠，添加隐藏的书签和展开按钮
-        if (shouldCollapse) {
-            const hiddenContainer = document.createElement('div');
-            hiddenContainer.style.display = 'none';
-            hiddenContainer.dataset.collapsed = 'true';
+        // 文件夹容器（添加树状线）
+        const folderContainer = document.createElement('div');
+        folderContainer.style.position = 'relative';
+        folderContainer.style.marginBottom = autoExpand ? '12px' : '0';
+        folderContainer.dataset.treeLevel = level;
+        
+        // 添加树状连接线
+        if (level > 0) {
+            folderContainer.style.paddingLeft = '20px';
             
-            for (let i = COLLAPSE_THRESHOLD; i < bookmarks.length; i++) {
-                hiddenContainer.appendChild(this.createBookmarkItem(bookmarks[i]));
+            // 纵向连接线（从上一级延伸下来）
+            if (!isLastChild) {
+                const verticalLine = document.createElement('div');
+                verticalLine.style.position = 'absolute';
+                verticalLine.style.left = '0';
+                verticalLine.style.top = '0';
+                verticalLine.style.width = '1px';
+                verticalLine.style.height = '100%';
+                verticalLine.style.background = 'var(--border-color)';
+                verticalLine.style.opacity = '0.5';
+                folderContainer.appendChild(verticalLine);
+            } else {
+                // 最后一个子节点的纵线只到中间
+                const verticalLine = document.createElement('div');
+                verticalLine.style.position = 'absolute';
+                verticalLine.style.left = '0';
+                verticalLine.style.top = '0';
+                verticalLine.style.width = '1px';
+                verticalLine.style.height = '18px';
+                verticalLine.style.background = 'var(--border-color)';
+                verticalLine.style.opacity = '0.5';
+                folderContainer.appendChild(verticalLine);
             }
             
-            container.appendChild(hiddenContainer);
+            // 横向连接线（连接到文件夹标题）
+            const horizontalLine = document.createElement('div');
+            horizontalLine.style.position = 'absolute';
+            horizontalLine.style.left = '0';
+            horizontalLine.style.top = '18px';
+            horizontalLine.style.width = '12px';
+            horizontalLine.style.height = '1px';
+            horizontalLine.style.background = 'var(--border-color)';
+            horizontalLine.style.opacity = '0.5';
+            folderContainer.appendChild(horizontalLine);
+        }
+        
+        // 文件夹标题
+        const folderHeader = this.createFolderHeader(node.title, node.path, 
+            node.bookmarks.length + this.countAllBookmarks(node), level);
+        if (level > 0) {
+            folderHeader.style.marginLeft = '0';
+        }
+        folderContainer.appendChild(folderHeader);
+        
+        // 子内容容器
+        const childrenContainer = document.createElement('div');
+        childrenContainer.style.display = autoExpand ? 'block' : 'none';
+        childrenContainer.style.paddingLeft = '20px'; // 缩进与树状线对齐
+        childrenContainer.style.position = 'relative';
+        
+        // 为子内容添加纵向连接线
+        if (level > 0 && (node.bookmarks.length > 0 || node.children.length > 0)) {
+            const childrenVerticalLine = document.createElement('div');
+            childrenVerticalLine.style.position = 'absolute';
+            childrenVerticalLine.style.left = '0';
+            childrenVerticalLine.style.top = '0';
+            childrenVerticalLine.style.width = '1px';
+            childrenVerticalLine.style.height = '100%';
+            childrenVerticalLine.style.background = 'var(--border-color)';
+            childrenVerticalLine.style.opacity = '0.5';
+            childrenContainer.appendChild(childrenVerticalLine);
+        }
+        
+        // 先渲染当前文件夹的书签
+        if (node.bookmarks.length > 0) {
+            const bookmarksWrapper = document.createElement('div');
+            bookmarksWrapper.style.position = 'relative';
+            bookmarksWrapper.appendChild(this.renderBookmarkList(node.bookmarks, level > 0));
+            childrenContainer.appendChild(bookmarksWrapper);
+        }
+        
+        // 再渲染子文件夹
+        node.children.forEach((child, index) => {
+            const isLast = index === node.children.length - 1;
+            childrenContainer.appendChild(this.renderTreeNode(child, level + 1, autoExpand, isLast));
+        });
+        
+        folderContainer.appendChild(childrenContainer);
+        
+        // 添加折叠功能
+        this.attachFolderToggle(folderHeader, childrenContainer, folderContainer, !autoExpand);
+        
+        return folderContainer;
+    }
+    
+    // 创建文件夹标题
+    createFolderHeader(title, path, count, level) {
+        const folderHeader = document.createElement('div');
+        folderHeader.style.display = 'flex';
+        folderHeader.style.alignItems = 'center';
+        folderHeader.style.gap = '8px';
+        folderHeader.style.padding = '6px 8px';
+        folderHeader.style.background = 'var(--bg-secondary)';
+        folderHeader.style.borderRadius = '6px';
+        folderHeader.style.cursor = 'pointer';
+        folderHeader.style.marginBottom = '6px';
+        folderHeader.style.transition = 'all 0.2s';
+        folderHeader.dataset.collapsed = 'false';
+        
+        const themeColor = this.selectMode ? '#4CAF50' : 'var(--accent-primary)';
+        
+        // 创建路径显示（每个文件夹用椭圆框框住）
+        // level > 1 时只显示当前文件夹名称，level = 1 时显示完整路径
+        let pathHTML = '';
+        if (level > 1) {
+            // 子层级：只显示当前文件夹名称
+            pathHTML = `<span style="display:inline-block;background:rgba(128,128,128,0.1);border-radius:12px;padding:2px 8px;margin:2px;font-size:11px;white-space:nowrap;">${this.escapeHtml(title)}</span>`;
+        } else if (path.length > 0) {
+            // 顶层：显示完整路径
+            pathHTML = path.map(folder => 
+                `<span style="display:inline-block;background:rgba(128,128,128,0.1);border-radius:12px;padding:2px 8px;margin:2px;font-size:11px;white-space:nowrap;">${this.escapeHtml(folder)}</span>`
+            ).join('<span style="margin:0 2px;color:var(--text-tertiary);font-size:11px;">/</span>');
+        } else {
+            pathHTML = `<span style="display:inline-block;background:rgba(128,128,128,0.1);border-radius:12px;padding:2px 8px;margin:2px;font-size:11px;">${this.escapeHtml(title)}</span>`;
+        }
+        
+        folderHeader.innerHTML = `
+            <i class="fas fa-chevron-down" style="font-size:10px;color:${themeColor};flex-shrink:0;"></i>
+            <i class="fas fa-folder" style="color:${themeColor};font-size:12px;flex-shrink:0;"></i>
+            <div style="flex:1;min-width:0;display:flex;flex-wrap:wrap;align-items:center;">${pathHTML}</div>
+            <span style="font-size:11px;color:var(--text-tertiary);flex-shrink:0;">${count}</span>
+        `;
+        
+        return folderHeader;
+    }
+    
+    // 附加文件夹折叠功能
+    attachFolderToggle(folderHeader, childrenContainer, folderContainer, defaultCollapsed = false) {
+        // 设置初始状态
+        if (defaultCollapsed) {
+            folderHeader.dataset.collapsed = 'true';
+            const chevron = folderHeader.querySelector('.fa-chevron-down');
+            if (chevron) {
+                chevron.classList.remove('fa-chevron-down');
+                chevron.classList.add('fa-chevron-right');
+            }
+        }
+        
+        folderHeader.addEventListener('click', () => {
+            const isCollapsed = folderHeader.dataset.collapsed === 'true';
+            const chevron = folderHeader.querySelector('.fa-chevron-down, .fa-chevron-right');
             
-            // 展开/收起按钮
+            if (isCollapsed) {
+                childrenContainer.style.display = 'block';
+                folderHeader.dataset.collapsed = 'false';
+                folderContainer.style.marginBottom = '12px';
+                chevron.classList.remove('fa-chevron-right');
+                chevron.classList.add('fa-chevron-down');
+            } else {
+                childrenContainer.style.display = 'none';
+                folderHeader.dataset.collapsed = 'true';
+                folderContainer.style.marginBottom = '0';
+                chevron.classList.remove('fa-chevron-down');
+                chevron.classList.add('fa-chevron-right');
+            }
+        });
+        
+        folderHeader.addEventListener('mouseenter', () => {
+            folderHeader.style.background = 'var(--bg-tertiary)';
+        });
+        
+        folderHeader.addEventListener('mouseleave', () => {
+            folderHeader.style.background = 'var(--bg-secondary)';
+        });
+    }
+    
+    // 渲染书签列表（带5个折叠）
+    renderBookmarkList(bookmarks, showTreeLines = false) {
+        const container = document.createElement('div');
+        container.style.marginBottom = '8px';
+        
+        const BOOKMARK_COLLAPSE_THRESHOLD = 5;
+        const shouldCollapseBookmarks = bookmarks.length > BOOKMARK_COLLAPSE_THRESHOLD;
+        
+        // 按时间排序
+        bookmarks.sort((a, b) => a.dateAdded - b.dateAdded);
+        
+        // 显示前5个书签
+        const visibleCount = shouldCollapseBookmarks ? BOOKMARK_COLLAPSE_THRESHOLD : bookmarks.length;
+        for (let i = 0; i < visibleCount; i++) {
+            const isLastVisible = !shouldCollapseBookmarks && i === bookmarks.length - 1;
+            container.appendChild(this.createBookmarkItem(bookmarks[i], showTreeLines, isLastVisible));
+        }
+        
+        // 如果超过5个，创建隐藏容器和展开按钮
+        if (shouldCollapseBookmarks) {
+            const hiddenBookmarksContainer = document.createElement('div');
+            hiddenBookmarksContainer.style.display = 'none';
+            hiddenBookmarksContainer.dataset.collapsed = 'true';
+            
+            for (let i = BOOKMARK_COLLAPSE_THRESHOLD; i < bookmarks.length; i++) {
+                const isLast = i === bookmarks.length - 1;
+                hiddenBookmarksContainer.appendChild(this.createBookmarkItem(bookmarks[i], showTreeLines, isLast));
+            }
+            
+            container.appendChild(hiddenBookmarksContainer);
+            
+            // 展开/收起按钮（改进UI）
             const toggleBtn = document.createElement('button');
             toggleBtn.style.width = '100%';
-            toggleBtn.style.padding = '8px';
+            toggleBtn.style.padding = '8px 12px';
             toggleBtn.style.marginTop = '8px';
-            toggleBtn.style.border = '1px dashed var(--border-color)';
+            toggleBtn.style.border = '1px solid var(--border-color)';
             const btnColor = this.selectMode ? '#4CAF50' : 'var(--accent-primary)';
             toggleBtn.style.borderRadius = '6px';
-            toggleBtn.style.background = 'transparent';
-            toggleBtn.style.color = btnColor;
+            toggleBtn.style.background = 'var(--bg-secondary)';
+            toggleBtn.style.color = 'var(--text-primary)';
             toggleBtn.style.cursor = 'pointer';
-            toggleBtn.style.fontSize = '13px';
+            toggleBtn.style.fontSize = '12px';
+            toggleBtn.style.fontWeight = '500';
             toggleBtn.style.transition = 'all 0.2s';
-            toggleBtn.innerHTML = `<i class="fas fa-chevron-down"></i> ${t('calendarExpandMore', bookmarks.length - COLLAPSE_THRESHOLD)}`;
+            toggleBtn.style.display = 'flex';
+            toggleBtn.style.alignItems = 'center';
+            toggleBtn.style.justifyContent = 'center';
+            toggleBtn.style.gap = '6px';
             
-            toggleBtn.addEventListener('click', () => {
-                const isCollapsed = hiddenContainer.dataset.collapsed === 'true';
+            const hiddenCount = bookmarks.length - BOOKMARK_COLLAPSE_THRESHOLD;
+            const expandText = currentLang === 'en' ? `Show ${hiddenCount} more` : `展开更多 ${hiddenCount} 个`;
+            const collapseText = currentLang === 'en' ? 'Show less' : '收起';
+            
+            toggleBtn.innerHTML = `
+                <i class="fas fa-chevron-down" style="color:${btnColor};"></i>
+                <span>${expandText}</span>
+            `;
+            
+            toggleBtn.addEventListener('click', (e) => {
+                e.stopPropagation();
+                const isCollapsed = hiddenBookmarksContainer.dataset.collapsed === 'true';
                 if (isCollapsed) {
-                    hiddenContainer.style.display = 'block';
-                    hiddenContainer.dataset.collapsed = 'false';
-                    toggleBtn.innerHTML = `<i class="fas fa-chevron-up"></i> ${t('calendarCollapse')}`;
+                    hiddenBookmarksContainer.style.display = 'block';
+                    hiddenBookmarksContainer.dataset.collapsed = 'false';
+                    toggleBtn.innerHTML = `
+                        <i class="fas fa-chevron-up" style="color:${btnColor};"></i>
+                        <span>${collapseText}</span>
+                    `;
                 } else {
-                    hiddenContainer.style.display = 'none';
-                    hiddenContainer.dataset.collapsed = 'true';
-                    toggleBtn.innerHTML = `<i class="fas fa-chevron-down"></i> ${t('calendarExpandMore', bookmarks.length - COLLAPSE_THRESHOLD)}`;
+                    hiddenBookmarksContainer.style.display = 'none';
+                    hiddenBookmarksContainer.dataset.collapsed = 'true';
+                    toggleBtn.innerHTML = `
+                        <i class="fas fa-chevron-down" style="color:${btnColor};"></i>
+                        <span>${expandText}</span>
+                    `;
                 }
             });
             
             toggleBtn.addEventListener('mouseenter', () => {
                 const hoverColor = this.selectMode ? '#4CAF50' : 'var(--accent-primary)';
-                toggleBtn.style.background = 'var(--bg-secondary)';
+                toggleBtn.style.background = 'var(--bg-tertiary)';
                 toggleBtn.style.borderColor = hoverColor;
+                toggleBtn.style.color = hoverColor;
             });
             
             toggleBtn.addEventListener('mouseleave', () => {
-                toggleBtn.style.background = 'transparent';
+                toggleBtn.style.background = 'var(--bg-secondary)';
                 toggleBtn.style.borderColor = 'var(--border-color)';
+                toggleBtn.style.color = 'var(--text-primary)';
             });
             
             container.appendChild(toggleBtn);
         }
+        
+        return container;
+    }
+    
+    // 计算节点下所有书签数量
+    countAllBookmarks(node) {
+        let count = 0;
+        node.children.forEach(child => {
+            count += child.bookmarks.length + this.countAllBookmarks(child);
+        });
+        return count;
+    }
+
+    // 创建可折叠的书签列表（树状结构，参考永久栏目）
+    createCollapsibleBookmarkList(bookmarks, containerId) {
+        const container = document.createElement('div');
+        
+        if (bookmarks.length === 0) return container;
+        
+        // 判断是否自动展开（总书签数<=20）
+        const autoExpand = bookmarks.length <= 20;
+        
+        // 判断是否需要双列显示（总数超过20个）
+        const shouldUseColumns = bookmarks.length > 20;
+        
+        if (shouldUseColumns) {
+            container.style.display = 'grid';
+            container.style.gridTemplateColumns = 'repeat(2, 1fr)';
+            container.style.gap = '20px';
+        }
+        
+        // 构建树结构
+        const tree = this.buildBookmarkTree(bookmarks);
+        
+        // 渲染树（传入autoExpand参数）
+        const treeContainer = this.renderTreeNode(tree, 0, autoExpand);
+        container.appendChild(treeContainer);
         
         return container;
     }

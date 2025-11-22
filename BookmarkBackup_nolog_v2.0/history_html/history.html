@@ -200,22 +200,54 @@
                     <!-- 面包屑导航 -->
                     <div class="calendar-breadcrumb-nav">
                         <div style="display: flex; align-items: center; gap: 8px; flex: 1;">
-                            <button class="breadcrumb-btn active" id="breadcrumbYear">
-                                <i class="fas fa-calendar"></i>
-                                <span id="breadcrumbYearText">2024年</span>
-                            </button>
+                            <div class="breadcrumb-item-wrapper">
+                                <button class="breadcrumb-btn active" id="breadcrumbYear">
+                                    <i class="fas fa-calendar"></i>
+                                    <span id="breadcrumbYearText">2024年</span>
+                                </button>
+                                <div class="breadcrumb-dropdown-trigger" data-target="breadcrumbYear">
+                                    <i class="fas fa-chevron-down"></i>
+                                </div>
+                                <div class="breadcrumb-dropdown-menu" id="breadcrumbYear-menu">
+                                    <!-- 年份候选项将在这里动态生成 -->
+                                </div>
+                            </div>
                             <span class="breadcrumb-separator" id="separator1" style="display:none;">/</span>
-                            <button class="breadcrumb-btn" id="breadcrumbMonth" style="display:none;">
-                                <span id="breadcrumbMonthText">11月</span>
-                            </button>
+                            <div class="breadcrumb-item-wrapper">
+                                <button class="breadcrumb-btn" id="breadcrumbMonth" style="display:none;">
+                                    <span id="breadcrumbMonthText">11月</span>
+                                </button>
+                                <div class="breadcrumb-dropdown-trigger" data-target="breadcrumbMonth">
+                                    <i class="fas fa-chevron-down"></i>
+                                </div>
+                                <div class="breadcrumb-dropdown-menu" id="breadcrumbMonth-menu">
+                                    <!-- 月份候选项将在这里动态生成 -->
+                                </div>
+                            </div>
                             <span class="breadcrumb-separator" id="separator2" style="display:none;">/</span>
-                            <button class="breadcrumb-btn" id="breadcrumbWeek" style="display:none;">
-                                <span id="breadcrumbWeekText">第45周</span>
-                            </button>
+                            <div class="breadcrumb-item-wrapper">
+                                <button class="breadcrumb-btn" id="breadcrumbWeek" style="display:none;">
+                                    <span id="breadcrumbWeekText">第45周</span>
+                                </button>
+                                <div class="breadcrumb-dropdown-trigger" data-target="breadcrumbWeek">
+                                    <i class="fas fa-chevron-down"></i>
+                                </div>
+                                <div class="breadcrumb-dropdown-menu" id="breadcrumbWeek-menu">
+                                    <!-- 周候选项将在这里动态生成 -->
+                                </div>
+                            </div>
                             <span class="breadcrumb-separator" id="separator3" style="display:none;">/</span>
-                            <button class="breadcrumb-btn" id="breadcrumbDay" style="display:none;">
-                                <span id="breadcrumbDayText">11月20日</span>
-                            </button>
+                            <div class="breadcrumb-item-wrapper">
+                                <button class="breadcrumb-btn" id="breadcrumbDay" style="display:none;">
+                                    <span id="breadcrumbDayText">11月20日</span>
+                                </button>
+                                <div class="breadcrumb-dropdown-trigger" data-target="breadcrumbDay">
+                                    <i class="fas fa-chevron-down"></i>
+                                </div>
+                                <div class="breadcrumb-dropdown-menu" id="breadcrumbDay-menu">
+                                    <!-- 日期候选项将在这里动态生成 -->
+                                </div>
+                            </div>
                         </div>
                         <div style="display: flex; align-items: center; gap: 8px;">
                             <button class="calendar-action-btn" id="calendarSelectModeBtn">

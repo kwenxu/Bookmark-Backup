@@ -46,6 +46,106 @@
     user-select: none;
 }
 
+/* 面包屑项容器 */
+.breadcrumb-item-wrapper {
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+}
+
+/* 下拉触发按钮 */
+.breadcrumb-dropdown-trigger {
+    display: none;
+    align-items: center;
+    justify-content: center;
+    width: 24px;
+    height: 24px;
+    margin-left: -4px;
+    padding: 0;
+    border: none;
+    background: transparent;
+    color: var(--text-tertiary);
+    cursor: pointer;
+    border-radius: 4px;
+    transition: all 0.2s ease;
+    font-size: 12px;
+}
+
+/* 当鼠标悬停在容器上时显示下拉图标 */
+.breadcrumb-item-wrapper:hover .breadcrumb-dropdown-trigger {
+    display: flex;
+}
+
+.breadcrumb-dropdown-trigger:hover {
+    background: var(--bg-secondary);
+    color: var(--accent-primary);
+}
+
+/* 下拉菜单 */
+.breadcrumb-dropdown-menu {
+    position: absolute;
+    top: calc(100% + 4px);
+    left: 0;
+    min-width: 120px;
+    max-height: 300px;
+    overflow-y: auto;
+    background: var(--bg-elevated);
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+    z-index: 1000;
+    display: none;
+    padding: 4px;
+}
+
+.breadcrumb-dropdown-menu.show {
+    display: block;
+}
+
+/* 下拉菜单项 */
+.breadcrumb-dropdown-item {
+    padding: 8px 12px;
+    cursor: pointer;
+    border-radius: 4px;
+    transition: all 0.2s ease;
+    font-size: 14px;
+    color: var(--text-primary);
+    white-space: nowrap;
+}
+
+.breadcrumb-dropdown-item:hover {
+    background: var(--bg-secondary);
+    color: var(--accent-primary);
+}
+
+.breadcrumb-dropdown-item.active {
+    background: var(--accent-primary);
+    color: white;
+}
+
+.breadcrumb-dropdown-item.active:hover {
+    background: var(--accent-primary);
+    opacity: 0.9;
+}
+
+/* 滚动条样式 */
+.breadcrumb-dropdown-menu::-webkit-scrollbar {
+    width: 6px;
+}
+
+.breadcrumb-dropdown-menu::-webkit-scrollbar-track {
+    background: transparent;
+}
+
+.breadcrumb-dropdown-menu::-webkit-scrollbar-thumb {
+    background: var(--text-tertiary);
+    border-radius: 3px;
+}
+
+.breadcrumb-dropdown-menu::-webkit-scrollbar-thumb:hover {
+    background: var(--text-secondary);
+}
+
 /* 日历操作按钮 */
 .calendar-action-btn {
     display: flex;

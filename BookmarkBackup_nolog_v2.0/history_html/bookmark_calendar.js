@@ -213,6 +213,167 @@ class BookmarkCalendar {
         
         // 定位至今天按钮
         document.getElementById('calendarLocateTodayBtn')?.addEventListener('click', () => this.locateToToday());
+        
+        // 设置下拉菜单功能
+        this.setupDropdownMenus();
+    }
+    
+    setupDropdownMenus() {
+        // 为所有下拉触发器添加点击事件
+        const triggers = document.querySelectorAll('.breadcrumb-dropdown-trigger');
+        triggers.forEach(trigger => {
+            trigger.addEventListener('click', (e) => {
+                e.stopPropagation();
+                const targetId = trigger.getAttribute('data-target');
+                const menu = document.getElementById(`${targetId}-menu`);
+                
+                // 关闭其他所有菜单
+                document.querySelectorAll('.breadcrumb-dropdown-menu').forEach(m => {
+                    if (m !== menu) m.classList.remove('show');
+                });
+                
+                // 切换当前菜单
+                if (menu) {
+                    const isShowing = menu.classList.contains('show');
+                    menu.classList.toggle('show');
+                    
+                    // 如果菜单打开，填充候选项
+                    if (!isShowing) {
+                        this.populateDropdownMenu(targetId, menu);
+                    }
+                }
+            });
+        });
+        
+        // 点击页面其他地方关闭所有菜单
+        document.addEventListener('click', () => {
+            document.querySelectorAll('.breadcrumb-dropdown-menu').forEach(menu => {
+                menu.classList.remove('show');
+            });
+        });
+        
+        // 防止点击菜单内部时关闭菜单
+        document.querySelectorAll('.breadcrumb-dropdown-menu').forEach(menu => {
+            menu.addEventListener('click', (e) => {
+                e.stopPropagation();
+            });
+        });
+    }
+    
+    populateDropdownMenu(targetId, menu) {
+        menu.innerHTML = ''; // 清空现有内容
+        let activeItem = null; // 用于存储当前激活的项
+        
+        if (targetId === 'breadcrumbYear') {
+            // 生成年份候选项（当前年份前后各5年）
+            const currentYear = new Date().getFullYear();
+            const startYear = currentYear - 5;
+            const endYear = currentYear + 5;
+            
+            for (let year = endYear; year >= startYear; year--) {
+                const item = document.createElement('div');
+                item.className = 'breadcrumb-dropdown-item';
+                if (year === this.currentYear) {
+                    item.classList.add('active');
+                    activeItem = item; // 记录激活项
+                }
+                item.textContent = t('calendarYear', year);
+                item.addEventListener('click', () => {
+                    this.currentYear = year;
+                    this.viewLevel = 'year';
+                    this.render();
+                    menu.classList.remove('show');
+                });
+                menu.appendChild(item);
+            }
+        } else if (targetId === 'breadcrumbMonth') {
+            // 生成月份候选项（1-12月）
+            for (let month = 0; month < 12; month++) {
+                const item = document.createElement('div');
+                item.className = 'breadcrumb-dropdown-item';
+                if (month === this.currentMonth) {
+                    item.classList.add('active');
+                    activeItem = item; // 记录激活项
+                }
+                item.textContent = tm(month);
+                item.addEventListener('click', () => {
+                    this.currentMonth = month;
+                    this.viewLevel = 'month';
+                    this.render();
+                    menu.classList.remove('show');
+                });
+                menu.appendChild(item);
+            }
+        } else if (targetId === 'breadcrumbWeek') {
+            // 生成本月所有周的候选项
+            const firstDayOfMonth = new Date(this.currentYear, this.currentMonth, 1);
+            const lastDayOfMonth = new Date(this.currentYear, this.currentMonth + 1, 0);
+            
+            let weekStart = new Date(firstDayOfMonth);
+            const startDay = weekStart.getDay() || 7;
+            weekStart.setDate(weekStart.getDate() - startDay + 1);
+            
+            while (weekStart <= lastDayOfMonth) {
+                const weekNum = this.getWeekNumber(weekStart);
+                const weekStartCopy = new Date(weekStart);
+                
+                const item = document.createElement('div');
+                item.className = 'breadcrumb-dropdown-item';
+                
+                // 检查是否是当前周
+                if (this.currentWeekStart && 
+                    weekStartCopy.getTime() === this.currentWeekStart.getTime()) {
+                    item.classList.add('active');
+                    activeItem = item; // 记录激活项
+                }
+                
+                item.textContent = t('calendarWeek', weekNum);
+                item.addEventListener('click', () => {
+                    this.currentWeekStart = weekStartCopy;
+                    this.viewLevel = 'week';
+                    this.render();
+                    menu.classList.remove('show');
+                });
+                menu.appendChild(item);
+                
+                weekStart.setDate(weekStart.getDate() + 7);
+            }
+        } else if (targetId === 'breadcrumbDay') {
+            // 生成本周所有日期的候选项
+            for (let i = 0; i < 7; i++) {
+                const date = new Date(this.currentWeekStart);
+                date.setDate(date.getDate() + i);
+                
+                const item = document.createElement('div');
+                item.className = 'breadcrumb-dropdown-item';
+                
+                if (this.currentDay && 
+                    date.toDateString() === this.currentDay.toDateString()) {
+                    item.classList.add('active');
+                    activeItem = item; // 记录激活项
+                }
+                
+                item.textContent = t('calendarMonthDay', date.getMonth() + 1, date.getDate());
+                item.addEventListener('click', () => {
+                    this.currentDay = new Date(date);
+                    this.viewLevel = 'day';
+                    this.render();
+                    menu.classList.remove('show');
+                });
+                menu.appendChild(item);
+            }
+        }
+        
+        // 如果找到了激活项，直接定位到该项位置（无动画）
+        if (activeItem) {
+            // 使用 setTimeout 确保 DOM 已经渲染完成
+            setTimeout(() => {
+                activeItem.scrollIntoView({
+                    behavior: 'auto',  // 立即定位，无动画
+                    block: 'center'    // 居中显示
+                });
+            }, 10);
+        }
     }
     
     toggleSelectMode() {

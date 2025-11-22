@@ -403,12 +403,14 @@ class BookmarkCalendar {
     }
     
     setupDropdownMenus() {
-        // 为所有下拉触发器添加点击事件
+        // 为当前视图的下拉触发器添加点击事件（只处理 bookmark 日历自己的触发器）
         const triggers = document.querySelectorAll('.breadcrumb-dropdown-trigger');
         triggers.forEach(trigger => {
+            const targetId = trigger.getAttribute('data-target');
+            if (!targetId || !targetId.startsWith('breadcrumb')) return;
+            
             trigger.addEventListener('click', (e) => {
                 e.stopPropagation();
-                const targetId = trigger.getAttribute('data-target');
                 const menu = document.getElementById(`${targetId}-menu`);
                 
                 // 关闭其他所有菜单
@@ -2133,12 +2135,12 @@ class BookmarkCalendar {
         });
     }
     
-    // 渲染书签列表（带5个折叠）
+    // 渲染书签列表（带折叠）
     renderBookmarkList(bookmarks, showTreeLines = false) {
         const container = document.createElement('div');
         container.style.marginBottom = '8px';
         
-        const BOOKMARK_COLLAPSE_THRESHOLD = 5;
+        const BOOKMARK_COLLAPSE_THRESHOLD = 10;
         const shouldCollapseBookmarks = bookmarks.length > BOOKMARK_COLLAPSE_THRESHOLD;
         
         // 按时间排序

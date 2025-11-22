@@ -993,6 +993,14 @@ body {
     font-weight: 600;
 }
 
+/* 书签浏览记录按钮：使用更浅的蓝色背景和阴影，弱化对比 */
+#additionsTabBrowsing.additions-tab.active {
+    background: var(--accent-light);
+    color: var(--accent-primary);
+    border-color: var(--accent-primary);
+    box-shadow: var(--shadow-sm);
+}
+
 .additions-subview {
     display: none;
 }
@@ -1007,10 +1015,15 @@ body {
     gap: 8px;
     margin-bottom: 16px;
     padding-top: 8px;
+    justify-content: center;
+    width: 33.33%;
+    max-width: 360px;
+    margin-left: auto;
+    margin-right: auto;
 }
 
 .browsing-sub-tab {
-    flex: 1;
+    flex: 1 1 0;
     padding: 6px 10px;
     border-radius: 999px;
     border: 1px solid var(--border-color);
@@ -1030,6 +1043,7 @@ body {
     border-color: var(--accent-primary);
     color: #ffffff;
     font-weight: 600;
+    box-shadow: var(--shadow-sm);
 }
 
 .browsing-sub-tab:hover:not(.active) {

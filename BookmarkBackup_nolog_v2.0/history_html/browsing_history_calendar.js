@@ -450,12 +450,14 @@ parseBookmarks(node, parentPath = []) {
     }
     
     setupDropdownMenus() {
-        // 为所有下拉触发器添加点击事件
+        // 只为 BrowsingHistoryCalendar 自己的下拉触发器添加点击事件
         const triggers = document.querySelectorAll('.breadcrumb-dropdown-trigger');
         triggers.forEach(trigger => {
+            const targetId = trigger.getAttribute('data-target');
+            if (!targetId || !targetId.startsWith('browsingBreadcrumb')) return;
+            
             trigger.addEventListener('click', (e) => {
                 e.stopPropagation();
-                const targetId = trigger.getAttribute('data-target');
                 const menu = document.getElementById(`${targetId}-menu`);
                 
                 // 关闭其他所有菜单
@@ -495,7 +497,7 @@ parseBookmarks(node, parentPath = []) {
         menu.innerHTML = ''; // 清空现有内容
         let activeItem = null; // 用于存储当前激活的项
         
-        if (targetId === 'breadcrumbYear') {
+        if (targetId === 'browsingBreadcrumbYear') {
             // 生成年份候选项（当前年份前后各5年）
             const currentYear = new Date().getFullYear();
             const startYear = currentYear - 5;
@@ -517,7 +519,7 @@ parseBookmarks(node, parentPath = []) {
                 });
                 menu.appendChild(item);
             }
-        } else if (targetId === 'breadcrumbMonth') {
+        } else if (targetId === 'browsingBreadcrumbMonth') {
             // 生成月份候选项（1-12月）
             for (let month = 0; month < 12; month++) {
                 const item = document.createElement('div');
@@ -535,7 +537,7 @@ parseBookmarks(node, parentPath = []) {
                 });
                 menu.appendChild(item);
             }
-        } else if (targetId === 'breadcrumbWeek') {
+        } else if (targetId === 'browsingBreadcrumbWeek') {
             // 生成本月所有周的候选项
             const firstDayOfMonth = new Date(this.currentYear, this.currentMonth, 1);
             const lastDayOfMonth = new Date(this.currentYear, this.currentMonth + 1, 0);
@@ -569,7 +571,7 @@ parseBookmarks(node, parentPath = []) {
                 
                 weekStart.setDate(weekStart.getDate() + 7);
             }
-        } else if (targetId === 'breadcrumbDay') {
+        } else if (targetId === 'browsingBreadcrumbDay') {
             // 生成本周所有日期的候选项
             for (let i = 0; i < 7; i++) {
                 const date = new Date(this.currentWeekStart);
@@ -2180,12 +2182,12 @@ parseBookmarks(node, parentPath = []) {
         });
     }
     
-    // 渲染书签列表（带5个折叠）
+    // 渲染书签列表（带折叠）
     renderBookmarkList(bookmarks, showTreeLines = false) {
         const container = document.createElement('div');
         container.style.marginBottom = '8px';
         
-        const BOOKMARK_COLLAPSE_THRESHOLD = 5;
+        const BOOKMARK_COLLAPSE_THRESHOLD = 10;
         const shouldCollapseBookmarks = bookmarks.length > BOOKMARK_COLLAPSE_THRESHOLD;
         
         // 按时间排序
@@ -2293,92 +2295,172 @@ parseBookmarks(node, parentPath = []) {
         
         if (bookmarks.length === 0) return container;
         
-        // 浏览历史记录：直接显示平面列表（不按文件夹分组）
-        // 按时间倒序排列
+        // 浏览历史记录：使用平面列表，但当数量较多时折叠显示
+        const BOOKMARK_COLLAPSE_THRESHOLD = 10;
         const sortedBookmarks = [...bookmarks].sort((a, b) => b.dateAdded - a.dateAdded);
+        const shouldCollapse = sortedBookmarks.length > BOOKMARK_COLLAPSE_THRESHOLD;
+        const visibleCount = shouldCollapse ? BOOKMARK_COLLAPSE_THRESHOLD : sortedBookmarks.length;
         
-        sortedBookmarks.forEach(bookmark => {
-            const item = document.createElement('div');
-            item.style.display = 'flex';
-            item.style.alignItems = 'flex-start';
-            item.style.gap = '8px';
-            item.style.padding = '8px 10px';
-            item.style.border = '1px solid var(--border-color)';
-            item.style.borderRadius = '6px';
-            item.style.marginBottom = '6px';
-            item.style.cursor = 'pointer';
-            item.style.transition = 'all 0.2s';
-            item.dataset.bookmarkUrl = bookmark.url;
-            
-            const time = bookmark.dateAdded.toLocaleTimeString('zh-CN', { 
-                hour: '2-digit', 
-                minute: '2-digit'
-            });
-            
-            // 创建favicon图标
-            const faviconImg = document.createElement('img');
-            faviconImg.className = 'bookmark-favicon';
-            faviconImg.style.width = '16px';
-            faviconImg.style.height = '16px';
-            faviconImg.style.flexShrink = '0';
-            faviconImg.style.marginTop = '2px';
-            faviconImg.alt = '';
-            
-            if (typeof getFaviconUrl === 'function') {
-                faviconImg.src = getFaviconUrl(bookmark.url);
-            } else {
-                faviconImg.src = `chrome://favicon/${bookmark.url}`;
-            }
-            
-            item.appendChild(faviconImg);
-            
-            // 信息区域
-            const infoDiv = document.createElement('div');
-            infoDiv.style.flex = '1';
-            infoDiv.style.minWidth = '0';
-            infoDiv.innerHTML = `
-                <div style="font-size:13px;font-weight:500;word-break:break-word;line-height:1.4;" title="${this.escapeHtml(bookmark.title)}">
-                    ${this.escapeHtml(bookmark.title)}
-                </div>
-            `;
-            item.appendChild(infoDiv);
-            
-            // 时间区域
-            const timeDiv = document.createElement('div');
-            timeDiv.style.fontSize = '11px';
-            timeDiv.style.color = 'var(--text-tertiary)';
-            timeDiv.style.whiteSpace = 'nowrap';
-            timeDiv.style.flexShrink = '0';
-            timeDiv.style.marginTop = '2px';
-            timeDiv.textContent = time;
-            item.appendChild(timeDiv);
-            
-            // 异步加载高质量favicon
-            if (typeof FaviconCache !== 'undefined' && FaviconCache.fetch) {
-                FaviconCache.fetch(bookmark.url).then(faviconUrl => {
-                    if (faviconUrl) faviconImg.src = faviconUrl;
-                }).catch(() => {});
-            }
-            
-            item.addEventListener('click', () => {
-                chrome.tabs.create({ url: bookmark.url });
-            });
-            
-            item.addEventListener('mouseenter', () => {
-                const borderColor = this.selectMode ? '#4CAF50' : 'var(--accent-primary)';
-                item.style.background = 'var(--bg-secondary)';
-                item.style.borderColor = borderColor;
-            });
-            
-            item.addEventListener('mouseleave', () => {
-                item.style.background = 'transparent';
-                item.style.borderColor = 'var(--border-color)';
-            });
-            
+        // 先渲染前 N 个
+        for (let i = 0; i < visibleCount; i++) {
+            const item = this.createFlatHistoryBookmarkItem(sortedBookmarks[i]);
             container.appendChild(item);
-        });
+        }
+        
+        // 如果超过阈值，创建隐藏容器和展开按钮
+        if (shouldCollapse) {
+            const hiddenContainer = document.createElement('div');
+            hiddenContainer.style.display = 'none';
+            hiddenContainer.dataset.collapsed = 'true';
+            
+            for (let i = BOOKMARK_COLLAPSE_THRESHOLD; i < sortedBookmarks.length; i++) {
+                hiddenContainer.appendChild(this.createFlatHistoryBookmarkItem(sortedBookmarks[i]));
+            }
+            
+            container.appendChild(hiddenContainer);
+            
+            const toggleBtn = document.createElement('button');
+            toggleBtn.style.width = '100%';
+            toggleBtn.style.padding = '8px 12px';
+            toggleBtn.style.marginTop = '8px';
+            toggleBtn.style.border = '1px solid var(--border-color)';
+            const btnColor = this.selectMode ? '#4CAF50' : 'var(--accent-primary)';
+            toggleBtn.style.borderRadius = '6px';
+            toggleBtn.style.background = 'var(--bg-secondary)';
+            toggleBtn.style.color = 'var(--text-primary)';
+            toggleBtn.style.cursor = 'pointer';
+            toggleBtn.style.fontSize = '12px';
+            toggleBtn.style.fontWeight = '500';
+            toggleBtn.style.transition = 'all 0.2s';
+            toggleBtn.style.display = 'flex';
+            toggleBtn.style.alignItems = 'center';
+            toggleBtn.style.justifyContent = 'center';
+            toggleBtn.style.gap = '6px';
+            
+            const hiddenCount = sortedBookmarks.length - BOOKMARK_COLLAPSE_THRESHOLD;
+            const expandText = currentLang === 'en' ? `Show ${hiddenCount} more` : `展开更多 ${hiddenCount} 个`;
+            const collapseText = currentLang === 'en' ? 'Show less' : '收起';
+            
+            toggleBtn.innerHTML = `
+                <i class="fas fa-chevron-down" style="color:${btnColor};"></i>
+                <span>${expandText}</span>
+            `;
+            
+            toggleBtn.addEventListener('click', (e) => {
+                e.stopPropagation();
+                const isCollapsed = hiddenContainer.dataset.collapsed === 'true';
+                if (isCollapsed) {
+                    hiddenContainer.style.display = 'block';
+                    hiddenContainer.dataset.collapsed = 'false';
+                    toggleBtn.innerHTML = `
+                        <i class="fas fa-chevron-up" style="color:${btnColor};"></i>
+                        <span>${collapseText}</span>
+                    `;
+                } else {
+                    hiddenContainer.style.display = 'none';
+                    hiddenContainer.dataset.collapsed = 'true';
+                    toggleBtn.innerHTML = `
+                        <i class="fas fa-chevron-down" style="color:${btnColor};"></i>
+                        <span>${expandText}</span>
+                    `;
+                }
+            });
+            
+            toggleBtn.addEventListener('mouseenter', () => {
+                const hoverColor = this.selectMode ? '#4CAF50' : 'var(--accent-primary)';
+                toggleBtn.style.background = 'var(--bg-tertiary)';
+                toggleBtn.style.borderColor = hoverColor;
+                toggleBtn.style.color = hoverColor;
+            });
+            
+            toggleBtn.addEventListener('mouseleave', () => {
+                toggleBtn.style.background = 'var(--bg-secondary)';
+                toggleBtn.style.borderColor = 'var(--border-color)';
+                toggleBtn.style.color = 'var(--text-primary)';
+            });
+            
+            container.appendChild(toggleBtn);
+        }
         
         return container;
+    }
+    
+    // 浏览历史平面列表使用的单个条目（复用逻辑，便于折叠）
+    createFlatHistoryBookmarkItem(bookmark) {
+        const item = document.createElement('div');
+        item.style.display = 'flex';
+        item.style.alignItems = 'flex-start';
+        item.style.gap = '8px';
+        item.style.padding = '8px 10px';
+        item.style.border = '1px solid var(--border-color)';
+        item.style.borderRadius = '6px';
+        item.style.marginBottom = '6px';
+        item.style.cursor = 'pointer';
+        item.style.transition = 'all 0.2s';
+        item.dataset.bookmarkUrl = bookmark.url;
+        
+        const time = bookmark.dateAdded.toLocaleTimeString('zh-CN', { 
+            hour: '2-digit', 
+            minute: '2-digit'
+        });
+        
+        const faviconImg = document.createElement('img');
+        faviconImg.className = 'bookmark-favicon';
+        faviconImg.style.width = '16px';
+        faviconImg.style.height = '16px';
+        faviconImg.style.flexShrink = '0';
+        faviconImg.style.marginTop = '2px';
+        faviconImg.alt = '';
+        
+        if (typeof getFaviconUrl === 'function') {
+            faviconImg.src = getFaviconUrl(bookmark.url);
+        } else {
+            faviconImg.src = `chrome://favicon/${bookmark.url}`;
+        }
+        
+        item.appendChild(faviconImg);
+        
+        const infoDiv = document.createElement('div');
+        infoDiv.style.flex = '1';
+        infoDiv.style.minWidth = '0';
+        infoDiv.innerHTML = `
+            <div style="font-size:13px;font-weight:500;word-break:break-word;line-height:1.4;" title="${this.escapeHtml(bookmark.title)}">
+                ${this.escapeHtml(bookmark.title)}
+            </div>
+        `;
+        item.appendChild(infoDiv);
+        
+        const timeDiv = document.createElement('div');
+        timeDiv.style.fontSize = '11px';
+        timeDiv.style.color = 'var(--text-tertiary)';
+        timeDiv.style.whiteSpace = 'nowrap';
+        timeDiv.style.flexShrink = '0';
+        timeDiv.style.marginTop = '2px';
+        timeDiv.textContent = time;
+        item.appendChild(timeDiv);
+        
+        if (typeof FaviconCache !== 'undefined' && FaviconCache.fetch) {
+            FaviconCache.fetch(bookmark.url).then(faviconUrl => {
+                if (faviconUrl) faviconImg.src = faviconUrl;
+            }).catch(() => {});
+        }
+        
+        item.addEventListener('click', () => {
+            chrome.tabs.create({ url: bookmark.url });
+        });
+        
+        item.addEventListener('mouseenter', () => {
+            const borderColor = this.selectMode ? '#4CAF50' : 'var(--accent-primary)';
+            item.style.background = 'var(--bg-secondary)';
+            item.style.borderColor = borderColor;
+        });
+        
+        item.addEventListener('mouseleave', () => {
+            item.style.background = 'transparent';
+            item.style.borderColor = 'var(--border-color)';
+        });
+        
+        return item;
     }
 
     // ========== 周视图 ==========

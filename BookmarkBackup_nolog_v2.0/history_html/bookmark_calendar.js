@@ -2831,21 +2831,21 @@ class BookmarkCalendar {
         if (scopeText) {
             if (this.selectMode) {
                 const count = this.selectedDates.size;
-                scopeText.textContent = `当前勾选 (${count} 个日期)`;
+                scopeText.textContent = i18n.exportScopeSelected[currentLang].replace('{0}', count);
             } else {
                 let text = '';
                 switch (this.viewLevel) {
-                    case 'year': text = `${this.currentYear}年`; break;
-                    case 'month': text = `${this.currentYear}年${this.currentMonth + 1}月`; break;
+                    case 'year': text = t('calendarYear', this.currentYear); break;
+                    case 'month': text = formatYearMonth(this.currentYear, this.currentMonth); break;
                     case 'week': 
                         const weekNum = this.getWeekNumber(this.currentWeekStart);
-                        text = `${this.currentYear}年 第${weekNum}周`; 
+                        text = `${t('calendarYear', this.currentYear)} ${t('calendarWeek', weekNum)}`; 
                         break;
                     case 'day': 
-                        text = `${this.currentYear}年${this.currentMonth + 1}月${this.currentDay.getDate()}日`; 
+                        text = t('calendarYearMonthDay', this.currentYear, this.currentMonth + 1, this.currentDay.getDate()).replace('{0}', this.currentYear).replace('{1}', this.currentMonth + 1).replace('{2}', this.currentDay.getDate()); 
                         break;
                 }
-                scopeText.textContent = `当前视图: ${text}`;
+                scopeText.textContent = i18n.exportScopeCurrent[currentLang] + text;
             }
         }
         
@@ -2859,21 +2859,21 @@ class BookmarkCalendar {
         
         try {
             doExportBtn.disabled = true;
-            doExportBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> 正在处理...';
+            doExportBtn.innerHTML = `<i class="fas fa-spinner fa-spin"></i> ${i18n.exportBtnProcessing[currentLang]}`;
             
             // 获取选项
             const mode = document.querySelector('input[name="exportMode"]:checked')?.value || 'records';
             const formats = Array.from(document.querySelectorAll('input[name="exportFormat"]:checked')).map(cb => cb.value);
             
             if (formats.length === 0) {
-                alert('请至少选择一种导出格式');
+                alert(i18n.exportErrorNoFormat[currentLang]);
                 return;
             }
             
             // 获取数据
             const exportData = await this.getExportData(mode);
             if (!exportData || exportData.children.length === 0) {
-                alert('当前范围内没有可导出的书签');
+                alert(i18n.exportErrorNoData[currentLang]);
                 return;
             }
             
@@ -2891,7 +2891,7 @@ class BookmarkCalendar {
                 if (formats.includes('copy')) {
                     await this.copyToClipboard(htmlContent);
                     if (formats.length === 1) {
-                        alert('已复制到剪贴板');
+                        alert(i18n.exportSuccessCopy[currentLang]);
                     }
                 }
             }
@@ -2906,7 +2906,7 @@ class BookmarkCalendar {
             
         } catch (error) {
             console.error('导出失败:', error);
-            alert('导出失败: ' + error.message);
+            alert(i18n.error[currentLang] + ': ' + error.message);
         } finally {
             doExportBtn.disabled = false;
             doExportBtn.innerHTML = originalBtnText;
@@ -2947,23 +2947,24 @@ class BookmarkCalendar {
     // 辅助：获取导出范围名称（用于文件夹命名）
     getExportScopeName() {
         if (this.selectMode) {
-            return `Selected Dates (${this.selectedDates.size})`;
+            return i18n.exportScopeSelected[currentLang].replace('{0}', this.selectedDates.size);
         }
         switch (this.viewLevel) {
-            case 'year': return `${this.currentYear}年`;
-            case 'month': return `${this.currentYear}年${this.currentMonth + 1}月`;
+            case 'year': return t('calendarYear', this.currentYear);
+            case 'month': return formatYearMonth(this.currentYear, this.currentMonth);
             case 'week': 
                 const weekNum = this.getWeekNumber(this.currentWeekStart);
-                return `${this.currentYear}年 第${weekNum}周`;
+                // 需要组合 年 + 周
+                return `${t('calendarYear', this.currentYear)} ${t('calendarWeek', weekNum)}`;
             case 'day': 
-                return `${this.currentYear}年${this.currentMonth + 1}月${this.currentDay.getDate()}日`;
-            default: return "Bookmark Export";
+                return t('calendarYearMonthDay', this.currentYear, this.currentMonth + 1, this.currentDay.getDate()).replace('{0}', this.currentYear).replace('{1}', this.currentMonth + 1).replace('{2}', this.currentDay.getDate());
+            default: return i18n.exportRootTitle[currentLang];
         }
     }
 
     async getExportData(mode) {
         const root = {
-            title: "Bookmark Export",
+            title: i18n.exportRootTitle[currentLang],
             children: []
         };
 
@@ -3009,9 +3010,18 @@ class BookmarkCalendar {
                 
                 // 时间分组：周 -> 日
                 const weekNum = this.getWeekNumber(date);
-                const weekName = `第${weekNum}周`;
-                const weekdayStr = tw(date.getDay());
-                const dayName = `${String(m).padStart(2,'0')}月${String(d).padStart(2,'0')}日 ${weekdayStr}`; // e.g. "11月05日 周二"
+                const weekName = t('calendarWeek', weekNum);
+                
+                // 格式化日期：例如 "11月05日 周二" 或 "Nov 05 Tue"
+                let dayName;
+                if (currentLang === 'zh_CN') {
+                    dayName = `${String(m).padStart(2,'0')}月${String(d).padStart(2,'0')}日 ${tw(date.getDay())}`;
+                } else {
+                    // 英文格式: Nov 05 Mon
+                    const monthNamesShort = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+                    const dayOfWeekShort = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+                    dayName = `${monthNamesShort[m-1]} ${String(d).padStart(2,'0')} ${dayOfWeekShort[date.getDay()]}`;
+                }
 
                 const weekFolder = getOrCreateFolder(mainFolder, weekName);
                 const dayFolder = getOrCreateFolder(weekFolder, dayName);
@@ -3176,7 +3186,7 @@ class BookmarkCalendar {
         // 尝试使用 chrome.downloads API 以支持子目录
         if (chrome.downloads) {
             // 确定文件夹名称：中文环境下使用中文，否则使用英文
-            const folderName = (typeof currentLang !== 'undefined' && currentLang === 'zh_CN') ? '书签添加记录' : 'Bookmark Records';
+            const folderName = i18n.exportFolderName[currentLang] || 'Bookmark Records';
             
             chrome.downloads.download({
                 url: url,

@@ -1077,6 +1077,99 @@ const i18n = {
     additionsAnkiDescription: {
         'zh_CN': '未来会在这里加入基于 Anki 的复习节奏，帮助你按记忆曲线重新回顾书签。',
         'en': 'An Anki-based review flow will be added here to help you revisit bookmarks along a memory curve.'
+    },
+    // 导出功能翻译
+    exportTooltip: {
+        'zh_CN': '导出记录',
+        'en': 'Export Records'
+    },
+    exportModalTitle: {
+        'zh_CN': '导出书签记录',
+        'en': 'Export Bookmarks'
+    },
+    exportScopeLabel: {
+        'zh_CN': '导出范围',
+        'en': 'Export Scope'
+    },
+    exportScopeCurrent: {
+        'zh_CN': '当前视图: ',
+        'en': 'Current View: '
+    },
+    exportScopeSelected: {
+        'zh_CN': '当前勾选 ({0} 个日期)',
+        'en': 'Selected ({0} dates)'
+    },
+    exportModeLabel: {
+        'zh_CN': '导出模式',
+        'en': 'Export Mode'
+    },
+    exportModeRecords: {
+        'zh_CN': '仅导出添加记录',
+        'en': 'Records Only'
+    },
+    exportModeRecordsDesc: {
+        'zh_CN': '(仅现有记录)',
+        'en': '(Current records only)'
+    },
+    exportModeContext: {
+        'zh_CN': '现记录关联导出',
+        'en': 'Context Export'
+    },
+    exportModeContextDesc: {
+        'zh_CN': '(包含同文件夹下的其他书签)',
+        'en': '(Includes siblings in folder)'
+    },
+    exportModeCollection: {
+        'zh_CN': '集合导出到日期文件夹',
+        'en': 'Collection Export'
+    },
+    exportModeCollectionDesc: {
+        'zh_CN': '(按日期归档，不保留原目录名)',
+        'en': '(Group by date, flat structure)'
+    },
+    exportFormatLabel: {
+        'zh_CN': '导出格式',
+        'en': 'Export Format'
+    },
+    exportFormatHtml: {
+        'zh_CN': 'HTML (浏览器可导入)',
+        'en': 'HTML (Importable)'
+    },
+    exportFormatJson: {
+        'zh_CN': 'JSON',
+        'en': 'JSON'
+    },
+    exportFormatCopy: {
+        'zh_CN': '复制到剪贴板',
+        'en': 'Copy to Clipboard'
+    },
+    exportBtnStart: {
+        'zh_CN': '开始导出',
+        'en': 'Start Export'
+    },
+    exportBtnProcessing: {
+        'zh_CN': '正在处理...',
+        'en': 'Processing...'
+    },
+    exportSuccessCopy: {
+        'zh_CN': '已复制到剪贴板',
+        'en': 'Copied to clipboard'
+    },
+    exportErrorNoFormat: {
+        'zh_CN': '请至少选择一种导出格式',
+        'en': 'Please select at least one format'
+    },
+    exportErrorNoData: {
+        'zh_CN': '当前范围内没有可导出的书签',
+        'en': 'No bookmarks to export in current scope'
+    },
+    exportFolderName: {
+        'zh_CN': '书签添加记录',
+        'en': 'Bookmark Records'
+    },
+    exportRootTitle: {
+        'zh_CN': '书签导出',
+        'en': 'Bookmark Export'
     }
 };
 
@@ -1553,6 +1646,55 @@ function applyLanguage() {
     const additionsAnkiDescription = document.getElementById('additionsAnkiDescription');
     if (additionsAnkiDescription) additionsAnkiDescription.textContent = i18n.additionsAnkiDescription[currentLang];
     
+    // 导出相关翻译
+    const exportTooltip = document.getElementById('calendarExportTooltip');
+    if (exportTooltip) exportTooltip.textContent = i18n.exportTooltip[currentLang];
+    
+    const exportModalTitle = document.getElementById('exportModalTitle');
+    if (exportModalTitle) exportModalTitle.textContent = i18n.exportModalTitle[currentLang];
+    
+    const doExportBtn = document.getElementById('doExportBtn');
+    if (doExportBtn) {
+        // 保留图标
+        const icon = doExportBtn.querySelector('i');
+        doExportBtn.childNodes[doExportBtn.childNodes.length - 1].textContent = ' ' + i18n.exportBtnStart[currentLang];
+    }
+
+    // 更新导出弹窗内的标签（需要遍历查找，因为没有ID，或者我们给它们加ID）
+    // 这里为了简单，我们在HTML中添加data-i18n属性会更好，但现在直接操作DOM
+    // 重新打开弹窗时也会触发文本更新（见 BookmarkCalendar.openExportModal）
+    // 但我们需要在 applyLanguage 中也处理一下静态文本
+    
+    document.querySelectorAll('#exportModal h4').forEach((h4, index) => {
+        if (index === 0) h4.textContent = i18n.exportScopeLabel[currentLang];
+        if (index === 1) h4.textContent = i18n.exportModeLabel[currentLang];
+        if (index === 2) h4.textContent = i18n.exportFormatLabel[currentLang];
+    });
+
+    // 导出选项文本更新
+    const updateRadioLabel = (val, titleKey, descKey) => {
+        const input = document.querySelector(`input[name="exportMode"][value="${val}"]`);
+        if (input && input.nextElementSibling) {
+            const span = input.nextElementSibling;
+            span.innerHTML = `${i18n[titleKey][currentLang]} <small style="color: var(--text-tertiary);">${i18n[descKey][currentLang]}</small>`;
+        }
+    };
+    
+    updateRadioLabel('records', 'exportModeRecords', 'exportModeRecordsDesc');
+    updateRadioLabel('context', 'exportModeContext', 'exportModeContextDesc');
+    updateRadioLabel('collection', 'exportModeCollection', 'exportModeCollectionDesc');
+
+    const updateCheckboxLabel = (val, titleKey) => {
+        const input = document.querySelector(`input[name="exportFormat"][value="${val}"]`);
+        if (input && input.nextElementSibling) {
+            input.nextElementSibling.textContent = i18n[titleKey][currentLang];
+        }
+    };
+
+    updateCheckboxLabel('html', 'exportFormatHtml');
+    updateCheckboxLabel('json', 'exportFormatJson');
+    updateCheckboxLabel('copy', 'exportFormatCopy');
+
     // 更新语言切换按钮
     document.querySelector('#langToggle .lang-text').textContent = currentLang === 'zh_CN' ? 'EN' : '中';
     

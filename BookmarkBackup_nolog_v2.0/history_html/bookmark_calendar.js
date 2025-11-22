@@ -1467,9 +1467,9 @@ class BookmarkCalendar {
         
         const item = document.createElement('div');
         item.style.display = 'flex';
-        item.style.alignItems = 'center';
+        item.style.alignItems = 'flex-start';
         item.style.gap = '8px';
-        item.style.padding = '6px 10px';
+        item.style.padding = '8px 10px';
         item.style.border = '1px solid var(--border-color)';
         item.style.borderRadius = '6px';
         item.style.marginBottom = '6px';
@@ -1488,6 +1488,7 @@ class BookmarkCalendar {
         faviconImg.style.width = '16px';
         faviconImg.style.height = '16px';
         faviconImg.style.flexShrink = '0';
+        faviconImg.style.marginTop = '2px'; // 微调对齐
         faviconImg.alt = '';
         
         // 使用全局的 getFaviconUrl 函数（如果存在）
@@ -1505,7 +1506,7 @@ class BookmarkCalendar {
         infoDiv.style.flex = '1';
         infoDiv.style.minWidth = '0';
         infoDiv.innerHTML = `
-            <div style="font-size:13px;font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${this.escapeHtml(bookmark.title)}">
+            <div style="font-size:13px;font-weight:500;word-break:break-word;line-height:1.4;" title="${this.escapeHtml(bookmark.title)}">
                 ${this.escapeHtml(bookmark.title)}
             </div>
         `;
@@ -1516,6 +1517,8 @@ class BookmarkCalendar {
         timeDiv.style.fontSize = '11px';
         timeDiv.style.color = 'var(--text-tertiary)';
         timeDiv.style.whiteSpace = 'nowrap';
+        timeDiv.style.flexShrink = '0';
+        timeDiv.style.marginTop = '2px'; // 微调对齐
         timeDiv.textContent = time;
         item.appendChild(timeDiv);
         
@@ -1918,15 +1921,6 @@ class BookmarkCalendar {
         
         // 判断是否自动展开（总书签数<=20）
         const autoExpand = bookmarks.length <= 20;
-        
-        // 判断是否需要双列显示（总数超过20个）
-        const shouldUseColumns = bookmarks.length > 20;
-        
-        if (shouldUseColumns) {
-            container.style.display = 'grid';
-            container.style.gridTemplateColumns = 'repeat(2, 1fr)';
-            container.style.gap = '20px';
-        }
         
         // 构建树结构
         const tree = this.buildBookmarkTree(bookmarks);

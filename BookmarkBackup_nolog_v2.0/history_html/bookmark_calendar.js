@@ -215,6 +215,12 @@ class BookmarkCalendar {
         
         // 定位至今天按钮
         document.getElementById('calendarLocateTodayBtn')?.addEventListener('click', () => this.locateToToday());
+
+        // 导出按钮
+        document.getElementById('calendarExportBtn')?.addEventListener('click', () => this.openExportModal());
+        
+        // 导出模态框初始化
+        this.setupExportUI();
         
         // 设置下拉菜单功能
         this.setupDropdownMenus();
@@ -2790,6 +2796,430 @@ class BookmarkCalendar {
         
         wrapper.appendChild(yearGrid);
         container.appendChild(wrapper);
+    }
+
+    // ========== 导出功能 ==========
+
+    setupExportUI() {
+        const modal = document.getElementById('exportModal');
+        const closeBtn = document.getElementById('closeExportModal');
+        const doExportBtn = document.getElementById('doExportBtn');
+        
+        if (closeBtn) {
+            closeBtn.addEventListener('click', () => {
+                modal.classList.remove('show');
+            });
+        }
+        
+        if (modal) {
+            modal.addEventListener('click', (e) => {
+                if (e.target === modal) modal.classList.remove('show');
+            });
+        }
+        
+        if (doExportBtn) {
+            doExportBtn.addEventListener('click', () => this.handleExport());
+        }
+    }
+    
+    openExportModal() {
+        const modal = document.getElementById('exportModal');
+        if (!modal) return;
+        
+        // 更新范围说明
+        const scopeText = document.getElementById('exportScopeText');
+        if (scopeText) {
+            if (this.selectMode) {
+                const count = this.selectedDates.size;
+                scopeText.textContent = `当前勾选 (${count} 个日期)`;
+            } else {
+                let text = '';
+                switch (this.viewLevel) {
+                    case 'year': text = `${this.currentYear}年`; break;
+                    case 'month': text = `${this.currentYear}年${this.currentMonth + 1}月`; break;
+                    case 'week': 
+                        const weekNum = this.getWeekNumber(this.currentWeekStart);
+                        text = `${this.currentYear}年 第${weekNum}周`; 
+                        break;
+                    case 'day': 
+                        text = `${this.currentYear}年${this.currentMonth + 1}月${this.currentDay.getDate()}日`; 
+                        break;
+                }
+                scopeText.textContent = `当前视图: ${text}`;
+            }
+        }
+        
+        modal.classList.add('show');
+    }
+    
+    async handleExport() {
+        const modal = document.getElementById('exportModal');
+        const doExportBtn = document.getElementById('doExportBtn');
+        const originalBtnText = doExportBtn.innerHTML;
+        
+        try {
+            doExportBtn.disabled = true;
+            doExportBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> 正在处理...';
+            
+            // 获取选项
+            const mode = document.querySelector('input[name="exportMode"]:checked')?.value || 'records';
+            const formats = Array.from(document.querySelectorAll('input[name="exportFormat"]:checked')).map(cb => cb.value);
+            
+            if (formats.length === 0) {
+                alert('请至少选择一种导出格式');
+                return;
+            }
+            
+            // 获取数据
+            const exportData = await this.getExportData(mode);
+            if (!exportData || exportData.children.length === 0) {
+                alert('当前范围内没有可导出的书签');
+                return;
+            }
+            
+            const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
+            const filenameBase = `bookmarks_export_${timestamp}`;
+            
+            // 导出 HTML
+            if (formats.includes('html') || formats.includes('copy')) {
+                const htmlContent = this.generateNetscapeHTML(exportData);
+                
+                if (formats.includes('html')) {
+                    this.downloadFile(htmlContent, `${filenameBase}.html`, 'text/html');
+                }
+                
+                if (formats.includes('copy')) {
+                    await this.copyToClipboard(htmlContent);
+                    if (formats.length === 1) {
+                        alert('已复制到剪贴板');
+                    }
+                }
+            }
+            
+            // 导出 JSON
+            if (formats.includes('json')) {
+                const jsonContent = JSON.stringify(exportData, null, 2);
+                this.downloadFile(jsonContent, `${filenameBase}.json`, 'application/json');
+            }
+            
+            modal.classList.remove('show');
+            
+        } catch (error) {
+            console.error('导出失败:', error);
+            alert('导出失败: ' + error.message);
+        } finally {
+            doExportBtn.disabled = false;
+            doExportBtn.innerHTML = originalBtnText;
+        }
+    }
+    
+    // 辅助：判断日期是否在当前导出范围内
+    checkDateInScope(dateKey) {
+        if (this.selectMode) {
+            return this.selectedDates.has(dateKey);
+        }
+        
+        if (this.viewLevel === 'year') {
+            return dateKey.startsWith(`${this.currentYear}-`);
+        }
+        if (this.viewLevel === 'month') {
+            const m = String(this.currentMonth + 1).padStart(2, '0');
+            return dateKey.startsWith(`${this.currentYear}-${m}-`);
+        }
+        if (this.viewLevel === 'day') {
+            return dateKey === this.getDateKey(this.currentDay);
+        }
+        if (this.viewLevel === 'week') {
+            const [y, m, day] = dateKey.split('-').map(Number);
+            const localDate = new Date(y, m - 1, day);
+            
+            const start = new Date(this.currentWeekStart);
+            start.setHours(0,0,0,0);
+            const end = new Date(start);
+            end.setDate(end.getDate() + 6);
+            end.setHours(23,59,59,999);
+            
+            return localDate >= start && localDate <= end;
+        }
+        return false;
+    }
+
+    // 辅助：获取导出范围名称（用于文件夹命名）
+    getExportScopeName() {
+        if (this.selectMode) {
+            return `Selected Dates (${this.selectedDates.size})`;
+        }
+        switch (this.viewLevel) {
+            case 'year': return `${this.currentYear}年`;
+            case 'month': return `${this.currentYear}年${this.currentMonth + 1}月`;
+            case 'week': 
+                const weekNum = this.getWeekNumber(this.currentWeekStart);
+                return `${this.currentYear}年 第${weekNum}周`;
+            case 'day': 
+                return `${this.currentYear}年${this.currentMonth + 1}月${this.currentDay.getDate()}日`;
+            default: return "Bookmark Export";
+        }
+    }
+
+    async getExportData(mode) {
+        const root = {
+            title: "Bookmark Export",
+            children: []
+        };
+
+        // 1. 创建顶层大文件夹（包含时间/范围信息）
+        const mainFolderName = this.getExportScopeName();
+        const mainFolder = {
+            title: mainFolderName,
+            type: 'folder',
+            children: []
+        };
+        root.children.push(mainFolder);
+
+        // 辅助函数：获取或创建子文件夹
+        const getOrCreateFolder = (parent, name) => {
+            let folder = parent.children.find(c => c.type === 'folder' && c.title === name);
+            if (!folder) {
+                folder = { title: name, type: 'folder', children: [] };
+                parent.children.push(folder);
+            }
+            return folder;
+        };
+
+        // 2. 收集所有符合范围的书签（按日期排序）
+        const sortedDateKeys = [...this.bookmarksByDate.keys()].sort();
+        let allTargetBookmarks = []; // 用于 collection 和 context 模式
+
+        if (mode === 'records') {
+            // RECORDS 模式：按照 时间(周->日) -> 原始目录结构 组织
+            const ensurePath = (rootNode, pathArray) => {
+                let current = rootNode;
+                for (const folderName of pathArray) {
+                    current = getOrCreateFolder(current, folderName);
+                }
+                return current;
+            };
+
+            for (const dateKey of sortedDateKeys) {
+                if (!this.checkDateInScope(dateKey)) continue;
+
+                const bookmarks = this.bookmarksByDate.get(dateKey);
+                const [y, m, d] = dateKey.split('-').map(Number);
+                const date = new Date(y, m - 1, d);
+                
+                // 时间分组：周 -> 日
+                const weekNum = this.getWeekNumber(date);
+                const weekName = `第${weekNum}周`;
+                const weekdayStr = tw(date.getDay());
+                const dayName = `${String(m).padStart(2,'0')}月${String(d).padStart(2,'0')}日 ${weekdayStr}`; // e.g. "11月05日 周二"
+
+                const weekFolder = getOrCreateFolder(mainFolder, weekName);
+                const dayFolder = getOrCreateFolder(weekFolder, dayName);
+
+                // 在日期文件夹下，重建原始目录结构
+                bookmarks.forEach(bm => {
+                    const path = bm.folderPath || [];
+                    const parentFolder = ensurePath(dayFolder, path);
+                    
+                    parentFolder.children.push({
+                        title: bm.title,
+                        url: bm.url,
+                        addDate: bm.dateAdded.getTime() / 1000,
+                        type: 'bookmark'
+                    });
+                });
+            }
+            // 如果没有内容，给予提示
+            if (mainFolder.children.length === 0 && sortedDateKeys.length > 0) {
+                 // 可能是范围没匹配到，但理论上 sortedDateKeys 应该包含所有。
+                 // 这里不做特殊处理，返回空文件夹即可。
+            }
+
+        } else {
+            // COLLECTION 和 CONTEXT 模式：先扁平化收集所有书签
+            for (const dateKey of sortedDateKeys) {
+                if (this.checkDateInScope(dateKey)) {
+                    allTargetBookmarks.push(...this.bookmarksByDate.get(dateKey));
+                }
+            }
+
+            if (allTargetBookmarks.length === 0) return root;
+
+            if (mode === 'collection') {
+                // COLLECTION 模式：全部直接放在主文件夹下（扁平）
+                allTargetBookmarks.forEach(bm => {
+                    mainFolder.children.push({
+                        title: bm.title,
+                        url: bm.url,
+                        addDate: bm.dateAdded.getTime() / 1000,
+                        type: 'bookmark'
+                    });
+                });
+
+            } else if (mode === 'context') {
+                // CONTEXT 模式：按父文件夹分组，并包含兄弟节点
+                const ids = allTargetBookmarks.map(bm => bm.id);
+                const parentIds = new Set();
+                
+                const getBookmarks = (idList) => new Promise((resolve) => {
+                    if (!chrome.bookmarks) { resolve([]); return; }
+                    chrome.bookmarks.get(idList, (results) => {
+                        if (chrome.runtime.lastError) {
+                            console.warn(chrome.runtime.lastError);
+                            resolve([]);
+                        } else {
+                            resolve(results);
+                        }
+                    });
+                });
+                
+                // 批量获取书签以得到 parentId
+                for (let i = 0; i < ids.length; i += 50) {
+                    const chunk = ids.slice(i, i + 50);
+                    const nodes = await getBookmarks(chunk);
+                    nodes?.forEach(node => parentIds.add(node.parentId));
+                }
+                
+                // 对每个父文件夹，获取其所有子节点（上下文）
+                for (const parentId of parentIds) {
+                    try {
+                        const [folderNode] = await new Promise(r => chrome.bookmarks.get(parentId, r));
+                        if (!folderNode) continue;
+                        
+                        const children = await new Promise(r => chrome.bookmarks.getChildren(parentId, r));
+                        
+                        // 创建文件夹节点
+                        const folderObj = {
+                            title: folderNode.title,
+                            addDate: folderNode.dateAdded,
+                            lastModified: folderNode.dateGroupModified,
+                            type: 'folder',
+                            children: children.map(child => {
+                                if (child.url) {
+                                    return {
+                                        title: child.title,
+                                        url: child.url,
+                                        addDate: child.dateAdded,
+                                        type: 'bookmark'
+                                    };
+                                } else {
+                                    return {
+                                        title: child.title,
+                                        type: 'folder',
+                                        children: []
+                                    };
+                                }
+                            })
+                        };
+                        // 将文件夹加入到主文件夹下
+                        mainFolder.children.push(folderObj);
+                    } catch (e) {
+                        console.warn('Error processing folder context:', e);
+                    }
+                }
+            }
+        }
+        
+        return root;
+    }
+    
+    generateNetscapeHTML(root) {
+        let html = `<!DOCTYPE NETSCAPE-Bookmark-file-1>
+<!-- This is an automatically generated file.
+     It will be read and overwritten.
+     DO NOT EDIT! -->
+<META HTTP-EQUIV="Content-Type" CONTENT="text/html; charset=UTF-8">
+<TITLE>Bookmarks</TITLE>
+<H1>Bookmarks</H1>
+<DL><p>
+`;
+        
+        const processNode = (node) => {
+            let chunk = '';
+            if (node.type === 'bookmark') {
+                chunk += `    <DT><A HREF="${node.url}" ADD_DATE="${Math.floor(node.addDate || 0)}">${this.escapeHtml(node.title)}</A>\n`;
+            } else if (node.children) {
+                if (node.title !== "Bookmark Export" && node.title !== "Root") {
+                     chunk += `    <DT><H3 ADD_DATE="${Math.floor(node.addDate || 0)}" LAST_MODIFIED="${Math.floor(node.lastModified || 0)}">${this.escapeHtml(node.title)}</H3>\n`;
+                }
+                chunk += `    <DL><p>\n`;
+                node.children.forEach(child => {
+                    chunk += processNode(child);
+                });
+                chunk += `    </DL><p>\n`;
+            }
+            return chunk;
+        };
+        
+        root.children.forEach(child => {
+            html += processNode(child);
+        });
+        
+        html += `</DL><p>`;
+        return html;
+    }
+    
+    escapeHtml(text) {
+        if (!text) return '';
+        return text
+            .replace(/&/g, "&amp;")
+            .replace(/</g, "&lt;")
+            .replace(/>/g, "&gt;")
+            .replace(/"/g, "&quot;")
+            .replace(/'/g, "&#039;");
+    }
+    
+    downloadFile(content, filename, type) {
+        const blob = new Blob([content], { type: type });
+        const url = URL.createObjectURL(blob);
+        
+        // 尝试使用 chrome.downloads API 以支持子目录
+        if (chrome.downloads) {
+            // 确定文件夹名称：中文环境下使用中文，否则使用英文
+            const folderName = (typeof currentLang !== 'undefined' && currentLang === 'zh_CN') ? '书签添加记录' : 'Bookmark Records';
+            
+            chrome.downloads.download({
+                url: url,
+                filename: `${folderName}/${filename}`,
+                saveAs: false,
+                conflictAction: 'uniquify'
+            }, (downloadId) => {
+                if (chrome.runtime.lastError) {
+                    console.warn('chrome.downloads API failed, falling back to <a> tag:', chrome.runtime.lastError);
+                    this._downloadFallback(url, filename);
+                } else {
+                    // 下载成功启动，延迟释放URL
+                    setTimeout(() => URL.revokeObjectURL(url), 10000);
+                }
+            });
+        } else {
+            // 降级方案
+            this._downloadFallback(url, filename);
+        }
+    }
+    
+    _downloadFallback(url, filename) {
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = filename;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        setTimeout(() => URL.revokeObjectURL(url), 1000);
+    }
+    
+    async copyToClipboard(text) {
+        try {
+            await navigator.clipboard.writeText(text);
+        } catch (err) {
+            console.error('复制失败:', err);
+            const textarea = document.createElement('textarea');
+            textarea.value = text;
+            document.body.appendChild(textarea);
+            textarea.select();
+            document.execCommand('copy');
+            document.body.removeChild(textarea);
+        }
     }
 }
 

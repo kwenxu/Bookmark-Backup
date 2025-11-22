@@ -171,12 +171,18 @@
     cursor: pointer;
     border-radius: 6px;
     transition: all 0.2s ease;
+    position: relative; /* 为tooltip定位 */
 }
 
 .calendar-action-btn:hover {
     background: var(--bg-secondary);
     border-color: var(--accent-primary);
     color: var(--accent-primary);
+}
+
+.calendar-action-btn:hover .btn-tooltip {
+    visibility: visible;
+    opacity: 1;
 }
 
 .calendar-action-btn.active {

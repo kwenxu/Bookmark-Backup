@@ -552,6 +552,10 @@ class BookmarkCalendar {
                 break;
             case 'month':
                 this.renderMonthView(container);
+                // 月视图完成后，同步左右两侧的高度
+                requestAnimationFrame(() => {
+                    this.syncMonthViewHeights();
+                });
                 break;
             case 'week':
                 this.renderWeekView(container);
@@ -564,6 +568,57 @@ class BookmarkCalendar {
         this.updateBreadcrumb();
     }
 
+    // 同步月视图左右两侧的高度对齐
+    syncMonthViewHeights() {
+        const topSection = document.querySelector('[data-calendar-top-section]');
+        if (!topSection) return;
+        
+        const weeksColumn = topSection.querySelector('[data-weeks-column]');
+        const calendarWrapper = topSection.querySelector('[data-calendar-wrapper]');
+        
+        if (!weeksColumn || !calendarWrapper) return;
+        
+        // 同步顶部导航和周标签的高度
+        const navPlaceholder = weeksColumn.querySelector('[data-nav-placeholder]');
+        const rightHeader = calendarWrapper.querySelector('[data-calendar-header]');
+        if (navPlaceholder && rightHeader) {
+            const rightHeaderHeight = rightHeader.offsetHeight;
+            navPlaceholder.style.height = rightHeaderHeight + 'px';
+            navPlaceholder.style.minHeight = rightHeaderHeight + 'px';
+        }
+        
+        // 同步周标签和weekday标题的高度
+        const weekHeader = weeksColumn.querySelector('[data-week-label]');
+        const weekdayHeader = calendarWrapper.querySelector('[data-weekday-header]');
+        if (weekHeader && weekdayHeader) {
+            const weekdayHeaderHeight = weekdayHeader.offsetHeight;
+            weekHeader.style.height = weekdayHeaderHeight + 'px';
+            weekHeader.style.minHeight = weekdayHeaderHeight + 'px';
+        }
+        
+        // 同步周数容器和日历网格的高度及行高
+        const weeksContainer = weeksColumn.querySelector('[data-weeks-container]');
+        const grid = calendarWrapper.querySelector('[data-calendar-grid]');
+        if (weeksContainer && grid) {
+            const gridHeight = grid.offsetHeight;
+            const gridRows = weeksContainer.querySelectorAll('[data-week-div]').length;
+            weeksContainer.style.height = gridHeight + 'px';
+            
+            // 计算gap的总高度
+            const gap = 10; // 与grid的gap一致
+            const totalGapHeight = (gridRows - 1) * gap;
+            const availableHeight = gridHeight - totalGapHeight;
+            const rowHeight = availableHeight / gridRows;
+            
+            weeksContainer.style.gridTemplateRows = `repeat(${gridRows}, ${rowHeight}px)`;
+            
+            // 同步每一行的高度
+            weeksContainer.querySelectorAll('[data-week-div]').forEach((weekDiv) => {
+                weekDiv.style.height = rowHeight + 'px';
+            });
+        }
+    }
+
     // ========== 月视图（默认） ==========
     
     renderMonthView(container) {
@@ -574,6 +629,7 @@ class BookmarkCalendar {
         const topSection = document.createElement('div');
         topSection.style.display = 'flex';
         topSection.style.gap = '20px';
+        topSection.setAttribute('data-calendar-top-section', '');
         
         // 左侧周数
         topSection.appendChild(this.createWeeksColumn());
@@ -591,6 +647,7 @@ class BookmarkCalendar {
 
     createWeeksColumn() {
         const column = document.createElement('div');
+        column.setAttribute('data-weeks-column', '');
         column.style.minWidth = '50px';
         column.style.borderRight = '1px solid var(--border-color)';
         column.style.paddingRight = '10px';
@@ -599,6 +656,7 @@ class BookmarkCalendar {
         
         // 占位：与右侧月份导航对齐
         const navPlaceholder = document.createElement('div');
+        navPlaceholder.setAttribute('data-nav-placeholder', '');
         navPlaceholder.style.display = 'flex';
         navPlaceholder.style.alignItems = 'center';
         navPlaceholder.style.justifyContent = 'center';
@@ -608,11 +666,13 @@ class BookmarkCalendar {
         
         // 周标签：与右侧星期标题对齐
         const header = document.createElement('div');
+        header.setAttribute('data-week-label', '');
         header.style.display = 'flex';
         header.style.alignItems = 'center';
         header.style.justifyContent = 'center';
-        header.style.fontSize = '12px';
-        header.style.color = 'var(--text-tertiary)';
+        header.style.fontSize = '18px';
+        header.style.fontWeight = '700';
+        header.style.color = '#2196F3';
         header.style.padding = '8px 0';
         header.style.marginBottom = '10px';
         header.textContent = t('calendarWeekLabel');
@@ -639,6 +699,7 @@ class BookmarkCalendar {
         
         // 创建周数容器，使其与右侧日历单元格对齐
         const weeksContainer = document.createElement('div');
+        weeksContainer.setAttribute('data-weeks-container', '');
         weeksContainer.style.display = 'grid';
         weeksContainer.style.gridTemplateRows = `repeat(${numRows}, 1fr)`;
         weeksContainer.style.gap = '10px';
@@ -650,6 +711,7 @@ class BookmarkCalendar {
             const weekMondayCopy = new Date(weekMonday);
             
             const weekDiv = document.createElement('div');
+            weekDiv.setAttribute('data-week-div', '');
             weekDiv.style.display = 'flex';
             weekDiv.style.alignItems = 'center';
             weekDiv.style.justifyContent = 'center';
@@ -657,7 +719,8 @@ class BookmarkCalendar {
             weekDiv.style.borderRadius = '6px';
             weekDiv.style.transition = 'all 0.2s';
             weekDiv.style.fontSize = '14px';
-            weekDiv.style.fontWeight = '500';
+            weekDiv.style.fontWeight = '600';
+            weekDiv.style.color = '#2196F3';
             weekDiv.textContent = weekNum;
             
             weekDiv.addEventListener('click', () => {
@@ -684,10 +747,12 @@ class BookmarkCalendar {
 
     createMonthCalendar() {
         const wrapper = document.createElement('div');
+        wrapper.setAttribute('data-calendar-wrapper', '');
         wrapper.style.flex = '1';
         
         // 导航
         const header = document.createElement('div');
+        header.setAttribute('data-calendar-header', '');
         header.style.display = 'flex';
         header.style.justifyContent = 'space-between';
         header.style.alignItems = 'center';
@@ -731,6 +796,7 @@ class BookmarkCalendar {
         
         // 星期标题行（独立于日历网格）
         const weekdayHeader = document.createElement('div');
+        weekdayHeader.setAttribute('data-weekday-header', '');
         weekdayHeader.style.display = 'grid';
         weekdayHeader.style.gridTemplateColumns = 'repeat(7, 1fr)';
         weekdayHeader.style.gap = '10px';
@@ -750,6 +816,7 @@ class BookmarkCalendar {
         
         // 日历网格（仅包含日期单元格）
         const grid = document.createElement('div');
+        grid.setAttribute('data-calendar-grid', '');
         grid.style.display = 'grid';
         grid.style.gridTemplateColumns = 'repeat(7, 1fr)';
         grid.style.gap = '10px';

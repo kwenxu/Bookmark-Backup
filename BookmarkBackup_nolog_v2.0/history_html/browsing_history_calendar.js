@@ -1654,11 +1654,26 @@ class BrowsingHistoryCalendar {
             dayHeader.style.justifyContent = 'space-between';
             dayHeader.style.alignItems = 'center';
 
-            dayHeader.innerHTML = `
+            // 创建标题和书签数量的容器
+            const titleContainer = document.createElement('div');
+            titleContainer.style.display = 'flex';
+            titleContainer.style.alignItems = 'center';
+            titleContainer.style.gap = '12px';
+            titleContainer.innerHTML = `
                 <span><i class="fas fa-calendar-day"></i> ${tw(date.getDay())} ${t('calendarMonthDay', date.getMonth() + 1, date.getDate())}${isDayToday ? ` <span style="color: ${todayColor};">(${currentLang === 'en' ? 'Today' : '今天'})</span>` : ''}</span>
                 <span style="font-size:14px;color:var(--text-secondary);">${t('calendarBookmarksCount', bookmarks.length)}</span>
             `;
 
+            // 创建导出按钮
+            const headerText = `${tw(date.getDay())} ${t('calendarMonthDay', date.getMonth() + 1, date.getDate())}`;
+            const exportBtn = this.createInlineExportButton({
+                title: headerText,
+                type: 'day',
+                data: { date: new Date(date) }
+            });
+
+            dayHeader.appendChild(titleContainer);
+            dayHeader.appendChild(exportBtn);
             contentArea.appendChild(dayHeader);
 
             if (!bookmarks.length) {
@@ -1694,7 +1709,12 @@ class BrowsingHistoryCalendar {
             hourHeader.style.justifyContent = 'space-between';
             hourHeader.style.alignItems = 'center';
 
-            hourHeader.innerHTML = `
+            // 创建标题和书签数量的容器
+            const titleContainer = document.createElement('div');
+            titleContainer.style.display = 'flex';
+            titleContainer.style.alignItems = 'center';
+            titleContainer.style.gap = '12px';
+            titleContainer.innerHTML = `
                 <span>
                     <i class="fas fa-calendar-day"></i> ${tw(date.getDay())} ${t('calendarMonthDay', date.getMonth() + 1, date.getDate())}${isDayToday ? ` <span style="color: ${todayColor};">(${currentLang === 'en' ? 'Today' : '今天'})</span>` : ''}
                     <span style="margin-left:12px;">${String(hour).padStart(2, '0')}:00-${String(hour).padStart(2, '0')}:59</span>
@@ -1702,6 +1722,19 @@ class BrowsingHistoryCalendar {
                 <span style="font-size:14px;color:var(--text-secondary);">${t('calendarBookmarksCount', hourBookmarks.length)}</span>
             `;
 
+            // 创建导出按钮 - 包含完整日期
+            const fullDatePart = currentLang === 'zh_CN'
+                ? `${date.getFullYear()}年${date.getMonth() + 1}月${date.getDate()}日`
+                : `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+            const headerText = `${fullDatePart} ${String(hour).padStart(2, '0')}:00-${String(hour).padStart(2, '0')}:59`;
+            const exportBtn = this.createInlineExportButton({
+                title: headerText,
+                type: 'hour',
+                data: { date: new Date(date), hour }
+            });
+
+            hourHeader.appendChild(titleContainer);
+            hourHeader.appendChild(exportBtn);
             contentArea.appendChild(hourHeader);
 
             // 显示该小时的书签列表（带折叠）
@@ -1728,11 +1761,28 @@ class BrowsingHistoryCalendar {
 
             const totalCount = weekData.reduce((sum, item) => sum + item.bookmarks.length, 0);
 
-            weekHeader.innerHTML = `
+            // 创建标题和书签数量的容器
+            const titleContainer = document.createElement('div');
+            titleContainer.style.display = 'flex';
+            titleContainer.style.alignItems = 'center';
+            titleContainer.style.gap = '12px';
+            titleContainer.innerHTML = `
                 <span><i class="fas fa-calendar-week"></i> ${t('calendarWeek', weekNum)}</span>
                 <span style="font-size:14px;color:var(--text-secondary);">${t('calendarBookmarksCount', totalCount)}</span>
             `;
 
+            // 创建导出按钮
+            const headerText = t('calendarWeek', weekNum);
+            const weekStart = new Date(weekData[0].date);
+            weekStart.setHours(0, 0, 0, 0);
+            const exportBtn = this.createInlineExportButton({
+                title: headerText,
+                type: 'week',
+                data: { weekNum, weekStart }
+            });
+
+            weekHeader.appendChild(titleContainer);
+            weekHeader.appendChild(exportBtn);
             contentArea.appendChild(weekHeader);
 
             // 按日显示
@@ -1795,7 +1845,11 @@ class BrowsingHistoryCalendar {
             `;
 
             // 创建导出按钮
-            const exportBtn = this.createInlineExportButton(headerText);
+            const exportBtn = this.createInlineExportButton({
+                title: headerText,
+                type: 'all',
+                data: { viewLevel: 'month', year: this.currentYear, month: this.currentMonth }
+            });
             
             allHeader.appendChild(titleContainer);
             allHeader.appendChild(exportBtn);
@@ -3032,8 +3086,24 @@ class BrowsingHistoryCalendar {
                 dayHeader.style.marginBottom = '20px';
                 dayHeader.style.paddingBottom = '12px';
                 dayHeader.style.borderBottom = `2px solid ${themeColor}`;
-                dayHeader.innerHTML = `<i class="fas fa-calendar-day"></i> ${twFull(date.getDay())}, ${t('calendarMonthDay', date.getMonth() + 1, date.getDate())}${isDayToday ? ` <span style="color: ${todayColor};">(${currentLang === 'en' ? 'Today' : '今天'})</span>` : ''}`;
+                dayHeader.style.display = 'flex';
+                dayHeader.style.justifyContent = 'space-between';
+                dayHeader.style.alignItems = 'center';
 
+                // 创建标题容器
+                const titleContainer = document.createElement('div');
+                titleContainer.innerHTML = `<i class="fas fa-calendar-day"></i> ${twFull(date.getDay())}, ${t('calendarMonthDay', date.getMonth() + 1, date.getDate())}${isDayToday ? ` <span style="color: ${todayColor};">(${currentLang === 'en' ? 'Today' : '今天'})</span>` : ''}`;
+
+                // 创建导出按钮
+                const headerText = `${twFull(date.getDay())} ${t('calendarMonthDay', date.getMonth() + 1, date.getDate())}`;
+                const exportBtn = this.createInlineExportButton({
+                    title: headerText,
+                    type: 'day',
+                    data: { date: new Date(date) }
+                });
+
+                dayHeader.appendChild(titleContainer);
+                dayHeader.appendChild(exportBtn);
                 contentArea.appendChild(dayHeader);
 
                 // 直接显示书签列表
@@ -3060,7 +3130,12 @@ class BrowsingHistoryCalendar {
                 hourHeader.style.justifyContent = 'space-between';
                 hourHeader.style.alignItems = 'center';
 
-                hourHeader.innerHTML = `
+                // 创建标题和书签数量的容器
+                const titleContainer = document.createElement('div');
+                titleContainer.style.display = 'flex';
+                titleContainer.style.alignItems = 'center';
+                titleContainer.style.gap = '12px';
+                titleContainer.innerHTML = `
                     <span>
                         <i class="fas fa-calendar-day"></i> ${twFull(date.getDay())}, ${t('calendarMonthDay', date.getMonth() + 1, date.getDate())}${isDayToday ? ` <span style="color: ${todayColor};">(${currentLang === 'en' ? 'Today' : '今天'})</span>` : ''}
                         <span style="margin-left:12px;">${String(hour).padStart(2, '0')}:00-${String(hour).padStart(2, '0')}:59</span>
@@ -3068,6 +3143,19 @@ class BrowsingHistoryCalendar {
                     <span style="font-size:14px;color:var(--text-secondary);">${t('calendarBookmarksCount', hourBookmarks.length)}</span>
                 `;
 
+                // 创建导出按钮 - 包含完整日期
+                const fullDatePart = currentLang === 'zh_CN'
+                    ? `${date.getFullYear()}年${date.getMonth() + 1}月${date.getDate()}日`
+                    : `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+                const headerText = `${fullDatePart} ${String(hour).padStart(2, '0')}:00-${String(hour).padStart(2, '0')}:59`;
+                const exportBtn = this.createInlineExportButton({
+                    title: headerText,
+                    type: 'hour',
+                    data: { date: new Date(date), hour }
+                });
+
+                hourHeader.appendChild(titleContainer);
+                hourHeader.appendChild(exportBtn);
                 contentArea.appendChild(hourHeader);
 
                 // 显示该小时的书签列表（带折叠）
@@ -3110,7 +3198,11 @@ class BrowsingHistoryCalendar {
                 `;
 
                 // 创建导出按钮
-                const exportBtn = this.createInlineExportButton(headerText);
+                const exportBtn = this.createInlineExportButton({
+                    title: headerText,
+                    type: 'all',
+                    data: { viewLevel: 'week', weekStart: this.currentWeekStart }
+                });
                 
                 allHeader.appendChild(titleContainer);
                 allHeader.appendChild(exportBtn);
@@ -3401,7 +3493,11 @@ class BrowsingHistoryCalendar {
             // 创建导出按钮 - 日视图下使用「全部」作为标题
             const dayTitle = t('calendarYearMonthDay', this.currentDay.getFullYear(), this.currentDay.getMonth() + 1, this.currentDay.getDate());
             const headerText = currentLang === 'zh_CN' ? `${dayTitle}` : dayTitle;
-            const exportBtn = this.createInlineExportButton(headerText);
+            const exportBtn = this.createInlineExportButton({
+                title: headerText,
+                type: 'all',
+                data: { viewLevel: 'day', date: this.currentDay }
+            });
             
             allHeader.appendChild(titleContainer);
             allHeader.appendChild(exportBtn);
@@ -3439,8 +3535,27 @@ class BrowsingHistoryCalendar {
             hourHeader.style.marginBottom = '20px';
             hourHeader.style.paddingBottom = '12px';
             hourHeader.style.borderBottom = `2px solid ${themeColor}`;
-            hourHeader.innerHTML = `${String(hour).padStart(2, '0')}:00-${String(hour).padStart(2, '0')}:59`;
+            hourHeader.style.display = 'flex';
+            hourHeader.style.justifyContent = 'space-between';
+            hourHeader.style.alignItems = 'center';
 
+            // 创建标题容器
+            const titleContainer = document.createElement('div');
+            titleContainer.innerHTML = `${String(hour).padStart(2, '0')}:00-${String(hour).padStart(2, '0')}:59`;
+
+            // 创建导出按钮 - 包含完整日期
+            const fullDate = currentLang === 'zh_CN' 
+                ? `${this.currentDay.getFullYear()}年${this.currentDay.getMonth() + 1}月${this.currentDay.getDate()}日`
+                : `${this.currentDay.getFullYear()}-${String(this.currentDay.getMonth() + 1).padStart(2, '0')}-${String(this.currentDay.getDate()).padStart(2, '0')}`;
+            const headerText = `${fullDate} ${String(hour).padStart(2, '0')}:00-${String(hour).padStart(2, '0')}:59`;
+            const exportBtn = this.createInlineExportButton({
+                title: headerText,
+                type: 'hour',
+                data: { date: this.currentDay, hour }
+            });
+
+            hourHeader.appendChild(titleContainer);
+            hourHeader.appendChild(exportBtn);
             contentArea.appendChild(hourHeader);
 
             const list = this.createCollapsibleBookmarkList(hourBookmarks);
@@ -3520,7 +3635,12 @@ class BrowsingHistoryCalendar {
     // ========== 导出功能 ==========
 
     // 创建内联导出按钮（用于标题右侧）
-    createInlineExportButton(scopeTitle) {
+    // scopeData: { title: string, type: string, data: object }
+    createInlineExportButton(scopeData) {
+        // 兼容旧的字符串参数
+        if (typeof scopeData === 'string') {
+            scopeData = { title: scopeData, type: 'custom', data: {} };
+        }
         const btn = document.createElement('button');
         btn.className = 'inline-export-btn';
         btn.style.cssText = `
@@ -3582,9 +3702,10 @@ class BrowsingHistoryCalendar {
             tooltip.style.opacity = '0';
         });
 
-        // 点击打开导出弹窗，并记录当前范围标题
+        // 点击打开导出弹窗，并记录当前范围信息
         btn.addEventListener('click', () => {
-            this.currentExportScopeTitle = scopeTitle;
+            this.currentExportScope = scopeData;
+            this.currentExportScopeTitle = scopeData.title;
             this.openExportModal();
         });
 
@@ -3745,6 +3866,43 @@ class BrowsingHistoryCalendar {
 
     // 辅助：判断日期是否在当前导出范围内
     checkDateInScope(dateKey) {
+        // 如果有记录的导出范围，使用它
+        if (this.currentExportScope && this.currentExportScope.type) {
+            const scope = this.currentExportScope;
+            const [y, m, day] = dateKey.split('-').map(Number);
+            const localDate = new Date(y, m - 1, day);
+
+            switch (scope.type) {
+                case 'week':
+                    if (scope.data && scope.data.weekStart) {
+                        const start = new Date(scope.data.weekStart);
+                        start.setHours(0, 0, 0, 0);
+                        const end = new Date(start);
+                        end.setDate(end.getDate() + 6);
+                        end.setHours(23, 59, 59, 999);
+                        return localDate >= start && localDate <= end;
+                    }
+                    break;
+                case 'day':
+                    if (scope.data && scope.data.date) {
+                        const targetDate = new Date(scope.data.date);
+                        return this.getDateKey(localDate) === this.getDateKey(targetDate);
+                    }
+                    break;
+                case 'hour':
+                    if (scope.data && scope.data.date) {
+                        const targetDate = new Date(scope.data.date);
+                        if (this.getDateKey(localDate) !== this.getDateKey(targetDate)) {
+                            return false;
+                        }
+                        return true;
+                    }
+                    break;
+                case 'all':
+                    break;
+            }
+        }
+
         if (this.selectMode) {
             return this.selectedDates.has(dateKey);
         }
@@ -3774,8 +3932,27 @@ class BrowsingHistoryCalendar {
         return false;
     }
 
+    // 辅助：判断书签是否在当前导出范围内（用于hour类型过滤）
+    checkBookmarkInScope(bookmark) {
+        // 如果是hour类型，需要检查书签的小时
+        if (this.currentExportScope && this.currentExportScope.type === 'hour') {
+            const scope = this.currentExportScope;
+            if (scope.data && scope.data.hour !== undefined) {
+                const bookmarkHour = bookmark.dateAdded.getHours();
+                return bookmarkHour === scope.data.hour;
+            }
+        }
+        // 其他类型不需要额外过滤
+        return true;
+    }
+
     // 辅助：获取导出范围名称（用于文件夹命名）
     getExportScopeName() {
+        // 优先使用记录的导出范围标题
+        if (this.currentExportScope && this.currentExportScope.title) {
+            return this.currentExportScope.title;
+        }
+
         if (this.selectMode) {
             // 勾选模式：过滤掉没有数据的日期，并格式化显示
             const dates = Array.from(this.selectedDates)
@@ -4015,6 +4192,9 @@ class BrowsingHistoryCalendar {
 
                 // 在目标文件夹下，重建原始目录结构
                 bookmarks.forEach(bm => {
+                    // 检查书签是否在导出范围内（用于hour类型过滤）
+                    if (!this.checkBookmarkInScope(bm)) return;
+
                     const path = bm.folderPath || [];
                     const parentFolder = ensurePath(targetFolder, path);
 
@@ -4033,7 +4213,11 @@ class BrowsingHistoryCalendar {
                 if (this.checkDateInScope(dateKey)) {
                     const bookmarks = this.bookmarksByDate.get(dateKey);
                     if (bookmarks && bookmarks.length > 0) { // 过滤空白日期
-                        allTargetBookmarks.push(...bookmarks);
+                        // 过滤出在范围内的书签（用于hour类型）
+                        const filteredBookmarks = bookmarks.filter(bm => this.checkBookmarkInScope(bm));
+                        if (filteredBookmarks.length > 0) {
+                            allTargetBookmarks.push(...filteredBookmarks);
+                        }
                     }
                 }
             }

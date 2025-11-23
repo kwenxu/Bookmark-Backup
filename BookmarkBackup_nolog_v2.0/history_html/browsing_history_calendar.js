@@ -47,6 +47,10 @@ function formatYearMonth(year, month) {
     return t('calendarYearMonth', year, monthName).replace('{0}', year).replace('{1}', monthName);
 }
 
+// 浏览记录仅需要最近一段时间的详细点击记录，防止无限制读取导致卡顿
+const BROWSING_HISTORY_LOOKBACK_DAYS = 365; // 最多保留一年的点击记录
+const BROWSING_HISTORY_MAX_VISITS_PER_URL = 400; // 单个站点最多缓存多少次点击
+
 // 按小时分组书签
 function groupBookmarksByHour(bookmarks) {
     const groups = {}; // { hour: [bookmarks] }
@@ -339,28 +343,126 @@ class BrowsingHistoryCalendar {
             // 3. 过滤出有书签的历史记录，并按日期分组
             this.bookmarksByDate.clear();
 
-            historyItems.forEach(item => {
-                if (bookmarkUrls.has(item.url)) {
-                    const date = new Date(item.lastVisitTime);
-                    const dateKey = this.getDateKey(date);
+            const relevantHistoryItems = historyItems.filter(item => bookmarkUrls.has(item.url));
+            if (!relevantHistoryItems.length) {
+                return;
+            }
 
-                    if (!this.bookmarksByDate.has(dateKey)) {
-                        this.bookmarksByDate.set(dateKey, []);
-                    }
+            const hasVisitDetails = browserAPI.history && typeof browserAPI.history.getVisits === 'function';
+            const lookbackMs = (typeof BROWSING_HISTORY_LOOKBACK_DAYS === 'number' && BROWSING_HISTORY_LOOKBACK_DAYS > 0)
+                ? BROWSING_HISTORY_LOOKBACK_DAYS * 24 * 60 * 60 * 1000
+                : 0;
+            const now = Date.now();
+            const cutoffTime = lookbackMs ? (now - lookbackMs) : 0;
 
-                    // 转换为类似书签的格式，保持与BookmarkCalendar一致
-                    this.bookmarksByDate.get(dateKey).push({
-                        id: item.id || item.url,
-                        title: item.title || item.url,
-                        url: item.url,
-                        dateAdded: date, // 使用最后访问时间
-                        visitTime: item.lastVisitTime,
-                        visitCount: item.visitCount || 0,
-                        typedCount: item.typedCount || 0,
-                        folderPath: []
+            const addVisitRecord = (item, visitTime, options = {}) => {
+                if (!visitTime) return;
+                if (cutoffTime && visitTime < cutoffTime) return;
+
+                const date = new Date(visitTime);
+                const dateKey = this.getDateKey(date);
+                if (!this.bookmarksByDate.has(dateKey)) {
+                    this.bookmarksByDate.set(dateKey, []);
+                }
+
+                const records = this.bookmarksByDate.get(dateKey);
+                records.push({
+                    id: options.id || `${item.id || item.url}-${visitTime}-${records.length}`,
+                    title: item.title || item.url,
+                    url: item.url,
+                    dateAdded: date,
+                    visitTime,
+                    visitCount: typeof options.count === 'number' && options.count > 0 ? options.count : 1,
+                    typedCount: item.typedCount || 0,
+                    folderPath: [],
+                    transition: options.transition || '',
+                    referringVisitId: options.referringVisitId || null,
+                    aggregated: !!options.aggregated
+                });
+            };
+
+            if (!hasVisitDetails) {
+                relevantHistoryItems.forEach(item => {
+                    const fallbackTime = item.lastVisitTime;
+                    if (!fallbackTime) return;
+                    addVisitRecord(item, fallbackTime, {
+                        count: Math.max(item.visitCount || 1, 1),
+                        aggregated: true,
+                        id: item.id || item.url
                     });
+                });
+                return;
+            }
+
+            const getVisitsAsync = (item) => new Promise((resolve) => {
+                try {
+                    browserAPI.history.getVisits({ url: item.url }, (visits) => {
+                        if (browserAPI.runtime && browserAPI.runtime.lastError) {
+                            console.warn('[BrowsingHistoryCalendar] getVisits失败:', browserAPI.runtime.lastError);
+                            resolve([]);
+                        } else {
+                            resolve(visits || []);
+                        }
+                    });
+                } catch (err) {
+                    console.warn('[BrowsingHistoryCalendar] getVisits异常:', err);
+                    resolve([]);
                 }
             });
+
+            const maxVisitsPerUrl = (typeof BROWSING_HISTORY_MAX_VISITS_PER_URL === 'number' && BROWSING_HISTORY_MAX_VISITS_PER_URL > 0)
+                ? BROWSING_HISTORY_MAX_VISITS_PER_URL
+                : 0;
+            const concurrency = Math.min(10, relevantHistoryItems.length);
+            let cursor = 0;
+
+            const processNext = async () => {
+                while (cursor < relevantHistoryItems.length) {
+                    const currentIndex = cursor++;
+                    const item = relevantHistoryItems[currentIndex];
+                    const visits = await getVisitsAsync(item);
+                    let inserted = 0;
+
+                    if (Array.isArray(visits) && visits.length) {
+                        for (const visit of visits) {
+                            const visitTime = typeof visit.visitTime === 'number' ? visit.visitTime : 0;
+                            if (!visitTime) continue;
+                            if (cutoffTime && visitTime < cutoffTime) {
+                                continue;
+                            }
+
+                            addVisitRecord(item, visitTime, {
+                                id: `${item.id || item.url}-${visit.visitId || visitTime}-${inserted}`,
+                                transition: visit.transition || '',
+                                referringVisitId: visit.referringVisitId || null,
+                                count: 1
+                            });
+                            inserted += 1;
+
+                            if (maxVisitsPerUrl && inserted >= maxVisitsPerUrl) {
+                                break;
+                            }
+                        }
+                    }
+
+                    if (inserted === 0) {
+                        const fallbackTime = item.lastVisitTime;
+                        if (!fallbackTime) continue;
+                        addVisitRecord(item, fallbackTime, {
+                            count: Math.max(item.visitCount || 1, 1),
+                            aggregated: true,
+                            id: item.id || item.url
+                        });
+                    }
+                }
+            };
+
+            if (concurrency === 0) {
+                return;
+            }
+
+            const workers = Array.from({ length: concurrency }, () => processNext());
+            await Promise.all(workers);
 
         } catch (error) {
             console.error('[BrowsingHistoryCalendar] 加载失败:', error);

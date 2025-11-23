@@ -5039,6 +5039,10 @@ async function ensureBrowsingClickRankingStats() {
                 : (bm.dateAdded instanceof Date ? bm.dateAdded.getTime() : 0);
             if (!t) return;
 
+            const increment = typeof bm.visitCount === 'number' && bm.visitCount > 0
+                ? bm.visitCount
+                : 1;
+
             let stats = statsMap.get(url);
             if (!stats) {
                 stats = {
@@ -5057,10 +5061,10 @@ async function ensureBrowsingClickRankingStats() {
                 stats.lastVisitTime = t;
             }
 
-            if (t >= boundaries.dayStart) stats.dayCount += 1;
-            if (t >= boundaries.weekStart) stats.weekCount += 1;
-            if (t >= boundaries.monthStart) stats.monthCount += 1;
-            if (t >= boundaries.yearStart) stats.yearCount += 1;
+            if (t >= boundaries.dayStart) stats.dayCount += increment;
+            if (t >= boundaries.weekStart) stats.weekCount += increment;
+            if (t >= boundaries.monthStart) stats.monthCount += increment;
+            if (t >= boundaries.yearStart) stats.yearCount += increment;
         });
     }
 

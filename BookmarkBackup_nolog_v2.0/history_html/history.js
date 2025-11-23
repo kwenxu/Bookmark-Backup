@@ -5327,7 +5327,13 @@ function initBrowsingClickRanking() {
     const buttons = panel.querySelectorAll('.ranking-time-filter-btn');
     if (!buttons.length) return;
 
-    const setActiveRange = (range) => {
+    const allowedRanges = ['day', 'week', 'month', 'year'];
+
+    const setActiveRange = (range, shouldPersist = true) => {
+        if (!allowedRanges.includes(range)) {
+            range = 'month';
+        }
+
         buttons.forEach(btn => {
             if (btn.dataset.range === range) {
                 btn.classList.add('active');
@@ -5336,6 +5342,14 @@ function initBrowsingClickRanking() {
             }
         });
         loadBrowsingClickRanking(range);
+
+        if (shouldPersist) {
+            try {
+                localStorage.setItem('browsingRankingActiveRange', range);
+            } catch (storageErr) {
+                console.warn('[BrowsingRanking] 无法保存筛选范围:', storageErr);
+            }
+        }
     };
 
     buttons.forEach(btn => {
@@ -5345,8 +5359,17 @@ function initBrowsingClickRanking() {
         });
     });
 
-    // 默认显示当月
-    setActiveRange('month');
+    let initialRange = 'month';
+    try {
+        const saved = localStorage.getItem('browsingRankingActiveRange');
+        if (saved && allowedRanges.includes(saved)) {
+            initialRange = saved;
+        }
+    } catch (storageErr) {
+        console.warn('[BrowsingRanking] 无法读取筛选范围:', storageErr);
+    }
+
+    setActiveRange(initialRange, false);
 }
 
 function groupBookmarksByTime(bookmarks, timeFilter) {

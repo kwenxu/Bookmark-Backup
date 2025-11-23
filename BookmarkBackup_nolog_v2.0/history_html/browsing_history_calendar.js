@@ -1257,13 +1257,8 @@ parseBookmarks(node, parentPath = []) {
         const firstWeekData = bookmarksByWeek.get(sortedWeeks[0]);
         let selectedDateKey = this.getDateKey(firstWeekData[0].date);
         if (isCurrentMonth) {
-            const todayKey = this.getDateKey(now);
-            const hasToday = Array.from(bookmarksByWeek.values()).some(weekArr =>
-                weekArr.some(({ date }) => this.getDateKey(date) === todayKey)
-            );
-            if (hasToday) {
-                selectedDateKey = todayKey;
-            }
+            // 始终优先选中今天（即使今天没有数据，createMonthBookmarksList开头已经保证了今天会被加入列表）
+            selectedDateKey = this.getDateKey(now);
         }
         
         // 添加「All」0级菜单（所有模式下都显示）
@@ -1845,6 +1840,7 @@ parseBookmarks(node, parentPath = []) {
             if (initialDayItem) {
                 initialDayItem.click();
             } else {
+                // 理论上当前月今天一定存在（开头已处理），但作为兜底
                 renderAllContent();
             }
         }
@@ -2798,7 +2794,7 @@ parseBookmarks(node, parentPath = []) {
             
             filteredBookmarks.forEach(({ date, bookmarks }, index) => {
                 const dateKey = this.getDateKey(date);
-                const hasTimePeriods = bookmarks.length > 10; // 是否需要时间段子菜单
+                const hasTimePeriods = bookmarks.length > 0; // 是否需要时间段子菜单
                 const isDayToday = this.isToday(date);
                 
                 // 日期菜单项容器
@@ -3128,8 +3124,12 @@ parseBookmarks(node, parentPath = []) {
                 allMenuItem.style.border = '1px solid var(--accent-primary)';
                 renderAllContent();
             } else {
-                // 普通模式 + 当前周：显示第一天
-                renderDayContent(filteredBookmarks[0].date, filteredBookmarks[0].bookmarks);
+                // 普通模式 + 当前周：默认显示All模式
+                allMenuItem.style.background = 'rgba(33, 150, 243, 0.15)';
+                allMenuItem.style.color = 'var(--accent-primary)';
+                allMenuItem.style.fontWeight = '600';
+                allMenuItem.style.border = '1px solid var(--accent-primary)';
+                renderAllContent();
             }
             
             panelContainer.appendChild(sidebar);

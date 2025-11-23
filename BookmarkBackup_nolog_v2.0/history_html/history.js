@@ -4541,37 +4541,53 @@ function initAdditionsSubTabs() {
 
     let browsingHistoryInitialized = false;
 
+    // 标签切换函数
+    const switchToTab = (target, shouldSave = true) => {
+        // 切换标签高亮
+        tabs.forEach(t => t.classList.remove('active'));
+        const targetTab = document.querySelector(`.additions-tab[data-tab="${target}"]`);
+        if (targetTab) targetTab.classList.add('active');
+
+        // 切换子视图
+        reviewPanel.classList.remove('active');
+        browsingPanel.classList.remove('active');
+        ankiPanel.classList.remove('active');
+
+        if (target === 'review') {
+            reviewPanel.classList.add('active');
+        } else if (target === 'browsing') {
+            browsingPanel.classList.add('active');
+            // 初始化浏览记录日历（首次点击时）
+            if (!browsingHistoryInitialized) {
+                browsingHistoryInitialized = true;
+                try {
+                    initBrowsingHistoryCalendar();
+                } catch (e) {
+                    console.error('[Additions] 初始化浏览记录日历失败:', e);
+                }
+            }
+        } else if (target === 'anki') {
+            ankiPanel.classList.add('active');
+        }
+
+        // 保存当前状态
+        if (shouldSave) {
+            localStorage.setItem('additionsActiveTab', target);
+        }
+    };
+
+    // 绑定点击事件
     tabs.forEach(tab => {
         tab.addEventListener('click', () => {
-            const target = tab.dataset.tab;
-
-            // 切换标签高亮
-            tabs.forEach(t => t.classList.remove('active'));
-            tab.classList.add('active');
-
-            // 切换子视图
-            reviewPanel.classList.remove('active');
-            browsingPanel.classList.remove('active');
-            ankiPanel.classList.remove('active');
-
-            if (target === 'review') {
-                reviewPanel.classList.add('active');
-            } else if (target === 'browsing') {
-                browsingPanel.classList.add('active');
-                // 初始化浏览记录日历（首次点击时）
-                if (!browsingHistoryInitialized) {
-                    browsingHistoryInitialized = true;
-                    try {
-                        initBrowsingHistoryCalendar();
-                    } catch (e) {
-                        console.error('[Additions] 初始化浏览记录日历失败:', e);
-                    }
-                }
-            } else if (target === 'anki') {
-                ankiPanel.classList.add('active');
-            }
+            switchToTab(tab.dataset.tab, true);
         });
     });
+
+    // 恢复上次选中的标签
+    const savedTab = localStorage.getItem('additionsActiveTab');
+    if (savedTab && ['review', 'browsing', 'anki'].includes(savedTab)) {
+        switchToTab(savedTab, false);
+    }
 
     // 初始化浏览记录的子标签
     initBrowsingSubTabs();
@@ -4588,25 +4604,41 @@ function initBrowsingSubTabs() {
         return;
     }
 
+    // 子标签切换函数
+    const switchToSubTab = (target, shouldSave = true) => {
+        // 切换子标签高亮
+        subTabs.forEach(t => t.classList.remove('active'));
+        const targetTab = document.querySelector(`.browsing-sub-tab[data-sub-tab="${target}"]`);
+        if (targetTab) targetTab.classList.add('active');
+
+        // 切换子面板
+        historyPanel.classList.remove('active');
+        rankingPanel.classList.remove('active');
+
+        if (target === 'history') {
+            historyPanel.classList.add('active');
+        } else if (target === 'ranking') {
+            rankingPanel.classList.add('active');
+        }
+
+        // 保存当前状态
+        if (shouldSave) {
+            localStorage.setItem('browsingActiveSubTab', target);
+        }
+    };
+
+    // 绑定点击事件
     subTabs.forEach(tab => {
         tab.addEventListener('click', () => {
-            const target = tab.dataset.subTab;
-
-            // 切换子标签高亮
-            subTabs.forEach(t => t.classList.remove('active'));
-            tab.classList.add('active');
-
-            // 切换子面板
-            historyPanel.classList.remove('active');
-            rankingPanel.classList.remove('active');
-
-            if (target === 'history') {
-                historyPanel.classList.add('active');
-            } else if (target === 'ranking') {
-                rankingPanel.classList.add('active');
-            }
+            switchToSubTab(tab.dataset.subTab, true);
         });
     });
+
+    // 恢复上次选中的子标签
+    const savedSubTab = localStorage.getItem('browsingActiveSubTab');
+    if (savedSubTab && ['history', 'ranking'].includes(savedSubTab)) {
+        switchToSubTab(savedSubTab, false);
+    }
 }
 
 /*

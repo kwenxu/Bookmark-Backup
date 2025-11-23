@@ -1657,7 +1657,7 @@ class BrowsingHistoryCalendar {
             // 创建标题和书签数量的容器
             const titleContainer = document.createElement('div');
             titleContainer.style.display = 'flex';
-            titleContainer.style.alignItems = 'center';
+            titleContainer.style.alignItems = 'baseline';
             titleContainer.style.gap = '12px';
             titleContainer.innerHTML = `
                 <span><i class="fas fa-calendar-day"></i> ${tw(date.getDay())} ${t('calendarMonthDay', date.getMonth() + 1, date.getDate())}${isDayToday ? ` <span style="color: ${todayColor};">(${currentLang === 'en' ? 'Today' : '今天'})</span>` : ''}</span>
@@ -1712,7 +1712,7 @@ class BrowsingHistoryCalendar {
             // 创建标题和书签数量的容器
             const titleContainer = document.createElement('div');
             titleContainer.style.display = 'flex';
-            titleContainer.style.alignItems = 'center';
+            titleContainer.style.alignItems = 'baseline';
             titleContainer.style.gap = '12px';
             titleContainer.innerHTML = `
                 <span>
@@ -1764,7 +1764,7 @@ class BrowsingHistoryCalendar {
             // 创建标题和书签数量的容器
             const titleContainer = document.createElement('div');
             titleContainer.style.display = 'flex';
-            titleContainer.style.alignItems = 'center';
+            titleContainer.style.alignItems = 'baseline';
             titleContainer.style.gap = '12px';
             titleContainer.innerHTML = `
                 <span><i class="fas fa-calendar-week"></i> ${t('calendarWeek', weekNum)}</span>
@@ -1837,7 +1837,7 @@ class BrowsingHistoryCalendar {
             // 创建标题和书签数量的容器
             const titleContainer = document.createElement('div');
             titleContainer.style.display = 'flex';
-            titleContainer.style.alignItems = 'center';
+            titleContainer.style.alignItems = 'baseline';
             titleContainer.style.gap = '12px';
             titleContainer.innerHTML = `
                 <span><i class="fas ${headerIcon}"></i> ${headerText}</span>
@@ -3133,7 +3133,7 @@ class BrowsingHistoryCalendar {
                 // 创建标题和书签数量的容器
                 const titleContainer = document.createElement('div');
                 titleContainer.style.display = 'flex';
-                titleContainer.style.alignItems = 'center';
+                titleContainer.style.alignItems = 'baseline';
                 titleContainer.style.gap = '12px';
                 titleContainer.innerHTML = `
                     <span>
@@ -3190,7 +3190,7 @@ class BrowsingHistoryCalendar {
                 // 创建标题和书签数量的容器
                 const titleContainer = document.createElement('div');
                 titleContainer.style.display = 'flex';
-                titleContainer.style.alignItems = 'center';
+                titleContainer.style.alignItems = 'baseline';
                 titleContainer.style.gap = '12px';
                 titleContainer.innerHTML = `
                     <span><i class="fas ${headerIcon}"></i> ${headerText}</span>
@@ -3483,7 +3483,7 @@ class BrowsingHistoryCalendar {
             // 创建标题和书签数量的容器
             const titleContainer = document.createElement('div');
             titleContainer.style.display = 'flex';
-            titleContainer.style.alignItems = 'center';
+            titleContainer.style.alignItems = 'baseline';
             titleContainer.style.gap = '12px';
             titleContainer.innerHTML = `
                 <span><i class="fas fa-th-large"></i> ${allLabel}</span>
@@ -3688,11 +3688,12 @@ class BrowsingHistoryCalendar {
         `;
         btn.appendChild(tooltip);
 
-        // 鼠标悬停效果
+        // 鼠标悬停效果 - 勾选模式用绿色，其他模式用蓝色
+        const hoverColor = this.selectMode ? '#4CAF50' : 'var(--accent-primary)';
         btn.addEventListener('mouseenter', () => {
             btn.style.background = 'var(--bg-secondary)';
-            btn.style.borderColor = 'var(--accent-primary)';
-            icon.style.color = 'var(--accent-primary)';
+            btn.style.borderColor = hoverColor;
+            icon.style.color = hoverColor;
             tooltip.style.opacity = '1';
         });
         btn.addEventListener('mouseleave', () => {

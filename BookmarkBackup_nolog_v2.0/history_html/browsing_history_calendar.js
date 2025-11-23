@@ -757,6 +757,16 @@ class BrowsingHistoryCalendar {
 
         this.updateBreadcrumb();
 
+        // 控制面包屑导航处导出按钮的显示：只在年视图显示
+        const breadcrumbExportBtn = document.getElementById('browsingCalendarExportBtn');
+        if (breadcrumbExportBtn) {
+            if (this.viewLevel === 'year') {
+                breadcrumbExportBtn.style.display = 'flex';
+            } else {
+                breadcrumbExportBtn.style.display = 'none';
+            }
+        }
+
         // 每次render后保存状态（勾选状态和视图状态）
         this.saveSelectMode();
     }
@@ -1774,11 +1784,21 @@ class BrowsingHistoryCalendar {
                 (currentLang === 'en' ? 'All Selected Bookmarks' : '所有选中的书签') :
                 (currentLang === 'en' ? 'All Bookmarks This Month' : '本月所有书签');
 
-            allHeader.innerHTML = `
+            // 创建标题和书签数量的容器
+            const titleContainer = document.createElement('div');
+            titleContainer.style.display = 'flex';
+            titleContainer.style.alignItems = 'center';
+            titleContainer.style.gap = '12px';
+            titleContainer.innerHTML = `
                 <span><i class="fas ${headerIcon}"></i> ${headerText}</span>
                 <span style="font-size:14px;color:var(--text-secondary);">${t('calendarBookmarksCount', totalCount)}</span>
             `;
 
+            // 创建导出按钮
+            const exportBtn = this.createInlineExportButton(headerText);
+            
+            allHeader.appendChild(titleContainer);
+            allHeader.appendChild(exportBtn);
             contentArea.appendChild(allHeader);
 
             // 按周分组显示
@@ -3079,11 +3099,21 @@ class BrowsingHistoryCalendar {
                     (currentLang === 'en' ? 'All Selected Bookmarks' : '所有选中的书签') :
                     (currentLang === 'en' ? 'All Bookmarks This Week' : '本周所有书签');
 
-                allHeader.innerHTML = `
+                // 创建标题和书签数量的容器
+                const titleContainer = document.createElement('div');
+                titleContainer.style.display = 'flex';
+                titleContainer.style.alignItems = 'center';
+                titleContainer.style.gap = '12px';
+                titleContainer.innerHTML = `
                     <span><i class="fas ${headerIcon}"></i> ${headerText}</span>
                     <span style="font-size:14px;color:var(--text-secondary);">${t('calendarBookmarksCount', totalBookmarks)}</span>
                 `;
 
+                // 创建导出按钮
+                const exportBtn = this.createInlineExportButton(headerText);
+                
+                allHeader.appendChild(titleContainer);
+                allHeader.appendChild(exportBtn);
                 contentArea.appendChild(allHeader);
 
                 // 按日显示
@@ -3358,11 +3388,23 @@ class BrowsingHistoryCalendar {
             allHeader.style.justifyContent = 'space-between';
             allHeader.style.alignItems = 'center';
 
-            allHeader.innerHTML = `
+            // 创建标题和书签数量的容器
+            const titleContainer = document.createElement('div');
+            titleContainer.style.display = 'flex';
+            titleContainer.style.alignItems = 'center';
+            titleContainer.style.gap = '12px';
+            titleContainer.innerHTML = `
                 <span><i class="fas fa-th-large"></i> ${allLabel}</span>
                 <span style="font-size:14px;color:var(--text-secondary);">${t('calendarBookmarksCount', bookmarks.length)}</span>
             `;
 
+            // 创建导出按钮 - 日视图下使用「全部」作为标题
+            const dayTitle = t('calendarYearMonthDay', this.currentDay.getFullYear(), this.currentDay.getMonth() + 1, this.currentDay.getDate());
+            const headerText = currentLang === 'zh_CN' ? `${dayTitle}` : dayTitle;
+            const exportBtn = this.createInlineExportButton(headerText);
+            
+            allHeader.appendChild(titleContainer);
+            allHeader.appendChild(exportBtn);
             contentArea.appendChild(allHeader);
 
             // 按小时顺序，把所有书签分段展示
@@ -3477,6 +3519,78 @@ class BrowsingHistoryCalendar {
 
     // ========== 导出功能 ==========
 
+    // 创建内联导出按钮（用于标题右侧）
+    createInlineExportButton(scopeTitle) {
+        const btn = document.createElement('button');
+        btn.className = 'inline-export-btn';
+        btn.style.cssText = `
+            position: relative;
+            width: 32px;
+            height: 32px;
+            padding: 0;
+            background: transparent;
+            border: 1px solid var(--border-color);
+            border-radius: 6px;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            flex-shrink: 0;
+        `;
+        
+        // 只显示图标
+        const icon = document.createElement('i');
+        icon.className = 'fas fa-file-export';
+        icon.style.fontSize = '14px';
+        icon.style.color = 'var(--text-secondary)';
+        btn.appendChild(icon);
+
+        // 创建tooltip
+        const tooltip = document.createElement('span');
+        tooltip.className = 'btn-tooltip';
+        tooltip.textContent = currentLang === 'zh_CN' ? '导出记录' : 'Export Records';
+        tooltip.style.cssText = `
+            position: absolute;
+            bottom: 100%;
+            left: 50%;
+            transform: translateX(-50%) translateY(-8px);
+            background-color: rgba(0, 0, 0, 0.8);
+            color: white;
+            padding: 6px 10px;
+            border-radius: 4px;
+            font-size: 12px;
+            white-space: nowrap;
+            pointer-events: none;
+            opacity: 0;
+            transition: opacity 0.2s ease;
+            z-index: 1000;
+        `;
+        btn.appendChild(tooltip);
+
+        // 鼠标悬停效果
+        btn.addEventListener('mouseenter', () => {
+            btn.style.background = 'var(--bg-secondary)';
+            btn.style.borderColor = 'var(--accent-primary)';
+            icon.style.color = 'var(--accent-primary)';
+            tooltip.style.opacity = '1';
+        });
+        btn.addEventListener('mouseleave', () => {
+            btn.style.background = 'transparent';
+            btn.style.borderColor = 'var(--border-color)';
+            icon.style.color = 'var(--text-secondary)';
+            tooltip.style.opacity = '0';
+        });
+
+        // 点击打开导出弹窗，并记录当前范围标题
+        btn.addEventListener('click', () => {
+            this.currentExportScopeTitle = scopeTitle;
+            this.openExportModal();
+        });
+
+        return btn;
+    }
+
     setupExportUI() {
         const modal = document.getElementById('browsingExportModal');
         const closeBtn = document.getElementById('closeBrowsingExportModal');
@@ -3503,10 +3617,13 @@ class BrowsingHistoryCalendar {
         const modal = document.getElementById('browsingExportModal');
         if (!modal) return;
 
-        // 更新范围说明
+        // 更新范围说明 - 使用当前导出范围标题
         const scopeText = document.getElementById('browsingExportScopeText');
         if (scopeText) {
-            if (this.selectMode) {
+            // 如果有currentExportScopeTitle，直接使用它
+            if (this.currentExportScopeTitle) {
+                scopeText.textContent = this.currentExportScopeTitle;
+            } else if (this.selectMode) {
                 // 勾选模式：过滤掉没有数据的日期
                 const dates = Array.from(this.selectedDates)
                     .filter(dateKey => {
@@ -3737,8 +3854,17 @@ class BrowsingHistoryCalendar {
         // 根据当前语言选择前缀
         const modePrefix = currentLang === 'zh_CN' ? prefix : prefixEn;
 
-        // 获取范围后缀
-        const scopeSuffix = this.getExportScopeSuffix();
+        // 获取范围后缀 - 优先使用currentExportScopeTitle
+        let scopeSuffix = '';
+        if (this.currentExportScopeTitle) {
+            // 清理标题中的特殊字符，用于文件名
+            scopeSuffix = this.currentExportScopeTitle
+                .replace(/[\s\/\\:*?"<>|]/g, '_')
+                .replace(/_+/g, '_')
+                .replace(/^_|_$/g, '');
+        } else {
+            scopeSuffix = this.getExportScopeSuffix();
+        }
 
         // 组合文件名
         return scopeSuffix ? `${modePrefix}_${scopeSuffix}` : modePrefix;

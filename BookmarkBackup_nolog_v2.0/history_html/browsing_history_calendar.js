@@ -4134,7 +4134,7 @@ class BrowsingHistoryCalendar {
 
         // 2. 收集所有符合范围的书签（按日期排序）
         const sortedDateKeys = [...this.bookmarksByDate.keys()].sort();
-        let allTargetBookmarks = []; // 用于 collection 和 context 模式
+        let allTargetBookmarks = []; // 用于 collection 模式
 
         // 判断是否是单日导出（不需要日期子文件夹）
         const isSingleDayExport = !this.selectMode && this.viewLevel === 'day';
@@ -4209,7 +4209,7 @@ class BrowsingHistoryCalendar {
             }
 
         } else {
-            // COLLECTION 和 CONTEXT 模式：先扁平化收集所有书签
+            // COLLECTION 模式：先扁平化收集所有书签
             for (const dateKey of sortedDateKeys) {
                 if (this.checkDateInScope(dateKey)) {
                     const bookmarks = this.bookmarksByDate.get(dateKey);
@@ -4287,68 +4287,6 @@ class BrowsingHistoryCalendar {
                             });
                         });
                     });
-                }
-
-            } else if (mode === 'context') {
-                // CONTEXT 模式：按父文件夹分组，并包含兄弟节点
-                const ids = allTargetBookmarks.map(bm => bm.id);
-                const parentIds = new Set();
-
-                const getBookmarks = (idList) => new Promise((resolve) => {
-                    if (!chrome.bookmarks) { resolve([]); return; }
-                    chrome.bookmarks.get(idList, (results) => {
-                        if (chrome.runtime.lastError) {
-                            console.warn(chrome.runtime.lastError);
-                            resolve([]);
-                        } else {
-                            resolve(results);
-                        }
-                    });
-                });
-
-                // 批量获取书签以得到 parentId
-                for (let i = 0; i < ids.length; i += 50) {
-                    const chunk = ids.slice(i, i + 50);
-                    const nodes = await getBookmarks(chunk);
-                    nodes?.forEach(node => parentIds.add(node.parentId));
-                }
-
-                // 对每个父文件夹，获取其所有子节点（上下文）
-                for (const parentId of parentIds) {
-                    try {
-                        const [folderNode] = await new Promise(r => chrome.bookmarks.get(parentId, r));
-                        if (!folderNode) continue;
-
-                        const children = await new Promise(r => chrome.bookmarks.getChildren(parentId, r));
-
-                        // 创建文件夹节点
-                        const folderObj = {
-                            title: folderNode.title,
-                            addDate: folderNode.dateAdded,
-                            lastModified: folderNode.dateGroupModified,
-                            type: 'folder',
-                            children: children.map(child => {
-                                if (child.url) {
-                                    return {
-                                        title: child.title,
-                                        url: child.url,
-                                        addDate: child.dateAdded,
-                                        type: 'bookmark'
-                                    };
-                                } else {
-                                    return {
-                                        title: child.title,
-                                        type: 'folder',
-                                        children: []
-                                    };
-                                }
-                            })
-                        };
-                        // 将文件夹加入到主文件夹下
-                        mainFolder.children.push(folderObj);
-                    } catch (e) {
-                        console.warn('Error processing folder context:', e);
-                    }
                 }
             }
         }

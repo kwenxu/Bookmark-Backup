@@ -5140,12 +5140,16 @@ function renderBrowsingClickRankingList(container, items, range) {
         const rankSpan = document.createElement('span');
         rankSpan.className = 'ranking-index';
         rankSpan.textContent = index + 1;
+        let rankClass = '';
         if (index === 0) {
-            rankSpan.classList.add('gold');
+            rankClass = 'gold';
         } else if (index === 1) {
-            rankSpan.classList.add('silver');
+            rankClass = 'silver';
         } else if (index === 2) {
-            rankSpan.classList.add('bronze');
+            rankClass = 'bronze';
+        }
+        if (rankClass) {
+            rankSpan.classList.add(rankClass);
         }
 
         const icon = document.createElement('img');
@@ -5184,13 +5188,22 @@ function renderBrowsingClickRankingList(container, items, range) {
                 : range === 'year'
                     ? entry.yearCount
                     : entry.monthCount;
+        const locale = currentLang === 'zh_CN' ? 'zh-CN' : 'en-US';
+        const formattedValue = typeof value === 'number'
+            ? value.toLocaleString(locale)
+            : String(value);
+        counts.textContent = formattedValue;
 
-        if (isZh) {
-            counts.textContent = `${rangeLabel}：${value} 次`;
-        } else {
-            const unit = value === 1 ? 'click' : 'clicks';
-            counts.textContent = `${rangeLabel}: ${value} ${unit}`;
+        if (rankClass) {
+            counts.classList.add(rankClass);
         }
+
+        const unitLabel = isZh ? '次' : (value === 1 ? 'click' : 'clicks');
+        const accessibleLabel = isZh
+            ? `${rangeLabel}：${value} ${unitLabel}`
+            : `${rangeLabel}: ${value} ${unitLabel}`;
+        counts.title = accessibleLabel;
+        counts.setAttribute('aria-label', accessibleLabel);
 
         header.appendChild(main);
         header.appendChild(counts);

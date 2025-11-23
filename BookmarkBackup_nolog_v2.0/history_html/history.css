@@ -1174,26 +1174,81 @@ body {
 .ranking-list {
     display: flex;
     flex-direction: column;
-    gap: 8px;
+    gap: 12px;
 }
 
-.ranking-item {
-    cursor: pointer;
+.addition-item.ranking-item {
+    display: flex;
     flex-direction: column;
+    gap: 4px;
+    cursor: pointer;
+    background: var(--bg-secondary);
+    border-radius: 10px;
+    padding: 10px 12px;
+    transition: background 0.15s ease;
     align-items: stretch;
+    text-align: left;
+}
+
+.addition-item.ranking-item:hover {
+    background: var(--bg-tertiary);
 }
 
 .ranking-item-header {
     display: flex;
-    justify-content: space-between;
     align-items: center;
-    gap: 8px;
+    justify-content: space-between;
+    gap: 12px;
+    width: 100%;
+}
+
+.ranking-item .addition-info {
+    min-width: 0;
+}
+
+.ranking-item .addition-title,
+.ranking-item .addition-url {
+    display: block;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    text-align: left;
+}
+
+.ranking-item .addition-icon {
+    width: 20px;
+    height: 20px;
+}
+
+.ranking-item-header > .ranking-main {
+    flex: 1 1 auto;
+    min-width: 0;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    justify-content: flex-start;
 }
 
 .ranking-counts {
-    font-size: 12px;
-    color: var(--text-secondary);
-    white-space: nowrap;
+    font-size: 20px;
+    font-weight: 600;
+    color: var(--text-primary);
+    margin-left: auto;
+    text-align: right;
+    min-width: 56px;
+    font-variant-numeric: tabular-nums;
+}
+
+.ranking-counts.gold {
+    color: #b88700;
+}
+
+.ranking-counts.silver {
+    color: #7b7f8c;
+}
+
+.ranking-counts.bronze {
+    color: #8a4a1f;
 }
 
 .ranking-detail {
@@ -1261,22 +1316,38 @@ body {
 }
 
 .ranking-index {
-    width: 24px;
-    text-align: center;
+    width: 36px;
+    height: 36px;
+    border-radius: 50%;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
     font-weight: 700;
-    font-size: 14px;
+    font-size: 15px;
+    background: var(--bg-tertiary);
+    color: var(--text-primary);
+    border: 1px solid var(--border-color);
 }
 
 .ranking-index.gold {
-    color: #d4af37;
+    background: radial-gradient(circle at 30% 30%, #ffeaa7, #f1c40f);
+    color: #5d4200;
+    border: none;
+    box-shadow: 0 2px 6px rgba(241, 196, 15, 0.4);
 }
 
 .ranking-index.silver {
-    color: #9e9e9e;
+    background: radial-gradient(circle at 30% 30%, #f5f6fa, #c5c9d6);
+    color: #4f566b;
+    border: none;
+    box-shadow: 0 2px 6px rgba(197, 201, 214, 0.45);
 }
 
 .ranking-index.bronze {
-    color: #cd7f32;
+    background: radial-gradient(circle at 30% 30%, #ffd4b2, #ca7c44);
+    color: #4a2106;
+    border: none;
+    box-shadow: 0 2px 6px rgba(202, 124, 68, 0.45);
 }
 
 .filter-bar {

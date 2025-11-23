@@ -65,6 +65,7 @@ let allBookmarks = [];
 let syncHistory = [];
 let lastBackupTime = null;
 let currentBookmarkData = null;
+let browsingClickRankingStats = null; // 点击排行缓存（基于浏览器历史记录）
 
 // 预加载缓存
 let cachedBookmarkTree = null;
@@ -638,12 +639,48 @@ const i18n = {
         'en': 'Click Ranking'
     },
     browsingRankingTitle: {
-        'zh_CN': '点击排行（规划中）',
-        'en': 'Click Ranking (Planned)'
+        'zh_CN': '点击排行',
+        'en': 'Click Ranking'
     },
     browsingRankingDescription: {
-        'zh_CN': '未来会在这里展示书签的点击排行榜。',
-        'en': 'Bookmark click ranking will be displayed here in the future.'
+        'zh_CN': '基于浏览器历史记录，按点击次数统计当前书签的热门程度。',
+        'en': 'Based on browser history, rank your bookmarks by click counts.'
+    },
+    browsingRankingFilterToday: {
+        'zh_CN': '当天',
+        'en': 'Today'
+    },
+    browsingRankingFilterWeek: {
+        'zh_CN': '当周',
+        'en': 'This week'
+    },
+    browsingRankingFilterMonth: {
+        'zh_CN': '当月',
+        'en': 'This month'
+    },
+    browsingRankingFilterYear: {
+        'zh_CN': '当年',
+        'en': 'This year'
+    },
+    browsingRankingEmptyTitle: {
+        'zh_CN': '暂无点击记录',
+        'en': 'No click records found'
+    },
+    browsingRankingEmptyDescription: {
+        'zh_CN': '当前时间范围内尚未找到这些书签的访问记录。',
+        'en': 'No visit records for your bookmarks were found in the selected time range.'
+    },
+    browsingRankingNotSupportedTitle: {
+        'zh_CN': '当前环境不支持历史记录统计',
+        'en': 'History statistics are not available in this environment'
+    },
+    browsingRankingNotSupportedDesc: {
+        'zh_CN': '请确认扩展已获得浏览器的历史记录权限。',
+        'en': 'Please ensure the extension has permission to access browser history.'
+    },
+    browsingRankingNoBookmarksTitle: {
+        'zh_CN': '暂无书签可统计',
+        'en': 'No bookmarks to analyze'
     },
     browsingCalendarLoading: {
         'zh_CN': '正在加载日历...',
@@ -1703,6 +1740,14 @@ function applyLanguage() {
     if (browsingRankingTitle) browsingRankingTitle.textContent = i18n.browsingRankingTitle[currentLang];
     const browsingRankingDescription = document.getElementById('browsingRankingDescription');
     if (browsingRankingDescription) browsingRankingDescription.textContent = i18n.browsingRankingDescription[currentLang];
+    const browsingRankingFilterDay = document.getElementById('browsingRankingFilterDay');
+    if (browsingRankingFilterDay) browsingRankingFilterDay.textContent = i18n.browsingRankingFilterToday[currentLang];
+    const browsingRankingFilterWeek = document.getElementById('browsingRankingFilterWeek');
+    if (browsingRankingFilterWeek) browsingRankingFilterWeek.textContent = i18n.browsingRankingFilterWeek[currentLang];
+    const browsingRankingFilterMonth = document.getElementById('browsingRankingFilterMonth');
+    if (browsingRankingFilterMonth) browsingRankingFilterMonth.textContent = i18n.browsingRankingFilterMonth[currentLang];
+    const browsingRankingFilterYear = document.getElementById('browsingRankingFilterYear');
+    if (browsingRankingFilterYear) browsingRankingFilterYear.textContent = i18n.browsingRankingFilterYear[currentLang];
     const browsingCalendarLoadingText = document.getElementById('browsingCalendarLoadingText');
     if (browsingCalendarLoadingText) browsingCalendarLoadingText.textContent = i18n.browsingCalendarLoading[currentLang];
 
@@ -4598,6 +4643,7 @@ function initBrowsingSubTabs() {
     const subTabs = document.querySelectorAll('.browsing-sub-tab');
     const historyPanel = document.getElementById('browsingHistoryPanel');
     const rankingPanel = document.getElementById('browsingRankingPanel');
+    let browsingRankingInitialized = false;
 
     if (!subTabs.length || !historyPanel || !rankingPanel) {
         console.warn('[initBrowsingSubTabs] 子标签或面板缺失');
@@ -4619,6 +4665,14 @@ function initBrowsingSubTabs() {
             historyPanel.classList.add('active');
         } else if (target === 'ranking') {
             rankingPanel.classList.add('active');
+            if (!browsingRankingInitialized) {
+                browsingRankingInitialized = true;
+                try {
+                    initBrowsingClickRanking();
+                } catch (e) {
+                    console.error('[initBrowsingSubTabs] 初始化点击排行失败:', e);
+                }
+            }
         }
 
         // 保存当前状态
@@ -4892,6 +4946,391 @@ function renderBookmarkClickRankingList(container, items) {
  * 以上「书签点击排行」相关代码已注释，UI已删除，等待重构
  * ============================================================================
  */
+
+// 基于浏览器历史记录的「点击排行」（书签浏览记录子视图）
+
+function getBrowsingClickRankingBoundaries() {
+    const now = new Date();
+    const nowMs = now.getTime();
+
+    // 当天起始（本地时区）
+    const dayStartDate = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    const dayStart = dayStartDate.getTime();
+
+    // 与「点击记录」日历保持一致：
+    // - 中文使用周一作为一周开始
+    // - 其他语言使用周日作为一周开始
+    const weekStartDay = currentLang === 'zh_CN' ? 1 : 0; // 0=周日,1=周一,...
+    const weekStartDate = new Date(dayStartDate);
+    const currentDay = weekStartDate.getDay(); // 0-6 (周日-周六)
+    let diff = currentDay - weekStartDay;
+    if (diff < 0) diff += 7;
+    weekStartDate.setDate(weekStartDate.getDate() - diff);
+    const weekStart = weekStartDate.getTime();
+
+    // 当月起始
+    const monthStart = new Date(now.getFullYear(), now.getMonth(), 1).getTime();
+
+    // 当年起始
+    const yearStart = new Date(now.getFullYear(), 0, 1).getTime();
+
+    return { now: nowMs, dayStart, weekStart, monthStart, yearStart };
+}
+
+async function ensureBrowsingClickRankingStats() {
+    if (browsingClickRankingStats) {
+        return browsingClickRankingStats;
+    }
+
+    // 如果历史记录 API 完全不可用，直接标记为不支持
+    if (!browserAPI || !browserAPI.history || typeof browserAPI.history.search !== 'function') {
+        browsingClickRankingStats = { items: [], error: 'noHistoryApi' };
+        return browsingClickRankingStats;
+    }
+
+    // 确保「点击记录」日历已初始化
+    try {
+        if (typeof initBrowsingHistoryCalendar === 'function' && !window.browsingHistoryCalendarInstance) {
+            initBrowsingHistoryCalendar();
+        }
+    } catch (e) {
+        console.warn('[BrowsingRanking] 初始化 BrowsingHistoryCalendar 失败:', e);
+    }
+
+    // 等待日历数据（基于 bookmarksByDate）
+    const waitForCalendarData = async () => {
+        const start = Date.now();
+        const timeout = 5000;
+        while (Date.now() - start < timeout) {
+            const inst = window.browsingHistoryCalendarInstance;
+            if (inst && inst.bookmarksByDate && inst.bookmarksByDate.size > 0) {
+                return inst;
+            }
+            await new Promise(resolve => setTimeout(resolve, 200));
+        }
+        return window.browsingHistoryCalendarInstance || null;
+    };
+
+    const calendar = await waitForCalendarData();
+
+    if (!calendar || !calendar.bookmarksByDate) {
+        browsingClickRankingStats = { items: [], error: 'noBookmarks' };
+        return browsingClickRankingStats;
+    }
+
+    // 如果完全没有任何点击记录，则视为无数据
+    if (calendar.bookmarksByDate.size === 0) {
+        browsingClickRankingStats = { items: [], error: 'noBookmarks' };
+        return browsingClickRankingStats;
+    }
+
+    const boundaries = getBrowsingClickRankingBoundaries();
+    const statsMap = new Map(); // url -> stats
+
+    // 从「点击记录」的数据结构中汇总统计信息
+    for (const bookmarks of calendar.bookmarksByDate.values()) {
+        bookmarks.forEach(bm => {
+            if (!bm || !bm.url) return;
+
+            const url = bm.url;
+            const title = bm.title || bm.url;
+            const t = typeof bm.visitTime === 'number'
+                ? bm.visitTime
+                : (bm.dateAdded instanceof Date ? bm.dateAdded.getTime() : 0);
+            if (!t) return;
+
+            let stats = statsMap.get(url);
+            if (!stats) {
+                stats = {
+                    url,
+                    title,
+                    lastVisitTime: 0,
+                    dayCount: 0,
+                    weekCount: 0,
+                    monthCount: 0,
+                    yearCount: 0
+                };
+                statsMap.set(url, stats);
+            }
+
+            if (t > stats.lastVisitTime) {
+                stats.lastVisitTime = t;
+            }
+
+            if (t >= boundaries.dayStart) stats.dayCount += 1;
+            if (t >= boundaries.weekStart) stats.weekCount += 1;
+            if (t >= boundaries.monthStart) stats.monthCount += 1;
+            if (t >= boundaries.yearStart) stats.yearCount += 1;
+        });
+    }
+
+    const items = Array.from(statsMap.values());
+
+    browsingClickRankingStats = { items, boundaries };
+    return browsingClickRankingStats;
+}
+
+function getBrowsingRankingItemsForRange(range) {
+    if (!browsingClickRankingStats || !Array.isArray(browsingClickRankingStats.items)) {
+        return [];
+    }
+
+    const key = range === 'day'
+        ? 'dayCount'
+        : range === 'week'
+            ? 'weekCount'
+            : range === 'year'
+                ? 'yearCount'
+                : 'monthCount';
+
+    const items = browsingClickRankingStats.items
+        .filter(item => item[key] > 0)
+        .sort((a, b) => {
+            if (b[key] !== a[key]) return b[key] - a[key];
+            return (b.lastVisitTime || 0) - (a.lastVisitTime || 0);
+        });
+
+    return items.slice(0, 50);
+}
+
+function renderBrowsingClickRankingList(container, items, range) {
+    container.innerHTML = '';
+
+    if (!items.length) {
+        const isZh = currentLang === 'zh_CN';
+        const title = i18n.browsingRankingEmptyTitle
+            ? i18n.browsingRankingEmptyTitle[currentLang]
+            : (isZh ? '暂无点击记录' : 'No click records found');
+        const desc = i18n.browsingRankingEmptyDescription
+            ? i18n.browsingRankingEmptyDescription[currentLang]
+            : (isZh ? '当前时间范围内尚未找到这些书签的访问记录。' : 'No visit records were found in the selected time range.');
+
+        container.innerHTML = `
+            <div class="empty-state">
+                <div class="empty-state-icon"><i class="fas fa-clock"></i></div>
+                <div class="empty-state-title">${title}</div>
+                <div class="empty-state-description">${desc}</div>
+            </div>
+        `;
+        return;
+    }
+
+    const isZh = currentLang === 'zh_CN';
+    const rangeLabel = (() => {
+        if (range === 'day') return isZh ? '今天' : 'Today';
+        if (range === 'week') return isZh ? '本周' : 'This week';
+        if (range === 'year') return isZh ? '本年' : 'This year';
+        return isZh ? '本月' : 'This month';
+    })();
+
+    items.forEach((entry, index) => {
+        const row = document.createElement('div');
+        row.className = 'addition-item ranking-item';
+
+        const header = document.createElement('div');
+        header.className = 'ranking-item-header';
+
+        const main = document.createElement('div');
+        main.className = 'ranking-main';
+
+        const rankSpan = document.createElement('span');
+        rankSpan.className = 'ranking-index';
+        rankSpan.textContent = index + 1;
+        if (index === 0) {
+            rankSpan.classList.add('gold');
+        } else if (index === 1) {
+            rankSpan.classList.add('silver');
+        } else if (index === 2) {
+            rankSpan.classList.add('bronze');
+        }
+
+        const icon = document.createElement('img');
+        icon.className = 'addition-icon';
+        icon.src = getFaviconUrl(entry.url);
+        icon.alt = '';
+
+        const info = document.createElement('div');
+        info.className = 'addition-info';
+
+        const titleLink = document.createElement('a');
+        titleLink.className = 'addition-title';
+        titleLink.href = entry.url;
+        titleLink.target = '_blank';
+        titleLink.rel = 'noopener noreferrer';
+        titleLink.textContent = entry.title;
+
+        const urlDiv = document.createElement('div');
+        urlDiv.className = 'addition-url';
+        urlDiv.textContent = entry.url;
+
+        info.appendChild(titleLink);
+        info.appendChild(urlDiv);
+
+        main.appendChild(rankSpan);
+        main.appendChild(icon);
+        main.appendChild(info);
+
+        const counts = document.createElement('div');
+        counts.className = 'ranking-counts';
+
+        const value = range === 'day'
+            ? entry.dayCount
+            : range === 'week'
+                ? entry.weekCount
+                : range === 'year'
+                    ? entry.yearCount
+                    : entry.monthCount;
+
+        if (isZh) {
+            counts.textContent = `${rangeLabel}：${value} 次`;
+        } else {
+            const unit = value === 1 ? 'click' : 'clicks';
+            counts.textContent = `${rangeLabel}: ${value} ${unit}`;
+        }
+
+        header.appendChild(main);
+        header.appendChild(counts);
+
+        const detail = document.createElement('div');
+        detail.className = 'ranking-detail';
+        detail.style.display = 'none';
+
+        const lastVisitText = entry.lastVisitTime
+            ? new Date(entry.lastVisitTime).toLocaleString()
+            : (isZh ? '无访问记录' : 'No visits');
+
+        if (isZh) {
+            detail.textContent =
+                `今天：${entry.dayCount} 次，本周：${entry.weekCount} 次，本月：${entry.monthCount} 次，本年：${entry.yearCount} 次；` +
+                `最近访问：${lastVisitText}`;
+        } else {
+            detail.textContent =
+                `Today: ${entry.dayCount} clicks, This week: ${entry.weekCount} clicks, ` +
+                `This month: ${entry.monthCount} clicks, This year: ${entry.yearCount} clicks; ` +
+                `Last visit: ${lastVisitText}`;
+        }
+
+        row.appendChild(header);
+        row.appendChild(detail);
+
+        // 整行可点击：展开/收起详细统计，同时打开书签
+        row.addEventListener('click', (e) => {
+            // 如果直接点击的是标题链接，让浏览器默认打开，不拦截
+            if (e.target === titleLink) {
+                return;
+            }
+
+            e.preventDefault();
+
+            const visible = detail.style.display === 'block';
+            detail.style.display = visible ? 'none' : 'block';
+
+            try {
+                if (browserAPI && browserAPI.tabs && typeof browserAPI.tabs.create === 'function') {
+                    browserAPI.tabs.create({ url: entry.url });
+                } else {
+                    window.open(entry.url, '_blank');
+                }
+            } catch (err) {
+                console.warn('[BrowsingRanking] 打开书签失败:', err);
+            }
+        });
+
+        container.appendChild(row);
+    });
+}
+
+async function loadBrowsingClickRanking(range) {
+    const listContainer = document.getElementById('browsingRankingList');
+    if (!listContainer) return;
+
+    // 显示加载状态
+    const isZh = currentLang === 'zh_CN';
+    const loadingText = isZh ? '正在读取历史记录...' : 'Loading history...';
+    listContainer.innerHTML = `
+        <div class="empty-state">
+            <div class="empty-state-icon"><i class="fas fa-clock"></i></div>
+            <div class="empty-state-title">${loadingText}</div>
+        </div>
+    `;
+
+    try {
+        const stats = await ensureBrowsingClickRankingStats();
+
+        if (stats.error === 'noHistoryApi') {
+            const title = i18n.browsingRankingNotSupportedTitle
+                ? i18n.browsingRankingNotSupportedTitle[currentLang]
+                : (isZh ? '当前环境不支持历史记录统计' : 'History statistics are not available in this environment');
+            const desc = i18n.browsingRankingNotSupportedDesc
+                ? i18n.browsingRankingNotSupportedDesc[currentLang]
+                : (isZh ? '请确认扩展已获得浏览器的历史记录权限。' : 'Please ensure the extension has permission to access browser history.');
+
+            listContainer.innerHTML = `
+                <div class="empty-state">
+                    <div class="empty-state-icon"><i class="fas fa-ban"></i></div>
+                    <div class="empty-state-title">${title}</div>
+                    <div class="empty-state-description">${desc}</div>
+                </div>
+            `;
+            return;
+        }
+
+        if (stats.error === 'noBookmarks') {
+            const title = i18n.browsingRankingNoBookmarksTitle
+                ? i18n.browsingRankingNoBookmarksTitle[currentLang]
+                : (isZh ? '暂无书签可统计' : 'No bookmarks to analyze');
+
+            listContainer.innerHTML = `
+                <div class="empty-state">
+                    <div class="empty-state-icon"><i class="fas fa-bookmark"></i></div>
+                    <div class="empty-state-title">${title}</div>
+                </div>
+            `;
+            return;
+        }
+
+        const items = getBrowsingRankingItemsForRange(range);
+        renderBrowsingClickRankingList(listContainer, items, range);
+    } catch (error) {
+        console.error('[BrowsingRanking] 加载点击排行失败:', error);
+        const fallbackTitle = isZh ? '加载点击排行失败' : 'Failed to load click ranking';
+        listContainer.innerHTML = `
+            <div class="empty-state">
+                <div class="empty-state-icon"><i class="fas fa-exclamation-circle"></i></div>
+                <div class="empty-state-title">${fallbackTitle}</div>
+            </div>
+        `;
+    }
+}
+
+function initBrowsingClickRanking() {
+    const panel = document.getElementById('browsingRankingPanel');
+    if (!panel) return;
+
+    const buttons = panel.querySelectorAll('.ranking-time-filter-btn');
+    if (!buttons.length) return;
+
+    const setActiveRange = (range) => {
+        buttons.forEach(btn => {
+            if (btn.dataset.range === range) {
+                btn.classList.add('active');
+            } else {
+                btn.classList.remove('active');
+            }
+        });
+        loadBrowsingClickRanking(range);
+    };
+
+    buttons.forEach(btn => {
+        btn.addEventListener('click', () => {
+            const range = btn.dataset.range || 'month';
+            setActiveRange(range);
+        });
+    });
+
+    // 默认显示当月
+    setActiveRange('month');
+}
 
 function groupBookmarksByTime(bookmarks, timeFilter) {
     const groups = {};

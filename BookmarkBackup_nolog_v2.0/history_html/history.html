@@ -362,13 +362,26 @@
                         </div>
                     </div>
 
-                    <!-- 子视图 2.2：点击排行（占位） -->
+                    <!-- 子视图 2.2：点击排行 -->
                     <div id="browsingRankingPanel" class="browsing-sub-panel">
-                        <div class="empty-state">
-                            <div class="empty-state-icon"><i class="fas fa-chart-bar"></i></div>
-                            <div id="browsingRankingTitle" class="empty-state-title">点击排行（规划中）</div>
-                            <div id="browsingRankingDescription" class="empty-state-description">
-                                未来会在这里展示书签的点击排行榜。
+                        <div class="browsing-ranking-header">
+                            <div class="browsing-ranking-title-block">
+                                <div id="browsingRankingTitle" class="ranking-title">点击排行</div>
+                                <div id="browsingRankingDescription" class="ranking-description">
+                                    基于浏览器历史记录，按点击次数统计当前书签的热门程度。
+                                </div>
+                            </div>
+                            <div class="browsing-ranking-filters">
+                                <button id="browsingRankingFilterDay" class="ranking-time-filter-btn" data-range="day">当天</button>
+                                <button id="browsingRankingFilterWeek" class="ranking-time-filter-btn" data-range="week">当周</button>
+                                <button id="browsingRankingFilterMonth" class="ranking-time-filter-btn active" data-range="month">当月</button>
+                                <button id="browsingRankingFilterYear" class="ranking-time-filter-btn" data-range="year">当年</button>
+                            </div>
+                        </div>
+                        <div id="browsingRankingList" class="ranking-list">
+                            <div class="empty-state">
+                                <div class="empty-state-icon"><i class="fas fa-chart-bar"></i></div>
+                                <div class="empty-state-title" id="browsingRankingLoadingText">正在读取历史记录...</div>
                             </div>
                         </div>
                     </div>

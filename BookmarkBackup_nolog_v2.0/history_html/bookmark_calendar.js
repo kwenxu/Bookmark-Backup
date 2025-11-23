@@ -72,6 +72,7 @@ class BookmarkCalendar {
         this.viewLevel = 'month'; // 默认月视图 'year' | 'month' | 'week' | 'day'
         this.selectMode = false; // 勾选模式
         this.selectedDates = new Set(); // 已勾选的日期集合 'YYYY-MM-DD'
+        this.bookmarkSortAsc = true; // 书签排序：true=正序，false=倒序
 
         // 拖拽勾选相关状态
         this.isDragging = false; // 是否正在拖拽
@@ -132,9 +133,15 @@ class BookmarkCalendar {
         const savedSelectMode = localStorage.getItem('bookmarkCalendar_selectMode');
         const savedSelectedDates = localStorage.getItem('bookmarkCalendar_selectedDates');
         const savedViewState = localStorage.getItem('bookmarkCalendar_viewState');
+        const savedSortAsc = localStorage.getItem('bookmarkCalendar_sortAsc');
 
         if (savedSelectMode === 'true') {
             this.selectMode = true;
+        }
+
+        // 恢复排序状态
+        if (savedSortAsc !== null) {
+            this.bookmarkSortAsc = savedSortAsc === 'true';
         }
 
         if (savedSelectedDates) {
@@ -1392,7 +1399,9 @@ class BookmarkCalendar {
 
                     // 按小时分组
                     const hourGroups = groupBookmarksByHour(bookmarks);
-                    const hours = Object.keys(hourGroups).map(Number).sort((a, b) => a - b);
+                    const hours = Object.keys(hourGroups).map(Number).sort((a, b) => {
+                        return this.bookmarkSortAsc ? (a - b) : (b - a);
+                    });
 
                     hours.forEach(hour => {
                         const hourBookmarks = hourGroups[hour];
@@ -1625,8 +1634,18 @@ class BookmarkCalendar {
                 data: { date: new Date(date) }
             });
             
+            // 创建排序按钮
+            const sortBtn = this.createSortToggleButton();
+            
+            // 创建按钮容器
+            const buttonsContainer = document.createElement('div');
+            buttonsContainer.style.display = 'flex';
+            buttonsContainer.style.gap = '8px';
+            buttonsContainer.appendChild(exportBtn);
+            buttonsContainer.appendChild(sortBtn);
+            
             dayHeader.appendChild(titleContainer);
-            dayHeader.appendChild(exportBtn);
+            dayHeader.appendChild(buttonsContainer);
             contentArea.appendChild(dayHeader);
 
             if (!bookmarks.length) {
@@ -1686,8 +1705,18 @@ class BookmarkCalendar {
                 data: { date: new Date(date), hour }
             });
             
+            // 创建排序按钮
+            const sortBtn = this.createSortToggleButton();
+            
+            // 创建按钮容器
+            const buttonsContainer = document.createElement('div');
+            buttonsContainer.style.display = 'flex';
+            buttonsContainer.style.gap = '8px';
+            buttonsContainer.appendChild(exportBtn);
+            buttonsContainer.appendChild(sortBtn);
+            
             hourHeader.appendChild(titleContainer);
-            hourHeader.appendChild(exportBtn);
+            hourHeader.appendChild(buttonsContainer);
             contentArea.appendChild(hourHeader);
 
             // 显示该小时的书签列表（带折叠）
@@ -1734,8 +1763,18 @@ class BookmarkCalendar {
                 data: { weekNum, weekStart }
             });
             
+            // 创建排序按钮
+            const sortBtn = this.createSortToggleButton();
+            
+            // 创建按钮容器
+            const buttonsContainer = document.createElement('div');
+            buttonsContainer.style.display = 'flex';
+            buttonsContainer.style.gap = '8px';
+            buttonsContainer.appendChild(exportBtn);
+            buttonsContainer.appendChild(sortBtn);
+            
             weekHeader.appendChild(titleContainer);
-            weekHeader.appendChild(exportBtn);
+            weekHeader.appendChild(buttonsContainer);
             contentArea.appendChild(weekHeader);
 
             // 按日显示
@@ -1804,8 +1843,18 @@ class BookmarkCalendar {
                 data: { viewLevel: 'month', year: this.currentYear, month: this.currentMonth }
             });
             
+            // 创建排序按钮
+            const sortBtn = this.createSortToggleButton();
+            
+            // 创建按钮容器
+            const buttonsContainer = document.createElement('div');
+            buttonsContainer.style.display = 'flex';
+            buttonsContainer.style.gap = '8px';
+            buttonsContainer.appendChild(exportBtn);
+            buttonsContainer.appendChild(sortBtn);
+            
             allHeader.appendChild(titleContainer);
-            allHeader.appendChild(exportBtn);
+            allHeader.appendChild(buttonsContainer);
             contentArea.appendChild(allHeader);
 
             // 按周分组显示
@@ -1843,7 +1892,6 @@ class BookmarkCalendar {
                     dayTitle.innerHTML = `${twFull(date.getDay())}, ${t('calendarMonthDay', date.getMonth() + 1, date.getDate())}${isDayToday ? ` <span style="color: ${todayColor};">(${currentLang === 'en' ? 'Today' : '今天'})</span>` : ''} - ${t('calendarBookmarkCount', bookmarks.length)}`;
                     daySection.appendChild(dayTitle);
 
-                    bookmarks.sort((a, b) => a.dateAdded - b.dateAdded);
                     const bookmarkList = this.createCollapsibleBookmarkList(bookmarks);
                     daySection.appendChild(bookmarkList);
 
@@ -2257,9 +2305,6 @@ class BookmarkCalendar {
         const BOOKMARK_COLLAPSE_THRESHOLD = 10;
         const shouldCollapseBookmarks = bookmarks.length > BOOKMARK_COLLAPSE_THRESHOLD;
 
-        // 按时间排序
-        bookmarks.sort((a, b) => a.dateAdded - b.dateAdded);
-
         // 显示前5个书签
         const visibleCount = shouldCollapseBookmarks ? BOOKMARK_COLLAPSE_THRESHOLD : bookmarks.length;
         for (let i = 0; i < visibleCount; i++) {
@@ -2362,21 +2407,28 @@ class BookmarkCalendar {
 
         if (bookmarks.length === 0) return container;
 
+        // 根据排序状态对书签进行排序
+        const sortedBookmarks = [...bookmarks].sort((a, b) => {
+            // 按添加时间排序
+            const timeCompare = a.dateAdded - b.dateAdded;
+            return this.bookmarkSortAsc ? timeCompare : -timeCompare;
+        });
+
         // 根据书签总数决定展开到哪个层级
         // ≤10个: 展开到书签层级（全部展开，包括书签）
         // 11-25个: 展开到第三层级（文件夹的子文件夹）
         // >25个: 展开到第二层级（只展开顶层文件夹）
         let expandToLevel;
-        if (bookmarks.length <= 10) {
+        if (sortedBookmarks.length <= 10) {
             expandToLevel = 999; // 全部展开（包括书签）
-        } else if (bookmarks.length <= 25) {
+        } else if (sortedBookmarks.length <= 25) {
             expandToLevel = 3; // 展开到第三层级
         } else {
             expandToLevel = 2; // 展开到第二层级
         }
 
         // 构建树结构
-        const tree = this.buildBookmarkTree(bookmarks);
+        const tree = this.buildBookmarkTree(sortedBookmarks);
 
         // 渲染树（传入展开层级参数）
         const treeContainer = this.renderTreeNode(tree, 0, expandToLevel);
@@ -2737,7 +2789,9 @@ class BookmarkCalendar {
 
                     // 按小时分组
                     const hourGroups = groupBookmarksByHour(bookmarks);
-                    const hours = Object.keys(hourGroups).map(Number).sort((a, b) => a - b);
+                    const hours = Object.keys(hourGroups).map(Number).sort((a, b) => {
+                        return this.bookmarkSortAsc ? (a - b) : (b - a);
+                    });
 
                     hours.forEach(hour => {
                         const hourBookmarks = hourGroups[hour];
@@ -2931,8 +2985,18 @@ class BookmarkCalendar {
                     data: { date: new Date(date) }
                 });
                 
+                // 创建排序按钮
+                const sortBtn = this.createSortToggleButton();
+                
+                // 创建按钮容器
+                const buttonsContainer = document.createElement('div');
+                buttonsContainer.style.display = 'flex';
+                buttonsContainer.style.gap = '8px';
+                buttonsContainer.appendChild(exportBtn);
+                buttonsContainer.appendChild(sortBtn);
+                
                 dayHeader.appendChild(titleContainer);
-                dayHeader.appendChild(exportBtn);
+                dayHeader.appendChild(buttonsContainer);
                 contentArea.appendChild(dayHeader);
 
                 // 直接显示书签列表
@@ -2983,8 +3047,18 @@ class BookmarkCalendar {
                     data: { date: new Date(date), hour }
                 });
                 
+                // 创建排序按钮
+                const sortBtn = this.createSortToggleButton();
+                
+                // 创建按钮容器
+                const buttonsContainer = document.createElement('div');
+                buttonsContainer.style.display = 'flex';
+                buttonsContainer.style.gap = '8px';
+                buttonsContainer.appendChild(exportBtn);
+                buttonsContainer.appendChild(sortBtn);
+                
                 hourHeader.appendChild(titleContainer);
-                hourHeader.appendChild(exportBtn);
+                hourHeader.appendChild(buttonsContainer);
                 contentArea.appendChild(hourHeader);
 
                 // 显示该小时的书签列表（带折叠）
@@ -3033,8 +3107,18 @@ class BookmarkCalendar {
                     data: { viewLevel: 'week', weekStart: this.currentWeekStart }
                 });
                 
+                // 创建排序按钮
+                const sortBtn = this.createSortToggleButton();
+                
+                // 创建按钮容器
+                const buttonsContainer = document.createElement('div');
+                buttonsContainer.style.display = 'flex';
+                buttonsContainer.style.gap = '8px';
+                buttonsContainer.appendChild(exportBtn);
+                buttonsContainer.appendChild(sortBtn);
+                
                 allHeader.appendChild(titleContainer);
-                allHeader.appendChild(exportBtn);
+                allHeader.appendChild(buttonsContainer);
                 contentArea.appendChild(allHeader);
 
                 // 按日显示
@@ -3055,7 +3139,6 @@ class BookmarkCalendar {
                     dayTitle.innerHTML = `${twFull(date.getDay())}, ${t('calendarMonthDay', date.getMonth() + 1, date.getDate())}${isDayToday ? ` <span style="color: ${todayColor};">(${currentLang === 'en' ? 'Today' : '今天'})</span>` : ''} - ${t('calendarBookmarkCount', bookmarks.length)}`;
                     daySection.appendChild(dayTitle);
 
-                    bookmarks.sort((a, b) => a.dateAdded - b.dateAdded);
                     const bookmarkList = this.createCollapsibleBookmarkList(bookmarks);
                     daySection.appendChild(bookmarkList);
 
@@ -3167,7 +3250,9 @@ class BookmarkCalendar {
 
         // 按小时分组
         const hourGroups = groupBookmarksByHour(bookmarks);
-        const hours = Object.keys(hourGroups).map(Number).sort((a, b) => a - b);
+        const hours = Object.keys(hourGroups).map(Number).sort((a, b) => {
+            return this.bookmarkSortAsc ? (a - b) : (b - a);
+        });
 
         let selectedMode = 'all'; // 'all' | 'hour'
         let selectedHour = null;
@@ -3328,8 +3413,18 @@ class BookmarkCalendar {
                 data: { viewLevel: 'day', date: this.currentDay }
             });
             
+            // 创建排序按钮
+            const sortBtn = this.createSortToggleButton();
+            
+            // 创建按钮容器
+            const buttonsContainer = document.createElement('div');
+            buttonsContainer.style.display = 'flex';
+            buttonsContainer.style.gap = '8px';
+            buttonsContainer.appendChild(exportBtn);
+            buttonsContainer.appendChild(sortBtn);
+            
             allHeader.appendChild(titleContainer);
-            allHeader.appendChild(exportBtn);
+            allHeader.appendChild(buttonsContainer);
             contentArea.appendChild(allHeader);
 
             // 「全部」模式下：把当天所有书签合在一起显示为一个整体列表
@@ -3389,8 +3484,18 @@ class BookmarkCalendar {
                 data: { date: this.currentDay, hour }
             });
             
+            // 创建排序按钮
+            const sortBtn = this.createSortToggleButton();
+            
+            // 创建按钮容器
+            const buttonsContainer = document.createElement('div');
+            buttonsContainer.style.display = 'flex';
+            buttonsContainer.style.gap = '8px';
+            buttonsContainer.appendChild(exportBtn);
+            buttonsContainer.appendChild(sortBtn);
+            
             hourHeader.appendChild(titleContainer);
-            hourHeader.appendChild(exportBtn);
+            hourHeader.appendChild(buttonsContainer);
             contentArea.appendChild(hourHeader);
 
             const list = this.createCollapsibleBookmarkList(hourBookmarks);
@@ -3545,6 +3650,83 @@ class BookmarkCalendar {
             this.currentExportScope = scopeData;
             this.currentExportScopeTitle = scopeData.title;
             this.openExportModal();
+        });
+
+        return btn;
+    }
+
+    // 创建排序切换按钮（用于标题右侧，导出按钮旁边）
+    createSortToggleButton() {
+        const btn = document.createElement('button');
+        btn.className = 'inline-sort-btn';
+        btn.style.cssText = `
+            position: relative;
+            width: 32px;
+            height: 32px;
+            padding: 0;
+            background: transparent;
+            border: 1px solid var(--border-color);
+            border-radius: 6px;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            flex-shrink: 0;
+        `;
+        
+        // 显示图标（根据当前排序状态）
+        const icon = document.createElement('i');
+        icon.className = this.bookmarkSortAsc ? 'fas fa-sort-amount-down' : 'fas fa-sort-amount-up';
+        icon.style.fontSize = '14px';
+        icon.style.color = 'var(--text-secondary)';
+        btn.appendChild(icon);
+
+        // 创建tooltip
+        const tooltip = document.createElement('span');
+        tooltip.className = 'btn-tooltip';
+        tooltip.textContent = this.bookmarkSortAsc 
+            ? (currentLang === 'zh_CN' ? '正序排列' : 'Ascending')
+            : (currentLang === 'zh_CN' ? '倒序排列' : 'Descending');
+        tooltip.style.cssText = `
+            position: absolute;
+            bottom: 100%;
+            left: 50%;
+            transform: translateX(-50%) translateY(-8px);
+            background-color: rgba(0, 0, 0, 0.8);
+            color: white;
+            padding: 6px 10px;
+            border-radius: 4px;
+            font-size: 12px;
+            white-space: nowrap;
+            pointer-events: none;
+            opacity: 0;
+            transition: opacity 0.2s ease;
+            z-index: 1000;
+        `;
+        btn.appendChild(tooltip);
+
+        // 鼠标悬停效果 - 勾选模式用绿色，其他模式用蓝色
+        const hoverColor = this.selectMode ? '#4CAF50' : 'var(--accent-primary)';
+        btn.addEventListener('mouseenter', () => {
+            btn.style.background = 'var(--bg-secondary)';
+            btn.style.borderColor = hoverColor;
+            icon.style.color = hoverColor;
+            tooltip.style.opacity = '1';
+        });
+        btn.addEventListener('mouseleave', () => {
+            btn.style.background = 'transparent';
+            btn.style.borderColor = 'var(--border-color)';
+            icon.style.color = 'var(--text-secondary)';
+            tooltip.style.opacity = '0';
+        });
+
+        // 点击切换排序方向并重新渲染
+        btn.addEventListener('click', () => {
+            this.bookmarkSortAsc = !this.bookmarkSortAsc;
+            // 保存排序状态
+            localStorage.setItem('bookmarkCalendar_sortAsc', this.bookmarkSortAsc.toString());
+            this.render(); // 重新渲染当前视图
         });
 
         return btn;

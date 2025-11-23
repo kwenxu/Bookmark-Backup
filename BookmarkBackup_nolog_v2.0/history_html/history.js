@@ -67,6 +67,18 @@ let lastBackupTime = null;
 let currentBookmarkData = null;
 let browsingClickRankingStats = null; // 点击排行缓存（基于浏览器历史记录）
 
+const bookmarkUrlSet = new Set();
+let pendingHistoryRefreshTimer = null;
+let pendingHistoryRefreshForceFull = false;
+
+const DATA_CACHE_KEYS = {
+    additions: 'bb_cache_additions_v1'
+};
+
+let additionsCacheRestored = false;
+let saveAdditionsCacheTimer = null;
+let browsingHistoryRefreshPromise = null;
+
 // 预加载缓存
 let cachedBookmarkTree = null;
 let cachedCurrentChanges = null;
@@ -449,6 +461,297 @@ const FaviconCache = {
 
 // 浏览器 API 兼容性
 const browserAPI = (typeof chrome !== 'undefined') ? chrome : browser;
+
+function getCacheStorageArea() {
+    try {
+        if (browserAPI && browserAPI.storage && browserAPI.storage.local) {
+            return browserAPI.storage.local;
+        }
+    } catch (_) {
+        // ignore
+    }
+    return null;
+}
+
+function readCachedValue(key) {
+    return new Promise((resolve) => {
+        const storageArea = getCacheStorageArea();
+        if (storageArea) {
+            storageArea.get([key], (result) => {
+                if (browserAPI.runtime && browserAPI.runtime.lastError) {
+                    console.warn('[Cache] 读取失败:', browserAPI.runtime.lastError.message);
+                    resolve(null);
+                    return;
+                }
+                resolve(result ? result[key] : null);
+            });
+            return;
+        }
+
+        try {
+            const raw = localStorage.getItem(key);
+            resolve(raw ? JSON.parse(raw) : null);
+        } catch (error) {
+            console.warn('[Cache] 读取 localStorage 失败:', error);
+            resolve(null);
+        }
+    });
+}
+
+function writeCachedValue(key, value) {
+    return new Promise((resolve) => {
+        const storageArea = getCacheStorageArea();
+        if (storageArea) {
+            storageArea.set({ [key]: value }, () => {
+                if (browserAPI.runtime && browserAPI.runtime.lastError) {
+                    console.warn('[Cache] 写入失败:', browserAPI.runtime.lastError.message);
+                }
+                resolve();
+            });
+            return;
+        }
+
+        try {
+            localStorage.setItem(key, JSON.stringify(value));
+        } catch (error) {
+            console.warn('[Cache] 写入 localStorage 失败:', error);
+        }
+        resolve();
+    });
+}
+
+function normalizeBookmarkCacheEntry(entry) {
+    if (!entry || !entry.url) return null;
+    const timestamp = typeof entry.dateAdded === 'number'
+        ? entry.dateAdded
+        : (entry.dateAdded instanceof Date ? entry.dateAdded.getTime() : Date.now());
+    return {
+        id: entry.id,
+        title: entry.title || entry.url || '',
+        url: entry.url || '',
+        dateAdded: timestamp,
+        parentId: entry.parentId || '',
+        path: entry.path || ''
+    };
+}
+
+async function ensureAdditionsCacheLoaded(skipRender) {
+    if (additionsCacheRestored || allBookmarks.length > 0) {
+        return;
+    }
+    try {
+        const cached = await readCachedValue(DATA_CACHE_KEYS.additions);
+        if (cached && Array.isArray(cached.bookmarks)) {
+            allBookmarks = cached.bookmarks
+                .map(normalizeBookmarkCacheEntry)
+                .filter(Boolean);
+            additionsCacheRestored = true;
+            rebuildBookmarkUrlSet();
+            console.log('[AdditionsCache] 已从缓存恢复记录:', allBookmarks.length);
+            if (!skipRender) {
+                renderAdditionsView();
+            }
+        }
+    } catch (error) {
+        console.warn('[AdditionsCache] 恢复失败:', error);
+    }
+}
+
+async function persistAdditionsCache() {
+    try {
+        const payload = {
+            timestamp: Date.now(),
+            bookmarks: allBookmarks.map(normalizeBookmarkCacheEntry).filter(Boolean)
+        };
+        await writeCachedValue(DATA_CACHE_KEYS.additions, payload);
+        console.log('[AdditionsCache] 已保存:', payload.bookmarks.length);
+    } catch (error) {
+        console.warn('[AdditionsCache] 保存失败:', error);
+    }
+}
+
+function scheduleAdditionsCacheSave() {
+    if (saveAdditionsCacheTimer) {
+        clearTimeout(saveAdditionsCacheTimer);
+    }
+    saveAdditionsCacheTimer = setTimeout(() => {
+        saveAdditionsCacheTimer = null;
+        persistAdditionsCache();
+    }, 600);
+}
+
+function handleAdditionsDataMutation(forceRender = true) {
+    additionsCacheRestored = true;
+    scheduleAdditionsCacheSave();
+    if (forceRender && currentView === 'additions') {
+        renderAdditionsView();
+    }
+}
+
+function addBookmarkToAdditionsCache(bookmark) {
+    const normalized = normalizeBookmarkCacheEntry(bookmark);
+    if (!normalized) return;
+    allBookmarks.push(normalized);
+    addUrlToBookmarkSet(normalized.url);
+    handleAdditionsDataMutation(true);
+}
+
+function removeBookmarkFromAdditionsCache(bookmarkId) {
+    if (!bookmarkId) return;
+    const index = allBookmarks.findIndex(item => item.id === bookmarkId);
+    if (index === -1) return;
+    removeUrlFromBookmarkSet(allBookmarks[index].url);
+    allBookmarks.splice(index, 1);
+    handleAdditionsDataMutation(true);
+}
+
+function updateBookmarkInAdditionsCache(bookmarkId, changeInfo = {}) {
+    if (!bookmarkId) return;
+    const target = allBookmarks.find(item => item.id === bookmarkId);
+    if (!target) return;
+    const prevUrl = target.url;
+    if (typeof changeInfo.title !== 'undefined') {
+        target.title = changeInfo.title;
+    }
+    if (typeof changeInfo.url !== 'undefined') {
+        target.url = changeInfo.url;
+        removeUrlFromBookmarkSet(prevUrl);
+        addUrlToBookmarkSet(changeInfo.url);
+    }
+    handleAdditionsDataMutation(true);
+}
+
+function moveBookmarkInAdditionsCache(bookmarkId, moveInfo = {}) {
+    if (!bookmarkId) return;
+    const target = allBookmarks.find(item => item.id === bookmarkId);
+    if (!target) return;
+    if (typeof moveInfo.parentId !== 'undefined') {
+        target.parentId = moveInfo.parentId;
+    }
+    handleAdditionsDataMutation(false);
+}
+
+function normalizeBookmarkUrl(url) {
+    if (!url || typeof url !== 'string') return null;
+    if (!url.startsWith('http://') && !url.startsWith('https://')) {
+        return null;
+    }
+    return url.trim();
+}
+
+function rebuildBookmarkUrlSet() {
+    bookmarkUrlSet.clear();
+    allBookmarks.forEach(item => {
+        const normalized = normalizeBookmarkUrl(item.url);
+        if (normalized) {
+            bookmarkUrlSet.add(normalized);
+        }
+    });
+}
+
+function addUrlToBookmarkSet(url) {
+    const normalized = normalizeBookmarkUrl(url);
+    if (normalized) {
+        bookmarkUrlSet.add(normalized);
+    }
+}
+
+function removeUrlFromBookmarkSet(url) {
+    const normalized = normalizeBookmarkUrl(url);
+    if (normalized) {
+        bookmarkUrlSet.delete(normalized);
+    }
+}
+
+function scheduleHistoryRefresh({ forceFull = false } = {}) {
+    pendingHistoryRefreshForceFull = pendingHistoryRefreshForceFull || forceFull;
+    if (pendingHistoryRefreshTimer) {
+        clearTimeout(pendingHistoryRefreshTimer);
+    }
+    pendingHistoryRefreshTimer = setTimeout(() => {
+        pendingHistoryRefreshTimer = null;
+        const shouldForce = pendingHistoryRefreshForceFull;
+        pendingHistoryRefreshForceFull = false;
+        refreshBrowsingHistoryData({ forceFull: shouldForce, silent: true });
+    }, 500);
+}
+
+function handleHistoryVisited(result) {
+    if (!result || !result.url) return;
+    if (!bookmarkUrlSet.has(result.url)) return;
+    scheduleHistoryRefresh({ forceFull: false });
+}
+
+function handleHistoryVisitRemoved(details) {
+    if (!details) return;
+    if (details.allHistory) {
+        scheduleHistoryRefresh({ forceFull: true });
+        return;
+    }
+    if (Array.isArray(details.urls)) {
+        const intersects = details.urls.some(url => bookmarkUrlSet.has(url));
+        if (intersects) {
+            scheduleHistoryRefresh({ forceFull: true });
+        }
+    }
+}
+
+let historyRealtimeBound = false;
+function setupBrowsingHistoryRealtimeListeners() {
+    if (historyRealtimeBound) return;
+    if (!browserAPI.history) return;
+    if (browserAPI.history.onVisited && typeof browserAPI.history.onVisited.addListener === 'function') {
+        browserAPI.history.onVisited.addListener(handleHistoryVisited);
+        historyRealtimeBound = true;
+    }
+    if (browserAPI.history.onVisitRemoved && typeof browserAPI.history.onVisitRemoved.addListener === 'function') {
+        browserAPI.history.onVisitRemoved.addListener(handleHistoryVisitRemoved);
+    }
+}
+
+async function refreshBrowsingHistoryData(options = {}) {
+    const { forceFull = false, silent = false } = options;
+    const inst = window.browsingHistoryCalendarInstance;
+    if (!inst || typeof inst.loadBookmarkData !== 'function') {
+        return;
+    }
+
+    if (browsingHistoryRefreshPromise) {
+        try {
+            await browsingHistoryRefreshPromise;
+        } catch (_) {
+            // ignore
+        }
+    }
+
+    const incremental = !forceFull && inst.historyCacheRestored !== false;
+    browsingHistoryRefreshPromise = (async () => {
+        try {
+            await inst.loadBookmarkData({ incremental });
+            if (typeof inst.render === 'function') {
+                inst.render();
+            }
+            if (typeof inst.updateSelectModeButton === 'function') {
+                inst.updateSelectModeButton();
+            }
+            browsingClickRankingStats = null;
+            refreshActiveBrowsingRankingIfVisible();
+        } catch (error) {
+            if (!silent) {
+                console.warn('[BrowsingHistory] 刷新失败:', error);
+            }
+            throw error;
+        } finally {
+            browsingHistoryRefreshPromise = null;
+        }
+    })();
+
+    try {
+        await browsingHistoryRefreshPromise;
+    } catch (_) {
+        // already logged
+    }
+}
 
 // 实时更新状态控制
 let viewerInitialized = false;
@@ -1462,6 +1765,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     // 监听书签API变化（实时更新书签树视图）
     setupBookmarkListener();
+    setupBrowsingHistoryRealtimeListeners();
 
     viewerInitialized = true;
     if (deferredAnalysisMessage) {
@@ -2132,6 +2436,8 @@ async function loadAllData(options = {}) {
     console.log('[loadAllData] 开始加载所有数据...');
 
     try {
+        await ensureAdditionsCacheLoaded(skipRender);
+
         // 并行加载所有数据
         const [storageData, bookmarkTree] = await Promise.all([
             loadStorageData(),
@@ -2157,6 +2463,9 @@ async function loadAllData(options = {}) {
         // 将 ISO 字符串格式转换为时间戳（毫秒）
         lastBackupTime = storageData.lastSyncTime ? new Date(storageData.lastSyncTime).getTime() : null;
         allBookmarks = flattenBookmarkTree(bookmarkTree);
+        rebuildBookmarkUrlSet();
+        additionsCacheRestored = true;
+        await persistAdditionsCache();
         cachedBookmarkTree = bookmarkTree;
 
         console.log('[loadAllData] 数据加载完成:', {
@@ -4600,6 +4909,11 @@ function initAdditionsSubTabs() {
 
         if (target === 'review') {
             reviewPanel.classList.add('active');
+            try {
+                renderAdditionsView();
+            } catch (error) {
+                console.warn('[initAdditionsSubTabs] 渲染书签添加记录失败:', error);
+            }
         } else if (target === 'browsing') {
             browsingPanel.classList.add('active');
             // 初始化浏览记录日历（首次点击时）
@@ -4610,6 +4924,8 @@ function initAdditionsSubTabs() {
                 } catch (e) {
                     console.error('[Additions] 初始化浏览记录日历失败:', e);
                 }
+            } else {
+                refreshBrowsingHistoryData({ forceFull: false, silent: true });
             }
         } else if (target === 'anki') {
             ankiPanel.classList.add('active');
@@ -4663,6 +4979,7 @@ function initBrowsingSubTabs() {
 
         if (target === 'history') {
             historyPanel.classList.add('active');
+            refreshBrowsingHistoryData({ forceFull: false, silent: true });
         } else if (target === 'ranking') {
             rankingPanel.classList.add('active');
             if (!browsingRankingInitialized) {
@@ -4672,6 +4989,10 @@ function initBrowsingSubTabs() {
                 } catch (e) {
                     console.error('[initBrowsingSubTabs] 初始化点击排行失败:', e);
                 }
+            } else {
+                refreshBrowsingHistoryData({ forceFull: false, silent: true });
+                browsingClickRankingStats = null;
+                refreshActiveBrowsingRankingIfVisible();
             }
         }
 
@@ -5371,6 +5692,25 @@ function initBrowsingClickRanking() {
 
     setActiveRange(initialRange, false);
 }
+
+function getActiveBrowsingRankingRange() {
+    const panel = document.getElementById('browsingRankingPanel');
+    if (!panel) return null;
+    const activeBtn = panel.querySelector('.ranking-time-filter-btn.active');
+    return activeBtn ? (activeBtn.dataset.range || 'month') : null;
+}
+
+function refreshActiveBrowsingRankingIfVisible() {
+    const panel = document.getElementById('browsingRankingPanel');
+    if (!panel || !panel.classList.contains('active')) return;
+    const range = getActiveBrowsingRankingRange() || 'month';
+    loadBrowsingClickRanking(range);
+}
+
+document.addEventListener('browsingHistoryCacheUpdated', () => {
+    browsingClickRankingStats = null;
+    refreshActiveBrowsingRankingIfVisible();
+});
 
 function groupBookmarksByTime(bookmarks, timeFilter) {
     const groups = {};
@@ -7942,6 +8282,7 @@ function setupBookmarkListener() {
     browserAPI.bookmarks.onCreated.addListener(async (id, bookmark) => {
         console.log('[书签监听] 书签创建:', bookmark.title);
         try {
+            addBookmarkToAdditionsCache(bookmark);
             // 支持 tree 和 canvas 视图（canvas视图包含永久栏目的书签树）
             if (currentView === 'tree' || currentView === 'canvas') {
                 await applyIncrementalCreateToTree(id, bookmark);
@@ -7959,6 +8300,7 @@ function setupBookmarkListener() {
     browserAPI.bookmarks.onRemoved.addListener(async (id, removeInfo) => {
         console.log('[书签监听] 书签删除:', id);
         try {
+            removeBookmarkFromAdditionsCache(id);
             // 删除对应的 favicon 缓存
             // removeInfo.node 包含被删除书签的信息（包括 URL）
             if (removeInfo.node && removeInfo.node.url) {
@@ -7981,6 +8323,7 @@ function setupBookmarkListener() {
     browserAPI.bookmarks.onChanged.addListener(async (id, changeInfo) => {
         console.log('[书签监听] 书签修改:', changeInfo);
         try {
+            updateBookmarkInAdditionsCache(id, changeInfo);
             // 支持 tree 和 canvas 视图（canvas视图包含永久栏目的书签树）
             if (currentView === 'tree' || currentView === 'canvas') {
                 await applyIncrementalChangeToTree(id, changeInfo);
@@ -7997,6 +8340,7 @@ function setupBookmarkListener() {
     browserAPI.bookmarks.onMoved.addListener(async (id, moveInfo) => {
         console.log('[书签监听] 书签移动:', id);
         try {
+            moveBookmarkInAdditionsCache(id, moveInfo);
             // 将本次移动记为显式主动移动，确保稳定显示蓝色标识
             explicitMovedIds.set(id, Date.now() + Infinity);
 
@@ -8302,6 +8646,16 @@ async function refreshData() {
 
     // 手动刷新时，强制刷新background缓存
     await loadAllData({ skipRender: true });
+
+    if (currentView === 'additions') {
+        try {
+            renderAdditionsView();
+        } catch (error) {
+            console.warn('[refreshData] 渲染书签添加记录失败:', error);
+        }
+    }
+
+    await refreshBrowsingHistoryData({ forceFull: true, silent: true });
 
     // 如果当前在变化视图，强制刷新渲染
     if (currentView === 'current-changes') {

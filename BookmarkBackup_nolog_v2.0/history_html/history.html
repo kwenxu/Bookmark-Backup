@@ -514,7 +514,7 @@
         </div>
     </div>
 
-    <!-- 导出配置弹窗 -->
+    <!-- 导出配置弹窗 (书签添加记录) -->
     <div id="exportModal" class="modal">
         <div class="modal-content" style="max-width: 500px;">
             <div class="modal-header">
@@ -567,6 +567,66 @@
                 
                 <div class="export-actions" style="text-align: right; border-top: 1px solid var(--border-color); padding-top: 20px;">
                     <button id="doExportBtn" class="view-action-btn" style="display: inline-flex; width: auto;">
+                        <i class="fas fa-file-export"></i> 开始导出
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 导出配置弹窗 (点击记录) -->
+    <div id="browsingExportModal" class="modal">
+        <div class="modal-content" style="max-width: 500px;">
+            <div class="modal-header">
+                <h3 id="browsingExportModalTitle">导出点击记录</h3>
+                <button class="modal-close" id="closeBrowsingExportModal">
+                    <i class="fas fa-times"></i>
+                </button>
+            </div>
+            <div class="modal-body">
+                <div class="export-section" style="margin-bottom: 20px;">
+                    <h4 style="margin-bottom: 10px; font-size: 14px; color: var(--text-secondary);">导出范围</h4>
+                    <p id="browsingExportScopeText" style="font-weight: 500; font-size: 15px;">当前视图</p>
+                </div>
+                
+                <div class="export-section" style="margin-bottom: 20px;">
+                    <h4 style="margin-bottom: 10px; font-size: 14px; color: var(--text-secondary);">导出模式</h4>
+                    <div class="radio-group" style="display: flex; flex-direction: column; gap: 8px;">
+                        <label class="radio-label" style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
+                            <input type="radio" name="browsingExportMode" value="records" checked>
+                            <span>仅导出点击记录 <small style="color: var(--text-tertiary);">(仅现有记录)</small></span>
+                        </label>
+                        <label class="radio-label" style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
+                            <input type="radio" name="browsingExportMode" value="context">
+                            <span>现记录关联导出 <small style="color: var(--text-tertiary);">(包含同文件夹下的其他书签)</small></span>
+                        </label>
+                        <label class="radio-label" style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
+                            <input type="radio" name="browsingExportMode" value="collection">
+                            <span>集合导出到日期文件夹 <small style="color: var(--text-tertiary);">(按日期归档，不保留原目录名)</small></span>
+                        </label>
+                    </div>
+                </div>
+
+                <div class="export-section" style="margin-bottom: 20px;">
+                    <h4 style="margin-bottom: 10px; font-size: 14px; color: var(--text-secondary);">导出格式</h4>
+                    <div class="checkbox-group" style="display: flex; flex-direction: column; gap: 8px;">
+                        <label class="checkbox-label" style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
+                            <input type="checkbox" name="browsingExportFormat" value="html" checked>
+                            <span>HTML (浏览器可导入)</span>
+                        </label>
+                        <label class="checkbox-label" style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
+                            <input type="checkbox" name="browsingExportFormat" value="json">
+                            <span>JSON</span>
+                        </label>
+                        <label class="checkbox-label" style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
+                            <input type="checkbox" name="browsingExportFormat" value="copy">
+                            <span>复制到剪贴板</span>
+                        </label>
+                    </div>
+                </div>
+                
+                <div class="export-actions" style="text-align: right; border-top: 1px solid var(--border-color); padding-top: 20px;">
+                    <button id="doBrowsingExportBtn" class="view-action-btn" style="display: inline-flex; width: auto;">
                         <i class="fas fa-file-export"></i> 开始导出
                     </button>
                 </div>

@@ -197,8 +197,9 @@ body {
 
 .btn-tooltip {
     position: absolute;
-    top: calc(100% + 8px);
-    right: 0;
+    bottom: calc(100% + 8px);
+    left: 50%;
+    transform: translateX(-50%);
     background: rgba(0, 0, 0, 0.9);
     color: white;
     padding: 6px 10px;
@@ -216,10 +217,11 @@ body {
 .btn-tooltip::before {
     content: '';
     position: absolute;
-    bottom: 100%;
-    right: 12px;
+    top: 100%;
+    left: 50%;
+    transform: translateX(-50%);
     border: 5px solid transparent;
-    border-bottom-color: rgba(0, 0, 0, 0.9);
+    border-top-color: rgba(0, 0, 0, 0.9);
 }
 
 /* 快捷键 & 开源信息弹窗 */

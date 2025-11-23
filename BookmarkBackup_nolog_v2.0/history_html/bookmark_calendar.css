@@ -196,6 +196,12 @@
     border-color: #45a049;
 }
 
+/* 排序按钮防抖：点击后短时间内不显示tooltip */
+.calendar-action-btn.sort-cooldown:hover .btn-tooltip {
+    visibility: hidden !important;
+    opacity: 0 !important;
+}
+
 /* 日历导航按钮 */
 .calendar-nav-btn {
     padding: 8px 16px;

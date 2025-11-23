@@ -73,6 +73,7 @@ class BookmarkCalendar {
         this.selectMode = false; // 勾选模式
         this.selectedDates = new Set(); // 已勾选的日期集合 'YYYY-MM-DD'
         this.bookmarkSortAsc = true; // 书签排序：true=正序，false=倒序
+        this.sortButtonCooldown = false; // 排序按钮点击防抖标志
 
         // 拖拽勾选相关状态
         this.isDragging = false; // 是否正在拖拽
@@ -1885,7 +1886,7 @@ class BookmarkCalendar {
                     const dayTitle = document.createElement('div');
                     dayTitle.style.fontSize = '15px';
                     dayTitle.style.fontWeight = '600';
-                    dayTitle.style.color = 'var(--text-primary)';
+                    dayTitle.style.color = 'var(--accent-primary)';
                     dayTitle.style.marginBottom = '12px';
                     dayTitle.style.paddingLeft = '8px';
                     dayTitle.style.borderLeft = `3px solid ${themeColor}`;
@@ -3132,7 +3133,7 @@ class BookmarkCalendar {
                     const dayTitle = document.createElement('div');
                     dayTitle.style.fontSize = '16px';
                     dayTitle.style.fontWeight = '600';
-                    dayTitle.style.color = themeColor;
+                    dayTitle.style.color = 'var(--accent-primary)';
                     dayTitle.style.marginBottom = '16px';
                     dayTitle.style.paddingBottom = '8px';
                     dayTitle.style.borderBottom = `1px solid ${themeColor}`;
@@ -3584,66 +3585,18 @@ class BookmarkCalendar {
         }
 
         const btn = document.createElement('button');
-        btn.className = 'inline-export-btn';
-        btn.style.cssText = `
-            position: relative;
-            width: 32px;
-            height: 32px;
-            padding: 0;
-            background: transparent;
-            border: 1px solid var(--border-color);
-            border-radius: 6px;
-            cursor: pointer;
-            transition: all 0.2s ease;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            flex-shrink: 0;
-        `;
+        btn.className = 'calendar-action-btn';
         
         // 只显示图标
         const icon = document.createElement('i');
         icon.className = 'fas fa-file-export';
-        icon.style.fontSize = '14px';
-        icon.style.color = 'var(--text-secondary)';
         btn.appendChild(icon);
 
-        // 创建tooltip
+        // 创建tooltip（使用与其他按钮相同的样式）
         const tooltip = document.createElement('span');
         tooltip.className = 'btn-tooltip';
         tooltip.textContent = currentLang === 'zh_CN' ? '导出记录' : 'Export Records';
-        tooltip.style.cssText = `
-            position: absolute;
-            bottom: 100%;
-            left: 50%;
-            transform: translateX(-50%) translateY(-8px);
-            background-color: rgba(0, 0, 0, 0.8);
-            color: white;
-            padding: 6px 10px;
-            border-radius: 4px;
-            font-size: 12px;
-            white-space: nowrap;
-            pointer-events: none;
-            opacity: 0;
-            transition: opacity 0.2s ease;
-            z-index: 1000;
-        `;
         btn.appendChild(tooltip);
-
-        // 鼠标悬停效果 - 勾选模式用绿色，其他模式用蓝色
-        const hoverColor = this.selectMode ? '#4CAF50' : 'var(--accent-primary)';
-        btn.addEventListener('mouseenter', () => {
-            btn.style.background = 'var(--bg-secondary)';
-            btn.style.borderColor = hoverColor;
-            icon.style.color = hoverColor;
-            tooltip.style.opacity = '1';
-        });
-        btn.addEventListener('mouseleave', () => {
-            btn.style.background = 'transparent';
-            btn.style.borderColor = 'var(--border-color)';
-            icon.style.color = 'var(--text-secondary)';
-            tooltip.style.opacity = '0';
-        });
 
         // 点击打开导出弹窗，并记录当前范围信息
         btn.addEventListener('click', () => {
@@ -3658,75 +3611,45 @@ class BookmarkCalendar {
     // 创建排序切换按钮（用于标题右侧，导出按钮旁边）
     createSortToggleButton() {
         const btn = document.createElement('button');
-        btn.className = 'inline-sort-btn';
-        btn.style.cssText = `
-            position: relative;
-            width: 32px;
-            height: 32px;
-            padding: 0;
-            background: transparent;
-            border: 1px solid var(--border-color);
-            border-radius: 6px;
-            cursor: pointer;
-            transition: all 0.2s ease;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            flex-shrink: 0;
-        `;
+        btn.className = 'calendar-action-btn';
+        
+        // 如果处于冷却期，添加防抖类
+        if (this.sortButtonCooldown) {
+            btn.classList.add('sort-cooldown');
+        }
         
         // 显示图标（根据当前排序状态）
         const icon = document.createElement('i');
         icon.className = this.bookmarkSortAsc ? 'fas fa-sort-amount-down' : 'fas fa-sort-amount-up';
-        icon.style.fontSize = '14px';
-        icon.style.color = 'var(--text-secondary)';
         btn.appendChild(icon);
 
-        // 创建tooltip
+        // 创建tooltip（使用与其他按钮相同的样式）
         const tooltip = document.createElement('span');
         tooltip.className = 'btn-tooltip';
+        const t = window.i18n || {};
         tooltip.textContent = this.bookmarkSortAsc 
-            ? (currentLang === 'zh_CN' ? '正序排列' : 'Ascending')
-            : (currentLang === 'zh_CN' ? '倒序排列' : 'Descending');
-        tooltip.style.cssText = `
-            position: absolute;
-            bottom: 100%;
-            left: 50%;
-            transform: translateX(-50%) translateY(-8px);
-            background-color: rgba(0, 0, 0, 0.8);
-            color: white;
-            padding: 6px 10px;
-            border-radius: 4px;
-            font-size: 12px;
-            white-space: nowrap;
-            pointer-events: none;
-            opacity: 0;
-            transition: opacity 0.2s ease;
-            z-index: 1000;
-        `;
+            ? (t.calendarSortAscending?.[currentLang] || (currentLang === 'zh_CN' ? '正序排列' : 'Ascending'))
+            : (t.calendarSortDescending?.[currentLang] || (currentLang === 'zh_CN' ? '倒序排列' : 'Descending'));
         btn.appendChild(tooltip);
 
-        // 鼠标悬停效果 - 勾选模式用绿色，其他模式用蓝色
-        const hoverColor = this.selectMode ? '#4CAF50' : 'var(--accent-primary)';
-        btn.addEventListener('mouseenter', () => {
-            btn.style.background = 'var(--bg-secondary)';
-            btn.style.borderColor = hoverColor;
-            icon.style.color = hoverColor;
-            tooltip.style.opacity = '1';
-        });
-        btn.addEventListener('mouseleave', () => {
-            btn.style.background = 'transparent';
-            btn.style.borderColor = 'var(--border-color)';
-            icon.style.color = 'var(--text-secondary)';
-            tooltip.style.opacity = '0';
-        });
-
-        // 点击切换排序方向并重新渲染
+        // 点击切换排序方向并重新渲染，添加防抖效果
         btn.addEventListener('click', () => {
+            // 设置冷却标志
+            this.sortButtonCooldown = true;
+            
             this.bookmarkSortAsc = !this.bookmarkSortAsc;
             // 保存排序状态
             localStorage.setItem('bookmarkCalendar_sortAsc', this.bookmarkSortAsc.toString());
             this.render(); // 重新渲染当前视图
+            
+            // 800ms后清除冷却标志并移除所有按钮上的防抖类
+            setTimeout(() => {
+                this.sortButtonCooldown = false;
+                // 移除所有排序按钮上的 sort-cooldown 类
+                document.querySelectorAll('.calendar-action-btn.sort-cooldown').forEach(btn => {
+                    btn.classList.remove('sort-cooldown');
+                });
+            }, 800);
         });
 
         return btn;

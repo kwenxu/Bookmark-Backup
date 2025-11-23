@@ -990,6 +990,14 @@ const i18n = {
         'zh_CN': '正在加载日历...',
         'en': 'Loading calendar...'
     },
+    calendarSortAscending: {
+        'zh_CN': '正序排列',
+        'en': 'Ascending'
+    },
+    calendarSortDescending: {
+        'zh_CN': '倒序排列',
+        'en': 'Descending'
+    },
     refreshTooltip: {
         'zh_CN': '刷新',
         'en': 'Refresh'

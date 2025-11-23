@@ -4098,7 +4098,7 @@ class BrowsingHistoryCalendar {
         // 尝试使用 chrome.downloads API 以支持子目录
         if (chrome.downloads) {
             // 确定文件夹名称：中文环境下使用中文，否则使用英文
-            const folderName = currentLang === 'zh_CN' ? '点击记录' : 'Click History';
+            const folderName = i18n.browsingExportFolderName[currentLang] || 'Click History';
 
             chrome.downloads.download({
                 url: url,

@@ -40,7 +40,7 @@ function resetPermanentSectionChangeMarkers() {
         });
 
         // 2) 清理其余颜色标识类和内联样式、徽标
-        const changeClasses = ['tree-change-added','tree-change-modified','tree-change-moved','tree-change-mixed','tree-change-deleted'];
+        const changeClasses = ['tree-change-added', 'tree-change-modified', 'tree-change-moved', 'tree-change-mixed', 'tree-change-deleted'];
         const selector = changeClasses.map(c => `.tree-item.${c}`).join(',');
         tree.querySelectorAll(selector).forEach(item => {
             changeClasses.forEach(c => item.classList.remove(c));
@@ -85,32 +85,32 @@ const FaviconCache = {
     memoryCache: new Map(), // {url: faviconDataUrl}
     failureCache: new Set(), // 失败的域名集合
     pendingRequests: new Map(), // 正在请求的URL，避免重复请求
-    
+
     // 初始化 IndexedDB
     async init() {
         if (this.db) return;
-        
+
         return new Promise((resolve, reject) => {
             const request = indexedDB.open(this.dbName, this.dbVersion);
-            
+
             request.onerror = () => {
                 reject(request.error);
             };
-            
+
             request.onsuccess = () => {
                 this.db = request.result;
                 resolve();
             };
-            
+
             request.onupgradeneeded = (event) => {
                 const db = event.target.result;
-                
+
                 // 创建成功缓存的存储
                 if (!db.objectStoreNames.contains(this.storeName)) {
                     const store = db.createObjectStore(this.storeName, { keyPath: 'domain' });
                     store.createIndex('timestamp', 'timestamp', { unique: false });
                 }
-                
+
                 // 创建失败缓存的存储
                 if (!db.objectStoreNames.contains(this.failureStoreName)) {
                     const failureStore = db.createObjectStore(this.failureStoreName, { keyPath: 'domain' });
@@ -119,71 +119,71 @@ const FaviconCache = {
             };
         });
     },
-    
+
     // 检查URL是否为本地/内网/明显无效
     isInvalidUrl(url) {
         if (!url || typeof url !== 'string') return true;
-        
+
         try {
             const urlObj = new URL(url);
             const hostname = urlObj.hostname.toLowerCase();
-            
+
             // 本地地址
             if (hostname === 'localhost' || hostname === '127.0.0.1' || hostname === '::1') {
                 return true;
             }
-            
+
             // 内网地址
             if (hostname.match(/^(10\.|172\.(1[6-9]|2[0-9]|3[01])\.|192\.168\.)/)) {
                 return true;
             }
-            
+
             // .local 域名
             if (hostname.endsWith('.local')) {
                 return true;
             }
-            
+
             // 文件协议等
             if (!url.startsWith('http://') && !url.startsWith('https://')) {
                 return true;
             }
-            
+
             return false;
         } catch (e) {
             return true;
         }
     },
-    
+
     // 从缓存获取favicon
     async get(url) {
         if (this.isInvalidUrl(url)) {
             return null;
         }
-        
+
         try {
             const urlObj = new URL(url);
             const domain = urlObj.hostname;
-            
+
             // 检查失败缓存
             if (this.failureCache.has(domain)) {
                 return 'failed';
             }
-            
+
             // 检查内存缓存
             if (this.memoryCache.has(domain)) {
                 return this.memoryCache.get(domain);
             }
-            
+
             // 从 IndexedDB 读取
             if (!this.db) await this.init();
-            
+
             return new Promise((resolve) => {
                 const transaction = this.db.transaction([this.storeName, this.failureStoreName], 'readonly');
-                
+
                 // 先检查失败缓存
                 const failureStore = transaction.objectStore(this.failureStoreName);
                 const failureRequest = failureStore.get(domain);
-                
+
                 failureRequest.onsuccess = () => {
                     if (failureRequest.result) {
                         // 检查失败缓存是否过期（7天）
@@ -194,11 +194,11 @@ const FaviconCache = {
                             return;
                         }
                     }
-                    
+
                     // 检查成功缓存
                     const store = transaction.objectStore(this.storeName);
                     const request = store.get(domain);
-                    
+
                     request.onsuccess = () => {
                         if (request.result) {
                             // 永久缓存，不检查过期（只有删除书签时才删除缓存）
@@ -208,81 +208,81 @@ const FaviconCache = {
                             resolve(null);
                         }
                     };
-                    
+
                     request.onerror = () => resolve(null);
                 };
-                
+
                 failureRequest.onerror = () => resolve(null);
             });
         } catch (e) {
             return null;
         }
     },
-    
+
     // 保存favicon到缓存
     async save(url, dataUrl) {
         if (this.isInvalidUrl(url)) return;
-        
+
         try {
             const urlObj = new URL(url);
             const domain = urlObj.hostname;
-            
+
             // 更新内存缓存
             this.memoryCache.set(domain, dataUrl);
-            
+
             // 保存到 IndexedDB
             if (!this.db) await this.init();
-            
+
             const transaction = this.db.transaction([this.storeName], 'readwrite');
             const store = transaction.objectStore(this.storeName);
-            
+
             store.put({
                 domain: domain,
                 dataUrl: dataUrl,
                 timestamp: Date.now()
             });
-            
+
             // 从失败缓存中移除（如果存在）
             this.failureCache.delete(domain);
             this.removeFailure(domain);
-            
+
         } catch (e) {
             // 静默处理
         }
     },
-    
+
     // 记录失败
     async saveFailure(url) {
         if (this.isInvalidUrl(url)) return;
-        
+
         try {
             const urlObj = new URL(url);
             const domain = urlObj.hostname;
-            
+
             // 更新内存缓存
             this.failureCache.add(domain);
-            
+
             // 保存到 IndexedDB
             if (!this.db) await this.init();
-            
+
             const transaction = this.db.transaction([this.failureStoreName], 'readwrite');
             const store = transaction.objectStore(this.failureStoreName);
-            
+
             store.put({
                 domain: domain,
                 timestamp: Date.now()
             });
-            
+
         } catch (e) {
             // 静默处理
         }
     },
-    
+
     // 移除失败记录（当URL被修改时）
     async removeFailure(domain) {
         try {
             if (!this.db) await this.init();
-            
+
             const transaction = this.db.transaction([this.failureStoreName], 'readwrite');
             const store = transaction.objectStore(this.failureStoreName);
             store.delete(domain);
@@ -290,41 +290,41 @@ const FaviconCache = {
             // 静默失败
         }
     },
-    
+
     // 清除特定URL的缓存（用于书签URL修改时）
     async clear(url) {
         if (this.isInvalidUrl(url)) return;
-        
+
         try {
             const urlObj = new URL(url);
             const domain = urlObj.hostname;
-            
+
             // 清除内存缓存
             this.memoryCache.delete(domain);
             this.failureCache.delete(domain);
-            
+
             // 清除 IndexedDB
             if (!this.db) await this.init();
-            
+
             const transaction = this.db.transaction([this.storeName, this.failureStoreName], 'readwrite');
             transaction.objectStore(this.storeName).delete(domain);
             transaction.objectStore(this.failureStoreName).delete(domain);
-            
+
         } catch (e) {
             // 静默处理
         }
     },
-    
+
     // 获取favicon（带缓存和请求合并）
     async fetch(url) {
         if (this.isInvalidUrl(url)) {
             return fallbackIcon;
         }
-        
+
         try {
             const urlObj = new URL(url);
             const domain = urlObj.hostname;
-            
+
             // 1. 检查缓存
             const cached = await this.get(url);
             if (cached === 'failed') {
@@ -333,35 +333,35 @@ const FaviconCache = {
             if (cached) {
                 return cached;
             }
-            
+
             // 2. 检查是否已有相同请求在进行中（避免重复请求）
             if (this.pendingRequests.has(domain)) {
                 return this.pendingRequests.get(domain);
             }
-            
+
             // 3. 发起新请求
             const requestPromise = this._fetchFavicon(url);
             this.pendingRequests.set(domain, requestPromise);
-            
+
             try {
                 const result = await requestPromise;
                 return result;
             } finally {
                 this.pendingRequests.delete(domain);
             }
-            
+
         } catch (e) {
             return fallbackIcon;
         }
     },
-    
+
     // 实际请求favicon - 多源降级策略
     async _fetchFavicon(url) {
         return new Promise(async (resolve) => {
             try {
                 const urlObj = new URL(url);
                 const domain = urlObj.hostname;
-                
+
                 // 定义多个 favicon 源，按优先级尝试
                 const faviconSources = [
                     // 1. 网站自己的 favicon（最准确，全球可用）
@@ -371,23 +371,23 @@ const FaviconCache = {
                     // 3. Google S2（功能强大，但中国大陆被墙）
                     `https://www.google.com/s2/favicons?domain=${domain}&sz=32`
                 ];
-                
+
                 // 尝试每个源
                 for (let i = 0; i < faviconSources.length; i++) {
                     const faviconUrl = faviconSources[i];
                     const sourceName = ['网站原生', 'DuckDuckGo', 'Google S2'][i];
-                    
+
                     const result = await this._tryLoadFavicon(faviconUrl, url, sourceName);
                     if (result && result !== fallbackIcon) {
                         resolve(result);
                         return;
                     }
                 }
-                
+
                 // 所有源都失败，记录失败并返回 fallback（静默）
                 this.saveFailure(url);
                 resolve(fallbackIcon);
-                
+
             } catch (e) {
                 // 静默处理错误
                 this.saveFailure(url);
@@ -395,28 +395,28 @@ const FaviconCache = {
             }
         });
     },
-    
+
     // 尝试从单个源加载 favicon
     async _tryLoadFavicon(faviconUrl, originalUrl, sourceName) {
         return new Promise((resolve) => {
             const img = new Image();
             // 不设置 crossOrigin，避免 CORS 预检请求导致的错误
             // img.crossOrigin = 'anonymous';
-            
+
             const timeout = setTimeout(() => {
                 img.src = '';
                 resolve(null); // 超时，尝试下一个源
             }, 3000); // 每个源最多等待3秒
-            
+
             img.onload = () => {
                 clearTimeout(timeout);
-                
+
                 // 检查是否是有效的图片（某些服务器返回1x1的占位图）
                 if (img.width < 8 || img.height < 8) {
                     resolve(null);
                     return;
                 }
-                
+
                 // 尝试转换为 Base64（可能因 CORS 失败，但不显示错误）
                 try {
                     const canvas = document.createElement('canvas');
@@ -425,7 +425,7 @@ const FaviconCache = {
                     const ctx = canvas.getContext('2d');
                     ctx.drawImage(img, 0, 0);
                     const dataUrl = canvas.toDataURL('image/png');
-                    
+
                     // 保存到缓存
                     this.save(originalUrl, dataUrl);
                     resolve(dataUrl);
@@ -435,12 +435,12 @@ const FaviconCache = {
                     resolve(faviconUrl);
                 }
             };
-            
+
             img.onerror = () => {
                 clearTimeout(timeout);
                 resolve(null); // 失败，尝试下一个源
             };
-            
+
             img.src = faviconUrl;
         });
     }
@@ -470,31 +470,31 @@ let currentDetailRecordTime = null; // 当前打开的详情面板对应的记�
 // 注意：这个函数会触发后台异步加载，初次调用返回fallbackIcon
 function getFaviconUrl(url) {
     if (!url) return fallbackIcon;
-    
+
     // 验证是否是有效的 HTTP/HTTPS URL
     if (!url.startsWith('http://') && !url.startsWith('https://')) {
         return fallbackIcon;
     }
-    
+
     // 检查是否是无效URL
     if (FaviconCache.isInvalidUrl(url)) {
         return fallbackIcon;
     }
-    
+
     try {
         const urlObj = new URL(url);
         const domain = urlObj.hostname;
-        
+
         // 【关键修复】先检查内存缓存（在 renderTreeView 时已预热）
         if (FaviconCache.memoryCache.has(domain)) {
             return FaviconCache.memoryCache.get(domain);
         }
-        
+
         // 检查失败缓存
         if (FaviconCache.failureCache.has(domain)) {
             return fallbackIcon;
         }
-        
+
         // 触发后台异步加载（不等待结果）
         // 注意：由于在 renderTreeView 时已经预热了缓存，
         // 这里只是作为兜底机制，处理动态添加的书签
@@ -504,7 +504,7 @@ function getFaviconUrl(url) {
                 updateFaviconImages(url, dataUrl);
             }
         });
-        
+
         // 立即返回 fallback 图标作为占位符
         return fallbackIcon;
     } catch (error) {
@@ -518,15 +518,15 @@ function updateFaviconImages(url, dataUrl) {
     try {
         const urlObj = new URL(url);
         const domain = urlObj.hostname;
-        
+
         // 查找所有相关的img标签（通过data-favicon-domain或父元素的data-node-url）
         const allImages = document.querySelectorAll('img.tree-icon, img.addition-icon, img.change-tree-item-icon, img.canvas-bookmark-icon');
-        
+
         allImages.forEach(img => {
             // 检查是否是fallback图标（SVG data URL）且对应的书签URL匹配
             const isFallback = img.src.startsWith('data:image/svg+xml') || img.src === fallbackIcon;
             const item = img.closest('[data-node-url], [data-bookmark-url]');
-            
+
             if (item) {
                 const itemUrl = item.dataset.nodeUrl || item.dataset.bookmarkUrl;
                 if (itemUrl) {
@@ -552,11 +552,11 @@ function updateFaviconImages(url, dataUrl) {
 // 全局图片错误处理（使用事件委托，避免CSP内联事件处理器）
 function setupGlobalImageErrorHandler() {
     document.addEventListener('error', (e) => {
-        if (e.target.tagName === 'IMG' && 
-            (e.target.classList.contains('tree-icon') || 
-             e.target.classList.contains('addition-icon') ||
-             e.target.classList.contains('change-tree-item-icon') ||
-             e.target.classList.contains('canvas-bookmark-icon'))) {
+        if (e.target.tagName === 'IMG' &&
+            (e.target.classList.contains('tree-icon') ||
+                e.target.classList.contains('addition-icon') ||
+                e.target.classList.contains('change-tree-item-icon') ||
+                e.target.classList.contains('canvas-bookmark-icon'))) {
             // 只在src不是fallbackIcon时才替换，避免无限循环
             // fallbackIcon 是 data URL，不会加载失败
             if (e.target.src !== fallbackIcon && !e.target.src.startsWith('data:image/svg+xml')) {
@@ -569,11 +569,11 @@ function setupGlobalImageErrorHandler() {
 // 异步获取favicon（推荐使用，支持完整缓存）
 async function getFaviconUrlAsync(url) {
     if (!url) return fallbackIcon;
-    
+
     if (!url.startsWith('http://') && !url.startsWith('https://')) {
         return fallbackIcon;
     }
-    
+
     return await FaviconCache.fetch(url);
 }
 
@@ -1190,6 +1190,23 @@ const i18n = {
     exportRootTitle: {
         'zh_CN': '书签导出',
         'en': 'Bookmark Export'
+    },
+    // 点击记录导出翻译
+    browsingExportTooltip: {
+        'zh_CN': '导出记录',
+        'en': 'Export Records'
+    },
+    browsingExportModalTitle: {
+        'zh_CN': '导出点击记录',
+        'en': 'Export Click History'
+    },
+    browsingExportModeRecords: {
+        'zh_CN': '仅导出点击记录',
+        'en': 'Click Records Only'
+    },
+    browsingExportFolderName: {
+        'zh_CN': '点击记录',
+        'en': 'Click History'
     }
 };
 
@@ -1199,7 +1216,7 @@ const i18n = {
 
 document.addEventListener('DOMContentLoaded', async () => {
     console.log('历史查看器初始化...');
-    
+
     // ========================================================================
     // 【关键步骤 0】初始化 Favicon 缓存系统
     // ========================================================================
@@ -1208,21 +1225,21 @@ document.addEventListener('DOMContentLoaded', async () => {
     } catch (error) {
         // 静默处理
     }
-    
+
     // 设置全局图片错误处理（避免CSP内联事件处理器）
     setupGlobalImageErrorHandler();
-    
+
     // ========================================================================
     // 【关键步骤 1】最优先：立即恢复并应用视图状态
     // ========================================================================
     const urlParams = new URLSearchParams(window.location.search);
     const viewParam = urlParams.get('view');
-    
+
     // 优先级：URL参数 > localStorage > 默认值
     if (viewParam && ['current-changes', 'history', 'additions', 'tree', 'canvas'].includes(viewParam)) {
         currentView = viewParam === 'tree' ? 'canvas' : viewParam;
         console.log('[初始化] 从URL参数设置视图:', currentView);
-        
+
         // 【关键】应用 URL 参数后，立即从 URL 中移除 view 参数
         // 这样刷新页面时就会使用 localStorage，实现持久化
         const newUrl = new URL(window.location.href);
@@ -1238,7 +1255,7 @@ document.addEventListener('DOMContentLoaded', async () => {
             console.log('[初始化] 使用默认视图:', currentView);
         }
     }
-    
+
     // 立即应用视图状态到DOM
     console.log('[初始化] >>>立即应用视图状态<<<:', currentView);
     document.querySelectorAll('.nav-tab').forEach(tab => {
@@ -1257,23 +1274,23 @@ document.addEventListener('DOMContentLoaded', async () => {
     });
     localStorage.setItem('lastActiveView', currentView);
     console.log('[初始化] 视图状态已应用完成');
-    
+
     // ========================================================================
     // 其他初始化
     // ========================================================================
     const recordTime = urlParams.get('record');
     console.log('[URL参数] 完整URL:', window.location.href);
     console.log('[URL参数] recordTime:', recordTime, 'viewParam:', viewParam);
-    
+
     // 加载用户设置
     await loadUserSettings();
-    
+
     // 初始化 UI（此时currentView已经是正确的值）
     initializeUI();
-    
+
     // 初始化侧边栏收起功能
     initSidebarToggle();
-    
+
     // 初始化右键菜单和拖拽功能
     if (typeof initContextMenu === 'function') {
         initContextMenu();
@@ -1281,7 +1298,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     if (typeof initDragDrop === 'function') {
         initDragDrop();
     }
-    
+
     // 初始化批量操作相关功能
     if (typeof initBatchToolbar === 'function') {
         initBatchToolbar();
@@ -1305,7 +1322,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     // 先加载基础数据
     console.log('[初始化] 加载基础数据...');
     await loadAllData();
-    
+
     // 如果有 recordTime 参数，立即打开详情弹窗（在UI渲染之前）
     if (recordTime) {
         console.log('[初始化] 快速打开详情面板，recordTime:', recordTime);
@@ -1316,11 +1333,11 @@ document.addEventListener('DOMContentLoaded', async () => {
             setTimeout(() => showDetailModal(record), 0);
         }
     }
-    
+
     // 使用智能等待：尝试渲染，如果数据不完整则等待后重试
     // 初始化时强制刷新缓存，确保显示最新数据
     console.log('[初始化] 开始渲染当前视图:', currentView);
-    
+
     // 根据当前视图渲染
     if (currentView === 'current-changes') {
         await renderCurrentChangesViewWithRetry(3, true);
@@ -1334,7 +1351,7 @@ document.addEventListener('DOMContentLoaded', async () => {
             const nid = urlParams.get('nid');
             const titleParam = urlParams.get('t');
             const typeParam = urlParams.get('type'); // 'hyperlink' 或 undefined
-            
+
             if (titleParam && typeof titleParam === 'string' && titleParam.trim()) {
                 // 根据type参数设置不同的标题格式
                 if (typeParam === 'hyperlink') {
@@ -1352,7 +1369,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                     try {
                         if (predicate()) return resolve(true);
                         if (Date.now() - start >= timeout) return resolve(false);
-                    } catch (_) {}
+                    } catch (_) { }
                     setTimeout(tick, interval);
                 };
                 tick();
@@ -1371,12 +1388,12 @@ document.addEventListener('DOMContentLoaded', async () => {
                         const body = document.querySelector('#permanentSection .permanent-section-body');
                         const target = body ? body.querySelector(`.tree-item[data-node-id="${CSS.escape(nid)}"]`) : null;
                         if (target && target.scrollIntoView) {
-                            try { target.scrollIntoView({ block: 'center', behavior: 'instant' }); } catch(_) { target.scrollIntoView(); }
+                            try { target.scrollIntoView({ block: 'center', behavior: 'instant' }); } catch (_) { target.scrollIntoView(); }
                         }
                     }
                 } else if (lt === 'temporary' && sid) {
                     if (window.CanvasModule && typeof window.CanvasModule.locateSection === 'function') {
-                        try { window.CanvasModule.locateSection(sid); } catch(_) {}
+                        try { window.CanvasModule.locateSection(sid); } catch (_) { }
                     }
                 }
             }
@@ -1384,7 +1401,7 @@ document.addEventListener('DOMContentLoaded', async () => {
             console.warn('[初始化] Canvas 定位参数处理失败:', e);
         }
     }
-    
+
     // 并行预加载其他视图和图标（不阻塞）
     Promise.all([
         preloadAllViews(),
@@ -1394,10 +1411,10 @@ document.addEventListener('DOMContentLoaded', async () => {
     }).catch(error => {
         console.error('[初始化] 预加载失败:', error);
     });
-    
+
     // 监听存储变化（实时更新）
     browserAPI.storage.onChanged.addListener(handleStorageChange);
-    
+
     // 监听书签API变化（实时更新书签树视图）
     setupBookmarkListener();
 
@@ -1407,7 +1424,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         deferredAnalysisMessage = null;
         handleAnalysisUpdatedMessage(pendingMessage);
     }
-    
+
     console.log('历史查看器初始化完成');
 });
 
@@ -1457,7 +1474,7 @@ async function loadUserSettings() {
                 && window.matchMedia
                 && window.matchMedia('(prefers-color-scheme: dark)').matches;
             const mainUITheme = result.currentTheme || (prefersDark ? 'dark' : 'light');
-            
+
             // 优先使用覆盖设置，否则使用主UI设置
             if (hasThemeOverride()) {
                 currentTheme = getThemeOverride() || mainUITheme;
@@ -1466,7 +1483,7 @@ async function loadUserSettings() {
                 currentTheme = mainUITheme;
                 console.log('[加载用户设置] 跟随主UI主题:', currentTheme);
             }
-            
+
             if (hasLangOverride()) {
                 currentLang = getLangOverride() || mainUILang;
                 console.log('[加载用户设置] 使用History Viewer的语言覆盖:', currentLang);
@@ -1474,25 +1491,25 @@ async function loadUserSettings() {
                 currentLang = mainUILang;
                 console.log('[加载用户设置] 跟随主UI语言:', currentLang);
             }
-            
+
             // 应用主题
             document.documentElement.setAttribute('data-theme', currentTheme);
-            
+
             // 更新主题切换按钮图标
             const themeIcon = document.querySelector('#themeToggle i');
             if (themeIcon) {
                 themeIcon.className = currentTheme === 'dark' ? 'fas fa-sun' : 'fas fa-moon';
             }
-            
+
             // 应用语言
             applyLanguage();
-            
+
             // 更新语言切换按钮文本
             const langText = document.querySelector('#langToggle .lang-text');
             if (langText) {
                 langText.textContent = currentLang === 'zh_CN' ? 'EN' : '中';
             }
-            
+
             resolve();
         });
     });
@@ -1525,23 +1542,23 @@ function applyLanguage() {
     if (exportCanvasText) exportCanvasText.textContent = i18n.exportCanvasText[currentLang];
     const clearTempNodesText = document.getElementById('clearTempNodesText');
     if (clearTempNodesText) clearTempNodesText.textContent = i18n.clearTempNodesText[currentLang];
-    
+
     // Canvas 缩放控制器
     const canvasZoomLabel = document.getElementById('canvasZoomLabel');
     if (canvasZoomLabel) canvasZoomLabel.textContent = i18n.canvasZoomLabel[currentLang];
     const canvasZoomHint = document.getElementById('canvasZoomHint');
     if (canvasZoomHint) canvasZoomHint.innerHTML = i18n.canvasZoomHint[currentLang];
-    
+
     // 日历加载文本
     const calendarLoadingText = document.getElementById('calendarLoadingText');
     if (calendarLoadingText) calendarLoadingText.textContent = i18n.calendarLoading[currentLang];
-    
+
     // 日历按钮文本
     const calendarSelectModeText = document.getElementById('calendarSelectModeText');
     if (calendarSelectModeText) calendarSelectModeText.textContent = i18n.calendarSelectMode[currentLang];
     const calendarLocateTodayText = document.getElementById('calendarLocateTodayText');
     if (calendarLocateTodayText) calendarLocateTodayText.textContent = i18n.calendarLocateToday[currentLang];
-    
+
     // 更新日历视图翻译
     if (typeof updateBookmarkCalendarLanguage === 'function') {
         updateBookmarkCalendarLanguage();
@@ -1574,7 +1591,7 @@ function applyLanguage() {
         fullscreenBtn.classList.toggle('fullscreen-active', Boolean(isFullscreen));
         fullscreenBtn.setAttribute('aria-pressed', isFullscreen ? 'true' : 'false');
     }
-    
+
     // Canvas永久栏目文本
     const permanentSectionTitle = document.getElementById('permanentSectionTitle');
     if (permanentSectionTitle) permanentSectionTitle.textContent = i18n.permanentSectionTitle[currentLang];
@@ -1582,12 +1599,12 @@ function applyLanguage() {
     if (permanentSectionTip) {
         // 若用户已自定义说明，则保留用户内容；仅在无自定义时应用默认文案
         let savedTip = '';
-        try { savedTip = localStorage.getItem('canvas-permanent-tip-text') || ''; } catch {}
+        try { savedTip = localStorage.getItem('canvas-permanent-tip-text') || ''; } catch { }
         if (!savedTip.trim()) {
             permanentSectionTip.textContent = i18n.permanentSectionTip[currentLang];
         }
     }
-    
+
     // 更新按钮文本
     const copyAllHistoryText = document.getElementById('copyAllHistoryText');
     if (copyAllHistoryText) {
@@ -1595,7 +1612,7 @@ function applyLanguage() {
     }
     const revertAllCurrentText = document.getElementById('revertAllCurrentText');
     if (revertAllCurrentText) revertAllCurrentText.textContent = i18n.revertAll[currentLang];
-    
+
     // 以下元素在「书签点击排行」UI中，已被删除，需要安全检查
     const filterAll = document.getElementById('filterAll');
     if (filterAll) filterAll.textContent = i18n.filterAll[currentLang];
@@ -1619,7 +1636,7 @@ function applyLanguage() {
     // document.getElementById('treeViewModeText').textContent = i18n.treeViewMode[currentLang];
     // document.getElementById('jsonViewModeText').textContent = i18n.jsonViewMode[currentLang];
     document.getElementById('modalTitle').textContent = i18n.modalTitle[currentLang];
-    
+
     // 更新工具按钮气泡
     document.getElementById('refreshTooltip').textContent = i18n.refreshTooltip[currentLang];
     document.getElementById('themeTooltip').textContent = i18n.themeTooltip[currentLang];
@@ -1654,7 +1671,7 @@ function applyLanguage() {
     if (closeShortcutsText) {
         closeShortcutsText.textContent = i18n.closeShortcutsText[currentLang];
     }
-    
+
     // 更新横向滚动条提示文字
     const scrollbarHint = document.querySelector('.canvas-scrollbar.horizontal .scrollbar-hint');
     if (scrollbarHint) scrollbarHint.textContent = i18n.horizontalScrollHint[currentLang];
@@ -1672,7 +1689,7 @@ function applyLanguage() {
     if (browsingTabHistory) browsingTabHistory.textContent = i18n.browsingTabHistory[currentLang];
     const browsingTabRanking = document.getElementById('browsingTabRanking');
     if (browsingTabRanking) browsingTabRanking.textContent = i18n.browsingTabRanking[currentLang];
-    
+
     // 浏览记录相关文本
     const browsingRankingTitle = document.getElementById('browsingRankingTitle');
     if (browsingRankingTitle) browsingRankingTitle.textContent = i18n.browsingRankingTitle[currentLang];
@@ -1690,14 +1707,14 @@ function applyLanguage() {
     if (additionsAnkiTitle) additionsAnkiTitle.textContent = i18n.additionsAnkiTitle[currentLang];
     const additionsAnkiDescription = document.getElementById('additionsAnkiDescription');
     if (additionsAnkiDescription) additionsAnkiDescription.textContent = i18n.additionsAnkiDescription[currentLang];
-    
+
     // 导出相关翻译
     const exportTooltip = document.getElementById('calendarExportTooltip');
     if (exportTooltip) exportTooltip.textContent = i18n.exportTooltip[currentLang];
-    
+
     const exportModalTitle = document.getElementById('exportModalTitle');
     if (exportModalTitle) exportModalTitle.textContent = i18n.exportModalTitle[currentLang];
-    
+
     const doExportBtn = document.getElementById('doExportBtn');
     if (doExportBtn) {
         // 保留图标
@@ -1709,7 +1726,7 @@ function applyLanguage() {
     // 这里为了简单，我们在HTML中添加data-i18n属性会更好，但现在直接操作DOM
     // 重新打开弹窗时也会触发文本更新（见 BookmarkCalendar.openExportModal）
     // 但我们需要在 applyLanguage 中也处理一下静态文本
-    
+
     document.querySelectorAll('#exportModal h4').forEach((h4, index) => {
         if (index === 0) h4.textContent = i18n.exportScopeLabel[currentLang];
         if (index === 1) h4.textContent = i18n.exportModeLabel[currentLang];
@@ -1724,7 +1741,7 @@ function applyLanguage() {
             span.innerHTML = `${i18n[titleKey][currentLang]} <small style="color: var(--text-tertiary);">${i18n[descKey][currentLang]}</small>`;
         }
     };
-    
+
     updateRadioLabel('records', 'exportModeRecords', 'exportModeRecordsDesc');
     updateRadioLabel('context', 'exportModeContext', 'exportModeContextDesc');
     updateRadioLabel('collection', 'exportModeCollection', 'exportModeCollectionDesc');
@@ -1740,9 +1757,60 @@ function applyLanguage() {
     updateCheckboxLabel('json', 'exportFormatJson');
     updateCheckboxLabel('copy', 'exportFormatCopy');
 
+    // 导出相关翻译 (点击记录)
+    const browsingExportTooltip = document.getElementById('browsingCalendarExportTooltip');
+    if (browsingExportTooltip) browsingExportTooltip.textContent = i18n.browsingExportTooltip[currentLang];
+
+    const browsingSelectModeText = document.getElementById('browsingCalendarSelectModeText');
+    if (browsingSelectModeText) browsingSelectModeText.textContent = i18n.calendarSelectMode[currentLang];
+
+    const browsingLocateTodayText = document.getElementById('browsingCalendarLocateTodayText');
+    if (browsingLocateTodayText) browsingLocateTodayText.textContent = i18n.calendarLocateToday[currentLang];
+
+    const browsingExportModalTitle = document.getElementById('browsingExportModalTitle');
+    if (browsingExportModalTitle) browsingExportModalTitle.textContent = i18n.browsingExportModalTitle[currentLang];
+
+    const doBrowsingExportBtn = document.getElementById('doBrowsingExportBtn');
+    if (doBrowsingExportBtn) {
+        // 保留图标
+        const icon = doBrowsingExportBtn.querySelector('i');
+        doBrowsingExportBtn.childNodes[doBrowsingExportBtn.childNodes.length - 1].textContent = ' ' + i18n.exportBtnStart[currentLang];
+    }
+
+    // 更新点击记录导出弹窗内的标签
+    document.querySelectorAll('#browsingExportModal h4').forEach((h4, index) => {
+        if (index === 0) h4.textContent = i18n.exportScopeLabel[currentLang];
+        if (index === 1) h4.textContent = i18n.exportModeLabel[currentLang];
+        if (index === 2) h4.textContent = i18n.exportFormatLabel[currentLang];
+    });
+
+    // 导出选项文本更新 (点击记录)
+    const updateBrowsingRadioLabel = (val, titleKey, descKey) => {
+        const input = document.querySelector(`input[name="browsingExportMode"][value="${val}"]`);
+        if (input && input.nextElementSibling) {
+            const span = input.nextElementSibling;
+            span.innerHTML = `${i18n[titleKey][currentLang]} <small style="color: var(--text-tertiary);">${i18n[descKey][currentLang]}</small>`;
+        }
+    };
+
+    updateBrowsingRadioLabel('records', 'browsingExportModeRecords', 'exportModeRecordsDesc');
+    updateBrowsingRadioLabel('context', 'exportModeContext', 'exportModeContextDesc');
+    updateBrowsingRadioLabel('collection', 'exportModeCollection', 'exportModeCollectionDesc');
+
+    const updateBrowsingCheckboxLabel = (val, titleKey) => {
+        const input = document.querySelector(`input[name="browsingExportFormat"][value="${val}"]`);
+        if (input && input.nextElementSibling) {
+            input.nextElementSibling.textContent = i18n[titleKey][currentLang];
+        }
+    };
+
+    updateBrowsingCheckboxLabel('html', 'exportFormatHtml');
+    updateBrowsingCheckboxLabel('json', 'exportFormatJson');
+    updateBrowsingCheckboxLabel('copy', 'exportFormatCopy');
+
     // 更新语言切换按钮
     document.querySelector('#langToggle .lang-text').textContent = currentLang === 'zh_CN' ? 'EN' : '中';
-    
+
     // 更新主题切换按钮图标
     const themeIcon = document.querySelector('#themeToggle i');
     if (currentTheme === 'dark') {
@@ -1761,7 +1829,7 @@ function initializeUI() {
     document.querySelectorAll('.nav-tab').forEach(tab => {
         tab.addEventListener('click', () => switchView(tab.dataset.view));
     });
-    
+
     // 状态过滤按钮（已删除，但保留代码以防恢复）
     document.querySelectorAll('.filter-btn').forEach(btn => {
         btn.addEventListener('click', () => {
@@ -1771,7 +1839,7 @@ function initializeUI() {
             renderAdditionsView();
         });
     });
-    
+
     // 时间过滤按钮（已删除，但保留代码以防恢复）
     document.querySelectorAll('.time-filter-btn').forEach(btn => {
         btn.addEventListener('click', () => {
@@ -1784,7 +1852,7 @@ function initializeUI() {
 
     // 「书签温故」子视图标签
     initAdditionsSubTabs();
-    
+
     // 工具按钮
     document.getElementById('refreshBtn').addEventListener('click', refreshData);
     document.getElementById('themeToggle').addEventListener('click', toggleTheme);
@@ -1820,16 +1888,16 @@ function initializeUI() {
         revertAllCurrentBtn.addEventListener('click', () => handleRevertAll('current'));
     }
     // Canvas 相关事件监听在 Canvas 模块中处理
-    
+
     // 搜索
     document.getElementById('searchInput').addEventListener('input', handleSearch);
-    
+
     // 弹窗关闭
     document.getElementById('modalClose').addEventListener('click', closeModal);
     document.getElementById('detailModal').addEventListener('click', (e) => {
         if (e.target.id === 'detailModal') closeModal();
     });
-    
+
     // 注意：不再在这里调用 updateUIForCurrentView()，因为已经在 DOMContentLoaded 早期调用了 applyViewState()
     console.log('[initializeUI] UI事件监听器初始化完成，当前视图:', currentView);
 }
@@ -2009,16 +2077,16 @@ function showRevertToast(isSuccess, message) {
 async function loadAllData(options = {}) {
     const { skipRender = false } = options;
     console.log('[loadAllData] 开始加载所有数据...');
-    
+
     try {
         // 并行加载所有数据
         const [storageData, bookmarkTree] = await Promise.all([
             loadStorageData(),
             loadBookmarkTree()
         ]);
-        
+
         syncHistory = storageData.syncHistory || [];
-        
+
         // 清理bookmarkTree以减少内存占用和防止复制时卡顿
         // 只保留最近3条记录的bookmarkTree用于显示详情
         syncHistory = syncHistory.map((record, index) => {
@@ -2030,28 +2098,28 @@ async function loadAllData(options = {}) {
             const { bookmarkTree, ...recordWithoutTree } = record;
             return recordWithoutTree;
         });
-        
+
         console.log('[loadAllData] 已清理历史记录中的大数据，保留最新3条的bookmarkTree');
-        
+
         // 将 ISO 字符串格式转换为时间戳（毫秒）
         lastBackupTime = storageData.lastSyncTime ? new Date(storageData.lastSyncTime).getTime() : null;
         allBookmarks = flattenBookmarkTree(bookmarkTree);
         cachedBookmarkTree = bookmarkTree;
-        
+
         console.log('[loadAllData] 数据加载完成:', {
             历史记录数: syncHistory.length,
             书签总数: allBookmarks.length
         });
-        
+
         // 更新统计信息
         updateStats();
-        
+
         // 如果当前正在查看 current-changes，重新渲染
         if (currentView === 'current-changes' && !skipRender) {
             console.log('[loadAllData] 刷新当前变化视图');
             renderCurrentChangesView();
         }
-        
+
     } catch (error) {
         console.error('[loadAllData] 加载数据失败:', error);
         showError('加载数据失败');
@@ -2062,22 +2130,22 @@ async function loadAllData(options = {}) {
 async function preloadAllViews() {
     if (isPreloading) return;
     isPreloading = true;
-    
+
     console.log('[预加载] 开始预加载所有视图...');
-    
+
     try {
         // 预加载书签树（后台准备）
         if (!cachedBookmarkTree) {
             cachedBookmarkTree = await loadBookmarkTree();
             console.log('[预加载] 书签树已缓存');
         }
-        
+
         // 预加载当前变化数据（后台准备）
         if (!cachedCurrentChanges) {
             cachedCurrentChanges = await getDetailedChanges();
             console.log('[预加载] 当前变化数据已缓存');
         }
-        
+
         console.log('[预加载] 所有视图数据预加载完成');
     } catch (error) {
         console.error('[预加载] 预加载失败:', error);
@@ -2089,27 +2157,27 @@ async function preloadAllViews() {
 // 预加载常见网站的图标
 async function preloadCommonIcons() {
     console.log('[图标预加载] 开始预加载常见图标...');
-    
+
     try {
         // 获取当前所有书签的 URL，过滤掉无效的
         const urls = allBookmarks
             .map(b => b.url)
             .filter(url => url && url.trim() && (url.startsWith('http://') || url.startsWith('https://')));
-        
+
         if (urls.length === 0) {
             console.log('[图标预加载] 没有有效的 URL 需要预加载');
             return;
         }
-        
+
         // 批量预加载（限制并发数）
         const batchSize = 10;
         const maxPreload = Math.min(urls.length, 50);
-        
+
         for (let i = 0; i < maxPreload; i += batchSize) {
             const batch = urls.slice(i, i + batchSize);
             await Promise.all(batch.map(url => preloadIcon(url)));
         }
-        
+
         console.log('[图标预加载] 完成，已预加载', maxPreload, '个图标');
     } catch (error) {
         console.error('[图标预加载] 失败:', error);
@@ -2123,7 +2191,7 @@ async function preloadIcon(url) {
         if (!url || FaviconCache.isInvalidUrl(url)) {
             return;
         }
-        
+
         // 使用缓存系统获取favicon（会自动缓存）
         await FaviconCache.fetch(url);
     } catch (error) {
@@ -2135,15 +2203,15 @@ async function preloadIcon(url) {
 // 用于解决切换视图时图标变成五角星的问题
 async function warmupFaviconCache(bookmarkUrls) {
     if (!bookmarkUrls || bookmarkUrls.length === 0) return;
-    
+
     try {
         console.log('[Favicon预热] 开始预热内存缓存，书签数量:', bookmarkUrls.length);
-        
+
         // 初始化 IndexedDB（如果还没初始化）
         if (!FaviconCache.db) {
             await FaviconCache.init();
         }
-        
+
         // 批量从 IndexedDB 读取所有域名的 favicon
         const domains = new Set();
         bookmarkUrls.forEach(url => {
@@ -2156,20 +2224,20 @@ async function warmupFaviconCache(bookmarkUrls) {
                 // 忽略无效URL
             }
         });
-        
+
         if (domains.size === 0) return;
-        
+
         console.log('[Favicon预热] 需要预热的域名数:', domains.size);
-        
+
         // 批量读取
         const transaction = FaviconCache.db.transaction([FaviconCache.storeName], 'readonly');
         const store = transaction.objectStore(FaviconCache.storeName);
-        
+
         let loaded = 0;
         for (const domain of domains) {
             // 跳过已在内存缓存中的
             if (FaviconCache.memoryCache.has(domain)) continue;
-            
+
             try {
                 const request = store.get(domain);
                 await new Promise((resolve) => {
@@ -2186,7 +2254,7 @@ async function warmupFaviconCache(bookmarkUrls) {
                 // 忽略单个域名的错误
             }
         }
-        
+
         console.log('[Favicon预热] 完成，从IndexedDB加载了', loaded, '个favicon到内存');
     } catch (error) {
         console.warn('[Favicon预热] 失败:', error);
@@ -2212,7 +2280,7 @@ function loadBookmarkTree() {
 function flattenBookmarkTree(node, parentPath = '') {
     const bookmarks = [];
     const currentPath = parentPath ? `${parentPath}/${node.title}` : node.title;
-    
+
     if (node.url) {
         bookmarks.push({
             id: node.id,
@@ -2223,13 +2291,13 @@ function flattenBookmarkTree(node, parentPath = '') {
             parentId: node.parentId
         });
     }
-    
+
     if (node.children) {
         node.children.forEach(child => {
             bookmarks.push(...flattenBookmarkTree(child, currentPath));
         });
     }
-    
+
     return bookmarks;
 }
 
@@ -2395,12 +2463,12 @@ function buildChangeSummary(diffMeta, stats, lang) {
 
     if (hasBookmarkStructural || hasFolderStructural) {
         summary.hasStructuralChange = true;
-        
+
         // 构建具体的结构变化列表
         const structuralParts = [];
         const movedCount = (typeof stats?.bookmarkMoved === 'number' ? stats.bookmarkMoved : 0) + (typeof stats?.folderMoved === 'number' ? stats.folderMoved : 0);
         const modifiedCount = (typeof stats?.bookmarkModified === 'number' ? stats.bookmarkModified : 0) + (typeof stats?.folderModified === 'number' ? stats.folderModified : 0);
-        
+
         if (bookmarkMoved || folderMoved) {
             structuralParts.push(`${effectiveLang === 'en' ? 'Moved' : '移动'}${movedCount > 0 ? ` (${movedCount})` : ''}`);
             summary.structuralItems.push(`${effectiveLang === 'en' ? 'Moved' : '移动'}${movedCount > 0 ? ` (${movedCount})` : ''}`);
@@ -2410,7 +2478,7 @@ function buildChangeSummary(diffMeta, stats, lang) {
             summary.structuralItems.push(`${effectiveLang === 'en' ? 'Modified' : '修改'}${modifiedCount > 0 ? ` (${modifiedCount})` : ''}`);
         }
 
-        
+
         // 用具体的变化类型替代通用的"变动"标签
         const separator = effectiveLang === 'en' ? ' <span style="color:var(--text-tertiary);">|</span> ' : '、';
         const structuralText = structuralParts.join(separator);
@@ -2427,15 +2495,15 @@ function buildChangeSummary(diffMeta, stats, lang) {
 function updateStats() {
     const totalBackups = syncHistory.length;
     const currentBookmarks = allBookmarks.length;
-    
+
     // 计算文件夹数（从最新备份记录获取）
     let currentFolders = 0;
     if (syncHistory.length > 0) {
         const latestRecord = syncHistory[syncHistory.length - 1];
-        currentFolders = latestRecord.bookmarkStats?.currentFolderCount || 
-                        latestRecord.bookmarkStats?.currentFolders || 0;
+        currentFolders = latestRecord.bookmarkStats?.currentFolderCount ||
+            latestRecord.bookmarkStats?.currentFolders || 0;
     }
-    
+
     document.getElementById('statBackupsCount').textContent = totalBackups;
     document.getElementById('statBookmarksCount').textContent = currentBookmarks;
     document.getElementById('statFoldersCount').textContent = currentFolders;
@@ -2448,28 +2516,28 @@ function updateStats() {
 function initSidebarToggle() {
     const sidebar = document.getElementById('sidebar');
     const toggleBtn = document.getElementById('sidebarToggle');
-    
+
     if (!sidebar || !toggleBtn) {
         console.warn('[侧边栏] 找不到侧边栏或切换按钮');
         return;
     }
-    
+
     // 从 localStorage 恢复侧边栏状态
     const savedState = localStorage.getItem('sidebarCollapsed');
     if (savedState === 'true') {
         sidebar.classList.add('collapsed');
         console.log('[侧边栏] 恢复收起状态');
     }
-    
+
     // 点击切换按钮
     toggleBtn.addEventListener('click', (e) => {
         e.stopPropagation();
         sidebar.classList.toggle('collapsed');
-        
+
         // 保存状态到 localStorage
         const isCollapsed = sidebar.classList.contains('collapsed');
         localStorage.setItem('sidebarCollapsed', isCollapsed.toString());
-        
+
         console.log('[侧边栏]', isCollapsed ? '已收起' : '已展开');
     });
 }
@@ -2480,14 +2548,14 @@ function initSidebarToggle() {
 
 function switchView(view) {
     console.log('[switchView] 切换视图到:', view);
-    
+
     const previousView = currentView;
-    
+
     // 处理旧的 'tree' 命名
     if (view === 'tree') {
         view = 'canvas';
     }
-    
+
     // 当从 Canvas 视图切换到其他视图时，尝试更新一次缩略图
     if (previousView === 'canvas' && view !== 'canvas') {
         try {
@@ -2500,10 +2568,10 @@ function switchView(view) {
             console.warn('[Canvas Thumbnail] switchView 捕获失败:', e);
         }
     }
-    
+
     // 更新全局变量
     currentView = view;
-    
+
     // 更新导航标签
     document.querySelectorAll('.nav-tab').forEach(tab => {
         if (tab.dataset.view === view) {
@@ -2512,7 +2580,7 @@ function switchView(view) {
             tab.classList.remove('active');
         }
     });
-    
+
     // 更新视图容器
     document.querySelectorAll('.view').forEach(v => {
         if (v.id === `${view}View`) {
@@ -2521,11 +2589,11 @@ function switchView(view) {
             v.classList.remove('active');
         }
     });
-    
+
     // 保存到 localStorage
     localStorage.setItem('lastActiveView', view);
     console.log('[switchView] 已保存视图到localStorage:', view);
-    
+
     // 渲染当前视图
     renderCurrentView();
 }
@@ -2581,7 +2649,7 @@ function captureCanvasThumbnail() {
                             const ctx = canvas.getContext('2d');
                             if (!ctx) {
                                 console.warn('[Canvas Thumbnail] 无法获取 2D 上下文，退回整页截图');
-                                browserAPI.storage.local.set({ bookmarkCanvasThumbnail: dataUrl }, () => {});
+                                browserAPI.storage.local.set({ bookmarkCanvasThumbnail: dataUrl }, () => { });
                                 return;
                             }
 
@@ -2609,17 +2677,17 @@ function captureCanvasThumbnail() {
                             });
                         } catch (e) {
                             console.warn('[Canvas Thumbnail] 裁剪缩略图时出错，退回整页截图:', e);
-                            browserAPI.storage.local.set({ bookmarkCanvasThumbnail: dataUrl }, () => {});
+                            browserAPI.storage.local.set({ bookmarkCanvasThumbnail: dataUrl }, () => { });
                         }
                     };
                     img.onerror = () => {
                         console.warn('[Canvas Thumbnail] 缩略图图片加载失败，退回整页截图');
-                        browserAPI.storage.local.set({ bookmarkCanvasThumbnail: dataUrl }, () => {});
+                        browserAPI.storage.local.set({ bookmarkCanvasThumbnail: dataUrl }, () => { });
                     };
                     img.src = dataUrl;
                 } catch (cropError) {
                     console.warn('[Canvas Thumbnail] 裁剪逻辑异常，退回整页截图:', cropError);
-                    browserAPI.storage.local.set({ bookmarkCanvasThumbnail: dataUrl }, () => {});
+                    browserAPI.storage.local.set({ bookmarkCanvasThumbnail: dataUrl }, () => { });
                 }
             } catch (e) {
                 console.warn('[Canvas Thumbnail] 保存缩略图时出错:', e);
@@ -2664,7 +2732,7 @@ function renderCurrentView() {
             zoomIndicator.style.display = 'none';
         }
     }
-    
+
     switch (currentView) {
         case 'current-changes':
             renderCurrentChangesView();
@@ -2680,14 +2748,14 @@ function renderCurrentView() {
             // 1. 先从template创建永久栏目并添加到canvas-content（如果还不存在）
             const canvasContent = document.getElementById('canvasContent');
             let permanentSectionExists = document.getElementById('permanentSection');
-            
+
             if (!permanentSectionExists && canvasContent) {
                 const template = document.getElementById('permanentSectionTemplate');
                 if (template) {
                     const permanentSection = template.content.cloneNode(true);
                     canvasContent.appendChild(permanentSection);
                     console.log('[Canvas] 永久栏目已从template创建到canvas-content');
-                    
+
                     // 立即应用语言设置（使用主UI的applyLanguage函数）
                     setTimeout(() => {
                         applyLanguage();
@@ -2701,7 +2769,7 @@ function renderCurrentView() {
             } else {
                 console.log('[Canvas] 永久栏目已存在，跳过创建');
             }
-            
+
             // 2. 渲染原有的书签树功能（到永久栏目中的bookmarkTree容器）
             renderTreeView();
             // 3. 初始化Canvas功能（缩放、平移、拖拽等）
@@ -2715,7 +2783,7 @@ function renderCurrentView() {
                     if (currentView === 'canvas') {
                         captureCanvasThumbnail();
                     }
-                } catch (_) {}
+                } catch (_) { }
             }, 800);
 
             // 5. 绑定 Canvas 滚动截图逻辑：只在 Canvas 视图内滚动时触发 B 方案
@@ -2734,7 +2802,7 @@ function renderCurrentView() {
                             canvasScrollThumbnailTimer = null;
                             requestCanvasThumbnailUpdate('scroll');
                         }, 800);
-                    } catch (_) {}
+                    } catch (_) { }
                 }, { passive: true });
             }
             break;
@@ -2749,22 +2817,22 @@ function renderCurrentView() {
 async function renderCurrentChangesViewWithRetry(maxRetries = 3, forceRefresh = false) {
     for (let attempt = 1; attempt <= maxRetries; attempt++) {
         console.log(`[渲染重试] 第 ${attempt}/${maxRetries} 次尝试`);
-        
+
         // 第一次尝试使用forceRefresh参数，后续尝试也使用
         const shouldForceRefresh = forceRefresh || attempt === 1;
-        
+
         // 尝试渲染
         await renderCurrentChangesView(shouldForceRefresh);
-        
+
         // 检查是否需要重试
         const changeData = await getDetailedChanges(shouldForceRefresh);
-        
+
         // 如果有数量变化，但没有详细列表，且不是最后一次尝试，则重试
         const hasQuantityChange = Boolean(changeData.diffMeta?.hasNumericalChange);
         const hasDetailedList = (changeData.added && changeData.added.length > 0) ||
             (changeData.deleted && changeData.deleted.length > 0) ||
             (changeData.moved && changeData.moved.length > 0);
-        
+
         console.log(`[渲染重试] 检查结果:`, {
             attempt,
             hasQuantityChange,
@@ -2772,13 +2840,13 @@ async function renderCurrentChangesViewWithRetry(maxRetries = 3, forceRefresh = 
             bookmarkDiff: changeData.diffMeta?.bookmarkDiff,
             deletedCount: changeData.deleted?.length || 0
         });
-        
+
         // 如果有变化且有详细列表，或者没有变化，或者是最后一次尝试，则停止
         if (!hasQuantityChange || hasDetailedList || attempt === maxRetries) {
             console.log(`[渲染重试] 完成，不再重试`);
             break;
         }
-        
+
         // 等待 300ms 后重试
         console.log(`[渲染重试] 等待 300ms 后重试...`);
         await new Promise(resolve => setTimeout(resolve, 300));
@@ -2787,18 +2855,18 @@ async function renderCurrentChangesViewWithRetry(maxRetries = 3, forceRefresh = 
 
 async function renderCurrentChangesView(forceRefresh = false) {
     const container = document.getElementById('currentChangesList');
-    
+
     // 显示加载状态
     container.innerHTML = `<div class="loading">${i18n.loading[currentLang]}</div>`;
-    
+
     console.log('[当前变化视图] 开始加载...', forceRefresh ? '(强制刷新)' : '');
-    
+
     try {
         // 从 background 获取详细变化数据
         const changeData = await getDetailedChanges(forceRefresh);
-        
+
         console.log('[当前变化视图] 获取到的数据:', changeData);
-        
+
         if (!changeData || !changeData.hasChanges) {
             // 没有变化
             console.log('[当前变化视图] 无变化');
@@ -2811,9 +2879,9 @@ async function renderCurrentChangesView(forceRefresh = false) {
             `;
             return;
         }
-        
+
         let html = '';
-        
+
         const stats = changeData.stats || {};
         const diffMeta = changeData.diffMeta || {
             bookmarkDiff: stats.bookmarkDiff || 0,
@@ -2826,26 +2894,26 @@ async function renderCurrentChangesView(forceRefresh = false) {
         const summary = buildChangeSummary(diffMeta, stats, currentLang);
         const hasQuantityChange = summary.hasQuantityChange;
         const hasStructureChange = summary.hasStructuralChange;
-        
+
         if (hasQuantityChange || hasStructureChange) {
             // Git diff 风格的容器
             html += '<div class="git-diff-container">';
-            
+
             // diff 头部
             html += '<div class="diff-header">';
             html += '<span class="diff-icon">📊</span>';
             html += `<span class="diff-title">${currentLang === 'zh_CN' ? '书签变化统计' : 'Bookmark Changes'}</span>`;
             html += `<span class="diff-stats">${summary.quantityTotalLine}</span>`;
             html += '</div>';
-            
+
             // diff 主体
             html += '<div class="diff-body">';
-            
+
             // 数量变化部分
             if (hasQuantityChange) {
                 const bookmarkDiff = diffMeta.bookmarkDiff || 0;
                 const folderDiff = diffMeta.folderDiff || 0;
-                
+
                 if (bookmarkDiff > 0) {
                     html += '<div class="diff-line added">';
                     html += '<span class="diff-prefix">+</span>';
@@ -2857,7 +2925,7 @@ async function renderCurrentChangesView(forceRefresh = false) {
                     html += `<span class="diff-content">${Math.abs(bookmarkDiff)} ${currentLang === 'zh_CN' ? '个书签' : 'bookmarks'}</span>`;
                     html += '</div>';
                 }
-                
+
                 if (folderDiff > 0) {
                     html += '<div class="diff-line added">';
                     html += '<span class="diff-prefix">+</span>';
@@ -2870,13 +2938,13 @@ async function renderCurrentChangesView(forceRefresh = false) {
                     html += '</div>';
                 }
             }
-            
+
             // 结构变化部分
             if (hasStructureChange && summary.structuralItems && summary.structuralItems.length > 0) {
                 summary.structuralItems.forEach(item => {
                     let diffClass = 'modified';
                     let prefix = '~';
-                    
+
                     if (item.includes('moved') || item.includes('移动')) {
                         diffClass = 'moved';
                         prefix = '↔';
@@ -2884,14 +2952,14 @@ async function renderCurrentChangesView(forceRefresh = false) {
                         diffClass = 'modified';
                         prefix = '~';
                     }
-                    
+
                     html += `<div class="diff-line ${diffClass}">`;
                     html += `<span class="diff-prefix">${prefix}</span>`;
                     html += `<span class="diff-content">${item}</span>`;
                     html += '</div>';
                 });
             }
-            
+
             // 如果没有任何变化
             if (!hasQuantityChange && !hasStructureChange) {
                 html += '<div class="diff-line unchanged">';
@@ -2899,11 +2967,11 @@ async function renderCurrentChangesView(forceRefresh = false) {
                 html += `<span class="diff-content">${currentLang === 'zh_CN' ? '无变化' : 'No changes'}</span>`;
                 html += '</div>';
             }
-            
+
             html += '</div>'; // 结束 diff-body
             html += '</div>'; // 结束 git-diff-container
         }
-        
+
         // 2. 智能分析书签变化 + 生成 Git diff
         browserAPI.storage.local.get(['lastBookmarkData'], async (lastData) => {
             // 获取当前书签树（working directory）
@@ -2913,13 +2981,13 @@ async function renderCurrentChangesView(forceRefresh = false) {
                 if (lastData.lastBookmarkData && lastData.lastBookmarkData.bookmarkTree) {
                     oldTree = lastData.lastBookmarkData.bookmarkTree;
                 }
-                
+
                 // 按路径分别生成 diff（确保移动的书签在两个路径都显示）
                 const oldLines = oldTree ? bookmarkTreeToLines(oldTree) : [];
                 const newLines = bookmarkTreeToLines(currentTree);
                 const groupedHunks = generateDiffByPath(oldLines, newLines);
                 let diffHtml = '';
-                
+
                 if (groupedHunks.length === 0) {
                     diffHtml += `
                         <div class="no-changes-message" style="margin-top: 20px;">
@@ -2937,27 +3005,27 @@ async function renderCurrentChangesView(forceRefresh = false) {
                     diffHtml += `<span>${currentLang === 'zh_CN' ? '复制Diff' : 'Copy Diff'}</span>`;
                     diffHtml += '</button>';
                     diffHtml += '</div>';
-                    
+
                     let hunkIndex = 0;
                     groupedHunks.forEach((group, groupIdx) => {
                         diffHtml += '<div class="diff-folder-group">';
-                        
+
                         // 文件夹头部（面包屑导航样式）
                         diffHtml += `<div class="diff-folder-header-static">`;
                         diffHtml += renderBreadcrumb(group.path, currentLang);
                         diffHtml += '</div>';
-                        
+
                         group.hunks.forEach(hunk => {
                             const hunkId = `hunk-${hunkIndex++}`;
                             const hunkLines = hunk.contextBefore.length + hunk.changes.length + hunk.contextAfter.length;
                             const shouldCollapse = hunkLines > 15; // 超过15行的片段默认折叠
-                            
+
                             // 计算 +/- 统计
                             const addCount = hunk.changes.filter(c => c.type === 'add').length;
                             const deleteCount = hunk.changes.filter(c => c.type === 'delete').length;
-                            
+
                             diffHtml += '<div class="diff-hunk">';
-                            
+
                             // Hunk 头部（可点击折叠）
                             const iconClass = shouldCollapse ? 'fa-chevron-right' : 'fa-chevron-down';
                             diffHtml += `<div class="diff-hunk-header collapsible" data-hunk-id="${hunkId}">`;
@@ -2968,10 +3036,10 @@ async function renderCurrentChangesView(forceRefresh = false) {
                             if (deleteCount > 0) diffHtml += `<span class="stat-delete">-${deleteCount}</span>`;
                             diffHtml += `</span>`;
                             diffHtml += '</div>';
-                            
+
                             // Hunk 内容（可折叠）
                             diffHtml += `<div class="diff-hunk-content ${shouldCollapse ? 'collapsed' : ''}" id="${hunkId}">`;
-                            
+
                             // 前置上下文
                             hunk.contextBefore.forEach(ctx => {
                                 diffHtml += `<div class="diff-line-wrapper context">`;
@@ -2981,7 +3049,7 @@ async function renderCurrentChangesView(forceRefresh = false) {
                                 diffHtml += `<span class="diff-line-content">${escapeHtml(ctx.line.line)}</span>`;
                                 diffHtml += `</div>`;
                             });
-                            
+
                             // 变化
                             hunk.changes.forEach(change => {
                                 if (change.type === 'delete') {
@@ -3007,7 +3075,7 @@ async function renderCurrentChangesView(forceRefresh = false) {
                                     diffHtml += `</div>`;
                                 }
                             });
-                            
+
                             // 后置上下文
                             hunk.contextAfter.forEach(ctx => {
                                 diffHtml += `<div class="diff-line-wrapper context">`;
@@ -3017,25 +3085,25 @@ async function renderCurrentChangesView(forceRefresh = false) {
                                 diffHtml += `<span class="diff-line-content">${escapeHtml(ctx.line.line)}</span>`;
                                 diffHtml += `</div>`;
                             });
-                            
+
                             diffHtml += '</div>'; // 结束 diff-hunk-content
                             diffHtml += '</div>'; // 结束 diff-hunk
                         });
-                        
+
                         diffHtml += '</div>'; // 结束 diff-folder-group
                     });
-                    
+
                     diffHtml += '</div>'; // 结束 git-diff-viewer
                 }
-                
+
                 container.innerHTML = html + diffHtml;
-                
+
                 // 添加 hunk 折叠按钮事件监听器
                 setTimeout(() => {
                     document.querySelectorAll('.diff-hunk-header.collapsible').forEach(header => {
                         const hunkId = header.getAttribute('data-hunk-id');
                         if (hunkId) {
-                            header.addEventListener('click', function() {
+                            header.addEventListener('click', function () {
                                 toggleHunk(hunkId);
                             });
                         }
@@ -3059,14 +3127,14 @@ async function renderCurrentChangesView(forceRefresh = false) {
 async function getDetailedChanges(forceRefresh = false) {
     return new Promise((resolve) => {
         console.log('[getDetailedChanges] 开始获取数据...', forceRefresh ? '(强制刷新)' : '(使用缓存)');
-        
+
         // 使用和 popup.js 完全相同的逻辑：并行获取三个数据源
         Promise.all([
             // 1. 获取当前统计（支持强制刷新）
             new Promise((res, rej) => {
-                browserAPI.runtime.sendMessage({ 
+                browserAPI.runtime.sendMessage({
                     action: "getBackupStats",
-                    forceRefresh: forceRefresh 
+                    forceRefresh: forceRefresh
                 }, response => {
                     if (response && response.success) res(response);
                     else rej(new Error(response?.error || '获取备份统计失败'));
@@ -3086,28 +3154,28 @@ async function getDetailedChanges(forceRefresh = false) {
                 });
             })
         ]).then(([backupResponse, syncHistory, cachedRecordFromStorage]) => {
-            console.log('[getDetailedChanges] 获取到的完整数据:', { 
+            console.log('[getDetailedChanges] 获取到的完整数据:', {
                 backupResponse,
                 'stats对象': backupResponse.stats,
                 syncHistoryLength: syncHistory.length,
-                hasCachedRecord: !!cachedRecordFromStorage 
+                hasCachedRecord: !!cachedRecordFromStorage
             });
-            
-        const diffResult = calculateBookmarkFolderDiffs(
-            backupResponse.stats,
-            syncHistory,
-            cachedRecordFromStorage
-        );
 
-        const bookmarkDiff = diffResult.bookmarkDiff || 0;
-        const folderDiff = diffResult.folderDiff || 0;
-        const hasNumericalChange = diffResult.hasNumericalChange === true;
-            
+            const diffResult = calculateBookmarkFolderDiffs(
+                backupResponse.stats,
+                syncHistory,
+                cachedRecordFromStorage
+            );
+
+            const bookmarkDiff = diffResult.bookmarkDiff || 0;
+            const folderDiff = diffResult.folderDiff || 0;
+            const hasNumericalChange = diffResult.hasNumericalChange === true;
+
             const hasStructuralChanges = backupResponse.stats.bookmarkMoved ||
                 backupResponse.stats.folderMoved ||
                 backupResponse.stats.bookmarkModified ||
                 backupResponse.stats.folderModified;
-            
+
             console.log('[getDetailedChanges] ✅ 直接使用 background 返回的差异（不再自己计算）:', {
                 bookmarkDiff,
                 folderDiff,
@@ -3117,18 +3185,18 @@ async function getDetailedChanges(forceRefresh = false) {
                     folderDiff: backupResponse.stats.folderDiff
                 }
             });
-            
+
             // 检查是否有变化
             const hasChanges = hasNumericalChange || hasStructuralChanges;
-            
+
             console.log('[getDetailedChanges] 是否有变化:', hasChanges);
-            
+
             if (!hasChanges) {
                 console.log('[getDetailedChanges] 无变化，返回');
                 resolve({ hasChanges: false, stats: { ...backupResponse.stats, bookmarkDiff, folderDiff }, diffMeta: diffResult });
                 return;
             }
-            
+
             // 构造 stats 对象
             const stats = {
                 ...backupResponse.stats,
@@ -3139,22 +3207,22 @@ async function getDetailedChanges(forceRefresh = false) {
                 currentFolderCount: diffResult.currentFolderCount,
                 hasNumericalChange
             };
-            
+
             // 获取指纹数据进行详细分析
             browserAPI.storage.local.get(['lastBookmarkData'], async (data) => {
                 const lastData = data.lastBookmarkData;
-                
+
                 console.log('[getDetailedChanges] lastBookmarkData:', {
                     exists: !!lastData,
                     hasPrints: !!(lastData && lastData.bookmarkPrints),
                     printsCount: lastData?.bookmarkPrints?.length || 0,
                     timestamp: lastData?.timestamp || 'unknown'
                 });
-                
+
                 if (!lastData || !lastData.bookmarkPrints) {
                     // 只有数量变化，无法获取详细列表
                     console.warn('[getDetailedChanges] 没有 lastBookmarkData，无法获取详细列表');
-                    resolve({ 
+                    resolve({
                         hasChanges: true,
                         stats: stats,
                         diffMeta: diffResult,
@@ -3165,19 +3233,19 @@ async function getDetailedChanges(forceRefresh = false) {
                     });
                     return;
                 }
-                
+
                 // 获取当前书签树并生成指纹
                 browserAPI.bookmarks.getTree(async (tree) => {
                     try {
                         const currentPrints = generateFingerprintsFromTree(tree);
                         const oldBookmarkPrints = new Set(lastData.bookmarkPrints || []);
                         const newBookmarkPrints = new Set(currentPrints.bookmarks);
-                        
+
                         const added = [];
                         const deleted = [];
                         const moved = [];
                         const modified = [];
-                        
+
                         // 解析新增和可能的移动
                         for (const print of newBookmarkPrints) {
                             if (!oldBookmarkPrints.has(print)) {
@@ -3205,7 +3273,7 @@ async function getDetailedChanges(forceRefresh = false) {
                                 }
                             }
                         }
-                        
+
                         // 解析删除
                         for (const print of oldBookmarkPrints) {
                             if (!newBookmarkPrints.has(print)) {
@@ -3218,14 +3286,14 @@ async function getDetailedChanges(forceRefresh = false) {
                                 }
                             }
                         }
-                        
-                        console.log('变化分析结果:', { 
-                            added: added.length, 
-                            deleted: deleted.length, 
+
+                        console.log('变化分析结果:', {
+                            added: added.length,
+                            deleted: deleted.length,
                             moved: moved.length,
                             stats
                         });
-                        
+
                         resolve({
                             hasChanges: true,
                             stats,
@@ -3260,7 +3328,7 @@ async function getDetailedChanges(forceRefresh = false) {
 function generateFingerprintsFromTree(bookmarkNodes) {
     const bookmarkPrints = [];
     const folderPrints = [];
-    
+
     function traverse(nodes, path) {
         if (!nodes) return;
         for (const node of nodes) {
@@ -3282,11 +3350,11 @@ function generateFingerprintsFromTree(bookmarkNodes) {
             }
         }
     }
-    
+
     if (bookmarkNodes && bookmarkNodes.length > 0 && bookmarkNodes[0].children) {
         traverse(bookmarkNodes[0].children, '');
     }
-    
+
     return { bookmarks: bookmarkPrints, folders: folderPrints };
 }
 
@@ -3294,10 +3362,10 @@ function generateFingerprintsFromTree(bookmarkNodes) {
 function parseBookmarkFingerprint(fingerprint) {
     // 格式: B:path|title|url
     if (!fingerprint || !fingerprint.startsWith('B:')) return null;
-    
+
     const parts = fingerprint.substring(2).split('|');
     if (parts.length < 3) return null;
-    
+
     return {
         path: parts[0],
         title: parts[1],
@@ -3312,20 +3380,20 @@ function groupBookmarksByFolder(bookmarks, lastBackupTime) {
         modified: [],
         moved: []
     };
-    
+
     if (!lastBackupTime) {
         // 如果没有备份记录，所有书签都算新增
         result.added = bookmarks;
         return result;
     }
-    
+
     // 找出新增的书签（添加时间晚于最后备份时间）
     bookmarks.forEach(bookmark => {
         if (bookmark.dateAdded > lastBackupTime) {
             result.added.push(bookmark);
         }
     });
-    
+
     return result;
 }
 
@@ -3339,33 +3407,33 @@ function generateDiffByPath(oldLines, newLines) {
     newLines.forEach(line => {
         if (line.path) allPaths.add(line.path);
     });
-    
+
     const result = [];
-    
+
     // 为每个路径单独生成 diff
     allPaths.forEach(path => {
         // 提取该路径下的行，保留全局索引
         const pathOldLines = [];
         const pathNewLines = [];
-        
+
         oldLines.forEach((line, globalIdx) => {
             if (line.path === path || (!line.path && !path)) {
                 // 保留全局索引
                 pathOldLines.push({ ...line, globalIdx });
             }
         });
-        
+
         newLines.forEach((line, globalIdx) => {
             if (line.path === path || (!line.path && !path)) {
                 // 保留全局索引
                 pathNewLines.push({ ...line, globalIdx });
             }
         });
-        
+
         // 如果这个路径下有内容，生成 diff
         if (pathOldLines.length > 0 || pathNewLines.length > 0) {
             const hunks = generateGitDiff(pathOldLines, pathNewLines, true);
-            
+
             if (hunks.length > 0) {
                 result.push({
                     path: path,
@@ -3374,7 +3442,7 @@ function generateDiffByPath(oldLines, newLines) {
             }
         }
     });
-    
+
     return result;
 }
 
@@ -3385,18 +3453,18 @@ function analyzeStructuralChanges(oldTree, newTree) {
         moved: [],     // 移动：{type: 'bookmark'|'folder', title, oldPath, newPath, url}
         modified: []   // URL修改：{title, oldUrl, newUrl}
     };
-    
+
     if (!oldTree) {
         return changes;
     }
-    
+
     // 提取所有书签和文件夹的信息（带路径）
     const extractItems = (nodes, path = []) => {
         const items = { bookmarks: [], folders: [] };
-        
+
         const traverse = (node, currentPath) => {
             if (!node) return;
-            
+
             if (node.url) {
                 // 书签
                 items.bookmarks.push({
@@ -3414,24 +3482,24 @@ function analyzeStructuralChanges(oldTree, newTree) {
                         path: currentPath.join(' > ')
                     });
                 }
-                
+
                 const newPath = node.title ? [...currentPath, node.title] : currentPath;
                 node.children.forEach(child => traverse(child, newPath));
             }
         };
-        
+
         nodes.forEach(node => traverse(node, path));
         return items;
     };
-    
+
     const oldItems = extractItems(oldTree);
     const newItems = extractItems(newTree);
-    
+
     // 1. 检测书签的重命名、移动、修改
     oldItems.bookmarks.forEach(oldBm => {
         // 通过 URL 匹配（URL 是书签的唯一标识）
         const newBm = newItems.bookmarks.find(n => n.url === oldBm.url);
-        
+
         if (newBm) {
             // 书签存在
             if (oldBm.title !== newBm.title) {
@@ -3455,15 +3523,15 @@ function analyzeStructuralChanges(oldTree, newTree) {
             }
         }
     });
-    
+
     // 检测 URL 修改（通过标题匹配，但 URL 不同）
     oldItems.bookmarks.forEach(oldBm => {
-        const newBm = newItems.bookmarks.find(n => 
-            n.title === oldBm.title && 
-            n.path === oldBm.path && 
+        const newBm = newItems.bookmarks.find(n =>
+            n.title === oldBm.title &&
+            n.path === oldBm.path &&
             n.url !== oldBm.url
         );
-        
+
         if (newBm) {
             changes.modified.push({
                 title: oldBm.title,
@@ -3472,11 +3540,11 @@ function analyzeStructuralChanges(oldTree, newTree) {
             });
         }
     });
-    
+
     // 2. 检测文件夹的重命名、移动（简化版）
     oldItems.folders.forEach(oldFolder => {
         const newFolder = newItems.folders.find(n => n.title === oldFolder.title);
-        
+
         if (newFolder && oldFolder.path !== newFolder.path) {
             changes.moved.push({
                 type: 'folder',
@@ -3486,7 +3554,7 @@ function analyzeStructuralChanges(oldTree, newTree) {
             });
         }
     });
-    
+
     return changes;
 }
 
@@ -3496,7 +3564,7 @@ function renderStructuralChangesSummary(changes, lang) {
     let html = '<div class="structural-changes-summary">';
     html += `<div class="summary-header"><i class="fas fa-info-circle"></i> ${isZh ? '结构变化摘要' : 'Structural Changes'}</div>`;
     html += '<div class="summary-body">';
-    
+
     // 重命名
     if (changes.renamed.length > 0) {
         html += '<div class="change-group">';
@@ -3510,7 +3578,7 @@ function renderStructuralChangesSummary(changes, lang) {
         }
         html += '</div>';
     }
-    
+
     // 移动
     if (changes.moved.length > 0) {
         html += '<div class="change-group">';
@@ -3527,7 +3595,7 @@ function renderStructuralChangesSummary(changes, lang) {
         }
         html += '</div>';
     }
-    
+
     // URL 修改
     if (changes.modified.length > 0) {
         html += '<div class="change-group">';
@@ -3545,7 +3613,7 @@ function renderStructuralChangesSummary(changes, lang) {
         }
         html += '</div>';
     }
-    
+
     html += '</div></div>';
     return html;
 }
@@ -3553,14 +3621,14 @@ function renderStructuralChangesSummary(changes, lang) {
 // 将书签树转换为类似HTML文件的行数组
 function bookmarkTreeToLines(tree, parentPath = '') {
     const lines = [];
-    
+
     function traverse(nodes, path) {
         if (!nodes) return;
-        
+
         nodes.forEach(node => {
             // 使用 ' > ' 作为路径分隔符，避免和文件夹名称中的 '/' 冲突
             const currentPath = path ? `${path} > ${node.title}` : node.title;
-            
+
             if (node.url) {
                 // 书签节点 - 类似 HTML 的 <DT><A> 行
                 lines.push({
@@ -3586,11 +3654,11 @@ function bookmarkTreeToLines(tree, parentPath = '') {
             }
         });
     }
-    
+
     if (tree && tree[0] && tree[0].children) {
         traverse(tree[0].children, '');
     }
-    
+
     return lines;
 }
 
@@ -3598,68 +3666,68 @@ function bookmarkTreeToLines(tree, parentPath = '') {
 function generateGitDiff(oldLines, newLines, useGlobalIndex = false) {
     const hunks = [];
     const contextLines = 3; // 上下文行数
-    
+
     // 使用简单的逐行比对
     let i = 0;
     let j = 0;
-    
+
     while (i < oldLines.length || j < newLines.length) {
         // 找到下一个差异点
         const matchStart = { old: i, new: j };
-        
+
         // 跳过相同的行
-        while (i < oldLines.length && j < newLines.length && 
-               oldLines[i].line === newLines[j].line) {
+        while (i < oldLines.length && j < newLines.length &&
+            oldLines[i].line === newLines[j].line) {
             i++;
             j++;
         }
-        
+
         // 如果没有差异了，结束
         if (i >= oldLines.length && j >= newLines.length) {
             break;
         }
-        
+
         // 找到了差异，记录差异的起始位置（减去上下文）
         const hunkOldStart = Math.max(0, i - contextLines);
         const hunkNewStart = Math.max(0, j - contextLines);
-        
+
         // 添加前置上下文
         const contextBefore = [];
         for (let k = hunkOldStart; k < i; k++) {
             if (k < oldLines.length) {
                 const actualOldIdx = useGlobalIndex && oldLines[k].globalIdx !== undefined ? oldLines[k].globalIdx : k;
                 const actualNewIdx = useGlobalIndex && newLines[j - (i - k)] && newLines[j - (i - k)].globalIdx !== undefined ? newLines[j - (i - k)].globalIdx : (j - (i - k));
-                contextBefore.push({ 
-                    type: 'context', 
-                    line: oldLines[k], 
-                    oldIdx: actualOldIdx, 
+                contextBefore.push({
+                    type: 'context',
+                    line: oldLines[k],
+                    oldIdx: actualOldIdx,
                     newIdx: actualNewIdx
                 });
             }
         }
-        
+
         // 收集变化
         const changes = [];
         const changeStartOld = i;
         const changeStartNew = j;
-        
+
         // 找变化的范围（继续往前直到再次匹配或结束）
         while (i < oldLines.length || j < newLines.length) {
             // 检查是否重新匹配（连续匹配几行）
             let matchCount = 0;
             let ti = i, tj = j;
-            while (ti < oldLines.length && tj < newLines.length && 
-                   oldLines[ti].line === newLines[tj].line && matchCount < contextLines + 1) {
+            while (ti < oldLines.length && tj < newLines.length &&
+                oldLines[ti].line === newLines[tj].line && matchCount < contextLines + 1) {
                 matchCount++;
                 ti++;
                 tj++;
             }
-            
+
             // 如果连续匹配了足够多行，说明差异段结束
             if (matchCount >= contextLines + 1) {
                 break;
             }
-            
+
             // 否则继续收集差异
             if (i < oldLines.length && (j >= newLines.length || oldLines[i].line !== newLines[j].line)) {
                 // 检查这行是否在 newLines 的后面出现（可能是新增导致的偏移）
@@ -3670,7 +3738,7 @@ function generateGitDiff(oldLines, newLines, useGlobalIndex = false) {
                         break;
                     }
                 }
-                
+
                 if (foundInNew > j) {
                     // 说明中间有新增的行
                     while (j < foundInNew) {
@@ -3703,7 +3771,7 @@ function generateGitDiff(oldLines, newLines, useGlobalIndex = false) {
                 break;
             }
         }
-        
+
         // 添加后置上下文
         const contextAfter = [];
         const afterStart = { old: i, new: j };
@@ -3711,26 +3779,26 @@ function generateGitDiff(oldLines, newLines, useGlobalIndex = false) {
             if (oldLines[i + k].line === newLines[j + k].line) {
                 const actualOldIdx = useGlobalIndex && oldLines[i + k].globalIdx !== undefined ? oldLines[i + k].globalIdx : (i + k);
                 const actualNewIdx = useGlobalIndex && newLines[j + k].globalIdx !== undefined ? newLines[j + k].globalIdx : (j + k);
-                contextAfter.push({ 
-                    type: 'context', 
-                    line: oldLines[i + k], 
-                    oldIdx: actualOldIdx, 
+                contextAfter.push({
+                    type: 'context',
+                    line: oldLines[i + k],
+                    oldIdx: actualOldIdx,
                     newIdx: actualNewIdx
                 });
             }
         }
-        
+
         // 跳过后置上下文的行数
         const skipCount = contextAfter.length;
         i += skipCount;
         j += skipCount;
-        
+
         // 如果有变化，添加 hunk
         if (changes.length > 0) {
             const deleteCount = changes.filter(c => c.type === 'delete').length;
             const addCount = changes.filter(c => c.type === 'add').length;
             const contextInChanges = changes.filter(c => c.type === 'context').length;
-            
+
             // 提取路径信息（从变化的行或上下文中）
             let hunkPath = null;
             for (const change of changes) {
@@ -3742,7 +3810,7 @@ function generateGitDiff(oldLines, newLines, useGlobalIndex = false) {
             if (!hunkPath && contextBefore.length > 0) {
                 hunkPath = contextBefore[0].line.path;
             }
-            
+
             hunks.push({
                 oldStart: hunkOldStart + 1,
                 oldCount: contextBefore.length + deleteCount + contextInChanges + contextAfter.length,
@@ -3755,7 +3823,7 @@ function generateGitDiff(oldLines, newLines, useGlobalIndex = false) {
             });
         }
     }
-    
+
     return hunks;
 }
 
@@ -3964,7 +4032,7 @@ function computeLCS(oldLines, newLines) {
     const m = oldLines.length;
     const n = newLines.length;
     const dp = Array(m + 1).fill(null).map(() => Array(n + 1).fill(0));
-    
+
     for (let i = 1; i <= m; i++) {
         for (let j = 1; j <= n; j++) {
             if (oldLines[i - 1].line === newLines[j - 1].line) {
@@ -3974,7 +4042,7 @@ function computeLCS(oldLines, newLines) {
             }
         }
     }
-    
+
     // 回溯
     const lcs = [];
     let i = m, j = n;
@@ -3989,7 +4057,7 @@ function computeLCS(oldLines, newLines) {
             j--;
         }
     }
-    
+
     return lcs;
 }
 
@@ -4005,23 +4073,23 @@ function renderBreadcrumb(path, lang) {
             </span>
         </div>`;
     }
-    
+
     // 只按 ' > ' 拆分路径（避免误拆文件夹名称中的 '/'）
     const parts = path.split(' > ').filter(p => p.trim());
-    
+
     let html = '<div class="breadcrumb">';
-    
+
     parts.forEach((part, index) => {
         if (index > 0) {
             html += '<span class="breadcrumb-separator"><i class="fas fa-chevron-right"></i></span>';
         }
-        
+
         html += `<span class="breadcrumb-item">`;
         html += `<i class="fas fa-folder"></i>`;
         html += `<span class="breadcrumb-text">${escapeHtml(part.trim())}</span>`;
         html += `</span>`;
     });
-    
+
     html += '</div>';
     return html;
 }
@@ -4030,12 +4098,12 @@ function renderBreadcrumb(path, lang) {
 function toggleHunk(hunkId) {
     const content = document.getElementById(hunkId);
     const icon = document.getElementById(hunkId + '-icon');
-    
+
     if (!content || !icon) {
         console.error('[toggleHunk] 找不到元素:', hunkId);
         return;
     }
-    
+
     if (content.classList.contains('collapsed')) {
         content.classList.remove('collapsed');
         icon.classList.remove('fa-chevron-right');
@@ -4049,7 +4117,7 @@ function toggleHunk(hunkId) {
 
 function renderChangeCategory(type, bookmarks) {
     if (bookmarks.length === 0) return '';
-    
+
     // 这个函数现在不再使用，因为我们要渲染完整的 diff
     return '';
 }
@@ -4057,7 +4125,7 @@ function renderChangeCategory(type, bookmarks) {
 function renderChangeTreeItem(bookmark, type) {
     // 使用 Google S2 服务获取favicon - 更可靠
     const favicon = getFaviconUrl(bookmark.url);
-    
+
     let displayInfo = '';
     if (type === 'moved') {
         // 移动的书签显示原路径和新路径
@@ -4075,7 +4143,7 @@ function renderChangeTreeItem(bookmark, type) {
             <div class="change-tree-item-url">${escapeHtml(bookmark.url)}</div>
         `;
     }
-    
+
     return `
         <div class="change-tree-item" data-bookmark-url="${escapeHtml(bookmark.url || '')}">
             ${favicon ? `<img class="change-tree-item-icon" 
@@ -4085,10 +4153,10 @@ function renderChangeTreeItem(bookmark, type) {
                 ${displayInfo}
             </div>
             <span class="change-tree-item-badge ${type}">
-                ${type === 'added' ? i18n.added[currentLang] : 
-                  type === 'deleted' ? i18n.deleted[currentLang] :
-                  type === 'modified' ? i18n.modified[currentLang] :
-                  i18n.moved[currentLang]}
+                ${type === 'added' ? i18n.added[currentLang] :
+            type === 'deleted' ? i18n.deleted[currentLang] :
+                type === 'modified' ? i18n.modified[currentLang] :
+                    i18n.moved[currentLang]}
             </span>
         </div>
     `;
@@ -4422,13 +4490,13 @@ function renderCommitStatsInline(changes) {
 
 function renderAdditionsView() {
     const container = document.getElementById('additionsList');
-    
+
     // 【修复】容器已被删除（在UI重构中），直接返回
     if (!container) {
         console.log('[renderAdditionsView] additionsList容器不存在，跳过渲染');
         return;
     }
-    
+
     if (allBookmarks.length === 0) {
         container.innerHTML = `
             <div class="empty-state">
@@ -4438,15 +4506,15 @@ function renderAdditionsView() {
         `;
         return;
     }
-    
+
     // 按时间范围分组（年、月、日）
     const groupedByTime = groupBookmarksByTime(allBookmarks, currentTimeFilter);
-    
+
     // 过滤
     const filtered = filterBookmarks(groupedByTime);
-    
+
     container.innerHTML = renderBookmarkGroups(filtered, currentTimeFilter);
-    
+
     // 绑定折叠/展开事件
     attachAdditionGroupEvents();
 }
@@ -4787,17 +4855,17 @@ function renderBookmarkClickRankingList(container, items) {
 
 function groupBookmarksByTime(bookmarks, timeFilter) {
     const groups = {};
-    
+
     bookmarks.forEach(bookmark => {
         const date = new Date(bookmark.dateAdded);
         let groupKey;
-        
+
         switch (timeFilter) {
             case 'year':
                 groupKey = date.getFullYear().toString();
                 break;
             case 'month':
-                groupKey = currentLang === 'zh_CN' 
+                groupKey = currentLang === 'zh_CN'
                     ? `${date.getFullYear()}年${date.getMonth() + 1}月`
                     : `${date.toLocaleDateString('en-US', { year: 'numeric', month: 'long' })}`;
                 break;
@@ -4807,13 +4875,13 @@ function groupBookmarksByTime(bookmarks, timeFilter) {
                 groupKey = date.toLocaleDateString(currentLang === 'en' ? 'en-US' : 'zh-CN');
                 break;
         }
-        
+
         if (!groups[groupKey]) {
             groups[groupKey] = [];
         }
         groups[groupKey].push(bookmark);
     });
-    
+
     return groups;
 }
 
@@ -4824,20 +4892,20 @@ function groupBookmarksByDate(bookmarks) {
 
 function filterBookmarks(groups) {
     if (currentFilter === 'all') return groups;
-    
+
     const filtered = {};
-    
+
     Object.entries(groups).forEach(([date, bookmarks]) => {
         const filteredBookmarks = bookmarks.filter(b => {
             const isBackedUp = isBookmarkBackedUp(b);
             return currentFilter === 'backed-up' ? isBackedUp : !isBackedUp;
         });
-        
+
         if (filteredBookmarks.length > 0) {
             filtered[date] = filteredBookmarks;
         }
     });
-    
+
     return filtered;
 }
 
@@ -4855,13 +4923,13 @@ function renderBookmarkGroups(groups, timeFilter) {
         }
         return new Date(b) - new Date(a);
     });
-    
+
     return sortedDates.map((date, index) => {
         const bookmarks = groups[date];
         const groupId = `group-${index}`;
         // 默认折叠
         const isExpanded = false;
-        
+
         return `
             <div class="addition-group" data-group-id="${groupId}">
                 <div class="addition-group-header" data-group-id="${groupId}">
@@ -4886,7 +4954,7 @@ function attachAdditionGroupEvents() {
             const groupId = header.getAttribute('data-group-id');
             const items = document.querySelector(`.addition-items[data-group-id="${groupId}"]`);
             const toggle = header.querySelector('.addition-group-toggle');
-            
+
             if (items && toggle) {
                 items.classList.toggle('expanded');
                 toggle.classList.toggle('expanded');
@@ -4898,7 +4966,7 @@ function attachAdditionGroupEvents() {
 function renderBookmarkItem(bookmark) {
     const isBackedUp = isBookmarkBackedUp(bookmark);
     const favicon = getFaviconUrl(bookmark.url);
-    
+
     return `
         <div class="addition-item" data-bookmark-url="${escapeHtml(bookmark.url)}">
             <img class="addition-icon" src="${favicon}" alt="">
@@ -4926,7 +4994,7 @@ let lastTreeFingerprint = null; // 上次树的指纹
 // 生成书签树指纹（快速哈希）
 function getTreeFingerprint(tree) {
     if (!tree || !tree[0]) return '';
-    
+
     // 只提取关键信息生成指纹
     const extractKey = (node) => {
         const key = {
@@ -4941,7 +5009,7 @@ function getTreeFingerprint(tree) {
         }
         return key;
     };
-    
+
     return JSON.stringify(extractKey(tree[0]));
 }
 
@@ -4951,7 +5019,7 @@ function getIndexAddressPathFromTree(tree, targetId) {
         if (!tree || !tree[0]) return '';
         // 构建 id -> node 快速索引
         const map = new Map();
-        (function build(n){
+        (function build(n) {
             if (!n) return;
             map.set(n.id, n);
             if (n.children) n.children.forEach(build);
@@ -4985,7 +5053,7 @@ function getOldIndexAddressForNode(nodeId) {
         if (cachedOldTree && cachedOldTree[0]) {
             return getIndexAddressPathFromTree(cachedOldTree, nodeId);
         }
-    } catch (_) {}
+    } catch (_) { }
     return '';
 }
 
@@ -5059,30 +5127,30 @@ async function renderTreeView(forceRefresh = false) {
     // 记录永久栏目滚动位置，渲染后恢复
     const permBody = document.querySelector('.permanent-section-body');
     const permScrollTop = permBody ? permBody.scrollTop : null;
-    
+
     const treeContainer = document.getElementById('bookmarkTree');
-    
+
     if (!treeContainer) {
         console.error('[renderTreeView] 容器元素未找到');
         return;
     }
-    
+
     console.log('[renderTreeView] 容器元素已找到');
-    
+
     // 如果已有缓存且不强制刷新，直接使用（快速路径）
     if (!forceRefresh && cachedTreeData && cachedTreeData.treeFragment) {
         console.log('[renderTreeView] 使用现有缓存（快速显示）');
         treeContainer.innerHTML = '';
         treeContainer.appendChild(cachedTreeData.treeFragment.cloneNode(true));
         treeContainer.style.display = 'block';
-        
+
         // 重新绑定事件
         attachTreeEvents(treeContainer);
-        
+
         console.log('[renderTreeView] 缓存显示完成');
         // 恢复滚动位置
         if (permBody && permScrollTop !== null) permBody.scrollTop = permScrollTop;
-        
+
         // 【关键修复】即使使用缓存，也要预热内存缓存
         // 因为内存缓存可能在页面刷新后被清空，导致图标显示为五角星
         // 预热完成后会自动更新页面上的图标
@@ -5101,10 +5169,10 @@ async function renderTreeView(forceRefresh = false) {
                         });
                     };
                     collectUrls(currentTree);
-                    
+
                     if (allBookmarkUrls.length > 0) {
                         await warmupFaviconCache(allBookmarkUrls);
-                        
+
                         // 预热完成后，更新页面上所有使用fallback图标的img标签
                         allBookmarkUrls.forEach(url => {
                             try {
@@ -5118,7 +5186,7 @@ async function renderTreeView(forceRefresh = false) {
                                 // 忽略无效URL
                             }
                         });
-                        
+
                         console.log('[renderTreeView] 快速路径预热完成，已更新图标');
                     }
                 }
@@ -5126,15 +5194,15 @@ async function renderTreeView(forceRefresh = false) {
                 console.warn('[renderTreeView] 快速路径预热失败:', e);
             }
         })();
-        
+
         return;
     }
-    
+
     // 没有缓存，显示加载状态
     console.log('[renderTreeView] 无缓存，开始加载数据');
     treeContainer.innerHTML = `<div class="loading">${i18n.loading[currentLang]}</div>`;
     treeContainer.style.display = 'block';
-    
+
     // 获取数据并行处理
     Promise.all([
         new Promise(resolve => browserAPI.bookmarks.getTree(resolve)),
@@ -5149,31 +5217,31 @@ async function renderTreeView(forceRefresh = false) {
             `;
             return;
         }
-        
+
         // 生成当前树的指纹
         const currentFingerprint = getTreeFingerprint(currentTree);
-        
+
         // 如果指纹相同，直接使用缓存（树没有变化）
         if (cachedTreeData && currentFingerprint === lastTreeFingerprint) {
             console.log('[renderTreeView] 使用缓存（书签未变化）');
             treeContainer.innerHTML = '';
             treeContainer.appendChild(cachedTreeData.treeFragment.cloneNode(true));
             treeContainer.style.display = 'block';
-            
+
             // 重新绑定事件
             attachTreeEvents(treeContainer);
             // 恢复滚动位置
             if (permBody && permScrollTop !== null) permBody.scrollTop = permScrollTop;
             return;
         }
-        
+
         // 树有变化，重新渲染
         console.log('[renderTreeView] 检测到书签变化，重新渲染');
-        
+
         const oldTree = storageData.lastBookmarkData && storageData.lastBookmarkData.bookmarkTree;
         cachedOldTree = oldTree;
         cachedCurrentTree = currentTree; // 缓存当前树，用于智能路径检测
-        
+
         // 【关键修复】预热 favicon 缓存 - 从 IndexedDB 批量加载到内存
         // 收集所有书签URL
         const allBookmarkUrls = [];
@@ -5189,7 +5257,7 @@ async function renderTreeView(forceRefresh = false) {
             });
         };
         collectUrls(currentTree);
-        
+
         // 批量预热缓存（等待完成，确保渲染时缓存已就绪）
         if (allBookmarkUrls.length > 0) {
             try {
@@ -5198,16 +5266,16 @@ async function renderTreeView(forceRefresh = false) {
                 console.warn('[renderTreeView] favicon缓存预热失败，继续渲染:', e);
             }
         }
-        
+
         // 快速检测变动（只在有备份数据时才检测）
         console.log('[renderTreeView] oldTree 存在:', !!oldTree);
         console.log('[renderTreeView] oldTree[0] 存在:', !!(oldTree && oldTree[0]));
-        
+
         if (oldTree && oldTree[0]) {
             console.log('[renderTreeView] 开始检测变动...');
             treeChangeMap = await detectTreeChangesFast(oldTree, currentTree);
             console.log('[renderTreeView] 检测到的变动数量:', treeChangeMap.size);
-            
+
             // 打印前5个变动
             let count = 0;
             for (const [id, change] of treeChangeMap) {
@@ -5219,7 +5287,7 @@ async function renderTreeView(forceRefresh = false) {
             treeChangeMap = new Map(); // 无备份数据，不显示任何变化标记
             console.log('[renderTreeView] 无上次备份数据，不显示变化标记');
         }
-        
+
         // 合并旧树和新树，显示删除的节点
         let treeToRender = currentTree;
         if (oldTree && oldTree[0] && treeChangeMap && treeChangeMap.size > 0) {
@@ -5231,10 +5299,10 @@ async function renderTreeView(forceRefresh = false) {
                 treeToRender = currentTree; // 回退到原始树
             }
         }
-        
+
         // 使用 DocumentFragment 优化渲染
         const fragment = document.createDocumentFragment();
-        
+
         // 只在有变化时才显示图例
         if (treeChangeMap.size > 0) {
             const legend = document.createElement('div');
@@ -5247,27 +5315,27 @@ async function renderTreeView(forceRefresh = false) {
             `;
             fragment.appendChild(legend);
         }
-        
+
         const tempDiv = document.createElement('div');
         tempDiv.innerHTML = renderTreeNodeWithChanges(treeToRender[0], 0);
         while (tempDiv.firstChild) {
             fragment.appendChild(tempDiv.firstChild);
         }
-        
+
         // 更新缓存
         cachedTreeData = {
             treeFragment: fragment.cloneNode(true),
             currentTree: currentTree
         };
         lastTreeFingerprint = currentFingerprint;
-        
+
         treeContainer.innerHTML = '';
         treeContainer.appendChild(fragment);
         treeContainer.style.display = 'block';
-        
+
         // 绑定事件
         attachTreeEvents(treeContainer);
-        
+
         console.log('[renderTreeView] 渲染完成');
         // 恢复滚动位置
         if (permBody && permScrollTop !== null) permBody.scrollTop = permScrollTop;
@@ -5288,7 +5356,7 @@ function attachTreeEvents(treeContainer) {
     if (existingHandler) {
         treeContainer.removeEventListener('click', existingHandler);
     }
-    
+
     // 创建新的事件处理器
     const clickHandler = (e) => {
         // 处理移动标记的点击
@@ -5308,16 +5376,16 @@ function attachTreeEvents(treeContainer) {
                         const bc = getNamedPathFromTree(cachedOldTree, nodeId);
                         fromPath = breadcrumbToSlashFolders(bc);
                     }
-                } catch (_) {}
+                } catch (_) { }
             }
             if (!fromPath) fromPath = '/';
-            const message = currentLang === 'zh_CN' 
+            const message = currentLang === 'zh_CN'
                 ? `原位置：\n${fromPath}`
                 : `Original location:\n${fromPath}`;
             alert(message);
             return;
         }
-        
+
         // 点击整个文件夹行都可以展开
         const treeItem = e.target.closest('.tree-item');
         if (treeItem) {
@@ -5327,29 +5395,29 @@ function attachTreeEvents(treeContainer) {
                 console.log('[树事件] 未找到tree-node');
                 return;
             }
-            
+
             const children = node.querySelector('.tree-children');
             const toggle = node.querySelector('.tree-toggle');
-            
+
             console.log('[树事件] 点击节点:', {
                 hasChildren: !!children,
                 hasToggle: !!toggle,
                 nodeHTML: node.outerHTML.substring(0, 200)
             });
-            
+
             if (children && toggle) {
                 e.stopPropagation();
                 children.classList.toggle('expanded');
                 toggle.classList.toggle('expanded');
-                
+
                 console.log('[树事件] 切换展开状态:', toggle.classList.contains('expanded'));
-                
+
                 // 保存展开状态
                 saveTreeExpandState(treeContainer);
             }
         }
     };
-    
+
     // 绑定新的事件监听器
     treeContainer.addEventListener('click', clickHandler);
     treeClickHandlers.set(treeContainer, clickHandler);
@@ -5374,15 +5442,15 @@ function attachTreeEvents(treeContainer) {
                 // 兼容：如果提供 getter
                 window.defaultOpenMode = window.getDefaultOpenMode();
             }
-        } catch(_) {}
+        } catch (_) { }
         const mode = (typeof window !== 'undefined' && window.defaultOpenMode) || (typeof defaultOpenMode !== 'undefined' ? defaultOpenMode : 'new-tab');
-        
+
         // 防抖检查：使用与右键菜单相同的防抖机制
         const actionKey = `left-click-${mode}-${url}`;
         if (typeof shouldAllowBookmarkOpen === 'function' && !shouldAllowBookmarkOpen(actionKey)) {
             return; // 被防抖忽略
         }
-        
+
         if (mode === 'new-window') {
             if (typeof openBookmarkNewWindow === 'function') openBookmarkNewWindow(url, false); else window.open(url, '_blank');
         } else if (mode === 'incognito') {
@@ -5401,7 +5469,7 @@ function attachTreeEvents(treeContainer) {
             if (typeof openBookmarkNewTab === 'function') openBookmarkNewTab(url); else window.open(url, '_blank');
         }
     });
-    
+
     // 绑定右键菜单事件
     const treeItems = treeContainer.querySelectorAll('.tree-item[data-node-id]');
     treeItems.forEach(item => {
@@ -5411,26 +5479,26 @@ function attachTreeEvents(treeContainer) {
             }
         });
     });
-    
+
     // 绑定拖拽事件
     if (typeof attachDragEvents === 'function') {
         attachDragEvents(treeContainer);
     }
-    
+
     // 绑定指针拖拽事件（支持滚轮滚动）
     if (typeof attachPointerDragEvents === 'function') {
         attachPointerDragEvents(treeContainer);
         console.log('[树事件] 指针拖拽事件已绑定');
     }
-    
+
     // 如果在Canvas视图，重新绑定Canvas拖出功能
     if (currentView === 'canvas' && window.CanvasModule && window.CanvasModule.enhance) {
         console.log('[树事件] 当前在Canvas视图，重新绑定Canvas拖出功能');
         window.CanvasModule.enhance();
     }
-    
+
     console.log('[树事件] 事件绑定完成');
-    
+
     // 恢复展开状态
     restoreTreeExpandState(treeContainer);
 }
@@ -5488,7 +5556,7 @@ function restoreTreeExpandState(treeContainer) {
     try {
         const savedState = localStorage.getItem('treeExpandedNodes');
         if (!savedState) return;
-        
+
         const expandedPaths = JSON.parse(savedState);
         expandedPaths.forEach(path => {
             const labels = treeContainer.querySelectorAll('.tree-label');
@@ -5566,8 +5634,8 @@ async function detectTreeChangesFast(oldTree, newTree) {
             if (modified) types.push('modified');
             if (crossMove) {
                 types.push('moved');
-                detail.moved = { 
-                    oldPath: getNodePath(oldTree, id), 
+                detail.moved = {
+                    oldPath: getNodePath(oldTree, id),
                     newPath: getNodePath(newTree, id),
                     oldParentId: o.parentId,
                     oldIndex: o.index,
@@ -5601,13 +5669,13 @@ async function detectTreeChangesFast(oldTree, newTree) {
         if (parentsWithAddDelete.has(parentId)) {
             return;
         }
-        
+
         const oldList = oldByParent.get(parentId) || [];
         if (oldList.length === 0 || newList.length === 0) return;
-        
+
         // 构建旧索引映射
         const oldIndexMap = new Map(oldList.map(({ id, index }) => [id, index]));
-        
+
         // 收集所有位置改变的候选项
         const candidates = [];
         for (const { id, index } of newList) {
@@ -5618,19 +5686,19 @@ async function detectTreeChangesFast(oldTree, newTree) {
             }
         }
         if (candidates.length === 0) return;
-        
+
         // 选择唯一的"被移动"节点：
         // 1. 优先从显式移动集合中选取（用户拖拽时设置）
         // 2. 否则选择位移量最大的（最有可能是被拖拽的）
-        let picked = candidates.find(c => 
+        let picked = candidates.find(c =>
             explicitMovedIds && explicitMovedIds.has(c.id) && explicitMovedIds.get(c.id) > Date.now()
         );
-        
+
         if (!picked) {
             candidates.sort((a, b) => b.delta - a.delta || b.dir - a.dir);
             picked = candidates[0];
         }
-        
+
         // 只标记选中的节点为'moved'，其他位置改变的项完全忽略
         if (picked) {
             const existing = changes.get(picked.id);
@@ -5663,17 +5731,17 @@ function renderJSONDiff(container, oldTree, newTree) {
         `;
         return;
     }
-    
+
     // 真正渲染Diff（使用 requestIdleCallback 分批渲染）
     const oldJSON = oldTree ? JSON.stringify(oldTree, null, 2) : '';
     const newJSON = newTree ? JSON.stringify(newTree, null, 2) : '';
-    
+
     const oldLines = oldJSON.split('\n');
     const newLines = newJSON.split('\n');
-    
+
     // 使用更快的diff算法
     const diff = fastLineDiff(oldLines, newLines);
-    
+
     // 分批渲染
     const header = `
         <div class="json-header">
@@ -5683,24 +5751,24 @@ function renderJSONDiff(container, oldTree, newTree) {
         </div>
         <div class="json-diff-content" id="jsonDiffContent">
     `;
-    
+
     container.innerHTML = header + '</div>';
     const content = container.querySelector('#jsonDiffContent');
-    
+
     // 分批渲染（每批100行）
     const batchSize = 100;
     let currentBatch = 0;
-    
+
     const renderBatch = () => {
         const start = currentBatch * batchSize;
         const end = Math.min(start + batchSize, diff.length);
         const fragment = document.createDocumentFragment();
-        
+
         for (let idx = start; idx < end; idx++) {
             const line = diff[idx];
             const lineClass = line.type === 'added' ? 'added' : line.type === 'deleted' ? 'deleted' : 'same';
             const prefix = line.type === 'added' ? '+' : line.type === 'deleted' ? '-' : ' ';
-            
+
             const div = document.createElement('div');
             div.className = `json-diff-line ${lineClass}`;
             div.innerHTML = `
@@ -5711,9 +5779,9 @@ function renderJSONDiff(container, oldTree, newTree) {
             `;
             fragment.appendChild(div);
         }
-        
+
         content.appendChild(fragment);
-        
+
         currentBatch++;
         if (end < diff.length) {
             requestIdleCallback ? requestIdleCallback(renderBatch) : setTimeout(renderBatch, 0);
@@ -5736,7 +5804,7 @@ function renderJSONDiff(container, oldTree, newTree) {
             });
         }
     };
-    
+
     renderBatch();
 }
 
@@ -5745,9 +5813,9 @@ function fastLineDiff(oldLines, newLines) {
     const diff = [];
     const oldSet = new Set(oldLines);
     const newSet = new Set(newLines);
-    
+
     let i = 0, j = 0;
-    
+
     while (i < oldLines.length || j < newLines.length) {
         if (i < oldLines.length && j < newLines.length && oldLines[i] === newLines[j]) {
             diff.push({ type: 'same', line: oldLines[i], oldNum: i + 1, newNum: j + 1 });
@@ -5767,12 +5835,12 @@ function fastLineDiff(oldLines, newLines) {
             j++;
         }
     }
-    
+
     return diff;
 }
 
 // 复制JSON Diff
-window.copyJSONDiff = function() {
+window.copyJSONDiff = function () {
     const lines = document.querySelectorAll('.json-diff-line');
     let text = '';
     lines.forEach(line => {
@@ -5780,7 +5848,7 @@ window.copyJSONDiff = function() {
         const content = line.querySelector('.json-line-text').textContent;
         text += prefix + content + '\n';
     });
-    
+
     navigator.clipboard.writeText(text).then(() => {
         alert(currentLang === 'zh_CN' ? 'Diff已复制到剪贴板' : 'Diff copied to clipboard');
     }).catch(err => {
@@ -5795,17 +5863,17 @@ function generateBreadcrumbForTooltip(pathInfo) {
     if (typeof pathInfo === 'string') {
         return generateSinglePathBreadcrumb(pathInfo, currentLang === 'zh_CN' ? '从' : 'From');
     }
-    
+
     // 新的对象参数：{ originalPath, currentPath, hasChanges }
     if (!pathInfo || !pathInfo.originalPath) return '';
-    
+
     let html = '';
-    
+
     if (pathInfo.hasChanges && pathInfo.currentPath) {
         // 显示两个路径：原始路径 + 当前路径
         const originalLabel = currentLang === 'zh_CN' ? '原位置' : 'Original';
         const currentLabel = currentLang === 'zh_CN' ? '现在位置' : 'Current';
-        
+
         html += generateSinglePathBreadcrumb(pathInfo.originalPath, originalLabel);
         html += '<div class="path-separator"></div>'; // 分隔线
         html += generateSinglePathBreadcrumb(pathInfo.currentPath, currentLabel);
@@ -5814,40 +5882,40 @@ function generateBreadcrumbForTooltip(pathInfo) {
         const prefix = currentLang === 'zh_CN' ? '从' : 'From';
         html += generateSinglePathBreadcrumb(pathInfo.originalPath, prefix);
     }
-    
+
     return html;
 }
 
 // 生成单个路径的面包屑
 function generateSinglePathBreadcrumb(path, label) {
     if (!path) return '';
-    
+
     const parts = path.split(' > ');
-    
+
     let html = `<span class="move-tooltip-label">${label}:</span>`;
-    
+
     parts.forEach((part, index) => {
         const isRoot = index === 0;
         const iconClass = isRoot ? 'fa-home' : 'fa-folder';
         const itemClass = isRoot ? 'root' : '';
-        
+
         html += `<span class="breadcrumb-item ${itemClass}">
             <i class="fas ${iconClass}"></i>
             <span class="breadcrumb-text">${escapeHtml(part)}</span>
         </span>`;
-        
+
         if (index < parts.length - 1) {
             html += '<span class="breadcrumb-separator"><i class="fas fa-chevron-right"></i></span>';
         }
     });
-    
+
     return html;
 }
 
 // 合并旧树和新树，显示所有节点（包括删除的）
 function mergeTreesForDisplay(oldTree, newTree) {
     const allNodes = new Map();
-    
+
     // 遍历新树
     function traverseNew(nodes, parentPath = '') {
         if (!nodes) return;
@@ -5859,7 +5927,7 @@ function mergeTreesForDisplay(oldTree, newTree) {
             }
         });
     }
-    
+
     // 遍历旧树，找出已删除的节点
     function traverseOld(nodes, parentPath = '') {
         if (!nodes) return;
@@ -5873,26 +5941,26 @@ function mergeTreesForDisplay(oldTree, newTree) {
             }
         });
     }
-    
+
     if (newTree && newTree[0]) traverseNew(newTree[0].children);
     if (oldTree && oldTree[0]) traverseOld(oldTree[0].children);
-    
+
     return allNodes;
 }
 
 // 重建树结构，包含删除的节点（保持原始位置）
 function rebuildTreeWithDeleted(oldTree, newTree, changeMap) {
     console.log('[树重建] 开始重建树结构');
-    
+
     if (!oldTree || !oldTree[0] || !newTree || !newTree[0]) {
         console.log('[树重建] 缺少树数据，返回新树');
         return newTree;
     }
-    
+
     // 防止循环引用的集合
     const visitedIds = new Set();
     const MAX_DEPTH = 50;
-    
+
     // 基于旧树重建，添加新节点和保留删除节点
     function rebuildNode(oldNode, newNodes, depth = 0) {
         // 安全检查
@@ -5900,65 +5968,65 @@ function rebuildTreeWithDeleted(oldTree, newTree, changeMap) {
             console.log('[树重建] 跳过无效节点:', oldNode);
             return null;
         }
-        
+
         // 深度限制
         if (depth > MAX_DEPTH) {
             console.warn('[树重建] 超过最大深度限制:', depth);
             return null;
         }
-        
+
         // 循环引用检测
         if (visitedIds.has(oldNode.id)) {
             console.warn('[树重建] 检测到循环引用:', oldNode.id);
             return null;
         }
         visitedIds.add(oldNode.id);
-        
+
         // 在新树中查找对应的节点
         const newNode = newNodes ? newNodes.find(n => n && n.id === oldNode.id) : null;
         const change = changeMap ? changeMap.get(oldNode.id) : null;
-        
+
         if (change && change.type === 'deleted') {
             // 节点被删除，保留但标记
             console.log('[树重建] 保留删除节点:', oldNode.title);
             const deletedNodeCopy = JSON.parse(JSON.stringify(oldNode));
-            
+
             // 递归处理子节点
             if (oldNode.children && oldNode.children.length > 0) {
                 deletedNodeCopy.children = oldNode.children.map(child => rebuildNode(child, null, depth + 1)).filter(n => n !== null);
             }
-            
+
             return deletedNodeCopy;
         } else if (newNode) {
             // 节点存在于新树中
             const nodeCopy = JSON.parse(JSON.stringify(newNode));
-            
+
             // 处理子节点：合并新旧子节点
             if (oldNode.children || newNode.children) {
                 const childrenMap = new Map();
-                
+
                 // 先添加旧的子节点
                 if (oldNode.children) {
                     oldNode.children.forEach((child, index) => {
                         childrenMap.set(child.id, { node: child, index, source: 'old' });
                     });
                 }
-                
+
                 // 更新或添加新的子节点
                 if (newNode.children) {
                     newNode.children.forEach((child, index) => {
                         childrenMap.set(child.id, { node: child, index, source: 'new' });
                     });
                 }
-                
+
                 // 重建子节点列表，保持原始顺序
                 const rebuiltChildren = [];
-                
+
                 // 按照旧树的顺序遍历
                 if (oldNode.children) {
                     oldNode.children.forEach(oldChild => {
                         if (!oldChild) return; // 跳过null/undefined子节点
-                        
+
                         const childInfo = childrenMap.get(oldChild.id);
                         if (childInfo) {
                             const rebuiltChild = rebuildNode(oldChild, newNode.children, depth + 1);
@@ -5968,12 +6036,12 @@ function rebuildTreeWithDeleted(oldTree, newTree, changeMap) {
                         }
                     });
                 }
-                
+
                 // 添加新增的子节点
                 if (newNode.children) {
                     newNode.children.forEach(newChild => {
                         if (!newChild) return; // 跳过null/undefined子节点
-                        
+
                         if (!oldNode.children || !oldNode.children.find(c => c && c.id === newChild.id)) {
                             // 这是新增的节点
                             console.log('[树重建] 添加新节点:', newChild.title);
@@ -5981,21 +6049,21 @@ function rebuildTreeWithDeleted(oldTree, newTree, changeMap) {
                         }
                     });
                 }
-                
+
                 nodeCopy.children = rebuiltChildren;
             }
-            
+
             return nodeCopy;
         } else if (newNodes === null && change && change.type === 'deleted') {
             // 父节点已删除，这个子节点也视为删除，保留但标记
             console.log('[树重建] 保留已删除节点的子节点:', oldNode.title);
             const deletedNodeCopy = JSON.parse(JSON.stringify(oldNode));
-            
+
             // 递归处理子节点
             if (oldNode.children && oldNode.children.length > 0) {
                 deletedNodeCopy.children = oldNode.children.map(child => rebuildNode(child, null, depth + 1)).filter(n => n !== null);
             }
-            
+
             return deletedNodeCopy;
         } else {
             // 节点在新树中不存在，不是删除，跳过它
@@ -6003,10 +6071,10 @@ function rebuildTreeWithDeleted(oldTree, newTree, changeMap) {
             return null;
         }
     }
-    
+
     // 重建根节点
     const rebuiltRoot = rebuildNode(oldTree[0], [newTree[0]]);
-    
+
     console.log('[树重建] 重建完成');
     return [rebuiltRoot];
 }
@@ -6014,15 +6082,15 @@ function rebuildTreeWithDeleted(oldTree, newTree, changeMap) {
 // 从完整路径中提取父文件夹路径（去掉最后一级）
 function getParentFolderPath(fullPath, lang = 'zh_CN') {
     if (!fullPath) return lang === 'zh_CN' ? '未知位置' : 'Unknown';
-    
+
     // 分割路径（使用 ' > ' 作为分隔符）
     const parts = fullPath.split(' > ').filter(p => p.trim());
-    
+
     // 如果只有一级（根目录），直接返回
     if (parts.length <= 1) {
         return lang === 'zh_CN' ? '根目录' : 'Root';
     }
-    
+
     // 去掉最后一级（书签/文件夹自己的名称），保留父文件夹路径
     parts.pop();
     return parts.join(' > ');
@@ -6032,7 +6100,7 @@ function getParentFolderPath(fullPath, lang = 'zh_CN') {
 // 返回 { originalPath, currentPath, hasChanges }
 function detectParentPathChanges(fullOldPath, oldTree, newTree, lang = 'zh_CN') {
     const parentPath = getParentFolderPath(fullOldPath, lang);
-    
+
     // 如果是根目录，不需要检测
     if (parentPath === '根目录' || parentPath === 'Root') {
         return {
@@ -6041,10 +6109,10 @@ function detectParentPathChanges(fullOldPath, oldTree, newTree, lang = 'zh_CN') 
             hasChanges: false
         };
     }
-    
+
     // 分解父路径中的文件夹名称
     const folderNames = parentPath.split(' > ').filter(p => p.trim());
-    
+
     if (folderNames.length === 0) {
         return {
             originalPath: parentPath,
@@ -6052,10 +6120,10 @@ function detectParentPathChanges(fullOldPath, oldTree, newTree, lang = 'zh_CN') 
             hasChanges: false
         };
     }
-    
+
     // 在旧树中找到这些文件夹对应的ID
     const folderIds = findFolderIdsByPath(oldTree, folderNames);
-    
+
     if (folderIds.length === 0) {
         return {
             originalPath: parentPath,
@@ -6063,35 +6131,35 @@ function detectParentPathChanges(fullOldPath, oldTree, newTree, lang = 'zh_CN') 
             hasChanges: false
         };
     }
-    
+
     // 检查这些文件夹在新树中的路径
     let hasChanges = false;
     const currentPaths = [];
-    
+
     folderIds.forEach(folderId => {
         if (treeChangeMap && treeChangeMap.has(folderId)) {
             const change = treeChangeMap.get(folderId);
             // 如果文件夹被移动、重命名或删除
-            if (change.type === 'moved' || change.type === 'modified' || change.type === 'deleted' || 
+            if (change.type === 'moved' || change.type === 'modified' || change.type === 'deleted' ||
                 change.type.includes('moved') || change.type.includes('modified')) {
                 hasChanges = true;
             }
         }
     });
-    
+
     // 如果有变化，构建当前路径
     let currentPath = null;
     if (hasChanges && newTree) {
         // 尝试在新树中找到最后一个文件夹（最深层的父文件夹）
         const lastFolderId = folderIds[folderIds.length - 1];
         currentPath = findNodePathInTree(newTree, lastFolderId);
-        
+
         if (currentPath) {
             // 去掉最后一级（这是找到的文件夹自己）
             currentPath = getParentFolderPath(currentPath + ' > dummy', lang);
         }
     }
-    
+
     return {
         originalPath: parentPath,
         currentPath: currentPath,
@@ -6102,22 +6170,22 @@ function detectParentPathChanges(fullOldPath, oldTree, newTree, lang = 'zh_CN') 
 // 根据路径中的文件夹名称找到对应的ID
 function findFolderIdsByPath(tree, folderNames) {
     const ids = [];
-    
+
     if (!tree || !tree[0] || folderNames.length === 0) {
         return ids;
     }
-    
+
     let currentNodes = [tree[0]];
-    
+
     for (const folderName of folderNames) {
         let found = false;
-        
+
         for (const node of currentNodes) {
             if (node.children) {
-                const folder = node.children.find(child => 
+                const folder = node.children.find(child =>
                     child.title === folderName && !child.url
                 );
-                
+
                 if (folder) {
                     ids.push(folder.id);
                     currentNodes = [folder];
@@ -6126,25 +6194,25 @@ function findFolderIdsByPath(tree, folderNames) {
                 }
             }
         }
-        
+
         if (!found) break;
     }
-    
+
     return ids;
 }
 
 // 在树中根据ID找到节点的完整路径
 function findNodePathInTree(tree, nodeId) {
     if (!tree || !tree[0]) return null;
-    
+
     const path = [];
-    
+
     function traverse(node, currentPath) {
         if (node.id === nodeId) {
             path.push(...currentPath, node.title);
             return true;
         }
-        
+
         if (node.children) {
             for (const child of node.children) {
                 if (traverse(child, [...currentPath, node.title])) {
@@ -6152,14 +6220,14 @@ function findNodePathInTree(tree, nodeId) {
                 }
             }
         }
-        
+
         return false;
     }
-    
+
     if (traverse(tree[0], [])) {
         return path.join(' > ');
     }
-    
+
     return null;
 }
 
@@ -6168,25 +6236,25 @@ function renderTreeNodeWithChanges(node, level = 0, maxDepth = 50, visitedIds = 
     // 防止无限递归的保护机制
     const MAX_DEPTH = maxDepth;
     const MAX_NODES = 10000;
-    
+
     if (!node) return '';
     if (level > MAX_DEPTH) {
         console.warn('[renderTreeNodeWithChanges] 超过最大深度限制:', level);
         return '';
     }
-    
+
     // 检测循环引用
     if (visitedIds.has(node.id)) {
         console.warn('[renderTreeNodeWithChanges] 检测到循环引用:', node.id);
         return '';
     }
     visitedIds.add(node.id);
-    
+
     if (visitedIds.size > MAX_NODES) {
         console.warn('[renderTreeNodeWithChanges] 超过最大节点限制');
         return '';
     }
-    
+
     const change = treeChangeMap ? treeChangeMap.get(node.id) : null;
     let statusIcon = '';
     let changeClass = '';
@@ -6393,11 +6461,11 @@ async function applyIncrementalCreateToTree(id, bookmark) {
     const labelColor = 'color: #28a745;'; // 绿色
     const labelFontWeight = 'font-weight: 500;';
     const html = `
-        <div class="tree-node" style="padding-left: ${(parseInt(parentItem.style.paddingLeft||'0',10)+12)||12}px">
-            <div class="tree-item tree-change-added" data-node-id="${id}" data-node-title="${escapeHtml(bookmark.title||'')}" data-node-url="${escapeHtml(bookmark.url||'')}" data-node-type="${bookmark.url ? 'bookmark' : 'folder'}">
+        <div class="tree-node" style="padding-left: ${(parseInt(parentItem.style.paddingLeft || '0', 10) + 12) || 12}px">
+            <div class="tree-item tree-change-added" data-node-id="${id}" data-node-title="${escapeHtml(bookmark.title || '')}" data-node-url="${escapeHtml(bookmark.url || '')}" data-node-type="${bookmark.url ? 'bookmark' : 'folder'}">
                 <span class="tree-toggle" style="opacity: 0"></span>
                 ${bookmark.url ? (favicon ? `<img class="tree-icon" src="${favicon}" alt="">` : `<i class="tree-icon fas fa-bookmark"></i>`) : `<i class="tree-icon fas fa-folder"></i>`}
-                ${bookmark.url ? `<a href="${escapeHtml(bookmark.url)}" target="_blank" class="tree-label tree-bookmark-link" rel="noopener noreferrer" style="${labelColor} ${labelFontWeight}">${escapeHtml(bookmark.title||'')}</a>` : `<span class="tree-label" style="${labelColor} ${labelFontWeight}">${escapeHtml(bookmark.title||'')}</span>`}
+                ${bookmark.url ? `<a href="${escapeHtml(bookmark.url)}" target="_blank" class="tree-label tree-bookmark-link" rel="noopener noreferrer" style="${labelColor} ${labelFontWeight}">${escapeHtml(bookmark.title || '')}</a>` : `<span class="tree-label" style="${labelColor} ${labelFontWeight}">${escapeHtml(bookmark.title || '')}</span>`}
                 <span class="change-badges"><span class="change-badge added">+</span></span>
             </div>
             ${bookmark.url ? '' : '<div class="tree-children"></div>'}
@@ -6426,7 +6494,7 @@ async function applyIncrementalCreateToTree(id, bookmark) {
         const firstDeleted = siblingsAll.find(n => n.querySelector(':scope > .tree-item')?.classList.contains('tree-change-deleted'));
         if (firstDeleted) parentNode.insertBefore(newNodeEl, firstDeleted); else parentNode.appendChild(newNodeEl);
     }
-    
+
     // 为新创建的节点绑定事件
     const newItem = newNodeEl?.querySelector('.tree-item');
     if (newItem) {
@@ -6436,12 +6504,12 @@ async function applyIncrementalCreateToTree(id, bookmark) {
                 showContextMenu(e, newItem);
             }
         });
-        
+
         // 绑定拖拽事件
         if (typeof attachDragEvents === 'function') {
             attachDragEvents(container);
         }
-        
+
         // 如果在Canvas视图，绑定Canvas拖出功能
         if (currentView === 'canvas' && window.CanvasModule && window.CanvasModule.enhance) {
             window.CanvasModule.enhance();
@@ -6550,7 +6618,7 @@ async function applyIncrementalChangeToTree(id, changeInfo) {
             const fav = getFaviconUrl(changeInfo.url || '');
             if (fav) icon.src = fav;
         }
-        item.setAttribute('data-node-url', escapeHtml(changeInfo.url||''));
+        item.setAttribute('data-node-url', escapeHtml(changeInfo.url || ''));
     }
 
     // 给该节点增加"modified"标识
@@ -6648,24 +6716,24 @@ async function applyIncrementalMoveToTree(id, moveInfo) {
 function showDetailModal(record) {
     const modal = document.getElementById('detailModal');
     const body = document.getElementById('modalBody');
-    
+
     // 保存当前打开的记录时间，用于关闭时滚动
     currentDetailRecordTime = record.time;
-    
+
     // 显示加载状态
     body.innerHTML = `<div class="loading">${i18n.loading[currentLang]}</div>`;
     modal.classList.add('show');
-    
+
     // 异步生成详情内容
     generateDetailContent(record).then(html => {
         body.innerHTML = html;
-        
+
         // 添加 hunk 折叠事件监听
         setTimeout(() => {
             body.querySelectorAll('.diff-hunk-header.collapsible').forEach(header => {
                 const hunkId = header.getAttribute('data-hunk-id');
                 if (hunkId) {
-                    header.addEventListener('click', function() {
+                    header.addEventListener('click', function () {
                         toggleHunk(hunkId);
                     });
                 }
@@ -6679,7 +6747,7 @@ function showDetailModal(record) {
 
 function closeModal() {
     document.getElementById('detailModal').classList.remove('show');
-    
+
     // 关闭时，如果有打开的记录，滚动到该记录并使其居中，并闪烁突出显示
     if (currentDetailRecordTime) {
         // 延迟执行以确保DOM已更新
@@ -6688,22 +6756,22 @@ function closeModal() {
             if (recordElement) {
                 // 滚动到该元素并使其在视口中央
                 recordElement.scrollIntoView({ behavior: 'smooth', block: 'center' });
-                
+
                 // 添加呼吸效果的蓝色闪烁（1次）
                 const originalBackground = recordElement.style.backgroundColor;
-                
+
                 // 设置缓慢平滑的过渡
                 recordElement.style.transition = 'background-color 0.8s ease-in-out, box-shadow 0.8s ease-in-out';
-                
+
                 // 显示蓝色框（呼吸效果 - 淡入）
                 recordElement.style.backgroundColor = 'rgba(0, 122, 255, 0.25)';
                 recordElement.style.boxShadow = '0 0 0 2px #007AFF inset';
-                
+
                 // 1秒后开始淡出
                 setTimeout(() => {
                     recordElement.style.backgroundColor = originalBackground;
                     recordElement.style.boxShadow = 'none';
-                    
+
                     // 淡出完成后重置transition
                     setTimeout(() => {
                         recordElement.style.transition = '';
@@ -6746,12 +6814,12 @@ async function generateDetailContent(record) {
                     <div class="detail-empty">
                         <i class="fas fa-info-circle"></i>
                         ${currentLang === 'zh_CN'
-                            ? '无详细变化记录（旧记录的详细数据已清理以优化性能）'
-                            : 'No detailed changes available (old records cleaned for performance)'}
+                    ? '无详细变化记录（旧记录的详细数据已清理以优化性能）'
+                    : 'No detailed changes available (old records cleaned for performance)'}
                         <div style="margin-top: 10px; font-size: 0.9em; color: var(--text-tertiary);">
                             ${currentLang === 'zh_CN'
-                                ? '提示：只保留最新3条记录的详细变化数据'
-                                : 'Note: Only the latest 3 records retain detailed change data'}
+                    ? '提示：只保留最新3条记录的详细变化数据'
+                    : 'Note: Only the latest 3 records retain detailed change data'}
                         </div>
                     </div>
                 </div>
@@ -6779,7 +6847,7 @@ async function generateDetailedChanges(record) {
     console.log('[详细变化] 记录状态:', record.status);
     console.log('[详细变化] 记录有 bookmarkTree:', !!record.bookmarkTree);
     console.log('[详细变化] bookmarkTree 类型:', typeof record.bookmarkTree);
-    
+
     if (record.bookmarkTree) {
         console.log('[详细变化] bookmarkTree 是数组:', Array.isArray(record.bookmarkTree));
         console.log('[详细变化] bookmarkTree 长度:', record.bookmarkTree.length);
@@ -6788,17 +6856,17 @@ async function generateDetailedChanges(record) {
             console.log('[详细变化] bookmarkTree[0] 的 children 数量:', record.bookmarkTree[0].children?.length || 0);
         }
     }
-    
+
     // 检查当前记录是否有 bookmarkTree
     if (!record.bookmarkTree) {
         console.log('[详细变化] ❌ 当前记录没有 bookmarkTree（可能是旧记录或保存失败）');
         return null;
     }
-    
+
     // 找到上一条记录
     const recordIndex = syncHistory.findIndex(r => r.time === record.time);
     console.log('[详细变化] 记录索引:', recordIndex);
-    
+
     if (recordIndex <= 0) {
         // 第一条记录，显示所有书签为新增
         if (record.isFirstBackup) {
@@ -6808,7 +6876,7 @@ async function generateDetailedChanges(record) {
         console.log('[详细变化] 第一条记录但不是首次备份');
         return null;
     }
-    
+
     // 获取上一条记录
     let previousRecord = null;
     for (let i = recordIndex - 1; i >= 0; i--) {
@@ -6817,32 +6885,32 @@ async function generateDetailedChanges(record) {
             break;
         }
     }
-    
+
     if (!previousRecord || !previousRecord.bookmarkTree) {
         console.log('[详细变化] 没有找到上一条有效的备份记录');
         return null;
     }
-    
+
     console.log('[详细变化] 找到上一条记录:', previousRecord.time);
-    
+
     // 生成 diff（对比这次备份和上次备份）
     const oldLines = bookmarkTreeToLines(previousRecord.bookmarkTree);
     const newLines = bookmarkTreeToLines(record.bookmarkTree);
-    
+
     console.log('[详细变化] oldLines 数量:', oldLines.length);
     console.log('[详细变化] newLines 数量:', newLines.length);
-    
+
     const groupedHunks = generateDiffByPath(oldLines, newLines);
-    
+
     console.log('[详细变化] groupedHunks 数量:', groupedHunks.length);
-    
+
     return renderDiffHtml(groupedHunks);
 }
 
 // 生成首次备份的 diff（所有书签都是新增）
 function generateFirstBackupDiff(bookmarkTree) {
     const lines = bookmarkTreeToLines(bookmarkTree);
-    
+
     if (lines.length === 0) {
         return `
             <div class="detail-section">
@@ -6853,7 +6921,7 @@ function generateFirstBackupDiff(bookmarkTree) {
             </div>
         `;
     }
-    
+
     // 按路径分组
     const grouped = {};
     lines.forEach(line => {
@@ -6861,12 +6929,12 @@ function generateFirstBackupDiff(bookmarkTree) {
         if (!grouped[path]) grouped[path] = [];
         grouped[path].push(line);
     });
-    
+
     let html = '<div class="detail-section"><div class="git-diff-viewer">';
     html += '<div class="diff-file-header">';
     html += `<span class="diff-file-path">${currentLang === 'zh_CN' ? '首次备份 - 所有书签' : 'First Backup - All Bookmarks'}</span>`;
     html += '</div>';
-    
+
     Object.entries(grouped).forEach(([path, pathLines]) => {
         html += '<div class="diff-folder-group">';
         html += `<div class="diff-folder-header-static">`;
@@ -6878,7 +6946,7 @@ function generateFirstBackupDiff(bookmarkTree) {
         html += `<span class="hunk-stats"><span class="stat-add">+${pathLines.length}</span></span>`;
         html += '</div>';
         html += '<div class="diff-hunk-content">';
-        
+
         pathLines.forEach((line, idx) => {
             html += `<div class="diff-line-wrapper added">`;
             html += `<span class="diff-line-num old"></span>`;
@@ -6887,10 +6955,10 @@ function generateFirstBackupDiff(bookmarkTree) {
             html += `<span class="diff-line-content">${escapeHtml(line.line)}</span>`;
             html += `</div>`;
         });
-        
+
         html += '</div></div></div>';
     });
-    
+
     html += '</div></div>';
     return html;
 }
@@ -6907,30 +6975,30 @@ function renderDiffHtml(groupedHunks) {
             </div>
         `;
     }
-    
+
     // 渲染 Git diff
     let diffHtml = '<div class="detail-section"><div class="git-diff-viewer">';
     diffHtml += '<div class="diff-file-header">';
     diffHtml += `<span class="diff-file-path">${currentLang === 'zh_CN' ? '书签变化详情' : 'Bookmark Changes'}</span>`;
     diffHtml += '</div>';
-    
+
     let hunkIndex = 0;
     groupedHunks.forEach((group) => {
         diffHtml += '<div class="diff-folder-group">';
         diffHtml += `<div class="diff-folder-header-static">`;
         diffHtml += renderBreadcrumb(group.path, currentLang);
         diffHtml += '</div>';
-        
+
         group.hunks.forEach(hunk => {
             const hunkId = `detail-hunk-${hunkIndex++}`;
             const hunkLines = hunk.contextBefore.length + hunk.changes.length + hunk.contextAfter.length;
             const shouldCollapse = hunkLines > 15;
-            
+
             const addCount = hunk.changes.filter(c => c.type === 'add').length;
             const deleteCount = hunk.changes.filter(c => c.type === 'delete').length;
-            
+
             diffHtml += '<div class="diff-hunk">';
-            
+
             const iconClass = shouldCollapse ? 'fa-chevron-right' : 'fa-chevron-down';
             diffHtml += `<div class="diff-hunk-header collapsible" data-hunk-id="${hunkId}">`;
             diffHtml += `<i class="fas ${iconClass} collapse-icon" id="${hunkId}-icon"></i>`;
@@ -6940,9 +7008,9 @@ function renderDiffHtml(groupedHunks) {
             if (deleteCount > 0) diffHtml += `<span class="stat-delete">-${deleteCount}</span>`;
             diffHtml += `</span>`;
             diffHtml += '</div>';
-            
+
             diffHtml += `<div class="diff-hunk-content ${shouldCollapse ? 'collapsed' : ''}" id="${hunkId}">`;
-            
+
             // 前置上下文
             hunk.contextBefore.forEach(ctx => {
                 diffHtml += `<div class="diff-line-wrapper context">`;
@@ -6952,7 +7020,7 @@ function renderDiffHtml(groupedHunks) {
                 diffHtml += `<span class="diff-line-content">${escapeHtml(ctx.line.line)}</span>`;
                 diffHtml += `</div>`;
             });
-            
+
             // 变化
             hunk.changes.forEach(change => {
                 if (change.type === 'delete') {
@@ -6971,7 +7039,7 @@ function renderDiffHtml(groupedHunks) {
                     diffHtml += `</div>`;
                 }
             });
-            
+
             // 后置上下文
             hunk.contextAfter.forEach(ctx => {
                 diffHtml += `<div class="diff-line-wrapper context">`;
@@ -6981,13 +7049,13 @@ function renderDiffHtml(groupedHunks) {
                 diffHtml += `<span class="diff-line-content">${escapeHtml(ctx.line.line)}</span>`;
                 diffHtml += `</div>`;
             });
-            
+
             diffHtml += '</div></div>';
         });
-        
+
         diffHtml += '</div>';
     });
-    
+
     diffHtml += '</div></div>';
     return diffHtml;
 }
@@ -7000,7 +7068,7 @@ let searchTimeout = null;
 
 function handleSearch(e) {
     const query = e.target.value.trim().toLowerCase();
-    
+
     clearTimeout(searchTimeout);
     searchTimeout = setTimeout(() => {
         performSearch(query);
@@ -7012,7 +7080,7 @@ function performSearch(query) {
         renderCurrentView();
         return;
     }
-    
+
     // 根据当前视图执行搜索
     switch (currentView) {
         case 'history':
@@ -7034,12 +7102,12 @@ function searchHistory(query) {
         const time = formatTime(record.time).toLowerCase();
         return note.includes(query) || time.includes(query);
     });
-    
+
     if (filtered.length === 0) {
         container.innerHTML = `<div class="empty-state"><div class="empty-state-title">未找到匹配的记录</div></div>`;
         return;
     }
-    
+
     // 重新渲染过滤后的历史
     syncHistory = filtered;
     renderHistoryView();
@@ -7051,7 +7119,7 @@ function searchAdditions(query) {
         const url = (bookmark.url || '').toLowerCase();
         return title.includes(query) || url.includes(query);
     });
-    
+
     const groupedByDate = groupBookmarksByDate(filtered);
     const container = document.getElementById('additionsList');
     container.innerHTML = renderBookmarkGroups(groupedByDate);
@@ -7072,7 +7140,7 @@ function searchTree(query) {
 function toggleTheme() {
     currentTheme = currentTheme === 'light' ? 'dark' : 'light';
     document.documentElement.setAttribute('data-theme', currentTheme);
-    
+
     // 设置覆盖标志
     try {
         localStorage.setItem('historyViewerHasCustomTheme', 'true');
@@ -7081,7 +7149,7 @@ function toggleTheme() {
     } catch (e) {
         console.error('[History Viewer] 无法保存主题覆盖:', e);
     }
-    
+
     // 更新图标
     const icon = document.querySelector('#themeToggle i');
     if (icon) {
@@ -7091,7 +7159,7 @@ function toggleTheme() {
 
 function toggleLanguage() {
     currentLang = currentLang === 'zh_CN' ? 'en' : 'zh_CN';
-    
+
     // 设置覆盖标志
     try {
         localStorage.setItem('historyViewerHasCustomLang', 'true');
@@ -7100,12 +7168,12 @@ function toggleLanguage() {
     } catch (e) {
         console.error('[History Viewer] 无法保存语言覆盖:', e);
     }
-    
+
     applyLanguage();
-    
+
     // 只更新界面文字，不重新渲染内容（避免图标重新加载）
     // renderCurrentView();
-    
+
     // 手动更新需要多语言的UI元素（不涉及书签树内容）
     updateLanguageDependentUI();
 }
@@ -7113,7 +7181,7 @@ function toggleLanguage() {
 // 更新依赖语言的UI元素（不重新渲染内容，避免图标重新加载）
 function updateLanguageDependentUI() {
     const isEn = currentLang === 'en';
-    
+
     // 只更新图例文字（如果存在）
     const legends = document.querySelectorAll('.tree-legend');
     legends.forEach(legend => {
@@ -7124,7 +7192,7 @@ function updateLanguageDependentUI() {
             <span class="legend-item"><span class="legend-dot moved"></span> ${isEn ? 'Moved' : '移动'}</span>
         `;
     });
-    
+
     // 更新加载文本（如果存在）
     const loadingTexts = document.querySelectorAll('.loading');
     loadingTexts.forEach(el => {
@@ -7132,7 +7200,7 @@ function updateLanguageDependentUI() {
             el.textContent = i18n.loading[currentLang];
         }
     });
-    
+
     // 更新空状态文本
     const emptyStates = document.querySelectorAll('.empty-state');
     emptyStates.forEach(el => {
@@ -7140,34 +7208,34 @@ function updateLanguageDependentUI() {
             el.textContent = isEn ? 'No data' : '没有数据';
         }
     });
-    
+
     // ===== 更新临时栏目相关的多语言元素 =====
-    
+
     // 1. 更新临时栏目的按钮tooltip
     document.querySelectorAll('.temp-node-rename-btn').forEach(btn => {
         const label = isEn ? 'Rename section' : '重命名栏目';
         btn.title = label;
         btn.setAttribute('aria-label', label);
     });
-    
+
     document.querySelectorAll('.temp-node-color-btn, .temp-node-color-input').forEach(btn => {
         const label = isEn ? 'Change color' : '调整栏目颜色';
         btn.title = label;
         btn.setAttribute('aria-label', label);
     });
-    
+
     document.querySelectorAll('.temp-node-close').forEach(btn => {
         const label = isEn ? 'Remove section' : '删除临时栏目';
         btn.title = label;
         btn.setAttribute('aria-label', label);
     });
-    
+
     // 2. 更新临时栏目说明的placeholder和文本
     document.querySelectorAll('.temp-node-description').forEach(descText => {
         const text = descText.textContent.trim();
         const hasPlaceholder = text === 'Click to add description...' || text === '点击添加说明...';
         const hasSpanChild = descText.querySelector('span[style*="opacity"]');
-        
+
         // 如果是占位符文本（检查文本内容或者是否有占位符span）
         if (hasPlaceholder || (hasSpanChild && !text)) {
             const placeholder = isEn ? 'Click to add description...' : '点击添加说明...';
@@ -7178,23 +7246,23 @@ function updateLanguageDependentUI() {
             descText.title = isEn ? 'Double-click to edit' : '双击编辑说明';
         }
     });
-    
+
     // 3. 更新说明编辑按钮的tooltip
     document.querySelectorAll('.temp-node-desc-edit-btn').forEach(btn => {
         btn.title = isEn ? 'Edit description' : '编辑说明';
     });
-    
+
     document.querySelectorAll('.temp-node-desc-delete-btn').forEach(btn => {
         btn.title = isEn ? 'Delete description' : '删除说明';
     });
-    
+
     // 4. 更新永久栏目的说明提示
     const permanentTipCollapsed = document.querySelector('.permanent-section-tip-collapsed span');
     if (permanentTipCollapsed) {
         const text = isEn ? 'Click to add description...' : '点击添加说明...';
         permanentTipCollapsed.textContent = text;
     }
-    
+
     const permanentTipText = document.querySelector('.permanent-section-tip');
     if (permanentTipText) {
         const text = permanentTipText.textContent.trim();
@@ -7207,7 +7275,7 @@ function updateLanguageDependentUI() {
             permanentTipText.title = isEn ? 'Double-click to edit' : '双击编辑说明';
         }
     }
-    
+
     console.log('[toggleLanguage] 已更新UI文字（包括临时栏目）');
 }
 
@@ -7232,7 +7300,7 @@ function handleStorageChange(changes, namespace) {
                     const fp = lastRec.fingerprint || lastRec.time || String(Date.now());
                     if (fp !== window.__lastResetFingerprint) {
                         // 清空显式移动集合，避免蓝标残留
-                        try { explicitMovedIds = new Map(); } catch(_) {}
+                        try { explicitMovedIds = new Map(); } catch (_) { }
                         resetPermanentSectionChangeMarkers();
                         window.__lastResetFingerprint = fp;
                     }
@@ -7348,9 +7416,9 @@ function setupBookmarkListener() {
         console.warn('[书签监听] 书签API不可用');
         return;
     }
-    
+
     console.log('[书签监听] 设置书签API监听器');
-    
+
     // 书签创建
     browserAPI.bookmarks.onCreated.addListener(async (id, bookmark) => {
         console.log('[书签监听] 书签创建:', bookmark.title);
@@ -7367,7 +7435,7 @@ function setupBookmarkListener() {
             refreshTreeViewIfVisible();
         }
     });
-    
+
     // 书签删除
     browserAPI.bookmarks.onRemoved.addListener(async (id, removeInfo) => {
         console.log('[书签监听] 书签删除:', id);
@@ -7377,7 +7445,7 @@ function setupBookmarkListener() {
             if (removeInfo.node && removeInfo.node.url) {
                 FaviconCache.clear(removeInfo.node.url);
             }
-            
+
             // 支持 tree 和 canvas 视图（canvas视图包含永久栏目的书签树）
             if (currentView === 'tree' || currentView === 'canvas') {
                 applyIncrementalRemoveFromTree(id);
@@ -7389,7 +7457,7 @@ function setupBookmarkListener() {
             refreshTreeViewIfVisible();
         }
     });
-    
+
     // 书签修改
     browserAPI.bookmarks.onChanged.addListener(async (id, changeInfo) => {
         console.log('[书签监听] 书签修改:', changeInfo);
@@ -7405,7 +7473,7 @@ function setupBookmarkListener() {
             refreshTreeViewIfVisible();
         }
     });
-    
+
     // 书签移动
     browserAPI.bookmarks.onMoved.addListener(async (id, moveInfo) => {
         console.log('[书签监听] 书签移动:', id);
@@ -7431,13 +7499,13 @@ async function refreshTreeViewIfVisible() {
     // 支持 tree 和 canvas 视图（canvas视图包含永久栏目的书签树）
     if (currentView === 'tree' || currentView === 'canvas') {
         console.log('[书签监听] 检测到书签变化，刷新树视图');
-        
+
         // 清除缓存，强制刷新
         cachedBookmarkTree = null;
         cachedTreeData = null;
         lastTreeFingerprint = null;
         jsonDiffRendered = false;
-        
+
         // 延迟一点刷新，避免频繁更新
         setTimeout(async () => {
             try {
@@ -7497,7 +7565,7 @@ function setupRealtimeMessageListener() {
                 if (currentView === 'canvas') {
                     resetPermanentSectionChangeMarkers();
                 }
-            } catch(e) { /* 忽略 */ }
+            } catch (e) { /* 忽略 */ }
         } else if (message.action === 'recentMovedBroadcast' && message.id) {
             // 后台广播的最近被移动的ID，立即记入显式集合（仅标记这个节点）
             // 这确保用户拖拽的节点优先被标识为蓝色"moved"
@@ -7519,13 +7587,13 @@ function setupRealtimeMessageListener() {
                                     const bcSelf = getNamedPathFromTree(cachedOldTree, String(message.id));
                                     if (bcSelf) tip = breadcrumbToSlashFolders(bcSelf);
                                 }
-                            } catch(_) {}
+                            } catch (_) { }
                             if (!tip) tip = '/';
                             badges.insertAdjacentHTML('beforeend', `<span class="change-badge moved" data-move-from="${escapeHtml(tip)}" title="${escapeHtml(tip)}"><i class="fas fa-arrows-alt"></i><span class="move-tooltip">${slashPathToChipsHTML(tip)}</span></span>`);
                             item.classList.add('tree-change-moved');
                         }
                     }
-                } catch(_) {}
+                } catch (_) { }
             }
         }
     });
@@ -7655,7 +7723,7 @@ function formatTime(timestamp) {
     const hours = String(date.getHours()).padStart(2, '0');
     const minutes = String(date.getMinutes()).padStart(2, '0');
     const seconds = String(date.getSeconds()).padStart(2, '0');
-    
+
     return `${year}/${month}/${day} ${hours}:${minutes}:${seconds}`;
 }
 
@@ -7700,7 +7768,7 @@ function showToast(message) {
     `;
     toast.textContent = message;
     document.body.appendChild(toast);
-    
+
     setTimeout(() => {
         toast.style.animation = 'slideOut 0.3s ease';
         setTimeout(() => toast.remove(), 300);
@@ -7710,24 +7778,24 @@ function showToast(message) {
 async function refreshData() {
     const btn = document.getElementById('refreshBtn');
     const icon = btn.querySelector('i');
-    
+
     icon.style.animation = 'spin 0.5s linear infinite';
-    
+
     // 手动刷新时，强制刷新background缓存
     await loadAllData({ skipRender: true });
-    
+
     // 如果当前在变化视图，强制刷新渲染
     if (currentView === 'current-changes') {
         await renderCurrentChangesViewWithRetry(3, true);
     }
-    
+
     // 如果当前在树视图，强制刷新树视图
     if (currentView === 'tree') {
         await renderTreeView(true);
     }
-    
+
     icon.style.animation = '';
-    
+
     showToast(currentLang === 'zh_CN' ? '数据已刷新' : 'Data Refreshed');
 }
 
@@ -7750,7 +7818,7 @@ document.head.appendChild(style);
 // =============================================================================
 
 // 复制当前Changes视图的diff（JSON格式，限制数量以防止卡顿）
-window.copyCurrentDiff = async function() {
+window.copyCurrentDiff = async function () {
     try {
         const changeData = await getDetailedChanges(false);
 
@@ -7828,7 +7896,7 @@ window.copyCurrentDiff = async function() {
 
 
 // 复制历史记录的diff（JSON格式，排除bookmarkTree以防止卡顿）
-window.copyHistoryDiff = async function(recordTime) {
+window.copyHistoryDiff = async function (recordTime) {
     try {
         const recordIndex = syncHistory.findIndex(r => r.time === recordTime);
         if (recordIndex === -1) {
@@ -7922,10 +7990,10 @@ window.copyHistoryDiff = async function(recordTime) {
 // 从书签树提取书签列表（扁平化，包含路径信息）
 function extractBookmarksFromTree(tree) {
     const bookmarks = [];
-    
+
     function traverse(nodes, path = []) {
         if (!nodes) return;
-        
+
         nodes.forEach(node => {
             if (node.url) {
                 // 这是一个书签
@@ -7941,16 +8009,16 @@ function extractBookmarksFromTree(tree) {
             }
         });
     }
-    
+
     if (tree && tree[0] && tree[0].children) {
         traverse(tree[0].children);
     }
-    
+
     return bookmarks;
 }
 
 // 复制所有历史记录的diff（JSON格式，排除bookmarkTree以防止卡顿）
-window.copyAllHistoryDiff = async function() {
+window.copyAllHistoryDiff = async function () {
     try {
         const allDiffs = syncHistory.map(record => ({
             timestamp: record.time,
@@ -7974,7 +8042,7 @@ window.copyAllHistoryDiff = async function() {
                 folderModified: record.bookmarkStats.folderModified
             } : null
         }));
-        
+
         const jsonString = JSON.stringify(allDiffs, null, 2);
         await navigator.clipboard.writeText(jsonString);
         showToast(currentLang === 'zh_CN' ? `已复制${allDiffs.length}条历史记录` : `Copied ${allDiffs.length} records`);
@@ -7985,19 +8053,19 @@ window.copyAllHistoryDiff = async function() {
 };
 
 // 导出历史记录的diff为HTML（可视化格式）
-window.exportHistoryDiffToHTML = async function(recordTime) {
+window.exportHistoryDiffToHTML = async function (recordTime) {
     try {
         const recordIndex = syncHistory.findIndex(r => r.time === recordTime);
         if (recordIndex === -1) {
             showToast(currentLang === 'zh_CN' ? '未找到记录' : 'Record not found');
             return;
         }
-        
+
         const record = syncHistory[recordIndex];
-        
+
         // 获取diff数据（与copyHistoryDiff相同的逻辑）
         let diffData;
-        
+
         if (record.isFirstBackup && record.bookmarkTree) {
             // 第一次备份：完整的书签列表
             const bookmarksList = extractBookmarksFromTree(record.bookmarkTree);
@@ -8020,17 +8088,17 @@ window.exportHistoryDiffToHTML = async function(recordTime) {
                 // 计算diff
                 const oldTree = prevRecord.bookmarkTree;
                 const newTree = record.bookmarkTree;
-                
+
                 const oldPrints = generateFingerprintsFromTree(oldTree);
                 const newPrints = generateFingerprintsFromTree(newTree);
-                
+
                 const oldBookmarkPrints = new Set(oldPrints.bookmarks);
                 const newBookmarkPrints = new Set(newPrints.bookmarks);
-                
+
                 const added = [];
                 const deleted = [];
                 const moved = [];
-                
+
                 // 检测新增和移动
                 for (const print of newBookmarkPrints) {
                     if (!oldBookmarkPrints.has(print)) {
@@ -8057,7 +8125,7 @@ window.exportHistoryDiffToHTML = async function(recordTime) {
                         }
                     }
                 }
-                
+
                 // 检测删除
                 for (const print of oldBookmarkPrints) {
                     if (!newBookmarkPrints.has(print)) {
@@ -8070,7 +8138,7 @@ window.exportHistoryDiffToHTML = async function(recordTime) {
                         }
                     }
                 }
-                
+
                 diffData = {
                     timestamp: record.time,
                     type: 'history-diff',
@@ -8110,10 +8178,10 @@ window.exportHistoryDiffToHTML = async function(recordTime) {
                 hasDetailedDiff: false
             };
         }
-        
+
         // 将diff数据转换为HTML
         const htmlContent = convertDiffDataToHTML(diffData);
-        
+
         // 创建下载
         const blob = new Blob([htmlContent], { type: 'text/html;charset=utf-8' });
         const url = URL.createObjectURL(blob);
@@ -8124,7 +8192,7 @@ window.exportHistoryDiffToHTML = async function(recordTime) {
         a.click();
         document.body.removeChild(a);
         URL.revokeObjectURL(url);
-        
+
         showToast(currentLang === 'zh_CN' ? 'Diff HTML已导出' : 'Diff HTML exported');
     } catch (error) {
         console.error('[导出Diff HTML] 失败:', error);
@@ -8138,7 +8206,7 @@ function convertDiffDataToHTML(diffData) {
     const isZh = lang === 'zh_CN';
     const timestamp = new Date(diffData.timestamp).toISOString();
     const dateAdded = Math.floor(new Date(diffData.timestamp).getTime() / 1000);
-    
+
     // 标准Netscape书签HTML头部
     let html = `<!DOCTYPE NETSCAPE-Bookmark-file-1>
 <!-- This is an automatically generated file.
@@ -8153,7 +8221,7 @@ function convertDiffDataToHTML(diffData) {
 <H1>Bookmarks</H1>
 <DL><p>
 `;
-    
+
     // 如果是首次备份，导出所有书签
     if (diffData.type === 'first-backup' && diffData.bookmarks) {
         // 按文件夹分组
@@ -8165,21 +8233,21 @@ function convertDiffDataToHTML(diffData) {
             }
             folderMap[folder].push(bookmark);
         });
-        
+
         // 生成HTML
         Object.keys(folderMap).sort().forEach(folder => {
             const bookmarks = folderMap[folder];
-            
+
             // 文件夹标题
             if (folder && folder !== (isZh ? '根目录' : 'Root')) {
                 html += `    <DT><H3 ADD_DATE="${dateAdded}">${escapeHtml(folder)}</H3>\n`;
                 html += `    <DL><p>\n`;
-                
+
                 bookmarks.forEach(bookmark => {
                     const bookmarkDate = bookmark.dateAdded ? Math.floor(new Date(bookmark.dateAdded).getTime() / 1000) : dateAdded;
                     html += `        <DT><A HREF="${escapeHtml(bookmark.url)}" ADD_DATE="${bookmarkDate}">${escapeHtml(bookmark.title)}</A>\n`;
                 });
-                
+
                 html += `    </DL><p>\n`;
             } else {
                 // 根目录的书签
@@ -8189,14 +8257,14 @@ function convertDiffDataToHTML(diffData) {
                 });
             }
         });
-    } 
+    }
     // 如果有详细diff，按类别导出
     else if (diffData.hasDetailedDiff) {
         // 新增的书签
         if (diffData.added && diffData.added.length > 0) {
             html += `    <DT><H3 ADD_DATE="${dateAdded}">${isZh ? '新增书签' : 'Added Bookmarks'}</H3>\n`;
             html += `    <DL><p>\n`;
-            
+
             // 按路径分组
             const folderMap = {};
             diffData.added.forEach(bookmark => {
@@ -8206,10 +8274,10 @@ function convertDiffDataToHTML(diffData) {
                 }
                 folderMap[folder].push(bookmark);
             });
-            
+
             Object.keys(folderMap).sort().forEach(folder => {
                 const bookmarks = folderMap[folder];
-                
+
                 if (folder && folder !== (isZh ? '根目录' : 'Root')) {
                     html += `        <DT><H3 ADD_DATE="${dateAdded}">${escapeHtml(folder)}</H3>\n`;
                     html += `        <DL><p>\n`;
@@ -8223,15 +8291,15 @@ function convertDiffDataToHTML(diffData) {
                     });
                 }
             });
-            
+
             html += `    </DL><p>\n`;
         }
-        
+
         // 删除的书签
         if (diffData.deleted && diffData.deleted.length > 0) {
             html += `    <DT><H3 ADD_DATE="${dateAdded}">${isZh ? '删除书签' : 'Deleted Bookmarks'}</H3>\n`;
             html += `    <DL><p>\n`;
-            
+
             // 按路径分组
             const folderMap = {};
             diffData.deleted.forEach(bookmark => {
@@ -8241,10 +8309,10 @@ function convertDiffDataToHTML(diffData) {
                 }
                 folderMap[folder].push(bookmark);
             });
-            
+
             Object.keys(folderMap).sort().forEach(folder => {
                 const bookmarks = folderMap[folder];
-                
+
                 if (folder && folder !== (isZh ? '根目录' : 'Root')) {
                     html += `        <DT><H3 ADD_DATE="${dateAdded}">${escapeHtml(folder)}</H3>\n`;
                     html += `        <DL><p>\n`;
@@ -8258,15 +8326,15 @@ function convertDiffDataToHTML(diffData) {
                     });
                 }
             });
-            
+
             html += `    </DL><p>\n`;
         }
-        
+
         // 移动的书签
         if (diffData.moved && diffData.moved.length > 0) {
             html += `    <DT><H3 ADD_DATE="${dateAdded}">${isZh ? '移动书签' : 'Moved Bookmarks'}</H3>\n`;
             html += `    <DL><p>\n`;
-            
+
             // 按新路径分组
             const folderMap = {};
             diffData.moved.forEach(bookmark => {
@@ -8276,15 +8344,15 @@ function convertDiffDataToHTML(diffData) {
                 }
                 folderMap[folder].push(bookmark);
             });
-            
+
             Object.keys(folderMap).sort().forEach(folder => {
                 const bookmarks = folderMap[folder];
-                
+
                 if (folder && folder !== (isZh ? '根目录' : 'Root')) {
                     html += `        <DT><H3 ADD_DATE="${dateAdded}">${escapeHtml(folder)}</H3>\n`;
                     html += `        <DL><p>\n`;
                     bookmarks.forEach(bookmark => {
-                        const titleWithNote = bookmark.oldPath !== bookmark.path 
+                        const titleWithNote = bookmark.oldPath !== bookmark.path
                             ? `${escapeHtml(bookmark.title)} [${isZh ? '从' : 'from'}: ${escapeHtml(bookmark.oldPath)}]`
                             : escapeHtml(bookmark.title);
                         html += `            <DT><A HREF="${escapeHtml(bookmark.url)}" ADD_DATE="${dateAdded}">${titleWithNote}</A>\n`;
@@ -8292,14 +8360,14 @@ function convertDiffDataToHTML(diffData) {
                     html += `        </DL><p>\n`;
                 } else {
                     bookmarks.forEach(bookmark => {
-                        const titleWithNote = bookmark.oldPath !== bookmark.path 
+                        const titleWithNote = bookmark.oldPath !== bookmark.path
                             ? `${escapeHtml(bookmark.title)} [${isZh ? '从' : 'from'}: ${escapeHtml(bookmark.oldPath)}]`
                             : escapeHtml(bookmark.title);
                         html += `        <DT><A HREF="${escapeHtml(bookmark.url)}" ADD_DATE="${dateAdded}">${titleWithNote}</A>\n`;
                     });
                 }
             });
-            
+
             html += `    </DL><p>\n`;
         }
     }
@@ -8310,16 +8378,16 @@ function convertDiffDataToHTML(diffData) {
         html += `        <DT>${isZh ? '此记录仅包含统计信息，无法导出具体书签' : 'This record only contains statistics, no bookmarks available'}\n`;
         html += `    </DL><p>\n`;
     }
-    
+
     html += `</DL><p>\n`;
-    
+
     return html;
 }
 
 // 将书签树转换为Netscape标准HTML格式（浏览器可导入）
 function convertBookmarkTreeToNetscapeHTML(bookmarkTree, timestamp) {
     const dateAdded = Math.floor(new Date(timestamp).getTime() / 1000);
-    
+
     let html = `<!DOCTYPE NETSCAPE-Bookmark-file-1>
 <!-- This is an automatically generated file.
      It will be read and overwritten.
@@ -8329,13 +8397,13 @@ function convertBookmarkTreeToNetscapeHTML(bookmarkTree, timestamp) {
 <H1>Bookmarks</H1>
 <DL><p>
 `;
-    
+
     // 递归处理书签树
     function processNode(node, indent = '    ') {
         if (!node) return '';
-        
+
         let result = '';
-        
+
         if (node.url) {
             // 这是一个书签
             const addDate = node.dateAdded ? Math.floor(node.dateAdded / 1000) : dateAdded;
@@ -8346,29 +8414,29 @@ function convertBookmarkTreeToNetscapeHTML(bookmarkTree, timestamp) {
             // 这是一个文件夹
             const folderDate = node.dateAdded ? Math.floor(node.dateAdded / 1000) : dateAdded;
             const folderTitle = escapeHtml(node.title || 'Untitled Folder');
-            
+
             result += `${indent}<DT><H3 ADD_DATE="${folderDate}">${folderTitle}</H3>\n`;
             result += `${indent}<DL><p>\n`;
-            
+
             // 处理子节点
             for (const child of node.children) {
                 result += processNode(child, indent + '    ');
             }
-            
+
             result += `${indent}</DL><p>\n`;
         }
-        
+
         return result;
     }
-    
+
     // 处理根节点的children
     if (bookmarkTree && bookmarkTree[0] && bookmarkTree[0].children) {
         for (const child of bookmarkTree[0].children) {
             html += processNode(child);
         }
     }
-    
+
     html += `</DL><p>\n`;
-    
+
     return html;
 }

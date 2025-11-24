@@ -941,6 +941,10 @@ const i18n = {
         'zh_CN': '点击排行',
         'en': 'Click Ranking'
     },
+    browsingTabRelated: {
+        'zh_CN': '书签关联记录',
+        'en': 'Related History'
+    },
     browsingRankingTitle: {
         'zh_CN': '点击排行',
         'en': 'Click Ranking'
@@ -948,6 +952,34 @@ const i18n = {
     browsingRankingDescription: {
         'zh_CN': '基于浏览器历史记录，按点击次数统计当前书签的热门程度。',
         'en': 'Based on browser history, rank your bookmarks by click counts.'
+    },
+    browsingRelatedTitle: {
+        'zh_CN': '书签关联记录',
+        'en': 'Related History'
+    },
+    browsingRelatedDescription: {
+        'zh_CN': '显示浏览器历史记录，并用黄色边框凸显书签相关的记录。',
+        'en': 'Shows browser history, highlighting bookmark-related entries with yellow borders.'
+    },
+    browsingRelatedLoadingText: {
+        'zh_CN': '正在读取历史记录...',
+        'en': 'Loading history...'
+    },
+    browsingRelatedFilterDay: {
+        'zh_CN': '当天',
+        'en': 'Today'
+    },
+    browsingRelatedFilterWeek: {
+        'zh_CN': '当周',
+        'en': 'This Week'
+    },
+    browsingRelatedFilterMonth: {
+        'zh_CN': '当月',
+        'en': 'This Month'
+    },
+    browsingRelatedFilterYear: {
+        'zh_CN': '当年',
+        'en': 'This Year'
     },
     browsingRankingFilterToday: {
         'zh_CN': '当天',
@@ -2037,6 +2069,8 @@ function applyLanguage() {
     const browsingTabHistory = document.getElementById('browsingTabHistory');
     if (browsingTabHistory) browsingTabHistory.textContent = i18n.browsingTabHistory[currentLang];
     const browsingTabRanking = document.getElementById('browsingTabRanking');
+    const browsingTabRelated = document.getElementById('browsingTabRelated');
+    if (browsingTabRelated) browsingTabRelated.textContent = i18n.browsingTabRelated[currentLang];
     if (browsingTabRanking) browsingTabRanking.textContent = i18n.browsingTabRanking[currentLang];
 
     // 浏览记录相关文本
@@ -2052,6 +2086,22 @@ function applyLanguage() {
     if (browsingRankingFilterMonth) browsingRankingFilterMonth.textContent = i18n.browsingRankingFilterMonth[currentLang];
     const browsingRankingFilterYear = document.getElementById('browsingRankingFilterYear');
     if (browsingRankingFilterYear) browsingRankingFilterYear.textContent = i18n.browsingRankingFilterYear[currentLang];
+
+    // 书签关联记录相关文本
+    const browsingRelatedTitle = document.getElementById('browsingRelatedTitle');
+    if (browsingRelatedTitle) browsingRelatedTitle.textContent = i18n.browsingRelatedTitle[currentLang];
+    const browsingRelatedDescription = document.getElementById('browsingRelatedDescription');
+    if (browsingRelatedDescription) browsingRelatedDescription.textContent = i18n.browsingRelatedDescription[currentLang];
+    const browsingRelatedLoadingText = document.getElementById('browsingRelatedLoadingText');
+    if (browsingRelatedLoadingText) browsingRelatedLoadingText.textContent = i18n.browsingRelatedLoadingText[currentLang];
+    const browsingRelatedFilterDay = document.getElementById('browsingRelatedFilterDay');
+    if (browsingRelatedFilterDay) browsingRelatedFilterDay.textContent = i18n.browsingRelatedFilterDay[currentLang];
+    const browsingRelatedFilterWeek = document.getElementById('browsingRelatedFilterWeek');
+    if (browsingRelatedFilterWeek) browsingRelatedFilterWeek.textContent = i18n.browsingRelatedFilterWeek[currentLang];
+    const browsingRelatedFilterMonth = document.getElementById('browsingRelatedFilterMonth');
+    if (browsingRelatedFilterMonth) browsingRelatedFilterMonth.textContent = i18n.browsingRelatedFilterMonth[currentLang];
+    const browsingRelatedFilterYear = document.getElementById('browsingRelatedFilterYear');
+    if (browsingRelatedFilterYear) browsingRelatedFilterYear.textContent = i18n.browsingRelatedFilterYear[currentLang];
     const browsingCalendarLoadingText = document.getElementById('browsingCalendarLoadingText');
     if (browsingCalendarLoadingText) browsingCalendarLoadingText.textContent = i18n.browsingCalendarLoading[currentLang];
 
@@ -4959,9 +5009,11 @@ function initBrowsingSubTabs() {
     const subTabs = document.querySelectorAll('.browsing-sub-tab');
     const historyPanel = document.getElementById('browsingHistoryPanel');
     const rankingPanel = document.getElementById('browsingRankingPanel');
+    const relatedPanel = document.getElementById('browsingRelatedPanel');
     let browsingRankingInitialized = false;
+    let browsingRelatedInitialized = false;
 
-    if (!subTabs.length || !historyPanel || !rankingPanel) {
+    if (!subTabs.length || !historyPanel || !rankingPanel || !relatedPanel) {
         console.warn('[initBrowsingSubTabs] 子标签或面板缺失');
         return;
     }
@@ -4976,6 +5028,7 @@ function initBrowsingSubTabs() {
         // 切换子面板
         historyPanel.classList.remove('active');
         rankingPanel.classList.remove('active');
+        relatedPanel.classList.remove('active');
 
         if (target === 'history') {
             historyPanel.classList.add('active');
@@ -4994,6 +5047,18 @@ function initBrowsingSubTabs() {
                 browsingClickRankingStats = null;
                 refreshActiveBrowsingRankingIfVisible();
             }
+        } else if (target === 'related') {
+            relatedPanel.classList.add('active');
+            if (!browsingRelatedInitialized) {
+                browsingRelatedInitialized = true;
+                try {
+                    initBrowsingRelatedHistory();
+                } catch (e) {
+                    console.error('[initBrowsingSubTabs] 初始化书签关联记录失败:', e);
+                }
+            } else {
+                refreshBrowsingRelatedHistory();
+            }
         }
 
         // 保存当前状态
@@ -5011,7 +5076,7 @@ function initBrowsingSubTabs() {
 
     // 恢复上次选中的子标签
     const savedSubTab = localStorage.getItem('browsingActiveSubTab');
-    if (savedSubTab && ['history', 'ranking'].includes(savedSubTab)) {
+    if (savedSubTab && ['history', 'ranking', 'related'].includes(savedSubTab)) {
         switchToSubTab(savedSubTab, false);
     }
 }
@@ -9312,4 +9377,356 @@ function convertBookmarkTreeToNetscapeHTML(bookmarkTree, timestamp) {
     html += `</DL><p>\n`;
 
     return html;
+}
+// ============================================================================
+// 书签关联记录功能（浏览器历史记录 + 书签标识）
+// ============================================================================
+
+let browsingRelatedHistory = null; // 缓存的关联历史记录
+let browsingRelatedBookmarkUrls = null; // 缓存的书签URL集合
+let browsingRelatedSortAsc = false; // 排序方式：false=倒序（新到旧），true=正序（旧到新）
+let browsingRelatedCurrentRange = 'day'; // 当前选中的时间范围
+
+// 初始化书签关联记录
+function initBrowsingRelatedHistory() {
+    const panel = document.getElementById('browsingRelatedPanel');
+    if (!panel) return;
+
+    const buttons = panel.querySelectorAll('.ranking-time-filter-btn');
+    const sortBtn = document.getElementById('browsingRelatedSortBtn');
+    if (!buttons.length) return;
+
+    const allowedRanges = ['day', 'week', 'month', 'year'];
+
+    const setActiveRange = (range, shouldPersist = true) => {
+        if (!allowedRanges.includes(range)) {
+            range = 'day';
+        }
+
+        browsingRelatedCurrentRange = range;
+
+        buttons.forEach(btn => {
+            if (btn.dataset.range === range) {
+                btn.classList.add('active');
+            } else {
+                btn.classList.remove('active');
+            }
+        });
+        loadBrowsingRelatedHistory(range);
+
+        if (shouldPersist) {
+            try {
+                localStorage.setItem('browsingRelatedActiveRange', range);
+            } catch (storageErr) {
+                console.warn('[BrowsingRelated] 无法保存筛选范围:', storageErr);
+            }
+        }
+    };
+
+    buttons.forEach(btn => {
+        btn.addEventListener('click', () => {
+            const range = btn.dataset.range || 'day';
+            setActiveRange(range);
+        });
+    });
+
+    // 排序按钮事件
+    if (sortBtn) {
+        sortBtn.addEventListener('click', () => {
+            browsingRelatedSortAsc = !browsingRelatedSortAsc;
+            if (browsingRelatedSortAsc) {
+                sortBtn.classList.add('asc');
+            } else {
+                sortBtn.classList.remove('asc');
+            }
+            loadBrowsingRelatedHistory(browsingRelatedCurrentRange);
+        });
+    }
+
+    let initialRange = 'day';
+    try {
+        const saved = localStorage.getItem('browsingRelatedActiveRange');
+        if (saved && allowedRanges.includes(saved)) {
+            initialRange = saved;
+        }
+    } catch (storageErr) {
+        console.warn('[BrowsingRelated] 无法读取筛选范围:', storageErr);
+    }
+
+    setActiveRange(initialRange, false);
+}
+
+// 刷新书签关联记录
+function refreshBrowsingRelatedHistory() {
+    const panel = document.getElementById('browsingRelatedPanel');
+    if (!panel || !panel.classList.contains('active')) return;
+    
+    const activeBtn = panel.querySelector('.ranking-time-filter-btn.active');
+    const range = activeBtn ? (activeBtn.dataset.range || 'day') : 'day';
+    
+    browsingRelatedHistory = null;
+    browsingRelatedBookmarkUrls = null;
+    loadBrowsingRelatedHistory(range);
+}
+
+// 获取书签URL集合
+async function getBookmarkUrls() {
+    if (browsingRelatedBookmarkUrls) {
+        return browsingRelatedBookmarkUrls;
+    }
+
+    const browserAPI = (typeof chrome !== 'undefined') ? chrome : browser;
+    if (!browserAPI || !browserAPI.bookmarks || !browserAPI.bookmarks.getTree) {
+        return new Set();
+    }
+
+    const urls = new Set();
+    
+    const collectUrls = (nodes) => {
+        if (!Array.isArray(nodes)) return;
+        for (const node of nodes) {
+            if (node.url) {
+                urls.add(node.url);
+            }
+            if (node.children) {
+                collectUrls(node.children);
+            }
+        }
+    };
+
+    try {
+        const tree = await new Promise((resolve, reject) => {
+            browserAPI.bookmarks.getTree((result) => {
+                if (browserAPI.runtime && browserAPI.runtime.lastError) {
+                    reject(browserAPI.runtime.lastError);
+                } else {
+                    resolve(result);
+                }
+            });
+        });
+        
+        collectUrls(tree);
+        browsingRelatedBookmarkUrls = urls;
+        return urls;
+    } catch (error) {
+        console.error('[BrowsingRelated] 获取书签URL失败:', error);
+        return new Set();
+    }
+}
+
+// 获取时间范围的起始时间
+function getTimeRangeStart(range) {
+    const now = new Date();
+    let startTime = new Date();
+
+    switch (range) {
+        case 'day':
+            startTime.setHours(0, 0, 0, 0);
+            break;
+        case 'week':
+            const dayOfWeek = now.getDay();
+            const daysToMonday = (dayOfWeek === 0 ? 6 : dayOfWeek - 1);
+            startTime.setDate(now.getDate() - daysToMonday);
+            startTime.setHours(0, 0, 0, 0);
+            break;
+        case 'month':
+            startTime.setDate(1);
+            startTime.setHours(0, 0, 0, 0);
+            break;
+        case 'year':
+            startTime.setMonth(0, 1);
+            startTime.setHours(0, 0, 0, 0);
+            break;
+        default:
+            startTime.setHours(0, 0, 0, 0);
+    }
+
+    return startTime.getTime();
+}
+
+// 加载书签关联记录
+async function loadBrowsingRelatedHistory(range = 'day') {
+    const listContainer = document.getElementById('browsingRelatedList');
+    if (!listContainer) return;
+
+    const isZh = currentLang === 'zh_CN';
+    const loadingTitle = isZh ? '正在读取历史记录...' : 'Loading history...';
+
+    listContainer.innerHTML = `
+        <div class="empty-state">
+            <div class="empty-state-icon"><i class="fas fa-spinner fa-spin"></i></div>
+            <div class="empty-state-title">${loadingTitle}</div>
+        </div>
+    `;
+
+    try {
+        const browserAPI = (typeof chrome !== 'undefined') ? chrome : browser;
+        if (!browserAPI || !browserAPI.history || !browserAPI.history.search) {
+            throw new Error('History API not available');
+        }
+
+        // 获取书签URL集合
+        const bookmarkUrls = await getBookmarkUrls();
+
+        // 获取时间范围
+        const startTime = getTimeRangeStart(range);
+        const endTime = Date.now();
+
+        // 搜索历史记录
+        const historyItems = await new Promise((resolve, reject) => {
+            browserAPI.history.search({
+                text: '',
+                startTime: startTime,
+                endTime: endTime,
+                maxResults: 500
+            }, (results) => {
+                if (browserAPI.runtime && browserAPI.runtime.lastError) {
+                    reject(browserAPI.runtime.lastError);
+                } else {
+                    resolve(results || []);
+                }
+            });
+        });
+
+        if (historyItems.length === 0) {
+            const emptyTitle = isZh ? '该时间范围内没有历史记录' : 'No history in this time range';
+            listContainer.innerHTML = `
+                <div class="empty-state">
+                    <div class="empty-state-icon"><i class="fas fa-history"></i></div>
+                    <div class="empty-state-title">${emptyTitle}</div>
+                </div>
+            `;
+            return;
+        }
+
+        // 按当前排序方式排序
+        if (browsingRelatedSortAsc) {
+            // 正序：旧到新
+            historyItems.sort((a, b) => (a.lastVisitTime || 0) - (b.lastVisitTime || 0));
+        } else {
+            // 倒序：新到旧
+            historyItems.sort((a, b) => (b.lastVisitTime || 0) - (a.lastVisitTime || 0));
+        }
+
+        // 渲染历史记录
+        renderBrowsingRelatedList(listContainer, historyItems, bookmarkUrls, range);
+
+    } catch (error) {
+        console.error('[BrowsingRelated] 加载失败:', error);
+        const errorTitle = isZh ? '加载历史记录失败' : 'Failed to load history';
+        const errorDesc = isZh ? '请检查浏览器权限设置' : 'Please check browser permissions';
+        listContainer.innerHTML = `
+            <div class="empty-state">
+                <div class="empty-state-icon"><i class="fas fa-exclamation-circle"></i></div>
+                <div class="empty-state-title">${errorTitle}</div>
+                <div class="empty-state-description">${errorDesc}</div>
+            </div>
+        `;
+    }
+}
+
+// 渲染书签关联记录列表
+async function renderBrowsingRelatedList(container, historyItems, bookmarkUrls, range) {
+    if (!container) return;
+
+    container.innerHTML = '';
+
+    const isZh = currentLang === 'zh_CN';
+    const bookmarkLabel = isZh ? '书签' : 'Bookmark';
+
+    for (let index = 0; index < historyItems.length; index++) {
+        const item = historyItems[index];
+        const isBookmark = bookmarkUrls.has(item.url);
+        
+        const itemEl = document.createElement('div');
+        itemEl.className = 'related-history-item' + (isBookmark ? ' is-bookmark' : '');
+
+        // 获取favicon
+        let faviconUrl = '';
+        if (typeof FaviconCache !== 'undefined' && FaviconCache.fetch) {
+            try {
+                faviconUrl = await FaviconCache.fetch(item.url);
+            } catch (e) {
+                // 静默失败
+            }
+        }
+        if (!faviconUrl) {
+            faviconUrl = 'data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16"><text y="12" font-size="12">🌐</text></svg>';
+        }
+
+        // 格式化时间（根据时间范围显示不同格式）
+        const visitTime = item.lastVisitTime ? new Date(item.lastVisitTime) : new Date();
+        const timeStr = formatTimeByRange(visitTime, range);
+
+        itemEl.innerHTML = `
+            <div class="related-history-number">${index + 1}</div>
+            <div class="related-history-header">
+                <img src="${faviconUrl}" class="related-history-favicon" alt="">
+                <div class="related-history-info">
+                    <div class="related-history-title">${escapeHtml(item.title || item.url)}</div>
+                </div>
+            </div>
+            <div class="related-history-meta">
+                <div class="related-history-time">
+                    <i class="fas fa-clock"></i>
+                    ${timeStr}
+                </div>
+                ${isBookmark ? `<div class="related-history-badge">${bookmarkLabel}</div>` : ''}
+            </div>
+        `;
+
+        // 点击打开链接
+        itemEl.addEventListener('click', () => {
+            const browserAPI = (typeof chrome !== 'undefined') ? chrome : browser;
+            if (browserAPI && browserAPI.tabs && browserAPI.tabs.create) {
+                browserAPI.tabs.create({ url: item.url });
+            } else {
+                window.open(item.url, '_blank');
+            }
+        });
+
+        container.appendChild(itemEl);
+    }
+}
+
+// 根据时间范围格式化时间
+function formatTimeByRange(date, range) {
+    const isZh = currentLang === 'zh_CN';
+    const hour = String(date.getHours()).padStart(2, '0');
+    const minute = String(date.getMinutes()).padStart(2, '0');
+    const timeOnly = `${hour}:${minute}`;
+
+    switch (range) {
+        case 'day':
+            // 当天：只显示时间
+            return timeOnly;
+        
+        case 'week':
+            // 当周：显示周几+时间
+            const weekdays = isZh 
+                ? ['周日', '周一', '周二', '周三', '周四', '周五', '周六']
+                : ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+            const weekday = weekdays[date.getDay()];
+            return `${weekday} ${timeOnly}`;
+        
+        case 'month':
+        case 'year':
+            // 当月/当年：显示月-日 时间
+            const month = String(date.getMonth() + 1).padStart(2, '0');
+            const day = String(date.getDate()).padStart(2, '0');
+            return `${month}-${day} ${timeOnly}`;
+        
+        default:
+            return timeOnly;
+    }
+}
+
+// 格式化时间为日期时间格式（保留用于其他地方）
+function formatRelativeTime(date) {
+    const year = date.getFullYear();
+    const month = String(date.getMonth() + 1).padStart(2, '0');
+    const day = String(date.getDate()).padStart(2, '0');
+    const hour = String(date.getHours()).padStart(2, '0');
+    const minute = String(date.getMinutes()).padStart(2, '0');
+    return `${year}-${month}-${day} ${hour}:${minute}`;
 }

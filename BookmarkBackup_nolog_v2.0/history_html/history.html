@@ -281,6 +281,7 @@
                     <div class="browsing-sub-tabs">
                         <button id="browsingTabHistory" class="browsing-sub-tab active" data-sub-tab="history">点击记录</button>
                         <button id="browsingTabRanking" class="browsing-sub-tab" data-sub-tab="ranking">点击排行</button>
+                        <button id="browsingTabRelated" class="browsing-sub-tab" data-sub-tab="related">书签关联记录</button>
                     </div>
 
                     <!-- 子视图 2.1：点击记录（日历视图） -->
@@ -382,6 +383,33 @@
                             <div class="empty-state">
                                 <div class="empty-state-icon"><i class="fas fa-chart-bar"></i></div>
                                 <div class="empty-state-title" id="browsingRankingLoadingText">正在读取历史记录...</div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- 子视图 2.3：书签关联记录 -->
+                    <div id="browsingRelatedPanel" class="browsing-sub-panel">
+                        <div class="browsing-ranking-header">
+                            <div class="browsing-ranking-title-block">
+                                <div id="browsingRelatedTitle" class="ranking-title">书签关联记录</div>
+                                <div id="browsingRelatedDescription" class="ranking-description">
+                                    显示浏览器历史记录，并用黄色边框凸显书签相关的记录。
+                                </div>
+                            </div>
+                            <div class="browsing-ranking-filters">
+                                <button id="browsingRelatedSortBtn" class="ranking-sort-btn" title="切换排序">
+                                    <i class="fas fa-sort-amount-down"></i>
+                                </button>
+                                <button id="browsingRelatedFilterDay" class="ranking-time-filter-btn active" data-range="day">当天</button>
+                                <button id="browsingRelatedFilterWeek" class="ranking-time-filter-btn" data-range="week">当周</button>
+                                <button id="browsingRelatedFilterMonth" class="ranking-time-filter-btn" data-range="month">当月</button>
+                                <button id="browsingRelatedFilterYear" class="ranking-time-filter-btn" data-range="year">当年</button>
+                            </div>
+                        </div>
+                        <div id="browsingRelatedList" class="related-history-list">
+                            <div class="empty-state">
+                                <div class="empty-state-icon"><i class="fas fa-history"></i></div>
+                                <div class="empty-state-title" id="browsingRelatedLoadingText">正在读取历史记录...</div>
                             </div>
                         </div>
                     </div>

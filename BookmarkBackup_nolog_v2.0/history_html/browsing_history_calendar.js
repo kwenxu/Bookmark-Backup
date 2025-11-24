@@ -528,9 +528,11 @@ class BrowsingHistoryCalendar {
                 return;
             }
 
+            // 修改：同时收集URL和标题
             const bookmarkUrls = new Set();
+            const bookmarkTitles = new Set();
             const bookmarks = await browserAPI.bookmarks.getTree();
-            this.collectBookmarkUrls(bookmarks[0], bookmarkUrls);
+            this.collectBookmarkUrlsAndTitles(bookmarks[0], bookmarkUrls, bookmarkTitles);
             if (bookmarkUrls.size === 0) {
                 return;
             }
@@ -566,7 +568,18 @@ class BrowsingHistoryCalendar {
 
             this.pruneOldRecords(cutoffTime);
 
-            const relevantHistoryItems = historyItems.filter(item => bookmarkUrls.has(item.url));
+            // 修改：使用URL或标题进行匹配（并集）
+            const relevantHistoryItems = historyItems.filter(item => {
+                // 条件1：URL匹配
+                if (bookmarkUrls.has(item.url)) {
+                    return true;
+                }
+                // 条件2：标题匹配（去除空白后比较）
+                if (item.title && item.title.trim() && bookmarkTitles.has(item.title.trim())) {
+                    return true;
+                }
+                return false;
+            });
             if (!relevantHistoryItems.length) {
                 this.historyCacheMeta.lastSyncTime = now;
                 if (!canIncremental) {
@@ -677,7 +690,22 @@ class BrowsingHistoryCalendar {
         }
     }
 
-    // 递归收集所有书签URL
+    // 递归收集所有书签URL和标题
+    collectBookmarkUrlsAndTitles(node, urlSet, titleSet) {
+        if (node.url) {
+            urlSet.add(node.url);
+            // 同时收集标题（去除空白后存储）
+            if (node.title && node.title.trim()) {
+                titleSet.add(node.title.trim());
+            }
+        }
+
+        if (node.children) {
+            node.children.forEach(child => this.collectBookmarkUrlsAndTitles(child, urlSet, titleSet));
+        }
+    }
+
+    // 保留旧方法名以兼容可能的其他调用
     collectBookmarkUrls(node, urlSet) {
         if (node.url) {
             urlSet.add(node.url);

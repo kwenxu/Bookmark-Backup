@@ -9384,6 +9384,7 @@ function convertBookmarkTreeToNetscapeHTML(bookmarkTree, timestamp) {
 
 let browsingRelatedHistory = null; // 缓存的关联历史记录
 let browsingRelatedBookmarkUrls = null; // 缓存的书签URL集合
+let browsingRelatedBookmarkTitles = null; // 缓存的书签标题集合
 let browsingRelatedSortAsc = false; // 排序方式：false=倒序（新到旧），true=正序（旧到新）
 let browsingRelatedCurrentRange = 'day'; // 当前选中的时间范围
 
@@ -9466,30 +9467,36 @@ function refreshBrowsingRelatedHistory() {
     
     browsingRelatedHistory = null;
     browsingRelatedBookmarkUrls = null;
+    browsingRelatedBookmarkTitles = null;
     loadBrowsingRelatedHistory(range);
 }
 
-// 获取书签URL集合
-async function getBookmarkUrls() {
-    if (browsingRelatedBookmarkUrls) {
-        return browsingRelatedBookmarkUrls;
+// 获取书签URL和标题集合（使用URL或标题匹配）
+async function getBookmarkUrlsAndTitles() {
+    if (browsingRelatedBookmarkUrls && browsingRelatedBookmarkTitles) {
+        return { urls: browsingRelatedBookmarkUrls, titles: browsingRelatedBookmarkTitles };
     }
 
     const browserAPI = (typeof chrome !== 'undefined') ? chrome : browser;
     if (!browserAPI || !browserAPI.bookmarks || !browserAPI.bookmarks.getTree) {
-        return new Set();
+        return { urls: new Set(), titles: new Set() };
     }
 
     const urls = new Set();
+    const titles = new Set();
     
-    const collectUrls = (nodes) => {
+    const collectUrlsAndTitles = (nodes) => {
         if (!Array.isArray(nodes)) return;
         for (const node of nodes) {
             if (node.url) {
                 urls.add(node.url);
+                // 同时收集标题（去除空白后存储）
+                if (node.title && node.title.trim()) {
+                    titles.add(node.title.trim());
+                }
             }
             if (node.children) {
-                collectUrls(node.children);
+                collectUrlsAndTitles(node.children);
             }
         }
     };
@@ -9505,12 +9512,13 @@ async function getBookmarkUrls() {
             });
         });
         
-        collectUrls(tree);
+        collectUrlsAndTitles(tree);
         browsingRelatedBookmarkUrls = urls;
-        return urls;
+        browsingRelatedBookmarkTitles = titles;
+        return { urls, titles };
     } catch (error) {
-        console.error('[BrowsingRelated] 获取书签URL失败:', error);
-        return new Set();
+        console.error('[BrowsingRelated] 获取书签URL和标题失败:', error);
+        return { urls: new Set(), titles: new Set() };
     }
 }
 
@@ -9565,8 +9573,8 @@ async function loadBrowsingRelatedHistory(range = 'day') {
             throw new Error('History API not available');
         }
 
-        // 获取书签URL集合
-        const bookmarkUrls = await getBookmarkUrls();
+        // 获取书签URL和标题集合
+        const { urls: bookmarkUrls, titles: bookmarkTitles } = await getBookmarkUrlsAndTitles();
 
         // 获取时间范围
         const startTime = getTimeRangeStart(range);
@@ -9609,7 +9617,7 @@ async function loadBrowsingRelatedHistory(range = 'day') {
         }
 
         // 渲染历史记录
-        renderBrowsingRelatedList(listContainer, historyItems, bookmarkUrls, range);
+        renderBrowsingRelatedList(listContainer, historyItems, bookmarkUrls, bookmarkTitles, range);
 
     } catch (error) {
         console.error('[BrowsingRelated] 加载失败:', error);
@@ -9626,7 +9634,7 @@ async function loadBrowsingRelatedHistory(range = 'day') {
 }
 
 // 渲染书签关联记录列表
-async function renderBrowsingRelatedList(container, historyItems, bookmarkUrls, range) {
+async function renderBrowsingRelatedList(container, historyItems, bookmarkUrls, bookmarkTitles, range) {
     if (!container) return;
 
     container.innerHTML = '';
@@ -9636,7 +9644,17 @@ async function renderBrowsingRelatedList(container, historyItems, bookmarkUrls, 
 
     for (let index = 0; index < historyItems.length; index++) {
         const item = historyItems[index];
-        const isBookmark = bookmarkUrls.has(item.url);
+        
+        // 使用URL或标题进行匹配（并集逻辑）
+        let isBookmark = false;
+        // 条件1：URL匹配
+        if (bookmarkUrls.has(item.url)) {
+            isBookmark = true;
+        }
+        // 条件2：标题匹配（去除空白后比较）
+        if (!isBookmark && item.title && item.title.trim() && bookmarkTitles.has(item.title.trim())) {
+            isBookmark = true;
+        }
         
         const itemEl = document.createElement('div');
         itemEl.className = 'related-history-item' + (isBookmark ? ' is-bookmark' : '');

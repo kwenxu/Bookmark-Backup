@@ -1,5 +1,18 @@
 # 书签关联记录更新说明 v2
 
+## 重要更新：匹配算法优化
+
+### 📌 URL + 标题双重匹配
+现在使用与「点击记录」相同的匹配算法：
+- **条件1**：URL匹配（原有逻辑）
+- **条件2**：标题匹配（新增逻辑，去除空白后比较）
+- **匹配规则**：只要**任意一个条件**满足，就认为是书签相关的记录
+
+### 使用场景
+1. **书签重新添加**：删除书签后重新添加，即使URL略有变化，也能通过标题匹配
+2. **相似书签**：标题相同的书签会被识别为同一项
+3. **URL变化**：网站改版导致URL变化，但页面标题不变时仍能匹配
+
 ## 新增功能
 
 ### 1. ✨ 序号标识
@@ -67,14 +80,31 @@
 1. **全局变量**：
    - `browsingRelatedSortAsc` - 排序方式标志
    - `browsingRelatedCurrentRange` - 当前时间范围
+   - `browsingRelatedBookmarkTitles` - 书签标题集合缓存
 
 2. **新增函数**：
    - `formatTimeByRange(date, range)` - 根据时间范围格式化时间
+   - `getBookmarkUrlsAndTitles()` - 同时获取书签URL和标题集合
 
 3. **修改函数**：
    - `initBrowsingRelatedHistory()` - 添加排序按钮事件处理
-   - `loadBrowsingRelatedHistory()` - 支持正序/倒序排序
-   - `renderBrowsingRelatedList()` - 添加序号显示和智能时间格式
+   - `loadBrowsingRelatedHistory()` - 支持正序/倒序排序，使用URL+标题匹配
+   - `renderBrowsingRelatedList()` - 添加序号显示、智能时间格式和双重匹配逻辑
+   - `refreshBrowsingRelatedHistory()` - 清除标题缓存
+
+4. **匹配逻辑**：
+```javascript
+// 使用URL或标题进行匹配（并集逻辑）
+let isBookmark = false;
+// 条件1：URL匹配
+if (bookmarkUrls.has(item.url)) {
+    isBookmark = true;
+}
+// 条件2：标题匹配（去除空白后比较）
+if (!isBookmark && item.title && item.title.trim() && bookmarkTitles.has(item.title.trim())) {
+    isBookmark = true;
+}
+```
 
 ## 使用说明
 

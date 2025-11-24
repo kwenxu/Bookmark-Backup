@@ -33,29 +33,56 @@
 1. **`initBrowsingRelatedHistory()`**
    - 初始化书签关联记录功能
    - 绑定时间筛选按钮事件
+   - 绑定排序按钮事件
    - 恢复上次选择的时间范围
 
 2. **`loadBrowsingRelatedHistory(range)`**
    - 加载指定时间范围的历史记录
    - 调用浏览器 History API 获取数据
-   - 识别书签相关的记录
+   - 使用 URL + 标题双重匹配识别书签相关记录
+   - 支持正序/倒序排序
 
-3. **`getBookmarkUrls()`**
-   - 获取当前所有书签的 URL 集合
+3. **`getBookmarkUrlsAndTitles()`**
+   - 同时获取当前所有书签的 URL 和标题集合
+   - 标题会去除首尾空白后存储
    - 缓存结果以提高性能
 
-4. **`renderBrowsingRelatedList(container, historyItems, bookmarkUrls)`**
+4. **`renderBrowsingRelatedList(container, historyItems, bookmarkUrls, bookmarkTitles, range)`**
    - 渲染历史记录列表
+   - 使用 URL 或标题匹配识别书签（并集逻辑）
    - 为书签相关的记录添加特殊样式
-   - 显示 favicon 和相对时间
+   - 显示序号、favicon 和智能时间格式
 
-5. **`formatRelativeTime(date)`**
-   - 格式化相对时间（刚刚、X分钟前、X小时前等）
+5. **`formatTimeByRange(date, range)`**
+   - 根据时间范围智能格式化时间
+   - 当天：只显示时间
+   - 当周：显示周几+时间
+   - 当月/当年：显示月-日+时间
    - 支持中英文
 
 6. **`refreshBrowsingRelatedHistory()`**
    - 刷新当前显示的历史记录
-   - 清除缓存并重新加载
+   - 清除所有缓存（URL、标题、历史记录）并重新加载
+
+#### 匹配算法
+
+使用 **URL 或标题匹配（并集逻辑）**：
+
+```javascript
+// 条件1：URL匹配
+if (bookmarkUrls.has(item.url)) {
+    isBookmark = true;
+}
+// 条件2：标题匹配（去除空白后比较）
+if (!isBookmark && item.title && item.title.trim() && bookmarkTitles.has(item.title.trim())) {
+    isBookmark = true;
+}
+```
+
+**优势**：
+- 书签被删除后重新添加，即使URL略有变化也能匹配
+- 网站改版导致URL变化但标题不变时仍能识别
+- 与「点击记录」功能使用相同的匹配逻辑，保持一致性
 
 ### 国际化支持
 
@@ -147,7 +174,13 @@
 
 ## 更新日志
 
-### 2025-11-24 v2
+### 2025-11-24 v2.1
+- **重要**：采用 URL + 标题双重匹配算法（与点击记录保持一致）
+- 修改 `getBookmarkUrlsAndTitles()` 同时收集URL和标题
+- 修改匹配逻辑：URL或标题任一匹配即可识别为书签
+- 提高书签识别准确性，支持书签重新添加、URL变化等场景
+
+### 2025-11-24 v2.0
 - 添加序号标识（左上角圆形徽章，书签记录为黄色渐变）
 - 添加正序/倒序排序按钮
 - 实现智能时间格式显示（根据时间范围自动调整）

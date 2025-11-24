@@ -664,11 +664,13 @@ function removeUrlFromBookmarkSet(url) {
 }
 
 function scheduleHistoryRefresh({ forceFull = false } = {}) {
+    console.log('[History] 安排刷新，forceFull:', forceFull);
     pendingHistoryRefreshForceFull = pendingHistoryRefreshForceFull || forceFull;
     if (pendingHistoryRefreshTimer) {
         clearTimeout(pendingHistoryRefreshTimer);
     }
     pendingHistoryRefreshTimer = setTimeout(() => {
+        console.log('[History] 执行刷新，forceFull:', pendingHistoryRefreshForceFull);
         pendingHistoryRefreshTimer = null;
         const shouldForce = pendingHistoryRefreshForceFull;
         pendingHistoryRefreshForceFull = false;
@@ -678,7 +680,12 @@ function scheduleHistoryRefresh({ forceFull = false } = {}) {
 
 function handleHistoryVisited(result) {
     if (!result || !result.url) return;
-    if (!bookmarkUrlSet.has(result.url)) return;
+    console.log('[History] onVisited:', result.url);
+    if (!bookmarkUrlSet.has(result.url)) {
+        console.log('[History] URL不在书签集合中，跳过刷新');
+        return;
+    }
+    console.log('[History] URL在书签集合中，安排刷新');
     scheduleHistoryRefresh({ forceFull: false });
 }
 
@@ -698,13 +705,21 @@ function handleHistoryVisitRemoved(details) {
 
 let historyRealtimeBound = false;
 function setupBrowsingHistoryRealtimeListeners() {
-    if (historyRealtimeBound) return;
-    if (!browserAPI.history) return;
+    if (historyRealtimeBound) {
+        console.log('[History] 实时监听器已绑定，跳过');
+        return;
+    }
+    if (!browserAPI.history) {
+        console.warn('[History] 浏览器历史API不可用');
+        return;
+    }
     if (browserAPI.history.onVisited && typeof browserAPI.history.onVisited.addListener === 'function') {
+        console.log('[History] 绑定 onVisited 监听器');
         browserAPI.history.onVisited.addListener(handleHistoryVisited);
         historyRealtimeBound = true;
     }
     if (browserAPI.history.onVisitRemoved && typeof browserAPI.history.onVisitRemoved.addListener === 'function') {
+        console.log('[History] 绑定 onVisitRemoved 监听器');
         browserAPI.history.onVisitRemoved.addListener(handleHistoryVisitRemoved);
     }
 }
@@ -728,14 +743,25 @@ async function refreshBrowsingHistoryData(options = {}) {
     browsingHistoryRefreshPromise = (async () => {
         try {
             await inst.loadBookmarkData({ incremental });
+            
+            // 重建 bookmarkUrlSet（用于实时更新判断）
+            if (typeof rebuildBookmarkUrlSet === 'function' && allBookmarks.length > 0) {
+                rebuildBookmarkUrlSet();
+            }
+            
             if (typeof inst.render === 'function') {
                 inst.render();
             }
             if (typeof inst.updateSelectModeButton === 'function') {
                 inst.updateSelectModeButton();
             }
+            
+            // 清除缓存，让下次加载时重新获取
             browsingClickRankingStats = null;
-            refreshActiveBrowsingRankingIfVisible();
+            
+            // 注意：不在这里直接调用 refresh 函数，而是依赖事件系统
+            // 日历的 announceHistoryDataUpdated() 会派发 browsingHistoryCacheUpdated 事件
+            // 事件监听器会调用 refreshActiveBrowsingRankingIfVisible() 和 refreshBrowsingRelatedHistory()
         } catch (error) {
             if (!silent) {
                 console.warn('[BrowsingHistory] 刷新失败:', error);
@@ -5773,6 +5799,7 @@ function refreshActiveBrowsingRankingIfVisible() {
 }
 
 document.addEventListener('browsingHistoryCacheUpdated', () => {
+    console.log('[Event] browsingHistoryCacheUpdated 触发，刷新所有浏览记录相关页面');
     browsingClickRankingStats = null;
     refreshActiveBrowsingRankingIfVisible();
     refreshBrowsingRelatedHistory(); // 同时刷新书签关联页面
@@ -9577,6 +9604,30 @@ async function loadBrowsingRelatedHistory(range = 'day') {
             throw new Error('History API not available');
         }
 
+        // 确保「点击记录」日历已初始化
+        if (typeof initBrowsingHistoryCalendar === 'function' && !window.browsingHistoryCalendarInstance) {
+            console.log('[BrowsingRelated] 初始化日历...');
+            initBrowsingHistoryCalendar();
+        }
+
+        // 等待日历数据加载（最多10秒）
+        const waitForCalendarData = async () => {
+            const start = Date.now();
+            const timeout = 10000;
+            while (Date.now() - start < timeout) {
+                const inst = window.browsingHistoryCalendarInstance;
+                if (inst && inst.bookmarksByDate && inst.bookmarksByDate.size > 0) {
+                    console.log('[BrowsingRelated] 日历数据已加载，记录数:', inst.bookmarksByDate.size);
+                    return inst;
+                }
+                await new Promise(resolve => setTimeout(resolve, 200));
+            }
+            console.warn('[BrowsingRelated] 等待日历数据超时');
+            return window.browsingHistoryCalendarInstance || null;
+        };
+
+        const calendar = await waitForCalendarData();
+
         // 获取时间范围
         const startTime = getTimeRangeStart(range);
         const endTime = Date.now();
@@ -9611,22 +9662,26 @@ async function loadBrowsingRelatedHistory(range = 'day') {
         // 获取书签URL和标题集合（用于标识哪些是书签）
         // 优先从「点击记录」日历获取，保持数据一致性
         let bookmarkUrls, bookmarkTitles;
-        if (window.browsingHistoryCalendarInstance && window.browsingHistoryCalendarInstance.bookmarksByDate) {
+        if (calendar && calendar.bookmarksByDate && calendar.bookmarksByDate.size > 0) {
+            console.log('[BrowsingRelated] 从日历提取书签集合');
             // 从日历实例中提取书签URL和标题集合
             bookmarkUrls = new Set();
             bookmarkTitles = new Set();
-            for (const records of window.browsingHistoryCalendarInstance.bookmarksByDate.values()) {
+            for (const records of calendar.bookmarksByDate.values()) {
                 if (!Array.isArray(records)) continue;
                 records.forEach(record => {
                     if (record.url) bookmarkUrls.add(record.url);
                     if (record.title && record.title.trim()) bookmarkTitles.add(record.title.trim());
                 });
             }
+            console.log('[BrowsingRelated] 书签集合大小 - URL:', bookmarkUrls.size, 'Title:', bookmarkTitles.size);
         } else {
+            console.log('[BrowsingRelated] 使用降级方案获取书签');
             // 降级方案：直接获取书签库
             const result = await getBookmarkUrlsAndTitles();
             bookmarkUrls = result.urls;
             bookmarkTitles = result.titles;
+            console.log('[BrowsingRelated] 降级方案书签集合 - URL:', bookmarkUrls.size, 'Title:', bookmarkTitles.size);
         }
 
         // 按当前排序方式排序

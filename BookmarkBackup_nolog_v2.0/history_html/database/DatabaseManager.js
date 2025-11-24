@@ -263,16 +263,17 @@ class DatabaseManager {
     console.log('[DatabaseManager] 书签创建:', bookmark.url);
 
     try {
+      // 添加到存储库2
       await this.bookmarks.add(bookmark);
 
-      // 检查存储库1中是否有该URL的历史记录
-      const historyRecords = this.allHistory.getByUrl(bookmark.url);
+      // ✨ 检查存储库1中是否有匹配的历史记录（URL 或标题匹配）
+      const historyRecords = this.allHistory.getByUrlOrTitle(bookmark.url, bookmark.title);
       if (historyRecords.length > 0) {
-        // 有历史记录，添加到存储库3
+        // 有匹配的历史记录，添加到存储库3
         for (const record of historyRecords) {
           this.bookmarkHistory.add(record);
         }
-        console.log('[DatabaseManager] 添加', historyRecords.length, '条历史记录到存储库3');
+        console.log('[DatabaseManager] 添加', historyRecords.length, '条历史记录到存储库3 (URL+标题匹配)');
       }
 
       await this.saveAll();

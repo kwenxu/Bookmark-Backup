@@ -195,6 +195,54 @@ class AllHistoryDatabase {
   }
 
   /**
+   * 查询指定标题的所有记录
+   * @param {string} title - 要查询的标题
+   * @returns {Array} 记录数组
+   */
+  getByTitle(title) {
+    const normalizedTitle = normalizeTitle(title);
+    if (!normalizedTitle) return [];
+
+    const results = [];
+    for (const records of this.records.values()) {
+      for (const record of records) {
+        if (normalizeTitle(record.title) === normalizedTitle) {
+          results.push(record);
+        }
+      }
+    }
+    return results;
+  }
+
+  /**
+   * 查询匹配URL或标题的所有记录（并集）
+   * @param {string} url - URL
+   * @param {string} title - 标题
+   * @returns {Array} 记录数组（去重）
+   */
+  getByUrlOrTitle(url, title) {
+    const recordMap = new Map(); // 用于去重
+
+    // URL 匹配
+    if (url) {
+      const urlRecords = this.getByUrl(url);
+      for (const record of urlRecords) {
+        recordMap.set(record.id, record);
+      }
+    }
+
+    // 标题匹配
+    if (title) {
+      const titleRecords = this.getByTitle(title);
+      for (const record of titleRecords) {
+        recordMap.set(record.id, record);
+      }
+    }
+
+    return Array.from(recordMap.values());
+  }
+
+  /**
    * 获取指定时间范围的记录
    * @param {number} startTime - 开始时间戳
    * @param {number} endTime - 结束时间戳

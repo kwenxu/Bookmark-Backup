@@ -229,23 +229,34 @@ class BookmarkHistoryDatabase {
    * @returns {number} 匹配的记录数
    */
   rebuildFrom(allHistoryDB, bookmarkDB) {
-    console.log('[BookmarkHistoryDB] 开始重建数据...');
+    console.log('[BookmarkHistoryDB] 开始重建数据（URL + 标题并集匹配）...');
     
     this.clear();
     
     let matched = 0;
+    let urlMatched = 0;
+    let titleMatched = 0;
     const allRecords = allHistoryDB.getAllRecords();
     
     for (const [dateKey, records] of allRecords.entries()) {
       for (const record of records) {
+        // ✨ 使用 bookmarkDB.matches() 实现 URL + 标题并集匹配
         if (bookmarkDB.matches(record)) {
           this.add(record);
           matched++;
+          
+          // 统计匹配类型（用于调试）
+          const url = normalizeUrl(record.url);
+          const title = normalizeTitle(record.title);
+          if (url && bookmarkDB.hasUrl(url)) urlMatched++;
+          if (title && bookmarkDB.hasTitle(title)) titleMatched++;
         }
       }
     }
     
     console.log('[BookmarkHistoryDB] 重建完成，匹配', matched, '条记录');
+    console.log('  - URL匹配:', urlMatched, '条');
+    console.log('  - 标题匹配:', titleMatched, '条');
     return matched;
   }
 }

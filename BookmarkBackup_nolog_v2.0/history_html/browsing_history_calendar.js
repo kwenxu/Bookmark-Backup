@@ -140,6 +140,10 @@ class BrowsingHistoryCalendar {
         this.dragMinDistance = 10; // 拖拽最小距离(px)
         this.renderDebounceTimer = null; // 防抖定时器
 
+        // ✨ 新增：数据库管理器（三库架构）
+        this.dbManager = null;
+        this.useNewArchitecture = false;
+
         this.init();
     }
 
@@ -290,6 +294,32 @@ class BrowsingHistoryCalendar {
     async init() {
         console.log('[BrowsingHistoryCalendar] 初始化...');
 
+        // ✨ 尝试使用新的数据库架构
+        if (typeof DatabaseManager !== 'undefined') {
+            console.log('[BrowsingHistoryCalendar] 使用新的三库架构');
+            this.useNewArchitecture = true;
+            this.dbManager = new DatabaseManager();
+            
+            try {
+                const result = await this.dbManager.initialize({ forceRefresh: false });
+                console.log('[BrowsingHistoryCalendar] DatabaseManager初始化:', result);
+                
+                // 从DatabaseManager同步数据到bookmarksByDate（用于渲染）
+                this.syncFromDatabaseManager();
+                
+                // 监听数据更新事件
+                document.addEventListener('browsingDataUpdated', (event) => {
+                    console.log('[BrowsingHistoryCalendar] 收到数据更新事件:', event.detail);
+                    this.syncFromDatabaseManager();
+                    this.render();
+                });
+            } catch (error) {
+                console.error('[BrowsingHistoryCalendar] DatabaseManager初始化失败，回退到旧架构:', error);
+                this.useNewArchitecture = false;
+                this.dbManager = null;
+            }
+        }
+
         // 初始化FaviconCache（如果可用）
         if (typeof FaviconCache !== 'undefined' && FaviconCache.init) {
             try {
@@ -300,9 +330,12 @@ class BrowsingHistoryCalendar {
             }
         }
 
-        const restoredFromCache = await this.restoreBrowsingHistoryCache();
-        if (!restoredFromCache) {
-            await this.loadBookmarkData({ incremental: false });
+        // 如果使用新架构，跳过旧的缓存恢复逻辑
+        if (!this.useNewArchitecture) {
+            const restoredFromCache = await this.restoreBrowsingHistoryCache();
+            if (!restoredFromCache) {
+                await this.loadBookmarkData({ incremental: false });
+            }
         }
 
         // 从localStorage恢复勾选模式和视图状态
@@ -330,19 +363,66 @@ class BrowsingHistoryCalendar {
         this.setupDragEvents();
         this.render();
 
-        if (restoredFromCache) {
-            this.loadBookmarkData({ incremental: true })
-                .then(() => {
-                    this.render();
-                })
-                .catch(error => {
-                    console.warn('[BrowsingHistoryCalendar] 增量更新失败，回退全量:', error);
-                    this.loadBookmarkData({ incremental: false }).then(() => this.render());
-                });
+        // 新架构不需要手动触发增量更新（自动监听）
+        if (!this.useNewArchitecture) {
+            if (restoredFromCache) {
+                this.loadBookmarkData({ incremental: true })
+                    .then(() => {
+                        this.render();
+                    })
+                    .catch(error => {
+                        console.warn('[BrowsingHistoryCalendar] 增量更新失败，回退全量:', error);
+                        this.loadBookmarkData({ incremental: false }).then(() => this.render());
+                    });
+            }
         }
 
         // 恢复后更新按钮状态
         this.updateSelectModeButton();
+    }
+    
+    /**
+     * ✨ 新增：从DatabaseManager同步数据到bookmarksByDate
+     */
+    syncFromDatabaseManager() {
+        if (!this.dbManager) return;
+        
+        console.log('[BrowsingHistoryCalendar] 同步DatabaseManager数据...');
+        
+        // 清空现有数据
+        this.bookmarksByDate.clear();
+        this.visitKeySet.clear();
+        
+        // 从存储库3（书签历史）获取所有记录
+        const bookmarkHistoryDB = this.dbManager.getBookmarkHistoryDB();
+        const allRecords = bookmarkHistoryDB.getAllRecords();
+        
+        for (const [dateKey, records] of allRecords.entries()) {
+            const formattedRecords = records.map(record => {
+                const visitTime = record.visitTime;
+                const visitKey = `${record.url}|${visitTime}`;
+                this.visitKeySet.add(visitKey);
+                
+                return {
+                    id: record.id,
+                    title: record.title || record.url,
+                    url: record.url,
+                    dateAdded: new Date(visitTime),
+                    visitTime: visitTime,
+                    visitCount: record.visitCount || 1,
+                    typedCount: record.typedCount || 0,
+                    folderPath: [],
+                    transition: record.transition || '',
+                    referringVisitId: record.referringVisitId || null,
+                    aggregated: false
+                };
+            });
+            
+            this.bookmarksByDate.set(dateKey, formattedRecords);
+        }
+        
+        const stats = bookmarkHistoryDB.getStats();
+        console.log('[BrowsingHistoryCalendar] 同步完成:', stats);
     }
 
     // 从localStorage恢复勾选模式和视图状态

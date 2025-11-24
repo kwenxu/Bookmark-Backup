@@ -181,6 +181,152 @@ switch (range) {
 
 ---
 
+## v2.2 更新：书签集合复用优化
+
+### 🔄 核心变化
+**显示所有浏览器历史记录，但复用「点击记录」的书签集合进行标识**：
+- 数据源：浏览器 History API（所有记录）
+- 书签标识：优先使用 `browsingHistoryCalendarInstance` 的书签集合
+- 移除了 500 条记录的限制（`maxResults: 0`）
+- 自动跟随「点击记录」的更新（监听 `browsingHistoryCacheUpdated` 事件）
+
+### 📊 数据流程图
+```
+┌─────────────────────────────────────┐
+│  浏览器 History API                 │
+│  (chrome.history.search)            │
+│  maxResults: 0 (不限制)              │
+└──────────┬──────────────────────────┘
+           │
+           ↓
+    所有浏览器历史记录
+           │
+           ↓
+    ┌──────────────────────┐
+    │ 书签标识逻辑         │
+    │ ┌──────────────────┐ │
+    │ │ 优先方案：       │ │
+    │ │ 从日历实例提取   │ │  ←──┐
+    │ │ 书签URL+标题集合 │ │     │
+    │ └──────────────────┘ │     │
+    │ ┌──────────────────┐ │     │
+    │ │ 降级方案：       │ │     │ 保持一致性
+    │ │ 直接获取书签库   │ │     │
+    │ └──────────────────┘ │     │
+    └──────────┬───────────┘     │
+               │                  │
+               ↓                  │
+   ┌──────────────────────────┐  │
+   │ 书签关联页面             │  │
+   │ - 显示所有历史记录       │  │
+   │ - 黄色边框标识书签       │  │
+   └──────────────────────────┘  │
+                                  │
+   ┌──────────────────────────────┴────┐
+   │  BrowsingHistoryCalendar          │
+   │  (点击记录日历)                   │
+   │  ┌──────────────────────────────┐ │
+   │  │ bookmarksByDate (Map)        │ │
+   │  │ 只包含与书签匹配的历史记录   │ │
+   │  └──────────────────────────────┘ │
+   └───────────────┬───────────────────┘
+                   │
+                   ↓
+              点击排行
+         (统计书签点击次数)
+```
+
+### ⚡ 优势
+1. **显示完整**：显示所有浏览器历史记录（不只是书签相关的）
+2. **标识一致**：书签标识与「点击记录」使用相同的集合
+3. **无数量限制**：不再受 `maxResults: 500` 限制
+4. **实时更新**：监听 `browsingHistoryCacheUpdated` 事件自动刷新
+5. **降级保障**：日历未初始化时降级到直接获取书签库
+
+### 🔧 实现细节
+
+#### 获取所有历史记录
+```javascript
+// 搜索所有浏览器历史记录（不限制数量）
+const historyItems = await new Promise((resolve, reject) => {
+    browserAPI.history.search({
+        text: '',
+        startTime: startTime,
+        endTime: endTime,
+        maxResults: 0  // 0表示不限制数量
+    }, (results) => {
+        resolve(results || []);
+    });
+});
+```
+
+#### 获取书签集合（优先复用日历数据）
+```javascript
+// 优先从「点击记录」日历获取，保持数据一致性
+let bookmarkUrls, bookmarkTitles;
+if (window.browsingHistoryCalendarInstance && 
+    window.browsingHistoryCalendarInstance.bookmarksByDate) {
+    // 从日历实例中提取书签URL和标题集合
+    bookmarkUrls = new Set();
+    bookmarkTitles = new Set();
+    for (const records of window.browsingHistoryCalendarInstance.bookmarksByDate.values()) {
+        records.forEach(record => {
+            if (record.url) bookmarkUrls.add(record.url);
+            if (record.title && record.title.trim()) {
+                bookmarkTitles.add(record.title.trim());
+            }
+        });
+    }
+} else {
+    // 降级方案：直接获取书签库
+    const result = await getBookmarkUrlsAndTitles();
+    bookmarkUrls = result.urls;
+    bookmarkTitles = result.titles;
+}
+```
+
+#### 实时更新监听
+```javascript
+document.addEventListener('browsingHistoryCacheUpdated', () => {
+    browsingClickRankingStats = null;
+    refreshActiveBrowsingRankingIfVisible();
+    refreshBrowsingRelatedHistory(); // 同时刷新书签关联页面
+});
+```
+
+### 📝 代码变更
+1. **保留变量**（用于标识书签）：
+   - `browsingRelatedBookmarkUrls` - 书签URL集合缓存
+   - `browsingRelatedBookmarkTitles` - 书签标题集合缓存
+
+2. **修改函数**：
+   - `loadBrowsingRelatedHistory()` - 获取所有历史记录，优先使用日历的书签集合进行标识
+   - `refreshBrowsingRelatedHistory()` - 清除书签缓存后重新加载
+   - 添加事件监听器：`browsingHistoryCacheUpdated`
+
+3. **核心逻辑**：
+   - 通过 `browserAPI.history.search()` 获取所有历史记录（`maxResults: 0`）
+   - 优先从 `browsingHistoryCalendarInstance` 提取书签集合
+   - 降级到直接调用 `getBookmarkUrlsAndTitles()`
+   - 使用 URL + 标题双重匹配标识书签
+
+### 🧪 测试要点
+1. **数据完整性**：「书签关联页面」应显示所有历史记录（包括非书签）
+2. **书签标识一致性**：书签标识应与「点击记录」一致
+3. **实时更新**：浏览新网页后自动更新，书签标识同步
+4. **数量验证**：检查是否能显示超过500条记录
+5. **时间范围**：验证不同时间范围（当天/当周/当月/当年）数据正确
+6. **降级测试**：日历未初始化时应能正常工作
+
+### ⚠️ 注意事项
+1. 显示所有浏览器历史记录（不仅仅是书签相关的）
+2. 书签标识优先使用「点击记录」的集合，保持一致性
+3. 降级方案：日历未初始化时直接获取书签库
+4. 不限制显示数量，取决于浏览器历史记录的实际量
+5. 与「点击排行」共享书签集合，但数据源不同（全部 vs 过滤）
+
+---
+
 **更新时间**：2025-11-24  
-**版本**：v2.0  
+**版本**：v2.2  
 **状态**：已完成 ✅

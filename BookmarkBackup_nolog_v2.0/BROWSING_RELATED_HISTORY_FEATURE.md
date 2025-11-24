@@ -134,9 +134,11 @@ if (!isBookmark && item.title && item.title.trim() && bookmarkTitles.has(item.ti
 - 排序状态在切换时间范围时保持
 
 ### 性能优化
-- 书签 URL 集合缓存
-- Favicon 缓存复用
-- 最多显示 500 条历史记录
+- 书签 URL 和标题集合缓存（用于标识）
+- Favicon 缓存复用（通过 FaviconCache）
+- 复用「点击记录」的书签集合进行标识，保持数据一致性
+- 不限制显示数量（`maxResults: 0`）
+- 自动跟随「点击记录」的更新（监听 `browsingHistoryCacheUpdated` 事件）
 
 ## 测试建议
 
@@ -161,18 +163,30 @@ if (!isBookmark && item.title && item.title.trim() && bookmarkTitles.has(item.ti
 
 ## 依赖
 
-- Chrome/Edge History API
-- Chrome/Edge Bookmarks API
+- Chrome/Edge History API（用于获取所有浏览器历史记录）
+- **BrowsingHistoryCalendar**（优先使用其书签集合进行标识，保持与「点击记录」一致）
+- Chrome/Edge Bookmarks API（降级方案：日历未初始化时直接获取书签）
 - FaviconCache（如果可用）
 - 现有的国际化系统
 
 ## 注意事项
 
 1. 需要浏览器的 `history` 权限
-2. 最多显示 500 条历史记录（可在代码中调整）
-3. Favicon 加载可能受 CORS 限制影响
+2. 不限制显示数量（`maxResults: 0`），取决于浏览器历史记录量
+3. 书签标识优先使用「点击记录」的数据，降级到直接获取书签库
+4. 自动监听 `browsingHistoryCacheUpdated` 事件实时更新
+5. Favicon 加载可能受 CORS 限制影响
 
 ## 更新日志
+
+### 2025-11-24 v2.2
+- **重要**：显示所有浏览器历史记录，标识出哪些是书签
+- 移除500条记录限制（`maxResults: 0`）
+- 复用「点击记录」的书签集合进行标识，保持数据一致性
+- 优先从 `browsingHistoryCalendarInstance` 提取书签URL和标题集合
+- 降级方案：日历未初始化时直接获取书签库
+- 监听 `browsingHistoryCacheUpdated` 事件实现实时更新
+- 保持原有的 URL + 标题双重匹配算法
 
 ### 2025-11-24 v2.1
 - **重要**：采用 URL + 标题双重匹配算法（与点击记录保持一致）

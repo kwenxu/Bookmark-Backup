@@ -5775,6 +5775,7 @@ function refreshActiveBrowsingRankingIfVisible() {
 document.addEventListener('browsingHistoryCacheUpdated', () => {
     browsingClickRankingStats = null;
     refreshActiveBrowsingRankingIfVisible();
+    refreshBrowsingRelatedHistory(); // 同时刷新书签关联页面
 });
 
 function groupBookmarksByTime(bookmarks, timeFilter) {
@@ -9380,13 +9381,13 @@ function convertBookmarkTreeToNetscapeHTML(bookmarkTree, timestamp) {
 }
 // ============================================================================
 // 书签关联记录功能（浏览器历史记录 + 书签标识）
+// 复用「点击记录」的 browsingHistoryCalendarInstance.bookmarksByDate 数据库
 // ============================================================================
 
-let browsingRelatedHistory = null; // 缓存的关联历史记录
-let browsingRelatedBookmarkUrls = null; // 缓存的书签URL集合
-let browsingRelatedBookmarkTitles = null; // 缓存的书签标题集合
 let browsingRelatedSortAsc = false; // 排序方式：false=倒序（新到旧），true=正序（旧到新）
 let browsingRelatedCurrentRange = 'day'; // 当前选中的时间范围
+let browsingRelatedBookmarkUrls = null; // 缓存的书签URL集合（用于标识）
+let browsingRelatedBookmarkTitles = null; // 缓存的书签标题集合（用于标识）
 
 // 初始化书签关联记录
 function initBrowsingRelatedHistory() {
@@ -9465,9 +9466,11 @@ function refreshBrowsingRelatedHistory() {
     const activeBtn = panel.querySelector('.ranking-time-filter-btn.active');
     const range = activeBtn ? (activeBtn.dataset.range || 'day') : 'day';
     
-    browsingRelatedHistory = null;
+    // 清除书签URL/标题缓存（以便重新获取最新书签）
     browsingRelatedBookmarkUrls = null;
     browsingRelatedBookmarkTitles = null;
+    
+    // 直接重新加载（数据来自 browsingHistoryCalendarInstance）
     loadBrowsingRelatedHistory(range);
 }
 
@@ -9552,7 +9555,8 @@ function getTimeRangeStart(range) {
     return startTime.getTime();
 }
 
-// 加载书签关联记录
+// 加载书签关联记录（显示所有浏览记录，标识出书签）
+// 复用「点击记录」的书签集合进行标识，实现数据一致性
 async function loadBrowsingRelatedHistory(range = 'day') {
     const listContainer = document.getElementById('browsingRelatedList');
     if (!listContainer) return;
@@ -9573,20 +9577,17 @@ async function loadBrowsingRelatedHistory(range = 'day') {
             throw new Error('History API not available');
         }
 
-        // 获取书签URL和标题集合
-        const { urls: bookmarkUrls, titles: bookmarkTitles } = await getBookmarkUrlsAndTitles();
-
         // 获取时间范围
         const startTime = getTimeRangeStart(range);
         const endTime = Date.now();
 
-        // 搜索历史记录
+        // 搜索所有历史记录（不限制数量）
         const historyItems = await new Promise((resolve, reject) => {
             browserAPI.history.search({
                 text: '',
                 startTime: startTime,
                 endTime: endTime,
-                maxResults: 500
+                maxResults: 0  // 0表示不限制数量
             }, (results) => {
                 if (browserAPI.runtime && browserAPI.runtime.lastError) {
                     reject(browserAPI.runtime.lastError);
@@ -9605,6 +9606,27 @@ async function loadBrowsingRelatedHistory(range = 'day') {
                 </div>
             `;
             return;
+        }
+
+        // 获取书签URL和标题集合（用于标识哪些是书签）
+        // 优先从「点击记录」日历获取，保持数据一致性
+        let bookmarkUrls, bookmarkTitles;
+        if (window.browsingHistoryCalendarInstance && window.browsingHistoryCalendarInstance.bookmarksByDate) {
+            // 从日历实例中提取书签URL和标题集合
+            bookmarkUrls = new Set();
+            bookmarkTitles = new Set();
+            for (const records of window.browsingHistoryCalendarInstance.bookmarksByDate.values()) {
+                if (!Array.isArray(records)) continue;
+                records.forEach(record => {
+                    if (record.url) bookmarkUrls.add(record.url);
+                    if (record.title && record.title.trim()) bookmarkTitles.add(record.title.trim());
+                });
+            }
+        } else {
+            // 降级方案：直接获取书签库
+            const result = await getBookmarkUrlsAndTitles();
+            bookmarkUrls = result.urls;
+            bookmarkTitles = result.titles;
         }
 
         // 按当前排序方式排序

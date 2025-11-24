@@ -5,6 +5,14 @@
 
 ## 更新内容
 
+### 🆕 默认排序优化（2025-11-24）
+- ✅ **书签添加记录**日历：默认改为**倒序排列**（最新的在前）
+- ✅ **点击记录**日历：默认改为**倒序排列**（最新的在前）
+- 用户仍可以通过排序按钮手动切换正序/倒序
+- 排序状态会保存到 localStorage，下次打开保持上次选择
+
+---
+
 ### 问题描述
 之前的「点击记录」功能只基于URL来匹配书签和浏览器历史记录。当书签被删除后重新添加时，虽然URL相同，但如果书签的ID变化了，可能导致记录丢失或不准确。
 
@@ -17,7 +25,8 @@
 - 只要**任意一个条件通过**，就认为是匹配的记录
 
 ### 修改文件
-- `history_html/browsing_history_calendar.js`
+1. `history_html/browsing_history_calendar.js`（点击记录日历）
+2. `history_html/bookmark_calendar.js`（书签添加记录日历）
 
 ### 具体修改
 
@@ -92,6 +101,42 @@ const relevantHistoryItems = historyItems.filter(item => {
 2. 打开「书签记录」→「书签浏览记录」→「点击记录」
 3. 验证是否能看到之前的访问记录
 4. 检查「点击排行」是否也反映了新的匹配逻辑
+
+## 默认排序修改详情
+
+### 修改位置
+
+**1. 书签添加记录日历** (`bookmark_calendar.js` 第75行)
+```javascript
+// 修改前
+this.bookmarkSortAsc = true; // 书签排序：true=正序，false=倒序
+
+// 修改后
+this.bookmarkSortAsc = false; // 书签排序：true=正序，false=倒序（默认倒序）
+```
+
+**2. 点击记录日历** (`browsing_history_calendar.js` 第130行)
+```javascript
+// 修改前
+this.bookmarkSortAsc = true; // 书签排序：true=正序，false=倒序
+
+// 修改后
+this.bookmarkSortAsc = false; // 书签排序：true=正序，false=倒序（默认倒序）
+```
+
+### 排序逻辑
+- `bookmarkSortAsc = true`：正序（旧→新，时间从小到大）
+- `bookmarkSortAsc = false`：倒序（新→旧，时间从大到小）✅ **新默认值**
+- 用户点击排序按钮时会切换该值并保存到 localStorage
+- 下次打开时优先使用 localStorage 中保存的值
+
+### 影响范围
+- ✅ 书签添加记录的所有视图（年/月/周/日）
+- ✅ 点击记录的所有视图（年/月/周/日）
+- ✅ 不影响已保存的用户排序偏好
+- ✅ 首次使用或清除缓存后采用新的倒序默认值
+
+---
 
 ## 技术细节
 

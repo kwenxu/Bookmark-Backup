@@ -72,7 +72,7 @@ class BookmarkCalendar {
         this.viewLevel = 'month'; // 默认月视图 'year' | 'month' | 'week' | 'day'
         this.selectMode = false; // 勾选模式
         this.selectedDates = new Set(); // 已勾选的日期集合 'YYYY-MM-DD'
-        this.bookmarkSortAsc = true; // 书签排序：true=正序，false=倒序
+        this.bookmarkSortAsc = false; // 书签排序：true=正序，false=倒序（默认倒序）
         this.sortButtonCooldown = false; // 排序按钮点击防抖标志
 
         // 拖拽勾选相关状态

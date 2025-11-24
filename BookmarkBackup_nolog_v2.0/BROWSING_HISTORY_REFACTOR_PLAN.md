@@ -37,6 +37,7 @@
 │  │                                                            │  │
 │  │ 单条记录：                                                │  │
 │  │ {                                                          │  │
+│  │   id: string,             // 唯一ID（便于删除）          │  │
 │  │   url: string,                                            │  │
 │  │   title: string,                                          │  │
 │  │   visitTime: number,      // 访问时间戳                  │  │
@@ -44,6 +45,12 @@
 │  │   transition: string,     // 访问方式(link/typed/等)     │  │
 │  │   referringVisitId: string // 来源访问ID                 │  │
 │  │ }                                                          │  │
+│  │                                                            │  │
+│  │ 关键方法：                                                │  │
+│  │ - add(record)             // 添加记录                    │  │
+│  │ - removeByUrl(url)        // ✨ 删除指定URL的所有记录   │  │
+│  │ - clear()                 // ✨ 清空所有记录            │  │
+│  │ - getByUrl(url)           // 查询指定URL的记录           │  │
 │  └──────────────────────────────────────────────────────────┘  │
 │                                                                  │
 │  ┌──────────────────────────────────────────────────────────┐  │
@@ -62,6 +69,13 @@
 │  │   titles: Set<string>,        // 所有书签标题            │  │
 │  │   urlToTitle: Map<url, title> // URL到标题的映射         │  │
 │  │ }                                                          │  │
+│  │                                                            │  │
+│  │ 关键方法：                                                │  │
+│  │ - add(bookmark)           // 添加书签                    │  │
+│  │ - remove(url, title)      // ✨ 删除书签                │  │
+│  │ - update(id, changeInfo)  // 更新书签                    │  │
+│  │ - matches(record)         // 判断记录是否匹配书签        │  │
+│  │ - hasUrl(url)             // 判断URL是否是书签           │  │
 │  └──────────────────────────────────────────────────────────┘  │
 │                                                                  │
 │  ┌──────────────────────────────────────────────────────────┐  │
@@ -82,6 +96,12 @@
 │  │ 匹配规则：                                                │  │
 │  │ record.url in 存储库2.urls OR                            │  │
 │  │ record.title in 存储库2.titles                           │  │
+│  │                                                            │  │
+│  │ 关键方法：                                                │  │
+│  │ - add(record)             // 添加匹配的书签历史          │  │
+│  │ - removeByUrl(url)        // ✨ 删除指定URL的所有记录   │  │
+│  │ - clear()                 // ✨ 清空所有记录            │  │
+│  │ - getAllUrls()            // 获取所有书签URL集合         │  │
 │  └──────────────────────────────────────────────────────────┘  │
 └──────────────────────────────────────────────────────────────────┘
 ```
@@ -208,7 +228,7 @@ B. 全量加载路径：
   (刷新列表)        (清除缓存)      (刷新列表)
 ```
 
-### 3. 书签变化更新流程
+### 3. 书签变化更新流程（增量/减量）
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
@@ -230,41 +250,97 @@ B. 全量加载路径：
 │  │    case 'created':                                        │  │
 │  │      bookmarkDB.urls.add(changeInfo.url);                │  │
 │  │      bookmarkDB.titles.add(changeInfo.title);            │  │
+│  │      // 检查存储库1中是否有该URL的历史记录              │  │
+│  │      // 如果有，添加到存储库3                           │  │
 │  │      break;                                               │  │
+│  │                                                            │  │
 │  │    case 'removed':                                        │  │
 │  │      bookmarkDB.urls.delete(changeInfo.url);             │  │
 │  │      bookmarkDB.titles.delete(changeInfo.title);         │  │
+│  │      // ✨ 从存储库3中删除该URL的所有记录               │  │
+│  │      bookmarkHistoryDB.removeByUrl(changeInfo.url);      │  │
 │  │      break;                                               │  │
+│  │                                                            │  │
 │  │    case 'changed':                                        │  │
-│  │      // 更新URL和标题                                    │  │
+│  │      // 更新URL和标题，重新匹配                         │  │
+│  │      scheduleRematch();                                   │  │
 │  │  }                                                         │  │
 │  │                                                            │  │
-│  │  步骤2：重新匹配存储库3（异步）                          │  │
-│  │  ───────────────────────────────────                     │  │
-│  │  scheduleRematch();  // 延迟重新匹配                     │  │
-│  │                                                            │  │
-│  │  重新匹配逻辑：                                           │  │
-│  │  ─────────────                                            │  │
-│  │  bookmarkHistoryDB.clear();                              │  │
-│  │  for (const [dateKey, records] of allHistoryDB) {        │  │
-│  │    for (const record of records) {                        │  │
-│  │      if (bookmarkDB.matches(record)) {                   │  │
-│  │        bookmarkHistoryDB.add(dateKey, record);           │  │
-│  │      }                                                     │  │
-│  │    }                                                       │  │
-│  │  }                                                         │  │
-│  │                                                            │  │
-│  │  步骤3：保存并派发事件                                    │  │
+│  │  步骤2：保存并派发事件                                    │  │
 │  │  ─────────────────────                                    │  │
 │  │  saveAll();                                               │  │
 │  │  document.dispatchEvent(                                  │  │
 │  │    new CustomEvent('browsingDataUpdated', {              │  │
-│  │      detail: { type: 'bookmark' }                        │  │
+│  │      detail: { type: 'bookmark', action: 'removed' }     │  │
 │  │    })                                                     │  │
 │  │  );                                                        │  │
 │  │                                                            │  │
 │  └──────────────────────────────────────────────────────────┘  │
 └─────────────────────────────────────────────────────────────────┘
+```
+
+### 4. 历史记录删除更新流程（减量）
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│       用户通过浏览器删除历史记录                                 │
+│       (Ctrl+H → 删除 或 清除浏览数据)                           │
+└────────────────────────────┬────────────────────────────────────┘
+                             │
+                             ↓
+                chrome.history.onVisitRemoved
+                        事件触发
+                             │
+                             ↓
+┌─────────────────────────────────────────────────────────────────┐
+│           handleHistoryVisitRemoved(removeInfo)                  │
+│  ┌──────────────────────────────────────────────────────────┐  │
+│  │                                                            │  │
+│  │  情况1：清除所有历史记录                                 │  │
+│  │  ───────────────────────                                  │  │
+│  │  if (removeInfo.allHistory) {                             │  │
+│  │    // 清空存储库1（所有历史）                           │  │
+│  │    allHistoryDB.clear();                                  │  │
+│  │    // 清空存储库3（书签历史）                           │  │
+│  │    bookmarkHistoryDB.clear();                             │  │
+│  │    // 保存并派发事件                                     │  │
+│  │    saveAll();                                             │  │
+│  │    emit('updated', { type: 'history', action: 'cleared' });│ │
+│  │    return;                                                 │  │
+│  │  }                                                         │  │
+│  │                                                            │  │
+│  │  情况2：删除指定URL的历史记录                            │  │
+│  │  ──────────────────────────                              │  │
+│  │  if (Array.isArray(removeInfo.urls)) {                   │  │
+│  │    for (const url of removeInfo.urls) {                  │  │
+│  │      // ✨ 从存储库1中删除该URL的所有访问记录           │  │
+│  │      allHistoryDB.removeByUrl(url);                       │  │
+│  │                                                            │  │
+│  │      // ✨ 检查是否是书签，如果是，从存储库3删除        │  │
+│  │      if (bookmarkDB.urls.has(url)) {                     │  │
+│  │        bookmarkHistoryDB.removeByUrl(url);                │  │
+│  │      }                                                     │  │
+│  │    }                                                       │  │
+│  │                                                            │  │
+│  │    // 保存并派发事件                                     │  │
+│  │    saveAll();                                             │  │
+│  │    emit('updated', {                                      │  │
+│  │      type: 'history',                                     │  │
+│  │      action: 'removed',                                   │  │
+│  │      urls: removeInfo.urls                                │  │
+│  │    });                                                     │  │
+│  │  }                                                         │  │
+│  │                                                            │  │
+│  └──────────────────────────────────────────────────────────┘  │
+└─────────────────────────────────────────────────────────────────┘
+                             │
+                             ↓
+                    更新事件触发UI刷新
+        ┌────────────────┼────────────────┐
+        │                │                │
+        ↓                ↓                ↓
+  点击记录页面      点击排行页面    书签关联页面
+  (移除记录)        (重新统计)      (移除记录)
 ```
 
 ---
@@ -661,6 +737,13 @@ class DatabaseManager {
         await this.handleBookmarkChanged(id, changeInfo);
       });
     }
+    
+    // 监听历史记录删除
+    if (browserAPI.history?.onVisitRemoved) {
+      browserAPI.history.onVisitRemoved.addListener(async (removeInfo) => {
+        await this.handleHistoryVisitRemoved(removeInfo);
+      });
+    }
   }
   
   async handleHistoryVisited(visitItem) {
@@ -690,26 +773,93 @@ class DatabaseManager {
     
     await this.bookmarks.add(bookmark);
     
-    // 延迟重新匹配（可能有历史记录现在匹配了）
-    this.scheduleRematch();
+    // 检查存储库1中是否有该URL的历史记录
+    const historyRecords = await this.allHistory.getByUrl(bookmark.url);
+    if (historyRecords.length > 0) {
+      // 有历史记录，添加到存储库3
+      for (const record of historyRecords) {
+        await this.bookmarkHistory.add(record);
+      }
+    }
+    
+    await this.saveAll();
+    this.emit('updated', { 
+      type: 'bookmark', 
+      action: 'created',
+      url: bookmark.url
+    });
   }
   
   async handleBookmarkRemoved(removeInfo) {
-    console.log('[DatabaseManager] 书签删除');
+    console.log('[DatabaseManager] 书签删除:', removeInfo.node?.url);
     
-    await this.bookmarks.remove(removeInfo);
+    const url = removeInfo.node?.url;
+    const title = removeInfo.node?.title;
     
-    // 延迟重新匹配
-    this.scheduleRematch();
+    // 从存储库2删除
+    await this.bookmarks.remove(url, title);
+    
+    // ✨ 从存储库3删除该URL的所有记录
+    if (url) {
+      await this.bookmarkHistory.removeByUrl(url);
+    }
+    
+    await this.saveAll();
+    this.emit('updated', { 
+      type: 'bookmark', 
+      action: 'removed',
+      url: url
+    });
   }
   
   async handleBookmarkChanged(id, changeInfo) {
-    console.log('[DatabaseManager] 书签修改');
+    console.log('[DatabaseManager] 书签修改:', changeInfo);
     
     await this.bookmarks.update(id, changeInfo);
     
-    // 延迟重新匹配
-    this.scheduleRematch();
+    // 如果URL或标题改变，需要重新匹配
+    if (changeInfo.url || changeInfo.title) {
+      this.scheduleRematch();
+    }
+  }
+  
+  async handleHistoryVisitRemoved(removeInfo) {
+    console.log('[DatabaseManager] 历史记录删除:', removeInfo);
+    
+    // 情况1：清除所有历史
+    if (removeInfo.allHistory) {
+      console.log('[DatabaseManager] 清除所有历史记录');
+      await this.allHistory.clear();
+      await this.bookmarkHistory.clear();
+      await this.saveAll();
+      this.emit('updated', { 
+        type: 'history', 
+        action: 'cleared' 
+      });
+      return;
+    }
+    
+    // 情况2：删除指定URL
+    if (Array.isArray(removeInfo.urls) && removeInfo.urls.length > 0) {
+      console.log('[DatabaseManager] 删除指定URL:', removeInfo.urls);
+      
+      for (const url of removeInfo.urls) {
+        // 从存储库1删除
+        await this.allHistory.removeByUrl(url);
+        
+        // 如果是书签，从存储库3删除
+        if (this.bookmarks.hasUrl(url)) {
+          await this.bookmarkHistory.removeByUrl(url);
+        }
+      }
+      
+      await this.saveAll();
+      this.emit('updated', { 
+        type: 'history', 
+        action: 'removed',
+        urls: removeInfo.urls
+      });
+    }
   }
   
   scheduleSave() {
@@ -754,12 +904,22 @@ window.databaseManager = new DatabaseManager();
 
 ### 功能测试
 
+**增量更新测试**：
 - [ ] 首次打开能正确全量加载所有数据
 - [ ] 刷新页面能从缓存快速恢复
-- [ ] 访问网页后能实时更新显示
+- [ ] 访问网页后能实时添加到存储库1
+- [ ] 访问书签网页后能实时添加到存储库3
 - [ ] 添加书签后能立即在三个页面看到
-- [ ] 删除书签后相关记录正确更新
 - [ ] 三个页面数据一致性正确
+
+**减量更新测试**：
+- [ ] 删除书签后，存储库2正确删除
+- [ ] 删除书签后，存储库3删除对应记录
+- [ ] 删除书签后，三个页面正确更新
+- [ ] 删除单条历史记录后，存储库1正确删除
+- [ ] 删除单条历史记录后，如果是书签，存储库3也删除
+- [ ] 清除所有历史后，存储库1和3正确清空
+- [ ] 修改书签URL后，存储库2和3正确更新
 
 ### 性能测试
 

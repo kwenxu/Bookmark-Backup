@@ -7203,11 +7203,12 @@ a.tree-label.tree-bookmark-link:hover {
     box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
 }
 
-/* 菜单项容器（横向布局） */
+/* 菜单项容器（横向布局，右对齐） */
 .time-menu-items {
     display: flex;
     flex-wrap: wrap;
     gap: 8px;
+    justify-content: flex-end; /* 右对齐 */
 }
 
 /* 菜单按钮 */

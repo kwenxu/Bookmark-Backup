@@ -1018,15 +1018,11 @@ body {
     margin-bottom: 16px;
     padding-top: 8px;
     justify-content: center;
-    width: 33.33%;
-    max-width: 360px;
-    margin-left: auto;
-    margin-right: auto;
 }
 
 .browsing-sub-tab {
-    flex: 1 1 0;
-    padding: 6px 10px;
+    flex: 0 0 auto;
+    padding: 6px 16px;
     border-radius: 999px;
     border: 1px solid var(--border-color);
     background: var(--bg-secondary);
@@ -1259,9 +1255,8 @@ body {
 
 .browsing-ranking-header {
     display: flex;
-    justify-content: space-between;
-    align-items: center;
-    gap: 16px;
+    flex-direction: column;
+    gap: 12px;
     margin-bottom: 16px;
 }
 
@@ -1285,13 +1280,13 @@ body {
     display: flex;
     flex-wrap: wrap;
     gap: 8px;
-    justify-content: flex-end;
+    justify-content: flex-start;
 }
 
 .ranking-time-filter-btn {
-    padding: 8px 16px;
+    padding: 6px 16px;
     border: 1px solid var(--border-color);
-    border-radius: 20px;
+    border-radius: 999px;
     background: var(--bg-secondary);
     color: var(--text-secondary);
     font-size: 13px;
@@ -1307,6 +1302,7 @@ body {
     background: var(--accent-primary);
     color: #ffffff;
     border-color: var(--accent-primary);
+    font-weight: 600;
 }
 
 .ranking-main {
@@ -7022,9 +7018,6 @@ a.tree-label.tree-bookmark-link:hover {
     display: grid;
     grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
     gap: 12px;
-    max-height: calc(100vh - 320px);
-    overflow-y: auto;
-    overflow-x: hidden;
     padding: 4px;
 }
 
@@ -7195,54 +7188,49 @@ a.tree-label.tree-bookmark-link:hover {
 
 /* ========== 书签关联页面 - 时间段菜单（横向下拉） ========== */
 .browsing-time-menu {
-    margin-top: 12px;
-    padding: 12px;
-    background: var(--bg-elevated);
-    border: 1px solid var(--border-color);
-    border-radius: 8px;
-    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+    margin-top: 4px;
+    margin-bottom: 20px;
+    padding: 0;
+    background: transparent;
+    border: none;
+    border-radius: 0;
+    box-shadow: none;
 }
 
-/* 菜单项容器（横向布局，右对齐） */
+/* 菜单项容器（横向布局，左对齐） */
 .time-menu-items {
     display: flex;
     flex-wrap: wrap;
     gap: 8px;
-    justify-content: flex-end; /* 右对齐 */
+    justify-content: flex-start;
 }
 
 /* 菜单按钮 */
 .time-menu-btn {
-    padding: 6px 12px;
+    padding: 6px 16px;
     border: 1px solid var(--border-color);
-    border-radius: 6px;
-    background: white;
-    font-size: 12px;
-    color: var(--text-primary);
+    border-radius: 999px;
+    background: var(--bg-secondary);
+    font-size: 13px;
+    color: var(--text-secondary);
     cursor: pointer;
-    transition: all 0.2s;
+    transition: all 0.2s ease;
     white-space: nowrap;
 }
 
 .time-menu-btn:hover {
-    background: rgba(33, 150, 243, 0.1);
-    border-color: var(--accent-primary);
+    background: var(--bg-tertiary);
+    border-color: var(--border-hover);
 }
 
 .time-menu-btn.active {
     background: var(--accent-primary);
-    color: white;
+    color: #ffffff;
     border-color: var(--accent-primary);
+    font-weight: 600;
 }
 
-/* 深色模式 */
-[data-theme="dark"] .time-menu-btn {
-    background: var(--bg-secondary);
-}
-
-[data-theme="dark"] .time-menu-btn:hover {
-    background: rgba(48, 129, 247, 0.2);
-}
+/* 深色模式 - 使用统一的主题变量，无需额外定义 */
 
 /* 子菜单容器（三级菜单） */
 .time-submenu {

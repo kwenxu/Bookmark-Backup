@@ -10134,7 +10134,7 @@ function renderWeekDaysMenu(container, date, historyData) {
     weekStart.setHours(0, 0, 0, 0);
 
     const weekdayNames = currentLang === 'zh_CN' 
-        ? ['星期日', '星期一', '星期二', '星期三', '星期四', '星期五', '星期六']
+        ? ['周日', '周一', '周二', '周三', '周四', '周五', '周六']
         : ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
 
     for (let i = 0; i < 7; i++) {

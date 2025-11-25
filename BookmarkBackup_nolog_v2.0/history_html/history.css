@@ -7020,10 +7020,11 @@ a.tree-label.tree-bookmark-link:hover {
 
 .related-history-list {
     display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+    grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
     gap: 12px;
     max-height: calc(100vh - 320px);
     overflow-y: auto;
+    overflow-x: hidden;
     padding: 4px;
 }
 

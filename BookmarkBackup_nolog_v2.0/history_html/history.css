@@ -6996,13 +6996,19 @@ a.tree-label.tree-bookmark-link:hover {
     display: flex;
     align-items: center;
     gap: 6px;
-    margin-right: 8px;
+    margin-left: auto;
+    position: relative;
 }
 
 .ranking-sort-btn:hover {
     background: var(--bg-tertiary);
     color: var(--accent-primary);
     border-color: var(--accent-primary);
+}
+
+.ranking-sort-btn:hover .btn-tooltip {
+    visibility: visible;
+    opacity: 1;
 }
 
 .ranking-sort-btn i {

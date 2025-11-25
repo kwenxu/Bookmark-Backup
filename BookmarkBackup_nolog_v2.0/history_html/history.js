@@ -1400,6 +1400,14 @@ const i18n = {
         'zh_CN': '倒序排列',
         'en': 'Descending'
     },
+    currentAscending: {
+        'zh_CN': '当前：正序',
+        'en': 'Current: Ascending'
+    },
+    currentDescending: {
+        'zh_CN': '当前：倒序',
+        'en': 'Current: Descending'
+    },
     refreshTooltip: {
         'zh_CN': '刷新',
         'en': 'Refresh'
@@ -9546,6 +9554,19 @@ function initBrowsingRelatedHistory() {
 
     // 排序按钮事件
     if (sortBtn) {
+        // 创建tooltip
+        const tooltip = document.createElement('span');
+        tooltip.className = 'btn-tooltip';
+        const updateTooltip = () => {
+            const t = window.i18n || {};
+            const currentLang = window.currentLang || 'zh_CN';
+            tooltip.textContent = browsingRelatedSortAsc 
+                ? (t.currentAscending?.[currentLang] || (currentLang === 'zh_CN' ? '当前：正序' : 'Current: Ascending'))
+                : (t.currentDescending?.[currentLang] || (currentLang === 'zh_CN' ? '当前：倒序' : 'Current: Descending'));
+        };
+        updateTooltip();
+        sortBtn.appendChild(tooltip);
+        
         sortBtn.addEventListener('click', () => {
             browsingRelatedSortAsc = !browsingRelatedSortAsc;
             if (browsingRelatedSortAsc) {
@@ -9553,6 +9574,7 @@ function initBrowsingRelatedHistory() {
             } else {
                 sortBtn.classList.remove('asc');
             }
+            updateTooltip();
             loadBrowsingRelatedHistory(browsingRelatedCurrentRange);
         });
     }

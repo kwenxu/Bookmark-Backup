@@ -5641,9 +5641,9 @@ const currentLang = data.preferredLang || 'zh_CN';
             }
         });
 
-        openHistoryViewerBtn.addEventListener('click', function() {
+        openHistoryViewerBtn.addEventListener('click', async function() {
             // 打开历史查看器页面
-            chrome.tabs.create({ url: chrome.runtime.getURL('history_html/history.html') });
+            await safeCreateTab({ url: chrome.runtime.getURL('history_html/history.html') });
         });
 
         // 添加悬停提示
@@ -5675,10 +5675,10 @@ const currentLang = data.preferredLang || 'zh_CN';
     // 添加状态卡片点击事件 - 直接跳转到当前变化视图
     const statusCard = document.getElementById('change-description-row');
     if (statusCard) {
-        statusCard.addEventListener('click', function() {
+        statusCard.addEventListener('click', async function() {
             // 打开历史查看器的当前变化视图
             const url = chrome.runtime.getURL('history_html/history.html?view=current-changes');
-            chrome.tabs.create({ url: url });
+            await safeCreateTab({ url: url });
         });
 
         // 添加 hover 效果
@@ -6501,10 +6501,10 @@ function initializeBookmarkToolbox() {
     }
 
     // 点击画布缩略图，直接打开 Bookmark Canvas 视图
-    canvasContainer.addEventListener('click', () => {
+    canvasContainer.addEventListener('click', async () => {
         try {
             const url = chrome.runtime.getURL('history_html/history.html?view=canvas');
-            chrome.tabs.create({ url });
+            await safeCreateTab({ url });
         } catch (e) {
             console.warn('[Bookmark Toolbox] 打开 Canvas 视图失败:', e);
         }
@@ -6716,10 +6716,10 @@ function renderRecentBookmarkItems(container, bookmarks, currentLang) {
         item.appendChild(iconImg);
         item.appendChild(titleDiv);
 
-        item.addEventListener('click', () => {
+        item.addEventListener('click', async () => {
             try {
                 if (bookmark.url) {
-                    chrome.tabs.create({ url: bookmark.url });
+                    await safeCreateTab({ url: bookmark.url });
                 }
             } catch (e) {
                 console.warn('[Bookmark Toolbox] 打开书签失败:', e);

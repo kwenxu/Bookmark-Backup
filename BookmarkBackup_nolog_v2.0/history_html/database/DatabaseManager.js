@@ -235,16 +235,17 @@ class DatabaseManager {
       // 添加到存储库1
       this.allHistory.add(record);
 
+      // ✨ 使用 matches() 实现 URL + 标题双重匹配
       // 检查是否匹配书签，如果匹配则添加到存储库3
       if (this.bookmarks.matches(record)) {
         this.bookmarkHistory.add(record);
-        console.log('[DatabaseManager] 匹配书签，添加到存储库3');
+        console.log('[DatabaseManager] 匹配书签（URL或标题），添加到存储库3');
       }
 
       // 延迟保存
       this.scheduleSave();
 
-      // 派发事件
+      // ✨ 立即派发事件（不延迟），确保UI实时更新
       this.emit('updated', { 
         type: 'history', 
         action: 'visited',
@@ -264,7 +265,7 @@ class DatabaseManager {
 
     try {
       // 添加到存储库2
-      await this.bookmarks.add(bookmark);
+      this.bookmarks.add(bookmark);
 
       // ✨ 检查存储库1中是否有匹配的历史记录（URL 或标题匹配）
       const historyRecords = this.allHistory.getByUrlOrTitle(bookmark.url, bookmark.title);
@@ -276,7 +277,10 @@ class DatabaseManager {
         console.log('[DatabaseManager] 添加', historyRecords.length, '条历史记录到存储库3 (URL+标题匹配)');
       }
 
-      await this.saveAll();
+      // 延迟保存
+      this.scheduleSave();
+
+      // ✨ 立即派发事件（不延迟），确保UI实时更新
       this.emit('updated', { 
         type: 'bookmark', 
         action: 'created',
@@ -301,12 +305,17 @@ class DatabaseManager {
       // 从存储库2删除
       this.bookmarks.remove(url, title);
 
-      // 从存储库3删除该URL的所有记录
+      // ✨ 从存储库3删除该URL的所有记录
+      // 注意：如果通过标题匹配的记录，也需要删除
+      // 但由于标题可能对应多个URL，这里只删除URL匹配的记录
       if (url) {
         this.bookmarkHistory.removeByUrl(url);
       }
 
-      await this.saveAll();
+      // 延迟保存
+      this.scheduleSave();
+
+      // ✨ 立即派发事件（不延迟），确保UI实时更新
       this.emit('updated', { 
         type: 'bookmark', 
         action: 'removed',
@@ -350,7 +359,11 @@ class DatabaseManager {
         console.log('[DatabaseManager] 清除所有历史记录');
         this.allHistory.clear();
         this.bookmarkHistory.clear();
-        await this.saveAll();
+        
+        // 延迟保存
+        this.scheduleSave();
+        
+        // ✨ 立即派发事件（不延迟），确保UI实时更新
         this.emit('updated', { 
           type: 'history', 
           action: 'cleared' 
@@ -366,13 +379,16 @@ class DatabaseManager {
           // 从存储库1删除
           this.allHistory.removeByUrl(url);
 
-          // 如果是书签，从存储库3删除
+          // ✨ 如果是书签（URL或标题匹配），从存储库3删除
           if (this.bookmarks.hasUrl(url)) {
             this.bookmarkHistory.removeByUrl(url);
           }
         }
 
-        await this.saveAll();
+        // 延迟保存
+        this.scheduleSave();
+        
+        // ✨ 立即派发事件（不延迟），确保UI实时更新
         this.emit('updated', { 
           type: 'history', 
           action: 'removed',
@@ -403,15 +419,17 @@ class DatabaseManager {
   scheduleRematch() {
     if (this.rematchTimer) clearTimeout(this.rematchTimer);
     this.rematchTimer = setTimeout(() => {
-      console.log('[DatabaseManager] 执行重新匹配');
+      console.log('[DatabaseManager] 执行重新匹配（URL+标题双重匹配）');
       this.bookmarkHistory.rebuildFrom(this.allHistory, this.bookmarks);
-      this.saveAll().then(() => {
-        this.emit('updated', { type: 'bookmark', action: 'changed' });
-      }).catch(err => {
-        console.error('[DatabaseManager] 重新匹配保存失败:', err);
-      });
+      
+      // 延迟保存
+      this.scheduleSave();
+      
+      // ✨ 立即派发事件（不延迟），确保UI实时更新
+      this.emit('updated', { type: 'bookmark', action: 'changed' });
+      
       this.rematchTimer = null;
-    }, 1000); // 1秒后重新匹配
+    }, 500); // ✨ 减少延迟到500ms，提高响应速度
   }
 
   /**

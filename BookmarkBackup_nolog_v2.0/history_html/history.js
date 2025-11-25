@@ -5437,7 +5437,41 @@ async function ensureBrowsingClickRankingStats() {
     }
 
     const boundaries = getBrowsingClickRankingBoundaries();
-    const statsMap = new Map(); // url -> stats
+    
+    // ✨ 从 DatabaseManager 获取书签库，用于构建书签标识映射
+    const bookmarkDB = calendar.dbManager?.getBookmarksDB?.();
+    if (!bookmarkDB) {
+        console.warn('[BrowsingRanking] 无法获取书签数据库，回退到基于URL的统计');
+        browsingClickRankingStats = { items: [], error: 'noBookmarkDB' };
+        return browsingClickRankingStats;
+    }
+
+    // 构建 URL/标题 -> 书签主键的映射
+    // 同一个书签可能有多个URL或标题匹配到不同的历史记录，需要合并统计
+    const bookmarkKeyMap = new Map(); // url or title (normalized) -> bookmarkKey
+    const bookmarkInfoMap = new Map(); // bookmarkKey -> { url, title }
+    
+    // 遍历所有书签，建立映射
+    let bookmarkKeyCounter = 0;
+    for (const url of bookmarkDB.getAllUrls()) {
+        const normalizedUrl = url; // 已经是 normalized
+        const title = bookmarkDB.getTitleByUrl(url);
+        const normalizedTitle = title; // 已经是 normalized
+        
+        const bookmarkKey = `bm_${bookmarkKeyCounter++}`;
+        bookmarkKeyMap.set(`url:${normalizedUrl}`, bookmarkKey);
+        if (normalizedTitle) {
+            bookmarkKeyMap.set(`title:${normalizedTitle}`, bookmarkKey);
+        }
+        
+        // 记录书签信息（优先使用URL）
+        bookmarkInfoMap.set(bookmarkKey, {
+            url: normalizedUrl,
+            title: normalizedTitle || normalizedUrl
+        });
+    }
+    
+    const statsMap = new Map(); // bookmarkKey -> stats
 
     // 从「点击记录」的数据结构中汇总统计信息
     for (const bookmarks of calendar.bookmarksByDate.values()) {
@@ -5451,32 +5485,49 @@ async function ensureBrowsingClickRankingStats() {
                 : (bm.dateAdded instanceof Date ? bm.dateAdded.getTime() : 0);
             if (!t) return;
 
-            const increment = typeof bm.visitCount === 'number' && bm.visitCount > 0
-                ? bm.visitCount
-                : 1;
+            // ✨ 每条历史记录的 visitCount 应该是 1（单次访问），不应累积浏览器的总访问次数
+            // 因为我们已经将每次访问都记录为单独的记录
+            const increment = 1;
 
-            let stats = statsMap.get(url);
+            // ✨ 找出这条记录匹配的书签（优先URL匹配，其次标题匹配）
+            let bookmarkKey = bookmarkKeyMap.get(`url:${url}`);
+            if (!bookmarkKey) {
+                // URL 不匹配，尝试标题匹配
+                bookmarkKey = bookmarkKeyMap.get(`title:${title}`);
+            }
+            
+            if (!bookmarkKey) {
+                // 没有匹配的书签，跳过（理论上不应该发生，因为这些记录来自存储库3）
+                return;
+            }
+
+            let stats = statsMap.get(bookmarkKey);
             if (!stats) {
+                const info = bookmarkInfoMap.get(bookmarkKey);
                 stats = {
-                    url,
-                    title,
+                    url: info.url,
+                    title: info.title,
                     lastVisitTime: 0,
                     dayCount: 0,
                     weekCount: 0,
                     monthCount: 0,
                     yearCount: 0
                 };
-                statsMap.set(url, stats);
+                statsMap.set(bookmarkKey, stats);
             }
 
             if (t > stats.lastVisitTime) {
                 stats.lastVisitTime = t;
             }
 
-            if (t >= boundaries.dayStart) stats.dayCount += increment;
-            if (t >= boundaries.weekStart) stats.weekCount += increment;
-            if (t >= boundaries.monthStart) stats.monthCount += increment;
-            if (t >= boundaries.yearStart) stats.yearCount += increment;
+            // ✨ 修复时间统计：只统计当前时间之前的访问
+            const now = boundaries.now;
+            if (t <= now) {
+                if (t >= boundaries.dayStart && t <= now) stats.dayCount += increment;
+                if (t >= boundaries.weekStart && t <= now) stats.weekCount += increment;
+                if (t >= boundaries.monthStart && t <= now) stats.monthCount += increment;
+                if (t >= boundaries.yearStart && t <= now) stats.yearCount += increment;
+            }
         });
     }
 

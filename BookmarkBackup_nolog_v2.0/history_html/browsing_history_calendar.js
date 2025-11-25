@@ -312,6 +312,8 @@ class BrowsingHistoryCalendar {
                     console.log('[BrowsingHistoryCalendar] 收到数据更新事件:', event.detail);
                     this.syncFromDatabaseManager();
                     this.render();
+                    // ✨ 派发旧的更新事件，以便其他组件（如点击排行）也能收到通知
+                    this.announceHistoryDataUpdated();
                 });
             } catch (error) {
                 console.error('[BrowsingHistoryCalendar] DatabaseManager初始化失败，回退到旧架构:', error);

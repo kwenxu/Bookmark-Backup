@@ -7192,3 +7192,64 @@ a.tree-label.tree-bookmark-link:hover {
 .related-history-list .empty-state {
     grid-column: 1 / -1;
 }
+
+/* ========== 书签关联页面 - 时间段菜单（横向下拉） ========== */
+.browsing-time-menu {
+    margin-top: 12px;
+    padding: 12px;
+    background: var(--bg-elevated);
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+}
+
+/* 菜单项容器（横向布局） */
+.time-menu-items {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+}
+
+/* 菜单按钮 */
+.time-menu-btn {
+    padding: 6px 12px;
+    border: 1px solid var(--border-color);
+    border-radius: 6px;
+    background: white;
+    font-size: 12px;
+    color: var(--text-primary);
+    cursor: pointer;
+    transition: all 0.2s;
+    white-space: nowrap;
+}
+
+.time-menu-btn:hover {
+    background: rgba(33, 150, 243, 0.1);
+    border-color: var(--accent-primary);
+}
+
+.time-menu-btn.active {
+    background: var(--accent-primary);
+    color: white;
+    border-color: var(--accent-primary);
+}
+
+/* 深色模式 */
+[data-theme="dark"] .time-menu-btn {
+    background: var(--bg-secondary);
+}
+
+[data-theme="dark"] .time-menu-btn:hover {
+    background: rgba(48, 129, 247, 0.2);
+}
+
+/* 子菜单容器（三级菜单） */
+.time-submenu {
+    margin-top: 8px;
+    padding-top: 8px;
+    border-top: 1px solid var(--border-color);
+}
+
+.time-submenu .time-menu-items {
+    margin-left: 16px;
+}

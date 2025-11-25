@@ -9522,6 +9522,10 @@ function initBrowsingRelatedHistory() {
                 btn.classList.remove('active');
             }
         });
+        
+        // 显示对应的时间段菜单
+        showBrowsingRelatedTimeMenu(range);
+        
         loadBrowsingRelatedHistory(range);
 
         if (shouldPersist) {
@@ -9833,8 +9837,24 @@ async function renderBrowsingRelatedList(container, historyItems, bookmarkUrls, 
     const isZh = currentLang === 'zh_CN';
     const bookmarkLabel = i18n.browsingRelatedBadgeText[currentLang];
 
-    for (let index = 0; index < historyItems.length; index++) {
-        const item = historyItems[index];
+    // ✨ 应用时间筛选
+    let filteredItems = historyItems;
+    if (browsingRelatedTimeFilter) {
+        filteredItems = filterHistoryByTime(historyItems, browsingRelatedTimeFilter, range);
+        if (filteredItems.length === 0) {
+            const emptyTitle = isZh ? '没有匹配的记录' : 'No matching records';
+            container.innerHTML = `
+                <div class="empty-state">
+                    <div class="empty-state-icon"><i class="fas fa-filter"></i></div>
+                    <div class="empty-state-title">${emptyTitle}</div>
+                </div>
+            `;
+            return;
+        }
+    }
+
+    for (let index = 0; index < filteredItems.length; index++) {
+        const item = filteredItems[index];
         
         // ✨ 使用URL或标题进行匹配（并集逻辑）
         let isBookmark = false;
@@ -9960,4 +9980,216 @@ function formatRelativeTime(date) {
     const hour = String(date.getHours()).padStart(2, '0');
     const minute = String(date.getMinutes()).padStart(2, '0');
     return `${year}-${month}-${day} ${hour}:${minute}`;
+}
+
+// ========== 书签关联页面 - 时间段菜单功能 ==========
+
+// 全局变量：当前选中的时间筛选
+let browsingRelatedTimeFilter = null; // { type: 'hour'|'day'|'week'|'month', value: number|Date }
+
+// 显示时间段菜单
+function showBrowsingRelatedTimeMenu(range) {
+    const menuContainer = document.getElementById('browsingRelatedTimeMenu');
+    if (!menuContainer) return;
+
+    menuContainer.innerHTML = '';
+    menuContainer.style.display = 'none';
+    browsingRelatedTimeFilter = null; // 重置筛选
+
+    const now = new Date();
+
+    switch (range) {
+        case 'day':
+            // 当天：显示24小时段
+            renderDayHoursMenu(menuContainer, now);
+            break;
+        case 'week':
+            // 当周：显示周一~周日
+            renderWeekDaysMenu(menuContainer, now);
+            break;
+        case 'month':
+            // 当月：显示第XX周
+            renderMonthWeeksMenu(menuContainer, now);
+            break;
+        case 'year':
+            // 当年：显示1-12月
+            renderYearMonthsMenu(menuContainer, now);
+            break;
+    }
+}
+
+// 辅助函数：复用日历的 ISO 8601 周数计算
+function getWeekNumberForRelated(date) {
+    const d = new Date(date);
+    d.setHours(0, 0, 0, 0);
+    const thursday = new Date(d);
+    thursday.setDate(d.getDate() + (4 - (d.getDay() || 7)));
+    const yearStart = new Date(thursday.getFullYear(), 0, 1);
+    const weekNo = Math.ceil((((thursday - yearStart) / 86400000) + 1) / 7);
+    return weekNo;
+}
+
+// 渲染当天的24小时菜单
+function renderDayHoursMenu(container, date) {
+    const itemsContainer = document.createElement('div');
+    itemsContainer.className = 'time-menu-items';
+
+    for (let hour = 0; hour < 24; hour++) {
+        const btn = document.createElement('button');
+        btn.className = 'time-menu-btn';
+        btn.textContent = `${String(hour).padStart(2, '0')}:00-${String(hour).padStart(2, '0')}:59`;
+        btn.dataset.hour = hour;
+
+        btn.addEventListener('click', () => {
+            itemsContainer.querySelectorAll('.time-menu-btn').forEach(b => b.classList.remove('active'));
+            btn.classList.add('active');
+            browsingRelatedTimeFilter = { type: 'hour', value: hour };
+            loadBrowsingRelatedHistory(browsingRelatedCurrentRange);
+        });
+
+        itemsContainer.appendChild(btn);
+    }
+
+    container.appendChild(itemsContainer);
+    container.style.display = 'block';
+}
+
+// 渲染当周的周一~周日菜单
+function renderWeekDaysMenu(container, date) {
+    const itemsContainer = document.createElement('div');
+    itemsContainer.className = 'time-menu-items';
+
+    const weekStart = new Date(date);
+    const day = weekStart.getDay();
+    const diff = weekStart.getDate() - day + (day === 0 ? -6 : 1);
+    weekStart.setDate(diff);
+    weekStart.setHours(0, 0, 0, 0);
+
+    for (let i = 0; i < 7; i++) {
+        const dayDate = new Date(weekStart);
+        dayDate.setDate(weekStart.getDate() + i);
+        
+        const dayBtn = document.createElement('button');
+        dayBtn.className = 'time-menu-btn';
+        const weekdayIndex = dayDate.getDay();
+        const weekdayNames = currentLang === 'zh_CN' 
+            ? ['星期日', '星期一', '星期二', '星期三', '星期四', '星期五', '星期六']
+            : ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+        dayBtn.textContent = weekdayNames[weekdayIndex];
+        dayBtn.dataset.date = dayDate.toISOString();
+
+        dayBtn.addEventListener('click', () => {
+            itemsContainer.querySelectorAll('.time-menu-btn').forEach(b => b.classList.remove('active'));
+            dayBtn.classList.add('active');
+            browsingRelatedTimeFilter = { type: 'day', value: dayDate };
+            loadBrowsingRelatedHistory(browsingRelatedCurrentRange);
+        });
+
+        itemsContainer.appendChild(dayBtn);
+    }
+
+    container.appendChild(itemsContainer);
+    container.style.display = 'block';
+}
+
+// 渲染当月的周数菜单
+function renderMonthWeeksMenu(container, date) {
+    const itemsContainer = document.createElement('div');
+    itemsContainer.className = 'time-menu-items';
+
+    const year = date.getFullYear();
+    const month = date.getMonth();
+    const firstDay = new Date(year, month, 1);
+    const lastDay = new Date(year, month + 1, 0);
+
+    const weeks = new Set();
+    for (let d = new Date(firstDay); d <= lastDay; d.setDate(d.getDate() + 1)) {
+        const weekNum = getWeekNumberForRelated(new Date(d));
+        weeks.add(weekNum);
+    }
+
+    const sortedWeeks = Array.from(weeks).sort((a, b) => a - b);
+
+    sortedWeeks.forEach(weekNum => {
+        const btn = document.createElement('button');
+        btn.className = 'time-menu-btn';
+        const weekText = currentLang === 'zh_CN' ? `第${weekNum}周` : `Week ${weekNum}`;
+        btn.textContent = weekText;
+        btn.dataset.week = weekNum;
+
+        btn.addEventListener('click', () => {
+            itemsContainer.querySelectorAll('.time-menu-btn').forEach(b => b.classList.remove('active'));
+            btn.classList.add('active');
+            browsingRelatedTimeFilter = { type: 'week', value: weekNum };
+            loadBrowsingRelatedHistory(browsingRelatedCurrentRange);
+        });
+
+        itemsContainer.appendChild(btn);
+    });
+
+    container.appendChild(itemsContainer);
+    container.style.display = 'block';
+}
+
+// 渲染当年的月份菜单
+function renderYearMonthsMenu(container, date) {
+    const itemsContainer = document.createElement('div');
+    itemsContainer.className = 'time-menu-items';
+
+    const monthNames = currentLang === 'zh_CN'
+        ? ['1月', '2月', '3月', '4月', '5月', '6月', '7月', '8月', '9月', '10月', '11月', '12月']
+        : ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+
+    for (let month = 0; month < 12; month++) {
+        const btn = document.createElement('button');
+        btn.className = 'time-menu-btn';
+        btn.textContent = monthNames[month];
+        btn.dataset.month = month;
+
+        btn.addEventListener('click', () => {
+            itemsContainer.querySelectorAll('.time-menu-btn').forEach(b => b.classList.remove('active'));
+            btn.classList.add('active');
+            browsingRelatedTimeFilter = { type: 'month', value: month };
+            loadBrowsingRelatedHistory(browsingRelatedCurrentRange);
+        });
+
+        itemsContainer.appendChild(btn);
+    }
+
+    container.appendChild(itemsContainer);
+    container.style.display = 'block';
+}
+
+// 按时间筛选历史记录
+function filterHistoryByTime(items, filter, range) {
+    if (!filter || !items || items.length === 0) return items;
+
+    return items.filter(item => {
+        if (!item.lastVisitTime) return false;
+        
+        const itemDate = new Date(item.lastVisitTime);
+        
+        switch (filter.type) {
+            case 'hour':
+                // 筛选特定小时
+                return itemDate.getHours() === filter.value;
+            
+            case 'day':
+                // 筛选特定日期
+                const filterDate = new Date(filter.value);
+                return itemDate.toDateString() === filterDate.toDateString();
+            
+            case 'week':
+                // 筛选特定周
+                const weekNum = getWeekNumberForRelated(itemDate);
+                return weekNum === filter.value;
+            
+            case 'month':
+                // 筛选特定月份
+                return itemDate.getMonth() === filter.value;
+            
+            default:
+                return true;
+        }
+    });
 }

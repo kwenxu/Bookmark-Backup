@@ -7020,6 +7020,18 @@ a.tree-label.tree-bookmark-link:hover {
     transform: rotate(180deg);
 }
 
+.ranking-sort-btn .btn-tooltip {
+    left: auto;
+    right: 0;
+    transform: none;
+}
+
+.ranking-sort-btn .btn-tooltip::before {
+    left: auto;
+    right: 12px;
+    transform: none;
+}
+
 .related-history-list {
     display: grid;
     grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));

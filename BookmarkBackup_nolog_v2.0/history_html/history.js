@@ -8314,6 +8314,17 @@ function updateLanguageDependentUI() {
         }
     }
 
+    // 5. 更新书签关联记录排序按钮的tooltip
+    const relatedSortBtn = document.getElementById('browsingRelatedSortBtn');
+    if (relatedSortBtn) {
+        const tooltip = relatedSortBtn.querySelector('.btn-tooltip');
+        if (tooltip) {
+            tooltip.textContent = browsingRelatedSortAsc 
+                ? (i18n.currentAscending?.[currentLang] || (isEn ? 'Current: Ascending' : '当前：正序'))
+                : (i18n.currentDescending?.[currentLang] || (isEn ? 'Current: Descending' : '当前：倒序'));
+        }
+    }
+
     console.log('[toggleLanguage] 已更新UI文字（包括临时栏目）');
 }
 
@@ -9558,11 +9569,9 @@ function initBrowsingRelatedHistory() {
         const tooltip = document.createElement('span');
         tooltip.className = 'btn-tooltip';
         const updateTooltip = () => {
-            const t = window.i18n || {};
-            const currentLang = window.currentLang || 'zh_CN';
             tooltip.textContent = browsingRelatedSortAsc 
-                ? (t.currentAscending?.[currentLang] || (currentLang === 'zh_CN' ? '当前：正序' : 'Current: Ascending'))
-                : (t.currentDescending?.[currentLang] || (currentLang === 'zh_CN' ? '当前：倒序' : 'Current: Descending'));
+                ? (i18n.currentAscending?.[currentLang] || (currentLang === 'zh_CN' ? '当前：正序' : 'Current: Ascending'))
+                : (i18n.currentDescending?.[currentLang] || (currentLang === 'zh_CN' ? '当前：倒序' : 'Current: Descending'));
         };
         updateTooltip();
         sortBtn.appendChild(tooltip);

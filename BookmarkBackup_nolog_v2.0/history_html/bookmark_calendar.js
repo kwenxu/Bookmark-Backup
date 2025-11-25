@@ -3627,9 +3627,12 @@ class BookmarkCalendar {
         const tooltip = document.createElement('span');
         tooltip.className = 'btn-tooltip';
         const t = window.i18n || {};
-        tooltip.textContent = this.bookmarkSortAsc 
-            ? (t.calendarSortAscending?.[currentLang] || (currentLang === 'zh_CN' ? '正序排列' : 'Ascending'))
-            : (t.calendarSortDescending?.[currentLang] || (currentLang === 'zh_CN' ? '倒序排列' : 'Descending'));
+        const updateTooltip = () => {
+            tooltip.textContent = this.bookmarkSortAsc 
+                ? (t.currentAscending?.[currentLang] || (currentLang === 'zh_CN' ? '当前：正序' : 'Current: Ascending'))
+                : (t.currentDescending?.[currentLang] || (currentLang === 'zh_CN' ? '当前：倒序' : 'Current: Descending'));
+        };
+        updateTooltip();
         btn.appendChild(tooltip);
 
         // 点击切换排序方向并重新渲染，添加防抖效果
@@ -3640,6 +3643,7 @@ class BookmarkCalendar {
             this.bookmarkSortAsc = !this.bookmarkSortAsc;
             // 保存排序状态
             localStorage.setItem('bookmarkCalendar_sortAsc', this.bookmarkSortAsc.toString());
+            updateTooltip();
             this.render(); // 重新渲染当前视图
             
             // 800ms后清除冷却标志并移除所有按钮上的防抖类

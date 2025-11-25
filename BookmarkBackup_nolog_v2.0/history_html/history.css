@@ -7056,10 +7056,10 @@ a.tree-label.tree-bookmark-link:hover {
 }
 
 .related-history-item.is-bookmark .related-history-number {
-    background: linear-gradient(135deg, #fbbf24 0%, #f59e0b 100%);
-    border-color: #fbbf24;
+    background: linear-gradient(135deg, #4CAF50 0%, #43A047 100%);
+    border-color: #4CAF50;
     color: #ffffff;
-    box-shadow: 0 2px 4px rgba(251, 191, 36, 0.3);
+    box-shadow: 0 2px 4px rgba(76, 175, 80, 0.4);
 }
 
 .related-history-item:hover {
@@ -7068,13 +7068,13 @@ a.tree-label.tree-bookmark-link:hover {
     transform: translateY(-1px);
 }
 
-/* 书签相关的记录 - 黄色边框凸显 */
+/* 书签相关的记录 - 绿色细边框凸显（与书签画布一致） */
 .related-history-item.is-bookmark {
-    border: 2px solid #fbbf24;
+    border: 1px solid #4CAF50;
     background: linear-gradient(135deg, 
-        rgba(251, 191, 36, 0.05) 0%, 
-        rgba(251, 191, 36, 0.02) 100%);
-    box-shadow: 0 0 0 1px rgba(251, 191, 36, 0.3);
+        rgba(76, 175, 80, 0.08) 0%, 
+        rgba(76, 175, 80, 0.03) 100%);
+    box-shadow: 0 0 0 1px rgba(76, 175, 80, 0.25);
 }
 
 .related-history-item.is-bookmark::before {
@@ -7084,14 +7084,15 @@ a.tree-label.tree-bookmark-link:hover {
     right: 8px;
     width: 8px;
     height: 8px;
-    background: #fbbf24;
+    background: #4CAF50;
     border-radius: 50%;
-    box-shadow: 0 0 4px rgba(251, 191, 36, 0.6);
+    box-shadow: 0 0 6px rgba(76, 175, 80, 0.7);
 }
 
 .related-history-item.is-bookmark:hover {
-    border-color: #f59e0b;
-    box-shadow: 0 0 0 2px rgba(251, 191, 36, 0.4), var(--shadow-md);
+    border-color: #43A047;
+    border-width: 1px;
+    box-shadow: 0 0 0 2px rgba(76, 175, 80, 0.35), var(--shadow-md);
 }
 
 .related-history-header {
@@ -7100,6 +7101,7 @@ a.tree-label.tree-bookmark-link:hover {
     gap: 10px;
     margin-bottom: 8px;
     padding-left: 30px;
+    padding-right: 0;
 }
 
 .related-history-favicon {
@@ -7116,7 +7118,7 @@ a.tree-label.tree-bookmark-link:hover {
 }
 
 .related-history-title {
-    font-size: 14px;
+    font-size: 12px;
     font-weight: 500;
     color: var(--text-primary);
     margin-bottom: 4px;
@@ -7126,6 +7128,7 @@ a.tree-label.tree-bookmark-link:hover {
     -webkit-line-clamp: 2;
     -webkit-box-orient: vertical;
     line-height: 1.4;
+    min-height: 33.6px;
 }
 
 .related-history-url {
@@ -7139,10 +7142,25 @@ a.tree-label.tree-bookmark-link:hover {
 .related-history-meta {
     display: flex;
     align-items: center;
+    justify-content: space-between;
     gap: 8px;
     margin-top: 8px;
     padding-top: 8px;
-    border-top: 1px solid var(--border-color);
+    border-top: none;
+    padding-left: 30px;
+    padding-right: 0;
+    position: relative;
+}
+
+/* 分割线从30px处开始（与内容对齐） */
+.related-history-meta::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 30px;
+    right: 0;
+    height: 1px;
+    background: var(--border-color);
 }
 
 .related-history-time {
@@ -7151,6 +7169,7 @@ a.tree-label.tree-bookmark-link:hover {
     display: flex;
     align-items: center;
     gap: 4px;
+    flex: 1;
 }
 
 .related-history-time i {
@@ -7161,9 +7180,11 @@ a.tree-label.tree-bookmark-link:hover {
     font-size: 10px;
     padding: 2px 6px;
     border-radius: 4px;
-    background: var(--accent-light);
-    color: var(--accent-primary);
+    background: rgba(76, 175, 80, 0.15);
+    color: #4CAF50;
     font-weight: 500;
+    flex-shrink: 0;
+    margin-left: auto;
 }
 
 /* 空状态 */

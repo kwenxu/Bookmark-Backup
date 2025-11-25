@@ -984,8 +984,12 @@ const i18n = {
         'en': 'Related History'
     },
     browsingRelatedDescription: {
-        'zh_CN': '显示浏览器历史记录，并用黄色边框凸显书签相关的记录。',
-        'en': 'Shows browser history, highlighting bookmark-related entries with yellow borders.'
+        'zh_CN': '显示浏览器历史记录，并用绿色边框凸显书签相关的记录。',
+        'en': 'Shows browser history, highlighting bookmark-related entries with green borders.'
+    },
+    browsingRelatedBadgeText: {
+        'zh_CN': '书签',
+        'en': 'Bookmark'
     },
     browsingRelatedLoadingText: {
         'zh_CN': '正在读取历史记录...',
@@ -8199,6 +8203,9 @@ function toggleLanguage() {
 
     // 手动更新需要多语言的UI元素（不涉及书签树内容）
     updateLanguageDependentUI();
+    
+    // 刷新书签关联记录列表（更新badge文字）
+    refreshBrowsingRelatedHistory();
 }
 
 // 更新依赖语言的UI元素（不重新渲染内容，避免图标重新加载）
@@ -8427,6 +8434,9 @@ function handleStorageChange(changes, namespace) {
 
         // 重新渲染当前视图以应用语言
         renderCurrentView();
+        
+        // 刷新书签关联记录列表（更新badge文字）
+        refreshBrowsingRelatedHistory();
     }
 }
 
@@ -9821,7 +9831,7 @@ async function renderBrowsingRelatedList(container, historyItems, bookmarkUrls, 
     container.innerHTML = '';
 
     const isZh = currentLang === 'zh_CN';
-    const bookmarkLabel = isZh ? '书签' : 'Bookmark';
+    const bookmarkLabel = i18n.browsingRelatedBadgeText[currentLang];
 
     for (let index = 0; index < historyItems.length; index++) {
         const item = historyItems[index];

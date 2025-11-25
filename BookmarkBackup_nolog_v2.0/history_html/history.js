@@ -5842,9 +5842,29 @@ function getActiveBrowsingRankingRange() {
     return activeBtn ? (activeBtn.dataset.range || 'month') : null;
 }
 
-function refreshActiveBrowsingRankingIfVisible() {
+async function refreshActiveBrowsingRankingIfVisible() {
     const panel = document.getElementById('browsingRankingPanel');
     if (!panel || !panel.classList.contains('active')) return;
+    
+    // ✨ 等待日历数据同步完成（防止显示空白）
+    const waitForCalendarData = async () => {
+        const start = Date.now();
+        const timeout = 2000; // 2秒超时
+        while (Date.now() - start < timeout) {
+            const inst = window.browsingHistoryCalendarInstance;
+            if (inst && inst.bookmarksByDate && inst.bookmarksByDate.size > 0) {
+                return true;
+            }
+            await new Promise(resolve => setTimeout(resolve, 50));
+        }
+        return false;
+    };
+    
+    const dataReady = await waitForCalendarData();
+    if (!dataReady) {
+        console.warn('[BrowsingRanking] 等待日历数据超时');
+    }
+    
     const range = getActiveBrowsingRankingRange() || 'month';
     loadBrowsingClickRanking(range);
 }
@@ -9537,7 +9557,7 @@ function initBrowsingRelatedHistory() {
 }
 
 // 刷新书签关联记录
-function refreshBrowsingRelatedHistory() {
+async function refreshBrowsingRelatedHistory() {
     const panel = document.getElementById('browsingRelatedPanel');
     if (!panel || !panel.classList.contains('active')) return;
     
@@ -9547,6 +9567,25 @@ function refreshBrowsingRelatedHistory() {
     // 清除书签URL/标题缓存（以便重新获取最新书签）
     browsingRelatedBookmarkUrls = null;
     browsingRelatedBookmarkTitles = null;
+    
+    // ✨ 等待日历数据同步完成（确保标题匹配的记录能正确显示）
+    const waitForCalendarData = async () => {
+        const start = Date.now();
+        const timeout = 2000; // 2秒超时
+        while (Date.now() - start < timeout) {
+            const inst = window.browsingHistoryCalendarInstance;
+            if (inst && inst.bookmarksByDate && inst.bookmarksByDate.size > 0) {
+                return true;
+            }
+            await new Promise(resolve => setTimeout(resolve, 50));
+        }
+        return false;
+    };
+    
+    const dataReady = await waitForCalendarData();
+    if (!dataReady) {
+        console.warn('[BrowsingRelated] 等待日历数据超时');
+    }
     
     // 直接重新加载（数据来自 browsingHistoryCalendarInstance）
     loadBrowsingRelatedHistory(range);
@@ -9710,10 +9749,24 @@ async function loadBrowsingRelatedHistory(range = 'day') {
             return;
         }
 
-        // 获取书签URL和标题集合（用于标识哪些是书签）
+        // ✨ 获取书签URL和标题集合（用于标识哪些是书签）
         // 优先从「点击记录」日历获取，保持数据一致性
         let bookmarkUrls, bookmarkTitles;
-        if (calendar && calendar.bookmarksByDate && calendar.bookmarksByDate.size > 0) {
+        
+        // 优先使用 DatabaseManager 获取书签信息（最准确）
+        if (calendar && calendar.dbManager) {
+            console.log('[BrowsingRelated] 从DatabaseManager获取书签集合');
+            const bookmarkDB = calendar.dbManager.getBookmarksDB();
+            if (bookmarkDB) {
+                bookmarkUrls = bookmarkDB.getAllUrls();
+                bookmarkTitles = bookmarkDB.getAllTitles();
+                console.log('[BrowsingRelated] DatabaseManager书签集合 - URL:', bookmarkUrls.size, 'Title:', bookmarkTitles.size);
+            } else {
+                // 回退到日历数据
+                bookmarkUrls = new Set();
+                bookmarkTitles = new Set();
+            }
+        } else if (calendar && calendar.bookmarksByDate && calendar.bookmarksByDate.size > 0) {
             console.log('[BrowsingRelated] 从日历提取书签集合');
             // 从日历实例中提取书签URL和标题集合
             bookmarkUrls = new Set();
@@ -9725,7 +9778,7 @@ async function loadBrowsingRelatedHistory(range = 'day') {
                     if (record.title && record.title.trim()) bookmarkTitles.add(record.title.trim());
                 });
             }
-            console.log('[BrowsingRelated] 书签集合大小 - URL:', bookmarkUrls.size, 'Title:', bookmarkTitles.size);
+            console.log('[BrowsingRelated] 日历书签集合 - URL:', bookmarkUrls.size, 'Title:', bookmarkTitles.size);
         } else {
             console.log('[BrowsingRelated] 使用降级方案获取书签');
             // 降级方案：直接获取书签库
@@ -9773,8 +9826,10 @@ async function renderBrowsingRelatedList(container, historyItems, bookmarkUrls, 
     for (let index = 0; index < historyItems.length; index++) {
         const item = historyItems[index];
         
-        // 使用URL或标题进行匹配（并集逻辑）
+        // ✨ 使用URL或标题进行匹配（并集逻辑）
         let isBookmark = false;
+        let matchedByTitle = false; // 标记是否通过标题匹配
+        
         // 条件1：URL匹配
         if (bookmarkUrls.has(item.url)) {
             isBookmark = true;
@@ -9782,6 +9837,13 @@ async function renderBrowsingRelatedList(container, historyItems, bookmarkUrls, 
         // 条件2：标题匹配（去除空白后比较）
         if (!isBookmark && item.title && item.title.trim() && bookmarkTitles.has(item.title.trim())) {
             isBookmark = true;
+            matchedByTitle = true;
+            // ✨ 如果通过标题匹配但没有title，从bookmarkTitles中获取
+            if (!item.title || !item.title.trim()) {
+                // 这种情况理论上不会发生，因为上面已经检查了item.title
+                // 但为了安全起见，保留这个逻辑
+                console.warn('[BrowsingRelated] 标题匹配但item.title为空:', item);
+            }
         }
         
         const itemEl = document.createElement('div');
@@ -9804,12 +9866,25 @@ async function renderBrowsingRelatedList(container, historyItems, bookmarkUrls, 
         const visitTime = item.lastVisitTime ? new Date(item.lastVisitTime) : new Date();
         const timeStr = formatTimeByRange(visitTime, range);
 
+        // ✨ 确保标题正确显示（优先使用 item.title，如果为空则使用 item.url）
+        const displayTitle = (item.title && item.title.trim()) ? item.title : item.url;
+        
+        // ✨ 调试日志：记录标题匹配的情况
+        if (matchedByTitle) {
+            console.log('[BrowsingRelated] 标题匹配的记录:', {
+                url: item.url,
+                title: item.title,
+                displayTitle: displayTitle,
+                isBookmark: isBookmark
+            });
+        }
+        
         itemEl.innerHTML = `
             <div class="related-history-number">${index + 1}</div>
             <div class="related-history-header">
                 <img src="${faviconUrl}" class="related-history-favicon" alt="">
                 <div class="related-history-info">
-                    <div class="related-history-title">${escapeHtml(item.title || item.url)}</div>
+                    <div class="related-history-title">${escapeHtml(displayTitle)}</div>
                 </div>
             </div>
             <div class="related-history-meta">

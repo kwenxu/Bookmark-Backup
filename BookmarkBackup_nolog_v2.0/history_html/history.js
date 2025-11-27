@@ -10634,18 +10634,18 @@ function highlightRelatedHistoryItem(retryCount = 0) {
 // 回到顶部悬浮按钮功能
 // ============================================================================
 
-let scrollToTopBtn = null;
-
-// 创建回到顶部按钮（全局唯一）
-function createScrollToTopButton() {
-    if (scrollToTopBtn) return scrollToTopBtn;
+// 为指定面板创建回到顶部按钮
+function createScrollToTopForPanel(panelId) {
+    const panel = document.getElementById(panelId);
+    if (!panel) return;
+    
+    // 检查是否已存在
+    if (panel.querySelector('.scroll-to-top-btn')) return;
     
     const btn = document.createElement('button');
     btn.className = 'scroll-to-top-btn';
-    btn.id = 'globalScrollToTopBtn';
     btn.innerHTML = '<i class="fas fa-arrow-up"></i>';
     btn.title = typeof currentLang !== 'undefined' && currentLang === 'zh_CN' ? '回到顶部' : 'Back to Top';
-    btn.style.display = 'none';
     
     btn.addEventListener('click', () => {
         const contentArea = document.querySelector('.content-area');
@@ -10654,54 +10654,35 @@ function createScrollToTopButton() {
         }
     });
     
-    // 添加到 content-area
-    const contentArea = document.querySelector('.content-area');
-    if (contentArea) {
-        contentArea.appendChild(btn);
-    }
+    panel.style.position = 'relative';
+    panel.appendChild(btn);
     
-    scrollToTopBtn = btn;
     return btn;
 }
 
-// 检查当前是否在需要显示按钮的面板
-function shouldShowScrollToTopBtn() {
-    // 检查点击记录面板
-    const browsingHistoryPanel = document.getElementById('browsingHistoryPanel');
-    if (browsingHistoryPanel && browsingHistoryPanel.classList.contains('active')) {
-        return true;
-    }
-    
-    // 检查点击排行面板
-    const browsingRankingPanel = document.getElementById('browsingRankingPanel');
-    if (browsingRankingPanel && browsingRankingPanel.classList.contains('active')) {
-        return true;
-    }
-    
-    return false;
-}
-
-// 初始化滚动监听
+// 初始化所有回到顶部按钮
 function initScrollToTopButtons() {
     const contentArea = document.querySelector('.content-area');
     if (!contentArea) return;
     
-    // 创建按钮
-    const btn = createScrollToTopButton();
-    if (!btn) return;
+    // 为三个面板创建按钮
+    createScrollToTopForPanel('browsingHistoryPanel');
+    createScrollToTopForPanel('browsingRankingPanel');
+    createScrollToTopForPanel('browsingRelatedPanel');
     
-    // 监听 content-area 的滚动
+    // 获取所有按钮
+    const buttons = document.querySelectorAll('.scroll-to-top-btn');
+    
+    // 监听滚动
     contentArea.addEventListener('scroll', () => {
-        if (shouldShowScrollToTopBtn() && contentArea.scrollTop > 200) {
-            btn.style.display = 'flex';
-        } else {
-            btn.style.display = 'none';
-        }
+        const show = contentArea.scrollTop > 200;
+        buttons.forEach(btn => {
+            btn.style.display = show ? 'flex' : 'none';
+        });
     });
 }
 
-// 在 DOMContentLoaded 后初始化回到顶部按钮
+// 在 DOMContentLoaded 后初始化
 document.addEventListener('DOMContentLoaded', () => {
-    // 延迟初始化，确保容器已渲染
-    setTimeout(initScrollToTopButtons, 500);
+    setTimeout(initScrollToTopButtons, 1000);
 });

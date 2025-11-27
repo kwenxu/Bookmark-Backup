@@ -5581,9 +5581,9 @@ function getBrowsingRankingItemsForRange(range) {
         ? 'dayCount'
         : range === 'week'
             ? 'weekCount'
-            : range === 'year'
-                ? 'yearCount'
-                : 'monthCount';
+        : range === 'year'
+            ? 'yearCount'
+            : 'monthCount';
 
     const items = browsingClickRankingStats.items
         .filter(item => item[key] > 0)
@@ -5592,7 +5592,8 @@ function getBrowsingRankingItemsForRange(range) {
             return (b.lastVisitTime || 0) - (a.lastVisitTime || 0);
         });
 
-    return items.slice(0, 50);
+    // 返回完整有序列表，渲染层做懒加载
+    return items;
 }
 
 function renderBrowsingClickRankingList(container, items, range) {
@@ -5625,134 +5626,163 @@ function renderBrowsingClickRankingList(container, items, range) {
         return isZh ? '本月' : 'This month';
     })();
 
-    items.forEach((entry, index) => {
-        const row = document.createElement('div');
-        row.className = 'addition-item ranking-item';
+    const PAGE_SIZE = 50;
+    let offset = 0;
 
-        const header = document.createElement('div');
-        header.className = 'ranking-item-header';
+    // 清理旧的懒加载监听
+    if (container.__browsingRankingScrollHandler) {
+        container.removeEventListener('scroll', container.__browsingRankingScrollHandler);
+        delete container.__browsingRankingScrollHandler;
+    }
 
-        const main = document.createElement('div');
-        main.className = 'ranking-main';
+    const appendNextPage = () => {
+        const end = Math.min(offset + PAGE_SIZE, items.length);
+        for (let i = offset; i < end; i++) {
+            const entry = items[i];
 
-        const rankSpan = document.createElement('span');
-        rankSpan.className = 'ranking-index';
-        rankSpan.textContent = index + 1;
-        let rankClass = '';
-        if (index === 0) {
-            rankClass = 'gold';
-        } else if (index === 1) {
-            rankClass = 'silver';
-        } else if (index === 2) {
-            rankClass = 'bronze';
-        }
-        if (rankClass) {
-            rankSpan.classList.add(rankClass);
-        }
+            const row = document.createElement('div');
+            row.className = 'addition-item ranking-item';
 
-        const icon = document.createElement('img');
-        icon.className = 'addition-icon';
-        icon.src = getFaviconUrl(entry.url);
-        icon.alt = '';
+            const header = document.createElement('div');
+            header.className = 'ranking-item-header';
 
-        const info = document.createElement('div');
-        info.className = 'addition-info';
+            const main = document.createElement('div');
+            main.className = 'ranking-main';
 
-        const titleLink = document.createElement('a');
-        titleLink.className = 'addition-title';
-        titleLink.href = entry.url;
-        titleLink.target = '_blank';
-        titleLink.rel = 'noopener noreferrer';
-        titleLink.textContent = entry.title;
-
-        const urlDiv = document.createElement('div');
-        urlDiv.className = 'addition-url';
-        urlDiv.textContent = entry.url;
-
-        info.appendChild(titleLink);
-        info.appendChild(urlDiv);
-
-        main.appendChild(rankSpan);
-        main.appendChild(icon);
-        main.appendChild(info);
-
-        const counts = document.createElement('div');
-        counts.className = 'ranking-counts';
-
-        const value = range === 'day'
-            ? entry.dayCount
-            : range === 'week'
-                ? entry.weekCount
-                : range === 'year'
-                    ? entry.yearCount
-                    : entry.monthCount;
-        const locale = currentLang === 'zh_CN' ? 'zh-CN' : 'en-US';
-        const formattedValue = typeof value === 'number'
-            ? value.toLocaleString(locale)
-            : String(value);
-        counts.textContent = formattedValue;
-
-        if (rankClass) {
-            counts.classList.add(rankClass);
-        }
-
-        const unitLabel = isZh ? '次' : (value === 1 ? 'click' : 'clicks');
-        const accessibleLabel = isZh
-            ? `${rangeLabel}：${value} ${unitLabel}`
-            : `${rangeLabel}: ${value} ${unitLabel}`;
-        counts.title = accessibleLabel;
-        counts.setAttribute('aria-label', accessibleLabel);
-
-        header.appendChild(main);
-        header.appendChild(counts);
-
-        const detail = document.createElement('div');
-        detail.className = 'ranking-detail';
-        detail.style.display = 'none';
-
-        const lastVisitText = entry.lastVisitTime
-            ? new Date(entry.lastVisitTime).toLocaleString()
-            : (isZh ? '无访问记录' : 'No visits');
-
-        if (isZh) {
-            detail.textContent =
-                `今天：${entry.dayCount} 次，本周：${entry.weekCount} 次，本月：${entry.monthCount} 次，本年：${entry.yearCount} 次；` +
-                `最近访问：${lastVisitText}`;
-        } else {
-            detail.textContent =
-                `Today: ${entry.dayCount} clicks, This week: ${entry.weekCount} clicks, ` +
-                `This month: ${entry.monthCount} clicks, This year: ${entry.yearCount} clicks; ` +
-                `Last visit: ${lastVisitText}`;
-        }
-
-        row.appendChild(header);
-        row.appendChild(detail);
-
-        // 整行可点击：展开/收起详细统计，同时打开书签
-        row.addEventListener('click', (e) => {
-            // 如果直接点击的是标题链接，让浏览器默认打开，不拦截
-            if (e.target === titleLink) {
-                return;
+            const rankSpan = document.createElement('span');
+            rankSpan.className = 'ranking-index';
+            rankSpan.textContent = i + 1;
+            let rankClass = '';
+            if (i === 0) {
+                rankClass = 'gold';
+            } else if (i === 1) {
+                rankClass = 'silver';
+            } else if (i === 2) {
+                rankClass = 'bronze';
+            }
+            if (rankClass) {
+                rankSpan.classList.add(rankClass);
             }
 
-            e.preventDefault();
+            const icon = document.createElement('img');
+            icon.className = 'addition-icon';
+            icon.src = getFaviconUrl(entry.url);
+            icon.alt = '';
 
-            const visible = detail.style.display === 'block';
-            detail.style.display = visible ? 'none' : 'block';
+            const info = document.createElement('div');
+            info.className = 'addition-info';
 
-            try {
-                if (browserAPI && browserAPI.tabs && typeof browserAPI.tabs.create === 'function') {
-                    browserAPI.tabs.create({ url: entry.url });
-                } else {
-                    window.open(entry.url, '_blank');
+            const titleLink = document.createElement('a');
+            titleLink.className = 'addition-title';
+            titleLink.href = entry.url;
+            titleLink.target = '_blank';
+            titleLink.rel = 'noopener noreferrer';
+            titleLink.textContent = entry.title;
+
+            const urlDiv = document.createElement('div');
+            urlDiv.className = 'addition-url';
+            urlDiv.textContent = entry.url;
+
+            info.appendChild(titleLink);
+            info.appendChild(urlDiv);
+
+            main.appendChild(rankSpan);
+            main.appendChild(icon);
+            main.appendChild(info);
+
+            const counts = document.createElement('div');
+            counts.className = 'ranking-counts';
+
+            const value = range === 'day'
+                ? entry.dayCount
+                : range === 'week'
+                    ? entry.weekCount
+                    : range === 'year'
+                        ? entry.yearCount
+                        : entry.monthCount;
+            const locale = currentLang === 'zh_CN' ? 'zh-CN' : 'en-US';
+            const formattedValue = typeof value === 'number'
+                ? value.toLocaleString(locale)
+                : String(value);
+            counts.textContent = formattedValue;
+
+            if (rankClass) {
+                counts.classList.add(rankClass);
+            }
+
+            const unitLabel = isZh ? '次' : (value === 1 ? 'click' : 'clicks');
+            const accessibleLabel = isZh
+                ? `${rangeLabel}：${value} ${unitLabel}`
+                : `${rangeLabel}: ${value} ${unitLabel}`;
+            counts.title = accessibleLabel;
+            counts.setAttribute('aria-label', accessibleLabel);
+
+            header.appendChild(main);
+            header.appendChild(counts);
+
+            const detail = document.createElement('div');
+            detail.className = 'ranking-detail';
+            detail.style.display = 'none';
+
+            const lastVisitText = entry.lastVisitTime
+                ? new Date(entry.lastVisitTime).toLocaleString()
+                : (isZh ? '无访问记录' : 'No visits');
+
+            if (isZh) {
+                detail.textContent =
+                    `今天：${entry.dayCount} 次，本周：${entry.weekCount} 次，本月：${entry.monthCount} 次，本年：${entry.yearCount} 次；` +
+                    `最近访问：${lastVisitText}`;
+            } else {
+                detail.textContent =
+                    `Today: ${entry.dayCount} clicks, This week: ${entry.weekCount} clicks, ` +
+                    `This month: ${entry.monthCount} clicks, This year: ${entry.yearCount} clicks; ` +
+                    `Last visit: ${lastVisitText}`;
+            }
+
+            row.appendChild(header);
+            row.appendChild(detail);
+
+            // 整行可点击：展开/收起详细统计，同时打开书签
+            row.addEventListener('click', (e) => {
+                // 如果直接点击的是标题链接，让浏览器默认打开，不拦截
+                if (e.target === titleLink) {
+                    return;
                 }
-            } catch (err) {
-                console.warn('[BrowsingRanking] 打开书签失败:', err);
-            }
-        });
 
-        container.appendChild(row);
-    });
+                e.preventDefault();
+
+                const visible = detail.style.display === 'block';
+                detail.style.display = visible ? 'none' : 'block';
+
+                try {
+                    if (browserAPI && browserAPI.tabs && typeof browserAPI.tabs.create === 'function') {
+                        browserAPI.tabs.create({ url: entry.url });
+                    } else {
+                        window.open(entry.url, '_blank');
+                    }
+                } catch (err) {
+                    console.warn('[BrowsingRanking] 打开书签失败:', err);
+                }
+            });
+
+            container.appendChild(row);
+        }
+
+        offset = end;
+    };
+
+    appendNextPage();
+
+    const onScroll = () => {
+        if (offset >= items.length) return;
+        const threshold = 100; // 距底部 100px 内加载下一页
+        if (container.scrollTop + container.clientHeight + threshold >= container.scrollHeight) {
+            appendNextPage();
+        }
+    };
+
+    container.addEventListener('scroll', onScroll);
+    container.__browsingRankingScrollHandler = onScroll;
 }
 
 async function loadBrowsingClickRanking(range) {
@@ -9927,7 +9957,7 @@ async function loadBrowsingRelatedHistory(range = 'day') {
             historyItems.sort((a, b) => (b.lastVisitTime || 0) - (a.lastVisitTime || 0));
         }
 
-        // 渲染历史记录
+        // 渲染历史记录（根据数量和时间范围自动决定是否懒加载）
         renderBrowsingRelatedList(listContainer, historyItems, bookmarkUrls, bookmarkTitles, range);
 
     } catch (error) {
@@ -9944,7 +9974,7 @@ async function loadBrowsingRelatedHistory(range = 'day') {
     }
 }
 
-// 渲染书签关联记录列表
+// 渲染书签关联记录列表（大列表场景支持懒加载）
 async function renderBrowsingRelatedList(container, historyItems, bookmarkUrls, bookmarkTitles, range) {
     if (!container) return;
 
@@ -9969,63 +9999,61 @@ async function renderBrowsingRelatedList(container, historyItems, bookmarkUrls, 
         }
     }
 
-    for (let index = 0; index < filteredItems.length; index++) {
-        const item = filteredItems[index];
+    // 懒加载规则：
+    // - 当范围为 month/year 且条数 > 1000 时，启用懒加载
+    // - 其他情况一次性渲染全部
+    const enableLazy = (range === 'month' || range === 'year') && filteredItems.length > 1000;
+
+    // 清理旧的懒加载监听
+    if (container.__browsingRelatedScrollHandler) {
+        container.removeEventListener('scroll', container.__browsingRelatedScrollHandler);
+        delete container.__browsingRelatedScrollHandler;
+    }
+
+    if (!enableLazy) {
+        for (let index = 0; index < filteredItems.length; index++) {
+            const item = filteredItems[index];
         
-        // ✨ 使用URL或标题进行匹配（并集逻辑）
-        let isBookmark = false;
-        let matchedByTitle = false; // 标记是否通过标题匹配
-        
-        // 条件1：URL匹配
-        if (bookmarkUrls.has(item.url)) {
-            isBookmark = true;
-        }
-        // 条件2：标题匹配（去除空白后比较）
-        if (!isBookmark && item.title && item.title.trim() && bookmarkTitles.has(item.title.trim())) {
-            isBookmark = true;
-            matchedByTitle = true;
-            // ✨ 如果通过标题匹配但没有title，从bookmarkTitles中获取
-            if (!item.title || !item.title.trim()) {
-                // 这种情况理论上不会发生，因为上面已经检查了item.title
-                // 但为了安全起见，保留这个逻辑
-                console.warn('[BrowsingRelated] 标题匹配但item.title为空:', item);
+            // ✨ 使用URL或标题进行匹配（并集逻辑）
+            let isBookmark = false;
+            let matchedByTitle = false; // 标记是否通过标题匹配
+            
+            // 条件1：URL匹配
+            if (bookmarkUrls.has(item.url)) {
+                isBookmark = true;
             }
-        }
-        
-        const itemEl = document.createElement('div');
-        itemEl.className = 'related-history-item' + (isBookmark ? ' is-bookmark' : '');
-
-        // 获取favicon
-        let faviconUrl = '';
-        if (typeof FaviconCache !== 'undefined' && FaviconCache.fetch) {
-            try {
-                faviconUrl = await FaviconCache.fetch(item.url);
-            } catch (e) {
-                // 静默失败
+            // 条件2：标题匹配（去除空白后比较）
+            if (!isBookmark && item.title && item.title.trim() && bookmarkTitles.has(item.title.trim())) {
+                isBookmark = true;
+                matchedByTitle = true;
+                if (!item.title || !item.title.trim()) {
+                    console.warn('[BrowsingRelated] 标题匹配但item.title为空:', item);
+                }
             }
-        }
-        if (!faviconUrl) {
-            faviconUrl = 'data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16"><text y="12" font-size="12">🌐</text></svg>';
-        }
+            
+            const itemEl = document.createElement('div');
+            itemEl.className = 'related-history-item' + (isBookmark ? ' is-bookmark' : '');
 
-        // 格式化时间（根据时间范围显示不同格式）
-        const visitTime = item.lastVisitTime ? new Date(item.lastVisitTime) : new Date();
-        const timeStr = formatTimeByRange(visitTime, range);
+            // 获取favicon（同步版本，使用占位图标 + 后台加载）
+            const faviconUrl = getFaviconUrl(item.url);
 
-        // ✨ 确保标题正确显示（优先使用 item.title，如果为空则使用 item.url）
-        const displayTitle = (item.title && item.title.trim()) ? item.title : item.url;
-        
-        // ✨ 调试日志：记录标题匹配的情况
-        if (matchedByTitle) {
-            console.log('[BrowsingRelated] 标题匹配的记录:', {
-                url: item.url,
-                title: item.title,
-                displayTitle: displayTitle,
-                isBookmark: isBookmark
-            });
-        }
-        
-        itemEl.innerHTML = `
+            // 格式化时间（根据时间范围显示不同格式）
+            const visitTime = item.lastVisitTime ? new Date(item.lastVisitTime) : new Date();
+            const timeStr = formatTimeByRange(visitTime, range);
+
+            // ✨ 确保标题正确显示（优先使用 item.title，如果为空则使用 item.url）
+            const displayTitle = (item.title && item.title.trim()) ? item.title : item.url;
+            
+            if (matchedByTitle) {
+                console.log('[BrowsingRelated] 标题匹配的记录:', {
+                    url: item.url,
+                    title: item.title,
+                    displayTitle: displayTitle,
+                    isBookmark: isBookmark
+                });
+            }
+            
+            itemEl.innerHTML = `
             <div class="related-history-number">${index + 1}</div>
             <div class="related-history-header">
                 <img src="${faviconUrl}" class="related-history-favicon" alt="">
@@ -10042,18 +10070,113 @@ async function renderBrowsingRelatedList(container, historyItems, bookmarkUrls, 
             </div>
         `;
 
-        // 点击打开链接
-        itemEl.addEventListener('click', () => {
-            const browserAPI = (typeof chrome !== 'undefined') ? chrome : browser;
-            if (browserAPI && browserAPI.tabs && browserAPI.tabs.create) {
-                browserAPI.tabs.create({ url: item.url });
-            } else {
-                window.open(item.url, '_blank');
-            }
-        });
+            // 点击打开链接
+            itemEl.addEventListener('click', () => {
+                const browserAPI = (typeof chrome !== 'undefined') ? chrome : browser;
+                if (browserAPI && browserAPI.tabs && browserAPI.tabs.create) {
+                    browserAPI.tabs.create({ url: item.url });
+                } else {
+                    window.open(item.url, '_blank');
+                }
+            });
 
-        container.appendChild(itemEl);
+            container.appendChild(itemEl);
+        }
+        return;
     }
+
+    // 启用懒加载：每次追加 1000 条
+    const PAGE_SIZE = 1000;
+    let offset = 0;
+
+    const appendNextPage = () => {
+        const end = Math.min(offset + PAGE_SIZE, filteredItems.length);
+
+        for (let index = offset; index < end; index++) {
+            const item = filteredItems[index];
+            
+            // ✨ 使用URL或标题进行匹配（并集逻辑）
+            let isBookmark = false;
+            let matchedByTitle = false; // 标记是否通过标题匹配
+            
+            // 条件1：URL匹配
+            if (bookmarkUrls.has(item.url)) {
+                isBookmark = true;
+            }
+            // 条件2：标题匹配（去除空白后比较）
+            if (!isBookmark && item.title && item.title.trim() && bookmarkTitles.has(item.title.trim())) {
+                isBookmark = true;
+                matchedByTitle = true;
+                if (!item.title || !item.title.trim()) {
+                    console.warn('[BrowsingRelated] 标题匹配但item.title为空:', item);
+                }
+            }
+            
+            const itemEl = document.createElement('div');
+            itemEl.className = 'related-history-item' + (isBookmark ? ' is-bookmark' : '');
+
+            // 获取favicon（同步版本，使用占位图标 + 后台加载）
+            const faviconUrl = getFaviconUrl(item.url);
+
+            const visitTime = item.lastVisitTime ? new Date(item.lastVisitTime) : new Date();
+            const timeStr = formatTimeByRange(visitTime, range);
+
+            const displayTitle = (item.title && item.title.trim()) ? item.title : item.url;
+            
+            if (matchedByTitle) {
+                console.log('[BrowsingRelated] 标题匹配的记录:', {
+                    url: item.url,
+                    title: item.title,
+                    displayTitle: displayTitle,
+                    isBookmark: isBookmark
+                });
+            }
+            
+            itemEl.innerHTML = `
+            <div class="related-history-number">${index + 1}</div>
+            <div class="related-history-header">
+                <img src="${faviconUrl}" class="related-history-favicon" alt="">
+                <div class="related-history-info">
+                    <div class="related-history-title">${escapeHtml(displayTitle)}</div>
+                </div>
+            </div>
+            <div class="related-history-meta">
+                <div class="related-history-time">
+                    <i class="fas fa-clock"></i>
+                    ${timeStr}
+                </div>
+                ${isBookmark ? `<div class="related-history-badge">${bookmarkLabel}</div>` : ''}
+            </div>
+        `;
+
+            itemEl.addEventListener('click', () => {
+                const browserAPI = (typeof chrome !== 'undefined') ? chrome : browser;
+                if (browserAPI && browserAPI.tabs && browserAPI.tabs.create) {
+                    browserAPI.tabs.create({ url: item.url });
+                } else {
+                    window.open(item.url, '_blank');
+                }
+            });
+
+            container.appendChild(itemEl);
+        }
+
+        offset = end;
+    };
+
+    appendNextPage();
+
+    const onScroll = () => {
+        if (offset >= filteredItems.length) return;
+        const threshold = 150;
+        if (container.scrollTop + container.clientHeight + threshold >= container.scrollHeight) {
+            // 不等待 Promise，按需追加
+            appendNextPage();
+        }
+    };
+
+    container.addEventListener('scroll', onScroll);
+    container.__browsingRelatedScrollHandler = onScroll;
 }
 
 // 根据时间范围格式化时间

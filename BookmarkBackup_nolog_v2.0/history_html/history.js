@@ -708,16 +708,13 @@ function handleHistoryVisited(result) {
 
 function handleHistoryVisitRemoved(details) {
     if (!details) return;
-    if (details.allHistory) {
-        scheduleHistoryRefresh({ forceFull: true });
-        return;
-    }
-    if (Array.isArray(details.urls)) {
-        const intersects = details.urls.some(url => bookmarkUrlSet.has(url));
-        if (intersects) {
-            scheduleHistoryRefresh({ forceFull: true });
-        }
-    }
+    console.log('[History] onVisitRemoved:', details);
+
+    // 无论是清除所有历史，还是删除特定URL，都可能影响：
+    // - 通过 URL 匹配到的点击记录
+    // - 仅通过标题匹配到的点击记录
+    // 因此这里一律触发一次全量重建（仅限最近一年的点击记录）。
+    scheduleHistoryRefresh({ forceFull: true });
 }
 
 let historyRealtimeBound = false;

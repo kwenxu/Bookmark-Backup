@@ -7260,3 +7260,103 @@ a.tree-label.tree-bookmark-link:hover {
 .time-submenu .time-menu-items {
     margin-left: 16px;
 }
+
+/* ========== 跳转至书签关联记录按钮 ========== */
+.jump-to-related-btn-container {
+    opacity: 0;
+    transition: opacity 0.2s ease;
+}
+
+/* 悬停时显示跳转按钮 */
+*:hover > .jump-to-related-btn-container,
+.jump-to-related-btn-container:hover {
+    opacity: 1;
+}
+
+.jump-to-related-btn {
+    width: 20px;
+    height: 20px;
+    padding: 0;
+    border: none;
+    background: var(--accent-primary);
+    color: #fff;
+    border-radius: 4px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 10px;
+    transition: all 0.2s ease;
+}
+
+.jump-to-related-btn:hover {
+    background: var(--accent-hover);
+    transform: scale(1.1);
+}
+
+.jump-to-related-btn i {
+    font-size: 10px;
+}
+
+/* ========== 书签关联记录高亮目标 ========== */
+.related-history-item.highlight-target {
+    background: linear-gradient(135deg, 
+        rgba(255, 235, 59, 0.4) 0%, 
+        rgba(255, 193, 7, 0.3) 100%) !important;
+    border-color: #FFC107 !important;
+    box-shadow: 0 0 0 3px rgba(255, 193, 7, 0.3), 0 4px 12px rgba(255, 193, 7, 0.2) !important;
+    animation: highlightPulse 1.5s ease-out;
+}
+
+@keyframes highlightPulse {
+    0% {
+        box-shadow: 0 0 0 0 rgba(255, 193, 7, 0.6), 0 4px 12px rgba(255, 193, 7, 0.3);
+    }
+    50% {
+        box-shadow: 0 0 0 8px rgba(255, 193, 7, 0.2), 0 4px 12px rgba(255, 193, 7, 0.3);
+    }
+    100% {
+        box-shadow: 0 0 0 3px rgba(255, 193, 7, 0.3), 0 4px 12px rgba(255, 193, 7, 0.2);
+    }
+}
+
+/* 深色模式下的高亮颜色 */
+[data-theme="dark"] .related-history-item.highlight-target {
+    background: linear-gradient(135deg, 
+        rgba(255, 193, 7, 0.25) 0%, 
+        rgba(255, 152, 0, 0.2) 100%) !important;
+}
+
+/* ========== 回到顶部悬浮按钮 ========== */
+.scroll-to-top-btn {
+    position: fixed;
+    bottom: 30px;
+    right: 30px;
+    width: 44px;
+    height: 44px;
+    padding: 0;
+    border: none;
+    background: var(--accent-primary);
+    color: #fff;
+    border-radius: 50%;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 18px;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+    transition: all 0.3s ease;
+    z-index: 1000;
+    opacity: 0.9;
+}
+
+.scroll-to-top-btn:hover {
+    background: var(--accent-hover);
+    transform: translateY(-3px) scale(1.05);
+    box-shadow: 0 6px 20px rgba(0, 0, 0, 0.25);
+    opacity: 1;
+}
+
+.scroll-to-top-btn:active {
+    transform: translateY(0) scale(1);
+}

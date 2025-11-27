@@ -10033,6 +10033,10 @@ async function renderBrowsingRelatedList(container, historyItems, bookmarkUrls, 
             
             const itemEl = document.createElement('div');
             itemEl.className = 'related-history-item' + (isBookmark ? ' is-bookmark' : '');
+            
+            // 添加 dataset 属性用于跳转匹配
+            itemEl.dataset.url = item.url;
+            itemEl.dataset.visitTime = item.lastVisitTime || Date.now();
 
             // 获取favicon（同步版本，使用占位图标 + 后台加载）
             const faviconUrl = getFaviconUrl(item.url);
@@ -10114,6 +10118,10 @@ async function renderBrowsingRelatedList(container, historyItems, bookmarkUrls, 
             
             const itemEl = document.createElement('div');
             itemEl.className = 'related-history-item' + (isBookmark ? ' is-bookmark' : '');
+            
+            // 添加 dataset 属性用于跳转匹配
+            itemEl.dataset.url = item.url;
+            itemEl.dataset.visitTime = item.lastVisitTime || Date.now();
 
             // 获取favicon（同步版本，使用占位图标 + 后台加载）
             const faviconUrl = getFaviconUrl(item.url);
@@ -10492,3 +10500,208 @@ function filterHistoryByTime(items, filter, range) {
         }
     });
 }
+
+// ============================================================================
+// 跳转至书签关联记录功能（从点击记录跳转）
+// ============================================================================
+
+// 全局变量：存储待高亮的记录信息
+let pendingHighlightInfo = null;
+
+// 跳转到书签关联记录并高亮对应条目
+async function jumpToRelatedHistory(url, title, visitTime) {
+    // 1. 切换到「书签浏览记录」标签
+    const browsingTab = document.getElementById('additionsTabBrowsing');
+    if (browsingTab && !browsingTab.classList.contains('active')) {
+        browsingTab.click();
+    }
+    
+    // 2. 切换到「书签关联记录」子标签
+    const relatedTab = document.getElementById('browsingTabRelated');
+    if (relatedTab && !relatedTab.classList.contains('active')) {
+        relatedTab.click();
+    }
+    
+    // 3. 存储待高亮信息和尝试的时间范围队列
+    // 书签关联记录每个URL只显示一次（最后访问时间），因此需要从小范围到大范围尝试
+    pendingHighlightInfo = {
+        url: url,
+        title: title,
+        visitTime: visitTime,
+        rangeQueue: ['day', 'week', 'month', 'year'], // 从小到大尝试
+        currentRangeIndex: 0
+    };
+    
+    // 4. 从"当天"开始尝试
+    const filterBtn = document.getElementById('browsingRelatedFilterDay');
+    if (filterBtn && !filterBtn.classList.contains('active')) {
+        filterBtn.click();
+    } else {
+        await loadBrowsingRelatedHistory('day');
+    }
+    
+    // 5. 延迟查找并高亮目标元素
+    setTimeout(() => {
+        highlightRelatedHistoryItem();
+    }, 400);
+}
+
+// 高亮书签关联记录中的目标条目
+function highlightRelatedHistoryItem(retryCount = 0) {
+    if (!pendingHighlightInfo) return;
+    
+    const { url, title, rangeQueue, currentRangeIndex } = pendingHighlightInfo;
+    const listContainer = document.getElementById('browsingRelatedList');
+    if (!listContainer) return;
+    
+    // 查找匹配的记录项
+    // 注意：点击记录中的时间是每次访问时间，书签关联记录中是最后访问时间
+    // 因此优先按URL匹配，URL相同即视为匹配成功
+    const items = listContainer.querySelectorAll('.related-history-item');
+    let targetItem = null;
+    let urlMatchItem = null;
+    let titleMatchItem = null;
+    
+    items.forEach(item => {
+        const itemUrl = item.dataset.url;
+        
+        // URL 精确匹配（最高优先级）
+        if (itemUrl === url) {
+            urlMatchItem = item;
+            targetItem = item;
+            return; // 找到URL匹配就跳出
+        }
+        
+        // 标题匹配（备选）
+        if (!titleMatchItem && title) {
+            const itemTitle = item.querySelector('.related-history-title');
+            if (itemTitle && itemTitle.textContent.trim() === title.trim()) {
+                titleMatchItem = item;
+            }
+        }
+    });
+    
+    // 如果URL没匹配到，尝试用标题匹配
+    if (!targetItem && titleMatchItem) {
+        targetItem = titleMatchItem;
+    }
+    
+    // 如果找到了，高亮显示
+    if (targetItem) {
+        // 移除之前的高亮
+        listContainer.querySelectorAll('.related-history-item.highlight-target').forEach(el => {
+            el.classList.remove('highlight-target');
+        });
+        
+        // 添加高亮类
+        targetItem.classList.add('highlight-target');
+        
+        // 直接定位到目标位置（不使用滚动动画）
+        targetItem.scrollIntoView({ behavior: 'instant', block: 'center' });
+        
+        // 清除待高亮信息
+        pendingHighlightInfo = null;
+        return;
+    }
+    
+    // 如果没找到，尝试更大的时间范围
+    if (rangeQueue && currentRangeIndex < rangeQueue.length - 1) {
+        const nextIndex = currentRangeIndex + 1;
+        const nextRange = rangeQueue[nextIndex];
+        pendingHighlightInfo.currentRangeIndex = nextIndex;
+        
+        // 切换到更大的时间范围
+        const rangeName = nextRange.charAt(0).toUpperCase() + nextRange.slice(1);
+        const filterBtn = document.getElementById(`browsingRelatedFilter${rangeName}`);
+        if (filterBtn) {
+            filterBtn.click();
+            // 等待数据加载后再次尝试
+            setTimeout(() => highlightRelatedHistoryItem(0), 400);
+        }
+        return;
+    }
+    
+    // 所有范围都尝试过了，仍未找到，清除待高亮信息
+    if (retryCount < 3) {
+        // 最后重试几次（可能数据还在加载）
+        setTimeout(() => highlightRelatedHistoryItem(retryCount + 1), 300);
+    } else {
+        pendingHighlightInfo = null;
+    }
+}
+
+// ============================================================================
+// 回到顶部悬浮按钮功能
+// ============================================================================
+
+let scrollToTopBtn = null;
+
+// 创建回到顶部按钮（全局唯一）
+function createScrollToTopButton() {
+    if (scrollToTopBtn) return scrollToTopBtn;
+    
+    const btn = document.createElement('button');
+    btn.className = 'scroll-to-top-btn';
+    btn.id = 'globalScrollToTopBtn';
+    btn.innerHTML = '<i class="fas fa-arrow-up"></i>';
+    btn.title = typeof currentLang !== 'undefined' && currentLang === 'zh_CN' ? '回到顶部' : 'Back to Top';
+    btn.style.display = 'none';
+    
+    btn.addEventListener('click', () => {
+        const contentArea = document.querySelector('.content-area');
+        if (contentArea) {
+            contentArea.scrollTo({ top: 0, behavior: 'smooth' });
+        }
+    });
+    
+    // 添加到 content-area
+    const contentArea = document.querySelector('.content-area');
+    if (contentArea) {
+        contentArea.appendChild(btn);
+    }
+    
+    scrollToTopBtn = btn;
+    return btn;
+}
+
+// 检查当前是否在需要显示按钮的面板
+function shouldShowScrollToTopBtn() {
+    // 检查点击记录面板
+    const browsingHistoryPanel = document.getElementById('browsingHistoryPanel');
+    if (browsingHistoryPanel && browsingHistoryPanel.classList.contains('active')) {
+        return true;
+    }
+    
+    // 检查点击排行面板
+    const browsingRankingPanel = document.getElementById('browsingRankingPanel');
+    if (browsingRankingPanel && browsingRankingPanel.classList.contains('active')) {
+        return true;
+    }
+    
+    return false;
+}
+
+// 初始化滚动监听
+function initScrollToTopButtons() {
+    const contentArea = document.querySelector('.content-area');
+    if (!contentArea) return;
+    
+    // 创建按钮
+    const btn = createScrollToTopButton();
+    if (!btn) return;
+    
+    // 监听 content-area 的滚动
+    contentArea.addEventListener('scroll', () => {
+        if (shouldShowScrollToTopBtn() && contentArea.scrollTop > 200) {
+            btn.style.display = 'flex';
+        } else {
+            btn.style.display = 'none';
+        }
+    });
+}
+
+// 在 DOMContentLoaded 后初始化回到顶部按钮
+document.addEventListener('DOMContentLoaded', () => {
+    // 延迟初始化，确保容器已渲染
+    setTimeout(initScrollToTopButtons, 500);
+});

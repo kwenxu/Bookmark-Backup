@@ -2462,6 +2462,32 @@ class BrowsingHistoryCalendar {
         `;
         item.appendChild(infoDiv);
 
+        // 跳转按钮容器（时间左边）
+        const jumpBtnContainer = document.createElement('div');
+        jumpBtnContainer.className = 'jump-to-related-btn-container';
+        jumpBtnContainer.style.display = 'flex';
+        jumpBtnContainer.style.alignItems = 'center';
+        jumpBtnContainer.style.marginRight = '6px';
+        jumpBtnContainer.style.flexShrink = '0';
+
+        const jumpBtn = document.createElement('button');
+        jumpBtn.className = 'jump-to-related-btn';
+        jumpBtn.title = typeof currentLang !== 'undefined' && currentLang === 'zh_CN' ? '跳转至书签关联记录' : 'Jump to Related History';
+        jumpBtn.innerHTML = '<i class="fas fa-external-link-alt"></i>';
+        jumpBtn.dataset.visitTime = bookmark.dateAdded.getTime();
+        jumpBtn.dataset.url = bookmark.url;
+        jumpBtn.dataset.title = bookmark.title;
+        
+        jumpBtn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            if (typeof jumpToRelatedHistory === 'function') {
+                jumpToRelatedHistory(bookmark.url, bookmark.title, bookmark.dateAdded.getTime());
+            }
+        });
+        
+        jumpBtnContainer.appendChild(jumpBtn);
+        item.appendChild(jumpBtnContainer);
+
         // 时间区域
         const timeDiv = document.createElement('div');
         timeDiv.style.fontSize = '11px';
@@ -3013,6 +3039,32 @@ class BrowsingHistoryCalendar {
             </div>
         `;
         item.appendChild(infoDiv);
+
+        // 跳转按钮容器（时间左边）
+        const jumpBtnContainer = document.createElement('div');
+        jumpBtnContainer.className = 'jump-to-related-btn-container';
+        jumpBtnContainer.style.display = 'flex';
+        jumpBtnContainer.style.alignItems = 'center';
+        jumpBtnContainer.style.marginRight = '6px';
+        jumpBtnContainer.style.flexShrink = '0';
+
+        const jumpBtn = document.createElement('button');
+        jumpBtn.className = 'jump-to-related-btn';
+        jumpBtn.title = typeof currentLang !== 'undefined' && currentLang === 'zh_CN' ? '跳转至书签关联记录' : 'Jump to Related History';
+        jumpBtn.innerHTML = '<i class="fas fa-external-link-alt"></i>';
+        jumpBtn.dataset.visitTime = bookmark.dateAdded.getTime();
+        jumpBtn.dataset.url = bookmark.url;
+        jumpBtn.dataset.title = bookmark.title;
+        
+        jumpBtn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            if (typeof jumpToRelatedHistory === 'function') {
+                jumpToRelatedHistory(bookmark.url, bookmark.title, bookmark.dateAdded.getTime());
+            }
+        });
+        
+        jumpBtnContainer.appendChild(jumpBtn);
+        item.appendChild(jumpBtnContainer);
 
         const timeDiv = document.createElement('div');
         timeDiv.style.fontSize = '11px';

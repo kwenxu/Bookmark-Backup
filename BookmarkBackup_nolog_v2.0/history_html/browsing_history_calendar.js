@@ -334,8 +334,9 @@ class BrowsingHistoryCalendar {
         }
 
         // 如果使用新架构，跳过旧的缓存恢复逻辑
+        let restoredFromCache = false;
         if (!this.useNewArchitecture) {
-            const restoredFromCache = await this.restoreBrowsingHistoryCache();
+            restoredFromCache = await this.restoreBrowsingHistoryCache();
             if (!restoredFromCache) {
                 await this.loadBookmarkData({ incremental: false });
             }

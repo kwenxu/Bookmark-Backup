@@ -10508,8 +10508,20 @@ function filterHistoryByTime(items, filter, range) {
 // 全局变量：存储待高亮的记录信息
 let pendingHighlightInfo = null;
 
+// 返回按钮相关
+let jumpSourceInfo = null;  // 记录跳转来源信息
+
 // 跳转到书签关联记录并高亮对应条目
-async function jumpToRelatedHistory(url, title, visitTime) {
+async function jumpToRelatedHistory(url, title, visitTime, sourceElement) {
+    // 记录来源信息，用于返回
+    jumpSourceInfo = {
+        type: 'browsingHistory',  // 来自点击记录
+        url: url,
+        title: title,
+        visitTime: visitTime,
+        scrollTop: document.querySelector('.content-area')?.scrollTop || 0
+    };
+    
     // 1. 切换到「书签浏览记录」标签
     const browsingTab = document.getElementById('additionsTabBrowsing');
     if (browsingTab && !browsingTab.classList.contains('active')) {
@@ -10529,7 +10541,8 @@ async function jumpToRelatedHistory(url, title, visitTime) {
         title: title,
         visitTime: visitTime,
         rangeQueue: ['day', 'week', 'month', 'year'], // 从小到大尝试
-        currentRangeIndex: 0
+        currentRangeIndex: 0,
+        showBackButton: true  // 标记需要显示返回按钮
     };
     
     // 4. 从"当天"开始尝试
@@ -10609,6 +10622,11 @@ function highlightRelatedHistoryItem(retryCount = 0) {
         
         // 直接定位到目标位置（不使用滚动动画）
         targetItem.scrollIntoView({ behavior: 'instant', block: 'center' });
+        
+        // 显示返回按钮
+        if (pendingHighlightInfo.showBackButton && jumpSourceInfo) {
+            showBackButton();
+        }
         
         // 清除待高亮信息
         pendingHighlightInfo = null;
@@ -10727,6 +10745,15 @@ async function jumpToRelatedHistoryFromAdditions(url, title, dateAdded) {
         return;
     }
     
+    // 记录来源信息，用于返回
+    jumpSourceInfo = {
+        type: 'bookmarkAdditions',  // 来自书签添加记录
+        url: url,
+        title: title,
+        dateAdded: dateAdded,
+        scrollTop: document.querySelector('.content-area')?.scrollTop || 0
+    };
+    
     // 1. 切换到「书签浏览记录」标签
     const browsingTab = document.getElementById('additionsTabBrowsing');
     if (browsingTab && !browsingTab.classList.contains('active')) {
@@ -10773,7 +10800,8 @@ async function jumpToRelatedHistoryFromAdditions(url, title, dateAdded) {
         visitTime: matchingVisitTime,  // 使用精确匹配的访问时间
         rangeQueue: [targetRange],     // 直接使用正确的范围
         currentRangeIndex: 0,
-        fromAdditions: true
+        fromAdditions: true,
+        showBackButton: true  // 标记需要显示返回按钮
     };
     
     // 5. 切换到对应的时间范围
@@ -10789,6 +10817,138 @@ async function jumpToRelatedHistoryFromAdditions(url, title, dateAdded) {
     setTimeout(() => {
         highlightRelatedHistoryItem();
     }, 400);
+}
+
+// ============================================================================
+// 返回按钮功能
+// ============================================================================
+
+// 显示返回按钮
+function showBackButton() {
+    // 如果已存在，先移除（但不清除 jumpSourceInfo）
+    const existingBtn = document.getElementById('jumpBackBtn');
+    if (existingBtn) existingBtn.remove();
+    
+    console.log('[showBackButton] 显示返回按钮, jumpSourceInfo:', jumpSourceInfo);
+    
+    const btn = document.createElement('button');
+    btn.id = 'jumpBackBtn';
+    btn.className = 'jump-back-btn';
+    btn.innerHTML = '<i class="fas fa-arrow-left"></i>';
+    btn.title = typeof currentLang !== 'undefined' && currentLang === 'zh_CN' ? '返回' : 'Go Back';
+    
+    btn.addEventListener('click', (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        console.log('[showBackButton] 点击返回按钮');
+        goBackToSource();
+    });
+    
+    document.body.appendChild(btn);
+    
+    // 显示动画
+    setTimeout(() => {
+        btn.style.opacity = '1';
+        btn.style.transform = 'translateY(0)';
+    }, 50);
+}
+
+// 隐藏返回按钮（可选是否清除来源信息）
+function hideBackButton(clearSource = true) {
+    const btn = document.getElementById('jumpBackBtn');
+    if (btn) {
+        btn.remove();
+    }
+    if (clearSource) {
+        jumpSourceInfo = null;
+    }
+}
+
+// 返回到跳转来源
+async function goBackToSource() {
+    if (!jumpSourceInfo) {
+        console.warn('[goBackToSource] jumpSourceInfo 为空');
+        return;
+    }
+    
+    const { type, url, scrollTop } = jumpSourceInfo;
+    console.log('[goBackToSource] 返回:', type, url);
+    
+    // 先隐藏返回按钮
+    const btn = document.getElementById('jumpBackBtn');
+    if (btn) btn.remove();
+    
+    // 清除来源信息（在使用完之后立即清除）
+    jumpSourceInfo = null;
+    
+    if (type === 'browsingHistory') {
+        // 返回点击记录 - 需要切换到「点击记录」子标签
+        const historyTab = document.getElementById('browsingTabHistory');
+        if (historyTab) {
+            historyTab.click();
+            console.log('[goBackToSource] 已切换到点击记录');
+        }
+        
+        // 恢复滚动位置并高亮
+        setTimeout(() => {
+            const contentArea = document.querySelector('.content-area');
+            if (contentArea && scrollTop) {
+                contentArea.scrollTop = scrollTop;
+            }
+            highlightSourceBookmark(url);
+        }, 500);
+        
+    } else if (type === 'bookmarkAdditions') {
+        // 返回书签添加记录 - 需要切换到「书签添加记录」标签
+        const reviewTab = document.getElementById('additionsTabReview');
+        if (reviewTab) {
+            reviewTab.click();
+            console.log('[goBackToSource] 已切换到书签添加记录');
+        }
+        
+        // 恢复滚动位置并高亮
+        setTimeout(() => {
+            const contentArea = document.querySelector('.content-area');
+            if (contentArea && scrollTop) {
+                contentArea.scrollTop = scrollTop;
+            }
+            highlightSourceBookmark(url);
+        }, 500);
+    }
+}
+
+// 高亮来源书签
+function highlightSourceBookmark(url) {
+    // 在整个内容区域查找匹配的书签项
+    const contentArea = document.querySelector('.content-area');
+    if (!contentArea) {
+        console.warn('[highlightSourceBookmark] 未找到 content-area');
+        return;
+    }
+    
+    // 查找所有匹配URL的书签项
+    const items = contentArea.querySelectorAll('[data-bookmark-url]');
+    console.log('[highlightSourceBookmark] 查找书签:', url, '找到', items.length, '个书签项');
+    
+    let found = false;
+    
+    items.forEach(item => {
+        if (item.dataset.bookmarkUrl === url && !found) {
+            found = true;
+            console.log('[highlightSourceBookmark] 找到匹配书签，添加高亮');
+            item.classList.add('highlight-source');
+            item.scrollIntoView({ behavior: 'instant', block: 'center' });
+            
+            // 3秒后移除高亮
+            setTimeout(() => {
+                item.classList.remove('highlight-source');
+            }, 3000);
+        }
+    });
+    
+    if (!found) {
+        console.warn('[highlightSourceBookmark] 未找到匹配的书签');
+    }
 }
 
 // ============================================================================

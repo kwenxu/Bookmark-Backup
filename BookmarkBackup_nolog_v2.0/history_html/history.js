@@ -10550,40 +10550,51 @@ async function jumpToRelatedHistory(url, title, visitTime) {
 function highlightRelatedHistoryItem(retryCount = 0) {
     if (!pendingHighlightInfo) return;
     
-    const { url, title, rangeQueue, currentRangeIndex } = pendingHighlightInfo;
+    const { url, title, visitTime, rangeQueue, currentRangeIndex, fromAdditions } = pendingHighlightInfo;
     const listContainer = document.getElementById('browsingRelatedList');
     if (!listContainer) return;
     
     // 查找匹配的记录项
-    // 注意：点击记录中的时间是每次访问时间，书签关联记录中是最后访问时间
-    // 因此优先按URL匹配，URL相同即视为匹配成功
     const items = listContainer.querySelectorAll('.related-history-item');
     let targetItem = null;
     let urlMatchItem = null;
-    let titleMatchItem = null;
+    let bestTimeMatch = null;
+    let bestTimeDiff = Infinity;
     
     items.forEach(item => {
         const itemUrl = item.dataset.url;
+        const itemTime = parseInt(item.dataset.visitTime, 10);
         
-        // URL 精确匹配（最高优先级）
+        // URL 精确匹配
         if (itemUrl === url) {
             urlMatchItem = item;
-            targetItem = item;
-            return; // 找到URL匹配就跳出
-        }
-        
-        // 标题匹配（备选）
-        if (!titleMatchItem && title) {
-            const itemTitle = item.querySelector('.related-history-title');
-            if (itemTitle && itemTitle.textContent.trim() === title.trim()) {
-                titleMatchItem = item;
+            
+            // 如果是从书签添加记录跳转，需要时间精确匹配（同一分钟内）
+            if (fromAdditions && visitTime) {
+                const timeDiff = Math.abs(itemTime - visitTime);
+                const oneMinute = 60 * 1000;
+                
+                // 记录时间最接近的
+                if (timeDiff < bestTimeDiff) {
+                    bestTimeDiff = timeDiff;
+                    bestTimeMatch = item;
+                }
+                
+                // 时间差在1分钟内才算匹配
+                if (timeDiff <= oneMinute) {
+                    targetItem = item;
+                }
+            } else {
+                // 从点击记录跳转，URL匹配即可
+                targetItem = item;
             }
         }
     });
     
-    // 如果URL没匹配到，尝试用标题匹配
-    if (!targetItem && titleMatchItem) {
-        targetItem = titleMatchItem;
+    // 如果是从书签添加记录跳转且URL匹配但时间不匹配，不使用该记录
+    // 如果不是从书签添加记录跳转，URL匹配即可
+    if (!targetItem && urlMatchItem && !fromAdditions) {
+        targetItem = urlMatchItem;
     }
     
     // 如果找到了，高亮显示
@@ -10626,8 +10637,158 @@ function highlightRelatedHistoryItem(retryCount = 0) {
         // 最后重试几次（可能数据还在加载）
         setTimeout(() => highlightRelatedHistoryItem(retryCount + 1), 300);
     } else {
+        const fromAdditions = pendingHighlightInfo.fromAdditions;
         pendingHighlightInfo = null;
+        // 只有从「书签添加记录」跳转时才显示"暂无记录"提示
+        if (fromAdditions) {
+            showNoRecordToast();
+        }
     }
+}
+
+// 显示暂无记录提示
+function showNoRecordToast() {
+    const msg = typeof currentLang !== 'undefined' && currentLang === 'zh_CN' 
+        ? '暂无浏览记录（可能是导入的书签）' 
+        : 'No browsing history found (may be imported bookmark)';
+    
+    // 创建提示元素
+    let toast = document.getElementById('noRecordToast');
+    if (!toast) {
+        toast = document.createElement('div');
+        toast.id = 'noRecordToast';
+        toast.style.cssText = `
+            position: fixed;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background: rgba(0, 0, 0, 0.8);
+            color: #fff;
+            padding: 16px 24px;
+            border-radius: 8px;
+            font-size: 14px;
+            z-index: 10000;
+            opacity: 0;
+            transition: opacity 0.3s ease;
+        `;
+        document.body.appendChild(toast);
+    }
+    
+    toast.textContent = msg;
+    toast.style.opacity = '1';
+    
+    setTimeout(() => {
+        toast.style.opacity = '0';
+    }, 2500);
+}
+
+// 从「书签添加记录」跳转到「书签关联记录」
+async function jumpToRelatedHistoryFromAdditions(url, title, dateAdded) {
+    const browserAPI = (typeof chrome !== 'undefined') ? chrome : browser;
+    
+    // 先查询该URL在书签添加时间附近是否有访问记录
+    let hasMatchingVisit = false;
+    let matchingVisitTime = null;
+    
+    try {
+        if (browserAPI && browserAPI.history && browserAPI.history.getVisits) {
+            const visits = await new Promise((resolve, reject) => {
+                browserAPI.history.getVisits({ url: url }, (results) => {
+                    if (browserAPI.runtime && browserAPI.runtime.lastError) {
+                        reject(browserAPI.runtime.lastError);
+                    } else {
+                        resolve(results || []);
+                    }
+                });
+            });
+            
+            // 查找时间精确匹配的访问记录（同一分钟内，即60秒）
+            const oneMinute = 60 * 1000;
+            let minDiff = Infinity;
+            
+            visits.forEach(visit => {
+                const diff = Math.abs(visit.visitTime - dateAdded);
+                if (diff < minDiff) {
+                    minDiff = diff;
+                    matchingVisitTime = visit.visitTime;
+                }
+            });
+            
+            // 时间差必须在1分钟内才算匹配
+            hasMatchingVisit = minDiff <= oneMinute;
+        }
+    } catch (e) {
+        console.warn('[jumpToRelatedHistoryFromAdditions] 查询访问记录失败:', e);
+    }
+    
+    // 如果没有精确匹配的访问记录，直接显示提示，不跳转
+    if (!hasMatchingVisit) {
+        showNoRecordToast();
+        return;
+    }
+    
+    // 1. 切换到「书签浏览记录」标签
+    const browsingTab = document.getElementById('additionsTabBrowsing');
+    if (browsingTab && !browsingTab.classList.contains('active')) {
+        browsingTab.click();
+    }
+    
+    // 2. 切换到「书签关联记录」子标签
+    const relatedTab = document.getElementById('browsingTabRelated');
+    if (relatedTab && !relatedTab.classList.contains('active')) {
+        relatedTab.click();
+    }
+    
+    // 3. 根据访问时间确定时间范围
+    const now = new Date();
+    const visitDate = new Date(matchingVisitTime);
+    let targetRange = 'year';
+    
+    const todayStart = new Date(now);
+    todayStart.setHours(0, 0, 0, 0);
+    
+    const weekStart = new Date(now);
+    const dayOfWeek = now.getDay();
+    const daysToMonday = (dayOfWeek === 0 ? 6 : dayOfWeek - 1);
+    weekStart.setDate(now.getDate() - daysToMonday);
+    weekStart.setHours(0, 0, 0, 0);
+    
+    const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+    const yearStart = new Date(now.getFullYear(), 0, 1);
+    
+    if (visitDate >= todayStart) {
+        targetRange = 'day';
+    } else if (visitDate >= weekStart) {
+        targetRange = 'week';
+    } else if (visitDate >= monthStart) {
+        targetRange = 'month';
+    } else {
+        targetRange = 'year';
+    }
+    
+    // 4. 存储待高亮信息
+    pendingHighlightInfo = {
+        url: url,
+        title: title,
+        visitTime: matchingVisitTime,  // 使用精确匹配的访问时间
+        rangeQueue: [targetRange],     // 直接使用正确的范围
+        currentRangeIndex: 0,
+        fromAdditions: true
+    };
+    
+    // 5. 切换到对应的时间范围
+    const rangeName = targetRange.charAt(0).toUpperCase() + targetRange.slice(1);
+    const filterBtn = document.getElementById(`browsingRelatedFilter${rangeName}`);
+    if (filterBtn && !filterBtn.classList.contains('active')) {
+        filterBtn.click();
+    } else {
+        await loadBrowsingRelatedHistory(targetRange);
+    }
+    
+    // 6. 延迟查找并高亮目标元素
+    setTimeout(() => {
+        highlightRelatedHistoryItem();
+    }, 400);
 }
 
 // ============================================================================

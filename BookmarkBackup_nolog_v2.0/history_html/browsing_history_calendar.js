@@ -47,8 +47,9 @@ function formatYearMonth(year, month) {
     return t('calendarYearMonth', year, monthName).replace('{0}', year).replace('{1}', monthName);
 }
 
-// 浏览记录仅需要最近一段时间的详细点击记录，防止无限制读取导致卡顿
-const BROWSING_HISTORY_LOOKBACK_DAYS = 365; // 最多保留一年的点击记录
+// 浏览记录保留时长（天）
+// 0 表示不做时间窗口限制，由浏览器自身的历史保留策略决定。
+const BROWSING_HISTORY_LOOKBACK_DAYS = 0;
 const BROWSING_HISTORY_MAX_VISITS_PER_URL = 400; // 单个站点最多缓存多少次点击
 const BROWSING_HISTORY_CACHE_KEY = 'bb_cache_browsing_history_v1';
 const BROWSING_HISTORY_INCREMENTAL_PADDING_MS = 60 * 1000; // 增量同步时回溯1分钟

@@ -68,6 +68,7 @@ let currentBookmarkData = null;
 let browsingClickRankingStats = null; // 点击排行缓存（基于浏览器历史记录）
 
 const bookmarkUrlSet = new Set();
+const bookmarkTitleSet = new Set(); // 书签标题集合（用于标题匹配的实时刷新）
 let pendingHistoryRefreshTimer = null;
 let pendingHistoryRefreshForceFull = false;
 
@@ -593,6 +594,10 @@ function addBookmarkToAdditionsCache(bookmark) {
     if (!normalized) return;
     allBookmarks.push(normalized);
     addUrlToBookmarkSet(normalized.url);
+    const normalizedTitle = normalizeBookmarkTitle(normalized.title);
+    if (normalizedTitle) {
+        bookmarkTitleSet.add(normalizedTitle);
+    }
     handleAdditionsDataMutation(true);
 }
 
@@ -612,6 +617,10 @@ function updateBookmarkInAdditionsCache(bookmarkId, changeInfo = {}) {
     const prevUrl = target.url;
     if (typeof changeInfo.title !== 'undefined') {
         target.title = changeInfo.title;
+        const normalizedTitle = normalizeBookmarkTitle(changeInfo.title);
+        if (normalizedTitle) {
+            bookmarkTitleSet.add(normalizedTitle);
+        }
     }
     if (typeof changeInfo.url !== 'undefined') {
         target.url = changeInfo.url;
@@ -631,6 +640,12 @@ function moveBookmarkInAdditionsCache(bookmarkId, moveInfo = {}) {
     handleAdditionsDataMutation(false);
 }
 
+function normalizeBookmarkTitle(title) {
+    if (!title || typeof title !== 'string') return null;
+    const trimmed = title.trim();
+    return trimmed || null;
+}
+
 function normalizeBookmarkUrl(url) {
     if (!url || typeof url !== 'string') return null;
     if (!url.startsWith('http://') && !url.startsWith('https://')) {
@@ -641,10 +656,15 @@ function normalizeBookmarkUrl(url) {
 
 function rebuildBookmarkUrlSet() {
     bookmarkUrlSet.clear();
+    bookmarkTitleSet.clear();
     allBookmarks.forEach(item => {
         const normalized = normalizeBookmarkUrl(item.url);
         if (normalized) {
             bookmarkUrlSet.add(normalized);
+        }
+        const normalizedTitle = normalizeBookmarkTitle(item.title);
+        if (normalizedTitle) {
+            bookmarkTitleSet.add(normalizedTitle);
         }
     });
 }
@@ -680,12 +700,9 @@ function scheduleHistoryRefresh({ forceFull = false } = {}) {
 
 function handleHistoryVisited(result) {
     if (!result || !result.url) return;
-    console.log('[History] onVisited:', result.url);
-    if (!bookmarkUrlSet.has(result.url)) {
-        console.log('[History] URL不在书签集合中，跳过刷新');
-        return;
-    }
-    console.log('[History] URL在书签集合中，安排刷新');
+    console.log('[History] onVisited:', result.url, 'title:', result.title);
+    // 不在这里做 URL/标题过滤，统一交给 BrowsingHistoryCalendar.loadBookmarkData()
+    // 中的 URL + 标题并集规则处理（增量只扫描 lastSyncTime 之后的历史）。
     scheduleHistoryRefresh({ forceFull: false });
 }
 
@@ -739,7 +756,8 @@ async function refreshBrowsingHistoryData(options = {}) {
         }
     }
 
-    const incremental = !forceFull && inst.historyCacheRestored !== false;
+    // 如果已经有 lastSyncTime，则可以安全地做增量更新
+    const incremental = !forceFull && !!(inst.historyCacheMeta && inst.historyCacheMeta.lastSyncTime);
     browsingHistoryRefreshPromise = (async () => {
         try {
             await inst.loadBookmarkData({ incremental });
@@ -8492,6 +8510,10 @@ function setupBookmarkListener() {
             if (currentView === 'current-changes') {
                 await renderCurrentChangesViewWithRetry(1, true);
             }
+
+            // 书签集合变化会影响「点击记录」「点击排行」「书签关联记录」
+            // 这里使用全量重建（仅限最近一年的历史，内部有lookback与去重）
+            scheduleHistoryRefresh({ forceFull: true });
         } catch (e) {
             refreshTreeViewIfVisible();
         }
@@ -8515,6 +8537,9 @@ function setupBookmarkListener() {
             if (currentView === 'current-changes') {
                 await renderCurrentChangesViewWithRetry(1, true);
             }
+
+            // 书签被删除后，对应的点击记录与排行需要重算
+            scheduleHistoryRefresh({ forceFull: true });
         } catch (e) {
             refreshTreeViewIfVisible();
         }
@@ -8532,6 +8557,9 @@ function setupBookmarkListener() {
             if (currentView === 'current-changes') {
                 await renderCurrentChangesViewWithRetry(1, true);
             }
+
+            // 书签URL或标题变化会影响匹配结果，重建最近一年的点击记录
+            scheduleHistoryRefresh({ forceFull: true });
         } catch (e) {
             refreshTreeViewIfVisible();
         }

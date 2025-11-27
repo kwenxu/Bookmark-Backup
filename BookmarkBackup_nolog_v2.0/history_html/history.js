@@ -5449,12 +5449,21 @@ async function ensureBrowsingClickRankingStats() {
     }
 
     const boundaries = getBrowsingClickRankingBoundaries();
-    
-    // ✨ 从 DatabaseManager 获取书签库，用于构建书签标识映射
-    const bookmarkDB = calendar.dbManager?.getBookmarksDB?.();
-    if (!bookmarkDB) {
-        console.warn('[BrowsingRanking] 无法获取书签数据库，回退到基于URL的统计');
-        browsingClickRankingStats = { items: [], error: 'noBookmarkDB' };
+
+    // ✨ 通过书签 API 获取 URL 和标题集合，用于构建书签标识映射
+    // 与「书签关联记录」和「点击记录」保持一致，使用 URL 或标题的并集匹配
+    let bookmarkData;
+    try {
+        bookmarkData = await getBookmarkUrlsAndTitles();
+    } catch (error) {
+        console.warn('[BrowsingRanking] 获取书签URL和标题失败:', error);
+        browsingClickRankingStats = { items: [], error: 'noBookmarks' };
+        return browsingClickRankingStats;
+    }
+
+    const bookmarkInfoByUrl = bookmarkData && bookmarkData.info ? bookmarkData.info : null;
+    if (!bookmarkInfoByUrl || bookmarkInfoByUrl.size === 0) {
+        browsingClickRankingStats = { items: [], error: 'noBookmarks' };
         return browsingClickRankingStats;
     }
 
@@ -5462,27 +5471,24 @@ async function ensureBrowsingClickRankingStats() {
     // 同一个书签可能有多个URL或标题匹配到不同的历史记录，需要合并统计
     const bookmarkKeyMap = new Map(); // url or title (normalized) -> bookmarkKey
     const bookmarkInfoMap = new Map(); // bookmarkKey -> { url, title }
-    
-    // 遍历所有书签，建立映射
+
     let bookmarkKeyCounter = 0;
-    for (const url of bookmarkDB.getAllUrls()) {
-        const normalizedUrl = url; // 已经是 normalized
-        const title = bookmarkDB.getTitleByUrl(url);
-        const normalizedTitle = title; // 已经是 normalized
-        
+    for (const [url, info] of bookmarkInfoByUrl.entries()) {
+        const normalizedUrl = url;
+        const normalizedTitle = info && typeof info.title === 'string' ? info.title.trim() : '';
+
         const bookmarkKey = `bm_${bookmarkKeyCounter++}`;
         bookmarkKeyMap.set(`url:${normalizedUrl}`, bookmarkKey);
         if (normalizedTitle) {
             bookmarkKeyMap.set(`title:${normalizedTitle}`, bookmarkKey);
         }
-        
-        // 记录书签信息（优先使用URL）
+
         bookmarkInfoMap.set(bookmarkKey, {
             url: normalizedUrl,
             title: normalizedTitle || normalizedUrl
         });
     }
-    
+
     const statsMap = new Map(); // bookmarkKey -> stats
 
     // 从「点击记录」的数据结构中汇总统计信息
@@ -5491,7 +5497,9 @@ async function ensureBrowsingClickRankingStats() {
             if (!bm || !bm.url) return;
 
             const url = bm.url;
-            const title = bm.title || bm.url;
+            const title = typeof bm.title === 'string' && bm.title.trim()
+                ? bm.title.trim()
+                : (bm.url || '');
             const t = typeof bm.visitTime === 'number'
                 ? bm.visitTime
                 : (bm.dateAdded instanceof Date ? bm.dateAdded.getTime() : 0);
@@ -5503,7 +5511,7 @@ async function ensureBrowsingClickRankingStats() {
 
             // ✨ 找出这条记录匹配的书签（优先URL匹配，其次标题匹配）
             let bookmarkKey = bookmarkKeyMap.get(`url:${url}`);
-            if (!bookmarkKey) {
+            if (!bookmarkKey && title) {
                 // URL 不匹配，尝试标题匹配
                 bookmarkKey = bookmarkKeyMap.get(`title:${title}`);
             }
@@ -9515,6 +9523,7 @@ let browsingRelatedSortAsc = false; // 排序方式：false=倒序（新到旧�
 let browsingRelatedCurrentRange = 'day'; // 当前选中的时间范围
 let browsingRelatedBookmarkUrls = null; // 缓存的书签URL集合（用于标识）
 let browsingRelatedBookmarkTitles = null; // 缓存的书签标题集合（用于标识）
+let browsingRelatedBookmarkInfo = null; // 缓存的书签URL->标题映射（用于统计与展示）
 
 // 初始化书签关联记录
 function initBrowsingRelatedHistory() {
@@ -9612,6 +9621,7 @@ async function refreshBrowsingRelatedHistory() {
     // 清除书签URL/标题缓存（以便重新获取最新书签）
     browsingRelatedBookmarkUrls = null;
     browsingRelatedBookmarkTitles = null;
+    browsingRelatedBookmarkInfo = null;
     
     // ✨ 等待日历数据同步完成（确保标题匹配的记录能正确显示）
     const waitForCalendarData = async () => {
@@ -9638,8 +9648,12 @@ async function refreshBrowsingRelatedHistory() {
 
 // 获取书签URL和标题集合（使用URL或标题匹配）
 async function getBookmarkUrlsAndTitles() {
-    if (browsingRelatedBookmarkUrls && browsingRelatedBookmarkTitles) {
-        return { urls: browsingRelatedBookmarkUrls, titles: browsingRelatedBookmarkTitles };
+    if (browsingRelatedBookmarkUrls && browsingRelatedBookmarkTitles && browsingRelatedBookmarkInfo) {
+        return {
+            urls: browsingRelatedBookmarkUrls,
+            titles: browsingRelatedBookmarkTitles,
+            info: browsingRelatedBookmarkInfo
+        };
     }
 
     const browserAPI = (typeof chrome !== 'undefined') ? chrome : browser;
@@ -9649,15 +9663,27 @@ async function getBookmarkUrlsAndTitles() {
 
     const urls = new Set();
     const titles = new Set();
+    const info = new Map(); // url -> { url, title }
     
     const collectUrlsAndTitles = (nodes) => {
         if (!Array.isArray(nodes)) return;
         for (const node of nodes) {
             if (node.url) {
-                urls.add(node.url);
+                const url = node.url;
+                urls.add(url);
+
                 // 同时收集标题（去除空白后存储）
-                if (node.title && node.title.trim()) {
-                    titles.add(node.title.trim());
+                const trimmedTitle = typeof node.title === 'string' ? node.title.trim() : '';
+                if (trimmedTitle) {
+                    titles.add(trimmedTitle);
+                }
+
+                // 记录URL到标题的映射（用于后续统计展示）
+                if (!info.has(url)) {
+                    info.set(url, {
+                        url,
+                        title: trimmedTitle || url
+                    });
                 }
             }
             if (node.children) {
@@ -9680,10 +9706,11 @@ async function getBookmarkUrlsAndTitles() {
         collectUrlsAndTitles(tree);
         browsingRelatedBookmarkUrls = urls;
         browsingRelatedBookmarkTitles = titles;
-        return { urls, titles };
+        browsingRelatedBookmarkInfo = info;
+        return { urls, titles, info };
     } catch (error) {
         console.error('[BrowsingRelated] 获取书签URL和标题失败:', error);
-        return { urls: new Set(), titles: new Set() };
+        return { urls: new Set(), titles: new Set(), info: new Map() };
     }
 }
 

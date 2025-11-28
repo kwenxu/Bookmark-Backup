@@ -962,6 +962,10 @@ const i18n = {
         'zh_CN': '书签画布',
         'en': 'Bookmark Canvas'
     },
+    navRecommend: {
+        'zh_CN': '书签推荐',
+        'en': 'Bookmark Recommend'
+    },
     additionsTabReview: {
         'zh_CN': '书签添加记录',
         'en': 'Bookmark additions'
@@ -970,9 +974,17 @@ const i18n = {
         'zh_CN': '书签浏览记录',
         'en': 'Browsing History'
     },
-    additionsTabAnki: {
-        'zh_CN': '书签Anki',
-        'en': 'Bookmark Anki'
+    additionsTabTracking: {
+        'zh_CN': '时间捕捉',
+        'en': 'Time Tracking'
+    },
+    trackingPanelDesc: {
+        'zh_CN': '追踪书签页面的活跃浏览时间',
+        'en': 'Track active browsing time on bookmark pages'
+    },
+    clearTrackingText: {
+        'zh_CN': '清除',
+        'en': 'Clear'
     },
     browsingTabHistory: {
         'zh_CN': '点击记录',
@@ -1640,6 +1652,152 @@ const i18n = {
     browsingExportFolderName: {
         'zh_CN': '点击记录',
         'en': 'Click History'
+    },
+    // 时间捕捉翻译
+    trackingTitle: {
+        'zh_CN': '时间捕捉',
+        'en': 'Time Tracking'
+    },
+    trackingToggleOn: {
+        'zh_CN': '开启',
+        'en': 'On'
+    },
+    trackingToggleOff: {
+        'zh_CN': '关闭',
+        'en': 'Off'
+    },
+    trackingClearBtn: {
+        'zh_CN': '清除记录',
+        'en': 'Clear Records'
+    },
+    trackingCurrentTitle: {
+        'zh_CN': '正在追踪的书签',
+        'en': 'Currently Tracking'
+    },
+    trackingNoActive: {
+        'zh_CN': '暂无正在追踪的书签',
+        'en': 'No active tracking sessions'
+    },
+    trackingRankingTitle: {
+        'zh_CN': '活跃时间排行',
+        'en': 'Active Time Ranking'
+    },
+    trackingRangeToday: {
+        'zh_CN': '今天',
+        'en': 'Today'
+    },
+    trackingRangeWeek: {
+        'zh_CN': '本周',
+        'en': 'This Week'
+    },
+    trackingRangeMonth: {
+        'zh_CN': '本月',
+        'en': 'This Month'
+    },
+    trackingRangeAll: {
+        'zh_CN': '全部',
+        'en': 'All Time'
+    },
+    trackingNoData: {
+        'zh_CN': '暂无活跃时间数据',
+        'en': 'No active time data'
+    },
+    trackingClearConfirm: {
+        'zh_CN': '确定要清除所有时间追踪记录吗？此操作不可撤销。',
+        'en': 'Are you sure you want to clear all tracking records? This action cannot be undone.'
+    },
+    trackingCleared: {
+        'zh_CN': '追踪记录已清除',
+        'en': 'Tracking records cleared'
+    },
+    trackingIdle: {
+        'zh_CN': '挂机',
+        'en': 'Idle'
+    },
+    trackingLoadFailed: {
+        'zh_CN': '排行加载失败',
+        'en': 'Failed to load ranking'
+    },
+    // 书签推荐翻译
+    recommendViewTitle: {
+        'zh_CN': '书签推荐',
+        'en': 'Bookmark Recommendations'
+    },
+    recommendHelpTooltip: {
+        'zh_CN': '帮助',
+        'en': 'Help'
+    },
+    legendFreshness: {
+        'zh_CN': '新鲜度',
+        'en': 'Freshness'
+    },
+    legendColdness: {
+        'zh_CN': '冷门度',
+        'en': 'Coldness'
+    },
+    legendShallowRead: {
+        'zh_CN': '浅阅读',
+        'en': 'Shallow Read'
+    },
+    legendForgetting: {
+        'zh_CN': '遗忘度',
+        'en': 'Forgetting'
+    },
+    thresholdFreshnessSuffix: {
+        'zh_CN': '天',
+        'en': ' days'
+    },
+    thresholdColdnessSuffix: {
+        'zh_CN': '次',
+        'en': ' clicks'
+    },
+    thresholdShallowReadSuffix: {
+        'zh_CN': '分钟',
+        'en': ' min'
+    },
+    thresholdForgettingSuffix: {
+        'zh_CN': '天',
+        'en': ' days'
+    },
+    presetArchaeology: {
+        'zh_CN': '考古模式',
+        'en': 'Archaeology'
+    },
+    presetArchaeologyTip: {
+        'zh_CN': '挖掘尘封已久的书签',
+        'en': 'Dig up long-forgotten bookmarks'
+    },
+    presetConsolidate: {
+        'zh_CN': '巩固模式',
+        'en': 'Consolidate'
+    },
+    presetConsolidateTip: {
+        'zh_CN': '温习近期重要内容',
+        'en': 'Review recent important content'
+    },
+    presetWander: {
+        'zh_CN': '漫游模式',
+        'en': 'Wander'
+    },
+    presetWanderTip: {
+        'zh_CN': '随机探索发现',
+        'en': 'Random exploration'
+    },
+    resetFormulaText: {
+        'zh_CN': '恢复默认',
+        'en': 'Reset'
+    },
+    cardRefreshText: {
+        'zh_CN': '刷新推荐',
+        'en': 'Refresh'
+    },
+    heatmapTitle: {
+        'zh_CN': '复习热力图',
+        'en': 'Review Heatmap'
+    },
+    heatmapLoading: {
+        'zh_CN': '热力图数据加载中...',
+        'en': 'Loading heatmap data...'
     }
 };
 
@@ -1958,6 +2116,8 @@ function applyLanguage() {
     document.getElementById('navHistoryText').textContent = i18n.navHistory[currentLang];
     document.getElementById('navAdditionsText').textContent = i18n.navAdditions[currentLang];
     document.getElementById('navCanvasText').textContent = i18n.navCanvas[currentLang];
+    const navRecommendText = document.getElementById('navRecommendText');
+    if (navRecommendText) navRecommendText.textContent = i18n.navRecommend[currentLang];
     document.getElementById('bookmarkGitTitle').textContent = i18n.bookmarkGitTitle[currentLang];
     document.getElementById('bookmarkToolboxTitle').textContent = i18n.bookmarkToolboxTitle[currentLang];
     document.getElementById('statsTitle').textContent = i18n.statsTitle[currentLang];
@@ -2115,8 +2275,15 @@ function applyLanguage() {
     if (additionsTabReview) additionsTabReview.textContent = i18n.additionsTabReview[currentLang];
     const additionsTabBrowsing = document.getElementById('additionsTabBrowsing');
     if (additionsTabBrowsing) additionsTabBrowsing.textContent = i18n.additionsTabBrowsing[currentLang];
-    const additionsTabAnki = document.getElementById('additionsTabAnki');
-    if (additionsTabAnki) additionsTabAnki.textContent = i18n.additionsTabAnki[currentLang];
+    
+    const additionsTabTracking = document.getElementById('additionsTabTracking');
+    if (additionsTabTracking) additionsTabTracking.textContent = i18n.additionsTabTracking[currentLang];
+    
+    const trackingPanelDesc = document.getElementById('trackingPanelDesc');
+    if (trackingPanelDesc) trackingPanelDesc.textContent = i18n.trackingPanelDesc[currentLang];
+    
+    const clearTrackingText = document.getElementById('clearTrackingText');
+    if (clearTrackingText) clearTrackingText.textContent = i18n.clearTrackingText[currentLang];
 
     // 浏览记录子标签
     const browsingTabHistory = document.getElementById('browsingTabHistory');
@@ -2267,6 +2434,113 @@ function applyLanguage() {
     updateBrowsingCheckboxLabel('html', 'exportFormatHtml');
     updateBrowsingCheckboxLabel('json', 'exportFormatJson');
     updateBrowsingCheckboxLabel('copy', 'exportFormatCopy');
+
+    // 时间捕捉翻译
+    const trackingTitle = document.getElementById('trackingTitle');
+    if (trackingTitle) trackingTitle.textContent = i18n.trackingTitle[currentLang];
+    
+    const trackingToggleText = document.getElementById('trackingToggleText');
+    if (trackingToggleText) {
+        const toggleBtn = document.getElementById('trackingToggleBtn');
+        const isActive = toggleBtn && toggleBtn.classList.contains('active');
+        trackingToggleText.textContent = isActive ? 
+            i18n.trackingToggleOn[currentLang] : i18n.trackingToggleOff[currentLang];
+    }
+    
+    const clearTrackingBtn = document.getElementById('clearTrackingBtn');
+    if (clearTrackingBtn) clearTrackingBtn.title = i18n.trackingClearBtn[currentLang];
+    
+    const trackingCurrentTitle = document.getElementById('trackingCurrentTitle');
+    if (trackingCurrentTitle) trackingCurrentTitle.textContent = i18n.trackingCurrentTitle[currentLang];
+    
+    const trackingNoActiveText = document.getElementById('trackingNoActiveText');
+    if (trackingNoActiveText) trackingNoActiveText.textContent = i18n.trackingNoActive[currentLang];
+    
+    const trackingRankingTitle = document.getElementById('trackingRankingTitle');
+    if (trackingRankingTitle) trackingRankingTitle.textContent = i18n.trackingRankingTitle[currentLang];
+    
+    const trackingRangeToday = document.getElementById('trackingRangeToday');
+    if (trackingRangeToday) trackingRangeToday.textContent = i18n.trackingRangeToday[currentLang];
+    
+    const trackingRangeWeek = document.getElementById('trackingRangeWeek');
+    if (trackingRangeWeek) trackingRangeWeek.textContent = i18n.trackingRangeWeek[currentLang];
+    
+    const trackingRangeMonth = document.getElementById('trackingRangeMonth');
+    if (trackingRangeMonth) trackingRangeMonth.textContent = i18n.trackingRangeMonth[currentLang];
+    
+    const trackingRangeAll = document.getElementById('trackingRangeAll');
+    if (trackingRangeAll) trackingRangeAll.textContent = i18n.trackingRangeAll[currentLang];
+    
+    const trackingNoDataText = document.getElementById('trackingNoDataText');
+    if (trackingNoDataText) trackingNoDataText.textContent = i18n.trackingNoData[currentLang];
+
+    // 书签推荐翻译
+    const recommendViewTitle = document.getElementById('recommendViewTitle');
+    if (recommendViewTitle) recommendViewTitle.textContent = i18n.recommendViewTitle[currentLang];
+    
+    const recommendHelpBtn = document.getElementById('recommendHelpBtn');
+    if (recommendHelpBtn) recommendHelpBtn.title = i18n.recommendHelpTooltip[currentLang];
+    
+    const legendFreshness = document.getElementById('legendFreshness');
+    if (legendFreshness) legendFreshness.textContent = i18n.legendFreshness[currentLang];
+    
+    const legendColdness = document.getElementById('legendColdness');
+    if (legendColdness) legendColdness.textContent = i18n.legendColdness[currentLang];
+    
+    const legendShallowRead = document.getElementById('legendShallowRead');
+    if (legendShallowRead) legendShallowRead.textContent = i18n.legendShallowRead[currentLang];
+    
+    const legendForgetting = document.getElementById('legendForgetting');
+    if (legendForgetting) legendForgetting.textContent = i18n.legendForgetting[currentLang];
+    
+    // 公式阈值后缀（需要特殊处理，保留输入框）
+    document.querySelectorAll('.threshold-item').forEach((item, index) => {
+        const input = item.querySelector('input');
+        if (input) {
+            const keys = ['thresholdFreshnessSuffix', 'thresholdColdnessSuffix', 'thresholdShallowReadSuffix', 'thresholdForgettingSuffix'];
+            const prefixes = [
+                { zh: 'F = 1 - 添加天数/', en: 'F = 1 - days added/' },
+                { zh: 'C = 1 - 点击数/', en: 'C = 1 - clicks/' },
+                { zh: 'S = 1 - 活跃时间/', en: 'S = 1 - active time/' },
+                { zh: 'D = 未访问天数/', en: 'D = unvisited days/' }
+            ];
+            const prefix = currentLang === 'en' ? prefixes[index].en : prefixes[index].zh;
+            const suffix = i18n[keys[index]][currentLang];
+            // 重建内容
+            const inputValue = input.value;
+            const inputId = input.id;
+            const inputClass = input.className;
+            item.innerHTML = `${prefix}<input type="text" class="${inputClass}" id="${inputId}" value="${inputValue}">${suffix}`;
+        }
+    });
+    
+    // 预设模式按钮
+    document.querySelectorAll('.preset-btn').forEach(btn => {
+        const mode = btn.dataset.mode;
+        const span = btn.querySelector('span');
+        if (mode === 'archaeology' && span) {
+            span.textContent = i18n.presetArchaeology[currentLang];
+            btn.title = i18n.presetArchaeologyTip[currentLang];
+        } else if (mode === 'consolidate' && span) {
+            span.textContent = i18n.presetConsolidate[currentLang];
+            btn.title = i18n.presetConsolidateTip[currentLang];
+        } else if (mode === 'wander' && span) {
+            span.textContent = i18n.presetWander[currentLang];
+            btn.title = i18n.presetWanderTip[currentLang];
+        }
+    });
+    
+    const resetFormulaText = document.getElementById('resetFormulaText');
+    if (resetFormulaText) resetFormulaText.textContent = i18n.resetFormulaText[currentLang];
+    
+    const cardRefreshText = document.getElementById('cardRefreshText');
+    if (cardRefreshText) cardRefreshText.textContent = i18n.cardRefreshText[currentLang];
+    
+    const heatmapTitle = document.getElementById('heatmapTitle');
+    if (heatmapTitle) heatmapTitle.textContent = i18n.heatmapTitle[currentLang];
+    
+    const heatmapLoadingText = document.getElementById('heatmapLoadingText');
+    if (heatmapLoadingText) heatmapLoadingText.textContent = i18n.heatmapLoading[currentLang];
 
     // 更新语言切换按钮
     document.querySelector('#langToggle .lang-text').textContent = currentLang === 'zh_CN' ? 'EN' : '中';
@@ -3188,6 +3462,11 @@ let canvasScrollThumbnailBound = false;
 let canvasScrollThumbnailTimer = null;
 
 function renderCurrentView() {
+    // 如果离开书签记录视图，停止时间捕捉实时刷新定时器
+    if (currentView !== 'additions' && trackingRefreshInterval) {
+        stopTrackingRefresh();
+    }
+    
     // 控制缩放控制器的显示/隐藏
     const zoomIndicator = document.getElementById('canvasZoomIndicator');
     if (zoomIndicator) {
@@ -3271,8 +3550,1012 @@ function renderCurrentView() {
                 }, { passive: true });
             }
             break;
+        case 'recommend':
+            renderRecommendView();
+            break;
     }
 }
+
+// =============================================================================
+// 书签推荐视图
+// =============================================================================
+
+let recommendViewInitialized = false;
+
+function renderRecommendView() {
+    console.log('[书签推荐] 渲染推荐视图');
+    
+    // 只初始化一次事件监听器
+    if (!recommendViewInitialized) {
+        // 初始化可折叠区域
+        initCollapsibleSections();
+        
+        // 初始化公式输入框事件
+        initFormulaInputs();
+        
+        // 初始化卡片交互
+        initCardInteractions();
+        
+        // 初始化追踪开关
+        initTrackingToggle();
+        
+        recommendViewInitialized = true;
+    }
+    
+    // 每次进入视图时加载数据（loadRecommendData内部已包含loadHeatmapData等）
+    loadRecommendData();
+}
+
+function initCollapsibleSections() {
+    document.querySelectorAll('.collapsible .section-header').forEach(header => {
+        header.addEventListener('click', (e) => {
+            // 避免点击追踪开关时触发折叠
+            if (e.target.closest('.tracking-toggle')) return;
+            const section = header.closest('.collapsible');
+            section.classList.toggle('collapsed');
+        });
+    });
+}
+
+function initFormulaInputs() {
+    // 权重输入框
+    const weightInputs = document.querySelectorAll('.formula-weight');
+    weightInputs.forEach(input => {
+        input.addEventListener('click', () => {
+            input.removeAttribute('readonly');
+            input.select();
+        });
+        input.addEventListener('blur', () => {
+            input.setAttribute('readonly', 'readonly');
+            normalizeWeights();
+        });
+        input.addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') {
+                input.blur();
+            }
+        });
+    });
+    
+    // 阈值输入框
+    const thresholdInputs = document.querySelectorAll('.threshold-value');
+    thresholdInputs.forEach(input => {
+        input.addEventListener('blur', () => {
+            saveFormulaConfig();
+        });
+        input.addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') {
+                input.blur();
+            }
+        });
+    });
+    
+    // 恢复默认按钮
+    const resetBtn = document.getElementById('resetFormulaBtn');
+    if (resetBtn) {
+        resetBtn.addEventListener('click', resetFormulaToDefault);
+    }
+    
+    // 加载保存的配置
+    loadFormulaConfig();
+}
+
+function normalizeWeights() {
+    const w1 = parseFloat(document.getElementById('weightFreshness').value) || 0;
+    const w2 = parseFloat(document.getElementById('weightColdness').value) || 0;
+    const w3 = parseFloat(document.getElementById('weightShallowRead').value) || 0;
+    const w4 = parseFloat(document.getElementById('weightForgetting').value) || 0;
+    
+    const total = w1 + w2 + w3 + w4;
+    if (total > 0 && Math.abs(total - 1) > 0.01) {
+        document.getElementById('weightFreshness').value = (w1 / total).toFixed(2);
+        document.getElementById('weightColdness').value = (w2 / total).toFixed(2);
+        document.getElementById('weightShallowRead').value = (w3 / total).toFixed(2);
+        document.getElementById('weightForgetting').value = (w4 / total).toFixed(2);
+    }
+    saveFormulaConfig();
+}
+
+function resetFormulaToDefault() {
+    document.getElementById('weightFreshness').value = '0.15';
+    document.getElementById('weightColdness').value = '0.25';
+    document.getElementById('weightShallowRead').value = '0.30';
+    document.getElementById('weightForgetting').value = '0.25';
+    
+    document.getElementById('thresholdFreshness').value = '30';
+    document.getElementById('thresholdColdness').value = '10';
+    document.getElementById('thresholdShallowRead').value = '5';
+    document.getElementById('thresholdForgetting').value = '14';
+    
+    saveFormulaConfig();
+}
+
+function saveFormulaConfig() {
+    const config = {
+        weights: {
+            freshness: parseFloat(document.getElementById('weightFreshness').value) || 0.15,
+            coldness: parseFloat(document.getElementById('weightColdness').value) || 0.25,
+            shallowRead: parseFloat(document.getElementById('weightShallowRead').value) || 0.30,
+            forgetting: parseFloat(document.getElementById('weightForgetting').value) || 0.25
+        },
+        thresholds: {
+            freshness: parseInt(document.getElementById('thresholdFreshness').value) || 30,
+            coldness: parseInt(document.getElementById('thresholdColdness').value) || 10,
+            shallowRead: parseInt(document.getElementById('thresholdShallowRead').value) || 5,
+            forgetting: parseInt(document.getElementById('thresholdForgetting').value) || 14
+        }
+    };
+    browserAPI.storage.local.set({ recommendFormulaConfig: config });
+    console.log('[书签推荐] 保存公式配置:', config);
+}
+
+function loadFormulaConfig() {
+    browserAPI.storage.local.get(['recommendFormulaConfig'], (result) => {
+        if (result.recommendFormulaConfig) {
+            const config = result.recommendFormulaConfig;
+            document.getElementById('weightFreshness').value = config.weights.freshness;
+            document.getElementById('weightColdness').value = config.weights.coldness;
+            document.getElementById('weightShallowRead').value = config.weights.shallowRead;
+            document.getElementById('weightForgetting').value = config.weights.forgetting;
+            
+            document.getElementById('thresholdFreshness').value = config.thresholds.freshness;
+            document.getElementById('thresholdColdness').value = config.thresholds.coldness;
+            document.getElementById('thresholdShallowRead').value = config.thresholds.shallowRead;
+            document.getElementById('thresholdForgetting').value = config.thresholds.forgetting;
+            console.log('[书签推荐] 加载公式配置:', config);
+        }
+    });
+}
+
+// 当前推荐模式
+let currentRecommendMode = 'wander'; // 默认漫游模式
+
+// 预设模式配置
+const presetModes = {
+    // 考古模式：挖掘尘封已久的书签
+    archaeology: {
+        weights: {
+            freshness: 0.05,      // 新鲜度权重低
+            coldness: 0.35,       // 冷门度高权重
+            shallowRead: 0.20,    // 浅读权重中等
+            forgetting: 0.40      // 遗忘因子最高
+        },
+        thresholds: {
+            freshness: 90,        // 90天内算新
+            coldness: 3,          // 3次以下算冷门
+            shallowRead: 3,       // 3分钟以下算浅读
+            forgetting: 30        // 30天未访问算遗忘
+        }
+    },
+    // 巩固模式：温习近期重要内容
+    consolidate: {
+        weights: {
+            freshness: 0.40,      // 新鲜度高权重
+            coldness: 0.10,       // 冷门度低（热门优先）
+            shallowRead: 0.30,    // 浅读权重
+            forgetting: 0.20      // 遗忘权重低
+        },
+        thresholds: {
+            freshness: 14,        // 14天内算新
+            coldness: 20,         // 20次以下算冷门
+            shallowRead: 10,      // 10分钟以下算浅读
+            forgetting: 7         // 7天未访问算遗忘
+        }
+    },
+    // 漫游模式：随机探索（默认模式，偏向巩固+少量考古）
+    wander: {
+        weights: {
+            freshness: 0.35,
+            coldness: 0.15,
+            shallowRead: 0.25,
+            forgetting: 0.25
+        },
+        thresholds: {
+            freshness: 21,
+            coldness: 10,
+            shallowRead: 5,
+            forgetting: 14
+        }
+    }
+};
+
+// =============================================================================
+// 推荐卡片专用：弹窗管理
+// =============================================================================
+
+// 预加载 favicon（使用现有的 FaviconCache 系统）
+function preloadHighResFavicons(urls) {
+    urls.forEach(url => {
+        if (url) FaviconCache.fetch(url);
+    });
+}
+
+// 设置 favicon（使用现有的 FaviconCache 系统）
+function setHighResFavicon(imgElement, url) {
+    if (!url) {
+        imgElement.src = fallbackIcon;
+        return;
+    }
+    
+    // 使用现有的 getFaviconUrl（会触发异步加载）
+    imgElement.src = getFaviconUrl(url);
+    
+    // 异步获取更高质量版本
+    getFaviconUrlAsync(url).then(dataUrl => {
+        if (dataUrl && dataUrl !== fallbackIcon) {
+            imgElement.src = dataUrl;
+        }
+    });
+}
+
+// 推荐卡片专用窗口
+let recommendWindowId = null;
+
+// 在推荐窗口中打开链接
+async function openInRecommendWindow(url) {
+    if (!url) return;
+    
+    try {
+        // 检查窗口是否存在
+        if (recommendWindowId) {
+            try {
+                await browserAPI.windows.get(recommendWindowId);
+                // 窗口存在，在其中打开新标签页
+                await browserAPI.tabs.create({
+                    windowId: recommendWindowId,
+                    url: url,
+                    active: true
+                });
+                await browserAPI.windows.update(recommendWindowId, { focused: true });
+                return;
+            } catch (e) {
+                // 窗口已关闭
+                recommendWindowId = null;
+            }
+        }
+        
+        // 创建新窗口
+        const width = Math.min(1200, Math.round(screen.availWidth * 0.75));
+        const height = Math.min(800, Math.round(screen.availHeight * 0.8));
+        const left = Math.round((screen.availWidth - width) / 2);
+        const top = Math.round((screen.availHeight - height) / 2);
+        
+        const win = await browserAPI.windows.create({
+            url: url,
+            type: 'normal',
+            width, height, left, top,
+            focused: true
+        });
+        recommendWindowId = win.id;
+        
+    } catch (error) {
+        console.error('[推荐卡片] 打开窗口失败:', error);
+        browserAPI.tabs.create({ url });
+    }
+}
+
+function initCardInteractions() {
+    // 刷新按钮
+    document.getElementById('cardRefreshBtn')?.addEventListener('click', (e) => {
+        e.stopPropagation();
+        refreshRecommendCards();
+    });
+    
+    // 预设模式按钮
+    document.querySelectorAll('.preset-btn').forEach(btn => {
+        btn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            const mode = btn.dataset.mode;
+            applyPresetMode(mode);
+        });
+    });
+}
+
+// 应用预设模式
+function applyPresetMode(mode) {
+    if (!presetModes[mode]) return;
+    
+    currentRecommendMode = mode;
+    const preset = presetModes[mode];
+    
+    // 更新按钮状态
+    document.querySelectorAll('.preset-btn').forEach(btn => {
+        btn.classList.toggle('active', btn.dataset.mode === mode);
+    });
+    
+    // 更新权重输入框
+    document.getElementById('weightFreshness').value = preset.weights.freshness;
+    document.getElementById('weightColdness').value = preset.weights.coldness;
+    document.getElementById('weightShallowRead').value = preset.weights.shallowRead;
+    document.getElementById('weightForgetting').value = preset.weights.forgetting;
+    
+    // 更新阈值输入框
+    document.getElementById('thresholdFreshness').value = preset.thresholds.freshness;
+    document.getElementById('thresholdColdness').value = preset.thresholds.coldness;
+    document.getElementById('thresholdShallowRead').value = preset.thresholds.shallowRead;
+    document.getElementById('thresholdForgetting').value = preset.thresholds.forgetting;
+    
+    // 保存配置
+    saveFormulaConfig();
+    
+    // 刷新推荐卡片
+    refreshRecommendCards();
+    
+    console.log(`[书签推荐] 切换到${mode === 'archaeology' ? '考古' : mode === 'consolidate' ? '巩固' : '漫游'}模式`);
+}
+
+function initTrackingToggle() {
+    const toggleBtn = document.getElementById('trackingToggleBtn');
+    if (toggleBtn) {
+        toggleBtn.addEventListener('click', async (e) => {
+            e.stopPropagation();
+            toggleBtn.classList.toggle('active');
+            const isActive = toggleBtn.classList.contains('active');
+            document.getElementById('trackingToggleText').textContent = isActive ? 
+                i18n.trackingToggleOn[currentLang] : 
+                i18n.trackingToggleOff[currentLang];
+            
+            // 更新公式中的S项
+            const termS = document.getElementById('termShallowRead');
+            if (termS) {
+                if (isActive) {
+                    termS.classList.remove('disabled');
+                } else {
+                    termS.classList.add('disabled');
+                }
+            }
+            
+            // 通知 background.js 更新追踪状态
+            try {
+                await browserAPI.runtime.sendMessage({ 
+                    action: 'setTrackingEnabled', 
+                    enabled: isActive 
+                });
+            } catch (error) {
+                console.warn('[书签推荐] 设置追踪状态失败:', error);
+            }
+        });
+        
+        // 加载保存的状态
+        browserAPI.runtime.sendMessage({ action: 'isTrackingEnabled' }, (response) => {
+            if (response && response.success) {
+                const isActive = response.enabled;
+                if (isActive) {
+                    toggleBtn.classList.add('active');
+                    document.getElementById('trackingToggleText').textContent = 
+                        i18n.trackingToggleOn[currentLang];
+                } else {
+                    toggleBtn.classList.remove('active');
+                    document.getElementById('trackingToggleText').textContent = 
+                        i18n.trackingToggleOff[currentLang];
+                    document.getElementById('termShallowRead')?.classList.add('disabled');
+                }
+            }
+        });
+    }
+    
+    // 时间范围选择器
+    const rangeSelect = document.getElementById('trackingRankingRange');
+    if (rangeSelect) {
+        rangeSelect.addEventListener('change', () => {
+            loadActiveTimeRanking();
+        });
+    }
+    
+    // 清除记录按钮
+    const clearBtn = document.getElementById('clearTrackingBtn');
+    if (clearBtn) {
+        clearBtn.addEventListener('click', async (e) => {
+            e.stopPropagation();
+            
+            if (!confirm(i18n.trackingClearConfirm[currentLang])) return;
+            
+            try {
+                const response = await browserAPI.runtime.sendMessage({ 
+                    action: 'clearAllTrackingSessions' 
+                });
+                
+                if (response && response.success) {
+                    // 刷新显示
+                    await loadCurrentTrackingSessions();
+                    await loadActiveTimeRanking();
+                    console.log('[时间捕捉]', i18n.trackingCleared[currentLang]);
+                }
+            } catch (error) {
+                console.error('[时间捕捉] 清除记录失败:', error);
+            }
+        });
+    }
+}
+
+// 推荐卡片数据
+let recommendCards = [];
+let trackingRefreshInterval = null;
+const TRACKING_REFRESH_INTERVAL = 3000; // 3秒刷新一次
+
+async function loadRecommendData() {
+    console.log('[书签推荐] 加载推荐数据');
+    
+    // 自动刷新推荐卡片
+    await refreshRecommendCards();
+    
+    // 加载热力图
+    await loadHeatmapData();
+}
+
+// 启动时间捕捉实时刷新
+function startTrackingRefresh() {
+    // 清除已有定时器
+    if (trackingRefreshInterval) {
+        clearInterval(trackingRefreshInterval);
+    }
+    
+    // 只在书签记录视图的时间捕捉标签中刷新
+    trackingRefreshInterval = setInterval(() => {
+        if (currentView === 'additions') {
+            const trackingPanel = document.getElementById('additionsTrackingPanel');
+            if (trackingPanel && trackingPanel.classList.contains('active')) {
+                loadCurrentTrackingSessions();
+            }
+        }
+    }, TRACKING_REFRESH_INTERVAL);
+}
+
+// 停止实时刷新
+function stopTrackingRefresh() {
+    if (trackingRefreshInterval) {
+        clearInterval(trackingRefreshInterval);
+        trackingRefreshInterval = null;
+    }
+}
+
+// 刷新推荐卡片（三卡并排）
+// 获取已翻过的书签ID列表
+async function getFlippedBookmarks() {
+    return new Promise((resolve) => {
+        browserAPI.storage.local.get(['flippedBookmarks'], (result) => {
+            resolve(result.flippedBookmarks || []);
+        });
+    });
+}
+
+// 标记书签为已翻过，并记录翻牌时间
+async function markBookmarkFlipped(bookmarkId) {
+    console.log('[翻牌] 标记书签:', bookmarkId);
+    
+    const flipped = await getFlippedBookmarks();
+    if (!flipped.includes(bookmarkId)) {
+        flipped.push(bookmarkId);
+        await browserAPI.storage.local.set({ flippedBookmarks: flipped });
+        console.log('[翻牌] flippedBookmarks 已更新:', flipped.length, '个');
+    }
+    
+    // 记录翻牌时间（用于热力图）
+    const result = await new Promise(resolve => {
+        browserAPI.storage.local.get(['flipHistory'], resolve);
+    });
+    const flipHistory = result.flipHistory || [];
+    flipHistory.push({
+        bookmarkId,
+        timestamp: Date.now()
+    });
+    await browserAPI.storage.local.set({ flipHistory });
+    console.log('[翻牌] flipHistory 已更新:', flipHistory.length, '条记录');
+}
+
+async function refreshRecommendCards() {
+    const cardsRow = document.getElementById('cardsRow');
+    if (!cardsRow) return;
+    
+    const cards = cardsRow.querySelectorAll('.recommend-card');
+    
+    // 清除所有卡片的 flipped 状态
+    cards.forEach(card => card.classList.remove('flipped'));
+    
+    try {
+        // 获取已翻过的书签
+        const flippedBookmarks = await getFlippedBookmarks();
+        const flippedSet = new Set(flippedBookmarks);
+        
+        // 获取所有书签
+        const bookmarks = await new Promise((resolve) => {
+            browserAPI.bookmarks.getTree((tree) => {
+                const allBookmarks = [];
+                function traverse(nodes) {
+                    for (const node of nodes) {
+                        if (node.url) {
+                            allBookmarks.push(node);
+                        }
+                        if (node.children) {
+                            traverse(node.children);
+                        }
+                    }
+                }
+                traverse(tree);
+                resolve(allBookmarks);
+            });
+        });
+        
+        // 过滤掉已翻过的书签
+        const availableBookmarks = bookmarks.filter(b => !flippedSet.has(b.id));
+        
+        if (availableBookmarks.length === 0) {
+            cards.forEach((card) => {
+                card.classList.add('empty');
+                card.querySelector('.card-title').textContent = 
+                    currentLang === 'en' ? 'All bookmarks reviewed!' : '所有书签都已翻阅！';
+                card.querySelector('.card-priority').textContent = '';
+                card.onclick = null;
+            });
+            return;
+        }
+        
+        // 随机选择3个不重复的书签
+        const shuffled = [...availableBookmarks].sort(() => Math.random() - 0.5);
+        recommendCards = shuffled.slice(0, 3);
+        
+        // 预加载当前3个 + 下一批6个的 favicon（并行）
+        const urlsToPreload = shuffled.slice(0, 9).map(b => b.url).filter(Boolean);
+        preloadHighResFavicons(urlsToPreload);
+        
+        // 更新卡片显示
+        cards.forEach((card, index) => {
+            if (index < recommendCards.length) {
+                const bookmark = recommendCards[index];
+                card.classList.remove('empty');
+                card.querySelector('.card-title').textContent = bookmark.title || bookmark.url;
+                card.querySelector('.card-priority').textContent = `P = ${(Math.random() * 0.5 + 0.5).toFixed(2)}`;
+                card.dataset.url = bookmark.url;
+                card.dataset.bookmarkId = bookmark.id;
+                
+                // 设置 favicon（透明背景，与浏览器一致）
+                const favicon = card.querySelector('.card-favicon');
+                if (favicon && bookmark.url) {
+                    setHighResFavicon(favicon, bookmark.url);
+                }
+                
+                // 点击：打开链接 + 标记为已翻过
+                card.onclick = async () => {
+                    if (bookmark.url) {
+                        // 标记已翻过
+                        await markBookmarkFlipped(bookmark.id);
+                        // 在推荐窗口中打开
+                        await openInRecommendWindow(bookmark.url);
+                        // 视觉反馈：标记卡片已翻
+                        card.classList.add('flipped');
+                    }
+                };
+            } else {
+                card.classList.add('empty');
+                card.querySelector('.card-title').textContent = '--';
+                card.querySelector('.card-priority').textContent = 'P = --';
+                const favicon = card.querySelector('.card-favicon');
+                if (favicon) {
+                    favicon.src = fallbackIcon;
+                }
+                card.onclick = null;
+            }
+        });
+        
+    } catch (error) {
+        console.error('[书签推荐] 刷新卡片失败:', error);
+        cards.forEach(card => {
+            card.classList.add('empty');
+            card.querySelector('.card-title').textContent = 
+                currentLang === 'en' ? 'Load failed' : '加载失败';
+        });
+    }
+}
+
+async function loadCurrentTrackingSessions() {
+    const trackingCurrentList = document.getElementById('trackingCurrentList');
+    const trackingCurrentCount = document.getElementById('trackingCurrentCount');
+    if (!trackingCurrentList) return;
+    
+    try {
+        const response = await browserAPI.runtime.sendMessage({ 
+            action: 'getCurrentActiveSessions' 
+        });
+        
+        if (response && response.success && response.sessions) {
+            const sessions = response.sessions;
+            
+            // 更新计数
+            if (trackingCurrentCount) {
+                trackingCurrentCount.textContent = sessions.length;
+            }
+            
+            if (sessions.length === 0) {
+                trackingCurrentList.innerHTML = `
+                    <div class="tracking-empty">
+                        ${i18n.trackingNoActive[currentLang]}
+                    </div>
+                `;
+                return;
+            }
+            
+            // 截断标题函数
+            const truncateTitle = (title, maxLen = 45) => {
+                if (!title) return '';
+                return title.length > maxLen ? title.substring(0, maxLen) + '...' : title;
+            };
+            
+            trackingCurrentList.innerHTML = sessions.map(session => {
+                const activeTime = formatActiveTime(session.activeMs);
+                const activeRatio = Math.round(session.activeRatio * 100);
+                const stateIcon = session.state === 'active' ? '🟢' : '🟡';
+                const idleTag = session.isIdle ? 
+                    `<span class="idle-tag">⚠${i18n.trackingIdle[currentLang]}</span>` : '';
+                const displayTitle = truncateTitle(session.title || session.url);
+                const faviconUrl = getFaviconUrl(session.url);
+                
+                return `
+                    <div class="tracking-item" data-tab-id="${session.tabId}">
+                        <span class="tracking-state">${stateIcon}</span>
+                        <img class="tracking-favicon" src="${faviconUrl}" alt="" onerror="this.src='${fallbackIcon}'">
+                        <span class="tracking-title" title="${escapeHtml(session.title || session.url)}">${escapeHtml(displayTitle)}</span>
+                        <span class="tracking-time">${activeTime}</span>
+                        <span class="tracking-pauses">${session.pauseCount}${currentLang === 'en' ? 'x' : '次'}</span>
+                        <span class="tracking-ratio">${activeRatio}%</span>
+                        ${idleTag}
+                    </div>
+                `;
+            }).join('');
+            
+            // 点击切换到对应标签页
+            trackingCurrentList.querySelectorAll('.tracking-item').forEach(item => {
+                item.addEventListener('click', () => {
+                    const tabId = parseInt(item.dataset.tabId);
+                    if (tabId) {
+                        browserAPI.tabs.update(tabId, { active: true });
+                    }
+                });
+            });
+        }
+    } catch (error) {
+        console.warn('[书签推荐] 加载追踪会话失败:', error);
+    }
+}
+
+// HTML 转义函数
+function escapeHtml(str) {
+    if (!str) return '';
+    return str.replace(/&/g, '&amp;')
+              .replace(/</g, '&lt;')
+              .replace(/>/g, '&gt;')
+              .replace(/"/g, '&quot;')
+              .replace(/'/g, '&#039;');
+}
+
+// =============================================================================
+// 复习热力图 (GitHub 风格，当前月份在左)
+// =============================================================================
+
+async function loadHeatmapData() {
+    const container = document.getElementById('heatmapContainer');
+    if (!container) return;
+    
+    console.log('[热力图] 开始加载数据...');
+    
+    try {
+        // 从 storage 获取翻牌历史记录
+        const result = await new Promise(resolve => {
+            browserAPI.storage.local.get(['flipHistory'], resolve);
+        });
+        const flipHistory = result.flipHistory || [];
+        console.log('[热力图] flipHistory 数据:', flipHistory.length, '条记录', flipHistory);
+        
+        // 按日期统计翻牌次数
+        const dailyCounts = new Map();
+        const today = new Date();
+        today.setHours(0, 0, 0, 0);
+        
+        // 初始化最近 52 周 + 本周的天数
+        const daysToShow = 52 * 7 + today.getDay();
+        for (let i = daysToShow - 1; i >= 0; i--) {
+            const date = new Date(today);
+            date.setDate(date.getDate() - i);
+            const key = date.toISOString().split('T')[0];
+            dailyCounts.set(key, 0);
+        }
+        
+        // 统计每天的翻牌次数
+        for (const flip of flipHistory) {
+            if (!flip.timestamp) continue;
+            const date = new Date(flip.timestamp);
+            const key = date.toISOString().split('T')[0];
+            if (dailyCounts.has(key)) {
+                dailyCounts.set(key, (dailyCounts.get(key) || 0) + 1);
+            }
+        }
+        
+        // 渲染热力图（反转顺序，当前月份在左）
+        renderHeatmap(container, dailyCounts);
+        
+    } catch (error) {
+        console.error('[热力图] 加载失败:', error);
+        container.innerHTML = `<div class="empty-state"><div class="empty-state-title">${
+            currentLang === 'en' ? 'Failed to load heatmap' : '热力图加载失败'
+        }</div></div>`;
+    }
+}
+
+function renderHeatmap(container, dailyCounts) {
+    const isEn = currentLang === 'en';
+    const dayNames = isEn ? ['', 'Mon', '', 'Wed', '', 'Fri', ''] :
+                           ['', '一', '', '三', '', '五', ''];
+    const monthNames = isEn ? 
+        ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'] :
+        ['1月', '2月', '3月', '4月', '5月', '6月', '7月', '8月', '9月', '10月', '11月', '12月'];
+    
+    // 找出最大值用于计算颜色深度
+    const counts = Array.from(dailyCounts.values());
+    const maxCount = Math.max(...counts, 1);
+    const totalReviews = counts.reduce((a, b) => a + b, 0);
+    
+    // 按周分组 (周日在顶部)
+    const weeks = [];
+    let currentWeek = [];
+    const entries = Array.from(dailyCounts.entries()).sort();
+    
+    // 跟踪月份变化
+    const monthLabels = [];
+    let lastMonth = -1;
+    let weekIndex = 0;
+    
+    for (const [dateStr, count] of entries) {
+        const date = new Date(dateStr);
+        const dayOfWeek = date.getDay(); // 周日为0
+        const month = date.getMonth();
+        
+        if (currentWeek.length === 0 && dayOfWeek > 0) {
+            // 填充周开始的空白
+            for (let i = 0; i < dayOfWeek; i++) {
+                currentWeek.push({ empty: true });
+            }
+        }
+        
+        // 检测月份变化
+        if (month !== lastMonth) {
+            monthLabels.push({ weekIndex, month });
+            lastMonth = month;
+        }
+        
+        currentWeek.push({ date: dateStr, count, dayOfWeek });
+        
+        if (dayOfWeek === 6) {
+            weeks.push(currentWeek);
+            currentWeek = [];
+            weekIndex++;
+        }
+    }
+    
+    if (currentWeek.length > 0) {
+        // 填充周末的空白
+        while (currentWeek.length < 7) {
+            currentWeek.push({ empty: true });
+        }
+        weeks.push(currentWeek);
+    }
+    
+    // 反转周顺序（当前月份在左）
+    weeks.reverse();
+    monthLabels.reverse();
+    
+    // 计算月份标签位置（反转后重新计算）
+    const cellWidth = 14; // 11px cell + 3px gap
+    
+    // 生成月份标签 HTML（反转顺序）
+    let monthsHtml = '';
+    for (let i = 0; i < monthLabels.length; i++) {
+        const { month } = monthLabels[i];
+        const currentWeekIdx = monthLabels.length - 1 - i;
+        const nextIdx = i < monthLabels.length - 1 ? monthLabels.length - 2 - i : -1;
+        const nextWeekIdx = nextIdx >= 0 ? monthLabels[monthLabels.length - 1 - nextIdx].weekIndex : 0;
+        const width = (monthLabels[i].weekIndex - (nextIdx >= 0 ? monthLabels[i + 1].weekIndex : 0)) * cellWidth;
+        if (width > 20) {
+            monthsHtml += `<span class="heatmap-month-label" style="width: ${Math.abs(width)}px">${monthNames[month]}</span>`;
+        } else {
+            monthsHtml += `<span class="heatmap-month-label" style="width: ${Math.abs(width)}px"></span>`;
+        }
+    }
+    
+    // 生成 HTML
+    let html = `
+        <div class="heatmap-wrapper">
+            <div class="heatmap-months">${monthsHtml}</div>
+            <div class="heatmap-main">
+                <div class="heatmap-days">
+                    ${dayNames.map(d => `<span class="heatmap-day-label">${d}</span>`).join('')}
+                </div>
+                <div class="heatmap-grid">
+    `;
+    
+    for (const week of weeks) {
+        html += '<div class="heatmap-week">';
+        for (const day of week) {
+            if (day.empty) {
+                html += '<div class="heatmap-cell empty"></div>';
+            } else {
+                const level = day.count === 0 ? 0 : 
+                              day.count <= maxCount * 0.25 ? 1 :
+                              day.count <= maxCount * 0.5 ? 2 :
+                              day.count <= maxCount * 0.75 ? 3 : 4;
+                const dateObj = new Date(day.date);
+                const formattedDate = isEn ? 
+                    `${monthNames[dateObj.getMonth()]} ${dateObj.getDate()}, ${dateObj.getFullYear()}` :
+                    `${dateObj.getFullYear()}年${dateObj.getMonth() + 1}月${dateObj.getDate()}日`;
+                const tooltip = `${day.count} ${isEn ? 'reviews on' : '次复习于'} ${formattedDate}`;
+                html += `<div class="heatmap-cell level-${level}"><span class="heatmap-tooltip">${tooltip}</span></div>`;
+            }
+        }
+        html += '</div>';
+    }
+    
+    html += `
+                </div>
+            </div>
+            <div class="heatmap-footer">
+                <span class="heatmap-stats">${totalReviews} ${isEn ? 'reviews in the last year' : '次复习（过去一年）'}</span>
+                <div class="heatmap-legend">
+                    <span>${isEn ? 'Less' : '少'}</span>
+                    <div class="heatmap-cell level-0"></div>
+                    <div class="heatmap-cell level-1"></div>
+                    <div class="heatmap-cell level-2"></div>
+                    <div class="heatmap-cell level-3"></div>
+                    <div class="heatmap-cell level-4"></div>
+                    <span>${isEn ? 'More' : '多'}</span>
+                </div>
+            </div>
+        </div>
+    `;
+    
+    container.innerHTML = html;
+}
+
+// =============================================================================
+// 活跃时间排行
+// =============================================================================
+
+async function loadActiveTimeRanking() {
+    const container = document.getElementById('trackingRankingList');
+    if (!container) return;
+    
+    console.log('[时间排行] 开始加载...');
+    
+    try {
+        // 获取时间范围
+        const rangeSelect = document.getElementById('trackingRankingRange');
+        const range = rangeSelect ? rangeSelect.value : 'week';
+        console.log('[时间排行] 时间范围:', range);
+        
+        const now = Date.now();
+        let startTime;
+        switch (range) {
+            case 'today':
+                startTime = new Date().setHours(0, 0, 0, 0);
+                break;
+            case 'week':
+                startTime = now - 7 * 24 * 60 * 60 * 1000;
+                break;
+            case 'month':
+                startTime = now - 30 * 24 * 60 * 60 * 1000;
+                break;
+            default:
+                startTime = 0;
+        }
+        
+        // 从 background.js 获取活跃会话数据
+        console.log('[时间排行] 发送请求 getActiveSessions...');
+        const response = await browserAPI.runtime.sendMessage({
+            action: 'getActiveSessions',
+            startTime,
+            endTime: now
+        });
+        console.log('[时间排行] 响应:', response);
+        
+        if (!response || !response.success || !response.sessions) {
+            console.log('[时间排行] 无数据或请求失败');
+            container.innerHTML = `<div class="tracking-empty">${i18n.trackingNoData[currentLang]}</div>`;
+            return;
+        }
+        
+        console.log('[时间排行] 获取到', response.sessions.length, '条会话记录');
+        
+        // 按 URL 聚合活跃时间
+        const urlStats = new Map();
+        for (const session of response.sessions) {
+            const key = session.url;
+            if (!urlStats.has(key)) {
+                urlStats.set(key, {
+                    url: session.url,
+                    title: session.title,
+                    bookmarkId: session.bookmarkId,
+                    totalActiveMs: 0,
+                    pauseCount: 0,
+                    sessionCount: 0
+                });
+            }
+            const stat = urlStats.get(key);
+            stat.totalActiveMs += session.activeMs || 0;
+            stat.pauseCount += session.pauseCount || 0;
+            stat.sessionCount++;
+        }
+        
+        // 排序
+        const sorted = Array.from(urlStats.values())
+            .sort((a, b) => b.totalActiveMs - a.totalActiveMs)
+            .slice(0, 10);
+        
+        if (sorted.length === 0) {
+            container.innerHTML = `<div class="tracking-empty">${i18n.trackingNoData[currentLang]}</div>`;
+            return;
+        }
+        
+        // 计算最大值用于进度条
+        const maxMs = sorted[0].totalActiveMs;
+        
+        // 截断标题函数
+        const truncateTitle = (title, maxLen = 45) => {
+            if (!title) return '';
+            return title.length > maxLen ? title.substring(0, maxLen) + '...' : title;
+        };
+        
+        // 渲染列表
+        container.innerHTML = sorted.map((item, index) => {
+            const activeTime = formatActiveTime(item.totalActiveMs);
+            const barWidth = maxMs > 0 ? (item.totalActiveMs / maxMs * 100) : 0;
+            const displayTitle = truncateTitle(item.title || item.url);
+            const faviconUrl = getFaviconUrl(item.url);
+            
+            return `
+                <div class="tracking-ranking-item" data-url="${escapeHtml(item.url)}">
+                    <span class="ranking-number">${index + 1}</span>
+                    <img class="ranking-favicon" src="${faviconUrl}" alt="" onerror="this.src='${fallbackIcon}'">
+                    <div class="ranking-info">
+                        <div class="ranking-title" title="${escapeHtml(item.title || item.url)}">${escapeHtml(displayTitle)}</div>
+                        <div class="ranking-bar">
+                            <div class="ranking-bar-fill" style="width: ${barWidth}%"></div>
+                        </div>
+                    </div>
+                    <span class="ranking-time">${activeTime}</span>
+                    <span class="ranking-pauses">${item.pauseCount}${currentLang === 'en' ? 'x' : '次'}</span>
+                </div>
+            `;
+        }).join('');
+        
+        // 点击打开对应URL
+        container.querySelectorAll('.tracking-ranking-item').forEach(item => {
+            item.addEventListener('click', () => {
+                const url = item.dataset.url;
+                if (url) {
+                    browserAPI.tabs.create({ url });
+                }
+            });
+        });
+        
+    } catch (error) {
+        console.error('[活跃时间排行] 加载失败:', error);
+        container.innerHTML = `<div class="tracking-empty">${i18n.trackingLoadFailed[currentLang]}</div>`;
+    }
+}
+
+function formatActiveTime(ms) {
+    if (!ms || ms < 0) return '0s';
+    
+    const seconds = Math.floor(ms / 1000);
+    const minutes = Math.floor(seconds / 60);
+    const hours = Math.floor(minutes / 60);
+    
+    if (hours > 0) {
+        return `${hours}h${minutes % 60}m`;
+    } else if (minutes > 0) {
+        return `${minutes}m${seconds % 60}s`;
+    } else {
+        return `${seconds}s`;
+    }
+}
+
+
 
 // =============================================================================
 // 当前变化视图
@@ -4989,14 +6272,15 @@ function initAdditionsSubTabs() {
     const tabs = document.querySelectorAll('.additions-tab');
     const reviewPanel = document.getElementById('additionsReviewPanel');
     const browsingPanel = document.getElementById('additionsBrowsingPanel');
-    const ankiPanel = document.getElementById('additionsAnkiPanel');
+    const trackingPanel = document.getElementById('additionsTrackingPanel');
 
-    if (!tabs.length || !reviewPanel || !browsingPanel || !ankiPanel) {
+    if (!tabs.length || !reviewPanel || !browsingPanel) {
         console.warn('[initAdditionsSubTabs] 主标签或面板缺失');
         return;
     }
 
     let browsingHistoryInitialized = false;
+    let trackingInitialized = false;
 
     // 标签切换函数
     const switchToTab = (target, shouldSave = true) => {
@@ -5008,7 +6292,7 @@ function initAdditionsSubTabs() {
         // 切换子视图
         reviewPanel.classList.remove('active');
         browsingPanel.classList.remove('active');
-        ankiPanel.classList.remove('active');
+        if (trackingPanel) trackingPanel.classList.remove('active');
 
         if (target === 'review') {
             reviewPanel.classList.add('active');
@@ -5030,8 +6314,17 @@ function initAdditionsSubTabs() {
             } else {
                 refreshBrowsingHistoryData({ forceFull: false, silent: true });
             }
-        } else if (target === 'anki') {
-            ankiPanel.classList.add('active');
+        } else if (target === 'tracking' && trackingPanel) {
+            trackingPanel.classList.add('active');
+            // 初始化时间捕捉（首次点击时）
+            if (!trackingInitialized) {
+                trackingInitialized = true;
+                initTrackingToggle();
+            }
+            // 加载数据
+            loadCurrentTrackingSessions();
+            loadActiveTimeRanking();
+            startTrackingRefresh();
         }
 
         // 保存当前状态
@@ -5049,7 +6342,7 @@ function initAdditionsSubTabs() {
 
     // 恢复上次选中的标签
     const savedTab = localStorage.getItem('additionsActiveTab');
-    if (savedTab && ['review', 'browsing', 'anki'].includes(savedTab)) {
+    if (savedTab && ['review', 'browsing', 'tracking'].includes(savedTab)) {
         switchToTab(savedTab, false);
     }
 

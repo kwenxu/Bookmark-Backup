@@ -39,6 +39,19 @@ import {
     checkMissedBackups as checkMissedBackupsFromTimer
 } from './auto_backup_timer/index.js';
 
+// 导入活跃时间追踪模块
+import {
+    initialize as initializeActiveTimeTracker,
+    setupEventListeners as setupActiveTimeTrackerListeners,
+    setTrackingEnabled,
+    isTrackingEnabled,
+    getCurrentActiveSessions,
+    getSessionsByUrl,
+    getSessionsByTimeRange,
+    getBookmarkActiveTimeStats,
+    rebuildBookmarkCache as rebuildActiveTimeBookmarkCache
+} from './active_time_tracker/index.js';
+
 // 浏览器兼容性处理
 const browserAPI = (function() {
     if (typeof chrome !== 'undefined') {
@@ -1577,6 +1590,84 @@ sendResponse({ success: false, error: '缺少状态文本' });
                         changeDescription: '',
                         error: error.message 
                     });
+                }
+            })();
+            return true;
+        }
+        // =============================================================================
+        // 活跃时间追踪 API
+        // =============================================================================
+        else if (message.action === "setTrackingEnabled") {
+            (async () => {
+                try {
+                    await setTrackingEnabled(message.enabled);
+                    sendResponse({ success: true, enabled: message.enabled });
+                } catch (error) {
+                    sendResponse({ success: false, error: error.message });
+                }
+            })();
+            return true;
+        }
+        else if (message.action === "isTrackingEnabled") {
+            (async () => {
+                try {
+                    const enabled = await isTrackingEnabled();
+                    sendResponse({ success: true, enabled });
+                } catch (error) {
+                    sendResponse({ success: false, error: error.message });
+                }
+            })();
+            return true;
+        }
+        else if (message.action === "getCurrentActiveSessions") {
+            try {
+                const sessions = getCurrentActiveSessions();
+                sendResponse({ success: true, sessions });
+            } catch (error) {
+                sendResponse({ success: false, error: error.message });
+            }
+            return false;
+        }
+        else if (message.action === "getBookmarkActiveTime") {
+            (async () => {
+                try {
+                    const stats = await getBookmarkActiveTimeStats(message.bookmarkId);
+                    sendResponse({ success: true, ...stats });
+                } catch (error) {
+                    sendResponse({ success: false, error: error.message });
+                }
+            })();
+            return true;
+        }
+        else if (message.action === "getActiveSessions") {
+            (async () => {
+                try {
+                    const sessions = await getSessionsByTimeRange(message.startTime, message.endTime);
+                    sendResponse({ success: true, sessions });
+                } catch (error) {
+                    sendResponse({ success: false, error: error.message });
+                }
+            })();
+            return true;
+        }
+        else if (message.action === "getActiveSessionsByUrl") {
+            (async () => {
+                try {
+                    const sessions = await getSessionsByUrl(message.url, message.startTime, message.endTime);
+                    sendResponse({ success: true, sessions });
+                } catch (error) {
+                    sendResponse({ success: false, error: error.message });
+                }
+            })();
+            return true;
+        }
+        else if (message.action === "clearAllTrackingSessions") {
+            (async () => {
+                try {
+                    await clearAllSessions();
+                    sendResponse({ success: true });
+                } catch (error) {
+                    sendResponse({ success: false, error: error.message });
                 }
             })();
             return true;
@@ -3631,6 +3722,10 @@ await initializeLanguagePreference(); // 新增：初始化语言偏好
     await initializeBadge();
     await initializeAutoSync();
     initializeOperationTracking();
+    
+    // 初始化活跃时间追踪
+    await initializeActiveTimeTracker();
+    setupActiveTimeTrackerListeners();
 });
 
 // =================================================================================
@@ -3755,6 +3850,10 @@ await initializeLanguagePreference(); // 新增：初始化语言偏好
     await initializeBadge();
     await initializeAutoSync();
     initializeOperationTracking();
+    
+    // 初始化活跃时间追踪
+    await initializeActiveTimeTracker();
+    setupActiveTimeTrackerListeners();
 
     if (details.reason === 'install') {
 // browserAPI.tabs.create({ url: 'welcome.html' });
@@ -3762,3 +3861,23 @@ await initializeLanguagePreference(); // 新增：初始化语言偏好
         const previousVersion = details.previousVersion;
 }
 });
+
+// =================================================================================
+// IX. 顶层初始化 - 确保 Service Worker 每次加载时都初始化活跃时间追踪
+// =================================================================================
+// 在 Manifest V3 中，Service Worker 可能会被卸载并重新加载，
+// 此时 onInstalled/onStartup 事件不会再触发。
+// 因此需要在顶层代码中进行初始化。
+
+(async function initializeOnLoad() {
+    console.log('[Background] Service Worker 加载，执行顶层初始化...');
+    
+    try {
+        // 初始化活跃时间追踪（包含 IndexedDB 和书签缓存）
+        await initializeActiveTimeTracker();
+        setupActiveTimeTrackerListeners();
+        console.log('[Background] 活跃时间追踪模块已初始化');
+    } catch (error) {
+        console.error('[Background] 活跃时间追踪初始化失败:', error);
+    }
+})();

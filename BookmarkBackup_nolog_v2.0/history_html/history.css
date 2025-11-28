@@ -7473,6 +7473,71 @@ a.tree-label.tree-bookmark-link:hover {
 /* 点击排行中的跳转按钮 - 离计数更近 */
 .ranking-item .jump-to-related-btn-container {
     margin-right: -30px;
+    position: relative;
+    z-index: 10;
+}
+
+/* 跳转按钮的tooltip - 从正下方出现 */
+.ranking-item .jump-to-related-btn {
+    position: relative;
+    cursor: pointer !important;
+    z-index: 11;
+}
+
+.ranking-item .jump-to-related-btn::after {
+    content: attr(data-tooltip);
+    position: absolute;
+    top: 100%;
+    left: 50%;
+    transform: translateX(-50%);
+    margin-top: 4px;
+    padding: 4px 8px;
+    background: rgba(0, 0, 0, 0.8);
+    color: #fff;
+    font-size: 11px;
+    white-space: nowrap;
+    border-radius: 3px;
+    opacity: 0;
+    visibility: hidden;
+    transition: opacity 0.2s ease, visibility 0.2s ease;
+    z-index: 1000;
+    pointer-events: none;
+}
+
+.ranking-item .jump-to-related-btn:hover::after {
+    opacity: 1;
+    visibility: visible;
+}
+
+/* 计数的tooltip - 从正下方出现 */
+.ranking-counts {
+    position: relative;
+    cursor: pointer;
+}
+
+.ranking-counts::after {
+    content: attr(data-tooltip);
+    position: absolute;
+    top: 100%;
+    left: 50%;
+    transform: translateX(-50%);
+    margin-top: 4px;
+    padding: 4px 8px;
+    background: rgba(0, 0, 0, 0.8);
+    color: #fff;
+    font-size: 11px;
+    white-space: nowrap;
+    border-radius: 3px;
+    opacity: 0;
+    visibility: hidden;
+    transition: opacity 0.2s ease, visibility 0.2s ease;
+    z-index: 1000;
+    pointer-events: none;
+}
+
+.ranking-counts:hover::after {
+    opacity: 1;
+    visibility: visible;
 }
 
 /* ========== 书签关联记录高亮目标 ========== */

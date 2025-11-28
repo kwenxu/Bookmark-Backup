@@ -5714,7 +5714,7 @@ function renderBrowsingClickRankingList(container, items, range) {
             const accessibleLabel = isZh
                 ? `${rangeLabel}：${value} ${unitLabel}`
                 : `${rangeLabel}: ${value} ${unitLabel}`;
-            counts.title = accessibleLabel;
+            counts.dataset.tooltip = accessibleLabel;
             counts.setAttribute('aria-label', accessibleLabel);
 
             header.appendChild(main);
@@ -5728,7 +5728,7 @@ function renderBrowsingClickRankingList(container, items, range) {
 
             const jumpBtn = document.createElement('button');
             jumpBtn.className = 'jump-to-related-btn';
-            jumpBtn.title = isZh ? '查看此书签的所有访问记录' : 'View all visit records for this bookmark';
+            jumpBtn.dataset.tooltip = isZh ? '跳转至书签关联记录' : 'Jump to Related History';
             jumpBtn.innerHTML = '<i class="fas fa-external-link-alt"></i>';
             jumpBtn.dataset.url = entry.url;
             jumpBtn.dataset.title = entry.title;
@@ -5740,6 +5740,11 @@ function renderBrowsingClickRankingList(container, items, range) {
                 if (typeof jumpToRelatedHistoryFromRanking === 'function') {
                     jumpToRelatedHistoryFromRanking(entry.url, entry.title, range);
                 }
+            });
+            
+            // 容器也阻止事件冒泡
+            jumpBtnContainer.addEventListener('click', (e) => {
+                e.stopPropagation();
             });
             
             jumpBtnContainer.appendChild(jumpBtn);
@@ -5773,6 +5778,12 @@ function renderBrowsingClickRankingList(container, items, range) {
             row.addEventListener('click', (e) => {
                 // 如果直接点击的是标题链接，让浏览器默认打开，不拦截
                 if (e.target === titleLink) {
+                    return;
+                }
+                
+                // 如果点击的是跳转按钮或其容器，不执行打开书签操作
+                if (e.target.closest('.jump-to-related-btn-container') || 
+                    e.target.closest('.jump-to-related-btn')) {
                     return;
                 }
 

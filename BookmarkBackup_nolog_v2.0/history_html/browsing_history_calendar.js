@@ -143,6 +143,9 @@ class BrowsingHistoryCalendar {
 
         // ✨ 新增：数据库管理器（三库架构）
         this.dbManager = null;
+        
+        // 书签URL到文件夹路径的映射
+        this.bookmarkFolderPaths = new Map();
         this.useNewArchitecture = false;
 
         this.init();
@@ -774,18 +777,27 @@ class BrowsingHistoryCalendar {
         }
     }
 
-    // 递归收集所有书签URL和标题
-    collectBookmarkUrlsAndTitles(node, urlSet, titleSet) {
+    // 递归收集所有书签URL、标题和文件夹路径
+    collectBookmarkUrlsAndTitles(node, urlSet, titleSet, parentPath = []) {
         if (node.url) {
             urlSet.add(node.url);
             // 同时收集标题（去除空白后存储）
             if (node.title && node.title.trim()) {
                 titleSet.add(node.title.trim());
             }
+            // 保存URL到文件夹路径的映射
+            if (!this.bookmarkFolderPaths) {
+                this.bookmarkFolderPaths = new Map();
+            }
+            if (!this.bookmarkFolderPaths.has(node.url)) {
+                this.bookmarkFolderPaths.set(node.url, parentPath.slice());
+            }
         }
 
         if (node.children) {
-            node.children.forEach(child => this.collectBookmarkUrlsAndTitles(child, urlSet, titleSet));
+            // 构建当前节点的路径（排除根节点）
+            const currentPath = node.title ? [...parentPath, node.title] : parentPath;
+            node.children.forEach(child => this.collectBookmarkUrlsAndTitles(child, urlSet, titleSet, currentPath));
         }
     }
 
@@ -2896,25 +2908,52 @@ class BrowsingHistoryCalendar {
         return count;
     }
 
-    // 创建可折叠的书签列表（树状结构，参考永久栏目）
+    // 创建可折叠的书签列表（树状结构，按文件夹分组，参考书签添加记录）
     createCollapsibleBookmarkList(bookmarks, containerId) {
         const container = document.createElement('div');
 
         if (bookmarks.length === 0) return container;
 
-        // 浏览历史记录：使用平面列表，但当数量较多时折叠显示
         // 根据排序状态对书签进行排序
-        const BOOKMARK_COLLAPSE_THRESHOLD = 10;
         const sortedBookmarks = [...bookmarks].sort((a, b) => {
             const timeCompare = a.dateAdded - b.dateAdded;
             return this.bookmarkSortAsc ? timeCompare : -timeCompare;
         });
-        const shouldCollapse = sortedBookmarks.length > BOOKMARK_COLLAPSE_THRESHOLD;
-        const visibleCount = shouldCollapse ? BOOKMARK_COLLAPSE_THRESHOLD : sortedBookmarks.length;
+
+        // 为每个书签填充 folderPath（从 bookmarkFolderPaths 获取）
+        const bookmarksWithPath = sortedBookmarks.map(bm => {
+            const folderPath = this.bookmarkFolderPaths?.get(bm.url) || [];
+            return { ...bm, folderPath };
+        });
+
+        // 检查是否有任何书签有文件夹路径
+        const hasAnyFolderPath = bookmarksWithPath.some(bm => bm.folderPath.length > 0);
+
+        if (!hasAnyFolderPath) {
+            // 没有文件夹路径，使用平面列表显示（兼容旧逻辑）
+            return this.createFlatBookmarkList(sortedBookmarks);
+        }
+
+        // 使用树状结构显示
+        const tree = this.buildBookmarkTree(bookmarksWithPath);
+        const treeNode = this.renderTreeNode(tree, 0, 1); // expandToLevel=1 展开第一层
+        container.appendChild(treeNode);
+
+        return container;
+    }
+
+    // 创建平面书签列表（无文件夹分组时使用）
+    createFlatBookmarkList(bookmarks) {
+        const container = document.createElement('div');
+        if (bookmarks.length === 0) return container;
+
+        const BOOKMARK_COLLAPSE_THRESHOLD = 10;
+        const shouldCollapse = bookmarks.length > BOOKMARK_COLLAPSE_THRESHOLD;
+        const visibleCount = shouldCollapse ? BOOKMARK_COLLAPSE_THRESHOLD : bookmarks.length;
 
         // 先渲染前 N 个
         for (let i = 0; i < visibleCount; i++) {
-            const item = this.createFlatHistoryBookmarkItem(sortedBookmarks[i]);
+            const item = this.createFlatHistoryBookmarkItem(bookmarks[i]);
             container.appendChild(item);
         }
 
@@ -2924,8 +2963,8 @@ class BrowsingHistoryCalendar {
             hiddenContainer.style.display = 'none';
             hiddenContainer.dataset.collapsed = 'true';
 
-            for (let i = BOOKMARK_COLLAPSE_THRESHOLD; i < sortedBookmarks.length; i++) {
-                hiddenContainer.appendChild(this.createFlatHistoryBookmarkItem(sortedBookmarks[i]));
+            for (let i = BOOKMARK_COLLAPSE_THRESHOLD; i < bookmarks.length; i++) {
+                hiddenContainer.appendChild(this.createFlatHistoryBookmarkItem(bookmarks[i]));
             }
 
             container.appendChild(hiddenContainer);
@@ -2948,7 +2987,7 @@ class BrowsingHistoryCalendar {
             toggleBtn.style.justifyContent = 'center';
             toggleBtn.style.gap = '6px';
 
-            const hiddenCount = sortedBookmarks.length - BOOKMARK_COLLAPSE_THRESHOLD;
+            const hiddenCount = bookmarks.length - BOOKMARK_COLLAPSE_THRESHOLD;
             const expandText = currentLang === 'en' ? `Show ${hiddenCount} more` : `展开更多 ${hiddenCount} 个`;
             const collapseText = currentLang === 'en' ? 'Show less' : '收起';
 

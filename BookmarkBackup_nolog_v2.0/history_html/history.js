@@ -9787,9 +9787,9 @@ async function getBookmarkUrlsAndTitles() {
 
     const urls = new Set();
     const titles = new Set();
-    const info = new Map(); // url -> { url, title }
+    const info = new Map(); // url -> { url, title, folderPath }
     
-    const collectUrlsAndTitles = (nodes) => {
+    const collectUrlsAndTitles = (nodes, parentPath = []) => {
         if (!Array.isArray(nodes)) return;
         for (const node of nodes) {
             if (node.url) {
@@ -9802,16 +9802,19 @@ async function getBookmarkUrlsAndTitles() {
                     titles.add(trimmedTitle);
                 }
 
-                // 记录URL到标题的映射（用于后续统计展示）
+                // 记录URL到标题和文件夹路径的映射
                 if (!info.has(url)) {
                     info.set(url, {
                         url,
-                        title: trimmedTitle || url
+                        title: trimmedTitle || url,
+                        folderPath: parentPath.slice() // 复制父文件夹路径
                     });
                 }
             }
             if (node.children) {
-                collectUrlsAndTitles(node.children);
+                // 构建当前节点的路径（排除根节点）
+                const currentPath = node.title ? [...parentPath, node.title] : parentPath;
+                collectUrlsAndTitles(node.children, currentPath);
             }
         }
     };

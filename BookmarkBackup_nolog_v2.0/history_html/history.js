@@ -10119,6 +10119,10 @@ async function renderBrowsingRelatedList(container, historyItems, bookmarkUrls, 
             // 添加 dataset 属性用于跳转匹配
             itemEl.dataset.url = item.url;
             itemEl.dataset.visitTime = item.lastVisitTime || Date.now();
+            // 添加标题用于标题匹配
+            if (item.title && item.title.trim()) {
+                itemEl.dataset.title = item.title.trim();
+            }
 
             // 获取favicon（同步版本，使用占位图标 + 后台加载）
             const faviconUrl = getFaviconUrl(item.url);
@@ -10204,6 +10208,10 @@ async function renderBrowsingRelatedList(container, historyItems, bookmarkUrls, 
             // 添加 dataset 属性用于跳转匹配
             itemEl.dataset.url = item.url;
             itemEl.dataset.visitTime = item.lastVisitTime || Date.now();
+            // 添加标题用于标题匹配
+            if (item.title && item.title.trim()) {
+                itemEl.dataset.title = item.title.trim();
+            }
 
             // 获取favicon（同步版本，使用占位图标 + 后台加载）
             const faviconUrl = getFaviconUrl(item.url);
@@ -11029,15 +11037,21 @@ function highlightAllRelatedHistoryItems(retryCount = 0) {
     const listContainer = document.getElementById('browsingRelatedList');
     if (!listContainer) return;
     
-    // 查找所有匹配的记录项
+    // 查找所有匹配的记录项（URL匹配或标题匹配，与点击排行的计数逻辑保持一致）
     const items = listContainer.querySelectorAll('.related-history-item');
     const matchedItems = [];
+    const normalizedTitle = title ? title.trim() : '';
     
     items.forEach(item => {
         const itemUrl = item.dataset.url;
+        const itemTitle = item.dataset.title || '';
         
         // URL 精确匹配
         if (itemUrl === url) {
+            matchedItems.push(item);
+        }
+        // 标题匹配（URL不同但标题相同）
+        else if (normalizedTitle && itemTitle === normalizedTitle) {
             matchedItems.push(item);
         }
     });

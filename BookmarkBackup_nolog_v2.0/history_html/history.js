@@ -10648,46 +10648,108 @@ async function showBrowsingRankingTimeMenu(range) {
 
     menuRow.appendChild(itemsContainer);
 
-    // 创建"书签/文件夹"切换按钮
-    const toggleBtn = document.createElement('button');
-    toggleBtn.className = 'ranking-view-toggle-btn';
-    toggleBtn.style.padding = '4px 10px';
-    toggleBtn.style.fontSize = '11px';
-    toggleBtn.style.border = '1px solid var(--border-color)';
-    toggleBtn.style.borderRadius = '4px';
-    toggleBtn.style.background = 'var(--bg-secondary)';
-    toggleBtn.style.color = 'var(--text-secondary)';
-    toggleBtn.style.cursor = 'pointer';
-    toggleBtn.style.whiteSpace = 'nowrap';
-    toggleBtn.style.transition = 'all 0.2s';
-    toggleBtn.style.flexShrink = '0';
+    // 创建"文件夹/书签"滑块开关
+    const toggleContainer = document.createElement('div');
+    toggleContainer.className = 'ranking-view-toggle';
+    toggleContainer.style.cssText = `
+        position: relative;
+        display: inline-flex;
+        background: var(--bg-secondary);
+        border: 1px solid var(--border-color);
+        border-radius: 20px;
+        padding: 3px;
+        flex-shrink: 0;
+    `;
 
-    const updateToggleBtnText = () => {
-        const isFolder = browsingRankingViewMode === 'folder';
-        toggleBtn.innerHTML = `<i class="fas ${isFolder ? 'fa-folder' : 'fa-bookmark'}" style="margin-right:4px;"></i>${isFolder ? (isZh ? '文件夹' : 'Folder') : (isZh ? '书签' : 'Bookmark')}`;
+    // 滑块
+    const slider = document.createElement('div');
+    slider.className = 'toggle-slider';
+    slider.style.cssText = `
+        position: absolute;
+        top: 3px;
+        height: calc(100% - 6px);
+        width: calc(50% - 3px);
+        background: linear-gradient(135deg, var(--accent-primary) 0%, #0056b3 100%);
+        border-radius: 16px;
+        transition: left 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+        box-shadow: 0 2px 4px rgba(0,0,0,0.15);
+        z-index: 0;
+    `;
+    slider.style.left = browsingRankingViewMode === 'folder' ? '3px' : 'calc(50%)';
+    toggleContainer.appendChild(slider);
+
+    // 按钮通用样式
+    const btnStyle = `
+        position: relative;
+        z-index: 1;
+        padding: 5px 12px;
+        font-size: 11px;
+        font-weight: 500;
+        border: none;
+        background: transparent;
+        cursor: pointer;
+        transition: color 0.2s;
+        white-space: nowrap;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: 5px;
+        border-radius: 16px;
+    `;
+
+    // 文件夹按钮（左边）
+    const folderBtn = document.createElement('button');
+    folderBtn.style.cssText = btnStyle;
+    folderBtn.style.color = browsingRankingViewMode === 'folder' ? '#fff' : 'var(--text-tertiary)';
+    folderBtn.innerHTML = `<i class="fas fa-folder" style="font-size:11px;"></i><span>${isZh ? '文件夹' : 'Folder'}</span>`;
+
+    // 书签按钮（右边）
+    const bookmarkBtn = document.createElement('button');
+    bookmarkBtn.style.cssText = btnStyle;
+    bookmarkBtn.style.color = browsingRankingViewMode === 'bookmark' ? '#fff' : 'var(--text-tertiary)';
+    bookmarkBtn.innerHTML = `<i class="fas fa-bookmark" style="font-size:10px;"></i><span>${isZh ? '书签' : 'Bookmark'}</span>`;
+
+    const updateToggle = (mode) => {
+        slider.style.left = mode === 'folder' ? '3px' : 'calc(50%)';
+        folderBtn.style.color = mode === 'folder' ? '#fff' : 'var(--text-tertiary)';
+        bookmarkBtn.style.color = mode === 'bookmark' ? '#fff' : 'var(--text-tertiary)';
     };
-    updateToggleBtnText();
 
-    toggleBtn.addEventListener('click', () => {
-        const newMode = browsingRankingViewMode === 'bookmark' ? 'folder' : 'bookmark';
-        saveBrowsingRankingViewMode(newMode);
-        updateToggleBtnText();
-        loadBrowsingClickRanking(browsingRankingCurrentRange);
+    folderBtn.addEventListener('click', () => {
+        if (browsingRankingViewMode !== 'folder') {
+            saveBrowsingRankingViewMode('folder');
+            updateToggle('folder');
+            loadBrowsingClickRanking(browsingRankingCurrentRange);
+        }
     });
 
-    toggleBtn.addEventListener('mouseenter', () => {
-        toggleBtn.style.background = 'var(--bg-tertiary)';
-        toggleBtn.style.borderColor = 'var(--accent-primary)';
-        toggleBtn.style.color = 'var(--accent-primary)';
+    bookmarkBtn.addEventListener('click', () => {
+        if (browsingRankingViewMode !== 'bookmark') {
+            saveBrowsingRankingViewMode('bookmark');
+            updateToggle('bookmark');
+            loadBrowsingClickRanking(browsingRankingCurrentRange);
+        }
     });
 
-    toggleBtn.addEventListener('mouseleave', () => {
-        toggleBtn.style.background = 'var(--bg-secondary)';
-        toggleBtn.style.borderColor = 'var(--border-color)';
-        toggleBtn.style.color = 'var(--text-secondary)';
+    // hover效果
+    [folderBtn, bookmarkBtn].forEach(btn => {
+        btn.addEventListener('mouseenter', () => {
+            if ((btn === folderBtn && browsingRankingViewMode !== 'folder') ||
+                (btn === bookmarkBtn && browsingRankingViewMode !== 'bookmark')) {
+                btn.style.color = 'var(--text-primary)';
+            }
+        });
+        btn.addEventListener('mouseleave', () => {
+            if ((btn === folderBtn && browsingRankingViewMode !== 'folder') ||
+                (btn === bookmarkBtn && browsingRankingViewMode !== 'bookmark')) {
+                btn.style.color = 'var(--text-tertiary)';
+            }
+        });
     });
 
-    menuRow.appendChild(toggleBtn);
+    toggleContainer.appendChild(folderBtn);
+    toggleContainer.appendChild(bookmarkBtn);
+    menuRow.appendChild(toggleContainer);
 
     if (itemsContainer.children.length > 1) { // 至少有"全部"和一个其他选项
         menuContainer.appendChild(menuRow);

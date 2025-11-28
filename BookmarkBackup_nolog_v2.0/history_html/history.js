@@ -11261,12 +11261,16 @@ async function jumpToRelatedHistoryFromAdditions(url, title, dateAdded) {
 
 // 从「点击排行」跳转到「书签关联记录」并高亮所有匹配记录
 async function jumpToRelatedHistoryFromRanking(url, title, currentRange) {
+    // 保存当前的二级菜单筛选条件
+    const currentTimeFilter = browsingRankingTimeFilter ? { ...browsingRankingTimeFilter } : null;
+    
     // 记录来源信息，用于返回
     jumpSourceInfo = {
         type: 'clickRanking',  // 来自点击排行
         url: url,
         title: title,
         range: currentRange,
+        timeFilter: currentTimeFilter,  // 保存二级菜单筛选条件
         scrollTop: document.querySelector('.content-area')?.scrollTop || 0
     };
     
@@ -11287,12 +11291,13 @@ async function jumpToRelatedHistoryFromRanking(url, title, currentRange) {
         url: url,
         title: title,
         currentRange: currentRange,
+        timeFilter: currentTimeFilter,  // 传递二级菜单筛选条件
         fromRanking: true,
         showBackButton: true,
         highlightAll: true
     };
     
-    // 4. 切换到对应的时间范围
+    // 4. 切换到对应的时间范围（这会触发 showBrowsingRelatedTimeMenu）
     const rangeName = currentRange.charAt(0).toUpperCase() + currentRange.slice(1);
     const filterBtn = document.getElementById(`browsingRelatedFilter${rangeName}`);
     if (filterBtn && !filterBtn.classList.contains('active')) {
@@ -11302,10 +11307,49 @@ async function jumpToRelatedHistoryFromRanking(url, title, currentRange) {
         await loadBrowsingRelatedHistory(currentRange);
     }
     
-    // 5. 延迟高亮所有匹配记录
+    // 5. 延迟应用二级菜单筛选并高亮
     setTimeout(() => {
+        // 如果有二级菜单筛选，同步选中对应的按钮
+        if (currentTimeFilter) {
+            applyRelatedTimeFilter(currentTimeFilter);
+        }
         highlightAllRelatedHistoryItems();
     }, 500);
+}
+
+// 应用书签关联记录的二级菜单筛选（从点击排行跳转时使用）
+function applyRelatedTimeFilter(filter) {
+    if (!filter) return;
+    
+    const menuContainer = document.getElementById('browsingRelatedTimeMenu');
+    if (!menuContainer) return;
+    
+    const buttons = menuContainer.querySelectorAll('.time-menu-btn');
+    let targetBtn = null;
+    
+    // 找到对应的按钮
+    buttons.forEach(btn => {
+        if (btn.dataset.filter === 'all') {
+            // 全部按钮
+            if (!filter) targetBtn = btn;
+        } else if (filter.type === 'hour' && btn.dataset.hour == filter.value) {
+            targetBtn = btn;
+        } else if (filter.type === 'day' && btn.dataset.date) {
+            const btnDate = new Date(btn.dataset.date);
+            if (btnDate.toDateString() === filter.value.toDateString()) {
+                targetBtn = btn;
+            }
+        } else if (filter.type === 'week' && btn.dataset.week == filter.value) {
+            targetBtn = btn;
+        } else if (filter.type === 'month' && btn.dataset.month == filter.value) {
+            targetBtn = btn;
+        }
+    });
+    
+    // 点击对应的按钮
+    if (targetBtn && !targetBtn.classList.contains('active')) {
+        targetBtn.click();
+    }
 }
 
 // 高亮点击记录日历中所有匹配的记录（从点击排行跳转时使用）

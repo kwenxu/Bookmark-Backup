@@ -5718,6 +5718,33 @@ function renderBrowsingClickRankingList(container, items, range) {
             counts.setAttribute('aria-label', accessibleLabel);
 
             header.appendChild(main);
+
+            // 跳转按钮容器（点击次数左边）
+            const jumpBtnContainer = document.createElement('div');
+            jumpBtnContainer.className = 'jump-to-related-btn-container';
+            jumpBtnContainer.style.display = 'flex';
+            jumpBtnContainer.style.alignItems = 'center';
+            jumpBtnContainer.style.flexShrink = '0';
+
+            const jumpBtn = document.createElement('button');
+            jumpBtn.className = 'jump-to-related-btn';
+            jumpBtn.title = isZh ? '查看此书签的所有访问记录' : 'View all visit records for this bookmark';
+            jumpBtn.innerHTML = '<i class="fas fa-external-link-alt"></i>';
+            jumpBtn.dataset.url = entry.url;
+            jumpBtn.dataset.title = entry.title;
+            jumpBtn.dataset.range = range;
+            
+            jumpBtn.addEventListener('click', (e) => {
+                e.stopPropagation();
+                e.preventDefault();
+                if (typeof jumpToRelatedHistoryFromRanking === 'function') {
+                    jumpToRelatedHistoryFromRanking(entry.url, entry.title, range);
+                }
+            });
+            
+            jumpBtnContainer.appendChild(jumpBtn);
+            header.appendChild(jumpBtnContainer);
+
             header.appendChild(counts);
 
             const detail = document.createElement('div');
@@ -9909,6 +9936,61 @@ async function loadBrowsingRelatedHistory(range = 'day') {
             return;
         }
 
+        // ✨ 使用 getVisits 获取每个URL的详细访问记录，展开为每次访问一条
+        const expandedItems = [];
+        const getVisitsAsync = (url) => new Promise((resolve) => {
+            if (!browserAPI.history.getVisits) {
+                resolve([]);
+                return;
+            }
+            browserAPI.history.getVisits({ url }, (visits) => {
+                if (browserAPI.runtime && browserAPI.runtime.lastError) {
+                    resolve([]);
+                } else {
+                    resolve(visits || []);
+                }
+            });
+        });
+
+        // 并发获取所有URL的访问详情
+        const visitPromises = historyItems.map(async (item) => {
+            const visits = await getVisitsAsync(item.url);
+            // 过滤在时间范围内的访问
+            const filteredVisits = visits.filter(v => 
+                v.visitTime >= startTime && v.visitTime <= endTime
+            );
+            
+            if (filteredVisits.length > 0) {
+                // 每次访问创建一条记录
+                return filteredVisits.map(visit => ({
+                    ...item,
+                    lastVisitTime: visit.visitTime,
+                    transition: visit.transition || '',
+                    _visitId: visit.visitId
+                }));
+            } else {
+                // 如果没有详细访问记录，使用汇总记录
+                return [item];
+            }
+        });
+
+        const allVisitArrays = await Promise.all(visitPromises);
+        allVisitArrays.forEach(arr => expandedItems.push(...arr));
+
+        if (expandedItems.length === 0) {
+            const emptyTitle = isZh ? '该时间范围内没有历史记录' : 'No history in this time range';
+            listContainer.innerHTML = `
+                <div class="empty-state">
+                    <div class="empty-state-icon"><i class="fas fa-history"></i></div>
+                    <div class="empty-state-title">${emptyTitle}</div>
+                </div>
+            `;
+            return;
+        }
+
+        // 用展开后的记录替换原来的
+        const historyItemsExpanded = expandedItems;
+
         // ✨ 获取书签URL和标题集合（用于标识哪些是书签）
         // 优先从「点击记录」日历获取，保持数据一致性
         let bookmarkUrls, bookmarkTitles;
@@ -9948,17 +10030,17 @@ async function loadBrowsingRelatedHistory(range = 'day') {
             console.log('[BrowsingRelated] 降级方案书签集合 - URL:', bookmarkUrls.size, 'Title:', bookmarkTitles.size);
         }
 
-        // 按当前排序方式排序
+        // 按当前排序方式排序（使用展开后的记录）
         if (browsingRelatedSortAsc) {
             // 正序：旧到新
-            historyItems.sort((a, b) => (a.lastVisitTime || 0) - (b.lastVisitTime || 0));
+            historyItemsExpanded.sort((a, b) => (a.lastVisitTime || 0) - (b.lastVisitTime || 0));
         } else {
             // 倒序：新到旧
-            historyItems.sort((a, b) => (b.lastVisitTime || 0) - (a.lastVisitTime || 0));
+            historyItemsExpanded.sort((a, b) => (b.lastVisitTime || 0) - (a.lastVisitTime || 0));
         }
 
         // 渲染历史记录（根据数量和时间范围自动决定是否懒加载）
-        renderBrowsingRelatedList(listContainer, historyItems, bookmarkUrls, bookmarkTitles, range);
+        renderBrowsingRelatedList(listContainer, historyItemsExpanded, bookmarkUrls, bookmarkTitles, range);
 
     } catch (error) {
         console.error('[BrowsingRelated] 加载失败:', error);
@@ -10819,6 +10901,187 @@ async function jumpToRelatedHistoryFromAdditions(url, title, dateAdded) {
     }, 400);
 }
 
+// 从「点击排行」跳转到「书签关联记录」并高亮所有匹配记录
+async function jumpToRelatedHistoryFromRanking(url, title, currentRange) {
+    // 记录来源信息，用于返回
+    jumpSourceInfo = {
+        type: 'clickRanking',  // 来自点击排行
+        url: url,
+        title: title,
+        range: currentRange,
+        scrollTop: document.querySelector('.content-area')?.scrollTop || 0
+    };
+    
+    // 1. 切换到「书签浏览记录」标签
+    const browsingTab = document.getElementById('additionsTabBrowsing');
+    if (browsingTab && !browsingTab.classList.contains('active')) {
+        browsingTab.click();
+    }
+    
+    // 2. 切换到「书签关联记录」子标签
+    const relatedTab = document.getElementById('browsingTabRelated');
+    if (relatedTab && !relatedTab.classList.contains('active')) {
+        relatedTab.click();
+    }
+    
+    // 3. 存储待高亮信息
+    pendingHighlightInfo = {
+        url: url,
+        title: title,
+        currentRange: currentRange,
+        fromRanking: true,
+        showBackButton: true,
+        highlightAll: true
+    };
+    
+    // 4. 切换到对应的时间范围
+    const rangeName = currentRange.charAt(0).toUpperCase() + currentRange.slice(1);
+    const filterBtn = document.getElementById(`browsingRelatedFilter${rangeName}`);
+    if (filterBtn && !filterBtn.classList.contains('active')) {
+        filterBtn.click();
+    } else {
+        // 已经在当前范围，重新加载
+        await loadBrowsingRelatedHistory(currentRange);
+    }
+    
+    // 5. 延迟高亮所有匹配记录
+    setTimeout(() => {
+        highlightAllRelatedHistoryItems();
+    }, 500);
+}
+
+// 高亮点击记录日历中所有匹配的记录（从点击排行跳转时使用）
+function highlightAllClickHistoryItems(retryCount = 0) {
+    if (!pendingHighlightInfo) return;
+    
+    const { url, title, currentRange, showBackButton: shouldShowBackButton } = pendingHighlightInfo;
+    
+    // 获取点击记录日历实例
+    const calendar = window.browsingHistoryCalendarInstance;
+    if (!calendar || !calendar.bookmarksByDate) {
+        if (retryCount < 10) {
+            setTimeout(() => highlightAllClickHistoryItems(retryCount + 1), 300);
+        } else {
+            pendingHighlightInfo = null;
+            showNoRecordToast();
+        }
+        return;
+    }
+    
+    // 查找日历容器中的所有书签项
+    const calendarContainer = document.getElementById('browsingHistoryCalendar');
+    if (!calendarContainer) {
+        if (retryCount < 10) {
+            setTimeout(() => highlightAllClickHistoryItems(retryCount + 1), 300);
+        }
+        return;
+    }
+    
+    // 查找所有匹配URL的书签项（使用 data-bookmark-url 属性）
+    const items = calendarContainer.querySelectorAll('[data-bookmark-url]');
+    const matchedItems = [];
+    
+    items.forEach(item => {
+        const itemUrl = item.dataset.bookmarkUrl;
+        if (itemUrl === url) {
+            matchedItems.push(item);
+        }
+    });
+    
+    if (matchedItems.length > 0) {
+        // 移除之前的高亮
+        calendarContainer.querySelectorAll('[data-bookmark-url].highlight-target').forEach(el => {
+            el.classList.remove('highlight-target');
+        });
+        
+        // 为所有匹配项添加高亮
+        matchedItems.forEach(item => {
+            item.classList.add('highlight-target');
+        });
+        
+        // 滚动到第一个匹配项
+        matchedItems[0].scrollIntoView({ behavior: 'instant', block: 'center' });
+        
+        // 显示返回按钮
+        if (shouldShowBackButton && jumpSourceInfo) {
+            showBackButton();
+        }
+        
+        // 清除待高亮信息
+        pendingHighlightInfo = null;
+        return;
+    }
+    
+    // 没找到匹配项，可能需要等待渲染
+    if (retryCount < 10) {
+        setTimeout(() => highlightAllClickHistoryItems(retryCount + 1), 300);
+    } else {
+        pendingHighlightInfo = null;
+        showNoRecordToast();
+    }
+}
+
+// 高亮所有匹配的书签关联记录（保留，可能其他地方使用）
+function highlightAllRelatedHistoryItems(retryCount = 0) {
+    if (!pendingHighlightInfo) return;
+    
+    const { url, title, highlightAll, showBackButton: shouldShowBackButton } = pendingHighlightInfo;
+    const listContainer = document.getElementById('browsingRelatedList');
+    if (!listContainer) return;
+    
+    // 查找所有匹配的记录项
+    const items = listContainer.querySelectorAll('.related-history-item');
+    const matchedItems = [];
+    
+    items.forEach(item => {
+        const itemUrl = item.dataset.url;
+        
+        // URL 精确匹配
+        if (itemUrl === url) {
+            matchedItems.push(item);
+        }
+    });
+    
+    // 如果找到了匹配项，高亮显示
+    if (matchedItems.length > 0) {
+        // 移除之前的高亮
+        listContainer.querySelectorAll('.related-history-item.highlight-target').forEach(el => {
+            el.classList.remove('highlight-target');
+        });
+        
+        // 为所有匹配项添加高亮
+        matchedItems.forEach(item => {
+            item.classList.add('highlight-target');
+        });
+        
+        // 获取当前排序顺序（默认按时间降序，即最新的在前）
+        const sortBtn = document.querySelector('.sort-indicator-btn');
+        const isAscending = sortBtn && sortBtn.classList.contains('asc');
+        
+        // 根据排序滚动到第一个或最后一个（最新/最旧的记录）
+        const targetItem = isAscending ? matchedItems[0] : matchedItems[0];
+        targetItem.scrollIntoView({ behavior: 'instant', block: 'center' });
+        
+        // 显示返回按钮
+        if (shouldShowBackButton && jumpSourceInfo) {
+            showBackButton();
+        }
+        
+        // 清除待高亮信息
+        pendingHighlightInfo = null;
+        return;
+    }
+    
+    // 没找到匹配项
+    if (retryCount < 5) {
+        setTimeout(() => highlightAllRelatedHistoryItems(retryCount + 1), 300);
+    } else {
+        pendingHighlightInfo = null;
+        // 显示暂无记录提示
+        showNoRecordToast();
+    }
+}
+
 // ============================================================================
 // 返回按钮功能
 // ============================================================================
@@ -10914,6 +11177,23 @@ async function goBackToSource() {
             }
             highlightSourceBookmark(url);
         }, 500);
+        
+    } else if (type === 'clickRanking') {
+        // 返回点击排行 - 需要切换到「点击排行」子标签
+        const rankingTab = document.getElementById('browsingTabRanking');
+        if (rankingTab) {
+            rankingTab.click();
+            console.log('[goBackToSource] 已切换到点击排行');
+        }
+        
+        // 恢复滚动位置并高亮
+        setTimeout(() => {
+            const contentArea = document.querySelector('.content-area');
+            if (contentArea && scrollTop) {
+                contentArea.scrollTop = scrollTop;
+            }
+            highlightSourceRankingItem(url);
+        }, 500);
     }
 }
 
@@ -10948,6 +11228,41 @@ function highlightSourceBookmark(url) {
     
     if (!found) {
         console.warn('[highlightSourceBookmark] 未找到匹配的书签');
+    }
+}
+
+// 高亮点击排行中的来源书签
+function highlightSourceRankingItem(url) {
+    const listContainer = document.getElementById('browsingRankingList');
+    if (!listContainer) {
+        console.warn('[highlightSourceRankingItem] 未找到 browsingRankingList');
+        return;
+    }
+    
+    // 查找所有排行项
+    const items = listContainer.querySelectorAll('.ranking-item');
+    console.log('[highlightSourceRankingItem] 查找排行项:', url, '找到', items.length, '个项目');
+    
+    let found = false;
+    
+    items.forEach(item => {
+        // 通过跳转按钮的 data-url 来匹配
+        const jumpBtn = item.querySelector('.jump-to-related-btn');
+        if (jumpBtn && jumpBtn.dataset.url === url && !found) {
+            found = true;
+            console.log('[highlightSourceRankingItem] 找到匹配排行项，添加高亮');
+            item.classList.add('highlight-source');
+            item.scrollIntoView({ behavior: 'instant', block: 'center' });
+            
+            // 3秒后移除高亮
+            setTimeout(() => {
+                item.classList.remove('highlight-source');
+            }, 3000);
+        }
+    });
+    
+    if (!found) {
+        console.warn('[highlightSourceRankingItem] 未找到匹配的排行项');
     }
 }
 

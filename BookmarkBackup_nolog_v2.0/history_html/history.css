@@ -5,19 +5,19 @@
     --bg-secondary: #f8f9fa;
     --bg-tertiary: #f0f2f5;
     --bg-elevated: #ffffff;
-    
+
     --text-primary: #1c1e21;
     --text-secondary: #65676b;
     --text-tertiary: #8a8d91;
-    
+
     --border-color: #e4e6eb;
     --border-hover: #ccd0d5;
-    
+
     --accent-primary: #1877f2;
     --accent-hover: #166fe5;
     --accent-light: #e7f3ff;
     --link-color: #1877f2;
-    
+
     --success: #42b72a;
     --success-light: #e7f5e4;
     --warning: #ff9800;
@@ -26,11 +26,11 @@
     --error-light: #ffebee;
     --info: #17a2b8;
     --info-light: #e0f7fa;
-    
+
     --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.1);
     --shadow-md: 0 2px 8px rgba(0, 0, 0, 0.1);
     --shadow-lg: 0 4px 16px rgba(0, 0, 0, 0.15);
-    
+
     /* Git 风格颜色 */
     --git-added: #22863a;
     --git-added-bg: #e6ffed;
@@ -47,19 +47,19 @@
     --bg-secondary: #242526;
     --bg-tertiary: #3a3b3c;
     --bg-elevated: #242526;
-    
+
     --text-primary: #e4e6eb;
     --text-secondary: #b0b3b8;
     --text-tertiary: #8a8d91;
-    
+
     --border-color: #3a3b3c;
     --border-hover: #4e4f50;
-    
+
     --accent-primary: #2d88ff;
     --accent-hover: #4d9eff;
     --accent-light: #1a3a5f;
     --link-color: #4d9eff;
-    
+
     --success: #42b72a;
     --success-light: #1b3a1b;
     --warning: #ff9800;
@@ -68,11 +68,11 @@
     --error-light: #3d1f1f;
     --info: #17a2b8;
     --info-light: #1a3540;
-    
+
     --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.3);
     --shadow-md: 0 2px 8px rgba(0, 0, 0, 0.4);
     --shadow-lg: 0 4px 16px rgba(0, 0, 0, 0.5);
-    
+
     --git-added: #3fb950;
     --git-added-bg: #1b3a1b;
     --git-deleted: #f85149;
@@ -253,7 +253,8 @@ body {
 }
 
 .shortcuts-header .modal-close {
-    margin-top: 4px; /* 略向下对齐标题基线 */
+    margin-top: 4px;
+    /* 略向下对齐标题基线 */
 }
 
 .shortcuts-section {
@@ -283,7 +284,8 @@ body {
     display: flex;
     align-items: center;
     justify-content: flex-start;
-    gap: 6px; /* 文字与按钮之间稍微拉开一点，更明显 */
+    gap: 6px;
+    /* 文字与按钮之间稍微拉开一点，更明显 */
     margin-bottom: 4px;
 }
 
@@ -296,7 +298,8 @@ body {
     display: flex;
     align-items: center;
     justify-content: center;
-    margin-left: 0; /* 几乎紧贴文字 */
+    margin-left: 0;
+    /* 几乎紧贴文字 */
 }
 
 .shortcuts-settings-btn:hover {
@@ -354,7 +357,8 @@ body {
 .shortcuts-row {
     display: flex;
     align-items: flex-start;
-    gap: 16px; /* 按键列与功能列的水平间距 */
+    gap: 16px;
+    /* 按键列与功能列的水平间距 */
     justify-content: center;
 }
 
@@ -1216,7 +1220,7 @@ body {
     height: 20px;
 }
 
-.ranking-item-header > .ranking-main {
+.ranking-item-header>.ranking-main {
     flex: 1 1 auto;
     min-width: 0;
     display: flex;
@@ -1803,8 +1807,8 @@ a.tree-label.tree-bookmark-link:hover {
 }
 
 /* 每个路径占一行 */
-.move-tooltip > span,
-.move-tooltip > .path-separator {
+.move-tooltip>span,
+.move-tooltip>.path-separator {
     display: flex;
     align-items: center;
     gap: 8px;
@@ -1867,35 +1871,35 @@ a.tree-label.tree-bookmark-link:hover {
 }
 
 /* 变动节点文字颜色 - 使用直接子选择器，只影响当前项，不影响子项 */
-.tree-change-added > .tree-label,
-.tree-change-added > a.tree-label {
+.tree-change-added>.tree-label,
+.tree-change-added>a.tree-label {
     color: #28a745;
     font-weight: 500;
 }
 
-.tree-change-deleted > .tree-label,
-.tree-change-deleted > a.tree-label {
+.tree-change-deleted>.tree-label,
+.tree-change-deleted>a.tree-label {
     color: #dc3545;
     font-weight: 500;
     text-decoration: line-through;
     opacity: 0.7;
 }
 
-.tree-change-modified > .tree-label,
-.tree-change-modified > a.tree-label {
+.tree-change-modified>.tree-label,
+.tree-change-modified>a.tree-label {
     color: #fd7e14;
     font-weight: 500;
 }
 
-.tree-change-moved > .tree-label,
-.tree-change-moved > a.tree-label {
+.tree-change-moved>.tree-label,
+.tree-change-moved>a.tree-label {
     color: #0d6efd;
     font-weight: 500;
 }
 
 /* 混合类型（modified+moved）*/
-.tree-change-mixed > .tree-label,
-.tree-change-mixed > a.tree-label {
+.tree-change-mixed>.tree-label,
+.tree-change-mixed>a.tree-label {
     background: linear-gradient(90deg, #fd7e14 0%, #0d6efd 100%);
     -webkit-background-clip: text;
     -webkit-text-fill-color: transparent;
@@ -2062,7 +2066,8 @@ a.tree-label.tree-bookmark-link:hover {
 #shortcutsModal {
     align-items: flex-start;
     justify-content: flex-end;
-    padding-top: 72px;  /* 约等于 header 高度，刚好在四个按钮下方 */
+    padding-top: 72px;
+    /* 约等于 header 高度，刚好在四个按钮下方 */
     padding-right: 24px;
 }
 
@@ -2084,8 +2089,10 @@ a.tree-label.tree-bookmark-link:hover {
     display: inline-block;
     border-radius: 10px;
     padding: 10px 10px 8px;
-    margin: 8px 0 0 0; /* 右边缘与 header 右内边距对齐 */
-    align-self: flex-start; /* 在 flex 容器中靠上对齐 */
+    margin: 8px 0 0 0;
+    /* 右边缘与 header 右内边距对齐 */
+    align-self: flex-start;
+    /* 在 flex 容器中靠上对齐 */
 }
 
 .modal-header {
@@ -2409,58 +2416,61 @@ a.tree-label.tree-bookmark-link:hover {
         width: 60px;
         padding: 16px 4px;
     }
-    
+
     .sidebar .nav-tab span,
     .sidebar .nav-group-title,
     .sidebar .stats-panel h3,
     .sidebar .stats-panel .stat-item span:first-child {
         display: none;
     }
-    
+
     .sidebar .nav-group {
         border-bottom: none;
         margin-bottom: 8px;
         padding-bottom: 8px;
     }
-    
+
     .sidebar .nav-tab {
         justify-content: center;
         padding: 12px 0;
     }
-    
+
     .sidebar .nav-tab i {
         margin: 0;
     }
-    
+
     .sidebar .stats-panel {
         padding: 12px 4px;
     }
-    
+
     .sidebar .stats-panel .stat-item {
         flex-direction: column;
         align-items: center;
         gap: 4px;
     }
-    
+
     .sidebar .stats-panel .stat-item strong {
         margin-top: 0;
     }
 }
 
 @media (max-width: 768px) {
+
     /* 保持横向布局，不要纵向堆叠 */
     .main-container {
-        flex-direction: row; /* 保持横向 */
+        flex-direction: row;
+        /* 保持横向 */
     }
-    
+
     /* 自动收缩侧边栏，而不是占满宽度 */
     .sidebar {
-        width: 60px; /* 自动收缩到最小宽度 */
+        width: 60px;
+        /* 自动收缩到最小宽度 */
         padding: 16px 4px;
         border-right: 1px solid var(--border-color);
         border-bottom: none;
     }
-    
+
     /* 在小屏幕上自动隐藏侧边栏文字（相当于自动收起） */
     .sidebar .nav-tab span,
     .sidebar .nav-group-title,
@@ -2468,40 +2478,40 @@ a.tree-label.tree-bookmark-link:hover {
     .sidebar .stats-panel .stat-item span:first-child {
         display: none;
     }
-    
+
     .sidebar .nav-group {
         border-bottom: none;
         margin-bottom: 8px;
         padding-bottom: 8px;
     }
-    
+
     .sidebar .nav-tab {
         justify-content: center;
         padding: 12px 0;
     }
-    
+
     .sidebar .nav-tab i {
         margin: 0;
     }
-    
+
     .sidebar .stats-panel {
         padding: 12px 4px;
     }
-    
+
     .sidebar .stats-panel .stat-item {
         flex-direction: column;
         align-items: center;
         gap: 4px;
     }
-    
+
     .sidebar .stats-panel .stat-item strong {
         margin-top: 0;
     }
-    
+
     .search-container input {
         width: 200px;
     }
-    
+
     .search-container input:focus {
         width: 240px;
     }
@@ -2528,7 +2538,9 @@ a.tree-label.tree-bookmark-link:hover {
 }
 
 @keyframes spin {
-    to { transform: rotate(360deg); }
+    to {
+        transform: rotate(360deg);
+    }
 }
 
 /* ==================== 空状态 ==================== */
@@ -3216,7 +3228,7 @@ a.tree-label.tree-bookmark-link:hover {
         flex-wrap: wrap;
         min-height: auto;
     }
-    
+
     .diff-file-url {
         width: 100%;
         max-width: 100%;
@@ -3387,15 +3399,15 @@ a.tree-label.tree-bookmark-link:hover {
         grid-template-columns: 1fr;
         gap: 16px;
     }
-    
+
     .change-card-header {
         padding: 14px 16px;
     }
-    
+
     .change-card-body {
         padding: 12px 16px;
     }
-    
+
     .change-item {
         padding: 10px;
     }
@@ -3476,30 +3488,37 @@ a.tree-label.tree-bookmark-link:hover {
     flex-direction: row;
     flex-wrap: wrap;
     width: auto;
-    max-width: min(95vw, 640px);  /* 中文最大宽度：视口95%或640px，取较小值 */
+    max-width: min(95vw, 640px);
+    /* 中文最大宽度：视口95%或640px，取较小值 */
     min-width: auto;
     overflow-x: visible;
     overflow-y: visible;
     padding: 8px;
-    gap: 10px;          /* 列间距 */
-    row-gap: 16px;      /* 行间距更大一些 */
+    gap: 10px;
+    /* 列间距 */
+    row-gap: 16px;
+    /* 行间距更大一些 */
     align-items: center;
     justify-content: flex-start;
 }
 
 /* 英文模式下横向布局更宽 */
 .bookmark-context-menu.horizontal-layout.lang-en {
-    max-width: min(95vw, 831px);  /* 英文最大宽度：视口95%或800px，取较小值 */
+    max-width: min(95vw, 831px);
+    /* 英文最大宽度：视口95%或800px，取较小值 */
 }
 
 /* ========== 纵向菜单（第一种形态）更紧凑：缩小按钮的上下内边距与分隔的上下间距 ==========
    仅作用于非横向形态，避免影响第二种形态（横向） */
 .bookmark-context-menu:not(.horizontal-layout) .context-menu-item {
-    padding-top: 5px;   /* 原 10px → 5px，约减半 */
+    padding-top: 5px;
+    /* 原 10px → 5px，约减半 */
     padding-bottom: 5px;
 }
+
 .bookmark-context-menu:not(.horizontal-layout) .context-menu-separator {
-    margin-top: 3px;    /* 原 6px → 3px */
+    margin-top: 3px;
+    /* 原 6px → 3px */
     margin-bottom: 3px;
 }
 
@@ -3541,6 +3560,7 @@ a.tree-label.tree-bookmark-link:hover {
     color: var(--text-secondary);
     font-weight: 600;
 }
+
 .bookmark-context-menu .context-menu-item.section-label:hover {
     background: transparent;
 }
@@ -3593,18 +3613,21 @@ a.tree-label.tree-bookmark-link:hover {
     border-radius: 10px;
     font-size: 11px;
     line-height: 1.6;
-    background: var(--bg-tertiary, rgba(0,0,0,0.06));
+    background: var(--bg-tertiary, rgba(0, 0, 0, 0.06));
     color: var(--text-secondary);
 }
+
 [data-theme="dark"] .bookmark-context-menu .context-menu-item .sub-badge {
-    background: rgba(255,255,255,0.08);
+    background: rgba(255, 255, 255, 0.08);
 }
+
 .bookmark-context-menu .context-menu-item .sub-badge[data-sub-action] {
     cursor: pointer;
     user-select: none;
 }
+
 .bookmark-context-menu .context-menu-item .sub-badge[data-sub-action]:hover {
-    background: var(--accent-light, rgba(0,0,0,0.08));
+    background: var(--accent-light, rgba(0, 0, 0, 0.08));
     color: var(--accent-primary, var(--text-primary));
 }
 
@@ -3634,7 +3657,8 @@ a.tree-label.tree-bookmark-link:hover {
     display: inline-flex;
     align-items: center;
     gap: 8px;
-    margin-bottom: 6px; /* 纵向额外留白，确保行与行更明显 */
+    margin-bottom: 6px;
+    /* 纵向额外留白，确保行与行更明显 */
 }
 
 /* 横向布局的强制换行占位（用于指定行次） */
@@ -3644,7 +3668,7 @@ a.tree-label.tree-bookmark-link:hover {
 }
 
 /* 相邻分组之间的分隔与内边距 */
-.bookmark-context-menu.horizontal-layout .context-menu-group + .context-menu-group {
+.bookmark-context-menu.horizontal-layout .context-menu-group+.context-menu-group {
     border-left: none;
     padding-left: 0;
     margin-left: 12px;
@@ -3663,64 +3687,76 @@ a.tree-label.tree-bookmark-link:hover {
 .bookmark-context-menu.density-xs {
     font-size: 12px;
 }
+
 .bookmark-context-menu.density-xs.horizontal-layout {
     padding: 6px;
     gap: 6px;
 }
+
 .bookmark-context-menu.density-xs.horizontal-layout .context-menu-item {
     padding: 6px 10px;
     gap: 6px;
     border-radius: 6px;
 }
-.bookmark-context-menu.density-xs.horizontal-layout .context-menu-group + .context-menu-group {
+
+.bookmark-context-menu.density-xs.horizontal-layout .context-menu-group+.context-menu-group {
     margin-left: 8px;
 }
 
 .bookmark-context-menu.density-sm {
     font-size: 12.5px;
 }
+
 .bookmark-context-menu.density-sm.horizontal-layout {
     padding: 8px;
     gap: 8px;
 }
+
 .bookmark-context-menu.density-sm.horizontal-layout .context-menu-item {
     padding: 7px 11px;
     gap: 7px;
     border-radius: 6px;
 }
-.bookmark-context-menu.density-sm.horizontal-layout .context-menu-group + .context-menu-group {
+
+.bookmark-context-menu.density-sm.horizontal-layout .context-menu-group+.context-menu-group {
     margin-left: 10px;
 }
 
 .bookmark-context-menu.density-md {
     font-size: 13px;
 }
+
 .bookmark-context-menu.density-md.horizontal-layout {
     padding: 8px;
     gap: 10px;
 }
+
 .bookmark-context-menu.density-md.horizontal-layout .context-menu-item {
     padding: 8px 12px;
     gap: 8px;
     border-radius: 6px;
 }
-.bookmark-context-menu.density-md.horizontal-layout .context-menu-group + .context-menu-group {
+
+.bookmark-context-menu.density-md.horizontal-layout .context-menu-group+.context-menu-group {
     margin-left: 12px;
 }
 
 .bookmark-context-menu.density-lg {
     font-size: 13.5px;
 }
+
 .bookmark-context-menu.density-lg.horizontal-layout {
     padding: 10px;
     gap: 12px;
 }
+
 .bookmark-context-menu.density-lg.horizontal-layout .context-menu-item {
     padding: 10px 14px;
     gap: 10px;
     border-radius: 8px;
 }
-.bookmark-context-menu.density-lg.horizontal-layout .context-menu-group + .context-menu-group {
+
+.bookmark-context-menu.density-lg.horizontal-layout .context-menu-group+.context-menu-group {
     margin-left: 16px;
 }
 
@@ -3809,7 +3845,8 @@ a.tree-label.tree-bookmark-link:hover {
 .drop-indicator {
     position: absolute;
     background: var(--accent-primary);
-    pointer-events: auto; /* 改为auto以接收点击和右键事件 */
+    pointer-events: auto;
+    /* 改为auto以接收点击和右键事件 */
     z-index: 1000;
     border-radius: 1px;
     transition: opacity 0.1s ease-in-out;
@@ -3817,10 +3854,13 @@ a.tree-label.tree-bookmark-link:hover {
 
 /* 吸附提示闪烁动画 */
 @keyframes dropIndicatorFlash {
-    0%, 100% {
+
+    0%,
+    100% {
         opacity: 1;
         box-shadow: 0 0 8px rgba(24, 119, 242, 0.8);
     }
+
     50% {
         opacity: 0.4;
         box-shadow: 0 0 4px rgba(24, 119, 242, 0.4);
@@ -3845,6 +3885,7 @@ a.tree-label.tree-bookmark-link:hover {
         opacity: 0;
         transform: scale(0.95);
     }
+
     to {
         opacity: 1;
         transform: scale(1);
@@ -3870,20 +3911,19 @@ a.tree-label.tree-bookmark-link:hover {
     transform: translateY(-50%);
     width: 4px;
     height: 12px;
-    background: linear-gradient(to bottom, 
-        var(--text-tertiary) 0px, 
-        var(--text-tertiary) 2px, 
-        transparent 2px, 
-        transparent 4px,
-        var(--text-tertiary) 4px, 
-        var(--text-tertiary) 6px, 
-        transparent 6px, 
-        transparent 8px,
-        var(--text-tertiary) 8px, 
-        var(--text-tertiary) 10px,
-        transparent 10px,
-        transparent 12px
-    );
+    background: linear-gradient(to bottom,
+            var(--text-tertiary) 0px,
+            var(--text-tertiary) 2px,
+            transparent 2px,
+            transparent 4px,
+            var(--text-tertiary) 4px,
+            var(--text-tertiary) 6px,
+            transparent 6px,
+            transparent 8px,
+            var(--text-tertiary) 8px,
+            var(--text-tertiary) 10px,
+            transparent 10px,
+            transparent 12px);
     opacity: 0;
     transition: opacity 0.2s;
 }
@@ -3922,7 +3962,8 @@ a.tree-label.tree-bookmark-link:hover {
 .tree-item.selected {
     background: var(--accent-light);
     border-left: 3px solid var(--accent-primary);
-    padding-left: calc(12px - 3px); /* 补偿边框宽度 */
+    padding-left: calc(12px - 3px);
+    /* 补偿边框宽度 */
 }
 
 [data-theme="dark"] .tree-item.selected {
@@ -3954,6 +3995,7 @@ a.tree-label.tree-bookmark-link:hover {
         transform: translateX(100px);
         opacity: 0;
     }
+
     to {
         transform: translateX(0);
         opacity: 1;
@@ -4014,6 +4056,7 @@ a.tree-label.tree-bookmark-link:hover {
         transform: translateY(-10px);
         opacity: 0;
     }
+
     to {
         transform: translateY(0);
         opacity: 1;
@@ -4036,7 +4079,8 @@ a.tree-label.tree-bookmark-link:hover {
 
 [data-theme="dark"] .selected-count {
     background: rgba(255, 255, 255, 0.1);
-    color: #e4e6eb; /* 使用浅色文字，确保在深色背景下可读 */
+    color: #e4e6eb;
+    /* 使用浅色文字，确保在深色背景下可读 */
 }
 
 .batch-btn {
@@ -4093,8 +4137,10 @@ a.tree-label.tree-bookmark-link:hover {
     bottom: 0;
     border: 3px solid var(--accent-primary);
     border-radius: 12px;
-    background: transparent; /* 移除淡蓝色蒙版，保持透明 */
-    pointer-events: auto; /* 改为auto以接收点击和右键事件 */
+    background: transparent;
+    /* 移除淡蓝色蒙版，保持透明 */
+    pointer-events: auto;
+    /* 改为auto以接收点击和右键事件 */
     z-index: 100;
     animation: selectModeIn 0.3s ease-out;
 }
@@ -4104,6 +4150,7 @@ a.tree-label.tree-bookmark-link:hover {
         opacity: 0;
         transform: scale(0.98);
     }
+
     to {
         opacity: 1;
         transform: scale(1);
@@ -4111,7 +4158,8 @@ a.tree-label.tree-bookmark-link:hover {
 }
 
 [data-theme="dark"] .select-mode-overlay {
-    background: transparent; /* 暗色主题也保持透明 */
+    background: transparent;
+    /* 暗色主题也保持透明 */
 }
 
 .select-mode-tip {
@@ -4139,6 +4187,7 @@ a.tree-label.tree-bookmark-link:hover {
         transform: translateX(-50%) translateY(-20px);
         opacity: 0;
     }
+
     to {
         transform: translateX(-50%) translateY(0);
         opacity: 1;
@@ -4223,7 +4272,8 @@ a.tree-label.tree-bookmark-link:hover {
     left: 50%;
     transform: translateX(-50%);
     width: 1000px;
-    height: fit-content; /* 改为fit-content，完全贴合内容 */
+    height: fit-content;
+    /* 改为fit-content，完全贴合内容 */
     min-width: 150px;
     max-width: 95vw;
     max-height: 200px;
@@ -4238,13 +4288,15 @@ a.tree-label.tree-bookmark-link:hover {
     display: flex;
     flex-direction: column;
     resize: none;
-    overflow: hidden; /* 改为hidden，避免内容溢出产生滚动条和空白 */
+    overflow: hidden;
+    /* 改为hidden，避免内容溢出产生滚动条和空白 */
 }
 
 @keyframes panelFadeIn {
     from {
         opacity: 0;
     }
+
     to {
         opacity: 1;
     }
@@ -4256,7 +4308,8 @@ a.tree-label.tree-bookmark-link:hover {
     justify-content: space-between;
     align-items: center;
     gap: 8px;
-    padding: 3px 8px; /* 更小的padding，极致紧凑 */
+    padding: 3px 8px;
+    /* 更小的padding，极致紧凑 */
     background: rgba(37, 99, 235, 0.12) !important;
     backdrop-filter: blur(10px) !important;
     -webkit-backdrop-filter: blur(10px) !important;
@@ -4264,8 +4317,10 @@ a.tree-label.tree-bookmark-link:hover {
     text-shadow: 0 1px 4px rgba(0, 0, 0, 1), 0 0 8px rgba(0, 0, 0, 0.8);
     border-radius: 10px 10px 0 0;
     flex-shrink: 0;
-    min-height: 0; /* 移除最小高度 */
-    line-height: 1; /* 紧凑行高 */
+    min-height: 0;
+    /* 移除最小高度 */
+    line-height: 1;
+    /* 紧凑行高 */
     user-select: none;
     cursor: grab;
 }
@@ -4276,14 +4331,18 @@ a.tree-label.tree-bookmark-link:hover {
 
 .batch-panel-title {
     font-weight: 600;
-    font-size: 12px; /* 更小的字体 */
+    font-size: 12px;
+    /* 更小的字体 */
     margin-right: auto;
-    line-height: 1.2; /* 紧凑行高 */
+    line-height: 1.2;
+    /* 紧凑行高 */
 }
 
 .batch-panel-count {
-    font-size: 11px; /* 更小的字体 */
-    padding: 2px 8px; /* 更小的padding */
+    font-size: 11px;
+    /* 更小的字体 */
+    padding: 2px 8px;
+    /* 更小的padding */
     background: rgba(255, 255, 255, 0.2);
     border-radius: 10px;
     line-height: 1.2;
@@ -4294,12 +4353,15 @@ a.tree-label.tree-bookmark-link:hover {
     color: white;
     border: 1px solid rgba(255, 255, 255, 0.7);
     border-radius: 4px;
-    padding: 2px 8px; /* 更小的padding */
-    font-size: 11px; /* 更小的字体 */
+    padding: 2px 8px;
+    /* 更小的padding */
+    font-size: 11px;
+    /* 更小的字体 */
     cursor: pointer;
     display: flex;
     align-items: center;
-    gap: 2px; /* 更小的gap */
+    gap: 2px;
+    /* 更小的gap */
     transition: all 0.2s;
     font-weight: 500;
     line-height: 1.2;
@@ -4345,73 +4407,80 @@ a.tree-label.tree-bookmark-link:hover {
 }
 
 /* 四边 - 增加可拖动区域的宽度 */
-.resize-n { 
-    top: -4px; 
-    left: 0; 
-    right: 0; 
-    height: 12px; 
-    cursor: ns-resize; 
+.resize-n {
+    top: -4px;
+    left: 0;
+    right: 0;
+    height: 12px;
+    cursor: ns-resize;
 }
-.resize-s { 
-    bottom: -4px; 
-    left: 0; 
-    right: 0; 
-    height: 12px; 
-    cursor: ns-resize; 
+
+.resize-s {
+    bottom: -4px;
+    left: 0;
+    right: 0;
+    height: 12px;
+    cursor: ns-resize;
 }
-.resize-w { 
-    left: -4px; 
-    top: 0; 
-    bottom: 0; 
-    width: 12px; 
-    cursor: ew-resize; 
+
+.resize-w {
+    left: -4px;
+    top: 0;
+    bottom: 0;
+    width: 12px;
+    cursor: ew-resize;
 }
-.resize-e { 
-    right: -4px; 
-    top: 0; 
-    bottom: 0; 
-    width: 12px; 
-    cursor: ew-resize; 
+
+.resize-e {
+    right: -4px;
+    top: 0;
+    bottom: 0;
+    width: 12px;
+    cursor: ew-resize;
 }
 
 /* 四角 - 更大的可拖动区域 */
-.resize-nw { 
-    top: -4px; 
-    left: -4px; 
-    width: 20px; 
-    height: 20px; 
-    cursor: nwse-resize; 
+.resize-nw {
+    top: -4px;
+    left: -4px;
+    width: 20px;
+    height: 20px;
+    cursor: nwse-resize;
     z-index: 10004 !important;
 }
-.resize-ne { 
-    top: -4px; 
-    right: -4px; 
-    width: 20px; 
-    height: 20px; 
-    cursor: nesw-resize; 
+
+.resize-ne {
+    top: -4px;
+    right: -4px;
+    width: 20px;
+    height: 20px;
+    cursor: nesw-resize;
     z-index: 10004 !important;
 }
-.resize-sw { 
-    bottom: -4px; 
-    left: -4px; 
-    width: 20px; 
-    height: 20px; 
-    cursor: nesw-resize; 
+
+.resize-sw {
+    bottom: -4px;
+    left: -4px;
+    width: 20px;
+    height: 20px;
+    cursor: nesw-resize;
     z-index: 10004 !important;
 }
-.resize-se { 
-    bottom: -4px; 
-    right: -4px; 
-    width: 20px; 
-    height: 20px; 
-    cursor: nwse-resize; 
+
+.resize-se {
+    bottom: -4px;
+    right: -4px;
+    width: 20px;
+    height: 20px;
+    cursor: nwse-resize;
     z-index: 10004 !important;
 }
 
 /* 视觉提示 - 悬停时显示边框（极致扁平化） */
 .resize-handle:hover {
     background: rgba(74, 144, 226, 0.05);
-    border-radius: 8px; /* 与栏目一致 */
+    border-radius: 8px;
+    /* 与栏目一致 */
 }
 
 .resize-n:hover,
@@ -4429,7 +4498,8 @@ a.tree-label.tree-bookmark-link:hover {
 .resize-sw:hover,
 .resize-se:hover {
     background: rgba(74, 144, 226, 0.08);
-    border-radius: 12px; /* 角handle更大圆角 */
+    border-radius: 12px;
+    /* 角handle更大圆角 */
 }
 
 /* 永久栏目的resize handles - 保持12px圆角 */
@@ -4445,16 +4515,14 @@ a.tree-label.tree-bookmark-link:hover {
     right: 4px;
     width: 10px;
     height: 10px;
-    background: linear-gradient(
-        135deg,
-        transparent 0%,
-        transparent 46%,
-        rgba(74, 144, 226, 0.4) 46%,
-        rgba(74, 144, 226, 0.4) 50%,
-        transparent 50%,
-        transparent 96%,
-        rgba(74, 144, 226, 0.4) 96%
-    );
+    background: linear-gradient(135deg,
+            transparent 0%,
+            transparent 46%,
+            rgba(74, 144, 226, 0.4) 46%,
+            rgba(74, 144, 226, 0.4) 50%,
+            transparent 50%,
+            transparent 96%,
+            rgba(74, 144, 226, 0.4) 96%);
     background-size: 5px 5px;
     opacity: 0.6;
     transition: opacity 0.2s ease;
@@ -4500,16 +4568,14 @@ a.tree-label.tree-bookmark-link:hover {
 }
 
 [data-theme="dark"] .resize-se::after {
-    background: linear-gradient(
-        135deg,
-        transparent 0%,
-        transparent 46%,
-        rgba(88, 166, 255, 0.5) 46%,
-        rgba(88, 166, 255, 0.5) 50%,
-        transparent 50%,
-        transparent 96%,
-        rgba(88, 166, 255, 0.5) 96%
-    );
+    background: linear-gradient(135deg,
+            transparent 0%,
+            transparent 46%,
+            rgba(88, 166, 255, 0.5) 46%,
+            rgba(88, 166, 255, 0.5) 50%,
+            transparent 50%,
+            transparent 96%,
+            rgba(88, 166, 255, 0.5) 96%);
     background-size: 5px 5px;
 }
 
@@ -4521,7 +4587,8 @@ a.tree-label.tree-bookmark-link:hover {
 
 .batch-panel-content {
     padding: 8px;
-    flex: 0 1 auto; /* 改为不自动增长，只根据内容大小 */
+    flex: 0 1 auto;
+    /* 改为不自动增长，只根据内容大小 */
     overflow-y: auto;
     overflow-x: hidden;
     background: transparent;
@@ -4629,32 +4696,50 @@ a.tree-label.tree-bookmark-link:hover {
 .batch-action-panel.horizontal-batch-layout .batch-panel-content {
     display: flex;
     flex-direction: row;
-    flex-wrap: wrap; /* 允许区域换行，根据宽度自动布局 */
-    gap: 8px; /* 区域之间的紧凑间距 */
-    padding: 4px 8px; /* 更小的padding，极致紧凑 */
+    flex-wrap: wrap;
+    /* 允许区域换行，根据宽度自动布局 */
+    gap: 8px;
+    /* 区域之间的紧凑间距 */
+    padding: 4px 8px;
+    /* 更小的padding，极致紧凑 */
     overflow-x: auto;
-    overflow-y: hidden; /* 横向布局不需要纵向滚动 */
-    min-height: 0 !important; /* 强制移除最小高度限制，完全由内容决定 */
-    max-height: fit-content; /* 高度完全贴合内容 */
-    height: auto !important; /* 强制自适应高度 */
-    flex: 0 0 auto !important; /* 强制不增长，只根据内容大小 */
-    align-items: flex-start; /* 顶部对齐 */
+    overflow-y: hidden;
+    /* 横向布局不需要纵向滚动 */
+    min-height: 0 !important;
+    /* 强制移除最小高度限制，完全由内容决定 */
+    max-height: fit-content;
+    /* 高度完全贴合内容 */
+    height: auto !important;
+    /* 强制自适应高度 */
+    flex: 0 0 auto !important;
+    /* 强制不增长，只根据内容大小 */
+    align-items: flex-start;
+    /* 顶部对齐 */
 }
 
 /* 横向布局：当高度较大时（>=200px），每个区域内按钮变为纵向排列，但区域之间仍可换行 */
 .batch-action-panel.horizontal-batch-layout.tall-layout .batch-panel-content {
-    flex-direction: row; /* 保持主容器横向，区域横向排列 */
-    flex-wrap: wrap; /* 区域可以换行 */
-    align-items: flex-start; /* 顶部对齐 */
-    gap: 12px; /* 纵向布局时稍大的区域间距 */
+    flex-direction: row;
+    /* 保持主容器横向，区域横向排列 */
+    flex-wrap: wrap;
+    /* 区域可以换行 */
+    align-items: flex-start;
+    /* 顶部对齐 */
+    gap: 12px;
+    /* 纵向布局时稍大的区域间距 */
 }
 
 .batch-action-panel.horizontal-batch-layout.tall-layout .batch-menu-group {
-    flex-direction: column; /* 每个分组内部变为纵向 */
-    border-right: 1px solid rgba(var(--border-color-rgb, 200, 200, 200), 0.3); /* 细边框 */
-    padding-right: 12px; /* 纵向时稍大padding */
-    flex: 1 1 auto; /* 允许区域自动增长 */
-    min-width: 0; /* 允许收缩 */
+    flex-direction: column;
+    /* 每个分组内部变为纵向 */
+    border-right: 1px solid rgba(var(--border-color-rgb, 200, 200, 200), 0.3);
+    /* 细边框 */
+    padding-right: 12px;
+    /* 纵向时稍大padding */
+    flex: 1 1 auto;
+    /* 允许区域自动增长 */
+    min-width: 0;
+    /* 允许收缩 */
 }
 
 .batch-action-panel.horizontal-batch-layout.tall-layout .batch-menu-group:last-child {
@@ -4663,34 +4748,50 @@ a.tree-label.tree-bookmark-link:hover {
 }
 
 .batch-action-panel.horizontal-batch-layout.tall-layout .batch-group-items {
-    flex-direction: column; /* 按钮组变为纵向 */
-    gap: 4px; /* 纵向时稍大间距 */
-    align-items: stretch; /* 按钮拉伸到组宽度 */
+    flex-direction: column;
+    /* 按钮组变为纵向 */
+    gap: 4px;
+    /* 纵向时稍大间距 */
+    align-items: stretch;
+    /* 按钮拉伸到组宽度 */
 }
 
 .batch-action-panel.horizontal-batch-layout.tall-layout .context-menu-item {
-    width: 100%; /* 按钮占满分组宽度 */
-    padding: 8px 12px; /* 纵向时稍大padding，更容易点击 */
-    font-size: 13px; /* 纵向时稍大字体 */
+    width: 100%;
+    /* 按钮占满分组宽度 */
+    padding: 8px 12px;
+    /* 纵向时稍大padding，更容易点击 */
+    font-size: 13px;
+    /* 纵向时稍大字体 */
 }
 
 .batch-action-panel.horizontal-batch-layout.tall-layout .context-menu-item i {
-    font-size: 14px; /* 纵向时稍大图标 */
+    font-size: 14px;
+    /* 纵向时稍大图标 */
 }
 
 /* 分组样式 */
 .batch-menu-group {
     display: flex;
     flex-direction: column;
-    gap: 0; /* 移除间隙，让分组更紧凑 */
-    padding-right: 8px; /* 紧凑的右padding */
-    padding-top: 0; /* 移除上padding */
-    padding-bottom: 0; /* 移除下padding，避免额外空白 */
-    margin: 0; /* 移除所有margin，避免额外空白 */
-    border-right: 1px solid rgba(var(--border-color-rgb, 200, 200, 200), 0.3); /* 更细的分隔线 */
-    align-items: stretch; /* 子元素拉伸填充 */
-    min-height: 0; /* 移除最小高度 */
-    height: auto; /* 高度自适应内容 */
+    gap: 0;
+    /* 移除间隙，让分组更紧凑 */
+    padding-right: 8px;
+    /* 紧凑的右padding */
+    padding-top: 0;
+    /* 移除上padding */
+    padding-bottom: 0;
+    /* 移除下padding，避免额外空白 */
+    margin: 0;
+    /* 移除所有margin，避免额外空白 */
+    border-right: 1px solid rgba(var(--border-color-rgb, 200, 200, 200), 0.3);
+    /* 更细的分隔线 */
+    align-items: stretch;
+    /* 子元素拉伸填充 */
+    min-height: 0;
+    /* 移除最小高度 */
+    height: auto;
+    /* 高度自适应内容 */
 }
 
 .batch-menu-group:last-child {
@@ -4700,7 +4801,8 @@ a.tree-label.tree-bookmark-link:hover {
 
 .batch-group-label {
     display: none;
-    height: 0; /* 确保隐藏时不占空间 */
+    height: 0;
+    /* 确保隐藏时不占空间 */
     margin: 0;
     padding: 0;
 }
@@ -4708,23 +4810,32 @@ a.tree-label.tree-bookmark-link:hover {
 .batch-group-items {
     display: flex;
     flex-direction: row;
-    gap: 2px; /* 极小的按钮间距，紧凑布局 */
-    flex-wrap: wrap; /* 允许换行，根据宽度自适应 */
-    min-height: 0; /* 移除默认最小高度，允许完全收缩 */
-    margin: 0; /* 移除margin，避免额外空白 */
-    padding: 0; /* 移除padding，避免额外空白 */
+    gap: 2px;
+    /* 极小的按钮间距，紧凑布局 */
+    flex-wrap: wrap;
+    /* 允许换行，根据宽度自适应 */
+    min-height: 0;
+    /* 移除默认最小高度，允许完全收缩 */
+    margin: 0;
+    /* 移除margin，避免额外空白 */
+    padding: 0;
+    /* 移除padding，避免额外空白 */
 }
 
 .batch-action-panel.horizontal-batch-layout .context-menu-item {
     flex: 0 0 auto;
     min-width: auto;
-    min-height: 0; /* 移除最小高度 */
-    height: auto; /* 高度自适应 */
-    padding: 4px 8px; /* 更紧凑的padding */
+    min-height: 0;
+    /* 移除最小高度 */
+    height: auto;
+    /* 高度自适应 */
+    padding: 4px 8px;
+    /* 更紧凑的padding */
     margin: 0;
     white-space: nowrap;
     font-size: 12px;
-    line-height: 1.2; /* 紧凑的行高 */
+    line-height: 1.2;
+    /* 紧凑的行高 */
 }
 
 .batch-action-panel.horizontal-batch-layout .context-menu-item i {
@@ -4788,6 +4899,7 @@ a.tree-label.tree-bookmark-link:hover {
         transform: translateY(100%);
         opacity: 0;
     }
+
     to {
         transform: translateY(0);
         opacity: 1;
@@ -4799,6 +4911,7 @@ a.tree-label.tree-bookmark-link:hover {
         transform: translateY(0);
         opacity: 1;
     }
+
     to {
         transform: translateY(100%);
         opacity: 0;
@@ -4859,6 +4972,7 @@ a.tree-label.tree-bookmark-link:hover {
         transform: scale(0.9);
         opacity: 0;
     }
+
     to {
         transform: scale(1);
         opacity: 1;
@@ -4894,7 +5008,7 @@ a.tree-label.tree-bookmark-link:hover {
     width: 100%;
     height: 100%;
     background-color: var(--bg-secondary);
-    background-image: 
+    background-image:
         radial-gradient(circle, var(--border-color) 1px, transparent 1px);
     background-size: 20px 20px;
     overflow: auto;
@@ -4917,6 +5031,7 @@ a.tree-label.tree-bookmark-link:hover {
     from {
         opacity: 0;
     }
+
     to {
         opacity: 1;
     }
@@ -4929,18 +5044,22 @@ a.tree-label.tree-bookmark-link:hover {
     left: 50%;
     transform: translate(-50%, -50%);
     width: 600px;
-    height: 70vh; /* 改为固定高度而不是max-height */
+    height: 70vh;
+    /* 改为固定高度而不是max-height */
     background: var(--bg-elevated);
     border: 3px solid #10b981;
     border-radius: 12px;
     box-shadow: var(--shadow-lg);
-    overflow: visible; /* Allow external connection anchors to show */
+    overflow: visible;
+    /* Allow external connection anchors to show */
     z-index: 100;
     transition: box-shadow 0.18s ease, transform 0.28s cubic-bezier(0.16, 1, 0.3, 1), border-color 0.18s ease;
     cursor: default;
     will-change: left, top;
-    display: flex; /* 使用flex布局 */
-    flex-direction: column; /* 垂直方向 */
+    display: flex;
+    /* 使用flex布局 */
+    flex-direction: column;
+    /* 垂直方向 */
 }
 
 [data-theme="dark"] .permanent-bookmark-section {
@@ -4977,6 +5096,7 @@ a.tree-label.tree-bookmark-link:hover {
     from {
         box-shadow: 0 0 0 0 rgba(66, 183, 42, 0.16), var(--shadow-lg);
     }
+
     to {
         box-shadow: 0 0 0 4px rgba(66, 183, 42, 0.2), var(--shadow-lg);
     }
@@ -5226,8 +5346,10 @@ a.tree-label.tree-bookmark-link:hover {
 
 .permanent-section-body {
     padding: 16px;
-    flex: 1; /* 填充剩余空间 */
-    overflow-y: auto; /* 滚动条在这里，跟随栏目窗口大小 */
+    flex: 1;
+    /* 填充剩余空间 */
+    overflow-y: auto;
+    /* 滚动条在这里，跟随栏目窗口大小 */
     overflow-x: hidden;
     display: flex;
     flex-direction: column;
@@ -5236,8 +5358,10 @@ a.tree-label.tree-bookmark-link:hover {
 /* 永久栏目内的书签树样式调整 */
 .permanent-bookmark-section .bookmark-tree {
     /* 继承原有的bookmark-tree样式，不需要额外padding */
-    flex: 1; /* 填充父容器 */
-    overflow: visible; /* 让内容自然扩展 */
+    flex: 1;
+    /* 填充父容器 */
+    overflow: visible;
+    /* 让内容自然扩展 */
 }
 
 /* 临时节点样式 */
@@ -5255,7 +5379,8 @@ a.tree-label.tree-bookmark-link:hover {
     will-change: left, top;
     display: flex;
     flex-direction: column;
-    overflow: visible; /* Allow external connection anchors to show */
+    overflow: visible;
+    /* Allow external connection anchors to show */
 }
 
 [data-theme="dark"] .temp-canvas-node {
@@ -5700,7 +5825,8 @@ a.tree-label.tree-bookmark-link:hover {
 
 .temp-node-description-container:hover .temp-node-description-content,
 .temp-node-description-container.editing .temp-node-description-content {
-    padding-right: 28px; /* 仅为删除按钮预留空间，输入区更宽 */
+    padding-right: 28px;
+    /* 仅为删除按钮预留空间，输入区更宽 */
 }
 
 /* 编辑模式下隐藏“编辑”按钮，仅保留删除按钮 */
@@ -6076,27 +6202,36 @@ a.tree-label.tree-bookmark-link:hover {
 .md-canvas-node {
     position: absolute;
     box-sizing: border-box;
-    background: #ffffff; /* 与画布背景一致（亮色） */
-    border: 2px solid rgba(27, 31, 36, 0.35); /* 默认边框，更重 */
+    background: #ffffff;
+    /* 与画布背景一致（亮色） */
+    border: 2px solid rgba(27, 31, 36, 0.35);
+    /* 默认边框，更重 */
     border-radius: 8px;
     box-shadow: none;
-    padding: 0; /* 移除padding，让md-canvas-text自己处理 */
-    display: flex; /* 使用flex布局，让子元素可以正确计算高度 */
-    flex-direction: column; /* 垂直布局 */
-    overflow: visible; /* 改为visible，允许工具栏显示在节点外部 */
+    padding: 0;
+    /* 移除padding，让md-canvas-text自己处理 */
+    display: flex;
+    /* 使用flex布局，让子元素可以正确计算高度 */
+    flex-direction: column;
+    /* 垂直布局 */
+    overflow: visible;
+    /* 改为visible，允许工具栏显示在节点外部 */
     /* 确保高度约束生效 */
     flex-shrink: 0;
     flex-basis: auto;
 }
 
 [data-theme="dark"] .md-canvas-node {
-    background: #242526; /* 与画布背景一致（暗色） */
-    border-color: rgba(255, 255, 255, 0.4); /* 默认边框，更重 */
+    background: #242526;
+    /* 与画布背景一致（暗色） */
+    border-color: rgba(255, 255, 255, 0.4);
+    /* 默认边框，更重 */
     box-shadow: none;
 }
 
 .md-canvas-node {
-    cursor: grab; /* 悬停显示抓手 */
+    cursor: grab;
+    /* 悬停显示抓手 */
 }
 
 /* 编辑模式下禁用拖拽光标 */
@@ -6111,10 +6246,12 @@ a.tree-label.tree-bookmark-link:hover {
 /* Resize handles 样式优化 */
 .resize-handle {
     position: absolute;
-    z-index: 10003; /* 高于其他元素 */
+    z-index: 10003;
+    /* 高于其他元素 */
     background: transparent;
     transition: background 0.15s ease, opacity 0.15s ease;
-    border-radius: 8px; /* 与栏目边角曲率一致 */
+    border-radius: 8px;
+    /* 与栏目边角曲率一致 */
 }
 
 /* 永久栏目的resize handles - 更大的圆角 */
@@ -6156,7 +6293,7 @@ a.tree-label.tree-bookmark-link:hover {
     background: #0969da;
     border-radius: 50%;
     border: 1.5px solid white;
-    box-shadow: 0 1px 3px rgba(0,0,0,0.2);
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
 }
 
 [data-theme="dark"] .resize-handle-nw:hover::after,
@@ -6200,24 +6337,31 @@ a.tree-label.tree-bookmark-link:hover {
 
 .md-canvas-node.dragging,
 .md-canvas-node.dragging .md-canvas-text {
-    cursor: grabbing; /* 拖动中显示抓手 */
+    cursor: grabbing;
+    /* 拖动中显示抓手 */
 }
 
 .md-canvas-editor {
     width: 100%;
-    flex: 1; /* 填充剩余空间 */
+    flex: 1;
+    /* 填充剩余空间 */
     outline: none;
     border: none;
     background: transparent;
     font-size: 12px;
     line-height: 1.4;
     white-space: pre-wrap;
-    padding: 8px; /* 增加内边距，与view保持一致 */
+    padding: 8px;
+    /* 增加内边距，与view保持一致 */
     box-sizing: border-box;
-    resize: none; /* 禁用textarea自带的resize */
-    overflow: auto; /* 允许滚动 */
-    min-height: 0; /* 允许flex子元素缩小 */
-    border-radius: 0 0 6px 6px; /* 与节点圆角匹配，限制内容溢出 */
+    resize: none;
+    /* 禁用textarea自带的resize */
+    overflow: auto;
+    /* 允许滚动 */
+    min-height: 0;
+    /* 允许flex子元素缩小 */
+    border-radius: 0 0 6px 6px;
+    /* 与节点圆角匹配，限制内容溢出 */
 }
 
 [data-theme="dark"] .md-canvas-editor {
@@ -6227,7 +6371,8 @@ a.tree-label.tree-bookmark-link:hover {
 /* 顶部工具栏（空白栏目/Markdown 卡片） */
 .md-node-toolbar {
     position: absolute;
-    top: -42px; /* Moved up from -28px to avoid conflict with top anchor */
+    top: -42px;
+    /* Moved up from -28px to avoid conflict with top anchor */
     left: 50%;
     transform: translateX(-50%);
     height: 24px;
@@ -6241,7 +6386,8 @@ a.tree-label.tree-bookmark-link:hover {
     opacity: 0;
     pointer-events: none;
     transition: opacity 0.12s ease;
-    z-index: 12000; /* Above anchors (11000) so toolbar remains clickable on top edge */
+    z-index: 12000;
+    /* Above anchors (11000) so toolbar remains clickable on top edge */
 }
 
 /* When drawing a connection, hide toolbar completely to avoid conflict with top anchor zone */
@@ -6322,22 +6468,25 @@ a.tree-label.tree-bookmark-link:hover {
     z-index: 10;
     white-space: nowrap;
 }
+
 .md-color-popover.open {
     display: flex;
     align-items: center;
     flex-wrap: nowrap;
 }
+
 .md-color-chip {
     width: 16px;
     height: 16px;
     border-radius: 50%;
-    border: 1px solid rgba(0,0,0,0.2);
+    border: 1px solid rgba(0, 0, 0, 0.2);
     cursor: pointer;
     transition: transform 0.12s ease, box-shadow 0.12s ease;
 }
+
 .md-color-chip:hover {
     transform: scale(1.15);
-    box-shadow: 0 2px 6px rgba(0,0,0,0.2);
+    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.2);
 }
 
 /* 彩色圆盘按钮 */
@@ -6347,11 +6496,13 @@ a.tree-label.tree-bookmark-link:hover {
     justify-content: center;
     background: white;
     padding: 0;
-    border: 1px solid rgba(0,0,0,0.2);
+    border: 1px solid rgba(0, 0, 0, 0.2);
 }
+
 .md-color-picker-btn:hover {
-    border-color: rgba(0,0,0,0.4);
+    border-color: rgba(0, 0, 0, 0.4);
 }
+
 .md-color-picker-btn svg {
     display: block;
 }
@@ -6397,12 +6548,14 @@ a.tree-label.tree-bookmark-link:hover {
     background: #2c2d2e;
     border-color: rgba(99, 110, 123, 0.45);
 }
-[data-theme="dark"] .md-color-chip { 
-    border-color: rgba(255,255,255,0.25); 
+
+[data-theme="dark"] .md-color-chip {
+    border-color: rgba(255, 255, 255, 0.25);
 }
+
 [data-theme="dark"] .md-color-picker-btn {
     background: #2c2d2e;
-    border-color: rgba(255,255,255,0.25);
+    border-color: rgba(255, 255, 255, 0.25);
 }
 
 /* 缩放指示器 */
@@ -6632,24 +6785,32 @@ a.tree-label.tree-bookmark-link:hover {
 .canvas-workspace::-webkit-scrollbar-corner {
     background: var(--bg-tertiary);
 }
+
 [data-theme="dark"] .md-canvas-text a {
     color: #93c5fd;
 }
 
 .md-canvas-text {
     width: 100%;
-    flex: 1 1 auto; /* 填充剩余空间，明确 flex 属性 */
-    overflow: auto !important; /* 重要：确保滚动启用 */
-    user-select: text; /* 允许选中文本，方便点击链接 */
-    cursor: default; /* 默认使用普通光标；按空格拖动画布时再切换 */
-    padding: 8px; /* 增加内边距，避免内容贴边 */
+    flex: 1 1 auto;
+    /* 填充剩余空间，明确 flex 属性 */
+    overflow: auto !important;
+    /* 重要：确保滚动启用 */
+    user-select: text;
+    /* 允许选中文本，方便点击链接 */
+    cursor: default;
+    /* 默认使用普通光标；按空格拖动画布时再切换 */
+    padding: 8px;
+    /* 增加内边距，避免内容贴边 */
     box-sizing: border-box;
     /* 关键：让滚动正常工作，不被父元素的拖拽事件干扰 */
     pointer-events: auto;
     position: relative;
     z-index: 1;
-    min-height: 0; /* 允许flex子元素缩小，关键用于使滚动条工作 */
-    max-height: 100%; /* 确保不超过容器高度 */
+    min-height: 0;
+    /* 允许flex子元素缩小，关键用于使滚动条工作 */
+    max-height: 100%;
+    /* 确保不超过容器高度 */
     /* 确保滚动条总是可见轨道 */
     scrollbar-width: thin;
     /* 平滑滚动与隔离，减少滚动链导致的卡顿 */
@@ -6657,7 +6818,8 @@ a.tree-label.tree-bookmark-link:hover {
     will-change: scroll-position;
     contain: layout paint;
     /* 限制内容不溢出到节点外（因为节点本身是overflow:visible） */
-    border-radius: 0 0 6px 6px; /* 与节点圆角匹配 */
+    border-radius: 0 0 6px 6px;
+    /* 与节点圆角匹配 */
 }
 
 /* 编辑模式下仍显示文本光标，避免与拖动光标冲突 */
@@ -6680,9 +6842,12 @@ a.tree-label.tree-bookmark-link:hover {
     /* 更深的轨道色，避免在深色主题下显得偏亮，且与自定义滚动条风格一致 */
     background: #0f1012 !important;
 }
+
 [data-theme="dark"] .md-canvas-text::-webkit-scrollbar-thumb {
-    background: #3a3d40 !important; /* 深色thumb，避免看起来偏亮 */
-    border-color: #0f1012 !important; /* 与轨道统一，避免边缘亮线 */
+    background: #3a3d40 !important;
+    /* 深色thumb，避免看起来偏亮 */
+    border-color: #0f1012 !important;
+    /* 与轨道统一，避免边缘亮线 */
 }
 
 /* 明确声明深色配色方案，促使浏览器原生滚动条与控件采用深色渲染，减少初次渲染时的浅色闪烁 */
@@ -6695,6 +6860,7 @@ a.tree-label.tree-bookmark-link:hover {
 [data-theme="dark"] #canvasView ::-webkit-scrollbar-track {
     background: #121315 !important;
 }
+
 [data-theme="dark"] #canvasView ::-webkit-scrollbar-thumb {
     background: #3b3f43 !important;
     border-color: #121315 !important;
@@ -6704,6 +6870,7 @@ a.tree-label.tree-bookmark-link:hover {
 [data-theme="dark"] .content-area::-webkit-scrollbar-track {
     background: #121315 !important;
 }
+
 [data-theme="dark"] .content-area::-webkit-scrollbar-thumb {
     background: #3b3f43 !important;
     border: 2px solid #121315 !important;
@@ -6713,6 +6880,7 @@ a.tree-label.tree-bookmark-link:hover {
 [data-theme="dark"] .md-canvas-editor::-webkit-scrollbar-track {
     background: #121315 !important;
 }
+
 [data-theme="dark"] .md-canvas-editor::-webkit-scrollbar-thumb {
     background: #3b3f43 !important;
     border-color: #121315 !important;
@@ -6725,6 +6893,7 @@ a.tree-label.tree-bookmark-link:hover {
 [data-theme="dark"] .main-container::-webkit-scrollbar-track {
     background: #0f1012 !important;
 }
+
 [data-theme="dark"] html::-webkit-scrollbar-thumb,
 [data-theme="dark"] body::-webkit-scrollbar-thumb,
 [data-theme="dark"] .view::-webkit-scrollbar-thumb,
@@ -6747,7 +6916,7 @@ a.tree-label.tree-bookmark-link:hover {
 }
 
 .md-canvas-text code {
-    background: rgba(0,0,0,0.06);
+    background: rgba(0, 0, 0, 0.06);
     padding: 2px 4px;
     border-radius: 3px;
 }
@@ -6802,8 +6971,10 @@ a.tree-label.tree-bookmark-link:hover {
     text-decoration: none;
     border-bottom: 1px solid rgba(37, 99, 235, 0.3);
     cursor: pointer;
-    padding: 2px 4px; /* 增加点击区域 */
-    margin: -2px -4px; /* 抵消padding，保持视觉位置 */
+    padding: 2px 4px;
+    /* 增加点击区域 */
+    margin: -2px -4px;
+    /* 抵消padding，保持视觉位置 */
     display: inline-block;
 }
 
@@ -7083,9 +7254,9 @@ a.tree-label.tree-bookmark-link:hover {
 /* 书签相关的记录 - 绿色细边框凸显（与书签画布一致） */
 .related-history-item.is-bookmark {
     border: 1px solid #4CAF50;
-    background: linear-gradient(135deg, 
-        rgba(76, 175, 80, 0.08) 0%, 
-        rgba(76, 175, 80, 0.03) 100%);
+    background: linear-gradient(135deg,
+            rgba(76, 175, 80, 0.08) 0%,
+            rgba(76, 175, 80, 0.03) 100%);
     box-shadow: 0 0 0 1px rgba(76, 175, 80, 0.25);
 }
 
@@ -7268,14 +7439,15 @@ a.tree-label.tree-bookmark-link:hover {
 }
 
 /* 悬停时显示跳转按钮 */
-*:hover > .jump-to-related-btn-container,
-.jump-to-related-btn-container:hover {
+*:hover>.jump-to-related-btn-container,
+.jump-to-related-btn-container:hover,
+.ranking-item:hover .jump-to-related-btn-container {
     opacity: 1;
 }
 
 .jump-to-related-btn {
-    width: 20px;
-    height: 20px;
+    width: 24px;
+    height: 24px;
     padding: 0;
     border: none;
     background: var(--accent-primary);
@@ -7285,7 +7457,7 @@ a.tree-label.tree-bookmark-link:hover {
     display: flex;
     align-items: center;
     justify-content: center;
-    font-size: 10px;
+    font-size: 12px;
     transition: all 0.2s ease;
 }
 
@@ -7295,14 +7467,19 @@ a.tree-label.tree-bookmark-link:hover {
 }
 
 .jump-to-related-btn i {
-    font-size: 10px;
+    font-size: 12px;
+}
+
+/* 点击排行中的跳转按钮 - 离计数更近 */
+.ranking-item .jump-to-related-btn-container {
+    margin-right: -30px;
 }
 
 /* ========== 书签关联记录高亮目标 ========== */
 .related-history-item.highlight-target {
-    background: linear-gradient(135deg, 
-        rgba(255, 235, 59, 0.4) 0%, 
-        rgba(255, 193, 7, 0.3) 100%) !important;
+    background: linear-gradient(135deg,
+            rgba(255, 235, 59, 0.4) 0%,
+            rgba(255, 193, 7, 0.3) 100%) !important;
     border-color: #FFC107 !important;
     box-shadow: 0 0 0 3px rgba(255, 193, 7, 0.3), 0 4px 12px rgba(255, 193, 7, 0.2) !important;
     animation: highlightPulse 1.5s ease-out;
@@ -7312,9 +7489,11 @@ a.tree-label.tree-bookmark-link:hover {
     0% {
         box-shadow: 0 0 0 0 rgba(255, 193, 7, 0.6), 0 4px 12px rgba(255, 193, 7, 0.3);
     }
+
     50% {
         box-shadow: 0 0 0 8px rgba(255, 193, 7, 0.2), 0 4px 12px rgba(255, 193, 7, 0.3);
     }
+
     100% {
         box-shadow: 0 0 0 3px rgba(255, 193, 7, 0.3), 0 4px 12px rgba(255, 193, 7, 0.2);
     }
@@ -7322,16 +7501,33 @@ a.tree-label.tree-bookmark-link:hover {
 
 /* 深色模式下的高亮颜色 */
 [data-theme="dark"] .related-history-item.highlight-target {
-    background: linear-gradient(135deg, 
-        rgba(255, 193, 7, 0.25) 0%, 
-        rgba(255, 152, 0, 0.2) 100%) !important;
+    background: linear-gradient(135deg,
+            rgba(255, 193, 7, 0.25) 0%,
+            rgba(255, 152, 0, 0.2) 100%) !important;
+}
+
+/* ========== 点击记录书签项高亮 ========== */
+[data-bookmark-url].highlight-target {
+    background: linear-gradient(135deg,
+            rgba(255, 235, 59, 0.4) 0%,
+            rgba(255, 193, 7, 0.3) 100%) !important;
+    border-color: #FFC107 !important;
+    box-shadow: 0 0 0 3px rgba(255, 193, 7, 0.3), 0 4px 12px rgba(255, 193, 7, 0.2) !important;
+    animation: highlightPulse 1.5s ease-out;
+}
+
+[data-theme="dark"] [data-bookmark-url].highlight-target {
+    background: linear-gradient(135deg,
+            rgba(255, 193, 7, 0.25) 0%,
+            rgba(255, 152, 0, 0.2) 100%) !important;
 }
 
 /* ========== 返回按钮 ========== */
 .jump-back-btn {
     position: fixed;
     bottom: 40px;
-    right: 100px;  /* 在回到顶部按钮左边 */
+    right: 100px;
+    /* 在回到顶部按钮左边 */
     width: 48px;
     height: 48px;
     padding: 0;

@@ -2473,7 +2473,7 @@ class BrowsingHistoryCalendar {
 
         const jumpBtn = document.createElement('button');
         jumpBtn.className = 'jump-to-related-btn';
-        jumpBtn.title = typeof currentLang !== 'undefined' && currentLang === 'zh_CN' ? '跳转至书签关联记录' : 'Jump to Related History';
+        jumpBtn.title = typeof currentLang !== 'undefined' && currentLang === 'zh_CN' ? '跳转至关联记录' : 'Jump to Related History';
         jumpBtn.innerHTML = '<i class="fas fa-external-link-alt"></i>';
         jumpBtn.dataset.visitTime = bookmark.dateAdded.getTime();
         jumpBtn.dataset.url = bookmark.url;
@@ -3051,7 +3051,7 @@ class BrowsingHistoryCalendar {
 
         const jumpBtn = document.createElement('button');
         jumpBtn.className = 'jump-to-related-btn';
-        jumpBtn.title = typeof currentLang !== 'undefined' && currentLang === 'zh_CN' ? '跳转至书签关联记录' : 'Jump to Related History';
+        jumpBtn.title = typeof currentLang !== 'undefined' && currentLang === 'zh_CN' ? '跳转至关联记录' : 'Jump to Related History';
         jumpBtn.innerHTML = '<i class="fas fa-external-link-alt"></i>';
         jumpBtn.dataset.visitTime = bookmark.dateAdded.getTime();
         jumpBtn.dataset.url = bookmark.url;

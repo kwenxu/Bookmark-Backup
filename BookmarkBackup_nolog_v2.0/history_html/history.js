@@ -983,7 +983,7 @@ const i18n = {
         'en': 'Click Ranking'
     },
     browsingTabRelated: {
-        'zh_CN': '书签关联记录',
+        'zh_CN': '关联记录',
         'en': 'Related History'
     },
     browsingRankingTitle: {
@@ -995,7 +995,7 @@ const i18n = {
         'en': 'Based on browser history, rank your bookmarks by click counts.'
     },
     browsingRelatedTitle: {
-        'zh_CN': '书签关联记录',
+        'zh_CN': '关联记录',
         'en': 'Related History'
     },
     browsingRelatedDescription: {
@@ -5749,7 +5749,7 @@ function renderBrowsingClickRankingList(container, items, range) {
 
             const jumpBtn = document.createElement('button');
             jumpBtn.className = 'jump-to-related-btn';
-            jumpBtn.dataset.tooltip = isZh ? '跳转至书签关联记录' : 'Jump to Related History';
+            jumpBtn.dataset.tooltip = isZh ? '跳转至关联记录' : 'Jump to Related History';
             jumpBtn.innerHTML = '<i class="fas fa-external-link-alt"></i>';
             jumpBtn.dataset.url = entry.url;
             jumpBtn.dataset.title = entry.title;
@@ -5956,7 +5956,7 @@ function initBrowsingClickRanking() {
         });
     });
 
-    let initialRange = 'month';
+    let initialRange = 'day';
     try {
         const saved = localStorage.getItem('browsingRankingActiveRange');
         if (saved && allowedRanges.includes(saved)) {

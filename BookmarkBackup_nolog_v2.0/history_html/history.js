@@ -5614,6 +5614,190 @@ function getBrowsingRankingItemsForRange(range) {
     return items;
 }
 
+// 渲染文件夹模式的点击排行列表
+async function renderBrowsingFolderRankingList(container, items, range, stats) {
+    container.innerHTML = '';
+    
+    const isZh = currentLang === 'zh_CN';
+    
+    // 确保书签信息已加载（包含 folderPath）
+    await getBookmarkUrlsAndTitles();
+    
+    if (!items.length) {
+        const title = isZh ? '暂无点击记录' : 'No click records found';
+        const desc = isZh ? '当前时间范围内尚未找到这些书签的访问记录。' : 'No visit records were found in the selected time range.';
+        container.innerHTML = `
+            <div class="empty-state">
+                <div class="empty-state-icon"><i class="fas fa-folder"></i></div>
+                <div class="empty-state-title">${title}</div>
+                <div class="empty-state-description">${desc}</div>
+            </div>
+        `;
+        return;
+    }
+
+    // 按文件夹聚合统计
+    const folderStats = new Map(); // folderPath -> { count, items: [] }
+    const bookmarkInfo = stats.bookmarkInfoMap;
+    
+    items.forEach(item => {
+        // 尝试从 getBookmarkUrlsAndTitles 获取 folderPath
+        let folderPath = [];
+        if (browsingRelatedBookmarkInfo && browsingRelatedBookmarkInfo.has(item.url)) {
+            folderPath = browsingRelatedBookmarkInfo.get(item.url).folderPath || [];
+        }
+        
+        // 使用完整的文件夹路径作为分组键（精确到最后一级文件夹）
+        const folderKey = folderPath.length > 0 ? folderPath.join(' / ') : (isZh ? '未分类' : 'Uncategorized');
+        const folderName = folderPath.length > 0 ? folderPath[folderPath.length - 1] : folderKey;
+        
+        if (!folderStats.has(folderKey)) {
+            folderStats.set(folderKey, { 
+                name: folderName,
+                fullPath: folderKey,
+                folderPath: folderPath,
+                count: 0, 
+                items: []
+            });
+        }
+        
+        const folderData = folderStats.get(folderKey);
+        const itemCount = item.filteredCount !== undefined ? item.filteredCount : (
+            range === 'day' ? item.dayCount :
+            range === 'week' ? item.weekCount :
+            range === 'year' ? item.yearCount : item.monthCount
+        );
+        folderData.count += itemCount;
+        folderData.items.push({ ...item, count: itemCount, folderPath });
+    });
+
+    // 按点击次数排序文件夹
+    const sortedFolders = Array.from(folderStats.values()).sort((a, b) => b.count - a.count);
+    
+    // 渲染文件夹列表
+    const rangeLabel = (() => {
+        if (range === 'day') return isZh ? '今天' : 'Today';
+        if (range === 'week') return isZh ? '本周' : 'This week';
+        if (range === 'year') return isZh ? '本年' : 'This year';
+        return isZh ? '本月' : 'This month';
+    })();
+
+    sortedFolders.forEach((folder, index) => {
+        const folderRow = document.createElement('div');
+        folderRow.className = 'ranking-item folder-ranking-item';
+        folderRow.style.cursor = 'pointer';
+        
+        // 排名样式
+        let rankClass = '';
+        if (index === 0) rankClass = 'rank-gold';
+        else if (index === 1) rankClass = 'rank-silver';
+        else if (index === 2) rankClass = 'rank-bronze';
+
+        const header = document.createElement('div');
+        header.className = 'ranking-header';
+
+        // 排名数字
+        const rank = document.createElement('span');
+        rank.className = 'ranking-rank';
+        rank.textContent = index + 1;
+        if (rankClass) rank.classList.add(rankClass);
+        header.appendChild(rank);
+
+        // 文件夹图标和名称
+        const main = document.createElement('div');
+        main.className = 'ranking-main';
+        const pathDisplay = folder.fullPath !== folder.name ? folder.fullPath : '';
+        main.innerHTML = `
+            <div class="ranking-icon" style="color: var(--accent-primary);">
+                <i class="fas fa-folder"></i>
+            </div>
+            <div class="ranking-info">
+                <div class="ranking-title" title="${folder.fullPath}">${folder.name}</div>
+                <div class="ranking-meta">${pathDisplay ? `${pathDisplay} · ` : ''}${isZh ? `${folder.items.length} 个书签` : `${folder.items.length} bookmarks`}</div>
+            </div>
+        `;
+        header.appendChild(main);
+
+        // 点击次数
+        const counts = document.createElement('div');
+        counts.className = 'ranking-counts';
+        if (rankClass) counts.classList.add(rankClass);
+        counts.textContent = folder.count.toLocaleString(isZh ? 'zh-CN' : 'en-US');
+        counts.dataset.tooltip = isZh ? `${rangeLabel}：${folder.count} 次` : `${rangeLabel}: ${folder.count} clicks`;
+        header.appendChild(counts);
+
+        folderRow.appendChild(header);
+
+        // 展开的书签列表
+        const bookmarkList = document.createElement('div');
+        bookmarkList.className = 'folder-bookmark-list';
+        bookmarkList.style.display = 'none';
+        bookmarkList.style.padding = '8px 0 8px 40px';
+        bookmarkList.style.borderTop = '1px solid var(--border-color)';
+        bookmarkList.style.marginTop = '8px';
+
+        // 按点击次数排序书签
+        folder.items.sort((a, b) => b.count - a.count);
+        
+        folder.items.forEach(item => {
+            const bookmarkItem = document.createElement('div');
+            bookmarkItem.style.display = 'flex';
+            bookmarkItem.style.alignItems = 'center';
+            bookmarkItem.style.gap = '8px';
+            bookmarkItem.style.padding = '6px 8px';
+            bookmarkItem.style.marginBottom = '4px';
+            bookmarkItem.style.borderRadius = '4px';
+            bookmarkItem.style.cursor = 'pointer';
+            bookmarkItem.style.transition = 'background 0.2s';
+
+            bookmarkItem.innerHTML = `
+                <img src="${typeof getFaviconUrl === 'function' ? getFaviconUrl(item.url) : `chrome://favicon/${item.url}`}" 
+                     style="width:16px;height:16px;flex-shrink:0;" onerror="this.style.display='none'">
+                <span style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:12px;" 
+                      title="${item.title}">${item.title}</span>
+                <span style="font-size:11px;color:var(--text-tertiary);flex-shrink:0;">${item.count}</span>
+            `;
+
+            bookmarkItem.addEventListener('mouseenter', () => {
+                bookmarkItem.style.background = 'var(--bg-tertiary)';
+            });
+            bookmarkItem.addEventListener('mouseleave', () => {
+                bookmarkItem.style.background = 'transparent';
+            });
+            bookmarkItem.addEventListener('click', (e) => {
+                e.stopPropagation();
+                try {
+                    const browserAPI = (typeof chrome !== 'undefined') ? chrome : browser;
+                    if (browserAPI?.tabs?.create) {
+                        browserAPI.tabs.create({ url: item.url });
+                    } else {
+                        window.open(item.url, '_blank');
+                    }
+                } catch (err) {
+                    console.warn('[FolderRanking] 打开书签失败:', err);
+                }
+            });
+
+            bookmarkList.appendChild(bookmarkItem);
+        });
+
+        folderRow.appendChild(bookmarkList);
+
+        // 点击展开/收起
+        header.addEventListener('click', () => {
+            const isExpanded = bookmarkList.style.display === 'block';
+            bookmarkList.style.display = isExpanded ? 'none' : 'block';
+            const icon = main.querySelector('.fa-folder, .fa-folder-open');
+            if (icon) {
+                icon.classList.toggle('fa-folder', isExpanded);
+                icon.classList.toggle('fa-folder-open', !isExpanded);
+            }
+        });
+
+        container.appendChild(folderRow);
+    });
+}
+
 function renderBrowsingClickRankingList(container, items, range) {
     container.innerHTML = '';
 
@@ -5900,7 +6084,13 @@ async function loadBrowsingClickRanking(range) {
             items = filterRankingItemsByTime(items, browsingRankingTimeFilter, stats.boundaries);
         }
         
-        renderBrowsingClickRankingList(listContainer, items, range);
+        // 根据视图模式渲染
+        initBrowsingRankingViewMode();
+        if (browsingRankingViewMode === 'folder') {
+            await renderBrowsingFolderRankingList(listContainer, items, range, stats);
+        } else {
+            renderBrowsingClickRankingList(listContainer, items, range);
+        }
     } catch (error) {
         console.error('[BrowsingRanking] 加载点击排行失败:', error);
         const fallbackTitle = isZh ? '加载点击排行失败' : 'Failed to load click ranking';
@@ -10369,6 +10559,29 @@ function formatRelativeTime(date) {
 // 全局变量：点击排行当前选中的时间筛选
 let browsingRankingTimeFilter = null; // { type: 'hour'|'day'|'week'|'month', value: number|Date }
 let browsingRankingCurrentRange = 'month'; // 当前选中的时间范围
+let browsingRankingViewMode = 'bookmark'; // 'bookmark' 或 'folder'
+
+// 初始化视图模式（从localStorage读取）
+function initBrowsingRankingViewMode() {
+    try {
+        const saved = localStorage.getItem('browsingRankingViewMode');
+        if (saved === 'folder' || saved === 'bookmark') {
+            browsingRankingViewMode = saved;
+        }
+    } catch (e) {
+        console.warn('[BrowsingRanking] 无法读取视图模式:', e);
+    }
+}
+
+// 保存视图模式
+function saveBrowsingRankingViewMode(mode) {
+    browsingRankingViewMode = mode;
+    try {
+        localStorage.setItem('browsingRankingViewMode', mode);
+    } catch (e) {
+        console.warn('[BrowsingRanking] 无法保存视图模式:', e);
+    }
+}
 
 // 显示点击排行的时间段菜单
 async function showBrowsingRankingTimeMenu(range) {
@@ -10380,6 +10593,9 @@ async function showBrowsingRankingTimeMenu(range) {
     menuContainer.style.display = 'none';
     browsingRankingTimeFilter = null; // 重置筛选
 
+    // 初始化视图模式
+    initBrowsingRankingViewMode();
+
     // 获取点击排行的数据
     const stats = await ensureBrowsingClickRankingStats();
     if (!stats || !stats.items || stats.items.length === 0) {
@@ -10389,9 +10605,17 @@ async function showBrowsingRankingTimeMenu(range) {
     const now = new Date();
     const isZh = currentLang === 'zh_CN';
 
-    // 创建菜单项容器
+    // 创建菜单行容器（包含时间按钮和切换按钮）
+    const menuRow = document.createElement('div');
+    menuRow.style.display = 'flex';
+    menuRow.style.alignItems = 'center';
+    menuRow.style.justifyContent = 'space-between';
+    menuRow.style.gap = '12px';
+
+    // 创建时间菜单项容器
     const itemsContainer = document.createElement('div');
     itemsContainer.className = 'time-menu-items';
+    itemsContainer.style.flex = '1';
 
     // 添加"全部"按钮（默认选中）
     const allBtn = document.createElement('button');
@@ -10422,8 +10646,51 @@ async function showBrowsingRankingTimeMenu(range) {
             break;
     }
 
+    menuRow.appendChild(itemsContainer);
+
+    // 创建"书签/文件夹"切换按钮
+    const toggleBtn = document.createElement('button');
+    toggleBtn.className = 'ranking-view-toggle-btn';
+    toggleBtn.style.padding = '4px 10px';
+    toggleBtn.style.fontSize = '11px';
+    toggleBtn.style.border = '1px solid var(--border-color)';
+    toggleBtn.style.borderRadius = '4px';
+    toggleBtn.style.background = 'var(--bg-secondary)';
+    toggleBtn.style.color = 'var(--text-secondary)';
+    toggleBtn.style.cursor = 'pointer';
+    toggleBtn.style.whiteSpace = 'nowrap';
+    toggleBtn.style.transition = 'all 0.2s';
+    toggleBtn.style.flexShrink = '0';
+
+    const updateToggleBtnText = () => {
+        const isFolder = browsingRankingViewMode === 'folder';
+        toggleBtn.innerHTML = `<i class="fas ${isFolder ? 'fa-folder' : 'fa-bookmark'}" style="margin-right:4px;"></i>${isFolder ? (isZh ? '文件夹' : 'Folder') : (isZh ? '书签' : 'Bookmark')}`;
+    };
+    updateToggleBtnText();
+
+    toggleBtn.addEventListener('click', () => {
+        const newMode = browsingRankingViewMode === 'bookmark' ? 'folder' : 'bookmark';
+        saveBrowsingRankingViewMode(newMode);
+        updateToggleBtnText();
+        loadBrowsingClickRanking(browsingRankingCurrentRange);
+    });
+
+    toggleBtn.addEventListener('mouseenter', () => {
+        toggleBtn.style.background = 'var(--bg-tertiary)';
+        toggleBtn.style.borderColor = 'var(--accent-primary)';
+        toggleBtn.style.color = 'var(--accent-primary)';
+    });
+
+    toggleBtn.addEventListener('mouseleave', () => {
+        toggleBtn.style.background = 'var(--bg-secondary)';
+        toggleBtn.style.borderColor = 'var(--border-color)';
+        toggleBtn.style.color = 'var(--text-secondary)';
+    });
+
+    menuRow.appendChild(toggleBtn);
+
     if (itemsContainer.children.length > 1) { // 至少有"全部"和一个其他选项
-        menuContainer.appendChild(itemsContainer);
+        menuContainer.appendChild(menuRow);
         menuContainer.style.display = 'block';
     }
 }

@@ -7627,6 +7627,112 @@ a.tree-label.tree-bookmark-link:hover {
     border: 2px solid #2196F3 !important;
 }
 
+/* ========== 文件夹点击排行 ========== */
+.folder-ranking-item {
+    margin-bottom: 8px;
+    border-radius: 8px;
+    background: var(--bg-secondary);
+    border: 1px solid var(--border-color);
+    transition: all 0.2s ease;
+    overflow: hidden;
+}
+
+.folder-ranking-item:hover {
+    border-color: var(--accent-primary);
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+}
+
+.folder-ranking-item .ranking-header {
+    display: flex;
+    align-items: center;
+    padding: 12px;
+    gap: 12px;
+}
+
+.folder-ranking-item .ranking-rank {
+    min-width: 24px;
+    height: 24px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--text-tertiary);
+    background: var(--bg-tertiary);
+    border-radius: 6px;
+}
+
+.folder-ranking-item .ranking-rank.rank-gold {
+    background: linear-gradient(135deg, #FFD700 0%, #FFA500 100%);
+    color: #fff;
+}
+
+.folder-ranking-item .ranking-rank.rank-silver {
+    background: linear-gradient(135deg, #C0C0C0 0%, #A0A0A0 100%);
+    color: #fff;
+}
+
+.folder-ranking-item .ranking-rank.rank-bronze {
+    background: linear-gradient(135deg, #CD7F32 0%, #A0522D 100%);
+    color: #fff;
+}
+
+.folder-ranking-item .ranking-main {
+    flex: 1;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    min-width: 0;
+}
+
+.folder-ranking-item .ranking-icon {
+    font-size: 18px;
+    flex-shrink: 0;
+}
+
+.folder-ranking-item .ranking-info {
+    flex: 1;
+    min-width: 0;
+}
+
+.folder-ranking-item .ranking-title {
+    font-size: 14px;
+    font-weight: 500;
+    color: var(--text-primary);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.folder-ranking-item .ranking-meta {
+    font-size: 11px;
+    color: var(--text-tertiary);
+    margin-top: 2px;
+}
+
+.folder-ranking-item .ranking-counts {
+    font-size: 16px;
+    font-weight: 600;
+    color: var(--text-secondary);
+    flex-shrink: 0;
+}
+
+.folder-ranking-item .ranking-counts.rank-gold {
+    color: #FFA500;
+}
+
+.folder-ranking-item .ranking-counts.rank-silver {
+    color: #808080;
+}
+
+.folder-ranking-item .ranking-counts.rank-bronze {
+    color: #CD7F32;
+}
+
+.folder-bookmark-list {
+    background: var(--bg-primary);
+}
+
 /* ========== 回到顶部悬浮按钮 ========== */
 .scroll-to-top-btn {
     position: fixed;

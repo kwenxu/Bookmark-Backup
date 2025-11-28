@@ -5483,25 +5483,42 @@ async function ensureBrowsingClickRankingStats() {
     }
 
     // 构建 URL/标题 -> 书签主键的映射
-    // 同一个书签可能有多个URL或标题匹配到不同的历史记录，需要合并统计
+    // 标题相同的书签合并为同一个统计项（共享 bookmarkKey）
     const bookmarkKeyMap = new Map(); // url or title (normalized) -> bookmarkKey
-    const bookmarkInfoMap = new Map(); // bookmarkKey -> { url, title }
+    const bookmarkInfoMap = new Map(); // bookmarkKey -> { url, title, urls: [] }
 
     let bookmarkKeyCounter = 0;
     for (const [url, info] of bookmarkInfoByUrl.entries()) {
         const normalizedUrl = url;
         const normalizedTitle = info && typeof info.title === 'string' ? info.title.trim() : '';
 
-        const bookmarkKey = `bm_${bookmarkKeyCounter++}`;
-        bookmarkKeyMap.set(`url:${normalizedUrl}`, bookmarkKey);
+        // 检查是否已有相同标题的书签
+        let bookmarkKey = null;
         if (normalizedTitle) {
-            bookmarkKeyMap.set(`title:${normalizedTitle}`, bookmarkKey);
+            bookmarkKey = bookmarkKeyMap.get(`title:${normalizedTitle}`);
         }
-
-        bookmarkInfoMap.set(bookmarkKey, {
-            url: normalizedUrl,
-            title: normalizedTitle || normalizedUrl
-        });
+        
+        if (bookmarkKey) {
+            // 标题相同，复用已有的 bookmarkKey，添加 URL 映射
+            bookmarkKeyMap.set(`url:${normalizedUrl}`, bookmarkKey);
+            // 记录额外的 URL
+            const existingInfo = bookmarkInfoMap.get(bookmarkKey);
+            if (existingInfo && existingInfo.urls) {
+                existingInfo.urls.push(normalizedUrl);
+            }
+        } else {
+            // 创建新的 bookmarkKey
+            bookmarkKey = `bm_${bookmarkKeyCounter++}`;
+            bookmarkKeyMap.set(`url:${normalizedUrl}`, bookmarkKey);
+            if (normalizedTitle) {
+                bookmarkKeyMap.set(`title:${normalizedTitle}`, bookmarkKey);
+            }
+            bookmarkInfoMap.set(bookmarkKey, {
+                url: normalizedUrl,
+                title: normalizedTitle || normalizedUrl,
+                urls: [normalizedUrl]
+            });
+        }
     }
 
     const statsMap = new Map(); // bookmarkKey -> stats
@@ -5568,7 +5585,8 @@ async function ensureBrowsingClickRankingStats() {
 
     const items = Array.from(statsMap.values());
 
-    browsingClickRankingStats = { items, boundaries };
+    // 保存映射供筛选函数使用
+    browsingClickRankingStats = { items, boundaries, bookmarkKeyMap, bookmarkInfoMap };
     return browsingClickRankingStats;
 }
 
@@ -5693,13 +5711,16 @@ function renderBrowsingClickRankingList(container, items, range) {
             const counts = document.createElement('div');
             counts.className = 'ranking-counts';
 
-            const value = range === 'day'
-                ? entry.dayCount
-                : range === 'week'
-                    ? entry.weekCount
-                    : range === 'year'
-                        ? entry.yearCount
-                        : entry.monthCount;
+            // 优先使用筛选后的次数（如果存在）
+            const value = entry.filteredCount !== undefined
+                ? entry.filteredCount
+                : (range === 'day'
+                    ? entry.dayCount
+                    : range === 'week'
+                        ? entry.weekCount
+                        : range === 'year'
+                            ? entry.yearCount
+                            : entry.monthCount);
             const locale = currentLang === 'zh_CN' ? 'zh-CN' : 'en-US';
             const formattedValue = typeof value === 'number'
                 ? value.toLocaleString(locale)
@@ -5872,7 +5893,13 @@ async function loadBrowsingClickRanking(range) {
             return;
         }
 
-        const items = getBrowsingRankingItemsForRange(range);
+        let items = getBrowsingRankingItemsForRange(range);
+        
+        // 应用二级菜单时间筛选
+        if (browsingRankingTimeFilter && items.length > 0) {
+            items = filterRankingItemsByTime(items, browsingRankingTimeFilter, stats.boundaries);
+        }
+        
         renderBrowsingClickRankingList(listContainer, items, range);
     } catch (error) {
         console.error('[BrowsingRanking] 加载点击排行失败:', error);
@@ -5907,6 +5934,10 @@ function initBrowsingClickRanking() {
                 btn.classList.remove('active');
             }
         });
+        
+        // 显示时间菜单
+        showBrowsingRankingTimeMenu(range);
+        
         loadBrowsingClickRanking(range);
 
         if (shouldPersist) {
@@ -10330,6 +10361,317 @@ function formatRelativeTime(date) {
     return `${year}-${month}-${day} ${hour}:${minute}`;
 }
 
+// ========== 点击排行 - 时间段菜单功能 ==========
+
+// 全局变量：点击排行当前选中的时间筛选
+let browsingRankingTimeFilter = null; // { type: 'hour'|'day'|'week'|'month', value: number|Date }
+let browsingRankingCurrentRange = 'month'; // 当前选中的时间范围
+
+// 显示点击排行的时间段菜单
+async function showBrowsingRankingTimeMenu(range) {
+    browsingRankingCurrentRange = range;
+    const menuContainer = document.getElementById('browsingRankingTimeMenu');
+    if (!menuContainer) return;
+
+    menuContainer.innerHTML = '';
+    menuContainer.style.display = 'none';
+    browsingRankingTimeFilter = null; // 重置筛选
+
+    // 获取点击排行的数据
+    const stats = await ensureBrowsingClickRankingStats();
+    if (!stats || !stats.items || stats.items.length === 0) {
+        return;
+    }
+
+    const now = new Date();
+    const isZh = currentLang === 'zh_CN';
+
+    // 创建菜单项容器
+    const itemsContainer = document.createElement('div');
+    itemsContainer.className = 'time-menu-items';
+
+    // 添加"全部"按钮（默认选中）
+    const allBtn = document.createElement('button');
+    allBtn.className = 'time-menu-btn active';
+    allBtn.textContent = isZh ? '全部' : 'All';
+    allBtn.dataset.filter = 'all';
+    allBtn.addEventListener('click', () => {
+        itemsContainer.querySelectorAll('.time-menu-btn').forEach(b => b.classList.remove('active'));
+        allBtn.classList.add('active');
+        browsingRankingTimeFilter = null;
+        loadBrowsingClickRanking(browsingRankingCurrentRange);
+    });
+    itemsContainer.appendChild(allBtn);
+
+    // 根据范围显示不同的时间段按钮
+    switch (range) {
+        case 'day':
+            renderRankingDayHoursMenu(itemsContainer, now, stats);
+            break;
+        case 'week':
+            renderRankingWeekDaysMenu(itemsContainer, now, stats);
+            break;
+        case 'month':
+            renderRankingMonthWeeksMenu(itemsContainer, now, stats);
+            break;
+        case 'year':
+            renderRankingYearMonthsMenu(itemsContainer, now, stats);
+            break;
+    }
+
+    if (itemsContainer.children.length > 1) { // 至少有"全部"和一个其他选项
+        menuContainer.appendChild(itemsContainer);
+        menuContainer.style.display = 'block';
+    }
+}
+
+// 渲染点击排行当天的小时菜单
+function renderRankingDayHoursMenu(container, date, stats) {
+    const isZh = currentLang === 'zh_CN';
+    const boundaries = stats.boundaries;
+    const calendar = window.browsingHistoryCalendarInstance;
+    if (!calendar || !calendar.bookmarksByDate) return;
+
+    // 分析有数据的小时
+    const hoursSet = new Set();
+    for (const records of calendar.bookmarksByDate.values()) {
+        records.forEach(record => {
+            const t = record.visitTime || (record.dateAdded instanceof Date ? record.dateAdded.getTime() : 0);
+            if (t >= boundaries.dayStart && t <= boundaries.now) {
+                hoursSet.add(new Date(t).getHours());
+            }
+        });
+    }
+
+    Array.from(hoursSet).sort((a, b) => a - b).forEach(hour => {
+        const btn = document.createElement('button');
+        btn.className = 'time-menu-btn';
+        btn.textContent = `${String(hour).padStart(2, '0')}:00`;
+        btn.dataset.hour = hour;
+        btn.addEventListener('click', () => {
+            container.querySelectorAll('.time-menu-btn').forEach(b => b.classList.remove('active'));
+            btn.classList.add('active');
+            browsingRankingTimeFilter = { type: 'hour', value: hour };
+            loadBrowsingClickRanking(browsingRankingCurrentRange);
+        });
+        container.appendChild(btn);
+    });
+}
+
+// 渲染点击排行当周的天菜单
+function renderRankingWeekDaysMenu(container, date, stats) {
+    const isZh = currentLang === 'zh_CN';
+    const boundaries = stats.boundaries;
+    const calendar = window.browsingHistoryCalendarInstance;
+    if (!calendar || !calendar.bookmarksByDate) return;
+
+    const weekdayNames = isZh 
+        ? ['周日', '周一', '周二', '周三', '周四', '周五', '周六']
+        : ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+
+    // 分析有数据的天
+    const daysSet = new Set();
+    for (const records of calendar.bookmarksByDate.values()) {
+        records.forEach(record => {
+            const t = record.visitTime || (record.dateAdded instanceof Date ? record.dateAdded.getTime() : 0);
+            if (t >= boundaries.weekStart && t <= boundaries.now) {
+                daysSet.add(new Date(t).toDateString());
+            }
+        });
+    }
+
+    // 生成本周的日期
+    const weekStart = new Date(boundaries.weekStart);
+    for (let i = 0; i < 7; i++) {
+        const dayDate = new Date(weekStart);
+        dayDate.setDate(weekStart.getDate() + i);
+        
+        if (!daysSet.has(dayDate.toDateString())) continue;
+        if (dayDate.getTime() > boundaries.now) continue;
+        
+        const btn = document.createElement('button');
+        btn.className = 'time-menu-btn';
+        btn.textContent = weekdayNames[dayDate.getDay()];
+        btn.dataset.date = dayDate.toISOString();
+        btn.addEventListener('click', () => {
+            container.querySelectorAll('.time-menu-btn').forEach(b => b.classList.remove('active'));
+            btn.classList.add('active');
+            browsingRankingTimeFilter = { type: 'day', value: dayDate };
+            loadBrowsingClickRanking(browsingRankingCurrentRange);
+        });
+        container.appendChild(btn);
+    }
+}
+
+// 渲染点击排行当月的周菜单
+function renderRankingMonthWeeksMenu(container, date, stats) {
+    const isZh = currentLang === 'zh_CN';
+    const boundaries = stats.boundaries;
+    const calendar = window.browsingHistoryCalendarInstance;
+    if (!calendar || !calendar.bookmarksByDate) return;
+
+    // 分析有数据的周
+    const weeksSet = new Set();
+    for (const records of calendar.bookmarksByDate.values()) {
+        records.forEach(record => {
+            const t = record.visitTime || (record.dateAdded instanceof Date ? record.dateAdded.getTime() : 0);
+            if (t >= boundaries.monthStart && t <= boundaries.now) {
+                weeksSet.add(getWeekNumberForRelated(new Date(t)));
+            }
+        });
+    }
+
+    Array.from(weeksSet).sort((a, b) => a - b).forEach(weekNum => {
+        const btn = document.createElement('button');
+        btn.className = 'time-menu-btn';
+        btn.textContent = isZh ? `第${weekNum}周` : `W${weekNum}`;
+        btn.dataset.week = weekNum;
+        btn.addEventListener('click', () => {
+            container.querySelectorAll('.time-menu-btn').forEach(b => b.classList.remove('active'));
+            btn.classList.add('active');
+            browsingRankingTimeFilter = { type: 'week', value: weekNum };
+            loadBrowsingClickRanking(browsingRankingCurrentRange);
+        });
+        container.appendChild(btn);
+    });
+}
+
+// 渲染点击排行当年的月份菜单
+function renderRankingYearMonthsMenu(container, date, stats) {
+    const isZh = currentLang === 'zh_CN';
+    const boundaries = stats.boundaries;
+    const calendar = window.browsingHistoryCalendarInstance;
+    if (!calendar || !calendar.bookmarksByDate) return;
+
+    const monthNames = isZh
+        ? ['1月', '2月', '3月', '4月', '5月', '6月', '7月', '8月', '9月', '10月', '11月', '12月']
+        : ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+
+    // 分析有数据的月份
+    const monthsSet = new Set();
+    for (const records of calendar.bookmarksByDate.values()) {
+        records.forEach(record => {
+            const t = record.visitTime || (record.dateAdded instanceof Date ? record.dateAdded.getTime() : 0);
+            if (t >= boundaries.yearStart && t <= boundaries.now) {
+                monthsSet.add(new Date(t).getMonth());
+            }
+        });
+    }
+
+    Array.from(monthsSet).sort((a, b) => a - b).forEach(month => {
+        const btn = document.createElement('button');
+        btn.className = 'time-menu-btn';
+        btn.textContent = monthNames[month];
+        btn.dataset.month = month;
+        btn.addEventListener('click', () => {
+            container.querySelectorAll('.time-menu-btn').forEach(b => b.classList.remove('active'));
+            btn.classList.add('active');
+            browsingRankingTimeFilter = { type: 'month', value: month };
+            loadBrowsingClickRanking(browsingRankingCurrentRange);
+        });
+        container.appendChild(btn);
+    });
+}
+
+// 按时间筛选点击排行项目（重新计算每个时间段的点击次数）
+function filterRankingItemsByTime(items, filter, boundaries) {
+    if (!filter || !items || items.length === 0) return items;
+    
+    const calendar = window.browsingHistoryCalendarInstance;
+    if (!calendar || !calendar.bookmarksByDate) return items;
+    
+    // 使用与原始统计相同的映射
+    const stats = browsingClickRankingStats;
+    if (!stats || !stats.bookmarkKeyMap || !stats.bookmarkInfoMap) return items;
+    
+    const bookmarkKeyMap = stats.bookmarkKeyMap;
+    const bookmarkInfoMap = stats.bookmarkInfoMap;
+    
+    // 创建 bookmarkKey -> 访问次数的映射
+    const keyVisitCounts = new Map();
+    
+    // 遍历所有访问记录，使用与原始统计完全相同的匹配逻辑
+    for (const bookmarks of calendar.bookmarksByDate.values()) {
+        for (const bm of bookmarks) {
+            if (!bm || !bm.url) continue;
+            
+            const url = bm.url;
+            const title = typeof bm.title === 'string' && bm.title.trim()
+                ? bm.title.trim()
+                : (bm.url || '');
+            const t = typeof bm.visitTime === 'number'
+                ? bm.visitTime
+                : (bm.dateAdded instanceof Date ? bm.dateAdded.getTime() : 0);
+            if (!t) continue;
+            
+            const visitDate = new Date(t);
+            let matches = false;
+            
+            switch (filter.type) {
+                case 'hour':
+                    if (t >= boundaries.dayStart && t <= boundaries.now && 
+                        visitDate.getHours() === filter.value) {
+                        matches = true;
+                    }
+                    break;
+                case 'day':
+                    if (t >= boundaries.weekStart && t <= boundaries.now &&
+                        visitDate.toDateString() === filter.value.toDateString()) {
+                        matches = true;
+                    }
+                    break;
+                case 'week':
+                    if (t >= boundaries.monthStart && t <= boundaries.now &&
+                        getWeekNumberForRelated(visitDate) === filter.value) {
+                        matches = true;
+                    }
+                    break;
+                case 'month':
+                    if (t >= boundaries.yearStart && t <= boundaries.now &&
+                        visitDate.getMonth() === filter.value) {
+                        matches = true;
+                    }
+                    break;
+            }
+            
+            if (matches) {
+                // 与原始统计完全相同的匹配逻辑
+                let bookmarkKey = bookmarkKeyMap.get(`url:${url}`);
+                if (!bookmarkKey && title) {
+                    bookmarkKey = bookmarkKeyMap.get(`title:${title}`);
+                }
+                
+                if (bookmarkKey) {
+                    keyVisitCounts.set(bookmarkKey, (keyVisitCounts.get(bookmarkKey) || 0) + 1);
+                }
+            }
+        }
+    }
+    
+    // 将 bookmarkKey 的计数映射回 item.url
+    const urlVisitCounts = new Map();
+    for (const [key, count] of keyVisitCounts.entries()) {
+        const info = bookmarkInfoMap.get(key);
+        if (info && info.url) {
+            urlVisitCounts.set(info.url, count);
+        }
+    }
+    
+    // 过滤并更新items的点击次数
+    const result = items
+        .filter(item => urlVisitCounts.has(item.url) && urlVisitCounts.get(item.url) > 0)
+        .map(item => ({
+            ...item,
+            filteredCount: urlVisitCounts.get(item.url)
+        }))
+        .sort((a, b) => {
+            if (b.filteredCount !== a.filteredCount) return b.filteredCount - a.filteredCount;
+            return (b.lastVisitTime || 0) - (a.lastVisitTime || 0);
+        });
+    
+    return result;
+}
+
 // ========== 书签关联页面 - 时间段菜单功能 ==========
 
 // 全局变量：当前选中的时间筛选
@@ -10351,24 +10693,47 @@ async function showBrowsingRelatedTimeMenu(range) {
     }
 
     const now = new Date();
+    const isZh = currentLang === 'zh_CN';
+
+    // 创建菜单项容器
+    const itemsContainer = document.createElement('div');
+    itemsContainer.className = 'time-menu-items';
+
+    // 添加"全部"按钮（默认选中）
+    const allBtn = document.createElement('button');
+    allBtn.className = 'time-menu-btn active';
+    allBtn.textContent = isZh ? '全部' : 'All';
+    allBtn.dataset.filter = 'all';
+    allBtn.addEventListener('click', () => {
+        itemsContainer.querySelectorAll('.time-menu-btn').forEach(b => b.classList.remove('active'));
+        allBtn.classList.add('active');
+        browsingRelatedTimeFilter = null;
+        loadBrowsingRelatedHistory(browsingRelatedCurrentRange);
+    });
+    itemsContainer.appendChild(allBtn);
 
     switch (range) {
         case 'day':
             // 当天：只显示有数据的小时段
-            renderDayHoursMenu(menuContainer, now, historyData);
+            renderDayHoursMenuItems(itemsContainer, now, historyData);
             break;
         case 'week':
             // 当周：只显示有数据的天
-            renderWeekDaysMenu(menuContainer, now, historyData);
+            renderWeekDaysMenuItems(itemsContainer, now, historyData);
             break;
         case 'month':
             // 当月：只显示有数据的周
-            renderMonthWeeksMenu(menuContainer, now, historyData);
+            renderMonthWeeksMenuItems(itemsContainer, now, historyData);
             break;
         case 'year':
             // 当年：只显示有数据的月份
-            renderYearMonthsMenu(menuContainer, now, historyData);
+            renderYearMonthsMenuItems(itemsContainer, now, historyData);
             break;
+    }
+
+    if (itemsContainer.children.length > 1) { // 至少有"全部"和一个其他选项
+        menuContainer.appendChild(itemsContainer);
+        menuContainer.style.display = 'block';
     }
 }
 
@@ -10383,8 +10748,8 @@ function getWeekNumberForRelated(date) {
     return weekNo;
 }
 
-// 渲染当天的24小时菜单（只显示有数据的小时段）
-function renderDayHoursMenu(container, date, historyData) {
+// 渲染当天的24小时菜单项（只显示有数据的小时段）
+function renderDayHoursMenuItems(container, date, historyData) {
     if (!historyData || historyData.length === 0) return;
 
     // 分析数据中有哪些小时
@@ -10398,34 +10763,28 @@ function renderDayHoursMenu(container, date, historyData) {
 
     if (hoursSet.size === 0) return;
 
-    const itemsContainer = document.createElement('div');
-    itemsContainer.className = 'time-menu-items';
-
     // 排序小时
     const hours = Array.from(hoursSet).sort((a, b) => a - b);
 
     hours.forEach(hour => {
         const btn = document.createElement('button');
         btn.className = 'time-menu-btn';
-        btn.textContent = `${String(hour).padStart(2, '0')}:00-${String(hour).padStart(2, '0')}:59`;
+        btn.textContent = `${String(hour).padStart(2, '0')}:00`;
         btn.dataset.hour = hour;
 
         btn.addEventListener('click', () => {
-            itemsContainer.querySelectorAll('.time-menu-btn').forEach(b => b.classList.remove('active'));
+            container.querySelectorAll('.time-menu-btn').forEach(b => b.classList.remove('active'));
             btn.classList.add('active');
             browsingRelatedTimeFilter = { type: 'hour', value: hour };
             loadBrowsingRelatedHistory(browsingRelatedCurrentRange);
         });
 
-        itemsContainer.appendChild(btn);
+        container.appendChild(btn);
     });
-
-    container.appendChild(itemsContainer);
-    container.style.display = 'block';
 }
 
-// 渲染当周的周一~周日菜单（只显示有数据的天）
-function renderWeekDaysMenu(container, date, historyData) {
+// 渲染当周的周一~周日菜单项（只显示有数据的天）
+function renderWeekDaysMenuItems(container, date, historyData) {
     if (!historyData || historyData.length === 0) return;
 
     // 分析数据中有哪些天
@@ -10439,9 +10798,6 @@ function renderWeekDaysMenu(container, date, historyData) {
 
     if (daysSet.size === 0) return;
 
-    const itemsContainer = document.createElement('div');
-    itemsContainer.className = 'time-menu-items';
-
     const weekStart = new Date(date);
     const day = weekStart.getDay();
     const diff = weekStart.getDate() - day + (day === 0 ? -6 : 1);
@@ -10450,7 +10806,7 @@ function renderWeekDaysMenu(container, date, historyData) {
 
     const weekdayNames = currentLang === 'zh_CN' 
         ? ['周日', '周一', '周二', '周三', '周四', '周五', '周六']
-        : ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+        : ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 
     for (let i = 0; i < 7; i++) {
         const dayDate = new Date(weekStart);
@@ -10466,23 +10822,18 @@ function renderWeekDaysMenu(container, date, historyData) {
         dayBtn.dataset.date = dayDate.toISOString();
 
         dayBtn.addEventListener('click', () => {
-            itemsContainer.querySelectorAll('.time-menu-btn').forEach(b => b.classList.remove('active'));
+            container.querySelectorAll('.time-menu-btn').forEach(b => b.classList.remove('active'));
             dayBtn.classList.add('active');
             browsingRelatedTimeFilter = { type: 'day', value: dayDate };
             loadBrowsingRelatedHistory(browsingRelatedCurrentRange);
         });
 
-        itemsContainer.appendChild(dayBtn);
-    }
-
-    if (itemsContainer.children.length > 0) {
-        container.appendChild(itemsContainer);
-        container.style.display = 'block';
+        container.appendChild(dayBtn);
     }
 }
 
-// 渲染当月的周数菜单（只显示有数据的周）
-function renderMonthWeeksMenu(container, date, historyData) {
+// 渲染当月的周数菜单项（只显示有数据的周）
+function renderMonthWeeksMenuItems(container, date, historyData) {
     if (!historyData || historyData.length === 0) return;
 
     // 分析数据中有哪些周
@@ -10497,34 +10848,28 @@ function renderMonthWeeksMenu(container, date, historyData) {
 
     if (weeksSet.size === 0) return;
 
-    const itemsContainer = document.createElement('div');
-    itemsContainer.className = 'time-menu-items';
-
     const sortedWeeks = Array.from(weeksSet).sort((a, b) => a - b);
 
     sortedWeeks.forEach(weekNum => {
         const btn = document.createElement('button');
         btn.className = 'time-menu-btn';
-        const weekText = currentLang === 'zh_CN' ? `第${weekNum}周` : `Week ${weekNum}`;
+        const weekText = currentLang === 'zh_CN' ? `第${weekNum}周` : `W${weekNum}`;
         btn.textContent = weekText;
         btn.dataset.week = weekNum;
 
         btn.addEventListener('click', () => {
-            itemsContainer.querySelectorAll('.time-menu-btn').forEach(b => b.classList.remove('active'));
+            container.querySelectorAll('.time-menu-btn').forEach(b => b.classList.remove('active'));
             btn.classList.add('active');
             browsingRelatedTimeFilter = { type: 'week', value: weekNum };
             loadBrowsingRelatedHistory(browsingRelatedCurrentRange);
         });
 
-        itemsContainer.appendChild(btn);
+        container.appendChild(btn);
     });
-
-    container.appendChild(itemsContainer);
-    container.style.display = 'block';
 }
 
-// 渲染当年的月份菜单（只显示有数据的月份）
-function renderYearMonthsMenu(container, date, historyData) {
+// 渲染当年的月份菜单项（只显示有数据的月份）
+function renderYearMonthsMenuItems(container, date, historyData) {
     if (!historyData || historyData.length === 0) return;
 
     // 分析数据中有哪些月份
@@ -10537,9 +10882,6 @@ function renderYearMonthsMenu(container, date, historyData) {
     });
 
     if (monthsSet.size === 0) return;
-
-    const itemsContainer = document.createElement('div');
-    itemsContainer.className = 'time-menu-items';
 
     const monthNames = currentLang === 'zh_CN'
         ? ['1月', '2月', '3月', '4月', '5月', '6月', '7月', '8月', '9月', '10月', '11月', '12月']
@@ -10555,17 +10897,14 @@ function renderYearMonthsMenu(container, date, historyData) {
         btn.dataset.month = month;
 
         btn.addEventListener('click', () => {
-            itemsContainer.querySelectorAll('.time-menu-btn').forEach(b => b.classList.remove('active'));
+            container.querySelectorAll('.time-menu-btn').forEach(b => b.classList.remove('active'));
             btn.classList.add('active');
             browsingRelatedTimeFilter = { type: 'month', value: month };
             loadBrowsingRelatedHistory(browsingRelatedCurrentRange);
         });
 
-        itemsContainer.appendChild(btn);
+        container.appendChild(btn);
     });
-
-    container.appendChild(itemsContainer);
-    container.style.display = 'block';
 }
 
 // 按时间筛选历史记录

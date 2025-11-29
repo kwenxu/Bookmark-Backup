@@ -8053,6 +8053,322 @@ a.tree-label.tree-bookmark-link:hover {
     justify-content: center;
 }
 
+.card-footer {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-top: auto;
+    padding-top: 8px;
+    border-top: 1px solid var(--border-color);
+}
+
+.card-actions {
+    display: flex;
+    gap: 6px;
+    margin-left: auto;
+    padding-left: 16px;
+}
+
+.card-btn {
+    width: 28px;
+    height: 28px;
+    border: 1px solid var(--border-color);
+    background: var(--bg-secondary);
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 13px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.2s;
+    opacity: 0.7;
+}
+
+.card-btn:hover {
+    opacity: 1;
+    transform: scale(1.1);
+}
+
+.card-btn-later {
+    color: var(--text-secondary);
+}
+
+.card-btn-later:hover {
+    background: var(--warning);
+    border-color: var(--warning);
+    color: white;
+}
+
+.card-btn-skip {
+    color: var(--text-secondary);
+}
+
+.card-btn-skip:hover {
+    background: var(--accent-primary);
+    border-color: var(--accent-primary);
+    color: white;
+}
+
+.card-btn-block {
+    color: var(--text-secondary);
+}
+
+.card-btn-block:hover {
+    background: var(--danger);
+    border-color: var(--danger);
+    color: white;
+}
+
+/* 稍后复习弹窗 */
+.later-modal {
+    max-width: 340px;
+    padding: 24px 28px 28px;
+    position: relative;
+}
+
+.later-modal-close {
+    position: absolute;
+    top: 10px;
+    right: 10px;
+    width: 32px;
+    height: 32px;
+    border: none;
+    background: var(--bg-tertiary);
+    color: var(--text-secondary);
+    cursor: pointer;
+    border-radius: 6px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.2s;
+    font-size: 14px;
+}
+
+.later-modal-close:hover {
+    background: var(--danger);
+    color: white;
+}
+
+.later-options {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 12px;
+    margin-top: 20px;
+}
+
+.later-option {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 10px;
+    padding: 20px 16px;
+    border: 2px solid var(--border-color);
+    border-radius: 12px;
+    background: var(--bg-secondary);
+    cursor: pointer;
+    transition: all 0.2s;
+}
+
+.later-option i {
+    font-size: 28px;
+    color: var(--accent-primary);
+}
+
+.later-option span {
+    font-size: 14px;
+    color: var(--text-primary);
+    font-weight: 500;
+}
+
+.later-option:hover {
+    border-color: var(--accent-primary);
+    background: var(--bg-tertiary);
+    transform: translateY(-2px);
+}
+
+.later-option:active {
+    transform: translateY(0);
+}
+
+/* 稍后复习队列区域 */
+.recommend-postponed-section,
+.recommend-block-section {
+    margin-bottom: 16px;
+}
+
+.postponed-list,
+.block-list {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.postponed-item,
+.block-item {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 10px 12px;
+    background: var(--bg-secondary);
+    border-radius: 8px;
+    border: 1px solid var(--border-color);
+    transition: all 0.2s;
+}
+
+.postponed-item:hover {
+    background: var(--bg-tertiary);
+    border-color: var(--accent-primary);
+}
+
+.postponed-item-icon,
+.block-item-icon {
+    width: 20px;
+    height: 20px;
+    object-fit: contain;
+    flex-shrink: 0;
+}
+
+.postponed-item-info,
+.block-item-info {
+    flex: 1;
+    min-width: 0;
+}
+
+.postponed-item-title,
+.block-item-title {
+    font-size: 13px;
+    color: var(--text-primary);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.postponed-item-meta {
+    font-size: 11px;
+    color: var(--text-tertiary);
+    margin-top: 2px;
+}
+
+.postponed-item-time {
+    color: var(--warning);
+}
+
+.postponed-item-count {
+    color: var(--text-tertiary);
+    margin-left: 8px;
+}
+
+.postponed-item-btn,
+.block-item-btn {
+    padding: 4px 10px;
+    font-size: 12px;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+    background: var(--bg-tertiary);
+    color: var(--text-secondary);
+    transition: all 0.2s;
+}
+
+.postponed-item-btn:hover {
+    background: var(--warning);
+    color: white;
+}
+
+.block-item-btn:hover {
+    background: var(--success);
+    color: white;
+}
+
+/* 屏蔽管理子区域 */
+.block-subsection {
+    margin-bottom: 16px;
+}
+
+.block-subsection:last-child {
+    margin-bottom: 0;
+}
+
+.block-subsection-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 8px 0;
+    font-size: 13px;
+    color: var(--text-secondary);
+    border-bottom: 1px solid var(--border-color);
+    margin-bottom: 8px;
+}
+
+.block-subsection-header i {
+    margin-right: 6px;
+    opacity: 0.7;
+}
+
+.block-add-btn {
+    width: 24px;
+    height: 24px;
+    border: none;
+    border-radius: 4px;
+    background: var(--bg-tertiary);
+    color: var(--text-secondary);
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.2s;
+}
+
+.block-add-btn:hover {
+    background: var(--accent-primary);
+    color: white;
+}
+
+/* 文件夹选择树 */
+.folder-tree-container {
+    padding: 8px 0;
+}
+
+.folder-tree-item {
+    display: flex;
+    align-items: center;
+    padding: 8px 12px;
+    cursor: pointer;
+    border-radius: 6px;
+    margin-bottom: 4px;
+    transition: all 0.15s;
+}
+
+.folder-tree-item:hover {
+    background: var(--bg-tertiary);
+}
+
+.folder-tree-item i {
+    margin-right: 8px;
+    color: var(--warning);
+}
+
+.folder-tree-item span {
+    flex: 1;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.folder-tree-item .folder-count {
+    font-size: 11px;
+    color: var(--text-tertiary);
+    margin-left: 8px;
+}
+
+/* 空状态内联样式 */
+.empty-state-inline {
+    padding: 16px;
+    text-align: center;
+    color: var(--text-tertiary);
+    font-size: 13px;
+}
+
 .card-priority {
     font-size: 11px;
     color: var(--text-tertiary);

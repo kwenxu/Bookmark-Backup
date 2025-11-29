@@ -563,22 +563,37 @@
                         <div class="recommend-card" data-index="0">
                             <img class="card-favicon" src="" alt="">
                             <div class="card-title">--</div>
-                            <div class="card-meta">
+                            <div class="card-footer">
                                 <span class="card-priority">P = --</span>
+                                <div class="card-actions">
+                                    <button class="card-btn card-btn-later" title="稍后复习"><i class="fas fa-clock"></i></button>
+                                    <button class="card-btn card-btn-skip" title="跳过"><i class="fas fa-forward"></i></button>
+                                    <button class="card-btn card-btn-block" title="屏蔽"><i class="fas fa-ban"></i></button>
+                                </div>
                             </div>
                         </div>
                         <div class="recommend-card" data-index="1">
                             <img class="card-favicon" src="" alt="">
                             <div class="card-title">--</div>
-                            <div class="card-meta">
+                            <div class="card-footer">
                                 <span class="card-priority">P = --</span>
+                                <div class="card-actions">
+                                    <button class="card-btn card-btn-later" title="稍后复习"><i class="fas fa-clock"></i></button>
+                                    <button class="card-btn card-btn-skip" title="跳过"><i class="fas fa-forward"></i></button>
+                                    <button class="card-btn card-btn-block" title="屏蔽"><i class="fas fa-ban"></i></button>
+                                </div>
                             </div>
                         </div>
                         <div class="recommend-card" data-index="2">
                             <img class="card-favicon" src="" alt="">
                             <div class="card-title">--</div>
-                            <div class="card-meta">
+                            <div class="card-footer">
                                 <span class="card-priority">P = --</span>
+                                <div class="card-actions">
+                                    <button class="card-btn card-btn-later" title="稍后复习"><i class="fas fa-clock"></i></button>
+                                    <button class="card-btn card-btn-skip" title="跳过"><i class="fas fa-forward"></i></button>
+                                    <button class="card-btn card-btn-block" title="屏蔽"><i class="fas fa-ban"></i></button>
+                                </div>
                             </div>
                         </div>
                     </div>
@@ -587,7 +602,22 @@
                     </div>
                 </div>
 
-                <!-- C区：热力图（可折叠） -->
+                <!-- C区：稍后复习队列（可折叠） -->
+                <div class="recommend-postponed-section collapsible">
+                    <div class="section-header">
+                        <span class="section-title"><i class="fas fa-clock"></i> <span id="postponedTitle">稍后复习</span> (<span id="postponedCount">0</span>)</span>
+                        <button class="section-toggle"><i class="fas fa-chevron-down"></i></button>
+                    </div>
+                    <div class="section-content">
+                        <div class="postponed-list" id="postponedList">
+                            <div class="empty-state-inline" id="postponedEmpty">
+                                <span id="postponedEmptyText">暂无稍后复习的书签</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- D区：热力图（可折叠） -->
                 <div class="recommend-heatmap-section collapsible">
                     <div class="section-header" id="heatmapHeader">
                         <span class="section-title"><i class="fas fa-fire"></i> <span id="heatmapTitle">复习热力图</span></span>
@@ -598,6 +628,51 @@
                             <div class="empty-state">
                                 <div class="empty-state-icon"><i class="fas fa-fire"></i></div>
                                 <div id="heatmapLoadingText" class="empty-state-title">热力图数据加载中...</div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- E区：屏蔽管理（可折叠） -->
+                <div class="recommend-block-section collapsible collapsed">
+                    <div class="section-header">
+                        <span class="section-title"><i class="fas fa-ban"></i> <span id="blockManageTitle">屏蔽管理</span></span>
+                        <button class="section-toggle"><i class="fas fa-chevron-down"></i></button>
+                    </div>
+                    <div class="section-content">
+                        <!-- 已屏蔽书签 -->
+                        <div class="block-subsection">
+                            <div class="block-subsection-header">
+                                <span><i class="fas fa-bookmark"></i> <span id="blockedBookmarksTitle">已屏蔽书签</span> (<span id="blockedBookmarksCount">0</span>)</span>
+                            </div>
+                            <div class="block-list" id="blockedBookmarksList">
+                                <div class="empty-state-inline" id="blockedBookmarksEmpty">
+                                    <span id="blockedBookmarksEmptyText">暂无已屏蔽书签</span>
+                                </div>
+                            </div>
+                        </div>
+                        <!-- 已屏蔽文件夹 -->
+                        <div class="block-subsection">
+                            <div class="block-subsection-header">
+                                <span><i class="fas fa-folder"></i> <span id="blockedFoldersTitle">已屏蔽文件夹</span> (<span id="blockedFoldersCount">0</span>)</span>
+                                <button class="block-add-btn" id="addBlockFolderBtn"><i class="fas fa-plus"></i></button>
+                            </div>
+                            <div class="block-list" id="blockedFoldersList">
+                                <div class="empty-state-inline" id="blockedFoldersEmpty">
+                                    <span id="blockedFoldersEmptyText">暂无已屏蔽文件夹</span>
+                                </div>
+                            </div>
+                        </div>
+                        <!-- 已屏蔽域名 -->
+                        <div class="block-subsection">
+                            <div class="block-subsection-header">
+                                <span><i class="fas fa-globe"></i> <span id="blockedDomainsTitle">已屏蔽域名</span> (<span id="blockedDomainsCount">0</span>)</span>
+                                <button class="block-add-btn" id="addBlockDomainBtn"><i class="fas fa-plus"></i></button>
+                            </div>
+                            <div class="block-list" id="blockedDomainsList">
+                                <div class="empty-state-inline" id="blockedDomainsEmpty">
+                                    <span id="blockedDomainsEmptyText">暂无已屏蔽域名</span>
+                                </div>
                             </div>
                         </div>
                     </div>
@@ -860,6 +935,70 @@
             </div>
             <div class="modal-body" id="modalBody">
                 <!-- 动态加载详情内容 -->
+            </div>
+        </div>
+    </div>
+
+    <!-- 稍后复习弹窗 -->
+    <div id="laterModal" class="modal">
+        <div class="modal-content later-modal">
+            <button class="later-modal-close" id="laterModalClose">
+                <i class="fas fa-times"></i>
+            </button>
+            <div class="later-options">
+                <button class="later-option" data-delay="3600000">
+                    <i class="fas fa-clock"></i>
+                    <span data-i18n="laterIn1Hour">1小时后</span>
+                </button>
+                <button class="later-option" data-delay="86400000">
+                    <i class="fas fa-sun"></i>
+                    <span data-i18n="laterTomorrow">明天</span>
+                </button>
+                <button class="later-option" data-delay="259200000">
+                    <i class="fas fa-calendar-day"></i>
+                    <span data-i18n="laterIn3Days">3天后</span>
+                </button>
+                <button class="later-option" data-delay="604800000">
+                    <i class="fas fa-calendar-week"></i>
+                    <span data-i18n="laterIn1Week">1周后</span>
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- 添加域名屏蔽弹窗 -->
+    <div id="addDomainModal" class="modal">
+        <div class="modal-content" style="max-width: 400px;">
+            <div class="modal-header">
+                <h3 id="addDomainModalTitle">添加屏蔽域名</h3>
+                <button class="modal-close" id="addDomainModalClose">
+                    <i class="fas fa-times"></i>
+                </button>
+            </div>
+            <div class="modal-body">
+                <p id="addDomainModalDesc" style="color: var(--text-secondary); margin-bottom: 12px;">输入要屏蔽的域名（如 example.com）：</p>
+                <input type="text" id="addDomainInput" class="modal-input" placeholder="example.com" style="width: 100%; padding: 10px; border: 1px solid var(--border-color); border-radius: 6px; background: var(--bg-secondary); color: var(--text-primary);">
+                <div style="display: flex; gap: 10px; margin-top: 16px; justify-content: flex-end;">
+                    <button id="addDomainCancelBtn" class="modal-btn" style="padding: 8px 16px; border: 1px solid var(--border-color); border-radius: 6px; background: var(--bg-secondary); color: var(--text-primary); cursor: pointer;">取消</button>
+                    <button id="addDomainConfirmBtn" class="modal-btn primary" style="padding: 8px 16px; border: none; border-radius: 6px; background: var(--accent-primary); color: white; cursor: pointer;">添加</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 选择文件夹屏蔽弹窗 -->
+    <div id="selectFolderModal" class="modal">
+        <div class="modal-content" style="max-width: 500px; max-height: 70vh;">
+            <div class="modal-header">
+                <h3 id="selectFolderModalTitle">选择要屏蔽的文件夹</h3>
+                <button class="modal-close" id="selectFolderModalClose">
+                    <i class="fas fa-times"></i>
+                </button>
+            </div>
+            <div class="modal-body" style="max-height: 50vh; overflow-y: auto;">
+                <div id="folderTreeContainer" class="folder-tree-container">
+                    <!-- 文件夹树将动态生成 -->
+                </div>
             </div>
         </div>
     </div>

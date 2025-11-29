@@ -3579,6 +3579,14 @@ function renderRecommendView() {
         // 初始化追踪开关
         initTrackingToggle();
         
+        // 初始化稍后复习弹窗
+        initLaterModal();
+        
+        // 初始化添加域名和文件夹弹窗
+        initAddDomainModal();
+        initSelectFolderModal();
+        initBlockManageButtons();
+        
         recommendViewInitialized = true;
     }
     
@@ -3972,14 +3980,758 @@ let recommendCards = [];
 let trackingRefreshInterval = null;
 const TRACKING_REFRESH_INTERVAL = 3000; // 3秒刷新一次
 
+// 跳过和屏蔽数据
+let skippedBookmarks = new Set(); // 本次会话跳过的书签（内存，刷新页面后清空）
+
+// 获取已屏蔽书签
+async function getBlockedBookmarks() {
+    try {
+        const result = await browserAPI.storage.local.get('recommend_blocked');
+        return result.recommend_blocked || { bookmarks: [], folders: [], domains: [] };
+    } catch (e) {
+        console.error('[屏蔽] 获取屏蔽数据失败:', e);
+        return { bookmarks: [], folders: [], domains: [] };
+    }
+}
+
+// 屏蔽书签（按标题匹配，同名书签一起屏蔽）
+async function blockBookmark(bookmarkId) {
+    try {
+        // 获取当前书签信息
+        const bookmarks = await new Promise(resolve => {
+            browserAPI.bookmarks.get(bookmarkId, resolve);
+        });
+        if (!bookmarks || bookmarks.length === 0) return false;
+        const targetBookmark = bookmarks[0];
+        const targetTitle = targetBookmark.title;
+        
+        // 获取所有书签
+        const allBookmarks = await new Promise(resolve => {
+            browserAPI.bookmarks.getTree(tree => {
+                const result = [];
+                function traverse(nodes) {
+                    for (const node of nodes) {
+                        if (node.url) result.push(node);
+                        if (node.children) traverse(node.children);
+                    }
+                }
+                traverse(tree);
+                resolve(result);
+            });
+        });
+        
+        // 找到所有同标题的书签
+        const sameTitle = allBookmarks.filter(b => b.title === targetTitle);
+        
+        const blocked = await getBlockedBookmarks();
+        let blockedCount = 0;
+        
+        for (const b of sameTitle) {
+            if (!blocked.bookmarks.includes(b.id)) {
+                blocked.bookmarks.push(b.id);
+                blockedCount++;
+            }
+        }
+        
+        await browserAPI.storage.local.set({ recommend_blocked: blocked });
+        console.log('[屏蔽] 已屏蔽书签:', targetTitle, '共', blockedCount, '个');
+        return true;
+    } catch (e) {
+        console.error('[屏蔽] 屏蔽书签失败:', e);
+        return false;
+    }
+}
+
+// 恢复屏蔽的书签
+async function unblockBookmark(bookmarkId) {
+    try {
+        const blocked = await getBlockedBookmarks();
+        blocked.bookmarks = blocked.bookmarks.filter(id => id !== bookmarkId);
+        await browserAPI.storage.local.set({ recommend_blocked: blocked });
+        console.log('[屏蔽] 已恢复书签:', bookmarkId);
+        return true;
+    } catch (e) {
+        console.error('[屏蔽] 恢复书签失败:', e);
+        return false;
+    }
+}
+
+// 获取稍后复习数据
+async function getPostponedBookmarks() {
+    try {
+        const result = await browserAPI.storage.local.get('recommend_postponed');
+        return result.recommend_postponed || [];
+    } catch (e) {
+        console.error('[稍后] 获取稍后复习数据失败:', e);
+        return [];
+    }
+}
+
+// 添加稍后复习
+async function postponeBookmark(bookmarkId, delayMs) {
+    try {
+        const postponed = await getPostponedBookmarks();
+        const existing = postponed.find(p => p.bookmarkId === bookmarkId);
+        const now = Date.now();
+        
+        if (existing) {
+            existing.postponeUntil = now + delayMs;
+            existing.postponeCount = (existing.postponeCount || 0) + 1;
+            existing.updatedAt = now;
+        } else {
+            postponed.push({
+                bookmarkId,
+                postponeUntil: now + delayMs,
+                postponeCount: 1,
+                createdAt: now,
+                updatedAt: now
+            });
+        }
+        
+        await browserAPI.storage.local.set({ recommend_postponed: postponed });
+        console.log('[稍后] 已推迟书签:', bookmarkId, '延迟:', delayMs / 3600000, '小时');
+        return true;
+    } catch (e) {
+        console.error('[稍后] 推迟书签失败:', e);
+        return false;
+    }
+}
+
+// 取消稍后复习
+async function cancelPostpone(bookmarkId) {
+    try {
+        let postponed = await getPostponedBookmarks();
+        postponed = postponed.filter(p => p.bookmarkId !== bookmarkId);
+        await browserAPI.storage.local.set({ recommend_postponed: postponed });
+        console.log('[稍后] 已取消推迟:', bookmarkId);
+        return true;
+    } catch (e) {
+        console.error('[稍后] 取消推迟失败:', e);
+        return false;
+    }
+}
+
+// 清理过期的稍后复习记录
+async function cleanExpiredPostponed() {
+    try {
+        let postponed = await getPostponedBookmarks();
+        const now = Date.now();
+        const before = postponed.length;
+        postponed = postponed.filter(p => p.postponeUntil > now);
+        if (postponed.length !== before) {
+            await browserAPI.storage.local.set({ recommend_postponed: postponed });
+            console.log('[稍后] 清理过期记录:', before - postponed.length, '条');
+        }
+    } catch (e) {
+        console.error('[稍后] 清理过期记录失败:', e);
+    }
+}
+
+// 稍后复习弹窗相关
+let currentLaterBookmark = null;
+
+function showLaterModal(bookmark) {
+    currentLaterBookmark = bookmark;
+    const modal = document.getElementById('laterModal');
+    if (modal) {
+        modal.classList.add('show');
+        console.log('[稍后] 显示弹窗:', bookmark.id, bookmark.title);
+    }
+}
+
+function hideLaterModal() {
+    const modal = document.getElementById('laterModal');
+    if (modal) {
+        modal.classList.remove('show');
+    }
+    currentLaterBookmark = null;
+}
+
+function initLaterModal() {
+    const modal = document.getElementById('laterModal');
+    if (!modal) return;
+    
+    // 关闭按钮
+    const closeBtn = document.getElementById('laterModalClose');
+    if (closeBtn) {
+        closeBtn.onclick = hideLaterModal;
+    }
+    
+    // 点击背景关闭
+    modal.onclick = (e) => {
+        if (e.target === modal) {
+            hideLaterModal();
+        }
+    };
+    
+    // 选项按钮
+    const options = modal.querySelectorAll('.later-option');
+    options.forEach(option => {
+        option.onclick = async () => {
+            if (!currentLaterBookmark) return;
+            
+            const delayMs = parseInt(option.dataset.delay);
+            await postponeBookmark(currentLaterBookmark.id, delayMs);
+            hideLaterModal();
+            await loadPostponedList(); // 刷新稍后复习列表
+            await refreshRecommendCards();
+        };
+    });
+}
+
+// 初始化添加域名弹窗
+function initAddDomainModal() {
+    const modal = document.getElementById('addDomainModal');
+    if (!modal) return;
+    
+    const closeBtn = document.getElementById('addDomainModalClose');
+    const cancelBtn = document.getElementById('addDomainCancelBtn');
+    const confirmBtn = document.getElementById('addDomainConfirmBtn');
+    const input = document.getElementById('addDomainInput');
+    
+    const hideModal = () => {
+        modal.classList.remove('show');
+        if (input) input.value = '';
+    };
+    
+    if (closeBtn) closeBtn.onclick = hideModal;
+    if (cancelBtn) cancelBtn.onclick = hideModal;
+    
+    modal.onclick = (e) => {
+        if (e.target === modal) hideModal();
+    };
+    
+    if (confirmBtn) {
+        confirmBtn.onclick = async () => {
+            const domain = input.value.trim();
+            if (domain) {
+                await blockDomain(domain);
+                hideModal();
+                await loadBlockedLists();
+                await refreshRecommendCards();
+            }
+        };
+    }
+    
+    if (input) {
+        input.onkeypress = (e) => {
+            if (e.key === 'Enter') confirmBtn.click();
+        };
+    }
+}
+
+// 初始化选择文件夹弹窗
+function initSelectFolderModal() {
+    const modal = document.getElementById('selectFolderModal');
+    if (!modal) return;
+    
+    const closeBtn = document.getElementById('selectFolderModalClose');
+    
+    const hideModal = () => {
+        modal.classList.remove('show');
+    };
+    
+    if (closeBtn) closeBtn.onclick = hideModal;
+    
+    modal.onclick = (e) => {
+        if (e.target === modal) hideModal();
+    };
+}
+
+// 显示添加域名弹窗
+function showAddDomainModal() {
+    const modal = document.getElementById('addDomainModal');
+    if (modal) {
+        modal.classList.add('show');
+        const input = document.getElementById('addDomainInput');
+        if (input) {
+            input.value = '';
+            input.focus();
+        }
+    }
+}
+
+// 显示选择文件夹弹窗
+async function showSelectFolderModal() {
+    const modal = document.getElementById('selectFolderModal');
+    const container = document.getElementById('folderTreeContainer');
+    if (!modal || !container) return;
+    
+    // 获取已屏蔽的文件夹
+    const blocked = await getBlockedBookmarks();
+    const blockedFolderSet = new Set(blocked.folders);
+    
+    // 获取所有文件夹
+    const tree = await new Promise(resolve => {
+        browserAPI.bookmarks.getTree(resolve);
+    });
+    
+    // 生成文件夹树HTML
+    container.innerHTML = '';
+    
+    function countBookmarks(node) {
+        let count = 0;
+        if (node.url) count = 1;
+        if (node.children) {
+            for (const child of node.children) {
+                count += countBookmarks(child);
+            }
+        }
+        return count;
+    }
+    
+    function renderFolders(nodes, depth = 0) {
+        for (const node of nodes) {
+            if (!node.url && node.children) { // 是文件夹
+                if (blockedFolderSet.has(node.id)) continue; // 已屏蔽的不显示
+                
+                const bookmarkCount = countBookmarks(node);
+                const item = document.createElement('div');
+                item.className = 'folder-tree-item';
+                item.style.paddingLeft = `${12 + depth * 16}px`;
+                item.innerHTML = `
+                    <i class="fas fa-folder"></i>
+                    <span>${escapeHtml(node.title || '未命名文件夹')}</span>
+                    <span class="folder-count">${bookmarkCount} 个书签</span>
+                `;
+                item.onclick = async () => {
+                    await blockFolder(node.id);
+                    modal.classList.remove('show');
+                    await loadBlockedLists();
+                    await refreshRecommendCards();
+                };
+                container.appendChild(item);
+                
+                // 递归渲染子文件夹
+                renderFolders(node.children, depth + 1);
+            }
+        }
+    }
+    
+    renderFolders(tree);
+    modal.classList.add('show');
+}
+
+// 初始化屏蔽管理添加按钮
+function initBlockManageButtons() {
+    const addFolderBtn = document.getElementById('addBlockFolderBtn');
+    const addDomainBtn = document.getElementById('addBlockDomainBtn');
+    
+    if (addFolderBtn) {
+        addFolderBtn.onclick = () => showSelectFolderModal();
+    }
+    
+    if (addDomainBtn) {
+        addDomainBtn.onclick = () => showAddDomainModal();
+    }
+}
+
 async function loadRecommendData() {
     console.log('[书签推荐] 加载推荐数据');
     
     // 自动刷新推荐卡片
     await refreshRecommendCards();
     
+    // 加载稍后复习队列
+    await loadPostponedList();
+    
     // 加载热力图
     await loadHeatmapData();
+    
+    // 加载屏蔽列表
+    await loadBlockedLists();
+}
+
+// 加载稍后复习队列
+async function loadPostponedList() {
+    const listEl = document.getElementById('postponedList');
+    const countEl = document.getElementById('postponedCount');
+    const emptyEl = document.getElementById('postponedEmpty');
+    if (!listEl) return;
+    
+    try {
+        const postponed = await getPostponedBookmarks();
+        const now = Date.now();
+        
+        // 过滤未到期的
+        const activePostponed = postponed.filter(p => p.postponeUntil > now);
+        
+        // 更新计数
+        if (countEl) countEl.textContent = activePostponed.length;
+        
+        // 清空列表（保留空状态元素）
+        const items = listEl.querySelectorAll('.postponed-item');
+        items.forEach(item => item.remove());
+        
+        if (activePostponed.length === 0) {
+            if (emptyEl) emptyEl.style.display = 'block';
+            return;
+        }
+        
+        if (emptyEl) emptyEl.style.display = 'none';
+        
+        // 获取书签信息
+        for (const p of activePostponed) {
+            try {
+                const bookmarks = await new Promise(resolve => {
+                    browserAPI.bookmarks.get(p.bookmarkId, resolve);
+                });
+                if (!bookmarks || bookmarks.length === 0) continue;
+                const bookmark = bookmarks[0];
+                
+                const item = document.createElement('div');
+                item.className = 'postponed-item';
+                item.style.cursor = 'pointer';
+                item.innerHTML = `
+                    <img class="postponed-item-icon" src="${getFaviconUrl(bookmark.url)}" alt="">
+                    <div class="postponed-item-info">
+                        <div class="postponed-item-title">${escapeHtml(bookmark.title || bookmark.url)}</div>
+                        <div class="postponed-item-meta">
+                            <span class="postponed-item-time">${formatPostponeTime(p.postponeUntil)}</span>
+                            ${p.postponeCount > 1 ? `<span class="postponed-item-count">(${currentLang === 'en' ? 'postponed ' + p.postponeCount + ' times' : '已推迟' + p.postponeCount + '次'})</span>` : ''}
+                        </div>
+                    </div>
+                    <button class="postponed-item-btn" data-id="${p.bookmarkId}">${currentLang === 'en' ? 'Cancel' : '取消'}</button>
+                `;
+                
+                // 点击整个item = 提前复习（打开链接 + 取消推迟 + 记录复习）
+                item.onclick = async (e) => {
+                    if (e.target.closest('.postponed-item-btn')) return; // 排除按钮点击
+                    console.log('[提前复习]', bookmark.id, bookmark.title);
+                    await cancelPostpone(p.bookmarkId);
+                    await recordReview(p.bookmarkId);
+                    await openInRecommendWindow(bookmark.url);
+                    await loadPostponedList();
+                };
+                
+                // 取消按钮事件
+                const btn = item.querySelector('.postponed-item-btn');
+                btn.onclick = async (e) => {
+                    e.stopPropagation();
+                    await cancelPostpone(p.bookmarkId);
+                    await loadPostponedList();
+                    await refreshRecommendCards();
+                };
+                
+                listEl.appendChild(item);
+            } catch (e) {
+                console.error('[稍后] 获取书签信息失败:', e);
+            }
+        }
+    } catch (e) {
+        console.error('[稍后] 加载稍后复习列表失败:', e);
+    }
+}
+
+// 格式化推迟时间
+function formatPostponeTime(timestamp) {
+    const now = Date.now();
+    const diff = timestamp - now;
+    const hours = Math.floor(diff / 3600000);
+    const days = Math.floor(hours / 24);
+    
+    if (days > 0) {
+        return currentLang === 'en' ? `${days} day${days > 1 ? 's' : ''} later` : `${days}天后`;
+    } else if (hours > 0) {
+        return currentLang === 'en' ? `${hours} hour${hours > 1 ? 's' : ''} later` : `${hours}小时后`;
+    } else {
+        const mins = Math.max(1, Math.floor(diff / 60000));
+        return currentLang === 'en' ? `${mins} minute${mins > 1 ? 's' : ''} later` : `${mins}分钟后`;
+    }
+}
+
+// 加载屏蔽列表
+async function loadBlockedLists() {
+    const blocked = await getBlockedBookmarks();
+    
+    // 加载已屏蔽书签
+    await loadBlockedBookmarksList(blocked.bookmarks);
+    
+    // 加载已屏蔽文件夹
+    await loadBlockedFoldersList(blocked.folders);
+    
+    // 加载已屏蔽域名
+    await loadBlockedDomainsList(blocked.domains);
+}
+
+// 加载已屏蔽书签列表
+async function loadBlockedBookmarksList(bookmarkIds) {
+    const listEl = document.getElementById('blockedBookmarksList');
+    const countEl = document.getElementById('blockedBookmarksCount');
+    const emptyEl = document.getElementById('blockedBookmarksEmpty');
+    if (!listEl) return;
+    
+    // 更新计数
+    if (countEl) countEl.textContent = bookmarkIds.length;
+    
+    // 清空列表
+    const items = listEl.querySelectorAll('.block-item');
+    items.forEach(item => item.remove());
+    
+    if (bookmarkIds.length === 0) {
+        if (emptyEl) emptyEl.style.display = 'block';
+        return;
+    }
+    
+    if (emptyEl) emptyEl.style.display = 'none';
+    
+    for (const id of bookmarkIds) {
+        try {
+            const bookmarks = await new Promise(resolve => {
+                browserAPI.bookmarks.get(id, resolve);
+            });
+            if (!bookmarks || bookmarks.length === 0) continue;
+            const bookmark = bookmarks[0];
+            
+            const item = document.createElement('div');
+            item.className = 'block-item';
+            item.innerHTML = `
+                <img class="block-item-icon" src="${getFaviconUrl(bookmark.url)}" alt="">
+                <div class="block-item-info">
+                    <div class="block-item-title">${escapeHtml(bookmark.title || bookmark.url)}</div>
+                </div>
+                <button class="block-item-btn" data-id="${id}">${currentLang === 'en' ? 'Restore' : '恢复'}</button>
+            `;
+            
+            const btn = item.querySelector('.block-item-btn');
+            btn.onclick = async () => {
+                await unblockBookmark(id);
+                await loadBlockedLists();
+                await refreshRecommendCards();
+            };
+            
+            listEl.appendChild(item);
+        } catch (e) {
+            // 书签可能已被删除
+        }
+    }
+}
+
+// 加载已屏蔽文件夹列表
+async function loadBlockedFoldersList(folderIds) {
+    const listEl = document.getElementById('blockedFoldersList');
+    const countEl = document.getElementById('blockedFoldersCount');
+    const emptyEl = document.getElementById('blockedFoldersEmpty');
+    if (!listEl) return;
+    
+    if (countEl) countEl.textContent = folderIds.length;
+    
+    const items = listEl.querySelectorAll('.block-item');
+    items.forEach(item => item.remove());
+    
+    if (folderIds.length === 0) {
+        if (emptyEl) emptyEl.style.display = 'block';
+        return;
+    }
+    
+    if (emptyEl) emptyEl.style.display = 'none';
+    
+    for (const id of folderIds) {
+        try {
+            const folders = await new Promise(resolve => {
+                browserAPI.bookmarks.get(id, resolve);
+            });
+            if (!folders || folders.length === 0) continue;
+            const folder = folders[0];
+            
+            const item = document.createElement('div');
+            item.className = 'block-item';
+            item.innerHTML = `
+                <i class="fas fa-folder block-item-icon" style="font-size: 18px; color: var(--warning);"></i>
+                <div class="block-item-info">
+                    <div class="block-item-title">${escapeHtml(folder.title)}</div>
+                </div>
+                <button class="block-item-btn" data-id="${id}">${currentLang === 'en' ? 'Restore' : '恢复'}</button>
+            `;
+            
+            const btn = item.querySelector('.block-item-btn');
+            btn.onclick = async () => {
+                await unblockFolder(id);
+                await loadBlockedLists();
+                await refreshRecommendCards();
+            };
+            
+            listEl.appendChild(item);
+        } catch (e) {}
+    }
+}
+
+// 加载已屏蔽域名列表
+async function loadBlockedDomainsList(domains) {
+    const listEl = document.getElementById('blockedDomainsList');
+    const countEl = document.getElementById('blockedDomainsCount');
+    const emptyEl = document.getElementById('blockedDomainsEmpty');
+    if (!listEl) return;
+    
+    if (countEl) countEl.textContent = domains.length;
+    
+    const items = listEl.querySelectorAll('.block-item');
+    items.forEach(item => item.remove());
+    
+    if (domains.length === 0) {
+        if (emptyEl) emptyEl.style.display = 'block';
+        return;
+    }
+    
+    if (emptyEl) emptyEl.style.display = 'none';
+    
+    for (const domain of domains) {
+        const item = document.createElement('div');
+        item.className = 'block-item';
+        item.innerHTML = `
+            <i class="fas fa-globe block-item-icon" style="font-size: 18px; color: var(--accent-primary);"></i>
+            <div class="block-item-info">
+                <div class="block-item-title">${escapeHtml(domain)}</div>
+            </div>
+            <button class="block-item-btn" data-domain="${domain}">${currentLang === 'en' ? 'Restore' : '恢复'}</button>
+        `;
+        
+        const btn = item.querySelector('.block-item-btn');
+        btn.onclick = async () => {
+            await unblockDomain(domain);
+            await loadBlockedLists();
+            await refreshRecommendCards();
+        };
+        
+        listEl.appendChild(item);
+    }
+}
+
+// 屏蔽/恢复文件夹
+async function blockFolder(folderId) {
+    try {
+        const blocked = await getBlockedBookmarks();
+        if (!blocked.folders.includes(folderId)) {
+            blocked.folders.push(folderId);
+            await browserAPI.storage.local.set({ recommend_blocked: blocked });
+        }
+        return true;
+    } catch (e) {
+        return false;
+    }
+}
+
+async function unblockFolder(folderId) {
+    try {
+        const blocked = await getBlockedBookmarks();
+        blocked.folders = blocked.folders.filter(id => id !== folderId);
+        await browserAPI.storage.local.set({ recommend_blocked: blocked });
+        return true;
+    } catch (e) {
+        return false;
+    }
+}
+
+// 屏蔽/恢复域名
+async function blockDomain(domain) {
+    try {
+        const blocked = await getBlockedBookmarks();
+        if (!blocked.domains.includes(domain)) {
+            blocked.domains.push(domain);
+            await browserAPI.storage.local.set({ recommend_blocked: blocked });
+        }
+        return true;
+    } catch (e) {
+        return false;
+    }
+}
+
+async function unblockDomain(domain) {
+    try {
+        const blocked = await getBlockedBookmarks();
+        blocked.domains = blocked.domains.filter(d => d !== domain);
+        await browserAPI.storage.local.set({ recommend_blocked: blocked });
+        return true;
+    } catch (e) {
+        return false;
+    }
+}
+
+// =============================================================================
+// Phase 4: 复习曲线（简化版SM-2）
+// =============================================================================
+
+// 获取复习数据
+async function getReviewData() {
+    try {
+        const result = await browserAPI.storage.local.get('recommend_reviews');
+        return result.recommend_reviews || {};
+    } catch (e) {
+        console.error('[复习] 获取复习数据失败:', e);
+        return {};
+    }
+}
+
+// 记录一次复习
+async function recordReview(bookmarkId) {
+    try {
+        const reviews = await getReviewData();
+        const existing = reviews[bookmarkId];
+        const now = Date.now();
+        
+        if (existing) {
+            // 简化版SM-2：每次复习间隔翻倍，最大30天
+            const newInterval = Math.min(existing.interval * 2, 30);
+            reviews[bookmarkId] = {
+                lastReview: now,
+                interval: newInterval,
+                reviewCount: existing.reviewCount + 1,
+                nextReview: now + newInterval * 24 * 60 * 60 * 1000
+            };
+        } else {
+            // 首次复习，间隔1天
+            reviews[bookmarkId] = {
+                lastReview: now,
+                interval: 1,
+                reviewCount: 1,
+                nextReview: now + 1 * 24 * 60 * 60 * 1000
+            };
+        }
+        
+        await browserAPI.storage.local.set({ recommend_reviews: reviews });
+        console.log('[复习] 已记录复习:', bookmarkId, '下次间隔:', reviews[bookmarkId].interval, '天');
+        return reviews[bookmarkId];
+    } catch (e) {
+        console.error('[复习] 记录复习失败:', e);
+        return null;
+    }
+}
+
+// 获取书签的复习状态
+function getReviewStatus(bookmarkId, reviewData) {
+    const review = reviewData[bookmarkId];
+    if (!review) return { status: 'new', label: '新书签' };
+    
+    const now = Date.now();
+    const daysSinceReview = (now - review.lastReview) / (1000 * 60 * 60 * 24);
+    
+    if (now >= review.nextReview) {
+        return { status: 'due', label: '待复习', priority: 1.2 };
+    } else if (daysSinceReview >= review.interval * 0.7) {
+        return { status: 'soon', label: '即将到期', priority: 1.1 };
+    } else {
+        return { status: 'reviewed', label: '已复习', priority: 0.8 };
+    }
+}
+
+// 计算带复习状态的优先级
+function calculatePriorityWithReview(basePriority, bookmarkId, reviewData, postponeData) {
+    let priority = basePriority;
+    
+    // 复习状态加成
+    const reviewStatus = getReviewStatus(bookmarkId, reviewData);
+    priority *= reviewStatus.priority || 1.0;
+    
+    // 惩罚因子：被多次推迟的书签降低优先级
+    if (postponeData) {
+        const postponeInfo = postponeData.find(p => p.bookmarkId === bookmarkId);
+        if (postponeInfo && postponeInfo.postponeCount > 0) {
+            const penaltyFactor = Math.pow(0.9, postponeInfo.postponeCount);
+            priority *= penaltyFactor;
+        }
+    }
+    
+    return Math.min(priority, 1.5); // 最高1.5
 }
 
 // 启动时间捕捉实时刷新
@@ -4056,6 +4808,17 @@ async function refreshRecommendCards() {
         const flippedBookmarks = await getFlippedBookmarks();
         const flippedSet = new Set(flippedBookmarks);
         
+        // 获取已屏蔽的书签
+        const blocked = await getBlockedBookmarks();
+        const blockedSet = new Set(blocked.bookmarks);
+        
+        // 获取稍后复习的书签（未到期的）
+        const postponed = await getPostponedBookmarks();
+        const now = Date.now();
+        const postponedSet = new Set(
+            postponed.filter(p => p.postponeUntil > now).map(p => p.bookmarkId)
+        );
+        
         // 获取所有书签
         const bookmarks = await new Promise((resolve) => {
             browserAPI.bookmarks.getTree((tree) => {
@@ -4075,8 +4838,13 @@ async function refreshRecommendCards() {
             });
         });
         
-        // 过滤掉已翻过的书签
-        const availableBookmarks = bookmarks.filter(b => !flippedSet.has(b.id));
+        // 过滤掉已翻过、已跳过、已屏蔽、稍后复习的书签
+        const availableBookmarks = bookmarks.filter(b => 
+            !flippedSet.has(b.id) && 
+            !skippedBookmarks.has(b.id) && 
+            !blockedSet.has(b.id) &&
+            !postponedSet.has(b.id)
+        );
         
         if (availableBookmarks.length === 0) {
             cards.forEach((card) => {
@@ -4089,12 +4857,23 @@ async function refreshRecommendCards() {
             return;
         }
         
-        // 随机选择3个不重复的书签
-        const shuffled = [...availableBookmarks].sort(() => Math.random() - 0.5);
-        recommendCards = shuffled.slice(0, 3);
+        // 获取复习数据用于优先级计算
+        const reviewData = await getReviewData();
+        
+        // 计算每个书签的优先级（基于复习状态）
+        const bookmarksWithPriority = availableBookmarks.map(b => {
+            const basePriority = Math.random() * 0.5 + 0.5; // 基础随机优先级
+            const reviewStatus = getReviewStatus(b.id, reviewData);
+            const priority = calculatePriorityWithReview(basePriority, b.id, reviewData, postponed);
+            return { ...b, priority, reviewStatus };
+        });
+        
+        // 按优先级排序（高优先级在前），然后取前3个
+        bookmarksWithPriority.sort((a, b) => b.priority - a.priority);
+        recommendCards = bookmarksWithPriority.slice(0, 3);
         
         // 预加载当前3个 + 下一批6个的 favicon（并行）
-        const urlsToPreload = shuffled.slice(0, 9).map(b => b.url).filter(Boolean);
+        const urlsToPreload = bookmarksWithPriority.slice(0, 9).map(b => b.url).filter(Boolean);
         preloadHighResFavicons(urlsToPreload);
         
         // 更新卡片显示
@@ -4103,7 +4882,7 @@ async function refreshRecommendCards() {
                 const bookmark = recommendCards[index];
                 card.classList.remove('empty');
                 card.querySelector('.card-title').textContent = bookmark.title || bookmark.url;
-                card.querySelector('.card-priority').textContent = `P = ${(Math.random() * 0.5 + 0.5).toFixed(2)}`;
+                card.querySelector('.card-priority').textContent = `P = ${bookmark.priority.toFixed(2)}`;
                 card.dataset.url = bookmark.url;
                 card.dataset.bookmarkId = bookmark.id;
                 
@@ -4113,17 +4892,54 @@ async function refreshRecommendCards() {
                     setHighResFavicon(favicon, bookmark.url);
                 }
                 
-                // 点击：打开链接 + 标记为已翻过
-                card.onclick = async () => {
+                // 点击卡片主体：打开链接 + 标记为已翻过 + 记录复习
+                card.onclick = async (e) => {
+                    // 如果点击的是按钮，不触发卡片点击
+                    if (e.target.closest('.card-actions')) return;
+                    
                     if (bookmark.url) {
-                        // 标记已翻过
                         await markBookmarkFlipped(bookmark.id);
-                        // 在推荐窗口中打开
+                        await recordReview(bookmark.id); // 记录复习
                         await openInRecommendWindow(bookmark.url);
-                        // 视觉反馈：标记卡片已翻
                         card.classList.add('flipped');
                     }
                 };
+                
+                // 按钮事件：稍后复习
+                const btnLater = card.querySelector('.card-btn-later');
+                if (btnLater) {
+                    btnLater.onclick = (e) => {
+                        e.stopPropagation();
+                        e.preventDefault();
+                        console.log('[稍后] 点击稍后按钮:', bookmark.id, bookmark.title);
+                        showLaterModal(bookmark);
+                    };
+                }
+                
+                // 按钮事件：跳过本次
+                const btnSkip = card.querySelector('.card-btn-skip');
+                if (btnSkip) {
+                    btnSkip.onclick = async (e) => {
+                        e.stopPropagation();
+                        e.preventDefault();
+                        console.log('[跳过] 点击跳过按钮:', bookmark.id, bookmark.title);
+                        skippedBookmarks.add(bookmark.id);
+                        await refreshRecommendCards();
+                    };
+                }
+                
+                // 按钮事件：永久屏蔽（无需确认）
+                const btnBlock = card.querySelector('.card-btn-block');
+                if (btnBlock) {
+                    btnBlock.onclick = async (e) => {
+                        e.stopPropagation();
+                        e.preventDefault();
+                        console.log('[屏蔽] 点击屏蔽按钮:', bookmark.id, bookmark.title);
+                        await blockBookmark(bookmark.id);
+                        await loadBlockedLists();
+                        await refreshRecommendCards();
+                    };
+                }
             } else {
                 card.classList.add('empty');
                 card.querySelector('.card-title').textContent = '--';
@@ -4133,6 +4949,14 @@ async function refreshRecommendCards() {
                     favicon.src = fallbackIcon;
                 }
                 card.onclick = null;
+                
+                // 清除空卡片的按钮事件
+                const actions = card.querySelector('.card-actions');
+                if (actions) {
+                    actions.querySelectorAll('.card-btn').forEach(btn => {
+                        btn.onclick = null;
+                    });
+                }
             }
         });
         

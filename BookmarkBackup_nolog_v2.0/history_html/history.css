@@ -8442,7 +8442,9 @@ a.tree-label.tree-bookmark-link:hover {
 
 .card-navigation {
     display: flex;
+    justify-content: center;
     gap: 12px;
+    margin-top: 16px;
 }
 
 .card-nav-btn {

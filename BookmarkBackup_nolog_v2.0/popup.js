@@ -3742,8 +3742,8 @@ const applyLocalizedContent = async (lang) => { // Added lang parameter
     };
 
     const bookmarkAdditionTitleStrings = {
-        'zh_CN': "2. 书签温故",
-        'en': "2. Bookmark Review"
+        'zh_CN': "2. 书签推荐",
+        'en': "2. Bookmark Recommend"
     };
 
     const openHistoryViewerStrings = {
@@ -6584,7 +6584,46 @@ function initializeBookmarkToolbox() {
     });
 
     // 加载最近添加的书签（数据来源与历史页面的“书签温故”视图一致）
-    loadRecentBookmarkAdditions(recentListContainer);
+    // 加载推荐书签卡片
+    loadRecommendCard();
+    
+    // 刷新推荐按钮
+    const refreshRecommendBtn = document.getElementById('refreshRecommendBtn');
+    if (refreshRecommendBtn) {
+        refreshRecommendBtn.onclick = async () => {
+            popupClickedBookmarks.clear();
+            await saveClickedBookmarks();
+            loadRecommendCard();
+        };
+    }
+    
+    // 跳转到推荐页面按钮
+    const openRecommendBtn = document.getElementById('openRecommendPageBtn');
+    if (openRecommendBtn) {
+        openRecommendBtn.onclick = () => {
+            chrome.tabs.create({ url: chrome.runtime.getURL('history_html/history.html#recommend') });
+        };
+    }
+}
+
+// 记录已点击的书签（从storage加载）
+let popupClickedBookmarks = new Set();
+
+// 加载已点击书签状态
+async function loadClickedBookmarks() {
+    const data = await new Promise(resolve => {
+        chrome.storage.local.get(['popupClickedBookmarks'], resolve);
+    });
+    if (data.popupClickedBookmarks && Array.isArray(data.popupClickedBookmarks)) {
+        popupClickedBookmarks = new Set(data.popupClickedBookmarks);
+    }
+}
+
+// 保存已点击书签状态
+async function saveClickedBookmarks() {
+    await new Promise(resolve => {
+        chrome.storage.local.set({ popupClickedBookmarks: Array.from(popupClickedBookmarks) }, resolve);
+    });
 }
 
 function flattenBookmarkTreeForRecent(node, parentPath = '') {
@@ -6779,4 +6818,114 @@ function loadRecentBookmarkAdditions(container) {
             renderRecentBookmarkItems(container, [], currentLang);
         }
     });
+}
+
+// 加载推荐书签列表（3个，无按钮）
+async function loadRecommendCard() {
+    const container = document.getElementById('recentBookmarks');
+    if (!container) return;
+    
+    // 先加载已点击状态
+    await loadClickedBookmarks();
+    
+    try {
+        const tree = await new Promise(resolve => chrome.bookmarks.getTree(resolve));
+        const allBookmarks = flattenBookmarkTreeForRecent(tree[0]);
+        
+        // 获取屏蔽和稍后复习数据
+        const storageData = await new Promise(resolve => {
+            chrome.storage.local.get(['blockedBookmarks', 'postponedBookmarks'], resolve);
+        });
+        
+        const blocked = storageData.blockedBookmarks || { bookmarks: [], folders: [], domains: [] };
+        const postponed = storageData.postponedBookmarks || {};
+        const now = Date.now();
+        
+        // 过滤
+        let candidates = allBookmarks.filter(b => {
+            if (!b.url) return false;
+            if (blocked.bookmarks.includes(b.title)) return false;
+            if (blocked.folders.includes(b.parentId)) return false;
+            
+            try {
+                const domain = new URL(b.url).hostname;
+                if (blocked.domains.some(d => domain.includes(d))) return false;
+            } catch {}
+            
+            if (postponed[b.id] && postponed[b.id].until > now) return false;
+            
+            return true;
+        });
+        
+        // 计算优先级
+        candidates.forEach(b => {
+            const daysSinceAdded = (now - (b.dateAdded || 0)) / (1000 * 60 * 60 * 24);
+            b.priority = Math.min(daysSinceAdded / 30, 1);
+        });
+        
+        candidates.sort((a, b) => b.priority - a.priority);
+        const topBookmarks = candidates.slice(0, 3);
+        
+        // 渲染列表
+        container.innerHTML = '';
+        
+        if (topBookmarks.length === 0) {
+            container.innerHTML = `
+                <div style="text-align: center; padding: 10px; color: var(--theme-text-secondary); font-size: 11px;">
+                    <i class="fas fa-bookmark" style="font-size: 18px; opacity: 0.3; margin-bottom: 4px;"></i>
+                    <div>暂无推荐</div>
+                </div>
+            `;
+            return;
+        }
+        
+        topBookmarks.forEach(bookmark => {
+            const item = document.createElement('div');
+            const isClicked = popupClickedBookmarks.has(bookmark.id);
+            
+            item.style.cssText = `display: flex; align-items: center; gap: 6px; padding: 4px 6px; background: var(--theme-bg-tertiary); border-radius: 4px; cursor: pointer; transition: all 0.2s; ${isClicked ? 'opacity: 0.6;' : ''}`;
+            item.onmouseenter = () => { if (!popupClickedBookmarks.has(bookmark.id)) item.style.background = 'var(--theme-bg-hover)'; };
+            item.onmouseleave = () => item.style.background = 'var(--theme-bg-tertiary)';
+            
+            // Favicon
+            let faviconUrl = '';
+            try {
+                const domain = new URL(bookmark.url).hostname;
+                faviconUrl = `https://www.google.com/s2/favicons?domain=${domain}&sz=32`;
+            } catch {}
+            
+            if (isClicked) {
+                item.innerHTML = `
+                    <i class="fas fa-check" style="width: 14px; height: 14px; color: var(--theme-success, #4CAF50); font-size: 12px; display: flex; align-items: center; justify-content: center;"></i>
+                    <span style="flex: 1; font-size: 11px; color: var(--theme-text-secondary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; text-decoration: line-through;">${bookmark.title || '无标题'}</span>
+                `;
+            } else {
+                item.innerHTML = `
+                    <img src="${faviconUrl}" style="width: 14px; height: 14px; border-radius: 2px; flex-shrink: 0;" onerror="this.style.display='none'">
+                    <span style="flex: 1; font-size: 11px; color: var(--theme-text-primary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">${bookmark.title || '无标题'}</span>
+                `;
+            }
+            
+            item.onclick = async () => {
+                chrome.tabs.create({ url: bookmark.url });
+                popupClickedBookmarks.add(bookmark.id);
+                await saveClickedBookmarks();
+                // 更新显示状态
+                item.style.opacity = '0.6';
+                item.innerHTML = `
+                    <i class="fas fa-check" style="width: 14px; height: 14px; color: var(--theme-success, #4CAF50); font-size: 12px; display: flex; align-items: center; justify-content: center;"></i>
+                    <span style="flex: 1; font-size: 11px; color: var(--theme-text-secondary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; text-decoration: line-through;">${bookmark.title || '无标题'}</span>
+                `;
+            };
+            
+            container.appendChild(item);
+        });
+    } catch (e) {
+        console.warn('[Bookmark Toolbox] 加载推荐书签失败:', e);
+        container.innerHTML = `
+            <div style="text-align: center; padding: 10px; color: var(--theme-text-secondary); font-size: 11px;">
+                <div>加载失败</div>
+            </div>
+        `;
+    }
 }

@@ -1,5 +1,6 @@
 <!DOCTYPE html>
 <html lang="zh">
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -51,10 +52,10 @@
 
             --light-icon-color: #6c757d;
             --light-svg-icon-stroke-color-path: "%23666";
-            
+
             --light-status-info-bg: #e6f3ff;
             --light-status-info-text: #007AFF;
-            
+
             /* Dark Theme */
             --dark-bg-primary: #1e1e1e;
             --dark-bg-secondary: #2d2d2d;
@@ -92,10 +93,10 @@
 
             --dark-icon-color: #9e9e9e;
             --dark-svg-icon-stroke-color-path: "%23aaa";
-            
+
             --dark-status-info-bg: #1a3f5f;
             --dark-status-info-text: #4da3ff;
-            
+
             /* Apply theme variables - defaults to light theme */
             --theme-bg-primary: var(--light-bg-primary);
             --theme-bg-secondary: var(--light-bg-secondary);
@@ -133,7 +134,7 @@
 
             --theme-icon-color: var(--light-icon-color);
             --theme-svg-icon-stroke-color-path: var(--light-svg-icon-stroke-color-path);
-            
+
             --theme-status-info-bg: var(--light-status-info-bg);
             --theme-status-info-text: var(--light-status-info-text);
             --theme-status-info-border: #b3d9ff;
@@ -169,7 +170,8 @@
             --theme-dropzone-error-bg: #fff0f0;
             --theme-dropzone-text-color: #666;
 
-            color-scheme: light; /* Indicate light scheme */
+            color-scheme: light;
+            /* Indicate light scheme */
         }
 
         /* Dark Theme */
@@ -193,8 +195,9 @@
             --theme-input-placeholder: var(--dark-input-placeholder);
             --theme-input-focus-shadow: var(--dark-input-focus-shadow);
 
-            --theme-accent-text-color: #66b3ff; /* Lighter blue for titles in dark mode */
-            
+            --theme-accent-text-color: #66b3ff;
+            /* Lighter blue for titles in dark mode */
+
             --theme-link-color: #66b3ff;
 
             --theme-scrollbar-track: var(--dark-scrollbar-track);
@@ -203,7 +206,7 @@
 
             --theme-icon-color: var(--dark-icon-color);
             --theme-svg-icon-stroke-color-path: var(--dark-svg-icon-stroke-color-path);
-            
+
             --theme-status-info-bg: var(--dark-status-info-bg);
             --theme-status-info-text: var(--dark-status-info-text);
             --theme-status-info-border: #33628f;
@@ -228,7 +231,7 @@
             --theme-settings-button-text: var(--dark-text-primary);
             --theme-settings-button-border: #555;
             --theme-settings-button-hover-bg: #4a4a4a;
-            
+
             --theme-dropzone-bg: #2c2c2c;
             --theme-dropzone-border: #555;
             --theme-dropzone-hover-bg: #2a3a4f;
@@ -237,43 +240,57 @@
             --theme-dropzone-error-bg: #402020;
             --theme-dropzone-text-color: var(--dark-text-secondary);
 
-            color-scheme: dark; /* Indicate dark scheme */
+            color-scheme: dark;
+            /* Indicate dark scheme */
         }
 
         /* 基础页面设置 */
         body {
             width: auto;
-            min-width: 750px;     /* 增加最小宽度 */
-            max-width: 850px;     /* 增加最大宽度 */
-            padding: 0;           /* 移除内边距 */
-            margin: 0 auto;       /* 水平居中 */
+            min-width: 750px;
+            /* 增加最小宽度 */
+            max-width: 850px;
+            /* 增加最大宽度 */
+            padding: 0;
+            /* 移除内边距 */
+            margin: 0 auto;
+            /* 水平居中 */
             font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
             overflow: hidden;
-            background-color: var(--theme-bg-primary); /* Use CSS variable for background color */
-            box-sizing: border-box;  /* 确保padding不会增加总宽度 */
+            background-color: var(--theme-bg-primary);
+            /* Use CSS variable for background color */
+            box-sizing: border-box;
+            /* 确保padding不会增加总宽度 */
         }
 
         /* 主内容区域 */
         .main-section {
             flex: 1;
             width: 100%;
-            padding: 20px 25px;   /* 保留内边距 */
-            background-color: var(--theme-bg-elevated); /* Use CSS variable for background color */
-            border-radius: 0;     /* 移除圆角 */
-            box-shadow: none;     /* 移除阴影 */
+            padding: 20px 25px;
+            /* 保留内边距 */
+            background-color: var(--theme-bg-elevated);
+            /* Use CSS variable for background color */
+            border-radius: 0;
+            /* 移除圆角 */
+            box-shadow: none;
+            /* 移除阴影 */
             position: relative;
-            margin: 0 auto;       /* 水平居中 */
-            box-sizing: border-box;  /* 确保padding不会增加总宽度 */
+            margin: 0 auto;
+            /* 水平居中 */
+            box-sizing: border-box;
+            /* 确保padding不会增加总宽度 */
         }
 
         /* 确保数字输入框的上下调节按钮始终可见 */
-        input[type="number"]::-webkit-inner-spin-button, 
-        input[type="number"]::-webkit-outer-spin-button { 
+        input[type="number"]::-webkit-inner-spin-button,
+        input[type="number"]::-webkit-outer-spin-button {
             opacity: 1 !important;
             height: 24px;
             width: 18px;
             margin-right: 4px;
-            background-color: var(--theme-input-border); /* Use CSS variable for background color */
+            background-color: var(--theme-input-border);
+            /* Use CSS variable for background color */
             position: relative;
             border-radius: 0 2px 2px 0;
         }
@@ -281,7 +298,8 @@
         /* 标题样式 */
         h1 {
             font-size: 20px;
-            color: var(--theme-accent-color); /* Use CSS variable for color */
+            color: var(--theme-accent-color);
+            /* Use CSS variable for color */
             margin: 0 0 20px 0;
             font-weight: 600;
             white-space: nowrap;
@@ -298,7 +316,8 @@
 
         /* 表单标签样式 */
         label {
-            color: var(--theme-text-primary); /* Use CSS variable for color */
+            color: var(--theme-text-primary);
+            /* Use CSS variable for color */
             font-size: 14px;
             margin-bottom: 8px;
             font-weight: 500;
@@ -311,8 +330,10 @@
             position: absolute;
             top: -5px;
             right: -5px;
-            background-color: var(--theme-accent-color); /* Use CSS variable for background color */
-            color: var(--theme-text-on-accent); /* Use CSS variable for text color */
+            background-color: var(--theme-accent-color);
+            /* Use CSS variable for background color */
+            color: var(--theme-text-on-accent);
+            /* Use CSS variable for text color */
             border-radius: 50%;
             width: 16px;
             height: 16px;
@@ -324,42 +345,60 @@
         }
 
         @keyframes badgePop {
-            0% { transform: scale(0.8); opacity: 0; }
-            50% { transform: scale(1.1); }
-            100% { transform: scale(1); opacity: 1; }
+            0% {
+                transform: scale(0.8);
+                opacity: 0;
+            }
+
+            50% {
+                transform: scale(1.1);
+            }
+
+            100% {
+                transform: scale(1);
+                opacity: 1;
+            }
         }
 
         /* 输入框样式 */
         input {
             width: 100%;
             padding: 12px 15px;
-            border: 1px solid var(--theme-input-border); /* Use CSS variable for border color */
+            border: 1px solid var(--theme-input-border);
+            /* Use CSS variable for border color */
             border-radius: 8px;
             font-size: 14px;
             box-sizing: border-box;
-            background-color: var(--theme-input-bg); /* Use CSS variable for background color */
+            background-color: var(--theme-input-bg);
+            /* Use CSS variable for background color */
             transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
         }
 
         /* 输入框焦点状态 */
         input:focus {
-            border-color: var(--theme-input-focus-border); /* Use CSS variable for border color */
+            border-color: var(--theme-input-focus-border);
+            /* Use CSS variable for border color */
             outline: none;
-            box-shadow: 0 0 0 3px var(--theme-input-focus-shadow); /* Use CSS variable for shadow color */
-            background-color: var(--theme-input-bg); /* Use CSS variable for background color */
+            box-shadow: 0 0 0 3px var(--theme-input-focus-shadow);
+            /* Use CSS variable for shadow color */
+            background-color: var(--theme-input-bg);
+            /* Use CSS variable for background color */
         }
 
         /* 输入框占位符样式 */
         input::placeholder {
-            color: var(--theme-input-placeholder); /* Use CSS variable for color */
+            color: var(--theme-input-placeholder);
+            /* Use CSS variable for color */
             font-size: 13px;
         }
 
         /* 按钮组样式 */
         .button-group {
-            margin-top: 20px;      /* 增加与表单的间距 */
+            margin-top: 20px;
+            /* 增加与表单的间距 */
             display: flex;
-            gap: 15px;            /* 增加按钮间距 */
+            gap: 15px;
+            /* 增加按钮间距 */
             width: 100%;
         }
 
@@ -369,8 +408,10 @@
             padding: 12px 16px;
             border: none;
             border-radius: 8px;
-            background-color: var(--theme-accent-color); /* Use CSS variable for background color */
-            color: var(--theme-text-on-accent); /* Use CSS variable for text color */
+            background-color: var(--theme-accent-color);
+            /* Use CSS variable for background color */
+            color: var(--theme-text-on-accent);
+            /* Use CSS variable for text color */
             cursor: pointer;
             font-size: 14px;
             font-weight: 500;
@@ -380,20 +421,25 @@
 
         /* 按钮悬停效果 */
         button:hover {
-            background-color: var(--theme-accent-color-hover); /* Use CSS variable for background color */
-            box-shadow: 0 4px 8px rgba(0, 0, 0, 0.15);  /* 悬停时增加阴影 */
-            transform: translateY(-1px);  /* 轻微上浮效果 */
+            background-color: var(--theme-accent-color-hover);
+            /* Use CSS variable for background color */
+            box-shadow: 0 4px 8px rgba(0, 0, 0, 0.15);
+            /* 悬停时增加阴影 */
+            transform: translateY(-1px);
+            /* 轻微上浮效果 */
         }
 
         /* 禁用按钮样式 */
         button:disabled {
-            background-color: var(--theme-text-disabled); /* Use CSS variable for background color */
+            background-color: var(--theme-text-disabled);
+            /* Use CSS variable for background color */
             cursor: not-allowed;
         }
 
         /* 状态提示框样式 */
         .status {
-            position: fixed; /* 修改为 fixed 定位 */
+            position: fixed;
+            /* 修改为 fixed 定位 */
             top: 25px;
             right: 30px;
             padding: 12px 15px;
@@ -402,26 +448,36 @@
             line-height: 1.5;
             max-width: 300px;
             word-break: break-word;
-            white-space: pre-line;  /* 支持换行符 */
-            z-index: 10001; /* 增加z-index，确保在顶层显示, 高于语言切换按钮 */
+            white-space: pre-line;
+            /* 支持换行符 */
+            z-index: 10001;
+            /* 增加z-index，确保在顶层显示, 高于语言切换按钮 */
             opacity: 0;
             transform: translateY(-10px);
             transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-            background-color: var(--theme-bg-elevated); /* Use CSS variable for background color */
+            background-color: var(--theme-bg-elevated);
+            /* Use CSS variable for background color */
             box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
-            pointer-events: none; /* 添加此属性使状态提示不会拦截鼠标事件 */
+            pointer-events: none;
+            /* 添加此属性使状态提示不会拦截鼠标事件 */
         }
 
         .status.info {
-            background-color: var(--theme-status-info-bg); /* Use CSS variable for background color */
-            color: var(--theme-status-info-text); /* Use CSS variable for text color */
-            border: 1px solid var(--theme-status-info-border); /* Use CSS variable for border color */
+            background-color: var(--theme-status-info-bg);
+            /* Use CSS variable for background color */
+            color: var(--theme-status-info-text);
+            /* Use CSS variable for text color */
+            border: 1px solid var(--theme-status-info-border);
+            /* Use CSS variable for border color */
         }
 
         .status.error {
-            background-color: var(--theme-status-error-bg); /* Use CSS variable for background color */
-            color: var(--theme-status-error-text); /* Use CSS variable for text color */
-            border: 1px solid var(--theme-status-error-border); /* Use CSS variable for border color */
+            background-color: var(--theme-status-error-bg);
+            /* Use CSS variable for background color */
+            color: var(--theme-status-error-text);
+            /* Use CSS variable for text color */
+            border: 1px solid var(--theme-status-error-border);
+            /* Use CSS variable for border color */
         }
 
         .status.show {
@@ -431,21 +487,27 @@
 
         /* 页面底部样式 */
         .footer {
-            margin: 12px 0 15px 0;  /* 上右下左边距 */
+            margin: 12px 0 15px 0;
+            /* 上右下左边距 */
             text-align: center;
-            color: var(--theme-text-secondary); /* Use CSS variable for text color */
+            color: var(--theme-text-secondary);
+            /* Use CSS variable for text color */
             font-size: 12px;
-            border-bottom: 1px solid var(--theme-border-primary);  /* 添加分隔线 */
-            padding-bottom: 12px;           /* 分隔线的间距 */
+            border-bottom: 1px solid var(--theme-border-primary);
+            /* 添加分隔线 */
+            padding-bottom: 12px;
+            /* 分隔线的间距 */
         }
 
         /* 初始备份对话框 */
         .init-sync-dialog {
             margin-top: 15px;
             padding: 12px;
-            background-color: var(--theme-bg-secondary); /* Use CSS variable for background color */
+            background-color: var(--theme-bg-secondary);
+            /* Use CSS variable for background color */
             border-radius: 8px;
-            border: 1px solid var(--theme-border-primary); /* Use CSS variable for border color */
+            border: 1px solid var(--theme-border-primary);
+            /* Use CSS variable for border color */
         }
 
         /* 初始化备份按钮组 */
@@ -461,8 +523,10 @@
             font-size: 14px;
             border: none;
             border-radius: 6px;
-            background-color: var(--theme-success-color); /* Use CSS variable for background color */
-            color: var(--theme-text-on-accent); /* Use CSS variable for text color */
+            background-color: var(--theme-success-color);
+            /* Use CSS variable for background color */
+            color: var(--theme-text-on-accent);
+            /* Use CSS variable for text color */
             cursor: pointer;
             transition: all 0.3s ease;
             box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
@@ -472,13 +536,15 @@
         }
 
         .init-sync-buttons button:hover {
-            background-color: var(--theme-success-color); /* Use CSS variable for background color */
+            background-color: var(--theme-success-color);
+            /* Use CSS variable for background color */
             box-shadow: 0 4px 8px rgba(0, 0, 0, 0.15);
             transform: translateY(-1px);
         }
 
         .init-sync-buttons button:disabled {
-            background-color: var(--theme-text-disabled); /* Use CSS variable for background color */
+            background-color: var(--theme-text-disabled);
+            /* Use CSS variable for background color */
             cursor: not-allowed;
             transform: none;
             box-shadow: none;
@@ -486,7 +552,8 @@
 
         /* 警告文本样式 */
         .warning {
-            color: var(--theme-error-color); /* Use CSS variable for text color */
+            color: var(--theme-error-color);
+            /* Use CSS variable for text color */
             margin-bottom: 15px;
             font-size: 13px;
             font-weight: 500;
@@ -495,49 +562,69 @@
         /* 备份状态区域 */
         .sync-status {
             margin-top: 20px;
-            padding: 15px 20px;   /* 减小内边距 */
-            background-color: var(--theme-bg-elevated); /* Use CSS variable for background color */
+            padding: 15px 20px;
+            /* 减小内边距 */
+            background-color: var(--theme-bg-elevated);
+            /* Use CSS variable for background color */
             border-radius: 8px;
-            border: 1px solid var(--theme-border-primary); /* Use CSS variable for border color */
+            border: 1px solid var(--theme-border-primary);
+            /* Use CSS variable for border color */
             box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);
-            width: 100%;  /* 宽度100% */
-            box-sizing: border-box;  /* 确保padding不会增加总宽度 */
+            width: 100%;
+            /* 宽度100% */
+            box-sizing: border-box;
+            /* 确保padding不会增加总宽度 */
         }
 
         /* 备份状态信息区块 */
         .backup-stats {
             margin-bottom: 15px;
             padding: 12px 15px;
-            background-color: var(--theme-bg-tertiary); /* Use CSS variable for background color */
+            background-color: var(--theme-bg-tertiary);
+            /* Use CSS variable for background color */
             border-radius: 6px;
-            border: 1px solid var(--theme-border-primary); /* Use CSS variable for border color */
-            line-height: 1.6;  /* 增加行间距 */
-            letter-spacing: 0.5px;  /* 微弱增加字体间距 */
+            border: 1px solid var(--theme-border-primary);
+            /* Use CSS variable for border color */
+            line-height: 1.6;
+            /* 增加行间距 */
+            letter-spacing: 0.5px;
+            /* 微弱增加字体间距 */
         }
-        
+
         .backup-stats .stats-row {
             display: flex;
-            margin-bottom: 10px;  /* 增加行间距 */
+            margin-bottom: 10px;
+            /* 增加行间距 */
         }
-        
+
         .backup-stats .stats-label {
-            font-weight: 700;  /* 保持加粗 */
-            font-size: 13px;   /* 缩小字号 */
+            font-weight: 700;
+            /* 保持加粗 */
+            font-size: 13px;
+            /* 缩小字号 */
             margin-right: 10px;
-            color: var(--theme-text-primary); /* Use CSS variable for text color */
-            white-space: nowrap; /* 防止“当前数量/结构:”和“Last Change:”换行 */
+            color: var(--theme-text-primary);
+            /* Use CSS variable for text color */
+            white-space: nowrap;
+            /* 防止“当前数量/结构:”和“Last Change:”换行 */
         }
-        
+
         .backup-stats .stats-value {
-            color: var(--theme-text-primary); /* Use CSS variable for text color */
-            font-size: 12px;  /* 缩小字号 */
-            margin-top: 1.5px;  /* 微调对齐 */
+            color: var(--theme-text-primary);
+            /* Use CSS variable for text color */
+            font-size: 12px;
+            /* 缩小字号 */
+            margin-top: 1.5px;
+            /* 微调对齐 */
         }
-        
+
         .backup-stats .time-value {
-            color: var(--theme-success-color);  /* 标记时间为绿色 */
-            font-size: 12px;  /* 缩小字号 */
-            margin-top: 1.5px;  /* 微调对齐 */
+            color: var(--theme-success-color);
+            /* 标记时间为绿色 */
+            font-size: 12px;
+            /* 缩小字号 */
+            margin-top: 1.5px;
+            /* 微调对齐 */
         }
 
         /* 状态标题样式 */
@@ -548,20 +635,21 @@
             margin-bottom: 0;
             padding: 0 10px;
         }
-        
+
         .status-headers .header-item {
             flex: 1;
             font-size: 14px;
             font-weight: 600;
-            color: var(--theme-text-primary); /* Use CSS variable for text color */
+            color: var(--theme-text-primary);
+            /* Use CSS variable for text color */
             min-width: 150px;
             text-align: center;
         }
-        
+
         .status-headers .header-item:last-child {
             text-align: right;
         }
-        
+
         /* 备份信息区域 */
         .sync-info {
             margin-bottom: 15px;
@@ -581,32 +669,41 @@
             font-size: 14px;
             margin: 0;
             padding: 0;
-            height: 24px;  /* 固定高度 */
-            line-height: 24px;  /* 确保文字垂直居中 */
+            height: 24px;
+            /* 固定高度 */
+            line-height: 24px;
+            /* 确保文字垂直居中 */
         }
 
         .auto-sync-control .setting-label {
             font-size: 14px;
-            color: var(--theme-text-primary); /* Use CSS variable for text color */
+            color: var(--theme-text-primary);
+            /* Use CSS variable for text color */
             display: flex;
             align-items: center;
             margin: 0;
             padding: 0;
-            height: 24px;  /* 固定高度 */
-            line-height: 24px;  /* 确保文字垂直居中 */
+            height: 24px;
+            /* 固定高度 */
+            line-height: 24px;
+            /* 确保文字垂直居中 */
         }
 
         .auto-sync-control .setting-tip {
             font-size: 14px;
-            color: var(--theme-text-secondary); /* Use CSS variable for text color */
+            color: var(--theme-text-secondary);
+            /* Use CSS variable for text color */
             margin: 0;
             padding: 0;
-            height: 24px;  /* 固定高度 */
-            line-height: 24px;  /* 确保文字垂直居中 */
+            height: 24px;
+            /* 固定高度 */
+            line-height: 24px;
+            /* 确保文字垂直居中 */
         }
 
         .highlight-text {
-            color: var(--theme-success-color); /* Use CSS variable for text color */
+            color: var(--theme-success-color);
+            /* Use CSS variable for text color */
             font-weight: 500;
         }
 
@@ -617,7 +714,8 @@
             width: 36px;
             height: 18px;
             margin-left: 10px;
-            margin-top: 6px;  /* 增加顶部外边距到6px */
+            margin-top: 6px;
+            /* 增加顶部外边距到6px */
         }
 
         /* 开关按钮的滑块调整 */
@@ -628,7 +726,8 @@
             left: 0;
             right: 0;
             bottom: 0;
-            background-color: var(--theme-switch-bg); /* Use CSS variable for background color */
+            background-color: var(--theme-switch-bg);
+            /* Use CSS variable for background color */
             transition: .4s cubic-bezier(0.4, 0, 0.2, 1);
             border-radius: 18px;
         }
@@ -640,13 +739,15 @@
             width: 14px;
             left: 2px;
             bottom: 2px;
-            background-color: var(--theme-switch-slider-bg); /* Use CSS variable for background color */
+            background-color: var(--theme-switch-slider-bg);
+            /* Use CSS variable for background color */
             transition: .4s cubic-bezier(0.4, 0, 0.2, 1);
             border-radius: 50%;
         }
 
-        input:checked + .slider {
-            background-color: var(--theme-switch-bg-checked); /* Use CSS variable for background color */
+        input:checked+.slider {
+            background-color: var(--theme-switch-bg-checked);
+            /* Use CSS variable for background color */
         }
 
         /* 移除开关按钮的焦点框 */
@@ -656,8 +757,9 @@
             border-color: transparent;
         }
 
-        input:checked + .slider:before {
-            transform: translateX(18px);  /* 调整滑块移动距离 */
+        input:checked+.slider:before {
+            transform: translateX(18px);
+            /* 调整滑块移动距离 */
         }
 
         /* 设置项容器 */
@@ -671,13 +773,15 @@
 
         .setting-label {
             font-size: 14px;
-            color: var(--theme-text-primary); /* Use CSS variable for text color */
+            color: var(--theme-text-primary);
+            /* Use CSS variable for text color */
             margin-right: 10px;
         }
 
         .setting-tip {
             font-size: 12px;
-            color: var(--theme-text-secondary); /* Use CSS variable for text color */
+            color: var(--theme-text-secondary);
+            /* Use CSS variable for text color */
             margin-left: 10px;
         }
 
@@ -685,68 +789,92 @@
         .main-section {
             flex: 1;
             width: 100%;
-            padding: 20px 25px;   /* 保留内边距 */
-            background-color: var(--theme-bg-elevated); /* Use CSS variable for background color */
-            border-radius: 0;     /* 移除圆角 */
-            box-shadow: none;     /* 移除阴影 */
+            padding: 20px 25px;
+            /* 保留内边距 */
+            background-color: var(--theme-bg-elevated);
+            /* Use CSS variable for background color */
+            border-radius: 0;
+            /* 移除圆角 */
+            box-shadow: none;
+            /* 移除阴影 */
             position: relative;
-            margin: 0 auto;       /* 水平居中 */
-            box-sizing: border-box;  /* 确保padding不会增加总宽度 */
+            margin: 0 auto;
+            /* 水平居中 */
+            box-sizing: border-box;
+            /* 确保padding不会增加总宽度 */
         }
 
         /* 备份历史记录区域 */
         .sync-history {
             margin-top: 20px;
-            padding: 12px 10px 12px 20px;   /* 进一步减小右侧padding */
-            background-color: var(--theme-bg-elevated); /* Use CSS variable for background color */
+            padding: 12px 10px 12px 20px;
+            /* 进一步减小右侧padding */
+            background-color: var(--theme-bg-elevated);
+            /* Use CSS variable for background color */
             border-radius: 8px;
-            border: 1px solid var(--theme-border-primary); /* Use CSS variable for border color */
-            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);  /* 增加阴影效果 */
-            box-sizing: border-box;  /* 确保padding不会增加总宽度 */
-            position: relative;    /* 添加相对定位 */
-            z-index: 1;           /* 确保阴影效果可见 */
+            border: 1px solid var(--theme-border-primary);
+            /* Use CSS variable for border color */
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
+            /* 增加阴影效果 */
+            box-sizing: border-box;
+            /* 确保padding不会增加总宽度 */
+            position: relative;
+            /* 添加相对定位 */
+            z-index: 1;
+            /* 确保阴影效果可见 */
         }
 
         .sync-history h3 {
             font-size: 14px;
-            margin: 0 0 8px 0;  /* 减小底部间距 */
-            color: var(--theme-text-primary); /* Use CSS variable for text color */
+            margin: 0 0 8px 0;
+            /* 减小底部间距 */
+            color: var(--theme-text-primary);
+            /* Use CSS variable for text color */
             font-weight: 500;
-            position: relative;    /* 添加相对定位 */
-            z-index: 2;           /* 确保标题在阴影之上 */
+            position: relative;
+            /* 添加相对定位 */
+            z-index: 2;
+            /* 确保标题在阴影之上 */
         }
 
         /* 历史记录列表 */
         .history-list {
-            height: 320px;       /* 从250px增加到320px */
-            overflow-y: auto;    /* 垂直滚动 */
+            height: 320px;
+            /* 从250px增加到320px */
+            overflow-y: auto;
+            /* 垂直滚动 */
             display: flex;
-            flex-direction: column;  /* 改为正常的从上到下排列 */
-            position: relative;      /* 添加相对定位 */
-            z-index: 2;             /* 确保列表在阴影之上 */
-            border: 1px solid var(--theme-border-primary); /* Use CSS variable for border color */
-            border-radius: 4px;     /* 圆角边框 */
+            flex-direction: column;
+            /* 改为正常的从上到下排列 */
+            position: relative;
+            /* 添加相对定位 */
+            z-index: 2;
+            /* 确保列表在阴影之上 */
+            border: 1px solid var(--theme-border-primary);
+            /* Use CSS variable for border color */
+            border-radius: 4px;
+            /* 圆角边框 */
         }
-        
+
         /* Bookmark Toolbox 样式 */
         .bookmark-toolbox {
             transition: all 0.3s ease;
         }
-        
+
         .bookmark-toolbox:hover {
             box-shadow: 0 6px 16px rgba(0, 0, 0, 0.12) !important;
         }
-        
+
         .toolbox-canvas:hover {
             background-color: var(--theme-bg-tertiary) !important;
             box-shadow: 0 2px 8px rgba(0, 123, 255, 0.15);
         }
-        
+
         .toolbox-addition {
             scrollbar-width: thin;
             scrollbar-color: var(--theme-scrollbar-thumb) var(--theme-scrollbar-track);
         }
-        
+
         .bookmark-recommend-header {
             display: flex;
             align-items: center;
@@ -781,7 +909,7 @@
             color: var(--theme-accent-color);
             background: var(--theme-bg-secondary);
         }
-        
+
         .bookmark-recommend-btn[title]:hover::after {
             content: attr(title);
             position: absolute;
@@ -1070,27 +1198,31 @@
         .history-header {
             display: flex;
             justify-content: space-between;
-            padding: 6px 5px;  /* 进一步减小左右内边距 */
+            padding: 6px 5px;
+            /* 进一步减小左右内边距 */
             border-bottom: 2px solid var(--theme-border-primary);
             position: sticky;
             top: 0;
             background-color: var(--theme-bg-secondary);
             z-index: 3;
         }
-        
+
         .history-header .header-item {
             flex: 1;
             text-align: center;
-            font-size: 12px;  /* 缩小字体大小 */
+            font-size: 12px;
+            /* 缩小字体大小 */
             font-weight: 600;
             color: var(--theme-text-primary);
-            min-width: 100px;  /* 进一步减小最小宽度 */
+            min-width: 100px;
+            /* 进一步减小最小宽度 */
             /* 移除任何可能的边界 */
             border: none;
-            padding: 0 5px;  /* 添加小的左右padding */
+            padding: 0 5px;
+            /* 添加小的左右padding */
             margin: 0;
         }
-        
+
         /* 第二栏（数量与结构）向左移动 */
         .history-header .header-item:nth-child(2) {
             padding-right: 20px;
@@ -1098,20 +1230,26 @@
 
         /* 历史记录项 */
         .history-item {
-            padding: 8px 5px;  /* 减小左右padding */
+            padding: 8px 5px;
+            /* 减小左右padding */
             border-bottom: 1px solid var(--theme-border-primary);
             display: flex;
-            justify-content: space-between; /* 使元素均匀分布 */
-            align-items: center; /* 垂直居中 */
+            justify-content: space-between;
+            /* 使元素均匀分布 */
+            align-items: center;
+            /* 垂直居中 */
         }
-        
+
         /* 历史记录项的元素 - 只保留两栏 */
-        .history-item-time, .history-item-count {
+        .history-item-time,
+        .history-item-count {
             flex: 1;
             text-align: center;
-            padding: 0 5px;  /* 添加小的左右padding */
+            padding: 0 5px;
+            /* 添加小的左右padding */
             overflow: visible;
-            min-width: 100px;  /* 进一步减小最小宽度 */
+            min-width: 100px;
+            /* 进一步减小最小宽度 */
             display: flex;
             flex-direction: column;
             justify-content: center;
@@ -1119,17 +1257,17 @@
             border: none;
             margin: 0;
         }
-        
+
         /* 确保历史记录内容换行时的对齐 */
-        .history-item-count > div {
+        .history-item-count>div {
             width: 100%;
         }
-        
+
         /* 历史记录项悬停效果 */
         .history-item:hover {
             background-color: var(--theme-hover-bg);
         }
-        
+
         /* 历史记录项最后一项无底部边框 */
         .history-item:last-child {
             border-bottom: none;
@@ -1137,80 +1275,97 @@
 
         /* NEW: Base style for history columns */
         .history-col {
-            flex: 1; /* Distribute space equally */
+            flex: 1;
+            /* Distribute space equally */
             display: flex;
-            align-items: center; /* Vertically center content within the column div itself */
+            align-items: center;
+            /* Vertically center content within the column div itself */
             font-size: 12px;
             white-space: nowrap;
-            min-width: 0; /* Allow shrinking */
+            min-width: 0;
+            /* Allow shrinking */
         }
 
         /* NEW: Specific styles for each column */
         .time-col {
-            justify-content: center; /* Align time to the center */
+            justify-content: center;
+            /* Align time to the center */
             color: var(--theme-success-color);
-            min-width: 140px; /* Adjust min-width as needed */
-            flex-shrink: 0; /* Prevent time column from shrinking too much */
+            min-width: 140px;
+            /* Adjust min-width as needed */
+            flex-shrink: 0;
+            /* Prevent time column from shrinking too much */
         }
 
         .stats-col {
-            justify-content: center; /* Center bookmark stats */
-            flex-grow: 2; /* Allow stats column to take more space if needed */
+            justify-content: center;
+            /* Center bookmark stats */
+            flex-grow: 2;
+            /* Allow stats column to take more space if needed */
         }
-        
+
         /* Ensure nested stats div aligns correctly */
         .stats-col .bookmark-stats {
-             display: flex;
-             justify-content: center;
-             align-items: center; /* Center items within the stats div */
-             gap: 4px;
-             margin: 0;
-             padding: 0;
-             width: 100%; /* Ensure it takes full width of its container */
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            /* Center items within the stats div */
+            gap: 4px;
+            margin: 0;
+            padding: 0;
+            width: 100%;
+            /* Ensure it takes full width of its container */
         }
-        
+
         .stats-col .bookmark-stats span {
-             margin: 0;
-             white-space: nowrap;
-             color: var(--theme-text-secondary);
+            margin: 0;
+            white-space: nowrap;
+            color: var(--theme-text-secondary);
         }
 
         .status-col {
-            justify-content: center; /* Align status to the center */
+            justify-content: center;
+            /* Align status to the center */
             color: var(--theme-success-color);
-            min-width: 150px; /* Adjust as needed */
+            min-width: 150px;
+            /* Adjust as needed */
         }
 
         /* Apply error/locked colors to status column */
-         .status-col.error {
+        .status-col.error {
             color: var(--theme-error-color);
         }
-        
-         .status-col.locked {
+
+        .status-col.locked {
             color: var(--theme-warning-color);
         }
-         .status-col.locked::before {
-             content: "🔒 ";
-             margin-right: 4px;
-         }
+
+        .status-col.locked::before {
+            content: "🔒 ";
+            margin-right: 4px;
+        }
 
         /* 美化滚动条样式 */
         .history-list::-webkit-scrollbar {
-            width: 6px;         /* 滚动条宽度 */
+            width: 6px;
+            /* 滚动条宽度 */
         }
 
         .history-list::-webkit-scrollbar-track {
-            background: var(--theme-scrollbar-track);  /* 滚动条轨道 */
+            background: var(--theme-scrollbar-track);
+            /* 滚动条轨道 */
             border-radius: 3px;
         }
 
         .history-list::-webkit-scrollbar-thumb {
-            background: var(--theme-scrollbar-thumb);     /* 滚动条滑块 */
+            background: var(--theme-scrollbar-thumb);
+            /* 滚动条滑块 */
             border-radius: 3px;
         }
 
         .history-list::-webkit-scrollbar-thumb:hover {
-            background: var(--theme-scrollbar-thumb-hover);     /* 滚动条滑块悬停 */
+            background: var(--theme-scrollbar-thumb-hover);
+            /* 滚动条滑块悬停 */
         }
 
         /* 配置区域样式 */
@@ -1221,8 +1376,10 @@
             overflow: hidden;
             background-color: var(--theme-bg-elevated);
             box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);
-            width: 100%;          /* 确保宽度100% */
-            box-sizing: border-box;  /* 确保padding不会增加总宽度 */
+            width: 100%;
+            /* 确保宽度100% */
+            box-sizing: border-box;
+            /* 确保padding不会增加总宽度 */
         }
 
         /* 配置头部样式 */
@@ -1256,7 +1413,7 @@
             height: 10px;
             border-radius: 50%;
             display: inline-block;
-            box-shadow: 0 0 3px rgba(0,0,0,0.2);
+            box-shadow: 0 0 3px rgba(0, 0, 0, 0.2);
             transition: all 0.3s ease;
         }
 
@@ -1278,8 +1435,15 @@
         }
 
         @keyframes slideDown {
-            from { opacity: 0; transform: translateY(-10px); }
-            to { opacity: 1; transform: translateY(0); }
+            from {
+                opacity: 0;
+                transform: translateY(-10px);
+            }
+
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
         }
 
         .toggle-icon {
@@ -1288,7 +1452,7 @@
             position: relative;
             transition: transform 0.3s ease;
         }
-        
+
         .toggle-icon::before,
         .toggle-icon::after {
             content: '';
@@ -1296,26 +1460,26 @@
             background-color: var(--theme-icon-color);
             transition: transform 0.3s ease;
         }
-        
+
         .toggle-icon::before {
             width: 2px;
             height: 12px;
             left: 9px;
             top: 4px;
         }
-        
+
         .toggle-icon::after {
             width: 12px;
             height: 2px;
             left: 4px;
             top: 9px;
         }
-        
+
         /* 非折叠状态时隐藏垂直线，形成减号 */
         .config-header:not(.collapsed) .toggle-icon::before {
             transform: scaleY(0);
         }
-        
+
         /* 折叠状态时显示垂直线，形成加号 */
         .config-header.collapsed .toggle-icon::before {
             transform: scaleY(1);
@@ -1359,8 +1523,10 @@
             margin-top: 10px;
             padding-top: 10px;
             border-top: 1px dashed var(--theme-border-primary);
-            text-align: left;         /* 添加左对齐 */
-            padding-left: 5px;        /* 添加左侧内边距 */
+            text-align: left;
+            /* 添加左对齐 */
+            padding-left: 5px;
+            /* 添加左侧内边距 */
         }
 
         .info-details p {
@@ -1368,7 +1534,8 @@
             font-size: 12px;
             color: var(--theme-text-secondary);
             line-height: 1.4;
-            text-align: left;         /* 确保段落也是左对齐 */
+            text-align: left;
+            /* 确保段落也是左对齐 */
         }
 
         .bookmark-status {
@@ -1379,7 +1546,7 @@
             font-size: 13px;
             color: var(--theme-text-primary);
         }
-        
+
         .bookmark-status div {
             margin: 3px 0;
         }
@@ -1389,7 +1556,8 @@
             display: flex;
             align-items: center;
             justify-content: space-between;
-            margin-bottom: 15px;   /* 减小底部间距 */
+            margin-bottom: 15px;
+            /* 减小底部间距 */
             gap: 15px;
         }
 
@@ -1419,7 +1587,8 @@
             width: 16px;
             height: 16px;
             cursor: pointer;
-            display: none;  /* 默认隐藏 */
+            display: none;
+            /* 默认隐藏 */
             opacity: 0.6;
             transition: opacity 0.3s;
             background: url('data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--theme-svg-icon-stroke-color-path)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>') no-repeat center;
@@ -1527,14 +1696,18 @@
         .password-container {
             position: relative;
             width: 100%;
-            display: flex;  /* 添加 flex 布局 */
-            align-items: center;  /* 垂直居中 */
+            display: flex;
+            /* 添加 flex 布局 */
+            align-items: center;
+            /* 垂直居中 */
         }
 
         /* 密码输入框样式 */
         #password {
-            flex: 1;  /* 让输入框占据剩余空间 */
-            padding-right: 35px;  /* 为图标留出空间 */
+            flex: 1;
+            /* 让输入框占据剩余空间 */
+            padding-right: 35px;
+            /* 为图标留出空间 */
         }
 
         /* 调整密码显示/隐藏按钮位置 */
@@ -1550,7 +1723,8 @@
             border: none;
             padding: 0;
             opacity: 0;
-            transition: opacity 0.2s ease;  /* 只保留透明度的过渡效果 */
+            transition: opacity 0.2s ease;
+            /* 只保留透明度的过渡效果 */
             z-index: 1;
         }
 
@@ -1652,7 +1826,7 @@
         .direction.locked {
             color: #ff9800;
         }
-        
+
         .history-item .direction.locked::before {
             content: "🔒 ";
             margin-right: 4px;
@@ -1722,7 +1896,7 @@
             background: white;
             padding: 4px;
             border-radius: 4px;
-            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
         }
 
         .search-result-item:hover .result-actions {
@@ -1764,7 +1938,7 @@
             background: white;
             padding: 20px;
             border-radius: 8px;
-            box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
             z-index: 1001;
             display: none;
             width: 90%;
@@ -1784,8 +1958,8 @@
         }
 
         /* 在 popup.html 的 style 标签中添加 */
-        .sync-info > div:first-child,
-        .sync-direction-row > span:first-child {
+        .sync-info>div:first-child,
+        .sync-direction-row>span:first-child {
             display: none;
         }
 
@@ -1801,11 +1975,11 @@
             font-size: 12px;
             color: #666;
         }
-        
+
         .bookmark-stats span {
             margin: 0 5px;
         }
-        
+
         .history-item:last-child {
             border-bottom: none;
         }
@@ -1816,7 +1990,7 @@
             align-items: center;
             width: 100%;
         }
-        
+
         .browse-button {
             margin-left: 8px;
             padding: 6px 12px;
@@ -1828,24 +2002,24 @@
             font-size: 12px;
             flex-shrink: 0;
         }
-        
+
         .browse-button:hover {
             background-color: #e9ecef;
         }
-        
+
         /* 开关按钮位置调整 */
         .form-group .setting-label {
             font-size: 14px;
             color: var(--theme-text-primary);
             margin-right: 10px;
         }
-        
+
         .form-group .setting-tip {
             font-size: 12px;
             color: #666;
             margin-left: 10px;
         }
-        
+
         /* 本地配置框样式 */
         #localConfigContent {
             padding: 10px 20px;
@@ -1906,15 +2080,15 @@
             margin-bottom: 12px;
             transition: all 0.3s ease;
         }
-        
+
         .folder-dropzone:hover .dropzone-icon {
             color: #4285f4;
         }
-        
+
         .folder-dropzone.success .dropzone-icon {
             color: #4CAF50;
         }
-        
+
         .folder-dropzone.error .dropzone-icon {
             color: #f44336;
         }
@@ -1926,12 +2100,12 @@
             line-height: 1.5;
             transition: all 0.3s ease;
         }
-        
+
         .folder-dropzone.success .dropzone-text {
             color: #4CAF50;
             font-weight: 500;
         }
-        
+
         .folder-dropzone.error .dropzone-text {
             color: #f44336;
             font-weight: 500;
@@ -1951,185 +2125,232 @@
             text-align: center;
             transition: all 0.3s ease;
         }
-        
+
         .folder-dropzone.success .selected-path {
             background-color: #e8f5e9;
             border-color: #a5d6a7;
         }
 
         @keyframes breathe {
-            0% { border-color: #FFF2CC; box-shadow: 0 0 5px #FFEB99; }
-            50% { border-color: #FFD700; box-shadow: 0 0 15px #FFD700; }
-            100% { border-color: #FFF2CC; box-shadow: 0 0 5px #FFEB99; }
+            0% {
+                border-color: #FFF2CC;
+                box-shadow: 0 0 5px #FFEB99;
+            }
+
+            50% {
+                border-color: #FFD700;
+                box-shadow: 0 0 15px #FFD700;
+            }
+
+            100% {
+                border-color: #FFF2CC;
+                box-shadow: 0 0 5px #FFEB99;
+            }
         }
-        
+
         /* @keyframes fadeOutBorder {
             0% { border: 3px solid #FFF2CC; box-shadow: 0 0 5px #FFEB99; }
             100% { border: 3px solid transparent; box-shadow: 0 0 0 transparent; }
-        } */ /* Removing this block */
-        
+        } */
+        /* Removing this block */
+
         .breathe-animation {
-            animation: breathe 1s 1; /* Removed fadeOutBorder */
+            animation: breathe 1s 1;
+            /* Removed fadeOutBorder */
             border: 3px solid #FFF2CC;
         }
 
         .close-button:hover {
             background-color: var(--theme-bg-tertiary);
             color: var(--theme-text-secondary);
-            box-shadow: 0 2px 5px rgba(0,0,0,0.15);
+            box-shadow: 0 2px 5px rgba(0, 0, 0, 0.15);
             transform: translateY(-1px);
         }
 
         /* 呼吸动画效果 */
         @keyframes pulse {
-            0% { box-shadow: 0 0 0 0 rgba(76, 175, 80, 0.4); }
-            70% { box-shadow: 0 0 0 10px rgba(76, 175, 80, 0); }
-            100% { box-shadow: 0 0 0 0 rgba(76, 175, 80, 0); }
+            0% {
+                box-shadow: 0 0 0 0 rgba(76, 175, 80, 0.4);
+            }
+
+            70% {
+                box-shadow: 0 0 0 10px rgba(76, 175, 80, 0);
+            }
+
+            100% {
+                box-shadow: 0 0 0 0 rgba(76, 175, 80, 0);
+            }
         }
-        
-        .backup-mode-switch.manual ~ .manual-buttons .backup-button:not(.disabled) {
+
+        .backup-mode-switch.manual~.manual-buttons .backup-button:not(.disabled) {
             animation: pulse 2s infinite;
         }
 
         /* 精美的集成开关样式 */
         .backup-mode-switch {
             position: relative;
-            width: 100%; /* 随容器宽度自适应 */
-            margin: 0; /* 左对齐 */
-            height: 110px; /* 纵向布局高度提升，容纳同排操作按钮 */
+            width: 100%;
+            /* 随容器宽度自适应 */
+            margin: 0;
+            /* 左对齐 */
+            height: 110px;
+            /* 纵向布局高度提升，容纳同排操作按钮 */
             background: linear-gradient(to bottom, #e8f5e9, #f0f0f0);
             border-radius: 21px;
             display: flex;
-            flex-direction: column; /* 纵向排列 */
-            align-items: stretch; /* 占满横向宽度 */
-            cursor: default; /* 不再整块切换模式，仅子区域可点击 */
+            flex-direction: column;
+            /* 纵向排列 */
+            align-items: stretch;
+            /* 占满横向宽度 */
+            cursor: default;
+            /* 不再整块切换模式，仅子区域可点击 */
             box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
-            overflow: visible; /* 允许内部tooltip溢出 */
+            overflow: visible;
+            /* 允许内部tooltip溢出 */
             transition: all 0.5s ease;
         }
-        
+
         html[data-theme="dark"] .backup-mode-switch {
             box-shadow: 0 2px 10px rgba(0, 0, 0, 0.3);
         }
-        
+
         .backup-mode-switch.auto {
             background: linear-gradient(to bottom, #e8f5e9, #f0f0f0);
         }
-        
+
         html[data-theme="dark"] .backup-mode-switch.auto {
             background: linear-gradient(to bottom, #1a3a1a, #2d2d2d);
         }
-        
+
         .backup-mode-switch.manual {
             background: linear-gradient(to bottom, #f0f0f0, #e6f7ff);
         }
-        
+
         html[data-theme="dark"] .backup-mode-switch.manual {
             background: linear-gradient(to bottom, #2d2d2d, #1a3a5f);
         }
-        
+
         .backup-mode-slider {
             position: absolute;
-            width: calc(100% - 6px); /* 纵向时占满宽度，留3px边距 */
-            height: calc(50% - 6px); /* 占容器的一半高度，并留上下边距 */
+            width: calc(100% - 6px);
+            /* 纵向时占满宽度，留3px边距 */
+            height: calc(50% - 6px);
+            /* 占容器的一半高度，并留上下边距 */
             border-radius: 18px;
             top: 3px;
             left: 3px;
             background: white;
             box-shadow: 0 2px 8px rgba(76, 175, 80, 0.2);
-            /* transition: all 0.5s cubic-bezier(0.175, 0.885, 0.32, 1.275); */ /* 移除此行以取消加载时的滑动动画 */
+            /* transition: all 0.5s cubic-bezier(0.175, 0.885, 0.32, 1.275); */
+            /* 移除此行以取消加载时的滑动动画 */
             z-index: 1;
         }
-        
+
         html[data-theme="dark"] .backup-mode-slider {
             background: var(--dark-bg-elevated);
         }
-        
+
         .backup-mode-switch.auto .backup-mode-slider {
             top: 3px;
             left: 3px;
             box-shadow: 0 2px 8px rgba(76, 175, 80, 0.2);
         }
-        
+
         .backup-mode-switch.manual .backup-mode-slider {
             top: calc(50% + 3px);
             left: 3px;
             box-shadow: 0 2px 8px rgba(0, 123, 255, 0.2);
         }
-        
+
         .backup-mode-option {
             flex: 1;
-            /* text-align: center; */ /* Replaced by flex alignment */
+            /* text-align: center; */
+            /* Replaced by flex alignment */
             z-index: 2;
             font-size: 13px;
             font-weight: bold;
             transition: all 0.3s ease;
-            padding: 6px 8px; /* 纵向时略增内边距以保持触控面积 */
+            padding: 6px 8px;
+            /* 纵向时略增内边距以保持触控面积 */
             position: relative;
-            display: flex; /* Added for alignment */
-            align-items: center; /* Added for vertical alignment */
-            justify-content: center; /* Added for horizontal centering */
-            white-space: nowrap; /* Added to prevent line breaks */
-            overflow: hidden; /* Added to handle potential overflow */
-            text-overflow: ellipsis; /* Added to show ... if text still overflows */
-            cursor: pointer; /* 区域本身可点击切换模式 */
+            display: flex;
+            /* Added for alignment */
+            align-items: center;
+            /* Added for vertical alignment */
+            justify-content: center;
+            /* Added for horizontal centering */
+            white-space: nowrap;
+            /* Added to prevent line breaks */
+            overflow: hidden;
+            /* Added to handle potential overflow */
+            text-overflow: ellipsis;
+            /* Added to show ... if text still overflows */
+            cursor: pointer;
+            /* 区域本身可点击切换模式 */
         }
-        
+
         .backup-mode-switch.auto .auto-option {
             color: #4CAF50;
         }
-        
+
         .backup-mode-switch.auto .manual-option {
             color: #999;
         }
-        
+
         .backup-mode-switch.manual .auto-option {
             color: #999;
         }
-        
+
         .backup-mode-switch.manual .manual-option {
             color: #007AFF;
         }
-        
+
         /* 微小图标动画 */
         .option-icon {
             display: inline-block;
             margin-right: 5px;
             transition: all 0.3s ease;
-            /* vertical-align: middle; */ /* Parent flex align-items handles this now */
+            /* vertical-align: middle; */
+            /* Parent flex align-items handles this now */
         }
-        
+
         .backup-mode-switch.auto .auto-option .option-icon {
             transform: scale(1.2);
         }
-        
+
         .backup-mode-switch.manual .manual-option .option-icon {
             transform: scale(1.2);
         }
-        
+
         /* 提示文本样式 */
         .mode-tip {
-            margin-top: 6px; /* 减小上边距 */
-            font-size: 12px; /* 减小字体 */
+            margin-top: 6px;
+            /* 减小上边距 */
+            font-size: 12px;
+            /* 减小字体 */
             color: var(--theme-text-secondary);
             text-align: center;
-            padding: 6px 8px; /* 减小内边距 */
+            padding: 6px 8px;
+            /* 减小内边距 */
             border-radius: 4px;
             background-color: var(--theme-bg-secondary);
             transition: all 0.3s ease;
         }
-        
+
         /* 手动备份按钮区域 */
         .manual-buttons {
-            margin-top: 12px; /* 减小上边距 */
+            margin-top: 12px;
+            /* 减小上边距 */
             display: flex;
-            gap: 8px; /* 减小间距 */
+            gap: 8px;
+            /* 减小间距 */
             transition: all 0.3s ease;
         }
-        
+
         .manual-buttons button {
             flex: 1;
-            padding: 7px 10px; /* 减小内边距 */
+            padding: 7px 10px;
+            /* 减小内边距 */
             border: none;
             border-radius: 6px;
             font-weight: 500;
@@ -2144,32 +2365,40 @@
             background-color: #4CAF50;
             color: white;
             box-sizing: border-box;
-            height: 32px;   /* 确保两个按钮高度一致 */
+            height: 32px;
+            /* 确保两个按钮高度一致 */
             line-height: 1;
         }
-        
+
         .settings-button {
             background-color: var(--theme-bg-secondary);
             color: var(--theme-text-primary);
             border: 1px solid #ddd;
-            padding: 7px 10px; /* 减小内边距 */
-            border-radius: 6px; /* 减小圆角 */
-            font-size: 13px; /* 减小字体 */
+            padding: 7px 10px;
+            /* 减小内边距 */
+            border-radius: 6px;
+            /* 减小圆角 */
+            font-size: 13px;
+            /* 减小字体 */
             cursor: pointer;
             transition: all 0.3s ease;
             display: flex;
             align-items: center;
             justify-content: center;
-            margin-top: 12px; /* 减小上边距 */
+            margin-top: 12px;
+            /* 减小上边距 */
             box-shadow: 0 2px 5px rgba(0, 0, 0, 0.05);
             box-sizing: border-box;
-            height: 32px;    /* 确保两个按钮高度一致 */
-            margin-bottom: 10px;  /* 增加与下方按钮的间距 */
+            height: 32px;
+            /* 确保两个按钮高度一致 */
+            margin-bottom: 10px;
+            /* 增加与下方按钮的间距 */
         }
 
         .settings-button:hover {
             background-color: var(--theme-settings-button-hover-bg);
-            transform: translateY(-1px); /* 减小悬停时的上移距离 */
+            transform: translateY(-1px);
+            /* 减小悬停时的上移距离 */
         }
 
         .settings-button:active {
@@ -2190,8 +2419,14 @@
         }
 
         /* 允许选项容器溢出以呈现气泡 */
-        .backup-mode-option { overflow: visible; }
-        .backup-mode-option .option-label { overflow: hidden; text-overflow: ellipsis; }
+        .backup-mode-option {
+            overflow: visible;
+        }
+
+        .backup-mode-option .option-label {
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
 
         /* 根据上下半区分别定位tooltip，避免被整体容器裁剪 */
         .backup-mode-option.auto-option .settings-button .tooltip {
@@ -2201,6 +2436,7 @@
             transform: translateX(-50%) !important;
             z-index: 10;
         }
+
         .backup-mode-option.manual-option .settings-button .tooltip {
             bottom: calc(100% + 6px) !important;
             left: 50% !important;
@@ -2214,20 +2450,21 @@
         }
 
         .manual-buttons button:hover {
-            transform: translateY(-1px); /* 减小悬停时的上移距离 */
+            transform: translateY(-1px);
+            /* 减小悬停时的上移距离 */
             box-shadow: 0 3px 6px rgba(0, 0, 0, 0.15);
         }
-        
+
         .manual-buttons button:active {
             transform: translateY(1px);
         }
-        
+
         .manual-buttons button.disabled {
             opacity: 0.5;
             cursor: not-allowed;
             pointer-events: none;
         }
-        
+
         /* 栏目卡片化：为左右两个操作容器添加卡片样式 */
         #manualButtonsContainer,
         #autoButtonsContainer {
@@ -2236,24 +2473,47 @@
             padding: 10px;
             border-radius: 8px;
         }
+
         html[data-theme="dark"] #manualButtonsContainer,
         html[data-theme="dark"] #autoButtonsContainer {
             border-color: var(--theme-border-secondary);
         }
 
         /* 合并至左侧UI：在开关内部对齐操作按钮 */
-        .backup-mode-option { justify-content: space-between; }
-        .backup-mode-option .option-label { 
-            font-weight: 700; 
-            margin-left: 20px; /* 标签右移 */
+        .backup-mode-option {
+            justify-content: space-between;
         }
-        .backup-mode-option .option-actions { display: flex; gap: 10px; align-items: center; }
+
+        .backup-mode-option .option-label {
+            font-weight: 700;
+            margin-left: 20px;
+            /* 标签右移 */
+        }
+
+        .backup-mode-option .option-actions {
+            display: flex;
+            gap: 10px;
+            align-items: center;
+        }
+
         /* 当处于某个模式时，另一侧操作区域不拦截点击，让容器接管以切换模式 */
-        .backup-mode-switch.auto .manual-option .option-actions { pointer-events: none; }
-        .backup-mode-switch.manual .auto-option .option-actions { pointer-events: none; }
+        .backup-mode-switch.auto .manual-option .option-actions {
+            pointer-events: none;
+        }
+
+        .backup-mode-switch.manual .auto-option .option-actions {
+            pointer-events: none;
+        }
+
         .backup-mode-switch #manualButtonsContainer,
-        .backup-mode-switch #autoButtonsContainer { background: transparent; border: none; padding: 0; box-shadow: none; margin: 0; }
-        
+        .backup-mode-switch #autoButtonsContainer {
+            background: transparent;
+            border: none;
+            padding: 0;
+            box-shadow: none;
+            margin: 0;
+        }
+
         /* 状态卡片样式 */
         :root {
             /* 自动备份模式 - 绿色系 */
@@ -2261,31 +2521,32 @@
             --theme-status-card-auto-text: #2e7d32;
             --theme-status-card-auto-border: #a5d6a7;
             --theme-status-card-auto-shadow: rgba(76, 175, 80, 0.1);
-            
+
             /* 手动备份模式 - 蓝色系 */
             --theme-status-card-manual-bg: #e3f2fd;
             --theme-status-card-manual-text: #1976d2;
             --theme-status-card-manual-border: #90caf9;
             --theme-status-card-manual-shadow: rgba(33, 150, 243, 0.1);
         }
-        
+
         html[data-theme="dark"] {
             /* 自动备份模式 - 绿色系（深色模式）*/
             --theme-status-card-auto-bg: #1b3a1b;
             --theme-status-card-auto-text: #81c784;
             --theme-status-card-auto-border: #388e3c;
             --theme-status-card-auto-shadow: rgba(76, 175, 80, 0.2);
-            
+
             /* 手动备份模式 - 蓝色系（深色模式）*/
             --theme-status-card-manual-bg: #1a3a5f;
             --theme-status-card-manual-text: #64b5f6;
             --theme-status-card-manual-border: #1976d2;
             --theme-status-card-manual-shadow: rgba(33, 150, 243, 0.2);
         }
-        
+
         .status-card {
             transition: all 0.3s ease;
         }
+
         /* 右侧状态卡片：根据模式着色 */
         .status-card.auto-mode {
             background-color: var(--theme-status-card-auto-bg) !important;
@@ -2293,26 +2554,27 @@
             border: 1px solid var(--theme-status-card-auto-border) !important;
             box-shadow: 0 2px 8px var(--theme-status-card-auto-shadow) !important;
         }
+
         .status-card.manual-mode {
             background-color: var(--theme-status-card-manual-bg) !important;
             color: var(--theme-status-card-manual-text) !important;
             border: 1px solid var(--theme-status-card-manual-border) !important;
             box-shadow: 0 2px 8px var(--theme-status-card-manual-shadow) !important;
         }
-        
+
         .mode-tip.auto-tip {
             display: block;
         }
-        
+
         .mode-tip.manual-tip {
             display: none;
         }
-        
-        .backup-mode-switch.manual ~ .mode-tip.auto-tip {
+
+        .backup-mode-switch.manual~.mode-tip.auto-tip {
             display: none;
         }
-        
-        .backup-mode-switch.manual ~ .mode-tip.manual-tip {
+
+        .backup-mode-switch.manual~.mode-tip.manual-tip {
             display: block;
         }
 
@@ -2325,6 +2587,7 @@
         html[lang="en"] .backup-stats .stats-label {
             width: 90px !important;
         }
+
         html[lang="en"] .stats-text-container {
             margin-left: 10px !important;
         }
@@ -2337,8 +2600,10 @@
         /* 中文模式：将右侧蓝色状态容器左移并与上方“手动备份”按钮左边对齐 */
         html[lang="zh"] .backup-stats {
             grid-template-columns: 2fr 1fr !important;
-            column-gap: 31px !important; /* 上方区块为左右15px间隔+中间1px分隔线 => 31px */
+            column-gap: 31px !important;
+            /* 上方区块为左右15px间隔+中间1px分隔线 => 31px */
         }
+
         html[lang="zh"] #rightStatusContainer {
             justify-self: start !important;
             margin-right: 0 !important;
@@ -2350,39 +2615,49 @@
             grid-template-columns: 2fr 1fr !important;
             column-gap: 31px !important;
         }
+
         html[lang="en"] #rightStatusContainer {
             justify-self: start !important;
             margin-right: 0 !important;
             margin-left: 0 !important;
         }
-
     </style>
 </head>
+
 <body>
     <div id="status" class="status"></div>
     <div class="main-section">
         <div id="status" class="status"></div>
-        
+
         <!-- 新的标题和搜索框布局 -->
         <div class="header-container">
             <!-- 移除空的h1元素 -->
         </div>
 
         <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
-            <h2 style="margin: 0; color: #007AFF; font-size: 18px;"><span id="pageTitleElement">书签备份（实时自动/手动，不覆盖）</span></h2>
+            <h2 style="margin: 0; color: #007AFF; font-size: 18px;"><span id="pageTitleElement">书签备份（实时自动/手动，不覆盖）</span>
+            </h2>
             <div style="display: flex; align-items: center;">
                 <button id="scrollToTopBtn" title="回到顶部" style="display: none; margin-right: 5px;">↑</button>
-                <button id="openSourceInfoBtn" title="开源信息" style="font-size: 14px; padding: 5px 8px; margin-right: 8px; background-color: var(--theme-bg-tertiary); border: 1px solid var(--theme-border-primary); border-radius: 4px; color: var(--theme-text-secondary); cursor: pointer; position: relative;">
+                <button id="openSourceInfoBtn" title="开源信息"
+                    style="font-size: 14px; padding: 5px 8px; margin-right: 8px; background-color: var(--theme-bg-tertiary); border: 1px solid var(--theme-border-primary); border-radius: 4px; color: var(--theme-text-secondary); cursor: pointer; position: relative;">
                     <i class="fab fa-github"></i>
-                    <span class="tooltip" style="position: absolute; background-color: var(--theme-tooltip-bg, rgba(0,0,0,0.7)); color: var(--theme-tooltip-text, white); padding: 2px 8px; border-radius: 4px; font-size: 12px; white-space: nowrap; visibility: hidden; opacity: 0; transition: opacity 0.3s; pointer-events: none; top: -25px; left: 50%; transform: translateX(-50%);" id="openSourceTooltip">开源信息</span>
+                    <span class="tooltip"
+                        style="position: absolute; background-color: var(--theme-tooltip-bg, rgba(0,0,0,0.7)); color: var(--theme-tooltip-text, white); padding: 2px 8px; border-radius: 4px; font-size: 12px; white-space: nowrap; visibility: hidden; opacity: 0; transition: opacity 0.3s; pointer-events: none; top: -25px; left: 50%; transform: translateX(-50%);"
+                        id="openSourceTooltip">开源信息</span>
                 </button>
-                <button id="themeSwitcher" title="切换主题" style="font-size: 14px; padding: 5px 8px; margin-right: 8px; background-color: var(--theme-bg-tertiary); border: 1px solid var(--theme-border-primary); border-radius: 4px; color: var(--theme-text-secondary); cursor: pointer; position: relative;">
+                <button id="themeSwitcher" title="切换主题"
+                    style="font-size: 14px; padding: 5px 8px; margin-right: 8px; background-color: var(--theme-bg-tertiary); border: 1px solid var(--theme-border-primary); border-radius: 4px; color: var(--theme-text-secondary); cursor: pointer; position: relative;">
                     <i class="fas fa-moon" id="darkModeIcon" style="display: none;"></i>
                     <i class="fas fa-sun" id="lightModeIcon" style="display: none;"></i>
                     <i class="fas fa-desktop" id="systemModeIcon"></i>
-                    <span class="tooltip" style="position: absolute; background-color: var(--theme-tooltip-bg, rgba(0,0,0,0.7)); color: var(--theme-tooltip-text, white); padding: 2px 8px; border-radius: 4px; font-size: 12px; white-space: nowrap; visibility: hidden; opacity: 0; transition: opacity 0.3s; pointer-events: none; top: -25px; left: 50%; transform: translateX(-50%);" id="themeSwitcherTooltip">切换主题</span>
+                    <span class="tooltip"
+                        style="position: absolute; background-color: var(--theme-tooltip-bg, rgba(0,0,0,0.7)); color: var(--theme-tooltip-text, white); padding: 2px 8px; border-radius: 4px; font-size: 12px; white-space: nowrap; visibility: hidden; opacity: 0; transition: opacity 0.3s; pointer-events: none; top: -25px; left: 50%; transform: translateX(-50%);"
+                        id="themeSwitcherTooltip">切换主题</span>
                 </button>
-                <button id="lang-toggle-btn" title="切换语言" style="font-size: 12px; padding: 5px 8px; margin: 0; z-index: 10000; position: relative; min-width: 90px; min-height: 28px;">中文 / English</button>
+                <button id="lang-toggle-btn" title="切换语言"
+                    style="font-size: 12px; padding: 5px 8px; margin: 0; z-index: 10000; position: relative; min-width: 90px; min-height: 28px;">中文
+                    / English</button>
             </div>
         </div>
 
@@ -2402,15 +2677,16 @@
             </div>
             <div class="config-content" id="configContent">
                 <div class="form-group" style="padding-left: 5px;">
-                    <label for="serverAddress" style="display: block; margin-bottom: 5px;" id="serverAddressLabel"></label>
+                    <label for="serverAddress" style="display: block; margin-bottom: 5px;"
+                        id="serverAddressLabel"></label>
                     <input type="text" id="serverAddress" placeholder="" style="width: 100%;">
                 </div>
-                
+
                 <div class="form-group" style="padding-left: 5px;">
                     <label for="username" style="display: block; margin-bottom: 5px;" id="usernameLabel"></label>
                     <input type="text" id="username" placeholder="" style="width: 100%;">
                 </div>
-                
+
                 <div class="form-group" style="padding-left: 5px;">
                     <label for="password" style="display: block; margin-bottom: 5px;" id="passwordLabel"></label>
                     <div class="password-container" style="width: 100%;">
@@ -2418,9 +2694,11 @@
                         <button type="button" class="password-toggle" aria-label="显示/隐藏密码"></button>
                     </div>
                 </div>
-                
-                <div class="button-group" style="margin-top: 15px; display: flex; justify-content: center; padding-left: 5px; padding-right: 5px; margin-bottom: 5px;">
-                    <button id="saveKey" style="width: auto; min-width: 200px; background-color: #4CAF50; color: white; border: none; border-radius: 4px; padding: 8px 12px; cursor: pointer;"></button>
+
+                <div class="button-group"
+                    style="margin-top: 15px; display: flex; justify-content: center; padding-left: 5px; padding-right: 5px; margin-bottom: 5px;">
+                    <button id="saveKey"
+                        style="width: auto; min-width: 200px; background-color: #4CAF50; color: white; border: none; border-radius: 4px; padding: 8px 12px; cursor: pointer;"></button>
                 </div>
             </div>
         </div>
@@ -2442,49 +2720,57 @@
             </div>
             <div class="config-content" id="localConfigContent">
                 <div class="form-group" style="margin-bottom: 6px; padding-left: 5px;">
-                    <div class="setting-item" style="display: flex; align-items: center; margin-bottom: 0.75px; margin-top: 0.1px;">
+                    <div class="setting-item"
+                        style="display: flex; align-items: center; margin-bottom: 0.75px; margin-top: 0.1px;">
                         <span class="setting-label" style="font-weight: bold;" id="localBackupPathLabel"></span>
                     </div>
-                    <div id="downloadPathDisplay" style="margin-top: 5px; padding: 8px 12px; border: 1px solid var(--theme-border-primary); border-radius: 4px; background-color: var(--theme-bg-secondary); font-size: 13px; color: var(--theme-text-primary); margin-bottom: 8px;">
+                    <div id="downloadPathDisplay"
+                        style="margin-top: 5px; padding: 8px 12px; border: 1px solid var(--theme-border-primary); border-radius: 4px; background-color: var(--theme-bg-secondary); font-size: 13px; color: var(--theme-text-primary); margin-bottom: 8px;">
                         加载中...
                     </div>
                     <div style="text-align: left; margin-bottom: 0px;">
-                        <button id="calibratePathBtn" style="background-color: #007AFF; color: white; border: none; border-radius: 4px; padding: 6px 10px; cursor: pointer; font-size: 13px; display: flex; align-items: center;">
+                        <button id="calibratePathBtn"
+                            style="background-color: #007AFF; color: white; border: none; border-radius: 4px; padding: 6px 10px; cursor: pointer; font-size: 13px; display: flex; align-items: center;">
                             <span style="margin-right: 4px;">🔄</span> <span id="calibrateButtonText"></span>
                         </button>
                     </div>
                 </div>
-                
+
                 <!-- 防干扰选项 -->
                 <div class="form-group" style="margin-bottom: 6px; padding-left: 5px;">
-                    <div class="setting-item" style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 0.75px; margin-top: 0.75px;">
+                    <div class="setting-item"
+                        style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 0.75px; margin-top: 0.75px;">
                         <span class="setting-label" style="font-weight: bold;" id="hideDownloadBarLabel"></span>
                         <label class="switch" style="margin-right: 20px;">
                             <input type="checkbox" id="hideDownloadShelfToggle" checked>
                             <span class="slider"></span>
                         </label>
                     </div>
-                    <div style="font-size: 12px; color: var(--theme-text-secondary); margin-top: 3px; padding-left: 8px;">
+                    <div
+                        style="font-size: 12px; color: var(--theme-text-secondary); margin-top: 3px; padding-left: 8px;">
                         <span></span>
                     </div>
                 </div>
-                
+
                 <!-- 分隔线 -->
                 <div style="border-top: 1px solid #eee; margin: 6px 0;"></div>
-                
+
                 <!-- 区块三：安全规则说明 -->
                 <div class="form-group" style="margin-bottom: 6px; padding-left: 5px;">
-                    <div class="setting-item" style="display: flex; align-items: center; margin-bottom: 0.75px; margin-top: 0.75px;">
+                    <div class="setting-item"
+                        style="display: flex; align-items: center; margin-bottom: 0.75px; margin-top: 0.75px;">
                         <span class="setting-label" style="font-weight: bold;" id="instructionsLabel"></span>
                     </div>
-                    <div style="font-size: 13px; color: var(--theme-text-secondary); margin-top: 8px; padding-left: 5px;">
-                        <p style="margin-top: 0; margin-bottom: 5px; font-weight: bold; padding-left: 2px;" id="defaultPathExamples"></p>
+                    <div
+                        style="font-size: 13px; color: var(--theme-text-secondary); margin-top: 8px; padding-left: 5px;">
+                        <p style="margin-top: 0; margin-bottom: 5px; font-weight: bold; padding-left: 2px;"
+                            id="defaultPathExamples"></p>
                         <ul style="margin-top: 5px; margin-bottom: 15px; padding-left: 20px;">
                             <li><strong>macOS:</strong> /Users/&lt;username&gt;/Downloads/Bookmarks/</li>
                             <li><strong>Windows:</strong> C:\Users\&lt;username&gt;\Downloads\Bookmarks\</li>
                             <li><strong>Linux:</strong> /home/&lt;username&gt;/Downloads/Bookmarks/</li>
                         </ul>
-                        
+
                         <ul style="margin-top: 0; margin-bottom: 0; padding-left: 20px;">
                             <li id="rulesNoCalibration"></li>
                             <li id="rulesNonInterference"></li>
@@ -2508,9 +2794,12 @@
                 </div>
             </div>
             <div class="config-content" id="initContent" style="display: block; padding: 5px;">
-                <div class="init-sync-buttons" style="display: flex; justify-content: space-between; gap: 10px; margin: 10px 0; padding: 0 20px;">
-                    <button id="resetAll" class="danger-button" style="background-color: #dc3545; flex: 1; height: 38px; font-weight: 500; border-radius: 8px;"></button>
-                    <button id="uploadToCloud" style="background-color: #4CAF50; flex: 1; height: 38px; font-weight: 500; border-radius: 8px;"></button>
+                <div class="init-sync-buttons"
+                    style="display: flex; justify-content: space-between; gap: 10px; margin: 10px 0; padding: 0 20px;">
+                    <button id="resetAll" class="danger-button"
+                        style="background-color: #dc3545; flex: 1; height: 38px; font-weight: 500; border-radius: 8px;"></button>
+                    <button id="uploadToCloud"
+                        style="background-color: #4CAF50; flex: 1; height: 38px; font-weight: 500; border-radius: 8px;"></button>
                 </div>
                 <div class="setting-item" style="display: none;">
                     <span class="setting-label">启用自动备份</span>
@@ -2527,7 +2816,8 @@
             <!-- 新的布局：第一行A+B，第二行C+D -->
             <div style="display: flex; flex-direction: column; gap: 15px;">
                 <!-- 第一行：A（备份模式切换区域，包含B状态卡片在右侧）-->
-                <div class="sync-controls" style="margin: 0; background-color: transparent; border-radius: 8px; padding: 15px 20px; border: 1px solid var(--theme-border-primary); box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05); display: flex; gap: 15px; align-items: stretch;">
+                <div class="sync-controls"
+                    style="margin: 0; background-color: transparent; border-radius: 8px; padding: 15px 20px; border: 1px solid var(--theme-border-primary); box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05); display: flex; gap: 15px; align-items: stretch;">
                     <!-- A的主要内容：备份模式切换 -->
                     <div style="flex: 1; display: flex; align-items: stretch;">
                         <div id="backupModeSwitch" class="backup-mode-switch auto" style="width: 100%;">
@@ -2535,18 +2825,24 @@
                             <div class="backup-mode-option auto-option">
                                 <span class="option-label" id="autoOptionLabel">自动备份</span>
                                 <div id="autoButtonsContainer" class="manual-buttons option-actions">
-                                    <button id="autoBackupSettingsBtn" class="settings-button" style="margin: 0; position: relative;" aria-label="自动备份设置">
+                                    <button id="autoBackupSettingsBtn" class="settings-button"
+                                        style="margin: 0; position: relative;" aria-label="自动备份设置">
                                         <i class="fas fa-cog"></i>
-                                        <span class="tooltip" style="position: absolute; background-color: var(--theme-tooltip-bg, rgba(0,0,0,0.7)); color: var(--theme-tooltip-text, white); padding: 2px 8px; border-radius: 4px; font-size: 12px; white-space: nowrap; visibility: hidden; opacity: 0; transition: opacity 0.3s; pointer-events: none;" id="autoBackupTooltip">自动备份设置</span>
+                                        <span class="tooltip"
+                                            style="position: absolute; background-color: var(--theme-tooltip-bg, rgba(0,0,0,0.7)); color: var(--theme-tooltip-text, white); padding: 2px 8px; border-radius: 4px; font-size: 12px; white-space: nowrap; visibility: hidden; opacity: 0; transition: opacity 0.3s; pointer-events: none;"
+                                            id="autoBackupTooltip">自动备份设置</span>
                                     </button>
                                 </div>
                             </div>
                             <div class="backup-mode-option manual-option">
                                 <span class="option-label" id="manualOptionLabel">手动备份</span>
                                 <div id="manualButtonsContainer" class="manual-buttons option-actions">
-                                    <button id="reminderSettingsBtn" class="settings-button disabled" style="margin: 0; position: relative;" aria-label="动态提醒设置">
+                                    <button id="reminderSettingsBtn" class="settings-button disabled"
+                                        style="margin: 0; position: relative;" aria-label="动态提醒设置">
                                         <i class="fas fa-cog"></i>
-                                        <span class="tooltip" style="position: absolute; background-color: var(--theme-tooltip-bg, rgba(0,0,0,0.7)); color: var(--theme-tooltip-text, white); padding: 2px 8px; border-radius: 4px; font-size: 12px; white-space: nowrap; visibility: hidden; opacity: 0; transition: opacity 0.3s; pointer-events: none;" id="reminderSettingsTooltip">动态提醒设置</span>
+                                        <span class="tooltip"
+                                            style="position: absolute; background-color: var(--theme-tooltip-bg, rgba(0,0,0,0.7)); color: var(--theme-tooltip-text, white); padding: 2px 8px; border-radius: 4px; font-size: 12px; white-space: nowrap; visibility: hidden; opacity: 0; transition: opacity 0.3s; pointer-events: none;"
+                                            id="reminderSettingsTooltip">动态提醒设置</span>
                                     </button>
                                     <button id="uploadToCloudManual" class="backup-button disabled">手动备份</button>
                                 </div>
@@ -2571,11 +2867,13 @@
                             box-sizing: border-box;
                             cursor: pointer;
                             position: relative;
-                            width: calc(100% - 20px);
-                            margin-left: auto;
+                            width: auto;
+                            margin-left: 20px;
+                            margin-right: -6.5px;
                         " title="点击查看详细变化">
                             <div id="statusCardText">自动备份模式</div>
-                            <i class="fas fa-chevron-right" style="position: absolute; right: 12px; opacity: 0.5; font-size: 16px;"></i>
+                            <i class="fas fa-chevron-right"
+                                style="position: absolute; right: 12px; opacity: 0.5; font-size: 16px;"></i>
                         </div>
                     </div>
                 </div>
@@ -2583,21 +2881,29 @@
                 <!-- 第二行：C（备份检查记录历史）和 D（书签工具箱）水平对齐 -->
                 <div style="display: flex; gap: 15px; align-items: stretch;">
                     <!-- C：备份检查记录历史 -->
-                    <div class="sync-history" style="margin: 0; flex: 0 0 calc(60% - 7.5px); padding: 12px 10px 12px 20px;">
-                        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+                    <div class="sync-history"
+                        style="margin: 0; flex: 0 0 calc(60% - 7.5px); padding: 12px 10px 12px 20px;">
+                        <div
+                            style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
                             <h3 style="margin: 0;">备份检查记录</h3>
                             <div style="display: flex; align-items: center; gap: 8px;">
-                                <button id="clearHistoryBtn" class="action-button" style="background-color: transparent; color: #666; border: none; border-radius: 4px; padding: 0; width: 20px; height: 24px; font-size: 11px; cursor: pointer; position: relative; display: inline-flex; align-items: center; justify-content: center;">
+                                <button id="clearHistoryBtn" class="action-button"
+                                    style="background-color: transparent; color: #666; border: none; border-radius: 4px; padding: 0; width: 20px; height: 24px; font-size: 11px; cursor: pointer; position: relative; display: inline-flex; align-items: center; justify-content: center;">
                                     <i class="fas fa-trash-alt"></i>
-                                    <span class="tooltip" style="position: absolute; background-color: rgba(0,0,0,0.7); color: white; padding: 2px 8px; border-radius: 4px; font-size: 12px; white-space: nowrap; visibility: hidden; opacity: 0; transition: opacity 0.3s; pointer-events: none; top: -25px; left: 50%; transform: translateX(-50%);">清空记录</span>
+                                    <span class="tooltip"
+                                        style="position: absolute; background-color: rgba(0,0,0,0.7); color: white; padding: 2px 8px; border-radius: 4px; font-size: 12px; white-space: nowrap; visibility: hidden; opacity: 0; transition: opacity 0.3s; pointer-events: none; top: -25px; left: 50%; transform: translateX(-50%);">清空记录</span>
                                 </button>
-                                <button id="exportHistoryBtn" class="action-button" style="background-color: transparent; color: #666; border: none; border-radius: 4px; padding: 0; width: 20px; height: 24px; font-size: 11px; cursor: pointer; position: relative; display: inline-flex; align-items: center; justify-content: center;">
+                                <button id="exportHistoryBtn" class="action-button"
+                                    style="background-color: transparent; color: #666; border: none; border-radius: 4px; padding: 0; width: 20px; height: 24px; font-size: 11px; cursor: pointer; position: relative; display: inline-flex; align-items: center; justify-content: center;">
                                     <i class="fas fa-download"></i>
-                                    <span class="tooltip" style="position: absolute; background-color: rgba(0,0,0,0.7); color: white; padding: 2px 8px; border-radius: 4px; font-size: 12px; white-space: nowrap; visibility: hidden; opacity: 0; transition: opacity 0.3s; pointer-events: none; top: -25px; left: 50%; transform: translateX(-50%);">导出记录</span>
+                                    <span class="tooltip"
+                                        style="position: absolute; background-color: rgba(0,0,0,0.7); color: white; padding: 2px 8px; border-radius: 4px; font-size: 12px; white-space: nowrap; visibility: hidden; opacity: 0; transition: opacity 0.3s; pointer-events: none; top: -25px; left: 50%; transform: translateX(-50%);">导出记录</span>
                                 </button>
-                                <button id="openHistoryViewerBtn" class="action-button" style="background-color: #007AFF; color: white; border: none; border-radius: 4px; padding: 0; font-size: 11px; cursor: pointer; position: relative; width: 80px; height: 24px; display: inline-flex; align-items: center; justify-content: center;">
+                                <button id="openHistoryViewerBtn" class="action-button"
+                                    style="background-color: #007AFF; color: white; border: none; border-radius: 4px; padding: 0; font-size: 11px; cursor: pointer; position: relative; width: 80px; height: 24px; display: inline-flex; align-items: center; justify-content: center;">
                                     <i class="fas fa-history" style="font-size: 13px;"></i>
-                                    <span class="tooltip" id="historyViewerTooltip" style="position: absolute; background-color: rgba(0,0,0,0.7); color: white; padding: 2px 8px; border-radius: 4px; font-size: 12px; white-space: nowrap; visibility: hidden; opacity: 0; transition: opacity 0.3s; pointer-events: none; top: -25px; left: 50%; transform: translateX(-50%);"></span>
+                                    <span class="tooltip" id="historyViewerTooltip"
+                                        style="position: absolute; background-color: rgba(0,0,0,0.7); color: white; padding: 2px 8px; border-radius: 4px; font-size: 12px; white-space: nowrap; visibility: hidden; opacity: 0; transition: opacity 0.3s; pointer-events: none; top: -25px; left: 50%; transform: translateX(-50%);"></span>
                                 </button>
                             </div>
                         </div>
@@ -2630,12 +2936,13 @@
                                 <span id="bookmarkToolboxTitle">Bookmark Toolbox</span>
                             </h3>
                         </div>
-                        
+
                         <!-- 内容区域 -->
                         <div style="display: flex; flex-direction: column; gap: 5px; flex: 1; overflow: hidden;">
                             <!-- Bookmark Canvas 区域 -->
                             <div style="flex: 6; display: flex; flex-direction: column; min-height: 0;">
-                                <h4 style="margin: 0 0 3px 0; font-size: 11px; color: var(--theme-text-primary); font-weight: 500; text-align: left;">
+                                <h4
+                                    style="margin: 0 0 3px 0; font-size: 11px; color: var(--theme-text-primary); font-weight: 500; text-align: left;">
                                     <span id="bookmarkCanvasTitle">1. Bookmark Canvas</span>
                                 </h4>
                                 <div id="bookmarkCanvas" class="toolbox-canvas" style="
@@ -2664,24 +2971,29 @@
                                         overflow: hidden;
                                     ">
                                         <div style="text-align: center;">
-                                            <i class="fas fa-images" style="font-size: 24px; opacity: 0.3; margin-bottom: 8px;"></i>
+                                            <i class="fas fa-images"
+                                                style="font-size: 24px; opacity: 0.3; margin-bottom: 8px;"></i>
                                             <div>画布缩略图</div>
                                         </div>
                                     </div>
                                 </div>
                             </div>
-                            
+
                             <!-- Bookmark Recommend 区域 -->
-                            <div style="flex: 5; display: flex; flex-direction: column; justify-content: space-between; min-height: 0; overflow: hidden;">
+                            <div
+                                style="flex: 5; display: flex; flex-direction: column; justify-content: space-between; min-height: 0; overflow: hidden;">
                                 <div class="bookmark-recommend-header" style="margin: 1px 0 3px 0;">
-                                    <h4 style="margin: 0; font-size: 11px; color: var(--theme-text-primary); font-weight: 500; text-align: left;">
+                                    <h4
+                                        style="margin: 0; font-size: 11px; color: var(--theme-text-primary); font-weight: 500; text-align: left;">
                                         <span id="bookmarkAdditionTitle">2. Bookmark Recommendations</span>
                                     </h4>
                                     <div class="bookmark-recommend-actions" style="gap: 4px;">
-                                        <button id="bookmarkRecommendOpenPage" class="bookmark-recommend-btn" title="打开推荐页面" aria-label="打开推荐页面">
+                                        <button id="bookmarkRecommendOpenPage" class="bookmark-recommend-btn"
+                                            title="打开推荐页面" aria-label="打开推荐页面">
                                             <i class="fas fa-external-link-alt"></i>
                                         </button>
-                                        <button id="bookmarkRecommendRefresh" class="bookmark-recommend-btn" title="刷新推荐" aria-label="刷新推荐">
+                                        <button id="bookmarkRecommendRefresh" class="bookmark-recommend-btn"
+                                            title="刷新推荐" aria-label="刷新推荐">
                                             <i class="fas fa-sync-alt"></i>
                                         </button>
                                     </div>
@@ -2701,42 +3013,54 @@
                                         <div class="popup-recommend-card empty" data-index="0">
                                             <div class="popup-recommend-card-top">
                                                 <img class="popup-recommend-favicon" src="" alt="">
-                                                <div class="popup-recommend-title popup-recommend-card-empty-text">--</div>
+                                                <div class="popup-recommend-title popup-recommend-card-empty-text">--
+                                                </div>
                                             </div>
                                             <div class="popup-recommend-footer">
                                                 <span class="popup-recommend-priority">P = --</span>
                                                 <div class="popup-recommend-actions">
-                                                    <button class="popup-card-btn popup-card-btn-block" title="屏蔽"><i class="fas fa-ban"></i></button>
-                                                    <button class="popup-card-btn popup-card-btn-later" title="稍后复习"><i class="fas fa-clock"></i></button>
-                                                    <button class="popup-card-btn popup-card-btn-skip" title="跳过"><i class="fas fa-forward"></i></button>
+                                                    <button class="popup-card-btn popup-card-btn-block" title="屏蔽"><i
+                                                            class="fas fa-ban"></i></button>
+                                                    <button class="popup-card-btn popup-card-btn-later" title="稍后复习"><i
+                                                            class="fas fa-clock"></i></button>
+                                                    <button class="popup-card-btn popup-card-btn-skip" title="跳过"><i
+                                                            class="fas fa-forward"></i></button>
                                                 </div>
                                             </div>
                                         </div>
                                         <div class="popup-recommend-card empty" data-index="1">
                                             <div class="popup-recommend-card-top">
                                                 <img class="popup-recommend-favicon" src="" alt="">
-                                                <div class="popup-recommend-title popup-recommend-card-empty-text">--</div>
+                                                <div class="popup-recommend-title popup-recommend-card-empty-text">--
+                                                </div>
                                             </div>
                                             <div class="popup-recommend-footer">
                                                 <span class="popup-recommend-priority">P = --</span>
                                                 <div class="popup-recommend-actions">
-                                                    <button class="popup-card-btn popup-card-btn-block" title="屏蔽"><i class="fas fa-ban"></i></button>
-                                                    <button class="popup-card-btn popup-card-btn-later" title="稍后复习"><i class="fas fa-clock"></i></button>
-                                                    <button class="popup-card-btn popup-card-btn-skip" title="跳过"><i class="fas fa-forward"></i></button>
+                                                    <button class="popup-card-btn popup-card-btn-block" title="屏蔽"><i
+                                                            class="fas fa-ban"></i></button>
+                                                    <button class="popup-card-btn popup-card-btn-later" title="稍后复习"><i
+                                                            class="fas fa-clock"></i></button>
+                                                    <button class="popup-card-btn popup-card-btn-skip" title="跳过"><i
+                                                            class="fas fa-forward"></i></button>
                                                 </div>
                                             </div>
                                         </div>
                                         <div class="popup-recommend-card empty" data-index="2">
                                             <div class="popup-recommend-card-top">
                                                 <img class="popup-recommend-favicon" src="" alt="">
-                                                <div class="popup-recommend-title popup-recommend-card-empty-text">--</div>
+                                                <div class="popup-recommend-title popup-recommend-card-empty-text">--
+                                                </div>
                                             </div>
                                             <div class="popup-recommend-footer">
                                                 <span class="popup-recommend-priority">P = --</span>
                                                 <div class="popup-recommend-actions">
-                                                    <button class="popup-card-btn popup-card-btn-block" title="屏蔽"><i class="fas fa-ban"></i></button>
-                                                    <button class="popup-card-btn popup-card-btn-later" title="稍后复习"><i class="fas fa-clock"></i></button>
-                                                    <button class="popup-card-btn popup-card-btn-skip" title="跳过"><i class="fas fa-forward"></i></button>
+                                                    <button class="popup-card-btn popup-card-btn-block" title="屏蔽"><i
+                                                            class="fas fa-ban"></i></button>
+                                                    <button class="popup-card-btn popup-card-btn-later" title="稍后复习"><i
+                                                            class="fas fa-clock"></i></button>
+                                                    <button class="popup-card-btn popup-card-btn-skip" title="跳过"><i
+                                                            class="fas fa-forward"></i></button>
                                                 </div>
                                             </div>
                                         </div>
@@ -2755,15 +3079,21 @@
                     <span>备份方向: <span id="syncDirection" class="direction">-</span></span>
                 </div>
             </div>
-            
+
             <!-- 内嵌的回到顶部按钮 -->
             <div style="position: relative; height: 20px; margin-top: 10px;">
-                <div style="position: absolute; left: 0; right: 0; height: 1px; background-color: var(--theme-border-primary); top: 50%; transform: translateY(-50%);"></div>
-                <button id="scrollToTopEmbedded" style="position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); width: 100px; height: 28px; border-radius: 14px; background: var(--theme-bg-elevated); border: 1px solid var(--theme-border-primary); cursor: pointer; box-shadow: 0 2px 6px rgba(0, 0, 0, 0.1); display: none; z-index: 10; transition: all 0.3s ease; padding: 0; align-items: center; justify-content: center; gap: 4px; white-space: nowrap;" aria-label="返回顶部">
+                <div
+                    style="position: absolute; left: 0; right: 0; height: 1px; background-color: var(--theme-border-primary); top: 50%; transform: translateY(-50%);">
+                </div>
+                <button id="scrollToTopEmbedded"
+                    style="position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); width: 100px; height: 28px; border-radius: 14px; background: var(--theme-bg-elevated); border: 1px solid var(--theme-border-primary); cursor: pointer; box-shadow: 0 2px 6px rgba(0, 0, 0, 0.1); display: none; z-index: 10; transition: all 0.3s ease; padding: 0; align-items: center; justify-content: center; gap: 4px; white-space: nowrap;"
+                    aria-label="返回顶部">
                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-                        <path d="M7 14L12 9L17 14" stroke="var(--theme-text-primary)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                        <path d="M7 14L12 9L17 14" stroke="var(--theme-text-primary)" stroke-width="2"
+                            stroke-linecap="round" stroke-linejoin="round" />
                     </svg>
-                    <span id="scrollToTopTextEmbedded" style="color: var(--theme-text-primary); font-size: 11px; font-weight: 500; letter-spacing: 0.5px;">返回顶部</span>
+                    <span id="scrollToTopTextEmbedded"
+                        style="color: var(--theme-text-primary); font-size: 11px; font-weight: 500; letter-spacing: 0.5px;">返回顶部</span>
                 </button>
             </div>
 
@@ -2802,101 +3132,146 @@
 
     <!-- 重新设计的重置确认对话框 -->
     <div id="resetConfirmDialog" class="modal">
-        <div class="modal-content" style="position: relative; top: auto; right: auto; margin: 15% auto; width: 360px; box-shadow: 0 6px 18px rgba(0,0,0,0.15); border-radius: 10px; padding: 20px;">
-            <h3 id="resetDialogTitle" style="font-size: 17px; margin-bottom: 14px; color: var(--theme-text-primary); text-align: left; padding-left: 2px;">恢复初始状态</h3>
-            <p id="resetDialogDescription" style="font-size: 15px; margin-bottom: 10px; text-align: left; padding-left: 2px; color: var(--theme-text-primary);">说明：</p>
-            <ul style="margin-bottom: 14px; padding-left: 22px; font-size: 14px; line-height: 1.5; color: var(--theme-text-secondary);">
+        <div class="modal-content"
+            style="position: relative; top: auto; right: auto; margin: 15% auto; width: 360px; box-shadow: 0 6px 18px rgba(0,0,0,0.15); border-radius: 10px; padding: 20px;">
+            <h3 id="resetDialogTitle"
+                style="font-size: 17px; margin-bottom: 14px; color: var(--theme-text-primary); text-align: left; padding-left: 2px;">
+                恢复初始状态</h3>
+            <p id="resetDialogDescription"
+                style="font-size: 15px; margin-bottom: 10px; text-align: left; padding-left: 2px; color: var(--theme-text-primary);">
+                说明：</p>
+            <ul
+                style="margin-bottom: 14px; padding-left: 22px; font-size: 14px; line-height: 1.5; color: var(--theme-text-secondary);">
                 <li id="resetDialogInfo1">恢复插件到首次安装时的状态</li>
                 <li id="resetDialogInfo2">清除所有配置和备份记录</li>
                 <li id="resetDialogInfo3">您当前的书签不受影响</li>
             </ul>
-            <p id="resetDialogInfo4" style="color: var(--theme-success-color); font-size: 13px; margin: 14px 0; line-height: 1.4; background-color: var(--theme-status-success-bg); padding: 8px 10px; border-radius: 6px; margin-left: 2px;">适用于：清除缓存、解决配置异常等情况</p>
-            
+            <p id="resetDialogInfo4"
+                style="color: var(--theme-success-color); font-size: 13px; margin: 14px 0; line-height: 1.4; background-color: var(--theme-status-success-bg); padding: 8px 10px; border-radius: 6px; margin-left: 2px;">
+                适用于：清除缓存、解决配置异常等情况</p>
+
             <!-- 添加显示初始备份记录的区域 -->
-            <div id="initialBackupInfo" style="margin: 14px 0; padding: 8px 10px; background-color: var(--theme-status-info-bg); border-radius: 6px; border-left: 3px solid var(--theme-link-color); font-size: 13px; display: none;">
+            <div id="initialBackupInfo"
+                style="margin: 14px 0; padding: 8px 10px; background-color: var(--theme-status-info-bg); border-radius: 6px; border-left: 3px solid var(--theme-link-color); font-size: 13px; display: none;">
                 <p style="margin: 0 0 5px 0; font-weight: bold; color: var(--theme-text-primary);">您的初始备份文件：</p>
-                <div id="initialBackupFileName" style="word-break: break-all; font-family: monospace; color: var(--theme-text-secondary);"></div>
+                <div id="initialBackupFileName"
+                    style="word-break: break-all; font-family: monospace; color: var(--theme-text-secondary);"></div>
             </div>
-            
+
             <div class="button-group" style="margin-top: 18px; justify-content: center; gap: 16px;">
-                <button id="confirmReset" style="background-color: var(--theme-error-color); font-size: 14px; padding: 8px 20px; color: white;">确认</button>
-                <button id="cancelReset" class="normal-button" style="font-size: 14px; padding: 8px 20px; background-color: var(--theme-bg-tertiary); color: var(--theme-text-secondary);">取消</button>
+                <button id="confirmReset"
+                    style="background-color: var(--theme-error-color); font-size: 14px; padding: 8px 20px; color: white;">确认</button>
+                <button id="cancelReset" class="normal-button"
+                    style="font-size: 14px; padding: 8px 20px; background-color: var(--theme-bg-tertiary); color: var(--theme-text-secondary);">取消</button>
             </div>
         </div>
     </div>
 
     <!-- 添加备份提醒设置对话框 -->
     <div id="reminderSettingsDialog" class="modal">
-        <div class="modal-content" style="max-width: 480px; max-height: 90vh; position: fixed; padding: 25px; top: 50%; left: 50%; transform: translate(-50%, -50%); margin: 0; overflow-y: auto;">
+        <div class="modal-content"
+            style="max-width: 480px; max-height: 90vh; position: fixed; padding: 25px; top: 50%; left: 50%; transform: translate(-50%, -50%); margin: 0; overflow-y: auto;">
             <div style="position: relative; margin-bottom: 12px;">
                 <h3 style="color: #4CAF50; font-size: 20px; margin: 0; display: inline-block;">动态提醒设置</h3>
-                <button id="closeReminderSettings" class="close-button" style="position: absolute; right: 0; top: 50%; transform: translateY(-50%); width: 28px; height: 28px; display: flex; justify-content: center; align-items: center; font-size: 20px; font-weight: bold; background-color: var(--theme-bg-primary); color: #888; border: none; cursor: pointer; border-radius: 50%; box-shadow: 0 1px 3px rgba(0,0,0,0.1); transition: all 0.2s ease;">×</button>
+                <button id="closeReminderSettings" class="close-button"
+                    style="position: absolute; right: 0; top: 50%; transform: translateY(-50%); width: 28px; height: 28px; display: flex; justify-content: center; align-items: center; font-size: 20px; font-weight: bold; background-color: var(--theme-bg-primary); color: #888; border: none; cursor: pointer; border-radius: 50%; box-shadow: 0 1px 3px rgba(0,0,0,0.1); transition: all 0.2s ease;">×</button>
             </div>
-            
+
             <!-- 循环提醒设置 -->
-            <div class="setting-block" style="padding: 12px; background-color: var(--theme-bg-secondary); border-radius: 5px; margin-bottom: 12px;">
-                <div class="setting-row" style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; height: 38px;">
+            <div class="setting-block"
+                style="padding: 12px; background-color: var(--theme-bg-secondary); border-radius: 5px; margin-bottom: 12px;">
+                <div class="setting-row"
+                    style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; height: 38px;">
                     <div class="setting-label" style="display: flex; align-items: center; flex: 1; height: 38px;">
-                        <div id="cyclicReminderLabel" class="setting-label-text" style="font-weight: bold; font-size: 16px; margin-right: 5px; width: 85px; text-align: right; flex-shrink: 0; display: flex; align-items: center; justify-content: flex-end; height: 38px; line-height: 38px;"></div>
+                        <div id="cyclicReminderLabel" class="setting-label-text"
+                            style="font-weight: bold; font-size: 16px; margin-right: 5px; width: 85px; text-align: right; flex-shrink: 0; display: flex; align-items: center; justify-content: flex-end; height: 38px; line-height: 38px;">
+                        </div>
                         <div class="setting-input" style="display: flex; align-items: center; width: 160px;">
-                            <input type="number" id="firstReminderMinutes" min="0" value="30" style="width: 90px; padding: 6px; padding-left: 15px; border-radius: 4px; border: 1px solid #ccc; font-size: 15px; text-align: center; box-sizing: content-box; -moz-appearance: textfield;">
+                            <input type="number" id="firstReminderMinutes" min="0" value="30"
+                                style="width: 90px; padding: 6px; padding-left: 15px; border-radius: 4px; border: 1px solid #ccc; font-size: 15px; text-align: center; box-sizing: content-box; -moz-appearance: textfield;">
                             <span class="unit" style="margin-left: 6px; min-width: 36px; font-size: 15px;">分钟</span>
                         </div>
                     </div>
                     <div class="toggle-container" style="margin-left: 15px; display: flex; align-items: center;">
-                        <button id="reminderToggle" class="toggle-button" data-state="on" style="width: 60px; height: 30px; border-radius: 15px; background-color: #4CAF50; border: none; position: relative; cursor: pointer; padding: 0; transition: background-color 0.3s ease;">
-                            <div class="toggle-circle" style="width: 24px; height: 24px; background-color: var(--theme-bg-primary); border-radius: 50%; position: absolute; top: 3px; right: 3px; transition: transform 0.3s ease; box-shadow: 0 1px 3px rgba(0,0,0,0.2);"></div>
+                        <button id="reminderToggle" class="toggle-button" data-state="on"
+                            style="width: 60px; height: 30px; border-radius: 15px; background-color: #4CAF50; border: none; position: relative; cursor: pointer; padding: 0; transition: background-color 0.3s ease;">
+                            <div class="toggle-circle"
+                                style="width: 24px; height: 24px; background-color: var(--theme-bg-primary); border-radius: 50%; position: absolute; top: 3px; right: 3px; transition: transform 0.3s ease; box-shadow: 0 1px 3px rgba(0,0,0,0.2);">
+                            </div>
                         </button>
                     </div>
                 </div>
             </div>
-            
+
             <!-- 准点定时提醒设置 -->
-            <div class="setting-block" style="padding: 12px; background-color: var(--theme-bg-secondary); border-radius: 5px; margin-bottom: 12px;">
-                <div class="setting-row" style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; height: 38px;">
+            <div class="setting-block"
+                style="padding: 12px; background-color: var(--theme-bg-secondary); border-radius: 5px; margin-bottom: 12px;">
+                <div class="setting-row"
+                    style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; height: 38px;">
                     <div class="setting-label" style="display: flex; align-items: center; flex: 1; height: 38px;">
-                        <div id="fixedTime1Label" class="setting-label-text" style="font-weight: bold; font-size: 16px; margin-right: 5px; width: 85px; text-align: right; flex-shrink: 0; display: flex; align-items: center; justify-content: flex-end; height: 38px; line-height: 38px;"></div>
+                        <div id="fixedTime1Label" class="setting-label-text"
+                            style="font-weight: bold; font-size: 16px; margin-right: 5px; width: 85px; text-align: right; flex-shrink: 0; display: flex; align-items: center; justify-content: flex-end; height: 38px; line-height: 38px;">
+                        </div>
                         <div class="setting-input" style="display: flex; align-items: center; width: 160px;">
-                            <input type="time" id="fixedTime1" value="09:30" style="width: 90px; padding: 6px; padding-left: 15px; border-radius: 4px; border: 1px solid #ccc; font-size: 15px; text-align: center; font-family: 'Source Code Pro', 'IBM Plex Mono', 'Fira Code', 'Consolas', monospace; font-weight: normal; line-height: 18px; height: 18px; vertical-align: middle; box-sizing: content-box; color: var(--theme-text-primary); letter-spacing: 0.5px;">
+                            <input type="time" id="fixedTime1" value="09:30"
+                                style="width: 90px; padding: 6px; padding-left: 15px; border-radius: 4px; border: 1px solid #ccc; font-size: 15px; text-align: center; font-family: 'Source Code Pro', 'IBM Plex Mono', 'Fira Code', 'Consolas', monospace; font-weight: normal; line-height: 18px; height: 18px; vertical-align: middle; box-sizing: content-box; color: var(--theme-text-primary); letter-spacing: 0.5px;">
                         </div>
                     </div>
                     <div class="toggle-container" style="margin-left: 15px; display: flex; align-items: center;">
-                        <button id="fixedTimeToggle1" class="toggle-button" data-state="on" style="width: 60px; height: 30px; border-radius: 15px; background-color: #4CAF50; border: none; position: relative; cursor: pointer; padding: 0; transition: background-color 0.3s ease;">
-                            <div class="toggle-circle" style="width: 24px; height: 24px; background-color: var(--theme-bg-primary); border-radius: 50%; position: absolute; top: 3px; right: 3px; transition: transform 0.3s ease; box-shadow: 0 1px 3px rgba(0,0,0,0.2);"></div>
+                        <button id="fixedTimeToggle1" class="toggle-button" data-state="on"
+                            style="width: 60px; height: 30px; border-radius: 15px; background-color: #4CAF50; border: none; position: relative; cursor: pointer; padding: 0; transition: background-color 0.3s ease;">
+                            <div class="toggle-circle"
+                                style="width: 24px; height: 24px; background-color: var(--theme-bg-primary); border-radius: 50%; position: absolute; top: 3px; right: 3px; transition: transform 0.3s ease; box-shadow: 0 1px 3px rgba(0,0,0,0.2);">
+                            </div>
                         </button>
                     </div>
                 </div>
-                <div class="setting-row" style="display: flex; justify-content: space-between; align-items: center; margin-top: 10px; height: 38px;">
+                <div class="setting-row"
+                    style="display: flex; justify-content: space-between; align-items: center; margin-top: 10px; height: 38px;">
                     <div class="setting-label" style="display: flex; align-items: center; flex: 1; height: 38px;">
-                        <div id="fixedTime2Label" class="setting-label-text" style="font-weight: bold; font-size: 16px; margin-right: 5px; width: 85px; text-align: right; flex-shrink: 0; display: flex; align-items: center; justify-content: flex-end; height: 38px; line-height: 38px;"></div>
+                        <div id="fixedTime2Label" class="setting-label-text"
+                            style="font-weight: bold; font-size: 16px; margin-right: 5px; width: 85px; text-align: right; flex-shrink: 0; display: flex; align-items: center; justify-content: flex-end; height: 38px; line-height: 38px;">
+                        </div>
                         <div class="setting-input" style="display: flex; align-items: center; width: 160px;">
-                            <input type="time" id="fixedTime2" value="16:00" style="width: 90px; padding: 6px; padding-left: 15px; border-radius: 4px; border: 1px solid #ccc; font-size: 15px; text-align: center; font-family: 'Source Code Pro', 'IBM Plex Mono', 'Fira Code', 'Consolas', monospace; font-weight: normal; line-height: 18px; height: 18px; vertical-align: middle; box-sizing: content-box; color: var(--theme-text-primary); letter-spacing: 0.5px;">
+                            <input type="time" id="fixedTime2" value="16:00"
+                                style="width: 90px; padding: 6px; padding-left: 15px; border-radius: 4px; border: 1px solid #ccc; font-size: 15px; text-align: center; font-family: 'Source Code Pro', 'IBM Plex Mono', 'Fira Code', 'Consolas', monospace; font-weight: normal; line-height: 18px; height: 18px; vertical-align: middle; box-sizing: content-box; color: var(--theme-text-primary); letter-spacing: 0.5px;">
                         </div>
                     </div>
                     <div class="toggle-container" style="margin-left: 15px; display: flex; align-items: center;">
-                        <button id="fixedTimeToggle2" class="toggle-button" data-state="off" style="width: 60px; height: 30px; border-radius: 15px; background-color: #ccc; border: none; position: relative; cursor: pointer; padding: 0; transition: background-color 0.3s ease;">
-                            <div class="toggle-circle" style="width: 24px; height: 24px; background-color: var(--theme-bg-primary); border-radius: 50%; position: absolute; top: 3px; left: 3px; transition: transform 0.3s ease; box-shadow: 0 1px 3px rgba(0,0,0,0.2);"></div>
+                        <button id="fixedTimeToggle2" class="toggle-button" data-state="off"
+                            style="width: 60px; height: 30px; border-radius: 15px; background-color: #ccc; border: none; position: relative; cursor: pointer; padding: 0; transition: background-color 0.3s ease;">
+                            <div class="toggle-circle"
+                                style="width: 24px; height: 24px; background-color: var(--theme-bg-primary); border-radius: 50%; position: absolute; top: 3px; left: 3px; transition: transform 0.3s ease; box-shadow: 0 1px 3px rgba(0,0,0,0.2);">
+                            </div>
                         </button>
                     </div>
                 </div>
             </div>
-            
+
             <!-- 添加声明区块 -->
-            <div class="setting-block" style="padding: 12px; background-color: var(--theme-bg-secondary); border-radius: 5px; margin-bottom: 12px;">
+            <div class="setting-block"
+                style="padding: 12px; background-color: var(--theme-bg-secondary); border-radius: 5px; margin-bottom: 12px;">
                 <div style="font-size: 14px; line-height: 1.5; color: var(--theme-text-secondary);">
-                    <div class="reminder-desc" id="manualBackupReminderDesc">循环提醒的计时：浏览器的<span style="color: orange;">实际使用时间</span>，即（多）窗口焦点时间。<br>手动备份下，进行操作（数量/结构变化）才会提醒，</div>
-                    <div id="reminderExample">示例：(<span style="color: #4CAF50;">+12</span> 书签，<span style="color: #4CAF50;">+1</span> 文件夹，<span style="color: orange;">书签、文件夹变动</span>)</div>
+                    <div class="reminder-desc" id="manualBackupReminderDesc">循环提醒的计时：浏览器的<span
+                            style="color: orange;">实际使用时间</span>，即（多）窗口焦点时间。<br>手动备份下，进行操作（数量/结构变化）才会提醒，</div>
+                    <div id="reminderExample">示例：(<span style="color: #4CAF50;">+12</span> 书签，<span
+                            style="color: #4CAF50;">+1</span> 文件夹，<span style="color: orange;">书签、文件夹变动</span>)</div>
                 </div>
             </div>
-            
+
             <!-- 按钮区域 -->
-            <div class="button-group" style="margin-top: 20px; display: flex; justify-content: space-between; gap: 12px;">
-                <button id="restoreDefaultSettings" class="normal-button" style="flex: 1; padding: 10px 15px; border: none; background-color: var(--theme-bg-tertiary); color: var(--theme-text-secondary); border-radius: 6px; cursor: pointer; font-size: 15px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); transition: all 0.2s ease;">恢复默认</button>
-                <button id="saveReminderSettings" class="action-button" style="flex: 1; padding: 10px 15px; border: none; background-color: #4CAF50; color: white; border-radius: 6px; cursor: pointer; font-size: 15px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); transition: all 0.2s ease;" aria-label="保存" title="保存">保存</button>
+            <div class="button-group"
+                style="margin-top: 20px; display: flex; justify-content: space-between; gap: 12px;">
+                <button id="restoreDefaultSettings" class="normal-button"
+                    style="flex: 1; padding: 10px 15px; border: none; background-color: var(--theme-bg-tertiary); color: var(--theme-text-secondary); border-radius: 6px; cursor: pointer; font-size: 15px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); transition: all 0.2s ease;">恢复默认</button>
+                <button id="saveReminderSettings" class="action-button"
+                    style="flex: 1; padding: 10px 15px; border: none; background-color: #4CAF50; color: white; border-radius: 6px; cursor: pointer; font-size: 15px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); transition: all 0.2s ease;"
+                    aria-label="保存" title="保存">保存</button>
             </div>
-            
+
             <!-- 保存提示 -->
-            <div id="settingsSavedIndicator" style="position: absolute; left: 0; right: 0; bottom: 60px; text-align: center; color: white; opacity: 0; transition: all 0.3s ease; display: none; padding: 8px; font-size: 15px; background-color: rgba(76, 175, 80, 0.9); border-radius: 4px; box-shadow: 0 2px 5px rgba(0, 0, 0, 0.1); max-width: 200px; margin: 0 auto; transform: translateY(0);">
+            <div id="settingsSavedIndicator"
+                style="position: absolute; left: 0; right: 0; bottom: 60px; text-align: center; color: white; opacity: 0; transition: all 0.3s ease; display: none; padding: 8px; font-size: 15px; background-color: rgba(76, 175, 80, 0.9); border-radius: 4px; box-shadow: 0 2px 5px rgba(0, 0, 0, 0.1); max-width: 200px; margin: 0 auto; transform: translateY(0);">
                 设置已保存
             </div>
         </div>
@@ -2904,10 +3279,13 @@
 
     <!-- 添加自动备份设置对话框（重构为区块式UI） -->
     <div id="autoBackupSettingsDialog" class="modal">
-        <div class="modal-content" style="max-width: 520px; max-height: 90vh; position: fixed; padding: 25px; top: 50%; left: 50%; transform: translate(-50%, -50%); margin: 0; overflow-y: auto;">
+        <div class="modal-content"
+            style="max-width: 520px; max-height: 90vh; position: fixed; padding: 25px; top: 50%; left: 50%; transform: translate(-50%, -50%); margin: 0; overflow-y: auto;">
             <div style="position: relative; margin-bottom: 12px;">
-                <h3 id="autoBackupSettingsTitle" style="color: #4CAF50; font-size: 20px; margin: 0; display: inline-block;">自动备份设置</h3>
-                <button id="closeAutoBackupSettings" class="close-button" style="position: absolute; right: 0; top: 50%; transform: translateY(-50%); width: 28px; height: 28px; display: flex; justify-content: center; align-items: center; font-size: 20px; font-weight: bold; background-color: var(--theme-bg-primary); color: #888; border: none; cursor: pointer; border-radius: 50%; box-shadow: 0 1px 3px rgba(0,0,0,0.1); transition: all 0.2s ease;">×</button>
+                <h3 id="autoBackupSettingsTitle"
+                    style="color: #4CAF50; font-size: 20px; margin: 0; display: inline-block;">自动备份设置</h3>
+                <button id="closeAutoBackupSettings" class="close-button"
+                    style="position: absolute; right: 0; top: 50%; transform: translateY(-50%); width: 28px; height: 28px; display: flex; justify-content: center; align-items: center; font-size: 20px; font-weight: bold; background-color: var(--theme-bg-primary); color: #888; border: none; cursor: pointer; border-radius: 50%; box-shadow: 0 1px 3px rgba(0,0,0,0.1); transition: all 0.2s ease;">×</button>
             </div>
 
             <!-- 自动备份定时器UI容器 -->
@@ -2916,59 +3294,85 @@
             </div>
 
             <!-- 按钮区域 -->
-            <div class="button-group" style="margin-top: 20px; display: flex; justify-content: space-between; gap: 12px;">
-                <button id="restoreAutoBackupDefaults" class="normal-button" style="flex: 1; padding: 10px 15px; border: none; background-color: var(--theme-bg-tertiary); color: var(--theme-text-secondary); border-radius: 6px; cursor: pointer; font-size: 15px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); transition: all 0.2s ease;">恢复默认</button>
-                <button id="saveAutoBackupSettings" class="action-button" style="flex: 1; padding: 10px 15px; border: none; background-color: #4CAF50; color: white; border-radius: 6px; cursor: pointer; font-size: 15px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); transition: all 0.2s ease;" aria-label="保存" title="保存">保存</button>
+            <div class="button-group"
+                style="margin-top: 20px; display: flex; justify-content: space-between; gap: 12px;">
+                <button id="restoreAutoBackupDefaults" class="normal-button"
+                    style="flex: 1; padding: 10px 15px; border: none; background-color: var(--theme-bg-tertiary); color: var(--theme-text-secondary); border-radius: 6px; cursor: pointer; font-size: 15px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); transition: all 0.2s ease;">恢复默认</button>
+                <button id="saveAutoBackupSettings" class="action-button"
+                    style="flex: 1; padding: 10px 15px; border: none; background-color: #4CAF50; color: white; border-radius: 6px; cursor: pointer; font-size: 15px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); transition: all 0.2s ease;"
+                    aria-label="保存" title="保存">保存</button>
             </div>
 
             <!-- 保存提示 -->
-            <div id="autoBackupSettingsSavedIndicator" style="position: absolute; left: 0; right: 0; bottom: 60px; text-align: center; color: white; opacity: 0; transition: all 0.3s ease; display: none; padding: 8px; font-size: 15px; background-color: rgba(76, 175, 80, 0.9); border-radius: 4px; box-shadow: 0 2px 5px rgba(0, 0, 0, 0.1); max-width: 200px; margin: 0 auto; transform: translateY(0);">
+            <div id="autoBackupSettingsSavedIndicator"
+                style="position: absolute; left: 0; right: 0; bottom: 60px; text-align: center; color: white; opacity: 0; transition: all 0.3s ease; display: none; padding: 8px; font-size: 15px; background-color: rgba(76, 175, 80, 0.9); border-radius: 4px; box-shadow: 0 2px 5px rgba(0, 0, 0, 0.1); max-width: 200px; margin: 0 auto; transform: translateY(0);">
                 设置已保存
             </div>
         </div>
     </div>
-    
+
     <!-- 添加清空记录确认对话框 -->
     <div id="clearHistoryConfirmDialog" class="modal">
-        <div class="modal-content" style="position: relative; top: auto; right: auto; margin: 15% auto; width: 360px; box-shadow: 0 6px 18px rgba(0,0,0,0.15); border-radius: 10px; padding: 20px;">
-            <h3 id="clearHistoryDialogTitle" style="font-size: 17px; margin-bottom: 14px; color: var(--theme-text-primary); text-align: left; padding-left: 2px;">确认清空记录</h3>
-            <p id="clearHistoryDialogDescription" style="font-size: 15px; margin-bottom: 10px; text-align: left; padding-left: 2px; color: var(--theme-text-primary);">确定要清空所有备份历史记录吗？</p>
-            <p id="clearHistoryWarning" style="color: var(--theme-error-color); font-size: 13px; margin: 14px 0; line-height: 1.4; background-color: var(--theme-status-error-bg); padding: 8px 10px; border-radius: 6px; margin-left: 2px;">此操作不可撤销，清空后无法恢复这些记录。</p>
-            
+        <div class="modal-content"
+            style="position: relative; top: auto; right: auto; margin: 15% auto; width: 360px; box-shadow: 0 6px 18px rgba(0,0,0,0.15); border-radius: 10px; padding: 20px;">
+            <h3 id="clearHistoryDialogTitle"
+                style="font-size: 17px; margin-bottom: 14px; color: var(--theme-text-primary); text-align: left; padding-left: 2px;">
+                确认清空记录</h3>
+            <p id="clearHistoryDialogDescription"
+                style="font-size: 15px; margin-bottom: 10px; text-align: left; padding-left: 2px; color: var(--theme-text-primary);">
+                确定要清空所有备份历史记录吗？</p>
+            <p id="clearHistoryWarning"
+                style="color: var(--theme-error-color); font-size: 13px; margin: 14px 0; line-height: 1.4; background-color: var(--theme-status-error-bg); padding: 8px 10px; border-radius: 6px; margin-left: 2px;">
+                此操作不可撤销，清空后无法恢复这些记录。</p>
+
             <!-- 添加蓝色信息区块 -->
-            <div id="clearHistoryInfo" style="color: var(--theme-link-color); font-size: 13px; margin: 14px 0; line-height: 1.4; background-color: var(--theme-status-info-bg); padding: 8px 10px; border-radius: 6px; margin-left: 2px; border-left: 3px solid var(--theme-link-color);">
+            <div id="clearHistoryInfo"
+                style="color: var(--theme-link-color); font-size: 13px; margin: 14px 0; line-height: 1.4; background-color: var(--theme-status-info-bg); padding: 8px 10px; border-radius: 6px; margin-left: 2px; border-left: 3px solid var(--theme-link-color);">
                 <span id="clearHistoryInfoText">备份记录保留至100条记录，<br>超出后将静默清空并自动导出txt文件。</span>
             </div>
-            
+
             <div class="button-group" style="margin-top: 18px; justify-content: center; gap: 16px;">
-                <button id="confirmClearHistory" style="background-color: var(--theme-error-color); font-size: 14px; padding: 8px 20px; color: white;">确认清空</button>
-                <button id="cancelClearHistory" class="normal-button" style="font-size: 14px; padding: 8px 20px; background-color: var(--theme-bg-tertiary); color: var(--theme-text-secondary);">取消</button>
+                <button id="confirmClearHistory"
+                    style="background-color: var(--theme-error-color); font-size: 14px; padding: 8px 20px; color: white;">确认清空</button>
+                <button id="cancelClearHistory" class="normal-button"
+                    style="font-size: 14px; padding: 8px 20px; background-color: var(--theme-bg-tertiary); color: var(--theme-text-secondary);">取消</button>
             </div>
         </div>
     </div>
 
     <!-- 开源信息对话框 -->
     <div id="openSourceInfoDialog" class="modal">
-        <div class="modal-content" style="position: relative; top: auto; right: auto; margin: 15% auto; width: 380px; box-shadow: 0 6px 18px rgba(0,0,0,0.15); border-radius: 10px; padding: 20px;">
+        <div class="modal-content"
+            style="position: relative; top: auto; right: auto; margin: 15% auto; width: 380px; box-shadow: 0 6px 18px rgba(0,0,0,0.15); border-radius: 10px; padding: 20px;">
             <!-- 标题和关闭按钮布局 -->
             <div style="position: relative; margin-bottom: 14px;">
-                <h3 id="openSourceInfoTitle" style="font-size: 17px; margin: 0; color: var(--theme-accent-text-color); text-align: left;">开源信息</h3>
-                <button id="closeOpenSourceDialog" class="close-button" style="position: absolute; right: 0; top: 50%; transform: translateY(-50%); width: 28px; height: 28px; display: flex; justify-content: center; align-items: center; font-size: 20px; font-weight: bold; background-color: var(--theme-bg-primary); color: #888; border: none; cursor: pointer; border-radius: 50%; box-shadow: 0 1px 3px rgba(0,0,0,0.1); transition: all 0.2s ease;">×</button>
+                <h3 id="openSourceInfoTitle"
+                    style="font-size: 17px; margin: 0; color: var(--theme-accent-text-color); text-align: left;">开源信息
+                </h3>
+                <button id="closeOpenSourceDialog" class="close-button"
+                    style="position: absolute; right: 0; top: 50%; transform: translateY(-50%); width: 28px; height: 28px; display: flex; justify-content: center; align-items: center; font-size: 20px; font-weight: bold; background-color: var(--theme-bg-primary); color: #888; border: none; cursor: pointer; border-radius: 50%; box-shadow: 0 1px 3px rgba(0,0,0,0.1); transition: all 0.2s ease;">×</button>
             </div>
-            
+
             <div style="background-color: var(--theme-bg-secondary); padding: 14px; border-radius: 8px;">
                 <div style="display: flex; flex-direction: column; gap: 10px;">
                     <div>
-                        <p id="openSourceGithubLabel" style="font-size: 14px; color: var(--theme-text-secondary); margin: 0 0 4px 0;">GitHub 仓库:</p>
-                        <a id="openSourceGithubLink" href="https://github.com/kwenxu/Bookmark-Backup?tab=readme-ov-file#readme" target="_blank" style="display: block; padding: 8px 12px; background-color: var(--theme-bg-tertiary); border-radius: 6px; color: var(--theme-link-color); text-decoration: none; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">
+                        <p id="openSourceGithubLabel"
+                            style="font-size: 14px; color: var(--theme-text-secondary); margin: 0 0 4px 0;">GitHub 仓库:
+                        </p>
+                        <a id="openSourceGithubLink"
+                            href="https://github.com/kwenxu/Bookmark-Backup?tab=readme-ov-file#readme" target="_blank"
+                            style="display: block; padding: 8px 12px; background-color: var(--theme-bg-tertiary); border-radius: 6px; color: var(--theme-link-color); text-decoration: none; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">
                             <i class="fab fa-github" style="margin-right: 5px;"></i>
                             https://github.com/kwenxu/Bookmark-Backup
                         </a>
                     </div>
-                    
+
                     <div>
-                        <p id="openSourceIssueLabel" style="font-size: 14px; color: var(--theme-text-secondary); margin: 0 0 4px 0;">问题反馈:</p>
-                        <a id="openSourceIssueLink" href="https://github.com/kwenxu/Bookmark-Backup/issues" target="_blank" style="display: block; padding: 8px 12px; background-color: var(--theme-bg-tertiary); border-radius: 6px; color: var(--theme-link-color); text-decoration: none;">
+                        <p id="openSourceIssueLabel"
+                            style="font-size: 14px; color: var(--theme-text-secondary); margin: 0 0 4px 0;">问题反馈:</p>
+                        <a id="openSourceIssueLink" href="https://github.com/kwenxu/Bookmark-Backup/issues"
+                            target="_blank"
+                            style="display: block; padding: 8px 12px; background-color: var(--theme-bg-tertiary); border-radius: 6px; color: var(--theme-link-color); text-decoration: none;">
                             <i class="fas fa-exclamation-circle" style="margin-right: 5px;"></i>
                             <span id="openSourceIssueText">提交问题</span>
                         </a>
@@ -2980,14 +3384,19 @@
     </div>
 
     <!-- 页面底部正中央透明长条向上箭头按钮 -->
-    <button id="scrollToTopFloating" style="position: fixed; left: 50%; bottom: 15px; transform: translateX(-50%); width: 120px; height: 36px; border-radius: 18px; background: rgba(100, 100, 100, 0.25); border: 1px solid rgba(150, 150, 150, 0.3); cursor: pointer; box-shadow: 0 2px 10px rgba(0, 0, 0, 0.15); display: none; z-index: 10000; transition: all 0.3s ease; padding: 0; backdrop-filter: blur(15px); align-items: center; justify-content: center; gap: 6px;" aria-label="返回顶部">
+    <button id="scrollToTopFloating"
+        style="position: fixed; left: 50%; bottom: 15px; transform: translateX(-50%); width: 120px; height: 36px; border-radius: 18px; background: rgba(100, 100, 100, 0.25); border: 1px solid rgba(150, 150, 150, 0.3); cursor: pointer; box-shadow: 0 2px 10px rgba(0, 0, 0, 0.15); display: none; z-index: 10000; transition: all 0.3s ease; padding: 0; backdrop-filter: blur(15px); align-items: center; justify-content: center; gap: 6px;"
+        aria-label="返回顶部">
         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-            <path d="M7 14L12 9L17 14" stroke="var(--theme-text-primary)" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="filter: drop-shadow(0 1px 2px rgba(0,0,0,0.3));"/>
+            <path d="M7 14L12 9L17 14" stroke="var(--theme-text-primary)" stroke-width="2.5" stroke-linecap="round"
+                stroke-linejoin="round" style="filter: drop-shadow(0 1px 2px rgba(0,0,0,0.3));" />
         </svg>
-        <span id="scrollToTopText" style="color: var(--theme-text-primary); font-size: 13px; font-weight: 500; letter-spacing: 0.5px; text-shadow: 0 1px 2px rgba(0,0,0,0.3);">返回顶部</span>
+        <span id="scrollToTopText"
+            style="color: var(--theme-text-primary); font-size: 13px; font-weight: 500; letter-spacing: 0.5px; text-shadow: 0 1px 2px rgba(0,0,0,0.3);">返回顶部</span>
     </button>
 
     <!-- 添加外部脚本引用 -->
     <script src="debug.js"></script>
 </body>
+
 </html>

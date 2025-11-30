@@ -747,66 +747,323 @@
             scrollbar-color: var(--theme-scrollbar-thumb) var(--theme-scrollbar-track);
         }
         
-        .recent-bookmarks-list {
-            scrollbar-width: thin;
-            scrollbar-color: var(--theme-scrollbar-thumb) var(--theme-scrollbar-track);
-        }
-        
-        .recent-bookmarks-list::-webkit-scrollbar {
-            width: 4px;
-        }
-        
-        .recent-bookmarks-list::-webkit-scrollbar-track {
-            background: var(--theme-scrollbar-track);
-            border-radius: 2px;
-        }
-        
-        .recent-bookmarks-list::-webkit-scrollbar-thumb {
-            background: var(--theme-scrollbar-thumb);
-            border-radius: 2px;
-        }
-        
-        .recent-bookmarks-list::-webkit-scrollbar-thumb:hover {
-            background: var(--theme-scrollbar-thumb-hover);
-        }
-        
-        .bookmark-item {
-            padding: 4px 6px;
-            background-color: var(--theme-bg-elevated);
-            border-radius: 4px;
-            border: 1px solid var(--theme-border-primary);
-            cursor: pointer;
-            transition: all 0.2s ease;
+        .bookmark-recommend-header {
             display: flex;
             align-items: center;
-            gap: 4px;
-            min-height: 22px; /* 缩小高度，使三个书签能更好地显示 */
-            min-width: 0; /* 确保flex子元素可以正确截断文本 */
+            justify-content: space-between;
+            gap: 6px;
+        }
+
+        .bookmark-recommend-actions {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+
+        .bookmark-recommend-btn {
+            width: 15px;
+            height: 15px;
+            border-radius: 3px;
+            border: 1px solid var(--theme-border-primary);
+            background: var(--theme-bg-elevated);
+            color: var(--theme-icon-color);
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            transition: all 0.15s ease;
+            font-size: 8px;
+            position: relative;
+        }
+
+        .bookmark-recommend-btn:hover {
+            border-color: var(--theme-accent-color);
+            color: var(--theme-accent-color);
+            background: var(--theme-bg-secondary);
+        }
+        
+        .bookmark-recommend-btn[title]:hover::after {
+            content: attr(title);
+            position: absolute;
+            bottom: calc(100% + 4px);
+            left: 50%;
+            transform: translateX(-50%);
+            background: rgba(0, 0, 0, 0.75);
+            color: white;
+            padding: 3px 6px;
+            border-radius: 3px;
+            font-size: 10px;
+            white-space: nowrap;
+            z-index: 100;
+            pointer-events: none;
+        }
+
+        .popup-recommend-grid {
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            gap: 5px;
+            height: 100%;
+            width: 100%;
+            overflow: hidden;
+        }
+
+        .popup-recommend-card {
+            position: relative;
+            border: 1px solid var(--theme-border-primary);
+            border-radius: 4px;
+            background: var(--theme-bg-elevated);
+            padding: 7px 8px;
+            display: flex;
+            flex-direction: row;
+            align-items: center;
+            min-height: 26px;
+            flex: 0 0 auto;
+            transition: all 0.15s ease;
+            overflow: hidden;
+            cursor: pointer;
             width: 100%;
             box-sizing: border-box;
         }
-        
-        .bookmark-item:hover {
-            background-color: var(--theme-bg-tertiary);
-            border-color: #007AFF;
-            transform: translateX(-2px);
+
+        .popup-recommend-card::before {
+            content: '';
+            position: absolute;
+            inset: 0;
+            border-radius: inherit;
+            background: linear-gradient(90deg, rgba(0, 122, 255, 0.06), rgba(76, 175, 80, 0.06));
+            opacity: 0;
+            pointer-events: none;
+            transition: opacity 0.15s ease;
         }
-        
-        .bookmark-item img {
-            width: 12px;
-            height: 12px;
+
+        .popup-recommend-card:hover {
+            border-color: var(--theme-accent-color);
+            background: var(--theme-bg-secondary);
+            box-shadow: 0 1px 4px rgba(0, 0, 0, 0.1);
+        }
+
+        .popup-recommend-card:hover::before {
+            opacity: 1;
+        }
+
+        .popup-recommend-card.empty {
+            opacity: 0.6;
+            cursor: default;
+        }
+
+        .popup-recommend-card.flipped {
+            opacity: 0.5;
+        }
+
+        .popup-recommend-card.flipped::after {
+            content: '✓';
+            position: absolute;
+            right: 6px;
+            top: 50%;
+            transform: translateY(-50%);
+            color: var(--theme-success-color);
+            font-weight: 600;
+            font-size: 11px;
+        }
+
+        .popup-recommend-card-top {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            flex: 1;
+            min-width: 0;
+            overflow: hidden;
+            padding-right: 4px;
+        }
+
+        .popup-recommend-favicon {
+            width: 16px;
+            height: 16px;
+            object-fit: contain;
+            border-radius: 2px;
             flex-shrink: 0;
         }
-        
-        .bookmark-item-title {
-            font-size: 10px;
+
+        .popup-recommend-title {
+            font-size: 11px;
             color: var(--theme-text-primary);
+            font-weight: 500;
+            line-height: 1.3;
             overflow: hidden;
-            text-overflow: ellipsis;
             white-space: nowrap;
+            text-overflow: ellipsis;
             flex: 1;
-            min-width: 0; /* 确保文本可以正确截断并显示省略号 */
+            min-width: 0;
+        }
+
+        .popup-recommend-card:hover .popup-recommend-title {
+            opacity: 1;
+        }
+
+        .popup-recommend-footer {
+            display: none;
+            align-items: center;
+            justify-content: flex-end;
+            gap: 2px;
+            flex-shrink: 0;
+            margin-left: 6px;
+            position: absolute;
+            right: 6px;
+            top: 50%;
+            transform: translateY(-50%);
+            background: var(--theme-bg-elevated);
+            padding: 2px 4px;
+            border-radius: 3px;
+        }
+
+        .popup-recommend-card:hover .popup-recommend-footer {
+            display: flex;
+        }
+
+        .popup-recommend-priority {
+            font-size: 9px;
+            color: var(--theme-text-secondary);
+            letter-spacing: 0;
+            white-space: nowrap;
+        }
+
+        .popup-recommend-actions {
+            display: flex;
+            gap: 2px;
+        }
+
+        .popup-card-btn {
+            width: 16px;
+            height: 16px;
+            border-radius: 3px;
+            border: 1px solid var(--theme-border-primary);
+            background: var(--theme-bg-elevated);
+            color: var(--theme-icon-color);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 8px;
+            cursor: pointer;
+            transition: all 0.15s ease;
+            padding: 0;
+        }
+
+        .popup-card-btn:hover {
+            border-color: var(--theme-accent-color);
+            color: var(--theme-accent-color);
+            background: var(--theme-bg-secondary);
+        }
+
+        .popup-card-btn-block:hover {
+            border-color: #ff4d4f;
+            color: #ff4d4f;
+        }
+
+        .popup-card-btn-later:hover {
+            border-color: #ff9800;
+            color: #ff9800;
+        }
+
+        .popup-card-btn-skip:hover {
+            border-color: #007AFF;
+            color: #007AFF;
+        }
+
+        .popup-recommend-card.empty .popup-recommend-actions {
+            opacity: 0;
+            pointer-events: none;
+        }
+
+        .popup-recommend-card-empty-text {
+            font-size: 10px;
+            color: var(--theme-text-secondary);
+            text-align: left;
             line-height: 1.2;
+        }
+
+        .popup-recommend-later-overlay {
+            position: fixed;
+            inset: 0;
+            background: rgba(0, 0, 0, 0.45);
+            display: none;
+            align-items: center;
+            justify-content: center;
+            z-index: 1200;
+        }
+
+        .popup-recommend-later-overlay.show {
+            display: flex;
+        }
+
+        .popup-recommend-later-modal {
+            width: calc(100% - 32px);
+            max-width: 320px;
+            background: var(--theme-bg-primary);
+            border-radius: 10px;
+            border: 1px solid var(--theme-border-primary);
+            padding: 16px;
+            position: relative;
+            box-shadow: 0 12px 32px rgba(0, 0, 0, 0.25);
+        }
+
+        .popup-recommend-later-close {
+            position: absolute;
+            top: 8px;
+            right: 8px;
+            width: 28px;
+            height: 28px;
+            border: none;
+            border-radius: 50%;
+            background: var(--theme-bg-secondary);
+            color: var(--theme-icon-color);
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: all 0.2s ease;
+        }
+
+        .popup-recommend-later-close:hover {
+            background: var(--theme-error-color);
+            color: var(--theme-text-on-accent);
+        }
+
+        .popup-recommend-later-options {
+            margin-top: 12px;
+            display: grid;
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+            gap: 10px;
+        }
+
+        .popup-later-option {
+            border: 1px solid var(--theme-border-primary);
+            border-radius: 8px;
+            background: var(--theme-bg-secondary);
+            padding: 12px 10px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 8px;
+            cursor: pointer;
+            transition: all 0.2s ease;
+        }
+
+        .popup-later-option i {
+            font-size: 18px;
+            color: var(--theme-accent-color);
+        }
+
+        .popup-later-option span {
+            font-size: 12px;
+            color: var(--theme-text-primary);
+            text-align: center;
+        }
+
+        .popup-later-option:hover {
+            border-color: var(--theme-accent-color);
+            background: var(--theme-bg-elevated);
+            transform: translateY(-2px);
         }
 
         /* 列表标题行 */
@@ -2354,10 +2611,10 @@
                         </div>
                     </div>
 
-                    <!-- D：Bookmark Toolbox 区块（宽度与状态卡片一致）-->
+                    <!-- D：Bookmark Toolbox 区块 -->
                     <div id="bookmarkToolbox" class="bookmark-toolbox" style="
                         flex: 0 0 calc(40% - 7.5px);
-                        padding: 12px 0px 12px 0px;
+                        padding: 10px 14px;
                         background-color: var(--theme-bg-elevated);
                         border-radius: 8px;
                         border: 1px solid var(--theme-border-primary);
@@ -2365,26 +2622,24 @@
                         box-sizing: border-box;
                         display: flex;
                         flex-direction: column;
+                        overflow: hidden;
                     ">
                         <!-- 大标题 -->
-                        <div style="margin-bottom: 12px;">
-                            <h3 style="margin: 0; font-size: 14px; color: var(--theme-text-primary); font-weight: 500;">
+                        <div style="margin-bottom: 5px;">
+                            <h3 style="margin: 0; font-size: 12px; color: var(--theme-text-primary); font-weight: 500;">
                                 <span id="bookmarkToolboxTitle">Bookmark Toolbox</span>
                             </h3>
                         </div>
                         
                         <!-- 内容区域 -->
-                        <div style="display: flex; flex-direction: column; gap: 12px; width: 100%;">
-                            <!-- Bookmark Canvas 区域 (固定高度) -->
-                            <div style="display: flex; flex-direction: column; width: 100%;">
-                                <h4 style="margin: 0 0 6px 0; font-size: 12px; color: var(--theme-text-primary); font-weight: 500; text-align: left;">
+                        <div style="display: flex; flex-direction: column; gap: 5px; flex: 1; overflow: hidden;">
+                            <!-- Bookmark Canvas 区域 -->
+                            <div style="flex: 6; display: flex; flex-direction: column; min-height: 0;">
+                                <h4 style="margin: 0 0 3px 0; font-size: 11px; color: var(--theme-text-primary); font-weight: 500; text-align: left;">
                                     <span id="bookmarkCanvasTitle">1. Bookmark Canvas</span>
                                 </h4>
                                 <div id="bookmarkCanvas" class="toolbox-canvas" style="
-                                    width: calc(100% - 20px);
-                                    height: 140px;
-                                    min-height: 140px;
-                                    max-height: 140px;
+                                    flex: 1;
                                     background-color: var(--theme-bg-secondary);
                                     border-radius: 6px;
                                     border: 1px solid var(--theme-border-primary);
@@ -2395,8 +2650,6 @@
                                     display: flex;
                                     align-items: center;
                                     justify-content: center;
-                                    box-sizing: border-box;
-                                    margin-left: auto;
                                 " title="点击进入书签画布">
                                     <div id="canvasThumbnail" style="
                                         width: 100%;
@@ -2418,52 +2671,74 @@
                                 </div>
                             </div>
                             
-                            <!-- 书签推荐区域 (固定高度) -->
-                            <div style="display: flex; flex-direction: column; width: 100%;">
-                                <h4 style="margin: 4px 0 6px 0; font-size: 12px; color: var(--theme-text-primary); font-weight: 500; text-align: left; display: flex; align-items: center; justify-content: space-between;">
-                                    <span id="bookmarkAdditionTitle">2. 书签推荐</span>
-                                    <div style="display: flex; align-items: center; gap: 4px;">
-                                        <button id="refreshRecommendBtn" title="刷新推荐" style="background: none; border: none; color: var(--theme-text-secondary); cursor: pointer; padding: 2px; font-size: 11px; display: flex; align-items: center; justify-content: center;">
-                                            <i class="fas fa-sync-alt"></i>
-                                        </button>
-                                        <button id="openRecommendPageBtn" title="查看更多" style="background: none; border: none; color: var(--theme-text-secondary); cursor: pointer; padding: 2px; font-size: 11px; display: flex; align-items: center; justify-content: center;">
+                            <!-- Bookmark Recommend 区域 -->
+                            <div style="flex: 5; display: flex; flex-direction: column; justify-content: space-between; min-height: 0; overflow: hidden;">
+                                <div class="bookmark-recommend-header" style="margin: 1px 0 3px 0;">
+                                    <h4 style="margin: 0; font-size: 11px; color: var(--theme-text-primary); font-weight: 500; text-align: left;">
+                                        <span id="bookmarkAdditionTitle">2. Bookmark Recommendations</span>
+                                    </h4>
+                                    <div class="bookmark-recommend-actions" style="gap: 4px;">
+                                        <button id="bookmarkRecommendOpenPage" class="bookmark-recommend-btn" title="打开推荐页面" aria-label="打开推荐页面">
                                             <i class="fas fa-external-link-alt"></i>
                                         </button>
+                                        <button id="bookmarkRecommendRefresh" class="bookmark-recommend-btn" title="刷新推荐" aria-label="刷新推荐">
+                                            <i class="fas fa-sync-alt"></i>
+                                        </button>
                                     </div>
-                                </h4>
+                                </div>
                                 <div id="bookmarkAddition" class="toolbox-addition" style="
-                                    width: calc(100% - 20px);
-                                    height: 90px;
-                                    min-height: 90px;
-                                    max-height: 90px;
+                                    flex: 1;
                                     background-color: var(--theme-bg-secondary);
-                                    border-radius: 6px;
+                                    border-radius: 5px;
                                     border: 1px solid var(--theme-border-primary);
-                                    padding: 8px;
+                                    padding: 6px 5px;
                                     display: flex;
                                     flex-direction: column;
                                     overflow: hidden;
-                                    margin-bottom: 4px;
-                                    box-sizing: border-box;
-                                    margin-left: auto;
+                                    margin-bottom: 0;
                                 ">
-                                    <div id="recentBookmarks" class="recent-bookmarks-list" style="
-                                        flex: 1;
-                                        width: 100%;
-                                        overflow-y: auto;
-                                        display: flex;
-                                        flex-direction: column;
-                                        gap: 4px;
-                                    ">
-                                        <!-- 推荐书签将在这里显示 -->
-                                        <div style="
-                                            text-align: center;
-                                            padding: 10px;
-                                            color: var(--theme-text-secondary);
-                                            font-size: 11px;
-                                        ">
-                                            <i class="fas fa-bookmark" style="font-size: 18px; opacity: 0.3; margin-bottom: 4px;"></i>
-                                            <div>加载中...</div>
+                                    <div id="bookmarkRecommendCards" class="popup-recommend-grid">
+                                        <div class="popup-recommend-card empty" data-index="0">
+                                            <div class="popup-recommend-card-top">
+                                                <img class="popup-recommend-favicon" src="" alt="">
+                                                <div class="popup-recommend-title popup-recommend-card-empty-text">--</div>
+                                            </div>
+                                            <div class="popup-recommend-footer">
+                                                <span class="popup-recommend-priority">P = --</span>
+                                                <div class="popup-recommend-actions">
+                                                    <button class="popup-card-btn popup-card-btn-block" title="屏蔽"><i class="fas fa-ban"></i></button>
+                                                    <button class="popup-card-btn popup-card-btn-later" title="稍后复习"><i class="fas fa-clock"></i></button>
+                                                    <button class="popup-card-btn popup-card-btn-skip" title="跳过"><i class="fas fa-forward"></i></button>
+                                                </div>
+                                            </div>
+                                        </div>
+                                        <div class="popup-recommend-card empty" data-index="1">
+                                            <div class="popup-recommend-card-top">
+                                                <img class="popup-recommend-favicon" src="" alt="">
+                                                <div class="popup-recommend-title popup-recommend-card-empty-text">--</div>
+                                            </div>
+                                            <div class="popup-recommend-footer">
+                                                <span class="popup-recommend-priority">P = --</span>
+                                                <div class="popup-recommend-actions">
+                                                    <button class="popup-card-btn popup-card-btn-block" title="屏蔽"><i class="fas fa-ban"></i></button>
+                                                    <button class="popup-card-btn popup-card-btn-later" title="稍后复习"><i class="fas fa-clock"></i></button>
+                                                    <button class="popup-card-btn popup-card-btn-skip" title="跳过"><i class="fas fa-forward"></i></button>
+                                                </div>
+                                            </div>
+                                        </div>
+                                        <div class="popup-recommend-card empty" data-index="2">
+                                            <div class="popup-recommend-card-top">
+                                                <img class="popup-recommend-favicon" src="" alt="">
+                                                <div class="popup-recommend-title popup-recommend-card-empty-text">--</div>
+                                            </div>
+                                            <div class="popup-recommend-footer">
+                                                <span class="popup-recommend-priority">P = --</span>
+                                                <div class="popup-recommend-actions">
+                                                    <button class="popup-card-btn popup-card-btn-block" title="屏蔽"><i class="fas fa-ban"></i></button>
+                                                    <button class="popup-card-btn popup-card-btn-later" title="稍后复习"><i class="fas fa-clock"></i></button>
+                                                    <button class="popup-card-btn popup-card-btn-skip" title="跳过"><i class="fas fa-forward"></i></button>
+                                                </div>
+                                            </div>
                                         </div>
                                     </div>
                                 </div>
@@ -2497,6 +2772,32 @@
             </div>
         </div>
     </div>
+    </div>
+
+    <div id="popupRecommendLaterOverlay" class="popup-recommend-later-overlay" aria-hidden="true">
+        <div class="popup-recommend-later-modal">
+            <button class="popup-recommend-later-close" id="popupRecommendLaterClose" aria-label="关闭">
+                <i class="fas fa-times"></i>
+            </button>
+            <div class="popup-recommend-later-options">
+                <button class="popup-later-option" data-delay="3600000">
+                    <i class="fas fa-clock"></i>
+                    <span class="popup-later-label" data-delay-label="3600000">1小时后</span>
+                </button>
+                <button class="popup-later-option" data-delay="86400000">
+                    <i class="fas fa-sun"></i>
+                    <span class="popup-later-label" data-delay-label="86400000">明天</span>
+                </button>
+                <button class="popup-later-option" data-delay="259200000">
+                    <i class="fas fa-calendar-day"></i>
+                    <span class="popup-later-label" data-delay-label="259200000">3天后</span>
+                </button>
+                <button class="popup-later-option" data-delay="604800000">
+                    <i class="fas fa-calendar-week"></i>
+                    <span class="popup-later-label" data-delay-label="604800000">1周后</span>
+                </button>
+            </div>
+        </div>
     </div>
 
     <!-- 重新设计的重置确认对话框 -->

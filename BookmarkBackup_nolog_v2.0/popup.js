@@ -3721,8 +3721,8 @@ const applyLocalizedContent = async (lang) => { // Added lang parameter
     };
 
     const bookmarkAdditionTooltipStrings = {
-        'zh_CN': "查看最近新增的三个书签",
-        'en': "View 3 most recently added bookmarks"
+        'zh_CN': "查看当前的书签推荐卡片",
+        'en': "View the current bookmark recommendations"
     };
 
     const historyRecordsDescriptionStrings = {
@@ -3743,7 +3743,7 @@ const applyLocalizedContent = async (lang) => { // Added lang parameter
 
     const bookmarkAdditionTitleStrings = {
         'zh_CN': "2. 书签推荐",
-        'en': "2. Bookmark Recommend"
+        'en': "2. Bookmark Recommendations"
     };
 
     const openHistoryViewerStrings = {
@@ -4776,6 +4776,8 @@ const currentLang = data.preferredLang || 'zh_CN';
         bookmarkAdditionElement.setAttribute('title', additionTip);
         bookmarkAdditionElement.setAttribute('aria-label', additionTip);
     }
+
+    updatePopupRecommendLanguage(lang);
 
 
     // 添加新的国际化字符串
@@ -6488,17 +6490,120 @@ updateSyncHistory(); // 更新显示
 }
 
 // =============================================================================
-// Bookmark Toolbox：画布缩略图 + 最近添加
+// Bookmark Toolbox：画布缩略图 + 书签推荐卡片
 // =============================================================================
+
+const browserAPI = (typeof chrome !== 'undefined') ? chrome : (typeof browser !== 'undefined' ? browser : null);
+const POPUP_RECOMMEND_CARD_COUNT = 3;
+
+const popupRecommendOpenStrings = {
+    'zh_CN': '打开推荐页面',
+    'en': 'Open recommendation page'
+};
+
+const popupRecommendRefreshStrings = {
+    'zh_CN': '刷新推荐',
+    'en': 'Refresh recommendations'
+};
+
+const popupRecommendLaterSuccessStrings = {
+    'zh_CN': '已加入稍后复习队列',
+    'en': 'Added to later queue'
+};
+
+const popupRecommendLaterErrorStrings = {
+    'zh_CN': '推迟失败，请稍后重试',
+    'en': 'Failed to postpone, try again later'
+};
+
+const popupRecommendBlockSuccessStrings = {
+    'zh_CN': '书签已屏蔽',
+    'en': 'Bookmark blocked'
+};
+
+const popupRecommendBlockErrorStrings = {
+    'zh_CN': '屏蔽失败，请稍后重试',
+    'en': 'Failed to block bookmark'
+};
+
+const popupRecommendEmptyStrings = {
+    'zh_CN': '所有书签都已翻阅！',
+    'en': 'All bookmarks reviewed!'
+};
+
+const popupRecommendLoadFailedStrings = {
+    'zh_CN': '推荐加载失败',
+    'en': 'Load failed'
+};
+
+const popupRecommendLaterOptionLabels = {
+    '3600000': { 'zh_CN': '1小时后', 'en': 'In 1 hour' },
+    '86400000': { 'zh_CN': '明天', 'en': 'Tomorrow' },
+    '259200000': { 'zh_CN': '3天后', 'en': 'In 3 days' },
+    '604800000': { 'zh_CN': '1周后', 'en': 'In 1 week' }
+};
+
+let popupRecommendLang = 'zh_CN';
+let popupRecommendCards = [];
+const popupSkippedBookmarks = new Set();
+let popupCurrentLaterBookmark = null;
+let popupRecommendControlsInitialized = false;
+let popupRecommendOverlayInitialized = false;
+let popupRecommendLoading = false;
+
+// 获取共享的推荐窗口ID
+async function getRecommendWindowId() {
+    return new Promise((resolve) => {
+        browserAPI.storage.local.get(['recommendWindowId'], (result) => {
+            resolve(result.recommendWindowId || null);
+        });
+    });
+}
+
+// 保存共享的推荐窗口ID
+async function saveRecommendWindowId(windowId) {
+    await browserAPI.storage.local.set({ recommendWindowId: windowId });
+}
+
+// 监听storage变化，实现popup和history页面的实时同步
+let popupLastCardRefreshTime = 0;
+browserAPI.storage.onChanged.addListener((changes, areaName) => {
+    if (areaName === 'local' && changes.popupCurrentCards) {
+        // 防止短时间内重复刷新
+        const now = Date.now();
+        if (now - popupLastCardRefreshTime < 300) return;
+        popupLastCardRefreshTime = now;
+        
+        // 检查是否全部勾选，如果是则强制刷新获取新卡片
+        const newValue = changes.popupCurrentCards.newValue;
+        if (newValue && newValue.cardIds && newValue.flippedIds) {
+            const allFlipped = newValue.cardIds.every(id => newValue.flippedIds.includes(id));
+            if (allFlipped && newValue.cardIds.length > 0) {
+                // 全部勾选，延迟强制刷新
+                setTimeout(() => {
+                    refreshPopupRecommendCards(true);
+                }, 100);
+            } else {
+                // 部分勾选，普通刷新显示当前状态
+                refreshPopupRecommendCards();
+            }
+        } else {
+            refreshPopupRecommendCards();
+        }
+    }
+});
 
 function initializeBookmarkToolbox() {
     const canvasContainer = document.getElementById('bookmarkCanvas');
     const canvasThumbnailContainer = document.getElementById('canvasThumbnail');
-    const recentListContainer = document.getElementById('recentBookmarks');
+    const recommendCardsContainer = document.getElementById('bookmarkRecommendCards');
 
-    if (!canvasContainer || !canvasThumbnailContainer || !recentListContainer) {
+    if (!canvasContainer || !canvasThumbnailContainer || !recommendCardsContainer) {
         return;
     }
+
+    setupPopupRecommendControls();
+    setupPopupRecommendLaterOverlay();
 
     // 点击画布缩略图，直接打开 Bookmark Canvas 视图
     canvasContainer.addEventListener('click', async () => {
@@ -6517,6 +6622,8 @@ function initializeBookmarkToolbox() {
             const thumbnail = data.bookmarkCanvasThumbnail;
             const lang = data.preferredLang || 'zh_CN';
             const isEN = (lang === 'en');
+            popupRecommendLang = lang;
+            updatePopupRecommendLanguage(lang);
 
             canvasThumbnailContainer.innerHTML = '';
 
@@ -6564,96 +6671,25 @@ function initializeBookmarkToolbox() {
                 wrapper.appendChild(line1);
                 wrapper.appendChild(line2);
                 canvasThumbnailContainer.appendChild(wrapper);
-                return;
+            } else {
+                // 有缩略图时显示截图
+                canvasThumbnailContainer.style.background = 'none';
+                const img = document.createElement('img');
+                img.src = thumbnail;
+                img.alt = 'Bookmark Canvas Thumbnail';
+                img.style.width = '100%';
+                img.style.height = '100%';
+                // 使用 contain，保证完整显示整个画布截图，不再二次裁剪
+                img.style.objectFit = 'contain';
+                img.style.borderRadius = '4px';
+                canvasThumbnailContainer.appendChild(img);
             }
-
-            // 有缩略图时显示截图
-            canvasThumbnailContainer.style.background = 'none';
-            const img = document.createElement('img');
-            img.src = thumbnail;
-            img.alt = 'Bookmark Canvas Thumbnail';
-            img.style.width = '100%';
-            img.style.height = '100%';
-            // 使用 contain，保证完整显示整个画布截图，不再二次裁剪
-            img.style.objectFit = 'contain';
-            img.style.borderRadius = '4px';
-            canvasThumbnailContainer.appendChild(img);
         } catch (e) {
             console.warn('[Bookmark Toolbox] 显示 Canvas 缩略图失败:', e);
+        } finally {
+            refreshPopupRecommendCards();
         }
     });
-
-    // 加载最近添加的书签（数据来源与历史页面的“书签温故”视图一致）
-    // 加载推荐书签卡片
-    loadRecommendCard();
-    
-    // 刷新推荐按钮
-    const refreshRecommendBtn = document.getElementById('refreshRecommendBtn');
-    if (refreshRecommendBtn) {
-        refreshRecommendBtn.onclick = async () => {
-            popupClickedBookmarks.clear();
-            await saveClickedBookmarks();
-            loadRecommendCard();
-        };
-    }
-    
-    // 跳转到推荐页面按钮
-    const openRecommendBtn = document.getElementById('openRecommendPageBtn');
-    if (openRecommendBtn) {
-        openRecommendBtn.onclick = () => {
-            chrome.tabs.create({ url: chrome.runtime.getURL('history_html/history.html#recommend') });
-        };
-    }
-}
-
-// 记录已点击的书签（从storage加载）
-let popupClickedBookmarks = new Set();
-
-// 加载已点击书签状态
-async function loadClickedBookmarks() {
-    const data = await new Promise(resolve => {
-        chrome.storage.local.get(['popupClickedBookmarks'], resolve);
-    });
-    if (data.popupClickedBookmarks && Array.isArray(data.popupClickedBookmarks)) {
-        popupClickedBookmarks = new Set(data.popupClickedBookmarks);
-    }
-}
-
-// 保存已点击书签状态
-async function saveClickedBookmarks() {
-    await new Promise(resolve => {
-        chrome.storage.local.set({ popupClickedBookmarks: Array.from(popupClickedBookmarks) }, resolve);
-    });
-}
-
-function flattenBookmarkTreeForRecent(node, parentPath = '') {
-    const bookmarks = [];
-    const currentPath = parentPath ? `${parentPath}/${node.title}` : node.title;
-
-    if (node.url) {
-        bookmarks.push({
-            id: node.id,
-            title: node.title,
-            url: node.url,
-            dateAdded: node.dateAdded,
-            path: currentPath,
-            parentId: node.parentId
-        });
-    }
-
-    if (node.children) {
-        node.children.forEach(child => {
-            bookmarks.push(...flattenBookmarkTreeForRecent(child, currentPath));
-        });
-    }
-
-    return bookmarks;
-}
-
-function isBookmarkBackedUpForRecent(bookmark, lastBackupTime) {
-    if (!lastBackupTime) return false;
-    if (typeof bookmark.dateAdded !== 'number') return false;
-    return bookmark.dateAdded <= lastBackupTime;
 }
 
 function getRecentFaviconFallback() {
@@ -6714,218 +6750,676 @@ function loadFaviconForRecent(imgElement, url) {
     }
 }
 
-function renderRecentBookmarkItems(container, bookmarks, currentLang) {
-    container.innerHTML = '';
+function setupPopupRecommendControls() {
+    if (popupRecommendControlsInitialized) return;
 
-    if (!bookmarks || bookmarks.length === 0) {
-        const empty = document.createElement('div');
-        empty.style.textAlign = 'center';
-        empty.style.padding = '10px';
-        empty.style.color = 'var(--theme-text-secondary)';
-        empty.style.fontSize = '11px';
+    const openBtn = document.getElementById('bookmarkRecommendOpenPage');
+    if (openBtn) {
+        openBtn.addEventListener('click', async (event) => {
+            event.preventDefault();
+            event.stopPropagation();
+            try {
+                const url = chrome.runtime.getURL('history_html/history.html?view=recommend');
+                await safeCreateTab({ url });
+            } catch (error) {
+                console.warn('[Bookmark Toolbox] 打开推荐页面失败:', error);
+            }
+        });
+    }
 
-        const icon = document.createElement('i');
-        icon.className = 'fas fa-bookmark';
-        icon.style.fontSize = '18px';
-        icon.style.opacity = '0.3';
-        icon.style.marginBottom = '4px';
-        icon.style.display = 'block';
+    const refreshBtn = document.getElementById('bookmarkRecommendRefresh');
+    if (refreshBtn) {
+        refreshBtn.addEventListener('click', async (event) => {
+            event.preventDefault();
+            event.stopPropagation();
+            await refreshPopupRecommendCards(true);
+        });
+    }
 
-        const text = document.createElement('div');
-        text.textContent = currentLang === 'en' ? 'No new bookmarks' : '暂无新增书签';
+    popupRecommendControlsInitialized = true;
+}
 
-        empty.appendChild(icon);
-        empty.appendChild(text);
-        container.appendChild(empty);
+function setupPopupRecommendLaterOverlay() {
+    if (popupRecommendOverlayInitialized) return;
+    const overlay = document.getElementById('popupRecommendLaterOverlay');
+    if (!overlay) return;
+
+    overlay.addEventListener('click', (event) => {
+        if (event.target === overlay) {
+            hidePopupRecommendLaterOverlay();
+        }
+    });
+
+    const closeBtn = document.getElementById('popupRecommendLaterClose');
+    if (closeBtn) {
+        closeBtn.addEventListener('click', (event) => {
+            event.preventDefault();
+            hidePopupRecommendLaterOverlay();
+        });
+    }
+
+    overlay.querySelectorAll('.popup-later-option').forEach(option => {
+        option.addEventListener('click', async (event) => {
+            event.preventDefault();
+            event.stopPropagation();
+            if (!popupCurrentLaterBookmark) return;
+            const delay = parseInt(option.dataset.delay, 10);
+            try {
+                await postponeRecommendBookmark(popupCurrentLaterBookmark.id, delay);
+                showStatus(popupRecommendLaterSuccessStrings[popupRecommendLang] || popupRecommendLaterSuccessStrings['zh_CN'], 'success');
+                hidePopupRecommendLaterOverlay();
+                await refreshPopupRecommendCards(true);
+            } catch (error) {
+                console.warn('[Bookmark Toolbox] 推迟书签失败:', error);
+                showStatus(popupRecommendLaterErrorStrings[popupRecommendLang] || popupRecommendLaterErrorStrings['zh_CN'], 'error');
+            }
+        });
+    });
+
+    popupRecommendOverlayInitialized = true;
+}
+
+function showPopupRecommendLaterOverlay(bookmark) {
+    popupCurrentLaterBookmark = bookmark;
+    const overlay = document.getElementById('popupRecommendLaterOverlay');
+    if (overlay) {
+        overlay.classList.add('show');
+        overlay.setAttribute('aria-hidden', 'false');
+    }
+}
+
+function hidePopupRecommendLaterOverlay() {
+    popupCurrentLaterBookmark = null;
+    const overlay = document.getElementById('popupRecommendLaterOverlay');
+    if (overlay) {
+        overlay.classList.remove('show');
+        overlay.setAttribute('aria-hidden', 'true');
+    }
+}
+
+function updatePopupRecommendLanguage(lang) {
+    popupRecommendLang = lang || 'zh_CN';
+    const openBtn = document.getElementById('bookmarkRecommendOpenPage');
+    if (openBtn) {
+        const text = popupRecommendOpenStrings[popupRecommendLang] || popupRecommendOpenStrings['zh_CN'];
+        openBtn.setAttribute('title', text);
+        openBtn.setAttribute('aria-label', text);
+    }
+
+    const refreshBtn = document.getElementById('bookmarkRecommendRefresh');
+    if (refreshBtn) {
+        const text = popupRecommendRefreshStrings[popupRecommendLang] || popupRecommendRefreshStrings['zh_CN'];
+        refreshBtn.setAttribute('title', text);
+        refreshBtn.setAttribute('aria-label', text);
+    }
+
+    const closeBtn = document.getElementById('popupRecommendLaterClose');
+    if (closeBtn) {
+        closeBtn.setAttribute('aria-label', popupRecommendLang === 'en' ? 'Close' : '关闭');
+    }
+
+    document.querySelectorAll('.popup-later-label').forEach(label => {
+        const key = label.dataset.delayLabel;
+        if (!key) return;
+        const text = popupRecommendLaterOptionLabels[key]?.[popupRecommendLang] ||
+            popupRecommendLaterOptionLabels[key]?.['zh_CN'] ||
+            label.textContent;
+        label.textContent = text;
+    });
+}
+
+// 获取当前显示的卡片状态
+async function getPopupCurrentCards() {
+    return new Promise((resolve) => {
+        browserAPI.storage.local.get(['popupCurrentCards'], (result) => {
+            resolve(result.popupCurrentCards || null);
+        });
+    });
+}
+
+// 保存当前显示的卡片状态
+async function savePopupCurrentCards(cardIds, flippedIds) {
+    await browserAPI.storage.local.set({
+        popupCurrentCards: {
+            cardIds: cardIds,
+            flippedIds: flippedIds,
+            timestamp: Date.now()
+        }
+    });
+}
+
+// 标记卡片为已勾选，并检查是否全部勾选
+async function markPopupCardFlipped(bookmarkId) {
+    const currentCards = await getPopupCurrentCards();
+    if (!currentCards) return false;
+    
+    // 添加到已勾选列表
+    if (!currentCards.flippedIds.includes(bookmarkId)) {
+        currentCards.flippedIds.push(bookmarkId);
+        await savePopupCurrentCards(currentCards.cardIds, currentCards.flippedIds);
+    }
+    
+    // 检查是否全部勾选
+    const allFlipped = currentCards.cardIds.every(id => currentCards.flippedIds.includes(id));
+    return allFlipped;
+}
+
+async function refreshPopupRecommendCards(force = false) {
+    if (popupRecommendLoading && !force) return;
+    const cardsRoot = document.getElementById('bookmarkRecommendCards');
+    if (!cardsRoot) return;
+    const cards = cardsRoot.querySelectorAll('.popup-recommend-card');
+    if (!cards.length) return;
+
+    popupRecommendLoading = true;
+
+    try {
+        // 检查是否有已保存的卡片状态
+        const currentCards = await getPopupCurrentCards();
+        const bookmarks = await fetchAllBookmarksFlat();
+        const bookmarkMap = new Map(bookmarks.map(b => [b.id, b]));
+        
+        // 如果有保存的卡片且不是全部勾选，则显示保存的卡片
+        if (currentCards && currentCards.cardIds && currentCards.cardIds.length > 0 && !force) {
+            const allFlipped = currentCards.cardIds.every(id => currentCards.flippedIds.includes(id));
+            
+            if (!allFlipped) {
+                // 显示保存的卡片
+                const reviewData = await getPopupReviewData();
+                const postponedList = await getPopupPostponedBookmarks();
+                
+                // 构建缓存的favicon URL映射
+                const cachedFaviconMap = new Map();
+                if (currentCards.cardData && Array.isArray(currentCards.cardData)) {
+                    currentCards.cardData.forEach(data => {
+                        if (data && data.id && data.faviconUrl) {
+                            cachedFaviconMap.set(data.id, data.faviconUrl);
+                        }
+                    });
+                }
+                
+                popupRecommendCards = currentCards.cardIds.map(id => {
+                    const bookmark = bookmarkMap.get(id);
+                    if (bookmark) {
+                        const basePriority = 0.75;
+                        const priority = calculatePopupPriorityWithReview(basePriority, bookmark.id, reviewData, postponedList);
+                        return { ...bookmark, priority };
+                    }
+                    return null;
+                }).filter(Boolean);
+                
+                cards.forEach((card, index) => {
+                    const bookmark = popupRecommendCards[index];
+                    if (bookmark) {
+                        // 使用缓存的favicon URL（如果可用）
+                        const cachedFavicon = cachedFaviconMap.get(bookmark.id);
+                        populatePopupRecommendCard(card, bookmark, cachedFavicon);
+                        // 恢复勾选状态
+                        if (currentCards.flippedIds.includes(bookmark.id)) {
+                            card.classList.add('flipped');
+                        }
+                    } else {
+                        resetPopupRecommendCard(card, '--');
+                    }
+                });
+                
+                popupRecommendLoading = false;
+                return;
+            }
+        }
+        
+        // 获取新的推荐卡片
+        const [flippedList, blockedData, postponedList] = await Promise.all([
+            getPopupFlippedBookmarks(),
+            getPopupBlockedBookmarks(),
+            getPopupPostponedBookmarks()
+        ]);
+
+        const now = Date.now();
+        const flippedSet = new Set(flippedList || []);
+        const blockedBookmarks = new Set(blockedData.bookmarks || []);
+        const blockedFolders = new Set(blockedData.folders || []);
+        const blockedDomains = new Set((blockedData.domains || []).map(normalizeDomain));
+        const postponedSet = new Set(
+            postponedList.filter(item => item.postponeUntil > now).map(item => item.bookmarkId)
+        );
+
+        const availableBookmarks = bookmarks.filter(bookmark => {
+            if (!bookmark.url) return false;
+            if (flippedSet.has(bookmark.id)) return false;
+            if (popupSkippedBookmarks.has(bookmark.id)) return false;
+            if (blockedBookmarks.has(bookmark.id)) return false;
+            if (postponedSet.has(bookmark.id)) return false;
+
+            if (blockedFolders.size && bookmark.ancestorFolderIds) {
+                for (const folderId of bookmark.ancestorFolderIds) {
+                    if (blockedFolders.has(folderId)) return false;
+                }
+            }
+
+            if (blockedDomains.size && bookmark.domain) {
+                const normalized = normalizeDomain(bookmark.domain);
+                if (blockedDomains.has(normalized)) return false;
+            }
+
+            return true;
+        });
+
+        if (!availableBookmarks.length) {
+            popupRecommendCards = [];
+            // 清除保存的卡片状态
+            await savePopupCurrentCards([], []);
+            cards.forEach((card, index) => {
+                const message = index === 0
+                    ? (popupRecommendEmptyStrings[popupRecommendLang] || popupRecommendEmptyStrings['zh_CN'])
+                    : '--';
+                resetPopupRecommendCard(card, message);
+            });
+            popupRecommendLoading = false;
+            return;
+        }
+
+        const reviewData = await getPopupReviewData();
+        const bookmarksWithPriority = availableBookmarks.map(bookmark => {
+            const basePriority = Math.random() * 0.5 + 0.5;
+            const priority = calculatePopupPriorityWithReview(basePriority, bookmark.id, reviewData, postponedList);
+            return { ...bookmark, priority };
+        });
+
+        bookmarksWithPriority.sort((a, b) => b.priority - a.priority);
+        popupRecommendCards = bookmarksWithPriority.slice(0, POPUP_RECOMMEND_CARD_COUNT);
+
+        // 保存新的卡片状态
+        const newCardIds = popupRecommendCards.map(b => b.id);
+        await savePopupCurrentCards(newCardIds, []);
+
+        cards.forEach((card, index) => {
+            const bookmark = popupRecommendCards[index];
+            if (bookmark) {
+                populatePopupRecommendCard(card, bookmark);
+            } else {
+                resetPopupRecommendCard(card, '--');
+            }
+        });
+    } catch (error) {
+        console.warn('[Bookmark Toolbox] 加载推荐卡片失败:', error);
+        const message = popupRecommendLoadFailedStrings[popupRecommendLang] || popupRecommendLoadFailedStrings['zh_CN'];
+        cards.forEach((card, index) => {
+            resetPopupRecommendCard(card, index === 0 ? message : '--');
+        });
+    } finally {
+        popupRecommendLoading = false;
+    }
+}
+
+function resetPopupRecommendCard(card, message) {
+    if (!card) return;
+    card.classList.add('empty');
+    card.classList.remove('flipped');
+    card.dataset.bookmarkId = '';
+
+    const titleEl = card.querySelector('.popup-recommend-title');
+    if (titleEl) titleEl.textContent = message;
+
+    const priorityEl = card.querySelector('.popup-recommend-priority');
+    if (priorityEl) priorityEl.textContent = 'P = --';
+
+    const favicon = card.querySelector('.popup-recommend-favicon');
+    if (favicon) favicon.src = getRecentFaviconFallback();
+
+    card.onclick = null;
+    card.querySelectorAll('.popup-card-btn').forEach(btn => {
+        btn.onclick = null;
+    });
+}
+
+function populatePopupRecommendCard(card, bookmark, cachedFaviconUrl = null) {
+    if (!card) return;
+    card.classList.remove('empty');
+    card.classList.remove('flipped');
+    card.dataset.bookmarkId = bookmark.id;
+
+    const titleEl = card.querySelector('.popup-recommend-title');
+    if (titleEl) {
+        titleEl.textContent = bookmark.title || bookmark.url || (popupRecommendLang === 'en' ? '(No title)' : '（无标题）');
+    }
+
+    const favicon = card.querySelector('.popup-recommend-favicon');
+    if (favicon) {
+        // 优先使用缓存的favicon URL（来自history.js的预加载）
+        if (cachedFaviconUrl) {
+            favicon.src = cachedFaviconUrl;
+        } else {
+            loadFaviconForRecent(favicon, bookmark.url);
+        }
+    }
+
+    const priorityEl = card.querySelector('.popup-recommend-priority');
+    if (priorityEl) {
+        priorityEl.textContent = `P = ${bookmark.priority.toFixed(2)}`;
+    }
+
+    card.onclick = async (event) => {
+        if (event.target.closest('.popup-recommend-actions')) return;
+        try {
+            await markPopupBookmarkFlipped(bookmark.id);
+            await recordPopupReview(bookmark.id);
+            await openPopupRecommendTarget(bookmark.url);
+            card.classList.add('flipped');
+            
+            // 更新本地卡片勾选状态（storage监听器会自动处理刷新）
+            await markPopupCardFlipped(bookmark.id);
+        } catch (error) {
+            console.warn('[Bookmark Toolbox] 打开推荐书签失败:', error);
+        }
+    };
+
+    const blockBtn = card.querySelector('.popup-card-btn-block');
+    if (blockBtn) {
+        blockBtn.onclick = async (event) => {
+            event.preventDefault();
+            event.stopPropagation();
+            try {
+                const success = await blockPopupBookmark(bookmark.id);
+                if (success) {
+                    showStatus(popupRecommendBlockSuccessStrings[popupRecommendLang] || popupRecommendBlockSuccessStrings['zh_CN'], 'success');
+                } else {
+                    showStatus(popupRecommendBlockErrorStrings[popupRecommendLang] || popupRecommendBlockErrorStrings['zh_CN'], 'error');
+                }
+            } catch (error) {
+                console.warn('[Bookmark Toolbox] 屏蔽书签失败:', error);
+                showStatus(popupRecommendBlockErrorStrings[popupRecommendLang] || popupRecommendBlockErrorStrings['zh_CN'], 'error');
+            }
+            await refreshPopupRecommendCards(true);
+        };
+    }
+
+    const laterBtn = card.querySelector('.popup-card-btn-later');
+    if (laterBtn) {
+        laterBtn.onclick = (event) => {
+            event.preventDefault();
+            event.stopPropagation();
+            showPopupRecommendLaterOverlay(bookmark);
+        };
+    }
+
+    const skipBtn = card.querySelector('.popup-card-btn-skip');
+    if (skipBtn) {
+        skipBtn.onclick = async (event) => {
+            event.preventDefault();
+            event.stopPropagation();
+            popupSkippedBookmarks.add(bookmark.id);
+            await refreshPopupRecommendCards(true);
+        };
+    }
+}
+
+function normalizeDomain(domain) {
+    if (!domain) return '';
+    return domain.toLowerCase().replace(/^www\./, '');
+}
+
+async function fetchAllBookmarksFlat() {
+    return new Promise((resolve) => {
+        chrome.bookmarks.getTree((tree) => {
+            if (!tree || !tree.length) {
+                resolve([]);
+                return;
+            }
+
+            const results = [];
+            function traverse(nodes, ancestorFolderIds = []) {
+                nodes.forEach(node => {
+                    if (node.url) {
+                        results.push({
+                            id: node.id,
+                            title: node.title,
+                            url: node.url,
+                            dateAdded: node.dateAdded,
+                            domain: normalizeDomain((() => {
+                                try {
+                                    return new URL(node.url).hostname;
+                                } catch (_) {
+                                    return '';
+                                }
+                            })()),
+                            ancestorFolderIds
+                        });
+                    }
+                    if (node.children && node.children.length) {
+                        const nextAncestors = node.url ? ancestorFolderIds : [...ancestorFolderIds, node.id];
+                        traverse(node.children, nextAncestors);
+                    }
+                });
+            }
+
+            traverse(tree, []);
+            resolve(results);
+        });
+    });
+}
+
+async function getPopupBlockedBookmarks() {
+    return new Promise((resolve) => {
+        browserAPI.storage.local.get(['recommend_blocked'], (result) => {
+            if (browserAPI.runtime && browserAPI.runtime.lastError) {
+                console.warn('[Bookmark Toolbox] 获取屏蔽数据失败:', browserAPI.runtime.lastError.message);
+            }
+            resolve(result.recommend_blocked || { bookmarks: [], folders: [], domains: [] });
+        });
+    });
+}
+
+async function blockPopupBookmark(bookmarkId) {
+    try {
+        const targetList = await new Promise((resolve) => {
+            browserAPI.bookmarks.get(bookmarkId, resolve);
+        });
+
+        if (!targetList || !targetList.length) {
+            return false;
+        }
+
+        const targetBookmark = targetList[0];
+        const targetTitle = targetBookmark.title;
+
+        const allBookmarks = await fetchAllBookmarksFlat();
+        const sameTitleBookmarks = allBookmarks.filter(b => b.title === targetTitle);
+
+        const blocked = await getPopupBlockedBookmarks();
+        let updated = false;
+
+        sameTitleBookmarks.forEach(bookmark => {
+            if (!blocked.bookmarks.includes(bookmark.id)) {
+                blocked.bookmarks.push(bookmark.id);
+                updated = true;
+            }
+        });
+
+        if (updated) {
+            await browserAPI.storage.local.set({ recommend_blocked: blocked });
+        }
+
+        return true;
+    } catch (error) {
+        console.warn('[Bookmark Toolbox] 屏蔽书签失败:', error);
+        return false;
+    }
+}
+
+async function getPopupPostponedBookmarks() {
+    return new Promise((resolve) => {
+        browserAPI.storage.local.get(['recommend_postponed'], (result) => {
+            if (browserAPI.runtime && browserAPI.runtime.lastError) {
+                console.warn('[Bookmark Toolbox] 获取稍后队列失败:', browserAPI.runtime.lastError.message);
+            }
+            resolve(result.recommend_postponed || []);
+        });
+    });
+}
+
+async function postponeRecommendBookmark(bookmarkId, delayMs) {
+    const postponed = await getPopupPostponedBookmarks();
+    const now = Date.now();
+    const existing = postponed.find(item => item.bookmarkId === bookmarkId);
+
+    if (existing) {
+        existing.postponeUntil = now + delayMs;
+        existing.postponeCount = (existing.postponeCount || 0) + 1;
+        existing.updatedAt = now;
+    } else {
+        postponed.push({
+            bookmarkId,
+            postponeUntil: now + delayMs,
+            postponeCount: 1,
+            createdAt: now,
+            updatedAt: now
+        });
+    }
+
+    await browserAPI.storage.local.set({ recommend_postponed: postponed });
+}
+
+async function getPopupReviewData() {
+    return new Promise((resolve) => {
+        browserAPI.storage.local.get(['recommend_reviews'], (result) => {
+            resolve(result.recommend_reviews || {});
+        });
+    });
+}
+
+async function recordPopupReview(bookmarkId) {
+    const reviews = await getPopupReviewData();
+    const now = Date.now();
+    const existing = reviews[bookmarkId];
+
+    if (existing) {
+        const newInterval = Math.min(existing.interval * 2, 30);
+        reviews[bookmarkId] = {
+            lastReview: now,
+            interval: newInterval,
+            reviewCount: existing.reviewCount + 1,
+            nextReview: now + newInterval * 24 * 60 * 60 * 1000
+        };
+    } else {
+        reviews[bookmarkId] = {
+            lastReview: now,
+            interval: 1,
+            reviewCount: 1,
+            nextReview: now + 24 * 60 * 60 * 1000
+        };
+    }
+
+    await browserAPI.storage.local.set({ recommend_reviews: reviews });
+}
+
+function getPopupReviewStatus(bookmarkId, reviewData) {
+    const review = reviewData[bookmarkId];
+    if (!review) return { priority: 1 };
+
+    const now = Date.now();
+    if (now >= review.nextReview) {
+        return { priority: 1.2 };
+    }
+
+    const daysSinceReview = (now - review.lastReview) / (1000 * 60 * 60 * 24);
+    if (daysSinceReview >= review.interval * 0.7) {
+        return { priority: 1.1 };
+    }
+
+    return { priority: 0.9 };
+}
+
+function calculatePopupPriorityWithReview(basePriority, bookmarkId, reviewData, postponedData) {
+    let priority = basePriority;
+    const reviewStatus = getPopupReviewStatus(bookmarkId, reviewData);
+    priority *= reviewStatus.priority || 1;
+
+    const postponeInfo = postponedData.find(item => item.bookmarkId === bookmarkId);
+    if (postponeInfo && postponeInfo.postponeCount > 0) {
+        priority *= Math.pow(0.9, postponeInfo.postponeCount);
+    }
+
+    return Math.min(priority, 1.5);
+}
+
+async function getPopupFlippedBookmarks() {
+    return new Promise((resolve) => {
+        browserAPI.storage.local.get(['flippedBookmarks'], (result) => {
+            resolve(result.flippedBookmarks || []);
+        });
+    });
+}
+
+async function markPopupBookmarkFlipped(bookmarkId) {
+    const flipped = await getPopupFlippedBookmarks();
+    if (!flipped.includes(bookmarkId)) {
+        flipped.push(bookmarkId);
+        await browserAPI.storage.local.set({ flippedBookmarks: flipped });
+    }
+
+    const result = await new Promise((resolve) => {
+        browserAPI.storage.local.get(['flipHistory'], resolve);
+    });
+
+    const flipHistory = result.flipHistory || [];
+    flipHistory.push({
+        bookmarkId,
+        timestamp: Date.now()
+    });
+    await browserAPI.storage.local.set({ flipHistory });
+}
+
+async function openPopupRecommendTarget(url) {
+    if (!url) return;
+
+    if (!browserAPI?.windows || !browserAPI?.tabs) {
+        await safeCreateTab({ url });
         return;
     }
 
-    bookmarks.forEach(bookmark => {
-        const item = document.createElement('div');
-        item.className = 'bookmark-item';
-
-        const iconImg = document.createElement('img');
-        iconImg.alt = '';
-        loadFaviconForRecent(iconImg, bookmark.url);
-
-        const titleDiv = document.createElement('div');
-        titleDiv.className = 'bookmark-item-title';
-        titleDiv.textContent = bookmark.title || bookmark.url || (currentLang === 'en' ? '(No title)' : '（无标题）');
-
-        item.appendChild(iconImg);
-        item.appendChild(titleDiv);
-
-        item.addEventListener('click', async () => {
-            try {
-                if (bookmark.url) {
-                    await safeCreateTab({ url: bookmark.url });
-                }
-            } catch (e) {
-                console.warn('[Bookmark Toolbox] 打开书签失败:', e);
-            }
-        });
-
-        container.appendChild(item);
-    });
-}
-
-function loadRecentBookmarkAdditions(container) {
-    chrome.storage.local.get(['lastSyncTime', 'preferredLang'], (storageData) => {
-        const currentLang = storageData.preferredLang || 'zh_CN';
-        let lastBackupTime = null;
-        if (storageData.lastSyncTime) {
-            try {
-                lastBackupTime = new Date(storageData.lastSyncTime).getTime();
-            } catch (_) {
-                lastBackupTime = null;
-            }
-        }
-
-        try {
-            chrome.bookmarks.getTree((tree) => {
-                try {
-                    if (!tree || !tree.length) {
-                        renderRecentBookmarkItems(container, [], currentLang);
-                        return;
-                    }
-
-                    const root = tree[0];
-                    const allBookmarks = flattenBookmarkTreeForRecent(root);
-
-                    let candidates = allBookmarks.filter(b => b.url);
-
-                    // 与“书签温故”视图保持一致：优先展示未备份的新增书签
-                    const additions = candidates.filter(b => !isBookmarkBackedUpForRecent(b, lastBackupTime));
-                    if (additions.length > 0) {
-                        candidates = additions;
-                    }
-
-                    candidates.sort((a, b) => {
-                        const aTime = typeof a.dateAdded === 'number' ? a.dateAdded : 0;
-                        const bTime = typeof b.dateAdded === 'number' ? b.dateAdded : 0;
-                        return bTime - aTime;
-                    });
-
-                    const recent = candidates.slice(0, 3);
-                    renderRecentBookmarkItems(container, recent, currentLang);
-                } catch (e) {
-                    console.warn('[Bookmark Toolbox] 处理书签数据失败:', e);
-                    renderRecentBookmarkItems(container, [], currentLang);
-                }
-            });
-        } catch (e) {
-            console.warn('[Bookmark Toolbox] 获取书签树失败:', e);
-            renderRecentBookmarkItems(container, [], currentLang);
-        }
-    });
-}
-
-// 加载推荐书签列表（3个，无按钮）
-async function loadRecommendCard() {
-    const container = document.getElementById('recentBookmarks');
-    if (!container) return;
-    
-    // 先加载已点击状态
-    await loadClickedBookmarks();
-    
     try {
-        const tree = await new Promise(resolve => chrome.bookmarks.getTree(resolve));
-        const allBookmarks = flattenBookmarkTreeForRecent(tree[0]);
+        // 从storage获取共享的窗口ID
+        let windowId = await getRecommendWindowId();
         
-        // 获取屏蔽和稍后复习数据
-        const storageData = await new Promise(resolve => {
-            chrome.storage.local.get(['blockedBookmarks', 'postponedBookmarks'], resolve);
-        });
-        
-        const blocked = storageData.blockedBookmarks || { bookmarks: [], folders: [], domains: [] };
-        const postponed = storageData.postponedBookmarks || {};
-        const now = Date.now();
-        
-        // 过滤
-        let candidates = allBookmarks.filter(b => {
-            if (!b.url) return false;
-            if (blocked.bookmarks.includes(b.title)) return false;
-            if (blocked.folders.includes(b.parentId)) return false;
-            
+        if (windowId) {
             try {
-                const domain = new URL(b.url).hostname;
-                if (blocked.domains.some(d => domain.includes(d))) return false;
-            } catch {}
-            
-            if (postponed[b.id] && postponed[b.id].until > now) return false;
-            
-            return true;
-        });
-        
-        // 计算优先级
-        candidates.forEach(b => {
-            const daysSinceAdded = (now - (b.dateAdded || 0)) / (1000 * 60 * 60 * 24);
-            b.priority = Math.min(daysSinceAdded / 30, 1);
-        });
-        
-        candidates.sort((a, b) => b.priority - a.priority);
-        const topBookmarks = candidates.slice(0, 3);
-        
-        // 渲染列表
-        container.innerHTML = '';
-        
-        if (topBookmarks.length === 0) {
-            container.innerHTML = `
-                <div style="text-align: center; padding: 10px; color: var(--theme-text-secondary); font-size: 11px;">
-                    <i class="fas fa-bookmark" style="font-size: 18px; opacity: 0.3; margin-bottom: 4px;"></i>
-                    <div>暂无推荐</div>
-                </div>
-            `;
-            return;
-        }
-        
-        topBookmarks.forEach(bookmark => {
-            const item = document.createElement('div');
-            const isClicked = popupClickedBookmarks.has(bookmark.id);
-            
-            item.style.cssText = `display: flex; align-items: center; gap: 6px; padding: 4px 6px; background: var(--theme-bg-tertiary); border-radius: 4px; cursor: pointer; transition: all 0.2s; ${isClicked ? 'opacity: 0.6;' : ''}`;
-            item.onmouseenter = () => { if (!popupClickedBookmarks.has(bookmark.id)) item.style.background = 'var(--theme-bg-hover)'; };
-            item.onmouseleave = () => item.style.background = 'var(--theme-bg-tertiary)';
-            
-            // Favicon
-            let faviconUrl = '';
-            try {
-                const domain = new URL(bookmark.url).hostname;
-                faviconUrl = `https://www.google.com/s2/favicons?domain=${domain}&sz=32`;
-            } catch {}
-            
-            if (isClicked) {
-                item.innerHTML = `
-                    <i class="fas fa-check" style="width: 14px; height: 14px; color: var(--theme-success, #4CAF50); font-size: 12px; display: flex; align-items: center; justify-content: center;"></i>
-                    <span style="flex: 1; font-size: 11px; color: var(--theme-text-secondary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; text-decoration: line-through;">${bookmark.title || '无标题'}</span>
-                `;
-            } else {
-                item.innerHTML = `
-                    <img src="${faviconUrl}" style="width: 14px; height: 14px; border-radius: 2px; flex-shrink: 0;" onerror="this.style.display='none'">
-                    <span style="flex: 1; font-size: 11px; color: var(--theme-text-primary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">${bookmark.title || '无标题'}</span>
-                `;
+                await browserAPI.windows.get(windowId);
+                await browserAPI.tabs.create({
+                    windowId: windowId,
+                    url,
+                    active: true
+                });
+                await browserAPI.windows.update(windowId, { focused: true });
+                return;
+            } catch (_) {
+                // 窗口不存在，清除保存的ID
+                await saveRecommendWindowId(null);
             }
-            
-            item.onclick = async () => {
-                chrome.tabs.create({ url: bookmark.url });
-                popupClickedBookmarks.add(bookmark.id);
-                await saveClickedBookmarks();
-                // 更新显示状态
-                item.style.opacity = '0.6';
-                item.innerHTML = `
-                    <i class="fas fa-check" style="width: 14px; height: 14px; color: var(--theme-success, #4CAF50); font-size: 12px; display: flex; align-items: center; justify-content: center;"></i>
-                    <span style="flex: 1; font-size: 11px; color: var(--theme-text-secondary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; text-decoration: line-through;">${bookmark.title || '无标题'}</span>
-                `;
-            };
-            
-            container.appendChild(item);
+        }
+
+        const screenInfo = (typeof window !== 'undefined' && window.screen) ? window.screen :
+            (typeof screen !== 'undefined' ? screen : null);
+        const availWidth = screenInfo?.availWidth || 1280;
+        const availHeight = screenInfo?.availHeight || 800;
+        const width = Math.min(1200, Math.round(availWidth * 0.75));
+        const height = Math.min(800, Math.round(availHeight * 0.8));
+        const left = Math.round((availWidth - width) / 2);
+        const top = Math.round((availHeight - height) / 2);
+
+        const win = await browserAPI.windows.create({
+            url,
+            type: 'normal',
+            width,
+            height,
+            left,
+            top,
+            focused: true
         });
-    } catch (e) {
-        console.warn('[Bookmark Toolbox] 加载推荐书签失败:', e);
-        container.innerHTML = `
-            <div style="text-align: center; padding: 10px; color: var(--theme-text-secondary); font-size: 11px;">
-                <div>加载失败</div>
-            </div>
-        `;
+        // 保存窗口ID到storage，供popup和history共享
+        await saveRecommendWindowId(win.id);
+    } catch (error) {
+        console.warn('[Bookmark Toolbox] 打开推荐窗口失败，退回普通标签页:', error);
+        await safeCreateTab({ url });
     }
 }

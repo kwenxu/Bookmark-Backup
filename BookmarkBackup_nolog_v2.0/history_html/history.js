@@ -1827,7 +1827,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     const viewParam = urlParams.get('view');
 
     // 优先级：URL参数 > localStorage > 默认值
-    if (viewParam && ['current-changes', 'history', 'additions', 'tree', 'canvas'].includes(viewParam)) {
+    if (viewParam && ['current-changes', 'history', 'additions', 'tree', 'canvas', 'recommend'].includes(viewParam)) {
         currentView = viewParam === 'tree' ? 'canvas' : viewParam;
         console.log('[初始化] 从URL参数设置视图:', currentView);
 
@@ -1839,7 +1839,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         console.log('[初始化] 已从URL中移除view参数，刷新时将使用localStorage');
     } else {
         const lastView = localStorage.getItem('lastActiveView');
-        if (lastView && ['current-changes', 'history', 'additions', 'tree', 'canvas'].includes(lastView)) {
+        if (lastView && ['current-changes', 'history', 'additions', 'tree', 'canvas', 'recommend'].includes(lastView)) {
             currentView = lastView === 'tree' ? 'canvas' : lastView;
             console.log('[初始化] 从localStorage恢复视图:', currentView);
         } else {
@@ -3795,29 +3795,73 @@ function setHighResFavicon(imgElement, url) {
     });
 }
 
-// 推荐卡片专用窗口
-let recommendWindowId = null;
+// 推荐卡片专用窗口 - 使用storage共享窗口ID（与popup同步）
+async function getSharedRecommendWindowId() {
+    return new Promise((resolve) => {
+        browserAPI.storage.local.get(['recommendWindowId'], (result) => {
+            resolve(result.recommendWindowId || null);
+        });
+    });
+}
+
+async function saveSharedRecommendWindowId(windowId) {
+    await browserAPI.storage.local.set({ recommendWindowId: windowId });
+}
+
+// 监听storage变化，实现history和popup页面的实时同步
+let historyLastCardRefreshTime = 0;
+browserAPI.storage.onChanged.addListener((changes, areaName) => {
+    if (areaName === 'local' && changes.popupCurrentCards) {
+        // 仅在推荐视图时刷新
+        if (currentView !== 'recommend') return;
+        
+        // 防止短时间内重复刷新
+        const now = Date.now();
+        if (now - historyLastCardRefreshTime < 300) return;
+        historyLastCardRefreshTime = now;
+        
+        // 检查是否全部勾选，如果是则强制刷新获取新卡片
+        const newValue = changes.popupCurrentCards.newValue;
+        if (newValue && newValue.cardIds && newValue.flippedIds) {
+            const allFlipped = newValue.cardIds.every(id => newValue.flippedIds.includes(id));
+            if (allFlipped && newValue.cardIds.length > 0) {
+                // 全部勾选，延迟强制刷新
+                setTimeout(() => {
+                    refreshRecommendCards(true);
+                }, 100);
+            } else {
+                // 部分勾选，普通刷新显示当前状态
+                refreshRecommendCards();
+            }
+        } else {
+            refreshRecommendCards();
+        }
+    }
+});
 
 // 在推荐窗口中打开链接
 async function openInRecommendWindow(url) {
     if (!url) return;
     
     try {
+        // 从storage获取共享的窗口ID
+        let windowId = await getSharedRecommendWindowId();
+        
         // 检查窗口是否存在
-        if (recommendWindowId) {
+        if (windowId) {
             try {
-                await browserAPI.windows.get(recommendWindowId);
+                await browserAPI.windows.get(windowId);
                 // 窗口存在，在其中打开新标签页
                 await browserAPI.tabs.create({
-                    windowId: recommendWindowId,
+                    windowId: windowId,
                     url: url,
                     active: true
                 });
-                await browserAPI.windows.update(recommendWindowId, { focused: true });
+                await browserAPI.windows.update(windowId, { focused: true });
                 return;
             } catch (e) {
-                // 窗口已关闭
-                recommendWindowId = null;
+                // 窗口已关闭，清除保存的ID
+                await saveSharedRecommendWindowId(null);
             }
         }
         
@@ -3833,7 +3877,8 @@ async function openInRecommendWindow(url) {
             width, height, left, top,
             focused: true
         });
-        recommendWindowId = win.id;
+        // 保存窗口ID到storage，供popup和history共享
+        await saveSharedRecommendWindowId(win.id);
         
     } catch (error) {
         console.error('[推荐卡片] 打开窗口失败:', error);
@@ -3982,6 +4027,168 @@ const TRACKING_REFRESH_INTERVAL = 3000; // 3秒刷新一次
 
 // 跳过和屏蔽数据
 let skippedBookmarks = new Set(); // 本次会话跳过的书签（内存，刷新页面后清空）
+
+// 获取当前显示的卡片状态（与popup共享）
+async function getHistoryCurrentCards() {
+    return new Promise((resolve) => {
+        browserAPI.storage.local.get(['popupCurrentCards'], (result) => {
+            resolve(result.popupCurrentCards || null);
+        });
+    });
+}
+
+// 保存当前显示的卡片状态（与popup共享）
+async function saveHistoryCurrentCards(cardIds, flippedIds, cardData = null) {
+    const dataToSave = {
+        popupCurrentCards: {
+            cardIds: cardIds,
+            flippedIds: flippedIds,
+            timestamp: Date.now()
+        }
+    };
+    // 如果提供了卡片数据（包含url和favicon），也保存它们
+    if (cardData && cardData.length > 0) {
+        dataToSave.popupCurrentCards.cardData = cardData;
+    }
+    await browserAPI.storage.local.set(dataToSave);
+}
+
+// 异步获取并保存当前卡片的favicon URLs（供popup使用）
+async function saveCardFaviconsToStorage(bookmarks) {
+    if (!bookmarks || bookmarks.length === 0) return;
+    
+    try {
+        // 获取当前保存的卡片状态
+        const currentCards = await getHistoryCurrentCards();
+        if (!currentCards || !currentCards.cardIds) return;
+        
+        // 为每个卡片获取favicon data URL
+        const cardData = await Promise.all(bookmarks.map(async (bookmark) => {
+            if (!bookmark || !bookmark.url) {
+                return { id: bookmark?.id, url: null, faviconUrl: null };
+            }
+            try {
+                const faviconUrl = await FaviconCache.fetch(bookmark.url);
+                return {
+                    id: bookmark.id,
+                    url: bookmark.url,
+                    faviconUrl: faviconUrl !== fallbackIcon ? faviconUrl : null
+                };
+            } catch (e) {
+                return { id: bookmark.id, url: bookmark.url, faviconUrl: null };
+            }
+        }));
+        
+        // 更新storage中的卡片数据
+        currentCards.cardData = cardData;
+        await browserAPI.storage.local.set({ popupCurrentCards: currentCards });
+    } catch (error) {
+        // 静默处理错误
+    }
+}
+
+// 标记卡片为已勾选，并检查是否全部勾选
+async function markHistoryCardFlipped(bookmarkId) {
+    const currentCards = await getHistoryCurrentCards();
+    if (!currentCards) return false;
+    
+    // 添加到已勾选列表
+    if (!currentCards.flippedIds.includes(bookmarkId)) {
+        currentCards.flippedIds.push(bookmarkId);
+        await saveHistoryCurrentCards(currentCards.cardIds, currentCards.flippedIds);
+    }
+    
+    // 检查是否全部勾选
+    const allFlipped = currentCards.cardIds.every(id => currentCards.flippedIds.includes(id));
+    return allFlipped;
+}
+
+// 更新单个卡片显示
+function updateCardDisplay(card, bookmark, isFlipped = false) {
+    card.classList.remove('empty');
+    if (isFlipped) {
+        card.classList.add('flipped');
+    } else {
+        card.classList.remove('flipped');
+    }
+    card.querySelector('.card-title').textContent = bookmark.title || bookmark.url;
+    card.querySelector('.card-priority').textContent = `P = ${bookmark.priority.toFixed(2)}`;
+    card.dataset.url = bookmark.url;
+    card.dataset.bookmarkId = bookmark.id;
+    
+    // 设置 favicon
+    const favicon = card.querySelector('.card-favicon');
+    if (favicon && bookmark.url) {
+        setHighResFavicon(favicon, bookmark.url);
+    }
+    
+    // 点击卡片主体：打开链接 + 标记为已翻过 + 记录复习
+    card.onclick = async (e) => {
+        if (e.target.closest('.card-actions')) return;
+        
+        if (bookmark.url) {
+            await markBookmarkFlipped(bookmark.id);
+            await recordReview(bookmark.id);
+            await openInRecommendWindow(bookmark.url);
+            card.classList.add('flipped');
+            
+            // 更新本地卡片勾选状态（storage监听器会自动处理刷新）
+            await markHistoryCardFlipped(bookmark.id);
+        }
+    };
+    
+    // 按钮事件：稍后复习
+    const btnLater = card.querySelector('.card-btn-later');
+    if (btnLater) {
+        btnLater.onclick = (e) => {
+            e.stopPropagation();
+            e.preventDefault();
+            showLaterModal(bookmark);
+        };
+    }
+    
+    // 按钮事件：跳过本次
+    const btnSkip = card.querySelector('.card-btn-skip');
+    if (btnSkip) {
+        btnSkip.onclick = async (e) => {
+            e.stopPropagation();
+            e.preventDefault();
+            skippedBookmarks.add(bookmark.id);
+            await refreshRecommendCards(true);
+        };
+    }
+    
+    // 按钮事件：永久屏蔽
+    const btnBlock = card.querySelector('.card-btn-block');
+    if (btnBlock) {
+        btnBlock.onclick = async (e) => {
+            e.stopPropagation();
+            e.preventDefault();
+            await blockBookmark(bookmark.id);
+            await loadBlockedLists();
+            await refreshRecommendCards(true);
+        };
+    }
+}
+
+// 设置卡片为空状态
+function setCardEmpty(card) {
+    card.classList.add('empty');
+    card.querySelector('.card-title').textContent = '--';
+    card.querySelector('.card-priority').textContent = 'P = --';
+    const favicon = card.querySelector('.card-favicon');
+    if (favicon) {
+        favicon.src = fallbackIcon;
+    }
+    card.onclick = null;
+    
+    const actions = card.querySelector('.card-actions');
+    if (actions) {
+        actions.querySelectorAll('.card-btn').forEach(btn => {
+            btn.onclick = null;
+        });
+    }
+}
 
 // 获取已屏蔽书签
 async function getBlockedBookmarks() {
@@ -4794,7 +5001,7 @@ async function markBookmarkFlipped(bookmarkId) {
     console.log('[翻牌] flipHistory 已更新:', flipHistory.length, '条记录');
 }
 
-async function refreshRecommendCards() {
+async function refreshRecommendCards(force = false) {
     const cardsRow = document.getElementById('cardsRow');
     if (!cardsRow) return;
     
@@ -4804,22 +5011,7 @@ async function refreshRecommendCards() {
     cards.forEach(card => card.classList.remove('flipped'));
     
     try {
-        // 获取已翻过的书签
-        const flippedBookmarks = await getFlippedBookmarks();
-        const flippedSet = new Set(flippedBookmarks);
-        
-        // 获取已屏蔽的书签
-        const blocked = await getBlockedBookmarks();
-        const blockedSet = new Set(blocked.bookmarks);
-        
-        // 获取稍后复习的书签（未到期的）
-        const postponed = await getPostponedBookmarks();
-        const now = Date.now();
-        const postponedSet = new Set(
-            postponed.filter(p => p.postponeUntil > now).map(p => p.bookmarkId)
-        );
-        
-        // 获取所有书签
+        // 获取所有书签（用于后续查找）
         const bookmarks = await new Promise((resolve) => {
             browserAPI.bookmarks.getTree((tree) => {
                 const allBookmarks = [];
@@ -4837,6 +5029,56 @@ async function refreshRecommendCards() {
                 resolve(allBookmarks);
             });
         });
+        const bookmarkMap = new Map(bookmarks.map(b => [b.id, b]));
+        
+        // 检查是否有已保存的卡片状态（与popup共享）
+        const currentCards = await getHistoryCurrentCards();
+        const postponed = await getPostponedBookmarks();
+        const reviewData = await getReviewData();
+        
+        // 如果有保存的卡片且不是全部勾选且不是强制刷新，则显示保存的卡片
+        if (currentCards && currentCards.cardIds && currentCards.cardIds.length > 0 && !force) {
+            const allFlipped = currentCards.cardIds.every(id => currentCards.flippedIds.includes(id));
+            
+            if (!allFlipped) {
+                // 显示保存的卡片
+                recommendCards = currentCards.cardIds.map(id => {
+                    const bookmark = bookmarkMap.get(id);
+                    if (bookmark) {
+                        const basePriority = 0.75;
+                        const reviewStatus = getReviewStatus(bookmark.id, reviewData);
+                        const priority = calculatePriorityWithReview(basePriority, bookmark.id, reviewData, postponed);
+                        return { ...bookmark, priority, reviewStatus };
+                    }
+                    return null;
+                }).filter(Boolean);
+                
+                // 更新卡片显示（复用下面的逻辑）
+                cards.forEach((card, index) => {
+                    if (index < recommendCards.length) {
+                        const bookmark = recommendCards[index];
+                        updateCardDisplay(card, bookmark, currentCards.flippedIds.includes(bookmark.id));
+                    } else {
+                        setCardEmpty(card);
+                    }
+                });
+                return;
+            }
+        }
+        
+        // 获取已翻过的书签
+        const flippedBookmarks = await getFlippedBookmarks();
+        const flippedSet = new Set(flippedBookmarks);
+        
+        // 获取已屏蔽的书签
+        const blocked = await getBlockedBookmarks();
+        const blockedSet = new Set(blocked.bookmarks);
+        
+        // 获取稍后复习的书签（未到期的）
+        const now = Date.now();
+        const postponedSet = new Set(
+            postponed.filter(p => p.postponeUntil > now).map(p => p.bookmarkId)
+        );
         
         // 过滤掉已翻过、已跳过、已屏蔽、稍后复习的书签
         const availableBookmarks = bookmarks.filter(b => 
@@ -4847,6 +5089,8 @@ async function refreshRecommendCards() {
         );
         
         if (availableBookmarks.length === 0) {
+            // 清除保存的卡片状态
+            await saveHistoryCurrentCards([], []);
             cards.forEach((card) => {
                 card.classList.add('empty');
                 card.querySelector('.card-title').textContent = 
@@ -4856,9 +5100,6 @@ async function refreshRecommendCards() {
             });
             return;
         }
-        
-        // 获取复习数据用于优先级计算
-        const reviewData = await getReviewData();
         
         // 计算每个书签的优先级（基于复习状态）
         const bookmarksWithPriority = availableBookmarks.map(b => {
@@ -4872,91 +5113,24 @@ async function refreshRecommendCards() {
         bookmarksWithPriority.sort((a, b) => b.priority - a.priority);
         recommendCards = bookmarksWithPriority.slice(0, 3);
         
+        // 保存新的卡片状态
+        const newCardIds = recommendCards.map(b => b.id);
+        await saveHistoryCurrentCards(newCardIds, []);
+        
         // 预加载当前3个 + 下一批6个的 favicon（并行）
         const urlsToPreload = bookmarksWithPriority.slice(0, 9).map(b => b.url).filter(Boolean);
         preloadHighResFavicons(urlsToPreload);
+        
+        // 异步保存favicon URLs到storage（供popup使用，不阻塞UI）
+        saveCardFaviconsToStorage(recommendCards);
         
         // 更新卡片显示
         cards.forEach((card, index) => {
             if (index < recommendCards.length) {
                 const bookmark = recommendCards[index];
-                card.classList.remove('empty');
-                card.querySelector('.card-title').textContent = bookmark.title || bookmark.url;
-                card.querySelector('.card-priority').textContent = `P = ${bookmark.priority.toFixed(2)}`;
-                card.dataset.url = bookmark.url;
-                card.dataset.bookmarkId = bookmark.id;
-                
-                // 设置 favicon（透明背景，与浏览器一致）
-                const favicon = card.querySelector('.card-favicon');
-                if (favicon && bookmark.url) {
-                    setHighResFavicon(favicon, bookmark.url);
-                }
-                
-                // 点击卡片主体：打开链接 + 标记为已翻过 + 记录复习
-                card.onclick = async (e) => {
-                    // 如果点击的是按钮，不触发卡片点击
-                    if (e.target.closest('.card-actions')) return;
-                    
-                    if (bookmark.url) {
-                        await markBookmarkFlipped(bookmark.id);
-                        await recordReview(bookmark.id); // 记录复习
-                        await openInRecommendWindow(bookmark.url);
-                        card.classList.add('flipped');
-                    }
-                };
-                
-                // 按钮事件：稍后复习
-                const btnLater = card.querySelector('.card-btn-later');
-                if (btnLater) {
-                    btnLater.onclick = (e) => {
-                        e.stopPropagation();
-                        e.preventDefault();
-                        console.log('[稍后] 点击稍后按钮:', bookmark.id, bookmark.title);
-                        showLaterModal(bookmark);
-                    };
-                }
-                
-                // 按钮事件：跳过本次
-                const btnSkip = card.querySelector('.card-btn-skip');
-                if (btnSkip) {
-                    btnSkip.onclick = async (e) => {
-                        e.stopPropagation();
-                        e.preventDefault();
-                        console.log('[跳过] 点击跳过按钮:', bookmark.id, bookmark.title);
-                        skippedBookmarks.add(bookmark.id);
-                        await refreshRecommendCards();
-                    };
-                }
-                
-                // 按钮事件：永久屏蔽（无需确认）
-                const btnBlock = card.querySelector('.card-btn-block');
-                if (btnBlock) {
-                    btnBlock.onclick = async (e) => {
-                        e.stopPropagation();
-                        e.preventDefault();
-                        console.log('[屏蔽] 点击屏蔽按钮:', bookmark.id, bookmark.title);
-                        await blockBookmark(bookmark.id);
-                        await loadBlockedLists();
-                        await refreshRecommendCards();
-                    };
-                }
+                updateCardDisplay(card, bookmark, false);
             } else {
-                card.classList.add('empty');
-                card.querySelector('.card-title').textContent = '--';
-                card.querySelector('.card-priority').textContent = 'P = --';
-                const favicon = card.querySelector('.card-favicon');
-                if (favicon) {
-                    favicon.src = fallbackIcon;
-                }
-                card.onclick = null;
-                
-                // 清除空卡片的按钮事件
-                const actions = card.querySelector('.card-actions');
-                if (actions) {
-                    actions.querySelectorAll('.card-btn').forEach(btn => {
-                        btn.onclick = null;
-                    });
-                }
+                setCardEmpty(card);
             }
         });
         

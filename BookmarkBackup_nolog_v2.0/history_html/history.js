@@ -5429,7 +5429,7 @@ function renderHeatmap(container, dailyCounts) {
                         const tooltip = isEn ? 
                             `${day.count} review${day.count !== 1 ? 's' : ''}, ${m}-${dd}` :
                             `${day.count}次, ${m}-${dd}`;
-                        html += `<div class="heatmap-cell level-${level}${todayClass}" data-date="${day.date}"><span class="heatmap-tooltip">${tooltip}</span></div>`;
+                        html += `<div class="heatmap-cell level-${level}${todayClass}" data-date="${day.date}" data-tooltip="${tooltip}"></div>`;
                     } else {
                         html += `<div class="heatmap-cell level-0${todayClass}" data-date="${day.date}"></div>`;
                     }
@@ -5474,13 +5474,63 @@ function renderHeatmap(container, dailyCounts) {
         scrollContainer.scrollLeft = 0;
     }
     
-    // 绑定日期格子点击事件
+    // 创建或获取全局tooltip元素
+    let globalTooltip = document.getElementById('heatmapGlobalTooltip');
+    if (!globalTooltip) {
+        globalTooltip = document.createElement('div');
+        globalTooltip.id = 'heatmapGlobalTooltip';
+        globalTooltip.className = 'heatmap-global-tooltip';
+        document.body.appendChild(globalTooltip);
+    }
+    
+    // 绑定日期格子点击事件和tooltip事件
     container.querySelectorAll('.heatmap-cell[data-date]').forEach(cell => {
         cell.style.cursor = 'pointer';
         cell.addEventListener('click', (e) => {
             e.stopPropagation();
+            // 点击时隐藏tooltip
+            globalTooltip.classList.remove('visible');
             const date = cell.dataset.date;
             showHeatmapDateDetail(date);
+        });
+        
+        // 鼠标进入时显示tooltip
+        cell.addEventListener('mouseenter', (e) => {
+            const tooltipText = cell.dataset.tooltip;
+            if (!tooltipText) return;
+            
+            // 先设置内容并临时显示以获取正确尺寸
+            globalTooltip.textContent = tooltipText;
+            globalTooltip.style.visibility = 'hidden';
+            globalTooltip.style.display = 'block';
+            
+            // 计算位置：在cell正上方居中
+            const rect = cell.getBoundingClientRect();
+            const tooltipRect = globalTooltip.getBoundingClientRect();
+            let left = rect.left + rect.width / 2 - tooltipRect.width / 2;
+            let top = rect.top - tooltipRect.height - 8;
+            
+            // 防止超出左右边界
+            if (left < 5) left = 5;
+            if (left + tooltipRect.width > window.innerWidth - 5) {
+                left = window.innerWidth - tooltipRect.width - 5;
+            }
+            
+            // 如果上方空间不够，显示在下方
+            if (top < 5) {
+                top = rect.bottom + 8;
+            }
+            
+            globalTooltip.style.left = left + 'px';
+            globalTooltip.style.top = top + 'px';
+            globalTooltip.style.visibility = '';
+            globalTooltip.style.display = '';
+            globalTooltip.classList.add('visible');
+        });
+        
+        // 鼠标离开时隐藏tooltip
+        cell.addEventListener('mouseleave', () => {
+            globalTooltip.classList.remove('visible');
         });
     });
     

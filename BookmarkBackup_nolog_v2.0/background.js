@@ -49,7 +49,8 @@ import {
     getSessionsByUrl,
     getSessionsByTimeRange,
     getBookmarkActiveTimeStats,
-    rebuildBookmarkCache as rebuildActiveTimeBookmarkCache
+    rebuildBookmarkCache as rebuildActiveTimeBookmarkCache,
+    clearAllSessions
 } from './active_time_tracker/index.js';
 
 // 浏览器兼容性处理

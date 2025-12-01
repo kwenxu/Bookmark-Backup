@@ -6550,6 +6550,38 @@ let popupCurrentLaterBookmark = null;
 let popupRecommendControlsInitialized = false;
 let popupRecommendOverlayInitialized = false;
 let popupRecommendLoading = false;
+let popupOpenCountRecorded = false; // 防止重复记录
+
+// 增加打开次数（popup 和 history 共享 storage）
+async function incrementPopupOpenCount() {
+    if (popupOpenCountRecorded) return; // 本次 popup 打开只记录一次
+    popupOpenCountRecorded = true;
+    
+    try {
+        const result = await new Promise(resolve => {
+            browserAPI.storage.local.get('recommendRefreshSettings', resolve);
+        });
+        
+        const DEFAULT_SETTINGS = {
+            refreshEveryNOpens: 3,
+            refreshAfterHours: 0,
+            refreshAfterDays: 0,
+            lastRefreshTime: 0,
+            openCountSinceRefresh: 0
+        };
+        
+        const settings = { ...DEFAULT_SETTINGS, ...result.recommendRefreshSettings };
+        settings.openCountSinceRefresh = (settings.openCountSinceRefresh || 0) + 1;
+        
+        await new Promise(resolve => {
+            browserAPI.storage.local.set({ recommendRefreshSettings: settings }, resolve);
+        });
+        
+        console.log('[Popup] 打开次数已记录:', settings.openCountSinceRefresh);
+    } catch (e) {
+        console.error('[Popup] 记录打开次数失败:', e);
+    }
+}
 
 // 获取共享的推荐窗口ID
 async function getRecommendWindowId() {
@@ -6911,6 +6943,9 @@ async function refreshPopupRecommendCards(force = false) {
     const cards = cardsRoot.querySelectorAll('.popup-recommend-card');
     if (!cards.length) return;
 
+    // 记录打开次数（首次加载时）
+    incrementPopupOpenCount();
+    
     popupRecommendLoading = true;
 
     try {

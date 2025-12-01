@@ -21,8 +21,6 @@
     <!-- 浏览历史辅助工具（通用工具函数） -->
     <script src="database/utils.js" defer></script>
     <script src="history.js" defer></script>
-    <!-- Anki数据库模块（需要在 history.js 之后加载以使用 browserAPI） -->
-    <script src="anki_database.js" defer></script>
 </head>
 <body>
     <!-- 头部导航 -->
@@ -489,72 +487,6 @@
             <div id="recommendView" class="view">
                 <div class="view-header">
                     <h2 id="recommendViewTitle">书签推荐</h2>
-                    <div class="view-header-right">
-                        <button id="recommendHelpBtn" class="tool-btn" title="帮助">
-                            <i class="fas fa-question-circle"></i>
-                        </button>
-                    </div>
-                </div>
-
-                <!-- A区：推荐公式 -->
-                <div class="recommend-formula-section">
-                    <div class="formula-display">
-                        <div class="formula-main">
-                            <span class="formula-label">P</span>
-                            <span class="formula-equals">=</span>
-                            <span class="formula-term">
-                                <input type="text" class="formula-weight" id="weightFreshness" value="0.35" readonly>
-                                <span class="formula-multiply">×</span>
-                                <span class="formula-factor">F</span>
-                            </span>
-                            <span class="formula-plus">+</span>
-                            <span class="formula-term">
-                                <input type="text" class="formula-weight" id="weightColdness" value="0.15" readonly>
-                                <span class="formula-multiply">×</span>
-                                <span class="formula-factor">C</span>
-                            </span>
-                            <span class="formula-plus">+</span>
-                            <span class="formula-term" id="termShallowRead">
-                                <input type="text" class="formula-weight" id="weightShallowRead" value="0.25" readonly>
-                                <span class="formula-multiply">×</span>
-                                <span class="formula-factor">S</span>
-                            </span>
-                            <span class="formula-plus">+</span>
-                            <span class="formula-term">
-                                <input type="text" class="formula-weight" id="weightForgetting" value="0.25" readonly>
-                                <span class="formula-multiply">×</span>
-                                <span class="formula-factor">D</span>
-                            </span>
-                        </div>
-                        <div class="formula-legend">
-                            <span class="legend-item"><span class="legend-factor">F</span><span id="legendFreshness">新鲜度</span></span>
-                            <span class="legend-item"><span class="legend-factor">C</span><span id="legendColdness">冷门度</span></span>
-                            <span class="legend-item"><span class="legend-factor">S</span><span id="legendShallowRead">浅阅读</span></span>
-                            <span class="legend-item"><span class="legend-factor">D</span><span id="legendForgetting">遗忘度</span></span>
-                        </div>
-                        <div class="formula-thresholds">
-                            <span class="threshold-item">F = 1 - 添加天数/<input type="text" class="threshold-value" id="thresholdFreshness" value="30">天</span>
-                            <span class="threshold-item">C = 1 - 点击数/<input type="text" class="threshold-value" id="thresholdColdness" value="10">次</span>
-                            <span class="threshold-item">S = 1 - 活跃时间/<input type="text" class="threshold-value" id="thresholdShallowRead" value="5">分钟</span>
-                            <span class="threshold-item">D = 未访问天数/<input type="text" class="threshold-value" id="thresholdForgetting" value="14">天</span>
-                        </div>
-                        <div class="formula-footer">
-                            <div class="preset-modes">
-                                <button class="preset-btn" data-mode="archaeology" title="挖掘尘封已久的书签">
-                                    <i class="fas fa-hourglass-end"></i> <span>考古模式</span>
-                                </button>
-                                <button class="preset-btn" data-mode="consolidate" title="温习近期重要内容">
-                                    <i class="fas fa-fire-alt"></i> <span>巩固模式</span>
-                                </button>
-                                <button class="preset-btn" data-mode="wander" title="随机探索发现">
-                                    <i class="fas fa-dice"></i> <span>漫游模式</span>
-                                </button>
-                            </div>
-                            <div class="formula-actions">
-                                <button id="resetFormulaBtn" class="formula-btn"><i class="fas fa-undo"></i> <span id="resetFormulaText">恢复默认</span></button>
-                            </div>
-                        </div>
-                    </div>
                 </div>
 
                 <!-- B区：推荐卡片（三卡并排） -->
@@ -567,7 +499,7 @@
                                 <span class="card-priority">P = --</span>
                                 <div class="card-actions">
                                     <button class="card-btn card-btn-block" title="屏蔽"><i class="fas fa-ban"></i></button>
-                                    <button class="card-btn card-btn-later" title="稍后复习"><i class="fas fa-clock"></i></button>
+                                    <button class="card-btn card-btn-later" title="待复习"><i class="fas fa-clock"></i></button>
                                     <button class="card-btn card-btn-skip" title="跳过"><i class="fas fa-forward"></i></button>
                                 </div>
                             </div>
@@ -579,7 +511,7 @@
                                 <span class="card-priority">P = --</span>
                                 <div class="card-actions">
                                     <button class="card-btn card-btn-block" title="屏蔽"><i class="fas fa-ban"></i></button>
-                                    <button class="card-btn card-btn-later" title="稍后复习"><i class="fas fa-clock"></i></button>
+                                    <button class="card-btn card-btn-later" title="待复习"><i class="fas fa-clock"></i></button>
                                     <button class="card-btn card-btn-skip" title="跳过"><i class="fas fa-forward"></i></button>
                                 </div>
                             </div>
@@ -591,87 +523,169 @@
                                 <span class="card-priority">P = --</span>
                                 <div class="card-actions">
                                     <button class="card-btn card-btn-block" title="屏蔽"><i class="fas fa-ban"></i></button>
-                                    <button class="card-btn card-btn-later" title="稍后复习"><i class="fas fa-clock"></i></button>
+                                    <button class="card-btn card-btn-later" title="待复习"><i class="fas fa-clock"></i></button>
                                     <button class="card-btn card-btn-skip" title="跳过"><i class="fas fa-forward"></i></button>
                                 </div>
                             </div>
                         </div>
                     </div>
                     <div class="card-navigation">
+                        <button id="refreshSettingsBtn" class="card-nav-btn compact" title="自动刷新设置"><i class="fas fa-cog"></i></button>
                         <button id="cardRefreshBtn" class="card-nav-btn primary"><i class="fas fa-sync-alt"></i> <span id="cardRefreshText">刷新推荐</span></button>
                     </div>
                 </div>
 
-                <!-- C区：稍后复习队列（可折叠） -->
-                <div class="recommend-postponed-section collapsible">
-                    <div class="section-header">
-                        <span class="section-title"><i class="fas fa-clock"></i> <span id="postponedTitle">稍后复习</span> (<span id="postponedCount">0</span>)</span>
-                        <button class="section-toggle"><i class="fas fa-chevron-down"></i></button>
-                    </div>
-                    <div class="section-content">
-                        <div class="postponed-list" id="postponedList">
-                            <div class="empty-state-inline" id="postponedEmpty">
-                                <span id="postponedEmptyText">暂无稍后复习的书签</span>
+                <!-- 可拖拽折叠区域容器 -->
+                <div class="recommend-sections-container" id="recommendSectionsContainer">
+                    <!-- 待复习队列（数量为0时默认折叠） -->
+                    <div class="recommend-postponed-section collapsible draggable-section" data-section-id="postponed">
+                        <div class="section-header">
+                            <span class="section-title"><i class="fas fa-clock"></i> <span id="postponedTitle">待复习</span> (<span id="postponedCount">0</span>)</span>
+                            <div class="section-header-actions">
+                                <button class="section-action-btn" id="postponedAddBtn" title="添加书签到待复习"><i class="fas fa-plus"></i></button>
+                                <button class="section-toggle"><i class="fas fa-chevron-down"></i></button>
                             </div>
                         </div>
-                    </div>
-                </div>
-
-                <!-- D区：热力图（可折叠） -->
-                <div class="recommend-heatmap-section collapsible">
-                    <div class="section-header" id="heatmapHeader">
-                        <span class="section-title"><i class="fas fa-fire"></i> <span id="heatmapTitle">复习热力图</span></span>
-                        <button class="section-toggle"><i class="fas fa-chevron-down"></i></button>
-                    </div>
-                    <div class="section-content" id="heatmapContent">
-                        <div class="heatmap-container" id="heatmapContainer">
-                            <div class="empty-state">
-                                <div class="empty-state-icon"><i class="fas fa-fire"></i></div>
-                                <div id="heatmapLoadingText" class="empty-state-title">热力图数据加载中...</div>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-
-                <!-- E区：屏蔽管理（可折叠） -->
-                <div class="recommend-block-section collapsible collapsed">
-                    <div class="section-header">
-                        <span class="section-title"><i class="fas fa-ban"></i> <span id="blockManageTitle">屏蔽管理</span></span>
-                        <button class="section-toggle"><i class="fas fa-chevron-down"></i></button>
-                    </div>
-                    <div class="section-content">
-                        <!-- 已屏蔽书签 -->
-                        <div class="block-subsection">
-                            <div class="block-subsection-header">
-                                <span><i class="fas fa-bookmark"></i> <span id="blockedBookmarksTitle">已屏蔽书签</span> (<span id="blockedBookmarksCount">0</span>)</span>
-                            </div>
-                            <div class="block-list" id="blockedBookmarksList">
-                                <div class="empty-state-inline" id="blockedBookmarksEmpty">
-                                    <span id="blockedBookmarksEmptyText">暂无已屏蔽书签</span>
+                        <div class="section-content">
+                            <div class="postponed-list" id="postponedList">
+                                <div class="empty-state-inline" id="postponedEmpty">
+                                    <span id="postponedEmptyText">暂无待复习的书签</span>
                                 </div>
                             </div>
                         </div>
-                        <!-- 已屏蔽文件夹 -->
-                        <div class="block-subsection">
-                            <div class="block-subsection-header">
-                                <span><i class="fas fa-folder"></i> <span id="blockedFoldersTitle">已屏蔽文件夹</span> (<span id="blockedFoldersCount">0</span>)</span>
-                                <button class="block-add-btn" id="addBlockFolderBtn"><i class="fas fa-plus"></i></button>
+                    </div>
+
+                    <!-- 屏蔽管理（默认折叠） -->
+                    <div class="recommend-block-section collapsible collapsed draggable-section" data-section-id="block">
+                        <div class="section-header">
+                            <span class="section-title"><i class="fas fa-ban"></i> <span id="blockManageTitle">屏蔽管理</span></span>
+                            <button class="section-toggle"><i class="fas fa-chevron-down"></i></button>
+                        </div>
+                        <div class="section-content">
+                            <!-- 已屏蔽书签 -->
+                            <div class="block-subsection">
+                                <div class="block-subsection-header">
+                                    <span><i class="fas fa-bookmark"></i> <span id="blockedBookmarksTitle">已屏蔽书签</span> (<span id="blockedBookmarksCount">0</span>)</span>
+                                </div>
+                                <div class="block-list" id="blockedBookmarksList">
+                                    <div class="empty-state-inline" id="blockedBookmarksEmpty">
+                                        <span id="blockedBookmarksEmptyText">暂无已屏蔽书签</span>
+                                    </div>
+                                </div>
                             </div>
-                            <div class="block-list" id="blockedFoldersList">
-                                <div class="empty-state-inline" id="blockedFoldersEmpty">
-                                    <span id="blockedFoldersEmptyText">暂无已屏蔽文件夹</span>
+                            <!-- 已屏蔽文件夹 -->
+                            <div class="block-subsection">
+                                <div class="block-subsection-header">
+                                    <span><i class="fas fa-folder"></i> <span id="blockedFoldersTitle">已屏蔽文件夹</span> (<span id="blockedFoldersCount">0</span>)</span>
+                                    <button class="block-add-btn" id="addBlockFolderBtn"><i class="fas fa-plus"></i></button>
+                                </div>
+                                <div class="block-list" id="blockedFoldersList">
+                                    <div class="empty-state-inline" id="blockedFoldersEmpty">
+                                        <span id="blockedFoldersEmptyText">暂无已屏蔽文件夹</span>
+                                    </div>
+                                </div>
+                            </div>
+                            <!-- 已屏蔽域名 -->
+                            <div class="block-subsection">
+                                <div class="block-subsection-header">
+                                    <span><i class="fas fa-globe"></i> <span id="blockedDomainsTitle">已屏蔽域名</span> (<span id="blockedDomainsCount">0</span>)</span>
+                                    <button class="block-add-btn" id="addBlockDomainBtn"><i class="fas fa-plus"></i></button>
+                                </div>
+                                <div class="block-list" id="blockedDomainsList">
+                                    <div class="empty-state-inline" id="blockedDomainsEmpty">
+                                        <span id="blockedDomainsEmptyText">暂无已屏蔽域名</span>
+                                    </div>
                                 </div>
                             </div>
                         </div>
-                        <!-- 已屏蔽域名 -->
-                        <div class="block-subsection">
-                            <div class="block-subsection-header">
-                                <span><i class="fas fa-globe"></i> <span id="blockedDomainsTitle">已屏蔽域名</span> (<span id="blockedDomainsCount">0</span>)</span>
-                                <button class="block-add-btn" id="addBlockDomainBtn"><i class="fas fa-plus"></i></button>
+                    </div>
+
+                    <!-- 权重公式（默认折叠） -->
+                    <div class="recommend-formula-section collapsible collapsed draggable-section" data-section-id="formula">
+                        <div class="section-header" id="formulaHeader">
+                            <i class="fas fa-superscript formula-icon"></i>
+                            <div class="formula-main">
+                                <span class="formula-label">P</span>
+                                <span class="formula-equals">=</span>
+                                <span class="formula-term">
+                                    <input type="text" class="formula-weight" id="weightFreshness" value="0.15" readonly>
+                                    <span class="formula-multiply">×</span>
+                                    <span class="formula-factor">F</span>
+                                </span>
+                                <span class="formula-plus">+</span>
+                                <span class="formula-term">
+                                    <input type="text" class="formula-weight" id="weightColdness" value="0.20" readonly>
+                                    <span class="formula-multiply">×</span>
+                                    <span class="formula-factor">C</span>
+                                </span>
+                                <span class="formula-plus">+</span>
+                                <span class="formula-term" id="termShallowRead">
+                                    <input type="text" class="formula-weight" id="weightShallowRead" value="0.25" readonly>
+                                    <span class="formula-multiply">×</span>
+                                    <span class="formula-factor">S</span>
+                                </span>
+                                <span class="formula-plus">+</span>
+                                <span class="formula-term">
+                                    <input type="text" class="formula-weight" id="weightForgetting" value="0.20" readonly>
+                                    <span class="formula-multiply">×</span>
+                                    <span class="formula-factor">D</span>
+                                </span>
+                                <span class="formula-plus">+</span>
+                                <span class="formula-term" id="termLaterReview">
+                                    <input type="text" class="formula-weight" id="weightLaterReview" value="0.20" readonly>
+                                    <span class="formula-multiply">×</span>
+                                    <span class="formula-factor">L</span>
+                                </span>
                             </div>
-                            <div class="block-list" id="blockedDomainsList">
-                                <div class="empty-state-inline" id="blockedDomainsEmpty">
-                                    <span id="blockedDomainsEmptyText">暂无已屏蔽域名</span>
+                            <button class="section-toggle"><i class="fas fa-chevron-down"></i></button>
+                        </div>
+                        <div class="section-content" id="formulaContent">
+                            <div class="formula-display">
+                                <div class="formula-legend">
+                                    <span class="legend-item"><span class="legend-factor">F</span><span id="legendFreshness">新鲜度</span></span>
+                                    <span class="legend-item"><span class="legend-factor">C</span><span id="legendColdness">冷门度</span></span>
+                                    <span class="legend-item"><span class="legend-factor">S</span><span id="legendShallowRead">浅阅读</span></span>
+                                    <span class="legend-item"><span class="legend-factor">D</span><span id="legendForgetting">遗忘度</span></span>
+                                    <span class="legend-item"><span class="legend-factor">L</span><span id="legendLaterReview">待复习</span></span>
+                                </div>
+                                <div class="formula-thresholds">
+                                    <span class="threshold-item">F = 1 - 添加天数/<input type="text" class="threshold-value" id="thresholdFreshness" value="30">天</span>
+                                    <span class="threshold-item">C = 1 - 点击数/<input type="text" class="threshold-value" id="thresholdColdness" value="10">次</span>
+                                    <span class="threshold-item">S = 1 - 活跃时间/<input type="text" class="threshold-value" id="thresholdShallowRead" value="5">分钟</span>
+                                    <span class="threshold-item">D = 未访问天数/<input type="text" class="threshold-value" id="thresholdForgetting" value="14">天</span>
+                                    <span class="threshold-item" id="thresholdLaterReviewItem">L = <span id="laterReviewStatus">0</span><span id="laterReviewDesc">（手动添加后=1）</span></span>
+                                </div>
+                                <div class="formula-footer">
+                                    <div class="preset-modes">
+                                        <button class="preset-btn" data-mode="archaeology" title="挖掘尘封已久的书签">
+                                            <i class="fas fa-hourglass-end"></i> <span>考古模式</span>
+                                        </button>
+                                        <button class="preset-btn" data-mode="consolidate" title="温习近期重要内容">
+                                            <i class="fas fa-fire-alt"></i> <span>巩固模式</span>
+                                        </button>
+                                        <button class="preset-btn" data-mode="wander" title="随机探索发现">
+                                            <i class="fas fa-dice"></i> <span>漫游模式</span>
+                                        </button>
+                                    </div>
+                                    <div class="formula-actions">
+                                        <button id="resetFormulaBtn" class="formula-btn"><i class="fas fa-undo"></i> <span id="resetFormulaText">恢复默认</span></button>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- 热力图 -->
+                    <div class="recommend-heatmap-section collapsible draggable-section" data-section-id="heatmap">
+                        <div class="section-header" id="heatmapHeader">
+                            <span class="section-title"><i class="fas fa-fire"></i> <span id="heatmapTitle">复习热力图</span></span>
+                            <button class="section-toggle"><i class="fas fa-chevron-down"></i></button>
+                        </div>
+                        <div class="section-content" id="heatmapContent">
+                            <div class="heatmap-container" id="heatmapContainer">
+                                <div class="empty-state">
+                                    <div class="empty-state-icon"><i class="fas fa-fire"></i></div>
+                                    <div id="heatmapLoadingText" class="empty-state-title">热力图数据加载中...</div>
                                 </div>
                             </div>
                         </div>
@@ -939,12 +953,163 @@
         </div>
     </div>
 
+    <!-- 自动刷新设置弹窗 -->
+    <div id="refreshSettingsModal" class="modal content-center">
+        <div class="modal-content refresh-settings-modal">
+            <div class="modal-header compact">
+                <h3 id="refreshSettingsTitle">自动刷新设置</h3>
+                <button class="modal-close" id="refreshSettingsClose">
+                    <i class="fas fa-times"></i>
+                </button>
+            </div>
+            <div class="modal-body">
+                <div class="refresh-settings-section">
+                    <label class="refresh-setting-item">
+                        <input type="checkbox" id="refreshEveryNOpensEnabled" checked>
+                        <span id="refreshEveryNOpensLabel">每打开</span>
+                        <input type="number" id="refreshEveryNOpensValue" value="3" min="1" max="100" style="width: 50px; margin: 0 6px;">
+                        <span id="refreshEveryNOpensUnit">次刷新</span>
+                    </label>
+                    <label class="refresh-setting-item">
+                        <input type="checkbox" id="refreshAfterHoursEnabled">
+                        <span id="refreshAfterHoursLabel">距上次刷新超过</span>
+                        <input type="number" id="refreshAfterHoursValue" value="1" min="1" max="24" style="width: 50px; margin: 0 6px;">
+                        <span id="refreshAfterHoursUnit">小时</span>
+                    </label>
+                    <label class="refresh-setting-item">
+                        <input type="checkbox" id="refreshAfterDaysEnabled">
+                        <span id="refreshAfterDaysLabel">距上次刷新超过</span>
+                        <input type="number" id="refreshAfterDaysValue" value="1" min="1" max="30" style="width: 50px; margin: 0 6px;">
+                        <span id="refreshAfterDaysUnit">天</span>
+                    </label>
+                </div>
+                <div class="refresh-settings-status" id="refreshSettingsStatus" style="margin-top: 12px; padding: 8px 10px; background: var(--bg-tertiary); border-radius: 6px; font-size: 13px; color: var(--text-secondary);">
+                    <!-- 动态显示状态 -->
+                </div>
+                <div class="refresh-settings-hint" id="refreshSettingsHint" style="margin-top: 8px; font-size: 12px; color: var(--text-tertiary);">
+                    <i class="fas fa-info-circle"></i> 打开主UI或刷新本页面会增加打开次数
+                </div>
+                <div class="refresh-settings-actions" style="margin-top: 12px; text-align: right;">
+                    <button id="refreshSettingsSaveBtn" class="view-action-btn" style="display: inline-flex; width: auto;">
+                        <i class="fas fa-check"></i> <span id="refreshSettingsSaveText">保存</span>
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 添加到待复习弹窗 -->
+    <div id="addToPostponedModal" class="modal content-center">
+        <div class="modal-content add-postponed-modal">
+            <div class="modal-header">
+                <h3 id="addPostponedModalTitle">添加到待复习</h3>
+                <button class="modal-close" id="addPostponedModalClose">
+                    <i class="fas fa-times"></i>
+                </button>
+            </div>
+            <div class="modal-body">
+                <!-- 添加方式选项卡 -->
+                <div class="add-postponed-tabs">
+                    <button class="add-postponed-tab active" data-tab="folder">
+                        <i class="fas fa-folder"></i> <span id="addTabFolder">从文件夹</span>
+                    </button>
+                    <button class="add-postponed-tab" data-tab="search">
+                        <i class="fas fa-search"></i> <span id="addTabSearch">搜索书签</span>
+                    </button>
+                    <button class="add-postponed-tab" data-tab="domain">
+                        <i class="fas fa-globe"></i> <span id="addTabDomain">按域名</span>
+                    </button>
+                </div>
+
+                <!-- 从文件夹添加面板 -->
+                <div class="add-postponed-panel active" data-panel="folder">
+                    <div class="add-panel-row">
+                        <label id="addFolderLabel">选择文件夹：</label>
+                        <button class="add-folder-select-btn" id="addFolderSelectBtn">
+                            <i class="fas fa-folder"></i> <span id="addFolderSelectedName">点击选择文件夹</span>
+                        </button>
+                    </div>
+                    <div class="add-panel-row">
+                        <label id="addCountLabel">抽取数量：</label>
+                        <div class="add-count-wrapper">
+                            <input type="number" id="addFolderCount" value="5" min="1" max="100" class="add-count-input">
+                            <label class="add-checkbox-inline">
+                                <input type="checkbox" id="addFolderSelectAll">
+                                <span id="addSelectAllLabel">全部</span>
+                            </label>
+                        </div>
+                    </div>
+                    <div class="add-panel-row" id="addModeRow">
+                        <label id="addModeLabel">抽取方式：</label>
+                        <div class="add-mode-options">
+                            <label class="add-mode-option">
+                                <input type="radio" name="addFolderMode" value="random" checked> <span id="addModeRandom">随机</span>
+                            </label>
+                            <label class="add-mode-option">
+                                <input type="radio" name="addFolderMode" value="sequential"> <span id="addModeSequential">顺序</span>
+                            </label>
+                        </div>
+                    </div>
+                    <div class="add-panel-row">
+                        <label class="add-checkbox-label">
+                            <input type="checkbox" id="addFolderIncludeSubfolders" checked>
+                            <span id="addIncludeSubfolders">包含子文件夹</span>
+                        </label>
+                    </div>
+                </div>
+
+                <!-- 搜索书签面板 -->
+                <div class="add-postponed-panel" data-panel="search">
+                    <div class="add-search-container">
+                        <input type="text" id="addSearchInput" class="add-search-input" placeholder="搜索书签标题或URL...">
+                        <i class="fas fa-search add-search-icon"></i>
+                    </div>
+                    <div class="add-results-list" id="addSearchResults">
+                        <div class="add-results-empty" id="addSearchEmpty">输入关键词搜索书签</div>
+                    </div>
+                    <div class="add-selected-count">
+                        <span id="addSearchSelectedText">已选择</span>: <span id="addSearchSelectedCount">0</span>
+                    </div>
+                </div>
+
+                <!-- 按域名添加面板 -->
+                <div class="add-postponed-panel" data-panel="domain">
+                    <div class="add-search-container">
+                        <input type="text" id="addDomainSearchInput" class="add-search-input" placeholder="搜索域名...">
+                        <i class="fas fa-search add-search-icon"></i>
+                    </div>
+                    <div class="add-domain-list" id="addDomainList">
+                        <div class="add-results-empty" id="addDomainLoading">加载域名列表中...</div>
+                    </div>
+                    <div class="add-selected-count">
+                        <span id="addDomainSelectedText">已选择</span>: <span id="addDomainSelectedCount">0</span> <span id="addDomainSelectedLabel">个域名</span>
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="modal-btn" id="addPostponedCancelBtn">取消</button>
+                <button class="modal-btn primary" id="addPostponedConfirmBtn">添加</button>
+            </div>
+        </div>
+    </div>
+
     <!-- 稍后复习弹窗 -->
-    <div id="laterModal" class="modal">
+    <div id="laterModal" class="modal content-center">
         <div class="modal-content later-modal">
             <button class="later-modal-close" id="laterModalClose">
                 <i class="fas fa-times"></i>
             </button>
+            <!-- P值推荐区域 -->
+            <div class="later-recommend" id="laterRecommendSection">
+                <div class="later-recommend-label" id="laterRecommendLabel">根据浏览习惯推荐</div>
+                <button class="later-recommend-btn" id="laterRecommendBtn">
+                    <i class="fas fa-magic"></i>
+                    <span id="laterRecommendDays">3 天后</span>
+                </button>
+            </div>
+            <div class="later-divider">
+                <span id="laterOrText">或自定义</span>
+            </div>
             <div class="later-options">
                 <button class="later-option" data-delay="3600000">
                     <i class="fas fa-clock"></i>
@@ -967,9 +1132,9 @@
     </div>
 
     <!-- 添加域名屏蔽弹窗 -->
-    <div id="addDomainModal" class="modal">
+    <div id="addDomainModal" class="modal content-center">
         <div class="modal-content" style="max-width: 400px;">
-            <div class="modal-header">
+            <div class="modal-header compact">
                 <h3 id="addDomainModalTitle">添加屏蔽域名</h3>
                 <button class="modal-close" id="addDomainModalClose">
                     <i class="fas fa-times"></i>
@@ -987,9 +1152,9 @@
     </div>
 
     <!-- 选择文件夹屏蔽弹窗 -->
-    <div id="selectFolderModal" class="modal">
+    <div id="selectFolderModal" class="modal content-center">
         <div class="modal-content" style="max-width: 500px; max-height: 70vh;">
-            <div class="modal-header">
+            <div class="modal-header compact">
                 <h3 id="selectFolderModalTitle">选择要屏蔽的文件夹</h3>
                 <button class="modal-close" id="selectFolderModalClose">
                     <i class="fas fa-times"></i>

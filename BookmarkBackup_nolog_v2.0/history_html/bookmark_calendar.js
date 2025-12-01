@@ -1025,7 +1025,7 @@ class BookmarkCalendar {
             dayCell.innerHTML = `
                 <div style="font-weight: 600;">${day}</div>
                 ${bookmarks.length > 0 ? `<div style="font-size: 12px; color: ${countColor}; margin-top: 4px;">${t('calendarBookmarkCount', bookmarks.length)}</div>` : ''}
-                ${isTodayCell ? `<div style="position: absolute; bottom: 4px; right: 4px; font-size: 10px; color: #2196F3; font-weight: 600;">${currentLang === 'en' ? 'Today' : '今天'}</div>` : ''}
+                ${isTodayCell ? `<div style="position: absolute; bottom: 4px; right: 4px; font-size: 10px; color: #2196F3; font-weight: 600;">${(typeof currentLang !== 'undefined' && currentLang === 'en') ? 'Today' : '今天'}</div>` : ''}
             `;
 
             // 勾选模式下的事件处理

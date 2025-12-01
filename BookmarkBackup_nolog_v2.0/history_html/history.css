@@ -2062,6 +2062,12 @@ a.tree-label.tree-bookmark-link:hover {
     display: flex;
 }
 
+/* 弹窗在右侧内容区居中（考虑侧边栏宽度） */
+.modal.content-center {
+    left: var(--sidebar-width, 260px);
+    width: calc(100% - var(--sidebar-width, 260px));
+}
+
 /* 右上角快捷键二级 UI：定位在头部工具按钮正下方靠右 */
 #shortcutsModal {
     align-items: flex-start;
@@ -7774,13 +7780,49 @@ a.tree-label.tree-bookmark-link:hover {
 
 /* ==================== 书签推荐视图样式 ==================== */
 
-/* A区：推荐公式 */
+/* A区：推荐公式（可折叠） */
 .recommend-formula-section {
     background: var(--bg-secondary);
     border: 1px solid var(--border-color);
     border-radius: 12px;
-    padding: 20px;
     margin-bottom: 20px;
+    overflow: hidden;
+}
+
+/* 非折叠模式下的兼容 */
+.recommend-formula-section:not(.collapsible) {
+    padding: 20px;
+}
+
+/* 可拖拽折叠区域容器 */
+.recommend-sections-container {
+    display: flex;
+    flex-direction: column;
+    gap: 0;
+}
+
+/* 拖拽状态 */
+.draggable-section.dragging {
+    opacity: 0.5;
+    background: var(--bg-tertiary);
+}
+
+.draggable-section.drag-over {
+    border-top: 2px solid var(--accent-primary);
+}
+
+/* 公式标题栏样式 */
+.recommend-formula-section .section-header {
+    gap: 8px;
+}
+
+.recommend-formula-section .section-header .formula-icon {
+    color: var(--accent-primary);
+    font-size: 14px;
+}
+
+.recommend-formula-section .section-header .formula-main {
+    flex: 1;
 }
 
 .formula-display {
@@ -8149,11 +8191,63 @@ a.tree-label.tree-bookmark-link:hover {
     color: white;
 }
 
+/* P值推荐区域 */
+.later-recommend {
+    text-align: center;
+    margin-bottom: 16px;
+}
+
+.later-recommend-label {
+    font-size: 13px;
+    color: var(--text-secondary);
+    margin-bottom: 10px;
+}
+
+.later-recommend-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 10px;
+    padding: 16px 32px;
+    border: 2px solid var(--accent-primary);
+    border-radius: 12px;
+    background: linear-gradient(135deg, var(--accent-primary), var(--accent-secondary, #6366f1));
+    color: white;
+    cursor: pointer;
+    font-size: 18px;
+    font-weight: 600;
+    transition: all 0.2s;
+}
+
+.later-recommend-btn:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 4px 12px rgba(99, 102, 241, 0.4);
+}
+
+.later-recommend-btn i {
+    font-size: 20px;
+}
+
+.later-divider {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin: 16px 0;
+    color: var(--text-tertiary);
+    font-size: 12px;
+}
+
+.later-divider::before,
+.later-divider::after {
+    content: '';
+    flex: 1;
+    height: 1px;
+    background: var(--border-color);
+}
+
 .later-options {
     display: grid;
     grid-template-columns: 1fr 1fr;
     gap: 12px;
-    margin-top: 20px;
 }
 
 .later-option {
@@ -8190,10 +8284,92 @@ a.tree-label.tree-bookmark-link:hover {
     transform: translateY(0);
 }
 
-/* 稍后复习队列区域 */
+/* 刷新设置弹窗 */
+.refresh-settings-modal .modal-body {
+    padding: 16px 20px 12px;
+}
+
+.refresh-settings-section {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+.refresh-setting-item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 10px;
+    background: var(--bg-secondary);
+    border-radius: 8px;
+    cursor: pointer;
+    transition: background 0.2s;
+    font-size: 13px;
+}
+
+.refresh-settings-modal #refreshSettingsSaveBtn {
+    padding: 6px 14px;
+    font-size: 12px;
+}
+
+.refresh-setting-item:hover {
+    background: var(--bg-tertiary);
+}
+
+.refresh-setting-item input[type="checkbox"] {
+    width: 18px;
+    height: 18px;
+    cursor: pointer;
+}
+
+.refresh-setting-item input[type="number"] {
+    padding: 4px 8px;
+    border: 1px solid var(--border-color);
+    border-radius: 4px;
+    background: var(--bg-primary);
+    color: var(--text-primary);
+    text-align: center;
+}
+
+.refresh-setting-item input[type="number"]:focus {
+    outline: none;
+    border-color: var(--accent-primary);
+}
+
+/* 刷新设置弹窗特定样式 */
+.refresh-settings-modal {
+    max-width: 450px;
+}
+
+.modal-header.compact {
+    padding: 10px 16px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+}
+
+.modal-header.compact h3 {
+    margin: 0;
+    margin-left: 8px;
+    font-size: 17px;
+    font-weight: 600;
+}
+
+.modal-header.compact .modal-close {
+    position: static;
+    margin: 0;
+    margin-right: -1.5px;
+    align-self: center;
+}
+
+/* 稍后复习队列区域 - 与热力图样式一致 */
 .recommend-postponed-section,
 .recommend-block-section {
+    background: var(--bg-secondary);
+    border: 1px solid var(--border-color);
+    border-radius: 12px;
     margin-bottom: 16px;
+    overflow: hidden;
 }
 
 .postponed-list,
@@ -8258,6 +8434,21 @@ a.tree-label.tree-bookmark-link:hover {
     margin-left: 8px;
 }
 
+.postponed-item-badge {
+    display: inline-block;
+    padding: 2px 6px;
+    border-radius: 4px;
+    font-size: 10px;
+    font-weight: 600;
+    margin-right: 6px;
+    vertical-align: middle;
+}
+
+.postponed-item-badge.manual {
+    background: var(--accent-primary);
+    color: white;
+}
+
 .postponed-item-btn,
 .block-item-btn {
     padding: 4px 10px;
@@ -8273,6 +8464,116 @@ a.tree-label.tree-bookmark-link:hover {
 .postponed-item-btn:hover {
     background: var(--warning);
     color: white;
+}
+
+/* 待复习分组 */
+.postponed-group {
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    overflow: hidden;
+}
+
+.postponed-group-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 10px 12px;
+    background: var(--bg-secondary);
+    cursor: pointer;
+    transition: background 0.2s;
+}
+
+.postponed-group-header:hover {
+    background: var(--bg-tertiary);
+}
+
+.postponed-group-info {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex: 1;
+    min-width: 0;
+}
+
+.postponed-group-icon {
+    color: var(--accent-primary);
+    font-size: 14px;
+}
+
+.postponed-group-name {
+    font-size: 13px;
+    font-weight: 500;
+    color: var(--text-primary);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.postponed-group-count {
+    background: var(--accent-primary);
+    color: white;
+    font-size: 11px;
+    font-weight: 600;
+    padding: 2px 6px;
+    border-radius: 10px;
+    flex-shrink: 0;
+}
+
+.postponed-group-type {
+    font-size: 11px;
+    color: var(--text-tertiary);
+    flex-shrink: 0;
+}
+
+.postponed-group-actions {
+    display: flex;
+    gap: 4px;
+}
+
+.postponed-group-btn {
+    width: 28px;
+    height: 28px;
+    border: none;
+    border-radius: 4px;
+    background: transparent;
+    color: var(--text-secondary);
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.2s;
+}
+
+.postponed-group-btn:hover {
+    background: var(--bg-primary);
+}
+
+.postponed-group-btn.cancel:hover {
+    background: var(--danger);
+    color: white;
+}
+
+.postponed-group-items {
+    border-top: 1px solid var(--border-color);
+    padding: 8px;
+    background: var(--bg-primary);
+}
+
+.postponed-group-items .postponed-item {
+    margin-bottom: 6px;
+}
+
+.postponed-group-items .postponed-item:last-child {
+    margin-bottom: 0;
+}
+
+.postponed-item.group-child {
+    padding: 8px 10px;
+    background: var(--bg-secondary);
+}
+
+.postponed-item.group-child:hover {
+    background: var(--bg-tertiary);
 }
 
 .block-item-btn:hover {
@@ -8308,15 +8609,32 @@ a.tree-label.tree-bookmark-link:hover {
 .block-add-btn {
     width: 24px;
     height: 24px;
+    min-width: 24px;
+    min-height: 24px;
+    padding: 0;
+    margin: 0;
     border: none;
     border-radius: 4px;
     background: var(--bg-tertiary);
     color: var(--text-secondary);
     cursor: pointer;
-    display: flex;
+    display: inline-flex;
     align-items: center;
     justify-content: center;
     transition: all 0.2s;
+    font-size: 11px;
+    line-height: 24px;
+    text-align: center;
+    flex-shrink: 0;
+}
+
+.block-add-btn i,
+.block-add-btn .fas {
+    margin: 0;
+    padding: 0;
+    line-height: 1;
+    width: auto;
+    height: auto;
 }
 
 .block-add-btn:hover {
@@ -8324,19 +8642,37 @@ a.tree-label.tree-bookmark-link:hover {
     color: white;
 }
 
+.block-item-count {
+    display: inline-block;
+    background: var(--accent-primary);
+    color: white;
+    font-size: 10px;
+    font-weight: 600;
+    padding: 2px 6px;
+    border-radius: 10px;
+    margin-right: 6px;
+    vertical-align: middle;
+}
+
 /* 文件夹选择树 */
 .folder-tree-container {
     padding: 8px 0;
+    padding-left: 4px;
+}
+
+.folder-tree-node {
+    position: relative;
 }
 
 .folder-tree-item {
     display: flex;
     align-items: center;
-    padding: 8px 12px;
+    padding: 6px 10px;
     cursor: pointer;
     border-radius: 6px;
-    margin-bottom: 4px;
+    margin-bottom: 2px;
     transition: all 0.15s;
+    position: relative;
 }
 
 .folder-tree-item:hover {
@@ -8358,7 +8694,30 @@ a.tree-label.tree-bookmark-link:hover {
 .folder-tree-item .folder-count {
     font-size: 11px;
     color: var(--text-tertiary);
-    margin-left: 8px;
+    margin-left: auto;
+    padding-left: 8px;
+    white-space: nowrap;
+}
+
+.folder-tree-children {
+    margin-left: 16px;
+    padding-left: 12px;
+    position: relative;
+    border-left: 1px solid var(--border-color);
+}
+
+.folder-tree-children .folder-tree-node {
+    position: relative;
+}
+
+.folder-tree-children .folder-tree-node::before {
+    content: '';
+    position: absolute;
+    left: -12px;
+    top: 14px;
+    width: 12px;
+    height: 1px;
+    background: var(--border-color);
 }
 
 /* 空状态内联样式 */
@@ -8468,6 +8827,10 @@ color: var(--text-secondary);
     border-color: var(--accent-primary);
 }
 
+.card-nav-btn.compact {
+    padding: 10px 12px;
+}
+
 .card-actions {
     display: flex;
     justify-content: center;
@@ -8574,6 +8937,33 @@ color: var(--text-secondary);
 
 .section-title i {
     color: var(--accent-primary);
+}
+
+.section-header-actions {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.section-action-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 28px;
+    height: 28px;
+    border: 1px solid var(--border-color);
+    border-radius: 6px;
+    background: var(--bg-primary);
+    color: var(--text-secondary);
+    font-size: 12px;
+    cursor: pointer;
+    transition: all 0.2s;
+}
+
+.section-action-btn:hover {
+    border-color: var(--accent-primary);
+    color: var(--accent-primary);
+    background: var(--accent-light);
 }
 
 .section-toggle {
@@ -8842,7 +9232,7 @@ color: var(--text-secondary);
 }
 
 .heatmap-scroll-container::-webkit-scrollbar {
-    height: 6px;
+    height: 12px;
 }
 
 .heatmap-scroll-container::-webkit-scrollbar-track {
@@ -9571,6 +9961,419 @@ color: var(--text-secondary);
 }
 
 /* 响应式 */
+/* Toast 提示动画 */
+@keyframes fadeInUp {
+    from {
+        opacity: 0;
+        transform: translateX(-50%) translateY(20px);
+    }
+
+    to {
+        opacity: 1;
+        transform: translateX(-50%) translateY(0);
+    }
+}
+
+@keyframes fadeOutDown {
+    from {
+        opacity: 1;
+        transform: translateX(-50%) translateY(0);
+    }
+
+    to {
+        opacity: 0;
+        transform: translateX(-50%) translateY(20px);
+    }
+}
+
+/* ==================== 添加到待复习弹窗 ==================== */
+.add-postponed-modal {
+    max-width: 520px;
+    width: 90%;
+}
+
+.add-postponed-modal .modal-body {
+    padding: 0;
+}
+
+.add-postponed-modal .modal-footer {
+    display: flex;
+    justify-content: flex-end;
+    gap: 10px;
+    padding: 16px 20px;
+    border-top: 1px solid var(--border-color);
+}
+
+.add-postponed-tabs {
+    display: flex;
+    border-bottom: 1px solid var(--border-color);
+}
+
+.add-postponed-tab {
+    flex: 1;
+    padding: 12px 16px;
+    border: none;
+    background: transparent;
+    color: var(--text-secondary);
+    font-size: 13px;
+    cursor: pointer;
+    transition: all 0.2s;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+}
+
+.add-postponed-tab:hover {
+    background: var(--bg-secondary);
+    color: var(--text-primary);
+}
+
+.add-postponed-tab.active {
+    color: var(--accent-primary);
+    border-bottom: 2px solid var(--accent-primary);
+    font-weight: 600;
+}
+
+.add-postponed-panel {
+    display: none;
+    padding: 20px;
+    padding-left: 24px;
+}
+
+.add-postponed-panel.active {
+    display: block;
+}
+
+.add-panel-row {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin-bottom: 16px;
+    margin-left: 4px;
+}
+
+.add-panel-row label {
+    min-width: 90px;
+    font-size: 13px;
+    color: var(--text-secondary);
+}
+
+.add-folder-select-btn {
+    flex: 1;
+    padding: 10px 14px;
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    background: var(--bg-secondary);
+    color: var(--text-primary);
+    font-size: 13px;
+    cursor: pointer;
+    transition: all 0.2s;
+    text-align: left;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.add-folder-select-btn:hover {
+    border-color: var(--accent-primary);
+    background: var(--bg-tertiary);
+}
+
+.add-folder-select-btn i {
+    color: var(--accent-primary);
+}
+
+.add-count-wrapper {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+}
+
+.add-count-input {
+    width: 80px;
+    padding: 8px 12px;
+    border: 1px solid var(--border-color);
+    border-radius: 6px;
+    background: var(--bg-secondary);
+    color: var(--text-primary);
+    font-size: 13px;
+}
+
+.add-count-input:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
+.add-checkbox-inline {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    cursor: pointer;
+    font-size: 13px;
+    color: var(--text-secondary);
+}
+
+.add-checkbox-inline input[type="checkbox"] {
+    cursor: pointer;
+}
+
+/* 域名列表 */
+.add-domain-list {
+    max-height: 280px;
+    overflow-y: auto;
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    background: var(--bg-secondary);
+}
+
+.add-domain-item {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 10px 12px;
+    border-bottom: 1px solid var(--border-color);
+    cursor: pointer;
+    transition: background 0.2s;
+}
+
+.add-domain-item:last-child {
+    border-bottom: none;
+}
+
+.add-domain-item:hover {
+    background: var(--bg-tertiary);
+}
+
+.add-domain-item.selected {
+    background: rgba(var(--accent-primary-rgb), 0.1);
+}
+
+.add-domain-item input[type="checkbox"] {
+    flex-shrink: 0;
+}
+
+.add-domain-info {
+    flex: 1;
+    min-width: 0;
+}
+
+.add-domain-name {
+    font-size: 13px;
+    font-weight: 500;
+    color: var(--text-primary);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.add-domain-count {
+    font-size: 11px;
+    color: var(--text-tertiary);
+    margin-top: 2px;
+}
+
+.add-mode-options {
+    display: flex;
+    gap: 16px;
+}
+
+.add-mode-option {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 13px;
+    color: var(--text-primary);
+    cursor: pointer;
+}
+
+.add-checkbox-label {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 13px;
+    color: var(--text-primary);
+    cursor: pointer;
+}
+
+.add-search-container {
+    position: relative;
+    margin-bottom: 12px;
+}
+
+.add-search-input {
+    width: 100%;
+    padding: 10px 14px 10px 36px;
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    background: var(--bg-secondary);
+    color: var(--text-primary);
+    font-size: 13px;
+}
+
+.add-search-input:focus {
+    outline: none;
+    border-color: var(--accent-primary);
+}
+
+.add-search-icon {
+    position: absolute;
+    left: 12px;
+    top: 50%;
+    transform: translateY(-50%);
+    color: var(--text-tertiary);
+    font-size: 13px;
+}
+
+.add-results-list {
+    max-height: 280px;
+    overflow-y: auto;
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    background: var(--bg-primary);
+}
+
+.add-results-empty {
+    padding: 40px 20px;
+    text-align: center;
+    color: var(--text-tertiary);
+    font-size: 13px;
+}
+
+.add-result-item {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 10px 12px;
+    border-bottom: 1px solid var(--border-color);
+    cursor: pointer;
+    transition: background 0.15s;
+}
+
+.add-result-item:last-child {
+    border-bottom: none;
+}
+
+.add-result-item:hover {
+    background: var(--bg-secondary);
+}
+
+.add-result-item.selected {
+    background: var(--accent-light);
+}
+
+.add-result-checkbox {
+    width: 16px;
+    height: 16px;
+    flex-shrink: 0;
+}
+
+.add-result-favicon {
+    width: 16px;
+    height: 16px;
+    flex-shrink: 0;
+}
+
+.add-result-info {
+    flex: 1;
+    min-width: 0;
+}
+
+.add-result-title {
+    font-size: 13px;
+    color: var(--text-primary);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.add-result-url {
+    font-size: 11px;
+    color: var(--text-tertiary);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.add-selected-count {
+    margin-top: 12px;
+    padding: 8px 12px;
+    background: var(--bg-secondary);
+    border-radius: 6px;
+    font-size: 12px;
+    color: var(--text-secondary);
+    text-align: right;
+}
+
+.add-selected-count span:last-child {
+    font-weight: 600;
+    color: var(--accent-primary);
+}
+
+.modal-btn {
+    padding: 8px 20px;
+    border: 1px solid var(--border-color);
+    border-radius: 6px;
+    background: var(--bg-secondary);
+    color: var(--text-primary);
+    font-size: 13px;
+    cursor: pointer;
+    transition: all 0.2s;
+}
+
+.modal-btn:hover {
+    background: var(--bg-tertiary);
+}
+
+.modal-btn.primary {
+    border: none;
+    background: var(--accent-primary);
+    color: white;
+}
+
+.modal-btn.primary:hover {
+    background: var(--accent-hover);
+}
+
+/* 选择文件夹弹窗内嵌树形结构 */
+.add-folder-tree {
+    max-height: 250px;
+    overflow-y: auto;
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    padding: 8px;
+    background: var(--bg-primary);
+    margin-bottom: 12px;
+}
+
+.add-folder-tree-item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 10px;
+    border-radius: 6px;
+    cursor: pointer;
+    transition: background 0.15s;
+    font-size: 13px;
+    color: var(--text-primary);
+}
+
+.add-folder-tree-item:hover {
+    background: var(--bg-secondary);
+}
+
+.add-folder-tree-item.selected {
+    background: var(--accent-light);
+    color: var(--accent-primary);
+}
+
+.add-folder-tree-item i {
+    color: var(--accent-primary);
+    font-size: 14px;
+}
+
+/* 文件夹树统一使用 .folder-tree-children 的连接线样式 */
+
 @media (max-width: 768px) {
     .formula-main {
         font-size: 14px;

@@ -790,5 +790,6 @@ export {
     getSessionsByUrl,
     getSessionsByTimeRange,
     getBookmarkActiveTimeStats,
-    rebuildBookmarkCache
+    rebuildBookmarkCache,
+    clearAllSessions
 };

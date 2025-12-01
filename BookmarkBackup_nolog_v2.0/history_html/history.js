@@ -5358,6 +5358,9 @@ function renderHeatmap(container, dailyCounts) {
             html += `<div class="heatmap-quarter-divider"></div>`;
         }
         
+        // 获取一周开始日(中文:周一=1, 英文:周日=0)，与书签添加记录日历保持一致
+        const weekStartDay = (typeof currentLang !== 'undefined' && currentLang === 'zh_CN') ? 1 : 0;
+        
         // 获取这个月第一天是星期几
         const firstDay = new Date(year, month - 1, 1);
         const firstDayOfWeek = firstDay.getDay();
@@ -5369,8 +5372,9 @@ function renderHeatmap(container, dailyCounts) {
         // 构建日历网格（横向7列）
         const calendarDays = [];
         
-        // 填充第一行前面的空白
-        for (let i = 0; i < firstDayOfWeek; i++) {
+        // 填充第一行前面的空白（根据周开始日调整）
+        const blankCells = (firstDayOfWeek - weekStartDay + 7) % 7;
+        for (let i = 0; i < blankCells; i++) {
             calendarDays.push({ empty: true });
         }
         
@@ -5397,6 +5401,9 @@ function renderHeatmap(container, dailyCounts) {
         html += `<div class="heatmap-month-header">${monthLabel}</div>`;
         html += `<div class="heatmap-calendar">`;
         
+        // 当天日期字符串，用于判断是否高亮
+        const todayStr = `${currentYear}-${String(currentMonth).padStart(2,'0')}-${String(now.getDate()).padStart(2,'0')}`;
+        
         // 按行输出（每行7个）
         for (let i = 0; i < calendarDays.length; i += 7) {
             html += '<div class="heatmap-row">';
@@ -5409,14 +5416,17 @@ function renderHeatmap(container, dailyCounts) {
                                   day.count <= maxCount * 0.25 ? 1 :
                                   day.count <= maxCount * 0.5 ? 2 :
                                   day.count <= maxCount * 0.75 ? 3 : 4;
+                    // 判断是否是当天
+                    const isToday = day.date === todayStr;
+                    const todayClass = isToday ? ' today' : '';
                     if (day.count > 0) {
                         const [y, m, dd] = day.date.split('-').map(Number);
                         const tooltip = isEn ? 
                             `${day.count} review${day.count !== 1 ? 's' : ''}, ${m}-${dd}` :
                             `${day.count}次, ${m}-${dd}`;
-                        html += `<div class="heatmap-cell level-${level}" data-date="${day.date}"><span class="heatmap-tooltip">${tooltip}</span></div>`;
+                        html += `<div class="heatmap-cell level-${level}${todayClass}" data-date="${day.date}"><span class="heatmap-tooltip">${tooltip}</span></div>`;
                     } else {
-                        html += `<div class="heatmap-cell level-0" data-date="${day.date}"></div>`;
+                        html += `<div class="heatmap-cell level-0${todayClass}" data-date="${day.date}"></div>`;
                     }
                 }
             }

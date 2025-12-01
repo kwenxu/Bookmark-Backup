@@ -8937,6 +8937,11 @@ a.tree-label.tree-bookmark-link:hover {
     cursor: default;
 }
 
+.heatmap-cell.today {
+    box-shadow: 0 0 0 2px var(--accent-primary);
+    border-radius: 2px;
+}
+
 /* GitHub 绿色调 */
 .heatmap-cell.level-0 { background: #ebedf0; }
 .heatmap-cell.level-1 { background: #9be9a8; }

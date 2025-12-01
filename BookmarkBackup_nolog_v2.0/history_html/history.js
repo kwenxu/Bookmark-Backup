@@ -5300,127 +5300,170 @@ function renderHeatmap(container, dailyCounts) {
     const maxCount = Math.max(...counts, 1);
     const totalReviews = counts.reduce((a, b) => a + b, 0);
     
-    // 按周分组 (周日在顶部)
-    const weeks = [];
-    let currentWeek = [];
+    // 按月分组数据
+    const monthsData = new Map(); // year-month -> { year, month, days: [], totalCount }
     const entries = Array.from(dailyCounts.entries()).sort();
     
-    // 跟踪月份变化
-    const monthLabels = [];
-    let lastMonth = -1;
-    let weekIndex = 0;
-    
     for (const [dateStr, count] of entries) {
-        // 解析本地日期字符串 (YYYY-MM-DD)，避免时区问题
         const [year, month, day] = dateStr.split('-').map(Number);
         const date = new Date(year, month - 1, day);
-        const dayOfWeek = date.getDay(); // 周日为0
-        const monthNum = date.getMonth();
+        const dayOfWeek = date.getDay();
+        const monthKey = `${year}-${month}`;
         
-        if (currentWeek.length === 0 && dayOfWeek > 0) {
-            // 填充周开始的空白
-            for (let i = 0; i < dayOfWeek; i++) {
-                currentWeek.push({ empty: true });
-            }
+        if (!monthsData.has(monthKey)) {
+            monthsData.set(monthKey, { year, month, days: [], totalCount: 0 });
         }
         
-        // 检测月份变化
-        if (monthNum !== lastMonth) {
-            monthLabels.push({ weekIndex, month: monthNum });
-            lastMonth = monthNum;
-        }
-        
-        currentWeek.push({ date: dateStr, count, dayOfWeek });
-        
-        if (dayOfWeek === 6) {
-            weeks.push(currentWeek);
-            currentWeek = [];
-            weekIndex++;
-        }
+        monthsData.get(monthKey).days.push({ date: dateStr, count, dayOfWeek, day });
+        monthsData.get(monthKey).totalCount += count;
     }
     
-    if (currentWeek.length > 0) {
-        // 填充周末的空白
-        while (currentWeek.length < 7) {
-            currentWeek.push({ empty: true });
-        }
-        weeks.push(currentWeek);
+    // 构建显示顺序：当前月 + 今年12个月(1-12正序)
+    const now = new Date();
+    const currentYear = now.getFullYear();
+    const currentMonth = now.getMonth() + 1;
+    
+    const monthsArray = [];
+    
+    // 第一个：当前月份
+    const currentMonthKey = `${currentYear}-${currentMonth}`;
+    const currentMonthData = monthsData.get(currentMonthKey) || { year: currentYear, month: currentMonth, days: [], totalCount: 0 };
+    monthsArray.push(currentMonthData);
+    
+    // 后面12个：今年1月、2月、3月...12月（正序）
+    for (let m = 1; m <= 12; m++) {
+        const key = `${currentYear}-${m}`;
+        const data = monthsData.get(key) || { year: currentYear, month: m, days: [], totalCount: 0 };
+        monthsArray.push(data);
     }
     
-    // 反转周顺序（当前月份在左）
-    weeks.reverse();
-    monthLabels.reverse();
-    
-    // 计算月份标签位置（反转后重新计算）
-    const cellWidth = 14; // 11px cell + 3px gap
-    
-    // 生成月份标签 HTML（反转顺序）
-    let monthsHtml = '';
-    for (let i = 0; i < monthLabels.length; i++) {
-        const { month } = monthLabels[i];
-        const currentWeekIdx = monthLabels.length - 1 - i;
-        const nextIdx = i < monthLabels.length - 1 ? monthLabels.length - 2 - i : -1;
-        const nextWeekIdx = nextIdx >= 0 ? monthLabels[monthLabels.length - 1 - nextIdx].weekIndex : 0;
-        const width = (monthLabels[i].weekIndex - (nextIdx >= 0 ? monthLabels[i + 1].weekIndex : 0)) * cellWidth;
-        if (width > 20) {
-            monthsHtml += `<span class="heatmap-month-label" style="width: ${Math.abs(width)}px">${monthNames[month]}</span>`;
-        } else {
-            monthsHtml += `<span class="heatmap-month-label" style="width: ${Math.abs(width)}px"></span>`;
-        }
-    }
+    console.log('[热力图] 月份顺序:', monthsArray.map(m => m.month).join(', '));
     
     // 生成 HTML
-    let html = `
-        <div class="heatmap-wrapper">
-            <div class="heatmap-months">${monthsHtml}</div>
-            <div class="heatmap-main">
-                <div class="heatmap-days">
-                    ${dayNames.map(d => `<span class="heatmap-day-label">${d}</span>`).join('')}
-                </div>
-                <div class="heatmap-grid">
-    `;
+    let html = `<div class="heatmap-year-view">`;
+    html += `<div class="heatmap-scroll-container">`;
+    html += `<div class="heatmap-months-row">`;
     
-    for (const week of weeks) {
-        html += '<div class="heatmap-week">';
-        for (const day of week) {
-            if (day.empty) {
-                html += '<div class="heatmap-cell empty"></div>';
+    for (let idx = 0; idx < monthsArray.length; idx++) {
+        const monthData = monthsArray[idx];
+        const { year, month, days, totalCount } = monthData;
+        const monthLabel = monthNames[month - 1];
+        
+        // idx=1 时在当前月份后添加分隔线，后面每3个月添加分隔线
+        if (idx === 1) {
+            // 当前月份与12个月之间的分隔线
+            html += `<div class="heatmap-quarter-divider current-divider"></div>`;
+        } else if (idx > 1 && (idx - 1) % 3 === 0) {
+            // 12个月内部的季度分隔线（4月、7月、10月前）
+            html += `<div class="heatmap-quarter-divider"></div>`;
+        }
+        
+        // 获取这个月第一天是星期几
+        const firstDay = new Date(year, month - 1, 1);
+        const firstDayOfWeek = firstDay.getDay();
+        
+        // 获取这个月的天数
+        const daysInMonth = new Date(year, month, 0).getDate();
+        const dayCountMap = new Map(days.map(d => [d.day, d]));
+        
+        // 构建日历网格（横向7列）
+        const calendarDays = [];
+        
+        // 填充第一行前面的空白
+        for (let i = 0; i < firstDayOfWeek; i++) {
+            calendarDays.push({ empty: true });
+        }
+        
+        // 填充每一天
+        for (let d = 1; d <= daysInMonth; d++) {
+            const dayData = dayCountMap.get(d);
+            if (dayData) {
+                calendarDays.push(dayData);
             } else {
-                const level = day.count === 0 ? 0 : 
-                              day.count <= maxCount * 0.25 ? 1 :
-                              day.count <= maxCount * 0.5 ? 2 :
-                              day.count <= maxCount * 0.75 ? 3 : 4;
-                // 解析本地日期字符串，避免时区问题
-                const [y, m, d] = day.date.split('-').map(Number);
-                const formattedDate = isEn ? 
-                    `${monthNames[m - 1]} ${d}, ${y}` :
-                    `${y}年${m}月${d}日`;
-                const tooltip = `${day.count} ${isEn ? 'reviews on' : '次复习于'} ${formattedDate}`;
-                html += `<div class="heatmap-cell level-${level}"><span class="heatmap-tooltip">${tooltip}</span></div>`;
+                calendarDays.push({ date: `${year}-${String(month).padStart(2,'0')}-${String(d).padStart(2,'0')}`, count: 0, day: d });
             }
         }
-        html += '</div>';
+        
+        // 填充最后一行的空白
+        while (calendarDays.length % 7 !== 0) {
+            calendarDays.push({ empty: true });
+        }
+        
+        // 判断是否是当前月份
+        const isCurrentMonth = year === currentYear && month === currentMonth;
+        const currentClass = isCurrentMonth ? ' current-month' : '';
+        
+        html += `<div class="heatmap-month-block${currentClass}" data-year="${year}" data-month="${month}">`;
+        html += `<div class="heatmap-month-header">${monthLabel}</div>`;
+        html += `<div class="heatmap-calendar">`;
+        
+        // 按行输出（每行7个）
+        for (let i = 0; i < calendarDays.length; i += 7) {
+            html += '<div class="heatmap-row">';
+            for (let j = 0; j < 7; j++) {
+                const day = calendarDays[i + j];
+                if (!day || day.empty) {
+                    html += '<div class="heatmap-cell empty"></div>';
+                } else {
+                    const level = day.count === 0 ? 0 : 
+                                  day.count <= maxCount * 0.25 ? 1 :
+                                  day.count <= maxCount * 0.5 ? 2 :
+                                  day.count <= maxCount * 0.75 ? 3 : 4;
+                    if (day.count > 0) {
+                        const [y, m, dd] = day.date.split('-').map(Number);
+                        const tooltip = isEn ? 
+                            `${day.count} review${day.count !== 1 ? 's' : ''}, ${m}-${dd}` :
+                            `${day.count}次, ${m}-${dd}`;
+                        html += `<div class="heatmap-cell level-${level}" data-date="${day.date}"><span class="heatmap-tooltip">${tooltip}</span></div>`;
+                    } else {
+                        html += `<div class="heatmap-cell level-0" data-date="${day.date}"></div>`;
+                    }
+                }
+            }
+            html += '</div>';
+        }
+        
+        html += `</div>`;
+        html += `<div class="heatmap-month-count">${totalCount}</div>`;
+        html += `</div>`;
     }
     
+    html += `</div></div>`;
+    
+    // 底部统计和图例
     html += `
-                </div>
-            </div>
-            <div class="heatmap-footer">
-                <span class="heatmap-stats">${totalReviews} ${isEn ? 'reviews in the last year' : '次复习（过去一年）'}</span>
-                <div class="heatmap-legend">
-                    <span>${isEn ? 'Less' : '少'}</span>
-                    <div class="heatmap-cell level-0"></div>
-                    <div class="heatmap-cell level-1"></div>
-                    <div class="heatmap-cell level-2"></div>
-                    <div class="heatmap-cell level-3"></div>
-                    <div class="heatmap-cell level-4"></div>
-                    <span>${isEn ? 'More' : '多'}</span>
-                </div>
+        <div class="heatmap-footer">
+            <span class="heatmap-stats">${totalReviews} ${isEn ? 'reviews' : '次复习'}</span>
+            <div class="heatmap-legend">
+                <span>${isEn ? 'Less' : '少'}</span>
+                <div class="heatmap-cell level-0"></div>
+                <div class="heatmap-cell level-1"></div>
+                <div class="heatmap-cell level-2"></div>
+                <div class="heatmap-cell level-3"></div>
+                <div class="heatmap-cell level-4"></div>
+                <span>${isEn ? 'More' : '多'}</span>
             </div>
         </div>
-    `;
+    </div>`;
     
     container.innerHTML = html;
+    
+    // 确保滚动条在最左边，显示当前月份
+    const scrollContainer = container.querySelector('.heatmap-scroll-container');
+    if (scrollContainer) {
+        scrollContainer.scrollLeft = 0;
+    }
+    
+    // 绑定月份点击事件（可选：进入月视图）
+    container.querySelectorAll('.heatmap-month-block').forEach(block => {
+        block.style.cursor = 'pointer';
+        block.addEventListener('click', () => {
+            const year = parseInt(block.dataset.year);
+            const month = parseInt(block.dataset.month);
+            console.log(`[热力图] 点击月份: ${year}-${month}`);
+            // 可扩展：进入月详情视图
+        });
+    });
 }
 
 // =============================================================================

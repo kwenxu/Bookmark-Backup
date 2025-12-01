@@ -8811,65 +8811,104 @@ a.tree-label.tree-bookmark-link:hover {
     font-size: 13px;
 }
 
-/* GitHub 风格热力图 */
+/* 按月分块热力图 */
 .heatmap-container {
-    min-height: 100px;
-    padding: 16px;
+    min-height: 80px;
+    padding: 8px 0;
+}
+
+.heatmap-year-view {
+    width: 100%;
+}
+
+.heatmap-scroll-container {
     overflow-x: auto;
+    overflow-y: hidden;
+    padding: 4px 12px 8px;
+    scrollbar-width: thin;
+    scrollbar-color: var(--border-color) transparent;
 }
 
-.heatmap-wrapper {
-    display: inline-block;
-    min-width: 100%;
+.heatmap-scroll-container::-webkit-scrollbar {
+    height: 6px;
 }
 
-.heatmap-months {
+.heatmap-scroll-container::-webkit-scrollbar-track {
+    background: transparent;
+}
+
+.heatmap-scroll-container::-webkit-scrollbar-thumb {
+    background: var(--border-color);
+    border-radius: 3px;
+}
+
+.heatmap-months-row {
     display: flex;
-    padding-left: 32px;
-    margin-bottom: 4px;
+    gap: 8px;
+    align-items: stretch;
 }
 
-.heatmap-month-label {
+.heatmap-month-block {
+    flex-shrink: 0;
+    padding: 8px;
+    background: var(--bg-tertiary);
+    border-radius: 8px;
+    transition: all 0.2s;
+    border: 1px solid transparent;
+    display: flex;
+    flex-direction: column;
+}
+
+.heatmap-month-block:hover {
+    border-color: var(--accent-primary);
+    background: var(--accent-light);
+}
+
+.heatmap-month-block.current-month {
+    border-color: var(--accent-primary);
+    box-shadow: 0 0 0 1px var(--accent-primary);
+}
+
+.heatmap-month-header {
+    font-size: 11px;
+    font-weight: 600;
+    color: var(--text-secondary);
+    margin-bottom: 6px;
+    text-align: center;
+}
+
+.heatmap-calendar {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    flex: 1;
+    min-height: 78px; /* 6行 * (10px + 2px gap) + 余量 */
+}
+
+.heatmap-row {
+    display: flex;
+    gap: 2px;
+}
+
+.heatmap-month-count {
     font-size: 10px;
     color: var(--text-tertiary);
-    text-align: left;
+    text-align: center;
+    margin-top: auto;
+    padding-top: 4px;
 }
 
-.heatmap-main {
-    display: flex;
-    gap: 4px;
+.heatmap-quarter-divider {
+    width: 1px;
+    background: var(--border-color);
+    margin: 0 4px;
+    align-self: stretch;
 }
 
-.heatmap-days {
-    display: flex;
-    flex-direction: column;
-    gap: 3px;
-    padding-right: 4px;
-}
-
-.heatmap-day-label {
-    height: 11px;
-    font-size: 9px;
-    color: var(--text-tertiary);
-    display: flex;
-    align-items: center;
-    justify-content: flex-end;
-    width: 24px;
-}
-
-.heatmap-day-label:nth-child(even) {
-    visibility: hidden;
-}
-
-.heatmap-grid {
-    display: flex;
-    gap: 3px;
-}
-
-.heatmap-week {
-    display: flex;
-    flex-direction: column;
-    gap: 3px;
+.heatmap-quarter-divider.current-divider {
+    width: 2px;
+    background: var(--accent-primary);
+    margin: 0 8px;
 }
 
 .heatmap-cell {
@@ -8948,8 +8987,8 @@ a.tree-label.tree-bookmark-link:hover {
     display: flex;
     justify-content: space-between;
     align-items: center;
-    margin-top: 12px;
-    padding-left: 32px;
+    margin-top: 8px;
+    padding: 0 12px;
 }
 
 .heatmap-legend {

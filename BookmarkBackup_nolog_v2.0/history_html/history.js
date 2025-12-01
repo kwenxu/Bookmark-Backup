@@ -5300,6 +5300,10 @@ function renderHeatmap(container, dailyCounts) {
     const maxCount = Math.max(...counts, 1);
     const totalReviews = counts.reduce((a, b) => a + b, 0);
     
+    // 计算今天的复习次数
+    const todayKey = `${new Date().getFullYear()}-${String(new Date().getMonth() + 1).padStart(2, '0')}-${String(new Date().getDate()).padStart(2, '0')}`;
+    const todayReviews = dailyCounts.get(todayKey) || 0;
+    
     // 按月分组数据
     const monthsData = new Map(); // year-month -> { year, month, days: [], totalCount }
     const entries = Array.from(dailyCounts.entries()).sort();
@@ -5412,10 +5416,11 @@ function renderHeatmap(container, dailyCounts) {
                 if (!day || day.empty) {
                     html += '<div class="heatmap-cell empty"></div>';
                 } else {
+                    // 固定阈值：0 / 1-15 / 16-50 / 51-150 / 151+
                     const level = day.count === 0 ? 0 : 
-                                  day.count <= maxCount * 0.25 ? 1 :
-                                  day.count <= maxCount * 0.5 ? 2 :
-                                  day.count <= maxCount * 0.75 ? 3 : 4;
+                                  day.count <= 15 ? 1 :
+                                  day.count <= 50 ? 2 :
+                                  day.count <= 150 ? 3 : 4;
                     // 判断是否是当天
                     const isToday = day.date === todayStr;
                     const todayClass = isToday ? ' today' : '';
@@ -5443,15 +5448,20 @@ function renderHeatmap(container, dailyCounts) {
     // 底部统计和图例
     html += `
         <div class="heatmap-footer">
-            <span class="heatmap-stats">${totalReviews} ${isEn ? 'reviews' : '次复习'}</span>
-            <div class="heatmap-legend">
-                <span>${isEn ? 'Less' : '少'}</span>
-                <div class="heatmap-cell level-0"></div>
-                <div class="heatmap-cell level-1"></div>
-                <div class="heatmap-cell level-2"></div>
-                <div class="heatmap-cell level-3"></div>
-                <div class="heatmap-cell level-4"></div>
-                <span>${isEn ? 'More' : '多'}</span>
+            <span class="heatmap-stats">${isEn ? 'Today' : '今天'} ${todayReviews} ${isEn ? 'reviews' : '次'}</span>
+            <div class="heatmap-footer-right">
+                <div class="heatmap-legend">
+                    <span>${isEn ? 'Less' : '少'}</span>
+                    <div class="heatmap-cell level-0"></div>
+                    <div class="heatmap-cell level-1"></div>
+                    <div class="heatmap-cell level-2"></div>
+                    <div class="heatmap-cell level-3"></div>
+                    <div class="heatmap-cell level-4"></div>
+                    <span>${isEn ? 'More' : '多'}</span>
+                </div>
+                <button class="heatmap-help-btn" id="heatmapHelpBtn" title="${isEn ? 'Level description' : '等级说明'}">
+                    <i class="fas fa-question-circle"></i>
+                </button>
             </div>
         </div>
     </div>`;
@@ -5464,14 +5474,325 @@ function renderHeatmap(container, dailyCounts) {
         scrollContainer.scrollLeft = 0;
     }
     
-    // 绑定月份点击事件（可选：进入月视图）
+    // 绑定日期格子点击事件
+    container.querySelectorAll('.heatmap-cell[data-date]').forEach(cell => {
+        cell.style.cursor = 'pointer';
+        cell.addEventListener('click', (e) => {
+            e.stopPropagation();
+            const date = cell.dataset.date;
+            showHeatmapDateDetail(date);
+        });
+    });
+    
+    // 绑定月份点击事件（进入月视图）
     container.querySelectorAll('.heatmap-month-block').forEach(block => {
         block.style.cursor = 'pointer';
-        block.addEventListener('click', () => {
+        block.addEventListener('click', (e) => {
+            // 如果点击的是日期格子，不触发月份点击
+            if (e.target.closest('.heatmap-cell[data-date]')) return;
             const year = parseInt(block.dataset.year);
             const month = parseInt(block.dataset.month);
-            console.log(`[热力图] 点击月份: ${year}-${month}`);
-            // 可扩展：进入月详情视图
+            showHeatmapMonthDetail(year, month);
+        });
+    });
+    
+    // 绑定帮助按钮点击事件
+    const helpBtn = document.getElementById('heatmapHelpBtn');
+    if (helpBtn) {
+        helpBtn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            showHeatmapLevelHelp(helpBtn);
+        });
+    }
+}
+
+// 显示热力图等级说明
+function showHeatmapLevelHelp(anchorBtn) {
+    const isEn = currentLang === 'en';
+    
+    // 如果已存在，先移除
+    const existing = document.getElementById('heatmapLevelPopup');
+    if (existing) {
+        existing.remove();
+        return;
+    }
+    
+    const popup = document.createElement('div');
+    popup.id = 'heatmapLevelPopup';
+    popup.className = 'heatmap-level-popup';
+    popup.innerHTML = `
+        <div class="heatmap-level-title">${isEn ? 'Review Level' : '复习等级说明'}</div>
+        <div class="heatmap-level-list">
+            <div class="heatmap-level-row">
+                <div class="heatmap-cell level-0"></div>
+                <span>0 ${isEn ? 'reviews' : '次'}</span>
+            </div>
+            <div class="heatmap-level-row">
+                <div class="heatmap-cell level-1"></div>
+                <span>1-15 ${isEn ? 'reviews' : '次'}</span>
+            </div>
+            <div class="heatmap-level-row">
+                <div class="heatmap-cell level-2"></div>
+                <span>16-50 ${isEn ? 'reviews' : '次'}</span>
+            </div>
+            <div class="heatmap-level-row">
+                <div class="heatmap-cell level-3"></div>
+                <span>51-150 ${isEn ? 'reviews' : '次'}</span>
+            </div>
+            <div class="heatmap-level-row">
+                <div class="heatmap-cell level-4"></div>
+                <span>151+ ${isEn ? 'reviews' : '次'}</span>
+            </div>
+        </div>
+    `;
+    
+    document.body.appendChild(popup);
+    
+    // 定位到按钮上方
+    const rect = anchorBtn.getBoundingClientRect();
+    popup.style.position = 'fixed';
+    popup.style.bottom = (window.innerHeight - rect.top + 8) + 'px';
+    popup.style.right = (window.innerWidth - rect.right) + 'px';
+    
+    // 点击其他地方关闭
+    const closeHandler = (e) => {
+        if (!popup.contains(e.target) && e.target !== anchorBtn) {
+            popup.remove();
+            document.removeEventListener('click', closeHandler);
+        }
+    };
+    setTimeout(() => document.addEventListener('click', closeHandler), 0);
+}
+
+// 显示热力图日期详情（二级UI）
+async function showHeatmapDateDetail(dateStr) {
+    const isEn = currentLang === 'en';
+    const container = document.getElementById('heatmapContainer');
+    if (!container) return;
+    
+    // 获取翻牌历史
+    const result = await new Promise(resolve => {
+        browserAPI.storage.local.get(['flipHistory'], resolve);
+    });
+    const flipHistory = result.flipHistory || [];
+    
+    // 筛选当天的记录
+    const dayRecords = flipHistory.filter(flip => {
+        if (!flip.timestamp) return false;
+        const date = new Date(flip.timestamp);
+        const y = date.getFullYear();
+        const m = String(date.getMonth() + 1).padStart(2, '0');
+        const d = String(date.getDate()).padStart(2, '0');
+        return `${y}-${m}-${d}` === dateStr;
+    });
+    
+    // 获取书签信息
+    const bookmarkMap = new Map();
+    try {
+        const tree = await new Promise(resolve => browserAPI.bookmarks.getTree(resolve));
+        const flatten = (nodes) => {
+            for (const node of nodes) {
+                if (node.url) bookmarkMap.set(node.id, node);
+                if (node.children) flatten(node.children);
+            }
+        };
+        flatten(tree);
+    } catch (e) {
+        console.warn('[热力图] 获取书签失败:', e);
+    }
+    
+    // 格式化日期
+    const [year, month, day] = dateStr.split('-').map(Number);
+    const dateLabel = isEn ? `${month}/${day}/${year}` : `${year}年${month}月${day}日`;
+    
+    // 生成详情HTML
+    let html = `
+        <div class="heatmap-detail-view">
+            <div class="heatmap-detail-header">
+                <button class="heatmap-back-btn" id="heatmapBackBtn">
+                    <i class="fas fa-arrow-left"></i>
+                    <span>${isEn ? 'Back' : '返回'}</span>
+                </button>
+                <span class="heatmap-detail-title">${dateLabel}</span>
+                <span class="heatmap-detail-count">${dayRecords.length} ${isEn ? 'reviews' : '次复习'}</span>
+            </div>
+            <div class="heatmap-detail-list">
+    `;
+    
+    if (dayRecords.length === 0) {
+        html += `<div class="heatmap-detail-empty">${isEn ? 'No reviews on this day' : '当天没有复习记录'}</div>`;
+    } else {
+        // 按时间倒序排列
+        dayRecords.sort((a, b) => b.timestamp - a.timestamp);
+        
+        for (const record of dayRecords) {
+            const bookmark = bookmarkMap.get(record.bookmarkId);
+            const time = new Date(record.timestamp);
+            const timeStr = `${String(time.getHours()).padStart(2, '0')}:${String(time.getMinutes()).padStart(2, '0')}`;
+            
+            if (bookmark) {
+                html += `
+                    <div class="heatmap-detail-item" data-url="${escapeHtml(bookmark.url)}">
+                        <img class="heatmap-detail-favicon" src="${getFaviconUrl(bookmark.url)}" onerror="this.src='icons/default-favicon.png'">
+                        <div class="heatmap-detail-info">
+                            <div class="heatmap-detail-item-title">${escapeHtml(bookmark.title || bookmark.url)}</div>
+                            <div class="heatmap-detail-item-url">${escapeHtml(bookmark.url)}</div>
+                        </div>
+                        <span class="heatmap-detail-time">${timeStr}</span>
+                    </div>
+                `;
+            } else {
+                html += `
+                    <div class="heatmap-detail-item deleted">
+                        <i class="fas fa-bookmark heatmap-detail-favicon-icon"></i>
+                        <div class="heatmap-detail-info">
+                            <div class="heatmap-detail-item-title">${isEn ? 'Bookmark deleted' : '书签已删除'}</div>
+                            <div class="heatmap-detail-item-url">ID: ${record.bookmarkId}</div>
+                        </div>
+                        <span class="heatmap-detail-time">${timeStr}</span>
+                    </div>
+                `;
+            }
+        }
+    }
+    
+    html += `</div></div>`;
+    
+    container.innerHTML = html;
+    
+    // 绑定返回按钮
+    document.getElementById('heatmapBackBtn').addEventListener('click', () => {
+        loadHeatmapData();
+    });
+    
+    // 绑定书签点击事件
+    container.querySelectorAll('.heatmap-detail-item[data-url]').forEach(item => {
+        item.style.cursor = 'pointer';
+        item.addEventListener('click', () => {
+            const url = item.dataset.url;
+            if (url) window.open(url, '_blank');
+        });
+    });
+}
+
+// 显示热力图月份详情（书签复习排行）
+async function showHeatmapMonthDetail(year, month) {
+    const isEn = currentLang === 'en';
+    const container = document.getElementById('heatmapContainer');
+    if (!container) return;
+    
+    // 获取翻牌历史
+    const result = await new Promise(resolve => {
+        browserAPI.storage.local.get(['flipHistory'], resolve);
+    });
+    const flipHistory = result.flipHistory || [];
+    
+    // 筛选当月的记录，按书签ID统计次数
+    const bookmarkCountMap = new Map(); // bookmarkId -> { count, lastTime }
+    for (const flip of flipHistory) {
+        if (!flip.timestamp || !flip.bookmarkId) continue;
+        const date = new Date(flip.timestamp);
+        if (date.getFullYear() === year && date.getMonth() + 1 === month) {
+            if (!bookmarkCountMap.has(flip.bookmarkId)) {
+                bookmarkCountMap.set(flip.bookmarkId, { count: 0, lastTime: 0 });
+            }
+            const stat = bookmarkCountMap.get(flip.bookmarkId);
+            stat.count++;
+            if (flip.timestamp > stat.lastTime) stat.lastTime = flip.timestamp;
+        }
+    }
+    
+    // 获取书签信息
+    const bookmarkMap = new Map();
+    try {
+        const tree = await new Promise(resolve => browserAPI.bookmarks.getTree(resolve));
+        const flatten = (nodes) => {
+            for (const node of nodes) {
+                if (node.url) bookmarkMap.set(node.id, node);
+                if (node.children) flatten(node.children);
+            }
+        };
+        flatten(tree);
+    } catch (e) {
+        console.warn('[热力图] 获取书签失败:', e);
+    }
+    
+    const monthNames = isEn ? 
+        ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'] :
+        ['1月', '2月', '3月', '4月', '5月', '6月', '7月', '8月', '9月', '10月', '11月', '12月'];
+    const monthLabel = isEn ? `${monthNames[month - 1]} ${year}` : `${year}年${monthNames[month - 1]}`;
+    
+    const totalCount = Array.from(bookmarkCountMap.values()).reduce((sum, s) => sum + s.count, 0);
+    
+    // 按复习次数排序
+    const sortedBookmarks = Array.from(bookmarkCountMap.entries())
+        .sort((a, b) => b[1].count - a[1].count);
+    
+    // 生成详情HTML
+    let html = `
+        <div class="heatmap-detail-view">
+            <div class="heatmap-detail-header">
+                <button class="heatmap-back-btn" id="heatmapBackBtn">
+                    <i class="fas fa-arrow-left"></i>
+                    <span>${isEn ? 'Back' : '返回'}</span>
+                </button>
+                <span class="heatmap-detail-title">${monthLabel} ${isEn ? 'Ranking' : '复习排行'}</span>
+                <span class="heatmap-detail-count">${totalCount} ${isEn ? 'reviews' : '次复习'}</span>
+            </div>
+            <div class="heatmap-detail-list">
+    `;
+    
+    if (sortedBookmarks.length === 0) {
+        html += `<div class="heatmap-detail-empty">${isEn ? 'No reviews this month' : '当月没有复习记录'}</div>`;
+    } else {
+        let rank = 0;
+        for (const [bookmarkId, stat] of sortedBookmarks) {
+            rank++;
+            const bookmark = bookmarkMap.get(bookmarkId);
+            
+            if (bookmark) {
+                html += `
+                    <div class="heatmap-detail-item heatmap-ranking-item" data-url="${escapeHtml(bookmark.url)}">
+                        <span class="heatmap-rank ${rank <= 3 ? 'top-' + rank : ''}">${rank}</span>
+                        <img class="heatmap-detail-favicon" src="${getFaviconUrl(bookmark.url)}" onerror="this.src='icons/default-favicon.png'">
+                        <div class="heatmap-detail-info">
+                            <div class="heatmap-detail-item-title">${escapeHtml(bookmark.title || bookmark.url)}</div>
+                            <div class="heatmap-detail-item-url">${escapeHtml(bookmark.url)}</div>
+                        </div>
+                        <span class="heatmap-review-count">${stat.count} ${isEn ? 'times' : '次'}</span>
+                    </div>
+                `;
+            } else {
+                html += `
+                    <div class="heatmap-detail-item heatmap-ranking-item deleted">
+                        <span class="heatmap-rank">${rank}</span>
+                        <i class="fas fa-bookmark heatmap-detail-favicon-icon"></i>
+                        <div class="heatmap-detail-info">
+                            <div class="heatmap-detail-item-title">${isEn ? 'Bookmark deleted' : '书签已删除'}</div>
+                            <div class="heatmap-detail-item-url">ID: ${bookmarkId}</div>
+                        </div>
+                        <span class="heatmap-review-count">${stat.count} ${isEn ? 'times' : '次'}</span>
+                    </div>
+                `;
+            }
+        }
+    }
+    
+    html += `</div></div>`;
+    
+    container.innerHTML = html;
+    
+    // 绑定返回按钮
+    document.getElementById('heatmapBackBtn').addEventListener('click', () => {
+        loadHeatmapData();
+    });
+    
+    // 绑定书签点击事件
+    container.querySelectorAll('.heatmap-detail-item[data-url]').forEach(item => {
+        item.style.cursor = 'pointer';
+        item.addEventListener('click', () => {
+            const url = item.dataset.url;
+            if (url) window.open(url, '_blank');
         });
     });
 }

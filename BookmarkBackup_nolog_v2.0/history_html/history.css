@@ -9314,6 +9314,7 @@ color: var(--text-secondary);
     display: flex;
     align-items: center;
     gap: 2px;
+    margin-right: -3.5px;
 }
 
 .heatmap-legend {

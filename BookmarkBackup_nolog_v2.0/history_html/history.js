@@ -4999,6 +4999,11 @@ async function markBookmarkFlipped(bookmarkId) {
     });
     await browserAPI.storage.local.set({ flipHistory });
     console.log('[翻牌] flipHistory 已更新:', flipHistory.length, '条记录');
+    
+    // 立即刷新热力图
+    if (currentView === 'recommend') {
+        await loadHeatmapData();
+    }
 }
 
 async function refreshRecommendCards(force = false) {
@@ -5232,27 +5237,32 @@ async function loadHeatmapData() {
     const container = document.getElementById('heatmapContainer');
     if (!container) return;
     
-    console.log('[热力图] 开始加载数据...');
-    
     try {
         // 从 storage 获取翻牌历史记录
         const result = await new Promise(resolve => {
             browserAPI.storage.local.get(['flipHistory'], resolve);
         });
         const flipHistory = result.flipHistory || [];
-        console.log('[热力图] flipHistory 数据:', flipHistory.length, '条记录', flipHistory);
         
         // 按日期统计翻牌次数
         const dailyCounts = new Map();
         const today = new Date();
         today.setHours(0, 0, 0, 0);
         
+        // 辅助函数：获取本地日期字符串 (YYYY-MM-DD)
+        const getLocalDateKey = (d) => {
+            const year = d.getFullYear();
+            const month = String(d.getMonth() + 1).padStart(2, '0');
+            const day = String(d.getDate()).padStart(2, '0');
+            return `${year}-${month}-${day}`;
+        };
+        
         // 初始化最近 52 周 + 本周的天数
         const daysToShow = 52 * 7 + today.getDay();
         for (let i = daysToShow - 1; i >= 0; i--) {
             const date = new Date(today);
             date.setDate(date.getDate() - i);
-            const key = date.toISOString().split('T')[0];
+            const key = getLocalDateKey(date);
             dailyCounts.set(key, 0);
         }
         
@@ -5260,7 +5270,7 @@ async function loadHeatmapData() {
         for (const flip of flipHistory) {
             if (!flip.timestamp) continue;
             const date = new Date(flip.timestamp);
-            const key = date.toISOString().split('T')[0];
+            const key = getLocalDateKey(date);
             if (dailyCounts.has(key)) {
                 dailyCounts.set(key, (dailyCounts.get(key) || 0) + 1);
             }
@@ -5301,9 +5311,11 @@ function renderHeatmap(container, dailyCounts) {
     let weekIndex = 0;
     
     for (const [dateStr, count] of entries) {
-        const date = new Date(dateStr);
+        // 解析本地日期字符串 (YYYY-MM-DD)，避免时区问题
+        const [year, month, day] = dateStr.split('-').map(Number);
+        const date = new Date(year, month - 1, day);
         const dayOfWeek = date.getDay(); // 周日为0
-        const month = date.getMonth();
+        const monthNum = date.getMonth();
         
         if (currentWeek.length === 0 && dayOfWeek > 0) {
             // 填充周开始的空白
@@ -5313,9 +5325,9 @@ function renderHeatmap(container, dailyCounts) {
         }
         
         // 检测月份变化
-        if (month !== lastMonth) {
-            monthLabels.push({ weekIndex, month });
-            lastMonth = month;
+        if (monthNum !== lastMonth) {
+            monthLabels.push({ weekIndex, month: monthNum });
+            lastMonth = monthNum;
         }
         
         currentWeek.push({ date: dateStr, count, dayOfWeek });
@@ -5378,10 +5390,11 @@ function renderHeatmap(container, dailyCounts) {
                               day.count <= maxCount * 0.25 ? 1 :
                               day.count <= maxCount * 0.5 ? 2 :
                               day.count <= maxCount * 0.75 ? 3 : 4;
-                const dateObj = new Date(day.date);
+                // 解析本地日期字符串，避免时区问题
+                const [y, m, d] = day.date.split('-').map(Number);
                 const formattedDate = isEn ? 
-                    `${monthNames[dateObj.getMonth()]} ${dateObj.getDate()}, ${dateObj.getFullYear()}` :
-                    `${dateObj.getFullYear()}年${dateObj.getMonth() + 1}月${dateObj.getDate()}日`;
+                    `${monthNames[m - 1]} ${d}, ${y}` :
+                    `${y}年${m}月${d}日`;
                 const tooltip = `${day.count} ${isEn ? 'reviews on' : '次复习于'} ${formattedDate}`;
                 html += `<div class="heatmap-cell level-${level}"><span class="heatmap-tooltip">${tooltip}</span></div>`;
             }
@@ -11059,6 +11072,11 @@ function handleStorageChange(changes, namespace) {
         
         // 刷新书签关联记录列表（更新badge文字）
         refreshBrowsingRelatedHistory();
+    }
+    
+    // 翻牌历史变化（用于实时刷新热力图）
+    if (changes.flipHistory && currentView === 'recommend') {
+        loadHeatmapData();
     }
 }
 

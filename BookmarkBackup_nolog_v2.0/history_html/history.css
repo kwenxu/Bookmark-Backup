@@ -8657,7 +8657,7 @@ a.tree-label.tree-bookmark-link:hover {
 
 /* 文件夹选择树 */
 .folder-tree-container {
-    padding: 8px 0;
+    padding: 0;
     padding-left: 4px;
 }
 
@@ -8682,7 +8682,7 @@ a.tree-label.tree-bookmark-link:hover {
 
 .folder-tree-item i {
     margin-right: 8px;
-    color: var(--warning);
+    color: var(--accent-primary);
 }
 
 .folder-tree-item span {
@@ -8694,10 +8694,12 @@ a.tree-label.tree-bookmark-link:hover {
 
 .folder-tree-item .folder-count {
     font-size: 11px;
-    color: var(--text-tertiary);
+    color: var(--accent-primary);
     margin-left: auto;
     padding-left: 8px;
     white-space: nowrap;
+    min-width: 30px;
+    text-align: right;
 }
 
 .folder-tree-children {
@@ -10376,6 +10378,14 @@ color: var(--text-secondary);
 .add-folder-tree-item i {
     color: var(--accent-primary);
     font-size: 14px;
+}
+
+.add-folder-tree-item .folder-count {
+    font-size: 11px;
+    color: var(--accent-primary);
+    margin-left: auto;
+    padding-left: 8px;
+    white-space: nowrap;
 }
 
 /* 文件夹树统一使用 .folder-tree-children 的连接线样式 */

@@ -5289,7 +5289,6 @@ async function showSelectFolderModal() {
     function renderFolders(nodes, parentEl, depth = 0) {
         const isZh = currentLang === 'zh_CN';
         const unnamedFolder = i18n.unnamedFolderLabel ? i18n.unnamedFolderLabel[currentLang] : '未命名文件夹';
-        const bookmarkSuffix = i18n.folderBookmarkCount ? i18n.folderBookmarkCount[currentLang] : (isZh ? '个书签' : 'bookmarks');
         for (const node of nodes) {
             if (!node.url && node.children) { // 是文件夹
                 if (blockedFolderSet.has(node.id)) continue; // 已屏蔽的不显示
@@ -5305,7 +5304,7 @@ async function showSelectFolderModal() {
                 item.innerHTML = `
                     <i class="fas fa-folder"></i>
                     <span>${escapeHtml(node.title || unnamedFolder)}</span>
-                    <span class="folder-count">${bookmarkCount} ${bookmarkSuffix}</span>
+                    <span class="folder-count">${bookmarkCount}</span>
                 `;
                 item.onclick = async () => {
                     await blockFolder(node.id);
@@ -5538,14 +5537,29 @@ function showAddFolderPicker() {
 }
 
 function renderFolderTree(nodes, level = 0) {
+    const isZh = currentLang === 'zh_CN';
+    
+    function countBookmarks(node) {
+        let count = 0;
+        if (node.url) count = 1;
+        if (node.children) {
+            for (const child of node.children) {
+                count += countBookmarks(child);
+            }
+        }
+        return count;
+    }
+    
     let html = '';
     for (const node of nodes) {
         if (!node.url) { // 只显示文件夹
             const hasChildren = node.children?.some(c => !c.url);
+            const bookmarkCount = countBookmarks(node);
             html += `<div class="folder-tree-node">`;
             html += `<div class="add-folder-tree-item" data-id="${node.id}" data-title="${escapeHtml(node.title || '未命名')}">
                 <i class="fas fa-folder"></i>
-                <span>${escapeHtml(node.title || (currentLang === 'zh_CN' ? '未命名' : 'Untitled'))}</span>
+                <span>${escapeHtml(node.title || (isZh ? '未命名' : 'Untitled'))}</span>
+                <span class="folder-count">${bookmarkCount}</span>
             </div>`;
             if (hasChildren) {
                 html += `<div class="folder-tree-children">${renderFolderTree(node.children, level + 1)}</div>`;

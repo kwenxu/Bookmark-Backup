@@ -224,6 +224,18 @@ body {
     border-bottom-color: rgba(0, 0, 0, 0.9);
 }
 
+#helpToggle .btn-tooltip {
+    left: auto;
+    right: 0;
+    transform: none;
+}
+
+#helpToggle .btn-tooltip::before {
+    left: auto;
+    right: 10px;
+    transform: none;
+}
+
 /* 快捷键 & 开源信息弹窗 */
 .shortcuts-modal {
     display: inline-block;

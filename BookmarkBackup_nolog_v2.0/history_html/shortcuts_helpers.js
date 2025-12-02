@@ -4,13 +4,25 @@ function updateShortcutsDisplay() {
     if (!shortcutsContent) return;
 
     const lang = typeof currentLang === 'string' ? currentLang : 'zh_CN';
+    const isMac = navigator.platform?.toUpperCase().includes('MAC') || 
+                  navigator.userAgent?.toUpperCase().includes('MAC');
+
+    // 格式化快捷键显示（Mac上Alt显示为⌥）
+    const formatKey = (key) => {
+        if (!key) return key;
+        if (isMac) {
+            return key.replace(/Alt\+/gi, '⌥');
+        }
+        return key;
+    };
 
     const render = (shortcuts) => {
         const safe = (value, fallback) => (value && typeof value === 'string') ? value : fallback;
-        const key1 = safe(shortcuts.open_current_changes_view, 'Alt+1');
-        const key2 = safe(shortcuts.open_backup_history_view, 'Alt+2');
-        const key3 = safe(shortcuts.open_canvas_view, 'Alt+3');
-        const key4 = safe(shortcuts.open_additions_view, 'Alt+4');
+        const defaultPrefix = isMac ? '⌥' : 'Alt+';
+        const key2 = formatKey(safe(shortcuts.open_backup_history_view, defaultPrefix + '2'));
+        const key3 = formatKey(safe(shortcuts.open_canvas_view, defaultPrefix + '3'));
+        const key4 = formatKey(safe(shortcuts.open_additions_view, defaultPrefix + '4'));
+        const key5 = formatKey(safe(shortcuts.open_recommend_view, defaultPrefix + '5'));
 
         shortcutsContent.innerHTML = `
             <div class="shortcuts-card">
@@ -28,10 +40,6 @@ function updateShortcutsDisplay() {
                     </div>
                     <div class="shortcuts-list">
                         <div class="shortcuts-row">
-                            <div class="shortcuts-key"><kbd>${key1}</kbd></div>
-                            <div class="shortcuts-action">${i18n.shortcutCurrentChanges[lang]}</div>
-                        </div>
-                        <div class="shortcuts-row">
                             <div class="shortcuts-key"><kbd>${key2}</kbd></div>
                             <div class="shortcuts-action">${i18n.shortcutHistory[lang]}</div>
                         </div>
@@ -42,6 +50,10 @@ function updateShortcutsDisplay() {
                         <div class="shortcuts-row">
                             <div class="shortcuts-key"><kbd>${key4}</kbd></div>
                             <div class="shortcuts-action">${i18n.shortcutAdditions[lang]}</div>
+                        </div>
+                        <div class="shortcuts-row">
+                            <div class="shortcuts-key"><kbd>${key5}</kbd></div>
+                            <div class="shortcuts-action">${i18n.shortcutRecommend[lang]}</div>
                         </div>
                     </div>
                 </div>
@@ -78,10 +90,10 @@ function updateShortcutsDisplay() {
                     });
                 }
                 render({
-                    open_current_changes_view: map.open_current_changes_view,
                     open_backup_history_view: map.open_backup_history_view,
                     open_canvas_view: map.open_canvas_view,
-                    open_additions_view: map.open_additions_view
+                    open_additions_view: map.open_additions_view,
+                    open_recommend_view: map.open_recommend_view
                 });
             });
         } catch (e) {

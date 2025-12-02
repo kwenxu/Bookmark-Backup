@@ -160,6 +160,9 @@ if (browserAPI.commands && browserAPI.commands.onCommand) {
             case 'open_additions_view':
                 openHistoryViewFromCommand('additions');
                 break;
+            case 'open_recommend_view':
+                openHistoryViewFromCommand('recommend');
+                break;
             default:
                 break;
         }

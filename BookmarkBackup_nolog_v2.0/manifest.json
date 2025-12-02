@@ -19,12 +19,6 @@
    },
    "commands": {
       "open_current_changes_view": {
-         "suggested_key": {
-            "default": "Alt+1",
-            "mac": "Alt+1",
-            "windows": "Alt+1",
-            "linux": "Alt+1"
-         },
          "description": "Open 'Current quantity/structure changes' view"
       },
       "open_backup_history_view": {
@@ -53,6 +47,15 @@
             "linux": "Alt+4"
          },
          "description": "Open 'Bookmark Review' view"
+      },
+      "open_recommend_view": {
+         "suggested_key": {
+            "default": "Alt+5",
+            "mac": "Alt+5",
+            "windows": "Alt+5",
+            "linux": "Alt+5"
+         },
+         "description": "Open 'Bookmark Recommend' view"
       }
    },
    "permissions": [

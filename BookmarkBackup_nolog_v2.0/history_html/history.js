@@ -943,8 +943,8 @@ const i18n = {
         'en': 'Search bookmarks, folders...'
     },
     helpTooltip: {
-        'zh_CN': '快捷键与开源信息',
-        'en': 'Shortcuts & Open Source Info'
+        'zh_CN': '开源信息与快捷键',
+        'en': 'Open Source Info & Shortcuts'
     },
     navCurrentChanges: {
         'zh_CN': '当前 数量/结构 变化',
@@ -1225,6 +1225,10 @@ const i18n = {
     shortcutAdditions: {
         'zh_CN': '打开「书签记录」视图',
         'en': 'Open "Bookmark Records" view'
+    },
+    shortcutRecommend: {
+        'zh_CN': '打开「书签推荐」视图',
+        'en': 'Open "Bookmark Recommend" view'
     },
     closeShortcutsText: {
         'zh_CN': '关闭',

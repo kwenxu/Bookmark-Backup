@@ -865,7 +865,7 @@ function updateFaviconImages(url, dataUrl) {
         const domain = urlObj.hostname;
 
         // 查找所有相关的img标签（通过data-favicon-domain或父元素的data-node-url）
-        const allImages = document.querySelectorAll('img.tree-icon, img.addition-icon, img.change-tree-item-icon, img.canvas-bookmark-icon');
+        const allImages = document.querySelectorAll('img.tree-icon, img.addition-icon, img.change-tree-item-icon, img.canvas-bookmark-icon, img.tracking-favicon, img.ranking-favicon');
 
         allImages.forEach(img => {
             // 检查是否是fallback图标（SVG data URL）且对应的书签URL匹配
@@ -901,7 +901,9 @@ function setupGlobalImageErrorHandler() {
             (e.target.classList.contains('tree-icon') ||
                 e.target.classList.contains('addition-icon') ||
                 e.target.classList.contains('change-tree-item-icon') ||
-                e.target.classList.contains('canvas-bookmark-icon'))) {
+                e.target.classList.contains('canvas-bookmark-icon') ||
+                e.target.classList.contains('tracking-favicon') ||
+                e.target.classList.contains('ranking-favicon'))) {
             // 只在src不是fallbackIcon时才替换，避免无限循环
             // fallbackIcon 是 data URL，不会加载失败
             if (e.target.src !== fallbackIcon && !e.target.src.startsWith('data:image/svg+xml')) {
@@ -1691,20 +1693,20 @@ const i18n = {
         'en': 'Bookmark'
     },
     trackingHeaderTime: {
-        'zh_CN': '时长',
-        'en': 'Time'
+        'zh_CN': '综合时间',
+        'en': 'Composite Time'
     },
-    trackingHeaderPauses: {
-        'zh_CN': '暂停',
-        'en': 'Pauses'
+    trackingHeaderWakes: {
+        'zh_CN': '唤醒',
+        'en': 'Wakes'
     },
     trackingHeaderRatio: {
         'zh_CN': '活跃',
         'en': 'Active'
     },
     trackingRankingTitle: {
-        'zh_CN': '活跃时间排行',
-        'en': 'Active Time Ranking'
+        'zh_CN': '综合时间排行',
+        'en': 'Composite Time Ranking'
     },
     trackingRangeToday: {
         'zh_CN': '今天',
@@ -1759,9 +1761,9 @@ const i18n = {
         'zh_CN': '冷门度',
         'en': 'Coldness'
     },
-    legendShallowRead: {
-        'zh_CN': '浅阅读',
-        'en': 'Shallow Read'
+    legendTimeDegree: {
+        'zh_CN': '时间度',
+        'en': 'Time Degree'
     },
     legendForgetting: {
         'zh_CN': '遗忘度',
@@ -1783,7 +1785,7 @@ const i18n = {
         'zh_CN': '次',
         'en': ' clicks'
     },
-    thresholdShallowReadSuffix: {
+    thresholdTimeDegreeSuffix: {
         'zh_CN': '分钟',
         'en': ' min'
     },
@@ -2691,13 +2693,24 @@ function applyLanguage() {
     if (trackingNoActiveText) trackingNoActiveText.textContent = i18n.trackingNoActive[currentLang];
     
     const trackingHeaderState = document.getElementById('trackingHeaderState');
-    if (trackingHeaderState) trackingHeaderState.textContent = i18n.trackingHeaderState[currentLang];
+    if (trackingHeaderState) {
+        // 更新文本 span，保留帮助图标
+        const textSpan = trackingHeaderState.querySelector('.tracking-header-text');
+        if (textSpan) {
+            textSpan.textContent = i18n.trackingHeaderState[currentLang];
+        }
+        // 更新图标的 title
+        const helpIcon = trackingHeaderState.querySelector('.tracking-state-help');
+        if (helpIcon) {
+            helpIcon.title = currentLang === 'en' ? 'State Guide' : '状态说明';
+        }
+    }
     const trackingHeaderTitle = document.getElementById('trackingHeaderTitle');
     if (trackingHeaderTitle) trackingHeaderTitle.textContent = i18n.trackingHeaderTitle[currentLang];
     const trackingHeaderTime = document.getElementById('trackingHeaderTime');
     if (trackingHeaderTime) trackingHeaderTime.textContent = i18n.trackingHeaderTime[currentLang];
-    const trackingHeaderPauses = document.getElementById('trackingHeaderPauses');
-    if (trackingHeaderPauses) trackingHeaderPauses.textContent = i18n.trackingHeaderPauses[currentLang];
+    const trackingHeaderWakes = document.getElementById('trackingHeaderWakes');
+    if (trackingHeaderWakes) trackingHeaderWakes.textContent = i18n.trackingHeaderWakes[currentLang];
     const trackingHeaderRatio = document.getElementById('trackingHeaderRatio');
     if (trackingHeaderRatio) trackingHeaderRatio.textContent = i18n.trackingHeaderRatio[currentLang];
     
@@ -2732,8 +2745,8 @@ function applyLanguage() {
     const legendColdness = document.getElementById('legendColdness');
     if (legendColdness) legendColdness.textContent = i18n.legendColdness[currentLang];
     
-    const legendShallowRead = document.getElementById('legendShallowRead');
-    if (legendShallowRead) legendShallowRead.textContent = i18n.legendShallowRead[currentLang];
+    const legendTimeDegree = document.getElementById('legendTimeDegree');
+    if (legendTimeDegree) legendTimeDegree.textContent = i18n.legendTimeDegree[currentLang];
     
     const legendForgetting = document.getElementById('legendForgetting');
     if (legendForgetting) legendForgetting.textContent = i18n.legendForgetting[currentLang];
@@ -2748,11 +2761,11 @@ function applyLanguage() {
     document.querySelectorAll('.threshold-item').forEach((item, index) => {
         const input = item.querySelector('input');
         if (input) {
-            const keys = ['thresholdFreshnessSuffix', 'thresholdColdnessSuffix', 'thresholdShallowReadSuffix', 'thresholdForgettingSuffix'];
+            const keys = ['thresholdFreshnessSuffix', 'thresholdColdnessSuffix', 'thresholdTimeDegreeSuffix', 'thresholdForgettingSuffix'];
             const prefixes = [
                 { zh: 'F = 1 - 添加天数/', en: 'F = 1 - days added/' },
                 { zh: 'C = 1 - 点击数/', en: 'C = 1 - clicks/' },
-                { zh: 'S = 1 - 活跃时间/', en: 'S = 1 - active time/' },
+                { zh: 'T = 1 - 综合时间/', en: 'T = 1 - composite time/' },
                 { zh: 'D = 未访问天数/', en: 'D = unvisited days/' }
             ];
             const prefix = currentLang === 'en' ? prefixes[index].en : prefixes[index].zh;
@@ -3667,7 +3680,11 @@ async function updateTimeTrackingWidget() {
                     
                     const stateIcon = document.createElement('span');
                     stateIcon.className = 'item-state';
-                    stateIcon.textContent = session.state === 'active' ? '🟢' : '🟡';
+                    // 🟢活跃 🟡前台静止 🔵可见参考 ⚪后台 💤睡眠
+                    stateIcon.textContent = session.state === 'active' ? '🟢' : 
+                        (session.state === 'sleeping' ? '💤' : 
+                        (session.state === 'background' ? '⚪' : 
+                        (session.state === 'visible' ? '🔵' : '🟡')));
                     
                     const title = document.createElement('span');
                     title.className = 'item-title';
@@ -3676,7 +3693,7 @@ async function updateTimeTrackingWidget() {
                     
                     const time = document.createElement('span');
                     time.className = 'item-time';
-                    time.textContent = formatActiveTime(session.activeMs);
+                    time.textContent = formatActiveTime(session.compositeMs || session.activeMs);
                     
                     item.appendChild(stateIcon);
                     item.appendChild(title);
@@ -3800,7 +3817,7 @@ function startTimeTrackingWidgetRefresh() {
         clearInterval(timeTrackingWidgetInterval);
     }
     updateTimeTrackingWidget();
-    timeTrackingWidgetInterval = setInterval(updateTimeTrackingWidget, 5000);
+    timeTrackingWidgetInterval = setInterval(updateTimeTrackingWidget, 1000);  // 1秒刷新，更实时
 }
 
 function initTimeTrackingWidget() {
@@ -4378,7 +4395,7 @@ function initFormulaInputs() {
 function normalizeWeights() {
     const w1 = parseFloat(document.getElementById('weightFreshness').value) || 0;
     const w2 = parseFloat(document.getElementById('weightColdness').value) || 0;
-    const w3 = parseFloat(document.getElementById('weightShallowRead').value) || 0;
+    const w3 = parseFloat(document.getElementById('weightTimeDegree').value) || 0;
     const w4 = parseFloat(document.getElementById('weightForgetting').value) || 0;
     const w5 = parseFloat(document.getElementById('weightLaterReview').value) || 0;
     
@@ -4386,7 +4403,7 @@ function normalizeWeights() {
     if (total > 0 && Math.abs(total - 1) > 0.01) {
         document.getElementById('weightFreshness').value = (w1 / total).toFixed(2);
         document.getElementById('weightColdness').value = (w2 / total).toFixed(2);
-        document.getElementById('weightShallowRead').value = (w3 / total).toFixed(2);
+        document.getElementById('weightTimeDegree').value = (w3 / total).toFixed(2);
         document.getElementById('weightForgetting').value = (w4 / total).toFixed(2);
         document.getElementById('weightLaterReview').value = (w5 / total).toFixed(2);
     }
@@ -4396,13 +4413,13 @@ function normalizeWeights() {
 function resetFormulaToDefault() {
     document.getElementById('weightFreshness').value = '0.15';
     document.getElementById('weightColdness').value = '0.20';
-    document.getElementById('weightShallowRead').value = '0.25';
+    document.getElementById('weightTimeDegree').value = '0.25';
     document.getElementById('weightForgetting').value = '0.20';
     document.getElementById('weightLaterReview').value = '0.20';
     
     document.getElementById('thresholdFreshness').value = '30';
     document.getElementById('thresholdColdness').value = '10';
-    document.getElementById('thresholdShallowRead').value = '5';
+    document.getElementById('thresholdTimeDegree').value = '5';
     document.getElementById('thresholdForgetting').value = '14';
     
     saveFormulaConfig();
@@ -4413,14 +4430,14 @@ function saveFormulaConfig() {
         weights: {
             freshness: parseFloat(document.getElementById('weightFreshness').value) || 0.15,
             coldness: parseFloat(document.getElementById('weightColdness').value) || 0.20,
-            shallowRead: parseFloat(document.getElementById('weightShallowRead').value) || 0.25,
+            shallowRead: parseFloat(document.getElementById('weightTimeDegree').value) || 0.25,
             forgetting: parseFloat(document.getElementById('weightForgetting').value) || 0.20,
             laterReview: parseFloat(document.getElementById('weightLaterReview').value) || 0.20
         },
         thresholds: {
             freshness: parseInt(document.getElementById('thresholdFreshness').value) || 30,
             coldness: parseInt(document.getElementById('thresholdColdness').value) || 10,
-            shallowRead: parseInt(document.getElementById('thresholdShallowRead').value) || 5,
+            shallowRead: parseInt(document.getElementById('thresholdTimeDegree').value) || 5,
             forgetting: parseInt(document.getElementById('thresholdForgetting').value) || 14
         }
     };
@@ -4434,13 +4451,13 @@ function loadFormulaConfig() {
             const config = result.recommendFormulaConfig;
             document.getElementById('weightFreshness').value = config.weights.freshness;
             document.getElementById('weightColdness').value = config.weights.coldness;
-            document.getElementById('weightShallowRead').value = config.weights.shallowRead;
+            document.getElementById('weightTimeDegree').value = config.weights.shallowRead;
             document.getElementById('weightForgetting').value = config.weights.forgetting;
             document.getElementById('weightLaterReview').value = config.weights.laterReview ?? 0.20;
             
             document.getElementById('thresholdFreshness').value = config.thresholds.freshness;
             document.getElementById('thresholdColdness').value = config.thresholds.coldness;
-            document.getElementById('thresholdShallowRead').value = config.thresholds.shallowRead;
+            document.getElementById('thresholdTimeDegree').value = config.thresholds.shallowRead;
             document.getElementById('thresholdForgetting').value = config.thresholds.forgetting;
             console.log('[书签推荐] 加载公式配置:', config);
         }
@@ -4448,55 +4465,71 @@ function loadFormulaConfig() {
 }
 
 // 当前推荐模式
-let currentRecommendMode = 'wander'; // 默认漫游模式
+let currentRecommendMode = 'default'; // 默认模式
 
-// 预设模式配置
+// 预设模式配置（时间度权重增大，使用综合时间）
 const presetModes = {
+    // 默认模式：均衡推荐
+    default: {
+        weights: {
+            freshness: 0.15,      // 新鲜度
+            coldness: 0.15,       // 冷门度
+            timeDegree: 0.30,     // 时间度（综合时间短=需要深入阅读）
+            forgetting: 0.20,     // 遗忘因子
+            laterReview: 0.20     // 待复习权重
+        },
+        thresholds: {
+            freshness: 30,        // 30天内算新
+            coldness: 10,         // 10次以下算冷门
+            timeDegree: 5,        // 5分钟以下算浅读
+            forgetting: 14        // 14天未访问算遗忘
+        }
+    },
     // 考古模式：挖掘尘封已久的书签
     archaeology: {
         weights: {
             freshness: 0.05,      // 新鲜度权重低
-            coldness: 0.30,       // 冷门度高权重
-            shallowRead: 0.15,    // 浅读权重中等
+            coldness: 0.25,       // 冷门度高权重
+            timeDegree: 0.20,     // 时间度
             forgetting: 0.35,     // 遗忘因子最高
             laterReview: 0.15     // 待复习权重
         },
         thresholds: {
             freshness: 90,        // 90天内算新
             coldness: 3,          // 3次以下算冷门
-            shallowRead: 3,       // 3分钟以下算浅读
+            timeDegree: 3,        // 3分钟以下算浅读
             forgetting: 30        // 30天未访问算遗忘
         }
     },
-    // 巩固模式：温习近期重要内容（优先处理用户手动添加的待复习书签）
+    // 巩固模式：温习近期重要内容
     consolidate: {
         weights: {
-            freshness: 0.15,      // 新鲜度
+            freshness: 0.10,      // 新鲜度
             coldness: 0.05,       // 冷门度低
-            shallowRead: 0.15,    // 浅读权重
+            timeDegree: 0.25,     // 时间度
             forgetting: 0.05,     // 遗忘权重低
-            laterReview: 0.60     // 待复习权重最高（用户明确想复习的优先）
+            laterReview: 0.55     // 待复习权重最高
         },
         thresholds: {
             freshness: 14,        // 14天内算新
             coldness: 20,         // 20次以下算冷门
-            shallowRead: 10,      // 10分钟以下算浅读
+            timeDegree: 10,       // 10分钟以下算浅读
             forgetting: 7         // 7天未访问算遗忘
         }
     },
-    // 漫游模式：随机探索（默认模式，偏向巩固+少量考古）
+    // 漫游模式：随机探索
     wander: {
         weights: {
-            freshness: 0.25,
+            freshness: 0.20,
             coldness: 0.15,
-            shallowRead: 0.20,
+            timeDegree: 0.25,
             forgetting: 0.20,
             laterReview: 0.20
         },
         thresholds: {
             freshness: 21,
             coldness: 10,
-            shallowRead: 5,
+            timeDegree: 5,
             forgetting: 14
         }
     }
@@ -4663,14 +4696,14 @@ function applyPresetMode(mode) {
     // 更新权重输入框
     document.getElementById('weightFreshness').value = preset.weights.freshness;
     document.getElementById('weightColdness').value = preset.weights.coldness;
-    document.getElementById('weightShallowRead').value = preset.weights.shallowRead;
+    document.getElementById('weightTimeDegree').value = preset.weights.timeDegree;
     document.getElementById('weightForgetting').value = preset.weights.forgetting;
     document.getElementById('weightLaterReview').value = preset.weights.laterReview;
     
     // 更新阈值输入框
     document.getElementById('thresholdFreshness').value = preset.thresholds.freshness;
     document.getElementById('thresholdColdness').value = preset.thresholds.coldness;
-    document.getElementById('thresholdShallowRead').value = preset.thresholds.shallowRead;
+    document.getElementById('thresholdTimeDegree').value = preset.thresholds.timeDegree;
     document.getElementById('thresholdForgetting').value = preset.thresholds.forgetting;
     
     // 保存配置
@@ -4693,13 +4726,13 @@ function initTrackingToggle() {
                 i18n.trackingToggleOn[currentLang] : 
                 i18n.trackingToggleOff[currentLang];
             
-            // 更新公式中的S项
-            const termS = document.getElementById('termShallowRead');
-            if (termS) {
+            // 更新公式中的T项（时间度）
+            const termT = document.getElementById('termTimeDegree');
+            if (termT) {
                 if (isActive) {
-                    termS.classList.remove('disabled');
+                    termT.classList.remove('disabled');
                 } else {
-                    termS.classList.add('disabled');
+                    termT.classList.add('disabled');
                 }
             }
             
@@ -4728,7 +4761,7 @@ function initTrackingToggle() {
                     toggleBtn.classList.remove('active');
                     document.getElementById('trackingToggleText').textContent = 
                         i18n.trackingToggleOff[currentLang];
-                    document.getElementById('termShallowRead')?.classList.add('disabled');
+                    document.getElementById('termTimeDegree')?.classList.add('disabled');
                 }
             }
         });
@@ -4766,12 +4799,77 @@ function initTrackingToggle() {
             }
         });
     }
+    
+    // 状态说明弹窗（使用事件委托，支持动态创建的图标）
+    const stateModal = document.getElementById('trackingStateModal');
+    const closeStateModalBtn = document.getElementById('closeTrackingStateModal');
+    const trackingHeaderState = document.getElementById('trackingHeaderState');
+    
+    if (trackingHeaderState && stateModal) {
+        trackingHeaderState.addEventListener('click', (e) => {
+            if (e.target.classList.contains('tracking-state-help')) {
+                e.stopPropagation();
+                stateModal.classList.add('show');
+                updateTrackingStateModalI18n();
+            }
+        });
+        
+        if (closeStateModalBtn) {
+            closeStateModalBtn.addEventListener('click', () => {
+                stateModal.classList.remove('show');
+            });
+        }
+        
+        // 点击背景关闭
+        stateModal.addEventListener('click', (e) => {
+            if (e.target === stateModal) {
+                stateModal.classList.remove('show');
+            }
+        });
+    }
+}
+
+// 更新状态说明弹窗的国际化文本
+function updateTrackingStateModalI18n() {
+    const isEn = currentLang === 'en';
+    
+    // 标题
+    const title = document.getElementById('trackingStateModalTitle');
+    if (title) title.textContent = isEn ? 'Time Tracking State Guide' : '时间捕捉状态说明';
+    
+    // 表头（图标在第一列）
+    document.getElementById('stateTableHeaderIcon').textContent = isEn ? 'Icon' : '图标';
+    document.getElementById('stateTableHeaderState').textContent = isEn ? 'State' : '状态';
+    document.getElementById('stateTableHeaderCondition').textContent = isEn ? 'Condition' : '条件';
+    document.getElementById('stateTableHeaderRate').textContent = isEn ? 'Rate' : '计时倍率';
+    document.getElementById('stateTableHeaderExample').textContent = isEn ? 'Example' : '例子';
+    
+    // 表格内容
+    document.getElementById('stateActiveLabel').textContent = isEn ? 'Active' : '活跃';
+    document.getElementById('stateActiveCondition').textContent = isEn ? 'Current tab + Window focus + User active' : '当前标签 + 窗口焦点 + 用户活跃';
+    document.getElementById('stateActiveExample').textContent = isEn ? 'Reading, scrolling, typing' : '正在阅读、滚动页面、打字';
+    
+    document.getElementById('stateIdleLabel').textContent = isEn ? 'Idle Focus' : '前台静止';
+    document.getElementById('stateIdleCondition').textContent = isEn ? 'Current tab + Window focus + User idle' : '当前标签 + 窗口焦点 + 用户空闲';
+    document.getElementById('stateIdleExample').textContent = isEn ? 'Watching video, thinking' : '静止观看视频、思考内容';
+    
+    document.getElementById('stateVisibleLabel').textContent = isEn ? 'Visible Ref' : '可见参考';
+    document.getElementById('stateVisibleCondition').textContent = isEn ? 'Current tab + No window focus + User active' : '当前标签 + 窗口无焦点 + 用户活跃';
+    document.getElementById('stateVisibleExample').textContent = isEn ? 'Split-screen reference, comparing code' : '分屏参考文档、对照代码';
+    
+    document.getElementById('stateBackgroundLabel').textContent = isEn ? 'Background' : '后台';
+    document.getElementById('stateBackgroundCondition').textContent = isEn ? 'Not current tab + User active' : '非当前标签 + 用户活跃';
+    document.getElementById('stateBackgroundExample').textContent = isEn ? 'Idle tab, background music' : '挂机、后台播放音乐';
+    
+    document.getElementById('stateSleepLabel').textContent = isEn ? 'Sleep' : '睡眠';
+    document.getElementById('stateSleepCondition').textContent = isEn ? 'User idle (any tab)' : '用户空闲（任何标签）';
+    document.getElementById('stateSleepExample').textContent = isEn ? 'Away from computer, screen locked' : '离开电脑、锁屏';
 }
 
 // 推荐卡片数据
 let recommendCards = [];
 let trackingRefreshInterval = null;
-const TRACKING_REFRESH_INTERVAL = 3000; // 3秒刷新一次
+const TRACKING_REFRESH_INTERVAL = 1000; // 1秒刷新一次，更实时
 
 // 跳过和屏蔽数据
 let skippedBookmarks = new Set(); // 本次会话跳过的书签（内存，刷新页面后清空）
@@ -6665,15 +6763,23 @@ async function getTrackingDataFromDB() {
             for (const session of response.sessions) {
                 if (session.url) {
                     if (!trackingData[session.url]) {
-                        trackingData[session.url] = 0;
+                        trackingData[session.url] = { activeMs: 0, compositeMs: 0 };
                     }
-                    trackingData[session.url] += session.activeMs || 0;
+                    // 累加活跃时间
+                    trackingData[session.url].activeMs += session.activeMs || 0;
+                    // 累加综合时间：活跃×1.0 + 前台静止×0.8 + 可见参考×0.5 + 后台×0.1
+                    const sessionComposite = session.compositeMs || 
+                        ((session.activeMs || 0) + 
+                         (session.idleFocusMs || session.pauseTotalMs || 0) * 0.8 +
+                         (session.visibleMs || 0) * 0.5 +
+                         (session.backgroundMs || 0) * 0.1);
+                    trackingData[session.url].compositeMs += sessionComposite;
                 }
             }
             // 更新缓存
             trackingDataCache = trackingData;
             trackingCacheTime = now;
-            console.log('[权重计算] tracking 数据已加载:', Object.keys(trackingData).length, '个URL');
+            console.log('[权重计算] tracking 数据已加载:', Object.keys(trackingData).length, '个URL（含综合时间）');
             return trackingData;
         }
     } catch (e) {
@@ -6779,12 +6885,13 @@ async function batchGetBookmarkStats(bookmarks) {
     // 直接从缓存构建统计数据，无需逐个查询
     for (const bookmark of bookmarks) {
         const historyStats = historyData.get(bookmark.url) || { visitCount: 0, lastVisitTime: 0 };
-        const activeTimeMs = trackingData[bookmark.url] || 0;
+        const trackingInfo = trackingData[bookmark.url] || { activeMs: 0, compositeMs: 0 };
         
         stats.set(bookmark.id, {
             visitCount: historyStats.visitCount,
             lastVisitTime: historyStats.lastVisitTime,
-            activeTimeMs: activeTimeMs,
+            activeTimeMs: trackingInfo.activeMs,
+            compositeTimeMs: trackingInfo.compositeMs,  // 综合时间
             dateAdded: bookmark.dateAdded || Date.now()
         });
     }
@@ -6820,13 +6927,13 @@ function calculateWeightedPriority(bookmark, stats, postponeData) {
     };
     
     // 检查追踪是否开启（通过UI状态判断）
-    const termShallowRead = document.getElementById('termShallowRead');
-    const isTrackingDisabled = termShallowRead?.classList.contains('disabled');
+    const termTimeDegree = document.getElementById('termTimeDegree');
+    const isTrackingDisabled = termTimeDegree?.classList.contains('disabled');
     
     // 获取权重配置
     let w1 = parseFloat(document.getElementById('weightFreshness')?.value) || 0.15;
     let w2 = parseFloat(document.getElementById('weightColdness')?.value) || 0.20;
-    let w3 = parseFloat(document.getElementById('weightShallowRead')?.value) || 0.25;
+    let w3 = parseFloat(document.getElementById('weightTimeDegree')?.value) || 0.25;
     let w4 = parseFloat(document.getElementById('weightForgetting')?.value) || 0.20;
     let w5 = parseFloat(document.getElementById('weightLaterReview')?.value) || 0.20;
     
@@ -6845,7 +6952,7 @@ function calculateWeightedPriority(bookmark, stats, postponeData) {
     // 获取阈值配置
     const tFreshness = parseFloat(document.getElementById('thresholdFreshness')?.value) || 30; // 天
     const tColdness = parseFloat(document.getElementById('thresholdColdness')?.value) || 10; // 次
-    const tShallowRead = parseFloat(document.getElementById('thresholdShallowRead')?.value) || 5; // 分钟
+    const tShallowRead = parseFloat(document.getElementById('thresholdTimeDegree')?.value) || 5; // 分钟
     const tForgetting = parseFloat(document.getElementById('thresholdForgetting')?.value) || 14; // 天
     
     // 计算 F (新鲜度): 添加时间越近，F值越高
@@ -6857,9 +6964,11 @@ function calculateWeightedPriority(bookmark, stats, postponeData) {
     // 计算 C (冷门度): 点击次数越少，值越高
     const C = calculateFactorValue(bookmarkStats.visitCount, tColdness, true);
     
-    // 计算 S (浅阅读): 活跃时间越短，值越高（表示还没深入阅读）
-    const activeMinutes = bookmarkStats.activeTimeMs / (1000 * 60);
-    const S = calculateFactorValue(activeMinutes, tShallowRead, true);
+    // 计算 T (时间度): 综合时间越短，值越高（表示还没深入阅读）
+    // 综合时间 = 活跃时间 + 前台静止时间 × 0.8
+    const compositeMs = bookmarkStats.compositeTimeMs || bookmarkStats.activeTimeMs || 0;
+    const compositeMinutes = compositeMs / (1000 * 60);
+    const T = calculateFactorValue(compositeMinutes, tShallowRead, true);
     
     // 计算 D (遗忘度): 未访问天数越多，值越高
     let daysSinceLastVisit = tForgetting; // 默认等于阈值
@@ -6878,7 +6987,7 @@ function calculateWeightedPriority(bookmark, stats, postponeData) {
     }
     
     // 计算加权优先级
-    const priority = w1 * F + w2 * C + w3 * S + w4 * D + w5 * L;
+    const priority = w1 * F + w2 * C + w3 * T + w4 * D + w5 * L;
     
     // 添加小量随机扰动避免完全相同的优先级
     const randomFactor = (Math.random() - 0.5) * 0.05;
@@ -6888,12 +6997,12 @@ function calculateWeightedPriority(bookmark, stats, postponeData) {
     if (Math.random() < 0.05) { // 5%采样率
         console.log('[权重计算]', bookmark.title?.substring(0, 20), 
             'P=', finalPriority.toFixed(3),
-            'F=', F.toFixed(2), 'C=', C.toFixed(2), 'S=', S.toFixed(2), 'D=', D.toFixed(2), 'L=', L);
+            'F=', F.toFixed(2), 'C=', C.toFixed(2), 'T=', T.toFixed(2), 'D=', D.toFixed(2), 'L=', L);
     }
     
     return {
         priority: finalPriority,
-        factors: { F, C, S, D, L },
+        factors: { F, C, T, D, L },
         weights: { w1, w2, w3, w4, w5 }
     };
 }
@@ -6994,6 +7103,9 @@ function calculatePriorityWithReview(basePriority, bookmarkId, reviewData, postp
     return Math.min(priority, 1.5); // 最高1.5
 }
 
+// 排行榜刷新计数器（每10次刷新排行榜一次，即每10秒）
+let rankingRefreshCounter = 0;
+
 // 启动时间捕捉实时刷新
 function startTrackingRefresh() {
     // 清除已有定时器
@@ -7001,12 +7113,20 @@ function startTrackingRefresh() {
         clearInterval(trackingRefreshInterval);
     }
     
+    rankingRefreshCounter = 0;
+    
     // 只在书签记录视图的时间捕捉标签中刷新
     trackingRefreshInterval = setInterval(() => {
         if (currentView === 'additions') {
             const trackingPanel = document.getElementById('additionsTrackingPanel');
             if (trackingPanel && trackingPanel.classList.contains('active')) {
                 loadCurrentTrackingSessions();
+                // 排行榜每10秒刷新一次（数据来自 IndexedDB，变化较慢）
+                rankingRefreshCounter++;
+                if (rankingRefreshCounter >= 10) {
+                    rankingRefreshCounter = 0;
+                    loadActiveTimeRanking();
+                }
             }
         }
     }, TRACKING_REFRESH_INTERVAL);
@@ -7255,6 +7375,9 @@ async function refreshRecommendCards(force = false) {
     }
 }
 
+// 缓存当前追踪列表的会话 ID，用于判断是否需要完整刷新
+let lastTrackingSessionIds = [];
+
 async function loadCurrentTrackingSessions() {
     const trackingCurrentList = document.getElementById('trackingCurrentList');
     const trackingCurrentCount = document.getElementById('trackingCurrentCount');
@@ -7274,6 +7397,7 @@ async function loadCurrentTrackingSessions() {
             }
             
             if (sessions.length === 0) {
+                lastTrackingSessionIds = [];
                 trackingCurrentList.innerHTML = `
                     <tr class="tracking-empty-row">
                         <td colspan="5">${i18n.trackingNoActive[currentLang]}</td>
@@ -7282,51 +7406,93 @@ async function loadCurrentTrackingSessions() {
                 return;
             }
             
+            // 检查会话列表是否有变化（新增/删除会话）
+            const currentIds = sessions.map(s => s.tabId).sort().join(',');
+            const lastIds = lastTrackingSessionIds.sort().join(',');
+            const needsFullRender = currentIds !== lastIds;
+            
             // 截断标题函数
             const truncateTitle = (title, maxLen = 45) => {
                 if (!title) return '';
                 return title.length > maxLen ? title.substring(0, maxLen) + '...' : title;
             };
             
-            trackingCurrentList.innerHTML = sessions.map(session => {
-                const activeTime = formatActiveTime(session.activeMs);
-                const activeRatio = Math.round(session.activeRatio * 100);
-                const stateIcon = session.state === 'active' ? '🟢' : '🟡';
-                const idleTag = session.isIdle ? 
-                    `<span class="idle-tag">⚠${i18n.trackingIdle[currentLang]}</span>` : '';
-                const displayTitle = truncateTitle(session.title || session.url);
-                const faviconUrl = getFaviconUrl(session.url);
+            if (needsFullRender) {
+                // 会话列表有变化，需要完整渲染
+                lastTrackingSessionIds = sessions.map(s => s.tabId);
                 
-                return `
-                    <tr data-tab-id="${session.tabId}">
-                        <td><span class="tracking-state">${stateIcon}</span></td>
-                        <td>
-                            <div class="tracking-title-cell">
-                                <img class="tracking-favicon" src="${faviconUrl}" alt="" onerror="this.src='${fallbackIcon}'">
-                                <span class="tracking-title" title="${escapeHtml(session.title || session.url)}">${escapeHtml(displayTitle)}</span>
-                            </div>
-                        </td>
-                        <td><span class="tracking-time">${activeTime}</span></td>
-                        <td><span class="tracking-pauses">${session.pauseCount}${currentLang === 'en' ? 'x' : '次'}</span></td>
-                        <td>
-                            <div class="tracking-ratio-cell">
-                                <span class="tracking-ratio">${activeRatio}%</span>
-                                ${idleTag}
-                            </div>
-                        </td>
-                    </tr>
-                `;
-            }).join('');
-            
-            // 点击切换到对应标签页
-            trackingCurrentList.querySelectorAll('tr[data-tab-id]').forEach(item => {
-                item.addEventListener('click', () => {
-                    const tabId = parseInt(item.dataset.tabId);
-                    if (tabId) {
-                        browserAPI.tabs.update(tabId, { active: true });
+                trackingCurrentList.innerHTML = sessions.map(session => {
+                    const compositeTime = formatActiveTime(session.compositeMs || session.activeMs);
+                    const activeRatio = Math.round(session.activeRatio * 100);
+                    const stateIcon = session.state === 'active' ? '🟢' : 
+                        (session.state === 'sleeping' ? '💤' : 
+                        (session.state === 'background' ? '⚪' : 
+                        (session.state === 'visible' ? '🔵' : '🟡')));
+                    const idleTag = session.isIdle ? 
+                        `<span class="idle-tag">⚠${i18n.trackingIdle[currentLang]}</span>` : '';
+                    const displayTitle = truncateTitle(session.title || session.url);
+                    const faviconUrl = getFaviconUrl(session.url);
+                    
+                    return `
+                        <tr data-tab-id="${session.tabId}" data-bookmark-url="${escapeHtml(session.url)}">
+                            <td><span class="tracking-state">${stateIcon}</span></td>
+                            <td>
+                                <div class="tracking-title-cell">
+                                    <img class="tracking-favicon" src="${faviconUrl}" alt="">
+                                    <span class="tracking-title" title="${escapeHtml(session.title || session.url)}">${escapeHtml(displayTitle)}</span>
+                                </div>
+                            </td>
+                            <td><span class="tracking-time">${compositeTime}</span></td>
+                            <td><span class="tracking-wakes">${session.wakeCount || 0}${currentLang === 'en' ? 'x' : '次'}</span></td>
+                            <td>
+                                <div class="tracking-ratio-cell">
+                                    <span class="tracking-ratio">${activeRatio}%</span>
+                                    ${idleTag}
+                                </div>
+                            </td>
+                        </tr>
+                    `;
+                }).join('');
+                
+                // 点击切换到对应标签页
+                trackingCurrentList.querySelectorAll('tr[data-tab-id]').forEach(item => {
+                    item.addEventListener('click', () => {
+                        const tabId = parseInt(item.dataset.tabId);
+                        if (tabId) {
+                            browserAPI.tabs.update(tabId, { active: true });
+                        }
+                    });
+                });
+            } else {
+                // 会话列表没变，只更新时间、状态等动态数据（不重新渲染 favicon）
+                sessions.forEach(session => {
+                    const row = trackingCurrentList.querySelector(`tr[data-tab-id="${session.tabId}"]`);
+                    if (row) {
+                        const compositeTime = formatActiveTime(session.compositeMs || session.activeMs);
+                        const activeRatio = Math.round(session.activeRatio * 100);
+                        const stateIcon = session.state === 'active' ? '🟢' : 
+                            (session.state === 'sleeping' ? '💤' : 
+                            (session.state === 'background' ? '⚪' : 
+                            (session.state === 'visible' ? '🔵' : '🟡')));
+                        
+                        // 更新状态图标
+                        const stateEl = row.querySelector('.tracking-state');
+                        if (stateEl) stateEl.textContent = stateIcon;
+                        
+                        // 更新时间
+                        const timeEl = row.querySelector('.tracking-time');
+                        if (timeEl) timeEl.textContent = compositeTime;
+                        
+                        // 更新唤醒次数
+                        const wakesEl = row.querySelector('.tracking-wakes');
+                        if (wakesEl) wakesEl.textContent = `${session.wakeCount || 0}${currentLang === 'en' ? 'x' : '次'}`;
+                        
+                        // 更新活跃率
+                        const ratioEl = row.querySelector('.tracking-ratio');
+                        if (ratioEl) ratioEl.textContent = `${activeRatio}%`;
                     }
                 });
-            });
+            }
         }
     } catch (error) {
         console.warn('[书签推荐] 加载追踪会话失败:', error);
@@ -7962,7 +8128,7 @@ async function showHeatmapMonthDetail(year, month) {
 }
 
 // =============================================================================
-// 活跃时间排行
+// 综合时间排行
 // =============================================================================
 
 async function loadActiveTimeRanking() {
@@ -7978,18 +8144,26 @@ async function loadActiveTimeRanking() {
         console.log('[时间排行] 时间范围:', range);
         
         const now = Date.now();
+        const today = new Date();
         let startTime;
         switch (range) {
             case 'today':
-                startTime = new Date().setHours(0, 0, 0, 0);
+                // 当天：今天 0:00
+                startTime = new Date(today.getFullYear(), today.getMonth(), today.getDate()).getTime();
                 break;
             case 'week':
-                startTime = now - 7 * 24 * 60 * 60 * 1000;
+                // 本周：本周一 0:00
+                const dayOfWeek = today.getDay();
+                const daysToMonday = dayOfWeek === 0 ? 6 : dayOfWeek - 1;  // 周日是0，需要回退6天
+                const monday = new Date(today.getFullYear(), today.getMonth(), today.getDate() - daysToMonday);
+                startTime = monday.getTime();
                 break;
             case 'month':
-                startTime = now - 30 * 24 * 60 * 60 * 1000;
+                // 本月：本月1号 0:00
+                startTime = new Date(today.getFullYear(), today.getMonth(), 1).getTime();
                 break;
             default:
+                // 全部
                 startTime = 0;
         }
         
@@ -8010,29 +8184,35 @@ async function loadActiveTimeRanking() {
         
         console.log('[时间排行] 获取到', response.sessions.length, '条会话记录');
         
-        // 按 URL 聚合活跃时间
-        const urlStats = new Map();
+        // 按标题聚合综合时间（统一用标题作为 key）
+        const titleStats = new Map();
         for (const session of response.sessions) {
-            const key = session.url;
-            if (!urlStats.has(key)) {
-                urlStats.set(key, {
+            const key = session.title || session.url;  // 优先用标题
+            if (!titleStats.has(key)) {
+                titleStats.set(key, {
                     url: session.url,
-                    title: session.title,
+                    title: session.title || session.url,
                     bookmarkId: session.bookmarkId,
-                    totalActiveMs: 0,
-                    pauseCount: 0,
+                    totalCompositeMs: 0,
+                    wakeCount: 0,
                     sessionCount: 0
                 });
             }
-            const stat = urlStats.get(key);
-            stat.totalActiveMs += session.activeMs || 0;
-            stat.pauseCount += session.pauseCount || 0;
+            const stat = titleStats.get(key);
+            // 使用综合时间：活跃×1.0 + 前台静止×0.8 + 可见参考×0.5 + 后台×0.1
+            const sessionComposite = session.compositeMs || 
+                ((session.activeMs || 0) + 
+                 (session.idleFocusMs || session.pauseTotalMs || 0) * 0.8 +
+                 (session.visibleMs || 0) * 0.5 +
+                 (session.backgroundMs || 0) * 0.1);
+            stat.totalCompositeMs += sessionComposite;
+            stat.wakeCount += session.wakeCount || 0;
             stat.sessionCount++;
         }
         
-        // 排序
-        const sorted = Array.from(urlStats.values())
-            .sort((a, b) => b.totalActiveMs - a.totalActiveMs)
+        // 排序（按综合时间）
+        const sorted = Array.from(titleStats.values())
+            .sort((a, b) => b.totalCompositeMs - a.totalCompositeMs)
             .slice(0, 10);
         
         if (sorted.length === 0) {
@@ -8041,7 +8221,7 @@ async function loadActiveTimeRanking() {
         }
         
         // 计算最大值用于进度条
-        const maxMs = sorted[0].totalActiveMs;
+        const maxMs = sorted[0].totalCompositeMs;
         
         // 截断标题函数
         const truncateTitle = (title, maxLen = 45) => {
@@ -8051,23 +8231,23 @@ async function loadActiveTimeRanking() {
         
         // 渲染列表
         container.innerHTML = sorted.map((item, index) => {
-            const activeTime = formatActiveTime(item.totalActiveMs);
-            const barWidth = maxMs > 0 ? (item.totalActiveMs / maxMs * 100) : 0;
+            const compositeTime = formatActiveTime(item.totalCompositeMs);
+            const barWidth = maxMs > 0 ? (item.totalCompositeMs / maxMs * 100) : 0;
             const displayTitle = truncateTitle(item.title || item.url);
             const faviconUrl = getFaviconUrl(item.url);
             
             return `
-                <div class="tracking-ranking-item" data-url="${escapeHtml(item.url)}">
+                <div class="tracking-ranking-item" data-url="${escapeHtml(item.url)}" data-bookmark-url="${escapeHtml(item.url)}">
                     <span class="ranking-number">${index + 1}</span>
-                    <img class="ranking-favicon" src="${faviconUrl}" alt="" onerror="this.src='${fallbackIcon}'">
+                    <img class="ranking-favicon" src="${faviconUrl}" alt="">
                     <div class="ranking-info">
                         <div class="ranking-title" title="${escapeHtml(item.title || item.url)}">${escapeHtml(displayTitle)}</div>
                         <div class="ranking-bar">
                             <div class="ranking-bar-fill" style="width: ${barWidth}%"></div>
                         </div>
                     </div>
-                    <span class="ranking-time">${activeTime}</span>
-                    <span class="ranking-pauses">${item.pauseCount}${currentLang === 'en' ? 'x' : '次'}</span>
+                    <span class="ranking-time">${compositeTime}</span>
+                    <span class="ranking-wakes">${item.wakeCount}${currentLang === 'en' ? 'x' : '次'}</span>
                 </div>
             `;
         }).join('');
@@ -8083,7 +8263,7 @@ async function loadActiveTimeRanking() {
         });
         
     } catch (error) {
-        console.error('[活跃时间排行] 加载失败:', error);
+        console.error('[综合时间排行] 加载失败:', error);
         container.innerHTML = `<div class="tracking-empty">${i18n.trackingLoadFailed[currentLang]}</div>`;
     }
 }

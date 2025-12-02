@@ -50,7 +50,8 @@ import {
     getSessionsByTimeRange,
     getBookmarkActiveTimeStats,
     rebuildBookmarkCache as rebuildActiveTimeBookmarkCache,
-    clearAllSessions
+    clearAllSessions,
+    saveAllActiveSessions
 } from './active_time_tracker/index.js';
 
 // 浏览器兼容性处理
@@ -3885,3 +3886,18 @@ await initializeLanguagePreference(); // 新增：初始化语言偏好
         console.error('[Background] 活跃时间追踪初始化失败:', error);
     }
 })();
+
+// 最后一个窗口关闭时保存所有活跃会话（浏览器即将退出）
+if (browserAPI.windows && browserAPI.windows.onRemoved) {
+    browserAPI.windows.onRemoved.addListener(async (windowId) => {
+        try {
+            const allWindows = await browserAPI.windows.getAll();
+            if (allWindows.length === 0) {
+                console.log('[Background] 最后一个窗口关闭，保存所有活跃会话...');
+                await saveAllActiveSessions();
+            }
+        } catch (error) {
+            console.error('[Background] 检查窗口状态失败:', error);
+        }
+    });
+}

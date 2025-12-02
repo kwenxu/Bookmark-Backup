@@ -151,6 +151,69 @@
                 </div>
             </div>
 
+            <!-- 时间捕捉状态说明弹窗 -->
+            <div id="trackingStateModal" class="modal">
+                <div class="modal-content tracking-state-modal">
+                    <div class="modal-header">
+                        <h2 id="trackingStateModalTitle">时间捕捉状态说明</h2>
+                        <button id="closeTrackingStateModal" class="modal-close" aria-label="Close">×</button>
+                    </div>
+                    <div class="tracking-state-content">
+                        <table class="tracking-state-table">
+                            <thead>
+                                <tr>
+                                    <th id="stateTableHeaderIcon">图标</th>
+                                    <th id="stateTableHeaderState">状态</th>
+                                    <th id="stateTableHeaderCondition">条件</th>
+                                    <th id="stateTableHeaderRate">计时倍率</th>
+                                    <th id="stateTableHeaderExample">例子</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <tr>
+                                    <td class="state-icon-cell">🟢</td>
+                                    <td id="stateActiveLabel">活跃</td>
+                                    <td id="stateActiveCondition">当前标签 + 窗口焦点 + 用户活跃</td>
+                                    <td class="state-rate-cell">×1.0</td>
+                                    <td id="stateActiveExample">正在阅读、滚动页面、打字</td>
+                                </tr>
+                                <tr>
+                                    <td class="state-icon-cell">🟡</td>
+                                    <td id="stateIdleLabel">前台静止</td>
+                                    <td id="stateIdleCondition">当前标签 + 窗口焦点 + 用户空闲</td>
+                                    <td class="state-rate-cell">×0.8</td>
+                                    <td id="stateIdleExample">静止观看视频、思考内容</td>
+                                </tr>
+                                <tr>
+                                    <td class="state-icon-cell">🔵</td>
+                                    <td id="stateVisibleLabel">可见参考</td>
+                                    <td id="stateVisibleCondition">当前标签 + 窗口无焦点 + 用户活跃</td>
+                                    <td class="state-rate-cell">×0.5</td>
+                                    <td id="stateVisibleExample">分屏参考文档、对照代码</td>
+                                </tr>
+                                <tr>
+                                    <td class="state-icon-cell">⚪</td>
+                                    <td id="stateBackgroundLabel">后台</td>
+                                    <td id="stateBackgroundCondition">非当前标签 + 用户活跃</td>
+                                    <td class="state-rate-cell">×0.1</td>
+                                    <td id="stateBackgroundExample">挂机、后台播放音乐</td>
+                                </tr>
+                                <tr>
+                                    <td class="state-icon-cell">💤</td>
+                                    <td id="stateSleepLabel">睡眠</td>
+                                    <td id="stateSleepCondition">用户空闲（任何标签）</td>
+                                    <td class="state-rate-cell">×0</td>
+                                    <td id="stateSleepExample">离开电脑、锁屏</td>
+                                </tr>
+                            </tbody>
+                        </table>
+                        <div class="tracking-state-formula">
+                            <code>综合时间 = 活跃×1.0 + 前台静止×0.8 + 可见参考×0.5 + 后台×0.1</code>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
             <!-- 当前变化视图 -->
             <div id="current-changesView" class="view">
                 <div class="view-header">
@@ -452,10 +515,10 @@
                             <table class="tracking-table" id="trackingCurrentTable">
                                 <thead>
                                     <tr>
-                                        <th id="trackingHeaderState">状态</th>
+                                        <th id="trackingHeaderState"><span class="tracking-header-text">状态</span><i class="fas fa-question-circle tracking-state-help" id="trackingStateHelpBtn" title="状态说明"></i></th>
                                         <th id="trackingHeaderTitle">书签</th>
-                                        <th id="trackingHeaderTime">时长</th>
-                                        <th id="trackingHeaderPauses">暂停</th>
+                                        <th id="trackingHeaderTime">综合时间</th>
+                                        <th id="trackingHeaderWakes">唤醒</th>
                                         <th id="trackingHeaderRatio">活跃</th>
                                     </tr>
                                 </thead>
@@ -630,10 +693,10 @@
                                     <span class="formula-factor">C</span>
                                 </span>
                                 <span class="formula-plus">+</span>
-                                <span class="formula-term" id="termShallowRead">
-                                    <input type="text" class="formula-weight" id="weightShallowRead" value="0.25" readonly>
+                                <span class="formula-term" id="termTimeDegree">
+                                    <input type="text" class="formula-weight" id="weightTimeDegree" value="0.30" readonly>
                                     <span class="formula-multiply">×</span>
-                                    <span class="formula-factor">S</span>
+                                    <span class="formula-factor">T</span>
                                 </span>
                                 <span class="formula-plus">+</span>
                                 <span class="formula-term">
@@ -655,19 +718,22 @@
                                 <div class="formula-legend">
                                     <span class="legend-item"><span class="legend-factor">F</span><span id="legendFreshness">新鲜度</span></span>
                                     <span class="legend-item"><span class="legend-factor">C</span><span id="legendColdness">冷门度</span></span>
-                                    <span class="legend-item"><span class="legend-factor">S</span><span id="legendShallowRead">浅阅读</span></span>
+                                    <span class="legend-item"><span class="legend-factor">T</span><span id="legendTimeDegree">时间度</span></span>
                                     <span class="legend-item"><span class="legend-factor">D</span><span id="legendForgetting">遗忘度</span></span>
                                     <span class="legend-item"><span class="legend-factor">L</span><span id="legendLaterReview">待复习</span></span>
                                 </div>
                                 <div class="formula-thresholds">
                                     <span class="threshold-item">F = 1 - 添加天数/<input type="text" class="threshold-value" id="thresholdFreshness" value="30">天</span>
                                     <span class="threshold-item">C = 1 - 点击数/<input type="text" class="threshold-value" id="thresholdColdness" value="10">次</span>
-                                    <span class="threshold-item">S = 1 - 活跃时间/<input type="text" class="threshold-value" id="thresholdShallowRead" value="5">分钟</span>
+                                    <span class="threshold-item">T = 1 - 综合时间/<input type="text" class="threshold-value" id="thresholdTimeDegree" value="5">分钟</span>
                                     <span class="threshold-item">D = 未访问天数/<input type="text" class="threshold-value" id="thresholdForgetting" value="14">天</span>
                                     <span class="threshold-item" id="thresholdLaterReviewItem">L = <span id="laterReviewStatus">0</span><span id="laterReviewDesc">（手动添加后=1）</span></span>
                                 </div>
                                 <div class="formula-footer">
                                     <div class="preset-modes">
+                                        <button class="preset-btn active" data-mode="default" title="均衡推荐">
+                                            <i class="fas fa-balance-scale"></i> <span>默认模式</span>
+                                        </button>
                                         <button class="preset-btn" data-mode="archaeology" title="挖掘尘封已久的书签">
                                             <i class="fas fa-hourglass-end"></i> <span>考古模式</span>
                                         </button>

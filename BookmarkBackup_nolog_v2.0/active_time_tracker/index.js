@@ -76,6 +76,12 @@ async function saveSession(session) {
             const transaction = database.transaction([CONFIG.STORE_NAME], 'readwrite');
             const store = transaction.objectStore(CONFIG.STORE_NAME);
             
+            // 计算综合时间：活跃×1.0 + 前台静止×0.8 + 可见参考×0.5 + 后台×0.1
+            const compositeMs = session.accumulatedActiveMs + 
+                (session.pauseTotalMs * 0.8) + 
+                (session.visibleTotalMs * 0.5) +
+                (session.backgroundTotalMs * 0.1);
+            
             const record = {
                 url: session.url,
                 bookmarkId: session.bookmarkId || null,
@@ -84,7 +90,11 @@ async function saveSession(session) {
                 endTime: session.endTime || Date.now(),
                 totalMs: (session.endTime || Date.now()) - session.startTime,
                 activeMs: session.accumulatedActiveMs,
-                pauseCount: session.pauseCount,
+                idleFocusMs: session.pauseTotalMs,       // 前台静止时间 ×0.8
+                visibleMs: session.visibleTotalMs,       // 可见参考时间 ×0.5
+                backgroundMs: session.backgroundTotalMs, // 后台时间 ×0.1
+                compositeMs: compositeMs,                 // 综合时间
+                wakeCount: session.wakeCount,             // 唤醒次数
                 pauseTotalMs: session.pauseTotalMs,
                 source: 'tabs',
                 matchType: session.matchType || 'url',
@@ -97,7 +107,7 @@ async function saveSession(session) {
             
             request.onsuccess = () => {
                 console.log('[ActiveTimeTracker] 会话已保存:', record.url, 
-                    `活跃时间: ${Math.round(record.activeMs / 1000)}秒`);
+                    `综合时间: ${Math.round(record.compositeMs / 1000)}秒`);
                 resolve(request.result);
             };
             
@@ -190,6 +200,104 @@ async function clearAllSessions() {
     }
 }
 
+// 保存所有活跃会话（浏览器关闭/Service Worker 暂停时调用）
+async function saveAllActiveSessions() {
+    let savedCount = 0;
+    const sessionsToSave = [];
+    
+    for (const [tabId, session] of activeSessions) {
+        if (session.state !== SessionState.INACTIVE && session.state !== SessionState.ENDED) {
+            const ended = session.end();
+            if (ended && ended.accumulatedActiveMs >= CONFIG.MIN_ACTIVE_MS) {
+                sessionsToSave.push(ended);
+            }
+        }
+    }
+    
+    for (const session of sessionsToSave) {
+        try {
+            await saveSession(session);
+            savedCount++;
+        } catch (error) {
+            console.error('[ActiveTimeTracker] 保存会话失败:', error);
+        }
+    }
+    
+    activeSessions.clear();
+    console.log('[ActiveTimeTracker] 浏览器关闭/暂停，已保存', savedCount, '个活跃会话');
+    return savedCount;
+}
+
+// 删除指定 URL 的所有时间记录（书签被删除时调用）
+async function deleteSessionsByUrl(url) {
+    const normalizedUrl = normalizeUrl(url);
+    if (!normalizedUrl) return false;
+    
+    try {
+        const database = await openDatabase();
+        return new Promise((resolve, reject) => {
+            const transaction = database.transaction([CONFIG.STORE_NAME], 'readwrite');
+            const store = transaction.objectStore(CONFIG.STORE_NAME);
+            const index = store.index('url');
+            const request = index.openCursor(IDBKeyRange.only(normalizedUrl));
+            
+            let deletedCount = 0;
+            request.onsuccess = (event) => {
+                const cursor = event.target.result;
+                if (cursor) {
+                    cursor.delete();
+                    deletedCount++;
+                    cursor.continue();
+                } else {
+                    console.log('[ActiveTimeTracker] 已删除', deletedCount, '条记录:', normalizedUrl);
+                    resolve(deletedCount);
+                }
+            };
+            
+            request.onerror = () => reject(request.error);
+        });
+    } catch (error) {
+        console.error('[ActiveTimeTracker] deleteSessionsByUrl 错误:', error);
+        return 0;
+    }
+}
+
+// 删除指定标题的所有时间记录
+async function deleteSessionsByTitle(title) {
+    const normalizedTitle = normalizeTitle(title);
+    if (!normalizedTitle) return false;
+    
+    try {
+        const database = await openDatabase();
+        return new Promise((resolve, reject) => {
+            const transaction = database.transaction([CONFIG.STORE_NAME], 'readwrite');
+            const store = transaction.objectStore(CONFIG.STORE_NAME);
+            const request = store.openCursor();
+            
+            let deletedCount = 0;
+            request.onsuccess = (event) => {
+                const cursor = event.target.result;
+                if (cursor) {
+                    const record = cursor.value;
+                    if (normalizeTitle(record.title) === normalizedTitle) {
+                        cursor.delete();
+                        deletedCount++;
+                    }
+                    cursor.continue();
+                } else {
+                    console.log('[ActiveTimeTracker] 按标题删除了', deletedCount, '条记录:', normalizedTitle);
+                    resolve(deletedCount);
+                }
+            };
+            
+            request.onerror = () => reject(request.error);
+        });
+    } catch (error) {
+        console.error('[ActiveTimeTracker] deleteSessionsByTitle 错误:', error);
+        return 0;
+    }
+}
+
 async function getBookmarkActiveTimeStats(bookmarkId) {
     try {
         const database = await openDatabase();
@@ -228,6 +336,8 @@ async function getBookmarkActiveTimeStats(bookmarkId) {
 let bookmarkUrlSet = new Set();
 let bookmarkTitleSet = new Set();
 let bookmarkUrlToId = new Map();
+let bookmarkUrlToTitle = new Map();       // 规范化URL -> 原始书签标题
+let bookmarkTitleToOriginal = new Map();  // 规范化标题 -> 原始书签标题
 
 function normalizeUrl(url) {
     if (!url) return null;
@@ -252,6 +362,8 @@ async function rebuildBookmarkCache() {
     bookmarkUrlSet.clear();
     bookmarkTitleSet.clear();
     bookmarkUrlToId.clear();
+    bookmarkUrlToTitle.clear();
+    bookmarkTitleToOriginal.clear();
     
     try {
         const tree = await browserAPI.bookmarks.getTree();
@@ -263,10 +375,12 @@ async function rebuildBookmarkCache() {
                     if (normalizedUrl) {
                         bookmarkUrlSet.add(normalizedUrl);
                         bookmarkUrlToId.set(normalizedUrl, node.id);
+                        bookmarkUrlToTitle.set(normalizedUrl, node.title);  // URL -> 书签标题
                     }
                     const normalizedTitle = normalizeTitle(node.title);
                     if (normalizedTitle) {
                         bookmarkTitleSet.add(normalizedTitle);
+                        bookmarkTitleToOriginal.set(normalizedTitle, node.title);  // 存储原始标题
                     }
                 }
                 if (node.children) {
@@ -287,13 +401,23 @@ function isBookmarkUrl(url, title) {
     const normalizedUrl = normalizeUrl(url);
     const normalizedTitle = normalizeTitle(title);
     
+    // 并集匹配：URL 或 标题 匹配任一即可
     const urlMatch = normalizedUrl && bookmarkUrlSet.has(normalizedUrl);
     const titleMatch = normalizedTitle && bookmarkTitleSet.has(normalizedTitle);
+    
+    // 获取书签的原始标题（URL匹配或标题匹配都要获取）
+    let bookmarkTitle = null;
+    if (urlMatch) {
+        bookmarkTitle = bookmarkUrlToTitle.get(normalizedUrl);
+    } else if (titleMatch) {
+        bookmarkTitle = bookmarkTitleToOriginal.get(normalizedTitle);
+    }
     
     return {
         isBookmark: urlMatch || titleMatch,
         matchType: urlMatch && titleMatch ? 'both' : (urlMatch ? 'url' : (titleMatch ? 'title' : null)),
-        bookmarkId: normalizedUrl ? bookmarkUrlToId.get(normalizedUrl) : null
+        bookmarkId: normalizedUrl ? bookmarkUrlToId.get(normalizedUrl) : null,
+        bookmarkTitle: bookmarkTitle  // 返回书签的原始标题
     };
 }
 
@@ -317,9 +441,14 @@ class SessionData {
         this.startTime = null;
         this.activeStartTime = null;
         this.accumulatedActiveMs = 0;
-        this.pauseCount = 0;
-        this.pauseTotalMs = 0;
+        this.wakeCount = 0;          // 唤醒次数（从非活跃状态恢复到活跃状态的次数）
+        this.pauseTotalMs = 0;       // 前台静止时间（用户空闲但仍在当前标签）×0.8
+        this.visibleTotalMs = 0;     // 可见参考时间（窗口无焦点但用户活跃）×0.5
+        this.backgroundTotalMs = 0;  // 后台时间（切换到其他标签）×0.1
         this.lastPauseTime = null;
+        this.isBackground = false;   // 是否在后台（切换到其他标签）
+        this.isVisible = false;      // 是否可见参考（窗口无焦点）
+        this.isSleeping = false;     // 是否在睡眠（用户空闲）
         this.bookmarkId = null;
         this.matchType = null;
     }
@@ -332,24 +461,86 @@ class SessionData {
         
         this.bookmarkId = match.bookmarkId;
         this.matchType = match.matchType;
+        // 使用书签的原始标题（如果有的话）
+        if (match.bookmarkTitle) {
+            this.title = match.bookmarkTitle;
+        }
         this.state = SessionState.ACTIVE;
         this.startTime = Date.now();
         this.activeStartTime = Date.now();
+        this.isBackground = false;
         
         console.log('[ActiveTimeTracker] 会话开始:', this.title || this.url);
     }
     
-    pause() {
+    // 用户空闲暂停（仍在当前标签，计入前台静止时间）
+    pauseForIdle() {
         if (this.state !== SessionState.ACTIVE) return;
         
         const now = Date.now();
         this.accumulatedActiveMs += now - this.activeStartTime;
         this.activeStartTime = null;
         this.lastPauseTime = now;
-        this.pauseCount++;
+        this.isBackground = false;
         this.state = SessionState.PAUSED;
         
-        console.log('[ActiveTimeTracker] 会话暂停:', this.title || this.url);
+        console.log('[ActiveTimeTracker] 用户空闲暂停:', this.title || this.url);
+    }
+    
+    // 窗口失去焦点但仍是当前标签（可见参考，×0.5倍率）
+    pauseForVisible() {
+        if (this.state !== SessionState.ACTIVE) return;
+        
+        const now = Date.now();
+        this.accumulatedActiveMs += now - this.activeStartTime;
+        this.activeStartTime = null;
+        this.lastPauseTime = now;
+        this.isBackground = false;
+        this.isVisible = true;
+        this.isSleeping = false;
+        this.state = SessionState.PAUSED;
+        
+        console.log('[ActiveTimeTracker] 进入可见参考:', this.title || this.url);
+    }
+    
+    // 切换标签（进入后台，×0.1倍率）
+    pauseForBackground() {
+        if (this.state !== SessionState.ACTIVE) return;
+        
+        const now = Date.now();
+        this.accumulatedActiveMs += now - this.activeStartTime;
+        this.activeStartTime = null;
+        this.lastPauseTime = now;
+        this.isBackground = true;
+        this.isVisible = false;
+        this.isSleeping = false;
+        this.state = SessionState.PAUSED;
+        
+        console.log('[ActiveTimeTracker] 进入后台:', this.title || this.url);
+    }
+    
+    // 用户睡眠时，后台会话也停止计时
+    pauseForSleep() {
+        if (this.state !== SessionState.PAUSED || !this.isBackground) return;
+        
+        // 结算当前后台时间
+        if (this.lastPauseTime) {
+            this.backgroundTotalMs += Date.now() - this.lastPauseTime;
+            this.lastPauseTime = null;
+        }
+        this.isSleeping = true;
+        
+        console.log('[ActiveTimeTracker] 后台进入睡眠:', this.title || this.url);
+    }
+    
+    // 用户恢复活跃，后台会话重新开始计时
+    resumeFromSleep() {
+        if (this.state !== SessionState.PAUSED || !this.isBackground || !this.isSleeping) return;
+        
+        this.lastPauseTime = Date.now();
+        this.isSleeping = false;
+        
+        console.log('[ActiveTimeTracker] 后台恢复计时:', this.title || this.url);
     }
     
     resume() {
@@ -357,12 +548,26 @@ class SessionData {
         
         const now = Date.now();
         if (this.lastPauseTime) {
-            this.pauseTotalMs += now - this.lastPauseTime;
+            const pauseDuration = now - this.lastPauseTime;
+            if (this.isBackground) {
+                // 后台时间 ×0.1
+                this.backgroundTotalMs += pauseDuration;
+            } else if (this.isVisible) {
+                // 可见参考时间 ×0.5
+                this.visibleTotalMs += pauseDuration;
+            } else {
+                // 前台静止时间 ×0.8
+                this.pauseTotalMs += pauseDuration;
+            }
         }
         this.activeStartTime = now;
+        this.isBackground = false;
+        this.isVisible = false;
+        this.isSleeping = false;
+        this.wakeCount++;  // 唤醒次数 +1
         this.state = SessionState.ACTIVE;
         
-        console.log('[ActiveTimeTracker] 会话恢复:', this.title || this.url);
+        console.log('[ActiveTimeTracker] 会话恢复（唤醒）:', this.title || this.url);
     }
     
     end() {
@@ -374,15 +579,24 @@ class SessionData {
             this.accumulatedActiveMs += now - this.activeStartTime;
         }
         
-        if (this.state === SessionState.PAUSED && this.lastPauseTime) {
-            this.pauseTotalMs += now - this.lastPauseTime;
+        // 处理暂停期间的时间
+        if (this.state === SessionState.PAUSED && this.lastPauseTime && !this.isSleeping) {
+            const pauseDuration = now - this.lastPauseTime;
+            if (this.isBackground) {
+                this.backgroundTotalMs += pauseDuration;
+            } else if (this.isVisible) {
+                this.visibleTotalMs += pauseDuration;
+            } else {
+                this.pauseTotalMs += pauseDuration;
+            }
         }
         
         this.state = SessionState.ENDED;
         this.endTime = now;
         
         console.log('[ActiveTimeTracker] 会话结束:', this.title || this.url,
-            `活跃时间: ${Math.round(this.accumulatedActiveMs / 1000)}秒`);
+            `活跃时间: ${Math.round(this.accumulatedActiveMs / 1000)}秒`,
+            `静止时间: ${Math.round(this.pauseTotalMs / 1000)}秒`);
         
         return this;
     }
@@ -397,10 +611,10 @@ async function handleTabActivated(activeInfo) {
     
     const { tabId, windowId } = activeInfo;
     
-    // 暂停其他标签页的会话
+    // 暂停其他标签页的会话（进入后台，不计时）
     for (const [tid, session] of activeSessions) {
         if (tid !== tabId && session.state === SessionState.ACTIVE) {
-            session.pause();
+            session.pauseForBackground();
         }
     }
     
@@ -504,18 +718,18 @@ function handleWindowFocusChanged(windowId) {
     });
     
     if (!currentWindowFocused) {
-        // 焦点完全离开浏览器，暂停所有活跃会话
+        // 焦点完全离开浏览器，当前标签进入可见参考（×0.5）
         for (const session of activeSessions.values()) {
             if (session.state === SessionState.ACTIVE) {
-                session.pause();
+                session.pauseForVisible();
             }
         }
     } else if (previousWindowId !== null && previousWindowId !== windowId) {
         // 从一个窗口切换到另一个窗口
-        // 暂停旧窗口的活跃会话
+        // 旧窗口的当前标签进入可见参考（×0.5）
         for (const session of activeSessions.values()) {
             if (session.windowId === previousWindowId && session.state === SessionState.ACTIVE) {
-                session.pause();
+                session.pauseForVisible();
             }
         }
         // 恢复新窗口的当前标签会话
@@ -533,14 +747,25 @@ function handleIdleStateChanged(newState) {
     currentIdleState = newState;
     
     if (wasActive && newState !== 'active') {
-        // 用户休眠，暂停所有会话
+        // 用户空闲
         for (const session of activeSessions.values()) {
             if (session.state === SessionState.ACTIVE) {
-                session.pause();
+                // 前台会话 → 前台静止（×0.8）
+                session.pauseForIdle();
+            } else if (session.state === SessionState.PAUSED && session.isBackground) {
+                // 后台会话 → 睡眠（停止计时）
+                session.pauseForSleep();
             }
         }
     } else if (!wasActive && newState === 'active') {
-        // 用户活跃，恢复当前会话
+        // 用户恢复活跃
+        for (const session of activeSessions.values()) {
+            if (session.state === SessionState.PAUSED && session.isBackground && session.isSleeping) {
+                // 后台会话从睡眠恢复（重新开始计后台时间）
+                session.resumeFromSleep();
+            }
+        }
+        // 恢复前台当前会话
         if (currentWindowFocused) {
             resumeActiveTabSession();
         }
@@ -642,23 +867,54 @@ function getCurrentActiveSessions() {
         if (session.state !== SessionState.INACTIVE && session.state !== SessionState.ENDED) {
             const now = Date.now();
             let currentActiveMs = session.accumulatedActiveMs;
+            let currentIdleFocusMs = session.pauseTotalMs;
+            let currentVisibleMs = session.visibleTotalMs;
+            let currentBackgroundMs = session.backgroundTotalMs;
             
             if (session.state === SessionState.ACTIVE && session.activeStartTime) {
                 currentActiveMs += now - session.activeStartTime;
             }
             
+            // 计算当前暂停期间的时间（睡眠状态不累积）
+            if (session.state === SessionState.PAUSED && session.lastPauseTime && !session.isSleeping) {
+                const pauseDuration = now - session.lastPauseTime;
+                if (session.isBackground) {
+                    currentBackgroundMs += pauseDuration;
+                } else if (session.isVisible) {
+                    currentVisibleMs += pauseDuration;
+                } else {
+                    currentIdleFocusMs += pauseDuration;
+                }
+            }
+            
+            // 计算综合时间：活跃×1.0 + 前台静止×0.8 + 可见参考×0.5 + 后台×0.1
+            const compositeMs = currentActiveMs + 
+                (currentIdleFocusMs * 0.8) + 
+                (currentVisibleMs * 0.5) + 
+                (currentBackgroundMs * 0.1);
+            
             const totalMs = now - session.startTime;
             const activeRatio = totalMs > 0 ? currentActiveMs / totalMs : 0;
+            
+            // 区分显示状态：active=活跃, paused=前台静止, visible=可见参考, background=后台, sleeping=睡眠
+            const displayState = session.state === SessionState.ACTIVE ? 'active' : 
+                (session.isSleeping ? 'sleeping' :
+                (session.isBackground ? 'background' : 
+                (session.isVisible ? 'visible' : 'paused')));
             
             result.push({
                 tabId: session.tabId,
                 url: session.url,
                 title: session.title,
                 bookmarkId: session.bookmarkId,
-                state: session.state,
+                state: displayState,
                 activeMs: currentActiveMs,
+                idleFocusMs: currentIdleFocusMs,
+                visibleMs: currentVisibleMs,
+                backgroundMs: currentBackgroundMs,
+                compositeMs: compositeMs,
                 totalMs: totalMs,
-                pauseCount: session.pauseCount,
+                wakeCount: session.wakeCount,
                 activeRatio: activeRatio,
                 isIdle: totalMs > 30 * 60 * 1000 && activeRatio < 0.15
             });
@@ -769,12 +1025,42 @@ function setupEventListeners() {
         if (browserAPI.bookmarks.onCreated) {
             browserAPI.bookmarks.onCreated.addListener(rebuildCache);
         }
+        
+        // 书签删除时：删除对应的时间记录，然后重建缓存
         if (browserAPI.bookmarks.onRemoved) {
-            browserAPI.bookmarks.onRemoved.addListener(rebuildCache);
+            browserAPI.bookmarks.onRemoved.addListener(async (id, removeInfo) => {
+                const node = removeInfo.node;
+                if (node && node.url) {
+                    // 删除该 URL 的时间记录
+                    await deleteSessionsByUrl(node.url);
+                    // 同时按标题删除（因为可能是通过标题匹配的）
+                    if (node.title) {
+                        await deleteSessionsByTitle(node.title);
+                    }
+                    // 结束该 URL 的活跃会话
+                    for (const [tabId, session] of activeSessions) {
+                        if (session.url === node.url || session.title === node.title) {
+                            session.end();
+                            activeSessions.delete(tabId);
+                        }
+                    }
+                    console.log('[ActiveTimeTracker] 书签已删除，清理对应记录:', node.title || node.url);
+                }
+                rebuildCache();
+            });
         }
+        
         if (browserAPI.bookmarks.onChanged) {
             browserAPI.bookmarks.onChanged.addListener(rebuildCache);
         }
+    }
+    
+    // Service Worker 暂停时保存所有活跃会话
+    if (browserAPI.runtime && browserAPI.runtime.onSuspend) {
+        browserAPI.runtime.onSuspend.addListener(() => {
+            console.log('[ActiveTimeTracker] Service Worker 即将暂停，保存活跃会话...');
+            saveAllActiveSessions();
+        });
     }
     
     console.log('[ActiveTimeTracker] 事件监听器已设置');
@@ -791,5 +1077,8 @@ export {
     getSessionsByTimeRange,
     getBookmarkActiveTimeStats,
     rebuildBookmarkCache,
-    clearAllSessions
+    clearAllSessions,
+    deleteSessionsByUrl,
+    deleteSessionsByTitle,
+    saveAllActiveSessions
 };

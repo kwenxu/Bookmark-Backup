@@ -9337,8 +9337,8 @@ color: var(--text-secondary);
     color: var(--text-secondary);
 }
 
-/* 暂停次数单元格 */
-.tracking-table .tracking-pauses {
+/* 唤醒次数单元格 */
+.tracking-table .tracking-wakes {
     color: var(--text-tertiary);
 }
 
@@ -9376,7 +9376,7 @@ color: var(--text-secondary);
     text-align: center;
 }
 
-.tracking-pauses {
+.tracking-wakes {
     font-size: 11px;
     color: var(--text-tertiary);
     text-align: center;
@@ -9403,6 +9403,117 @@ color: var(--text-secondary);
     text-align: center;
     color: var(--text-tertiary);
     font-size: 13px;
+}
+
+/* 状态表头（文字和图标在同一行） */
+#trackingHeaderState {
+    white-space: nowrap;
+}
+
+.tracking-header-text {
+    vertical-align: middle;
+}
+
+/* 状态说明帮助图标 */
+.tracking-state-help {
+    font-size: 11px;
+    color: var(--text-secondary);
+    cursor: pointer;
+    margin-left: 4px;
+    opacity: 0.7;
+    transition: all 0.2s;
+    vertical-align: middle;
+    display: inline-block;
+}
+
+.tracking-state-help:hover {
+    color: var(--accent-primary);
+    opacity: 1;
+}
+
+/* 状态说明弹窗 */
+.tracking-state-modal {
+    max-width: 720px;
+    width: 90%;
+}
+
+.tracking-state-modal .modal-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 16px 20px;
+    border-bottom: 1px solid var(--border-color);
+}
+
+.tracking-state-modal .modal-header h2 {
+    margin: 0;
+    font-size: 16px;
+    font-weight: 600;
+    color: var(--text-primary);
+}
+
+.tracking-state-content {
+    padding: 20px;
+}
+
+.tracking-state-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 13px;
+}
+
+.tracking-state-table th,
+.tracking-state-table td {
+    padding: 10px 12px;
+    text-align: left;
+    border-bottom: 1px solid var(--border-color);
+}
+
+.tracking-state-table th {
+    background: var(--bg-secondary);
+    font-weight: 600;
+    color: var(--text-secondary);
+    font-size: 12px;
+}
+
+.tracking-state-table th,
+.tracking-state-table td {
+    text-align: center;
+}
+
+.tracking-state-table .state-icon-cell {
+    font-size: 16px;
+    width: 50px;
+}
+
+.tracking-state-table .state-rate-cell {
+    font-family: var(--font-mono);
+    color: var(--accent-primary);
+    font-weight: 500;
+    width: 80px;
+}
+
+.tracking-state-table td:last-child {
+    color: var(--text-tertiary);
+    font-size: 12px;
+}
+
+.tracking-state-formula {
+    margin-top: 16px;
+    padding: 12px 16px;
+    background: var(--bg-secondary);
+    border-radius: 8px;
+    font-size: 13px;
+    text-align: center;
+}
+
+.tracking-state-formula code {
+    font-family: var(--font-mono);
+    color: var(--accent-primary);
+    background: var(--bg-tertiary);
+    padding: 4px 10px;
+    border-radius: 4px;
+    display: inline-block;
 }
 
 .empty-state-small {
@@ -10003,7 +10114,7 @@ color: var(--text-secondary);
     text-align: right;
 }
 
-.tracking-ranking-item .ranking-pauses {
+.tracking-ranking-item .ranking-wakes {
     font-size: 11px;
     color: var(--text-tertiary);
     text-align: right;

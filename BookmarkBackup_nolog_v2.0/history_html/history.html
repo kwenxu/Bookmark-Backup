@@ -102,20 +102,16 @@
                 </div>
             </nav>
 
-            <!-- 统计信息 -->
-            <div class="stats-panel">
-                <h3 id="statsTitle">统计信息</h3>
-                <div class="stat-item">
-                    <span id="statBackupsLabel">总备份次数</span>
-                    <strong id="statBackupsCount">0</strong>
+            <!-- 时间捕捉小组件 -->
+            <div class="time-tracking-widget" id="timeTrackingWidget">
+                <div class="time-tracking-widget-header">
+                    <i class="fas fa-stopwatch"></i>
+                    <span id="timeTrackingWidgetTitle">时间捕捉</span>
                 </div>
-                <div class="stat-item">
-                    <span id="statBookmarksLabel">当前书签</span>
-                    <strong id="statBookmarksCount">0</strong>
-                </div>
-                <div class="stat-item">
-                    <span id="statFoldersLabel">当前文件夹</span>
-                    <strong id="statFoldersCount">0</strong>
+                <div class="time-tracking-widget-list" id="timeTrackingWidgetList">
+                    <div class="time-tracking-widget-empty" id="timeTrackingWidgetEmpty">
+                        <span id="timeTrackingWidgetEmptyText">暂无追踪中的书签</span>
+                    </div>
                 </div>
             </div>
         </aside>
@@ -452,10 +448,25 @@
                                 <span class="tracking-count">(<span id="trackingCurrentCount">0</span>)</span>
                             </span>
                         </div>
-                        <div class="tracking-list" id="trackingCurrentList">
-                            <div class="empty-state-small">
-                                <span id="trackingNoActiveText">暂无正在追踪的书签</span>
-                            </div>
+                        <div class="tracking-table-wrapper">
+                            <table class="tracking-table" id="trackingCurrentTable">
+                                <thead>
+                                    <tr>
+                                        <th id="trackingHeaderState">状态</th>
+                                        <th id="trackingHeaderTitle">书签</th>
+                                        <th id="trackingHeaderTime">时长</th>
+                                        <th id="trackingHeaderPauses">暂停</th>
+                                        <th id="trackingHeaderRatio">活跃</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="trackingCurrentList">
+                                    <tr class="tracking-empty-row">
+                                        <td colspan="5">
+                                            <span id="trackingNoActiveText">暂无正在追踪的书签</span>
+                                        </td>
+                                    </tr>
+                                </tbody>
+                            </table>
                         </div>
                     </div>
                     

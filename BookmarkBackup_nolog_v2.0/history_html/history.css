@@ -433,9 +433,7 @@ body {
 
 /* 收起后隐藏文字 */
 .sidebar.collapsed .nav-tab span,
-.sidebar.collapsed .nav-group-title,
-.sidebar.collapsed .stats-panel h3,
-.sidebar.collapsed .stats-panel .stat-item span:first-child {
+.sidebar.collapsed .nav-group-title {
     display: none;
 }
 
@@ -454,21 +452,6 @@ body {
 
 .sidebar.collapsed .nav-tab i {
     margin: 0;
-}
-
-/* 收起后调整统计面板 */
-.sidebar.collapsed .stats-panel {
-    padding: 12px 4px;
-}
-
-.sidebar.collapsed .stats-panel .stat-item {
-    flex-direction: column;
-    align-items: center;
-    gap: 4px;
-}
-
-.sidebar.collapsed .stats-panel .stat-item strong {
-    margin-top: 0;
 }
 
 /* 侧边栏切换按钮 - 圆形设计，水平居中靠近底部 */
@@ -582,35 +565,154 @@ body {
     letter-spacing: 0.5px;
 }
 
-.stats-panel {
-    padding: 16px;
+/* 时间捕捉小组件 */
+.time-tracking-widget {
+    padding: 12px;
     background: var(--bg-elevated);
     border: 1px solid var(--border-color);
     border-radius: 12px;
+    cursor: pointer;
+    transition: all 0.2s ease;
 }
 
-.stats-panel h3 {
+.time-tracking-widget:hover {
+    border-color: var(--accent-primary);
+    box-shadow: 0 2px 8px rgba(var(--accent-primary-rgb), 0.15);
+}
+
+.time-tracking-widget-header {
+    display: flex;
+    align-items: center;
+    gap: 8px;
     font-size: 14px;
     font-weight: 600;
-    margin-bottom: 16px;
+    color: var(--text-primary);
+    margin-bottom: 10px;
+}
+
+.time-tracking-widget-header i {
+    color: var(--accent-primary);
+    font-size: 14px;
+}
+
+.time-tracking-widget-list {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+
+.time-tracking-widget-empty {
+    font-size: 12px;
+    color: var(--text-tertiary);
+    text-align: center;
+    padding: 8px 0;
+}
+
+.time-tracking-widget-item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 8px;
+    background: var(--bg-secondary);
+    border-radius: 6px;
+    font-size: 12px;
+    transition: background 0.15s ease;
+}
+
+.time-tracking-widget-item:hover {
+    background: var(--bg-hover);
+}
+
+.time-tracking-widget-item .item-state {
+    font-size: 10px;
+    flex-shrink: 0;
+    line-height: 1;
+}
+
+.time-tracking-widget-item .item-title {
+    flex: 1;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
     color: var(--text-primary);
 }
 
-.stat-item {
+.time-tracking-widget-item .item-time {
+    font-size: 11px;
+    color: var(--text-tertiary);
+    flex-shrink: 0;
+}
+
+.time-tracking-widget-more {
+    font-size: 11px;
+    color: var(--text-tertiary);
+    text-align: center;
+    padding: 4px 0;
+}
+
+/* 排行模式样式 */
+.time-tracking-widget-item.ranking-item {
+    cursor: pointer;
+    padding-left: 4px;
+    padding-right: 4px;
+}
+
+.time-tracking-widget-item.ranking-item .item-time {
+    margin-left: auto;
+    padding-left: 8px;
+}
+
+.time-tracking-widget-item .item-rank {
+    width: 16px;
+    height: 16px;
     display: flex;
-    justify-content: space-between;
     align-items: center;
-    padding: 8px 0;
-    font-size: 13px;
+    justify-content: center;
+    font-size: 10px;
+    font-weight: 700;
+    color: var(--text-tertiary);
+    background: var(--bg-tertiary);
+    border-radius: 4px;
+    flex-shrink: 0;
 }
 
-.stat-item span {
-    color: var(--text-secondary);
+.time-tracking-widget-item:nth-child(1) .item-rank {
+    color: #FFD700;
+    background: rgba(255, 215, 0, 0.15);
 }
 
-.stat-item strong {
-    color: var(--accent-primary);
-    font-size: 16px;
+.time-tracking-widget-item:nth-child(2) .item-rank {
+    color: #C0C0C0;
+    background: rgba(192, 192, 192, 0.15);
+}
+
+.time-tracking-widget-item:nth-child(3) .item-rank {
+    color: #CD7F32;
+    background: rgba(205, 127, 50, 0.15);
+}
+
+.time-tracking-widget-hint {
+    font-size: 10px;
+    color: var(--text-tertiary);
+    text-align: right;
+    padding-top: 6px;
+    border-top: 1px solid var(--border-color);
+    margin-top: 6px;
+}
+
+/* 侧边栏收起状态 - 时间捕捉小组件 */
+.sidebar.collapsed .time-tracking-widget-header span,
+.sidebar.collapsed .time-tracking-widget-list {
+    display: none;
+}
+
+.sidebar.collapsed .time-tracking-widget {
+    padding: 12px 4px;
+}
+
+.sidebar.collapsed .time-tracking-widget-header {
+    justify-content: center;
+    margin-bottom: 0;
 }
 
 /* ==================== 内容区域 ==================== */
@@ -2439,8 +2541,8 @@ a.tree-label.tree-bookmark-link:hover {
 
     .sidebar .nav-tab span,
     .sidebar .nav-group-title,
-    .sidebar .stats-panel h3,
-    .sidebar .stats-panel .stat-item span:first-child {
+    .sidebar .time-tracking-widget-header span,
+    .sidebar .time-tracking-widget-list {
         display: none;
     }
 
@@ -2459,18 +2561,13 @@ a.tree-label.tree-bookmark-link:hover {
         margin: 0;
     }
 
-    .sidebar .stats-panel {
+    .sidebar .time-tracking-widget {
         padding: 12px 4px;
     }
 
-    .sidebar .stats-panel .stat-item {
-        flex-direction: column;
-        align-items: center;
-        gap: 4px;
-    }
-
-    .sidebar .stats-panel .stat-item strong {
-        margin-top: 0;
+    .sidebar .time-tracking-widget-header {
+        justify-content: center;
+        margin-bottom: 0;
     }
 }
 
@@ -2494,8 +2591,8 @@ a.tree-label.tree-bookmark-link:hover {
     /* 在小屏幕上自动隐藏侧边栏文字（相当于自动收起） */
     .sidebar .nav-tab span,
     .sidebar .nav-group-title,
-    .sidebar .stats-panel h3,
-    .sidebar .stats-panel .stat-item span:first-child {
+    .sidebar .time-tracking-widget-header span,
+    .sidebar .time-tracking-widget-list {
         display: none;
     }
 
@@ -2514,18 +2611,13 @@ a.tree-label.tree-bookmark-link:hover {
         margin: 0;
     }
 
-    .sidebar .stats-panel {
+    .sidebar .time-tracking-widget {
         padding: 12px 4px;
     }
 
-    .sidebar .stats-panel .stat-item {
-        flex-direction: column;
-        align-items: center;
-        gap: 4px;
-    }
-
-    .sidebar .stats-panel .stat-item strong {
-        margin-top: 0;
+    .sidebar .time-tracking-widget-header {
+        justify-content: center;
+        margin-bottom: 0;
     }
 
     .search-container input {
@@ -9152,36 +9244,120 @@ color: var(--text-secondary);
     overflow-y: auto;
 }
 
-/* 追踪列表项 - 表格式布局 */
-.tracking-item {
-    display: grid;
-    grid-template-columns: 20px 18px minmax(100px, 1fr) 65px 65px 50px auto;
-    align-items: center;
-    gap: 10px;
-    padding: 8px 12px;
-    background: var(--bg-primary);
-    border: 1px solid var(--border-color);
-    border-radius: 8px;
-    transition: all 0.2s;
-    cursor: pointer;
+/* 追踪表格容器 */
+.tracking-table-wrapper {
+    padding: 12px;
+    overflow-x: auto;
+}
+
+/* 追踪表格 */
+.tracking-table {
+    width: 100%;
+    border-collapse: collapse;
     font-size: 12px;
 }
 
-.tracking-item:hover {
-    border-color: var(--accent-primary);
+.tracking-table thead th {
+    padding: 10px 12px;
+    font-size: 11px;
+    font-weight: 600;
+    color: var(--text-tertiary);
+    text-align: center;
+    border-bottom: 2px solid var(--border-color);
+    background: var(--bg-secondary);
+}
+
+.tracking-table thead th:nth-child(1) { width: 60px; }
+.tracking-table thead th:nth-child(2) { width: auto; }
+.tracking-table thead th:nth-child(3) { width: 70px; }
+.tracking-table thead th:nth-child(4) { width: 60px; }
+.tracking-table thead th:nth-child(5) { width: 80px; }
+
+.tracking-table tbody tr {
+    cursor: pointer;
+    transition: background 0.2s;
+}
+
+.tracking-table tbody tr:hover {
     background: var(--accent-light);
 }
 
-.tracking-state {
-    font-size: 12px;
+.tracking-table tbody td {
+    padding: 10px 12px;
+    text-align: center;
+    vertical-align: middle;
+    border-bottom: 1px solid var(--border-color);
+}
+
+.tracking-table tbody tr:last-child td {
+    border-bottom: none;
+}
+
+/* 空行样式 */
+.tracking-empty-row td {
+    padding: 24px;
+    color: var(--text-tertiary);
     text-align: center;
 }
 
-.tracking-favicon {
+/* 书签单元格 */
+.tracking-table .tracking-title-cell {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+}
+
+.tracking-table .tracking-favicon {
     width: 16px;
     height: 16px;
     object-fit: contain;
     border-radius: 2px;
+    flex-shrink: 0;
+}
+
+.tracking-table .tracking-title {
+    font-size: 13px;
+    font-weight: 500;
+    color: var(--text-primary);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: 200px;
+}
+
+/* 状态单元格 */
+.tracking-table .tracking-state {
+    font-size: 14px;
+}
+
+/* 时长单元格 */
+.tracking-table .tracking-time {
+    font-family: var(--font-mono, monospace);
+    color: var(--text-secondary);
+}
+
+/* 暂停次数单元格 */
+.tracking-table .tracking-pauses {
+    color: var(--text-tertiary);
+}
+
+/* 活跃率单元格 */
+.tracking-table .tracking-ratio-cell {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 4px;
+}
+
+.tracking-table .tracking-ratio {
+    font-weight: 500;
+    color: var(--accent-primary);
+}
+
+.tracking-table .idle-tag {
+    font-size: 10px;
+    color: var(--warning);
 }
 
 .tracking-title {
@@ -9197,20 +9373,20 @@ color: var(--text-secondary);
     font-size: 12px;
     color: var(--text-secondary);
     font-family: var(--font-mono);
-    text-align: right;
+    text-align: center;
 }
 
 .tracking-pauses {
     font-size: 11px;
     color: var(--text-tertiary);
-    text-align: right;
+    text-align: center;
 }
 
 .tracking-ratio {
     font-size: 11px;
     color: var(--accent-primary);
     font-weight: 500;
-    text-align: right;
+    text-align: center;
 }
 
 .idle-tag {

@@ -8808,6 +8808,11 @@ color: var(--text-secondary);
     margin-bottom: 16px;
 }
 
+/* 书签推荐视图中的按钮下边距 */
+.recommend-card-section .card-navigation {
+    margin-bottom: 24px;
+}
+
 .card-nav-btn {
     display: inline-flex;
     align-items: center;

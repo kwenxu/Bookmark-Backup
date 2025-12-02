@@ -7994,6 +7994,7 @@ a.tree-label.tree-bookmark-link:hover {
 
 /* B区：推荐卡片 */
 .recommend-card-section {
+    margin-top: -20px;
     margin-bottom: 20px;
 }
 

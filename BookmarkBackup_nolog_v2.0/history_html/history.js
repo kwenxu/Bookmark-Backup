@@ -1827,10 +1827,6 @@ const i18n = {
         'zh_CN': '天',
         'en': 'days'
     },
-    refreshSettingsHint: {
-        'zh_CN': '打开主UI或刷新本页面会增加打开次数',
-        'en': 'Opening main UI or refreshing this page increments the count'
-    },
     refreshSettingsSave: {
         'zh_CN': '保存',
         'en': 'Save'
@@ -2771,9 +2767,6 @@ function applyLanguage() {
     
     const refreshAfterDaysUnit = document.getElementById('refreshAfterDaysUnit');
     if (refreshAfterDaysUnit) refreshAfterDaysUnit.textContent = i18n.refreshAfterDaysUnit[currentLang];
-    
-    const refreshSettingsHint = document.getElementById('refreshSettingsHint');
-    if (refreshSettingsHint) refreshSettingsHint.innerHTML = `<i class="fas fa-info-circle"></i> ${i18n.refreshSettingsHint[currentLang]}`;
     
     const refreshSettingsSaveText = document.getElementById('refreshSettingsSaveText');
     if (refreshSettingsSaveText) refreshSettingsSaveText.textContent = i18n.refreshSettingsSave[currentLang];

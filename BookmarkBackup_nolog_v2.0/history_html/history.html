@@ -214,6 +214,64 @@
                 </div>
             </div>
 
+            <!-- 权重公式说明弹窗 -->
+            <div id="formulaHelpModal" class="modal content-center">
+                <div class="modal-content formula-help-modal">
+                    <div class="modal-header">
+                        <h2 id="formulaHelpModalTitle">权重公式说明</h2>
+                        <button id="closeFormulaHelpModal" class="modal-close" aria-label="Close">×</button>
+                    </div>
+                    <div class="formula-help-content">
+                        <div class="formula-help-section">
+                            <h3 id="formulaHelpGeneralTitle">通用公式</h3>
+                            <div class="formula-help-code">
+                                <code>因子值 = 1 / (1 + (实际值 / 阈值)^0.7)</code>
+                            </div>
+                        </div>
+                        
+                        <div class="formula-help-section">
+                            <h3 id="formulaHelpFeaturesTitle">公式特点</h3>
+                            <ul class="formula-help-list">
+                                <li id="formulaHelpFeature1"><strong>阈值处 = 0.5</strong>：当实际值等于阈值时，因子值正好是0.5</li>
+                                <li id="formulaHelpFeature2"><strong>平滑衰减</strong>：使用幂函数(^0.7)使衰减更平缓，避免硬截断</li>
+                                <li id="formulaHelpFeature3"><strong>永不归零</strong>：即使数值很大，仍保留微小区分度</li>
+                                <li id="formulaHelpFeature4"><strong>大数值友好</strong>：1000次点击仍有0.02的区分度</li>
+                            </ul>
+                        </div>
+                        
+                        <div class="formula-help-section">
+                            <h3 id="formulaHelpNotesTitle">注意事项</h3>
+                            <ul class="formula-help-list">
+                                <li id="formulaHelpNote1"><strong>F、C、T</strong> 使用 inverse 模式：值越大，因子越小（如点击越多，冷门度越低）</li>
+                                <li id="formulaHelpNote2"><strong>D</strong> 使用正向模式：未访问天数越多，遗忘度越高</li>
+                                <li id="formulaHelpNote3"><strong>L</strong> 是布尔值：手动添加=1，否则=0</li>
+                            </ul>
+                        </div>
+                        
+                        <div class="formula-help-section">
+                            <h3 id="formulaHelpExampleTitle">效果示例</h3>
+                            <table class="formula-help-table">
+                                <thead>
+                                    <tr>
+                                        <th id="formulaHelpTableValue">实际值/阈值</th>
+                                        <th id="formulaHelpTableResult">因子值</th>
+                                        <th id="formulaHelpTableMeaning">含义</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    <tr><td>0</td><td>1.00</td><td id="formulaHelpMeaning1">最高优先</td></tr>
+                                    <tr><td>0.5×</td><td>0.75</td><td id="formulaHelpMeaning2">较高</td></tr>
+                                    <tr><td id="formulaHelpThreshold">1×(阈值)</td><td>0.50</td><td id="formulaHelpMeaning3">中等</td></tr>
+                                    <tr><td>3×</td><td>0.22</td><td id="formulaHelpMeaning4">较低</td></tr>
+                                    <tr><td>10×</td><td>0.10</td><td id="formulaHelpMeaning5">很低</td></tr>
+                                    <tr><td>100×</td><td>0.02</td><td id="formulaHelpMeaning6">极低但仍有区分</td></tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
             <!-- 当前变化视图 -->
             <div id="current-changesView" class="view">
                 <div class="view-header">
@@ -722,12 +780,17 @@
                                     <span class="legend-item"><span class="legend-factor">D</span><span id="legendForgetting">遗忘度</span></span>
                                     <span class="legend-item"><span class="legend-factor">L</span><span id="legendLaterReview">待复习</span></span>
                                 </div>
-                                <div class="formula-thresholds">
-                                    <span class="threshold-item">F = 1 - 添加天数/<input type="text" class="threshold-value" id="thresholdFreshness" value="30">天</span>
-                                    <span class="threshold-item">C = 1 - 点击数/<input type="text" class="threshold-value" id="thresholdColdness" value="10">次</span>
-                                    <span class="threshold-item">T = 1 - 综合时间/<input type="text" class="threshold-value" id="thresholdTimeDegree" value="5">分钟</span>
-                                    <span class="threshold-item">D = 未访问天数/<input type="text" class="threshold-value" id="thresholdForgetting" value="14">天</span>
-                                    <span class="threshold-item" id="thresholdLaterReviewItem">L = <span id="laterReviewStatus">0</span><span id="laterReviewDesc">（手动添加后=1）</span></span>
+                                <div class="formula-thresholds-wrapper">
+                                    <div class="formula-thresholds">
+                                        <span class="threshold-item">F = 1/(1+(添加天数/<input type="text" class="threshold-value" id="thresholdFreshness" value="30">)⁰·⁷)</span>
+                                        <span class="threshold-item">C = 1/(1+(点击数/<input type="text" class="threshold-value" id="thresholdColdness" value="10">)⁰·⁷)</span>
+                                        <span class="threshold-item">T = 1/(1+(综合时间/<input type="text" class="threshold-value" id="thresholdTimeDegree" value="5">分钟)⁰·⁷)</span>
+                                        <span class="threshold-item">D = 1-1/(1+(未访问/<input type="text" class="threshold-value" id="thresholdForgetting" value="14">天)⁰·⁷)</span>
+                                        <span class="threshold-item" id="thresholdLaterReviewItem">L = <span id="laterReviewStatus">0</span><span id="laterReviewDesc">（手动添加后=1）</span></span>
+                                    </div>
+                                    <button class="formula-help-btn" id="formulaHelpBtn" title="公式说明">
+                                        <i class="fas fa-question-circle"></i>
+                                    </button>
                                 </div>
                                 <div class="formula-footer">
                                     <div class="preset-modes">

@@ -8035,7 +8035,14 @@ a.tree-label.tree-bookmark-link:hover {
     font-family: 'SF Mono', 'Monaco', monospace;
 }
 
+.formula-thresholds-wrapper {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+}
+
 .formula-thresholds {
+    flex: 1;
     display: flex;
     flex-wrap: wrap;
     gap: 12px;
@@ -8044,6 +8051,131 @@ a.tree-label.tree-bookmark-link:hover {
     border-radius: 8px;
     font-size: 13px;
     color: var(--text-secondary);
+}
+
+.formula-help-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 32px;
+    height: 32px;
+    border: none;
+    border-radius: 50%;
+    background: var(--bg-tertiary);
+    color: var(--text-secondary);
+    cursor: pointer;
+    transition: all 0.2s;
+}
+
+.formula-help-btn:hover {
+    background: var(--accent-primary);
+    color: white;
+}
+
+.formula-help-btn i {
+    font-size: 16px;
+}
+
+/* 权重公式说明弹窗 */
+.formula-help-modal {
+    width: 480px;
+    max-width: 90%;
+    max-height: 70vh;
+    display: flex;
+    flex-direction: column;
+}
+
+.formula-help-content {
+    padding: 20px;
+    overflow-y: auto;
+    flex: 1;
+}
+
+.formula-help-section {
+    margin-bottom: 24px;
+}
+
+.formula-help-section:last-child {
+    margin-bottom: 0;
+}
+
+.formula-help-section h3 {
+    font-size: 15px;
+    font-weight: 600;
+    color: var(--text-primary);
+    margin-bottom: 12px;
+    padding-bottom: 8px;
+    border-bottom: 1px solid var(--border-color);
+}
+
+.formula-help-code {
+    padding: 16px;
+    background: var(--bg-tertiary);
+    border-radius: 8px;
+    text-align: center;
+}
+
+.formula-help-code code {
+    font-family: 'SF Mono', 'Monaco', 'Consolas', monospace;
+    font-size: 15px;
+    color: var(--accent-primary);
+    font-weight: 600;
+}
+
+.formula-help-list {
+    list-style: none;
+    padding: 0;
+    margin: 0;
+}
+
+.formula-help-list li {
+    padding: 8px 12px;
+    margin-bottom: 8px;
+    background: var(--bg-tertiary);
+    border-radius: 6px;
+    font-size: 13px;
+    color: var(--text-secondary);
+    line-height: 1.5;
+}
+
+.formula-help-list li:last-child {
+    margin-bottom: 0;
+}
+
+.formula-help-list li strong {
+    color: var(--text-primary);
+}
+
+.formula-help-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 13px;
+}
+
+.formula-help-table th,
+.formula-help-table td {
+    padding: 10px 12px;
+    text-align: center;
+    border-bottom: 1px solid var(--border-color);
+}
+
+.formula-help-table th {
+    background: var(--bg-tertiary);
+    color: var(--text-secondary);
+    font-weight: 500;
+}
+
+.formula-help-table td {
+    color: var(--text-primary);
+}
+
+.formula-help-table td:first-child {
+    font-family: 'SF Mono', monospace;
+    color: var(--accent-primary);
+}
+
+.formula-help-table td:nth-child(2) {
+    font-weight: 600;
 }
 
 .threshold-item {

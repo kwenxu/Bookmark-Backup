@@ -2777,19 +2777,24 @@ function applyLanguage() {
     const laterReviewDesc = document.getElementById('laterReviewDesc');
     if (laterReviewDesc) laterReviewDesc.textContent = i18n.laterReviewDesc[currentLang];
     
-    // 公式阈值后缀（需要特殊处理，保留输入框）
+    // 公式阈值（需要特殊处理，保留输入框）- 使用幂函数衰减公式
     document.querySelectorAll('.threshold-item').forEach((item, index) => {
         const input = item.querySelector('input');
         if (input) {
-            const keys = ['thresholdFreshnessSuffix', 'thresholdColdnessSuffix', 'thresholdTimeDegreeSuffix', 'thresholdForgettingSuffix'];
-            const prefixes = [
-                { zh: 'F = 1 - 添加天数/', en: 'F = 1 - days added/' },
-                { zh: 'C = 1 - 点击数/', en: 'C = 1 - clicks/' },
-                { zh: 'T = 1 - 综合时间/', en: 'T = 1 - composite time/' },
-                { zh: 'D = 未访问天数/', en: 'D = unvisited days/' }
+            const formulas = [
+                { zh: 'F = 1/(1+(添加天数/', en: 'F = 1/(1+(days/' },
+                { zh: 'C = 1/(1+(点击数/', en: 'C = 1/(1+(clicks/' },
+                { zh: 'T = 1/(1+(综合时间/', en: 'T = 1/(1+(time/' },
+                { zh: 'D = 1-1/(1+(未访问/', en: 'D = 1-1/(1+(unvisited/' }
             ];
-            const prefix = currentLang === 'en' ? prefixes[index].en : prefixes[index].zh;
-            const suffix = i18n[keys[index]][currentLang];
+            const suffixes = [
+                { zh: ')⁰·⁷)', en: ')⁰·⁷)' },
+                { zh: ')⁰·⁷)', en: ')⁰·⁷)' },
+                { zh: '分钟)⁰·⁷)', en: 'min)⁰·⁷)' },
+                { zh: '天)⁰·⁷)', en: 'days)⁰·⁷)' }
+            ];
+            const prefix = currentLang === 'en' ? formulas[index].en : formulas[index].zh;
+            const suffix = currentLang === 'en' ? suffixes[index].en : suffixes[index].zh;
             // 重建内容
             const inputValue = input.value;
             const inputId = input.id;
@@ -4907,6 +4912,31 @@ function initTrackingToggle() {
             }
         });
     }
+    
+    // 公式说明弹窗
+    const formulaHelpBtn = document.getElementById('formulaHelpBtn');
+    const formulaHelpModal = document.getElementById('formulaHelpModal');
+    const closeFormulaHelpBtn = document.getElementById('closeFormulaHelpModal');
+    
+    if (formulaHelpBtn && formulaHelpModal) {
+        formulaHelpBtn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            formulaHelpModal.classList.add('show');
+            updateFormulaHelpModalI18n();
+        });
+        
+        if (closeFormulaHelpBtn) {
+            closeFormulaHelpBtn.addEventListener('click', () => {
+                formulaHelpModal.classList.remove('show');
+            });
+        }
+        
+        formulaHelpModal.addEventListener('click', (e) => {
+            if (e.target === formulaHelpModal) {
+                formulaHelpModal.classList.remove('show');
+            }
+        });
+    }
 }
 
 // 更新状态说明弹窗的国际化文本
@@ -4944,6 +4974,71 @@ function updateTrackingStateModalI18n() {
     document.getElementById('stateSleepLabel').textContent = isEn ? 'Sleep' : '睡眠';
     document.getElementById('stateSleepCondition').textContent = isEn ? 'User idle (any tab)' : '用户空闲（任何标签）';
     document.getElementById('stateSleepExample').textContent = isEn ? 'Away from computer, screen locked' : '离开电脑、锁屏';
+}
+
+// 更新公式说明弹窗的国际化文本
+function updateFormulaHelpModalI18n() {
+    const isEn = currentLang === 'en';
+    
+    // 标题
+    const title = document.getElementById('formulaHelpModalTitle');
+    if (title) title.textContent = isEn ? 'Formula Explanation' : '权重公式说明';
+    
+    // 通用公式
+    const generalTitle = document.getElementById('formulaHelpGeneralTitle');
+    if (generalTitle) generalTitle.textContent = isEn ? 'General Formula' : '通用公式';
+    
+    const codeEl = document.querySelector('.formula-help-code code');
+    if (codeEl) codeEl.textContent = isEn 
+        ? 'Factor = 1 / (1 + (value / threshold)^0.7)' 
+        : '因子值 = 1 / (1 + (实际值 / 阈值)^0.7)';
+    
+    // 公式特点
+    const featuresTitle = document.getElementById('formulaHelpFeaturesTitle');
+    if (featuresTitle) featuresTitle.textContent = isEn ? 'Features' : '公式特点';
+    
+    document.getElementById('formulaHelpFeature1').innerHTML = isEn 
+        ? '<strong>At threshold = 0.5</strong>: When value equals threshold, factor is exactly 0.5'
+        : '<strong>阈值处 = 0.5</strong>：当实际值等于阈值时，因子值正好是0.5';
+    document.getElementById('formulaHelpFeature2').innerHTML = isEn
+        ? '<strong>Smooth decay</strong>: Power function (^0.7) makes decay more gradual, avoiding hard cutoff'
+        : '<strong>平滑衰减</strong>：使用幂函数(^0.7)使衰减更平缓，避免硬截断';
+    document.getElementById('formulaHelpFeature3').innerHTML = isEn
+        ? '<strong>Never zero</strong>: Even very large values retain small differentiation'
+        : '<strong>永不归零</strong>：即使数值很大，仍保留微小区分度';
+    document.getElementById('formulaHelpFeature4').innerHTML = isEn
+        ? '<strong>Large value friendly</strong>: 1000 clicks still has 0.02 differentiation'
+        : '<strong>大数值友好</strong>：1000次点击仍有0.02的区分度';
+    
+    // 效果示例
+    const exampleTitle = document.getElementById('formulaHelpExampleTitle');
+    if (exampleTitle) exampleTitle.textContent = isEn ? 'Examples' : '效果示例';
+    
+    document.getElementById('formulaHelpTableValue').textContent = isEn ? 'Value/Threshold' : '实际值/阈值';
+    document.getElementById('formulaHelpTableResult').textContent = isEn ? 'Factor' : '因子值';
+    document.getElementById('formulaHelpTableMeaning').textContent = isEn ? 'Meaning' : '含义';
+    
+    document.getElementById('formulaHelpThreshold').textContent = isEn ? '1×(threshold)' : '1×(阈值)';
+    document.getElementById('formulaHelpMeaning1').textContent = isEn ? 'Highest priority' : '最高优先';
+    document.getElementById('formulaHelpMeaning2').textContent = isEn ? 'Higher' : '较高';
+    document.getElementById('formulaHelpMeaning3').textContent = isEn ? 'Medium' : '中等';
+    document.getElementById('formulaHelpMeaning4').textContent = isEn ? 'Lower' : '较低';
+    document.getElementById('formulaHelpMeaning5').textContent = isEn ? 'Very low' : '很低';
+    document.getElementById('formulaHelpMeaning6').textContent = isEn ? 'Minimal but distinct' : '极低但仍有区分';
+    
+    // 注意事项
+    const notesTitle = document.getElementById('formulaHelpNotesTitle');
+    if (notesTitle) notesTitle.textContent = isEn ? 'Notes' : '注意事项';
+    
+    document.getElementById('formulaHelpNote1').innerHTML = isEn
+        ? '<strong>F, C, T</strong> use inverse mode: larger value = smaller factor (e.g., more clicks = lower coldness)'
+        : '<strong>F、C、T</strong> 使用 inverse 模式：值越大，因子越小（如点击越多，冷门度越低）';
+    document.getElementById('formulaHelpNote2').innerHTML = isEn
+        ? '<strong>D</strong> uses direct mode: more unvisited days = higher forgetting'
+        : '<strong>D</strong> 使用正向模式：未访问天数越多，遗忘度越高';
+    document.getElementById('formulaHelpNote3').innerHTML = isEn
+        ? '<strong>L</strong> is boolean: manually added = 1, otherwise = 0'
+        : '<strong>L</strong> 是布尔值：手动添加=1，否则=0';
 }
 
 // 推荐卡片数据
@@ -7016,10 +7111,13 @@ function clearStatsCache() {
 }
 
 // 计算单个因子的归一化值 (0-1)
+// 使用幂函数衰减：1 / (1 + (x/阈值)^0.7)
+// 特点：阈值处正好是0.5，大数值仍有区分度，衰减平缓
 function calculateFactorValue(value, threshold, inverse = false) {
-    // inverse=true 表示值越大，因子值越小（如点击次数多=冷门度低）
-    const normalized = Math.min(value / threshold, 1);
-    return inverse ? (1 - normalized) : normalized;
+    if (value <= 0) return inverse ? 1 : 0;
+    // 幂函数衰减，指数0.7使衰减更平缓
+    const decayed = 1 / (1 + Math.pow(value / threshold, 0.7));
+    return inverse ? decayed : (1 - decayed);
 }
 
 // 使用权重公式计算书签优先级

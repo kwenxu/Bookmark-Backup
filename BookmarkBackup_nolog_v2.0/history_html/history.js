@@ -11088,14 +11088,8 @@ function renderBrowsingClickRankingList(container, items, range) {
         return isZh ? '本月' : 'This month';
     })();
 
-    const PAGE_SIZE = 50;
+    const PAGE_SIZE = 200; // 每次加载200条
     let offset = 0;
-
-    // 清理旧的懒加载监听
-    if (container.__browsingRankingScrollHandler) {
-        container.removeEventListener('scroll', container.__browsingRankingScrollHandler);
-        delete container.__browsingRankingScrollHandler;
-    }
 
     const appendNextPage = () => {
         const end = Math.min(offset + PAGE_SIZE, items.length);
@@ -11278,16 +11272,35 @@ function renderBrowsingClickRankingList(container, items, range) {
 
     appendNextPage();
 
+    // 找到真正的滚动容器（.content-area）
+    const scrollContainer = container.closest('.content-area') || container;
+    
     const onScroll = () => {
         if (offset >= items.length) return;
-        const threshold = 100; // 距底部 100px 内加载下一页
-        if (container.scrollTop + container.clientHeight + threshold >= container.scrollHeight) {
+        const threshold = 300; // 距底部 300px 内加载下一页
+        if (scrollContainer.scrollTop + scrollContainer.clientHeight + threshold >= scrollContainer.scrollHeight) {
             appendNextPage();
         }
     };
 
-    container.addEventListener('scroll', onScroll);
-    container.__browsingRankingScrollHandler = onScroll;
+    // 清理旧的监听器
+    if (scrollContainer.__browsingRankingScrollHandler) {
+        scrollContainer.removeEventListener('scroll', scrollContainer.__browsingRankingScrollHandler);
+    }
+    scrollContainer.addEventListener('scroll', onScroll);
+    scrollContainer.__browsingRankingScrollHandler = onScroll;
+    
+    // 暴露懒加载状态和函数，供跳转功能使用
+    container.__lazyLoadState = {
+        totalItems: items.length,
+        getLoadedCount: () => offset,
+        loadMore: appendNextPage,
+        loadAll: () => {
+            while (offset < items.length) {
+                appendNextPage();
+            }
+        }
+    };
 }
 
 async function loadBrowsingClickRanking(range) {
@@ -15580,15 +15593,9 @@ async function renderBrowsingRelatedList(container, historyItems, bookmarkUrls, 
     }
 
     // 懒加载规则：
-    // - 当范围为 month/year 且条数 > 1000 时，启用懒加载
+    // - 当条数 > 500 时启用懒加载（所有范围都适用）
     // - 其他情况一次性渲染全部
-    const enableLazy = (range === 'month' || range === 'year') && filteredItems.length > 1000;
-
-    // 清理旧的懒加载监听
-    if (container.__browsingRelatedScrollHandler) {
-        container.removeEventListener('scroll', container.__browsingRelatedScrollHandler);
-        delete container.__browsingRelatedScrollHandler;
-    }
+    const enableLazy = filteredItems.length > 500;
 
     if (!enableLazy) {
         for (let index = 0; index < filteredItems.length; index++) {
@@ -15762,17 +15769,36 @@ async function renderBrowsingRelatedList(container, historyItems, bookmarkUrls, 
 
     appendNextPage();
 
+    // 找到真正的滚动容器（.content-area）
+    const scrollContainer = container.closest('.content-area') || container;
+    
     const onScroll = () => {
         if (offset >= filteredItems.length) return;
-        const threshold = 150;
-        if (container.scrollTop + container.clientHeight + threshold >= container.scrollHeight) {
-            // 不等待 Promise，按需追加
+        const threshold = 300;
+        // 检查是否滚动到底部附近
+        if (scrollContainer.scrollTop + scrollContainer.clientHeight + threshold >= scrollContainer.scrollHeight) {
             appendNextPage();
         }
     };
 
-    container.addEventListener('scroll', onScroll);
-    container.__browsingRelatedScrollHandler = onScroll;
+    // 清理旧的监听器
+    if (scrollContainer.__browsingRelatedScrollHandler) {
+        scrollContainer.removeEventListener('scroll', scrollContainer.__browsingRelatedScrollHandler);
+    }
+    scrollContainer.addEventListener('scroll', onScroll);
+    scrollContainer.__browsingRelatedScrollHandler = onScroll;
+    
+    // 暴露懒加载状态和函数，供跳转功能使用
+    container.__lazyLoadState = {
+        totalItems: filteredItems.length,
+        getLoadedCount: () => offset,
+        loadMore: appendNextPage,
+        loadAll: () => {
+            while (offset < filteredItems.length) {
+                appendNextPage();
+            }
+        }
+    };
 }
 
 // 根据时间范围格式化时间
@@ -16757,6 +16783,21 @@ function highlightRelatedHistoryItem(retryCount = 0) {
         return;
     }
     
+    // 检查是否有未加载的数据（懒加载场景）
+    const lazyState = listContainer.__lazyLoadState;
+    if (lazyState && lazyState.getLoadedCount() < lazyState.totalItems) {
+        // 还有未加载的数据，加载更多后重试
+        lazyState.loadMore();
+        if (retryCount < 20) { // 增加重试次数以支持大列表
+            setTimeout(() => highlightRelatedHistoryItem(retryCount + 1), 100);
+        } else {
+            // 重试次数过多，加载全部然后最后尝试一次
+            lazyState.loadAll();
+            setTimeout(() => highlightRelatedHistoryItem(100), 100); // 用大数标记最后一次尝试
+        }
+        return;
+    }
+    
     // 所有范围都尝试过了，仍未找到，清除待高亮信息
     if (retryCount < 3) {
         // 最后重试几次（可能数据还在加载）
@@ -17144,6 +17185,21 @@ function highlightAllRelatedHistoryItems(retryCount = 0) {
         
         // 清除待高亮信息
         pendingHighlightInfo = null;
+        return;
+    }
+    
+    // 检查是否有未加载的数据（懒加载场景）
+    const lazyState = listContainer.__lazyLoadState;
+    if (lazyState && lazyState.getLoadedCount() < lazyState.totalItems) {
+        // 还有未加载的数据，加载更多后重试
+        lazyState.loadMore();
+        if (retryCount < 20) {
+            setTimeout(() => highlightAllRelatedHistoryItems(retryCount + 1), 100);
+        } else {
+            // 重试次数过多，加载全部然后最后尝试一次
+            lazyState.loadAll();
+            setTimeout(() => highlightAllRelatedHistoryItems(100), 100);
+        }
         return;
     }
     

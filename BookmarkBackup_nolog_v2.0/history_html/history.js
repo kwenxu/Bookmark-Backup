@@ -1040,6 +1040,10 @@ const i18n = {
         'zh_CN': '当年',
         'en': 'This Year'
     },
+    browsingRelatedFilterAll: {
+        'zh_CN': '全部',
+        'en': 'All'
+    },
     browsingRankingFilterToday: {
         'zh_CN': '当天',
         'en': 'Today'
@@ -1055,6 +1059,10 @@ const i18n = {
     browsingRankingFilterYear: {
         'zh_CN': '当年',
         'en': 'This year'
+    },
+    browsingRankingFilterAll: {
+        'zh_CN': '全部',
+        'en': 'All'
     },
     browsingRankingEmptyTitle: {
         'zh_CN': '暂无点击记录',
@@ -1719,6 +1727,10 @@ const i18n = {
     trackingRangeMonth: {
         'zh_CN': '本月',
         'en': 'This Month'
+    },
+    trackingRangeYear: {
+        'zh_CN': '当年',
+        'en': 'This Year'
     },
     trackingRangeAll: {
         'zh_CN': '全部',
@@ -2562,6 +2574,8 @@ function applyLanguage() {
     if (browsingRankingFilterMonth) browsingRankingFilterMonth.textContent = i18n.browsingRankingFilterMonth[currentLang];
     const browsingRankingFilterYear = document.getElementById('browsingRankingFilterYear');
     if (browsingRankingFilterYear) browsingRankingFilterYear.textContent = i18n.browsingRankingFilterYear[currentLang];
+    const browsingRankingFilterAll = document.getElementById('browsingRankingFilterAll');
+    if (browsingRankingFilterAll) browsingRankingFilterAll.textContent = i18n.browsingRankingFilterAll[currentLang];
 
     // 书签关联记录相关文本
     const browsingRelatedTitle = document.getElementById('browsingRelatedTitle');
@@ -2578,6 +2592,8 @@ function applyLanguage() {
     if (browsingRelatedFilterMonth) browsingRelatedFilterMonth.textContent = i18n.browsingRelatedFilterMonth[currentLang];
     const browsingRelatedFilterYear = document.getElementById('browsingRelatedFilterYear');
     if (browsingRelatedFilterYear) browsingRelatedFilterYear.textContent = i18n.browsingRelatedFilterYear[currentLang];
+    const browsingRelatedFilterAll = document.getElementById('browsingRelatedFilterAll');
+    if (browsingRelatedFilterAll) browsingRelatedFilterAll.textContent = i18n.browsingRelatedFilterAll[currentLang];
     const browsingCalendarLoadingText = document.getElementById('browsingCalendarLoadingText');
     if (browsingCalendarLoadingText) browsingCalendarLoadingText.textContent = i18n.browsingCalendarLoading[currentLang];
 
@@ -2745,6 +2761,9 @@ function applyLanguage() {
     
     const trackingRangeMonth = document.getElementById('trackingRangeMonth');
     if (trackingRangeMonth) trackingRangeMonth.textContent = i18n.trackingRangeMonth[currentLang];
+    
+    const trackingRangeYear = document.getElementById('trackingRangeYear');
+    if (trackingRangeYear) trackingRangeYear.textContent = i18n.trackingRangeYear[currentLang];
     
     const trackingRangeAll = document.getElementById('trackingRangeAll');
     if (trackingRangeAll) trackingRangeAll.textContent = i18n.trackingRangeAll[currentLang];
@@ -8370,6 +8389,10 @@ async function loadActiveTimeRanking() {
                 // 本月：本月1号 0:00
                 startTime = new Date(today.getFullYear(), today.getMonth(), 1).getTime();
                 break;
+            case 'year':
+                // 当年：今年1月1日 0:00
+                startTime = new Date(today.getFullYear(), 0, 1).getTime();
+                break;
             default:
                 // 全部
                 startTime = 0;
@@ -10793,7 +10816,8 @@ async function ensureBrowsingClickRankingStats() {
                     dayCount: 0,
                     weekCount: 0,
                     monthCount: 0,
-                    yearCount: 0
+                    yearCount: 0,
+                    allCount: 0
                 };
                 statsMap.set(bookmarkKey, stats);
             }
@@ -10805,6 +10829,7 @@ async function ensureBrowsingClickRankingStats() {
             // ✨ 修复时间统计：只统计当前时间之前的访问
             const now = boundaries.now;
             if (t <= now) {
+                stats.allCount += increment; // 全部时间范围
                 if (t >= boundaries.dayStart && t <= now) stats.dayCount += increment;
                 if (t >= boundaries.weekStart && t <= now) stats.weekCount += increment;
                 if (t >= boundaries.monthStart && t <= now) stats.monthCount += increment;
@@ -10831,6 +10856,8 @@ function getBrowsingRankingItemsForRange(range) {
             ? 'weekCount'
         : range === 'year'
             ? 'yearCount'
+        : range === 'all'
+            ? 'allCount'
             : 'monthCount';
 
     const items = browsingClickRankingStats.items
@@ -10895,7 +10922,8 @@ async function renderBrowsingFolderRankingList(container, items, range, stats) {
         const itemCount = item.filteredCount !== undefined ? item.filteredCount : (
             range === 'day' ? item.dayCount :
             range === 'week' ? item.weekCount :
-            range === 'year' ? item.yearCount : item.monthCount
+            range === 'year' ? item.yearCount :
+            range === 'all' ? item.allCount : item.monthCount
         );
         folderData.count += itemCount;
         folderData.items.push({ ...item, count: itemCount, folderPath });
@@ -10909,6 +10937,7 @@ async function renderBrowsingFolderRankingList(container, items, range, stats) {
         if (range === 'day') return isZh ? '今天' : 'Today';
         if (range === 'week') return isZh ? '本周' : 'This week';
         if (range === 'year') return isZh ? '本年' : 'This year';
+        if (range === 'all') return isZh ? '全部' : 'All';
         return isZh ? '本月' : 'This month';
     })();
 
@@ -11055,6 +11084,7 @@ function renderBrowsingClickRankingList(container, items, range) {
         if (range === 'day') return isZh ? '今天' : 'Today';
         if (range === 'week') return isZh ? '本周' : 'This week';
         if (range === 'year') return isZh ? '本年' : 'This year';
+        if (range === 'all') return isZh ? '全部' : 'All';
         return isZh ? '本月' : 'This month';
     })();
 
@@ -11134,7 +11164,9 @@ function renderBrowsingClickRankingList(container, items, range) {
                         ? entry.weekCount
                         : range === 'year'
                             ? entry.yearCount
-                            : entry.monthCount);
+                            : range === 'all'
+                                ? entry.allCount
+                                : entry.monthCount);
             const locale = currentLang === 'zh_CN' ? 'zh-CN' : 'en-US';
             const formattedValue = typeof value === 'number'
                 ? value.toLocaleString(locale)
@@ -11340,7 +11372,7 @@ function initBrowsingClickRanking() {
     const buttons = panel.querySelectorAll('.ranking-time-filter-btn');
     if (!buttons.length) return;
 
-    const allowedRanges = ['day', 'week', 'month', 'year'];
+    const allowedRanges = ['day', 'week', 'month', 'year', 'all'];
 
     const setActiveRange = (range, shouldPersist = true) => {
         if (!allowedRanges.includes(range)) {
@@ -15077,7 +15109,7 @@ function initBrowsingRelatedHistory() {
     const sortBtn = document.getElementById('browsingRelatedSortBtn');
     if (!buttons.length) return;
 
-    const allowedRanges = ['day', 'week', 'month', 'year'];
+    const allowedRanges = ['day', 'week', 'month', 'year', 'all'];
 
     const setActiveRange = (range, shouldPersist = true) => {
         if (!allowedRanges.includes(range)) {
@@ -15283,6 +15315,8 @@ function getTimeRangeStart(range) {
             startTime.setMonth(0, 1);
             startTime.setHours(0, 0, 0, 0);
             break;
+        case 'all':
+            return 0; // 从最早时间开始
         default:
             startTime.setHours(0, 0, 0, 0);
     }
@@ -15873,6 +15907,10 @@ async function showBrowsingRankingTimeMenu(range) {
         case 'year':
             renderRankingYearMonthsMenu(itemsContainer, now, stats);
             break;
+        case 'all':
+            // 全部：显示有数据的年份
+            renderRankingAllYearsMenu(itemsContainer, stats);
+            break;
     }
 
     menuRow.appendChild(itemsContainer);
@@ -15980,7 +16018,8 @@ async function showBrowsingRankingTimeMenu(range) {
     toggleContainer.appendChild(bookmarkBtn);
     menuRow.appendChild(toggleContainer);
 
-    if (itemsContainer.children.length > 1) { // 至少有"全部"和一个其他选项
+    // 对于 'all' 范围，即使只有"全部"按钮，也要显示菜单（因为需要切换按钮）
+    if (itemsContainer.children.length > 1 || range === 'all') {
         menuContainer.appendChild(menuRow);
         menuContainer.style.display = 'block';
     }
@@ -16134,6 +16173,39 @@ function renderRankingYearMonthsMenu(container, date, stats) {
     });
 }
 
+// 渲染点击排行全部时间的年份菜单
+function renderRankingAllYearsMenu(container, stats) {
+    const isZh = currentLang === 'zh_CN';
+    const calendar = window.browsingHistoryCalendarInstance;
+    if (!calendar || !calendar.bookmarksByDate) return;
+
+    // 分析有数据的年份
+    const yearsSet = new Set();
+    for (const records of calendar.bookmarksByDate.values()) {
+        records.forEach(record => {
+            const t = record.visitTime || (record.dateAdded instanceof Date ? record.dateAdded.getTime() : 0);
+            if (t > 0) {
+                yearsSet.add(new Date(t).getFullYear());
+            }
+        });
+    }
+
+    // 按年份倒序排列（最近的年份在前）
+    Array.from(yearsSet).sort((a, b) => b - a).forEach(year => {
+        const btn = document.createElement('button');
+        btn.className = 'time-menu-btn';
+        btn.textContent = isZh ? `${year}年` : `${year}`;
+        btn.dataset.year = year;
+        btn.addEventListener('click', () => {
+            container.querySelectorAll('.time-menu-btn').forEach(b => b.classList.remove('active'));
+            btn.classList.add('active');
+            browsingRankingTimeFilter = { type: 'year', value: year };
+            loadBrowsingClickRanking(browsingRankingCurrentRange);
+        });
+        container.appendChild(btn);
+    });
+}
+
 // 按时间筛选点击排行项目（重新计算每个时间段的点击次数）
 function filterRankingItemsByTime(items, filter, boundaries) {
     if (!filter || !items || items.length === 0) return items;
@@ -16190,6 +16262,12 @@ function filterRankingItemsByTime(items, filter, boundaries) {
                 case 'month':
                     if (t >= boundaries.yearStart && t <= boundaries.now &&
                         visitDate.getMonth() === filter.value) {
+                        matches = true;
+                    }
+                    break;
+                case 'year':
+                    // 筛选特定年份（用于「全部」范围的年份二级菜单）
+                    if (visitDate.getFullYear() === filter.value) {
                         matches = true;
                     }
                     break;
@@ -16296,6 +16374,10 @@ async function showBrowsingRelatedTimeMenu(range) {
         case 'year':
             // 当年：只显示有数据的月份
             renderRelatedYearMonthsMenu(itemsContainer, boundaries, calendar);
+            break;
+        case 'all':
+            // 全部：显示有数据的年份
+            renderRelatedAllYearsMenu(itemsContainer, calendar);
             break;
     }
 
@@ -16456,6 +16538,38 @@ function renderRelatedYearMonthsMenu(container, boundaries, calendar) {
     });
 }
 
+// 书签关联记录 - 渲染全部时间的年份菜单
+function renderRelatedAllYearsMenu(container, calendar) {
+    const isZh = currentLang === 'zh_CN';
+    if (!calendar || !calendar.bookmarksByDate) return;
+
+    // 分析有数据的年份
+    const yearsSet = new Set();
+    for (const records of calendar.bookmarksByDate.values()) {
+        records.forEach(record => {
+            const t = record.visitTime || (record.dateAdded instanceof Date ? record.dateAdded.getTime() : 0);
+            if (t > 0) {
+                yearsSet.add(new Date(t).getFullYear());
+            }
+        });
+    }
+
+    // 按年份倒序排列（最近的年份在前）
+    Array.from(yearsSet).sort((a, b) => b - a).forEach(year => {
+        const btn = document.createElement('button');
+        btn.className = 'time-menu-btn';
+        btn.textContent = isZh ? `${year}年` : `${year}`;
+        btn.dataset.year = year;
+        btn.addEventListener('click', () => {
+            container.querySelectorAll('.time-menu-btn').forEach(b => b.classList.remove('active'));
+            btn.classList.add('active');
+            browsingRelatedTimeFilter = { type: 'year', value: year };
+            loadBrowsingRelatedHistory(browsingRelatedCurrentRange);
+        });
+        container.appendChild(btn);
+    });
+}
+
 // 按时间筛选历史记录
 function filterHistoryByTime(items, filter, range) {
     if (!filter || !items || items.length === 0) return items;
@@ -16483,6 +16597,10 @@ function filterHistoryByTime(items, filter, range) {
             case 'month':
                 // 筛选特定月份
                 return itemDate.getMonth() === filter.value;
+            
+            case 'year':
+                // 筛选特定年份
+                return itemDate.getFullYear() === filter.value;
             
             default:
                 return true;

@@ -7424,17 +7424,20 @@ async function refreshRecommendCards(force = false) {
             const allFlipped = currentCards.cardIds.every(id => currentCards.flippedIds.includes(id));
             
             if (!allFlipped) {
-                // 显示保存的卡片
-                recommendCards = currentCards.cardIds.map(id => {
-                    const bookmark = bookmarkMap.get(id);
-                    if (bookmark) {
-                        const basePriority = 0.75;
-                        const reviewStatus = getReviewStatus(bookmark.id, reviewData);
-                        const priority = calculatePriorityWithReview(basePriority, bookmark.id, reviewData, postponed);
-                        return { ...bookmark, priority, reviewStatus };
+                // 获取保存卡片的统计数据，重新计算优先级
+                const savedBookmarks = currentCards.cardIds.map(id => bookmarkMap.get(id)).filter(Boolean);
+                const savedStats = await batchGetBookmarkStats(savedBookmarks);
+                
+                // 显示保存的卡片（重新计算优先级）
+                recommendCards = savedBookmarks.map(bookmark => {
+                    const { priority, factors } = calculateWeightedPriority(bookmark, savedStats, postponed);
+                    const reviewStatus = getReviewStatus(bookmark.id, reviewData);
+                    let finalPriority = priority;
+                    if (reviewStatus.priority) {
+                        finalPriority *= reviewStatus.priority;
                     }
-                    return null;
-                }).filter(Boolean);
+                    return { ...bookmark, priority: finalPriority, factors, reviewStatus };
+                });
                 
                 // 更新卡片显示（复用下面的逻辑）
                 cards.forEach((card, index) => {

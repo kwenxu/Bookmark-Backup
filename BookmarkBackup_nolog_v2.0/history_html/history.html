@@ -614,7 +614,7 @@
                     <!-- 待复习队列（数量为0时默认折叠） -->
                     <div class="recommend-postponed-section collapsible draggable-section" data-section-id="postponed">
                         <div class="section-header">
-                            <span class="section-title"><i class="fas fa-clock"></i> <span id="postponedTitle">待复习</span> (<span id="postponedCount">0</span>)</span>
+                            <span class="section-title"><i class="fas fa-clock"></i> <span id="postponedTitle">待复习</span> (<span id="postponedCount">0</span>) <span id="postponedPriorityBadge" class="priority-mode-badge" style="display:none;">⚡优先</span></span>
                             <div class="section-header-actions">
                                 <button class="section-action-btn" id="postponedAddBtn" title="添加书签到待复习"><i class="fas fa-plus"></i></button>
                                 <button class="section-toggle"><i class="fas fa-chevron-down"></i></button>
@@ -742,6 +742,9 @@
                                         </button>
                                         <button class="preset-btn" data-mode="wander" title="随机探索发现">
                                             <i class="fas fa-dice"></i> <span>漫游模式</span>
+                                        </button>
+                                        <button class="preset-btn priority-mode" data-mode="priority" id="priorityModeBtn" style="display:none;" title="优先复习手动添加的书签">
+                                            <i class="fas fa-bolt"></i> <span id="priorityModeText">优先巩固</span>
                                         </button>
                                     </div>
                                     <div class="formula-actions">

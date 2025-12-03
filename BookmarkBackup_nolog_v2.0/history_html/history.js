@@ -1793,6 +1793,14 @@ const i18n = {
         'zh_CN': '天',
         'en': ' days'
     },
+    presetDefault: {
+        'zh_CN': '默认模式',
+        'en': 'Default'
+    },
+    presetDefaultTip: {
+        'zh_CN': '均衡推荐',
+        'en': 'Balanced recommendation'
+    },
     presetArchaeology: {
         'zh_CN': '考古模式',
         'en': 'Archaeology'
@@ -1806,8 +1814,16 @@ const i18n = {
         'en': 'Consolidate'
     },
     presetConsolidateTip: {
-        'zh_CN': '温习近期重要内容',
-        'en': 'Review recent important content'
+        'zh_CN': '经常访问但还没深入阅读的',
+        'en': 'Frequently visited but not deeply read'
+    },
+    presetPriority: {
+        'zh_CN': '优先巩固',
+        'en': 'Priority'
+    },
+    presetPriorityTip: {
+        'zh_CN': '优先复习手动添加的书签',
+        'en': 'Prioritize manually added bookmarks'
     },
     presetWander: {
         'zh_CN': '漫游模式',
@@ -1870,6 +1886,10 @@ const i18n = {
     postponedTitle: {
         'zh_CN': '待复习',
         'en': 'To Review'
+    },
+    priorityModeBadge: {
+        'zh_CN': '⚡优先',
+        'en': '⚡Priority'
     },
     postponedEmptyText: {
         'zh_CN': '暂无待复习的书签',
@@ -2782,7 +2802,10 @@ function applyLanguage() {
     document.querySelectorAll('.preset-btn').forEach(btn => {
         const mode = btn.dataset.mode;
         const span = btn.querySelector('span');
-        if (mode === 'archaeology' && span) {
+        if (mode === 'default' && span) {
+            span.textContent = i18n.presetDefault[currentLang];
+            btn.title = i18n.presetDefaultTip[currentLang];
+        } else if (mode === 'archaeology' && span) {
             span.textContent = i18n.presetArchaeology[currentLang];
             btn.title = i18n.presetArchaeologyTip[currentLang];
         } else if (mode === 'consolidate' && span) {
@@ -2791,6 +2814,9 @@ function applyLanguage() {
         } else if (mode === 'wander' && span) {
             span.textContent = i18n.presetWander[currentLang];
             btn.title = i18n.presetWanderTip[currentLang];
+        } else if (mode === 'priority' && span) {
+            span.textContent = i18n.presetPriority[currentLang];
+            btn.title = i18n.presetPriorityTip[currentLang];
         }
     });
     
@@ -2833,6 +2859,9 @@ function applyLanguage() {
     // 待复习区域翻译
     const postponedTitle = document.getElementById('postponedTitle');
     if (postponedTitle) postponedTitle.textContent = i18n.postponedTitle[currentLang];
+    
+    const priorityBadge = document.getElementById('postponedPriorityBadge');
+    if (priorityBadge) priorityBadge.textContent = i18n.priorityModeBadge[currentLang];
     
     const postponedEmptyText = document.getElementById('postponedEmptyText');
     if (postponedEmptyText) postponedEmptyText.textContent = i18n.postponedEmptyText[currentLang];
@@ -4501,18 +4530,18 @@ const presetModes = {
             forgetting: 30        // 30天未访问算遗忘
         }
     },
-    // 巩固模式：温习近期重要内容
+    // 巩固模式：经常访问但还没深入阅读的书签
     consolidate: {
         weights: {
-            freshness: 0.10,      // 新鲜度
-            coldness: 0.05,       // 冷门度低
-            timeDegree: 0.25,     // 时间度
-            forgetting: 0.05,     // 遗忘权重低
-            laterReview: 0.55     // 待复习权重最高
+            freshness: 0.15,      // 新鲜度
+            coldness: 0.05,       // 冷门度低（推荐常用的）
+            timeDegree: 0.40,     // 时间度高（推荐还没深入阅读的）
+            forgetting: 0.20,     // 遗忘度稍高
+            laterReview: 0.20     // 待复习权重
         },
         thresholds: {
             freshness: 14,        // 14天内算新
-            coldness: 20,         // 20次以下算冷门
+            coldness: 30,         // 30次以下算冷门（提高阈值，让常用书签也能被选中）
             timeDegree: 10,       // 10分钟以下算浅读
             forgetting: 7         // 7天未访问算遗忘
         }
@@ -4528,6 +4557,22 @@ const presetModes = {
         },
         thresholds: {
             freshness: 21,
+            coldness: 10,
+            timeDegree: 5,
+            forgetting: 14
+        }
+    },
+    // 优先巩固模式：手动添加待复习时自动激活
+    priority: {
+        weights: {
+            freshness: 0.05,
+            coldness: 0.05,
+            timeDegree: 0.10,
+            forgetting: 0.10,
+            laterReview: 0.70
+        },
+        thresholds: {
+            freshness: 30,
             coldness: 10,
             timeDegree: 5,
             forgetting: 14
@@ -4694,11 +4739,45 @@ function applyPresetMode(mode) {
     });
     
     // 更新权重输入框
-    document.getElementById('weightFreshness').value = preset.weights.freshness;
-    document.getElementById('weightColdness').value = preset.weights.coldness;
-    document.getElementById('weightTimeDegree').value = preset.weights.timeDegree;
-    document.getElementById('weightForgetting').value = preset.weights.forgetting;
-    document.getElementById('weightLaterReview').value = preset.weights.laterReview;
+    const weightInputs = {
+        freshness: document.getElementById('weightFreshness'),
+        coldness: document.getElementById('weightColdness'),
+        timeDegree: document.getElementById('weightTimeDegree'),
+        forgetting: document.getElementById('weightForgetting'),
+        laterReview: document.getElementById('weightLaterReview')
+    };
+    
+    // 设置权重值
+    weightInputs.freshness.value = preset.weights.freshness;
+    weightInputs.coldness.value = preset.weights.coldness;
+    weightInputs.timeDegree.value = preset.weights.timeDegree;
+    weightInputs.forgetting.value = preset.weights.forgetting;
+    weightInputs.laterReview.value = preset.weights.laterReview;
+    
+    // 处理优先模式和用户覆盖
+    const priorityModeBtn = document.getElementById('priorityModeBtn');
+    
+    if (mode === 'priority') {
+        // 优先模式：橙色显示
+        for (const input of Object.values(weightInputs)) {
+            input.style.color = '#ff6b35';
+            input.style.fontWeight = 'bold';
+        }
+        // 清除用户覆盖标记
+        if (priorityModeBtn) {
+            delete priorityModeBtn.dataset.userOverride;
+        }
+    } else {
+        // 其他模式：正常显示
+        for (const input of Object.values(weightInputs)) {
+            input.style.color = '';
+            input.style.fontWeight = '';
+        }
+        // 设置用户覆盖标记（防止自动切换回优先模式）
+        if (priorityModeBtn && priorityModeBtn.style.display !== 'none') {
+            priorityModeBtn.dataset.userOverride = 'true';
+        }
+    }
     
     // 更新阈值输入框
     document.getElementById('thresholdFreshness').value = preset.thresholds.freshness;
@@ -4712,7 +4791,8 @@ function applyPresetMode(mode) {
     // 刷新推荐卡片
     refreshRecommendCards();
     
-    console.log(`[书签推荐] 切换到${mode === 'archaeology' ? '考古' : mode === 'consolidate' ? '巩固' : '漫游'}模式`);
+    const modeNames = { default: '默认', archaeology: '考古', consolidate: '巩固', wander: '漫游', priority: '优先巩固' };
+    console.log(`[书签推荐] 切换到${modeNames[mode] || mode}模式`);
 }
 
 function initTrackingToggle() {
@@ -6286,6 +6366,33 @@ async function loadPostponedList() {
         // 更新计数
         if (countEl) countEl.textContent = activePostponed.length;
         
+        // 更新优先模式按钮和权重显示
+        const priorityBadge = document.getElementById('postponedPriorityBadge');
+        const priorityModeBtn = document.getElementById('priorityModeBtn');
+        const hasManualPostponed = activePostponed.some(p => p.manuallyAdded);
+        
+        if (priorityBadge) {
+            priorityBadge.style.display = hasManualPostponed ? 'inline-flex' : 'none';
+        }
+        
+        // 优先模式按钮显示/隐藏
+        if (priorityModeBtn) {
+            if (hasManualPostponed) {
+                priorityModeBtn.style.display = 'inline-flex';
+                // 如果当前不是用户主动选择的其他模式，自动切换到优先模式
+                if (!priorityModeBtn.dataset.userOverride) {
+                    applyPresetMode('priority');
+                }
+            } else {
+                priorityModeBtn.style.display = 'none';
+                // 待复习清空后，如果当前是优先模式，切换回默认
+                if (currentRecommendMode === 'priority') {
+                    applyPresetMode('default');
+                }
+                delete priorityModeBtn.dataset.userOverride;
+            }
+        }
+        
         // 根据数量决定是否折叠
         updatePostponedCollapse(activePostponed.length);
         
@@ -6930,14 +7037,14 @@ function calculateWeightedPriority(bookmark, stats, postponeData) {
     const termTimeDegree = document.getElementById('termTimeDegree');
     const isTrackingDisabled = termTimeDegree?.classList.contains('disabled');
     
-    // 获取权重配置
+    // 获取权重配置（从输入框读取，已由模式设置）
     let w1 = parseFloat(document.getElementById('weightFreshness')?.value) || 0.15;
     let w2 = parseFloat(document.getElementById('weightColdness')?.value) || 0.20;
     let w3 = parseFloat(document.getElementById('weightTimeDegree')?.value) || 0.25;
     let w4 = parseFloat(document.getElementById('weightForgetting')?.value) || 0.20;
     let w5 = parseFloat(document.getElementById('weightLaterReview')?.value) || 0.20;
     
-    // 追踪关闭时，S权重变0，其他权重重新归一化
+    // 追踪关闭时，T权重变0，其他权重重新归一化
     if (isTrackingDisabled) {
         const remaining = w1 + w2 + w4 + w5;
         if (remaining > 0) {

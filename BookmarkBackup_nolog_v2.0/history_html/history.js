@@ -15593,68 +15593,140 @@ async function renderBrowsingRelatedList(container, historyItems, bookmarkUrls, 
         }
     }
 
-    // 懒加载规则：
-    // - 当条数 > 500 时启用懒加载（所有范围都适用）
-    // - 其他情况一次性渲染全部
-    const enableLazy = filteredItems.length > 500;
+    // ✨ 辅助函数：判断记录是否为书签
+    const checkIsBookmark = (item) => {
+        if (bookmarkUrls.has(item.url)) return true;
+        if (item.title && item.title.trim() && bookmarkTitles.has(item.title.trim())) return true;
+        return false;
+    };
 
-    if (!enableLazy) {
-        for (let index = 0; index < filteredItems.length; index++) {
-            const item = filteredItems[index];
-        
-            // ✨ 使用URL或标题进行匹配（并集逻辑）
-            let isBookmark = false;
-            let matchedByTitle = false; // 标记是否通过标题匹配
+    // ✨ 辅助函数：从URL提取用于比较的键（去掉查询参数和hash）
+    const getUrlKey = (url) => {
+        try {
+            const u = new URL(url);
+            return u.origin + u.pathname; // 只保留协议+域名+路径
+        } catch {
+            return url;
+        }
+    };
+
+    // ✨ 辅助函数：检测字符串是否是URL
+    const isUrl = (str) => {
+        if (!str) return false;
+        return str.startsWith('http://') || str.startsWith('https://') || str.startsWith('chrome-extension://') || str.startsWith('file://');
+    };
+
+    // ✨ 辅助函数：规范化标题用于比较
+    const normalizeTitle = (title) => {
+        if (!title) return '';
+        const trimmed = title.trim();
+        // 如果标题本身是URL，则去掉查询参数进行比较
+        if (isUrl(trimmed)) {
+            return getUrlKey(trimmed);
+        }
+        return trimmed
+            .replace(/\s+/g, ' ')  // 多个空白字符合并为一个空格
+            .replace(/[\u200B-\u200D\uFEFF]/g, ''); // 去除零宽字符
+    };
+
+    // ✨ 合并连续相同标题的非书签记录
+    // 规则：连续相同名字的浏览记录合并，书签作为分界线不合并
+    const mergeConsecutiveItems = (items) => {
+        const groups = [];
+        for (let i = 0; i < items.length; i++) {
+            const item = items[i];
+            const isBookmark = checkIsBookmark(item);
+            // 优先使用标题，如果标题为空则使用URL的路径部分（去掉查询参数）
+            const itemTitle = (item.title && item.title.trim()) ? normalizeTitle(item.title) : getUrlKey(item.url);
             
-            // 条件1：URL匹配
-            if (bookmarkUrls.has(item.url)) {
-                isBookmark = true;
-            }
-            // 条件2：标题匹配（去除空白后比较）
-            if (!isBookmark && item.title && item.title.trim() && bookmarkTitles.has(item.title.trim())) {
-                isBookmark = true;
-                matchedByTitle = true;
-                if (!item.title || !item.title.trim()) {
-                    console.warn('[BrowsingRelated] 标题匹配但item.title为空:', item);
+            if (isBookmark) {
+                // 书签单独成组，不合并
+                groups.push({
+                    startIndex: i + 1,
+                    endIndex: i + 1,
+                    items: [item],
+                    isBookmark: true,
+                    representativeItem: item,
+                    title: itemTitle
+                });
+            } else {
+                // 非书签：检查是否可以和前一组合并
+                const lastGroup = groups.length > 0 ? groups[groups.length - 1] : null;
+                if (lastGroup && !lastGroup.isBookmark && lastGroup.title === itemTitle) {
+                    // 合并到前一组
+                    lastGroup.endIndex = i + 1;
+                    lastGroup.items.push(item);
+                } else {
+                    // 创建新组 - 调试：为什么没合并
+                    if (lastGroup && !lastGroup.isBookmark) {
+                        console.log('[合并调试] 未合并原因 - 标题不同:', {
+                            index: i + 1,
+                            当前标题: itemTitle,
+                            前一组标题: lastGroup.title,
+                            相同: lastGroup.title === itemTitle,
+                            当前标题长度: itemTitle.length,
+                            前一组标题长度: lastGroup.title.length,
+                            当前标题编码: [...itemTitle].map(c => c.charCodeAt(0)),
+                            前一组标题编码: [...lastGroup.title].map(c => c.charCodeAt(0))
+                        });
+                    }
+                    groups.push({
+                        startIndex: i + 1,
+                        endIndex: i + 1,
+                        items: [item],
+                        isBookmark: false,
+                        representativeItem: item,
+                        title: itemTitle
+                    });
                 }
             }
-            
-            const itemEl = document.createElement('div');
-            itemEl.className = 'related-history-item' + (isBookmark ? ' is-bookmark' : '');
-            
-            // 添加 dataset 属性用于跳转匹配
-            const visitTimestamp = item.lastVisitTime || null;
-            itemEl.dataset.url = item.url;
-            itemEl.dataset.visitTime = visitTimestamp || Date.now();
-            if (visitTimestamp) {
-                itemEl.dataset.visitMinute = Math.floor(visitTimestamp / 60000);
-            }
-            // 添加标题用于标题匹配
-            if (item.title && item.title.trim()) {
-                itemEl.dataset.title = item.title.trim();
-            }
+        }
+        return groups;
+    };
 
-            // 获取favicon（同步版本，使用占位图标 + 后台加载）
-            const faviconUrl = getFaviconUrl(item.url);
+    // 合并后的分组
+    const mergedGroups = mergeConsecutiveItems(filteredItems);
 
-            // 格式化时间（根据时间范围显示不同格式）
-            const visitTime = item.lastVisitTime ? new Date(item.lastVisitTime) : new Date();
-            const timeStr = formatTimeByRange(visitTime, range);
+    // 懒加载规则：
+    // - 当分组数 > 500 时启用懒加载（所有范围都适用）
+    // - 其他情况一次性渲染全部
+    const enableLazy = mergedGroups.length > 500;
 
-            // ✨ 确保标题正确显示（优先使用 item.title，如果为空则使用 item.url）
-            const displayTitle = (item.title && item.title.trim()) ? item.title : item.url;
-            
-            if (matchedByTitle) {
-                console.log('[BrowsingRelated] 标题匹配的记录:', {
-                    url: item.url,
-                    title: item.title,
-                    displayTitle: displayTitle,
-                    isBookmark: isBookmark
-                });
-            }
-            
-            itemEl.innerHTML = `
-            <div class="related-history-number">${index + 1}</div>
+    // 渲染单个分组的函数
+    const renderGroup = (group) => {
+        const item = group.representativeItem;
+        const isBookmark = group.isBookmark;
+        
+        const itemEl = document.createElement('div');
+        itemEl.className = 'related-history-item' + (isBookmark ? ' is-bookmark' : '');
+        
+        // 添加 dataset 属性用于跳转匹配
+        const visitTimestamp = item.lastVisitTime || null;
+        itemEl.dataset.url = item.url;
+        itemEl.dataset.visitTime = visitTimestamp || Date.now();
+        if (visitTimestamp) {
+            itemEl.dataset.visitMinute = Math.floor(visitTimestamp / 60000);
+        }
+        if (item.title && item.title.trim()) {
+            itemEl.dataset.title = item.title.trim();
+        }
+
+        // 获取favicon
+        const faviconUrl = getFaviconUrl(item.url);
+
+        // 格式化时间
+        const visitTime = item.lastVisitTime ? new Date(item.lastVisitTime) : new Date();
+        const timeStr = formatTimeByRange(visitTime, range);
+
+        const displayTitle = (item.title && item.title.trim()) ? item.title : item.url;
+        
+        // ✨ 序号显示：如果合并了多条，显示为 "起始~结束" 格式
+        const numberStr = group.startIndex === group.endIndex 
+            ? `${group.startIndex}` 
+            : `${group.startIndex}~${group.endIndex}`;
+        
+        itemEl.innerHTML = `
+            <div class="related-history-number">${numberStr}</div>
             <div class="related-history-header">
                 <img src="${faviconUrl}" class="related-history-favicon" alt="">
                 <div class="related-history-info">
@@ -15670,107 +15742,35 @@ async function renderBrowsingRelatedList(container, historyItems, bookmarkUrls, 
             </div>
         `;
 
-            // 点击打开链接
-            itemEl.addEventListener('click', () => {
-                const browserAPI = (typeof chrome !== 'undefined') ? chrome : browser;
-                if (browserAPI && browserAPI.tabs && browserAPI.tabs.create) {
-                    browserAPI.tabs.create({ url: item.url });
-                } else {
-                    window.open(item.url, '_blank');
-                }
-            });
+        // 点击打开链接
+        itemEl.addEventListener('click', () => {
+            const browserAPI = (typeof chrome !== 'undefined') ? chrome : browser;
+            if (browserAPI && browserAPI.tabs && browserAPI.tabs.create) {
+                browserAPI.tabs.create({ url: item.url });
+            } else {
+                window.open(item.url, '_blank');
+            }
+        });
 
-            container.appendChild(itemEl);
+        return itemEl;
+    };
+
+    if (!enableLazy) {
+        for (const group of mergedGroups) {
+            container.appendChild(renderGroup(group));
         }
         return;
     }
 
-    // 启用懒加载：每次追加 1000 条
+    // 启用懒加载：每次追加 1000 个分组
     const PAGE_SIZE = 1000;
     let offset = 0;
 
     const appendNextPage = () => {
-        const end = Math.min(offset + PAGE_SIZE, filteredItems.length);
+        const end = Math.min(offset + PAGE_SIZE, mergedGroups.length);
 
-        for (let index = offset; index < end; index++) {
-            const item = filteredItems[index];
-            
-            // ✨ 使用URL或标题进行匹配（并集逻辑）
-            let isBookmark = false;
-            let matchedByTitle = false; // 标记是否通过标题匹配
-            
-            // 条件1：URL匹配
-            if (bookmarkUrls.has(item.url)) {
-                isBookmark = true;
-            }
-            // 条件2：标题匹配（去除空白后比较）
-            if (!isBookmark && item.title && item.title.trim() && bookmarkTitles.has(item.title.trim())) {
-                isBookmark = true;
-                matchedByTitle = true;
-                if (!item.title || !item.title.trim()) {
-                    console.warn('[BrowsingRelated] 标题匹配但item.title为空:', item);
-                }
-            }
-            
-            const itemEl = document.createElement('div');
-            itemEl.className = 'related-history-item' + (isBookmark ? ' is-bookmark' : '');
-            
-            // 添加 dataset 属性用于跳转匹配
-            const visitTimestamp = item.lastVisitTime || null;
-            itemEl.dataset.url = item.url;
-            itemEl.dataset.visitTime = visitTimestamp || Date.now();
-            if (visitTimestamp) {
-                itemEl.dataset.visitMinute = Math.floor(visitTimestamp / 60000);
-            }
-            // 添加标题用于标题匹配
-            if (item.title && item.title.trim()) {
-                itemEl.dataset.title = item.title.trim();
-            }
-
-            // 获取favicon（同步版本，使用占位图标 + 后台加载）
-            const faviconUrl = getFaviconUrl(item.url);
-
-            const visitTime = item.lastVisitTime ? new Date(item.lastVisitTime) : new Date();
-            const timeStr = formatTimeByRange(visitTime, range);
-
-            const displayTitle = (item.title && item.title.trim()) ? item.title : item.url;
-            
-            if (matchedByTitle) {
-                console.log('[BrowsingRelated] 标题匹配的记录:', {
-                    url: item.url,
-                    title: item.title,
-                    displayTitle: displayTitle,
-                    isBookmark: isBookmark
-                });
-            }
-            
-            itemEl.innerHTML = `
-            <div class="related-history-number">${index + 1}</div>
-            <div class="related-history-header">
-                <img src="${faviconUrl}" class="related-history-favicon" alt="">
-                <div class="related-history-info">
-                    <div class="related-history-title">${escapeHtml(displayTitle)}</div>
-                </div>
-            </div>
-            <div class="related-history-meta">
-                <div class="related-history-time">
-                    <i class="fas fa-clock"></i>
-                    ${timeStr}
-                </div>
-                ${isBookmark ? `<div class="related-history-badge">${bookmarkLabel}</div>` : ''}
-            </div>
-        `;
-
-            itemEl.addEventListener('click', () => {
-                const browserAPI = (typeof chrome !== 'undefined') ? chrome : browser;
-                if (browserAPI && browserAPI.tabs && browserAPI.tabs.create) {
-                    browserAPI.tabs.create({ url: item.url });
-                } else {
-                    window.open(item.url, '_blank');
-                }
-            });
-
-            container.appendChild(itemEl);
+        for (let i = offset; i < end; i++) {
+            container.appendChild(renderGroup(mergedGroups[i]));
         }
 
         offset = end;
@@ -15782,9 +15782,8 @@ async function renderBrowsingRelatedList(container, historyItems, bookmarkUrls, 
     const scrollContainer = container.closest('.content-area') || container;
     
     const onScroll = () => {
-        if (offset >= filteredItems.length) return;
+        if (offset >= mergedGroups.length) return;
         const threshold = 300;
-        // 检查是否滚动到底部附近
         if (scrollContainer.scrollTop + scrollContainer.clientHeight + threshold >= scrollContainer.scrollHeight) {
             appendNextPage();
         }
@@ -15803,7 +15802,7 @@ async function renderBrowsingRelatedList(container, historyItems, bookmarkUrls, 
         getLoadedCount: () => offset,
         loadMore: appendNextPage,
         loadAll: () => {
-            while (offset < filteredItems.length) {
+            while (offset < mergedGroups.length) {
                 appendNextPage();
             }
         }

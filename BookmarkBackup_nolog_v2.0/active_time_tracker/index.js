@@ -108,6 +108,19 @@ async function saveSession(session) {
             request.onsuccess = () => {
                 console.log('[ActiveTimeTracker] 会话已保存:', record.url, 
                     `综合时间: ${Math.round(record.compositeMs / 1000)}秒`);
+                
+                // 通知其他页面T值数据已更新
+                try {
+                    chrome.runtime.sendMessage({ 
+                        action: 'trackingDataUpdated',
+                        url: record.url,
+                        title: record.title,
+                        compositeMs: record.compositeMs
+                    });
+                } catch (e) {
+                    // 忽略发送失败（可能没有监听者）
+                }
+                
                 resolve(request.result);
             };
             

@@ -4,11 +4,57 @@
 
 书签推荐系统通过计算每个书签的优先级分数（S值）来决定推荐顺序。S值基于以下因子计算：
 
-- **F (新鲜度)**: 书签创建时间
-- **C (冷门度)**: 访问次数
-- **T (时间度)**: 页面停留时间
-- **D (遗忘度)**: 上次访问距今时间
-- **L (待复习)**: 是否在待复习队列
+- **F (新鲜度)**: 书签创建时间 → 实时计算，不需要传递
+- **C (冷门度)**: 访问次数 → 访问URL时传递更新
+- **T (时间度)**: 页面停留时间 → 会话保存时传递更新
+- **D (遗忘度)**: 上次访问距今时间 → 访问URL时传递更新
+- **L (待复习)**: 是否在待复习队列 → 待复习变化时传递更新
+
+## 因子数据流
+
+```
+┌─────────────────────────────────────────────────────────────────────────────────┐
+│                              因子更新机制                                        │
+├─────────────────────────────────────────────────────────────────────────────────┤
+│                                                                                 │
+│  F (新鲜度) - 实时计算，不需要传递                                               │
+│  ────────────────────────────────────────────────────────────────               │
+│  公式: F = 1/(1+(daysSinceAdded/阈值)^0.7)                                       │
+│  数据: now - bookmark.dateAdded                                                 │
+│  特点: dateAdded是静态的，每次计算都用当前时间，所以F值永远是最新的               │
+│                                                                                 │
+│  C/D (冷门度/遗忘度) - 访问URL时传递                                             │
+│  ────────────────────────────────────────────────────────────────               │
+│  chrome.history.onVisited                                                       │
+│       ↓                                                                         │
+│  handleHistoryVisited(url)                                                      │
+│       ↓                                                                         │
+│  scheduleBookmarkScoreUpdateByUrl(url) ←── 1秒防抖                              │
+│       ↓                                                                         │
+│  updateSingleBookmarkScore(id) ←── 增量更新该书签的S值                           │
+│                                                                                 │
+│  T (时间度) - 会话保存时传递                                                     │
+│  ────────────────────────────────────────────────────────────────               │
+│  ActiveTimeTracker.saveSession()                                                │
+│       ↓                                                                         │
+│  chrome.runtime.sendMessage({ action: 'trackingDataUpdated' })                  │
+│       ↓                                                                         │
+│  history.js 监听到消息                                                          │
+│       ↓                                                                         │
+│  增量更新 trackingRankingCache（累加到现有值）                                   │
+│       ↓                                                                         │
+│  下次计算S值时使用最新T值                                                        │
+│                                                                                 │
+│  L (待复习) - 待复习变化时传递                                                   │
+│  ────────────────────────────────────────────────────────────────               │
+│  confirmAddToPostponed / cancelPostpone                                         │
+│       ↓                                                                         │
+│  updateSingleBookmarkScore(id) / updateMultipleBookmarkScores(ids)              │
+│       ↓                                                                         │
+│  增量更新相关书签的S值                                                           │
+│                                                                                 │
+└─────────────────────────────────────────────────────────────────────────────────┘
+```
 
 ## 架构图
 
@@ -22,12 +68,12 @@
 │  ├─────────────────────────────────────────────────────────────────────────┤    │
 │  │                                                                         │    │
 │  │   原始数据源                              S值缓存                        │    │
-│  │   ├── F ← bookmark.dateAdded             recommend_scores_cache         │    │
+│  │   ├── F ← now - dateAdded（实时计算）    recommend_scores_cache         │    │
 │  │   ├── C ← chrome.history.visitCount      ┌─────────────────────────┐    │    │
-│  │   ├── T ← IndexedDB (tracking)           │ {                       │    │    │
-│  │   ├── D ← chrome.history.lastVisitTime   │   "id1": {S,F,C,T,D,L}  │    │    │
-│  │   └── L ← recommend_postponed            │   "id2": {S,F,C,T,D,L}  │    │    │
-│  │                                          │   ...                   │    │    │
+│  │   ├── T ← trackingRankingCache           │ {                       │    │    │
+│  │   │      ↳ 标题或URL匹配（并集）          │   "id1": {S,F,C,T,D,L}  │    │    │
+│  │   ├── D ← chrome.history.lastVisitTime   │   "id2": {S,F,C,T,D,L}  │    │    │
+│  │   └── L ← recommend_postponed            │   ...                   │    │    │
 │  │                                          │ }                       │    │    │
 │  │                                          └─────────────────────────┘    │    │
 │  └─────────────────────────────────────────────────────────────────────────┘    │
@@ -189,11 +235,12 @@ function scheduleBookmarkScoreUpdateByUrl(url) {
 |------|---------|---------|:----:|
 | 主动刷新 | 从缓存读取，显示新卡片 | 从缓存读取，跳过当前卡片选新Top3 | ✅ |
 | 被动刷新 | 从缓存读取，显示新卡片 | 从缓存读取，选新Top3 | ✅ |
-| 访问URL（C/D变化） | 增量更新该书签 | `updateSingleBookmarkScore` | ✅ |
-| 时间追踪（T变化） | 增量更新该书签 | 下次计算时获取最新T值 | ⚠️ |
+| F值（新鲜度）变化 | 实时计算 | `now - dateAdded`，每次计算都是最新 | ✅ |
+| C/D值（访问URL） | 增量更新该书签 | `history.onVisited` → `updateSingleBookmarkScore` | ✅ |
+| T值（时间追踪） | 增量更新缓存 | `saveSession` → `sendMessage` → 累加到缓存 | ✅ |
+| L值（待复习变化） | 增量更新相关书签 | `updateMultipleBookmarkScores` | ✅ |
 | 模式切换 | 全量重算 | `clearCache` + `computeAll` | ✅ |
 | 手动调权重 | 全量重算 | `clearCache` + `computeAll` | ✅ |
-| 待复习变化（L变化） | 增量更新相关书签 | `updateMultipleBookmarkScores` | ✅ |
 | 新建书签 | 增量计算该书签 | `updateSingleBookmarkScore` | ✅ |
 | 删除书签 | 删除缓存 | `removeCachedScore` | ✅ |
 | 循环刷新 | 阻止循环 | 500ms时间戳检查 | ✅ |

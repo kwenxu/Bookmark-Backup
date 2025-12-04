@@ -7227,55 +7227,106 @@ async function updateMultipleBookmarkScores(bookmarkIds) {
 }
 
 // ===== P1: 缓存机制 =====
-let trackingDataCache = null;
-let trackingCacheTime = 0;
+// 综合时间排行静态缓存（"全部"范围，按标题和URL双索引）
+let trackingRankingCache = {
+    byTitle: new Map(),   // 标题 -> { compositeMs, url }
+    byUrl: new Map(),     // URL -> { compositeMs, title }
+    loaded: false
+};
 let historyDataCache = null;
 let historyCacheTime = 0;
 const STATS_CACHE_TTL = 60000; // 1分钟缓存
 
-// ===== P0: 从 IndexedDB 获取 tracking 数据（通过 sendMessage）=====
-async function getTrackingDataFromDB() {
-    const now = Date.now();
-    // 检查缓存
-    if (trackingDataCache && (now - trackingCacheTime) < STATS_CACHE_TTL) {
-        return trackingDataCache;
+// ===== P0: 加载综合时间排行缓存（"全部"范围）=====
+async function loadTrackingRankingCache() {
+    if (trackingRankingCache.loaded) {
+        return trackingRankingCache;
     }
     
     try {
         const response = await browserAPI.runtime.sendMessage({
             action: 'getActiveSessions',
-            startTime: 0,
-            endTime: now
+            startTime: 0,  // 全部范围
+            endTime: Date.now()
         });
         
         if (response && response.success && response.sessions) {
-            const trackingData = {};
+            // 按标题聚合综合时间（与排行榜逻辑一致）
+            const titleStats = new Map();
             for (const session of response.sessions) {
-                if (session.url) {
-                    if (!trackingData[session.url]) {
-                        trackingData[session.url] = { activeMs: 0, compositeMs: 0 };
-                    }
-                    // 累加活跃时间
-                    trackingData[session.url].activeMs += session.activeMs || 0;
-                    // 累加综合时间：活跃×1.0 + 前台静止×0.8 + 可见参考×0.5 + 后台×0.1
-                    const sessionComposite = session.compositeMs || 
-                        ((session.activeMs || 0) + 
-                         (session.idleFocusMs || session.pauseTotalMs || 0) * 0.8 +
-                         (session.visibleMs || 0) * 0.5 +
-                         (session.backgroundMs || 0) * 0.1);
-                    trackingData[session.url].compositeMs += sessionComposite;
+                const key = session.title || session.url;
+                if (!titleStats.has(key)) {
+                    titleStats.set(key, {
+                        url: session.url,
+                        title: session.title || session.url,
+                        compositeMs: 0
+                    });
+                }
+                const stat = titleStats.get(key);
+                const sessionComposite = session.compositeMs || 
+                    ((session.activeMs || 0) + 
+                     (session.idleFocusMs || session.pauseTotalMs || 0) * 0.8 +
+                     (session.visibleMs || 0) * 0.5 +
+                     (session.backgroundMs || 0) * 0.1);
+                stat.compositeMs += sessionComposite;
+            }
+            
+            // 构建双索引
+            trackingRankingCache.byTitle.clear();
+            trackingRankingCache.byUrl.clear();
+            for (const [key, stat] of titleStats) {
+                trackingRankingCache.byTitle.set(stat.title, stat);
+                if (stat.url) {
+                    trackingRankingCache.byUrl.set(stat.url, stat);
                 }
             }
-            // 更新缓存
-            trackingDataCache = trackingData;
-            trackingCacheTime = now;
-            console.log('[权重计算] tracking 数据已加载:', Object.keys(trackingData).length, '个URL（含综合时间）');
-            return trackingData;
+            trackingRankingCache.loaded = true;
+            console.log('[T值缓存] 已加载综合时间排行:', titleStats.size, '条记录');
         }
     } catch (e) {
-        console.warn('[权重计算] 获取 tracking 数据失败:', e);
+        console.warn('[T值缓存] 加载失败:', e);
     }
-    return {};
+    return trackingRankingCache;
+}
+
+// 清除T值缓存（在数据变化时调用）
+function clearTrackingRankingCache() {
+    trackingRankingCache.byTitle.clear();
+    trackingRankingCache.byUrl.clear();
+    trackingRankingCache.loaded = false;
+}
+
+// ===== P0: 从静态缓存获取书签的综合时间（标题或URL匹配）=====
+async function getTrackingDataFromDB() {
+    // 确保缓存已加载
+    await loadTrackingRankingCache();
+    
+    // 返回兼容旧格式的对象（供 batchGetBookmarkStats 使用）
+    const result = {};
+    for (const [url, stat] of trackingRankingCache.byUrl) {
+        result[url] = { 
+            compositeMs: stat.compositeMs,
+            title: stat.title
+        };
+    }
+    return result;
+}
+
+// 根据书签获取综合时间（标题或URL匹配，并集）
+async function getBookmarkCompositeTime(bookmark) {
+    await loadTrackingRankingCache();
+    
+    // 优先URL匹配
+    if (bookmark.url && trackingRankingCache.byUrl.has(bookmark.url)) {
+        return trackingRankingCache.byUrl.get(bookmark.url).compositeMs;
+    }
+    
+    // 其次标题匹配
+    if (bookmark.title && trackingRankingCache.byTitle.has(bookmark.title)) {
+        return trackingRankingCache.byTitle.get(bookmark.title).compositeMs;
+    }
+    
+    return 0;
 }
 
 // ===== P2: 批量获取历史记录（URL+标题并集匹配，与点击记录一致）=====
@@ -7398,8 +7449,8 @@ async function getBookmarkActiveTime(url) {
 async function batchGetBookmarkStats(bookmarks) {
     const stats = new Map();
     
-    // P0+P1: 从 IndexedDB 获取 tracking 数据（带缓存）
-    const trackingData = await getTrackingDataFromDB();
+    // P0: 加载综合时间排行缓存（静态，"全部"范围）
+    await loadTrackingRankingCache();
     
     // P2: 批量获取历史数据（带缓存）
     const historyData = await getBatchHistoryData();
@@ -7441,13 +7492,19 @@ async function batchGetBookmarkStats(bookmarks) {
             historyStats = { visitCount: 0, lastVisitTime: 0 };
         }
         
-        const trackingInfo = trackingData[bookmark.url] || { activeMs: 0, compositeMs: 0 };
+        // T值：优先URL匹配，其次标题匹配（并集）
+        let compositeMs = 0;
+        if (bookmark.url && trackingRankingCache.byUrl.has(bookmark.url)) {
+            compositeMs = trackingRankingCache.byUrl.get(bookmark.url).compositeMs;
+        } else if (bookmark.title && trackingRankingCache.byTitle.has(bookmark.title)) {
+            compositeMs = trackingRankingCache.byTitle.get(bookmark.title).compositeMs;
+        }
         
         stats.set(bookmark.id, {
             visitCount: historyStats.visitCount,
             lastVisitTime: historyStats.lastVisitTime,
-            activeTimeMs: trackingInfo.activeMs,
-            compositeTimeMs: trackingInfo.compositeMs,
+            activeTimeMs: 0,
+            compositeTimeMs: compositeMs,
             dateAdded: bookmark.dateAdded || Date.now()
         });
     }
@@ -7457,8 +7514,7 @@ async function batchGetBookmarkStats(bookmarks) {
 
 // 清除统计缓存（在需要强制刷新时调用）
 function clearStatsCache() {
-    trackingDataCache = null;
-    trackingCacheTime = 0;
+    clearTrackingRankingCache();
     historyDataCache = null;
     historyCacheTime = 0;
     historyDataLoadingPromise = null;
@@ -7691,30 +7747,21 @@ function calculatePriorityWithReview(basePriority, bookmarkId, reviewData, postp
     return Math.min(priority, 1.5); // 最高1.5
 }
 
-// 排行榜刷新计数器（每10次刷新排行榜一次，即每10秒）
-let rankingRefreshCounter = 0;
-
-// 启动时间捕捉实时刷新
+// 启动时间捕捉实时刷新（只刷新当前会话，排行榜不自动刷新）
 function startTrackingRefresh() {
     // 清除已有定时器
     if (trackingRefreshInterval) {
         clearInterval(trackingRefreshInterval);
     }
     
-    rankingRefreshCounter = 0;
-    
-    // 只在书签记录视图的时间捕捉标签中刷新
+    // 只刷新当前会话状态，排行榜只在数据变化时刷新
     trackingRefreshInterval = setInterval(() => {
         if (currentView === 'additions') {
             const trackingPanel = document.getElementById('additionsTrackingPanel');
             if (trackingPanel && trackingPanel.classList.contains('active')) {
+                // 只刷新当前会话（实时显示计时）
                 loadCurrentTrackingSessions();
-                // 排行榜每10秒刷新一次（数据来自 IndexedDB，变化较慢）
-                rankingRefreshCounter++;
-                if (rankingRefreshCounter >= 10) {
-                    rankingRefreshCounter = 0;
-                    loadActiveTimeRanking();
-                }
+                // 排行榜不再定时刷新，改为事件触发
             }
         }
     }, TRACKING_REFRESH_INTERVAL);
@@ -8732,6 +8779,9 @@ async function showHeatmapMonthDetail(year, month) {
 async function loadActiveTimeRanking() {
     const container = document.getElementById('trackingRankingList');
     if (!container) return;
+    
+    // 排行榜刷新时，清除T值缓存，下次计算S值时会获取最新数据
+    clearTrackingRankingCache();
     
     console.log('[时间排行] 开始加载...');
     
@@ -10652,9 +10702,10 @@ function initAdditionsSubTabs() {
                 trackingInitialized = true;
                 initTrackingToggle();
             }
-            // 加载数据
+            // 每次切换到标签时加载最新数据
             loadCurrentTrackingSessions();
             loadActiveTimeRanking();
+            // 启动当前会话的实时刷新（排行榜不定时刷新）
             startTrackingRefresh();
         }
 
@@ -14581,6 +14632,34 @@ function setupRealtimeMessageListener() {
                 return;
             }
             handleAnalysisUpdatedMessage(message);
+        } else if (message.action === 'trackingDataUpdated') {
+            // T值数据更新，增量更新缓存
+            if (message.url || message.title) {
+                // 增量更新缓存（不清除整个缓存，只更新变化的条目）
+                if (trackingRankingCache.loaded) {
+                    const stat = {
+                        url: message.url,
+                        title: message.title,
+                        compositeMs: message.compositeMs || 0
+                    };
+                    // 累加到现有值（如果已存在）
+                    if (message.url && trackingRankingCache.byUrl.has(message.url)) {
+                        const existing = trackingRankingCache.byUrl.get(message.url);
+                        stat.compositeMs = existing.compositeMs + (message.compositeMs || 0);
+                    } else if (message.title && trackingRankingCache.byTitle.has(message.title)) {
+                        const existing = trackingRankingCache.byTitle.get(message.title);
+                        stat.compositeMs = existing.compositeMs + (message.compositeMs || 0);
+                    }
+                    // 更新双索引
+                    if (message.title) {
+                        trackingRankingCache.byTitle.set(message.title, stat);
+                    }
+                    if (message.url) {
+                        trackingRankingCache.byUrl.set(message.url, stat);
+                    }
+                    console.log('[T值缓存] 增量更新:', message.title || message.url);
+                }
+            }
         } else if (message.action === 'clearFaviconCache') {
             // 书签URL被修改，清除favicon缓存（静默）
             if (message.url) {

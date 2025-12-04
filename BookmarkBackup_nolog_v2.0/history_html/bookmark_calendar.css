@@ -122,6 +122,10 @@
     font-size: 14px;
     color: var(--text-primary);
     white-space: nowrap;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 12px;
 }
 
 .breadcrumb-dropdown-item:hover {
@@ -137,6 +141,24 @@
 .breadcrumb-dropdown-item.active:hover {
     background: var(--accent-primary);
     opacity: 0.9;
+}
+
+/* 下拉菜单项文本 */
+.dropdown-item-text {
+    flex: 1;
+}
+
+/* 下拉菜单项数量（蓝色） */
+.dropdown-item-count {
+    color: var(--accent-primary);
+    font-size: 12px;
+    font-weight: 500;
+    min-width: 24px;
+    text-align: right;
+}
+
+.breadcrumb-dropdown-item.active .dropdown-item-count {
+    color: rgba(255, 255, 255, 0.9);
 }
 
 /* 滚动条样式 */

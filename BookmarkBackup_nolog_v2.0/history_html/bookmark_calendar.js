@@ -458,6 +458,51 @@ class BookmarkCalendar {
         menu.innerHTML = ''; // 清空现有内容
         let activeItem = null; // 用于存储当前激活的项
 
+        // 辅助函数：统计指定年份的书签数量
+        const countBookmarksInYear = (year) => {
+            let count = 0;
+            for (const [dateKey, bookmarks] of this.bookmarksByDate) {
+                if (dateKey.startsWith(`${year}-`)) {
+                    count += bookmarks.length;
+                }
+            }
+            return count;
+        };
+
+        // 辅助函数：统计指定月份的书签数量
+        const countBookmarksInMonth = (year, month) => {
+            let count = 0;
+            const monthStr = String(month + 1).padStart(2, '0');
+            const prefix = `${year}-${monthStr}-`;
+            for (const [dateKey, bookmarks] of this.bookmarksByDate) {
+                if (dateKey.startsWith(prefix)) {
+                    count += bookmarks.length;
+                }
+            }
+            return count;
+        };
+
+        // 辅助函数：统计指定周的书签数量
+        const countBookmarksInWeek = (weekStart) => {
+            let count = 0;
+            for (let i = 0; i < 7; i++) {
+                const date = new Date(weekStart);
+                date.setDate(weekStart.getDate() + i);
+                const dateKey = this.getDateKey(date);
+                const bookmarks = this.bookmarksByDate.get(dateKey) || [];
+                count += bookmarks.length;
+            }
+            return count;
+        };
+
+        // 辅助函数：创建带数量的候选项
+        const createItemWithCount = (text, count) => {
+            const item = document.createElement('div');
+            item.className = 'breadcrumb-dropdown-item';
+            item.innerHTML = `<span class="dropdown-item-text">${text}</span>${count > 0 ? `<span class="dropdown-item-count">${count}</span>` : ''}`;
+            return item;
+        };
+
         if (targetId === 'breadcrumbYear') {
             // 生成年份候选项（当前年份前后各5年）
             const currentYear = new Date().getFullYear();
@@ -465,13 +510,12 @@ class BookmarkCalendar {
             const endYear = currentYear + 5;
 
             for (let year = endYear; year >= startYear; year--) {
-                const item = document.createElement('div');
-                item.className = 'breadcrumb-dropdown-item';
+                const count = countBookmarksInYear(year);
+                const item = createItemWithCount(t('calendarYear', year), count);
                 if (year === this.currentYear) {
                     item.classList.add('active');
-                    activeItem = item; // 记录激活项
+                    activeItem = item;
                 }
-                item.textContent = t('calendarYear', year);
                 item.addEventListener('click', () => {
                     this.currentYear = year;
                     this.viewLevel = 'year';
@@ -483,13 +527,12 @@ class BookmarkCalendar {
         } else if (targetId === 'breadcrumbMonth') {
             // 生成月份候选项（1-12月）
             for (let month = 0; month < 12; month++) {
-                const item = document.createElement('div');
-                item.className = 'breadcrumb-dropdown-item';
+                const count = countBookmarksInMonth(this.currentYear, month);
+                const item = createItemWithCount(tm(month), count);
                 if (month === this.currentMonth) {
                     item.classList.add('active');
-                    activeItem = item; // 记录激活项
+                    activeItem = item;
                 }
-                item.textContent = tm(month);
                 item.addEventListener('click', () => {
                     this.currentMonth = month;
                     this.viewLevel = 'month';
@@ -510,18 +553,17 @@ class BookmarkCalendar {
             while (weekStart <= lastDayOfMonth) {
                 const weekNum = this.getWeekNumber(weekStart);
                 const weekStartCopy = new Date(weekStart);
+                const count = countBookmarksInWeek(weekStartCopy);
 
-                const item = document.createElement('div');
-                item.className = 'breadcrumb-dropdown-item';
+                const item = createItemWithCount(t('calendarWeek', weekNum), count);
 
                 // 检查是否是当前周
                 if (this.currentWeekStart &&
                     weekStartCopy.getTime() === this.currentWeekStart.getTime()) {
                     item.classList.add('active');
-                    activeItem = item; // 记录激活项
+                    activeItem = item;
                 }
 
-                item.textContent = t('calendarWeek', weekNum);
                 item.addEventListener('click', () => {
                     this.currentWeekStart = weekStartCopy;
                     this.viewLevel = 'week';
@@ -537,17 +579,18 @@ class BookmarkCalendar {
             for (let i = 0; i < 7; i++) {
                 const date = new Date(this.currentWeekStart);
                 date.setDate(date.getDate() + i);
+                const dateKey = this.getDateKey(date);
+                const bookmarks = this.bookmarksByDate.get(dateKey) || [];
+                const count = bookmarks.length;
 
-                const item = document.createElement('div');
-                item.className = 'breadcrumb-dropdown-item';
+                const item = createItemWithCount(t('calendarMonthDay', date.getMonth() + 1, date.getDate()), count);
 
                 if (this.currentDay &&
                     date.toDateString() === this.currentDay.toDateString()) {
                     item.classList.add('active');
-                    activeItem = item; // 记录激活项
+                    activeItem = item;
                 }
 
-                item.textContent = t('calendarMonthDay', date.getMonth() + 1, date.getDate());
                 item.addEventListener('click', () => {
                     this.currentDay = new Date(date);
                     this.viewLevel = 'day';
@@ -558,14 +601,14 @@ class BookmarkCalendar {
             }
         }
 
-        // 如果找到了激活项，直接定位到该项位置（无动画）
+        // 如果找到了激活项，直接定位到该项位置（只滚动菜单内部，不影响页面）
         if (activeItem) {
-            // 使用 setTimeout 确保 DOM 已经渲染完成
             setTimeout(() => {
-                activeItem.scrollIntoView({
-                    behavior: 'auto',  // 立即定位，无动画
-                    block: 'center'    // 居中显示
-                });
+                const menuHeight = menu.clientHeight;
+                const itemTop = activeItem.offsetTop;
+                const itemHeight = activeItem.offsetHeight;
+                // 将激活项滚动到菜单中间位置
+                menu.scrollTop = itemTop - (menuHeight / 2) + (itemHeight / 2);
             }, 10);
         }
     }

@@ -705,6 +705,9 @@ function handleHistoryVisited(result) {
     // 不在这里做 URL/标题过滤，统一交给 BrowsingHistoryCalendar.loadBookmarkData()
     // 中的 URL + 标题并集规则处理（增量只扫描 lastSyncTime 之后的历史）。
     scheduleHistoryRefresh({ forceFull: false });
+    
+    // 增量更新：如果访问的URL对应某个书签，更新该书签的S值（C/D因子变化）
+    scheduleBookmarkScoreUpdateByUrl(result.url);
 }
 
 function handleHistoryVisitRemoved(details) {
@@ -4277,8 +4280,7 @@ function renderRecommendView() {
         recommendViewInitialized = true;
     }
     
-    // 每次进入视图时加载数据（loadRecommendData内部已包含loadHeatmapData等）
-    // 注意：checkAutoRefresh 在 loadRecommendData 内部调用，避免重复刷新
+    // 每次进入视图时加载数据
     loadRecommendData();
 }
 
@@ -4676,32 +4678,30 @@ async function saveSharedRecommendWindowId(windowId) {
 }
 
 // 监听storage变化，实现history和popup页面的实时同步
-let historyLastCardRefreshTime = 0;
+// 标志：用于防止 history 页面自己保存的变化触发重复刷新
+let historyLastSaveTime = 0;
 browserAPI.storage.onChanged.addListener((changes, areaName) => {
     if (areaName === 'local' && changes.popupCurrentCards) {
         // 仅在推荐视图时刷新
         if (currentView !== 'recommend') return;
         
-        // 防止短时间内重复刷新
+        // 检查是否是 history 页面自己刚保存的（500ms内忽略）
         const now = Date.now();
-        if (now - historyLastCardRefreshTime < 300) return;
-        historyLastCardRefreshTime = now;
+        if (now - historyLastSaveTime < 500) {
+            console.log('[卡片同步] 忽略本页面保存触发的变化');
+            return;
+        }
         
         // 检查是否全部勾选，如果是则强制刷新获取新卡片
         const newValue = changes.popupCurrentCards.newValue;
         if (newValue && newValue.cardIds && newValue.flippedIds) {
             const allFlipped = newValue.cardIds.every(id => newValue.flippedIds.includes(id));
             if (allFlipped && newValue.cardIds.length > 0) {
-                // 全部勾选，延迟强制刷新
-                setTimeout(() => {
-                    refreshRecommendCards(true);
-                }, 100);
-            } else {
-                // 部分勾选，普通刷新显示当前状态
-                refreshRecommendCards();
+                // 全部勾选（来自popup的操作），刷新获取新卡片
+                console.log('[卡片同步] popup完成翻牌，刷新卡片');
+                refreshRecommendCards(true);
             }
-        } else {
-            refreshRecommendCards();
+            // 部分勾选不需要刷新，因为UI已经通过其他方式更新
         }
     }
 });
@@ -4754,12 +4754,11 @@ async function openInRecommendWindow(url) {
 }
 
 function initCardInteractions() {
-    // 刷新按钮（主动刷新：先批量计算所有书签S值，再显示卡片）
+    // 刷新按钮（直接从缓存读取S值，选择新的Top3卡片）
     document.getElementById('cardRefreshBtn')?.addEventListener('click', async (e) => {
         e.stopPropagation();
-        // 主动刷新时，先批量计算所有书签S值
-        await computeAllBookmarkScores();
-        await refreshRecommendCards(true);  // force=true 更新刷新时间
+        // S值已通过增量更新保持最新，直接从缓存刷新卡片
+        await refreshRecommendCards(true);
     });
     
     // 刷新设置按钮
@@ -4840,11 +4839,11 @@ function applyPresetMode(mode) {
     document.getElementById('thresholdTimeDegree').value = preset.thresholds.timeDegree;
     document.getElementById('thresholdForgetting').value = preset.thresholds.forgetting;
     
-    // 保存配置
-    saveFormulaConfig();
-    
-    // 刷新推荐卡片
-    refreshRecommendCards();
+    // 保存配置（saveFormulaConfig 内部会触发全量重算）
+    saveFormulaConfig().then(() => {
+        // 重算完成后刷新推荐卡片
+        refreshRecommendCards();
+    });
     
     const modeNames = { default: '默认', archaeology: '考古', consolidate: '巩固', wander: '漫游', priority: '优先巩固' };
     console.log(`[书签推荐] 切换到${modeNames[mode] || mode}模式`);
@@ -5110,6 +5109,9 @@ async function getHistoryCurrentCards() {
 
 // 保存当前显示的卡片状态（与popup共享）
 async function saveHistoryCurrentCards(cardIds, flippedIds, cardData = null) {
+    // 标记本次保存时间，防止触发循环刷新
+    historyLastSaveTime = Date.now();
+    
     const dataToSave = {
         popupCurrentCards: {
             cardIds: cardIds,
@@ -5153,6 +5155,7 @@ async function saveCardFaviconsToStorage(bookmarks) {
         
         // 更新storage中的卡片数据
         currentCards.cardData = cardData;
+        historyLastSaveTime = Date.now(); // 防止触发循环刷新
         await browserAPI.storage.local.set({ popupCurrentCards: currentCards });
     } catch (error) {
         // 静默处理错误
@@ -5383,6 +5386,10 @@ async function cancelPostpone(bookmarkId) {
         postponed = postponed.filter(p => p.bookmarkId !== bookmarkId);
         await browserAPI.storage.local.set({ recommend_postponed: postponed });
         console.log('[稍后] 已取消推迟:', bookmarkId);
+        
+        // L因子变化，更新该书签的S值
+        await updateSingleBookmarkScore(bookmarkId);
+        
         return true;
     } catch (e) {
         console.error('[稍后] 取消推迟失败:', e);
@@ -5555,56 +5562,8 @@ async function saveRefreshSettings(settings) {
     }
 }
 
-async function checkAutoRefresh() {
-    const settings = await getRefreshSettings();
-    const now = Date.now();
-    let shouldForceRefresh = false;
-    let reason = '';
-    
-    // 更新打开次数
-    settings.openCountSinceRefresh = (settings.openCountSinceRefresh || 0) + 1;
-    
-    // 每N次打开刷新（三次卡片复习后触发被动刷新）
-    if (settings.refreshEveryNOpens > 0) {
-        if (settings.openCountSinceRefresh >= settings.refreshEveryNOpens) {
-            shouldForceRefresh = true;
-            reason = `达到 ${settings.refreshEveryNOpens} 次打开`;
-        }
-    }
-    
-    // 超过X小时
-    if (!shouldForceRefresh && settings.refreshAfterHours > 0) {
-        const hoursElapsed = (now - (settings.lastRefreshTime || 0)) / (1000 * 60 * 60);
-        if (hoursElapsed >= settings.refreshAfterHours) {
-            shouldForceRefresh = true;
-            reason = `超过 ${settings.refreshAfterHours} 小时`;
-        }
-    }
-    
-    // 超过X天
-    if (!shouldForceRefresh && settings.refreshAfterDays > 0) {
-        const daysElapsed = (now - (settings.lastRefreshTime || 0)) / (1000 * 60 * 60 * 24);
-        if (daysElapsed >= settings.refreshAfterDays) {
-            shouldForceRefresh = true;
-            reason = `超过 ${settings.refreshAfterDays} 天`;
-        }
-    }
-    
-    // 执行刷新
-    if (shouldForceRefresh) {
-        console.log('[自动刷新] 触发强制刷新，原因:', reason);
-        settings.lastRefreshTime = now;
-        settings.openCountSinceRefresh = 0;
-        await saveRefreshSettings(settings);
-        // 强制刷新时，先批量计算所有书签S值，再显示卡片
-        await computeAllBookmarkScores();
-        await refreshRecommendCards(true);
-    } else {
-        // 普通刷新：直接从 storage 读取缓存显示卡片
-        await saveRefreshSettings(settings);
-        await refreshRecommendCards(false);
-    }
-}
+// checkAutoRefresh 已移除：S值通过增量更新机制保持最新，不再需要定时全量重算
+// 保留刷新设置UI用于记录上次刷新时间
 
 function showRefreshSettingsModal() {
     const modal = document.getElementById('refreshSettingsModal');
@@ -6419,6 +6378,9 @@ async function confirmAddToPostponed() {
     await browserAPI.storage.local.set({ recommend_postponed: postponed });
     console.log(`[添加到待复习] 已添加 ${addedCount} 个书签（手动添加，优先级提升）`);
     
+    // L因子变化，更新相关书签的S值
+    await updateMultipleBookmarkScores(bookmarkIds);
+    
     // 刷新列表和推荐卡片
     await loadPostponedList();
     await refreshRecommendCards(true); // 强制刷新推荐卡片
@@ -6484,8 +6446,9 @@ async function getBookmarksFromFolder(folderId, includeSubfolders = true) {
 async function loadRecommendData() {
     console.log('[书签推荐] 加载推荐数据');
     
-    // 检查是否需要自动刷新，如果不需要则普通刷新
-    await checkAutoRefresh();
+    // 直接从缓存刷新卡片显示（S值已通过增量更新机制保持最新）
+    // 不再调用 checkAutoRefresh，避免不必要的全量计算
+    await refreshRecommendCards(false);
     
     // 加载稍后复习队列
     await loadPostponedList();
@@ -7196,6 +7159,73 @@ async function removeCachedScore(bookmarkId) {
     }
 }
 
+// 根据URL更新对应书签的S值（访问历史变化时使用）
+// 使用防抖机制，避免频繁更新
+let pendingUrlScoreUpdates = new Set();
+let urlScoreUpdateTimer = null;
+
+async function scheduleBookmarkScoreUpdateByUrl(url) {
+    if (!url) return;
+    pendingUrlScoreUpdates.add(url);
+    
+    if (urlScoreUpdateTimer) {
+        clearTimeout(urlScoreUpdateTimer);
+    }
+    
+    urlScoreUpdateTimer = setTimeout(async () => {
+        const urlsToUpdate = Array.from(pendingUrlScoreUpdates);
+        pendingUrlScoreUpdates.clear();
+        urlScoreUpdateTimer = null;
+        
+        if (urlsToUpdate.length === 0) return;
+        
+        try {
+            // 获取所有书签
+            const tree = await new Promise(resolve => browserAPI.bookmarks.getTree(resolve));
+            const allBookmarks = [];
+            const collectBookmarks = (nodes) => {
+                for (const node of nodes) {
+                    if (node.url) allBookmarks.push(node);
+                    if (node.children) collectBookmarks(node.children);
+                }
+            };
+            collectBookmarks(tree);
+            
+            // 找到URL匹配的书签
+            const urlSet = new Set(urlsToUpdate);
+            const matchedBookmarks = allBookmarks.filter(b => urlSet.has(b.url));
+            
+            if (matchedBookmarks.length === 0) return;
+            
+            // 清除统计缓存以获取最新数据
+            clearStatsCache();
+            
+            // 批量更新这些书签的S值
+            for (const bookmark of matchedBookmarks) {
+                await updateSingleBookmarkScore(bookmark.id);
+            }
+            
+            console.log('[S值增量更新] 已更新', matchedBookmarks.length, '个书签（URL匹配）');
+        } catch (e) {
+            console.warn('[S值增量更新] 失败:', e);
+        }
+    }, 1000); // 1秒防抖
+}
+
+// 批量更新多个书签的S值（待复习变化时使用）
+async function updateMultipleBookmarkScores(bookmarkIds) {
+    if (!bookmarkIds || bookmarkIds.length === 0) return;
+    
+    try {
+        for (const id of bookmarkIds) {
+            await updateSingleBookmarkScore(id);
+        }
+        console.log('[S值批量更新] 已更新', bookmarkIds.length, '个书签');
+    } catch (e) {
+        console.warn('[S值批量更新] 失败:', e);
+    }
+}
+
 // ===== P1: 缓存机制 =====
 let trackingDataCache = null;
 let trackingCacheTime = 0;
@@ -7844,15 +7874,29 @@ async function refreshRecommendCards(force = false) {
             }
         };
         
-        // 过滤掉已翻过、已跳过、已屏蔽（书签/文件夹/域名）、稀后复习（未到期且非手动添加）的书签
-        const availableBookmarks = bookmarks.filter(b => 
+        // 基础过滤：已翻过、已跳过、已屏蔽、稀后复习
+        const baseFilter = (b) => 
             !flippedSet.has(b.id) && 
             !skippedBookmarks.has(b.id) && 
             !blockedBookmarkSet.has(b.id) &&
             !isInBlockedFolder(b) &&
             !isBlockedDomain(b) &&
-            !postponedSet.has(b.id)
+            !postponedSet.has(b.id);
+        
+        // 刷新时跳过当前显示的卡片（force=true时）
+        const currentCardIds = new Set(
+            force && currentCards?.cardIds ? currentCards.cardIds : []
         );
+        
+        // 先尝试排除当前卡片
+        let availableBookmarks = bookmarks.filter(b => 
+            baseFilter(b) && !currentCardIds.has(b.id)
+        );
+        
+        // 如果排除后不足3个，则不排除当前卡片
+        if (availableBookmarks.length < 3 && currentCardIds.size > 0) {
+            availableBookmarks = bookmarks.filter(baseFilter);
+        }
         
         if (availableBookmarks.length === 0) {
             await saveHistoryCurrentCards([], []);
@@ -7867,7 +7911,7 @@ async function refreshRecommendCards(force = false) {
         }
         
         // 从缓存读取所有可用书签的S值，直接排序取top3
-        // 批量计算已在 checkAutoRefresh 或手动刷新时完成
+        // S值通过增量更新机制保持最新，或在手动刷新时全量重算
         const bookmarksWithPriority = availableBookmarks.map(b => {
             const cached = scoresCache[b.id];
             const reviewStatus = getReviewStatus(b.id, reviewData);
@@ -7878,8 +7922,15 @@ async function refreshRecommendCards(force = false) {
             return { ...b, priority: 0.5, factors: {}, reviewStatus };
         });
         
-        // 按优先级排序（高优先级在前），然后取前3个
-        bookmarksWithPriority.sort((a, b) => b.priority - a.priority);
+        // 按优先级排序（高优先级在前），S值相同时添加随机因子
+        bookmarksWithPriority.sort((a, b) => {
+            const diff = b.priority - a.priority;
+            // S值差异小于0.01时，添加随机因子
+            if (Math.abs(diff) < 0.01) {
+                return Math.random() - 0.5;
+            }
+            return diff;
+        });
         recommendCards = bookmarksWithPriority.slice(0, 3);
         
         // 保存新的卡片状态

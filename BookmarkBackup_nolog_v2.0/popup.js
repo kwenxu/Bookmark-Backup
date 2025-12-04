@@ -6598,29 +6598,26 @@ async function saveRecommendWindowId(windowId) {
 }
 
 // 监听storage变化，实现popup和history页面的实时同步
-let popupLastCardRefreshTime = 0;
+// 标志：用于防止 popup 页面自己保存的变化触发重复刷新
+let popupLastSaveTime = 0;
 browserAPI.storage.onChanged.addListener((changes, areaName) => {
     if (areaName === 'local' && changes.popupCurrentCards) {
-        // 防止短时间内重复刷新
+        // 检查是否是 popup 页面自己刚保存的（500ms内忽略）
         const now = Date.now();
-        if (now - popupLastCardRefreshTime < 300) return;
-        popupLastCardRefreshTime = now;
+        if (now - popupLastSaveTime < 500) {
+            console.log('[卡片同步] 忽略本页面保存触发的变化');
+            return;
+        }
         
-        // 检查是否全部勾选，如果是则强制刷新获取新卡片
+        // 检查是否全部勾选，如果是则刷新获取新卡片（来自history页面的翻牌完成）
         const newValue = changes.popupCurrentCards.newValue;
         if (newValue && newValue.cardIds && newValue.flippedIds) {
             const allFlipped = newValue.cardIds.every(id => newValue.flippedIds.includes(id));
             if (allFlipped && newValue.cardIds.length > 0) {
-                // 全部勾选，延迟强制刷新
-                setTimeout(() => {
-                    refreshPopupRecommendCards(true);
-                }, 100);
-            } else {
-                // 部分勾选，普通刷新显示当前状态
-                refreshPopupRecommendCards();
+                console.log('[卡片同步] history完成翻牌，刷新卡片');
+                refreshPopupRecommendCards(true);
             }
-        } else {
-            refreshPopupRecommendCards();
+            // 部分勾选不需要刷新
         }
     }
 });
@@ -6911,6 +6908,9 @@ async function getPopupCurrentCards() {
 
 // 保存当前显示的卡片状态
 async function savePopupCurrentCards(cardIds, flippedIds) {
+    // 标记本次保存时间，防止触发循环刷新
+    popupLastSaveTime = Date.now();
+    
     await browserAPI.storage.local.set({
         popupCurrentCards: {
             cardIds: cardIds,

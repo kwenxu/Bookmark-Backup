@@ -17145,8 +17145,8 @@ function showRelatedJumpSuccessToast(visitTime, title) {
         toast.id = 'relatedJumpToast';
         toast.style.cssText = `
             position: fixed;
-            bottom: 32px;
-            right: 32px;
+            top: 28px;
+            right: 28px;
             background: rgba(33, 150, 243, 0.92);
             color: #fff;
             padding: 14px 18px;

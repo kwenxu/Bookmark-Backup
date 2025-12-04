@@ -11278,7 +11278,8 @@ function renderBrowsingClickRankingList(container, items, range) {
     
     const onScroll = () => {
         if (offset >= items.length) return;
-        const threshold = 300; // 距底部 300px 内加载下一页
+        // 提前加载：使用视口高度的3倍作为阈值，至少1500px
+        const threshold = Math.max(1500, scrollContainer.clientHeight * 3);
         if (scrollContainer.scrollTop + scrollContainer.clientHeight + threshold >= scrollContainer.scrollHeight) {
             appendNextPage();
         }
@@ -15785,7 +15786,8 @@ async function renderBrowsingRelatedList(container, historyItems, bookmarkUrls, 
     
     const onScroll = () => {
         if (offset >= mergedGroups.length) return;
-        const threshold = 300;
+        // 提前加载：使用视口高度的3倍作为阈值，至少1500px
+        const threshold = Math.max(1500, scrollContainer.clientHeight * 3);
         if (scrollContainer.scrollTop + scrollContainer.clientHeight + threshold >= scrollContainer.scrollHeight) {
             appendNextPage();
         }

@@ -16644,6 +16644,125 @@ let pendingHighlightInfo = null;
 // 返回按钮相关
 let jumpSourceInfo = null;  // 记录跳转来源信息
 
+function getWeekStartForRelated(date) {
+    const d = new Date(date);
+    const day = d.getDay() || 7; // 周日返回0，转换为7
+    const weekStart = new Date(d);
+    weekStart.setDate(d.getDate() - day + 1);
+    weekStart.setHours(0, 0, 0, 0);
+    return weekStart;
+}
+
+function getPreferredRangeFromCalendar(instance) {
+    if (!instance || !instance.viewLevel) return null;
+    const level = String(instance.viewLevel).toLowerCase();
+    switch (level) {
+        case 'day':
+        case 'week':
+        case 'month':
+        case 'year':
+            return level;
+        default:
+            return null;
+    }
+}
+
+function buildRelatedRangeStrategies(visitTime, options = {}) {
+    const strategies = [];
+    const seen = new Set();
+    const { preferredRange = null } = options || {};
+
+    const pushStrategy = (range, filter = null) => {
+        const filterKey = filter
+            ? `${filter.type}-${filter.value instanceof Date ? filter.value.toISOString() : filter.value}`
+            : 'none';
+        const key = `${range}|${filterKey}`;
+        if (seen.has(key)) return;
+        seen.add(key);
+        strategies.push({ range, filter });
+    };
+
+    if (typeof visitTime !== 'number' || Number.isNaN(visitTime)) {
+        pushStrategy('day', null);
+        pushStrategy('all', null);
+    } else {
+        const visitDate = new Date(visitTime);
+        const dayStart = new Date(visitDate);
+        dayStart.setHours(0, 0, 0, 0);
+        const hourValue = visitDate.getHours();
+        const weekNum = getWeekNumberForRelated(visitDate);
+        const monthValue = visitDate.getMonth();
+        const yearValue = visitDate.getFullYear();
+
+        pushStrategy('day', { type: 'hour', value: hourValue });
+        pushStrategy('day', null);
+        pushStrategy('week', { type: 'day', value: new Date(dayStart) });
+        pushStrategy('month', { type: 'week', value: weekNum });
+        pushStrategy('year', { type: 'month', value: monthValue });
+        pushStrategy('all', { type: 'year', value: yearValue });
+        pushStrategy('all', null);
+    }
+
+    if (preferredRange) {
+        const prioritized = [];
+        strategies.forEach(strategy => {
+            if (strategy.range === preferredRange) {
+                prioritized.push(strategy);
+            }
+        });
+        strategies.forEach(strategy => {
+            if (strategy.range !== preferredRange) {
+                prioritized.push(strategy);
+            }
+        });
+        return prioritized;
+    }
+
+    return strategies;
+}
+
+function scheduleApplyRelatedFilter(filter, attempt = 0) {
+    const MAX_ATTEMPTS = 10;
+    const success = applyRelatedTimeFilter(filter);
+    if (!success && attempt < MAX_ATTEMPTS) {
+        setTimeout(() => scheduleApplyRelatedFilter(filter, attempt + 1), 120);
+    }
+}
+
+function activateRelatedRangeStrategy(strategy) {
+    if (!strategy) return;
+    pendingHighlightInfo.activeStrategy = strategy;
+
+    const rangeName = strategy.range.charAt(0).toUpperCase() + strategy.range.slice(1);
+    const filterBtn = document.getElementById(`browsingRelatedFilter${rangeName}`);
+
+    const triggerHighlightFlow = () => {
+        scheduleApplyRelatedFilter(strategy.filter || null);
+        setTimeout(() => {
+            highlightRelatedHistoryItem();
+        }, 450);
+    };
+
+    if (filterBtn) {
+        if (!filterBtn.classList.contains('active')) {
+            filterBtn.click();
+            setTimeout(triggerHighlightFlow, 350);
+        } else {
+            loadBrowsingRelatedHistory(strategy.range).then(() => {
+                triggerHighlightFlow();
+            }).catch(() => {
+                triggerHighlightFlow();
+            });
+        }
+    } else {
+        loadBrowsingRelatedHistory(strategy.range).then(() => {
+            triggerHighlightFlow();
+        }).catch(() => {
+            triggerHighlightFlow();
+        });
+    }
+}
+
 // 跳转到书签关联记录并高亮对应条目
 async function jumpToRelatedHistory(url, title, visitTime, sourceElement) {
     // 记录来源信息，用于返回
@@ -16667,148 +16786,127 @@ async function jumpToRelatedHistory(url, title, visitTime, sourceElement) {
         relatedTab.click();
     }
     
-    // 3. 存储待高亮信息和尝试的时间范围队列
-    // 书签关联记录每个URL只显示一次（最后访问时间），因此需要从小范围到大范围尝试
+    const normalizedTitle = typeof title === 'string' ? title.trim() : '';
+    const preferredRange = getPreferredRangeFromCalendar(window.browsingHistoryCalendarInstance);
+    const strategyQueue = buildRelatedRangeStrategies(visitTime, { preferredRange });
+    const effectiveStrategies = strategyQueue.length ? strategyQueue : [{ range: 'all', filter: null }];
+
+    // 3. 存储待高亮信息和时间范围策略
     pendingHighlightInfo = {
         url: url,
         title: title,
+        normalizedTitle,
         visitTime: visitTime,
-        rangeQueue: ['day', 'week', 'month', 'year'], // 从小到大尝试
-        currentRangeIndex: 0,
+        strategyQueue: effectiveStrategies,
+        currentStrategyIndex: 0,
         showBackButton: true  // 标记需要显示返回按钮
     };
-    
-    // 4. 从"当天"开始尝试
-    const filterBtn = document.getElementById('browsingRelatedFilterDay');
-    if (filterBtn && !filterBtn.classList.contains('active')) {
-        filterBtn.click();
-    } else {
-        await loadBrowsingRelatedHistory('day');
-    }
-    
-    // 5. 延迟查找并高亮目标元素
-    setTimeout(() => {
-        highlightRelatedHistoryItem();
-    }, 400);
+
+    // 4. 启动首个时间范围策略
+    activateRelatedRangeStrategy(effectiveStrategies[0]);
 }
 
 // 高亮书签关联记录中的目标条目
 function highlightRelatedHistoryItem(retryCount = 0) {
     if (!pendingHighlightInfo) return;
     
-    const { url, title, visitTime, rangeQueue, currentRangeIndex, fromAdditions } = pendingHighlightInfo;
+    const {
+        url,
+        title,
+        normalizedTitle,
+        visitTime,
+        strategyQueue = [],
+        currentStrategyIndex = 0,
+        fromAdditions,
+        showBackButton
+    } = pendingHighlightInfo;
     const listContainer = document.getElementById('browsingRelatedList');
     if (!listContainer) return;
     
-    // 查找匹配的记录项
+    const normalizedTitleValue = normalizedTitle || (title ? title.trim() : '');
+    const hasVisitTime = typeof visitTime === 'number' && !Number.isNaN(visitTime);
+    const targetMinute = hasVisitTime ? Math.floor(visitTime / (60 * 1000)) : null;
+    
     const items = listContainer.querySelectorAll('.related-history-item');
-    let targetItem = null;
-    let urlMatchItem = null;
-    let bestTimeMatch = null;
-    let bestTimeDiff = Infinity;
+    let minuteUrlMatch = null;
+    let minuteTitleMatch = null;
+    let fallbackMatch = null;
     
     items.forEach(item => {
+        if (minuteUrlMatch && minuteTitleMatch) {
+            return; // 已找到最佳匹配
+        }
+
         const itemUrl = item.dataset.url;
+        const itemTitle = (item.dataset.title || '').trim();
+        const matchesUrl = itemUrl === url;
+        const matchesTitle = normalizedTitleValue && itemTitle === normalizedTitleValue;
+
         const itemTime = parseInt(item.dataset.visitTime, 10);
-        
-        // URL 精确匹配
-        if (itemUrl === url) {
-            urlMatchItem = item;
-            
-            // 如果是从书签添加记录跳转，需要时间精确匹配（同一分钟内）
-            if (fromAdditions && visitTime) {
-                const timeDiff = Math.abs(itemTime - visitTime);
-                const oneMinute = 60 * 1000;
-                
-                // 记录时间最接近的
-                if (timeDiff < bestTimeDiff) {
-                    bestTimeDiff = timeDiff;
-                    bestTimeMatch = item;
+        const hasItemTime = !Number.isNaN(itemTime);
+
+        if (hasVisitTime && hasItemTime) {
+            const itemMinute = Math.floor(itemTime / (60 * 1000));
+            if (itemMinute === targetMinute) {
+                if (matchesUrl && !minuteUrlMatch) {
+                    minuteUrlMatch = item;
+                } else if (matchesTitle && !minuteTitleMatch) {
+                    minuteTitleMatch = item;
                 }
-                
-                // 时间差在1分钟内才算匹配
-                if (timeDiff <= oneMinute) {
-                    targetItem = item;
-                }
-            } else {
-                // 从点击记录跳转，URL匹配即可
-                targetItem = item;
+                return;
             }
         }
+
+        if (!hasVisitTime && (matchesUrl || matchesTitle) && !fallbackMatch) {
+            fallbackMatch = item;
+        }
     });
-    
-    // 如果是从书签添加记录跳转且URL匹配但时间不匹配，不使用该记录
-    // 如果不是从书签添加记录跳转，URL匹配即可
-    if (!targetItem && urlMatchItem && !fromAdditions) {
-        targetItem = urlMatchItem;
+
+    let targetItem = minuteUrlMatch || minuteTitleMatch || null;
+    if (!targetItem && !hasVisitTime) {
+        targetItem = fallbackMatch;
     }
-    
-    // 如果找到了，高亮显示
+
     if (targetItem) {
-        // 移除之前的高亮
         listContainer.querySelectorAll('.related-history-item.highlight-target').forEach(el => {
             el.classList.remove('highlight-target');
         });
-        
-        // 添加高亮类
         targetItem.classList.add('highlight-target');
-        
-        // 直接定位到目标位置（不使用滚动动画）
         targetItem.scrollIntoView({ behavior: 'instant', block: 'center' });
-        
-        // 显示返回按钮
-        if (pendingHighlightInfo.showBackButton && jumpSourceInfo) {
+        if (showBackButton && jumpSourceInfo) {
             showBackButton();
         }
-        
-        // 清除待高亮信息
         pendingHighlightInfo = null;
         return;
     }
-    
-    // 如果没找到，尝试更大的时间范围
-    if (rangeQueue && currentRangeIndex < rangeQueue.length - 1) {
-        const nextIndex = currentRangeIndex + 1;
-        const nextRange = rangeQueue[nextIndex];
-        pendingHighlightInfo.currentRangeIndex = nextIndex;
-        
-        // 切换到更大的时间范围
-        const rangeName = nextRange.charAt(0).toUpperCase() + nextRange.slice(1);
-        const filterBtn = document.getElementById(`browsingRelatedFilter${rangeName}`);
-        if (filterBtn) {
-            filterBtn.click();
-            // 等待数据加载后再次尝试
-            setTimeout(() => highlightRelatedHistoryItem(0), 400);
-        }
-        return;
-    }
-    
-    // 检查是否有未加载的数据（懒加载场景）
+
     const lazyState = listContainer.__lazyLoadState;
     if (lazyState && lazyState.getLoadedCount() < lazyState.totalItems) {
-        // 还有未加载的数据，加载更多后重试
         lazyState.loadMore();
-        if (retryCount < 20) { // 增加重试次数以支持大列表
-            setTimeout(() => highlightRelatedHistoryItem(retryCount + 1), 100);
+        if (retryCount < 20) {
+            setTimeout(() => highlightRelatedHistoryItem(retryCount + 1), 120);
         } else {
-            // 重试次数过多，加载全部然后最后尝试一次
             lazyState.loadAll();
-            setTimeout(() => highlightRelatedHistoryItem(100), 100); // 用大数标记最后一次尝试
+            setTimeout(() => highlightRelatedHistoryItem(100), 150);
         }
         return;
     }
-    
-    // 所有范围都尝试过了，仍未找到，清除待高亮信息
-    if (retryCount < 3) {
-        // 最后重试几次（可能数据还在加载）
-        setTimeout(() => highlightRelatedHistoryItem(retryCount + 1), 300);
-    } else {
-        const fromAdditions = pendingHighlightInfo.fromAdditions;
-        pendingHighlightInfo = null;
-        // 只有从「书签添加记录」跳转时才显示"暂无记录"提示
-        if (fromAdditions) {
-            showNoRecordToast();
-        }
+
+    if (retryCount < 5) {
+        setTimeout(() => highlightRelatedHistoryItem(retryCount + 1), 220);
+        return;
+    }
+
+    if (strategyQueue.length && currentStrategyIndex < strategyQueue.length - 1) {
+        const nextIndex = currentStrategyIndex + 1;
+        pendingHighlightInfo.currentStrategyIndex = nextIndex;
+        activateRelatedRangeStrategy(strategyQueue[nextIndex]);
+        return;
+    }
+
+    pendingHighlightInfo = null;
+    if (fromAdditions || hasVisitTime) {
+        showNoRecordToast();
     }
 }
 
@@ -16914,57 +17012,26 @@ async function jumpToRelatedHistoryFromAdditions(url, title, dateAdded) {
         relatedTab.click();
     }
     
-    // 3. 根据访问时间确定时间范围
-    const now = new Date();
-    const visitDate = new Date(matchingVisitTime);
-    let targetRange = 'year';
-    
-    const todayStart = new Date(now);
-    todayStart.setHours(0, 0, 0, 0);
-    
-    const weekStart = new Date(now);
-    const dayOfWeek = now.getDay();
-    const daysToMonday = (dayOfWeek === 0 ? 6 : dayOfWeek - 1);
-    weekStart.setDate(now.getDate() - daysToMonday);
-    weekStart.setHours(0, 0, 0, 0);
-    
-    const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
-    const yearStart = new Date(now.getFullYear(), 0, 1);
-    
-    if (visitDate >= todayStart) {
-        targetRange = 'day';
-    } else if (visitDate >= weekStart) {
-        targetRange = 'week';
-    } else if (visitDate >= monthStart) {
-        targetRange = 'month';
-    } else {
-        targetRange = 'year';
-    }
+    // 3. 根据访问时间构建时间范围策略
+    const normalizedTitle = typeof title === 'string' ? title.trim() : '';
+    const preferredRange = getPreferredRangeFromCalendar(window.bookmarkCalendarInstance);
+    const strategyQueue = buildRelatedRangeStrategies(matchingVisitTime, { preferredRange });
+    const effectiveStrategies = strategyQueue.length ? strategyQueue : [{ range: 'all', filter: null }];
     
     // 4. 存储待高亮信息
     pendingHighlightInfo = {
         url: url,
         title: title,
-        visitTime: matchingVisitTime,  // 使用精确匹配的访问时间
-        rangeQueue: [targetRange],     // 直接使用正确的范围
-        currentRangeIndex: 0,
+        normalizedTitle,
+        visitTime: matchingVisitTime,
+        strategyQueue: effectiveStrategies,
+        currentStrategyIndex: 0,
         fromAdditions: true,
         showBackButton: true  // 标记需要显示返回按钮
     };
-    
-    // 5. 切换到对应的时间范围
-    const rangeName = targetRange.charAt(0).toUpperCase() + targetRange.slice(1);
-    const filterBtn = document.getElementById(`browsingRelatedFilter${rangeName}`);
-    if (filterBtn && !filterBtn.classList.contains('active')) {
-        filterBtn.click();
-    } else {
-        await loadBrowsingRelatedHistory(targetRange);
-    }
-    
-    // 6. 延迟查找并高亮目标元素
-    setTimeout(() => {
-        highlightRelatedHistoryItem();
-    }, 400);
+
+    // 5. 启动对应的范围策略
+    activateRelatedRangeStrategy(effectiveStrategies[0]);
 }
 
 // 从「点击排行」跳转到「书签关联记录」并高亮所有匹配记录
@@ -17017,9 +17084,8 @@ async function jumpToRelatedHistoryFromRanking(url, title, currentRange) {
     
     // 5. 延迟应用二级菜单筛选并高亮
     setTimeout(() => {
-        // 如果有二级菜单筛选，同步选中对应的按钮
         if (currentTimeFilter) {
-            applyRelatedTimeFilter(currentTimeFilter);
+            scheduleApplyRelatedFilter(currentTimeFilter);
         }
         highlightAllRelatedHistoryItems();
     }, 500);
@@ -17027,37 +17093,45 @@ async function jumpToRelatedHistoryFromRanking(url, title, currentRange) {
 
 // 应用书签关联记录的二级菜单筛选（从点击排行跳转时使用）
 function applyRelatedTimeFilter(filter) {
-    if (!filter) return;
-    
     const menuContainer = document.getElementById('browsingRelatedTimeMenu');
-    if (!menuContainer) return;
-    
+    if (!menuContainer) return false;
     const buttons = menuContainer.querySelectorAll('.time-menu-btn');
+    if (!buttons.length) return false;
+
     let targetBtn = null;
-    
-    // 找到对应的按钮
+
     buttons.forEach(btn => {
-        if (btn.dataset.filter === 'all') {
-            // 全部按钮
-            if (!filter) targetBtn = btn;
+        if (!filter) {
+            if (btn.dataset.filter === 'all' && !targetBtn) {
+                targetBtn = btn;
+            }
+            return;
+        }
+
+        if (btn.dataset.filter === 'all' && filter.type === 'all') {
+            targetBtn = btn;
         } else if (filter.type === 'hour' && btn.dataset.hour == filter.value) {
             targetBtn = btn;
         } else if (filter.type === 'day' && btn.dataset.date) {
             const btnDate = new Date(btn.dataset.date);
-            if (btnDate.toDateString() === filter.value.toDateString()) {
+            if (filter.value instanceof Date && btnDate.toDateString() === filter.value.toDateString()) {
                 targetBtn = btn;
             }
         } else if (filter.type === 'week' && btn.dataset.week == filter.value) {
             targetBtn = btn;
         } else if (filter.type === 'month' && btn.dataset.month == filter.value) {
             targetBtn = btn;
+        } else if (filter.type === 'year' && btn.dataset.year == filter.value) {
+            targetBtn = btn;
         }
     });
-    
-    // 点击对应的按钮
-    if (targetBtn && !targetBtn.classList.contains('active')) {
+
+    if (targetBtn) {
         targetBtn.click();
+        return true;
     }
+
+    return false;
 }
 
 // 高亮点击记录日历中所有匹配的记录（从点击排行跳转时使用）

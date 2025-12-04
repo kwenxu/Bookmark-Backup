@@ -8030,12 +8030,29 @@ a.tree-label.tree-bookmark-link:hover {
     font-size: 14px;
 }
 
+.formula-bracket {
+    color: var(--text-secondary);
+    font-size: 16px;
+    font-weight: 300;
+    margin: 0 2px;
+}
+
 .formula-factor {
     font-weight: 600;
     color: var(--text-primary);
     padding: 2px 6px;
     background: var(--accent-light);
     border-radius: 4px;
+}
+
+.formula-factor-r {
+    background: linear-gradient(135deg, #ff6b6b, #ffa502);
+    color: white;
+}
+
+.legend-recall .legend-factor {
+    background: linear-gradient(135deg, #ff6b6b, #ffa502);
+    color: white;
 }
 
 .formula-legend {

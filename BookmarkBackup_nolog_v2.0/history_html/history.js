@@ -1770,6 +1770,14 @@ const i18n = {
         'zh_CN': '推荐分数',
         'en': 'Score'
     },
+    legendRecall: {
+        'zh_CN': '记忆度',
+        'en': 'Recall'
+    },
+    recallDesc: {
+        'zh_CN': '（FSRS遗忘曲线：复习后锐减，逐渐恢复）',
+        'en': ' (FSRS curve: drops after review, gradually recovers)'
+    },
     legendFreshness: {
         'zh_CN': '新鲜度',
         'en': 'Freshness'
@@ -2800,6 +2808,12 @@ function applyLanguage() {
     
     const legendLaterReview = document.getElementById('legendLaterReview');
     if (legendLaterReview) legendLaterReview.textContent = i18n.legendLaterReview[currentLang];
+    
+    const legendRecall = document.getElementById('legendRecall');
+    if (legendRecall) legendRecall.textContent = i18n.legendRecall[currentLang];
+    
+    const recallDesc = document.getElementById('recallDesc');
+    if (recallDesc) recallDesc.textContent = i18n.recallDesc[currentLang];
     
     const laterReviewDesc = document.getElementById('laterReviewDesc');
     if (laterReviewDesc) laterReviewDesc.textContent = i18n.laterReviewDesc[currentLang];
@@ -4486,7 +4500,7 @@ function resetFormulaToDefault() {
     saveFormulaConfig();
 }
 
-function saveFormulaConfig() {
+async function saveFormulaConfig() {
     const config = {
         weights: {
             freshness: parseFloat(document.getElementById('weightFreshness').value) || 0.15,
@@ -4503,7 +4517,14 @@ function saveFormulaConfig() {
         }
     };
     browserAPI.storage.local.set({ recommendFormulaConfig: config });
-    console.log('[书签推荐] 保存公式配置:', config);
+    // 权重/阈值变化时清除旧缓存，立即重新计算所有书签S值
+    if (typeof clearScoresCache === 'function') {
+        await clearScoresCache();
+    }
+    if (typeof computeAllBookmarkScores === 'function') {
+        await computeAllBookmarkScores();
+    }
+    console.log('[书签推荐] 保存公式配置并重新计算S值:', config);
 }
 
 function loadFormulaConfig() {
@@ -4733,10 +4754,12 @@ async function openInRecommendWindow(url) {
 }
 
 function initCardInteractions() {
-    // 刷新按钮
-    document.getElementById('cardRefreshBtn')?.addEventListener('click', (e) => {
+    // 刷新按钮（主动刷新：先批量计算所有书签S值，再显示卡片）
+    document.getElementById('cardRefreshBtn')?.addEventListener('click', async (e) => {
         e.stopPropagation();
-        refreshRecommendCards(true);  // force=true 更新刷新时间
+        // 主动刷新时，先批量计算所有书签S值
+        await computeAllBookmarkScores();
+        await refreshRecommendCards(true);  // force=true 更新刷新时间
     });
     
     // 刷新设置按钮
@@ -5541,7 +5564,7 @@ async function checkAutoRefresh() {
     // 更新打开次数
     settings.openCountSinceRefresh = (settings.openCountSinceRefresh || 0) + 1;
     
-    // 每N次打开刷新
+    // 每N次打开刷新（三次卡片复习后触发被动刷新）
     if (settings.refreshEveryNOpens > 0) {
         if (settings.openCountSinceRefresh >= settings.refreshEveryNOpens) {
             shouldForceRefresh = true;
@@ -5573,9 +5596,11 @@ async function checkAutoRefresh() {
         settings.lastRefreshTime = now;
         settings.openCountSinceRefresh = 0;
         await saveRefreshSettings(settings);
+        // 强制刷新时，先批量计算所有书签S值，再显示卡片
+        await computeAllBookmarkScores();
         await refreshRecommendCards(true);
     } else {
-        // 保存打开次数，普通刷新
+        // 普通刷新：直接从 storage 读取缓存显示卡片
         await saveRefreshSettings(settings);
         await refreshRecommendCards(false);
     }
@@ -6963,9 +6988,213 @@ async function unblockDomain(domain) {
 }
 
 // =============================================================================
-// Phase 4: 权重公式计算 S = w1×F + w2×C + w3×T + w4×D + w5×L
+// Phase 4: 权重公式计算 S = (w1×F + w2×C + w3×T + w4×D + w5×L) × R
 // S = Score（推荐分数），值越高越优先推荐
+// R = Recall（记忆度），基于遗忘曲线，复习后锐减，逐渐恢复
 // =============================================================================
+
+// ===== 书签推荐缓存机制（仅 storage.local） =====
+// 启动时/刷新时：批量计算所有书签的S值，存入 storage.local
+// 刷新卡片时：直接从缓存读取，排序取top3，无需重新计算
+let isComputingScores = false;  // 正在计算中标志
+
+// 从 storage.local 获取所有缓存的S值
+async function getScoresCache() {
+    try {
+        const result = await new Promise(resolve => {
+            browserAPI.storage.local.get(['recommend_scores_cache'], resolve);
+        });
+        return result.recommend_scores_cache || {};
+    } catch (e) {
+        console.warn('[缓存] 读取S值缓存失败:', e);
+        return {};
+    }
+}
+
+// 保存所有S值到 storage.local
+async function saveScoresCache(cache) {
+    try {
+        await browserAPI.storage.local.set({
+            recommend_scores_cache: cache,
+            recommend_scores_time: Date.now()
+        });
+        console.log('[缓存] S值缓存已保存:', Object.keys(cache).length, '个书签');
+    } catch (e) {
+        console.warn('[缓存] 保存S值缓存失败:', e);
+    }
+}
+
+// 获取单个书签的缓存S值
+async function getCachedScore(bookmarkId) {
+    const cache = await getScoresCache();
+    return cache[bookmarkId] || null;
+}
+
+// 清除缓存
+async function clearScoresCache() {
+    await browserAPI.storage.local.remove(['recommend_scores_cache', 'recommend_scores_time']);
+    console.log('[缓存] 已清除S值缓存');
+}
+
+// ===== 批量计算所有书签S值 =====
+// 当被动刷新（三次卡片复习后）或主动按下按钮刷新时调用
+// 根据书签数量分批计算：500+分2次，1000+分3次
+async function computeAllBookmarkScores(progressCallback = null) {
+    if (isComputingScores) {
+        console.log('[批量计算] 已有计算任务在运行，跳过');
+        return false;
+    }
+    
+    isComputingScores = true;
+    console.log('[批量计算] 开始计算所有书签S值...');
+    
+    try {
+        // 获取所有书签
+        const allBookmarks = await new Promise((resolve) => {
+            browserAPI.bookmarks.getTree((tree) => {
+                const bookmarks = [];
+                function traverse(nodes) {
+                    for (const node of nodes) {
+                        if (node.url) {
+                            bookmarks.push(node);
+                        }
+                        if (node.children) {
+                            traverse(node.children);
+                        }
+                    }
+                }
+                traverse(tree);
+                resolve(bookmarks);
+            });
+        });
+        
+        if (allBookmarks.length === 0) {
+            console.log('[批量计算] 没有书签需要计算');
+            isComputingScores = false;
+            return true;
+        }
+        
+        // 获取过滤条件数据
+        const blocked = await getBlockedBookmarks();
+        const blockedBookmarkSet = new Set(blocked.bookmarks);
+        const blockedFolderSet = new Set(blocked.folders);
+        const blockedDomainSet = new Set(blocked.domains);
+        const postponed = await getPostponedBookmarks();
+        const reviewData = await getReviewData();
+        
+        // 过滤掉不需要计算的书签
+        const isBlockedDomain = (bookmark) => {
+            if (blockedDomainSet.size === 0 || !bookmark.url) return false;
+            try {
+                const url = new URL(bookmark.url);
+                return blockedDomainSet.has(url.hostname);
+            } catch {
+                return false;
+            }
+        };
+        
+        const availableBookmarks = allBookmarks.filter(b => 
+            !blockedBookmarkSet.has(b.id) &&
+            !blockedFolderSet.has(b.parentId) &&
+            !isBlockedDomain(b)
+        );
+        
+        const totalCount = availableBookmarks.length;
+        console.log('[批量计算] 需要计算的书签数量:', totalCount);
+        
+        // 根据书签数量确定批次数
+        let batchCount = 1;
+        if (totalCount > 1000) {
+            batchCount = 3;
+        } else if (totalCount > 500) {
+            batchCount = 2;
+        }
+        const batchSize = Math.ceil(totalCount / batchCount);
+        console.log('[批量计算] 分', batchCount, '批计算，每批约', batchSize, '个书签');
+        
+        // 新建缓存对象
+        const newCache = {};
+        
+        // 分批计算
+        for (let i = 0; i < batchCount; i++) {
+            const start = i * batchSize;
+            const end = Math.min(start + batchSize, totalCount);
+            const batchBookmarks = availableBookmarks.slice(start, end);
+            
+            console.log('[批量计算] 第', i + 1, '批，书签', start + 1, '-', end);
+            
+            // 获取这批书签的统计数据
+            const bookmarkStats = await batchGetBookmarkStats(batchBookmarks);
+            
+            // 计算每个书签的S值
+            for (const bookmark of batchBookmarks) {
+                const bookmarkWithReview = { ...bookmark, reviewData: reviewData[bookmark.id] || null };
+                const { priority, factors } = calculateWeightedPriority(bookmarkWithReview, bookmarkStats, postponed);
+                newCache[bookmark.id] = { S: priority, ...factors };
+            }
+            
+            // 回调进度
+            if (progressCallback) {
+                progressCallback(Math.round((end / totalCount) * 100));
+            }
+            
+            // 批次间暂停，避免阻塞UI
+            if (i < batchCount - 1) {
+                await new Promise(resolve => setTimeout(resolve, 50));
+            }
+        }
+        
+        // 保存到 storage.local
+        await saveScoresCache(newCache);
+        
+        console.log('[批量计算] 完成！共计算', Object.keys(newCache).length, '个书签');
+        isComputingScores = false;
+        return true;
+        
+    } catch (error) {
+        console.error('[批量计算] 计算失败:', error);
+        isComputingScores = false;
+        return false;
+    }
+}
+
+// 更新单个书签的S值（事件触发时使用）
+async function updateSingleBookmarkScore(bookmarkId) {
+    try {
+        const bookmarks = await new Promise((resolve) => {
+            browserAPI.bookmarks.get([bookmarkId], resolve);
+        });
+        if (!bookmarks || bookmarks.length === 0) return;
+        
+        const bookmark = bookmarks[0];
+        const bookmarkStats = await batchGetBookmarkStats([bookmark]);
+        const postponed = await getPostponedBookmarks();
+        const reviewData = await getReviewData();
+        const bookmarkWithReview = { ...bookmark, reviewData: reviewData[bookmark.id] || null };
+        const { priority, factors } = calculateWeightedPriority(bookmarkWithReview, bookmarkStats, postponed);
+        
+        // 读取现有缓存，更新后保存
+        const cache = await getScoresCache();
+        cache[bookmarkId] = { S: priority, ...factors };
+        await saveScoresCache(cache);
+    } catch (e) {
+        console.warn('[单书签更新] 失败:', e);
+    }
+}
+
+// 删除单个书签的S值缓存（书签删除时使用）
+async function removeCachedScore(bookmarkId) {
+    try {
+        const cache = await getScoresCache();
+        if (cache[bookmarkId]) {
+            delete cache[bookmarkId];
+            await saveScoresCache(cache);
+            console.log('[缓存] 已删除书签S值:', bookmarkId);
+        }
+    } catch (e) {
+        console.warn('[缓存] 删除书签S值失败:', e);
+    }
+}
 
 // ===== P1: 缓存机制 =====
 let trackingDataCache = null;
@@ -7287,23 +7516,51 @@ function calculateWeightedPriority(bookmark, stats, postponeData) {
         }
     }
     
-    // 计算加权优先级
-    const priority = w1 * F + w2 * C + w3 * T + w4 * D + w5 * L;
+    // 计算 R (记忆度/推荐调节因子): 基于FSRS遗忘曲线
+    // FSRS公式: 记忆保留率 = 0.9^(t/S)，其中 t=天数，S=稳定性
+    // 
+    // 关键：R是乘法因子，不能太低，否则S会趋近于0
+    // R范围设为 0.3~1.0：刚复习 R=0.3（S降到30%），到期 R→1（S不变）
+    let R = 1; // 默认未复习过，需要推荐
+    if (bookmark.reviewData) {
+        const review = bookmark.reviewData;
+        const daysSinceReview = (now - review.lastReview) / (1000 * 60 * 60 * 24);
+        
+        // 稳定性S：复习次数越多，恢复越慢
+        // 第1次: 3天, 第2次: 7天, 第3次: 14天, 第4次: 30天, 第5次+: 60天
+        const reviewCount = review.reviewCount || 1;
+        const stabilityTable = [3, 7, 14, 30, 60]; // 天
+        const stability = stabilityTable[Math.min(reviewCount - 1, stabilityTable.length - 1)];
+        
+        // FSRS遗忘曲线：推荐必要性 = 1 - 0.9^(t/S)
+        const needReview = 1 - Math.pow(0.9, daysSinceReview / stability);
+        
+        // R范围映射到 0.7~1.0，避免S值过低导致"卡死"
+        // 刚复习: R=0.7 (S降到70%)，到期: R→1.0 (S恢复)
+        // R = 0.7 + 0.3 × needReview
+        R = 0.7 + 0.3 * needReview;
+        R = Math.max(0.7, Math.min(1, R));
+    }
     
-    // 添加小量随机扰动避免完全相同的优先级
-    const randomFactor = (Math.random() - 0.5) * 0.05;
+    // 计算加权优先级：S = (w1×F + w2×C + w3×T + w4×D + w5×L) × R
+    const basePriority = w1 * F + w2 * C + w3 * T + w4 * D + w5 * L;
+    const priority = basePriority * R;
+    
+    // 添加随机扰动避免S值相近导致"卡死"
+    // 扰动范围±0.05，让初期大量相似S值的书签更分散
+    const randomFactor = (Math.random() - 0.5) * 0.1;
     const finalPriority = Math.max(0, Math.min(1, priority + randomFactor));
     
     // 调试日志（只对前几个书签输出）
     if (Math.random() < 0.05) { // 5%采样率
         console.log('[权重计算]', bookmark.title?.substring(0, 20), 
             'S=', finalPriority.toFixed(3),
-            'F=', F.toFixed(2), 'C=', C.toFixed(2), 'T=', T.toFixed(2), 'D=', D.toFixed(2), 'L=', L);
+            'F=', F.toFixed(2), 'C=', C.toFixed(2), 'T=', T.toFixed(2), 'D=', D.toFixed(2), 'L=', L, 'R=', R.toFixed(2));
     }
     
     return {
         priority: finalPriority,
-        factors: { F, C, T, D, L },
+        factors: { F, C, T, D, L, R },
         weights: { w1, w2, w3, w4, w5 }
     };
 }
@@ -7510,6 +7767,9 @@ async function refreshRecommendCards(force = false) {
         });
         const bookmarkMap = new Map(bookmarks.map(b => [b.id, b]));
         
+        // 一次性获取所有缓存的S值
+        const scoresCache = await getScoresCache();
+        
         // 检查是否有已保存的卡片状态（与popup共享）
         const currentCards = await getHistoryCurrentCards();
         const postponed = await getPostponedBookmarks();
@@ -7520,22 +7780,20 @@ async function refreshRecommendCards(force = false) {
             const allFlipped = currentCards.cardIds.every(id => currentCards.flippedIds.includes(id));
             
             if (!allFlipped) {
-                // 获取保存卡片的统计数据，重新计算优先级
+                // 恢复保存的卡片，直接使用缓存
                 const savedBookmarks = currentCards.cardIds.map(id => bookmarkMap.get(id)).filter(Boolean);
-                const savedStats = await batchGetBookmarkStats(savedBookmarks);
                 
-                // 显示保存的卡片（重新计算优先级）
                 recommendCards = savedBookmarks.map(bookmark => {
-                    const { priority, factors } = calculateWeightedPriority(bookmark, savedStats, postponed);
+                    const cached = scoresCache[bookmark.id];
                     const reviewStatus = getReviewStatus(bookmark.id, reviewData);
-                    let finalPriority = priority;
-                    if (reviewStatus.priority) {
-                        finalPriority *= reviewStatus.priority;
+                    if (cached) {
+                        return { ...bookmark, priority: cached.S, factors: cached, reviewStatus };
                     }
-                    return { ...bookmark, priority: finalPriority, factors, reviewStatus };
+                    // 缓存不存在时返回默认值
+                    return { ...bookmark, priority: 0.5, factors: {}, reviewStatus };
                 });
                 
-                // 更新卡片显示（复用下面的逻辑）
+                // 更新卡片显示
                 cards.forEach((card, index) => {
                     if (index < recommendCards.length) {
                         const bookmark = recommendCards[index];
@@ -7564,18 +7822,12 @@ async function refreshRecommendCards(force = false) {
             postponed.filter(p => p.postponeUntil > now && !p.manuallyAdded).map(p => p.bookmarkId)
         );
         
-        // 获取手动添加的书签ID集合（用于优先推荐）
-        const manuallyAddedSet = new Set(
-            postponed.filter(p => p.manuallyAdded).map(p => p.bookmarkId)
-        );
-        
         // 检查书签是否在屏蔽的文件夹中
         const isInBlockedFolder = (bookmark) => {
             if (blockedFolderSet.size === 0) return false;
             let parentId = bookmark.parentId;
             while (parentId) {
                 if (blockedFolderSet.has(parentId)) return true;
-                // 获取父文件夹的parentId（这里简化处理，只检查直接父级）
                 break;
             }
             return false;
@@ -7603,7 +7855,6 @@ async function refreshRecommendCards(force = false) {
         );
         
         if (availableBookmarks.length === 0) {
-            // 清除保存的卡片状态
             await saveHistoryCurrentCards([], []);
             cards.forEach((card) => {
                 card.classList.add('empty');
@@ -7615,24 +7866,16 @@ async function refreshRecommendCards(force = false) {
             return;
         }
         
-        // 批量获取书签统计数据（用于权重计算）
-        // 只获取前100个候选书签的统计数据以优化性能
-        const candidateBookmarks = availableBookmarks.slice(0, 100);
-        const bookmarkStats = await batchGetBookmarkStats(candidateBookmarks);
-        
-        // 使用权重公式计算每个书签的推荐分数
-        // S = w1×F + w2×C + w3×T + w4×D + w5×L
-        const bookmarksWithPriority = candidateBookmarks.map(b => {
-            const { priority, factors } = calculateWeightedPriority(b, bookmarkStats, postponed);
+        // 从缓存读取所有可用书签的S值，直接排序取top3
+        // 批量计算已在 checkAutoRefresh 或手动刷新时完成
+        const bookmarksWithPriority = availableBookmarks.map(b => {
+            const cached = scoresCache[b.id];
             const reviewStatus = getReviewStatus(b.id, reviewData);
-            
-            // 复习状态加成（待复习的书签额外提升）
-            let finalPriority = priority;
-            if (reviewStatus.priority) {
-                finalPriority *= reviewStatus.priority;
+            if (cached) {
+                return { ...b, priority: cached.S, factors: cached, reviewStatus };
             }
-            
-            return { ...b, priority: finalPriority, factors, reviewStatus };
+            // 缓存不存在时返回默认值（新书签或首次使用）
+            return { ...b, priority: 0.5, factors: {}, reviewStatus };
         });
         
         // 按优先级排序（高优先级在前），然后取前3个
@@ -14154,6 +14397,10 @@ function setupBookmarkListener() {
         console.log('[书签监听] 书签创建:', bookmark.title);
         try {
             addBookmarkToAdditionsCache(bookmark);
+            // 计算新书签的S值并加入缓存
+            if (typeof updateSingleBookmarkScore === 'function') {
+                await updateSingleBookmarkScore(id);
+            }
             // 支持 tree 和 canvas 视图（canvas视图包含永久栏目的书签树）
             if (currentView === 'tree' || currentView === 'canvas') {
                 await applyIncrementalCreateToTree(id, bookmark);
@@ -14176,6 +14423,10 @@ function setupBookmarkListener() {
         console.log('[书签监听] 书签删除:', id);
         try {
             removeBookmarkFromAdditionsCache(id);
+            // 从S值缓存中删除该书签
+            if (typeof removeCachedScore === 'function') {
+                await removeCachedScore(id);
+            }
             // 删除对应的 favicon 缓存
             // removeInfo.node 包含被删除书签的信息（包括 URL）
             if (removeInfo.node && removeInfo.node.url) {

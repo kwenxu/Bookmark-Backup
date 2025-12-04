@@ -742,6 +742,7 @@
                             <div class="formula-main">
                                 <span class="formula-label">S</span>
                                 <span class="formula-equals">=</span>
+                                <span class="formula-bracket">(</span>
                                 <span class="formula-term">
                                     <input type="text" class="formula-weight" id="weightFreshness" value="0.15" readonly>
                                     <span class="formula-multiply">×</span>
@@ -771,6 +772,9 @@
                                     <span class="formula-multiply">×</span>
                                     <span class="formula-factor">L</span>
                                 </span>
+                                <span class="formula-bracket">)</span>
+                                <span class="formula-multiply">×</span>
+                                <span class="formula-factor formula-factor-r">R</span>
                             </div>
                             <button class="section-toggle"><i class="fas fa-chevron-down"></i></button>
                         </div>
@@ -783,6 +787,7 @@
                                     <span class="legend-item"><span class="legend-factor">T</span><span id="legendTimeDegree">时间度</span></span>
                                     <span class="legend-item"><span class="legend-factor">D</span><span id="legendForgetting">遗忘度</span></span>
                                     <span class="legend-item"><span class="legend-factor">L</span><span id="legendLaterReview">待复习</span></span>
+                                    <span class="legend-item legend-recall"><span class="legend-factor">R</span><span id="legendRecall">记忆度</span></span>
                                 </div>
                                 <div class="formula-thresholds-wrapper">
                                     <div class="formula-thresholds">
@@ -791,6 +796,7 @@
                                         <span class="threshold-item">T = 1/(1+(综合时间/<input type="text" class="threshold-value" id="thresholdTimeDegree" value="5">分钟)⁰·⁷)</span>
                                         <span class="threshold-item">D = 1-1/(1+(未访问/<input type="text" class="threshold-value" id="thresholdForgetting" value="14">天)⁰·⁷)</span>
                                         <span class="threshold-item" id="thresholdLaterReviewItem">L = <span id="laterReviewStatus">0</span><span id="laterReviewDesc">（手动添加后=1）</span></span>
+                                        <span class="threshold-item" id="thresholdRecallItem">R = 1-0.9<sup>t/S</sup><span id="recallDesc">（FSRS遗忘曲线：复习后锐减，逐渐恢复）</span></span>
                                     </div>
                                     <button class="formula-help-btn" id="formulaHelpBtn" title="公式说明">
                                         <i class="fas fa-question-circle"></i>

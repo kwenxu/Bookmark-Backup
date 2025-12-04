@@ -7020,6 +7020,8 @@ async function getTrackingDataFromDB() {
 }
 
 // ===== P2: 批量获取历史记录（URL+标题并集匹配，与点击记录一致）=====
+let historyDataLoadingPromise = null; // 防止并发加载
+
 async function getBatchHistoryData() {
     const now = Date.now();
     // 检查缓存
@@ -7027,62 +7029,74 @@ async function getBatchHistoryData() {
         return historyDataCache;
     }
     
-    try {
-        if (!browserAPI?.history?.search) {
-            return { original: new Map(), title: new Map() };
-        }
-        
-        const historyItems = await new Promise((resolve) => {
-            browserAPI.history.search({
-                text: '',
-                startTime: 0,
-                maxResults: 50000
-            }, (results) => {
-                if (browserAPI.runtime?.lastError) {
-                    resolve([]);
-                } else {
-                    resolve(results || []);
-                }
-            });
-        });
-        
-        const originalMap = new Map();  // URL映射
-        const titleMap = new Map();    // 标题映射（与点击记录一致的并集匹配）
-        
-        for (const item of historyItems) {
-            if (item.url) {
-                const data = {
-                    visitCount: item.visitCount || 0,
-                    lastVisitTime: item.lastVisitTime || 0
-                };
-                // URL映射
-                originalMap.set(item.url, data);
-                
-                // 标题映射
-                const title = item.title && item.title.trim();
-                if (title) {
-                    if (!titleMap.has(title)) {
-                        titleMap.set(title, data);
+    // 如果正在加载，等待加载完成
+    if (historyDataLoadingPromise) {
+        return historyDataLoadingPromise;
+    }
+    
+    // 开始加载，设置Promise锁
+    historyDataLoadingPromise = (async () => {
+        try {
+            if (!browserAPI?.history?.search) {
+                return { original: new Map(), title: new Map() };
+            }
+            
+            const historyItems = await new Promise((resolve) => {
+                browserAPI.history.search({
+                    text: '',
+                    startTime: 0,
+                    maxResults: 50000
+                }, (results) => {
+                    if (browserAPI.runtime?.lastError) {
+                        resolve([]);
                     } else {
-                        const existing = titleMap.get(title);
-                        titleMap.set(title, {
-                            visitCount: existing.visitCount + data.visitCount,
-                            lastVisitTime: Math.max(existing.lastVisitTime, data.lastVisitTime)
-                        });
+                        resolve(results || []);
+                    }
+                });
+            });
+            
+            const originalMap = new Map();  // URL映射
+            const titleMap = new Map();    // 标题映射（与点击记录一致的并集匹配）
+            
+            for (const item of historyItems) {
+                if (item.url) {
+                    const data = {
+                        visitCount: item.visitCount || 0,
+                        lastVisitTime: item.lastVisitTime || 0
+                    };
+                    // URL映射
+                    originalMap.set(item.url, data);
+                    
+                    // 标题映射
+                    const title = item.title && item.title.trim();
+                    if (title) {
+                        if (!titleMap.has(title)) {
+                            titleMap.set(title, data);
+                        } else {
+                            const existing = titleMap.get(title);
+                            titleMap.set(title, {
+                                visitCount: existing.visitCount + data.visitCount,
+                                lastVisitTime: Math.max(existing.lastVisitTime, data.lastVisitTime)
+                            });
+                        }
                     }
                 }
             }
+            
+            // 更新缓存（URL + 标题，与点击记录一致）
+            historyDataCache = { original: originalMap, title: titleMap };
+            historyCacheTime = Date.now();
+            console.log('[权重计算] 历史数据已加载:', originalMap.size, '条URL,', titleMap.size, '条标题');
+            return historyDataCache;
+        } catch (e) {
+            console.warn('[权重计算] 批量获取历史数据失败:', e);
+            return { original: new Map(), title: new Map() };
+        } finally {
+            historyDataLoadingPromise = null; // 清除锁
         }
-        
-        // 更新缓存（URL + 标题，与点击记录一致）
-        historyDataCache = { original: originalMap, title: titleMap };
-        historyCacheTime = now;
-        console.log('[权重计算] 历史数据已加载:', originalMap.size, '条URL,', titleMap.size, '条标题');
-        return historyDataCache;
-    } catch (e) {
-        console.warn('[权重计算] 批量获取历史数据失败:', e);
-        return { original: new Map(), title: new Map() };
-    }
+    })();
+    
+    return historyDataLoadingPromise;
 }
 
 // 获取书签的访问统计数据（保留用于单个查询场景）
@@ -7179,8 +7193,6 @@ async function batchGetBookmarkStats(bookmarks) {
         });
     }
     
-    console.log('[权重计算] 点击数匹配: URL', urlMatchCount, ', 标题', titleMatchCount, ', 总计', bookmarks.length);
-    
     return stats;
 }
 
@@ -7190,6 +7202,7 @@ function clearStatsCache() {
     trackingCacheTime = 0;
     historyDataCache = null;
     historyCacheTime = 0;
+    historyDataLoadingPromise = null;
     console.log('[权重计算] 统计缓存已清除');
 }
 

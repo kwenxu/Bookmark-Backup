@@ -14659,6 +14659,11 @@ function setupRealtimeMessageListener() {
                     }
                     console.log('[T值缓存] 增量更新:', message.title || message.url);
                 }
+                
+                // T值变化后，触发该书签的S值增量更新
+                if (message.url) {
+                    scheduleBookmarkScoreUpdateByUrl(message.url);
+                }
             }
         } else if (message.action === 'clearFaviconCache') {
             // 书签URL被修改，清除favicon缓存（静默）

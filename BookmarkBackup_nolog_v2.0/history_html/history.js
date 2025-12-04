@@ -370,6 +370,8 @@ const FaviconCache = {
     },
 
     // 实际请求favicon - 多源降级策略
+    // 注意：不再直接请求网站的 /favicon.ico，因为某些网站（如需要认证的网站）
+    // 可能返回 HTML 页面而非图标，导致浏览器解析其中的 preload 标签并产生警告
     async _fetchFavicon(url) {
         return new Promise(async (resolve) => {
             try {
@@ -377,19 +379,18 @@ const FaviconCache = {
                 const domain = urlObj.hostname;
 
                 // 定义多个 favicon 源，按优先级尝试
+                // 只使用第三方服务，避免直接请求可能返回 HTML 的网站
                 const faviconSources = [
-                    // 1. 网站自己的 favicon（最准确，全球可用）
-                    `${urlObj.protocol}//${domain}/favicon.ico`,
-                    // 2. DuckDuckGo（全球可用，国内可访问）
+                    // 1. DuckDuckGo（全球可用，国内可访问，推荐首选）
                     `https://icons.duckduckgo.com/ip3/${domain}.ico`,
-                    // 3. Google S2（功能强大，但中国大陆被墙）
+                    // 2. Google S2（功能强大，但中国大陆被墙）
                     `https://www.google.com/s2/favicons?domain=${domain}&sz=32`
                 ];
 
                 // 尝试每个源
                 for (let i = 0; i < faviconSources.length; i++) {
                     const faviconUrl = faviconSources[i];
-                    const sourceName = ['网站原生', 'DuckDuckGo', 'Google S2'][i];
+                    const sourceName = ['DuckDuckGo', 'Google S2'][i];
 
                     const result = await this._tryLoadFavicon(faviconUrl, url, sourceName);
                     if (result && result !== fallbackIcon) {
@@ -16775,7 +16776,15 @@ function scheduleApplyRelatedFilter(filter, attempt = 0) {
 }
 
 function activateRelatedRangeStrategy(strategy) {
-    if (!strategy) return;
+    if (!strategy) {
+        // 确保在没有策略时也清理加载状态和超时
+        clearTimeout(window.__relatedJumpTimeout);
+        if (pendingHighlightInfo && pendingHighlightInfo.silentMenu) {
+            setRelatedPanelSilent(false);
+        }
+        pendingHighlightInfo = null;
+        return;
+    }
     pendingHighlightInfo.activeStrategy = strategy;
     if (pendingHighlightInfo) {
         pendingHighlightInfo.pendingUIRange = strategy.range;
@@ -16917,6 +16926,16 @@ async function jumpToRelatedHistory(url, title, visitTime, sourceElement) {
         scrollTop: document.querySelector('.content-area')?.scrollTop || 0
     };
     
+    // 添加超时保护机制，确保加载状态一定会被清理
+    clearTimeout(window.__relatedJumpTimeout);
+    window.__relatedJumpTimeout = setTimeout(() => {
+        if (pendingHighlightInfo && pendingHighlightInfo.silentMenu) {
+            console.warn('[BrowsingRelated] 跳转超时，强制清理加载状态');
+            setRelatedPanelSilent(false);
+            pendingHighlightInfo = null;
+        }
+    }, 10000); // 10秒超时保护
+    
     // 1. 切换到「书签浏览记录」标签
     const browsingTab = document.getElementById('additionsTabBrowsing');
     if (browsingTab && !browsingTab.classList.contains('active')) {
@@ -16972,7 +16991,16 @@ function highlightRelatedHistoryItem(retryCount = 0) {
         forceLoadAll
     } = pendingHighlightInfo;
     const listContainer = document.getElementById('browsingRelatedList');
-    if (!listContainer) return;
+    if (!listContainer) {
+        // 确保在容器不存在时也清理加载状态和超时
+        clearTimeout(window.__relatedJumpTimeout);
+        const silentMode = pendingHighlightInfo && pendingHighlightInfo.silentMenu;
+        pendingHighlightInfo = null;
+        if (silentMode) {
+            setRelatedPanelSilent(false);
+        }
+        return;
+    }
     
     const normalizedTitleValue = normalizedTitle || (title ? title.trim() : '');
     const computedHasVisitTime = typeof visitTime === 'number' && !Number.isNaN(visitTime);
@@ -17038,6 +17066,8 @@ function highlightRelatedHistoryItem(retryCount = 0) {
             syncRelatedUIWithStrategy(finalStrategy);
         }
         showRelatedJumpSuccessToast(visitTime, title);
+        // 清除超时保护
+        clearTimeout(window.__relatedJumpTimeout);
         if (pendingHighlightInfo && pendingHighlightInfo.silentMenu) {
             setRelatedPanelSilent(false);
         }
@@ -17078,6 +17108,8 @@ function highlightRelatedHistoryItem(retryCount = 0) {
     }
 
     const silentMode = pendingHighlightInfo && pendingHighlightInfo.silentMenu;
+    // 清除超时保护
+    clearTimeout(window.__relatedJumpTimeout);
     pendingHighlightInfo = null;
     if (silentMode) {
         setRelatedPanelSilent(false);
@@ -17223,6 +17255,16 @@ async function jumpToRelatedHistoryFromAdditions(url, title, dateAdded) {
         scrollTop: document.querySelector('.content-area')?.scrollTop || 0
     };
     
+    // 添加超时保护机制
+    clearTimeout(window.__relatedJumpTimeout);
+    window.__relatedJumpTimeout = setTimeout(() => {
+        if (pendingHighlightInfo && pendingHighlightInfo.silentMenu) {
+            console.warn('[BrowsingRelated] 跳转超时，强制清理加载状态');
+            setRelatedPanelSilent(false);
+            pendingHighlightInfo = null;
+        }
+    }, 10000);
+    
     // 1. 切换到「书签浏览记录」标签
     const browsingTab = document.getElementById('additionsTabBrowsing');
     if (browsingTab && !browsingTab.classList.contains('active')) {
@@ -17277,6 +17319,16 @@ async function jumpToRelatedHistoryFromRanking(url, title, currentRange) {
         timeFilter: currentTimeFilter,  // 保存二级菜单筛选条件
         scrollTop: document.querySelector('.content-area')?.scrollTop || 0
     };
+    
+    // 添加超时保护机制
+    clearTimeout(window.__relatedJumpTimeout);
+    window.__relatedJumpTimeout = setTimeout(() => {
+        if (pendingHighlightInfo) {
+            console.warn('[BrowsingRelated] 跳转超时，强制清理状态');
+            setRelatedPanelSilent(false);
+            pendingHighlightInfo = null;
+        }
+    }, 10000);
     
     // 1. 切换到「书签浏览记录」标签
     const browsingTab = document.getElementById('additionsTabBrowsing');
@@ -17440,7 +17492,12 @@ function highlightAllRelatedHistoryItems(retryCount = 0) {
     
     const { url, title, highlightAll, showBackButton: shouldShowBackButton } = pendingHighlightInfo;
     const listContainer = document.getElementById('browsingRelatedList');
-    if (!listContainer) return;
+    if (!listContainer) {
+        // 确保在容器不存在时也清理状态
+        clearTimeout(window.__relatedJumpTimeout);
+        pendingHighlightInfo = null;
+        return;
+    }
     
     // 查找所有匹配的记录项（URL匹配或标题匹配，与点击排行的计数逻辑保持一致）
     const items = listContainer.querySelectorAll('.related-history-item');
@@ -17486,7 +17543,8 @@ function highlightAllRelatedHistoryItems(retryCount = 0) {
             showBackButton();
         }
         
-        // 清除待高亮信息
+        // 清除超时保护和待高亮信息
+        clearTimeout(window.__relatedJumpTimeout);
         pendingHighlightInfo = null;
         return;
     }
@@ -17510,6 +17568,8 @@ function highlightAllRelatedHistoryItems(retryCount = 0) {
     if (retryCount < 5) {
         setTimeout(() => highlightAllRelatedHistoryItems(retryCount + 1), 300);
     } else {
+        // 清除超时保护
+        clearTimeout(window.__relatedJumpTimeout);
         pendingHighlightInfo = null;
         // 显示暂无记录提示
         showNoRecordToast();

@@ -6963,12 +6963,15 @@ async function refreshPopupRecommendCards(force = false) {
                 const reviewData = await getPopupReviewData();
                 const postponedList = await getPopupPostponedBookmarks();
                 
-                // 构建缓存的favicon URL映射
-                const cachedFaviconMap = new Map();
+                // 构建缓存的卡片数据映射（包含favicon和priority）
+                const cachedCardDataMap = new Map();
                 if (currentCards.cardData && Array.isArray(currentCards.cardData)) {
                     currentCards.cardData.forEach(data => {
-                        if (data && data.id && data.faviconUrl) {
-                            cachedFaviconMap.set(data.id, data.faviconUrl);
+                        if (data && data.id) {
+                            cachedCardDataMap.set(data.id, {
+                                faviconUrl: data.faviconUrl || null,
+                                priority: data.priority || 0
+                            });
                         }
                     });
                 }
@@ -6976,8 +6979,9 @@ async function refreshPopupRecommendCards(force = false) {
                 popupRecommendCards = currentCards.cardIds.map(id => {
                     const bookmark = bookmarkMap.get(id);
                     if (bookmark) {
-                        const basePriority = 0.75;
-                        const priority = calculatePopupPriorityWithReview(basePriority, bookmark.id, reviewData, postponedList);
+                        // 使用history.js保存的priority，而不是固定值
+                        const cachedData = cachedCardDataMap.get(id);
+                        const priority = cachedData?.priority || 0.75;
                         return { ...bookmark, priority };
                     }
                     return null;
@@ -6987,8 +6991,8 @@ async function refreshPopupRecommendCards(force = false) {
                     const bookmark = popupRecommendCards[index];
                     if (bookmark) {
                         // 使用缓存的favicon URL（如果可用）
-                        const cachedFavicon = cachedFaviconMap.get(bookmark.id);
-                        populatePopupRecommendCard(card, bookmark, cachedFavicon);
+                        const cachedData = cachedCardDataMap.get(bookmark.id);
+                        populatePopupRecommendCard(card, bookmark, cachedData?.faviconUrl);
                         // 恢复勾选状态
                         if (currentCards.flippedIds.includes(bookmark.id)) {
                             card.classList.add('flipped');
@@ -7097,7 +7101,7 @@ function resetPopupRecommendCard(card, message) {
     if (titleEl) titleEl.textContent = message;
 
     const priorityEl = card.querySelector('.popup-recommend-priority');
-    if (priorityEl) priorityEl.textContent = 'P = --';
+    if (priorityEl) priorityEl.textContent = 'S = --';
 
     const favicon = card.querySelector('.popup-recommend-favicon');
     if (favicon) favicon.src = getRecentFaviconFallback();
@@ -7131,7 +7135,7 @@ function populatePopupRecommendCard(card, bookmark, cachedFaviconUrl = null) {
 
     const priorityEl = card.querySelector('.popup-recommend-priority');
     if (priorityEl) {
-        priorityEl.textContent = `P = ${bookmark.priority.toFixed(2)}`;
+        priorityEl.textContent = `S = ${bookmark.priority.toFixed(2)}`;
     }
 
     card.onclick = async (event) => {

@@ -1766,6 +1766,10 @@ const i18n = {
         'zh_CN': '帮助',
         'en': 'Help'
     },
+    legendScore: {
+        'zh_CN': '推荐分数',
+        'en': 'Score'
+    },
     legendFreshness: {
         'zh_CN': '新鲜度',
         'en': 'Freshness'
@@ -2778,6 +2782,9 @@ function applyLanguage() {
     
     const recommendHelpBtn = document.getElementById('recommendHelpBtn');
     if (recommendHelpBtn) recommendHelpBtn.title = i18n.recommendHelpTooltip[currentLang];
+    
+    const legendScore = document.getElementById('legendScore');
+    if (legendScore) legendScore.textContent = i18n.legendScore[currentLang];
     
     const legendFreshness = document.getElementById('legendFreshness');
     if (legendFreshness) legendFreshness.textContent = i18n.legendFreshness[currentLang];
@@ -5094,7 +5101,7 @@ async function saveHistoryCurrentCards(cardIds, flippedIds, cardData = null) {
     await browserAPI.storage.local.set(dataToSave);
 }
 
-// 异步获取并保存当前卡片的favicon URLs（供popup使用）
+// 异步获取并保存当前卡片的数据（含priority和favicon，供popup使用）
 async function saveCardFaviconsToStorage(bookmarks) {
     if (!bookmarks || bookmarks.length === 0) return;
     
@@ -5103,20 +5110,21 @@ async function saveCardFaviconsToStorage(bookmarks) {
         const currentCards = await getHistoryCurrentCards();
         if (!currentCards || !currentCards.cardIds) return;
         
-        // 为每个卡片获取favicon data URL
+        // 为每个卡片获取favicon data URL和priority
         const cardData = await Promise.all(bookmarks.map(async (bookmark) => {
             if (!bookmark || !bookmark.url) {
-                return { id: bookmark?.id, url: null, faviconUrl: null };
+                return { id: bookmark?.id, url: null, faviconUrl: null, priority: 0 };
             }
             try {
                 const faviconUrl = await FaviconCache.fetch(bookmark.url);
                 return {
                     id: bookmark.id,
                     url: bookmark.url,
-                    faviconUrl: faviconUrl !== fallbackIcon ? faviconUrl : null
+                    faviconUrl: faviconUrl !== fallbackIcon ? faviconUrl : null,
+                    priority: bookmark.priority || 0
                 };
             } catch (e) {
-                return { id: bookmark.id, url: bookmark.url, faviconUrl: null };
+                return { id: bookmark.id, url: bookmark.url, faviconUrl: null, priority: bookmark.priority || 0 };
             }
         }));
         
@@ -5153,7 +5161,7 @@ function updateCardDisplay(card, bookmark, isFlipped = false) {
         card.classList.remove('flipped');
     }
     card.querySelector('.card-title').textContent = bookmark.title || bookmark.url;
-    card.querySelector('.card-priority').textContent = `P = ${bookmark.priority.toFixed(2)}`;
+    card.querySelector('.card-priority').textContent = `S = ${bookmark.priority.toFixed(2)}`;
     card.dataset.url = bookmark.url;
     card.dataset.bookmarkId = bookmark.id;
     
@@ -5216,7 +5224,7 @@ function updateCardDisplay(card, bookmark, isFlipped = false) {
 function setCardEmpty(card) {
     card.classList.add('empty');
     card.querySelector('.card-title').textContent = '--';
-    card.querySelector('.card-priority').textContent = 'P = --';
+    card.querySelector('.card-priority').textContent = 'S = --';
     const favicon = card.querySelector('.card-favicon');
     if (favicon) {
         favicon.src = fallbackIcon;
@@ -6955,7 +6963,8 @@ async function unblockDomain(domain) {
 }
 
 // =============================================================================
-// Phase 4: 权重公式计算 P = w1×F + w2×C + w3×S + w4×D + w5×L
+// Phase 4: 权重公式计算 S = w1×F + w2×C + w3×T + w4×D + w5×L
+// S = Score（推荐分数），值越高越优先推荐
 // =============================================================================
 
 // ===== P1: 缓存机制 =====
@@ -7194,8 +7203,8 @@ function calculateFactorValue(value, threshold, inverse = false) {
     return inverse ? decayed : (1 - decayed);
 }
 
-// 使用权重公式计算书签优先级
-// P = w1×F + w2×C + w3×S + w4×D + w5×L
+// 使用权重公式计算书签推荐分数
+// S = w1×F + w2×C + w3×T + w4×D + w5×L
 function calculateWeightedPriority(bookmark, stats, postponeData) {
     const now = Date.now();
     const bookmarkStats = stats.get(bookmark.id) || {
@@ -7275,7 +7284,7 @@ function calculateWeightedPriority(bookmark, stats, postponeData) {
     // 调试日志（只对前几个书签输出）
     if (Math.random() < 0.05) { // 5%采样率
         console.log('[权重计算]', bookmark.title?.substring(0, 20), 
-            'P=', finalPriority.toFixed(3),
+            'S=', finalPriority.toFixed(3),
             'F=', F.toFixed(2), 'C=', C.toFixed(2), 'T=', T.toFixed(2), 'D=', D.toFixed(2), 'L=', L);
     }
     
@@ -7598,8 +7607,8 @@ async function refreshRecommendCards(force = false) {
         const candidateBookmarks = availableBookmarks.slice(0, 100);
         const bookmarkStats = await batchGetBookmarkStats(candidateBookmarks);
         
-        // 使用权重公式计算每个书签的优先级
-        // P = w1×F + w2×C + w3×S + w4×D + w5×L
+        // 使用权重公式计算每个书签的推荐分数
+        // S = w1×F + w2×C + w3×T + w4×D + w5×L
         const bookmarksWithPriority = candidateBookmarks.map(b => {
             const { priority, factors } = calculateWeightedPriority(b, bookmarkStats, postponed);
             const reviewStatus = getReviewStatus(b.id, reviewData);

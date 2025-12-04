@@ -5393,8 +5393,8 @@ function calculateRecommendedDays(priority, factors) {
     if (factors) {
         // D(遗忘度)特别高：很久没看了，缩短间隔
         if (factors.D > 0.8) intervalDays *= 0.7;
-        // S(浅阅读)特别高：几乎没读过，缩短间隔
-        if (factors.S > 0.9) intervalDays *= 0.8;
+        // T(时间度/浅阅读)特别高：几乎没读过，缩短间隔
+        if (factors.T > 0.9) intervalDays *= 0.8;
         // C(冷门度)特别高：很少点击，缩短间隔
         if (factors.C > 0.9) intervalDays *= 0.85;
     }
@@ -7010,7 +7010,7 @@ async function getTrackingDataFromDB() {
     return {};
 }
 
-// ===== P2: 批量获取历史记录（优化性能）=====
+// ===== P2: 批量获取历史记录（URL+标题并集匹配，与点击记录一致）=====
 async function getBatchHistoryData() {
     const now = Date.now();
     // 检查缓存
@@ -7020,7 +7020,7 @@ async function getBatchHistoryData() {
     
     try {
         if (!browserAPI?.history?.search) {
-            return new Map();
+            return { original: new Map(), title: new Map() };
         }
         
         const historyItems = await new Promise((resolve) => {
@@ -7037,24 +7037,42 @@ async function getBatchHistoryData() {
             });
         });
         
-        const historyMap = new Map();
+        const originalMap = new Map();  // URL映射
+        const titleMap = new Map();    // 标题映射（与点击记录一致的并集匹配）
+        
         for (const item of historyItems) {
             if (item.url) {
-                historyMap.set(item.url, {
+                const data = {
                     visitCount: item.visitCount || 0,
                     lastVisitTime: item.lastVisitTime || 0
-                });
+                };
+                // URL映射
+                originalMap.set(item.url, data);
+                
+                // 标题映射
+                const title = item.title && item.title.trim();
+                if (title) {
+                    if (!titleMap.has(title)) {
+                        titleMap.set(title, data);
+                    } else {
+                        const existing = titleMap.get(title);
+                        titleMap.set(title, {
+                            visitCount: existing.visitCount + data.visitCount,
+                            lastVisitTime: Math.max(existing.lastVisitTime, data.lastVisitTime)
+                        });
+                    }
+                }
             }
         }
         
-        // 更新缓存
-        historyDataCache = historyMap;
+        // 更新缓存（URL + 标题，与点击记录一致）
+        historyDataCache = { original: originalMap, title: titleMap };
         historyCacheTime = now;
-        console.log('[权重计算] 历史数据已批量加载:', historyMap.size, '条');
-        return historyMap;
+        console.log('[权重计算] 历史数据已加载:', originalMap.size, '条URL,', titleMap.size, '条标题');
+        return historyDataCache;
     } catch (e) {
         console.warn('[权重计算] 批量获取历史数据失败:', e);
-        return new Map();
+        return { original: new Map(), title: new Map() };
     }
 }
 
@@ -7103,20 +7121,56 @@ async function batchGetBookmarkStats(bookmarks) {
     
     // P2: 批量获取历史数据（带缓存）
     const historyData = await getBatchHistoryData();
+    const { original: originalMap, title: titleMap } = historyData;
     
-    // 直接从缓存构建统计数据，无需逐个查询
+    // 直接从缓存构建统计数据（URL或标题并集匹配，与点击记录一致）
+    let urlMatchCount = 0;
+    let titleMatchCount = 0;
+    
     for (const bookmark of bookmarks) {
-        const historyStats = historyData.get(bookmark.url) || { visitCount: 0, lastVisitTime: 0 };
+        let historyStats = null;
+        let matchType = 'none';
+        
+        // URL匹配
+        const urlStats = originalMap.get(bookmark.url);
+        if (urlStats && urlStats.visitCount > 0) {
+            historyStats = urlStats;
+            matchType = 'url';
+        }
+        
+        // 标题匹配（与点击记录保持一致的并集匹配）
+        if (!historyStats || historyStats.visitCount === 0) {
+            const bookmarkTitle = bookmark.title && bookmark.title.trim();
+            if (bookmarkTitle) {
+                const titleStats = titleMap.get(bookmarkTitle);
+                if (titleStats && titleStats.visitCount > 0) {
+                    historyStats = titleStats;
+                    matchType = 'title';
+                }
+            }
+        }
+        
+        // 统计匹配类型
+        if (matchType === 'url') urlMatchCount++;
+        else if (matchType === 'title') titleMatchCount++;
+        
+        // 默认值
+        if (!historyStats) {
+            historyStats = { visitCount: 0, lastVisitTime: 0 };
+        }
+        
         const trackingInfo = trackingData[bookmark.url] || { activeMs: 0, compositeMs: 0 };
         
         stats.set(bookmark.id, {
             visitCount: historyStats.visitCount,
             lastVisitTime: historyStats.lastVisitTime,
             activeTimeMs: trackingInfo.activeMs,
-            compositeTimeMs: trackingInfo.compositeMs,  // 综合时间
+            compositeTimeMs: trackingInfo.compositeMs,
             dateAdded: bookmark.dateAdded || Date.now()
         });
     }
+    
+    console.log('[权重计算] 点击数匹配: URL', urlMatchCount, ', 标题', titleMatchCount, ', 总计', bookmarks.length);
     
     return stats;
 }

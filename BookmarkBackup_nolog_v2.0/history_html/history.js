@@ -15657,19 +15657,7 @@ async function renderBrowsingRelatedList(container, historyItems, bookmarkUrls, 
                     lastGroup.endIndex = i + 1;
                     lastGroup.items.push(item);
                 } else {
-                    // 创建新组 - 调试：为什么没合并
-                    if (lastGroup && !lastGroup.isBookmark) {
-                        console.log('[合并调试] 未合并原因 - 标题不同:', {
-                            index: i + 1,
-                            当前标题: itemTitle,
-                            前一组标题: lastGroup.title,
-                            相同: lastGroup.title === itemTitle,
-                            当前标题长度: itemTitle.length,
-                            前一组标题长度: lastGroup.title.length,
-                            当前标题编码: [...itemTitle].map(c => c.charCodeAt(0)),
-                            前一组标题编码: [...lastGroup.title].map(c => c.charCodeAt(0))
-                        });
-                    }
+                    // 创建新组
                     groups.push({
                         startIndex: i + 1,
                         endIndex: i + 1,
@@ -15714,9 +15702,23 @@ async function renderBrowsingRelatedList(container, historyItems, bookmarkUrls, 
         // 获取favicon
         const faviconUrl = getFaviconUrl(item.url);
 
-        // 格式化时间
-        const visitTime = item.lastVisitTime ? new Date(item.lastVisitTime) : new Date();
-        const timeStr = formatTimeByRange(visitTime, range);
+        // ✨ 格式化时间：如果合并了多条，显示时间范围
+        let timeStr;
+        if (group.items.length === 1) {
+            // 单条记录：显示单个时间
+            const visitTime = item.lastVisitTime ? new Date(item.lastVisitTime) : new Date();
+            timeStr = formatTimeByRange(visitTime, range);
+        } else {
+            // 多条记录：显示时间范围（第一条 ~ 最后一条）
+            const firstItem = group.items[0];
+            const lastItem = group.items[group.items.length - 1];
+            const firstTime = firstItem.lastVisitTime ? new Date(firstItem.lastVisitTime) : new Date();
+            const lastTime = lastItem.lastVisitTime ? new Date(lastItem.lastVisitTime) : new Date();
+            const firstTimeStr = formatTimeByRange(firstTime, range);
+            const lastTimeStr = formatTimeByRange(lastTime, range);
+            // 时间顺序已经由排序决定，直接按数组顺序显示
+            timeStr = `${firstTimeStr} ~ ${lastTimeStr}`;
+        }
 
         const displayTitle = (item.title && item.title.trim()) ? item.title : item.url;
         

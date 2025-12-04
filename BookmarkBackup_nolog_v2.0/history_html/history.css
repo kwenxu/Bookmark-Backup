@@ -7652,6 +7652,33 @@ a.tree-label.tree-bookmark-link:hover {
     visibility: visible;
 }
 
+#browsingRelatedPanel.related-silent-loading {
+    position: relative;
+}
+
+#browsingRelatedPanel.related-silent-loading::after {
+    content: attr(data-loading-text);
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    background: rgba(15, 23, 42, 0.9);
+    color: #fff;
+    padding: 16px 24px;
+    border-radius: 12px;
+    font-size: 14px;
+    letter-spacing: 0.5px;
+    z-index: 50;
+    box-shadow: 0 8px 30px rgba(15, 23, 42, 0.35);
+}
+
+#browsingRelatedPanel.related-silent-loading .ranking-time-filter-btn,
+#browsingRelatedPanel.related-silent-loading #browsingRelatedTimeMenu,
+#browsingRelatedPanel.related-silent-loading #browsingRelatedList {
+    opacity: 0;
+    pointer-events: none;
+}
+
 /* ========== 书签关联记录高亮目标 ========== */
 .related-history-item.highlight-target {
     background: linear-gradient(135deg,

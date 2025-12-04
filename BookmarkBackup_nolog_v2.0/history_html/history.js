@@ -15622,8 +15622,12 @@ async function renderBrowsingRelatedList(container, historyItems, bookmarkUrls, 
             itemEl.className = 'related-history-item' + (isBookmark ? ' is-bookmark' : '');
             
             // 添加 dataset 属性用于跳转匹配
+            const visitTimestamp = item.lastVisitTime || null;
             itemEl.dataset.url = item.url;
-            itemEl.dataset.visitTime = item.lastVisitTime || Date.now();
+            itemEl.dataset.visitTime = visitTimestamp || Date.now();
+            if (visitTimestamp) {
+                itemEl.dataset.visitMinute = Math.floor(visitTimestamp / 60000);
+            }
             // 添加标题用于标题匹配
             if (item.title && item.title.trim()) {
                 itemEl.dataset.title = item.title.trim();
@@ -15711,8 +15715,12 @@ async function renderBrowsingRelatedList(container, historyItems, bookmarkUrls, 
             itemEl.className = 'related-history-item' + (isBookmark ? ' is-bookmark' : '');
             
             // 添加 dataset 属性用于跳转匹配
+            const visitTimestamp = item.lastVisitTime || null;
             itemEl.dataset.url = item.url;
-            itemEl.dataset.visitTime = item.lastVisitTime || Date.now();
+            itemEl.dataset.visitTime = visitTimestamp || Date.now();
+            if (visitTimestamp) {
+                itemEl.dataset.visitMinute = Math.floor(visitTimestamp / 60000);
+            }
             // 添加标题用于标题匹配
             if (item.title && item.title.trim()) {
                 itemEl.dataset.title = item.title.trim();
@@ -16667,12 +16675,56 @@ function getPreferredRangeFromCalendar(instance) {
     }
 }
 
+function getPrimaryRangeForVisit(visitDate) {
+    if (!visitDate) return 'day';
+    const now = new Date();
+    if (visitDate.toDateString() === now.toDateString()) {
+        return 'day';
+    }
+    const diff = Math.abs(now - visitDate);
+    const oneDay = 24 * 60 * 60 * 1000;
+    if (diff <= 7 * oneDay) {
+        return 'week';
+    }
+    if (diff <= 31 * oneDay) {
+        return 'month';
+    }
+    if (visitDate.getFullYear() === now.getFullYear()) {
+        return 'year';
+    }
+    return 'all';
+}
+
+function buildRangeFilter(range, visitDate) {
+    if (!visitDate) return null;
+    switch (range) {
+        case 'day':
+            return { type: 'hour', value: visitDate.getHours() };
+        case 'week': {
+            const dayDate = new Date(visitDate);
+            dayDate.setHours(0, 0, 0, 0);
+            return { type: 'day', value: dayDate };
+        }
+        case 'month':
+            return { type: 'week', value: getWeekNumberForRelated(visitDate) };
+        case 'year':
+            return { type: 'month', value: visitDate.getMonth() };
+        case 'all':
+            return { type: 'year', value: visitDate.getFullYear() };
+        default:
+            return null;
+    }
+}
+
 function buildRelatedRangeStrategies(visitTime, options = {}) {
     const strategies = [];
     const seen = new Set();
     const { preferredRange = null } = options || {};
+    const hasVisitTime = typeof visitTime === 'number' && !Number.isNaN(visitTime);
+    const visitDate = hasVisitTime ? new Date(visitTime) : null;
 
     const pushStrategy = (range, filter = null) => {
+        if (!range) return;
         const filterKey = filter
             ? `${filter.type}-${filter.value instanceof Date ? filter.value.toISOString() : filter.value}`
             : 'none';
@@ -16682,42 +16734,35 @@ function buildRelatedRangeStrategies(visitTime, options = {}) {
         strategies.push({ range, filter });
     };
 
-    if (typeof visitTime !== 'number' || Number.isNaN(visitTime)) {
-        pushStrategy('day', null);
+    if (!visitDate) {
+        pushStrategy(preferredRange || 'day', null);
         pushStrategy('all', null);
-    } else {
-        const visitDate = new Date(visitTime);
-        const dayStart = new Date(visitDate);
-        dayStart.setHours(0, 0, 0, 0);
-        const hourValue = visitDate.getHours();
-        const weekNum = getWeekNumberForRelated(visitDate);
-        const monthValue = visitDate.getMonth();
-        const yearValue = visitDate.getFullYear();
-
-        pushStrategy('day', { type: 'hour', value: hourValue });
-        pushStrategy('day', null);
-        pushStrategy('week', { type: 'day', value: new Date(dayStart) });
-        pushStrategy('month', { type: 'week', value: weekNum });
-        pushStrategy('year', { type: 'month', value: monthValue });
-        pushStrategy('all', { type: 'year', value: yearValue });
-        pushStrategy('all', null);
+        return strategies;
     }
 
-    if (preferredRange) {
-        const prioritized = [];
-        strategies.forEach(strategy => {
-            if (strategy.range === preferredRange) {
-                prioritized.push(strategy);
-            }
-        });
-        strategies.forEach(strategy => {
-            if (strategy.range !== preferredRange) {
-                prioritized.push(strategy);
-            }
-        });
-        return prioritized;
+    const primaryRange = getPrimaryRangeForVisit(visitDate);
+    const orderedRanges = [];
+    if (preferredRange) orderedRanges.push(preferredRange);
+    orderedRanges.push(primaryRange);
+    if (primaryRange !== 'year' && visitDate.getFullYear() === (new Date()).getFullYear()) {
+        orderedRanges.push('year');
     }
+    orderedRanges.push('all');
 
+    const uniqueRanges = [];
+    const rangeSeen = new Set();
+    orderedRanges.forEach(range => {
+        if (!range) return;
+        if (rangeSeen.has(range)) return;
+        rangeSeen.add(range);
+        uniqueRanges.push(range);
+    });
+
+    uniqueRanges.forEach(range => {
+        pushStrategy(range, buildRangeFilter(range, visitDate));
+    });
+
+    pushStrategy('all', null);
     return strategies;
 }
 
@@ -16732,6 +16777,30 @@ function scheduleApplyRelatedFilter(filter, attempt = 0) {
 function activateRelatedRangeStrategy(strategy) {
     if (!strategy) return;
     pendingHighlightInfo.activeStrategy = strategy;
+    if (pendingHighlightInfo) {
+        pendingHighlightInfo.pendingUIRange = strategy.range;
+        pendingHighlightInfo.pendingUIFilter = strategy.filter || null;
+    }
+
+    const silentMode = pendingHighlightInfo && pendingHighlightInfo.silentMenu;
+    if (silentMode) {
+        setRelatedPanelSilent(true);
+    }
+
+    const loadAndHighlightSilently = () => {
+        setTimeout(() => {
+            highlightRelatedHistoryItem();
+        }, 20);
+    };
+
+    if (silentMode) {
+        browsingRelatedCurrentRange = strategy.range;
+        browsingRelatedTimeFilter = strategy.filter || null;
+        loadBrowsingRelatedHistory(strategy.range)
+            .then(loadAndHighlightSilently)
+            .catch(loadAndHighlightSilently);
+        return;
+    }
 
     const rangeName = strategy.range.charAt(0).toUpperCase() + strategy.range.slice(1);
     const filterBtn = document.getElementById(`browsingRelatedFilter${rangeName}`);
@@ -16763,6 +16832,80 @@ function activateRelatedRangeStrategy(strategy) {
     }
 }
 
+function syncRelatedUIWithStrategy(strategy) {
+    if (!strategy) return;
+    const range = strategy.range;
+    const filter = strategy.filter || null;
+    setActiveRelatedRangeButton(range);
+    showBrowsingRelatedTimeMenu(range).then(() => {
+        markRelatedTimeMenuSelection(filter);
+    }).catch(() => {
+        markRelatedTimeMenuSelection(filter);
+    });
+}
+
+function setRelatedPanelSilent(enabled) {
+    const panel = document.getElementById('browsingRelatedPanel');
+    if (!panel) return;
+    if (enabled) {
+        const loadingText = currentLang === 'zh_CN' ? '正在定位记录…' : 'Locating record…';
+        panel.setAttribute('data-loading-text', loadingText);
+        panel.classList.add('related-silent-loading');
+    } else {
+        panel.classList.remove('related-silent-loading');
+        panel.removeAttribute('data-loading-text');
+    }
+}
+
+function setActiveRelatedRangeButton(range) {
+    if (!range) return;
+    const panel = document.getElementById('browsingRelatedPanel');
+    if (!panel) return;
+    const buttons = panel.querySelectorAll('.ranking-time-filter-btn');
+    buttons.forEach(btn => {
+        const isMatch = btn.dataset.range === range;
+        btn.classList.toggle('active', isMatch);
+    });
+}
+
+function markRelatedTimeMenuSelection(filter) {
+    const menuContainer = document.getElementById('browsingRelatedTimeMenu');
+    if (!menuContainer) return;
+    const buttons = menuContainer.querySelectorAll('.time-menu-btn');
+    buttons.forEach(btn => btn.classList.remove('active'));
+
+    if (!filter) {
+        const allBtn = menuContainer.querySelector('.time-menu-btn[data-filter="all"]');
+        if (allBtn) allBtn.classList.add('active');
+        return;
+    }
+
+    let targetBtn = null;
+    buttons.forEach(btn => {
+        if (filter.type === 'hour' && btn.dataset.hour == filter.value) {
+            targetBtn = btn;
+        } else if (filter.type === 'day' && btn.dataset.date) {
+            const btnDate = new Date(btn.dataset.date);
+            if (filter.value instanceof Date && btnDate.toDateString() === filter.value.toDateString()) {
+                targetBtn = btn;
+            }
+        } else if (filter.type === 'week' && btn.dataset.week == filter.value) {
+            targetBtn = btn;
+        } else if (filter.type === 'month' && btn.dataset.month == filter.value) {
+            targetBtn = btn;
+        } else if (filter.type === 'year' && btn.dataset.year == filter.value) {
+            targetBtn = btn;
+        }
+    });
+
+    if (targetBtn) {
+        targetBtn.classList.add('active');
+    } else {
+        const allBtn = menuContainer.querySelector('.time-menu-btn[data-filter="all"]');
+        if (allBtn) allBtn.classList.add('active');
+    }
+}
+
 // 跳转到书签关联记录并高亮对应条目
 async function jumpToRelatedHistory(url, title, visitTime, sourceElement) {
     // 记录来源信息，用于返回
@@ -16787,6 +16930,7 @@ async function jumpToRelatedHistory(url, title, visitTime, sourceElement) {
     }
     
     const normalizedTitle = typeof title === 'string' ? title.trim() : '';
+    const hasPreciseVisit = typeof visitTime === 'number' && !Number.isNaN(visitTime);
     const preferredRange = getPreferredRangeFromCalendar(window.browsingHistoryCalendarInstance);
     const strategyQueue = buildRelatedRangeStrategies(visitTime, { preferredRange });
     const effectiveStrategies = strategyQueue.length ? strategyQueue : [{ range: 'all', filter: null }];
@@ -16799,7 +16943,12 @@ async function jumpToRelatedHistory(url, title, visitTime, sourceElement) {
         visitTime: visitTime,
         strategyQueue: effectiveStrategies,
         currentStrategyIndex: 0,
-        showBackButton: true  // 标记需要显示返回按钮
+        showBackButton: true, // 标记需要显示返回按钮
+        hasVisitTime: hasPreciseVisit,
+        forceLoadAll: true,
+        silentMenu: true,
+        pendingUIRange: effectiveStrategies[0]?.range || null,
+        pendingUIFilter: effectiveStrategies[0]?.filter || null
     };
 
     // 4. 启动首个时间范围策略
@@ -16818,23 +16967,32 @@ function highlightRelatedHistoryItem(retryCount = 0) {
         strategyQueue = [],
         currentStrategyIndex = 0,
         fromAdditions,
-        showBackButton
+        showBackButton: shouldShowBackButton,
+        hasVisitTime: storedVisitFlag,
+        forceLoadAll
     } = pendingHighlightInfo;
     const listContainer = document.getElementById('browsingRelatedList');
     if (!listContainer) return;
     
     const normalizedTitleValue = normalizedTitle || (title ? title.trim() : '');
-    const hasVisitTime = typeof visitTime === 'number' && !Number.isNaN(visitTime);
+    const computedHasVisitTime = typeof visitTime === 'number' && !Number.isNaN(visitTime);
+    const hasVisitTime = typeof storedVisitFlag === 'boolean' ? storedVisitFlag : computedHasVisitTime;
     const targetMinute = hasVisitTime ? Math.floor(visitTime / (60 * 1000)) : null;
-    
-    const items = listContainer.querySelectorAll('.related-history-item');
+
+    const candidateSelector = hasVisitTime && targetMinute !== null
+        ? `[data-visit-minute="${targetMinute}"]`
+        : '.related-history-item';
+    let nodes = listContainer.querySelectorAll(candidateSelector);
+    if (!nodes || nodes.length === 0) {
+        nodes = listContainer.querySelectorAll('.related-history-item');
+    }
+
     let minuteUrlMatch = null;
     let minuteTitleMatch = null;
     let fallbackMatch = null;
-    
-    items.forEach(item => {
+    nodes.forEach(item => {
         if (minuteUrlMatch && minuteTitleMatch) {
-            return; // 已找到最佳匹配
+            return;
         }
 
         const itemUrl = item.dataset.url;
@@ -16842,22 +17000,19 @@ function highlightRelatedHistoryItem(retryCount = 0) {
         const matchesUrl = itemUrl === url;
         const matchesTitle = normalizedTitleValue && itemTitle === normalizedTitleValue;
 
-        const itemTime = parseInt(item.dataset.visitTime, 10);
-        const hasItemTime = !Number.isNaN(itemTime);
-
-        if (hasVisitTime && hasItemTime) {
-            const itemMinute = Math.floor(itemTime / (60 * 1000));
-            if (itemMinute === targetMinute) {
+        if (hasVisitTime) {
+            const itemMinuteAttr = item.dataset.visitMinute;
+            if (itemMinuteAttr && Number(itemMinuteAttr) === targetMinute) {
                 if (matchesUrl && !minuteUrlMatch) {
                     minuteUrlMatch = item;
-                } else if (matchesTitle && !minuteTitleMatch) {
-                    minuteTitleMatch = item;
+                    return;
                 }
-                return;
+                if (matchesTitle && !minuteTitleMatch) {
+                    minuteTitleMatch = item;
+                    return;
+                }
             }
-        }
-
-        if (!hasVisitTime && (matchesUrl || matchesTitle) && !fallbackMatch) {
+        } else if (!fallbackMatch && (matchesUrl || matchesTitle)) {
             fallbackMatch = item;
         }
     });
@@ -16868,28 +17023,46 @@ function highlightRelatedHistoryItem(retryCount = 0) {
     }
 
     if (targetItem) {
+        const shouldSyncUI = pendingHighlightInfo && pendingHighlightInfo.silentMenu;
+        const finalStrategy = pendingHighlightInfo ? pendingHighlightInfo.activeStrategy : null;
         listContainer.querySelectorAll('.related-history-item.highlight-target').forEach(el => {
             el.classList.remove('highlight-target');
         });
         targetItem.classList.add('highlight-target');
         targetItem.scrollIntoView({ behavior: 'instant', block: 'center' });
-        if (showBackButton && jumpSourceInfo) {
+        if (shouldShowBackButton && typeof showBackButton === 'function' && jumpSourceInfo) {
             showBackButton();
+        }
+        if (shouldSyncUI && finalStrategy) {
+            browsingRelatedTimeFilter = finalStrategy.filter || null;
+            syncRelatedUIWithStrategy(finalStrategy);
+        }
+        showRelatedJumpSuccessToast(visitTime, title);
+        if (pendingHighlightInfo && pendingHighlightInfo.silentMenu) {
+            setRelatedPanelSilent(false);
         }
         pendingHighlightInfo = null;
         return;
     }
 
     const lazyState = listContainer.__lazyLoadState;
-    if (lazyState && lazyState.getLoadedCount() < lazyState.totalItems) {
-        lazyState.loadMore();
-        if (retryCount < 20) {
-            setTimeout(() => highlightRelatedHistoryItem(retryCount + 1), 120);
-        } else {
+    if (lazyState) {
+        if (forceLoadAll && !lazyState.__forceLoaded) {
+            lazyState.__forceLoaded = true;
             lazyState.loadAll();
-            setTimeout(() => highlightRelatedHistoryItem(100), 150);
+            setTimeout(() => highlightRelatedHistoryItem(retryCount + 1), 120);
+            return;
         }
-        return;
+        if (lazyState.getLoadedCount() < lazyState.totalItems) {
+            lazyState.loadMore();
+            if (retryCount < 20) {
+                setTimeout(() => highlightRelatedHistoryItem(retryCount + 1), 120);
+            } else {
+                lazyState.loadAll();
+                setTimeout(() => highlightRelatedHistoryItem(100), 150);
+            }
+            return;
+        }
     }
 
     if (retryCount < 5) {
@@ -16904,7 +17077,11 @@ function highlightRelatedHistoryItem(retryCount = 0) {
         return;
     }
 
+    const silentMode = pendingHighlightInfo && pendingHighlightInfo.silentMenu;
     pendingHighlightInfo = null;
+    if (silentMode) {
+        setRelatedPanelSilent(false);
+    }
     if (fromAdditions || hasVisitTime) {
         showNoRecordToast();
     }
@@ -16944,6 +17121,52 @@ function showNoRecordToast() {
     setTimeout(() => {
         toast.style.opacity = '0';
     }, 2500);
+}
+
+function showRelatedJumpSuccessToast(visitTime, title) {
+    const isZh = currentLang === 'zh_CN';
+    const dateText = visitTime
+        ? new Date(visitTime).toLocaleString(isZh ? 'zh-CN' : 'en-US', {
+            year: 'numeric',
+            month: '2-digit',
+            day: '2-digit',
+            hour: '2-digit',
+            minute: '2-digit'
+        })
+        : '';
+    const safeTitle = (title && title.trim()) || (isZh ? '目标记录' : 'target entry');
+    const msg = isZh
+        ? `已定位：${safeTitle}${dateText ? `（${dateText}）` : ''}`
+        : `Jumped to ${safeTitle}${dateText ? ` (${dateText})` : ''}`;
+
+    let toast = document.getElementById('relatedJumpToast');
+    if (!toast) {
+        toast = document.createElement('div');
+        toast.id = 'relatedJumpToast';
+        toast.style.cssText = `
+            position: fixed;
+            bottom: 32px;
+            right: 32px;
+            background: rgba(33, 150, 243, 0.92);
+            color: #fff;
+            padding: 14px 18px;
+            border-radius: 10px;
+            font-size: 13px;
+            box-shadow: 0 8px 24px rgba(33, 150, 243, 0.35);
+            z-index: 11000;
+            opacity: 0;
+            transition: opacity 0.25s ease;
+        `;
+        document.body.appendChild(toast);
+    }
+
+    toast.textContent = msg;
+    toast.style.opacity = '1';
+
+    clearTimeout(toast.__hideTimer);
+    toast.__hideTimer = setTimeout(() => {
+        toast.style.opacity = '0';
+    }, 2400);
 }
 
 // 从「书签添加记录」跳转到「书签关联记录」
@@ -17014,6 +17237,7 @@ async function jumpToRelatedHistoryFromAdditions(url, title, dateAdded) {
     
     // 3. 根据访问时间构建时间范围策略
     const normalizedTitle = typeof title === 'string' ? title.trim() : '';
+    const hasPreciseVisit = typeof matchingVisitTime === 'number' && !Number.isNaN(matchingVisitTime);
     const preferredRange = getPreferredRangeFromCalendar(window.bookmarkCalendarInstance);
     const strategyQueue = buildRelatedRangeStrategies(matchingVisitTime, { preferredRange });
     const effectiveStrategies = strategyQueue.length ? strategyQueue : [{ range: 'all', filter: null }];
@@ -17027,7 +17251,12 @@ async function jumpToRelatedHistoryFromAdditions(url, title, dateAdded) {
         strategyQueue: effectiveStrategies,
         currentStrategyIndex: 0,
         fromAdditions: true,
-        showBackButton: true  // 标记需要显示返回按钮
+        showBackButton: true,  // 标记需要显示返回按钮
+        hasVisitTime: hasPreciseVisit,
+        forceLoadAll: true,
+        silentMenu: true,
+        pendingUIRange: effectiveStrategies[0]?.range || null,
+        pendingUIFilter: effectiveStrategies[0]?.filter || null
     };
 
     // 5. 启动对应的范围策略

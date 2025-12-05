@@ -2313,15 +2313,9 @@ async function addTempFolderAction(context) {
 
 async function deleteTempNodes(nodeIds, sectionId, nodeTitle, isFolder) {
     const manager = ensureTempManager();
-    const lang = currentLang || 'zh_CN';
     const ids = Array.isArray(nodeIds) ? nodeIds : [nodeIds];
     
-    const message = lang === 'zh_CN'
-        ? `确定要删除 "${nodeTitle}" 吗？${isFolder ? '（包括其中的所有内容）' : ''}`
-        : `Delete "${nodeTitle}"?${isFolder ? ' (including all contents)' : ''}`;
-    
-    if (!confirm(message)) return;
-    
+    // 普通删除不需要二次确认，直接删除
     manager.removeItems(sectionId, ids);
 }
 
@@ -2520,7 +2514,13 @@ async function handleTempMenuAction(action, context) {
             await pasteIntoTemp(context);
             break;
         case 'select-item':
-            toggleSelectItem(context.nodeId, context.node);
+            // 进入Select模式并自动选中当前节点
+            if (!selectMode) {
+                enterSelectMode();
+            }
+            if (context.nodeId && !selectedNodes.has(context.nodeId)) {
+                toggleSelectItem(context.nodeId, context.node);
+            }
             updateBatchToolbar();
             break;
         case 'deselect-all':
@@ -2761,6 +2761,10 @@ async function handleMenuAction(action, context) {
                 
             case 'select-item':
                 enterSelectMode();
+                // 自动选中当前右键点击的节点
+                if (nodeId && !selectedNodes.has(nodeId)) {
+                    toggleSelectItem(nodeId);
+                }
                 break;
                 
             case 'deselect-all':
@@ -3474,23 +3478,15 @@ async function copyUrl(url) {
     }
 }
 
-// 删除书签/文件夹
+// 删除书签/文件夹（普通删除不需要二次确认）
+// 不调用refreshBookmarkTree，让onRemoved事件的增量更新处理红色标识
 async function deleteBookmark(nodeId, nodeTitle, isFolder) {
-    const lang = currentLang || 'zh_CN';
-    
-    const confirmMsg = lang === 'zh_CN' 
-        ? `确定要删除 "${nodeTitle}" 吗？${isFolder ? '（包括其中的所有内容）' : ''}`
-        : `Delete "${nodeTitle}"?${isFolder ? ' (including all contents)' : ''}`;
-    
-    if (!confirm(confirmMsg)) return;
-    
     if (chrome && chrome.bookmarks) {
         if (isFolder) {
             await chrome.bookmarks.removeTree(nodeId);
         } else {
             await chrome.bookmarks.remove(nodeId);
         }
-        await refreshBookmarkTree();
     }
 }
 

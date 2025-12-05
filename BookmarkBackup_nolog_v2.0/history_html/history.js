@@ -13344,17 +13344,8 @@ function applyIncrementalRemoveFromTree(id) {
         item.insertAdjacentHTML('beforeend', '<span class="change-badges"><span class="change-badge deleted">-</span></span>');
     }
 
-    // 然后移除节点
-    const node = item.closest('.tree-node');
-    if (node) {
-        // 添加淡出效果后删除
-        node.style.opacity = '0.5';
-        setTimeout(() => {
-            if (node.parentNode) {
-                node.remove();
-            }
-        }, 300);
-    }
+    // 保持删除标识在原位显示，不自动移除节点
+    // 用户可以通过"清理变动标识"功能来清除这些已删除的项目
     // 恢复滚动位置
     if (permBody && permScrollTop !== null) permBody.scrollTop = permScrollTop;
 }

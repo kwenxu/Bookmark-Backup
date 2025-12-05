@@ -4395,7 +4395,7 @@ a.tree-label.tree-bookmark-link:hover {
     border: 1px solid rgba(148, 163, 184, 0.4);
     border-radius: 14px;
     box-shadow: 0 12px 40px rgba(15, 23, 42, 0.22);
-    z-index: 10000;
+    z-index: 99999;
     animation: panelFadeIn 0.25s ease-out;
     display: flex;
     flex-direction: column;

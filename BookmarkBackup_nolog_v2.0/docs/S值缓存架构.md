@@ -383,6 +383,61 @@ cancelPostpone() → updateSingleBookmarkScore() ← 增量更新
 | P6 | 低 | storage配额满无处理 | 自动清理（已翻阅/过期待复习/Canvas缩略图）+ 用户提示 | ✅ 已修复 |
 | P7 | 中 | 大量书签性能问题 | 分批计算（500+分2批，1000+分3批，批次间50ms暂停） | ✅ 已有 |
 | P8 | 低 | 阈值为0除零错误 | `safeThreshold = Math.max(1, threshold)` | ✅ 已修复 |
+| P9 | 中 | T值缓存增量更新可能重复累加 | **非问题**：`resetAccumulated()`确保每次保存只含增量 | ✅ 已验证 |
+| P10 | 低 | 书签修改时T值缓存清理不完整 | `bookmarks.onChanged`变化时调用`clearTrackingRankingCache()` | ✅ 已修复 |
+
+### P9: T值缓存增量更新（已验证：非问题）
+
+**原始担忧**：当定期保存触发`saveSession()`时，会发送`trackingDataUpdated`消息，担心T值重复累加。
+
+**验证结论**：**不是问题**
+
+**正确的数据流**：
+```
+用户浏览页面5分钟
+  ├── 30秒时：快照保存30秒，resetAccumulated()重置，消息发送30秒增量
+  ├── 60秒时：快照保存30秒（自重置后），resetAccumulated()重置，消息发送30秒增量
+  ├── 90秒时：快照保存30秒（自重置后），resetAccumulated()重置，消息发送30秒增量
+  └── history.js累加：30+30+30=90秒 ✓
+```
+
+**关键机制**：
+1. `createSnapshot()` 只计算自上次重置以来的累积时间
+2. `resetAccumulated()` 在每次保存后立即重置所有累积器
+3. 每条消息只包含增量时间，不会重复
+
+### P10: 书签修改时T值缓存清理不完整
+
+**问题**：当书签URL或标题被修改时，旧的T值缓存条目可能残留，导致数据不一致。
+
+**攻击场景**：
+```
+书签"旧标题"有T值=300秒
+  ↓
+用户修改标题为"新标题"
+  ↓
+旧的byTitle["旧标题"]仍存在 ❌
+  ↓
+如果另一个书签也叫"旧标题"，会错误继承300秒的T值
+```
+
+**修复方案**：
+```javascript
+// history.js - bookmarks.onChanged监听器
+// 书签URL/标题变化时，清除整个T值缓存以确保正确性
+// 因为无法可靠获取修改前的旧URL/标题，直接让缓存重新加载
+if (changeInfo.url || changeInfo.title) {
+    if (trackingRankingCache.loaded) {
+        clearTrackingRankingCache();
+        console.log('[书签修改] 已清除T值缓存');
+    }
+}
+```
+
+**选择此方案的原因**：
+1. scoresCache不存储原始URL/标题，无法可靠获取修改前的值
+2. 清除整个缓存是最安全的做法，确保不会有残留数据
+3. 缓存会在下次需要时自动重新加载
 
 ## 文件修改记录
 
@@ -417,3 +472,4 @@ cancelPostpone() → updateSingleBookmarkScore() ← 增量更新
 | `history.js` | 添加`showStorageFullWarning`函数（存储满时提示用户） |
 | `history.js` | `saveScoresCache`添加配额错误检测和自动清理重试 |
 | `popup.js` | 添加`popupLastSaveTime`防循环机制 |
+| `history.js` | P10修复：`bookmarks.onChanged`监听器URL/标题变化时调用`clearTrackingRankingCache()` |

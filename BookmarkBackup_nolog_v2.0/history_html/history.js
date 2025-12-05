@@ -14636,16 +14636,13 @@ function setupBookmarkListener() {
         try {
             updateBookmarkInAdditionsCache(id, changeInfo);
             
-            // URL或标题变化时，清除旧的T值缓存并重算S值
+            // URL或标题变化时，清除T值缓存并重算S值
             if (changeInfo.url || changeInfo.title) {
-                // 清除T值缓存中可能失效的条目
-                if (changeInfo.url && trackingRankingCache.loaded) {
-                    // 获取旧URL（从S值缓存）
-                    const scoresCache = await getScoresCache();
-                    if (scoresCache[id] && scoresCache[id].url && scoresCache[id].url !== changeInfo.url) {
-                        trackingRankingCache.byUrl.delete(scoresCache[id].url);
-                        console.log('[书签修改] 清除旧URL的T值缓存:', scoresCache[id].url);
-                    }
+                // P10修复：书签URL/标题变化时，清除整个T值缓存以确保正确性
+                // 因为无法可靠获取修改前的旧URL/标题，直接让缓存重新加载
+                if (trackingRankingCache.loaded) {
+                    clearTrackingRankingCache();
+                    console.log('[书签修改] 已清除T值缓存（URL或标题变化）');
                 }
                 // 重新计算该书签的S值
                 if (typeof updateSingleBookmarkScore === 'function') {

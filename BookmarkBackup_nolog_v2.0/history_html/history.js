@@ -5342,6 +5342,8 @@ async function unblockBookmark(bookmarkId) {
         blocked.bookmarks = blocked.bookmarks.filter(id => id !== bookmarkId);
         await browserAPI.storage.local.set({ recommend_blocked: blocked });
         console.log('[屏蔽] 已恢复书签:', bookmarkId);
+        // 恢复后触发S值计算（该书签之前没有缓存）
+        browserAPI.runtime.sendMessage({ action: 'updateBookmarkScore', bookmarkId });
         return true;
     } catch (e) {
         console.error('[屏蔽] 恢复书签失败:', e);

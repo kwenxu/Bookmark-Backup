@@ -3949,13 +3949,14 @@ let isComputingScores = false;
 
 // 获取公式配置（从storage读取）
 async function getFormulaConfig() {
-    const result = await browserAPI.storage.local.get(['recommendFormulaConfig', 'activeTimeTrackingEnabled']);
+    // 使用 trackingEnabled 键名（与 active_time_tracker 一致）
+    const result = await browserAPI.storage.local.get(['recommendFormulaConfig', 'trackingEnabled']);
     const config = result.recommendFormulaConfig || {
         weights: { freshness: 0.15, coldness: 0.25, shallowRead: 0.20, forgetting: 0.25, laterReview: 0.15 },
         thresholds: { freshness: 90, coldness: 10, shallowRead: 5, forgetting: 14 }
     };
     // 追踪是否开启（默认开启）
-    config.trackingEnabled = result.activeTimeTrackingEnabled !== false;
+    config.trackingEnabled = result.trackingEnabled !== false;
     return config;
 }
 
@@ -3975,9 +3976,44 @@ async function getScoresCache() {
     return result.recommend_scores_cache || {};
 }
 
-// 保存S值缓存
+// 保存S值缓存（带配额错误处理）
 async function saveScoresCache(cache) {
-    await browserAPI.storage.local.set({ recommend_scores_cache: cache });
+    try {
+        await browserAPI.storage.local.set({ recommend_scores_cache: cache });
+    } catch (error) {
+        // 处理存储配额不足的情况
+        if (error.message && error.message.includes('QUOTA')) {
+            console.warn('[S值缓存] 存储配额不足，尝试清理...');
+            try {
+                // 清理过期数据：已翻阅记录、过期待复习、缩略图缓存
+                const keysToCheck = ['flippedBookmarks', 'thumbnailCache', 'recommend_postponed'];
+                const data = await browserAPI.storage.local.get(keysToCheck);
+                
+                // 清理已翻阅（只保留最近7天）
+                if (data.flippedBookmarks) {
+                    const oneWeekAgo = Date.now() - 7 * 24 * 60 * 60 * 1000;
+                    const filtered = {};
+                    for (const [id, time] of Object.entries(data.flippedBookmarks)) {
+                        if (time > oneWeekAgo) filtered[id] = time;
+                    }
+                    await browserAPI.storage.local.set({ flippedBookmarks: filtered });
+                }
+                
+                // 清理缩略图缓存（全部清除以腾出空间）
+                if (data.thumbnailCache) {
+                    await browserAPI.storage.local.remove(['thumbnailCache']);
+                }
+                
+                // 重试保存
+                await browserAPI.storage.local.set({ recommend_scores_cache: cache });
+                console.log('[S值缓存] 清理后保存成功');
+            } catch (retryError) {
+                console.error('[S值缓存] 清理后仍然保存失败:', retryError);
+            }
+        } else {
+            console.error('[S值缓存] 保存失败:', error);
+        }
+    }
 }
 
 // 获取待复习数据

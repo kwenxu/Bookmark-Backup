@@ -4755,11 +4755,26 @@ async function syncCardsFromStorage(cardState) {
                 titleEl.textContent = data.title || data.url || '--';
             }
             
-            // 更新favicon
+            // 更新favicon（三层降级：网站自己 → DuckDuckGo → Google S2）
             const favicon = card.querySelector('.card-favicon');
-            if (favicon && data.favicon) {
-                favicon.src = data.favicon;
-                favicon.onerror = () => { favicon.src = ''; };
+            if (favicon && data.url) {
+                try {
+                    const urlObj = new URL(data.url);
+                    const domain = urlObj.hostname;
+                    // 设置初始favicon（网站自己的）
+                    favicon.src = data.favicon || `${urlObj.protocol}//${domain}/favicon.ico`;
+                    // 失败时降级到DuckDuckGo
+                    favicon.onerror = () => {
+                        favicon.src = `https://icons.duckduckgo.com/ip3/${domain}.ico`;
+                        // 再失败降级到Google S2
+                        favicon.onerror = () => {
+                            favicon.src = `https://www.google.com/s2/favicons?domain=${domain}&sz=32`;
+                            favicon.onerror = () => { favicon.src = fallbackIcon; };
+                        };
+                    };
+                } catch (e) {
+                    favicon.src = fallbackIcon;
+                }
             }
             
             // 更新优先级显示

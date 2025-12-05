@@ -6771,9 +6771,12 @@ function loadFaviconForRecent(imgElement, url) {
 
         const urlObj = new URL(url);
         const domain = urlObj.hostname;
-        // 多源策略（与history.js一致）：DuckDuckGo优先（国内可访问），Google S2备选
-        // 不直接请求网站的/favicon.ico，避免CORS问题和HTML响应
+        // 三层降级策略：
+        // 1. 网站自己的favicon（最清晰）
+        // 2. DuckDuckGo（国内可访问）
+        // 3. Google S2（备选）
         const faviconSources = [
+            `${urlObj.protocol}//${domain}/favicon.ico`,
             `https://icons.duckduckgo.com/ip3/${domain}.ico`,
             `https://www.google.com/s2/favicons?domain=${domain}&sz=32`
         ];
@@ -7152,9 +7155,9 @@ async function refreshPopupRecommendCards(force = false) {
             let favicon = '';
             if (b.url) {
                 try {
-                    const domain = new URL(b.url).hostname;
-                    // 使用DuckDuckGo优先（国内可访问，与history.js一致）
-                    favicon = `https://icons.duckduckgo.com/ip3/${domain}.ico`;
+                    const urlObj = new URL(b.url);
+                    // 使用网站自己的favicon（最清晰）
+                    favicon = `${urlObj.protocol}//${urlObj.hostname}/favicon.ico`;
                 } catch (e) {
                     favicon = '';
                 }

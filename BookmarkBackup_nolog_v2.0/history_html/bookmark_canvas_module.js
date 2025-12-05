@@ -5072,7 +5072,6 @@ function buildTempTreeNode(section, item, level) {
     
     const wrapper = document.createElement('div');
     wrapper.className = 'tree-node';
-    wrapper.style.paddingLeft = `${level * 12}px`;
     
     const treeItem = document.createElement('div');
     treeItem.className = 'tree-item';
@@ -5097,7 +5096,7 @@ function buildTempTreeNode(section, item, level) {
     let icon;
     if (item.type === 'folder') {
         icon = document.createElement('i');
-        icon.className = 'tree-icon fas fa-folder-open';
+        icon.className = 'tree-icon fas fa-folder';
     } else {
         icon = document.createElement('img');
         icon.className = 'tree-icon';

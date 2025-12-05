@@ -747,3 +747,56 @@
     background: rgba(27, 32, 45, 0.95);
     color: #c9d1d9;
 }
+
+/* 画布书签树连线样式 - 永久栏目和书签型临时栏目 */
+.permanent-section-body .tree-children,
+.temp-canvas-node .tree-children {
+    position: relative;
+    margin-left: 20px;
+    padding-left: 12px;
+    border-left: 1px solid var(--border-color);
+}
+
+.permanent-section-body .tree-children > .tree-node,
+.temp-canvas-node .tree-children > .tree-node {
+    position: relative;
+}
+
+.permanent-section-body .tree-children > .tree-node::before,
+.temp-canvas-node .tree-children > .tree-node::before {
+    content: '';
+    position: absolute;
+    left: -12px;
+    top: 14px;
+    width: 12px;
+    height: 1px;
+    background: var(--border-color);
+}
+
+/* 暗色模式下连线颜色 */
+[data-theme="dark"] .permanent-section-body .tree-children,
+[data-theme="dark"] .temp-canvas-node .tree-children {
+    border-left-color: #3a3b3c;
+}
+
+[data-theme="dark"] .permanent-section-body .tree-children > .tree-node::before,
+[data-theme="dark"] .temp-canvas-node .tree-children > .tree-node::before {
+    background: #3a3b3c;
+}
+
+/* 画布书签树文件夹图标样式 */
+.permanent-section-body i.fas.fa-folder,
+.permanent-section-body i.fas.fa-folder-open,
+.temp-canvas-node i.fas.fa-folder,
+.temp-canvas-node i.fas.fa-folder-open {
+    color: var(--accent-primary) !important;
+    font-size: 15px !important;
+}
+
+/* 图标垂直对齐修正 */
+.permanent-section-body .tree-item .tree-icon,
+.temp-canvas-node .tree-item .tree-icon {
+    vertical-align: middle;
+    position: relative;
+    top: 0;
+}

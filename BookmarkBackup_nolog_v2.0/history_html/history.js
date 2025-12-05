@@ -13102,7 +13102,7 @@ function renderTreeNodeWithChanges(node, level = 0, maxDepth = 50, visitedIds = 
             }
             const favicon = getFaviconUrl(node.url);
             return `
-                <div class="tree-node" style="padding-left: ${level * 12}px">
+                <div class="tree-node">
                     <div class="tree-item ${changeClass}" data-node-id="${node.id}" data-node-title="${escapeHtml(node.title)}" data-node-url="${escapeHtml(node.url || '')}" data-node-type="bookmark" data-node-index="${typeof node.index === 'number' ? node.index : ''}">
                         <span class="tree-toggle" style="opacity: 0"></span>
                         ${favicon ? `<img class="tree-icon" src="${favicon}" alt="">` : `<i class="tree-icon fas fa-bookmark"></i>`}
@@ -13218,7 +13218,7 @@ function renderTreeNodeWithChanges(node, level = 0, maxDepth = 50, visitedIds = 
     const sortedChildren = present.concat(deleted);
 
     return `
-        <div class="tree-node" style="padding-left: ${level * 12}px">
+        <div class="tree-node">
             <div class="tree-item ${changeClass}" data-node-id="${node.id}" data-node-title="${escapeHtml(node.title)}" data-node-type="folder" data-node-index="${typeof node.index === 'number' ? node.index : ''}">
                 <span class="tree-toggle ${level === 0 ? 'expanded' : ''}"><i class="fas fa-chevron-right"></i></span>
                 <i class="tree-icon fas fa-folder"></i>
@@ -13250,7 +13250,7 @@ async function applyIncrementalCreateToTree(id, bookmark) {
     const labelColor = 'color: #28a745;'; // 绿色
     const labelFontWeight = 'font-weight: 500;';
     const html = `
-        <div class="tree-node" style="padding-left: ${(parseInt(parentItem.style.paddingLeft || '0', 10) + 12) || 12}px">
+        <div class="tree-node">
             <div class="tree-item tree-change-added" data-node-id="${id}" data-node-title="${escapeHtml(bookmark.title || '')}" data-node-url="${escapeHtml(bookmark.url || '')}" data-node-type="${bookmark.url ? 'bookmark' : 'folder'}">
                 <span class="tree-toggle" style="opacity: 0"></span>
                 ${bookmark.url ? (favicon ? `<img class="tree-icon" src="${favicon}" alt="">` : `<i class="tree-icon fas fa-bookmark"></i>`) : `<i class="tree-icon fas fa-folder"></i>`}

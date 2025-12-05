@@ -358,7 +358,7 @@ cancelPostpone() → updateSingleBookmarkScore() ← 增量更新
 | 书签标题为空 | 使用URL显示 | `title \|\| url` | ✅ | - |
 | 书签URL无效 | 不崩溃 | try-catch | ✅ | - |
 | storage配额满 | 优雅降级 | 自动清理+用户提示 | ✅ | P6已修复 |
-| 书签数量>10000 | 性能问题 | 批量处理+防抖 | ⚠️ | P7 |
+| 书签数量>10000 | 性能问题 | 分批计算（500+/1000+），批次间50ms暂停 | ✅ | P7已有 |
 | 首次使用无缓存 | 全量计算 | `computeAllBookmarkScores` | ✅ | - |
 | 权重全为0 | 使用默认值 | `\|\| 0.15` 等 | ✅ | - |
 | 阈值为0 | 可能除零错误 | `safeThreshold = Math.max(1, threshold)` | ✅ | P8已修复 |
@@ -381,7 +381,7 @@ cancelPostpone() → updateSingleBookmarkScore() ← 增量更新
 | P4 | 低 | 休眠后唤醒计时不准 | 休眠检测（1秒心跳），唤醒时重置计时起点 | ✅ 已修复 |
 | P5 | 低 | 书签修改后缓存失效 | `onChanged` 监听，清除旧URL的T值缓存，重算S值 | ✅ 已修复 |
 | P6 | 低 | storage配额满无处理 | 自动清理（已翻阅/过期待复习/Canvas缩略图）+ 用户提示 | ✅ 已修复 |
-| P7 | 中 | 大量书签性能问题 | 分批计算优化 | 待处理 |
+| P7 | 中 | 大量书签性能问题 | 分批计算（500+分2批，1000+分3批，批次间50ms暂停） | ✅ 已有 |
 | P8 | 低 | 阈值为0除零错误 | `safeThreshold = Math.max(1, threshold)` | ✅ 已修复 |
 
 ## 文件修改记录

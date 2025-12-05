@@ -4687,7 +4687,7 @@ async function saveSharedRecommendWindowId(windowId) {
 let historyLastSaveTime = 0;
 browserAPI.storage.onChanged.addListener((changes, areaName) => {
     if (areaName === 'local' && changes.popupCurrentCards) {
-        // 仅在推荐视图时刷新
+        // 仅在推荐视图时处理
         if (currentView !== 'recommend') return;
         
         // 检查是否是 history 页面自己刚保存的（500ms内忽略）
@@ -4697,19 +4697,94 @@ browserAPI.storage.onChanged.addListener((changes, areaName) => {
             return;
         }
         
-        // 检查是否全部勾选，如果是则强制刷新获取新卡片
         const newValue = changes.popupCurrentCards.newValue;
-        if (newValue && newValue.cardIds && newValue.flippedIds) {
-            const allFlipped = newValue.cardIds.every(id => newValue.flippedIds.includes(id));
-            if (allFlipped && newValue.cardIds.length > 0) {
-                // 全部勾选（来自popup的操作），刷新获取新卡片
-                console.log('[卡片同步] popup完成翻牌，刷新卡片');
-                refreshRecommendCards(true);
+        const oldValue = changes.popupCurrentCards.oldValue;
+        
+        if (newValue && newValue.cardIds) {
+            // 检查卡片ID是否变化（popup刷新了卡片）
+            const oldCardIds = oldValue?.cardIds || [];
+            const newCardIds = newValue.cardIds || [];
+            const cardIdsChanged = JSON.stringify(oldCardIds.sort()) !== JSON.stringify(newCardIds.sort());
+            
+            if (cardIdsChanged) {
+                // 卡片ID变化（来自popup的刷新），同步更新HTML页面
+                console.log('[卡片同步] popup刷新了卡片，同步更新HTML');
+                syncCardsFromStorage(newValue);
+                return;
             }
-            // 部分勾选不需要刷新，因为UI已经通过其他方式更新
+            
+            // 检查是否全部勾选
+            if (newValue.flippedIds) {
+                const allFlipped = newValue.cardIds.every(id => newValue.flippedIds.includes(id));
+                if (allFlipped && newValue.cardIds.length > 0) {
+                    // 全部勾选（来自popup的操作），刷新获取新卡片
+                    console.log('[卡片同步] popup完成翻牌，刷新卡片');
+                    refreshRecommendCards(true);
+                }
+            }
         }
     }
 });
+
+// 从storage同步卡片显示（不重新计算，直接使用popup的数据）
+async function syncCardsFromStorage(cardState) {
+    try {
+        const cardsRow = document.getElementById('cardsRow');
+        if (!cardsRow) return;
+        
+        const cards = cardsRow.querySelectorAll('.recommend-card');
+        if (cards.length === 0 || !cardState.cardData) return;
+        
+        const { cardIds, flippedIds, cardData } = cardState;
+        
+        // 获取S值缓存用于显示优先级
+        const scoresCache = await getScoresCache();
+        
+        cards.forEach((card, index) => {
+            if (index >= cardData.length) return;
+            
+            const data = cardData[index];
+            const bookmarkId = cardIds[index];
+            const isFlipped = flippedIds?.includes(bookmarkId);
+            
+            // 更新卡片内容
+            card.dataset.bookmarkId = bookmarkId;
+            
+            const titleEl = card.querySelector('.card-title');
+            if (titleEl) {
+                titleEl.textContent = data.title || data.url || '--';
+            }
+            
+            // 更新favicon
+            const favicon = card.querySelector('.card-favicon');
+            if (favicon && data.favicon) {
+                favicon.src = data.favicon;
+                favicon.onerror = () => { favicon.src = ''; };
+            }
+            
+            // 更新优先级显示
+            const priorityEl = card.querySelector('.card-priority');
+            if (priorityEl) {
+                const cached = scoresCache[bookmarkId];
+                const priority = cached ? cached.S : 0;
+                priorityEl.textContent = `S = ${priority.toFixed(2)}`;
+            }
+            
+            // 更新翻阅状态
+            if (isFlipped) {
+                card.classList.add('flipped');
+            } else {
+                card.classList.remove('flipped');
+            }
+            
+            card.classList.remove('empty');
+        });
+        
+        console.log('[卡片同步] HTML页面已同步popup的卡片');
+    } catch (e) {
+        console.warn('[卡片同步] 同步失败:', e);
+    }
+}
 
 // 在推荐窗口中打开链接
 async function openInRecommendWindow(url) {

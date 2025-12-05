@@ -6554,7 +6554,7 @@ let popupOpenCountRecorded = false; // 防止重复记录
 
 // 增加打开次数（popup 和 history 共享 storage）
 async function incrementPopupOpenCount() {
-    if (popupOpenCountRecorded) return; // 本次 popup 打开只记录一次
+    if (popupOpenCountRecorded) return false; // 本次 popup 打开只记录一次
     popupOpenCountRecorded = true;
     
     try {
@@ -6573,13 +6573,50 @@ async function incrementPopupOpenCount() {
         const settings = { ...DEFAULT_SETTINGS, ...result.recommendRefreshSettings };
         settings.openCountSinceRefresh = (settings.openCountSinceRefresh || 0) + 1;
         
+        // 检查是否需要自动刷新
+        let shouldRefresh = false;
+        const now = Date.now();
+        
+        // 条件1: 每N次打开
+        if (settings.refreshEveryNOpens > 0 && 
+            settings.openCountSinceRefresh >= settings.refreshEveryNOpens) {
+            console.log('[Popup] 达到打开次数阈值，需要刷新');
+            shouldRefresh = true;
+        }
+        
+        // 条件2: 超过X小时
+        if (!shouldRefresh && settings.refreshAfterHours > 0 && settings.lastRefreshTime > 0) {
+            const hoursSinceRefresh = (now - settings.lastRefreshTime) / 3600000;
+            if (hoursSinceRefresh >= settings.refreshAfterHours) {
+                console.log('[Popup] 超过时间阈值（小时），需要刷新');
+                shouldRefresh = true;
+            }
+        }
+        
+        // 条件3: 超过X天
+        if (!shouldRefresh && settings.refreshAfterDays > 0 && settings.lastRefreshTime > 0) {
+            const daysSinceRefresh = (now - settings.lastRefreshTime) / 86400000;
+            if (daysSinceRefresh >= settings.refreshAfterDays) {
+                console.log('[Popup] 超过时间阈值（天），需要刷新');
+                shouldRefresh = true;
+            }
+        }
+        
+        // 如果需要刷新，重置计数
+        if (shouldRefresh) {
+            settings.openCountSinceRefresh = 0;
+            settings.lastRefreshTime = now;
+        }
+        
         await new Promise(resolve => {
             browserAPI.storage.local.set({ recommendRefreshSettings: settings }, resolve);
         });
         
-        console.log('[Popup] 打开次数已记录:', settings.openCountSinceRefresh);
+        console.log('[Popup] 打开次数已记录:', settings.openCountSinceRefresh, '需要刷新:', shouldRefresh);
+        return shouldRefresh;
     } catch (e) {
         console.error('[Popup] 记录打开次数失败:', e);
+        return false;
     }
 }
 
@@ -6906,18 +6943,23 @@ async function getPopupCurrentCards() {
     });
 }
 
-// 保存当前显示的卡片状态
-async function savePopupCurrentCards(cardIds, flippedIds) {
+// 保存当前显示的卡片状态（包含cardData用于同步到HTML页面）
+async function savePopupCurrentCards(cardIds, flippedIds, cardData = null) {
     // 标记本次保存时间，防止触发循环刷新
     popupLastSaveTime = Date.now();
     
-    await browserAPI.storage.local.set({
-        popupCurrentCards: {
-            cardIds: cardIds,
-            flippedIds: flippedIds,
-            timestamp: Date.now()
-        }
-    });
+    const data = {
+        cardIds: cardIds,
+        flippedIds: flippedIds,
+        timestamp: Date.now()
+    };
+    
+    // 如果提供了cardData，保存它（用于HTML页面同步）
+    if (cardData) {
+        data.cardData = cardData;
+    }
+    
+    await browserAPI.storage.local.set({ popupCurrentCards: data });
 }
 
 // 标记卡片为已勾选，并检查是否全部勾选
@@ -6943,8 +6985,12 @@ async function refreshPopupRecommendCards(force = false) {
     const cards = cardsRoot.querySelectorAll('.popup-recommend-card');
     if (!cards.length) return;
 
-    // 记录打开次数（首次加载时）
-    incrementPopupOpenCount();
+    // 记录打开次数并检查是否需要自动刷新
+    const shouldAutoRefresh = await incrementPopupOpenCount();
+    if (shouldAutoRefresh && !force) {
+        console.log('[Popup] 满足自动刷新条件，强制刷新卡片');
+        force = true;
+    }
     
     popupRecommendLoading = true;
 
@@ -7099,9 +7145,15 @@ async function refreshPopupRecommendCards(force = false) {
         });
         popupRecommendCards = bookmarksWithPriority.slice(0, POPUP_RECOMMEND_CARD_COUNT);
 
-        // 保存新的卡片状态
+        // 保存新的卡片状态（包含cardData用于HTML页面同步）
         const newCardIds = popupRecommendCards.map(b => b.id);
-        await savePopupCurrentCards(newCardIds, []);
+        const newCardData = popupRecommendCards.map(b => ({
+            id: b.id,
+            title: b.title || '',
+            url: b.url || '',
+            favicon: b.url ? `https://www.google.com/s2/favicons?domain=${new URL(b.url).hostname}&sz=32` : ''
+        }));
+        await savePopupCurrentCards(newCardIds, [], newCardData);
 
         cards.forEach((card, index) => {
             const bookmark = popupRecommendCards[index];

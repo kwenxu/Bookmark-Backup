@@ -2,110 +2,157 @@
 
 ## 概述
 
-书签推荐系统通过计算每个书签的优先级分数（S值）来决定推荐顺序。S值基于以下因子计算：
+书签推荐系统通过计算每个书签的优先级分数（S值）来决定推荐顺序。
 
-- **F (新鲜度)**: 书签创建时间 → 实时计算，不需要传递
-- **C (冷门度)**: 访问次数 → 访问URL时传递更新
-- **T (时间度)**: 页面停留时间 → 会话保存时传递更新
-- **D (遗忘度)**: 上次访问距今时间 → 访问URL时传递更新
-- **L (待复习)**: 是否在待复习队列 → 待复习变化时传递更新
+**核心设计：所有S值计算统一在 background.js 中执行，popup.js 和 history.js 只负责读取缓存和发送消息。**
 
-## 因子数据流
+S值基于以下因子计算：
+
+- **F (新鲜度)**: 书签创建时间 → 实时计算
+- **C (冷门度)**: 访问次数 → history.onVisited 触发更新
+- **T (时间度)**: 页面停留时间 → trackingDataUpdated 消息触发更新
+- **D (遗忘度)**: 上次访问距今时间 → history.onVisited 触发更新
+- **L (待复习)**: 是否在待复习队列 → 待复习变化时触发更新
+- **R (记忆度)**: 复习状态 → recordReview 触发更新
+
+## 系统架构图
+
+```
+┌──────────────────────────────────────────────────────────────────────────────────┐
+│                    S值计算架构（统一在 background.js）                            │
+├──────────────────────────────────────────────────────────────────────────────────┤
+│                                                                                  │
+│                         ┌────────────────────────┐                               │
+│                         │  recommend_scores_cache │                              │
+│                         │    (storage.local)      │  ← 统一的storage             │
+│                         └───────────┬────────────┘                               │
+│                                     │                                            │
+│              ┌──────────────────────┼──────────────────────┐                     │
+│              │                      │                      │                     │
+│              ▼                      ▼                      ▼                     │
+│     ┌─────────────────┐   ┌─────────────────┐   ┌──────────────────┐            │
+│     │    popup.js     │   │   history.js    │   │  background.js   │            │
+│     │    (主UI)       │   │  (HTML页面)     │   │ ★唯一计算入口★   │            │
+│     └────────┬────────┘   └────────┬────────┘   └────────┬─────────┘            │
+│              │                     │                     │                       │
+│        只读缓存               只读缓存              读/写/计算                    │
+│              │                     │                     │                       │
+│              └───── 消息 ──────────┴───── 消息 ──────────→│                      │
+│                                                          │                       │
+└──────────────────────────────────────────────────────────────────────────────────┘
+```
+
+## 因子数据流（新架构）
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────────────┐
-│                              因子更新机制                                        │
+│                         因子更新机制（统一在 background.js）                      │
 ├─────────────────────────────────────────────────────────────────────────────────┤
 │                                                                                 │
-│  F (新鲜度) - 实时计算，不需要传递                                               │
+│  F (新鲜度) - 实时计算                                                          │
 │  ────────────────────────────────────────────────────────────────               │
 │  公式: F = 1/(1+(daysSinceAdded/阈值)^0.7)                                       │
 │  数据: now - bookmark.dateAdded                                                 │
-│  特点: dateAdded是静态的，每次计算都用当前时间，所以F值永远是最新的               │
+│  特点: 每次计算都用当前时间，无需传递                                            │
 │                                                                                 │
-│  C/D (冷门度/遗忘度) - 访问URL时传递                                             │
+│  C/D (冷门度/遗忘度) - 访问URL时更新                                             │
 │  ────────────────────────────────────────────────────────────────               │
-│  chrome.history.onVisited                                                       │
+│  background.js: history.onVisited 监听器                                        │
 │       ↓                                                                         │
-│  handleHistoryVisited(url)                                                      │
+│  scheduleScoreUpdateByUrl(url) ←── 1秒防抖                                      │
 │       ↓                                                                         │
-│  scheduleBookmarkScoreUpdateByUrl(url) ←── 1秒防抖                              │
-│       ↓                                                                         │
-│  updateSingleBookmarkScore(id) ←── 增量更新该书签的S值                           │
+│  updateSingleBookmarkScore(id)                                                  │
 │                                                                                 │
-│  T (时间度) - 会话保存时传递                                                     │
+│  T (时间度) - 会话保存时更新                                                     │
 │  ────────────────────────────────────────────────────────────────               │
 │  ActiveTimeTracker.saveSession()                                                │
 │       ↓                                                                         │
-│  chrome.runtime.sendMessage({ action: 'trackingDataUpdated' })                  │
+│  sendMessage({ action: 'trackingDataUpdated', url, compositeMs })               │
 │       ↓                                                                         │
-│  history.js 监听到消息                                                          │
-│       ↓                                                                         │
-│  增量更新 trackingRankingCache（累加到现有值）                                   │
-│       ↓                                                                         │
-│  下次计算S值时使用最新T值                                                        │
+│  background.js 监听消息 → scheduleScoreUpdateByUrl(url)                         │
 │                                                                                 │
-│  L (待复习) - 待复习变化时传递                                                   │
+│  L (待复习) - 待复习变化时更新                                                   │
 │  ────────────────────────────────────────────────────────────────               │
-│  confirmAddToPostponed / cancelPostpone                                         │
+│  history.js: cancelPostpone()                                                   │
 │       ↓                                                                         │
-│  updateSingleBookmarkScore(id) / updateMultipleBookmarkScores(ids)              │
+│  sendMessage({ action: 'updateBookmarkScore', bookmarkId })                     │
 │       ↓                                                                         │
-│  增量更新相关书签的S值                                                           │
+│  background.js: updateSingleBookmarkScore(id)                                   │
+│                                                                                 │
+│  R (记忆度) - 复习时更新                                                         │
+│  ────────────────────────────────────────────────────────────────               │
+│  history.js: recordReview()                                                     │
+│       ↓                                                                         │
+│  sendMessage({ action: 'updateBookmarkScore', bookmarkId })                     │
+│       ↓                                                                         │
+│  background.js: updateSingleBookmarkScore(id)                                   │
 │                                                                                 │
 └─────────────────────────────────────────────────────────────────────────────────┘
 ```
 
-## 架构图
+## background.js 计算系统
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────────────┐
-│                           S值缓存系统架构                                        │
+│                       background.js S值计算系统                                  │
 ├─────────────────────────────────────────────────────────────────────────────────┤
 │                                                                                 │
-│  ┌─────────────────────────────────────────────────────────────────────────┐    │
-│  │                         数据层                                          │    │
-│  ├─────────────────────────────────────────────────────────────────────────┤    │
-│  │                                                                         │    │
-│  │   原始数据源                              S值缓存                        │    │
-│  │   ├── F ← now - dateAdded（实时计算）    recommend_scores_cache         │    │
-│  │   ├── C ← chrome.history.visitCount      ┌─────────────────────────┐    │    │
-│  │   ├── T ← trackingRankingCache           │ {                       │    │    │
-│  │   │      ↳ 标题或URL匹配（并集）          │   "id1": {S,F,C,T,D,L}  │    │    │
-│  │   ├── D ← chrome.history.lastVisitTime   │   "id2": {S,F,C,T,D,L}  │    │    │
-│  │   └── L ← recommend_postponed            │   ...                   │    │    │
-│  │                                          │ }                       │    │    │
-│  │                                          └─────────────────────────┘    │    │
-│  └─────────────────────────────────────────────────────────────────────────┘    │
+│  数据获取函数:                                                                   │
+│  ├── getFormulaConfig()          ← storage (权重/阈值 + trackingEnabled)        │
+│  ├── getBlockedDataForScore()    ← storage (屏蔽书签/文件夹/域名)               │
+│  ├── getBatchHistoryDataWithTitle() ← history API (URL+标题双索引)              │
+│  ├── getTrackingDataForScore()   ← IndexedDB (T值，URL+标题双索引)              │
+│  ├── getPostponedBookmarksForScore() ← storage (L值)                            │
+│  └── getReviewDataForScore()     ← storage (R值)                                │
 │                                                                                 │
-│  ┌─────────────────────────────────────────────────────────────────────────┐    │
-│  │                         计算层                                          │    │
-│  ├─────────────────────────────────────────────────────────────────────────┤    │
-│  │                                                                         │    │
-│  │   全量计算 computeAllBookmarkScores()                                   │    │
-│  │   ├── 清除旧缓存                                                        │    │
-│  │   ├── 遍历所有书签，计算每个的S值                                        │    │
-│  │   └── 写入 recommend_scores_cache                                       │    │
-│  │                                                                         │    │
-│  │   增量更新 updateSingleBookmarkScore(id)                                │    │
-│  │   ├── 读取该书签的原始数据                                               │    │
-│  │   ├── 计算新的S值                                                        │    │
-│  │   └── 更新 recommend_scores_cache 中的该条记录                           │    │
-│  │                                                                         │    │
-│  └─────────────────────────────────────────────────────────────────────────┘    │
+│  计算函数:                                                                       │
+│  ├── calculateFactorValue()      ← 计算单个因子 (0-1)                           │
+│  ├── calculateBookmarkScore()    ← 计算单个书签S值 (含追踪关闭归一化)           │
+│  ├── computeAllBookmarkScores()  ← 全量计算 (分批+过滤屏蔽)                     │
+│  └── updateSingleBookmarkScore() ← 增量更新                                     │
 │                                                                                 │
-│  ┌─────────────────────────────────────────────────────────────────────────┐    │
-│  │                         展示层                                          │    │
-│  ├─────────────────────────────────────────────────────────────────────────┤    │
-│  │                                                                         │    │
-│  │   refreshRecommendCards(force)                                          │    │
-│  │   ├── 从缓存读取所有S值（不重算）                                         │    │
-│  │   ├── 过滤掉已翻/跳过/屏蔽/待复习的书签                                   │    │
-│  │   ├── force=true时，跳过当前显示的卡片                                    │    │
-│  │   ├── 按S值排序（相同时随机）                                            │    │
-│  │   └── 取Top3显示                                                        │    │
-│  │                                                                         │    │
-│  └─────────────────────────────────────────────────────────────────────────┘    │
+│  消息处理:                                                                       │
+│  ├── computeBookmarkScores       → 全量计算                                     │
+│  ├── updateBookmarkScore         → 增量更新 (by ID)                             │
+│  ├── updateBookmarkScoreByUrl    → 增量更新 (by URL)                            │
+│  └── trackingDataUpdated         → T值变化触发增量更新                          │
+│                                                                                 │
+│  事件监听:                                                                       │
+│  ├── history.onVisited           → scheduleScoreUpdateByUrl()                   │
+│  ├── bookmarks.onCreated         → updateSingleBookmarkScore()                  │
+│  ├── bookmarks.onRemoved         → 删除缓存条目                                 │
+│  └── bookmarks.onChanged         → updateSingleBookmarkScore()                  │
+│                                                                                 │
+│  优化机制:                                                                       │
+│  ├── 分批计算: 500+分2批，1000+分3批，批次间50ms暂停                            │
+│  ├── 防抖: URL更新1秒防抖                                                       │
+│  ├── 防并发: isComputingScores 标志                                             │
+│  └── 过滤屏蔽: 屏蔽书签/文件夹/域名不参与计算                                   │
+│                                                                                 │
+└─────────────────────────────────────────────────────────────────────────────────┘
+```
+
+## 展示层（只读缓存）
+
+```
+┌─────────────────────────────────────────────────────────────────────────────────┐
+│                              展示层                                              │
+├─────────────────────────────────────────────────────────────────────────────────┤
+│                                                                                 │
+│  popup.js: refreshPopupRecommendCards()                                         │
+│  ├── getPopupScoresCache() → 读取缓存                                           │
+│  ├── 缓存为空? → sendMessage('computeBookmarkScores') → 等待计算完成            │
+│  ├── 过滤已翻/跳过/屏蔽/待复习                                                  │
+│  ├── 按S值排序                                                                  │
+│  └── 显示Top3卡片                                                               │
+│                                                                                 │
+│  history.js: refreshRecommendCards(force)                                       │
+│  ├── getScoresCache() → 读取缓存                                                │
+│  ├── 缓存为空? → sendMessage('computeBookmarkScores') → 等待计算完成            │
+│  ├── force=true时跳过当前卡片                                                   │
+│  ├── 过滤已翻/跳过/屏蔽/待复习                                                  │
+│  ├── 按S值排序（相同时随机）                                                    │
+│  └── 显示Top3卡片                                                               │
 │                                                                                 │
 └─────────────────────────────────────────────────────────────────────────────────┘
 ```
@@ -113,34 +160,38 @@
 ## 核心原则
 
 ```
-1. S值存在缓存里，刷新卡片只读缓存，不重算
-2. 个体变化（访问URL/待复习变化）→ 增量更新单个书签
-3. 公式变化（权重/模式切换）→ 全量重算所有书签
+1. S值计算只在 background.js 执行，popup.js 和 history.js 只读缓存
+2. 个体变化（访问URL/待复习/复习）→ 发消息触发增量更新
+3. 公式变化（权重/模式切换/阈值）→ 发消息触发全量重算
 4. 刷新卡片 = 从缓存选Top3（force时跳过当前显示的）
+5. 即使HTML页面未打开，background.js的事件监听器也会自动更新S值
 ```
 
 ## 触发场景
 
-### 全量计算 `computeAllBookmarkScores()`
+### 全量计算
 
-**唯一触发点**：`saveFormulaConfig()` 内部
-
-| 场景 | 调用链 |
+| 场景 | 触发链 |
 |------|--------|
-| 模式切换 | `applyPresetMode()` → `saveFormulaConfig()` |
-| 手动调权重 | `input.blur` → `normalizeWeights()` → `saveFormulaConfig()` |
-| 恢复默认 | `resetFormulaToDefault()` → `saveFormulaConfig()` |
+| 模式切换 | history.js: `applyPresetMode()` → `saveFormulaConfig()` → `sendMessage('computeBookmarkScores')` |
+| 手动调权重 | history.js: `input.blur` → `normalizeWeights()` → `saveFormulaConfig()` → `sendMessage('computeBookmarkScores')` |
+| 恢复默认 | history.js: `resetFormulaToDefault()` → `saveFormulaConfig()` → `sendMessage('computeBookmarkScores')` |
+| 缓存为空 | popup.js/history.js: `refreshCards()` → `sendMessage('computeBookmarkScores')` |
 
-### 增量更新 `updateSingleBookmarkScore(id)`
+### 增量更新
 
-| 场景 | 触发点 | 说明 |
-|------|--------|------|
-| 访问URL | `handleHistoryVisited()` → `scheduleBookmarkScoreUpdateByUrl()` | C/D因子变化 |
-| 取消待复习 | `cancelPostpone()` | L因子变化 |
-| 添加待复习 | `confirmAddToPostponed()` → `updateMultipleBookmarkScores()` | L因子变化 |
-| 新建书签 | `bookmarks.onCreated` | 初始化S值 |
+| 场景 | 触发链 |
+|------|--------|
+| 访问URL | background.js: `history.onVisited` → `scheduleScoreUpdateByUrl()` |
+| 新建书签 | background.js: `bookmarks.onCreated` → `updateSingleBookmarkScore()` |
+| 删除书签 | background.js: `bookmarks.onRemoved` → 删除缓存 |
+| 修改书签 | background.js: `bookmarks.onChanged` → `updateSingleBookmarkScore()` |
+| T值变化 | background.js: 监听 `trackingDataUpdated` → `scheduleScoreUpdateByUrl()` |
+| 取消待复习 | history.js: `cancelPostpone()` → `sendMessage('updateBookmarkScore')` |
+| 添加待复习 | history.js: `confirmAddToPostponed()` → 依赖模式切换全量重算 |
+| 记录复习 | history.js: `recordReview()` → `sendMessage('updateBookmarkScore')` |
 
-### 直接读缓存 `refreshRecommendCards(force)`
+### 直接读缓存（不触发计算）
 
 | 场景 | force值 | 说明 |
 |------|---------|------|
@@ -149,8 +200,46 @@
 | 被动刷新 | true | 翻完3张后，选新Top3 |
 | 跳过书签 | true | 该书签加入跳过集 |
 | 屏蔽书签 | true | 该书签被过滤 |
-| 待复习操作 | true/false | 刷新显示 |
-| 模式切换后 | false | 全量重算后刷新 |
+
+## 首次安装流程
+
+```
+用户首次安装插件
+       ↓
+   打开主UI (popup.js)
+       ↓
+refreshPopupRecommendCards()
+       ↓
+getPopupScoresCache() → 缓存为空 {}
+       ↓
+sendMessage('computeBookmarkScores') ──→ background.js
+                                              ↓
+                                    computeAllBookmarkScores()
+                                              ↓
+                                    保存到 recommend_scores_cache
+       ↓
+getPopupScoresCache() → 有数据
+       ↓
+显示正确的S值
+```
+
+## 多页面场景
+
+```
+┌─────────────────┐  ┌─────────────────┐  ┌─────────────────┐
+│  HTML页面 1     │  │  HTML页面 2     │  │    popup.js     │
+└────────┬────────┘  └────────┬────────┘  └────────┬────────┘
+         │                    │                    │
+         ▼                    ▼                    ▼
+    getScoresCache()     getScoresCache()     getPopupScoresCache()
+         │                    │                    │
+         └────────────────────┼────────────────────┘
+                              ▼
+                    同一个 recommend_scores_cache
+                              │
+                              ▼
+                      显示相同的S值
+```
 
 ## 防御机制
 

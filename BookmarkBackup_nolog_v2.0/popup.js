@@ -6976,13 +6976,25 @@ async function refreshPopupRecommendCards(force = false) {
                     });
                 }
                 
+                // 从S值缓存读取（与history.js共享），确保S值始终一致
+                let scoresCache = await getPopupScoresCache();
+                
+                // 如果S值缓存为空，请求background.js计算
+                if (Object.keys(scoresCache).length === 0 && bookmarks.length > 0) {
+                    console.log('[Popup] S值缓存为空（恢复卡片时），请求background计算...');
+                    await requestComputeScores();
+                    scoresCache = await getPopupScoresCache();
+                }
+                
                 popupRecommendCards = currentCards.cardIds.map(id => {
                     const bookmark = bookmarkMap.get(id);
                     if (bookmark) {
-                        // 使用history.js保存的priority，而不是固定值
+                        // 优先使用S值缓存（与history.js一致）
+                        const cached = scoresCache[id];
                         const cachedData = cachedCardDataMap.get(id);
-                        const priority = cachedData?.priority || 0.75;
-                        return { ...bookmark, priority };
+                        // 优先级：S值缓存 > cardData中保存的priority > 默认值0.5
+                        const priority = cached ? cached.S : (cachedData?.priority || 0.5);
+                        return { ...bookmark, priority, factors: cached || {} };
                     }
                     return null;
                 }).filter(Boolean);
@@ -7059,13 +7071,32 @@ async function refreshPopupRecommendCards(force = false) {
         }
 
         const reviewData = await getPopupReviewData();
+        // 从S值缓存读取（与history.js共享），保持一致性
+        let scoresCache = await getPopupScoresCache();
+        
+        // 如果S值缓存为空，请求background.js计算
+        if (Object.keys(scoresCache).length === 0 && bookmarks.length > 0) {
+            console.log('[Popup] S值缓存为空，请求background计算...');
+            await requestComputeScores();
+            scoresCache = await getPopupScoresCache();
+        }
+        
         const bookmarksWithPriority = availableBookmarks.map(bookmark => {
-            const basePriority = Math.random() * 0.5 + 0.5;
+            const cached = scoresCache[bookmark.id];
+            // 使用缓存的S值（与history.js一致），缓存不存在时使用默认值0.5
+            const basePriority = cached ? cached.S : 0.5;
             const priority = calculatePopupPriorityWithReview(basePriority, bookmark.id, reviewData, postponedList);
-            return { ...bookmark, priority };
+            return { ...bookmark, priority, factors: cached || {} };
         });
 
-        bookmarksWithPriority.sort((a, b) => b.priority - a.priority);
+        // 按优先级排序，S值相同时添加随机因子（与history.js一致）
+        bookmarksWithPriority.sort((a, b) => {
+            const diff = b.priority - a.priority;
+            if (Math.abs(diff) < 0.01) {
+                return Math.random() - 0.5;
+            }
+            return diff;
+        });
         popupRecommendCards = bookmarksWithPriority.slice(0, POPUP_RECOMMEND_CARD_COUNT);
 
         // 保存新的卡片状态
@@ -7380,6 +7411,29 @@ function calculatePopupPriorityWithReview(basePriority, bookmarkId, reviewData, 
     }
 
     return Math.min(priority, 1.5);
+}
+
+// 从 storage.local 获取S值缓存（与history.js共享）
+async function getPopupScoresCache() {
+    return new Promise((resolve) => {
+        browserAPI.storage.local.get(['recommend_scores_cache'], (result) => {
+            resolve(result.recommend_scores_cache || {});
+        });
+    });
+}
+
+// 请求background.js计算S值缓存
+async function requestComputeScores() {
+    return new Promise((resolve) => {
+        chrome.runtime.sendMessage({ action: 'computeBookmarkScores' }, (response) => {
+            if (chrome.runtime.lastError) {
+                console.warn('[Popup] 请求计算S值失败:', chrome.runtime.lastError.message);
+                resolve(false);
+            } else {
+                resolve(response?.success || false);
+            }
+        });
+    });
 }
 
 async function getPopupFlippedBookmarks() {

@@ -1666,6 +1666,45 @@ sendResponse({ success: false, error: '缺少状态文本' });
             })();
             return true;
         }
+        // S值计算相关消息
+        else if (message.action === "computeBookmarkScores") {
+            (async () => {
+                try {
+                    const success = await computeAllBookmarkScores();
+                    sendResponse({ success });
+                } catch (error) {
+                    sendResponse({ success: false, error: error.message });
+                }
+            })();
+            return true;
+        }
+        else if (message.action === "updateBookmarkScore") {
+            (async () => {
+                try {
+                    await updateSingleBookmarkScore(message.bookmarkId);
+                    sendResponse({ success: true });
+                } catch (error) {
+                    sendResponse({ success: false, error: error.message });
+                }
+            })();
+            return true;
+        }
+        else if (message.action === "updateBookmarkScoreByUrl") {
+            // 根据URL更新对应书签的S值
+            if (message.url) {
+                scheduleScoreUpdateByUrl(message.url);
+            }
+            sendResponse({ success: true });
+            return false;
+        }
+        else if (message.action === "trackingDataUpdated") {
+            // T值数据更新，触发对应URL的S值增量更新
+            if (message.url) {
+                scheduleScoreUpdateByUrl(message.url);
+            }
+            // 不需要sendResponse，让消息继续传递给其他监听者（如history.js）
+            return false;
+        }
         else if (message.action === "clearAllTrackingSessions") {
             (async () => {
                 try {
@@ -3901,3 +3940,465 @@ if (browserAPI.windows && browserAPI.windows.onRemoved) {
         }
     });
 }
+
+// =================================================================================
+// X. 书签推荐 S值计算系统（在background.js中统一管理）
+// =================================================================================
+
+let isComputingScores = false;
+
+// 获取公式配置（从storage读取）
+async function getFormulaConfig() {
+    const result = await browserAPI.storage.local.get(['recommendFormulaConfig', 'activeTimeTrackingEnabled']);
+    const config = result.recommendFormulaConfig || {
+        weights: { freshness: 0.15, coldness: 0.25, shallowRead: 0.20, forgetting: 0.25, laterReview: 0.15 },
+        thresholds: { freshness: 90, coldness: 10, shallowRead: 5, forgetting: 14 }
+    };
+    // 追踪是否开启（默认开启）
+    config.trackingEnabled = result.activeTimeTrackingEnabled !== false;
+    return config;
+}
+
+// 获取屏蔽数据
+async function getBlockedDataForScore() {
+    const result = await browserAPI.storage.local.get(['blockedBookmarks', 'blockedDomains', 'blockedFolders']);
+    return {
+        bookmarks: new Set(result.blockedBookmarks || []),
+        domains: new Set(result.blockedDomains || []),
+        folders: new Set(result.blockedFolders || [])
+    };
+}
+
+// 获取S值缓存
+async function getScoresCache() {
+    const result = await browserAPI.storage.local.get(['recommend_scores_cache']);
+    return result.recommend_scores_cache || {};
+}
+
+// 保存S值缓存
+async function saveScoresCache(cache) {
+    await browserAPI.storage.local.set({ recommend_scores_cache: cache });
+}
+
+// 获取待复习数据
+async function getPostponedBookmarksForScore() {
+    const result = await browserAPI.storage.local.get(['recommend_postponed']);
+    return result.recommend_postponed || [];
+}
+
+// 获取复习数据
+async function getReviewDataForScore() {
+    const result = await browserAPI.storage.local.get(['recommend_reviews']);
+    return result.recommend_reviews || {};
+}
+
+// 获取追踪数据（从活跃时间追踪模块）
+async function getTrackingDataForScore() {
+    try {
+        const sessions = await getSessionsByTimeRange(0, Date.now());
+        const titleStats = new Map();
+        
+        for (const session of sessions) {
+            const key = session.title || session.url;
+            if (!titleStats.has(key)) {
+                titleStats.set(key, { url: session.url, title: session.title, compositeMs: 0 });
+            }
+            const stat = titleStats.get(key);
+            const sessionComposite = session.compositeMs || 
+                ((session.activeMs || 0) + 
+                 (session.idleFocusMs || session.pauseTotalMs || 0) * 0.8 +
+                 (session.visibleMs || 0) * 0.5 +
+                 (session.backgroundMs || 0) * 0.1);
+            stat.compositeMs += sessionComposite;
+        }
+        
+        return {
+            byUrl: new Map([...titleStats.values()].filter(s => s.url).map(s => [s.url, s])),
+            byTitle: new Map([...titleStats.values()].filter(s => s.title).map(s => [s.title, s]))
+        };
+    } catch (e) {
+        console.warn('[S值计算] 获取追踪数据失败:', e);
+        return { byUrl: new Map(), byTitle: new Map() };
+    }
+}
+
+// 计算因子值（0-1）
+function calculateFactorValue(value, threshold, inverse = false) {
+    if (value <= 0) return inverse ? 1 : 0;
+    const safeThreshold = Math.max(1, threshold || 1);
+    const decayed = 1 / (1 + Math.pow(value / safeThreshold, 0.7));
+    return inverse ? decayed : (1 - decayed);
+}
+
+// 计算单个书签的S值
+function calculateBookmarkScore(bookmark, historyStats, trackingData, config, postponedList, reviewData) {
+    const now = Date.now();
+    const thresholds = config.thresholds;
+    
+    // 获取历史统计（URL匹配优先，然后标题匹配）
+    let history = historyStats.get(bookmark.url);
+    if (!history || history.visitCount === 0) {
+        // 尝试标题匹配
+        if (bookmark.title && historyStats.titleMap) {
+            history = historyStats.titleMap.get(bookmark.title);
+        }
+    }
+    history = history || { visitCount: 0, lastVisitTime: 0 };
+    
+    // 获取追踪数据（T值）- URL匹配优先，然后标题匹配
+    let compositeMs = 0;
+    if (bookmark.url && trackingData.byUrl.has(bookmark.url)) {
+        compositeMs = trackingData.byUrl.get(bookmark.url).compositeMs;
+    } else if (bookmark.title && trackingData.byTitle.has(bookmark.title)) {
+        compositeMs = trackingData.byTitle.get(bookmark.title).compositeMs;
+    }
+    
+    // F (新鲜度)
+    const daysSinceAdded = (now - (bookmark.dateAdded || now)) / (1000 * 60 * 60 * 24);
+    const F = calculateFactorValue(daysSinceAdded, thresholds.freshness, true);
+    
+    // C (冷门度)
+    const C = calculateFactorValue(history.visitCount, thresholds.coldness, true);
+    
+    // T (时间度)
+    const compositeMinutes = compositeMs / (1000 * 60);
+    const T = calculateFactorValue(compositeMinutes, thresholds.shallowRead, true);
+    
+    // D (遗忘度)
+    let daysSinceLastVisit = thresholds.forgetting;
+    if (history.lastVisitTime > 0) {
+        daysSinceLastVisit = (now - history.lastVisitTime) / (1000 * 60 * 60 * 24);
+    }
+    const D = calculateFactorValue(daysSinceLastVisit, thresholds.forgetting, false);
+    
+    // L (待复习)
+    let L = 0;
+    const postponeInfo = postponedList.find(p => p.bookmarkId === bookmark.id);
+    if (postponeInfo && postponeInfo.manuallyAdded) {
+        L = 1;
+    }
+    
+    // R (记忆度)
+    let R = 1;
+    const review = reviewData[bookmark.id];
+    if (review) {
+        const daysSinceReview = (now - review.lastReview) / (1000 * 60 * 60 * 24);
+        const reviewCount = review.reviewCount || 1;
+        const stabilityTable = [3, 7, 14, 30, 60];
+        const stability = stabilityTable[Math.min(reviewCount - 1, stabilityTable.length - 1)];
+        const needReview = 1 - Math.pow(0.9, daysSinceReview / stability);
+        R = 0.7 + 0.3 * needReview;
+        R = Math.max(0.7, Math.min(1, R));
+    }
+    
+    // 获取权重
+    let w1 = config.weights.freshness || 0.15;
+    let w2 = config.weights.coldness || 0.25;
+    let w3 = config.weights.shallowRead || 0.20;
+    let w4 = config.weights.forgetting || 0.25;
+    let w5 = config.weights.laterReview || 0.15;
+    
+    // 追踪关闭时，T权重变0，其他权重重新归一化
+    if (!config.trackingEnabled) {
+        const remaining = w1 + w2 + w4 + w5;
+        if (remaining > 0) {
+            w1 = w1 / remaining;
+            w2 = w2 / remaining;
+            w4 = w4 / remaining;
+            w5 = w5 / remaining;
+        }
+        w3 = 0;
+    }
+    
+    const basePriority = w1 * F + w2 * C + w3 * T + w4 * D + w5 * L;
+    const priority = basePriority * R;
+    const randomFactor = (Math.random() - 0.5) * 0.1;
+    const S = Math.max(0, Math.min(1, priority + randomFactor));
+    
+    return { S, F, C, T, D, L, R };
+}
+
+// 批量获取历史数据（带URL和标题双索引）
+async function getBatchHistoryDataWithTitle() {
+    const urlMap = new Map();
+    const titleMap = new Map();
+    
+    if (!browserAPI.history) return { urlMap, titleMap };
+    
+    try {
+        // 获取最近一年的历史记录
+        const oneYearAgo = Date.now() - 365 * 24 * 60 * 60 * 1000;
+        const historyItems = await new Promise(resolve => {
+            browserAPI.history.search({
+                text: '',
+                startTime: oneYearAgo,
+                maxResults: 100000
+            }, resolve);
+        });
+        
+        for (const item of historyItems) {
+            if (!item.url) continue;
+            const data = {
+                visitCount: item.visitCount || 0,
+                lastVisitTime: item.lastVisitTime || 0
+            };
+            
+            // URL映射
+            urlMap.set(item.url, data);
+            
+            // 标题映射（合并同标题的访问）
+            const title = item.title && item.title.trim();
+            if (title) {
+                if (!titleMap.has(title)) {
+                    titleMap.set(title, data);
+                } else {
+                    const existing = titleMap.get(title);
+                    titleMap.set(title, {
+                        visitCount: existing.visitCount + data.visitCount,
+                        lastVisitTime: Math.max(existing.lastVisitTime, data.lastVisitTime)
+                    });
+                }
+            }
+        }
+        
+        console.log('[S值计算] 历史数据已加载:', urlMap.size, '条URL,', titleMap.size, '条标题');
+    } catch (e) {
+        console.warn('[S值计算] 批量获取历史数据失败:', e);
+    }
+    
+    // 返回带titleMap的对象
+    const result = urlMap;
+    result.titleMap = titleMap;
+    return result;
+}
+
+// 全量计算所有书签S值
+async function computeAllBookmarkScores() {
+    if (isComputingScores) {
+        console.log('[S值计算] 已有计算任务在运行，跳过');
+        return false;
+    }
+    
+    isComputingScores = true;
+    console.log('[S值计算] 开始全量计算...');
+    
+    try {
+        // 获取所有书签
+        const tree = await new Promise(resolve => browserAPI.bookmarks.getTree(resolve));
+        const allBookmarks = [];
+        function traverse(nodes) {
+            for (const node of nodes) {
+                if (node.url) allBookmarks.push(node);
+                if (node.children) traverse(node.children);
+            }
+        }
+        traverse(tree);
+        
+        if (allBookmarks.length === 0) {
+            isComputingScores = false;
+            return true;
+        }
+        
+        // 获取屏蔽数据和配置
+        const [blocked, config, historyStats, trackingData, postponedList, reviewData] = await Promise.all([
+            getBlockedDataForScore(),
+            getFormulaConfig(),
+            getBatchHistoryDataWithTitle(),
+            getTrackingDataForScore(),
+            getPostponedBookmarksForScore(),
+            getReviewDataForScore()
+        ]);
+        
+        // 过滤屏蔽书签
+        const isBlockedDomain = (bookmark) => {
+            if (blocked.domains.size === 0 || !bookmark.url) return false;
+            try {
+                const url = new URL(bookmark.url);
+                return blocked.domains.has(url.hostname);
+            } catch {
+                return false;
+            }
+        };
+        
+        const availableBookmarks = allBookmarks.filter(b => 
+            !blocked.bookmarks.has(b.id) &&
+            !blocked.folders.has(b.parentId) &&
+            !isBlockedDomain(b)
+        );
+        
+        const totalCount = availableBookmarks.length;
+        console.log('[S值计算] 需要计算的书签数量:', totalCount, '(总计:', allBookmarks.length, ')');
+        
+        // 根据书签数量确定批次数（与history.js一致）
+        let batchCount = 1;
+        if (totalCount > 1000) {
+            batchCount = 3;
+        } else if (totalCount > 500) {
+            batchCount = 2;
+        }
+        const batchSize = Math.ceil(totalCount / batchCount);
+        
+        // 分批计算
+        const newCache = {};
+        for (let i = 0; i < batchCount; i++) {
+            const start = i * batchSize;
+            const end = Math.min(start + batchSize, totalCount);
+            const batchBookmarks = availableBookmarks.slice(start, end);
+            
+            console.log('[S值计算] 第', i + 1, '批，书签', start + 1, '-', end);
+            
+            for (const bookmark of batchBookmarks) {
+                const scores = calculateBookmarkScore(bookmark, historyStats, trackingData, config, postponedList, reviewData);
+                newCache[bookmark.id] = scores;
+            }
+            
+            // 批次间暂停50ms，避免阻塞
+            if (i < batchCount - 1) {
+                await new Promise(resolve => setTimeout(resolve, 50));
+            }
+        }
+        
+        // 保存缓存
+        await saveScoresCache(newCache);
+        console.log('[S值计算] 全量计算完成，共', Object.keys(newCache).length, '个书签');
+        
+        isComputingScores = false;
+        return true;
+    } catch (error) {
+        console.error('[S值计算] 全量计算失败:', error);
+        isComputingScores = false;
+        return false;
+    }
+}
+
+// 增量更新单个书签S值
+async function updateSingleBookmarkScore(bookmarkId) {
+    try {
+        const bookmarks = await new Promise(resolve => browserAPI.bookmarks.get([bookmarkId], resolve));
+        if (!bookmarks || bookmarks.length === 0) return;
+        
+        const bookmark = bookmarks[0];
+        
+        // 获取该书签的历史数据（URL和标题双匹配）
+        const historyStats = new Map();
+        if (browserAPI.history && bookmark.url) {
+            const visits = await new Promise(resolve => {
+                browserAPI.history.getVisits({ url: bookmark.url }, resolve);
+            });
+            historyStats.set(bookmark.url, {
+                visitCount: visits?.length || 0,
+                lastVisitTime: visits?.length > 0 ? Math.max(...visits.map(v => v.visitTime)) : 0
+            });
+            
+            // 如果需要标题匹配，可以搜索历史
+            if (bookmark.title) {
+                historyStats.titleMap = new Map();
+                try {
+                    const historyItems = await new Promise(resolve => {
+                        browserAPI.history.search({ text: bookmark.title, maxResults: 100 }, resolve);
+                    });
+                    for (const item of historyItems) {
+                        if (item.title?.trim() === bookmark.title.trim()) {
+                            const existing = historyStats.titleMap.get(bookmark.title) || { visitCount: 0, lastVisitTime: 0 };
+                            historyStats.titleMap.set(bookmark.title, {
+                                visitCount: existing.visitCount + (item.visitCount || 0),
+                                lastVisitTime: Math.max(existing.lastVisitTime, item.lastVisitTime || 0)
+                            });
+                        }
+                    }
+                } catch (e) {
+                    // 忽略标题搜索错误
+                }
+            }
+        }
+        
+        const [config, trackingData, postponedList, reviewData] = await Promise.all([
+            getFormulaConfig(),
+            getTrackingDataForScore(),
+            getPostponedBookmarksForScore(),
+            getReviewDataForScore()
+        ]);
+        
+        const scores = calculateBookmarkScore(bookmark, historyStats, trackingData, config, postponedList, reviewData);
+        
+        const cache = await getScoresCache();
+        cache[bookmarkId] = scores;
+        await saveScoresCache(cache);
+        
+        console.log('[S值计算] 增量更新:', bookmark.title?.substring(0, 20), 'S=', scores.S.toFixed(3));
+    } catch (e) {
+        console.warn('[S值计算] 增量更新失败:', e);
+    }
+}
+
+// 根据URL增量更新对应书签
+let pendingUrlUpdates = new Set();
+let urlUpdateTimer = null;
+
+async function scheduleScoreUpdateByUrl(url) {
+    if (!url) return;
+    pendingUrlUpdates.add(url);
+    
+    if (urlUpdateTimer) clearTimeout(urlUpdateTimer);
+    
+    urlUpdateTimer = setTimeout(async () => {
+        const urls = [...pendingUrlUpdates];
+        pendingUrlUpdates.clear();
+        urlUpdateTimer = null;
+        
+        try {
+            const tree = await new Promise(resolve => browserAPI.bookmarks.getTree(resolve));
+            const bookmarks = [];
+            function traverse(nodes) {
+                for (const node of nodes) {
+                    if (node.url && urls.includes(node.url)) bookmarks.push(node);
+                    if (node.children) traverse(node.children);
+                }
+            }
+            traverse(tree);
+            
+            for (const bookmark of bookmarks) {
+                await updateSingleBookmarkScore(bookmark.id);
+            }
+            
+            if (bookmarks.length > 0) {
+                console.log('[S值计算] URL增量更新完成，共', bookmarks.length, '个书签');
+            }
+        } catch (e) {
+            console.warn('[S值计算] URL增量更新失败:', e);
+        }
+    }, 1000);
+}
+
+// 监听历史访问事件（增量更新）
+if (browserAPI.history && browserAPI.history.onVisited) {
+    browserAPI.history.onVisited.addListener((result) => {
+        if (result && result.url) {
+            scheduleScoreUpdateByUrl(result.url);
+        }
+    });
+}
+
+// 监听书签创建事件
+browserAPI.bookmarks.onCreated.addListener((id, bookmark) => {
+    if (bookmark.url) {
+        setTimeout(() => updateSingleBookmarkScore(id), 500);
+    }
+});
+
+// 监听书签删除事件
+browserAPI.bookmarks.onRemoved.addListener(async (id) => {
+    const cache = await getScoresCache();
+    if (cache[id]) {
+        delete cache[id];
+        await saveScoresCache(cache);
+    }
+});
+
+// 监听书签修改事件（URL或标题变化时更新S值）
+browserAPI.bookmarks.onChanged.addListener(async (id, changeInfo) => {
+    if (changeInfo.url || changeInfo.title) {
+        console.log('[S值计算] 书签修改，更新S值:', id);
+        await updateSingleBookmarkScore(id);
+    }
+});

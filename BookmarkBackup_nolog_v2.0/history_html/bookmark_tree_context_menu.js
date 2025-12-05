@@ -2514,11 +2514,11 @@ async function handleTempMenuAction(action, context) {
             await pasteIntoTemp(context);
             break;
         case 'select-item':
-            // 进入Select模式并自动选中当前节点
+            // 进入Select模式并切换当前节点的选中状态
             if (!selectMode) {
                 enterSelectMode();
             }
-            if (context.nodeId && !selectedNodes.has(context.nodeId)) {
+            if (context.nodeId) {
                 toggleSelectItem(context.nodeId, context.node);
             }
             updateBatchToolbar();
@@ -2761,8 +2761,8 @@ async function handleMenuAction(action, context) {
                 
             case 'select-item':
                 enterSelectMode();
-                // 自动选中当前右键点击的节点
-                if (nodeId && !selectedNodes.has(nodeId)) {
+                // 切换当前右键点击的节点的选中状态
+                if (nodeId) {
                     toggleSelectItem(nodeId);
                 }
                 break;
@@ -4112,6 +4112,7 @@ function showSelectModeOverlay() {
     console.log('[Select模式] 蓝框已添加到:', treeContainer.id || treeContainer.className);
     
     // 允许拖动穿透：按住左键准备拖动时，让事件传递给下方的书签项
+    // 但单击已选中的书签应该取消选中，而不是穿透
     overlay.addEventListener('mousedown', (e) => {
         // 仅处理左键
         if (e.button !== 0) return;
@@ -4127,22 +4128,11 @@ function showSelectModeOverlay() {
         const isTreeItem = !!treeItem;
         const hasMultiSelection = (typeof selectedNodes !== 'undefined' && selectedNodes && selectedNodes.size > 1);
         const isSelectedItem = !!(treeItem && treeItem.classList && treeItem.classList.contains('selected'));
+        
+        // 如果没有多选，不进行拖拽穿透，让点击事件正常处理（可以取消选中）
         if (!isTreeItem || !hasMultiSelection) return;
 
-        // 若点在已选中的项上，优先认为是拖拽：立即穿透
-        if (isSelectedItem) {
-            overlay.style.pointerEvents = 'none';
-            const restore = () => {
-                overlay.style.pointerEvents = 'auto';
-                document.removeEventListener('mouseup', restore, true);
-                document.removeEventListener('dragend', restore, true);
-            };
-            document.addEventListener('mouseup', restore, true);
-            document.addEventListener('dragend', restore, true);
-            return;
-        }
-
-        // 否则保留点击选择能力：只有移动超过阈值再开启穿透，允许继续点选更多项
+        // 多选情况下，使用移动阈值来区分点击和拖拽
         const startX = e.clientX;
         const startY = e.clientY;
         let dragging = false;

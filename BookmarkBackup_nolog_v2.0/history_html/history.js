@@ -13213,9 +13213,15 @@ function renderTreeNodeWithChanges(node, level = 0, maxDepth = 50, visitedIds = 
         return pa - pb;
     };
 
-    const present = children.filter(c => !isDeleted(c)).sort(cmpStable);
-    const deleted = children.filter(c => isDeleted(c)).sort(cmpStable);
-    const sortedChildren = present.concat(deleted);
+    // 保持删除标识在原位置显示：
+    // rebuildTreeWithDeleted 已经按照旧树的顺序构建了children数组，
+    // 删除的节点在数据层面不占位（不影响浏览器书签库），
+    // 但在视觉层面保持原有位置
+    const sortedChildren = children.slice().sort((a, b) => {
+        const pa = originalPos.get(a?.id) ?? Number.POSITIVE_INFINITY;
+        const pb = originalPos.get(b?.id) ?? Number.POSITIVE_INFINITY;
+        return pa - pb;
+    });
 
     return `
         <div class="tree-node">

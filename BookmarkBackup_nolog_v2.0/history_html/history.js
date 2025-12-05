@@ -4784,6 +4784,12 @@ function initCardInteractions() {
 function applyPresetMode(mode) {
     if (!presetModes[mode]) return;
     
+    // 如果已经是目标模式，不触发全量重算
+    if (currentRecommendMode === mode) {
+        console.log('[书签推荐] 已是当前模式，跳过重算:', mode);
+        return;
+    }
+    
     currentRecommendMode = mode;
     const preset = presetModes[mode];
     
@@ -5383,12 +5389,23 @@ async function postponeBookmark(bookmarkId, delayMs) {
 async function cancelPostpone(bookmarkId) {
     try {
         let postponed = await getPostponedBookmarks();
+        const hadManualPostponed = postponed.some(p => p.manuallyAdded);
+        
         postponed = postponed.filter(p => p.bookmarkId !== bookmarkId);
         await browserAPI.storage.local.set({ recommend_postponed: postponed });
         console.log('[稍后] 已取消推迟:', bookmarkId);
         
-        // L因子变化，更新该书签的S值
-        await updateSingleBookmarkScore(bookmarkId);
+        // 检查取消后是否还有手动添加的待复习
+        const hasManualPostponed = postponed.some(p => p.manuallyAdded);
+        
+        // 如果手动待复习从有变无，后续 loadPostponedList 会触发模式切换和全量重算
+        // 此时不需要增量更新，避免重复计算
+        if (hadManualPostponed && !hasManualPostponed && currentRecommendMode === 'priority') {
+            console.log('[稍后] 待复习将清空，跳过增量更新（后续会全量重算）');
+        } else {
+            // L因子变化，更新该书签的S值
+            await updateSingleBookmarkScore(bookmarkId);
+        }
         
         return true;
     } catch (e) {
@@ -6378,10 +6395,9 @@ async function confirmAddToPostponed() {
     await browserAPI.storage.local.set({ recommend_postponed: postponed });
     console.log(`[添加到待复习] 已添加 ${addedCount} 个书签（手动添加，优先级提升）`);
     
-    // L因子变化，更新相关书签的S值
-    await updateMultipleBookmarkScores(bookmarkIds);
-    
-    // 刷新列表和推荐卡片
+    // 刷新列表（可能触发模式切换和全量重算）
+    // 注意：loadPostponedList 会检测是否需要切换到优先模式，如果切换则会全量重算
+    // 所以这里不需要额外调用 updateMultipleBookmarkScores，避免重复计算
     await loadPostponedList();
     await refreshRecommendCards(true); // 强制刷新推荐卡片
     
@@ -6983,7 +6999,69 @@ async function saveScoresCache(cache) {
         });
         console.log('[缓存] S值缓存已保存:', Object.keys(cache).length, '个书签');
     } catch (e) {
-        console.warn('[缓存] 保存S值缓存失败:', e);
+        // 检测是否是配额问题
+        if (e.message && (e.message.includes('QUOTA') || e.message.includes('quota'))) {
+            console.warn('[缓存] 存储配额已满，尝试清理旧数据...');
+            await cleanupStorageQuota();
+            // 重试一次
+            try {
+                await browserAPI.storage.local.set({
+                    recommend_scores_cache: cache,
+                    recommend_scores_time: Date.now()
+                });
+                console.log('[缓存] 清理后保存成功');
+            } catch (e2) {
+                console.error('[缓存] 清理后仍然失败，请手动清理浏览器数据');
+                showStorageFullWarning();
+            }
+        } else {
+            console.warn('[缓存] 保存S值缓存失败:', e);
+        }
+    }
+}
+
+// 清理存储配额（当存储满时调用）
+async function cleanupStorageQuota() {
+    try {
+        // 1. 清理超过1000条的已翻阅记录
+        const result = await new Promise(resolve => {
+            browserAPI.storage.local.get(['flippedBookmarks'], resolve);
+        });
+        if (result.flippedBookmarks && result.flippedBookmarks.length > 1000) {
+            const trimmed = result.flippedBookmarks.slice(-1000);
+            await browserAPI.storage.local.set({ flippedBookmarks: trimmed });
+            console.log('[清理] 已翻阅记录从', result.flippedBookmarks.length, '条缩减到', trimmed.length, '条');
+        }
+        
+        // 2. 清理过期的稍后复习记录（7天前）
+        const postponed = await getPostponedBookmarks();
+        const now = Date.now();
+        const validPostponed = postponed.filter(p => p.manuallyAdded || p.postponeUntil > now - 7 * 24 * 60 * 60 * 1000);
+        if (validPostponed.length < postponed.length) {
+            await browserAPI.storage.local.set({ recommend_postponed: validPostponed });
+            console.log('[清理] 过期稍后复习记录已清理:', postponed.length - validPostponed.length, '条');
+        }
+        
+        // 3. 清理Canvas缩略图（最大的单项）
+        await browserAPI.storage.local.remove(['bookmarkCanvasThumbnail']);
+        console.log('[清理] Canvas缩略图已清理');
+        
+    } catch (e) {
+        console.error('[清理] 清理存储失败:', e);
+    }
+}
+
+// 显示存储满警告
+function showStorageFullWarning() {
+    const isZh = currentLang === 'zh_CN';
+    const msg = isZh 
+        ? '存储空间已满，部分数据可能无法保存。请在浏览器设置中清理扩展数据。'
+        : 'Storage is full. Some data may not be saved. Please clear extension data in browser settings.';
+    
+    if (typeof showToast === 'function') {
+        showToast(msg, 5000);
+    } else {
+        console.error('[存储] ' + msg);
     }
 }
 
@@ -7526,8 +7604,10 @@ function clearStatsCache() {
 // 特点：阈值处正好是0.5，大数值仍有区分度，衰减平缓
 function calculateFactorValue(value, threshold, inverse = false) {
     if (value <= 0) return inverse ? 1 : 0;
+    // 阈值最小为1，防止除零错误
+    const safeThreshold = Math.max(1, threshold || 1);
     // 幂函数衰减，指数0.7使衰减更平缓
-    const decayed = 1 / (1 + Math.pow(value / threshold, 0.7));
+    const decayed = 1 / (1 + Math.pow(value / safeThreshold, 0.7));
     return inverse ? decayed : (1 - decayed);
 }
 
@@ -14555,6 +14635,25 @@ function setupBookmarkListener() {
         console.log('[书签监听] 书签修改:', changeInfo);
         try {
             updateBookmarkInAdditionsCache(id, changeInfo);
+            
+            // URL或标题变化时，清除旧的T值缓存并重算S值
+            if (changeInfo.url || changeInfo.title) {
+                // 清除T值缓存中可能失效的条目
+                if (changeInfo.url && trackingRankingCache.loaded) {
+                    // 获取旧URL（从S值缓存）
+                    const scoresCache = await getScoresCache();
+                    if (scoresCache[id] && scoresCache[id].url && scoresCache[id].url !== changeInfo.url) {
+                        trackingRankingCache.byUrl.delete(scoresCache[id].url);
+                        console.log('[书签修改] 清除旧URL的T值缓存:', scoresCache[id].url);
+                    }
+                }
+                // 重新计算该书签的S值
+                if (typeof updateSingleBookmarkScore === 'function') {
+                    await updateSingleBookmarkScore(id);
+                    console.log('[书签修改] 已更新S值:', id);
+                }
+            }
+            
             // 支持 tree 和 canvas 视图（canvas视图包含永久栏目的书签树）
             if (currentView === 'tree' || currentView === 'canvas') {
                 await applyIncrementalChangeToTree(id, changeInfo);

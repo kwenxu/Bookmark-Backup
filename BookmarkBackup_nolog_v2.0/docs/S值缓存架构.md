@@ -231,13 +231,15 @@ function scheduleBookmarkScoreUpdateByUrl(url) {
 
 ## 攻防演习结果
 
+### 一、基础场景
+
 | 场景 | 期望行为 | 实际行为 | 状态 |
 |------|---------|---------|:----:|
 | 主动刷新 | 从缓存读取，显示新卡片 | 从缓存读取，跳过当前卡片选新Top3 | ✅ |
 | 被动刷新 | 从缓存读取，显示新卡片 | 从缓存读取，选新Top3 | ✅ |
 | F值（新鲜度）变化 | 实时计算 | `now - dateAdded`，每次计算都是最新 | ✅ |
 | C/D值（访问URL） | 增量更新该书签 | `history.onVisited` → `updateSingleBookmarkScore` | ✅ |
-| T值（时间追踪） | 增量更新缓存 | `saveSession` → `sendMessage` → 累加到缓存 | ✅ |
+| T值（时间追踪） | 增量更新缓存+S值 | `saveSession` → `sendMessage` → 更新缓存+触发S值更新 | ✅ |
 | L值（待复习变化） | 增量更新相关书签 | `updateMultipleBookmarkScores` | ✅ |
 | 模式切换 | 全量重算 | `clearCache` + `computeAll` | ✅ |
 | 手动调权重 | 全量重算 | `clearCache` + `computeAll` | ✅ |
@@ -245,6 +247,142 @@ function scheduleBookmarkScoreUpdateByUrl(url) {
 | 删除书签 | 删除缓存 | `removeCachedScore` | ✅ |
 | 循环刷新 | 阻止循环 | 500ms时间戳检查 | ✅ |
 | 并发计算 | 阻止并发 | `isComputingScores`标志 | ✅ |
+
+### 二、卡片三按钮交互
+
+| 场景 | 期望行为 | 实际行为 | 状态 |
+|------|---------|---------|:----:|
+| 跳过按钮 | 加入跳过集合，刷新卡片 | `skippedBookmarks.add()` + `refreshRecommendCards(true)` | ✅ |
+| 屏蔽按钮 | 加入屏蔽列表，刷新卡片 | `blockBookmark()` + `refreshRecommendCards(true)` | ✅ |
+| 稍后复习按钮 | 显示延迟选项 | 弹窗选择时间 → `postponeBookmark()` | ✅ |
+| 点击卡片 | 打开书签，记录翻阅 | `openInRecommendWindow()` + 更新flipped状态 | ✅ |
+
+### 三、待复习系统（重点）
+
+| 场景 | 期望行为 | 实际行为 | 状态 | 问题 |
+|------|---------|---------|:----:|------|
+| 添加到待复习 | L因子变化，更新S值 | 模式切换全量重算（已移除冗余增量更新） | ✅ | P1已修复 |
+| 取消待复习 | L因子变化，更新S值 | 智能判断是否需要增量更新 | ✅ | P2已修复 |
+| 手动添加 → 激活优先模式 | 自动切换模式 | `loadPostponedList` → `applyPresetMode('priority')` | ✅ | P1已修复 |
+| 优先模式S值计算 | L权重=0.70 | `presetModes.priority.weights.laterReview = 0.70` | ✅ | - |
+| 待复习清空 → 退出优先模式 | 自动切换回默认 | 智能跳过重复模式切换 | ✅ | P2已修复 |
+| 提前复习（点击待复习项） | 取消待复习+记录复习 | `cancelPostpone` + `recordReview` | ✅ | - |
+
+**P1: 添加待复习时重复计算**
+```
+confirmAddToPostponed()
+  ├── updateMultipleBookmarkScores() ← 增量更新
+  ├── loadPostponedList()
+  │     └── applyPresetMode('priority')
+  │           └── saveFormulaConfig() → computeAllBookmarkScores() ← 又全量重算！
+  └── refreshRecommendCards(true)
+```
+
+**P2: 取消待复习时可能重复计算**
+```
+cancelPostpone() → updateSingleBookmarkScore() ← 增量更新
+调用方 → loadPostponedList()
+         └── 如果待复习清空 → applyPresetMode('default')
+               └── computeAllBookmarkScores() ← 又全量重算！
+```
+
+### 四、模式切换
+
+| 场景 | 期望行为 | 实际行为 | 状态 |
+|------|---------|---------|:----:|
+| 切换到考古模式 | 全量重算，刷新卡片 | `applyPresetMode('archaeology')` | ✅ |
+| 切换到巩固模式 | 全量重算，刷新卡片 | `applyPresetMode('consolidate')` | ✅ |
+| 切换到漫游模式 | 全量重算，刷新卡片 | `applyPresetMode('wander')` | ✅ |
+| 切换到优先模式 | 全量重算，刷新卡片 | `applyPresetMode('priority')` | ✅ |
+| 手动调权重 | 归一化+全量重算 | `normalizeWeights()` → `saveFormulaConfig()` | ✅ |
+| 手动调阈值 | 全量重算 | `saveFormulaConfig()` | ✅ |
+
+### 五、屏蔽系统
+
+| 场景 | 期望行为 | 实际行为 | 状态 |
+|------|---------|---------|:----:|
+| 屏蔽书签 | 加入屏蔽列表，刷新卡片 | `blockBookmark()` | ✅ |
+| 屏蔽域名 | 加入域名屏蔽列表 | `blockDomain()` | ✅ |
+| 屏蔽文件夹 | 加入文件夹屏蔽列表 | `blockFolder()` | ✅ |
+| 恢复屏蔽书签 | 从列表移除，刷新卡片 | `unblockBookmark()` | ✅ |
+| 恢复屏蔽域名 | 从列表移除 | `unblockDomain()` | ✅ |
+| 恢复屏蔽文件夹 | 从列表移除 | `unblockFolder()` | ✅ |
+| 屏蔽后书签被过滤 | 不出现在推荐卡片 | `baseFilter` 中检查 | ✅ |
+
+### 六、意外情况/异常处理
+
+| 场景 | 期望行为 | 当前实现 | 状态 | 问题 |
+|------|---------|---------|:----:|------|
+| 浏览器崩溃 | 保留已保存数据 | 每30秒定期保存会话快照 | ✅ | P3已修复 |
+| 电脑休眠 | 唤醒后继续追踪 | 1秒心跳检测，唤醒时重置计时起点 | ✅ | P4已修复 |
+| 页面刷新 | 恢复之前的卡片状态 | 从storage读取 | ✅ | - |
+| 网络中断 | 本地存储不受影响 | storage.local | ✅ | - |
+| 书签被删除 | 从缓存移除 | `bookmarks.onRemoved` | ✅ | - |
+| 书签被修改 | 更新缓存 | 清除旧T值缓存，重算S值 | ✅ | P5已修复 |
+
+**P3: 浏览器崩溃时数据丢失**
+- ActiveTimeTracker 只在以下时机保存会话：URL变化时、标签关闭时、追踪关闭时
+- **缺少定期保存机制**，崩溃时当前会话丢失
+
+**P4: 休眠后唤醒**
+- 休眠时会话计时可能不准确
+- 唤醒后需要重新检测活跃状态
+
+**P5: 书签被修改**
+- 书签URL/标题修改后，S值缓存可能失效
+- 需要监听 `bookmarks.onChanged` 并更新
+
+### 七、边界条件
+
+| 场景 | 期望行为 | 实际行为 | 状态 |
+|------|---------|---------|:----:|
+| 没有书签 | 显示空状态 | 卡片显示"所有书签都已翻阅" | ✅ |
+| 所有书签已翻阅 | 显示空状态 | 同上 | ✅ |
+| 所有书签被屏蔽 | 显示空状态 | 同上 | ✅ |
+| 可用书签<3个 | 显示可用的+空卡片 | `setCardEmpty()` | ✅ |
+| 刷新时可用书签<3个 | 不排除当前卡片 | `availableBookmarks.length < 3` 时回退 | ✅ |
+
+### 八、并发/竞态
+
+| 场景 | 期望行为 | 实际行为 | 状态 |
+|------|---------|---------|:----:|
+| 快速连续点击刷新 | 不重复计算 | `isComputingScores` 标志 | ✅ |
+| popup和history同时操作 | 状态同步 | storage.onChanged 监听 | ✅ |
+| 多个tab同时触发更新 | 合并更新 | 1秒防抖 | ✅ |
+| history/popup循环刷新 | 阻止循环 | 500ms时间戳检查 | ✅ |
+
+### 九、冷门场景
+
+| 场景 | 期望行为 | 当前实现 | 状态 | 问题 |
+|------|---------|---------|:----:|------|
+| 书签标题为空 | 使用URL显示 | `title \|\| url` | ✅ | - |
+| 书签URL无效 | 不崩溃 | try-catch | ✅ | - |
+| storage配额满 | 优雅降级 | 自动清理+用户提示 | ✅ | P6已修复 |
+| 书签数量>10000 | 性能问题 | 批量处理+防抖 | ⚠️ | P7 |
+| 首次使用无缓存 | 全量计算 | `computeAllBookmarkScores` | ✅ | - |
+| 权重全为0 | 使用默认值 | `\|\| 0.15` 等 | ✅ | - |
+| 阈值为0 | 可能除零错误 | `safeThreshold = Math.max(1, threshold)` | ✅ | P8已修复 |
+
+**P6: storage配额满** - 需要添加错误处理和用户提示
+
+**P7: 书签数量>10000** - 需要分批计算或增量计算优化
+
+**P8: 阈值为0** - 需要添加最小值检查
+
+---
+
+## 问题汇总
+
+| ID | 严重度 | 问题描述 | 修复方案 | 状态 |
+|----|:------:|---------|---------|:----:|
+| P1 | 中 | 添加待复习时重复计算 | 移除冗余增量更新，依赖模式切换全量重算 | ✅ 已修复 |
+| P2 | 中 | 取消待复习可能重复计算 | `applyPresetMode` 检查是否已是目标模式；`cancelPostpone` 检测是否会触发模式切换 | ✅ 已修复 |
+| P3 | 高 | 浏览器崩溃时数据丢失 | 添加定期保存机制（每30秒），`createSnapshot` + `resetAccumulated` | ✅ 已修复 |
+| P4 | 低 | 休眠后唤醒计时不准 | 休眠检测（1秒心跳），唤醒时重置计时起点 | ✅ 已修复 |
+| P5 | 低 | 书签修改后缓存失效 | `onChanged` 监听，清除旧URL的T值缓存，重算S值 | ✅ 已修复 |
+| P6 | 低 | storage配额满无处理 | 自动清理（已翻阅/过期待复习/Canvas缩略图）+ 用户提示 | ✅ 已修复 |
+| P7 | 中 | 大量书签性能问题 | 分批计算优化 | 待处理 |
+| P8 | 低 | 阈值为0除零错误 | `safeThreshold = Math.max(1, threshold)` | ✅ 已修复 |
 
 ## 文件修改记录
 
@@ -260,4 +398,22 @@ function scheduleBookmarkScoreUpdateByUrl(url) {
 | `history.js` | `loadRecommendData`移除`checkAutoRefresh`调用 |
 | `history.js` | 删除`checkAutoRefresh`函数（死代码） |
 | `history.js` | 添加`historyLastSaveTime`防循环机制 |
+| `history.js` | 添加`trackingRankingCache`（T值静态缓存，按标题/URL双索引） |
+| `history.js` | 添加`loadTrackingRankingCache`、`clearTrackingRankingCache`、`getBookmarkCompositeTime` |
+| `history.js` | 监听`trackingDataUpdated`消息，增量更新T值缓存 |
+| `history.js` | T值变化后触发S值增量更新（`scheduleBookmarkScoreUpdateByUrl`） |
+| `history.js` | `applyPresetMode`添加模式检查，避免重复切换时全量重算 |
+| `history.js` | `confirmAddToPostponed`移除冗余增量更新（依赖模式切换全量重算） |
+| `history.js` | `cancelPostpone`智能判断是否需要增量更新（避免与模式切换重复） |
+| `active_time_tracker/index.js` | `saveSession`发送`trackingDataUpdated`消息通知 |
+| `active_time_tracker/index.js` | 添加定期保存机制（`PERIODIC_SAVE_INTERVAL`=30秒） |
+| `active_time_tracker/index.js` | 添加`createSnapshot`、`resetAccumulated`方法 |
+| `active_time_tracker/index.js` | 添加`startPeriodicSave`、`stopPeriodicSave`函数 |
+| `active_time_tracker/index.js` | 添加休眠检测（`SLEEP_DETECTION_INTERVAL`=1秒，`SLEEP_THRESHOLD_MS`=5秒） |
+| `active_time_tracker/index.js` | 添加`startSleepDetection`、`stopSleepDetection`、`handleWakeFromSleep`函数 |
+| `history.js` | `calculateFactorValue`添加阈值最小值保护（`safeThreshold = Math.max(1, threshold)`) |
+| `history.js` | `bookmarks.onChanged`监听器添加T值缓存清理和S值重算 |
+| `history.js` | 添加`cleanupStorageQuota`函数（清理已翻阅/过期待复习/Canvas缩略图） |
+| `history.js` | 添加`showStorageFullWarning`函数（存储满时提示用户） |
+| `history.js` | `saveScoresCache`添加配额错误检测和自动清理重试 |
 | `popup.js` | 添加`popupLastSaveTime`防循环机制 |

@@ -13,6 +13,9 @@ const CONFIG = {
     MERGE_WINDOW_MS: 5 * 60 * 1000,   // 去重合并：同一URL 5分钟内多次访问合并
     BATCH_SIZE: 5,                     // 批量写入：累积5条后批量写DB
     IDLE_DETECTION_INTERVAL: 60,       // idle检测阈值：60秒无操作视为idle
+    PERIODIC_SAVE_INTERVAL: 30000,    // 定期保存间隔：30秒（防止崩溃丢失数据）
+    SLEEP_DETECTION_INTERVAL: 1000,   // 休眠检测间隔：1秒
+    SLEEP_THRESHOLD_MS: 5000,         // 休眠判定阈值：时间跳跃>5秒视为休眠
     DB_NAME: 'BookmarkActiveTimeDB',
     DB_VERSION: 1,
     STORE_NAME: 'active_sessions'
@@ -613,6 +616,72 @@ class SessionData {
         
         return this;
     }
+    
+    // 创建当前会话的快照（用于定期保存，不结束会话）
+    createSnapshot() {
+        if (this.state === SessionState.INACTIVE || this.state === SessionState.ENDED) return null;
+        
+        const now = Date.now();
+        let snapshotActiveMs = this.accumulatedActiveMs;
+        let snapshotPauseMs = this.pauseTotalMs;
+        let snapshotVisibleMs = this.visibleTotalMs;
+        let snapshotBackgroundMs = this.backgroundTotalMs;
+        
+        // 计算当前正在进行的时间
+        if (this.state === SessionState.ACTIVE && this.activeStartTime) {
+            snapshotActiveMs += now - this.activeStartTime;
+        }
+        
+        if (this.state === SessionState.PAUSED && this.lastPauseTime && !this.isSleeping) {
+            const pauseDuration = now - this.lastPauseTime;
+            if (this.isBackground) {
+                snapshotBackgroundMs += pauseDuration;
+            } else if (this.isVisible) {
+                snapshotVisibleMs += pauseDuration;
+            } else {
+                snapshotPauseMs += pauseDuration;
+            }
+        }
+        
+        return {
+            url: this.url,
+            title: this.title,
+            bookmarkId: this.bookmarkId,
+            matchType: this.matchType,
+            tabId: this.tabId,
+            windowId: this.windowId,
+            startTime: this.startTime,
+            endTime: now,
+            accumulatedActiveMs: snapshotActiveMs,
+            pauseTotalMs: snapshotPauseMs,
+            visibleTotalMs: snapshotVisibleMs,
+            backgroundTotalMs: snapshotBackgroundMs,
+            wakeCount: this.wakeCount
+        };
+    }
+    
+    // 重置累积时间（定期保存后调用，避免重复计算）
+    resetAccumulated() {
+        const now = Date.now();
+        
+        // 重置累积时间
+        this.accumulatedActiveMs = 0;
+        this.pauseTotalMs = 0;
+        this.visibleTotalMs = 0;
+        this.backgroundTotalMs = 0;
+        this.wakeCount = 0;
+        
+        // 重置计时起点
+        if (this.state === SessionState.ACTIVE) {
+            this.activeStartTime = now;
+        }
+        if (this.state === SessionState.PAUSED) {
+            this.lastPauseTime = now;
+        }
+        
+        // 更新 startTime 为当前时间（新的时间段）
+        this.startTime = now;
+    }
 }
 
 // =============================================================================
@@ -981,9 +1050,117 @@ async function initialize() {
             }
         }
         
+        // 启动定期保存定时器（防止浏览器崩溃丢失数据）
+        startPeriodicSave();
+        
+        // 启动休眠检测（防止唤醒后计时不准）
+        startSleepDetection();
+        
         console.log('[ActiveTimeTracker] 初始化完成, 追踪状态:', trackingEnabled);
     } catch (error) {
         console.error('[ActiveTimeTracker] 初始化失败:', error);
+    }
+}
+
+// 定期保存定时器
+let periodicSaveTimer = null;
+
+function startPeriodicSave() {
+    if (periodicSaveTimer) {
+        clearInterval(periodicSaveTimer);
+    }
+    
+    periodicSaveTimer = setInterval(async () => {
+        if (!trackingEnabled) return;
+        
+        // 保存所有活跃会话的快照（不结束会话）
+        for (const [tabId, session] of activeSessions) {
+            if (session.state === SessionState.ACTIVE || session.state === SessionState.PAUSED) {
+                // 创建会话快照保存
+                const snapshot = session.createSnapshot();
+                if (snapshot && snapshot.accumulatedActiveMs >= CONFIG.MIN_ACTIVE_MS) {
+                    await saveSession(snapshot);
+                    // 重置会话累积时间（避免重复计算）
+                    session.resetAccumulated();
+                    console.log('[ActiveTimeTracker] 定期保存会话:', session.url);
+                }
+            }
+        }
+    }, CONFIG.PERIODIC_SAVE_INTERVAL);
+    
+    console.log('[ActiveTimeTracker] 定期保存已启动，间隔:', CONFIG.PERIODIC_SAVE_INTERVAL / 1000, '秒');
+}
+
+function stopPeriodicSave() {
+    if (periodicSaveTimer) {
+        clearInterval(periodicSaveTimer);
+        periodicSaveTimer = null;
+        console.log('[ActiveTimeTracker] 定期保存已停止');
+    }
+}
+
+// 休眠检测定时器
+let sleepDetectionTimer = null;
+let lastHeartbeat = Date.now();
+
+function startSleepDetection() {
+    if (sleepDetectionTimer) {
+        clearInterval(sleepDetectionTimer);
+    }
+    
+    lastHeartbeat = Date.now();
+    
+    sleepDetectionTimer = setInterval(() => {
+        const now = Date.now();
+        const elapsed = now - lastHeartbeat;
+        
+        if (elapsed > CONFIG.SLEEP_THRESHOLD_MS) {
+            console.log('[ActiveTimeTracker] 检测到休眠/唤醒，时间跳跃:', Math.round(elapsed / 1000), '秒');
+            handleWakeFromSleep(elapsed);
+        }
+        
+        lastHeartbeat = now;
+    }, CONFIG.SLEEP_DETECTION_INTERVAL);
+    
+    console.log('[ActiveTimeTracker] 休眠检测已启动');
+}
+
+function stopSleepDetection() {
+    if (sleepDetectionTimer) {
+        clearInterval(sleepDetectionTimer);
+        sleepDetectionTimer = null;
+        console.log('[ActiveTimeTracker] 休眠检测已停止');
+    }
+}
+
+function handleWakeFromSleep(sleepDuration) {
+    // 唤醒后重置所有活跃会话的计时起点，避免多算休眠时间
+    const now = Date.now();
+    const wakeTime = now - sleepDuration;  // 休眠开始时间
+    
+    for (const [tabId, session] of activeSessions) {
+        if (session.state === SessionState.ACTIVE && session.activeStartTime) {
+            // 只累积休眠前的活跃时间
+            const activeBeforeSleep = Math.max(0, wakeTime - session.activeStartTime);
+            session.accumulatedActiveMs += activeBeforeSleep;
+            // 重置起点为唤醒时间
+            session.activeStartTime = now;
+            console.log('[ActiveTimeTracker] 重置会话计时起点:', session.title || session.url, 
+                '累积活跃时间:', Math.round(session.accumulatedActiveMs / 1000), '秒');
+        }
+        
+        if (session.state === SessionState.PAUSED && session.lastPauseTime) {
+            // 暂停状态也需要重置，避免多算暂停时间
+            const pauseBeforeSleep = Math.max(0, wakeTime - session.lastPauseTime);
+            if (session.isBackground) {
+                session.backgroundTotalMs += pauseBeforeSleep;
+            } else if (session.isVisible) {
+                session.visibleTotalMs += pauseBeforeSleep;
+            } else {
+                session.pauseTotalMs += pauseBeforeSleep;
+            }
+            session.lastPauseTime = now;
+        }
     }
 }
 

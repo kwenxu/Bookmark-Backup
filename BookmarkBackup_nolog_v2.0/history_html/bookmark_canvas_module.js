@@ -115,6 +115,7 @@ const CanvasState = {
     panStartX: 0,
     panStartY: 0,
     isSpacePressed: false,
+    isCtrlPressed: false,
     isFullscreen: false,
     fullscreenHandlersBound: false,
     scrollState: {
@@ -1454,8 +1455,8 @@ function setupCanvasZoomAndPan() {
             const isTouchpad = Math.abs(e.deltaY) < 50 && e.deltaMode === 0;
             const delta = -e.deltaY;
             
-            // 缩放速率：触控板保持原速率，鼠标滚轮降低灵敏度
-            const zoomSpeed = isTouchpad ? 0.004 : 0.0005; // 触控板0.004（保持原值），鼠标滚轮0.0005（降低约38%）
+            // 缩放速率：触控板和鼠标滚轮都大幅降低灵敏度，使缩放非常平滑
+            const zoomSpeed = isTouchpad ? 0.0008 : 0.00015; // 触控板0.0008（降低80%），鼠标滚轮0.00015（降低70%）
             const oldZoom = CanvasState.zoom;
             let newZoom = oldZoom + delta * zoomSpeed;
             
@@ -1476,12 +1477,17 @@ function setupCanvasZoomAndPan() {
         }
     }, { passive: false });
     
-    // 空格键按下 - 启用拖动模式
+    // 空格键/Control键按下 - 启用拖动模式
     document.addEventListener('keydown', (e) => {
         if (e.code === 'Space' && !e.repeat && e.target.tagName !== 'INPUT' && e.target.tagName !== 'TEXTAREA') {
             e.preventDefault();
             CanvasState.isSpacePressed = true;
             workspace.classList.add('space-pressed');
+        }
+        // Control键按下 - 也启用拖动模式
+        if ((e.code === 'ControlLeft' || e.code === 'ControlRight') && !e.repeat && e.target.tagName !== 'INPUT' && e.target.tagName !== 'TEXTAREA') {
+            CanvasState.isCtrlPressed = true;
+            workspace.classList.add('ctrl-pressed');
         }
     });
     
@@ -1492,14 +1498,28 @@ function setupCanvasZoomAndPan() {
             if (CanvasState.isPanning) {
                 CanvasState.isPanning = false;
                 workspace.classList.remove('panning');
+                onScrollStop();
+                savePanOffsetThrottled();
+            }
+        }
+        // Control键松开 - 结束拖动模式
+        if (e.code === 'ControlLeft' || e.code === 'ControlRight') {
+            CanvasState.isCtrlPressed = false;
+            workspace.classList.remove('ctrl-pressed');
+            if (CanvasState.isPanning) {
+                CanvasState.isPanning = false;
+                workspace.classList.remove('panning');
+                onScrollStop();
+                savePanOffsetThrottled();
             }
         }
     });
     
-    // 空格 + 鼠标拖动画布（Obsidian方式）
+    // 空格/Control + 鼠标拖动画布（Obsidian方式）
     workspace.addEventListener('mousedown', (e) => {
-        if (CanvasState.isSpacePressed) {
+        if (CanvasState.isSpacePressed || CanvasState.isCtrlPressed) {
             e.preventDefault();
+            e.stopPropagation();
             CanvasState.isPanning = true;
             CanvasState.panStartX = e.clientX - CanvasState.panOffsetX;
             CanvasState.panStartY = e.clientY - CanvasState.panOffsetY;
@@ -1508,6 +1528,14 @@ function setupCanvasZoomAndPan() {
             markScrolling();
         }
     });
+    
+    // Control键按下时屏蔽右键菜单，避免干扰拖动
+    workspace.addEventListener('contextmenu', (e) => {
+        if (CanvasState.isCtrlPressed || CanvasState.isPanning) {
+            e.preventDefault();
+            e.stopPropagation();
+        }
+    }, true);
     
     document.addEventListener('mousemove', (e) => {
         if (CanvasState.isPanning) {

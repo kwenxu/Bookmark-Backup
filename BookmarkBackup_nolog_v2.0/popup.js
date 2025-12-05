@@ -6771,8 +6771,9 @@ function loadFaviconForRecent(imgElement, url) {
 
         const urlObj = new URL(url);
         const domain = urlObj.hostname;
+        // 多源策略（与history.js一致）：DuckDuckGo优先（国内可访问），Google S2备选
+        // 不直接请求网站的/favicon.ico，避免CORS问题和HTML响应
         const faviconSources = [
-            `${urlObj.protocol}//${domain}/favicon.ico`,
             `https://icons.duckduckgo.com/ip3/${domain}.ico`,
             `https://www.google.com/s2/favicons?domain=${domain}&sz=32`
         ];
@@ -7147,12 +7148,24 @@ async function refreshPopupRecommendCards(force = false) {
 
         // 保存新的卡片状态（包含cardData用于HTML页面同步）
         const newCardIds = popupRecommendCards.map(b => b.id);
-        const newCardData = popupRecommendCards.map(b => ({
-            id: b.id,
-            title: b.title || '',
-            url: b.url || '',
-            favicon: b.url ? `https://www.google.com/s2/favicons?domain=${new URL(b.url).hostname}&sz=32` : ''
-        }));
+        const newCardData = popupRecommendCards.map(b => {
+            let favicon = '';
+            if (b.url) {
+                try {
+                    const domain = new URL(b.url).hostname;
+                    // 使用DuckDuckGo优先（国内可访问，与history.js一致）
+                    favicon = `https://icons.duckduckgo.com/ip3/${domain}.ico`;
+                } catch (e) {
+                    favicon = '';
+                }
+            }
+            return {
+                id: b.id,
+                title: b.title || '',
+                url: b.url || '',
+                favicon
+            };
+        });
         await savePopupCurrentCards(newCardIds, [], newCardData);
 
         cards.forEach((card, index) => {

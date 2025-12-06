@@ -10937,3 +10937,53 @@ color: var(--text-secondary);
         justify-content: flex-end;
     }
 }
+
+/* ==================== 编辑书签弹窗 ==================== */
+.edit-bookmark-form {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+}
+
+.edit-bookmark-field {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+
+.edit-bookmark-field label {
+    font-size: 13px;
+    font-weight: 500;
+    color: var(--text-secondary);
+}
+
+.edit-bookmark-input {
+    width: 100%;
+    padding: 10px 12px;
+    border: 1px solid var(--border-color);
+    border-radius: 6px;
+    background: var(--bg-secondary);
+    color: var(--text-primary);
+    font-size: 14px;
+    transition: border-color 0.2s, box-shadow 0.2s;
+    box-sizing: border-box;
+}
+
+.edit-bookmark-input:focus {
+    outline: none;
+    border-color: var(--accent-primary);
+    box-shadow: 0 0 0 3px rgba(0, 122, 255, 0.1);
+}
+
+.edit-bookmark-input::placeholder {
+    color: var(--text-tertiary);
+}
+
+.edit-bookmark-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 10px;
+    margin-top: 8px;
+    padding-top: 16px;
+    border-top: 1px solid var(--border-color);
+}

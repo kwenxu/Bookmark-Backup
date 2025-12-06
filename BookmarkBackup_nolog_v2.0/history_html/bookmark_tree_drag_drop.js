@@ -274,19 +274,13 @@ async function handleDrop(e) {
     
     const targetNodeId = targetNode.dataset.nodeId;
     const targetIsFolder = targetNode.dataset.nodeType === 'folder';
-    
-    console.log('[拖拽] 放下:', {
-        from: draggedNodeId,
-        to: targetNodeId,
-        targetIsFolder
-    });
+    const position = dropIndicator ? dropIndicator.dataset.position : null;
     
     // 隐藏拖拽指示器
     hideDropIndicator();
     
     const targetTreeType = targetNode.dataset.treeType || 'permanent';
     const targetSectionId = targetNode.dataset.sectionId || null;
-    const position = dropIndicator ? dropIndicator.dataset.position : null;
     await moveBookmark(draggedNodeId, targetNodeId, targetIsFolder, {
         sourceTreeType: draggedNodeTreeType,
         sourceSectionId: draggedNodeSectionId,
@@ -348,105 +342,66 @@ function showDropIndicator(targetNode, e) {
     
     const rect = targetNode.getBoundingClientRect();
     const mouseY = e.clientY;
-    const targetMiddle = rect.top + rect.height / 2;
+    const targetIsFolder = targetNode?.dataset?.nodeType === 'folder';
     
-    // 判断放置位置：上方、内部还是下方
+    // 检查是否是当前层级的第一个节点
+    const treeNode = targetNode.closest('.tree-node');
+    const isFirstInLevel = treeNode && !treeNode.previousElementSibling;
+    
+    // 检查文件夹是否展开
+    let isFolderExpanded = false;
+    if (targetIsFolder && treeNode) {
+        const childrenContainer = treeNode.querySelector(':scope > .tree-children');
+        isFolderExpanded = childrenContainer && childrenContainer.classList.contains('expanded');
+    }
+    
     let position;
-    // 增加边缘检测敏感度，使同级移动更容易准确
-    const minBand = 6; // 减小最小边缘带高度，提高灵敏度
-    const threshold = Math.max(minBand, Math.min(rect.height / 4, 12)); // 调整为1/4并减小上限
     
-    // 使用基于 data-node-id 的比较（比 DOM 元素引用更可靠）
-    const draggedNodeId = draggedNode?.dataset?.nodeId;
-    const targetNodeId = targetNode?.dataset?.nodeId;
-    const prevNodeId = draggedNodePrev?.dataset?.nodeId;
-    const nextNodeId = draggedNodeNext?.dataset?.nodeId;
-    
-    // 检查目标节点是否是被拖动节点
-    const isTargetDraggedNode = draggedNodeId && draggedNodeId === targetNodeId;
-    
-    // 检查目标节点是否是被拖动节点的子节点
-    const isTargetDescendant = draggedNode && isDescendant(targetNode, draggedNode);
-    
-    // 检查目标节点是否是前一个同级节点
-    const isTargetPrev = prevNodeId && prevNodeId === targetNodeId;
-    
-    // 检查目标节点是否是后一个同级节点
-    const isTargetNext = nextNodeId && nextNodeId === targetNodeId;
-    
-    // 确定是否需要屏蔽以及屏蔽哪个边缘
-    let blockBeforeEdge = false;  // 是否屏蔽 before 边缘
-    let blockAfterEdge = false;   // 是否屏蔽 after 边缘
-    
-    if (isTargetDraggedNode || isTargetDescendant) {
-        // 屏蔽被拖动节点和其子节点的所有上下边缘
-        blockBeforeEdge = true;
-        blockAfterEdge = true;
-        console.log('[拖拽指示器] 屏蔽被拖节点的所有上下边缘');
-    } else if (isTargetPrev) {
-        // 屏蔽前一个同级节点的下边缘 (after)
-        blockAfterEdge = true;
-        console.log('[拖拽指示器] 屏蔽前一个同级节点的下边缘');
-    } else if (isTargetNext) {
-        // 屏蔽后一个同级节点的上边缘 (before)
-        blockBeforeEdge = true;
-        console.log('[拖拽指示器] 屏蔽后一个同级节点的上边缘');
-    }
-    
-    // 允许任意位置放置
-    const allowInside = true;
-
-    // 根据屏蔽规则确定最终位置
-    if (mouseY < rect.top + threshold) {
-        // 鼠标在上边缘
-        position = blockBeforeEdge ? 'inside' : 'before';
-    } else if (mouseY > rect.bottom - threshold) {
-        // 鼠标在下边缘
-        position = blockAfterEdge ? 'inside' : 'after';
+    if (targetIsFolder) {
+        if (isFolderExpanded) {
+            // 展开的文件夹：上半部分 = before（如果是首位）或 inside，下半部分也是 inside（没有 after）
+            if (isFirstInLevel && mouseY < rect.top + rect.height / 3) {
+                position = 'before';
+            } else {
+                position = 'inside';
+            }
+        } else {
+            // 未展开的文件夹：首位有 before，上半部分 = inside，下半部分 = after
+            if (isFirstInLevel && mouseY < rect.top + rect.height / 4) {
+                position = 'before';
+            } else if (mouseY < rect.top + rect.height / 2) {
+                position = 'inside';
+            } else {
+                position = 'after';
+            }
+        }
     } else {
-        // 鼠标在中间
-        position = 'inside';
-    }
-    
-    // 如果上下边缘都被屏蔽，强制为 inside
-    if (blockBeforeEdge && blockAfterEdge && (mouseY < rect.top + threshold || mouseY > rect.bottom - threshold)) {
-        position = 'inside';
+        // 书签：首位有 before，否则只有 after
+        if (isFirstInLevel && mouseY < rect.top + rect.height / 2) {
+            position = 'before';
+        } else {
+            position = 'after';
+        }
     }
     
     // 设置指示器位置
     if (position === 'before') {
-        console.log('[拖拽指示器] 显示 before 线条');
         dropIndicator.style.top = (rect.top + window.scrollY) + 'px';
         dropIndicator.style.left = rect.left + 'px';
         dropIndicator.style.width = rect.width + 'px';
         dropIndicator.style.height = '2px';
         dropIndicator.style.display = 'block';
-        dropIndicator.style.visibility = 'visible';
-        dropIndicator.style.pointerEvents = 'auto';
-        // 添加闪烁效果提示可以吸附
-        dropIndicator.classList.add('flashing');
     } else if (position === 'after') {
-        console.log('[拖拽指示器] 显示 after 线条');
         dropIndicator.style.top = (rect.bottom + window.scrollY) + 'px';
         dropIndicator.style.left = rect.left + 'px';
         dropIndicator.style.width = rect.width + 'px';
         dropIndicator.style.height = '2px';
         dropIndicator.style.display = 'block';
-        dropIndicator.style.visibility = 'visible';
-        dropIndicator.style.pointerEvents = 'auto';
-        // 添加闪烁效果提示可以吸附
-        dropIndicator.classList.add('flashing');
     } else {
-        // inside - 隐藏线条
-        console.log('[拖拽指示器] 屏蔽线条（inside 位置）');
+        // inside - 隐藏线条（文件夹高亮显示）
         dropIndicator.style.display = 'none';
-        dropIndicator.style.visibility = 'hidden';
-        dropIndicator.style.pointerEvents = 'none';
-        // 隐藏时移除闪烁效果
-        dropIndicator.classList.remove('flashing');
     }
     
-    // 保存位置信息
     dropIndicator.dataset.position = position;
 }
 
@@ -529,6 +484,11 @@ async function createBookmarkFromPayload(parentId, index, payload) {
     }
 }
 
+// 用于标记由拖拽操作触发的移动，防止 applyIncrementalMoveToTree 重复处理
+if (typeof window !== 'undefined') {
+    window.__dragMoveHandled = window.__dragMoveHandled || new Set();
+}
+
 async function moveBookmark(sourceId, targetId, targetIsFolder, context) {
     const { sourceTreeType = 'permanent', sourceSectionId = null, targetTreeType = 'permanent', targetSectionId = null, position = 'inside' } = context || {};
     const manager = getTempManager();
@@ -545,12 +505,15 @@ async function moveBookmark(sourceId, targetId, targetIsFolder, context) {
         
         if (sourceTreeType === 'temporary' && targetTreeType === 'permanent' && manager && chrome && chrome.bookmarks) {
             const payload = manager.extractPayload(sourceSectionId, [sourceId]);
+            // 临时栏目到永久栏目不需要调整索引（源不在永久栏目中）
             const { parentId, index } = await computePermanentInsertion(targetId, targetIsFolder, position);
             for (const item of payload) {
                 await createBookmarkFromPayload(parentId, index, item);
             }
             manager.removeItems(sourceSectionId, [sourceId]);
-            await refreshBookmarkTree();
+            // 不调用 refreshBookmarkTree()，让 chrome.bookmarks.onCreated 事件触发增量更新
+            // 这样可以避免页面闪烁和滚动位置丢失
+            console.log('[拖拽] 临时->永久完成，等待 onCreated 事件增量更新');
             return;
         }
         
@@ -571,26 +534,31 @@ async function moveBookmark(sourceId, targetId, targetIsFolder, context) {
         const [targetNode] = await chrome.bookmarks.get(targetId);
         const insertInfo = await computePermanentInsertion(targetId, targetIsFolder, position);
         
-        console.log('[拖拽] 移动书签:', {
+        console.log('[拖拽] 永久栏目内移动:', {
             source: sourceNode?.title,
             target: targetNode?.title,
             position,
             insertInfo
         });
         
-        await chrome.bookmarks.move(sourceId, {
-            parentId: insertInfo.parentId,
-            index: insertInfo.index
-        });
-        
+        // 【测试】只执行Chrome API，完全依赖 onMoved 事件来更新视觉
+        // 先标记
         try {
             if (typeof explicitMovedIds !== 'undefined') {
                 explicitMovedIds.set(sourceId, Date.now() + Infinity);
             }
         } catch (_) {}
         
+        // 执行Chrome API移动
+        await chrome.bookmarks.move(sourceId, {
+            parentId: insertInfo.parentId,
+            index: insertInfo.index
+        });
+        
+        console.log('[拖拽] Chrome API 移动成功，等待 onMoved 事件更新视觉');
+        
     } catch (error) {
-        console.debug('[拖拽] 移动操作信息:', error.message);
+        console.error('[拖拽] 移动操作失败:', error);
     }
 }
 

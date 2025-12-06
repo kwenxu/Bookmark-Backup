@@ -2411,7 +2411,7 @@ async function pasteIntoTemp(context) {
                         console.warn('[临时栏目] 移除原始书签失败:', error);
                     }
                 }
-                await refreshBookmarkTree();
+                // 不调用 refreshBookmarkTree()，让 onRemoved 事件触发增量更新
                 bookmarkClipboard = null;
                 clipboardOperation = null;
                 unmarkCutNode();
@@ -3382,86 +3382,355 @@ async function openAllBookmarks(folderId, newWindow = false, incognito = false) 
     }
 }
 
-// 编辑书签
+// 编辑书签 - 使用自定义模态框
 async function editBookmark(nodeId, currentTitle, currentUrl, isFolder) {
     const lang = currentLang || 'zh_CN';
     
-    if (isFolder) {
-        // 编辑文件夹（重命名）
-        const newTitle = prompt(
-            lang === 'zh_CN' ? '重命名文件夹:' : 'Rename folder:',
-            currentTitle
-        );
-        
-        if (newTitle && newTitle !== currentTitle) {
-            if (chrome && chrome.bookmarks) {
-                await chrome.bookmarks.update(nodeId, { title: newTitle });
-                await refreshBookmarkTree();
-            }
-        }
-    } else {
-        // 编辑书签
-        const newTitle = prompt(
-            lang === 'zh_CN' ? '书签名称:' : 'Bookmark name:',
-            currentTitle
-        );
-        
-        if (newTitle === null) return; // 用户取消
-        
-        const newUrl = prompt(
-            lang === 'zh_CN' ? '书签地址:' : 'Bookmark URL:',
-            currentUrl
-        );
-        
-        if (newUrl === null) return; // 用户取消
-        
-        if ((newTitle && newTitle !== currentTitle) || (newUrl && newUrl !== currentUrl)) {
-            if (chrome && chrome.bookmarks) {
-                const updates = {};
-                if (newTitle && newTitle !== currentTitle) updates.title = newTitle;
-                if (newUrl && newUrl !== currentUrl) updates.url = newUrl;
-                
-                await chrome.bookmarks.update(nodeId, updates);
-                await refreshBookmarkTree();
-            }
-        }
+    // 获取模态框元素
+    const modal = document.getElementById('editBookmarkModal');
+    const titleInput = document.getElementById('editBookmarkTitle');
+    const urlInput = document.getElementById('editBookmarkUrl');
+    const urlField = document.getElementById('editBookmarkUrlField');
+    const modalTitle = document.getElementById('editBookmarkModalTitle');
+    const titleLabel = document.getElementById('editBookmarkTitleLabel');
+    const urlLabel = document.getElementById('editBookmarkUrlLabel');
+    const saveBtn = document.getElementById('editBookmarkSaveBtn');
+    const cancelBtn = document.getElementById('editBookmarkCancelBtn');
+    const closeBtn = document.getElementById('editBookmarkModalClose');
+    
+    if (!modal) {
+        console.error('[编辑] 未找到编辑模态框');
+        return;
     }
+    
+    // 设置标题和标签文本
+    if (isFolder) {
+        modalTitle.textContent = lang === 'zh_CN' ? '编辑文件夹' : 'Edit Folder';
+        titleLabel.textContent = lang === 'zh_CN' ? '文件夹名称' : 'Folder Name';
+        urlField.style.display = 'none';
+    } else {
+        modalTitle.textContent = lang === 'zh_CN' ? '编辑书签' : 'Edit Bookmark';
+        titleLabel.textContent = lang === 'zh_CN' ? '书签名称' : 'Bookmark Name';
+        urlLabel.textContent = lang === 'zh_CN' ? '书签地址' : 'Bookmark URL';
+        urlField.style.display = 'flex';
+    }
+    
+    // 设置按钮文本
+    saveBtn.textContent = lang === 'zh_CN' ? '保存' : 'Save';
+    cancelBtn.textContent = lang === 'zh_CN' ? '取消' : 'Cancel';
+    
+    // 设置输入框占位符
+    titleInput.placeholder = lang === 'zh_CN' ? '输入名称...' : 'Enter name...';
+    urlInput.placeholder = 'https://...';
+    
+    // 填入当前值
+    titleInput.value = currentTitle || '';
+    urlInput.value = currentUrl || '';
+    
+    // 显示模态框
+    modal.classList.add('show');
+    
+    // 聚焦到标题输入框
+    setTimeout(() => titleInput.focus(), 100);
+    
+    // 创建 Promise 来等待用户操作
+    return new Promise((resolve) => {
+        // 清理之前的事件监听器
+        const newSaveBtn = saveBtn.cloneNode(true);
+        const newCancelBtn = cancelBtn.cloneNode(true);
+        const newCloseBtn = closeBtn.cloneNode(true);
+        saveBtn.parentNode.replaceChild(newSaveBtn, saveBtn);
+        cancelBtn.parentNode.replaceChild(newCancelBtn, cancelBtn);
+        closeBtn.parentNode.replaceChild(newCloseBtn, closeBtn);
+        
+        const closeModal = () => {
+            modal.classList.remove('show');
+            resolve();
+        };
+        
+        const handleSave = async () => {
+            const newTitle = titleInput.value.trim();
+            const newUrl = urlInput.value.trim();
+            
+            if (!newTitle) {
+                titleInput.focus();
+                return;
+            }
+            
+            if (!isFolder && !newUrl) {
+                urlInput.focus();
+                return;
+            }
+            
+            try {
+                if (chrome && chrome.bookmarks) {
+                    if (isFolder) {
+                        if (newTitle !== currentTitle) {
+                            await chrome.bookmarks.update(nodeId, { title: newTitle });
+                        }
+                    } else {
+                        const updates = {};
+                        if (newTitle !== currentTitle) updates.title = newTitle;
+                        if (newUrl !== currentUrl) updates.url = newUrl;
+                        
+                        if (Object.keys(updates).length > 0) {
+                            await chrome.bookmarks.update(nodeId, updates);
+                        }
+                    }
+                }
+            } catch (error) {
+                console.error('[编辑] 保存失败:', error);
+                alert(lang === 'zh_CN' ? `保存失败: ${error.message}` : `Save failed: ${error.message}`);
+            }
+            
+            closeModal();
+        };
+        
+        // 绑定事件
+        newSaveBtn.addEventListener('click', handleSave);
+        newCancelBtn.addEventListener('click', closeModal);
+        newCloseBtn.addEventListener('click', closeModal);
+        
+        // Enter 键保存
+        const handleKeydown = (e) => {
+            if (e.key === 'Enter') {
+                e.preventDefault();
+                handleSave();
+            } else if (e.key === 'Escape') {
+                closeModal();
+            }
+        };
+        
+        titleInput.addEventListener('keydown', handleKeydown);
+        urlInput.addEventListener('keydown', handleKeydown);
+        
+        // 点击背景关闭
+        const handleBackgroundClick = (e) => {
+            if (e.target === modal) {
+                closeModal();
+            }
+        };
+        modal.addEventListener('click', handleBackgroundClick);
+    });
 }
 
-// 添加书签
+// 添加书签 - 使用自定义模态框
 async function addBookmark(parentId) {
     const lang = currentLang || 'zh_CN';
     
-    const title = prompt(lang === 'zh_CN' ? '书签名称:' : 'Bookmark name:');
-    if (!title) return;
+    // 获取模态框元素
+    const modal = document.getElementById('editBookmarkModal');
+    const titleInput = document.getElementById('editBookmarkTitle');
+    const urlInput = document.getElementById('editBookmarkUrl');
+    const urlField = document.getElementById('editBookmarkUrlField');
+    const modalTitle = document.getElementById('editBookmarkModalTitle');
+    const titleLabel = document.getElementById('editBookmarkTitleLabel');
+    const urlLabel = document.getElementById('editBookmarkUrlLabel');
+    const saveBtn = document.getElementById('editBookmarkSaveBtn');
+    const cancelBtn = document.getElementById('editBookmarkCancelBtn');
+    const closeBtn = document.getElementById('editBookmarkModalClose');
     
-    const url = prompt(lang === 'zh_CN' ? '书签地址:' : 'Bookmark URL:', 'https://');
-    if (!url) return;
-    
-    if (chrome && chrome.bookmarks) {
-        await chrome.bookmarks.create({
-            parentId: parentId,
-            title: title,
-            url: url
-        });
-        await refreshBookmarkTree();
+    if (!modal) {
+        console.error('[添加书签] 未找到模态框');
+        return;
     }
+    
+    // 设置标题和标签文本
+    modalTitle.textContent = lang === 'zh_CN' ? '添加书签' : 'Add Bookmark';
+    titleLabel.textContent = lang === 'zh_CN' ? '书签名称' : 'Bookmark Name';
+    urlLabel.textContent = lang === 'zh_CN' ? '书签地址' : 'Bookmark URL';
+    urlField.style.display = 'flex';
+    
+    // 设置按钮文本
+    saveBtn.textContent = lang === 'zh_CN' ? '添加' : 'Add';
+    cancelBtn.textContent = lang === 'zh_CN' ? '取消' : 'Cancel';
+    
+    // 设置输入框占位符并清空
+    titleInput.placeholder = lang === 'zh_CN' ? '输入书签名称...' : 'Enter bookmark name...';
+    urlInput.placeholder = 'https://...';
+    titleInput.value = '';
+    urlInput.value = 'https://';
+    
+    // 显示模态框
+    modal.classList.add('show');
+    
+    // 聚焦到标题输入框
+    setTimeout(() => titleInput.focus(), 100);
+    
+    // 创建 Promise 来等待用户操作
+    return new Promise((resolve) => {
+        // 清理之前的事件监听器
+        const newSaveBtn = saveBtn.cloneNode(true);
+        const newCancelBtn = cancelBtn.cloneNode(true);
+        const newCloseBtn = closeBtn.cloneNode(true);
+        saveBtn.parentNode.replaceChild(newSaveBtn, saveBtn);
+        cancelBtn.parentNode.replaceChild(newCancelBtn, cancelBtn);
+        closeBtn.parentNode.replaceChild(newCloseBtn, closeBtn);
+        
+        const closeModal = () => {
+            modal.classList.remove('show');
+            resolve();
+        };
+        
+        const handleSave = async () => {
+            const newTitle = titleInput.value.trim();
+            const newUrl = urlInput.value.trim();
+            
+            if (!newTitle) {
+                titleInput.focus();
+                return;
+            }
+            
+            if (!newUrl) {
+                urlInput.focus();
+                return;
+            }
+            
+            try {
+                if (chrome && chrome.bookmarks) {
+                    await chrome.bookmarks.create({
+                        parentId: parentId,
+                        title: newTitle,
+                        url: newUrl
+                    });
+                }
+            } catch (error) {
+                console.error('[添加书签] 失败:', error);
+                alert(lang === 'zh_CN' ? `添加失败: ${error.message}` : `Add failed: ${error.message}`);
+            }
+            
+            closeModal();
+        };
+        
+        // 绑定事件
+        newSaveBtn.addEventListener('click', handleSave);
+        newCancelBtn.addEventListener('click', closeModal);
+        newCloseBtn.addEventListener('click', closeModal);
+        
+        // Enter 键保存
+        const handleKeydown = (e) => {
+            if (e.key === 'Enter') {
+                e.preventDefault();
+                handleSave();
+            } else if (e.key === 'Escape') {
+                closeModal();
+            }
+        };
+        
+        titleInput.addEventListener('keydown', handleKeydown);
+        urlInput.addEventListener('keydown', handleKeydown);
+        
+        // 点击背景关闭
+        const handleBackgroundClick = (e) => {
+            if (e.target === modal) {
+                closeModal();
+            }
+        };
+        modal.addEventListener('click', handleBackgroundClick);
+    });
 }
 
-// 添加文件夹
+// 添加文件夹 - 使用自定义模态框
 async function addFolder(parentId) {
     const lang = currentLang || 'zh_CN';
     
-    const title = prompt(lang === 'zh_CN' ? '文件夹名称:' : 'Folder name:');
-    if (!title) return;
+    // 获取模态框元素
+    const modal = document.getElementById('editBookmarkModal');
+    const titleInput = document.getElementById('editBookmarkTitle');
+    const urlField = document.getElementById('editBookmarkUrlField');
+    const modalTitle = document.getElementById('editBookmarkModalTitle');
+    const titleLabel = document.getElementById('editBookmarkTitleLabel');
+    const saveBtn = document.getElementById('editBookmarkSaveBtn');
+    const cancelBtn = document.getElementById('editBookmarkCancelBtn');
+    const closeBtn = document.getElementById('editBookmarkModalClose');
     
-    if (chrome && chrome.bookmarks) {
-        await chrome.bookmarks.create({
-            parentId: parentId,
-            title: title
-        });
-        await refreshBookmarkTree();
+    if (!modal) {
+        console.error('[添加文件夹] 未找到模态框');
+        return;
     }
+    
+    // 设置标题和标签文本
+    modalTitle.textContent = lang === 'zh_CN' ? '添加文件夹' : 'Add Folder';
+    titleLabel.textContent = lang === 'zh_CN' ? '文件夹名称' : 'Folder Name';
+    urlField.style.display = 'none';
+    
+    // 设置按钮文本
+    saveBtn.textContent = lang === 'zh_CN' ? '添加' : 'Add';
+    cancelBtn.textContent = lang === 'zh_CN' ? '取消' : 'Cancel';
+    
+    // 设置输入框占位符并清空
+    titleInput.placeholder = lang === 'zh_CN' ? '输入文件夹名称...' : 'Enter folder name...';
+    titleInput.value = '';
+    
+    // 显示模态框
+    modal.classList.add('show');
+    
+    // 聚焦到标题输入框
+    setTimeout(() => titleInput.focus(), 100);
+    
+    // 创建 Promise 来等待用户操作
+    return new Promise((resolve) => {
+        // 清理之前的事件监听器
+        const newSaveBtn = saveBtn.cloneNode(true);
+        const newCancelBtn = cancelBtn.cloneNode(true);
+        const newCloseBtn = closeBtn.cloneNode(true);
+        saveBtn.parentNode.replaceChild(newSaveBtn, saveBtn);
+        cancelBtn.parentNode.replaceChild(newCancelBtn, cancelBtn);
+        closeBtn.parentNode.replaceChild(newCloseBtn, closeBtn);
+        
+        const closeModal = () => {
+            modal.classList.remove('show');
+            resolve();
+        };
+        
+        const handleSave = async () => {
+            const newTitle = titleInput.value.trim();
+            
+            if (!newTitle) {
+                titleInput.focus();
+                return;
+            }
+            
+            try {
+                if (chrome && chrome.bookmarks) {
+                    await chrome.bookmarks.create({
+                        parentId: parentId,
+                        title: newTitle
+                    });
+                }
+            } catch (error) {
+                console.error('[添加文件夹] 失败:', error);
+                alert(lang === 'zh_CN' ? `添加失败: ${error.message}` : `Add failed: ${error.message}`);
+            }
+            
+            closeModal();
+        };
+        
+        // 绑定事件
+        newSaveBtn.addEventListener('click', handleSave);
+        newCancelBtn.addEventListener('click', closeModal);
+        newCloseBtn.addEventListener('click', closeModal);
+        
+        // Enter 键保存
+        const handleKeydown = (e) => {
+            if (e.key === 'Enter') {
+                e.preventDefault();
+                handleSave();
+            } else if (e.key === 'Escape') {
+                closeModal();
+            }
+        };
+        
+        titleInput.addEventListener('keydown', handleKeydown);
+        
+        // 点击背景关闭
+        const handleBackgroundClick = (e) => {
+            if (e.target === modal) {
+                closeModal();
+            }
+        };
+        modal.addEventListener('click', handleBackgroundClick);
+    });
 }
 
 // 复制URL
@@ -3610,7 +3879,7 @@ async function pasteBookmark(targetNodeId, isFolder) {
             }
         }
         
-        await refreshBookmarkTree();
+        // 不调用 refreshBookmarkTree()，让 onMoved/onCreated 事件触发增量更新
         
     } catch (error) {
         console.error('[粘贴] 失败:', error);
@@ -4648,8 +4917,8 @@ async function batchDelete() {
             console.log('[批量删除] 已记录受影响的父文件夹:', Array.from(affectedParentIds));
         }
         
-        // 刷新书签树（这会重新渲染，确保没有残留的状态）
-        await refreshBookmarkTree();
+        // 不调用 refreshBookmarkTree()，让 onRemoved 事件触发增量更新
+        // 增量更新会添加删除标记，用户可以通过"清理变动标识"功能来清除
         
         // 清除临时标记（延迟清除，给渲染留出更长时间，从1秒增加到5秒）
         setTimeout(async () => {
@@ -4705,7 +4974,7 @@ async function batchRename() {
             count++;
         }
         
-        await refreshBookmarkTree();
+        // 不调用 refreshBookmarkTree()，让 onChanged 事件触发增量更新
         alert(lang === 'zh_CN' ? `已重命名 ${count} 项` : `Renamed ${count} items`);
         console.log('[批量] 重命名完成:', count);
         
@@ -4861,7 +5130,7 @@ async function batchMergeFolder() {
         
         deselectAll();
         updateBatchToolbar();
-        await refreshBookmarkTree();
+        // 不调用 refreshBookmarkTree()，让 onCreated/onMoved 事件触发增量更新
         
         alert(lang === 'zh_CN' ? `已将 ${count} 项合并到新文件夹` : `Merged ${count} items to new folder`);
         console.log('[批量] 合并完成:', count);

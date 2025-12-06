@@ -1317,5 +1317,33 @@
             </div>
         </div>
     </div>
+
+    <!-- 编辑书签/文件夹弹窗 -->
+    <div id="editBookmarkModal" class="modal content-center">
+        <div class="modal-content" style="max-width: 480px;">
+            <div class="modal-header compact">
+                <h3 id="editBookmarkModalTitle">编辑书签</h3>
+                <button class="modal-close" id="editBookmarkModalClose">
+                    <i class="fas fa-times"></i>
+                </button>
+            </div>
+            <div class="modal-body">
+                <div class="edit-bookmark-form">
+                    <div class="edit-bookmark-field">
+                        <label for="editBookmarkTitle" id="editBookmarkTitleLabel">名称</label>
+                        <input type="text" id="editBookmarkTitle" class="edit-bookmark-input" placeholder="输入名称...">
+                    </div>
+                    <div class="edit-bookmark-field" id="editBookmarkUrlField">
+                        <label for="editBookmarkUrl" id="editBookmarkUrlLabel">地址</label>
+                        <input type="text" id="editBookmarkUrl" class="edit-bookmark-input" placeholder="https://...">
+                    </div>
+                </div>
+                <div class="edit-bookmark-actions">
+                    <button id="editBookmarkCancelBtn" class="modal-btn">取消</button>
+                    <button id="editBookmarkSaveBtn" class="modal-btn primary">保存</button>
+                </div>
+            </div>
+        </div>
+    </div>
 </body>
 </html>

@@ -6211,10 +6211,7 @@ function setupPermanentDropTarget() {
             if (typeof deselectAll === 'function') {
                 deselectAll();
             }
-            // 刷新永久书签树
-            if (typeof refreshBookmarkTree === 'function') {
-                await refreshBookmarkTree();
-            }
+            // 不调用 refreshBookmarkTree()，让 onCreated 事件触发增量更新
         } catch (error) {
             console.error('[Canvas] 添加到书签失败:', error);
             alert('添加到书签失败: ' + (error && error.message ? error.message : error));

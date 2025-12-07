@@ -2365,7 +2365,8 @@ a.tree-label.tree-bookmark-link:hover {
 }
 
 .changes-tree-preview-inline .changes-preview-readonly .permanent-section-body {
-    max-height: 350px;
+    max-height: 60vh;
+    min-height: 300px;
     border: none !important;
     background: transparent !important;
     padding: 0 !important;
@@ -2782,9 +2783,36 @@ a.tree-label.tree-bookmark-link:hover {
 }
 
 .diff-title {
-    flex: 1;
     color: var(--text-primary);
     font-size: 14px;
+}
+
+.diff-header-spacer {
+    flex: 1;
+}
+
+.diff-edit-btn {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 6px 12px;
+    background: var(--accent-primary);
+    color: #ffffff;
+    border: none;
+    border-radius: 6px;
+    font-size: 12px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+
+.diff-edit-btn:hover {
+    background: var(--accent-hover);
+    transform: translateY(-1px);
+}
+
+.diff-edit-btn i {
+    font-size: 12px;
 }
 
 .diff-stats {

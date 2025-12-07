@@ -8998,6 +8998,11 @@ async function renderCurrentChangesView(forceRefresh = false) {
             html += '<span class="diff-icon">📊</span>';
             html += `<span class="diff-title">${currentLang === 'zh_CN' ? '书签变化统计' : 'Bookmark Changes'}</span>`;
             html += `<span class="diff-stats">${summary.quantityTotalLine}</span>`;
+            html += '<span class="diff-header-spacer"></span>';
+            html += `<button class="diff-edit-btn" id="jumpToCanvasBtn" title="${currentLang === 'zh_CN' ? '在画布中编辑' : 'Edit in Canvas'}">`;
+            html += '<i class="fas fa-edit"></i>';
+            html += `<span>${currentLang === 'zh_CN' ? '编辑' : 'Edit'}</span>`;
+            html += '</button>';
             html += '</div>';
 
             // diff 主体
@@ -9231,6 +9236,14 @@ async function renderCurrentChangesView(forceRefresh = false) {
                                     ? (currentLang === 'zh_CN' ? '展开详细 Diff 代码' : 'Expand Detailed Diff')
                                     : (currentLang === 'zh_CN' ? '收起详细 Diff 代码' : 'Collapse Detailed Diff');
                             }
+                        });
+                    }
+                    
+                    // 添加跳转到Canvas编辑按钮事件
+                    const jumpToCanvasBtn = document.getElementById('jumpToCanvasBtn');
+                    if (jumpToCanvasBtn) {
+                        jumpToCanvasBtn.addEventListener('click', () => {
+                            document.querySelector('[data-view="canvas"]')?.click();
                         });
                     }
                 }, 0);

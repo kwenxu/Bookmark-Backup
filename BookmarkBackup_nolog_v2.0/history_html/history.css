@@ -2338,6 +2338,83 @@ a.tree-label.tree-bookmark-link:hover {
     gap: 24px;
 }
 
+/* ==================== 书签树映射预览（内嵌到Bookmark Changes下方） ==================== */
+.changes-tree-preview-inline {
+    margin-top: 16px;
+    padding-top: 16px;
+    border-top: 1px dashed var(--border-color);
+}
+
+/* 克隆的永久栏目 - 重置定位，去掉标题和边框，内嵌融入 */
+.changes-tree-preview-inline .changes-preview-readonly {
+    position: relative !important;
+    top: auto !important;
+    left: auto !important;
+    transform: none !important;
+    width: 100% !important;
+    height: auto !important;
+    border: none !important;
+    box-shadow: none !important;
+    background: transparent !important;
+    margin: 0 !important;
+    z-index: auto !important;
+}
+
+.changes-tree-preview-inline .changes-preview-readonly .permanent-section-header {
+    display: none !important;
+}
+
+.changes-tree-preview-inline .changes-preview-readonly .permanent-section-body {
+    max-height: 350px;
+    border: none !important;
+    background: transparent !important;
+    padding: 0 !important;
+}
+
+/* Git Diff 折叠样式 */
+.git-diff-viewer.collapsed-default .diff-folder-group {
+    /* 默认折叠 */
+}
+
+.git-diff-section-toggle {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    padding: 12px;
+    background: var(--bg-secondary);
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    cursor: pointer;
+    font-size: 14px;
+    color: var(--text-secondary);
+    transition: all 0.2s ease;
+    margin-top: 16px;
+}
+
+.git-diff-section-toggle:hover {
+    background: var(--bg-tertiary);
+    color: var(--text-primary);
+}
+
+.git-diff-section-toggle i {
+    transition: transform 0.3s ease;
+}
+
+.git-diff-section-toggle.expanded i {
+    transform: rotate(180deg);
+}
+
+.git-diff-collapsible {
+    max-height: 0;
+    overflow: hidden;
+    transition: max-height 0.3s ease;
+}
+
+.git-diff-collapsible.expanded {
+    max-height: none;
+}
+
 .change-category {
     background: var(--bg-elevated);
     border: 1px solid var(--border-color);

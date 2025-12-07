@@ -1307,6 +1307,30 @@ const i18n = {
         'zh_CN': '当前没有未备份的书签变化',
         'en': 'No unbacked bookmark changes'
     },
+    changesTreeTitle: {
+        'zh_CN': '书签结构预览',
+        'en': 'Bookmark Structure Preview'
+    },
+    changesTreeEdit: {
+        'zh_CN': '编辑',
+        'en': 'Edit'
+    },
+    legendAdded: {
+        'zh_CN': '新增',
+        'en': 'Added'
+    },
+    legendDeleted: {
+        'zh_CN': '删除',
+        'en': 'Deleted'
+    },
+    legendMoved: {
+        'zh_CN': '移动',
+        'en': 'Moved'
+    },
+    legendModified: {
+        'zh_CN': '修改',
+        'en': 'Modified'
+    },
     emptyHistory: {
         'zh_CN': '暂无备份记录',
         'en': 'No backup records'
@@ -2413,6 +2437,20 @@ function applyLanguage() {
     
     document.getElementById('currentChangesViewTitle').textContent = i18n.currentChangesViewTitle[currentLang];
     document.getElementById('historyViewTitle').textContent = i18n.historyViewTitle[currentLang];
+    
+    // 书签树映射预览翻译
+    const changesTreeTitleText = document.getElementById('changesTreeTitleText');
+    if (changesTreeTitleText) changesTreeTitleText.textContent = i18n.changesTreeTitle[currentLang];
+    const changesTreeEditText = document.getElementById('changesTreeEditText');
+    if (changesTreeEditText) changesTreeEditText.textContent = i18n.changesTreeEdit[currentLang];
+    const legendAddedText = document.getElementById('legendAddedText');
+    if (legendAddedText) legendAddedText.textContent = i18n.legendAdded[currentLang];
+    const legendDeletedText = document.getElementById('legendDeletedText');
+    if (legendDeletedText) legendDeletedText.textContent = i18n.legendDeleted[currentLang];
+    const legendMovedText = document.getElementById('legendMovedText');
+    if (legendMovedText) legendMovedText.textContent = i18n.legendMoved[currentLang];
+    const legendModifiedText = document.getElementById('legendModifiedText');
+    if (legendModifiedText) legendModifiedText.textContent = i18n.legendModified[currentLang];
     document.getElementById('additionsViewTitle').textContent = i18n.additionsViewTitle[currentLang];
     // Canvas 视图标题
     const canvasViewTitle = document.getElementById('canvasViewTitle');
@@ -3111,6 +3149,9 @@ function initializeUI() {
         revertAllCurrentBtn.addEventListener('click', () => handleRevertAll('current'));
     }
     // Canvas 相关事件监听在 Canvas 模块中处理
+    
+    // 初始化书签树映射预览的交互
+    initChangesTreePreview();
 
     // 搜索
     document.getElementById('searchInput').addEventListener('input', handleSearch);
@@ -8689,6 +8730,183 @@ function formatActiveTime(ms) {
 // 当前变化视图
 // =============================================================================
 
+// 渲染书签树映射预览（完全克隆永久栏目）
+async function renderChangesTreePreview(changeData) {
+    const targetContainer = document.getElementById('changesTreePreviewInline');
+    if (!targetContainer) return;
+    
+    try {
+        console.log('[书签树映射预览] 开始...');
+        
+        // 1. 确保永久栏目存在（如果不存在就创建）
+        let permanentSection = document.getElementById('permanentSection');
+        if (!permanentSection) {
+            console.log('[书签树映射预览] 创建永久栏目...');
+            const canvasContent = document.getElementById('canvasContent');
+            const template = document.getElementById('permanentSectionTemplate');
+            if (template && canvasContent) {
+                const clone = template.content.cloneNode(true);
+                canvasContent.appendChild(clone);
+                permanentSection = document.getElementById('permanentSection');
+                // 应用语言
+                setTimeout(() => applyLanguage(), 0);
+            }
+        }
+        
+        // 2. 确保书签树已渲染
+        const bookmarkTree = document.getElementById('bookmarkTree');
+        if (!bookmarkTree || bookmarkTree.children.length === 0) {
+            console.log('[书签树映射预览] 渲染书签树...');
+            await renderTreeView(true);
+            // 等待渲染完成
+            await new Promise(resolve => setTimeout(resolve, 100));
+        }
+        
+        // 3. 再次获取永久栏目（确保已渲染）
+        permanentSection = document.getElementById('permanentSection');
+        const bookmarkTreeEl = document.getElementById('bookmarkTree');
+        
+        if (!permanentSection || !bookmarkTreeEl || bookmarkTreeEl.children.length === 0) {
+            console.error('[书签树映射预览] 永久栏目或书签树不存在');
+            targetContainer.innerHTML = `<div class="empty-state-small">${currentLang === 'zh_CN' ? '加载中...' : 'Loading...'}</div>`;
+            return;
+        }
+        
+        // 4. 克隆整个永久栏目
+        console.log('[书签树映射预览] 克隆永久栏目...');
+        const clonedSection = permanentSection.cloneNode(true);
+        
+        // 修改ID避免冲突
+        clonedSection.id = 'changesPreviewPermanentSection';
+        clonedSection.querySelectorAll('[id]').forEach(el => {
+            el.id = 'preview_' + el.id;
+        });
+        
+        // 添加只读类
+        clonedSection.classList.add('changes-preview-readonly');
+        
+        // 隐藏标题栏（header）
+        const header = clonedSection.querySelector('.permanent-section-header');
+        if (header) {
+            header.style.display = 'none';
+        }
+        
+        // 禁用拖拽
+        clonedSection.querySelectorAll('[draggable="true"]').forEach(el => {
+            el.setAttribute('draggable', 'false');
+        });
+        
+        // 标记所有tree-item为只读
+        clonedSection.querySelectorAll('.tree-item').forEach(el => {
+            el.dataset.readonly = 'true';
+        });
+        
+        // 5. 替换目标容器
+        targetContainer.innerHTML = '';
+        targetContainer.appendChild(clonedSection);
+        
+        // 6. 重新绑定只读的展开/折叠事件
+        const treeContainer = clonedSection.querySelector('.bookmark-tree');
+        if (treeContainer) {
+            // 移除原有事件（通过克隆）
+            const items = treeContainer.querySelectorAll('.tree-item');
+            items.forEach(item => {
+                const newItem = item.cloneNode(true);
+                item.parentNode.replaceChild(newItem, item);
+            });
+            
+            // 绑定新的只读事件
+            treeContainer.addEventListener('click', (e) => {
+                // 阻止右键菜单
+                if (e.button === 2) {
+                    e.preventDefault();
+                    return;
+                }
+                
+                const treeItem = e.target.closest('.tree-item');
+                if (!treeItem) return;
+                
+                // 允许链接点击
+                if (e.target.closest('a')) return;
+                
+                // 展开/折叠
+                const treeNode = treeItem.closest('.tree-node');
+                const children = treeNode?.querySelector('.tree-children');
+                const toggle = treeItem.querySelector('.tree-toggle:not(.placeholder)');
+                
+                if (children && toggle) {
+                    toggle.classList.toggle('expanded');
+                    children.classList.toggle('expanded');
+                    
+                    // 更新文件夹图标
+                    const folderIcon = treeItem.querySelector('.folder-icon');
+                    if (folderIcon) {
+                        if (children.classList.contains('expanded')) {
+                            folderIcon.classList.remove('fa-folder');
+                            folderIcon.classList.add('fa-folder-open');
+                        } else {
+                            folderIcon.classList.remove('fa-folder-open');
+                            folderIcon.classList.add('fa-folder');
+                        }
+                    }
+                }
+            });
+            
+            // 禁用右键菜单
+            treeContainer.addEventListener('contextmenu', (e) => {
+                e.preventDefault();
+            });
+        }
+        
+        console.log('[书签树映射预览] 完成');
+        
+    } catch (error) {
+        console.error('[书签树映射预览] 失败:', error);
+        targetContainer.innerHTML = '';
+    }
+}
+
+
+
+// 初始化书签树映射预览的交互
+function initChangesTreePreview() {
+    const previewSection = document.getElementById('changesTreePreview');
+    const toggleBtn = document.getElementById('changesTreeToggleBtn');
+    const editBtn = document.getElementById('changesTreeEditBtn');
+    const header = document.querySelector('.changes-tree-header');
+    
+    if (!previewSection) return;
+    
+    // 折叠/展开功能
+    if (toggleBtn) {
+        toggleBtn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            previewSection.classList.toggle('collapsed');
+        });
+    }
+    
+    // 点击头部也可以折叠/展开
+    if (header) {
+        header.addEventListener('click', (e) => {
+            if (e.target.closest('.changes-tree-action-btn')) return;
+            previewSection.classList.toggle('collapsed');
+        });
+    }
+    
+    // 编辑按钮 - 跳转到Canvas视图
+    if (editBtn) {
+        editBtn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            switchView('canvas');
+            setTimeout(() => {
+                if (window.CanvasModule && window.CanvasModule.locatePermanent) {
+                    window.CanvasModule.locatePermanent();
+                }
+            }, 200);
+        });
+    }
+}
+
 // 带重试机制的渲染函数
 async function renderCurrentChangesViewWithRetry(maxRetries = 3, forceRefresh = false) {
     for (let attempt = 1; attempt <= maxRetries; attempt++) {
@@ -8843,6 +9061,9 @@ async function renderCurrentChangesView(forceRefresh = false) {
                 html += `<span class="diff-content">${currentLang === 'zh_CN' ? '无变化' : 'No changes'}</span>`;
                 html += '</div>';
             }
+            
+            // 书签树预览（放在变化统计下方）
+            html += '<div id="changesTreePreviewInline" class="changes-tree-preview-inline"></div>';
 
             html += '</div>'; // 结束 diff-body
             html += '</div>'; // 结束 git-diff-container
@@ -8872,7 +9093,14 @@ async function renderCurrentChangesView(forceRefresh = false) {
                         </div>
                     `;
                 } else if (groupedHunks.length > 0) {
-                    // 渲染 Git diff（带折叠）
+                    // 添加折叠/展开按钮（默认折叠）
+                    diffHtml += `<div class="git-diff-section-toggle" id="diffSectionToggle">`;
+                    diffHtml += `<i class="fas fa-chevron-down"></i>`;
+                    diffHtml += `<span>${currentLang === 'zh_CN' ? '展开详细 Diff 代码' : 'Expand Detailed Diff'}</span>`;
+                    diffHtml += `</div>`;
+                    
+                    // 渲染 Git diff（默认折叠）
+                    diffHtml += '<div class="git-diff-collapsible" id="diffCollapsible">';
                     diffHtml += '<div class="git-diff-viewer">';
                     diffHtml += '<div class="diff-file-header">';
                     diffHtml += '<span class="diff-file-path">diff --git a/bookmarks.html b/bookmarks.html</span>';
@@ -8970,9 +9198,13 @@ async function renderCurrentChangesView(forceRefresh = false) {
                     });
 
                     diffHtml += '</div>'; // 结束 git-diff-viewer
+                    diffHtml += '</div>'; // 结束 git-diff-collapsible
                 }
 
                 container.innerHTML = html + diffHtml;
+                
+                // 渲染书签树映射预览（内嵌到Bookmark Changes内部）
+                await renderChangesTreePreview(changeData);
 
                 // 添加 hunk 折叠按钮事件监听器
                 setTimeout(() => {
@@ -8984,6 +9216,23 @@ async function renderCurrentChangesView(forceRefresh = false) {
                             });
                         }
                     });
+                    
+                    // 添加 Diff 区域折叠/展开功能
+                    const diffToggle = document.getElementById('diffSectionToggle');
+                    const diffCollapsible = document.getElementById('diffCollapsible');
+                    if (diffToggle && diffCollapsible) {
+                        diffToggle.addEventListener('click', () => {
+                            const isExpanded = diffCollapsible.classList.contains('expanded');
+                            diffCollapsible.classList.toggle('expanded');
+                            diffToggle.classList.toggle('expanded');
+                            const span = diffToggle.querySelector('span');
+                            if (span) {
+                                span.textContent = isExpanded 
+                                    ? (currentLang === 'zh_CN' ? '展开详细 Diff 代码' : 'Expand Detailed Diff')
+                                    : (currentLang === 'zh_CN' ? '收起详细 Diff 代码' : 'Collapse Detailed Diff');
+                            }
+                        });
+                    }
                 }, 0);
             });
         });

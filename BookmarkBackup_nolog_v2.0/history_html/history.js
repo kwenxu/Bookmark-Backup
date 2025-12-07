@@ -8738,12 +8738,13 @@ function highlightTreeNodesByChangeType(changeType) {
     const previewContainer = document.getElementById('changesTreePreviewInline');
     if (!previewContainer) return;
     
-    // 移除之前的所有高亮
-    previewContainer.querySelectorAll('.tree-node').forEach(node => {
-        node.classList.remove('highlight-added', 'highlight-deleted', 'highlight-modified', 'highlight-moved');
+    // 移除之前的所有高亮（在 .tree-item 上操作）
+    previewContainer.querySelectorAll('.tree-item').forEach(item => {
+        item.classList.remove('highlight-added', 'highlight-deleted', 'highlight-modified', 'highlight-moved');
     });
     
     // 根据变化类型找到对应的节点（通过tree-change-*类或change-badge类）
+    // 注意：tree-change-mixed 类表示同时有 modified 和 moved，需要在两种情况下都选中
     let selector;
     switch (changeType) {
         case 'added':
@@ -8753,10 +8754,12 @@ function highlightTreeNodesByChangeType(changeType) {
             selector = '.tree-item.tree-change-deleted, .change-badge.deleted';
             break;
         case 'modified':
-            selector = '.tree-item.tree-change-modified, .change-badge.modified';
+            // modified 也选择 mixed 类（mixed = modified + moved）
+            selector = '.tree-item.tree-change-modified, .tree-item.tree-change-mixed, .change-badge.modified';
             break;
         case 'moved':
-            selector = '.tree-item.tree-change-moved, .change-badge.moved';
+            // moved 也选择 mixed 类（mixed = modified + moved）
+            selector = '.tree-item.tree-change-moved, .tree-item.tree-change-mixed, .change-badge.moved';
             break;
         default:
             return;
@@ -8860,14 +8863,12 @@ async function renderChangesTreePreview(changeData) {
             }
         }
         
-        // 2. 确保书签树已渲染
-        const bookmarkTree = document.getElementById('bookmarkTree');
-        if (!bookmarkTree || bookmarkTree.children.length === 0) {
-            console.log('[书签树映射预览] 渲染书签树...');
-            await renderTreeView(true);
-            // 等待渲染完成
-            await new Promise(resolve => setTimeout(resolve, 100));
-        }
+        // 2. 强制刷新书签树以确保 treeChangeMap 是最新的
+        // 无论书签树是否存在，都需要刷新以获取最新的变化标记
+        console.log('[书签树映射预览] 渲染书签树（强制刷新）...');
+        await renderTreeView(true);
+        // 等待渲染完成
+        await new Promise(resolve => setTimeout(resolve, 100));
         
         // 3. 再次获取永久栏目（确保已渲染）
         permanentSection = document.getElementById('permanentSection');
@@ -12525,19 +12526,28 @@ async function renderTreeView(forceRefresh = false) {
             console.log('[renderTreeView] 无上次备份数据，不显示变化标记');
         }
 
-        // 【测试】暂时禁用树重建，直接使用当前树
         // 合并旧树和新树，显示删除的节点
         let treeToRender = currentTree;
-        // if (oldTree && oldTree[0] && treeChangeMap && treeChangeMap.size > 0) {
-        //     console.log('[renderTreeView] 合并旧树和新树以显示删除的节点');
-        //     try {
-        //         treeToRender = rebuildTreeWithDeleted(oldTree, currentTree, treeChangeMap);
-        //     } catch (error) {
-        //         console.error('[renderTreeView] 重建树时出错:', error);
-        //         treeToRender = currentTree; // 回退到原始树
-        //     }
-        // }
-        console.log('[renderTreeView] 【测试】直接使用currentTree，跳过rebuildTreeWithDeleted');
+        if (oldTree && oldTree[0] && treeChangeMap && treeChangeMap.size > 0) {
+            // 检查是否有删除的节点，只有在有删除节点时才重建树
+            let hasDeletedNodes = false;
+            for (const [, change] of treeChangeMap) {
+                if (change.type === 'deleted') {
+                    hasDeletedNodes = true;
+                    break;
+                }
+            }
+            if (hasDeletedNodes) {
+                console.log('[renderTreeView] 检测到删除节点，合并旧树和新树');
+                try {
+                    treeToRender = rebuildTreeWithDeleted(oldTree, currentTree, treeChangeMap);
+                } catch (error) {
+                    console.error('[renderTreeView] 重建树时出错:', error);
+                    treeToRender = currentTree; // 回退到原始树
+                }
+            }
+        }
+        console.log('[renderTreeView] 使用树:', treeToRender === currentTree ? 'currentTree' : 'rebuiltTree');
 
         // 使用 DocumentFragment 优化渲染
         const fragment = document.createDocumentFragment();

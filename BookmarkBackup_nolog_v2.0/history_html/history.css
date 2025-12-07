@@ -36,10 +36,10 @@
     --git-added-bg: #e6ffed;
     --git-deleted: #cb2431;
     --git-deleted-bg: #ffeef0;
-    --git-modified: #6f42c1;
-    --git-modified-bg: #f5f0ff;
-    --git-moved: #0366d6;
-    --git-moved-bg: #e6f3ff;
+    --git-modified: #f97316;
+    --git-modified-bg: #fff7ed;
+    --git-moved: #3b82f6;
+    --git-moved-bg: #eff6ff;
 }
 
 [data-theme="dark"] {
@@ -77,10 +77,10 @@
     --git-added-bg: #1b3a1b;
     --git-deleted: #f85149;
     --git-deleted-bg: #3d1f1f;
-    --git-modified: #a371f7;
-    --git-modified-bg: #2d1f3d;
-    --git-moved: #58a6ff;
-    --git-moved-bg: #1a3a5f;
+    --git-modified: #fb923c;
+    --git-modified-bg: #431407;
+    --git-moved: #60a5fa;
+    --git-moved-bg: #172554;
 }
 
 /* ==================== 基础样式 ==================== */
@@ -2924,32 +2924,32 @@ a.tree-label.tree-bookmark-link:hover {
     color: #bd2130;
 }
 
-/* 修改状态（黄色） */
+/* 修改状态（橙色） */
 .diff-line.modified {
-    background-color: rgba(255, 193, 7, 0.1);
-    border-left-color: #ffc107;
+    background-color: var(--git-modified-bg);
+    border-left-color: var(--git-modified);
 }
 
 .diff-line.modified .diff-prefix {
-    color: #ff9800;
+    color: var(--git-modified);
 }
 
 .diff-line.modified .diff-content {
-    color: #e68a00;
+    color: var(--git-modified);
 }
 
-/* 移动状态（紫色） */
+/* 移动状态（蓝色） */
 .diff-line.moved {
-    background-color: rgba(111, 66, 193, 0.1);
-    border-left-color: #6f42c1;
+    background-color: var(--git-moved-bg);
+    border-left-color: var(--git-moved);
 }
 
 .diff-line.moved .diff-prefix {
-    color: #6f42c1;
+    color: var(--git-moved);
 }
 
 .diff-line.moved .diff-content {
-    color: #5a32a3;
+    color: var(--git-moved);
 }
 
 /* 无变化状态（灰色） */
@@ -2985,19 +2985,19 @@ a.tree-label.tree-bookmark-link:hover {
 }
 
 [data-theme="dark"] .diff-line.modified {
-    background-color: rgba(255, 193, 7, 0.15);
+    background-color: var(--git-modified-bg);
 }
 
 [data-theme="dark"] .diff-line.modified .diff-content {
-    color: #ffb74d;
+    color: var(--git-modified);
 }
 
 [data-theme="dark"] .diff-line.moved {
-    background-color: rgba(111, 66, 193, 0.15);
+    background-color: var(--git-moved-bg);
 }
 
 [data-theme="dark"] .diff-line.moved .diff-content {
-    color: #9575cd;
+    color: var(--git-moved);
 }
 
 /* ==================== Git Diff Viewer（真正的 diff 格式） ==================== */

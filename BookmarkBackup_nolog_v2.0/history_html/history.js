@@ -8730,6 +8730,35 @@ function formatActiveTime(ms) {
 // 当前变化视图
 // =============================================================================
 
+// 书签树预览展开状态持久化（独立于书签画布）
+const CHANGES_PREVIEW_EXPANDED_KEY = 'changesPreviewExpandedNodes';
+
+function getChangesPreviewExpandedState() {
+    try {
+        const saved = localStorage.getItem(CHANGES_PREVIEW_EXPANDED_KEY);
+        return saved ? JSON.parse(saved) : [];
+    } catch (e) {
+        return [];
+    }
+}
+
+function saveChangesPreviewExpandedState(nodeId, isExpanded) {
+    try {
+        const expandedIds = getChangesPreviewExpandedState();
+        const index = expandedIds.indexOf(nodeId);
+        
+        if (isExpanded && index === -1) {
+            expandedIds.push(nodeId);
+        } else if (!isExpanded && index !== -1) {
+            expandedIds.splice(index, 1);
+        }
+        
+        localStorage.setItem(CHANGES_PREVIEW_EXPANDED_KEY, JSON.stringify(expandedIds));
+    } catch (e) {
+        console.warn('[书签树预览] 保存展开状态失败:', e);
+    }
+}
+
 // 渲染书签树映射预览（完全克隆永久栏目）
 async function renderChangesTreePreview(changeData) {
     const targetContainer = document.getElementById('changesTreePreviewInline');
@@ -8791,6 +8820,12 @@ async function renderChangesTreePreview(changeData) {
             header.style.display = 'none';
         }
         
+        // 隐藏书签树里的图例（已在标题栏显示）
+        const treeLegend = clonedSection.querySelector('.tree-legend');
+        if (treeLegend) {
+            treeLegend.style.display = 'none';
+        }
+        
         // 禁用拖拽
         clonedSection.querySelectorAll('[draggable="true"]').forEach(el => {
             el.setAttribute('draggable', 'false');
@@ -8815,6 +8850,23 @@ async function renderChangesTreePreview(changeData) {
                 item.parentNode.replaceChild(newItem, item);
             });
             
+            // 恢复展开状态（独立存储，不同步到书签画布）
+            const expandedIds = getChangesPreviewExpandedState();
+            expandedIds.forEach(nodeId => {
+                const treeNode = treeContainer.querySelector(`.tree-node[data-node-id="${nodeId}"]`);
+                if (treeNode) {
+                    const children = treeNode.querySelector('.tree-children');
+                    const toggle = treeNode.querySelector('.tree-toggle');
+                    const folderIcon = treeNode.querySelector('.folder-icon');
+                    if (children) children.classList.add('expanded');
+                    if (toggle) toggle.classList.add('expanded');
+                    if (folderIcon) {
+                        folderIcon.classList.remove('fa-folder');
+                        folderIcon.classList.add('fa-folder-open');
+                    }
+                }
+            });
+            
             // 绑定新的只读事件
             treeContainer.addEventListener('click', (e) => {
                 // 阻止右键菜单
@@ -8833,21 +8885,28 @@ async function renderChangesTreePreview(changeData) {
                 const treeNode = treeItem.closest('.tree-node');
                 const children = treeNode?.querySelector('.tree-children');
                 const toggle = treeItem.querySelector('.tree-toggle:not(.placeholder)');
+                const nodeId = treeNode?.dataset.nodeId;
                 
                 if (children && toggle) {
+                    const isExpanding = !children.classList.contains('expanded');
                     toggle.classList.toggle('expanded');
                     children.classList.toggle('expanded');
                     
                     // 更新文件夹图标
                     const folderIcon = treeItem.querySelector('.folder-icon');
                     if (folderIcon) {
-                        if (children.classList.contains('expanded')) {
+                        if (isExpanding) {
                             folderIcon.classList.remove('fa-folder');
                             folderIcon.classList.add('fa-folder-open');
                         } else {
                             folderIcon.classList.remove('fa-folder-open');
                             folderIcon.classList.add('fa-folder');
                         }
+                    }
+                    
+                    // 保存展开状态（独立存储）
+                    if (nodeId) {
+                        saveChangesPreviewExpandedState(nodeId, isExpanding);
                     }
                 }
             });
@@ -8997,7 +9056,13 @@ async function renderCurrentChangesView(forceRefresh = false) {
             html += '<div class="diff-header">';
             html += '<span class="diff-icon">📊</span>';
             html += `<span class="diff-title">${currentLang === 'zh_CN' ? '书签变化统计' : 'Bookmark Changes'}</span>`;
-            html += `<span class="diff-stats">${summary.quantityTotalLine}</span>`;
+            // 图例放在标题右边
+            html += '<span class="diff-header-legend">';
+            html += `<span class="legend-item"><span class="legend-dot added"></span>${currentLang === 'zh_CN' ? '新增' : 'Added'}</span>`;
+            html += `<span class="legend-item"><span class="legend-dot deleted"></span>${currentLang === 'zh_CN' ? '删除' : 'Deleted'}</span>`;
+            html += `<span class="legend-item"><span class="legend-dot modified"></span>${currentLang === 'zh_CN' ? '修改' : 'Modified'}</span>`;
+            html += `<span class="legend-item"><span class="legend-dot moved"></span>${currentLang === 'zh_CN' ? '移动' : 'Moved'}</span>`;
+            html += '</span>';
             html += '<span class="diff-header-spacer"></span>';
             html += `<button class="diff-edit-btn" id="jumpToCanvasBtn" title="${currentLang === 'zh_CN' ? '在画布中编辑' : 'Edit in Canvas'}">`;
             html += '<i class="fas fa-edit"></i>';

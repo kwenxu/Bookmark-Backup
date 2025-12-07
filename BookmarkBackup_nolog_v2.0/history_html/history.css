@@ -2787,6 +2787,46 @@ a.tree-label.tree-bookmark-link:hover {
     font-size: 14px;
 }
 
+.diff-header-legend {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin-left: 16px;
+    padding-left: 16px;
+    border-left: 1px solid var(--border-color);
+}
+
+.diff-header-legend .legend-item {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    font-size: 11px;
+    font-weight: normal;
+    color: var(--text-secondary);
+}
+
+.diff-header-legend .legend-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+}
+
+.diff-header-legend .legend-dot.added {
+    background: var(--git-added);
+}
+
+.diff-header-legend .legend-dot.deleted {
+    background: var(--git-deleted);
+}
+
+.diff-header-legend .legend-dot.modified {
+    background: var(--git-modified);
+}
+
+.diff-header-legend .legend-dot.moved {
+    background: var(--git-moved);
+}
+
 .diff-header-spacer {
     flex: 1;
 }

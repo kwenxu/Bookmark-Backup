@@ -9152,32 +9152,35 @@ async function renderCurrentChangesView(forceRefresh = false) {
             // diff 主体
             html += '<div class="diff-body">';
 
-            // 数量变化部分
+            // 数量变化部分 - 书签和文件夹合并显示
             if (hasQuantityChange) {
                 const bookmarkDiff = diffMeta.bookmarkDiff || 0;
                 const folderDiff = diffMeta.folderDiff || 0;
+                const isZh = currentLang === 'zh_CN';
 
-                if (bookmarkDiff > 0) {
+                // 收集增加的项目
+                const addedParts = [];
+                if (bookmarkDiff > 0) addedParts.push(`${bookmarkDiff} ${isZh ? '个书签' : 'bookmarks'}`);
+                if (folderDiff > 0) addedParts.push(`${folderDiff} ${isZh ? '个文件夹' : 'folders'}`);
+
+                // 收集减少的项目
+                const deletedParts = [];
+                if (bookmarkDiff < 0) deletedParts.push(`${Math.abs(bookmarkDiff)} ${isZh ? '个书签' : 'bookmarks'}`);
+                if (folderDiff < 0) deletedParts.push(`${Math.abs(folderDiff)} ${isZh ? '个文件夹' : 'folders'}`);
+
+                // 显示增加行
+                if (addedParts.length > 0) {
                     html += '<div class="diff-line added clickable" data-change-type="added">';
                     html += '<span class="diff-prefix">+</span>';
-                    html += `<span class="diff-content">${bookmarkDiff} ${currentLang === 'zh_CN' ? '个书签' : 'bookmarks'}</span>`;
-                    html += '</div>';
-                } else if (bookmarkDiff < 0) {
-                    html += '<div class="diff-line deleted clickable" data-change-type="deleted">';
-                    html += '<span class="diff-prefix">-</span>';
-                    html += `<span class="diff-content">${Math.abs(bookmarkDiff)} ${currentLang === 'zh_CN' ? '个书签' : 'bookmarks'}</span>`;
+                    html += `<span class="diff-content">${addedParts.join(isZh ? '，' : ', ')}</span>`;
                     html += '</div>';
                 }
 
-                if (folderDiff > 0) {
-                    html += '<div class="diff-line added clickable" data-change-type="added">';
-                    html += '<span class="diff-prefix">+</span>';
-                    html += `<span class="diff-content">${folderDiff} ${currentLang === 'zh_CN' ? '个文件夹' : 'folders'}</span>`;
-                    html += '</div>';
-                } else if (folderDiff < 0) {
+                // 显示减少行
+                if (deletedParts.length > 0) {
                     html += '<div class="diff-line deleted clickable" data-change-type="deleted">';
                     html += '<span class="diff-prefix">-</span>';
-                    html += `<span class="diff-content">${Math.abs(folderDiff)} ${currentLang === 'zh_CN' ? '个文件夹' : 'folders'}</span>`;
+                    html += `<span class="diff-content">${deletedParts.join(isZh ? '，' : ', ')}</span>`;
                     html += '</div>';
                 }
             }

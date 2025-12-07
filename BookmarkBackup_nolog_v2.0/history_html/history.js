@@ -9109,10 +9109,10 @@ async function renderCurrentChangesView(forceRefresh = false) {
                     let diffClass = 'modified';
                     let prefix = '~';
 
-                    if (item.includes('moved') || item.includes('移动')) {
+                    if (item.includes('Moved') || item.includes('移动')) {
                         diffClass = 'moved';
                         prefix = '↔';
-                    } else if (item.includes('modified') || item.includes('修改')) {
+                    } else if (item.includes('Modified') || item.includes('修改')) {
                         diffClass = 'modified';
                         prefix = '~';
                     }

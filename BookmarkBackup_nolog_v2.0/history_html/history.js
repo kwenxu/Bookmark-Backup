@@ -8863,20 +8863,27 @@ async function renderChangesTreePreview(changeData) {
             }
         }
         
-        // 2. 强制刷新书签树以确保 treeChangeMap 是最新的
-        // 无论书签树是否存在，都需要刷新以获取最新的变化标记
-        console.log('[书签树映射预览] 渲染书签树（强制刷新）...');
-        await renderTreeView(true);
-        // 等待渲染完成
-        await new Promise(resolve => setTimeout(resolve, 100));
+        // 2. 检查书签树是否需要首次渲染
+        const bookmarkTreeEl = document.getElementById('bookmarkTree');
+        const needsFirstRender = !bookmarkTreeEl || bookmarkTreeEl.children.length === 0 || bookmarkTreeEl.querySelector('.loading');
+        
+        if (needsFirstRender) {
+            console.log('[书签树映射预览] 首次渲染书签树...');
+            // 直接渲染书签树（同步等待完成）
+            await renderTreeViewSync();
+        } else {
+            // 已有书签树，只需刷新 treeChangeMap
+            console.log('[书签树映射预览] 刷新变化标记...');
+            await renderTreeViewSync();
+        }
         
         // 3. 再次获取永久栏目（确保已渲染）
         permanentSection = document.getElementById('permanentSection');
-        const bookmarkTreeEl = document.getElementById('bookmarkTree');
+        const finalBookmarkTreeEl = document.getElementById('bookmarkTree');
         
-        if (!permanentSection || !bookmarkTreeEl || bookmarkTreeEl.children.length === 0) {
+        if (!permanentSection || !finalBookmarkTreeEl || finalBookmarkTreeEl.children.length === 0) {
             console.error('[书签树映射预览] 永久栏目或书签树不存在');
-            targetContainer.innerHTML = `<div class="empty-state-small">${currentLang === 'zh_CN' ? '加载中...' : 'Loading...'}</div>`;
+            targetContainer.innerHTML = `<div class="empty-state-small">${currentLang === 'zh_CN' ? '请切换到书签画布查看详情' : 'Switch to Canvas for details'}</div>`;
             return;
         }
         
@@ -12348,6 +12355,100 @@ function getOldAddressFromParentAndIndex(oldParentId, oldIndex) {
 // 防止并发渲染和闪烁的标志
 let isRenderingTree = false;
 let pendingRenderRequest = null;
+
+// 同步版本的树渲染（真正可 await，用于 Current Changes 预览）
+async function renderTreeViewSync() {
+    console.log('[renderTreeViewSync] 开始同步渲染...');
+    
+    const treeContainer = document.getElementById('bookmarkTree');
+    if (!treeContainer) {
+        console.error('[renderTreeViewSync] 容器元素未找到');
+        return;
+    }
+    
+    // 清除缓存，确保重新渲染
+    cachedTreeData = null;
+    lastTreeFingerprint = null;
+    
+    try {
+        // 并行获取数据
+        const [currentTree, storageData] = await Promise.all([
+            new Promise(resolve => browserAPI.bookmarks.getTree(resolve)),
+            new Promise(resolve => browserAPI.storage.local.get(['lastBookmarkData'], resolve))
+        ]);
+        
+        if (!currentTree || currentTree.length === 0) {
+            treeContainer.innerHTML = `<div class="empty-state"><div class="empty-state-icon"><i class="fas fa-sitemap"></i></div><div class="empty-state-title">${i18n.emptyTree[currentLang]}</div></div>`;
+            return;
+        }
+        
+        const oldTree = storageData.lastBookmarkData && storageData.lastBookmarkData.bookmarkTree;
+        cachedOldTree = oldTree;
+        cachedCurrentTree = currentTree;
+        
+        // 检测变动
+        if (oldTree && oldTree[0]) {
+            treeChangeMap = await detectTreeChangesFast(oldTree, currentTree);
+            console.log('[renderTreeViewSync] 检测到变动数量:', treeChangeMap.size);
+        } else {
+            treeChangeMap = new Map();
+        }
+        
+        // 合并旧树和新树，显示删除的节点
+        let treeToRender = currentTree;
+        if (oldTree && oldTree[0] && treeChangeMap && treeChangeMap.size > 0) {
+            let hasDeletedNodes = false;
+            for (const [, change] of treeChangeMap) {
+                if (change.type === 'deleted') {
+                    hasDeletedNodes = true;
+                    break;
+                }
+            }
+            if (hasDeletedNodes) {
+                try {
+                    treeToRender = rebuildTreeWithDeleted(oldTree, currentTree, treeChangeMap);
+                } catch (error) {
+                    console.error('[renderTreeViewSync] 重建树时出错:', error);
+                    treeToRender = currentTree;
+                }
+            }
+        }
+        
+        // 渲染树
+        const fragment = document.createDocumentFragment();
+        
+        if (treeChangeMap.size > 0) {
+            const legend = document.createElement('div');
+            legend.className = 'tree-legend';
+            legend.innerHTML = `
+                <span class="legend-item"><span class="legend-dot added"></span> ${currentLang === 'zh_CN' ? '新增' : 'Added'}</span>
+                <span class="legend-item"><span class="legend-dot deleted"></span> ${currentLang === 'zh_CN' ? '删除' : 'Deleted'}</span>
+                <span class="legend-item"><span class="legend-dot modified"></span> ${currentLang === 'zh_CN' ? '修改' : 'Modified'}</span>
+                <span class="legend-item"><span class="legend-dot moved"></span> ${currentLang === 'zh_CN' ? '移动' : 'Moved'}</span>
+            `;
+            fragment.appendChild(legend);
+        }
+        
+        const tempDiv = document.createElement('div');
+        tempDiv.innerHTML = renderTreeNodeWithChanges(treeToRender[0], 0);
+        while (tempDiv.firstChild) {
+            fragment.appendChild(tempDiv.firstChild);
+        }
+        
+        treeContainer.innerHTML = '';
+        treeContainer.appendChild(fragment);
+        treeContainer.style.display = 'block';
+        
+        // 绑定事件
+        attachTreeEvents(treeContainer);
+        
+        console.log('[renderTreeViewSync] 渲染完成');
+        
+    } catch (error) {
+        console.error('[renderTreeViewSync] 渲染失败:', error);
+        treeContainer.innerHTML = `<div class="error">${currentLang === 'zh_CN' ? '加载失败' : 'Failed to load'}</div>`;
+    }
+}
 
 async function renderTreeView(forceRefresh = false) {
     console.log('[renderTreeView] 开始渲染, forceRefresh:', forceRefresh);

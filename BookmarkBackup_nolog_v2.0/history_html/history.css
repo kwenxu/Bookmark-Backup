@@ -2372,6 +2372,56 @@ a.tree-label.tree-bookmark-link:hover {
     padding: 0 !important;
 }
 
+/* 点击diff行时高亮对应节点 */
+.diff-line.clickable {
+    cursor: pointer;
+}
+
+.diff-line.clickable:hover {
+    filter: brightness(0.92);
+}
+
+/* 高亮闪烁动画 */
+.tree-item.highlight-added {
+    animation: highlightPulseAdded 0.6s ease-in-out 2;
+    border-radius: 4px;
+}
+
+.tree-item.highlight-deleted {
+    animation: highlightPulseDeleted 0.6s ease-in-out 2;
+    border-radius: 4px;
+}
+
+.tree-item.highlight-modified {
+    animation: highlightPulseModified 0.6s ease-in-out 2;
+    border-radius: 4px;
+}
+
+.tree-item.highlight-moved {
+    animation: highlightPulseMoved 0.6s ease-in-out 2;
+    border-radius: 4px;
+}
+
+@keyframes highlightPulseAdded {
+    0%, 100% { box-shadow: none; }
+    50% { box-shadow: inset 0 0 0 2px var(--git-added), 0 0 8px var(--git-added); background: var(--git-added-bg); }
+}
+
+@keyframes highlightPulseDeleted {
+    0%, 100% { box-shadow: none; }
+    50% { box-shadow: inset 0 0 0 2px var(--git-deleted), 0 0 8px var(--git-deleted); background: var(--git-deleted-bg); }
+}
+
+@keyframes highlightPulseModified {
+    0%, 100% { box-shadow: none; }
+    50% { box-shadow: inset 0 0 0 2px var(--git-modified), 0 0 8px var(--git-modified); background: var(--git-modified-bg); }
+}
+
+@keyframes highlightPulseMoved {
+    0%, 100% { box-shadow: none; }
+    50% { box-shadow: inset 0 0 0 2px var(--git-moved), 0 0 8px var(--git-moved); background: var(--git-moved-bg); }
+}
+
 /* Git Diff 折叠样式 */
 .git-diff-viewer.collapsed-default .diff-folder-group {
     /* 默认折叠 */

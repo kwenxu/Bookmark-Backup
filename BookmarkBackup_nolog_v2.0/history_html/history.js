@@ -8733,6 +8733,84 @@ function formatActiveTime(ms) {
 // 书签树预览展开状态持久化（独立于书签画布）
 const CHANGES_PREVIEW_EXPANDED_KEY = 'changesPreviewExpandedNodes';
 
+// 点击diff行时高亮对应的书签树节点
+function highlightTreeNodesByChangeType(changeType) {
+    const previewContainer = document.getElementById('changesTreePreviewInline');
+    if (!previewContainer) return;
+    
+    // 移除之前的所有高亮
+    previewContainer.querySelectorAll('.tree-node').forEach(node => {
+        node.classList.remove('highlight-added', 'highlight-deleted', 'highlight-modified', 'highlight-moved');
+    });
+    
+    // 根据变化类型找到对应的节点（通过tree-change-*类或change-badge类）
+    let selector;
+    switch (changeType) {
+        case 'added':
+            selector = '.tree-item.tree-change-added, .change-badge.added';
+            break;
+        case 'deleted':
+            selector = '.tree-item.tree-change-deleted, .change-badge.deleted';
+            break;
+        case 'modified':
+            selector = '.tree-item.tree-change-modified, .change-badge.modified';
+            break;
+        case 'moved':
+            selector = '.tree-item.tree-change-moved, .change-badge.moved';
+            break;
+        default:
+            return;
+    }
+    
+    const matchedElements = previewContainer.querySelectorAll(selector);
+    const itemsToHighlight = new Set();
+    
+    matchedElements.forEach(el => {
+        // 找到tree-item元素
+        const treeItem = el.classList.contains('tree-item') ? el : el.closest('.tree-item');
+        if (treeItem) {
+            itemsToHighlight.add(treeItem);
+            
+            // 展开所有父节点
+            let parent = treeItem.parentElement;
+            while (parent && parent !== previewContainer) {
+                if (parent.classList.contains('tree-children')) {
+                    parent.classList.add('expanded');
+                }
+                const parentItem = parent.previousElementSibling;
+                if (parentItem && parentItem.classList.contains('tree-item')) {
+                    const toggle = parentItem.querySelector('.tree-toggle');
+                    const folderIcon = parentItem.querySelector('.fa-folder');
+                    if (toggle) toggle.classList.add('expanded');
+                    if (folderIcon) {
+                        folderIcon.classList.remove('fa-folder');
+                        folderIcon.classList.add('fa-folder-open');
+                    }
+                }
+                parent = parent.parentElement;
+            }
+        }
+    });
+    
+    // 添加高亮动画
+    itemsToHighlight.forEach(item => {
+        item.classList.add(`highlight-${changeType}`);
+    });
+    
+    // 滚动到第一个高亮的节点
+    if (itemsToHighlight.size > 0) {
+        const firstItem = Array.from(itemsToHighlight)[0];
+        firstItem.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    }
+    
+    // 动画结束后移除高亮类
+    setTimeout(() => {
+        itemsToHighlight.forEach(item => {
+            item.classList.remove(`highlight-${changeType}`);
+        });
+    }, 1200); // 0.6s * 2次 = 1.2s
+}
+
 function getChangesPreviewExpandedState() {
     try {
         const saved = localStorage.getItem(CHANGES_PREVIEW_EXPANDED_KEY);
@@ -9079,24 +9157,24 @@ async function renderCurrentChangesView(forceRefresh = false) {
                 const folderDiff = diffMeta.folderDiff || 0;
 
                 if (bookmarkDiff > 0) {
-                    html += '<div class="diff-line added">';
+                    html += '<div class="diff-line added clickable" data-change-type="added">';
                     html += '<span class="diff-prefix">+</span>';
                     html += `<span class="diff-content">${bookmarkDiff} ${currentLang === 'zh_CN' ? '个书签' : 'bookmarks'}</span>`;
                     html += '</div>';
                 } else if (bookmarkDiff < 0) {
-                    html += '<div class="diff-line deleted">';
+                    html += '<div class="diff-line deleted clickable" data-change-type="deleted">';
                     html += '<span class="diff-prefix">-</span>';
                     html += `<span class="diff-content">${Math.abs(bookmarkDiff)} ${currentLang === 'zh_CN' ? '个书签' : 'bookmarks'}</span>`;
                     html += '</div>';
                 }
 
                 if (folderDiff > 0) {
-                    html += '<div class="diff-line added">';
+                    html += '<div class="diff-line added clickable" data-change-type="added">';
                     html += '<span class="diff-prefix">+</span>';
                     html += `<span class="diff-content">${folderDiff} ${currentLang === 'zh_CN' ? '个文件夹' : 'folders'}</span>`;
                     html += '</div>';
                 } else if (folderDiff < 0) {
-                    html += '<div class="diff-line deleted">';
+                    html += '<div class="diff-line deleted clickable" data-change-type="deleted">';
                     html += '<span class="diff-prefix">-</span>';
                     html += `<span class="diff-content">${Math.abs(folderDiff)} ${currentLang === 'zh_CN' ? '个文件夹' : 'folders'}</span>`;
                     html += '</div>';
@@ -9117,7 +9195,7 @@ async function renderCurrentChangesView(forceRefresh = false) {
                         prefix = '~';
                     }
 
-                    html += `<div class="diff-line ${diffClass}">`;
+                    html += `<div class="diff-line ${diffClass} clickable" data-change-type="${diffClass}">`;
                     html += `<span class="diff-prefix">${prefix}</span>`;
                     html += `<span class="diff-content">${item}</span>`;
                     html += '</div>';
@@ -9311,6 +9389,14 @@ async function renderCurrentChangesView(forceRefresh = false) {
                             document.querySelector('[data-view="canvas"]')?.click();
                         });
                     }
+                    
+                    // 添加diff行点击高亮对应书签树节点的事件
+                    document.querySelectorAll('.diff-line.clickable').forEach(line => {
+                        line.addEventListener('click', () => {
+                            const changeType = line.dataset.changeType;
+                            highlightTreeNodesByChangeType(changeType);
+                        });
+                    });
                 }, 0);
             });
         });

@@ -9123,8 +9123,16 @@ async function renderCurrentChangesView(forceRefresh = false) {
             currentFolderCount: stats.currentFolderCount ?? stats.folderCount ?? 0
         };
 
+        // 确保 hasNumericalChange 正确设置（即使 diffMeta 来自 changeData）
+        const bookmarkDiff = diffMeta.bookmarkDiff || 0;
+        const folderDiff = diffMeta.folderDiff || 0;
+        if (!diffMeta.hasNumericalChange && (bookmarkDiff !== 0 || folderDiff !== 0)) {
+            diffMeta.hasNumericalChange = true;
+        }
+
         const summary = buildChangeSummary(diffMeta, stats, currentLang);
-        const hasQuantityChange = summary.hasQuantityChange;
+        // 直接检查是否有数量变化（不仅依赖 summary）
+        const hasQuantityChange = summary.hasQuantityChange || (bookmarkDiff !== 0 || folderDiff !== 0);
         const hasStructureChange = summary.hasStructuralChange;
 
         if (hasQuantityChange || hasStructureChange) {
@@ -9154,8 +9162,6 @@ async function renderCurrentChangesView(forceRefresh = false) {
 
             // 数量变化部分 - 书签和文件夹合并显示
             if (hasQuantityChange) {
-                const bookmarkDiff = diffMeta.bookmarkDiff || 0;
-                const folderDiff = diffMeta.folderDiff || 0;
                 const isZh = currentLang === 'zh_CN';
 
                 // 收集增加的项目

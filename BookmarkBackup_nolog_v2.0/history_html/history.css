@@ -1824,6 +1824,9 @@ body {
     flex: 1;
     font-size: 14px;
     color: var(--text-primary);
+    /* 优化长文本换行，避免第一行很少字第二行很多字的情况 */
+    word-break: break-all;
+    overflow-wrap: anywhere;
 }
 
 /* 书签链接样式 */
@@ -2599,17 +2602,17 @@ a.tree-label.tree-bookmark-link:hover {
 .change-tree-item-title {
     font-size: 14px;
     color: var(--text-primary);
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
+    /* 允许长文本合理换行 */
+    word-break: break-all;
+    overflow-wrap: anywhere;
 }
 
 .change-tree-item-url {
     font-size: 12px;
     color: var(--text-tertiary);
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
+    /* 允许长URL合理换行 */
+    word-break: break-all;
+    overflow-wrap: anywhere;
     margin-top: 2px;
 }
 

@@ -196,7 +196,33 @@
     }
   };
 
-  marked.use({ extensions: [highlightExtension, wikiLinkExtension, calloutExtension] });
+  const invertedSetextExtension = {
+    name: 'invertedSetext',
+    level: 'block',
+    start(src) {
+      return src.match(/^(?![ \t\n]+)((?:.|\n)*?)\n\s*(-{3,}|={3,})\s*(?:\n+|$)/)?.index;
+    },
+    tokenizer(src) {
+      const rule = /^(?![ \t\n]+)((?:.|\n)*?)\n\s*(-{3,}|={3,})\s*(?:\n+|$)/;
+      const match = rule.exec(src);
+      if (match) {
+        const text = match[1];
+        const marker = match[2];
+        // User wants: '-' (3+) -> H1, '=' (3+) -> H2
+        const depth = marker.startsWith('-') ? 1 : 2;
+        
+        return {
+          type: 'heading',
+          raw: match[0],
+          depth: depth,
+          text: text.trim(),
+          tokens: this.lexer.inlineTokens(text.trim())
+        };
+      }
+    }
+  };
+
+  marked.use({ extensions: [highlightExtension, wikiLinkExtension, calloutExtension, invertedSetextExtension] });
 
   const handleCalloutToggle = (event) => {
     const toggle = event.target.closest('.md-callout-toggle');

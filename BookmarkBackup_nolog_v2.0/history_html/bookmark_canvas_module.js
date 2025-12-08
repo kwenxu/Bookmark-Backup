@@ -1508,6 +1508,8 @@ function setupCanvasZoomAndPan() {
     document.addEventListener('keydown', (e) => {
         if (isRecordingShortcut) return;
         if (e.repeat || e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
+        // 在 contenteditable 元素内编辑时不拦截键盘事件（允许输入空格等）
+        if (e.target.isContentEditable || e.target.closest('[contenteditable="true"]')) return;
         
         if (isCustomSpaceKeyCode(e.code)) {
             e.preventDefault();
@@ -4310,176 +4312,2004 @@ function renderMdNode(node) {
     const colorTitle = lang === 'en' ? 'Color' : '颜色';
     const focusTitle = lang === 'en' ? 'Locate and zoom' : '定位并放大';
     const editTitle = lang === 'en' ? 'Edit' : '编辑';
+    const formatTitle = lang === 'en' ? 'Format toolbar' : '格式工具栏';
     
     toolbar.innerHTML = `
         <button class="md-node-toolbar-btn" data-action="md-delete" title="${deleteTitle}"><i class="far fa-trash-alt"></i></button>
         <button class="md-node-toolbar-btn" data-action="md-color-toggle" title="${colorTitle}"><i class="fas fa-palette"></i></button>
+        <button class="md-node-toolbar-btn" data-action="md-format-toggle" title="${formatTitle}"><i class="fas fa-font"></i></button>
         <button class="md-node-toolbar-btn" data-action="md-focus" title="${focusTitle}"><i class="fas fa-search-plus"></i></button>
         <button class="md-node-toolbar-btn" data-action="md-edit" title="${editTitle}"><i class="far fa-edit"></i></button>
     `;
     
-    // 视图（渲染 Markdown）
-    const view = document.createElement('div');
-    view.className = 'md-canvas-text';
-    const raw = typeof node.text === 'string' ? node.text : '';
-    if (raw) {
-        if (typeof marked !== 'undefined') {
-            try { view.innerHTML = marked.parse(raw); } catch { view.textContent = raw; }
+    // 初始化字体大小（从节点数据或默认值）
+    const defaultFontSize = 14;
+    const minFontSize = 10;
+    const maxFontSize = 28;
+    if (typeof node.fontSize !== 'number') {
+        node.fontSize = defaultFontSize;
+    }
+    
+    // 创建格式工具栏弹层（单行布局）
+    const createFormatPopover = () => {
+        let pop = toolbar.querySelector('.md-format-popover');
+        if (pop) return pop;
+        
+        pop = document.createElement('div');
+        pop.className = 'md-format-popover';
+        
+        // 多语言翻译
+        const sizeDecreaseTitle = lang === 'en' ? 'Decrease font size' : '减小字号';
+        const sizeIncreaseTitle = lang === 'en' ? 'Increase font size' : '增大字号';
+        const boldTitle = lang === 'en' ? 'Bold' : '加粗';
+        const italicTitle = lang === 'en' ? 'Italic' : '斜体';
+        const highlightTitle = lang === 'en' ? 'Highlight' : '高亮';
+        const fontColorTitle = lang === 'en' ? 'Font Color' : '字体颜色';
+        const strikeTitle = lang === 'en' ? 'Strikethrough' : '删除线';
+        const codeTitle = lang === 'en' ? 'Code' : '代码';
+        const linkTitle = lang === 'en' ? 'Link' : '链接';
+        const headingTitle = lang === 'en' ? 'Heading' : '标题';
+        const alignTitle = lang === 'en' ? 'Alignment' : '对齐';
+        const listTitle = lang === 'en' ? 'List' : '列表';
+        const quoteTitle = lang === 'en' ? 'Quote' : '引用';
+        
+        pop.innerHTML = `
+            <div class="md-format-row">
+                <button class="md-format-btn md-format-btn-sm" data-action="md-font-decrease" title="${sizeDecreaseTitle}"><i class="fas fa-minus"></i></button>
+                <span class="md-format-size-value">${node.fontSize}</span>
+                <button class="md-format-btn md-format-btn-sm" data-action="md-font-increase" title="${sizeIncreaseTitle}"><i class="fas fa-plus"></i></button>
+                <span class="md-format-sep"></span>
+                <button class="md-format-btn md-format-heading-btn" data-action="md-heading-toggle" title="${headingTitle}"><i class="fas fa-heading"></i></button>
+                <button class="md-format-btn md-format-align-btn" data-action="md-align-toggle" title="${alignTitle}"><i class="fas fa-align-left"></i></button>
+                <span class="md-format-sep"></span>
+                <button class="md-format-btn" data-action="md-insert-bold" title="${boldTitle}"><b>B</b></button>
+                <button class="md-format-btn" data-action="md-insert-italic" title="${italicTitle}"><i>I</i></button>
+                <button class="md-format-btn" data-action="md-insert-highlight" title="${highlightTitle}"><span style="background:#fcd34d;color:#000;padding:0 3px;border-radius:2px;">H</span></button>
+                <button class="md-format-btn md-format-fontcolor-btn" data-action="md-fontcolor-toggle" title="${fontColorTitle}"><span style="border-bottom:2px solid #2DC26B;padding:0 2px;">A</span></button>
+                <button class="md-format-btn" data-action="md-insert-strike" title="${strikeTitle}"><s>S</s></button>
+                <button class="md-format-btn" data-action="md-insert-code" title="${codeTitle}"><code>&lt;/&gt;</code></button>
+                <button class="md-format-btn" data-action="md-insert-link" title="${linkTitle}"><i class="fas fa-link"></i></button>
+                <span class="md-format-sep"></span>
+                <button class="md-format-btn md-format-list-btn" data-action="md-list-toggle" title="${listTitle}"><i class="fas fa-list"></i></button>
+                <button class="md-format-btn" data-action="md-insert-quote" title="${quoteTitle}"><i class="fas fa-quote-left"></i></button>
+            </div>
+        `;
+        
+        toolbar.appendChild(pop);
+        return pop;
+    };
+    
+    // 切换格式工具栏显示
+    const toggleFormatPopover = (btn) => {
+        const pop = createFormatPopover();
+        const isOpen = pop.classList.contains('open');
+        
+        // 关闭其他弹层
+        closeMdColorPopover(toolbar);
+        
+        if (isOpen) {
+            pop.classList.remove('open');
+            btn.classList.remove('active');
         } else {
-            view.textContent = raw;
+            pop.classList.add('open');
+            btn.classList.add('active');
+            // 更新字号显示
+            const sizeValue = pop.querySelector('.md-format-size-value');
+            if (sizeValue) sizeValue.textContent = node.fontSize + 'px';
         }
-    } else {
-        view.textContent = '';
-    }
-
-    // 编辑器
-    const editor = document.createElement('textarea');
-    editor.className = 'md-canvas-editor';
+    };
+    
+    // 关闭格式工具栏
+    const closeFormatPopover = () => {
+        const pop = toolbar.querySelector('.md-format-popover');
+        if (pop) pop.classList.remove('open');
+        // 移除按钮选中状态
+        const formatBtn = toolbar.querySelector('[data-action="md-format-toggle"]');
+        if (formatBtn) formatBtn.classList.remove('active');
+    };
+    
+    // 当前选中的字体颜色
+    let currentFontColor = '#2DC26B';
+    
+    // 创建字体颜色选择弹层
+    const createFontColorPopover = () => {
+        let pop = toolbar.querySelector('.md-fontcolor-popover');
+        if (pop) return pop;
+        
+        pop = document.createElement('div');
+        pop.className = 'md-fontcolor-popover';
+        
+        // 预设颜色值（参考obsidian-editing-toolbar）
+        const presetColors = [
+            '#c00000', '#ff0000', '#ffc000', '#ffff00', '#92d050',
+            '#00b050', '#00b0f0', '#0070c0', '#002060', '#7030a0',
+            '#ffffff', '#000000', '#1f497d', '#4f81bd', '#8064a2'
+        ];
+        
+        let colorChips = presetColors.map(c => 
+            `<span class="md-fontcolor-chip" data-action="md-fontcolor-apply" data-color="${c}" style="background:${c};" title="${c}"></span>`
+        ).join('');
+        
+        pop.innerHTML = `
+            <div class="md-fontcolor-grid">${colorChips}</div>
+            <div class="md-fontcolor-custom">
+                <input type="color" class="md-fontcolor-input" value="${currentFontColor}" title="${lang === 'en' ? 'Custom color' : '自定义颜色'}">
+            </div>
+        `;
+        
+        // 自定义颜色选择器事件
+        const customInput = pop.querySelector('.md-fontcolor-input');
+        if (customInput) {
+            customInput.addEventListener('change', (e) => {
+                const color = e.target.value;
+                currentFontColor = color;
+                insertFontColor(color);
+                closeFontColorPopover();
+            });
+        }
+        
+        // 添加到 format popover 内部，作为兄弟元素
+        const formatPop = toolbar.querySelector('.md-format-popover');
+        if (formatPop) {
+            formatPop.appendChild(pop);
+        }
+        return pop;
+    };
+    
+    // 定位弹层到按钮正上方居中
+    const positionPopoverAboveBtn = (pop, btn) => {
+        const formatPop = toolbar.querySelector('.md-format-popover');
+        if (!formatPop) return;
+        const btnRect = btn.getBoundingClientRect();
+        const formatRect = formatPop.getBoundingClientRect();
+        // 计算按钮中心相对于格式弹层的位置
+        const btnCenterX = btnRect.left + btnRect.width / 2 - formatRect.left;
+        pop.style.left = btnCenterX + 'px';
+        pop.style.transform = 'translateX(-50%) translateY(-100%)';
+    };
+    
+    // 切换字体颜色弹层
+    const toggleFontColorPopover = (btn) => {
+        // 先保存当前选区
+        const sel = window.getSelection();
+        if (sel.rangeCount > 0 && editor.contains(sel.anchorNode)) {
+            savedSelection = {
+                range: sel.getRangeAt(0).cloneRange(),
+                text: sel.toString()
+            };
+        }
+        
+        const pop = createFontColorPopover();
+        const isOpen = pop.classList.contains('open');
+        
+        // 关闭其他弹层
+        closeAlignPopover();
+        closeHeadingPopover();
+        closeListPopover();
+        
+        if (isOpen) {
+            pop.classList.remove('open');
+            btn.classList.remove('active');
+        } else {
+            positionPopoverAboveBtn(pop, btn);
+            pop.classList.add('open');
+            btn.classList.add('active');
+        }
+    };
+    
+    // 关闭字体颜色弹层
+    const closeFontColorPopover = () => {
+        const pop = toolbar.querySelector('.md-fontcolor-popover');
+        if (pop) pop.classList.remove('open');
+        const btn = toolbar.querySelector('[data-action="md-fontcolor-toggle"]');
+        if (btn) btn.classList.remove('active');
+    };
+    
+    // 插入字体颜色
+    const insertFontColor = (color) => {
+        if (!node.isEditing) {
+            enterEdit();
+            setTimeout(() => doInsertFontColor(color), 50);
+        } else {
+            doInsertFontColor(color);
+        }
+    };
+    
+    const doInsertFontColor = (color) => {
+        const sel = window.getSelection();
+        let range;
+        
+        // 优先使用保存的选区
+        if (savedSelection && savedSelection.range) {
+            range = savedSelection.range;
+            sel.removeAllRanges();
+            sel.addRange(range);
+        } else if (sel.rangeCount) {
+            range = sel.getRangeAt(0);
+        } else {
+            editor.focus();
+            return;
+        }
+        
+        if (!editor.contains(range.commonAncestorContainer)) {
+            editor.focus();
+            return;
+        }
+        
+        const selected = range.toString();
+        const insertText = selected || (lang === 'en' ? 'text' : '文本');
+        
+        // 清除保存的选区
+        savedSelection = null;
+        
+        // 创建 font 标签
+        const wrapper = document.createElement('font');
+        wrapper.setAttribute('color', color);
+        wrapper.textContent = insertText;
+        
+        range.deleteContents();
+        range.insertNode(wrapper);
+        
+        const spacer = document.createTextNode('\u200B');
+        wrapper.parentNode.insertBefore(spacer, wrapper.nextSibling);
+        
+        range.setStart(spacer, 1);
+        range.collapse(true);
+        sel.removeAllRanges();
+        sel.addRange(range);
+        
+        node.html = editor.innerHTML;
+        node.text = editor.innerText;
+        saveTempNodes();
+        
+        currentFontColor = color;
+        // 更新按钮颜色指示
+        const fontColorBtn = toolbar.querySelector('[data-action="md-fontcolor-toggle"] span');
+        if (fontColorBtn) {
+            fontColorBtn.style.borderBottomColor = color;
+        }
+        
+        editor.focus();
+    };
+    
+    // 创建对齐选择弹层
+    const createAlignPopover = () => {
+        let pop = toolbar.querySelector('.md-align-popover');
+        if (pop) return pop;
+        
+        pop = document.createElement('div');
+        pop.className = 'md-align-popover';
+        
+        const leftTitle = lang === 'en' ? 'Align Left' : '左对齐';
+        const centerTitle = lang === 'en' ? 'Center' : '居中';
+        const rightTitle = lang === 'en' ? 'Align Right' : '右对齐';
+        const justifyTitle = lang === 'en' ? 'Justify' : '两端对齐';
+        
+        pop.innerHTML = `
+            <button class="md-align-option" data-action="md-align-apply" data-align="left" title="${leftTitle}"><i class="fas fa-align-left"></i></button>
+            <button class="md-align-option" data-action="md-align-apply" data-align="center" title="${centerTitle}"><i class="fas fa-align-center"></i></button>
+            <button class="md-align-option" data-action="md-align-apply" data-align="right" title="${rightTitle}"><i class="fas fa-align-right"></i></button>
+            <button class="md-align-option" data-action="md-align-apply" data-align="justify" title="${justifyTitle}"><i class="fas fa-align-justify"></i></button>
+        `;
+        
+        toolbar.querySelector('.md-format-popover').appendChild(pop);
+        return pop;
+    };
+    
+    // 切换对齐弹层
+    const toggleAlignPopover = (btn) => {
+        // 先保存当前选区
+        const sel = window.getSelection();
+        if (sel.rangeCount > 0 && editor.contains(sel.anchorNode)) {
+            savedSelection = {
+                range: sel.getRangeAt(0).cloneRange(),
+                text: sel.toString()
+            };
+        }
+        
+        const pop = createAlignPopover();
+        const isOpen = pop.classList.contains('open');
+        
+        // 关闭其他弹层
+        closeFontColorPopover();
+        closeHeadingPopover();
+        closeListPopover();
+        
+        if (isOpen) {
+            pop.classList.remove('open');
+            btn.classList.remove('active');
+        } else {
+            positionPopoverAboveBtn(pop, btn);
+            pop.classList.add('open');
+            btn.classList.add('active');
+        }
+    };
+    
+    // 关闭对齐弹层
+    const closeAlignPopover = () => {
+        const pop = toolbar.querySelector('.md-align-popover');
+        if (pop) pop.classList.remove('open');
+        const btn = toolbar.querySelector('[data-action="md-align-toggle"]');
+        if (btn) btn.classList.remove('active');
+    };
+    
+    // 创建标题选择弹层
+    const createHeadingPopover = () => {
+        let pop = toolbar.querySelector('.md-heading-popover');
+        if (pop) return pop;
+        
+        pop = document.createElement('div');
+        pop.className = 'md-heading-popover';
+        
+        const h1Title = lang === 'en' ? 'Heading 1' : '一级标题';
+        const h2Title = lang === 'en' ? 'Heading 2' : '二级标题';
+        const h3Title = lang === 'en' ? 'Heading 3' : '三级标题';
+        
+        pop.innerHTML = `
+            <button class="md-heading-option" data-action="md-heading-apply" data-level="h1" title="${h1Title}">H1</button>
+            <button class="md-heading-option" data-action="md-heading-apply" data-level="h2" title="${h2Title}">H2</button>
+            <button class="md-heading-option" data-action="md-heading-apply" data-level="h3" title="${h3Title}">H3</button>
+        `;
+        
+        const formatPop = toolbar.querySelector('.md-format-popover');
+        if (formatPop) {
+            formatPop.appendChild(pop);
+        }
+        return pop;
+    };
+    
+    // 切换标题弹层
+    const toggleHeadingPopover = (btn) => {
+        // 先保存当前选区
+        const sel = window.getSelection();
+        if (sel.rangeCount > 0 && editor.contains(sel.anchorNode)) {
+            savedSelection = {
+                range: sel.getRangeAt(0).cloneRange(),
+                text: sel.toString()
+            };
+        }
+        
+        const pop = createHeadingPopover();
+        const isOpen = pop.classList.contains('open');
+        
+        // 关闭其他弹层
+        closeFontColorPopover();
+        closeAlignPopover();
+        closeListPopover();
+        
+        if (isOpen) {
+            pop.classList.remove('open');
+            btn.classList.remove('active');
+        } else {
+            positionPopoverAboveBtn(pop, btn);
+            pop.classList.add('open');
+            btn.classList.add('active');
+        }
+    };
+    
+    // 关闭标题弹层
+    const closeHeadingPopover = () => {
+        const pop = toolbar.querySelector('.md-heading-popover');
+        if (pop) pop.classList.remove('open');
+        const btn = toolbar.querySelector('[data-action="md-heading-toggle"]');
+        if (btn) btn.classList.remove('active');
+    };
+    
+    // 创建列表选择弹层
+    const createListPopover = () => {
+        let pop = toolbar.querySelector('.md-list-popover');
+        if (pop) return pop;
+        
+        pop = document.createElement('div');
+        pop.className = 'md-list-popover';
+        
+        const ulTitle = lang === 'en' ? 'Bullet List' : '无序列表';
+        const olTitle = lang === 'en' ? 'Numbered List' : '有序列表';
+        const taskTitle = lang === 'en' ? 'Task List' : '任务列表';
+        
+        pop.innerHTML = `
+            <button class="md-list-option" data-action="md-list-apply" data-type="ul" title="${ulTitle}"><i class="fas fa-list-ul"></i></button>
+            <button class="md-list-option" data-action="md-list-apply" data-type="ol" title="${olTitle}"><i class="fas fa-list-ol"></i></button>
+            <button class="md-list-option" data-action="md-list-apply" data-type="task" title="${taskTitle}"><i class="fas fa-tasks"></i></button>
+        `;
+        
+        const formatPop = toolbar.querySelector('.md-format-popover');
+        if (formatPop) {
+            formatPop.appendChild(pop);
+        }
+        return pop;
+    };
+    
+    // 切换列表弹层
+    const toggleListPopover = (btn) => {
+        // 先保存当前选区
+        const sel = window.getSelection();
+        if (sel.rangeCount > 0 && editor.contains(sel.anchorNode)) {
+            savedSelection = {
+                range: sel.getRangeAt(0).cloneRange(),
+                text: sel.toString()
+            };
+        }
+        
+        const pop = createListPopover();
+        const isOpen = pop.classList.contains('open');
+        
+        // 关闭其他弹层
+        closeFontColorPopover();
+        closeAlignPopover();
+        closeHeadingPopover();
+        
+        if (isOpen) {
+            pop.classList.remove('open');
+            btn.classList.remove('active');
+        } else {
+            positionPopoverAboveBtn(pop, btn);
+            pop.classList.add('open');
+            btn.classList.add('active');
+        }
+    };
+    
+    // 关闭列表弹层
+    const closeListPopover = () => {
+        const pop = toolbar.querySelector('.md-list-popover');
+        if (pop) pop.classList.remove('open');
+        const btn = toolbar.querySelector('[data-action="md-list-toggle"]');
+        if (btn) btn.classList.remove('active');
+    };
+    
+    // 插入对齐格式
+    const insertAlign = (alignType) => {
+        if (!node.isEditing) {
+            enterEdit();
+            setTimeout(() => doInsertAlign(alignType), 50);
+        } else {
+            doInsertAlign(alignType);
+        }
+    };
+    
+    const doInsertAlign = (alignType) => {
+        const sel = window.getSelection();
+        let range;
+        
+        // 优先使用保存的选区
+        if (savedSelection && savedSelection.range) {
+            range = savedSelection.range;
+            sel.removeAllRanges();
+            sel.addRange(range);
+        } else if (sel.rangeCount) {
+            range = sel.getRangeAt(0);
+        } else {
+            editor.focus();
+            return;
+        }
+        
+        if (!editor.contains(range.commonAncestorContainer)) {
+            editor.focus();
+            return;
+        }
+        
+        const selected = range.toString();
+        const insertText = selected || (lang === 'en' ? 'text' : '文本');
+        
+        // 清除保存的选区
+        savedSelection = null;
+        
+        let wrapper;
+        if (alignType === 'center') {
+            // 使用 <center> 标签
+            wrapper = document.createElement('center');
+            wrapper.textContent = insertText;
+        } else {
+            // 使用 <p align="xxx"> 标签
+            wrapper = document.createElement('p');
+            wrapper.setAttribute('align', alignType);
+            wrapper.textContent = insertText;
+        }
+        
+        range.deleteContents();
+        range.insertNode(wrapper);
+        
+        const spacer = document.createTextNode('\u200B');
+        wrapper.parentNode.insertBefore(spacer, wrapper.nextSibling);
+        
+        range.setStart(spacer, 1);
+        range.collapse(true);
+        sel.removeAllRanges();
+        sel.addRange(range);
+        
+        node.html = editor.innerHTML;
+        node.text = editor.innerText;
+        saveTempNodes();
+        
+        editor.focus();
+    };
+    
+    // 保存选区（用于工具栏点击时恢复）- 变量先声明，事件监听在editor创建后绑定
+    let savedSelection = null;
+    
+    // 插入格式化 - 直接插入 HTML 标签（不是 Markdown 语法）
+    const insertFormat = (formatType) => {
+        if (!node.isEditing) {
+            enterEdit();
+            setTimeout(() => doInsert(formatType), 50);
+        } else {
+            doInsert(formatType);
+        }
+    };
+    
+    const doInsert = (formatType) => {
+        // 获取当前选区
+        const sel = window.getSelection();
+        if (!sel.rangeCount) {
+            editor.focus();
+            return;
+        }
+        let range = sel.getRangeAt(0);
+        
+        // 确保 range 在 editor 内
+        if (!editor.contains(range.commonAncestorContainer)) {
+            editor.focus();
+            return;
+        }
+        
+        // 清除保存的选区
+        savedSelection = null;
+        
+        // 判断是否为块级元素类型
+        const isBlockFormat = ['h1', 'h2', 'h3', 'ul', 'ol', 'task', 'quote'].includes(formatType);
+        
+        // 对于块级元素，扩展选区到整行/整段
+        let insertText;
+        if (isBlockFormat) {
+            // 获取光标所在的文本行
+            const container = range.startContainer;
+            let lineText = '';
+            let lineStart = null;
+            let lineEnd = null;
+            
+            // 找到包含选区的块级容器（div, p, 或 editor 本身）
+            let blockContainer = container;
+            if (container.nodeType === Node.TEXT_NODE) {
+                blockContainer = container.parentElement;
+            }
+            
+            // 如果是在 editor 直接子级的文本节点，则取整个文本节点
+            if (blockContainer === editor || blockContainer.parentElement === editor) {
+                if (container.nodeType === Node.TEXT_NODE) {
+                    lineText = container.textContent;
+                    lineStart = container;
+                    lineEnd = container;
+                } else {
+                    lineText = range.toString() || (lang === 'en' ? 'text' : '文本');
+                }
+            } else {
+                // 否则取整个块级容器的内容
+                lineText = blockContainer.textContent;
+                lineStart = blockContainer;
+                lineEnd = blockContainer;
+            }
+            
+            // 如果找到了整行内容，扩展选区
+            if (lineStart && lineEnd && lineText.trim()) {
+                insertText = lineText.trim();
+                // 创建一个新的 range 覆盖整个行
+                range = document.createRange();
+                if (lineStart.nodeType === Node.TEXT_NODE) {
+                    range.setStart(lineStart, 0);
+                    range.setEnd(lineEnd, lineEnd.textContent.length);
+                } else {
+                    range.selectNodeContents(lineStart);
+                }
+                sel.removeAllRanges();
+                sel.addRange(range);
+            } else {
+                insertText = range.toString() || (lang === 'en' ? 'text' : '文本');
+            }
+        } else {
+            // 获取选中的文本
+            const selected = range.toString();
+            insertText = selected || (lang === 'en' ? 'text' : '文本');
+        }
+        
+        // 插入格式化元素，并在后面添加零宽空格确保后续输入不继承格式
+        let wrapper = null;
+        
+        switch (formatType) {
+            case 'bold':
+                wrapper = document.createElement('strong');
+                wrapper.textContent = insertText;
+                break;
+            case 'italic':
+                wrapper = document.createElement('em');
+                wrapper.textContent = insertText;
+                break;
+            case 'highlight':
+                wrapper = document.createElement('mark');
+                wrapper.textContent = insertText;
+                break;
+            case 'strike':
+                wrapper = document.createElement('del');
+                wrapper.textContent = insertText;
+                break;
+            case 'code':
+                wrapper = document.createElement('code');
+                wrapper.textContent = insertText;
+                break;
+            case 'link':
+                const url = prompt(lang === 'en' ? 'Enter URL:' : '请输入链接地址:', 'https://');
+                if (url) {
+                    wrapper = document.createElement('a');
+                    wrapper.href = url;
+                    wrapper.textContent = insertText;
+                    wrapper.target = '_blank';
+                }
+                break;
+            case 'h1':
+                wrapper = document.createElement('h1');
+                wrapper.textContent = insertText;
+                break;
+            case 'h2':
+                wrapper = document.createElement('h2');
+                wrapper.textContent = insertText;
+                break;
+            case 'h3':
+                wrapper = document.createElement('h3');
+                wrapper.textContent = insertText;
+                break;
+            case 'ul':
+                wrapper = document.createElement('ul');
+                const li1 = document.createElement('li');
+                li1.textContent = insertText;
+                wrapper.appendChild(li1);
+                break;
+            case 'ol':
+                wrapper = document.createElement('ol');
+                const li2 = document.createElement('li');
+                li2.textContent = insertText;
+                wrapper.appendChild(li2);
+                break;
+            case 'task':
+                wrapper = document.createElement('div');
+                wrapper.className = 'md-task-item';
+                const taskCb = document.createElement('input');
+                taskCb.type = 'checkbox';
+                taskCb.className = 'md-task-checkbox';
+                wrapper.appendChild(taskCb);
+                wrapper.appendChild(document.createTextNode(' ' + insertText));
+                break;
+            case 'quote':
+                wrapper = document.createElement('blockquote');
+                wrapper.textContent = insertText;
+                break;
+        }
+        
+        if (wrapper) {
+            range.deleteContents();
+            range.insertNode(wrapper);
+            
+            // 在格式化元素后添加一个空文本节点，确保后续输入不继承格式
+            const spacer = document.createTextNode('\u200B'); // 零宽空格
+            wrapper.parentNode.insertBefore(spacer, wrapper.nextSibling);
+            
+            // 移动光标到空文本节点内
+            range.setStart(spacer, 1);
+            range.collapse(true);
+            sel.removeAllRanges();
+            sel.addRange(range);
+            
+            // 保存内容
+            node.html = editor.innerHTML;
+            node.text = editor.innerText;
+            saveTempNodes();
+        }
+        
+        editor.focus();
+    };
+    
+    // 编辑器（实时渲染的 WYSIWYG 编辑器）
+    const editor = document.createElement('div');
+    editor.className = 'md-canvas-editor md-wysiwyg-editor md-canvas-text';
+    editor.contentEditable = 'true';
     editor.spellcheck = false;
-    editor.style.display = node.isEditing ? 'block' : 'none';
-    editor.value = raw;
+    
+    // 应用字体大小
+    editor.style.fontSize = node.fontSize + 'px';
+    
     const mdPlaceholder = (lang === 'en')
-        ? 'Supports Obsidian Markdown (callouts, tasks, [[links]])'
-        : '支持 Obsidian Markdown 语法（callout、任务列表、[[链接]]）';
-    editor.placeholder = mdPlaceholder;
+        ? 'Type Markdown: **bold**, *italic*, ==highlight=='
+        : '输入 Markdown：**粗体**、*斜体*、==高亮==';
+    editor.setAttribute('data-placeholder', mdPlaceholder);
     editor.setAttribute('aria-label', mdPlaceholder);
+    
+    // 初始化编辑器内容：优先使用保存的 HTML，否则从 text 渲染
+    if (node.html) {
+        editor.innerHTML = node.html;
+    } else {
+        const raw = typeof node.text === 'string' ? node.text : '';
+        if (raw) {
+            if (typeof marked !== 'undefined') {
+                try { editor.innerHTML = marked.parse(raw); } catch { editor.textContent = raw; }
+            } else {
+                editor.textContent = raw;
+            }
+        }
+    }
+    
+    // 保存选区函数（用于工具栏点击时恢复）
+    const saveSelection = () => {
+        const sel = window.getSelection();
+        if (sel.rangeCount > 0 && editor.contains(sel.anchorNode)) {
+            savedSelection = {
+                range: sel.getRangeAt(0).cloneRange(),
+                text: sel.toString()
+            };
+        }
+    };
+    
+    // 监听mouseup/keyup保存选区（在点击工具栏前保存）
+    editor.addEventListener('mouseup', saveSelection);
+    editor.addEventListener('keyup', saveSelection);
 
-    // 持久化：空白栏目滚动（查看/编辑分别记忆）
-    const viewScrollKey = `md-node-scroll-v:${node.id}`;
-    const editorScrollKey = `md-node-scroll-e:${node.id}`;
-    // 恢复（先设置，后续进入/退出编辑时再各自恢复一次）
-    const vPersist = __readJSON(viewScrollKey, null);
-    if (vPersist && typeof vPersist.top === 'number') {
-        view.scrollTop = vPersist.top || 0;
-        view.scrollLeft = vPersist.left || 0;
+    // 持久化：空白栏目滚动位置
+    const scrollKey = `md-node-scroll:${node.id}`;
+    // 恢复滚动位置
+    const scrollPersist = __readJSON(scrollKey, null);
+    if (scrollPersist && typeof scrollPersist.top === 'number') {
+        editor.scrollTop = scrollPersist.top || 0;
+        editor.scrollLeft = scrollPersist.left || 0;
     }
-    const ePersist = __readJSON(editorScrollKey, null);
-    if (ePersist && typeof ePersist.top === 'number') {
-        editor.scrollTop = ePersist.top || 0;
-        editor.scrollLeft = ePersist.left || 0;
-    }
-    // 保存
+    // 保存滚动位置
     {
-        let rafV = 0, rafE = 0;
-        view.addEventListener('scroll', () => {
-            if (rafV) cancelAnimationFrame(rafV);
-            rafV = requestAnimationFrame(() => __writeJSON(viewScrollKey, { top: view.scrollTop || 0, left: view.scrollLeft || 0 }));
-        }, { passive: true });
+        let rafS = 0;
         editor.addEventListener('scroll', () => {
-            if (rafE) cancelAnimationFrame(rafE);
-            rafE = requestAnimationFrame(() => __writeJSON(editorScrollKey, { top: editor.scrollTop || 0, left: editor.scrollLeft || 0 }));
+            if (rafS) cancelAnimationFrame(rafS);
+            rafS = requestAnimationFrame(() => __writeJSON(scrollKey, { top: editor.scrollTop || 0, left: editor.scrollLeft || 0 }));
         }, { passive: true });
     }
 
+    // 格式化元素与 Markdown 语法的映射
+    const formatMap = {
+        'STRONG': { prefix: '**', suffix: '**' },
+        'B': { prefix: '**', suffix: '**' },
+        'EM': { prefix: '*', suffix: '*' },
+        'I': { prefix: '*', suffix: '*' },
+        'DEL': { prefix: '~~', suffix: '~~' },
+        'S': { prefix: '~~', suffix: '~~' },
+        'MARK': { prefix: '==', suffix: '==' },
+        'CODE': { prefix: '`', suffix: '`' },
+    };
+    
+    // 当前展开的元素（用于失焦时重新渲染）
+    let expandedElement = null;
+    let expandedMarkdown = null;
+    let expandedType = null; // 'simple' | 'fontcolor' | 'align'
+    
+    // 获取特殊格式元素的源码表示
+    const getSourceCode = (el) => {
+        const tagName = el.tagName;
+        const content = el.textContent;
+        
+        // font color: <font color="#xxx">text</font>
+        if (tagName === 'FONT') {
+            const color = el.getAttribute('color') || '#000000';
+            return { 
+                source: `<font color="${color}">${content}</font>`,
+                prefix: `<font color="${color}">`,
+                suffix: '</font>',
+                type: 'fontcolor'
+            };
+        }
+        
+        // center: <center>text</center>
+        if (tagName === 'CENTER') {
+            return {
+                source: `<center>${content}</center>`,
+                prefix: '<center>',
+                suffix: '</center>',
+                type: 'align'
+            };
+        }
+        
+        // p with align: <p align="xxx">text</p>
+        if (tagName === 'P' && el.hasAttribute('align')) {
+            const align = el.getAttribute('align');
+            return {
+                source: `<p align="${align}">${content}</p>`,
+                prefix: `<p align="${align}">`,
+                suffix: '</p>',
+                type: 'align'
+            };
+        }
+        
+        // hr: --- 水平分割线
+        if (tagName === 'HR') {
+            return {
+                source: '---',
+                prefix: '',
+                suffix: '',
+                type: 'hr'
+            };
+        }
+        
+        // blockquote: > text
+        if (tagName === 'BLOCKQUOTE') {
+            return {
+                source: `> ${content}`,
+                prefix: '> ',
+                suffix: '',
+                type: 'quote'
+            };
+        }
+        
+        // ul: - item
+        if (tagName === 'UL') {
+            const items = Array.from(el.querySelectorAll('li')).map(li => `- ${li.textContent}`).join('\n');
+            return {
+                source: items,
+                prefix: '- ',
+                suffix: '',
+                type: 'ul'
+            };
+        }
+        
+        // ol: 1. item
+        if (tagName === 'OL') {
+            const items = Array.from(el.querySelectorAll('li')).map((li, i) => `${i + 1}. ${li.textContent}`).join('\n');
+            return {
+                source: items,
+                prefix: '1. ',
+                suffix: '',
+                type: 'ol'
+            };
+        }
+        
+        // task: - [ ] text 或 - [x] text
+        if (el.classList && el.classList.contains('md-task-item')) {
+            const checkbox = el.querySelector('input[type="checkbox"]');
+            const checked = checkbox && checkbox.checked;
+            const text = el.textContent.trim();
+            return {
+                source: checked ? `- [x] ${text}` : `- [ ] ${text}`,
+                prefix: checked ? '- [x] ' : '- [ ] ',
+                suffix: '',
+                type: 'task'
+            };
+        }
+        
+        // 标题: 支持 ATX 和 Setext 两种格式
+        // Setext 格式通过 dataset.setextType 标识
+        // 自定义规则: --- → H1, === → H2
+        if (tagName === 'H1') {
+            // 检查是否为 Setext 格式（--- → H1）
+            if (el.dataset && el.dataset.setextType === '---') {
+                return {
+                    source: `${content}\n---`,
+                    prefix: '',
+                    suffix: '\n---',
+                    type: 'setext-heading'
+                };
+            }
+            return {
+                source: `# ${content}`,
+                prefix: '# ',
+                suffix: '',
+                type: 'heading'
+            };
+        }
+        if (tagName === 'H2') {
+            // 检查是否为 Setext 格式（=== → H2）
+            if (el.dataset && el.dataset.setextType === '===') {
+                return {
+                    source: `${content}\n===`,
+                    prefix: '',
+                    suffix: '\n===',
+                    type: 'setext-heading'
+                };
+            }
+            return {
+                source: `## ${content}`,
+                prefix: '## ',
+                suffix: '',
+                type: 'heading'
+            };
+        }
+        if (tagName === 'H3') {
+            return {
+                source: `### ${content}`,
+                prefix: '### ',
+                suffix: '',
+                type: 'heading'
+            };
+        }
+        if (tagName === 'H4') {
+            return {
+                source: `#### ${content}`,
+                prefix: '#### ',
+                suffix: '',
+                type: 'heading'
+            };
+        }
+        if (tagName === 'H5') {
+            return {
+                source: `##### ${content}`,
+                prefix: '##### ',
+                suffix: '',
+                type: 'heading'
+            };
+        }
+        if (tagName === 'H6') {
+            return {
+                source: `###### ${content}`,
+                prefix: '###### ',
+                suffix: '',
+                type: 'heading'
+            };
+        }
+        
+        return null;
+    };
+    
+    // 点击格式化元素时展开为源码
+    // cursorPosition: 'middle'(默认), 'start', 'end'
+    const expandToMarkdown = (formattedEl, cursorPosition = 'middle') => {
+        const tagName = formattedEl.tagName;
+        
+        // 处理特殊格式（font color, alignment, headings, hr 等）
+        const specialFormat = getSourceCode(formattedEl);
+        if (specialFormat) {
+            const parent = formattedEl.parentNode;
+            
+            // 对于 Setext 标题，需要用 <br> 来表示换行（contenteditable 不显示 \n）
+            if (specialFormat.type === 'setext-heading') {
+                const content = formattedEl.textContent;
+                const underline = formattedEl.dataset.setextType || '---';
+                
+                const textNode1 = document.createTextNode(content);
+                const brNode = document.createElement('br');
+                const textNode2 = document.createTextNode(underline);
+                
+                parent.insertBefore(textNode1, formattedEl);
+                parent.insertBefore(brNode, formattedEl);
+                parent.insertBefore(textNode2, formattedEl);
+                parent.removeChild(formattedEl);
+                
+                expandedElement = textNode2; // 记录下划线节点
+                expandedMarkdown = specialFormat.source;
+                expandedType = specialFormat.type;
+                
+                // 光标放在下划线末尾
+                const sel = window.getSelection();
+                const range = document.createRange();
+                range.setStart(textNode2, textNode2.length);
+                range.collapse(true);
+                sel.removeAllRanges();
+                sel.addRange(range);
+                
+                return true;
+            }
+            
+            const textNode = document.createTextNode(specialFormat.source);
+            parent.replaceChild(textNode, formattedEl);
+
+            // 对于通过 # 语法形成的标题，在源码行后面显式插入一个 <br>
+            // 确保原本在标题下一行的内容不会“挤到”同一行右侧
+            if (specialFormat.type === 'heading') {
+                const nextSibling = textNode.nextSibling;
+                if (!nextSibling || !(nextSibling.nodeType === Node.ELEMENT_NODE && nextSibling.tagName === 'BR')) {
+                    const brAfter = document.createElement('br');
+                    if (nextSibling) {
+                        parent.insertBefore(brAfter, nextSibling);
+                    } else {
+                        parent.appendChild(brAfter);
+                    }
+                }
+            }
+
+            expandedElement = textNode;
+            expandedMarkdown = specialFormat.source;
+            expandedType = specialFormat.type;
+            
+            const sel = window.getSelection();
+            const range = document.createRange();
+            let cursorPos;
+            if (cursorPosition === 'start') {
+                cursorPos = 0;
+            } else if (cursorPosition === 'end') {
+                cursorPos = specialFormat.source.length;
+            } else {
+                // 对于没有文本内容的元素（如 hr），光标放在中间
+                const contentLen = formattedEl.textContent ? formattedEl.textContent.length : 0;
+                cursorPos = specialFormat.prefix.length + Math.floor(contentLen / 2);
+                // 确保光标位置在有效范围内
+                cursorPos = Math.max(0, Math.min(cursorPos, specialFormat.source.length));
+            }
+            range.setStart(textNode, Math.min(cursorPos, textNode.length));
+            range.collapse(true);
+            sel.removeAllRanges();
+            sel.addRange(range);
+            
+            return true;
+        }
+        
+        // 处理简单格式（Markdown）
+        const format = formatMap[tagName];
+        if (!format) return false;
+        
+        const content = formattedEl.textContent;
+        const markdown = format.prefix + content + format.suffix;
+        
+        // 创建文本节点替换格式化元素
+        const textNode = document.createTextNode(markdown);
+        formattedEl.parentNode.replaceChild(textNode, formattedEl);
+        
+        // 记录展开的状态
+        expandedElement = textNode;
+        expandedMarkdown = markdown;
+        expandedType = 'simple';
+        
+        // 根据参数决定光标位置
+        const sel = window.getSelection();
+        const range = document.createRange();
+        let cursorPos;
+        if (cursorPosition === 'start') {
+            cursorPos = 0;
+        } else if (cursorPosition === 'end') {
+            cursorPos = markdown.length;
+        } else {
+            cursorPos = format.prefix.length + Math.floor(content.length / 2);
+        }
+        range.setStart(textNode, cursorPos);
+        range.collapse(true);
+        sel.removeAllRanges();
+        sel.addRange(range);
+        
+        return true;
+    };
+    
+    // 实时 Markdown 渲染：检测并转换 Markdown 语法
+    const liveRenderMarkdown = () => {
+        const sel = window.getSelection();
+        if (!sel.rangeCount) return;
+        
+        const range = sel.getRangeAt(0);
+        if (!editor.contains(range.startContainer)) return;
+        
+        // 获取当前光标所在的文本节点
+        let textNode = range.startContainer;
+        if (textNode.nodeType !== Node.TEXT_NODE) return;
+        
+        // 如果正在编辑展开的元素，不要渲染
+        if (textNode === expandedElement) return;
+        
+        const text = textNode.textContent;
+        const cursorPos = range.startOffset;
+        
+        // Markdown 模式列表（按优先级排序）
+        const patterns = [
+            { regex: /\*\*(.+?)\*\*/, tag: 'strong' },           // **粗体**
+            { regex: /\*(.+?)\*/, tag: 'em' },                   // *斜体*
+            { regex: /~~(.+?)~~/, tag: 'del' },                  // ~~删除线~~
+            { regex: /==(.+?)==/, tag: 'mark' },                 // ==高亮==
+            { regex: /`([^`]+)`/, tag: 'code' },                 // `代码`
+            { regex: /\[\[(.+?)\]\]/, tag: 'span', className: 'md-wikilink' }, // [[链接]]
+        ];
+        
+        // HTML 标签模式（font color, center, p align）
+        const htmlPatterns = [
+            { regex: /<font\s+color=["']?([^"'>]+)["']?>([^<]*)<\/font>/i, tag: 'font', attrName: 'color', attrIndex: 1, contentIndex: 2 },
+            { regex: /<center>([^<]*)<\/center>/i, tag: 'center', contentIndex: 1 },
+            { regex: /<p\s+align=["']?([^"'>]+)["']?>([^<]*)<\/p>/i, tag: 'p', attrName: 'align', attrIndex: 1, contentIndex: 2 },
+        ];
+        
+        // Setext 标题和水平分割线检测
+        // 使用编辑器完整文本检测（基于行），同时保留已经存在的 Setext 标题结构
+        // 自定义规则：--- → H1（一级标题），=== → H2（二级标题）
+        // 注意：正则需要兼容开头的零宽空格(\u200B)
+        const setextH1Match = text.match(/^[\u200B]*(-{3,})\s*$/);  // --- → H1
+        const setextH2Match = text.match(/^[\u200B]*(= {3,})\s*$/);  // === → H2
+
+        if (setextH1Match || setextH2Match) {
+            const parent = textNode.parentNode;
+            
+            // 向上查找前一个非空文本节点（作为标题内容）
+            let targetPreviousNode = null;
+            let nodesToRemove = [];
+            
+            let curr = textNode.previousSibling;
+            
+            // 跳过 --- 前面的空白文本节点
+            while (curr && curr.nodeType === Node.TEXT_NODE && !curr.textContent.trim()) {
+                 nodesToRemove.push(curr);
+                 curr = curr.previousSibling;
+            }
+            
+            // 检查是否有 BR 换行符（允许标题和分隔符之间有一个换行）
+            if (curr && curr.tagName === 'BR') {
+                 nodesToRemove.push(curr);
+                 curr = curr.previousSibling;
+                 
+                 // 跳过 BR 前面的空白文本节点
+                 while (curr && curr.nodeType === Node.TEXT_NODE && !curr.textContent.trim()) {
+                     nodesToRemove.push(curr);
+                     curr = curr.previousSibling;
+                 }
+                 
+                 // 找到潜在的标题文本
+                 if (curr && curr.nodeType === Node.TEXT_NODE && curr.textContent.trim()) {
+                      targetPreviousNode = curr;
+                 }
+            } else if (curr && curr.nodeType === Node.TEXT_NODE && curr.textContent.trim()) {
+                 // 紧邻的文本（无 BR）
+                 targetPreviousNode = curr;
+            }
+
+            // 逻辑 1: Setext 标题 (文本 + ---/===)
+            // 只有当存在有效的上一行文本节点时才尝试合并为标题
+            if (targetPreviousNode) {
+                 const headerText = targetPreviousNode.textContent.trim();
+                 // 确保上一行本身不是分隔符 (同时兼容零宽空格)
+                 // 只有当 headerText 看起来不像是另一个分隔符时，才将其转为标题
+                 if (!/^[\u200B]*[-=]{3,}$/.test(headerText)) {
+                     const level = setextH1Match ? 'h1' : 'h2';
+                     const newEl = document.createElement(level);
+                     newEl.textContent = headerText;
+                     newEl.dataset.setextType = setextH1Match ? '---' : '===';
+                     
+                     // 插入新标题
+                     parent.insertBefore(newEl, targetPreviousNode);
+                     
+                     // 移除旧文本节点和中间的 BR/空白
+                     parent.removeChild(targetPreviousNode);
+                     nodesToRemove.forEach(el => parent.removeChild(el));
+                     
+                     // 移除当前的 ---/=== 文本节点
+                     const afterNode = document.createTextNode('\u200B');
+                     // 如果当前节点后面有兄弟节点，插在前面；否则追加
+                     if (textNode.nextSibling) {
+                         parent.insertBefore(afterNode, textNode.nextSibling);
+                     } else {
+                         parent.appendChild(afterNode);
+                     }
+                     parent.removeChild(textNode);
+                     
+                     // 恢复光标位置
+                     const newRange = document.createRange();
+                     newRange.setStart(afterNode, 1);
+                     newRange.collapse(true);
+                     sel.removeAllRanges();
+                     sel.addRange(newRange);
+                     
+                     expandedElement = null;
+                     expandedMarkdown = null;
+                     expandedType = null;
+                     
+                     saveEditorContent();
+                     return;
+                 }
+                 // 如果 headerText 也是分隔符（例如连续输入 ---），则不合并，让其 falling through 到逻辑 2
+            }
+
+            // 逻辑 2: 水平分割线 (仅限 ---, 且没有形成标题时)
+            // === 如果没有形成 H2，则不应该渲染为 HR（Markdown 标准中 === 只是 H2 marker）
+            if (setextH1Match) {
+                 const hr = document.createElement('hr');
+                 const afterNode = document.createTextNode('\u200B');
+                 
+                 // 替换当前的 --- 文本节点
+                 parent.insertBefore(hr, textNode);
+                 parent.insertBefore(afterNode, textNode);
+                 parent.removeChild(textNode);
+                 
+                 const newRange = document.createRange();
+                 newRange.setStart(afterNode, 1);
+                 newRange.collapse(true);
+                 sel.removeAllRanges();
+                 sel.addRange(newRange);
+                 
+                 expandedElement = null;
+                 expandedMarkdown = null;
+                 expandedType = null;
+                 
+                 saveEditorContent();
+                 return;
+            }
+        }
+        
+        // 块级 Markdown 模式（需要特殊处理）
+        // ATX 标题规则：
+        //   - # 必须在行首
+        //   - # 后面必须有至少一个空格
+        //   - 支持 H1-H6（1-6个 #）
+        //   - 超过6个 # 不会被渲染为标题
+        //   - #标题（无空格）不会被渲染
+        //   -兼容零宽空格(\u200B)
+        const blockPatterns = [
+            { regex: /^[\u200B]*######\s(.+)$/, type: 'h6', contentIndex: 1 },    // ###### 六级标题
+            { regex: /^[\u200B]*#####\s(.+)$/, type: 'h5', contentIndex: 1 },     // ##### 五级标题
+            { regex: /^[\u200B]*####\s(.+)$/, type: 'h4', contentIndex: 1 },      // #### 四级标题
+            { regex: /^[\u200B]*###\s(.+)$/, type: 'h3', contentIndex: 1 },       // ### 三级标题
+            { regex: /^[\u200B]*##\s(.+)$/, type: 'h2', contentIndex: 1 },        // ## 二级标题
+            { regex: /^[\u200B]*#\s(.+)$/, type: 'h1', contentIndex: 1 },         // # 一级标题
+            { regex: /^[\u200B]*>\s*(.*)$/, type: 'blockquote', contentIndex: 1 },
+            { regex: /^[\u200B]*-\s+\[\s*\]\s*(.*)$/, type: 'task-unchecked', contentIndex: 1 },
+            { regex: /^[\u200B]*-\s+\[x\]\s*(.*)$/i, type: 'task-checked', contentIndex: 1 },
+            { regex: /^[\u200B]*-\s+(.+)$/, type: 'ul', contentIndex: 1 },
+            { regex: /^[\u200B]*(\d+)\.\s+(.+)$/, type: 'ol', contentIndex: 2 },
+        ];
+        
+        // 检查块级模式
+        for (const pattern of blockPatterns) {
+            const match = text.match(pattern.regex);
+            // 放宽条件：只要匹配成功就尝试渲染（不要求光标必须在末尾）
+            if (match) {
+                let newEl;
+                const parent = textNode.parentNode;
+                
+                // ATX 标题处理
+                if (pattern.type === 'h1') {
+                    newEl = document.createElement('h1');
+                    newEl.textContent = match[pattern.contentIndex] || '';
+                } else if (pattern.type === 'h2') {
+                    newEl = document.createElement('h2');
+                    newEl.textContent = match[pattern.contentIndex] || '';
+                } else if (pattern.type === 'h3') {
+                    newEl = document.createElement('h3');
+                    newEl.textContent = match[pattern.contentIndex] || '';
+                } else if (pattern.type === 'h4') {
+                    newEl = document.createElement('h4');
+                    newEl.textContent = match[pattern.contentIndex] || '';
+                } else if (pattern.type === 'h5') {
+                    newEl = document.createElement('h5');
+                    newEl.textContent = match[pattern.contentIndex] || '';
+                } else if (pattern.type === 'h6') {
+                    newEl = document.createElement('h6');
+                    newEl.textContent = match[pattern.contentIndex] || '';
+                } else if (pattern.type === 'blockquote') {
+                    newEl = document.createElement('blockquote');
+                    newEl.textContent = match[pattern.contentIndex] || '';
+                } else if (pattern.type === 'task-unchecked' || pattern.type === 'task-checked') {
+                    newEl = document.createElement('div');
+                    newEl.className = 'md-task-item';
+                    const checkbox = document.createElement('input');
+                    checkbox.type = 'checkbox';
+                    checkbox.className = 'md-task-checkbox';
+                    checkbox.checked = pattern.type === 'task-checked';
+                    newEl.appendChild(checkbox);
+                    newEl.appendChild(document.createTextNode(' ' + (match[pattern.contentIndex] || '')));
+                } else if (pattern.type === 'ul') {
+                    newEl = document.createElement('ul');
+                    const li = document.createElement('li');
+                    li.textContent = match[pattern.contentIndex] || '';
+                    newEl.appendChild(li);
+                } else if (pattern.type === 'ol') {
+                    newEl = document.createElement('ol');
+                    const li = document.createElement('li');
+                    li.textContent = match[pattern.contentIndex] || '';
+                    newEl.appendChild(li);
+                }
+                
+                if (newEl) {
+                    const afterNode = document.createTextNode('\u200B');
+                    parent.insertBefore(newEl, textNode);
+                    parent.insertBefore(afterNode, textNode);
+                    parent.removeChild(textNode);
+                    
+                    const newRange = document.createRange();
+                    newRange.setStart(afterNode, 1);
+                    newRange.collapse(true);
+                    sel.removeAllRanges();
+                    sel.addRange(newRange);
+                    
+                    expandedElement = null;
+                    expandedMarkdown = null;
+                    expandedType = null;
+                    
+                    saveEditorContent();
+                    return;
+                }
+            }
+        }
+        
+        // 先检查 HTML 模式
+        for (const pattern of htmlPatterns) {
+            const match = text.match(pattern.regex);
+            if (match && match.index !== undefined) {
+                const matchStart = match.index;
+                const matchEnd = matchStart + match[0].length;
+                
+                if (cursorPos >= matchEnd) {
+                    const before = text.substring(0, matchStart);
+                    const content = match[pattern.contentIndex];
+                    const after = text.substring(matchEnd);
+                    
+                    const newEl = document.createElement(pattern.tag);
+                    if (pattern.attrName && pattern.attrIndex) {
+                        newEl.setAttribute(pattern.attrName, match[pattern.attrIndex]);
+                    }
+                    newEl.textContent = content;
+                    
+                    const parent = textNode.parentNode;
+                    const beforeNode = document.createTextNode(before);
+                    const afterNode = document.createTextNode(after || '\u200B');
+                    
+                    parent.insertBefore(beforeNode, textNode);
+                    parent.insertBefore(newEl, textNode);
+                    parent.insertBefore(afterNode, textNode);
+                    parent.removeChild(textNode);
+                    
+                    const newRange = document.createRange();
+                    newRange.setStart(afterNode, after ? 0 : 1);
+                    newRange.collapse(true);
+                    sel.removeAllRanges();
+                    sel.addRange(newRange);
+                    
+                    expandedElement = null;
+                    expandedMarkdown = null;
+                    expandedType = null;
+                    
+                    saveEditorContent();
+                    return;
+                }
+            }
+        }
+        
+        // 检查 Markdown 模式
+        for (const pattern of patterns) {
+            const match = text.match(pattern.regex);
+            if (match && match.index !== undefined) {
+                const matchStart = match.index;
+                const matchEnd = matchStart + match[0].length;
+                
+                // 只在光标位于匹配文本之后时才渲染（即用户刚完成输入）
+                if (cursorPos >= matchEnd) {
+                    const before = text.substring(0, matchStart);
+                    const content = match[1];
+                    const after = text.substring(matchEnd);
+                    
+                    // 创建新元素
+                    const newEl = document.createElement(pattern.tag);
+                    if (pattern.className) newEl.className = pattern.className;
+                    newEl.textContent = content;
+                    
+                    // 替换文本节点
+                    const parent = textNode.parentNode;
+                    const beforeNode = document.createTextNode(before);
+                    // 如果后面没有内容，添加零宽空格确保光标位置正确且后续输入不继承格式
+                    const afterNode = document.createTextNode(after || '\u200B');
+                    
+                    parent.insertBefore(beforeNode, textNode);
+                    parent.insertBefore(newEl, textNode);
+                    parent.insertBefore(afterNode, textNode);
+                    parent.removeChild(textNode);
+                    
+                    // 将光标移到新元素之后
+                    const newRange = document.createRange();
+                    newRange.setStart(afterNode, after ? 0 : 1);
+                    newRange.collapse(true);
+                    sel.removeAllRanges();
+                    sel.addRange(newRange);
+                    
+                    // 清除展开状态
+                    expandedElement = null;
+                    expandedMarkdown = null;
+                    expandedType = null;
+                    
+                    // 保存内容
+                    saveEditorContent();
+                    return;
+                }
+            }
+        }
+    };
+    
+    // 重新渲染展开的 Markdown（当光标离开时）
+    const reRenderExpanded = () => {
+        if (!expandedElement || !expandedElement.parentNode) {
+            expandedElement = null;
+            expandedMarkdown = null;
+            expandedType = null;
+            return;
+        }
+        
+        const textNode = expandedElement;
+        const text = textNode.textContent;
+        const savedType = expandedType;
+        
+        // 清除展开状态（必须在渲染前清除）
+        expandedElement = null;
+        expandedMarkdown = null;
+        expandedType = null;
+        
+        // HTML 标签模式（font color, center, p align）
+        const htmlPatterns = [
+            { regex: /<font\s+color=["']?([^"'>]+)["']?>([^<]*)<\/font>/i, tag: 'font', attrName: 'color', attrIndex: 1, contentIndex: 2 },
+            { regex: /<center>([^<]*)<\/center>/i, tag: 'center', contentIndex: 1 },
+            { regex: /<p\s+align=["']?([^"'>]+)["']?>([^<]*)<\/p>/i, tag: 'p', attrName: 'align', attrIndex: 1, contentIndex: 2 },
+        ];
+        
+        // Setext 标题语法检测（处理两行结构：内容 + <br> + ---/===）
+        // 自定义规则: --- → H1, === → H2
+        const isSetextH1 = /^-{3,}\s*$/.test(text);  // --- → H1
+        const isSetextH2 = /^={3,}\s*$/.test(text);  // === → H2
+        
+        if (isSetextH1 || isSetextH2) {
+            const parent = textNode.parentNode;
+            if (parent) {
+                // 向前查找：<br> 和上一行文本
+                let prevNode = textNode.previousSibling;
+                let brNode = null;
+                let contentNode = null;
+                
+                // 跳过空文本节点
+                while (prevNode && prevNode.nodeType === Node.TEXT_NODE && 
+                       prevNode.textContent.trim() === '') {
+                    prevNode = prevNode.previousSibling;
+                }
+                
+                // 找到 <br>
+                if (prevNode && prevNode.nodeType === Node.ELEMENT_NODE && prevNode.tagName === 'BR') {
+                    brNode = prevNode;
+                    prevNode = prevNode.previousSibling;
+                    
+                    // 跳过空文本节点
+                    while (prevNode && prevNode.nodeType === Node.TEXT_NODE && 
+                           prevNode.textContent.trim() === '') {
+                        prevNode = prevNode.previousSibling;
+                    }
+                    
+                    // 找到内容文本节点
+                    if (prevNode && prevNode.nodeType === Node.TEXT_NODE) {
+                        contentNode = prevNode;
+                    }
+                }
+                
+                if (contentNode && contentNode.textContent.trim()) {
+                    // 有上一行内容，创建标题
+                    const headingLevel = isSetextH1 ? 'h1' : 'h2';
+                    const newEl = document.createElement(headingLevel);
+                    newEl.textContent = contentNode.textContent.trim();
+                    newEl.dataset.setextType = isSetextH1 ? '---' : '===';
+                    
+                    // 移除内容节点、<br>、下划线节点
+                    if (contentNode.parentNode) contentNode.parentNode.removeChild(contentNode);
+                    if (brNode && brNode.parentNode) brNode.parentNode.removeChild(brNode);
+                    
+                    const afterNode = document.createTextNode('\u200B');
+                    parent.insertBefore(newEl, textNode);
+                    parent.insertBefore(afterNode, textNode);
+                    parent.removeChild(textNode);
+                    saveEditorContent();
+                    return;
+                } else if (isSetextH1) {
+                    // 没有上一行内容，--- 变成水平分割线
+                    const hrEl = document.createElement('hr');
+                    
+                    // 移除可能存在的 <br>
+                    if (brNode && brNode.parentNode) brNode.parentNode.removeChild(brNode);
+                    
+                    const afterNode = document.createTextNode('\u200B');
+                    parent.insertBefore(hrEl, textNode);
+                    parent.insertBefore(afterNode, textNode);
+                    parent.removeChild(textNode);
+                    saveEditorContent();
+                    return;
+                }
+            }
+        }
+        
+        // 水平分割线 ---（单独一行，没有其他内容）
+        const hrPattern = /^-{3,}\s*$/;
+        if (hrPattern.test(text)) {
+            const parent = textNode.parentNode;
+            if (parent) {
+                const hrEl = document.createElement('hr');
+                
+                const afterNode = document.createTextNode('\u200B');
+                parent.insertBefore(hrEl, textNode);
+                parent.insertBefore(afterNode, textNode);
+                parent.removeChild(textNode);
+                saveEditorContent();
+                return;
+            }
+        }
+        
+        // 块级 Markdown 模式
+        // ATX 标题规则：# 在行首，后面必须有空格，支持 H1-H6
+        const blockPatterns = [
+            { regex: /^######\s(.+)$/, type: 'h6', contentIndex: 1 },    // ###### 六级标题
+            { regex: /^#####\s(.+)$/, type: 'h5', contentIndex: 1 },     // ##### 五级标题
+            { regex: /^####\s(.+)$/, type: 'h4', contentIndex: 1 },      // #### 四级标题
+            { regex: /^###\s(.+)$/, type: 'h3', contentIndex: 1 },       // ### 三级标题
+            { regex: /^##\s(.+)$/, type: 'h2', contentIndex: 1 },        // ## 二级标题
+            { regex: /^#\s(.+)$/, type: 'h1', contentIndex: 1 },         // # 一级标题
+            { regex: /^>\s*(.*)$/, type: 'blockquote', contentIndex: 1 },
+            { regex: /^-\s+\[\s*\]\s*(.*)$/, type: 'task-unchecked', contentIndex: 1 },
+            { regex: /^-\s+\[x\]\s*(.*)$/i, type: 'task-checked', contentIndex: 1 },
+            { regex: /^-\s+(.+)$/, type: 'ul', contentIndex: 1 },
+            { regex: /^(\d+)\.\s+(.+)$/, type: 'ol', contentIndex: 2 },
+        ];
+        
+        // 检查块级模式
+        for (const pattern of blockPatterns) {
+            const match = text.match(pattern.regex);
+            if (match) {
+                let newEl;
+                const parent = textNode.parentNode;
+                if (!parent) return;
+                // ATX 标题处理
+                if (pattern.type === 'h1') {
+                    newEl = document.createElement('h1');
+                    newEl.textContent = match[pattern.contentIndex] || '';
+                } else if (pattern.type === 'h2') {
+                    newEl = document.createElement('h2');
+                    newEl.textContent = match[pattern.contentIndex] || '';
+                } else if (pattern.type === 'h3') {
+                    newEl = document.createElement('h3');
+                    newEl.textContent = match[pattern.contentIndex] || '';
+                } else if (pattern.type === 'h4') {
+                    newEl = document.createElement('h4');
+                    newEl.textContent = match[pattern.contentIndex] || '';
+                } else if (pattern.type === 'h5') {
+                    newEl = document.createElement('h5');
+                    newEl.textContent = match[pattern.contentIndex] || '';
+                } else if (pattern.type === 'h6') {
+                    newEl = document.createElement('h6');
+                    newEl.textContent = match[pattern.contentIndex] || '';
+                } else if (pattern.type === 'blockquote') {
+                    newEl = document.createElement('blockquote');
+                    newEl.textContent = match[pattern.contentIndex] || '';
+                } else if (pattern.type === 'task-unchecked' || pattern.type === 'task-checked') {
+                    newEl = document.createElement('div');
+                    newEl.className = 'md-task-item';
+                    const cb = document.createElement('input');
+                    cb.type = 'checkbox';
+                    cb.className = 'md-task-checkbox';
+                    cb.checked = pattern.type === 'task-checked';
+                    newEl.appendChild(cb);
+                    newEl.appendChild(document.createTextNode(' ' + (match[pattern.contentIndex] || '')));
+                } else if (pattern.type === 'ul') {
+                    newEl = document.createElement('ul');
+                    const li = document.createElement('li');
+                    li.textContent = match[pattern.contentIndex] || '';
+                    newEl.appendChild(li);
+                } else if (pattern.type === 'ol') {
+                    newEl = document.createElement('ol');
+                    const li = document.createElement('li');
+                    li.textContent = match[pattern.contentIndex] || '';
+                    newEl.appendChild(li);
+                }
+                if (newEl) {
+                    const afterNode = document.createTextNode('\u200B');
+                    parent.insertBefore(newEl, textNode);
+                    parent.insertBefore(afterNode, textNode);
+                    parent.removeChild(textNode);
+                    saveEditorContent();
+                    return;
+                }
+            }
+        }
+        
+        // 先检查 HTML 模式
+        for (const pattern of htmlPatterns) {
+            const match = text.match(pattern.regex);
+            if (match && match.index !== undefined) {
+                const matchStart = match.index;
+                const matchEnd = matchStart + match[0].length;
+                const before = text.substring(0, matchStart);
+                const content = match[pattern.contentIndex];
+                const after = text.substring(matchEnd);
+                
+                const newEl = document.createElement(pattern.tag);
+                if (pattern.attrName && pattern.attrIndex) {
+                    newEl.setAttribute(pattern.attrName, match[pattern.attrIndex]);
+                }
+                newEl.textContent = content;
+                
+                const parent = textNode.parentNode;
+                if (!parent) return;
+                
+                const beforeNode = document.createTextNode(before);
+                const afterNode = document.createTextNode(after || '\u200B');
+                
+                parent.insertBefore(beforeNode, textNode);
+                parent.insertBefore(newEl, textNode);
+                parent.insertBefore(afterNode, textNode);
+                parent.removeChild(textNode);
+                
+                saveEditorContent();
+                return;
+            }
+        }
+        
+        // Markdown 模式列表
+        const patterns = [
+            { regex: /\*\*(.+?)\*\*/, tag: 'strong' },
+            { regex: /\*(.+?)\*/, tag: 'em' },
+            { regex: /~~(.+?)~~/, tag: 'del' },
+            { regex: /==(.+?)==/, tag: 'mark' },
+            { regex: /`([^`]+)`/, tag: 'code' },
+            { regex: /\[\[(.+?)\]\]/, tag: 'span', className: 'md-wikilink' },
+        ];
+        
+        for (const pattern of patterns) {
+            const match = text.match(pattern.regex);
+            if (match && match.index !== undefined) {
+                const matchStart = match.index;
+                const matchEnd = matchStart + match[0].length;
+                const before = text.substring(0, matchStart);
+                const content = match[1];
+                const after = text.substring(matchEnd);
+                
+                // 创建新元素
+                const newEl = document.createElement(pattern.tag);
+                if (pattern.className) newEl.className = pattern.className;
+                newEl.textContent = content;
+                
+                // 替换文本节点
+                const parent = textNode.parentNode;
+                if (!parent) return;
+                
+                const beforeNode = document.createTextNode(before);
+                // 如果后面没有内容，添加零宽空格
+                const afterNode = document.createTextNode(after || '\u200B');
+                
+                parent.insertBefore(beforeNode, textNode);
+                parent.insertBefore(newEl, textNode);
+                parent.insertBefore(afterNode, textNode);
+                parent.removeChild(textNode);
+                
+                // 保存内容
+                saveEditorContent();
+                return;
+            }
+        }
+    };
+    
+    // 保存编辑器内容
+    const saveEditorContent = () => {
+        node.html = editor.innerHTML;
+        // 保存时清除零宽空格
+        node.text = editor.innerText.replace(/\u200B/g, '');
+        saveTempNodes();
+    };
+    
+    // 进入编辑状态（点击时）
     const enterEdit = () => {
         if (node.isEditing) return;
         node.isEditing = true;
-        editor.value = typeof node.text === 'string' ? node.text : '';
-        editor.style.display = 'block';
-        view.style.display = 'none';
         el.classList.add('editing');
-        // 恢复编辑器滚动（多次尝试）
-        __restoreScroll(editor, editorScrollKey);
         
         // 编辑模式下禁用拖拽和resize
-        el.style.pointerEvents = 'auto';
         const resizeHandles = el.querySelectorAll('.resize-handle');
         resizeHandles.forEach(handle => {
             handle.style.pointerEvents = 'none';
             handle.style.opacity = '0';
         });
+    };
+    
+    // 退出编辑状态
+    const exitEdit = () => {
+        if (!node.isEditing) return;
+        node.isEditing = false;
+        el.classList.remove('editing');
         
-        requestAnimationFrame(() => editor.focus());
+        // 恢复拖拽和resize
+        const resizeHandles = el.querySelectorAll('.resize-handle');
+        resizeHandles.forEach(handle => {
+            handle.style.pointerEvents = 'auto';
+            handle.style.opacity = '';
+        });
+        
+        // 保存内容
+        saveEditorContent();
     };
 
-    const applyEdit = () => {
-        const val = editor.value || '';
-        node.text = val;
-        if (typeof marked !== 'undefined') {
-            try { view.innerHTML = val ? marked.parse(val) : ''; } catch { view.textContent = val; }
-        } else {
-            view.textContent = val;
+    // 实时渲染：监听输入事件（带防抖，避免输入时频繁渲染）
+    let renderDebounceTimer = null;
+    const RENDER_DEBOUNCE_DELAY = 400; // 放慢到 400ms，接近 Obsidian 的节奏，避免“还没打完就被渲染”
+    
+    editor.addEventListener('input', (e) => {
+        // 清除之前的定时器
+        if (renderDebounceTimer) {
+            clearTimeout(renderDebounceTimer);
         }
-        node.isEditing = false;
-        editor.style.display = 'none';
-        view.style.display = 'block';
-        el.classList.remove('editing');
-        // 恢复查看态滚动（多次尝试）
-        __restoreScroll(view, viewScrollKey);
         
-        // 恢复拖拽和resize
-        const resizeHandles = el.querySelectorAll('.resize-handle');
-        resizeHandles.forEach(handle => {
-            handle.style.pointerEvents = 'auto';
-            handle.style.opacity = '';
-        });
-        
-        saveTempNodes();
-    };
-
-    const cancelEdit = () => {
-        node.isEditing = false;
-        editor.style.display = 'none';
-        view.style.display = 'block';
-        el.classList.remove('editing');
-        __restoreScroll(view, viewScrollKey);
-        
-        // 恢复拖拽和resize
-        const resizeHandles = el.querySelectorAll('.resize-handle');
-        resizeHandles.forEach(handle => {
-            handle.style.pointerEvents = 'auto';
-            handle.style.opacity = '';
-        });
-    };
-
-    // 交互：双击进入编辑；编辑框 blur/快捷键提交
-    el.addEventListener('dblclick', (e) => {
-        if (e.target.closest('.resize-handle')) return;
+        // 延迟渲染
+        renderDebounceTimer = setTimeout(() => {
+            liveRenderMarkdown();
+            renderDebounceTimer = null;
+        }, RENDER_DEBOUNCE_DELAY);
+    });
+    
+    // 编辑器获得焦点时进入编辑状态
+    editor.addEventListener('focus', () => {
         enterEdit();
-        e.stopPropagation();
-        e.preventDefault();
     });
-
-    editor.addEventListener('blur', () => { if (node.isEditing) applyEdit(); });
+    
+    // 编辑器失去焦点时退出编辑状态并重新渲染展开的内容
+    editor.addEventListener('blur', () => {
+        reRenderExpanded();
+        exitEdit();
+    });
+    
+    // 快捷键处理
     editor.addEventListener('keydown', (e) => {
-        if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') { e.preventDefault(); applyEdit(); }
-        else if (e.key === 'Escape') { e.preventDefault(); cancelEdit(); }
+        if (e.key === 'Escape') {
+            e.preventDefault();
+            editor.blur();
+            return;
+        }
+        
+        // Backspace：删除到格式化元素时，先展开为源码
+        if (e.key === 'Backspace') {
+            const sel = window.getSelection();
+            if (!sel.rangeCount) return;
+            const range = sel.getRangeAt(0);
+            
+            // 只处理光标（非选区）
+            if (!range.collapsed) return;
+            
+            const container = range.startContainer;
+            const offset = range.startOffset;
+            
+            // 检查元素是否为格式化元素（Markdown 或 HTML 格式）
+            const isFormattedElement = (el) => {
+                if (!el || el.nodeType !== Node.ELEMENT_NODE) return false;
+                const tag = el.tagName;
+                // Markdown 格式
+                if (formatMap[tag]) return true;
+                // HTML 格式：font, center, p[align]
+                if (tag === 'FONT' || tag === 'CENTER') return true;
+                if (tag === 'P' && el.hasAttribute('align')) return true;
+                // 块级格式：blockquote, hr, ul, ol, task
+                if (tag === 'BLOCKQUOTE' || tag === 'HR' || tag === 'UL' || tag === 'OL') return true;
+                if (el.classList && el.classList.contains('md-task-item')) return true;
+                // 标题格式：h1-h6
+                if (tag === 'H1' || tag === 'H2' || tag === 'H3' || tag === 'H4' || tag === 'H5' || tag === 'H6') return true;
+                return false;
+            };
+            
+            // 查找紧邻光标前的格式化元素
+            const findAdjacentFormattedEl = () => {
+                // 情况A：光标在文本节点内
+                if (container.nodeType === Node.TEXT_NODE) {
+                    // 在文本开头，或在零宽空格的位置1
+                    if (offset === 0 || (offset === 1 && container.textContent.charAt(0) === '\u200B')) {
+                        let prev = container.previousSibling;
+                        // 跳过空文本节点和零宽空格
+                        while (prev && prev.nodeType === Node.TEXT_NODE && 
+                               (prev.textContent === '' || prev.textContent === '\u200B')) {
+                            prev = prev.previousSibling;
+                        }
+                        if (isFormattedElement(prev)) {
+                            return { el: prev, cleanup: offset === 1 && container.textContent === '\u200B' ? container : null };
+                        }
+                    }
+                }
+                
+                // 情况B：光标在元素节点内（如 editor 本身）
+                if (container.nodeType === Node.ELEMENT_NODE && offset > 0) {
+                    let prevChild = container.childNodes[offset - 1];
+                    // 跳过零宽空格
+                    let cleanup = null;
+                    if (prevChild && prevChild.nodeType === Node.TEXT_NODE && prevChild.textContent === '\u200B') {
+                        cleanup = prevChild;
+                        prevChild = container.childNodes[offset - 2];
+                    }
+                    if (isFormattedElement(prevChild)) {
+                        return { el: prevChild, cleanup };
+                    }
+                }
+                
+                // 情况C：光标在格式化元素内部的开头
+                const formattedParent = container.parentElement?.closest('strong, b, em, i, del, s, mark, code, font, center, p[align], blockquote, hr, ul, ol, .md-task-item, h1, h2, h3, h4, h5, h6');
+                if (formattedParent && editor.contains(formattedParent)) {
+                    const isAtStart = (container.nodeType === Node.TEXT_NODE && offset === 0) ||
+                                      (container === formattedParent && offset === 0);
+                    if (isAtStart) {
+                        return { el: formattedParent, cleanup: null };
+                    }
+                }
+                
+                return null;
+            };
+            
+            const result = findAdjacentFormattedEl();
+            if (result) {
+                e.preventDefault();
+                if (result.cleanup) {
+                    result.cleanup.parentNode?.removeChild(result.cleanup);
+                }
+                expandToMarkdown(result.el, 'end');
+                return;
+            }
+        }
+        
+        // Delete：删除到格式化元素时，先展开为源码
+        if (e.key === 'Delete') {
+            const sel = window.getSelection();
+            if (!sel.rangeCount) return;
+            const range = sel.getRangeAt(0);
+            
+            if (!range.collapsed) return;
+            
+            const container = range.startContainer;
+            const offset = range.startOffset;
+            
+            // 检查元素是否为格式化元素（Markdown 或 HTML 格式）
+            const isFormattedEl = (el) => {
+                if (!el || el.nodeType !== Node.ELEMENT_NODE) return false;
+                const tag = el.tagName;
+                if (formatMap[tag]) return true;
+                if (tag === 'FONT' || tag === 'CENTER') return true;
+                if (tag === 'P' && el.hasAttribute('align')) return true;
+                // 块级格式
+                if (tag === 'BLOCKQUOTE' || tag === 'HR' || tag === 'UL' || tag === 'OL') return true;
+                if (el.classList && el.classList.contains('md-task-item')) return true;
+                // 标题格式：h1-h6
+                if (tag === 'H1' || tag === 'H2' || tag === 'H3' || tag === 'H4' || tag === 'H5' || tag === 'H6') return true;
+                return false;
+            };
+            
+            // 查找紧邻光标后的格式化元素
+            const findNextFormattedEl = () => {
+                if (container.nodeType === Node.TEXT_NODE) {
+                    const len = container.textContent.length;
+                    // 在文本末尾，或在零宽空格结尾位置
+                    if (offset === len || (offset === len - 1 && container.textContent.charAt(len - 1) === '\u200B')) {
+                        let next = container.nextSibling;
+                        while (next && next.nodeType === Node.TEXT_NODE && 
+                               (next.textContent === '' || next.textContent === '\u200B')) {
+                            next = next.nextSibling;
+                        }
+                        if (isFormattedEl(next)) {
+                            return next;
+                        }
+                    }
+                }
+                
+                if (container.nodeType === Node.ELEMENT_NODE && offset < container.childNodes.length) {
+                    let nextChild = container.childNodes[offset];
+                    if (nextChild && nextChild.nodeType === Node.TEXT_NODE && nextChild.textContent === '\u200B') {
+                        nextChild = container.childNodes[offset + 1];
+                    }
+                    if (isFormattedEl(nextChild)) {
+                        return nextChild;
+                    }
+                }
+                
+                return null;
+            };
+            
+            const nextEl = findNextFormattedEl();
+            if (nextEl) {
+                e.preventDefault();
+                expandToMarkdown(nextEl, 'start');
+                return;
+            }
+        }
+        
+        // 方向键移动：
+        // - 当光标离开当前展开的源码区域时，自动重新渲染
+        // - 当光标移动到某个格式化元素内部时，自动展开为源码
+        if (['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown'].includes(e.key)) {
+            setTimeout(() => {
+                const sel = window.getSelection();
+                if (!sel || !sel.rangeCount) return;
+                let range = sel.getRangeAt(0);
+
+                const isCursorInsideExpanded = () => {
+                    if (!expandedElement || !expandedElement.parentNode) return false;
+                    const container = range.startContainer;
+                    if (container === expandedElement) return true;
+                    if (container.nodeType === Node.TEXT_NODE) {
+                        if (container === expandedElement) return true;
+                        if (container.previousSibling === expandedElement || container.nextSibling === expandedElement) {
+                            return true;
+                        }
+                    }
+                    return false;
+                };
+
+                // 如果已经展开源码且光标离开了该区域，则先重新渲染
+                if (expandedElement && expandedElement.parentNode && !isCursorInsideExpanded()) {
+                    reRenderExpanded();
+                    const selAfter = window.getSelection();
+                    if (!selAfter || !selAfter.rangeCount) return;
+                    range = selAfter.getRangeAt(0);
+                }
+
+                // 当前没有展开的源码时，检测是否进入了某个格式化元素
+                if (!expandedElement) {
+                    let container = range.startContainer;
+                    if (container.nodeType === Node.TEXT_NODE && container.parentElement) {
+                        // 避免零宽空格节点干扰判断
+                        if (container.textContent === '\u200B') {
+                            container = container.parentElement;
+                        } else {
+                            container = container.parentElement;
+                        }
+                    }
+
+                    let formattedEl = null;
+                    if (container.nodeType === Node.ELEMENT_NODE) {
+                        formattedEl = container.closest('strong, b, em, i, del, s, mark, code, font, center, p[align], blockquote, hr, ul, ol, .md-task-item, h1, h2, h3, h4, h5, h6');
+                    }
+
+                    if (formattedEl && editor.contains(formattedEl)) {
+                        // 根据方向键大致决定光标落点在源码的开头还是结尾
+                        const cursorPos = (e.key === 'ArrowLeft' || e.key === 'ArrowUp') ? 'end' : 'start';
+                        expandToMarkdown(formattedEl, cursorPos);
+                    }
+                }
+            }, 0);
+        }
     });
 
-    // 阻止编辑器事件冒泡
+    // 阻止编辑器事件冒泡（防止触发画布拖动）
     ['mousedown','dblclick','click'].forEach(evt => editor.addEventListener(evt, ev => ev.stopPropagation()));
 
     el.appendChild(toolbar);
-    el.appendChild(view);
     el.appendChild(editor);
-
-    // 初次渲染完成后（元素已插入DOM）再尝试恢复查看态滚动
-    __restoreScroll(view, viewScrollKey);
     
-    // 链接点击处理
-    view.addEventListener('click', (e) => {
-        const link = e.target.closest('a');
-        if (link && link.href) {
+    // 点击处理：格式化元素展开为源码，链接打开
+    editor.addEventListener('click', (e) => {
+        const target = e.target;
+        
+        // 任务checkbox点击 - 切换选中状态
+        if (target.classList && target.classList.contains('md-task-checkbox')) {
+            // checkbox状态已经由浏览器自动切换，只需保存
+            saveEditorContent();
+            return;
+        }
+        
+        // 链接点击
+        const link = target.closest('a');
+        if (link && link.href && !node.isEditing) {
             e.preventDefault();
             e.stopPropagation();
             window.open(link.href, '_blank', 'noopener,noreferrer');
+            return;
+        }
+        
+        // 判断当前点击是否仍在已展开的源码区域内（允许继续选择文字，而不触发重新渲染）
+        const isClickInsideExpanded = (() => {
+            if (!expandedElement || !expandedElement.parentNode) return false;
+            const sel = window.getSelection();
+            if (sel && sel.rangeCount) {
+                const container = sel.getRangeAt(0).startContainer;
+                if (container === expandedElement) return true;
+                if (container.nodeType === Node.TEXT_NODE &&
+                    (container.previousSibling === expandedElement || container.nextSibling === expandedElement)) {
+                    return true;
+                }
+            }
+            if (target === expandedElement) return true;
+            if (target && target.nodeType === Node.TEXT_NODE &&
+                (target.previousSibling === expandedElement || target.nextSibling === expandedElement)) {
+                return true;
+            }
+            return false;
+        })();
+        
+        // 点击格式化元素时展开为 Markdown 源码（包括 HTML 格式）- 排除checkbox
+        const formattedEl = target.closest('strong, b, em, i, del, s, mark, code, font, center, p[align], blockquote, hr, ul, ol, .md-task-item, h1, h2, h3, h4, h5, h6');
+        if (formattedEl && editor.contains(formattedEl)) {
+            // 先重新渲染之前展开的元素（如果此次点击不在源码区域内）
+            if (expandedElement && expandedElement.parentNode && !isClickInsideExpanded) {
+                reRenderExpanded();
+            }
+            expandToMarkdown(formattedEl);
+        } else if (expandedElement && expandedElement.parentNode && !isClickInsideExpanded) {
+            // 点击其他位置时，重新渲染之前展开的元素
+            reRenderExpanded();
         }
     });
 
-    // 降低滚动链和事件冒泡带来的卡顿：
-    // 在 Markdown 视图内滚动时，阻止事件冒泡到画布层（但不阻止默认滚动）
-    view.addEventListener('wheel', (e) => {
+    // 降低滚动链和事件冒泡带来的卡顿
+    editor.addEventListener('wheel', (e) => {
         e.stopPropagation();
     }, { passive: true });
-    
-    // 允许在查看态内按下后触发节点级拖动；仍保护链接点击
-    view.addEventListener('mousedown', (e) => {
-        if (e.target.closest('a')) {
-            e.stopPropagation();
-            return;
-        }
-        // 其余情况不拦截，让事件冒泡到节点容器，配合移动阈值启动拖动
-    }, true);
 
     // 选择逻辑：单击选中，空白点击清除
     el.addEventListener('mousedown', (e) => {
@@ -4488,16 +6318,24 @@ function renderMdNode(node) {
         selectMdNode(node.id);
     }, true);
 
+    // 工具栏mousedown：阻止默认行为防止编辑器失焦
+    toolbar.addEventListener('mousedown', (e) => {
+        const btn = e.target.closest('.md-format-btn, .md-fontcolor-chip, .md-align-option, .md-heading-option, .md-list-option, .md-fontcolor-input');
+        if (btn && node.isEditing) {
+            e.preventDefault(); // 防止编辑器失去焦点
+        }
+    });
+    
     // 工具栏事件
     toolbar.addEventListener('click', (e) => {
-        const btn = e.target.closest('.md-node-toolbar-btn, .md-color-chip, .md-color-custom, .md-color-picker-btn');
+        const btn = e.target.closest('.md-node-toolbar-btn, .md-color-chip, .md-color-custom, .md-color-picker-btn, .md-format-btn, .md-fontcolor-chip, .md-align-option, .md-heading-option, .md-list-option');
         if (!btn) return;
         e.preventDefault();
         e.stopPropagation();
         const action = btn.getAttribute('data-action');
         if (action === 'md-edit') {
             selectMdNode(node.id);
-            enterEdit();
+            editor.focus();
         } else if (action === 'md-delete') {
             removeMdNode(node.id);
             clearMdSelection();
@@ -4521,8 +6359,80 @@ function renderMdNode(node) {
         } else if (action === 'md-focus') {
             selectMdNode(node.id);
             locateAndZoomToMdNode(node.id);
+        } else if (action === 'md-format-toggle') {
+            // 打开格式工具栏
+            toggleFormatPopover(btn);
+        } else if (action === 'md-font-increase') {
+            // 增大字体
+            if (node.fontSize < maxFontSize) {
+                node.fontSize = Math.min(maxFontSize, node.fontSize + 2);
+                editor.style.fontSize = node.fontSize + 'px';
+                // 更新弹层中的字号显示
+                const sizeValue = toolbar.querySelector('.md-format-size-value');
+                if (sizeValue) sizeValue.textContent = node.fontSize + 'px';
+                saveTempNodes();
+            }
+        } else if (action === 'md-font-decrease') {
+            // 减小字体
+            if (node.fontSize > minFontSize) {
+                node.fontSize = Math.max(minFontSize, node.fontSize - 2);
+                editor.style.fontSize = node.fontSize + 'px';
+                // 更新弹层中的字号显示
+                const sizeValue = toolbar.querySelector('.md-format-size-value');
+                if (sizeValue) sizeValue.textContent = node.fontSize + 'px';
+                saveTempNodes();
+            }
+        } else if (action === 'md-insert-bold') {
+            insertFormat('bold');
+        } else if (action === 'md-insert-italic') {
+            insertFormat('italic');
+        } else if (action === 'md-insert-highlight') {
+            insertFormat('highlight');
+        } else if (action === 'md-fontcolor-toggle') {
+            toggleFontColorPopover(btn);
+        } else if (action === 'md-fontcolor-apply') {
+            const color = btn.getAttribute('data-color');
+            if (color) {
+                insertFontColor(color);
+                closeFontColorPopover();
+            }
+        } else if (action === 'md-insert-strike') {
+            insertFormat('strike');
+        } else if (action === 'md-insert-code') {
+            insertFormat('code');
+        } else if (action === 'md-insert-link') {
+            insertFormat('link');
+        } else if (action === 'md-heading-toggle') {
+            toggleHeadingPopover(btn);
+        } else if (action === 'md-heading-apply') {
+            const level = btn.getAttribute('data-level');
+            if (level) {
+                insertFormat(level);
+                closeHeadingPopover();
+            }
+        } else if (action === 'md-align-toggle') {
+            toggleAlignPopover(btn);
+        } else if (action === 'md-align-apply') {
+            const alignType = btn.getAttribute('data-align');
+            if (alignType) {
+                insertAlign(alignType);
+                closeAlignPopover();
+            }
+        } else if (action === 'md-list-toggle') {
+            toggleListPopover(btn);
+        } else if (action === 'md-list-apply') {
+            const listType = btn.getAttribute('data-type');
+            if (listType) {
+                insertFormat(listType);
+                closeListPopover();
+            }
+        } else if (action === 'md-insert-quote') {
+            insertFormat('quote');
         }
     });
+    
+    // 同步字体大小到编辑器
+    editor.style.fontSize = node.fontSize + 'px';
     
     makeMdNodeDraggable(el, node);
     makeTempNodeResizable(el, node);

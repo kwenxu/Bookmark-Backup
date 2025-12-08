@@ -6059,8 +6059,8 @@ a.tree-label.tree-bookmark-link:hover {
 }
 
 .temp-node-description mark {
-    background: #fef08a;
-    color: inherit;
+    background: #fcd34d;
+    color: #000000;
     padding: 0 2px;
     border-radius: 2px;
 }
@@ -6085,8 +6085,8 @@ a.tree-label.tree-bookmark-link:hover {
 }
 
 [data-theme="dark"] .temp-node-description mark {
-    background: #854d0e;
-    color: #fef08a;
+    background: #f59e0b;
+    color: #000000;
 }
 
 /* 任务列表样式（临时栏目描述） */
@@ -6657,32 +6657,52 @@ a.tree-label.tree-bookmark-link:hover {
     /* 拖动中显示抓手 */
 }
 
-.md-canvas-editor {
+/* 编辑器和视图共享基础样式，避免切换时抖动 */
+.md-canvas-editor,
+.md-canvas-text {
     width: 100%;
-    flex: 1;
-    /* 填充剩余空间 */
+    flex: 1 1 auto;
     outline: none;
     border: none;
     background: transparent;
-    font-size: 12px;
-    line-height: 1.4;
-    white-space: pre-wrap;
     padding: 8px;
-    /* 增加内边距，与view保持一致 */
     box-sizing: border-box;
-    resize: none;
-    /* 禁用textarea自带的resize */
     overflow: auto;
-    /* 允许滚动 */
     min-height: 0;
-    /* 允许flex子元素缩小 */
+    max-height: 100%;
     border-radius: 0 0 6px 6px;
-    /* 与节点圆角匹配，限制内容溢出 */
+    line-height: 1.5;
+    word-wrap: break-word;
+    overflow-wrap: break-word;
+}
+
+.md-canvas-editor {
+    resize: none;
+    cursor: text;
+    user-select: text;
 }
 
 [data-theme="dark"] .md-canvas-editor {
     color: #ffffff;
 }
+
+/* WYSIWYG编辑器样式（contenteditable） */
+.md-wysiwyg-editor {
+    cursor: text;
+}
+
+.md-wysiwyg-editor:empty::before {
+    content: attr(data-placeholder);
+    color: #999;
+    font-style: italic;
+    pointer-events: none;
+}
+
+[data-theme="dark"] .md-wysiwyg-editor:empty::before {
+    color: #666;
+}
+
+/* WYSIWYG编辑器与视图共享的元素样式在下方 .md-canvas-text 中定义 */
 
 /* 顶部工具栏（空白栏目/Markdown 卡片） */
 .md-node-toolbar {
@@ -6721,7 +6741,8 @@ a.tree-label.tree-bookmark-link:hover {
 .md-canvas-node.selected .md-node-toolbar,
 .md-canvas-node:hover .md-node-toolbar,
 .md-node-toolbar:hover,
-.md-node-toolbar:has(.md-color-popover.open) {
+.md-node-toolbar:has(.md-color-popover.open),
+.md-node-toolbar:has(.md-format-popover.open) {
     opacity: 1;
     pointer-events: auto;
 }
@@ -6756,6 +6777,488 @@ a.tree-label.tree-bookmark-link:hover {
     transform: translateY(1px);
 }
 
+.md-node-toolbar-btn.active {
+    border-color: #2563eb;
+    background: rgba(37, 99, 235, 0.12);
+    color: #2563eb;
+}
+
+/* 格式工具栏弹层样式（单行布局） */
+.md-format-popover {
+    position: absolute;
+    top: -8px;
+    left: 50%;
+    transform: translateX(-50%) translateY(-100%);
+    background: #ffffff;
+    border: 1px solid rgba(27, 31, 36, 0.25);
+    border-radius: 6px;
+    padding: 4px 6px;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.12);
+    z-index: 12100;
+    display: none;
+    white-space: nowrap;
+}
+
+.md-format-popover.open {
+    display: block;
+}
+
+[data-theme="dark"] .md-format-popover {
+    background: #2d2d2d;
+    border-color: rgba(255, 255, 255, 0.15);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
+}
+
+.md-format-row {
+    display: flex;
+    align-items: center;
+    gap: 3px;
+}
+
+.md-format-size-value {
+    font-size: 11px;
+    font-weight: 600;
+    min-width: 20px;
+    text-align: center;
+    color: #555;
+}
+
+[data-theme="dark"] .md-format-size-value {
+    color: #bbb;
+}
+
+.md-format-sep {
+    width: 1px;
+    height: 16px;
+    background: rgba(0, 0, 0, 0.15);
+    margin: 0 3px;
+}
+
+[data-theme="dark"] .md-format-sep {
+    background: rgba(255, 255, 255, 0.15);
+}
+
+.md-format-btn {
+    width: 24px;
+    height: 24px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border: 1px solid transparent;
+    border-radius: 4px;
+    background: transparent;
+    color: #24292f;
+    cursor: pointer;
+    transition: all 0.12s ease;
+    font-size: 12px;
+    font-weight: 600;
+}
+
+.md-format-btn:hover {
+    background: rgba(9, 105, 218, 0.1);
+    border-color: rgba(9, 105, 218, 0.3);
+    color: #0969da;
+}
+
+.md-format-btn:active {
+    transform: scale(0.92);
+}
+
+[data-theme="dark"] .md-format-btn {
+    color: #e4e6eb;
+}
+
+[data-theme="dark"] .md-format-btn:hover {
+    background: rgba(88, 166, 255, 0.15);
+    border-color: rgba(88, 166, 255, 0.3);
+    color: #58a6ff;
+}
+
+.md-format-btn.md-format-btn-sm {
+    width: 20px;
+    height: 20px;
+    font-size: 10px;
+}
+
+.md-format-btn.md-format-btn-sm i {
+    font-size: 9px;
+}
+
+.md-format-btn.md-format-heading {
+    font-size: 10px;
+    font-weight: bold;
+}
+
+.md-format-btn code {
+    font-size: 9px;
+    font-family: monospace;
+}
+
+/* 字体颜色弹层样式 */
+.md-fontcolor-popover {
+    position: absolute;
+    top: -4px;
+    left: 0;
+    transform: translateX(-50%) translateY(-100%);
+    background: #ffffff;
+    border: 1px solid rgba(27, 31, 36, 0.25);
+    border-radius: 6px;
+    padding: 8px;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+    z-index: 12200;
+    display: none;
+    flex-direction: column;
+    gap: 6px;
+    min-width: 140px;
+}
+
+.md-fontcolor-popover.open {
+    display: flex;
+}
+
+[data-theme="dark"] .md-fontcolor-popover {
+    background: #2d2d2d;
+    border-color: rgba(255, 255, 255, 0.15);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
+}
+
+.md-fontcolor-grid {
+    display: grid;
+    grid-template-columns: repeat(5, 1fr);
+    gap: 4px;
+}
+
+.md-fontcolor-chip {
+    width: 20px;
+    height: 20px;
+    border-radius: 3px;
+    border: 1px solid rgba(0, 0, 0, 0.15);
+    cursor: pointer;
+    transition: transform 0.12s ease, box-shadow 0.12s ease;
+}
+
+.md-fontcolor-chip:hover {
+    transform: scale(1.15);
+    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.25);
+    z-index: 1;
+}
+
+[data-theme="dark"] .md-fontcolor-chip {
+    border-color: rgba(255, 255, 255, 0.2);
+}
+
+.md-fontcolor-custom {
+    display: flex;
+    justify-content: center;
+    padding-top: 4px;
+    border-top: 1px solid rgba(0, 0, 0, 0.1);
+}
+
+[data-theme="dark"] .md-fontcolor-custom {
+    border-top-color: rgba(255, 255, 255, 0.1);
+}
+
+.md-fontcolor-input {
+    width: 100%;
+    height: 24px;
+    border: 1px solid rgba(27, 31, 36, 0.25);
+    border-radius: 4px;
+    cursor: pointer;
+    padding: 0;
+}
+
+[data-theme="dark"] .md-fontcolor-input {
+    border-color: rgba(255, 255, 255, 0.2);
+}
+
+/* 对齐弹层样式 */
+.md-align-popover {
+    position: absolute;
+    top: -4px;
+    left: 0;
+    transform: translateX(-50%) translateY(-100%);
+    background: #ffffff;
+    border: 1px solid rgba(27, 31, 36, 0.25);
+    border-radius: 6px;
+    padding: 4px;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+    z-index: 12200;
+    display: none;
+    flex-direction: row;
+    gap: 2px;
+}
+
+.md-align-popover.open {
+    display: flex;
+}
+
+[data-theme="dark"] .md-align-popover {
+    background: #2d2d2d;
+    border-color: rgba(255, 255, 255, 0.15);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
+}
+
+.md-align-option {
+    width: 28px;
+    height: 28px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border: 1px solid transparent;
+    border-radius: 4px;
+    background: transparent;
+    color: #444;
+    cursor: pointer;
+    transition: all 0.12s ease;
+    font-size: 14px;
+}
+
+.md-align-option:hover {
+    background: rgba(9, 105, 218, 0.1);
+    border-color: rgba(9, 105, 218, 0.3);
+    color: #0969da;
+}
+
+.md-align-option:active {
+    transform: scale(0.92);
+}
+
+[data-theme="dark"] .md-align-option {
+    color: #e4e6eb;
+}
+
+[data-theme="dark"] .md-align-option:hover {
+    background: rgba(88, 166, 255, 0.15);
+    border-color: rgba(88, 166, 255, 0.3);
+    color: #58a6ff;
+}
+
+/* 字体颜色、对齐、标题按钮的激活状态 */
+.md-format-fontcolor-btn.active,
+.md-format-align-btn.active,
+.md-format-heading-btn.active {
+    background: rgba(9, 105, 218, 0.15);
+    border-color: rgba(9, 105, 218, 0.4);
+}
+
+[data-theme="dark"] .md-format-fontcolor-btn.active,
+[data-theme="dark"] .md-format-align-btn.active,
+[data-theme="dark"] .md-format-heading-btn.active {
+    background: rgba(88, 166, 255, 0.2);
+    border-color: rgba(88, 166, 255, 0.4);
+}
+
+/* 标题弹层样式 */
+.md-heading-popover {
+    position: absolute;
+    top: -4px;
+    left: 0;
+    transform: translateX(-50%) translateY(-100%);
+    background: #ffffff;
+    border: 1px solid rgba(27, 31, 36, 0.25);
+    border-radius: 6px;
+    padding: 4px;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+    z-index: 12200;
+    display: none;
+    flex-direction: row;
+    gap: 2px;
+}
+
+.md-heading-popover.open {
+    display: flex;
+}
+
+[data-theme="dark"] .md-heading-popover {
+    background: #2d2d2d;
+    border-color: rgba(255, 255, 255, 0.15);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
+}
+
+.md-heading-option {
+    min-width: 32px;
+    height: 28px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border: 1px solid transparent;
+    border-radius: 4px;
+    background: transparent;
+    color: #444;
+    cursor: pointer;
+    transition: all 0.12s ease;
+    font-size: 13px;
+    font-weight: 600;
+    padding: 0 6px;
+}
+
+.md-heading-option:hover {
+    background: rgba(9, 105, 218, 0.1);
+    border-color: rgba(9, 105, 218, 0.3);
+    color: #0969da;
+}
+
+.md-heading-option:active {
+    transform: scale(0.92);
+}
+
+[data-theme="dark"] .md-heading-option {
+    color: #e4e6eb;
+}
+
+[data-theme="dark"] .md-heading-option:hover {
+    background: rgba(88, 166, 255, 0.15);
+    border-color: rgba(88, 166, 255, 0.3);
+    color: #58a6ff;
+}
+
+/* 列表弹层样式 */
+.md-list-popover {
+    position: absolute;
+    top: -4px;
+    left: 0;
+    transform: translateX(-50%) translateY(-100%);
+    background: #ffffff;
+    border: 1px solid rgba(27, 31, 36, 0.25);
+    border-radius: 6px;
+    padding: 4px;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+    z-index: 12200;
+    display: none;
+    flex-direction: row;
+    gap: 2px;
+}
+
+.md-list-popover.open {
+    display: flex;
+}
+
+[data-theme="dark"] .md-list-popover {
+    background: #2d2d2d;
+    border-color: rgba(255, 255, 255, 0.15);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
+}
+
+.md-list-option {
+    width: 28px;
+    height: 28px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border: 1px solid transparent;
+    border-radius: 4px;
+    background: transparent;
+    color: #444;
+    cursor: pointer;
+    transition: all 0.12s ease;
+    font-size: 14px;
+}
+
+.md-list-option:hover {
+    background: rgba(9, 105, 218, 0.1);
+    border-color: rgba(9, 105, 218, 0.3);
+    color: #0969da;
+}
+
+.md-list-option:active {
+    transform: scale(0.92);
+}
+
+[data-theme="dark"] .md-list-option {
+    color: #e4e6eb;
+}
+
+[data-theme="dark"] .md-list-option:hover {
+    background: rgba(88, 166, 255, 0.15);
+    border-color: rgba(88, 166, 255, 0.3);
+    color: #58a6ff;
+}
+
+.md-format-list-btn.active {
+    background: rgba(9, 105, 218, 0.15);
+    border-color: rgba(9, 105, 218, 0.4);
+}
+
+[data-theme="dark"] .md-format-list-btn.active {
+    background: rgba(88, 166, 255, 0.2);
+    border-color: rgba(88, 166, 255, 0.4);
+}
+
+/* 任务列表样式 */
+.md-task-item {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 2px 0;
+}
+
+.md-task-item input[type="checkbox"] {
+    margin: 0;
+    width: 14px;
+    height: 14px;
+    cursor: pointer;
+    flex-shrink: 0;
+}
+
+/* 任务勾选后文本加删除线 */
+.md-task-item.checked,
+.md-task-item:has(input:checked) {
+    text-decoration: line-through;
+    color: #8b949e;
+}
+
+[data-theme="dark"] .md-task-item.checked,
+[data-theme="dark"] .md-task-item:has(input:checked) {
+    color: #6e7681;
+}
+
+/* 引用样式 */
+.md-canvas-editor blockquote {
+    border-left: 3px solid #0969da;
+    padding-left: 12px;
+    margin: 8px 0;
+    color: #57606a;
+    font-style: italic;
+}
+
+[data-theme="dark"] .md-canvas-editor blockquote {
+    border-left-color: #58a6ff;
+    color: #8b949e;
+}
+
+/* 分隔线样式 */
+.md-canvas-editor hr {
+    border: none;
+    border-top: 1px solid rgba(0, 0, 0, 0.15);
+    margin: 12px 0;
+    padding: 4px 0;
+    cursor: pointer;
+    background: transparent;
+}
+
+.md-canvas-editor hr:hover {
+    border-top-color: rgba(0, 0, 0, 0.3);
+}
+
+[data-theme="dark"] .md-canvas-editor hr {
+    border-top-color: rgba(255, 255, 255, 0.15);
+}
+
+[data-theme="dark"] .md-canvas-editor hr:hover {
+    border-top-color: rgba(255, 255, 255, 0.3);
+}
+
+/* 列表样式 */
+.md-canvas-editor ul,
+.md-canvas-editor ol {
+    margin: 8px 0;
+    padding-left: 24px;
+}
+
+.md-canvas-editor li {
+    margin: 4px 0;
+}
+
 [data-theme="dark"] .md-node-toolbar-btn {
     border-color: rgba(99, 110, 123, 0.45);
     background: transparent;
@@ -6766,6 +7269,12 @@ a.tree-label.tree-bookmark-link:hover {
     background: rgba(88, 166, 255, 0.08);
     color: #e4e6eb;
     border-color: rgba(88, 166, 255, 0.55);
+}
+
+[data-theme="dark"] .md-node-toolbar-btn.active {
+    border-color: #58a6ff;
+    background: rgba(88, 166, 255, 0.15);
+    color: #58a6ff;
 }
 
 /* 色盘弹出层 - 相对于工具栏定位 */
@@ -7106,36 +7615,16 @@ a.tree-label.tree-bookmark-link:hover {
     color: #93c5fd;
 }
 
+/* .md-canvas-text 特有样式（基础样式已在上方与 .md-canvas-editor 合并） */
 .md-canvas-text {
-    width: 100%;
-    flex: 1 1 auto;
-    /* 填充剩余空间，明确 flex 属性 */
-    overflow: auto !important;
-    /* 重要：确保滚动启用 */
-    user-select: text;
-    /* 允许选中文本，方便点击链接 */
     cursor: default;
-    /* 默认使用普通光标；按空格拖动画布时再切换 */
-    padding: 8px;
-    /* 增加内边距，避免内容贴边 */
-    box-sizing: border-box;
-    /* 关键：让滚动正常工作，不被父元素的拖拽事件干扰 */
     pointer-events: auto;
     position: relative;
     z-index: 1;
-    min-height: 0;
-    /* 允许flex子元素缩小，关键用于使滚动条工作 */
-    max-height: 100%;
-    /* 确保不超过容器高度 */
-    /* 确保滚动条总是可见轨道 */
     scrollbar-width: thin;
-    /* 平滑滚动与隔离，减少滚动链导致的卡顿 */
     overscroll-behavior: contain;
     will-change: scroll-position;
     contain: layout paint;
-    /* 限制内容不溢出到节点外（因为节点本身是overflow:visible） */
-    border-radius: 0 0 6px 6px;
-    /* 与节点圆角匹配 */
 }
 
 /* 编辑模式下仍显示文本光标，避免与拖动光标冲突 */
@@ -7218,30 +7707,49 @@ a.tree-label.tree-bookmark-link:hover {
     border: 2px solid #0f1012 !important;
 }
 
-.md-canvas-text h1,
-.md-canvas-text h2,
-.md-canvas-text h3 {
+/* 编辑器和视图共享的 Markdown 元素样式 */
+.md-canvas-text h1, .md-wysiwyg-editor h1,
+.md-canvas-text h2, .md-wysiwyg-editor h2,
+.md-canvas-text h3, .md-wysiwyg-editor h3 {
     margin: 6px 0 4px;
     font-weight: 600;
 }
 
-.md-canvas-text ul,
-.md-canvas-text ol {
+.md-canvas-text h1, .md-wysiwyg-editor h1 { font-size: 1.4em; }
+.md-canvas-text h2, .md-wysiwyg-editor h2 { font-size: 1.2em; }
+.md-canvas-text h3, .md-wysiwyg-editor h3 { font-size: 1.1em; }
+
+.md-canvas-text ul, .md-wysiwyg-editor ul,
+.md-canvas-text ol, .md-wysiwyg-editor ol {
     margin: 4px 0;
     padding-left: 16px;
 }
 
-.md-canvas-text code {
+.md-canvas-text code, .md-wysiwyg-editor code {
     background: rgba(0, 0, 0, 0.06);
     padding: 2px 4px;
     border-radius: 3px;
+    font-family: monospace;
+    font-size: 0.9em;
 }
 
-.md-canvas-text mark {
-    background: #fef08a;
-    color: inherit;
+[data-theme="dark"] .md-canvas-text code,
+[data-theme="dark"] .md-wysiwyg-editor code {
+    background: rgba(255, 255, 255, 0.1);
+}
+
+.md-canvas-text mark, .md-wysiwyg-editor mark {
+    background: #fcd34d;
+    color: #000000;
     padding: 0 2px;
     border-radius: 2px;
+}
+
+/* 深色模式下的高亮颜色 */
+[data-theme="dark"] .md-canvas-text mark,
+[data-theme="dark"] .md-wysiwyg-editor mark {
+    background: #f59e0b;
+    color: #000000;
 }
 
 /* 支持Obsidian风格的HTML标签 */
@@ -7249,63 +7757,63 @@ a.tree-label.tree-bookmark-link:hover {
     /* font标签的color属性会自动应用 */
 }
 
-.md-canvas-text u {
+.md-canvas-text u, .md-wysiwyg-editor u {
     text-decoration: underline;
 }
 
-.md-canvas-text strong,
-.md-canvas-text b {
+.md-canvas-text strong, .md-wysiwyg-editor strong,
+.md-canvas-text b, .md-wysiwyg-editor b {
     font-weight: 600;
 }
 
-.md-canvas-text em,
-.md-canvas-text i {
+.md-canvas-text em, .md-wysiwyg-editor em,
+.md-canvas-text i, .md-wysiwyg-editor i {
     font-style: italic;
 }
 
-.md-canvas-text del,
-.md-canvas-text s {
+.md-canvas-text del, .md-wysiwyg-editor del,
+.md-canvas-text s, .md-wysiwyg-editor s {
     text-decoration: line-through;
 }
 
-.md-canvas-text sub {
+.md-canvas-text sub, .md-wysiwyg-editor sub {
     vertical-align: sub;
     font-size: 0.8em;
 }
 
-.md-canvas-text sup {
+.md-canvas-text sup, .md-wysiwyg-editor sup {
     vertical-align: super;
     font-size: 0.8em;
 }
 
-.md-canvas-text p {
+.md-canvas-text p, .md-wysiwyg-editor p {
     margin: 4px 0;
 }
 
-.md-canvas-text a {
+.md-canvas-text a, .md-wysiwyg-editor a {
     color: #2563eb;
     text-decoration: none;
     border-bottom: 1px solid rgba(37, 99, 235, 0.3);
     cursor: pointer;
     padding: 2px 4px;
-    /* 增加点击区域 */
     margin: -2px -4px;
-    /* 抵消padding，保持视觉位置 */
     display: inline-block;
 }
 
-.md-canvas-text a:hover {
+.md-canvas-text a:hover, .md-wysiwyg-editor a:hover {
     border-bottom-color: rgba(37, 99, 235, 0.6);
     background: rgba(37, 99, 235, 0.08);
     border-radius: 3px;
 }
 
-[data-theme="dark"] .md-canvas-text a {
+[data-theme="dark"] .md-canvas-text a,
+[data-theme="dark"] .md-wysiwyg-editor a {
     color: #93c5fd;
     border-bottom-color: rgba(147, 197, 253, 0.4);
 }
 
-[data-theme="dark"] .md-canvas-text a:hover {
+[data-theme="dark"] .md-canvas-text a:hover,
+[data-theme="dark"] .md-wysiwyg-editor a:hover {
     border-bottom-color: rgba(147, 197, 253, 0.7);
     background: rgba(147, 197, 253, 0.12);
 }

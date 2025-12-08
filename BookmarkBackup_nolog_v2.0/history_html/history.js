@@ -1277,6 +1277,42 @@ const i18n = {
         'zh_CN': '拖动画布',
         'en': 'Pan canvas'
     },
+    canvasShortcutRecorderText: {
+        'zh_CN': '请按下新的快捷键...',
+        'en': 'Press new shortcut key...'
+    },
+    canvasShortcutRecorderCancel: {
+        'zh_CN': '取消',
+        'en': 'Cancel'
+    },
+    canvasShortcutEditTitle: {
+        'zh_CN': '点击修改快捷键',
+        'en': 'Click to change shortcut'
+    },
+    recorderHelpTitle: {
+        'zh_CN': '可用按键',
+        'en': 'Available Keys'
+    },
+    recorderHelpBtnTitle: {
+        'zh_CN': '查看可用按键',
+        'en': 'View available keys'
+    },
+    tooltipModifierLabel: {
+        'zh_CN': '修饰键:',
+        'en': 'Modifiers:'
+    },
+    tooltipSpecialLabel: {
+        'zh_CN': '特殊键:',
+        'en': 'Special:'
+    },
+    tooltipLetterLabel: {
+        'zh_CN': '字母键:',
+        'en': 'Letters:'
+    },
+    tooltipNumberLabel: {
+        'zh_CN': '数字键:',
+        'en': 'Numbers:'
+    },
     permanentSectionTitle: {
         'zh_CN': '书签树 (永久栏目)',
         'en': 'Bookmark Tree (Permanent)'
@@ -2646,6 +2682,31 @@ function applyLanguage() {
     if (canvasHelpTouchpadScroll) canvasHelpTouchpadScroll.textContent = i18n.canvasHelpTouchpadScroll[currentLang];
     const canvasHelpTouchpadScrollDesc = document.getElementById('canvasHelpTouchpadScrollDesc');
     if (canvasHelpTouchpadScrollDesc) canvasHelpTouchpadScrollDesc.textContent = i18n.canvasHelpTouchpadScrollDesc[currentLang];
+    
+    // 快捷键编辑按钮和录制器翻译
+    const editCtrlKeyBtn = document.getElementById('editCtrlKeyBtn');
+    if (editCtrlKeyBtn) editCtrlKeyBtn.title = i18n.canvasShortcutEditTitle[currentLang];
+    const editSpaceKeyBtn = document.getElementById('editSpaceKeyBtn');
+    if (editSpaceKeyBtn) editSpaceKeyBtn.title = i18n.canvasShortcutEditTitle[currentLang];
+    const recorderCancelBtn = document.getElementById('recorderCancelBtn');
+    if (recorderCancelBtn) recorderCancelBtn.textContent = i18n.canvasShortcutRecorderCancel[currentLang];
+    const recorderHelpBtn = document.getElementById('recorderHelpBtn');
+    if (recorderHelpBtn) recorderHelpBtn.title = i18n.recorderHelpBtnTitle[currentLang];
+    const recorderHelpTitle = document.getElementById('recorderHelpTitle');
+    if (recorderHelpTitle) recorderHelpTitle.textContent = i18n.recorderHelpTitle[currentLang];
+    const tooltipModifierLabel = document.getElementById('tooltipModifierLabel');
+    if (tooltipModifierLabel) tooltipModifierLabel.textContent = i18n.tooltipModifierLabel[currentLang];
+    const tooltipSpecialLabel = document.getElementById('tooltipSpecialLabel');
+    if (tooltipSpecialLabel) tooltipSpecialLabel.textContent = i18n.tooltipSpecialLabel[currentLang];
+    const tooltipLetterLabel = document.getElementById('tooltipLetterLabel');
+    if (tooltipLetterLabel) tooltipLetterLabel.textContent = i18n.tooltipLetterLabel[currentLang];
+    const tooltipNumberLabel = document.getElementById('tooltipNumberLabel');
+    if (tooltipNumberLabel) tooltipNumberLabel.textContent = i18n.tooltipNumberLabel[currentLang];
+    
+    // 更新快捷键显示（如果CanvasModule已加载）
+    if (window.CanvasModule && typeof window.CanvasModule.updateShortcutDisplays === 'function') {
+        window.CanvasModule.updateShortcutDisplays();
+    }
     
     const fullscreenBtn = document.getElementById('canvasFullscreenBtn');
     if (fullscreenBtn) {

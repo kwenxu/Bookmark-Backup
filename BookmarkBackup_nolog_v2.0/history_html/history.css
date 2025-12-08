@@ -11459,3 +11459,158 @@ color: var(--text-secondary);
     background: rgba(36, 37, 38, 0.98);
     box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4);
 }
+
+/* ==================== Canvas 快捷键编辑样式 ==================== */
+.canvas-help-section-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 8px;
+    padding-bottom: 4px;
+    border-bottom: 1px solid var(--border-color);
+}
+
+.canvas-help-section-header .canvas-help-section-title {
+    margin-bottom: 0;
+    padding-bottom: 0;
+    border-bottom: none;
+}
+
+.canvas-shortcut-edit-btn {
+    background: none;
+    border: none;
+    cursor: pointer;
+    color: var(--text-tertiary);
+    font-size: 11px;
+    padding: 2px 6px;
+    border-radius: 4px;
+    transition: all 0.15s ease;
+}
+
+.canvas-shortcut-edit-btn:hover {
+    color: var(--accent-primary);
+    background: var(--bg-tertiary);
+}
+
+.canvas-shortcut-key {
+    cursor: default;
+    transition: all 0.15s ease;
+}
+
+.canvas-shortcut-key.recording {
+    background: var(--accent-primary) !important;
+    color: white !important;
+    border-color: var(--accent-primary) !important;
+    animation: pulse 1s infinite;
+}
+
+@keyframes pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.7; }
+}
+
+.canvas-shortcut-recorder {
+    position: absolute;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    background: var(--accent-primary);
+    color: white;
+    padding: 10px 14px;
+    border-radius: 0 0 10px 10px;
+}
+
+.recorder-content {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+}
+
+.recorder-text {
+    font-size: 12px;
+    font-weight: 500;
+}
+
+.recorder-cancel-btn {
+    background: rgba(255, 255, 255, 0.2);
+    border: 1px solid rgba(255, 255, 255, 0.3);
+    color: white;
+    padding: 4px 10px;
+    border-radius: 4px;
+    font-size: 11px;
+    cursor: pointer;
+    transition: all 0.15s ease;
+}
+
+.recorder-cancel-btn:hover {
+    background: rgba(255, 255, 255, 0.3);
+}
+
+.recorder-buttons {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.recorder-help-btn {
+    background: rgba(255, 255, 255, 0.15);
+    border: 1px solid rgba(255, 255, 255, 0.25);
+    color: white;
+    width: 24px;
+    height: 24px;
+    border-radius: 50%;
+    font-size: 12px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.15s ease;
+}
+
+.recorder-help-btn:hover {
+    background: rgba(255, 255, 255, 0.25);
+}
+
+.recorder-help-tooltip {
+    position: absolute;
+    bottom: 100%;
+    right: 10px;
+    margin-bottom: 8px;
+    background: var(--bg-primary);
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    padding: 10px 14px;
+    box-shadow: var(--shadow-lg);
+    min-width: 200px;
+    z-index: 10;
+}
+
+.tooltip-title {
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--text-primary);
+    margin-bottom: 8px;
+    padding-bottom: 6px;
+    border-bottom: 1px solid var(--border-color);
+}
+
+.tooltip-content {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+
+.tooltip-row {
+    font-size: 11px;
+    color: var(--text-secondary);
+}
+
+.tooltip-label {
+    color: var(--text-primary);
+    font-weight: 500;
+}
+
+[data-theme="dark"] .canvas-shortcut-recorder {
+    background: var(--accent-primary);
+}

@@ -243,7 +243,7 @@ function getCachedContent() {
 // =============================================================================
 
 function isSectionCtrlModeEvent(e) {
-    return !!(CanvasState.sectionCtrlMode && CanvasState.sectionCtrlMode.active) || (!!e && (e.ctrlKey || e.metaKey));
+    return !!(CanvasState.sectionCtrlMode && CanvasState.sectionCtrlMode.active) || (!!e && (isCustomCtrlKeyPressed(e) || e.metaKey));
 }
 
 function resolveSectionMeta(element) {
@@ -303,7 +303,7 @@ function registerSectionCtrlOverlay(element) {
         });
         overlay.addEventListener('wheel', (e) => {
             // 允许 Ctrl+滚轮 进行画布缩放，不阻止
-            if (e.ctrlKey || e.metaKey) {
+            if (isCustomCtrlKeyPressed(e) || e.metaKey) {
                 return;
             }
             // 其他情况下，如果在Ctrl模式中，阻止默认滚动
@@ -1356,8 +1356,8 @@ function setupCanvasZoomAndPan() {
         return;
     }
     
-    // 移除初始化日志
-    // console.log('[Canvas] 设置Obsidian风格的缩放和平移功能');
+    // 加载保存的快捷键设置（必须在事件处理器注册之前）
+    loadCanvasShortcuts();
     
     // 加载保存的缩放级别
     loadCanvasZoom();
@@ -1439,7 +1439,7 @@ function setupCanvasZoomAndPan() {
             return;
         }
         
-        if (e.ctrlKey || e.metaKey) {
+        if (isCustomCtrlKeyPressed(e) || e.metaKey) {
             e.preventDefault();
             
             // 标记正在滚动
@@ -1453,7 +1453,8 @@ function setupCanvasZoomAndPan() {
             // 计算新的缩放级别 - 优化：触控板双指缩放优化
             // 检测是否为触控板滚动（触控板的 deltaY 通常较小且连续）
             const isTouchpad = Math.abs(e.deltaY) < 50 && e.deltaMode === 0;
-            const delta = -e.deltaY;
+            // Shift+滚轮在某些浏览器会变成横向滚动，需要使用 deltaX 或 deltaY
+            const delta = e.deltaY !== 0 ? -e.deltaY : -e.deltaX;
             
             // 缩放速率：触控板和鼠标滚轮都大幅降低灵敏度，使缩放非常平滑
             const zoomSpeed = isTouchpad ? 0.0008 : 0.00015; // 触控板0.0008（降低80%），鼠标滚轮0.00015（降低70%）
@@ -1477,22 +1478,51 @@ function setupCanvasZoomAndPan() {
         }
     }, { passive: false });
     
-    // 空格键/Control键按下 - 启用拖动模式
+    // 空格键/Control键按下 - 启用拖动模式（支持自定义快捷键）
+    // 快捷键检测辅助函数
+    const MODIFIER_KEY_CODES = {
+        'Control': ['ControlLeft', 'ControlRight'],
+        'Alt': ['AltLeft', 'AltRight'],
+        'Shift': ['ShiftLeft', 'ShiftRight'],
+        'Meta': ['MetaLeft', 'MetaRight']
+    };
+    
+    function isCustomCtrlKeyCode(code) {
+        const key = canvasShortcuts.ctrlKey;
+        const codes = MODIFIER_KEY_CODES[key];
+        // 修饰键匹配左右键
+        if (codes) return codes.includes(code);
+        // 普通键直接匹配
+        return code === key;
+    }
+    
+    function isCustomSpaceKeyCode(code) {
+        const key = canvasShortcuts.spaceKey;
+        const codes = MODIFIER_KEY_CODES[key];
+        // 修饰键匹配左右键
+        if (codes) return codes.includes(code);
+        // 普通键直接匹配
+        return code === key;
+    }
+    
     document.addEventListener('keydown', (e) => {
-        if (e.code === 'Space' && !e.repeat && e.target.tagName !== 'INPUT' && e.target.tagName !== 'TEXTAREA') {
+        if (isRecordingShortcut) return;
+        if (e.repeat || e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
+        
+        if (isCustomSpaceKeyCode(e.code)) {
             e.preventDefault();
             CanvasState.isSpacePressed = true;
             workspace.classList.add('space-pressed');
         }
-        // Control键按下 - 也启用拖动模式
-        if ((e.code === 'ControlLeft' || e.code === 'ControlRight') && !e.repeat && e.target.tagName !== 'INPUT' && e.target.tagName !== 'TEXTAREA') {
+        if (isCustomCtrlKeyCode(e.code)) {
             CanvasState.isCtrlPressed = true;
             workspace.classList.add('ctrl-pressed');
+            setSectionCtrlModeActive(true); // 激活栏目操作蒙版
         }
     });
     
     document.addEventListener('keyup', (e) => {
-        if (e.code === 'Space') {
+        if (isCustomSpaceKeyCode(e.code)) {
             CanvasState.isSpacePressed = false;
             workspace.classList.remove('space-pressed');
             if (CanvasState.isPanning) {
@@ -1502,10 +1532,10 @@ function setupCanvasZoomAndPan() {
                 savePanOffsetThrottled();
             }
         }
-        // Control键松开 - 结束拖动模式
-        if (e.code === 'ControlLeft' || e.code === 'ControlRight') {
+        if (isCustomCtrlKeyCode(e.code)) {
             CanvasState.isCtrlPressed = false;
             workspace.classList.remove('ctrl-pressed');
+            setSectionCtrlModeActive(false); // 停用栏目操作蒙版
             if (CanvasState.isPanning) {
                 CanvasState.isPanning = false;
                 workspace.classList.remove('panning');
@@ -1613,6 +1643,168 @@ function setupCanvasManageModal() {
     });
 }
 
+// =============================================================================
+// 快捷键自定义功能
+// =============================================================================
+
+const CANVAS_SHORTCUTS_KEY = 'canvas-custom-shortcuts';
+const DEFAULT_SHORTCUTS = {
+    ctrlKey: 'Control',  // Control, Alt, Shift, Meta
+    spaceKey: 'Space'    // Space, or any other key
+};
+
+let canvasShortcuts = { ...DEFAULT_SHORTCUTS };
+let isRecordingShortcut = false;
+let recordingTarget = null; // 'ctrl' or 'space'
+
+function loadCanvasShortcuts() {
+    try {
+        const saved = localStorage.getItem(CANVAS_SHORTCUTS_KEY);
+        if (saved) {
+            const parsed = JSON.parse(saved);
+            canvasShortcuts = { ...DEFAULT_SHORTCUTS, ...parsed };
+        }
+    } catch (e) {
+        console.warn('[Canvas] 加载快捷键设置失败:', e);
+    }
+    updateShortcutDisplays();
+}
+
+function saveCanvasShortcuts() {
+    try {
+        localStorage.setItem(CANVAS_SHORTCUTS_KEY, JSON.stringify(canvasShortcuts));
+    } catch (e) {
+        console.warn('[Canvas] 保存快捷键设置失败:', e);
+    }
+}
+
+function getKeyDisplayName(keyCode, lang) {
+    const isZh = lang === 'zh_CN';
+    const keyMap = {
+        'Control': 'Ctrl',
+        'Alt': 'Alt',
+        'Shift': 'Shift',
+        'Meta': 'Cmd',
+        'Space': isZh ? '空格' : 'Space',
+        'Tab': 'Tab'
+    };
+    if (keyMap[keyCode]) return keyMap[keyCode];
+    // KeyA -> A, Digit1 -> 1
+    if (/^Key([A-Z])$/.test(keyCode)) return keyCode.slice(3);
+    if (/^Digit([0-9])$/.test(keyCode)) return keyCode.slice(5);
+    return keyCode;
+}
+
+function updateShortcutDisplays() {
+    const lang = typeof window !== 'undefined' && window.currentLang ? window.currentLang : 'zh_CN';
+    
+    // 更新 Ctrl 键显示
+    const ctrlDisplays = ['ctrlKeyDisplay', 'ctrlKeyDisplay2', 'ctrlKeyDisplay3'];
+    const ctrlName = getKeyDisplayName(canvasShortcuts.ctrlKey, lang);
+    ctrlDisplays.forEach(id => {
+        const el = document.getElementById(id);
+        if (el) el.textContent = ctrlName;
+    });
+    
+    // 更新 Space 键显示
+    const spaceDisplay = document.getElementById('spaceKeyDisplay');
+    if (spaceDisplay) {
+        spaceDisplay.textContent = getKeyDisplayName(canvasShortcuts.spaceKey, lang);
+    }
+    
+    // 更新标题
+    const ctrlTitle = document.getElementById('canvasHelpCtrlTitle');
+    if (ctrlTitle) {
+        const isZh = lang === 'zh_CN';
+        ctrlTitle.textContent = isZh ? `${ctrlName} 键操作` : `${ctrlName} Key Actions`;
+    }
+    
+    const spaceTitle = document.getElementById('canvasHelpSpaceTitle');
+    if (spaceTitle) {
+        const isZh = lang === 'zh_CN';
+        const spaceName = getKeyDisplayName(canvasShortcuts.spaceKey, lang);
+        spaceTitle.textContent = isZh ? `${spaceName}键操作` : `${spaceName} Key Actions`;
+    }
+}
+
+function startShortcutRecording(target) {
+    isRecordingShortcut = true;
+    recordingTarget = target;
+    
+    const recorder = document.getElementById('canvasShortcutRecorder');
+    const recorderText = document.getElementById('recorderText');
+    const lang = typeof window !== 'undefined' && window.currentLang ? window.currentLang : 'zh_CN';
+    
+    if (recorder) {
+        recorder.style.display = 'block';
+        if (recorderText) {
+            recorderText.textContent = lang === 'zh_CN' ? '请按下新的快捷键...' : 'Press a new shortcut key...';
+        }
+    }
+    
+    // 高亮对应的键
+    if (target === 'ctrl') {
+        ['ctrlKeyDisplay', 'ctrlKeyDisplay2', 'ctrlKeyDisplay3'].forEach(id => {
+            const el = document.getElementById(id);
+            if (el) el.classList.add('recording');
+        });
+    } else if (target === 'space') {
+        const el = document.getElementById('spaceKeyDisplay');
+        if (el) el.classList.add('recording');
+    }
+}
+
+function stopShortcutRecording(newKey) {
+    if (!isRecordingShortcut) return;
+    
+    ['ctrlKeyDisplay', 'ctrlKeyDisplay2', 'ctrlKeyDisplay3', 'spaceKeyDisplay'].forEach(id => {
+        const el = document.getElementById(id);
+        if (el) el.classList.remove('recording');
+    });
+    
+    const recorder = document.getElementById('canvasShortcutRecorder');
+    if (recorder) recorder.style.display = 'none';
+    
+    if (newKey && recordingTarget) {
+        if (recordingTarget === 'ctrl') {
+            canvasShortcuts.ctrlKey = newKey;
+        } else if (recordingTarget === 'space') {
+            canvasShortcuts.spaceKey = newKey;
+        }
+        saveCanvasShortcuts();
+        updateShortcutDisplays();
+    }
+    
+    isRecordingShortcut = false;
+    recordingTarget = null;
+}
+
+function isCustomCtrlKeyPressed(e) {
+    const key = canvasShortcuts.ctrlKey;
+    // 修饰键使用事件属性检测
+    switch (key) {
+        case 'Control': return e.ctrlKey;
+        case 'Alt': return e.altKey;
+        case 'Shift': return e.shiftKey;
+        case 'Meta': return e.metaKey;
+    }
+    // 普通键使用状态检测
+    return CanvasState.isCtrlPressed;
+}
+
+function isCustomSpaceKeyPressed(keyCode) {
+    const key = canvasShortcuts.spaceKey;
+    return keyCode === key;
+}
+
+function getCustomCtrlKeyCode() {
+    return canvasShortcuts.ctrlKey;
+}
+
+function getCustomSpaceKeyCode() {
+    return canvasShortcuts.spaceKey;
+}
+
 function setupCanvasHelpModal() {
     const helpBtn = document.getElementById('canvasHelpBtn');
     const helpModal = document.getElementById('canvasHelpModal');
@@ -1621,6 +1813,9 @@ function setupCanvasHelpModal() {
     
     if (!helpBtn || !helpModal) return;
     
+    // 加载保存的快捷键设置
+    loadCanvasShortcuts();
+    
     helpBtn.addEventListener('click', (e) => {
         e.stopPropagation();
         // 先关闭管理弹窗
@@ -1628,13 +1823,94 @@ function setupCanvasHelpModal() {
         // 切换帮助弹窗
         const isVisible = helpModal.style.display === 'block';
         helpModal.style.display = isVisible ? 'none' : 'block';
+        if (!isVisible) {
+            updateShortcutDisplays();
+        }
     });
     
     if (helpModalClose) {
         helpModalClose.addEventListener('click', () => {
+            stopShortcutRecording(null);
             helpModal.style.display = 'none';
         });
     }
+    
+    // 快捷键编辑按钮
+    const editCtrlBtn = document.getElementById('editCtrlKeyBtn');
+    const editSpaceBtn = document.getElementById('editSpaceKeyBtn');
+    const recorderCancelBtn = document.getElementById('recorderCancelBtn');
+    
+    if (editCtrlBtn) {
+        editCtrlBtn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            startShortcutRecording('ctrl');
+        });
+    }
+    
+    if (editSpaceBtn) {
+        editSpaceBtn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            startShortcutRecording('space');
+        });
+    }
+    
+    if (recorderCancelBtn) {
+        recorderCancelBtn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            stopShortcutRecording(null);
+        });
+    }
+    
+    // 问号帮助按钮
+    const recorderHelpBtn = document.getElementById('recorderHelpBtn');
+    const recorderHelpTooltip = document.getElementById('recorderHelpTooltip');
+    
+    if (recorderHelpBtn && recorderHelpTooltip) {
+        recorderHelpBtn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            const isVisible = recorderHelpTooltip.style.display === 'block';
+            recorderHelpTooltip.style.display = isVisible ? 'none' : 'block';
+        });
+        
+        // 点击其他地方关闭提示
+        document.addEventListener('click', (e) => {
+            if (recorderHelpTooltip.style.display === 'block' && 
+                !recorderHelpTooltip.contains(e.target) && 
+                e.target !== recorderHelpBtn && 
+                !recorderHelpBtn.contains(e.target)) {
+                recorderHelpTooltip.style.display = 'none';
+            }
+        });
+    }
+    
+    // 监听键盘事件进行录制
+    document.addEventListener('keydown', (e) => {
+        if (!isRecordingShortcut) return;
+        
+        e.preventDefault();
+        e.stopPropagation();
+        e.stopImmediatePropagation();
+        
+        const modifierKeys = ['Control', 'Alt', 'Shift', 'Meta'];
+        const specialKeys = ['Space', 'Tab'];
+        
+        let newKey = null;
+        
+        // 修饰键直接使用 e.key
+        if (modifierKeys.includes(e.key)) {
+            newKey = e.key;
+        }
+        // 特殊键使用 e.code
+        else if (specialKeys.includes(e.code)) {
+            newKey = e.code;
+        }
+        // 普通字母/数字键使用 e.code (如 KeyA, KeyB, Digit1)
+        else if (/^(Key[A-Z]|Digit[0-9])$/.test(e.code)) {
+            newKey = e.code;
+        }
+        
+        if (newKey) stopShortcutRecording(newKey);
+    }, true);
     
     // 点击其他地方关闭弹窗
     document.addEventListener('click', (e) => {
@@ -1642,6 +1918,7 @@ function setupCanvasHelpModal() {
             !helpModal.contains(e.target) && 
             e.target !== helpBtn && 
             !helpBtn.contains(e.target)) {
+            stopShortcutRecording(null);
             helpModal.style.display = 'none';
         }
     });
@@ -8087,6 +8364,7 @@ window.CanvasModule = {
     enhance: enhanceBookmarkTreeForCanvas, // 增强书签树的Canvas功能
     clear: clearAllTempNodes,
     updateFullscreenButton: updateFullscreenButtonState,
+    updateShortcutDisplays: updateShortcutDisplays, // 更新快捷键显示
     CanvasState: CanvasState, // 导出状态供外部访问（如指针拖拽）
     createTempNode: createTempNode, // 导出创建临时节点函数
     createMdNode: createMdNode,

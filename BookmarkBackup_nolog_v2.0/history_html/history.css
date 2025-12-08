@@ -8643,8 +8643,8 @@ a.tree-label.tree-bookmark-link:hover {
 }
 
 .card-btn-block:hover {
-    background: var(--danger);
-    border-color: var(--danger);
+    background: #ff4d4f;
+    border-color: #ff4d4f;
     color: white;
 }
 

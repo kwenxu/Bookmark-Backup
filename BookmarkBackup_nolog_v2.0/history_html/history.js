@@ -3196,15 +3196,12 @@ let revertInProgress = false;
 let lastRevertMessageHandler = null;
 let revertOverlayTimeout = null;
 
-// 二次确认并触发撤销全部
+// 确认并触发撤销全部（移除第二次确认）
 async function handleRevertAll(source) {
     try {
-        // 第一次确认
-        const first = confirm(`${i18n.revertConfirmTitle[currentLang]}\n\n${i18n.revertConfirmDesc[currentLang]}`);
-        if (!first) return;
-        // 第二次确认
-        const second = confirm(i18n.revertConfirmSecondary[currentLang]);
-        if (!second) return;
+        // 只保留一次确认
+        const confirmed = confirm(`${i18n.revertConfirmTitle[currentLang]}\n\n${i18n.revertConfirmDesc[currentLang]}`);
+        if (!confirmed) return;
 
         // 防止多次触发
         if (revertInProgress) {
@@ -9340,23 +9337,38 @@ async function renderCurrentChangesView(forceRefresh = false, options = {}) {
 
                 // 显示增加行
                 if (addedParts.length > 0) {
-                    html += '<div class="diff-line added clickable" data-change-type="added">';
+                    html += '<div class="diff-line added clickable" data-change-type="added" style="display: flex; align-items: center; justify-content: space-between;">';
+                    html += '<div style="display: flex; align-items: baseline;">';
                     html += '<span class="diff-prefix">+</span>';
                     html += `<span class="diff-content">${addedParts.join(isZh ? '，' : ', ')}</span>`;
+                    html += '</div>';
+                    html += '<div class="jump-to-related-btn-container" style="opacity: 0; transition: opacity 0.2s ease; margin-right: 8px;">';
+                    html += `<button class="jump-to-related-btn" data-change-type="added" title="${isZh ? '跳转至对应位置' : 'Jump to changes'}">`;
+                    html += '<i class="fas fa-external-link-alt"></i>';
+                    html += '</button>';
+                    html += '</div>';
                     html += '</div>';
                 }
 
                 // 显示减少行
                 if (deletedParts.length > 0) {
-                    html += '<div class="diff-line deleted clickable" data-change-type="deleted">';
+                    html += '<div class="diff-line deleted clickable" data-change-type="deleted" style="display: flex; align-items: center; justify-content: space-between;">';
+                    html += '<div style="display: flex; align-items: baseline;">';
                     html += '<span class="diff-prefix">-</span>';
                     html += `<span class="diff-content">${deletedParts.join(isZh ? '，' : ', ')}</span>`;
+                    html += '</div>';
+                    html += '<div class="jump-to-related-btn-container" style="opacity: 0; transition: opacity 0.2s ease; margin-right: 8px;">';
+                    html += `<button class="jump-to-related-btn" data-change-type="deleted" title="${isZh ? '跳转至对应位置' : 'Jump to changes'}">`;
+                    html += '<i class="fas fa-external-link-alt"></i>';
+                    html += '</button>';
+                    html += '</div>';
                     html += '</div>';
                 }
             }
 
             // 结构变化部分
             if (hasStructureChange && summary.structuralItems && summary.structuralItems.length > 0) {
+                const isZh = currentLang === 'zh_CN';
                 summary.structuralItems.forEach(item => {
                     let diffClass = 'modified';
                     let prefix = '~';
@@ -9369,9 +9381,16 @@ async function renderCurrentChangesView(forceRefresh = false, options = {}) {
                         prefix = '~';
                     }
 
-                    html += `<div class="diff-line ${diffClass} clickable" data-change-type="${diffClass}">`;
+                    html += `<div class="diff-line ${diffClass} clickable" data-change-type="${diffClass}" style="display: flex; align-items: center; justify-content: space-between;">`;
+                    html += '<div style="display: flex; align-items: baseline;">';
                     html += `<span class="diff-prefix">${prefix}</span>`;
                     html += `<span class="diff-content">${item}</span>`;
+                    html += '</div>';
+                    html += '<div class="jump-to-related-btn-container" style="opacity: 0; transition: opacity 0.2s ease; margin-right: 8px;">';
+                    html += `<button class="jump-to-related-btn" data-change-type="${diffClass}" title="${isZh ? '跳转至对应位置' : 'Jump to changes'}">`;
+                    html += '<i class="fas fa-external-link-alt"></i>';
+                    html += '</button>';
+                    html += '</div>';
                     html += '</div>';
                 });
             }
@@ -9566,8 +9585,21 @@ async function renderCurrentChangesView(forceRefresh = false, options = {}) {
                     
                     // 添加diff行点击高亮对应书签树节点的事件
                     document.querySelectorAll('.diff-line.clickable').forEach(line => {
-                        line.addEventListener('click', () => {
+                        line.addEventListener('click', (e) => {
+                            // 如果点击的是跳转按钮，不触发行点击事件
+                            if (e.target.closest('.jump-to-related-btn-container') || e.target.closest('.jump-to-related-btn')) {
+                                return;
+                            }
                             const changeType = line.dataset.changeType;
+                            highlightTreeNodesByChangeType(changeType);
+                        });
+                    });
+                    
+                    // 添加跳转按钮点击事件
+                    document.querySelectorAll('.jump-to-related-btn').forEach(btn => {
+                        btn.addEventListener('click', (e) => {
+                            e.stopPropagation(); // 阻止事件冒泡到diff-line
+                            const changeType = btn.dataset.changeType;
                             highlightTreeNodesByChangeType(changeType);
                         });
                     });

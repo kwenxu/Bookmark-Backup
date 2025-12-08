@@ -737,7 +737,7 @@ body {
 .view-header h2 {
     font-size: 24px;
     font-weight: 600;
-    margin-bottom: 8px;
+    margin-bottom: 0; /* 移除底部边距，避免影响垂直对齐 */
     color: var(--text-primary);
 }
 
@@ -1648,7 +1648,7 @@ body {
 .view-header {
     display: flex;
     justify-content: space-between;
-    align-items: flex-start;
+    align-items: center; /* 改为 center，让按钮和标题水平对齐 */
     margin-bottom: 20px;
 }
 
@@ -2379,6 +2379,11 @@ a.tree-label.tree-bookmark-link:hover {
 
 .diff-line.clickable:hover {
     filter: brightness(0.92);
+}
+
+/* diff行中的跳转按钮 - 默认隐藏，hover时显示 */
+.diff-line.clickable:hover .jump-to-related-btn-container {
+    opacity: 1 !important;
 }
 
 /* 高亮闪烁动画 */

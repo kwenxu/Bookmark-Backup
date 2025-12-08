@@ -1196,6 +1196,86 @@ const i18n = {
         'zh_CN': '定位',
         'en': 'Locate'
     },
+    canvasManageText: {
+        'zh_CN': '管理',
+        'en': 'Manage'
+    },
+    canvasManageTitle: {
+        'zh_CN': '画布管理',
+        'en': 'Canvas Manage'
+    },
+    canvasHelpBtnTitle: {
+        'zh_CN': '快捷键说明',
+        'en': 'Shortcut Help'
+    },
+    canvasHelpModalTitle: {
+        'zh_CN': '快捷键说明',
+        'en': 'Keyboard Shortcuts'
+    },
+    canvasHelpCtrlTitle: {
+        'zh_CN': 'Ctrl 键操作',
+        'en': 'Ctrl Key Actions'
+    },
+    canvasHelpCtrlLeftClick: {
+        'zh_CN': '左键（按住）',
+        'en': 'Left Click (Hold)'
+    },
+    canvasHelpCtrlLeftDesc: {
+        'zh_CN': '拖动画布 或 栏目卡片',
+        'en': 'Drag canvas or section card'
+    },
+    canvasHelpCtrlWheel: {
+        'zh_CN': '滚轮',
+        'en': 'Wheel'
+    },
+    canvasHelpCtrlWheelDesc: {
+        'zh_CN': '缩放',
+        'en': 'Zoom'
+    },
+    canvasHelpCtrlRightClick: {
+        'zh_CN': '右键（单击）',
+        'en': 'Right Click'
+    },
+    canvasHelpCtrlRightDesc: {
+        'zh_CN': '更改栏目卡片的大小',
+        'en': 'Resize section card'
+    },
+    canvasHelpSpaceTitle: {
+        'zh_CN': '空格键操作',
+        'en': 'Space Key Actions'
+    },
+    canvasHelpSpaceKey: {
+        'zh_CN': '空格',
+        'en': 'Space'
+    },
+    canvasHelpSpaceLeftClick: {
+        'zh_CN': '左键（按住）',
+        'en': 'Left Click (Hold)'
+    },
+    canvasHelpSpaceDesc: {
+        'zh_CN': '拖动画布',
+        'en': 'Drag canvas'
+    },
+    canvasHelpTouchpadTitle: {
+        'zh_CN': '触控板操作',
+        'en': 'Touchpad Actions'
+    },
+    canvasHelpTouchpadPinch: {
+        'zh_CN': '双指捏合',
+        'en': 'Pinch'
+    },
+    canvasHelpTouchpadPinchDesc: {
+        'zh_CN': '缩放画布',
+        'en': 'Zoom canvas'
+    },
+    canvasHelpTouchpadScroll: {
+        'zh_CN': '双指滑动',
+        'en': 'Two-finger Scroll'
+    },
+    canvasHelpTouchpadScrollDesc: {
+        'zh_CN': '拖动画布',
+        'en': 'Pan canvas'
+    },
     permanentSectionTitle: {
         'zh_CN': '书签树 (永久栏目)',
         'en': 'Bookmark Tree (Permanent)'
@@ -2477,9 +2557,7 @@ function applyLanguage() {
     const legendModifiedText = document.getElementById('legendModifiedText');
     if (legendModifiedText) legendModifiedText.textContent = i18n.legendModified[currentLang];
     document.getElementById('additionsViewTitle').textContent = i18n.additionsViewTitle[currentLang];
-    // Canvas 视图标题
-    const canvasViewTitle = document.getElementById('canvasViewTitle');
-    if (canvasViewTitle) canvasViewTitle.textContent = i18n.canvasViewTitle[currentLang];
+    // Canvas 视图按钮翻译
     const importCanvasText = document.getElementById('importCanvasText');
     if (importCanvasText) importCanvasText.textContent = i18n.importCanvasText[currentLang];
     const exportCanvasText = document.getElementById('exportCanvasText');
@@ -2490,8 +2568,6 @@ function applyLanguage() {
     // Canvas 缩放控制器
     const canvasZoomLabel = document.getElementById('canvasZoomLabel');
     if (canvasZoomLabel) canvasZoomLabel.textContent = i18n.canvasZoomLabel[currentLang];
-    const canvasZoomHint = document.getElementById('canvasZoomHint');
-    if (canvasZoomHint) canvasZoomHint.innerHTML = i18n.canvasZoomHint[currentLang];
 
     // 日历加载文本
     const calendarLoadingText = document.getElementById('calendarLoadingText');
@@ -2518,6 +2594,55 @@ function applyLanguage() {
     if (zoomLocateBtn) zoomLocateBtn.title = i18n.zoomLocateTitle[currentLang];
     const zoomLocateText = document.getElementById('zoomLocateText');
     if (zoomLocateText) zoomLocateText.textContent = i18n.zoomLocateText[currentLang];
+    
+    // Canvas 管理和帮助按钮翻译
+    const canvasManageText = document.getElementById('canvasManageText');
+    if (canvasManageText) canvasManageText.textContent = i18n.canvasManageText[currentLang];
+    const canvasManageBtn = document.getElementById('canvasManageBtn');
+    if (canvasManageBtn) canvasManageBtn.title = i18n.canvasManageTitle[currentLang];
+    const canvasHelpBtn = document.getElementById('canvasHelpBtn');
+    if (canvasHelpBtn) canvasHelpBtn.title = i18n.canvasHelpBtnTitle[currentLang];
+    
+    // Canvas 管理弹窗翻译
+    const canvasManageModalTitle = document.getElementById('canvasManageModalTitle');
+    if (canvasManageModalTitle) canvasManageModalTitle.textContent = i18n.canvasManageTitle[currentLang];
+    
+    // Canvas 快捷键帮助弹窗翻译
+    const canvasHelpModalTitle = document.getElementById('canvasHelpModalTitle');
+    if (canvasHelpModalTitle) canvasHelpModalTitle.textContent = i18n.canvasHelpModalTitle[currentLang];
+    const canvasHelpCtrlTitle = document.getElementById('canvasHelpCtrlTitle');
+    if (canvasHelpCtrlTitle) canvasHelpCtrlTitle.textContent = i18n.canvasHelpCtrlTitle[currentLang];
+    const canvasHelpCtrlLeftClick = document.getElementById('canvasHelpCtrlLeftClick');
+    if (canvasHelpCtrlLeftClick) canvasHelpCtrlLeftClick.textContent = i18n.canvasHelpCtrlLeftClick[currentLang];
+    const canvasHelpCtrlLeftDesc = document.getElementById('canvasHelpCtrlLeftDesc');
+    if (canvasHelpCtrlLeftDesc) canvasHelpCtrlLeftDesc.textContent = i18n.canvasHelpCtrlLeftDesc[currentLang];
+    const canvasHelpCtrlWheel = document.getElementById('canvasHelpCtrlWheel');
+    if (canvasHelpCtrlWheel) canvasHelpCtrlWheel.textContent = i18n.canvasHelpCtrlWheel[currentLang];
+    const canvasHelpCtrlWheelDesc = document.getElementById('canvasHelpCtrlWheelDesc');
+    if (canvasHelpCtrlWheelDesc) canvasHelpCtrlWheelDesc.textContent = i18n.canvasHelpCtrlWheelDesc[currentLang];
+    const canvasHelpCtrlRightClick = document.getElementById('canvasHelpCtrlRightClick');
+    if (canvasHelpCtrlRightClick) canvasHelpCtrlRightClick.textContent = i18n.canvasHelpCtrlRightClick[currentLang];
+    const canvasHelpCtrlRightDesc = document.getElementById('canvasHelpCtrlRightDesc');
+    if (canvasHelpCtrlRightDesc) canvasHelpCtrlRightDesc.textContent = i18n.canvasHelpCtrlRightDesc[currentLang];
+    const canvasHelpSpaceTitle = document.getElementById('canvasHelpSpaceTitle');
+    if (canvasHelpSpaceTitle) canvasHelpSpaceTitle.textContent = i18n.canvasHelpSpaceTitle[currentLang];
+    const canvasHelpSpaceKey = document.getElementById('canvasHelpSpaceKey');
+    if (canvasHelpSpaceKey) canvasHelpSpaceKey.textContent = i18n.canvasHelpSpaceKey[currentLang];
+    const canvasHelpSpaceLeftClick = document.getElementById('canvasHelpSpaceLeftClick');
+    if (canvasHelpSpaceLeftClick) canvasHelpSpaceLeftClick.textContent = i18n.canvasHelpSpaceLeftClick[currentLang];
+    const canvasHelpSpaceDesc = document.getElementById('canvasHelpSpaceDesc');
+    if (canvasHelpSpaceDesc) canvasHelpSpaceDesc.textContent = i18n.canvasHelpSpaceDesc[currentLang];
+    const canvasHelpTouchpadTitle = document.getElementById('canvasHelpTouchpadTitle');
+    if (canvasHelpTouchpadTitle) canvasHelpTouchpadTitle.textContent = i18n.canvasHelpTouchpadTitle[currentLang];
+    const canvasHelpTouchpadPinch = document.getElementById('canvasHelpTouchpadPinch');
+    if (canvasHelpTouchpadPinch) canvasHelpTouchpadPinch.textContent = i18n.canvasHelpTouchpadPinch[currentLang];
+    const canvasHelpTouchpadPinchDesc = document.getElementById('canvasHelpTouchpadPinchDesc');
+    if (canvasHelpTouchpadPinchDesc) canvasHelpTouchpadPinchDesc.textContent = i18n.canvasHelpTouchpadPinchDesc[currentLang];
+    const canvasHelpTouchpadScroll = document.getElementById('canvasHelpTouchpadScroll');
+    if (canvasHelpTouchpadScroll) canvasHelpTouchpadScroll.textContent = i18n.canvasHelpTouchpadScroll[currentLang];
+    const canvasHelpTouchpadScrollDesc = document.getElementById('canvasHelpTouchpadScrollDesc');
+    if (canvasHelpTouchpadScrollDesc) canvasHelpTouchpadScrollDesc.textContent = i18n.canvasHelpTouchpadScrollDesc[currentLang];
+    
     const fullscreenBtn = document.getElementById('canvasFullscreenBtn');
     if (fullscreenBtn) {
         // Always update fullscreen button to ensure language changes are applied

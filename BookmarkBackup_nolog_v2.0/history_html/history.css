@@ -11212,3 +11212,250 @@ color: var(--text-secondary);
     padding-top: 16px;
     border-top: 1px solid var(--border-color);
 }
+/* ==================== Canvas 全页面视图样式 ==================== */
+.canvas-fullpage-view {
+    padding: 0 !important;
+    margin: 0 !important;
+    height: 100% !important;
+    overflow: hidden !important;
+}
+
+.canvas-fullpage-view .canvas-main-container {
+    height: 100% !important;
+    border-radius: 0 !important;
+}
+
+/* ==================== Canvas 帮助按钮样式 ==================== */
+.canvas-help-btn {
+    padding: 5px 8px;
+    background: linear-gradient(to bottom, #ffffff, #f8f9fa);
+    border: 1px solid #d0d7de;
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 12px;
+    transition: all 0.15s ease;
+    color: #57606a;
+}
+
+.canvas-help-btn:hover {
+    background: linear-gradient(to bottom, #f6f8fa, #eaeef2);
+    border-color: #0969da;
+    color: #0969da;
+    transform: translateY(-1px);
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.08);
+}
+
+[data-theme="dark"] .canvas-help-btn {
+    background: linear-gradient(to bottom, #3a3b3c, #2f3031);
+    border-color: #4a4b4c;
+    color: #b0b3b8;
+}
+
+[data-theme="dark"] .canvas-help-btn:hover {
+    background: linear-gradient(to bottom, #4a4b4c, #3a3b3c);
+    border-color: #58a6ff;
+    color: #58a6ff;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.4);
+}
+
+/* ==================== Canvas 快捷键帮助弹窗样式 ==================== */
+.canvas-help-modal {
+    position: absolute;
+    top: 90px;
+    left: 20px;
+    background: rgba(255, 255, 255, 0.98);
+    border: 1px solid var(--border-color);
+    border-radius: 10px;
+    padding: 0;
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.15);
+    backdrop-filter: blur(10px);
+    z-index: 1001;
+    min-width: 280px;
+    max-width: 360px;
+}
+
+.canvas-help-modal-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 12px 14px;
+    border-bottom: 1px solid var(--border-color);
+}
+
+.canvas-help-modal-header h4 {
+    margin: 0;
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--text-primary);
+}
+
+.canvas-help-modal-close {
+    background: none;
+    border: none;
+    cursor: pointer;
+    color: var(--text-tertiary);
+    font-size: 14px;
+    padding: 4px;
+    border-radius: 4px;
+    transition: all 0.15s ease;
+}
+
+.canvas-help-modal-close:hover {
+    color: var(--text-primary);
+    background: var(--bg-tertiary);
+}
+
+.canvas-help-modal-body {
+    padding: 12px 14px;
+}
+
+.canvas-help-section {
+    margin-bottom: 12px;
+}
+
+.canvas-help-section:last-child {
+    margin-bottom: 0;
+}
+
+.canvas-help-section-title {
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--text-secondary);
+    margin-bottom: 8px;
+    padding-bottom: 4px;
+    border-bottom: 1px solid var(--border-color);
+}
+
+.canvas-help-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 6px 0;
+    gap: 12px;
+}
+
+.canvas-help-key {
+    font-size: 12px;
+    color: var(--text-primary);
+    display: flex;
+    align-items: center;
+    gap: 4px;
+}
+
+.canvas-help-key kbd {
+    font-size: 10px;
+    padding: 2px 5px;
+    background: var(--bg-tertiary);
+    border: 1px solid var(--border-color);
+    border-radius: 4px;
+    font-family: monospace;
+}
+
+.canvas-help-desc {
+    font-size: 11px;
+    color: var(--text-secondary);
+    text-align: right;
+}
+
+[data-theme="dark"] .canvas-help-modal {
+    background: rgba(36, 37, 38, 0.98);
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4);
+}
+
+/* ==================== Canvas 管理弹窗样式 ==================== */
+.canvas-manage-modal {
+    position: absolute;
+    top: 90px;
+    left: 20px;
+    background: rgba(255, 255, 255, 0.98);
+    border: 1px solid var(--border-color);
+    border-radius: 10px;
+    padding: 0;
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.15);
+    backdrop-filter: blur(10px);
+    z-index: 1001;
+    min-width: 200px;
+}
+
+.canvas-manage-modal-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 12px 14px;
+    border-bottom: 1px solid var(--border-color);
+}
+
+.canvas-manage-modal-header h4 {
+    margin: 0;
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--text-primary);
+}
+
+.canvas-manage-modal-close {
+    background: none;
+    border: none;
+    cursor: pointer;
+    color: var(--text-tertiary);
+    font-size: 14px;
+    padding: 4px;
+    border-radius: 4px;
+    transition: all 0.15s ease;
+}
+
+.canvas-manage-modal-close:hover {
+    color: var(--text-primary);
+    background: var(--bg-tertiary);
+}
+
+.canvas-manage-modal-body {
+    padding: 10px;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+
+.canvas-manage-btn {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    width: 100%;
+    padding: 10px 12px;
+    background: var(--bg-secondary);
+    border: 1px solid var(--border-color);
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 13px;
+    color: var(--text-primary);
+    transition: all 0.15s ease;
+}
+
+.canvas-manage-btn:hover {
+    background: var(--bg-tertiary);
+    border-color: var(--accent-primary);
+}
+
+.canvas-manage-btn i {
+    font-size: 14px;
+    color: var(--accent-primary);
+    width: 18px;
+    text-align: center;
+}
+
+.canvas-manage-btn.danger {
+    color: var(--error);
+}
+
+.canvas-manage-btn.danger i {
+    color: var(--error);
+}
+
+.canvas-manage-btn.danger:hover {
+    background: var(--error-light);
+    border-color: var(--error);
+}
+
+[data-theme="dark"] .canvas-manage-modal {
+    background: rgba(36, 37, 38, 0.98);
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4);
+}

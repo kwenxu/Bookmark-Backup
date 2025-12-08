@@ -1572,6 +1572,79 @@ function setupCanvasZoomAndPan() {
     if (zoomInBtn) zoomInBtn.addEventListener('click', () => setCanvasZoom(CanvasState.zoom + 0.1));
     if (zoomOutBtn) zoomOutBtn.addEventListener('click', () => setCanvasZoom(CanvasState.zoom - 0.1));
     if (zoomLocateBtn) zoomLocateBtn.addEventListener('click', locateToPermanentSection);
+    
+    // 管理按钮和弹窗
+    setupCanvasManageModal();
+    // 快捷键帮助按钮和弹窗
+    setupCanvasHelpModal();
+}
+
+function setupCanvasManageModal() {
+    const manageBtn = document.getElementById('canvasManageBtn');
+    const manageModal = document.getElementById('canvasManageModal');
+    const manageModalClose = document.getElementById('canvasManageModalClose');
+    const helpModal = document.getElementById('canvasHelpModal');
+    
+    if (!manageBtn || !manageModal) return;
+    
+    manageBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        // 先关闭帮助弹窗
+        if (helpModal) helpModal.style.display = 'none';
+        // 切换管理弹窗
+        const isVisible = manageModal.style.display === 'block';
+        manageModal.style.display = isVisible ? 'none' : 'block';
+    });
+    
+    if (manageModalClose) {
+        manageModalClose.addEventListener('click', () => {
+            manageModal.style.display = 'none';
+        });
+    }
+    
+    // 点击其他地方关闭弹窗
+    document.addEventListener('click', (e) => {
+        if (manageModal.style.display === 'block' && 
+            !manageModal.contains(e.target) && 
+            e.target !== manageBtn && 
+            !manageBtn.contains(e.target)) {
+            manageModal.style.display = 'none';
+        }
+    });
+}
+
+function setupCanvasHelpModal() {
+    const helpBtn = document.getElementById('canvasHelpBtn');
+    const helpModal = document.getElementById('canvasHelpModal');
+    const helpModalClose = document.getElementById('canvasHelpModalClose');
+    const manageModal = document.getElementById('canvasManageModal');
+    
+    if (!helpBtn || !helpModal) return;
+    
+    helpBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        // 先关闭管理弹窗
+        if (manageModal) manageModal.style.display = 'none';
+        // 切换帮助弹窗
+        const isVisible = helpModal.style.display === 'block';
+        helpModal.style.display = isVisible ? 'none' : 'block';
+    });
+    
+    if (helpModalClose) {
+        helpModalClose.addEventListener('click', () => {
+            helpModal.style.display = 'none';
+        });
+    }
+    
+    // 点击其他地方关闭弹窗
+    document.addEventListener('click', (e) => {
+        if (helpModal.style.display === 'block' && 
+            !helpModal.contains(e.target) && 
+            e.target !== helpBtn && 
+            !helpBtn.contains(e.target)) {
+            helpModal.style.display = 'none';
+        }
+    });
 }
 
 function setCanvasZoom(zoom, centerX = null, centerY = null, options = {}) {
@@ -2460,7 +2533,7 @@ function updateFullscreenButtonState() {
 
 function getCanvasLanguage() {
     if (typeof window !== 'undefined' && window.currentLang) {
-        return window.currentLang === 'en' ? 'en' : 'zh_CN';
+        return window.currentLang;
     }
     return 'zh_CN';
 }

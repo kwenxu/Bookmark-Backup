@@ -852,27 +852,7 @@
             </div>
 
             <!-- Bookmark Canvas 视图 (原Bookmark Tree改造) -->
-            <div id="canvasView" class="view">
-                <div class="view-header">
-                    <div class="view-header-left">
-                        <h2 id="canvasViewTitle">Bookmark Canvas</h2>
-                    </div>
-                    <div class="view-header-right">
-                        <button id="importCanvasBtn" class="view-action-btn">
-                            <i class="fas fa-file-import"></i>
-                            <span id="importCanvasText">导入</span>
-                        </button>
-                        <button id="exportCanvasBtn" class="view-action-btn">
-                            <i class="fas fa-file-export"></i>
-                            <span id="exportCanvasText">导出</span>
-                        </button>
-                        <button id="clearTempNodesBtn" class="view-action-btn">
-                            <i class="fas fa-trash-alt"></i>
-                            <span id="clearTempNodesText">清空临时节点</span>
-                        </button>
-                    </div>
-                </div>
-                
+            <div id="canvasView" class="view canvas-fullpage-view">
                 <!-- Canvas主容器 -->
                 <div class="canvas-main-container" style="--canvas-scale: 1; --canvas-pan-x: 0px; --canvas-pan-y: 0px;">
                     <!-- 自定义纵向滚动条 -->
@@ -912,17 +892,80 @@
                         <div class="canvas-zoom-indicator" id="canvasZoomIndicator" style="display: none;">
                             <div class="canvas-zoom-header">
                                 <button class="canvas-fullscreen-btn" id="canvasFullscreenBtn" aria-label="进入全屏" aria-pressed="false">全屏</button>
+                                <button class="canvas-help-btn" id="canvasHelpBtn" title="快捷键说明"><i class="fas fa-question-circle"></i></button>
                                 <span class="canvas-zoom-label" id="canvasZoomLabel">缩放</span>
                                 <span class="zoom-value" id="zoomValue">100%</span>
                             </div>
                             <div class="canvas-zoom-controls">
+                                <button class="zoom-btn" id="canvasManageBtn" title="管理"><span id="canvasManageText">管理</span></button>
                                 <button class="zoom-btn" id="zoomLocateBtn" title="定位到永久栏目"><span id="zoomLocateText">定位</span></button>
                                 <button class="zoom-btn" id="zoomOutBtn" title="缩小 (10%)">−</button>
                                 <button class="zoom-btn" id="zoomInBtn" title="放大 (10%)">+</button>
                             </div>
-                            <div style="font-size: 10px; margin-top: 6px; color: #57606a; text-align: center;" id="canvasZoomHint">
-                                <kbd style="font-size: 9px; padding: 2px 4px; background: #f6f8fa; border: 1px solid #d0d7de; border-radius: 3px;">Ctrl</kbd> + 滚轮 | 
-                                <kbd style="font-size: 9px; padding: 2px 4px; background: #f6f8fa; border: 1px solid #d0d7de; border-radius: 3px;">空格</kbd> 拖动
+                        </div>
+                        
+                        <!-- Canvas快捷键说明弹窗 -->
+                        <div class="canvas-help-modal" id="canvasHelpModal" style="display: none;">
+                            <div class="canvas-help-modal-header">
+                                <h4 id="canvasHelpModalTitle">快捷键说明</h4>
+                                <button class="canvas-help-modal-close" id="canvasHelpModalClose"><i class="fas fa-times"></i></button>
+                            </div>
+                            <div class="canvas-help-modal-body">
+                                <div class="canvas-help-section">
+                                    <div class="canvas-help-section-title" id="canvasHelpCtrlTitle">Ctrl 键操作</div>
+                                    <div class="canvas-help-row">
+                                        <span class="canvas-help-key"><kbd>Ctrl</kbd> + <span id="canvasHelpCtrlLeftClick">左键（按住）</span></span>
+                                        <span class="canvas-help-desc" id="canvasHelpCtrlLeftDesc">拖动画布 或 栏目卡片</span>
+                                    </div>
+                                    <div class="canvas-help-row">
+                                        <span class="canvas-help-key"><kbd>Ctrl</kbd> + <span id="canvasHelpCtrlWheel">滚轮</span></span>
+                                        <span class="canvas-help-desc" id="canvasHelpCtrlWheelDesc">缩放</span>
+                                    </div>
+                                    <div class="canvas-help-row">
+                                        <span class="canvas-help-key"><kbd>Ctrl</kbd> + <span id="canvasHelpCtrlRightClick">右键（单击）</span></span>
+                                        <span class="canvas-help-desc" id="canvasHelpCtrlRightDesc">更改栏目卡片的大小</span>
+                                    </div>
+                                </div>
+                                <div class="canvas-help-section">
+                                    <div class="canvas-help-section-title" id="canvasHelpSpaceTitle">空格键操作</div>
+                                    <div class="canvas-help-row">
+                                        <span class="canvas-help-key"><kbd id="canvasHelpSpaceKey">空格</kbd> + <span id="canvasHelpSpaceLeftClick">左键（按住）</span></span>
+                                        <span class="canvas-help-desc" id="canvasHelpSpaceDesc">拖动画布</span>
+                                    </div>
+                                </div>
+                                <div class="canvas-help-section">
+                                    <div class="canvas-help-section-title" id="canvasHelpTouchpadTitle">触控板操作</div>
+                                    <div class="canvas-help-row">
+                                        <span class="canvas-help-key" id="canvasHelpTouchpadPinch">双指捏合</span>
+                                        <span class="canvas-help-desc" id="canvasHelpTouchpadPinchDesc">缩放画布</span>
+                                    </div>
+                                    <div class="canvas-help-row">
+                                        <span class="canvas-help-key" id="canvasHelpTouchpadScroll">双指滑动</span>
+                                        <span class="canvas-help-desc" id="canvasHelpTouchpadScrollDesc">拖动画布</span>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <!-- Canvas管理弹窗 -->
+                        <div class="canvas-manage-modal" id="canvasManageModal" style="display: none;">
+                            <div class="canvas-manage-modal-header">
+                                <h4 id="canvasManageModalTitle">画布管理</h4>
+                                <button class="canvas-manage-modal-close" id="canvasManageModalClose"><i class="fas fa-times"></i></button>
+                            </div>
+                            <div class="canvas-manage-modal-body">
+                                <button id="importCanvasBtn" class="canvas-manage-btn">
+                                    <i class="fas fa-file-import"></i>
+                                    <span id="importCanvasText">导入</span>
+                                </button>
+                                <button id="exportCanvasBtn" class="canvas-manage-btn">
+                                    <i class="fas fa-file-export"></i>
+                                    <span id="exportCanvasText">导出</span>
+                                </button>
+                                <button id="clearTempNodesBtn" class="canvas-manage-btn danger">
+                                    <i class="fas fa-trash-alt"></i>
+                                    <span id="clearTempNodesText">清空临时节点</span>
+                                </button>
                             </div>
                         </div>
                         

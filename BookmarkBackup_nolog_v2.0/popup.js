@@ -6743,11 +6743,13 @@ function initializeBookmarkToolbox() {
                 const img = document.createElement('img');
                 img.src = thumbnail;
                 img.alt = 'Bookmark Canvas Thumbnail';
+                img.style.borderRadius = '4px';
+                
+                // 直接用 cover，保持比例裁剪边缘，不拉伸变形
                 img.style.width = '100%';
                 img.style.height = '100%';
-                // 使用 contain，保证完整显示整个画布截图，不再二次裁剪
-                img.style.objectFit = 'contain';
-                img.style.borderRadius = '4px';
+                img.style.objectFit = 'cover';
+                
                 canvasThumbnailContainer.appendChild(img);
             }
         } catch (e) {

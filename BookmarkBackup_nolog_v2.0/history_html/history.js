@@ -4311,28 +4311,25 @@ function captureCanvasThumbnail() {
                     const container = document.querySelector('.canvas-main-container');
                     if (!container) {
                         // 找不到容器，直接保存整页截图作为兜底
-                        browserAPI.storage.local.set({ bookmarkCanvasThumbnail: dataUrl }, () => {
-                            const err = browserAPI.runtime && browserAPI.runtime.lastError;
-                            if (err) {
-                                console.warn('[Canvas Thumbnail] 保存缩略图失败:', err.message || err);
-                            } else {
-                                console.log('[Canvas Thumbnail] 已保存整页缩略图（未找到容器）');
-                            }
-                        });
+                        browserAPI.storage.local.set({ bookmarkCanvasThumbnail: dataUrl }, () => { });
                         return;
                     }
 
                     const rect = container.getBoundingClientRect();
                     const pageWidth = window.innerWidth || document.documentElement.clientWidth;
-                    const scale = 1; // 目前默认缩放为1，后续如有需要可读写 storage 中的缩放倍率
+                    
+                    // 固定缩略图输出尺寸，适配主UI的框（约 270x180，宽高比 3:2）
+                    // 使用 8x 分辨率确保超清显示
+                    const THUMBNAIL_WIDTH = 2160;
+                    const THUMBNAIL_HEIGHT = 1440;
 
                     const img = new Image();
                     img.onload = () => {
                         try {
                             const canvas = document.createElement('canvas');
-                            // 按容器宽高裁剪
-                            canvas.width = rect.width * scale;
-                            canvas.height = rect.height * scale;
+                            // 使用固定尺寸输出
+                            canvas.width = THUMBNAIL_WIDTH;
+                            canvas.height = THUMBNAIL_HEIGHT;
                             const ctx = canvas.getContext('2d');
                             if (!ctx) {
                                 console.warn('[Canvas Thumbnail] 无法获取 2D 上下文，退回整页截图');
@@ -4353,14 +4350,9 @@ function captureCanvasThumbnail() {
                                 0, 0, canvas.width, canvas.height
                             );
 
-                            const croppedDataUrl = canvas.toDataURL('image/png');
+                            const croppedDataUrl = canvas.toDataURL('image/jpeg', 0.98);
                             browserAPI.storage.local.set({ bookmarkCanvasThumbnail: croppedDataUrl }, () => {
-                                const err = browserAPI.runtime && browserAPI.runtime.lastError;
-                                if (err) {
-                                    console.warn('[Canvas Thumbnail] 保存裁剪缩略图失败:', err.message || err);
-                                } else {
-                                    console.log('[Canvas Thumbnail] 已保存画布容器裁剪后的缩略图');
-                                }
+                                // 静默保存，不输出日志
                             });
                         } catch (e) {
                             console.warn('[Canvas Thumbnail] 裁剪缩略图时出错，退回整页截图:', e);
@@ -4389,6 +4381,9 @@ function captureCanvasThumbnail() {
 let canvasThumbnailUpdateTimer = null;
 function requestCanvasThumbnailUpdate(reason) {
     try {
+        // 提前检查：只在 Canvas 视图下调度截图
+        if (currentView !== 'canvas') return;
+        
         if (canvasThumbnailUpdateTimer) {
             clearTimeout(canvasThumbnailUpdateTimer);
         }
@@ -4397,7 +4392,7 @@ function requestCanvasThumbnailUpdate(reason) {
             try {
                 captureCanvasThumbnail();
             } catch (e) {
-                console.warn('[Canvas Thumbnail] requestCanvasThumbnailUpdate 调用失败:', e, 'reason:', reason);
+                // 静默处理错误
             }
         }, 1500); // 1.5 秒内合并多次修改
     } catch (e) {
@@ -4490,11 +4485,11 @@ function renderCurrentView() {
                         if (canvasScrollThumbnailTimer) {
                             clearTimeout(canvasScrollThumbnailTimer);
                         }
-                        // 滚动结束约 800ms 后，按 B 方案调度截图
+                        // 滚动结束约 2.5 秒后，再调度截图（减少性能影响）
                         canvasScrollThumbnailTimer = setTimeout(() => {
                             canvasScrollThumbnailTimer = null;
                             requestCanvasThumbnailUpdate('scroll');
-                        }, 800);
+                        }, 2500);
                     } catch (_) { }
                 }, { passive: true });
             }

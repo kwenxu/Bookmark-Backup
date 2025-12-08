@@ -233,10 +233,16 @@
 
 .canvas-scrollbar.is-hidden {
     opacity: 0.35;
+    pointer-events: none; /* 隐藏时允许穿透 */
+}
+
+.canvas-scrollbar.is-hidden .scrollbar-controls {
+    pointer-events: auto; /* 但控制按钮仍可点击 */
 }
 
 .canvas-scrollbar.is-hidden.show-controls {
     opacity: 1;
+    pointer-events: auto; /* 显示控制时恢复事件 */
 }
 
 .canvas-scrollbar.is-hidden .scrollbar-track {

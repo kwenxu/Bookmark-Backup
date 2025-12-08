@@ -371,6 +371,13 @@
     transition: transform 0.05s ease-out;
 }
 
+/* 拖动时禁用过渡，确保跟手 */
+.canvas-workspace.panning .canvas-content,
+.canvas-workspace.space-pressed .canvas-content,
+.canvas-workspace.ctrl-pressed .canvas-content {
+    transition: none !important;
+}
+
 .canvas-workspace {
     transition: background-position 0.05s ease-out;
 }

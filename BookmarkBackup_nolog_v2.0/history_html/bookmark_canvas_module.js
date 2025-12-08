@@ -1517,7 +1517,8 @@ function setupCanvasZoomAndPan() {
         if (isCustomCtrlKeyCode(e.code)) {
             CanvasState.isCtrlPressed = true;
             workspace.classList.add('ctrl-pressed');
-            setSectionCtrlModeActive(true); // 激活栏目操作蒙版
+            // 延迟激活栏目操作蒙版，避免影响拖动性能
+            requestAnimationFrame(() => setSectionCtrlModeActive(true));
         }
     });
     
@@ -1535,7 +1536,8 @@ function setupCanvasZoomAndPan() {
         if (isCustomCtrlKeyCode(e.code)) {
             CanvasState.isCtrlPressed = false;
             workspace.classList.remove('ctrl-pressed');
-            setSectionCtrlModeActive(false); // 停用栏目操作蒙版
+            // 延迟停用栏目操作蒙版
+            requestAnimationFrame(() => setSectionCtrlModeActive(false));
             if (CanvasState.isPanning) {
                 CanvasState.isPanning = false;
                 workspace.classList.remove('panning');

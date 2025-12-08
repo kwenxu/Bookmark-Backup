@@ -3,6 +3,7 @@
 // =============================================================================
 
 let currentLang = 'zh_CN';
+window.currentLang = currentLang; // 暴露给其他模块使用
 let currentTheme = 'light';
 // 从 localStorage 立即恢复视图，避免页面闪烁
 let currentView = (() => {
@@ -1205,12 +1206,12 @@ const i18n = {
         'en': 'Canvas Manage'
     },
     canvasHelpBtnTitle: {
-        'zh_CN': '快捷键说明',
-        'en': 'Shortcut Help'
+        'zh_CN': '说明',
+        'en': 'Help'
     },
     canvasHelpModalTitle: {
-        'zh_CN': '快捷键说明',
-        'en': 'Keyboard Shortcuts'
+        'zh_CN': '说明',
+        'en': 'Help'
     },
     canvasHelpCtrlTitle: {
         'zh_CN': 'Ctrl 键操作',
@@ -2211,6 +2212,7 @@ const i18n = {
         'en': 'or custom'
     }
 };
+window.i18n = i18n; // 暴露给其他模块使用
 
 // =============================================================================
 // 初始化
@@ -2492,9 +2494,11 @@ async function loadUserSettings() {
 
             if (hasLangOverride()) {
                 currentLang = getLangOverride() || mainUILang;
+                window.currentLang = currentLang; // 同步到 window
                 console.log('[加载用户设置] 使用History Viewer的语言覆盖:', currentLang);
             } else {
                 currentLang = mainUILang;
+                window.currentLang = currentLang; // 同步到 window
                 console.log('[加载用户设置] 跟随主UI语言:', currentLang);
             }
 
@@ -14901,6 +14905,7 @@ function toggleTheme() {
 
 function toggleLanguage() {
     currentLang = currentLang === 'zh_CN' ? 'en' : 'zh_CN';
+    window.currentLang = currentLang; // 同步到 window
 
     // 设置覆盖标志
     try {
@@ -15156,6 +15161,7 @@ function handleStorageChange(changes, namespace) {
         const newLang = changes.preferredLang.newValue;
         console.log('[存储监听] 语言变化，跟随主UI:', newLang);
         currentLang = newLang;
+        window.currentLang = currentLang; // 同步到 window
 
         // 更新语言切换按钮文本
         const langText = document.querySelector('#langToggle .lang-text');

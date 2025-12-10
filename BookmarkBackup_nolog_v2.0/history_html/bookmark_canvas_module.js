@@ -5181,11 +5181,25 @@ function renderMdNode(node) {
         // 自定义规则: --- → H1, === → H2
         if (tagName === 'H1') {
             // 检查是否为 Setext 格式（--- → H1）
-            if (el.dataset && el.dataset.setextType === '---') {
+            if (el.dataset && el.dataset.setextType) {
+                const separator = el.dataset.setextType;
+                // 从渲染的元素中提取标题文字
+                // 元素结构：标题文字 + <br> + <span class="setext-separator">分隔符</span>
+                // 使用 childNodes 提取纯文本部分（不包括 separator span）
+                let headerText = '';
+                for (let node of el.childNodes) {
+                    if (node.nodeType === Node.TEXT_NODE) {
+                        headerText += node.textContent;
+                    } else if (node.nodeType === Node.ELEMENT_NODE && node.tagName !== 'BR' && !node.classList.contains('setext-separator')) {
+                        headerText += node.textContent;
+                    }
+                }
+                headerText = headerText.trim();
+                
                 return {
-                    source: `${content}\n---`,
+                    source: `${headerText}\n${separator}`,
                     prefix: '',
-                    suffix: '\n---',
+                    suffix: '\n' + separator,
                     type: 'setext-heading'
                 };
             }
@@ -5198,11 +5212,25 @@ function renderMdNode(node) {
         }
         if (tagName === 'H2') {
             // 检查是否为 Setext 格式（=== → H2）
-            if (el.dataset && el.dataset.setextType === '===') {
+            if (el.dataset && el.dataset.setextType) {
+                const separator = el.dataset.setextType;
+                // 从渲染的元素中提取标题文字
+                // 元素结构：标题文字 + <br> + <span class="setext-separator">分隔符</span>
+                // 使用 childNodes 提取纯文本部分（不包括 separator span）
+                let headerText = '';
+                for (let node of el.childNodes) {
+                    if (node.nodeType === Node.TEXT_NODE) {
+                        headerText += node.textContent;
+                    } else if (node.nodeType === Node.ELEMENT_NODE && node.tagName !== 'BR' && !node.classList.contains('setext-separator')) {
+                        headerText += node.textContent;
+                    }
+                }
+                headerText = headerText.trim();
+                
                 return {
-                    source: `${content}\n===`,
+                    source: `${headerText}\n${separator}`,
                     prefix: '',
-                    suffix: '\n===',
+                    suffix: '\n' + separator,
                     type: 'setext-heading'
                 };
             }
@@ -5261,10 +5289,21 @@ function renderMdNode(node) {
             
             // 对于 Setext 标题，需要用 <br> 来表示换行（contenteditable 不显示 \n）
             if (specialFormat.type === 'setext-heading') {
-                const content = formattedEl.textContent;
+                // 从渲染的元素中提取标题文字（不包括分隔符）
+                // 元素结构：标题文字 + <br> + <span class="setext-separator">分隔符</span>
+                let headerText = '';
+                for (let node of formattedEl.childNodes) {
+                    if (node.nodeType === Node.TEXT_NODE) {
+                        headerText += node.textContent;
+                    } else if (node.nodeType === Node.ELEMENT_NODE && node.tagName !== 'BR' && !node.classList.contains('setext-separator')) {
+                        headerText += node.textContent;
+                    }
+                }
+                headerText = headerText.trim();
+                
                 const underline = formattedEl.dataset.setextType || '---';
                 
-                const textNode1 = document.createTextNode(content);
+                const textNode1 = document.createTextNode(headerText);
                 const brNode = document.createElement('br');
                 const textNode2 = document.createTextNode(underline);
                 
@@ -5384,6 +5423,174 @@ function renderMdNode(node) {
         const text = textNode.textContent;
         const cursorPos = range.startOffset;
         
+        // 辅助函数：查找下一个“行”节点（兼容 TextNode 和 Block Element）
+        const findNextLineNode = (node) => {
+            let next = node.nextSibling;
+            
+            // 1. 同级查找
+            while (next) {
+                // 跳过空文本/注释
+                if (next.nodeType === Node.TEXT_NODE && !next.textContent.trim()) {
+                    next = next.nextSibling;
+                    continue;
+                }
+                // 跳过 BR
+                if (next.tagName === 'BR') {
+                    next = next.nextSibling;
+                    continue;
+                }
+                break;
+            }
+            
+            if (next) return next;
+
+            // 2. 跨块查找 (如果当前在 DIV/P 内，找父元素的下一个兄弟)
+            const parent = node.parentNode;
+            if (parent && (parent.tagName === 'DIV' || parent.tagName === 'P') && parent.parentNode === editor) {
+                let nextBlock = parent.nextSibling;
+                while (nextBlock && nextBlock.nodeType === Node.TEXT_NODE && !nextBlock.textContent.trim()) {
+                    nextBlock = nextBlock.nextSibling;
+                }
+                if (nextBlock) return nextBlock;
+            }
+            
+            return null;
+        };
+
+        // 辅助函数：查找上一个“行”节点（兼容 TextNode 和 Block Element）
+        const findPrevLineNode = (node) => {
+            let prev = node.previousSibling;
+            
+            // 1. 同级查找
+            while (prev) {
+                if (prev.nodeType === Node.TEXT_NODE && !prev.textContent.trim()) {
+                    prev = prev.previousSibling;
+                    continue;
+                }
+                if (prev.tagName === 'BR') {
+                    prev = prev.previousSibling;
+                    continue;
+                }
+                break;
+            }
+            
+            if (prev) return prev;
+            
+            // 2. 跨块查找
+            const parent = node.parentNode;
+            if (parent && (parent.tagName === 'DIV' || parent.tagName === 'P') && parent.parentNode === editor) {
+                let prevBlock = parent.previousSibling;
+                while (prevBlock && prevBlock.nodeType === Node.TEXT_NODE && !prevBlock.textContent.trim()) {
+                    prevBlock = prevBlock.previousSibling;
+                }
+                if (prevBlock) return prevBlock;
+            }
+            
+            return null;
+        };
+
+        // 获取节点文本内容的辅助函数
+        const getNodeText = (node) => {
+            return node.textContent || '';
+        };
+
+        // Setext 标题前瞻检测（当在标题文本行输入时，检测下一行是否为分隔符）
+        // 只有当当前行不是分隔符时才进行检测
+        const isSeparator = /^[\u200B]*([-=])\1+\s*$/.test(text);
+        if (!isSeparator && text.trim()) {
+            const nextNode = findNextLineNode(textNode);
+            
+            let foundSetext = false;
+            let setextLevel = ''; // h1 or h2
+            let setextType = ''; // --- or ===
+            
+            if (nextNode) {
+                const nextText = getNodeText(nextNode);
+                
+                // 1. 下一行是 HR 元素（对应 ---）
+                if (nextNode.tagName === 'HR') {
+                    // Text + HR(---) => H1
+                    foundSetext = true;
+                    setextLevel = 'h1';
+                    setextType = '---';
+                }
+                // 2. 下一行是文本（TextNode 或 Block），且内容是 --- 或 ===
+                else {
+                    const dashMatch = nextText.match(/^[\u200B]*(-{3,})\s*$/);
+                    const equalMatch = nextText.match(/^[\u200B]*(={3,})\s*$/);
+                    
+                    if (dashMatch) {
+                        // Text + --- => H1
+                        foundSetext = true;
+                        setextLevel = 'h1';
+                        setextType = dashMatch[1];  // 保存实际的分隔符（如 ---、----、-----）
+                    } else if (equalMatch) {
+                        // Text + === => H2
+                        foundSetext = true;
+                        setextLevel = 'h2';
+                        setextType = equalMatch[1];  // 保存实际的分隔符（如 ===、====、=====）
+                    }
+                }
+            }
+            
+            if (foundSetext) {
+                const newEl = document.createElement(setextLevel);
+                // Setext 标题显示为：标题文字 + 换行 + 分隔符（两行，分隔符保持原始大小）
+                const headerTextEscaped = text.trim().replace(/</g, '&lt;').replace(/>/g, '&gt;');
+                newEl.innerHTML = `${headerTextEscaped}<br><span class="setext-separator" style="font-size: 14px; font-weight: normal; color: #999;">${setextType}</span>`;
+                newEl.dataset.setextType = setextType;
+                
+                // 插入新标题（位置在当前节点之前）
+                const insertParent = textNode.parentNode === editor ? editor : textNode.parentNode.parentNode;
+                const insertRef = textNode.parentNode === editor ? textNode : textNode.parentNode;
+                
+                insertParent.insertBefore(newEl, insertRef);
+                
+                // 移除旧节点（当前文本节点 + 下一行节点）
+                // 注意：如果是在块元素内，可能需要移除整个块
+                const removeNodeAndBlock = (n) => {
+                    if (!n) return;
+                    if (n.parentNode === editor) {
+                         // Block element or direct text node
+                         editor.removeChild(n);
+                    } else if (n.parentNode && n.parentNode.parentNode === editor && (n.parentNode.tagName === 'DIV' || n.parentNode.tagName === 'P')) {
+                         // Inside a block, remove the whole block
+                         editor.removeChild(n.parentNode);
+                    } else if (n.parentNode) {
+                         n.parentNode.removeChild(n);
+                    }
+                };
+                
+                // 移除当前节点
+                removeNodeAndBlock(textNode);
+                
+                // 移除下一行节点
+                removeNodeAndBlock(nextNode);
+                
+                // 在后面添加零宽空格
+                const afterNode = document.createTextNode('\u200B');
+                if (newEl.nextSibling) {
+                    insertParent.insertBefore(afterNode, newEl.nextSibling);
+                } else {
+                    insertParent.appendChild(afterNode);
+                }
+                
+                // 恢复光标位置
+                const newRange = document.createRange();
+                newRange.setStart(afterNode, 1);
+                newRange.collapse(true);
+                sel.removeAllRanges();
+                sel.addRange(newRange);
+                
+                expandedElement = null;
+                expandedMarkdown = null;
+                expandedType = null;
+                
+                saveEditorContent();
+                return;
+            }
+        }
+        
         // Markdown 模式列表（按优先级排序）
         const patterns = [
             { regex: /\*\*(.+?)\*\*/, tag: 'strong' },           // **粗体**
@@ -5401,80 +5608,68 @@ function renderMdNode(node) {
             { regex: /<p\s+align=["']?([^"'>]+)["']?>([^<]*)<\/p>/i, tag: 'p', attrName: 'align', attrIndex: 1, contentIndex: 2 },
         ];
         
-        // Setext 标题和水平分割线检测
-        // 使用编辑器完整文本检测（基于行），同时保留已经存在的 Setext 标题结构
-        // 自定义规则：--- → H1（一级标题），=== → H2（二级标题）
-        // 注意：正则需要兼容开头的零宽空格(\u200B)
-        const setextH1Match = text.match(/^[\u200B]*(-{3,})\s*$/);  // --- → H1
-        const setextH2Match = text.match(/^[\u200B]*(= {3,})\s*$/);  // === → H2
+        // Setext 标题和水平分割线检测（回溯检测：当输入分隔符时，检测上一行是否为标题文本）
+        const setextDashMatch = text.match(/^[\u200B]*(-{3,})\s*$/);    // --- → H1
+        const setextEqualMatch = text.match(/^[\u200B]*(={3,})\s*$/);   // === → H2
 
-        if (setextH1Match || setextH2Match) {
-            const parent = textNode.parentNode;
+        if (setextDashMatch || setextEqualMatch) {
+            const prevNode = findPrevLineNode(textNode);
             
-            // 向上查找前一个非空文本节点（作为标题内容）
-            let targetPreviousNode = null;
-            let nodesToRemove = [];
-            
-            let curr = textNode.previousSibling;
-            
-            // 跳过 --- 前面的空白文本节点
-            while (curr && curr.nodeType === Node.TEXT_NODE && !curr.textContent.trim()) {
-                 nodesToRemove.push(curr);
-                 curr = curr.previousSibling;
-            }
-            
-            // 检查是否有 BR 换行符（允许标题和分隔符之间有一个换行）
-            if (curr && curr.tagName === 'BR') {
-                 nodesToRemove.push(curr);
-                 curr = curr.previousSibling;
+            if (prevNode) {
+                 // 获取上一行的文本内容（移除零宽空格）
+                 const headerText = getNodeText(prevNode).replace(/\u200B/g, '').trim();
                  
-                 // 跳过 BR 前面的空白文本节点
-                 while (curr && curr.nodeType === Node.TEXT_NODE && !curr.textContent.trim()) {
-                     nodesToRemove.push(curr);
-                     curr = curr.previousSibling;
-                 }
-                 
-                 // 找到潜在的标题文本
-                 if (curr && curr.nodeType === Node.TEXT_NODE && curr.textContent.trim()) {
-                      targetPreviousNode = curr;
-                 }
-            } else if (curr && curr.nodeType === Node.TEXT_NODE && curr.textContent.trim()) {
-                 // 紧邻的文本（无 BR）
-                 targetPreviousNode = curr;
-            }
+                 // 如果上一行是 HR 元素、空内容、或只包含零宽空格，不尝试创建标题，直接跳过
+                 if (prevNode.tagName === 'HR' || !headerText || /^[-=]{3,}$/.test(headerText)) {
+                     // 继续执行后续的 HR 创建逻辑
+                 } else {
+                     // 确保上一行有有效内容且不是分隔符
+                     if (headerText) {
+                         // 自定义规则: --- → H1, === → H2
+                         const level = setextDashMatch ? 'h1' : 'h2';
+                         const separator = setextDashMatch ? setextDashMatch[1] : setextEqualMatch[1];
+                         
+                         const newEl = document.createElement(level);
+                         // Setext 标题显示为：标题文字 + 换行 + 分隔符（两行，分隔符保持原始大小）
+                         const headerTextEscaped = headerText.replace(/</g, '&lt;').replace(/>/g, '&gt;');
+                         newEl.innerHTML = `${headerTextEscaped}<br><span class="setext-separator" style="font-size: 14px; font-weight: normal; color: #999;">${separator}</span>`;
+                         newEl.dataset.setextType = separator;
+                     
+                     // 插入位置确定
+                     const insertParent = textNode.parentNode === editor ? editor : textNode.parentNode.parentNode;
+                     const insertRef = (prevNode.parentNode === editor) ? prevNode : prevNode.parentNode;
+                     
+                     insertParent.insertBefore(newEl, insertRef);
+                     
+                     // 移除节点Helper
+                     const removeNodeAndBlock = (n) => {
+                        if (!n) return;
+                        if (n.parentNode === editor) {
+                             editor.removeChild(n);
+                        } else if (n.parentNode && n.parentNode.parentNode === editor && (n.parentNode.tagName === 'DIV' || n.parentNode.tagName === 'P')) {
+                             editor.removeChild(n.parentNode);
+                        } else if (n.parentNode) {
+                             n.parentNode.removeChild(n);
+                        }
+                    };
 
-            // 逻辑 1: Setext 标题 (文本 + ---/===)
-            // 只有当存在有效的上一行文本节点时才尝试合并为标题
-            if (targetPreviousNode) {
-                 const headerText = targetPreviousNode.textContent.trim();
-                 // 确保上一行本身不是分隔符 (同时兼容零宽空格)
-                 // 只有当 headerText 看起来不像是另一个分隔符时，才将其转为标题
-                 if (!/^[\u200B]*[-=]{3,}$/.test(headerText)) {
-                     const level = setextH1Match ? 'h1' : 'h2';
-                     const newEl = document.createElement(level);
-                     newEl.textContent = headerText;
-                     newEl.dataset.setextType = setextH1Match ? '---' : '===';
+                     // 移除上一行
+                     removeNodeAndBlock(prevNode);
                      
-                     // 插入新标题
-                     parent.insertBefore(newEl, targetPreviousNode);
-                     
-                     // 移除旧文本节点和中间的 BR/空白
-                     parent.removeChild(targetPreviousNode);
-                     nodesToRemove.forEach(el => parent.removeChild(el));
+                     // 移除当前行（分隔符）
+                     removeNodeAndBlock(textNode);
                      
                      // 移除当前的 ---/=== 文本节点
                      const afterNode = document.createTextNode('\u200B');
-                     // 如果当前节点后面有兄弟节点，插在前面；否则追加
-                     if (textNode.nextSibling) {
-                         parent.insertBefore(afterNode, textNode.nextSibling);
+                     if (newEl.nextSibling) {
+                         insertParent.insertBefore(afterNode, newEl.nextSibling);
                      } else {
-                         parent.appendChild(afterNode);
+                         insertParent.appendChild(afterNode);
                      }
-                     parent.removeChild(textNode);
                      
                      // 恢复光标位置
                      const newRange = document.createRange();
-                     newRange.setStart(afterNode, 1);
+                     newRange.setStart(afterNode, afterNode.textContent.length);
                      newRange.collapse(true);
                      sel.removeAllRanges();
                      sel.addRange(newRange);
@@ -5485,26 +5680,52 @@ function renderMdNode(node) {
                      
                      saveEditorContent();
                      return;
+                     }
                  }
-                 // 如果 headerText 也是分隔符（例如连续输入 ---），则不合并，让其 falling through 到逻辑 2
             }
 
             // 逻辑 2: 水平分割线 (仅限 ---, 且没有形成标题时)
-            // === 如果没有形成 H2，则不应该渲染为 HR（Markdown 标准中 === 只是 H2 marker）
-            if (setextH1Match) {
+            if (setextDashMatch) {
                  const hr = document.createElement('hr');
-                 const afterNode = document.createTextNode('\u200B');
                  
-                 // 替换当前的 --- 文本节点
-                 parent.insertBefore(hr, textNode);
-                 parent.insertBefore(afterNode, textNode);
-                 parent.removeChild(textNode);
+                 const parent = textNode.parentNode;
                  
-                 const newRange = document.createRange();
-                 newRange.setStart(afterNode, 1);
-                 newRange.collapse(true);
-                 sel.removeAllRanges();
-                 sel.addRange(newRange);
+                 // 如果在 Block 内，需要在 Block 外插入 HR，或者把 Block 替换
+                 if (parent.tagName === 'DIV' || parent.tagName === 'P') {
+                     // 在 Block 前插入 HR
+                     parent.parentNode.insertBefore(hr, parent);
+                     
+                     // 清空当前 Block 的内容，保留 Block 本身以保持光标位置
+                     textNode.textContent = '\u200B';
+                     
+                     // 设置光标
+                     try {
+                         const newRange = document.createRange();
+                         newRange.setStart(textNode, 1);
+                         newRange.collapse(true);
+                         sel.removeAllRanges();
+                         sel.addRange(newRange);
+                     } catch (e) {
+                         // 光标设置失败，静默处理
+                     }
+                 } else {
+                     // 在当前文本节点前插入 HR
+                     parent.insertBefore(hr, textNode);
+                     
+                     // 清空当前文本节点为零宽空格
+                     textNode.textContent = '\u200B';
+                     
+                     // 设置光标
+                     try {
+                         const newRange = document.createRange();
+                         newRange.setStart(textNode, 1);
+                         newRange.collapse(true);
+                         sel.removeAllRanges();
+                         sel.addRange(newRange);
+                     } catch (e) {
+                         // 光标设置失败，静默处理
+                     }
+                 }
                  
                  expandedElement = null;
                  expandedMarkdown = null;
@@ -5729,8 +5950,10 @@ function renderMdNode(node) {
         
         // Setext 标题语法检测（处理两行结构：内容 + <br> + ---/===）
         // 自定义规则: --- → H1, === → H2
-        const isSetextH1 = /^-{3,}\s*$/.test(text);  // --- → H1
-        const isSetextH2 = /^={3,}\s*$/.test(text);  // === → H2
+        const setextH1Match = text.match(/^[\u200B]*(-{3,})\s*$/);  // --- → H1
+        const setextH2Match = text.match(/^[\u200B]*(={3,})\s*$/);  // === → H2
+        const isSetextH1 = !!setextH1Match;
+        const isSetextH2 = !!setextH2Match;
         
         if (isSetextH1 || isSetextH2) {
             const parent = textNode.parentNode;
@@ -5766,9 +5989,13 @@ function renderMdNode(node) {
                 if (contentNode && contentNode.textContent.trim()) {
                     // 有上一行内容，创建标题
                     const headingLevel = isSetextH1 ? 'h1' : 'h2';
+                    const separator = isSetextH1 ? setextH1Match[1] : setextH2Match[1];
                     const newEl = document.createElement(headingLevel);
-                    newEl.textContent = contentNode.textContent.trim();
-                    newEl.dataset.setextType = isSetextH1 ? '---' : '===';
+                    // Setext 标题显示为：标题文字 + 换行 + 分隔符（两行，分隔符保持原始大小）
+                    // 分隔符部分设为不可编辑，让用户只能修改标题文字
+                    const headerTextEscaped = contentNode.textContent.trim().replace(/</g, '&lt;').replace(/>/g, '&gt;');
+                    newEl.innerHTML = `${headerTextEscaped}<br contenteditable="false"><span class="setext-separator" contenteditable="false" style="font-size: 14px; font-weight: normal; color: #999; user-select: none;">${separator}</span>`;
+                    newEl.dataset.setextType = separator;
                     
                     // 移除内容节点、<br>、下划线节点
                     if (contentNode.parentNode) contentNode.parentNode.removeChild(contentNode);
@@ -5798,7 +6025,7 @@ function renderMdNode(node) {
         }
         
         // 水平分割线 ---（单独一行，没有其他内容）
-        const hrPattern = /^-{3,}\s*$/;
+        const hrPattern = /^[\u200B]*-{3,}\s*$/;
         if (hrPattern.test(text)) {
             const parent = textNode.parentNode;
             if (parent) {
@@ -6295,6 +6522,23 @@ function renderMdNode(node) {
         // 点击格式化元素时展开为 Markdown 源码（包括 HTML 格式）- 排除checkbox
         const formattedEl = target.closest('strong, b, em, i, del, s, mark, code, font, center, p[align], blockquote, hr, ul, ol, .md-task-item, h1, h2, h3, h4, h5, h6');
         if (formattedEl && editor.contains(formattedEl)) {
+            // 特殊处理：Setext标题（带有分隔符的H1/H2）点击时不展开为源码
+            // 而是让标题内容可编辑，保持渲染后的标题格式
+            const isSetextHeading = (formattedEl.tagName === 'H1' || formattedEl.tagName === 'H2') && 
+                                   formattedEl.dataset && formattedEl.dataset.setextType;
+            
+            if (isSetextHeading) {
+                // 先重新渲染之前展开的元素
+                if (expandedElement && expandedElement.parentNode && !isClickInsideExpanded) {
+                    reRenderExpanded();
+                }
+                // Setext标题保持渲染后的格式，直接可编辑，不展开为源码
+                // 标题元素本身在contenteditable中，用户可以直接修改文字内容
+                // 不做任何操作，让浏览器默认的编辑行为生效
+                return;
+            }
+            
+            // 其他格式化元素：展开为源码
             // 先重新渲染之前展开的元素（如果此次点击不在源码区域内）
             if (expandedElement && expandedElement.parentNode && !isClickInsideExpanded) {
                 reRenderExpanded();

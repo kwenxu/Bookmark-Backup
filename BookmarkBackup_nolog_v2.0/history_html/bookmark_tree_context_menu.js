@@ -6589,7 +6589,7 @@ async function showManualWindowGroupSelector(context) {
         const windowPanel = document.createElement('div');
         windowPanel.className = 'manual-selector-panel';
         windowPanel.innerHTML = `
-            <div class="manual-selector-panel-title">${lang === 'zh_CN' ? '窗口 (可选)' : 'Windows (Optional)'}</div>
+            <div class="manual-selector-panel-title">${lang === 'zh_CN' ? '窗口' : 'Windows'}</div>
             <div class="manual-selector-list" data-type="windows"></div>
         `;
         
@@ -6597,7 +6597,7 @@ async function showManualWindowGroupSelector(context) {
         const groupPanel = document.createElement('div');
         groupPanel.className = 'manual-selector-panel';
         groupPanel.innerHTML = `
-            <div class="manual-selector-panel-title">${lang === 'zh_CN' ? '标签组 (可选)' : 'Tab Groups (Optional)'}</div>
+            <div class="manual-selector-panel-title">${lang === 'zh_CN' ? '标签组' : 'Tab Groups'}</div>
             <div class="manual-selector-list" data-type="groups"></div>
         `;
         
@@ -6633,6 +6633,27 @@ async function showManualWindowGroupSelector(context) {
         
         // 加载窗口和组数据
         await loadWindowsAndGroups(overlay, lang);
+        
+        // 阻止选择器内的所有滚动相关事件冒泡到画布
+        const preventBubble = (e) => {
+            e.stopPropagation();
+        };
+        
+        // 滚轮事件
+        dialog.addEventListener('wheel', preventBubble, { passive: false });
+        
+        // 触摸事件
+        dialog.addEventListener('touchmove', preventBubble, { passive: false });
+        
+        // 鼠标拖动事件（可能影响滚动）
+        dialog.addEventListener('mousedown', (e) => {
+            e.stopPropagation();
+        });
+        
+        // 防止点击事件冒泡导致画布交互
+        dialog.addEventListener('click', (e) => {
+            e.stopPropagation();
+        });
         
         // 事件处理
         setupSelectorEvents(overlay, context, lang);

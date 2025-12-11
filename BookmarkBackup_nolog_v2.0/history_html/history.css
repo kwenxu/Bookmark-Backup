@@ -12344,7 +12344,31 @@ color: var(--text-secondary);
 .manual-selector-list {
     flex: 1;
     overflow-y: auto;
+    overflow-x: hidden;
     padding: 6px;
+    /* 确保滚动流畅 */
+    -webkit-overflow-scrolling: touch;
+    /* 自定义滚动条样式 */
+    scrollbar-width: thin;
+    scrollbar-color: var(--accent-primary) var(--bg-secondary);
+}
+
+.manual-selector-list::-webkit-scrollbar {
+    width: 8px;
+}
+
+.manual-selector-list::-webkit-scrollbar-track {
+    background: var(--bg-secondary);
+    border-radius: 4px;
+}
+
+.manual-selector-list::-webkit-scrollbar-thumb {
+    background: var(--accent-primary);
+    border-radius: 4px;
+}
+
+.manual-selector-list::-webkit-scrollbar-thumb:hover {
+    background: var(--accent-hover);
 }
 
 .manual-selector-item {

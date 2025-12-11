@@ -6558,6 +6558,9 @@ async function openHyperlinkInSameWindowSpecificGroup(url) {
 let manualSelectedWindowId = null;
 let manualSelectedGroupId = null;
 
+// 存储自定义窗口名称
+let customWindowNames = {};
+
 /**
  * 显示手动选择窗口+组的选择器
  */
@@ -6588,10 +6591,37 @@ async function showManualWindowGroupSelector(context) {
         // 左侧：窗口列表
         const windowPanel = document.createElement('div');
         windowPanel.className = 'manual-selector-panel';
+        windowPanel.style.position = 'relative';
         windowPanel.innerHTML = `
-            <div class="manual-selector-panel-title">${lang === 'zh_CN' ? '窗口' : 'Windows'}</div>
+            <div class="manual-selector-panel-title">
+                <span>${lang === 'zh_CN' ? '窗口' : 'Windows'}</span>
+                <i class="fas fa-question-circle manual-selector-help-icon"></i>
+            </div>
+            <div class="manual-selector-help-tooltip">
+                <p>${lang === 'zh_CN' 
+                    ? 'Chrome/Edge扩展API无法获取窗口的自定义名称（即使您在浏览器中设置了"命名窗口"）。' 
+                    : 'Chrome/Edge extension API cannot access custom window names (even if you set "Name Window" in browser).'}</p>
+                <p>${lang === 'zh_CN' 
+                    ? '显示的是活动标签页标题，您可以点击编辑按钮（✏️）设置自定义名称。' 
+                    : 'Showing active tab title, you can click edit button (✏️) to set custom name.'}</p>
+            </div>
             <div class="manual-selector-list" data-type="windows"></div>
         `;
+        
+        // 绑定帮助图标点击事件
+        const helpIcon = windowPanel.querySelector('.manual-selector-help-icon');
+        const helpTooltip = windowPanel.querySelector('.manual-selector-help-tooltip');
+        helpIcon.addEventListener('click', (e) => {
+            e.stopPropagation();
+            helpTooltip.classList.toggle('show');
+        });
+        
+        // 点击其他地方关闭提示
+        document.addEventListener('click', (e) => {
+            if (!helpTooltip.contains(e.target) && e.target !== helpIcon) {
+                helpTooltip.classList.remove('show');
+            }
+        });
         
         // 右侧：组列表
         const groupPanel = document.createElement('div');
@@ -6685,6 +6715,29 @@ async function loadWindowsAndGroups(overlay, lang) {
                 const isCurrent = win.id === currentWindowId;
                 const tabCount = win.tabs ? win.tabs.length : 0;
                 
+                // 获取活动标签页标题
+                const activeTab = win.tabs ? win.tabs.find(tab => tab.active) : null;
+                const activeTabTitle = activeTab ? activeTab.title : `Window #${win.id}`;
+                
+                // 获取显示名称（优先使用自定义名称）
+                const displayName = getWindowDisplayName(win.id, activeTabTitle);
+                const hasCustomName = !!customWindowNames[win.id];
+                
+                // 窗口状态
+                const stateIcon = {
+                    'maximized': '<i class="fas fa-window-maximize"></i>',
+                    'minimized': '<i class="fas fa-window-minimize"></i>',
+                    'fullscreen': '<i class="fas fa-expand"></i>',
+                    'normal': '<i class="fas fa-window-restore"></i>'
+                }[win.state] || '';
+                
+                const stateText = {
+                    'maximized': lang === 'zh_CN' ? '最大化' : 'Maximized',
+                    'minimized': lang === 'zh_CN' ? '最小化' : 'Minimized',
+                    'fullscreen': lang === 'zh_CN' ? '全屏' : 'Fullscreen',
+                    'normal': lang === 'zh_CN' ? '正常' : 'Normal'
+                }[win.state] || '';
+                
                 const item = document.createElement('div');
                 item.className = 'manual-selector-item';
                 item.dataset.windowId = win.id;
@@ -6695,15 +6748,38 @@ async function loadWindowsAndGroups(overlay, lang) {
                 }
                 
                 item.innerHTML = `
-                    <div class="manual-selector-item-title">
-                        🪟 ${lang === 'zh_CN' ? '窗口' : 'Window'} #${win.id}
-                        ${isCurrent ? `<span class="manual-selector-item-badge">${lang === 'zh_CN' ? '当前' : 'Current'}</span>` : ''}
+                    <div class="manual-selector-item-header">
+                        <div class="manual-selector-item-title">
+                            ${win.incognito ? '🕶️' : '🪟'} ${displayName}
+                            ${isCurrent ? `<span class="manual-selector-item-badge">${lang === 'zh_CN' ? '当前' : 'Current'}</span>` : ''}
+                            ${hasCustomName ? `<span class="manual-selector-item-badge" style="background: var(--accent-primary);">✓</span>` : ''}
+                        </div>
+                        <div class="manual-selector-item-actions">
+                            <button class="manual-selector-edit-btn" data-window-id="${win.id}" title="${lang === 'zh_CN' ? '编辑名称' : 'Edit name'}">
+                                <i class="fas fa-edit"></i>
+                            </button>
+                        </div>
                     </div>
-                    <div class="manual-selector-item-info">${tabCount} ${lang === 'zh_CN' ? '个标签页' : 'tabs'}</div>
+                    <div class="manual-selector-item-info">
+                        <span class="manual-selector-item-meta">${stateIcon} ${stateText}</span>
+                        <span class="manual-selector-item-meta"><i class="fas fa-layer-group"></i> ${tabCount} ${lang === 'zh_CN' ? '个标签页' : 'tabs'}</span>
+                        ${win.incognito ? `<span class="manual-selector-item-meta"><i class="fas fa-user-secret"></i> ${lang === 'zh_CN' ? '无痕模式' : 'Incognito'}</span>` : ''}
+                    </div>
                 `;
                 
+                // 绑定编辑按钮事件
+                const editBtn = item.querySelector('.manual-selector-edit-btn');
+                editBtn.addEventListener('click', async (e) => {
+                    e.stopPropagation();
+                    await showWindowNameEditor(item, win.id, displayName, lang);
+                });
+                
                 // 点击选择窗口
-                item.addEventListener('click', async () => {
+                item.addEventListener('click', async (e) => {
+                    // 如果点击的是编辑按钮或输入框，不触发选择
+                    if (e.target.closest('.manual-selector-edit-btn') || e.target.closest('.manual-selector-item-input')) {
+                        return;
+                    }
                     // 切换选择
                     const wasSelected = item.classList.contains('selected');
                     overlay.querySelectorAll('.manual-selector-list[data-type="windows"] .manual-selector-item').forEach(i => {
@@ -6912,7 +6988,8 @@ async function saveManualSelection() {
     try {
         await chrome.storage.local.set({
             manualSelectedWindowId,
-            manualSelectedGroupId
+            manualSelectedGroupId,
+            customWindowNames
         });
         console.log('[手动选择器] 已保存:', { windowId: manualSelectedWindowId, groupId: manualSelectedGroupId });
     } catch (error) {
@@ -6921,13 +6998,148 @@ async function saveManualSelection() {
 }
 
 /**
+ * 设置窗口自定义名称
+ */
+async function setCustomWindowName(windowId, customName) {
+    if (customName && customName.trim()) {
+        customWindowNames[windowId] = customName.trim();
+    } else {
+        delete customWindowNames[windowId];
+    }
+    await saveManualSelection();
+}
+
+/**
+ * 获取窗口显示名称（优先使用自定义名称）
+ */
+function getWindowDisplayName(windowId, activeTabTitle) {
+    return customWindowNames[windowId] || activeTabTitle;
+}
+
+/**
+ * 显示窗口名称编辑器
+ */
+async function showWindowNameEditor(item, windowId, currentName, lang) {
+    const titleDiv = item.querySelector('.manual-selector-item-title');
+    const actionsDiv = item.querySelector('.manual-selector-item-actions');
+    
+    // 保存原始HTML
+    const originalTitleHTML = titleDiv.innerHTML;
+    
+    // 创建输入框
+    const input = document.createElement('input');
+    input.type = 'text';
+    input.className = 'manual-selector-item-input';
+    input.value = currentName;
+    input.placeholder = lang === 'zh_CN' ? '输入自定义名称' : 'Enter custom name';
+    
+    // 创建操作按钮
+    const saveBtn = document.createElement('button');
+    saveBtn.className = 'manual-selector-edit-btn';
+    saveBtn.innerHTML = '<i class="fas fa-check"></i>';
+    saveBtn.title = lang === 'zh_CN' ? '保存' : 'Save';
+    
+    const cancelBtn = document.createElement('button');
+    cancelBtn.className = 'manual-selector-edit-btn';
+    cancelBtn.innerHTML = '<i class="fas fa-times"></i>';
+    cancelBtn.title = lang === 'zh_CN' ? '取消' : 'Cancel';
+    
+    const clearBtn = document.createElement('button');
+    clearBtn.className = 'manual-selector-edit-btn';
+    clearBtn.innerHTML = '<i class="fas fa-trash"></i>';
+    clearBtn.title = lang === 'zh_CN' ? '清除自定义名称' : 'Clear custom name';
+    clearBtn.style.color = '#dc3545';
+    
+    // 替换内容
+    titleDiv.innerHTML = '';
+    titleDiv.appendChild(input);
+    
+    actionsDiv.innerHTML = '';
+    actionsDiv.appendChild(saveBtn);
+    actionsDiv.appendChild(clearBtn);
+    actionsDiv.appendChild(cancelBtn);
+    actionsDiv.style.opacity = '1'; // 始终显示
+    
+    // 聚焦并选中文本
+    input.focus();
+    input.select();
+    
+    // 保存函数
+    const save = async () => {
+        const newName = input.value.trim();
+        await setCustomWindowName(windowId, newName);
+        
+        // 重新加载窗口列表以刷新显示
+        const overlay = item.closest('.manual-selector-overlay');
+        if (overlay) {
+            await loadWindowsAndGroups(overlay, lang);
+        }
+    };
+    
+    // 取消函数
+    const cancel = () => {
+        titleDiv.innerHTML = originalTitleHTML;
+        actionsDiv.style.opacity = '';
+        // 重新绑定编辑按钮
+        const editBtn = actionsDiv.querySelector('.manual-selector-edit-btn');
+        if (editBtn) {
+            editBtn.addEventListener('click', async (e) => {
+                e.stopPropagation();
+                await showWindowNameEditor(item, windowId, currentName, lang);
+            });
+        }
+    };
+    
+    // 清除函数
+    const clear = async () => {
+        await setCustomWindowName(windowId, '');
+        const overlay = item.closest('.manual-selector-overlay');
+        if (overlay) {
+            await loadWindowsAndGroups(overlay, lang);
+        }
+    };
+    
+    // 绑定事件
+    saveBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        save();
+    });
+    
+    cancelBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        cancel();
+    });
+    
+    clearBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        clear();
+    });
+    
+    // Enter保存，Escape取消
+    input.addEventListener('keydown', (e) => {
+        e.stopPropagation();
+        if (e.key === 'Enter') {
+            save();
+        } else if (e.key === 'Escape') {
+            cancel();
+        }
+    });
+    
+    // 阻止点击输入框时触发窗口选择
+    input.addEventListener('click', (e) => {
+        e.stopPropagation();
+    });
+}
+
+/**
  * 加载手动选择
  */
 async function loadManualSelection() {
     try {
-        const data = await chrome.storage.local.get(['manualSelectedWindowId', 'manualSelectedGroupId']);
+        const data = await chrome.storage.local.get(['manualSelectedWindowId', 'manualSelectedGroupId', 'customWindowNames']);
         manualSelectedWindowId = data.manualSelectedWindowId || null;
         manualSelectedGroupId = data.manualSelectedGroupId || null;
+        customWindowNames = data.customWindowNames || {};
     } catch (error) {
         console.error('[手动选择器] 加载失败:', error);
     }

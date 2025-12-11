@@ -2030,10 +2030,11 @@ function applyPanOffset() {
 
 // 性能优化：极速平移（使用 transform，完全跳过边界检查和滚动条）
 function applyPanOffsetFast() {
+    const container = getCachedContainer();
     const content = getCachedContent();
     if (!content) return;
 
-    // 直接使用 transform，跳过 clampPan 和 CSS 变量
+    // 直接使用 transform，跳过 clampPan
     // transform 只触发合成，性能最优
     const scale = CanvasState.zoom;
     const translateX = CanvasState.panOffsetX / scale;
@@ -2041,6 +2042,13 @@ function applyPanOffsetFast() {
 
     // 使用 translate3d 启用硬件加速
     content.style.transform = `scale(${scale}) translate3d(${translateX}px, ${translateY}px, 0)`;
+    
+    // 实时更新背景网格的CSS变量，让网格跟随缩放变化
+    if (container) {
+        container.style.setProperty('--canvas-scale', scale);
+        container.style.setProperty('--canvas-pan-x', `${CanvasState.panOffsetX}px`);
+        container.style.setProperty('--canvas-pan-y', `${CanvasState.panOffsetY}px`);
+    }
 }
 
 // 性能优化：标记正在滚动

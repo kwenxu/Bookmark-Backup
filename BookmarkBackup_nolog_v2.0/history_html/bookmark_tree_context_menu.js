@@ -2189,7 +2189,22 @@ async function openUrlList(urls, { newWindow = false, incognito = false, tabGrou
     
     if (newWindow) {
         if (chrome && chrome.windows) {
-            await chrome.windows.create({ url: urls, incognito });
+            try {
+                await chrome.windows.create({ url: urls, incognito });
+            } catch (error) {
+                if (incognito && error.message && error.message.includes('Incognito mode is disabled')) {
+                    const lang = currentLang || 'zh_CN';
+                    const message = lang === 'zh_CN' 
+                        ? '无痕模式已被禁用。将在普通窗口中打开。\n\n若要使用无痕模式，请在扩展管理页面启用"在无痕模式下启用"。'
+                        : 'Incognito mode is disabled. Opening in normal window.\n\nTo use incognito mode, enable "Allow in Incognito" in extension settings.';
+                    alert(message);
+                    // 降级为普通新窗口
+                    await chrome.windows.create({ url: urls, incognito: false });
+                } else {
+                    console.error('[openUrlList] 新窗口失败:', error);
+                    urls.forEach(url => window.open(url, '_blank'));
+                }
+            }
         } else {
             urls.forEach(url => window.open(url, '_blank'));
         }
@@ -3006,7 +3021,23 @@ async function openInSameGroup(url, opts = {}) {
 async function openBookmarkNewWindow(url, incognito = false) {
     if (!url) return;
     if (chrome && chrome.windows) {
-        chrome.windows.create({ url: url, incognito: incognito });
+        try {
+            await chrome.windows.create({ url: url, incognito: incognito });
+        } catch (error) {
+            // 处理无痕模式被禁用的错误
+            if (incognito && error.message && error.message.includes('Incognito mode is disabled')) {
+                const lang = currentLang || 'zh_CN';
+                const message = lang === 'zh_CN' 
+                    ? '无痕模式已被禁用。\n\n请在扩展管理页面启用"在无痕模式下启用"选项：\n1. 右键点击扩展图标\n2. 选择"管理扩展程序"\n3. 启用"在无痕模式下启用"'
+                    : 'Incognito mode is disabled.\n\nPlease enable "Allow in Incognito" in extension settings:\n1. Right-click extension icon\n2. Select "Manage extensions"\n3. Enable "Allow in Incognito"';
+                alert(message);
+                // 降级为普通新窗口
+                await chrome.windows.create({ url: url, incognito: false });
+            } else {
+                console.error('[新窗口] 打开失败:', error);
+                window.open(url, '_blank');
+            }
+        }
     } else {
         window.open(url, '_blank');
     }
@@ -3412,7 +3443,22 @@ async function openAllBookmarks(folderId, newWindow = false, incognito = false) 
     if (newWindow) {
         // 在新窗口中打开
         if (chrome.windows) {
-            chrome.windows.create({ url: urls, incognito: incognito });
+            try {
+                await chrome.windows.create({ url: urls, incognito: incognito });
+            } catch (error) {
+                if (incognito && error.message && error.message.includes('Incognito mode is disabled')) {
+                    const lang = currentLang || 'zh_CN';
+                    const message = lang === 'zh_CN' 
+                        ? '无痕模式已被禁用。将在普通窗口中打开。\n\n若要使用无痕模式，请在扩展管理页面启用"在无痕模式下启用"。'
+                        : 'Incognito mode is disabled. Opening in normal window.\n\nTo use incognito mode, enable "Allow in Incognito" in extension settings.';
+                    alert(message);
+                    // 降级为普通新窗口
+                    await chrome.windows.create({ url: urls, incognito: false });
+                } else {
+                    console.error('[打开全部] 新窗口失败:', error);
+                    urls.forEach(url => window.open(url, '_blank'));
+                }
+            }
         }
     } else {
         // 在新标签页中打开

@@ -170,7 +170,7 @@ function __readJSON(key, fallback = null) {
     } catch (_) { return fallback; }
 }
 function __writeJSON(key, obj) {
-    try { localStorage.setItem(key, JSON.stringify(obj)); } catch (_) {}
+    try { localStorage.setItem(key, JSON.stringify(obj)); } catch (_) { }
 }
 
 // 多次尝试恢复滚动，避免首次布局或字体加载导致的覆盖
@@ -487,8 +487,8 @@ const TEMP_SECTION_DEFAULT_WIDTH = 360;
 const TEMP_SECTION_DEFAULT_HEIGHT = 280;
 const TEMP_SECTION_DEFAULT_COLOR = '#2563eb';
 // Obsidian Canvas 文本节点默认尺寸（参考 sample.canvas）
-const MD_NODE_DEFAULT_WIDTH = 250;
-const MD_NODE_DEFAULT_HEIGHT = 160;
+const MD_NODE_DEFAULT_WIDTH = 300;
+const MD_NODE_DEFAULT_HEIGHT = 300;
 function formatTimestampForTitle(date = new Date()) {
     const yyyy = date.getFullYear();
     const mm = String(date.getMonth() + 1).padStart(2, '0');
@@ -560,24 +560,24 @@ async function resolveBookmarkNode(data) {
     if (!data) {
         throw new Error('缺少拖拽数据');
     }
-    
+
     // 数据已经是完整节点
     if (data.children || data.url) {
         return cloneBookmarkNode(data);
     }
-    
+
     const targetId = data.id || data.nodeId;
     if (!targetId) {
         throw new Error('拖拽数据缺少ID');
     }
-    
+
     if (browserAPI && browserAPI.bookmarks && browserAPI.bookmarks.getSubTree) {
         const nodes = await browserAPI.bookmarks.getSubTree(targetId);
         if (nodes && nodes.length > 0) {
             return cloneBookmarkNode(nodes[0]);
         }
     }
-    
+
     throw new Error('无法获取书签数据，请确保扩展具有访问书签的权限');
 }
 
@@ -587,7 +587,7 @@ function allocateTempItemId(sectionId) {
 
 function convertBookmarkNodeToTempItem(node, sectionId) {
     if (!node) return null;
-    
+
     const itemId = allocateTempItemId(sectionId);
     const item = {
         id: itemId,
@@ -599,13 +599,13 @@ function convertBookmarkNodeToTempItem(node, sectionId) {
         originalId: node.id || null,
         createdAt: Date.now()
     };
-    
+
     if (node.children && node.children.length) {
         item.children = node.children
             .map(child => convertBookmarkNodeToTempItem(child, sectionId))
             .filter(Boolean);
     }
-    
+
     return item;
 }
 
@@ -614,7 +614,7 @@ function convertLegacyTempNode(legacyNode, index) {
     const sectionId = (legacyNode.id && typeof legacyNode.id === 'string')
         ? legacyNode.id
         : `temp-section-${index + 1}`;
-    
+
     const section = {
         id: sectionId,
         title: (legacyNode.data && legacyNode.data.title) ? legacyNode.data.title : getDefaultTempSectionTitle(),
@@ -626,21 +626,21 @@ function convertLegacyTempNode(legacyNode, index) {
         createdAt: Date.now(),
         items: []
     };
-    
+
     if (legacyNode.data) {
         const mapped = convertBookmarkNodeToTempItem(legacyNode.data, sectionId);
         if (mapped) {
             section.items.push(mapped);
         }
     }
-    
+
     return section;
 }
 
 function refreshTempSectionCounters() {
     let maxSection = CanvasState.tempSectionCounter || 0;
     let maxItem = CanvasState.tempItemCounter || 0;
-    
+
     const traverseItems = (items) => {
         if (!Array.isArray(items)) return;
         items.forEach(item => {
@@ -658,7 +658,7 @@ function refreshTempSectionCounters() {
             }
         });
     };
-    
+
     CanvasState.tempSections.forEach(section => {
         if (section && typeof section.id === 'string') {
             const matchSection = section.id.match(/temp-section-(\d+)/);
@@ -671,7 +671,7 @@ function refreshTempSectionCounters() {
         }
         traverseItems(section.items);
     });
-    
+
     CanvasState.tempSectionCounter = Math.max(CanvasState.tempSectionCounter, maxSection);
     CanvasState.tempItemCounter = Math.max(CanvasState.tempItemCounter, maxItem);
 }
@@ -684,9 +684,9 @@ function getTempSection(sectionId) {
 function findTempItemEntry(sectionId, itemId) {
     const section = getTempSection(sectionId);
     if (!section || !itemId) return null;
-    
+
     const stack = [{ items: section.items, parent: null }];
-    
+
     while (stack.length) {
         const { items, parent } = stack.pop();
         for (let index = 0; index < items.length; index++) {
@@ -699,7 +699,7 @@ function findTempItemEntry(sectionId, itemId) {
             }
         }
     }
-    
+
     return null;
 }
 
@@ -725,13 +725,13 @@ function createTempItemFromPayload(sectionId, payload) {
         originalId: null,
         createdAt: Date.now()
     };
-    
+
     if (payload.children && payload.children.length) {
         item.children = payload.children
             .map(child => createTempItemFromPayload(sectionId, child))
             .filter(Boolean);
     }
-    
+
     return item;
 }
 
@@ -747,18 +747,18 @@ function reassignTempItemIds(sectionId, item) {
 function insertTempItems(sectionId, parentId, items, index = null) {
     const section = getTempSection(sectionId);
     if (!section) throw new Error('未找到临时栏目');
-    const targetItems = parentId 
+    const targetItems = parentId
         ? (findTempItemEntry(sectionId, parentId)?.item?.children || (() => { throw new Error('未找到目标文件夹'); })())
         : section.items;
-    
+
     if (typeof index !== 'number' || index < 0 || index > targetItems.length) {
         index = targetItems.length;
     }
-    
+
     items.forEach((item, offset) => {
         targetItems.splice(index + offset, 0, item);
     });
-    
+
     renderTempNode(section);
     saveTempNodes();
 }
@@ -766,7 +766,7 @@ function insertTempItems(sectionId, parentId, items, index = null) {
 function removeTempItemsById(sectionId, itemIds) {
     const removed = [];
     const ids = Array.isArray(itemIds) ? itemIds : [itemIds];
-    
+
     ids.forEach(id => {
         const entry = findTempItemEntry(sectionId, id);
         if (entry) {
@@ -774,46 +774,46 @@ function removeTempItemsById(sectionId, itemIds) {
             removed.push(item);
         }
     });
-    
+
     const section = getTempSection(sectionId);
     if (section) {
         renderTempNode(section);
         saveTempNodes();
     }
-    
+
     return removed;
 }
 
 function moveTempItemsWithinSection(sectionId, itemIds, targetParentId, index = null) {
     const section = getTempSection(sectionId);
     if (!section) throw new Error('未找到临时栏目');
-    
+
     const ids = Array.isArray(itemIds) ? itemIds : [itemIds];
     const movingItems = ids
         .map(id => findTempItemEntry(sectionId, id))
         .filter(Boolean)
         .sort((a, b) => a.index - b.index);
-    
+
     if (!movingItems.length) return;
-    
+
     const targetEntry = targetParentId ? findTempItemEntry(sectionId, targetParentId) : null;
     const targetArray = targetEntry ? targetEntry.item.children : section.items;
-    
+
     // Remove items from original positions (from bottom to top to keep indexes)
     for (let i = movingItems.length - 1; i >= 0; i--) {
         const entry = movingItems[i];
         entry.items.splice(entry.index, 1);
     }
-    
+
     if (typeof index !== 'number' || index < 0 || index > targetArray.length) {
         index = targetArray.length;
     }
-    
+
     movingItems.forEach((entry, offset) => {
         entry.item.sectionId = sectionId;
         targetArray.splice(index + offset, 0, entry.item);
     });
-    
+
     renderTempNode(section);
     saveTempNodes();
 }
@@ -824,7 +824,7 @@ function moveTempItemsAcrossSections(sourceSectionId, targetSectionId, itemIds, 
     if (!sourceSection || !targetSection) {
         throw new Error('移动失败：临时栏目不存在');
     }
-    
+
     const ids = Array.isArray(itemIds) ? itemIds : [itemIds];
     const removedItems = [];
     ids.forEach(id => {
@@ -836,21 +836,21 @@ function moveTempItemsAcrossSections(sourceSectionId, targetSectionId, itemIds, 
             }
         }
     });
-    
+
     const targetArray = targetParentId ? (findTempItemEntry(targetSectionId, targetParentId)?.item?.children) : targetSection.items;
     if (!targetArray) {
         throw new Error('目标文件夹不存在');
     }
-    
+
     if (typeof index !== 'number' || index < 0 || index > targetArray.length) {
         index = targetArray.length;
     }
-    
+
     removedItems.forEach(item => reassignTempItemIds(targetSectionId, item));
     removedItems.forEach((item, offset) => {
         targetArray.splice(index + offset, 0, item);
     });
-    
+
     renderTempNode(sourceSection);
     renderTempNode(targetSection);
     saveTempNodes();
@@ -868,7 +868,7 @@ function renameTempItem(sectionId, itemId, newTitle) {
 function updateTempBookmark(sectionId, itemId, updates) {
     const entry = findTempItemEntry(sectionId, itemId);
     if (!entry) throw new Error('未找到临时节点');
-    
+
     if (typeof updates.title === 'string') {
         entry.item.title = updates.title;
     }
@@ -876,7 +876,7 @@ function updateTempBookmark(sectionId, itemId, updates) {
         entry.item.url = updates.url;
         entry.item.type = updates.url ? 'bookmark' : entry.item.type;
     }
-    
+
     renderTempNode(entry.section);
     saveTempNodes();
 }
@@ -932,38 +932,38 @@ function createTempFolder(sectionId, parentId, title) {
 
 function initCanvasView() {
     console.log('[Canvas] 初始化Obsidian风格的Canvas');
-    
+
     // 清除缓存的 DOM 引用（防止过期）
     cachedCanvasContainer = null;
     cachedCanvasContent = null;
-    
+
     // 加载性能模式设置
     loadPerformanceMode();
-    
+
     // 初始化连接线层
     setupCanvasEdgesLayer();
-    
+
     // 显示缩放控制器
     const zoomIndicator = document.getElementById('canvasZoomIndicator');
     if (zoomIndicator) {
         zoomIndicator.style.display = 'block';
     }
-    
+
     // 注意：永久栏目已经在renderCurrentView中从template创建并添加到canvas-content
     // bookmarkTree已经由renderTreeView()渲染了
     // 我们只需要增强它的拖拽功能
-    
+
     enhanceBookmarkTreeForCanvas();
-    
+
     // 让永久栏目可以拖动
     makePermanentSectionDraggable();
-    
+
     // 设置Canvas缩放和平移
     setupCanvasZoomAndPan();
-    
+
     // 加载临时节点
     loadTempNodes();
-    
+
     // 初始化滚动条状态和事件
     loadCanvasScrollPreferences();
     setupCanvasScrollbars();
@@ -973,13 +973,13 @@ function initCanvasView() {
     setupCanvasEventListeners();
     setupCanvasDropFeedback();
     setupPermanentSectionEdgeFeedback();
-    
+
     // 设置永久栏目提示关闭按钮
     setupPermanentSectionTipClose();
-    
+
     // 设置永久栏目置顶按钮
     setupPermanentSectionPinButton();
-    
+
     // 设置连接线交互
     setupCanvasConnectionInteractions();
     addAnchorsToNode(document.getElementById('permanentSection'), 'permanent-section');
@@ -1001,7 +1001,7 @@ function setupCanvasDropFeedback() {
     workspace.addEventListener('dragover', (e) => {
         if (CanvasState.dragState.dragSource === 'permanent') {
             e.preventDefault();
-            try { if (e.dataTransfer) e.dataTransfer.dropEffect = 'copy'; } catch(_) {}
+            try { if (e.dataTransfer) e.dataTransfer.dropEffect = 'copy'; } catch (_) { }
             workspace.classList.add('canvas-drop-active');
             const rect = workspace.getBoundingClientRect();
             const x = ((e.clientX - rect.left) / rect.width) * 100;
@@ -1011,7 +1011,7 @@ function setupCanvasDropFeedback() {
         }
     });
     workspace.addEventListener('drop', (e) => {
-        try { e.preventDefault(); } catch(_) {}
+        try { e.preventDefault(); } catch (_) { }
         workspace.classList.remove('canvas-drop-active');
     });
 }
@@ -1054,23 +1054,23 @@ function getTransparentDragImage() {
 function enhanceBookmarkTreeForCanvas() {
     const bookmarkTree = document.getElementById('bookmarkTree');
     if (!bookmarkTree) return;
-    
+
     console.log('[Canvas] 为书签树添加Canvas拖拽功能');
-    
+
     // 重要：不要覆盖原有的拖拽事件！
     // 原有的拖拽功能（bookmark_tree_drag_drop.js）已经通过 attachTreeEvents() 绑定了
     // 我们只需要添加额外的事件监听器来支持拖出到Canvas即可
-    
+
     // 使用正确的选择器：.tree-item（不是.bookmark-item）
     const treeItems = bookmarkTree.querySelectorAll('.tree-item[data-node-id]');
     treeItems.forEach(item => {
         // 添加dragstart监听器，收集节点数据（不干扰原有拖拽）
-        item.addEventListener('dragstart', function(e) {
+        item.addEventListener('dragstart', function (e) {
             const nodeId = item.dataset.nodeId;
             const nodeTitle = item.dataset.nodeTitle;
             const nodeUrl = item.dataset.nodeUrl;
             const isFolder = item.dataset.nodeType === 'folder';
-            
+
             // 保存到Canvas状态，仅存储必要的标识信息，完整数据稍后获取
             CanvasState.dragState.draggedData = {
                 id: nodeId,
@@ -1081,10 +1081,10 @@ function enhanceBookmarkTreeForCanvas() {
                 hasSnapshot: false
             };
             CanvasState.dragState.dragSource = 'permanent';
-            
+
             // 启用拖动时的滚轮滚动功能
             CanvasState.dragState.wheelScrollEnabled = true;
-            
+
             // 设置拖拽数据（供外部系统识别）
             try {
                 if (e.dataTransfer) {
@@ -1099,7 +1099,7 @@ function enhanceBookmarkTreeForCanvas() {
             } catch (err) {
                 console.warn('[Canvas] 设置拖拽数据失败:', err);
             }
-            
+
             console.log('[Canvas] 拖拽数据已保存:', CanvasState.dragState.draggedData);
 
             markTreeItemDragging(item);
@@ -1120,7 +1120,7 @@ function enhanceBookmarkTreeForCanvas() {
                         if (Array.isArray(ids) && ids.length > 1) {
                             previewText = 'Multiple items';
                         }
-                    } catch (_) {}
+                    } catch (_) { }
                     const preview = document.createElement('div');
                     preview.className = 'drag-preview';
                     preview.textContent = previewText || '';
@@ -1129,36 +1129,36 @@ function enhanceBookmarkTreeForCanvas() {
                     e.dataTransfer.setDragImage(preview, 0, 0);
                     setTimeout(() => preview.remove(), 0);
                 }
-            } catch (_) {}
+            } catch (_) { }
         });
-        
+
         // 添加dragend监听器，检查是否拖到Canvas
-        item.addEventListener('dragend', async function(e) {
+        item.addEventListener('dragend', async function (e) {
             if (CanvasState.dragState.dragSource !== 'permanent') return;
-            
+
             // 禁用拖动时的滚轮滚动功能
             CanvasState.dragState.wheelScrollEnabled = false;
-            
+
             // 防重复：检查是否正在创建或者时间间隔太短
             const now = Date.now();
             if (CanvasState.isCreatingTempNode || (now - CanvasState.lastDragEndTime < 300)) {
                 console.log('[Canvas] 防重复：跳过重复的 dragend 事件');
                 return;
             }
-            
+
             const dropX = e.clientX;
             const dropY = e.clientY;
-            
+
             // 检查是否拖到Canvas工作区
             const workspace = document.getElementById('canvasWorkspace');
             if (!workspace) return;
-            
+
             const rect = workspace.getBoundingClientRect();
             let accepted = false;
-            
-            if (dropX >= rect.left && dropX <= rect.right && 
+
+            if (dropX >= rect.left && dropX <= rect.right &&
                 dropY >= rect.top && dropY <= rect.bottom) {
-                
+
                 // 优先检查是否拖到现有的临时栏目上（通过 drop 事件处理）
                 // 如果已经被 drop 事件处理过（拖到临时栏目），就不创建新栏目
                 const elementAtPoint = document.elementFromPoint(dropX, dropY);
@@ -1172,7 +1172,7 @@ function enhanceBookmarkTreeForCanvas() {
                     const pRect = permanentSection.getBoundingClientRect();
                     insidePermanentRect = dropX >= pRect.left && dropX <= pRect.right && dropY >= pRect.top && dropY <= pRect.bottom;
                 }
-                
+
                 if (insidePermanentDom || insidePermanentRect) {
                     // 落点在永久栏目区域内，不创建临时栏目（避免内部移动误触发）
                     console.log('[Canvas] 拖拽位于永久栏目内，不创建临时栏目');
@@ -1185,20 +1185,20 @@ function enhanceBookmarkTreeForCanvas() {
                     // 拖到空白区域，创建新临时栏目
                     const canvasX = (dropX - rect.left - CanvasState.panOffsetX) / CanvasState.zoom;
                     const canvasY = (dropY - rect.top - CanvasState.panOffsetY) / CanvasState.zoom;
-                    
+
                     console.log('[Canvas] 拖到Canvas空白区域，创建新临时栏目:', { canvasX, canvasY });
-                    
+
                     // 在Canvas上创建临时节点（支持多选合集）
                     if (CanvasState.dragState.draggedData) {
                         try {
                             // 标记正在创建，防止重复
                             CanvasState.isCreatingTempNode = true;
                             CanvasState.lastDragEndTime = now;
-                            
+
                             let ids = [];
                             try {
                                 ids = collectPermanentSelectionIds(CanvasState.dragState.draggedData.id || null) || [];
-                            } catch(_) {}
+                            } catch (_) { }
                             if (Array.isArray(ids) && ids.length > 1) {
                                 await createTempNode({ multi: true, permanentIds: ids }, canvasX, canvasY);
                             } else {
@@ -1217,7 +1217,7 @@ function enhanceBookmarkTreeForCanvas() {
                     }
                 }
             }
-            
+
             // 清理状态
             CanvasState.dragState.draggedData = null;
             CanvasState.dragState.dragSource = null;
@@ -1233,7 +1233,7 @@ function enhanceBookmarkTreeForCanvas() {
             scheduleClearTreeItemDragging(accepted ? 380 : 160);
         });
     });
-    
+
     console.log('[Canvas] 已为', treeItems.length, '个节点添加Canvas拖拽支持');
 }
 
@@ -1254,36 +1254,36 @@ function createCanvasBookmarkItem(bookmark, isDraggable) {
     item.dataset.bookmarkId = bookmark.id;
     item.dataset.bookmarkTitle = bookmark.title;
     item.dataset.bookmarkUrl = bookmark.url;
-    
+
     // 图标
     const icon = document.createElement('img');
     icon.className = 'canvas-bookmark-icon';
     icon.src = getFaviconUrl(bookmark.url);
     // 不再需要 onerror，全局事件处理器会处理
-    
+
     // 标题
     const title = document.createElement('span');
     title.className = 'canvas-bookmark-title';
     title.textContent = bookmark.title || bookmark.url;
     title.title = bookmark.title || bookmark.url;
-    
+
     item.appendChild(icon);
     item.appendChild(title);
-    
+
     // 点击打开链接
     item.addEventListener('click', (e) => {
         if (!CanvasState.dragState.isDragging && bookmark.url) {
             window.open(bookmark.url, '_blank');
         }
     });
-    
+
     // 添加拖拽事件
     if (isDraggable) {
         item.draggable = true;
         item.addEventListener('dragstart', (e) => handlePermanentDragStart(e, bookmark, 'bookmark'));
         item.addEventListener('dragend', handlePermanentDragEnd);
     }
-    
+
     return item;
 }
 
@@ -1292,34 +1292,34 @@ function createCanvasFolderItem(folder, isDraggable) {
     item.className = 'canvas-folder-item';
     item.dataset.folderId = folder.id;
     item.dataset.folderTitle = folder.title;
-    
+
     // 文件夹头部
     const header = document.createElement('div');
     header.className = 'canvas-folder-header';
-    
+
     // 图标
     const icon = document.createElement('i');
     icon.className = 'fas fa-folder canvas-folder-icon';
-    
+
     // 标题
     const title = document.createElement('span');
     title.className = 'canvas-folder-title';
     title.textContent = folder.title || '未命名文件夹';
-    
+
     header.appendChild(icon);
     header.appendChild(title);
-    
+
     // 子节点容器
     const children = document.createElement('div');
     children.className = 'canvas-folder-children';
-    
+
     if (folder.children) {
         folder.children.forEach(child => {
             const childElement = createCanvasBookmarkElement(child, isDraggable);
             children.appendChild(childElement);
         });
     }
-    
+
     // 点击展开/折叠
     header.addEventListener('click', (e) => {
         if (!CanvasState.dragState.isDragging) {
@@ -1328,17 +1328,17 @@ function createCanvasFolderItem(folder, isDraggable) {
             icon.classList.toggle('fa-folder-open');
         }
     });
-    
+
     // 文件夹拖拽
     if (isDraggable) {
         header.draggable = true;
         header.addEventListener('dragstart', (e) => handlePermanentDragStart(e, folder, 'folder'));
         header.addEventListener('dragend', handlePermanentDragEnd);
     }
-    
+
     item.appendChild(header);
     item.appendChild(children);
-    
+
     return item;
 }
 
@@ -1350,19 +1350,19 @@ function createCanvasFolderItem(folder, isDraggable) {
 function setupCanvasZoomAndPan() {
     const workspace = document.getElementById('canvasWorkspace');
     const container = document.querySelector('.canvas-main-container');
-    
+
     if (!workspace || !container) {
         console.warn('[Canvas] 找不到workspace或container元素');
         return;
     }
-    
+
     // 加载保存的快捷键设置（必须在事件处理器注册之前）
     loadCanvasShortcuts();
-    
+
     // 加载保存的缩放级别
     loadCanvasZoom();
     setupCanvasFullscreenControls();
-    
+
     // Ctrl + 滚轮缩放（以鼠标位置为中心）- 性能优化版本
     workspace.addEventListener('wheel', (e) => {
         // 拖动时的滚轮滚动功能：
@@ -1372,30 +1372,30 @@ function setupCanvasZoomAndPan() {
         // 拖动的元素会悬停在更高层级，滚轮滚动画布，松开后元素落下归位
         if (CanvasState.dragState.wheelScrollEnabled) {
             e.preventDefault();
-            
+
             // 标记正在滚动
             markScrolling();
-            
+
             // 检测是否为触控板
             const isTouchpad = (Math.abs(e.deltaY) < 50 || Math.abs(e.deltaX) < 50) && e.deltaMode === 0;
-            
+
             // 滚动系数 - 根据缩放比例动态调整
             let scrollFactor = 1.0 / (CanvasState.zoom || 1);
-            
+
             // 根据缩放比例动态调整基础系数，让不同缩放级别下的滚动感觉更一致
             const zoomAdjustment = Math.pow(CanvasState.zoom || 1, 0.3); // 使用较小的指数，减少缩放对速率的影响
             scrollFactor *= zoomAdjustment;
-            
+
             if (isTouchpad) {
                 scrollFactor *= 0.7; // 触控板降低灵敏度（从1.4降到0.7）
             } else {
                 scrollFactor *= 0.8; // 鼠标滚轮也稍微降低一点灵敏度
             }
-            
+
             const prevPanX = CanvasState.panOffsetX;
             const prevPanY = CanvasState.panOffsetY;
             let hasUpdate = false;
-            
+
             // 触控板：同时支持横向和纵向，实现四向自由滚动
             if (isTouchpad) {
                 if (e.deltaX !== 0) {
@@ -1423,7 +1423,7 @@ function setupCanvasZoomAndPan() {
                     }
                 }
             }
-            
+
             if (hasUpdate) {
                 const panDeltaX = CanvasState.panOffsetX - prevPanX;
                 const panDeltaY = CanvasState.panOffsetY - prevPanY;
@@ -1431,36 +1431,36 @@ function setupCanvasZoomAndPan() {
                     adjustDragReferenceForPan(panDeltaX, panDeltaY, e.clientX, e.clientY);
                 }
                 applyPanOffsetFast();
-                
+
                 // 拖动时也实时更新滚动条
                 updateScrollbarThumbsLightweight();
             }
-            
+
             return;
         }
-        
+
         if (isCustomCtrlKeyPressed(e) || e.metaKey) {
             e.preventDefault();
-            
+
             // 标记正在滚动
             markScrolling();
-            
+
             // 获取鼠标在viewport中的位置
             const rect = workspace.getBoundingClientRect();
             const mouseX = e.clientX - rect.left;
             const mouseY = e.clientY - rect.top;
-            
+
             // 计算新的缩放级别 - 优化：触控板双指缩放优化
             // 检测是否为触控板滚动（触控板的 deltaY 通常较小且连续）
             const isTouchpad = Math.abs(e.deltaY) < 50 && e.deltaMode === 0;
             // Shift+滚轮在某些浏览器会变成横向滚动，需要使用 deltaX 或 deltaY
             const delta = e.deltaY !== 0 ? -e.deltaY : -e.deltaX;
-            
+
             // 缩放速率：触控板和鼠标滚轮都大幅降低灵敏度，使缩放非常平滑
             const zoomSpeed = isTouchpad ? 0.0008 : 0.00015; // 触控板0.0008（降低80%），鼠标滚轮0.00015（降低70%）
             const oldZoom = CanvasState.zoom;
             let newZoom = oldZoom + delta * zoomSpeed;
-            
+
             // 应用平滑曲线：在中间缩放级别时更敏感
             if (isTouchpad) {
                 const zoomDelta = newZoom - oldZoom;
@@ -1468,16 +1468,16 @@ function setupCanvasZoomAndPan() {
                 const responsiveness = 1 + Math.max(0, 0.5 - Math.abs(oldZoom - 1) * 0.3);
                 newZoom = oldZoom + zoomDelta * responsiveness;
             }
-            
+
             newZoom = Math.max(0.1, Math.min(3, newZoom));
-            
+
             // 使用优化的缩放更新，滚动时跳过边界计算
             scheduleZoomUpdate(newZoom, mouseX, mouseY, { recomputeBounds: false, skipSave: false, skipScrollbarUpdate: true });
         } else if (shouldHandleCustomScroll(e)) {
             handleCanvasCustomScroll(e);
         }
     }, { passive: false });
-    
+
     // 空格键/Control键按下 - 启用拖动模式（支持自定义快捷键）
     // 快捷键检测辅助函数
     const MODIFIER_KEY_CODES = {
@@ -1486,7 +1486,7 @@ function setupCanvasZoomAndPan() {
         'Shift': ['ShiftLeft', 'ShiftRight'],
         'Meta': ['MetaLeft', 'MetaRight']
     };
-    
+
     function isCustomCtrlKeyCode(code) {
         const key = canvasShortcuts.ctrlKey;
         const codes = MODIFIER_KEY_CODES[key];
@@ -1495,7 +1495,7 @@ function setupCanvasZoomAndPan() {
         // 普通键直接匹配
         return code === key;
     }
-    
+
     function isCustomSpaceKeyCode(code) {
         const key = canvasShortcuts.spaceKey;
         const codes = MODIFIER_KEY_CODES[key];
@@ -1504,13 +1504,13 @@ function setupCanvasZoomAndPan() {
         // 普通键直接匹配
         return code === key;
     }
-    
+
     document.addEventListener('keydown', (e) => {
         if (isRecordingShortcut) return;
         if (e.repeat || e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
         // 在 contenteditable 元素内编辑时不拦截键盘事件（允许输入空格等）
         if (e.target.isContentEditable || e.target.closest('[contenteditable="true"]')) return;
-        
+
         if (isCustomSpaceKeyCode(e.code)) {
             e.preventDefault();
             CanvasState.isSpacePressed = true;
@@ -1523,7 +1523,7 @@ function setupCanvasZoomAndPan() {
             requestAnimationFrame(() => setSectionCtrlModeActive(true));
         }
     });
-    
+
     document.addEventListener('keyup', (e) => {
         if (isCustomSpaceKeyCode(e.code)) {
             CanvasState.isSpacePressed = false;
@@ -1548,7 +1548,7 @@ function setupCanvasZoomAndPan() {
             }
         }
     });
-    
+
     // 空格/Control + 鼠标拖动画布（Obsidian方式）
     workspace.addEventListener('mousedown', (e) => {
         if (CanvasState.isSpacePressed || CanvasState.isCtrlPressed) {
@@ -1562,7 +1562,7 @@ function setupCanvasZoomAndPan() {
             markScrolling();
         }
     });
-    
+
     // Control键按下时屏蔽右键菜单，避免干扰拖动
     workspace.addEventListener('contextmenu', (e) => {
         if (CanvasState.isCtrlPressed || CanvasState.isPanning) {
@@ -1570,43 +1570,43 @@ function setupCanvasZoomAndPan() {
             e.stopPropagation();
         }
     }, true);
-    
+
     document.addEventListener('mousemove', (e) => {
         if (CanvasState.isPanning) {
             // 标记正在拖动/滚动
             markScrolling();
-            
+
             CanvasState.panOffsetX = e.clientX - CanvasState.panStartX;
             CanvasState.panOffsetY = e.clientY - CanvasState.panStartY;
-            
+
             // 使用极速平移（降低渲染频率）
             applyPanOffsetFast();
-            
+
             // 实时更新滚动条位置
             updateScrollbarThumbsLightweight();
         }
     });
-    
+
     document.addEventListener('mouseup', () => {
         if (CanvasState.isPanning) {
             CanvasState.isPanning = false;
             workspace.classList.remove('panning');
-            
+
             // 拖动停止后，触发完整更新
             onScrollStop();
             savePanOffsetThrottled();
         }
     });
-    
+
     // 缩放按钮
     const zoomInBtn = document.getElementById('zoomInBtn');
     const zoomOutBtn = document.getElementById('zoomOutBtn');
     const zoomLocateBtn = document.getElementById('zoomLocateBtn');
-    
+
     if (zoomInBtn) zoomInBtn.addEventListener('click', () => setCanvasZoom(CanvasState.zoom + 0.1));
     if (zoomOutBtn) zoomOutBtn.addEventListener('click', () => setCanvasZoom(CanvasState.zoom - 0.1));
     if (zoomLocateBtn) zoomLocateBtn.addEventListener('click', locateToPermanentSection);
-    
+
     // 管理按钮和弹窗
     setupCanvasManageModal();
     // 快捷键帮助按钮和弹窗
@@ -1618,9 +1618,9 @@ function setupCanvasManageModal() {
     const manageModal = document.getElementById('canvasManageModal');
     const manageModalClose = document.getElementById('canvasManageModalClose');
     const helpModal = document.getElementById('canvasHelpModal');
-    
+
     if (!manageBtn || !manageModal) return;
-    
+
     manageBtn.addEventListener('click', (e) => {
         e.stopPropagation();
         // 先关闭帮助弹窗
@@ -1629,18 +1629,18 @@ function setupCanvasManageModal() {
         const isVisible = manageModal.style.display === 'block';
         manageModal.style.display = isVisible ? 'none' : 'block';
     });
-    
+
     if (manageModalClose) {
         manageModalClose.addEventListener('click', () => {
             manageModal.style.display = 'none';
         });
     }
-    
+
     // 点击其他地方关闭弹窗
     document.addEventListener('click', (e) => {
-        if (manageModal.style.display === 'block' && 
-            !manageModal.contains(e.target) && 
-            e.target !== manageBtn && 
+        if (manageModal.style.display === 'block' &&
+            !manageModal.contains(e.target) &&
+            e.target !== manageBtn &&
             !manageBtn.contains(e.target)) {
             manageModal.style.display = 'none';
         }
@@ -1701,7 +1701,7 @@ function getKeyDisplayName(keyCode, lang) {
 
 function updateShortcutDisplays() {
     const lang = typeof window !== 'undefined' && window.currentLang ? window.currentLang : 'zh_CN';
-    
+
     // 更新 Ctrl 键显示
     const ctrlDisplays = ['ctrlKeyDisplay', 'ctrlKeyDisplay2', 'ctrlKeyDisplay3'];
     const ctrlName = getKeyDisplayName(canvasShortcuts.ctrlKey, lang);
@@ -1709,20 +1709,20 @@ function updateShortcutDisplays() {
         const el = document.getElementById(id);
         if (el) el.textContent = ctrlName;
     });
-    
+
     // 更新 Space 键显示
     const spaceDisplay = document.getElementById('spaceKeyDisplay');
     if (spaceDisplay) {
         spaceDisplay.textContent = getKeyDisplayName(canvasShortcuts.spaceKey, lang);
     }
-    
+
     // 更新标题
     const ctrlTitle = document.getElementById('canvasHelpCtrlTitle');
     if (ctrlTitle) {
         const isZh = lang === 'zh_CN';
         ctrlTitle.textContent = isZh ? `${ctrlName} 键操作` : `${ctrlName} Key Actions`;
     }
-    
+
     const spaceTitle = document.getElementById('canvasHelpSpaceTitle');
     if (spaceTitle) {
         const isZh = lang === 'zh_CN';
@@ -1734,18 +1734,18 @@ function updateShortcutDisplays() {
 function startShortcutRecording(target) {
     isRecordingShortcut = true;
     recordingTarget = target;
-    
+
     const recorder = document.getElementById('canvasShortcutRecorder');
     const recorderText = document.getElementById('recorderText');
     const lang = typeof window !== 'undefined' && window.currentLang ? window.currentLang : 'zh_CN';
-    
+
     if (recorder) {
         recorder.style.display = 'block';
         if (recorderText) {
             recorderText.textContent = lang === 'zh_CN' ? '请按下新的快捷键...' : 'Press a new shortcut key...';
         }
     }
-    
+
     // 高亮对应的键
     if (target === 'ctrl') {
         ['ctrlKeyDisplay', 'ctrlKeyDisplay2', 'ctrlKeyDisplay3'].forEach(id => {
@@ -1760,15 +1760,15 @@ function startShortcutRecording(target) {
 
 function stopShortcutRecording(newKey) {
     if (!isRecordingShortcut) return;
-    
+
     ['ctrlKeyDisplay', 'ctrlKeyDisplay2', 'ctrlKeyDisplay3', 'spaceKeyDisplay'].forEach(id => {
         const el = document.getElementById(id);
         if (el) el.classList.remove('recording');
     });
-    
+
     const recorder = document.getElementById('canvasShortcutRecorder');
     if (recorder) recorder.style.display = 'none';
-    
+
     if (newKey && recordingTarget) {
         if (recordingTarget === 'ctrl') {
             canvasShortcuts.ctrlKey = newKey;
@@ -1778,7 +1778,7 @@ function stopShortcutRecording(newKey) {
         saveCanvasShortcuts();
         updateShortcutDisplays();
     }
-    
+
     isRecordingShortcut = false;
     recordingTarget = null;
 }
@@ -1814,12 +1814,12 @@ function setupCanvasHelpModal() {
     const helpModal = document.getElementById('canvasHelpModal');
     const helpModalClose = document.getElementById('canvasHelpModalClose');
     const manageModal = document.getElementById('canvasManageModal');
-    
+
     if (!helpBtn || !helpModal) return;
-    
+
     // 加载保存的快捷键设置
     loadCanvasShortcuts();
-    
+
     helpBtn.addEventListener('click', (e) => {
         e.stopPropagation();
         // 先关闭管理弹窗
@@ -1831,75 +1831,75 @@ function setupCanvasHelpModal() {
             updateShortcutDisplays();
         }
     });
-    
+
     if (helpModalClose) {
         helpModalClose.addEventListener('click', () => {
             stopShortcutRecording(null);
             helpModal.style.display = 'none';
         });
     }
-    
+
     // 快捷键编辑按钮
     const editCtrlBtn = document.getElementById('editCtrlKeyBtn');
     const editSpaceBtn = document.getElementById('editSpaceKeyBtn');
     const recorderCancelBtn = document.getElementById('recorderCancelBtn');
-    
+
     if (editCtrlBtn) {
         editCtrlBtn.addEventListener('click', (e) => {
             e.stopPropagation();
             startShortcutRecording('ctrl');
         });
     }
-    
+
     if (editSpaceBtn) {
         editSpaceBtn.addEventListener('click', (e) => {
             e.stopPropagation();
             startShortcutRecording('space');
         });
     }
-    
+
     if (recorderCancelBtn) {
         recorderCancelBtn.addEventListener('click', (e) => {
             e.stopPropagation();
             stopShortcutRecording(null);
         });
     }
-    
+
     // 问号帮助按钮
     const recorderHelpBtn = document.getElementById('recorderHelpBtn');
     const recorderHelpTooltip = document.getElementById('recorderHelpTooltip');
-    
+
     if (recorderHelpBtn && recorderHelpTooltip) {
         recorderHelpBtn.addEventListener('click', (e) => {
             e.stopPropagation();
             const isVisible = recorderHelpTooltip.style.display === 'block';
             recorderHelpTooltip.style.display = isVisible ? 'none' : 'block';
         });
-        
+
         // 点击其他地方关闭提示
         document.addEventListener('click', (e) => {
-            if (recorderHelpTooltip.style.display === 'block' && 
-                !recorderHelpTooltip.contains(e.target) && 
-                e.target !== recorderHelpBtn && 
+            if (recorderHelpTooltip.style.display === 'block' &&
+                !recorderHelpTooltip.contains(e.target) &&
+                e.target !== recorderHelpBtn &&
                 !recorderHelpBtn.contains(e.target)) {
                 recorderHelpTooltip.style.display = 'none';
             }
         });
     }
-    
+
     // 监听键盘事件进行录制
     document.addEventListener('keydown', (e) => {
         if (!isRecordingShortcut) return;
-        
+
         e.preventDefault();
         e.stopPropagation();
         e.stopImmediatePropagation();
-        
+
         const modifierKeys = ['Control', 'Alt', 'Shift', 'Meta'];
         const specialKeys = ['Space', 'Tab'];
-        
+
         let newKey = null;
-        
+
         // 修饰键直接使用 e.key
         if (modifierKeys.includes(e.key)) {
             newKey = e.key;
@@ -1912,15 +1912,15 @@ function setupCanvasHelpModal() {
         else if (/^(Key[A-Z]|Digit[0-9])$/.test(e.code)) {
             newKey = e.code;
         }
-        
+
         if (newKey) stopShortcutRecording(newKey);
     }, true);
-    
+
     // 点击其他地方关闭弹窗
     document.addEventListener('click', (e) => {
-        if (helpModal.style.display === 'block' && 
-            !helpModal.contains(e.target) && 
-            e.target !== helpBtn && 
+        if (helpModal.style.display === 'block' &&
+            !helpModal.contains(e.target) &&
+            e.target !== helpBtn &&
             !helpBtn.contains(e.target)) {
             stopShortcutRecording(null);
             helpModal.style.display = 'none';
@@ -1932,7 +1932,7 @@ function setCanvasZoom(zoom, centerX = null, centerY = null, options = {}) {
     const container = document.querySelector('.canvas-main-container');
     const workspace = document.getElementById('canvasWorkspace');
     if (!container || !workspace) return;
-    
+
     if (typeof options !== 'object' || options === null) {
         options = {};
     }
@@ -1942,30 +1942,30 @@ function setCanvasZoom(zoom, centerX = null, centerY = null, options = {}) {
         silent = false,
         skipScrollbarUpdate = false // 新增：跳过滚动条更新（滚动时使用）
     } = options;
-    
+
     const oldZoom = CanvasState.zoom;
-    
+
     // 限制缩放范围
     zoom = Math.max(0.1, Math.min(3, zoom));
-    
+
     // 如果没有指定中心点，使用 workspace 的中心点
     if (centerX === null || centerY === null) {
         const workspaceRect = workspace.getBoundingClientRect();
         centerX = workspaceRect.width / 2;
         centerY = workspaceRect.height / 2;
     }
-    
+
     // 计算中心点在 canvas-content 坐标系中的位置
     const canvasCenterX = (centerX - CanvasState.panOffsetX) / oldZoom;
     const canvasCenterY = (centerY - CanvasState.panOffsetY) / oldZoom;
-    
+
     // 应用新的缩放
     CanvasState.zoom = zoom;
-    
+
     // 调整平移偏移，使中心点保持在相同的视觉位置
     CanvasState.panOffsetX = centerX - canvasCenterX * zoom;
     CanvasState.panOffsetY = centerY - canvasCenterY * zoom;
-    
+
     // 优化：滚动时延迟更新边界
     if (!skipScrollbarUpdate) {
         container.style.setProperty('--canvas-scale', zoom);
@@ -1975,18 +1975,18 @@ function setCanvasZoom(zoom, centerX = null, centerY = null, options = {}) {
         // 滚动时使用极速平移（直接 transform）
         applyPanOffsetFast();
     }
-    
+
     // 更新显示
     const zoomValue = document.getElementById('zoomValue');
     if (zoomValue) {
         zoomValue.textContent = Math.round(zoom * 100) + '%';
     }
-    
+
     // 保存缩放级别
     if (!skipSave) {
         saveZoomThrottled(zoom);
     }
-    
+
     // 移除缩放日志以减少控制台输出
     // if (!silent) {
     //     console.log('[Canvas] 缩放:', Math.round(zoom * 100) + '%', '中心点:', { canvasCenterX, canvasCenterY });
@@ -2000,11 +2000,11 @@ function applyPanOffset() {
     const container = getCachedContainer();
     const content = getCachedContent();
     if (!container || !content) return;
-    
+
     // 不要自动限制滚动位置，允许用户自由滚动到空白区域
     // CanvasState.panOffsetX = clampPan('horizontal', CanvasState.panOffsetX);
     // CanvasState.panOffsetY = clampPan('vertical', CanvasState.panOffsetY);
-    
+
     // 优化：滚动/拖动时使用 transform 直接操作，停止时才用 CSS 变量
     if (isScrolling) {
         const scale = CanvasState.zoom;
@@ -2017,11 +2017,11 @@ function applyPanOffset() {
         container.style.setProperty('--canvas-pan-x', `${CanvasState.panOffsetX}px`);
         container.style.setProperty('--canvas-pan-y', `${CanvasState.panOffsetY}px`);
         content.style.transform = ''; // 清除直接 transform
-        
+
         // 调度滚动条更新（只在停止时更新）
         scheduleScrollbarUpdate();
     }
-    
+
     if (!CanvasState.scrollAnimation.frameId) {
         CanvasState.scrollAnimation.targetX = CanvasState.panOffsetX;
         CanvasState.scrollAnimation.targetY = CanvasState.panOffsetY;
@@ -2032,13 +2032,13 @@ function applyPanOffset() {
 function applyPanOffsetFast() {
     const content = getCachedContent();
     if (!content) return;
-    
+
     // 直接使用 transform，跳过 clampPan 和 CSS 变量
     // transform 只触发合成，性能最优
     const scale = CanvasState.zoom;
     const translateX = CanvasState.panOffsetX / scale;
     const translateY = CanvasState.panOffsetY / scale;
-    
+
     // 使用 translate3d 启用硬件加速
     content.style.transform = `scale(${scale}) translate3d(${translateX}px, ${translateY}px, 0)`;
 }
@@ -2046,12 +2046,12 @@ function applyPanOffsetFast() {
 // 性能优化：标记正在滚动
 function markScrolling() {
     isScrolling = true;
-    
+
     // 清除之前的停止计时器
     if (scrollStopTimer) {
         clearTimeout(scrollStopTimer);
     }
-    
+
     // 设置新的停止计时器
     scrollStopTimer = setTimeout(() => {
         isScrolling = false;
@@ -2064,7 +2064,7 @@ function onScrollStop() {
     // 滚动停止后，恢复 CSS 变量模式
     const container = getCachedContainer();
     const content = getCachedContent();
-    
+
     if (container && content) {
         // 恢复使用 CSS 变量
         container.style.setProperty('--canvas-scale', CanvasState.zoom);
@@ -2072,15 +2072,15 @@ function onScrollStop() {
         container.style.setProperty('--canvas-pan-y', `${CanvasState.panOffsetY}px`);
         content.style.transform = ''; // 清除直接 transform
     }
-    
+
     // 启动惯性滚动（拖尾阻尼效果）
     startInertiaScroll();
-    
+
     // 更新边界和滚动条
     scheduleBoundsUpdate();
     scheduleScrollbarUpdate();
     savePanOffsetThrottled();
-    
+
     // 更新休眠状态
     scheduleDormancyUpdate();
 }
@@ -2088,13 +2088,13 @@ function onScrollStop() {
 // 性能优化：调度休眠管理更新（节流）
 function scheduleDormancyUpdate() {
     if (dormancyUpdatePending) return;
-    
+
     dormancyUpdatePending = true;
-    
+
     if (dormancyUpdateTimer) {
         clearTimeout(dormancyUpdateTimer);
     }
-    
+
     dormancyUpdateTimer = setTimeout(() => {
         dormancyUpdateTimer = null;
         dormancyUpdatePending = false;
@@ -2107,26 +2107,26 @@ function startInertiaScroll() {
     // 检查是否有足够的速度启动惯性滚动
     const velocityThreshold = 0.5; // 最小速度阈值
     const timeSinceLastScroll = Date.now() - CanvasState.inertiaState.lastTime;
-    
+
     // 如果距离上次滚动太久（超过100ms），不启动惯性滚动
     if (timeSinceLastScroll > 100) {
         return;
     }
-    
+
     const absVelocityX = Math.abs(CanvasState.inertiaState.lastDeltaX);
     const absVelocityY = Math.abs(CanvasState.inertiaState.lastDeltaY);
-    
+
     // 如果速度太小，不启动惯性滚动
     if (absVelocityX < velocityThreshold && absVelocityY < velocityThreshold) {
         return;
     }
-    
+
     // 设置初始速度（放大系数，让惯性更明显）
     const inertiaMultiplier = 1.2;
     CanvasState.inertiaState.velocityX = CanvasState.inertiaState.lastDeltaX * inertiaMultiplier;
     CanvasState.inertiaState.velocityY = CanvasState.inertiaState.lastDeltaY * inertiaMultiplier;
     CanvasState.inertiaState.isActive = true;
-    
+
     // 启动惯性滚动动画
     runInertiaScroll();
 }
@@ -2135,11 +2135,11 @@ function runInertiaScroll() {
     if (!CanvasState.inertiaState.isActive) {
         return;
     }
-    
+
     const scrollFactor = 1.0 / (CanvasState.zoom || 1);
     const damping = 0.92; // 阻尼系数，越小减速越快
     const stopThreshold = 0.1; // 速度低于此值时停止
-    
+
     // 应用速度
     if (Math.abs(CanvasState.inertiaState.velocityX) > stopThreshold) {
         CanvasState.panOffsetX -= CanvasState.inertiaState.velocityX * scrollFactor;
@@ -2147,26 +2147,26 @@ function runInertiaScroll() {
     if (Math.abs(CanvasState.inertiaState.velocityY) > stopThreshold) {
         CanvasState.panOffsetY -= CanvasState.inertiaState.velocityY * scrollFactor;
     }
-    
+
     // 应用阻尼
     CanvasState.inertiaState.velocityX *= damping;
     CanvasState.inertiaState.velocityY *= damping;
-    
+
     // 更新显示
     applyPanOffsetFast();
     updateScrollbarThumbsLightweight();
-    
+
     // 检查是否应该停止
     const absVelocityX = Math.abs(CanvasState.inertiaState.velocityX);
     const absVelocityY = Math.abs(CanvasState.inertiaState.velocityY);
-    
+
     if (absVelocityX < stopThreshold && absVelocityY < stopThreshold) {
         // 停止惯性滚动
         CanvasState.inertiaState.isActive = false;
         CanvasState.inertiaState.velocityX = 0;
         CanvasState.inertiaState.velocityY = 0;
         CanvasState.inertiaState.animationId = null;
-        
+
         // 惯性滚动结束后，进行最终更新
         const container = getCachedContainer();
         const content = getCachedContent();
@@ -2180,7 +2180,7 @@ function runInertiaScroll() {
         savePanOffsetThrottled();
         return;
     }
-    
+
     // 继续动画
     CanvasState.inertiaState.animationId = requestAnimationFrame(runInertiaScroll);
 }
@@ -2199,24 +2199,24 @@ function cancelInertiaScroll() {
 function checkEdgeAutoScroll(clientX, clientY) {
     const workspace = document.getElementById('canvasWorkspace');
     if (!workspace) return;
-    
+
     const rect = workspace.getBoundingClientRect();
     const edgeThreshold = 100; // 触发自动滚动的边缘距离（像素）- 增加到100px
     const maxSpeed = 20; // 最大滚动速度 - 增加基础速度
     const minSpeed = 2; // 最小滚动速度 - 确保在边缘有基础速度
-    
+
     // 计算距离边缘的距离
     const distLeft = clientX - rect.left;
     const distRight = rect.right - clientX;
     const distTop = clientY - rect.top;
     const distBottom = rect.bottom - clientY;
-    
+
     let targetVelocityX = 0;
     let targetVelocityY = 0;
-    
+
     // 缓动函数：使用三次方缓动（easeInCubic）让加速更平滑
     const easeInCubic = (t) => t * t * t;
-    
+
     // 横向滚动
     if (distLeft < edgeThreshold && distLeft > 0) {
         // 靠近左边缘，向左滚动（正向）
@@ -2229,7 +2229,7 @@ function checkEdgeAutoScroll(clientX, clientY) {
         const easedRatio = easeInCubic(ratio);
         targetVelocityX = -(minSpeed + (maxSpeed - minSpeed) * easedRatio);
     }
-    
+
     // 纵向滚动
     if (distTop < edgeThreshold && distTop > 0) {
         // 靠近上边缘，向上滚动（正向）
@@ -2242,7 +2242,7 @@ function checkEdgeAutoScroll(clientX, clientY) {
         const easedRatio = easeInCubic(ratio);
         targetVelocityY = -(minSpeed + (maxSpeed - minSpeed) * easedRatio);
     }
-    
+
     // 启动或更新自动滚动
     if (targetVelocityX !== 0 || targetVelocityY !== 0) {
         startEdgeAutoScroll(targetVelocityX, targetVelocityY);
@@ -2255,12 +2255,12 @@ function startEdgeAutoScroll(targetVelocityX, targetVelocityY) {
     // 更新目标速度
     CanvasState.autoScrollState.targetVelocityX = targetVelocityX;
     CanvasState.autoScrollState.targetVelocityY = targetVelocityY;
-    
+
     // 如果已经在自动滚动，只更新目标速度
     if (CanvasState.autoScrollState.isActive) {
         return;
     }
-    
+
     // 首次启动时，将当前速度设置为目标速度的一半，实现平滑启动
     CanvasState.autoScrollState.velocityX = targetVelocityX * 0.5;
     CanvasState.autoScrollState.velocityY = targetVelocityY * 0.5;
@@ -2272,50 +2272,50 @@ function runEdgeAutoScroll() {
     if (!CanvasState.autoScrollState.isActive) {
         return;
     }
-    
+
     const state = CanvasState.autoScrollState;
     const scrollFactor = 1.0 / (CanvasState.zoom || 1);
-    
+
     // 使用线性插值（lerp）平滑地过渡到目标速度，避免抖动
     // velocityX = velocityX + (targetVelocityX - velocityX) * smoothing
     const smoothing = state.smoothing;
     state.velocityX += (state.targetVelocityX - state.velocityX) * smoothing;
     state.velocityY += (state.targetVelocityY - state.velocityY) * smoothing;
-    
+
     // 应用滚动
     CanvasState.panOffsetX += state.velocityX * scrollFactor;
     CanvasState.panOffsetY += state.velocityY * scrollFactor;
-    
+
     // 更新显示
     applyPanOffsetFast();
     updateScrollbarThumbsLightweight();
-    
+
     // 同步更新拖动元素的位置
     if (CanvasState.dragState.isDragging && CanvasState.dragState.draggedElement) {
         const panDeltaX = state.velocityX * scrollFactor;
         const panDeltaY = state.velocityY * scrollFactor;
         adjustDragReferenceForPan(panDeltaX, panDeltaY, CanvasState.dragState.lastClientX, CanvasState.dragState.lastClientY);
     }
-    
+
     // 继续动画
     state.intervalId = requestAnimationFrame(runEdgeAutoScroll);
 }
 
 function stopEdgeAutoScroll() {
     const state = CanvasState.autoScrollState;
-    
+
     if (state.intervalId) {
         cancelAnimationFrame(state.intervalId);
         state.intervalId = null;
     }
-    
+
     // 重置所有状态
     state.isActive = false;
     state.velocityX = 0;
     state.velocityY = 0;
     state.targetVelocityX = 0;
     state.targetVelocityY = 0;
-    
+
     // 停止后进行最终更新
     if (CanvasState.dragState.isDragging) {
         const container = getCachedContainer();
@@ -2333,13 +2333,13 @@ function stopEdgeAutoScroll() {
 // 性能优化：调度滚动条更新（使用 RAF 去抖）
 function scheduleScrollbarUpdate() {
     if (scrollbarUpdatePending) return;
-    
+
     scrollbarUpdatePending = true;
-    
+
     if (scrollbarUpdateFrame) {
         cancelAnimationFrame(scrollbarUpdateFrame);
     }
-    
+
     scrollbarUpdateFrame = requestAnimationFrame(() => {
         scrollbarUpdateFrame = null;
         scrollbarUpdatePending = false;
@@ -2350,13 +2350,13 @@ function scheduleScrollbarUpdate() {
 // 性能优化：调度边界更新（使用 RAF 去抖）
 function scheduleBoundsUpdate() {
     if (boundsUpdatePending) return;
-    
+
     boundsUpdatePending = true;
-    
+
     if (boundsUpdateFrame) {
         cancelAnimationFrame(boundsUpdateFrame);
     }
-    
+
     boundsUpdateFrame = requestAnimationFrame(() => {
         boundsUpdateFrame = null;
         boundsUpdatePending = false;
@@ -2373,7 +2373,7 @@ function loadCanvasZoom() {
                 setCanvasZoom(zoom, null, null, { recomputeBounds: false, skipSave: true, silent: true });
             }
         }
-        
+
         // 加载平移位置
         const panData = localStorage.getItem('canvas-pan');
         if (panData) {
@@ -2385,7 +2385,7 @@ function loadCanvasZoom() {
     } catch (error) {
         console.error('[Canvas] 加载画布状态失败:', error);
     }
-    
+
     updateCanvasScrollBounds(true);
     updateScrollbarThumbs();
 }
@@ -2424,12 +2424,12 @@ function scheduleZoomUpdate(zoom, centerX, centerY, options = {}) {
         centerY,
         options
     };
-    
+
     if (!zoomUpdateFrame) {
         zoomUpdateFrame = requestAnimationFrame(() => {
             zoomUpdateFrame = null;
             if (!pendingZoomRequest) return;
-            
+
             const { zoom, centerX, centerY, options } = pendingZoomRequest;
             pendingZoomRequest = null;
             setCanvasZoom(zoom, centerX, centerY, options);
@@ -2441,7 +2441,7 @@ function loadCanvasScrollPreferences() {
     try {
         const stored = localStorage.getItem('canvas-scroll-preferences');
         if (!stored) return;
-        
+
         const parsed = JSON.parse(stored);
         ['vertical', 'horizontal'].forEach(axis => {
             if (parsed[axis]) {
@@ -2475,26 +2475,26 @@ function persistCanvasScrollPreferences() {
 function setupCanvasScrollbars() {
     const verticalBar = document.getElementById('canvasVerticalScrollbar');
     const horizontalBar = document.getElementById('canvasHorizontalScrollbar');
-    
+
     if (!verticalBar && !horizontalBar) return;
-    
+
     const bars = [
         { axis: 'vertical', element: verticalBar },
         { axis: 'horizontal', element: horizontalBar }
     ];
-    
+
     bars.forEach(({ axis, element }) => {
         if (!element) return;
-        
+
         element.classList.toggle('is-hidden', CanvasState.scrollState[axis].hidden);
         element.classList.toggle('is-disabled', CanvasState.scrollState[axis].disabled);
         element.classList.remove('show-controls');
-        
+
         const hideBtn = element.querySelector('.scrollbar-btn.scroll-hide');
         const disableBtn = element.querySelector('.scrollbar-btn.scroll-disable');
         const thumb = element.querySelector('.scrollbar-thumb');
         const controls = element.querySelector('.scrollbar-controls');
-        
+
         if (hideBtn) {
             hideBtn.addEventListener('click', (event) => {
                 event.stopPropagation();
@@ -2502,7 +2502,7 @@ function setupCanvasScrollbars() {
                 flashScrollbarControls(element);
             });
         }
-        
+
         if (disableBtn) {
             disableBtn.addEventListener('click', (event) => {
                 event.stopPropagation();
@@ -2510,20 +2510,20 @@ function setupCanvasScrollbars() {
                 flashScrollbarControls(element);
             });
         }
-        
+
         if (thumb) {
             thumb.addEventListener('mousedown', (event) => startScrollbarThumbDrag(event, axis));
         }
-        
+
         attachScrollbarHoverHandlers(element, axis);
     });
-    
+
     if (!CanvasState.scrollState.handlersAttached) {
         document.addEventListener('mousemove', handleScrollbarThumbDrag);
         document.addEventListener('mouseup', stopScrollbarThumbDrag);
         CanvasState.scrollState.handlersAttached = true;
     }
-    
+
     updateScrollbarControls('vertical');
     updateScrollbarControls('horizontal');
     updateScrollbarThumbs();
@@ -2553,16 +2553,16 @@ function toggleScrollbarDisabled(axis) {
 function updateScrollbarControls(axis) {
     const bar = axis === 'vertical' ? document.getElementById('canvasVerticalScrollbar') : document.getElementById('canvasHorizontalScrollbar');
     if (!bar) return;
-    
+
     const hideBtn = bar.querySelector('.scrollbar-btn.scroll-hide');
     const hideIcon = hideBtn ? hideBtn.querySelector('i') : null;
     const disableBtn = bar.querySelector('.scrollbar-btn.scroll-disable');
     const disableIcon = disableBtn ? disableBtn.querySelector('i') : null;
     const axisLabel = axis === 'vertical' ? '纵向' : '横向';
-    
+
     bar.classList.toggle('is-hidden', CanvasState.scrollState[axis].hidden);
     bar.classList.toggle('is-disabled', CanvasState.scrollState[axis].disabled);
-    
+
     if (hideBtn) {
         const label = CanvasState.scrollState[axis].hidden ? `显示${axisLabel}滚动条` : `隐藏${axisLabel}滚动条`;
         hideBtn.setAttribute('aria-label', label);
@@ -2583,34 +2583,34 @@ function updateScrollbarControls(axis) {
 
 function startScrollbarThumbDrag(event, axis) {
     if (CanvasState.scrollState[axis].disabled) return;
-    
+
     const bar = axis === 'vertical' ? document.getElementById('canvasVerticalScrollbar') : document.getElementById('canvasHorizontalScrollbar');
     if (!bar) return;
-    
+
     const track = bar.querySelector('.scrollbar-track');
     const thumb = bar.querySelector('.scrollbar-thumb');
     if (!track || !thumb) return;
-    
+
     event.preventDefault();
-    
+
     const trackRect = track.getBoundingClientRect();
     const thumbRect = thumb.getBoundingClientRect();
     const offset = axis === 'vertical' ? event.clientY - thumbRect.top : event.clientX - thumbRect.left;
-    
+
     if (CanvasState.scrollAnimation.frameId) {
         cancelAnimationFrame(CanvasState.scrollAnimation.frameId);
         CanvasState.scrollAnimation.frameId = null;
     }
     CanvasState.scrollAnimation.targetX = CanvasState.panOffsetX;
     CanvasState.scrollAnimation.targetY = CanvasState.panOffsetY;
-    
+
     CanvasState.scrollState.activeDragAxis = axis;
     CanvasState.scrollState.dragInfo = {
         offset,
         trackSize: axis === 'vertical' ? trackRect.height : trackRect.width,
         thumbSize: axis === 'vertical' ? thumbRect.height : thumbRect.width
     };
-    
+
     CanvasState.scrollState[axis].dragging = true;
     thumb.classList.add('dragging');
 }
@@ -2618,19 +2618,19 @@ function startScrollbarThumbDrag(event, axis) {
 function handleScrollbarThumbDrag(event) {
     const axis = CanvasState.scrollState.activeDragAxis;
     if (!axis) return;
-    
+
     if (CanvasState.scrollState[axis].disabled) return;
-    
+
     const bar = axis === 'vertical' ? document.getElementById('canvasVerticalScrollbar') : document.getElementById('canvasHorizontalScrollbar');
     if (!bar) return;
-    
+
     const track = bar.querySelector('.scrollbar-track');
     const thumb = bar.querySelector('.scrollbar-thumb');
     const info = CanvasState.scrollState.dragInfo;
     if (!track || !thumb || !info) return;
-    
+
     event.preventDefault();
-    
+
     const trackRect = track.getBoundingClientRect();
     const coord = axis === 'vertical'
         ? event.clientY - trackRect.top - info.offset
@@ -2640,27 +2640,27 @@ function handleScrollbarThumbDrag(event) {
     const ratio = maxTravel === 0 ? 0 : clampedCoord / maxTravel;
     const bounds = axis === 'vertical' ? CanvasState.scrollBounds.vertical : CanvasState.scrollBounds.horizontal;
     const target = bounds.max - ratio * (bounds.max - bounds.min);
-    
+
     if (axis === 'vertical') {
         CanvasState.panOffsetY = target;
     } else {
         CanvasState.panOffsetX = target;
     }
-    
+
     applyPanOffset();
 }
 
 function stopScrollbarThumbDrag() {
     const axis = CanvasState.scrollState.activeDragAxis;
     if (!axis) return;
-    
+
     const bar = axis === 'vertical' ? document.getElementById('canvasVerticalScrollbar') : document.getElementById('canvasHorizontalScrollbar');
     const thumb = bar ? bar.querySelector('.scrollbar-thumb') : null;
-    
+
     if (thumb) {
         thumb.classList.remove('dragging');
     }
-    
+
     CanvasState.scrollState[axis].dragging = false;
     CanvasState.scrollState.activeDragAxis = null;
     CanvasState.scrollState.dragInfo = null;
@@ -2671,14 +2671,14 @@ function attachScrollbarHoverHandlers(bar, axis) {
     if (!bar) return;
     const controls = bar.querySelector('.scrollbar-controls');
     if (!controls || scrollbarHoverState.has(bar)) return;
-    
+
     const state = {
         axis,
         hideTimer: null,
         flashTimer: null,
         pointerInside: false
     };
-    
+
     const showControls = () => {
         if (state.hideTimer) {
             clearTimeout(state.hideTimer);
@@ -2686,7 +2686,7 @@ function attachScrollbarHoverHandlers(bar, axis) {
         }
         bar.classList.add('show-controls');
     };
-    
+
     const hideControls = () => {
         if (state.hideTimer) {
             clearTimeout(state.hideTimer);
@@ -2697,26 +2697,26 @@ function attachScrollbarHoverHandlers(bar, axis) {
             state.hideTimer = null;
         }, 220);
     };
-    
+
     const enterControls = () => {
         state.pointerInside = true;
         showControls();
     };
-    
+
     const leaveControls = () => {
         state.pointerInside = false;
         hideControls();
     };
-    
+
     controls.addEventListener('mouseenter', enterControls);
     controls.addEventListener('focusin', enterControls);
     controls.addEventListener('mouseleave', leaveControls);
     controls.addEventListener('focusout', leaveControls);
     bar.addEventListener('mouseleave', leaveControls);
-    
+
     state.show = showControls;
     state.hide = hideControls;
-    
+
     scrollbarHoverState.set(bar, state);
 }
 
@@ -2848,7 +2848,7 @@ function shouldHandleCustomScroll(event) {
     if (event.target.closest('.md-canvas-text') || event.target.closest('.md-canvas-editor')) {
         return false;
     }
-    
+
     const scrollbarElement = event.target.closest('.canvas-scrollbar');
     if (scrollbarElement) {
         const axisKey = scrollbarElement.classList.contains('horizontal') ? 'horizontal' : 'vertical';
@@ -2864,70 +2864,70 @@ function shouldHandleCustomScroll(event) {
             return false;
         }
     }
-    
+
     // 在栏目内部：如果正在画布级滚动，则拦截处理
     const sectionBody = event.target.closest('.permanent-section-body') || event.target.closest('.temp-node-body');
     if (sectionBody) {
         // 检测是否为触控板双指滑动
         const isTouchpad = (Math.abs(event.deltaX) < 50 || Math.abs(event.deltaY) < 50) && event.deltaMode === 0;
-        
+
         // 如果正在画布级滚动（双指滑动），拦截并让画布处理
         if (isTouchpad && CanvasState.touchpadState.isScrolling) {
             return true; // 让画布处理滚动
         }
-        
+
         // 否则让栏目自己处理滚动
         return false;
     }
-    
+
     if (CanvasState.scrollState.vertical.disabled && CanvasState.scrollState.horizontal.disabled) {
         return false;
     }
-    
+
     return true;
 }
 
 function handleCanvasCustomScroll(event) {
     const horizontalEnabled = !CanvasState.scrollState.horizontal.disabled;
     const verticalEnabled = !CanvasState.scrollState.vertical.disabled;
-    
+
     if (!horizontalEnabled && !verticalEnabled) {
         return;
     }
-    
+
     // 标记正在滚动
     markScrolling();
-    
+
     // 取消之前的惯性滚动
     cancelInertiaScroll();
-    
+
     let horizontalDelta = event.deltaX;
     let verticalDelta = event.deltaY;
-    
+
     if (event.shiftKey && horizontalEnabled) {
         horizontalDelta = horizontalDelta !== 0 ? horizontalDelta : verticalDelta;
         verticalDelta = 0;
     }
-    
+
     // 检测是否为触控板（触控板的 delta 值较小且连续，deltaMode 通常为 0）
     const isTouchpad = (Math.abs(horizontalDelta) < 50 || Math.abs(verticalDelta) < 50) && event.deltaMode === 0;
-    
+
     // 双指滑动状态追踪：当检测到画布级别的滚动时，标记状态并设置超时清除
     if (isTouchpad && (Math.abs(horizontalDelta) > 0.5 || Math.abs(verticalDelta) > 0.5)) {
         CanvasState.touchpadState.isScrolling = true;
         CanvasState.touchpadState.lastScrollTime = Date.now();
-        
+
         // 清除之前的超时
         if (CanvasState.touchpadState.scrollTimeout) {
             clearTimeout(CanvasState.touchpadState.scrollTimeout);
         }
-        
+
         // 设置新的超时：滚动停止300ms后恢复栏目内滚动
         CanvasState.touchpadState.scrollTimeout = setTimeout(() => {
             CanvasState.touchpadState.isScrolling = false;
         }, 300);
     }
-    
+
     // 记录滚动速度用于惯性滚动（仅触控板）
     if (isTouchpad) {
         const currentTime = Date.now();
@@ -2935,19 +2935,19 @@ function handleCanvasCustomScroll(event) {
         CanvasState.inertiaState.lastDeltaY = verticalDelta;
         CanvasState.inertiaState.lastTime = currentTime;
     }
-    
+
     // 触控板双指拖动优化：根据缩放比例调整灵敏度
     let scrollFactor = 1.0 / (CanvasState.zoom || 1);
-    
+
     // 根据缩放比例动态调整基础系数，让不同缩放级别下的滚动感觉更一致
     // 缩放越大（放大状态），滚动速率应该越慢；缩放越小（缩小状态），滚动速率应该越快
     const zoomAdjustment = Math.pow(CanvasState.zoom || 1, 0.3); // 使用较小的指数，减少缩放对速率的影响
     scrollFactor *= zoomAdjustment;
-    
+
     if (isTouchpad) {
         // 触控板使用适中的滚动系数（降低灵敏度）
         scrollFactor *= 0.7; // 降低灵敏度（从1.4降到0.7）
-        
+
         // 根据滚动速度动态调整响应：快速滚动时略微提升（减少加成幅度）
         const scrollSpeed = Math.sqrt(horizontalDelta * horizontalDelta + verticalDelta * verticalDelta);
         if (scrollSpeed > 8) { // 提高阈值（从5到8）
@@ -2958,20 +2958,20 @@ function handleCanvasCustomScroll(event) {
         // 鼠标滚轮也应用缩放调整，但保持相对较快的响应
         scrollFactor *= 0.8; // 鼠标滚轮也稍微降低一点灵敏度
     }
-    
+
     // 累积滚动增量
     let hasUpdate = false;
-    
+
     if (horizontalEnabled && horizontalDelta !== 0) {
         CanvasState.panOffsetX -= horizontalDelta * scrollFactor;
         hasUpdate = true;
     }
-    
+
     if (verticalEnabled && verticalDelta !== 0) {
         CanvasState.panOffsetY -= verticalDelta * scrollFactor;
         hasUpdate = true;
     }
-    
+
     if (hasUpdate) {
         // 使用 RAF 去抖，合并多个滚动事件为一次渲染
         scheduleScrollUpdate();
@@ -2986,19 +2986,19 @@ function scheduleScrollUpdate() {
         panOffsetX: CanvasState.panOffsetX,
         panOffsetY: CanvasState.panOffsetY
     };
-    
+
     // 如果没有正在进行的渲染帧，调度一次
     if (!scrollUpdateFrame) {
         scrollUpdateFrame = requestAnimationFrame(() => {
             scrollUpdateFrame = null;
             if (!pendingScrollRequest) return;
-            
+
             // 应用累积的滚动位置（使用极速平移）
             applyPanOffsetFast();
-            
+
             // 实时更新滚动条位置（轻量操作，只更新 transform）
             updateScrollbarThumbsLightweight();
-            
+
             pendingScrollRequest = null;
         });
     }
@@ -3008,10 +3008,10 @@ function scheduleScrollUpdate() {
 function updateScrollbarThumbsLightweight() {
     const workspace = document.getElementById('canvasWorkspace');
     if (!workspace) return;
-    
+
     const verticalBar = document.getElementById('canvasVerticalScrollbar');
     const horizontalBar = document.getElementById('canvasHorizontalScrollbar');
-    
+
     // 更新垂直滚动条
     if (verticalBar) {
         const track = verticalBar.querySelector('.scrollbar-track');
@@ -3025,13 +3025,13 @@ function updateScrollbarThumbsLightweight() {
                 const maxTravel = Math.max(0, trackSize - thumbSize);
                 const normalized = range === 0 ? 0 : (bounds.max - CanvasState.panOffsetY) / range;
                 const position = Math.min(maxTravel, Math.max(0, normalized * maxTravel));
-                
+
                 // 只更新 transform，极轻量
                 thumb.style.transform = `translateY(${position}px)`;
             }
         }
     }
-    
+
     // 更新水平滚动条
     if (horizontalBar) {
         const track = horizontalBar.querySelector('.scrollbar-track');
@@ -3045,7 +3045,7 @@ function updateScrollbarThumbsLightweight() {
                 const maxTravel = Math.max(0, trackSize - thumbSize);
                 const normalized = range === 0 ? 0 : (bounds.max - CanvasState.panOffsetX) / range;
                 const position = Math.min(maxTravel, Math.max(0, normalized * maxTravel));
-                
+
                 // 只更新 transform，极轻量
                 thumb.style.transform = `translateX(${position}px)`;
             }
@@ -3245,7 +3245,7 @@ function schedulePanTo(targetX, targetY) {
     if (typeof targetY === 'number') {
         CanvasState.scrollAnimation.targetY = clampPan('vertical', targetY);
     }
-    
+
     if (!CanvasState.scrollAnimation.frameId) {
         CanvasState.scrollAnimation.frameId = requestAnimationFrame(runScrollAnimation);
     }
@@ -3253,7 +3253,7 @@ function schedulePanTo(targetX, targetY) {
 
 function runScrollAnimation() {
     let continueAnimation = false;
-    
+
     if (typeof CanvasState.scrollAnimation.targetX === 'number') {
         const diffX = CanvasState.scrollAnimation.targetX - CanvasState.panOffsetX;
         if (Math.abs(diffX) > 0.5) {
@@ -3263,7 +3263,7 @@ function runScrollAnimation() {
             CanvasState.panOffsetX = CanvasState.scrollAnimation.targetX;
         }
     }
-    
+
     if (typeof CanvasState.scrollAnimation.targetY === 'number') {
         const diffY = CanvasState.scrollAnimation.targetY - CanvasState.panOffsetY;
         if (Math.abs(diffY) > 0.5) {
@@ -3273,17 +3273,17 @@ function runScrollAnimation() {
             CanvasState.panOffsetY = CanvasState.scrollAnimation.targetY;
         }
     }
-    
+
     // 优化：使用快速平移（不更新滚动条）
     applyPanOffsetFast();
-    
+
     if (continueAnimation) {
         CanvasState.scrollAnimation.frameId = requestAnimationFrame(runScrollAnimation);
     } else {
         CanvasState.scrollAnimation.frameId = null;
         CanvasState.scrollAnimation.targetX = CanvasState.panOffsetX;
         CanvasState.scrollAnimation.targetY = CanvasState.panOffsetY;
-        
+
         // 动画结束后更新滚动条
         scheduleScrollbarUpdate();
         savePanOffsetThrottled();
@@ -3293,10 +3293,10 @@ function runScrollAnimation() {
 function updateCanvasScrollBounds(options = {}) {
     const workspace = document.getElementById('canvasWorkspace');
     if (!workspace) return;
-    
+
     let initial = false;
     let recomputeBounds = true;
-    
+
     if (typeof options === 'boolean') {
         initial = options;
     } else if (options && typeof options === 'object') {
@@ -3305,7 +3305,7 @@ function updateCanvasScrollBounds(options = {}) {
             recomputeBounds = options.recomputeBounds;
         }
     }
-    
+
     let bounds = CanvasState.contentBounds;
     if (recomputeBounds || !bounds) {
         bounds = computeCanvasContentBounds();
@@ -3314,24 +3314,24 @@ function updateCanvasScrollBounds(options = {}) {
         bounds = computeCanvasContentBounds();
         CanvasState.contentBounds = bounds;
     }
-    
+
     const zoom = Math.max(CanvasState.zoom || 1, 0.1);
     const workspaceWidth = workspace.clientWidth || 1;
     const workspaceHeight = workspace.clientHeight || 1;
-    
+
     // 允许滚动到内容区域外的空白区域
     const minPanX = workspaceWidth - CANVAS_SCROLL_MARGIN - bounds.maxX * zoom - CANVAS_SCROLL_EXTRA_SPACE;
     const maxPanX = CANVAS_SCROLL_MARGIN - bounds.minX * zoom + CANVAS_SCROLL_EXTRA_SPACE;
     const minPanY = workspaceHeight - CANVAS_SCROLL_MARGIN - bounds.maxY * zoom - CANVAS_SCROLL_EXTRA_SPACE;
     const maxPanY = CANVAS_SCROLL_MARGIN - bounds.minY * zoom + CANVAS_SCROLL_EXTRA_SPACE;
-    
+
     CanvasState.scrollBounds.horizontal = normalizeScrollBounds(minPanX, maxPanX, workspaceWidth);
     CanvasState.scrollBounds.vertical = normalizeScrollBounds(minPanY, maxPanY, workspaceHeight);
-    
+
     // 不要自动限制滚动位置，允许用户滚动到空白区域
     // CanvasState.panOffsetX = clampPan('horizontal', CanvasState.panOffsetX);
     // CanvasState.panOffsetY = clampPan('vertical', CanvasState.panOffsetY);
-    
+
     if (!initial) {
         applyPanOffset();
     }
@@ -3342,37 +3342,37 @@ function normalizeScrollBounds(min, max, fallbackSize) {
         const half = fallbackSize * 0.5;
         return { min: -half, max: half };
     }
-    
+
     if (min === max) {
         const half = Math.max(fallbackSize * 0.5, 200);
         return { min: min - half, max: max + half };
     }
-    
+
     if (min > max) {
         const center = (min + max) / 2;
         const half = Math.max(fallbackSize * 0.5, 200);
         return { min: center - half, max: center + half };
     }
-    
+
     const span = max - min;
     if (span < fallbackSize * 0.3) {
         const center = (min + max) / 2;
         const half = Math.max(span / 2, fallbackSize * 0.3);
         return { min: center - half, max: center + half };
     }
-    
+
     return { min, max };
 }
 
 function computeCanvasContentBounds() {
     const permanentSection = document.getElementById('permanentSection');
-    
+
     let minX = 0;
     let maxX = 0;
     let minY = 0;
     let maxY = 0;
     let hasContent = false;
-    
+
     if (permanentSection) {
         const left = parseFloat(permanentSection.style.left) || 0;
         const top = parseFloat(permanentSection.style.top) || 0;
@@ -3384,7 +3384,7 @@ function computeCanvasContentBounds() {
         maxY = Math.max(maxY, top + height);
         hasContent = true;
     }
-    
+
     CanvasState.tempSections.forEach(section => {
         const width = section.width || TEMP_SECTION_DEFAULT_WIDTH;
         const height = section.height || TEMP_SECTION_DEFAULT_HEIGHT;
@@ -3406,14 +3406,14 @@ function computeCanvasContentBounds() {
             hasContent = true;
         });
     }
-    
+
     if (!hasContent) {
         minX = -400;
         maxX = 400;
         minY = -300;
         maxY = 300;
     }
-    
+
     return {
         minX: minX - 80,
         maxX: maxX + 80,
@@ -3426,7 +3426,7 @@ function clampPan(axis, value) {
     const bounds = axis === 'horizontal'
         ? CanvasState.scrollBounds.horizontal
         : CanvasState.scrollBounds.vertical;
-    
+
     if (!bounds) return value;
     if (value < bounds.min) return bounds.min;
     if (value > bounds.max) return bounds.max;
@@ -3436,10 +3436,10 @@ function clampPan(axis, value) {
 function updateScrollbarThumbs() {
     const workspace = document.getElementById('canvasWorkspace');
     if (!workspace) return;
-    
+
     const verticalBar = document.getElementById('canvasVerticalScrollbar');
     const horizontalBar = document.getElementById('canvasHorizontalScrollbar');
-    
+
     if (verticalBar) {
         const track = verticalBar.querySelector('.scrollbar-track');
         const thumb = verticalBar.querySelector('.scrollbar-thumb');
@@ -3457,13 +3457,13 @@ function updateScrollbarThumbs() {
                 const maxTravel = Math.max(0, trackSize - thumbSize);
                 const normalized = range === 0 ? 0 : (bounds.max - CanvasState.panOffsetY) / range;
                 const position = Math.min(maxTravel, Math.max(0, normalized * maxTravel));
-                
+
                 thumb.style.height = `${thumbSize}px`;
                 thumb.style.transform = `translateY(${position}px)`;
             }
         }
     }
-    
+
     if (horizontalBar) {
         const track = horizontalBar.querySelector('.scrollbar-track');
         const thumb = horizontalBar.querySelector('.scrollbar-thumb');
@@ -3481,7 +3481,7 @@ function updateScrollbarThumbs() {
                 const maxTravel = Math.max(0, trackSize - thumbSize);
                 const normalized = range === 0 ? 0 : (bounds.max - CanvasState.panOffsetX) / range;
                 const position = Math.min(maxTravel, Math.max(0, normalized * maxTravel));
-                
+
                 thumb.style.width = `${thumbSize}px`;
                 thumb.style.transform = `translateX(${position}px)`;
             }
@@ -3496,35 +3496,35 @@ function updateScrollbarThumbs() {
 function locateToPermanentSection() {
     const permanentSection = document.getElementById('permanentSection');
     const workspace = document.getElementById('canvasWorkspace');
-    
+
     if (!permanentSection || !workspace) {
         console.warn('[Canvas] 找不到永久栏目或工作区');
         return;
     }
-    
+
     // 获取永久栏目的位置和尺寸（在canvas-content坐标系中）
     const sectionLeft = parseFloat(permanentSection.style.left) || 0;
     const sectionTop = parseFloat(permanentSection.style.top) || 0;
     const sectionWidth = permanentSection.offsetWidth;
     const sectionHeight = permanentSection.offsetHeight;
-    
+
     // 获取workspace的尺寸
     const workspaceWidth = workspace.clientWidth;
     const workspaceHeight = workspace.clientHeight;
-    
+
     // 计算永久栏目的中心点（在canvas-content坐标系中）
     const sectionCenterX = sectionLeft + sectionWidth / 2;
     const sectionCenterY = sectionTop + sectionHeight / 2;
-    
+
     // 计算需要的平移量，使永久栏目居中显示
     // 公式：panOffset = workspace中心 - (section中心 * zoom)
     CanvasState.panOffsetX = workspaceWidth / 2 - sectionCenterX * CanvasState.zoom;
     CanvasState.panOffsetY = workspaceHeight / 2 - sectionCenterY * CanvasState.zoom;
-    
+
     // 应用平移
     updateCanvasScrollBounds();
     savePanOffsetThrottled();
-    
+
     console.log('[Canvas] 定位到永久栏目:', {
         sectionCenter: { x: sectionCenterX, y: sectionCenterY },
         panOffset: { x: CanvasState.panOffsetX, y: CanvasState.panOffsetY }
@@ -3553,7 +3553,7 @@ function locateToElement(el) {
 // 定位到临时栏目（通过 sectionId）
 function locateToTempSection(sectionId) {
     if (!sectionId) return;
-    try { ensureTempSectionRendered(sectionId); } catch(_) {}
+    try { ensureTempSectionRendered(sectionId); } catch (_) { }
     const el = document.querySelector(`.temp-canvas-node[data-section-id="${CSS.escape(sectionId)}"]`);
     if (el) locateToElement(el);
 }
@@ -3565,33 +3565,33 @@ function locateToTempSection(sectionId) {
 function makePermanentSectionDraggable() {
     const permanentSection = document.getElementById('permanentSection');
     const header = document.getElementById('permanentSectionHeader');
-    
+
     if (!permanentSection || !header) {
         console.warn('[Canvas] 找不到永久栏目元素');
         return;
     }
-    
+
     console.log('[Canvas] 为永久栏目添加拖拽功能');
-    
+
     // 初始化位置：如果使用transform居中，转换为left/top形式，避免第一次拖动跳动
     initializePermanentSectionPosition(permanentSection);
-    
+
     // 添加resize功能
     makePermanentSectionResizable(permanentSection);
 
     // 注册 Ctrl 蒙版
     registerSectionCtrlOverlay(permanentSection);
-    
+
     const onMouseDown = (e) => {
         // 不要在连接点或其触发区上触发拖动
         if (e.target.closest('.canvas-node-anchor') || e.target.closest('.canvas-anchor-zone')) return;
-        
+
         // 不要在关闭按钮、提示文本上触发拖动
-        if (e.target.closest('.permanent-section-tip-close') || 
+        if (e.target.closest('.permanent-section-tip-close') ||
             e.target.closest('.permanent-section-tip-container')) {
             return;
         }
-        
+
         // 只允许在标题区域拖动
         if (!e.target.closest('.permanent-section-header')) {
             return;
@@ -3620,19 +3620,19 @@ function makePermanentSectionDraggable() {
         CanvasState.dragState.lastClientY = e.clientY;
         CanvasState.dragState.hasMoved = false;
         CanvasState.dragState.meta = null;
-        
+
         permanentSection.classList.add('dragging');
         permanentSection.style.transform = 'none';
         permanentSection.style.transition = 'none';
 
         CanvasState.dragState.wheelScrollEnabled = true;
-        
+
         e.preventDefault();
     };
-    
+
     // 使用捕获阶段确保事件优先处理，mousemove用冒泡阶段提高性能
     header.addEventListener('mousedown', onMouseDown, true);
-    
+
     // 添加永久栏目空白区域右键菜单（整个栏目body区域）
     const permanentBody = permanentSection.querySelector('.permanent-section-body');
     if (permanentBody) {
@@ -3676,14 +3676,14 @@ function makePermanentSectionDraggable() {
 function savePermanentSectionPosition() {
     const permanentSection = document.getElementById('permanentSection');
     if (!permanentSection) return;
-    
+
     const position = {
         left: permanentSection.style.left,
         top: permanentSection.style.top,
         width: permanentSection.style.width,
         height: permanentSection.style.height
     };
-    
+
     localStorage.setItem('permanent-section-position', JSON.stringify(position));
     console.log('[Canvas] 保存永久栏目位置和大小:', position);
 }
@@ -3702,7 +3702,7 @@ function loadPermanentSectionPosition() {
                 if (position.width) permanentSection.style.width = position.width;
                 if (position.height) permanentSection.style.height = position.height;
                 console.log('[Canvas] 恢复永久栏目位置和大小:', position);
-                
+
                 // 强制重排后恢复transition
                 permanentSection.offsetHeight;
                 permanentSection.style.transition = '';
@@ -3716,33 +3716,33 @@ function loadPermanentSectionPosition() {
 // 初始化永久栏目位置：转换transform为left/top，避免第一次拖动跳动
 function initializePermanentSectionPosition(permanentSection) {
     if (!permanentSection) return;
-    
+
     // 如果已经有left/top设置，说明已经初始化过了
     if (permanentSection.style.left && permanentSection.style.top) {
         return;
     }
-    
+
     // 获取当前的计算位置（使用transform居中）
     const rect = permanentSection.getBoundingClientRect();
     const workspace = document.getElementById('canvasWorkspace');
     if (!workspace) return;
-    
+
     const workspaceRect = workspace.getBoundingClientRect();
-    
+
     // 计算在canvas-content坐标系中的位置
     const left = (rect.left - workspaceRect.left) / CanvasState.zoom;
     const top = (rect.top - workspaceRect.top) / CanvasState.zoom;
-    
+
     // 禁用过渡，设置新位置
     permanentSection.style.transition = 'none';
     permanentSection.style.transform = 'none';
     permanentSection.style.left = left + 'px';
     permanentSection.style.top = top + 'px';
-    
+
     // 强制重排后恢复transition
     permanentSection.offsetHeight;
     permanentSection.style.transition = '';
-    
+
     console.log('[Canvas] 初始化永久栏目位置:', { left, top });
 }
 
@@ -3762,27 +3762,27 @@ function makePermanentSectionResizable(element) {
         { name: 'sw', cursor: 'sw-resize', position: 'bottom-left' },
         { name: 'w', cursor: 'w-resize', position: 'left' }
     ];
-    
+
     handles.forEach(handleInfo => {
         const handle = document.createElement('div');
         handle.className = `resize-handle resize-handle-${handleInfo.name}`;
         handle.style.cssText = getResizeHandleStyle(handleInfo);
         element.appendChild(handle);
-        
+
         let isResizing = false;
         let startX, startY, startWidth, startHeight, startLeft, startTop;
-        
+
         handle.addEventListener('mousedown', (e) => {
             // 永久栏目不使用 node 对象；如需禁用缩放，可通过 data-locked 控制
             if (element && element.dataset && element.dataset.locked === 'true') return;
-            
+
             // Ctrl模式下，resize由overlay接管
             if (isSectionCtrlModeEvent(e)) return;
-            
+
             if (e.button !== 0) return;
             e.stopPropagation();
             e.preventDefault();
-            
+
             isResizing = true;
             startX = e.clientX;
             startY = e.clientY;
@@ -3790,22 +3790,22 @@ function makePermanentSectionResizable(element) {
             startHeight = element.offsetHeight;
             startLeft = parseFloat(element.style.left) || 0;
             startTop = parseFloat(element.style.top) || 0;
-            
+
             element.classList.add('resizing');
-            
+
             const onMouseMove = (e) => {
                 if (!isResizing) return;
-                
+
                 // 计算鼠标移动距离（考虑缩放）
                 const deltaX = (e.clientX - startX) / CanvasState.zoom;
                 const deltaY = (e.clientY - startY) / CanvasState.zoom;
-                
+
                 // 根据handle位置计算新的尺寸和位置
                 let newWidth = startWidth;
                 let newHeight = startHeight;
                 let newLeft = startLeft;
                 let newTop = startTop;
-                
+
                 // 处理水平方向
                 if (handleInfo.name.includes('e')) {
                     newWidth = Math.max(300, startWidth + deltaX);
@@ -3813,7 +3813,7 @@ function makePermanentSectionResizable(element) {
                     newWidth = Math.max(300, startWidth - deltaX);
                     newLeft = startLeft + (startWidth - newWidth);
                 }
-                
+
                 // 处理垂直方向
                 if (handleInfo.name.includes('s')) {
                     newHeight = Math.max(200, startHeight + deltaY);
@@ -3821,17 +3821,17 @@ function makePermanentSectionResizable(element) {
                     newHeight = Math.max(200, startHeight - deltaY);
                     newTop = startTop + (startHeight - newHeight);
                 }
-                
+
                 // 应用新的尺寸和位置
                 element.style.width = newWidth + 'px';
                 element.style.height = newHeight + 'px';
                 element.style.left = newLeft + 'px';
                 element.style.top = newTop + 'px';
-                
+
                 // Update connected edges in real-time during resize
                 renderEdges();
             };
-            
+
             const onMouseUp = () => {
                 if (isResizing) {
                     isResizing = false;
@@ -3843,7 +3843,7 @@ function makePermanentSectionResizable(element) {
                     document.removeEventListener('mouseup', onMouseUp);
                 }
             };
-            
+
             document.addEventListener('mousemove', onMouseMove);
             document.addEventListener('mouseup', onMouseUp);
         });
@@ -3854,13 +3854,13 @@ function getResizeHandleStyle(handleInfo) {
     const baseStyle = 'position: absolute; z-index: 10003; background: transparent;';
     const cornerSize = '36px'; // 角手柄再缩小
     const edgeThickness = '28px'; // 边手柄再增宽
-    
+
     let style = baseStyle + `cursor: ${handleInfo.cursor};`;
-    
+
     // 角handle - 三角形区域，更大范围
     if (handleInfo.name.length === 2) {
         style += `width: ${cornerSize}; height: ${cornerSize};`;
-        
+
         // 使用clip-path创建三角形
         if (handleInfo.name === 'nw') {
             style += 'top: -8px; left: -8px;'; // 向外扩展
@@ -3889,7 +3889,7 @@ function getResizeHandleStyle(handleInfo) {
             else style += `right: -${halfThickness}px;`;
         }
     }
-    
+
     return style;
 }
 
@@ -3905,24 +3905,24 @@ function makeTempNodeResizable(element, node) {
         { name: 'sw', cursor: 'sw-resize' },
         { name: 'w', cursor: 'w-resize' }
     ];
-    
+
     handles.forEach(handleInfo => {
         const handle = document.createElement('div');
         handle.className = `resize-handle resize-handle-${handleInfo.name}`;
         handle.style.cssText = getResizeHandleStyle(handleInfo);
         element.appendChild(handle);
-        
+
         let isResizing = false;
         let startX, startY, startWidth, startHeight, startLeft, startTop;
-        
+
         handle.addEventListener('mousedown', (e) => {
             // Ctrl模式下，resize由overlay接管
             if (isSectionCtrlModeEvent(e)) return;
-            
+
             if (e.button !== 0) return;
             e.stopPropagation();
             e.preventDefault();
-            
+
             isResizing = true;
             startX = e.clientX;
             startY = e.clientY;
@@ -3930,22 +3930,22 @@ function makeTempNodeResizable(element, node) {
             startHeight = element.offsetHeight;
             startLeft = node.x;
             startTop = node.y;
-            
+
             element.classList.add('resizing');
-            
+
             const onMouseMove = (e) => {
                 if (!isResizing) return;
-                
+
                 // 计算鼠标移动距离（考虑缩放）
                 const deltaX = (e.clientX - startX) / CanvasState.zoom;
                 const deltaY = (e.clientY - startY) / CanvasState.zoom;
-                
+
                 // 根据handle位置计算新的尺寸和位置
                 let newWidth = startWidth;
                 let newHeight = startHeight;
                 let newLeft = startLeft;
                 let newTop = startTop;
-                
+
                 // 处理水平方向
                 if (handleInfo.name.includes('e')) {
                     newWidth = Math.max(200, startWidth + deltaX);
@@ -3953,7 +3953,7 @@ function makeTempNodeResizable(element, node) {
                     newWidth = Math.max(200, startWidth - deltaX);
                     newLeft = startLeft + (startWidth - newWidth);
                 }
-                
+
                 // 处理垂直方向
                 if (handleInfo.name.includes('s')) {
                     newHeight = Math.max(150, startHeight + deltaY);
@@ -3961,23 +3961,23 @@ function makeTempNodeResizable(element, node) {
                     newHeight = Math.max(150, startHeight - deltaY);
                     newTop = startTop + (startHeight - newHeight);
                 }
-                
+
                 // 应用新的尺寸和位置
                 element.style.width = newWidth + 'px';
                 element.style.height = newHeight + 'px';
                 element.style.left = newLeft + 'px';
                 element.style.top = newTop + 'px';
-                
+
                 // 更新节点数据
                 node.width = newWidth;
                 node.height = newHeight;
                 node.x = newLeft;
                 node.y = newTop;
-                
+
                 // Update connected edges in real-time during resize
                 renderEdges();
             };
-            
+
             const onMouseUp = () => {
                 if (isResizing) {
                     isResizing = false;
@@ -3989,7 +3989,7 @@ function makeTempNodeResizable(element, node) {
                     document.removeEventListener('mouseup', onMouseUp);
                 }
             };
-            
+
             document.addEventListener('mousemove', onMouseMove);
             document.addEventListener('mouseup', onMouseUp);
         });
@@ -4011,7 +4011,7 @@ function handlePermanentDragStart(e, data, type) {
         hasSnapshot: !!data.children
     };
     CanvasState.dragState.dragSource = 'permanent';
-    
+
     e.dataTransfer.effectAllowed = 'copy';
     e.dataTransfer.setData('text/plain', data.title || '');
     try {
@@ -4024,7 +4024,7 @@ function handlePermanentDragStart(e, data, type) {
     } catch (err) {
         console.warn('[Canvas] 设置拖拽数据失败:', err);
     }
-    
+
     // 创建拖拽预览（替代UI规则同上）
     let previewText = data && (data.title || data.url) ? (data.title || data.url) : '';
     try {
@@ -4032,7 +4032,7 @@ function handlePermanentDragStart(e, data, type) {
         if (Array.isArray(ids) && ids.length > 1) {
             previewText = 'Multiple items';
         }
-    } catch (_) {}
+    } catch (_) { }
     const preview = document.createElement('div');
     preview.className = 'drag-preview';
     preview.textContent = previewText || '';
@@ -4044,15 +4044,15 @@ function handlePermanentDragStart(e, data, type) {
 
 async function handlePermanentDragEnd(e) {
     if (!CanvasState.dragState.isDragging) return;
-    
+
     const dropX = e.clientX;
     const dropY = e.clientY;
-    
+
     // 检查是否拖到Canvas工作区
     const workspace = document.getElementById('canvasWorkspace');
     const rect = workspace.getBoundingClientRect();
-    
-    if (dropX >= rect.left && dropX <= rect.right && 
+
+    if (dropX >= rect.left && dropX <= rect.right &&
         dropY >= rect.top && dropY <= rect.bottom) {
         // 若落点在永久栏目内，则视为永久栏目内部操作，不创建临时栏目
         const elementAtPoint = document.elementFromPoint(dropX, dropY);
@@ -4070,7 +4070,7 @@ async function handlePermanentDragEnd(e) {
             const y = dropY - rect.top + workspace.scrollTop;
             try {
                 let ids = [];
-                try { ids = collectPermanentSelectionIds((CanvasState.dragState.draggedData && CanvasState.dragState.draggedData.id) || null) || []; } catch(_) {}
+                try { ids = collectPermanentSelectionIds((CanvasState.dragState.draggedData && CanvasState.dragState.draggedData.id) || null) || []; } catch (_) { }
                 if (Array.isArray(ids) && ids.length > 1) {
                     await createTempNode({ multi: true, permanentIds: ids }, x, y);
                 } else {
@@ -4084,7 +4084,7 @@ async function handlePermanentDragEnd(e) {
             console.log('[Canvas] 拖拽结束位于永久栏目内，不创建临时栏目');
         }
     }
-    
+
     CanvasState.dragState.isDragging = false;
     CanvasState.dragState.draggedData = null;
     CanvasState.dragState.dragSource = null;
@@ -4118,7 +4118,7 @@ async function createTempNode(data, x, y) {
         createdAt: Date.now(),
         items: []
     };
-    
+
     try {
         let payload = [];
         if (data && data.multi && Array.isArray(data.permanentIds) && data.permanentIds.length) {
@@ -4146,14 +4146,14 @@ async function createTempNode(data, x, y) {
     } catch (error) {
         console.error('[Canvas] 转换拖拽节点失败:', error);
     }
-    
+
     CanvasState.tempSections.push(section);
-    
+
     renderTempNode(section);
-    
+
     // 延迟管理休眠状态
     scheduleDormancyUpdate();
-    
+
     saveTempNodes();
 }
 
@@ -4167,7 +4167,7 @@ function clearMdSelection() {
             const prev = document.getElementById(CanvasState.selectedMdNodeId);
             if (prev) prev.classList.remove('selected');
         }
-    } catch(_) {}
+    } catch (_) { }
     CanvasState.selectedMdNodeId = null;
 }
 
@@ -4215,13 +4215,18 @@ function makeMdNodeDraggable(element, node) {
         if (node && node.isEditing) return; // 编辑模式下不允许拖动
         const target = e.target;
         if (!target) return;
-        
-        // 编辑、resize、连接点、链接时不拖动
-        if (target.closest('.md-canvas-editor') || 
-            target.closest('.resize-handle') || 
-            target.closest('.canvas-node-anchor') || 
-            target.closest('.canvas-anchor-zone') || 
+
+        // resize、连接点、链接时不拖动
+        if (target.closest('.resize-handle') ||
+            target.closest('.canvas-node-anchor') ||
+            target.closest('.canvas-anchor-zone') ||
             target.closest('a')) {
+            return;
+        }
+
+        // 编辑器区域：如果编辑器已聚焦（正在编辑），不拖动；否则允许拖动
+        const editorEl = element.querySelector('.md-canvas-editor');
+        if (target.closest('.md-canvas-editor') && document.activeElement === editorEl) {
             return;
         }
 
@@ -4232,7 +4237,7 @@ function makeMdNodeDraggable(element, node) {
 
         // 正常拖动
         if (e.button !== 0) return;
-        
+
         // 在查看态区域内也允许按下后拖动（滚动用 wheel 事件处理；链接在下方单独保护）
         // 不再因存在滚动条而提前 return；通过移动阈值来区分点击/拖动
 
@@ -4258,9 +4263,9 @@ function makeMdNodeDraggable(element, node) {
             CanvasState.dragState.nodeStartX = node.x;
             CanvasState.dragState.nodeStartY = node.y;
             CanvasState.dragState.dragSource = 'temp-node';
-            
+
             CanvasState.dragState.wheelScrollEnabled = true;
-            
+
             element.classList.add('dragging');
             element.style.transition = 'none';
             ev.preventDefault();
@@ -4286,7 +4291,7 @@ function makeMdNodeDraggable(element, node) {
 function renderMdNode(node) {
     const container = document.getElementById('canvasContent');
     if (!container) return;
-    
+
     let el = document.getElementById(node.id);
     const isNew = !el;
     if (!el) {
@@ -4305,7 +4310,7 @@ function renderMdNode(node) {
     // 顶部工具栏（选中/悬停可见）
     const toolbar = document.createElement('div');
     toolbar.className = 'md-node-toolbar';
-    
+
     // 多语言支持
     const lang = typeof currentLang !== 'undefined' ? currentLang : 'zh';
     const deleteTitle = lang === 'en' ? 'Delete' : '删除';
@@ -4313,7 +4318,7 @@ function renderMdNode(node) {
     const focusTitle = lang === 'en' ? 'Locate and zoom' : '定位并放大';
     const editTitle = lang === 'en' ? 'Edit' : '编辑';
     const formatTitle = lang === 'en' ? 'Format toolbar' : '格式工具栏';
-    
+
     toolbar.innerHTML = `
         <button class="md-node-toolbar-btn" data-action="md-delete" title="${deleteTitle}"><i class="far fa-trash-alt"></i></button>
         <button class="md-node-toolbar-btn" data-action="md-color-toggle" title="${colorTitle}"><i class="fas fa-palette"></i></button>
@@ -4321,7 +4326,7 @@ function renderMdNode(node) {
         <button class="md-node-toolbar-btn" data-action="md-focus" title="${focusTitle}"><i class="fas fa-search-plus"></i></button>
         <button class="md-node-toolbar-btn" data-action="md-edit" title="${editTitle}"><i class="far fa-edit"></i></button>
     `;
-    
+
     // 初始化字体大小（从节点数据或默认值）
     const defaultFontSize = 14;
     const minFontSize = 10;
@@ -4329,15 +4334,15 @@ function renderMdNode(node) {
     if (typeof node.fontSize !== 'number') {
         node.fontSize = defaultFontSize;
     }
-    
+
     // 创建格式工具栏弹层（单行布局）
     const createFormatPopover = () => {
         let pop = toolbar.querySelector('.md-format-popover');
         if (pop) return pop;
-        
+
         pop = document.createElement('div');
         pop.className = 'md-format-popover';
-        
+
         // 多语言翻译
         const sizeDecreaseTitle = lang === 'en' ? 'Decrease font size' : '减小字号';
         const sizeIncreaseTitle = lang === 'en' ? 'Increase font size' : '增大字号';
@@ -4352,7 +4357,7 @@ function renderMdNode(node) {
         const alignTitle = lang === 'en' ? 'Alignment' : '对齐';
         const listTitle = lang === 'en' ? 'List' : '列表';
         const quoteTitle = lang === 'en' ? 'Quote' : '引用';
-        
+
         pop.innerHTML = `
             <div class="md-format-row">
                 <button class="md-format-btn md-format-btn-sm" data-action="md-font-decrease" title="${sizeDecreaseTitle}"><i class="fas fa-minus"></i></button>
@@ -4374,19 +4379,19 @@ function renderMdNode(node) {
                 <button class="md-format-btn" data-action="md-insert-quote" title="${quoteTitle}"><i class="fas fa-quote-left"></i></button>
             </div>
         `;
-        
+
         toolbar.appendChild(pop);
         return pop;
     };
-    
+
     // 切换格式工具栏显示
     const toggleFormatPopover = (btn) => {
         const pop = createFormatPopover();
         const isOpen = pop.classList.contains('open');
-        
+
         // 关闭其他弹层
         closeMdColorPopover(toolbar);
-        
+
         if (isOpen) {
             pop.classList.remove('open');
             btn.classList.remove('active');
@@ -4398,7 +4403,7 @@ function renderMdNode(node) {
             if (sizeValue) sizeValue.textContent = node.fontSize + 'px';
         }
     };
-    
+
     // 关闭格式工具栏
     const closeFormatPopover = () => {
         const pop = toolbar.querySelector('.md-format-popover');
@@ -4407,36 +4412,36 @@ function renderMdNode(node) {
         const formatBtn = toolbar.querySelector('[data-action="md-format-toggle"]');
         if (formatBtn) formatBtn.classList.remove('active');
     };
-    
+
     // 当前选中的字体颜色
     let currentFontColor = '#2DC26B';
-    
+
     // 创建字体颜色选择弹层
     const createFontColorPopover = () => {
         let pop = toolbar.querySelector('.md-fontcolor-popover');
         if (pop) return pop;
-        
+
         pop = document.createElement('div');
         pop.className = 'md-fontcolor-popover';
-        
+
         // 预设颜色值（参考obsidian-editing-toolbar）
         const presetColors = [
             '#c00000', '#ff0000', '#ffc000', '#ffff00', '#92d050',
             '#00b050', '#00b0f0', '#0070c0', '#002060', '#7030a0',
             '#ffffff', '#000000', '#1f497d', '#4f81bd', '#8064a2'
         ];
-        
-        let colorChips = presetColors.map(c => 
+
+        let colorChips = presetColors.map(c =>
             `<span class="md-fontcolor-chip" data-action="md-fontcolor-apply" data-color="${c}" style="background:${c};" title="${c}"></span>`
         ).join('');
-        
+
         pop.innerHTML = `
             <div class="md-fontcolor-grid">${colorChips}</div>
             <div class="md-fontcolor-custom">
                 <input type="color" class="md-fontcolor-input" value="${currentFontColor}" title="${lang === 'en' ? 'Custom color' : '自定义颜色'}">
             </div>
         `;
-        
+
         // 自定义颜色选择器事件
         const customInput = pop.querySelector('.md-fontcolor-input');
         if (customInput) {
@@ -4447,7 +4452,7 @@ function renderMdNode(node) {
                 closeFontColorPopover();
             });
         }
-        
+
         // 添加到 format popover 内部，作为兄弟元素
         const formatPop = toolbar.querySelector('.md-format-popover');
         if (formatPop) {
@@ -4455,7 +4460,7 @@ function renderMdNode(node) {
         }
         return pop;
     };
-    
+
     // 定位弹层到按钮正上方居中
     const positionPopoverAboveBtn = (pop, btn) => {
         const formatPop = toolbar.querySelector('.md-format-popover');
@@ -4467,7 +4472,7 @@ function renderMdNode(node) {
         pop.style.left = btnCenterX + 'px';
         pop.style.transform = 'translateX(-50%) translateY(-100%)';
     };
-    
+
     // 切换字体颜色弹层
     const toggleFontColorPopover = (btn) => {
         // 先保存当前选区
@@ -4478,15 +4483,15 @@ function renderMdNode(node) {
                 text: sel.toString()
             };
         }
-        
+
         const pop = createFontColorPopover();
         const isOpen = pop.classList.contains('open');
-        
+
         // 关闭其他弹层
         closeAlignPopover();
         closeHeadingPopover();
         closeListPopover();
-        
+
         if (isOpen) {
             pop.classList.remove('open');
             btn.classList.remove('active');
@@ -4496,7 +4501,7 @@ function renderMdNode(node) {
             btn.classList.add('active');
         }
     };
-    
+
     // 关闭字体颜色弹层
     const closeFontColorPopover = () => {
         const pop = toolbar.querySelector('.md-fontcolor-popover');
@@ -4504,7 +4509,7 @@ function renderMdNode(node) {
         const btn = toolbar.querySelector('[data-action="md-fontcolor-toggle"]');
         if (btn) btn.classList.remove('active');
     };
-    
+
     // 插入字体颜色
     const insertFontColor = (color) => {
         if (!node.isEditing) {
@@ -4514,11 +4519,11 @@ function renderMdNode(node) {
             doInsertFontColor(color);
         }
     };
-    
+
     const doInsertFontColor = (color) => {
         const sel = window.getSelection();
         let range;
-        
+
         // 优先使用保存的选区
         if (savedSelection && savedSelection.range) {
             range = savedSelection.range;
@@ -4530,72 +4535,72 @@ function renderMdNode(node) {
             editor.focus();
             return;
         }
-        
+
         if (!editor.contains(range.commonAncestorContainer)) {
             editor.focus();
             return;
         }
-        
+
         const selected = range.toString();
         const insertText = selected || (lang === 'en' ? 'text' : '文本');
-        
+
         // 清除保存的选区
         savedSelection = null;
-        
+
         // 创建 font 标签
         const wrapper = document.createElement('font');
         wrapper.setAttribute('color', color);
         wrapper.textContent = insertText;
-        
+
         range.deleteContents();
         range.insertNode(wrapper);
-        
+
         const spacer = document.createTextNode('\u200B');
         wrapper.parentNode.insertBefore(spacer, wrapper.nextSibling);
-        
+
         range.setStart(spacer, 1);
         range.collapse(true);
         sel.removeAllRanges();
         sel.addRange(range);
-        
+
         node.html = editor.innerHTML;
         node.text = editor.innerText;
         saveTempNodes();
-        
+
         currentFontColor = color;
         // 更新按钮颜色指示
         const fontColorBtn = toolbar.querySelector('[data-action="md-fontcolor-toggle"] span');
         if (fontColorBtn) {
             fontColorBtn.style.borderBottomColor = color;
         }
-        
+
         editor.focus();
     };
-    
+
     // 创建对齐选择弹层
     const createAlignPopover = () => {
         let pop = toolbar.querySelector('.md-align-popover');
         if (pop) return pop;
-        
+
         pop = document.createElement('div');
         pop.className = 'md-align-popover';
-        
+
         const leftTitle = lang === 'en' ? 'Align Left' : '左对齐';
         const centerTitle = lang === 'en' ? 'Center' : '居中';
         const rightTitle = lang === 'en' ? 'Align Right' : '右对齐';
         const justifyTitle = lang === 'en' ? 'Justify' : '两端对齐';
-        
+
         pop.innerHTML = `
             <button class="md-align-option" data-action="md-align-apply" data-align="left" title="${leftTitle}"><i class="fas fa-align-left"></i></button>
             <button class="md-align-option" data-action="md-align-apply" data-align="center" title="${centerTitle}"><i class="fas fa-align-center"></i></button>
             <button class="md-align-option" data-action="md-align-apply" data-align="right" title="${rightTitle}"><i class="fas fa-align-right"></i></button>
             <button class="md-align-option" data-action="md-align-apply" data-align="justify" title="${justifyTitle}"><i class="fas fa-align-justify"></i></button>
         `;
-        
+
         toolbar.querySelector('.md-format-popover').appendChild(pop);
         return pop;
     };
-    
+
     // 切换对齐弹层
     const toggleAlignPopover = (btn) => {
         // 先保存当前选区
@@ -4606,15 +4611,15 @@ function renderMdNode(node) {
                 text: sel.toString()
             };
         }
-        
+
         const pop = createAlignPopover();
         const isOpen = pop.classList.contains('open');
-        
+
         // 关闭其他弹层
         closeFontColorPopover();
         closeHeadingPopover();
         closeListPopover();
-        
+
         if (isOpen) {
             pop.classList.remove('open');
             btn.classList.remove('active');
@@ -4624,7 +4629,7 @@ function renderMdNode(node) {
             btn.classList.add('active');
         }
     };
-    
+
     // 关闭对齐弹层
     const closeAlignPopover = () => {
         const pop = toolbar.querySelector('.md-align-popover');
@@ -4632,32 +4637,32 @@ function renderMdNode(node) {
         const btn = toolbar.querySelector('[data-action="md-align-toggle"]');
         if (btn) btn.classList.remove('active');
     };
-    
+
     // 创建标题选择弹层
     const createHeadingPopover = () => {
         let pop = toolbar.querySelector('.md-heading-popover');
         if (pop) return pop;
-        
+
         pop = document.createElement('div');
         pop.className = 'md-heading-popover';
-        
+
         const h1Title = lang === 'en' ? 'Heading 1' : '一级标题';
         const h2Title = lang === 'en' ? 'Heading 2' : '二级标题';
         const h3Title = lang === 'en' ? 'Heading 3' : '三级标题';
-        
+
         pop.innerHTML = `
             <button class="md-heading-option" data-action="md-heading-apply" data-level="h1" title="${h1Title}">H1</button>
             <button class="md-heading-option" data-action="md-heading-apply" data-level="h2" title="${h2Title}">H2</button>
             <button class="md-heading-option" data-action="md-heading-apply" data-level="h3" title="${h3Title}">H3</button>
         `;
-        
+
         const formatPop = toolbar.querySelector('.md-format-popover');
         if (formatPop) {
             formatPop.appendChild(pop);
         }
         return pop;
     };
-    
+
     // 切换标题弹层
     const toggleHeadingPopover = (btn) => {
         // 先保存当前选区
@@ -4668,15 +4673,15 @@ function renderMdNode(node) {
                 text: sel.toString()
             };
         }
-        
+
         const pop = createHeadingPopover();
         const isOpen = pop.classList.contains('open');
-        
+
         // 关闭其他弹层
         closeFontColorPopover();
         closeAlignPopover();
         closeListPopover();
-        
+
         if (isOpen) {
             pop.classList.remove('open');
             btn.classList.remove('active');
@@ -4686,7 +4691,7 @@ function renderMdNode(node) {
             btn.classList.add('active');
         }
     };
-    
+
     // 关闭标题弹层
     const closeHeadingPopover = () => {
         const pop = toolbar.querySelector('.md-heading-popover');
@@ -4694,32 +4699,32 @@ function renderMdNode(node) {
         const btn = toolbar.querySelector('[data-action="md-heading-toggle"]');
         if (btn) btn.classList.remove('active');
     };
-    
+
     // 创建列表选择弹层
     const createListPopover = () => {
         let pop = toolbar.querySelector('.md-list-popover');
         if (pop) return pop;
-        
+
         pop = document.createElement('div');
         pop.className = 'md-list-popover';
-        
+
         const ulTitle = lang === 'en' ? 'Bullet List' : '无序列表';
         const olTitle = lang === 'en' ? 'Numbered List' : '有序列表';
         const taskTitle = lang === 'en' ? 'Task List' : '任务列表';
-        
+
         pop.innerHTML = `
             <button class="md-list-option" data-action="md-list-apply" data-type="ul" title="${ulTitle}"><i class="fas fa-list-ul"></i></button>
             <button class="md-list-option" data-action="md-list-apply" data-type="ol" title="${olTitle}"><i class="fas fa-list-ol"></i></button>
             <button class="md-list-option" data-action="md-list-apply" data-type="task" title="${taskTitle}"><i class="fas fa-tasks"></i></button>
         `;
-        
+
         const formatPop = toolbar.querySelector('.md-format-popover');
         if (formatPop) {
             formatPop.appendChild(pop);
         }
         return pop;
     };
-    
+
     // 切换列表弹层
     const toggleListPopover = (btn) => {
         // 先保存当前选区
@@ -4730,15 +4735,15 @@ function renderMdNode(node) {
                 text: sel.toString()
             };
         }
-        
+
         const pop = createListPopover();
         const isOpen = pop.classList.contains('open');
-        
+
         // 关闭其他弹层
         closeFontColorPopover();
         closeAlignPopover();
         closeHeadingPopover();
-        
+
         if (isOpen) {
             pop.classList.remove('open');
             btn.classList.remove('active');
@@ -4748,7 +4753,7 @@ function renderMdNode(node) {
             btn.classList.add('active');
         }
     };
-    
+
     // 关闭列表弹层
     const closeListPopover = () => {
         const pop = toolbar.querySelector('.md-list-popover');
@@ -4756,7 +4761,7 @@ function renderMdNode(node) {
         const btn = toolbar.querySelector('[data-action="md-list-toggle"]');
         if (btn) btn.classList.remove('active');
     };
-    
+
     // 插入对齐格式
     const insertAlign = (alignType) => {
         if (!node.isEditing) {
@@ -4766,11 +4771,11 @@ function renderMdNode(node) {
             doInsertAlign(alignType);
         }
     };
-    
+
     const doInsertAlign = (alignType) => {
         const sel = window.getSelection();
         let range;
-        
+
         // 优先使用保存的选区
         if (savedSelection && savedSelection.range) {
             range = savedSelection.range;
@@ -4782,18 +4787,18 @@ function renderMdNode(node) {
             editor.focus();
             return;
         }
-        
+
         if (!editor.contains(range.commonAncestorContainer)) {
             editor.focus();
             return;
         }
-        
+
         const selected = range.toString();
         const insertText = selected || (lang === 'en' ? 'text' : '文本');
-        
+
         // 清除保存的选区
         savedSelection = null;
-        
+
         let wrapper;
         if (alignType === 'center') {
             // 使用 <center> 标签
@@ -4805,28 +4810,28 @@ function renderMdNode(node) {
             wrapper.setAttribute('align', alignType);
             wrapper.textContent = insertText;
         }
-        
+
         range.deleteContents();
         range.insertNode(wrapper);
-        
+
         const spacer = document.createTextNode('\u200B');
         wrapper.parentNode.insertBefore(spacer, wrapper.nextSibling);
-        
+
         range.setStart(spacer, 1);
         range.collapse(true);
         sel.removeAllRanges();
         sel.addRange(range);
-        
+
         node.html = editor.innerHTML;
         node.text = editor.innerText;
         saveTempNodes();
-        
+
         editor.focus();
     };
-    
+
     // 保存选区（用于工具栏点击时恢复）- 变量先声明，事件监听在editor创建后绑定
     let savedSelection = null;
-    
+
     // 插入格式化 - 直接插入 HTML 标签（不是 Markdown 语法）
     const insertFormat = (formatType) => {
         if (!node.isEditing) {
@@ -4836,7 +4841,7 @@ function renderMdNode(node) {
             doInsert(formatType);
         }
     };
-    
+
     const doInsert = (formatType) => {
         // 获取当前选区
         const sel = window.getSelection();
@@ -4845,19 +4850,19 @@ function renderMdNode(node) {
             return;
         }
         let range = sel.getRangeAt(0);
-        
+
         // 确保 range 在 editor 内
         if (!editor.contains(range.commonAncestorContainer)) {
             editor.focus();
             return;
         }
-        
+
         // 清除保存的选区
         savedSelection = null;
-        
+
         // 判断是否为块级元素类型
         const isBlockFormat = ['h1', 'h2', 'h3', 'ul', 'ol', 'task', 'quote'].includes(formatType);
-        
+
         // 对于块级元素，扩展选区到整行/整段
         let insertText;
         if (isBlockFormat) {
@@ -4866,13 +4871,13 @@ function renderMdNode(node) {
             let lineText = '';
             let lineStart = null;
             let lineEnd = null;
-            
+
             // 找到包含选区的块级容器（div, p, 或 editor 本身）
             let blockContainer = container;
             if (container.nodeType === Node.TEXT_NODE) {
                 blockContainer = container.parentElement;
             }
-            
+
             // 如果是在 editor 直接子级的文本节点，则取整个文本节点
             if (blockContainer === editor || blockContainer.parentElement === editor) {
                 if (container.nodeType === Node.TEXT_NODE) {
@@ -4888,7 +4893,7 @@ function renderMdNode(node) {
                 lineStart = blockContainer;
                 lineEnd = blockContainer;
             }
-            
+
             // 如果找到了整行内容，扩展选区
             if (lineStart && lineEnd && lineText.trim()) {
                 insertText = lineText.trim();
@@ -4910,10 +4915,10 @@ function renderMdNode(node) {
             const selected = range.toString();
             insertText = selected || (lang === 'en' ? 'text' : '文本');
         }
-        
+
         // 插入格式化元素，并在后面添加零宽空格确保后续输入不继承格式
         let wrapper = null;
-        
+
         switch (formatType) {
             case 'bold':
                 wrapper = document.createElement('strong');
@@ -4982,45 +4987,45 @@ function renderMdNode(node) {
                 wrapper.textContent = insertText;
                 break;
         }
-        
+
         if (wrapper) {
             range.deleteContents();
             range.insertNode(wrapper);
-            
+
             // 在格式化元素后添加一个空文本节点，确保后续输入不继承格式
             const spacer = document.createTextNode('\u200B'); // 零宽空格
             wrapper.parentNode.insertBefore(spacer, wrapper.nextSibling);
-            
+
             // 移动光标到空文本节点内
             range.setStart(spacer, 1);
             range.collapse(true);
             sel.removeAllRanges();
             sel.addRange(range);
-            
+
             // 保存内容
             node.html = editor.innerHTML;
             node.text = editor.innerText;
             saveTempNodes();
         }
-        
+
         editor.focus();
     };
-    
+
     // 编辑器（实时渲染的 WYSIWYG 编辑器）
     const editor = document.createElement('div');
     editor.className = 'md-canvas-editor md-wysiwyg-editor md-canvas-text';
     editor.contentEditable = 'true';
     editor.spellcheck = false;
-    
+
     // 应用字体大小
     editor.style.fontSize = node.fontSize + 'px';
-    
+
     const mdPlaceholder = (lang === 'en')
         ? 'Type Markdown: **bold**, *italic*, ==highlight=='
         : '输入 Markdown：**粗体**、*斜体*、==高亮==';
     editor.setAttribute('data-placeholder', mdPlaceholder);
     editor.setAttribute('aria-label', mdPlaceholder);
-    
+
     // 初始化编辑器内容：优先使用保存的 HTML，否则从 text 渲染
     if (node.html) {
         editor.innerHTML = node.html;
@@ -5034,7 +5039,7 @@ function renderMdNode(node) {
             }
         }
     }
-    
+
     // 保存选区函数（用于工具栏点击时恢复）
     const saveSelection = () => {
         const sel = window.getSelection();
@@ -5045,7 +5050,7 @@ function renderMdNode(node) {
             };
         }
     };
-    
+
     // 监听mouseup/keyup保存选区（在点击工具栏前保存）
     editor.addEventListener('mouseup', saveSelection);
     editor.addEventListener('keyup', saveSelection);
@@ -5078,28 +5083,28 @@ function renderMdNode(node) {
         'MARK': { prefix: '==', suffix: '==' },
         'CODE': { prefix: '`', suffix: '`' },
     };
-    
+
     // 当前展开的元素（用于失焦时重新渲染）
     let expandedElement = null;
     let expandedMarkdown = null;
     let expandedType = null; // 'simple' | 'fontcolor' | 'align'
-    
+
     // 获取特殊格式元素的源码表示
     const getSourceCode = (el) => {
         const tagName = el.tagName;
         const content = el.textContent;
-        
+
         // font color: <font color="#xxx">text</font>
         if (tagName === 'FONT') {
             const color = el.getAttribute('color') || '#000000';
-            return { 
+            return {
                 source: `<font color="${color}">${content}</font>`,
                 prefix: `<font color="${color}">`,
                 suffix: '</font>',
                 type: 'fontcolor'
             };
         }
-        
+
         // center: <center>text</center>
         if (tagName === 'CENTER') {
             return {
@@ -5109,7 +5114,7 @@ function renderMdNode(node) {
                 type: 'align'
             };
         }
-        
+
         // p with align: <p align="xxx">text</p>
         if (tagName === 'P' && el.hasAttribute('align')) {
             const align = el.getAttribute('align');
@@ -5120,7 +5125,7 @@ function renderMdNode(node) {
                 type: 'align'
             };
         }
-        
+
         // hr: --- 水平分割线
         if (tagName === 'HR') {
             return {
@@ -5130,7 +5135,7 @@ function renderMdNode(node) {
                 type: 'hr'
             };
         }
-        
+
         // blockquote: > text
         if (tagName === 'BLOCKQUOTE') {
             return {
@@ -5140,7 +5145,7 @@ function renderMdNode(node) {
                 type: 'quote'
             };
         }
-        
+
         // ul: - item
         if (tagName === 'UL') {
             const items = Array.from(el.querySelectorAll('li')).map(li => `- ${li.textContent}`).join('\n');
@@ -5151,7 +5156,7 @@ function renderMdNode(node) {
                 type: 'ul'
             };
         }
-        
+
         // ol: 1. item
         if (tagName === 'OL') {
             const items = Array.from(el.querySelectorAll('li')).map((li, i) => `${i + 1}. ${li.textContent}`).join('\n');
@@ -5162,7 +5167,7 @@ function renderMdNode(node) {
                 type: 'ol'
             };
         }
-        
+
         // task: - [ ] text 或 - [x] text
         if (el.classList && el.classList.contains('md-task-item')) {
             const checkbox = el.querySelector('input[type="checkbox"]');
@@ -5175,7 +5180,7 @@ function renderMdNode(node) {
                 type: 'task'
             };
         }
-        
+
         // 标题: 支持 ATX 和 Setext 两种格式
         // Setext 格式通过 dataset.setextType 标识
         // 自定义规则: --- → H1, === → H2
@@ -5195,7 +5200,7 @@ function renderMdNode(node) {
                     }
                 }
                 headerText = headerText.trim();
-                
+
                 return {
                     source: `${headerText}\n${separator}`,
                     prefix: '',
@@ -5226,7 +5231,7 @@ function renderMdNode(node) {
                     }
                 }
                 headerText = headerText.trim();
-                
+
                 return {
                     source: `${headerText}\n${separator}`,
                     prefix: '',
@@ -5273,20 +5278,20 @@ function renderMdNode(node) {
                 type: 'heading'
             };
         }
-        
+
         return null;
     };
-    
+
     // 点击格式化元素时展开为源码
     // cursorPosition: 'middle'(默认), 'start', 'end'
     const expandToMarkdown = (formattedEl, cursorPosition = 'middle') => {
         const tagName = formattedEl.tagName;
-        
+
         // 处理特殊格式（font color, alignment, headings, hr 等）
         const specialFormat = getSourceCode(formattedEl);
         if (specialFormat) {
             const parent = formattedEl.parentNode;
-            
+
             // 对于 Setext 标题，需要用 <br> 来表示换行（contenteditable 不显示 \n）
             if (specialFormat.type === 'setext-heading') {
                 // 从渲染的元素中提取标题文字（不包括分隔符）
@@ -5300,22 +5305,22 @@ function renderMdNode(node) {
                     }
                 }
                 headerText = headerText.trim();
-                
+
                 const underline = formattedEl.dataset.setextType || '---';
-                
+
                 const textNode1 = document.createTextNode(headerText);
                 const brNode = document.createElement('br');
                 const textNode2 = document.createTextNode(underline);
-                
+
                 parent.insertBefore(textNode1, formattedEl);
                 parent.insertBefore(brNode, formattedEl);
                 parent.insertBefore(textNode2, formattedEl);
                 parent.removeChild(formattedEl);
-                
+
                 expandedElement = textNode2; // 记录下划线节点
                 expandedMarkdown = specialFormat.source;
                 expandedType = specialFormat.type;
-                
+
                 // 光标放在下划线末尾
                 const sel = window.getSelection();
                 const range = document.createRange();
@@ -5323,10 +5328,10 @@ function renderMdNode(node) {
                 range.collapse(true);
                 sel.removeAllRanges();
                 sel.addRange(range);
-                
+
                 return true;
             }
-            
+
             const textNode = document.createTextNode(specialFormat.source);
             parent.replaceChild(textNode, formattedEl);
 
@@ -5347,7 +5352,7 @@ function renderMdNode(node) {
             expandedElement = textNode;
             expandedMarkdown = specialFormat.source;
             expandedType = specialFormat.type;
-            
+
             const sel = window.getSelection();
             const range = document.createRange();
             let cursorPos;
@@ -5366,26 +5371,26 @@ function renderMdNode(node) {
             range.collapse(true);
             sel.removeAllRanges();
             sel.addRange(range);
-            
+
             return true;
         }
-        
+
         // 处理简单格式（Markdown）
         const format = formatMap[tagName];
         if (!format) return false;
-        
+
         const content = formattedEl.textContent;
         const markdown = format.prefix + content + format.suffix;
-        
+
         // 创建文本节点替换格式化元素
         const textNode = document.createTextNode(markdown);
         formattedEl.parentNode.replaceChild(textNode, formattedEl);
-        
+
         // 记录展开的状态
         expandedElement = textNode;
         expandedMarkdown = markdown;
         expandedType = 'simple';
-        
+
         // 根据参数决定光标位置
         const sel = window.getSelection();
         const range = document.createRange();
@@ -5401,32 +5406,32 @@ function renderMdNode(node) {
         range.collapse(true);
         sel.removeAllRanges();
         sel.addRange(range);
-        
+
         return true;
     };
-    
+
     // 实时 Markdown 渲染：检测并转换 Markdown 语法
     const liveRenderMarkdown = () => {
         const sel = window.getSelection();
         if (!sel.rangeCount) return;
-        
+
         const range = sel.getRangeAt(0);
         if (!editor.contains(range.startContainer)) return;
-        
+
         // 获取当前光标所在的文本节点
         let textNode = range.startContainer;
         if (textNode.nodeType !== Node.TEXT_NODE) return;
-        
+
         // 如果正在编辑展开的元素，不要渲染
         if (textNode === expandedElement) return;
-        
+
         const text = textNode.textContent;
         const cursorPos = range.startOffset;
-        
+
         // 辅助函数：查找下一个“行”节点（兼容 TextNode 和 Block Element）
         const findNextLineNode = (node) => {
             let next = node.nextSibling;
-            
+
             // 1. 同级查找
             while (next) {
                 // 跳过空文本/注释
@@ -5441,7 +5446,7 @@ function renderMdNode(node) {
                 }
                 break;
             }
-            
+
             if (next) return next;
 
             // 2. 跨块查找 (如果当前在 DIV/P 内，找父元素的下一个兄弟)
@@ -5453,14 +5458,14 @@ function renderMdNode(node) {
                 }
                 if (nextBlock) return nextBlock;
             }
-            
+
             return null;
         };
 
         // 辅助函数：查找上一个“行”节点（兼容 TextNode 和 Block Element）
         const findPrevLineNode = (node) => {
             let prev = node.previousSibling;
-            
+
             // 1. 同级查找
             while (prev) {
                 if (prev.nodeType === Node.TEXT_NODE && !prev.textContent.trim()) {
@@ -5473,9 +5478,9 @@ function renderMdNode(node) {
                 }
                 break;
             }
-            
+
             if (prev) return prev;
-            
+
             // 2. 跨块查找
             const parent = node.parentNode;
             if (parent && (parent.tagName === 'DIV' || parent.tagName === 'P') && parent.parentNode === editor) {
@@ -5485,7 +5490,7 @@ function renderMdNode(node) {
                 }
                 if (prevBlock) return prevBlock;
             }
-            
+
             return null;
         };
 
@@ -5499,14 +5504,14 @@ function renderMdNode(node) {
         const isSeparator = /^[\u200B]*([-=])\1+\s*$/.test(text);
         if (!isSeparator && text.trim()) {
             const nextNode = findNextLineNode(textNode);
-            
+
             let foundSetext = false;
             let setextLevel = ''; // h1 or h2
             let setextType = ''; // --- or ===
-            
+
             if (nextNode) {
                 const nextText = getNodeText(nextNode);
-                
+
                 // 1. 下一行是 HR 元素（对应 ---）
                 if (nextNode.tagName === 'HR') {
                     // Text + HR(---) => H1
@@ -5518,7 +5523,7 @@ function renderMdNode(node) {
                 else {
                     const dashMatch = nextText.match(/^[\u200B]*(-{3,})\s*$/);
                     const equalMatch = nextText.match(/^[\u200B]*(={3,})\s*$/);
-                    
+
                     if (dashMatch) {
                         // Text + --- => H1
                         foundSetext = true;
@@ -5532,41 +5537,41 @@ function renderMdNode(node) {
                     }
                 }
             }
-            
+
             if (foundSetext) {
                 const newEl = document.createElement(setextLevel);
                 // Setext 标题显示为：标题文字 + 换行 + 分隔符（两行，分隔符保持原始大小）
                 const headerTextEscaped = text.trim().replace(/</g, '&lt;').replace(/>/g, '&gt;');
                 newEl.innerHTML = `${headerTextEscaped}<br><span class="setext-separator" style="font-size: 14px; font-weight: normal; color: #999;">${setextType}</span>`;
                 newEl.dataset.setextType = setextType;
-                
+
                 // 插入新标题（位置在当前节点之前）
                 const insertParent = textNode.parentNode === editor ? editor : textNode.parentNode.parentNode;
                 const insertRef = textNode.parentNode === editor ? textNode : textNode.parentNode;
-                
+
                 insertParent.insertBefore(newEl, insertRef);
-                
+
                 // 移除旧节点（当前文本节点 + 下一行节点）
                 // 注意：如果是在块元素内，可能需要移除整个块
                 const removeNodeAndBlock = (n) => {
                     if (!n) return;
                     if (n.parentNode === editor) {
-                         // Block element or direct text node
-                         editor.removeChild(n);
+                        // Block element or direct text node
+                        editor.removeChild(n);
                     } else if (n.parentNode && n.parentNode.parentNode === editor && (n.parentNode.tagName === 'DIV' || n.parentNode.tagName === 'P')) {
-                         // Inside a block, remove the whole block
-                         editor.removeChild(n.parentNode);
+                        // Inside a block, remove the whole block
+                        editor.removeChild(n.parentNode);
                     } else if (n.parentNode) {
-                         n.parentNode.removeChild(n);
+                        n.parentNode.removeChild(n);
                     }
                 };
-                
+
                 // 移除当前节点
                 removeNodeAndBlock(textNode);
-                
+
                 // 移除下一行节点
                 removeNodeAndBlock(nextNode);
-                
+
                 // 在后面添加零宽空格
                 const afterNode = document.createTextNode('\u200B');
                 if (newEl.nextSibling) {
@@ -5574,23 +5579,23 @@ function renderMdNode(node) {
                 } else {
                     insertParent.appendChild(afterNode);
                 }
-                
+
                 // 恢复光标位置
                 const newRange = document.createRange();
                 newRange.setStart(afterNode, 1);
                 newRange.collapse(true);
                 sel.removeAllRanges();
                 sel.addRange(newRange);
-                
+
                 expandedElement = null;
                 expandedMarkdown = null;
                 expandedType = null;
-                
+
                 saveEditorContent();
                 return;
             }
         }
-        
+
         // Markdown 模式列表（按优先级排序）
         const patterns = [
             { regex: /\*\*(.+?)\*\*/, tag: 'strong' },           // **粗体**
@@ -5600,142 +5605,142 @@ function renderMdNode(node) {
             { regex: /`([^`]+)`/, tag: 'code' },                 // `代码`
             { regex: /\[\[(.+?)\]\]/, tag: 'span', className: 'md-wikilink' }, // [[链接]]
         ];
-        
+
         // HTML 标签模式（font color, center, p align）
         const htmlPatterns = [
             { regex: /<font\s+color=["']?([^"'>]+)["']?>([^<]*)<\/font>/i, tag: 'font', attrName: 'color', attrIndex: 1, contentIndex: 2 },
             { regex: /<center>([^<]*)<\/center>/i, tag: 'center', contentIndex: 1 },
             { regex: /<p\s+align=["']?([^"'>]+)["']?>([^<]*)<\/p>/i, tag: 'p', attrName: 'align', attrIndex: 1, contentIndex: 2 },
         ];
-        
+
         // Setext 标题和水平分割线检测（回溯检测：当输入分隔符时，检测上一行是否为标题文本）
         const setextDashMatch = text.match(/^[\u200B]*(-{3,})\s*$/);    // --- → H1
         const setextEqualMatch = text.match(/^[\u200B]*(={3,})\s*$/);   // === → H2
 
         if (setextDashMatch || setextEqualMatch) {
             const prevNode = findPrevLineNode(textNode);
-            
-            if (prevNode) {
-                 // 获取上一行的文本内容（移除零宽空格）
-                 const headerText = getNodeText(prevNode).replace(/\u200B/g, '').trim();
-                 
-                 // 如果上一行是 HR 元素、空内容、或只包含零宽空格，不尝试创建标题，直接跳过
-                 if (prevNode.tagName === 'HR' || !headerText || /^[-=]{3,}$/.test(headerText)) {
-                     // 继续执行后续的 HR 创建逻辑
-                 } else {
-                     // 确保上一行有有效内容且不是分隔符
-                     if (headerText) {
-                         // 自定义规则: --- → H1, === → H2
-                         const level = setextDashMatch ? 'h1' : 'h2';
-                         const separator = setextDashMatch ? setextDashMatch[1] : setextEqualMatch[1];
-                         
-                         const newEl = document.createElement(level);
-                         // Setext 标题显示为：标题文字 + 换行 + 分隔符（两行，分隔符保持原始大小）
-                         const headerTextEscaped = headerText.replace(/</g, '&lt;').replace(/>/g, '&gt;');
-                         newEl.innerHTML = `${headerTextEscaped}<br><span class="setext-separator" style="font-size: 14px; font-weight: normal; color: #999;">${separator}</span>`;
-                         newEl.dataset.setextType = separator;
-                     
-                     // 插入位置确定
-                     const insertParent = textNode.parentNode === editor ? editor : textNode.parentNode.parentNode;
-                     const insertRef = (prevNode.parentNode === editor) ? prevNode : prevNode.parentNode;
-                     
-                     insertParent.insertBefore(newEl, insertRef);
-                     
-                     // 移除节点Helper
-                     const removeNodeAndBlock = (n) => {
-                        if (!n) return;
-                        if (n.parentNode === editor) {
-                             editor.removeChild(n);
-                        } else if (n.parentNode && n.parentNode.parentNode === editor && (n.parentNode.tagName === 'DIV' || n.parentNode.tagName === 'P')) {
-                             editor.removeChild(n.parentNode);
-                        } else if (n.parentNode) {
-                             n.parentNode.removeChild(n);
-                        }
-                    };
 
-                     // 移除上一行
-                     removeNodeAndBlock(prevNode);
-                     
-                     // 移除当前行（分隔符）
-                     removeNodeAndBlock(textNode);
-                     
-                     // 移除当前的 ---/=== 文本节点
-                     const afterNode = document.createTextNode('\u200B');
-                     if (newEl.nextSibling) {
-                         insertParent.insertBefore(afterNode, newEl.nextSibling);
-                     } else {
-                         insertParent.appendChild(afterNode);
-                     }
-                     
-                     // 恢复光标位置
-                     const newRange = document.createRange();
-                     newRange.setStart(afterNode, afterNode.textContent.length);
-                     newRange.collapse(true);
-                     sel.removeAllRanges();
-                     sel.addRange(newRange);
-                     
-                     expandedElement = null;
-                     expandedMarkdown = null;
-                     expandedType = null;
-                     
-                     saveEditorContent();
-                     return;
-                     }
-                 }
+            if (prevNode) {
+                // 获取上一行的文本内容（移除零宽空格）
+                const headerText = getNodeText(prevNode).replace(/\u200B/g, '').trim();
+
+                // 如果上一行是 HR 元素、空内容、或只包含零宽空格，不尝试创建标题，直接跳过
+                if (prevNode.tagName === 'HR' || !headerText || /^[-=]{3,}$/.test(headerText)) {
+                    // 继续执行后续的 HR 创建逻辑
+                } else {
+                    // 确保上一行有有效内容且不是分隔符
+                    if (headerText) {
+                        // 自定义规则: --- → H1, === → H2
+                        const level = setextDashMatch ? 'h1' : 'h2';
+                        const separator = setextDashMatch ? setextDashMatch[1] : setextEqualMatch[1];
+
+                        const newEl = document.createElement(level);
+                        // Setext 标题显示为：标题文字 + 换行 + 分隔符（两行，分隔符保持原始大小）
+                        const headerTextEscaped = headerText.replace(/</g, '&lt;').replace(/>/g, '&gt;');
+                        newEl.innerHTML = `${headerTextEscaped}<br><span class="setext-separator" style="font-size: 14px; font-weight: normal; color: #999;">${separator}</span>`;
+                        newEl.dataset.setextType = separator;
+
+                        // 插入位置确定
+                        const insertParent = textNode.parentNode === editor ? editor : textNode.parentNode.parentNode;
+                        const insertRef = (prevNode.parentNode === editor) ? prevNode : prevNode.parentNode;
+
+                        insertParent.insertBefore(newEl, insertRef);
+
+                        // 移除节点Helper
+                        const removeNodeAndBlock = (n) => {
+                            if (!n) return;
+                            if (n.parentNode === editor) {
+                                editor.removeChild(n);
+                            } else if (n.parentNode && n.parentNode.parentNode === editor && (n.parentNode.tagName === 'DIV' || n.parentNode.tagName === 'P')) {
+                                editor.removeChild(n.parentNode);
+                            } else if (n.parentNode) {
+                                n.parentNode.removeChild(n);
+                            }
+                        };
+
+                        // 移除上一行
+                        removeNodeAndBlock(prevNode);
+
+                        // 移除当前行（分隔符）
+                        removeNodeAndBlock(textNode);
+
+                        // 移除当前的 ---/=== 文本节点
+                        const afterNode = document.createTextNode('\u200B');
+                        if (newEl.nextSibling) {
+                            insertParent.insertBefore(afterNode, newEl.nextSibling);
+                        } else {
+                            insertParent.appendChild(afterNode);
+                        }
+
+                        // 恢复光标位置
+                        const newRange = document.createRange();
+                        newRange.setStart(afterNode, afterNode.textContent.length);
+                        newRange.collapse(true);
+                        sel.removeAllRanges();
+                        sel.addRange(newRange);
+
+                        expandedElement = null;
+                        expandedMarkdown = null;
+                        expandedType = null;
+
+                        saveEditorContent();
+                        return;
+                    }
+                }
             }
 
             // 逻辑 2: 水平分割线 (仅限 ---, 且没有形成标题时)
             if (setextDashMatch) {
-                 const hr = document.createElement('hr');
-                 
-                 const parent = textNode.parentNode;
-                 
-                 // 如果在 Block 内，需要在 Block 外插入 HR，或者把 Block 替换
-                 if (parent.tagName === 'DIV' || parent.tagName === 'P') {
-                     // 在 Block 前插入 HR
-                     parent.parentNode.insertBefore(hr, parent);
-                     
-                     // 清空当前 Block 的内容，保留 Block 本身以保持光标位置
-                     textNode.textContent = '\u200B';
-                     
-                     // 设置光标
-                     try {
-                         const newRange = document.createRange();
-                         newRange.setStart(textNode, 1);
-                         newRange.collapse(true);
-                         sel.removeAllRanges();
-                         sel.addRange(newRange);
-                     } catch (e) {
-                         // 光标设置失败，静默处理
-                     }
-                 } else {
-                     // 在当前文本节点前插入 HR
-                     parent.insertBefore(hr, textNode);
-                     
-                     // 清空当前文本节点为零宽空格
-                     textNode.textContent = '\u200B';
-                     
-                     // 设置光标
-                     try {
-                         const newRange = document.createRange();
-                         newRange.setStart(textNode, 1);
-                         newRange.collapse(true);
-                         sel.removeAllRanges();
-                         sel.addRange(newRange);
-                     } catch (e) {
-                         // 光标设置失败，静默处理
-                     }
-                 }
-                 
-                 expandedElement = null;
-                 expandedMarkdown = null;
-                 expandedType = null;
-                 
-                 saveEditorContent();
-                 return;
+                const hr = document.createElement('hr');
+
+                const parent = textNode.parentNode;
+
+                // 如果在 Block 内，需要在 Block 外插入 HR，或者把 Block 替换
+                if (parent.tagName === 'DIV' || parent.tagName === 'P') {
+                    // 在 Block 前插入 HR
+                    parent.parentNode.insertBefore(hr, parent);
+
+                    // 清空当前 Block 的内容，保留 Block 本身以保持光标位置
+                    textNode.textContent = '\u200B';
+
+                    // 设置光标
+                    try {
+                        const newRange = document.createRange();
+                        newRange.setStart(textNode, 1);
+                        newRange.collapse(true);
+                        sel.removeAllRanges();
+                        sel.addRange(newRange);
+                    } catch (e) {
+                        // 光标设置失败，静默处理
+                    }
+                } else {
+                    // 在当前文本节点前插入 HR
+                    parent.insertBefore(hr, textNode);
+
+                    // 清空当前文本节点为零宽空格
+                    textNode.textContent = '\u200B';
+
+                    // 设置光标
+                    try {
+                        const newRange = document.createRange();
+                        newRange.setStart(textNode, 1);
+                        newRange.collapse(true);
+                        sel.removeAllRanges();
+                        sel.addRange(newRange);
+                    } catch (e) {
+                        // 光标设置失败，静默处理
+                    }
+                }
+
+                expandedElement = null;
+                expandedMarkdown = null;
+                expandedType = null;
+
+                saveEditorContent();
+                return;
             }
         }
-        
+
         // 块级 Markdown 模式（需要特殊处理）
         // ATX 标题规则：
         //   - # 必须在行首
@@ -5757,7 +5762,7 @@ function renderMdNode(node) {
             { regex: /^[\u200B]*-\s+(.+)$/, type: 'ul', contentIndex: 1 },
             { regex: /^[\u200B]*(\d+)\.\s+(.+)$/, type: 'ol', contentIndex: 2 },
         ];
-        
+
         // 检查块级模式
         for (const pattern of blockPatterns) {
             const match = text.match(pattern.regex);
@@ -5765,7 +5770,7 @@ function renderMdNode(node) {
             if (match) {
                 let newEl;
                 const parent = textNode.parentNode;
-                
+
                 // ATX 标题处理
                 if (pattern.type === 'h1') {
                     newEl = document.createElement('h1');
@@ -5808,113 +5813,113 @@ function renderMdNode(node) {
                     li.textContent = match[pattern.contentIndex] || '';
                     newEl.appendChild(li);
                 }
-                
+
                 if (newEl) {
                     const afterNode = document.createTextNode('\u200B');
                     parent.insertBefore(newEl, textNode);
                     parent.insertBefore(afterNode, textNode);
                     parent.removeChild(textNode);
-                    
+
                     const newRange = document.createRange();
                     newRange.setStart(afterNode, 1);
                     newRange.collapse(true);
                     sel.removeAllRanges();
                     sel.addRange(newRange);
-                    
+
                     expandedElement = null;
                     expandedMarkdown = null;
                     expandedType = null;
-                    
+
                     saveEditorContent();
                     return;
                 }
             }
         }
-        
+
         // 先检查 HTML 模式
         for (const pattern of htmlPatterns) {
             const match = text.match(pattern.regex);
             if (match && match.index !== undefined) {
                 const matchStart = match.index;
                 const matchEnd = matchStart + match[0].length;
-                
+
                 if (cursorPos >= matchEnd) {
                     const before = text.substring(0, matchStart);
                     const content = match[pattern.contentIndex];
                     const after = text.substring(matchEnd);
-                    
+
                     const newEl = document.createElement(pattern.tag);
                     if (pattern.attrName && pattern.attrIndex) {
                         newEl.setAttribute(pattern.attrName, match[pattern.attrIndex]);
                     }
                     newEl.textContent = content;
-                    
+
                     const parent = textNode.parentNode;
                     const beforeNode = document.createTextNode(before);
                     const afterNode = document.createTextNode(after || '\u200B');
-                    
+
                     parent.insertBefore(beforeNode, textNode);
                     parent.insertBefore(newEl, textNode);
                     parent.insertBefore(afterNode, textNode);
                     parent.removeChild(textNode);
-                    
+
                     const newRange = document.createRange();
                     newRange.setStart(afterNode, after ? 0 : 1);
                     newRange.collapse(true);
                     sel.removeAllRanges();
                     sel.addRange(newRange);
-                    
+
                     expandedElement = null;
                     expandedMarkdown = null;
                     expandedType = null;
-                    
+
                     saveEditorContent();
                     return;
                 }
             }
         }
-        
+
         // 检查 Markdown 模式
         for (const pattern of patterns) {
             const match = text.match(pattern.regex);
             if (match && match.index !== undefined) {
                 const matchStart = match.index;
                 const matchEnd = matchStart + match[0].length;
-                
+
                 // 只在光标位于匹配文本之后时才渲染（即用户刚完成输入）
                 if (cursorPos >= matchEnd) {
                     const before = text.substring(0, matchStart);
                     const content = match[1];
                     const after = text.substring(matchEnd);
-                    
+
                     // 创建新元素
                     const newEl = document.createElement(pattern.tag);
                     if (pattern.className) newEl.className = pattern.className;
                     newEl.textContent = content;
-                    
+
                     // 替换文本节点
                     const parent = textNode.parentNode;
                     const beforeNode = document.createTextNode(before);
                     // 如果后面没有内容，添加零宽空格确保光标位置正确且后续输入不继承格式
                     const afterNode = document.createTextNode(after || '\u200B');
-                    
+
                     parent.insertBefore(beforeNode, textNode);
                     parent.insertBefore(newEl, textNode);
                     parent.insertBefore(afterNode, textNode);
                     parent.removeChild(textNode);
-                    
+
                     // 将光标移到新元素之后
                     const newRange = document.createRange();
                     newRange.setStart(afterNode, after ? 0 : 1);
                     newRange.collapse(true);
                     sel.removeAllRanges();
                     sel.addRange(newRange);
-                    
+
                     // 清除展开状态
                     expandedElement = null;
                     expandedMarkdown = null;
                     expandedType = null;
-                    
+
                     // 保存内容
                     saveEditorContent();
                     return;
@@ -5922,7 +5927,7 @@ function renderMdNode(node) {
             }
         }
     };
-    
+
     // 重新渲染展开的 Markdown（当光标离开时）
     const reRenderExpanded = () => {
         if (!expandedElement || !expandedElement.parentNode) {
@@ -5931,30 +5936,30 @@ function renderMdNode(node) {
             expandedType = null;
             return;
         }
-        
+
         const textNode = expandedElement;
         const text = textNode.textContent;
         const savedType = expandedType;
-        
+
         // 清除展开状态（必须在渲染前清除）
         expandedElement = null;
         expandedMarkdown = null;
         expandedType = null;
-        
+
         // HTML 标签模式（font color, center, p align）
         const htmlPatterns = [
             { regex: /<font\s+color=["']?([^"'>]+)["']?>([^<]*)<\/font>/i, tag: 'font', attrName: 'color', attrIndex: 1, contentIndex: 2 },
             { regex: /<center>([^<]*)<\/center>/i, tag: 'center', contentIndex: 1 },
             { regex: /<p\s+align=["']?([^"'>]+)["']?>([^<]*)<\/p>/i, tag: 'p', attrName: 'align', attrIndex: 1, contentIndex: 2 },
         ];
-        
+
         // Setext 标题语法检测（处理两行结构：内容 + <br> + ---/===）
         // 自定义规则: --- → H1, === → H2
         const setextH1Match = text.match(/^[\u200B]*(-{3,})\s*$/);  // --- → H1
         const setextH2Match = text.match(/^[\u200B]*(={3,})\s*$/);  // === → H2
         const isSetextH1 = !!setextH1Match;
         const isSetextH2 = !!setextH2Match;
-        
+
         if (isSetextH1 || isSetextH2) {
             const parent = textNode.parentNode;
             if (parent) {
@@ -5962,30 +5967,30 @@ function renderMdNode(node) {
                 let prevNode = textNode.previousSibling;
                 let brNode = null;
                 let contentNode = null;
-                
+
                 // 跳过空文本节点
-                while (prevNode && prevNode.nodeType === Node.TEXT_NODE && 
-                       prevNode.textContent.trim() === '') {
+                while (prevNode && prevNode.nodeType === Node.TEXT_NODE &&
+                    prevNode.textContent.trim() === '') {
                     prevNode = prevNode.previousSibling;
                 }
-                
+
                 // 找到 <br>
                 if (prevNode && prevNode.nodeType === Node.ELEMENT_NODE && prevNode.tagName === 'BR') {
                     brNode = prevNode;
                     prevNode = prevNode.previousSibling;
-                    
+
                     // 跳过空文本节点
-                    while (prevNode && prevNode.nodeType === Node.TEXT_NODE && 
-                           prevNode.textContent.trim() === '') {
+                    while (prevNode && prevNode.nodeType === Node.TEXT_NODE &&
+                        prevNode.textContent.trim() === '') {
                         prevNode = prevNode.previousSibling;
                     }
-                    
+
                     // 找到内容文本节点
                     if (prevNode && prevNode.nodeType === Node.TEXT_NODE) {
                         contentNode = prevNode;
                     }
                 }
-                
+
                 if (contentNode && contentNode.textContent.trim()) {
                     // 有上一行内容，创建标题
                     const headingLevel = isSetextH1 ? 'h1' : 'h2';
@@ -5996,11 +6001,11 @@ function renderMdNode(node) {
                     const headerTextEscaped = contentNode.textContent.trim().replace(/</g, '&lt;').replace(/>/g, '&gt;');
                     newEl.innerHTML = `${headerTextEscaped}<br contenteditable="false"><span class="setext-separator" contenteditable="false" style="font-size: 14px; font-weight: normal; color: #999; user-select: none;">${separator}</span>`;
                     newEl.dataset.setextType = separator;
-                    
+
                     // 移除内容节点、<br>、下划线节点
                     if (contentNode.parentNode) contentNode.parentNode.removeChild(contentNode);
                     if (brNode && brNode.parentNode) brNode.parentNode.removeChild(brNode);
-                    
+
                     const afterNode = document.createTextNode('\u200B');
                     parent.insertBefore(newEl, textNode);
                     parent.insertBefore(afterNode, textNode);
@@ -6010,10 +6015,10 @@ function renderMdNode(node) {
                 } else if (isSetextH1) {
                     // 没有上一行内容，--- 变成水平分割线
                     const hrEl = document.createElement('hr');
-                    
+
                     // 移除可能存在的 <br>
                     if (brNode && brNode.parentNode) brNode.parentNode.removeChild(brNode);
-                    
+
                     const afterNode = document.createTextNode('\u200B');
                     parent.insertBefore(hrEl, textNode);
                     parent.insertBefore(afterNode, textNode);
@@ -6023,14 +6028,14 @@ function renderMdNode(node) {
                 }
             }
         }
-        
+
         // 水平分割线 ---（单独一行，没有其他内容）
         const hrPattern = /^[\u200B]*-{3,}\s*$/;
         if (hrPattern.test(text)) {
             const parent = textNode.parentNode;
             if (parent) {
                 const hrEl = document.createElement('hr');
-                
+
                 const afterNode = document.createTextNode('\u200B');
                 parent.insertBefore(hrEl, textNode);
                 parent.insertBefore(afterNode, textNode);
@@ -6039,7 +6044,7 @@ function renderMdNode(node) {
                 return;
             }
         }
-        
+
         // 块级 Markdown 模式
         // ATX 标题规则：# 在行首，后面必须有空格，支持 H1-H6
         const blockPatterns = [
@@ -6055,7 +6060,7 @@ function renderMdNode(node) {
             { regex: /^-\s+(.+)$/, type: 'ul', contentIndex: 1 },
             { regex: /^(\d+)\.\s+(.+)$/, type: 'ol', contentIndex: 2 },
         ];
-        
+
         // 检查块级模式
         for (const pattern of blockPatterns) {
             const match = text.match(pattern.regex);
@@ -6115,7 +6120,7 @@ function renderMdNode(node) {
                 }
             }
         }
-        
+
         // 先检查 HTML 模式
         for (const pattern of htmlPatterns) {
             const match = text.match(pattern.regex);
@@ -6125,29 +6130,29 @@ function renderMdNode(node) {
                 const before = text.substring(0, matchStart);
                 const content = match[pattern.contentIndex];
                 const after = text.substring(matchEnd);
-                
+
                 const newEl = document.createElement(pattern.tag);
                 if (pattern.attrName && pattern.attrIndex) {
                     newEl.setAttribute(pattern.attrName, match[pattern.attrIndex]);
                 }
                 newEl.textContent = content;
-                
+
                 const parent = textNode.parentNode;
                 if (!parent) return;
-                
+
                 const beforeNode = document.createTextNode(before);
                 const afterNode = document.createTextNode(after || '\u200B');
-                
+
                 parent.insertBefore(beforeNode, textNode);
                 parent.insertBefore(newEl, textNode);
                 parent.insertBefore(afterNode, textNode);
                 parent.removeChild(textNode);
-                
+
                 saveEditorContent();
                 return;
             }
         }
-        
+
         // Markdown 模式列表
         const patterns = [
             { regex: /\*\*(.+?)\*\*/, tag: 'strong' },
@@ -6157,7 +6162,7 @@ function renderMdNode(node) {
             { regex: /`([^`]+)`/, tag: 'code' },
             { regex: /\[\[(.+?)\]\]/, tag: 'span', className: 'md-wikilink' },
         ];
-        
+
         for (const pattern of patterns) {
             const match = text.match(pattern.regex);
             if (match && match.index !== undefined) {
@@ -6166,32 +6171,32 @@ function renderMdNode(node) {
                 const before = text.substring(0, matchStart);
                 const content = match[1];
                 const after = text.substring(matchEnd);
-                
+
                 // 创建新元素
                 const newEl = document.createElement(pattern.tag);
                 if (pattern.className) newEl.className = pattern.className;
                 newEl.textContent = content;
-                
+
                 // 替换文本节点
                 const parent = textNode.parentNode;
                 if (!parent) return;
-                
+
                 const beforeNode = document.createTextNode(before);
                 // 如果后面没有内容，添加零宽空格
                 const afterNode = document.createTextNode(after || '\u200B');
-                
+
                 parent.insertBefore(beforeNode, textNode);
                 parent.insertBefore(newEl, textNode);
                 parent.insertBefore(afterNode, textNode);
                 parent.removeChild(textNode);
-                
+
                 // 保存内容
                 saveEditorContent();
                 return;
             }
         }
     };
-    
+
     // 保存编辑器内容
     const saveEditorContent = () => {
         node.html = editor.innerHTML;
@@ -6199,13 +6204,13 @@ function renderMdNode(node) {
         node.text = editor.innerText.replace(/\u200B/g, '');
         saveTempNodes();
     };
-    
+
     // 进入编辑状态（点击时）
     const enterEdit = () => {
         if (node.isEditing) return;
         node.isEditing = true;
         el.classList.add('editing');
-        
+
         // 编辑模式下禁用拖拽和resize
         const resizeHandles = el.querySelectorAll('.resize-handle');
         resizeHandles.forEach(handle => {
@@ -6213,20 +6218,20 @@ function renderMdNode(node) {
             handle.style.opacity = '0';
         });
     };
-    
+
     // 退出编辑状态
     const exitEdit = () => {
         if (!node.isEditing) return;
         node.isEditing = false;
         el.classList.remove('editing');
-        
+
         // 恢复拖拽和resize
         const resizeHandles = el.querySelectorAll('.resize-handle');
         resizeHandles.forEach(handle => {
             handle.style.pointerEvents = 'auto';
             handle.style.opacity = '';
         });
-        
+
         // 保存内容
         saveEditorContent();
     };
@@ -6234,31 +6239,31 @@ function renderMdNode(node) {
     // 实时渲染：监听输入事件（带防抖，避免输入时频繁渲染）
     let renderDebounceTimer = null;
     const RENDER_DEBOUNCE_DELAY = 400; // 放慢到 400ms，接近 Obsidian 的节奏，避免“还没打完就被渲染”
-    
+
     editor.addEventListener('input', (e) => {
         // 清除之前的定时器
         if (renderDebounceTimer) {
             clearTimeout(renderDebounceTimer);
         }
-        
+
         // 延迟渲染
         renderDebounceTimer = setTimeout(() => {
             liveRenderMarkdown();
             renderDebounceTimer = null;
         }, RENDER_DEBOUNCE_DELAY);
     });
-    
+
     // 编辑器获得焦点时进入编辑状态
     editor.addEventListener('focus', () => {
         enterEdit();
     });
-    
+
     // 编辑器失去焦点时退出编辑状态并重新渲染展开的内容
     editor.addEventListener('blur', () => {
         reRenderExpanded();
         exitEdit();
     });
-    
+
     // 快捷键处理
     editor.addEventListener('keydown', (e) => {
         if (e.key === 'Escape') {
@@ -6266,19 +6271,19 @@ function renderMdNode(node) {
             editor.blur();
             return;
         }
-        
+
         // Backspace：删除到格式化元素时，先展开为源码
         if (e.key === 'Backspace') {
             const sel = window.getSelection();
             if (!sel.rangeCount) return;
             const range = sel.getRangeAt(0);
-            
+
             // 只处理光标（非选区）
             if (!range.collapsed) return;
-            
+
             const container = range.startContainer;
             const offset = range.startOffset;
-            
+
             // 检查元素是否为格式化元素（Markdown 或 HTML 格式）
             const isFormattedElement = (el) => {
                 if (!el || el.nodeType !== Node.ELEMENT_NODE) return false;
@@ -6295,7 +6300,7 @@ function renderMdNode(node) {
                 if (tag === 'H1' || tag === 'H2' || tag === 'H3' || tag === 'H4' || tag === 'H5' || tag === 'H6') return true;
                 return false;
             };
-            
+
             // 查找紧邻光标前的格式化元素
             const findAdjacentFormattedEl = () => {
                 // 情况A：光标在文本节点内
@@ -6304,8 +6309,8 @@ function renderMdNode(node) {
                     if (offset === 0 || (offset === 1 && container.textContent.charAt(0) === '\u200B')) {
                         let prev = container.previousSibling;
                         // 跳过空文本节点和零宽空格
-                        while (prev && prev.nodeType === Node.TEXT_NODE && 
-                               (prev.textContent === '' || prev.textContent === '\u200B')) {
+                        while (prev && prev.nodeType === Node.TEXT_NODE &&
+                            (prev.textContent === '' || prev.textContent === '\u200B')) {
                             prev = prev.previousSibling;
                         }
                         if (isFormattedElement(prev)) {
@@ -6313,7 +6318,7 @@ function renderMdNode(node) {
                         }
                     }
                 }
-                
+
                 // 情况B：光标在元素节点内（如 editor 本身）
                 if (container.nodeType === Node.ELEMENT_NODE && offset > 0) {
                     let prevChild = container.childNodes[offset - 1];
@@ -6327,20 +6332,20 @@ function renderMdNode(node) {
                         return { el: prevChild, cleanup };
                     }
                 }
-                
+
                 // 情况C：光标在格式化元素内部的开头
                 const formattedParent = container.parentElement?.closest('strong, b, em, i, del, s, mark, code, font, center, p[align], blockquote, hr, ul, ol, .md-task-item, h1, h2, h3, h4, h5, h6');
                 if (formattedParent && editor.contains(formattedParent)) {
                     const isAtStart = (container.nodeType === Node.TEXT_NODE && offset === 0) ||
-                                      (container === formattedParent && offset === 0);
+                        (container === formattedParent && offset === 0);
                     if (isAtStart) {
                         return { el: formattedParent, cleanup: null };
                     }
                 }
-                
+
                 return null;
             };
-            
+
             const result = findAdjacentFormattedEl();
             if (result) {
                 e.preventDefault();
@@ -6351,18 +6356,18 @@ function renderMdNode(node) {
                 return;
             }
         }
-        
+
         // Delete：删除到格式化元素时，先展开为源码
         if (e.key === 'Delete') {
             const sel = window.getSelection();
             if (!sel.rangeCount) return;
             const range = sel.getRangeAt(0);
-            
+
             if (!range.collapsed) return;
-            
+
             const container = range.startContainer;
             const offset = range.startOffset;
-            
+
             // 检查元素是否为格式化元素（Markdown 或 HTML 格式）
             const isFormattedEl = (el) => {
                 if (!el || el.nodeType !== Node.ELEMENT_NODE) return false;
@@ -6377,7 +6382,7 @@ function renderMdNode(node) {
                 if (tag === 'H1' || tag === 'H2' || tag === 'H3' || tag === 'H4' || tag === 'H5' || tag === 'H6') return true;
                 return false;
             };
-            
+
             // 查找紧邻光标后的格式化元素
             const findNextFormattedEl = () => {
                 if (container.nodeType === Node.TEXT_NODE) {
@@ -6385,8 +6390,8 @@ function renderMdNode(node) {
                     // 在文本末尾，或在零宽空格结尾位置
                     if (offset === len || (offset === len - 1 && container.textContent.charAt(len - 1) === '\u200B')) {
                         let next = container.nextSibling;
-                        while (next && next.nodeType === Node.TEXT_NODE && 
-                               (next.textContent === '' || next.textContent === '\u200B')) {
+                        while (next && next.nodeType === Node.TEXT_NODE &&
+                            (next.textContent === '' || next.textContent === '\u200B')) {
                             next = next.nextSibling;
                         }
                         if (isFormattedEl(next)) {
@@ -6394,7 +6399,7 @@ function renderMdNode(node) {
                         }
                     }
                 }
-                
+
                 if (container.nodeType === Node.ELEMENT_NODE && offset < container.childNodes.length) {
                     let nextChild = container.childNodes[offset];
                     if (nextChild && nextChild.nodeType === Node.TEXT_NODE && nextChild.textContent === '\u200B') {
@@ -6404,10 +6409,10 @@ function renderMdNode(node) {
                         return nextChild;
                     }
                 }
-                
+
                 return null;
             };
-            
+
             const nextEl = findNextFormattedEl();
             if (nextEl) {
                 e.preventDefault();
@@ -6415,7 +6420,7 @@ function renderMdNode(node) {
                 return;
             }
         }
-        
+
         // 方向键移动：
         // - 当光标离开当前展开的源码区域时，自动重新渲染
         // - 当光标移动到某个格式化元素内部时，自动展开为源码
@@ -6474,22 +6479,22 @@ function renderMdNode(node) {
     });
 
     // 阻止编辑器事件冒泡（防止触发画布拖动）
-    ['mousedown','dblclick','click'].forEach(evt => editor.addEventListener(evt, ev => ev.stopPropagation()));
+    ['mousedown', 'dblclick', 'click'].forEach(evt => editor.addEventListener(evt, ev => ev.stopPropagation()));
 
     el.appendChild(toolbar);
     el.appendChild(editor);
-    
+
     // 点击处理：格式化元素展开为源码，链接打开
     editor.addEventListener('click', (e) => {
         const target = e.target;
-        
+
         // 任务checkbox点击 - 切换选中状态
         if (target.classList && target.classList.contains('md-task-checkbox')) {
             // checkbox状态已经由浏览器自动切换，只需保存
             saveEditorContent();
             return;
         }
-        
+
         // 链接点击
         const link = target.closest('a');
         if (link && link.href && !node.isEditing) {
@@ -6498,7 +6503,7 @@ function renderMdNode(node) {
             window.open(link.href, '_blank', 'noopener,noreferrer');
             return;
         }
-        
+
         // 判断当前点击是否仍在已展开的源码区域内（允许继续选择文字，而不触发重新渲染）
         const isClickInsideExpanded = (() => {
             if (!expandedElement || !expandedElement.parentNode) return false;
@@ -6518,15 +6523,15 @@ function renderMdNode(node) {
             }
             return false;
         })();
-        
+
         // 点击格式化元素时展开为 Markdown 源码（包括 HTML 格式）- 排除checkbox
         const formattedEl = target.closest('strong, b, em, i, del, s, mark, code, font, center, p[align], blockquote, hr, ul, ol, .md-task-item, h1, h2, h3, h4, h5, h6');
         if (formattedEl && editor.contains(formattedEl)) {
             // 特殊处理：Setext标题（带有分隔符的H1/H2）点击时不展开为源码
             // 而是让标题内容可编辑，保持渲染后的标题格式
-            const isSetextHeading = (formattedEl.tagName === 'H1' || formattedEl.tagName === 'H2') && 
-                                   formattedEl.dataset && formattedEl.dataset.setextType;
-            
+            const isSetextHeading = (formattedEl.tagName === 'H1' || formattedEl.tagName === 'H2') &&
+                formattedEl.dataset && formattedEl.dataset.setextType;
+
             if (isSetextHeading) {
                 // 先重新渲染之前展开的元素
                 if (expandedElement && expandedElement.parentNode && !isClickInsideExpanded) {
@@ -6537,7 +6542,7 @@ function renderMdNode(node) {
                 // 不做任何操作，让浏览器默认的编辑行为生效
                 return;
             }
-            
+
             // 其他格式化元素：展开为源码
             // 先重新渲染之前展开的元素（如果此次点击不在源码区域内）
             if (expandedElement && expandedElement.parentNode && !isClickInsideExpanded) {
@@ -6555,11 +6560,99 @@ function renderMdNode(node) {
         e.stopPropagation();
     }, { passive: true });
 
-    // 选择逻辑：单击选中，空白点击清除
+    // 选择逻辑：单击选中（可拖动），快速双击进入编辑
+    // 使用自定义双击检测，时间窗口 200ms（更严格）
+    let lastClickTime = 0;
+    const DOUBLE_CLICK_THRESHOLD = 200;
+
+    // 标记是否在编辑模式
+    let isInEditMode = false;
+    let ctrlPausedEdit = false; // Ctrl暂停编辑标记
+
+    const enterEditMode = () => {
+        isInEditMode = true;
+        ctrlPausedEdit = false;
+        node.isEditing = true;
+        el.setAttribute('data-editing', 'true');
+        editor.focus();
+    };
+
+    const exitEditMode = () => {
+        isInEditMode = false;
+        ctrlPausedEdit = false;
+        node.isEditing = false;
+        el.removeAttribute('data-editing');
+    };
+    
+    // Ctrl键暂停编辑（允许拖动/调整大小）
+    const pauseEditForCtrl = () => {
+        if (isInEditMode) {
+            ctrlPausedEdit = true;
+            node.isEditing = false; // 暂时禁用编辑状态，允许拖动
+            el.removeAttribute('data-editing');
+            editor.blur();
+        }
+    };
+    
+    // 恢复编辑模式（Ctrl释放后可双击继续编辑）
+    const resumeEditFromCtrl = () => {
+        if (ctrlPausedEdit) {
+            ctrlPausedEdit = false;
+            // 不自动恢复编辑，保持选中状态，用户可双击继续编辑
+        }
+    };
+
+    // 监听编辑器失焦，退出编辑模式
+    editor.addEventListener('blur', () => {
+        // 如果是Ctrl暂停的，不退出编辑模式
+        if (ctrlPausedEdit) return;
+        // 延迟检查，避免点击工具栏时误退出
+        setTimeout(() => {
+            if (document.activeElement !== editor && !el.contains(document.activeElement)) {
+                exitEditMode();
+            }
+        }, 100);
+    });
+
     el.addEventListener('mousedown', (e) => {
-        // 忽略在编辑、resize、小工具栏按钮、链接上的按下
-        if (e.target.closest('.md-canvas-editor') || e.target.closest('.resize-handle') || e.target.closest('.md-node-toolbar-btn') || e.target.closest('a')) return;
+        // 忽略在resize、小工具栏按钮、链接上的按下
+        if (e.target.closest('.resize-handle') || e.target.closest('.md-node-toolbar-btn') || e.target.closest('a')) return;
+
+        // 按住Ctrl键时，暂停编辑模式，允许拖动和调整大小
+        if (isSectionCtrlModeEvent(e)) {
+            if (isInEditMode) {
+                pauseEditForCtrl();
+            }
+            return; // 让Ctrl模式的逻辑处理
+        }
+
+        // 如果在编辑模式中（非Ctrl暂停），允许正常编辑操作
+        if (isInEditMode && !ctrlPausedEdit) return;
+
+        const now = Date.now();
+        const timeSinceLastClick = now - lastClickTime;
+
+        // 快速双击检测（200ms内）：进入编辑模式
+        if (timeSinceLastClick < DOUBLE_CLICK_THRESHOLD && timeSinceLastClick > 30) {
+            e.preventDefault();
+            e.stopPropagation();
+            lastClickTime = 0;
+            selectMdNode(node.id);
+            enterEditMode();
+            return;
+        }
+
+        // 单击：选中节点
+        lastClickTime = now;
+        e.preventDefault(); // 阻止编辑器自动聚焦
         selectMdNode(node.id);
+    }, true);
+
+    // 禁用原生双击
+    el.addEventListener('dblclick', (e) => {
+        if (e.target.closest('.resize-handle') || e.target.closest('.md-node-toolbar-btn')) return;
+        e.preventDefault();
+        e.stopPropagation();
     }, true);
 
     // 工具栏mousedown：阻止默认行为防止编辑器失焦
@@ -6569,7 +6662,7 @@ function renderMdNode(node) {
             e.preventDefault(); // 防止编辑器失去焦点
         }
     });
-    
+
     // 工具栏事件
     toolbar.addEventListener('click', (e) => {
         const btn = e.target.closest('.md-node-toolbar-btn, .md-color-chip, .md-color-custom, .md-color-picker-btn, .md-format-btn, .md-fontcolor-chip, .md-align-option, .md-heading-option, .md-list-option');
@@ -6579,7 +6672,7 @@ function renderMdNode(node) {
         const action = btn.getAttribute('data-action');
         if (action === 'md-edit') {
             selectMdNode(node.id);
-            editor.focus();
+            enterEditMode();
         } else if (action === 'md-delete') {
             removeMdNode(node.id);
             clearMdSelection();
@@ -6674,13 +6767,13 @@ function renderMdNode(node) {
             insertFormat('quote');
         }
     });
-    
+
     // 同步字体大小到编辑器
     editor.style.fontSize = node.fontSize + 'px';
-    
+
     makeMdNodeDraggable(el, node);
     makeTempNodeResizable(el, node);
-    
+
     if (isNew) {
         el.classList.add('temp-node-enter');
         requestAnimationFrame(() => el.classList.remove('temp-node-enter'));
@@ -6696,7 +6789,7 @@ function renderMdNode(node) {
     if (node && typeof node.z === 'number') {
         el.style.zIndex = String(node.z);
     }
-    
+
     addAnchorsToNode(el, node.id);
 
     // Ctrl 蒙版同步
@@ -6722,10 +6815,14 @@ function applyMdNodeColor(el, node) {
     if (!el) return;
     if (hex) {
         el.style.borderColor = hex;
-        // 背景保持当前主题，仅强调描边以显得更“高级”
+        // 设置CSS变量用于选中时的发光效果
+        el.style.setProperty('--node-glow-color', hex);
+        el.setAttribute('data-has-color', 'true');
     } else {
         // 恢复默认样式
         el.style.borderColor = '';
+        el.style.removeProperty('--node-glow-color');
+        el.removeAttribute('data-has-color');
     }
 }
 
@@ -6751,13 +6848,13 @@ function ensureMdColorPopover(toolbar, node) {
     if (pop) return pop;
     pop = document.createElement('div');
     pop.className = 'md-color-popover';
-    
+
     // 多语言支持
     const lang = typeof currentLang !== 'undefined' ? currentLang : 'zh';
     const rgbPickerTitle = lang === 'en' ? 'RGB Color Picker' : 'RGB颜色选择器';
     const customColorTitle = lang === 'en' ? 'Select custom color' : '选择自定义颜色';
     const defaultTitle = lang === 'en' ? 'Default color' : '默认颜色';
-    
+
     // 使用 Obsidian Canvas 风格的颜色
     pop.innerHTML = `
         <span class="md-color-chip" data-action="md-color-default" title="${defaultTitle}" style="background: repeating-linear-gradient(45deg, #eee, #eee 4px, #fff 4px, #fff 8px); border:1px solid #c9d1d9;"></span>
@@ -6784,7 +6881,7 @@ function ensureMdColorPopover(toolbar, node) {
             </svg>
         </button>
     `;
-    
+
     // RGB选择器UI（显示在色盘上方）
     const rgbPicker = document.createElement('div');
     rgbPicker.className = 'md-rgb-picker';
@@ -6792,11 +6889,11 @@ function ensureMdColorPopover(toolbar, node) {
         <input class="md-color-input" type="color" value="${node.colorHex || '#2563eb'}" title="${customColorTitle}" />
     `;
     pop.appendChild(rgbPicker);
-    
+
     // 彩色圆盘按钮点击事件 - 切换RGB选择器显示
     const pickerBtn = pop.querySelector('.md-color-picker-btn');
     const colorInput = rgbPicker.querySelector('.md-color-input');
-    
+
     pickerBtn.addEventListener('click', (e) => {
         e.stopPropagation();
         const isOpen = rgbPicker.classList.contains('open');
@@ -6808,16 +6905,16 @@ function ensureMdColorPopover(toolbar, node) {
             setTimeout(() => colorInput.click(), 50);
         }
     });
-    
+
     // 自定义颜色变化
     colorInput.addEventListener('input', (ev) => {
         setMdNodeColor(node, ev.target.value);
     });
-    
+
     colorInput.addEventListener('change', () => {
         rgbPicker.classList.remove('open');
     });
-    
+
     toolbar.appendChild(pop);
     return pop;
 }
@@ -6903,18 +7000,18 @@ function renderTempNode(section) {
         console.warn('[Canvas] 找不到canvasContent容器');
         return;
     }
-    
+
     section.color = section.color || TEMP_SECTION_DEFAULT_COLOR;
-    
+
     let nodeElement = document.getElementById(section.id);
     const isNew = !nodeElement;
-    
+
     // 如果栏目处于休眠状态，只隐藏不删除
     if (section.dormant && nodeElement) {
         nodeElement.style.display = 'none';
         return;
     }
-    
+
     // 保存滚动位置（如果是更新现有节点）
     // 注意：滚动容器是 temp-node-body，而不是 bookmark-tree
     let savedScrollTop = 0;
@@ -6933,14 +7030,14 @@ function renderTempNode(section) {
         savedScrollTop = persisted.top;
         savedScrollLeft = typeof persisted.left === 'number' ? persisted.left : 0;
     }
-    
+
     if (!nodeElement) {
         nodeElement = document.createElement('div');
         nodeElement.className = 'temp-canvas-node';
         nodeElement.id = section.id;
         nodeElement.dataset.sectionId = section.id;
         container.appendChild(nodeElement);
-        
+
         // 只在新建时设置位置和大小
         nodeElement.style.transition = 'none';
         nodeElement.style.left = section.x + 'px';
@@ -6953,20 +7050,20 @@ function renderTempNode(section) {
         // 只更新颜色
         nodeElement.style.setProperty('--section-color', section.color || TEMP_SECTION_DEFAULT_COLOR);
     }
-    
+
     if (isNew) {
         nodeElement.style.setProperty('--section-color', section.color || TEMP_SECTION_DEFAULT_COLOR);
     }
-    
+
     const header = document.createElement('div');
     header.className = 'temp-node-header';
     header.dataset.sectionId = section.id;
     header.style.setProperty('--section-color', section.color || TEMP_SECTION_DEFAULT_COLOR);
-    
+
     // 创建标题容器（包含序号标签和标题输入框）
     const titleContainer = document.createElement('div');
     titleContainer.className = 'temp-node-title-container';
-    
+
     // 添加序号标签（如果有）
     const toAlphaLabel = (n) => {
         // 1->A, 2->B, ... 26->Z, 27->AA, 28->AB, ... Excel风格
@@ -6986,7 +7083,7 @@ function renderTempNode(section) {
         sequenceBadge.textContent = toAlphaLabel(section.sequenceNumber);
         titleContainer.appendChild(sequenceBadge);
     }
-    
+
     const titleInput = document.createElement('input');
     titleInput.type = 'text';
     titleInput.className = 'temp-node-title temp-node-title-input';
@@ -6996,12 +7093,12 @@ function renderTempNode(section) {
     titleInput.setAttribute('readonly', 'readonly');
     titleInput.tabIndex = -1;
     titleInput.dataset.sectionId = section.id;
-    
+
     titleContainer.appendChild(titleInput);
-    
+
     const actions = document.createElement('div');
     actions.className = 'temp-node-actions';
-    
+
     const renameBtn = document.createElement('button');
     renameBtn.type = 'button';
     renameBtn.className = 'temp-node-action-btn temp-node-rename-btn';
@@ -7009,7 +7106,7 @@ function renderTempNode(section) {
     renameBtn.title = renameLabel;
     renameBtn.setAttribute('aria-label', renameLabel);
     renameBtn.innerHTML = '<i class="fas fa-edit"></i>';
-    
+
     const colorLabel = (typeof currentLang !== 'undefined' && currentLang === 'en') ? 'Change color' : '调整栏目颜色';
 
     const colorInput = document.createElement('input');
@@ -7017,7 +7114,7 @@ function renderTempNode(section) {
     colorInput.className = 'temp-node-color-input';
     colorInput.value = section.color || TEMP_SECTION_DEFAULT_COLOR;
     colorInput.title = colorLabel;
-    
+
     const colorBtn = document.createElement('button');
     colorBtn.type = 'button';
     colorBtn.className = 'temp-node-action-btn temp-node-color-btn';
@@ -7107,41 +7204,41 @@ function renderTempNode(section) {
     actions.appendChild(colorBtn);
     actions.appendChild(colorInput);
     actions.appendChild(closeBtn);
-    
+
     header.appendChild(titleContainer);
     header.appendChild(actions);
-    
+
     // 创建说明文字容器（始终显示）
     const descriptionContainer = document.createElement('div');
     descriptionContainer.className = 'temp-node-description-container';
     descriptionContainer.dataset.sectionId = section.id;
-    
+
     const descriptionContent = document.createElement('div');
     descriptionContent.className = 'temp-node-description-content';
-    
+
     const descriptionText = document.createElement('div');
     descriptionText.className = 'temp-node-description';
     descriptionText.style.cursor = 'pointer';
     descriptionText.style.fontStyle = section.description ? 'normal' : 'italic';
     descriptionText.style.opacity = section.description ? '1' : '0.5';
-    
+
     // 获取占位符文字（支持多语言）
     const getPlaceholderText = () => {
         const lang = typeof currentLang !== 'undefined' ? currentLang : 'zh';
         return lang === 'en' ? 'Click to add description...' : '点击添加说明...';
     };
-    
+
     // 获取编辑提示（支持多语言）
     const getEditTitle = () => {
         const lang = typeof currentLang !== 'undefined' ? currentLang : 'zh';
         return lang === 'en' ? 'Double-click to edit' : '双击编辑说明';
     };
-    
+
     const getAddTitle = () => {
         const lang = typeof currentLang !== 'undefined' ? currentLang : 'zh';
         return lang === 'en' ? 'Click to add description' : '点击添加说明';
     };
-    
+
     // 渲染 Markdown 或占位符
     const renderTempDescription = () => {
         if (section.description) {
@@ -7168,16 +7265,16 @@ function renderTempNode(section) {
             }
         }
     };
-    
+
     renderTempDescription();
-    
+
     // 双击编辑功能
     descriptionText.addEventListener('dblclick', (e) => {
         e.preventDefault();
         e.stopPropagation();
         editDescBtn.click();
     });
-    
+
     // 单击也可以编辑（当没有说明时）
     descriptionText.addEventListener('click', (e) => {
         if (!section.description) {
@@ -7186,58 +7283,58 @@ function renderTempNode(section) {
             editDescBtn.click();
         }
     });
-    
+
     descriptionContent.appendChild(descriptionText);
-    
+
     const descriptionEditor = document.createElement('textarea');
     descriptionEditor.className = 'temp-node-description-editor';
     descriptionEditor.placeholder = '';
     descriptionEditor.value = section.description || '';
     descriptionEditor.style.display = 'none';
     descriptionContent.appendChild(descriptionEditor);
-    
+
     descriptionContainer.appendChild(descriptionContent);
-    
+
     const descriptionControls = document.createElement('div');
     descriptionControls.className = 'temp-node-description-controls';
     descriptionControls.style.display = 'flex';
-    
+
     const editDescBtn = document.createElement('button');
     editDescBtn.type = 'button';
     editDescBtn.className = 'temp-node-desc-action-btn temp-node-desc-edit-btn';
     editDescBtn.title = '编辑说明';
     editDescBtn.innerHTML = '<i class="fas fa-edit"></i>';
     descriptionControls.appendChild(editDescBtn);
-    
+
     const delDescBtn = document.createElement('button');
     delDescBtn.type = 'button';
     delDescBtn.className = 'temp-node-desc-action-btn temp-node-desc-delete-btn';
     delDescBtn.title = '删除说明';
     delDescBtn.innerHTML = '<i class="fas fa-trash-alt"></i>';
     descriptionControls.appendChild(delDescBtn);
-    
+
     descriptionContainer.appendChild(descriptionControls);
-    
+
     // 编辑说明文字的事件处理
     const finishEditingDescription = () => {
         const newDesc = descriptionEditor.value.trim();
         section.description = newDesc;
-        
+
         descriptionText.style.fontStyle = newDesc ? 'normal' : 'italic';
         descriptionText.style.opacity = newDesc ? '1' : '0.5';
-        
+
         // 重新渲染 Markdown
         renderTempDescription();
-        
+
         // 结束编辑后交给CSS通过hover/状态控制按钮显隐
         descriptionContainer.classList.remove('editing');
-        
+
         descriptionEditor.style.display = 'none';
         descriptionText.style.display = 'block';
         saveTempNodes();
         console.log('[Canvas] 临时栏目说明已保存:', section.id);
     };
-    
+
     editDescBtn.addEventListener('click', (e) => {
         e.preventDefault();
         e.stopPropagation();
@@ -7254,14 +7351,14 @@ function renderTempNode(section) {
             descriptionEditor.select();
         }
     });
-    
+
     // 点击编辑框外部时自动保存
     descriptionEditor.addEventListener('blur', () => {
         if (descriptionEditor.style.display !== 'none') {
             finishEditingDescription();
         }
     });
-    
+
     delDescBtn.addEventListener('click', (e) => {
         e.preventDefault();
         e.stopPropagation();
@@ -7276,7 +7373,7 @@ function renderTempNode(section) {
         saveTempNodes();
         console.log('[Canvas] 临时栏目说明已删除:', section.id);
     });
-    
+
     descriptionEditor.addEventListener('keydown', (e) => {
         if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
             e.preventDefault();
@@ -7290,15 +7387,15 @@ function renderTempNode(section) {
             descriptionContainer.classList.remove('editing');
         }
     });
-    
+
     const body = document.createElement('div');
     body.className = 'temp-node-body';
-    
+
     const treeContainer = document.createElement('div');
     treeContainer.className = 'bookmark-tree temp-bookmark-tree';
     treeContainer.dataset.sectionId = section.id;
     treeContainer.dataset.treeType = 'temporary';
-    
+
     const treeFragment = document.createDocumentFragment();
     section.items.forEach(item => {
         const node = buildTempTreeNode(section, item, 0);
@@ -7306,7 +7403,7 @@ function renderTempNode(section) {
     });
     treeContainer.appendChild(treeFragment);
     body.appendChild(treeContainer);
-    
+
     nodeElement.appendChild(header);
     nodeElement.appendChild(descriptionContainer);
     nodeElement.appendChild(body);
@@ -7320,7 +7417,7 @@ function renderTempNode(section) {
             rafId = requestAnimationFrame(() => __writeJSON(key, { top: body.scrollTop || 0, left: body.scrollLeft || 0 }));
         }, { passive: true });
     }
-    
+
     applyTempSectionColor(section, nodeElement, header, colorBtn, colorInput);
     makeNodeDraggable(nodeElement, section);
     makeTempNodeResizable(nodeElement, section);
@@ -7339,7 +7436,7 @@ function renderTempNode(section) {
         attachPointerDragEvents(treeContainer);
         console.log('[Canvas] 临时栏目指针拖拽事件已绑定');
     }
-    
+
     // 恢复滚动位置（在所有事件绑定之后，使用多次尝试确保成功）
     // 即使滚动位置是0也需要恢复，因为可能从非0位置变为0
     // 注意：滚动容器是 body (temp-node-body)，而不是 treeContainer
@@ -7347,16 +7444,16 @@ function renderTempNode(section) {
         const restoreScroll = () => {
             body.scrollTop = savedScrollTop;
             body.scrollLeft = savedScrollLeft;
-            console.log('[Canvas] 恢复滚动位置:', { 
-                sectionId: section.id, 
+            console.log('[Canvas] 恢复滚动位置:', {
+                sectionId: section.id,
                 target: { top: savedScrollTop, left: savedScrollLeft },
                 actual: { top: body.scrollTop, left: body.scrollLeft }
             });
         };
-        
+
         // 立即尝试
         restoreScroll();
-        
+
         // 使用 requestAnimationFrame 延迟尝试
         requestAnimationFrame(() => {
             restoreScroll();
@@ -7366,22 +7463,22 @@ function renderTempNode(section) {
             setTimeout(restoreScroll, 100);
         });
     }
-    
+
     nodeElement.offsetHeight;
     nodeElement.style.transition = '';
-    
+
     if (!suppressScrollSync) {
         updateCanvasScrollBounds();
         updateScrollbarThumbs();
     }
-    
+
     if (isNew) {
         nodeElement.classList.add('temp-node-enter');
         requestAnimationFrame(() => {
             nodeElement.classList.remove('temp-node-enter');
         });
     }
-    
+
     addAnchorsToNode(nodeElement, section.id);
 }
 
@@ -7575,10 +7672,10 @@ function finishTempSectionTitleEdit(section, input, renameButton, commit) {
 
 function buildTempTreeNode(section, item, level) {
     if (!item) return null;
-    
+
     const wrapper = document.createElement('div');
     wrapper.className = 'tree-node';
-    
+
     const treeItem = document.createElement('div');
     treeItem.className = 'tree-item';
     treeItem.dataset.nodeId = item.id;
@@ -7590,7 +7687,7 @@ function buildTempTreeNode(section, item, level) {
     if (item.url) {
         treeItem.dataset.nodeUrl = item.url;
     }
-    
+
     const toggle = document.createElement('span');
     toggle.className = 'tree-toggle';
     if (item.type === 'folder' && item.children && item.children.length) {
@@ -7598,7 +7695,7 @@ function buildTempTreeNode(section, item, level) {
     } else {
         toggle.style.opacity = '0';
     }
-    
+
     let icon;
     if (item.type === 'folder') {
         icon = document.createElement('i');
@@ -7610,7 +7707,7 @@ function buildTempTreeNode(section, item, level) {
         icon.src = favicon || fallbackIcon;
         // 不再需要 onerror，全局事件处理器会处理
     }
-    
+
     let label;
     if (item.type === 'bookmark') {
         const link = document.createElement('a');
@@ -7629,7 +7726,7 @@ function buildTempTreeNode(section, item, level) {
 
     const badges = document.createElement('span');
     badges.className = 'change-badges';
-    
+
     treeItem.appendChild(toggle);
     treeItem.appendChild(icon);
     treeItem.appendChild(label);
@@ -7642,7 +7739,7 @@ function buildTempTreeNode(section, item, level) {
         const childrenContainer = document.createElement('div');
         childrenContainer.className = 'tree-children expanded';
         childrenContainer.dataset.sectionId = section.id;
-        
+
         if (item.children && item.children.length) {
             item.children.forEach(child => {
                 const childNode = buildTempTreeNode(section, child, level + 1);
@@ -7651,22 +7748,22 @@ function buildTempTreeNode(section, item, level) {
         } else {
             toggle.style.opacity = '0';
         }
-        
+
         wrapper.appendChild(childrenContainer);
     }
-    
+
     return wrapper;
 }
 
 function setupTempSectionTreeInteractions(treeContainer, section) {
     if (!treeContainer) return;
-    
+
     // 注意：空白区域右键菜单已移至 setupTempSectionBlankAreaMenu
 }
 
 function setupTempSectionBlankAreaMenu(sectionElement, section) {
     if (!sectionElement) return;
-    
+
     // 在整个栏目容器上监听右键菜单
     sectionElement.addEventListener('contextmenu', (e) => {
         // 检查是否点击在树节点上
@@ -7674,7 +7771,7 @@ function setupTempSectionBlankAreaMenu(sectionElement, section) {
         // 检查是否点击在操作按钮上
         const actionBtn = e.target.closest('.temp-node-action-btn');
         const headerArea = e.target.closest('.temp-node-header');
-        
+
         // 如果不是树节点、不是操作按钮，则显示空白区域菜单
         if (!treeItem && !actionBtn) {
             e.preventDefault();
@@ -7939,14 +8036,14 @@ function getSelectionMeta(nodeId) {
 function makeNodeDraggable(element, section) {
     const header = element.querySelector('.temp-node-header');
     if (!header) return;
-    
+
     let lastClientX = 0;
     let lastClientY = 0;
-    
+
     const onMouseDown = (e) => {
         const target = e.target;
         if (!target) return;
-        
+
         if (target.closest('.temp-node-action-btn') ||
             target.classList.contains('temp-node-color-input') ||
             (target.classList.contains('temp-node-title') && target.classList.contains('editing')) ||
@@ -7973,22 +8070,22 @@ function makeNodeDraggable(element, section) {
         CanvasState.dragState.nodeStartX = section.x;
         CanvasState.dragState.nodeStartY = section.y;
         CanvasState.dragState.dragSource = 'temp-node';
-        
+
         CanvasState.dragState.wheelScrollEnabled = true;
-        
+
         element.classList.add('dragging');
         element.style.transition = 'none';
-        
+
         e.preventDefault();
     };
-    
+
     header.addEventListener('mousedown', onMouseDown, true);
 }
 
 function updateSectionZIndex(sectionId, isPinned) {
     const element = document.getElementById(sectionId);
     if (!element) return;
-    
+
     // 置顶的栏目 z-index 更高
     if (isPinned) {
         element.style.zIndex = '200';
@@ -8013,15 +8110,15 @@ function cancelDormancyTimer(sectionId) {
 // 调度延迟休眠
 function scheduleDormancy(section, reason) {
     const sectionId = section.id;
-    
+
     // 取消之前的定时器
     cancelDormancyTimer(sectionId);
-    
+
     // 确定延迟时间
-    const delay = reason === 'viewport' 
-        ? CanvasState.dormancyDelays.viewport 
+    const delay = reason === 'viewport'
+        ? CanvasState.dormancyDelays.viewport
         : CanvasState.dormancyDelays.occlusion;
-    
+
     // 设置新的定时器
     const timer = setTimeout(() => {
         // 再次检查栏目是否仍然应该休眠
@@ -8032,7 +8129,7 @@ function scheduleDormancy(section, reason) {
         }
         CanvasState.dormancyTimers.delete(sectionId);
     }, delay);
-    
+
     CanvasState.dormancyTimers.set(sectionId, {
         type: reason,
         timer: timer,
@@ -8043,10 +8140,10 @@ function scheduleDormancy(section, reason) {
 // 立即唤醒栏目（取消定时器）
 function wakeSection(section) {
     const sectionId = section.id;
-    
+
     // 取消休眠定时器
     cancelDormancyTimer(sectionId);
-    
+
     // 如果已经休眠，立即唤醒
     if (section.dormant) {
         section.dormant = false;
@@ -8060,11 +8157,11 @@ function wakeSection(section) {
 function manageSectionDormancy() {
     const workspace = document.getElementById('canvasWorkspace');
     if (!workspace) return;
-    
+
     // 获取当前性能模式的缓冲区大小
     const currentSettings = CanvasState.performanceSettings[CanvasState.performanceMode];
     const margin = currentSettings ? currentSettings.margin : 50;
-    
+
     // 无限制模式：不执行休眠
     if (margin === Infinity) {
         CanvasState.tempSections.forEach(section => {
@@ -8079,9 +8176,9 @@ function manageSectionDormancy() {
         });
         return;
     }
-    
+
     const workspaceRect = workspace.getBoundingClientRect();
-    
+
     // 扩展的可见区域
     const visibleArea = {
         left: workspaceRect.left - margin,
@@ -8089,29 +8186,29 @@ function manageSectionDormancy() {
         top: workspaceRect.top - margin,
         bottom: workspaceRect.bottom + margin
     };
-    
+
     let dormantCount = 0;
     let activeCount = 0;
     let scheduledCount = 0;
-    
+
     CanvasState.tempSections.forEach(section => {
         const element = document.getElementById(section.id);
         if (!element) return;
-        
+
         // 置顶的栏目永远不休眠
         if (section.pinned) {
             wakeSection(section);
             activeCount++;
             return;
         }
-        
+
         // 计算栏目的位置（考虑缩放和平移）
         const scale = CanvasState.zoom || 1;
         const x = section.x * scale + CanvasState.panOffsetX + workspaceRect.left;
         const y = section.y * scale + CanvasState.panOffsetY + workspaceRect.top;
         const width = (section.width || 360) * scale;
         const height = (section.height || 280) * scale;
-        
+
         // 检查是否在可见区域内
         const isInViewport = !(
             x + width < visibleArea.left ||
@@ -8119,7 +8216,7 @@ function manageSectionDormancy() {
             y + height < visibleArea.top ||
             y > visibleArea.bottom
         );
-        
+
         if (isInViewport) {
             // 在视口内，立即唤醒（如果已休眠）或取消休眠定时器
             wakeSection(section);
@@ -8144,7 +8241,7 @@ function manageSectionDormancy() {
             }
         }
     });
-    
+
     // 性能统计（不输出日志）
     // 活跃: activeCount, 休眠: dormantCount, 已调度: scheduledCount
 }
@@ -8157,13 +8254,13 @@ function isSectionDormant(sectionId) {
 function wakeSectionById(sectionId) {
     const section = getTempSection(sectionId);
     if (!section || !section.dormant) return;
-    
+
     section.dormant = false;
     const element = document.getElementById(section.id);
     if (element) {
         element.style.display = '';
     }
-    
+
     saveTempNodes();
 }
 
@@ -8173,18 +8270,18 @@ function setPerformanceMode(mode) {
         console.warn(`[Canvas] 无效的性能模式: ${mode}`);
         return;
     }
-    
+
     CanvasState.performanceMode = mode;
     const settings = CanvasState.performanceSettings[mode];
     console.log(`[Canvas] 切换性能模式：${settings.name} - ${settings.description}`);
-    
+
     // 保存到 localStorage
     try {
         localStorage.setItem('canvas-performance-mode', mode);
     } catch (error) {
         console.error('[Canvas] 保存性能模式失败:', error);
     }
-    
+
     // 立即更新休眠状态
     manageSectionDormancy();
 }
@@ -8208,28 +8305,28 @@ function removeTempNode(sectionId) {
     if (element) {
         element.remove();
     }
-    
+
     CanvasState.tempSections = CanvasState.tempSections.filter(section => section.id !== sectionId);
     // Remove all edges connected to this section
     removeEdgesForNode(sectionId);
-    
+
     // 重新计算序号：让剩余栏目的序号连续
     reorderSectionSequenceNumbers();
-    
+
     saveTempNodes();
     scheduleBoundsUpdate();
     scheduleScrollbarUpdate();
-    
+
     // 删除后重新管理休眠状态（可能唤醒休眠的栏目）
     scheduleDormancyUpdate();
 }
 
 function clearAllTempNodes() {
     if (!confirm('确定要清空所有临时栏目吗？')) return;
-    
+
     const container = document.getElementById('canvasContent');
     if (!container) return;
-    
+
     container.querySelectorAll('.temp-canvas-node').forEach(node => node.remove());
     container.querySelectorAll('.md-canvas-node').forEach(node => node.remove());
     CanvasState.tempSections = [];
@@ -8240,11 +8337,11 @@ function clearAllTempNodes() {
         CanvasState.selectedEdgeId = null;
         renderEdges();
     }
-    
+
     // 重置序号计数器
     CanvasState.tempSectionSequenceNumber = 0;
     CanvasState.mdNodeCounter = 0;
-    
+
     saveTempNodes();
     // 清空画布内容后，同时清理缩略图（下次主UI会显示占位样式或新的截图）
     if (typeof window !== 'undefined' && window.browserAPI && window.browserAPI.storage && window.browserAPI.storage.local) {
@@ -8271,7 +8368,7 @@ function reorderSectionSequenceNumbers() {
     const sortedSections = CanvasState.tempSections
         .filter(s => s.sequenceNumber) // 只处理有序号的
         .sort((a, b) => a.sequenceNumber - b.sequenceNumber);
-    
+
     // 重新分配序号 1, 2, 3, ...（显示为 A, B, C, ...）
     const toAlphaLabel = (n) => {
         let num = parseInt(n, 10);
@@ -8289,7 +8386,7 @@ function reorderSectionSequenceNumbers() {
         if (section.sequenceNumber !== newSequenceNumber) {
             section.sequenceNumber = newSequenceNumber;
             console.log(`[Canvas] 重新编号：${section.id} -> 序号 ${newSequenceNumber}`);
-            
+
             // 更新DOM中的序号显示
             const element = document.getElementById(section.id);
             if (element) {
@@ -8300,7 +8397,7 @@ function reorderSectionSequenceNumbers() {
             }
         }
     });
-    
+
     // 更新全局序号计数器为最大序号
     CanvasState.tempSectionSequenceNumber = sortedSections.length;
 }
@@ -8322,12 +8419,12 @@ function setupPermanentSectionTipClose() {
     const tipText = document.getElementById('permanentSectionTip');
     const tipEditor = document.getElementById('permanentSectionTipEditor');
     const tipContainer = document.getElementById('permanentSectionTipContainer');
-    
+
     if (!closeBtn || !tipContainer || !tipText || !tipEditor) {
         console.warn('[Canvas] 找不到提示相关元素');
         return;
     }
-    
+
     // 折叠栏（像临时栏说明的占位小栏）
     let collapsedBar = tipContainer.querySelector('.permanent-section-tip-collapsed');
     if (!collapsedBar) {
@@ -8338,7 +8435,7 @@ function setupPermanentSectionTipClose() {
         collapsedBar.innerHTML = `<i class="fas fa-info-circle" style="font-size:12px;"></i><span>${text}</span>`;
         tipContainer.appendChild(collapsedBar);
     }
-    
+
     // 检查是否已经关闭过
     const isTipClosed = localStorage.getItem('canvas-permanent-tip-closed') === 'true';
     if (isTipClosed) {
@@ -8346,7 +8443,7 @@ function setupPermanentSectionTipClose() {
     } else {
         tipContainer.classList.remove('collapsed');
     }
-    
+
     // 多语言占位文本
     const getPlaceholderText = () => {
         const lang = typeof currentLang !== 'undefined' ? currentLang : 'zh';
@@ -8377,7 +8474,7 @@ function setupPermanentSectionTipClose() {
     };
 
     renderTipContent(savedTip || '');
-    
+
     // 为说明文字添加双击编辑功能
     tipText.style.cursor = 'pointer';
     tipText.title = '双击编辑说明';
@@ -8388,7 +8485,7 @@ function setupPermanentSectionTipClose() {
             editBtn.click();
         }
     });
-    
+
     // 点击关闭按钮 -> 折叠而不是隐藏容器
     closeBtn.addEventListener('click', (e) => {
         e.stopPropagation();
@@ -8399,7 +8496,7 @@ function setupPermanentSectionTipClose() {
             if (newText) {
                 localStorage.setItem('canvas-permanent-tip-text', newText);
             } else {
-                try { localStorage.removeItem('canvas-permanent-tip-text'); } catch {}
+                try { localStorage.removeItem('canvas-permanent-tip-text'); } catch { }
             }
             renderTipContent(newText);
             isEditingTip = false;
@@ -8422,7 +8519,7 @@ function setupPermanentSectionTipClose() {
         e.preventDefault();
         e.stopPropagation();
         tipContainer.classList.remove('collapsed');
-        try { localStorage.setItem('canvas-permanent-tip-closed', 'false'); } catch {}
+        try { localStorage.setItem('canvas-permanent-tip-closed', 'false'); } catch { }
         // 进入编辑模式
         const tipContent = tipContainer.querySelector('.permanent-section-tip-content');
         if (tipContent) tipContent.style.display = 'none';
@@ -8438,7 +8535,7 @@ function setupPermanentSectionTipClose() {
             editBtn.title = '保存说明（Ctrl/Cmd+Enter）';
         }
     });
-    
+
     // 编辑功能
     let isEditingTip = false;
     let outsideHandlers = [];
@@ -8450,7 +8547,7 @@ function setupPermanentSectionTipClose() {
         if (newText) {
             localStorage.setItem('canvas-permanent-tip-text', newText);
         } else {
-            try { localStorage.removeItem('canvas-permanent-tip-text'); } catch {}
+            try { localStorage.removeItem('canvas-permanent-tip-text'); } catch { }
         }
         renderTipContent(newText);
         isEditingTip = false;
@@ -8506,10 +8603,10 @@ function setupPermanentSectionTipClose() {
     const detachOutsideListener = () => {
         while (outsideHandlers.length) {
             const off = outsideHandlers.pop();
-            try { off(); } catch {}
+            try { off(); } catch { }
         }
         if (clickAwayOverlay && clickAwayOverlay.parentNode) {
-            try { clickAwayOverlay.parentNode.removeChild(clickAwayOverlay); } catch {}
+            try { clickAwayOverlay.parentNode.removeChild(clickAwayOverlay); } catch { }
         }
         clickAwayOverlay = null;
         if (tipContainer) {
@@ -8519,14 +8616,14 @@ function setupPermanentSectionTipClose() {
             }
         }
     };
-    
+
     if (editBtn) {
         editBtn.addEventListener('click', (e) => {
             e.stopPropagation();
             e.preventDefault();
-            
+
             const tipContent = tipContainer.querySelector('.permanent-section-tip-content');
-            
+
             if (isEditingTip) {
                 // 保存编辑（点击按钮明确保存）
                 commitAndExit();
@@ -8546,7 +8643,7 @@ function setupPermanentSectionTipClose() {
                 attachOutsideListener();
             }
         });
-        
+
         // 编辑框快捷键处理
         tipEditor.addEventListener('keydown', (e) => {
             if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
@@ -8569,7 +8666,7 @@ function setupPermanentSectionTipClose() {
                 }
             }
         });
-        
+
         // 点击外部时自动保存并退出（空内容显示占位提示）
         tipEditor.addEventListener('blur', () => {
             if (isEditingTip) {
@@ -8585,7 +8682,7 @@ function setupPermanentSectionTipClose() {
                 if (newText) {
                     localStorage.setItem('canvas-permanent-tip-text', newText);
                 } else {
-                    try { localStorage.removeItem('canvas-permanent-tip-text'); } catch {}
+                    try { localStorage.removeItem('canvas-permanent-tip-text'); } catch { }
                 }
                 renderTipContent(newText);
                 detachOutsideListener();
@@ -8606,12 +8703,12 @@ function setupPermanentSectionTipClose() {
 function setupPermanentSectionPinButton() {
     const pinBtn = document.getElementById('permanentSectionPinBtn');
     const permanentSection = document.getElementById('permanentSection');
-    
+
     if (!pinBtn || !permanentSection) {
         console.warn('[Canvas] 找不到永久栏目置顶按钮或栏目元素');
         return;
     }
-    
+
     // 加载置顶状态（默认为true）
     let isPinned = true;
     try {
@@ -8622,16 +8719,16 @@ function setupPermanentSectionPinButton() {
     } catch (error) {
         console.error('[Canvas] 加载永久栏目置顶状态失败:', error);
     }
-    
+
     // 应用初始状态
     updatePermanentSectionPinState(isPinned, pinBtn, permanentSection);
-    
+
     // 添加点击事件
     pinBtn.addEventListener('click', (e) => {
         e.stopPropagation();
         isPinned = !isPinned;
         updatePermanentSectionPinState(isPinned, pinBtn, permanentSection);
-        
+
         // 保存状态
         try {
             localStorage.setItem('permanent-section-pinned', isPinned.toString());
@@ -8644,7 +8741,7 @@ function setupPermanentSectionPinButton() {
 function updatePermanentSectionPinState(isPinned, pinBtn, permanentSection) {
     const pinLabel = (typeof currentLang !== 'undefined' && currentLang === 'en') ? 'Pin section' : '置顶栏目';
     const unpinLabel = (typeof currentLang !== 'undefined' && currentLang === 'en') ? 'Unpin section' : '取消置顶';
-    
+
     if (isPinned) {
         pinBtn.classList.add('pinned');
         pinBtn.title = unpinLabel;
@@ -8665,22 +8762,22 @@ function updatePermanentSectionPinState(isPinned, pinBtn, permanentSection) {
 function setupPermanentDropTarget() {
     const permanentSection = document.getElementById('permanentSection');
     if (!permanentSection) return;
-    
+
     const allowDrop = () => getCurrentDragSourceType() === 'temporary';
     const clearHighlight = () => permanentSection.classList.remove('drop-target-highlight');
-    
+
     permanentSection.addEventListener('dragover', (e) => {
         if (!allowDrop()) return;
         e.preventDefault();
         e.dataTransfer.dropEffect = 'move';
     });
-    
+
     permanentSection.addEventListener('dragleave', (e) => {
         if (!permanentSection.contains(e.relatedTarget)) {
             clearHighlight();
         }
     });
-    
+
     permanentSection.addEventListener('drop', async (e) => {
         if (!allowDrop()) return;
         e.preventDefault();
@@ -8723,7 +8820,7 @@ function setupPermanentDropTarget() {
             alert('添加到书签失败: ' + (error && error.message ? error.message : error));
         }
     });
-    
+
     document.addEventListener('dragend', clearHighlight, true);
 }
 
@@ -8783,21 +8880,21 @@ function setupCanvasEventListeners() {
         if (CanvasState.dragState.dragSource !== 'temp-node' && CanvasState.dragState.dragSource !== 'permanent-section') {
             return;
         }
-        
+
         // 标记正在拖动/滚动
         markScrolling();
-        
+
         const handled = updateActiveDragPosition(e.clientX, e.clientY);
         if (handled) {
             e.preventDefault();
             // Update connected edges in real-time during drag
             renderEdges();
         }
-        
+
         // 检查是否接近边缘，启动自动滚动
         checkEdgeAutoScroll(e.clientX, e.clientY);
     }, false);
-    
+
     // 鼠标释放
     document.addEventListener('mouseup', (e) => {
         // Ctrl 缩放使用“第二次右键结束”，因此 mouseup 不结束，防止首右键立即结束
@@ -8821,23 +8918,23 @@ function setupCanvasEventListeners() {
         CanvasState.dragState.draggedElement = null;
         CanvasState.dragState.dragSource = null;
         CanvasState.dragState.wheelScrollEnabled = false;
-        
+
         // 停止自动滚动
         stopEdgeAutoScroll();
-        
+
         // 拖动停止后，触发完整更新
         onScrollStop();
     }, false);
-    
+
     // 工具栏按钮
     const importBtn = document.getElementById('importCanvasBtn');
     const exportBtn = document.getElementById('exportCanvasBtn');
     const clearBtn = document.getElementById('clearTempNodesBtn');
-    
+
     if (importBtn) importBtn.addEventListener('click', showImportDialog);
     if (exportBtn) exportBtn.addEventListener('click', exportCanvas);
     if (clearBtn) clearBtn.addEventListener('click', clearAllTempNodes);
-    
+
     // 设置永久栏目拖放目标
     setupPermanentDropTarget();
 
@@ -8898,7 +8995,7 @@ function showImportDialog() {
     const dialog = document.createElement('div');
     dialog.className = 'import-dialog';
     dialog.id = 'canvasImportDialog';
-    
+
     dialog.innerHTML = `
         <div class="import-dialog-content">
             <div class="import-dialog-header">
@@ -8920,57 +9017,57 @@ function showImportDialog() {
             </div>
         </div>
     `;
-    
+
     document.body.appendChild(dialog);
-    
+
     // 事件监听
     document.getElementById('closeImportDialog').addEventListener('click', () => {
         dialog.remove();
     });
-    
+
     dialog.addEventListener('click', (e) => {
         if (e.target === dialog) dialog.remove();
     });
-    
+
     document.getElementById('importHtmlBtn').addEventListener('click', () => {
         const input = document.getElementById('canvasFileInput');
         input.accept = '.html';
         input.dataset.type = 'html';
         input.click();
     });
-    
+
     document.getElementById('importJsonBtn').addEventListener('click', () => {
         const input = document.getElementById('canvasFileInput');
         input.accept = '.json';
         input.dataset.type = 'json';
         input.click();
     });
-    
+
     document.getElementById('canvasFileInput').addEventListener('change', handleFileImport);
 }
 
 async function handleFileImport(e) {
     const file = e.target.files[0];
     if (!file) return;
-    
+
     const type = e.target.dataset.type;
-    
+
     try {
         const text = await file.text();
-        
+
         if (type === 'html') {
             await importHtmlBookmarks(text);
         } else {
             await importJsonBookmarks(text);
         }
-        
+
         document.getElementById('canvasImportDialog').remove();
         alert('导入成功！');
     } catch (error) {
         console.error('[Canvas] 导入失败:', error);
         alert('导入失败: ' + error.message);
     }
-    
+
     e.target.value = '';
 }
 
@@ -8978,10 +9075,10 @@ async function importHtmlBookmarks(html) {
     const parser = new DOMParser();
     const doc = parser.parseFromString(html, 'text/html');
     const links = doc.querySelectorAll('a[href]');
-    
+
     let x = 100;
     let y = 100;
-    
+
     for (const [index, link] of Array.from(links).entries()) {
         const bookmark = {
             id: 'imported-' + Date.now() + '-' + index,
@@ -8989,7 +9086,7 @@ async function importHtmlBookmarks(html) {
             url: link.href,
             type: 'bookmark'
         };
-        
+
         await createTempNode(bookmark, x, y);
         x += 30;
         y += 30;
@@ -8998,10 +9095,10 @@ async function importHtmlBookmarks(html) {
 
 async function importJsonBookmarks(json) {
     const data = JSON.parse(json);
-    
+
     let x = 100;
     let y = 100;
-    
+
     const processNode = async (node) => {
         if (node.url) {
             const bookmark = {
@@ -9014,14 +9111,14 @@ async function importJsonBookmarks(json) {
             x += 30;
             y += 30;
         }
-        
+
         if (node.children) {
             for (const child of node.children) {
                 await processNode(child);
             }
         }
     };
-    
+
     if (data.roots) {
         for (const root of Object.values(data.roots)) {
             if (root.children) {
@@ -9040,7 +9137,7 @@ function exportCanvas() {
         nodes: [],
         edges: []
     };
-    
+
     // 添加永久栏目节点
     canvasData.nodes.push({
         id: 'permanent-section',
@@ -9052,7 +9149,7 @@ function exportCanvas() {
         label: 'Bookmark Tree (永久栏目)',
         color: '4'
     });
-    
+
     // 添加临时节点（书签栏目 -> 导出为文本）
     CanvasState.tempSections.forEach(section => {
         const hasDesc = section.description && typeof section.description === 'string' && section.description.trim().length > 0;
@@ -9113,7 +9210,7 @@ function exportCanvas() {
         };
         canvasData.nodes.push(textNode);
     });
-    
+
     // 添加 Markdown 文本卡片（与 Obsidian Canvas 文本节点一致）
     if (Array.isArray(CanvasState.mdNodes)) {
         CanvasState.mdNodes.forEach(node => {
@@ -9130,7 +9227,7 @@ function exportCanvas() {
             });
         });
     }
-    
+
     // 添加连接线
     if (Array.isArray(CanvasState.edges)) {
         canvasData.edges = CanvasState.edges.map(edge => {
@@ -9152,10 +9249,10 @@ function exportCanvas() {
             return base;
         });
     }
-    
+
     // 生成并下载文件
-    const blob = new Blob([JSON.stringify(canvasData, null, 2)], { 
-        type: 'application/json' 
+    const blob = new Blob([JSON.stringify(canvasData, null, 2)], {
+        type: 'application/json'
     });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
@@ -9163,13 +9260,13 @@ function exportCanvas() {
     a.download = `bookmark-canvas-${Date.now()}.canvas`;
     a.click();
     URL.revokeObjectURL(url);
-    
+
     alert('Canvas已导出为 .canvas 文件！');
 }
 
 function formatSectionText(section) {
     const lines = [`# ${section.title || '临时栏目'}`, ''];
-    
+
     const appendItem = (item, depth = 0) => {
         const indent = '  '.repeat(depth);
         if (item.type === 'bookmark') {
@@ -9183,9 +9280,9 @@ function formatSectionText(section) {
             }
         }
     };
-    
+
     section.items.forEach(item => appendItem(item, 0));
-    
+
     return lines.join('\n');
 }
 
@@ -9233,7 +9330,7 @@ function loadTempNodes() {
         CanvasState.mdNodeCounter = 0;
         CanvasState.edges = [];
         CanvasState.edgeCounter = 0;
-        
+
         let loaded = false;
         const saved = localStorage.getItem(TEMP_SECTION_STORAGE_KEY);
         if (saved) {
@@ -9264,14 +9361,14 @@ function loadTempNodes() {
                 }
             }
         }
-        
+
         if (!loaded) {
             CanvasState.tempSections = [];
         }
-        
+
         // 根据已有ID刷新计数
         refreshTempSectionCounters();
-        
+
         // 恢复序号计数器（找到最大的序号）
         let maxSequenceNumber = 0;
         CanvasState.tempSections.forEach(section => {
@@ -9280,7 +9377,7 @@ function loadTempNodes() {
             }
         });
         CanvasState.tempSectionSequenceNumber = maxSequenceNumber;
-        
+
         suppressScrollSync = true;
         try {
             CanvasState.tempSections.forEach(section => {
@@ -9297,16 +9394,16 @@ function loadTempNodes() {
         } finally {
             suppressScrollSync = false;
         }
-        
+
         console.log(`[Canvas] 加载了 ${CanvasState.tempSections.length} 个临时栏目`);
-        
+
         loadPermanentSectionPosition();
         updateCanvasScrollBounds();
         updateScrollbarThumbs();
-        
+
         // 初始化休眠状态
         scheduleDormancyUpdate();
-        
+
         // 渲染连接线
         renderEdges();
     } catch (error) {
@@ -9322,7 +9419,7 @@ function setupCanvasEdgesLayer() {
     const content = document.getElementById('canvasContent');
     if (!content) return;
     if (content.querySelector('.canvas-edges')) return;
-    
+
     const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
     svg.setAttribute('class', 'canvas-edges');
     // Insert as first child so it's behind everything
@@ -9349,14 +9446,14 @@ function setupCanvasEdgesLayer() {
             defs.appendChild(marker);
             svg.appendChild(defs);
         }
-    } catch (_) {}
+    } catch (_) { }
 }
 
 function addAnchorsToNode(nodeElement, nodeId) {
     if (!nodeElement) return;
     // Remove existing anchors and zones if any to avoid duplicates
     nodeElement.querySelectorAll('.canvas-node-anchor, .canvas-anchor-zone').forEach(el => el.remove());
-    
+
     ['top', 'right', 'bottom', 'left'].forEach(side => {
         // Create hover zone first (so it can affect anchor via sibling selector if needed, 
         // though we might use JS for more reliable hover handling if CSS is tricky)
@@ -9364,13 +9461,13 @@ function addAnchorsToNode(nodeElement, nodeId) {
         zone.className = `canvas-anchor-zone zone-${side}`;
         zone.dataset.side = side;
         nodeElement.appendChild(zone);
-        
+
         const anchor = document.createElement('div');
         anchor.className = 'canvas-node-anchor';
         anchor.dataset.nodeId = nodeId;
         anchor.dataset.side = side;
         nodeElement.appendChild(anchor);
-        
+
         anchor.addEventListener('mousedown', (e) => {
             startConnection(e, nodeId, side);
         }, true);
@@ -9398,7 +9495,7 @@ function addAnchorsToNode(nodeElement, nodeId) {
             if (window.defaultOpenMode === undefined && typeof window.getDefaultOpenMode === 'function') {
                 window.defaultOpenMode = window.getDefaultOpenMode();
             }
-        } catch(_) {}
+        } catch (_) { }
         const mode = (typeof window !== 'undefined' && window.defaultOpenMode) || 'new-tab';
         if (mode === 'new-window') {
             if (typeof window.openBookmarkNewWindow === 'function') window.openBookmarkNewWindow(url, false); else window.open(url, '_blank');
@@ -9428,10 +9525,10 @@ function startConnection(e, nodeId, side) {
     CanvasState.connectionStart = { nodeId, side, x: e.clientX, y: e.clientY };
     const workspace = document.getElementById('canvasWorkspace');
     if (workspace) workspace.classList.add('connecting');
-    
+
     // 隐藏连接线工具栏
     hideEdgeToolbar();
-    
+
     // Create temporary path for dragging
     const svg = document.querySelector('.canvas-edges');
     if (svg) {
@@ -9449,20 +9546,20 @@ function startConnection(e, nodeId, side) {
 function updateConnection(e) {
     if (!CanvasState.isConnecting || !CanvasState.connectionStart) return;
     e.preventDefault();
-    
+
     const svg = document.querySelector('.canvas-edges');
     const tempPath = document.getElementById('temp-connection-path');
     if (!svg || !tempPath) return;
-    
+
     const startPos = getAnchorPosition(CanvasState.connectionStart.nodeId, CanvasState.connectionStart.side);
     if (!startPos) return;
-    
+
     // Calculate end position in canvas coordinates
     const rect = svg.getBoundingClientRect();
     const zoom = CanvasState.zoom || 1;
     const endX = (e.clientX - rect.left) / zoom;
     const endY = (e.clientY - rect.top) / zoom;
-    
+
     const d = getEdgePathD(startPos.x, startPos.y, endX, endY, CanvasState.connectionStart.side, null);
     tempPath.setAttribute('d', d);
 }
@@ -9472,17 +9569,17 @@ function endConnection(e) {
     CanvasState.isConnecting = false;
     const workspace = document.getElementById('canvasWorkspace');
     if (workspace) workspace.classList.remove('connecting');
-    
+
     const tempPath = document.getElementById('temp-connection-path');
     if (tempPath) tempPath.remove();
-    
+
     // Use composedPath if available to get all elements under cursor, 
     // or just elementFromPoint. elementFromPoint might hit the dragging line if not careful,
     // but we removed it just above.
     const target = document.elementFromPoint(e.clientX, e.clientY);
     const anchor = target ? target.closest('.canvas-node-anchor') : null;
     const nodeEl = target ? target.closest('.temp-canvas-node, .md-canvas-node, #permanentSection') : null;
-    
+
     if (CanvasState.connectionStart) {
         let toNodeId = null;
         let toSide = null;
@@ -9495,7 +9592,7 @@ function endConnection(e) {
             toNodeId = nodeEl.id;
             // Special case for permanent section ID normalization
             if (toNodeId === 'permanentSection') toNodeId = 'permanent-section';
-            
+
             const rect = nodeEl.getBoundingClientRect();
             toSide = getNearestSide(rect, e.clientX, e.clientY);
         }
@@ -9508,7 +9605,7 @@ function endConnection(e) {
                 console.log('[Canvas] 忽略同栏目的锚点连接');
             } else if (toNodeId !== fromNodeId || toSide !== fromSide) {
                 addEdge(fromNodeId, fromSide, toNodeId, toSide);
-                
+
                 // Delay toolbar appearance for md-canvas-node after connection
                 if (nodeEl && nodeEl.classList.contains('md-canvas-node')) {
                     nodeEl.classList.add('connection-just-finished');
@@ -9536,7 +9633,7 @@ function getNearestSide(rect, x, y) {
 
 function addEdge(fromNode, fromSide, toNode, toSide) {
     // Check for existing identical edge
-    const exists = CanvasState.edges.some(e => 
+    const exists = CanvasState.edges.some(e =>
         e.fromNode === fromNode && e.fromSide === fromSide &&
         e.toNode === toNode && e.toSide === toSide
     );
@@ -9546,13 +9643,13 @@ function addEdge(fromNode, fromSide, toNode, toSide) {
         console.log('[Canvas] 忽略同栏目的锚点连接');
         return;
     }
-    
+
     const id = `edge-${++CanvasState.edgeCounter}-${Date.now()}`;
-    CanvasState.edges.push({ 
-        id, 
-        fromNode, 
-        fromSide, 
-        toNode, 
+    CanvasState.edges.push({
+        id,
+        fromNode,
+        fromSide,
+        toNode,
         toSide,
         direction: 'none', // 'none' | 'forward' | 'both'
         color: null, // 预设颜色编号 (1-6) 或 null
@@ -9595,18 +9692,18 @@ function removeEdge(edgeId) {
 function renderEdges() {
     const svg = document.querySelector('.canvas-edges');
     if (!svg) return;
-    
+
     // Clear existing edges (except temp path if any)
     Array.from(svg.querySelectorAll('.canvas-edge, .canvas-edge-label, .canvas-edge-label-bg, .canvas-edge-hit-area, foreignObject.edge-label-fo')).forEach(el => {
         if (el.id !== 'temp-connection-path') el.remove();
     });
-    
+
     // Stable z-order: render selected edge last to keep it on top
     const selectedId = CanvasState.selectedEdgeId || null;
     const edgesToRender = selectedId
         ? CanvasState.edges.filter(e => e.id !== selectedId).concat(CanvasState.edges.filter(e => e.id === selectedId))
         : CanvasState.edges.slice();
-    
+
     edgesToRender.forEach(edge => {
         // 创建不可见的宽点击区域（用于扩大点击识别范围）
         const hitArea = document.createElementNS('http://www.w3.org/2000/svg', 'path');
@@ -9617,10 +9714,10 @@ function renderEdges() {
         hitArea.setAttribute('fill', 'none');
         hitArea.style.cursor = 'pointer';
         hitArea.style.pointerEvents = 'stroke';
-        
+
         updateEdgePath(edge, hitArea);
         svg.appendChild(hitArea);
-        
+
         // 创建可见的连接线路径
         const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
         path.setAttribute('class', 'canvas-edge');
@@ -9629,7 +9726,7 @@ function renderEdges() {
         if (edge.id === CanvasState.selectedEdgeId) {
             path.classList.add('selected');
         }
-        
+
         // 应用颜色（使用 inline style 优先级高于样式表）
         const edgeColor = edge.colorHex || presetToHex(edge.color) || null;
         if (edgeColor) {
@@ -9656,17 +9753,17 @@ function renderEdges() {
         } else {
             path.style.filter = '';
         }
-        
+
         updateEdgePath(edge, path);
         svg.appendChild(path);
-        
+
         // 点击事件绑定到不可见的宽区域
         hitArea.addEventListener('click', (e) => {
             console.log('[Edge] Edge clicked:', edge.id);
             e.stopPropagation();
             selectEdge(edge.id, e.clientX, e.clientY);
         });
-        
+
         // 双击连接线直接进入编辑标签
         hitArea.addEventListener('dblclick', (e) => {
             console.log('[Edge] Edge double-clicked:', edge.id);
@@ -9674,7 +9771,7 @@ function renderEdges() {
             e.preventDefault();
             editEdgeLabel(edge.id);
         });
-        
+
         // 悬停效果也应用到 hitArea
         hitArea.addEventListener('mouseenter', () => {
             path.classList.add('hover');
@@ -9682,13 +9779,13 @@ function renderEdges() {
         hitArea.addEventListener('mouseleave', () => {
             path.classList.remove('hover');
         });
-        
+
         // 渲染标签（如果有）
         if (edge.label && edge.label.trim()) {
             renderEdgeLabel(svg, edge);
         }
     });
-    
+
     // 更新工具栏位置（如果工具栏正在显示）
     updateEdgeToolbarPosition();
 }
@@ -9697,12 +9794,12 @@ function renderEdgeLabel(svg, edge) {
     const start = getAnchorPosition(edge.fromNode, edge.fromSide);
     const end = getAnchorPosition(edge.toNode, edge.toSide);
     if (!start || !end) return;
-    
+
     // 使用贝塞尔曲线中点放置标签，和曲线保持一致
     const curveMid = getEdgeCurveMidpoint(edge);
     const midX = curveMid ? curveMid.x : (start.x + end.x) / 2;
     const midY = curveMid ? curveMid.y : (start.y + end.y) / 2;
-    
+
     // 先创建背景挖空矩形（让连线在文字区域下方留出空白）
     const textProbe = document.createElementNS('http://www.w3.org/2000/svg', 'text');
     textProbe.setAttribute('class', 'canvas-edge-label');
@@ -9715,13 +9812,13 @@ function renderEdgeLabel(svg, edge) {
 
     // 计算文字尺寸
     let textWidth = 0;
-    try { textWidth = textProbe.getComputedTextLength ? textProbe.getComputedTextLength() : 0; } catch(_) {}
+    try { textWidth = textProbe.getComputedTextLength ? textProbe.getComputedTextLength() : 0; } catch (_) { }
     // 优先用BBox高度，回退到估算
     let textHeight = 16;
     try {
         const bb = textProbe.getBBox ? textProbe.getBBox() : null;
         if (bb && bb.height) textHeight = Math.ceil(bb.height);
-    } catch(_) {}
+    } catch (_) { }
     const padX = 6;
     const padY = 2;
 
@@ -9740,7 +9837,7 @@ function renderEdgeLabel(svg, edge) {
                 const bg = cs && cs.backgroundColor ? cs.backgroundColor : null;
                 if (bg && bg !== 'rgba(0, 0, 0, 0)' && bg !== 'transparent') return bg;
             }
-        } catch(_) {}
+        } catch (_) { }
         return '#ffffff';
     };
     const bgColor = getCanvasBg();
@@ -9758,7 +9855,7 @@ function renderEdgeLabel(svg, edge) {
     rect.style.pointerEvents = 'none';
 
     // 计算完成后移除探针文本
-    try { textProbe.remove(); } catch(_) {}
+    try { textProbe.remove(); } catch (_) { }
     // 将背景矩形插入到真实文本之前（盖住连线）
     svg.appendChild(rect);
 
@@ -9771,7 +9868,7 @@ function renderEdgeLabel(svg, edge) {
     text.setAttribute('text-anchor', 'middle');
     text.setAttribute('dominant-baseline', 'middle');
     text.textContent = edge.label;
-    
+
     // 应用颜色（inline style 覆盖样式表）
     const edgeColor = edge.colorHex || presetToHex(edge.color) || null;
     if (edgeColor) {
@@ -9779,13 +9876,13 @@ function renderEdgeLabel(svg, edge) {
     } else {
         text.style.fill = '';
     }
-    
+
     svg.appendChild(text);
 
     // 标签点击事件：直接进入就地编辑
     text.addEventListener('click', (e) => {
         e.stopPropagation();
-        try { selectEdge(edge.id, e.clientX, e.clientY); } catch(_) {}
+        try { selectEdge(edge.id, e.clientX, e.clientY); } catch (_) { }
         startEdgeLabelInlineEdit(edge.id);
     });
 }
@@ -9793,7 +9890,7 @@ function renderEdgeLabel(svg, edge) {
 function updateEdgePath(edge, pathElement) {
     const start = getAnchorPosition(edge.fromNode, edge.fromSide);
     const end = getAnchorPosition(edge.toNode, edge.toSide);
-    
+
     if (start && end) {
         const d = getEdgePathD(start.x, start.y, end.x, end.y, edge.fromSide, edge.toSide);
         pathElement.setAttribute('d', d);
@@ -9806,13 +9903,13 @@ function getAnchorPosition(nodeId, side) {
     let el = document.getElementById(nodeId);
     // Special case mapping for permanent section
     if (nodeId === 'permanent-section') el = document.getElementById('permanentSection');
-    
+
     if (!el) return null;
-    
+
     // Must use style.left/top because they are in canvas-content coordinates
     let left = parseFloat(el.style.left) || 0;
     let top = parseFloat(el.style.top) || 0;
-    
+
     // 检查是否有 transform: translate() 应用（拖动过程中）
     const transform = el.style.transform;
     if (transform && transform.includes('translate')) {
@@ -9824,10 +9921,10 @@ function getAnchorPosition(nodeId, side) {
             top += translateY;
         }
     }
-    
+
     const width = el.offsetWidth;
     const height = el.offsetHeight;
-    
+
     switch (side) {
         case 'top': return { x: left + width / 2, y: top };
         case 'bottom': return { x: left + width / 2, y: top + height };
@@ -9847,14 +9944,14 @@ function computeEdgeControlPoints(x1, y1, x2, y2, side1, side2) {
     const z = (CanvasState && CanvasState.zoom) ? CanvasState.zoom : 1;
 
     const isHoriz = s => (s === 'left' || s === 'right');
-    const isVert  = s => (s === 'top'  || s === 'bottom');
+    const isVert = s => (s === 'top' || s === 'bottom');
     const offsetAlongSide = (side, x, y, amt) => {
         switch (side) {
-            case 'top':    return { x, y: y - amt };
+            case 'top': return { x, y: y - amt };
             case 'bottom': return { x, y: y + amt };
-            case 'left':   return { x: x - amt, y };
-            case 'right':  return { x: x + amt, y };
-            default:       return { x, y };
+            case 'left': return { x: x - amt, y };
+            case 'right': return { x: x + amt, y };
+            default: return { x, y };
         }
     };
 
@@ -9883,9 +9980,9 @@ function computeEdgeControlPoints(x1, y1, x2, y2, side1, side2) {
         // Very subtle perpendicular bend to avoid perfectly flat arcs and reduce crossings
         const bend = Math.min(12 / z, alongAmt * 0.15);
         if (isHoriz(side1)) { cp1y += (ddy === 0 ? 1 : Math.sign(ddy)) * bend; }
-        else {                cp1x += (ddx === 0 ? 1 : Math.sign(ddx)) * bend; }
+        else { cp1x += (ddx === 0 ? 1 : Math.sign(ddx)) * bend; }
         if (isHoriz(side2)) { cp2y -= (ddy === 0 ? 1 : Math.sign(ddy)) * bend; }
-        else {                cp2x -= (ddx === 0 ? 1 : Math.sign(ddx)) * bend; }
+        else { cp2x -= (ddx === 0 ? 1 : Math.sign(ddx)) * bend; }
     }
 
     // Stable jitter to avoid perfect overlap; skip for temp preview (side2 may be null)
@@ -9925,7 +10022,7 @@ function getEdgeCurveMidpoint(edge) {
 function setupCanvasConnectionInteractions() {
     document.addEventListener('mousemove', updateConnection);
     document.addEventListener('mouseup', endConnection);
-    
+
     // Clear edge selection on canvas click
     const workspace = document.getElementById('canvasWorkspace');
     if (workspace) {
@@ -9942,7 +10039,7 @@ function setupCanvasConnectionInteractions() {
 function selectEdge(edgeId, clientX, clientY) {
     // 清除空白栏目的选择
     clearMdSelection();
-    
+
     CanvasState.selectedEdgeId = edgeId;
     renderEdges(); // Re-render to show selection state
     showEdgeToolbar(edgeId, clientX, clientY);
@@ -9963,13 +10060,13 @@ function showEdgeToolbar(edgeId, x, y) {
         console.warn('[Edge Toolbar] Edge not found:', edgeId);
         return;
     }
-    
+
     const canvasContent = document.getElementById('canvasContent');
     if (!canvasContent) {
         console.warn('[Edge Toolbar] canvasContent not found');
         return;
     }
-    
+
     let toolbar = document.getElementById('edge-toolbar');
     if (!toolbar) {
         console.log('[Edge Toolbar] Creating new toolbar');
@@ -9989,10 +10086,10 @@ function showEdgeToolbar(edgeId, x, y) {
         toolbar.style.opacity = '1';
         toolbar.style.pointerEvents = 'auto';
     }
-    
+
     // 保存当前选中的连接线 ID
     toolbar.dataset.edgeId = edgeId;
-    
+
     // Multi-language support
     const lang = typeof currentLang !== 'undefined' ? currentLang : 'zh';
     const deleteTitle = lang === 'en' ? 'Delete' : '删除';
@@ -10000,7 +10097,7 @@ function showEdgeToolbar(edgeId, x, y) {
     const focusTitle = lang === 'en' ? 'Locate and zoom' : '定位并放大';
     const directionTitle = lang === 'en' ? 'Line direction' : '直线方向';
     const labelTitle = lang === 'en' ? 'Edit label' : '编辑文字';
-    
+
     toolbar.innerHTML = `
         <button class="md-node-toolbar-btn" data-action="edge-delete" title="${deleteTitle}">
             <i class="far fa-trash-alt"></i>
@@ -10018,10 +10115,10 @@ function showEdgeToolbar(edgeId, x, y) {
             <i class="far fa-edit"></i>
         </button>
     `;
-    
+
     // 更新工具栏位置（基于连接线中点，使用 canvas-content 坐标系）
     updateEdgeToolbarPosition();
-    
+
     // Attach event handlers (使用事件委托，只绑定一次)
     if (!toolbar.dataset.eventsBound) {
         toolbar.addEventListener('click', (e) => {
@@ -10029,13 +10126,13 @@ function showEdgeToolbar(edgeId, x, y) {
             if (!btn) return;
             e.preventDefault();
             e.stopPropagation();
-            
+
             const currentEdgeId = toolbar.dataset.edgeId;
             const currentEdge = CanvasState.edges.find(ed => ed.id === currentEdgeId);
             if (!currentEdge) return;
-            
+
             const action = btn.getAttribute('data-action');
-            
+
             if (action === 'edge-delete') {
                 removeEdge(currentEdgeId);
                 hideEdgeToolbar();
@@ -10102,23 +10199,23 @@ function updateEdgeToolbarPosition() {
         }
         return;
     }
-    
+
     const edgeId = toolbar.dataset.edgeId;
     if (!edgeId) return;
-    
+
     const edge = CanvasState.edges.find(e => e.id === edgeId);
     if (!edge) return;
-    
+
     const start = getAnchorPosition(edge.fromNode, edge.fromSide);
     const end = getAnchorPosition(edge.toNode, edge.toSide);
-    
+
     if (!start || !end) return;
-    
+
     // 工具栏定位于贝塞尔曲线中点
     const curveMid = getEdgeCurveMidpoint(edge);
     const midX = curveMid ? curveMid.x : (start.x + end.x) / 2;
     const midY = curveMid ? curveMid.y : (start.y + end.y) / 2;
-    
+
     // 工具栏显示在中点上方（使用 canvas-content 坐标系），根据缩放比例调整偏移
     const z = (CanvasState && CanvasState.zoom) ? CanvasState.zoom : 1;
     toolbar.style.left = `${midX}px`;
@@ -10152,16 +10249,16 @@ function hideEdgeToolbar() {
 function ensureEdgeColorPopover(toolbar, edge) {
     let pop = toolbar.querySelector('.md-color-popover');
     if (pop) return pop;
-    
+
     pop = document.createElement('div');
     pop.className = 'md-color-popover';
-    
+
     // 多语言支持
     const lang = typeof currentLang !== 'undefined' ? currentLang : 'zh';
     const rgbPickerTitle = lang === 'en' ? 'RGB Color Picker' : 'RGB颜色选择器';
     const customColorTitle = lang === 'en' ? 'Select custom color' : '选择自定义颜色';
     const defaultTitle = lang === 'en' ? 'Default color' : '默认颜色';
-    
+
     // 使用 Obsidian Canvas 风格的颜色（与空白栏目完全一致）
     pop.innerHTML = `
         <span class="md-color-chip" data-action="edge-color-default" title="${defaultTitle}" style="background: repeating-linear-gradient(45deg, #eee, #eee 4px, #fff 4px, #fff 8px); border:1px solid #c9d1d9;"></span>
@@ -10188,7 +10285,7 @@ function ensureEdgeColorPopover(toolbar, edge) {
             </svg>
         </button>
     `;
-    
+
     // RGB选择器UI（显示在色盘上方，与空白栏目完全一致）
     const rgbPicker = document.createElement('div');
     rgbPicker.className = 'md-rgb-picker';
@@ -10196,11 +10293,11 @@ function ensureEdgeColorPopover(toolbar, edge) {
         <input class="md-color-input" type="color" value="${edge.colorHex || '#66bbff'}" title="${customColorTitle}" />
     `;
     pop.appendChild(rgbPicker);
-    
+
     // 彩色圆盘按钮点击事件 - 切换RGB选择器显示
     const pickerBtn = pop.querySelector('.md-color-picker-btn');
     const colorInput = rgbPicker.querySelector('.md-color-input');
-    
+
     pickerBtn.addEventListener('click', (e) => {
         e.stopPropagation();
         const isOpen = rgbPicker.classList.contains('open');
@@ -10212,16 +10309,16 @@ function ensureEdgeColorPopover(toolbar, edge) {
             setTimeout(() => colorInput.click(), 50);
         }
     });
-    
+
     // 自定义颜色变化
     colorInput.addEventListener('input', (ev) => {
         setEdgeColor(edge, ev.target.value);
     });
-    
+
     colorInput.addEventListener('change', () => {
         rgbPicker.classList.remove('open');
     });
-    
+
     toolbar.appendChild(pop);
     return pop;
 }
@@ -10229,9 +10326,9 @@ function ensureEdgeColorPopover(toolbar, edge) {
 function toggleEdgeColorPopover(toolbar, edge, anchorBtn) {
     const pop = ensureEdgeColorPopover(toolbar, edge);
     const isOpen = pop.classList.contains('open');
-    if (isOpen) { 
-        closeEdgeColorPopover(toolbar); 
-        return; 
+    if (isOpen) {
+        closeEdgeColorPopover(toolbar);
+        return;
     }
     pop.classList.add('open');
     // 监听外部点击关闭
@@ -10251,7 +10348,7 @@ function closeEdgeColorPopover(toolbar) {
 
 function setEdgeColor(edge, presetOrHex) {
     if (!edge) return;
-    
+
     // 支持预设编号或十六进制颜色
     const isPreset = /^[1-6]$/.test(String(presetOrHex));
     if (isPreset) {
@@ -10261,7 +10358,7 @@ function setEdgeColor(edge, presetOrHex) {
         edge.color = null;
         edge.colorHex = presetOrHex;
     }
-    
+
     renderEdges();
     saveTempNodes();
 }
@@ -10322,28 +10419,28 @@ function locateAndZoomToEdge(edgeId, targetZoom = 1.2) {
     const edge = CanvasState.edges.find(e => e.id === edgeId);
     const workspace = document.getElementById('canvasWorkspace');
     if (!edge || !workspace) return;
-    
+
     const start = getAnchorPosition(edge.fromNode, edge.fromSide);
     const end = getAnchorPosition(edge.toNode, edge.toSide);
     if (!start || !end) return;
-    
+
     // 先调整缩放（与空白栏目逻辑一致）
     const zoom = Math.max(0.1, Math.min(3, Math.max(CanvasState.zoom, targetZoom)));
     if (zoom !== CanvasState.zoom) {
         const rect = workspace.getBoundingClientRect();
         setCanvasZoom(zoom, rect.left + rect.width / 2, rect.top + rect.height / 2, { recomputeBounds: true });
     }
-    
+
     // 计算连接线中心点
     const centerX = (start.x + end.x) / 2;
     const centerY = (start.y + end.y) / 2;
-    
+
     // 平移到中心点（与空白栏目逻辑一致）
     const workspaceWidth = workspace.clientWidth;
     const workspaceHeight = workspace.clientHeight;
     CanvasState.panOffsetX = workspaceWidth / 2 - centerX * CanvasState.zoom;
     CanvasState.panOffsetY = workspaceHeight / 2 - centerY * CanvasState.zoom;
-    
+
     updateCanvasScrollBounds();
     savePanOffsetThrottled();
 }
@@ -10352,7 +10449,7 @@ function locateAndZoomToEdge(edgeId, targetZoom = 1.2) {
 function toggleEdgeDirection(edgeId) {
     const edge = CanvasState.edges.find(e => e.id === edgeId);
     if (!edge) return;
-    
+
     // 交换起点和终点
     const tempNode = edge.fromNode;
     const tempSide = edge.fromSide;
@@ -10360,10 +10457,10 @@ function toggleEdgeDirection(edgeId) {
     edge.fromSide = edge.toSide;
     edge.toNode = tempNode;
     edge.toSide = tempSide;
-    
+
     renderEdges();
     saveTempNodes();
-    
+
     console.log('[Canvas] 切换连接线方向:', edgeId);
 }
 
@@ -10381,11 +10478,11 @@ function startEdgeLabelInlineEdit(edgeId) {
 
     // 清除已有的编辑器
     const existingFo = svg.querySelector(`foreignObject[data-edge-id="${edgeId}"]`);
-    if (existingFo) { try { existingFo.remove(); } catch(_) {} }
+    if (existingFo) { try { existingFo.remove(); } catch (_) { } }
 
     // 移除原文字（若存在）
     const textEl = svg.querySelector(`text.canvas-edge-label[data-edge-id="${edgeId}"]`);
-    if (textEl) { try { textEl.remove(); } catch(_) {} }
+    if (textEl) { try { textEl.remove(); } catch (_) { } }
 
     // 计算放置位置
     const start = getAnchorPosition(edge.fromNode, edge.fromSide);
@@ -10407,8 +10504,8 @@ function startEdgeLabelInlineEdit(edgeId) {
         textW = Math.max(30, probe.getComputedTextLength ? probe.getComputedTextLength() : 30);
         const bb = probe.getBBox ? probe.getBBox() : null;
         textH = Math.max(16, bb && bb.height ? Math.ceil(bb.height) : 16);
-    } catch(_) {}
-    try { probe.remove(); } catch(_) {}
+    } catch (_) { }
+    try { probe.remove(); } catch (_) { }
 
     const fo = document.createElementNS('http://www.w3.org/2000/svg', 'foreignObject');
     fo.setAttribute('data-edge-id', edgeId);
@@ -10454,7 +10551,7 @@ function startEdgeLabelInlineEdit(edgeId) {
             const ws = document.getElementById('canvasWorkspace');
             const bg = ws ? getComputedStyle(ws).backgroundColor : getComputedStyle(document.querySelector('.canvas-main-container')).backgroundColor;
             rect.setAttribute('fill', bg || '#fff');
-        } catch(_) { rect.setAttribute('fill', '#fff'); }
+        } catch (_) { rect.setAttribute('fill', '#fff'); }
         svg.appendChild(rect);
     }
 
@@ -10478,12 +10575,12 @@ function startEdgeLabelInlineEdit(edgeId) {
     const apply = () => {
         const val = (div.textContent || '').trim();
         edge.label = val;
-        try { fo.remove(); } catch(_) {}
+        try { fo.remove(); } catch (_) { }
         renderEdges();
         saveTempNodes();
     };
     const cancel = () => {
-        try { fo.remove(); } catch(_) {}
+        try { fo.remove(); } catch (_) { }
         renderEdges();
     };
 
@@ -10493,7 +10590,7 @@ function startEdgeLabelInlineEdit(edgeId) {
     });
     div.addEventListener('input', () => layout());
     div.addEventListener('blur', () => apply());
-    ['mousedown','click','dblclick'].forEach(evt => div.addEventListener(evt, ev => ev.stopPropagation()));
+    ['mousedown', 'click', 'dblclick'].forEach(evt => div.addEventListener(evt, ev => ev.stopPropagation()));
 
     fo.appendChild(div);
     svg.appendChild(fo);
@@ -10507,7 +10604,7 @@ function startEdgeLabelInlineEdit(edgeId) {
             const sel = window.getSelection();
             sel.removeAllRanges();
             sel.addRange(range);
-        } catch(_) {}
+        } catch (_) { }
     });
 }
 

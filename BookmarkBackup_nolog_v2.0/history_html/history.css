@@ -6575,13 +6575,45 @@ a.tree-label.tree-bookmark-link:hover {
     border-radius: 12px;
 }
 
-/* 悬停时显示视觉反馈 - 极致扁平化 */
+/* 悬停时显示视觉反馈 - 根据栏目颜色 */
 .resize-handle:hover {
     background: rgba(9, 105, 218, 0.05) !important;
 }
 
+/* 永久栏目（绿色） */
+.permanent-bookmark-section .resize-handle:hover {
+    background: rgba(16, 185, 129, 0.06) !important;
+}
+
+/* 临时书签栏目（使用自定义颜色） */
+.temp-canvas-node .resize-handle:hover {
+    background: color-mix(in srgb, var(--section-color, #2563eb) 8%, transparent) !important;
+}
+
+/* 空白栏目（默认蓝色） */
+.md-canvas-node .resize-handle:hover {
+    background: rgba(9, 105, 218, 0.05) !important;
+}
+
+/* 空白栏目有自定义颜色时 */
+.md-canvas-node[data-has-color="true"] .resize-handle:hover {
+    background: color-mix(in srgb, var(--node-glow-color) 8%, transparent) !important;
+}
+
 [data-theme="dark"] .resize-handle:hover {
     background: rgba(88, 166, 255, 0.06) !important;
+}
+
+[data-theme="dark"] .permanent-bookmark-section .resize-handle:hover {
+    background: rgba(52, 211, 153, 0.08) !important;
+}
+
+[data-theme="dark"] .temp-canvas-node .resize-handle:hover {
+    background: color-mix(in srgb, var(--section-color, #60a5fa) 10%, transparent) !important;
+}
+
+[data-theme="dark"] .md-canvas-node[data-has-color="true"] .resize-handle:hover {
+    background: color-mix(in srgb, var(--node-glow-color) 10%, transparent) !important;
 }
 
 /* 编辑模式下隐藏resize handles */
@@ -6612,12 +6644,65 @@ a.tree-label.tree-bookmark-link:hover {
     box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
 }
 
+/* 永久栏目（绿色） */
+.permanent-bookmark-section .resize-handle-nw:hover::after,
+.permanent-bookmark-section .resize-handle-ne:hover::after,
+.permanent-bookmark-section .resize-handle-sw:hover::after,
+.permanent-bookmark-section .resize-handle-se:hover::after {
+    background: #10b981;
+}
+
+/* 临时书签栏目（使用自定义颜色） */
+.temp-canvas-node .resize-handle-nw:hover::after,
+.temp-canvas-node .resize-handle-ne:hover::after,
+.temp-canvas-node .resize-handle-sw:hover::after,
+.temp-canvas-node .resize-handle-se:hover::after {
+    background: var(--section-color, #2563eb);
+}
+
+/* 空白栏目（默认蓝色） */
+.md-canvas-node .resize-handle-nw:hover::after,
+.md-canvas-node .resize-handle-ne:hover::after,
+.md-canvas-node .resize-handle-sw:hover::after,
+.md-canvas-node .resize-handle-se:hover::after {
+    background: #0969da;
+}
+
+/* 空白栏目有自定义颜色时 */
+.md-canvas-node[data-has-color="true"] .resize-handle-nw:hover::after,
+.md-canvas-node[data-has-color="true"] .resize-handle-ne:hover::after,
+.md-canvas-node[data-has-color="true"] .resize-handle-sw:hover::after,
+.md-canvas-node[data-has-color="true"] .resize-handle-se:hover::after {
+    background: var(--node-glow-color);
+}
+
 [data-theme="dark"] .resize-handle-nw:hover::after,
 [data-theme="dark"] .resize-handle-ne:hover::after,
 [data-theme="dark"] .resize-handle-sw:hover::after,
 [data-theme="dark"] .resize-handle-se:hover::after {
     background: #58a6ff;
     border-color: #242526;
+}
+
+[data-theme="dark"] .permanent-bookmark-section .resize-handle-nw:hover::after,
+[data-theme="dark"] .permanent-bookmark-section .resize-handle-ne:hover::after,
+[data-theme="dark"] .permanent-bookmark-section .resize-handle-sw:hover::after,
+[data-theme="dark"] .permanent-bookmark-section .resize-handle-se:hover::after {
+    background: #34d399;
+}
+
+[data-theme="dark"] .temp-canvas-node .resize-handle-nw:hover::after,
+[data-theme="dark"] .temp-canvas-node .resize-handle-ne:hover::after,
+[data-theme="dark"] .temp-canvas-node .resize-handle-sw:hover::after,
+[data-theme="dark"] .temp-canvas-node .resize-handle-se:hover::after {
+    background: var(--section-color, #60a5fa);
+}
+
+[data-theme="dark"] .md-canvas-node[data-has-color="true"] .resize-handle-nw:hover::after,
+[data-theme="dark"] .md-canvas-node[data-has-color="true"] .resize-handle-ne:hover::after,
+[data-theme="dark"] .md-canvas-node[data-has-color="true"] .resize-handle-sw:hover::after,
+[data-theme="dark"] .md-canvas-node[data-has-color="true"] .resize-handle-se:hover::after {
+    background: var(--node-glow-color);
 }
 
 .resize-handle-nw:hover::after {
@@ -6640,15 +6725,40 @@ a.tree-label.tree-bookmark-link:hover {
     right: 6px;
 }
 
-/* 选中状态：高亮边缘并添加轻微投影（参考 Obsidian Canvas is-active 效果） */
+/* 选中状态：高亮边缘并添加发光效果（参考 Obsidian Canvas is-active 效果） */
 .md-canvas-node.selected {
     border-color: rgba(9, 105, 218, 0.9);
-    box-shadow: 0 0 0 2px rgba(9, 105, 218, 0.35);
+    box-shadow: 
+        0 0 0 1.5px rgba(9, 105, 218, 0.4),
+        0 0 6px 1px rgba(9, 105, 218, 0.3);
+}
+
+/* 有自定义颜色时，使用对应颜色的发光效果 */
+.md-canvas-node.selected[data-has-color="true"] {
+    border-color: var(--node-glow-color);
+    box-shadow: 
+        0 0 0 1.5px color-mix(in srgb, var(--node-glow-color) 45%, transparent),
+        0 0 6px 1px color-mix(in srgb, var(--node-glow-color) 35%, transparent);
 }
 
 [data-theme="dark"] .md-canvas-node.selected {
     border-color: rgba(88, 166, 255, 0.95);
-    box-shadow: 0 0 0 2px rgba(88, 166, 255, 0.45);
+    box-shadow: 
+        0 0 0 1.5px rgba(88, 166, 255, 0.5),
+        0 0 8px 1px rgba(88, 166, 255, 0.35);
+}
+
+[data-theme="dark"] .md-canvas-node.selected[data-has-color="true"] {
+    border-color: var(--node-glow-color);
+    box-shadow: 
+        0 0 0 1.5px color-mix(in srgb, var(--node-glow-color) 55%, transparent),
+        0 0 8px 1px color-mix(in srgb, var(--node-glow-color) 40%, transparent);
+}
+
+/* 选中但未编辑时，编辑器区域不拦截鼠标事件，允许拖动整个卡片 */
+.md-canvas-node.selected:not([data-editing="true"]) .md-canvas-editor {
+    pointer-events: none;
+    cursor: grab;
 }
 
 .md-canvas-node.dragging,
@@ -6721,7 +6831,8 @@ a.tree-label.tree-bookmark-link:hover {
     box-shadow: none;
     opacity: 0;
     pointer-events: none;
-    transition: opacity 0.12s ease;
+    /* 隐藏时添加延迟，让用户有时间将鼠标移到工具栏 */
+    transition: opacity 0.15s ease 0.35s, pointer-events 0s linear 0.35s;
     z-index: 12000;
     /* Above anchors (11000) so toolbar remains clickable on top edge */
 }
@@ -6745,6 +6856,8 @@ a.tree-label.tree-bookmark-link:hover {
 .md-node-toolbar:has(.md-format-popover.open) {
     opacity: 1;
     pointer-events: auto;
+    /* 显示时无延迟，立即显示 */
+    transition: opacity 0.12s ease, pointer-events 0s linear;
 }
 
 /* Strong override: while connecting, toolbars never capture events */

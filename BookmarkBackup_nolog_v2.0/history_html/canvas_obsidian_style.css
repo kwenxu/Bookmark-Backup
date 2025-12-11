@@ -600,15 +600,15 @@
     border: none;
 }
 
-/* Small visible UI (original size) inside large clickable area */
+/* Small visible UI inside large clickable area - 视觉更小但点击区域不变 */
 .canvas-node-anchor::before {
     content: '';
     position: absolute;
-    background-color: rgba(100, 100, 100, 0.45);
-    border: 1.5px solid rgba(100, 100, 100, 0.65);
+    background-color: rgba(100, 100, 100, 0.4);
+    border: 1px solid rgba(100, 100, 100, 0.55);
 }
 
-/* Top anchor: large clickable half-circle (2.5x radius = 37.5px) */
+/* Top anchor: large clickable area, small visual */
 .canvas-node-anchor[data-side="top"] {
     width: 75px;
     height: 37.5px;
@@ -620,15 +620,15 @@
 }
 
 .canvas-node-anchor[data-side="top"]::before {
-    width: 30px;
-    height: 15px;
-    border-radius: 15px 15px 0 0;
+    width: 18px;
+    height: 9px;
+    border-radius: 9px 9px 0 0;
     bottom: 0;
     left: 50%;
     transform: translateX(-50%);
 }
 
-/* Bottom anchor: large clickable half-circle */
+/* Bottom anchor */
 .canvas-node-anchor[data-side="bottom"] {
     width: 75px;
     height: 37.5px;
@@ -640,15 +640,15 @@
 }
 
 .canvas-node-anchor[data-side="bottom"]::before {
-    width: 30px;
-    height: 15px;
-    border-radius: 0 0 15px 15px;
+    width: 18px;
+    height: 9px;
+    border-radius: 0 0 9px 9px;
     top: 0;
     left: 50%;
     transform: translateX(-50%);
 }
 
-/* Left anchor: large clickable half-circle */
+/* Left anchor */
 .canvas-node-anchor[data-side="left"] {
     width: 37.5px;
     height: 75px;
@@ -660,15 +660,15 @@
 }
 
 .canvas-node-anchor[data-side="left"]::before {
-    width: 15px;
-    height: 30px;
-    border-radius: 15px 0 0 15px;
+    width: 9px;
+    height: 18px;
+    border-radius: 9px 0 0 9px;
     right: 0;
     top: 50%;
     transform: translateY(-50%);
 }
 
-/* Right anchor: large clickable half-circle */
+/* Right anchor */
 .canvas-node-anchor[data-side="right"] {
     width: 37.5px;
     height: 75px;
@@ -680,22 +680,94 @@
 }
 
 .canvas-node-anchor[data-side="right"]::before {
-    width: 15px;
-    height: 30px;
-    border-radius: 0 15px 15px 0;
+    width: 9px;
+    height: 18px;
+    border-radius: 0 9px 9px 0;
     left: 0;
     top: 50%;
     transform: translateY(-50%);
 }
 
-[data-theme="dark"] .canvas-node-anchor::before {
-    background-color: rgba(200, 200, 200, 0.3);
-    border-color: rgba(200, 200, 200, 0.5);
+/* 永久栏目（绿色） */
+.permanent-bookmark-section .canvas-node-anchor::before {
+    background-color: rgba(16, 185, 129, 0.4);
+    border-color: rgba(16, 185, 129, 0.6);
+}
+.permanent-bookmark-section .canvas-node-anchor:hover::before {
+    background-color: rgba(16, 185, 129, 0.6);
+    border-color: rgba(16, 185, 129, 0.85);
 }
 
-[data-theme="dark"] .canvas-node-anchor:hover::before {
-    background-color: rgba(24, 119, 242, 0.4);
-    border-color: rgba(24, 119, 242, 0.75);
+/* 临时书签栏目（使用自定义颜色） */
+.temp-canvas-node .canvas-node-anchor::before {
+    background-color: color-mix(in srgb, var(--section-color, #2563eb) 45%, transparent);
+    border-color: color-mix(in srgb, var(--section-color, #2563eb) 65%, transparent);
+}
+.temp-canvas-node .canvas-node-anchor:hover::before {
+    background-color: color-mix(in srgb, var(--section-color, #2563eb) 65%, transparent);
+    border-color: color-mix(in srgb, var(--section-color, #2563eb) 90%, transparent);
+}
+
+/* 空白栏目（默认蓝色） */
+.md-canvas-node .canvas-node-anchor::before {
+    background-color: rgba(9, 105, 218, 0.4);
+    border-color: rgba(9, 105, 218, 0.6);
+}
+.md-canvas-node .canvas-node-anchor:hover::before {
+    background-color: rgba(9, 105, 218, 0.6);
+    border-color: rgba(9, 105, 218, 0.85);
+}
+
+/* 空白栏目有自定义颜色时 */
+.md-canvas-node[data-has-color="true"] .canvas-node-anchor::before {
+    background-color: color-mix(in srgb, var(--node-glow-color) 45%, transparent);
+    border-color: color-mix(in srgb, var(--node-glow-color) 65%, transparent);
+}
+.md-canvas-node[data-has-color="true"] .canvas-node-anchor:hover::before {
+    background-color: color-mix(in srgb, var(--node-glow-color) 65%, transparent);
+    border-color: color-mix(in srgb, var(--node-glow-color) 90%, transparent);
+}
+
+/* 深色模式 */
+[data-theme="dark"] .canvas-node-anchor::before {
+    background-color: rgba(200, 200, 200, 0.25);
+    border-color: rgba(200, 200, 200, 0.4);
+}
+
+[data-theme="dark"] .permanent-bookmark-section .canvas-node-anchor::before {
+    background-color: rgba(52, 211, 153, 0.35);
+    border-color: rgba(52, 211, 153, 0.55);
+}
+[data-theme="dark"] .permanent-bookmark-section .canvas-node-anchor:hover::before {
+    background-color: rgba(52, 211, 153, 0.55);
+    border-color: rgba(52, 211, 153, 0.8);
+}
+
+[data-theme="dark"] .temp-canvas-node .canvas-node-anchor::before {
+    background-color: color-mix(in srgb, var(--section-color, #60a5fa) 40%, transparent);
+    border-color: color-mix(in srgb, var(--section-color, #60a5fa) 60%, transparent);
+}
+[data-theme="dark"] .temp-canvas-node .canvas-node-anchor:hover::before {
+    background-color: color-mix(in srgb, var(--section-color, #60a5fa) 60%, transparent);
+    border-color: color-mix(in srgb, var(--section-color, #60a5fa) 85%, transparent);
+}
+
+[data-theme="dark"] .md-canvas-node .canvas-node-anchor::before {
+    background-color: rgba(88, 166, 255, 0.35);
+    border-color: rgba(88, 166, 255, 0.55);
+}
+[data-theme="dark"] .md-canvas-node .canvas-node-anchor:hover::before {
+    background-color: rgba(88, 166, 255, 0.55);
+    border-color: rgba(88, 166, 255, 0.8);
+}
+
+[data-theme="dark"] .md-canvas-node[data-has-color="true"] .canvas-node-anchor::before {
+    background-color: color-mix(in srgb, var(--node-glow-color) 40%, transparent);
+    border-color: color-mix(in srgb, var(--node-glow-color) 60%, transparent);
+}
+[data-theme="dark"] .md-canvas-node[data-has-color="true"] .canvas-node-anchor:hover::before {
+    background-color: color-mix(in srgb, var(--node-glow-color) 60%, transparent);
+    border-color: color-mix(in srgb, var(--node-glow-color) 85%, transparent);
 }
 
 /* Smart Hover: Show specific anchor when its zone is hovered */
@@ -703,32 +775,24 @@
 .zone-bottom:hover ~ .canvas-node-anchor[data-side="bottom"],
 .zone-left:hover ~ .canvas-node-anchor[data-side="left"],
 .zone-right:hover ~ .canvas-node-anchor[data-side="right"],
-/* Also show all when dragging a connection to help finding targets */
 .canvas-workspace.connecting .canvas-node-anchor,
-/* Keep showing if hovering the anchor itself */
 .canvas-node-anchor:hover {
     opacity: 1;
-    pointer-events: auto; /* Enable interaction when visible */
+    pointer-events: auto;
 }
 
-/* Enhanced hover effect for half-circle background */
-.canvas-node-anchor:hover::before {
-    background-color: rgba(24, 119, 242, 0.5);
-    border-color: rgba(24, 119, 242, 0.85);
-}
-
-/* Hover scale effect for each side */
+/* Hover scale effect */
 .canvas-node-anchor[data-side="top"]:hover {
-    transform: translateX(-50%) scale(1.15);
+    transform: translateX(-50%) scale(1.2);
 }
 .canvas-node-anchor[data-side="bottom"]:hover {
-    transform: translateX(-50%) scale(1.15);
+    transform: translateX(-50%) scale(1.2);
 }
 .canvas-node-anchor[data-side="left"]:hover {
-    transform: translateY(-50%) scale(1.15);
+    transform: translateY(-50%) scale(1.2);
 }
 .canvas-node-anchor[data-side="right"]:hover {
-    transform: translateY(-50%) scale(1.15);
+    transform: translateY(-50%) scale(1.2);
 }
 
 /* Removed edge-tight positions to keep anchors clear of toolbars */

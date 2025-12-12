@@ -12799,6 +12799,41 @@ function loadPermanentFolderChildrenLazy(parentId, childrenContainer, startIndex
                 attachDragEvents(treeRoot);
             }
         } catch (_) { }
+
+        // 懒加载完成后：检查新加载的子节点是否有需要恢复展开状态的
+        try {
+            const savedState = localStorage.getItem('treeExpandedNodeIds');
+            if (savedState) {
+                const expandedIds = JSON.parse(savedState);
+                if (Array.isArray(expandedIds) && expandedIds.length > 0) {
+                    const expandedSet = new Set(expandedIds);
+                    // 只检查刚加载的子节点
+                    childrenContainer.querySelectorAll(':scope > .tree-node > .tree-item[data-node-id]').forEach(item => {
+                        if (expandedSet.has(item.dataset.nodeId)) {
+                            const node = item.closest('.tree-node');
+                            if (!node) return;
+                            const children = node.querySelector(':scope > .tree-children');
+                            const toggle = item.querySelector('.tree-toggle');
+                            const icon = item.querySelector('.tree-icon.fas');
+                            if (children && toggle) {
+                                children.classList.add('expanded');
+                                toggle.classList.add('expanded');
+                                if (icon && icon.classList.contains('fa-folder')) {
+                                    icon.classList.remove('fa-folder');
+                                    icon.classList.add('fa-folder-open');
+                                }
+                                // 如果这个节点也需要懒加载，递归加载
+                                if (item.dataset.childrenLoaded === 'false' && item.dataset.hasChildren === 'true') {
+                                    setTimeout(() => {
+                                        loadPermanentFolderChildrenLazy(item.dataset.nodeId, children, 0, null);
+                                    }, 10);
+                                }
+                            }
+                        }
+                    });
+                }
+            }
+        } catch (_) { }
     } catch (e) {
         console.warn('[Canvas Tree Lazy] load children failed:', e);
     }
@@ -13027,10 +13062,23 @@ async function renderTreeView(forceRefresh = false) {
     }
     
     isRenderingTree = true;
-    
+
     // 记录永久栏目滚动位置，渲染后恢复
+    // 优先使用当前滚动位置；如果是0，尝试从 localStorage 读取持久化的值（页面刷新场景）
     const permBody = document.querySelector('.permanent-section-body');
-    const permScrollTop = permBody ? permBody.scrollTop : null;
+    let permScrollTop = permBody ? permBody.scrollTop : null;
+    let permScrollLeft = permBody ? permBody.scrollLeft : 0;
+
+    // 页面刷新后，permScrollTop 是 0，需要从 localStorage 恢复
+    if (permScrollTop === 0 && currentView === 'canvas') {
+        try {
+            const persisted = JSON.parse(localStorage.getItem('permanent-section-scroll'));
+            if (persisted && typeof persisted.top === 'number') {
+                permScrollTop = persisted.top;
+                permScrollLeft = persisted.left || 0;
+            }
+        } catch (_) {}
+    }
 
     const treeContainer = document.getElementById('bookmarkTree');
 
@@ -13065,8 +13113,21 @@ async function renderTreeView(forceRefresh = false) {
         attachTreeEvents(treeContainer);
 
         console.log('[renderTreeView] 缓存显示完成');
-        // 恢复滚动位置
-        if (permBody && permScrollTop !== null) permBody.scrollTop = permScrollTop;
+        // 恢复滚动位置（延迟确保展开状态恢复后再恢复滚动位置）
+        if (permBody && permScrollTop !== null) {
+            const restoreScroll = () => {
+                permBody.scrollTop = permScrollTop;
+                permBody.scrollLeft = permScrollLeft;
+            };
+            restoreScroll();
+            requestAnimationFrame(() => {
+                restoreScroll();
+                setTimeout(restoreScroll, 50);
+                setTimeout(restoreScroll, 150);
+                setTimeout(restoreScroll, 300);
+                setTimeout(restoreScroll, 500);
+            });
+        }
 
         // 【关键修复】即使使用缓存，也要预热内存缓存
         // 因为内存缓存可能在页面刷新后被清空，导致图标显示为五角星
@@ -13168,11 +13229,15 @@ async function renderTreeView(forceRefresh = false) {
         if (cachedTreeData && ((canUseVersion && snapshotVersion === lastTreeSnapshotVersion) || (!canUseVersion && currentFingerprint === lastTreeFingerprint))) {
             console.log('[renderTreeView] 使用缓存（书签未变化）');
 
-            // Canvas 视图下，如果已有 DOM，避免整树替换造成“重新加载感”
+            // Canvas 视图下，如果已有 DOM，避免整树替换造成"重新加载感"
             if (currentView === 'canvas' && treeContainer.children.length) {
                 cachedCurrentTree = currentTree;
                 cachedCurrentTreeIndex = null;
-                if (permBody && permScrollTop !== null) permBody.scrollTop = permScrollTop;
+                // 恢复滚动位置
+                if (permBody && permScrollTop !== null) {
+                    permBody.scrollTop = permScrollTop;
+                    permBody.scrollLeft = permScrollLeft;
+                }
                 isRenderingTree = false;
                 if (pendingRenderRequest !== null) {
                     const pending = pendingRenderRequest;
@@ -13189,8 +13254,21 @@ async function renderTreeView(forceRefresh = false) {
 
             // 重新绑定事件
             attachTreeEvents(treeContainer);
-            // 恢复滚动位置
-            if (permBody && permScrollTop !== null) permBody.scrollTop = permScrollTop;
+            // 恢复滚动位置（延迟确保展开状态恢复后再恢复滚动位置）
+            if (permBody && permScrollTop !== null) {
+                const restoreScroll = () => {
+                    permBody.scrollTop = permScrollTop;
+                    permBody.scrollLeft = permScrollLeft;
+                };
+                restoreScroll();
+                requestAnimationFrame(() => {
+                    restoreScroll();
+                    setTimeout(restoreScroll, 50);
+                    setTimeout(restoreScroll, 150);
+                    setTimeout(restoreScroll, 300);
+                    setTimeout(restoreScroll, 500);
+                });
+            }
 
             // 重置渲染标志并处理合并请求
             isRenderingTree = false;
@@ -13328,11 +13406,19 @@ async function renderTreeView(forceRefresh = false) {
             // 绑定事件
             attachTreeEvents(treeContainer);
 
-            // 立即恢复滚动位置（在同一帧内）
+            // 恢复滚动位置（延迟确保展开状态和懒加载完成后再恢复滚动位置）
             if (permBody && permScrollTop !== null) {
-                permBody.scrollTop = permScrollTop;
+                const restoreScroll = () => {
+                    permBody.scrollTop = permScrollTop;
+                    permBody.scrollLeft = permScrollLeft;
+                };
+                restoreScroll();
+                setTimeout(restoreScroll, 50);
+                setTimeout(restoreScroll, 150);
+                setTimeout(restoreScroll, 300); // 等待懒加载完成
+                setTimeout(restoreScroll, 500); // 最终确保
             }
-            
+
             console.log('[renderTreeView] 渲染完成');
         });
         
@@ -13580,46 +13666,78 @@ function restoreJSONScrollPosition(jsonContainer) {
     }
 }
 
-// 保存树的展开状态
+// 保存树的展开状态（使用节点 ID，更可靠）
 function saveTreeExpandState(treeContainer) {
     try {
-        const expandedPaths = [];
+        const expandedIds = [];
         treeContainer.querySelectorAll('.tree-children.expanded').forEach(children => {
             const node = children.closest('.tree-node');
-            const label = node.querySelector('.tree-label');
-            if (label) {
-                expandedPaths.push(label.textContent.trim());
+            const item = node ? node.querySelector('.tree-item[data-node-id]') : null;
+            if (item && item.dataset.nodeId) {
+                expandedIds.push(item.dataset.nodeId);
             }
         });
-        localStorage.setItem('treeExpandedNodes', JSON.stringify(expandedPaths));
-        console.log('[树状态] 保存展开节点:', expandedPaths.length);
+        localStorage.setItem('treeExpandedNodeIds', JSON.stringify(expandedIds));
+        console.log('[树状态] 保存展开节点:', expandedIds.length);
     } catch (e) {
         console.error('[树状态] 保存失败:', e);
     }
 }
 
-// 恢复树的展开状态
+// 恢复树的展开状态（使用节点 ID，更可靠）
 function restoreTreeExpandState(treeContainer) {
     try {
-        const savedState = localStorage.getItem('treeExpandedNodes');
+        const savedState = localStorage.getItem('treeExpandedNodeIds');
         if (!savedState) return;
 
-        const expandedPaths = JSON.parse(savedState);
-        expandedPaths.forEach(path => {
-            const labels = treeContainer.querySelectorAll('.tree-label');
-            labels.forEach(label => {
-                if (label.textContent.trim() === path) {
-                    const node = label.closest('.tree-node');
-                    const children = node.querySelector('.tree-children');
-                    const toggle = node.querySelector('.tree-toggle');
-                    if (children && toggle) {
-                        children.classList.add('expanded');
-                        toggle.classList.add('expanded');
+        const expandedIds = JSON.parse(savedState);
+        if (!Array.isArray(expandedIds) || expandedIds.length === 0) return;
+
+        const expandedSet = new Set(expandedIds);
+        const nodesToLazyLoad = []; // Canvas 懒加载模式下需要加载子节点的文件夹
+
+        treeContainer.querySelectorAll('.tree-item[data-node-id]').forEach(item => {
+            if (expandedSet.has(item.dataset.nodeId)) {
+                const node = item.closest('.tree-node');
+                if (!node) return;
+                const children = node.querySelector(':scope > .tree-children');
+                const toggle = item.querySelector('.tree-toggle');
+                const icon = item.querySelector('.tree-icon.fas');
+                if (children && toggle) {
+                    children.classList.add('expanded');
+                    toggle.classList.add('expanded');
+                    // 更新文件夹图标
+                    if (icon && icon.classList.contains('fa-folder')) {
+                        icon.classList.remove('fa-folder');
+                        icon.classList.add('fa-folder-open');
+                    }
+                    // Canvas 懒加载模式：如果子节点未加载，记录下来稍后加载
+                    if (currentView === 'canvas' &&
+                        CANVAS_PERMANENT_TREE_LAZY_ENABLED &&
+                        item.dataset.childrenLoaded === 'false' &&
+                        item.dataset.hasChildren === 'true') {
+                        nodesToLazyLoad.push({ parentId: item.dataset.nodeId, children });
                     }
                 }
-            });
+            }
         });
-        console.log('[树状态] 恢复展开节点:', expandedPaths.length);
+
+        // Canvas 懒加载模式：批量加载需要展开的文件夹的子节点
+        if (nodesToLazyLoad.length > 0) {
+            console.log('[树状态] Canvas懒加载：需要加载', nodesToLazyLoad.length, '个文件夹的子节点');
+            // 延迟加载，避免阻塞渲染
+            setTimeout(() => {
+                nodesToLazyLoad.forEach(({ parentId, children }) => {
+                    try {
+                        loadPermanentFolderChildrenLazy(parentId, children, 0, null);
+                    } catch (e) {
+                        console.warn('[树状态] 懒加载子节点失败:', parentId, e);
+                    }
+                });
+            }, 50);
+        }
+
+        console.log('[树状态] 恢复展开节点:', expandedIds.length);
     } catch (e) {
         console.error('[树状态] 恢复失败:', e);
     }

@@ -7712,17 +7712,25 @@ const LAZY_LOAD_THRESHOLD = {
 
 // 临时栏目展开状态持久化
 const TEMP_EXPAND_STATE_KEY = 'canvas-temp-expand-state';
+let _saveTempExpandStateTimer = null;
 
 function saveTempExpandState() {
-    try {
-        const state = {
-            expanded: Array.from(LAZY_LOAD_THRESHOLD.expandedFolders),
-            collapsed: Array.from(LAZY_LOAD_THRESHOLD.collapsedFolders)
-        };
-        localStorage.setItem(TEMP_EXPAND_STATE_KEY, JSON.stringify(state));
-    } catch (e) {
-        console.warn('[Canvas] 保存临时栏目展开状态失败:', e);
+    // debounce：300ms 内的连续调用只执行最后一次，减少 localStorage I/O
+    if (_saveTempExpandStateTimer) {
+        clearTimeout(_saveTempExpandStateTimer);
     }
+    _saveTempExpandStateTimer = setTimeout(() => {
+        _saveTempExpandStateTimer = null;
+        try {
+            const state = {
+                expanded: Array.from(LAZY_LOAD_THRESHOLD.expandedFolders),
+                collapsed: Array.from(LAZY_LOAD_THRESHOLD.collapsedFolders)
+            };
+            localStorage.setItem(TEMP_EXPAND_STATE_KEY, JSON.stringify(state));
+        } catch (e) {
+            console.warn('[Canvas] 保存临时栏目展开状态失败:', e);
+        }
+    }, 300);
 }
 
 function loadTempExpandState() {
@@ -8011,13 +8019,12 @@ function clearLazyLoadState() {
 
 function setupTempSectionTreeInteractions(treeContainer, section) {
     if (!treeContainer) return;
-    
+
     // 防止重复绑定
     if (treeContainer.dataset.lazyLoadBound === 'true') return;
     treeContainer.dataset.lazyLoadBound = 'true';
 
-    // 性能优化：懒加载处理
-    // 使用捕获阶段监听，在原有事件处理之前检查懒加载需求
+    // 性能优化：懒加载文件夹展开处理
     treeContainer.addEventListener('click', (e) => {
         // 处理"加载更多"按钮点击
         const loadMoreBtn = e.target.closest('.tree-load-more');
@@ -8029,50 +8036,60 @@ function setupTempSectionTreeInteractions(treeContainer, section) {
             loadMoreChildren(section, parentItemId, startIndex, loadMoreBtn);
             return;
         }
-        
-        // 检查是否点击了需要懒加载的文件夹
+
+        // 处理文件夹展开/折叠
         const treeItem = e.target.closest('.tree-item');
         if (!treeItem) return;
+
+        // 只处理文件夹
         if (treeItem.dataset.nodeType !== 'folder') return;
-        
-        console.log('[Canvas懒加载] 文件夹被点击:', {
-            nodeId: treeItem.dataset.nodeId,
-            childrenLoaded: treeItem.dataset.childrenLoaded,
-            hasChildren: treeItem.dataset.hasChildren
-        });
-        
+
         const treeNode = treeItem.closest('.tree-node');
-        const childrenContainer = treeNode ? treeNode.querySelector(':scope > .tree-children') : null;
+        if (!treeNode) return;
+
+        const childrenContainer = treeNode.querySelector(':scope > .tree-children');
+        if (!childrenContainer) return;
+
         const parentItemId = treeItem.dataset.nodeId;
         const folderId = `${section.id}-${parentItemId}`;
-        
-        // 延迟检查展开/折叠状态
-        setTimeout(() => {
-            const isExpanded = childrenContainer && childrenContainer.classList.contains('expanded');
-            
-            if (isExpanded) {
-                // 展开：如果需要懒加载，执行加载
-                if (treeItem.dataset.childrenLoaded === 'false' && treeItem.dataset.hasChildren === 'true') {
-                    console.log('[Canvas懒加载] 需要懒加载:', parentItemId);
-                    loadFolderChildren(section, parentItemId, childrenContainer);
-                } else {
-                    // 已加载的文件夹，记录展开状态
-                    LAZY_LOAD_THRESHOLD.expandedFolders.add(folderId);
-                    // 从折叠集合中移除（如果之前被折叠过）
-                    LAZY_LOAD_THRESHOLD.collapsedFolders.delete(folderId);
-                    saveTempExpandState();
-                }
-            } else {
-                // 折叠：记录折叠状态
-                // 从展开集合中移除
-                LAZY_LOAD_THRESHOLD.expandedFolders.delete(folderId);
-                // 添加到折叠集合（用于浅层默认展开的文件夹）
-                LAZY_LOAD_THRESHOLD.collapsedFolders.add(folderId);
-                saveTempExpandState();
-                console.log('[Canvas懒加载] 文件夹已折叠:', parentItemId);
+        const isExpanded = childrenContainer.classList.contains('expanded');
+        const nodeToggle = treeItem.querySelector('.tree-toggle');
+        const nodeIcon = treeItem.querySelector('.tree-icon.fas');
+
+        if (isExpanded) {
+            // 折叠
+            childrenContainer.classList.remove('expanded');
+            if (nodeToggle) nodeToggle.classList.remove('expanded');
+            if (nodeIcon) {
+                nodeIcon.classList.remove('fa-folder-open');
+                nodeIcon.classList.add('fa-folder');
             }
-        }, 50);
-    }, false); // 使用冒泡阶段，在原有事件处理之后执行
+            // 记录折叠状态
+            LAZY_LOAD_THRESHOLD.expandedFolders.delete(folderId);
+            LAZY_LOAD_THRESHOLD.collapsedFolders.add(folderId);
+            saveTempExpandState();
+        } else {
+            // 展开
+            childrenContainer.classList.add('expanded');
+            if (nodeToggle) nodeToggle.classList.add('expanded');
+            if (nodeIcon) {
+                nodeIcon.classList.remove('fa-folder');
+                nodeIcon.classList.add('fa-folder-open');
+            }
+
+            // 懒加载：如果子节点未加载，现在加载
+            if (treeItem.dataset.childrenLoaded === 'false' && treeItem.dataset.hasChildren === 'true') {
+                loadFolderChildren(section, parentItemId, childrenContainer);
+            }
+            // 记录展开状态
+            LAZY_LOAD_THRESHOLD.expandedFolders.add(folderId);
+            LAZY_LOAD_THRESHOLD.collapsedFolders.delete(folderId);
+            saveTempExpandState();
+        }
+
+        e.preventDefault();
+        e.stopImmediatePropagation(); // 阻止 attachTreeEvents 再次处理导致双重切换
+    });
 
     // 注意：空白区域右键菜单已移至 setupTempSectionBlankAreaMenu
 }

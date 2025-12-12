@@ -3681,10 +3681,32 @@ function makePermanentSectionDraggable() {
             rafId = requestAnimationFrame(() => __writeJSON(key, { top: permanentBody.scrollTop || 0, left: permanentBody.scrollLeft || 0 }));
         }, { passive: true });
 
+        // 避免“多次自动恢复滚动”与用户滚动产生抢夺：用户一旦开始滚动，短时间内停止自动恢复
+        if (permanentBody.dataset.scrollRestoreGuardAttached !== 'true') {
+            permanentBody.dataset.scrollRestoreGuardAttached = 'true';
+            const blockMs = 1000;
+            const block = () => {
+                try {
+                    permanentBody.dataset.scrollRestoreBlockUntil = String(Date.now() + blockMs);
+                } catch (_) { }
+            };
+            permanentBody.addEventListener('wheel', block, { passive: true });
+            permanentBody.addEventListener('touchstart', block, { passive: true });
+            permanentBody.addEventListener('touchmove', block, { passive: true });
+            // 仅当直接在滚动容器上按下（如拖动滚动条/空白区域）才算用户滚动意图，避免点击树节点误触发
+            permanentBody.addEventListener('pointerdown', (e) => {
+                if (e && e.target === permanentBody) block();
+            }, { passive: true });
+        }
+
         // 恢复滚动位置（多次尝试，确保树渲染后也能成功）
         const persisted = __readJSON(key, null);
         if (persisted && typeof persisted.top === 'number') {
             const restore = () => {
+                try {
+                    const until = parseInt(permanentBody.dataset.scrollRestoreBlockUntil || '0', 10) || 0;
+                    if (until && Date.now() < until) return;
+                } catch (_) { }
                 permanentBody.scrollTop = persisted.top || 0;
                 permanentBody.scrollLeft = persisted.left || 0;
             };
@@ -8014,7 +8036,15 @@ function loadMoreChildren(section, parentItemId, startIndex, loadMoreBtn) {
 
 // 清理懒加载状态（用于重置）
 function clearLazyLoadState() {
-    LAZY_LOAD_THRESHOLD.expandedFolders.clear();
+    try {
+        LAZY_LOAD_THRESHOLD.expandedFolders.clear();
+        LAZY_LOAD_THRESHOLD.collapsedFolders.clear();
+        if (_saveTempExpandStateTimer) {
+            clearTimeout(_saveTempExpandStateTimer);
+            _saveTempExpandStateTimer = null;
+        }
+        localStorage.removeItem(TEMP_EXPAND_STATE_KEY);
+    } catch (_) { }
 }
 
 function setupTempSectionTreeInteractions(treeContainer, section) {

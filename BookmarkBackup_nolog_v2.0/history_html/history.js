@@ -837,6 +837,30 @@ let lastAnalysisSignature = null;
 // 显式移动集合（基于 onMoved 事件），用于同级移动标识，设置短期有效期
 let explicitMovedIds = new Map(); // id -> expiryTimestamp
 
+// 页面刷新/重新打开时，恢复“显式移动”标记：
+// - Canvas 永久栏目懒加载模式下会跳过全量 diff 检测
+// - 因此移动蓝标主要依赖 explicitMovedIds（而它是内存态）
+// - 通过 background.js 持久化的 recentMovedIds 来恢复，避免“刷新后移动标识消失”
+async function restoreExplicitMovedIdsFromStorage() {
+    try {
+        if (!browserAPI || !browserAPI.storage || !browserAPI.storage.local) return;
+        const data = await browserAPI.storage.local.get(['recentMovedIds']);
+        const recentMovedIds = data && Array.isArray(data.recentMovedIds) ? data.recentMovedIds : [];
+        if (!recentMovedIds.length) return;
+
+        // 防止极端情况下列表过大导致初始化变慢：只恢复最近 N 条（备份成功后会清空）
+        const MAX_RESTORE = 2000;
+        const slice = recentMovedIds.length > MAX_RESTORE ? recentMovedIds.slice(-MAX_RESTORE) : recentMovedIds;
+        slice.forEach(entry => {
+            if (!entry || typeof entry.id === 'undefined' || entry.id === null) return;
+            explicitMovedIds.set(String(entry.id), Infinity);
+        });
+        console.log('[移动标识] 已从storage恢复显式移动ID数量:', explicitMovedIds.size);
+    } catch (e) {
+        console.warn('[移动标识] 从storage恢复显式移动ID失败:', e);
+    }
+}
+
 // 详情面板相关全局变量
 let currentDetailRecordTime = null; // 当前打开的详情面板对应的记录时间
 
@@ -2361,6 +2385,9 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     // 设置事件委托处理所有按钮的data-action属性
     setupEventDelegation();
+
+    // 恢复移动蓝标（避免 Canvas 懒加载模式下“刷新后移动效果消失”）
+    await restoreExplicitMovedIdsFromStorage();
 
     // 先加载基础数据
     console.log('[初始化] 加载基础数据...');
@@ -12704,6 +12731,85 @@ async function getBookmarkTreeSnapshot() {
     return { tree, version: null };
 }
 
+// Canvas 永久栏目懒加载：需要依赖 cachedCurrentTree 来按需加载 folder children。
+// 若只做 DOM 增量更新但不刷新 cachedCurrentTree，则在“展开/加载更多”时可能被旧快照覆盖，
+// 造成“刷新/展开后移动效果消失 / 节点跑回去”的错觉。
+let pendingTreeSnapshotRefreshTimer = null;
+let treeSnapshotRefreshing = false;
+let treeSnapshotRefreshQueued = false;
+
+async function refreshCachedCurrentTreeSnapshot(reason = '') {
+    // 只在 Canvas 懒加载模式下需要刷新该快照（tree/canvas 全量渲染会自然更新）
+    if (!(currentView === 'canvas' && CANVAS_PERMANENT_TREE_LAZY_ENABLED)) return;
+    if (treeSnapshotRefreshing) {
+        treeSnapshotRefreshQueued = true;
+        return;
+    }
+    treeSnapshotRefreshing = true;
+    try {
+        const snapshot = await getBookmarkTreeSnapshot();
+        if (snapshot && Array.isArray(snapshot.tree)) {
+            cachedCurrentTree = snapshot.tree;
+            cachedCurrentTreeIndex = null;
+            if (typeof snapshot.version !== 'undefined') {
+                lastTreeSnapshotVersion = snapshot.version;
+            }
+            console.log('[TreeSnapshot] 已刷新 cachedCurrentTree（Canvas懒加载）', reason || '');
+        }
+    } catch (e) {
+        console.warn('[TreeSnapshot] 刷新 cachedCurrentTree 失败:', e);
+    } finally {
+        treeSnapshotRefreshing = false;
+        if (treeSnapshotRefreshQueued) {
+            treeSnapshotRefreshQueued = false;
+            refreshCachedCurrentTreeSnapshot('queued').catch(() => { });
+        }
+    }
+}
+
+function scheduleCachedCurrentTreeSnapshotRefresh(reason = '') {
+    if (!(currentView === 'canvas' && CANVAS_PERMANENT_TREE_LAZY_ENABLED)) return;
+    if (pendingTreeSnapshotRefreshTimer) clearTimeout(pendingTreeSnapshotRefreshTimer);
+    pendingTreeSnapshotRefreshTimer = setTimeout(() => {
+        pendingTreeSnapshotRefreshTimer = null;
+        refreshCachedCurrentTreeSnapshot(reason).catch(() => { });
+    }, 300);
+}
+
+function applyIncrementalMoveToCachedCurrentTree(id, moveInfo) {
+    try {
+        if (!(currentView === 'canvas' && CANVAS_PERMANENT_TREE_LAZY_ENABLED)) return;
+        if (!id || !moveInfo || typeof moveInfo.parentId === 'undefined' || typeof moveInfo.oldParentId === 'undefined') return;
+        if (!cachedCurrentTree || !cachedCurrentTree[0]) return;
+
+        const index = getCachedCurrentTreeIndex();
+        if (!index) return;
+
+        const keyId = String(id);
+        const movedNode = index.get(keyId);
+        const oldParent = index.get(String(moveInfo.oldParentId));
+        const newParent = index.get(String(moveInfo.parentId));
+        if (!movedNode || !oldParent || !newParent) return;
+
+        const oldChildren = Array.isArray(oldParent.children) ? oldParent.children : [];
+        oldParent.children = oldChildren.filter(child => String(child?.id) !== keyId);
+
+        const newChildren = Array.isArray(newParent.children) ? newParent.children : [];
+        const filteredNew = newChildren.filter(child => String(child?.id) !== keyId);
+        const insertIndex = (typeof moveInfo.index === 'number')
+            ? Math.max(0, Math.min(moveInfo.index, filteredNew.length))
+            : filteredNew.length;
+        filteredNew.splice(insertIndex, 0, movedNode);
+        newParent.children = filteredNew;
+
+        // 更新节点自身的父信息（供路径/懒加载逻辑使用）
+        movedNode.parentId = String(moveInfo.parentId);
+        if (typeof moveInfo.index === 'number') movedNode.index = moveInfo.index;
+    } catch (_) {
+        // 静默失败：最终会由 refreshCachedCurrentTreeSnapshot() 兜底
+    }
+}
+
 function getCachedCurrentTreeIndex() {
     if (cachedCurrentTreeIndex) return cachedCurrentTreeIndex;
     if (!cachedCurrentTree || !cachedCurrentTree[0]) return null;
@@ -12794,9 +12900,9 @@ function loadPermanentFolderChildrenLazy(parentId, childrenContainer, startIndex
 
         // 懒加载插入新节点后：补绑定拖拽事件（内部拖拽排序/移动）
         try {
-            const treeRoot = childrenContainer.closest('#bookmarkTree');
-            if (treeRoot && typeof attachDragEvents === 'function') {
-                attachDragEvents(treeRoot);
+            // 仅对“刚插入的子树”补绑，避免每次懒加载都扫描整棵书签树
+            if (typeof attachDragEvents === 'function') {
+                attachDragEvents(childrenContainer);
             }
         } catch (_) { }
 
@@ -13069,6 +13175,33 @@ async function renderTreeView(forceRefresh = false) {
     let permScrollTop = permBody ? permBody.scrollTop : null;
     let permScrollLeft = permBody ? permBody.scrollLeft : 0;
 
+    // 避免“渲染后多次恢复滚动”与用户滚动产生抢夺：一旦检测到用户开始滚动，短时间内停止自动恢复
+    const isScrollRestoreBlocked = () => {
+        if (!permBody) return false;
+        try {
+            const until = parseInt(permBody.dataset.scrollRestoreBlockUntil || '0', 10) || 0;
+            return until && Date.now() < until;
+        } catch (_) {
+            return false;
+        }
+    };
+    if (permBody && permBody.dataset.scrollRestoreGuardAttached !== 'true') {
+        permBody.dataset.scrollRestoreGuardAttached = 'true';
+        const blockMs = 1000;
+        const block = () => {
+            try {
+                permBody.dataset.scrollRestoreBlockUntil = String(Date.now() + blockMs);
+            } catch (_) { }
+        };
+        permBody.addEventListener('wheel', block, { passive: true });
+        permBody.addEventListener('touchstart', block, { passive: true });
+        permBody.addEventListener('touchmove', block, { passive: true });
+        // 仅当直接在滚动容器上按下（如拖动滚动条/空白区域）才算用户滚动意图，避免点击树节点误触发
+        permBody.addEventListener('pointerdown', (e) => {
+            if (e && e.target === permBody) block();
+        }, { passive: true });
+    }
+
     // 页面刷新后，permScrollTop 是 0，需要从 localStorage 恢复
     if (permScrollTop === 0 && currentView === 'canvas') {
         try {
@@ -13116,6 +13249,7 @@ async function renderTreeView(forceRefresh = false) {
         // 恢复滚动位置（延迟确保展开状态恢复后再恢复滚动位置）
         if (permBody && permScrollTop !== null) {
             const restoreScroll = () => {
+                if (isScrollRestoreBlocked()) return;
                 permBody.scrollTop = permScrollTop;
                 permBody.scrollLeft = permScrollLeft;
             };
@@ -13234,7 +13368,7 @@ async function renderTreeView(forceRefresh = false) {
                 cachedCurrentTree = currentTree;
                 cachedCurrentTreeIndex = null;
                 // 恢复滚动位置
-                if (permBody && permScrollTop !== null) {
+                if (permBody && permScrollTop !== null && !isScrollRestoreBlocked()) {
                     permBody.scrollTop = permScrollTop;
                     permBody.scrollLeft = permScrollLeft;
                 }
@@ -13257,6 +13391,7 @@ async function renderTreeView(forceRefresh = false) {
             // 恢复滚动位置（延迟确保展开状态恢复后再恢复滚动位置）
             if (permBody && permScrollTop !== null) {
                 const restoreScroll = () => {
+                    if (isScrollRestoreBlocked()) return;
                     permBody.scrollTop = permScrollTop;
                     permBody.scrollLeft = permScrollLeft;
                 };
@@ -13409,6 +13544,7 @@ async function renderTreeView(forceRefresh = false) {
             // 恢复滚动位置（延迟确保展开状态和懒加载完成后再恢复滚动位置）
             if (permBody && permScrollTop !== null) {
                 const restoreScroll = () => {
+                    if (isScrollRestoreBlocked()) return;
                     permBody.scrollTop = permScrollTop;
                     permBody.scrollLeft = permScrollLeft;
                 };
@@ -13550,17 +13686,17 @@ function attachTreeEvents(treeContainer) {
         } catch (_) { }
 
         // 点击整个文件夹行都可以展开
-        const treeItem = e.target.closest('.tree-item');
+        const treeItem = e.target && e.target.closest ? e.target.closest('.tree-item[data-node-id]') : null;
         if (treeItem) {
             // 找到包含这个tree-item的tree-node
-            const node = treeItem.parentElement;
-            if (!node || !node.classList.contains('tree-node')) {
+            const node = treeItem.closest('.tree-node');
+            if (!node) {
                 console.log('[树事件] 未找到tree-node');
                 return;
             }
 
-            const children = node.querySelector('.tree-children');
-            const toggle = node.querySelector('.tree-toggle');
+            const children = node.querySelector(':scope > .tree-children');
+            const toggle = treeItem.querySelector(':scope > .tree-toggle');
 
             console.log('[树事件] 点击节点:', {
                 hasChildren: !!children,
@@ -13667,18 +13803,33 @@ function restoreJSONScrollPosition(jsonContainer) {
 }
 
 // 保存树的展开状态（使用节点 ID，更可靠）
+let _saveTreeExpandStateTimer = null;
+let _saveTreeExpandStateLastContainer = null;
 function saveTreeExpandState(treeContainer) {
     try {
-        const expandedIds = [];
-        treeContainer.querySelectorAll('.tree-children.expanded').forEach(children => {
-            const node = children.closest('.tree-node');
-            const item = node ? node.querySelector('.tree-item[data-node-id]') : null;
-            if (item && item.dataset.nodeId) {
-                expandedIds.push(item.dataset.nodeId);
+        _saveTreeExpandStateLastContainer = treeContainer;
+        if (_saveTreeExpandStateTimer) {
+            clearTimeout(_saveTreeExpandStateTimer);
+        }
+        _saveTreeExpandStateTimer = setTimeout(() => {
+            _saveTreeExpandStateTimer = null;
+            const container = _saveTreeExpandStateLastContainer;
+            if (!container) return;
+            try {
+                const expandedIds = [];
+                container.querySelectorAll('.tree-children.expanded').forEach(children => {
+                    const node = children.closest('.tree-node');
+                    const item = node ? node.querySelector('.tree-item[data-node-id]') : null;
+                    if (item && item.dataset.nodeId) {
+                        expandedIds.push(item.dataset.nodeId);
+                    }
+                });
+                localStorage.setItem('treeExpandedNodeIds', JSON.stringify(expandedIds));
+                console.log('[树状态] 保存展开节点:', expandedIds.length);
+            } catch (e) {
+                console.error('[树状态] 保存失败:', e);
             }
-        });
-        localStorage.setItem('treeExpandedNodeIds', JSON.stringify(expandedIds));
-        console.log('[树状态] 保存展开节点:', expandedIds.length);
+        }, 250);
     } catch (e) {
         console.error('[树状态] 保存失败:', e);
     }
@@ -14862,10 +15013,6 @@ async function applyIncrementalMoveToTree(id, moveInfo) {
     const newParentChildren = newParentItem && newParentItem.nextElementSibling && newParentItem.nextElementSibling.classList.contains('tree-children')
         ? newParentItem.nextElementSibling : null;
     
-    // 检查节点是否已经在正确的父容器中（由即时视觉更新处理过）
-    const currentParent = node ? node.parentElement : null;
-    const alreadyInPlace = currentParent && currentParent === newParentChildren;
-    
     if (!newParentChildren) { 
         // 如果找不到新父容器但节点有移动标记，说明即时更新已处理，只需添加徽标
         if (item.classList.contains('tree-change-moved')) {
@@ -14877,50 +15024,48 @@ async function applyIncrementalMoveToTree(id, moveInfo) {
         return; 
     }
     
-    // 如果节点已经在正确位置，跳过DOM操作
-    if (alreadyInPlace) {
-        console.log('[增量移动] 节点已在正确位置（即时更新已处理）');
+    // 关键修复：同一父级内的“排序移动”时，node 仍在 newParentChildren 里，但位置需要更新。
+    // 之前的 alreadyInPlace 逻辑会直接跳过，导致移动后视觉不跟随（只能依赖全量 renderTreeView 修正）。
+    if (!node) {
+        console.warn('[增量移动] 找不到tree-node容器，跳过');
+        return;
+    }
+    // 从旧位置移除并插入新父下（即使同父级也需要重排）
+    try {
+        if (node.parentNode) node.parentNode.removeChild(node);
+    } catch (_) { /* ignore */ }
+
+    // 按目标 index 插入更准确（忽略已删除的同级节点）
+    const targetIndex = (moveInfo && typeof moveInfo.index === 'number') ? moveInfo.index : null;
+    const siblingsAll = Array.from(newParentChildren.querySelectorAll(':scope > .tree-node'));
+    const presentSiblings = siblingsAll.filter(n => !n.querySelector(':scope > .tree-item')?.classList.contains('tree-change-deleted'));
+
+    if (targetIndex === null) {
+        // 尽量插在第一个已删除节点之前
+        const firstDeleted = siblingsAll.find(n => n.querySelector(':scope > .tree-item')?.classList.contains('tree-change-deleted'));
+        if (firstDeleted) newParentChildren.insertBefore(node, firstDeleted);
+        else newParentChildren.appendChild(node);
     } else {
-        // 从旧位置移除并插入新父下
-        if (node) node.remove();
-        // 按目标 index 插入更准确（忽略已删除的同级节点）
-        const targetIndex = (moveInfo && typeof moveInfo.index === 'number') ? moveInfo.index : null;
-        if (targetIndex === null) {
-            // 尽量插在第一个已删除节点之前
-            const siblingsAll = Array.from(newParentChildren.querySelectorAll(':scope > .tree-node'));
+        const safeIndex = Math.max(0, targetIndex);
+        const anchor = presentSiblings[safeIndex] || null;
+        if (anchor) newParentChildren.insertBefore(node, anchor);
+        else {
             const firstDeleted = siblingsAll.find(n => n.querySelector(':scope > .tree-item')?.classList.contains('tree-change-deleted'));
-            if (firstDeleted) newParentChildren.insertBefore(node, firstDeleted); else newParentChildren.appendChild(node);
-        } else {
-            const siblingsAll = Array.from(newParentChildren.querySelectorAll(':scope > .tree-node'));
-            const presentSiblings = siblingsAll.filter(n => !n.querySelector(':scope > .tree-item')?.classList.contains('tree-change-deleted'));
-            const anchor = presentSiblings[targetIndex] || null;
-            if (anchor) newParentChildren.insertBefore(node, anchor);
-            else {
-                const firstDeleted = siblingsAll.find(n => n.querySelector(':scope > .tree-item')?.classList.contains('tree-change-deleted'));
-                if (firstDeleted) newParentChildren.insertBefore(node, firstDeleted); else newParentChildren.appendChild(node);
-            }
+            if (firstDeleted) newParentChildren.insertBefore(node, firstDeleted);
+            else newParentChildren.appendChild(node);
         }
     }
 
-    // —— 修正缩进：适配新层级 ——
+    // 注意：缩进由 DOM 结构（.tree-children 的 margin-left）自动决定。
+    // 这里不要给 .tree-node 设 padding-left，否则会导致“放手瞬间层级不对齐”的视觉问题。
+    // 清理历史遗留的 padding-left（旧版本曾写入），避免刷新前后出现“对齐忽然变正常/又异常”的错觉。
     try {
-        if (node && newParentItem) {
-            const parentNodeEl = newParentItem.closest('.tree-node');
-            const parentPad = parseInt(parentNodeEl?.style?.paddingLeft || '0', 10) || 0;
-            const basePad = parentPad + 12;
-
-            const applyIndent = (treeNodeEl, pad) => {
-                if (!treeNodeEl) return;
-                treeNodeEl.style.paddingLeft = pad + 'px';
-                const childrenWrap = treeNodeEl.querySelector(':scope > .tree-children');
-                if (childrenWrap) {
-                    const childNodes = childrenWrap.querySelectorAll(':scope > .tree-node');
-                    childNodes.forEach(child => applyIndent(child, pad + 12));
-                }
-            };
-            applyIndent(node, basePad);
-        }
-    } catch (_) { /* 安静失败 */ }
+        if (node && node.style) node.style.paddingLeft = '';
+        // 仅清理确实带有 padding-left 的节点，避免无谓遍历
+        node.querySelectorAll('.tree-node[style*="padding-left"]').forEach(n => {
+            try { n.style.paddingLeft = ''; } catch (_) { }
+        });
+    } catch (_) { /* ignore */ }
     
     // 如果已经有移动标记（由即时更新处理），跳过徽标添加
     if (item.classList.contains('tree-change-moved') && item.querySelector('.change-badge.moved')) {
@@ -15602,6 +15747,19 @@ function handleStorageChange(changes, namespace) {
         return;
     }
 
+    // Canvas 视图：lastSyncOperations 只是“结构变化标记”，真正的永久栏目树已由 bookmarks API 增量更新。
+    // 若在这里做全量重载/重渲，会造成永久栏目明显闪烁与抖动（尤其在频繁移动/修改时）。
+    const isCanvasOpsOnly =
+        currentView === 'canvas' &&
+        !!changes.lastSyncOperations &&
+        !changes.syncHistory &&
+        !changes.lastSyncTime &&
+        !changes.lastBookmarkData;
+    if (isCanvasOpsOnly) {
+        console.log('[存储监听] Canvas下仅 lastSyncOperations 变化，跳过自动刷新以避免永久栏目闪烁');
+        return;
+    }
+
     // 检查相关数据是否变化 - 实时更新
     if (changes.syncHistory || changes.lastSyncTime || changes.lastBookmarkData || changes.lastSyncOperations) {
         console.log('[存储监听] 书签数据变化，立即重新加载...');
@@ -15634,10 +15792,18 @@ function handleStorageChange(changes, namespace) {
 
             // 如果当前在 canvas 视图，同步刷新永久栏目（强制刷新）
             if (currentView === 'canvas') {
-                console.log('[存储监听] 刷新 Canvas 永久栏目');
-                await renderTreeView(true);
-                if (window.CanvasModule && window.CanvasModule.enhance) {
-                    try { window.CanvasModule.enhance(); } catch (e) { console.warn('[Canvas] enhance失败:', e); }
+                // Canvas 视图：永久栏目已经由 bookmarks API 增量更新，频繁强制重渲会造成明显“刷新/闪烁/抖动”
+                // 这里仅在“尚未渲染出树”时才做一次兜底渲染，其余情况保持 DOM 稳定以优化观感。
+                const treeContainer = document.getElementById('bookmarkTree');
+                const treeHasDom = !!(treeContainer && treeContainer.children && treeContainer.children.length > 0);
+                if (!treeHasDom) {
+                    console.log('[存储监听] Canvas 永久栏目尚未渲染，执行一次兜底渲染');
+                    await renderTreeView(true);
+                    if (window.CanvasModule && window.CanvasModule.enhance) {
+                        try { window.CanvasModule.enhance(); } catch (e) { console.warn('[Canvas] enhance失败:', e); }
+                    }
+                } else {
+                    console.log('[存储监听] Canvas 永久栏目已存在，跳过强制重渲以避免闪烁');
                 }
             }
 
@@ -15724,6 +15890,7 @@ function setupBookmarkListener() {
             // 支持 tree 和 canvas 视图（canvas视图包含永久栏目的书签树）
             if (currentView === 'tree' || currentView === 'canvas') {
                 await applyIncrementalCreateToTree(id, bookmark);
+                scheduleCachedCurrentTreeSnapshotRefresh('onCreated');
             }
             // 立即刷新当前变化（轻量重绘容器，不刷新页面）
             if (currentView === 'current-changes') {
@@ -15757,6 +15924,7 @@ function setupBookmarkListener() {
             // 支持 tree 和 canvas 视图（canvas视图包含永久栏目的书签树）
             if (currentView === 'tree' || currentView === 'canvas') {
                 applyIncrementalRemoveFromTree(id);
+                scheduleCachedCurrentTreeSnapshotRefresh('onRemoved');
             }
             if (currentView === 'current-changes') {
                 await renderCurrentChangesViewWithRetry(1, true);
@@ -15792,6 +15960,7 @@ function setupBookmarkListener() {
             // 支持 tree 和 canvas 视图（canvas视图包含永久栏目的书签树）
             if (currentView === 'tree' || currentView === 'canvas') {
                 await applyIncrementalChangeToTree(id, changeInfo);
+                scheduleCachedCurrentTreeSnapshotRefresh('onChanged');
             }
             if (currentView === 'current-changes') {
                 await renderCurrentChangesViewWithRetry(1, true);
@@ -15817,6 +15986,8 @@ function setupBookmarkListener() {
             // 支持 tree 和 canvas 视图（canvas视图包含永久栏目的书签树）
             if (currentView === 'tree' || currentView === 'canvas') {
                 await applyIncrementalMoveToTree(id, moveInfo);
+                applyIncrementalMoveToCachedCurrentTree(id, moveInfo);
+                scheduleCachedCurrentTreeSnapshotRefresh('onMoved');
             }
             if (currentView === 'current-changes') {
                 await renderCurrentChangesViewWithRetry(1, true);

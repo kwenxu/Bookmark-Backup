@@ -181,10 +181,10 @@ function initializeOperationTracking() {
                 if (node.url) {
                     // 是书签
                     bookmarkMoved = true;
-} else {
+	} else {
                     // 是文件夹
                     folderMoved = true;
-}
+	}
 
 // 记录最近移动的节点到 storage（供前端读取做稳定标识）
 async function recordRecentMovedId(movedId, info) {
@@ -220,6 +220,33 @@ async function recordRecentMovedId(movedId, info) {
             }
         });
     });
+
+    // 监听文件夹子项重排事件：
+    // - 某些“同父级排序/批量调整”场景可能只触发 onChildrenReordered（未必逐个触发 onMoved）
+    // - 如果不记录为结构变化，角标不会变黄（用户会误以为没有变化）
+    try {
+        if (browserAPI.bookmarks.onChildrenReordered) {
+            browserAPI.bookmarks.onChildrenReordered.addListener((parentId, reorderInfo) => {
+                try {
+                    // 重排本质上就是“结构变化（移动）”
+                    // 这里无法可靠区分被重排的是书签还是文件夹，因此同时置为 true，保证变化检测准确触发。
+                    bookmarkMoved = true;
+                    folderMoved = true;
+
+                    // 保存状态
+                    browserAPI.storage.local.set({
+                        lastSyncOperations: {
+                            bookmarkMoved: bookmarkMoved,
+                            folderMoved: folderMoved,
+                            bookmarkModified: bookmarkModified,
+                            folderModified: folderModified,
+                            lastUpdateTime: new Date().toISOString()
+                        }
+                    });
+                } catch (_) { }
+            });
+        }
+    } catch (_) { }
 
     // 监听书签修改事件
     browserAPI.bookmarks.onChanged.addListener((id, changeInfo) => {
@@ -602,6 +629,12 @@ browserAPI.downloads.onChanged.addListener((downloadDelta) => {
 // 书签快照缓存（供 UI 读取，减少重复 getTree）
 // =============================================================================
 
+// 批量导入/重排期间：避免频繁重建快照/分析导致卡顿或 Service Worker 负载飙升
+// - Chrome 书签管理器“导入书签”会触发 onImportBegan/onImportEnded（并伴随大量 onCreated/onMoved 等）
+// - 导入期间允许 UI 继续读旧快照，等导入结束后再统一刷新
+let isBookmarkImporting = false;
+let bookmarkImportFlushTimer = null;
+
 const BookmarkSnapshotCache = {
     tree: null,
     version: 0,
@@ -613,6 +646,8 @@ const BookmarkSnapshotCache = {
     async ensureFresh() {
         if (this.buildPromise) return this.buildPromise;
         if (!this.stale) return this.tree;
+        // 导入期间：如果已有快照，避免被 UI 读取触发频繁 getTree（等导入结束后统一刷新）
+        if (isBookmarkImporting && this.tree) return this.tree;
 
         this.buildPromise = (async () => {
             const tree = await new Promise((resolve) => {
@@ -645,6 +680,11 @@ const BookmarkSnapshotCache = {
         this.stale = true;
         if (this.rebuildTimer) {
             clearTimeout(this.rebuildTimer);
+            this.rebuildTimer = null;
+        }
+        // 导入期间只标记 stale，不自动 rebuild；避免导入过程中出现“停顿间隙触发 rebuild”
+        if (isBookmarkImporting) {
+            return;
         }
         this.rebuildTimer = setTimeout(() => {
             this.rebuildTimer = null;
@@ -1828,6 +1868,47 @@ browserAPI.bookmarks.onCreated.addListener(handleBookmarkChange);
 browserAPI.bookmarks.onRemoved.addListener(handleBookmarkChange);
 browserAPI.bookmarks.onChanged.addListener(handleBookmarkChange);
 browserAPI.bookmarks.onMoved.addListener(handleBookmarkChange);
+// 这些事件在“批量导入/重排”场景下也会改变树结构/顺序，需同步标记快照失效
+try {
+    if (browserAPI.bookmarks.onChildrenReordered) {
+        browserAPI.bookmarks.onChildrenReordered.addListener(handleBookmarkChange);
+    }
+    if (browserAPI.bookmarks.onImportBegan) {
+        browserAPI.bookmarks.onImportBegan.addListener(() => {
+            try {
+                isBookmarkImporting = true;
+                // 导入开始：停止任何已安排的刷新，避免导入过程中触发分析/快照 rebuild
+                if (bookmarkImportFlushTimer) {
+                    clearTimeout(bookmarkImportFlushTimer);
+                    bookmarkImportFlushTimer = null;
+                }
+                if (bookmarkChangeTimeout) {
+                    clearTimeout(bookmarkChangeTimeout);
+                    bookmarkChangeTimeout = null;
+                }
+                // 标记快照失效，并取消自动 rebuild 定时器（导入期间不 rebuild）
+                try { BookmarkSnapshotCache.stale = true; } catch (_) { }
+                if (BookmarkSnapshotCache && BookmarkSnapshotCache.rebuildTimer) {
+                    clearTimeout(BookmarkSnapshotCache.rebuildTimer);
+                    BookmarkSnapshotCache.rebuildTimer = null;
+                }
+            } catch (_) { }
+        });
+    }
+    if (browserAPI.bookmarks.onImportEnded) {
+        browserAPI.bookmarks.onImportEnded.addListener(() => {
+            try {
+                isBookmarkImporting = false;
+                // 导入结束后延迟一次统一刷新，避免最后一波事件还在收尾
+                if (bookmarkImportFlushTimer) clearTimeout(bookmarkImportFlushTimer);
+                bookmarkImportFlushTimer = setTimeout(() => {
+                    bookmarkImportFlushTimer = null;
+                    try { handleBookmarkChange(); } catch (_) { }
+                }, 1000);
+            } catch (_) { }
+        });
+    }
+} catch (_) { }
 
 // 处理书签变化的函数
 async function handleBookmarkChange() {
@@ -1841,6 +1922,10 @@ async function handleBookmarkChange() {
 
     bookmarkChangeTimeout = setTimeout(async () => {
         try {
+            // 导入期间：避免触发昂贵的分析/通信/可能的实时备份；导入结束后会统一 flush
+            if (isBookmarkImporting) {
+                return;
+            }
             // 读取自动模式和自动备份定时器设置
             const { autoSync = true, autoBackupTimerSettings } = await browserAPI.storage.local.get(['autoSync', 'autoBackupTimerSettings']);
             const backupMode = autoBackupTimerSettings?.backupMode || 'regular';
@@ -1854,10 +1939,17 @@ async function handleBookmarkChange() {
                 await browserAPI.storage.local.set({ hasBookmarkActivitySinceLastCheck: true });
 }
 
+            // 先更新分析缓存，再更新角标：
+            // - 避免 setBadge() 读到旧的 cachedBookmarkAnalysis，导致“移动/修改（数量不变）时角标不变黄”
+            // - updateAndCacheAnalysis() 会把 lastSyncOperations 的最新标记纳入分析，并广播给前端
+            try {
+                await updateAndCacheAnalysis();
+            } catch (_) {
+                // 出错时不阻塞角标更新：setBadge 内部会自行兜底为红色/错误角标
+            }
+
             // 更新角标（无论模式如何）
             await setBadge(); // 使用新的不带参数的setBadge
-// 异步更新缓存，不阻塞当前流程
-            updateAndCacheAnalysis();
 
             // 向Popup页面发送消息，通知书签已更改
             try {
@@ -1885,13 +1977,10 @@ async function handleBookmarkChange() {
 // 备份失败也要更新角标为错误状态
                     updateBadgeAfterSync(false);
                 });
-            } else {
-// 手动模式或常规/特定时间模式下书签变化，直接更新角标状态（如变为黄色）
-                await setBadge();
             }
         } catch (error) {
 }
-    }, 500); // 延迟500毫秒，合并短时间内的多次变化
+    }, 250); // 延迟250毫秒，合并短时间内的多次变化（降低角标反馈延迟）
 }
 
 // 添加快捷键监听
@@ -4234,13 +4323,14 @@ async function getBatchHistoryDataWithTitle() {
     if (!browserAPI.history) return { urlMap, titleMap };
     
     try {
-        // 获取最近一年的历史记录
-        const oneYearAgo = Date.now() - 365 * 24 * 60 * 60 * 1000;
+        // 获取最近180天的历史记录（折中：相比90天更完整，同时避免一年/10万条带来的峰值压力）
+        // 说明：如果后续仍遇到重度历史导致卡顿，可再引入“自适应回退”（先180天，必要时扩展到365天）
+        const oneHundredEightyDaysAgo = Date.now() - 180 * 24 * 60 * 60 * 1000;
         const historyItems = await new Promise(resolve => {
             browserAPI.history.search({
                 text: '',
-                startTime: oneYearAgo,
-                maxResults: 100000
+                startTime: oneHundredEightyDaysAgo,
+                maxResults: 50000
             }, resolve);
         });
         

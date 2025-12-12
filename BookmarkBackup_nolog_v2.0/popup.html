@@ -371,7 +371,7 @@
             box-sizing: border-box;
             background-color: var(--theme-input-bg);
             /* Use CSS variable for background color */
-            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+            transition: border-color 0.3s cubic-bezier(0.4, 0, 0.2, 1), box-shadow 0.3s cubic-bezier(0.4, 0, 0.2, 1), background-color 0.3s cubic-bezier(0.4, 0, 0.2, 1);
         }
 
         /* 输入框焦点状态 */
@@ -415,7 +415,7 @@
             cursor: pointer;
             font-size: 14px;
             font-weight: 500;
-            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+            transition: background-color 0.3s cubic-bezier(0.4, 0, 0.2, 1), box-shadow 0.3s cubic-bezier(0.4, 0, 0.2, 1), transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
             box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
         }
 
@@ -454,7 +454,7 @@
             /* 增加z-index，确保在顶层显示, 高于语言切换按钮 */
             opacity: 0;
             transform: translateY(-10px);
-            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+            transition: opacity 0.3s cubic-bezier(0.4, 0, 0.2, 1), transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
             background-color: var(--theme-bg-elevated);
             /* Use CSS variable for background color */
             box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
@@ -528,7 +528,7 @@
             color: var(--theme-text-on-accent);
             /* Use CSS variable for text color */
             cursor: pointer;
-            transition: all 0.3s ease;
+            transition: background-color 0.3s ease, box-shadow 0.3s ease, transform 0.3s ease;
             box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
             white-space: nowrap;
             text-align: center;
@@ -858,7 +858,7 @@
 
         /* Bookmark Toolbox 样式 */
         .bookmark-toolbox {
-            transition: all 0.3s ease;
+            transition: box-shadow 0.3s ease;
         }
 
         .bookmark-toolbox:hover {
@@ -899,7 +899,7 @@
             align-items: center;
             justify-content: center;
             cursor: pointer;
-            transition: all 0.15s ease;
+            transition: background-color 0.15s ease, border-color 0.15s ease, color 0.15s ease;
             font-size: 8px;
             position: relative;
         }
@@ -947,7 +947,7 @@
             align-items: center;
             min-height: 26px;
             flex: 0 0 auto;
-            transition: all 0.15s ease;
+            transition: background-color 0.15s ease;
             overflow: hidden;
             cursor: pointer;
             width: 100%;
@@ -1073,7 +1073,7 @@
             justify-content: center;
             font-size: 8px;
             cursor: pointer;
-            transition: all 0.15s ease;
+            transition: background-color 0.15s ease, border-color 0.15s ease, color 0.15s ease;
             padding: 0;
         }
 
@@ -1149,7 +1149,7 @@
             display: flex;
             align-items: center;
             justify-content: center;
-            transition: all 0.2s ease;
+            transition: background-color 0.2s ease, color 0.2s ease;
         }
 
         .popup-recommend-later-close:hover {
@@ -1174,7 +1174,7 @@
             align-items: center;
             gap: 8px;
             cursor: pointer;
-            transition: all 0.2s ease;
+            transition: background-color 0.2s ease, transform 0.2s ease;
         }
 
         .popup-later-option i {
@@ -1390,7 +1390,7 @@
             display: flex;
             justify-content: space-between;
             align-items: center;
-            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+            transition: background-color 0.3s cubic-bezier(0.4, 0, 0.2, 1);
         }
 
         .config-header:hover {
@@ -1414,7 +1414,7 @@
             border-radius: 50%;
             display: inline-block;
             box-shadow: 0 0 3px rgba(0, 0, 0, 0.2);
-            transition: all 0.3s ease;
+            transition: background-color 0.3s ease, box-shadow 0.3s ease;
         }
 
         .status-dot.configured {
@@ -1575,7 +1575,7 @@
             border-radius: 8px;
             font-size: 14px;
             background-color: var(--theme-input-bg);
-            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+            transition: border-color 0.3s cubic-bezier(0.4, 0, 0.2, 1), box-shadow 0.3s cubic-bezier(0.4, 0, 0.2, 1), background-color 0.3s cubic-bezier(0.4, 0, 0.2, 1);
         }
 
         /* 清除按钮样式 */
@@ -1634,7 +1634,7 @@
             cursor: pointer;
             border-bottom: 1px solid var(--theme-border-primary);
             background-color: var(--theme-bg-elevated);
-            transition: all 0.2s ease;
+            transition: background-color 0.2s ease;
         }
 
         .search-result-item:last-child {
@@ -1910,7 +1910,7 @@
             cursor: pointer;
             font-size: 12px;
             color: white;
-            transition: all 0.2s ease;
+            transition: background-color 0.2s ease, opacity 0.2s ease;
         }
 
         .edit-button {
@@ -2044,7 +2044,7 @@
             padding: 20px;
             margin-bottom: 20px;
             margin-top: 10px;
-            transition: all 0.3s ease;
+            transition: border-color 0.3s ease, background-color 0.3s ease;
             cursor: pointer;
             background-color: var(--theme-bg-primary);
             position: relative;
@@ -2078,7 +2078,7 @@
             font-size: 38px;
             color: #888;
             margin-bottom: 12px;
-            transition: all 0.3s ease;
+            transition: color 0.3s ease, transform 0.3s ease;
         }
 
         .folder-dropzone:hover .dropzone-icon {
@@ -2098,7 +2098,7 @@
             color: #666;
             font-size: 14px;
             line-height: 1.5;
-            transition: all 0.3s ease;
+            transition: color 0.3s ease;
         }
 
         .folder-dropzone.success .dropzone-text {
@@ -2123,7 +2123,7 @@
             width: 100%;
             max-width: 450px;
             text-align: center;
-            transition: all 0.3s ease;
+            transition: background-color 0.3s ease, border-color 0.3s ease;
         }
 
         .folder-dropzone.success .selected-path {
@@ -2207,7 +2207,7 @@
             box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
             overflow: visible;
             /* 允许内部tooltip溢出 */
-            transition: all 0.5s ease;
+            transition: box-shadow 0.5s ease;
         }
 
         html[data-theme="dark"] .backup-mode-switch {
@@ -2269,7 +2269,7 @@
             z-index: 2;
             font-size: 13px;
             font-weight: bold;
-            transition: all 0.3s ease;
+            transition: color 0.3s ease;
             padding: 6px 8px;
             /* 纵向时略增内边距以保持触控面积 */
             position: relative;
@@ -2309,7 +2309,7 @@
         .option-icon {
             display: inline-block;
             margin-right: 5px;
-            transition: all 0.3s ease;
+            transition: transform 0.3s ease;
             /* vertical-align: middle; */
             /* Parent flex align-items handles this now */
         }
@@ -2334,7 +2334,7 @@
             /* 减小内边距 */
             border-radius: 4px;
             background-color: var(--theme-bg-secondary);
-            transition: all 0.3s ease;
+            transition: background-color 0.3s ease;
         }
 
         /* 手动备份按钮区域 */
@@ -2344,7 +2344,7 @@
             display: flex;
             gap: 8px;
             /* 减小间距 */
-            transition: all 0.3s ease;
+            transition: opacity 0.3s ease;
         }
 
         .manual-buttons button {
@@ -2356,7 +2356,7 @@
             font-weight: 500;
             font-size: 13px;
             cursor: pointer;
-            transition: all 0.3s ease;
+            transition: background-color 0.3s ease, box-shadow 0.3s ease, transform 0.3s ease;
             box-shadow: 0 2px 5px rgba(0, 0, 0, 0.1);
         }
 
@@ -2381,7 +2381,7 @@
             font-size: 13px;
             /* 减小字体 */
             cursor: pointer;
-            transition: all 0.3s ease;
+            transition: background-color 0.3s ease, box-shadow 0.3s ease, transform 0.3s ease;
             display: flex;
             align-items: center;
             justify-content: center;
@@ -2544,7 +2544,7 @@
         }
 
         .status-card {
-            transition: all 0.3s ease;
+            transition: background-color 0.3s ease, border-color 0.3s ease, box-shadow 0.3s ease;
         }
 
         /* 右侧状态卡片：根据模式着色 */

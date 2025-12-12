@@ -3893,8 +3893,14 @@ function getResizeHandleStyle(handleInfo) {
             else style += `bottom: -${halfThickness}px;`;
         } else {
             style += `top: ${cornerSize}; bottom: ${cornerSize}; width: ${edgeThickness};`;
-            if (handleInfo.name === 'w') style += `left: -${halfThickness}px;`;
-            else style += `right: -${halfThickness}px;`;
+            if (handleInfo.name === 'w') {
+                // 左侧handle保持居中（一半在内，一半在外）
+                style += `left: -${halfThickness}px;`;
+            } else {
+                // 【修复】右侧handle完全在栏目外部，避免与垂直滚动条冲突
+                // 从栏目右边缘开始，向右延伸到外部
+                style += `left: 100%;`;
+            }
         }
     }
 

@@ -4781,8 +4781,9 @@ a.tree-label.tree-bookmark-link:hover {
     cursor: ew-resize;
 }
 
+/* 【修复】右侧resize handle完全在栏目外部，避免与垂直滚动条冲突 */
 .resize-e {
-    right: -4px;
+    left: 100%;
     top: 0;
     bottom: 0;
     width: 12px;

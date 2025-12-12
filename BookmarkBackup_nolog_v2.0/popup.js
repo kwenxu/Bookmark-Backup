@@ -7300,43 +7300,54 @@ function normalizeDomain(domain) {
 }
 
 async function fetchAllBookmarksFlat() {
-    return new Promise((resolve) => {
-        chrome.bookmarks.getTree((tree) => {
-            if (!tree || !tree.length) {
-                resolve([]);
-                return;
-            }
-
-            const results = [];
-            function traverse(nodes, ancestorFolderIds = []) {
-                nodes.forEach(node => {
-                    if (node.url) {
-                        results.push({
-                            id: node.id,
-                            title: node.title,
-                            url: node.url,
-                            dateAdded: node.dateAdded,
-                            domain: normalizeDomain((() => {
-                                try {
-                                    return new URL(node.url).hostname;
-                                } catch (_) {
-                                    return '';
-                                }
-                            })()),
-                            ancestorFolderIds
-                        });
-                    }
-                    if (node.children && node.children.length) {
-                        const nextAncestors = node.url ? ancestorFolderIds : [...ancestorFolderIds, node.id];
-                        traverse(node.children, nextAncestors);
+    const tree = await new Promise((resolve) => {
+        try {
+            if (chrome && chrome.runtime && typeof chrome.runtime.sendMessage === 'function') {
+                chrome.runtime.sendMessage({ action: 'getBookmarkSnapshot' }, (resp) => {
+                    if (resp && resp.success && Array.isArray(resp.tree)) {
+                        resolve(resp.tree);
+                    } else {
+                        chrome.bookmarks.getTree(resolve);
                     }
                 });
+                return;
             }
-
-            traverse(tree, []);
-            resolve(results);
-        });
+        } catch (_) { }
+        chrome.bookmarks.getTree(resolve);
     });
+
+    if (!tree || !tree.length) {
+        return [];
+    }
+
+    const results = [];
+    function traverse(nodes, ancestorFolderIds = []) {
+        nodes.forEach(node => {
+            if (node.url) {
+                results.push({
+                    id: node.id,
+                    title: node.title,
+                    url: node.url,
+                    dateAdded: node.dateAdded,
+                    domain: normalizeDomain((() => {
+                        try {
+                            return new URL(node.url).hostname;
+                        } catch (_) {
+                            return '';
+                        }
+                    })()),
+                    ancestorFolderIds
+                });
+            }
+            if (node.children && node.children.length) {
+                const nextAncestors = node.url ? ancestorFolderIds : [...ancestorFolderIds, node.id];
+                traverse(node.children, nextAncestors);
+            }
+        });
+    }
+
+    traverse(tree, []);
+    return results;
 }
 
 async function getPopupBlockedBookmarks() {

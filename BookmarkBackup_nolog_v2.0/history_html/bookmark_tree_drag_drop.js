@@ -95,6 +95,10 @@ function attachDragEvents(treeContainer) {
     const draggableNodes = treeContainer.querySelectorAll('.tree-item[data-node-id]');
     
     draggableNodes.forEach(node => {
+        // 避免重复绑定：renderTreeView/懒加载可能多次调用 attachDragEvents
+        if (node.dataset.dragEventsBound === 'true') return;
+        node.dataset.dragEventsBound = 'true';
+
         // 设置可拖拽
         node.setAttribute('draggable', 'true');
         

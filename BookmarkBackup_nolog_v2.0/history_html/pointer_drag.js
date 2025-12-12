@@ -66,15 +66,24 @@ function attachPointerDragEvents(treeContainer) {
         return;
     }
     
+    // 避免重复绑定（renderTreeView 可能多次调用 attachPointerDragEvents）
+    if (treeContainer.dataset.pointerDragAttached === 'true') {
+        return;
+    }
+    treeContainer.dataset.pointerDragAttached = 'true';
+
     console.log('[指针拖拽] 为容器绑定指针拖拽事件:', treeContainer.id || treeContainer.className);
     
     // 使用事件委托，只在容器上监听
     treeContainer.addEventListener('pointerdown', handlePointerDown);
     
-    // 全局监听 pointermove 和 pointerup
-    document.addEventListener('pointermove', handlePointerMove);
-    document.addEventListener('pointerup', handlePointerUp);
-    document.addEventListener('pointercancel', handlePointerCancel);
+    // 全局监听 pointermove 和 pointerup（只绑定一次）
+    if (!pointerDragState.globalHandlersAttached) {
+        document.addEventListener('pointermove', handlePointerMove);
+        document.addEventListener('pointerup', handlePointerUp);
+        document.addEventListener('pointercancel', handlePointerCancel);
+        pointerDragState.globalHandlersAttached = true;
+    }
 }
 
 function handlePointerDown(e) {

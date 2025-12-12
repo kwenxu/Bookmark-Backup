@@ -4,8 +4,6 @@
 
 // Canvas状态管理
 const CANVAS_BASE_ZOOM_DEFAULT = 0.6; // 新默认基准缩放：旧 60% 视图 = 新 100%
-const CANVAS_INIT_ZOOM_PROTECT_MS = 2200; // 首次进入 Canvas 时的缩放保护窗口
-const CANVAS_INIT_PROTECTION_KEY = 'canvas-init-protection-done-v1';
 
 // 统一的首屏初始缩放：让 HTML 不需要再手动同步数值
 try {
@@ -122,8 +120,6 @@ const CanvasState = {
     // 画布缩放和平移
     zoom: 1,
     baseZoom: CANVAS_BASE_ZOOM_DEFAULT,
-    isInitializing: false, // 初始化保护缩放中（仅首次进入）
-    pendingZoom: null, // 初始化期间累计的目标缩放
     panOffsetX: 0,
     panOffsetY: 0,
     isPanning: false,
@@ -945,46 +941,8 @@ function createTempFolder(sectionId, parentId, title) {
 // 初始化Canvas视图
 // =============================================================================
 
-function startCanvasInitZoomProtectionOnce() {
-    let shouldProtect = false;
-    try {
-        shouldProtect = !localStorage.getItem(CANVAS_INIT_PROTECTION_KEY);
-        if (shouldProtect) {
-            localStorage.setItem(CANVAS_INIT_PROTECTION_KEY, '1');
-        }
-    } catch (_) {
-        // 若 localStorage 不可用，则退化为每次进入都保护一次
-        shouldProtect = true;
-    }
-
-    if (!shouldProtect) {
-        CanvasState.isInitializing = false;
-        CanvasState.pendingZoom = null;
-        return;
-    }
-
-    CanvasState.isInitializing = true;
-    CanvasState.pendingZoom = null;
-
-    // 等待至少两帧绘制后再开始计时，避免与首屏布局抢主线程/GPU
-    requestAnimationFrame(() => {
-        requestAnimationFrame(() => {
-            setTimeout(() => {
-                CanvasState.isInitializing = false;
-                if (CanvasState.pendingZoom) {
-                    const { zoom, centerX, centerY } = CanvasState.pendingZoom;
-                    CanvasState.pendingZoom = null;
-                    setCanvasZoom(zoom, centerX, centerY, { recomputeBounds: true, skipSave: false, silent: true });
-                }
-            }, CANVAS_INIT_ZOOM_PROTECT_MS);
-        });
-    });
-}
-
 function initCanvasView() {
     console.log('[Canvas] 初始化Obsidian风格的Canvas');
-
-    startCanvasInitZoomProtectionOnce();
 
     // 清除缓存的 DOM 引用（防止过期）
     cachedCanvasContainer = null;
@@ -1117,180 +1075,176 @@ function enhanceBookmarkTreeForCanvas() {
     // 原有的拖拽功能（bookmark_tree_drag_drop.js）已经通过 attachTreeEvents() 绑定了
     // 我们只需要添加额外的事件监听器来支持拖出到Canvas即可
 
-    // 使用正确的选择器：.tree-item（不是.bookmark-item）
-    const treeItems = bookmarkTree.querySelectorAll('.tree-item[data-node-id]');
-    treeItems.forEach(item => {
-        // 添加dragstart监听器，收集节点数据（不干扰原有拖拽）
-        item.addEventListener('dragstart', function (e) {
-            const nodeId = item.dataset.nodeId;
-            const nodeTitle = item.dataset.nodeTitle;
-            const nodeUrl = item.dataset.nodeUrl;
-            const isFolder = item.dataset.nodeType === 'folder';
+    // 性能优化：使用事件委托，避免给海量 tree-item 逐个绑定 dragstart/dragend
+    if (bookmarkTree.dataset.canvasDragDelegated === 'true') return;
+    bookmarkTree.dataset.canvasDragDelegated = 'true';
 
-            // 保存到Canvas状态，仅存储必要的标识信息，完整数据稍后获取
-            CanvasState.dragState.draggedData = {
-                id: nodeId,
-                title: nodeTitle,
-                url: nodeUrl,
-                type: isFolder ? 'folder' : 'bookmark',
-                source: 'permanent',
-                hasSnapshot: false
-            };
-            CanvasState.dragState.dragSource = 'permanent';
+    const onDragStart = (e) => {
+        const item = e && e.target && e.target.closest ? e.target.closest('.tree-item[data-node-id]') : null;
+        if (!item) return;
 
-            // 启用拖动时的滚轮滚动功能
-            CanvasState.dragState.wheelScrollEnabled = true;
+        const nodeId = item.dataset.nodeId;
+        const nodeTitle = item.dataset.nodeTitle;
+        const nodeUrl = item.dataset.nodeUrl;
+        const isFolder = item.dataset.nodeType === 'folder';
 
-            // 设置拖拽数据（供外部系统识别）
-            try {
-                if (e.dataTransfer) {
-                    e.dataTransfer.effectAllowed = 'copyMove';
-                }
+        // 保存到Canvas状态，仅存储必要的标识信息，完整数据稍后获取
+        CanvasState.dragState.draggedData = {
+            id: nodeId,
+            title: nodeTitle,
+            url: nodeUrl,
+            type: isFolder ? 'folder' : 'bookmark',
+            source: 'permanent',
+            hasSnapshot: false
+        };
+        CanvasState.dragState.dragSource = 'permanent';
+
+        // 启用拖动时的滚轮滚动功能
+        CanvasState.dragState.wheelScrollEnabled = true;
+
+        // 设置拖拽数据（供外部系统识别）
+        try {
+            if (e.dataTransfer) {
+                e.dataTransfer.effectAllowed = 'copyMove';
                 e.dataTransfer.setData('application/json', JSON.stringify({
                     id: nodeId,
                     title: nodeTitle,
                     url: nodeUrl,
                     type: isFolder ? 'folder' : 'bookmark'
                 }));
-            } catch (err) {
-                console.warn('[Canvas] 设置拖拽数据失败:', err);
             }
+        } catch (err) {
+            console.warn('[Canvas] 设置拖拽数据失败:', err);
+        }
 
-            console.log('[Canvas] 拖拽数据已保存:', CanvasState.dragState.draggedData);
+        markTreeItemDragging(item);
 
-            markTreeItemDragging(item);
+        const permanentSection = document.getElementById('permanentSection');
+        if (permanentSection) {
+            permanentSection.classList.add('drag-origin-active');
+        }
 
+        // 自定义替代UI：
+        // - 单项拖出显示名称
+        // - 批量选择拖出显示英文标识 "Multiple items"
+        try {
+            if (e.dataTransfer && typeof e.dataTransfer.setDragImage === 'function') {
+                let previewText = nodeTitle || nodeUrl || '';
+                try {
+                    const ids = collectPermanentSelectionIds(nodeId);
+                    if (Array.isArray(ids) && ids.length > 1) {
+                        previewText = 'Multiple items';
+                    }
+                } catch (_) { }
+                const preview = document.createElement('div');
+                preview.className = 'drag-preview';
+                preview.textContent = previewText || '';
+                preview.style.left = '-9999px';
+                document.body.appendChild(preview);
+                e.dataTransfer.setDragImage(preview, 0, 0);
+                setTimeout(() => preview.remove(), 0);
+            }
+        } catch (_) { }
+    };
+
+    const onDragEnd = async (e) => {
+        if (CanvasState.dragState.dragSource !== 'permanent') return;
+
+        // 禁用拖动时的滚轮滚动功能
+        CanvasState.dragState.wheelScrollEnabled = false;
+
+        // 防重复：检查是否正在创建或者时间间隔太短
+        const now = Date.now();
+        if (CanvasState.isCreatingTempNode || (now - CanvasState.lastDragEndTime < 300)) {
+            return;
+        }
+
+        const dropX = e.clientX;
+        const dropY = e.clientY;
+
+        // 检查是否拖到Canvas工作区
+        const workspace = document.getElementById('canvasWorkspace');
+        if (!workspace) return;
+
+        const rect = workspace.getBoundingClientRect();
+        let accepted = false;
+
+        if (dropX >= rect.left && dropX <= rect.right &&
+            dropY >= rect.top && dropY <= rect.bottom) {
+
+            // 优先检查是否拖到现有的临时栏目上（通过 drop 事件处理）
+            // 如果已经被 drop 事件处理过（拖到临时栏目），就不创建新栏目
+            const elementAtPoint = document.elementFromPoint(dropX, dropY);
+            const tempNode = elementAtPoint?.closest('.temp-canvas-node');
+            const tempTree = elementAtPoint?.closest('.temp-bookmark-tree');
+            // 如果落点位于永久栏目内，则视为在永久栏目内部操作，不创建临时栏目
             const permanentSection = document.getElementById('permanentSection');
+            const insidePermanentDom = !!(elementAtPoint && permanentSection && elementAtPoint.closest('#permanentSection'));
+            let insidePermanentRect = false;
             if (permanentSection) {
-                permanentSection.classList.add('drag-origin-active');
+                const pRect = permanentSection.getBoundingClientRect();
+                insidePermanentRect = dropX >= pRect.left && dropX <= pRect.right && dropY >= pRect.top && dropY <= pRect.bottom;
             }
 
-            // 自定义替代UI：
-            // - 单项拖出显示名称
-            // - 批量选择拖出显示英文标识 "Multiple items"
-            try {
-                if (e.dataTransfer && typeof e.dataTransfer.setDragImage === 'function') {
-                    let previewText = nodeTitle || nodeUrl || '';
+            if (insidePermanentDom || insidePermanentRect) {
+                accepted = true;
+            } else if (tempNode || tempTree) {
+                accepted = true;
+            } else {
+                // 拖到空白区域，创建新临时栏目
+                const canvasX = (dropX - rect.left - CanvasState.panOffsetX) / CanvasState.zoom;
+                const canvasY = (dropY - rect.top - CanvasState.panOffsetY) / CanvasState.zoom;
+
+                // 在Canvas上创建临时节点（支持多选合集）
+                if (CanvasState.dragState.draggedData) {
                     try {
-                        const ids = collectPermanentSelectionIds(nodeId);
-                        if (Array.isArray(ids) && ids.length > 1) {
-                            previewText = 'Multiple items';
-                        }
-                    } catch (_) { }
-                    const preview = document.createElement('div');
-                    preview.className = 'drag-preview';
-                    preview.textContent = previewText || '';
-                    preview.style.left = '-9999px';
-                    document.body.appendChild(preview);
-                    e.dataTransfer.setDragImage(preview, 0, 0);
-                    setTimeout(() => preview.remove(), 0);
-                }
-            } catch (_) { }
-        });
+                        // 标记正在创建，防止重复
+                        CanvasState.isCreatingTempNode = true;
+                        CanvasState.lastDragEndTime = now;
 
-        // 添加dragend监听器，检查是否拖到Canvas
-        item.addEventListener('dragend', async function (e) {
-            if (CanvasState.dragState.dragSource !== 'permanent') return;
-
-            // 禁用拖动时的滚轮滚动功能
-            CanvasState.dragState.wheelScrollEnabled = false;
-
-            // 防重复：检查是否正在创建或者时间间隔太短
-            const now = Date.now();
-            if (CanvasState.isCreatingTempNode || (now - CanvasState.lastDragEndTime < 300)) {
-                console.log('[Canvas] 防重复：跳过重复的 dragend 事件');
-                return;
-            }
-
-            const dropX = e.clientX;
-            const dropY = e.clientY;
-
-            // 检查是否拖到Canvas工作区
-            const workspace = document.getElementById('canvasWorkspace');
-            if (!workspace) return;
-
-            const rect = workspace.getBoundingClientRect();
-            let accepted = false;
-
-            if (dropX >= rect.left && dropX <= rect.right &&
-                dropY >= rect.top && dropY <= rect.bottom) {
-
-                // 优先检查是否拖到现有的临时栏目上（通过 drop 事件处理）
-                // 如果已经被 drop 事件处理过（拖到临时栏目），就不创建新栏目
-                const elementAtPoint = document.elementFromPoint(dropX, dropY);
-                const tempNode = elementAtPoint?.closest('.temp-canvas-node');
-                const tempTree = elementAtPoint?.closest('.temp-bookmark-tree');
-                // 如果落点位于永久栏目内，则视为在永久栏目内部操作，不创建临时栏目
-                const permanentSection = document.getElementById('permanentSection');
-                const insidePermanentDom = !!(elementAtPoint && permanentSection && elementAtPoint.closest('#permanentSection'));
-                let insidePermanentRect = false;
-                if (permanentSection) {
-                    const pRect = permanentSection.getBoundingClientRect();
-                    insidePermanentRect = dropX >= pRect.left && dropX <= pRect.right && dropY >= pRect.top && dropY <= pRect.bottom;
-                }
-
-                if (insidePermanentDom || insidePermanentRect) {
-                    // 落点在永久栏目区域内，不创建临时栏目（避免内部移动误触发）
-                    console.log('[Canvas] 拖拽位于永久栏目内，不创建临时栏目');
-                    accepted = true;
-                } else if (tempNode || tempTree) {
-                    // 已经拖到现有临时栏目，由 drop 事件处理
-                    console.log('[Canvas] 拖到现有临时栏目，不创建新栏目');
-                    accepted = true;
-                } else {
-                    // 拖到空白区域，创建新临时栏目
-                    const canvasX = (dropX - rect.left - CanvasState.panOffsetX) / CanvasState.zoom;
-                    const canvasY = (dropY - rect.top - CanvasState.panOffsetY) / CanvasState.zoom;
-
-                    console.log('[Canvas] 拖到Canvas空白区域，创建新临时栏目:', { canvasX, canvasY });
-
-                    // 在Canvas上创建临时节点（支持多选合集）
-                    if (CanvasState.dragState.draggedData) {
+                        let ids = [];
                         try {
-                            // 标记正在创建，防止重复
-                            CanvasState.isCreatingTempNode = true;
-                            CanvasState.lastDragEndTime = now;
-
-                            let ids = [];
-                            try {
-                                ids = collectPermanentSelectionIds(CanvasState.dragState.draggedData.id || null) || [];
-                            } catch (_) { }
-                            if (Array.isArray(ids) && ids.length > 1) {
-                                await createTempNode({ multi: true, permanentIds: ids }, canvasX, canvasY);
-                            } else {
-                                await createTempNode(CanvasState.dragState.draggedData, canvasX, canvasY);
-                            }
-                            accepted = true;
-                        } catch (err) {
-                            console.error('[Canvas] 创建临时栏目失败:', err);
-                            alert('创建临时栏目失败: ' + err.message);
-                        } finally {
-                            // 延迟重置标志，确保所有 dragend 事件都被过滤
-                            setTimeout(() => {
-                                CanvasState.isCreatingTempNode = false;
-                            }, 500);
+                            ids = collectPermanentSelectionIds(CanvasState.dragState.draggedData.id || null) || [];
+                        } catch (_) { }
+                        if (Array.isArray(ids) && ids.length > 1) {
+                            await createTempNode({ multi: true, permanentIds: ids }, canvasX, canvasY);
+                        } else {
+                            await createTempNode(CanvasState.dragState.draggedData, canvasX, canvasY);
                         }
+                        accepted = true;
+                    } catch (err) {
+                        console.error('[Canvas] 创建临时栏目失败:', err);
+                        alert('创建临时栏目失败: ' + err.message);
+                    } finally {
+                        // 延迟重置标志，确保所有 dragend 事件都被过滤
+                        setTimeout(() => {
+                            CanvasState.isCreatingTempNode = false;
+                        }, 500);
                     }
                 }
             }
+        }
 
-            // 清理状态
-            CanvasState.dragState.draggedData = null;
-            CanvasState.dragState.dragSource = null;
-            const permanentSection = document.getElementById('permanentSection');
-            if (permanentSection) {
-                permanentSection.classList.remove('drag-origin-active');
-            }
-            if (workspace) {
-                workspace.classList.remove('canvas-drop-active');
-            }
+        // 清理状态
+        CanvasState.dragState.draggedData = null;
+        CanvasState.dragState.dragSource = null;
+        const permanentSection = document.getElementById('permanentSection');
+        if (permanentSection) {
+            permanentSection.classList.remove('drag-origin-active');
+        }
+        if (workspace) {
+            workspace.classList.remove('canvas-drop-active');
+        }
 
-            // 接受落点后延迟还原树条目外观，避免“松手瞬间回弹”感
-            scheduleClearTreeItemDragging(accepted ? 380 : 160);
-        });
-    });
+        // 接受落点后延迟还原树条目外观，避免“松手瞬间回弹”感
+        scheduleClearTreeItemDragging(accepted ? 380 : 160);
+    };
 
-    console.log('[Canvas] 已为', treeItems.length, '个节点添加Canvas拖拽支持');
+    // 使用捕获阶段确保不被子模块 stopPropagation 影响，但不阻断原事件链
+    bookmarkTree.addEventListener('dragstart', onDragStart, true);
+    bookmarkTree.addEventListener('dragend', (e) => { onDragEnd(e); }, true);
+
+    console.log('[Canvas] 已为书签树启用委托拖拽支持');
 }
 
 // 这两个函数已废弃，不再需要，因为原有的拖拽功能已经足够
@@ -1516,8 +1470,7 @@ function setupCanvasZoomAndPan() {
             // 每次滚动改变固定的百分比，而不是固定的绝对值
             const zoomSpeed = isTouchpad ? 0.0015 : 0.0003; // 每像素滚动对应的缩放因子
 
-            // 初始化保护期间不立即应用缩放，而是累计目标值
-            const baseZoomForCalc = CanvasState.pendingZoom ? CanvasState.pendingZoom.zoom : CanvasState.zoom;
+            const baseZoomForCalc = CanvasState.zoom;
 
             // 计算缩放因子：delta > 0 放大，delta < 0 缩小
             // 使用 Math.exp 实现指数缩放，确保放大和缩小是对称的
@@ -1525,11 +1478,6 @@ function setupCanvasZoomAndPan() {
             let newZoom = baseZoomForCalc * zoomFactor;
 
             newZoom = Math.max(0.1, Math.min(3, newZoom));
-
-            if (CanvasState.isInitializing) {
-                CanvasState.pendingZoom = { zoom: newZoom, centerX: mouseX, centerY: mouseY };
-                return;
-            }
 
             // 使用优化的缩放更新，滚动时跳过边界计算
             scheduleZoomUpdate(newZoom, mouseX, mouseY, { recomputeBounds: false, skipSave: false, skipScrollbarUpdate: true });

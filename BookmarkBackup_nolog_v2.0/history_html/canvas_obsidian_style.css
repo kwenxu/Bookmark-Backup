@@ -949,20 +949,6 @@
     display: none;
 }
 
-/* 未加载子节点的文件夹指示器 */
-.tree-item[data-children-loaded="false"] .tree-toggle::after {
-    content: '';
-    position: absolute;
-    right: -8px;
-    top: 50%;
-    transform: translateY(-50%);
-    width: 4px;
-    height: 4px;
-    background: var(--accent-primary, #2563eb);
-    border-radius: 50%;
-    opacity: 0.6;
-}
-
 /* 休眠栏目样式（视口外） */
 .temp-canvas-node.dormant-content {
     /* 休眠时减少渲染负担 */

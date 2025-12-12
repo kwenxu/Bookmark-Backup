@@ -12649,11 +12649,19 @@ let cachedTreeData = null; // 缓存树数据
 let cachedOldTree = null; // 缓存旧树数据
 let cachedCurrentTree = null; // 缓存当前树数据（用于智能路径检测）
 let lastTreeFingerprint = null; // 上次树的指纹
+let lastTreeSnapshotVersion = null; // 上次快照版本（来自 background 缓存）
+let cachedCurrentTreeIndex = null; // id -> node（懒加载用，按需构建）
+
+// Canvas 永久栏目树：懒加载配置（避免首次进入构建海量 DOM）
+const CANVAS_PERMANENT_TREE_LAZY_ENABLED = true;
+const CANVAS_PERMANENT_TREE_CHILD_BATCH = 200;
 
 // 清除树缓存（供拖拽模块调用，防止缓存覆盖DOM更新）
 function clearTreeCache() {
     cachedTreeData = null;
     lastTreeFingerprint = null;
+    lastTreeSnapshotVersion = null;
+    cachedCurrentTreeIndex = null;
     console.log('[树缓存] 已清除');
 }
 window.clearTreeCache = clearTreeCache;
@@ -12678,6 +12686,122 @@ function getTreeFingerprint(tree) {
     };
 
     return JSON.stringify(extractKey(tree[0]));
+}
+
+// 从 background.js 获取书签树快照（优先走缓存，失败再直连 getTree）
+async function getBookmarkTreeSnapshot() {
+    try {
+        if (browserAPI && browserAPI.runtime && typeof browserAPI.runtime.sendMessage === 'function') {
+            const resp = await browserAPI.runtime.sendMessage({ action: 'getBookmarkSnapshot' });
+            if (resp && resp.success && Array.isArray(resp.tree)) {
+                return { tree: resp.tree, version: resp.version ?? null };
+            }
+        }
+    } catch (e) {
+        console.warn('[TreeSnapshot] 获取后台快照失败，回退直连:', e);
+    }
+    const tree = await new Promise(resolve => browserAPI.bookmarks.getTree(resolve));
+    return { tree, version: null };
+}
+
+function getCachedCurrentTreeIndex() {
+    if (cachedCurrentTreeIndex) return cachedCurrentTreeIndex;
+    if (!cachedCurrentTree || !cachedCurrentTree[0]) return null;
+    const map = new Map();
+    const stack = [cachedCurrentTree[0]];
+    while (stack.length) {
+        const node = stack.pop();
+        if (!node || !node.id) continue;
+        map.set(String(node.id), node);
+        if (Array.isArray(node.children) && node.children.length) {
+            for (let i = node.children.length - 1; i >= 0; i--) {
+                stack.push(node.children[i]);
+            }
+        }
+    }
+    cachedCurrentTreeIndex = map;
+    return cachedCurrentTreeIndex;
+}
+
+function loadPermanentFolderChildrenLazy(parentId, childrenContainer, startIndex = 0, triggerBtn = null) {
+    try {
+        if (!parentId || !childrenContainer) return;
+        const index = getCachedCurrentTreeIndex();
+        const parent = index ? index.get(String(parentId)) : null;
+        if (!parent || !Array.isArray(parent.children) || parent.children.length === 0) {
+            const item = document.querySelector(`.tree-item[data-node-id="${CSS.escape(String(parentId))}"]`);
+            if (item) {
+                item.dataset.childrenLoaded = 'true';
+                item.dataset.hasChildren = 'false';
+            }
+            if (triggerBtn) {
+                try { triggerBtn.remove(); } catch (_) { }
+            }
+            return;
+        }
+
+        const item = document.querySelector(`.tree-item[data-node-id="${CSS.escape(String(parentId))}"]`);
+        const level = item ? (parseInt(item.dataset.nodeLevel, 10) || 0) : 0;
+        const nextLevel = level + 1;
+
+        const slice = parent.children.slice(startIndex, startIndex + CANVAS_PERMANENT_TREE_CHILD_BATCH);
+        const visited = new Set([String(parentId)]);
+        const html = slice.map(child => renderTreeNodeWithChanges(child, nextLevel, 50, visited)).join('');
+
+        const tempDiv = document.createElement('div');
+        tempDiv.innerHTML = html;
+
+        const frag = document.createDocumentFragment();
+        while (tempDiv.firstChild) {
+            frag.appendChild(tempDiv.firstChild);
+        }
+
+        if (startIndex === 0 && !triggerBtn) {
+            childrenContainer.innerHTML = '';
+        }
+
+        // 插入到“加载更多”按钮之前（若存在）
+        if (triggerBtn && triggerBtn.parentElement === childrenContainer) {
+            childrenContainer.insertBefore(frag, triggerBtn);
+        } else {
+            childrenContainer.appendChild(frag);
+        }
+
+        if (item) {
+            item.dataset.childrenLoaded = 'true';
+            item.dataset.hasChildren = 'true';
+        }
+
+        const nextStart = startIndex + slice.length;
+        const remaining = parent.children.length - nextStart;
+
+        let loadMoreBtn = triggerBtn;
+        if (remaining > 0) {
+            if (!loadMoreBtn) {
+                loadMoreBtn = document.createElement('button');
+                loadMoreBtn.type = 'button';
+                loadMoreBtn.className = 'tree-load-more';
+                childrenContainer.appendChild(loadMoreBtn);
+            }
+            loadMoreBtn.dataset.parentId = String(parentId);
+            loadMoreBtn.dataset.startIndex = String(nextStart);
+            loadMoreBtn.textContent = currentLang === 'zh_CN'
+                ? `加载更多（剩余 ${remaining} 项）`
+                : `Load more (${remaining} remaining)`;
+        } else if (loadMoreBtn) {
+            try { loadMoreBtn.remove(); } catch (_) { }
+        }
+
+        // 懒加载插入新节点后：补绑定拖拽事件（内部拖拽排序/移动）
+        try {
+            const treeRoot = childrenContainer.closest('#bookmarkTree');
+            if (treeRoot && typeof attachDragEvents === 'function') {
+                attachDragEvents(treeRoot);
+            }
+        } catch (_) { }
+    } catch (e) {
+        console.warn('[Canvas Tree Lazy] load children failed:', e);
+    }
 }
 
 // 计算节点在指定树中的“索引地址路径”（示例：/1/2/3），从根的第一层开始使用 1 基索引
@@ -12806,13 +12930,17 @@ async function renderTreeViewSync() {
     // 清除缓存，确保重新渲染
     cachedTreeData = null;
     lastTreeFingerprint = null;
+    lastTreeSnapshotVersion = null;
+    cachedCurrentTreeIndex = null;
     
     try {
         // 并行获取数据
-        const [currentTree, storageData] = await Promise.all([
-            new Promise(resolve => browserAPI.bookmarks.getTree(resolve)),
+        const [snapshot, storageData] = await Promise.all([
+            getBookmarkTreeSnapshot(),
             new Promise(resolve => browserAPI.storage.local.get(['lastBookmarkData'], resolve))
         ]);
+        const currentTree = snapshot ? snapshot.tree : null;
+        lastTreeSnapshotVersion = snapshot ? snapshot.version : null;
         
         if (!currentTree || currentTree.length === 0) {
             treeContainer.innerHTML = `<div class="empty-state"><div class="empty-state-icon"><i class="fas fa-sitemap"></i></div><div class="empty-state-title">${i18n.emptyTree[currentLang]}</div></div>`;
@@ -12822,6 +12950,7 @@ async function renderTreeViewSync() {
         const oldTree = storageData.lastBookmarkData && storageData.lastBookmarkData.bookmarkTree;
         cachedOldTree = oldTree;
         cachedCurrentTree = currentTree;
+        cachedCurrentTreeIndex = null;
         
         // 检测变动
         if (oldTree && oldTree[0]) {
@@ -12915,15 +13044,22 @@ async function renderTreeView(forceRefresh = false) {
     if (forceRefresh) {
         cachedTreeData = null;
         lastTreeFingerprint = null;
+        lastTreeSnapshotVersion = null;
+        cachedCurrentTreeIndex = null;
         console.log('[renderTreeView] 强制刷新，已清除缓存');
     }
 
     // 如果已有缓存且不强制刷新，直接使用（快速路径）
     if (!forceRefresh && cachedTreeData && cachedTreeData.treeFragment) {
         console.log('[renderTreeView] 使用现有缓存（快速显示）');
-        treeContainer.innerHTML = '';
-        treeContainer.appendChild(cachedTreeData.treeFragment.cloneNode(true));
-        treeContainer.style.display = 'block';
+        // Canvas 视图下尽量避免整树替换，减少“重新加载感”
+        if (currentView === 'canvas' && treeContainer.children.length) {
+            treeContainer.style.display = 'block';
+        } else {
+            treeContainer.innerHTML = '';
+            treeContainer.appendChild(cachedTreeData.treeFragment.cloneNode(true));
+            treeContainer.style.display = 'block';
+        }
 
         // 重新绑定事件
         attachTreeEvents(treeContainer);
@@ -12937,8 +13073,13 @@ async function renderTreeView(forceRefresh = false) {
         // 预热完成后会自动更新页面上的图标
         (async () => {
             try {
-                // 获取当前书签树
-                const currentTree = await new Promise(resolve => browserAPI.bookmarks.getTree(resolve));
+                if (currentView === 'canvas' && CANVAS_PERMANENT_TREE_LAZY_ENABLED) {
+                    // Canvas 永久栏目首屏多为文件夹，不需要全量预热 favicon（会导致首次进入卡顿）
+                    return;
+                }
+                // 获取当前书签树（优先后台快照）
+                const snapshot = await getBookmarkTreeSnapshot();
+                const currentTree = snapshot ? snapshot.tree : null;
                 if (currentTree && currentTree.length > 0) {
                     // 收集所有书签URL
                     const allBookmarkUrls = [];
@@ -12976,8 +13117,16 @@ async function renderTreeView(forceRefresh = false) {
             }
         })();
 
-        return;
-    }
+	        // 重置渲染标志并处理合并请求
+	        isRenderingTree = false;
+	        if (pendingRenderRequest !== null) {
+	            const pending = pendingRenderRequest;
+	            pendingRenderRequest = null;
+	            console.log('[renderTreeView] 处理待处理的渲染请求（快速路径）');
+	            renderTreeView(pending);
+	        }
+	        return;
+	    }
 
     // 没有缓存，开始加载数据
     // 注意：不清空容器，保持原有内容，避免闪烁和滚动位置丢失
@@ -12990,9 +13139,11 @@ async function renderTreeView(forceRefresh = false) {
 
     // 获取数据并行处理
     Promise.all([
-        new Promise(resolve => browserAPI.bookmarks.getTree(resolve)),
+        getBookmarkTreeSnapshot(),
         new Promise(resolve => browserAPI.storage.local.get(['lastBookmarkData'], resolve))
-    ]).then(async ([currentTree, storageData]) => {
+    ]).then(async ([snapshot, storageData]) => {
+        const currentTree = snapshot ? snapshot.tree : null;
+        const snapshotVersion = snapshot ? snapshot.version : null;
         if (!currentTree || currentTree.length === 0) {
             treeContainer.innerHTML = `
                 <div class="empty-state">
@@ -13000,15 +13151,38 @@ async function renderTreeView(forceRefresh = false) {
                     <div class="empty-state-title">${i18n.emptyTree[currentLang]}</div>
                 </div>
             `;
+            isRenderingTree = false;
+            if (pendingRenderRequest !== null) {
+                const pending = pendingRenderRequest;
+                pendingRenderRequest = null;
+                renderTreeView(pending);
+            }
             return;
         }
 
-        // 生成当前树的指纹
-        const currentFingerprint = getTreeFingerprint(currentTree);
+        // 版本快路径：优先使用 background 快照版本，避免对整棵树做 JSON 指纹（非常耗时）
+        const canUseVersion = snapshotVersion !== null && typeof snapshotVersion !== 'undefined';
+        const currentFingerprint = canUseVersion ? null : getTreeFingerprint(currentTree);
 
-        // 如果指纹相同，直接使用缓存（树没有变化）
-        if (cachedTreeData && currentFingerprint === lastTreeFingerprint) {
+        // 如果版本/指纹相同，直接使用缓存（树没有变化）
+        if (cachedTreeData && ((canUseVersion && snapshotVersion === lastTreeSnapshotVersion) || (!canUseVersion && currentFingerprint === lastTreeFingerprint))) {
             console.log('[renderTreeView] 使用缓存（书签未变化）');
+
+            // Canvas 视图下，如果已有 DOM，避免整树替换造成“重新加载感”
+            if (currentView === 'canvas' && treeContainer.children.length) {
+                cachedCurrentTree = currentTree;
+                cachedCurrentTreeIndex = null;
+                if (permBody && permScrollTop !== null) permBody.scrollTop = permScrollTop;
+                isRenderingTree = false;
+                if (pendingRenderRequest !== null) {
+                    const pending = pendingRenderRequest;
+                    pendingRenderRequest = null;
+                    console.log('[renderTreeView] 处理待处理的渲染请求（Canvas无变化）');
+                    renderTreeView(pending);
+                }
+                return;
+            }
+
             treeContainer.innerHTML = '';
             treeContainer.appendChild(cachedTreeData.treeFragment.cloneNode(true));
             treeContainer.style.display = 'block';
@@ -13017,6 +13191,15 @@ async function renderTreeView(forceRefresh = false) {
             attachTreeEvents(treeContainer);
             // 恢复滚动位置
             if (permBody && permScrollTop !== null) permBody.scrollTop = permScrollTop;
+
+            // 重置渲染标志并处理合并请求
+            isRenderingTree = false;
+            if (pendingRenderRequest !== null) {
+                const pending = pendingRenderRequest;
+                pendingRenderRequest = null;
+                console.log('[renderTreeView] 处理待处理的渲染请求（指纹一致）');
+                renderTreeView(pending);
+            }
             return;
         }
 
@@ -13026,29 +13209,33 @@ async function renderTreeView(forceRefresh = false) {
         const oldTree = storageData.lastBookmarkData && storageData.lastBookmarkData.bookmarkTree;
         cachedOldTree = oldTree;
         cachedCurrentTree = currentTree; // 缓存当前树，用于智能路径检测
+        cachedCurrentTreeIndex = null;
 
         // 【关键修复】预热 favicon 缓存 - 从 IndexedDB 批量加载到内存
-        // 收集所有书签URL
-        const allBookmarkUrls = [];
-        const collectUrls = (nodes) => {
-            if (!nodes) return;
-            nodes.forEach(node => {
-                if (node.url) {
-                    allBookmarkUrls.push(node.url);
-                }
-                if (node.children) {
-                    collectUrls(node.children);
-                }
-            });
-        };
-        collectUrls(currentTree);
+        // Canvas 永久栏目采用懒加载时，避免首次进入遍历整棵树做预热（代价很高）
+        if (!(currentView === 'canvas' && CANVAS_PERMANENT_TREE_LAZY_ENABLED)) {
+            // 收集所有书签URL
+            const allBookmarkUrls = [];
+            const collectUrls = (nodes) => {
+                if (!nodes) return;
+                nodes.forEach(node => {
+                    if (node.url) {
+                        allBookmarkUrls.push(node.url);
+                    }
+                    if (node.children) {
+                        collectUrls(node.children);
+                    }
+                });
+            };
+            collectUrls(currentTree);
 
-        // 批量预热缓存（等待完成，确保渲染时缓存已就绪）
-        if (allBookmarkUrls.length > 0) {
-            try {
-                await warmupFaviconCache(allBookmarkUrls);
-            } catch (e) {
-                console.warn('[renderTreeView] favicon缓存预热失败，继续渲染:', e);
+            // 批量预热缓存（等待完成，确保渲染时缓存已就绪）
+            if (allBookmarkUrls.length > 0) {
+                try {
+                    await warmupFaviconCache(allBookmarkUrls);
+                } catch (e) {
+                    console.warn('[renderTreeView] favicon缓存预热失败，继续渲染:', e);
+                }
             }
         }
 
@@ -13056,7 +13243,10 @@ async function renderTreeView(forceRefresh = false) {
         console.log('[renderTreeView] oldTree 存在:', !!oldTree);
         console.log('[renderTreeView] oldTree[0] 存在:', !!(oldTree && oldTree[0]));
 
-        if (oldTree && oldTree[0]) {
+        if (currentView === 'canvas' && CANVAS_PERMANENT_TREE_LAZY_ENABLED) {
+            // Canvas 永久栏目优先保证跟手/流畅：跳过全量 diff 检测（会遍历整棵树）
+            treeChangeMap = new Map();
+        } else if (oldTree && oldTree[0]) {
             console.log('[renderTreeView] 开始检测变动...');
             treeChangeMap = await detectTreeChangesFast(oldTree, currentTree);
             console.log('[renderTreeView] 检测到的变动数量:', treeChangeMap.size);
@@ -13123,7 +13313,11 @@ async function renderTreeView(forceRefresh = false) {
             treeFragment: fragment.cloneNode(true),
             currentTree: currentTree
         };
-        lastTreeFingerprint = currentFingerprint;
+        if (canUseVersion) {
+            lastTreeSnapshotVersion = snapshotVersion;
+        } else {
+            lastTreeFingerprint = currentFingerprint;
+        }
 
         // 使用 requestAnimationFrame 确保 DOM 更新和滚动恢复在同一帧内完成，减少闪烁
         requestAnimationFrame(() => {
@@ -13165,6 +13359,7 @@ async function renderTreeView(forceRefresh = false) {
 
 // 树事件处理器映射（避免重复绑定）
 const treeClickHandlers = new WeakMap();
+const treeContextMenuHandlers = new WeakMap();
 
 // 绑定树的展开/折叠事件
 function attachTreeEvents(treeContainer) {
@@ -13175,7 +13370,21 @@ function attachTreeEvents(treeContainer) {
     }
 
     // 创建新的事件处理器
-    const clickHandler = (e) => {
+    const clickHandler = async (e) => {
+        // Canvas 永久栏目懒加载：加载更多
+        try {
+            const loadMoreBtn = e.target && e.target.closest ? e.target.closest('.tree-load-more') : null;
+            if (loadMoreBtn && currentView === 'canvas' && CANVAS_PERMANENT_TREE_LAZY_ENABLED) {
+                e.preventDefault();
+                e.stopPropagation();
+                const parentId = loadMoreBtn.dataset.parentId;
+                const startIndex = parseInt(loadMoreBtn.dataset.startIndex, 10) || 0;
+                const childrenContainer = loadMoreBtn.closest('.tree-children');
+                loadPermanentFolderChildrenLazy(parentId, childrenContainer, startIndex, loadMoreBtn);
+                return;
+            }
+        } catch (_) { }
+
         // 处理移动标记的点击
         const moveBadge = e.target.closest('.change-badge.moved');
         if (moveBadge) {
@@ -13202,6 +13411,57 @@ function attachTreeEvents(treeContainer) {
             alert(message);
             return;
         }
+
+        // 左键点击书签标签，根据默认打开方式打开（避免重复绑定多个 click 监听器）
+        try {
+            const link = e.target && e.target.closest ? e.target.closest('a.tree-bookmark-link') : null;
+            if (link && treeContainer.contains(link)) {
+                // 尊重系统快捷键：Ctrl/Cmd/Shift 走浏览器默认行为
+                if (e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
+
+                e.preventDefault();
+                const url = link.getAttribute('href');
+                const nodeElement = link.closest('.tree-item[data-node-id]');
+                const contextInfo = nodeElement ? {
+                    treeType: nodeElement.dataset.treeType || 'permanent',
+                    sectionId: nodeElement.dataset.sectionId || null,
+                    nodeId: nodeElement.dataset.nodeId || null
+                } : { treeType: 'permanent' };
+
+                try {
+                    if (window.defaultOpenMode === undefined && typeof window.getDefaultOpenMode === 'function') {
+                        window.defaultOpenMode = window.getDefaultOpenMode();
+                    }
+                } catch (_) { }
+                const mode = (typeof window !== 'undefined' && window.defaultOpenMode) || (typeof defaultOpenMode !== 'undefined' ? defaultOpenMode : 'new-tab');
+
+                const actionKey = `left-click-${mode}-${url}`;
+                if (typeof shouldAllowBookmarkOpen === 'function' && !shouldAllowBookmarkOpen(actionKey)) {
+                    return;
+                }
+
+                if (mode === 'new-window') {
+                    if (typeof openBookmarkNewWindow === 'function') openBookmarkNewWindow(url, false); else window.open(url, '_blank');
+                } else if (mode === 'incognito') {
+                    if (typeof openBookmarkNewWindow === 'function') openBookmarkNewWindow(url, true); else window.open(url, '_blank');
+                } else if (mode === 'specific-window') {
+                    if (typeof openInSpecificWindow === 'function') openInSpecificWindow(url); else window.open(url, '_blank');
+                } else if (mode === 'specific-group') {
+                    if (typeof openInSpecificTabGroup === 'function') openInSpecificTabGroup(url); else window.open(url, '_blank');
+                } else if (mode === 'scoped-window') {
+                    if (typeof openInScopedWindow === 'function') openInScopedWindow(url, { context: contextInfo }); else window.open(url, '_blank');
+                } else if (mode === 'scoped-group') {
+                    if (typeof openInScopedTabGroup === 'function') openInScopedTabGroup(url, { context: contextInfo }); else window.open(url, '_blank');
+                } else if (mode === 'same-window-specific-group') {
+                    if (typeof openInSameWindowSpecificGroup === 'function') openInSameWindowSpecificGroup(url, { context: contextInfo }); else window.open(url, '_blank');
+                } else if (mode === 'manual-select') {
+                    if (typeof openBookmarkWithManualSelection === 'function') openBookmarkWithManualSelection(url); else window.open(url, '_blank');
+                } else {
+                    if (typeof openBookmarkNewTab === 'function') openBookmarkNewTab(url); else window.open(url, '_blank');
+                }
+                return;
+            }
+        } catch (_) { }
 
         // 点击整个文件夹行都可以展开
         const treeItem = e.target.closest('.tree-item');
@@ -13231,6 +13491,19 @@ function attachTreeEvents(treeContainer) {
 
                 // 保存展开状态
                 saveTreeExpandState(treeContainer);
+
+                // Canvas 永久栏目懒加载：展开时按需加载子节点
+                try {
+                    const expanded = children.classList.contains('expanded');
+                    if (expanded &&
+                        currentView === 'canvas' &&
+                        CANVAS_PERMANENT_TREE_LAZY_ENABLED &&
+                        treeItem.dataset.nodeType === 'folder' &&
+                        treeItem.dataset.childrenLoaded === 'false' &&
+                        treeItem.dataset.hasChildren === 'true') {
+                        loadPermanentFolderChildrenLazy(treeItem.dataset.nodeId, children, 0, null);
+                    }
+                } catch (_) { }
             }
         }
     };
@@ -13239,66 +13512,20 @@ function attachTreeEvents(treeContainer) {
     treeContainer.addEventListener('click', clickHandler);
     treeClickHandlers.set(treeContainer, clickHandler);
 
-    // 左键点击书签标签，根据默认打开方式打开
-    treeContainer.addEventListener('click', async (e) => {
-        const link = e.target.closest('a.tree-bookmark-link');
-        if (!link || !treeContainer.contains(link)) return;
-        // 尊重系统快捷键：Ctrl/Cmd/Shift 走浏览器默认行为
-        if (e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
-        e.preventDefault();
-        const url = link.getAttribute('href');
-        const nodeElement = link.closest('.tree-item[data-node-id]');
-        const contextInfo = nodeElement ? {
-            treeType: nodeElement.dataset.treeType || 'permanent',
-            sectionId: nodeElement.dataset.sectionId || null,
-            nodeId: nodeElement.dataset.nodeId || null
-        } : { treeType: 'permanent' };
-        try {
-            // 从全局函数中调用（由 context_menu 文件定义）
-            if (window.defaultOpenMode === undefined && typeof window.getDefaultOpenMode === 'function') {
-                // 兼容：如果提供 getter
-                window.defaultOpenMode = window.getDefaultOpenMode();
-            }
-        } catch (_) { }
-        const mode = (typeof window !== 'undefined' && window.defaultOpenMode) || (typeof defaultOpenMode !== 'undefined' ? defaultOpenMode : 'new-tab');
-
-        // 防抖检查：使用与右键菜单相同的防抖机制
-        const actionKey = `left-click-${mode}-${url}`;
-        if (typeof shouldAllowBookmarkOpen === 'function' && !shouldAllowBookmarkOpen(actionKey)) {
-            return; // 被防抖忽略
+    // 绑定右键菜单事件（事件委托，避免反复给每个节点绑监听器）
+    const existingContextHandler = treeContextMenuHandlers.get(treeContainer);
+    if (existingContextHandler) {
+        treeContainer.removeEventListener('contextmenu', existingContextHandler);
+    }
+    const contextHandler = (e) => {
+        const item = e && e.target && e.target.closest ? e.target.closest('.tree-item[data-node-id]') : null;
+        if (!item || !treeContainer.contains(item)) return;
+        if (typeof showContextMenu === 'function') {
+            showContextMenu(e, item);
         }
-
-        if (mode === 'new-window') {
-            if (typeof openBookmarkNewWindow === 'function') openBookmarkNewWindow(url, false); else window.open(url, '_blank');
-        } else if (mode === 'incognito') {
-            if (typeof openBookmarkNewWindow === 'function') openBookmarkNewWindow(url, true); else window.open(url, '_blank');
-        } else if (mode === 'specific-window') {
-            if (typeof openInSpecificWindow === 'function') openInSpecificWindow(url); else window.open(url, '_blank');
-        } else if (mode === 'specific-group') {
-            if (typeof openInSpecificTabGroup === 'function') openInSpecificTabGroup(url); else window.open(url, '_blank');
-        } else if (mode === 'scoped-window') {
-            if (typeof openInScopedWindow === 'function') openInScopedWindow(url, { context: contextInfo }); else window.open(url, '_blank');
-        } else if (mode === 'scoped-group') {
-            if (typeof openInScopedTabGroup === 'function') openInScopedTabGroup(url, { context: contextInfo }); else window.open(url, '_blank');
-        } else if (mode === 'same-window-specific-group') {
-            if (typeof openInSameWindowSpecificGroup === 'function') openInSameWindowSpecificGroup(url, { context: contextInfo }); else window.open(url, '_blank');
-        } else if (mode === 'manual-select') {
-            // 使用手动选择的窗口/组打开
-            if (typeof openBookmarkWithManualSelection === 'function') openBookmarkWithManualSelection(url); else window.open(url, '_blank');
-        } else {
-            if (typeof openBookmarkNewTab === 'function') openBookmarkNewTab(url); else window.open(url, '_blank');
-        }
-    });
-
-    // 绑定右键菜单事件
-    const treeItems = treeContainer.querySelectorAll('.tree-item[data-node-id]');
-    treeItems.forEach(item => {
-        item.addEventListener('contextmenu', (e) => {
-            if (typeof showContextMenu === 'function') {
-                showContextMenu(e, item);
-            }
-        });
-    });
+    };
+    treeContainer.addEventListener('contextmenu', contextHandler);
+    treeContextMenuHandlers.set(treeContainer, contextHandler);
 
     // 绑定拖拽事件
     if (typeof attachDragEvents === 'function') {
@@ -14135,7 +14362,7 @@ function renderTreeNodeWithChanges(node, level = 0, maxDepth = 50, visitedIds = 
             const favicon = getFaviconUrl(node.url);
             return `
                 <div class="tree-node">
-                    <div class="tree-item ${changeClass}" data-node-id="${node.id}" data-node-title="${escapeHtml(node.title)}" data-node-url="${escapeHtml(node.url || '')}" data-node-type="bookmark" data-node-index="${typeof node.index === 'number' ? node.index : ''}">
+                    <div class="tree-item ${changeClass}" data-node-id="${node.id}" data-node-title="${escapeHtml(node.title)}" data-node-url="${escapeHtml(node.url || '')}" data-node-type="bookmark" data-node-level="${level}" data-node-index="${typeof node.index === 'number' ? node.index : ''}">
                         <span class="tree-toggle" style="opacity: 0"></span>
                         ${favicon ? `<img class="tree-icon" src="${favicon}" alt="">` : `<i class="tree-icon fas fa-bookmark"></i>`}
                         <a href="${escapeHtml(node.url)}" target="_blank" class="tree-label tree-bookmark-link" rel="noopener noreferrer">${escapeHtml(node.title)}</a>
@@ -14198,8 +14425,26 @@ function renderTreeNodeWithChanges(node, level = 0, maxDepth = 50, visitedIds = 
         statusIcon += `<span class="change-badge moved" data-move-from="${escapeHtml(slash)}" title="${escapeHtml(slash)}"><i class="fas fa-arrows-alt"></i><span class="move-tooltip">${slashPathToChipsHTML(slash)}</span></span>`;
     }
 
+    // Canvas 视图性能：永久栏目采用懒加载，避免首次进入遍历/渲染整棵书签树
+    if (CANVAS_PERMANENT_TREE_LAZY_ENABLED && currentView === 'canvas' && level > 0) {
+        const childCount = Array.isArray(node.children) ? node.children.length : 0;
+        const hasChildren = childCount > 0;
+        return `
+            <div class="tree-node">
+                <div class="tree-item ${changeClass}" data-node-id="${node.id}" data-node-title="${escapeHtml(node.title)}" data-node-type="folder" data-node-level="${level}" data-has-children="${hasChildren ? 'true' : 'false'}" data-children-loaded="${hasChildren ? 'false' : 'true'}" data-node-index="${typeof node.index === 'number' ? node.index : ''}">
+                    <span class="tree-toggle"><i class="fas fa-chevron-right"></i></span>
+                    <i class="tree-icon fas fa-folder"></i>
+                    <span class="tree-label">${escapeHtml(node.title)}</span>
+                    <span class="change-badges">${statusIcon}</span>
+                </div>
+                <div class="tree-children"></div>
+            </div>
+        `;
+    }
+
     // 若文件夹本身无变化，但其子树存在变化，追加灰色“指引”标识
-    if (!change) {
+    // 注意：Canvas 永久栏目懒加载模式下，禁止做整棵子树扫描（会导致首次进入严重卡顿）
+    if (!change && !(CANVAS_PERMANENT_TREE_LAZY_ENABLED && currentView === 'canvas')) {
         try {
             const hasDescendant = (function hasDescendantChangesFast(n) {
                 if (!n || !Array.isArray(n.children) || n.children.length === 0) return false;
@@ -14258,7 +14503,7 @@ function renderTreeNodeWithChanges(node, level = 0, maxDepth = 50, visitedIds = 
 
     return `
         <div class="tree-node">
-            <div class="tree-item ${changeClass}" data-node-id="${node.id}" data-node-title="${escapeHtml(node.title)}" data-node-type="folder" data-node-index="${typeof node.index === 'number' ? node.index : ''}">
+            <div class="tree-item ${changeClass}" data-node-id="${node.id}" data-node-title="${escapeHtml(node.title)}" data-node-type="folder" data-node-level="${level}" data-has-children="${Array.isArray(node.children) && node.children.length ? 'true' : 'false'}" data-children-loaded="true" data-node-index="${typeof node.index === 'number' ? node.index : ''}">
                 <span class="tree-toggle ${level === 0 ? 'expanded' : ''}"><i class="fas fa-chevron-right"></i></span>
                 <i class="tree-icon fas fa-folder"></i>
                 <span class="tree-label">${escapeHtml(node.title)}</span>
@@ -14280,10 +14525,31 @@ async function applyIncrementalCreateToTree(id, bookmark) {
     // 获取父节点 DOM
     const parentId = bookmark.parentId;
     const parentItem = container.querySelector(`.tree-item[data-node-id="${parentId}"]`);
-    if (!parentItem) { await renderTreeView(true); return; }
+    if (!parentItem) {
+        if (currentView === 'canvas' && CANVAS_PERMANENT_TREE_LAZY_ENABLED) {
+            // 懒加载模式下：父节点未渲染属正常情况（未展开），不触发整树重渲
+            cachedTreeData = null;
+            lastTreeFingerprint = null;
+            lastTreeSnapshotVersion = null;
+            cachedCurrentTreeIndex = null;
+            return;
+        }
+        await renderTreeView(true);
+        return;
+    }
     const parentNode = parentItem.nextElementSibling && parentItem.nextElementSibling.classList.contains('tree-children')
         ? parentItem.nextElementSibling : null;
-    if (!parentNode) { await renderTreeView(true); return; }
+    if (!parentNode) {
+        if (currentView === 'canvas' && CANVAS_PERMANENT_TREE_LAZY_ENABLED) {
+            cachedTreeData = null;
+            lastTreeFingerprint = null;
+            lastTreeSnapshotVersion = null;
+            cachedCurrentTreeIndex = null;
+            return;
+        }
+        await renderTreeView(true);
+        return;
+    }
     // 生成新节点 HTML（添加绿色变更标记）
     const favicon = getFaviconUrl(bookmark.url || '');
     const labelColor = 'color: #28a745;'; // 绿色
@@ -14396,7 +14662,17 @@ async function applyIncrementalChangeToTree(id, changeInfo) {
     const container = document.getElementById('bookmarkTree');
     if (!container) return;
     const item = container.querySelector(`.tree-item[data-node-id="${id}"]`);
-    if (!item) { await renderTreeView(true); return; }
+    if (!item) {
+        if (currentView === 'canvas' && CANVAS_PERMANENT_TREE_LAZY_ENABLED) {
+            cachedTreeData = null;
+            lastTreeFingerprint = null;
+            lastTreeSnapshotVersion = null;
+            cachedCurrentTreeIndex = null;
+            return;
+        }
+        await renderTreeView(true);
+        return;
+    }
 
     console.log('[applyIncrementalChangeToTree] 修改书签:', id, changeInfo);
 
@@ -15218,6 +15494,8 @@ function handleStorageChange(changes, namespace) {
         cachedTreeData = null; // 清除树视图缓存
         cachedOldTree = null;
         lastTreeFingerprint = null;
+        lastTreeSnapshotVersion = null;
+        cachedCurrentTreeIndex = null;
         jsonDiffRendered = false; // 重置JSON渲染标志
 
         // 立即重新加载数据
@@ -15442,6 +15720,8 @@ async function refreshTreeViewIfVisible() {
         cachedBookmarkTree = null;
         cachedTreeData = null;
         lastTreeFingerprint = null;
+        lastTreeSnapshotVersion = null;
+        cachedCurrentTreeIndex = null;
         jsonDiffRendered = false;
 
         // 延迟一点刷新，避免频繁更新

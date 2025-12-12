@@ -598,6 +598,63 @@ browserAPI.downloads.onChanged.addListener((downloadDelta) => {
     }
 });
 
+// =============================================================================
+// 书签快照缓存（供 UI 读取，减少重复 getTree）
+// =============================================================================
+
+const BookmarkSnapshotCache = {
+    tree: null,
+    version: 0,
+    stale: true,
+    buildPromise: null,
+    rebuildTimer: null,
+    lastBuildAt: 0,
+
+    async ensureFresh() {
+        if (this.buildPromise) return this.buildPromise;
+        if (!this.stale) return this.tree;
+
+        this.buildPromise = (async () => {
+            const tree = await new Promise((resolve) => {
+                try {
+                    browserAPI.bookmarks.getTree((nodes) => resolve(nodes));
+                } catch (_) {
+                    resolve(null);
+                }
+            });
+            if (tree && tree.length) {
+                this.tree = tree;
+                this.stale = false;
+                this.version += 1;
+                this.lastBuildAt = Date.now();
+            } else {
+                this.tree = tree || null;
+                this.stale = false;
+                this.version += 1;
+                this.lastBuildAt = Date.now();
+            }
+            return this.tree;
+        })().finally(() => {
+            this.buildPromise = null;
+        });
+
+        return this.buildPromise;
+    },
+
+    markStale(reason = '') {
+        this.stale = true;
+        if (this.rebuildTimer) {
+            clearTimeout(this.rebuildTimer);
+        }
+        this.rebuildTimer = setTimeout(() => {
+            this.rebuildTimer = null;
+            this.ensureFresh().catch((e) => {
+                console.warn('[BookmarkSnapshotCache] rebuild failed:', reason, e);
+            });
+        }, 800);
+    }
+};
+
 // 监听来自popup的消息
 browserAPI.runtime.onMessage.addListener((message, sender, sendResponse) => {
 // 基础校验
@@ -607,6 +664,17 @@ browserAPI.runtime.onMessage.addListener((message, sender, sendResponse) => {
     }
 
     try {
+        if (message.action === "getBookmarkSnapshot") {
+            (async () => {
+                try {
+                    const tree = await BookmarkSnapshotCache.ensureFresh();
+                    sendResponse({ success: true, tree, version: BookmarkSnapshotCache.version });
+                } catch (error) {
+                    sendResponse({ success: false, error: error && error.message ? error.message : String(error) });
+                }
+            })();
+            return true;
+        }
         if (message.action === "toggleAutoSync") {
             const useSpecificValue = message.hasOwnProperty('enabled');
 
@@ -1763,6 +1831,10 @@ browserAPI.bookmarks.onMoved.addListener(handleBookmarkChange);
 
 // 处理书签变化的函数
 async function handleBookmarkChange() {
+    try {
+        BookmarkSnapshotCache.markStale('bookmarks event');
+    } catch (_) { }
+
     if (bookmarkChangeTimeout) {
         clearTimeout(bookmarkChangeTimeout);
     }

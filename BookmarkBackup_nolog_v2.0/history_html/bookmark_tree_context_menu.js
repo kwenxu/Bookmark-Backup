@@ -1357,6 +1357,24 @@ function initContextMenu() {
     // 绑定超链接的右键菜单
     attachHyperlinkContextMenu();
     
+    // 【修复】添加滚轮事件监听器，允许在菜单上滚动栏目
+    // 当鼠标在菜单上滚动时，将事件传递给滚动容器
+    contextMenu.addEventListener('wheel', (e) => {
+        // 查找最近的滚动容器
+        const scrollContainer = contextMenu.closest('.permanent-section-body, .temp-node-body');
+        if (scrollContainer) {
+            // 阻止菜单本身的默认滚动行为（因为菜单不是滚动容器）
+            e.preventDefault();
+            
+            // 手动触发滚动容器的滚动
+            // 使用 deltaY 和 deltaX 来支持纵向和横向滚动
+            scrollContainer.scrollTop += e.deltaY;
+            scrollContainer.scrollLeft += e.deltaX;
+            
+            // 注意：不调用 e.stopPropagation()，保持事件冒泡
+        }
+    }, { passive: false }); // 使用 passive: false 以允许 preventDefault()
+    
     // 点击其他地方关闭菜单（使用捕获阶段，优先处理）
     document.addEventListener('click', (e) => {
         // 如果点击的不是菜单内部，关闭菜单

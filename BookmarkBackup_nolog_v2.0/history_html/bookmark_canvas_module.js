@@ -8977,6 +8977,20 @@ function setupCanvasEventListeners() {
             const isForm = ['INPUT', 'TEXTAREA', 'BUTTON', 'SELECT', 'LABEL'].includes(target.tagName);
             if (isInsideTemp || isInsidePermanent || isUI || isForm) return;
 
+            // 【修复】检查双击位置是否被其他栏目遮挡（在栏目下方）
+            // 使用 elementFromPoint 检测双击位置的最顶层元素
+            const elementAtPoint = document.elementFromPoint(e.clientX, e.clientY);
+            if (!elementAtPoint) return;
+            
+            // 如果最顶层元素是某个栏目或其内部元素，说明被遮挡，不生成空白栏目
+            const isBlockedByTemp = !!elementAtPoint.closest('.temp-canvas-node');
+            const isBlockedByPermanent = !!elementAtPoint.closest('#permanentSection');
+            const isBlockedByMd = !!elementAtPoint.closest('.md-canvas-node');
+            if (isBlockedByTemp || isBlockedByPermanent || isBlockedByMd) {
+                console.log('[Canvas] 双击位置被栏目遮挡，不生成空白栏目');
+                return;
+            }
+
             // 计算在 canvas-content 坐标系中的点击位置
             const rect = workspace.getBoundingClientRect();
             const clickX = e.clientX;

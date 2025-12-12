@@ -3,6 +3,18 @@
 // =============================================================================
 
 // Canvas状态管理
+const CANVAS_BASE_ZOOM_DEFAULT = 0.6; // 新默认基准缩放：旧 60% 视图 = 新 100%
+const CANVAS_INIT_ZOOM_PROTECT_MS = 2200; // 首次进入 Canvas 时的缩放保护窗口
+const CANVAS_INIT_PROTECTION_KEY = 'canvas-init-protection-done-v1';
+
+// 统一的首屏初始缩放：让 HTML 不需要再手动同步数值
+try {
+    const initialContainer = document.querySelector('.canvas-main-container');
+    if (initialContainer) {
+        initialContainer.style.setProperty('--canvas-scale', CANVAS_BASE_ZOOM_DEFAULT);
+    }
+} catch (_) { }
+
 const CanvasState = {
     tempSections: [],
     tempSectionCounter: 0,
@@ -109,6 +121,9 @@ const CanvasState = {
     },
     // 画布缩放和平移
     zoom: 1,
+    baseZoom: CANVAS_BASE_ZOOM_DEFAULT,
+    isInitializing: false, // 初始化保护缩放中（仅首次进入）
+    pendingZoom: null, // 初始化期间累计的目标缩放
     panOffsetX: 0,
     panOffsetY: 0,
     isPanning: false,
@@ -483,8 +498,8 @@ function handleCtrlOverlayMouseDown(e) {
 }
 const TEMP_SECTION_STORAGE_KEY = 'bookmark-canvas-temp-sections';
 const LEGACY_TEMP_NODE_STORAGE_KEY = 'bookmark-canvas-temp-nodes';
-const TEMP_SECTION_DEFAULT_WIDTH = 360;
-const TEMP_SECTION_DEFAULT_HEIGHT = 280;
+const TEMP_SECTION_DEFAULT_WIDTH = 420;
+const TEMP_SECTION_DEFAULT_HEIGHT = 380;
 const TEMP_SECTION_DEFAULT_COLOR = '#2563eb';
 // Obsidian Canvas 文本节点默认尺寸（参考 sample.canvas）
 const MD_NODE_DEFAULT_WIDTH = 300;
@@ -930,8 +945,46 @@ function createTempFolder(sectionId, parentId, title) {
 // 初始化Canvas视图
 // =============================================================================
 
+function startCanvasInitZoomProtectionOnce() {
+    let shouldProtect = false;
+    try {
+        shouldProtect = !localStorage.getItem(CANVAS_INIT_PROTECTION_KEY);
+        if (shouldProtect) {
+            localStorage.setItem(CANVAS_INIT_PROTECTION_KEY, '1');
+        }
+    } catch (_) {
+        // 若 localStorage 不可用，则退化为每次进入都保护一次
+        shouldProtect = true;
+    }
+
+    if (!shouldProtect) {
+        CanvasState.isInitializing = false;
+        CanvasState.pendingZoom = null;
+        return;
+    }
+
+    CanvasState.isInitializing = true;
+    CanvasState.pendingZoom = null;
+
+    // 等待至少两帧绘制后再开始计时，避免与首屏布局抢主线程/GPU
+    requestAnimationFrame(() => {
+        requestAnimationFrame(() => {
+            setTimeout(() => {
+                CanvasState.isInitializing = false;
+                if (CanvasState.pendingZoom) {
+                    const { zoom, centerX, centerY } = CanvasState.pendingZoom;
+                    CanvasState.pendingZoom = null;
+                    setCanvasZoom(zoom, centerX, centerY, { recomputeBounds: true, skipSave: false, silent: true });
+                }
+            }, CANVAS_INIT_ZOOM_PROTECT_MS);
+        });
+    });
+}
+
 function initCanvasView() {
     console.log('[Canvas] 初始化Obsidian风格的Canvas');
+
+    startCanvasInitZoomProtectionOnce();
 
     // 清除缓存的 DOM 引用（防止过期）
     cachedCanvasContainer = null;
@@ -939,6 +992,9 @@ function initCanvasView() {
 
     // 加载性能模式设置
     loadPerformanceMode();
+    
+    // 加载临时栏目展开状态
+    loadTempExpandState();
 
     // 初始化连接线层
     setupCanvasEdgesLayer();
@@ -1456,20 +1512,24 @@ function setupCanvasZoomAndPan() {
             // Shift+滚轮在某些浏览器会变成横向滚动，需要使用 deltaX 或 deltaY
             const delta = e.deltaY !== 0 ? -e.deltaY : -e.deltaX;
 
-            // 缩放速率：触控板和鼠标滚轮都大幅降低灵敏度，使缩放非常平滑
-            const zoomSpeed = isTouchpad ? 0.0008 : 0.00015; // 触控板0.0008（降低80%），鼠标滚轮0.00015（降低70%）
-            const oldZoom = CanvasState.zoom;
-            let newZoom = oldZoom + delta * zoomSpeed;
+            // 使用指数缩放（乘法），使缩放在任何级别都感觉一致
+            // 每次滚动改变固定的百分比，而不是固定的绝对值
+            const zoomSpeed = isTouchpad ? 0.0015 : 0.0003; // 每像素滚动对应的缩放因子
 
-            // 应用平滑曲线：在中间缩放级别时更敏感
-            if (isTouchpad) {
-                const zoomDelta = newZoom - oldZoom;
-                // 使用缓动函数：在 0.5-1.5 倍缩放时响应更快
-                const responsiveness = 1 + Math.max(0, 0.5 - Math.abs(oldZoom - 1) * 0.3);
-                newZoom = oldZoom + zoomDelta * responsiveness;
-            }
+            // 初始化保护期间不立即应用缩放，而是累计目标值
+            const baseZoomForCalc = CanvasState.pendingZoom ? CanvasState.pendingZoom.zoom : CanvasState.zoom;
+
+            // 计算缩放因子：delta > 0 放大，delta < 0 缩小
+            // 使用 Math.exp 实现指数缩放，确保放大和缩小是对称的
+            const zoomFactor = Math.exp(delta * zoomSpeed);
+            let newZoom = baseZoomForCalc * zoomFactor;
 
             newZoom = Math.max(0.1, Math.min(3, newZoom));
+
+            if (CanvasState.isInitializing) {
+                CanvasState.pendingZoom = { zoom: newZoom, centerX: mouseX, centerY: mouseY };
+                return;
+            }
 
             // 使用优化的缩放更新，滚动时跳过边界计算
             scheduleZoomUpdate(newZoom, mouseX, mouseY, { recomputeBounds: false, skipSave: false, skipScrollbarUpdate: true });
@@ -1603,8 +1663,9 @@ function setupCanvasZoomAndPan() {
     const zoomOutBtn = document.getElementById('zoomOutBtn');
     const zoomLocateBtn = document.getElementById('zoomLocateBtn');
 
-    if (zoomInBtn) zoomInBtn.addEventListener('click', () => setCanvasZoom(CanvasState.zoom + 0.1));
-    if (zoomOutBtn) zoomOutBtn.addEventListener('click', () => setCanvasZoom(CanvasState.zoom - 0.1));
+    // 使用乘法缩放，每次点击缩放15%
+    if (zoomInBtn) zoomInBtn.addEventListener('click', () => setCanvasZoom(CanvasState.zoom * 1.15));
+    if (zoomOutBtn) zoomOutBtn.addEventListener('click', () => setCanvasZoom(CanvasState.zoom / 1.15));
     if (zoomLocateBtn) zoomLocateBtn.addEventListener('click', locateToPermanentSection);
 
     // 管理按钮和弹窗
@@ -1979,7 +2040,9 @@ function setCanvasZoom(zoom, centerX = null, centerY = null, options = {}) {
     // 更新显示
     const zoomValue = document.getElementById('zoomValue');
     if (zoomValue) {
-        zoomValue.textContent = Math.round(zoom * 100) + '%';
+        const base = (CanvasState.baseZoom && CanvasState.baseZoom > 0) ? CanvasState.baseZoom : 1;
+        const displayZoom = zoom / base;
+        zoomValue.textContent = Math.round(displayZoom * 100) + '%';
     }
 
     // 保存缩放级别
@@ -2375,11 +2438,18 @@ function scheduleBoundsUpdate() {
 function loadCanvasZoom() {
     try {
         const saved = localStorage.getItem('canvas-zoom');
+        let zoomLoaded = false;
         if (saved) {
             const zoom = parseFloat(saved);
             if (!isNaN(zoom)) {
                 setCanvasZoom(zoom, null, null, { recomputeBounds: false, skipSave: true, silent: true });
+                zoomLoaded = true;
             }
+        }
+
+        // 新安装/无历史缩放：默认使用 baseZoom（旧 60% 视图）
+        if (!zoomLoaded && CanvasState.baseZoom && CanvasState.baseZoom !== 1) {
+            setCanvasZoom(CanvasState.baseZoom, null, null, { recomputeBounds: false, skipSave: true, silent: true });
         }
 
         // 加载平移位置
@@ -7688,8 +7758,49 @@ function finishTempSectionTitleEdit(section, input, renameButton, commit) {
 const LAZY_LOAD_THRESHOLD = {
     maxInitialDepth: 1,      // 初始只渲染到第1层深度
     maxInitialChildren: 20,  // 每个文件夹初始最多渲染20个子项
-    expandedFolders: new Set() // 跟踪已展开的文件夹
+    expandedFolders: new Set(), // 跟踪已展开的文件夹（深层）
+    collapsedFolders: new Set() // 跟踪已折叠的文件夹（浅层，默认展开但被用户折叠）
 };
+
+// 临时栏目展开状态持久化
+const TEMP_EXPAND_STATE_KEY = 'canvas-temp-expand-state';
+
+function saveTempExpandState() {
+    try {
+        const state = {
+            expanded: Array.from(LAZY_LOAD_THRESHOLD.expandedFolders),
+            collapsed: Array.from(LAZY_LOAD_THRESHOLD.collapsedFolders)
+        };
+        localStorage.setItem(TEMP_EXPAND_STATE_KEY, JSON.stringify(state));
+    } catch (e) {
+        console.warn('[Canvas] 保存临时栏目展开状态失败:', e);
+    }
+}
+
+function loadTempExpandState() {
+    try {
+        const saved = localStorage.getItem(TEMP_EXPAND_STATE_KEY);
+        if (saved) {
+            const state = JSON.parse(saved);
+            // 兼容旧格式（数组）和新格式（对象）
+            if (Array.isArray(state)) {
+                LAZY_LOAD_THRESHOLD.expandedFolders = new Set(state);
+            } else if (state && typeof state === 'object') {
+                if (Array.isArray(state.expanded)) {
+                    LAZY_LOAD_THRESHOLD.expandedFolders = new Set(state.expanded);
+                }
+                if (Array.isArray(state.collapsed)) {
+                    LAZY_LOAD_THRESHOLD.collapsedFolders = new Set(state.collapsed);
+                }
+            }
+            console.log('[Canvas] 恢复临时栏目展开状态:', 
+                LAZY_LOAD_THRESHOLD.expandedFolders.size, '个展开,',
+                LAZY_LOAD_THRESHOLD.collapsedFolders.size, '个折叠');
+        }
+    } catch (e) {
+        console.warn('[Canvas] 加载临时栏目展开状态失败:', e);
+    }
+}
 
 function buildTempTreeNode(section, item, level, options = {}) {
     if (!item) return null;
@@ -7721,7 +7832,15 @@ function buildTempTreeNode(section, item, level, options = {}) {
     // 超过阈值深度的文件夹默认折叠，不渲染子节点
     const shouldLazyLoad = lazyLoad && level >= LAZY_LOAD_THRESHOLD.maxInitialDepth && hasChildren;
     const folderId = `${section.id}-${item.id}`;
-    const isExpanded = forceExpand || LAZY_LOAD_THRESHOLD.expandedFolders.has(folderId) || (!shouldLazyLoad && level < LAZY_LOAD_THRESHOLD.maxInitialDepth);
+    
+    // 计算展开状态：
+    // 1. forceExpand - 强制展开
+    // 2. expandedFolders.has(folderId) - 用户已展开的深层文件夹
+    // 3. 浅层文件夹默认展开，除非被用户折叠（在collapsedFolders中）
+    const defaultExpanded = !shouldLazyLoad && level < LAZY_LOAD_THRESHOLD.maxInitialDepth;
+    const userCollapsed = LAZY_LOAD_THRESHOLD.collapsedFolders.has(folderId);
+    const userExpanded = LAZY_LOAD_THRESHOLD.expandedFolders.has(folderId);
+    const isExpanded = forceExpand || userExpanded || (defaultExpanded && !userCollapsed);
     
     if (hasChildren) {
         if (isExpanded) {
@@ -7821,51 +7940,136 @@ function buildTempTreeNode(section, item, level, options = {}) {
 
 // 懒加载：展开文件夹时加载子节点
 function loadFolderChildren(section, parentItemId, childrenContainer) {
-    const item = findTempItemEntry(section.id, parentItemId);
-    if (!item || !item.item || !item.item.children) return;
-    
-    const folderId = `${section.id}-${parentItemId}`;
-    LAZY_LOAD_THRESHOLD.expandedFolders.add(folderId);
-    
-    // 清空并重新渲染子节点
-    childrenContainer.innerHTML = '';
-    item.item.children.forEach(child => {
-        const childNode = buildTempTreeNode(section, child, 1, { lazyLoad: true });
-        if (childNode) childrenContainer.appendChild(childNode);
-    });
-    
-    // 更新父节点状态
-    const parentTreeItem = childrenContainer.previousElementSibling;
-    if (parentTreeItem) {
-        parentTreeItem.dataset.childrenLoaded = 'true';
-        // 移除数量提示
-        const countBadge = parentTreeItem.querySelector('.folder-count-badge');
-        if (countBadge) countBadge.remove();
+    try {
+        console.log('[Canvas懒加载] loadFolderChildren 被调用:', { 
+            sectionId: section?.id, 
+            parentItemId, 
+            hasContainer: !!childrenContainer 
+        });
+        
+        if (!section || !parentItemId || !childrenContainer) {
+            console.warn('[Canvas懒加载] loadFolderChildren: 参数无效');
+            return false;
+        }
+        
+        const itemEntry = findTempItemEntry(section.id, parentItemId);
+        console.log('[Canvas懒加载] findTempItemEntry 结果:', {
+            found: !!itemEntry,
+            hasItem: !!itemEntry?.item,
+            childrenCount: itemEntry?.item?.children?.length
+        });
+        
+        if (!itemEntry || !itemEntry.item) {
+            console.warn('[Canvas懒加载] loadFolderChildren: 找不到项目', parentItemId, '在section:', section.id);
+            // 打印section.items的所有id以便调试
+            console.log('[Canvas懒加载] section.items ids:', section.items?.map(i => i.id));
+            return false;
+        }
+        
+        const item = itemEntry.item;
+        if (!item.children || item.children.length === 0) {
+            console.warn('[Canvas懒加载] loadFolderChildren: 项目没有子节点', parentItemId);
+            return false;
+        }
+        
+        const folderId = `${section.id}-${parentItemId}`;
+        LAZY_LOAD_THRESHOLD.expandedFolders.add(folderId);
+        LAZY_LOAD_THRESHOLD.collapsedFolders.delete(folderId); // 从折叠集合中移除
+        saveTempExpandState(); // 持久化展开状态
+        
+        // 清空并重新渲染子节点
+        childrenContainer.innerHTML = '';
+        const fragment = document.createDocumentFragment();
+        
+        item.children.forEach(child => {
+            try {
+                const childNode = buildTempTreeNode(section, child, 1, { lazyLoad: true });
+                if (childNode) fragment.appendChild(childNode);
+            } catch (err) {
+                console.warn('[Canvas懒加载] 渲染子节点失败:', err);
+            }
+        });
+        
+        childrenContainer.appendChild(fragment);
+        
+        // 更新父节点状态
+        const parentTreeItem = childrenContainer.previousElementSibling;
+        if (parentTreeItem) {
+            parentTreeItem.dataset.childrenLoaded = 'true';
+            // 移除数量提示
+            const countBadge = parentTreeItem.querySelector('.folder-count-badge');
+            if (countBadge) countBadge.remove();
+        }
+        
+        return true;
+    } catch (error) {
+        console.error('[Canvas懒加载] loadFolderChildren 出错:', error);
+        return false;
     }
 }
 
 // 加载更多子节点
 function loadMoreChildren(section, parentItemId, startIndex, loadMoreBtn) {
-    const item = findTempItemEntry(section.id, parentItemId);
-    if (!item || !item.item || !item.item.children) return;
-    
-    const childrenContainer = loadMoreBtn.parentElement;
-    const remainingChildren = item.item.children.slice(startIndex);
-    
-    // 移除"加载更多"按钮
-    loadMoreBtn.remove();
-    
-    // 渲染剩余子节点
-    remainingChildren.forEach(child => {
-        const childNode = buildTempTreeNode(section, child, 1, { lazyLoad: true });
-        if (childNode) childrenContainer.appendChild(childNode);
-    });
+    try {
+        if (!section || !parentItemId || !loadMoreBtn) {
+            console.warn('[Canvas懒加载] loadMoreChildren: 参数无效');
+            return false;
+        }
+        
+        const itemEntry = findTempItemEntry(section.id, parentItemId);
+        if (!itemEntry || !itemEntry.item || !itemEntry.item.children) {
+            console.warn('[Canvas懒加载] loadMoreChildren: 找不到项目', parentItemId);
+            return false;
+        }
+        
+        const childrenContainer = loadMoreBtn.parentElement;
+        if (!childrenContainer) {
+            console.warn('[Canvas懒加载] loadMoreChildren: 找不到容器');
+            return false;
+        }
+        
+        const remainingChildren = itemEntry.item.children.slice(startIndex);
+        if (remainingChildren.length === 0) {
+            loadMoreBtn.remove();
+            return true;
+        }
+        
+        // 移除"加载更多"按钮
+        loadMoreBtn.remove();
+        
+        // 渲染剩余子节点
+        const fragment = document.createDocumentFragment();
+        remainingChildren.forEach(child => {
+            try {
+                const childNode = buildTempTreeNode(section, child, 1, { lazyLoad: true });
+                if (childNode) fragment.appendChild(childNode);
+            } catch (err) {
+                console.warn('[Canvas懒加载] 渲染子节点失败:', err);
+            }
+        });
+        
+        childrenContainer.appendChild(fragment);
+        return true;
+    } catch (error) {
+        console.error('[Canvas懒加载] loadMoreChildren 出错:', error);
+        return false;
+    }
+}
+
+// 清理懒加载状态（用于重置）
+function clearLazyLoadState() {
+    LAZY_LOAD_THRESHOLD.expandedFolders.clear();
 }
 
 function setupTempSectionTreeInteractions(treeContainer, section) {
     if (!treeContainer) return;
+    
+    // 防止重复绑定
+    if (treeContainer.dataset.lazyLoadBound === 'true') return;
+    treeContainer.dataset.lazyLoadBound = 'true';
 
-    // 性能优化：懒加载文件夹展开处理
+    // 性能优化：懒加载处理
+    // 使用捕获阶段监听，在原有事件处理之前检查懒加载需求
     treeContainer.addEventListener('click', (e) => {
         // 处理"加载更多"按钮点击
         const loadMoreBtn = e.target.closest('.tree-load-more');
@@ -7877,55 +8081,50 @@ function setupTempSectionTreeInteractions(treeContainer, section) {
             loadMoreChildren(section, parentItemId, startIndex, loadMoreBtn);
             return;
         }
-
-        // 处理文件夹展开/折叠（懒加载）
+        
+        // 检查是否点击了需要懒加载的文件夹
         const treeItem = e.target.closest('.tree-item');
         if (!treeItem) return;
-        
-        const toggle = e.target.closest('.tree-toggle');
-        const folderIcon = treeItem.querySelector('.tree-icon.fas');
-        if (!toggle && !folderIcon) return;
-        
-        // 只处理文件夹
         if (treeItem.dataset.nodeType !== 'folder') return;
         
+        console.log('[Canvas懒加载] 文件夹被点击:', {
+            nodeId: treeItem.dataset.nodeId,
+            childrenLoaded: treeItem.dataset.childrenLoaded,
+            hasChildren: treeItem.dataset.hasChildren
+        });
+        
         const treeNode = treeItem.closest('.tree-node');
-        if (!treeNode) return;
+        const childrenContainer = treeNode ? treeNode.querySelector(':scope > .tree-children') : null;
+        const parentItemId = treeItem.dataset.nodeId;
+        const folderId = `${section.id}-${parentItemId}`;
         
-        const childrenContainer = treeNode.querySelector(':scope > .tree-children');
-        if (!childrenContainer) return;
-        
-        const isExpanded = childrenContainer.classList.contains('expanded');
-        const nodeToggle = treeItem.querySelector('.tree-toggle');
-        const nodeIcon = treeItem.querySelector('.tree-icon.fas');
-        
-        if (isExpanded) {
-            // 折叠
-            childrenContainer.classList.remove('expanded');
-            if (nodeToggle) nodeToggle.classList.remove('expanded');
-            if (nodeIcon) {
-                nodeIcon.classList.remove('fa-folder-open');
-                nodeIcon.classList.add('fa-folder');
-            }
-        } else {
-            // 展开
-            childrenContainer.classList.add('expanded');
-            if (nodeToggle) nodeToggle.classList.add('expanded');
-            if (nodeIcon) {
-                nodeIcon.classList.remove('fa-folder');
-                nodeIcon.classList.add('fa-folder-open');
-            }
+        // 延迟检查展开/折叠状态
+        setTimeout(() => {
+            const isExpanded = childrenContainer && childrenContainer.classList.contains('expanded');
             
-            // 懒加载：如果子节点未加载，现在加载
-            if (treeItem.dataset.childrenLoaded === 'false' && treeItem.dataset.hasChildren === 'true') {
-                const parentItemId = treeItem.dataset.nodeId;
-                loadFolderChildren(section, parentItemId, childrenContainer);
+            if (isExpanded) {
+                // 展开：如果需要懒加载，执行加载
+                if (treeItem.dataset.childrenLoaded === 'false' && treeItem.dataset.hasChildren === 'true') {
+                    console.log('[Canvas懒加载] 需要懒加载:', parentItemId);
+                    loadFolderChildren(section, parentItemId, childrenContainer);
+                } else {
+                    // 已加载的文件夹，记录展开状态
+                    LAZY_LOAD_THRESHOLD.expandedFolders.add(folderId);
+                    // 从折叠集合中移除（如果之前被折叠过）
+                    LAZY_LOAD_THRESHOLD.collapsedFolders.delete(folderId);
+                    saveTempExpandState();
+                }
+            } else {
+                // 折叠：记录折叠状态
+                // 从展开集合中移除
+                LAZY_LOAD_THRESHOLD.expandedFolders.delete(folderId);
+                // 添加到折叠集合（用于浅层默认展开的文件夹）
+                LAZY_LOAD_THRESHOLD.collapsedFolders.add(folderId);
+                saveTempExpandState();
+                console.log('[Canvas懒加载] 文件夹已折叠:', parentItemId);
             }
-        }
-        
-        e.preventDefault();
-        e.stopPropagation();
-    });
+        }, 50);
+    }, false); // 使用冒泡阶段，在原有事件处理之后执行
 
     // 注意：空白区域右键菜单已移至 setupTempSectionBlankAreaMenu
 }
@@ -8321,6 +8520,11 @@ function scheduleDormancy(section, reason) {
 
 // 立即唤醒栏目（取消定时器）
 function wakeSection(section) {
+    if (!section || !section.id) {
+        console.warn('[Canvas休眠] wakeSection: 无效的section');
+        return false;
+    }
+    
     const sectionId = section.id;
 
     // 取消休眠定时器
@@ -8337,26 +8541,76 @@ function wakeSection(section) {
             // 性能优化：如果内容被卸载，重新渲染
             const treeContainer = element.querySelector('.temp-bookmark-tree');
             if (treeContainer && treeContainer.dataset.contentUnloaded === 'true') {
-                // 重新渲染书签树内容
-                treeContainer.innerHTML = '';
-                treeContainer.dataset.contentUnloaded = 'false';
-                const treeFragment = document.createDocumentFragment();
-                section.items.forEach(item => {
-                    const node = buildTempTreeNode(section, item, 0, { lazyLoad: true });
-                    if (node) treeFragment.appendChild(node);
-                });
-                treeContainer.appendChild(treeFragment);
-                
-                // 重新绑定事件
-                setupTempSectionTreeInteractions(treeContainer, section);
-                if (typeof attachTreeEvents === 'function') {
-                    attachTreeEvents(treeContainer);
-                }
-                if (typeof attachDragEvents === 'function') {
-                    attachDragEvents(treeContainer);
+                try {
+                    // 重新渲染书签树内容
+                    treeContainer.innerHTML = '';
+                    treeContainer.dataset.contentUnloaded = 'false';
+                    
+                    // 检查section.items是否存在
+                    if (!section.items || !Array.isArray(section.items)) {
+                        console.warn('[Canvas休眠] wakeSection: section.items无效，跳过渲染');
+                        return true;
+                    }
+                    
+                    const treeFragment = document.createDocumentFragment();
+                    section.items.forEach(item => {
+                        try {
+                            const node = buildTempTreeNode(section, item, 0, { lazyLoad: true });
+                            if (node) treeFragment.appendChild(node);
+                        } catch (err) {
+                            console.warn('[Canvas休眠] 渲染节点失败:', err);
+                        }
+                    });
+                    treeContainer.appendChild(treeFragment);
+                    
+                    // 重新绑定事件（使用延迟确保DOM已更新）
+                    requestAnimationFrame(() => {
+                        try {
+                            setupTempSectionTreeInteractions(treeContainer, section);
+                            if (typeof attachTreeEvents === 'function') {
+                                attachTreeEvents(treeContainer);
+                            }
+                            if (typeof attachDragEvents === 'function') {
+                                attachDragEvents(treeContainer);
+                            }
+                            if (typeof attachPointerDragEvents === 'function') {
+                                attachPointerDragEvents(treeContainer);
+                            }
+                        } catch (err) {
+                            console.warn('[Canvas休眠] 绑定事件失败:', err);
+                        }
+                    });
+                    
+                    console.log('[Canvas休眠] 栏目已唤醒并重新渲染:', sectionId);
+                } catch (error) {
+                    console.error('[Canvas休眠] wakeSection渲染失败:', error);
+                    // 失败时尝试完全重新渲染整个栏目
+                    try {
+                        renderTempNode(section);
+                    } catch (fallbackError) {
+                        console.error('[Canvas休眠] 回退渲染也失败:', fallbackError);
+                    }
                 }
             }
         }
+    }
+    return true;
+}
+
+// 强制唤醒并重新渲染栏目（用于恢复失败时）
+function forceWakeAndRender(sectionId) {
+    const section = getTempSection(sectionId);
+    if (!section) return false;
+    
+    section.dormant = false;
+    cancelDormancyTimer(sectionId);
+    
+    try {
+        renderTempNode(section);
+        return true;
+    } catch (error) {
+        console.error('[Canvas休眠] forceWakeAndRender失败:', error);
+        return false;
     }
 }
 
@@ -10847,6 +11101,8 @@ window.CanvasModule = {
     locateElement: locateToElement,
     // 性能优化：休眠管理
     scheduleDormancyUpdate: scheduleDormancyUpdate,
+    forceWakeAndRender: forceWakeAndRender,
+    clearLazyLoadState: clearLazyLoadState,
     temp: {
         getSection: getTempSection,
         findItem: findTempItemEntry,

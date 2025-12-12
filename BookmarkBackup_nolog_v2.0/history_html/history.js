@@ -4468,25 +4468,63 @@ function renderCurrentView() {
                 // 如果已初始化，跳过书签树的完整渲染，只做增量更新
                 if (!isCanvasInitialized) {
                     // 首次初始化：渲染书签树
-                    renderTreeView();
-                    
-                    // 3. 初始化Canvas功能（缩放、平移、拖拽等）
-                    if (window.CanvasModule) {
-                        window.CanvasModule.init();
+                    try {
+                        renderTreeView();
+                        
+                        // 3. 初始化Canvas功能（缩放、平移、拖拽等）
+                        if (window.CanvasModule) {
+                            window.CanvasModule.init();
+                        }
+                        
+                        // 标记Canvas已初始化
+                        if (canvasView) {
+                            canvasView.dataset.initialized = 'true';
+                            canvasView.dataset.initTime = Date.now().toString();
+                        }
+                        console.log('[Canvas] 首次初始化完成');
+                    } catch (initError) {
+                        console.error('[Canvas] 初始化失败:', initError);
+                        // 初始化失败时不标记为已初始化，下次会重试
                     }
-                    
-                    // 标记Canvas已初始化
-                    if (canvasView) {
-                        canvasView.dataset.initialized = 'true';
-                    }
-                    console.log('[Canvas] 首次初始化完成');
                 } else {
                     // 已初始化：只恢复显示，触发休眠管理
                     console.log('[Canvas] 使用缓存状态，跳过重新初始化');
                     
-                    // 触发视口休眠管理，唤醒可见栏目
-                    if (window.CanvasModule && window.CanvasModule.scheduleDormancyUpdate) {
-                        window.CanvasModule.scheduleDormancyUpdate();
+                    // 验证Canvas状态是否有效
+                    const canvasWorkspace = document.getElementById('canvasWorkspace');
+                    const canvasContentEl = document.getElementById('canvasContent');
+                    const hasValidState = canvasWorkspace && canvasContentEl && canvasContentEl.children.length > 0;
+                    
+                    if (!hasValidState) {
+                        // 状态无效，需要重新初始化
+                        console.warn('[Canvas] 缓存状态无效，重新初始化');
+                        if (canvasView) {
+                            canvasView.dataset.initialized = 'false';
+                        }
+                        try {
+                            renderTreeView();
+                            if (window.CanvasModule) {
+                                window.CanvasModule.init();
+                            }
+                            if (canvasView) {
+                                canvasView.dataset.initialized = 'true';
+                                canvasView.dataset.initTime = Date.now().toString();
+                            }
+                        } catch (reinitError) {
+                            console.error('[Canvas] 重新初始化失败:', reinitError);
+                        }
+                    } else {
+                        // 触发视口休眠管理，唤醒可见栏目
+                        if (window.CanvasModule && window.CanvasModule.scheduleDormancyUpdate) {
+                            // 延迟执行，确保视图切换完成
+                            setTimeout(() => {
+                                try {
+                                    window.CanvasModule.scheduleDormancyUpdate();
+                                } catch (err) {
+                                    console.warn('[Canvas] 休眠管理调度失败:', err);
+                                }
+                            }, 50);
+                        }
                     }
                 }
 

@@ -737,7 +737,8 @@ body {
 .view-header h2 {
     font-size: 24px;
     font-weight: 600;
-    margin-bottom: 0; /* 移除底部边距，避免影响垂直对齐 */
+    margin-bottom: 0;
+    /* 移除底部边距，避免影响垂直对齐 */
     color: var(--text-primary);
 }
 
@@ -1648,7 +1649,8 @@ body {
 .view-header {
     display: flex;
     justify-content: space-between;
-    align-items: center; /* 改为 center，让按钮和标题水平对齐 */
+    align-items: center;
+    /* 改为 center，让按钮和标题水平对齐 */
     margin-bottom: 20px;
 }
 
@@ -2411,23 +2413,55 @@ a.tree-label.tree-bookmark-link:hover {
 }
 
 @keyframes highlightPulseAdded {
-    0%, 100% { box-shadow: none; }
-    50% { box-shadow: inset 0 0 0 2px var(--git-added), 0 0 8px var(--git-added); background: var(--git-added-bg); }
+
+    0%,
+    100% {
+        box-shadow: none;
+    }
+
+    50% {
+        box-shadow: inset 0 0 0 2px var(--git-added), 0 0 8px var(--git-added);
+        background: var(--git-added-bg);
+    }
 }
 
 @keyframes highlightPulseDeleted {
-    0%, 100% { box-shadow: none; }
-    50% { box-shadow: inset 0 0 0 2px var(--git-deleted), 0 0 8px var(--git-deleted); background: var(--git-deleted-bg); }
+
+    0%,
+    100% {
+        box-shadow: none;
+    }
+
+    50% {
+        box-shadow: inset 0 0 0 2px var(--git-deleted), 0 0 8px var(--git-deleted);
+        background: var(--git-deleted-bg);
+    }
 }
 
 @keyframes highlightPulseModified {
-    0%, 100% { box-shadow: none; }
-    50% { box-shadow: inset 0 0 0 2px var(--git-modified), 0 0 8px var(--git-modified); background: var(--git-modified-bg); }
+
+    0%,
+    100% {
+        box-shadow: none;
+    }
+
+    50% {
+        box-shadow: inset 0 0 0 2px var(--git-modified), 0 0 8px var(--git-modified);
+        background: var(--git-modified-bg);
+    }
 }
 
 @keyframes highlightPulseMoved {
-    0%, 100% { box-shadow: none; }
-    50% { box-shadow: inset 0 0 0 2px var(--git-moved), 0 0 8px var(--git-moved); background: var(--git-moved-bg); }
+
+    0%,
+    100% {
+        box-shadow: none;
+    }
+
+    50% {
+        box-shadow: inset 0 0 0 2px var(--git-moved), 0 0 8px var(--git-moved);
+        background: var(--git-moved-bg);
+    }
 }
 
 /* Git Diff 折叠样式 */
@@ -6728,7 +6762,7 @@ a.tree-label.tree-bookmark-link:hover {
 /* 选中状态：高亮边缘并添加发光效果（参考 Obsidian Canvas is-active 效果） */
 .md-canvas-node.selected {
     border-color: rgba(9, 105, 218, 0.9);
-    box-shadow: 
+    box-shadow:
         0 0 0 1.5px rgba(9, 105, 218, 0.4),
         0 0 6px 1px rgba(9, 105, 218, 0.3);
 }
@@ -6736,21 +6770,21 @@ a.tree-label.tree-bookmark-link:hover {
 /* 有自定义颜色时，使用对应颜色的发光效果 */
 .md-canvas-node.selected[data-has-color="true"] {
     border-color: var(--node-glow-color);
-    box-shadow: 
+    box-shadow:
         0 0 0 1.5px color-mix(in srgb, var(--node-glow-color) 45%, transparent),
         0 0 6px 1px color-mix(in srgb, var(--node-glow-color) 35%, transparent);
 }
 
 [data-theme="dark"] .md-canvas-node.selected {
     border-color: rgba(88, 166, 255, 0.95);
-    box-shadow: 
+    box-shadow:
         0 0 0 1.5px rgba(88, 166, 255, 0.5),
         0 0 8px 1px rgba(88, 166, 255, 0.35);
 }
 
 [data-theme="dark"] .md-canvas-node.selected[data-has-color="true"] {
     border-color: var(--node-glow-color);
-    box-shadow: 
+    box-shadow:
         0 0 0 1.5px color-mix(in srgb, var(--node-glow-color) 55%, transparent),
         0 0 8px 1px color-mix(in srgb, var(--node-glow-color) 40%, transparent);
 }
@@ -7821,24 +7855,41 @@ a.tree-label.tree-bookmark-link:hover {
 }
 
 /* 编辑器和视图共享的 Markdown 元素样式 */
-.md-canvas-text h1, .md-wysiwyg-editor h1,
-.md-canvas-text h2, .md-wysiwyg-editor h2,
-.md-canvas-text h3, .md-wysiwyg-editor h3 {
+.md-canvas-text h1,
+.md-wysiwyg-editor h1,
+.md-canvas-text h2,
+.md-wysiwyg-editor h2,
+.md-canvas-text h3,
+.md-wysiwyg-editor h3 {
     margin: 6px 0 4px;
     font-weight: 600;
 }
 
-.md-canvas-text h1, .md-wysiwyg-editor h1 { font-size: 1.4em; }
-.md-canvas-text h2, .md-wysiwyg-editor h2 { font-size: 1.2em; }
-.md-canvas-text h3, .md-wysiwyg-editor h3 { font-size: 1.1em; }
+.md-canvas-text h1,
+.md-wysiwyg-editor h1 {
+    font-size: 1.4em;
+}
 
-.md-canvas-text ul, .md-wysiwyg-editor ul,
-.md-canvas-text ol, .md-wysiwyg-editor ol {
+.md-canvas-text h2,
+.md-wysiwyg-editor h2 {
+    font-size: 1.2em;
+}
+
+.md-canvas-text h3,
+.md-wysiwyg-editor h3 {
+    font-size: 1.1em;
+}
+
+.md-canvas-text ul,
+.md-wysiwyg-editor ul,
+.md-canvas-text ol,
+.md-wysiwyg-editor ol {
     margin: 4px 0;
     padding-left: 16px;
 }
 
-.md-canvas-text code, .md-wysiwyg-editor code {
+.md-canvas-text code,
+.md-wysiwyg-editor code {
     background: rgba(0, 0, 0, 0.06);
     padding: 2px 4px;
     border-radius: 3px;
@@ -7851,7 +7902,8 @@ a.tree-label.tree-bookmark-link:hover {
     background: rgba(255, 255, 255, 0.1);
 }
 
-.md-canvas-text mark, .md-wysiwyg-editor mark {
+.md-canvas-text mark,
+.md-wysiwyg-editor mark {
     background: #fcd34d;
     color: #000000;
     padding: 0 2px;
@@ -7870,40 +7922,51 @@ a.tree-label.tree-bookmark-link:hover {
     /* font标签的color属性会自动应用 */
 }
 
-.md-canvas-text u, .md-wysiwyg-editor u {
+.md-canvas-text u,
+.md-wysiwyg-editor u {
     text-decoration: underline;
 }
 
-.md-canvas-text strong, .md-wysiwyg-editor strong,
-.md-canvas-text b, .md-wysiwyg-editor b {
+.md-canvas-text strong,
+.md-wysiwyg-editor strong,
+.md-canvas-text b,
+.md-wysiwyg-editor b {
     font-weight: 600;
 }
 
-.md-canvas-text em, .md-wysiwyg-editor em,
-.md-canvas-text i, .md-wysiwyg-editor i {
+.md-canvas-text em,
+.md-wysiwyg-editor em,
+.md-canvas-text i,
+.md-wysiwyg-editor i {
     font-style: italic;
 }
 
-.md-canvas-text del, .md-wysiwyg-editor del,
-.md-canvas-text s, .md-wysiwyg-editor s {
+.md-canvas-text del,
+.md-wysiwyg-editor del,
+.md-canvas-text s,
+.md-wysiwyg-editor s {
     text-decoration: line-through;
 }
 
-.md-canvas-text sub, .md-wysiwyg-editor sub {
+.md-canvas-text sub,
+.md-wysiwyg-editor sub {
     vertical-align: sub;
     font-size: 0.8em;
 }
 
-.md-canvas-text sup, .md-wysiwyg-editor sup {
+.md-canvas-text sup,
+.md-wysiwyg-editor sup {
     vertical-align: super;
     font-size: 0.8em;
 }
 
-.md-canvas-text p, .md-wysiwyg-editor p {
+.md-canvas-text p,
+.md-wysiwyg-editor p {
     margin: 4px 0;
 }
 
-.md-canvas-text a, .md-wysiwyg-editor a {
+.md-canvas-text a,
+.md-wysiwyg-editor a {
     color: #2563eb;
     text-decoration: none;
     border-bottom: 1px solid rgba(37, 99, 235, 0.3);
@@ -7913,7 +7976,8 @@ a.tree-label.tree-bookmark-link:hover {
     display: inline-block;
 }
 
-.md-canvas-text a:hover, .md-wysiwyg-editor a:hover {
+.md-canvas-text a:hover,
+.md-wysiwyg-editor a:hover {
     border-bottom-color: rgba(37, 99, 235, 0.6);
     background: rgba(37, 99, 235, 0.08);
     border-radius: 3px;
@@ -11833,6 +11897,7 @@ color: var(--text-secondary);
     padding-top: 16px;
     border-top: 1px solid var(--border-color);
 }
+
 /* ==================== Canvas 全页面视图样式 ==================== */
 .canvas-fullpage-view {
     padding: 0 !important;
@@ -12126,8 +12191,15 @@ color: var(--text-secondary);
 }
 
 @keyframes pulse {
-    0%, 100% { opacity: 1; }
-    50% { opacity: 0.7; }
+
+    0%,
+    100% {
+        opacity: 1;
+    }
+
+    50% {
+        opacity: 0.7;
+    }
 }
 
 .canvas-shortcut-recorder {
@@ -12265,16 +12337,22 @@ color: var(--text-secondary);
 }
 
 @keyframes fadeIn {
-    from { opacity: 0; }
-    to { opacity: 1; }
+    from {
+        opacity: 0;
+    }
+
+    to {
+        opacity: 1;
+    }
 }
 
 @keyframes slideUp {
-    from { 
+    from {
         transform: translateY(20px);
         opacity: 0;
     }
-    to { 
+
+    to {
         transform: translateY(0);
         opacity: 1;
     }
@@ -12328,7 +12406,7 @@ color: var(--text-secondary);
     overflow: hidden;
 }
 
-.manual-selector-panel + .manual-selector-panel {
+.manual-selector-panel+.manual-selector-panel {
     border-left: 1px solid var(--border-color);
 }
 
@@ -12361,46 +12439,41 @@ color: var(--text-secondary);
 /* 窗口帮助提示框 */
 .manual-selector-help-tooltip {
     position: absolute;
-    top: 50px;
+    top: 38px;
     left: 50%;
+    right: auto;
     transform: translateX(-50%);
     background: var(--bg-primary);
     border: 1px solid var(--border-color);
-    border-radius: 8px;
-    padding: 12px 16px;
-    max-width: 350px;
-    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
-    z-index: 10001;
-    display: none;
-    animation: fadeIn 0.2s;
+    border-radius: 6px;
+    padding: 10px 16px;
+    width: 260px;
+    box-shadow: 0 6px 16px rgba(0, 0, 0, 0.2);
+    z-index: 100001;
+    opacity: 0;
+    visibility: hidden;
+    transition: opacity 0.2s, visibility 0.2s;
+    pointer-events: auto;
+    white-space: normal;
+    text-align: center;
 }
 
-.manual-selector-help-tooltip.show {
-    display: block;
-}
+
 
 .manual-selector-help-tooltip::before {
-    content: '';
-    position: absolute;
-    top: -8px;
-    left: 50%;
-    transform: translateX(-50%);
-    width: 0;
-    height: 0;
-    border-left: 8px solid transparent;
-    border-right: 8px solid transparent;
-    border-bottom: 8px solid var(--border-color);
+    display: none;
 }
 
 .manual-selector-help-tooltip p {
     margin: 0;
-    font-size: 12px;
-    line-height: 1.6;
+    font-size: 11px;
+    line-height: 1.5;
     color: var(--text-primary);
+    text-align: center;
 }
 
-.manual-selector-help-tooltip p + p {
-    margin-top: 8px;
+.manual-selector-help-tooltip p+p {
+    margin-top: 6px;
 }
 
 .manual-selector-list {

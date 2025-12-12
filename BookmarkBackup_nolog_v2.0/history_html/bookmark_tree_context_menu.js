@@ -6595,7 +6595,9 @@ async function showManualWindowGroupSelector(context) {
         windowPanel.innerHTML = `
             <div class="manual-selector-panel-title">
                 <span>${lang === 'zh_CN' ? '窗口' : 'Windows'}</span>
-                <i class="fas fa-question-circle manual-selector-help-icon"></i>
+                <span style="position: relative; display: inline-flex; align-items: center;">
+                    <i class="fas fa-question-circle manual-selector-help-icon"></i>
+                </span>
             </div>
             <div class="manual-selector-help-tooltip">
                 <p>${lang === 'zh_CN' 
@@ -6608,19 +6610,37 @@ async function showManualWindowGroupSelector(context) {
             <div class="manual-selector-list" data-type="windows"></div>
         `;
         
-        // 绑定帮助图标点击事件
+        // 绑定帮助图标hover事件
         const helpIcon = windowPanel.querySelector('.manual-selector-help-icon');
         const helpTooltip = windowPanel.querySelector('.manual-selector-help-tooltip');
-        helpIcon.addEventListener('click', (e) => {
-            e.stopPropagation();
-            helpTooltip.classList.toggle('show');
+        
+        // 动态计算箭头位置
+        const updateArrowPosition = () => {
+            const panelRect = windowPanel.getBoundingClientRect();
+            const iconRect = helpIcon.getBoundingClientRect();
+            const arrowOffset = iconRect.left - panelRect.left + (iconRect.width / 2);
+            helpTooltip.style.setProperty('--arrow-offset', `${arrowOffset}px`);
+        };
+        
+        helpIcon.addEventListener('mouseenter', () => {
+            updateArrowPosition();
+            helpTooltip.style.opacity = '1';
+            helpTooltip.style.visibility = 'visible';
         });
         
-        // 点击其他地方关闭提示
-        document.addEventListener('click', (e) => {
-            if (!helpTooltip.contains(e.target) && e.target !== helpIcon) {
-                helpTooltip.classList.remove('show');
-            }
+        helpIcon.addEventListener('mouseleave', () => {
+            helpTooltip.style.opacity = '0';
+            helpTooltip.style.visibility = 'hidden';
+        });
+        
+        helpTooltip.addEventListener('mouseenter', () => {
+            helpTooltip.style.opacity = '1';
+            helpTooltip.style.visibility = 'visible';
+        });
+        
+        helpTooltip.addEventListener('mouseleave', () => {
+            helpTooltip.style.opacity = '0';
+            helpTooltip.style.visibility = 'hidden';
         });
         
         // 右侧：组列表

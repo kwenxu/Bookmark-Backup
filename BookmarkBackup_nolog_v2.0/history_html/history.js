@@ -4433,65 +4433,90 @@ function renderCurrentView() {
             break;
         case 'canvas':
             // Canvas视图：包含原Bookmark Tree所有功能 + Canvas画布功能
-            // 1. 先从template创建永久栏目并添加到canvas-content（如果还不存在）
-            const canvasContent = document.getElementById('canvasContent');
-            let permanentSectionExists = document.getElementById('permanentSection');
+            // 性能优化：使用状态缓存，避免重复初始化
+            {
+                const canvasContent = document.getElementById('canvasContent');
+                let permanentSectionExists = document.getElementById('permanentSection');
+                const canvasView = document.getElementById('canvasView');
+                
+                // 检查Canvas是否已经初始化过
+                const isCanvasInitialized = canvasView && canvasView.dataset.initialized === 'true';
+                
+                // 1. 先从template创建永久栏目并添加到canvas-content（如果还不存在）
+                if (!permanentSectionExists && canvasContent) {
+                    const template = document.getElementById('permanentSectionTemplate');
+                    if (template) {
+                        const permanentSection = template.content.cloneNode(true);
+                        canvasContent.appendChild(permanentSection);
+                        console.log('[Canvas] 永久栏目已从template创建到canvas-content');
 
-            if (!permanentSectionExists && canvasContent) {
-                const template = document.getElementById('permanentSectionTemplate');
-                if (template) {
-                    const permanentSection = template.content.cloneNode(true);
-                    canvasContent.appendChild(permanentSection);
-                    console.log('[Canvas] 永久栏目已从template创建到canvas-content');
-
-                    // 立即应用语言设置（使用主UI的applyLanguage函数）
-                    setTimeout(() => {
-                        applyLanguage();
-                        console.log('[Canvas] 永久栏目语言已应用:', currentLang);
-                    }, 0);
-                } else {
-                    console.error('[Canvas] 找不到permanentSectionTemplate');
-                }
-            } else if (!canvasContent) {
-                console.error('[Canvas] 找不到canvasContent');
-            } else {
-                console.log('[Canvas] 永久栏目已存在，跳过创建');
-            }
-
-            // 2. 渲染原有的书签树功能（到永久栏目中的bookmarkTree容器）
-            renderTreeView();
-            // 3. 初始化Canvas功能（缩放、平移、拖拽等）
-            if (window.CanvasModule) {
-                window.CanvasModule.init();
-            }
-
-            // 4. 首次进入或刷新 Canvas 视图后，延迟截一次图，作为当前会话的基准缩略图
-            setTimeout(() => {
-                try {
-                    if (currentView === 'canvas') {
-                        captureCanvasThumbnail();
+                        // 立即应用语言设置（使用主UI的applyLanguage函数）
+                        setTimeout(() => {
+                            applyLanguage();
+                            console.log('[Canvas] 永久栏目语言已应用:', currentLang);
+                        }, 0);
+                    } else {
+                        console.error('[Canvas] 找不到permanentSectionTemplate');
                     }
-                } catch (_) { }
-            }, 800);
+                } else if (!canvasContent) {
+                    console.error('[Canvas] 找不到canvasContent');
+                } else {
+                    console.log('[Canvas] 永久栏目已存在，跳过创建');
+                }
 
-            // 5. 绑定 Canvas 滚动截图逻辑：只在 Canvas 视图内滚动时触发 B 方案
-            const workspace = document.getElementById('canvasWorkspace');
-            if (workspace && !canvasScrollThumbnailBound) {
-                canvasScrollThumbnailBound = true;
-                workspace.addEventListener('wheel', () => {
+                // 2. 性能优化：只在首次进入或强制刷新时渲染书签树
+                // 如果已初始化，跳过书签树的完整渲染，只做增量更新
+                if (!isCanvasInitialized) {
+                    // 首次初始化：渲染书签树
+                    renderTreeView();
+                    
+                    // 3. 初始化Canvas功能（缩放、平移、拖拽等）
+                    if (window.CanvasModule) {
+                        window.CanvasModule.init();
+                    }
+                    
+                    // 标记Canvas已初始化
+                    if (canvasView) {
+                        canvasView.dataset.initialized = 'true';
+                    }
+                    console.log('[Canvas] 首次初始化完成');
+                } else {
+                    // 已初始化：只恢复显示，触发休眠管理
+                    console.log('[Canvas] 使用缓存状态，跳过重新初始化');
+                    
+                    // 触发视口休眠管理，唤醒可见栏目
+                    if (window.CanvasModule && window.CanvasModule.scheduleDormancyUpdate) {
+                        window.CanvasModule.scheduleDormancyUpdate();
+                    }
+                }
+
+                // 4. 首次进入或刷新 Canvas 视图后，延迟截一次图
+                setTimeout(() => {
                     try {
-                        if (currentView !== 'canvas') return;
-                        if (!requestCanvasThumbnailUpdate) return;
-                        if (canvasScrollThumbnailTimer) {
-                            clearTimeout(canvasScrollThumbnailTimer);
+                        if (currentView === 'canvas') {
+                            captureCanvasThumbnail();
                         }
-                        // 滚动结束约 2.5 秒后，再调度截图（减少性能影响）
-                        canvasScrollThumbnailTimer = setTimeout(() => {
-                            canvasScrollThumbnailTimer = null;
-                            requestCanvasThumbnailUpdate('scroll');
-                        }, 2500);
                     } catch (_) { }
-                }, { passive: true });
+                }, 800);
+
+                // 5. 绑定 Canvas 滚动截图逻辑（只绑定一次）
+                const workspace = document.getElementById('canvasWorkspace');
+                if (workspace && !canvasScrollThumbnailBound) {
+                    canvasScrollThumbnailBound = true;
+                    workspace.addEventListener('wheel', () => {
+                        try {
+                            if (currentView !== 'canvas') return;
+                            if (!requestCanvasThumbnailUpdate) return;
+                            if (canvasScrollThumbnailTimer) {
+                                clearTimeout(canvasScrollThumbnailTimer);
+                            }
+                            canvasScrollThumbnailTimer = setTimeout(() => {
+                                canvasScrollThumbnailTimer = null;
+                                requestCanvasThumbnailUpdate('scroll');
+                            }, 2500);
+                        } catch (_) { }
+                    }, { passive: true });
+                }
             }
             break;
         case 'recommend':

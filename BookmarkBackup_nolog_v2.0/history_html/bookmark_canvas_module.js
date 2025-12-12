@@ -7684,8 +7684,17 @@ function finishTempSectionTitleEdit(section, input, renameButton, commit) {
     }
 }
 
-function buildTempTreeNode(section, item, level) {
+// 性能优化：懒加载阈值配置
+const LAZY_LOAD_THRESHOLD = {
+    maxInitialDepth: 1,      // 初始只渲染到第1层深度
+    maxInitialChildren: 20,  // 每个文件夹初始最多渲染20个子项
+    expandedFolders: new Set() // 跟踪已展开的文件夹
+};
+
+function buildTempTreeNode(section, item, level, options = {}) {
     if (!item) return null;
+
+    const { forceExpand = false, lazyLoad = true } = options;
 
     const wrapper = document.createElement('div');
     wrapper.className = 'tree-node';
@@ -7704,8 +7713,23 @@ function buildTempTreeNode(section, item, level) {
 
     const toggle = document.createElement('span');
     toggle.className = 'tree-toggle';
-    if (item.type === 'folder' && item.children && item.children.length) {
-        toggle.classList.add('expanded');
+    
+    // 判断是否有子节点
+    const hasChildren = item.type === 'folder' && item.children && item.children.length > 0;
+    
+    // 性能优化：懒加载逻辑
+    // 超过阈值深度的文件夹默认折叠，不渲染子节点
+    const shouldLazyLoad = lazyLoad && level >= LAZY_LOAD_THRESHOLD.maxInitialDepth && hasChildren;
+    const folderId = `${section.id}-${item.id}`;
+    const isExpanded = forceExpand || LAZY_LOAD_THRESHOLD.expandedFolders.has(folderId) || (!shouldLazyLoad && level < LAZY_LOAD_THRESHOLD.maxInitialDepth);
+    
+    if (hasChildren) {
+        if (isExpanded) {
+            toggle.classList.add('expanded');
+        }
+        // 标记该节点有子节点但可能未加载
+        treeItem.dataset.hasChildren = 'true';
+        treeItem.dataset.childrenLoaded = isExpanded ? 'true' : 'false';
     } else {
         toggle.style.opacity = '0';
     }
@@ -7714,12 +7738,15 @@ function buildTempTreeNode(section, item, level) {
     if (item.type === 'folder') {
         icon = document.createElement('i');
         icon.className = 'tree-icon fas fa-folder';
+        if (isExpanded && hasChildren) {
+            icon.classList.remove('fa-folder');
+            icon.classList.add('fa-folder-open');
+        }
     } else {
         icon = document.createElement('img');
         icon.className = 'tree-icon';
         const favicon = getFaviconUrl(item.url);
         icon.src = favicon || fallbackIcon;
-        // 不再需要 onerror，全局事件处理器会处理
     }
 
     let label;
@@ -7740,6 +7767,14 @@ function buildTempTreeNode(section, item, level) {
 
     const badges = document.createElement('span');
     badges.className = 'change-badges';
+    
+    // 如果有未加载的子节点，显示数量提示
+    if (hasChildren && !isExpanded) {
+        const countBadge = document.createElement('span');
+        countBadge.className = 'folder-count-badge';
+        countBadge.textContent = `(${item.children.length})`;
+        badges.appendChild(countBadge);
+    }
 
     treeItem.appendChild(toggle);
     treeItem.appendChild(icon);
@@ -7751,26 +7786,146 @@ function buildTempTreeNode(section, item, level) {
 
     if (item.type === 'folder') {
         const childrenContainer = document.createElement('div');
-        childrenContainer.className = 'tree-children expanded';
+        childrenContainer.className = 'tree-children' + (isExpanded ? ' expanded' : '');
         childrenContainer.dataset.sectionId = section.id;
+        childrenContainer.dataset.parentItemId = item.id;
 
-        if (item.children && item.children.length) {
-            item.children.forEach(child => {
-                const childNode = buildTempTreeNode(section, child, level + 1);
+        if (hasChildren && isExpanded) {
+            // 渲染子节点，但限制初始渲染数量
+            const childrenToRender = lazyLoad && item.children.length > LAZY_LOAD_THRESHOLD.maxInitialChildren
+                ? item.children.slice(0, LAZY_LOAD_THRESHOLD.maxInitialChildren)
+                : item.children;
+            
+            childrenToRender.forEach(child => {
+                const childNode = buildTempTreeNode(section, child, level + 1, { lazyLoad });
                 if (childNode) childrenContainer.appendChild(childNode);
             });
-        } else {
-            toggle.style.opacity = '0';
+            
+            // 如果有更多子节点未渲染，添加"加载更多"按钮
+            if (lazyLoad && item.children.length > LAZY_LOAD_THRESHOLD.maxInitialChildren) {
+                const loadMoreBtn = document.createElement('div');
+                loadMoreBtn.className = 'tree-load-more';
+                loadMoreBtn.dataset.sectionId = section.id;
+                loadMoreBtn.dataset.parentItemId = item.id;
+                loadMoreBtn.dataset.startIndex = LAZY_LOAD_THRESHOLD.maxInitialChildren;
+                loadMoreBtn.innerHTML = `<i class="fas fa-ellipsis-h"></i> <span>${item.children.length - LAZY_LOAD_THRESHOLD.maxInitialChildren} more items</span>`;
+                childrenContainer.appendChild(loadMoreBtn);
+            }
         }
-
+        
         wrapper.appendChild(childrenContainer);
     }
 
     return wrapper;
 }
 
+// 懒加载：展开文件夹时加载子节点
+function loadFolderChildren(section, parentItemId, childrenContainer) {
+    const item = findTempItemEntry(section.id, parentItemId);
+    if (!item || !item.item || !item.item.children) return;
+    
+    const folderId = `${section.id}-${parentItemId}`;
+    LAZY_LOAD_THRESHOLD.expandedFolders.add(folderId);
+    
+    // 清空并重新渲染子节点
+    childrenContainer.innerHTML = '';
+    item.item.children.forEach(child => {
+        const childNode = buildTempTreeNode(section, child, 1, { lazyLoad: true });
+        if (childNode) childrenContainer.appendChild(childNode);
+    });
+    
+    // 更新父节点状态
+    const parentTreeItem = childrenContainer.previousElementSibling;
+    if (parentTreeItem) {
+        parentTreeItem.dataset.childrenLoaded = 'true';
+        // 移除数量提示
+        const countBadge = parentTreeItem.querySelector('.folder-count-badge');
+        if (countBadge) countBadge.remove();
+    }
+}
+
+// 加载更多子节点
+function loadMoreChildren(section, parentItemId, startIndex, loadMoreBtn) {
+    const item = findTempItemEntry(section.id, parentItemId);
+    if (!item || !item.item || !item.item.children) return;
+    
+    const childrenContainer = loadMoreBtn.parentElement;
+    const remainingChildren = item.item.children.slice(startIndex);
+    
+    // 移除"加载更多"按钮
+    loadMoreBtn.remove();
+    
+    // 渲染剩余子节点
+    remainingChildren.forEach(child => {
+        const childNode = buildTempTreeNode(section, child, 1, { lazyLoad: true });
+        if (childNode) childrenContainer.appendChild(childNode);
+    });
+}
+
 function setupTempSectionTreeInteractions(treeContainer, section) {
     if (!treeContainer) return;
+
+    // 性能优化：懒加载文件夹展开处理
+    treeContainer.addEventListener('click', (e) => {
+        // 处理"加载更多"按钮点击
+        const loadMoreBtn = e.target.closest('.tree-load-more');
+        if (loadMoreBtn) {
+            e.preventDefault();
+            e.stopPropagation();
+            const parentItemId = loadMoreBtn.dataset.parentItemId;
+            const startIndex = parseInt(loadMoreBtn.dataset.startIndex, 10) || 0;
+            loadMoreChildren(section, parentItemId, startIndex, loadMoreBtn);
+            return;
+        }
+
+        // 处理文件夹展开/折叠（懒加载）
+        const treeItem = e.target.closest('.tree-item');
+        if (!treeItem) return;
+        
+        const toggle = e.target.closest('.tree-toggle');
+        const folderIcon = treeItem.querySelector('.tree-icon.fas');
+        if (!toggle && !folderIcon) return;
+        
+        // 只处理文件夹
+        if (treeItem.dataset.nodeType !== 'folder') return;
+        
+        const treeNode = treeItem.closest('.tree-node');
+        if (!treeNode) return;
+        
+        const childrenContainer = treeNode.querySelector(':scope > .tree-children');
+        if (!childrenContainer) return;
+        
+        const isExpanded = childrenContainer.classList.contains('expanded');
+        const nodeToggle = treeItem.querySelector('.tree-toggle');
+        const nodeIcon = treeItem.querySelector('.tree-icon.fas');
+        
+        if (isExpanded) {
+            // 折叠
+            childrenContainer.classList.remove('expanded');
+            if (nodeToggle) nodeToggle.classList.remove('expanded');
+            if (nodeIcon) {
+                nodeIcon.classList.remove('fa-folder-open');
+                nodeIcon.classList.add('fa-folder');
+            }
+        } else {
+            // 展开
+            childrenContainer.classList.add('expanded');
+            if (nodeToggle) nodeToggle.classList.add('expanded');
+            if (nodeIcon) {
+                nodeIcon.classList.remove('fa-folder');
+                nodeIcon.classList.add('fa-folder-open');
+            }
+            
+            // 懒加载：如果子节点未加载，现在加载
+            if (treeItem.dataset.childrenLoaded === 'false' && treeItem.dataset.hasChildren === 'true') {
+                const parentItemId = treeItem.dataset.nodeId;
+                loadFolderChildren(section, parentItemId, childrenContainer);
+            }
+        }
+        
+        e.preventDefault();
+        e.stopPropagation();
+    });
 
     // 注意：空白区域右键菜单已移至 setupTempSectionBlankAreaMenu
 }
@@ -8140,6 +8295,19 @@ function scheduleDormancy(section, reason) {
         if (element && !section.dormant) {
             section.dormant = true;
             element.style.display = 'none';
+            element.classList.add('dormant-content');
+            
+            // 性能优化：极致性能模式下，卸载书签树DOM内容
+            // 这可以大幅减少内存占用和DOM节点数量
+            if (CanvasState.performanceMode === 'maximum') {
+                const treeContainer = element.querySelector('.temp-bookmark-tree');
+                if (treeContainer && treeContainer.children.length > 0) {
+                    // 标记内容已卸载
+                    treeContainer.dataset.contentUnloaded = 'true';
+                    // 清空DOM内容（数据保留在section.items中）
+                    treeContainer.innerHTML = '';
+                }
+            }
         }
         CanvasState.dormancyTimers.delete(sectionId);
     }, delay);
@@ -8164,6 +8332,30 @@ function wakeSection(section) {
         const element = document.getElementById(sectionId);
         if (element) {
             element.style.display = '';
+            element.classList.remove('dormant-content');
+            
+            // 性能优化：如果内容被卸载，重新渲染
+            const treeContainer = element.querySelector('.temp-bookmark-tree');
+            if (treeContainer && treeContainer.dataset.contentUnloaded === 'true') {
+                // 重新渲染书签树内容
+                treeContainer.innerHTML = '';
+                treeContainer.dataset.contentUnloaded = 'false';
+                const treeFragment = document.createDocumentFragment();
+                section.items.forEach(item => {
+                    const node = buildTempTreeNode(section, item, 0, { lazyLoad: true });
+                    if (node) treeFragment.appendChild(node);
+                });
+                treeContainer.appendChild(treeFragment);
+                
+                // 重新绑定事件
+                setupTempSectionTreeInteractions(treeContainer, section);
+                if (typeof attachTreeEvents === 'function') {
+                    attachTreeEvents(treeContainer);
+                }
+                if (typeof attachDragEvents === 'function') {
+                    attachDragEvents(treeContainer);
+                }
+            }
         }
     }
 }
@@ -10653,6 +10845,8 @@ window.CanvasModule = {
     locatePermanent: locateToPermanentSection,
     locateSection: locateToTempSection,
     locateElement: locateToElement,
+    // 性能优化：休眠管理
+    scheduleDormancyUpdate: scheduleDormancyUpdate,
     temp: {
         getSection: getTempSection,
         findItem: findTempItemEntry,

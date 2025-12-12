@@ -6604,8 +6604,8 @@ async function showManualWindowGroupSelector(context) {
                     ? 'Chrome/Edge扩展API无法获取窗口的自定义名称（即使您在浏览器中设置了"命名窗口"）。' 
                     : 'Chrome/Edge extension API cannot access custom window names (even if you set "Name Window" in browser).'}</p>
                 <p>${lang === 'zh_CN' 
-                    ? '显示的是活动标签页标题，您可以点击编辑按钮（✏️）设置自定义名称。' 
-                    : 'Showing active tab title, you can click edit button (✏️) to set custom name.'}</p>
+                    ? '显示的是活动标签页标题，您可以点击编辑按钮（<i class="fas fa-edit"></i>）设置自定义名称。' 
+                    : 'Showing active tab title, you can click edit button (<i class="fas fa-edit"></i>) to set custom name.'}</p>
             </div>
             <div class="manual-selector-list" data-type="windows"></div>
         `;
@@ -6796,6 +6796,10 @@ async function loadWindowsAndGroups(overlay, lang) {
                 
                 // 点击选择窗口
                 item.addEventListener('click', async (e) => {
+                    // 如果处于编辑模式，不触发选择
+                    if (item.dataset.editing === 'true') {
+                        return;
+                    }
                     // 如果点击的是编辑按钮或输入框，不触发选择
                     if (e.target.closest('.manual-selector-edit-btn') || e.target.closest('.manual-selector-item-input')) {
                         return;
@@ -7045,6 +7049,10 @@ async function showWindowNameEditor(item, windowId, currentName, lang) {
     
     // 保存原始HTML
     const originalTitleHTML = titleDiv.innerHTML;
+    const originalActionsHTML = actionsDiv.innerHTML;
+    
+    // 标记为编辑模式，防止item的click事件触发
+    item.dataset.editing = 'true';
     
     // 创建输入框
     const input = document.createElement('input');
@@ -7066,8 +7074,8 @@ async function showWindowNameEditor(item, windowId, currentName, lang) {
     
     const clearBtn = document.createElement('button');
     clearBtn.className = 'manual-selector-edit-btn';
-    clearBtn.innerHTML = '<i class="fas fa-trash"></i>';
-    clearBtn.title = lang === 'zh_CN' ? '清除自定义名称' : 'Clear custom name';
+    clearBtn.innerHTML = '<i class="fas fa-undo"></i>';
+    clearBtn.title = lang === 'zh_CN' ? '还原为默认名称' : 'Restore default name';
     clearBtn.style.color = '#dc3545';
     
     // 替换内容
@@ -7098,8 +7106,13 @@ async function showWindowNameEditor(item, windowId, currentName, lang) {
     
     // 取消函数
     const cancel = () => {
+        // 移除编辑模式标记
+        delete item.dataset.editing;
+        
         titleDiv.innerHTML = originalTitleHTML;
+        actionsDiv.innerHTML = originalActionsHTML;
         actionsDiv.style.opacity = '';
+        
         // 重新绑定编辑按钮
         const editBtn = actionsDiv.querySelector('.manual-selector-edit-btn');
         if (editBtn) {

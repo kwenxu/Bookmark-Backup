@@ -12532,23 +12532,25 @@ color: var(--text-secondary);
     font-weight: 500;
     color: var(--text-primary);
     margin-bottom: 3px;
-    display: flex;
-    align-items: center;
-    gap: 6px;
     flex: 1;
+    word-break: break-all;
+    hyphens: none;
+    line-height: 1.4;
+    min-width: 0;
 }
 
 .manual-selector-item-header {
     display: flex;
-    align-items: center;
+    align-items: flex-start;
     justify-content: space-between;
     margin-bottom: 3px;
+    gap: 8px;
 }
 
 .manual-selector-item-actions {
     display: flex;
     align-items: center;
-    gap: 6px;
+    gap: 2px;
     opacity: 0;
     transition: opacity 0.2s;
 }
@@ -12562,10 +12564,32 @@ color: var(--text-secondary);
     border: none;
     color: var(--accent-primary);
     cursor: pointer;
-    padding: 2px 4px;
+    padding: 0;
     font-size: 12px;
     transition: all 0.2s;
     border-radius: 3px;
+    width: 24px;
+    height: 24px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+}
+
+.manual-selector-edit-btn i {
+    line-height: 1;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.manual-selector-edit-btn .fa-check {
+    transform: translateY(-0.5px);
+}
+
+.manual-selector-edit-btn .fa-undo {
+    font-size: 11px;
+    transform: translateY(1px);
 }
 
 .manual-selector-edit-btn:hover {

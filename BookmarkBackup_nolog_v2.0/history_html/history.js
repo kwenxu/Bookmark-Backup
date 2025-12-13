@@ -1342,8 +1342,8 @@ const i18n = {
         'en': 'Bookmark Tree (Permanent)'
     },
     permanentSectionTip: {
-        'zh_CN': '拖动书签/文件夹至空白处，创建书签型临时节点；临时节点的修改不计入核心数据，可用来对比查看/整理；栏目间可互相拖动/粘贴',
-        'en': 'Drag bookmarks/folders to blank area to create bookmark-type temp nodes; temp node changes are not saved to core data, can be used for comparison/organization; sections can drag/paste between each other'
+        'zh_CN': '点击添加说明...',
+        'en': 'Click to add description...'
     },
     filterAll: {
         'zh_CN': '全部',

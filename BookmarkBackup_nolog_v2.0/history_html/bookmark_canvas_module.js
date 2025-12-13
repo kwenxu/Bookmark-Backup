@@ -500,6 +500,173 @@ const TEMP_SECTION_DEFAULT_COLOR = '#2563eb';
 // Obsidian Canvas 文本节点默认尺寸（参考 sample.canvas）
 const MD_NODE_DEFAULT_WIDTH = 300;
 const MD_NODE_DEFAULT_HEIGHT = 300;
+
+// =============================================================================
+// 初始演示模板 - 首次使用时显示的使用指南
+// =============================================================================
+
+/**
+ * 创建初始演示模板数据
+ * 包含两个空白栏目和演示连接线
+ * 根据语言设置显示中文或英文版本
+ */
+function createInitialDemoTemplate() {
+    // 检测语言：使用全局 currentLang 或 window.currentLang，非中文则显示英文
+    const lang = (typeof currentLang !== 'undefined' ? currentLang : (typeof window !== 'undefined' && window.currentLang ? window.currentLang : 'zh_CN'));
+    const isEnglish = lang !== 'zh_CN';
+
+    // 中文版：永久栏目使用说明
+    const bookmarkGuideHtml_zh = `<h2>书签画布（v3.0） - 使用说明</h2>
+<ol>
+<li><strong>拖动书签/文件夹至空白处</strong>，创建书签型临时节点；</li>
+<li>临时节点的修改<strong>不计入核心数据</strong>，可用来对比查看/整理；</li>
+<li><strong>栏目间可互相拖动/粘贴</strong>。</li>
+</ol>
+<hr>
+<h3>基本操作</h3>
+<ul>
+<li><strong>创建临时栏目</strong>：从书签树拖动书签到空白处</li>
+<li><strong>创建空白卡片</strong>：双击画布空白处</li>
+<li><strong>平移画布</strong>：空格+拖动 或 双指滑动</li>
+<li><strong>缩放画布</strong>：Ctrl+滚轮 或 双指捏合</li>
+</ul>
+<h3>连接线</h3>
+<ul>
+<li><strong>创建连接</strong>：点击栏目边缘连接点，拖向另一栏目</li>
+<li><strong>编辑连接</strong>：点击连接线，可修改颜色、方向、标签</li>
+<li><strong>预设颜色</strong>：<font color="#ff6666">红</font> <font color="#ffaa66">橙</font> <font color="#ffdd66">黄</font> <font color="#66ffaa">绿</font> <font color="#66bbff">蓝</font> <font color="#bf66ff">紫</font></li>
+</ul>
+<p><em>提示：此卡片可自由编辑或删除</em></p>`;
+
+    // 英文版：永久栏目使用说明
+    const bookmarkGuideHtml_en = `<h2>Bookmark Canvas (v3.0) - User Guide</h2>
+<ol>
+<li><strong>Drag bookmarks/folders to blank area</strong> to create bookmark-type temp nodes;</li>
+<li>Temp node changes are <strong>not saved to core data</strong>, useful for comparison/organization;</li>
+<li><strong>Drag/paste between sections</strong>.</li>
+</ol>
+<hr>
+<h3>Basic Operations</h3>
+<ul>
+<li><strong>Create temp section</strong>: Drag bookmark from tree to blank area</li>
+<li><strong>Create blank card</strong>: Double-click on canvas blank area</li>
+<li><strong>Pan canvas</strong>: Space+drag or two-finger swipe</li>
+<li><strong>Zoom canvas</strong>: Ctrl+scroll or pinch gesture</li>
+</ul>
+<h3>Connection Lines</h3>
+<ul>
+<li><strong>Create connection</strong>: Click section edge anchor, drag to another section</li>
+<li><strong>Edit connection</strong>: Click line to change color, direction, label</li>
+<li><strong>Preset colors</strong>: <font color="#ff6666">Red</font> <font color="#ffaa66">Orange</font> <font color="#ffdd66">Yellow</font> <font color="#66ffaa">Green</font> <font color="#66bbff">Blue</font> <font color="#bf66ff">Purple</font></li>
+</ul>
+<p><em>Tip: This card can be freely edited or deleted</em></p>`;
+
+    // 中文版：快捷键说明
+    const shortcutGuideHtml_zh = `<h2>快捷键说明</h2>
+<h3>Ctrl 键操作</h3>
+<ul>
+<li><strong>Ctrl + 左键（按住）</strong>：拖动画布 或 栏目卡片</li>
+<li><strong>Ctrl + 滚轮</strong>：缩放画布</li>
+<li><strong>Ctrl + 右键（单击）</strong>：更改栏目卡片的大小</li>
+</ul>
+<h3>空格键操作</h3>
+<ul>
+<li><strong>空格 + 左键（按住）</strong>：拖动画布</li>
+</ul>
+<h3>触控板操作</h3>
+<ul>
+<li><strong>双指捏合</strong>：缩放画布</li>
+<li><strong>双指滑动</strong>：拖动画布</li>
+</ul>
+<hr>
+<p><em>快捷键可在左上角「说明」按钮中自定义</em></p>`;
+
+    // 英文版：快捷键说明
+    const shortcutGuideHtml_en = `<h2>Keyboard Shortcuts</h2>
+<h3>Ctrl Key Operations</h3>
+<ul>
+<li><strong>Ctrl + Left Click (hold)</strong>: Drag canvas or section card</li>
+<li><strong>Ctrl + Scroll</strong>: Zoom canvas</li>
+<li><strong>Ctrl + Right Click</strong>: Resize section card</li>
+</ul>
+<h3>Space Key Operations</h3>
+<ul>
+<li><strong>Space + Left Click (hold)</strong>: Drag canvas</li>
+</ul>
+<h3>Touchpad Operations</h3>
+<ul>
+<li><strong>Pinch gesture</strong>: Zoom canvas</li>
+<li><strong>Two-finger swipe</strong>: Drag canvas</li>
+</ul>
+<hr>
+<p><em>Shortcuts can be customized in the "Help" button at top-left</em></p>`;
+
+    // 根据语言选择对应版本
+    const bookmarkGuideHtml = isEnglish ? bookmarkGuideHtml_en : bookmarkGuideHtml_zh;
+    const shortcutGuideHtml = isEnglish ? shortcutGuideHtml_en : shortcutGuideHtml_zh;
+    const edgeLabel = isEnglish ? 'Guide' : '说明';
+
+    // 永久栏目说明卡片（位于永久栏目左侧）- 绿色
+    const bookmarkGuideNode = {
+        id: 'md-node-demo-bookmark-guide',
+        x: -450,
+        y: 300,
+        width: 420,
+        height: 480,
+        text: '',
+        html: bookmarkGuideHtml,
+        color: '4', // 绿色
+        fontSize: 14,
+        createdAt: Date.now()
+    };
+
+    // 快捷键说明卡片（位于永久栏目说明卡片上方）- 蓝色
+    const shortcutGuideNode = {
+        id: 'md-node-demo-shortcut-guide',
+        x: -450,
+        y: -170,
+        width: 420,
+        height: 400,
+        text: '',
+        html: shortcutGuideHtml,
+        color: '5', // 蓝色
+        fontSize: 14,
+        createdAt: Date.now()
+    };
+
+    // 从永久栏目连接到使用说明的演示连接线（绿色，箭头指向使用说明）
+    const edge1 = {
+        id: 'edge-demo-1',
+        fromNode: 'permanent-section',
+        fromSide: 'left',
+        toNode: 'md-node-demo-bookmark-guide',
+        toSide: 'right',
+        direction: 'forward',
+        color: '4', // 绿色
+        colorHex: null,
+        label: edgeLabel
+    };
+
+    // 从快捷键说明连接到永久栏目说明的演示连接线（蓝色）
+    const edge2 = {
+        id: 'edge-demo-2',
+        fromNode: 'md-node-demo-shortcut-guide',
+        fromSide: 'bottom',
+        toNode: 'md-node-demo-bookmark-guide',
+        toSide: 'top',
+        direction: 'none',
+        color: '5', // 蓝色
+        colorHex: null,
+        label: ''
+    };
+
+    return {
+        mdNodes: [bookmarkGuideNode, shortcutGuideNode],
+        edges: [edge1, edge2],
+        mdNodeCounter: 2,
+        edgeCounter: 2
+    };
+}
 function formatTimestampForTitle(date = new Date()) {
     const yyyy = date.getFullYear();
     const mm = String(date.getMonth() + 1).padStart(2, '0');
@@ -3557,6 +3724,53 @@ function locateToPermanentSection() {
     });
 }
 
+// 首次打开 Canvas（演示模板）时：定位到「快捷键说明 + 使用说明 + 永久栏目」三卡片的中心
+function locateToIntroCardsCenter() {
+    const workspace = document.getElementById('canvasWorkspace');
+    if (!workspace) return false;
+
+    const permanentSection = document.getElementById('permanentSection');
+    const shortcutGuide = document.getElementById('md-node-demo-shortcut-guide');
+    const bookmarkGuide = document.getElementById('md-node-demo-bookmark-guide');
+
+    const elements = [permanentSection, shortcutGuide, bookmarkGuide].filter(Boolean);
+    if (elements.length < 2) return false;
+
+    let minX = Infinity;
+    let minY = Infinity;
+    let maxX = -Infinity;
+    let maxY = -Infinity;
+
+    elements.forEach((el) => {
+        const left = parseFloat(el.style.left) || 0;
+        const top = parseFloat(el.style.top) || 0;
+        const width = el.offsetWidth || 0;
+        const height = el.offsetHeight || 0;
+
+        minX = Math.min(minX, left);
+        minY = Math.min(minY, top);
+        maxX = Math.max(maxX, left + width);
+        maxY = Math.max(maxY, top + height);
+    });
+
+    if (!isFinite(minX) || !isFinite(minY) || !isFinite(maxX) || !isFinite(maxY)) return false;
+
+    const centerX = (minX + maxX) / 2;
+    const centerY = (minY + maxY) / 2;
+
+    const wsW = workspace.clientWidth || 1;
+    const wsH = workspace.clientHeight || 1;
+
+    CanvasState.panOffsetX = wsW / 2 - centerX * CanvasState.zoom;
+    CanvasState.panOffsetY = wsH / 2 - centerY * CanvasState.zoom;
+
+    updateCanvasScrollBounds({ initial: false, recomputeBounds: true });
+    updateScrollbarThumbs();
+    savePanOffsetThrottled();
+
+    return true;
+}
+
 // 通用：定位到任意 Canvas 节点（按绝对定位的 left/top + 尺寸）
 function locateToElement(el) {
     if (!el) return;
@@ -5224,6 +5438,31 @@ function renderMdNode(node) {
             };
         }
 
+        // li: - item / 1. item（优先使用 LI，符合“单行显示源码”的体验）
+        if (tagName === 'LI') {
+            const parent = el.parentElement;
+            const itemText = (el.textContent || '').trim();
+            if (parent && parent.tagName === 'UL') {
+                return {
+                    source: `- ${itemText}`,
+                    prefix: '- ',
+                    suffix: '',
+                    type: 'li-ul'
+                };
+            }
+            if (parent && parent.tagName === 'OL') {
+                const siblings = Array.from(parent.children).filter(child => child && child.tagName === 'LI');
+                const idx = siblings.indexOf(el) + 1;
+                const n = idx > 0 ? idx : 1;
+                return {
+                    source: `${n}. ${itemText}`,
+                    prefix: `${n}. `,
+                    suffix: '',
+                    type: 'li-ol'
+                };
+            }
+        }
+
         // ul: - item
         if (tagName === 'UL') {
             const items = Array.from(el.querySelectorAll('li')).map(li => `- ${li.textContent}`).join('\n');
@@ -5419,6 +5658,7 @@ function renderMdNode(node) {
                 const nextSibling = textNode.nextSibling;
                 if (!nextSibling || !(nextSibling.nodeType === Node.ELEMENT_NODE && nextSibling.tagName === 'BR')) {
                     const brAfter = document.createElement('br');
+                    brAfter.setAttribute('data-md-auto-br', 'heading');
                     if (nextSibling) {
                         parent.insertBefore(brAfter, nextSibling);
                     } else {
@@ -6024,6 +6264,29 @@ function renderMdNode(node) {
         expandedMarkdown = null;
         expandedType = null;
 
+        // 列表项：LI 级别的源码 → 还原回 <li>
+        if (savedType === 'li-ul' || savedType === 'li-ol') {
+            const parent = textNode.parentNode;
+            const parentTag = parent && parent.nodeType === Node.ELEMENT_NODE ? parent.tagName : null;
+            const expectedParent = savedType === 'li-ul' ? 'UL' : 'OL';
+            if (parent && parentTag === expectedParent) {
+                const raw = (text || '').replace(/\u200B/g, '').trim();
+                let itemText = raw;
+                if (savedType === 'li-ul') {
+                    const m = raw.match(/^[-*+]\s+(.*)$/);
+                    itemText = m ? m[1] : raw;
+                } else {
+                    const m = raw.match(/^\d+\.\s+(.*)$/);
+                    itemText = m ? m[1] : raw;
+                }
+                const li = document.createElement('li');
+                li.textContent = itemText;
+                parent.replaceChild(li, textNode);
+                saveEditorContent();
+                return;
+            }
+        }
+
         // HTML 标签模式（font color, center, p align）
         const htmlPatterns = [
             { regex: /<font\s+color=["']?([^"'>]+)["']?>([^<]*)<\/font>/i, tag: 'font', attrName: 'color', attrIndex: 1, contentIndex: 2 },
@@ -6080,14 +6343,34 @@ function renderMdNode(node) {
                     newEl.innerHTML = `${headerTextEscaped}<br contenteditable="false"><span class="setext-separator" contenteditable="false" style="font-size: 14px; font-weight: normal; color: #999; user-select: none;">${separator}</span>`;
                     newEl.dataset.setextType = separator;
 
-                    // 移除内容节点、<br>、下划线节点
-                    if (contentNode.parentNode) contentNode.parentNode.removeChild(contentNode);
+                    // 用标题节点替换原始“内容文本节点”，并移除 <br> 与下划线节点
+                    const contentParent = contentNode.parentNode;
+                    if (!contentParent) return;
+                    contentParent.replaceChild(newEl, contentNode);
                     if (brNode && brNode.parentNode) brNode.parentNode.removeChild(brNode);
+                    if (textNode.parentNode) textNode.parentNode.removeChild(textNode);
 
-                    const afterNode = document.createTextNode('\u200B');
-                    parent.insertBefore(newEl, textNode);
-                    parent.insertBefore(afterNode, textNode);
-                    parent.removeChild(textNode);
+                    // 清理标题后由旧逻辑插入/遗留的占位符与换行，避免产生额外空行
+                    let removedZwsp = false;
+                    while (newEl.nextSibling &&
+                        newEl.nextSibling.nodeType === Node.TEXT_NODE &&
+                        newEl.nextSibling.textContent &&
+                        newEl.nextSibling.textContent.replace(/\u200B/g, '') === '' &&
+                        newEl.nextSibling.nextSibling) {
+                        removedZwsp = true;
+                        newEl.nextSibling.parentNode.removeChild(newEl.nextSibling);
+                    }
+                    while (newEl.nextSibling &&
+                        newEl.nextSibling.nodeType === Node.ELEMENT_NODE &&
+                        newEl.nextSibling.tagName === 'BR' &&
+                        (newEl.nextSibling.getAttribute('data-md-auto-br') === 'heading' || removedZwsp)) {
+                        newEl.nextSibling.parentNode.removeChild(newEl.nextSibling);
+                    }
+
+                    // 若标题位于末尾，保留一个占位符以便光标落点
+                    if (!newEl.nextSibling) {
+                        contentParent.appendChild(document.createTextNode('\u200B'));
+                    }
                     saveEditorContent();
                     return;
                 } else if (isSetextH1) {
@@ -6097,10 +6380,22 @@ function renderMdNode(node) {
                     // 移除可能存在的 <br>
                     if (brNode && brNode.parentNode) brNode.parentNode.removeChild(brNode);
 
-                    const afterNode = document.createTextNode('\u200B');
-                    parent.insertBefore(hrEl, textNode);
-                    parent.insertBefore(afterNode, textNode);
-                    parent.removeChild(textNode);
+                    // 直接替换，避免在分隔线后额外插入“空行”
+                    parent.replaceChild(hrEl, textNode);
+
+                    // 如果分隔线后面紧跟的是我们插入的 \u200B 占位符，并且后面还有真实内容，则清理它，避免产生额外空行
+                    while (hrEl.nextSibling &&
+                        hrEl.nextSibling.nodeType === Node.TEXT_NODE &&
+                        hrEl.nextSibling.textContent &&
+                        hrEl.nextSibling.textContent.replace(/\u200B/g, '') === '' &&
+                        hrEl.nextSibling.nextSibling) {
+                        hrEl.nextSibling.parentNode.removeChild(hrEl.nextSibling);
+                    }
+
+                    // 若分隔线位于末尾，保留一个占位符以便光标落点
+                    if (!hrEl.nextSibling) {
+                        parent.appendChild(document.createTextNode('\u200B'));
+                    }
                     saveEditorContent();
                     return;
                 }
@@ -6109,15 +6404,27 @@ function renderMdNode(node) {
 
         // 水平分割线 ---（单独一行，没有其他内容）
         const hrPattern = /^[\u200B]*-{3,}\s*$/;
-        if (hrPattern.test(text)) {
+        if (savedType === 'hr' && hrPattern.test(text)) {
             const parent = textNode.parentNode;
             if (parent) {
                 const hrEl = document.createElement('hr');
 
-                const afterNode = document.createTextNode('\u200B');
-                parent.insertBefore(hrEl, textNode);
-                parent.insertBefore(afterNode, textNode);
-                parent.removeChild(textNode);
+                // 直接替换，避免在分隔线后额外插入“空行”
+                parent.replaceChild(hrEl, textNode);
+
+                // 如果分隔线后面紧跟的是我们插入的 \u200B 占位符，并且后面还有真实内容，则清理它，避免产生额外空行
+                while (hrEl.nextSibling &&
+                    hrEl.nextSibling.nodeType === Node.TEXT_NODE &&
+                    hrEl.nextSibling.textContent &&
+                    hrEl.nextSibling.textContent.replace(/\u200B/g, '') === '' &&
+                    hrEl.nextSibling.nextSibling) {
+                    hrEl.nextSibling.parentNode.removeChild(hrEl.nextSibling);
+                }
+
+                // 若分隔线位于末尾，保留一个占位符以便光标落点
+                if (!hrEl.nextSibling) {
+                    parent.appendChild(document.createTextNode('\u200B'));
+                }
                 saveEditorContent();
                 return;
             }
@@ -6189,10 +6496,37 @@ function renderMdNode(node) {
                     newEl.appendChild(li);
                 }
                 if (newEl) {
-                    const afterNode = document.createTextNode('\u200B');
-                    parent.insertBefore(newEl, textNode);
-                    parent.insertBefore(afterNode, textNode);
-                    parent.removeChild(textNode);
+                    const isHeading = ['h1', 'h2', 'h3', 'h4', 'h5', 'h6'].includes(pattern.type);
+                    if (isHeading) {
+                        parent.replaceChild(newEl, textNode);
+
+                        // 清理标题后由旧逻辑插入/遗留的占位符与换行，避免产生额外空行
+                        let removedZwsp = false;
+                        while (newEl.nextSibling &&
+                            newEl.nextSibling.nodeType === Node.TEXT_NODE &&
+                            newEl.nextSibling.textContent &&
+                            newEl.nextSibling.textContent.replace(/\u200B/g, '') === '' &&
+                            newEl.nextSibling.nextSibling) {
+                            removedZwsp = true;
+                            newEl.nextSibling.parentNode.removeChild(newEl.nextSibling);
+                        }
+                        while (newEl.nextSibling &&
+                            newEl.nextSibling.nodeType === Node.ELEMENT_NODE &&
+                            newEl.nextSibling.tagName === 'BR' &&
+                            (newEl.nextSibling.getAttribute('data-md-auto-br') === 'heading' || removedZwsp)) {
+                            newEl.nextSibling.parentNode.removeChild(newEl.nextSibling);
+                        }
+
+                        // 若标题位于末尾，保留一个占位符以便光标落点
+                        if (!newEl.nextSibling) {
+                            parent.appendChild(document.createTextNode('\u200B'));
+                        }
+                    } else {
+                        const afterNode = document.createTextNode('\u200B');
+                        parent.insertBefore(newEl, textNode);
+                        parent.insertBefore(afterNode, textNode);
+                        parent.removeChild(textNode);
+                    }
                     saveEditorContent();
                     return;
                 }
@@ -6372,7 +6706,7 @@ function renderMdNode(node) {
                 if (tag === 'FONT' || tag === 'CENTER') return true;
                 if (tag === 'P' && el.hasAttribute('align')) return true;
                 // 块级格式：blockquote, hr, ul, ol, task
-                if (tag === 'BLOCKQUOTE' || tag === 'HR' || tag === 'UL' || tag === 'OL') return true;
+                if (tag === 'BLOCKQUOTE' || tag === 'HR' || tag === 'LI') return true;
                 if (el.classList && el.classList.contains('md-task-item')) return true;
                 // 标题格式：h1-h6
                 if (tag === 'H1' || tag === 'H2' || tag === 'H3' || tag === 'H4' || tag === 'H5' || tag === 'H6') return true;
@@ -6412,7 +6746,7 @@ function renderMdNode(node) {
                 }
 
                 // 情况C：光标在格式化元素内部的开头
-                const formattedParent = container.parentElement?.closest('strong, b, em, i, del, s, mark, code, font, center, p[align], blockquote, hr, ul, ol, .md-task-item, h1, h2, h3, h4, h5, h6');
+                const formattedParent = container.parentElement?.closest('strong, b, em, i, del, s, mark, code, font, center, p[align], blockquote, hr, li, .md-task-item, h1, h2, h3, h4, h5, h6');
                 if (formattedParent && editor.contains(formattedParent)) {
                     const isAtStart = (container.nodeType === Node.TEXT_NODE && offset === 0) ||
                         (container === formattedParent && offset === 0);
@@ -6454,7 +6788,7 @@ function renderMdNode(node) {
                 if (tag === 'FONT' || tag === 'CENTER') return true;
                 if (tag === 'P' && el.hasAttribute('align')) return true;
                 // 块级格式
-                if (tag === 'BLOCKQUOTE' || tag === 'HR' || tag === 'UL' || tag === 'OL') return true;
+                if (tag === 'BLOCKQUOTE' || tag === 'HR' || tag === 'LI') return true;
                 if (el.classList && el.classList.contains('md-task-item')) return true;
                 // 标题格式：h1-h6
                 if (tag === 'H1' || tag === 'H2' || tag === 'H3' || tag === 'H4' || tag === 'H5' || tag === 'H6') return true;
@@ -6543,7 +6877,7 @@ function renderMdNode(node) {
 
                     let formattedEl = null;
                     if (container.nodeType === Node.ELEMENT_NODE) {
-                        formattedEl = container.closest('strong, b, em, i, del, s, mark, code, font, center, p[align], blockquote, hr, ul, ol, .md-task-item, h1, h2, h3, h4, h5, h6');
+                        formattedEl = container.closest('strong, b, em, i, del, s, mark, code, font, center, p[align], blockquote, hr, li, .md-task-item, h1, h2, h3, h4, h5, h6');
                     }
 
                     if (formattedEl && editor.contains(formattedEl)) {
@@ -6564,7 +6898,11 @@ function renderMdNode(node) {
 
     // 点击处理：格式化元素展开为源码，链接打开
     editor.addEventListener('click', (e) => {
-        const target = e.target;
+        const rawTarget = e.target;
+        const target = (rawTarget && rawTarget.nodeType === Node.ELEMENT_NODE)
+            ? rawTarget
+            : (rawTarget && rawTarget.parentElement ? rawTarget.parentElement : null);
+        if (!target) return;
 
         // 任务checkbox点击 - 切换选中状态
         if (target.classList && target.classList.contains('md-task-checkbox')) {
@@ -6594,16 +6932,16 @@ function renderMdNode(node) {
                     return true;
                 }
             }
-            if (target === expandedElement) return true;
-            if (target && target.nodeType === Node.TEXT_NODE &&
-                (target.previousSibling === expandedElement || target.nextSibling === expandedElement)) {
+            if (rawTarget === expandedElement) return true;
+            if (rawTarget && rawTarget.nodeType === Node.TEXT_NODE &&
+                (rawTarget.previousSibling === expandedElement || rawTarget.nextSibling === expandedElement)) {
                 return true;
             }
             return false;
         })();
 
         // 点击格式化元素时展开为 Markdown 源码（包括 HTML 格式）- 排除checkbox
-        const formattedEl = target.closest('strong, b, em, i, del, s, mark, code, font, center, p[align], blockquote, hr, ul, ol, .md-task-item, h1, h2, h3, h4, h5, h6');
+        const formattedEl = target.closest('strong, b, em, i, del, s, mark, code, font, center, p[align], blockquote, hr, li, .md-task-item, h1, h2, h3, h4, h5, h6');
         if (formattedEl && editor.contains(formattedEl)) {
             // 特殊处理：Setext标题（带有分隔符的H1/H2）点击时不展开为源码
             // 而是让标题内容可编辑，保持渲染后的标题格式
@@ -6693,8 +7031,12 @@ function renderMdNode(node) {
     });
 
     el.addEventListener('mousedown', (e) => {
+        const target = (e.target && e.target.nodeType === Node.ELEMENT_NODE)
+            ? e.target
+            : (e.target && e.target.parentElement ? e.target.parentElement : null);
+        if (!target) return;
         // 忽略在resize、小工具栏按钮、链接上的按下
-        if (e.target.closest('.resize-handle') || e.target.closest('.md-node-toolbar-btn') || e.target.closest('a')) return;
+        if (target.closest('.resize-handle') || target.closest('.md-node-toolbar-btn') || target.closest('a')) return;
 
         // 按住Ctrl键时，暂停编辑模式，允许拖动和调整大小
         if (isSectionCtrlModeEvent(e)) {
@@ -6728,7 +7070,11 @@ function renderMdNode(node) {
 
     // 禁用原生双击
     el.addEventListener('dblclick', (e) => {
-        if (e.target.closest('.resize-handle') || e.target.closest('.md-node-toolbar-btn')) return;
+        const target = (e.target && e.target.nodeType === Node.ELEMENT_NODE)
+            ? e.target
+            : (e.target && e.target.parentElement ? e.target.parentElement : null);
+        if (!target) return;
+        if (target.closest('.resize-handle') || target.closest('.md-node-toolbar-btn')) return;
         e.preventDefault();
         e.stopPropagation();
     }, true);
@@ -9856,7 +10202,14 @@ function loadTempNodes() {
         }
 
         if (!loaded) {
+            // 首次使用：加载初始演示模板
             CanvasState.tempSections = [];
+            const demoTemplate = createInitialDemoTemplate();
+            CanvasState.mdNodes = demoTemplate.mdNodes;
+            CanvasState.mdNodeCounter = demoTemplate.mdNodeCounter;
+            CanvasState.edges = demoTemplate.edges;
+            CanvasState.edgeCounter = demoTemplate.edgeCounter;
+            console.log('[Canvas] 首次使用，加载演示模板');
         }
 
         // 根据已有ID刷新计数
@@ -9899,6 +10252,17 @@ function loadTempNodes() {
 
         // 渲染连接线
         renderEdges();
+
+        // 第一次打开 Canvas：把视口定位到「快捷键说明 + 使用说明 + 永久栏目」三卡片的中心
+        // 仅在“首次打开”且本次确实加载了演示模板（无保存数据）时触发，避免影响已有用户的布局。
+        const openedKey = 'bookmark-canvas-has-opened';
+        const hasOpenedCanvas = localStorage.getItem(openedKey) === 'true';
+        if (!hasOpenedCanvas) {
+            if (!loaded) {
+                try { locateToIntroCardsCenter(); } catch (_) { }
+            }
+            try { localStorage.setItem(openedKey, 'true'); } catch (_) { }
+        }
     } catch (error) {
         console.error('[Canvas] 加载临时栏目失败:', error);
     }

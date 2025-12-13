@@ -4364,23 +4364,60 @@ function captureCanvasThumbnail() {
                                 return;
                             }
 
-                            // 计算截图和页面之间的缩放比（captureVisibleTab 生成的图片宽度 / 当前页面宽度）
-                            const ratio = img.width / pageWidth;
-                            const sx = rect.left * ratio;
-                            const sy = rect.top * ratio;
-                            const sw = rect.width * ratio;
-                            const sh = rect.height * ratio;
+	                            // 计算截图和页面之间的缩放比（captureVisibleTab 生成的图片宽度 / 当前页面宽度）
+	                            const ratio = img.width / pageWidth;
 
-                            ctx.drawImage(
-                                img,
-                                sx, sy, sw, sh,
-                                0, 0, canvas.width, canvas.height
-                            );
+	                            // 先按容器 rect 获取截图中的源区域（像素坐标）
+	                            let sx = rect.left * ratio;
+	                            let sy = rect.top * ratio;
+	                            let sw = rect.width * ratio;
+	                            let sh = rect.height * ratio;
 
-                            const croppedDataUrl = canvas.toDataURL('image/jpeg', 0.98);
-                            browserAPI.storage.local.set({ bookmarkCanvasThumbnail: croppedDataUrl }, () => {
-                                // 静默保存，不输出日志
-                            });
+	                            // 安全处理：裁剪到截图可用范围（避免容器部分在可视区外时越界）
+	                            const ix = Math.max(0, sx);
+	                            const iy = Math.max(0, sy);
+	                            const iw = Math.max(0, Math.min(img.width - ix, sw - (ix - sx)));
+	                            const ih = Math.max(0, Math.min(img.height - iy, sh - (iy - sy)));
+
+	                            if (iw <= 1 || ih <= 1) {
+	                                console.warn('[Canvas Thumbnail] 裁剪区域无效，退回整页截图');
+	                                browserAPI.storage.local.set({ bookmarkCanvasThumbnail: dataUrl }, () => { });
+	                                return;
+	                            }
+
+	                            // 关键：保持主 UI 固定输出尺寸，但不要拉伸变形
+	                            // 这里采用「cover」策略：按目标宽高比在源图中居中裁剪，再缩放到固定尺寸
+	                            const targetAspect = canvas.width / canvas.height; // 3:2
+	                            let csx = ix;
+	                            let csy = iy;
+	                            let csw = iw;
+	                            let csh = ih;
+
+	                            const sourceAspect = csw / csh;
+	                            if (sourceAspect > targetAspect) {
+	                                // 源区域过宽：左右裁剪
+	                                const newW = csh * targetAspect;
+	                                csx = csx + (csw - newW) / 2;
+	                                csw = newW;
+	                            } else if (sourceAspect < targetAspect) {
+	                                // 源区域过高：上下裁剪
+	                                const newH = csw / targetAspect;
+	                                csy = csy + (csh - newH) / 2;
+	                                csh = newH;
+	                            }
+
+	                            // 最后再做一次边界收敛（浮点误差导致的越界）
+	                            csx = Math.max(0, csx);
+	                            csy = Math.max(0, csy);
+	                            csw = Math.max(1, Math.min(img.width - csx, csw));
+	                            csh = Math.max(1, Math.min(img.height - csy, csh));
+
+	                            ctx.drawImage(img, csx, csy, csw, csh, 0, 0, canvas.width, canvas.height);
+
+	                            const croppedDataUrl = canvas.toDataURL('image/jpeg', 0.98);
+	                            browserAPI.storage.local.set({ bookmarkCanvasThumbnail: croppedDataUrl }, () => {
+	                                // 静默保存，不输出日志
+	                            });
                         } catch (e) {
                             console.warn('[Canvas Thumbnail] 裁剪缩略图时出错，退回整页截图:', e);
                             browserAPI.storage.local.set({ bookmarkCanvasThumbnail: dataUrl }, () => { });
@@ -6905,19 +6942,70 @@ async function getBookmarksFromFolder(folderId, includeSubfolders = true) {
 
 async function loadRecommendData() {
     console.log('[书签推荐] 加载推荐数据');
-    
-    // 直接从缓存刷新卡片显示（S值已通过增量更新机制保持最新）
-    // 不再调用 checkAutoRefresh，避免不必要的全量计算
-    await refreshRecommendCards(false);
-    
+
+    // 检查是否需要自动刷新（基于打开次数或时间）
+    const shouldAutoRefresh = await checkAndIncrementOpenCount();
+
+    // 根据检查结果决定是否强制刷新
+    await refreshRecommendCards(shouldAutoRefresh);
+
     // 加载稍后复习队列
     await loadPostponedList();
-    
+
     // 加载热力图
     await loadHeatmapData();
-    
+
     // 加载屏蔽列表
     await loadBlockedLists();
+}
+
+// 检查并增加打开次数，返回是否需要自动刷新
+async function checkAndIncrementOpenCount() {
+    try {
+        const settings = await getRefreshSettings();
+        const now = Date.now();
+        let shouldRefresh = false;
+
+        // 增加打开次数
+        settings.openCountSinceRefresh = (settings.openCountSinceRefresh || 0) + 1;
+        console.log('[自动刷新] 打开次数:', settings.openCountSinceRefresh);
+
+        // 检查是否达到刷新条件
+        // 1. 每N次打开刷新
+        if (settings.refreshEveryNOpens > 0 && settings.openCountSinceRefresh >= settings.refreshEveryNOpens) {
+            console.log('[自动刷新] 达到打开次数阈值，触发刷新');
+            shouldRefresh = true;
+        }
+
+        // 2. 超过X小时刷新
+        if (!shouldRefresh && settings.refreshAfterHours > 0 && settings.lastRefreshTime > 0) {
+            const hoursSinceRefresh = (now - settings.lastRefreshTime) / (1000 * 60 * 60);
+            if (hoursSinceRefresh >= settings.refreshAfterHours) {
+                console.log('[自动刷新] 超过小时阈值，触发刷新');
+                shouldRefresh = true;
+            }
+        }
+
+        // 3. 超过X天刷新
+        if (!shouldRefresh && settings.refreshAfterDays > 0 && settings.lastRefreshTime > 0) {
+            const daysSinceRefresh = (now - settings.lastRefreshTime) / (1000 * 60 * 60 * 24);
+            if (daysSinceRefresh >= settings.refreshAfterDays) {
+                console.log('[自动刷新] 超过天数阈值，触发刷新');
+                shouldRefresh = true;
+            }
+        }
+
+        // 保存更新后的设置
+        await saveRefreshSettings(settings);
+
+        // 更新状态显示
+        updateRefreshSettingsStatus(settings);
+
+        return shouldRefresh;
+    } catch (e) {
+        console.error('[自动刷新] 检查失败:', e);
+        return false;
+    }
 }
 
 // 加载待复习队列

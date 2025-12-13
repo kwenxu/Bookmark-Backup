@@ -3739,22 +3739,46 @@ function savePermanentSectionPosition() {
 function loadPermanentSectionPosition() {
     try {
         const saved = localStorage.getItem('permanent-section-position');
+        const permanentSection = document.getElementById('permanentSection');
+        if (!permanentSection) return;
+
         if (saved) {
             const position = JSON.parse(saved);
-            const permanentSection = document.getElementById('permanentSection');
-            if (permanentSection) {
-                permanentSection.style.transition = 'none';
-                permanentSection.style.transform = 'none';
-                permanentSection.style.left = position.left;
-                permanentSection.style.top = position.top;
-                if (position.width) permanentSection.style.width = position.width;
-                if (position.height) permanentSection.style.height = position.height;
-                console.log('[Canvas] 恢复永久栏目位置和大小:', position);
+            permanentSection.style.transition = 'none';
+            permanentSection.style.transform = 'none';
+            permanentSection.style.left = position.left;
+            permanentSection.style.top = position.top;
+            if (position.width) permanentSection.style.width = position.width;
+            if (position.height) permanentSection.style.height = position.height;
+            console.log('[Canvas] 恢复永久栏目位置和大小:', position);
 
-                // 强制重排后恢复transition
-                permanentSection.offsetHeight;
-                permanentSection.style.transition = '';
+            // 强制重排后恢复transition
+            permanentSection.offsetHeight;
+            permanentSection.style.transition = '';
+        }
+
+        // 需求：永久栏目尺寸应始终“固定”，不要因为窗口 resize 而改变。
+        // 旧默认值中 height 使用 vh（会随窗口高度变化），只有当用户手动 resize 后才变成 px。
+        // 这里在“没有保存尺寸”的情况下，把当前计算后的尺寸固化为 px 并持久化，保证行为一致。
+        const hasInlineWidth = !!(permanentSection.style.width && permanentSection.style.width.trim());
+        const hasInlineHeight = !!(permanentSection.style.height && permanentSection.style.height.trim());
+        if (!hasInlineWidth || !hasInlineHeight) {
+            // 确保 left/top 已经初始化（否则保存会写入空值）
+            if (!permanentSection.style.left || !permanentSection.style.top) {
+                try { initializePermanentSectionPosition(permanentSection); } catch (_) { }
             }
+
+            // 用当前渲染尺寸固化为 px（避免 70vh 这种相对单位随窗口变化）
+            const widthPx = Math.max(300, Math.round(permanentSection.offsetWidth || 0));
+            const heightPx = Math.max(200, Math.round(permanentSection.offsetHeight || 0));
+            if (!hasInlineWidth) permanentSection.style.width = `${widthPx}px`;
+            if (!hasInlineHeight) permanentSection.style.height = `${heightPx}px`;
+
+            try { savePermanentSectionPosition(); } catch (_) { }
+            console.log('[Canvas] 固化永久栏目默认尺寸为固定像素:', {
+                width: permanentSection.style.width,
+                height: permanentSection.style.height
+            });
         }
     } catch (error) {
         console.error('[Canvas] 加载永久栏目位置失败:', error);

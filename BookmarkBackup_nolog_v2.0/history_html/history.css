@@ -90,12 +90,21 @@
     box-sizing: border-box;
 }
 
+html {
+    height: 100%;
+    /* 避免滚动条出现/消失导致内容宽度变化，从而在 resize 时产生抖动 */
+    scrollbar-gutter: stable;
+}
+
 body {
     font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Helvetica', 'Arial', sans-serif;
     background: var(--bg-primary);
     color: var(--text-primary);
     line-height: 1.6;
-    overflow-x: hidden;
+    height: 100%;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
 }
 
 /* ==================== 头部导航 ==================== */
@@ -410,7 +419,9 @@ body {
 /* ==================== 主容器 ==================== */
 .main-container {
     display: flex;
-    height: calc(100vh - 73px);
+    flex: 1 1 auto;
+    /* 允许子级滚动容器正确收缩，避免撑开导致 body 出现滚动条 */
+    min-height: 0;
 }
 
 /* ==================== 侧边栏 ==================== */
@@ -421,6 +432,10 @@ body {
     padding: 16px;
     overflow-y: auto;
     overflow-x: hidden;
+    /* 关键：稳定滚动条占位，减少 Chrome resize 时的布局抖动 */
+    scrollbar-gutter: stable;
+    /* 关键：让 overflow-y 在 flex 布局下生效 */
+    min-height: 0;
     position: relative;
     transition: width 0.3s ease, padding 0.3s ease;
 }
@@ -720,6 +735,10 @@ body {
     flex: 1;
     padding: 24px;
     overflow-y: auto;
+    /* 避免滚动条出现/消失导致内容宽度变化，从而在 resize 时产生抖动 */
+    scrollbar-gutter: stable;
+    /* 让内容区域成为稳定的滚动容器（避免撑开父级） */
+    min-height: 0;
 }
 
 .view {

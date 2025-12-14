@@ -1117,7 +1117,7 @@ function initCanvasView() {
 
     // 加载性能模式设置
     loadPerformanceMode();
-    
+
     // 加载临时栏目展开状态
     loadTempExpandState();
 
@@ -2220,7 +2220,7 @@ function applyPanOffsetFast() {
 
     // 使用 translate3d 启用硬件加速
     content.style.transform = `scale(${scale}) translate3d(${translateX}px, ${translateY}px, 0)`;
-    
+
     // 实时更新背景网格的CSS变量，让网格跟随缩放变化
     if (container) {
         container.style.setProperty('--canvas-scale', scale);
@@ -4671,6 +4671,7 @@ function renderMdNode(node) {
                 <span class="md-format-sep"></span>
                 <button class="md-format-btn md-format-list-btn" data-action="md-list-toggle" title="${listTitle}"><i class="fas fa-list"></i></button>
                 <button class="md-format-btn" data-action="md-insert-quote" title="${quoteTitle}"><i class="fas fa-quote-left"></i></button>
+                <button class="md-format-btn md-format-close-btn" data-action="md-format-close" title="${(typeof lang !== 'undefined' && lang === 'en') ? 'Close toolbar' : '关闭工具窗'}"><i class="fas fa-times"></i></button>
             </div>
         `;
 
@@ -6752,70 +6753,70 @@ function renderMdNode(node) {
                 index: Number.isFinite(persisted && persisted.index) ? persisted.index : -1
             };
 
-	            let recordRaf = 0;
-	            const MAX_STACK = 300;
+            let recordRaf = 0;
+            const MAX_STACK = 300;
 
-	            const syncExpandedStateFromSelection = (wasExpanded = false) => {
-	                try {
-	                    // 只有在“撤销前已经处于展开源码态”时才进行同步，避免把普通 Markdown token 误判为展开态
-	                    if (!wasExpanded) return;
+            const syncExpandedStateFromSelection = (wasExpanded = false) => {
+                try {
+                    // 只有在“撤销前已经处于展开源码态”时才进行同步，避免把普通 Markdown token 误判为展开态
+                    if (!wasExpanded) return;
 
-	                    const sel = window.getSelection();
-	                    if (!sel || !sel.rangeCount) return;
-	                    const range = sel.getRangeAt(0);
-	                    if (!range || !editor.contains(range.startContainer)) return;
+                    const sel = window.getSelection();
+                    if (!sel || !sel.rangeCount) return;
+                    const range = sel.getRangeAt(0);
+                    if (!range || !editor.contains(range.startContainer)) return;
 
-	                    const container = range.startContainer;
-	                    if (!container || container.nodeType !== Node.TEXT_NODE) return;
-	                    if (!container.parentNode) return;
+                    const container = range.startContainer;
+                    if (!container || container.nodeType !== Node.TEXT_NODE) return;
+                    if (!container.parentNode) return;
 
-	                    const raw = String(container.textContent || '');
-	                    const text = raw.replace(/\u200B/g, '').trim();
-	                    if (!text) return;
+                    const raw = String(container.textContent || '');
+                    const text = raw.replace(/\u200B/g, '').trim();
+                    if (!text) return;
 
-	                    // 仅在“整段文本看起来就是一段源码 token”时才视为展开态，避免误判普通段落
-	                    const looksLikeExpandedToken = (() => {
-	                        if (/^\*\*[\s\S]+?\*\*$/.test(text)) return true; // **bold**
-	                        if (/^\*[\s\S]+?\*$/.test(text)) return true; // *italic*
-	                        if (/^~~[\s\S]+?~~$/.test(text)) return true; // ~~del~~
-	                        if (/^==[\s\S]+?==$/.test(text)) return true; // ==mark==
-	                        if (/^`[^`]+`$/.test(text)) return true; // `code`
-	                        if (/^\[\[[\s\S]+?\]\]$/.test(text)) return true; // [[wikilink]]
-	                        if (/^<font\s+color=["']?[^"'>]+["']?>[\s\S]*<\/font>$/i.test(text)) return true;
-	                        if (/^<center>[\s\S]*<\/center>$/i.test(text)) return true;
-	                        if (/^<p\s+align=["']?[^"'>]+["']?>[\s\S]*<\/p>$/i.test(text)) return true;
-	                        if (/^<u>[\s\S]*<\/u>$/i.test(text)) return true;
-	                        // Setext 标题分隔符行（--- / ===）
-	                        if (/^(-{3,}|={3,})$/.test(text)) return true;
-	                        // 列表项（展开后 <li> 会变成 UL/OL 内的 TextNode）
-	                        const p = container.parentNode;
-	                        if (p && p.nodeType === Node.ELEMENT_NODE && (p.tagName === 'UL' || p.tagName === 'OL')) {
-	                            if (/^[-*+]\s+/.test(text) || /^\d+\.\s+/.test(text)) return true;
-	                        }
-	                        return false;
-	                    })();
+                    // 仅在“整段文本看起来就是一段源码 token”时才视为展开态，避免误判普通段落
+                    const looksLikeExpandedToken = (() => {
+                        if (/^\*\*[\s\S]+?\*\*$/.test(text)) return true; // **bold**
+                        if (/^\*[\s\S]+?\*$/.test(text)) return true; // *italic*
+                        if (/^~~[\s\S]+?~~$/.test(text)) return true; // ~~del~~
+                        if (/^==[\s\S]+?==$/.test(text)) return true; // ==mark==
+                        if (/^`[^`]+`$/.test(text)) return true; // `code`
+                        if (/^\[\[[\s\S]+?\]\]$/.test(text)) return true; // [[wikilink]]
+                        if (/^<font\s+color=["']?[^"'>]+["']?>[\s\S]*<\/font>$/i.test(text)) return true;
+                        if (/^<center>[\s\S]*<\/center>$/i.test(text)) return true;
+                        if (/^<p\s+align=["']?[^"'>]+["']?>[\s\S]*<\/p>$/i.test(text)) return true;
+                        if (/^<u>[\s\S]*<\/u>$/i.test(text)) return true;
+                        // Setext 标题分隔符行（--- / ===）
+                        if (/^(-{3,}|={3,})$/.test(text)) return true;
+                        // 列表项（展开后 <li> 会变成 UL/OL 内的 TextNode）
+                        const p = container.parentNode;
+                        if (p && p.nodeType === Node.ELEMENT_NODE && (p.tagName === 'UL' || p.tagName === 'OL')) {
+                            if (/^[-*+]\s+/.test(text) || /^\d+\.\s+/.test(text)) return true;
+                        }
+                        return false;
+                    })();
 
-	                    if (!looksLikeExpandedToken) return;
+                    if (!looksLikeExpandedToken) return;
 
-	                    expandedElement = container;
-	                    expandedMarkdown = raw;
-	                    // 仅列表需要额外类型信息；其他交给 reRenderExpanded 内部识别
-	                    const parentEl = container.parentNode;
-	                    if (parentEl && parentEl.nodeType === Node.ELEMENT_NODE && parentEl.tagName === 'UL') {
-	                        expandedType = 'li-ul';
-	                    } else if (parentEl && parentEl.nodeType === Node.ELEMENT_NODE && parentEl.tagName === 'OL') {
-	                        expandedType = 'li-ol';
-	                    } else {
-	                        expandedType = 'simple';
-	                    }
-	                } catch (_) { }
-	            };
+                    expandedElement = container;
+                    expandedMarkdown = raw;
+                    // 仅列表需要额外类型信息；其他交给 reRenderExpanded 内部识别
+                    const parentEl = container.parentNode;
+                    if (parentEl && parentEl.nodeType === Node.ELEMENT_NODE && parentEl.tagName === 'UL') {
+                        expandedType = 'li-ul';
+                    } else if (parentEl && parentEl.nodeType === Node.ELEMENT_NODE && parentEl.tagName === 'OL') {
+                        expandedType = 'li-ol';
+                    } else {
+                        expandedType = 'simple';
+                    }
+                } catch (_) { }
+            };
 
-	            undoManager = {
-	                isRestoring: false,
-	                cancelPendingRecord: () => {
-	                    if (recordRaf) {
-	                        cancelAnimationFrame(recordRaf);
+            undoManager = {
+                isRestoring: false,
+                cancelPendingRecord: () => {
+                    if (recordRaf) {
+                        cancelAnimationFrame(recordRaf);
                         recordRaf = 0;
                     }
                 },
@@ -6859,86 +6860,86 @@ function renderMdNode(node) {
                         const overflow = state.stack.length - MAX_STACK;
                         state.stack.splice(0, overflow);
                         state.index = Math.max(0, state.index - overflow);
-	                    }
-	                    CanvasState.mdUndoStates.set(node.id, { stack: state.stack, index: state.index });
-	                },
-	                reset: (reason = 'reset') => {
-	                    try { undoManager.cancelPendingRecord(); } catch (_) { }
-	                    try {
-	                        const snap = snapshot();
-	                        state.stack = [snap];
-	                        state.index = 0;
-	                        CanvasState.mdUndoStates.set(node.id, { stack: state.stack, index: state.index });
-	                    } catch (_) { }
-	                },
-	                undo: () => {
-	                    if (state.index <= 0) return;
-	                    undoManager.cancelPendingRecord();
-	                    undoManager.isRestoring = true;
-	                    try {
-	                        const wasExpanded = !!expandedElement || !!expandedMarkdown || !!expandedType;
-	                        state.index -= 1;
-	                        const snap = state.stack[state.index];
-	                        if (snap) {
-	                            editor.innerHTML = snap.html;
-	                            // innerHTML 会重建 DOM，旧的 expandedElement 会失效
-	                            expandedElement = null;
-	                            expandedMarkdown = null;
-	                            expandedType = null;
-	                            node.fontSize = snap.fontSize;
-	                            editor.style.fontSize = node.fontSize + 'px';
-	                            editor.scrollTop = snap.scrollTop || 0;
-	                            editor.scrollLeft = snap.scrollLeft || 0;
-	                            restoreSelection(snap.selection);
-	                            // 撤销/反撤销会重建 DOM：同步“展开源码”状态，确保后续能正常重新渲染
-	                            syncExpandedStateFromSelection(wasExpanded);
-	                            // 注意：不要在此处触发异步 reRender（会立刻写入新快照并截断 redo 栈）
-	                            try {
-	                                if (expandedElement && expandedElement.parentNode) {
-	                                    reRenderExpanded();
-	                                }
-	                            } catch (_) { }
-	                            try { liveRenderMarkdown(); } catch (_) { }
-	                            saveEditorContent();
-	                        }
-	                        CanvasState.mdUndoStates.set(node.id, { stack: state.stack, index: state.index });
-	                    } finally {
-	                        undoManager.isRestoring = false;
+                    }
+                    CanvasState.mdUndoStates.set(node.id, { stack: state.stack, index: state.index });
+                },
+                reset: (reason = 'reset') => {
+                    try { undoManager.cancelPendingRecord(); } catch (_) { }
+                    try {
+                        const snap = snapshot();
+                        state.stack = [snap];
+                        state.index = 0;
+                        CanvasState.mdUndoStates.set(node.id, { stack: state.stack, index: state.index });
+                    } catch (_) { }
+                },
+                undo: () => {
+                    if (state.index <= 0) return;
+                    undoManager.cancelPendingRecord();
+                    undoManager.isRestoring = true;
+                    try {
+                        const wasExpanded = !!expandedElement || !!expandedMarkdown || !!expandedType;
+                        state.index -= 1;
+                        const snap = state.stack[state.index];
+                        if (snap) {
+                            editor.innerHTML = snap.html;
+                            // innerHTML 会重建 DOM，旧的 expandedElement 会失效
+                            expandedElement = null;
+                            expandedMarkdown = null;
+                            expandedType = null;
+                            node.fontSize = snap.fontSize;
+                            editor.style.fontSize = node.fontSize + 'px';
+                            editor.scrollTop = snap.scrollTop || 0;
+                            editor.scrollLeft = snap.scrollLeft || 0;
+                            restoreSelection(snap.selection);
+                            // 撤销/反撤销会重建 DOM：同步“展开源码”状态，确保后续能正常重新渲染
+                            syncExpandedStateFromSelection(wasExpanded);
+                            // 注意：不要在此处触发异步 reRender（会立刻写入新快照并截断 redo 栈）
+                            try {
+                                if (expandedElement && expandedElement.parentNode) {
+                                    reRenderExpanded();
+                                }
+                            } catch (_) { }
+                            try { liveRenderMarkdown(); } catch (_) { }
+                            saveEditorContent();
+                        }
+                        CanvasState.mdUndoStates.set(node.id, { stack: state.stack, index: state.index });
+                    } finally {
+                        undoManager.isRestoring = false;
                     }
                 },
-	                redo: () => {
-	                    if (state.index >= state.stack.length - 1) return;
-	                    undoManager.cancelPendingRecord();
-	                    undoManager.isRestoring = true;
-	                    try {
-	                        const wasExpanded = !!expandedElement || !!expandedMarkdown || !!expandedType;
-	                        state.index += 1;
-	                        const snap = state.stack[state.index];
-	                        if (snap) {
-	                            editor.innerHTML = snap.html;
-	                            // innerHTML 会重建 DOM，旧的 expandedElement 会失效
-	                            expandedElement = null;
-	                            expandedMarkdown = null;
-	                            expandedType = null;
-	                            node.fontSize = snap.fontSize;
-	                            editor.style.fontSize = node.fontSize + 'px';
-	                            editor.scrollTop = snap.scrollTop || 0;
-	                            editor.scrollLeft = snap.scrollLeft || 0;
-	                            restoreSelection(snap.selection);
-	                            // 撤销/反撤销会重建 DOM：同步“展开源码”状态，确保后续能正常重新渲染
-	                            syncExpandedStateFromSelection(wasExpanded);
-	                            // 注意：不要在此处触发异步 reRender（会立刻写入新快照并截断 redo 栈）
-	                            try {
-	                                if (expandedElement && expandedElement.parentNode) {
-	                                    reRenderExpanded();
-	                                }
-	                            } catch (_) { }
-	                            try { liveRenderMarkdown(); } catch (_) { }
-	                            saveEditorContent();
-	                        }
-	                        CanvasState.mdUndoStates.set(node.id, { stack: state.stack, index: state.index });
-	                    } finally {
-	                        undoManager.isRestoring = false;
+                redo: () => {
+                    if (state.index >= state.stack.length - 1) return;
+                    undoManager.cancelPendingRecord();
+                    undoManager.isRestoring = true;
+                    try {
+                        const wasExpanded = !!expandedElement || !!expandedMarkdown || !!expandedType;
+                        state.index += 1;
+                        const snap = state.stack[state.index];
+                        if (snap) {
+                            editor.innerHTML = snap.html;
+                            // innerHTML 会重建 DOM，旧的 expandedElement 会失效
+                            expandedElement = null;
+                            expandedMarkdown = null;
+                            expandedType = null;
+                            node.fontSize = snap.fontSize;
+                            editor.style.fontSize = node.fontSize + 'px';
+                            editor.scrollTop = snap.scrollTop || 0;
+                            editor.scrollLeft = snap.scrollLeft || 0;
+                            restoreSelection(snap.selection);
+                            // 撤销/反撤销会重建 DOM：同步“展开源码”状态，确保后续能正常重新渲染
+                            syncExpandedStateFromSelection(wasExpanded);
+                            // 注意：不要在此处触发异步 reRender（会立刻写入新快照并截断 redo 栈）
+                            try {
+                                if (expandedElement && expandedElement.parentNode) {
+                                    reRenderExpanded();
+                                }
+                            } catch (_) { }
+                            try { liveRenderMarkdown(); } catch (_) { }
+                            saveEditorContent();
+                        }
+                        CanvasState.mdUndoStates.set(node.id, { stack: state.stack, index: state.index });
+                    } finally {
+                        undoManager.isRestoring = false;
                     }
                 }
             };
@@ -7379,21 +7380,21 @@ function renderMdNode(node) {
         editor.focus();
     };
 
-	    const exitEditMode = () => {
-	        isInEditMode = false;
-	        ctrlPausedEdit = false;
-	        node.isEditing = false;
-	        el.removeAttribute('data-editing');
-	        // 退出栏目卡片时：清空撤销/反撤销栈（每次进入编辑都从当前内容开始）
-	        try {
-	            if (renderDebounceTimer) {
-	                clearTimeout(renderDebounceTimer);
-	                renderDebounceTimer = null;
-	            }
-	        } catch (_) { }
-	        try { if (undoManager && undoManager.reset) undoManager.reset('exit-card'); } catch (_) { }
-	    };
-    
+    const exitEditMode = () => {
+        isInEditMode = false;
+        ctrlPausedEdit = false;
+        node.isEditing = false;
+        el.removeAttribute('data-editing');
+        // 退出栏目卡片时：清空撤销/反撤销栈（每次进入编辑都从当前内容开始）
+        try {
+            if (renderDebounceTimer) {
+                clearTimeout(renderDebounceTimer);
+                renderDebounceTimer = null;
+            }
+        } catch (_) { }
+        try { if (undoManager && undoManager.reset) undoManager.reset('exit-card'); } catch (_) { }
+    };
+
     // Ctrl键暂停编辑（允许拖动/调整大小）
     const pauseEditForCtrl = () => {
         if (isInEditMode) {
@@ -7403,7 +7404,7 @@ function renderMdNode(node) {
             editor.blur();
         }
     };
-    
+
     // 恢复编辑模式（Ctrl释放后可双击继续编辑）
     const resumeEditFromCtrl = () => {
         if (ctrlPausedEdit) {
@@ -7585,6 +7586,8 @@ function renderMdNode(node) {
             }
         } else if (action === 'md-insert-quote') {
             insertFormat('quote');
+        } else if (action === 'md-format-close') {
+            closeFormatPopover();
         }
     });
 
@@ -7814,6 +7817,1633 @@ function removeMdNode(id) {
     scheduleBoundsUpdate();
 }
 
+function __sanitizeCanvasRichTextHtml(html) {
+    const raw = String(html || '');
+    if (!raw) return '';
+
+    const allowedTags = new Set([
+        'a',
+        'p',
+        'center',
+        'font',
+        'span',
+        'u',
+        'mark',
+        'strong',
+        'em',
+        'b',
+        'i',
+        'del',
+        's',
+        'sub',
+        'sup',
+        'br',
+        'code',
+        'blockquote',
+        'ul',
+        'ol',
+        'li',
+        'hr',
+        'h1',
+        'h2',
+        'h3',
+        'h4',
+        'h5',
+        'h6',
+        'div',
+        'input'
+    ]);
+
+    const allowedAttrs = new Set([
+        'href',
+        'title',
+        'target',
+        'rel',
+        'color',
+        'align',
+        'class',
+        'data-wikilink',
+        'type',
+        'checked',
+        'disabled'
+    ]);
+
+    const allowedAlign = new Set(['left', 'center', 'right', 'justify']);
+
+    const sanitizeHref = (href) => {
+        const h = String(href || '').trim();
+        if (!h) return null;
+        try {
+            if (typeof ObsidianMarkdown !== 'undefined' && typeof ObsidianMarkdown.sanitizeHref === 'function') {
+                return ObsidianMarkdown.sanitizeHref(h);
+            }
+        } catch (_) { }
+        if (h.startsWith('#')) return h;
+        try {
+            const u = new URL(h, 'https://dummy.local');
+            const ok = u.protocol === 'http:' || u.protocol === 'https:' || u.protocol === 'mailto:' || u.protocol === 'tel:';
+            return ok ? h : null;
+        } catch (_) {
+            return null;
+        }
+    };
+
+    const tpl = document.createElement('template');
+    tpl.innerHTML = raw;
+
+    const sanitizeElement = (el) => {
+        const tag = String(el.tagName || '').toLowerCase();
+        if (!allowedTags.has(tag)) {
+            const text = document.createTextNode(el.textContent || '');
+            el.replaceWith(text);
+            return;
+        }
+
+        // Strip disallowed / dangerous attributes
+        Array.from(el.attributes || []).forEach((attr) => {
+            const name = String(attr.name || '').toLowerCase();
+            if (name.startsWith('on') || !allowedAttrs.has(name)) {
+                try { el.removeAttribute(attr.name); } catch (_) { }
+            }
+        });
+
+        if (tag === 'a') {
+            const safe = sanitizeHref(el.getAttribute('href'));
+            if (!safe) {
+                const text = document.createTextNode(el.textContent || '');
+                el.replaceWith(text);
+                return;
+            }
+            el.setAttribute('href', safe);
+            el.setAttribute('target', '_blank');
+            el.setAttribute('rel', 'noopener noreferrer');
+        }
+
+        if (tag === 'p' && el.hasAttribute('align')) {
+            const a = String(el.getAttribute('align') || '').toLowerCase();
+            if (!allowedAlign.has(a)) {
+                try { el.removeAttribute('align'); } catch (_) { }
+            } else {
+                el.setAttribute('align', a);
+            }
+        }
+
+        if (tag === 'font' && el.hasAttribute('color')) {
+            const rawColor = el.getAttribute('color') || '';
+            const normalized = normalizeHexColor(rawColor);
+            if (!normalized) {
+                try { el.removeAttribute('color'); } catch (_) { }
+            } else {
+                el.setAttribute('color', `#${normalized}`);
+            }
+        }
+
+        if (tag === 'input') {
+            const type = String(el.getAttribute('type') || '').toLowerCase();
+            if (type !== 'checkbox') {
+                const text = document.createTextNode('');
+                el.replaceWith(text);
+                return;
+            }
+            el.setAttribute('type', 'checkbox');
+        }
+    };
+
+    const walk = (node) => {
+        const children = Array.from(node.childNodes || []);
+        children.forEach((child) => {
+            if (!child) return;
+            if (child.nodeType === Node.COMMENT_NODE) {
+                try { child.remove(); } catch (_) { }
+                return;
+            }
+            if (child.nodeType === Node.ELEMENT_NODE) {
+                sanitizeElement(child);
+                // If still connected, traverse
+                if (child.parentNode) {
+                    walk(child);
+                }
+                return;
+            }
+            if (child.nodeType === Node.TEXT_NODE) {
+                return;
+            }
+            try { child.remove(); } catch (_) { }
+        });
+    };
+
+    walk(tpl.content);
+
+    const out = document.createElement('div');
+    out.appendChild(tpl.content);
+    return out.innerHTML;
+}
+
+function __placeCaretAtEnd(editableEl) {
+    if (!editableEl) return;
+    try {
+        const sel = window.getSelection();
+        const range = document.createRange();
+        range.selectNodeContents(editableEl);
+        range.collapse(false);
+        sel.removeAllRanges();
+        sel.addRange(range);
+    } catch (_) { }
+}
+
+function __tryConvertInlinePatternsInTextNode(editorEl) {
+    if (!editorEl) return false;
+    const sel = window.getSelection();
+    if (!sel || !sel.rangeCount) return false;
+    const range = sel.getRangeAt(0);
+    const start = range.startContainer;
+    if (!start || start.nodeType !== Node.TEXT_NODE) return false;
+    if (!editorEl.contains(start)) return false;
+
+    const textNode = start;
+    const text = textNode.textContent || '';
+    const cursorPos = range.startOffset;
+
+    const patterns = [
+        // HTML-like explicit syntax
+        { type: 'font', regex: /<font\s+color=["']?([^"'>\s]+)["']?>([^<]*)<\/font>/i, tag: 'font', attrName: 'color', attrIndex: 1, contentIndex: 2 },
+        { type: 'center', regex: /<center>([^<]*)<\/center>/i, tag: 'center', contentIndex: 1 },
+        { type: 'pAlign', regex: /<p\s+align=["']?([^"'>\s]+)["']?>([^<]*)<\/p>/i, tag: 'p', attrName: 'align', attrIndex: 1, contentIndex: 2 },
+        { type: 'u', regex: /<u>([^<]*)<\/u>/i, tag: 'u', contentIndex: 1 },
+
+        // Markdown-like implicit syntax
+        { type: 'bold', regex: /\*\*(.+?)\*\*/, tag: 'strong', contentIndex: 1 },
+        { type: 'italic', regex: /\*(.+?)\*/, tag: 'em', contentIndex: 1 },
+        { type: 'strike', regex: /~~(.+?)~~/, tag: 'del', contentIndex: 1 },
+        { type: 'highlight', regex: /==(.+?)==/, tag: 'mark', contentIndex: 1 },
+        { type: 'code', regex: /`([^`]+)`/, tag: 'code', contentIndex: 1 },
+        { type: 'wikilink', regex: /\[\[([^\]]+?)\]\]/, tag: 'span', className: 'md-wikilink', contentIndex: 1 },
+        { type: 'link', regex: /\[([^\]]+?)\]\(([^)]+?)\)/, tag: 'a', contentIndex: 1, hrefIndex: 2 },
+    ];
+
+    for (const pattern of patterns) {
+        const match = text.match(pattern.regex);
+        if (!match || match.index == null) continue;
+
+        const matchStart = match.index;
+        const matchEnd = matchStart + match[0].length;
+        if (cursorPos < matchEnd) continue; // user still typing inside the pattern
+
+        const before = text.substring(0, matchStart);
+        const after = text.substring(matchEnd);
+        const afterText = after || '\u200B';
+
+        const parent = textNode.parentNode;
+        if (!parent) return false;
+
+        const beforeNode = before ? document.createTextNode(before) : null;
+        const afterNode = document.createTextNode(afterText);
+
+        let newNode = null;
+        if (pattern.type === 'link') {
+            const href = match[pattern.hrefIndex] || '';
+            const safeHref = (typeof ObsidianMarkdown !== 'undefined' && typeof ObsidianMarkdown.sanitizeHref === 'function')
+                ? ObsidianMarkdown.sanitizeHref(href)
+                : href;
+            if (!safeHref) {
+                newNode = document.createTextNode(match[0] || '');
+            } else {
+                const a = document.createElement('a');
+                a.setAttribute('href', safeHref);
+                a.setAttribute('target', '_blank');
+                a.setAttribute('rel', 'noopener noreferrer');
+                a.textContent = match[pattern.contentIndex] || '';
+                newNode = a;
+            }
+        } else {
+            const newEl = document.createElement(pattern.tag);
+            if (pattern.className) newEl.className = pattern.className;
+            if (pattern.attrName && pattern.attrIndex) {
+                newEl.setAttribute(pattern.attrName, match[pattern.attrIndex]);
+            }
+            newEl.textContent = match[pattern.contentIndex] || '';
+            newNode = newEl;
+        }
+
+        if (beforeNode) parent.insertBefore(beforeNode, textNode);
+        parent.insertBefore(newNode, textNode);
+        parent.insertBefore(afterNode, textNode);
+        parent.removeChild(textNode);
+
+        // Restore caret in the "after" text node (same relative position after the match)
+        try {
+            const newRange = document.createRange();
+            const offsetInAfter = after ? Math.min(afterNode.length, Math.max(0, cursorPos - matchEnd)) : 1;
+            newRange.setStart(afterNode, offsetInAfter);
+            newRange.collapse(true);
+            sel.removeAllRanges();
+            sel.addRange(newRange);
+        } catch (_) { }
+
+        return true;
+    }
+
+    return false;
+}
+
+function __coerceDescriptionSourceToHtml(raw) {
+    const val = String(raw || '');
+    if (!val.trim()) return '';
+    const looksLikeHtml = /<\s*(?:a|p|div|span|br|strong|em|b|i|u|del|s|mark|code|blockquote|ul|ol|li|hr|h[1-6]|font|center|input)\b/i.test(val);
+    if (looksLikeHtml) return val;
+    if (typeof marked !== 'undefined') {
+        try { return marked.parse(val); } catch (_) { return val; }
+    }
+    return val;
+}
+
+function __hasMeaningfulRichContent(root) {
+    if (!root) return false;
+    const nodes = Array.from(root.childNodes || []);
+    for (const node of nodes) {
+        if (!node) continue;
+        if (node.nodeType === Node.TEXT_NODE) {
+            const t = (node.textContent || '').replace(/\u200B/g, '').trim();
+            if (t) return true;
+            continue;
+        }
+        if (node.nodeType !== Node.ELEMENT_NODE) continue;
+        const tag = node.tagName;
+        if (tag === 'BR') continue;
+        if (tag === 'DIV' || tag === 'P') {
+            if (__hasMeaningfulRichContent(node)) return true;
+            continue;
+        }
+        return true;
+    }
+    return false;
+}
+
+function __normalizeCanvasRichHtml(rawHtml) {
+    const sanitized = __sanitizeCanvasRichTextHtml(rawHtml);
+    if (!sanitized) return '';
+    const tmp = document.createElement('div');
+    tmp.innerHTML = sanitized;
+    if (!__hasMeaningfulRichContent(tmp)) return '';
+    return sanitized;
+}
+
+function __tryConvertBlockPatternsAtCaret(editorEl) {
+    if (!editorEl) return false;
+    const sel = window.getSelection();
+    if (!sel || !sel.rangeCount) return false;
+    const range = sel.getRangeAt(0);
+    const startContainer = range.startContainer;
+    if (!startContainer || !editorEl.contains(startContainer)) return false;
+
+    const parentEl = (startContainer.nodeType === Node.ELEMENT_NODE)
+        ? startContainer
+        : (startContainer.parentElement || null);
+    if (parentEl && parentEl.closest && parentEl.closest('code')) return false;
+
+    let lineEl = null;
+    let lineTextNode = null;
+
+    if (startContainer.nodeType === Node.TEXT_NODE) {
+        if (startContainer.parentNode === editorEl) {
+            lineTextNode = startContainer;
+        } else {
+            let cur = startContainer.parentElement;
+            while (cur && cur !== editorEl && cur.parentElement !== editorEl) {
+                cur = cur.parentElement;
+            }
+            if (cur && cur !== editorEl && (cur.tagName === 'DIV' || cur.tagName === 'P')) {
+                lineEl = cur;
+            }
+        }
+    } else if (startContainer.nodeType === Node.ELEMENT_NODE) {
+        let cur = startContainer;
+        if (cur !== editorEl) {
+            while (cur && cur !== editorEl && cur.parentElement !== editorEl) {
+                cur = cur.parentElement;
+            }
+            if (cur && cur !== editorEl && (cur.tagName === 'DIV' || cur.tagName === 'P')) {
+                lineEl = cur;
+            }
+        }
+    }
+
+    const rawText = lineEl
+        ? (lineEl.textContent || '')
+        : (lineTextNode ? (lineTextNode.textContent || '') : '');
+    const text = rawText.replace(/\u200B/g, '').trim();
+    if (!text) return false;
+
+    const containerEl = lineEl || (lineTextNode ? lineTextNode.parentElement : null);
+    if (containerEl && containerEl.closest) {
+        const inExistingBlock = containerEl.closest('ul, ol, blockquote, li, .md-task-item, h1, h2, h3, h4, h5, h6');
+        if (inExistingBlock && inExistingBlock !== containerEl) return false;
+        const t = containerEl.tagName;
+        if (t === 'UL' || t === 'OL' || t === 'BLOCKQUOTE') return false;
+    }
+
+    const hrMatch = text.match(/^(-{3,}|_{3,}|\*{3,})$/);
+    const headingMatch = text.match(/^(#{1,6})\s+(.+)$/);
+    const taskMatch = text.match(/^[-*]\s*\[( |x|X)\]\s+(.+)$/);
+    const olMatch = text.match(/^(\d+)\.\s+(.+)$/);
+    const quoteMatch = text.match(/^>\s+(.+)$/);
+    const ulMatch = text.match(/^[-*]\s+(.+)$/);
+
+    let wrapper = null;
+    if (taskMatch) {
+        wrapper = document.createElement('div');
+        wrapper.className = 'md-task-item';
+        const cb = document.createElement('input');
+        cb.type = 'checkbox';
+        cb.className = 'md-task-checkbox';
+        if (String(taskMatch[1] || '').trim().toLowerCase() === 'x') cb.checked = true;
+        wrapper.appendChild(cb);
+        wrapper.appendChild(document.createTextNode(' ' + String(taskMatch[2] || '').trim()));
+    } else if (hrMatch) {
+        wrapper = document.createElement('hr');
+    } else if (headingMatch) {
+        const level = Math.min(6, Math.max(1, String(headingMatch[1] || '').length));
+        wrapper = document.createElement('h' + level);
+        wrapper.textContent = String(headingMatch[2] || '').trim();
+    } else if (quoteMatch) {
+        wrapper = document.createElement('blockquote');
+        wrapper.textContent = String(quoteMatch[1] || '').trim();
+    } else if (olMatch) {
+        wrapper = document.createElement('ol');
+        const li = document.createElement('li');
+        li.textContent = String(olMatch[2] || '').trim();
+        wrapper.appendChild(li);
+    } else if (ulMatch) {
+        wrapper = document.createElement('ul');
+        const li = document.createElement('li');
+        li.textContent = String(ulMatch[1] || '').trim();
+        wrapper.appendChild(li);
+    }
+
+    if (!wrapper) return false;
+    const parent = lineEl ? lineEl.parentNode : (lineTextNode ? lineTextNode.parentNode : null);
+    const refNode = lineEl || lineTextNode;
+    if (!parent || !refNode) return false;
+
+    parent.insertBefore(wrapper, refNode);
+    const spacer = document.createTextNode('\u200B');
+    if (wrapper.nextSibling) parent.insertBefore(spacer, wrapper.nextSibling);
+    else parent.appendChild(spacer);
+    try { parent.removeChild(refNode); } catch (_) { }
+
+    try {
+        const newRange = document.createRange();
+        newRange.setStart(spacer, 1);
+        newRange.collapse(true);
+        sel.removeAllRanges();
+        sel.addRange(newRange);
+    } catch (_) { }
+
+    return true;
+}
+
+function __mountMdCloneDescriptionEditor({ editor, toolbar, formatToggleBtn, isEditing, enterEdit, save, nodeId }) {
+    if (!editor || !toolbar || !formatToggleBtn) return null;
+
+    const getLang = () => (typeof currentLang !== 'undefined' ? currentLang : 'zh');
+
+    // 保存选区函数（用于工具栏点击时恢复）
+    let savedSelection = null;
+    const saveSelection = () => {
+        const sel = window.getSelection();
+        if (sel && sel.rangeCount > 0 && editor.contains(sel.anchorNode)) {
+            savedSelection = {
+                range: sel.getRangeAt(0).cloneRange(),
+                text: sel.toString()
+            };
+        }
+    };
+    editor.addEventListener('mouseup', saveSelection);
+    editor.addEventListener('keyup', saveSelection);
+
+    const saveEditorContent = () => {
+        try { if (typeof save === 'function') save(); } catch (_) { }
+        try { if (undoManager) undoManager.scheduleRecord('save'); } catch (_) { }
+    };
+
+    // =========================================================================
+    // Markdown Editor Logic (Undo/Redo + Syntax Expansion)
+    // =========================================================================
+
+    // —— Undo/Redo Manager ——
+    let undoManager = null;
+    (() => {
+        try {
+            if (!CanvasState.mdUndoStates) {
+                CanvasState.mdUndoStates = new Map();
+            }
+            const idKey = nodeId || (editor.id ? editor.id : 'anonymous-editor-' + Math.random());
+
+            const getNodePath = (root, target) => {
+                if (!root || !target) return null;
+                const path = [];
+                let nodeCur = target;
+                while (nodeCur && nodeCur !== root) {
+                    const parent = nodeCur.parentNode;
+                    if (!parent) return null;
+                    const idx = Array.prototype.indexOf.call(parent.childNodes, nodeCur);
+                    if (idx < 0) return null;
+                    path.unshift(idx);
+                    nodeCur = parent;
+                }
+                return nodeCur === root ? path : null;
+            };
+
+            const resolveNodePath = (root, path) => {
+                if (!root || !Array.isArray(path)) return null;
+                let cur = root;
+                for (const idx of path) {
+                    if (!cur || !cur.childNodes || idx < 0 || idx >= cur.childNodes.length) return null;
+                    cur = cur.childNodes[idx];
+                }
+                return cur;
+            };
+
+            const clampOffset = (nodeForOffset, offset) => {
+                const safe = Math.max(0, Number.isFinite(offset) ? offset : 0);
+                if (!nodeForOffset) return 0;
+                if (nodeForOffset.nodeType === Node.TEXT_NODE) {
+                    const len = (nodeForOffset.textContent || '').length;
+                    return Math.min(safe, len);
+                }
+                if (nodeForOffset.nodeType === Node.ELEMENT_NODE) {
+                    return Math.min(safe, nodeForOffset.childNodes.length);
+                }
+                return 0;
+            };
+
+            const captureSelection = () => {
+                const sel = window.getSelection();
+                if (!sel || !sel.rangeCount) return null;
+                const range = sel.getRangeAt(0);
+                if (!editor.contains(range.startContainer) || !editor.contains(range.endContainer)) return null;
+                const startPath = getNodePath(editor, range.startContainer);
+                const endPath = getNodePath(editor, range.endContainer);
+                if (!startPath || !endPath) return null;
+                return {
+                    startPath,
+                    startOffset: range.startOffset,
+                    endPath,
+                    endOffset: range.endOffset,
+                    collapsed: range.collapsed
+                };
+            };
+
+            const restoreSelection = (selData) => {
+                try {
+                    if (!selData) return;
+                    const startNode = resolveNodePath(editor, selData.startPath) || editor;
+                    const endNode = resolveNodePath(editor, selData.endPath) || startNode;
+                    const range = document.createRange();
+                    range.setStart(startNode, clampOffset(startNode, selData.startOffset));
+                    range.setEnd(endNode, clampOffset(endNode, selData.endOffset));
+                    const sel = window.getSelection();
+                    sel.removeAllRanges();
+                    sel.addRange(range);
+                } catch (_) { }
+            };
+
+            const snapshot = () => ({
+                html: editor.innerHTML,
+                selection: captureSelection(),
+                scrollTop: editor.scrollTop || 0,
+                scrollLeft: editor.scrollLeft || 0
+            });
+
+            const isSameSnapshot = (a, b) => {
+                if (!a || !b) return false;
+                return a.html === b.html;
+            };
+
+            const persisted = CanvasState.mdUndoStates.get(idKey) || null;
+            const state = {
+                stack: Array.isArray(persisted && persisted.stack) ? persisted.stack : [],
+                index: Number.isFinite(persisted && persisted.index) ? persisted.index : -1
+            };
+
+            let recordRaf = 0;
+            const MAX_STACK = 300;
+
+            const syncExpandedStateFromSelection = (wasExpanded = false) => {
+                // Similar logic to renderMdNode for re-identifying expanded token
+                if (!wasExpanded) return;
+                const sel = window.getSelection();
+                if (!sel || !sel.rangeCount) return;
+                const range = sel.getRangeAt(0);
+                if (!range || !editor.contains(range.startContainer)) return;
+                const container = range.startContainer;
+                if (!container || container.nodeType !== Node.TEXT_NODE || !container.parentNode) return;
+                expandedElement = null;
+                expandedMarkdown = null;
+                expandedType = null;
+            };
+
+            undoManager = {
+                isRestoring: false,
+                cancelPendingRecord: () => {
+                    if (recordRaf) { cancelAnimationFrame(recordRaf); recordRaf = 0; }
+                },
+                scheduleRecord: (reason = 'unknown') => {
+                    if (undoManager.isRestoring) return;
+                    if (recordRaf) cancelAnimationFrame(recordRaf);
+                    recordRaf = requestAnimationFrame(() => { recordRaf = 0; undoManager.recordNow(reason); });
+                },
+                recordNow: (reason = 'unknown') => {
+                    if (undoManager.isRestoring) return;
+                    const snap = snapshot();
+                    if (state.index < 0) {
+                        state.stack = [snap];
+                        state.index = 0;
+                        CanvasState.mdUndoStates.set(idKey, { stack: state.stack, index: state.index });
+                        return;
+                    }
+                    if (state.index < state.stack.length - 1) {
+                        state.stack = state.stack.slice(0, state.index + 1);
+                    }
+                    const cur = state.stack[state.index];
+                    if (isSameSnapshot(cur, snap)) {
+                        state.stack[state.index] = snap;
+                        CanvasState.mdUndoStates.set(idKey, { stack: state.stack, index: state.index });
+                        return;
+                    }
+                    state.stack.push(snap);
+                    state.index = state.stack.length - 1;
+                    if (state.stack.length > MAX_STACK) {
+                        const overflow = state.stack.length - MAX_STACK;
+                        state.stack.splice(0, overflow);
+                        state.index = Math.max(0, state.index - overflow);
+                    }
+                    CanvasState.mdUndoStates.set(idKey, { stack: state.stack, index: state.index });
+                },
+                reset: () => {
+                    undoManager.cancelPendingRecord();
+                    state.stack = [];
+                    state.index = -1;
+                    if (CanvasState.mdUndoStates) CanvasState.mdUndoStates.delete(idKey);
+                },
+                undo: () => {
+
+                    if (state.index <= 0) return;
+                    undoManager.cancelPendingRecord();
+                    undoManager.isRestoring = true;
+                    try {
+                        state.index -= 1;
+                        const snap = state.stack[state.index];
+                        if (snap) {
+                            editor.innerHTML = snap.html;
+                            expandedElement = null;
+                            expandedMarkdown = null;
+                            expandedType = null;
+                            editor.scrollTop = snap.scrollTop || 0;
+                            editor.scrollLeft = snap.scrollLeft || 0;
+                            restoreSelection(snap.selection);
+                            saveEditorContent(); // Keep data in sync
+                        }
+                    } finally {
+                        undoManager.isRestoring = false;
+                    }
+                },
+                redo: () => {
+                    if (state.index >= state.stack.length - 1) return;
+                    undoManager.cancelPendingRecord();
+                    undoManager.isRestoring = true;
+                    try {
+                        state.index += 1;
+                        const snap = state.stack[state.index];
+                        if (snap) {
+                            editor.innerHTML = snap.html;
+                            expandedElement = null;
+                            expandedMarkdown = null;
+                            expandedType = null;
+                            editor.scrollTop = snap.scrollTop || 0;
+                            editor.scrollLeft = snap.scrollLeft || 0;
+                            restoreSelection(snap.selection);
+                            saveEditorContent();
+                        }
+                    } finally {
+                        undoManager.isRestoring = false;
+                    }
+                }
+            };
+        } catch (e) { console.error('UndoManager init error', e); }
+    })();
+
+    // —— Expand/Collapse Logic ——
+    let expandedElement = null;
+    let expandedMarkdown = null;
+    let expandedType = null;
+    const formatMap = {
+        'STRONG': { prefix: '**', suffix: '**' },
+        'B': { prefix: '**', suffix: '**' },
+        'EM': { prefix: '*', suffix: '*' },
+        'I': { prefix: '*', suffix: '*' },
+        'U': { prefix: '<u>', suffix: '</u>' },
+        'DEL': { prefix: '~~', suffix: '~~' },
+        'S': { prefix: '~~', suffix: '~~' },
+        'MARK': { prefix: '==', suffix: '==' },
+        'CODE': { prefix: '`', suffix: '`' },
+    };
+
+    const isCaretInsideExpandedSource = () => {
+        if (!expandedElement || !expandedElement.parentNode) return false;
+        const sel = window.getSelection();
+        if (!sel || !sel.rangeCount) return false;
+        const range = sel.getRangeAt(0);
+        return range && range.startContainer === expandedElement;
+    };
+
+    const checkAndExpandIfCaretEntered = () => {
+        // If currently expanded, let the 'leave' logic handle it
+        if (expandedElement && expandedElement.parentNode) return;
+
+        const sel = window.getSelection();
+        if (!sel || !sel.rangeCount) return;
+
+        let node = sel.anchorNode;
+        if (!node) return;
+
+        // Ensure we are inside this editor
+        if (!editor.contains(node)) return;
+
+        // Find closest formatted element
+        if (node.nodeType === Node.TEXT_NODE) node = node.parentNode;
+
+        // List of supported tags must match expandToMarkdown support
+        const formatted = node.closest('strong, b, em, i, u, del, s, mark, code, font');
+        if (formatted && editor.contains(formatted)) {
+            // Expand it!
+            expandToMarkdown(formatted);
+        }
+    };
+
+    const scheduleReRenderIfCaretLeftExpanded = (() => {
+        let rafId = 0;
+        return () => {
+            if (!expandedElement || !expandedElement.parentNode) return;
+            if (rafId) cancelAnimationFrame(rafId);
+            rafId = requestAnimationFrame(() => {
+                rafId = 0;
+                if (expandedElement && expandedElement.parentNode && !isCaretInsideExpandedSource()) {
+                    reRenderExpanded();
+                }
+            });
+        };
+    })();
+
+    const reRenderExpanded = () => {
+        const el = expandedElement;
+        if (!el || !el.parentNode) {
+            expandedElement = null; expandedMarkdown = null; expandedType = null;
+            return;
+        }
+        const text = el.textContent;
+        const parent = el.parentNode;
+
+        expandedElement = null;
+        expandedMarkdown = null;
+        expandedType = null;
+
+        if (!text) { try { el.remove(); } catch (_) { } return; }
+
+        let newNode = null;
+        const patterns = [
+            { regex: /^\*\*(.+?)\*\*$/, tag: 'strong', contentIndex: 1 },
+            { regex: /^\*(.+?)\*$/, tag: 'em', contentIndex: 1 },
+            { regex: /^~~(.+?)~~$/, tag: 'del', contentIndex: 1 },
+            { regex: /^==(.+?)==$/, tag: 'mark', contentIndex: 1 },
+            { regex: /^`([^`]+)`$/, tag: 'code', contentIndex: 1 },
+            { regex: /^<u>([^<]*)<\/u>$/i, tag: 'u', contentIndex: 1 },
+            { regex: /^<font\s+color=["']?([^"'>\s]+)["']?>([^<]*)<\/font>$/i, tag: 'font', attrName: 'color', attrIndex: 1, contentIndex: 2 }
+        ];
+
+        for (const p of patterns) {
+            const m = text.match(p.regex);
+            if (m) {
+                const newEl = document.createElement(p.tag);
+                if (p.attrName) newEl.setAttribute(p.attrName, m[p.attrIndex]);
+                newEl.textContent = m[p.contentIndex];
+                newNode = newEl;
+                break;
+            }
+        }
+
+        if (newNode) {
+            parent.replaceChild(newNode, el);
+            saveEditorContent();
+        }
+    };
+
+    // Since we don't have the full `expandToMarkdown` implementation here (it's 200 lines), 
+    // we will implement a simplified version for common formats logic used in Blank Column.
+    const expandToMarkdown = (formattedEl) => {
+        const tagName = formattedEl.tagName;
+        const format = formatMap[tagName];
+        if (format) {
+            const content = formattedEl.textContent;
+            const markdown = format.prefix + content + format.suffix;
+            const textNode = document.createTextNode(markdown);
+            formattedEl.parentNode.replaceChild(textNode, formattedEl);
+            expandedElement = textNode;
+            expandedMarkdown = markdown;
+            expandedType = 'simple';
+
+            // Place cursor
+            const sel = window.getSelection();
+            const range = document.createRange();
+            range.setStart(textNode, format.prefix.length + Math.floor(content.length / 2));
+            range.collapse(true);
+            sel.removeAllRanges();
+            sel.addRange(range);
+            return true;
+        }
+        // Handle FONT (Color), Center, P Align, Headers etc if needed...
+        // For brevity, we focus on bold/italic/highlight/code etc which are in formatMap.
+        // Font Color (FONT)
+        if (tagName === 'FONT') {
+            const color = formattedEl.getAttribute('color') || '#000';
+            const content = formattedEl.textContent;
+            const src = `<font color="${color}">${content}</font>`;
+            const textNode = document.createTextNode(src);
+            formattedEl.parentNode.replaceChild(textNode, formattedEl);
+            expandedElement = textNode;
+            expandedMarkdown = src;
+            expandedType = 'fontcolor';
+            const sel = window.getSelection();
+            const range = document.createRange();
+            range.setStart(textNode, src.length - 7); // end of content
+            range.collapse(true);
+            sel.removeAllRanges();
+            sel.addRange(range);
+            return true;
+        }
+        return false;
+    };
+
+    // Attach Listeners
+    editor.addEventListener('keydown', (e) => {
+        if (e.metaKey || e.ctrlKey) {
+            if (e.key === 'z' || e.key === 'Z') {
+                e.preventDefault();
+                e.shiftKey ? (undoManager && undoManager.redo()) : (undoManager && undoManager.undo());
+            } else if (e.key === 'y') {
+                e.preventDefault();
+                undoManager && undoManager.redo();
+            }
+        }
+    });
+
+    // Expand on click
+    editor.addEventListener('click', (e) => {
+        if (!e.target) return;
+        if (typeof isEditing === 'function' && !isEditing()) return;
+        // If clicking on a formatted element (b, i, mark...)
+        let target = e.target;
+        // If clicked inside editor but not on text directly
+        if (target !== editor && editor.contains(target)) {
+            // Find closest formatted element
+            const formatted = target.closest('strong, b, em, i, u, del, s, mark, code, font');
+            if (formatted && formatted.parentNode === editor) {
+                if (expandToMarkdown(formatted)) {
+                    e.preventDefault();
+                    e.stopPropagation();
+                }
+            }
+        }
+    });
+
+    // Collapse on leave / Expand on enter
+    document.addEventListener('selectionchange', () => {
+        scheduleReRenderIfCaretLeftExpanded();
+        checkAndExpandIfCaretEntered();
+    });
+    editor.addEventListener('blur', () => {
+        if (expandedElement) reRenderExpanded();
+    });
+
+
+
+    // 当前选中的字体颜色
+    let currentFontColor = '#2DC26B';
+
+    // 创建格式工具栏弹层（单行布局）
+    const createFormatPopover = () => {
+        let pop = toolbar.querySelector('.md-format-popover');
+        if (pop) return pop;
+
+        pop = document.createElement('div');
+        pop.className = 'md-format-popover';
+
+        const lang = getLang();
+        const boldTitle = lang === 'en' ? 'Bold' : '加粗';
+        const italicTitle = lang === 'en' ? 'Italic' : '斜体';
+        const underlineTitle = lang === 'en' ? 'Underline' : '下划线';
+        const highlightTitle = lang === 'en' ? 'Highlight' : '高亮';
+        const fontColorTitle = lang === 'en' ? 'Font Color' : '字体颜色';
+        const strikeTitle = lang === 'en' ? 'Strikethrough' : '删除线';
+        const codeTitle = lang === 'en' ? 'Code' : '代码';
+        const linkTitle = lang === 'en' ? 'Link' : '链接';
+        const headingTitle = lang === 'en' ? 'Heading' : '标题';
+        const alignTitle = lang === 'en' ? 'Alignment' : '对齐';
+        const listTitle = lang === 'en' ? 'List' : '列表';
+        const quoteTitle = lang === 'en' ? 'Quote' : '引用';
+
+        pop.innerHTML = `
+            <div class="md-format-row">
+                <button class="md-format-btn md-format-heading-btn" data-action="md-heading-toggle" title="${headingTitle}"><i class="fas fa-heading"></i></button>
+                <button class="md-format-btn md-format-align-btn" data-action="md-align-toggle" title="${alignTitle}"><i class="fas fa-align-left"></i></button>
+                <span class="md-format-sep"></span>
+                <button class="md-format-btn" data-action="md-insert-bold" title="${boldTitle}"><b>B</b></button>
+                <button class="md-format-btn" data-action="md-insert-italic" title="${italicTitle}"><i>I</i></button>
+                <button class="md-format-btn" data-action="md-insert-underline" title="${underlineTitle}"><u>U</u></button>
+                <button class="md-format-btn" data-action="md-insert-highlight" title="${highlightTitle}"><span style="background:#fcd34d;color:#000;padding:0 3px;border-radius:2px;">H</span></button>
+                <button class="md-format-btn md-format-fontcolor-btn" data-action="md-fontcolor-toggle" title="${fontColorTitle}"><span style="border-bottom:2px solid ${currentFontColor};padding:0 2px;">A</span></button>
+                <button class="md-format-btn" data-action="md-insert-strike" title="${strikeTitle}"><s>S</s></button>
+                <button class="md-format-btn" data-action="md-insert-code" title="${codeTitle}"><code>&lt;/&gt;</code></button>
+                <button class="md-format-btn" data-action="md-insert-link" title="${linkTitle}"><i class="fas fa-link"></i></button>
+                <span class="md-format-sep"></span>
+                <button class="md-format-btn md-format-list-btn" data-action="md-list-toggle" title="${listTitle}"><i class="fas fa-list"></i></button>
+                <button class="md-format-btn" data-action="md-insert-quote" title="${quoteTitle}"><i class="fas fa-quote-left"></i></button>
+                <button class="md-format-btn md-format-close-btn" data-action="md-format-close" title="${(typeof currentLang !== 'undefined' && currentLang === 'en') ? 'Close toolbar' : '关闭工具窗'}"><i class="fas fa-times"></i></button>
+            </div>
+        `;
+
+        toolbar.appendChild(pop);
+        return pop;
+    };
+
+    const closeFormatPopover = () => {
+        const pop = toolbar.querySelector('.md-format-popover');
+        if (pop) pop.classList.remove('open');
+        if (formatToggleBtn) formatToggleBtn.classList.remove('active');
+    };
+
+    const positionPopoverAboveBtn = (pop, btn) => {
+        const formatPop = toolbar.querySelector('.md-format-popover');
+        if (!formatPop) return;
+        const btnRect = btn.getBoundingClientRect();
+        const formatRect = formatPop.getBoundingClientRect();
+        const btnCenterX = btnRect.left + btnRect.width / 2 - formatRect.left;
+        pop.style.left = btnCenterX + 'px';
+        pop.style.transform = 'translateX(-50%) translateY(-100%)';
+    };
+
+    const createFontColorPopover = () => {
+        let pop = toolbar.querySelector('.md-fontcolor-popover');
+        if (pop) return pop;
+
+        pop = document.createElement('div');
+        pop.className = 'md-fontcolor-popover';
+
+        const presetColors = [
+            '#c00000', '#ff0000', '#ffc000', '#ffff00', '#92d050',
+            '#00b050', '#00b0f0', '#0070c0', '#002060', '#7030a0',
+            '#ffffff', '#000000', '#1f497d', '#4f81bd', '#8064a2'
+        ];
+
+        const colorChips = presetColors.map(c =>
+            `<span class="md-fontcolor-chip" data-action="md-fontcolor-apply" data-color="${c}" style="background:${c};" title="${c}"></span>`
+        ).join('');
+
+        const lang = getLang();
+        pop.innerHTML = `
+            <div class="md-fontcolor-grid">${colorChips}</div>
+            <div class="md-fontcolor-custom">
+                <input type="color" class="md-fontcolor-input" value="${currentFontColor}" title="${lang === 'en' ? 'Custom color' : '自定义颜色'}">
+            </div>
+        `;
+
+        const customInput = pop.querySelector('.md-fontcolor-input');
+        if (customInput) {
+            customInput.addEventListener('change', (e) => {
+                const color = e.target.value;
+                currentFontColor = color;
+                insertFontColor(color);
+                closeFontColorPopover();
+            });
+        }
+
+        const formatPop = toolbar.querySelector('.md-format-popover');
+        if (formatPop) formatPop.appendChild(pop);
+        return pop;
+    };
+
+    const closeFontColorPopover = () => {
+        const pop = toolbar.querySelector('.md-fontcolor-popover');
+        if (pop) pop.classList.remove('open');
+        const btn = toolbar.querySelector('[data-action="md-fontcolor-toggle"]');
+        if (btn) btn.classList.remove('active');
+    };
+
+    const createAlignPopover = () => {
+        let pop = toolbar.querySelector('.md-align-popover');
+        if (pop) return pop;
+
+        pop = document.createElement('div');
+        pop.className = 'md-align-popover';
+
+        const lang = getLang();
+        const leftTitle = lang === 'en' ? 'Align Left' : '左对齐';
+        const centerTitle = lang === 'en' ? 'Center' : '居中';
+        const rightTitle = lang === 'en' ? 'Align Right' : '右对齐';
+        const justifyTitle = lang === 'en' ? 'Justify' : '两端对齐';
+
+        pop.innerHTML = `
+            <button class="md-align-option" data-action="md-align-apply" data-align="left" title="${leftTitle}"><i class="fas fa-align-left"></i></button>
+            <button class="md-align-option" data-action="md-align-apply" data-align="center" title="${centerTitle}"><i class="fas fa-align-center"></i></button>
+            <button class="md-align-option" data-action="md-align-apply" data-align="right" title="${rightTitle}"><i class="fas fa-align-right"></i></button>
+            <button class="md-align-option" data-action="md-align-apply" data-align="justify" title="${justifyTitle}"><i class="fas fa-align-justify"></i></button>
+        `;
+
+        const formatPop = toolbar.querySelector('.md-format-popover');
+        if (formatPop) formatPop.appendChild(pop);
+        return pop;
+    };
+
+    const closeAlignPopover = () => {
+        const pop = toolbar.querySelector('.md-align-popover');
+        if (pop) pop.classList.remove('open');
+        const btn = toolbar.querySelector('[data-action="md-align-toggle"]');
+        if (btn) btn.classList.remove('active');
+    };
+
+    const createHeadingPopover = () => {
+        let pop = toolbar.querySelector('.md-heading-popover');
+        if (pop) return pop;
+
+        pop = document.createElement('div');
+        pop.className = 'md-heading-popover';
+
+        const lang = getLang();
+        const h1Title = lang === 'en' ? 'Heading 1' : '一级标题';
+        const h2Title = lang === 'en' ? 'Heading 2' : '二级标题';
+        const h3Title = lang === 'en' ? 'Heading 3' : '三级标题';
+
+        pop.innerHTML = `
+            <button class="md-heading-option" data-action="md-heading-apply" data-level="h1" title="${h1Title}">H1</button>
+            <button class="md-heading-option" data-action="md-heading-apply" data-level="h2" title="${h2Title}">H2</button>
+            <button class="md-heading-option" data-action="md-heading-apply" data-level="h3" title="${h3Title}">H3</button>
+        `;
+
+        const formatPop = toolbar.querySelector('.md-format-popover');
+        if (formatPop) formatPop.appendChild(pop);
+        return pop;
+    };
+
+    const closeHeadingPopover = () => {
+        const pop = toolbar.querySelector('.md-heading-popover');
+        if (pop) pop.classList.remove('open');
+        const btn = toolbar.querySelector('[data-action="md-heading-toggle"]');
+        if (btn) btn.classList.remove('active');
+    };
+
+    const createListPopover = () => {
+        let pop = toolbar.querySelector('.md-list-popover');
+        if (pop) return pop;
+
+        pop = document.createElement('div');
+        pop.className = 'md-list-popover';
+
+        const lang = getLang();
+        const ulTitle = lang === 'en' ? 'Bullet List' : '无序列表';
+        const olTitle = lang === 'en' ? 'Numbered List' : '有序列表';
+        const taskTitle = lang === 'en' ? 'Task List' : '任务列表';
+
+        pop.innerHTML = `
+            <button class="md-list-option" data-action="md-list-apply" data-type="ul" title="${ulTitle}"><i class="fas fa-list-ul"></i></button>
+            <button class="md-list-option" data-action="md-list-apply" data-type="ol" title="${olTitle}"><i class="fas fa-list-ol"></i></button>
+            <button class="md-list-option" data-action="md-list-apply" data-type="task" title="${taskTitle}"><i class="fas fa-tasks"></i></button>
+        `;
+
+        const formatPop = toolbar.querySelector('.md-format-popover');
+        if (formatPop) formatPop.appendChild(pop);
+        return pop;
+    };
+
+    const closeListPopover = () => {
+        const pop = toolbar.querySelector('.md-list-popover');
+        if (pop) pop.classList.remove('open');
+        const btn = toolbar.querySelector('[data-action="md-list-toggle"]');
+        if (btn) btn.classList.remove('active');
+    };
+
+    const closeAllPopovers = () => {
+        closeFontColorPopover();
+        closeAlignPopover();
+        closeHeadingPopover();
+        closeListPopover();
+        closeFormatPopover();
+    };
+
+    const toggleFontColorPopover = (btn) => {
+        saveSelection();
+        const pop = createFontColorPopover();
+        const isOpen = pop.classList.contains('open');
+
+        closeAlignPopover();
+        closeHeadingPopover();
+        closeListPopover();
+
+        if (isOpen) {
+            pop.classList.remove('open');
+            btn.classList.remove('active');
+        } else {
+            positionPopoverAboveBtn(pop, btn);
+            pop.classList.add('open');
+            btn.classList.add('active');
+        }
+    };
+
+    const toggleAlignPopover = (btn) => {
+        saveSelection();
+        const pop = createAlignPopover();
+        const isOpen = pop.classList.contains('open');
+
+        closeFontColorPopover();
+        closeHeadingPopover();
+        closeListPopover();
+
+        if (isOpen) {
+            pop.classList.remove('open');
+            btn.classList.remove('active');
+        } else {
+            positionPopoverAboveBtn(pop, btn);
+            pop.classList.add('open');
+            btn.classList.add('active');
+        }
+    };
+
+    const toggleHeadingPopover = (btn) => {
+        saveSelection();
+        const pop = createHeadingPopover();
+        const isOpen = pop.classList.contains('open');
+
+        closeFontColorPopover();
+        closeAlignPopover();
+        closeListPopover();
+
+        if (isOpen) {
+            pop.classList.remove('open');
+            btn.classList.remove('active');
+        } else {
+            positionPopoverAboveBtn(pop, btn);
+            pop.classList.add('open');
+            btn.classList.add('active');
+        }
+    };
+
+    const toggleListPopover = (btn) => {
+        saveSelection();
+        const pop = createListPopover();
+        const isOpen = pop.classList.contains('open');
+
+        closeFontColorPopover();
+        closeAlignPopover();
+        closeHeadingPopover();
+
+        if (isOpen) {
+            pop.classList.remove('open');
+            btn.classList.remove('active');
+        } else {
+            positionPopoverAboveBtn(pop, btn);
+            pop.classList.add('open');
+            btn.classList.add('active');
+        }
+    };
+
+    const toggleFormatPopover = () => {
+        const pop = createFormatPopover();
+        const isOpen = pop.classList.contains('open');
+        closeAllPopovers();
+        if (!isOpen) {
+            pop.classList.add('open');
+            formatToggleBtn.classList.add('active');
+
+            // -----------------------------------------------------------
+            // 定位优化：出现在当前输入框（editor）的上边缘居中位置
+            // -----------------------------------------------------------
+            try {
+                // 确保 toolbar 设置了定位上下文
+                const computedStyle = window.getComputedStyle(toolbar);
+                if (computedStyle.position === 'static') {
+                    toolbar.style.position = 'relative';
+                }
+
+                const editorRect = editor.getBoundingClientRect();
+                const toolbarRect = toolbar.getBoundingClientRect();
+
+                // 目标位置：Editor 右上角 (实现右对齐)
+                // 绝对坐标 (Viewport based)
+                const targetX = editorRect.right;
+                const targetY = editorRect.top;
+
+                // 计算相对于 toolbar 的坐标 (pop 是 toolbar 的子元素，绝对定位)
+                const relX = targetX - toolbarRect.left;
+                const relY = targetY - toolbarRect.top;
+
+                pop.style.left = relX + 'px';
+                pop.style.top = relY + 'px';
+
+                // 向上偏移 (translateY -100% - 6px) 并 向左偏移 (translateX -100%) 以实现右对齐且微调垂直间距
+                pop.style.transform = 'translate(-100%, calc(-100% - 6px))';
+            } catch (e) {
+                console.warn('Format popover positioning failed:', e);
+                // Fallback
+                pop.style.left = '';
+                pop.style.top = '';
+                pop.style.transform = '';
+            }
+        }
+    };
+
+    const insertFontColor = (color) => {
+        if (typeof isEditing === 'function' && !isEditing()) {
+            if (typeof enterEdit === 'function') enterEdit();
+            setTimeout(() => doInsertFontColor(color), 50);
+        } else {
+            doInsertFontColor(color);
+        }
+    };
+
+    const doInsertFontColor = (color) => {
+        const sel = window.getSelection();
+        let range;
+
+        if (savedSelection && savedSelection.range) {
+            range = savedSelection.range;
+            sel.removeAllRanges();
+            sel.addRange(range);
+        } else if (sel.rangeCount) {
+            range = sel.getRangeAt(0);
+        } else {
+            editor.focus();
+            return;
+        }
+
+        if (!editor.contains(range.commonAncestorContainer)) {
+            editor.focus();
+            return;
+        }
+
+        const lang = getLang();
+        const selected = range.toString();
+        const insertText = selected || (lang === 'en' ? 'text' : '文本');
+        savedSelection = null;
+
+        const wrapper = document.createElement('font');
+        wrapper.setAttribute('color', color);
+        wrapper.textContent = insertText;
+
+        range.deleteContents();
+        range.insertNode(wrapper);
+
+        const spacer = document.createTextNode('\u200B');
+        wrapper.parentNode.insertBefore(spacer, wrapper.nextSibling);
+
+        range.setStart(spacer, 1);
+        range.collapse(true);
+        sel.removeAllRanges();
+        sel.addRange(range);
+
+        currentFontColor = color;
+        const fontColorBtn = toolbar.querySelector('[data-action="md-fontcolor-toggle"] span');
+        if (fontColorBtn) {
+            fontColorBtn.style.borderBottomColor = color;
+        }
+
+        saveEditorContent();
+        editor.focus();
+    };
+
+    const insertAlign = (alignType) => {
+        if (typeof isEditing === 'function' && !isEditing()) {
+            if (typeof enterEdit === 'function') enterEdit();
+            setTimeout(() => doInsertAlign(alignType), 50);
+        } else {
+            doInsertAlign(alignType);
+        }
+    };
+
+    const doInsertAlign = (alignType) => {
+        const sel = window.getSelection();
+        let range;
+
+        if (savedSelection && savedSelection.range) {
+            range = savedSelection.range;
+            sel.removeAllRanges();
+            sel.addRange(range);
+        } else if (sel.rangeCount) {
+            range = sel.getRangeAt(0);
+        } else {
+            editor.focus();
+            return;
+        }
+
+        if (!editor.contains(range.commonAncestorContainer)) {
+            editor.focus();
+            return;
+        }
+
+        const lang = getLang();
+        const selected = range.toString();
+        const insertText = selected || (lang === 'en' ? 'text' : '文本');
+        savedSelection = null;
+
+        let wrapper;
+        if (alignType === 'center') {
+            wrapper = document.createElement('center');
+            wrapper.textContent = insertText;
+        } else {
+            wrapper = document.createElement('p');
+            wrapper.setAttribute('align', alignType);
+            wrapper.textContent = insertText;
+        }
+
+        range.deleteContents();
+        range.insertNode(wrapper);
+
+        const spacer = document.createTextNode('\u200B');
+        wrapper.parentNode.insertBefore(spacer, wrapper.nextSibling);
+
+        range.setStart(spacer, 1);
+        range.collapse(true);
+        sel.removeAllRanges();
+        sel.addRange(range);
+
+        saveEditorContent();
+        editor.focus();
+    };
+
+    const insertFormat = (formatType) => {
+        if (typeof isEditing === 'function' && !isEditing()) {
+            if (typeof enterEdit === 'function') enterEdit();
+            setTimeout(() => doInsert(formatType), 50);
+        } else {
+            doInsert(formatType);
+        }
+    };
+
+    const doInsert = (formatType) => {
+        const sel = window.getSelection();
+        if (!sel.rangeCount) {
+            editor.focus();
+            return;
+        }
+        let range = sel.getRangeAt(0);
+
+        if (savedSelection && savedSelection.range) {
+            range = savedSelection.range;
+            sel.removeAllRanges();
+            sel.addRange(range);
+        }
+
+        if (!editor.contains(range.commonAncestorContainer)) {
+            editor.focus();
+            return;
+        }
+
+        const lang = getLang();
+        const isBlockFormat = ['h1', 'h2', 'h3', 'ul', 'ol', 'task', 'quote'].includes(formatType);
+
+        let insertText;
+        if (isBlockFormat) {
+            const container = range.startContainer;
+            let blockContainer = container;
+            if (container.nodeType === Node.TEXT_NODE) {
+                blockContainer = container.parentElement;
+            }
+
+            if (blockContainer === editor || (blockContainer && blockContainer.parentElement === editor)) {
+                if (container.nodeType === Node.TEXT_NODE) {
+                    insertText = container.textContent.trim();
+                    range = document.createRange();
+                    range.setStart(container, 0);
+                    range.setEnd(container, container.textContent.length);
+                    sel.removeAllRanges();
+                    sel.addRange(range);
+                } else {
+                    insertText = range.toString() || (lang === 'en' ? 'text' : '文本');
+                }
+            } else {
+                insertText = (blockContainer && blockContainer.textContent) ? blockContainer.textContent.trim() : (range.toString() || (lang === 'en' ? 'text' : '文本'));
+                if (blockContainer && blockContainer.textContent && blockContainer.textContent.trim()) {
+                    range = document.createRange();
+                    range.selectNodeContents(blockContainer);
+                    sel.removeAllRanges();
+                    sel.addRange(range);
+                }
+            }
+        } else {
+            const selected = range.toString();
+            insertText = selected || (lang === 'en' ? 'text' : '文本');
+        }
+
+        savedSelection = null;
+
+        let wrapper = null;
+        switch (formatType) {
+            case 'bold':
+                wrapper = document.createElement('strong');
+                wrapper.textContent = insertText;
+                break;
+            case 'italic':
+                wrapper = document.createElement('em');
+                wrapper.textContent = insertText;
+                break;
+            case 'underline':
+                wrapper = document.createElement('u');
+                wrapper.textContent = insertText;
+                break;
+            case 'highlight':
+                wrapper = document.createElement('mark');
+                wrapper.textContent = insertText;
+                break;
+            case 'strike':
+                wrapper = document.createElement('del');
+                wrapper.textContent = insertText;
+                break;
+            case 'code':
+                wrapper = document.createElement('code');
+                wrapper.textContent = insertText;
+                break;
+            case 'link': {
+                const url = prompt(lang === 'en' ? 'Enter URL:' : '请输入链接地址:', 'https://');
+                if (url) {
+                    const safe = (typeof ObsidianMarkdown !== 'undefined' && typeof ObsidianMarkdown.sanitizeHref === 'function')
+                        ? ObsidianMarkdown.sanitizeHref(url)
+                        : url;
+                    if (safe) {
+                        wrapper = document.createElement('a');
+                        wrapper.href = safe;
+                        wrapper.textContent = insertText;
+                        wrapper.target = '_blank';
+                        wrapper.rel = 'noopener noreferrer';
+                    }
+                }
+                break;
+            }
+            case 'h1':
+                wrapper = document.createElement('h1');
+                wrapper.textContent = insertText;
+                break;
+            case 'h2':
+                wrapper = document.createElement('h2');
+                wrapper.textContent = insertText;
+                break;
+            case 'h3':
+                wrapper = document.createElement('h3');
+                wrapper.textContent = insertText;
+                break;
+            case 'ul': {
+                wrapper = document.createElement('ul');
+                const li = document.createElement('li');
+                li.textContent = insertText;
+                wrapper.appendChild(li);
+                break;
+            }
+            case 'ol': {
+                wrapper = document.createElement('ol');
+                const li = document.createElement('li');
+                li.textContent = insertText;
+                wrapper.appendChild(li);
+                break;
+            }
+            case 'task': {
+                wrapper = document.createElement('div');
+                wrapper.className = 'md-task-item';
+                const cb = document.createElement('input');
+                cb.type = 'checkbox';
+                cb.className = 'md-task-checkbox';
+                wrapper.appendChild(cb);
+                wrapper.appendChild(document.createTextNode(' ' + insertText));
+                break;
+            }
+            case 'quote':
+                wrapper = document.createElement('blockquote');
+                wrapper.textContent = insertText;
+                break;
+        }
+
+        if (wrapper) {
+            range.deleteContents();
+            range.insertNode(wrapper);
+            const spacer = document.createTextNode('\u200B');
+            wrapper.parentNode.insertBefore(spacer, wrapper.nextSibling);
+            range.setStart(spacer, 1);
+            range.collapse(true);
+            sel.removeAllRanges();
+            sel.addRange(range);
+            saveEditorContent();
+        }
+
+        editor.focus();
+    };
+
+    toolbar.addEventListener('mousedown', (e) => {
+        const btn = e.target.closest('.md-format-btn, .md-fontcolor-chip, .md-align-option, .md-heading-option, .md-list-option, .md-fontcolor-input');
+        if (btn && typeof isEditing === 'function' && isEditing()) {
+            e.preventDefault();
+        }
+    });
+
+    toolbar.addEventListener('click', (e) => {
+        const btn = e.target.closest('[data-action]');
+        if (!btn) return;
+        const action = btn.getAttribute('data-action');
+        if (!action) return;
+        e.preventDefault();
+        e.stopPropagation();
+
+        if (action === 'md-format-toggle') {
+            toggleFormatPopover();
+            return;
+        }
+
+        if (action === 'md-fontcolor-toggle') {
+            toggleFontColorPopover(btn);
+            return;
+        }
+        if (action === 'md-fontcolor-apply') {
+            const color = btn.getAttribute('data-color');
+            if (color) {
+                insertFontColor(color);
+                closeFontColorPopover();
+            }
+            return;
+        }
+
+        if (action === 'md-heading-toggle') {
+            toggleHeadingPopover(btn);
+            return;
+        }
+        if (action === 'md-heading-apply') {
+            const level = btn.getAttribute('data-level');
+            if (level) {
+                insertFormat(level);
+                closeHeadingPopover();
+            }
+            return;
+        }
+
+        if (action === 'md-format-close') {
+            toggleFormatPopover(toolbar.querySelector('[data-action="md-format-toggle"]'));
+            return;
+        }
+
+        if (action === 'md-align-toggle') {
+            toggleAlignPopover(btn);
+            return;
+        }
+        if (action === 'md-align-apply') {
+            const alignType = btn.getAttribute('data-align');
+            if (alignType) {
+                insertAlign(alignType);
+                closeAlignPopover();
+            }
+            return;
+        }
+
+        if (action === 'md-list-toggle') {
+            toggleListPopover(btn);
+            return;
+        }
+        if (action === 'md-list-apply') {
+            const listType = btn.getAttribute('data-type');
+            if (listType) {
+                insertFormat(listType);
+                closeListPopover();
+            }
+            return;
+        }
+
+        if (action === 'md-insert-bold') return insertFormat('bold');
+        if (action === 'md-insert-italic') return insertFormat('italic');
+        if (action === 'md-insert-underline') return insertFormat('underline');
+        if (action === 'md-insert-highlight') return insertFormat('highlight');
+        if (action === 'md-insert-strike') return insertFormat('strike');
+        if (action === 'md-insert-code') return insertFormat('code');
+        if (action === 'md-insert-link') return insertFormat('link');
+        if (action === 'md-insert-quote') return insertFormat('quote');
+
+        if (action === 'md-format-close') {
+            closeFormatPopover();
+            return;
+        }
+    });
+
+    // 实时渲染：监听输入事件（带防抖）
+    let renderDebounceTimer = null;
+    const RENDER_DEBOUNCE_DELAY = 250;
+    const liveRender = () => {
+        let changed = false;
+        for (let i = 0; i < 20; i++) {
+            if (!__tryConvertInlinePatternsInTextNode(editor)) break;
+            changed = true;
+        }
+        for (let i = 0; i < 10; i++) {
+            if (!__tryConvertBlockPatternsAtCaret(editor)) break;
+            changed = true;
+        }
+        saveEditorContent();
+        return changed;
+    };
+
+    editor.addEventListener('input', (e) => {
+        if (typeof isEditing === 'function' && !isEditing()) return;
+        if (e && e.isComposing) return;
+        if (renderDebounceTimer) clearTimeout(renderDebounceTimer);
+
+        const inputType = (e && typeof e.inputType === 'string') ? e.inputType : '';
+        const data = (e && typeof e.data === 'string') ? e.data : '';
+        const shouldRenderImmediately = (
+            inputType === 'insertFromPaste' ||
+            inputType === 'insertFromDrop' ||
+            /[*~=`=<>/\\\]\-#>]/.test(data)
+        );
+        if (shouldRenderImmediately) {
+            liveRender();
+            renderDebounceTimer = null;
+            return;
+        }
+
+        renderDebounceTimer = setTimeout(() => {
+            liveRender();
+            renderDebounceTimer = null;
+        }, RENDER_DEBOUNCE_DELAY);
+    });
+
+    editor.addEventListener('compositionend', () => {
+        if (typeof isEditing === 'function' && !isEditing()) return;
+        try { liveRender(); } catch (_) { }
+    });
+
+    editor.addEventListener('click', (e) => {
+        const target = e.target;
+        if (target && target.closest && target.closest('input.md-task-checkbox')) {
+            saveEditorContent();
+        }
+    });
+
+    ['mousedown', 'dblclick', 'click'].forEach(evt => editor.addEventListener(evt, ev => ev.stopPropagation()));
+
+    return {
+        closeAllPopovers,
+        flush: reRenderExpanded,
+        recordSnapshot: () => {
+            if (undoManager) undoManager.recordNow('manual');
+        },
+        clearUndoHistory: () => {
+            if (undoManager && typeof undoManager.reset === 'function') {
+                undoManager.reset();
+            }
+        }
+    };
+}
+
 function renderTempNode(section) {
     const container = document.getElementById('canvasContent');
     if (!container) {
@@ -8037,10 +9667,10 @@ function renderTempNode(section) {
     descriptionContent.className = 'temp-node-description-content';
 
     const descriptionText = document.createElement('div');
-    descriptionText.className = 'temp-node-description';
+    descriptionText.className = 'temp-node-description md-wysiwyg-editor';
     descriptionText.style.cursor = 'pointer';
-    descriptionText.style.fontStyle = section.description ? 'normal' : 'italic';
-    descriptionText.style.opacity = section.description ? '1' : '0.5';
+    descriptionText.contentEditable = 'false';
+    descriptionText.spellcheck = false;
 
     // 获取占位符文字（支持多语言）
     const getPlaceholderText = () => {
@@ -8059,153 +9689,205 @@ function renderTempNode(section) {
         return lang === 'en' ? 'Click to add description' : '点击添加说明';
     };
 
-    // 渲染 Markdown 或占位符
-    const renderTempDescription = () => {
-        if (section.description) {
-            if (typeof marked !== 'undefined') {
-                try {
-                    const html = marked.parse(section.description);
-                    descriptionText.innerHTML = html;
-                    descriptionText.title = getEditTitle();
-                } catch (e) {
-                    descriptionText.textContent = section.description;
-                    descriptionText.title = getEditTitle();
-                }
-            } else {
-                descriptionText.textContent = section.description;
-                descriptionText.title = getEditTitle();
-            }
-        } else {
-            if (section.suppressPlaceholder) {
-                descriptionText.innerHTML = '';
-                descriptionText.title = '';
-            } else {
-                descriptionText.innerHTML = `<span style="color: inherit; opacity: 0.6;">${getPlaceholderText()}</span>`;
-                descriptionText.title = getAddTitle();
-            }
-        }
-    };
-
-    renderTempDescription();
+    // 初始化内容：兼容旧的 Markdown 存储；编辑器内使用 HTML（与空白栏目一致）
+    const initialHtml = __normalizeCanvasRichHtml(__coerceDescriptionSourceToHtml(section.description || ''));
+    descriptionText.innerHTML = initialHtml;
 
     // 双击编辑功能
     descriptionText.addEventListener('dblclick', (e) => {
         e.preventDefault();
         e.stopPropagation();
-        editDescBtn.click();
-    });
-
-    // 单击也可以编辑（当没有说明时）
-    descriptionText.addEventListener('click', (e) => {
-        if (!section.description) {
-            e.preventDefault();
-            e.stopPropagation();
-            editDescBtn.click();
-        }
+        enterEditingDescription();
     });
 
     descriptionContent.appendChild(descriptionText);
-
-    const descriptionEditor = document.createElement('textarea');
-    descriptionEditor.className = 'temp-node-description-editor';
-    descriptionEditor.placeholder = '';
-    descriptionEditor.value = section.description || '';
-    descriptionEditor.style.display = 'none';
-    descriptionContent.appendChild(descriptionEditor);
 
     descriptionContainer.appendChild(descriptionContent);
 
     const descriptionControls = document.createElement('div');
     descriptionControls.className = 'temp-node-description-controls';
     descriptionControls.style.display = 'flex';
+    descriptionControls.style.opacity = '0'; // 默认隐藏，点击进入输入框时显示
+    descriptionControls.style.pointerEvents = 'none';
+    descriptionControls.style.transition = 'opacity 0.2s';
 
-    const editDescBtn = document.createElement('button');
-    editDescBtn.type = 'button';
-    editDescBtn.className = 'temp-node-desc-action-btn temp-node-desc-edit-btn';
-    editDescBtn.title = '编辑说明';
-    editDescBtn.innerHTML = '<i class="fas fa-edit"></i>';
-    descriptionControls.appendChild(editDescBtn);
+    const formatDescBtn = document.createElement('button');
+    formatDescBtn.type = 'button';
+    formatDescBtn.className = 'temp-node-desc-action-btn temp-node-desc-format-btn';
+    const formatLabel = (typeof currentLang !== 'undefined' && currentLang === 'en') ? 'Format toolbar' : '格式工具栏';
+    formatDescBtn.title = formatLabel;
+    formatDescBtn.setAttribute('aria-label', formatLabel);
+    formatDescBtn.setAttribute('data-action', 'md-format-toggle');
+    formatDescBtn.innerHTML = '<i class="fas fa-font"></i>';
+    descriptionControls.appendChild(formatDescBtn);
+
+    // editDescBtn removed as per request
+
 
     const delDescBtn = document.createElement('button');
     delDescBtn.type = 'button';
     delDescBtn.className = 'temp-node-desc-action-btn temp-node-desc-delete-btn';
-    delDescBtn.title = '删除说明';
-    delDescBtn.innerHTML = '<i class="fas fa-trash-alt"></i>';
+    // Change to "Clear input" to match Permanent Section
+    delDescBtn.title = (typeof currentLang !== 'undefined' && currentLang === 'en') ? 'Clear input' : '清空输入框';
+    delDescBtn.innerHTML = '<i class="fas fa-times"></i>';
     descriptionControls.appendChild(delDescBtn);
 
     descriptionContainer.appendChild(descriptionControls);
 
-    // 编辑说明文字的事件处理
-    const finishEditingDescription = () => {
-        const newDesc = descriptionEditor.value.trim();
-        section.description = newDesc;
+    // --- WYSIWYG 编辑（复用空白栏目格式工具 + 实时渲染规则） ---
+    let isEditingDesc = false;
+    let beforeEditStored = String(section.description || '');
 
-        descriptionText.style.fontStyle = newDesc ? 'normal' : 'italic';
-        descriptionText.style.opacity = newDesc ? '1' : '0.5';
-
-        // 重新渲染 Markdown
-        renderTempDescription();
-
-        // 结束编辑后交给CSS通过hover/状态控制按钮显隐
-        descriptionContainer.classList.remove('editing');
-
-        descriptionEditor.style.display = 'none';
-        descriptionText.style.display = 'block';
-        saveTempNodes();
-        console.log('[Canvas] 临时栏目说明已保存:', section.id);
+    const applyPlaceholder = () => {
+        if (section.suppressPlaceholder) {
+            descriptionText.setAttribute('data-placeholder', '');
+            descriptionText.setAttribute('aria-label', '');
+            return;
+        }
+        const ph = getPlaceholderText();
+        descriptionText.setAttribute('data-placeholder', ph);
+        descriptionText.setAttribute('aria-label', ph);
     };
 
-    editDescBtn.addEventListener('click', (e) => {
+    const updateDescMeta = () => {
+        const html = __normalizeCanvasRichHtml(descriptionText.innerHTML);
+        const hasContent = !!html;
+        descriptionText.style.fontStyle = hasContent ? 'normal' : 'italic';
+        descriptionText.style.opacity = hasContent ? '1' : '0.5';
+        descriptionText.title = hasContent ? getEditTitle() : (section.suppressPlaceholder ? '' : getAddTitle());
+    };
+
+    const persistDesc = ({ normalizeEditorHtml = false } = {}) => {
+        const normalized = __normalizeCanvasRichHtml(descriptionText.innerHTML);
+        section.description = normalized;
+        if (normalizeEditorHtml) {
+            descriptionText.innerHTML = normalized;
+        }
+        saveTempNodes();
+        updateDescMeta();
+    };
+
+    const exitEditingDescription = ({ commit }) => {
+        if (!isEditingDesc) return;
+        isEditingDesc = false;
+        descriptionContainer.classList.remove('editing');
+        descriptionText.contentEditable = 'false';
+
+        if (commit) {
+            try {
+                if (descEditorApi && typeof descEditorApi.flush === 'function') descEditorApi.flush();
+            } catch (_) { }
+            persistDesc({ normalizeEditorHtml: true });
+        } else {
+            section.description = beforeEditStored;
+            const restored = __normalizeCanvasRichHtml(__coerceDescriptionSourceToHtml(beforeEditStored));
+            descriptionText.innerHTML = restored;
+            saveTempNodes();
+            updateDescMeta();
+        }
+
+        if (descriptionControls) {
+            descriptionControls.style.opacity = '0';
+            descriptionControls.style.pointerEvents = 'none';
+        }
+
+        try {
+            if (descEditorApi) {
+                descEditorApi.closeAllPopovers();
+                if (typeof descEditorApi.clearUndoHistory === 'function') descEditorApi.clearUndoHistory();
+            }
+        } catch (_) { }
+    };
+
+    const enterEditingDescription = () => {
+        if (isEditingDesc) return;
+        isEditingDesc = true;
+        beforeEditStored = String(section.description || '');
+        descriptionContainer.classList.add('editing');
+        descriptionText.contentEditable = 'true';
+        descriptionText.focus();
+        __placeCaretAtEnd(descriptionText);
+        if (descEditorApi && typeof descEditorApi.recordSnapshot === 'function') {
+            // 确保初始状态被记录，以便可以撤销回初始状态
+            //由于 reset 会清空栈，我们需要一个新的起点
+            descEditorApi.recordSnapshot('init');
+        }
+        if (descriptionControls) {
+            descriptionControls.style.opacity = '1';
+            descriptionControls.style.pointerEvents = 'auto';
+        }
+
+    };
+
+    // 单击也可以编辑（当没有说明时）
+    // 单击进入编辑（只要不在编辑模式）
+    descriptionText.addEventListener('click', (e) => {
+        if (isEditingDesc) return;
         e.preventDefault();
         e.stopPropagation();
-        const isEditing = descriptionEditor.style.display !== 'none';
-        if (isEditing) {
-            finishEditingDescription();
-        } else {
-            // 进入编辑模式
-            descriptionEditor.style.display = 'block';
-            descriptionText.style.display = 'none';
-            // 编辑状态下强制显示按钮（CSS 通过 .editing 控制）
-            descriptionContainer.classList.add('editing');
-            descriptionEditor.focus();
-            descriptionEditor.select();
-        }
+        enterEditingDescription();
     });
 
-    // 点击编辑框外部时自动保存
-    descriptionEditor.addEventListener('blur', () => {
-        if (descriptionEditor.style.display !== 'none') {
-            finishEditingDescription();
-        }
-    });
+    // editDescBtn listener removed
+
 
     delDescBtn.addEventListener('click', (e) => {
         e.preventDefault();
         e.stopPropagation();
         section.description = '';
-        descriptionEditor.value = '';
-        descriptionText.style.fontStyle = 'italic';
-        descriptionText.style.opacity = '0.5';
-        renderTempDescription();
-        descriptionEditor.style.display = 'none';
-        descriptionText.style.display = 'block';
-        descriptionContainer.classList.remove('editing');
+        descriptionText.innerHTML = '';
         saveTempNodes();
-        console.log('[Canvas] 临时栏目说明已删除:', section.id);
+        if (isEditingDesc) {
+            // Keep editing, just clear content
+            descriptionText.focus();
+        } else {
+            // Should not happen if controls are hidden when not editing, but for safety:
+            isEditingDesc = false;
+            descriptionContainer.classList.remove('editing');
+            descriptionText.contentEditable = 'false';
+        }
+
+
+        try { if (descEditorApi) descEditorApi.closeAllPopovers(); } catch (_) { }
+        updateDescMeta();
     });
 
-    descriptionEditor.addEventListener('keydown', (e) => {
+    descriptionText.addEventListener('keydown', (e) => {
+        if (!isEditingDesc) return;
         if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
             e.preventDefault();
-            finishEditingDescription();
+            exitEditingDescription({ commit: true });
         } else if (e.key === 'Escape') {
             e.preventDefault();
-            // 取消编辑，恢复原来的内容
-            descriptionEditor.value = section.description || '';
-            descriptionEditor.style.display = 'none';
-            descriptionText.style.display = 'block';
-            descriptionContainer.classList.remove('editing');
+            exitEditingDescription({ commit: false });
         }
+    });
+
+    descriptionText.addEventListener('blur', () => {
+        if (!isEditingDesc) return;
+        exitEditingDescription({ commit: true });
+    });
+
+    descriptionControls.addEventListener('mousedown', (e) => {
+        if (!isEditingDesc) return;
+        const btn = e.target.closest('button');
+        if (btn) e.preventDefault();
+    });
+
+    applyPlaceholder();
+    updateDescMeta();
+
+    const descEditorApi = __mountMdCloneDescriptionEditor({
+        editor: descriptionText,
+        toolbar: descriptionControls,
+        formatToggleBtn: formatDescBtn,
+        isEditing: () => isEditingDesc,
+        enterEdit: enterEditingDescription,
+        save: () => {
+            if (!isEditingDesc) return;
+            persistDesc({ normalizeEditorHtml: false });
+        },
+        nodeId: section.id
     });
 
     const body = document.createElement('div');
@@ -8537,7 +10219,7 @@ function loadTempExpandState() {
                     LAZY_LOAD_THRESHOLD.collapsedFolders = new Set(state.collapsed);
                 }
             }
-            console.log('[Canvas] 恢复临时栏目展开状态:', 
+            console.log('[Canvas] 恢复临时栏目展开状态:',
                 LAZY_LOAD_THRESHOLD.expandedFolders.size, '个展开,',
                 LAZY_LOAD_THRESHOLD.collapsedFolders.size, '个折叠');
         }
@@ -8568,15 +10250,15 @@ function buildTempTreeNode(section, item, level, options = {}) {
 
     const toggle = document.createElement('span');
     toggle.className = 'tree-toggle';
-    
+
     // 判断是否有子节点
     const hasChildren = item.type === 'folder' && item.children && item.children.length > 0;
-    
+
     // 性能优化：懒加载逻辑
     // 超过阈值深度的文件夹默认折叠，不渲染子节点
     const shouldLazyLoad = lazyLoad && level >= LAZY_LOAD_THRESHOLD.maxInitialDepth && hasChildren;
     const folderId = `${section.id}-${item.id}`;
-    
+
     // 计算展开状态：
     // 1. forceExpand - 强制展开
     // 2. expandedFolders.has(folderId) - 用户已展开的深层文件夹
@@ -8585,7 +10267,7 @@ function buildTempTreeNode(section, item, level, options = {}) {
     const userCollapsed = LAZY_LOAD_THRESHOLD.collapsedFolders.has(folderId);
     const userExpanded = LAZY_LOAD_THRESHOLD.expandedFolders.has(folderId);
     const isExpanded = forceExpand || userExpanded || (defaultExpanded && !userCollapsed);
-    
+
     if (hasChildren) {
         if (isExpanded) {
             toggle.classList.add('expanded');
@@ -8630,7 +10312,7 @@ function buildTempTreeNode(section, item, level, options = {}) {
 
     const badges = document.createElement('span');
     badges.className = 'change-badges';
-    
+
     // 如果有未加载的子节点，显示数量提示
     if (hasChildren && !isExpanded) {
         const countBadge = document.createElement('span');
@@ -8658,12 +10340,12 @@ function buildTempTreeNode(section, item, level, options = {}) {
             const childrenToRender = lazyLoad && item.children.length > LAZY_LOAD_THRESHOLD.maxInitialChildren
                 ? item.children.slice(0, LAZY_LOAD_THRESHOLD.maxInitialChildren)
                 : item.children;
-            
+
             childrenToRender.forEach(child => {
                 const childNode = buildTempTreeNode(section, child, level + 1, { lazyLoad });
                 if (childNode) childrenContainer.appendChild(childNode);
             });
-            
+
             // 如果有更多子节点未渲染，添加"加载更多"按钮
             if (lazyLoad && item.children.length > LAZY_LOAD_THRESHOLD.maxInitialChildren) {
                 const loadMoreBtn = document.createElement('div');
@@ -8675,7 +10357,7 @@ function buildTempTreeNode(section, item, level, options = {}) {
                 childrenContainer.appendChild(loadMoreBtn);
             }
         }
-        
+
         wrapper.appendChild(childrenContainer);
     }
 
@@ -8685,46 +10367,46 @@ function buildTempTreeNode(section, item, level, options = {}) {
 // 懒加载：展开文件夹时加载子节点
 function loadFolderChildren(section, parentItemId, childrenContainer) {
     try {
-        console.log('[Canvas懒加载] loadFolderChildren 被调用:', { 
-            sectionId: section?.id, 
-            parentItemId, 
-            hasContainer: !!childrenContainer 
+        console.log('[Canvas懒加载] loadFolderChildren 被调用:', {
+            sectionId: section?.id,
+            parentItemId,
+            hasContainer: !!childrenContainer
         });
-        
+
         if (!section || !parentItemId || !childrenContainer) {
             console.warn('[Canvas懒加载] loadFolderChildren: 参数无效');
             return false;
         }
-        
+
         const itemEntry = findTempItemEntry(section.id, parentItemId);
         console.log('[Canvas懒加载] findTempItemEntry 结果:', {
             found: !!itemEntry,
             hasItem: !!itemEntry?.item,
             childrenCount: itemEntry?.item?.children?.length
         });
-        
+
         if (!itemEntry || !itemEntry.item) {
             console.warn('[Canvas懒加载] loadFolderChildren: 找不到项目', parentItemId, '在section:', section.id);
             // 打印section.items的所有id以便调试
             console.log('[Canvas懒加载] section.items ids:', section.items?.map(i => i.id));
             return false;
         }
-        
+
         const item = itemEntry.item;
         if (!item.children || item.children.length === 0) {
             console.warn('[Canvas懒加载] loadFolderChildren: 项目没有子节点', parentItemId);
             return false;
         }
-        
+
         const folderId = `${section.id}-${parentItemId}`;
         LAZY_LOAD_THRESHOLD.expandedFolders.add(folderId);
         LAZY_LOAD_THRESHOLD.collapsedFolders.delete(folderId); // 从折叠集合中移除
         saveTempExpandState(); // 持久化展开状态
-        
+
         // 清空并重新渲染子节点
         childrenContainer.innerHTML = '';
         const fragment = document.createDocumentFragment();
-        
+
         item.children.forEach(child => {
             try {
                 const childNode = buildTempTreeNode(section, child, 1, { lazyLoad: true });
@@ -8733,9 +10415,9 @@ function loadFolderChildren(section, parentItemId, childrenContainer) {
                 console.warn('[Canvas懒加载] 渲染子节点失败:', err);
             }
         });
-        
+
         childrenContainer.appendChild(fragment);
-        
+
         // 更新父节点状态
         const parentTreeItem = childrenContainer.previousElementSibling;
         if (parentTreeItem) {
@@ -8744,7 +10426,7 @@ function loadFolderChildren(section, parentItemId, childrenContainer) {
             const countBadge = parentTreeItem.querySelector('.folder-count-badge');
             if (countBadge) countBadge.remove();
         }
-        
+
         return true;
     } catch (error) {
         console.error('[Canvas懒加载] loadFolderChildren 出错:', error);
@@ -8759,28 +10441,28 @@ function loadMoreChildren(section, parentItemId, startIndex, loadMoreBtn) {
             console.warn('[Canvas懒加载] loadMoreChildren: 参数无效');
             return false;
         }
-        
+
         const itemEntry = findTempItemEntry(section.id, parentItemId);
         if (!itemEntry || !itemEntry.item || !itemEntry.item.children) {
             console.warn('[Canvas懒加载] loadMoreChildren: 找不到项目', parentItemId);
             return false;
         }
-        
+
         const childrenContainer = loadMoreBtn.parentElement;
         if (!childrenContainer) {
             console.warn('[Canvas懒加载] loadMoreChildren: 找不到容器');
             return false;
         }
-        
+
         const remainingChildren = itemEntry.item.children.slice(startIndex);
         if (remainingChildren.length === 0) {
             loadMoreBtn.remove();
             return true;
         }
-        
+
         // 移除"加载更多"按钮
         loadMoreBtn.remove();
-        
+
         // 渲染剩余子节点
         const fragment = document.createDocumentFragment();
         remainingChildren.forEach(child => {
@@ -8791,7 +10473,7 @@ function loadMoreChildren(section, parentItemId, startIndex, loadMoreBtn) {
                 console.warn('[Canvas懒加载] 渲染子节点失败:', err);
             }
         });
-        
+
         childrenContainer.appendChild(fragment);
         return true;
     } catch (error) {
@@ -9256,7 +10938,7 @@ function scheduleDormancy(section, reason) {
             section.dormant = true;
             element.style.display = 'none';
             element.classList.add('dormant-content');
-            
+
             // 性能优化：极致性能模式下，卸载书签树DOM内容
             // 这可以大幅减少内存占用和DOM节点数量
             if (CanvasState.performanceMode === 'maximum') {
@@ -9285,7 +10967,7 @@ function wakeSection(section) {
         console.warn('[Canvas休眠] wakeSection: 无效的section');
         return false;
     }
-    
+
     const sectionId = section.id;
 
     // 取消休眠定时器
@@ -9298,7 +10980,7 @@ function wakeSection(section) {
         if (element) {
             element.style.display = '';
             element.classList.remove('dormant-content');
-            
+
             // 性能优化：如果内容被卸载，重新渲染
             const treeContainer = element.querySelector('.temp-bookmark-tree');
             if (treeContainer && treeContainer.dataset.contentUnloaded === 'true') {
@@ -9306,13 +10988,13 @@ function wakeSection(section) {
                     // 重新渲染书签树内容
                     treeContainer.innerHTML = '';
                     treeContainer.dataset.contentUnloaded = 'false';
-                    
+
                     // 检查section.items是否存在
                     if (!section.items || !Array.isArray(section.items)) {
                         console.warn('[Canvas休眠] wakeSection: section.items无效，跳过渲染');
                         return true;
                     }
-                    
+
                     const treeFragment = document.createDocumentFragment();
                     section.items.forEach(item => {
                         try {
@@ -9323,7 +11005,7 @@ function wakeSection(section) {
                         }
                     });
                     treeContainer.appendChild(treeFragment);
-                    
+
                     // 重新绑定事件（使用延迟确保DOM已更新）
                     requestAnimationFrame(() => {
                         try {
@@ -9341,7 +11023,7 @@ function wakeSection(section) {
                             console.warn('[Canvas休眠] 绑定事件失败:', err);
                         }
                     });
-                    
+
                     console.log('[Canvas休眠] 栏目已唤醒并重新渲染:', sectionId);
                 } catch (error) {
                     console.error('[Canvas休眠] wakeSection渲染失败:', error);
@@ -9362,10 +11044,10 @@ function wakeSection(section) {
 function forceWakeAndRender(sectionId) {
     const section = getTempSection(sectionId);
     if (!section) return false;
-    
+
     section.dormant = false;
     cancelDormancyTimer(sectionId);
-    
+
     try {
         renderTempNode(section);
         return true;
@@ -9543,44 +11225,86 @@ function removeTempNode(sectionId) {
 }
 
 function clearAllTempNodes() {
-    if (!confirm('确定要清空所有临时栏目吗？')) return;
-
     const container = document.getElementById('canvasContent');
     if (!container) return;
 
-    container.querySelectorAll('.temp-canvas-node').forEach(node => node.remove());
-    container.querySelectorAll('.md-canvas-node').forEach(node => node.remove());
-    CanvasState.tempSections = [];
-    CanvasState.mdNodes = [];
-    // 清空与临时/文本节点相关的所有连接线
-    if (CanvasState.edges && CanvasState.edges.length) {
-        CanvasState.edges = [];
-        CanvasState.selectedEdgeId = null;
-        renderEdges();
+    const lang = (typeof currentLang === 'string' && currentLang) ? currentLang : 'zh_CN';
+    const isEn = lang === 'en' || lang === 'en_US' || lang === 'en-GB' || String(lang).toLowerCase().startsWith('en');
+    const text = {
+        noneToClear: isEn
+            ? 'Nothing to clear (nodes with edges are kept).'
+            : '没有可清理的未标注/空白节点（已自动跳过有连接线的节点）。',
+        confirmTitle: isEn ? 'Confirm' : '确认',
+        confirmBody: (tempCount, mdCount) => isEn
+            ? `Will clear:\n- ${tempCount} temp bookmark section(s) with empty description\n- ${mdCount} empty blank node(s)\n\nNote: nodes with edges will be kept.\n\nContinue?`
+            : `将清理：\n- ${tempCount} 个「说明为空」的书签型临时栏目\n- ${mdCount} 个空的「空白栏目」\n\n注：带连接线的节点会被保留。\n\n确定继续吗？`
+    };
+
+    const hasEdgeForNode = (nodeId) => {
+        if (!nodeId) return false;
+        if (!Array.isArray(CanvasState.edges) || !CanvasState.edges.length) return false;
+        return CanvasState.edges.some(e => e && (e.fromNode === nodeId || e.toNode === nodeId));
+    };
+
+    const isEmptyDesc = (desc) => {
+        if (typeof desc !== 'string') return true;
+        return desc.trim().length === 0;
+    };
+
+    const isEmptyMdNode = (node) => {
+        if (!node) return true;
+        const t = (typeof node.text === 'string') ? node.text : '';
+        return t.replace(/\u200B/g, '').trim().length === 0;
+    };
+
+    const removableTempIds = CanvasState.tempSections
+        .filter(section => section && section.id && isEmptyDesc(section.description) && !hasEdgeForNode(section.id))
+        .map(section => section.id);
+
+    const removableMdIds = CanvasState.mdNodes
+        .filter(node => node && node.id && isEmptyMdNode(node) && !hasEdgeForNode(node.id))
+        .map(node => node.id);
+
+    const removableTempIdSet = new Set(removableTempIds);
+    const removableMdIdSet = new Set(removableMdIds);
+
+    const total = removableTempIds.length + removableMdIds.length;
+    if (!total) {
+        alert(text.noneToClear);
+        return;
     }
 
-    // 重置序号计数器
-    CanvasState.tempSectionSequenceNumber = 0;
-    CanvasState.mdNodeCounter = 0;
+    if (!confirm(text.confirmBody(removableTempIds.length, removableMdIds.length))) return;
+
+    // 删除 DOM
+    removableTempIds.forEach((id) => {
+        const el = document.getElementById(id);
+        if (el) el.remove();
+    });
+    removableMdIds.forEach((id) => {
+        const el = document.getElementById(id);
+        if (el) el.remove();
+    });
+
+    // 删除数据
+    CanvasState.tempSections = CanvasState.tempSections.filter(section => section && !removableTempIdSet.has(section.id));
+    CanvasState.mdNodes = CanvasState.mdNodes.filter(node => node && !removableMdIdSet.has(node.id));
+
+    // 清理可能的选中态
+    if (CanvasState.selectedTempSectionId && removableTempIdSet.has(CanvasState.selectedTempSectionId)) {
+        clearTempSelection();
+    }
+    if (CanvasState.selectedMdNodeId && removableMdIdSet.has(CanvasState.selectedMdNodeId)) {
+        clearMdSelection();
+    }
+
+    // 重新计算序号：让剩余临时栏目的序号连续
+    reorderSectionSequenceNumbers();
 
     saveTempNodes();
-    // 清空画布内容后，同时清理缩略图（下次主UI会显示占位样式或新的截图）
-    if (typeof window !== 'undefined' && window.browserAPI && window.browserAPI.storage && window.browserAPI.storage.local) {
-        try {
-            window.browserAPI.storage.local.remove('bookmarkCanvasThumbnail', () => {
-                const err = window.browserAPI.runtime && window.browserAPI.runtime.lastError;
-                if (err) {
-                    console.warn('[Canvas Thumbnail] 清理缩略图失败:', err.message || err);
-                } else {
-                    console.log('[Canvas Thumbnail] 已清理缩略图（clearAllTempNodes）');
-                }
-            });
-        } catch (_) {
-            // 忽略清理错误
-        }
-    }
-    updateCanvasScrollBounds();
-    updateScrollbarThumbs();
+    scheduleBoundsUpdate();
+    scheduleScrollbarUpdate();
+    scheduleDormancyUpdate();
 }
 
 // 重新计算所有临时栏目的序号，使其连续
@@ -9636,15 +11360,23 @@ function movePermanentSectionToCanvas() {
 
 function setupPermanentSectionTipClose() {
     const closeBtn = document.getElementById('permanentSectionTipClose');
-    const editBtn = document.getElementById('permanentSectionTipEditBtn');
+    const _editBtnEl = document.getElementById('permanentSectionTipEditBtn');
+    if (_editBtnEl) _editBtnEl.remove();
+    const editBtn = null; // 移除编辑按钮引用
+
     const tipText = document.getElementById('permanentSectionTip');
-    const tipEditor = document.getElementById('permanentSectionTipEditor');
     const tipContainer = document.getElementById('permanentSectionTipContainer');
 
-    if (!closeBtn || !tipContainer || !tipText || !tipEditor) {
+    if (!closeBtn || !tipContainer || !tipText) {
         console.warn('[Canvas] 找不到提示相关元素');
         return;
     }
+
+    // 说明栏改为「空白栏目」同款：contenteditable + 格式工具栏 + 实时渲染
+    tipText.classList.add('md-wysiwyg-editor');
+    tipText.contentEditable = 'false';
+    tipText.spellcheck = false;
+    tipText.style.cursor = 'pointer';
 
     // 折叠栏（像临时栏说明的占位小栏）
     let collapsedBar = tipContainer.querySelector('.permanent-section-tip-collapsed');
@@ -9657,13 +11389,8 @@ function setupPermanentSectionTipClose() {
         tipContainer.appendChild(collapsedBar);
     }
 
-    // 检查是否已经关闭过
-    const isTipClosed = localStorage.getItem('canvas-permanent-tip-closed') === 'true';
-    if (isTipClosed) {
-        tipContainer.classList.add('collapsed');
-    } else {
-        tipContainer.classList.remove('collapsed');
-    }
+    // 检查是否已经关闭过 - LEGACY: Now acts as Clear button, input always open
+    tipContainer.classList.remove('collapsed');
 
     // 多语言占位文本
     const getPlaceholderText = () => {
@@ -9671,254 +11398,188 @@ function setupPermanentSectionTipClose() {
         return lang === 'en' ? 'Click to add description...' : '点击添加说明...';
     };
 
+    const getEditTitle = () => {
+        const lang = typeof currentLang !== 'undefined' ? currentLang : 'zh';
+        return lang === 'en' ? 'Click to edit' : '点击编辑说明';
+    };
+    const getAddTitle = () => {
+        const lang = typeof currentLang !== 'undefined' ? currentLang : 'zh';
+        return lang === 'en' ? 'Click to add description' : '点击添加说明';
+    };
+
+    const applyPlaceholder = () => {
+        const ph = getPlaceholderText();
+        tipText.setAttribute('data-placeholder', ph);
+        tipText.setAttribute('aria-label', ph);
+    };
+
     // 加载保存的说明文字并渲染（空内容显示占位提示）
-    const savedTip = localStorage.getItem('canvas-permanent-tip-text');
-    tipEditor.value = (savedTip || '');
+    const savedTipRaw = (() => {
+        try { return localStorage.getItem('canvas-permanent-tip-text') || ''; } catch (_) { return ''; }
+    })();
+    const savedTipHtml = __normalizeCanvasRichHtml(__coerceDescriptionSourceToHtml(savedTipRaw));
+    tipText.innerHTML = savedTipHtml;
+    applyPlaceholder();
 
-    const renderTipContent = (text) => {
-        const val = (text || '').trim();
-        if (val) {
-            if (typeof marked !== 'undefined') {
-                try {
-                    tipText.innerHTML = marked.parse(val);
-                } catch (e) {
-                    tipText.textContent = val;
-                }
-            } else {
-                tipText.textContent = val;
-            }
-            tipText.title = '双击编辑说明';
-        } else {
-            tipText.innerHTML = `<span style="opacity: 0.6;">${getPlaceholderText()}</span>`;
-            tipText.title = '点击添加说明';
-        }
+    const updateTipMeta = () => {
+        const html = __normalizeCanvasRichHtml(tipText.innerHTML);
+        tipText.title = html ? getEditTitle() : getAddTitle();
     };
+    updateTipMeta();
 
-    renderTipContent(savedTip || '');
+    const tipControls = tipContainer.querySelector('.permanent-section-tip-controls');
+    if (tipControls) {
+        tipControls.style.opacity = '0'; // 默认隐藏
+        tipControls.style.pointerEvents = 'none';
+        tipControls.style.transition = 'opacity 0.2s';
+    }
 
-    // 为说明文字添加双击编辑功能
-    tipText.style.cursor = 'pointer';
-    tipText.title = '双击编辑说明';
-    tipText.addEventListener('dblclick', (e) => {
-        e.preventDefault();
-        e.stopPropagation();
-        if (editBtn) {
-            editBtn.click();
-        }
-    });
+    let formatBtn = tipControls ? tipControls.querySelector('.permanent-section-tip-format-btn') : null;
+    if (tipControls && !formatBtn) {
+        formatBtn = document.createElement('button');
+        formatBtn.type = 'button';
+        formatBtn.className = 'permanent-section-tip-format-btn';
+        const label = (typeof currentLang !== 'undefined' && currentLang === 'en') ? 'Format toolbar' : '格式工具栏';
+        formatBtn.title = label;
+        formatBtn.setAttribute('aria-label', label);
+        formatBtn.setAttribute('data-action', 'md-format-toggle');
+        formatBtn.innerHTML = '<i class="fas fa-font"></i>';
+        tipControls.insertBefore(formatBtn, closeBtn);
+    }
 
-    // 点击关闭按钮 -> 折叠而不是隐藏容器
-    closeBtn.addEventListener('click', (e) => {
-        e.stopPropagation();
-        e.preventDefault();
-        if (isEditingTip) {
-            // 提交并退出编辑
-            const newText = tipEditor.value.trim();
-            if (newText) {
-                localStorage.setItem('canvas-permanent-tip-text', newText);
-            } else {
-                try { localStorage.removeItem('canvas-permanent-tip-text'); } catch { }
-            }
-            renderTipContent(newText);
-            isEditingTip = false;
-            const tipContent = tipContainer.querySelector('.permanent-section-tip-content');
-            tipEditor.style.display = 'none';
-            if (tipContent) tipContent.style.display = 'flex';
-            if (editBtn) {
-                editBtn.innerHTML = '<i class="fas fa-edit"></i>';
-                editBtn.title = '编辑说明';
-            }
-            detachOutsideListener();
-        }
-        tipContainer.classList.add('collapsed');
-        localStorage.setItem('canvas-permanent-tip-closed', 'true');
-        console.log('[Canvas] 永久栏目提示已关闭');
-    });
+    // Change Close button to Clear button
+    closeBtn.innerHTML = '<i class="fas fa-times"></i>';
+    const clearLabel = (typeof currentLang !== 'undefined' && currentLang === 'en') ? 'Clear input' : '清空输入框';
+    closeBtn.title = clearLabel;
+    closeBtn.setAttribute('aria-label', clearLabel);
 
-    // 点击折叠栏 -> 展开并进入编辑
-    collapsedBar.addEventListener('click', (e) => {
-        e.preventDefault();
-        e.stopPropagation();
-        tipContainer.classList.remove('collapsed');
-        try { localStorage.setItem('canvas-permanent-tip-closed', 'false'); } catch { }
-        // 进入编辑模式
-        const tipContent = tipContainer.querySelector('.permanent-section-tip-content');
-        if (tipContent) tipContent.style.display = 'none';
-        tipEditor.style.display = 'block';
-        tipEditor.focus();
-        tipEditor.select();
-        // 标记为编辑中并启用外部点击监听，确保可点击外部退出
-        isEditingTip = true;
-        attachOutsideListener();
-        if (editBtn) {
-            // 同步按钮状态为“保存”
-            editBtn.innerHTML = '<i class="fas fa-save"></i>';
-            editBtn.title = '保存说明（Ctrl/Cmd+Enter）';
-        }
-    });
+    // Replace closeBtn to remove old listeners
+    const newCloseBtn = closeBtn.cloneNode(true);
+    closeBtn.parentNode.replaceChild(newCloseBtn, closeBtn);
 
-    // 编辑功能
     let isEditingTip = false;
-    let outsideHandlers = [];
-    let clickAwayOverlay = null;
+    let beforeEditStored = savedTipRaw;
 
-    const commitAndExit = () => {
+    const persistTip = ({ normalizeEditorHtml = false } = {}) => {
+        const normalized = __normalizeCanvasRichHtml(tipText.innerHTML);
+        try {
+            if (normalized) localStorage.setItem('canvas-permanent-tip-text', normalized);
+            else localStorage.removeItem('canvas-permanent-tip-text');
+        } catch (_) { }
+        if (normalizeEditorHtml) {
+            tipText.innerHTML = normalized;
+        }
+        updateTipMeta();
+    };
+
+    const exitEditingTip = ({ commit }) => {
         if (!isEditingTip) return;
-        const newText = tipEditor.value.trim();
-        if (newText) {
-            localStorage.setItem('canvas-permanent-tip-text', newText);
-        } else {
-            try { localStorage.removeItem('canvas-permanent-tip-text'); } catch { }
-        }
-        renderTipContent(newText);
         isEditingTip = false;
-        const tipContent = tipContainer.querySelector('.permanent-section-tip-content');
-        tipEditor.style.display = 'none';
-        if (tipContent) tipContent.style.display = 'flex';
-        if (editBtn) {
-            editBtn.innerHTML = '<i class="fas fa-edit"></i>';
-            editBtn.title = '编辑说明';
+        tipContainer.classList.remove('editing');
+        tipText.contentEditable = 'false';
+
+        if (commit) {
+            try {
+                if (typeof tipEditorApi !== 'undefined' && tipEditorApi && typeof tipEditorApi.flush === 'function') tipEditorApi.flush();
+            } catch (_) { }
+            persistTip({ normalizeEditorHtml: true });
+        } else {
+            const restored = __normalizeCanvasRichHtml(__coerceDescriptionSourceToHtml(beforeEditStored));
+            tipText.innerHTML = restored;
+            try {
+                if (beforeEditStored) localStorage.setItem('canvas-permanent-tip-text', beforeEditStored);
+                else localStorage.removeItem('canvas-permanent-tip-text');
+            } catch (_) { }
+            updateTipMeta();
         }
-        detachOutsideListener();
-        console.log('[Canvas] 点击外部自动保存永久栏目说明');
-    };
 
-    const addCapture = (node, type, handler) => {
-        if (!node) return;
-        node.addEventListener(type, handler, true);
-        outsideHandlers.push(() => node.removeEventListener(type, handler, true));
-    };
-
-    const attachOutsideListener = () => {
-        if (outsideHandlers.length) return;
-        // 仅使用捕获监听检测外部点击，不使用覆盖层，避免遮挡输入框
-        // 1) 在容器上捕获：点击容器内部但非输入框也算“外部”
-        const containerCap = (e) => {
-            if (!isEditingTip) return;
-            const t = e.target;
-            if (t === tipEditor || (tipEditor && tipEditor.contains(t))) return;
-            if (editBtn && (t === editBtn || editBtn.contains(t))) return;
-            if (closeBtn && (t === closeBtn || closeBtn.contains(t))) return;
-            commitAndExit();
-        };
-        addCapture(tipContainer, 'pointerdown', containerCap);
-
-        // 2) 全局捕获：window/document/body/html 以及主要画布区域
-        const globalCap = (e) => {
-            if (!isEditingTip) return;
-            if (!tipContainer.contains(e.target)) commitAndExit();
-        };
-        addCapture(window, 'pointerdown', globalCap);
-        addCapture(document, 'pointerdown', globalCap);
-        addCapture(document.body, 'pointerdown', globalCap);
-        addCapture(document.documentElement, 'pointerdown', globalCap);
-        const ws = document.getElementById('canvasWorkspace');
-        const cc = document.getElementById('canvasContent');
-        addCapture(ws, 'pointerdown', globalCap);
-        addCapture(cc, 'pointerdown', globalCap);
-
-        // 兼容触摸/鼠标事件
-        addCapture(window, 'mousedown', globalCap);
-        addCapture(window, 'touchstart', globalCap);
-    };
-    const detachOutsideListener = () => {
-        while (outsideHandlers.length) {
-            const off = outsideHandlers.pop();
-            try { off(); } catch { }
+        if (tipControls) {
+            tipControls.style.opacity = '0';
+            tipControls.style.pointerEvents = 'none';
         }
-        if (clickAwayOverlay && clickAwayOverlay.parentNode) {
-            try { clickAwayOverlay.parentNode.removeChild(clickAwayOverlay); } catch { }
-        }
-        clickAwayOverlay = null;
-        if (tipContainer) {
-            if (typeof tipContainer.__oldZIndex !== 'undefined') {
-                tipContainer.style.zIndex = tipContainer.__oldZIndex || '';
-                delete tipContainer.__oldZIndex;
+
+        try {
+            if (typeof tipEditorApi !== 'undefined' && tipEditorApi) {
+                tipEditorApi.closeAllPopovers();
+                if (typeof tipEditorApi.clearUndoHistory === 'function') tipEditorApi.clearUndoHistory();
             }
+        } catch (_) { }
+    };
+
+    const enterEditingTip = () => {
+        if (isEditingTip) return;
+        isEditingTip = true;
+        try { beforeEditStored = localStorage.getItem('canvas-permanent-tip-text') || ''; } catch (_) { beforeEditStored = ''; }
+
+        tipContainer.classList.add('editing');
+        tipText.contentEditable = 'true';
+        tipText.focus();
+        __placeCaretAtEnd(tipText);
+
+        if (typeof tipEditorApi !== 'undefined' && tipEditorApi && typeof tipEditorApi.recordSnapshot === 'function') {
+            tipEditorApi.recordSnapshot('init');
+        }
+
+        if (tipControls) {
+            tipControls.style.opacity = '1';
+            tipControls.style.pointerEvents = 'auto';
         }
     };
 
-    if (editBtn) {
-        editBtn.addEventListener('click', (e) => {
-            e.stopPropagation();
+    // Events
+    tipText.addEventListener('click', (e) => {
+        if (isEditingTip) return;
+        e.preventDefault();
+        e.stopPropagation();
+        enterEditingTip();
+    });
+
+    newCloseBtn.addEventListener('click', (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        tipText.innerHTML = '';
+        try { localStorage.removeItem('canvas-permanent-tip-text'); } catch (_) { }
+        updateTipMeta();
+        if (isEditingTip) {
+            tipText.focus();
+        }
+    });
+
+    tipText.addEventListener('keydown', (e) => {
+        if (!isEditingTip) return;
+        if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
             e.preventDefault();
+            exitEditingTip({ commit: true });
+        } else if (e.key === 'Escape') {
+            e.preventDefault();
+            exitEditingTip({ commit: false });
+        }
+    });
 
-            const tipContent = tipContainer.querySelector('.permanent-section-tip-content');
+    tipText.addEventListener('blur', () => {
+        if (!isEditingTip) return;
+        exitEditingTip({ commit: true });
+    });
 
-            if (isEditingTip) {
-                // 保存编辑（点击按钮明确保存）
-                commitAndExit();
-            } else {
-                // 进入编辑模式
-                isEditingTip = true;
-                tipContent.style.display = 'none';
-                tipEditor.style.display = 'block';
-                // 每次进入编辑时，用已保存内容或空值填充
-                const saved = localStorage.getItem('canvas-permanent-tip-text');
-                tipEditor.value = (saved || '');
-                tipEditor.focus();
-                tipEditor.select();
-                editBtn.innerHTML = '<i class="fas fa-save"></i>';
-                editBtn.title = '保存说明（Ctrl/Cmd+Enter）';
-                console.log('[Canvas] 进入永久栏目说明编辑模式');
-                attachOutsideListener();
-            }
-        });
-
-        // 编辑框快捷键处理
-        tipEditor.addEventListener('keydown', (e) => {
-            if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
-                e.preventDefault();
-                editBtn.click();
-            } else if (e.key === 'Escape') {
-                e.preventDefault();
-                if (isEditingTip) {
-                    // 取消编辑，不保存
-                    isEditingTip = false;
-                    const tipContent = tipContainer.querySelector('.permanent-section-tip-content');
-                    tipEditor.style.display = 'none';
-                    tipContent.style.display = 'flex';
-                    editBtn.innerHTML = '<i class="fas fa-edit"></i>';
-                    editBtn.title = '编辑说明';
-                    const saved = localStorage.getItem('canvas-permanent-tip-text');
-                    tipEditor.value = (saved || '');
-                    detachOutsideListener();
-                    console.log('[Canvas] 取消编辑永久栏目说明');
-                }
-            }
-        });
-
-        // 点击外部时自动保存并退出（空内容显示占位提示）
-        tipEditor.addEventListener('blur', () => {
-            if (isEditingTip) {
-                isEditingTip = false;
-                const tipContent = tipContainer.querySelector('.permanent-section-tip-content');
-                tipEditor.style.display = 'none';
-                if (tipContent) tipContent.style.display = 'flex';
-                if (editBtn) {
-                    editBtn.innerHTML = '<i class="fas fa-edit"></i>';
-                    editBtn.title = '编辑说明';
-                }
-                const newText = tipEditor.value.trim();
-                if (newText) {
-                    localStorage.setItem('canvas-permanent-tip-text', newText);
-                } else {
-                    try { localStorage.removeItem('canvas-permanent-tip-text'); } catch { }
-                }
-                renderTipContent(newText);
-                detachOutsideListener();
-                console.log('[Canvas] 点击外部自动保存永久栏目说明');
-            }
+    if (tipControls) {
+        tipControls.addEventListener('mousedown', (e) => {
+            if (!isEditingTip) return;
+            if (e.target.closest('button')) e.preventDefault();
         });
     }
 
-    // 折叠栏点击进入编辑时，确保文本为保存值或空
-    if (collapsedBar) {
-        collapsedBar.addEventListener('click', () => {
-            const saved = localStorage.getItem('canvas-permanent-tip-text');
-            tipEditor.value = (saved || '');
-        });
-    }
+    const tipEditorApi = __mountMdCloneDescriptionEditor({
+        editor: tipText,
+        toolbar: tipControls || tipContainer,
+        formatToggleBtn: formatBtn || newCloseBtn,
+        isEditing: () => isEditingTip,
+        enterEdit: enterEditingTip,
+        save: () => {
+            if (!isEditingTip) return;
+            persistTip({ normalizeEditorHtml: false });
+        },
+        nodeId: 'permanentSection'
+    });
 }
 
 function setupPermanentSectionPinButton() {
@@ -10188,7 +11849,7 @@ function setupCanvasEventListeners() {
             // 使用 elementFromPoint 检测双击位置的最顶层元素
             const elementAtPoint = document.elementFromPoint(e.clientX, e.clientY);
             if (!elementAtPoint) return;
-            
+
             // 如果最顶层元素是某个栏目或其内部元素，说明被遮挡，不生成空白栏目
             const isBlockedByTemp = !!elementAtPoint.closest('.temp-canvas-node');
             const isBlockedByPermanent = !!elementAtPoint.closest('#permanentSection');
@@ -10226,6 +11887,7 @@ function setupCanvasEventListeners() {
 // =============================================================================
 
 function showImportDialog() {
+    const { isEn } = __getLang();
     // 创建导入对话框
     const dialog = document.createElement('div');
     dialog.className = 'import-dialog';
@@ -10234,21 +11896,25 @@ function showImportDialog() {
     dialog.innerHTML = `
         <div class="import-dialog-content">
             <div class="import-dialog-header">
-                <h3>导入书签</h3>
+                <h3>${isEn ? 'Import' : '导入'}</h3>
                 <button class="import-dialog-close" id="closeImportDialog">&times;</button>
             </div>
             <div class="import-dialog-body">
                 <div class="import-options">
+                    <button class="import-option-btn" id="importCanvasZipBtn">
+                        <i class="fas fa-file-archive" style="font-size: 24px;"></i>
+                        <span>${isEn ? 'Import Canvas Package (.zip)' : '导入画布本体包（.zip）'}</span>
+                    </button>
                     <button class="import-option-btn" id="importHtmlBtn">
                         <i class="fas fa-file-code" style="font-size: 24px;"></i>
-                        <span>导入 HTML 书签</span>
+                        <span>${isEn ? 'Import HTML Bookmarks' : '导入 HTML 书签（临时栏目）'}</span>
                     </button>
                     <button class="import-option-btn" id="importJsonBtn">
                         <i class="fas fa-file-code" style="font-size: 24px;"></i>
-                        <span>导入 JSON 书签</span>
+                        <span>${isEn ? 'Import JSON Bookmarks' : '导入 JSON 书签（临时栏目）'}</span>
                     </button>
                 </div>
-                <input type="file" id="canvasFileInput" accept=".html,.json" style="display: none;">
+                <input type="file" id="canvasFileInput" accept=".zip,.html,.json" style="display: none;">
             </div>
         </div>
     `;
@@ -10262,6 +11928,13 @@ function showImportDialog() {
 
     dialog.addEventListener('click', (e) => {
         if (e.target === dialog) dialog.remove();
+    });
+
+    document.getElementById('importCanvasZipBtn').addEventListener('click', () => {
+        const input = document.getElementById('canvasFileInput');
+        input.accept = '.zip';
+        input.dataset.type = 'package';
+        input.click();
     });
 
     document.getElementById('importHtmlBtn').addEventListener('click', () => {
@@ -10288,19 +11961,32 @@ async function handleFileImport(e) {
     const type = e.target.dataset.type;
 
     try {
-        const text = await file.text();
-
-        if (type === 'html') {
-            await importHtmlBookmarks(text);
+        if (type === 'package') {
+            const { isEn } = __getLang();
+            const ok = confirm(isEn
+                ? 'Importing a canvas package will replace the current canvas state. Continue?'
+                : '导入画布本体包会覆盖当前画布状态。确定继续吗？');
+            if (!ok) {
+                e.target.value = '';
+                return;
+            }
+            await importCanvasPackageZip(file);
         } else {
-            await importJsonBookmarks(text);
+            const text = await file.text();
+            if (type === 'html') {
+                await importHtmlBookmarks(text);
+            } else {
+                await importJsonBookmarks(text);
+            }
         }
 
         document.getElementById('canvasImportDialog').remove();
-        alert('导入成功！');
+        const { isEn } = __getLang();
+        alert(isEn ? 'Import succeeded.' : '导入成功！');
     } catch (error) {
         console.error('[Canvas] 导入失败:', error);
-        alert('导入失败: ' + error.message);
+        const { isEn } = __getLang();
+        alert((isEn ? 'Import failed: ' : '导入失败: ') + (error && error.message ? error.message : error));
     }
 
     e.target.value = '';
@@ -10368,135 +12054,1169 @@ async function importJsonBookmarks(json) {
 }
 
 function exportCanvas() {
-    const canvasData = {
-        nodes: [],
-        edges: []
+    // 已升级为 zip 导出（.canvas + .md + 本体json）
+    exportCanvasPackage().catch((e) => {
+        console.error('[Canvas] 导出失败:', e);
+        const { isEn } = __getLang();
+        alert((isEn ? 'Export failed: ' : '导出失败: ') + (e && e.message ? e.message : e));
+    });
+}
+
+// =============================================================================
+// Canvas 导入/导出（zip 包：.canvas + .md + 本体json）
+// =============================================================================
+
+function __getLang() {
+    const lang = (typeof currentLang === 'string' && currentLang) ? currentLang : 'zh_CN';
+    const lower = String(lang).toLowerCase();
+    const isEn = lower === 'en' || lower.startsWith('en_') || lower.startsWith('en-') || lower.startsWith('en');
+    return { lang, isEn };
+}
+
+function __frontmatter(meta) {
+    const safe = (v) => String(v == null ? '' : v).replace(/\r?\n/g, ' ').trim();
+    return [
+        '---',
+        'exporter: bookmark-backup-canvas',
+        'exportVersion: 1',
+        `exportedAt: ${safe(meta.exportedAt)}`,
+        `source: ${safe(meta.source)}`,
+        `sourceId: ${safe(meta.sourceId)}`,
+        `title: ${safe(meta.title)}`,
+        '---',
+        ''
+    ].join('\n');
+}
+
+function __stripZwsp(s) {
+    return String(s || '').replace(/\u200B/g, '');
+}
+
+/**
+ * Convert HTML content to Markdown source code for Obsidian rendering.
+ * This function traverses the DOM and converts HTML elements to their Markdown equivalents.
+ */
+function __htmlToMarkdown(html) {
+    if (!html || typeof html !== 'string') return '';
+    const stripped = __stripZwsp(html).trim();
+    if (!stripped) return '';
+
+    // If it doesn't look like HTML, return as-is (already Markdown)
+    const looksLikeHtml = /<\s*(?:a|p|div|span|br|strong|em|b|i|u|del|s|mark|code|blockquote|ul|ol|li|hr|h[1-6]|font|center|pre|sup|sub)\b/i.test(stripped);
+    if (!looksLikeHtml) return stripped;
+
+    const tmp = document.createElement('div');
+    tmp.innerHTML = stripped;
+
+    const processNode = (node) => {
+        if (!node) return '';
+        if (node.nodeType === Node.TEXT_NODE) {
+            return (node.textContent || '').replace(/\u200B/g, '');
+        }
+        if (node.nodeType !== Node.ELEMENT_NODE) return '';
+
+        const tag = node.tagName.toLowerCase();
+        const childContent = () => Array.from(node.childNodes).map(processNode).join('');
+
+        switch (tag) {
+            case 'br':
+                return '\n';
+            case 'p':
+            case 'div': {
+                const align = node.getAttribute('align');
+                const style = node.getAttribute('style');
+                if (align || style) {
+                    let attrs = '';
+                    if (align) attrs += ` align="${align}"`;
+                    if (style) attrs += ` style="${style}"`;
+                    return `<${tag}${attrs}>${childContent()}</${tag}>\n`;
+                }
+                return childContent() + '\n';
+            }
+            case 'details':
+                return `<details>${childContent()}</details>\n`;
+            case 'summary':
+                return `<summary>${childContent()}</summary>\n`;
+            case 'input': {
+                if (node.type === 'checkbox') {
+                    const isChecked = node.hasAttribute('checked') || node.checked;
+                    return `- [${isChecked ? 'x' : ' '}] `;
+                }
+                return '';
+            }
+            case 'strong':
+            case 'b':
+                return `**${childContent()}**`;
+            case 'em':
+            case 'i':
+                return `*${childContent()}*`;
+            case 'u':
+                return `<u>${childContent()}</u>`;
+            case 'del':
+            case 's':
+            case 'strike':
+                return `~~${childContent()}~~`;
+            case 'mark':
+                return `==${childContent()}==`;
+            case 'code':
+                return `\`${childContent()}\``;
+            case 'pre':
+                return '```\n' + childContent() + '\n```\n';
+            case 'sup':
+                return `<sup>${childContent()}</sup>`;
+            case 'sub':
+                return `<sub>${childContent()}</sub>`;
+            case 'a': {
+                const href = node.getAttribute('href') || '';
+                const text = childContent() || href;
+                return `[${text}](${href})`;
+            }
+            case 'h1':
+                return `# ${childContent()}\n`;
+            case 'h2':
+                return `## ${childContent()}\n`;
+            case 'h3':
+                return `### ${childContent()}\n`;
+            case 'h4':
+                return `#### ${childContent()}\n`;
+            case 'h5':
+                return `##### ${childContent()}\n`;
+            case 'h6':
+                return `###### ${childContent()}\n`;
+            case 'blockquote':
+                return childContent().split('\n').map(line => `> ${line}`).join('\n') + '\n';
+            case 'ul':
+                return Array.from(node.children).map((li, idx) => {
+                    const content = processNode(li).replace(/^- /, '').trim();
+                    return `- ${content}`;
+                }).join('\n') + '\n';
+            case 'ol':
+                return Array.from(node.children).map((li, idx) => {
+                    const content = processNode(li).replace(/^\d+\. /, '').trim();
+                    return `${idx + 1}. ${content}`;
+                }).join('\n') + '\n';
+            case 'li':
+                return childContent();
+            case 'hr':
+                return '---\n';
+            case 'img': {
+                const src = node.getAttribute('src') || '';
+                const alt = node.getAttribute('alt') || '';
+                return `![${alt}](${src})`;
+            }
+            case 'font': {
+                const color = node.getAttribute('color');
+                if (color) {
+                    return `<font color="${color}">${childContent()}</font>`;
+                }
+                return childContent();
+            }
+            case 'span': {
+                const style = node.getAttribute('style');
+                // Preserve span if it has style (e.g. color, background)
+                if (style) {
+                    return `<span style="${style}">${childContent()}</span>`;
+                }
+                return childContent();
+            }
+            case 'center':
+                return `<center>${childContent()}</center>`;
+            default:
+                return childContent();
+        }
     };
 
-    // 添加永久栏目节点
-    canvasData.nodes.push({
-        id: 'permanent-section',
-        type: 'group',
-        x: window.innerWidth / 2 - 300,
-        y: window.innerHeight / 2 - 300,
-        width: 600,
-        height: 600,
-        label: 'Bookmark Tree (永久栏目)',
-        color: '4'
-    });
+    const result = Array.from(tmp.childNodes).map(processNode).join('');
+    // Clean up excessive newlines
+    return result.replace(/\n{3,}/g, '\n\n').trim();
+}
 
-    // 添加临时节点（书签栏目 -> 导出为文本）
-    CanvasState.tempSections.forEach(section => {
-        const hasDesc = section.description && typeof section.description === 'string' && section.description.trim().length > 0;
-        const hasItems = Array.isArray(section.items) && section.items.length > 0;
+function __isValidUrl(url) {
+    const u = String(url || '').trim();
+    if (!u) return false;
+    try {
+        const parsed = new URL(u);
+        return parsed.protocol === 'http:' || parsed.protocol === 'https:';
+    } catch (_) {
+        return false;
+    }
+}
 
-        // 当说明与条目都为空：导出空文本，确保“什么都没有”
-        let mdText = '';
-        if (hasDesc && !hasItems) {
-            mdText = section.description;
-        } else if (!hasDesc && hasItems) {
-            // 仅导出条目列表为 Markdown（不加标题行）
-            const lines = [];
-            const appendItem = (item, depth = 0) => {
-                const indent = '  '.repeat(depth);
-                if (item.type === 'bookmark') {
-                    const title = item.title || item.url || '未命名书签';
-                    const url = item.url || '#';
-                    lines.push(`${indent}- [${title}](${url})`);
-                } else {
-                    lines.push(`${indent}- ${item.title || '未命名文件夹'}`);
-                    if (item.children && item.children.length) {
-                        item.children.forEach(child => appendItem(child, depth + 1));
-                    }
-                }
-            };
-            section.items.forEach(item => appendItem(item, 0));
-            mdText = lines.join('\n');
-        } else if (hasDesc && hasItems) {
-            // 两者都存在时，保留说明并在其后追加条目列表
-            const lines = [];
-            const appendItem = (item, depth = 0) => {
-                const indent = '  '.repeat(depth);
-                if (item.type === 'bookmark') {
-                    const title = item.title || item.url || '未命名书签';
-                    const url = item.url || '#';
-                    lines.push(`${indent}- [${title}](${url})`);
-                } else {
-                    lines.push(`${indent}- ${item.title || '未命名文件夹'}`);
-                    if (item.children && item.children.length) {
-                        item.children.forEach(child => appendItem(child, depth + 1));
-                    }
-                }
-            };
-            section.items.forEach(item => appendItem(item, 0));
-            const listText = lines.join('\n');
-            mdText = `${section.description.trim()}\n\n${listText}`;
+function __escapeMarkdownLinkText(text) {
+    return String(text || '').replace(/]/g, '\\]');
+}
+
+const __toAlphaLabel = (n) => {
+    if (n <= 0) return '';
+    let s = '';
+    while (n > 0) {
+        n--;
+        s = String.fromCharCode(65 + (n % 26)) + s;
+        n = Math.floor(n / 26);
+    }
+    return s;
+};
+
+// Helper to get permanent expanded state
+const __getPermanentExpandedSet = () => {
+    try {
+        const s = localStorage.getItem('treeExpandedNodeIds');
+        return new Set(JSON.parse(s || '[]'));
+    } catch (_) {
+        return new Set();
+    }
+};
+
+/**
+ * @param {Array} items
+ * @param {number} depth
+ * @param {Object} options
+ * @param {string} options.checkType - 'permanent' or 'temp' or 'none'
+ * @param {Set} options.permanentExpandedSet - for permanent section
+ * @param {string} options.tempSectionId - for temp section
+ */
+function __toTreeMarkdownLines(items, depth = 0, options = {}) {
+    const lines = [];
+    // Styles for tree visualization (mimicking the HTML canvas look)
+    const BORDER_COLOR = 'rgba(130, 130, 130, 0.3)';
+    // Children container: renders the vertical line
+    const containerStyle = `border-left: 1px solid ${BORDER_COLOR}; margin-left: 7px; padding-left: 16px; position: relative; display: flex; flex-direction: column;`;
+    // Item wrapper: holds connector and content
+    const itemWrapperStyle = `position: relative; margin-bottom: 2px;`;
+    // Connector: horizontal line from parent's vertical border to item
+    // We position it relative to the padding-left of the container.
+    const connectorStyle = `position: absolute; top: 12px; left: -16px; width: 12px; height: 1px; background-color: ${BORDER_COLOR}; pointer-events: none;`;
+
+    const labelStyle = `display: inline-flex; align-items: center; gap: 6px; vertical-align: middle; text-decoration: none; color: inherit; font-size: 14px; line-height: 24px; max-width: 100%; overflow: hidden;`;
+    const summaryStyle = `cursor: pointer; list-style: none; display: flex; align-items: center; outline: none;`;
+    const textStyle = `white-space: nowrap; overflow: hidden; text-overflow: ellipsis;`;
+
+    const { checkType, permanentExpandedSet, tempSectionId } = options;
+
+    (items || []).forEach((item) => {
+        if (!item) return;
+        let titleRaw = String(item.title || item.name || item.url || 'Untitled').trim();
+        // Remove excesive spaces and newlines
+        titleRaw = titleRaw.replace(/\s+/g, ' ');
+
+        // HTML escape title
+        const titleSafe = titleRaw.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+
+        const connector = depth > 0
+            ? `<span style="${connectorStyle}"></span>`
+            : '';
+
+        if (item.type === 'bookmark' || item.url) {
+            const url = String(item.url || '').trim();
+            const ok = __isValidUrl(url);
+            const safeUrl = ok ? url : '#';
+            const suffix = ok ? '' : ' <small style="color:red; opacity:0.7;">(invalid)</small>';
+
+            // Icon
+            let iconSrc = getFaviconUrl && getFaviconUrl(safeUrl);
+            if (!iconSrc) iconSrc = 'data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZ3dCb3g9IjAgMCAyNCAyNCIgZmlsbD0ibm9uZSIgc3Ryb2tlPSIjOTE5MTkxIiBzdHJva2Utd2lkdGg9IjIiIHN0cm9rZS1saW5lY2FwPSJyb3VuZCIgc3Ryb2tlLWxpbmVqb2luPSJyb3VuZCI+PGNpcmNsZSBjeD0iMTIiIGN5PSIxMiIgcj0iMTAiPjwvY2lyY2xlPjwvc3ZnPg==';
+
+            lines.push(`<div style="${itemWrapperStyle}">`);
+            lines.push(`  ${connector}`);
+            lines.push(`  <a href="${safeUrl}" target="_blank" style="${labelStyle}" title="${titleSafe}">`);
+            lines.push(`    <img src="${iconSrc}" style="width:16px; height:16px; object-fit:contain; border-radius:3px; flex-shrink: 0;" />`);
+            lines.push(`    <span style="${textStyle}">${titleSafe}</span>`);
+            lines.push(`  </a>${suffix}`);
+            lines.push(`</div>`);
+            return;
         }
 
-        const textNode = {
-            id: `${section.id}-text`,
-            type: 'text',
-            x: section.x,
-            y: section.y,
-            width: section.width || TEMP_SECTION_DEFAULT_WIDTH,
-            height: section.height || TEMP_SECTION_DEFAULT_HEIGHT,
-            text: mdText,
-            color: section.color
-        };
-        canvasData.nodes.push(textNode);
+        // Folder
+        const folderName = titleSafe || 'Folder';
+        let isExpanded = true;
+
+        if (checkType === 'permanent') {
+            if (item.id && permanentExpandedSet) {
+                isExpanded = permanentExpandedSet.has(String(item.id));
+            } else {
+                isExpanded = false;
+            }
+        } else if (checkType === 'temp' && tempSectionId && item.id && typeof LAZY_LOAD_THRESHOLD !== 'undefined') {
+            const folderId = `${tempSectionId}-${item.id}`;
+            const maxDepth = LAZY_LOAD_THRESHOLD.maxInitialDepth || 1;
+            const userCollapsed = LAZY_LOAD_THRESHOLD.collapsedFolders.has(folderId);
+            const userExpanded = LAZY_LOAD_THRESHOLD.expandedFolders.has(folderId);
+            const defaultExpanded = depth < maxDepth;
+            isExpanded = userExpanded || (defaultExpanded && !userCollapsed);
+        }
+
+        const openAttr = isExpanded ? ' open' : '';
+        const hasChildren = Array.isArray(item.children) && item.children.length > 0;
+
+        // Empty folder indicator
+        const emptyIndicator = hasChildren ? '' : ` <span style="opacity:0.5; font-size: 0.9em; margin-left: 6px;">(empty)</span>`;
+
+        lines.push(`<div style="${itemWrapperStyle}">`);
+        lines.push(`  ${connector}`);
+        lines.push(`  <details${openAttr}>`);
+        lines.push(`    <summary style="${summaryStyle}">`);
+        lines.push(`      <span style="${labelStyle}" title="${folderName}">`);
+        lines.push(`        <span style="font-size:16px; line-height:1; flex-shrink: 0;">📁</span>`);
+        lines.push(`        <span style="${textStyle}">${folderName}</span>`);
+        lines.push(`        ${emptyIndicator}`);
+        lines.push(`      </span>`);
+        lines.push(`    </summary>`);
+
+        if (hasChildren) {
+            lines.push(`    <div style="${containerStyle}">`);
+            lines.push(...__toTreeMarkdownLines(item.children, depth + 1, options));
+            lines.push(`    </div>`);
+        }
+
+        lines.push(`  </details>`);
+        lines.push(`</div>`);
+    });
+    return lines;
+}
+
+function __buildPermanentBookmarksMarkdown(bookmarkTree) {
+    const { isEn } = __getLang();
+    const exportedAt = new Date().toISOString();
+
+    // 1. Get Title from DOM (in case user modified it via CSS/hack, or just use translated default)
+    const domTitleEl = document.getElementById('permanentSectionTitle');
+    const domTitle = domTitleEl ? domTitleEl.textContent.trim() : '';
+    const title = domTitle || (isEn ? 'Permanent Bookmarks' : '书签树 (永久栏目)');
+
+    // 2. Get Description (Markdown) form LocalStorage
+    let rawDesc = '';
+    try { rawDesc = localStorage.getItem('canvas-permanent-tip-text') || ''; } catch (_) { }
+    const descMd = __htmlToMarkdown(rawDesc);
+
+    // Frontmatter removed to hide properties in Obsidian Canvas
+    /* const header = __frontmatter({
+        exportedAt,
+        source: 'permanent',
+        sourceId: 'chrome-bookmarks',
+        title
+    }); */
+
+    const body = [];
+    // Title header removed
+    // body.push(`# ${title}`);
+    // body.push('');
+
+    if (descMd) {
+        body.push(descMd);
+        body.push('');
+        body.push('---');
+        body.push('');
+    }
+
+    const root = Array.isArray(bookmarkTree) ? bookmarkTree[0] : null;
+    const roots = root && Array.isArray(root.children) ? root.children : [];
+
+    // Prepare options for expanded state
+    const permanentExpandedSet = __getPermanentExpandedSet();
+    // Default roots (1, 2, 3) to expanded if the set is empty (fresh start)?? 
+    // Actually, usually Bar (1) is expanded. If set is empty, maybe user never toggled anything or cleared data.
+    // Let's stick to the set. If empty, everything collapsed (except maybe we want to force roots open?).
+    // Obsidian usually likes clean md. <details> is good.
+
+    const getRootSectionName = (node) => {
+        if (!node) return 'Bookmarks';
+        if (node.id === '1') return isEn ? 'Bookmark Bar' : '书签栏';
+        if (node.id === '2') return isEn ? 'Other Bookmarks' : '其他书签';
+        if (node.id === '3') return isEn ? 'Mobile Bookmarks' : '移动设备书签';
+        const t = String(node.title || node.name || '').trim();
+        return t || (isEn ? 'Bookmarks' : '书签');
+    };
+
+    const toPayload = (node) => {
+        if (!node) return null;
+        if (node.url) {
+            return { id: node.id, type: 'bookmark', title: node.title || node.name || node.url, url: node.url };
+        }
+        const children = Array.isArray(node.children) ? node.children.map(toPayload).filter(Boolean) : [];
+        return { id: node.id, type: 'folder', title: node.title || node.name || (isEn ? 'Folder' : '文件夹'), children };
+    };
+
+    const parts = [];
+    parts.push(...body);
+
+    roots.forEach((r) => {
+        const sectionName = getRootSectionName(r);
+        parts.push(`## ${sectionName}`);
+        const children = Array.isArray(r.children) ? r.children.map(toPayload).filter(Boolean) : [];
+
+        // For roots, we might want to just list them. But usually they are headers.
+        // The children of roots are the actual folders/bookmarks.
+
+        const lines = __toTreeMarkdownLines(children, 0, {
+            checkType: 'permanent',
+            permanentExpandedSet
+        });
+
+        if (lines.length) parts.push(lines.join('\n'));
+        parts.push('');
     });
 
-    // 添加 Markdown 文本卡片（与 Obsidian Canvas 文本节点一致）
-    if (Array.isArray(CanvasState.mdNodes)) {
-        CanvasState.mdNodes.forEach(node => {
+    return parts.join('\n').trimEnd() + '\n';
+}
+
+function __buildTempSectionMarkdown(section) {
+    const { isEn } = __getLang();
+    const exportedAt = new Date().toISOString();
+
+    // 1. Title & Sequence
+    const rawTitle = String((section && section.title) || (isEn ? 'Temp Section' : '临时栏目'));
+    const seq = (section && section.sequenceNumber) ? __toAlphaLabel(section.sequenceNumber) : '';
+    const fullTitle = seq ? `${seq}. ${rawTitle}` : rawTitle;
+
+    // Frontmatter removed
+    /* const header = __frontmatter({
+        exportedAt,
+        source: 'tempSection',
+        sourceId: section && section.id ? section.id : '',
+        title: fullTitle,
+        color: (section && section.color) ? section.color : ''
+    }); */
+
+    const body = [];
+    // Title header removed
+    // body.push(`# ${fullTitle}`);
+    // body.push('');
+
+    // 2. Description (Markdown)
+    const descHtml = section && typeof section.description === 'string' ? section.description : '';
+    const descMd = __htmlToMarkdown(descHtml);
+    if (descMd) {
+        body.push(descMd);
+        body.push('');
+        body.push('---');
+        body.push('');
+    }
+
+    // 3. Items
+    const items = section && Array.isArray(section.items) ? section.items : [];
+
+    // Pass temp section ID for collapsed state checking
+    const lines = __toTreeMarkdownLines(items, 0, {
+        checkType: 'temp',
+        tempSectionId: section ? section.id : null
+    });
+
+    if (lines.length) {
+        body.push(lines.join('\n'));
+        body.push('');
+    }
+
+    return (body.join('\n')).trimEnd() + '\n';
+}
+
+function __buildMdNodeMarkdown(node) {
+    const exportedAt = new Date().toISOString();
+    // Frontmatter removed
+    /* const header = __frontmatter({
+        exportedAt,
+        source: 'mdNode',
+        sourceId: node && node.id ? node.id : '',
+        title: '',
+        color: (node && node.color) ? node.color : ''
+    }); */
+    // Convert HTML content to Markdown
+    // Prefer node.html (rich text source) over node.text (plain text)
+    // Legacy nodes might only have node.text
+    const rawContent = (node && typeof node.html === 'string' && node.html)
+        ? node.html
+        : ((node && typeof node.text === 'string') ? node.text : '');
+
+    const stripped = __stripZwsp(rawContent || '');
+    const textMd = __htmlToMarkdown(stripped);
+
+    // Remove first line (used as filename) to avoid duplication in content
+    const lines = textMd.split('\n');
+    if (lines.length > 0) {
+        lines.shift();
+    }
+    const finalMd = lines.join('\n').trim();
+
+    return (finalMd + '\n').replace(/\r\n/g, '\n');
+}
+
+function __toUint8(text) {
+    return new TextEncoder().encode(String(text || ''));
+}
+
+const __crc32Table = (() => {
+    const table = new Uint32Array(256);
+    for (let i = 0; i < 256; i++) {
+        let c = i;
+        for (let k = 0; k < 8; k++) {
+            c = (c & 1) ? (0xEDB88320 ^ (c >>> 1)) : (c >>> 1);
+        }
+        table[i] = c >>> 0;
+    }
+    return table;
+})();
+
+function __crc32(bytes) {
+    let crc = 0 ^ -1;
+    for (let i = 0; i < bytes.length; i++) {
+        crc = (crc >>> 8) ^ __crc32Table[(crc ^ bytes[i]) & 0xFF];
+    }
+    return (crc ^ -1) >>> 0;
+}
+
+function __zipStore(files) {
+    // files: Array<{ name: string, data: Uint8Array }>
+    const parts = [];
+    const central = [];
+    let offset = 0;
+
+    const writeU16 = (v) => {
+        const b = new Uint8Array(2);
+        new DataView(b.buffer).setUint16(0, v, true);
+        return b;
+    };
+    const writeU32 = (v) => {
+        const b = new Uint8Array(4);
+        new DataView(b.buffer).setUint32(0, v >>> 0, true);
+        return b;
+    };
+
+    const dosTime = 0;
+    const dosDate = 0;
+    const gpFlag = 0x0800; // UTF-8
+    const method = 0; // store
+
+    files.forEach((f) => {
+        const name = String(f.name || '').replace(/^\/+/, '');
+        const nameBytes = __toUint8(name);
+        const data = f.data instanceof Uint8Array ? f.data : new Uint8Array();
+        const crc = __crc32(data);
+
+        const localHeader = [
+            writeU32(0x04034b50),
+            writeU16(20),
+            writeU16(gpFlag),
+            writeU16(method),
+            writeU16(dosTime),
+            writeU16(dosDate),
+            writeU32(crc),
+            writeU32(data.length),
+            writeU32(data.length),
+            writeU16(nameBytes.length),
+            writeU16(0)
+        ];
+        parts.push(...localHeader, nameBytes, data);
+
+        const centralHeader = [
+            writeU32(0x02014b50),
+            writeU16(0x031E),
+            writeU16(20),
+            writeU16(gpFlag),
+            writeU16(method),
+            writeU16(dosTime),
+            writeU16(dosDate),
+            writeU32(crc),
+            writeU32(data.length),
+            writeU32(data.length),
+            writeU16(nameBytes.length),
+            writeU16(0),
+            writeU16(0),
+            writeU16(0),
+            writeU16(0),
+            writeU32(0),
+            writeU32(offset)
+        ];
+        central.push(...centralHeader, nameBytes);
+
+        const localSize = localHeader.reduce((sum, b) => sum + b.length, 0) + nameBytes.length + data.length;
+        offset += localSize;
+    });
+
+    const centralSize = central.reduce((sum, b) => sum + b.length, 0);
+    const end = [
+        writeU32(0x06054b50),
+        writeU16(0),
+        writeU16(0),
+        writeU16(files.length),
+        writeU16(files.length),
+        writeU32(centralSize),
+        writeU32(offset),
+        writeU16(0)
+    ];
+
+    return new Blob([...parts, ...central, ...end], { type: 'application/zip' });
+}
+
+function __sanitizeFilename(name) {
+    return (name || '').replace(/[<>:"/\\|?*\x00-\x1F]/g, '_').replace(/^\.+/, '').trim() || 'Untitled';
+}
+
+async function exportCanvasPackage() {
+    const { isEn } = __getLang();
+    const api = (typeof browserAPI !== 'undefined' && browserAPI.bookmarks) ? browserAPI.bookmarks : (chrome && chrome.bookmarks ? chrome.bookmarks : null);
+    if (!api || typeof api.getTree !== 'function') {
+        alert(isEn ? 'Bookmarks API not available.' : '当前环境不支持书签API，无法导出永久栏目。');
+        return;
+    }
+
+    try { saveTempNodes(); } catch (_) { }
+    try { savePermanentSectionPosition(); } catch (_) { }
+
+    const pad2 = (n) => String(n).padStart(2, '0');
+    const now = new Date();
+    const ymd = `${now.getFullYear()}${pad2(now.getMonth() + 1)}${pad2(now.getDate())}`;
+
+    const exportedAt = new Date().toISOString();
+    // zip 保存到浏览器默认下载目录下的固定父目录：bookmark-canvas-export/
+    // 需求：不同日期的 zip 都归档在同一个文件夹下
+    const downloadFolder = 'bookmark-canvas-export';
+    // 默认导出文件夹名（也作为默认 zip 名与默认 .canvas 名）
+    // - zh_CN: 书签画布-YYYYMMDD
+    // - en: bookmark-canvas-YYYYMMDD
+    const defaultExportRoot = isEn ? `bookmark-canvas-${ymd}` : `书签画布-${ymd}`;
+
+    const files = [];
+
+    const normalizeVaultPrefix = (input) => {
+        let s = String(input == null ? '' : input).trim();
+        if (!s) return '';
+        s = s.replace(/\\/g, '/');
+        s = s.replace(/^\.\/+/, '');
+        s = s.replace(/^\/+/, '');
+        s = s.replace(/\/+$/, '');
+        s = s.replace(/\/{2,}/g, '/');
+        return s;
+    };
+
+    const promptVaultPrefixViaDialog = (defaultValue) => new Promise((resolve) => {
+        const title = isEn ? 'Export: Obsidian Path' : '导出：Obsidian 路径';
+        const hl = (t) => `<font color="#ffff00">${t}</font>`;
+        const arrow = '<div style="margin:8px 0; line-height:1; display:flex; justify-content:center;"><i class="fas fa-arrow-down"></i></div>';
+        const contentMaxWidthPx = isEn ? 660 : 620;
+        const exampleShiftPx = 14;
+
+        const exampleFolderName = isEn
+            ? `bookmark-canvas-${ymd} (example)/`
+            : `书签画布-${ymd}（示例）/`;
+
+        const intro = isEn
+            ? 'Please follow the steps below to ensure Obsidian can locate the exported .md files.'
+            : '请按以下流程选择位置，确保 Obsidian 能正确找到导出的 .md 文件。';
+
+        const stepTitle = isEn
+            ? `Where will you place <code>${exampleFolderName}</code> inside your Obsidian vault?`
+            : `把 <code>${exampleFolderName}</code> 放入 Obsidian vault（仓库）里的哪个位置。`;
+
+        const stepA = isEn
+            ? `If you put it under an existing vault's ${hl('root')}, keep the default value and ${hl('click Confirm')}.`
+            : `-若把它直接放在${hl('已有仓库的根目录')}下，请保持默认值，${hl('直接点击确认')}即可。`;
+
+        const stepB = isEn
+            ? `If you put it under an existing vault's ${hl('subfolder')}, enter the ${hl('relative path')}.`
+            : `-若把它放在${hl('已有仓库的某个子文件夹')}下，请输入${hl('相对路径')}。`;
+
+        const stepBExample = isEn
+            ? `<div style="position:relative;text-align:center;">
+  <span style="position:absolute;left:0;font-weight:600;">Put into:</span>
+  <span style="display:inline-block; transform: translateX(${exampleShiftPx}px);"><code>Personal/Bookmarks/...</code></span>
+</div>
+<div style="transform: translateX(${exampleShiftPx}px);">${arrow}</div>
+<div style="text-align:center;">Input: <code>Personal/Bookmarks/${defaultExportRoot}</code></div>`
+            : `<div style="position:relative;text-align:center;">
+  <span style="position:absolute;left:0;font-weight:600;">放入：</span>
+  <span style="display:inline-block; transform: translateX(${exampleShiftPx}px);"><code>个人/书签/...</code></span>
+</div>
+<div style="transform: translateX(${exampleShiftPx}px);">${arrow}</div>
+<div style="text-align:center;">输入框填：<code>个人/书签/${defaultExportRoot}</code> 即可</div>`;
+
+        const stepC = isEn
+            ? `If you use it as a ${hl('standalone vault')}, ${hl('clear the input')} and click Confirm.`
+            : `-若把它直接作为一个独立的仓库，请${hl('清空输入框')}，点击确认即可。`;
+
+        const inputLabel = isEn
+            ? 'Enter path'
+            : '请输入路径';
+
+        const dialog = document.createElement('div');
+        dialog.className = 'import-dialog';
+        dialog.id = 'canvasExportVaultPrefixDialog';
+        dialog.innerHTML = `
+		            <div class="import-dialog-content" style="width:max-content;max-width:min(92vw, ${contentMaxWidthPx}px);box-sizing:border-box;">
+			                <div class="import-dialog-header">
+			                    <h3>${title}</h3>
+			                    <button class="import-dialog-close" id="closeCanvasExportVaultPrefixDialog" style="transform: translateY(1px);">&times;</button>
+			                </div>
+	                <div class="import-dialog-body" style="padding: 18px;">
+	                    <div style="margin: 0 0 6px; font-weight: 600;">${inputLabel}</div>
+	                    <div style="display:flex; gap:8px; align-items:center; margin-bottom: 10px;">
+	                        <input id="canvasExportVaultPrefixInput" type="text" style="flex:1; padding: 9px 10px; border: 1px solid #d0d7de; border-radius: 8px;" />
+	                        <button id="canvasExportVaultPrefixOk" class="import-option-btn" style="width:auto; padding: 9px 12px;">
+	                            ${isEn ? 'OK' : '确定'}
+	                        </button>
+	                    </div>
+
+                    <hr style="border:0;border-top:1px solid #e5e7eb;margin: 10px 0 12px;">
+
+                    <div style="margin-bottom: 10px; line-height: 1.6;">
+                        <div style="margin-bottom: 8px;">${intro}</div>
+                        <div style="margin: 6px 0 10px; font-weight: 600;">${stepTitle}</div>
+                        <div style="border-top:1px solid #e5e7eb;width:60%;margin: 6px 0 10px;"></div>
+                        <div style="margin: 6px 0;">${stepA}</div>
+	                        <div style="margin: 10px 0 6px;">${stepB}</div>
+	                        <div style="margin: 6px 0 10px; text-align: center;">
+	                            <div style="display: inline-block; padding: 4px 8px; border: 1px solid #e5e7eb; border-radius: 10px; background: rgba(255, 255, 255, 0.04); line-height: 1.5; box-sizing: border-box; text-align: center; max-width: 100%;">
+	                                <div style="font-weight: 600; margin: 0 0 1px; text-align: left;">${isEn ? 'Example:' : '例如：'}</div>
+	                                <div style="text-align: center;">
+	                                    ${stepBExample}
+	                                </div>
+	                            </div>
+	                        </div>
+	                        <div style="margin: 6px 0 0;">${stepC}</div>
+                    </div>
+                </div>
+            </div>
+        `;
+
+        const cleanup = (val) => {
+            try { dialog.remove(); } catch (_) { }
+            resolve(val);
+        };
+
+        dialog.addEventListener('click', (e) => {
+            if (e.target === dialog) cleanup(null);
+        });
+
+        document.body.appendChild(dialog);
+
+        const closeBtn = document.getElementById('closeCanvasExportVaultPrefixDialog');
+        if (closeBtn) closeBtn.addEventListener('click', () => cleanup(null));
+
+        const input = document.getElementById('canvasExportVaultPrefixInput');
+        if (input) {
+            input.value = String(defaultValue || '');
+            try { input.focus(); input.select(); } catch (_) { }
+            input.addEventListener('keydown', (e) => {
+                if (e.key === 'Enter') {
+                    e.preventDefault();
+                    cleanup(String(input.value || ''));
+                } else if (e.key === 'Escape') {
+                    e.preventDefault();
+                    cleanup(null);
+                }
+            });
+        }
+
+        const okBtn = document.getElementById('canvasExportVaultPrefixOk');
+        if (okBtn) okBtn.addEventListener('click', () => cleanup(input ? String(input.value || '') : String(defaultValue || '')));
+    });
+
+    // 让用户决定“导出文件夹在 vault 内的相对位置”，以适配：
+    // - vault 根目录下（默认）：bookmark-canvas-export/...
+    // - vault 的子文件夹下：SomeFolder/bookmark-canvas-export/...
+    // - 或把 bookmark-canvas-export/ 直接作为一个独立 vault 根目录（portable canvas）
+    const vaultPrefixInput = await promptVaultPrefixViaDialog(defaultExportRoot);
+    if (vaultPrefixInput === null) {
+        return;
+    }
+    const vaultPrefix = normalizeVaultPrefix(vaultPrefixInput);
+
+    const isValidFolderPath = (p) => {
+        if (!p) return true;
+        const segs = String(p).split('/');
+        for (const seg of segs) {
+            if (!seg || seg === '.' || seg === '..') return false;
+            if (/[<>:"\\|?*\x00-\x1F]/.test(seg)) return false;
+            if (/[. ]$/.test(seg)) return false;
+        }
+        return true;
+    };
+
+    if (vaultPrefix && !isValidFolderPath(vaultPrefix)) {
+        alert(isEn ? 'Invalid folder path. Please use a valid folder name.' : '路径不合法，请使用合法的文件夹命名。');
+        return;
+    }
+
+    const exportRoot = vaultPrefix ? vaultPrefix.split('/').slice(-1)[0] : defaultExportRoot;
+
+    // 1) Markdown files
+    const bookmarkTree = await api.getTree();
+    const permanentMdRel = isEn ? 'Permanent Bookmarks.md' : '永久书签.md';
+    files.push({ name: `${exportRoot}/${permanentMdRel}`, data: __toUint8(__buildPermanentBookmarksMarkdown(bookmarkTree)) });
+
+    const tempSectionMdPaths = [];
+    const tempMdFolder = isEn ? 'Temporary Sections' : '临时栏目';
+    CanvasState.tempSections.forEach((section) => {
+        if (!section || !section.id) return;
+
+        const rawSeq = section.sequenceNumber;
+        const seqLabel = rawSeq ? __toAlphaLabel(rawSeq) : '';
+        const rawTitle = section.title || (isEn ? 'Temp Section' : '临时栏目');
+        const fileTitle = seqLabel ? `${seqLabel}. ${rawTitle}` : rawTitle;
+        const safeTitle = __sanitizeFilename(fileTitle);
+
+        const rel = `${tempMdFolder}/${safeTitle}.md`;
+        tempSectionMdPaths.push({ id: section.id, rel });
+        files.push({ name: `${exportRoot}/${rel}`, data: __toUint8(__buildTempSectionMarkdown(section)) });
+    });
+
+    const mdNodeMdPaths = [];
+    const mdNodeFolder = isEn ? 'Blank Sections' : '空白栏目';
+    const usedNodePaths = new Set();
+
+    (CanvasState.mdNodes || []).forEach((node) => {
+        if (!node || !node.id) return;
+
+        // Use first line of text as filename
+        let titleCandidate = (node.text || '').replace(/\u200B/g, '').trim();
+        if (!titleCandidate && node.html) {
+            const div = document.createElement('div');
+            div.innerHTML = node.html;
+            titleCandidate = (div.textContent || '').replace(/\u200B/g, '').trim();
+        }
+        titleCandidate = titleCandidate.split('\n')[0].trim();
+
+        let safeName = __sanitizeFilename(titleCandidate);
+        if (!safeName || safeName === 'Untitled') safeName = node.id;
+
+        let rel = `${mdNodeFolder}/${safeName}.md`;
+        // Handle name collision
+        if (usedNodePaths.has(rel)) {
+            rel = `${mdNodeFolder}/${safeName}_${node.id}.md`;
+        }
+        usedNodePaths.add(rel);
+
+        mdNodeMdPaths.push({ id: node.id, rel });
+        files.push({ name: `${exportRoot}/${rel}`, data: __toUint8(__buildMdNodeMarkdown(node)) });
+    });
+
+    const buildCanvasData = ({ vaultRelativePrefix }) => {
+        // Obsidian Canvas 的 file 节点保存的是 vault-relative path（相对 vault 根目录的路径）。
+        // 因此若用户把导出文件夹放在 vault 的子目录中，需要把该子目录前缀写进 file 字段。
+        const prefix = normalizeVaultPrefix(vaultRelativePrefix);
+        const withPrefix = (relPath) => {
+            const rel = String(relPath || '').replace(/^\/+/, '');
+            return prefix ? `${prefix}/${rel}` : rel;
+        };
+        const canvasData = { nodes: [], edges: [] };
+
+        const permanentSectionEl = document.getElementById('permanentSection');
+        const permanentLeft = permanentSectionEl ? (parseFloat(permanentSectionEl.style.left) || 0) : 0;
+        const permanentTop = permanentSectionEl ? (parseFloat(permanentSectionEl.style.top) || 0) : 0;
+        const permanentW = permanentSectionEl ? (permanentSectionEl.offsetWidth || 600) : 600;
+        const permanentH = permanentSectionEl ? (permanentSectionEl.offsetHeight || 600) : 600;
+        canvasData.nodes.push({
+            id: 'permanent-section',
+            type: 'file',
+            x: Math.round(permanentLeft),
+            y: Math.round(permanentTop),
+            width: Math.round(permanentW),
+            height: Math.round(permanentH),
+            file: withPrefix(permanentMdRel),
+            color: '4'
+        });
+
+        tempSectionMdPaths.forEach(({ id, rel }) => {
+            const section = CanvasState.tempSections.find(s => s && s.id === id);
+            if (!section) return;
             canvasData.nodes.push({
-                id: node.id,
-                type: 'text',
-                x: node.x,
-                y: node.y,
-                width: node.width || MD_NODE_DEFAULT_WIDTH,
-                height: node.height || MD_NODE_DEFAULT_HEIGHT,
-                text: typeof node.text === 'string' ? node.text : '',
-                // 颜色可选，遵循规范可省略
-                ...(node.color ? { color: node.color } : {})
+                id,
+                type: 'file',
+                x: Math.round(section.x || 0),
+                y: Math.round(section.y || 0),
+                width: Math.round(section.width || TEMP_SECTION_DEFAULT_WIDTH),
+                height: Math.round(section.height || TEMP_SECTION_DEFAULT_HEIGHT),
+                file: withPrefix(rel),
+                color: section.color || null
             });
         });
+
+        mdNodeMdPaths.forEach(({ id, rel }) => {
+            const node = (CanvasState.mdNodes || []).find(n => n && n.id === id);
+            if (!node) return;
+            const color = node.colorHex || node.color || null;
+            canvasData.nodes.push({
+                id,
+                type: 'file',
+                x: Math.round(node.x || 0),
+                y: Math.round(node.y || 0),
+                width: Math.round(node.width || MD_NODE_DEFAULT_WIDTH),
+                height: Math.round(node.height || MD_NODE_DEFAULT_HEIGHT),
+                file: withPrefix(rel),
+                ...(color ? { color } : {})
+            });
+        });
+
+        if (Array.isArray(CanvasState.edges)) {
+            canvasData.edges = CanvasState.edges.map(edge => {
+                const dir = edge.direction || 'none';
+                const fromEnd = (dir === 'both') ? 'arrow' : 'none';
+                const toEnd = (dir === 'forward' || dir === 'both') ? 'arrow' : 'none';
+                const colorHex = edge.colorHex || presetToHex(edge.color) || null;
+                const base = {
+                    id: edge.id,
+                    fromNode: edge.fromNode,
+                    fromSide: edge.fromSide || 'right',
+                    toNode: edge.toNode,
+                    toSide: edge.toSide || 'left',
+                    fromEnd,
+                    toEnd
+                };
+                if (edge.label && String(edge.label).trim()) base.label = edge.label;
+                if (colorHex) base.color = colorHex;
+                return base;
+            });
+        }
+
+        return canvasData;
+    };
+
+    // 2) .canvas file
+    // 由用户输入的 vaultPrefix 决定 .canvas 内的 file 路径：
+    // - vault 根目录：保持默认（bookmark-canvas-export）
+    // - vault 子目录：填写 Exports/bookmark-canvas-export
+    // - 独立 vault：留空（file 路径将是 permanent-bookmarks.md / temp-sections/...）
+    const canvasForVault = buildCanvasData({ vaultRelativePrefix: vaultPrefix });
+    const canvasFileName = `${exportRoot}.canvas`;
+    files.push({ name: `${exportRoot}/${canvasFileName}`, data: __toUint8(JSON.stringify(canvasForVault, null, 2)) });
+
+    // 3) Full state json (for full import)
+    const tempStateRaw = localStorage.getItem(TEMP_SECTION_STORAGE_KEY);
+    const permanentPosRaw = localStorage.getItem('permanent-section-position');
+    const perfMode = localStorage.getItem('canvas-performance-mode');
+
+    // Collect scroll positions
+    const scrollState = {};
+    const permanentScroll = localStorage.getItem('permanent-section-scroll');
+    if (permanentScroll) {
+        try { scrollState['permanent-section-scroll'] = JSON.parse(permanentScroll); } catch (_) { }
+    }
+    // Collect temp section scroll positions
+    for (let i = 0; i < localStorage.length; i++) {
+        const key = localStorage.key(i);
+        if (key && key.startsWith('temp-section-scroll:')) {
+            try {
+                scrollState[key] = JSON.parse(localStorage.getItem(key));
+            } catch (_) { }
+        }
     }
 
-    // 添加连接线
-    if (Array.isArray(CanvasState.edges)) {
-        canvasData.edges = CanvasState.edges.map(edge => {
-            const dir = edge.direction || 'none';
-            const fromEnd = (dir === 'both') ? 'arrow' : 'none';
-            const toEnd = (dir === 'forward' || dir === 'both') ? 'arrow' : 'none';
-            const colorHex = edge.colorHex || presetToHex(edge.color) || null;
-            const base = {
-                id: edge.id,
-                fromNode: edge.fromNode,
-                fromSide: edge.fromSide,
-                toNode: edge.toNode,
-                toSide: edge.toSide,
-                fromEnd,
-                toEnd
-            };
-            if (edge.label && String(edge.label).trim()) base.label = edge.label;
-            if (colorHex) base.color = colorHex;
-            return base;
+    const fullState = {
+        exporter: 'bookmark-backup-canvas',
+        exportVersion: 1,
+        exportedAt,
+        storage: {
+            [TEMP_SECTION_STORAGE_KEY]: tempStateRaw ? JSON.parse(tempStateRaw) : null,
+            'permanent-section-position': permanentPosRaw ? JSON.parse(permanentPosRaw) : null,
+            'canvas-performance-mode': perfMode || null,
+            ...scrollState
+        }
+    };
+    files.push({ name: `${exportRoot}/bookmark-canvas.full.json`, data: __toUint8(JSON.stringify(fullState, null, 2)) });
+
+    // 4) Import guide for Obsidian
+    const orangeNote = isEn
+        ? `Tip: if unsure, keep under <span style="color:#f59e0b;font-weight:600;">vault root</span>. Standalone vault: set the path to <span style="color:#f59e0b;font-weight:600;">empty</span>.`
+        : `提示：不确定时放在 <span style="color:#f59e0b;font-weight:600;">vault 根目录</span>。独立 vault：把路径设置为 <span style="color:#f59e0b;font-weight:600;">空</span>。`;
+    const guide = [
+        __frontmatter({
+            exportedAt,
+            source: 'exportGuide',
+            sourceId: 'bookmark-canvas-export',
+            title: 'Obsidian Import Guide'
+        }),
+        isEn ? 'Process:' : '流程：',
+        isEn ? `1) Unzip: ${exportRoot}.zip` : `1）解压：${exportRoot}.zip`,
+        isEn
+            ? `2) Put the folder \`${exportRoot}/\` into your vault at: \`${(vaultPrefix ? (vaultPrefix.split('/').slice(0, -1).join('/') || '(vault root)') : '(standalone vault)')}\`.`
+            : `2）把文件夹 \`${exportRoot}/\` 放到仓库：\`${(vaultPrefix ? (vaultPrefix.split('/').slice(0, -1).join('/') || '（vault根目录）') : '（独立vault）')}\`。`,
+        isEn
+            ? `3) Open: \`${exportRoot}/${canvasFileName}\`.`
+            : `3）打开：\`${exportRoot}/${canvasFileName}\`。`,
+        '',
+        isEn
+            ? 'If you only copy the .canvas file without the .md files, Canvas will show “.md could not be found”.'
+            : '注意：如果只拷贝 .canvas 文件而没有同时拷贝对应的 .md 文件，Canvas 会显示“.md could not be found”。',
+        ''
+    ].join('\n');
+    files.push({ name: `${exportRoot}/README_IMPORT.md`, data: __toUint8(guide) });
+
+    const zipBlob = __zipStore(files);
+    const zipUrl = URL.createObjectURL(zipBlob);
+    const zipName = `${exportRoot}.zip`;
+
+    // 优先使用 downloads API：支持子目录（浏览器默认下载目录下的 bookmark-canvas-export/）
+    if (chrome && chrome.downloads && typeof chrome.downloads.download === 'function') {
+        chrome.downloads.download({
+            url: zipUrl,
+            filename: `${downloadFolder}/${zipName}`,
+            saveAs: false,
+            conflictAction: 'uniquify'
+        }, (downloadId) => {
+            if (chrome.runtime && chrome.runtime.lastError) {
+                console.warn('[Canvas] chrome.downloads.download failed, fallback to <a> tag:', chrome.runtime.lastError);
+                const a = document.createElement('a');
+                a.href = zipUrl;
+                a.download = zipName;
+                document.body.appendChild(a);
+                a.click();
+                document.body.removeChild(a);
+                setTimeout(() => URL.revokeObjectURL(zipUrl), 10000);
+            } else {
+                setTimeout(() => URL.revokeObjectURL(zipUrl), 10000);
+            }
+        });
+    } else {
+        const a = document.createElement('a');
+        a.href = zipUrl;
+        a.download = zipName;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        setTimeout(() => URL.revokeObjectURL(zipUrl), 10000);
+    }
+
+    alert(isEn
+        ? `Exported: ${zipName} (Downloads/${downloadFolder}/)`
+        : `已导出：${zipName}（默认下载目录/${downloadFolder}/）。`);
+}
+
+function __unzipStore(arrayBuffer) {
+    const bytes = new Uint8Array(arrayBuffer);
+    const dv = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+    const files = new Map();
+    let offset = 0;
+
+    const readU16 = (o) => dv.getUint16(o, true);
+    const readU32 = (o) => dv.getUint32(o, true);
+
+    while (offset + 4 <= bytes.length) {
+        const sig = readU32(offset);
+        if (sig !== 0x04034b50) break;
+
+        const gpFlag = readU16(offset + 6);
+        const method = readU16(offset + 8);
+        const compSize = readU32(offset + 18);
+        const nameLen = readU16(offset + 26);
+        const extraLen = readU16(offset + 28);
+
+        const nameStart = offset + 30;
+        const nameEnd = nameStart + nameLen;
+        const extraEnd = nameEnd + extraLen;
+        if (extraEnd > bytes.length) break;
+
+        const nameBytes = bytes.slice(nameStart, nameEnd);
+        const useUtf8 = !!(gpFlag & 0x0800);
+        const name = new TextDecoder(useUtf8 ? 'utf-8' : 'utf-8').decode(nameBytes);
+
+        const dataStart = extraEnd;
+        const dataEnd = dataStart + compSize;
+        if (dataEnd > bytes.length) break;
+
+        if (method !== 0) {
+            throw new Error('仅支持 store(不压缩) 的 zip 包（请使用本插件导出的zip）。');
+        }
+        files.set(name, bytes.slice(dataStart, dataEnd));
+        offset = dataEnd;
+    }
+
+    return files;
+}
+
+function __resetCanvasDomAndStateForImport() {
+    const container = document.getElementById('canvasContent');
+    if (container) {
+        container.querySelectorAll('.temp-canvas-node').forEach(el => el.remove());
+        container.querySelectorAll('.md-canvas-node').forEach(el => el.remove());
+    }
+    CanvasState.tempSections = [];
+    CanvasState.mdNodes = [];
+    CanvasState.edges = [];
+    CanvasState.tempSectionCounter = 0;
+    CanvasState.tempItemCounter = 0;
+    CanvasState.colorCursor = 0;
+    CanvasState.mdNodeCounter = 0;
+    CanvasState.edgeCounter = 0;
+    CanvasState.selectedTempSectionId = null;
+    CanvasState.selectedMdNodeId = null;
+    CanvasState.selectedEdgeId = null;
+    try { hideEdgeToolbar(); } catch (_) { }
+    try { clearTempSelection(); } catch (_) { }
+    try { clearMdSelection(); } catch (_) { }
+}
+
+function __applyImportedTempState(state) {
+    if (!state || typeof state !== 'object') throw new Error('导入失败：状态文件无效');
+    CanvasState.tempSections = Array.isArray(state.sections) ? state.sections : [];
+    CanvasState.tempSectionCounter = state.tempSectionCounter || CanvasState.tempSections.length;
+    CanvasState.tempItemCounter = state.tempItemCounter || 0;
+    CanvasState.colorCursor = state.colorCursor || 0;
+    CanvasState.mdNodes = Array.isArray(state.mdNodes) ? state.mdNodes : [];
+    CanvasState.mdNodeCounter = state.mdNodeCounter || CanvasState.mdNodes.length || 0;
+    CanvasState.edges = Array.isArray(state.edges) ? state.edges : [];
+    CanvasState.edgeCounter = state.edgeCounter || CanvasState.edges.length || 0;
+
+    CanvasState.tempSections.forEach(section => {
+        try { renderTempNode(section); } catch (e) { console.warn('[Canvas] 渲染临时栏目失败:', e); }
+    });
+    CanvasState.mdNodes.forEach(node => {
+        try { renderMdNode(node); } catch (e) { console.warn('[Canvas] 渲染空白栏目失败:', e); }
+    });
+    try { renderEdges(); } catch (_) { }
+
+    try { reorderSectionSequenceNumbers(); } catch (_) { }
+    try { updateCanvasScrollBounds(); } catch (_) { }
+    try { updateScrollbarThumbs(); } catch (_) { }
+    try { scheduleDormancyUpdate(); } catch (_) { }
+}
+
+async function importCanvasPackageZip(file) {
+    const { isEn } = __getLang();
+    const buf = await file.arrayBuffer();
+    const zipFiles = __unzipStore(buf);
+
+    let fullJsonName = null;
+    for (const name of zipFiles.keys()) {
+        if (name.endsWith('/bookmark-canvas.full.json') || name.endsWith('bookmark-canvas.full.json')) {
+            fullJsonName = name;
+            break;
+        }
+    }
+    if (!fullJsonName) {
+        throw new Error(isEn ? 'Package missing bookmark-canvas.full.json.' : '导入包缺少 bookmark-canvas.full.json');
+    }
+
+    const fullJsonText = new TextDecoder('utf-8').decode(zipFiles.get(fullJsonName));
+    const fullState = JSON.parse(fullJsonText);
+    const storage = fullState && fullState.storage ? fullState.storage : null;
+    const tempState = storage && storage[TEMP_SECTION_STORAGE_KEY] ? storage[TEMP_SECTION_STORAGE_KEY] : null;
+    if (!tempState) {
+        throw new Error(isEn ? 'Invalid package state.' : '导入包状态无效');
+    }
+
+    localStorage.setItem(TEMP_SECTION_STORAGE_KEY, JSON.stringify(tempState));
+    if (storage && storage['permanent-section-position']) {
+        localStorage.setItem('permanent-section-position', JSON.stringify(storage['permanent-section-position']));
+    }
+    if (storage && storage['canvas-performance-mode']) {
+        localStorage.setItem('canvas-performance-mode', String(storage['canvas-performance-mode']));
+    }
+
+    // Restore scroll positions (permanent & temporary) from storage
+    if (storage) {
+        // Permanent section scroll
+        if (storage['permanent-section-scroll']) {
+            localStorage.setItem('permanent-section-scroll', JSON.stringify(storage['permanent-section-scroll']));
+        }
+        // Temporary section scrolls
+        Object.keys(storage).forEach(key => {
+            if (key.startsWith('temp-section-scroll:')) {
+                localStorage.setItem(key, JSON.stringify(storage[key]));
+            }
         });
     }
 
-    // 生成并下载文件
-    const blob = new Blob([JSON.stringify(canvasData, null, 2)], {
-        type: 'application/json'
-    });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `bookmark-canvas-${Date.now()}.canvas`;
-    a.click();
-    URL.revokeObjectURL(url);
-
-    alert('Canvas已导出为 .canvas 文件！');
+    __resetCanvasDomAndStateForImport();
+    try { loadPermanentSectionPosition(); } catch (_) { }
+    __applyImportedTempState(tempState);
 }
 
 function formatSectionText(section) {

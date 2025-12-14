@@ -1248,6 +1248,10 @@ function attachHyperlinkContextMenu() {
         const inMdNodeContent = linkElement.closest('.md-canvas-text, .md-canvas-editor');
         
         if (inPermanentTip || inTempDescription || inMdNodeContent) {
+            // 编辑模式下不拦截（允许正常编辑/系统菜单）
+            const inEditingArea = linkElement.closest('.md-canvas-node.editing, .temp-node-description-container.editing, .permanent-section-tip-container.editing');
+            if (inEditingArea) return;
+
             // 阻止默认右键菜单
             e.preventDefault();
             e.stopPropagation();
@@ -1280,6 +1284,10 @@ function attachHyperlinkContextMenu() {
         const inMdNodeContent = linkElement.closest('.md-canvas-text, .md-canvas-editor');
         
         if (inPermanentTip || inTempDescription || inMdNodeContent) {
+            // 编辑模式下不拦截（允许光标定位/修改链接文本）
+            const inEditingArea = linkElement.closest('.md-canvas-node.editing, .temp-node-description-container.editing, .permanent-section-tip-container.editing');
+            if (inEditingArea) return;
+
             // 如果有系统快捷键，走浏览器默认行为
             if (e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) {
                 return;

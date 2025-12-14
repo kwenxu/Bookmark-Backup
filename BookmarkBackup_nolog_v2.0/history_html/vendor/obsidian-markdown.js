@@ -46,8 +46,27 @@
   };
 
   // 允许安全的HTML标签（Obsidian风格）
-  const allowedTags = new Set(['font', 'span', 'u', 'mark', 'strong', 'em', 'b', 'i', 'del', 's', 'sub', 'sup', 'br']);
-  const allowedAttrs = new Set(['color', 'style', 'class']);
+  // 注：这里的白名单用于“Markdown 源码中的原生 HTML 片段”。
+  // Canvas 空白栏目（md-node）的格式工具会生成/提示一些 HTML 语法（如 <center>、<p align="">），
+  // 其它区域（如永久栏目/书签型临时栏目说明）也需要复用同一套语法与渲染规则。
+  const allowedTags = new Set([
+    'font',
+    'span',
+    'u',
+    'mark',
+    'strong',
+    'em',
+    'b',
+    'i',
+    'del',
+    's',
+    'sub',
+    'sup',
+    'br',
+    'center',
+    'p'
+  ]);
+  const allowedAttrs = new Set(['color', 'style', 'class', 'align']);
   
   renderer.html = function safeHtml(html) {
     // 简单的标签白名单过滤

@@ -19,8 +19,8 @@
 
 - 原来的实现会转义所有 HTML 标签（出于安全考虑）
 - 现在改为白名单机制，允许安全的 HTML 标签通过
-- 支持的标签：`font`, `span`, `u`, `mark`, `strong`, `em`, `b`, `i`, `del`, `s`, `sub`, `sup`, `br`
-- 支持的属性：`color`, `style`, `class`
+- 支持的标签：`font`, `span`, `u`, `mark`, `strong`, `em`, `b`, `i`, `del`, `s`, `sub`, `sup`, `br`, `center`, `p`
+- 支持的属性：`color`, `style`, `class`, `align`
 - 自动过滤危险内容（如 `javascript:`）
 
 ### 2. 添加 CSS 样式
@@ -38,6 +38,10 @@
 #### b) 临时栏目说明（`.temp-node-description`）
 - 添加了相同的 HTML 标签样式
 - 确保在临时栏目的说明区域也能正确渲染
+
+#### c) 永久栏目说明（`.permanent-section-tip`）
+- 复用同一套 Markdown/HTML 白名单渲染规则
+- 支持与空白栏目格式工具一致的对齐语法（`<center>`、`<p align="">`）
 
 ### 3. 创建测试页面
 

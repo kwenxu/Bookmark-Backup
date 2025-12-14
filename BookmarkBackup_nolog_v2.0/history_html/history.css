@@ -5425,7 +5425,8 @@ a.tree-label.tree-bookmark-link:hover {
     z-index: 100;
     transition: box-shadow 0.18s ease, transform 0.28s cubic-bezier(0.16, 1, 0.3, 1), border-color 0.18s ease;
     cursor: default;
-    will-change: auto; /* 默认关闭，拖拽时动态启用，减少内存占用 */
+    will-change: auto;
+    /* 默认关闭，拖拽时动态启用，减少内存占用 */
     display: flex;
     /* 使用flex布局 */
     flex-direction: column;
@@ -5444,7 +5445,8 @@ a.tree-label.tree-bookmark-link:hover {
     cursor: move !important;
     z-index: 1000;
     user-select: none;
-    will-change: left, top; /* 拖拽时启用硬件加速 */
+    will-change: left, top;
+    /* 拖拽时启用硬件加速 */
 }
 
 [data-theme="dark"] .permanent-bookmark-section.dragging {
@@ -5556,6 +5558,11 @@ a.tree-label.tree-bookmark-link:hover {
     flex: 1;
 }
 
+/* 永久栏目说明：复用 WYSIWYG 的 placeholder 机制 */
+.permanent-section-tip.md-wysiwyg-editor:empty::before {
+    color: rgba(255, 255, 255, 0.7);
+}
+
 /* 永久栏目 Markdown 渲染样式 */
 .permanent-section-tip p {
     margin: 0;
@@ -5605,13 +5612,87 @@ a.tree-label.tree-bookmark-link:hover {
     font-style: italic;
 }
 
+/* 支持Obsidian风格的HTML标签（永久栏目说明） */
+.permanent-section-tip font {
+    /* font标签的color属性会自动应用 */
+}
+
+.permanent-section-tip u {
+    text-decoration: underline;
+}
+
+.permanent-section-tip b {
+    font-weight: 600;
+}
+
+.permanent-section-tip i {
+    font-style: italic;
+}
+
+.permanent-section-tip del,
+.permanent-section-tip s {
+    text-decoration: line-through;
+}
+
+.permanent-section-tip sub {
+    vertical-align: sub;
+    font-size: 0.8em;
+}
+
+.permanent-section-tip sup {
+    vertical-align: super;
+    font-size: 0.8em;
+}
+
+.permanent-section-tip mark {
+    background: #fcd34d;
+    color: #000000;
+    padding: 0 2px;
+    border-radius: 2px;
+}
+
+.permanent-section-tip a {
+    color: #93c5fd;
+    text-decoration: none;
+    border-bottom: 1px solid rgba(147, 197, 253, 0.4);
+}
+
+.permanent-section-tip a:hover {
+    border-bottom-color: rgba(147, 197, 253, 0.7);
+}
+
+/* 任务列表样式（永久栏目说明） */
+.permanent-section-tip input[type="checkbox"] {
+    margin-right: 6px;
+    cursor: pointer;
+}
+
 .permanent-section-tip-controls {
     display: flex;
     align-items: center;
     gap: 2px;
+    position: relative;
 }
 
 .permanent-section-tip-edit-btn {
+    background: rgba(255, 255, 255, 0.25);
+    border: none;
+    color: white;
+    width: 16px;
+    height: 16px;
+    border-radius: 3px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    padding: 0;
+    font-size: 10px;
+    transition: all 0.2s ease;
+    opacity: 0;
+    pointer-events: none;
+}
+
+.permanent-section-tip-format-btn {
     background: rgba(255, 255, 255, 0.25);
     border: none;
     color: white;
@@ -5649,20 +5730,52 @@ a.tree-label.tree-bookmark-link:hover {
 
 /* hover在容器上时显示编辑和关闭按钮 */
 .permanent-section-tip-container:hover .permanent-section-tip-edit-btn,
+.permanent-section-tip-container:hover .permanent-section-tip-format-btn,
 .permanent-section-tip-container:hover .permanent-section-tip-close {
     opacity: 1;
     pointer-events: auto;
 }
 
+.permanent-section-tip-container.editing .permanent-section-tip-edit-btn,
+.permanent-section-tip-container.editing .permanent-section-tip-format-btn,
+.permanent-section-tip-container.editing .permanent-section-tip-close {
+    opacity: 1;
+    pointer-events: auto;
+}
+
 .permanent-section-tip-edit-btn:hover,
+.permanent-section-tip-format-btn:hover,
 .permanent-section-tip-close:hover {
     background: rgba(255, 255, 255, 0.4);
     transform: scale(1.15);
 }
 
 .permanent-section-tip-edit-btn:active,
+.permanent-section-tip-format-btn:active,
 .permanent-section-tip-close:active {
     transform: scale(0.9);
+}
+
+.permanent-section-tip-container.editing .permanent-section-tip {
+    padding: 8px;
+    border: 1px solid rgba(255, 255, 255, 0.3);
+    border-radius: 4px;
+    background: rgba(255, 255, 255, 0.1);
+    color: white;
+    font-size: 11px;
+    font-family: inherit;
+    line-height: 1.4;
+    min-height: 50px;
+    max-height: 120px;
+    overflow: auto;
+    transition: all 0.2s ease;
+}
+
+.permanent-section-tip-container.editing .permanent-section-tip:focus {
+    outline: none;
+    background: rgba(255, 255, 255, 0.15);
+    border-color: rgba(255, 255, 255, 0.5);
+    box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.2);
 }
 
 .permanent-section-tip-editor {
@@ -5693,13 +5806,32 @@ a.tree-label.tree-bookmark-link:hover {
     pointer-events: none;
 }
 
+[data-theme="dark"] .permanent-section-tip-format-btn {
+    opacity: 0;
+    pointer-events: none;
+}
+
 [data-theme="dark"] .permanent-section-tip-close {
     background: rgba(255, 255, 255, 0.2);
 }
 
 [data-theme="dark"] .permanent-section-tip-edit-btn:hover,
+[data-theme="dark"] .permanent-section-tip-format-btn:hover,
 [data-theme="dark"] .permanent-section-tip-close:hover {
     background: rgba(255, 255, 255, 0.35);
+}
+
+[data-theme="dark"] .permanent-section-tip-container.editing .permanent-section-tip {
+    background: rgba(0, 0, 0, 0.3);
+    color: rgba(255, 255, 255, 0.8);
+    border-color: rgba(255, 255, 255, 0.25);
+}
+
+[data-theme="dark"] .permanent-section-tip-container.editing .permanent-section-tip:focus {
+    outline: none;
+    background: rgba(0, 0, 0, 0.5);
+    border-color: rgba(255, 255, 255, 0.4);
+    box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.15);
 }
 
 [data-theme="dark"] .permanent-section-tip-editor {
@@ -5747,8 +5879,10 @@ a.tree-label.tree-bookmark-link:hover {
     box-shadow: 0 6px 18px rgba(15, 23, 42, 0.12), 0 2px 6px rgba(15, 23, 42, 0.08);
     transition: box-shadow 0.18s ease, transform 0.28s cubic-bezier(0.16, 1, 0.3, 1), opacity 0.32s cubic-bezier(0.16, 1, 0.3, 1);
     z-index: 10;
-    will-change: auto; /* 默认关闭，拖拽时动态启用，减少内存占用 */
-    contain: layout style; /* 限制布局和样式计算的影响范围，提升性能 */
+    will-change: auto;
+    /* 默认关闭，拖拽时动态启用，减少内存占用 */
+    contain: layout style;
+    /* 限制布局和样式计算的影响范围，提升性能 */
     display: flex;
     flex-direction: column;
     overflow: visible;
@@ -5779,7 +5913,8 @@ a.tree-label.tree-bookmark-link:hover {
     transform: scale(1.02);
     z-index: 1000;
     user-select: none;
-    will-change: left, top, transform; /* 拖拽时启用硬件加速 */
+    will-change: left, top, transform;
+    /* 拖拽时启用硬件加速 */
 }
 
 [data-theme="dark"] .temp-canvas-node.dragging {
@@ -6011,21 +6146,28 @@ a.tree-label.tree-bookmark-link:hover {
 }
 
 .temp-node-description-container {
-    padding: 8px 16px;
+    padding: 8px 8px 8px 16px;
+    /* Right padding reduced to 8px to allow growth */
     background: rgba(0, 0, 0, 0.05);
     border-top: 1px solid rgba(0, 0, 0, 0.08);
     border-bottom: 1px solid rgba(0, 0, 0, 0.08);
     display: flex;
     align-items: center;
-    gap: 8px;
+    gap: 4px;
+    /* Reduced from 8px to match permanent section */
     position: relative;
 }
 
 .temp-node-description-content {
     flex: 1;
+    display: flex;
+    /* IMPORTANT */
+    align-items: center;
 }
 
 .temp-node-description {
+    flex: 1;
+    /* Match Permanent Section layout */
     margin: 0;
     padding: 0;
     font-size: 11px;
@@ -6152,11 +6294,11 @@ a.tree-label.tree-bookmark-link:hover {
     cursor: pointer;
 }
 
-.temp-node-description-editor {
+.temp-node-description-container.editing .temp-node-description {
     width: 100%;
     box-sizing: border-box;
     padding: 8px;
-    margin: 8px 0;
+    margin: 0;
     border: 1px solid rgba(0, 0, 0, 0.15);
     border-radius: 3px;
     background: rgba(255, 255, 255, 0.8);
@@ -6164,12 +6306,12 @@ a.tree-label.tree-bookmark-link:hover {
     font-size: 11px;
     font-family: inherit;
     line-height: 1.4;
-    resize: vertical;
     min-height: 40px;
-    max-height: 80px;
+    max-height: 120px;
+    overflow: auto;
 }
 
-.temp-node-description-editor:focus {
+.temp-node-description-container.editing .temp-node-description:focus {
     outline: none;
     border-color: rgba(37, 99, 235, 0.5);
     background: white;
@@ -6179,11 +6321,10 @@ a.tree-label.tree-bookmark-link:hover {
 .temp-node-description-controls {
     display: flex;
     align-items: center;
-    gap: 4px;
-    position: absolute;
-    right: 16px;
-    top: 50%;
-    transform: translateY(-50%);
+    gap: 2px;
+    /* Reduced from 4px to match permanent section */
+    position: relative;
+    /* relative for z-index and layout */
     opacity: 0;
     pointer-events: none;
     transition: opacity 0.2s ease;
@@ -6196,16 +6337,7 @@ a.tree-label.tree-bookmark-link:hover {
     pointer-events: auto;
 }
 
-.temp-node-description-container:hover .temp-node-description-content,
-.temp-node-description-container.editing .temp-node-description-content {
-    padding-right: 28px;
-    /* 仅为删除按钮预留空间，输入区更宽 */
-}
-
-/* 编辑模式下隐藏“编辑”按钮，仅保留删除按钮 */
-.temp-node-description-container.editing .temp-node-desc-edit-btn {
-    display: none;
-}
+/* Obsolete padding-right rule removed to allow full width via flex */
 
 /* 永久栏目：折叠提示的小栏 UI */
 .permanent-section-tip-collapsed {
@@ -6280,13 +6412,13 @@ a.tree-label.tree-bookmark-link:hover {
     border-bottom-color: rgba(255, 255, 255, 0.1);
 }
 
-[data-theme="dark"] .temp-node-description-editor {
+[data-theme="dark"] .temp-node-description-container.editing .temp-node-description {
     background: rgba(0, 0, 0, 0.3);
     color: rgba(255, 255, 255, 0.7);
     border-color: rgba(255, 255, 255, 0.15);
 }
 
-[data-theme="dark"] .temp-node-description-editor:focus {
+[data-theme="dark"] .temp-node-description-container.editing .temp-node-description:focus {
     border-color: rgba(59, 130, 246, 0.5);
     background: rgba(0, 0, 0, 0.5);
     box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.1);
@@ -6447,13 +6579,14 @@ a.tree-label.tree-bookmark-link:hover {
     display: flex;
     justify-content: space-between;
     align-items: center;
-    padding: 20px 24px;
+    padding: 14px 18px;
     border-bottom: 1px solid var(--border-color);
 }
 
 .import-dialog-header h3 {
     margin: 0;
-    font-size: 18px;
+    font-size: 16px;
+    line-height: 1.2;
     font-weight: 600;
     color: var(--text-primary);
 }
@@ -6461,12 +6594,13 @@ a.tree-label.tree-bookmark-link:hover {
 .import-dialog-close {
     background: none;
     border: none;
-    font-size: 28px;
+    font-size: 24px;
+    line-height: 1;
     color: var(--text-secondary);
     cursor: pointer;
     padding: 0;
-    width: 32px;
-    height: 32px;
+    width: 28px;
+    height: 28px;
     display: flex;
     align-items: center;
     justify-content: center;

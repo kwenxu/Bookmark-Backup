@@ -1,10 +1,11 @@
 <!DOCTYPE html>
 <html lang="zh">
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title></title>
-    <link rel="stylesheet" href="history.css">
+    <link rel="stylesheet" href="history.css?v=2.1">
     <link rel="stylesheet" href="canvas_obsidian_style.css">
     <link rel="stylesheet" href="bookmark_calendar.css">
     <link rel="stylesheet" href="../font-awesome.min.css">
@@ -14,7 +15,7 @@
     <script src="bookmark_tree_context_menu.js" defer></script>
     <script src="bookmark_tree_drag_drop.js" defer></script>
     <script src="pointer_drag.js" defer></script>
-    <script src="bookmark_canvas_module.js" defer></script>
+    <script src="bookmark_canvas_module.js?v=2.1" defer></script>
     <script src="shortcuts_helpers.js" defer></script>
     <script src="bookmark_calendar.js" defer></script>
     <script src="browsing_history_calendar.js" defer></script>
@@ -22,6 +23,7 @@
     <script src="database/utils.js" defer></script>
     <script src="history.js" defer></script>
 </head>
+
 <body>
     <!-- 头部导航 -->
     <header class="history-header">
@@ -35,7 +37,7 @@
                 <input type="text" id="searchInput" placeholder="搜索书签、文件夹..." />
                 <i class="fas fa-search"></i>
             </div>
-            
+
             <!-- 工具按钮组 -->
             <div class="tool-buttons">
                 <button id="refreshBtn" class="tool-btn">
@@ -69,7 +71,7 @@
             <button class="sidebar-toggle" id="sidebarToggle" title="收起/展开侧边栏">
                 <i class="fas fa-chevron-left"></i>
             </button>
-            
+
             <nav class="nav-tabs">
                 <!-- Bookmark Git 区域组 -->
                 <div class="nav-group">
@@ -129,16 +131,25 @@
                         <div class="shortcuts-card">
                             <div style="display: flex; flex-direction: column; gap: 10px;">
                                 <div>
-                                    <p id="openSourceGithubLabel" style="font-size: 14px; color: var(--text-secondary); margin: 0 0 4px 0;">GitHub 仓库:</p>
-                                    <a id="openSourceGithubLink" href="https://github.com/kwenxu/Bookmark-Backup?tab=readme-ov-file#readme" target="_blank" style="display: block; padding: 8px 12px; background-color: var(--bg-tertiary); border-radius: 6px; color: var(--link-color); text-decoration: none; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">
+                                    <p id="openSourceGithubLabel"
+                                        style="font-size: 14px; color: var(--text-secondary); margin: 0 0 4px 0;">GitHub
+                                        仓库:</p>
+                                    <a id="openSourceGithubLink"
+                                        href="https://github.com/kwenxu/Bookmark-Backup?tab=readme-ov-file#readme"
+                                        target="_blank"
+                                        style="display: block; padding: 8px 12px; background-color: var(--bg-tertiary); border-radius: 6px; color: var(--link-color); text-decoration: none; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">
                                         <i class="fab fa-github" style="margin-right: 5px;"></i>
                                         https://github.com/kwenxu/Bookmark-Backup
                                     </a>
                                 </div>
-                                
+
                                 <div>
-                                    <p id="openSourceIssueLabel" style="font-size: 14px; color: var(--text-secondary); margin: 0 0 4px 0;">问题反馈:</p>
-                                    <a id="openSourceIssueLink" href="https://github.com/kwenxu/Bookmark-Backup/issues" target="_blank" style="display: block; padding: 8px 12px; background-color: var(--bg-tertiary); border-radius: 6px; color: var(--link-color); text-decoration: none;">
+                                    <p id="openSourceIssueLabel"
+                                        style="font-size: 14px; color: var(--text-secondary); margin: 0 0 4px 0;">问题反馈:
+                                    </p>
+                                    <a id="openSourceIssueLink" href="https://github.com/kwenxu/Bookmark-Backup/issues"
+                                        target="_blank"
+                                        style="display: block; padding: 8px 12px; background-color: var(--bg-tertiary); border-radius: 6px; color: var(--link-color); text-decoration: none;">
                                         <i class="fas fa-exclamation-circle" style="margin-right: 5px;"></i>
                                         <span id="openSourceIssueText">提交问题</span>
                                     </a>
@@ -228,7 +239,7 @@
                                 <code>因子值 = 1 / (1 + (实际值 / 阈值)^0.7)</code>
                             </div>
                         </div>
-                        
+
                         <div class="formula-help-section">
                             <h3 id="formulaHelpFeaturesTitle">公式特点</h3>
                             <ul class="formula-help-list">
@@ -238,16 +249,17 @@
                                 <li id="formulaHelpFeature4"><strong>大数值友好</strong>：1000次点击仍有0.02的区分度</li>
                             </ul>
                         </div>
-                        
+
                         <div class="formula-help-section">
                             <h3 id="formulaHelpNotesTitle">注意事项</h3>
                             <ul class="formula-help-list">
-                                <li id="formulaHelpNote1"><strong>F、C、T</strong> 使用 inverse 模式：值越大，因子越小（如点击越多，冷门度越低）</li>
+                                <li id="formulaHelpNote1"><strong>F、C、T</strong> 使用 inverse 模式：值越大，因子越小（如点击越多，冷门度越低）
+                                </li>
                                 <li id="formulaHelpNote2"><strong>D</strong> 使用正向模式：未访问天数越多，遗忘度越高</li>
                                 <li id="formulaHelpNote3"><strong>L</strong> 是布尔值：手动添加=1，否则=0</li>
                             </ul>
                         </div>
-                        
+
                         <div class="formula-help-section">
                             <h3 id="formulaHelpExampleTitle">效果示例</h3>
                             <table class="formula-help-table">
@@ -259,12 +271,36 @@
                                     </tr>
                                 </thead>
                                 <tbody>
-                                    <tr><td>0</td><td>1.00</td><td id="formulaHelpMeaning1">最高优先</td></tr>
-                                    <tr><td>0.5×</td><td>0.75</td><td id="formulaHelpMeaning2">较高</td></tr>
-                                    <tr><td id="formulaHelpThreshold">1×(阈值)</td><td>0.50</td><td id="formulaHelpMeaning3">中等</td></tr>
-                                    <tr><td>3×</td><td>0.22</td><td id="formulaHelpMeaning4">较低</td></tr>
-                                    <tr><td>10×</td><td>0.10</td><td id="formulaHelpMeaning5">很低</td></tr>
-                                    <tr><td>100×</td><td>0.02</td><td id="formulaHelpMeaning6">极低但仍有区分</td></tr>
+                                    <tr>
+                                        <td>0</td>
+                                        <td>1.00</td>
+                                        <td id="formulaHelpMeaning1">最高优先</td>
+                                    </tr>
+                                    <tr>
+                                        <td>0.5×</td>
+                                        <td>0.75</td>
+                                        <td id="formulaHelpMeaning2">较高</td>
+                                    </tr>
+                                    <tr>
+                                        <td id="formulaHelpThreshold">1×(阈值)</td>
+                                        <td>0.50</td>
+                                        <td id="formulaHelpMeaning3">中等</td>
+                                    </tr>
+                                    <tr>
+                                        <td>3×</td>
+                                        <td>0.22</td>
+                                        <td id="formulaHelpMeaning4">较低</td>
+                                    </tr>
+                                    <tr>
+                                        <td>10×</td>
+                                        <td>0.10</td>
+                                        <td id="formulaHelpMeaning5">很低</td>
+                                    </tr>
+                                    <tr>
+                                        <td>100×</td>
+                                        <td>0.02</td>
+                                        <td id="formulaHelpMeaning6">极低但仍有区分</td>
+                                    </tr>
                                 </tbody>
                             </table>
                         </div>
@@ -285,7 +321,7 @@
                         </button>
                     </div>
                 </div>
-                
+
                 <!-- 变化列表（卡片式，书签树预览会内嵌到Bookmark Changes内部） -->
                 <div id="currentChangesList" class="current-changes-container">
                     <!-- 动态加载当前变化 -->
@@ -315,7 +351,7 @@
                 <div class="view-header">
                     <h2 id="additionsViewTitle">书签记录</h2>
                 </div>
-                
+
                 <!-- 书签记录子视图标签 -->
                 <div class="additions-tabs">
                     <button id="additionsTabReview" class="additions-tab active" data-tab="review">书签添加记录</button>
@@ -396,7 +432,8 @@
                     <!-- 日历容器 -->
                     <div id="bookmarkCalendarView" class="bookmark-calendar-view">
                         <div style="padding: 40px; text-align: center; color: var(--text-secondary);">
-                            <i class="fas fa-calendar-alt" style="font-size: 48px; opacity: 0.3; margin-bottom: 16px;"></i>
+                            <i class="fas fa-calendar-alt"
+                                style="font-size: 48px; opacity: 0.3; margin-bottom: 16px;"></i>
                             <p id="calendarLoadingText">正在加载日历...</p>
                         </div>
                     </div>
@@ -406,7 +443,8 @@
                 <div id="additionsBrowsingPanel" class="additions-subview">
                     <!-- 浏览记录子视图标签 -->
                     <div class="browsing-sub-tabs">
-                        <button id="browsingTabHistory" class="browsing-sub-tab active" data-sub-tab="history">点击记录</button>
+                        <button id="browsingTabHistory" class="browsing-sub-tab active"
+                            data-sub-tab="history">点击记录</button>
                         <button id="browsingTabRanking" class="browsing-sub-tab" data-sub-tab="ranking">点击排行</button>
                         <button id="browsingTabRelated" class="browsing-sub-tab" data-sub-tab="related">关联记录</button>
                     </div>
@@ -428,7 +466,8 @@
                                         <!-- 年份候选项将在这里动态生成 -->
                                     </div>
                                 </div>
-                                <span class="breadcrumb-separator" id="browsingSeparator1" style="display:none;">/</span>
+                                <span class="breadcrumb-separator" id="browsingSeparator1"
+                                    style="display:none;">/</span>
                                 <div class="breadcrumb-item-wrapper">
                                     <button class="breadcrumb-btn" id="browsingBreadcrumbMonth" style="display:none;">
                                         <span id="browsingBreadcrumbMonthText">11月</span>
@@ -440,7 +479,8 @@
                                         <!-- 月份候选项将在这里动态生成 -->
                                     </div>
                                 </div>
-                                <span class="breadcrumb-separator" id="browsingSeparator2" style="display:none;">/</span>
+                                <span class="breadcrumb-separator" id="browsingSeparator2"
+                                    style="display:none;">/</span>
                                 <div class="breadcrumb-item-wrapper">
                                     <button class="breadcrumb-btn" id="browsingBreadcrumbWeek" style="display:none;">
                                         <span id="browsingBreadcrumbWeekText">第45周</span>
@@ -452,7 +492,8 @@
                                         <!-- 周候选项将在这里动态生成 -->
                                     </div>
                                 </div>
-                                <span class="breadcrumb-separator" id="browsingSeparator3" style="display:none;">/</span>
+                                <span class="breadcrumb-separator" id="browsingSeparator3"
+                                    style="display:none;">/</span>
                                 <div class="breadcrumb-item-wrapper">
                                     <button class="breadcrumb-btn" id="browsingBreadcrumbDay" style="display:none;">
                                         <span id="browsingBreadcrumbDayText">11月20日</span>
@@ -484,7 +525,8 @@
                         <!-- 日历容器 -->
                         <div id="browsingCalendarView" class="bookmark-calendar-view">
                             <div style="padding: 40px; text-align: center; color: var(--text-secondary);">
-                                <i class="fas fa-calendar-alt" style="font-size: 48px; opacity: 0.3; margin-bottom: 16px;"></i>
+                                <i class="fas fa-calendar-alt"
+                                    style="font-size: 48px; opacity: 0.3; margin-bottom: 16px;"></i>
                                 <p id="browsingCalendarLoadingText">正在加载日历...</p>
                             </div>
                         </div>
@@ -500,11 +542,16 @@
                                 </div>
                             </div>
                             <div class="browsing-ranking-filters">
-                                <button id="browsingRankingFilterDay" class="ranking-time-filter-btn" data-range="day">当天</button>
-                                <button id="browsingRankingFilterWeek" class="ranking-time-filter-btn" data-range="week">当周</button>
-                                <button id="browsingRankingFilterMonth" class="ranking-time-filter-btn active" data-range="month">当月</button>
-                                <button id="browsingRankingFilterYear" class="ranking-time-filter-btn" data-range="year">当年</button>
-                                <button id="browsingRankingFilterAll" class="ranking-time-filter-btn" data-range="all">全部</button>
+                                <button id="browsingRankingFilterDay" class="ranking-time-filter-btn"
+                                    data-range="day">当天</button>
+                                <button id="browsingRankingFilterWeek" class="ranking-time-filter-btn"
+                                    data-range="week">当周</button>
+                                <button id="browsingRankingFilterMonth" class="ranking-time-filter-btn active"
+                                    data-range="month">当月</button>
+                                <button id="browsingRankingFilterYear" class="ranking-time-filter-btn"
+                                    data-range="year">当年</button>
+                                <button id="browsingRankingFilterAll" class="ranking-time-filter-btn"
+                                    data-range="all">全部</button>
                             </div>
                         </div>
                         <!-- 时间段菜单容器（在筛选按钮下方） -->
@@ -527,11 +574,16 @@
                                 </div>
                             </div>
                             <div class="browsing-ranking-filters">
-                                <button id="browsingRelatedFilterDay" class="ranking-time-filter-btn active" data-range="day">当天</button>
-                                <button id="browsingRelatedFilterWeek" class="ranking-time-filter-btn" data-range="week">当周</button>
-                                <button id="browsingRelatedFilterMonth" class="ranking-time-filter-btn" data-range="month">当月</button>
-                                <button id="browsingRelatedFilterYear" class="ranking-time-filter-btn" data-range="year">当年</button>
-                                <button id="browsingRelatedFilterAll" class="ranking-time-filter-btn" data-range="all">全部</button>
+                                <button id="browsingRelatedFilterDay" class="ranking-time-filter-btn active"
+                                    data-range="day">当天</button>
+                                <button id="browsingRelatedFilterWeek" class="ranking-time-filter-btn"
+                                    data-range="week">当周</button>
+                                <button id="browsingRelatedFilterMonth" class="ranking-time-filter-btn"
+                                    data-range="month">当月</button>
+                                <button id="browsingRelatedFilterYear" class="ranking-time-filter-btn"
+                                    data-range="year">当年</button>
+                                <button id="browsingRelatedFilterAll" class="ranking-time-filter-btn"
+                                    data-range="all">全部</button>
                                 <button id="browsingRelatedSortBtn" class="ranking-sort-btn">
                                     <i class="fas fa-sort-amount-down"></i>
                                 </button>
@@ -565,7 +617,7 @@
                             </button>
                         </div>
                     </div>
-                    
+
                     <!-- 正在追踪的书签 -->
                     <div class="tracking-section">
                         <div class="tracking-section-header">
@@ -579,7 +631,9 @@
                             <table class="tracking-table" id="trackingCurrentTable">
                                 <thead>
                                     <tr>
-                                        <th id="trackingHeaderState"><span class="tracking-header-text">状态</span><i class="fas fa-question-circle tracking-state-help" id="trackingStateHelpBtn" title="状态说明"></i></th>
+                                        <th id="trackingHeaderState"><span class="tracking-header-text">状态</span><i
+                                                class="fas fa-question-circle tracking-state-help"
+                                                id="trackingStateHelpBtn" title="状态说明"></i></th>
                                         <th id="trackingHeaderTitle">书签</th>
                                         <th id="trackingHeaderTime">综合时间</th>
                                         <th id="trackingHeaderWakes">唤醒</th>
@@ -596,7 +650,7 @@
                             </table>
                         </div>
                     </div>
-                    
+
                     <!-- 活跃时间排行 -->
                     <div class="tracking-section">
                         <div class="tracking-section-header">
@@ -637,9 +691,12 @@
                             <div class="card-footer">
                                 <span class="card-priority">S = --</span>
                                 <div class="card-actions">
-                                    <button class="card-btn card-btn-block" title="屏蔽"><i class="fas fa-ban"></i></button>
-                                    <button class="card-btn card-btn-later" title="待复习"><i class="fas fa-clock"></i></button>
-                                    <button class="card-btn card-btn-skip" title="跳过"><i class="fas fa-forward"></i></button>
+                                    <button class="card-btn card-btn-block" title="屏蔽"><i
+                                            class="fas fa-ban"></i></button>
+                                    <button class="card-btn card-btn-later" title="待复习"><i
+                                            class="fas fa-clock"></i></button>
+                                    <button class="card-btn card-btn-skip" title="跳过"><i
+                                            class="fas fa-forward"></i></button>
                                 </div>
                             </div>
                         </div>
@@ -649,9 +706,12 @@
                             <div class="card-footer">
                                 <span class="card-priority">S = --</span>
                                 <div class="card-actions">
-                                    <button class="card-btn card-btn-block" title="屏蔽"><i class="fas fa-ban"></i></button>
-                                    <button class="card-btn card-btn-later" title="待复习"><i class="fas fa-clock"></i></button>
-                                    <button class="card-btn card-btn-skip" title="跳过"><i class="fas fa-forward"></i></button>
+                                    <button class="card-btn card-btn-block" title="屏蔽"><i
+                                            class="fas fa-ban"></i></button>
+                                    <button class="card-btn card-btn-later" title="待复习"><i
+                                            class="fas fa-clock"></i></button>
+                                    <button class="card-btn card-btn-skip" title="跳过"><i
+                                            class="fas fa-forward"></i></button>
                                 </div>
                             </div>
                         </div>
@@ -661,16 +721,21 @@
                             <div class="card-footer">
                                 <span class="card-priority">S = --</span>
                                 <div class="card-actions">
-                                    <button class="card-btn card-btn-block" title="屏蔽"><i class="fas fa-ban"></i></button>
-                                    <button class="card-btn card-btn-later" title="待复习"><i class="fas fa-clock"></i></button>
-                                    <button class="card-btn card-btn-skip" title="跳过"><i class="fas fa-forward"></i></button>
+                                    <button class="card-btn card-btn-block" title="屏蔽"><i
+                                            class="fas fa-ban"></i></button>
+                                    <button class="card-btn card-btn-later" title="待复习"><i
+                                            class="fas fa-clock"></i></button>
+                                    <button class="card-btn card-btn-skip" title="跳过"><i
+                                            class="fas fa-forward"></i></button>
                                 </div>
                             </div>
                         </div>
                     </div>
                     <div class="card-navigation">
-                        <button id="refreshSettingsBtn" class="card-nav-btn compact" title="自动刷新设置"><i class="fas fa-cog"></i></button>
-                        <button id="cardRefreshBtn" class="card-nav-btn primary"><i class="fas fa-sync-alt"></i> <span id="cardRefreshText">刷新推荐</span></button>
+                        <button id="refreshSettingsBtn" class="card-nav-btn compact" title="自动刷新设置"><i
+                                class="fas fa-cog"></i></button>
+                        <button id="cardRefreshBtn" class="card-nav-btn primary"><i class="fas fa-sync-alt"></i> <span
+                                id="cardRefreshText">刷新推荐</span></button>
                     </div>
                 </div>
 
@@ -679,9 +744,13 @@
                     <!-- 待复习队列（数量为0时默认折叠） -->
                     <div class="recommend-postponed-section collapsible draggable-section" data-section-id="postponed">
                         <div class="section-header">
-                            <span class="section-title"><i class="fas fa-clock"></i> <span id="postponedTitle">待复习</span> (<span id="postponedCount">0</span>) <span id="postponedPriorityBadge" class="priority-mode-badge" style="display:none;">⚡优先</span></span>
+                            <span class="section-title"><i class="fas fa-clock"></i> <span
+                                    id="postponedTitle">待复习</span> (<span id="postponedCount">0</span>) <span
+                                    id="postponedPriorityBadge" class="priority-mode-badge"
+                                    style="display:none;">⚡优先</span></span>
                             <div class="section-header-actions">
-                                <button class="section-action-btn" id="postponedAddBtn" title="添加书签到待复习"><i class="fas fa-plus"></i></button>
+                                <button class="section-action-btn" id="postponedAddBtn" title="添加书签到待复习"><i
+                                        class="fas fa-plus"></i></button>
                                 <button class="section-toggle"><i class="fas fa-chevron-down"></i></button>
                             </div>
                         </div>
@@ -695,16 +764,19 @@
                     </div>
 
                     <!-- 屏蔽管理（默认折叠） -->
-                    <div class="recommend-block-section collapsible collapsed draggable-section" data-section-id="block">
+                    <div class="recommend-block-section collapsible collapsed draggable-section"
+                        data-section-id="block">
                         <div class="section-header">
-                            <span class="section-title"><i class="fas fa-ban"></i> <span id="blockManageTitle">屏蔽管理</span></span>
+                            <span class="section-title"><i class="fas fa-ban"></i> <span
+                                    id="blockManageTitle">屏蔽管理</span></span>
                             <button class="section-toggle"><i class="fas fa-chevron-down"></i></button>
                         </div>
                         <div class="section-content">
                             <!-- 已屏蔽书签 -->
                             <div class="block-subsection">
                                 <div class="block-subsection-header">
-                                    <span><i class="fas fa-bookmark"></i> <span id="blockedBookmarksTitle">已屏蔽书签</span> (<span id="blockedBookmarksCount">0</span>)</span>
+                                    <span><i class="fas fa-bookmark"></i> <span id="blockedBookmarksTitle">已屏蔽书签</span>
+                                        (<span id="blockedBookmarksCount">0</span>)</span>
                                 </div>
                                 <div class="block-list" id="blockedBookmarksList">
                                     <div class="empty-state-inline" id="blockedBookmarksEmpty">
@@ -715,8 +787,10 @@
                             <!-- 已屏蔽文件夹 -->
                             <div class="block-subsection">
                                 <div class="block-subsection-header">
-                                    <span><i class="fas fa-folder"></i> <span id="blockedFoldersTitle">已屏蔽文件夹</span> (<span id="blockedFoldersCount">0</span>)</span>
-                                    <button class="block-add-btn" id="addBlockFolderBtn"><i class="fas fa-plus"></i></button>
+                                    <span><i class="fas fa-folder"></i> <span id="blockedFoldersTitle">已屏蔽文件夹</span>
+                                        (<span id="blockedFoldersCount">0</span>)</span>
+                                    <button class="block-add-btn" id="addBlockFolderBtn"><i
+                                            class="fas fa-plus"></i></button>
                                 </div>
                                 <div class="block-list" id="blockedFoldersList">
                                     <div class="empty-state-inline" id="blockedFoldersEmpty">
@@ -727,8 +801,10 @@
                             <!-- 已屏蔽域名 -->
                             <div class="block-subsection">
                                 <div class="block-subsection-header">
-                                    <span><i class="fas fa-globe"></i> <span id="blockedDomainsTitle">已屏蔽域名</span> (<span id="blockedDomainsCount">0</span>)</span>
-                                    <button class="block-add-btn" id="addBlockDomainBtn"><i class="fas fa-plus"></i></button>
+                                    <span><i class="fas fa-globe"></i> <span id="blockedDomainsTitle">已屏蔽域名</span>
+                                        (<span id="blockedDomainsCount">0</span>)</span>
+                                    <button class="block-add-btn" id="addBlockDomainBtn"><i
+                                            class="fas fa-plus"></i></button>
                                 </div>
                                 <div class="block-list" id="blockedDomainsList">
                                     <div class="empty-state-inline" id="blockedDomainsEmpty">
@@ -740,7 +816,8 @@
                     </div>
 
                     <!-- 权重公式（默认折叠） -->
-                    <div class="recommend-formula-section collapsible collapsed draggable-section" data-section-id="formula">
+                    <div class="recommend-formula-section collapsible collapsed draggable-section"
+                        data-section-id="formula">
                         <div class="section-header" id="formulaHeader">
                             <i class="fas fa-superscript formula-icon"></i>
                             <div class="formula-main">
@@ -748,7 +825,8 @@
                                 <span class="formula-equals">=</span>
                                 <span class="formula-bracket">(</span>
                                 <span class="formula-term">
-                                    <input type="text" class="formula-weight" id="weightFreshness" value="0.15" readonly>
+                                    <input type="text" class="formula-weight" id="weightFreshness" value="0.15"
+                                        readonly>
                                     <span class="formula-multiply">×</span>
                                     <span class="formula-factor">F</span>
                                 </span>
@@ -760,19 +838,22 @@
                                 </span>
                                 <span class="formula-plus">+</span>
                                 <span class="formula-term" id="termTimeDegree">
-                                    <input type="text" class="formula-weight" id="weightTimeDegree" value="0.30" readonly>
+                                    <input type="text" class="formula-weight" id="weightTimeDegree" value="0.30"
+                                        readonly>
                                     <span class="formula-multiply">×</span>
                                     <span class="formula-factor">T</span>
                                 </span>
                                 <span class="formula-plus">+</span>
                                 <span class="formula-term">
-                                    <input type="text" class="formula-weight" id="weightForgetting" value="0.20" readonly>
+                                    <input type="text" class="formula-weight" id="weightForgetting" value="0.20"
+                                        readonly>
                                     <span class="formula-multiply">×</span>
                                     <span class="formula-factor">D</span>
                                 </span>
                                 <span class="formula-plus">+</span>
                                 <span class="formula-term" id="termLaterReview">
-                                    <input type="text" class="formula-weight" id="weightLaterReview" value="0.20" readonly>
+                                    <input type="text" class="formula-weight" id="weightLaterReview" value="0.20"
+                                        readonly>
                                     <span class="formula-multiply">×</span>
                                     <span class="formula-factor">L</span>
                                 </span>
@@ -785,22 +866,38 @@
                         <div class="section-content" id="formulaContent">
                             <div class="formula-display">
                                 <div class="formula-legend">
-                                    <span class="legend-item legend-score"><span class="legend-factor">S</span><span id="legendScore">推荐分数</span></span>
-                                    <span class="legend-item"><span class="legend-factor">F</span><span id="legendFreshness">新鲜度</span></span>
-                                    <span class="legend-item"><span class="legend-factor">C</span><span id="legendColdness">冷门度</span></span>
-                                    <span class="legend-item"><span class="legend-factor">T</span><span id="legendTimeDegree">时间度</span></span>
-                                    <span class="legend-item"><span class="legend-factor">D</span><span id="legendForgetting">遗忘度</span></span>
-                                    <span class="legend-item"><span class="legend-factor">L</span><span id="legendLaterReview">待复习</span></span>
-                                    <span class="legend-item legend-recall"><span class="legend-factor">R</span><span id="legendRecall">记忆度</span></span>
+                                    <span class="legend-item legend-score"><span class="legend-factor">S</span><span
+                                            id="legendScore">推荐分数</span></span>
+                                    <span class="legend-item"><span class="legend-factor">F</span><span
+                                            id="legendFreshness">新鲜度</span></span>
+                                    <span class="legend-item"><span class="legend-factor">C</span><span
+                                            id="legendColdness">冷门度</span></span>
+                                    <span class="legend-item"><span class="legend-factor">T</span><span
+                                            id="legendTimeDegree">时间度</span></span>
+                                    <span class="legend-item"><span class="legend-factor">D</span><span
+                                            id="legendForgetting">遗忘度</span></span>
+                                    <span class="legend-item"><span class="legend-factor">L</span><span
+                                            id="legendLaterReview">待复习</span></span>
+                                    <span class="legend-item legend-recall"><span class="legend-factor">R</span><span
+                                            id="legendRecall">记忆度</span></span>
                                 </div>
                                 <div class="formula-thresholds-wrapper">
                                     <div class="formula-thresholds">
-                                        <span class="threshold-item">F = 1/(1+(添加天数/<input type="text" class="threshold-value" id="thresholdFreshness" value="30">)⁰·⁷)</span>
-                                        <span class="threshold-item">C = 1/(1+(点击数/<input type="text" class="threshold-value" id="thresholdColdness" value="10">)⁰·⁷)</span>
-                                        <span class="threshold-item">T = 1/(1+(综合时间/<input type="text" class="threshold-value" id="thresholdTimeDegree" value="5">分钟)⁰·⁷)</span>
-                                        <span class="threshold-item">D = 1-1/(1+(未访问/<input type="text" class="threshold-value" id="thresholdForgetting" value="14">天)⁰·⁷)</span>
-                                        <span class="threshold-item" id="thresholdLaterReviewItem">L = <span id="laterReviewStatus">0</span><span id="laterReviewDesc">（手动添加后=1）</span></span>
-                                        <span class="threshold-item" id="thresholdRecallItem">R = 1-0.9<sup>t/S</sup><span id="recallDesc">（FSRS遗忘曲线：复习后锐减，逐渐恢复）</span></span>
+                                        <span class="threshold-item">F = 1/(1+(添加天数/<input type="text"
+                                                class="threshold-value" id="thresholdFreshness" value="30">)⁰·⁷)</span>
+                                        <span class="threshold-item">C = 1/(1+(点击数/<input type="text"
+                                                class="threshold-value" id="thresholdColdness" value="10">)⁰·⁷)</span>
+                                        <span class="threshold-item">T = 1/(1+(综合时间/<input type="text"
+                                                class="threshold-value" id="thresholdTimeDegree"
+                                                value="5">分钟)⁰·⁷)</span>
+                                        <span class="threshold-item">D = 1-1/(1+(未访问/<input type="text"
+                                                class="threshold-value" id="thresholdForgetting"
+                                                value="14">天)⁰·⁷)</span>
+                                        <span class="threshold-item" id="thresholdLaterReviewItem">L = <span
+                                                id="laterReviewStatus">0</span><span
+                                                id="laterReviewDesc">（手动添加后=1）</span></span>
+                                        <span class="threshold-item" id="thresholdRecallItem">R =
+                                            1-0.9<sup>t/S</sup><span id="recallDesc">（FSRS遗忘曲线：复习后锐减，逐渐恢复）</span></span>
                                     </div>
                                     <button class="formula-help-btn" id="formulaHelpBtn" title="公式说明">
                                         <i class="fas fa-question-circle"></i>
@@ -820,12 +917,14 @@
                                         <button class="preset-btn" data-mode="wander" title="随机探索发现">
                                             <i class="fas fa-dice"></i> <span>漫游模式</span>
                                         </button>
-                                        <button class="preset-btn priority-mode" data-mode="priority" id="priorityModeBtn" style="display:none;" title="优先复习手动添加的书签">
+                                        <button class="preset-btn priority-mode" data-mode="priority"
+                                            id="priorityModeBtn" style="display:none;" title="优先复习手动添加的书签">
                                             <i class="fas fa-bolt"></i> <span id="priorityModeText">优先巩固</span>
                                         </button>
                                     </div>
                                     <div class="formula-actions">
-                                        <button id="resetFormulaBtn" class="formula-btn"><i class="fas fa-undo"></i> <span id="resetFormulaText">恢复默认</span></button>
+                                        <button id="resetFormulaBtn" class="formula-btn"><i class="fas fa-undo"></i>
+                                            <span id="resetFormulaText">恢复默认</span></button>
                                     </div>
                                 </div>
                             </div>
@@ -835,7 +934,8 @@
                     <!-- 热力图 -->
                     <div class="recommend-heatmap-section collapsible draggable-section" data-section-id="heatmap">
                         <div class="section-header" id="heatmapHeader">
-                            <span class="section-title"><i class="fas fa-fire"></i> <span id="heatmapTitle">复习热力图</span></span>
+                            <span class="section-title"><i class="fas fa-fire"></i> <span
+                                    id="heatmapTitle">复习热力图</span></span>
                             <button class="section-toggle"><i class="fas fa-chevron-down"></i></button>
                         </div>
                         <div class="section-content" id="heatmapContent">
@@ -859,10 +959,12 @@
                     <!-- 自定义纵向滚动条 -->
                     <div class="canvas-scrollbar vertical" id="canvasVerticalScrollbar">
                         <div class="scrollbar-controls">
-                            <button class="scrollbar-btn scroll-hide" data-axis="vertical" data-action="toggle-hide" aria-label="隐藏纵向滚动条">
+                            <button class="scrollbar-btn scroll-hide" data-axis="vertical" data-action="toggle-hide"
+                                aria-label="隐藏纵向滚动条">
                                 <i class="fas fa-eye-slash"></i>
                             </button>
-                            <button class="scrollbar-btn scroll-disable" data-axis="vertical" data-action="toggle-disable" aria-label="禁用纵向滚动">
+                            <button class="scrollbar-btn scroll-disable" data-axis="vertical"
+                                data-action="toggle-disable" aria-label="禁用纵向滚动">
                                 <i class="fas fa-ban"></i>
                             </button>
                         </div>
@@ -870,73 +972,92 @@
                             <div class="scrollbar-thumb" data-axis="vertical"></div>
                         </div>
                     </div>
-                    
+
                     <!-- 自定义横向滚动条 -->
-                    <div class="canvas-scrollbar horizontal" id="canvasHorizontalScrollbar" style="display: flex; align-items: center; gap: 12px;">
+                    <div class="canvas-scrollbar horizontal" id="canvasHorizontalScrollbar"
+                        style="display: flex; align-items: center; gap: 12px;">
                         <div class="scrollbar-controls">
-                            <button class="scrollbar-btn scroll-hide" data-axis="horizontal" data-action="toggle-hide" aria-label="隐藏横向滚动条">
+                            <button class="scrollbar-btn scroll-hide" data-axis="horizontal" data-action="toggle-hide"
+                                aria-label="隐藏横向滚动条">
                                 <i class="fas fa-eye-slash"></i>
                             </button>
-                            <button class="scrollbar-btn scroll-disable" data-axis="horizontal" data-action="toggle-disable" aria-label="禁用横向滚动">
+                            <button class="scrollbar-btn scroll-disable" data-axis="horizontal"
+                                data-action="toggle-disable" aria-label="禁用横向滚动">
                                 <i class="fas fa-ban"></i>
                             </button>
                         </div>
-                        <span class="scrollbar-hint" data-i18n-text="horizontalScrollHint" data-en="Shift + Wheel" data-zh="Shift + 滚轮">Shift + 滚轮</span>
+                        <span class="scrollbar-hint" data-i18n-text="horizontalScrollHint" data-en="Shift + Wheel"
+                            data-zh="Shift + 滚轮">Shift + 滚轮</span>
                         <div class="scrollbar-track">
                             <div class="scrollbar-thumb" data-axis="horizontal"></div>
                         </div>
                     </div>
-                    
+
                     <!-- Canvas画布工作区 -->
                     <div class="canvas-workspace" id="canvasWorkspace">
                         <!-- 缩放控制器（固定在画布左上角） -->
                         <div class="canvas-zoom-indicator" id="canvasZoomIndicator" style="display: none;">
                             <div class="canvas-zoom-header">
-                                <button class="canvas-fullscreen-btn" id="canvasFullscreenBtn" aria-label="进入全屏" aria-pressed="false">全屏</button>
-                                <button class="canvas-help-btn" id="canvasHelpBtn" title="说明"><i class="fas fa-question-circle"></i></button>
+                                <button class="canvas-fullscreen-btn" id="canvasFullscreenBtn" aria-label="进入全屏"
+                                    aria-pressed="false">全屏</button>
+                                <button class="canvas-help-btn" id="canvasHelpBtn" title="说明"><i
+                                        class="fas fa-question-circle"></i></button>
                                 <span class="canvas-zoom-label" id="canvasZoomLabel">缩放</span>
                                 <span class="zoom-value" id="zoomValue">100%</span>
                             </div>
                             <div class="canvas-zoom-controls">
-                                <button class="zoom-btn" id="canvasManageBtn" title="管理"><span id="canvasManageText">管理</span></button>
-                                <button class="zoom-btn" id="zoomLocateBtn" title="定位到永久栏目"><span id="zoomLocateText">定位</span></button>
+                                <button class="zoom-btn" id="canvasManageBtn" title="管理"><span
+                                        id="canvasManageText">管理</span></button>
+                                <button class="zoom-btn" id="zoomLocateBtn" title="定位到永久栏目"><span
+                                        id="zoomLocateText">定位</span></button>
                                 <button class="zoom-btn" id="zoomOutBtn" title="缩小 (10%)">−</button>
                                 <button class="zoom-btn" id="zoomInBtn" title="放大 (10%)">+</button>
                             </div>
                         </div>
-                        
+
                         <!-- Canvas快捷键说明弹窗 -->
                         <div class="canvas-help-modal" id="canvasHelpModal" style="display: none;">
                             <div class="canvas-help-modal-header">
                                 <h4 id="canvasHelpModalTitle">说明</h4>
-                                <button class="canvas-help-modal-close" id="canvasHelpModalClose"><i class="fas fa-times"></i></button>
+                                <button class="canvas-help-modal-close" id="canvasHelpModalClose"><i
+                                        class="fas fa-times"></i></button>
                             </div>
                             <div class="canvas-help-modal-body">
                                 <div class="canvas-help-section">
                                     <div class="canvas-help-section-header">
                                         <span class="canvas-help-section-title" id="canvasHelpCtrlTitle">Ctrl 键操作</span>
-                                        <button class="canvas-shortcut-edit-btn" id="editCtrlKeyBtn" title="点击修改快捷键"><i class="fas fa-edit"></i></button>
+                                        <button class="canvas-shortcut-edit-btn" id="editCtrlKeyBtn" title="点击修改快捷键"><i
+                                                class="fas fa-edit"></i></button>
                                     </div>
                                     <div class="canvas-help-row">
-                                        <span class="canvas-help-key"><kbd class="canvas-shortcut-key" id="ctrlKeyDisplay">Ctrl</kbd> + <span id="canvasHelpCtrlLeftClick">左键（按住）</span></span>
+                                        <span class="canvas-help-key"><kbd class="canvas-shortcut-key"
+                                                id="ctrlKeyDisplay">Ctrl</kbd> + <span
+                                                id="canvasHelpCtrlLeftClick">左键（按住）</span></span>
                                         <span class="canvas-help-desc" id="canvasHelpCtrlLeftDesc">拖动画布 或 栏目卡片</span>
                                     </div>
                                     <div class="canvas-help-row">
-                                        <span class="canvas-help-key"><kbd class="canvas-shortcut-key" id="ctrlKeyDisplay2">Ctrl</kbd> + <span id="canvasHelpCtrlWheel">滚轮</span></span>
+                                        <span class="canvas-help-key"><kbd class="canvas-shortcut-key"
+                                                id="ctrlKeyDisplay2">Ctrl</kbd> + <span
+                                                id="canvasHelpCtrlWheel">滚轮</span></span>
                                         <span class="canvas-help-desc" id="canvasHelpCtrlWheelDesc">缩放</span>
                                     </div>
                                     <div class="canvas-help-row">
-                                        <span class="canvas-help-key"><kbd class="canvas-shortcut-key" id="ctrlKeyDisplay3">Ctrl</kbd> + <span id="canvasHelpCtrlRightClick">右键（单击）</span></span>
+                                        <span class="canvas-help-key"><kbd class="canvas-shortcut-key"
+                                                id="ctrlKeyDisplay3">Ctrl</kbd> + <span
+                                                id="canvasHelpCtrlRightClick">右键（单击）</span></span>
                                         <span class="canvas-help-desc" id="canvasHelpCtrlRightDesc">更改栏目卡片的大小</span>
                                     </div>
                                 </div>
                                 <div class="canvas-help-section">
                                     <div class="canvas-help-section-header">
                                         <span class="canvas-help-section-title" id="canvasHelpSpaceTitle">空格键操作</span>
-                                        <button class="canvas-shortcut-edit-btn" id="editSpaceKeyBtn" title="点击修改快捷键"><i class="fas fa-edit"></i></button>
+                                        <button class="canvas-shortcut-edit-btn" id="editSpaceKeyBtn" title="点击修改快捷键"><i
+                                                class="fas fa-edit"></i></button>
                                     </div>
                                     <div class="canvas-help-row">
-                                        <span class="canvas-help-key"><kbd class="canvas-shortcut-key" id="spaceKeyDisplay">空格</kbd> + <span id="canvasHelpSpaceLeftClick">左键（按住）</span></span>
+                                        <span class="canvas-help-key"><kbd class="canvas-shortcut-key"
+                                                id="spaceKeyDisplay">空格</kbd> + <span
+                                                id="canvasHelpSpaceLeftClick">左键（按住）</span></span>
                                         <span class="canvas-help-desc" id="canvasHelpSpaceDesc">拖动画布</span>
                                     </div>
                                 </div>
@@ -957,7 +1078,8 @@
                                 <div class="recorder-content">
                                     <span class="recorder-text" id="recorderText">请按下新的快捷键...</span>
                                     <div class="recorder-buttons">
-                                        <button class="recorder-help-btn" id="recorderHelpBtn" title="可用按键"><i class="fas fa-question-circle"></i></button>
+                                        <button class="recorder-help-btn" id="recorderHelpBtn" title="可用按键"><i
+                                                class="fas fa-question-circle"></i></button>
                                         <button class="recorder-cancel-btn" id="recorderCancelBtn">取消</button>
                                     </div>
                                 </div>
@@ -965,20 +1087,25 @@
                                 <div class="recorder-help-tooltip" id="recorderHelpTooltip" style="display: none;">
                                     <div class="tooltip-title" id="recorderHelpTitle">可用按键</div>
                                     <div class="tooltip-content">
-                                        <div class="tooltip-row"><span class="tooltip-label" id="tooltipModifierLabel">修饰键:</span> Ctrl, Alt, Shift, Cmd/Win</div>
-                                        <div class="tooltip-row"><span class="tooltip-label" id="tooltipSpecialLabel">特殊键:</span> Space, Tab</div>
-                                        <div class="tooltip-row"><span class="tooltip-label" id="tooltipLetterLabel">字母键:</span> A-Z</div>
-                                        <div class="tooltip-row"><span class="tooltip-label" id="tooltipNumberLabel">数字键:</span> 0-9</div>
+                                        <div class="tooltip-row"><span class="tooltip-label"
+                                                id="tooltipModifierLabel">修饰键:</span> Ctrl, Alt, Shift, Cmd/Win</div>
+                                        <div class="tooltip-row"><span class="tooltip-label"
+                                                id="tooltipSpecialLabel">特殊键:</span> Space, Tab</div>
+                                        <div class="tooltip-row"><span class="tooltip-label"
+                                                id="tooltipLetterLabel">字母键:</span> A-Z</div>
+                                        <div class="tooltip-row"><span class="tooltip-label"
+                                                id="tooltipNumberLabel">数字键:</span> 0-9</div>
                                     </div>
                                 </div>
                             </div>
                         </div>
-                        
+
                         <!-- Canvas管理弹窗 -->
                         <div class="canvas-manage-modal" id="canvasManageModal" style="display: none;">
                             <div class="canvas-manage-modal-header">
                                 <h4 id="canvasManageModalTitle">画布管理</h4>
-                                <button class="canvas-manage-modal-close" id="canvasManageModalClose"><i class="fas fa-times"></i></button>
+                                <button class="canvas-manage-modal-close" id="canvasManageModalClose"><i
+                                        class="fas fa-times"></i></button>
                             </div>
                             <div class="canvas-manage-modal-body">
                                 <button id="importCanvasBtn" class="canvas-manage-btn">
@@ -991,11 +1118,11 @@
                                 </button>
                                 <button id="clearTempNodesBtn" class="canvas-manage-btn danger">
                                     <i class="fas fa-trash-alt"></i>
-                                    <span id="clearTempNodesText">清空临时节点</span>
+                                    <span id="clearTempNodesText">清空未标注节点</span>
                                 </button>
                             </div>
                         </div>
-                        
+
                         <!-- Canvas内容容器（应用缩放和平移） -->
                         <div class="canvas-content" id="canvasContent">
                             <!-- 临时节点和永久栏目都在这里 -->
@@ -1003,7 +1130,7 @@
                     </div>
                 </div>
             </div>
-            
+
             <!-- 永久栏目 - 在canvas-content内部通过JS添加 -->
             <template id="permanentSectionTemplate">
                 <div class="permanent-bookmark-section" id="permanentSection">
@@ -1011,24 +1138,28 @@
                         <div class="permanent-section-title">
                             <h3 id="permanentSectionTitle">书签树 (永久栏目)</h3>
                             <div class="permanent-section-actions">
-                                <button class="permanent-section-action-btn permanent-section-pin-btn pinned" id="permanentSectionPinBtn" title="置顶栏目">
+                                <button class="permanent-section-action-btn permanent-section-pin-btn pinned"
+                                    id="permanentSectionPinBtn" title="置顶栏目">
                                     <i class="fas fa-thumbtack"></i>
                                 </button>
                             </div>
                         </div>
                         <div class="permanent-section-tip-container" id="permanentSectionTipContainer">
                             <div class="permanent-section-tip-content">
-                                <p class="permanent-section-tip" id="permanentSectionTip"></p>
+                                <div class="permanent-section-tip" id="permanentSectionTip"></div>
                                 <div class="permanent-section-tip-controls">
-                                    <button class="permanent-section-tip-edit-btn" id="permanentSectionTipEditBtn" title="编辑说明">
+                                    <button class="permanent-section-tip-edit-btn" id="permanentSectionTipEditBtn"
+                                        title="编辑说明">
                                         <i class="fas fa-edit"></i>
                                     </button>
-                                    <button class="permanent-section-tip-close" id="permanentSectionTipClose" title="关闭提示">
+                                    <button class="permanent-section-tip-close" id="permanentSectionTipClose"
+                                        title="关闭提示">
                                         <i class="fas fa-times"></i>
                                     </button>
                                 </div>
                             </div>
-                            <textarea class="permanent-section-tip-editor" id="permanentSectionTipEditor" style="display: none;" placeholder=""></textarea>
+                            <textarea class="permanent-section-tip-editor" id="permanentSectionTipEditor"
+                                style="display: none;" placeholder=""></textarea>
                         </div>
                     </div>
                     <div class="permanent-section-body">
@@ -1063,19 +1194,22 @@
                     <h4 style="margin-bottom: 10px; font-size: 14px; color: var(--text-secondary);">导出范围</h4>
                     <p id="exportScopeText" style="font-weight: 500; font-size: 15px;">当前视图</p>
                 </div>
-                
+
                 <div class="export-section" style="margin-bottom: 20px;">
                     <h4 style="margin-bottom: 10px; font-size: 14px; color: var(--text-secondary);">导出模式</h4>
                     <div class="radio-group" style="display: flex; flex-direction: column; gap: 8px;">
-                        <label class="radio-label" style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
+                        <label class="radio-label"
+                            style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
                             <input type="radio" name="exportMode" value="records" checked>
                             <span>仅导出添加记录 <small style="color: var(--text-tertiary);">(仅现有记录)</small></span>
                         </label>
-                        <label class="radio-label" style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
+                        <label class="radio-label"
+                            style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
                             <input type="radio" name="exportMode" value="context">
                             <span>现记录关联导出 <small style="color: var(--text-tertiary);">(包含同文件夹下的其他书签)</small></span>
                         </label>
-                        <label class="radio-label" style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
+                        <label class="radio-label"
+                            style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
                             <input type="radio" name="exportMode" value="collection">
                             <span>集合导出到日期文件夹 <small style="color: var(--text-tertiary);">(按日期归档，不保留原目录名)</small></span>
                         </label>
@@ -1085,22 +1219,26 @@
                 <div class="export-section" style="margin-bottom: 20px;">
                     <h4 style="margin-bottom: 10px; font-size: 14px; color: var(--text-secondary);">导出格式</h4>
                     <div class="checkbox-group" style="display: flex; flex-direction: column; gap: 8px;">
-                        <label class="checkbox-label" style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
+                        <label class="checkbox-label"
+                            style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
                             <input type="checkbox" name="exportFormat" value="html" checked>
                             <span>HTML (浏览器可导入)</span>
                         </label>
-                        <label class="checkbox-label" style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
+                        <label class="checkbox-label"
+                            style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
                             <input type="checkbox" name="exportFormat" value="json">
                             <span>JSON</span>
                         </label>
-                        <label class="checkbox-label" style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
+                        <label class="checkbox-label"
+                            style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
                             <input type="checkbox" name="exportFormat" value="copy">
                             <span>复制到剪贴板</span>
                         </label>
                     </div>
                 </div>
-                
-                <div class="export-actions" style="text-align: right; border-top: 1px solid var(--border-color); padding-top: 20px;">
+
+                <div class="export-actions"
+                    style="text-align: right; border-top: 1px solid var(--border-color); padding-top: 20px;">
                     <button id="doExportBtn" class="view-action-btn" style="display: inline-flex; width: auto;">
                         <i class="fas fa-file-export"></i> 开始导出
                     </button>
@@ -1123,15 +1261,17 @@
                     <h4 style="margin-bottom: 10px; font-size: 14px; color: var(--text-secondary);">导出范围</h4>
                     <p id="browsingExportScopeText" style="font-weight: 500; font-size: 15px;">当前视图</p>
                 </div>
-                
+
                 <div class="export-section" style="margin-bottom: 20px;">
                     <h4 style="margin-bottom: 10px; font-size: 14px; color: var(--text-secondary);">导出模式</h4>
                     <div class="radio-group" style="display: flex; flex-direction: column; gap: 8px;">
-                        <label class="radio-label" style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
+                        <label class="radio-label"
+                            style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
                             <input type="radio" name="browsingExportMode" value="records" checked>
                             <span>仅导出点击记录 <small style="color: var(--text-tertiary);">(仅现有记录)</small></span>
                         </label>
-                        <label class="radio-label" style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
+                        <label class="radio-label"
+                            style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
                             <input type="radio" name="browsingExportMode" value="collection">
                             <span>集合导出到日期文件夹 <small style="color: var(--text-tertiary);">(按日期归档，不保留原目录名)</small></span>
                         </label>
@@ -1141,22 +1281,26 @@
                 <div class="export-section" style="margin-bottom: 20px;">
                     <h4 style="margin-bottom: 10px; font-size: 14px; color: var(--text-secondary);">导出格式</h4>
                     <div class="checkbox-group" style="display: flex; flex-direction: column; gap: 8px;">
-                        <label class="checkbox-label" style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
+                        <label class="checkbox-label"
+                            style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
                             <input type="checkbox" name="browsingExportFormat" value="html" checked>
                             <span>HTML (浏览器可导入)</span>
                         </label>
-                        <label class="checkbox-label" style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
+                        <label class="checkbox-label"
+                            style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
                             <input type="checkbox" name="browsingExportFormat" value="json">
                             <span>JSON</span>
                         </label>
-                        <label class="checkbox-label" style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
+                        <label class="checkbox-label"
+                            style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
                             <input type="checkbox" name="browsingExportFormat" value="copy">
                             <span>复制到剪贴板</span>
                         </label>
                     </div>
                 </div>
-                
-                <div class="export-actions" style="text-align: right; border-top: 1px solid var(--border-color); padding-top: 20px;">
+
+                <div class="export-actions"
+                    style="text-align: right; border-top: 1px solid var(--border-color); padding-top: 20px;">
                     <button id="doBrowsingExportBtn" class="view-action-btn" style="display: inline-flex; width: auto;">
                         <i class="fas fa-file-export"></i> 开始导出
                     </button>
@@ -1194,27 +1338,32 @@
                     <label class="refresh-setting-item">
                         <input type="checkbox" id="refreshEveryNOpensEnabled" checked>
                         <span id="refreshEveryNOpensLabel">每打开</span>
-                        <input type="number" id="refreshEveryNOpensValue" value="3" min="1" max="100" style="width: 50px; margin: 0 6px;">
+                        <input type="number" id="refreshEveryNOpensValue" value="3" min="1" max="100"
+                            style="width: 50px; margin: 0 6px;">
                         <span id="refreshEveryNOpensUnit">次刷新</span>
                     </label>
                     <label class="refresh-setting-item">
                         <input type="checkbox" id="refreshAfterHoursEnabled">
                         <span id="refreshAfterHoursLabel">距上次刷新超过</span>
-                        <input type="number" id="refreshAfterHoursValue" value="1" min="1" max="24" style="width: 50px; margin: 0 6px;">
+                        <input type="number" id="refreshAfterHoursValue" value="1" min="1" max="24"
+                            style="width: 50px; margin: 0 6px;">
                         <span id="refreshAfterHoursUnit">小时</span>
                     </label>
                     <label class="refresh-setting-item">
                         <input type="checkbox" id="refreshAfterDaysEnabled">
                         <span id="refreshAfterDaysLabel">距上次刷新超过</span>
-                        <input type="number" id="refreshAfterDaysValue" value="1" min="1" max="30" style="width: 50px; margin: 0 6px;">
+                        <input type="number" id="refreshAfterDaysValue" value="1" min="1" max="30"
+                            style="width: 50px; margin: 0 6px;">
                         <span id="refreshAfterDaysUnit">天</span>
                     </label>
                 </div>
-                <div class="refresh-settings-status" id="refreshSettingsStatus" style="margin-top: 12px; padding: 8px 10px; background: var(--bg-tertiary); border-radius: 6px; font-size: 13px; color: var(--text-secondary);">
+                <div class="refresh-settings-status" id="refreshSettingsStatus"
+                    style="margin-top: 12px; padding: 8px 10px; background: var(--bg-tertiary); border-radius: 6px; font-size: 13px; color: var(--text-secondary);">
                     <!-- 动态显示状态 -->
                 </div>
                 <div class="refresh-settings-actions" style="margin-top: 12px; text-align: right;">
-                    <button id="refreshSettingsSaveBtn" class="view-action-btn" style="display: inline-flex; width: auto;">
+                    <button id="refreshSettingsSaveBtn" class="view-action-btn"
+                        style="display: inline-flex; width: auto;">
                         <i class="fas fa-check"></i> <span id="refreshSettingsSaveText">保存</span>
                     </button>
                 </div>
@@ -1256,7 +1405,8 @@
                     <div class="add-panel-row">
                         <label id="addCountLabel">抽取数量：</label>
                         <div class="add-count-wrapper">
-                            <input type="number" id="addFolderCount" value="5" min="1" max="100" class="add-count-input">
+                            <input type="number" id="addFolderCount" value="5" min="1" max="100"
+                                class="add-count-input">
                             <label class="add-checkbox-inline">
                                 <input type="checkbox" id="addFolderSelectAll">
                                 <span id="addSelectAllLabel">全部</span>
@@ -1267,10 +1417,12 @@
                         <label id="addModeLabel">抽取方式：</label>
                         <div class="add-mode-options">
                             <label class="add-mode-option">
-                                <input type="radio" name="addFolderMode" value="random" checked> <span id="addModeRandom">随机</span>
+                                <input type="radio" name="addFolderMode" value="random" checked> <span
+                                    id="addModeRandom">随机</span>
                             </label>
                             <label class="add-mode-option">
-                                <input type="radio" name="addFolderMode" value="sequential"> <span id="addModeSequential">顺序</span>
+                                <input type="radio" name="addFolderMode" value="sequential"> <span
+                                    id="addModeSequential">顺序</span>
                             </label>
                         </div>
                     </div>
@@ -1306,7 +1458,8 @@
                         <div class="add-results-empty" id="addDomainLoading">加载域名列表中...</div>
                     </div>
                     <div class="add-selected-count">
-                        <span id="addDomainSelectedText">已选择</span>: <span id="addDomainSelectedCount">0</span> <span id="addDomainSelectedLabel">个域名</span>
+                        <span id="addDomainSelectedText">已选择</span>: <span id="addDomainSelectedCount">0</span> <span
+                            id="addDomainSelectedLabel">个域名</span>
                     </div>
                 </div>
             </div>
@@ -1365,11 +1518,15 @@
                 </button>
             </div>
             <div class="modal-body">
-                <p id="addDomainModalDesc" style="color: var(--text-secondary); margin-bottom: 12px;">输入要屏蔽的域名（如 example.com）：</p>
-                <input type="text" id="addDomainInput" class="modal-input" placeholder="example.com" style="width: 100%; padding: 10px; border: 1px solid var(--border-color); border-radius: 6px; background: var(--bg-secondary); color: var(--text-primary);">
+                <p id="addDomainModalDesc" style="color: var(--text-secondary); margin-bottom: 12px;">输入要屏蔽的域名（如
+                    example.com）：</p>
+                <input type="text" id="addDomainInput" class="modal-input" placeholder="example.com"
+                    style="width: 100%; padding: 10px; border: 1px solid var(--border-color); border-radius: 6px; background: var(--bg-secondary); color: var(--text-primary);">
                 <div style="display: flex; gap: 10px; margin-top: 16px; justify-content: flex-end;">
-                    <button id="addDomainCancelBtn" class="modal-btn" style="padding: 8px 16px; border: 1px solid var(--border-color); border-radius: 6px; background: var(--bg-secondary); color: var(--text-primary); cursor: pointer;">取消</button>
-                    <button id="addDomainConfirmBtn" class="modal-btn primary" style="padding: 8px 16px; border: none; border-radius: 6px; background: var(--accent-primary); color: white; cursor: pointer;">添加</button>
+                    <button id="addDomainCancelBtn" class="modal-btn"
+                        style="padding: 8px 16px; border: 1px solid var(--border-color); border-radius: 6px; background: var(--bg-secondary); color: var(--text-primary); cursor: pointer;">取消</button>
+                    <button id="addDomainConfirmBtn" class="modal-btn primary"
+                        style="padding: 8px 16px; border: none; border-radius: 6px; background: var(--accent-primary); color: white; cursor: pointer;">添加</button>
                 </div>
             </div>
         </div>
@@ -1420,4 +1577,5 @@
         </div>
     </div>
 </body>
+
 </html>

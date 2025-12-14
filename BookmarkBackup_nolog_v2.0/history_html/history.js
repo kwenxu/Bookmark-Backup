@@ -734,7 +734,7 @@ function handleHistoryVisited(result) {
     // 不在这里做 URL/标题过滤，统一交给 BrowsingHistoryCalendar.loadBookmarkData()
     // 中的 URL + 标题并集规则处理（增量只扫描 lastSyncTime 之后的历史）。
     scheduleHistoryRefresh({ forceFull: false });
-    
+
     // 增量更新：background.js 的 history.onVisited 监听器会处理S值增量更新
     // 这里不需要再调用，避免重复
 }
@@ -791,22 +791,22 @@ async function refreshBrowsingHistoryData(options = {}) {
     browsingHistoryRefreshPromise = (async () => {
         try {
             await inst.loadBookmarkData({ incremental });
-            
+
             // 重建 bookmarkUrlSet（用于实时更新判断）
             if (typeof rebuildBookmarkUrlSet === 'function' && allBookmarks.length > 0) {
                 rebuildBookmarkUrlSet();
             }
-            
+
             if (typeof inst.render === 'function') {
                 inst.render();
             }
             if (typeof inst.updateSelectModeButton === 'function') {
                 inst.updateSelectModeButton();
             }
-            
+
             // 清除缓存，让下次加载时重新获取
             browsingClickRankingStats = null;
-            
+
             // 注意：不在这里直接调用 refresh 函数，而是依赖事件系统
             // 日历的 announceHistoryDataUpdated() 会派发 browsingHistoryCacheUpdated 事件
             // 事件监听器会调用 refreshActiveBrowsingRankingIfVisible() 和 refreshBrowsingRelatedHistory()
@@ -1186,8 +1186,8 @@ const i18n = {
         'en': 'Export'
     },
     clearTempNodesText: {
-        'zh_CN': '清空临时节点',
-        'en': 'Clear Temp Nodes'
+        'zh_CN': '清空未标注节点',
+        'en': 'Clear Unmarked Nodes'
     },
     canvasFullscreenEnter: {
         'zh_CN': '全屏',
@@ -2601,15 +2601,15 @@ function applyLanguage() {
     if (navRecommendText) navRecommendText.textContent = i18n.navRecommend[currentLang];
     document.getElementById('bookmarkGitTitle').textContent = i18n.bookmarkGitTitle[currentLang];
     document.getElementById('bookmarkToolboxTitle').textContent = i18n.bookmarkToolboxTitle[currentLang];
-    
+
     const timeTrackingWidgetTitle = document.getElementById('timeTrackingWidgetTitle');
     if (timeTrackingWidgetTitle) timeTrackingWidgetTitle.textContent = i18n.timeTrackingWidgetTitle[currentLang];
     const timeTrackingWidgetEmptyText = document.getElementById('timeTrackingWidgetEmptyText');
     if (timeTrackingWidgetEmptyText) timeTrackingWidgetEmptyText.textContent = i18n.timeTrackingWidgetEmpty[currentLang];
-    
+
     document.getElementById('currentChangesViewTitle').textContent = i18n.currentChangesViewTitle[currentLang];
     document.getElementById('historyViewTitle').textContent = i18n.historyViewTitle[currentLang];
-    
+
     // 书签树映射预览翻译
     const changesTreeTitleText = document.getElementById('changesTreeTitleText');
     if (changesTreeTitleText) changesTreeTitleText.textContent = i18n.changesTreeTitle[currentLang];
@@ -2661,7 +2661,7 @@ function applyLanguage() {
     if (zoomLocateBtn) zoomLocateBtn.title = i18n.zoomLocateTitle[currentLang];
     const zoomLocateText = document.getElementById('zoomLocateText');
     if (zoomLocateText) zoomLocateText.textContent = i18n.zoomLocateText[currentLang];
-    
+
     // Canvas 管理和帮助按钮翻译
     const canvasManageText = document.getElementById('canvasManageText');
     if (canvasManageText) canvasManageText.textContent = i18n.canvasManageText[currentLang];
@@ -2669,11 +2669,11 @@ function applyLanguage() {
     if (canvasManageBtn) canvasManageBtn.title = i18n.canvasManageTitle[currentLang];
     const canvasHelpBtn = document.getElementById('canvasHelpBtn');
     if (canvasHelpBtn) canvasHelpBtn.title = i18n.canvasHelpBtnTitle[currentLang];
-    
+
     // Canvas 管理弹窗翻译
     const canvasManageModalTitle = document.getElementById('canvasManageModalTitle');
     if (canvasManageModalTitle) canvasManageModalTitle.textContent = i18n.canvasManageTitle[currentLang];
-    
+
     // Canvas 快捷键帮助弹窗翻译
     const canvasHelpModalTitle = document.getElementById('canvasHelpModalTitle');
     if (canvasHelpModalTitle) canvasHelpModalTitle.textContent = i18n.canvasHelpModalTitle[currentLang];
@@ -2709,7 +2709,7 @@ function applyLanguage() {
     if (canvasHelpTouchpadScroll) canvasHelpTouchpadScroll.textContent = i18n.canvasHelpTouchpadScroll[currentLang];
     const canvasHelpTouchpadScrollDesc = document.getElementById('canvasHelpTouchpadScrollDesc');
     if (canvasHelpTouchpadScrollDesc) canvasHelpTouchpadScrollDesc.textContent = i18n.canvasHelpTouchpadScrollDesc[currentLang];
-    
+
     // 快捷键编辑按钮和录制器翻译
     const editCtrlKeyBtn = document.getElementById('editCtrlKeyBtn');
     if (editCtrlKeyBtn) editCtrlKeyBtn.title = i18n.canvasShortcutEditTitle[currentLang];
@@ -2729,12 +2729,12 @@ function applyLanguage() {
     if (tooltipLetterLabel) tooltipLetterLabel.textContent = i18n.tooltipLetterLabel[currentLang];
     const tooltipNumberLabel = document.getElementById('tooltipNumberLabel');
     if (tooltipNumberLabel) tooltipNumberLabel.textContent = i18n.tooltipNumberLabel[currentLang];
-    
+
     // 更新快捷键显示（如果CanvasModule已加载）
     if (window.CanvasModule && typeof window.CanvasModule.updateShortcutDisplays === 'function') {
         window.CanvasModule.updateShortcutDisplays();
     }
-    
+
     const fullscreenBtn = document.getElementById('canvasFullscreenBtn');
     if (fullscreenBtn) {
         // Always update fullscreen button to ensure language changes are applied
@@ -2758,11 +2758,23 @@ function applyLanguage() {
     if (permanentSectionTitle) permanentSectionTitle.textContent = i18n.permanentSectionTitle[currentLang];
     const permanentSectionTip = document.getElementById('permanentSectionTip');
     if (permanentSectionTip) {
-        // 若用户已自定义说明，则保留用户内容；仅在无自定义时应用默认文案
+        // 若用户已自定义说明，则保留用户内容；仅在无自定义时应用 placeholder（不写入内容）
+        const placeholder = i18n.permanentSectionTip[currentLang];
+        try {
+            permanentSectionTip.setAttribute('data-placeholder', placeholder);
+            permanentSectionTip.setAttribute('aria-label', placeholder);
+        } catch (_) { }
+
         let savedTip = '';
         try { savedTip = localStorage.getItem('canvas-permanent-tip-text') || ''; } catch { }
         if (!savedTip.trim()) {
-            permanentSectionTip.textContent = i18n.permanentSectionTip[currentLang];
+            // 兼容旧逻辑：若 DOM 里残留了“点击添加说明...”等占位文本，清空以启用 :empty::before
+            const t = (permanentSectionTip.textContent || '').trim();
+            const zh = i18n.permanentSectionTip['zh_CN'];
+            const en = i18n.permanentSectionTip['en'];
+            if (t === zh || t === en) {
+                permanentSectionTip.innerHTML = '';
+            }
         }
     }
 
@@ -2842,13 +2854,13 @@ function applyLanguage() {
     if (additionsTabReview) additionsTabReview.textContent = i18n.additionsTabReview[currentLang];
     const additionsTabBrowsing = document.getElementById('additionsTabBrowsing');
     if (additionsTabBrowsing) additionsTabBrowsing.textContent = i18n.additionsTabBrowsing[currentLang];
-    
+
     const additionsTabTracking = document.getElementById('additionsTabTracking');
     if (additionsTabTracking) additionsTabTracking.textContent = i18n.additionsTabTracking[currentLang];
-    
+
     const trackingPanelDesc = document.getElementById('trackingPanelDesc');
     if (trackingPanelDesc) trackingPanelDesc.textContent = i18n.trackingPanelDesc[currentLang];
-    
+
     const clearTrackingText = document.getElementById('clearTrackingText');
     if (clearTrackingText) clearTrackingText.textContent = i18n.clearTrackingText[currentLang];
 
@@ -3009,24 +3021,24 @@ function applyLanguage() {
     // 时间捕捉翻译
     const trackingTitle = document.getElementById('trackingTitle');
     if (trackingTitle) trackingTitle.textContent = i18n.trackingTitle[currentLang];
-    
+
     const trackingToggleText = document.getElementById('trackingToggleText');
     if (trackingToggleText) {
         const toggleBtn = document.getElementById('trackingToggleBtn');
         const isActive = toggleBtn && toggleBtn.classList.contains('active');
-        trackingToggleText.textContent = isActive ? 
+        trackingToggleText.textContent = isActive ?
             i18n.trackingToggleOn[currentLang] : i18n.trackingToggleOff[currentLang];
     }
-    
+
     const clearTrackingBtn = document.getElementById('clearTrackingBtn');
     if (clearTrackingBtn) clearTrackingBtn.title = i18n.trackingClearBtn[currentLang];
-    
+
     const trackingCurrentTitle = document.getElementById('trackingCurrentTitle');
     if (trackingCurrentTitle) trackingCurrentTitle.textContent = i18n.trackingCurrentTitle[currentLang];
-    
+
     const trackingNoActiveText = document.getElementById('trackingNoActiveText');
     if (trackingNoActiveText) trackingNoActiveText.textContent = i18n.trackingNoActive[currentLang];
-    
+
     const trackingHeaderState = document.getElementById('trackingHeaderState');
     if (trackingHeaderState) {
         // 更新文本 span，保留帮助图标
@@ -3048,62 +3060,62 @@ function applyLanguage() {
     if (trackingHeaderWakes) trackingHeaderWakes.textContent = i18n.trackingHeaderWakes[currentLang];
     const trackingHeaderRatio = document.getElementById('trackingHeaderRatio');
     if (trackingHeaderRatio) trackingHeaderRatio.textContent = i18n.trackingHeaderRatio[currentLang];
-    
+
     const trackingRankingTitle = document.getElementById('trackingRankingTitle');
     if (trackingRankingTitle) trackingRankingTitle.textContent = i18n.trackingRankingTitle[currentLang];
-    
+
     const trackingRangeToday = document.getElementById('trackingRangeToday');
     if (trackingRangeToday) trackingRangeToday.textContent = i18n.trackingRangeToday[currentLang];
-    
+
     const trackingRangeWeek = document.getElementById('trackingRangeWeek');
     if (trackingRangeWeek) trackingRangeWeek.textContent = i18n.trackingRangeWeek[currentLang];
-    
+
     const trackingRangeMonth = document.getElementById('trackingRangeMonth');
     if (trackingRangeMonth) trackingRangeMonth.textContent = i18n.trackingRangeMonth[currentLang];
-    
+
     const trackingRangeYear = document.getElementById('trackingRangeYear');
     if (trackingRangeYear) trackingRangeYear.textContent = i18n.trackingRangeYear[currentLang];
-    
+
     const trackingRangeAll = document.getElementById('trackingRangeAll');
     if (trackingRangeAll) trackingRangeAll.textContent = i18n.trackingRangeAll[currentLang];
-    
+
     const trackingNoDataText = document.getElementById('trackingNoDataText');
     if (trackingNoDataText) trackingNoDataText.textContent = i18n.trackingNoData[currentLang];
 
     // 书签推荐翻译
     const recommendViewTitle = document.getElementById('recommendViewTitle');
     if (recommendViewTitle) recommendViewTitle.textContent = i18n.recommendViewTitle[currentLang];
-    
+
     const recommendHelpBtn = document.getElementById('recommendHelpBtn');
     if (recommendHelpBtn) recommendHelpBtn.title = i18n.recommendHelpTooltip[currentLang];
-    
+
     const legendScore = document.getElementById('legendScore');
     if (legendScore) legendScore.textContent = i18n.legendScore[currentLang];
-    
+
     const legendFreshness = document.getElementById('legendFreshness');
     if (legendFreshness) legendFreshness.textContent = i18n.legendFreshness[currentLang];
-    
+
     const legendColdness = document.getElementById('legendColdness');
     if (legendColdness) legendColdness.textContent = i18n.legendColdness[currentLang];
-    
+
     const legendTimeDegree = document.getElementById('legendTimeDegree');
     if (legendTimeDegree) legendTimeDegree.textContent = i18n.legendTimeDegree[currentLang];
-    
+
     const legendForgetting = document.getElementById('legendForgetting');
     if (legendForgetting) legendForgetting.textContent = i18n.legendForgetting[currentLang];
-    
+
     const legendLaterReview = document.getElementById('legendLaterReview');
     if (legendLaterReview) legendLaterReview.textContent = i18n.legendLaterReview[currentLang];
-    
+
     const legendRecall = document.getElementById('legendRecall');
     if (legendRecall) legendRecall.textContent = i18n.legendRecall[currentLang];
-    
+
     const recallDesc = document.getElementById('recallDesc');
     if (recallDesc) recallDesc.textContent = i18n.recallDesc[currentLang];
-    
+
     const laterReviewDesc = document.getElementById('laterReviewDesc');
     if (laterReviewDesc) laterReviewDesc.textContent = i18n.laterReviewDesc[currentLang];
-    
+
     // 公式阈值（需要特殊处理，保留输入框）- 使用幂函数衰减公式
     document.querySelectorAll('.threshold-item').forEach((item, index) => {
         const input = item.querySelector('input');
@@ -3129,7 +3141,7 @@ function applyLanguage() {
             item.innerHTML = `${prefix}<input type="text" class="${inputClass}" id="${inputId}" value="${inputValue}">${suffix}`;
         }
     });
-    
+
     // 预设模式按钮
     document.querySelectorAll('.preset-btn').forEach(btn => {
         const mode = btn.dataset.mode;
@@ -3151,87 +3163,87 @@ function applyLanguage() {
             btn.title = i18n.presetPriorityTip[currentLang];
         }
     });
-    
+
     const resetFormulaText = document.getElementById('resetFormulaText');
     if (resetFormulaText) resetFormulaText.textContent = i18n.resetFormulaText[currentLang];
-    
+
     const cardRefreshText = document.getElementById('cardRefreshText');
     if (cardRefreshText) cardRefreshText.textContent = i18n.cardRefreshText[currentLang];
-    
+
     const refreshSettingsTitle = document.getElementById('refreshSettingsTitle');
     if (refreshSettingsTitle) refreshSettingsTitle.textContent = i18n.refreshSettingsTitle[currentLang];
-    
+
     const refreshEveryNOpensLabel = document.getElementById('refreshEveryNOpensLabel');
     if (refreshEveryNOpensLabel) refreshEveryNOpensLabel.textContent = i18n.refreshEveryNOpensLabel[currentLang];
-    
+
     const refreshEveryNOpensUnit = document.getElementById('refreshEveryNOpensUnit');
     if (refreshEveryNOpensUnit) refreshEveryNOpensUnit.textContent = i18n.refreshEveryNOpensUnit[currentLang];
-    
+
     const refreshAfterHoursLabel = document.getElementById('refreshAfterHoursLabel');
     if (refreshAfterHoursLabel) refreshAfterHoursLabel.textContent = i18n.refreshAfterHoursLabel[currentLang];
-    
+
     const refreshAfterHoursUnit = document.getElementById('refreshAfterHoursUnit');
     if (refreshAfterHoursUnit) refreshAfterHoursUnit.textContent = i18n.refreshAfterHoursUnit[currentLang];
-    
+
     const refreshAfterDaysLabel = document.getElementById('refreshAfterDaysLabel');
     if (refreshAfterDaysLabel) refreshAfterDaysLabel.textContent = i18n.refreshAfterDaysLabel[currentLang];
-    
+
     const refreshAfterDaysUnit = document.getElementById('refreshAfterDaysUnit');
     if (refreshAfterDaysUnit) refreshAfterDaysUnit.textContent = i18n.refreshAfterDaysUnit[currentLang];
-    
+
     const refreshSettingsSaveText = document.getElementById('refreshSettingsSaveText');
     if (refreshSettingsSaveText) refreshSettingsSaveText.textContent = i18n.refreshSettingsSave[currentLang];
-    
+
     const heatmapTitle = document.getElementById('heatmapTitle');
     if (heatmapTitle) heatmapTitle.textContent = i18n.heatmapTitle[currentLang];
-    
+
     const heatmapLoadingText = document.getElementById('heatmapLoadingText');
     if (heatmapLoadingText) heatmapLoadingText.textContent = i18n.heatmapLoading[currentLang];
 
     // 待复习区域翻译
     const postponedTitle = document.getElementById('postponedTitle');
     if (postponedTitle) postponedTitle.textContent = i18n.postponedTitle[currentLang];
-    
+
     const priorityBadge = document.getElementById('postponedPriorityBadge');
     if (priorityBadge) priorityBadge.textContent = i18n.priorityModeBadge[currentLang];
-    
+
     const postponedEmptyText = document.getElementById('postponedEmptyText');
     if (postponedEmptyText) postponedEmptyText.textContent = i18n.postponedEmptyText[currentLang];
-    
+
     const addPostponedModalTitle = document.getElementById('addPostponedModalTitle');
     if (addPostponedModalTitle) addPostponedModalTitle.textContent = i18n.addPostponedModalTitle[currentLang];
-    
+
     const postponedAddBtn = document.getElementById('postponedAddBtn');
     if (postponedAddBtn) postponedAddBtn.title = i18n.postponedAddBtnTitle[currentLang];
 
     // 「Add to Review」弹窗翻译
     const addTabFolder = document.getElementById('addTabFolder');
     if (addTabFolder) addTabFolder.textContent = i18n.addTabFolder[currentLang];
-    
+
     const addTabSearch = document.getElementById('addTabSearch');
     if (addTabSearch) addTabSearch.textContent = i18n.addTabSearch[currentLang];
-    
+
     const addTabDomain = document.getElementById('addTabDomain');
     if (addTabDomain) addTabDomain.textContent = i18n.addTabDomain[currentLang];
 
     const addFolderLabel = document.getElementById('addFolderLabel');
     if (addFolderLabel) addFolderLabel.textContent = i18n.addFolderLabel[currentLang];
-    
+
     const addCountLabel = document.getElementById('addCountLabel');
     if (addCountLabel) addCountLabel.textContent = i18n.addCountLabel[currentLang];
-    
+
     const addSelectAllLabel = document.getElementById('addSelectAllLabel');
     if (addSelectAllLabel) addSelectAllLabel.textContent = i18n.addSelectAllLabel[currentLang];
-    
+
     const addModeLabel = document.getElementById('addModeLabel');
     if (addModeLabel) addModeLabel.textContent = i18n.addModeLabel[currentLang];
-    
+
     const addModeRandom = document.getElementById('addModeRandom');
     if (addModeRandom) addModeRandom.textContent = i18n.addModeRandom[currentLang];
-    
+
     const addModeSequential = document.getElementById('addModeSequential');
     if (addModeSequential) addModeSequential.textContent = i18n.addModeSequential[currentLang];
-    
+
     const addIncludeSubfolders = document.getElementById('addIncludeSubfolders');
     if (addIncludeSubfolders) addIncludeSubfolders.textContent = i18n.addIncludeSubfolders[currentLang];
 
@@ -3258,56 +3270,56 @@ function applyLanguage() {
 
     const addPostponedCancelBtn = document.getElementById('addPostponedCancelBtn');
     if (addPostponedCancelBtn) addPostponedCancelBtn.textContent = i18n.addPostponedCancelText[currentLang];
-    
+
     const addPostponedConfirmBtn = document.getElementById('addPostponedConfirmBtn');
     if (addPostponedConfirmBtn) addPostponedConfirmBtn.textContent = i18n.addPostponedConfirmText[currentLang];
-    
+
     // 卡片按钮title
     document.querySelectorAll('.card-btn-later').forEach(btn => {
         btn.title = i18n.cardLaterTitle[currentLang];
     });
-    
+
     // 屏蔽管理翻译
     const blockManageTitle = document.getElementById('blockManageTitle');
     if (blockManageTitle) blockManageTitle.textContent = i18n.blockManageTitle[currentLang];
 
     const blockedBookmarksTitle = document.getElementById('blockedBookmarksTitle');
     if (blockedBookmarksTitle) blockedBookmarksTitle.textContent = i18n.blockedBookmarksTitle[currentLang];
-    
+
     const blockedBookmarksEmptyText = document.getElementById('blockedBookmarksEmptyText');
     if (blockedBookmarksEmptyText) blockedBookmarksEmptyText.textContent = i18n.blockedBookmarksEmptyText[currentLang];
 
     const blockedFoldersTitle = document.getElementById('blockedFoldersTitle');
     if (blockedFoldersTitle) blockedFoldersTitle.textContent = i18n.blockedFoldersTitle[currentLang];
-    
+
     const blockedDomainsTitle = document.getElementById('blockedDomainsTitle');
     if (blockedDomainsTitle) blockedDomainsTitle.textContent = i18n.blockedDomainsTitle[currentLang];
-    
+
     const blockedFoldersEmptyText = document.getElementById('blockedFoldersEmptyText');
     if (blockedFoldersEmptyText) blockedFoldersEmptyText.textContent = i18n.blockedFoldersEmptyText[currentLang];
-    
+
     const blockedDomainsEmptyText = document.getElementById('blockedDomainsEmptyText');
     if (blockedDomainsEmptyText) blockedDomainsEmptyText.textContent = i18n.blockedDomainsEmptyText[currentLang];
-    
+
     const addDomainModalTitle = document.getElementById('addDomainModalTitle');
     if (addDomainModalTitle) addDomainModalTitle.textContent = i18n.addDomainModalTitle[currentLang];
-    
+
     const addDomainModalDesc = document.getElementById('addDomainModalDesc');
     if (addDomainModalDesc) addDomainModalDesc.textContent = i18n.addDomainModalDesc[currentLang];
-    
+
     const addDomainCancelBtn = document.getElementById('addDomainCancelBtn');
     if (addDomainCancelBtn) addDomainCancelBtn.textContent = i18n.addDomainCancelBtn[currentLang];
-    
+
     const addDomainConfirmBtn = document.getElementById('addDomainConfirmBtn');
     if (addDomainConfirmBtn) addDomainConfirmBtn.textContent = i18n.addDomainConfirmBtn[currentLang];
-    
+
     const selectFolderModalTitle = document.getElementById('selectFolderModalTitle');
     if (selectFolderModalTitle) selectFolderModalTitle.textContent = i18n.selectFolderModalTitle[currentLang];
-    
+
     // 稍后复习弹窗翻译
     const laterRecommendLabel = document.getElementById('laterRecommendLabel');
     if (laterRecommendLabel) laterRecommendLabel.textContent = i18n.laterRecommendLabel[currentLang];
-    
+
     const laterOrText = document.getElementById('laterOrText');
     if (laterOrText) laterOrText.textContent = i18n.laterOrText[currentLang];
 
@@ -3391,7 +3403,7 @@ function initializeUI() {
         revertAllCurrentBtn.addEventListener('click', () => handleRevertAll('current'));
     }
     // Canvas 相关事件监听在 Canvas 模块中处理
-    
+
     // 初始化书签树映射预览的交互
     initChangesTreePreview();
 
@@ -4007,11 +4019,11 @@ let timeTrackingWidgetInterval = null;
 async function updateTimeTrackingWidget() {
     const widgetList = document.getElementById('timeTrackingWidgetList');
     const widgetTitle = document.getElementById('timeTrackingWidgetTitle');
-    
+
     if (!widgetList) return;
-    
+
     const emptyText = i18n.timeTrackingWidgetEmpty[currentLang];
-    
+
     // 检查追踪是否开启
     let isTrackingEnabled = true;
     try {
@@ -4022,51 +4034,51 @@ async function updateTimeTrackingWidget() {
     } catch (e) {
         console.warn('[时间捕捉小组件] 检查追踪状态失败:', e);
     }
-    
+
     if (isTrackingEnabled) {
         // 追踪开启：显示当前追踪的书签
         if (widgetTitle) widgetTitle.textContent = i18n.timeTrackingWidgetTitle[currentLang];
-        
+
         try {
-            const response = await browserAPI.runtime.sendMessage({ 
-                action: 'getCurrentActiveSessions' 
+            const response = await browserAPI.runtime.sendMessage({
+                action: 'getCurrentActiveSessions'
             });
-            
+
             if (response && response.success && response.sessions && response.sessions.length > 0) {
                 const sessions = response.sessions;
                 const maxShow = 5;
                 const showSessions = sessions.slice(0, maxShow);
                 const remaining = sessions.length - maxShow;
-                
+
                 widgetList.innerHTML = '';
-                
+
                 showSessions.forEach(session => {
                     const item = document.createElement('div');
                     item.className = 'time-tracking-widget-item';
-                    
+
                     const stateIcon = document.createElement('span');
                     stateIcon.className = 'item-state';
                     // 🟢活跃 🟡前台静止 🔵可见参考 ⚪后台 💤睡眠
-                    stateIcon.textContent = session.state === 'active' ? '🟢' : 
-                        (session.state === 'sleeping' ? '💤' : 
-                        (session.state === 'background' ? '⚪' : 
-                        (session.state === 'visible' ? '🔵' : '🟡')));
-                    
+                    stateIcon.textContent = session.state === 'active' ? '🟢' :
+                        (session.state === 'sleeping' ? '💤' :
+                            (session.state === 'background' ? '⚪' :
+                                (session.state === 'visible' ? '🔵' : '🟡')));
+
                     const title = document.createElement('span');
                     title.className = 'item-title';
                     title.textContent = session.title || new URL(session.url).hostname;
                     title.title = session.title || session.url;
-                    
+
                     const time = document.createElement('span');
                     time.className = 'item-time';
                     time.textContent = formatActiveTime(session.compositeMs || session.activeMs);
-                    
+
                     item.appendChild(stateIcon);
                     item.appendChild(title);
                     item.appendChild(time);
                     widgetList.appendChild(item);
                 });
-                
+
                 if (remaining > 0) {
                     const moreEl = document.createElement('div');
                     moreEl.className = 'time-tracking-widget-more';
@@ -4083,43 +4095,43 @@ async function updateTimeTrackingWidget() {
     } else {
         // 追踪关闭：显示点击排行前5名（优先今天，没有则本周）
         if (widgetTitle) widgetTitle.textContent = i18n.timeTrackingWidgetRankingTitle ? i18n.timeTrackingWidgetRankingTitle[currentLang] : (currentLang === 'zh_CN' ? '点击排行' : 'Click Ranking');
-        
+
         try {
             // 使用书签浏览记录的点击排行数据
             const stats = await ensureBrowsingClickRankingStats();
-            
+
             if (!stats || stats.error || !stats.items || stats.items.length === 0) {
                 showEmptyState();
                 return;
             }
-            
+
             // 先尝试获取今天的数据
             let items = getBrowsingRankingItemsForRange('day');
             let isToday = true;
             let countKey = 'dayCount';
-            
+
             // 如果今天没有数据，获取本周的
             if (!items || items.length === 0) {
                 items = getBrowsingRankingItemsForRange('week');
                 isToday = false;
                 countKey = 'weekCount';
             }
-            
+
             if (items && items.length > 0) {
                 // 取前5
                 const top5 = items.slice(0, 5);
-                
+
                 widgetList.innerHTML = '';
-                
+
                 top5.forEach((item, index) => {
                     const el = document.createElement('div');
                     el.className = 'time-tracking-widget-item ranking-item';
                     el.dataset.url = item.url;
-                    
+
                     const rankNum = document.createElement('span');
                     rankNum.className = 'item-rank';
                     rankNum.textContent = `${index + 1}`;
-                    
+
                     const title = document.createElement('span');
                     title.className = 'item-title';
                     try {
@@ -4128,29 +4140,29 @@ async function updateTimeTrackingWidget() {
                         title.textContent = item.title || item.url;
                     }
                     title.title = item.title || item.url;
-                    
+
                     const count = document.createElement('span');
                     count.className = 'item-time';
                     count.textContent = `${item[countKey]}${currentLang === 'zh_CN' ? '次' : 'x'}`;
-                    
+
                     el.appendChild(rankNum);
                     el.appendChild(title);
                     el.appendChild(count);
-                    
+
                     // 点击打开链接
                     el.addEventListener('click', (e) => {
                         e.stopPropagation();
                         browserAPI.tabs.create({ url: item.url });
                     });
-                    
+
                     widgetList.appendChild(el);
                 });
-                
+
                 // 显示时间范围提示
                 const rangeHint = document.createElement('div');
                 rangeHint.className = 'time-tracking-widget-hint';
-                rangeHint.textContent = isToday ? 
-                    (currentLang === 'zh_CN' ? '今日' : 'Today') : 
+                rangeHint.textContent = isToday ?
+                    (currentLang === 'zh_CN' ? '今日' : 'Today') :
                     (currentLang === 'zh_CN' ? '本周' : 'This Week');
                 widgetList.appendChild(rangeHint);
             } else {
@@ -4161,7 +4173,7 @@ async function updateTimeTrackingWidget() {
             showEmptyState();
         }
     }
-    
+
     function showEmptyState() {
         widgetList.innerHTML = `<div class="time-tracking-widget-empty"><span>${emptyText}</span></div>`;
     }
@@ -4189,7 +4201,7 @@ function startTimeTrackingWidgetRefresh() {
 function initTimeTrackingWidget() {
     const widget = document.getElementById('timeTrackingWidget');
     if (!widget) return;
-    
+
     widget.addEventListener('click', () => {
         switchView('additions');
         setTimeout(() => {
@@ -4199,7 +4211,7 @@ function initTimeTrackingWidget() {
             }
         }, 100);
     });
-    
+
     startTimeTrackingWidgetRefresh();
 }
 
@@ -4225,7 +4237,7 @@ function initSidebarToggle() {
         const widthPx = rect && rect.width ? `${rect.width}px` : '260px';
         document.documentElement.style.setProperty('--sidebar-width', widthPx);
     }
-    
+
     // 从 localStorage 恢复侧边栏状态
     const savedState = localStorage.getItem('sidebarCollapsed');
     if (savedState === 'true') {
@@ -4344,7 +4356,7 @@ function captureCanvasThumbnail() {
 
                     const rect = container.getBoundingClientRect();
                     const pageWidth = window.innerWidth || document.documentElement.clientWidth;
-                    
+
                     // 固定缩略图输出尺寸，适配主UI的框（约 270x180，宽高比 3:2）
                     // 使用 8x 分辨率确保超清显示
                     const THUMBNAIL_WIDTH = 2160;
@@ -4364,60 +4376,60 @@ function captureCanvasThumbnail() {
                                 return;
                             }
 
-	                            // 计算截图和页面之间的缩放比（captureVisibleTab 生成的图片宽度 / 当前页面宽度）
-	                            const ratio = img.width / pageWidth;
+                            // 计算截图和页面之间的缩放比（captureVisibleTab 生成的图片宽度 / 当前页面宽度）
+                            const ratio = img.width / pageWidth;
 
-	                            // 先按容器 rect 获取截图中的源区域（像素坐标）
-	                            let sx = rect.left * ratio;
-	                            let sy = rect.top * ratio;
-	                            let sw = rect.width * ratio;
-	                            let sh = rect.height * ratio;
+                            // 先按容器 rect 获取截图中的源区域（像素坐标）
+                            let sx = rect.left * ratio;
+                            let sy = rect.top * ratio;
+                            let sw = rect.width * ratio;
+                            let sh = rect.height * ratio;
 
-	                            // 安全处理：裁剪到截图可用范围（避免容器部分在可视区外时越界）
-	                            const ix = Math.max(0, sx);
-	                            const iy = Math.max(0, sy);
-	                            const iw = Math.max(0, Math.min(img.width - ix, sw - (ix - sx)));
-	                            const ih = Math.max(0, Math.min(img.height - iy, sh - (iy - sy)));
+                            // 安全处理：裁剪到截图可用范围（避免容器部分在可视区外时越界）
+                            const ix = Math.max(0, sx);
+                            const iy = Math.max(0, sy);
+                            const iw = Math.max(0, Math.min(img.width - ix, sw - (ix - sx)));
+                            const ih = Math.max(0, Math.min(img.height - iy, sh - (iy - sy)));
 
-	                            if (iw <= 1 || ih <= 1) {
-	                                console.warn('[Canvas Thumbnail] 裁剪区域无效，退回整页截图');
-	                                browserAPI.storage.local.set({ bookmarkCanvasThumbnail: dataUrl }, () => { });
-	                                return;
-	                            }
+                            if (iw <= 1 || ih <= 1) {
+                                console.warn('[Canvas Thumbnail] 裁剪区域无效，退回整页截图');
+                                browserAPI.storage.local.set({ bookmarkCanvasThumbnail: dataUrl }, () => { });
+                                return;
+                            }
 
-	                            // 关键：保持主 UI 固定输出尺寸，但不要拉伸变形
-	                            // 这里采用「cover」策略：按目标宽高比在源图中居中裁剪，再缩放到固定尺寸
-	                            const targetAspect = canvas.width / canvas.height; // 3:2
-	                            let csx = ix;
-	                            let csy = iy;
-	                            let csw = iw;
-	                            let csh = ih;
+                            // 关键：保持主 UI 固定输出尺寸，但不要拉伸变形
+                            // 这里采用「cover」策略：按目标宽高比在源图中居中裁剪，再缩放到固定尺寸
+                            const targetAspect = canvas.width / canvas.height; // 3:2
+                            let csx = ix;
+                            let csy = iy;
+                            let csw = iw;
+                            let csh = ih;
 
-	                            const sourceAspect = csw / csh;
-	                            if (sourceAspect > targetAspect) {
-	                                // 源区域过宽：左右裁剪
-	                                const newW = csh * targetAspect;
-	                                csx = csx + (csw - newW) / 2;
-	                                csw = newW;
-	                            } else if (sourceAspect < targetAspect) {
-	                                // 源区域过高：上下裁剪
-	                                const newH = csw / targetAspect;
-	                                csy = csy + (csh - newH) / 2;
-	                                csh = newH;
-	                            }
+                            const sourceAspect = csw / csh;
+                            if (sourceAspect > targetAspect) {
+                                // 源区域过宽：左右裁剪
+                                const newW = csh * targetAspect;
+                                csx = csx + (csw - newW) / 2;
+                                csw = newW;
+                            } else if (sourceAspect < targetAspect) {
+                                // 源区域过高：上下裁剪
+                                const newH = csw / targetAspect;
+                                csy = csy + (csh - newH) / 2;
+                                csh = newH;
+                            }
 
-	                            // 最后再做一次边界收敛（浮点误差导致的越界）
-	                            csx = Math.max(0, csx);
-	                            csy = Math.max(0, csy);
-	                            csw = Math.max(1, Math.min(img.width - csx, csw));
-	                            csh = Math.max(1, Math.min(img.height - csy, csh));
+                            // 最后再做一次边界收敛（浮点误差导致的越界）
+                            csx = Math.max(0, csx);
+                            csy = Math.max(0, csy);
+                            csw = Math.max(1, Math.min(img.width - csx, csw));
+                            csh = Math.max(1, Math.min(img.height - csy, csh));
 
-	                            ctx.drawImage(img, csx, csy, csw, csh, 0, 0, canvas.width, canvas.height);
+                            ctx.drawImage(img, csx, csy, csw, csh, 0, 0, canvas.width, canvas.height);
 
-	                            const croppedDataUrl = canvas.toDataURL('image/jpeg', 0.98);
-	                            browserAPI.storage.local.set({ bookmarkCanvasThumbnail: croppedDataUrl }, () => {
-	                                // 静默保存，不输出日志
-	                            });
+                            const croppedDataUrl = canvas.toDataURL('image/jpeg', 0.98);
+                            browserAPI.storage.local.set({ bookmarkCanvasThumbnail: croppedDataUrl }, () => {
+                                // 静默保存，不输出日志
+                            });
                         } catch (e) {
                             console.warn('[Canvas Thumbnail] 裁剪缩略图时出错，退回整页截图:', e);
                             browserAPI.storage.local.set({ bookmarkCanvasThumbnail: dataUrl }, () => { });
@@ -4447,7 +4459,7 @@ function requestCanvasThumbnailUpdate(reason) {
     try {
         // 提前检查：只在 Canvas 视图下调度截图
         if (currentView !== 'canvas') return;
-        
+
         if (canvasThumbnailUpdateTimer) {
             clearTimeout(canvasThumbnailUpdateTimer);
         }
@@ -4473,7 +4485,7 @@ function renderCurrentView() {
     if (currentView !== 'additions' && trackingRefreshInterval) {
         stopTrackingRefresh();
     }
-    
+
     // 控制缩放控制器的显示/隐藏
     const zoomIndicator = document.getElementById('canvasZoomIndicator');
     if (zoomIndicator) {
@@ -4502,10 +4514,10 @@ function renderCurrentView() {
                 const canvasContent = document.getElementById('canvasContent');
                 let permanentSectionExists = document.getElementById('permanentSection');
                 const canvasView = document.getElementById('canvasView');
-                
+
                 // 检查Canvas是否已经初始化过
                 const isCanvasInitialized = canvasView && canvasView.dataset.initialized === 'true';
-                
+
                 // 1. 先从template创建永久栏目并添加到canvas-content（如果还不存在）
                 if (!permanentSectionExists && canvasContent) {
                     const template = document.getElementById('permanentSectionTemplate');
@@ -4534,12 +4546,12 @@ function renderCurrentView() {
                     // 首次初始化：渲染书签树
                     try {
                         renderTreeView();
-                        
+
                         // 3. 初始化Canvas功能（缩放、平移、拖拽等）
                         if (window.CanvasModule) {
                             window.CanvasModule.init();
                         }
-                        
+
                         // 标记Canvas已初始化
                         if (canvasView) {
                             canvasView.dataset.initialized = 'true';
@@ -4553,12 +4565,12 @@ function renderCurrentView() {
                 } else {
                     // 已初始化：只恢复显示，触发休眠管理
                     console.log('[Canvas] 使用缓存状态，跳过重新初始化');
-                    
+
                     // 验证Canvas状态是否有效
                     const canvasWorkspace = document.getElementById('canvasWorkspace');
                     const canvasContentEl = document.getElementById('canvasContent');
                     const hasValidState = canvasWorkspace && canvasContentEl && canvasContentEl.children.length > 0;
-                    
+
                     if (!hasValidState) {
                         // 状态无效，需要重新初始化
                         console.warn('[Canvas] 缓存状态无效，重新初始化');
@@ -4635,35 +4647,35 @@ let recommendViewInitialized = false;
 
 function renderRecommendView() {
     console.log('[书签推荐] 渲染推荐视图');
-    
+
     // 只初始化一次事件监听器
     if (!recommendViewInitialized) {
         // 初始化可折叠区域
         initCollapsibleSections();
-        
+
         // 初始化公式输入框事件
         initFormulaInputs();
-        
+
         // 初始化卡片交互
         initCardInteractions();
-        
+
         // 初始化追踪开关
         initTrackingToggle();
-        
+
         // 初始化稍后复习弹窗
         initLaterModal();
-        
+
         // 初始化添加域名和文件夹弹窗
         initAddDomainModal();
         initSelectFolderModal();
         initBlockManageButtons();
-        
+
         // 初始化添加到稍后复习弹窗
         initAddToPostponedModal();
-        
+
         recommendViewInitialized = true;
     }
-    
+
     // 每次进入视图时加载数据
     loadRecommendData();
 }
@@ -4679,10 +4691,10 @@ function initCollapsibleSections() {
             section.classList.toggle('collapsed');
         });
     });
-    
+
     // 初始化拖拽排序
     initSectionDragSort();
-    
+
     // 恢复保存的顺序
     restoreSectionOrder();
 }
@@ -4691,63 +4703,63 @@ function initCollapsibleSections() {
 function initSectionDragSort() {
     const container = document.getElementById('recommendSectionsContainer');
     if (!container) return;
-    
+
     let draggedElement = null;
     let isDragging = false;
     let startY = 0;
-    
+
     container.querySelectorAll('.draggable-section').forEach(section => {
         const header = section.querySelector('.section-header');
         if (!header) return;
-        
+
         header.addEventListener('mousedown', (e) => {
             // 点击按钮或输入框时不触发拖拽
             if (e.target.closest('button') || e.target.closest('input')) return;
-            
+
             startY = e.clientY;
             draggedElement = section;
-            
+
             const onMouseMove = (e) => {
                 if (!draggedElement) return;
-                
+
                 // 移动超过5px才开始拖拽
                 if (!isDragging && Math.abs(e.clientY - startY) > 5) {
                     isDragging = true;
                     section.classList.add('dragging');
                 }
-                
+
                 if (!isDragging) return;
-                
+
                 const sections = [...container.querySelectorAll('.draggable-section')];
                 const afterElement = getDragAfterElement(container, e.clientY);
-                
+
                 sections.forEach(s => s.classList.remove('drag-over'));
-                
+
                 if (afterElement) {
                     afterElement.classList.add('drag-over');
                 }
             };
-            
+
             const onMouseUp = () => {
                 if (isDragging && draggedElement) {
                     const sections = [...container.querySelectorAll('.draggable-section')];
                     const afterElement = sections.find(s => s.classList.contains('drag-over'));
-                    
+
                     sections.forEach(s => s.classList.remove('drag-over'));
                     draggedElement.classList.remove('dragging');
-                    
+
                     if (afterElement && afterElement !== draggedElement) {
                         container.insertBefore(draggedElement, afterElement);
                         saveSectionOrder();
                     }
                 }
-                
+
                 draggedElement = null;
                 isDragging = false;
                 document.removeEventListener('mousemove', onMouseMove);
                 document.removeEventListener('mouseup', onMouseUp);
             };
-            
+
             document.addEventListener('mousemove', onMouseMove);
             document.addEventListener('mouseup', onMouseUp);
         });
@@ -4756,11 +4768,11 @@ function initSectionDragSort() {
 
 function getDragAfterElement(container, y) {
     const sections = [...container.querySelectorAll('.draggable-section:not(.dragging)')];
-    
+
     return sections.reduce((closest, section) => {
         const box = section.getBoundingClientRect();
         const offset = y - box.top - box.height / 2;
-        
+
         if (offset < 0 && offset > closest.offset) {
             return { offset, element: section };
         } else {
@@ -4772,10 +4784,10 @@ function getDragAfterElement(container, y) {
 function saveSectionOrder() {
     const container = document.getElementById('recommendSectionsContainer');
     if (!container) return;
-    
+
     const order = [...container.querySelectorAll('.draggable-section')]
         .map(s => s.dataset.sectionId);
-    
+
     browserAPI.storage.local.set({ recommendSectionOrder: order });
     console.log('[书签推荐] 保存栏目顺序:', order);
 }
@@ -4783,20 +4795,20 @@ function saveSectionOrder() {
 function restoreSectionOrder() {
     browserAPI.storage.local.get(['recommendSectionOrder'], (result) => {
         if (!result.recommendSectionOrder) return;
-        
+
         const container = document.getElementById('recommendSectionsContainer');
         if (!container) return;
-        
+
         const order = result.recommendSectionOrder;
         const sections = [...container.querySelectorAll('.draggable-section')];
-        
+
         order.forEach(id => {
             const section = sections.find(s => s.dataset.sectionId === id);
             if (section) {
                 container.appendChild(section);
             }
         });
-        
+
         console.log('[书签推荐] 恢复栏目顺序:', order);
     });
 }
@@ -4805,7 +4817,7 @@ function restoreSectionOrder() {
 function updatePostponedCollapse(count) {
     const section = document.querySelector('.recommend-postponed-section');
     if (!section) return;
-    
+
     if (count === 0) {
         section.classList.add('collapsed');
     }
@@ -4829,7 +4841,7 @@ function initFormulaInputs() {
             }
         });
     });
-    
+
     // 阈值输入框
     const thresholdInputs = document.querySelectorAll('.threshold-value');
     thresholdInputs.forEach(input => {
@@ -4842,13 +4854,13 @@ function initFormulaInputs() {
             }
         });
     });
-    
+
     // 恢复默认按钮
     const resetBtn = document.getElementById('resetFormulaBtn');
     if (resetBtn) {
         resetBtn.addEventListener('click', resetFormulaToDefault);
     }
-    
+
     // 加载保存的配置
     loadFormulaConfig();
 }
@@ -4859,7 +4871,7 @@ function normalizeWeights() {
     const w3 = parseFloat(document.getElementById('weightTimeDegree').value) || 0;
     const w4 = parseFloat(document.getElementById('weightForgetting').value) || 0;
     const w5 = parseFloat(document.getElementById('weightLaterReview').value) || 0;
-    
+
     const total = w1 + w2 + w3 + w4 + w5;
     if (total > 0 && Math.abs(total - 1) > 0.01) {
         document.getElementById('weightFreshness').value = (w1 / total).toFixed(2);
@@ -4877,12 +4889,12 @@ function resetFormulaToDefault() {
     document.getElementById('weightTimeDegree').value = '0.25';
     document.getElementById('weightForgetting').value = '0.20';
     document.getElementById('weightLaterReview').value = '0.20';
-    
+
     document.getElementById('thresholdFreshness').value = '30';
     document.getElementById('thresholdColdness').value = '10';
     document.getElementById('thresholdTimeDegree').value = '5';
     document.getElementById('thresholdForgetting').value = '14';
-    
+
     saveFormulaConfig();
 }
 
@@ -4927,7 +4939,7 @@ function loadFormulaConfig() {
             document.getElementById('weightTimeDegree').value = config.weights.shallowRead;
             document.getElementById('weightForgetting').value = config.weights.forgetting;
             document.getElementById('weightLaterReview').value = config.weights.laterReview ?? 0.20;
-            
+
             document.getElementById('thresholdFreshness').value = config.thresholds.freshness;
             document.getElementById('thresholdColdness').value = config.thresholds.coldness;
             document.getElementById('thresholdTimeDegree').value = config.thresholds.shallowRead;
@@ -5041,10 +5053,10 @@ function setHighResFavicon(imgElement, url) {
         imgElement.src = fallbackIcon;
         return;
     }
-    
+
     // 使用现有的 getFaviconUrl（会触发异步加载）
     imgElement.src = getFaviconUrl(url);
-    
+
     // 异步获取更高质量版本
     getFaviconUrlAsync(url).then(dataUrl => {
         if (dataUrl && dataUrl !== fallbackIcon) {
@@ -5073,30 +5085,30 @@ browserAPI.storage.onChanged.addListener((changes, areaName) => {
     if (areaName === 'local' && changes.popupCurrentCards) {
         // 仅在推荐视图时处理
         if (currentView !== 'recommend') return;
-        
+
         // 检查是否是 history 页面自己刚保存的（500ms内忽略）
         const now = Date.now();
         if (now - historyLastSaveTime < 500) {
             console.log('[卡片同步] 忽略本页面保存触发的变化');
             return;
         }
-        
+
         const newValue = changes.popupCurrentCards.newValue;
         const oldValue = changes.popupCurrentCards.oldValue;
-        
+
         if (newValue && newValue.cardIds) {
             // 检查卡片ID是否变化（popup刷新了卡片）
             const oldCardIds = oldValue?.cardIds || [];
             const newCardIds = newValue.cardIds || [];
             const cardIdsChanged = JSON.stringify(oldCardIds.sort()) !== JSON.stringify(newCardIds.sort());
-            
+
             if (cardIdsChanged) {
                 // 卡片ID变化（来自popup的刷新），同步更新HTML页面
                 console.log('[卡片同步] popup刷新了卡片，同步更新HTML');
                 syncCardsFromStorage(newValue);
                 return;
             }
-            
+
             // 检查是否全部勾选
             if (newValue.flippedIds) {
                 const allFlipped = newValue.cardIds.every(id => newValue.flippedIds.includes(id));
@@ -5115,30 +5127,30 @@ async function syncCardsFromStorage(cardState) {
     try {
         const cardsRow = document.getElementById('cardsRow');
         if (!cardsRow) return;
-        
+
         const cards = cardsRow.querySelectorAll('.recommend-card');
         if (cards.length === 0 || !cardState.cardData) return;
-        
+
         const { cardIds, flippedIds, cardData } = cardState;
-        
+
         // 获取S值缓存用于显示优先级
         const scoresCache = await getScoresCache();
-        
+
         cards.forEach((card, index) => {
             if (index >= cardData.length) return;
-            
+
             const data = cardData[index];
             const bookmarkId = cardIds[index];
             const isFlipped = flippedIds?.includes(bookmarkId);
-            
+
             // 更新卡片内容
             card.dataset.bookmarkId = bookmarkId;
-            
+
             const titleEl = card.querySelector('.card-title');
             if (titleEl) {
                 titleEl.textContent = data.title || data.url || '--';
             }
-            
+
             // 更新favicon（三层降级：网站自己 → DuckDuckGo → Google S2）
             const favicon = card.querySelector('.card-favicon');
             if (favicon && data.url) {
@@ -5160,7 +5172,7 @@ async function syncCardsFromStorage(cardState) {
                     favicon.src = fallbackIcon;
                 }
             }
-            
+
             // 更新优先级显示
             const priorityEl = card.querySelector('.card-priority');
             if (priorityEl) {
@@ -5168,17 +5180,17 @@ async function syncCardsFromStorage(cardState) {
                 const priority = cached ? cached.S : 0;
                 priorityEl.textContent = `S = ${priority.toFixed(2)}`;
             }
-            
+
             // 更新翻阅状态
             if (isFlipped) {
                 card.classList.add('flipped');
             } else {
                 card.classList.remove('flipped');
             }
-            
+
             card.classList.remove('empty');
         });
-        
+
         console.log('[卡片同步] HTML页面已同步popup的卡片');
     } catch (e) {
         console.warn('[卡片同步] 同步失败:', e);
@@ -5188,11 +5200,11 @@ async function syncCardsFromStorage(cardState) {
 // 在推荐窗口中打开链接
 async function openInRecommendWindow(url) {
     if (!url) return;
-    
+
     try {
         // 从storage获取共享的窗口ID
         let windowId = await getSharedRecommendWindowId();
-        
+
         // 检查窗口是否存在
         if (windowId) {
             try {
@@ -5210,13 +5222,13 @@ async function openInRecommendWindow(url) {
                 await saveSharedRecommendWindowId(null);
             }
         }
-        
+
         // 创建新窗口
         const width = Math.min(1200, Math.round(screen.availWidth * 0.75));
         const height = Math.min(800, Math.round(screen.availHeight * 0.8));
         const left = Math.round((screen.availWidth - width) / 2);
         const top = Math.round((screen.availHeight - height) / 2);
-        
+
         const win = await browserAPI.windows.create({
             url: url,
             type: 'normal',
@@ -5225,7 +5237,7 @@ async function openInRecommendWindow(url) {
         });
         // 保存窗口ID到storage，供popup和history共享
         await saveSharedRecommendWindowId(win.id);
-        
+
     } catch (error) {
         console.error('[推荐卡片] 打开窗口失败:', error);
         browserAPI.tabs.create({ url });
@@ -5239,16 +5251,16 @@ function initCardInteractions() {
         // S值已通过增量更新保持最新，直接从缓存刷新卡片
         await refreshRecommendCards(true);
     });
-    
+
     // 刷新设置按钮
     document.getElementById('refreshSettingsBtn')?.addEventListener('click', (e) => {
         e.stopPropagation();
         showRefreshSettingsModal();
     });
-    
+
     // 初始化刷新设置弹窗
     initRefreshSettingsModal();
-    
+
     // 预设模式按钮
     document.querySelectorAll('.preset-btn').forEach(btn => {
         btn.addEventListener('click', (e) => {
@@ -5262,21 +5274,21 @@ function initCardInteractions() {
 // 应用预设模式
 function applyPresetMode(mode) {
     if (!presetModes[mode]) return;
-    
+
     // 如果已经是目标模式，不触发全量重算
     if (currentRecommendMode === mode) {
         console.log('[书签推荐] 已是当前模式，跳过重算:', mode);
         return;
     }
-    
+
     currentRecommendMode = mode;
     const preset = presetModes[mode];
-    
+
     // 更新按钮状态
     document.querySelectorAll('.preset-btn').forEach(btn => {
         btn.classList.toggle('active', btn.dataset.mode === mode);
     });
-    
+
     // 更新权重输入框
     const weightInputs = {
         freshness: document.getElementById('weightFreshness'),
@@ -5285,17 +5297,17 @@ function applyPresetMode(mode) {
         forgetting: document.getElementById('weightForgetting'),
         laterReview: document.getElementById('weightLaterReview')
     };
-    
+
     // 设置权重值
     weightInputs.freshness.value = preset.weights.freshness;
     weightInputs.coldness.value = preset.weights.coldness;
     weightInputs.timeDegree.value = preset.weights.timeDegree;
     weightInputs.forgetting.value = preset.weights.forgetting;
     weightInputs.laterReview.value = preset.weights.laterReview;
-    
+
     // 处理优先模式和用户覆盖
     const priorityModeBtn = document.getElementById('priorityModeBtn');
-    
+
     if (mode === 'priority') {
         // 优先模式：橙色显示
         for (const input of Object.values(weightInputs)) {
@@ -5317,19 +5329,19 @@ function applyPresetMode(mode) {
             priorityModeBtn.dataset.userOverride = 'true';
         }
     }
-    
+
     // 更新阈值输入框
     document.getElementById('thresholdFreshness').value = preset.thresholds.freshness;
     document.getElementById('thresholdColdness').value = preset.thresholds.coldness;
     document.getElementById('thresholdTimeDegree').value = preset.thresholds.timeDegree;
     document.getElementById('thresholdForgetting').value = preset.thresholds.forgetting;
-    
+
     // 保存配置（saveFormulaConfig 内部会触发全量重算）
     saveFormulaConfig().then(() => {
         // 重算完成后刷新推荐卡片
         refreshRecommendCards();
     });
-    
+
     const modeNames = { default: '默认', archaeology: '考古', consolidate: '巩固', wander: '漫游', priority: '优先巩固' };
     console.log(`[书签推荐] 切换到${modeNames[mode] || mode}模式`);
 }
@@ -5341,10 +5353,10 @@ function initTrackingToggle() {
             e.stopPropagation();
             toggleBtn.classList.toggle('active');
             const isActive = toggleBtn.classList.contains('active');
-            document.getElementById('trackingToggleText').textContent = isActive ? 
-                i18n.trackingToggleOn[currentLang] : 
+            document.getElementById('trackingToggleText').textContent = isActive ?
+                i18n.trackingToggleOn[currentLang] :
                 i18n.trackingToggleOff[currentLang];
-            
+
             // 更新公式中的T项（时间度）
             const termT = document.getElementById('termTimeDegree');
             if (termT) {
@@ -5354,12 +5366,12 @@ function initTrackingToggle() {
                     termT.classList.add('disabled');
                 }
             }
-            
+
             // 通知 background.js 更新追踪状态
             try {
-                await browserAPI.runtime.sendMessage({ 
-                    action: 'setTrackingEnabled', 
-                    enabled: isActive 
+                await browserAPI.runtime.sendMessage({
+                    action: 'setTrackingEnabled',
+                    enabled: isActive
                 });
                 // 立即刷新左下角小组件
                 updateTimeTrackingWidget();
@@ -5367,25 +5379,25 @@ function initTrackingToggle() {
                 console.warn('[书签推荐] 设置追踪状态失败:', error);
             }
         });
-        
+
         // 加载保存的状态
         browserAPI.runtime.sendMessage({ action: 'isTrackingEnabled' }, (response) => {
             if (response && response.success) {
                 const isActive = response.enabled;
                 if (isActive) {
                     toggleBtn.classList.add('active');
-                    document.getElementById('trackingToggleText').textContent = 
+                    document.getElementById('trackingToggleText').textContent =
                         i18n.trackingToggleOn[currentLang];
                 } else {
                     toggleBtn.classList.remove('active');
-                    document.getElementById('trackingToggleText').textContent = 
+                    document.getElementById('trackingToggleText').textContent =
                         i18n.trackingToggleOff[currentLang];
                     document.getElementById('termTimeDegree')?.classList.add('disabled');
                 }
             }
         });
     }
-    
+
     // 时间范围选择器
     const rangeSelect = document.getElementById('trackingRankingRange');
     if (rangeSelect) {
@@ -5393,20 +5405,20 @@ function initTrackingToggle() {
             loadActiveTimeRanking();
         });
     }
-    
+
     // 清除记录按钮
     const clearBtn = document.getElementById('clearTrackingBtn');
     if (clearBtn) {
         clearBtn.addEventListener('click', async (e) => {
             e.stopPropagation();
-            
+
             if (!confirm(i18n.trackingClearConfirm[currentLang])) return;
-            
+
             try {
-                const response = await browserAPI.runtime.sendMessage({ 
-                    action: 'clearAllTrackingSessions' 
+                const response = await browserAPI.runtime.sendMessage({
+                    action: 'clearAllTrackingSessions'
                 });
-                
+
                 if (response && response.success) {
                     // 刷新显示
                     await loadCurrentTrackingSessions();
@@ -5418,12 +5430,12 @@ function initTrackingToggle() {
             }
         });
     }
-    
+
     // 状态说明弹窗（使用事件委托，支持动态创建的图标）
     const stateModal = document.getElementById('trackingStateModal');
     const closeStateModalBtn = document.getElementById('closeTrackingStateModal');
     const trackingHeaderState = document.getElementById('trackingHeaderState');
-    
+
     if (trackingHeaderState && stateModal) {
         trackingHeaderState.addEventListener('click', (e) => {
             if (e.target.classList.contains('tracking-state-help')) {
@@ -5432,13 +5444,13 @@ function initTrackingToggle() {
                 updateTrackingStateModalI18n();
             }
         });
-        
+
         if (closeStateModalBtn) {
             closeStateModalBtn.addEventListener('click', () => {
                 stateModal.classList.remove('show');
             });
         }
-        
+
         // 点击背景关闭
         stateModal.addEventListener('click', (e) => {
             if (e.target === stateModal) {
@@ -5446,25 +5458,25 @@ function initTrackingToggle() {
             }
         });
     }
-    
+
     // 公式说明弹窗
     const formulaHelpBtn = document.getElementById('formulaHelpBtn');
     const formulaHelpModal = document.getElementById('formulaHelpModal');
     const closeFormulaHelpBtn = document.getElementById('closeFormulaHelpModal');
-    
+
     if (formulaHelpBtn && formulaHelpModal) {
         formulaHelpBtn.addEventListener('click', (e) => {
             e.stopPropagation();
             formulaHelpModal.classList.add('show');
             updateFormulaHelpModalI18n();
         });
-        
+
         if (closeFormulaHelpBtn) {
             closeFormulaHelpBtn.addEventListener('click', () => {
                 formulaHelpModal.classList.remove('show');
             });
         }
-        
+
         formulaHelpModal.addEventListener('click', (e) => {
             if (e.target === formulaHelpModal) {
                 formulaHelpModal.classList.remove('show');
@@ -5476,35 +5488,35 @@ function initTrackingToggle() {
 // 更新状态说明弹窗的国际化文本
 function updateTrackingStateModalI18n() {
     const isEn = currentLang === 'en';
-    
+
     // 标题
     const title = document.getElementById('trackingStateModalTitle');
     if (title) title.textContent = isEn ? 'Time Tracking State Guide' : '时间捕捉状态说明';
-    
+
     // 表头（图标在第一列）
     document.getElementById('stateTableHeaderIcon').textContent = isEn ? 'Icon' : '图标';
     document.getElementById('stateTableHeaderState').textContent = isEn ? 'State' : '状态';
     document.getElementById('stateTableHeaderCondition').textContent = isEn ? 'Condition' : '条件';
     document.getElementById('stateTableHeaderRate').textContent = isEn ? 'Rate' : '计时倍率';
     document.getElementById('stateTableHeaderExample').textContent = isEn ? 'Example' : '例子';
-    
+
     // 表格内容
     document.getElementById('stateActiveLabel').textContent = isEn ? 'Active' : '活跃';
     document.getElementById('stateActiveCondition').textContent = isEn ? 'Current tab + Window focus + User active' : '当前标签 + 窗口焦点 + 用户活跃';
     document.getElementById('stateActiveExample').textContent = isEn ? 'Reading, scrolling, typing' : '正在阅读、滚动页面、打字';
-    
+
     document.getElementById('stateIdleLabel').textContent = isEn ? 'Idle Focus' : '前台静止';
     document.getElementById('stateIdleCondition').textContent = isEn ? 'Current tab + Window focus + User idle' : '当前标签 + 窗口焦点 + 用户空闲';
     document.getElementById('stateIdleExample').textContent = isEn ? 'Watching video, thinking' : '静止观看视频、思考内容';
-    
+
     document.getElementById('stateVisibleLabel').textContent = isEn ? 'Visible Ref' : '可见参考';
     document.getElementById('stateVisibleCondition').textContent = isEn ? 'Current tab + No window focus + User active' : '当前标签 + 窗口无焦点 + 用户活跃';
     document.getElementById('stateVisibleExample').textContent = isEn ? 'Split-screen reference, comparing code' : '分屏参考文档、对照代码';
-    
+
     document.getElementById('stateBackgroundLabel').textContent = isEn ? 'Background' : '后台';
     document.getElementById('stateBackgroundCondition').textContent = isEn ? 'Not current tab + User active' : '非当前标签 + 用户活跃';
     document.getElementById('stateBackgroundExample').textContent = isEn ? 'Idle tab, background music' : '挂机、后台播放音乐';
-    
+
     document.getElementById('stateSleepLabel').textContent = isEn ? 'Sleep' : '睡眠';
     document.getElementById('stateSleepCondition').textContent = isEn ? 'User idle (any tab)' : '用户空闲（任何标签）';
     document.getElementById('stateSleepExample').textContent = isEn ? 'Away from computer, screen locked' : '离开电脑、锁屏';
@@ -5513,25 +5525,25 @@ function updateTrackingStateModalI18n() {
 // 更新公式说明弹窗的国际化文本
 function updateFormulaHelpModalI18n() {
     const isEn = currentLang === 'en';
-    
+
     // 标题
     const title = document.getElementById('formulaHelpModalTitle');
     if (title) title.textContent = isEn ? 'Formula Explanation' : '权重公式说明';
-    
+
     // 通用公式
     const generalTitle = document.getElementById('formulaHelpGeneralTitle');
     if (generalTitle) generalTitle.textContent = isEn ? 'General Formula' : '通用公式';
-    
+
     const codeEl = document.querySelector('.formula-help-code code');
-    if (codeEl) codeEl.textContent = isEn 
-        ? 'Factor = 1 / (1 + (value / threshold)^0.7)' 
+    if (codeEl) codeEl.textContent = isEn
+        ? 'Factor = 1 / (1 + (value / threshold)^0.7)'
         : '因子值 = 1 / (1 + (实际值 / 阈值)^0.7)';
-    
+
     // 公式特点
     const featuresTitle = document.getElementById('formulaHelpFeaturesTitle');
     if (featuresTitle) featuresTitle.textContent = isEn ? 'Features' : '公式特点';
-    
-    document.getElementById('formulaHelpFeature1').innerHTML = isEn 
+
+    document.getElementById('formulaHelpFeature1').innerHTML = isEn
         ? '<strong>At threshold = 0.5</strong>: When value equals threshold, factor is exactly 0.5'
         : '<strong>阈值处 = 0.5</strong>：当实际值等于阈值时，因子值正好是0.5';
     document.getElementById('formulaHelpFeature2').innerHTML = isEn
@@ -5543,15 +5555,15 @@ function updateFormulaHelpModalI18n() {
     document.getElementById('formulaHelpFeature4').innerHTML = isEn
         ? '<strong>Large value friendly</strong>: 1000 clicks still has 0.02 differentiation'
         : '<strong>大数值友好</strong>：1000次点击仍有0.02的区分度';
-    
+
     // 效果示例
     const exampleTitle = document.getElementById('formulaHelpExampleTitle');
     if (exampleTitle) exampleTitle.textContent = isEn ? 'Examples' : '效果示例';
-    
+
     document.getElementById('formulaHelpTableValue').textContent = isEn ? 'Value/Threshold' : '实际值/阈值';
     document.getElementById('formulaHelpTableResult').textContent = isEn ? 'Factor' : '因子值';
     document.getElementById('formulaHelpTableMeaning').textContent = isEn ? 'Meaning' : '含义';
-    
+
     document.getElementById('formulaHelpThreshold').textContent = isEn ? '1×(threshold)' : '1×(阈值)';
     document.getElementById('formulaHelpMeaning1').textContent = isEn ? 'Highest priority' : '最高优先';
     document.getElementById('formulaHelpMeaning2').textContent = isEn ? 'Higher' : '较高';
@@ -5559,11 +5571,11 @@ function updateFormulaHelpModalI18n() {
     document.getElementById('formulaHelpMeaning4').textContent = isEn ? 'Lower' : '较低';
     document.getElementById('formulaHelpMeaning5').textContent = isEn ? 'Very low' : '很低';
     document.getElementById('formulaHelpMeaning6').textContent = isEn ? 'Minimal but distinct' : '极低但仍有区分';
-    
+
     // 注意事项
     const notesTitle = document.getElementById('formulaHelpNotesTitle');
     if (notesTitle) notesTitle.textContent = isEn ? 'Notes' : '注意事项';
-    
+
     document.getElementById('formulaHelpNote1').innerHTML = isEn
         ? '<strong>F, C, T</strong> use inverse mode: larger value = smaller factor (e.g., more clicks = lower coldness)'
         : '<strong>F、C、T</strong> 使用 inverse 模式：值越大，因子越小（如点击越多，冷门度越低）';
@@ -5596,7 +5608,7 @@ async function getHistoryCurrentCards() {
 async function saveHistoryCurrentCards(cardIds, flippedIds, cardData = null) {
     // 标记本次保存时间，防止触发循环刷新
     historyLastSaveTime = Date.now();
-    
+
     const dataToSave = {
         popupCurrentCards: {
             cardIds: cardIds,
@@ -5614,12 +5626,12 @@ async function saveHistoryCurrentCards(cardIds, flippedIds, cardData = null) {
 // 异步获取并保存当前卡片的数据（含priority和favicon，供popup使用）
 async function saveCardFaviconsToStorage(bookmarks) {
     if (!bookmarks || bookmarks.length === 0) return;
-    
+
     try {
         // 获取当前保存的卡片状态
         const currentCards = await getHistoryCurrentCards();
         if (!currentCards || !currentCards.cardIds) return;
-        
+
         // 为每个卡片获取favicon data URL和priority
         const cardData = await Promise.all(bookmarks.map(async (bookmark) => {
             if (!bookmark || !bookmark.url) {
@@ -5637,7 +5649,7 @@ async function saveCardFaviconsToStorage(bookmarks) {
                 return { id: bookmark.id, url: bookmark.url, faviconUrl: null, priority: bookmark.priority || 0 };
             }
         }));
-        
+
         // 更新storage中的卡片数据
         currentCards.cardData = cardData;
         historyLastSaveTime = Date.now(); // 防止触发循环刷新
@@ -5651,13 +5663,13 @@ async function saveCardFaviconsToStorage(bookmarks) {
 async function markHistoryCardFlipped(bookmarkId) {
     const currentCards = await getHistoryCurrentCards();
     if (!currentCards) return false;
-    
+
     // 添加到已勾选列表
     if (!currentCards.flippedIds.includes(bookmarkId)) {
         currentCards.flippedIds.push(bookmarkId);
         await saveHistoryCurrentCards(currentCards.cardIds, currentCards.flippedIds);
     }
-    
+
     // 检查是否全部勾选
     const allFlipped = currentCards.cardIds.every(id => currentCards.flippedIds.includes(id));
     return allFlipped;
@@ -5675,28 +5687,28 @@ function updateCardDisplay(card, bookmark, isFlipped = false) {
     card.querySelector('.card-priority').textContent = `S = ${bookmark.priority.toFixed(2)}`;
     card.dataset.url = bookmark.url;
     card.dataset.bookmarkId = bookmark.id;
-    
+
     // 设置 favicon
     const favicon = card.querySelector('.card-favicon');
     if (favicon && bookmark.url) {
         setHighResFavicon(favicon, bookmark.url);
     }
-    
+
     // 点击卡片主体：打开链接 + 标记为已翻过 + 记录复习
     card.onclick = async (e) => {
         if (e.target.closest('.card-actions')) return;
-        
+
         if (bookmark.url) {
             await markBookmarkFlipped(bookmark.id);
             await recordReview(bookmark.id);
             await openInRecommendWindow(bookmark.url);
             card.classList.add('flipped');
-            
+
             // 更新本地卡片勾选状态（storage监听器会自动处理刷新）
             await markHistoryCardFlipped(bookmark.id);
         }
     };
-    
+
     // 按钮事件：稍后复习
     const btnLater = card.querySelector('.card-btn-later');
     if (btnLater) {
@@ -5706,7 +5718,7 @@ function updateCardDisplay(card, bookmark, isFlipped = false) {
             showLaterModal(bookmark);
         };
     }
-    
+
     // 按钮事件：跳过本次
     const btnSkip = card.querySelector('.card-btn-skip');
     if (btnSkip) {
@@ -5717,7 +5729,7 @@ function updateCardDisplay(card, bookmark, isFlipped = false) {
             await refreshRecommendCards(true);
         };
     }
-    
+
     // 按钮事件：永久屏蔽
     const btnBlock = card.querySelector('.card-btn-block');
     if (btnBlock) {
@@ -5741,7 +5753,7 @@ function setCardEmpty(card) {
         favicon.src = fallbackIcon;
     }
     card.onclick = null;
-    
+
     const actions = card.querySelector('.card-actions');
     if (actions) {
         actions.querySelectorAll('.card-btn').forEach(btn => {
@@ -5771,7 +5783,7 @@ async function blockBookmark(bookmarkId) {
         if (!bookmarks || bookmarks.length === 0) return false;
         const targetBookmark = bookmarks[0];
         const targetTitle = targetBookmark.title;
-        
+
         // 获取所有书签
         const allBookmarks = await new Promise(resolve => {
             browserAPI.bookmarks.getTree(tree => {
@@ -5786,20 +5798,20 @@ async function blockBookmark(bookmarkId) {
                 resolve(result);
             });
         });
-        
+
         // 找到所有同标题的书签
         const sameTitle = allBookmarks.filter(b => b.title === targetTitle);
-        
+
         const blocked = await getBlockedBookmarks();
         let blockedCount = 0;
-        
+
         for (const b of sameTitle) {
             if (!blocked.bookmarks.includes(b.id)) {
                 blocked.bookmarks.push(b.id);
                 blockedCount++;
             }
         }
-        
+
         await browserAPI.storage.local.set({ recommend_blocked: blocked });
         console.log('[屏蔽] 已屏蔽书签:', targetTitle, '共', blockedCount, '个');
         return true;
@@ -5842,7 +5854,7 @@ async function postponeBookmark(bookmarkId, delayMs) {
         const postponed = await getPostponedBookmarks();
         const existing = postponed.find(p => p.bookmarkId === bookmarkId);
         const now = Date.now();
-        
+
         if (existing) {
             existing.postponeUntil = now + delayMs;
             existing.postponeCount = (existing.postponeCount || 0) + 1;
@@ -5856,7 +5868,7 @@ async function postponeBookmark(bookmarkId, delayMs) {
                 updatedAt: now
             });
         }
-        
+
         await browserAPI.storage.local.set({ recommend_postponed: postponed });
         console.log('[稍后] 已推迟书签:', bookmarkId, '延迟:', delayMs / 3600000, '小时');
         return true;
@@ -5871,14 +5883,14 @@ async function cancelPostpone(bookmarkId) {
     try {
         let postponed = await getPostponedBookmarks();
         const hadManualPostponed = postponed.some(p => p.manuallyAdded);
-        
+
         postponed = postponed.filter(p => p.bookmarkId !== bookmarkId);
         await browserAPI.storage.local.set({ recommend_postponed: postponed });
         console.log('[稍后] 已取消推迟:', bookmarkId);
-        
+
         // 检查取消后是否还有手动添加的待复习
         const hasManualPostponed = postponed.some(p => p.manuallyAdded);
-        
+
         // 如果手动待复习从有变无，后续 loadPostponedList 会触发模式切换和全量重算
         // 此时不需要增量更新，避免重复计算
         if (hadManualPostponed && !hasManualPostponed && currentRecommendMode === 'priority') {
@@ -5887,7 +5899,7 @@ async function cancelPostpone(bookmarkId) {
             // L因子变化，发消息给background.js更新该书签的S值
             browserAPI.runtime.sendMessage({ action: 'updateBookmarkScore', bookmarkId });
         }
-        
+
         return true;
     } catch (e) {
         console.error('[稍后] 取消推迟失败:', e);
@@ -5921,10 +5933,10 @@ function calculateRecommendedDays(priority, factors) {
     // P值低 → 不太需要 → 间隔长
     const maxDays = 14;
     const minDays = 1;
-    
+
     // 使用二次函数使分布更平滑
     let intervalDays = minDays + (maxDays - minDays) * Math.pow(1 - priority, 1.5);
-    
+
     // 根据单个因子微调
     if (factors) {
         // D(遗忘度)特别高：很久没看了，缩短间隔
@@ -5934,7 +5946,7 @@ function calculateRecommendedDays(priority, factors) {
         // C(冷门度)特别高：很少点击，缩短间隔
         if (factors.C > 0.9) intervalDays *= 0.85;
     }
-    
+
     return Math.max(minDays, Math.round(intervalDays));
 }
 
@@ -5957,20 +5969,20 @@ function showLaterModal(bookmark) {
     currentLaterBookmark = bookmark;
     const modal = document.getElementById('laterModal');
     if (!modal) return;
-    
+
     // 计算P值推荐的间隔
     if (bookmark.priority !== undefined && bookmark.factors) {
         currentLaterRecommendedDays = calculateRecommendedDays(bookmark.priority, bookmark.factors);
     } else {
         currentLaterRecommendedDays = 3; // 默认3天
     }
-    
+
     // 更新推荐按钮显示
     const recommendDaysEl = document.getElementById('laterRecommendDays');
     if (recommendDaysEl) {
         recommendDaysEl.textContent = formatRecommendDays(currentLaterRecommendedDays);
     }
-    
+
     modal.classList.add('show');
     console.log('[稍后] 显示弹窗:', bookmark.id, bookmark.title, '推荐间隔:', currentLaterRecommendedDays, '天');
 }
@@ -5986,26 +5998,26 @@ function hideLaterModal() {
 function initLaterModal() {
     const modal = document.getElementById('laterModal');
     if (!modal) return;
-    
+
     // 关闭按钮
     const closeBtn = document.getElementById('laterModalClose');
     if (closeBtn) {
         closeBtn.onclick = hideLaterModal;
     }
-    
+
     // 点击背景关闭
     modal.onclick = (e) => {
         if (e.target === modal) {
             hideLaterModal();
         }
     };
-    
+
     // P值推荐按钮
     const recommendBtn = document.getElementById('laterRecommendBtn');
     if (recommendBtn) {
         recommendBtn.onclick = async () => {
             if (!currentLaterBookmark) return;
-            
+
             const delayMs = currentLaterRecommendedDays * 24 * 60 * 60 * 1000;
             await postponeBookmark(currentLaterBookmark.id, delayMs);
             hideLaterModal();
@@ -6013,13 +6025,13 @@ function initLaterModal() {
             await refreshRecommendCards();
         };
     }
-    
+
     // 自定义选项按钮
     const options = modal.querySelectorAll('.later-option');
     options.forEach(option => {
         option.onclick = async () => {
             if (!currentLaterBookmark) return;
-            
+
             const delayMs = parseInt(option.dataset.delay);
             await postponeBookmark(currentLaterBookmark.id, delayMs);
             hideLaterModal();
@@ -6066,7 +6078,7 @@ async function saveRefreshSettings(settings) {
 function showRefreshSettingsModal() {
     const modal = document.getElementById('refreshSettingsModal');
     if (!modal) return;
-    
+
     loadRefreshSettingsToUI();
     modal.classList.add('show');
 }
@@ -6080,47 +6092,47 @@ function hideRefreshSettingsModal() {
 
 async function loadRefreshSettingsToUI() {
     const settings = await getRefreshSettings();
-    
+
     // 每N次打开
     const everyNEnabled = document.getElementById('refreshEveryNOpensEnabled');
     const everyNValue = document.getElementById('refreshEveryNOpensValue');
     if (everyNEnabled) everyNEnabled.checked = settings.refreshEveryNOpens > 0;
     if (everyNValue) everyNValue.value = settings.refreshEveryNOpens || 3;
-    
+
     // 超过X小时
     const hoursEnabled = document.getElementById('refreshAfterHoursEnabled');
     const hoursValue = document.getElementById('refreshAfterHoursValue');
     if (hoursEnabled) hoursEnabled.checked = settings.refreshAfterHours > 0;
     if (hoursValue) hoursValue.value = settings.refreshAfterHours || 1;
-    
+
     // 超过X天
     const daysEnabled = document.getElementById('refreshAfterDaysEnabled');
     const daysValue = document.getElementById('refreshAfterDaysValue');
     if (daysEnabled) daysEnabled.checked = settings.refreshAfterDays > 0;
     if (daysValue) daysValue.value = settings.refreshAfterDays || 1;
-    
+
     // 更新状态显示
     updateRefreshSettingsStatus(settings);
 }
 
 async function saveRefreshSettingsFromUI() {
     const settings = await getRefreshSettings();
-    
+
     // 每N次打开
     const everyNEnabled = document.getElementById('refreshEveryNOpensEnabled');
     const everyNValue = document.getElementById('refreshEveryNOpensValue');
     settings.refreshEveryNOpens = everyNEnabled?.checked ? parseInt(everyNValue?.value) || 3 : 0;
-    
+
     // 超过X小时
     const hoursEnabled = document.getElementById('refreshAfterHoursEnabled');
     const hoursValue = document.getElementById('refreshAfterHoursValue');
     settings.refreshAfterHours = hoursEnabled?.checked ? parseInt(hoursValue?.value) || 1 : 0;
-    
+
     // 超过X天
     const daysEnabled = document.getElementById('refreshAfterDaysEnabled');
     const daysValue = document.getElementById('refreshAfterDaysValue');
     settings.refreshAfterDays = daysEnabled?.checked ? parseInt(daysValue?.value) || 1 : 0;
-    
+
     await saveRefreshSettings(settings);
     hideRefreshSettingsModal();
 }
@@ -6128,17 +6140,17 @@ async function saveRefreshSettingsFromUI() {
 function updateRefreshSettingsStatus(settings) {
     const statusEl = document.getElementById('refreshSettingsStatus');
     if (!statusEl) return;
-    
+
     const isZh = currentLang !== 'en';
     const parts = [];
-    
+
     // 上次刷新时间
     if (settings.lastRefreshTime > 0) {
         const elapsed = Date.now() - settings.lastRefreshTime;
         const minutes = Math.floor(elapsed / 60000);
         const hours = Math.floor(elapsed / 3600000);
         const days = Math.floor(elapsed / 86400000);
-        
+
         let timeStr;
         if (days > 0) {
             timeStr = isZh ? `${days} 天前` : `${days} day${days > 1 ? 's' : ''} ago`;
@@ -6151,35 +6163,35 @@ function updateRefreshSettingsStatus(settings) {
     } else {
         parts.push(isZh ? '尚未刷新' : 'Not refreshed yet');
     }
-    
+
     // 打开次数
     if (settings.refreshEveryNOpens > 0) {
         const count = settings.openCountSinceRefresh || 0;
-        parts.push(isZh 
-            ? `已打开 ${count} / ${settings.refreshEveryNOpens} 次` 
+        parts.push(isZh
+            ? `已打开 ${count} / ${settings.refreshEveryNOpens} 次`
             : `Opened ${count} / ${settings.refreshEveryNOpens} times`);
     }
-    
+
     statusEl.textContent = parts.join(' | ');
 }
 
 function initRefreshSettingsModal() {
     const modal = document.getElementById('refreshSettingsModal');
     if (!modal) return;
-    
+
     // 关闭按钮
     const closeBtn = document.getElementById('refreshSettingsClose');
     if (closeBtn) {
         closeBtn.onclick = hideRefreshSettingsModal;
     }
-    
+
     // 点击背景关闭
     modal.onclick = (e) => {
         if (e.target === modal) {
             hideRefreshSettingsModal();
         }
     };
-    
+
     // 保存按钮
     const saveBtn = document.getElementById('refreshSettingsSaveBtn');
     if (saveBtn) {
@@ -6191,24 +6203,24 @@ function initRefreshSettingsModal() {
 function initAddDomainModal() {
     const modal = document.getElementById('addDomainModal');
     if (!modal) return;
-    
+
     const closeBtn = document.getElementById('addDomainModalClose');
     const cancelBtn = document.getElementById('addDomainCancelBtn');
     const confirmBtn = document.getElementById('addDomainConfirmBtn');
     const input = document.getElementById('addDomainInput');
-    
+
     const hideModal = () => {
         modal.classList.remove('show');
         if (input) input.value = '';
     };
-    
+
     if (closeBtn) closeBtn.onclick = hideModal;
     if (cancelBtn) cancelBtn.onclick = hideModal;
-    
+
     modal.onclick = (e) => {
         if (e.target === modal) hideModal();
     };
-    
+
     if (confirmBtn) {
         confirmBtn.onclick = async () => {
             const domain = input.value.trim();
@@ -6220,7 +6232,7 @@ function initAddDomainModal() {
             }
         };
     }
-    
+
     if (input) {
         input.onkeypress = (e) => {
             if (e.key === 'Enter') confirmBtn.click();
@@ -6232,15 +6244,15 @@ function initAddDomainModal() {
 function initSelectFolderModal() {
     const modal = document.getElementById('selectFolderModal');
     if (!modal) return;
-    
+
     const closeBtn = document.getElementById('selectFolderModalClose');
-    
+
     const hideModal = () => {
         modal.classList.remove('show');
     };
-    
+
     if (closeBtn) closeBtn.onclick = hideModal;
-    
+
     modal.onclick = (e) => {
         if (e.target === modal) hideModal();
     };
@@ -6264,19 +6276,19 @@ async function showSelectFolderModal() {
     const modal = document.getElementById('selectFolderModal');
     const container = document.getElementById('folderTreeContainer');
     if (!modal || !container) return;
-    
+
     // 获取已屏蔽的文件夹
     const blocked = await getBlockedBookmarks();
     const blockedFolderSet = new Set(blocked.folders);
-    
+
     // 获取所有文件夹
     const tree = await new Promise(resolve => {
         browserAPI.bookmarks.getTree(resolve);
     });
-    
+
     // 生成文件夹树HTML
     container.innerHTML = '';
-    
+
     function countBookmarks(node) {
         let count = 0;
         if (node.url) count = 1;
@@ -6287,20 +6299,20 @@ async function showSelectFolderModal() {
         }
         return count;
     }
-    
+
     function renderFolders(nodes, parentEl, depth = 0) {
         const isZh = currentLang === 'zh_CN';
         const unnamedFolder = i18n.unnamedFolderLabel ? i18n.unnamedFolderLabel[currentLang] : '未命名文件夹';
         for (const node of nodes) {
             if (!node.url && node.children) { // 是文件夹
                 if (blockedFolderSet.has(node.id)) continue; // 已屏蔽的不显示
-                
+
                 const bookmarkCount = countBookmarks(node);
-                
+
                 // 创建节点包装
                 const nodeWrapper = document.createElement('div');
                 nodeWrapper.className = 'folder-tree-node';
-                
+
                 const item = document.createElement('div');
                 item.className = 'folder-tree-item';
                 item.innerHTML = `
@@ -6315,7 +6327,7 @@ async function showSelectFolderModal() {
                     await refreshRecommendCards();
                 };
                 nodeWrapper.appendChild(item);
-                
+
                 // 检查是否有子文件夹
                 const childFolders = node.children.filter(c => !c.url && c.children && !blockedFolderSet.has(c.id));
                 if (childFolders.length > 0) {
@@ -6324,12 +6336,12 @@ async function showSelectFolderModal() {
                     renderFolders(node.children, childrenContainer, depth + 1);
                     nodeWrapper.appendChild(childrenContainer);
                 }
-                
+
                 parentEl.appendChild(nodeWrapper);
             }
         }
     }
-    
+
     renderFolders(tree, container);
     modal.classList.add('show');
 }
@@ -6338,11 +6350,11 @@ async function showSelectFolderModal() {
 function initBlockManageButtons() {
     const addFolderBtn = document.getElementById('addBlockFolderBtn');
     const addDomainBtn = document.getElementById('addBlockDomainBtn');
-    
+
     if (addFolderBtn) {
         addFolderBtn.onclick = () => showSelectFolderModal();
     }
-    
+
     if (addDomainBtn) {
         addDomainBtn.onclick = () => showAddDomainModal();
     }
@@ -6365,16 +6377,16 @@ function initAddToPostponedModal() {
     const confirmBtn = document.getElementById('addPostponedConfirmBtn');
     const tabs = modal?.querySelectorAll('.add-postponed-tab');
     const panels = modal?.querySelectorAll('.add-postponed-panel');
-    
+
     if (!modal || !addBtn) return;
-    
+
     // 打开弹窗
     addBtn.onclick = (e) => {
         e.stopPropagation();
         resetAddPostponedModal();
         modal.classList.add('show');
     };
-    
+
     // 关闭弹窗
     const hideModal = () => modal.classList.remove('show');
     closeBtn?.addEventListener('click', hideModal);
@@ -6382,7 +6394,7 @@ function initAddToPostponedModal() {
     modal.addEventListener('click', (e) => {
         if (e.target === modal) hideModal();
     });
-    
+
     // 标签切换
     tabs?.forEach(tab => {
         tab.addEventListener('click', () => {
@@ -6393,13 +6405,13 @@ function initAddToPostponedModal() {
             modal.querySelector(`.add-postponed-panel[data-panel="${tabName}"]`)?.classList.add('active');
         });
     });
-    
+
     // 文件夹选择按钮
     const folderSelectBtn = document.getElementById('addFolderSelectBtn');
     folderSelectBtn?.addEventListener('click', () => {
         showAddFolderPicker();
     });
-    
+
     // "全部"复选框逻辑
     const selectAllCheckbox = document.getElementById('addFolderSelectAll');
     const countInput = document.getElementById('addFolderCount');
@@ -6416,7 +6428,7 @@ function initAddToPostponedModal() {
             modeRow.style.display = 'flex';
         }
     });
-    
+
     // 搜索书签输入框
     const searchInput = document.getElementById('addSearchInput');
     let searchTimer = null;
@@ -6426,7 +6438,7 @@ function initAddToPostponedModal() {
             searchBookmarksForAdd(searchInput.value);
         }, 300);
     });
-    
+
     // 标签切换时加载域名列表
     tabs?.forEach(tab => {
         tab.addEventListener('click', async () => {
@@ -6435,7 +6447,7 @@ function initAddToPostponedModal() {
             }
         });
     });
-    
+
     // 域名搜索输入框
     const domainSearchInput = document.getElementById('addDomainSearchInput');
     let domainSearchTimer = null;
@@ -6445,7 +6457,7 @@ function initAddToPostponedModal() {
             filterDomainList(domainSearchInput.value);
         }, 200);
     });
-    
+
     // 确认添加
     confirmBtn?.addEventListener('click', async () => {
         await confirmAddToPostponed();
@@ -6457,13 +6469,13 @@ function resetAddPostponedModal() {
     addPostponedSelectedFolder = null;
     addPostponedSearchSelected.clear();
     addPostponedDomainSelected.clear();
-    
+
     const isZh = currentLang === 'zh_CN';
-    
+
     // 重置文件夹选择
     const folderName = document.getElementById('addFolderSelectedName');
     if (folderName) folderName.textContent = isZh ? '点击选择文件夹' : 'Click to select folder';
-    
+
     // 重置"全部"复选框
     const selectAllCheckbox = document.getElementById('addFolderSelectAll');
     const countInput = document.getElementById('addFolderCount');
@@ -6471,7 +6483,7 @@ function resetAddPostponedModal() {
     if (selectAllCheckbox) selectAllCheckbox.checked = false;
     if (countInput) countInput.disabled = false;
     if (modeRow) modeRow.style.display = 'flex';
-    
+
     // 重置搜索
     const searchInput = document.getElementById('addSearchInput');
     const searchResults = document.getElementById('addSearchResults');
@@ -6479,7 +6491,7 @@ function resetAddPostponedModal() {
     if (searchInput) searchInput.value = '';
     if (searchResults) searchResults.innerHTML = `<div class="add-results-empty">${isZh ? '输入关键词搜索书签' : 'Enter keyword to search bookmarks'}</div>`;
     if (searchCount) searchCount.textContent = '0';
-    
+
     // 重置域名
     const domainSearchInput = document.getElementById('addDomainSearchInput');
     const domainList = document.getElementById('addDomainList');
@@ -6488,7 +6500,7 @@ function resetAddPostponedModal() {
     if (domainList) domainList.innerHTML = `<div class="add-results-empty">${isZh ? '切换到此标签加载域名' : 'Switch to this tab to load domains'}</div>`;
     if (domainCount) domainCount.textContent = '0';
     addPostponedDomainData = [];
-    
+
     // 重置到第一个标签
     const modal = document.getElementById('addToPostponedModal');
     const tabs = modal?.querySelectorAll('.add-postponed-tab');
@@ -6501,23 +6513,23 @@ function resetAddPostponedModal() {
 function showAddFolderPicker() {
     const panel = document.querySelector('.add-postponed-panel[data-panel="folder"]');
     if (!panel) return;
-    
+
     // 检查是否已存在选择器
     let treeContainer = panel.querySelector('.add-folder-tree');
     if (treeContainer) {
         treeContainer.remove();
         return;
     }
-    
+
     // 创建树形选择器
     treeContainer = document.createElement('div');
     treeContainer.className = 'add-folder-tree';
-    
+
     // 获取书签树
     browserAPI.bookmarks.getTree().then(tree => {
         const rootNodes = tree[0]?.children || [];
         treeContainer.innerHTML = renderFolderTree(rootNodes);
-        
+
         // 绑定点击事件
         treeContainer.querySelectorAll('.add-folder-tree-item').forEach(item => {
             item.addEventListener('click', () => {
@@ -6532,7 +6544,7 @@ function showAddFolderPicker() {
             });
         });
     });
-    
+
     // 插入到第一行后面
     const firstRow = panel.querySelector('.add-panel-row');
     firstRow?.insertAdjacentElement('afterend', treeContainer);
@@ -6540,7 +6552,7 @@ function showAddFolderPicker() {
 
 function renderFolderTree(nodes, level = 0) {
     const isZh = currentLang === 'zh_CN';
-    
+
     function countBookmarks(node) {
         let count = 0;
         if (node.url) count = 1;
@@ -6551,7 +6563,7 @@ function renderFolderTree(nodes, level = 0) {
         }
         return count;
     }
-    
+
     let html = '';
     for (const node of nodes) {
         if (!node.url) { // 只显示文件夹
@@ -6577,21 +6589,21 @@ async function searchBookmarksForAdd(keyword) {
     const resultsEl = document.getElementById('addSearchResults');
     const countEl = document.getElementById('addSearchSelectedCount');
     if (!resultsEl) return;
-    
+
     if (!keyword.trim()) {
         resultsEl.innerHTML = `<div class="add-results-empty">${currentLang === 'zh_CN' ? '输入关键词搜索书签' : 'Enter keyword to search bookmarks'}</div>`;
         return;
     }
-    
+
     try {
         const results = await browserAPI.bookmarks.search(keyword);
         const bookmarks = results.filter(b => b.url).slice(0, 50);
-        
+
         if (bookmarks.length === 0) {
             resultsEl.innerHTML = `<div class="add-results-empty">${currentLang === 'zh_CN' ? '未找到匹配的书签' : 'No bookmarks found'}</div>`;
             return;
         }
-        
+
         resultsEl.innerHTML = bookmarks.map(b => `
             <div class="add-result-item ${addPostponedSearchSelected.has(b.id) ? 'selected' : ''}" data-id="${b.id}">
                 <input type="checkbox" class="add-result-checkbox" ${addPostponedSearchSelected.has(b.id) ? 'checked' : ''}>
@@ -6602,7 +6614,7 @@ async function searchBookmarksForAdd(keyword) {
                 </div>
             </div>
         `).join('');
-        
+
         // 绑定点击事件
         resultsEl.querySelectorAll('.add-result-item').forEach(item => {
             item.addEventListener('click', () => {
@@ -6631,14 +6643,14 @@ async function loadDomainList() {
     const countEl = document.getElementById('addDomainSelectedCount');
     const searchInput = document.getElementById('addDomainSearchInput');
     if (!listEl) return;
-    
+
     const isZh = currentLang === 'zh_CN';
     listEl.innerHTML = `<div class="add-results-empty">${isZh ? '加载中...' : 'Loading...'}</div>`;
     if (searchInput) searchInput.value = '';
-    
+
     try {
         const allBookmarks = await getAllBookmarksFlat();
-        
+
         // 统计每个域名的书签数量
         const domainMap = new Map(); // domain -> { count, bookmarkIds }
         for (const b of allBookmarks) {
@@ -6655,11 +6667,11 @@ async function loadDomainList() {
                 // 忽略无效URL
             }
         }
-        
+
         // 按数量排序并保存
         addPostponedDomainData = Array.from(domainMap.entries())
             .sort((a, b) => b[1].count - a[1].count);
-        
+
         renderDomainList(addPostponedDomainData);
     } catch (e) {
         console.error('[添加到待复习] 加载域名列表失败:', e);
@@ -6674,9 +6686,9 @@ function filterDomainList(keyword) {
         renderDomainList(addPostponedDomainData);
         return;
     }
-    
+
     const keywordLower = keyword.toLowerCase();
-    const filtered = addPostponedDomainData.filter(([domain]) => 
+    const filtered = addPostponedDomainData.filter(([domain]) =>
         domain.toLowerCase().includes(keywordLower)
     );
     renderDomainList(filtered);
@@ -6687,17 +6699,17 @@ function renderDomainList(domains) {
     const listEl = document.getElementById('addDomainList');
     const countEl = document.getElementById('addDomainSelectedCount');
     if (!listEl) return;
-    
+
     const isZh = currentLang === 'zh_CN';
-    
+
     if (domains.length === 0) {
         listEl.innerHTML = `<div class="add-results-empty">${isZh ? '没有找到匹配的域名' : 'No matching domains'}</div>`;
         return;
     }
-    
+
     // 最多显示100个
     const displayDomains = domains.slice(0, 100);
-    
+
     listEl.innerHTML = displayDomains.map(([domain, data]) => `
         <div class="add-domain-item ${addPostponedDomainSelected.has(domain) ? 'selected' : ''}" data-domain="${escapeHtml(domain)}">
             <input type="checkbox" ${addPostponedDomainSelected.has(domain) ? 'checked' : ''}>
@@ -6707,7 +6719,7 @@ function renderDomainList(domains) {
             </div>
         </div>
     `).join('');
-    
+
     // 绑定点击事件
     listEl.querySelectorAll('.add-domain-item').forEach(item => {
         item.addEventListener('click', () => {
@@ -6731,7 +6743,7 @@ function renderDomainList(domains) {
 async function getAllBookmarksFlat() {
     const tree = await browserAPI.bookmarks.getTree();
     const bookmarks = [];
-    
+
     function traverse(nodes) {
         for (const node of nodes) {
             if (node.url) {
@@ -6742,7 +6754,7 @@ async function getAllBookmarksFlat() {
             }
         }
     }
-    
+
     traverse(tree);
     return bookmarks;
 }
@@ -6751,31 +6763,31 @@ async function getAllBookmarksFlat() {
 async function confirmAddToPostponed() {
     const activePanel = document.querySelector('.add-postponed-panel.active');
     if (!activePanel) return;
-    
+
     const panelType = activePanel.dataset.panel;
     let bookmarkIds = [];
     const isZh = currentLang === 'zh_CN';
-    
+
     if (panelType === 'folder') {
         // 从文件夹抽取
         if (!addPostponedSelectedFolder) {
             alert(isZh ? '请先选择一个文件夹' : 'Please select a folder first');
             return;
         }
-        
+
         const selectAll = document.getElementById('addFolderSelectAll')?.checked;
         const count = selectAll ? Infinity : (parseInt(document.getElementById('addFolderCount')?.value) || 5);
         const mode = selectAll ? 'sequential' : (document.querySelector('input[name="addFolderMode"]:checked')?.value || 'random');
         const includeSubfolders = document.getElementById('addFolderIncludeSubfolders')?.checked ?? true;
-        
+
         // 获取文件夹内的书签
         const folderBookmarks = await getBookmarksFromFolder(addPostponedSelectedFolder.id, includeSubfolders);
-        
+
         if (folderBookmarks.length === 0) {
             alert(isZh ? '该文件夹中没有书签' : 'No bookmarks in this folder');
             return;
         }
-        
+
         // 根据模式抽取
         if (mode === 'random') {
             // 随机打乱
@@ -6785,7 +6797,7 @@ async function confirmAddToPostponed() {
             // 顺序抽取（全部或指定数量）
             bookmarkIds = folderBookmarks.slice(0, count).map(b => b.id);
         }
-        
+
     } else if (panelType === 'search') {
         bookmarkIds = Array.from(addPostponedSearchSelected);
         if (bookmarkIds.length === 0) {
@@ -6816,20 +6828,20 @@ async function confirmAddToPostponed() {
             return;
         }
     }
-    
+
     if (bookmarkIds.length === 0) {
         return;
     }
-    
+
     // 添加到待复习队列（手动添加的书签会获得优先级提升）
     const postponed = await getPostponedBookmarks();
     const now = Date.now();
     let addedCount = 0;
-    
+
     // 处理"全部"选项
     const selectAllCheckbox = document.getElementById('addFolderSelectAll');
     const isSelectAll = selectAllCheckbox?.checked;
-    
+
     // 生成分组信息
     let groupInfo = null;
     if (panelType === 'folder' && addPostponedSelectedFolder) {
@@ -6848,7 +6860,7 @@ async function confirmAddToPostponed() {
             name: domainName
         };
     }
-    
+
     for (const id of bookmarkIds) {
         // 检查是否已存在
         const existing = postponed.find(p => p.bookmarkId === id);
@@ -6872,21 +6884,21 @@ async function confirmAddToPostponed() {
             existing.groupName = groupInfo?.name || null;
         }
     }
-    
+
     await browserAPI.storage.local.set({ recommend_postponed: postponed });
     console.log(`[添加到待复习] 已添加 ${addedCount} 个书签（手动添加，优先级提升）`);
-    
+
     // 刷新列表（可能触发模式切换和全量重算）
     // 注意：loadPostponedList 会检测是否需要切换到优先模式，如果切换则会全量重算
     // 所以这里不需要额外调用 updateMultipleBookmarkScores，避免重复计算
     await loadPostponedList();
     await refreshRecommendCards(true); // 强制刷新推荐卡片
-    
+
     // 显示成功提示
-    const msg = isZh 
-        ? `已添加 ${bookmarkIds.length} 个书签到待复习` 
+    const msg = isZh
+        ? `已添加 ${bookmarkIds.length} 个书签到待复习`
         : `Added ${bookmarkIds.length} bookmark(s) to review`;
-    
+
     // 使用临时提示而不是 alert
     showToast(msg);
 }
@@ -6896,7 +6908,7 @@ function showToast(message, duration = 2000) {
     // 移除已存在的toast
     const existing = document.querySelector('.toast-message');
     if (existing) existing.remove();
-    
+
     const toast = document.createElement('div');
     toast.className = 'toast-message';
     toast.textContent = message;
@@ -6914,7 +6926,7 @@ function showToast(message, duration = 2000) {
         animation: fadeInUp 0.3s ease;
     `;
     document.body.appendChild(toast);
-    
+
     setTimeout(() => {
         toast.style.animation = 'fadeOutDown 0.3s ease';
         setTimeout(() => toast.remove(), 300);
@@ -6924,7 +6936,7 @@ function showToast(message, duration = 2000) {
 // 从文件夹获取书签
 async function getBookmarksFromFolder(folderId, includeSubfolders = true) {
     const bookmarks = [];
-    
+
     async function traverse(nodeId) {
         const children = await browserAPI.bookmarks.getChildren(nodeId);
         for (const child of children) {
@@ -6935,7 +6947,7 @@ async function getBookmarksFromFolder(folderId, includeSubfolders = true) {
             }
         }
     }
-    
+
     await traverse(folderId);
     return bookmarks;
 }
@@ -7014,26 +7026,26 @@ async function loadPostponedList() {
     const countEl = document.getElementById('postponedCount');
     const emptyEl = document.getElementById('postponedEmpty');
     if (!listEl) return;
-    
+
     try {
         const postponed = await getPostponedBookmarks();
         const now = Date.now();
-        
+
         // 过滤：手动添加的 或 未到期的
         const activePostponed = postponed.filter(p => p.manuallyAdded || p.postponeUntil > now);
-        
+
         // 更新计数
         if (countEl) countEl.textContent = activePostponed.length;
-        
+
         // 更新优先模式按钮和权重显示
         const priorityBadge = document.getElementById('postponedPriorityBadge');
         const priorityModeBtn = document.getElementById('priorityModeBtn');
         const hasManualPostponed = activePostponed.some(p => p.manuallyAdded);
-        
+
         if (priorityBadge) {
             priorityBadge.style.display = hasManualPostponed ? 'inline-flex' : 'none';
         }
-        
+
         // 优先模式按钮显示/隐藏
         if (priorityModeBtn) {
             if (hasManualPostponed) {
@@ -7051,26 +7063,26 @@ async function loadPostponedList() {
                 delete priorityModeBtn.dataset.userOverride;
             }
         }
-        
+
         // 根据数量决定是否折叠
         updatePostponedCollapse(activePostponed.length);
-        
+
         // 清空列表（保留空状态元素）
         const items = listEl.querySelectorAll('.postponed-item, .postponed-group');
         items.forEach(item => item.remove());
-        
+
         if (activePostponed.length === 0) {
             if (emptyEl) emptyEl.style.display = 'block';
             return;
         }
-        
+
         if (emptyEl) emptyEl.style.display = 'none';
-        
+
         // 按分组整理书签
         const groups = new Map(); // groupId -> items[]
         const singles = []; // 没有分组的单个书签
         const delayedItems = []; // 通过卡片⏰按钮添加的延迟书签
-        
+
         for (const p of activePostponed) {
             if (p.groupId && p.manuallyAdded) {
                 if (!groups.has(p.groupId)) {
@@ -7087,22 +7099,22 @@ async function loadPostponedList() {
                 delayedItems.push(p);
             }
         }
-        
+
         // 渲染分组
         for (const [groupId, group] of groups) {
             await renderPostponedGroup(listEl, groupId, group);
         }
-        
+
         // 渲染单个书签
         for (const p of singles) {
             await renderPostponedItem(listEl, p);
         }
-        
+
         // 渲染延迟书签
         for (const p of delayedItems) {
             await renderPostponedItem(listEl, p);
         }
-        
+
     } catch (e) {
         console.error('[待复习] 加载待复习列表失败:', e);
     }
@@ -7112,14 +7124,14 @@ async function loadPostponedList() {
 async function renderPostponedGroup(container, groupId, group) {
     const isZh = currentLang === 'zh_CN';
     const icon = group.type === 'folder' ? 'fa-folder' : 'fa-globe';
-    const typeLabel = group.type === 'folder' 
+    const typeLabel = group.type === 'folder'
         ? (isZh ? '文件夹' : 'Folder')
         : (isZh ? '域名' : 'Domain');
-    
+
     const groupEl = document.createElement('div');
     groupEl.className = 'postponed-group';
     groupEl.dataset.groupId = groupId;
-    
+
     groupEl.innerHTML = `
         <div class="postponed-group-header">
             <div class="postponed-group-info">
@@ -7139,23 +7151,23 @@ async function renderPostponedGroup(container, groupId, group) {
         </div>
         <div class="postponed-group-items" style="display: none;"></div>
     `;
-    
+
     const header = groupEl.querySelector('.postponed-group-header');
     const itemsContainer = groupEl.querySelector('.postponed-group-items');
     const expandBtn = groupEl.querySelector('.postponed-group-btn.expand');
     const cancelBtn = groupEl.querySelector('.postponed-group-btn.cancel');
-    
+
     // 展开/折叠
     header.onclick = async (e) => {
         if (e.target.closest('.postponed-group-btn')) return;
         toggleGroupExpand();
     };
-    
+
     expandBtn.onclick = (e) => {
         e.stopPropagation();
         toggleGroupExpand();
     };
-    
+
     async function toggleGroupExpand() {
         const isExpanded = itemsContainer.style.display !== 'none';
         if (isExpanded) {
@@ -7174,7 +7186,7 @@ async function renderPostponedGroup(container, groupId, group) {
             expandBtn.title = isZh ? '收起' : 'Collapse';
         }
     }
-    
+
     // 取消全部
     cancelBtn.onclick = async (e) => {
         e.stopPropagation();
@@ -7184,7 +7196,7 @@ async function renderPostponedGroup(container, groupId, group) {
         await loadPostponedList();
         await refreshRecommendCards();
     };
-    
+
     container.appendChild(groupEl);
 }
 
@@ -7196,20 +7208,20 @@ async function renderPostponedItem(container, p, isGroupChild = false) {
         });
         if (!bookmarks || bookmarks.length === 0) return;
         const bookmark = bookmarks[0];
-        
+
         const item = document.createElement('div');
         item.className = 'postponed-item' + (isGroupChild ? ' group-child' : '');
         item.style.cursor = 'pointer';
-        
+
         const isZh = currentLang === 'zh_CN';
         const isManuallyAdded = p.manuallyAdded;
         const manualBadge = (isManuallyAdded && !isGroupChild)
-            ? `<span class="postponed-item-badge manual">${isZh ? '优先' : 'Priority'}</span>` 
+            ? `<span class="postponed-item-badge manual">${isZh ? '优先' : 'Priority'}</span>`
             : '';
-        const timeOrManual = isManuallyAdded 
+        const timeOrManual = isManuallyAdded
             ? (isZh ? '手动添加，优先推荐' : 'Manually added, priority boost')
             : formatPostponeTime(p.postponeUntil);
-        
+
         item.innerHTML = `
             <img class="postponed-item-icon" src="${getFaviconUrl(bookmark.url)}" alt="">
             <div class="postponed-item-info">
@@ -7221,7 +7233,7 @@ async function renderPostponedItem(container, p, isGroupChild = false) {
             </div>
             <button class="postponed-item-btn" data-id="${p.bookmarkId}">${isZh ? '取消' : 'Cancel'}</button>
         `;
-        
+
         // 点击整个item = 提前复习
         item.onclick = async (e) => {
             if (e.target.closest('.postponed-item-btn')) return;
@@ -7231,7 +7243,7 @@ async function renderPostponedItem(container, p, isGroupChild = false) {
             await openInRecommendWindow(bookmark.url);
             await loadPostponedList();
         };
-        
+
         // 取消按钮事件
         const btn = item.querySelector('.postponed-item-btn');
         btn.onclick = async (e) => {
@@ -7240,7 +7252,7 @@ async function renderPostponedItem(container, p, isGroupChild = false) {
             await loadPostponedList();
             await refreshRecommendCards();
         };
-        
+
         container.appendChild(item);
     } catch (e) {
         console.error('[待复习] 获取书签信息失败:', e);
@@ -7253,7 +7265,7 @@ function formatPostponeTime(timestamp) {
     const diff = timestamp - now;
     const hours = Math.floor(diff / 3600000);
     const days = Math.floor(hours / 24);
-    
+
     if (days > 0) {
         return currentLang === 'en' ? `${days} day${days > 1 ? 's' : ''} later` : `${days}天后`;
     } else if (hours > 0) {
@@ -7267,13 +7279,13 @@ function formatPostponeTime(timestamp) {
 // 加载屏蔽列表
 async function loadBlockedLists() {
     const blocked = await getBlockedBookmarks();
-    
+
     // 加载已屏蔽书签
     await loadBlockedBookmarksList(blocked.bookmarks);
-    
+
     // 加载已屏蔽文件夹
     await loadBlockedFoldersList(blocked.folders);
-    
+
     // 加载已屏蔽域名
     await loadBlockedDomainsList(blocked.domains);
 }
@@ -7284,24 +7296,24 @@ async function loadBlockedBookmarksList(bookmarkIds) {
     const countEl = document.getElementById('blockedBookmarksCount');
     const emptyEl = document.getElementById('blockedBookmarksEmpty');
     if (!listEl) return;
-    
+
     // 更新计数
     if (countEl) countEl.textContent = bookmarkIds.length;
-    
+
     // 清空列表
     const items = listEl.querySelectorAll('.block-item, .block-group');
     items.forEach(item => item.remove());
-    
+
     if (bookmarkIds.length === 0) {
         if (emptyEl) emptyEl.style.display = 'block';
         return;
     }
-    
+
     if (emptyEl) emptyEl.style.display = 'none';
-    
+
     // 获取所有书签信息并按标题分组
     const titleGroups = new Map(); // title -> [{id, bookmark}]
-    
+
     for (const id of bookmarkIds) {
         try {
             const bookmarks = await new Promise(resolve => {
@@ -7310,7 +7322,7 @@ async function loadBlockedBookmarksList(bookmarkIds) {
             if (!bookmarks || bookmarks.length === 0) continue;
             const bookmark = bookmarks[0];
             const title = bookmark.title || bookmark.url;
-            
+
             if (!titleGroups.has(title)) {
                 titleGroups.set(title, []);
             }
@@ -7319,22 +7331,22 @@ async function loadBlockedBookmarksList(bookmarkIds) {
             // 书签可能已被删除
         }
     }
-    
+
     const isZh = currentLang === 'zh_CN';
-    
+
     // 渲染分组
     for (const [title, group] of titleGroups) {
         const firstBookmark = group[0].bookmark;
         const count = group.length;
         const allIds = group.map(g => g.id);
-        
+
         const item = document.createElement('div');
         item.className = 'block-item';
-        
-        const countBadge = count > 1 
-            ? `<span class="block-item-count">${count}</span>` 
+
+        const countBadge = count > 1
+            ? `<span class="block-item-count">${count}</span>`
             : '';
-        
+
         item.innerHTML = `
             <img class="block-item-icon" src="${getFaviconUrl(firstBookmark.url)}" alt="">
             <div class="block-item-info">
@@ -7343,7 +7355,7 @@ async function loadBlockedBookmarksList(bookmarkIds) {
             ${countBadge}
             <button class="block-item-btn">${isZh ? '恢复' : 'Restore'}</button>
         `;
-        
+
         const btn = item.querySelector('.block-item-btn');
         btn.onclick = async () => {
             // 恢复所有同标题的书签
@@ -7353,7 +7365,7 @@ async function loadBlockedBookmarksList(bookmarkIds) {
             await loadBlockedLists();
             await refreshRecommendCards();
         };
-        
+
         listEl.appendChild(item);
     }
 }
@@ -7364,19 +7376,19 @@ async function loadBlockedFoldersList(folderIds) {
     const countEl = document.getElementById('blockedFoldersCount');
     const emptyEl = document.getElementById('blockedFoldersEmpty');
     if (!listEl) return;
-    
+
     if (countEl) countEl.textContent = folderIds.length;
-    
+
     const items = listEl.querySelectorAll('.block-item');
     items.forEach(item => item.remove());
-    
+
     if (folderIds.length === 0) {
         if (emptyEl) emptyEl.style.display = 'block';
         return;
     }
-    
+
     if (emptyEl) emptyEl.style.display = 'none';
-    
+
     for (const id of folderIds) {
         try {
             const folders = await new Promise(resolve => {
@@ -7384,7 +7396,7 @@ async function loadBlockedFoldersList(folderIds) {
             });
             if (!folders || folders.length === 0) continue;
             const folder = folders[0];
-            
+
             const item = document.createElement('div');
             item.className = 'block-item';
             item.innerHTML = `
@@ -7394,16 +7406,16 @@ async function loadBlockedFoldersList(folderIds) {
                 </div>
                 <button class="block-item-btn" data-id="${id}">${currentLang === 'en' ? 'Restore' : '恢复'}</button>
             `;
-            
+
             const btn = item.querySelector('.block-item-btn');
             btn.onclick = async () => {
                 await unblockFolder(id);
                 await loadBlockedLists();
                 await refreshRecommendCards();
             };
-            
+
             listEl.appendChild(item);
-        } catch (e) {}
+        } catch (e) { }
     }
 }
 
@@ -7413,19 +7425,19 @@ async function loadBlockedDomainsList(domains) {
     const countEl = document.getElementById('blockedDomainsCount');
     const emptyEl = document.getElementById('blockedDomainsEmpty');
     if (!listEl) return;
-    
+
     if (countEl) countEl.textContent = domains.length;
-    
+
     const items = listEl.querySelectorAll('.block-item');
     items.forEach(item => item.remove());
-    
+
     if (domains.length === 0) {
         if (emptyEl) emptyEl.style.display = 'block';
         return;
     }
-    
+
     if (emptyEl) emptyEl.style.display = 'none';
-    
+
     for (const domain of domains) {
         const item = document.createElement('div');
         item.className = 'block-item';
@@ -7436,14 +7448,14 @@ async function loadBlockedDomainsList(domains) {
             </div>
             <button class="block-item-btn" data-domain="${domain}">${currentLang === 'en' ? 'Restore' : '恢复'}</button>
         `;
-        
+
         const btn = item.querySelector('.block-item-btn');
         btn.onclick = async () => {
             await unblockDomain(domain);
             await loadBlockedLists();
             await refreshRecommendCards();
         };
-        
+
         listEl.appendChild(item);
     }
 }
@@ -7563,7 +7575,7 @@ async function cleanupStorageQuota() {
             await browserAPI.storage.local.set({ flippedBookmarks: trimmed });
             console.log('[清理] 已翻阅记录从', result.flippedBookmarks.length, '条缩减到', trimmed.length, '条');
         }
-        
+
         // 2. 清理过期的稍后复习记录（7天前）
         const postponed = await getPostponedBookmarks();
         const now = Date.now();
@@ -7572,11 +7584,11 @@ async function cleanupStorageQuota() {
             await browserAPI.storage.local.set({ recommend_postponed: validPostponed });
             console.log('[清理] 过期稍后复习记录已清理:', postponed.length - validPostponed.length, '条');
         }
-        
+
         // 3. 清理Canvas缩略图（最大的单项）
         await browserAPI.storage.local.remove(['bookmarkCanvasThumbnail']);
         console.log('[清理] Canvas缩略图已清理');
-        
+
     } catch (e) {
         console.error('[清理] 清理存储失败:', e);
     }
@@ -7585,10 +7597,10 @@ async function cleanupStorageQuota() {
 // 显示存储满警告
 function showStorageFullWarning() {
     const isZh = currentLang === 'zh_CN';
-    const msg = isZh 
+    const msg = isZh
         ? '存储空间已满，部分数据可能无法保存。请在浏览器设置中清理扩展数据。'
         : 'Storage is full. Some data may not be saved. Please clear extension data in browser settings.';
-    
+
     if (typeof showToast === 'function') {
         showToast(msg, 5000);
     } else {
@@ -7624,14 +7636,14 @@ async function loadTrackingRankingCache() {
     if (trackingRankingCache.loaded) {
         return trackingRankingCache;
     }
-    
+
     try {
         const response = await browserAPI.runtime.sendMessage({
             action: 'getActiveSessions',
             startTime: 0,  // 全部范围
             endTime: Date.now()
         });
-        
+
         if (response && response.success && response.sessions) {
             // 按标题聚合综合时间（与排行榜逻辑一致）
             const titleStats = new Map();
@@ -7645,14 +7657,14 @@ async function loadTrackingRankingCache() {
                     });
                 }
                 const stat = titleStats.get(key);
-                const sessionComposite = session.compositeMs || 
-                    ((session.activeMs || 0) + 
-                     (session.idleFocusMs || session.pauseTotalMs || 0) * 0.8 +
-                     (session.visibleMs || 0) * 0.5 +
-                     (session.backgroundMs || 0) * 0.1);
+                const sessionComposite = session.compositeMs ||
+                    ((session.activeMs || 0) +
+                        (session.idleFocusMs || session.pauseTotalMs || 0) * 0.8 +
+                        (session.visibleMs || 0) * 0.5 +
+                        (session.backgroundMs || 0) * 0.1);
                 stat.compositeMs += sessionComposite;
             }
-            
+
             // 构建双索引
             trackingRankingCache.byTitle.clear();
             trackingRankingCache.byUrl.clear();
@@ -7682,11 +7694,11 @@ function clearTrackingRankingCache() {
 async function getTrackingDataFromDB() {
     // 确保缓存已加载
     await loadTrackingRankingCache();
-    
+
     // 返回兼容旧格式的对象（供 batchGetBookmarkStats 使用）
     const result = {};
     for (const [url, stat] of trackingRankingCache.byUrl) {
-        result[url] = { 
+        result[url] = {
             compositeMs: stat.compositeMs,
             title: stat.title
         };
@@ -7697,17 +7709,17 @@ async function getTrackingDataFromDB() {
 // 根据书签获取综合时间（标题或URL匹配，并集）
 async function getBookmarkCompositeTime(bookmark) {
     await loadTrackingRankingCache();
-    
+
     // 优先URL匹配
     if (bookmark.url && trackingRankingCache.byUrl.has(bookmark.url)) {
         return trackingRankingCache.byUrl.get(bookmark.url).compositeMs;
     }
-    
+
     // 其次标题匹配
     if (bookmark.title && trackingRankingCache.byTitle.has(bookmark.title)) {
         return trackingRankingCache.byTitle.get(bookmark.title).compositeMs;
     }
-    
+
     return 0;
 }
 
@@ -7720,19 +7732,19 @@ async function getBatchHistoryData() {
     if (historyDataCache && (now - historyCacheTime) < STATS_CACHE_TTL) {
         return historyDataCache;
     }
-    
+
     // 如果正在加载，等待加载完成
     if (historyDataLoadingPromise) {
         return historyDataLoadingPromise;
     }
-    
+
     // 开始加载，设置Promise锁
     historyDataLoadingPromise = (async () => {
         try {
             if (!browserAPI?.history?.search) {
                 return { original: new Map(), title: new Map() };
             }
-            
+
             const historyItems = await new Promise((resolve) => {
                 browserAPI.history.search({
                     text: '',
@@ -7746,10 +7758,10 @@ async function getBatchHistoryData() {
                     }
                 });
             });
-            
+
             const originalMap = new Map();  // URL映射
             const titleMap = new Map();    // 标题映射（与点击记录一致的并集匹配）
-            
+
             for (const item of historyItems) {
                 if (item.url) {
                     const data = {
@@ -7758,7 +7770,7 @@ async function getBatchHistoryData() {
                     };
                     // URL映射
                     originalMap.set(item.url, data);
-                    
+
                     // 标题映射
                     const title = item.title && item.title.trim();
                     if (title) {
@@ -7774,7 +7786,7 @@ async function getBatchHistoryData() {
                     }
                 }
             }
-            
+
             // 更新缓存（URL + 标题，与点击记录一致）
             historyDataCache = { original: originalMap, title: titleMap };
             historyCacheTime = Date.now();
@@ -7787,7 +7799,7 @@ async function getBatchHistoryData() {
             historyDataLoadingPromise = null; // 清除锁
         }
     })();
-    
+
     return historyDataLoadingPromise;
 }
 
@@ -7797,7 +7809,7 @@ async function getBookmarkVisitStats(url) {
         if (!browserAPI?.history?.getVisits) {
             return { visitCount: 0, lastVisitTime: 0 };
         }
-        
+
         const visits = await new Promise((resolve) => {
             browserAPI.history.getVisits({ url }, (results) => {
                 if (browserAPI.runtime?.lastError) {
@@ -7807,7 +7819,7 @@ async function getBookmarkVisitStats(url) {
                 }
             });
         });
-        
+
         return {
             visitCount: visits.length,
             lastVisitTime: visits.length > 0 ? Math.max(...visits.map(v => v.visitTime)) : 0
@@ -7838,7 +7850,7 @@ async function recordReview(bookmarkId) {
         const reviews = await getReviewData();
         const existing = reviews[bookmarkId];
         const now = Date.now();
-        
+
         // 如果是手动添加的书签，复习后清除标记
         const postponed = await getPostponedBookmarks();
         const postponeInfo = postponed.find(p => p.bookmarkId === bookmarkId);
@@ -7847,7 +7859,7 @@ async function recordReview(bookmarkId) {
             await browserAPI.storage.local.set({ recommend_postponed: postponed });
             console.log('[复习] 已清除手动添加标记:', bookmarkId);
         }
-        
+
         if (existing) {
             // 简化版SM-2：每次复习间隔翻倍，最大30天
             const newInterval = Math.min(existing.interval * 2, 30);
@@ -7866,13 +7878,13 @@ async function recordReview(bookmarkId) {
                 nextReview: now + 1 * 24 * 60 * 60 * 1000
             };
         }
-        
+
         await browserAPI.storage.local.set({ recommend_reviews: reviews });
         console.log('[复习] 已记录复习:', bookmarkId, '下次间隔:', reviews[bookmarkId].interval, '天');
-        
+
         // R因子变化，发消息给background.js更新S值
         browserAPI.runtime.sendMessage({ action: 'updateBookmarkScore', bookmarkId });
-        
+
         return reviews[bookmarkId];
     } catch (e) {
         console.error('[复习] 记录复习失败:', e);
@@ -7884,10 +7896,10 @@ async function recordReview(bookmarkId) {
 function getReviewStatus(bookmarkId, reviewData) {
     const review = reviewData[bookmarkId];
     if (!review) return { status: 'new', label: '新书签' };
-    
+
     const now = Date.now();
     const daysSinceReview = (now - review.lastReview) / (1000 * 60 * 60 * 24);
-    
+
     if (now >= review.nextReview) {
         return { status: 'due', label: '待复习', priority: 1.2 };
     } else if (daysSinceReview >= review.interval * 0.7) {
@@ -7900,11 +7912,11 @@ function getReviewStatus(bookmarkId, reviewData) {
 // 计算带复习状态的优先级（用于保存的卡片恢复）
 function calculatePriorityWithReview(basePriority, bookmarkId, reviewData, postponeData) {
     let priority = basePriority;
-    
+
     // 复习状态加成
     const reviewStatus = getReviewStatus(bookmarkId, reviewData);
     priority *= reviewStatus.priority || 1.0;
-    
+
     // 惩罚因子：被多次推迟的书签降低优先级（不影响手动添加的）
     if (postponeData) {
         const postponeInfo = postponeData.find(p => p.bookmarkId === bookmarkId);
@@ -7913,7 +7925,7 @@ function calculatePriorityWithReview(basePriority, bookmarkId, reviewData, postp
             priority *= penaltyFactor;
         }
     }
-    
+
     return Math.min(priority, 1.5); // 最高1.5
 }
 
@@ -7923,7 +7935,7 @@ function startTrackingRefresh() {
     if (trackingRefreshInterval) {
         clearInterval(trackingRefreshInterval);
     }
-    
+
     // 只刷新当前会话状态，排行榜只在数据变化时刷新
     trackingRefreshInterval = setInterval(() => {
         if (currentView === 'additions') {
@@ -7958,14 +7970,14 @@ async function getFlippedBookmarks() {
 // 标记书签为已翻过，并记录翻牌时间
 async function markBookmarkFlipped(bookmarkId) {
     console.log('[翻牌] 标记书签:', bookmarkId);
-    
+
     const flipped = await getFlippedBookmarks();
     if (!flipped.includes(bookmarkId)) {
         flipped.push(bookmarkId);
         await browserAPI.storage.local.set({ flippedBookmarks: flipped });
         console.log('[翻牌] flippedBookmarks 已更新:', flipped.length, '个');
     }
-    
+
     // 记录翻牌时间（用于热力图）
     const result = await new Promise(resolve => {
         browserAPI.storage.local.get(['flipHistory'], resolve);
@@ -7977,7 +7989,7 @@ async function markBookmarkFlipped(bookmarkId) {
     });
     await browserAPI.storage.local.set({ flipHistory });
     console.log('[翻牌] flipHistory 已更新:', flipHistory.length, '条记录');
-    
+
     // 立即刷新热力图
     if (currentView === 'recommend') {
         await loadHeatmapData();
@@ -7987,12 +7999,12 @@ async function markBookmarkFlipped(bookmarkId) {
 async function refreshRecommendCards(force = false) {
     const cardsRow = document.getElementById('cardsRow');
     if (!cardsRow) return;
-    
+
     const cards = cardsRow.querySelectorAll('.recommend-card');
-    
+
     // 清除所有卡片的 flipped 状态
     cards.forEach(card => card.classList.remove('flipped'));
-    
+
     try {
         // 获取所有书签（用于后续查找）
         const bookmarks = await new Promise((resolve) => {
@@ -8013,10 +8025,10 @@ async function refreshRecommendCards(force = false) {
             });
         });
         const bookmarkMap = new Map(bookmarks.map(b => [b.id, b]));
-        
+
         // 一次性获取所有缓存的S值
         let scoresCache = await getScoresCache();
-        
+
         // 如果S值缓存为空，请求background.js全量计算
         if (Object.keys(scoresCache).length === 0 && bookmarks.length > 0) {
             console.log('[书签推荐] S值缓存为空，请求background计算...');
@@ -8025,20 +8037,20 @@ async function refreshRecommendCards(force = false) {
             });
             scoresCache = await getScoresCache();
         }
-        
+
         // 检查是否有已保存的卡片状态（与popup共享）
         const currentCards = await getHistoryCurrentCards();
         const postponed = await getPostponedBookmarks();
         const reviewData = await getReviewData();
-        
+
         // 如果有保存的卡片且不是全部勾选且不是强制刷新，则显示保存的卡片
         if (currentCards && currentCards.cardIds && currentCards.cardIds.length > 0 && !force) {
             const allFlipped = currentCards.cardIds.every(id => currentCards.flippedIds.includes(id));
-            
+
             if (!allFlipped) {
                 // 恢复保存的卡片，直接使用缓存
                 const savedBookmarks = currentCards.cardIds.map(id => bookmarkMap.get(id)).filter(Boolean);
-                
+
                 recommendCards = savedBookmarks.map(bookmark => {
                     const cached = scoresCache[bookmark.id];
                     const reviewStatus = getReviewStatus(bookmark.id, reviewData);
@@ -8048,7 +8060,7 @@ async function refreshRecommendCards(force = false) {
                     // 缓存不存在时返回默认值
                     return { ...bookmark, priority: 0.5, factors: {}, reviewStatus };
                 });
-                
+
                 // 更新卡片显示
                 cards.forEach((card, index) => {
                     if (index < recommendCards.length) {
@@ -8061,23 +8073,23 @@ async function refreshRecommendCards(force = false) {
                 return;
             }
         }
-        
+
         // 获取已翻过的书签
         const flippedBookmarks = await getFlippedBookmarks();
         const flippedSet = new Set(flippedBookmarks);
-        
+
         // 获取已屏蔽的书签、文件夹、域名
         const blocked = await getBlockedBookmarks();
         const blockedBookmarkSet = new Set(blocked.bookmarks);
         const blockedFolderSet = new Set(blocked.folders);
         const blockedDomainSet = new Set(blocked.domains);
-        
+
         // 获取稍后复习的书签（未到期的，但手动添加的不排除）
         const now = Date.now();
         const postponedSet = new Set(
             postponed.filter(p => p.postponeUntil > now && !p.manuallyAdded).map(p => p.bookmarkId)
         );
-        
+
         // 检查书签是否在屏蔽的文件夹中
         const isInBlockedFolder = (bookmark) => {
             if (blockedFolderSet.size === 0) return false;
@@ -8088,7 +8100,7 @@ async function refreshRecommendCards(force = false) {
             }
             return false;
         };
-        
+
         // 检查书签是否在屏蔽的域名中
         const isBlockedDomain = (bookmark) => {
             if (blockedDomainSet.size === 0 || !bookmark.url) return false;
@@ -8099,43 +8111,43 @@ async function refreshRecommendCards(force = false) {
                 return false;
             }
         };
-        
+
         // 基础过滤：已翻过、已跳过、已屏蔽、稀后复习
-        const baseFilter = (b) => 
-            !flippedSet.has(b.id) && 
-            !skippedBookmarks.has(b.id) && 
+        const baseFilter = (b) =>
+            !flippedSet.has(b.id) &&
+            !skippedBookmarks.has(b.id) &&
             !blockedBookmarkSet.has(b.id) &&
             !isInBlockedFolder(b) &&
             !isBlockedDomain(b) &&
             !postponedSet.has(b.id);
-        
+
         // 刷新时跳过当前显示的卡片（force=true时）
         const currentCardIds = new Set(
             force && currentCards?.cardIds ? currentCards.cardIds : []
         );
-        
+
         // 先尝试排除当前卡片
-        let availableBookmarks = bookmarks.filter(b => 
+        let availableBookmarks = bookmarks.filter(b =>
             baseFilter(b) && !currentCardIds.has(b.id)
         );
-        
+
         // 如果排除后不足3个，则不排除当前卡片
         if (availableBookmarks.length < 3 && currentCardIds.size > 0) {
             availableBookmarks = bookmarks.filter(baseFilter);
         }
-        
+
         if (availableBookmarks.length === 0) {
             await saveHistoryCurrentCards([], []);
             cards.forEach((card) => {
                 card.classList.add('empty');
-                card.querySelector('.card-title').textContent = 
+                card.querySelector('.card-title').textContent =
                     currentLang === 'en' ? 'All bookmarks reviewed!' : '所有书签都已翻阅！';
                 card.querySelector('.card-priority').textContent = '';
                 card.onclick = null;
             });
             return;
         }
-        
+
         // 从缓存读取所有可用书签的S值，直接排序取top3
         // S值通过增量更新机制保持最新，或在手动刷新时全量重算
         const bookmarksWithPriority = availableBookmarks.map(b => {
@@ -8147,7 +8159,7 @@ async function refreshRecommendCards(force = false) {
             // 缓存不存在时返回默认值（新书签或首次使用）
             return { ...b, priority: 0.5, factors: {}, reviewStatus };
         });
-        
+
         // 按优先级排序（高优先级在前），S值相同时添加随机因子
         bookmarksWithPriority.sort((a, b) => {
             const diff = b.priority - a.priority;
@@ -8158,18 +8170,18 @@ async function refreshRecommendCards(force = false) {
             return diff;
         });
         recommendCards = bookmarksWithPriority.slice(0, 3);
-        
+
         // 保存新的卡片状态
         const newCardIds = recommendCards.map(b => b.id);
         await saveHistoryCurrentCards(newCardIds, []);
-        
+
         // 预加载当前3个 + 下一批6个的 favicon（并行）
         const urlsToPreload = bookmarksWithPriority.slice(0, 9).map(b => b.url).filter(Boolean);
         preloadHighResFavicons(urlsToPreload);
-        
+
         // 异步保存favicon URLs到storage（供popup使用，不阻塞UI）
         saveCardFaviconsToStorage(recommendCards);
-        
+
         // 更新卡片显示
         cards.forEach((card, index) => {
             if (index < recommendCards.length) {
@@ -8179,7 +8191,7 @@ async function refreshRecommendCards(force = false) {
                 setCardEmpty(card);
             }
         });
-        
+
         // 更新刷新时间（手动刷新时）
         if (force) {
             const settings = await getRefreshSettings();
@@ -8188,12 +8200,12 @@ async function refreshRecommendCards(force = false) {
             await saveRefreshSettings(settings);
             console.log('[刷新] 已更新刷新时间');
         }
-        
+
     } catch (error) {
         console.error('[书签推荐] 刷新卡片失败:', error);
         cards.forEach(card => {
             card.classList.add('empty');
-            card.querySelector('.card-title').textContent = 
+            card.querySelector('.card-title').textContent =
                 currentLang === 'en' ? 'Load failed' : '加载失败';
         });
     }
@@ -8206,20 +8218,20 @@ async function loadCurrentTrackingSessions() {
     const trackingCurrentList = document.getElementById('trackingCurrentList');
     const trackingCurrentCount = document.getElementById('trackingCurrentCount');
     if (!trackingCurrentList) return;
-    
+
     try {
-        const response = await browserAPI.runtime.sendMessage({ 
-            action: 'getCurrentActiveSessions' 
+        const response = await browserAPI.runtime.sendMessage({
+            action: 'getCurrentActiveSessions'
         });
-        
+
         if (response && response.success && response.sessions) {
             const sessions = response.sessions;
-            
+
             // 更新计数
             if (trackingCurrentCount) {
                 trackingCurrentCount.textContent = sessions.length;
             }
-            
+
             if (sessions.length === 0) {
                 lastTrackingSessionIds = [];
                 trackingCurrentList.innerHTML = `
@@ -8229,34 +8241,34 @@ async function loadCurrentTrackingSessions() {
                 `;
                 return;
             }
-            
+
             // 检查会话列表是否有变化（新增/删除会话）
             const currentIds = sessions.map(s => s.tabId).sort().join(',');
             const lastIds = lastTrackingSessionIds.sort().join(',');
             const needsFullRender = currentIds !== lastIds;
-            
+
             // 截断标题函数
             const truncateTitle = (title, maxLen = 45) => {
                 if (!title) return '';
                 return title.length > maxLen ? title.substring(0, maxLen) + '...' : title;
             };
-            
+
             if (needsFullRender) {
                 // 会话列表有变化，需要完整渲染
                 lastTrackingSessionIds = sessions.map(s => s.tabId);
-                
+
                 trackingCurrentList.innerHTML = sessions.map(session => {
                     const compositeTime = formatActiveTime(session.compositeMs || session.activeMs);
                     const activeRatio = Math.round(session.activeRatio * 100);
-                    const stateIcon = session.state === 'active' ? '🟢' : 
-                        (session.state === 'sleeping' ? '💤' : 
-                        (session.state === 'background' ? '⚪' : 
-                        (session.state === 'visible' ? '🔵' : '🟡')));
-                    const idleTag = session.isIdle ? 
+                    const stateIcon = session.state === 'active' ? '🟢' :
+                        (session.state === 'sleeping' ? '💤' :
+                            (session.state === 'background' ? '⚪' :
+                                (session.state === 'visible' ? '🔵' : '🟡')));
+                    const idleTag = session.isIdle ?
                         `<span class="idle-tag">⚠${i18n.trackingIdle[currentLang]}</span>` : '';
                     const displayTitle = truncateTitle(session.title || session.url);
                     const faviconUrl = getFaviconUrl(session.url);
-                    
+
                     return `
                         <tr data-tab-id="${session.tabId}" data-bookmark-url="${escapeHtml(session.url)}">
                             <td><span class="tracking-state">${stateIcon}</span></td>
@@ -8277,7 +8289,7 @@ async function loadCurrentTrackingSessions() {
                         </tr>
                     `;
                 }).join('');
-                
+
                 // 点击切换到对应标签页
                 trackingCurrentList.querySelectorAll('tr[data-tab-id]').forEach(item => {
                     item.addEventListener('click', () => {
@@ -8294,23 +8306,23 @@ async function loadCurrentTrackingSessions() {
                     if (row) {
                         const compositeTime = formatActiveTime(session.compositeMs || session.activeMs);
                         const activeRatio = Math.round(session.activeRatio * 100);
-                        const stateIcon = session.state === 'active' ? '🟢' : 
-                            (session.state === 'sleeping' ? '💤' : 
-                            (session.state === 'background' ? '⚪' : 
-                            (session.state === 'visible' ? '🔵' : '🟡')));
-                        
+                        const stateIcon = session.state === 'active' ? '🟢' :
+                            (session.state === 'sleeping' ? '💤' :
+                                (session.state === 'background' ? '⚪' :
+                                    (session.state === 'visible' ? '🔵' : '🟡')));
+
                         // 更新状态图标
                         const stateEl = row.querySelector('.tracking-state');
                         if (stateEl) stateEl.textContent = stateIcon;
-                        
+
                         // 更新时间
                         const timeEl = row.querySelector('.tracking-time');
                         if (timeEl) timeEl.textContent = compositeTime;
-                        
+
                         // 更新唤醒次数
                         const wakesEl = row.querySelector('.tracking-wakes');
                         if (wakesEl) wakesEl.textContent = `${session.wakeCount || 0}${currentLang === 'en' ? 'x' : '次'}`;
-                        
+
                         // 更新活跃率
                         const ratioEl = row.querySelector('.tracking-ratio');
                         if (ratioEl) ratioEl.textContent = `${activeRatio}%`;
@@ -8327,10 +8339,10 @@ async function loadCurrentTrackingSessions() {
 function escapeHtml(str) {
     if (!str) return '';
     return str.replace(/&/g, '&amp;')
-              .replace(/</g, '&lt;')
-              .replace(/>/g, '&gt;')
-              .replace(/"/g, '&quot;')
-              .replace(/'/g, '&#039;');
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#039;');
 }
 
 // =============================================================================
@@ -8340,19 +8352,19 @@ function escapeHtml(str) {
 async function loadHeatmapData() {
     const container = document.getElementById('heatmapContainer');
     if (!container) return;
-    
+
     try {
         // 从 storage 获取翻牌历史记录
         const result = await new Promise(resolve => {
             browserAPI.storage.local.get(['flipHistory'], resolve);
         });
         const flipHistory = result.flipHistory || [];
-        
+
         // 按日期统计翻牌次数
         const dailyCounts = new Map();
         const today = new Date();
         today.setHours(0, 0, 0, 0);
-        
+
         // 辅助函数：获取本地日期字符串 (YYYY-MM-DD)
         const getLocalDateKey = (d) => {
             const year = d.getFullYear();
@@ -8360,7 +8372,7 @@ async function loadHeatmapData() {
             const day = String(d.getDate()).padStart(2, '0');
             return `${year}-${month}-${day}`;
         };
-        
+
         // 初始化最近 52 周 + 本周的天数
         const daysToShow = 52 * 7 + today.getDay();
         for (let i = daysToShow - 1; i >= 0; i--) {
@@ -8369,7 +8381,7 @@ async function loadHeatmapData() {
             const key = getLocalDateKey(date);
             dailyCounts.set(key, 0);
         }
-        
+
         // 统计每天的翻牌次数
         for (const flip of flipHistory) {
             if (!flip.timestamp) continue;
@@ -8379,84 +8391,83 @@ async function loadHeatmapData() {
                 dailyCounts.set(key, (dailyCounts.get(key) || 0) + 1);
             }
         }
-        
+
         // 渲染热力图（反转顺序，当前月份在左）
         renderHeatmap(container, dailyCounts);
-        
+
     } catch (error) {
         console.error('[热力图] 加载失败:', error);
-        container.innerHTML = `<div class="empty-state"><div class="empty-state-title">${
-            currentLang === 'en' ? 'Failed to load heatmap' : '热力图加载失败'
-        }</div></div>`;
+        container.innerHTML = `<div class="empty-state"><div class="empty-state-title">${currentLang === 'en' ? 'Failed to load heatmap' : '热力图加载失败'
+            }</div></div>`;
     }
 }
 
 function renderHeatmap(container, dailyCounts) {
     const isEn = currentLang === 'en';
     const dayNames = isEn ? ['', 'Mon', '', 'Wed', '', 'Fri', ''] :
-                           ['', '一', '', '三', '', '五', ''];
-    const monthNames = isEn ? 
+        ['', '一', '', '三', '', '五', ''];
+    const monthNames = isEn ?
         ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'] :
         ['1月', '2月', '3月', '4月', '5月', '6月', '7月', '8月', '9月', '10月', '11月', '12月'];
-    
+
     // 找出最大值用于计算颜色深度
     const counts = Array.from(dailyCounts.values());
     const maxCount = Math.max(...counts, 1);
     const totalReviews = counts.reduce((a, b) => a + b, 0);
-    
+
     // 计算今天的复习次数
     const todayKey = `${new Date().getFullYear()}-${String(new Date().getMonth() + 1).padStart(2, '0')}-${String(new Date().getDate()).padStart(2, '0')}`;
     const todayReviews = dailyCounts.get(todayKey) || 0;
-    
+
     // 按月分组数据
     const monthsData = new Map(); // year-month -> { year, month, days: [], totalCount }
     const entries = Array.from(dailyCounts.entries()).sort();
-    
+
     for (const [dateStr, count] of entries) {
         const [year, month, day] = dateStr.split('-').map(Number);
         const date = new Date(year, month - 1, day);
         const dayOfWeek = date.getDay();
         const monthKey = `${year}-${month}`;
-        
+
         if (!monthsData.has(monthKey)) {
             monthsData.set(monthKey, { year, month, days: [], totalCount: 0 });
         }
-        
+
         monthsData.get(monthKey).days.push({ date: dateStr, count, dayOfWeek, day });
         monthsData.get(monthKey).totalCount += count;
     }
-    
+
     // 构建显示顺序：当前月 + 今年12个月(1-12正序)
     const now = new Date();
     const currentYear = now.getFullYear();
     const currentMonth = now.getMonth() + 1;
-    
+
     const monthsArray = [];
-    
+
     // 第一个：当前月份
     const currentMonthKey = `${currentYear}-${currentMonth}`;
     const currentMonthData = monthsData.get(currentMonthKey) || { year: currentYear, month: currentMonth, days: [], totalCount: 0 };
     monthsArray.push(currentMonthData);
-    
+
     // 后面12个：今年1月、2月、3月...12月（正序）
     for (let m = 1; m <= 12; m++) {
         const key = `${currentYear}-${m}`;
         const data = monthsData.get(key) || { year: currentYear, month: m, days: [], totalCount: 0 };
         monthsArray.push(data);
     }
-    
+
     console.log('[热力图] 月份顺序:', monthsArray.map(m => m.month).join(', '));
-    
+
     // 生成 HTML
     let html = `<div class="heatmap-year-view">`;
     html += `<div class="heatmap-scroll-container">`;
     html += `<div class="heatmap-months-row">`;
-    
+
     for (let idx = 0; idx < monthsArray.length; idx++) {
         const monthData = monthsArray[idx];
         const { year, month, days, totalCount } = monthData;
         const monthLabel = monthNames[month - 1];
-        
+
         // idx=1 时在当前月份后添加分隔线，后面每3个月添加分隔线
         if (idx === 1) {
             // 当前月份与12个月之间的分隔线
@@ -8465,53 +8476,53 @@ function renderHeatmap(container, dailyCounts) {
             // 12个月内部的季度分隔线（4月、7月、10月前）
             html += `<div class="heatmap-quarter-divider"></div>`;
         }
-        
+
         // 获取一周开始日(中文:周一=1, 英文:周日=0)，与书签添加记录日历保持一致
         const weekStartDay = (typeof currentLang !== 'undefined' && currentLang === 'zh_CN') ? 1 : 0;
-        
+
         // 获取这个月第一天是星期几
         const firstDay = new Date(year, month - 1, 1);
         const firstDayOfWeek = firstDay.getDay();
-        
+
         // 获取这个月的天数
         const daysInMonth = new Date(year, month, 0).getDate();
         const dayCountMap = new Map(days.map(d => [d.day, d]));
-        
+
         // 构建日历网格（横向7列）
         const calendarDays = [];
-        
+
         // 填充第一行前面的空白（根据周开始日调整）
         const blankCells = (firstDayOfWeek - weekStartDay + 7) % 7;
         for (let i = 0; i < blankCells; i++) {
             calendarDays.push({ empty: true });
         }
-        
+
         // 填充每一天
         for (let d = 1; d <= daysInMonth; d++) {
             const dayData = dayCountMap.get(d);
             if (dayData) {
                 calendarDays.push(dayData);
             } else {
-                calendarDays.push({ date: `${year}-${String(month).padStart(2,'0')}-${String(d).padStart(2,'0')}`, count: 0, day: d });
+                calendarDays.push({ date: `${year}-${String(month).padStart(2, '0')}-${String(d).padStart(2, '0')}`, count: 0, day: d });
             }
         }
-        
+
         // 填充最后一行的空白
         while (calendarDays.length % 7 !== 0) {
             calendarDays.push({ empty: true });
         }
-        
+
         // 判断是否是当前月份
         const isCurrentMonth = year === currentYear && month === currentMonth;
         const currentClass = isCurrentMonth ? ' current-month' : '';
-        
+
         html += `<div class="heatmap-month-block${currentClass}" data-year="${year}" data-month="${month}">`;
         html += `<div class="heatmap-month-header">${monthLabel}</div>`;
         html += `<div class="heatmap-calendar">`;
-        
+
         // 当天日期字符串，用于判断是否高亮
-        const todayStr = `${currentYear}-${String(currentMonth).padStart(2,'0')}-${String(now.getDate()).padStart(2,'0')}`;
-        
+        const todayStr = `${currentYear}-${String(currentMonth).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+
         // 按行输出（每行7个）
         for (let i = 0; i < calendarDays.length; i += 7) {
             html += '<div class="heatmap-row">';
@@ -8521,16 +8532,16 @@ function renderHeatmap(container, dailyCounts) {
                     html += '<div class="heatmap-cell empty"></div>';
                 } else {
                     // 固定阈值：0 / 1-15 / 16-50 / 51-150 / 151+
-                    const level = day.count === 0 ? 0 : 
-                                  day.count <= 15 ? 1 :
-                                  day.count <= 50 ? 2 :
-                                  day.count <= 150 ? 3 : 4;
+                    const level = day.count === 0 ? 0 :
+                        day.count <= 15 ? 1 :
+                            day.count <= 50 ? 2 :
+                                day.count <= 150 ? 3 : 4;
                     // 判断是否是当天
                     const isToday = day.date === todayStr;
                     const todayClass = isToday ? ' today' : '';
                     if (day.count > 0) {
                         const [y, m, dd] = day.date.split('-').map(Number);
-                        const tooltip = isEn ? 
+                        const tooltip = isEn ?
                             `${day.count} review${day.count !== 1 ? 's' : ''}, ${m}-${dd}` :
                             `${day.count}次, ${m}-${dd}`;
                         html += `<div class="heatmap-cell level-${level}${todayClass}" data-date="${day.date}" data-tooltip="${tooltip}"></div>`;
@@ -8541,14 +8552,14 @@ function renderHeatmap(container, dailyCounts) {
             }
             html += '</div>';
         }
-        
+
         html += `</div>`;
         html += `<div class="heatmap-month-count">${totalCount}</div>`;
         html += `</div>`;
     }
-    
+
     html += `</div></div>`;
-    
+
     // 底部统计和图例
     html += `
         <div class="heatmap-footer">
@@ -8569,15 +8580,15 @@ function renderHeatmap(container, dailyCounts) {
             </div>
         </div>
     </div>`;
-    
+
     container.innerHTML = html;
-    
+
     // 确保滚动条在最左边，显示当前月份
     const scrollContainer = container.querySelector('.heatmap-scroll-container');
     if (scrollContainer) {
         scrollContainer.scrollLeft = 0;
     }
-    
+
     // 创建或获取全局tooltip元素
     let globalTooltip = document.getElementById('heatmapGlobalTooltip');
     if (!globalTooltip) {
@@ -8586,7 +8597,7 @@ function renderHeatmap(container, dailyCounts) {
         globalTooltip.className = 'heatmap-global-tooltip';
         document.body.appendChild(globalTooltip);
     }
-    
+
     // 绑定日期格子点击事件和tooltip事件
     container.querySelectorAll('.heatmap-cell[data-date]').forEach(cell => {
         cell.style.cursor = 'pointer';
@@ -8597,47 +8608,47 @@ function renderHeatmap(container, dailyCounts) {
             const date = cell.dataset.date;
             showHeatmapDateDetail(date);
         });
-        
+
         // 鼠标进入时显示tooltip
         cell.addEventListener('mouseenter', (e) => {
             const tooltipText = cell.dataset.tooltip;
             if (!tooltipText) return;
-            
+
             // 先设置内容并临时显示以获取正确尺寸
             globalTooltip.textContent = tooltipText;
             globalTooltip.style.visibility = 'hidden';
             globalTooltip.style.display = 'block';
-            
+
             // 计算位置：在cell正上方居中
             const rect = cell.getBoundingClientRect();
             const tooltipRect = globalTooltip.getBoundingClientRect();
             let left = rect.left + rect.width / 2 - tooltipRect.width / 2;
             let top = rect.top - tooltipRect.height - 8;
-            
+
             // 防止超出左右边界
             if (left < 5) left = 5;
             if (left + tooltipRect.width > window.innerWidth - 5) {
                 left = window.innerWidth - tooltipRect.width - 5;
             }
-            
+
             // 如果上方空间不够，显示在下方
             if (top < 5) {
                 top = rect.bottom + 8;
             }
-            
+
             globalTooltip.style.left = left + 'px';
             globalTooltip.style.top = top + 'px';
             globalTooltip.style.visibility = '';
             globalTooltip.style.display = '';
             globalTooltip.classList.add('visible');
         });
-        
+
         // 鼠标离开时隐藏tooltip
         cell.addEventListener('mouseleave', () => {
             globalTooltip.classList.remove('visible');
         });
     });
-    
+
     // 绑定月份点击事件（进入月视图）
     container.querySelectorAll('.heatmap-month-block').forEach(block => {
         block.style.cursor = 'pointer';
@@ -8649,7 +8660,7 @@ function renderHeatmap(container, dailyCounts) {
             showHeatmapMonthDetail(year, month);
         });
     });
-    
+
     // 绑定帮助按钮点击事件
     const helpBtn = document.getElementById('heatmapHelpBtn');
     if (helpBtn) {
@@ -8663,14 +8674,14 @@ function renderHeatmap(container, dailyCounts) {
 // 显示热力图等级说明
 function showHeatmapLevelHelp(anchorBtn) {
     const isEn = currentLang === 'en';
-    
+
     // 如果已存在，先移除
     const existing = document.getElementById('heatmapLevelPopup');
     if (existing) {
         existing.remove();
         return;
     }
-    
+
     const popup = document.createElement('div');
     popup.id = 'heatmapLevelPopup';
     popup.className = 'heatmap-level-popup';
@@ -8699,15 +8710,15 @@ function showHeatmapLevelHelp(anchorBtn) {
             </div>
         </div>
     `;
-    
+
     document.body.appendChild(popup);
-    
+
     // 定位到按钮上方
     const rect = anchorBtn.getBoundingClientRect();
     popup.style.position = 'fixed';
     popup.style.bottom = (window.innerHeight - rect.top + 8) + 'px';
     popup.style.right = (window.innerWidth - rect.right) + 'px';
-    
+
     // 点击其他地方关闭
     const closeHandler = (e) => {
         if (!popup.contains(e.target) && e.target !== anchorBtn) {
@@ -8723,13 +8734,13 @@ async function showHeatmapDateDetail(dateStr) {
     const isEn = currentLang === 'en';
     const container = document.getElementById('heatmapContainer');
     if (!container) return;
-    
+
     // 获取翻牌历史
     const result = await new Promise(resolve => {
         browserAPI.storage.local.get(['flipHistory'], resolve);
     });
     const flipHistory = result.flipHistory || [];
-    
+
     // 筛选当天的记录
     const dayRecords = flipHistory.filter(flip => {
         if (!flip.timestamp) return false;
@@ -8739,7 +8750,7 @@ async function showHeatmapDateDetail(dateStr) {
         const d = String(date.getDate()).padStart(2, '0');
         return `${y}-${m}-${d}` === dateStr;
     });
-    
+
     // 获取书签信息
     const bookmarkMap = new Map();
     try {
@@ -8754,11 +8765,11 @@ async function showHeatmapDateDetail(dateStr) {
     } catch (e) {
         console.warn('[热力图] 获取书签失败:', e);
     }
-    
+
     // 格式化日期
     const [year, month, day] = dateStr.split('-').map(Number);
     const dateLabel = isEn ? `${month}/${day}/${year}` : `${year}年${month}月${day}日`;
-    
+
     // 生成详情HTML
     let html = `
         <div class="heatmap-detail-view">
@@ -8772,18 +8783,18 @@ async function showHeatmapDateDetail(dateStr) {
             </div>
             <div class="heatmap-detail-list">
     `;
-    
+
     if (dayRecords.length === 0) {
         html += `<div class="heatmap-detail-empty">${isEn ? 'No reviews on this day' : '当天没有复习记录'}</div>`;
     } else {
         // 按时间倒序排列
         dayRecords.sort((a, b) => b.timestamp - a.timestamp);
-        
+
         for (const record of dayRecords) {
             const bookmark = bookmarkMap.get(record.bookmarkId);
             const time = new Date(record.timestamp);
             const timeStr = `${String(time.getHours()).padStart(2, '0')}:${String(time.getMinutes()).padStart(2, '0')}`;
-            
+
             if (bookmark) {
                 html += `
                     <div class="heatmap-detail-item" data-url="${escapeHtml(bookmark.url)}">
@@ -8809,16 +8820,16 @@ async function showHeatmapDateDetail(dateStr) {
             }
         }
     }
-    
+
     html += `</div></div>`;
-    
+
     container.innerHTML = html;
-    
+
     // 绑定返回按钮
     document.getElementById('heatmapBackBtn').addEventListener('click', () => {
         loadHeatmapData();
     });
-    
+
     // 绑定书签点击事件
     container.querySelectorAll('.heatmap-detail-item[data-url]').forEach(item => {
         item.style.cursor = 'pointer';
@@ -8834,13 +8845,13 @@ async function showHeatmapMonthDetail(year, month) {
     const isEn = currentLang === 'en';
     const container = document.getElementById('heatmapContainer');
     if (!container) return;
-    
+
     // 获取翻牌历史
     const result = await new Promise(resolve => {
         browserAPI.storage.local.get(['flipHistory'], resolve);
     });
     const flipHistory = result.flipHistory || [];
-    
+
     // 筛选当月的记录，按书签ID统计次数
     const bookmarkCountMap = new Map(); // bookmarkId -> { count, lastTime }
     for (const flip of flipHistory) {
@@ -8855,7 +8866,7 @@ async function showHeatmapMonthDetail(year, month) {
             if (flip.timestamp > stat.lastTime) stat.lastTime = flip.timestamp;
         }
     }
-    
+
     // 获取书签信息
     const bookmarkMap = new Map();
     try {
@@ -8870,18 +8881,18 @@ async function showHeatmapMonthDetail(year, month) {
     } catch (e) {
         console.warn('[热力图] 获取书签失败:', e);
     }
-    
-    const monthNames = isEn ? 
+
+    const monthNames = isEn ?
         ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'] :
         ['1月', '2月', '3月', '4月', '5月', '6月', '7月', '8月', '9月', '10月', '11月', '12月'];
     const monthLabel = isEn ? `${monthNames[month - 1]} ${year}` : `${year}年${monthNames[month - 1]}`;
-    
+
     const totalCount = Array.from(bookmarkCountMap.values()).reduce((sum, s) => sum + s.count, 0);
-    
+
     // 按复习次数排序
     const sortedBookmarks = Array.from(bookmarkCountMap.entries())
         .sort((a, b) => b[1].count - a[1].count);
-    
+
     // 生成详情HTML
     let html = `
         <div class="heatmap-detail-view">
@@ -8895,7 +8906,7 @@ async function showHeatmapMonthDetail(year, month) {
             </div>
             <div class="heatmap-detail-list">
     `;
-    
+
     if (sortedBookmarks.length === 0) {
         html += `<div class="heatmap-detail-empty">${isEn ? 'No reviews this month' : '当月没有复习记录'}</div>`;
     } else {
@@ -8903,7 +8914,7 @@ async function showHeatmapMonthDetail(year, month) {
         for (const [bookmarkId, stat] of sortedBookmarks) {
             rank++;
             const bookmark = bookmarkMap.get(bookmarkId);
-            
+
             if (bookmark) {
                 html += `
                     <div class="heatmap-detail-item heatmap-ranking-item" data-url="${escapeHtml(bookmark.url)}">
@@ -8931,16 +8942,16 @@ async function showHeatmapMonthDetail(year, month) {
             }
         }
     }
-    
+
     html += `</div></div>`;
-    
+
     container.innerHTML = html;
-    
+
     // 绑定返回按钮
     document.getElementById('heatmapBackBtn').addEventListener('click', () => {
         loadHeatmapData();
     });
-    
+
     // 绑定书签点击事件
     container.querySelectorAll('.heatmap-detail-item[data-url]').forEach(item => {
         item.style.cursor = 'pointer';
@@ -8958,18 +8969,18 @@ async function showHeatmapMonthDetail(year, month) {
 async function loadActiveTimeRanking() {
     const container = document.getElementById('trackingRankingList');
     if (!container) return;
-    
+
     // 排行榜刷新时，清除T值缓存，下次计算S值时会获取最新数据
     clearTrackingRankingCache();
-    
+
     console.log('[时间排行] 开始加载...');
-    
+
     try {
         // 获取时间范围
         const rangeSelect = document.getElementById('trackingRankingRange');
         const range = rangeSelect ? rangeSelect.value : 'week';
         console.log('[时间排行] 时间范围:', range);
-        
+
         const now = Date.now();
         const today = new Date();
         let startTime;
@@ -8997,7 +9008,7 @@ async function loadActiveTimeRanking() {
                 // 全部
                 startTime = 0;
         }
-        
+
         // 从 background.js 获取活跃会话数据
         console.log('[时间排行] 发送请求 getActiveSessions...');
         const response = await browserAPI.runtime.sendMessage({
@@ -9006,15 +9017,15 @@ async function loadActiveTimeRanking() {
             endTime: now
         });
         console.log('[时间排行] 响应:', response);
-        
+
         if (!response || !response.success || !response.sessions) {
             console.log('[时间排行] 无数据或请求失败');
             container.innerHTML = `<div class="tracking-empty">${i18n.trackingNoData[currentLang]}</div>`;
             return;
         }
-        
+
         console.log('[时间排行] 获取到', response.sessions.length, '条会话记录');
-        
+
         // 按标题聚合综合时间（统一用标题作为 key）
         const titleStats = new Map();
         for (const session of response.sessions) {
@@ -9031,42 +9042,42 @@ async function loadActiveTimeRanking() {
             }
             const stat = titleStats.get(key);
             // 使用综合时间：活跃×1.0 + 前台静止×0.8 + 可见参考×0.5 + 后台×0.1
-            const sessionComposite = session.compositeMs || 
-                ((session.activeMs || 0) + 
-                 (session.idleFocusMs || session.pauseTotalMs || 0) * 0.8 +
-                 (session.visibleMs || 0) * 0.5 +
-                 (session.backgroundMs || 0) * 0.1);
+            const sessionComposite = session.compositeMs ||
+                ((session.activeMs || 0) +
+                    (session.idleFocusMs || session.pauseTotalMs || 0) * 0.8 +
+                    (session.visibleMs || 0) * 0.5 +
+                    (session.backgroundMs || 0) * 0.1);
             stat.totalCompositeMs += sessionComposite;
             stat.wakeCount += session.wakeCount || 0;
             stat.sessionCount++;
         }
-        
+
         // 排序（按综合时间）
         const sorted = Array.from(titleStats.values())
             .sort((a, b) => b.totalCompositeMs - a.totalCompositeMs)
             .slice(0, 10);
-        
+
         if (sorted.length === 0) {
             container.innerHTML = `<div class="tracking-empty">${i18n.trackingNoData[currentLang]}</div>`;
             return;
         }
-        
+
         // 计算最大值用于进度条
         const maxMs = sorted[0].totalCompositeMs;
-        
+
         // 截断标题函数
         const truncateTitle = (title, maxLen = 45) => {
             if (!title) return '';
             return title.length > maxLen ? title.substring(0, maxLen) + '...' : title;
         };
-        
+
         // 渲染列表
         container.innerHTML = sorted.map((item, index) => {
             const compositeTime = formatActiveTime(item.totalCompositeMs);
             const barWidth = maxMs > 0 ? (item.totalCompositeMs / maxMs * 100) : 0;
             const displayTitle = truncateTitle(item.title || item.url);
             const faviconUrl = getFaviconUrl(item.url);
-            
+
             return `
                 <div class="tracking-ranking-item" data-url="${escapeHtml(item.url)}" data-bookmark-url="${escapeHtml(item.url)}">
                     <span class="ranking-number">${index + 1}</span>
@@ -9082,7 +9093,7 @@ async function loadActiveTimeRanking() {
                 </div>
             `;
         }).join('');
-        
+
         // 点击打开对应URL
         container.querySelectorAll('.tracking-ranking-item').forEach(item => {
             item.addEventListener('click', () => {
@@ -9092,7 +9103,7 @@ async function loadActiveTimeRanking() {
                 }
             });
         });
-        
+
     } catch (error) {
         console.error('[综合时间排行] 加载失败:', error);
         container.innerHTML = `<div class="tracking-empty">${i18n.trackingLoadFailed[currentLang]}</div>`;
@@ -9101,11 +9112,11 @@ async function loadActiveTimeRanking() {
 
 function formatActiveTime(ms) {
     if (!ms || ms < 0) return '0s';
-    
+
     const seconds = Math.floor(ms / 1000);
     const minutes = Math.floor(seconds / 60);
     const hours = Math.floor(minutes / 60);
-    
+
     if (hours > 0) {
         return `${hours}h${minutes % 60}m`;
     } else if (minutes > 0) {
@@ -9133,12 +9144,12 @@ let pendingCurrentChangesRender = null;
 function highlightTreeNodesByChangeType(changeType) {
     const previewContainer = document.getElementById('changesTreePreviewInline');
     if (!previewContainer) return;
-    
+
     // 移除之前的所有高亮（在 .tree-item 上操作）
     previewContainer.querySelectorAll('.tree-item').forEach(item => {
         item.classList.remove('highlight-added', 'highlight-deleted', 'highlight-modified', 'highlight-moved');
     });
-    
+
     // 根据变化类型找到对应的节点（通过tree-change-*类或change-badge类）
     // 注意：tree-change-mixed 类表示同时有 modified 和 moved，需要在两种情况下都选中
     let selector;
@@ -9160,16 +9171,16 @@ function highlightTreeNodesByChangeType(changeType) {
         default:
             return;
     }
-    
+
     const matchedElements = previewContainer.querySelectorAll(selector);
     const itemsToHighlight = new Set();
-    
+
     matchedElements.forEach(el => {
         // 找到tree-item元素
         const treeItem = el.classList.contains('tree-item') ? el : el.closest('.tree-item');
         if (treeItem) {
             itemsToHighlight.add(treeItem);
-            
+
             // 展开所有父节点
             let parent = treeItem.parentElement;
             while (parent && parent !== previewContainer) {
@@ -9197,18 +9208,18 @@ function highlightTreeNodesByChangeType(changeType) {
             }
         }
     });
-    
+
     // 添加高亮动画
     itemsToHighlight.forEach(item => {
         item.classList.add(`highlight-${changeType}`);
     });
-    
+
     // 滚动到第一个高亮的节点
     if (itemsToHighlight.size > 0) {
         const firstItem = Array.from(itemsToHighlight)[0];
         firstItem.scrollIntoView({ behavior: 'smooth', block: 'center' });
     }
-    
+
     // 动画结束后移除高亮类
     setTimeout(() => {
         itemsToHighlight.forEach(item => {
@@ -9230,13 +9241,13 @@ function saveChangesPreviewExpandedState(nodeId, isExpanded) {
     try {
         const expandedIds = getChangesPreviewExpandedState();
         const index = expandedIds.indexOf(nodeId);
-        
+
         if (isExpanded && index === -1) {
             expandedIds.push(nodeId);
         } else if (!isExpanded && index !== -1) {
             expandedIds.splice(index, 1);
         }
-        
+
         localStorage.setItem(CHANGES_PREVIEW_EXPANDED_KEY, JSON.stringify(expandedIds));
     } catch (e) {
         console.warn('[书签树预览] 保存展开状态失败:', e);
@@ -9266,7 +9277,7 @@ function saveChangesPreviewScrollTop(scrollTop) {
 async function renderChangesTreePreview(changeData) {
     const targetContainer = document.getElementById('changesTreePreviewInline');
     if (!targetContainer) return;
-    
+
     try {
         console.log('[书签树映射预览] 开始...');
 
@@ -9277,7 +9288,7 @@ async function renderChangesTreePreview(changeData) {
             lastScrollTop = existingPreviewBody.scrollTop;
             saveChangesPreviewScrollTop(lastScrollTop);
         }
-        
+
         // 1. 确保永久栏目存在（如果不存在就创建）
         let permanentSection = document.getElementById('permanentSection');
         if (!permanentSection) {
@@ -9292,11 +9303,11 @@ async function renderChangesTreePreview(changeData) {
                 setTimeout(() => applyLanguage(), 0);
             }
         }
-        
+
         // 2. 检查书签树是否需要首次渲染
         const bookmarkTreeEl = document.getElementById('bookmarkTree');
         const needsFirstRender = !bookmarkTreeEl || bookmarkTreeEl.children.length === 0 || bookmarkTreeEl.querySelector('.loading');
-        
+
         if (needsFirstRender) {
             console.log('[书签树映射预览] 首次渲染书签树...');
             // 直接渲染书签树（同步等待完成）
@@ -9306,17 +9317,17 @@ async function renderChangesTreePreview(changeData) {
             console.log('[书签树映射预览] 刷新变化标记...');
             await renderTreeViewSync();
         }
-        
+
         // 3. 再次获取永久栏目（确保已渲染）
         permanentSection = document.getElementById('permanentSection');
         const finalBookmarkTreeEl = document.getElementById('bookmarkTree');
-        
+
         if (!permanentSection || !finalBookmarkTreeEl || finalBookmarkTreeEl.children.length === 0) {
             console.error('[书签树映射预览] 永久栏目或书签树不存在');
             targetContainer.innerHTML = `<div class="empty-state-small">${currentLang === 'zh_CN' ? '请切换到书签画布查看详情' : 'Switch to Canvas for details'}</div>`;
             return;
         }
-        
+
         // 4. 构建或复用预览用的永久栏目容器
         console.log('[书签树映射预览] 更新永久栏目预览...');
         let clonedSection = document.getElementById('changesPreviewPermanentSection');
@@ -9375,7 +9386,7 @@ async function renderChangesTreePreview(changeData) {
                 });
             }
         }
-        
+
         // 6. 重新绑定只读的展开/折叠事件
         const treeContainer = clonedSection.querySelector('.bookmark-tree');
         if (treeContainer) {
@@ -9423,7 +9434,7 @@ async function renderChangesTreePreview(changeData) {
                     }
                 });
             }
-            
+
             // 绑定新的只读事件
             treeContainer.addEventListener('click', (e) => {
                 // 阻止右键菜单
@@ -9431,24 +9442,24 @@ async function renderChangesTreePreview(changeData) {
                     e.preventDefault();
                     return;
                 }
-                
+
                 const treeItem = e.target.closest('.tree-item');
                 if (!treeItem) return;
-                
+
                 // 允许链接点击
                 if (e.target.closest('a')) return;
-                
+
                 // 展开/折叠
                 const treeNode = treeItem.closest('.tree-node');
                 const children = treeNode?.querySelector('.tree-children');
                 const toggle = treeItem.querySelector('.tree-toggle:not(.placeholder)');
                 const nodeId = treeItem.dataset.nodeId;
-                
+
                 if (children && toggle) {
                     const isExpanding = !children.classList.contains('expanded');
                     toggle.classList.toggle('expanded');
                     children.classList.toggle('expanded');
-                    
+
                     // 更新文件夹图标
                     const folderIcon = treeItem.querySelector('.tree-icon, .folder-icon');
                     if (folderIcon) {
@@ -9460,14 +9471,14 @@ async function renderChangesTreePreview(changeData) {
                             folderIcon.classList.add('fa-folder');
                         }
                     }
-                    
+
                     // 保存展开状态（独立存储）
                     if (nodeId) {
                         saveChangesPreviewExpandedState(nodeId, isExpanding);
                     }
                 }
             });
-            
+
             // 禁用右键菜单
             treeContainer.addEventListener('contextmenu', (e) => {
                 e.preventDefault();
@@ -9484,9 +9495,9 @@ async function renderChangesTreePreview(changeData) {
                 saveChangesPreviewScrollTop(previewBody.scrollTop);
             });
         }
-        
+
         console.log('[书签树映射预览] 完成');
-        
+
     } catch (error) {
         console.error('[书签树映射预览] 失败:', error);
         targetContainer.innerHTML = '';
@@ -9501,9 +9512,9 @@ function initChangesTreePreview() {
     const toggleBtn = document.getElementById('changesTreeToggleBtn');
     const editBtn = document.getElementById('changesTreeEditBtn');
     const header = document.querySelector('.changes-tree-header');
-    
+
     if (!previewSection) return;
-    
+
     // 折叠/展开功能
     if (toggleBtn) {
         toggleBtn.addEventListener('click', (e) => {
@@ -9511,7 +9522,7 @@ function initChangesTreePreview() {
             previewSection.classList.toggle('collapsed');
         });
     }
-    
+
     // 点击头部也可以折叠/展开
     if (header) {
         header.addEventListener('click', (e) => {
@@ -9519,7 +9530,7 @@ function initChangesTreePreview() {
             previewSection.classList.toggle('collapsed');
         });
     }
-    
+
     // 编辑按钮 - 跳转到Canvas视图
     if (editBtn) {
         editBtn.addEventListener('click', (e) => {
@@ -9765,7 +9776,7 @@ async function renderCurrentChangesView(forceRefresh = false, options = {}) {
                 html += `<span class="diff-content">${currentLang === 'zh_CN' ? '无变化' : 'No changes'}</span>`;
                 html += '</div>';
             }
-            
+
             // 书签树预览（放在变化统计下方）
             html += '<div id="changesTreePreviewInline" class="changes-tree-preview-inline"></div>';
 
@@ -9802,7 +9813,7 @@ async function renderCurrentChangesView(forceRefresh = false, options = {}) {
                     diffHtml += `<i class="fas fa-chevron-down"></i>`;
                     diffHtml += `<span>${currentLang === 'zh_CN' ? '展开详细 Diff 代码' : 'Expand Detailed Diff'}</span>`;
                     diffHtml += `</div>`;
-                    
+
                     // 渲染 Git diff（默认折叠）
                     diffHtml += '<div class="git-diff-collapsible" id="diffCollapsible">';
                     diffHtml += '<div class="git-diff-viewer">';
@@ -9906,7 +9917,7 @@ async function renderCurrentChangesView(forceRefresh = false, options = {}) {
                 }
 
                 container.innerHTML = html + diffHtml;
-                
+
                 // 渲染书签树映射预览（内嵌到Bookmark Changes内部）
                 await renderChangesTreePreview(changeData);
 
@@ -9920,7 +9931,7 @@ async function renderCurrentChangesView(forceRefresh = false, options = {}) {
                             });
                         }
                     });
-                    
+
                     // 添加 Diff 区域折叠/展开功能
                     const diffToggle = document.getElementById('diffSectionToggle');
                     const diffCollapsible = document.getElementById('diffCollapsible');
@@ -9931,13 +9942,13 @@ async function renderCurrentChangesView(forceRefresh = false, options = {}) {
                             diffToggle.classList.toggle('expanded');
                             const span = diffToggle.querySelector('span');
                             if (span) {
-                                span.textContent = isExpanded 
+                                span.textContent = isExpanded
                                     ? (currentLang === 'zh_CN' ? '展开详细 Diff 代码' : 'Expand Detailed Diff')
                                     : (currentLang === 'zh_CN' ? '收起详细 Diff 代码' : 'Collapse Detailed Diff');
                             }
                         });
                     }
-                    
+
                     // 添加跳转到Canvas编辑按钮事件
                     const jumpToCanvasBtn = document.getElementById('jumpToCanvasBtn');
                     if (jumpToCanvasBtn) {
@@ -9945,7 +9956,7 @@ async function renderCurrentChangesView(forceRefresh = false, options = {}) {
                             document.querySelector('[data-view="canvas"]')?.click();
                         });
                     }
-                    
+
                     // 添加diff行点击高亮对应书签树节点的事件
                     document.querySelectorAll('.diff-line.clickable').forEach(line => {
                         line.addEventListener('click', (e) => {
@@ -9957,7 +9968,7 @@ async function renderCurrentChangesView(forceRefresh = false, options = {}) {
                             highlightTreeNodesByChangeType(changeType);
                         });
                     });
-                    
+
                     // 添加跳转按钮点击事件
                     document.querySelectorAll('.jump-to-related-btn').forEach(btn => {
                         btn.addEventListener('click', (e) => {
@@ -11901,7 +11912,7 @@ async function ensureBrowsingClickRankingStats() {
         if (normalizedTitle) {
             bookmarkKey = bookmarkKeyMap.get(`title:${normalizedTitle}`);
         }
-        
+
         if (bookmarkKey) {
             // 标题相同，复用已有的 bookmarkKey，添加 URL 映射
             bookmarkKeyMap.set(`url:${normalizedUrl}`, bookmarkKey);
@@ -11951,7 +11962,7 @@ async function ensureBrowsingClickRankingStats() {
                 // URL 不匹配，尝试标题匹配
                 bookmarkKey = bookmarkKeyMap.get(`title:${title}`);
             }
-            
+
             if (!bookmarkKey) {
                 // 没有匹配的书签，跳过（理论上不应该发生，因为这些记录来自存储库3）
                 return;
@@ -12005,11 +12016,11 @@ function getBrowsingRankingItemsForRange(range) {
         ? 'dayCount'
         : range === 'week'
             ? 'weekCount'
-        : range === 'year'
-            ? 'yearCount'
-        : range === 'all'
-            ? 'allCount'
-            : 'monthCount';
+            : range === 'year'
+                ? 'yearCount'
+                : range === 'all'
+                    ? 'allCount'
+                    : 'monthCount';
 
     const items = browsingClickRankingStats.items
         .filter(item => item[key] > 0)
@@ -12025,12 +12036,12 @@ function getBrowsingRankingItemsForRange(range) {
 // 渲染文件夹模式的点击排行列表
 async function renderBrowsingFolderRankingList(container, items, range, stats) {
     container.innerHTML = '';
-    
+
     const isZh = currentLang === 'zh_CN';
-    
+
     // 确保书签信息已加载（包含 folderPath）
     await getBookmarkUrlsAndTitles();
-    
+
     if (!items.length) {
         const title = isZh ? '暂无点击记录' : 'No click records found';
         const desc = isZh ? '当前时间范围内尚未找到这些书签的访问记录。' : 'No visit records were found in the selected time range.';
@@ -12047,34 +12058,34 @@ async function renderBrowsingFolderRankingList(container, items, range, stats) {
     // 按文件夹聚合统计
     const folderStats = new Map(); // folderPath -> { count, items: [] }
     const bookmarkInfo = stats.bookmarkInfoMap;
-    
+
     items.forEach(item => {
         // 尝试从 getBookmarkUrlsAndTitles 获取 folderPath
         let folderPath = [];
         if (browsingRelatedBookmarkInfo && browsingRelatedBookmarkInfo.has(item.url)) {
             folderPath = browsingRelatedBookmarkInfo.get(item.url).folderPath || [];
         }
-        
+
         // 使用完整的文件夹路径作为分组键（精确到最后一级文件夹）
         const folderKey = folderPath.length > 0 ? folderPath.join(' / ') : (isZh ? '未分类' : 'Uncategorized');
         const folderName = folderPath.length > 0 ? folderPath[folderPath.length - 1] : folderKey;
-        
+
         if (!folderStats.has(folderKey)) {
-            folderStats.set(folderKey, { 
+            folderStats.set(folderKey, {
                 name: folderName,
                 fullPath: folderKey,
                 folderPath: folderPath,
-                count: 0, 
+                count: 0,
                 items: []
             });
         }
-        
+
         const folderData = folderStats.get(folderKey);
         const itemCount = item.filteredCount !== undefined ? item.filteredCount : (
             range === 'day' ? item.dayCount :
-            range === 'week' ? item.weekCount :
-            range === 'year' ? item.yearCount :
-            range === 'all' ? item.allCount : item.monthCount
+                range === 'week' ? item.weekCount :
+                    range === 'year' ? item.yearCount :
+                        range === 'all' ? item.allCount : item.monthCount
         );
         folderData.count += itemCount;
         folderData.items.push({ ...item, count: itemCount, folderPath });
@@ -12082,7 +12093,7 @@ async function renderBrowsingFolderRankingList(container, items, range, stats) {
 
     // 按点击次数排序文件夹
     const sortedFolders = Array.from(folderStats.values()).sort((a, b) => b.count - a.count);
-    
+
     // 渲染文件夹列表
     const rangeLabel = (() => {
         if (range === 'day') return isZh ? '今天' : 'Today';
@@ -12096,7 +12107,7 @@ async function renderBrowsingFolderRankingList(container, items, range, stats) {
         const folderRow = document.createElement('div');
         folderRow.className = 'ranking-item folder-ranking-item';
         folderRow.style.cursor = 'pointer';
-        
+
         // 排名样式
         let rankClass = '';
         if (index === 0) rankClass = 'rank-gold';
@@ -12148,7 +12159,7 @@ async function renderBrowsingFolderRankingList(container, items, range, stats) {
 
         // 按点击次数排序书签
         folder.items.sort((a, b) => b.count - a.count);
-        
+
         folder.items.forEach(item => {
             const bookmarkItem = document.createElement('div');
             bookmarkItem.style.display = 'flex';
@@ -12345,7 +12356,7 @@ function renderBrowsingClickRankingList(container, items, range) {
             jumpBtn.dataset.url = entry.url;
             jumpBtn.dataset.title = entry.title;
             jumpBtn.dataset.range = range;
-            
+
             jumpBtn.addEventListener('click', (e) => {
                 e.stopPropagation();
                 e.preventDefault();
@@ -12353,12 +12364,12 @@ function renderBrowsingClickRankingList(container, items, range) {
                     jumpToRelatedHistoryFromRanking(entry.url, entry.title, range);
                 }
             });
-            
+
             // 容器也阻止事件冒泡
             jumpBtnContainer.addEventListener('click', (e) => {
                 e.stopPropagation();
             });
-            
+
             jumpBtnContainer.appendChild(jumpBtn);
             header.appendChild(jumpBtnContainer);
 
@@ -12392,9 +12403,9 @@ function renderBrowsingClickRankingList(container, items, range) {
                 if (e.target === titleLink) {
                     return;
                 }
-                
+
                 // 如果点击的是跳转按钮或其容器，不执行打开书签操作
-                if (e.target.closest('.jump-to-related-btn-container') || 
+                if (e.target.closest('.jump-to-related-btn-container') ||
                     e.target.closest('.jump-to-related-btn')) {
                     return;
                 }
@@ -12425,7 +12436,7 @@ function renderBrowsingClickRankingList(container, items, range) {
 
     // 找到真正的滚动容器（.content-area）
     const scrollContainer = container.closest('.content-area') || container;
-    
+
     const onScroll = () => {
         if (offset >= items.length) return;
         // 提前加载：使用视口高度的3倍作为阈值，至少1500px
@@ -12441,7 +12452,7 @@ function renderBrowsingClickRankingList(container, items, range) {
     }
     scrollContainer.addEventListener('scroll', onScroll);
     scrollContainer.__browsingRankingScrollHandler = onScroll;
-    
+
     // 暴露懒加载状态和函数，供跳转功能使用
     container.__lazyLoadState = {
         totalItems: items.length,
@@ -12505,12 +12516,12 @@ async function loadBrowsingClickRanking(range) {
         }
 
         let items = getBrowsingRankingItemsForRange(range);
-        
+
         // 应用二级菜单时间筛选
         if (browsingRankingTimeFilter && items.length > 0) {
             items = filterRankingItemsByTime(items, browsingRankingTimeFilter, stats.boundaries);
         }
-        
+
         // 根据视图模式渲染
         initBrowsingRankingViewMode();
         if (browsingRankingViewMode === 'folder') {
@@ -12551,10 +12562,10 @@ function initBrowsingClickRanking() {
                 btn.classList.remove('active');
             }
         });
-        
+
         // 显示时间菜单
         showBrowsingRankingTimeMenu(range);
-        
+
         loadBrowsingClickRanking(range);
 
         if (shouldPersist) {
@@ -12596,7 +12607,7 @@ function getActiveBrowsingRankingRange() {
 async function refreshActiveBrowsingRankingIfVisible() {
     const panel = document.getElementById('browsingRankingPanel');
     if (!panel || !panel.classList.contains('active')) return;
-    
+
     // ✨ 等待日历数据同步完成（防止显示空白）
     const waitForCalendarData = async () => {
         const start = Date.now();
@@ -12610,12 +12621,12 @@ async function refreshActiveBrowsingRankingIfVisible() {
         }
         return false;
     };
-    
+
     const dataReady = await waitForCalendarData();
     if (!dataReady) {
         console.warn('[BrowsingRanking] 等待日历数据超时');
     }
-    
+
     const range = getActiveBrowsingRankingRange() || 'month';
     loadBrowsingClickRanking(range);
 }
@@ -13149,19 +13160,19 @@ let pendingRenderRequest = null;
 // 同步版本的树渲染（真正可 await，用于 Current Changes 预览）
 async function renderTreeViewSync() {
     console.log('[renderTreeViewSync] 开始同步渲染...');
-    
+
     const treeContainer = document.getElementById('bookmarkTree');
     if (!treeContainer) {
         console.error('[renderTreeViewSync] 容器元素未找到');
         return;
     }
-    
+
     // 清除缓存，确保重新渲染
     cachedTreeData = null;
     lastTreeFingerprint = null;
     lastTreeSnapshotVersion = null;
     cachedCurrentTreeIndex = null;
-    
+
     try {
         // 并行获取数据
         const [snapshot, storageData] = await Promise.all([
@@ -13170,17 +13181,17 @@ async function renderTreeViewSync() {
         ]);
         const currentTree = snapshot ? snapshot.tree : null;
         lastTreeSnapshotVersion = snapshot ? snapshot.version : null;
-        
+
         if (!currentTree || currentTree.length === 0) {
             treeContainer.innerHTML = `<div class="empty-state"><div class="empty-state-icon"><i class="fas fa-sitemap"></i></div><div class="empty-state-title">${i18n.emptyTree[currentLang]}</div></div>`;
             return;
         }
-        
+
         const oldTree = storageData.lastBookmarkData && storageData.lastBookmarkData.bookmarkTree;
         cachedOldTree = oldTree;
         cachedCurrentTree = currentTree;
         cachedCurrentTreeIndex = null;
-        
+
         // 检测变动
         if (oldTree && oldTree[0]) {
             treeChangeMap = await detectTreeChangesFast(oldTree, currentTree);
@@ -13188,7 +13199,7 @@ async function renderTreeViewSync() {
         } else {
             treeChangeMap = new Map();
         }
-        
+
         // 合并旧树和新树，显示删除的节点
         let treeToRender = currentTree;
         if (oldTree && oldTree[0] && treeChangeMap && treeChangeMap.size > 0) {
@@ -13208,10 +13219,10 @@ async function renderTreeViewSync() {
                 }
             }
         }
-        
+
         // 渲染树
         const fragment = document.createDocumentFragment();
-        
+
         if (treeChangeMap.size > 0) {
             const legend = document.createElement('div');
             legend.className = 'tree-legend';
@@ -13223,22 +13234,22 @@ async function renderTreeViewSync() {
             `;
             fragment.appendChild(legend);
         }
-        
+
         const tempDiv = document.createElement('div');
         tempDiv.innerHTML = renderTreeNodeWithChanges(treeToRender[0], 0);
         while (tempDiv.firstChild) {
             fragment.appendChild(tempDiv.firstChild);
         }
-        
+
         treeContainer.innerHTML = '';
         treeContainer.appendChild(fragment);
         treeContainer.style.display = 'block';
-        
+
         // 绑定事件
         attachTreeEvents(treeContainer);
-        
+
         console.log('[renderTreeViewSync] 渲染完成');
-        
+
     } catch (error) {
         console.error('[renderTreeViewSync] 渲染失败:', error);
         treeContainer.innerHTML = `<div class="error">${currentLang === 'zh_CN' ? '加载失败' : 'Failed to load'}</div>`;
@@ -13247,14 +13258,14 @@ async function renderTreeViewSync() {
 
 async function renderTreeView(forceRefresh = false) {
     console.log('[renderTreeView] 开始渲染, forceRefresh:', forceRefresh);
-    
+
     // 如果正在渲染中，合并请求，避免重复渲染导致闪烁
     if (isRenderingTree) {
         console.log('[renderTreeView] 已有渲染进行中，合并请求');
         pendingRenderRequest = forceRefresh;
         return;
     }
-    
+
     isRenderingTree = true;
 
     // 记录永久栏目滚动位置，渲染后恢复
@@ -13298,7 +13309,7 @@ async function renderTreeView(forceRefresh = false) {
                 permScrollTop = persisted.top;
                 permScrollLeft = persisted.left || 0;
             }
-        } catch (_) {}
+        } catch (_) { }
     }
 
     const treeContainer = document.getElementById('bookmarkTree');
@@ -13400,16 +13411,16 @@ async function renderTreeView(forceRefresh = false) {
             }
         })();
 
-	        // 重置渲染标志并处理合并请求
-	        isRenderingTree = false;
-	        if (pendingRenderRequest !== null) {
-	            const pending = pendingRenderRequest;
-	            pendingRenderRequest = null;
-	            console.log('[renderTreeView] 处理待处理的渲染请求（快速路径）');
-	            renderTreeView(pending);
-	        }
-	        return;
-	    }
+        // 重置渲染标志并处理合并请求
+        isRenderingTree = false;
+        if (pendingRenderRequest !== null) {
+            const pending = pendingRenderRequest;
+            pendingRenderRequest = null;
+            console.log('[renderTreeView] 处理待处理的渲染请求（快速路径）');
+            renderTreeView(pending);
+        }
+        return;
+    }
 
     // 没有缓存，开始加载数据
     // 注意：不清空容器，保持原有内容，避免闪烁和滚动位置丢失
@@ -13645,10 +13656,10 @@ async function renderTreeView(forceRefresh = false) {
 
             console.log('[renderTreeView] 渲染完成');
         });
-        
+
         // 重置渲染标志
         isRenderingTree = false;
-        
+
         // 如果有待处理的渲染请求，处理它
         if (pendingRenderRequest !== null) {
             const pending = pendingRenderRequest;
@@ -13660,7 +13671,7 @@ async function renderTreeView(forceRefresh = false) {
         console.error('[renderTreeView] 错误:', error);
         treeContainer.innerHTML = `<div class="error">加载失败: ${error.message}</div>`;
         treeContainer.style.display = 'block';
-        
+
         // 重置渲染标志
         isRenderingTree = false;
         pendingRenderRequest = null;
@@ -15085,23 +15096,23 @@ async function applyIncrementalChangeToTree(id, changeInfo) {
 // ===== 增量更新：移动 =====
 async function applyIncrementalMoveToTree(id, moveInfo) {
     console.log('[增量移动] 开始处理:', id, moveInfo);
-    
+
     const permBody = document.querySelector('.permanent-section-body');
     const permScrollTop = permBody ? permBody.scrollTop : null;
     const container = document.getElementById('bookmarkTree');
     if (!container) return;
     const item = container.querySelector(`.tree-item[data-node-id="${id}"]`);
-    if (!item) { 
+    if (!item) {
         console.warn('[增量移动] 找不到节点，跳过（可能由即时视觉更新处理）');
-        return; 
+        return;
     }
     const node = item.closest('.tree-node');
     const oldParentItem = container.querySelector(`.tree-item[data-node-id="${moveInfo.oldParentId}"]`);
     const newParentItem = container.querySelector(`.tree-item[data-node-id="${moveInfo.parentId}"]`);
     const newParentChildren = newParentItem && newParentItem.nextElementSibling && newParentItem.nextElementSibling.classList.contains('tree-children')
         ? newParentItem.nextElementSibling : null;
-    
-    if (!newParentChildren) { 
+
+    if (!newParentChildren) {
         // 如果找不到新父容器但节点有移动标记，说明即时更新已处理，只需添加徽标
         if (item.classList.contains('tree-change-moved')) {
             console.log('[增量移动] 节点已有移动标记，跳过DOM操作');
@@ -15109,9 +15120,9 @@ async function applyIncrementalMoveToTree(id, moveInfo) {
             return;
         }
         console.warn('[增量移动] 找不到新父容器，跳过');
-        return; 
+        return;
     }
-    
+
     // 关键修复：同一父级内的“排序移动”时，node 仍在 newParentChildren 里，但位置需要更新。
     // 之前的 alreadyInPlace 逻辑会直接跳过，导致移动后视觉不跟随（只能依赖全量 renderTreeView 修正）。
     if (!node) {
@@ -15154,14 +15165,14 @@ async function applyIncrementalMoveToTree(id, moveInfo) {
             try { n.style.paddingLeft = ''; } catch (_) { }
         });
     } catch (_) { /* ignore */ }
-    
+
     // 如果已经有移动标记（由即时更新处理），跳过徽标添加
     if (item.classList.contains('tree-change-moved') && item.querySelector('.change-badge.moved')) {
         console.log('[增量移动] 节点已有移动徽标，跳过');
         if (permBody && permScrollTop !== null) permBody.scrollTop = permScrollTop;
         return;
     }
-    
+
     // 关键：仅对这个被拖拽的节点标记为蓝色"moved"
     // 其他由于这次移动而位置改变的兄弟节点不标记，因为我们只标识用户直接操作的对象
     let badges = item.querySelector('.change-badges');
@@ -15185,7 +15196,7 @@ async function applyIncrementalMoveToTree(id, moveInfo) {
         if (!tip) tip = '/';
         badges.insertAdjacentHTML('beforeend', `<span class="change-badge moved" data-move-from="${escapeHtml(tip)}" title="${escapeHtml(tip)}"><i class="fas fa-arrows-alt"></i><span class="move-tooltip">${slashPathToChipsHTML(tip)}</span></span>`);
         item.classList.add('tree-change-moved');
-        
+
         // 设置蓝色样式
         const labelLink = item.querySelector('.tree-bookmark-link');
         const labelSpan = item.querySelector('.tree-label');
@@ -15680,7 +15691,7 @@ function toggleLanguage() {
     } catch (e) {
         console.warn('[Heatmap] 语言切换时重载失败:', e);
     }
-    
+
     // 刷新书签关联记录列表（更新badge文字）
     refreshBrowsingRelatedHistory();
 }
@@ -15737,21 +15748,20 @@ function updateLanguageDependentUI() {
         btn.setAttribute('aria-label', label);
     });
 
-    // 2. 更新临时栏目说明的placeholder和文本
-    document.querySelectorAll('.temp-node-description').forEach(descText => {
-        const text = descText.textContent.trim();
-        const hasPlaceholder = text === 'Click to add description...' || text === '点击添加说明...';
-        const hasSpanChild = descText.querySelector('span[style*="opacity"]');
+    // 2. 更新临时栏目说明（现为 WYSIWYG editor）
+    document.querySelectorAll('.temp-node-description').forEach(descEl => {
+        const placeholder = isEn ? 'Click to add description...' : '点击添加说明...';
+        try {
+            descEl.setAttribute('data-placeholder', placeholder);
+            descEl.setAttribute('aria-label', placeholder);
+        } catch (_) { }
 
-        // 如果是占位符文本（检查文本内容或者是否有占位符span）
-        if (hasPlaceholder || (hasSpanChild && !text)) {
-            const placeholder = isEn ? 'Click to add description...' : '点击添加说明...';
-            descText.innerHTML = `<span style="color: inherit; opacity: 0.6;">${placeholder}</span>`;
-            descText.title = isEn ? 'Click to add description' : '点击添加说明';
-        } else if (text && text.length > 0) {
-            // 有内容的，只更新title
-            descText.title = isEn ? 'Double-click to edit' : '双击编辑说明';
-        }
+        const text = (descEl.textContent || '').replace(/\u200B/g, '').trim();
+        const hasNonText = !!descEl.querySelector('hr, input[type="checkbox"], ul, ol, blockquote, h1, h2, h3, h4, h5, h6');
+        const hasContent = Boolean(text) || hasNonText;
+        descEl.title = hasContent
+            ? (isEn ? 'Click to edit' : '点击编辑说明')
+            : (isEn ? 'Click to add description' : '点击添加说明');
     });
 
     // 3. 更新说明编辑按钮的tooltip
@@ -15759,8 +15769,12 @@ function updateLanguageDependentUI() {
         btn.title = isEn ? 'Edit description' : '编辑说明';
     });
 
+    document.querySelectorAll('.temp-node-desc-format-btn').forEach(btn => {
+        btn.title = isEn ? 'Format toolbar' : '格式工具栏';
+    });
+
     document.querySelectorAll('.temp-node-desc-delete-btn').forEach(btn => {
-        btn.title = isEn ? 'Delete description' : '删除说明';
+        btn.title = isEn ? 'Clear input' : '清空输入框';
     });
 
     // 4. 更新永久栏目的说明提示
@@ -15772,23 +15786,30 @@ function updateLanguageDependentUI() {
 
     const permanentTipText = document.querySelector('.permanent-section-tip');
     if (permanentTipText) {
-        const text = permanentTipText.textContent.trim();
-        // 只更新占位符，不更新用户输入的内容
-        if (text === 'Click to add description...' || text === '点击添加说明...') {
-            const placeholder = isEn ? 'Click to add description...' : '点击添加说明...';
-            permanentTipText.innerHTML = `<span style="opacity: 0.6;">${placeholder}</span>`;
-            permanentTipText.title = isEn ? 'Click to add description' : '点击添加说明';
-        } else if (text) {
-            permanentTipText.title = isEn ? 'Double-click to edit' : '双击编辑说明';
-        }
+        const placeholder = isEn ? 'Click to add description...' : '点击添加说明...';
+        try {
+            permanentTipText.setAttribute('data-placeholder', placeholder);
+            permanentTipText.setAttribute('aria-label', placeholder);
+        } catch (_) { }
+
+        const text = (permanentTipText.textContent || '').replace(/\u200B/g, '').trim();
+        const hasNonText = !!permanentTipText.querySelector('hr, input[type="checkbox"], ul, ol, blockquote, h1, h2, h3, h4, h5, h6');
+        const hasContent = Boolean(text) || hasNonText;
+        permanentTipText.title = hasContent
+            ? (isEn ? 'Click to edit' : '点击编辑说明')
+            : (isEn ? 'Click to add description' : '点击添加说明');
     }
+
+    document.querySelectorAll('.permanent-section-tip-format-btn').forEach(btn => {
+        btn.title = isEn ? 'Format toolbar' : '格式工具栏';
+    });
 
     // 5. 更新书签关联记录排序按钮的tooltip
     const relatedSortBtn = document.getElementById('browsingRelatedSortBtn');
     if (relatedSortBtn) {
         const tooltip = relatedSortBtn.querySelector('.btn-tooltip');
         if (tooltip) {
-            tooltip.textContent = browsingRelatedSortAsc 
+            tooltip.textContent = browsingRelatedSortAsc
                 ? (i18n.currentAscending?.[currentLang] || (isEn ? 'Current: Ascending' : '当前：正序'))
                 : (i18n.currentDescending?.[currentLang] || (isEn ? 'Current: Descending' : '当前：倒序'));
         }
@@ -15946,11 +15967,11 @@ function handleStorageChange(changes, namespace) {
 
         // 重新渲染当前视图以应用语言
         renderCurrentView();
-        
+
         // 刷新书签关联记录列表（更新badge文字）
         refreshBrowsingRelatedHistory();
     }
-    
+
     // 翻牌历史变化（用于实时刷新热力图）
     if (changes.flipHistory && currentView === 'recommend') {
         loadHeatmapData();
@@ -16031,7 +16052,7 @@ function setupBookmarkListener() {
         console.log('[书签监听] 书签修改:', changeInfo);
         try {
             updateBookmarkInAdditionsCache(id, changeInfo);
-            
+
             // URL或标题变化时，清除T值缓存并重算S值
             if (changeInfo.url || changeInfo.title) {
                 // P10修复：书签URL/标题变化时，清除整个T值缓存以确保正确性
@@ -16044,7 +16065,7 @@ function setupBookmarkListener() {
                 browserAPI.runtime.sendMessage({ action: 'updateBookmarkScore', bookmarkId: id });
                 console.log('[书签修改] 已请求background更新S值:', id);
             }
-            
+
             // 支持 tree 和 canvas 视图（canvas视图包含永久栏目的书签树）
             if (currentView === 'tree' || currentView === 'canvas') {
                 await applyIncrementalChangeToTree(id, changeInfo);
@@ -16065,7 +16086,7 @@ function setupBookmarkListener() {
     // 书签移动
     browserAPI.bookmarks.onMoved.addListener(async (id, moveInfo) => {
         console.log('[书签监听] 书签移动:', id);
-        
+
         try {
             moveBookmarkInAdditionsCache(id, moveInfo);
             // 将本次移动记为显式主动移动，确保稳定显示蓝色标识
@@ -16157,7 +16178,7 @@ function setupRealtimeMessageListener() {
                     }
                     console.log('[T值缓存] 增量更新:', message.title || message.url);
                 }
-                
+
                 // T值变化后，发消息给background.js触发S值增量更新
                 // background.js也会监听trackingDataUpdated，即使html页面没打开也能更新
                 if (message.url) {
@@ -17101,10 +17122,10 @@ function initBrowsingRelatedHistory() {
                 btn.classList.remove('active');
             }
         });
-        
+
         // 显示对应的时间段菜单
         showBrowsingRelatedTimeMenu(range);
-        
+
         loadBrowsingRelatedHistory(range);
 
         if (shouldPersist) {
@@ -17129,13 +17150,13 @@ function initBrowsingRelatedHistory() {
         const tooltip = document.createElement('span');
         tooltip.className = 'btn-tooltip';
         const updateTooltip = () => {
-            tooltip.textContent = browsingRelatedSortAsc 
+            tooltip.textContent = browsingRelatedSortAsc
                 ? (i18n.currentAscending?.[currentLang] || (currentLang === 'zh_CN' ? '当前：正序' : 'Current: Ascending'))
                 : (i18n.currentDescending?.[currentLang] || (currentLang === 'zh_CN' ? '当前：倒序' : 'Current: Descending'));
         };
         updateTooltip();
         sortBtn.appendChild(tooltip);
-        
+
         sortBtn.addEventListener('click', () => {
             browsingRelatedSortAsc = !browsingRelatedSortAsc;
             if (browsingRelatedSortAsc) {
@@ -17165,15 +17186,15 @@ function initBrowsingRelatedHistory() {
 async function refreshBrowsingRelatedHistory() {
     const panel = document.getElementById('browsingRelatedPanel');
     if (!panel || !panel.classList.contains('active')) return;
-    
+
     const activeBtn = panel.querySelector('.ranking-time-filter-btn.active');
     const range = activeBtn ? (activeBtn.dataset.range || 'day') : 'day';
-    
+
     // 清除书签URL/标题缓存（以便重新获取最新书签）
     browsingRelatedBookmarkUrls = null;
     browsingRelatedBookmarkTitles = null;
     browsingRelatedBookmarkInfo = null;
-    
+
     // ✨ 等待日历数据同步完成（确保标题匹配的记录能正确显示）
     const waitForCalendarData = async () => {
         const start = Date.now();
@@ -17187,12 +17208,12 @@ async function refreshBrowsingRelatedHistory() {
         }
         return false;
     };
-    
+
     const dataReady = await waitForCalendarData();
     if (!dataReady) {
         console.warn('[BrowsingRelated] 等待日历数据超时');
     }
-    
+
     // 直接重新加载（数据来自 browsingHistoryCalendarInstance）
     loadBrowsingRelatedHistory(range);
 }
@@ -17215,7 +17236,7 @@ async function getBookmarkUrlsAndTitles() {
     const urls = new Set();
     const titles = new Set();
     const info = new Map(); // url -> { url, title, folderPath }
-    
+
     const collectUrlsAndTitles = (nodes, parentPath = []) => {
         if (!Array.isArray(nodes)) return;
         for (const node of nodes) {
@@ -17256,7 +17277,7 @@ async function getBookmarkUrlsAndTitles() {
                 }
             });
         });
-        
+
         collectUrlsAndTitles(tree);
         browsingRelatedBookmarkUrls = urls;
         browsingRelatedBookmarkTitles = titles;
@@ -17430,10 +17451,10 @@ async function loadBrowsingRelatedHistory(range = 'day') {
         const visitPromises = historyItems.map(async (item) => {
             const visits = await getVisitsAsync(item.url);
             // 过滤在时间范围内的访问
-            const filteredVisits = visits.filter(v => 
+            const filteredVisits = visits.filter(v =>
                 v.visitTime >= startTime && v.visitTime <= endTime
             );
-            
+
             if (filteredVisits.length > 0) {
                 // 每次访问创建一条记录
                 return filteredVisits.map(visit => ({
@@ -17468,7 +17489,7 @@ async function loadBrowsingRelatedHistory(range = 'day') {
         // ✨ 获取书签URL和标题集合（用于标识哪些是书签）
         // 优先从「点击记录」日历获取，保持数据一致性
         let bookmarkUrls, bookmarkTitles;
-        
+
         // 优先使用 DatabaseManager 获取书签信息（最准确）
         if (calendar && calendar.dbManager) {
             console.log('[BrowsingRelated] 从DatabaseManager获取书签集合');
@@ -17600,7 +17621,7 @@ async function renderBrowsingRelatedList(container, historyItems, bookmarkUrls, 
             const isBookmark = checkIsBookmark(item);
             // 优先使用标题，如果标题为空则使用URL的路径部分（去掉查询参数）
             const itemTitle = (item.title && item.title.trim()) ? normalizeTitle(item.title) : getUrlKey(item.url);
-            
+
             if (isBookmark) {
                 // 书签单独成组，不合并
                 groups.push({
@@ -17646,10 +17667,10 @@ async function renderBrowsingRelatedList(container, historyItems, bookmarkUrls, 
     const renderGroup = (group) => {
         const item = group.representativeItem;
         const isBookmark = group.isBookmark;
-        
+
         const itemEl = document.createElement('div');
         itemEl.className = 'related-history-item' + (isBookmark ? ' is-bookmark' : '');
-        
+
         // 添加 dataset 属性用于跳转匹配
         const visitTimestamp = item.lastVisitTime || null;
         itemEl.dataset.url = item.url;
@@ -17683,12 +17704,12 @@ async function renderBrowsingRelatedList(container, historyItems, bookmarkUrls, 
         }
 
         const displayTitle = (item.title && item.title.trim()) ? item.title : item.url;
-        
+
         // ✨ 序号显示：如果合并了多条，显示为 "起始~结束" 格式
-        const numberStr = group.startIndex === group.endIndex 
-            ? `${group.startIndex}` 
+        const numberStr = group.startIndex === group.endIndex
+            ? `${group.startIndex}`
             : `${group.startIndex}~${group.endIndex}`;
-        
+
         itemEl.innerHTML = `
             <div class="related-history-number">${numberStr}</div>
             <div class="related-history-header">
@@ -17744,7 +17765,7 @@ async function renderBrowsingRelatedList(container, historyItems, bookmarkUrls, 
 
     // 找到真正的滚动容器（.content-area）
     const scrollContainer = container.closest('.content-area') || container;
-    
+
     const onScroll = () => {
         if (offset >= mergedGroups.length) return;
         // 提前加载：使用视口高度的3倍作为阈值，至少1500px
@@ -17760,7 +17781,7 @@ async function renderBrowsingRelatedList(container, historyItems, bookmarkUrls, 
     }
     scrollContainer.addEventListener('scroll', onScroll);
     scrollContainer.__browsingRelatedScrollHandler = onScroll;
-    
+
     // 暴露懒加载状态和函数，供跳转功能使用
     container.__lazyLoadState = {
         totalItems: filteredItems.length,
@@ -17785,22 +17806,22 @@ function formatTimeByRange(date, range) {
         case 'day':
             // 当天：只显示时间
             return timeOnly;
-        
+
         case 'week':
             // 当周：显示周几+时间
-            const weekdays = isZh 
+            const weekdays = isZh
                 ? ['周日', '周一', '周二', '周三', '周四', '周五', '周六']
                 : ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
             const weekday = weekdays[date.getDay()];
             return `${weekday} ${timeOnly}`;
-        
+
         case 'month':
         case 'year':
             // 当月/当年：显示月-日 时间
             const month = String(date.getMonth() + 1).padStart(2, '0');
             const day = String(date.getDate()).padStart(2, '0');
             return `${month}-${day} ${timeOnly}`;
-        
+
         default:
             return timeOnly;
     }
@@ -18064,7 +18085,7 @@ function renderRankingWeekDaysMenu(container, date, stats) {
     const calendar = window.browsingHistoryCalendarInstance;
     if (!calendar || !calendar.bookmarksByDate) return;
 
-    const weekdayNames = isZh 
+    const weekdayNames = isZh
         ? ['周日', '周一', '周二', '周三', '周四', '周五', '周六']
         : ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 
@@ -18084,10 +18105,10 @@ function renderRankingWeekDaysMenu(container, date, stats) {
     for (let i = 0; i < 7; i++) {
         const dayDate = new Date(weekStart);
         dayDate.setDate(weekStart.getDate() + i);
-        
+
         if (!daysSet.has(dayDate.toDateString())) continue;
         if (dayDate.getTime() > boundaries.now) continue;
-        
+
         const btn = document.createElement('button');
         btn.className = 'time-menu-btn';
         btn.textContent = weekdayNames[dayDate.getDay()];
@@ -18208,25 +18229,25 @@ function renderRankingAllYearsMenu(container, stats) {
 // 按时间筛选点击排行项目（重新计算每个时间段的点击次数）
 function filterRankingItemsByTime(items, filter, boundaries) {
     if (!filter || !items || items.length === 0) return items;
-    
+
     const calendar = window.browsingHistoryCalendarInstance;
     if (!calendar || !calendar.bookmarksByDate) return items;
-    
+
     // 使用与原始统计相同的映射
     const stats = browsingClickRankingStats;
     if (!stats || !stats.bookmarkKeyMap || !stats.bookmarkInfoMap) return items;
-    
+
     const bookmarkKeyMap = stats.bookmarkKeyMap;
     const bookmarkInfoMap = stats.bookmarkInfoMap;
-    
+
     // 创建 bookmarkKey -> 访问次数的映射
     const keyVisitCounts = new Map();
-    
+
     // 遍历所有访问记录，使用与原始统计完全相同的匹配逻辑
     for (const bookmarks of calendar.bookmarksByDate.values()) {
         for (const bm of bookmarks) {
             if (!bm || !bm.url) continue;
-            
+
             const url = bm.url;
             const title = typeof bm.title === 'string' && bm.title.trim()
                 ? bm.title.trim()
@@ -18235,13 +18256,13 @@ function filterRankingItemsByTime(items, filter, boundaries) {
                 ? bm.visitTime
                 : (bm.dateAdded instanceof Date ? bm.dateAdded.getTime() : 0);
             if (!t) continue;
-            
+
             const visitDate = new Date(t);
             let matches = false;
-            
+
             switch (filter.type) {
                 case 'hour':
-                    if (t >= boundaries.dayStart && t <= boundaries.now && 
+                    if (t >= boundaries.dayStart && t <= boundaries.now &&
                         visitDate.getHours() === filter.value) {
                         matches = true;
                     }
@@ -18271,21 +18292,21 @@ function filterRankingItemsByTime(items, filter, boundaries) {
                     }
                     break;
             }
-            
+
             if (matches) {
                 // 与原始统计完全相同的匹配逻辑
                 let bookmarkKey = bookmarkKeyMap.get(`url:${url}`);
                 if (!bookmarkKey && title) {
                     bookmarkKey = bookmarkKeyMap.get(`title:${title}`);
                 }
-                
+
                 if (bookmarkKey) {
                     keyVisitCounts.set(bookmarkKey, (keyVisitCounts.get(bookmarkKey) || 0) + 1);
                 }
             }
         }
     }
-    
+
     // 将 bookmarkKey 的计数映射回 item.url
     const urlVisitCounts = new Map();
     for (const [key, count] of keyVisitCounts.entries()) {
@@ -18294,7 +18315,7 @@ function filterRankingItemsByTime(items, filter, boundaries) {
             urlVisitCounts.set(info.url, count);
         }
     }
-    
+
     // 过滤并更新items的点击次数
     const result = items
         .filter(item => urlVisitCounts.has(item.url) && urlVisitCounts.get(item.url) > 0)
@@ -18306,7 +18327,7 @@ function filterRankingItemsByTime(items, filter, boundaries) {
             if (b.filteredCount !== a.filteredCount) return b.filteredCount - a.filteredCount;
             return (b.lastVisitTime || 0) - (a.lastVisitTime || 0);
         });
-    
+
     return result;
 }
 
@@ -18330,11 +18351,11 @@ async function showBrowsingRelatedTimeMenu(range) {
     if (!calendar || !calendar.bookmarksByDate || calendar.bookmarksByDate.size === 0) {
         return; // 没有数据，不显示菜单
     }
-    
+
     // 获取时间边界（与点击排行保持一致）
     const stats = await ensureBrowsingClickRankingStats();
     if (!stats || !stats.boundaries) return;
-    
+
     const boundaries = stats.boundaries;
     const now = new Date();
     const isZh = currentLang === 'zh_CN';
@@ -18433,7 +18454,7 @@ function renderRelatedWeekDaysMenu(container, boundaries, calendar) {
     const isZh = currentLang === 'zh_CN';
     if (!calendar || !calendar.bookmarksByDate) return;
 
-    const weekdayNames = isZh 
+    const weekdayNames = isZh
         ? ['周日', '周一', '周二', '周三', '周四', '周五', '周六']
         : ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 
@@ -18453,10 +18474,10 @@ function renderRelatedWeekDaysMenu(container, boundaries, calendar) {
     for (let i = 0; i < 7; i++) {
         const dayDate = new Date(weekStart);
         dayDate.setDate(weekStart.getDate() + i);
-        
+
         if (!daysSet.has(dayDate.toDateString())) continue;
         if (dayDate.getTime() > boundaries.now) continue;
-        
+
         const btn = document.createElement('button');
         btn.className = 'time-menu-btn';
         btn.textContent = weekdayNames[dayDate.getDay()];
@@ -18575,32 +18596,32 @@ function filterHistoryByTime(items, filter, range) {
 
     return items.filter(item => {
         if (!item.lastVisitTime) return false;
-        
+
         const itemDate = new Date(item.lastVisitTime);
-        
+
         switch (filter.type) {
             case 'hour':
                 // 筛选特定小时
                 return itemDate.getHours() === filter.value;
-            
+
             case 'day':
                 // 筛选特定日期
                 const filterDate = new Date(filter.value);
                 return itemDate.toDateString() === filterDate.toDateString();
-            
+
             case 'week':
                 // 筛选特定周
                 const weekNum = getWeekNumberForRelated(itemDate);
                 return weekNum === filter.value;
-            
+
             case 'month':
                 // 筛选特定月份
                 return itemDate.getMonth() === filter.value;
-            
+
             case 'year':
                 // 筛选特定年份
                 return itemDate.getFullYear() === filter.value;
-            
+
             default:
                 return true;
         }
@@ -18889,7 +18910,7 @@ async function jumpToRelatedHistory(url, title, visitTime, sourceElement) {
         visitTime: visitTime,
         scrollTop: document.querySelector('.content-area')?.scrollTop || 0
     };
-    
+
     // 添加超时保护机制，确保加载状态一定会被清理
     clearTimeout(window.__relatedJumpTimeout);
     window.__relatedJumpTimeout = setTimeout(() => {
@@ -18899,19 +18920,19 @@ async function jumpToRelatedHistory(url, title, visitTime, sourceElement) {
             pendingHighlightInfo = null;
         }
     }, 10000); // 10秒超时保护
-    
+
     // 1. 切换到「书签浏览记录」标签
     const browsingTab = document.getElementById('additionsTabBrowsing');
     if (browsingTab && !browsingTab.classList.contains('active')) {
         browsingTab.click();
     }
-    
+
     // 2. 切换到「书签关联记录」子标签
     const relatedTab = document.getElementById('browsingTabRelated');
     if (relatedTab && !relatedTab.classList.contains('active')) {
         relatedTab.click();
     }
-    
+
     const normalizedTitle = typeof title === 'string' ? title.trim() : '';
     const hasPreciseVisit = typeof visitTime === 'number' && !Number.isNaN(visitTime);
     const preferredRange = getPreferredRangeFromCalendar(window.browsingHistoryCalendarInstance);
@@ -18941,7 +18962,7 @@ async function jumpToRelatedHistory(url, title, visitTime, sourceElement) {
 // 高亮书签关联记录中的目标条目
 function highlightRelatedHistoryItem(retryCount = 0) {
     if (!pendingHighlightInfo) return;
-    
+
     const {
         url,
         title,
@@ -18965,7 +18986,7 @@ function highlightRelatedHistoryItem(retryCount = 0) {
         }
         return;
     }
-    
+
     const normalizedTitleValue = normalizedTitle || (title ? title.trim() : '');
     const computedHasVisitTime = typeof visitTime === 'number' && !Number.isNaN(visitTime);
     const hasVisitTime = typeof storedVisitFlag === 'boolean' ? storedVisitFlag : computedHasVisitTime;
@@ -19085,10 +19106,10 @@ function highlightRelatedHistoryItem(retryCount = 0) {
 
 // 显示暂无记录提示
 function showNoRecordToast() {
-    const msg = typeof currentLang !== 'undefined' && currentLang === 'zh_CN' 
-        ? '暂无浏览记录（可能是导入的书签）' 
+    const msg = typeof currentLang !== 'undefined' && currentLang === 'zh_CN'
+        ? '暂无浏览记录（可能是导入的书签）'
         : 'No browsing history found (may be imported bookmark)';
-    
+
     // 创建提示元素
     let toast = document.getElementById('noRecordToast');
     if (!toast) {
@@ -19110,10 +19131,10 @@ function showNoRecordToast() {
         `;
         document.body.appendChild(toast);
     }
-    
+
     toast.textContent = msg;
     toast.style.opacity = '1';
-    
+
     setTimeout(() => {
         toast.style.opacity = '0';
     }, 2500);
@@ -19168,11 +19189,11 @@ function showRelatedJumpSuccessToast(visitTime, title) {
 // 从「书签添加记录」跳转到「书签关联记录」
 async function jumpToRelatedHistoryFromAdditions(url, title, dateAdded) {
     const browserAPI = (typeof chrome !== 'undefined') ? chrome : browser;
-    
+
     // 先查询该URL在书签添加时间附近是否有访问记录
     let hasMatchingVisit = false;
     let matchingVisitTime = null;
-    
+
     try {
         if (browserAPI && browserAPI.history && browserAPI.history.getVisits) {
             const visits = await new Promise((resolve, reject) => {
@@ -19184,11 +19205,11 @@ async function jumpToRelatedHistoryFromAdditions(url, title, dateAdded) {
                     }
                 });
             });
-            
+
             // 查找时间精确匹配的访问记录（同一分钟内，即60秒）
             const oneMinute = 60 * 1000;
             let minDiff = Infinity;
-            
+
             visits.forEach(visit => {
                 const diff = Math.abs(visit.visitTime - dateAdded);
                 if (diff < minDiff) {
@@ -19196,20 +19217,20 @@ async function jumpToRelatedHistoryFromAdditions(url, title, dateAdded) {
                     matchingVisitTime = visit.visitTime;
                 }
             });
-            
+
             // 时间差必须在1分钟内才算匹配
             hasMatchingVisit = minDiff <= oneMinute;
         }
     } catch (e) {
         console.warn('[jumpToRelatedHistoryFromAdditions] 查询访问记录失败:', e);
     }
-    
+
     // 如果没有精确匹配的访问记录，直接显示提示，不跳转
     if (!hasMatchingVisit) {
         showNoRecordToast();
         return;
     }
-    
+
     // 记录来源信息，用于返回
     jumpSourceInfo = {
         type: 'bookmarkAdditions',  // 来自书签添加记录
@@ -19218,7 +19239,7 @@ async function jumpToRelatedHistoryFromAdditions(url, title, dateAdded) {
         dateAdded: dateAdded,
         scrollTop: document.querySelector('.content-area')?.scrollTop || 0
     };
-    
+
     // 添加超时保护机制
     clearTimeout(window.__relatedJumpTimeout);
     window.__relatedJumpTimeout = setTimeout(() => {
@@ -19228,26 +19249,26 @@ async function jumpToRelatedHistoryFromAdditions(url, title, dateAdded) {
             pendingHighlightInfo = null;
         }
     }, 10000);
-    
+
     // 1. 切换到「书签浏览记录」标签
     const browsingTab = document.getElementById('additionsTabBrowsing');
     if (browsingTab && !browsingTab.classList.contains('active')) {
         browsingTab.click();
     }
-    
+
     // 2. 切换到「书签关联记录」子标签
     const relatedTab = document.getElementById('browsingTabRelated');
     if (relatedTab && !relatedTab.classList.contains('active')) {
         relatedTab.click();
     }
-    
+
     // 3. 根据访问时间构建时间范围策略
     const normalizedTitle = typeof title === 'string' ? title.trim() : '';
     const hasPreciseVisit = typeof matchingVisitTime === 'number' && !Number.isNaN(matchingVisitTime);
     const preferredRange = getPreferredRangeFromCalendar(window.bookmarkCalendarInstance);
     const strategyQueue = buildRelatedRangeStrategies(matchingVisitTime, { preferredRange });
     const effectiveStrategies = strategyQueue.length ? strategyQueue : [{ range: 'all', filter: null }];
-    
+
     // 4. 存储待高亮信息
     pendingHighlightInfo = {
         url: url,
@@ -19273,7 +19294,7 @@ async function jumpToRelatedHistoryFromAdditions(url, title, dateAdded) {
 async function jumpToRelatedHistoryFromRanking(url, title, currentRange) {
     // 保存当前的二级菜单筛选条件
     const currentTimeFilter = browsingRankingTimeFilter ? { ...browsingRankingTimeFilter } : null;
-    
+
     // 记录来源信息，用于返回
     jumpSourceInfo = {
         type: 'clickRanking',  // 来自点击排行
@@ -19283,7 +19304,7 @@ async function jumpToRelatedHistoryFromRanking(url, title, currentRange) {
         timeFilter: currentTimeFilter,  // 保存二级菜单筛选条件
         scrollTop: document.querySelector('.content-area')?.scrollTop || 0
     };
-    
+
     // 添加超时保护机制
     clearTimeout(window.__relatedJumpTimeout);
     window.__relatedJumpTimeout = setTimeout(() => {
@@ -19293,19 +19314,19 @@ async function jumpToRelatedHistoryFromRanking(url, title, currentRange) {
             pendingHighlightInfo = null;
         }
     }, 10000);
-    
+
     // 1. 切换到「书签浏览记录」标签
     const browsingTab = document.getElementById('additionsTabBrowsing');
     if (browsingTab && !browsingTab.classList.contains('active')) {
         browsingTab.click();
     }
-    
+
     // 2. 切换到「书签关联记录」子标签
     const relatedTab = document.getElementById('browsingTabRelated');
     if (relatedTab && !relatedTab.classList.contains('active')) {
         relatedTab.click();
     }
-    
+
     // 3. 存储待高亮信息
     pendingHighlightInfo = {
         url: url,
@@ -19316,7 +19337,7 @@ async function jumpToRelatedHistoryFromRanking(url, title, currentRange) {
         showBackButton: true,
         highlightAll: true
     };
-    
+
     // 4. 切换到对应的时间范围（这会触发 showBrowsingRelatedTimeMenu）
     const rangeName = currentRange.charAt(0).toUpperCase() + currentRange.slice(1);
     const filterBtn = document.getElementById(`browsingRelatedFilter${rangeName}`);
@@ -19326,7 +19347,7 @@ async function jumpToRelatedHistoryFromRanking(url, title, currentRange) {
         // 已经在当前范围，重新加载
         await loadBrowsingRelatedHistory(currentRange);
     }
-    
+
     // 5. 延迟应用二级菜单筛选并高亮
     setTimeout(() => {
         if (currentTimeFilter) {
@@ -19382,9 +19403,9 @@ function applyRelatedTimeFilter(filter) {
 // 高亮点击记录日历中所有匹配的记录（从点击排行跳转时使用）
 function highlightAllClickHistoryItems(retryCount = 0) {
     if (!pendingHighlightInfo) return;
-    
+
     const { url, title, currentRange, showBackButton: shouldShowBackButton } = pendingHighlightInfo;
-    
+
     // 获取点击记录日历实例
     const calendar = window.browsingHistoryCalendarInstance;
     if (!calendar || !calendar.bookmarksByDate) {
@@ -19396,7 +19417,7 @@ function highlightAllClickHistoryItems(retryCount = 0) {
         }
         return;
     }
-    
+
     // 查找日历容器中的所有书签项
     const calendarContainer = document.getElementById('browsingHistoryCalendar');
     if (!calendarContainer) {
@@ -19405,42 +19426,42 @@ function highlightAllClickHistoryItems(retryCount = 0) {
         }
         return;
     }
-    
+
     // 查找所有匹配URL的书签项（使用 data-bookmark-url 属性）
     const items = calendarContainer.querySelectorAll('[data-bookmark-url]');
     const matchedItems = [];
-    
+
     items.forEach(item => {
         const itemUrl = item.dataset.bookmarkUrl;
         if (itemUrl === url) {
             matchedItems.push(item);
         }
     });
-    
+
     if (matchedItems.length > 0) {
         // 移除之前的高亮
         calendarContainer.querySelectorAll('[data-bookmark-url].highlight-target').forEach(el => {
             el.classList.remove('highlight-target');
         });
-        
+
         // 为所有匹配项添加高亮
         matchedItems.forEach(item => {
             item.classList.add('highlight-target');
         });
-        
+
         // 滚动到第一个匹配项
         matchedItems[0].scrollIntoView({ behavior: 'instant', block: 'center' });
-        
+
         // 显示返回按钮
         if (shouldShowBackButton && jumpSourceInfo) {
             showBackButton();
         }
-        
+
         // 清除待高亮信息
         pendingHighlightInfo = null;
         return;
     }
-    
+
     // 没找到匹配项，可能需要等待渲染
     if (retryCount < 10) {
         setTimeout(() => highlightAllClickHistoryItems(retryCount + 1), 300);
@@ -19453,7 +19474,7 @@ function highlightAllClickHistoryItems(retryCount = 0) {
 // 高亮所有匹配的书签关联记录（保留，可能其他地方使用）
 function highlightAllRelatedHistoryItems(retryCount = 0) {
     if (!pendingHighlightInfo) return;
-    
+
     const { url, title, highlightAll, showBackButton: shouldShowBackButton } = pendingHighlightInfo;
     const listContainer = document.getElementById('browsingRelatedList');
     if (!listContainer) {
@@ -19462,16 +19483,16 @@ function highlightAllRelatedHistoryItems(retryCount = 0) {
         pendingHighlightInfo = null;
         return;
     }
-    
+
     // 查找所有匹配的记录项（URL匹配或标题匹配，与点击排行的计数逻辑保持一致）
     const items = listContainer.querySelectorAll('.related-history-item');
     const matchedItems = [];
     const normalizedTitle = title ? title.trim() : '';
-    
+
     items.forEach(item => {
         const itemUrl = item.dataset.url;
         const itemTitle = item.dataset.title || '';
-        
+
         // URL 精确匹配
         if (itemUrl === url) {
             matchedItems.push(item);
@@ -19481,38 +19502,38 @@ function highlightAllRelatedHistoryItems(retryCount = 0) {
             matchedItems.push(item);
         }
     });
-    
+
     // 如果找到了匹配项，高亮显示
     if (matchedItems.length > 0) {
         // 移除之前的高亮
         listContainer.querySelectorAll('.related-history-item.highlight-target').forEach(el => {
             el.classList.remove('highlight-target');
         });
-        
+
         // 为所有匹配项添加高亮
         matchedItems.forEach(item => {
             item.classList.add('highlight-target');
         });
-        
+
         // 获取当前排序顺序（默认按时间降序，即最新的在前）
         const sortBtn = document.querySelector('.sort-indicator-btn');
         const isAscending = sortBtn && sortBtn.classList.contains('asc');
-        
+
         // 根据排序滚动到第一个或最后一个（最新/最旧的记录）
         const targetItem = isAscending ? matchedItems[0] : matchedItems[0];
         targetItem.scrollIntoView({ behavior: 'instant', block: 'center' });
-        
+
         // 显示返回按钮
         if (shouldShowBackButton && jumpSourceInfo) {
             showBackButton();
         }
-        
+
         // 清除超时保护和待高亮信息
         clearTimeout(window.__relatedJumpTimeout);
         pendingHighlightInfo = null;
         return;
     }
-    
+
     // 检查是否有未加载的数据（懒加载场景）
     const lazyState = listContainer.__lazyLoadState;
     if (lazyState && lazyState.getLoadedCount() < lazyState.totalItems) {
@@ -19527,7 +19548,7 @@ function highlightAllRelatedHistoryItems(retryCount = 0) {
         }
         return;
     }
-    
+
     // 没找到匹配项
     if (retryCount < 5) {
         setTimeout(() => highlightAllRelatedHistoryItems(retryCount + 1), 300);
@@ -19549,24 +19570,24 @@ function showBackButton() {
     // 如果已存在，先移除（但不清除 jumpSourceInfo）
     const existingBtn = document.getElementById('jumpBackBtn');
     if (existingBtn) existingBtn.remove();
-    
+
     console.log('[showBackButton] 显示返回按钮, jumpSourceInfo:', jumpSourceInfo);
-    
+
     const btn = document.createElement('button');
     btn.id = 'jumpBackBtn';
     btn.className = 'jump-back-btn';
     btn.innerHTML = '<i class="fas fa-arrow-left"></i>';
     btn.title = typeof currentLang !== 'undefined' && currentLang === 'zh_CN' ? '返回' : 'Go Back';
-    
+
     btn.addEventListener('click', (e) => {
         e.preventDefault();
         e.stopPropagation();
         console.log('[showBackButton] 点击返回按钮');
         goBackToSource();
     });
-    
+
     document.body.appendChild(btn);
-    
+
     // 显示动画
     setTimeout(() => {
         btn.style.opacity = '1';
@@ -19591,17 +19612,17 @@ async function goBackToSource() {
         console.warn('[goBackToSource] jumpSourceInfo 为空');
         return;
     }
-    
+
     const { type, url, scrollTop } = jumpSourceInfo;
     console.log('[goBackToSource] 返回:', type, url);
-    
+
     // 先隐藏返回按钮
     const btn = document.getElementById('jumpBackBtn');
     if (btn) btn.remove();
-    
+
     // 清除来源信息（在使用完之后立即清除）
     jumpSourceInfo = null;
-    
+
     if (type === 'browsingHistory') {
         // 返回点击记录 - 需要切换到「点击记录」子标签
         const historyTab = document.getElementById('browsingTabHistory');
@@ -19609,7 +19630,7 @@ async function goBackToSource() {
             historyTab.click();
             console.log('[goBackToSource] 已切换到点击记录');
         }
-        
+
         // 恢复滚动位置并高亮
         setTimeout(() => {
             const contentArea = document.querySelector('.content-area');
@@ -19618,7 +19639,7 @@ async function goBackToSource() {
             }
             highlightSourceBookmark(url);
         }, 500);
-        
+
     } else if (type === 'bookmarkAdditions') {
         // 返回书签添加记录 - 需要切换到「书签添加记录」标签
         const reviewTab = document.getElementById('additionsTabReview');
@@ -19626,7 +19647,7 @@ async function goBackToSource() {
             reviewTab.click();
             console.log('[goBackToSource] 已切换到书签添加记录');
         }
-        
+
         // 恢复滚动位置并高亮
         setTimeout(() => {
             const contentArea = document.querySelector('.content-area');
@@ -19635,7 +19656,7 @@ async function goBackToSource() {
             }
             highlightSourceBookmark(url);
         }, 500);
-        
+
     } else if (type === 'clickRanking') {
         // 返回点击排行 - 需要切换到「点击排行」子标签
         const rankingTab = document.getElementById('browsingTabRanking');
@@ -19643,7 +19664,7 @@ async function goBackToSource() {
             rankingTab.click();
             console.log('[goBackToSource] 已切换到点击排行');
         }
-        
+
         // 恢复滚动位置并高亮
         setTimeout(() => {
             const contentArea = document.querySelector('.content-area');
@@ -19663,27 +19684,27 @@ function highlightSourceBookmark(url) {
         console.warn('[highlightSourceBookmark] 未找到 content-area');
         return;
     }
-    
+
     // 查找所有匹配URL的书签项
     const items = contentArea.querySelectorAll('[data-bookmark-url]');
     console.log('[highlightSourceBookmark] 查找书签:', url, '找到', items.length, '个书签项');
-    
+
     let found = false;
-    
+
     items.forEach(item => {
         if (item.dataset.bookmarkUrl === url && !found) {
             found = true;
             console.log('[highlightSourceBookmark] 找到匹配书签，添加高亮');
             item.classList.add('highlight-source');
             item.scrollIntoView({ behavior: 'instant', block: 'center' });
-            
+
             // 3秒后移除高亮
             setTimeout(() => {
                 item.classList.remove('highlight-source');
             }, 3000);
         }
     });
-    
+
     if (!found) {
         console.warn('[highlightSourceBookmark] 未找到匹配的书签');
     }
@@ -19696,13 +19717,13 @@ function highlightSourceRankingItem(url) {
         console.warn('[highlightSourceRankingItem] 未找到 browsingRankingList');
         return;
     }
-    
+
     // 查找所有排行项
     const items = listContainer.querySelectorAll('.ranking-item');
     console.log('[highlightSourceRankingItem] 查找排行项:', url, '找到', items.length, '个项目');
-    
+
     let found = false;
-    
+
     items.forEach(item => {
         // 通过跳转按钮的 data-url 来匹配
         const jumpBtn = item.querySelector('.jump-to-related-btn');
@@ -19711,14 +19732,14 @@ function highlightSourceRankingItem(url) {
             console.log('[highlightSourceRankingItem] 找到匹配排行项，添加高亮');
             item.classList.add('highlight-source');
             item.scrollIntoView({ behavior: 'instant', block: 'center' });
-            
+
             // 3秒后移除高亮
             setTimeout(() => {
                 item.classList.remove('highlight-source');
             }, 3000);
         }
     });
-    
+
     if (!found) {
         console.warn('[highlightSourceRankingItem] 未找到匹配的排行项');
     }
@@ -19732,25 +19753,25 @@ function highlightSourceRankingItem(url) {
 function createScrollToTopForPanel(panelId) {
     const panel = document.getElementById(panelId);
     if (!panel) return;
-    
+
     // 检查是否已存在
     if (panel.querySelector('.scroll-to-top-btn')) return;
-    
+
     const btn = document.createElement('button');
     btn.className = 'scroll-to-top-btn';
     btn.innerHTML = '<i class="fas fa-arrow-up"></i>';
     btn.title = typeof currentLang !== 'undefined' && currentLang === 'zh_CN' ? '回到顶部' : 'Back to Top';
-    
+
     btn.addEventListener('click', () => {
         const contentArea = document.querySelector('.content-area');
         if (contentArea) {
             contentArea.scrollTo({ top: 0, behavior: 'smooth' });
         }
     });
-    
+
     panel.style.position = 'relative';
     panel.appendChild(btn);
-    
+
     return btn;
 }
 
@@ -19758,15 +19779,15 @@ function createScrollToTopForPanel(panelId) {
 function initScrollToTopButtons() {
     const contentArea = document.querySelector('.content-area');
     if (!contentArea) return;
-    
+
     // 为三个面板创建按钮
     createScrollToTopForPanel('browsingHistoryPanel');
     createScrollToTopForPanel('browsingRankingPanel');
     createScrollToTopForPanel('browsingRelatedPanel');
-    
+
     // 获取所有按钮
     const buttons = document.querySelectorAll('.scroll-to-top-btn');
-    
+
     // 监听滚动
     contentArea.addEventListener('scroll', () => {
         const show = contentArea.scrollTop > 200;

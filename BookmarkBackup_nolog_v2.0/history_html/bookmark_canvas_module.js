@@ -4640,6 +4640,7 @@ function renderMdNode(node) {
         const sizeIncreaseTitle = lang === 'en' ? 'Increase font size' : '增大字号';
         const boldTitle = lang === 'en' ? 'Bold' : '加粗';
         const italicTitle = lang === 'en' ? 'Italic' : '斜体';
+        const underlineTitle = lang === 'en' ? 'Underline' : '下划线';
         const highlightTitle = lang === 'en' ? 'Highlight' : '高亮';
         const fontColorTitle = lang === 'en' ? 'Font Color' : '字体颜色';
         const strikeTitle = lang === 'en' ? 'Strikethrough' : '删除线';
@@ -4661,6 +4662,7 @@ function renderMdNode(node) {
                 <span class="md-format-sep"></span>
                 <button class="md-format-btn" data-action="md-insert-bold" title="${boldTitle}"><b>B</b></button>
                 <button class="md-format-btn" data-action="md-insert-italic" title="${italicTitle}"><i>I</i></button>
+                <button class="md-format-btn" data-action="md-insert-underline" title="${underlineTitle}"><u>U</u></button>
                 <button class="md-format-btn" data-action="md-insert-highlight" title="${highlightTitle}"><span style="background:#fcd34d;color:#000;padding:0 3px;border-radius:2px;">H</span></button>
                 <button class="md-format-btn md-format-fontcolor-btn" data-action="md-fontcolor-toggle" title="${fontColorTitle}"><span style="border-bottom:2px solid #2DC26B;padding:0 2px;">A</span></button>
                 <button class="md-format-btn" data-action="md-insert-strike" title="${strikeTitle}"><s>S</s></button>
@@ -5220,6 +5222,10 @@ function renderMdNode(node) {
                 wrapper = document.createElement('em');
                 wrapper.textContent = insertText;
                 break;
+            case 'underline':
+                wrapper = document.createElement('u');
+                wrapper.textContent = insertText;
+                break;
             case 'highlight':
                 wrapper = document.createElement('mark');
                 wrapper.textContent = insertText;
@@ -5298,6 +5304,7 @@ function renderMdNode(node) {
             node.html = editor.innerHTML;
             node.text = editor.innerText;
             saveTempNodes();
+            try { if (undoManager) undoManager.scheduleRecord('tool-insert'); } catch (_) { }
         }
 
         editor.focus();
@@ -5370,6 +5377,8 @@ function renderMdNode(node) {
         'B': { prefix: '**', suffix: '**' },
         'EM': { prefix: '*', suffix: '*' },
         'I': { prefix: '*', suffix: '*' },
+        // underline 使用 HTML 语法（便于“展开为源码/离开后重渲染”的体验）
+        'U': { prefix: '<u>', suffix: '</u>' },
         'DEL': { prefix: '~~', suffix: '~~' },
         'S': { prefix: '~~', suffix: '~~' },
         'MARK': { prefix: '==', suffix: '==' },
@@ -5380,6 +5389,30 @@ function renderMdNode(node) {
     let expandedElement = null;
     let expandedMarkdown = null;
     let expandedType = null; // 'simple' | 'fontcolor' | 'align'
+
+    // 统一判定：当前光标是否仍在“展开的源码文本节点”内
+    const isCaretInsideExpandedSource = () => {
+        if (!expandedElement || !expandedElement.parentNode) return false;
+        const sel = window.getSelection();
+        if (!sel || !sel.rangeCount) return false;
+        const range = sel.getRangeAt(0);
+        return range && range.startContainer === expandedElement;
+    };
+
+    // 只要光标离开展开的源码节点，就立即重渲染
+    const scheduleReRenderIfCaretLeftExpanded = (() => {
+        let rafId = 0;
+        return () => {
+            if (!expandedElement || !expandedElement.parentNode) return;
+            if (rafId) cancelAnimationFrame(rafId);
+            rafId = requestAnimationFrame(() => {
+                rafId = 0;
+                if (expandedElement && expandedElement.parentNode && !isCaretInsideExpandedSource()) {
+                    reRenderExpanded();
+                }
+            });
+        };
+    })();
 
     // 获取特殊格式元素的源码表示
     const getSourceCode = (el) => {
@@ -5929,6 +5962,7 @@ function renderMdNode(node) {
             { regex: /<font\s+color=["']?([^"'>]+)["']?>([^<]*)<\/font>/i, tag: 'font', attrName: 'color', attrIndex: 1, contentIndex: 2 },
             { regex: /<center>([^<]*)<\/center>/i, tag: 'center', contentIndex: 1 },
             { regex: /<p\s+align=["']?([^"'>]+)["']?>([^<]*)<\/p>/i, tag: 'p', attrName: 'align', attrIndex: 1, contentIndex: 2 },
+            { regex: /<u>([^<]*)<\/u>/i, tag: 'u', contentIndex: 1 },
         ];
 
         // Setext 标题和水平分割线检测（回溯检测：当输入分隔符时，检测上一行是否为标题文本）
@@ -6165,6 +6199,7 @@ function renderMdNode(node) {
                     const before = text.substring(0, matchStart);
                     const content = match[pattern.contentIndex];
                     const after = text.substring(matchEnd);
+                    const cursorInAfter = Math.max(0, Math.min(cursorPos - matchEnd, after.length));
 
                     const newEl = document.createElement(pattern.tag);
                     if (pattern.attrName && pattern.attrIndex) {
@@ -6182,7 +6217,7 @@ function renderMdNode(node) {
                     parent.removeChild(textNode);
 
                     const newRange = document.createRange();
-                    newRange.setStart(afterNode, after ? 0 : 1);
+                    newRange.setStart(afterNode, after ? cursorInAfter : 1);
                     newRange.collapse(true);
                     sel.removeAllRanges();
                     sel.addRange(newRange);
@@ -6209,6 +6244,7 @@ function renderMdNode(node) {
                     const before = text.substring(0, matchStart);
                     const content = match[1];
                     const after = text.substring(matchEnd);
+                    const cursorInAfter = Math.max(0, Math.min(cursorPos - matchEnd, after.length));
 
                     // 创建新元素
                     const newEl = document.createElement(pattern.tag);
@@ -6228,7 +6264,7 @@ function renderMdNode(node) {
 
                     // 将光标移到新元素之后
                     const newRange = document.createRange();
-                    newRange.setStart(afterNode, after ? 0 : 1);
+                    newRange.setStart(afterNode, after ? cursorInAfter : 1);
                     newRange.collapse(true);
                     sel.removeAllRanges();
                     sel.addRange(newRange);
@@ -6292,6 +6328,7 @@ function renderMdNode(node) {
             { regex: /<font\s+color=["']?([^"'>]+)["']?>([^<]*)<\/font>/i, tag: 'font', attrName: 'color', attrIndex: 1, contentIndex: 2 },
             { regex: /<center>([^<]*)<\/center>/i, tag: 'center', contentIndex: 1 },
             { regex: /<p\s+align=["']?([^"'>]+)["']?>([^<]*)<\/p>/i, tag: 'p', attrName: 'align', attrIndex: 1, contentIndex: 2 },
+            { regex: /<u>([^<]*)<\/u>/i, tag: 'u', contentIndex: 1 },
         ];
 
         // Setext 标题语法检测（处理两行结构：内容 + <br> + ---/===）
@@ -6609,13 +6646,310 @@ function renderMdNode(node) {
         }
     };
 
+    // 空白栏目：自定义撤销/重做（修复 DOM 直接改写导致的 Ctrl+Z 不可用/顺序混乱）
+    let undoManager = null;
+
     // 保存编辑器内容
     const saveEditorContent = () => {
         node.html = editor.innerHTML;
         // 保存时清除零宽空格
         node.text = editor.innerText.replace(/\u200B/g, '');
         saveTempNodes();
+        try { if (undoManager) undoManager.scheduleRecord('save'); } catch (_) { }
     };
+
+    // 初始化 undo/redo 管理器（每个 md-node 独立）
+    (() => {
+        try {
+            if (!CanvasState.mdUndoStates) {
+                CanvasState.mdUndoStates = new Map();
+            }
+            const getNodePath = (root, target) => {
+                if (!root || !target) return null;
+                const path = [];
+                let nodeCur = target;
+                while (nodeCur && nodeCur !== root) {
+                    const parent = nodeCur.parentNode;
+                    if (!parent) return null;
+                    const idx = Array.prototype.indexOf.call(parent.childNodes, nodeCur);
+                    if (idx < 0) return null;
+                    path.unshift(idx);
+                    nodeCur = parent;
+                }
+                return nodeCur === root ? path : null;
+            };
+
+            const resolveNodePath = (root, path) => {
+                if (!root || !Array.isArray(path)) return null;
+                let cur = root;
+                for (const idx of path) {
+                    if (!cur || !cur.childNodes || idx < 0 || idx >= cur.childNodes.length) return null;
+                    cur = cur.childNodes[idx];
+                }
+                return cur;
+            };
+
+            const clampOffset = (nodeForOffset, offset) => {
+                const safe = Math.max(0, Number.isFinite(offset) ? offset : 0);
+                if (!nodeForOffset) return 0;
+                if (nodeForOffset.nodeType === Node.TEXT_NODE) {
+                    const len = (nodeForOffset.textContent || '').length;
+                    return Math.min(safe, len);
+                }
+                if (nodeForOffset.nodeType === Node.ELEMENT_NODE) {
+                    return Math.min(safe, nodeForOffset.childNodes.length);
+                }
+                return 0;
+            };
+
+            const captureSelection = () => {
+                const sel = window.getSelection();
+                if (!sel || !sel.rangeCount) return null;
+                const range = sel.getRangeAt(0);
+                if (!editor.contains(range.startContainer) || !editor.contains(range.endContainer)) return null;
+                const startPath = getNodePath(editor, range.startContainer);
+                const endPath = getNodePath(editor, range.endContainer);
+                if (!startPath || !endPath) return null;
+                return {
+                    startPath,
+                    startOffset: range.startOffset,
+                    endPath,
+                    endOffset: range.endOffset,
+                    collapsed: range.collapsed
+                };
+            };
+
+            const restoreSelection = (selData) => {
+                try {
+                    if (!selData) return;
+                    const startNode = resolveNodePath(editor, selData.startPath) || editor;
+                    const endNode = resolveNodePath(editor, selData.endPath) || startNode;
+                    const range = document.createRange();
+                    range.setStart(startNode, clampOffset(startNode, selData.startOffset));
+                    range.setEnd(endNode, clampOffset(endNode, selData.endOffset));
+                    const sel = window.getSelection();
+                    sel.removeAllRanges();
+                    sel.addRange(range);
+                } catch (_) { }
+            };
+
+            const snapshot = () => ({
+                html: editor.innerHTML,
+                fontSize: typeof node.fontSize === 'number' ? node.fontSize : 14,
+                selection: captureSelection(),
+                scrollTop: editor.scrollTop || 0,
+                scrollLeft: editor.scrollLeft || 0
+            });
+
+            const isSameSnapshot = (a, b) => {
+                if (!a || !b) return false;
+                return a.html === b.html && a.fontSize === b.fontSize;
+            };
+
+            const persisted = CanvasState.mdUndoStates.get(node.id) || null;
+            const state = {
+                stack: Array.isArray(persisted && persisted.stack) ? persisted.stack : [],
+                index: Number.isFinite(persisted && persisted.index) ? persisted.index : -1
+            };
+
+	            let recordRaf = 0;
+	            const MAX_STACK = 300;
+
+	            const syncExpandedStateFromSelection = (wasExpanded = false) => {
+	                try {
+	                    // 只有在“撤销前已经处于展开源码态”时才进行同步，避免把普通 Markdown token 误判为展开态
+	                    if (!wasExpanded) return;
+
+	                    const sel = window.getSelection();
+	                    if (!sel || !sel.rangeCount) return;
+	                    const range = sel.getRangeAt(0);
+	                    if (!range || !editor.contains(range.startContainer)) return;
+
+	                    const container = range.startContainer;
+	                    if (!container || container.nodeType !== Node.TEXT_NODE) return;
+	                    if (!container.parentNode) return;
+
+	                    const raw = String(container.textContent || '');
+	                    const text = raw.replace(/\u200B/g, '').trim();
+	                    if (!text) return;
+
+	                    // 仅在“整段文本看起来就是一段源码 token”时才视为展开态，避免误判普通段落
+	                    const looksLikeExpandedToken = (() => {
+	                        if (/^\*\*[\s\S]+?\*\*$/.test(text)) return true; // **bold**
+	                        if (/^\*[\s\S]+?\*$/.test(text)) return true; // *italic*
+	                        if (/^~~[\s\S]+?~~$/.test(text)) return true; // ~~del~~
+	                        if (/^==[\s\S]+?==$/.test(text)) return true; // ==mark==
+	                        if (/^`[^`]+`$/.test(text)) return true; // `code`
+	                        if (/^\[\[[\s\S]+?\]\]$/.test(text)) return true; // [[wikilink]]
+	                        if (/^<font\s+color=["']?[^"'>]+["']?>[\s\S]*<\/font>$/i.test(text)) return true;
+	                        if (/^<center>[\s\S]*<\/center>$/i.test(text)) return true;
+	                        if (/^<p\s+align=["']?[^"'>]+["']?>[\s\S]*<\/p>$/i.test(text)) return true;
+	                        if (/^<u>[\s\S]*<\/u>$/i.test(text)) return true;
+	                        // Setext 标题分隔符行（--- / ===）
+	                        if (/^(-{3,}|={3,})$/.test(text)) return true;
+	                        // 列表项（展开后 <li> 会变成 UL/OL 内的 TextNode）
+	                        const p = container.parentNode;
+	                        if (p && p.nodeType === Node.ELEMENT_NODE && (p.tagName === 'UL' || p.tagName === 'OL')) {
+	                            if (/^[-*+]\s+/.test(text) || /^\d+\.\s+/.test(text)) return true;
+	                        }
+	                        return false;
+	                    })();
+
+	                    if (!looksLikeExpandedToken) return;
+
+	                    expandedElement = container;
+	                    expandedMarkdown = raw;
+	                    // 仅列表需要额外类型信息；其他交给 reRenderExpanded 内部识别
+	                    const parentEl = container.parentNode;
+	                    if (parentEl && parentEl.nodeType === Node.ELEMENT_NODE && parentEl.tagName === 'UL') {
+	                        expandedType = 'li-ul';
+	                    } else if (parentEl && parentEl.nodeType === Node.ELEMENT_NODE && parentEl.tagName === 'OL') {
+	                        expandedType = 'li-ol';
+	                    } else {
+	                        expandedType = 'simple';
+	                    }
+	                } catch (_) { }
+	            };
+
+	            undoManager = {
+	                isRestoring: false,
+	                cancelPendingRecord: () => {
+	                    if (recordRaf) {
+	                        cancelAnimationFrame(recordRaf);
+                        recordRaf = 0;
+                    }
+                },
+                scheduleRecord: (reason = 'unknown') => {
+                    if (undoManager.isRestoring) return;
+                    if (recordRaf) cancelAnimationFrame(recordRaf);
+                    recordRaf = requestAnimationFrame(() => {
+                        recordRaf = 0;
+                        undoManager.recordNow(reason);
+                    });
+                },
+                recordNow: (reason = 'unknown') => {
+                    if (undoManager.isRestoring) return;
+                    const snap = snapshot();
+
+                    // 初始化或同步当前指针
+                    if (state.index < 0) {
+                        state.stack = [snap];
+                        state.index = 0;
+                        CanvasState.mdUndoStates.set(node.id, { stack: state.stack, index: state.index });
+                        return;
+                    }
+
+                    // 如果当前指针不是最后一个，截断“未来”
+                    if (state.index < state.stack.length - 1) {
+                        state.stack = state.stack.slice(0, state.index + 1);
+                    }
+
+                    // 去重：避免重复写入相同内容
+                    const cur = state.stack[state.index];
+                    if (isSameSnapshot(cur, snap)) {
+                        // 更新 selection/scroll（不影响撤销内容，但避免恢复位置错乱）
+                        state.stack[state.index] = snap;
+                        CanvasState.mdUndoStates.set(node.id, { stack: state.stack, index: state.index });
+                        return;
+                    }
+
+                    state.stack.push(snap);
+                    state.index = state.stack.length - 1;
+                    if (state.stack.length > MAX_STACK) {
+                        const overflow = state.stack.length - MAX_STACK;
+                        state.stack.splice(0, overflow);
+                        state.index = Math.max(0, state.index - overflow);
+	                    }
+	                    CanvasState.mdUndoStates.set(node.id, { stack: state.stack, index: state.index });
+	                },
+	                reset: (reason = 'reset') => {
+	                    try { undoManager.cancelPendingRecord(); } catch (_) { }
+	                    try {
+	                        const snap = snapshot();
+	                        state.stack = [snap];
+	                        state.index = 0;
+	                        CanvasState.mdUndoStates.set(node.id, { stack: state.stack, index: state.index });
+	                    } catch (_) { }
+	                },
+	                undo: () => {
+	                    if (state.index <= 0) return;
+	                    undoManager.cancelPendingRecord();
+	                    undoManager.isRestoring = true;
+	                    try {
+	                        const wasExpanded = !!expandedElement || !!expandedMarkdown || !!expandedType;
+	                        state.index -= 1;
+	                        const snap = state.stack[state.index];
+	                        if (snap) {
+	                            editor.innerHTML = snap.html;
+	                            // innerHTML 会重建 DOM，旧的 expandedElement 会失效
+	                            expandedElement = null;
+	                            expandedMarkdown = null;
+	                            expandedType = null;
+	                            node.fontSize = snap.fontSize;
+	                            editor.style.fontSize = node.fontSize + 'px';
+	                            editor.scrollTop = snap.scrollTop || 0;
+	                            editor.scrollLeft = snap.scrollLeft || 0;
+	                            restoreSelection(snap.selection);
+	                            // 撤销/反撤销会重建 DOM：同步“展开源码”状态，确保后续能正常重新渲染
+	                            syncExpandedStateFromSelection(wasExpanded);
+	                            // 注意：不要在此处触发异步 reRender（会立刻写入新快照并截断 redo 栈）
+	                            try {
+	                                if (expandedElement && expandedElement.parentNode) {
+	                                    reRenderExpanded();
+	                                }
+	                            } catch (_) { }
+	                            try { liveRenderMarkdown(); } catch (_) { }
+	                            saveEditorContent();
+	                        }
+	                        CanvasState.mdUndoStates.set(node.id, { stack: state.stack, index: state.index });
+	                    } finally {
+	                        undoManager.isRestoring = false;
+                    }
+                },
+	                redo: () => {
+	                    if (state.index >= state.stack.length - 1) return;
+	                    undoManager.cancelPendingRecord();
+	                    undoManager.isRestoring = true;
+	                    try {
+	                        const wasExpanded = !!expandedElement || !!expandedMarkdown || !!expandedType;
+	                        state.index += 1;
+	                        const snap = state.stack[state.index];
+	                        if (snap) {
+	                            editor.innerHTML = snap.html;
+	                            // innerHTML 会重建 DOM，旧的 expandedElement 会失效
+	                            expandedElement = null;
+	                            expandedMarkdown = null;
+	                            expandedType = null;
+	                            node.fontSize = snap.fontSize;
+	                            editor.style.fontSize = node.fontSize + 'px';
+	                            editor.scrollTop = snap.scrollTop || 0;
+	                            editor.scrollLeft = snap.scrollLeft || 0;
+	                            restoreSelection(snap.selection);
+	                            // 撤销/反撤销会重建 DOM：同步“展开源码”状态，确保后续能正常重新渲染
+	                            syncExpandedStateFromSelection(wasExpanded);
+	                            // 注意：不要在此处触发异步 reRender（会立刻写入新快照并截断 redo 栈）
+	                            try {
+	                                if (expandedElement && expandedElement.parentNode) {
+	                                    reRenderExpanded();
+	                                }
+	                            } catch (_) { }
+	                            try { liveRenderMarkdown(); } catch (_) { }
+	                            saveEditorContent();
+	                        }
+	                        CanvasState.mdUndoStates.set(node.id, { stack: state.stack, index: state.index });
+	                    } finally {
+	                        undoManager.isRestoring = false;
+                    }
+                }
+            };
+
+            // 初始快照
+            undoManager.recordNow('init');
+        } catch (e) {
+            // undo 不可用时，不影响正常编辑
+            undoManager = null;
+        }
+    })();
 
     // 进入编辑状态（点击时）
     const enterEdit = () => {
@@ -6650,19 +6984,50 @@ function renderMdNode(node) {
 
     // 实时渲染：监听输入事件（带防抖，避免输入时频繁渲染）
     let renderDebounceTimer = null;
-    const RENDER_DEBOUNCE_DELAY = 400; // 放慢到 400ms，接近 Obsidian 的节奏，避免“还没打完就被渲染”
+    const RENDER_DEBOUNCE_DELAY = 250; // 降低到 250ms：减少手动输入到渲染的等待，但仍避免“还没打完就被渲染”
 
     editor.addEventListener('input', (e) => {
+        if (undoManager && undoManager.isRestoring) return;
+
+        // 若用户已经把光标移出“展开的源码”，立即重渲染（避免只靠方向键触发）
+        scheduleReRenderIfCaretLeftExpanded();
+
+        // 输入法合成阶段不要触发即时渲染，避免候选中途被替换（compositionend 会兜底）
+        if (e && e.isComposing) {
+            return;
+        }
+
         // 清除之前的定时器
         if (renderDebounceTimer) {
             clearTimeout(renderDebounceTimer);
         }
 
-        // 延迟渲染
-        renderDebounceTimer = setTimeout(() => {
+        // 对“闭合分隔符/标签结束/粘贴”等场景，立即渲染，避免必须停顿 400ms 才生效
+        // 典型例子：==12345==6789，在输入第二个 == 后应立刻渲染且光标保持在原位置（不回跳）
+        const inputType = (e && typeof e.inputType === 'string') ? e.inputType : '';
+        const data = (e && typeof e.data === 'string') ? e.data : '';
+        const shouldRenderImmediately = (
+            inputType === 'insertFromPaste' ||
+            inputType === 'insertFromDrop' ||
+            /[*~=`=<>/\\]]/.test(data)
+        );
+
+        if (shouldRenderImmediately) {
             liveRenderMarkdown();
             renderDebounceTimer = null;
+            try { if (undoManager) undoManager.scheduleRecord('input-immediate'); } catch (_) { }
+            return;
+        }
+
+        // 其他普通输入：延迟渲染，避免“还没打完就被渲染”
+        renderDebounceTimer = setTimeout(() => {
+            liveRenderMarkdown();
+            try { if (undoManager) undoManager.scheduleRecord('input-debounced'); } catch (_) { }
+            renderDebounceTimer = null;
         }, RENDER_DEBOUNCE_DELAY);
+
+        // 记录一次输入快照（即使本次没有触发语法渲染，也要支持逐步撤销）
+        try { if (undoManager) undoManager.scheduleRecord('input'); } catch (_) { }
     });
 
     // 编辑器获得焦点时进入编辑状态
@@ -6676,8 +7041,59 @@ function renderMdNode(node) {
         exitEdit();
     });
 
+    // 鼠标/输入法/键盘：只要光标离开展开源码就重渲染
+    editor.addEventListener('mouseup', () => {
+        scheduleReRenderIfCaretLeftExpanded();
+    });
+    editor.addEventListener('keyup', () => {
+        scheduleReRenderIfCaretLeftExpanded();
+    });
+    editor.addEventListener('compositionend', () => {
+        scheduleReRenderIfCaretLeftExpanded();
+        // 合成结束后立刻尝试渲染（避免中文输入导致渲染延后）
+        try {
+            liveRenderMarkdown();
+            if (undoManager) undoManager.scheduleRecord('compositionend');
+        } catch (_) { }
+    });
+
     // 快捷键处理
     editor.addEventListener('keydown', (e) => {
+        // Undo / Redo（修复工具插入与自动渲染无法撤销、撤销顺序混乱）
+        if (undoManager && (e.ctrlKey || e.metaKey) && !e.altKey) {
+            const key = (e.key || '').toLowerCase();
+            const isZ = key === 'z';
+            const isY = key === 'y';
+            if (isZ) {
+                e.preventDefault();
+                e.stopPropagation();
+                // 撤销/反撤销前先取消“延迟渲染/延迟记录”，避免把 redo 栈提前截断
+                try {
+                    if (renderDebounceTimer) {
+                        clearTimeout(renderDebounceTimer);
+                        renderDebounceTimer = null;
+                    }
+                    if (undoManager.cancelPendingRecord) undoManager.cancelPendingRecord();
+                } catch (_) { }
+                if (e.shiftKey) undoManager.redo();
+                else undoManager.undo();
+                return;
+            }
+            if (isY) {
+                e.preventDefault();
+                e.stopPropagation();
+                try {
+                    if (renderDebounceTimer) {
+                        clearTimeout(renderDebounceTimer);
+                        renderDebounceTimer = null;
+                    }
+                    if (undoManager.cancelPendingRecord) undoManager.cancelPendingRecord();
+                } catch (_) { }
+                undoManager.redo();
+                return;
+            }
+        }
+
         if (e.key === 'Escape') {
             e.preventDefault();
             editor.blur();
@@ -6746,7 +7162,7 @@ function renderMdNode(node) {
                 }
 
                 // 情况C：光标在格式化元素内部的开头
-                const formattedParent = container.parentElement?.closest('strong, b, em, i, del, s, mark, code, font, center, p[align], blockquote, hr, li, .md-task-item, h1, h2, h3, h4, h5, h6');
+                const formattedParent = container.parentElement?.closest('strong, b, em, i, u, del, s, mark, code, font, center, p[align], blockquote, hr, li, .md-task-item, h1, h2, h3, h4, h5, h6');
                 if (formattedParent && editor.contains(formattedParent)) {
                     const isAtStart = (container.nodeType === Node.TEXT_NODE && offset === 0) ||
                         (container === formattedParent && offset === 0);
@@ -6842,21 +7258,8 @@ function renderMdNode(node) {
                 if (!sel || !sel.rangeCount) return;
                 let range = sel.getRangeAt(0);
 
-                const isCursorInsideExpanded = () => {
-                    if (!expandedElement || !expandedElement.parentNode) return false;
-                    const container = range.startContainer;
-                    if (container === expandedElement) return true;
-                    if (container.nodeType === Node.TEXT_NODE) {
-                        if (container === expandedElement) return true;
-                        if (container.previousSibling === expandedElement || container.nextSibling === expandedElement) {
-                            return true;
-                        }
-                    }
-                    return false;
-                };
-
                 // 如果已经展开源码且光标离开了该区域，则先重新渲染
-                if (expandedElement && expandedElement.parentNode && !isCursorInsideExpanded()) {
+                if (expandedElement && expandedElement.parentNode && !isCaretInsideExpandedSource()) {
                     reRenderExpanded();
                     const selAfter = window.getSelection();
                     if (!selAfter || !selAfter.rangeCount) return;
@@ -6877,7 +7280,7 @@ function renderMdNode(node) {
 
                     let formattedEl = null;
                     if (container.nodeType === Node.ELEMENT_NODE) {
-                        formattedEl = container.closest('strong, b, em, i, del, s, mark, code, font, center, p[align], blockquote, hr, li, .md-task-item, h1, h2, h3, h4, h5, h6');
+                        formattedEl = container.closest('strong, b, em, i, u, del, s, mark, code, font, center, p[align], blockquote, hr, li, .md-task-item, h1, h2, h3, h4, h5, h6');
                     }
 
                     if (formattedEl && editor.contains(formattedEl)) {
@@ -6921,27 +7324,10 @@ function renderMdNode(node) {
         }
 
         // 判断当前点击是否仍在已展开的源码区域内（允许继续选择文字，而不触发重新渲染）
-        const isClickInsideExpanded = (() => {
-            if (!expandedElement || !expandedElement.parentNode) return false;
-            const sel = window.getSelection();
-            if (sel && sel.rangeCount) {
-                const container = sel.getRangeAt(0).startContainer;
-                if (container === expandedElement) return true;
-                if (container.nodeType === Node.TEXT_NODE &&
-                    (container.previousSibling === expandedElement || container.nextSibling === expandedElement)) {
-                    return true;
-                }
-            }
-            if (rawTarget === expandedElement) return true;
-            if (rawTarget && rawTarget.nodeType === Node.TEXT_NODE &&
-                (rawTarget.previousSibling === expandedElement || rawTarget.nextSibling === expandedElement)) {
-                return true;
-            }
-            return false;
-        })();
+        const isClickInsideExpanded = isCaretInsideExpandedSource() || rawTarget === expandedElement;
 
         // 点击格式化元素时展开为 Markdown 源码（包括 HTML 格式）- 排除checkbox
-        const formattedEl = target.closest('strong, b, em, i, del, s, mark, code, font, center, p[align], blockquote, hr, li, .md-task-item, h1, h2, h3, h4, h5, h6');
+        const formattedEl = target.closest('strong, b, em, i, u, del, s, mark, code, font, center, p[align], blockquote, hr, li, .md-task-item, h1, h2, h3, h4, h5, h6');
         if (formattedEl && editor.contains(formattedEl)) {
             // 特殊处理：Setext标题（带有分隔符的H1/H2）点击时不展开为源码
             // 而是让标题内容可编辑，保持渲染后的标题格式
@@ -6993,12 +7379,20 @@ function renderMdNode(node) {
         editor.focus();
     };
 
-    const exitEditMode = () => {
-        isInEditMode = false;
-        ctrlPausedEdit = false;
-        node.isEditing = false;
-        el.removeAttribute('data-editing');
-    };
+	    const exitEditMode = () => {
+	        isInEditMode = false;
+	        ctrlPausedEdit = false;
+	        node.isEditing = false;
+	        el.removeAttribute('data-editing');
+	        // 退出栏目卡片时：清空撤销/反撤销栈（每次进入编辑都从当前内容开始）
+	        try {
+	            if (renderDebounceTimer) {
+	                clearTimeout(renderDebounceTimer);
+	                renderDebounceTimer = null;
+	            }
+	        } catch (_) { }
+	        try { if (undoManager && undoManager.reset) undoManager.reset('exit-card'); } catch (_) { }
+	    };
     
     // Ctrl键暂停编辑（允许拖动/调整大小）
     const pauseEditForCtrl = () => {
@@ -7147,6 +7541,8 @@ function renderMdNode(node) {
             insertFormat('bold');
         } else if (action === 'md-insert-italic') {
             insertFormat('italic');
+        } else if (action === 'md-insert-underline') {
+            insertFormat('underline');
         } else if (action === 'md-insert-highlight') {
             insertFormat('highlight');
         } else if (action === 'md-fontcolor-toggle') {

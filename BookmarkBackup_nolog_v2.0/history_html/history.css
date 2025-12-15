@@ -7044,7 +7044,8 @@ a.tree-label.tree-bookmark-link:hover {
 .md-canvas-node:hover .md-node-toolbar,
 .md-node-toolbar:hover,
 .md-node-toolbar:has(.md-color-popover.open),
-.md-node-toolbar:has(.md-format-popover.open) {
+.md-node-toolbar:has(.md-format-popover.open),
+.md-node-toolbar:has(.md-delete-options-popover.open) {
     opacity: 1;
     pointer-events: auto;
     /* 显示时无延迟，立即显示 */
@@ -7085,6 +7086,18 @@ a.tree-label.tree-bookmark-link:hover {
     border-color: #2563eb;
     background: rgba(37, 99, 235, 0.12);
     color: #2563eb;
+}
+
+/* 删除全部内容按钮 - 危险操作样式 */
+.md-node-toolbar-btn.md-delete-danger-btn {
+    color: #cf222e;
+    border-color: rgba(207, 34, 46, 0.35);
+}
+
+.md-node-toolbar-btn.md-delete-danger-btn:hover {
+    background: rgba(207, 34, 46, 0.12);
+    border-color: rgba(207, 34, 46, 0.55);
+    color: #a40e26;
 }
 
 /* 格式工具栏弹层样式（单行布局） */
@@ -7575,10 +7588,84 @@ a.tree-label.tree-bookmark-link:hover {
     border-color: rgba(88, 166, 255, 0.55);
 }
 
-[data-theme="dark"] .md-node-toolbar-btn.active {
-    border-color: #58a6ff;
-    background: rgba(88, 166, 255, 0.15);
-    color: #58a6ff;
+/* 删除 tooltip 样式 - 无延迟，快速显示 */
+.md-node-toolbar-btn,
+.md-delete-option {
+    position: relative;
+}
+
+.md-node-toolbar-btn::after,
+.md-node-toolbar-btn::before {
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.1s ease 0.05s;
+    /* 极快显示 */
+    position: absolute;
+    z-index: 1000;
+}
+
+.md-node-toolbar-btn:hover::after {
+    content: attr(data-tooltip);
+    bottom: 100%;
+    left: 50%;
+    transform: translateX(-50%) translateY(-6px);
+    background: rgba(0, 0, 0, 0.85);
+    color: #fff;
+    padding: 4px 8px;
+    border-radius: 4px;
+    font-size: 11px;
+    white-space: nowrap;
+    opacity: 1;
+}
+
+.md-node-toolbar-btn:hover::before {
+    content: '';
+    bottom: 100%;
+    left: 50%;
+    transform: translateX(-50%) translateY(-1px);
+    border: 5px solid transparent;
+    border-top-color: rgba(0, 0, 0, 0.85);
+    opacity: 1;
+}
+
+/* 复合图标样式：框体+垃圾桶 (Grid 布局实现中心重叠) */
+.icon-frame-delete {
+    display: inline-grid;
+    place-items: center;
+    width: 14px;
+    height: 14px;
+    vertical-align: middle;
+}
+
+/* 让两个图标重叠在同一个网格单元中 */
+.icon-frame-delete i {
+    grid-area: 1 / 1;
+    line-height: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.icon-frame-delete .fa-square {
+    font-size: 14px;
+}
+
+.icon-frame-delete .fa-trash-alt {
+    font-size: 7px;
+    /* 垃圾桶图标本身底部可能有空白，稍微下移 0.5px 视觉效果更好 */
+    transform: translateY(0.5px);
+    color: currentColor;
+    /* 确保不再有绝对定位干扰 */
+    position: static;
+}
+
+[data-theme="dark"] .md-node-toolbar-btn:hover::after {
+    background: rgba(255, 255, 255, 0.9);
+    color: #000;
+}
+
+[data-theme="dark"] .md-node-toolbar-btn:hover::before {
+    border-top-color: rgba(255, 255, 255, 0.9);
 }
 
 /* 色盘弹出层 - 相对于工具栏定位 */
@@ -7686,6 +7773,103 @@ a.tree-label.tree-bookmark-link:hover {
     background: #2c2d2e;
     border-color: rgba(255, 255, 255, 0.25);
 }
+
+/* 删除选项弹窗样式 (用于 import-container) */
+.md-delete-options-popover {
+    position: absolute;
+    bottom: calc(100% + 4px);
+    left: 50%;
+    transform: translateX(-50%);
+    background: #ffffff;
+    border: 1px solid rgba(27, 31, 36, 0.25);
+    border-radius: 8px;
+    box-shadow: 0 6px 18px rgba(15, 23, 42, 0.12);
+    padding: 6px;
+    display: none;
+    flex-direction: column;
+    gap: 4px;
+    z-index: 10;
+    white-space: nowrap;
+    min-width: 140px;
+}
+
+.md-delete-options-popover.open {
+    display: flex;
+}
+
+.md-delete-option {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 12px;
+    border: 1px solid transparent;
+    border-radius: 6px;
+    background: transparent;
+    color: #24292f;
+    cursor: pointer;
+    transition: all 0.15s ease;
+    font-size: 13px;
+    text-align: left;
+    width: 100%;
+}
+
+.md-delete-option i {
+    font-size: 14px;
+    width: 16px;
+    text-align: center;
+    color: #57606a;
+}
+
+.md-delete-option:hover {
+    background: rgba(9, 105, 218, 0.08);
+    border-color: rgba(9, 105, 218, 0.25);
+}
+
+.md-delete-option:active {
+    transform: scale(0.98);
+}
+
+/* 危险操作按钮样式 */
+.md-delete-option.md-delete-option-danger:hover {
+    background: rgba(207, 34, 46, 0.08);
+    border-color: rgba(207, 34, 46, 0.25);
+    color: #cf222e;
+}
+
+.md-delete-option.md-delete-option-danger:hover i {
+    color: #cf222e;
+}
+
+/* 深色模式 */
+[data-theme="dark"] .md-delete-options-popover {
+    background: #2c2d2e;
+    border-color: rgba(99, 110, 123, 0.45);
+    box-shadow: 0 6px 18px rgba(0, 0, 0, 0.35);
+}
+
+[data-theme="dark"] .md-delete-option {
+    color: #e4e6eb;
+}
+
+[data-theme="dark"] .md-delete-option i {
+    color: #8b949e;
+}
+
+[data-theme="dark"] .md-delete-option:hover {
+    background: rgba(88, 166, 255, 0.12);
+    border-color: rgba(88, 166, 255, 0.3);
+}
+
+[data-theme="dark"] .md-delete-option.md-delete-option-danger:hover {
+    background: rgba(248, 81, 73, 0.12);
+    border-color: rgba(248, 81, 73, 0.35);
+    color: #f85149;
+}
+
+[data-theme="dark"] .md-delete-option.md-delete-option-danger:hover i {
+    color: #f85149;
+}
+
 
 /* 缩放指示器 */
 /* 默认使用普通光标；仅按住空格时显示抓手 */
@@ -12851,4 +13035,37 @@ color: var(--text-secondary);
 
 [data-theme="dark"] .manual-selector-item.selected {
     background: rgba(24, 119, 242, 0.2);
+}
+
+/* Import Container Label & Hint Theming */
+.import-group-label {
+    /* Base styles (moved from inline) */
+    font-weight: bold;
+    padding: 4px 0;
+    display: inline-block;
+    pointer-events: auto;
+    cursor: grab;
+    font-size: 16px;
+    /* Light theme color */
+    color: #555;
+    transition: color 0.2s ease;
+}
+
+.import-group-hint {
+    /* Base styles (moved from inline) */
+    font-size: 12px;
+    margin-top: 0;
+    /* Light theme color */
+    color: #999;
+    transition: color 0.2s ease;
+}
+
+[data-theme="dark"] .import-group-label {
+    color: #e6edf3;
+    /* High contrast for dark mode */
+}
+
+[data-theme="dark"] .import-group-hint {
+    color: #8b949e;
+    /* Muted text for dark mode */
 }

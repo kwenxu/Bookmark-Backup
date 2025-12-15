@@ -384,6 +384,56 @@ function startSectionDrag(element, event) {
         element.style.transform = 'none';
     }
 
+    // 如果是 import-container，计算并捕获其内部的子节点
+    CanvasState.dragState.childElements = [];
+    if (meta.data && meta.data.subtype === 'import-container') {
+        const container = meta.data;
+        const cx = Number(container.x);
+        const cy = Number(container.y);
+        const cw = Number(container.width);
+        const ch = Number(container.height);
+
+        // 查找所有在容器范围内的 tempSections
+        CanvasState.tempSections.forEach(sec => {
+            // 简单的包含检测：中心点在容器内，或者完全包含
+            const sx = Number(sec.x) + (Number(sec.width) / 2);
+            const sy = Number(sec.y) + (Number(sec.height) / 2);
+            if (sx >= cx && sx <= cx + cw && sy >= cy && sy <= cy + ch) {
+                CanvasState.dragState.childElements.push({
+                    type: 'temp-section',
+                    data: sec,
+                    startX: Number(sec.x),
+                    startY: Number(sec.y),
+                    element: document.getElementById(sec.id)
+                });
+            }
+        });
+
+        // 查找所有在容器范围内的 mdNodes (排除容器自己)
+        CanvasState.mdNodes.forEach(node => {
+            if (node.id === container.id) return;
+            // 简单的包含检测
+            const nodeW = Number(node.width) || 200; // fallback width
+            const nodeH = Number(node.height) || 100;
+            const nx = Number(node.x) + (nodeW / 2);
+            const ny = Number(node.y) + (nodeH / 2);
+            if (nx >= cx && nx <= cx + cw && ny >= cy && ny <= cy + ch) {
+                CanvasState.dragState.childElements.push({
+                    type: 'md-node',
+                    data: node,
+                    startX: Number(node.x),
+                    startY: Number(node.y),
+                    element: document.getElementById(node.id)
+                });
+            }
+        });
+
+        // 临时禁用这些子元素的过渡效果，以便平滑拖动
+        CanvasState.dragState.childElements.forEach(child => {
+            if (child.element) child.element.style.transition = 'none';
+        });
+    }
+
     event.preventDefault();
     return true;
 }
@@ -3298,6 +3348,23 @@ function applyTempNodeDragPosition(clientX, clientY) {
 
     element.style.left = newX + 'px';
     element.style.top = newY + 'px';
+
+    // 如果有附带的子节点（import-container 组拖动），同步更新它们的位置
+    if (CanvasState.dragState.childElements && CanvasState.dragState.childElements.length > 0) {
+        CanvasState.dragState.childElements.forEach(child => {
+            const cx = child.startX + scaledDeltaX;
+            const cy = child.startY + scaledDeltaY;
+            if (child.element) {
+                child.element.style.left = cx + 'px';
+                child.element.style.top = cy + 'px';
+            }
+            // 同时更新数据模型，确保 saveTempNodes 时能保存
+            if (child.data) {
+                child.data.x = cx;
+                child.data.y = cy;
+            }
+        });
+    }
     element.style.transform = 'none';
 
     const nodeId = element.id;
@@ -4380,6 +4447,7 @@ async function handlePermanentDragEnd(e) {
     CanvasState.dragState.isDragging = false;
     CanvasState.dragState.draggedData = null;
     CanvasState.dragState.dragSource = null;
+    CanvasState.dragState.childElements = []; // 清空子元素数组
     const permanentSection = document.getElementById('permanentSection');
     if (permanentSection) {
         permanentSection.classList.remove('drag-origin-active');
@@ -4516,6 +4584,16 @@ function makeMdNodeDraggable(element, node) {
             return;
         }
 
+        // *** 重要：如果是 import-container，检查点击的是否是内部的子节点 ***
+        // 如果点击的是子节点，则不拖动容器，让子节点自己处理拖动
+        if (node && node.subtype === 'import-container') {
+            const clickedChildNode = target.closest('.temp-canvas-node, .md-canvas-node');
+            // 如果点击的子节点不是当前容器本身，则跳过
+            if (clickedChildNode && clickedChildNode.id !== node.id) {
+                return;
+            }
+        }
+
         // 编辑器区域：如果编辑器已聚焦（正在编辑），不拖动；否则允许拖动
         const editorEl = element.querySelector('.md-canvas-editor');
         if (target.closest('.md-canvas-editor') && document.activeElement === editorEl) {
@@ -4556,6 +4634,51 @@ function makeMdNodeDraggable(element, node) {
             CanvasState.dragState.nodeStartY = node.y;
             CanvasState.dragState.dragSource = 'temp-node';
 
+            // *** 组拖动支持：如果是 import-container，捕获子节点 ***
+            CanvasState.dragState.childElements = [];
+            if (node && node.subtype === 'import-container') {
+                const container = node;
+                const cx = Number(container.x);
+                const cy = Number(container.y);
+                const cw = Number(container.width);
+                const ch = Number(container.height);
+
+                CanvasState.tempSections.forEach(sec => {
+                    const sx = Number(sec.x) + (Number(sec.width) / 2);
+                    const sy = Number(sec.y) + (Number(sec.height) / 2);
+                    if (sx >= cx && sx <= cx + cw && sy >= cy && sy <= cy + ch) {
+                        CanvasState.dragState.childElements.push({
+                            type: 'temp-section',
+                            data: sec,
+                            startX: Number(sec.x),
+                            startY: Number(sec.y),
+                            element: document.getElementById(sec.id) // ID就是section.id，没有前缀
+                        });
+                    }
+                });
+
+                CanvasState.mdNodes.forEach(n => {
+                    if (n.id === container.id) return;
+                    const nodeW = Number(n.width) || 120;
+                    const nodeH = Number(n.height) || 60;
+                    const nx = Number(n.x) + (nodeW / 2);
+                    const ny = Number(n.y) + (nodeH / 2);
+                    if (nx >= cx && nx <= cx + cw && ny >= cy && ny <= cy + ch) {
+                        CanvasState.dragState.childElements.push({
+                            type: 'md-node',
+                            data: n,
+                            startX: Number(n.x),
+                            startY: Number(n.y),
+                            element: document.getElementById(n.id) // 注意：renderMdNode用的是n.id作为element id，没有前缀
+                        });
+                    }
+                });
+
+                CanvasState.dragState.childElements.forEach(child => {
+                    if (child.element) child.element.style.transition = 'none';
+                });
+            }
+
             CanvasState.dragState.wheelScrollEnabled = true;
 
             element.classList.add('dragging');
@@ -4591,12 +4714,28 @@ function renderMdNode(node) {
         el.id = node.id;
         el.className = 'md-canvas-node';
         container.appendChild(el);
-        el.style.left = node.x + 'px';
-        el.style.top = node.y + 'px';
-        el.style.width = (node.width || MD_NODE_DEFAULT_WIDTH) + 'px';
-        el.style.height = (node.height || MD_NODE_DEFAULT_HEIGHT) + 'px';
     } else {
         el.innerHTML = '';
+    }
+
+    // Always update position/size/style
+    el.style.left = node.x + 'px';
+    el.style.top = node.y + 'px';
+    el.style.width = (node.width || 120) + 'px'; // Fallback to safe default
+    el.style.height = (node.height || 60) + 'px';
+
+    // 应用自定义样式 (用于 import-container 等)
+    if (node.style) {
+        el.style.cssText += node.style;
+    }
+
+    // 强制层级管理：Container(5) < TempSection(10) < MdNode(15)
+    if (node.subtype === 'import-container') {
+        el.style.zIndex = '5';
+    } else {
+        // 普通 Markdown 卡片默认在书签栏目之上
+        // 如果自定义样式里没有指定 z-index，才应用默认值 (这里简单起见强制应用，保证层级正确)
+        el.style.zIndex = '15';
     }
 
     // 顶部工具栏（选中/悬停可见）
@@ -4611,13 +4750,43 @@ function renderMdNode(node) {
     const editTitle = lang === 'en' ? 'Edit' : '编辑';
     const formatTitle = lang === 'en' ? 'Format toolbar' : '格式工具栏';
 
-    toolbar.innerHTML = `
-        <button class="md-node-toolbar-btn" data-action="md-delete" title="${deleteTitle}"><i class="far fa-trash-alt"></i></button>
-        <button class="md-node-toolbar-btn" data-action="md-color-toggle" title="${colorTitle}"><i class="fas fa-palette"></i></button>
-        <button class="md-node-toolbar-btn" data-action="md-format-toggle" title="${formatTitle}"><i class="fas fa-font"></i></button>
-        <button class="md-node-toolbar-btn" data-action="md-focus" title="${focusTitle}"><i class="fas fa-search-plus"></i></button>
-        <button class="md-node-toolbar-btn" data-action="md-edit" title="${editTitle}"><i class="far fa-edit"></i></button>
-    `;
+    // 多语言：import-container 的两个删除按钮
+    const deleteFrameTitle = lang === 'en' ? 'Delete Frame Only' : '仅删除框体';
+    const deleteAllTitle = lang === 'en' ? 'Delete All Content' : '删除全部内容';
+
+    // 根据节点类型生成不同的工具栏
+    if (node.subtype === 'import-container') {
+        // import-container 使用两个独立的删除按钮
+        // data-tooltip 用于自定义快速气泡，移除 title 属性以禁用原生提示
+        toolbar.innerHTML = `
+            <button class="md-node-toolbar-btn" data-action="md-delete-frame-only" data-tooltip="${deleteFrameTitle}">
+                <div class="icon-frame-delete">
+                    <i class="far fa-square"></i>
+                    <i class="fas fa-trash-alt"></i>
+                </div>
+            </button>
+            <button class="md-node-toolbar-btn" data-action="md-delete-all-content" data-tooltip="${deleteAllTitle}">
+                <i class="fas fa-trash-alt"></i>
+            </button>
+            <button class="md-node-toolbar-btn" data-action="md-focus" data-tooltip="${focusTitle}">
+                <i class="fas fa-search-plus"></i>
+            </button>
+        `;
+    } else {
+        // 普通节点使用标准工具栏
+        toolbar.innerHTML = `
+            <button class="md-node-toolbar-btn" data-action="md-delete" data-tooltip="${deleteTitle}"><i class="far fa-trash-alt"></i></button>
+            <button class="md-node-toolbar-btn" data-action="md-color-toggle" data-tooltip="${colorTitle}"><i class="fas fa-palette"></i></button>
+            <button class="md-node-toolbar-btn" data-action="md-format-toggle" data-tooltip="${formatTitle}"><i class="fas fa-font"></i></button>
+            <button class="md-node-toolbar-btn" data-action="md-focus" data-tooltip="${focusTitle}"><i class="fas fa-search-plus"></i></button>
+            <button class="md-node-toolbar-btn" data-action="md-edit" data-tooltip="${editTitle}"><i class="far fa-edit"></i></button>
+        `;
+    }
+
+    // Hook for Import Container Events
+    if (node.subtype === 'import-container') {
+        __setupImportContainerEvents(el, node);
+    }
 
     // 初始化字体大小（从节点数据或默认值）
     const defaultFontSize = 14;
@@ -7493,7 +7662,16 @@ function renderMdNode(node) {
             selectMdNode(node.id);
             enterEditMode();
         } else if (action === 'md-delete') {
+            // 普通节点的删除
             removeMdNode(node.id);
+            clearMdSelection();
+        } else if (action === 'md-delete-frame-only') {
+            // import-container: 仅删除框体，保留内容
+            removeMdNode(node.id, false);
+            clearMdSelection();
+        } else if (action === 'md-delete-all-content') {
+            // import-container: 删除框体及全部内容
+            removeMdNode(node.id, true);
             clearMdSelection();
         } else if (action === 'md-color-toggle') {
             toggleMdColorPopover(toolbar, node, btn);
@@ -7762,13 +7940,110 @@ function closeMdColorPopover(toolbar) {
     if (pop) pop.classList.remove('open');
 }
 
+// 删除选项弹窗 (用于 import-container)
+function ensureDeleteOptionsPopover(toolbar, node) {
+    let pop = toolbar.querySelector('.md-delete-options-popover');
+    if (pop) return pop;
+
+    pop = document.createElement('div');
+    pop.className = 'md-delete-options-popover';
+
+    // 多语言支持
+    const lang = typeof currentLang !== 'undefined' ? currentLang : 'zh';
+    const deleteFrameTitle = lang === 'en' ? 'Delete Frame Only' : '仅删除框体';
+    const deleteAllTitle = lang === 'en' ? 'Delete All Content' : '删除全部内容';
+
+    pop.innerHTML = `
+        <button class="md-delete-option" data-action="md-delete-frame-only" title="${deleteFrameTitle}">
+            <i class="far fa-square"></i>
+            <span>${deleteFrameTitle}</span>
+        </button>
+        <button class="md-delete-option md-delete-option-danger" data-action="md-delete-all-content" title="${deleteAllTitle}">
+            <i class="fas fa-trash-alt"></i>
+            <span>${deleteAllTitle}</span>
+        </button>
+    `;
+
+    // 删除选项点击事件
+    pop.addEventListener('click', (e) => {
+        const btn = e.target.closest('.md-delete-option');
+        if (!btn) return;
+        e.preventDefault();
+        e.stopPropagation();
+
+        const action = btn.getAttribute('data-action');
+        if (action === 'md-delete-frame-only') {
+            // 仅删除框体，保留内容
+            removeMdNode(node.id, false);
+            clearMdSelection();
+        } else if (action === 'md-delete-all-content') {
+            // 删除全部内容
+            removeMdNode(node.id, true);
+            clearMdSelection();
+        }
+        closeDeleteOptionsPopover(toolbar);
+    });
+
+    toolbar.appendChild(pop);
+    return pop;
+}
+
+function toggleDeleteOptionsPopover(toolbar, node, anchorBtn) {
+    const pop = ensureDeleteOptionsPopover(toolbar, node);
+    const isOpen = pop.classList.contains('open');
+
+    // 关闭其他弹层
+    closeMdColorPopover(toolbar);
+
+    if (isOpen) {
+        closeDeleteOptionsPopover(toolbar);
+        return;
+    }
+    pop.classList.add('open');
+
+    // 监听外部点击关闭
+    const onDoc = (e) => {
+        if (!toolbar.contains(e.target)) {
+            closeDeleteOptionsPopover(toolbar);
+            document.removeEventListener('mousedown', onDoc, true);
+        }
+    };
+    document.addEventListener('mousedown', onDoc, true);
+}
+
+function closeDeleteOptionsPopover(toolbar) {
+    const pop = toolbar.querySelector('.md-delete-options-popover');
+    if (pop) pop.classList.remove('open');
+}
+
+
 // 定位并放大到指定 Markdown 节点
-function locateAndZoomToMdNode(nodeId, targetZoom = 1.2) {
+function locateAndZoomToMdNode(nodeId, targetZoom = null) {
     const el = document.getElementById(nodeId);
     const workspace = document.getElementById('canvasWorkspace');
     if (!el || !workspace) return;
 
-    const zoom = Math.max(0.1, Math.min(3, Math.max(CanvasState.zoom, targetZoom)));
+    const workspaceWidth = workspace.clientWidth;
+    const workspaceHeight = workspace.clientHeight;
+    const nodeWidth = el.offsetWidth || 200;
+    const nodeHeight = el.offsetHeight || 100;
+
+    // 自动计算合适的缩放比例，使节点完整显示在视野中
+    // 留出一些边距（80px）
+    const padding = 80;
+    let fitZoom;
+    if (targetZoom === null) {
+        const zoomX = (workspaceWidth - padding * 2) / nodeWidth;
+        const zoomY = (workspaceHeight - padding * 2) / nodeHeight;
+        // 取两者中较小的值，确保节点在两个方向上都能完整显示
+        fitZoom = Math.min(zoomX, zoomY);
+        // 限制缩放范围：最小0.2，最大1.5（不要放得太大）
+        fitZoom = Math.max(0.2, Math.min(1.5, fitZoom));
+    } else {
+        fitZoom = targetZoom;
+    }
+
+    const zoom = Math.max(0.1, Math.min(3, fitZoom));
     if (zoom !== CanvasState.zoom) {
         const rect = workspace.getBoundingClientRect();
         setCanvasZoom(zoom, rect.left + rect.width / 2, rect.top + rect.height / 2, { recomputeBounds: true });
@@ -7776,11 +8051,9 @@ function locateAndZoomToMdNode(nodeId, targetZoom = 1.2) {
 
     const nodeLeft = parseFloat(el.style.left) || 0;
     const nodeTop = parseFloat(el.style.top) || 0;
-    const nodeCenterX = nodeLeft + el.offsetWidth / 2;
-    const nodeCenterY = nodeTop + el.offsetHeight / 2;
+    const nodeCenterX = nodeLeft + nodeWidth / 2;
+    const nodeCenterY = nodeTop + nodeHeight / 2;
 
-    const workspaceWidth = workspace.clientWidth;
-    const workspaceHeight = workspace.clientHeight;
     CanvasState.panOffsetX = workspaceWidth / 2 - nodeCenterX * CanvasState.zoom;
     CanvasState.panOffsetY = workspaceHeight / 2 - nodeCenterY * CanvasState.zoom;
 
@@ -7807,7 +8080,32 @@ async function createMdNode(x, y, text = '') {
     return id;
 }
 
-function removeMdNode(id) {
+function removeMdNode(id, deleteChildren = false) {
+    // Check for container cascading delete
+    const node = CanvasState.mdNodes.find(n => n.id === id);
+    if (node && node.subtype === 'import-container' && deleteChildren && !node._deletingChildren) {
+        node._deletingChildren = true;
+        const gx = node.x; const gy = node.y; const gw = node.width; const gh = node.height;
+        const idsToRemove = { temp: [], md: [] };
+
+        // Find internal
+        CanvasState.tempSections.forEach(s => {
+            const sx = s.x + (s.width / 2);
+            const sy = s.y + (s.height / 2);
+            if (sx > gx && sx < gx + gw && sy > gy && sy < gy + gh) idsToRemove.temp.push(s.id);
+        });
+        CanvasState.mdNodes.forEach(n => {
+            if (n.id === id) return;
+            const nx = n.x + (n.width / 2);
+            const ny = n.y + (n.height / 2);
+            if (nx > gx && nx < gx + gw && ny > gy && ny < gy + gh) idsToRemove.md.push(n.id);
+        });
+
+        // Delete internal
+        idsToRemove.temp.forEach(tid => removeTempNode(tid));
+        idsToRemove.md.forEach(mid => removeMdNode(mid)); // Recursive safe because _deletingChildren is not set on children (unless they are nested containers)
+    }
+
     const el = document.getElementById(id);
     if (el) el.remove();
     CanvasState.mdNodes = CanvasState.mdNodes.filter(n => n.id !== id);
@@ -9497,13 +9795,14 @@ function renderTempNode(section) {
     } else {
         // 更新时清空内容，但保持位置和大小不变
         nodeElement.innerHTML = '';
-        // 只更新颜色
-        nodeElement.style.setProperty('--section-color', section.color || TEMP_SECTION_DEFAULT_COLOR);
     }
 
-    if (isNew) {
-        nodeElement.style.setProperty('--section-color', section.color || TEMP_SECTION_DEFAULT_COLOR);
-    }
+    // Always update z-index logic (Both new and existing)
+    // 默认100 (Unpinned), Pinned 200. 高于 Import Container (5) 和 Edges (7)
+    const pinnedState = section.pinned || false;
+    nodeElement.style.zIndex = pinnedState ? '200' : '100';
+    nodeElement.style.position = 'absolute'; // Ensure absolute positioning
+    nodeElement.style.setProperty('--section-color', section.color || TEMP_SECTION_DEFAULT_COLOR);
 
     const header = document.createElement('div');
     header.className = 'temp-node-header';
@@ -10888,6 +11187,7 @@ function makeNodeDraggable(element, section) {
         element.style.transition = 'none';
 
         e.preventDefault();
+        e.stopPropagation();
     };
 
     header.addEventListener('mousedown', onMouseDown, true);
@@ -11800,6 +12100,7 @@ function setupCanvasEventListeners() {
         CanvasState.dragState.draggedElement = null;
         CanvasState.dragState.dragSource = null;
         CanvasState.dragState.wheelScrollEnabled = false;
+        CanvasState.dragState.childElements = []; // 清空子元素数组，避免后续拖动时仍带着子节点
 
         // 停止自动滚动
         stopEdgeAutoScroll();
@@ -11903,7 +12204,7 @@ function showImportDialog() {
                 <div class="import-options">
                     <button class="import-option-btn" id="importCanvasZipBtn">
                         <i class="fas fa-file-archive" style="font-size: 24px;"></i>
-                        <span>${isEn ? 'Import Canvas Package (.zip)' : '导入画布本体包（.zip）'}</span>
+                        <span>${isEn ? 'Import Canvas Snapshot (.zip / .json)' : '导入书签画布快照 (.zip / .json)'}</span>
                     </button>
                     <button class="import-option-btn" id="importHtmlBtn">
                         <i class="fas fa-file-code" style="font-size: 24px;"></i>
@@ -11932,7 +12233,8 @@ function showImportDialog() {
 
     document.getElementById('importCanvasZipBtn').addEventListener('click', () => {
         const input = document.getElementById('canvasFileInput');
-        input.accept = '.zip';
+        // 3.4 格式适配器：同时支持 ZIP 和 JSON 单文件
+        input.accept = '.zip,.json';
         input.dataset.type = 'package';
         input.click();
     });
@@ -11964,13 +12266,26 @@ async function handleFileImport(e) {
         if (type === 'package') {
             const { isEn } = __getLang();
             const ok = confirm(isEn
-                ? 'Importing a canvas package will replace the current canvas state. Continue?'
-                : '导入画布本体包会覆盖当前画布状态。确定继续吗？');
+                ? 'Importing a canvas package will add content to the current canvas (sandboxed). Continue?'
+                : '导入画布包会将内容添加到当前画布（沙箱模式）。确定继续吗？');
             if (!ok) {
                 e.target.value = '';
                 return;
             }
-            await importCanvasPackageZip(file);
+
+            // 3.4 格式适配器：根据文件扩展名选择处理方式
+            const fileName = file.name.toLowerCase();
+            if (fileName.endsWith('.zip')) {
+                // ZIP 压缩包处理
+                await importCanvasPackageZip(file);
+            } else if (fileName.endsWith('.json')) {
+                // JSON 单文件处理
+                await importCanvasPackageJson(file);
+            } else {
+                throw new Error(isEn
+                    ? 'Unsupported file format. Please use .zip or .json file.'
+                    : '不支持的文件格式。请使用 .zip 或 .json 文件。');
+            }
         } else {
             const text = await file.text();
             if (type === 'html') {
@@ -11990,6 +12305,64 @@ async function handleFileImport(e) {
     }
 
     e.target.value = '';
+}
+
+/**
+ * 3.4 格式适配器：导入 JSON 单文件
+ * 直接读取并校验是否为合法的 Canvas State JSON
+ */
+async function importCanvasPackageJson(file) {
+    const { isEn } = __getLang();
+    const text = await file.text();
+    let primaryState;
+
+    try {
+        primaryState = JSON.parse(text);
+    } catch (parseErr) {
+        throw new Error(isEn
+            ? 'Invalid JSON format.'
+            : 'JSON 格式无效。');
+    }
+
+    // 校验是否为合法的 Canvas State JSON
+    const isValidCanvasState = (
+        primaryState &&
+        primaryState.exporter === 'bookmark-backup-canvas' &&
+        (primaryState.storage || primaryState.canvasState)
+    );
+
+    if (!isValidCanvasState) {
+        throw new Error(isEn
+            ? 'This JSON file is not a valid Bookmark Canvas backup file.'
+            : '此 JSON 文件不是有效的书签画布备份文件。');
+    }
+
+    const isBackupMode = primaryState.exportVersion === 2 && primaryState.canvasState;
+    console.log(`[Canvas] JSON Import using ${isBackupMode ? 'BACKUP' : 'FULL'} mode`);
+
+    const storage = primaryState.storage || {};
+
+    // 提取 tempState
+    let tempState = null;
+    if (isBackupMode && primaryState.canvasState) {
+        tempState = {
+            sections: primaryState.canvasState.tempSections || [],
+            mdNodes: primaryState.canvasState.mdNodes || [],
+            edges: primaryState.canvasState.edges || [],
+            tempSectionCounter: primaryState.canvasState.tempSectionCounter || 0,
+            mdNodeCounter: primaryState.canvasState.mdNodeCounter || 0,
+            edgeCounter: primaryState.canvasState.edgeCounter || 0
+        };
+    } else {
+        tempState = storage[TEMP_SECTION_STORAGE_KEY] || null;
+    }
+
+    if (!tempState) {
+        throw new Error(isEn ? 'Invalid package state.' : '导入包状态无效');
+    }
+
+    // 复用 zip 导入的后续逻辑
+    __processSandboxedImport(tempState, storage, primaryState, file.name);
 }
 
 async function importHtmlBookmarks(html) {
@@ -12054,11 +12427,170 @@ async function importJsonBookmarks(json) {
 }
 
 function exportCanvas() {
-    // 已升级为 zip 导出（.canvas + .md + 本体json）
-    exportCanvasPackage().catch((e) => {
-        console.error('[Canvas] 导出失败:', e);
-        const { isEn } = __getLang();
-        alert((isEn ? 'Export failed: ' : '导出失败: ') + (e && e.message ? e.message : e));
+    // 双轨导出模式选择（2.1节）
+    showExportModeDialog();
+}
+
+/**
+ * 双轨模式选择对话框（简化版）
+ * 模式 A: Obsidian 兼容模式 - 进入路径配置
+ * 模式 B: 全量备份模式 - 进入确认页面
+ */
+function showExportModeDialog() {
+    const { isEn } = __getLang();
+
+    // 移除已有对话框
+    const existingDialog = document.getElementById('canvasExportModeDialog');
+    if (existingDialog) existingDialog.remove();
+
+    const dialog = document.createElement('div');
+    dialog.className = 'import-dialog';
+    dialog.id = 'canvasExportModeDialog';
+
+    const dialogTitle = isEn ? 'Export' : '导出';
+    const modeATitle = isEn ? 'Obsidian Compatible' : 'Obsidian 兼容';
+    const modeAHint = isEn ? 'For viewing in Obsidian' : '用于 Obsidian 中查看';
+    const modeBTitle = isEn ? 'Full Backup' : '全量备份';
+    const modeBHint = isEn ? 'For import & recovery' : '用于导入与恢复';
+
+    dialog.innerHTML = `
+        <div class="import-dialog-content" style="max-width: 420px; width: 90vw;">
+            <div class="import-dialog-header" style="padding: 10px 16px;">
+                <h3 style="margin-left: 4px;">${dialogTitle}</h3>
+                <button class="import-dialog-close" id="closeExportModeDialog" style="margin-top: 1px;">&times;</button>
+            </div>
+            <div class="import-dialog-body" style="padding: 16px;">
+                <div class="import-options" style="gap: 12px;">
+                    <!-- 模式 A: Obsidian 兼容 -->
+                    <button class="import-option-btn" id="exportModeA" style="padding: 14px 16px; display: flex; align-items: center;">
+                        <div style="width: 32px; display: flex; justify-content: center; margin-right: 12px;">
+                            <i class="fab fa-markdown" style="font-size: 22px; color: #7c3aed;"></i>
+                        </div>
+                        <div style="text-align: left; flex: 1;">
+                            <div style="font-size: 14px; font-weight: 600;">${modeATitle}</div>
+                            <div style="font-size: 12px; color: #888; margin-top: 2px;">${modeAHint}</div>
+                        </div>
+                        <i class="fas fa-chevron-right" style="color: #ccc;"></i>
+                    </button>
+                    
+                    <!-- 模式 B: 全量备份 (直接导出) -->
+                    <button class="import-option-btn" id="exportModeB" style="padding: 14px 16px; display: flex; align-items: center;">
+                        <div style="width: 32px; display: flex; justify-content: center; margin-right: 12px;">
+                            <i class="fas fa-database" style="font-size: 20px; color: #059669;"></i>
+                        </div>
+                        <div style="text-align: left; flex: 1;">
+                            <div style="font-size: 14px; font-weight: 600;">${modeBTitle}</div>
+                            <div style="font-size: 12px; color: #888; margin-top: 2px;">${modeBHint}</div>
+                        </div>
+                    </button>
+                </div>
+            </div>
+        </div>
+    `;
+
+    document.body.appendChild(dialog);
+
+    // 事件监听
+    document.getElementById('closeExportModeDialog').addEventListener('click', () => {
+        dialog.remove();
+    });
+
+    dialog.addEventListener('click', (e) => {
+        if (e.target === dialog) dialog.remove();
+    });
+
+    // 模式 A: 进入 Obsidian 路径配置
+    document.getElementById('exportModeA').addEventListener('click', () => {
+        dialog.remove();
+        exportCanvasPackage({ mode: 'obsidian' }).catch((e) => {
+            console.error('[Canvas] 导出失败:', e);
+            const { isEn } = __getLang();
+            alert((isEn ? 'Export failed: ' : '导出失败: ') + (e && e.message ? e.message : e));
+        });
+    });
+
+    // 模式 B: 直接进行全量备份导出，不再显示二级确认页
+    document.getElementById('exportModeB').addEventListener('click', () => {
+        dialog.remove();
+        exportCanvasPackage({ mode: 'full-backup' }).catch((e) => {
+            console.error('[Canvas] 导出失败:', e);
+            const { isEn } = __getLang();
+            alert((isEn ? 'Export failed: ' : '导出失败: ') + (e && e.message ? e.message : e));
+        });
+    });
+}
+
+/**
+ * 全量备份模式的二级确认对话框
+ */
+function showFullBackupConfirmDialog() {
+    const { isEn } = __getLang();
+
+    const dialog = document.createElement('div');
+    dialog.className = 'import-dialog';
+    dialog.id = 'canvasFullBackupConfirmDialog';
+
+    const title = isEn ? 'Full Backup Export' : '全量备份导出';
+    const desc = isEn
+        ? 'This will create a complete backup package containing:'
+        : '将创建一个完整的备份包，包含：';
+    const item1 = isEn ? '✓ All bookmark data (permanent & temporary)' : '✓ 所有书签数据（永久栏目 & 临时栏目）';
+    const item2 = isEn ? '✓ Canvas layout & connections' : '✓ 画布布局与连接线';
+    const item3 = isEn ? '✓ Scroll positions & settings' : '✓ 滚动位置与设置';
+    const item4 = isEn ? '✓ Structured JSON for AI analysis' : '✓ 结构化 JSON（便于 AI 分析）';
+    const btnText = isEn ? 'Export Now' : '立即导出';
+    const backText = isEn ? 'Back' : '返回';
+
+    dialog.innerHTML = `
+        <div class="import-dialog-content" style="max-width: 400px; width: 90vw;">
+            <div class="import-dialog-header">
+                <h3>${title}</h3>
+                <button class="import-dialog-close" id="closeFullBackupDialog">&times;</button>
+            </div>
+            <div class="import-dialog-body" style="padding: 16px;">
+                <div style="margin-bottom: 16px; color: #555; font-size: 13px;">${desc}</div>
+                <div style="background: #f0fdf4; border: 1px solid #bbf7d0; border-radius: 8px; padding: 12px; margin-bottom: 16px;">
+                    <div style="font-size: 13px; color: #166534; line-height: 1.8;">
+                        ${item1}<br>
+                        ${item2}<br>
+                        ${item3}<br>
+                        ${item4}
+                    </div>
+                </div>
+                <div style="display: flex; gap: 10px;">
+                    <button id="backToModeSelect" class="import-option-btn" style="flex: 1; padding: 10px; justify-content: center; background: #f3f4f6; border: 1px solid #e5e7eb;">
+                        <i class="fas fa-arrow-left" style="margin-right: 6px;"></i>${backText}
+                    </button>
+                    <button id="confirmFullBackup" class="import-option-btn" style="flex: 2; padding: 10px; justify-content: center; background: #059669; color: white; border: none;">
+                        <i class="fas fa-download" style="margin-right: 6px;"></i>${btnText}
+                    </button>
+                </div>
+            </div>
+        </div>
+    `;
+
+    document.body.appendChild(dialog);
+
+    document.getElementById('closeFullBackupDialog').addEventListener('click', () => {
+        dialog.remove();
+    });
+
+    dialog.addEventListener('click', (e) => {
+        if (e.target === dialog) dialog.remove();
+    });
+
+    document.getElementById('backToModeSelect').addEventListener('click', () => {
+        dialog.remove();
+        showExportModeDialog();
+    });
+
+    document.getElementById('confirmFullBackup').addEventListener('click', () => {
+        dialog.remove();
+        exportCanvasPackage({ mode: 'full-backup' }).catch((e) => {
+            console.error('[Canvas] 导出失败:', e);
+            const { isEn } = __getLang();
+            alert((isEn ? 'Export failed: ' : '导出失败: ') + (e && e.message ? e.message : e));
+        });
     });
 }
 
@@ -12650,7 +13182,9 @@ function __sanitizeFilename(name) {
     return (name || '').replace(/[<>:"/\\|?*\x00-\x1F]/g, '_').replace(/^\.+/, '').trim() || 'Untitled';
 }
 
-async function exportCanvasPackage() {
+async function exportCanvasPackage(options = {}) {
+    const exportMode = options.mode || 'obsidian'; // 'obsidian' or 'full-backup'
+    const isFullBackupMode = exportMode === 'full-backup';
     const { isEn } = __getLang();
     const api = (typeof browserAPI !== 'undefined' && browserAPI.bookmarks) ? browserAPI.bookmarks : (chrome && chrome.bookmarks ? chrome.bookmarks : null);
     if (!api || typeof api.getTree !== 'function') {
@@ -12676,6 +13210,90 @@ async function exportCanvasPackage() {
 
     const files = [];
 
+    // -------------------------------------------------------------------------
+    // 模式 B: 全量备份 (Direct JSON Download)
+    // -------------------------------------------------------------------------
+    if (isFullBackupMode) {
+        const tempStateRaw = localStorage.getItem(TEMP_SECTION_STORAGE_KEY);
+        const permanentPosRaw = localStorage.getItem('permanent-section-position');
+        const perfMode = localStorage.getItem('canvas-performance-mode');
+
+        // Collect scroll positions
+        const scrollState = {};
+        const permanentScroll = localStorage.getItem('permanent-section-scroll');
+        if (permanentScroll) {
+            try { scrollState['permanent-section-scroll'] = JSON.parse(permanentScroll); } catch (_) { }
+        }
+        for (let i = 0; i < localStorage.length; i++) {
+            const key = localStorage.key(i);
+            if (key && key.startsWith('temp-section-scroll:')) {
+                try {
+                    scrollState[key] = JSON.parse(localStorage.getItem(key));
+                } catch (_) { }
+            }
+        }
+
+        const bookmarkTree = await api.getTree();
+
+        const backupState = {
+            exporter: 'bookmark-backup-canvas',
+            exportVersion: 2,
+            exportedAt,
+            exportMode: 'full-backup',
+            description: isEn
+                ? 'Full backup file for Bookmark Canvas. Contains complete bookmark tree and all canvas data.'
+                : '书签画布完整备份文件。包含完整的书签树和所有画布数据。',
+            storage: {
+                [TEMP_SECTION_STORAGE_KEY]: tempStateRaw ? JSON.parse(tempStateRaw) : null,
+                'permanent-section-position': permanentPosRaw ? JSON.parse(permanentPosRaw) : null,
+                'canvas-performance-mode': perfMode || null,
+                ...scrollState
+            },
+            permanentTreeSnapshot: bookmarkTree,
+            canvasState: {
+                tempSections: CanvasState.tempSections,
+                mdNodes: CanvasState.mdNodes,
+                edges: CanvasState.edges,
+                tempSectionCounter: CanvasState.tempSectionCounter,
+                mdNodeCounter: CanvasState.mdNodeCounter,
+                edgeCounter: CanvasState.edgeCounter
+            }
+        };
+
+        const jsonString = JSON.stringify(backupState, null, 2);
+        const blob = new Blob([jsonString], { type: 'application/json' });
+        const url = URL.createObjectURL(blob);
+        const filename = `bookmark-canvas-backup-${ymd}.json`;
+
+        if (chrome && chrome.downloads && typeof chrome.downloads.download === 'function') {
+            chrome.downloads.download({
+                url: url,
+                filename: `${downloadFolder}/${filename}`,
+                saveAs: false,
+                conflictAction: 'uniquify'
+            }, () => {
+                setTimeout(() => URL.revokeObjectURL(url), 10000);
+            });
+        } else {
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = filename;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            setTimeout(() => URL.revokeObjectURL(url), 10000);
+        }
+
+        alert(isEn
+            ? `Exported Full Backup: ${filename}`
+            : `已导出全量备份：${filename}`);
+
+        return; // <--- 结束执行，跳过后续的 ZIP 生成逻辑
+    }
+
+    // -------------------------------------------------------------------------
+    // 模式 A: Obsidian 兼容模式 (ZIP Package)
+    // -------------------------------------------------------------------------
     const normalizeVaultPrefix = (input) => {
         let s = String(input == null ? '' : input).trim();
         if (!s) return '';
@@ -12809,13 +13427,23 @@ async function exportCanvasPackage() {
         if (okBtn) okBtn.addEventListener('click', () => cleanup(input ? String(input.value || '') : String(defaultValue || '')));
     });
 
-    // 让用户决定“导出文件夹在 vault 内的相对位置”，以适配：
+    // 让用户决定"导出文件夹在 vault 内的相对位置"，以适配：
     // - vault 根目录下（默认）：bookmark-canvas-export/...
     // - vault 的子文件夹下：SomeFolder/bookmark-canvas-export/...
     // - 或把 bookmark-canvas-export/ 直接作为一个独立 vault 根目录（portable canvas）
-    const vaultPrefixInput = await promptVaultPrefixViaDialog(defaultExportRoot);
-    if (vaultPrefixInput === null) {
-        return;
+
+    // 只有 Obsidian 模式才需要路径配置对话框
+    // 全量备份模式直接使用默认路径
+    let vaultPrefixInput;
+    if (isFullBackupMode) {
+        // 全量备份模式：直接使用默认值，不显示路径对话框
+        vaultPrefixInput = defaultExportRoot;
+    } else {
+        // Obsidian 模式：显示路径配置对话框
+        vaultPrefixInput = await promptVaultPrefixViaDialog(defaultExportRoot);
+        if (vaultPrefixInput === null) {
+            return;
+        }
     }
     const vaultPrefix = normalizeVaultPrefix(vaultPrefixInput);
 
@@ -12999,18 +13627,54 @@ async function exportCanvasPackage() {
         }
     }
 
+    // 3.1) Supplementary layer (bookmark-canvas.full.json) - 补充层
+    // 用于存储 Markdown 无法记录的"样式数据"（颜色、滚动条位置、性能模式配置）
     const fullState = {
         exporter: 'bookmark-backup-canvas',
         exportVersion: 1,
         exportedAt,
+        exportMode, // 记录导出模式
         storage: {
             [TEMP_SECTION_STORAGE_KEY]: tempStateRaw ? JSON.parse(tempStateRaw) : null,
             'permanent-section-position': permanentPosRaw ? JSON.parse(permanentPosRaw) : null,
             'canvas-performance-mode': perfMode || null,
             ...scrollState
         }
+        // 注意：补充层不包含书签树快照，仅作为样式补丁
     };
     files.push({ name: `${exportRoot}/bookmark-canvas.full.json`, data: __toUint8(JSON.stringify(fullState, null, 2)) });
+
+    // 3.2) Core data layer (bookmark-canvas.backup.json) - 核心数据层
+    // 仅在"模式 B"（全量备份模式）下生成
+    if (isFullBackupMode) {
+        const backupState = {
+            exporter: 'bookmark-backup-canvas',
+            exportVersion: 2, // 核心数据层使用版本2
+            exportedAt,
+            exportMode: 'full-backup',
+            description: isEn
+                ? 'Full backup file for Bookmark Canvas. Contains complete bookmark tree and all canvas data.'
+                : '书签画布完整备份文件。包含完整的书签树和所有画布数据。',
+            storage: {
+                [TEMP_SECTION_STORAGE_KEY]: tempStateRaw ? JSON.parse(tempStateRaw) : null,
+                'permanent-section-position': permanentPosRaw ? JSON.parse(permanentPosRaw) : null,
+                'canvas-performance-mode': perfMode || null,
+                ...scrollState
+            },
+            // 核心数据层包含完整书签树快照
+            permanentTreeSnapshot: bookmarkTree,
+            // 包含当前画布所有栏目的完整数据对象树
+            canvasState: {
+                tempSections: CanvasState.tempSections,
+                mdNodes: CanvasState.mdNodes,
+                edges: CanvasState.edges,
+                tempSectionCounter: CanvasState.tempSectionCounter,
+                mdNodeCounter: CanvasState.mdNodeCounter,
+                edgeCounter: CanvasState.edgeCounter
+            }
+        };
+        files.push({ name: `${exportRoot}/bookmark-canvas.backup.json`, data: __toUint8(JSON.stringify(backupState, null, 2)) });
+    }
 
     // 4) Import guide for Obsidian
     const orangeNote = isEn
@@ -13173,50 +13837,447 @@ async function importCanvasPackageZip(file) {
     const buf = await file.arrayBuffer();
     const zipFiles = __unzipStore(buf);
 
+    // 4.2 数据信任链：
+    // 优先查找 bookmark-canvas.backup.json（核心数据层）
+    // 若不存在则降级到 bookmark-canvas.full.json（补充层）
+    let backupJsonName = null;
     let fullJsonName = null;
+
     for (const name of zipFiles.keys()) {
+        if (name.endsWith('/bookmark-canvas.backup.json') || name.endsWith('bookmark-canvas.backup.json')) {
+            backupJsonName = name;
+        }
         if (name.endsWith('/bookmark-canvas.full.json') || name.endsWith('bookmark-canvas.full.json')) {
             fullJsonName = name;
-            break;
         }
     }
-    if (!fullJsonName) {
-        throw new Error(isEn ? 'Package missing bookmark-canvas.full.json.' : '导入包缺少 bookmark-canvas.full.json');
+
+    // 确定要使用的数据文件
+    const primaryJsonName = backupJsonName || fullJsonName;
+    const isBackupMode = !!backupJsonName;
+
+    if (!primaryJsonName) {
+        throw new Error(isEn
+            ? 'Package missing required JSON file (bookmark-canvas.backup.json or bookmark-canvas.full.json).'
+            : '导入包缺少必要的 JSON 文件 (bookmark-canvas.backup.json 或 bookmark-canvas.full.json)');
     }
 
-    const fullJsonText = new TextDecoder('utf-8').decode(zipFiles.get(fullJsonName));
-    const fullState = JSON.parse(fullJsonText);
-    const storage = fullState && fullState.storage ? fullState.storage : null;
-    const tempState = storage && storage[TEMP_SECTION_STORAGE_KEY] ? storage[TEMP_SECTION_STORAGE_KEY] : null;
+    console.log(`[Canvas] Import using ${isBackupMode ? 'BACKUP' : 'FULL'} mode: ${primaryJsonName}`);
+
+    const primaryJsonText = new TextDecoder('utf-8').decode(zipFiles.get(primaryJsonName));
+    const primaryState = JSON.parse(primaryJsonText);
+
+    // 从核心数据层或补充层提取数据
+    const storage = primaryState && primaryState.storage ? primaryState.storage : null;
+
+    // 如果是backup模式，优先使用canvasState（完整数据对象树）
+    let tempState = null;
+    if (isBackupMode && primaryState.canvasState) {
+        // 核心数据层包含完整的canvasState
+        tempState = {
+            sections: primaryState.canvasState.tempSections || [],
+            mdNodes: primaryState.canvasState.mdNodes || [],
+            edges: primaryState.canvasState.edges || [],
+            tempSectionCounter: primaryState.canvasState.tempSectionCounter || 0,
+            mdNodeCounter: primaryState.canvasState.mdNodeCounter || 0,
+            edgeCounter: primaryState.canvasState.edgeCounter || 0
+        };
+    } else {
+        // 降级：从storage中读取
+        tempState = storage && storage[TEMP_SECTION_STORAGE_KEY] ? storage[TEMP_SECTION_STORAGE_KEY] : null;
+    }
+
     if (!tempState) {
         throw new Error(isEn ? 'Invalid package state.' : '导入包状态无效');
     }
 
-    localStorage.setItem(TEMP_SECTION_STORAGE_KEY, JSON.stringify(tempState));
-    if (storage && storage['permanent-section-position']) {
-        localStorage.setItem('permanent-section-position', JSON.stringify(storage['permanent-section-position']));
-    }
-    if (storage && storage['canvas-performance-mode']) {
-        localStorage.setItem('canvas-performance-mode', String(storage['canvas-performance-mode']));
+    // 调用共享的沙箱导入处理逻辑
+    __processSandboxedImport(tempState, storage, primaryState, file.name);
+}
+
+/**
+ * 沙箱导入核心处理逻辑
+ * 被 importCanvasPackageZip 和 importCanvasPackageJson 共同使用
+ * @param {Object} tempState - 临时栏目状态数据
+ * @param {Object} storage - 存储数据（滚动位置等）
+ * @param {Object} primaryState - 原始状态对象（用于获取书签树快照等）
+ * @param {string} [importFileName] - 导入的文件名
+ */
+function __processSandboxedImport(tempState, storage, primaryState, importFileName = '') {
+    const { isEn } = __getLang();
+
+    // 不再覆盖localStorage，而是直接进行沙箱导入
+    // localStorage.setItem(TEMP_SECTION_STORAGE_KEY, JSON.stringify(tempState));
+
+    // 1. Conflict Resolution & ID Remapping
+    // We must remap ALL IDs in the imported state to prevent collision with existing nodes.
+    // Also converts the imported "permanent-section" into a "Snapshot Temp Section".
+    const { remappedNodes, remappedEdges, remappedScrolls } = __remapImportedData(tempState, storage, primaryState);
+
+    // 2. Calculate Bounding Box of the imported batch
+    const bounds = __calculateNodesBoundingBox(remappedNodes);
+
+    // 3. Find "Empty Space" in the current layout
+    // We look for the right-most edge of current content
+    const currentContentRight = __findCurrentContentRightBound();
+    const SPACING = 200;
+    const targetX = currentContentRight + SPACING;
+
+    // Calculate offset to move the batch to targetX
+    // Align vertical center of batch to vertical center of viewport (roughly) or 0
+    const offsetX = targetX - bounds.minX;
+    const offsetY = -bounds.minY + 100; // Place slightly down from 0
+
+    // 4. Create the "Group Container"
+    const PADDING = 60;
+    // 使用传入的文件名作为标题
+    const containerLabel = importFileName || (isEn
+        ? `📦 Imported Package (${new Date().toLocaleDateString()} ${new Date().toLocaleTimeString()})`
+        : `📦 导入的包 (${new Date().toLocaleDateString()} ${new Date().toLocaleTimeString()})`);
+
+    const containerHint = isEn
+        ? 'Items inside this frame will be removed if you delete this group. Move items OUT to keep them.'
+        : '删除此分组时，框内的项目会一并删除。将项目移出框外可保留它们。';
+
+    const containerNode = {
+        id: `import-group-${Date.now()}`,
+        type: 'md',
+        subtype: 'import-container', // Special flag
+        x: targetX - PADDING,
+        y: bounds.minY + offsetY - PADDING,
+        width: bounds.width + (PADDING * 2),
+        height: bounds.height + (PADDING * 2),
+        text: '', // No text, just UI
+        // 移除背景样式，只保留纯文字，样式移入 CSS 以支持主题适配
+        html: `<div class="import-group-label">${containerLabel}</div>
+               <div class="import-group-hint">${containerHint}</div>`,
+        color: 'transparent',
+        style: 'border: 2px dashed #bbb; background: rgba(0,0,0,0.02);' // No z-index, rely on DOM order
+    };
+
+    // 5. Apply Offset to all imported nodes
+    remappedNodes.tempSections.forEach(s => { s.x += offsetX; s.y += offsetY; });
+    remappedNodes.mdNodes.forEach(n => { n.x += offsetX; n.y += offsetY; });
+
+    console.log(`[Canvas] Sandboxed Import Stats:
+      - Sections: ${remappedNodes.tempSections.length}
+      - MdNodes: ${remappedNodes.mdNodes.length}
+      - Edges: ${remappedEdges.length}
+      - Offset: (${offsetX}, ${offsetY})`);
+
+    // 6. Merge into CanvasState
+    CanvasState.tempSections.push(...remappedNodes.tempSections);
+    // Put container FIRST so it renders at the bottom (DOM order)
+    CanvasState.mdNodes.unshift(containerNode);
+    CanvasState.mdNodes.push(...remappedNodes.mdNodes);
+    CanvasState.edges.push(...remappedEdges);
+
+    // 7. Restore Scrolls (Mapped to new IDs)
+    Object.keys(remappedScrolls).forEach(scKey => {
+        localStorage.setItem(scKey, JSON.stringify(remappedScrolls[scKey]));
+    });
+
+    // 8. Render & Persistence
+    // First render all nodes so they exist in the DOM
+    CanvasState.tempSections.forEach(s => renderTempNode(s));
+    CanvasState.mdNodes.forEach(n => renderMdNode(n)); // Renders the group too
+    saveTempNodes();
+
+    // Then render edges after nodes are in the DOM
+    // Use requestAnimationFrame to ensure DOM is fully updated
+    requestAnimationFrame(() => {
+        renderEdges();
+        // Schedule another render to ensure all edges are properly positioned
+        setTimeout(() => {
+            renderEdges();
+            scheduleBoundsUpdate();
+        }, 100);
+    });
+
+    // 9. Auto-Pan to the new group (镜头跟随)
+    const cx = containerNode.x + containerNode.width / 2;
+    const cy = containerNode.y + containerNode.height / 2;
+    // Zoom out slightly to see the whole package if it's big
+    const fitZoom = Math.min(1, (window.innerWidth - 100) / containerNode.width);
+    const z = Math.max(0.2, Math.min(1, fitZoom));
+
+    setCanvasZoom(z, cx, cy, { recomputeBounds: false }); // Set zoom first
+    CanvasState.panOffsetX = (window.innerWidth / 2) - (cx * z);
+    CanvasState.panOffsetY = (window.innerHeight / 2) - (cy * z);
+    updateCanvasScrollBounds();
+    savePanOffsetThrottled();
+
+    console.log('[Canvas] Import successful. ID Remapped, Offset applied, Group created.');
+}
+
+/**
+ * 5.1 数据结构适配器 (Adapter Layer)
+ * 将 chrome.bookmarks.getTree 返回的数据结构转换为 Canvas 内部的 TempSection items 格式
+ * @param {Array} chromeTree - Chrome 书签树 (chrome.bookmarks.getTree 返回值)
+ * @returns {Array} Canvas items 格式
+ */
+function __adaptChromeTreeToCanvasItems(chromeTree) {
+    if (!chromeTree || !Array.isArray(chromeTree)) return [];
+
+    const convertNode = (node) => {
+        if (!node) return null;
+
+        // 书签
+        if (node.url) {
+            return {
+                id: `snapshot-${node.id || Date.now()}-${Math.random().toString(36).substr(2, 5)}`,
+                type: 'bookmark',
+                title: node.title || node.name || node.url,
+                url: node.url
+            };
+        }
+
+        // 文件夹
+        const children = Array.isArray(node.children)
+            ? node.children.map(convertNode).filter(Boolean)
+            : [];
+
+        return {
+            id: `snapshot-${node.id || Date.now()}-${Math.random().toString(36).substr(2, 5)}`,
+            type: 'folder',
+            title: node.title || node.name || 'Folder',
+            children: children
+        };
+    };
+
+    // Chrome 书签树的根节点结构：[{ id: "0", children: [书签栏, 其他书签, ...] }]
+    const root = chromeTree[0];
+    if (!root || !Array.isArray(root.children)) return [];
+
+    // 返回根节点下的所有子节点（书签栏、其他书签等）
+    return root.children.map(convertNode).filter(Boolean);
+}
+
+// Helper: Remap all IDs to avoid collisions
+function __remapImportedData(tempState, fullStorage, primaryState = {}) {
+    const { isEn } = __getLang();
+    const idMap = new Map(); // oldId -> newId
+
+    const getNewId = (old) => {
+        if (!old) return old; // Return if null/undefined
+        if (!idMap.has(old)) idMap.set(old, `imported-${Date.now()}-${Math.floor(Math.random() * 100000)}`);
+        return idMap.get(old);
+    };
+
+    const newTempSections = [];
+    const newMdNodes = [];
+    const newEdges = [];
+    const newScrolls = {};
+
+    // 1. Handle Permanent Section (Convert to Snapshot - 永久栏目降级策略)
+    // 导入包中的"永久栏目"不可覆盖浏览器真实书签
+    // 它将自动转换为一个"快照临时栏目"
+    if (fullStorage && fullStorage['permanent-section-position']) {
+        const permPos = fullStorage['permanent-section-position'];
+        const snapshotId = getNewId('permanent-section');
+
+        // 尝试从核心数据层获取书签树快照
+        let snapshotItems = [];
+        let hasBookmarkData = false;
+
+        if (primaryState && primaryState.permanentTreeSnapshot) {
+            // 核心数据层包含完整书签树，进行适配
+            const bookmarkTree = primaryState.permanentTreeSnapshot;
+            snapshotItems = __adaptChromeTreeToCanvasItems(bookmarkTree);
+            hasBookmarkData = snapshotItems.length > 0;
+        }
+
+        const snapshotTitle = isEn
+            ? `[Snapshot] Permanent Bookmarks (${new Date().toLocaleDateString()})`
+            : `[快照] 永久栏目 (${new Date().toLocaleDateString()})`;
+
+        const snapshotDesc = hasBookmarkData
+            ? (isEn
+                ? '<p><em>This is a snapshot of the imported permanent bookmarks. It is read-only and not synced with the browser.</em></p>'
+                : '<p><em>此为导入的永久栏目快照。内容只读，与浏览器断开同步。</em></p>')
+            : (isEn
+                ? '<p><em>(Permanent section position snapshot. Bookmark data not available in this export format.)</em></p>'
+                : '<p><em>(永久栏目位置快照。此导出格式不包含书签数据。)</em></p>');
+
+        const snapshotSection = {
+            id: snapshotId,
+            title: snapshotTitle,
+            x: parseFloat(permPos.left) || 0,
+            y: parseFloat(permPos.top) || 0,
+            width: parseFloat(permPos.width) || 600,
+            height: parseFloat(permPos.height) || 600,
+            color: '4', // Greenish - 颜色区分
+            items: snapshotItems,
+            description: snapshotDesc,
+            isSnapshot: true // 标记为快照
+        };
+        newTempSections.push(snapshotSection);
+
+        // Remap scroll
+        if (fullStorage['permanent-section-scroll']) {
+            newScrolls[`temp-section-scroll:${snapshotId}`] = fullStorage['permanent-section-scroll'];
+        }
     }
 
-    // Restore scroll positions (permanent & temporary) from storage
-    if (storage) {
-        // Permanent section scroll
-        if (storage['permanent-section-scroll']) {
-            localStorage.setItem('permanent-section-scroll', JSON.stringify(storage['permanent-section-scroll']));
-        }
-        // Temporary section scrolls
-        Object.keys(storage).forEach(key => {
-            if (key.startsWith('temp-section-scroll:')) {
-                localStorage.setItem(key, JSON.stringify(storage[key]));
+    // 2. Remap Temp Sections
+    if (Array.isArray(tempState.sections)) {
+        tempState.sections.forEach(sec => {
+            const newId = getNewId(sec.id);
+            const newSec = JSON.parse(JSON.stringify(sec));
+            newSec.id = newId;
+            // Iterate items to remap internal IDs if needed? 
+            // Usually internal item IDs are unique per section. But let's keep them as is.
+
+            newTempSections.push(newSec);
+
+            // Remap scroll
+            const oldScrollKey = `temp-section-scroll:${sec.id}`;
+            if (fullStorage[oldScrollKey]) {
+                newScrolls[`temp-section-scroll:${newId}`] = fullStorage[oldScrollKey];
             }
         });
     }
 
-    __resetCanvasDomAndStateForImport();
-    try { loadPermanentSectionPosition(); } catch (_) { }
-    __applyImportedTempState(tempState);
+    // 3. Remap Md Nodes
+    if (Array.isArray(tempState.mdNodes)) {
+        tempState.mdNodes.forEach(node => {
+            const newId = getNewId(node.id);
+            // Ensure style/color are preserved
+            const newNode = { ...node, id: newId };
+            newMdNodes.push(newNode);
+        });
+    } else {
+        console.warn('[Canvas] Import: No mdNodes found in tempState', tempState);
+    }
+
+    // 4. Remap Edges
+    if (Array.isArray(tempState.edges)) {
+        tempState.edges.forEach(edge => {
+            const newFrom = idMap.has(edge.fromNode) ? idMap.get(edge.fromNode) : null;
+            const newTo = idMap.has(edge.toNode) ? idMap.get(edge.toNode) : null;
+
+            // Only keep edge if both ends exist in the imported set (or maybe connected to existing? No, pure import)
+            // If linked to 'permanent-section', it maps to our new snapshot.
+            if (newFrom && newTo) {
+                const newEdge = { ...edge, id: getNewId(edge.id), fromNode: newFrom, toNode: newTo };
+                newEdges.push(newEdge);
+            } else {
+                console.warn(`[Canvas] Skipping edge ${edge.id}: Ends not found in import batch. From: ${edge.fromNode}->${newFrom}, To: ${edge.toNode}->${newTo}`);
+            }
+        });
+    } else {
+        console.warn('[Canvas] Import: No edges found in tempState');
+    }
+
+    return { remappedNodes: { tempSections: newTempSections, mdNodes: newMdNodes }, remappedEdges: newEdges, remappedScrolls: newScrolls };
+}
+
+function __calculateNodesBoundingBox(nodesPayload) {
+    let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+    const all = [...nodesPayload.tempSections, ...nodesPayload.mdNodes];
+
+    if (all.length === 0) return { minX: 0, minY: 0, width: 800, height: 600 };
+
+    all.forEach(n => {
+        const x = parseFloat(n.x) || 0;
+        const y = parseFloat(n.y) || 0;
+        const w = parseFloat(n.width) || 300;
+        const h = parseFloat(n.height) || 300;
+        if (x < minX) minX = x;
+        if (y < minY) minY = y;
+        if (x + w > maxX) maxX = x + w;
+        if (y + h > maxY) maxY = y + h;
+    });
+
+    return { minX, minY, width: maxX - minX, height: maxY - minY };
+}
+
+function __findCurrentContentRightBound() {
+    let maxX = -Infinity;
+
+    // Check Permanent Section
+    const perm = document.getElementById('permanentSection');
+    if (perm) {
+        const rect = perm.getBoundingClientRect(); // This is viewport relative. We need Canvas Coords.
+        // Better to check style or saved state
+        const left = parseFloat(perm.style.left) || 0;
+        const width = perm.offsetWidth || 600;
+        if (left + width > maxX) maxX = left + width;
+    }
+
+    // Check Temp Sections
+    CanvasState.tempSections.forEach(s => {
+        const r = s.x + (s.width || 400);
+        if (r > maxX) maxX = r;
+    });
+
+    // Check Md Nodes
+    CanvasState.mdNodes.forEach(n => {
+        const r = n.x + (n.width || 300);
+        if (r > maxX) maxX = r;
+    });
+
+    return maxX === -Infinity ? 100 : maxX;
+}
+
+// Special Render Logic for "Import Container" (Group)
+// We need to inject this into 'renderMdNode' or handle it there. 
+// For now, let's modify the behavior by checking the subtype inside renderMdNode logic?
+// No, 'renderMdNode' in previous context treats html/text.
+// We can use the existing 'renderMdNode' and just ensuring the DELETE logic works as requested.
+
+function __setupImportContainerEvents(nodeElement, node) {
+    // This function is called after renderMdNode creates the element
+    if (node.subtype !== 'import-container') return;
+
+    // Note: The delete functionality is now handled by the toolbar's delete button
+    // which shows a popover with "Delete Frame Only" and "Delete All Content" options.
+    // No additional UI is needed here.
+}
+
+
+function deleteImportGroup(groupId) {
+    const groupNode = CanvasState.mdNodes.find(n => n.id === groupId);
+    if (!groupNode) return;
+
+    // 1. Calculate Group Rect
+    const gx = groupNode.x;
+    const gy = groupNode.y;
+    const gw = groupNode.width;
+    const gh = groupNode.height;
+
+    // 2. Find internal items
+    const idsToRemove = { temp: [], md: [] };
+
+    // Check Temp Sections
+    CanvasState.tempSections.forEach(s => {
+        // Simple center point check or full containment? 
+        // User said "inside". Let's use checking if Center is inside.
+        const cx = s.x + (s.width / 2);
+        const cy = s.y + (s.height / 2);
+        if (cx > gx && cx < gx + gw && cy > gy && cy < gy + gh) {
+            idsToRemove.temp.push(s.id);
+        }
+    });
+
+    // Check MD Nodes (exclude the group itself)
+    CanvasState.mdNodes.forEach(n => {
+        if (n.id === groupId) return;
+        const cx = n.x + (n.width / 2);
+        const cy = n.y + (n.height / 2);
+        if (cx > gx && cx < gx + gw && cy > gy && cy < gy + gh) {
+            idsToRemove.md.push(n.id);
+        }
+    });
+
+    // 3. Delete items
+    idsToRemove.temp.forEach(id => removeTempNode(id)); // This handles DOM removal and state update
+    idsToRemove.md.forEach(id => removeMdNode(id));
+
+    // 4. Delete Group
+    removeMdNode(groupId);
+
+    console.log('[Canvas] Import Group Deleted. Items removed:', idsToRemove);
 }
 
 function formatSectionText(section) {
@@ -13245,7 +14306,151 @@ function formatSectionText(section) {
 // 数据持久化
 // =============================================================================
 
+
+/**
+ * 自动调整 import-container 大小以包裹内容
+ * 策略：检查所有大部分区域（>50%）位于容器内的节点，如果它们超出容器边界，则扩展容器。
+ */
+function autoResizeImportContainers() {
+    const containers = CanvasState.mdNodes.filter(n => n.subtype === 'import-container');
+    if (containers.length === 0) return;
+
+    let changed = false;
+    const PADDING = 60;
+
+    containers.forEach(container => {
+        const children = [];
+
+        const cx = container.x;
+        const cy = container.y;
+        const cw = container.width;
+        const ch = container.height;
+
+        // 辅助函数：计算重叠并判断是否应该包含
+        const shouldContain = (node) => {
+            if (node.id === container.id) return false;
+
+            // 计算重叠区域
+            const interLeft = Math.max(node.x, cx);
+            const interTop = Math.max(node.y, cy);
+            const interRight = Math.min(node.x + node.width, cx + cw);
+            const interBottom = Math.min(node.y + node.height, cy + ch);
+
+            if (interLeft < interRight && interTop < interBottom) {
+                const intersectionArea = (interRight - interLeft) * (interBottom - interTop);
+                const nodeArea = node.width * node.height;
+                // 只有当超过 40% 的面积在容器内时，才强制容器包裹它
+                // 稍微降低阈值(40%)以增加粘性，或者50%
+                return (intersectionArea / nodeArea) > 0.4;
+            }
+            return false;
+        };
+
+        CanvasState.tempSections.forEach(node => {
+            if (shouldContain(node)) children.push(node);
+        });
+
+        CanvasState.mdNodes.forEach(node => {
+            if (shouldContain(node)) children.push(node);
+        });
+
+        if (children.length === 0) return;
+
+        // 计算所有“内部”节点的边界
+        let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+        children.forEach(c => {
+            if (c.x < minX) minX = c.x;
+            if (c.y < minY) minY = c.y;
+            if (c.x + c.width > maxX) maxX = c.x + c.width;
+            if (c.y + c.height > maxY) maxY = c.y + c.height;
+        });
+
+        // 仅在需要扩大时更新（单向增长，防止内容减少时容器缩成一团，除非用户手动调整）
+        // 实际上用户需求是“跟随...改变”，可能也期望缩回去？
+        // 但为了安全性，通常在这里只做扩大。如果要做缩小，需要知道容器的“初始”大小吗？
+        // 或者，我们可以让容器总是 tightly fitted to content + padding。
+        // 如果我们让 it tightly fitted，那么当我们把节点移出后，容器会自动缩小吗？
+        // 会的。如果移出后，remaining content 的 bbox 变小了，计算出的 newRight 就会变小。
+        // 这其实更加灵活。
+
+        // 计算新的理想边界 (tight fit)
+        // 限制：不能小于某个最小尺寸（或者原始对齐？）
+        // 这里简单地总是适应内容
+
+        // 但是要注意，如果容器本身很大，而内容很小（刚导入时的留白），一动就会缩回去。
+        // 这可能不是用户想要的（突然变小）。
+        // 只有当内容**超出**当前边界时才扩大？
+        // 用户原话：“超过他们的时候，他们也能够跟随...改变”。这通过了“扩大”的测试。
+        // 是否缩小？如果不缩小，会有很多空地。
+        // 综合考虑，只做扩大比较稳妥，避免意外的布局跳变。
+
+        const currentRight = container.x + container.width;
+        const currentBottom = container.y + container.height;
+
+        const contentLeft = minX - PADDING;
+        const contentTop = minY - PADDING;
+        const contentRight = maxX + PADDING;
+        const contentBottom = maxY + PADDING;
+
+        let newX = container.x;
+        let newY = container.y;
+        let newWidth = container.width;
+        let newHeight = container.height;
+        let hasResize = false;
+
+        // 检查左边界
+        if (contentLeft < container.x) {
+            newX = contentLeft;
+            newWidth += (container.x - contentLeft);
+            hasResize = true;
+        }
+
+        // 检查上边界
+        if (contentTop < container.y) {
+            newY = contentTop;
+            newHeight += (container.y - contentTop);
+            hasResize = true;
+        }
+
+        // 检查右边界 (需要基于新的 X)
+        if (contentRight > newX + newWidth) {
+            newWidth = contentRight - newX;
+            hasResize = true;
+        }
+
+        // 检查下边界 (需要基于新的 Y)
+        if (contentBottom > newY + newHeight) {
+            newHeight = contentBottom - newY;
+            hasResize = true;
+        }
+
+        if (hasResize) {
+            container.x = newX;
+            container.y = newY;
+            container.width = newWidth;
+            container.height = newHeight;
+
+            // Update DOM
+            const el = document.getElementById(container.id);
+            if (el) {
+                el.style.left = newX + 'px';
+                el.style.top = newY + 'px';
+                el.style.width = newWidth + 'px';
+                el.style.height = newHeight + 'px';
+            }
+            changed = true;
+        }
+    });
+
+    if (changed) {
+        try { scheduleBoundsUpdate(); } catch (_) { }
+    }
+}
+
 function saveTempNodes() {
+    // 保存前执行自动 resize
+    autoResizeImportContainers();
+
     try {
         const state = {
             sections: CanvasState.tempSections,
@@ -13395,6 +14600,14 @@ function setupCanvasEdgesLayer() {
 
     const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
     svg.setAttribute('class', 'canvas-edges');
+    // 设置样式：Z-Index 介于 Container(5) 和 TempSections(10) 之间
+    svg.style.position = 'absolute';
+    svg.style.top = '0';
+    svg.style.left = '0';
+    svg.style.width = '100%';
+    svg.style.height = '100%';
+    svg.style.zIndex = '7';
+    svg.style.pointerEvents = 'none'; // Pass through clicks to container unless hitting a path
     // Insert as first child so it's behind everything
     content.insertBefore(svg, content.firstChild);
 

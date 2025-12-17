@@ -227,8 +227,8 @@
       if (match) {
         const text = match[1];
         const marker = match[2];
-        // User wants: '-' (3+) -> H1, '=' (3+) -> H2
-        const depth = marker.startsWith('-') ? 1 : 2;
+        // Setext: '=' (3+) -> H1, '-' (3+) -> H2
+        const depth = marker.startsWith('=') ? 1 : 2;
         
         return {
           type: 'heading',

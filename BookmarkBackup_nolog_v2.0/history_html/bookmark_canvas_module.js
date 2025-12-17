@@ -18,6 +18,8 @@ const CanvasState = {
     tempSectionCounter: 0,
     tempItemCounter: 0,
     tempSectionSequenceNumber: 0,
+    tempSectionLastColor: null,
+    tempSectionPrevColor: null,
     colorCursor: 0,
     // 纯 Markdown 文本卡片（Obsidian Canvas 风格）
     mdNodes: [],
@@ -173,6 +175,29 @@ const CanvasState = {
 };
 
 // 简易本地存储封装（仅用于滚动位置）
+// 全局 Popover 状态管理 (防止穿透交互)
+function updateCanvasPopoverState(isActive) {
+    if (isActive) {
+        document.body.classList.add('canvas-popover-active');
+    } else {
+        // 延时一帧检查，确保 DOM 状态已更新
+        requestAnimationFrame(() => {
+            const hasOpen = document.querySelector('.md-format-popover.open, .temp-color-popover.open, .md-color-popover.open, .md-delete-options-popover.open');
+            if (!hasOpen) {
+                document.body.classList.remove('canvas-popover-active');
+            }
+        });
+    }
+}
+
+// 阻止 Canvas 事件冒泡 (防止 UI 内部拖动触发父级 Drag/Resize)
+function preventCanvasEventsPropagation(element) {
+    if (!element) return;
+    ['mousedown', 'dblclick', 'dragstart'].forEach(evt => {
+        element.addEventListener(evt, (e) => e.stopPropagation());
+    });
+}
+
 function __readJSON(key, fallback = null) {
     try {
         const v = localStorage.getItem(key);
@@ -656,11 +681,12 @@ function createInitialDemoTemplate() {
     const shortcutGuideHtml = isEnglish ? shortcutGuideHtml_en : shortcutGuideHtml_zh;
     const edgeLabel = isEnglish ? 'Guide' : '说明';
 
-    // 永久栏目说明卡片（位于永久栏目左侧）- 绿色
+    // 永久栏目说明卡片（位于永久栏目左侧，与永久栏目水平对齐）- 绿色
+    // 永久栏目初始位置：left=0, top=-190（与本卡片顶部对齐），横向间距180
     const bookmarkGuideNode = {
         id: 'md-node-demo-bookmark-guide',
-        x: -450,
-        y: 300,
+        x: -600,  // 右边缘(-600+420=-180) 与永久栏目(left=0)间距180
+        y: -190,  // 与永久栏目(top=-190)顶部对齐
         width: 420,
         height: 480,
         text: '',
@@ -673,12 +699,72 @@ function createInitialDemoTemplate() {
     // 快捷键说明卡片（位于永久栏目说明卡片上方）- 蓝色
     const shortcutGuideNode = {
         id: 'md-node-demo-shortcut-guide',
-        x: -450,
-        y: -170,
+        x: -600,  // 与使用说明卡片左对齐
+        y: -730,  // 使用说明顶部(y:-190) - 间距140 - 高度400 = -730
         width: 420,
         height: 400,
         text: '',
         html: shortcutGuideHtml,
+        color: '5', // 蓝色
+        fontSize: 14,
+        createdAt: Date.now()
+    };
+
+    // 中文版：打开方式与多选功能说明（强调一键连续点击）
+    const batchFeatureHtml_zh = `<h2>打开方式特色功能</h2>
+<h3>⭐ 一键连续打开</h3>
+<ul>
+<li><strong>勾选默认打开方式</strong>：右键菜单中选择并勾选你想要的打开方式</li>
+<li><strong>左键单击即生效</strong>：设置后，每次左键点击书签自动使用已选方式打开</li>
+</ul>
+<h3>可选打开方式</h3>
+<ul>
+<li><strong>同窗特定组</strong>：在同一窗口的特定标签组中打开</li>
+<li><strong>手动选择...</strong>：每次手动选择目标窗口和标签组</li>
+<li>新标签页 / 同一标签组 / 特定标签组</li>
+<li>新窗口 / 同一窗口 / 特定窗口 / 无痕窗口</li>
+</ul>
+<h3>批量操作</h3>
+<ul>
+<li><strong>选择（批量操作）</strong>：进入多选模式，支持跨栏目多选</li>
+<li><strong>文件夹自动成组</strong>：批量打开时，文件夹自动创建标签组</li>
+</ul>
+<hr>
+<p><em>提示：此卡片可自由编辑或删除</em></p>`;
+
+    // 英文版：打开方式与多选功能说明
+    const batchFeatureHtml_en = `<h2>Open Mode Features</h2>
+<h3>⭐ One-Click Continuous Open</h3>
+<ul>
+<li><strong>Check default open mode</strong>: Right-click menu to select and check your preferred mode</li>
+<li><strong>Left-click to open</strong>: After setting, each left-click opens bookmark in the chosen mode</li>
+</ul>
+<h3>Available Open Modes</h3>
+<ul>
+<li><strong>Same Window + Specific Group</strong>: Open in specific tab group of same window</li>
+<li><strong>Manual Select...</strong>: Manually choose target window and tab group each time</li>
+<li>New Tab / Same Group / Specific Group</li>
+<li>New Window / Same Window / Specific Window / Incognito</li>
+</ul>
+<h3>Batch Operations</h3>
+<ul>
+<li><strong>Select (Batch)</strong>: Enter multi-select mode, supports cross-column selection</li>
+<li><strong>Auto folder grouping</strong>: Folders auto-create tab groups when batch opening</li>
+</ul>
+<hr>
+<p><em>Tip: This card can be freely edited or deleted</em></p>`;
+
+    const batchFeatureHtml = isEnglish ? batchFeatureHtml_en : batchFeatureHtml_zh;
+
+    // 多选功能说明卡片（位于使用说明卡片下方）- 蓝色
+    const batchFeatureNode = {
+        id: 'md-node-demo-batch-feature',
+        x: -600,  // 与使用说明卡片左对齐
+        y: 430,  // 使用说明底部(y:-190+480=290) + 间距140 = 430
+        width: 420,
+        height: 420,  // 稍微增高以容纳更多内容
+        text: '',
+        html: batchFeatureHtml,
         color: '5', // 蓝色
         fontSize: 14,
         createdAt: Date.now()
@@ -710,13 +796,226 @@ function createInitialDemoTemplate() {
         label: ''
     };
 
+    // 从使用说明连接到多选功能说明的演示连接线（蓝色）
+    const edge3 = {
+        id: 'edge-demo-3',
+        fromNode: 'md-node-demo-bookmark-guide',
+        fromSide: 'bottom',
+        toNode: 'md-node-demo-batch-feature',
+        toSide: 'top',
+        direction: 'none',
+        color: '5', // 蓝色
+        colorHex: null,
+        label: ''
+    };
+
     return {
-        mdNodes: [bookmarkGuideNode, shortcutGuideNode],
-        edges: [edge1, edge2],
-        mdNodeCounter: 2,
-        edgeCounter: 2
+        mdNodes: [bookmarkGuideNode, shortcutGuideNode, batchFeatureNode],
+        edges: [edge1, edge2, edge3],
+        mdNodeCounter: 3,
+        edgeCounter: 3
     };
 }
+
+/**
+ * 在当前视口中找到一个可用的位置
+ * 第一个放在视口正中间，后续向右下偏移
+ * @param {number} width - 新元素的宽度
+ * @param {number} height - 新元素的高度
+ * @returns {{x: number, y: number, needsHigherZIndex: boolean}} - 可用位置的 Canvas 坐标
+ */
+// 用于跟踪导入偏移的计数器
+let importPositionOffset = 0;
+
+function findAvailablePositionInViewport(width = TEMP_SECTION_DEFAULT_WIDTH, height = TEMP_SECTION_DEFAULT_HEIGHT) {
+    const workspace = document.getElementById('canvasWorkspace');
+    if (!workspace) {
+        return { x: 100, y: 100, needsHigherZIndex: false };
+    }
+
+    const rect = workspace.getBoundingClientRect();
+    const zoom = CanvasState.zoom || 1;
+    const panX = CanvasState.panOffsetX || 0;
+    const panY = CanvasState.panOffsetY || 0;
+
+    // 计算当前视口中心的 Canvas 坐标
+    const viewportCenterScreenX = rect.width / 2;
+    const viewportCenterScreenY = rect.height / 2;
+    const viewportCenterCanvasX = (viewportCenterScreenX - panX) / zoom;
+    const viewportCenterCanvasY = (viewportCenterScreenY - panY) / zoom;
+
+    // 计算新元素的位置（左上角坐标，使元素居中于视口）
+    // 每次导入向右下偏移一些距离
+    const offsetStep = 40;  // 每次偏移的距离
+    const offsetX = importPositionOffset * offsetStep;
+    const offsetY = importPositionOffset * offsetStep * 0.5;  // Y方向偏移较小
+
+    const targetX = viewportCenterCanvasX - width / 2 + offsetX;
+    const targetY = viewportCenterCanvasY - height / 2 + offsetY;
+
+    // 更新偏移计数器（循环使用，避免偏移过大）
+    importPositionOffset = (importPositionOffset + 1) % 8;
+
+    return {
+        x: targetX,
+        y: targetY,
+        needsHigherZIndex: true  // 所有导入的栏目都设置更高z-index，确保可见
+    };
+}
+
+/**
+ * 在 Canvas UI 中显示 Toast 通知
+ * 显示在左上角悬浮工具窗下方
+ * @param {string} message - 通知消息
+ * @param {string} type - 类型：'success' | 'error' | 'info' | 'warning'
+ * @param {number} duration - 显示时长（毫秒），默认 3000
+ */
+function showCanvasToast(message, type = 'info', duration = 3000) {
+    // 移除之前的同类提示（防止堆积）
+    const existingToast = document.querySelector('.canvas-toast');
+    if (existingToast) {
+        existingToast.remove();
+    }
+
+    // 创建新的提示
+    const toast = document.createElement('div');
+    toast.className = 'canvas-toast';
+
+    // 基础样式 - 左上角，在悬浮工具窗下方
+    toast.style.cssText = `
+        position: fixed;
+        top: 60px;
+        left: 12px;
+        padding: 10px 16px;
+        border-radius: 8px;
+        font-size: 13px;
+        z-index: 100000;
+        box-shadow: 0 4px 16px rgba(0, 0, 0, 0.25);
+        max-width: 320px;
+        word-break: break-word;
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        animation: canvasToastSlideDown 0.3s ease;
+        backdrop-filter: blur(8px);
+    `;
+
+    // 根据类型设置颜色和图标
+    let icon = '';
+    switch (type) {
+        case 'success':
+            toast.style.backgroundColor = 'rgba(16, 185, 129, 0.95)';
+            toast.style.color = '#ffffff';
+            toast.style.border = '1px solid rgba(255, 255, 255, 0.2)';
+            icon = '<i class="fas fa-check-circle" style="font-size: 14px;"></i>';
+            break;
+        case 'error':
+            toast.style.backgroundColor = 'rgba(239, 68, 68, 0.95)';
+            toast.style.color = '#ffffff';
+            toast.style.border = '1px solid rgba(255, 255, 255, 0.2)';
+            icon = '<i class="fas fa-exclamation-circle" style="font-size: 14px;"></i>';
+            break;
+        case 'warning':
+            toast.style.backgroundColor = 'rgba(245, 158, 11, 0.95)';
+            toast.style.color = '#ffffff';
+            toast.style.border = '1px solid rgba(255, 255, 255, 0.2)';
+            icon = '<i class="fas fa-exclamation-triangle" style="font-size: 14px;"></i>';
+            break;
+        case 'info':
+        default:
+            toast.style.backgroundColor = 'rgba(59, 130, 246, 0.95)';
+            toast.style.color = '#ffffff';
+            toast.style.border = '1px solid rgba(255, 255, 255, 0.2)';
+            icon = '<i class="fas fa-info-circle" style="font-size: 14px;"></i>';
+            break;
+    }
+
+    toast.innerHTML = `${icon}<span>${message}</span>`;
+
+    // 添加动画样式（如果还没有）
+    if (!document.getElementById('canvas-toast-styles')) {
+        const style = document.createElement('style');
+        style.id = 'canvas-toast-styles';
+        style.textContent = `
+            @keyframes canvasToastSlideDown {
+                from {
+                    transform: translateY(-20px);
+                    opacity: 0;
+                }
+                to {
+                    transform: translateY(0);
+                    opacity: 1;
+                }
+            }
+            @keyframes canvasToastSlideUp {
+                from {
+                    transform: translateY(0);
+                    opacity: 1;
+                }
+                to {
+                    transform: translateY(-20px);
+                    opacity: 0;
+                }
+            }
+        `;
+        document.head.appendChild(style);
+    }
+
+    document.body.appendChild(toast);
+
+    // 自动移除
+    setTimeout(() => {
+        toast.style.animation = 'canvasToastSlideUp 0.3s ease';
+        setTimeout(() => {
+            if (toast.parentNode) {
+                toast.remove();
+            }
+        }, 300);
+    }, duration);
+}
+
+/**
+ * 给元素添加呼吸式闪烁效果
+ * @param {HTMLElement} element - 要添加效果的元素
+ * @param {number} duration - 效果持续时间（毫秒），默认1500
+ */
+function pulseBreathingEffect(element, duration = 1500) {
+    if (!element) return;
+
+    // 添加呼吸动画样式（如果还没有）
+    if (!document.getElementById('canvas-breathing-styles')) {
+        const style = document.createElement('style');
+        style.id = 'canvas-breathing-styles';
+        style.textContent = `
+            @keyframes canvasBreathingPulse {
+                0%, 100% {
+                    box-shadow: 0 0 0 0 rgba(255, 215, 0, 0.7),
+                                0 4px 12px rgba(0, 0, 0, 0.15);
+                    transform: scale(1);
+                }
+                50% {
+                    box-shadow: 0 0 0 10px rgba(255, 215, 0, 0.4),
+                                0 0 25px rgba(255, 215, 0, 0.5),
+                                0 4px 12px rgba(0, 0, 0, 0.15);
+                    transform: scale(1.01);
+                }
+            }
+            .canvas-breathing-pulse {
+                animation: canvasBreathingPulse 0.75s ease-in-out 2;
+            }
+        `;
+        document.head.appendChild(style);
+    }
+
+    // 添加动画类
+    element.classList.add('canvas-breathing-pulse');
+
+    // 动画结束后移除类
+    setTimeout(() => {
+        element.classList.remove('canvas-breathing-pulse');
+    }, duration);
+}
+
 function formatTimestampForTitle(date = new Date()) {
     const yyyy = date.getFullYear();
     const mm = String(date.getMonth() + 1).padStart(2, '0');
@@ -733,6 +1032,140 @@ function getDefaultTempSectionTitle() {
     } catch (_) {
         return new Date().toLocaleString();
     }
+}
+
+function escapeRegExp(value) {
+    return String(value || '').replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+function toAlphaLabel(n) {
+    let num = parseInt(n, 10);
+    if (!Number.isFinite(num) || num <= 0) return '';
+    let s = '';
+    while (num > 0) {
+        const rem = (num - 1) % 26;
+        s = String.fromCharCode(65 + rem) + s;
+        num = Math.floor((num - 1) / 26);
+    }
+    return s;
+}
+
+function getTempSectionLabel(section) {
+    if (!section) return '';
+    const explicit = (typeof section.label === 'string') ? section.label.trim() : '';
+    if (explicit) return explicit;
+    if (section.sequenceNumber) return toAlphaLabel(section.sequenceNumber);
+    return '';
+}
+
+function shouldUseWideBadge(label) {
+    return typeof label === 'string' && label.includes('-');
+}
+
+function applyTempSectionBadge(badge, label) {
+    if (!badge) return;
+    badge.textContent = label || '';
+    badge.classList.toggle('temp-node-sequence-badge-wide', shouldUseWideBadge(label));
+}
+
+function isDescendantLabel(parentLabel, candidateLabel) {
+    if (!parentLabel || !candidateLabel) return false;
+    if (parentLabel === candidateLabel) return false;
+    const base = String(parentLabel);
+    const candidate = String(candidateLabel);
+    if (/\d$/.test(base)) {
+        if (!candidate.startsWith(`${base}-`)) return false;
+        const rest = candidate.slice(base.length + 1);
+        return /^\d/.test(rest);
+    }
+    if (!candidate.startsWith(base)) return false;
+    const rest = candidate.slice(base.length);
+    return /^\d/.test(rest);
+}
+
+function getParentLabel(label) {
+    const value = String(label || '').trim();
+    if (!value) return '';
+    const dashIndex = value.lastIndexOf('-');
+    if (dashIndex > 0) {
+        return value.slice(0, dashIndex);
+    }
+    const match = value.match(/^([A-Z]+)\d+$/);
+    if (match) return match[1];
+    return '';
+}
+
+function buildTempSectionLabelMap() {
+    const map = new Map();
+    CanvasState.tempSections.forEach(section => {
+        const label = getTempSectionLabel(section);
+        if (label) map.set(label, section);
+    });
+    return map;
+}
+
+function hasLockedAncestor(parentLabel, candidateLabel, labelMap) {
+    let current = getParentLabel(candidateLabel);
+    while (current) {
+        if (current === parentLabel) return false;
+        const section = labelMap.get(current);
+        if (section && section.colorLocked) return true;
+        current = getParentLabel(current);
+    }
+    return false;
+}
+
+function updateTempSectionColor(section, color) {
+    if (!section) return;
+    section.color = color || TEMP_SECTION_DEFAULT_COLOR;
+    const element = document.getElementById(section.id);
+    if (!element) return;
+    const header = element.querySelector('.temp-node-header');
+    const colorInput = element.querySelector('.temp-node-color-input');
+    const colorBtn = element.querySelector('.temp-node-color-btn');
+    applyTempSectionColor(section, element, header, colorBtn, colorInput);
+}
+
+function propagateTempSectionColor(parentSection, color) {
+    if (!parentSection) return;
+    const parentLabel = getTempSectionLabel(parentSection);
+    if (!parentLabel) return;
+    const labelMap = buildTempSectionLabelMap();
+    CanvasState.tempSections.forEach(section => {
+        if (!section || section.id === parentSection.id) return;
+        const label = getTempSectionLabel(section);
+        if (label && isDescendantLabel(parentLabel, label)) {
+            if (section.colorLocked) return;
+            if (hasLockedAncestor(parentLabel, label, labelMap)) return;
+            updateTempSectionColor(section, color);
+        }
+    });
+}
+
+function getSplitTempSectionLabel(parentSection) {
+    if (!parentSection) return '';
+    let base = getTempSectionLabel(parentSection);
+    if (!base) base = String(parentSection.title || '').trim();
+    if (!base) return '';
+
+    const needsDash = /\d$/.test(base);
+    const separator = needsDash ? '-' : '';
+    const pattern = new RegExp(`^${escapeRegExp(base)}${separator ? '\\-' : ''}(\\d+)$`);
+    let maxIndex = 0;
+
+    CanvasState.tempSections.forEach(section => {
+        const label = getTempSectionLabel(section);
+        if (!label) return;
+        const match = label.match(pattern);
+        if (match) {
+            const num = parseInt(match[1], 10);
+            if (Number.isFinite(num)) {
+                maxIndex = Math.max(maxIndex, num);
+            }
+        }
+    });
+
+    return `${base}${separator}${maxIndex + 1}`;
 }
 
 function pickTempSectionColor() {
@@ -1219,31 +1652,926 @@ function initCanvasView() {
 function setupCanvasDropFeedback() {
     const workspace = document.getElementById('canvasWorkspace');
     if (!workspace) return;
+
+    // 检测是否是来自浏览器书签侧边栏的拖拽
+    const isBrowserBookmarkDrag = (e) => {
+        if (!e.dataTransfer) return false;
+        const types = e.dataTransfer.types || [];
+        // 浏览器书签拖拽通常包含这些类型
+        const hasUrl = types.includes('text/uri-list') || types.includes('text/plain');
+        // 排除我们自己扩展的拖拽
+        const isOurDrag = CanvasState.dragState.dragSource === 'permanent' ||
+            CanvasState.dragState.dragSource === 'temporary';
+        return hasUrl && !isOurDrag;
+    };
+
     workspace.addEventListener('dragenter', (e) => {
         if (CanvasState.dragState.dragSource === 'permanent') {
             workspace.classList.add('canvas-drop-active');
+        } else if (isBrowserBookmarkDrag(e)) {
+            // 浏览器书签侧边栏拖入
+            workspace.classList.add('canvas-drop-active', 'browser-bookmark-drop');
         }
     });
+
     workspace.addEventListener('dragleave', (e) => {
         if (!workspace.contains(e.relatedTarget)) {
-            workspace.classList.remove('canvas-drop-active');
+            workspace.classList.remove('canvas-drop-active', 'browser-bookmark-drop');
         }
     });
+
     workspace.addEventListener('dragover', (e) => {
         if (CanvasState.dragState.dragSource === 'permanent') {
             e.preventDefault();
             try { if (e.dataTransfer) e.dataTransfer.dropEffect = 'copy'; } catch (_) { }
             workspace.classList.add('canvas-drop-active');
-            const rect = workspace.getBoundingClientRect();
-            const x = ((e.clientX - rect.left) / rect.width) * 100;
-            const y = ((e.clientY - rect.top) / rect.height) * 100;
-            workspace.style.setProperty('--drop-x', `${x}%`);
-            workspace.style.setProperty('--drop-y', `${y}%`);
+        } else if (isBrowserBookmarkDrag(e)) {
+            // 允许浏览器书签拖放
+            e.preventDefault();
+            try { if (e.dataTransfer) e.dataTransfer.dropEffect = 'copy'; } catch (_) { }
+            workspace.classList.add('canvas-drop-active', 'browser-bookmark-drop');
         }
     });
-    workspace.addEventListener('drop', (e) => {
+
+    workspace.addEventListener('drop', async (e) => {
         try { e.preventDefault(); } catch (_) { }
-        workspace.classList.remove('canvas-drop-active');
+        workspace.classList.remove('canvas-drop-active', 'browser-bookmark-drop');
+
+        // 检查是否是浏览器书签侧边栏拖拽
+        if (isBrowserBookmarkDrag(e)) {
+            await handleBrowserBookmarkDrop(e);
+        }
+    });
+}
+
+/**
+ * 处理从浏览器书签侧边栏拖入的书签/文件夹
+ */
+async function handleBrowserBookmarkDrop(e) {
+    const { isEn } = __getLang();
+    const dataTransfer = e.dataTransfer;
+    if (!dataTransfer) return;
+
+    // 获取所有可用的拖拽数据类型
+    const types = Array.from(dataTransfer.types || []);
+
+    // 获取各种格式的数据
+    let uriList = '';
+    let plainText = '';
+    let htmlData = '';
+
+    try {
+        uriList = dataTransfer.getData('text/uri-list') || '';
+        plainText = dataTransfer.getData('text/plain') || '';
+        htmlData = dataTransfer.getData('text/html') || '';
+    } catch (err) {
+        console.warn('[Canvas] 获取拖拽数据失败:', err);
+    }
+
+    // 解析 URL 列表（可能有多个，用换行符分隔）
+    let urls = [];
+    const rawUrls = (uriList || plainText || '').split(/[\r\n]+/).map(s => s.trim()).filter(s => s);
+    for (const u of rawUrls) {
+        if (u.match(/^(https?|ftp|file):\/\//i)) {
+            urls.push(u);
+        }
+    }
+
+    // 计算放置位置（Canvas 坐标）
+    const workspace = document.getElementById('canvasWorkspace');
+    if (!workspace) return;
+    const rect = workspace.getBoundingClientRect();
+    const zoom = CanvasState.zoom || 1;
+    const dropX = (e.clientX - rect.left - CanvasState.panOffsetX) / zoom;
+    const dropY = (e.clientY - rect.top - CanvasState.panOffsetY) / zoom;
+
+    if (urls.length > 1) {
+        // 多个 URL：文件夹拖拽，扁平展示所有书签
+        console.log('[Canvas] 检测到多个 URL，扁平展示所有书签');
+        await createTempNodeFromMultipleUrlsFlat(urls, dropX, dropY);
+    } else if (urls.length === 1) {
+        // 单个 URL：直接创建包含单个书签的临时栏目
+        console.log('[Canvas] 检测到单个 URL，创建单个书签临时栏目');
+        let title = '';
+        if (htmlData) {
+            const match = htmlData.match(/<a[^>]*>([^<]*)<\/a>/i);
+            if (match && match[1]) {
+                title = match[1].trim();
+            }
+        }
+        // 尝试从书签库获取真实标题
+        if (browserAPI && browserAPI.bookmarks) {
+            try {
+                const results = await browserAPI.bookmarks.search({ url: urls[0] });
+                if (results && results.length > 0) {
+                    title = results[0].title || title;
+                }
+            } catch (e) { }
+        }
+        await createTempNodeFromBrowserBookmark({
+            title: title || urls[0],
+            url: urls[0],
+            type: 'bookmark'
+        }, dropX, dropY);
+    } else {
+        // 没有有效 URL，尝试作为文件夹名称匹配
+        const folderName = plainText.trim().split(/[\r\n]+/)[0].trim();
+        if (folderName && !folderName.match(/^(https?|ftp|file):\/\//i)) {
+            console.log('[Canvas] 尝试匹配文件夹:', folderName);
+            await handleBrowserBookmarkFolderDrop(folderName, dropX, dropY);
+        } else {
+            showCanvasToast(isEn ? 'Unable to recognize dropped content' : '无法识别拖入的内容', 'warning');
+        }
+    }
+}
+
+/**
+ * 获取书签的完整路径字符串（从根到父文件夹）
+ */
+async function getBookmarkPathString(folderId) {
+    if (!browserAPI || !browserAPI.bookmarks || !folderId) return '';
+
+    try {
+        const pathParts = [];
+        let currentId = folderId;
+
+        // 向上遍历获取路径
+        while (currentId && currentId !== '0') {
+            const nodes = await browserAPI.bookmarks.get(currentId);
+            if (!nodes || !nodes[0]) break;
+
+            const node = nodes[0];
+            if (node.title) {
+                pathParts.unshift(node.title);
+            }
+            currentId = node.parentId;
+        }
+
+        return pathParts.join(' > ') || '';
+    } catch (e) {
+        console.warn('[Canvas] 获取书签路径失败:', e);
+        return '';
+    }
+}
+
+/**
+ * 从多个 URL 创建临时栏目（扁平展示，不嵌套）
+ */
+async function createTempNodeFromMultipleUrlsFlat(urls, dropX, dropY) {
+    const { isEn } = __getLang();
+
+    if (!urls || urls.length === 0) return;
+
+    // 收集所有书签信息，并记录第一个书签的路径
+    const bookmarks = [];
+    let sourcePath = '';
+
+    for (const url of urls) {
+        let title = url;
+        let bookmarkPath = '';
+        // 尝试从书签库获取真实标题和路径
+        if (browserAPI && browserAPI.bookmarks) {
+            try {
+                const results = await browserAPI.bookmarks.search({ url: url });
+                if (results && results.length > 0) {
+                    title = results[0].title || url;
+                    // 获取第一个书签的完整路径
+                    if (!sourcePath && results[0].parentId) {
+                        sourcePath = await getBookmarkPathString(results[0].parentId);
+                    }
+                }
+            } catch (e) { }
+        }
+        bookmarks.push({
+            title: title,
+            url: url,
+            type: 'bookmark'
+        });
+    }
+
+    // 生成标题：时间 + 书签数量 + 来源说明
+    const now = new Date();
+    const timeStr = now.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' });
+    const dateStr = now.toLocaleDateString('zh-CN', { month: '2-digit', day: '2-digit' });
+    const sourceInfo = isEn
+        ? `${dateStr} ${timeStr} | ${bookmarks.length} bookmarks | Browser drop`
+        : `${dateStr} ${timeStr} | ${bookmarks.length}个书签 | 浏览器拖入`;
+
+    // 生成说明：书签路径
+    const description = sourcePath
+        ? (isEn ? `Source: ${sourcePath}` : `来源路径：${sourcePath}`)
+        : '';
+
+    // 创建临时栏目
+    const sectionId = `temp-section-${++CanvasState.tempSectionCounter}`;
+    const section = {
+        id: sectionId,
+        title: sourceInfo,
+        description: description,  // 添加说明
+        label: isEn ? 'Drop' : '拖入',  // 左边标签：拖入
+        color: pickTempSectionColor(),
+        x: dropX,
+        y: dropY,
+        width: TEMP_SECTION_DEFAULT_WIDTH,
+        height: TEMP_SECTION_DEFAULT_HEIGHT,
+        createdAt: Date.now(),
+        source: 'browser-drop',  // 标记来源
+        items: bookmarks.map((bm, index) => ({
+            id: `temp-${sectionId}-${++CanvasState.tempItemCounter}`,
+            sectionId: sectionId,
+            title: bm.title,
+            url: bm.url,
+            type: 'bookmark',
+            children: [],
+            createdAt: Date.now()
+        }))
+    };
+
+    CanvasState.tempSections.push(section);
+    renderTempNode(section);
+
+    // 设置更高的 z-index 和呼吸效果
+    const nodeElement = document.getElementById(section.id);
+    if (nodeElement) {
+        nodeElement.style.zIndex = '500';
+        pulseBreathingEffect(nodeElement, 1500);
+    }
+
+    saveTempNodes();
+
+    // 显示提示，说明浏览器限制
+    showCanvasToast(
+        isEn
+            ? `Created section with ${bookmarks.length} bookmarks. Note: Due to browser limitations, folder structure cannot be preserved.`
+            : `已创建临时栏目，包含 ${bookmarks.length} 个书签。提示：由于浏览器限制，无法保留文件夹层级结构。`,
+        'info',
+        4000  // 显示 4 秒
+    );
+}
+
+/**
+ * 处理单个 URL 的拖放：查找父文件夹，智能判断是否导入整个文件夹
+ */
+async function handleSingleUrlDrop(url, htmlData, dropX, dropY) {
+    const { isEn } = __getLang();
+
+    // 从 HTML 获取标题
+    let title = '';
+    if (htmlData) {
+        const match = htmlData.match(/<a[^>]*>([^<]*)<\/a>/i);
+        if (match && match[1]) {
+            title = match[1].trim();
+        }
+    }
+
+    // 尝试在书签库中找到这个 URL
+    if (browserAPI && browserAPI.bookmarks) {
+        try {
+            const results = await browserAPI.bookmarks.search({ url: url });
+            if (results && results.length > 0) {
+                const bookmark = results[0];
+                let parentId = String(bookmark.parentId); // 确保是字符串
+
+                console.log('[Canvas] 书签 parentId:', parentId, '类型:', typeof bookmark.parentId);
+
+                // 根级文件夹的 ID（不应该导入整个根文件夹）
+                const rootFolderIds = ['0', '1', '2']; // 0=root, 1=Bookmarks Bar, 2=Other Bookmarks
+                const isRootFolder = rootFolderIds.includes(parentId);
+
+                // 获取父文件夹信息
+                if (parentId) {
+                    const parents = await browserAPI.bookmarks.get(parentId);
+                    if (parents && parents[0] && !parents[0].url) {
+                        const parentFolder = parents[0];
+                        const folderTitle = parentFolder.title || '';
+
+                        // 根级文件夹名称列表（不应该导入整个根文件夹）
+                        const rootFolderNames = [
+                            'Bookmarks Bar', '书签栏', 'Bookmark Bar',
+                            'Other Bookmarks', '其他书签', 'Other bookmarks',
+                            'Mobile Bookmarks', '移动设备书签', 'Mobile bookmarks',
+                            'Bookmarks', '书签'
+                        ];
+                        const isRootFolder = rootFolderNames.some(name =>
+                            folderTitle.toLowerCase() === name.toLowerCase()
+                        );
+
+                        console.log('[Canvas] 父文件夹:', folderTitle, 'ID:', parentId, '是根文件夹:', isRootFolder);
+
+                        if (isRootFolder) {
+                            // 书签直接位于根文件夹下，创建单个书签
+                            console.log('[Canvas] 书签位于根文件夹下，直接创建单个书签');
+                        } else {
+                            // 获取父文件夹内的直接子项数量
+                            const children = await browserAPI.bookmarks.getChildren(parentId);
+                            const directChildCount = children ? children.length : 0;
+
+                            console.log('[Canvas] 普通文件夹，直接子项数量:', directChildCount);
+
+                            // 如果父文件夹有多个子项，说明用户拖动的是文件夹，自动导入整个文件夹
+                            if (directChildCount > 1) {
+                                console.log('[Canvas] 检测到不完整的文件夹拖拽，自动导入整个文件夹');
+                                await createTempNodeFromBookmarkFolder(parentFolder, dropX, dropY);
+                                return;
+                            }
+                            // 父文件夹只有一个书签，直接创建单个书签
+                        }
+                    }
+                }
+            }
+        } catch (error) {
+            console.warn('[Canvas] 查找书签失败:', error);
+        }
+    }
+
+    // 如果无法找到父文件夹，或父文件夹只有一个书签，直接创建单个书签的临时栏目
+    await createTempNodeFromBrowserBookmark({
+        title: title || url,
+        url: url,
+        type: 'bookmark'
+    }, dropX, dropY);
+}
+
+/**
+ * 显示导入选择对话框：让用户选择导入单个书签还是整个文件夹
+ */
+async function showImportChoiceDialog(bookmark, parentFolder, dropX, dropY) {
+    const { isEn } = __getLang();
+
+    // 移除已有的对话框
+    const existingDialog = document.getElementById('importChoiceDialog');
+    if (existingDialog) existingDialog.remove();
+
+    // 获取文件夹内的书签数量
+    let folderBookmarkCount = 0;
+    try {
+        const subTree = await browserAPI.bookmarks.getSubTree(parentFolder.id);
+        if (subTree && subTree[0]) {
+            const countBookmarks = (node) => {
+                let count = 0;
+                if (node.url) count = 1;
+                if (node.children) {
+                    for (const child of node.children) {
+                        count += countBookmarks(child);
+                    }
+                }
+                return count;
+            };
+            folderBookmarkCount = countBookmarks(subTree[0]);
+        }
+    } catch (e) { }
+
+    // 创建对话框
+    const dialog = document.createElement('div');
+    dialog.id = 'importChoiceDialog';
+    dialog.className = 'import-dialog';
+    dialog.innerHTML = `
+        <div class="import-dialog-content" style="max-width: 420px;">
+            <div class="import-dialog-header">
+                <h3>${isEn ? 'Import Options' : '导入选项'}</h3>
+                <button class="import-dialog-close">&times;</button>
+            </div>
+            <div class="import-dialog-body">
+                <p style="margin-bottom: 16px; color: var(--text-secondary);">
+                    ${isEn
+            ? `This bookmark is in folder "${parentFolder.title}". What would you like to import?`
+            : `此书签位于文件夹「${parentFolder.title}」中，您要导入什么？`}
+                </p>
+                <div class="import-options">
+                    <button class="import-option-btn" id="importSingleBtn">
+                        <i class="fas fa-bookmark" style="color: var(--accent-primary);"></i>
+                        <div style="flex: 1; text-align: left;">
+                            <div style="font-weight: 600;">${isEn ? 'Single Bookmark' : '单个书签'}</div>
+                            <div style="font-size: 12px; color: var(--text-secondary); margin-top: 2px;">
+                                ${bookmark.title || bookmark.url}
+                            </div>
+                        </div>
+                    </button>
+                    <button class="import-option-btn" id="importFolderBtn">
+                        <i class="fas fa-folder" style="color: var(--warning);"></i>
+                        <div style="flex: 1; text-align: left;">
+                            <div style="font-weight: 600;">${isEn ? 'Entire Folder' : '整个文件夹'}</div>
+                            <div style="font-size: 12px; color: var(--text-secondary); margin-top: 2px;">
+                                ${parentFolder.title} (${folderBookmarkCount} ${isEn ? 'bookmarks' : '个书签'})
+                            </div>
+                        </div>
+                    </button>
+                </div>
+            </div>
+        </div>
+    `;
+
+    document.body.appendChild(dialog);
+
+    // 绑定事件
+    dialog.querySelector('.import-dialog-close').onclick = () => dialog.remove();
+    dialog.onclick = (e) => {
+        if (e.target === dialog) dialog.remove();
+    };
+
+    dialog.querySelector('#importSingleBtn').onclick = async () => {
+        dialog.remove();
+        await createTempNodeFromBrowserBookmark({
+            title: bookmark.title || bookmark.url,
+            url: bookmark.url,
+            type: 'bookmark'
+        }, dropX, dropY);
+    };
+
+    dialog.querySelector('#importFolderBtn').onclick = async () => {
+        dialog.remove();
+        await createTempNodeFromBookmarkFolder(parentFolder, dropX, dropY);
+    };
+}
+
+/**
+ * 获取书签的祖先路径（从根到当前节点的 ID 列表）
+ */
+async function getBookmarkAncestorPath(bookmarkId) {
+    const path = [];
+    let currentId = bookmarkId;
+
+    try {
+        while (currentId && currentId !== '0') {
+            path.unshift(currentId);
+            const nodes = await browserAPI.bookmarks.get(currentId);
+            if (nodes && nodes[0] && nodes[0].parentId) {
+                currentId = nodes[0].parentId;
+            } else {
+                break;
+            }
+        }
+    } catch (e) {
+        console.warn('[Canvas] 获取书签祖先路径失败:', e);
+    }
+
+    return path;
+}
+
+/**
+ * 找到多个路径的最近公共祖先
+ * @param {Array<Array<string>>} paths - 多个祖先路径数组
+ * @returns {string|null} - 最近公共祖先的 ID
+ */
+function findLowestCommonAncestor(paths) {
+    if (!paths || paths.length === 0) return null;
+    if (paths.length === 1) {
+        // 单个路径，返回倒数第二个（父文件夹）
+        return paths[0].length > 1 ? paths[0][paths[0].length - 2] : null;
+    }
+
+    // 找到最短路径长度
+    const minLen = Math.min(...paths.map(p => p.length));
+
+    // 从根开始，找最后一个共同的祖先
+    let lcaIndex = -1;
+    for (let i = 0; i < minLen; i++) {
+        const id = paths[0][i];
+        if (paths.every(p => p[i] === id)) {
+            lcaIndex = i;
+        } else {
+            break;
+        }
+    }
+
+    return lcaIndex >= 0 ? paths[0][lcaIndex] : null;
+}
+
+/**
+ * 从多个 URL 创建临时栏目（文件夹拖拽）
+ * 通过书签 API 搜索匹配的书签来获取原始标题和文件夹结构
+ */
+async function createTempNodeFromMultipleUrls(urls, dropX, dropY) {
+    const { isEn } = __getLang();
+
+    if (!urls || urls.length === 0) return;
+
+    // 使用书签 API 搜索每个 URL 对应的书签
+    let bookmarks = [];
+    let commonParentId = null;
+    let commonParentTitle = null;
+
+    if (browserAPI && browserAPI.bookmarks) {
+        try {
+            // 获取每个 URL 对应的书签及其祖先路径
+            const bookmarkInfos = [];
+
+            for (const url of urls) {
+                const results = await browserAPI.bookmarks.search({ url: url });
+                if (results && results.length > 0) {
+                    const bm = results[0];
+                    // 获取这个书签的祖先路径
+                    const ancestors = await getBookmarkAncestorPath(bm.id);
+                    bookmarkInfos.push({
+                        bookmark: bm,
+                        ancestors: ancestors // 从根到当前的 ID 路径
+                    });
+                }
+            }
+
+            console.log('[Canvas] 书签信息:', bookmarkInfos.length, '个');
+
+            // 如果成功获取了所有书签信息，找最近公共祖先
+            if (bookmarkInfos.length === urls.length && bookmarkInfos.length > 0) {
+                // 找到最近公共祖先（LCA）
+                const lcaId = findLowestCommonAncestor(bookmarkInfos.map(info => info.ancestors));
+
+                if (lcaId && lcaId !== '0' && lcaId !== '1' && lcaId !== '2') {
+                    console.log('[Canvas] 找到最近公共祖先:', lcaId);
+                    const folder = await browserAPI.bookmarks.get(lcaId);
+                    if (folder && folder[0] && !folder[0].url) {
+                        // 确认是文件夹，使用 createTempNodeFromBookmarkFolder
+                        await createTempNodeFromBookmarkFolder(folder[0], dropX, dropY);
+                        return; // 已完成，直接返回
+                    }
+                }
+            }
+
+            // 如果无法确定公共祖先，逐个收集书签信息
+            for (const info of bookmarkInfos) {
+                bookmarks.push({
+                    title: info.bookmark.title || info.bookmark.url,
+                    url: info.bookmark.url,
+                    parentId: info.bookmark.parentId
+                });
+            }
+
+            // 补充未找到的 URL
+            if (bookmarks.length < urls.length) {
+                for (const url of urls) {
+                    if (!bookmarks.find(b => b.url === url)) {
+                        bookmarks.push({ title: url, url: url, parentId: null });
+                    }
+                }
+            }
+        } catch (error) {
+            console.warn('[Canvas] 搜索书签失败，使用 URL 作为标题:', error);
+        }
+    }
+
+    // 如果书签 API 搜索失败或未启用，使用 URL 提取标题
+    if (bookmarks.length === 0) {
+        for (const url of urls) {
+            let title = url;
+            try {
+                const urlObj = new URL(url);
+                const pathParts = urlObj.pathname.split('/').filter(p => p);
+                if (pathParts.length > 0) {
+                    title = decodeURIComponent(pathParts[pathParts.length - 1]) || urlObj.hostname;
+                } else {
+                    title = urlObj.hostname;
+                }
+            } catch (e) { }
+            bookmarks.push({ title, url, parentId: null });
+        }
+    }
+
+    // 创建临时栏目
+    const sectionId = `temp-section-${++CanvasState.tempSectionCounter}`;
+    const items = [];
+
+    for (const bm of bookmarks) {
+        items.push({
+            id: `temp-${sectionId}-${++CanvasState.tempItemCounter}`,
+            sectionId: sectionId,
+            title: bm.title,
+            url: bm.url,
+            type: 'bookmark',
+            children: [],
+            createdAt: Date.now()
+        });
+    }
+
+    // 使用默认标题格式
+    const sequenceNumber = ++CanvasState.tempSectionSequenceNumber;
+
+    const section = {
+        id: sectionId,
+        title: getDefaultTempSectionTitle(),
+        sequenceNumber: sequenceNumber,
+        color: pickTempSectionColor(),
+        x: dropX,
+        y: dropY,
+        width: TEMP_SECTION_DEFAULT_WIDTH,
+        height: TEMP_SECTION_DEFAULT_HEIGHT,
+        createdAt: Date.now(),
+        items: items
+    };
+
+    CanvasState.tempSections.push(section);
+    renderTempNode(section);
+
+    // 设置更高的 z-index 和呼吸效果
+    const nodeElement = document.getElementById(section.id);
+    if (nodeElement) {
+        nodeElement.style.zIndex = '500';
+        pulseBreathingEffect(nodeElement, 1500);
+    }
+
+    saveTempNodes();
+
+    const message = commonParentTitle
+        ? (isEn ? `Imported folder "${commonParentTitle}" with ${items.length} bookmarks`
+            : `已导入文件夹「${commonParentTitle}」，共 ${items.length} 个书签`)
+        : (isEn ? `Created temporary section with ${items.length} bookmarks`
+            : `已创建临时栏目，包含 ${items.length} 个书签`);
+    showCanvasToast(message, 'success');
+}
+
+/**
+ * 处理文件夹拖拽：通过标题匹配永久栏目中的文件夹
+ */
+async function handleBrowserBookmarkFolderDrop(folderTitle, dropX, dropY) {
+    const { isEn } = __getLang();
+
+    if (!browserAPI || !browserAPI.bookmarks) {
+        showCanvasToast(isEn ? 'Bookmarks API not available' : '书签API不可用', 'error');
+        return;
+    }
+
+    try {
+        // 搜索匹配标题的书签节点
+        const results = await browserAPI.bookmarks.search({ title: folderTitle });
+
+        // 过滤出文件夹（没有 url 的节点是文件夹）
+        const folders = results.filter(node => !node.url);
+
+        if (folders.length === 0) {
+            showCanvasToast(
+                isEn ? `Folder "${folderTitle}" not found` : `未找到文件夹「${folderTitle}」`,
+                'warning'
+            );
+            return;
+        }
+
+        if (folders.length === 1) {
+            // 唯一匹配，直接获取内容并创建临时栏目
+            await createTempNodeFromBookmarkFolder(folders[0], dropX, dropY);
+        } else {
+            // 多个匹配，让用户选择
+            await showFolderSelectionDialog(folders, dropX, dropY);
+        }
+    } catch (error) {
+        console.error('[Canvas] 搜索书签文件夹失败:', error);
+        showCanvasToast(
+            isEn ? 'Failed to search bookmark folder' : '搜索书签文件夹失败',
+            'error'
+        );
+    }
+}
+
+/**
+ * 从书签文件夹创建临时栏目
+ */
+async function createTempNodeFromBookmarkFolder(folder, dropX, dropY) {
+    const { isEn } = __getLang();
+
+    if (!browserAPI || !browserAPI.bookmarks) return;
+
+    try {
+        // 获取文件夹的完整子树
+        const subTree = await browserAPI.bookmarks.getSubTree(folder.id);
+        if (!subTree || !subTree[0]) {
+            showCanvasToast(isEn ? 'Folder is empty' : '文件夹为空', 'warning');
+            return;
+        }
+
+        const folderNode = subTree[0];
+        const children = folderNode.children || [];
+
+        if (children.length === 0) {
+            showCanvasToast(isEn ? 'Folder is empty' : '文件夹为空', 'warning');
+            return;
+        }
+
+        // 计算书签总数
+        const countBookmarks = (nodes) => {
+            let count = 0;
+            for (const node of nodes) {
+                if (node.url) count++;
+                if (node.children) count += countBookmarks(node.children);
+            }
+            return count;
+        };
+        const totalCount = countBookmarks(children);
+
+        // 创建临时栏目（使用默认标题格式）
+        const sectionId = `temp-section-${++CanvasState.tempSectionCounter}`;
+        const sequenceNumber = ++CanvasState.tempSectionSequenceNumber;
+        const section = {
+            id: sectionId,
+            title: getDefaultTempSectionTitle(),
+            sequenceNumber: sequenceNumber,
+            color: pickTempSectionColor(),
+            x: dropX,
+            y: dropY,
+            width: TEMP_SECTION_DEFAULT_WIDTH,
+            height: TEMP_SECTION_DEFAULT_HEIGHT,
+            createdAt: Date.now(),
+            items: []
+        };
+
+        // 递归转换为临时栏目格式
+        const convertToTempItem = (node) => {
+            const item = {
+                id: `temp-${sectionId}-${++CanvasState.tempItemCounter}`,
+                sectionId: sectionId,
+                title: node.title || (node.url ? (isEn ? 'Untitled' : '未命名') : (isEn ? 'Folder' : '文件夹')),
+                url: node.url || '',
+                type: node.url ? 'bookmark' : 'folder',
+                children: [],
+                createdAt: Date.now()
+            };
+
+            if (node.children && Array.isArray(node.children)) {
+                item.children = node.children.map(convertToTempItem).filter(Boolean);
+            }
+
+            return item;
+        };
+
+        // 将整个文件夹作为一个顶层项放入临时栏目（保留完整层次结构）
+        const folderItem = convertToTempItem(folderNode);
+        section.items = [folderItem];
+
+        // 调试：打印创建的数据结构
+        console.log('[Canvas] 创建的临时栏目数据结构:', JSON.stringify(section, null, 2).substring(0, 2000));
+        console.log('[Canvas] 顶层项类型:', folderItem.type, '子项数量:', folderItem.children?.length);
+
+        CanvasState.tempSections.push(section);
+        renderTempNode(section);
+
+        // 设置更高的 z-index
+        const nodeElement = document.getElementById(section.id);
+        if (nodeElement) {
+            nodeElement.style.zIndex = '500';
+            pulseBreathingEffect(nodeElement, 1500);
+        }
+
+        saveTempNodes();
+
+        showCanvasToast(
+            isEn ? `Imported folder "${folderNode.title}" with ${totalCount} bookmarks`
+                : `已导入文件夹「${folderNode.title}」，共 ${totalCount} 个书签`,
+            'success'
+        );
+    } catch (error) {
+        console.error('[Canvas] 创建临时栏目失败:', error);
+        showCanvasToast(isEn ? 'Failed to import folder' : '导入文件夹失败', 'error');
+    }
+}
+
+/**
+ * 从单个书签创建临时栏目
+ */
+async function createTempNodeFromBrowserBookmark(bookmark, dropX, dropY) {
+    const { isEn } = __getLang();
+
+    // 获取书签的路径
+    let sourcePath = '';
+    if (browserAPI && browserAPI.bookmarks && bookmark.url) {
+        try {
+            const results = await browserAPI.bookmarks.search({ url: bookmark.url });
+            if (results && results.length > 0 && results[0].parentId) {
+                sourcePath = await getBookmarkPathString(results[0].parentId);
+            }
+        } catch (e) { }
+    }
+
+    // 生成标题：时间 + 书签数量 + 来源说明
+    const now = new Date();
+    const timeStr = now.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' });
+    const dateStr = now.toLocaleDateString('zh-CN', { month: '2-digit', day: '2-digit' });
+    const sourceInfo = isEn
+        ? `${dateStr} ${timeStr} | 1 bookmark | Browser drop`
+        : `${dateStr} ${timeStr} | 1个书签 | 浏览器拖入`;
+
+    // 生成说明：书签路径
+    const description = sourcePath
+        ? (isEn ? `Source: ${sourcePath}` : `来源路径：${sourcePath}`)
+        : '';
+
+    const sectionId = `temp-section-${++CanvasState.tempSectionCounter}`;
+    const section = {
+        id: sectionId,
+        title: sourceInfo,
+        description: description,  // 添加说明
+        label: isEn ? 'Drop' : '拖入',  // 左边标签：拖入
+        color: pickTempSectionColor(),
+        x: dropX,
+        y: dropY,
+        width: TEMP_SECTION_DEFAULT_WIDTH,
+        height: TEMP_SECTION_DEFAULT_HEIGHT,
+        createdAt: Date.now(),
+        source: 'browser-drop',  // 标记来源
+        items: [{
+            id: `temp-${sectionId}-${++CanvasState.tempItemCounter}`,
+            sectionId: sectionId,
+            title: bookmark.title || bookmark.url,
+            url: bookmark.url || '',
+            type: 'bookmark',
+            children: [],
+            createdAt: Date.now()
+        }]
+    };
+
+    CanvasState.tempSections.push(section);
+    renderTempNode(section);
+
+    // 设置更高的 z-index
+    const nodeElement = document.getElementById(section.id);
+    if (nodeElement) {
+        nodeElement.style.zIndex = '500';
+        pulseBreathingEffect(nodeElement, 1500);
+    }
+
+    saveTempNodes();
+
+    showCanvasToast(
+        isEn ? 'Created temporary section with 1 bookmark' : '已创建临时栏目，包含 1 个书签',
+        'success'
+    );
+}
+
+/**
+ * 显示文件夹选择对话框（当有多个同名文件夹时）
+ */
+async function showFolderSelectionDialog(folders, dropX, dropY) {
+    const { isEn } = __getLang();
+
+    // 移除已有的对话框
+    const existingDialog = document.getElementById('folderSelectionDialog');
+    if (existingDialog) existingDialog.remove();
+
+    // 获取每个文件夹的路径信息
+    const foldersWithPath = await Promise.all(folders.map(async (folder) => {
+        let path = folder.title;
+        try {
+            // 获取父文件夹路径
+            let current = folder;
+            const pathParts = [folder.title];
+            while (current.parentId && current.parentId !== '0') {
+                const parents = await browserAPI.bookmarks.get(current.parentId);
+                if (parents && parents[0]) {
+                    pathParts.unshift(parents[0].title || '');
+                    current = parents[0];
+                } else {
+                    break;
+                }
+            }
+            path = pathParts.filter(p => p).join(' / ');
+        } catch (e) {
+            console.warn('[Canvas] 获取文件夹路径失败:', e);
+        }
+        return { ...folder, path };
+    }));
+
+    // 创建对话框
+    const dialog = document.createElement('div');
+    dialog.id = 'folderSelectionDialog';
+    dialog.className = 'import-dialog';
+    dialog.innerHTML = `
+        <div class="import-dialog-content" style="max-width: 500px;">
+            <div class="import-dialog-header">
+                <h3>${isEn ? 'Multiple folders found' : '找到多个同名文件夹'}</h3>
+                <button class="import-dialog-close">&times;</button>
+            </div>
+            <div class="import-dialog-body">
+                <p style="margin-bottom: 16px; color: var(--text-secondary);">
+                    ${isEn ? 'Please select the folder you want to import:' : '请选择要导入的文件夹：'}
+                </p>
+                <div class="import-options">
+                    ${foldersWithPath.map((folder, index) => `
+                        <button class="import-option-btn folder-select-btn" data-index="${index}">
+                            <i class="fas fa-folder" style="color: var(--warning);"></i>
+                            <div style="flex: 1; text-align: left;">
+                                <div style="font-weight: 600;">${folder.title}</div>
+                                <div style="font-size: 12px; color: var(--text-secondary); margin-top: 2px;">
+                                    ${folder.path}
+                                </div>
+                            </div>
+                        </button>
+                    `).join('')}
+                </div>
+            </div>
+        </div>
+    `;
+
+    document.body.appendChild(dialog);
+
+    // 绑定事件
+    dialog.querySelector('.import-dialog-close').onclick = () => dialog.remove();
+    dialog.onclick = (e) => {
+        if (e.target === dialog) dialog.remove();
+    };
+
+    dialog.querySelectorAll('.folder-select-btn').forEach(btn => {
+        btn.onclick = async () => {
+            const index = parseInt(btn.dataset.index, 10);
+            const selectedFolder = folders[index];
+            dialog.remove();
+            await createTempNodeFromBookmarkFolder(selectedFolder, dropX, dropY);
+        };
     });
 }
 
@@ -3115,6 +4443,19 @@ function shouldHandleCustomScroll(event) {
         return false;
     }
 
+    // 在临时栏目说明区域编辑时，不拦截滚轮，让其自身滚动
+    // 检测是否为正在编辑的说明区域（contentEditable 为 true）
+    const descTarget = event.target.closest('.temp-node-description');
+    if (descTarget && descTarget.isContentEditable) {
+        return false;
+    }
+
+    // 在永久栏目说明区域编辑时，不拦截滚轮，让其自身滚动
+    const tipTarget = event.target.closest('#permanentSectionTip');
+    if (tipTarget && tipTarget.isContentEditable) {
+        return false;
+    }
+
     const scrollbarElement = event.target.closest('.canvas-scrollbar');
     if (scrollbarElement) {
         const axisKey = scrollbarElement.classList.contains('horizontal') ? 'horizontal' : 'vertical';
@@ -4098,16 +5439,32 @@ function initializePermanentSectionPosition(permanentSection) {
         return;
     }
 
-    // 获取当前的计算位置（使用transform居中）
-    const rect = permanentSection.getBoundingClientRect();
-    const workspace = document.getElementById('canvasWorkspace');
-    if (!workspace) return;
+    // 检测是否是首次打开 Canvas（演示模板）
+    // 首次打开时使用固定的 canvas 坐标，与使用说明卡片水平对齐
+    const openedKey = 'bookmark-canvas-has-opened';
+    const hasOpenedCanvas = localStorage.getItem(openedKey) === 'true';
 
-    const workspaceRect = workspace.getBoundingClientRect();
+    let left, top;
 
-    // 计算在canvas-content坐标系中的位置
-    const left = (rect.left - workspaceRect.left) / CanvasState.zoom;
-    const top = (rect.top - workspaceRect.top) / CanvasState.zoom;
+    if (!hasOpenedCanvas) {
+        // 首次打开：使用固定的 canvas 坐标，与使用说明卡片(y=-190)水平对齐
+        // 使用说明卡片位置：x=-500, y=-190, width=420, height=480
+        // 永久栏目放在使用说明卡片右侧，水平对齐：left=0, top=-190
+        left = 0;
+        top = -190;
+        console.log('[Canvas] 首次打开，使用固定位置与使用说明卡片对齐:', { left, top });
+    } else {
+        // 非首次打开：使用当前视口位置转换为 canvas 坐标
+        const rect = permanentSection.getBoundingClientRect();
+        const workspace = document.getElementById('canvasWorkspace');
+        if (!workspace) return;
+
+        const workspaceRect = workspace.getBoundingClientRect();
+
+        // 计算在canvas-content坐标系中的位置
+        left = (rect.left - workspaceRect.left) / CanvasState.zoom;
+        top = (rect.top - workspaceRect.top) / CanvasState.zoom;
+    }
 
     // 禁用过渡，设置新位置
     permanentSection.style.transition = 'none';
@@ -4487,13 +5844,49 @@ async function handlePermanentDragEnd(e) {
 // =============================================================================
 
 async function createTempNode(data, x, y) {
+    const isTempSplit = !!(data && data.source === 'temporary' && data.sectionId);
+    let inheritedLabel = null;
+    let inheritedTitle = null;
+    let inheritedColor = null;
+    let splitPayload = [];
+
+    if (isTempSplit) {
+        const parentSection = getTempSection(data.sectionId);
+        if (parentSection) {
+            inheritedLabel = getSplitTempSectionLabel(parentSection);
+            const parentTitle = String(parentSection.title || '').trim();
+            const parentLabel = getTempSectionLabel(parentSection);
+            if (inheritedLabel && parentTitle && parentLabel && parentTitle === parentLabel) {
+                inheritedTitle = inheritedLabel;
+            }
+            inheritedColor = parentSection.color || TEMP_SECTION_DEFAULT_COLOR;
+            try {
+                const fallbackId = data.id || null;
+                let ids = [];
+                if (typeof collectTemporarySelectionIds === 'function') {
+                    ids = collectTemporarySelectionIds(parentSection.id, fallbackId);
+                }
+                if (Array.isArray(ids) && ids.length) {
+                    splitPayload = extractTempItemsPayload(parentSection.id, ids);
+                } else if (fallbackId) {
+                    const entry = findTempItemEntry(parentSection.id, fallbackId);
+                    if (entry && entry.item) {
+                        splitPayload = [serializeTempItemForClipboard(entry.item)];
+                    }
+                }
+            } catch (error) {
+                console.warn('[Canvas] 获取分裂栏目数据失败:', error);
+            }
+        }
+    }
+
     const sectionId = `temp-section-${++CanvasState.tempSectionCounter}`;
     const sequenceNumber = ++CanvasState.tempSectionSequenceNumber;
     const section = {
         id: sectionId,
-        title: getDefaultTempSectionTitle(),
+        title: inheritedTitle || getDefaultTempSectionTitle(),
         sequenceNumber: sequenceNumber,
-        color: pickTempSectionColor(),
+        color: inheritedColor || pickTempSectionColor(),
         x,
         y,
         width: TEMP_SECTION_DEFAULT_WIDTH,
@@ -4501,13 +5894,16 @@ async function createTempNode(data, x, y) {
         createdAt: Date.now(),
         items: []
     };
+    if (inheritedLabel) {
+        section.label = inheritedLabel;
+    }
 
     try {
-        let payload = [];
+        let payload = Array.isArray(splitPayload) ? splitPayload : [];
         if (data && data.multi && Array.isArray(data.permanentIds) && data.permanentIds.length) {
             // 多选合集：从永久栏收集所有选中的节点
             payload = await resolvePermanentPayload(data.permanentIds);
-        } else {
+        } else if (!payload.length) {
             let resolvedNode = null;
             try {
                 resolvedNode = await resolveBookmarkNode(data);
@@ -4826,6 +6222,7 @@ function renderMdNode(node) {
 
         pop = document.createElement('div');
         pop.className = 'md-format-popover';
+        preventCanvasEventsPropagation(pop);
 
         // 多语言翻译
         const sizeDecreaseTitle = lang === 'en' ? 'Decrease font size' : '减小字号';
@@ -4868,6 +6265,7 @@ function renderMdNode(node) {
         `;
 
         toolbar.appendChild(pop);
+        preventCanvasEventsPropagation(pop);
         return pop;
     };
 
@@ -4882,9 +6280,11 @@ function renderMdNode(node) {
         if (isOpen) {
             pop.classList.remove('open');
             btn.classList.remove('active');
+            updateCanvasPopoverState(false);
         } else {
             pop.classList.add('open');
             btn.classList.add('active');
+            updateCanvasPopoverState(true);
             // 更新字号显示
             const sizeValue = pop.querySelector('.md-format-size-value');
             if (sizeValue) sizeValue.textContent = node.fontSize + 'px';
@@ -4894,7 +6294,10 @@ function renderMdNode(node) {
     // 关闭格式工具栏
     const closeFormatPopover = () => {
         const pop = toolbar.querySelector('.md-format-popover');
-        if (pop) pop.classList.remove('open');
+        if (pop) {
+            pop.classList.remove('open');
+            updateCanvasPopoverState(false);
+        }
         // 移除按钮选中状态
         const formatBtn = toolbar.querySelector('[data-action="md-format-toggle"]');
         if (formatBtn) formatBtn.classList.remove('active');
@@ -4910,6 +6313,7 @@ function renderMdNode(node) {
 
         pop = document.createElement('div');
         pop.className = 'md-fontcolor-popover';
+        preventCanvasEventsPropagation(pop);
 
         // 预设颜色值（参考obsidian-editing-toolbar）
         const presetColors = [
@@ -4945,6 +6349,7 @@ function renderMdNode(node) {
         if (formatPop) {
             formatPop.appendChild(pop);
         }
+        preventCanvasEventsPropagation(pop);
         return pop;
     };
 
@@ -4982,17 +6387,22 @@ function renderMdNode(node) {
         if (isOpen) {
             pop.classList.remove('open');
             btn.classList.remove('active');
+            updateCanvasPopoverState(false);
         } else {
             positionPopoverAboveBtn(pop, btn);
             pop.classList.add('open');
             btn.classList.add('active');
+            updateCanvasPopoverState(true);
         }
     };
 
     // 关闭字体颜色弹层
     const closeFontColorPopover = () => {
         const pop = toolbar.querySelector('.md-fontcolor-popover');
-        if (pop) pop.classList.remove('open');
+        if (pop) {
+            pop.classList.remove('open');
+            updateCanvasPopoverState(false);
+        }
         const btn = toolbar.querySelector('[data-action="md-fontcolor-toggle"]');
         if (btn) btn.classList.remove('active');
     };
@@ -5071,6 +6481,7 @@ function renderMdNode(node) {
 
         pop = document.createElement('div');
         pop.className = 'md-align-popover';
+        preventCanvasEventsPropagation(pop);
 
         const leftTitle = lang === 'en' ? 'Align Left' : '左对齐';
         const centerTitle = lang === 'en' ? 'Center' : '居中';
@@ -5085,6 +6496,7 @@ function renderMdNode(node) {
         `;
 
         toolbar.querySelector('.md-format-popover').appendChild(pop);
+        preventCanvasEventsPropagation(pop);
         return pop;
     };
 
@@ -5110,17 +6522,22 @@ function renderMdNode(node) {
         if (isOpen) {
             pop.classList.remove('open');
             btn.classList.remove('active');
+            updateCanvasPopoverState(false);
         } else {
             positionPopoverAboveBtn(pop, btn);
             pop.classList.add('open');
             btn.classList.add('active');
+            updateCanvasPopoverState(true);
         }
     };
 
     // 关闭对齐弹层
     const closeAlignPopover = () => {
         const pop = toolbar.querySelector('.md-align-popover');
-        if (pop) pop.classList.remove('open');
+        if (pop) {
+            pop.classList.remove('open');
+            updateCanvasPopoverState(false);
+        }
         const btn = toolbar.querySelector('[data-action="md-align-toggle"]');
         if (btn) btn.classList.remove('active');
     };
@@ -5132,6 +6549,7 @@ function renderMdNode(node) {
 
         pop = document.createElement('div');
         pop.className = 'md-heading-popover';
+        preventCanvasEventsPropagation(pop);
 
         const h1Title = lang === 'en' ? 'Heading 1' : '一级标题';
         const h2Title = lang === 'en' ? 'Heading 2' : '二级标题';
@@ -5172,17 +6590,22 @@ function renderMdNode(node) {
         if (isOpen) {
             pop.classList.remove('open');
             btn.classList.remove('active');
+            updateCanvasPopoverState(false);
         } else {
             positionPopoverAboveBtn(pop, btn);
             pop.classList.add('open');
             btn.classList.add('active');
+            updateCanvasPopoverState(true);
         }
     };
 
     // 关闭标题弹层
     const closeHeadingPopover = () => {
         const pop = toolbar.querySelector('.md-heading-popover');
-        if (pop) pop.classList.remove('open');
+        if (pop) {
+            pop.classList.remove('open');
+            updateCanvasPopoverState(false);
+        }
         const btn = toolbar.querySelector('[data-action="md-heading-toggle"]');
         if (btn) btn.classList.remove('active');
     };
@@ -5194,6 +6617,7 @@ function renderMdNode(node) {
 
         pop = document.createElement('div');
         pop.className = 'md-list-popover';
+        preventCanvasEventsPropagation(pop);
 
         const ulTitle = lang === 'en' ? 'Bullet List' : '无序列表';
         const olTitle = lang === 'en' ? 'Numbered List' : '有序列表';
@@ -5234,17 +6658,22 @@ function renderMdNode(node) {
         if (isOpen) {
             pop.classList.remove('open');
             btn.classList.remove('active');
+            updateCanvasPopoverState(false);
         } else {
             positionPopoverAboveBtn(pop, btn);
             pop.classList.add('open');
             btn.classList.add('active');
+            updateCanvasPopoverState(true);
         }
     };
 
     // 关闭列表弹层
     const closeListPopover = () => {
         const pop = toolbar.querySelector('.md-list-popover');
-        if (pop) pop.classList.remove('open');
+        if (pop) {
+            pop.classList.remove('open');
+            updateCanvasPopoverState(false);
+        }
         const btn = toolbar.querySelector('[data-action="md-list-toggle"]');
         if (btn) btn.classList.remove('active');
     };
@@ -5531,6 +6960,7 @@ function renderMdNode(node) {
             }
         }
     }
+    try { __applyHeadingCollapse(editor); } catch (_) { }
 
     // 保存选区函数（用于工具栏点击时恢复）
     const saveSelection = () => {
@@ -5611,33 +7041,34 @@ function renderMdNode(node) {
     const getSourceCode = (el) => {
         const tagName = el.tagName;
         const content = el.textContent;
+        const htmlContent = el.innerHTML; // 用于需要保留内部 HTML 的元素
 
-        // font color: <font color="#xxx">text</font>
+        // font color: <font color="#xxx">text</font>（保留内部 HTML）
         if (tagName === 'FONT') {
             const color = el.getAttribute('color') || '#000000';
             return {
-                source: `<font color="${color}">${content}</font>`,
+                source: `<font color="${color}">${htmlContent}</font>`,
                 prefix: `<font color="${color}">`,
                 suffix: '</font>',
                 type: 'fontcolor'
             };
         }
 
-        // center: <center>text</center>
+        // center: <center>text</center>（保留内部 HTML）
         if (tagName === 'CENTER') {
             return {
-                source: `<center>${content}</center>`,
+                source: `<center>${htmlContent}</center>`,
                 prefix: '<center>',
                 suffix: '</center>',
                 type: 'align'
             };
         }
 
-        // p with align: <p align="xxx">text</p>
+        // p with align: <p align="xxx">text</p>（保留内部 HTML）
         if (tagName === 'P' && el.hasAttribute('align')) {
             const align = el.getAttribute('align');
             return {
-                source: `<p align="${align}">${content}</p>`,
+                source: `<p align="${align}">${htmlContent}</p>`,
                 prefix: `<p align="${align}">`,
                 suffix: '</p>',
                 type: 'align'
@@ -5654,23 +7085,23 @@ function renderMdNode(node) {
             };
         }
 
-        // blockquote: > text
+        // blockquote: > text（保留内部 HTML）
         if (tagName === 'BLOCKQUOTE') {
             return {
-                source: `> ${content}`,
+                source: `> ${htmlContent}`,
                 prefix: '> ',
                 suffix: '',
                 type: 'quote'
             };
         }
 
-        // li: - item / 1. item（优先使用 LI，符合“单行显示源码”的体验）
+        // li: - item / 1. item（保留内部 HTML）
         if (tagName === 'LI') {
             const parent = el.parentElement;
-            const itemText = (el.textContent || '').trim();
+            const itemHtml = (el.innerHTML || '').trim();
             if (parent && parent.tagName === 'UL') {
                 return {
-                    source: `- ${itemText}`,
+                    source: `- ${itemHtml}`,
                     prefix: '- ',
                     suffix: '',
                     type: 'li-ul'
@@ -5681,7 +7112,7 @@ function renderMdNode(node) {
                 const idx = siblings.indexOf(el) + 1;
                 const n = idx > 0 ? idx : 1;
                 return {
-                    source: `${n}. ${itemText}`,
+                    source: `${n}. ${itemHtml}`,
                     prefix: `${n}. `,
                     suffix: '',
                     type: 'li-ol'
@@ -5689,9 +7120,9 @@ function renderMdNode(node) {
             }
         }
 
-        // ul: - item
+        // ul: - item（保留内部 HTML）
         if (tagName === 'UL') {
-            const items = Array.from(el.querySelectorAll('li')).map(li => `- ${li.textContent}`).join('\n');
+            const items = Array.from(el.querySelectorAll('li')).map(li => `- ${li.innerHTML}`).join('\n');
             return {
                 source: items,
                 prefix: '- ',
@@ -5700,9 +7131,9 @@ function renderMdNode(node) {
             };
         }
 
-        // ol: 1. item
+        // ol: 1. item（保留内部 HTML）
         if (tagName === 'OL') {
-            const items = Array.from(el.querySelectorAll('li')).map((li, i) => `${i + 1}. ${li.textContent}`).join('\n');
+            const items = Array.from(el.querySelectorAll('li')).map((li, i) => `${i + 1}. ${li.innerHTML}`).join('\n');
             return {
                 source: items,
                 prefix: '1. ',
@@ -5711,13 +7142,17 @@ function renderMdNode(node) {
             };
         }
 
-        // task: - [ ] text 或 - [x] text
+        // task: - [ ] text 或 - [x] text（保留内部 HTML）
         if (el.classList && el.classList.contains('md-task-item')) {
             const checkbox = el.querySelector('input[type="checkbox"]');
             const checked = checkbox && checkbox.checked;
-            const text = el.textContent.trim();
+            // 获取除 checkbox 以外的内容
+            const clone = el.cloneNode(true);
+            const cb = clone.querySelector('input[type="checkbox"]');
+            if (cb) cb.remove();
+            const taskHtml = clone.innerHTML.trim();
             return {
-                source: checked ? `- [x] ${text}` : `- [ ] ${text}`,
+                source: checked ? `- [x] ${taskHtml}` : `- [ ] ${taskHtml}`,
                 prefix: checked ? '- [x] ' : '- [ ] ',
                 suffix: '',
                 type: 'task'
@@ -5726,7 +7161,7 @@ function renderMdNode(node) {
 
         // 标题: 支持 ATX 和 Setext 两种格式
         // Setext 格式通过 dataset.setextType 标识
-        // 自定义规则: --- → H1, === → H2
+        // 标准规则: === → H1, --- → H2
         if (tagName === 'H1') {
             // 检查是否为 Setext 格式（--- → H1）
             if (el.dataset && el.dataset.setextType) {
@@ -5752,7 +7187,7 @@ function renderMdNode(node) {
                 };
             }
             return {
-                source: `# ${content}`,
+                source: `# ${htmlContent}`,
                 prefix: '# ',
                 suffix: '',
                 type: 'heading'
@@ -5783,7 +7218,7 @@ function renderMdNode(node) {
                 };
             }
             return {
-                source: `## ${content}`,
+                source: `## ${htmlContent}`,
                 prefix: '## ',
                 suffix: '',
                 type: 'heading'
@@ -5791,7 +7226,7 @@ function renderMdNode(node) {
         }
         if (tagName === 'H3') {
             return {
-                source: `### ${content}`,
+                source: `### ${htmlContent}`,
                 prefix: '### ',
                 suffix: '',
                 type: 'heading'
@@ -5799,7 +7234,7 @@ function renderMdNode(node) {
         }
         if (tagName === 'H4') {
             return {
-                source: `#### ${content}`,
+                source: `#### ${htmlContent}`,
                 prefix: '#### ',
                 suffix: '',
                 type: 'heading'
@@ -5807,7 +7242,7 @@ function renderMdNode(node) {
         }
         if (tagName === 'H5') {
             return {
-                source: `##### ${content}`,
+                source: `##### ${htmlContent}`,
                 prefix: '##### ',
                 suffix: '',
                 type: 'heading'
@@ -5815,7 +7250,7 @@ function renderMdNode(node) {
         }
         if (tagName === 'H6') {
             return {
-                source: `###### ${content}`,
+                source: `###### ${htmlContent}`,
                 prefix: '###### ',
                 suffix: '',
                 type: 'heading'
@@ -5923,8 +7358,9 @@ function renderMdNode(node) {
         const format = formatMap[tagName];
         if (!format) return false;
 
-        const content = formattedEl.textContent;
-        const markdown = format.prefix + content + format.suffix;
+        // 使用 innerHTML 保留内部 HTML 格式
+        const innerHtml = formattedEl.innerHTML;
+        const markdown = format.prefix + innerHtml + format.suffix;
 
         // 创建文本节点替换格式化元素
         const textNode = document.createTextNode(markdown);
@@ -5939,12 +7375,13 @@ function renderMdNode(node) {
         const sel = window.getSelection();
         const range = document.createRange();
         let cursorPos;
+        const plainTextLen = formattedEl.textContent ? formattedEl.textContent.length : 0;
         if (cursorPosition === 'start') {
             cursorPos = 0;
         } else if (cursorPosition === 'end') {
             cursorPos = markdown.length;
         } else {
-            cursorPos = format.prefix.length + Math.floor(content.length / 2);
+            cursorPos = format.prefix.length + Math.floor(plainTextLen / 2);
         }
         range.setStart(textNode, cursorPos);
         range.collapse(true);
@@ -6058,9 +7495,9 @@ function renderMdNode(node) {
 
                 // 1. 下一行是 HR 元素（对应 ---）
                 if (nextNode.tagName === 'HR') {
-                    // Text + HR(---) => H1
+                    // Text + HR(---) => H2
                     foundSetext = true;
-                    setextLevel = 'h1';
+                    setextLevel = 'h2';
                     setextType = '---';
                 }
                 // 2. 下一行是文本（TextNode 或 Block），且内容是 --- 或 ===
@@ -6069,14 +7506,14 @@ function renderMdNode(node) {
                     const equalMatch = nextText.match(/^[\u200B]*(={3,})\s*$/);
 
                     if (dashMatch) {
-                        // Text + --- => H1
-                        foundSetext = true;
-                        setextLevel = 'h1';
-                        setextType = dashMatch[1];  // 保存实际的分隔符（如 ---、----、-----）
-                    } else if (equalMatch) {
-                        // Text + === => H2
+                        // Text + --- => H2
                         foundSetext = true;
                         setextLevel = 'h2';
+                        setextType = dashMatch[1];  // 保存实际的分隔符（如 ---、----、-----）
+                    } else if (equalMatch) {
+                        // Text + === => H1
+                        foundSetext = true;
+                        setextLevel = 'h1';
                         setextType = equalMatch[1];  // 保存实际的分隔符（如 ===、====、=====）
                     }
                 }
@@ -6175,7 +7612,7 @@ function renderMdNode(node) {
                 } else {
                     // 确保上一行有有效内容且不是分隔符
                     if (headerText) {
-                        // 自定义规则: --- → H1, === → H2
+                        // 标准规则: === → H1, --- → H2
                         const level = setextDashMatch ? 'h1' : 'h2';
                         const separator = setextDashMatch ? setextDashMatch[1] : setextEqualMatch[1];
 
@@ -6316,28 +7753,51 @@ function renderMdNode(node) {
                 let newEl;
                 const parent = textNode.parentNode;
 
+                // 辅助函数：将内联 Markdown 语法转换为 HTML
+                const parseInlineMarkdown = (text) => {
+                    if (!text) return text;
+                    // 按顺序处理：粗体、斜体、删除线、高亮、代码
+                    return text
+                        .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
+                        .replace(/\*(.+?)\*/g, '<em>$1</em>')
+                        .replace(/~~(.+?)~~/g, '<del>$1</del>')
+                        .replace(/==(.+?)==/g, '<mark>$1</mark>')
+                        .replace(/`([^`]+)`/g, '<code>$1</code>');
+                };
+
+                // 辅助函数：安全地设置元素内容
+                const setContent = (element, content) => {
+                    // 先解析 Markdown 再用 innerHTML
+                    const parsed = parseInlineMarkdown(content);
+                    if (/<[^>]+>/.test(parsed)) {
+                        element.innerHTML = parsed;
+                    } else {
+                        element.textContent = content;
+                    }
+                };
+
                 // ATX 标题处理
                 if (pattern.type === 'h1') {
                     newEl = document.createElement('h1');
-                    newEl.textContent = match[pattern.contentIndex] || '';
+                    setContent(newEl, match[pattern.contentIndex] || '');
                 } else if (pattern.type === 'h2') {
                     newEl = document.createElement('h2');
-                    newEl.textContent = match[pattern.contentIndex] || '';
+                    setContent(newEl, match[pattern.contentIndex] || '');
                 } else if (pattern.type === 'h3') {
                     newEl = document.createElement('h3');
-                    newEl.textContent = match[pattern.contentIndex] || '';
+                    setContent(newEl, match[pattern.contentIndex] || '');
                 } else if (pattern.type === 'h4') {
                     newEl = document.createElement('h4');
-                    newEl.textContent = match[pattern.contentIndex] || '';
+                    setContent(newEl, match[pattern.contentIndex] || '');
                 } else if (pattern.type === 'h5') {
                     newEl = document.createElement('h5');
-                    newEl.textContent = match[pattern.contentIndex] || '';
+                    setContent(newEl, match[pattern.contentIndex] || '');
                 } else if (pattern.type === 'h6') {
                     newEl = document.createElement('h6');
-                    newEl.textContent = match[pattern.contentIndex] || '';
+                    setContent(newEl, match[pattern.contentIndex] || '');
                 } else if (pattern.type === 'blockquote') {
                     newEl = document.createElement('blockquote');
-                    newEl.textContent = match[pattern.contentIndex] || '';
+                    setContent(newEl, match[pattern.contentIndex] || '');
                 } else if (pattern.type === 'task-unchecked' || pattern.type === 'task-checked') {
                     newEl = document.createElement('div');
                     newEl.className = 'md-task-item';
@@ -6346,16 +7806,19 @@ function renderMdNode(node) {
                     checkbox.className = 'md-task-checkbox';
                     checkbox.checked = pattern.type === 'task-checked';
                     newEl.appendChild(checkbox);
-                    newEl.appendChild(document.createTextNode(' ' + (match[pattern.contentIndex] || '')));
+                    // 任务内容可能包含 HTML
+                    const contentSpan = document.createElement('span');
+                    setContent(contentSpan, ' ' + (match[pattern.contentIndex] || ''));
+                    newEl.appendChild(contentSpan);
                 } else if (pattern.type === 'ul') {
                     newEl = document.createElement('ul');
                     const li = document.createElement('li');
-                    li.textContent = match[pattern.contentIndex] || '';
+                    setContent(li, match[pattern.contentIndex] || '');
                     newEl.appendChild(li);
                 } else if (pattern.type === 'ol') {
                     newEl = document.createElement('ol');
                     const li = document.createElement('li');
-                    li.textContent = match[pattern.contentIndex] || '';
+                    setContent(li, match[pattern.contentIndex] || '');
                     newEl.appendChild(li);
                 }
 
@@ -6398,7 +7861,12 @@ function renderMdNode(node) {
                     if (pattern.attrName && pattern.attrIndex) {
                         newEl.setAttribute(pattern.attrName, match[pattern.attrIndex]);
                     }
-                    newEl.textContent = content;
+                    // 如果内容包含 HTML 标签则用 innerHTML
+                    if (/<[^>]+>/.test(content)) {
+                        newEl.innerHTML = content;
+                    } else {
+                        newEl.textContent = content;
+                    }
 
                     const parent = textNode.parentNode;
                     const beforeNode = document.createTextNode(before);
@@ -6442,7 +7910,12 @@ function renderMdNode(node) {
                     // 创建新元素
                     const newEl = document.createElement(pattern.tag);
                     if (pattern.className) newEl.className = pattern.className;
-                    newEl.textContent = content;
+                    // 如果内容包含 HTML 标签则用 innerHTML
+                    if (/<[^>]+>/.test(content)) {
+                        newEl.innerHTML = content;
+                    } else {
+                        newEl.textContent = content;
+                    }
 
                     // 替换文本节点
                     const parent = textNode.parentNode;
@@ -6484,6 +7957,17 @@ function renderMdNode(node) {
             return;
         }
 
+        // 辅助函数：将内联 Markdown 语法转换为 HTML
+        const parseInlineMarkdown = (text) => {
+            if (!text) return text;
+            return text
+                .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
+                .replace(/\*(.+?)\*/g, '<em>$1</em>')
+                .replace(/~~(.+?)~~/g, '<del>$1</del>')
+                .replace(/==(.+?)==/g, '<mark>$1</mark>')
+                .replace(/`([^`]+)`/g, '<code>$1</code>');
+        };
+
         const textNode = expandedElement;
         const text = textNode.textContent;
         const savedType = expandedType;
@@ -6509,7 +7993,13 @@ function renderMdNode(node) {
                     itemText = m ? m[1] : raw;
                 }
                 const li = document.createElement('li');
-                li.textContent = itemText;
+                // 先解析 Markdown 再检查 HTML 标签
+                const parsed = parseInlineMarkdown(itemText);
+                if (/<[^>]+>/.test(parsed)) {
+                    li.innerHTML = parsed;
+                } else {
+                    li.textContent = itemText;
+                }
                 parent.replaceChild(li, textNode);
                 saveEditorContent();
                 return;
@@ -6525,7 +8015,7 @@ function renderMdNode(node) {
         ];
 
         // Setext 标题语法检测（处理两行结构：内容 + <br> + ---/===）
-        // 自定义规则: --- → H1, === → H2
+        // 标准规则: === → H1, --- → H2
         const setextH1Match = text.match(/^[\u200B]*(-{3,})\s*$/);  // --- → H1
         const setextH2Match = text.match(/^[\u200B]*(={3,})\s*$/);  // === → H2
         const isSetextH1 = !!setextH1Match;
@@ -6683,28 +8173,50 @@ function renderMdNode(node) {
                 let newEl;
                 const parent = textNode.parentNode;
                 if (!parent) return;
+
+                // 辅助函数：将内联 Markdown 语法转换为 HTML
+                const parseInlineMarkdown = (text) => {
+                    if (!text) return text;
+                    return text
+                        .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
+                        .replace(/\*(.+?)\*/g, '<em>$1</em>')
+                        .replace(/~~(.+?)~~/g, '<del>$1</del>')
+                        .replace(/==(.+?)==/g, '<mark>$1</mark>')
+                        .replace(/`([^`]+)`/g, '<code>$1</code>');
+                };
+
+                // 辅助函数：安全地设置元素内容（解析 Markdown 后用 innerHTML）
+                const setElementContent = (element, content) => {
+                    const parsed = parseInlineMarkdown(content);
+                    if (/<[^>]+>/.test(parsed)) {
+                        element.innerHTML = parsed;
+                    } else {
+                        element.textContent = content;
+                    }
+                };
+
                 // ATX 标题处理
                 if (pattern.type === 'h1') {
                     newEl = document.createElement('h1');
-                    newEl.textContent = match[pattern.contentIndex] || '';
+                    setElementContent(newEl, match[pattern.contentIndex] || '');
                 } else if (pattern.type === 'h2') {
                     newEl = document.createElement('h2');
-                    newEl.textContent = match[pattern.contentIndex] || '';
+                    setElementContent(newEl, match[pattern.contentIndex] || '');
                 } else if (pattern.type === 'h3') {
                     newEl = document.createElement('h3');
-                    newEl.textContent = match[pattern.contentIndex] || '';
+                    setElementContent(newEl, match[pattern.contentIndex] || '');
                 } else if (pattern.type === 'h4') {
                     newEl = document.createElement('h4');
-                    newEl.textContent = match[pattern.contentIndex] || '';
+                    setElementContent(newEl, match[pattern.contentIndex] || '');
                 } else if (pattern.type === 'h5') {
                     newEl = document.createElement('h5');
-                    newEl.textContent = match[pattern.contentIndex] || '';
+                    setElementContent(newEl, match[pattern.contentIndex] || '');
                 } else if (pattern.type === 'h6') {
                     newEl = document.createElement('h6');
-                    newEl.textContent = match[pattern.contentIndex] || '';
+                    setElementContent(newEl, match[pattern.contentIndex] || '');
                 } else if (pattern.type === 'blockquote') {
                     newEl = document.createElement('blockquote');
-                    newEl.textContent = match[pattern.contentIndex] || '';
+                    setElementContent(newEl, match[pattern.contentIndex] || '');
                 } else if (pattern.type === 'task-unchecked' || pattern.type === 'task-checked') {
                     newEl = document.createElement('div');
                     newEl.className = 'md-task-item';
@@ -6713,16 +8225,19 @@ function renderMdNode(node) {
                     cb.className = 'md-task-checkbox';
                     cb.checked = pattern.type === 'task-checked';
                     newEl.appendChild(cb);
-                    newEl.appendChild(document.createTextNode(' ' + (match[pattern.contentIndex] || '')));
+                    // 任务项内容可能包含 HTML
+                    const contentSpan = document.createElement('span');
+                    setElementContent(contentSpan, ' ' + (match[pattern.contentIndex] || ''));
+                    newEl.appendChild(contentSpan);
                 } else if (pattern.type === 'ul') {
                     newEl = document.createElement('ul');
                     const li = document.createElement('li');
-                    li.textContent = match[pattern.contentIndex] || '';
+                    setElementContent(li, match[pattern.contentIndex] || '');
                     newEl.appendChild(li);
                 } else if (pattern.type === 'ol') {
                     newEl = document.createElement('ol');
                     const li = document.createElement('li');
-                    li.textContent = match[pattern.contentIndex] || '';
+                    setElementContent(li, match[pattern.contentIndex] || '');
                     newEl.appendChild(li);
                 }
                 if (newEl) {
@@ -6817,7 +8332,12 @@ function renderMdNode(node) {
                 // 创建新元素
                 const newEl = document.createElement(pattern.tag);
                 if (pattern.className) newEl.className = pattern.className;
-                newEl.textContent = content;
+                // 如果内容包含 HTML 标签则用 innerHTML
+                if (/<[^>]+>/.test(content)) {
+                    newEl.innerHTML = content;
+                } else {
+                    newEl.textContent = content;
+                }
 
                 // 替换文本节点
                 const parent = textNode.parentNode;
@@ -6844,9 +8364,17 @@ function renderMdNode(node) {
 
     // 保存编辑器内容
     const saveEditorContent = () => {
-        node.html = editor.innerHTML;
-        // 保存时清除零宽空格
-        node.text = editor.innerText.replace(/\u200B/g, '');
+        try { __applyHeadingCollapse(editor); } catch (_) { }
+        const cleanHtml = __getCleanHtmlForStorage(editor);
+        node.html = cleanHtml;
+        // 保存时清除零宽空格（从干净副本获取完整文本，避免折叠状态丢失内容）
+        try {
+            const tmp = document.createElement('div');
+            tmp.innerHTML = cleanHtml;
+            node.text = (tmp.innerText || tmp.textContent || '').replace(/\u200B/g, '');
+        } catch (_) {
+            node.text = editor.innerText.replace(/\u200B/g, '');
+        }
         saveTempNodes();
         try { if (undoManager) undoManager.scheduleRecord('save'); } catch (_) { }
     };
@@ -7250,6 +8778,22 @@ function renderMdNode(node) {
         } catch (_) { }
     });
 
+    // 【关键修复】使用 selectionchange 检测光标移动，确保离开展开源码后立即重渲染
+    // 这对于颜色、字体等工具展开源码后的重渲染至关重要
+    // 注意：selectionchange 是 document 级别事件，需要检查选区是否在当前编辑器内
+    const onSelectionChange = () => {
+        // 只有当编辑器有焦点时才处理
+        if (!editor.contains(document.activeElement) && document.activeElement !== editor) return;
+        // 检查选区是否在编辑器内
+        const sel = window.getSelection();
+        if (!sel || !sel.rangeCount) return;
+        const range = sel.getRangeAt(0);
+        if (!editor.contains(range.startContainer)) return;
+        // 调度重渲染检查
+        scheduleReRenderIfCaretLeftExpanded();
+    };
+    document.addEventListener('selectionchange', onSelectionChange);
+
     // 快捷键处理
     editor.addEventListener('keydown', (e) => {
         // Undo / Redo（修复工具插入与自动渲染无法撤销、撤销顺序混乱）
@@ -7494,6 +9038,10 @@ function renderMdNode(node) {
 
     // 点击处理：格式化元素展开为源码，链接打开
     editor.addEventListener('click', (e) => {
+        if (__handleHeadingCollapseClick(editor, e)) {
+            saveEditorContent();
+            return;
+        }
         const rawTarget = e.target;
         const target = (rawTarget && rawTarget.nodeType === Node.ELEMENT_NODE)
             ? rawTarget
@@ -7520,8 +9068,35 @@ function renderMdNode(node) {
         const isClickInsideExpanded = isCaretInsideExpandedSource() || rawTarget === expandedElement;
 
         // 点击格式化元素时展开为 Markdown 源码（包括 HTML 格式）- 排除checkbox
-        const formattedEl = target.closest('strong, b, em, i, u, del, s, mark, code, font, center, p[align], blockquote, hr, li, .md-task-item, h1, h2, h3, h4, h5, h6');
+        let formattedEl = target.closest('strong, b, em, i, u, del, s, mark, code, font, center, p[align], blockquote, hr, li, .md-task-item, h1, h2, h3, h4, h5, h6');
+        // 标题是高频操作：无论点击标题内部的哪个子元素，都优先按整个标题处理（保留 # / ## / ### 语义）
+        const headingEl = target.closest('h1, h2, h3, h4, h5, h6');
+        if (headingEl && editor.contains(headingEl)) {
+            formattedEl = headingEl;
+        }
         if (formattedEl && editor.contains(formattedEl)) {
+            // 优化：对于块级元素（列表、引用），只有点击元素左侧（符号/Padding）时才展开源码
+            // 点击右侧文本内容时保持富文本编辑模式
+            //
+            // NOTE: 标题（# / ## / ### ...）属于高频操作，这里保持“直接点击即可展开源码”的行为。
+            const isBlockRestricted = formattedEl.tagName === 'LI' || formattedEl.tagName === 'BLOCKQUOTE';
+            if (isBlockRestricted) {
+                // 如果点击的是子元素（如 strong, em, a）或其内部文本区域，视为点击内容 -> 不展开
+                if (target !== formattedEl) return;
+
+                // 获取点击相对元素的横坐标
+                const rect = formattedEl.getBoundingClientRect();
+                const clickX = e.clientX - rect.left;
+
+                // 获取左侧缩进宽度（通常包含 bullet/marker）
+                const style = window.getComputedStyle(formattedEl);
+                const paddingLeft = parseFloat(style.paddingLeft);
+                // 设定热区阈值：至少 25px，或者使用 paddingLeft
+                const threshold = paddingLeft > 10 ? paddingLeft : 25;
+
+                // 如果点击位置在热区右侧，视为点击文本 -> 不展开
+                if (clickX > threshold) return;
+            }
             // 特殊处理：Setext标题（带有分隔符的H1/H2）点击时不展开为源码
             // 而是让标题内容可编辑，保持渲染后的标题格式
             const isSetextHeading = (formattedEl.tagName === 'H1' || formattedEl.tagName === 'H2') &&
@@ -7554,6 +9129,187 @@ function renderMdNode(node) {
     editor.addEventListener('wheel', (e) => {
         e.stopPropagation();
     }, { passive: true });
+
+    // 复制时转换为 Markdown 源码格式（而非渲染后的富文本）
+    editor.addEventListener('copy', (e) => {
+        const selection = window.getSelection();
+        if (!selection || !selection.rangeCount) return;
+
+        // 获取选中内容的 HTML
+        const range = selection.getRangeAt(0);
+        const container = document.createElement('div');
+        container.appendChild(range.cloneContents());
+        const selectedHtml = container.innerHTML;
+
+        const isAll = __isSelectionAll(editor, selection);
+        const htmlSource = isAll ? __getCleanHtmlForStorage(editor) : selectedHtml;
+        if (!htmlSource) return;
+
+        // 转换为 Markdown 源码
+        const markdownSource = __htmlToMarkdown(htmlSource);
+
+        // 设置剪贴板内容
+        // 智能优化：如果用户选中了整个块级元素（如列表项）的文本，自动补充 Markdown 语法结构（如 - ）
+        let finalSource = markdownSource;
+        if (selection.rangeCount > 0) {
+            const range = selection.getRangeAt(0);
+            const commonAncestor = range.commonAncestorContainer;
+            const blockEl = (commonAncestor.nodeType === 1 ? commonAncestor : commonAncestor.parentNode).closest('li, h1, h2, h3, h4, h5, h6, blockquote');
+
+            if (blockEl && editor.contains(blockEl)) {
+                const blockText = blockEl.textContent.trim();
+                const selectedText = selection.toString().trim();
+
+                // 如果选中的文本覆盖了整行（内容匹配），说明用户意图复制整行，补充 Markdown 符号
+                // 注意：这里做简单的全匹配判定
+                if (blockText && selectedText && blockText === selectedText) {
+                    const tag = blockEl.tagName;
+                    if (tag === 'LI') {
+                        const parent = blockEl.parentElement;
+                        if (parent && parent.tagName === 'OL') {
+                            const index = Array.from(parent.children).indexOf(blockEl) + 1;
+                            finalSource = `${index}. ${finalSource}`;
+                        } else {
+                            if (blockEl.classList.contains('md-task-item')) {
+                                const cb = blockEl.querySelector('input[type="checkbox"]');
+                                const mark = cb && cb.checked ? '[x]' : '[ ]';
+                                finalSource = `- ${mark} ${finalSource}`;
+                            } else {
+                                finalSource = `- ${finalSource}`;
+                            }
+                        }
+                    } else if (tag === 'H1') finalSource = `# ${finalSource}`;
+                    else if (tag === 'H2') finalSource = `## ${finalSource}`;
+                    else if (tag === 'H3') finalSource = `### ${finalSource}`;
+                    else if (tag === 'H4') finalSource = `#### ${finalSource}`;
+                    else if (tag === 'H5') finalSource = `##### ${finalSource}`;
+                    else if (tag === 'H6') finalSource = `###### ${finalSource}`;
+                    else if (tag === 'BLOCKQUOTE') finalSource = `> ${finalSource}`;
+                }
+            }
+        }
+
+        const safeHtml = __normalizeCanvasRichHtml(htmlSource);
+        if (safeHtml) {
+            try { e.clipboardData.setData('text/html', safeHtml); } catch (_) { }
+            try { e.clipboardData.setData('application/x-bookmark-canvas-html', safeHtml); } catch (_) { }
+        }
+
+        e.preventDefault();
+        e.clipboardData.setData('text/plain', finalSource);
+        // 移除 HTML 格式，确保外部粘贴时使用 Markdown 源码
+        // e.clipboardData.setData('text/html', selectedHtml);
+    });
+
+    const __insertTextAtSelection = (text) => {
+        const val = String(text || '');
+        if (!val) return;
+        try {
+            document.execCommand('insertText', false, val);
+            return;
+        } catch (_) { }
+        try {
+            const sel = window.getSelection();
+            if (!sel || !sel.rangeCount) return;
+            const range = sel.getRangeAt(0);
+            range.deleteContents();
+            const tn = document.createTextNode(val);
+            range.insertNode(tn);
+            const newRange = document.createRange();
+            newRange.setStartAfter(tn);
+            newRange.collapse(true);
+            sel.removeAllRanges();
+            sel.addRange(newRange);
+        } catch (_) { }
+    };
+
+    const __insertHtmlAtSelection = (html) => {
+        const safeHtml = String(html || '');
+        if (!safeHtml) return;
+        try {
+            document.execCommand('insertHTML', false, safeHtml);
+            return;
+        } catch (_) { }
+        try {
+            const sel = window.getSelection();
+            if (!sel || !sel.rangeCount) return;
+            const range = sel.getRangeAt(0);
+            range.deleteContents();
+            const tpl = document.createElement('template');
+            tpl.innerHTML = safeHtml;
+            const frag = tpl.content;
+            const last = frag.lastChild;
+            range.insertNode(frag);
+            if (last) {
+                const newRange = document.createRange();
+                newRange.setStartAfter(last);
+                newRange.collapse(true);
+                sel.removeAllRanges();
+                sel.addRange(newRange);
+            }
+        } catch (_) { }
+    };
+
+    // 粘贴时优先使用 HTML（内部格式），否则走 Markdown 解析
+    editor.addEventListener('paste', (e) => {
+        try {
+            const cd = e && e.clipboardData;
+            const clipboardHtml = cd ? String(cd.getData('application/x-bookmark-canvas-html') || cd.getData('text/html') || '') : '';
+            const plain = cd ? String(cd.getData('text/plain') || '') : '';
+            const normalized = plain.replace(/\r\n/g, '\n');
+            const trimmed = normalized.trim();
+            const looksLikeBlockMd = /(^|\n)\s*(#{1,6}\s+|>\s+|[-*]\s*(?:\[[ xX]\]\s+)?|\d+\.\s+|```)/.test(trimmed);
+            const isMultiLine = /\n/.test(trimmed);
+            const safeHtml = clipboardHtml ? __normalizeCanvasRichHtml(clipboardHtml) : '';
+            const hasHtmlTags = /<\s*(?:a|p|div|span|br|strong|em|b|i|u|del|s|mark|code|blockquote|ul|ol|li|hr|h[1-6]|font|center|pre|img|input|button|details|summary)\b/i.test(clipboardHtml);
+
+            if (safeHtml && hasHtmlTags) {
+                e.preventDefault();
+                __insertHtmlAtSelection(safeHtml);
+                setTimeout(() => {
+                    saveEditorContent();
+                }, 0);
+                return;
+            }
+
+            if (trimmed && (isMultiLine || looksLikeBlockMd) && typeof marked !== 'undefined') {
+                e.preventDefault();
+                let parsedHtml = '';
+                try { parsedHtml = marked.parse(trimmed); } catch (_) { parsedHtml = ''; }
+                const safe = __normalizeCanvasRichHtml(parsedHtml);
+                if (safe) {
+                    __insertHtmlAtSelection(safe);
+                } else {
+                    __insertTextAtSelection(normalized);
+                }
+                setTimeout(() => {
+                    saveEditorContent();
+                }, 0);
+                return;
+            }
+
+            if (trimmed && (isMultiLine || looksLikeBlockMd) && typeof marked === 'undefined') {
+                e.preventDefault();
+                const esc = (s) => String(s || '')
+                    .replace(/&/g, '&amp;')
+                    .replace(/</g, '&lt;')
+                    .replace(/>/g, '&gt;')
+                    .replace(/"/g, '&quot;')
+                    .replace(/'/g, '&#39;');
+                const lines = normalized.split('\n');
+                const html = lines.map(line => `<div>${esc(line)}</div>`).join('');
+                __insertHtmlAtSelection(html);
+                setTimeout(() => {
+                    saveEditorContent();
+                }, 0);
+                return;
+            }
+        } catch (_) { }
+
+        setTimeout(() => {
+            try { saveEditorContent(); } catch (_) { }
+        }, 50);
+    });
 
     // 选择逻辑：单击选中（可拖动），快速双击进入编辑
     // 使用自定义双击检测，时间窗口 200ms（更严格）
@@ -7839,12 +9595,20 @@ function applyMdNodeColor(el, node) {
     if (!el) return;
     if (hex) {
         el.style.borderColor = hex;
+        el.style.setProperty('--section-color', hex);
         // 设置CSS变量用于选中时的发光效果
         el.style.setProperty('--node-glow-color', hex);
         el.setAttribute('data-has-color', 'true');
     } else {
         // 恢复默认样式
         el.style.borderColor = '';
+        try {
+            const fallback = window.getComputedStyle(el).borderColor;
+            if (fallback) el.style.setProperty('--section-color', fallback);
+            else el.style.removeProperty('--section-color');
+        } catch (_) {
+            el.style.removeProperty('--section-color');
+        }
         el.style.removeProperty('--node-glow-color');
         el.removeAttribute('data-has-color');
     }
@@ -7872,6 +9636,7 @@ function ensureMdColorPopover(toolbar, node) {
     if (pop) return pop;
     pop = document.createElement('div');
     pop.className = 'md-color-popover';
+    preventCanvasEventsPropagation(pop);
 
     // 多语言支持
     const lang = typeof currentLang !== 'undefined' ? currentLang : 'zh';
@@ -7948,6 +9713,7 @@ function toggleMdColorPopover(toolbar, node, anchorBtn) {
     const isOpen = pop.classList.contains('open');
     if (isOpen) { closeMdColorPopover(toolbar); return; }
     pop.classList.add('open');
+    updateCanvasPopoverState(true);
     // 监听外部点击关闭
     const onDoc = (e) => {
         if (!toolbar.contains(e.target)) {
@@ -7960,7 +9726,10 @@ function toggleMdColorPopover(toolbar, node, anchorBtn) {
 
 function closeMdColorPopover(toolbar) {
     const pop = toolbar.querySelector('.md-color-popover');
-    if (pop) pop.classList.remove('open');
+    if (pop) {
+        pop.classList.remove('open');
+        updateCanvasPopoverState(false);
+    }
 }
 
 // 删除选项弹窗 (用于 import-container)
@@ -7986,6 +9755,8 @@ function ensureDeleteOptionsPopover(toolbar, node) {
             <span>${deleteAllTitle}</span>
         </button>
     `;
+
+    preventCanvasEventsPropagation(pop);
 
     // 删除选项点击事件
     pop.addEventListener('click', (e) => {
@@ -8023,6 +9794,7 @@ function toggleDeleteOptionsPopover(toolbar, node, anchorBtn) {
         return;
     }
     pop.classList.add('open');
+    updateCanvasPopoverState(true);
 
     // 监听外部点击关闭
     const onDoc = (e) => {
@@ -8036,7 +9808,10 @@ function toggleDeleteOptionsPopover(toolbar, node, anchorBtn) {
 
 function closeDeleteOptionsPopover(toolbar) {
     const pop = toolbar.querySelector('.md-delete-options-popover');
-    if (pop) pop.classList.remove('open');
+    if (pop) {
+        pop.classList.remove('open');
+        updateCanvasPopoverState(false);
+    }
 }
 
 
@@ -8172,7 +9947,11 @@ function __sanitizeCanvasRichTextHtml(html) {
         'h5',
         'h6',
         'div',
-        'input'
+        'input',
+        'img',
+        'button',
+        'details',
+        'summary'
     ]);
 
     const allowedAttrs = new Set([
@@ -8184,9 +9963,18 @@ function __sanitizeCanvasRichTextHtml(html) {
         'align',
         'class',
         'data-wikilink',
+        'data-callout',
+        'data-md-collapsible',
+        'data-md-collapsed',
         'type',
         'checked',
-        'disabled'
+        'disabled',
+        'src',
+        'alt',
+        'aria-label',
+        'aria-expanded',
+        'aria-hidden',
+        'open'
     ]);
 
     const allowedAlign = new Set(['left', 'center', 'right', 'justify']);
@@ -8204,6 +9992,19 @@ function __sanitizeCanvasRichTextHtml(html) {
             const u = new URL(h, 'https://dummy.local');
             const ok = u.protocol === 'http:' || u.protocol === 'https:' || u.protocol === 'mailto:' || u.protocol === 'tel:';
             return ok ? h : null;
+        } catch (_) {
+            return null;
+        }
+    };
+
+    const sanitizeSrc = (src) => {
+        const s = String(src || '').trim();
+        if (!s) return null;
+        if (s.startsWith('data:image/')) return s;
+        try {
+            const u = new URL(s, 'https://dummy.local');
+            const ok = u.protocol === 'http:' || u.protocol === 'https:' || u.protocol === 'blob:' || u.protocol === 'chrome-extension:';
+            return ok ? s : null;
         } catch (_) {
             return null;
         }
@@ -8238,6 +10039,21 @@ function __sanitizeCanvasRichTextHtml(html) {
             el.setAttribute('href', safe);
             el.setAttribute('target', '_blank');
             el.setAttribute('rel', 'noopener noreferrer');
+        }
+
+        if (tag === 'img') {
+            const safeSrc = sanitizeSrc(el.getAttribute('src'));
+            if (!safeSrc) {
+                const text = document.createTextNode(el.getAttribute('alt') || '');
+                el.replaceWith(text);
+                return;
+            }
+            el.setAttribute('src', safeSrc);
+            return;
+        }
+
+        if (tag === 'button') {
+            el.setAttribute('type', 'button');
         }
 
         if (tag === 'p' && el.hasAttribute('align')) {
@@ -8312,18 +10128,28 @@ function __placeCaretAtEnd(editableEl) {
     } catch (_) { }
 }
 
-function __tryConvertInlinePatternsInTextNode(editorEl) {
+function __tryConvertInlinePatternsInTextNode(editorEl, explicitNode = null) {
     if (!editorEl) return false;
-    const sel = window.getSelection();
-    if (!sel || !sel.rangeCount) return false;
-    const range = sel.getRangeAt(0);
-    const start = range.startContainer;
-    if (!start || start.nodeType !== Node.TEXT_NODE) return false;
-    if (!editorEl.contains(start)) return false;
+    let textNode;
+    let cursorPos;
+    let sel = null;
 
-    const textNode = start;
+    if (explicitNode) {
+        if (explicitNode.nodeType !== Node.TEXT_NODE) return false;
+        textNode = explicitNode;
+        cursorPos = Number.MAX_SAFE_INTEGER; // Bypass typing check
+    } else {
+        sel = window.getSelection();
+        if (!sel || !sel.rangeCount) return false;
+        const range = sel.getRangeAt(0);
+        const start = range.startContainer;
+        if (!start || start.nodeType !== Node.TEXT_NODE) return false;
+        if (!editorEl.contains(start)) return false;
+        textNode = start;
+        cursorPos = range.startOffset;
+    }
+
     const text = textNode.textContent || '';
-    const cursorPos = range.startOffset;
 
     const patterns = [
         // HTML-like explicit syntax
@@ -8360,6 +10186,25 @@ function __tryConvertInlinePatternsInTextNode(editorEl) {
         const beforeNode = before ? document.createTextNode(before) : null;
         const afterNode = document.createTextNode(afterText);
 
+        const parseInlineMarkdown = (text) => {
+            if (!text) return text;
+            return text
+                .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
+                .replace(/\*(.+?)\*/g, '<em>$1</em>')
+                .replace(/~~(.+?)~~/g, '<del>$1</del>')
+                .replace(/==(.+?)==/g, '<mark>$1</mark>')
+                .replace(/`([^`]+)`/g, '<code>$1</code>');
+        };
+
+        const setContent = (element, content) => {
+            const parsed = parseInlineMarkdown(content);
+            if (/<[^>]+>/.test(parsed)) {
+                element.innerHTML = parsed;
+            } else {
+                element.textContent = content;
+            }
+        };
+
         let newNode = null;
         if (pattern.type === 'link') {
             const href = match[pattern.hrefIndex] || '';
@@ -8373,7 +10218,8 @@ function __tryConvertInlinePatternsInTextNode(editorEl) {
                 a.setAttribute('href', safeHref);
                 a.setAttribute('target', '_blank');
                 a.setAttribute('rel', 'noopener noreferrer');
-                a.textContent = match[pattern.contentIndex] || '';
+                // Link text might contain formatting too
+                setContent(a, match[pattern.contentIndex] || '');
                 newNode = a;
             }
         } else {
@@ -8382,7 +10228,7 @@ function __tryConvertInlinePatternsInTextNode(editorEl) {
             if (pattern.attrName && pattern.attrIndex) {
                 newEl.setAttribute(pattern.attrName, match[pattern.attrIndex]);
             }
-            newEl.textContent = match[pattern.contentIndex] || '';
+            setContent(newEl, match[pattern.contentIndex] || '');
             newNode = newEl;
         }
 
@@ -8392,14 +10238,16 @@ function __tryConvertInlinePatternsInTextNode(editorEl) {
         parent.removeChild(textNode);
 
         // Restore caret in the "after" text node (same relative position after the match)
-        try {
-            const newRange = document.createRange();
-            const offsetInAfter = after ? Math.min(afterNode.length, Math.max(0, cursorPos - matchEnd)) : 1;
-            newRange.setStart(afterNode, offsetInAfter);
-            newRange.collapse(true);
-            sel.removeAllRanges();
-            sel.addRange(newRange);
-        } catch (_) { }
+        if (!explicitNode && sel) {
+            try {
+                const newRange = document.createRange();
+                const offsetInAfter = after ? Math.min(afterNode.length, Math.max(0, cursorPos - matchEnd)) : 1;
+                newRange.setStart(afterNode, offsetInAfter);
+                newRange.collapse(true);
+                sel.removeAllRanges();
+                sel.addRange(newRange);
+            } catch (_) { }
+        }
 
         return true;
     }
@@ -8449,42 +10297,173 @@ function __normalizeCanvasRichHtml(rawHtml) {
     return sanitized;
 }
 
-function __tryConvertBlockPatternsAtCaret(editorEl) {
+function __getCleanHtmlForStorage(editorEl) {
+    if (!editorEl) return '';
+    const clone = editorEl.cloneNode(true);
+    clone.querySelectorAll('.md-heading-hidden').forEach(el => {
+        try { el.classList.remove('md-heading-hidden'); } catch (_) { }
+    });
+    return clone.innerHTML;
+}
+
+function __isSelectionAll(editorEl, selection) {
+    if (!editorEl || !selection || !selection.rangeCount) return false;
+    const range = selection.getRangeAt(0);
+    if (!editorEl.contains(range.startContainer) || !editorEl.contains(range.endContainer)) return false;
+    try {
+        const editorRange = document.createRange();
+        editorRange.selectNodeContents(editorEl);
+        const coversAll = range.compareBoundaryPoints(Range.START_TO_START, editorRange) <= 0 &&
+            range.compareBoundaryPoints(Range.END_TO_END, editorRange) >= 0;
+        if (coversAll) return true;
+    } catch (_) { }
+    const fullText = (editorEl.innerText || editorEl.textContent || '').replace(/\u200B/g, '').trim();
+    const selectedText = selection.toString().replace(/\u200B/g, '').trim();
+    return !!fullText && selectedText === fullText;
+}
+
+function __isHeadingNode(node) {
+    return !!(node && node.nodeType === Node.ELEMENT_NODE && /^H[1-6]$/.test(node.tagName));
+}
+
+function __getHeadingLevel(node) {
+    if (!__isHeadingNode(node)) return 0;
+    return parseInt(node.tagName.slice(1), 10) || 0;
+}
+
+function __applyHeadingCollapse(editorEl) {
+    if (!editorEl) return;
+    const nodes = Array.from(editorEl.childNodes || []);
+    const hasContentBetween = (startIndex, level) => {
+        for (let i = startIndex + 1; i < nodes.length; i++) {
+            const n = nodes[i];
+            if (__isHeadingNode(n)) {
+                const nextLevel = __getHeadingLevel(n);
+                if (nextLevel <= level) return false;
+                return true;
+            }
+            if (n.nodeType === Node.TEXT_NODE) {
+                if ((n.textContent || '').trim()) return true;
+                continue;
+            }
+            return true;
+        }
+        return false;
+    };
+
+    let collapseLevel = null;
+    for (let i = 0; i < nodes.length; i++) {
+        const node = nodes[i];
+        if (__isHeadingNode(node)) {
+            const level = __getHeadingLevel(node);
+            if (collapseLevel !== null && level <= collapseLevel) {
+                collapseLevel = null;
+            }
+
+            const foldable = hasContentBetween(i, level);
+            if (foldable) {
+                node.setAttribute('data-md-collapsible', 'true');
+            } else {
+                try { node.removeAttribute('data-md-collapsible'); } catch (_) { }
+                try { node.removeAttribute('data-md-collapsed'); } catch (_) { }
+            }
+
+            const shouldHide = collapseLevel !== null && level > collapseLevel;
+            if (node.classList) node.classList.toggle('md-heading-hidden', shouldHide);
+
+            if (foldable && node.getAttribute('data-md-collapsed') === 'true') {
+                collapseLevel = level;
+            }
+        } else {
+            const shouldHide = collapseLevel !== null;
+            if (node.nodeType === Node.ELEMENT_NODE && node.classList) {
+                node.classList.toggle('md-heading-hidden', shouldHide);
+            }
+        }
+    }
+}
+
+function __handleHeadingCollapseClick(editorEl, e) {
+    if (!editorEl || !e || !e.target) return false;
+    const heading = e.target.closest('h1, h2, h3, h4, h5, h6');
+    if (!heading || heading.parentNode !== editorEl) return false;
+    if (heading.getAttribute('data-md-collapsible') !== 'true') return false;
+
+    const rect = heading.getBoundingClientRect();
+    const clickX = e.clientX - rect.left;
+    const style = window.getComputedStyle(heading);
+    const paddingLeft = parseFloat(style.paddingLeft) || 0;
+    const threshold = Math.max(16, Math.min(28, paddingLeft || 22));
+    if (clickX > threshold) return false;
+
+    e.preventDefault();
+    e.stopPropagation();
+
+    const collapsed = heading.getAttribute('data-md-collapsed') === 'true';
+    if (collapsed) heading.removeAttribute('data-md-collapsed');
+    else heading.setAttribute('data-md-collapsed', 'true');
+
+    __applyHeadingCollapse(editorEl);
+    return true;
+}
+
+function __tryConvertBlockPatternsAtCaret(editorEl, explicitNode = null) {
     if (!editorEl) return false;
     const sel = window.getSelection();
-    if (!sel || !sel.rangeCount) return false;
-    const range = sel.getRangeAt(0);
-    const startContainer = range.startContainer;
-    if (!startContainer || !editorEl.contains(startContainer)) return false;
 
-    const parentEl = (startContainer.nodeType === Node.ELEMENT_NODE)
-        ? startContainer
-        : (startContainer.parentElement || null);
-    if (parentEl && parentEl.closest && parentEl.closest('code')) return false;
+    // 如果没有 explicitNode，则必须依赖 selection
+    if (!explicitNode && (!sel || !sel.rangeCount)) return false;
 
     let lineEl = null;
     let lineTextNode = null;
 
-    if (startContainer.nodeType === Node.TEXT_NODE) {
-        if (startContainer.parentNode === editorEl) {
-            lineTextNode = startContainer;
-        } else {
-            let cur = startContainer.parentElement;
-            while (cur && cur !== editorEl && cur.parentElement !== editorEl) {
-                cur = cur.parentElement;
+    if (explicitNode) {
+        if (explicitNode.nodeType === Node.TEXT_NODE) {
+            if (explicitNode.parentNode === editorEl) {
+                lineTextNode = explicitNode;
+            } else {
+                let cur = explicitNode.parentElement;
+                while (cur && cur !== editorEl && cur.parentElement !== editorEl) cur = cur.parentElement;
+                if (cur && cur !== editorEl && (cur.tagName === 'DIV' || cur.tagName === 'P')) lineEl = cur;
             }
-            if (cur && cur !== editorEl && (cur.tagName === 'DIV' || cur.tagName === 'P')) {
-                lineEl = cur;
+        } else {
+            let cur = explicitNode;
+            if (cur !== editorEl) {
+                while (cur && cur !== editorEl && cur.parentElement !== editorEl) cur = cur.parentElement;
+                if (cur && cur !== editorEl && (cur.tagName === 'DIV' || cur.tagName === 'P')) lineEl = cur;
             }
         }
-    } else if (startContainer.nodeType === Node.ELEMENT_NODE) {
-        let cur = startContainer;
-        if (cur !== editorEl) {
-            while (cur && cur !== editorEl && cur.parentElement !== editorEl) {
-                cur = cur.parentElement;
+    } else {
+        const range = sel.getRangeAt(0);
+        const startContainer = range.startContainer;
+        if (!startContainer || !editorEl.contains(startContainer)) return false;
+
+        const parentEl = (startContainer.nodeType === Node.ELEMENT_NODE)
+            ? startContainer
+            : (startContainer.parentElement || null);
+        if (parentEl && parentEl.closest && parentEl.closest('code')) return false;
+
+        if (startContainer.nodeType === Node.TEXT_NODE) {
+            if (startContainer.parentNode === editorEl) {
+                lineTextNode = startContainer;
+            } else {
+                let cur = startContainer.parentElement;
+                while (cur && cur !== editorEl && cur.parentElement !== editorEl) {
+                    cur = cur.parentElement;
+                }
+                if (cur && cur !== editorEl && (cur.tagName === 'DIV' || cur.tagName === 'P')) {
+                    lineEl = cur;
+                }
             }
-            if (cur && cur !== editorEl && (cur.tagName === 'DIV' || cur.tagName === 'P')) {
-                lineEl = cur;
+        } else if (startContainer.nodeType === Node.ELEMENT_NODE) {
+            let cur = startContainer;
+            if (cur !== editorEl) {
+                while (cur && cur !== editorEl && cur.parentElement !== editorEl) {
+                    cur = cur.parentElement;
+                }
+                if (cur && cur !== editorEl && (cur.tagName === 'DIV' || cur.tagName === 'P')) {
+                    lineEl = cur;
+                }
             }
         }
     }
@@ -8503,12 +10482,113 @@ function __tryConvertBlockPatternsAtCaret(editorEl) {
         if (t === 'UL' || t === 'OL' || t === 'BLOCKQUOTE') return false;
     }
 
+    // Setext heading: "Title" + next line of --- / ===
+    const findNextLineNode = (node) => {
+        if (!node) return null;
+        let next = node.nextSibling;
+        while (next) {
+            if (next.nodeType === Node.TEXT_NODE && !next.textContent.trim()) {
+                next = next.nextSibling;
+                continue;
+            }
+            if (next.nodeType === Node.ELEMENT_NODE && next.tagName === 'BR') {
+                next = next.nextSibling;
+                continue;
+            }
+            return next;
+        }
+        return null;
+    };
+
+    const getNodeText = (node) => {
+        if (!node) return '';
+        if (node.nodeType === Node.TEXT_NODE) return node.textContent || '';
+        if (node.nodeType === Node.ELEMENT_NODE) return node.textContent || '';
+        return '';
+    };
+
+    const removeNodeAndBlock = (n) => {
+        if (!n) return;
+        if (n.nodeType === Node.ELEMENT_NODE && (n.tagName === 'DIV' || n.tagName === 'P') && n.parentNode === editorEl) {
+            try { n.remove(); } catch (_) { }
+            return;
+        }
+        if (n.nodeType === Node.TEXT_NODE && n.parentNode && (n.parentNode.tagName === 'DIV' || n.parentNode.tagName === 'P') && n.parentNode.parentNode === editorEl) {
+            try { n.parentNode.remove(); } catch (_) { }
+            return;
+        }
+        try { n.remove(); } catch (_) { }
+    };
+
     const hrMatch = text.match(/^(-{3,}|_{3,}|\*{3,})$/);
     const headingMatch = text.match(/^(#{1,6})\s+(.+)$/);
     const taskMatch = text.match(/^[-*]\s*\[( |x|X)\]\s+(.+)$/);
     const olMatch = text.match(/^(\d+)\.\s+(.+)$/);
     const quoteMatch = text.match(/^>\s+(.+)$/);
     const ulMatch = text.match(/^[-*]\s+(.+)$/);
+
+    const parseInlineMarkdown = (text) => {
+        if (!text) return text;
+        return text
+            .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
+            .replace(/\*(.+?)\*/g, '<em>$1</em>')
+            .replace(/~~(.+?)~~/g, '<del>$1</del>')
+            .replace(/==(.+?)==/g, '<mark>$1</mark>')
+            .replace(/`([^`]+)`/g, '<code>$1</code>');
+    };
+
+    const setContent = (element, content) => {
+        const parsed = parseInlineMarkdown(content);
+        if (/<[^>]+>/.test(parsed)) {
+            element.innerHTML = parsed;
+        } else {
+            element.textContent = content;
+        }
+    };
+
+    // Handle Setext headings before other block patterns
+    const isSeparator = /^[\u200B]*([-=])\1+\s*$/.test(text);
+    if (!isSeparator) {
+        const baseNode = lineEl || lineTextNode;
+        const nextNode = findNextLineNode(baseNode);
+        if (nextNode) {
+            const nextText = getNodeText(nextNode).replace(/\u200B/g, '').trim();
+            let level = 0;
+            if (nextNode.nodeType === Node.ELEMENT_NODE && nextNode.tagName === 'HR') {
+                level = 2;
+            } else if (/^-{3,}$/.test(nextText)) {
+                level = 2;
+            } else if (/^={3,}$/.test(nextText)) {
+                level = 1;
+            }
+            if (level) {
+                const heading = document.createElement('h' + level);
+                setContent(heading, String(text || '').trim());
+                const parent = lineEl ? lineEl.parentNode : (lineTextNode ? lineTextNode.parentNode : null);
+                const refNode = lineEl || lineTextNode;
+                if (!parent || !refNode) return false;
+
+                parent.insertBefore(heading, refNode);
+                const spacer = document.createTextNode('\u200B');
+                if (heading.nextSibling) parent.insertBefore(spacer, heading.nextSibling);
+                else parent.appendChild(spacer);
+                try { parent.removeChild(refNode); } catch (_) { }
+                removeNodeAndBlock(nextNode);
+
+                try {
+                    const newRange = document.createRange();
+                    newRange.setStart(spacer, 1);
+                    newRange.collapse(true);
+                    if (sel) {
+                        sel.removeAllRanges();
+                        sel.addRange(newRange);
+                    }
+                } catch (_) { }
+
+                return true;
+            }
+        }
+    }
 
     let wrapper = null;
     if (taskMatch) {
@@ -8519,25 +10599,27 @@ function __tryConvertBlockPatternsAtCaret(editorEl) {
         cb.className = 'md-task-checkbox';
         if (String(taskMatch[1] || '').trim().toLowerCase() === 'x') cb.checked = true;
         wrapper.appendChild(cb);
-        wrapper.appendChild(document.createTextNode(' ' + String(taskMatch[2] || '').trim()));
+        const textSpan = document.createElement('span');
+        setContent(textSpan, ' ' + String(taskMatch[2] || '').trim());
+        wrapper.appendChild(textSpan);
     } else if (hrMatch) {
         wrapper = document.createElement('hr');
     } else if (headingMatch) {
         const level = Math.min(6, Math.max(1, String(headingMatch[1] || '').length));
         wrapper = document.createElement('h' + level);
-        wrapper.textContent = String(headingMatch[2] || '').trim();
+        setContent(wrapper, String(headingMatch[2] || '').trim());
     } else if (quoteMatch) {
         wrapper = document.createElement('blockquote');
-        wrapper.textContent = String(quoteMatch[1] || '').trim();
+        setContent(wrapper, String(quoteMatch[1] || '').trim());
     } else if (olMatch) {
         wrapper = document.createElement('ol');
         const li = document.createElement('li');
-        li.textContent = String(olMatch[2] || '').trim();
+        setContent(li, String(olMatch[2] || '').trim());
         wrapper.appendChild(li);
     } else if (ulMatch) {
         wrapper = document.createElement('ul');
         const li = document.createElement('li');
-        li.textContent = String(ulMatch[1] || '').trim();
+        setContent(li, String(ulMatch[1] || '').trim());
         wrapper.appendChild(li);
     }
 
@@ -8563,10 +10645,93 @@ function __tryConvertBlockPatternsAtCaret(editorEl) {
     return true;
 }
 
+function __fullScanRenderDescriptionEditor(editorEl) {
+    if (!editorEl) return;
+
+    // 1. Process Block Patterns first
+    // We check direct children or text nodes
+    let children = Array.from(editorEl.childNodes);
+    for (const child of children) {
+        __tryConvertBlockPatternsAtCaret(editorEl, child);
+    }
+
+    // 2. Process Inline Patterns repeatedly until no changes
+    let changed = true;
+    let loop = 0;
+    while (changed && loop++ < 10) {
+        changed = false;
+        const walker = document.createTreeWalker(editorEl, NodeFilter.SHOW_TEXT, null, false);
+        const textNodes = [];
+        let node;
+        while (node = walker.nextNode()) textNodes.push(node);
+
+        for (const tn of textNodes) {
+            if (!tn.parentNode) continue;
+            // Skip if inside code block or pre
+            if (tn.parentNode.closest('code, pre')) continue;
+
+            if (__tryConvertInlinePatternsInTextNode(editorEl, tn)) {
+                changed = true;
+            }
+        }
+    }
+
+    try { __applyHeadingCollapse(editorEl); } catch (_) { }
+}
+
 function __mountMdCloneDescriptionEditor({ editor, toolbar, formatToggleBtn, isEditing, enterEdit, save, nodeId }) {
     if (!editor || !toolbar || !formatToggleBtn) return null;
 
     const getLang = () => (typeof currentLang !== 'undefined' ? currentLang : 'zh');
+
+    const __insertTextAtSelection = (text) => {
+        const val = String(text || '');
+        if (!val) return;
+        try {
+            document.execCommand('insertText', false, val);
+            return;
+        } catch (_) { }
+        try {
+            const sel = window.getSelection();
+            if (!sel || !sel.rangeCount) return;
+            const range = sel.getRangeAt(0);
+            range.deleteContents();
+            const tn = document.createTextNode(val);
+            range.insertNode(tn);
+            const newRange = document.createRange();
+            newRange.setStartAfter(tn);
+            newRange.collapse(true);
+            sel.removeAllRanges();
+            sel.addRange(newRange);
+        } catch (_) { }
+    };
+
+    const __insertHtmlAtSelection = (html) => {
+        const safeHtml = String(html || '');
+        if (!safeHtml) return;
+        try {
+            document.execCommand('insertHTML', false, safeHtml);
+            return;
+        } catch (_) { }
+        try {
+            const sel = window.getSelection();
+            if (!sel || !sel.rangeCount) return;
+            const range = sel.getRangeAt(0);
+            range.deleteContents();
+            const tpl = document.createElement('template');
+            tpl.innerHTML = safeHtml;
+            const frag = tpl.content;
+            const last = frag.lastChild;
+            range.insertNode(frag);
+            if (last) {
+                const newRange = document.createRange();
+                newRange.setStartAfter(last);
+                newRange.collapse(true);
+                sel.removeAllRanges();
+                sel.addRange(newRange);
+            }
+        } catch (_) { }
+    };
 
     // 保存选区函数（用于工具栏点击时恢复）
     let savedSelection = null;
@@ -8581,6 +10746,75 @@ function __mountMdCloneDescriptionEditor({ editor, toolbar, formatToggleBtn, isE
     };
     editor.addEventListener('mouseup', saveSelection);
     editor.addEventListener('keyup', saveSelection);
+
+    // 修复粘贴后不自动渲染的问题
+    editor.addEventListener('paste', (e) => {
+        // 多行/块级 Markdown 粘贴：直接解析为 HTML 插入，避免整段文本落在同一个节点导致无法命中规则
+        try {
+            const cd = e && e.clipboardData;
+            const clipboardHtml = cd ? String(cd.getData('application/x-bookmark-canvas-html') || cd.getData('text/html') || '') : '';
+            const plain = cd ? String(cd.getData('text/plain') || '') : '';
+            const normalized = plain.replace(/\r\n/g, '\n');
+            const trimmed = normalized.trim();
+            const looksLikeBlockMd = /(^|\n)\s*(#{1,6}\s+|>\s+|[-*]\s*(?:\[[ xX]\]\s+)?|\d+\.\s+|```)/.test(trimmed);
+            const isMultiLine = /\n/.test(trimmed);
+            const safeHtml = clipboardHtml ? __normalizeCanvasRichHtml(clipboardHtml) : '';
+            const hasHtmlTags = /<\s*(?:a|p|div|span|br|strong|em|b|i|u|del|s|mark|code|blockquote|ul|ol|li|hr|h[1-6]|font|center|pre|img|input|button|details|summary)\b/i.test(clipboardHtml);
+
+            // 优先使用内部专用 HTML（避免 Markdown 往返导致格式丢失）
+            if (safeHtml && hasHtmlTags) {
+                e.preventDefault();
+                __insertHtmlAtSelection(safeHtml);
+                setTimeout(() => {
+                    __fullScanRenderDescriptionEditor(editor);
+                    saveEditorContent();
+                }, 0);
+                return;
+            }
+
+            if (trimmed && (isMultiLine || looksLikeBlockMd) && typeof marked !== 'undefined') {
+                e.preventDefault();
+                let parsedHtml = '';
+                try { parsedHtml = marked.parse(trimmed); } catch (_) { parsedHtml = ''; }
+                const safe = __normalizeCanvasRichHtml(parsedHtml);
+                if (safe) {
+                    __insertHtmlAtSelection(safe);
+                } else {
+                    // Fallback: insert as plain text
+                    __insertTextAtSelection(normalized);
+                }
+                setTimeout(() => {
+                    __fullScanRenderDescriptionEditor(editor);
+                    saveEditorContent();
+                }, 0);
+                return;
+            }
+
+            // marked 不可用时：仍然把多行文本拆成多行节点，确保后续渲染规则可命中
+            if (trimmed && (isMultiLine || looksLikeBlockMd) && typeof marked === 'undefined') {
+                e.preventDefault();
+                const esc = (s) => String(s || '')
+                    .replace(/&/g, '&amp;')
+                    .replace(/</g, '&lt;')
+                    .replace(/>/g, '&gt;')
+                    .replace(/"/g, '&quot;')
+                    .replace(/'/g, '&#39;');
+                const lines = normalized.split('\n');
+                const html = lines.map(line => `<div>${esc(line)}</div>`).join('');
+                __insertHtmlAtSelection(html);
+                setTimeout(() => {
+                    __fullScanRenderDescriptionEditor(editor);
+                    saveEditorContent();
+                }, 0);
+                return;
+            }
+        } catch (_) { }
+
+        setTimeout(() => {
+            __fullScanRenderDescriptionEditor(editor);
+            saveEditorContent();
+        }, 50);
+    });
 
     const saveEditorContent = () => {
         try { if (typeof save === 'function') save(); } catch (_) { }
@@ -8815,7 +11049,11 @@ function __mountMdCloneDescriptionEditor({ editor, toolbar, formatToggleBtn, isE
         const sel = window.getSelection();
         if (!sel || !sel.rangeCount) return false;
         const range = sel.getRangeAt(0);
-        return range && range.startContainer === expandedElement;
+        if (!range) return false;
+        // 检查光标是否在展开的元素内（包括直接在文本节点内，或在其子节点内）
+        return range.startContainer === expandedElement ||
+            (expandedElement.nodeType === Node.TEXT_NODE && range.startContainer === expandedElement) ||
+            (expandedElement.contains && expandedElement.contains(range.startContainer));
     };
 
     const checkAndExpandIfCaretEntered = () => {
@@ -8834,8 +11072,8 @@ function __mountMdCloneDescriptionEditor({ editor, toolbar, formatToggleBtn, isE
         // Find closest formatted element
         if (node.nodeType === Node.TEXT_NODE) node = node.parentNode;
 
-        // List of supported tags must match expandToMarkdown support
-        const formatted = node.closest('strong, b, em, i, u, del, s, mark, code, font');
+        // Only auto-expand inline-like formats here; block elements are handled by click rules.
+        const formatted = node.closest('strong, b, em, i, u, del, s, mark, code, font, center, p[align], h1, h2, h3, h4, h5, h6, hr');
         if (formatted && editor.contains(formatted)) {
             // Expand it!
             expandToMarkdown(formatted);
@@ -8862,51 +11100,359 @@ function __mountMdCloneDescriptionEditor({ editor, toolbar, formatToggleBtn, isE
             expandedElement = null; expandedMarkdown = null; expandedType = null;
             return;
         }
-        const text = el.textContent;
+
+        // 辅助函数：将内联 Markdown 语法转换为 HTML
+        const parseInlineMarkdown = (text) => {
+            if (!text) return text;
+            return text
+                .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
+                .replace(/\*(.+?)\*/g, '<em>$1</em>')
+                .replace(/~~(.+?)~~/g, '<del>$1</del>')
+                .replace(/==(.+?)==/g, '<mark>$1</mark>')
+                .replace(/`([^`]+)`/g, '<code>$1</code>');
+        };
+
+        const rawText = el.textContent || '';
+        const text = rawText.replace(/\u200B/g, '').trim(); // 用于模式匹配的清理后文本
         const parent = el.parentNode;
+        const savedType = expandedType;
 
         expandedElement = null;
         expandedMarkdown = null;
         expandedType = null;
 
-        if (!text) { try { el.remove(); } catch (_) { } return; }
+        // 只有当原始文本完全为空或只有零宽空格时才删除元素
+        if (!rawText.replace(/\u200B/g, '').trim()) {
+            try { el.remove(); } catch (_) { }
+            return;
+        }
+
+        // 列表项：LI 级别的源码 → 还原回 <li>
+        if (savedType === 'li-ul' || savedType === 'li-ol') {
+            const parentTag = parent && parent.nodeType === Node.ELEMENT_NODE ? parent.tagName : null;
+            const expectedParent = savedType === 'li-ul' ? 'UL' : 'OL';
+            if (parent && parentTag === expectedParent) {
+                const raw = text;
+                let itemText = raw;
+                if (savedType === 'li-ul') {
+                    const m = raw.match(/^[-*+]\s+(.*)$/);
+                    itemText = m ? m[1] : raw;
+                } else {
+                    const m = raw.match(/^\d+\.\s+(.*)$/);
+                    itemText = m ? m[1] : raw;
+                }
+                const li = document.createElement('li');
+                // 先解析 Markdown 再检查 HTML 标签
+                const parsed = parseInlineMarkdown(itemText);
+                if (/<[^>]+>/.test(parsed)) {
+                    li.innerHTML = parsed;
+                } else {
+                    li.textContent = itemText;
+                }
+                parent.replaceChild(li, el);
+                saveEditorContent();
+                return;
+            }
+        }
 
         let newNode = null;
-        const patterns = [
+
+        // 内联格式模式
+        const inlinePatterns = [
             { regex: /^\*\*(.+?)\*\*$/, tag: 'strong', contentIndex: 1 },
             { regex: /^\*(.+?)\*$/, tag: 'em', contentIndex: 1 },
             { regex: /^~~(.+?)~~$/, tag: 'del', contentIndex: 1 },
             { regex: /^==(.+?)==$/, tag: 'mark', contentIndex: 1 },
             { regex: /^`([^`]+)`$/, tag: 'code', contentIndex: 1 },
             { regex: /^<u>([^<]*)<\/u>$/i, tag: 'u', contentIndex: 1 },
-            { regex: /^<font\s+color=["']?([^"'>\s]+)["']?>([^<]*)<\/font>$/i, tag: 'font', attrName: 'color', attrIndex: 1, contentIndex: 2 }
+            // font color: 支持带引号和不带引号的格式
+            { regex: /^<font\s+color="([^"]+)">([^<]*)<\/font>$/i, tag: 'font', attrName: 'color', attrIndex: 1, contentIndex: 2 },
+            { regex: /^<font\s+color='([^']+)'>([^<]*)<\/font>$/i, tag: 'font', attrName: 'color', attrIndex: 1, contentIndex: 2 },
+            { regex: /^<font\s+color=([^>\s]+)>([^<]*)<\/font>$/i, tag: 'font', attrName: 'color', attrIndex: 1, contentIndex: 2 },
+            { regex: /^<center>([^<]*)<\/center>$/i, tag: 'center', contentIndex: 1 },
+            // p align: 支持带引号和不带引号的格式
+            { regex: /^<p\s+align="([^"]+)">([^<]*)<\/p>$/i, tag: 'p', attrName: 'align', attrIndex: 1, contentIndex: 2 },
+            { regex: /^<p\s+align='([^']+)'>([^<]*)<\/p>$/i, tag: 'p', attrName: 'align', attrIndex: 1, contentIndex: 2 },
+            { regex: /^<p\s+align=([^>\s]+)>([^<]*)<\/p>$/i, tag: 'p', attrName: 'align', attrIndex: 1, contentIndex: 2 }
         ];
 
-        for (const p of patterns) {
+        // 块级格式模式（ATX 标题、引用、列表、水平分割线等）
+        const blockPatterns = [
+            { regex: /^######\s(.+)$/, type: 'h6', contentIndex: 1 },
+            { regex: /^#####\s(.+)$/, type: 'h5', contentIndex: 1 },
+            { regex: /^####\s(.+)$/, type: 'h4', contentIndex: 1 },
+            { regex: /^###\s(.+)$/, type: 'h3', contentIndex: 1 },
+            { regex: /^##\s(.+)$/, type: 'h2', contentIndex: 1 },
+            { regex: /^#\s(.+)$/, type: 'h1', contentIndex: 1 },
+            { regex: /^>\s*(.*)$/, type: 'blockquote', contentIndex: 1 },
+            { regex: /^-\s+\[\s*\]\s*(.*)$/, type: 'task-unchecked', contentIndex: 1 },
+            { regex: /^-\s+\[x\]\s*(.*)$/i, type: 'task-checked', contentIndex: 1 },
+            { regex: /^-\s+(.+)$/, type: 'ul', contentIndex: 1 },
+            { regex: /^(\d+)\.\s+(.+)$/, type: 'ol', contentIndex: 2 },
+            // { regex: /^[\u200B]*-{3,}\s*$/, type: 'hr' }
+        ];
+
+        // 辅助函数：安全地设置元素内容（解析 Markdown 后用 innerHTML）
+        const setElementContent = (element, content) => {
+            const parsed = parseInlineMarkdown(content);
+            if (/<[^>]+>/.test(parsed)) {
+                element.innerHTML = parsed;
+            } else {
+                element.textContent = content;
+            }
+        };
+
+        // 先检查内联格式
+        for (const p of inlinePatterns) {
             const m = text.match(p.regex);
             if (m) {
                 const newEl = document.createElement(p.tag);
                 if (p.attrName) newEl.setAttribute(p.attrName, m[p.attrIndex]);
-                newEl.textContent = m[p.contentIndex];
+                // 使用 setElementContent 以保留可能的内部 HTML
+                setElementContent(newEl, m[p.contentIndex]);
                 newNode = newEl;
                 break;
+            }
+        }
+
+        // 如果没有匹配内联格式，检查块级格式
+        if (!newNode) {
+
+            for (const pattern of blockPatterns) {
+                const match = text.match(pattern.regex);
+                if (match) {
+                    if (pattern.type === 'hr') {
+                        newNode = document.createElement('hr');
+                    } else if (pattern.type === 'h1' || pattern.type === 'h2' || pattern.type === 'h3' ||
+                        pattern.type === 'h4' || pattern.type === 'h5' || pattern.type === 'h6') {
+                        newNode = document.createElement(pattern.type);
+                        setElementContent(newNode, match[pattern.contentIndex] || '');
+                    } else if (pattern.type === 'blockquote') {
+                        newNode = document.createElement('blockquote');
+                        setElementContent(newNode, match[pattern.contentIndex] || '');
+                    } else if (pattern.type === 'ul') {
+                        const ul = document.createElement('ul');
+                        const li = document.createElement('li');
+                        setElementContent(li, match[pattern.contentIndex] || '');
+                        ul.appendChild(li);
+                        newNode = ul;
+                    } else if (pattern.type === 'ol') {
+                        const ol = document.createElement('ol');
+                        const li = document.createElement('li');
+                        setElementContent(li, match[pattern.contentIndex] || '');
+                        ol.appendChild(li);
+                        newNode = ol;
+                    } else if (pattern.type === 'task-unchecked' || pattern.type === 'task-checked') {
+                        const div = document.createElement('div');
+                        div.className = 'md-task-item';
+                        const checkbox = document.createElement('input');
+                        checkbox.type = 'checkbox';
+                        checkbox.className = 'md-task-checkbox';
+                        if (pattern.type === 'task-checked') checkbox.checked = true;
+                        div.appendChild(checkbox);
+                        // 任务列表项内容可能包含 HTML
+                        const contentSpan = document.createElement('span');
+                        setElementContent(contentSpan, ' ' + (match[pattern.contentIndex] || ''));
+                        div.appendChild(contentSpan);
+                        newNode = div;
+                    }
+                    break;
+                }
             }
         }
 
         if (newNode) {
             parent.replaceChild(newNode, el);
             saveEditorContent();
+        } else {
+            // 如果没有匹配任何模式，创建一个普通的文本节点或 span 保留内容
+            // 不删除，保留原样
+            saveEditorContent();
         }
     };
 
     // Since we don't have the full `expandToMarkdown` implementation here (it's 200 lines), 
     // we will implement a simplified version for common formats logic used in Blank Column.
+
+    // 获取特殊格式元素的源码表示（与空白栏目 getSourceCode 功能一致）
+    const getSourceCode = (el) => {
+        const tagName = el.tagName;
+        const content = el.textContent;
+        const htmlContent = el.innerHTML; // 用于需要保留内部 HTML 的元素
+
+        // font color: <font color="#xxx">text</font>（保留内部 HTML）
+        if (tagName === 'FONT') {
+            const color = el.getAttribute('color') || '#000000';
+            return {
+                source: `<font color="${color}">${htmlContent}</font>`,
+                prefix: `<font color="${color}">`,
+                suffix: '</font>',
+                type: 'fontcolor'
+            };
+        }
+
+        // center: <center>text</center>
+        if (tagName === 'CENTER') {
+            return {
+                source: `<center>${htmlContent}</center>`,
+                prefix: '<center>',
+                suffix: '</center>',
+                type: 'align'
+            };
+        }
+
+        // p with align: <p align="xxx">text</p>
+        if (tagName === 'P' && el.hasAttribute('align')) {
+            const align = el.getAttribute('align');
+            return {
+                source: `<p align="${align}">${htmlContent}</p>`,
+                prefix: `<p align="${align}">`,
+                suffix: '</p>',
+                type: 'align'
+            };
+        }
+
+        // hr: --- 水平分割线
+        if (tagName === 'HR') {
+            return {
+                source: '---',
+                prefix: '',
+                suffix: '',
+                type: 'hr'
+            };
+        }
+
+        // blockquote: > text （保留内部 HTML）
+        if (tagName === 'BLOCKQUOTE') {
+            return {
+                source: `> ${htmlContent}`,
+                prefix: '> ',
+                suffix: '',
+                type: 'quote'
+            };
+        }
+
+        // li: - item / 1. item （保留内部 HTML）
+        if (tagName === 'LI') {
+            const parent = el.parentElement;
+            const itemHtml = (el.innerHTML || '').trim();
+            if (parent && parent.tagName === 'UL') {
+                return {
+                    source: `- ${itemHtml}`,
+                    prefix: '- ',
+                    suffix: '',
+                    type: 'li-ul'
+                };
+            }
+            if (parent && parent.tagName === 'OL') {
+                const siblings = Array.from(parent.children).filter(child => child && child.tagName === 'LI');
+                const idx = siblings.indexOf(el) + 1;
+                const n = idx > 0 ? idx : 1;
+                return {
+                    source: `${n}. ${itemHtml}`,
+                    prefix: `${n}. `,
+                    suffix: '',
+                    type: 'li-ol'
+                };
+            }
+        }
+
+        // ul: - item （保留内部 HTML）
+        if (tagName === 'UL') {
+            const items = Array.from(el.querySelectorAll('li')).map(li => `- ${li.innerHTML}`).join('\n');
+            return {
+                source: items,
+                prefix: '- ',
+                suffix: '',
+                type: 'ul'
+            };
+        }
+
+        // ol: 1. item （保留内部 HTML）
+        if (tagName === 'OL') {
+            const items = Array.from(el.querySelectorAll('li')).map((li, i) => `${i + 1}. ${li.innerHTML}`).join('\n');
+            return {
+                source: items,
+                prefix: '1. ',
+                suffix: '',
+                type: 'ol'
+            };
+        }
+
+        // task: - [ ] text 或 - [x] text （保留内部 HTML）
+        if (el.classList && el.classList.contains('md-task-item')) {
+            const checkbox = el.querySelector('input[type="checkbox"]');
+            const checked = checkbox && checkbox.checked;
+            // 获取除 checkbox 以外的内容
+            const clone = el.cloneNode(true);
+            const cb = clone.querySelector('input[type="checkbox"]');
+            if (cb) cb.remove();
+            const taskHtml = clone.innerHTML.trim();
+            return {
+                source: checked ? `- [x] ${taskHtml}` : `- [ ] ${taskHtml}`,
+                prefix: checked ? '- [x] ' : '- [ ] ',
+                suffix: '',
+                type: 'task'
+            };
+        }
+
+        // 标题: H1-H6 （保留内部 HTML）
+        if (tagName === 'H1') {
+            return { source: `# ${htmlContent}`, prefix: '# ', suffix: '', type: 'heading' };
+        }
+        if (tagName === 'H2') {
+            return { source: `## ${htmlContent}`, prefix: '## ', suffix: '', type: 'heading' };
+        }
+        if (tagName === 'H3') {
+            return { source: `### ${htmlContent}`, prefix: '### ', suffix: '', type: 'heading' };
+        }
+        if (tagName === 'H4') {
+            return { source: `#### ${htmlContent}`, prefix: '#### ', suffix: '', type: 'heading' };
+        }
+        if (tagName === 'H5') {
+            return { source: `##### ${htmlContent}`, prefix: '##### ', suffix: '', type: 'heading' };
+        }
+        if (tagName === 'H6') {
+            return { source: `###### ${htmlContent}`, prefix: '###### ', suffix: '', type: 'heading' };
+        }
+
+
+        return null;
+    };
+
     const expandToMarkdown = (formattedEl) => {
         const tagName = formattedEl.tagName;
+
+        // 先尝试处理特殊格式（headings, lists, quotes, hr 等）
+        const specialFormat = getSourceCode(formattedEl);
+        if (specialFormat) {
+            const parent = formattedEl.parentNode;
+            const textNode = document.createTextNode(specialFormat.source);
+            parent.replaceChild(textNode, formattedEl);
+
+            expandedElement = textNode;
+            expandedMarkdown = specialFormat.source;
+            expandedType = specialFormat.type;
+
+            // Place cursor
+            const sel = window.getSelection();
+            const range = document.createRange();
+            const contentLen = formattedEl.textContent ? formattedEl.textContent.length : 0;
+            let cursorPos = specialFormat.prefix.length + Math.floor(contentLen / 2);
+            cursorPos = Math.max(0, Math.min(cursorPos, specialFormat.source.length));
+            range.setStart(textNode, Math.min(cursorPos, textNode.length));
+            range.collapse(true);
+            sel.removeAllRanges();
+            sel.addRange(range);
+            return true;
+        }
+
+        // 处理简单格式（粗体、斜体等，在 formatMap 中定义）
         const format = formatMap[tagName];
         if (format) {
-            const content = formattedEl.textContent;
-            const markdown = format.prefix + content + format.suffix;
+            // 使用 innerHTML 保留内部 HTML 格式
+            const innerHtml = formattedEl.innerHTML;
+            const markdown = format.prefix + innerHtml + format.suffix;
             const textNode = document.createTextNode(markdown);
             formattedEl.parentNode.replaceChild(textNode, formattedEl);
             expandedElement = textNode;
@@ -8916,32 +11462,14 @@ function __mountMdCloneDescriptionEditor({ editor, toolbar, formatToggleBtn, isE
             // Place cursor
             const sel = window.getSelection();
             const range = document.createRange();
-            range.setStart(textNode, format.prefix.length + Math.floor(content.length / 2));
+            const plainTextLen = formattedEl.textContent ? formattedEl.textContent.length : 0;
+            range.setStart(textNode, format.prefix.length + Math.floor(plainTextLen / 2));
             range.collapse(true);
             sel.removeAllRanges();
             sel.addRange(range);
             return true;
         }
-        // Handle FONT (Color), Center, P Align, Headers etc if needed...
-        // For brevity, we focus on bold/italic/highlight/code etc which are in formatMap.
-        // Font Color (FONT)
-        if (tagName === 'FONT') {
-            const color = formattedEl.getAttribute('color') || '#000';
-            const content = formattedEl.textContent;
-            const src = `<font color="${color}">${content}</font>`;
-            const textNode = document.createTextNode(src);
-            formattedEl.parentNode.replaceChild(textNode, formattedEl);
-            expandedElement = textNode;
-            expandedMarkdown = src;
-            expandedType = 'fontcolor';
-            const sel = window.getSelection();
-            const range = document.createRange();
-            range.setStart(textNode, src.length - 7); // end of content
-            range.collapse(true);
-            sel.removeAllRanges();
-            sel.addRange(range);
-            return true;
-        }
+
         return false;
     };
 
@@ -8961,14 +11489,35 @@ function __mountMdCloneDescriptionEditor({ editor, toolbar, formatToggleBtn, isE
     // Expand on click
     editor.addEventListener('click', (e) => {
         if (!e.target) return;
+        if (__handleHeadingCollapseClick(editor, e)) {
+            saveEditorContent();
+            return;
+        }
         if (typeof isEditing === 'function' && !isEditing()) return;
-        // If clicking on a formatted element (b, i, mark...)
+
         let target = e.target;
+
         // If clicked inside editor but not on text directly
         if (target !== editor && editor.contains(target)) {
-            // Find closest formatted element
-            const formatted = target.closest('strong, b, em, i, u, del, s, mark, code, font');
-            if (formatted && formatted.parentNode === editor) {
+            // Find closest formatted element (including block-level elements)
+            const formatted = target.closest('strong, b, em, i, u, del, s, mark, code, font, center, blockquote, h1, h2, h3, h4, h5, h6, hr, li, .md-task-item, p[align]');
+
+            if (formatted && editor.contains(formatted)) {
+                const isBlockRestricted = formatted.tagName === 'LI' || formatted.tagName === 'BLOCKQUOTE';
+                if (isBlockRestricted) {
+                    if (target !== formatted) return;
+                    const rect = formatted.getBoundingClientRect();
+                    const clickX = e.clientX - rect.left;
+                    const style = window.getComputedStyle(formatted);
+                    const paddingLeft = parseFloat(style.paddingLeft);
+                    const threshold = paddingLeft > 10 ? paddingLeft : 25;
+                    if (clickX > threshold) return;
+                }
+                // 如果已经有展开的元素，先重渲染
+                if (expandedElement && expandedElement.parentNode) {
+                    reRenderExpanded();
+                }
+                // 展开新元素
                 if (expandToMarkdown(formatted)) {
                     e.preventDefault();
                     e.stopPropagation();
@@ -8978,15 +11527,29 @@ function __mountMdCloneDescriptionEditor({ editor, toolbar, formatToggleBtn, isE
     });
 
     // Collapse on leave / Expand on enter
+    // 监听选区变化，当光标离开展开的源码时重渲染
     document.addEventListener('selectionchange', () => {
+        // 首先，始终检查是否需要重渲染（即使选区不在编辑器内）
         scheduleReRenderIfCaretLeftExpanded();
+
+        // 然后，只有选区在编辑器内时才检查是否需要展开
+        const sel = window.getSelection();
+        if (!sel || !sel.rangeCount) return;
+        const range = sel.getRangeAt(0);
+        if (!editor.contains(range.startContainer)) return;
+
+        // 自动展开检查
         checkAndExpandIfCaretEntered();
     });
+
     editor.addEventListener('blur', () => {
         if (expandedElement) reRenderExpanded();
     });
 
-
+    // 鼠标抬起时也检查是否需要重渲染
+    editor.addEventListener('mouseup', () => {
+        scheduleReRenderIfCaretLeftExpanded();
+    });
 
     // 当前选中的字体颜色
     let currentFontColor = '#2DC26B';
@@ -8998,6 +11561,7 @@ function __mountMdCloneDescriptionEditor({ editor, toolbar, formatToggleBtn, isE
 
         pop = document.createElement('div');
         pop.className = 'md-format-popover';
+        preventCanvasEventsPropagation(pop);
 
         const lang = getLang();
         const boldTitle = lang === 'en' ? 'Bold' : '加粗';
@@ -9034,12 +11598,16 @@ function __mountMdCloneDescriptionEditor({ editor, toolbar, formatToggleBtn, isE
         `;
 
         toolbar.appendChild(pop);
+        preventCanvasEventsPropagation(pop);
         return pop;
     };
 
     const closeFormatPopover = () => {
         const pop = toolbar.querySelector('.md-format-popover');
-        if (pop) pop.classList.remove('open');
+        if (pop) {
+            pop.classList.remove('open');
+            updateCanvasPopoverState(false);
+        }
         if (formatToggleBtn) formatToggleBtn.classList.remove('active');
     };
 
@@ -9059,6 +11627,7 @@ function __mountMdCloneDescriptionEditor({ editor, toolbar, formatToggleBtn, isE
 
         pop = document.createElement('div');
         pop.className = 'md-fontcolor-popover';
+        preventCanvasEventsPropagation(pop);
 
         const presetColors = [
             '#c00000', '#ff0000', '#ffc000', '#ffff00', '#92d050',
@@ -9090,6 +11659,7 @@ function __mountMdCloneDescriptionEditor({ editor, toolbar, formatToggleBtn, isE
 
         const formatPop = toolbar.querySelector('.md-format-popover');
         if (formatPop) formatPop.appendChild(pop);
+        preventCanvasEventsPropagation(pop);
         return pop;
     };
 
@@ -9106,6 +11676,7 @@ function __mountMdCloneDescriptionEditor({ editor, toolbar, formatToggleBtn, isE
 
         pop = document.createElement('div');
         pop.className = 'md-align-popover';
+        preventCanvasEventsPropagation(pop);
 
         const lang = getLang();
         const leftTitle = lang === 'en' ? 'Align Left' : '左对齐';
@@ -9127,7 +11698,10 @@ function __mountMdCloneDescriptionEditor({ editor, toolbar, formatToggleBtn, isE
 
     const closeAlignPopover = () => {
         const pop = toolbar.querySelector('.md-align-popover');
-        if (pop) pop.classList.remove('open');
+        if (pop) {
+            pop.classList.remove('open');
+            updateCanvasPopoverState(false);
+        }
         const btn = toolbar.querySelector('[data-action="md-align-toggle"]');
         if (btn) btn.classList.remove('active');
     };
@@ -9138,6 +11712,7 @@ function __mountMdCloneDescriptionEditor({ editor, toolbar, formatToggleBtn, isE
 
         pop = document.createElement('div');
         pop.className = 'md-heading-popover';
+        preventCanvasEventsPropagation(pop);
 
         const lang = getLang();
         const h1Title = lang === 'en' ? 'Heading 1' : '一级标题';
@@ -9157,7 +11732,10 @@ function __mountMdCloneDescriptionEditor({ editor, toolbar, formatToggleBtn, isE
 
     const closeHeadingPopover = () => {
         const pop = toolbar.querySelector('.md-heading-popover');
-        if (pop) pop.classList.remove('open');
+        if (pop) {
+            pop.classList.remove('open');
+            updateCanvasPopoverState(false);
+        }
         const btn = toolbar.querySelector('[data-action="md-heading-toggle"]');
         if (btn) btn.classList.remove('active');
     };
@@ -9168,6 +11746,7 @@ function __mountMdCloneDescriptionEditor({ editor, toolbar, formatToggleBtn, isE
 
         pop = document.createElement('div');
         pop.className = 'md-list-popover';
+        preventCanvasEventsPropagation(pop);
 
         const lang = getLang();
         const ulTitle = lang === 'en' ? 'Bullet List' : '无序列表';
@@ -9187,7 +11766,10 @@ function __mountMdCloneDescriptionEditor({ editor, toolbar, formatToggleBtn, isE
 
     const closeListPopover = () => {
         const pop = toolbar.querySelector('.md-list-popover');
-        if (pop) pop.classList.remove('open');
+        if (pop) {
+            pop.classList.remove('open');
+            updateCanvasPopoverState(false);
+        }
         const btn = toolbar.querySelector('[data-action="md-list-toggle"]');
         if (btn) btn.classList.remove('active');
     };
@@ -9212,10 +11794,12 @@ function __mountMdCloneDescriptionEditor({ editor, toolbar, formatToggleBtn, isE
         if (isOpen) {
             pop.classList.remove('open');
             btn.classList.remove('active');
+            updateCanvasPopoverState(false);
         } else {
             positionPopoverAboveBtn(pop, btn);
             pop.classList.add('open');
             btn.classList.add('active');
+            updateCanvasPopoverState(true);
         }
     };
 
@@ -9231,10 +11815,12 @@ function __mountMdCloneDescriptionEditor({ editor, toolbar, formatToggleBtn, isE
         if (isOpen) {
             pop.classList.remove('open');
             btn.classList.remove('active');
+            updateCanvasPopoverState(false);
         } else {
             positionPopoverAboveBtn(pop, btn);
             pop.classList.add('open');
             btn.classList.add('active');
+            updateCanvasPopoverState(true);
         }
     };
 
@@ -9250,10 +11836,12 @@ function __mountMdCloneDescriptionEditor({ editor, toolbar, formatToggleBtn, isE
         if (isOpen) {
             pop.classList.remove('open');
             btn.classList.remove('active');
+            updateCanvasPopoverState(false);
         } else {
             positionPopoverAboveBtn(pop, btn);
             pop.classList.add('open');
             btn.classList.add('active');
+            updateCanvasPopoverState(true);
         }
     };
 
@@ -9269,10 +11857,12 @@ function __mountMdCloneDescriptionEditor({ editor, toolbar, formatToggleBtn, isE
         if (isOpen) {
             pop.classList.remove('open');
             btn.classList.remove('active');
+            updateCanvasPopoverState(false);
         } else {
             positionPopoverAboveBtn(pop, btn);
             pop.classList.add('open');
             btn.classList.add('active');
+            updateCanvasPopoverState(true);
         }
     };
 
@@ -9283,6 +11873,7 @@ function __mountMdCloneDescriptionEditor({ editor, toolbar, formatToggleBtn, isE
         if (!isOpen) {
             pop.classList.add('open');
             formatToggleBtn.classList.add('active');
+            updateCanvasPopoverState(true);
 
             // -----------------------------------------------------------
             // 定位优化：出现在当前输入框（editor）的上边缘居中位置
@@ -9709,6 +12300,7 @@ function __mountMdCloneDescriptionEditor({ editor, toolbar, formatToggleBtn, isE
             if (!__tryConvertBlockPatternsAtCaret(editor)) break;
             changed = true;
         }
+        try { __applyHeadingCollapse(editor); } catch (_) { }
         saveEditorContent();
         return changed;
     };
@@ -9726,6 +12318,10 @@ function __mountMdCloneDescriptionEditor({ editor, toolbar, formatToggleBtn, isE
             /[*~=`=<>/\\\]\-#>]/.test(data)
         );
         if (shouldRenderImmediately) {
+            // 如果是粘贴或拖放，进行全量扫描以确保所有内容（包括多行）都被渲染
+            if (inputType === 'insertFromPaste' || inputType === 'insertFromDrop') {
+                try { __fullScanRenderDescriptionEditor(editor); } catch (_) { }
+            }
             liveRender();
             renderDebounceTimer = null;
             return;
@@ -9741,6 +12337,8 @@ function __mountMdCloneDescriptionEditor({ editor, toolbar, formatToggleBtn, isE
         if (typeof isEditing === 'function' && !isEditing()) return;
         try { liveRender(); } catch (_) { }
     });
+
+
 
     editor.addEventListener('click', (e) => {
         const target = e.target;
@@ -9837,22 +12435,11 @@ function renderTempNode(section) {
     titleContainer.className = 'temp-node-title-container';
 
     // 添加序号标签（如果有）
-    const toAlphaLabel = (n) => {
-        // 1->A, 2->B, ... 26->Z, 27->AA, 28->AB, ... Excel风格
-        let num = parseInt(n, 10);
-        if (!Number.isFinite(num) || num <= 0) return '';
-        let s = '';
-        while (num > 0) {
-            const rem = (num - 1) % 26;
-            s = String.fromCharCode(65 + rem) + s;
-            num = Math.floor((num - 1) / 26);
-        }
-        return s;
-    };
-    if (section.sequenceNumber) {
+    const sectionLabel = getTempSectionLabel(section);
+    if (sectionLabel) {
         const sequenceBadge = document.createElement('span');
         sequenceBadge.className = 'temp-node-sequence-badge';
-        sequenceBadge.textContent = toAlphaLabel(section.sequenceNumber);
+        applyTempSectionBadge(sequenceBadge, sectionLabel);
         titleContainer.appendChild(sequenceBadge);
     }
 
@@ -9883,9 +12470,26 @@ function renderTempNode(section) {
 
     const colorInput = document.createElement('input');
     colorInput.type = 'color';
-    colorInput.className = 'temp-node-color-input';
+    colorInput.className = 'temp-node-color-input md-color-input';
     colorInput.value = section.color || TEMP_SECTION_DEFAULT_COLOR;
     colorInput.title = colorLabel;
+
+    const lockBtn = document.createElement('button');
+    lockBtn.type = 'button';
+    lockBtn.className = 'temp-node-action-btn temp-color-lock-btn';
+    const lockLabel = (typeof currentLang !== 'undefined' && currentLang === 'en') ? 'Lock color' : '锁定颜色';
+    const unlockLabel = (typeof currentLang !== 'undefined' && currentLang === 'en') ? 'Unlock color' : '解除锁定';
+    const lockedSvg = '<svg viewBox="0 0 24 24" width="14" height="14" aria-hidden="true"><path fill="currentColor" d="M12 2a4 4 0 0 0-4 4v3H7a2 2 0 0 0-2 2v7a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-7a2 2 0 0 0-2-2h-1V6a4 4 0 0 0-4-4zm-2 7V6a2 2 0 1 1 4 0v3h-4z"/></svg>';
+    const unlockedSvg = '<svg viewBox="0 0 24 24" width="14" height="14" aria-hidden="true"><path fill="currentColor" d="M17 9h-1V7a4 4 0 0 0-7.4-2.2 1 1 0 1 0 1.7 1A2 2 0 0 1 14 7v2H7a2 2 0 0 0-2 2v7a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-7a2 2 0 0 0-2-2zm0 9H7v-7h10v7z"/></svg>';
+    const updateLockBtn = () => {
+        const locked = !!section.colorLocked;
+        lockBtn.classList.toggle('locked', locked);
+        lockBtn.innerHTML = locked ? lockedSvg : unlockedSvg;
+        lockBtn.title = locked ? unlockLabel : lockLabel;
+        lockBtn.setAttribute('aria-label', lockBtn.title);
+        lockBtn.setAttribute('aria-pressed', locked ? 'true' : 'false');
+    };
+    updateLockBtn();
 
     const colorBtn = document.createElement('button');
     colorBtn.type = 'button';
@@ -9893,10 +12497,98 @@ function renderTempNode(section) {
     colorBtn.title = colorLabel;
     colorBtn.setAttribute('aria-label', colorLabel);
     colorBtn.innerHTML = '<i class="fas fa-palette"></i>';
+
+    const colorWrap = document.createElement('div');
+    colorWrap.className = 'temp-node-color-wrap';
+
+    const colorPopover = document.createElement('div');
+    colorPopover.className = 'md-color-popover temp-color-popover';
+    preventCanvasEventsPropagation(colorPopover);
+    const rgbPickerTitle = (typeof currentLang !== 'undefined' && currentLang === 'en') ? 'RGB Color Picker' : 'RGB颜色选择器';
+    const recentTitle = (typeof currentLang !== 'undefined' && currentLang === 'en') ? 'Previous color' : '上上次颜色';
+    const chipRow = document.createElement('div');
+    chipRow.className = 'temp-color-chip-row';
+    chipRow.innerHTML = `
+        <span class="md-color-chip" data-action="md-color-preset" data-color="1" style="background:#ff6666"></span>
+        <span class="md-color-chip" data-action="md-color-preset" data-color="2" style="background:#ffaa66"></span>
+        <span class="md-color-chip" data-action="md-color-preset" data-color="3" style="background:#ffdd66"></span>
+        <span class="md-color-chip" data-action="md-color-preset" data-color="4" style="background:#66dd99"></span>
+        <span class="md-color-chip" data-action="md-color-preset" data-color="5" style="background:#66bbff"></span>
+        <span class="md-color-chip" data-action="md-color-preset" data-color="6" style="background:#bb99ff"></span>
+        <span class="temp-color-divider" aria-hidden="true"></span>
+        <span class="md-color-chip temp-color-current-chip" data-action="md-color-recent" title="${recentTitle}"></span>
+        <button class="md-color-chip md-color-picker-btn" data-action="md-color-picker-toggle" title="${rgbPickerTitle}">
+            <svg viewBox="0 0 24 24" width="14" height="14">
+                <circle cx="12" cy="12" r="10" fill="url(#rainbow-gradient-temp)" />
+                <defs>
+                    <linearGradient id="rainbow-gradient-temp" x1="0%" y1="0%" x2="100%" y2="100%">
+                        <stop offset="0%" style="stop-color:#ff0000" />
+                        <stop offset="16.67%" style="stop-color:#ff9900" />
+                        <stop offset="33.33%" style="stop-color:#ffff00" />
+                        <stop offset="50%" style="stop-color:#00ff00" />
+                        <stop offset="66.67%" style="stop-color:#0099ff" />
+                        <stop offset="83.33%" style="stop-color:#9900ff" />
+                        <stop offset="100%" style="stop-color:#ff0099" />
+                    </linearGradient>
+                </defs>
+            </svg>
+        </button>
+    `;
+    const defaultChipEl = chipRow.querySelector('.temp-color-current-chip');
+    const resolveHistoryColor = (value) => {
+        const normalized = normalizeHexColor(value || '');
+        return normalized ? `#${normalized}` : TEMP_SECTION_DEFAULT_COLOR;
+    };
+    const syncHistoryChip = (value) => {
+        if (!defaultChipEl) return;
+        const safe = resolveHistoryColor(value);
+        defaultChipEl.dataset.color = safe;
+        defaultChipEl.style.backgroundColor = safe;
+        defaultChipEl.style.backgroundImage = 'none';
+        defaultChipEl.style.border = '';
+    };
+    const updateColorHistory = (value) => {
+        const safe = resolveHistoryColor(value);
+        const last = resolveHistoryColor(CanvasState.tempSectionLastColor || TEMP_SECTION_DEFAULT_COLOR);
+        CanvasState.tempSectionPrevColor = last;
+        CanvasState.tempSectionLastColor = safe;
+        syncHistoryChip(CanvasState.tempSectionPrevColor || TEMP_SECTION_DEFAULT_COLOR);
+    };
+    syncHistoryChip(CanvasState.tempSectionPrevColor || TEMP_SECTION_DEFAULT_COLOR);
+    chipRow.appendChild(lockBtn);
+    colorPopover.appendChild(chipRow);
+    colorPopover.appendChild(colorInput);
+    colorWrap.appendChild(colorBtn);
+    colorWrap.appendChild(colorPopover);
+    preventCanvasEventsPropagation(colorPopover);
+
+    const closeColorPopover = () => {
+        colorPopover.classList.remove('open');
+        updateCanvasPopoverState(false);
+    };
+
     colorBtn.addEventListener('click', (event) => {
         event.preventDefault();
         event.stopPropagation();
-        colorInput.click();
+        const isOpen = colorPopover.classList.contains('open');
+        document.querySelectorAll('.temp-color-popover.open').forEach(el => {
+            if (el !== colorPopover) el.classList.remove('open');
+        });
+        if (isOpen) {
+            closeColorPopover();
+            return;
+        }
+        syncHistoryChip(CanvasState.tempSectionPrevColor || TEMP_SECTION_DEFAULT_COLOR);
+        colorPopover.classList.add('open');
+        updateCanvasPopoverState(true);
+
+        const onDoc = (e) => {
+            if (!colorPopover.contains(e.target) && e.target !== colorBtn) {
+                closeColorPopover();
+                document.removeEventListener('mousedown', onDoc, true);
+            }
+        };
+        document.addEventListener('mousedown', onDoc, true);
     });
 
     const closeBtn = document.createElement('button');
@@ -9909,9 +12601,55 @@ function renderTempNode(section) {
     closeBtn.addEventListener('click', () => removeTempNode(section.id));
 
     colorInput.addEventListener('input', (event) => {
-        section.color = event.target.value || TEMP_SECTION_DEFAULT_COLOR;
+        const nextColor = event.target.value || TEMP_SECTION_DEFAULT_COLOR;
+        section.color = nextColor;
         applyTempSectionColor(section, nodeElement, header, colorBtn, colorInput);
+        propagateTempSectionColor(section, nextColor);
+        updateColorHistory(nextColor);
         saveTempNodes();
+    });
+
+    lockBtn.addEventListener('click', (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        section.colorLocked = !section.colorLocked;
+        updateLockBtn();
+        saveTempNodes();
+    });
+
+    colorPopover.addEventListener('click', (event) => {
+        const btn = event.target.closest('.md-color-chip, .md-color-picker-btn');
+        if (!btn) return;
+        event.preventDefault();
+        event.stopPropagation();
+        const action = btn.getAttribute('data-action');
+
+        if (action === 'md-color-picker-toggle') {
+            colorInput.click();
+            return;
+        }
+
+        if (action === 'md-color-recent') {
+            const nextColor = (defaultChipEl && defaultChipEl.dataset.color) || TEMP_SECTION_DEFAULT_COLOR;
+            section.color = nextColor;
+            applyTempSectionColor(section, nodeElement, header, colorBtn, colorInput);
+            propagateTempSectionColor(section, nextColor);
+            updateColorHistory(nextColor);
+            saveTempNodes();
+            closeColorPopover();
+            return;
+        }
+
+        if (action === 'md-color-preset') {
+            const preset = String(btn.getAttribute('data-color') || '').trim();
+            const nextColor = presetToHex(preset) || TEMP_SECTION_DEFAULT_COLOR;
+            section.color = nextColor;
+            applyTempSectionColor(section, nodeElement, header, colorBtn, colorInput);
+            propagateTempSectionColor(section, nextColor);
+            updateColorHistory(nextColor);
+            saveTempNodes();
+            closeColorPopover();
+        }
     });
 
     renameBtn.addEventListener('click', (event) => {
@@ -9973,8 +12711,7 @@ function renderTempNode(section) {
 
     actions.appendChild(renameBtn);
     actions.appendChild(pinBtn);
-    actions.appendChild(colorBtn);
-    actions.appendChild(colorInput);
+    actions.appendChild(colorWrap);
     actions.appendChild(closeBtn);
 
     header.appendChild(titleContainer);
@@ -10014,6 +12751,7 @@ function renderTempNode(section) {
     // 初始化内容：兼容旧的 Markdown 存储；编辑器内使用 HTML（与空白栏目一致）
     const initialHtml = __normalizeCanvasRichHtml(__coerceDescriptionSourceToHtml(section.description || ''));
     descriptionText.innerHTML = initialHtml;
+    try { __applyHeadingCollapse(descriptionText); } catch (_) { }
 
     // 双击编辑功能
     descriptionText.addEventListener('dblclick', (e) => {
@@ -10080,7 +12818,7 @@ function renderTempNode(section) {
     };
 
     const persistDesc = ({ normalizeEditorHtml = false } = {}) => {
-        const normalized = __normalizeCanvasRichHtml(descriptionText.innerHTML);
+        const normalized = __normalizeCanvasRichHtml(__getCleanHtmlForStorage(descriptionText));
         section.description = normalized;
         if (normalizeEditorHtml) {
             descriptionText.innerHTML = normalized;
@@ -10188,6 +12926,63 @@ function renderTempNode(section) {
     descriptionText.addEventListener('blur', () => {
         if (!isEditingDesc) return;
         exitEditingDescription({ commit: true });
+    });
+
+    // 复制时转换为 Markdown 源码格式（而非渲染后的富文本）
+    descriptionText.addEventListener('copy', (e) => {
+        const selection = window.getSelection();
+        if (!selection || !selection.rangeCount) return;
+
+        const range = selection.getRangeAt(0);
+        const container = document.createElement('div');
+        container.appendChild(range.cloneContents());
+        const selectedHtml = container.innerHTML;
+
+        const isAll = __isSelectionAll(descriptionText, selection);
+        const htmlSource = isAll ? __getCleanHtmlForStorage(descriptionText) : selectedHtml;
+        if (!htmlSource) return;
+
+        const markdownSource = __htmlToMarkdown(htmlSource);
+
+        // 智能优化：选中整行自动补充 Markdown 符号
+        let finalSource = markdownSource;
+        if (selection.rangeCount > 0) {
+            const range = selection.getRangeAt(0);
+            const commonAncestor = range.commonAncestorContainer;
+            const blockEl = (commonAncestor.nodeType === 1 ? commonAncestor : commonAncestor.parentNode).closest('li, h1, h2, h3, h4, h5, h6, blockquote');
+            if (blockEl && descriptionText.contains(blockEl)) {
+                const blockText = blockEl.textContent.trim();
+                const selectedText = selection.toString().trim();
+                if (blockText && selectedText && blockText === selectedText) {
+                    const tag = blockEl.tagName;
+                    if (tag === 'LI') {
+                        const parent = blockEl.parentElement;
+                        if (parent && parent.tagName === 'OL') {
+                            const index = Array.from(parent.children).indexOf(blockEl) + 1;
+                            finalSource = `${index}. ${finalSource}`;
+                        } else {
+                            finalSource = (blockEl.classList.contains('md-task-item'))
+                                ? `- ${blockEl.querySelector('input') && blockEl.querySelector('input').checked ? '[x]' : '[ ]'} ${finalSource}`
+                                : `- ${finalSource}`;
+                        }
+                    } else if (tag === 'H1') finalSource = `# ${finalSource}`;
+                    else if (tag === 'H2') finalSource = `## ${finalSource}`;
+                    else if (tag === 'H3') finalSource = `### ${finalSource}`;
+                    else if (tag === 'BLOCKQUOTE') finalSource = `> ${finalSource}`;
+                }
+            }
+        }
+
+        const safeHtml = __normalizeCanvasRichHtml(htmlSource);
+        if (safeHtml) {
+            try { e.clipboardData.setData('text/html', safeHtml); } catch (_) { }
+            try { e.clipboardData.setData('application/x-bookmark-canvas-html', safeHtml); } catch (_) { }
+        }
+
+        e.preventDefault();
+        e.clipboardData.setData('text/plain', finalSource);
+        // 移除 HTML 格式
+        // e.clipboardData.setData('text/html', selectedHtml);
     });
 
     descriptionControls.addEventListener('mousedown', (e) => {
@@ -11187,6 +13982,7 @@ function makeNodeDraggable(element, section) {
         if (!target) return;
 
         if (target.closest('.temp-node-action-btn') ||
+            target.closest('.temp-color-popover') ||
             target.classList.contains('temp-node-color-input') ||
             (target.classList.contains('temp-node-title') && target.classList.contains('editing')) ||
             target.closest('.canvas-node-anchor') ||
@@ -11683,17 +14479,6 @@ function reorderSectionSequenceNumbers() {
         .sort((a, b) => a.sequenceNumber - b.sequenceNumber);
 
     // 重新分配序号 1, 2, 3, ...（显示为 A, B, C, ...）
-    const toAlphaLabel = (n) => {
-        let num = parseInt(n, 10);
-        if (!Number.isFinite(num) || num <= 0) return '';
-        let s = '';
-        while (num > 0) {
-            const rem = (num - 1) % 26;
-            s = String.fromCharCode(65 + rem) + s;
-            num = Math.floor((num - 1) / 26);
-        }
-        return s;
-    };
     sortedSections.forEach((section, index) => {
         const newSequenceNumber = index + 1;
         if (section.sequenceNumber !== newSequenceNumber) {
@@ -11705,7 +14490,7 @@ function reorderSectionSequenceNumbers() {
             if (element) {
                 const badge = element.querySelector('.temp-node-sequence-badge');
                 if (badge) {
-                    badge.textContent = toAlphaLabel(newSequenceNumber);
+                    applyTempSectionBadge(badge, getTempSectionLabel(section));
                 }
             }
         }
@@ -11787,6 +14572,7 @@ function setupPermanentSectionTipClose() {
     })();
     const savedTipHtml = __normalizeCanvasRichHtml(__coerceDescriptionSourceToHtml(savedTipRaw));
     tipText.innerHTML = savedTipHtml;
+    try { __applyHeadingCollapse(tipText); } catch (_) { }
     applyPlaceholder();
 
     const updateTipMeta = () => {
@@ -11829,7 +14615,7 @@ function setupPermanentSectionTipClose() {
     let beforeEditStored = savedTipRaw;
 
     const persistTip = ({ normalizeEditorHtml = false } = {}) => {
-        const normalized = __normalizeCanvasRichHtml(tipText.innerHTML);
+        const normalized = __normalizeCanvasRichHtml(__getCleanHtmlForStorage(tipText));
         try {
             if (normalized) localStorage.setItem('canvas-permanent-tip-text', normalized);
             else localStorage.removeItem('canvas-permanent-tip-text');
@@ -11927,6 +14713,63 @@ function setupPermanentSectionTipClose() {
     tipText.addEventListener('blur', () => {
         if (!isEditingTip) return;
         exitEditingTip({ commit: true });
+    });
+
+    // 复制时转换为 Markdown 源码格式（而非渲染后的富文本）
+    tipText.addEventListener('copy', (e) => {
+        const selection = window.getSelection();
+        if (!selection || !selection.rangeCount) return;
+
+        const range = selection.getRangeAt(0);
+        const container = document.createElement('div');
+        container.appendChild(range.cloneContents());
+        const selectedHtml = container.innerHTML;
+
+        const isAll = __isSelectionAll(tipText, selection);
+        const htmlSource = isAll ? __getCleanHtmlForStorage(tipText) : selectedHtml;
+        if (!htmlSource) return;
+
+        const markdownSource = __htmlToMarkdown(htmlSource);
+
+        // 智能优化：选中整行自动补充 Markdown 符号
+        let finalSource = markdownSource;
+        if (selection.rangeCount > 0) {
+            const range = selection.getRangeAt(0);
+            const commonAncestor = range.commonAncestorContainer;
+            const blockEl = (commonAncestor.nodeType === 1 ? commonAncestor : commonAncestor.parentNode).closest('li, h1, h2, h3, h4, h5, h6, blockquote');
+            if (blockEl && tipText.contains(blockEl)) {
+                const blockText = blockEl.textContent.trim();
+                const selectedText = selection.toString().trim();
+                if (blockText && selectedText && blockText === selectedText) {
+                    const tag = blockEl.tagName;
+                    if (tag === 'LI') {
+                        const parent = blockEl.parentElement;
+                        if (parent && parent.tagName === 'OL') {
+                            const index = Array.from(parent.children).indexOf(blockEl) + 1;
+                            finalSource = `${index}. ${finalSource}`;
+                        } else {
+                            finalSource = (blockEl.classList.contains('md-task-item'))
+                                ? `- ${blockEl.querySelector('input') && blockEl.querySelector('input').checked ? '[x]' : '[ ]'} ${finalSource}`
+                                : `- ${finalSource}`;
+                        }
+                    } else if (tag === 'H1') finalSource = `# ${finalSource}`;
+                    else if (tag === 'H2') finalSource = `## ${finalSource}`;
+                    else if (tag === 'H3') finalSource = `### ${finalSource}`;
+                    else if (tag === 'BLOCKQUOTE') finalSource = `> ${finalSource}`;
+                }
+            }
+        }
+
+        const safeHtml = __normalizeCanvasRichHtml(htmlSource);
+        if (safeHtml) {
+            try { e.clipboardData.setData('text/html', safeHtml); } catch (_) { }
+            try { e.clipboardData.setData('application/x-bookmark-canvas-html', safeHtml); } catch (_) { }
+        }
+
+        e.preventDefault();
+        e.clipboardData.setData('text/plain', finalSource);
+        // 移除 HTML 格式
+        // e.clipboardData.setData('text/html', selectedHtml);
     });
 
     if (tipControls) {
@@ -12364,12 +15207,11 @@ async function handleFileImport(e) {
         }
 
         document.getElementById('canvasImportDialog').remove();
-        const { isEn } = __getLang();
-        alert(isEn ? 'Import succeeded.' : '导入成功！');
+        // 成功提示已在各导入函数中显示，这里不再重复
     } catch (error) {
         console.error('[Canvas] 导入失败:', error);
         const { isEn } = __getLang();
-        alert((isEn ? 'Import failed: ' : '导入失败: ') + (error && error.message ? error.message : error));
+        showCanvasToast((isEn ? 'Import failed: ' : '导入失败: ') + (error && error.message ? error.message : error), 'error');
     }
 
     e.target.value = '';
@@ -12433,65 +15275,440 @@ async function importCanvasPackageJson(file) {
     __processSandboxedImport(tempState, storage, primaryState, file.name);
 }
 
+/**
+ * 导入 HTML 书签文件（支持 Netscape Bookmark 格式及通用 HTML）
+ * 
+ * 支持的格式：
+ * 1. Netscape Bookmark 格式（<!DOCTYPE NETSCAPE-Bookmark-file-1>）
+ *    - Chrome、Firefox、Edge、Safari 等浏览器导出的标准格式
+ *    - 保留完整的文件夹层级结构
+ *    - 解析 <DL>/<DT>/<H3>/<A> 标签
+ * 2. 通用 HTML 格式
+ *    - 任何包含 <a href> 链接的 HTML 文件
+ *    - 扁平化提取所有链接
+ */
 async function importHtmlBookmarks(html) {
+    const { isEn } = __getLang();
     const parser = new DOMParser();
     const doc = parser.parseFromString(html, 'text/html');
-    const links = doc.querySelectorAll('a[href]');
 
-    let x = 100;
-    let y = 100;
+    // 检测是否为 Netscape Bookmark 格式（通过 DOCTYPE 或结构特征）
+    const isNetscapeFormat = html.includes('NETSCAPE-Bookmark-file-1') ||
+        html.includes('<!DOCTYPE NETSCAPE-Bookmark-file') ||
+        (doc.querySelector('dl') && doc.querySelector('dt'));
 
-    for (const [index, link] of Array.from(links).entries()) {
-        const bookmark = {
-            id: 'imported-' + Date.now() + '-' + index,
-            title: link.textContent,
-            url: link.href,
-            type: 'bookmark'
-        };
+    let items = [];
+    let totalCount = 0;
 
-        await createTempNode(bookmark, x, y);
-        x += 30;
-        y += 30;
+    if (isNetscapeFormat) {
+        // 使用 Netscape 格式解析器，保留层级结构
+        const result = parseNetscapeBookmarkHtml(doc);
+        items = result.items;
+        totalCount = result.totalCount;
+    } else {
+        // 回退到简单的链接提取模式
+        const links = doc.querySelectorAll('a[href]');
+        if (links && links.length > 0) {
+            items = Array.from(links).map(link => ({
+                title: (link.textContent || '').trim() || link.href,
+                url: link.href,
+                type: 'bookmark',
+                children: []
+            }));
+            totalCount = items.length;
+        }
     }
-}
 
-async function importJsonBookmarks(json) {
-    const data = JSON.parse(json);
+    if (!items || items.length === 0) {
+        showCanvasToast(isEn ? 'No valid bookmark links found.' : '未找到有效的书签链接', 'error');
+        return;
+    }
 
-    let x = 100;
-    let y = 100;
-
-    const processNode = async (node) => {
-        if (node.url) {
-            const bookmark = {
-                id: node.id || 'imported-' + Date.now(),
-                title: node.name || node.title,
-                url: node.url,
-                type: 'bookmark'
-            };
-            await createTempNode(bookmark, x, y);
-            x += 30;
-            y += 30;
-        }
-
-        if (node.children) {
-            for (const child of node.children) {
-                await processNode(child);
-            }
-        }
+    // 创建一个新的临时栏目容器
+    // 在当前视口中找一个空白位置
+    const position = findAvailablePositionInViewport(TEMP_SECTION_DEFAULT_WIDTH, TEMP_SECTION_DEFAULT_HEIGHT);
+    const sectionId = `temp-section-${++CanvasState.tempSectionCounter}`;
+    const section = {
+        id: sectionId,
+        title: isEn
+            ? `Imported Bookmarks (${totalCount}) - ${formatTimestampForTitle()}`
+            : `导入的书签 (${totalCount}) - ${formatTimestampForTitle()}`,
+        color: pickTempSectionColor(),
+        x: position.x,
+        y: position.y,
+        width: TEMP_SECTION_DEFAULT_WIDTH,
+        height: TEMP_SECTION_DEFAULT_HEIGHT,
+        createdAt: Date.now(),
+        items: []
     };
 
-    if (data.roots) {
-        for (const root of Object.values(data.roots)) {
-            if (root.children) {
-                for (const child of root.children) {
-                    await processNode(child);
+    // 递归转换为临时栏目格式
+    const convertToTempItem = (node) => {
+        const item = {
+            id: `temp-${sectionId}-${++CanvasState.tempItemCounter}`,
+            sectionId: sectionId,
+            title: node.title || (node.url ? (isEn ? 'Untitled' : '未命名') : (isEn ? 'Folder' : '文件夹')),
+            url: node.url || '',
+            type: node.url ? 'bookmark' : 'folder',
+            children: [],
+            createdAt: Date.now()
+        };
+
+        if (node.children && Array.isArray(node.children)) {
+            item.children = node.children.map(convertToTempItem).filter(Boolean);
+        }
+
+        return item;
+    };
+
+    section.items = items.map(convertToTempItem).filter(Boolean);
+
+    CanvasState.tempSections.push(section);
+    renderTempNode(section);
+
+    // 如果找不到空白位置，需要将新栏目设置为更高的 z-index（覆盖在其他元素之上）
+    if (position.needsHigherZIndex) {
+        const nodeElement = document.getElementById(section.id);
+        if (nodeElement) {
+            nodeElement.style.zIndex = '500';  // 比其他栏目更高
+            // 添加一个轻微的阴影效果，让用户知道这是覆盖在其他元素之上的
+            nodeElement.style.boxShadow = '0 8px 32px rgba(0, 0, 0, 0.35)';
+        }
+    }
+
+    saveTempNodes();
+
+    // 添加呼吸式闪烁效果，吸引用户注意
+    const nodeElement = document.getElementById(section.id);
+    if (nodeElement) {
+        pulseBreathingEffect(nodeElement, 1500);
+    }
+
+    // 显示成功提示
+    showCanvasToast(
+        isEn ? `Successfully imported ${totalCount} bookmarks` : `成功导入 ${totalCount} 个书签`,
+        'success'
+    );
+
+    // 移动视图到新栏目
+    setCanvasZoom(CanvasState.zoom, section.x + section.width / 2, section.y + section.height / 2);
+}
+
+/**
+ * 解析 Netscape Bookmark HTML 格式
+ * 标准结构：
+ *   <DL><p>
+ *     <DT><H3>文件夹名</H3>
+ *     <DL><p>
+ *       <DT><A HREF="...">书签名</A>
+ *       ...
+ *     </DL><p>
+ *     <DT><A HREF="...">书签名</A>
+ *   </DL><p>
+ */
+function parseNetscapeBookmarkHtml(doc) {
+    let totalCount = 0;
+
+    // 递归解析 DL 元素
+    const parseDL = (dlElement) => {
+        const items = [];
+        if (!dlElement) return items;
+
+        // 遍历 DL 的直接子元素
+        const children = dlElement.children;
+        for (let i = 0; i < children.length; i++) {
+            const child = children[i];
+
+            // 跳过非 DT 元素（如 <p> 标签）
+            if (child.tagName !== 'DT') continue;
+
+            // 检查 DT 内部是文件夹（H3）还是书签（A）
+            const h3 = child.querySelector(':scope > h3, :scope > H3');
+            const anchor = child.querySelector(':scope > a, :scope > A');
+
+            if (h3) {
+                // 这是一个文件夹
+                const folderTitle = (h3.textContent || '').trim() || 'Folder';
+
+                // 查找紧随其后的 DL（文件夹内容）
+                // 可能是 DT 的下一个兄弟元素，也可能在 DT 内部
+                let subDL = child.querySelector(':scope > dl, :scope > DL');
+                if (!subDL) {
+                    // 检查下一个兄弟元素
+                    let nextSibling = child.nextElementSibling;
+                    while (nextSibling && nextSibling.tagName !== 'DT' && nextSibling.tagName !== 'DL') {
+                        nextSibling = nextSibling.nextElementSibling;
+                    }
+                    if (nextSibling && (nextSibling.tagName === 'DL' || nextSibling.tagName === 'dl')) {
+                        subDL = nextSibling;
+                    }
+                }
+
+                const folderItem = {
+                    title: folderTitle,
+                    url: '',
+                    type: 'folder',
+                    children: subDL ? parseDL(subDL) : []
+                };
+                items.push(folderItem);
+
+            } else if (anchor) {
+                // 这是一个书签
+                const href = anchor.getAttribute('href') || '';
+                const title = (anchor.textContent || '').trim() || href;
+
+                // 跳过无效的链接（如 javascript: 或空链接）
+                if (href && !href.startsWith('javascript:') && href !== '#') {
+                    const bookmarkItem = {
+                        title: title,
+                        url: href,
+                        type: 'bookmark',
+                        children: []
+                    };
+                    items.push(bookmarkItem);
+                    totalCount++;
                 }
             }
         }
-    } else {
-        await processNode(data);
+
+        return items;
+    };
+
+    // 找到根 DL 元素
+    // 通常在 <H1> 后面，或者直接是第一个 <DL>
+    let rootDL = doc.querySelector('body > dl, body > DL');
+    if (!rootDL) {
+        // 尝试找到任何 DL
+        rootDL = doc.querySelector('dl, DL');
     }
+
+    const items = rootDL ? parseDL(rootDL) : [];
+
+    return { items, totalCount };
+}
+
+/**
+ * 导入 JSON 书签文件（支持多种格式）
+ * 
+ * 支持的格式：
+ * 1. Chrome/Edge 内部格式：{roots: {bookmark_bar: {...}, other: {...}, synced: {...}}}
+ * 2. Chrome API 格式：{id, title, url, children, dateAdded, parentId}
+ * 3. Firefox 格式：{root, guid, title, uri, children, dateAdded}
+ * 4. 通用数组格式：[{name/title, url/href/uri, children}, ...]
+ * 5. 单对象格式：{name/title, url/href/uri, children}
+ * 6. 第三方插件常用格式（兼容各种字段名）
+ */
+async function importJsonBookmarks(json) {
+    const { isEn } = __getLang();
+    let data;
+    try {
+        data = JSON.parse(json);
+    } catch (e) {
+        showCanvasToast(isEn ? 'Invalid JSON format.' : '无效的 JSON 格式', 'error');
+        return;
+    }
+
+    // 统计书签总数
+    let totalBookmarkCount = 0;
+
+    // 通用转换器 - 支持多种字段名
+    const convert = (node) => {
+        if (!node || typeof node !== 'object') return null;
+
+        // 获取标题：支持 title, name, label, text
+        const title = node.title || node.name || node.label || node.text || '';
+
+        // 获取 URL：支持 url, uri, href, link
+        const url = node.url || node.uri || node.href || node.link || '';
+
+        // 判断类型
+        // Firefox 使用 type: "text/x-moz-place" 或 "text/x-moz-place-container"
+        // Chrome 使用 type 字段或检查是否有 url
+        let isFolder = false;
+        if (node.type) {
+            // Firefox: "text/x-moz-place-container" 是文件夹
+            // Chrome: "folder" 是文件夹
+            if (node.type === 'text/x-moz-place-container' ||
+                node.type === 'folder' ||
+                node.type === 'directory') {
+                isFolder = true;
+            }
+        } else {
+            // 没有 type 字段时：有 children 且没有 url 视为文件夹
+            isFolder = !url && (node.children && Array.isArray(node.children));
+        }
+
+        // 跳过无效节点（既没有标题也没有 URL，且没有 children）
+        if (!title && !url && (!node.children || node.children.length === 0)) {
+            return null;
+        }
+
+        // 跳过无效的链接
+        if (url && (url.startsWith('javascript:') || url === '#' || url === 'about:blank')) {
+            return null;
+        }
+
+        const item = {
+            title: title || (url ? (isEn ? 'Untitled' : '未命名') : (isEn ? 'Folder' : '文件夹')),
+            url: url,
+            type: (url && !isFolder) ? 'bookmark' : 'folder',
+            children: []
+        };
+
+        if (url && !isFolder) {
+            totalBookmarkCount++;
+        }
+
+        // 递归处理子节点
+        if (node.children && Array.isArray(node.children)) {
+            item.children = node.children.map(convert).filter(Boolean);
+        }
+
+        return item;
+    };
+
+    // 转换为临时栏目格式
+    const convertToTempItem = (node, sectionId) => {
+        const item = {
+            id: `temp-${sectionId}-${++CanvasState.tempItemCounter}`,
+            sectionId: sectionId,
+            title: node.title,
+            url: node.url || '',
+            type: node.type,
+            children: [],
+            createdAt: Date.now()
+        };
+
+        if (node.children && Array.isArray(node.children)) {
+            item.children = node.children.map(c => convertToTempItem(c, sectionId)).filter(Boolean);
+        }
+
+        return item;
+    };
+
+    let items = [];
+
+    // 检测并处理不同格式
+    if (data.roots) {
+        // Chrome/Edge 内部格式：{roots: {bookmark_bar, other, synced}}
+        console.log('[Canvas] Detected Chrome/Edge internal bookmark format');
+        for (const [key, root] of Object.entries(data.roots)) {
+            if (root && typeof root === 'object') {
+                // 跳过 sync_transaction_version 等非书签字段
+                if (typeof root === 'number' || typeof root === 'string') continue;
+
+                if (root.children && Array.isArray(root.children)) {
+                    // 创建一个代表根文件夹的节点
+                    const rootName = root.name || key;
+                    const rootItem = {
+                        title: rootName,
+                        url: '',
+                        type: 'folder',
+                        children: root.children.map(convert).filter(Boolean)
+                    };
+                    if (rootItem.children.length > 0) {
+                        items.push(rootItem);
+                    }
+                } else if (root.url) {
+                    // 单个书签
+                    const item = convert(root);
+                    if (item) items.push(item);
+                }
+            }
+        }
+    } else if (data.root && data.guid) {
+        // Firefox JSON 格式（完整备份）
+        console.log('[Canvas] Detected Firefox bookmark format');
+        if (data.children && Array.isArray(data.children)) {
+            data.children.forEach(child => {
+                const item = convert(child);
+                if (item) items.push(item);
+            });
+        }
+    } else if (Array.isArray(data)) {
+        // 数组格式 - 最通用的格式
+        console.log('[Canvas] Detected array bookmark format');
+
+        // 检查是否是 Chrome bookmarks.getTree() 的输出格式
+        // 通常返回 [{id: "0", title: "", children: [...]}]
+        if (data.length === 1 && data[0].children && !data[0].url) {
+            // 可能是 Chrome API 格式的根节点
+            data[0].children.forEach(child => {
+                const item = convert(child);
+                if (item) items.push(item);
+            });
+        } else {
+            data.forEach(c => {
+                const item = convert(c);
+                if (item) items.push(item);
+            });
+        }
+    } else if (data.children && Array.isArray(data.children)) {
+        // 单个根节点格式（可能是 Chrome API 格式）
+        console.log('[Canvas] Detected single root node format');
+        data.children.forEach(child => {
+            const item = convert(child);
+            if (item) items.push(item);
+        });
+    } else {
+        // 单个对象格式
+        console.log('[Canvas] Detected single object format');
+        const item = convert(data);
+        if (item) items.push(item);
+    }
+
+    if (items.length === 0) {
+        showCanvasToast(isEn ? 'No valid bookmark data found.' : '未解析到有效的书签数据', 'error');
+        return;
+    }
+
+    // 创建一个新的临时栏目容器
+    // 在当前视口中找一个空白位置
+    const position = findAvailablePositionInViewport(TEMP_SECTION_DEFAULT_WIDTH, TEMP_SECTION_DEFAULT_HEIGHT);
+    const sectionId = `temp-section-${++CanvasState.tempSectionCounter}`;
+    const section = {
+        id: sectionId,
+        title: isEn
+            ? `Imported Bookmarks (JSON, ${totalBookmarkCount}) - ${formatTimestampForTitle()}`
+            : `导入的书签 (JSON, ${totalBookmarkCount}) - ${formatTimestampForTitle()}`,
+        color: pickTempSectionColor(),
+        x: position.x,
+        y: position.y,
+        width: TEMP_SECTION_DEFAULT_WIDTH,
+        height: TEMP_SECTION_DEFAULT_HEIGHT,
+        createdAt: Date.now(),
+        items: items.map(item => convertToTempItem(item, sectionId)).filter(Boolean)
+    };
+
+    CanvasState.tempSections.push(section);
+    renderTempNode(section);
+
+    // 如果找不到空白位置，需要将新栏目设置为更高的 z-index（覆盖在其他元素之上）
+    if (position.needsHigherZIndex) {
+        const nodeElement = document.getElementById(section.id);
+        if (nodeElement) {
+            nodeElement.style.zIndex = '500';  // 比其他栏目更高
+            // 添加一个轻微的阴影效果，让用户知道这是覆盖在其他元素之上的
+            nodeElement.style.boxShadow = '0 8px 32px rgba(0, 0, 0, 0.35)';
+        }
+    }
+
+    saveTempNodes();
+
+    // 添加呼吸式闪烁效果，吸引用户注意
+    const nodeElement = document.getElementById(section.id);
+    if (nodeElement) {
+        pulseBreathingEffect(nodeElement, 1500);
+    }
+
+    // 显示成功提示
+    showCanvasToast(
+        isEn ? `Successfully imported ${totalBookmarkCount} bookmarks` : `成功导入 ${totalBookmarkCount} 个书签`,
+        'success'
+    );
+
+    // 移动视图到新栏目
+    setCanvasZoom(CanvasState.zoom, section.x + section.width / 2, section.y + section.height / 2);
 }
 
 function exportCanvas() {
@@ -13078,8 +16295,8 @@ function __buildTempSectionMarkdown(section) {
 
     // 1. Title & Sequence
     const rawTitle = String((section && section.title) || (isEn ? 'Temp Section' : '临时栏目'));
-    const seq = (section && section.sequenceNumber) ? __toAlphaLabel(section.sequenceNumber) : '';
-    const fullTitle = seq ? `${seq}. ${rawTitle}` : rawTitle;
+    const seqLabel = getTempSectionLabel(section);
+    const fullTitle = seqLabel ? `${seqLabel}. ${rawTitle}` : rawTitle;
 
     // Frontmatter removed
     /* const header = __frontmatter({
@@ -13378,6 +16595,45 @@ function __buildTempSectionMarkdownEditable(section) {
 
 
 /**
+ * [SECURITY] Sanitize Imported URL
+ * Prevent XSS (javascript:) and other dangerous schemes.
+ * Allow common productivity schemes (obsidian:, zotero:, etc.)
+ */
+function __sanitizeImportUrl(url) {
+    if (!url) return '';
+    const trimmed = String(url).trim();
+    if (!trimmed) return '';
+
+    // Allow relative paths (for Obsidian internal links?) - no, usually bookmarks are absolute.
+    // If it starts with #, ok.
+    if (trimmed.startsWith('#')) return trimmed;
+
+    try {
+        const u = new URL(trimmed);
+        const protocol = u.protocol.toLowerCase();
+        // Whitelist protocols
+        // http, https, ftp, mailto, tel
+        // obsidian, zotero, onenote, notion (productivity tools)
+        // chrome, edge, extension (browser internal? maybe risky if pointing to settings) -> let's allowed standard web + apps
+        const allowed = [
+            'http:', 'https:', 'ftp:', 'mailto:', 'tel:',
+            'obsidian:', 'zotero:', 'onenote:', 'notion:', 'vscode:', 'raycast:'
+        ];
+        if (allowed.includes(protocol)) return trimmed;
+
+        // Block javascript, data, vbscript
+        return `unsafe:${trimmed}`;
+    } catch (_) {
+        // If URL parsing fails, it might be a relative path or weird string.
+        // Check for javascript: explictly
+        if (/^\s*(javascript|vbscript|data):/i.test(trimmed)) {
+            return `unsafe:${trimmed}`;
+        }
+        return trimmed; // Return as is (maybe relative path)
+    }
+}
+
+/**
  * [PARSER] Parse "Editable Mode" Markdown back to Tree Structure
  */
 function __parseEditableMarkdownToTree(mdContent) {
@@ -13455,7 +16711,9 @@ function __parseEditableMarkdownToTree(mdContent) {
         const linkMatch = trimmed.match(/^-\s+\[(.*?)\]\((.*?)\)/);
         if (linkMatch) {
             const title = linkMatch[1].trim();
-            const url = linkMatch[2].trim();
+            const rawUrl = linkMatch[2].trim();
+            const url = __sanitizeImportUrl(rawUrl);
+
             const bmNode = {
                 id: `imported-bm-${Date.now()}-${Math.floor(Math.random() * 10000)}`,
                 type: 'bookmark',
@@ -13508,11 +16766,12 @@ function __parseVisualHtmlToTree(htmlContent) {
             // Check for bookmark (anchor link)
             const anchor = wrapper.querySelector(':scope > a[href]');
             if (anchor) {
-                const url = anchor.getAttribute('href') || '';
+                const rawUrl = anchor.getAttribute('href') || '';
+                const url = __sanitizeImportUrl(rawUrl);
                 const titleSpan = anchor.querySelector('span:last-child');
                 const title = titleSpan ? titleSpan.textContent.trim() : anchor.textContent.trim();
 
-                if (url && url !== '#') {
+                if (url && url !== '#' && !url.startsWith('unsafe:')) {
                     results.push({
                         id: `imported-bm-v-${Date.now()}-${Math.floor(Math.random() * 10000)}`,
                         type: 'bookmark',
@@ -14029,8 +17288,7 @@ async function exportCanvasPackage(options = {}) {
     CanvasState.tempSections.forEach((section) => {
         if (!section || !section.id) return;
 
-        const rawSeq = section.sequenceNumber;
-        const seqLabel = rawSeq ? __toAlphaLabel(rawSeq) : '';
+        const seqLabel = getTempSectionLabel(section);
         const rawTitle = section.title || (isEn ? 'Temp Section' : '临时栏目');
         const fileTitle = seqLabel ? `${seqLabel}. ${rawTitle}` : rawTitle;
         const safeTitle = __sanitizeFilename(fileTitle);
@@ -14271,6 +17529,125 @@ The current version (v3.0) does **NOT** support Obsidian's native grouping featu
 当前版本（v3.0）**不支持** Obsidian 原生分组功能。在 Obsidian 中创建的分组无法重新导入。
 `;
 
+    const isVisualExport = exportFormat === 'visual';
+    const aiGuideText = isEn
+        ? [
+            `## AI Editing/Import Guidelines (${isVisualExport ? 'Visual Export' : 'Editable Export'})`,
+            '',
+            'The following rules are based on the current Obsidian-compatible import/export implementation to keep structure stable.',
+            '',
+            '### 0. General',
+            '- You **may** rename files or folders, **but** you must update the `.canvas` `file` paths to match the new `.md` locations.',
+            '- Do not add Obsidian Group nodes (v3.0 does not support groups).',
+            '',
+            '### 1. Permanent Section (`Permanent Sections.md`)',
+            '- Do **not** rename the permanent section file. Keep it as `Permanent Sections.md` so the importer can recognize it.',
+            ...(isVisualExport
+                ? [
+                    '- Bookmarks: keep `<a href>` links.',
+                    '- Folders: keep `<details> / <summary>` structure.'
+                ]
+                : [
+                    '- Root groups use `##` (e.g., Bookmark Bar / Other Bookmarks).',
+                    '- Folder levels use headings `###` → `######` (H3–H6).',
+                    '- Deeper folders (beyond H6) must use nested list: `- 📁 **Title**` with indentation.',
+                    '- Bookmarks: `- [Title](URL)`.'
+                ]),
+            '',
+            '### 2. Temporary Sections (`Temporary Sections/*.md`)',
+            '- If you rename files or add/remove sections, **synchronize the `.canvas` file** so `file` paths and node IDs match.',
+            ...(isVisualExport
+                ? [
+                    '- Bookmarks: keep `<a href>` links.',
+                    '- Folders: keep `<details> / <summary>` structure.'
+                ]
+                : [
+                    '- Folder levels use headings `###` → `######` (H3–H6).',
+                    '- Deeper folders (beyond H6) must use nested list: `- 📁 **Title**` with indentation.',
+                    '- Bookmarks: `- [Title](URL)`.'
+                ]),
+            '',
+            '### 3. Blank Sections (`Blank Sections/*.md`)',
+            '- Free-form text is allowed. If you rename files or add/remove nodes, **synchronize the `.canvas` file** so `file` paths and node IDs match.',
+            ...(isVisualExport
+                ? [
+                    '',
+                    '### 4. Visual Mode (HTML Cards)',
+                    '- Keep the structure: `<details> / <summary> / <a href>`.',
+                    '- Each node must keep its outer `<div>` wrapper, otherwise items may be lost.'
+                ]
+                : []),
+            '',
+            '### 5. Edges & Positions (`.canvas`)',
+            '- You may edit `x/y/width/height`. Import will preserve relative positions (batch offset applied).',
+            '- Edges must reference valid node IDs; if you change an ID, update edges too.',
+            '- Known limitation: Obsidian import mainly keeps basic connections; color/direction may be lost and some edges can be ignored.',
+            '',
+            '### 6. URL Schemes',
+            '- Only these schemes are safely imported: `http/https/ftp/mailto/tel/obsidian/zotero/onenote/notion/vscode/raycast`.',
+            '- `chrome://`, `edge://`, `javascript:`, `data:` may be filtered or marked as `unsafe:`.',
+            '',
+            '### Import Steps'
+        ].join('\n')
+        : [
+            `## 修改/导入规范（AI专用）（${isVisualExport ? '可视化导出' : '编辑模式导出'}）`,
+            '',
+            '以下规范基于当前导入/导出实现（Obsidian 兼容模式），用于**保证结构稳定、可被正确导入**：',
+            '',
+            '### 0. 总原则',
+            '- **允许**修改文件名或目录结构，但必须同步修改 `.canvas` 里的 `file` 路径，使其能找到对应 `.md`。',
+            '- 不要新增 Obsidian 的分组（Group）节点（v3.0 不支持）。',
+            '',
+            '### 1. 永久栏目（`永久栏目.md`）',
+            '- 永久栏目文件名**不要改**（保持为 `永久栏目.md`），否则导入识别会失败。',
+            ...(isVisualExport
+                ? [
+                    '- 书签：保留 `<a href>` 链接。',
+                    '- 文件夹：保留 `<details> / <summary>` 结构。'
+                ]
+                : [
+                    '- 根分组使用 `##`（如：书签栏 / 其他书签）。',
+                    '- 文件夹层级使用标题 `###` → `######`（H3–H6）。',
+                    '- 超过 H6 的更深层文件夹使用缩进列表：`- 📁 **标题**`。',
+                    '- 书签：`- [标题](URL)`。'
+                ]),
+            '',
+            '### 2. 临时栏目（`临时栏目/*.md`）',
+            '- 若重命名或新增/删除临时栏目文件，请**同步修改 `.canvas`**，确保 `file` 路径与节点 ID 一致。',
+            ...(isVisualExport
+                ? [
+                    '- 书签：保留 `<a href>` 链接。',
+                    '- 文件夹：保留 `<details> / <summary>` 结构。'
+                ]
+                : [
+                    '- 文件夹层级使用标题 `###` → `######`（H3–H6）。',
+                    '- 超过 H6 的更深层文件夹使用缩进列表：`- 📁 **标题**`。',
+                    '- 书签：`- [标题](URL)`。'
+                ]),
+            '',
+            '### 3. 空白栏目（`空白栏目/*.md`）',
+            '- 可自由编辑；若重命名或新增/删除空白栏目文件，请**同步修改 `.canvas`**，确保 `file` 路径与节点 ID 一致。',
+            ...(isVisualExport
+                ? [
+                    '',
+                    '### 4. 可视化模式（HTML 卡片）',
+                    '- 必须保留结构：`<details> / <summary> / <a href>`。',
+                    '- 每个节点必须保留外层 `<div>` 包裹，否则可能丢失节点。'
+                ]
+                : []),
+            '',
+            '### 5. 连接线与位置（`.canvas`）',
+            '- 位置可改：`x/y/width/height` 会被导入（导入时会整体平移，保持相对位置）。',
+            '- 连接线需保证 `fromNode/toNode` 指向存在的节点 ID；改 ID 要同步改边。',
+            '- 已知限制：Obsidian 模式导入主要保留基础连线关系，颜色/方向等可能丢失，部分连线可能被忽略。',
+            '',
+            '### 6. URL 协议限制',
+            '- 仅保证 `http/https/ftp/mailto/tel/obsidian/zotero/onenote/notion/vscode/raycast` 等协议安全导入。',
+            '- `chrome://`、`edge://`、`javascript:`、`data:` 可能被过滤或标记为 `unsafe:`。',
+            '',
+            '### 导入步骤'
+        ].join('\n');
+
     const guide = [
         __frontmatter({
             exportedAt,
@@ -14281,7 +17658,7 @@ The current version (v3.0) does **NOT** support Obsidian's native grouping featu
         compatText,
         '',
         '-----------------------------------------------------------------------------',
-        isEn ? '## Import Steps' : '## 导入步骤',
+        aiGuideText,
         isEn ? `1) Unzip: ${exportRoot}.zip` : `1）解压：${exportRoot}.zip`,
         isEn
             ? `2) Put the folder \`${exportRoot}/\` into your vault at: \`${(vaultPrefix ? (vaultPrefix.split('/').slice(0, -1).join('/') || '(vault root)') : '(standalone vault)')}\`.`
@@ -15203,6 +18580,8 @@ function saveTempNodes() {
             tempSectionCounter: CanvasState.tempSectionCounter,
             tempItemCounter: CanvasState.tempItemCounter,
             colorCursor: CanvasState.colorCursor,
+            tempSectionLastColor: CanvasState.tempSectionLastColor || TEMP_SECTION_DEFAULT_COLOR,
+            tempSectionPrevColor: CanvasState.tempSectionPrevColor || null,
             // 新增：保存 Markdown 文本卡片
             mdNodes: CanvasState.mdNodes,
             mdNodeCounter: CanvasState.mdNodeCounter,
@@ -15232,6 +18611,8 @@ function loadTempNodes() {
         CanvasState.tempSectionCounter = 0;
         CanvasState.tempItemCounter = 0;
         CanvasState.colorCursor = 0;
+        CanvasState.tempSectionLastColor = TEMP_SECTION_DEFAULT_COLOR;
+        CanvasState.tempSectionPrevColor = null;
         CanvasState.mdNodes = [];
         CanvasState.mdNodeCounter = 0;
         CanvasState.edges = [];
@@ -15245,6 +18626,8 @@ function loadTempNodes() {
             CanvasState.tempSectionCounter = state.tempSectionCounter || CanvasState.tempSections.length;
             CanvasState.tempItemCounter = state.tempItemCounter || 0;
             CanvasState.colorCursor = state.colorCursor || 0;
+            CanvasState.tempSectionLastColor = state.tempSectionLastColor || TEMP_SECTION_DEFAULT_COLOR;
+            CanvasState.tempSectionPrevColor = state.tempSectionPrevColor || null;
             CanvasState.mdNodes = Array.isArray(state.mdNodes) ? state.mdNodes : [];
             CanvasState.mdNodeCounter = state.mdNodeCounter || CanvasState.mdNodes.length || 0;
             CanvasState.edges = Array.isArray(state.edges) ? state.edges : [];

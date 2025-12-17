@@ -5407,21 +5407,28 @@ a.tree-label.tree-bookmark-link:hover {
     }
 }
 
+/* 浏览器书签侧边栏拖入时的特殊样式 - 蓝色淡淡光晕（静态） */
+.canvas-workspace.browser-bookmark-drop::after {
+    background: rgba(59, 130, 246, 0.08);
+}
+
 /* 永久栏目样式 - 绿色框体 */
 .permanent-bookmark-section {
     position: absolute;
-    top: 50%;
+    top: 55%;
+    /* 稍微向下偏移，与左侧说明卡片更好对齐 */
     left: 50%;
     transform: translate(-50%, -50%);
     width: 600px;
     height: 70vh;
-    /* 改为固定高度而不是max-height */
-    background: var(--bg-elevated);
+    /* 移除背景色，让内层元素填充 */
+    background: transparent;
     border: 3px solid #10b981;
     border-radius: 12px;
     box-shadow: var(--shadow-lg);
+    /* 使用 clip 裁剪内容，确保圆角生效 */
+    /* 使用 visible 允许 resize handle 显示在外部 */
     overflow: visible;
-    /* Allow external connection anchors to show */
     z-index: 100;
     transition: box-shadow 0.18s ease, transform 0.28s cubic-bezier(0.16, 1, 0.3, 1), border-color 0.18s ease;
     cursor: default;
@@ -5434,7 +5441,7 @@ a.tree-label.tree-bookmark-link:hover {
 }
 
 [data-theme="dark"] .permanent-bookmark-section {
-    background: rgba(36, 37, 38, 0.95);
+    background: transparent;
     border-color: #10b981;
     box-shadow: 0 8px 32px rgba(0, 0, 0, 0.6);
 }
@@ -5465,6 +5472,10 @@ a.tree-label.tree-bookmark-link:hover {
     box-shadow: 0 0 0 4px rgba(16, 185, 129, 0.06), 0 12px 30px rgba(16, 185, 129, 0.18);
 }
 
+.permanent-bookmark-section {
+    --section-color: #10b981;
+}
+
 @keyframes dropTargetPulse {
     from {
         box-shadow: 0 0 0 0 rgba(66, 183, 42, 0.16), var(--shadow-lg);
@@ -5482,6 +5493,9 @@ a.tree-label.tree-bookmark-link:hover {
     cursor: move;
     user-select: none;
     border-bottom: 1px solid rgba(16, 185, 129, 0.2);
+    border-top-left-radius: 9px;
+    border-top-right-radius: 9px;
+    /* 外层 overflow:hidden 会自动裁剪圆角，无需单独设置 */
 }
 
 .permanent-section-header:hover {
@@ -5856,6 +5870,11 @@ a.tree-label.tree-bookmark-link:hover {
     overflow-x: hidden;
     display: flex;
     flex-direction: column;
+    border-bottom-left-radius: 9px;
+    border-bottom-right-radius: 9px;
+    /* 外层 overflow:hidden 会自动裁剪圆角，无需单独设置 */
+    /* 背景色填充整个区域 */
+    background: var(--bg-elevated);
 }
 
 /* 永久栏目内的书签树样式调整 */
@@ -5872,7 +5891,8 @@ a.tree-label.tree-bookmark-link:hover {
     position: absolute;
     width: 360px;
     min-height: 180px;
-    background: linear-gradient(to bottom, #ffffff 0%, #f8fafc 100%);
+    /* 移除背景色，让内层元素填充 */
+    background: transparent;
     border: 1.5px solid rgba(9, 105, 218, 0.18);
     border-top: 4px solid var(--section-color, #2563eb);
     border-radius: 12px;
@@ -5885,12 +5905,18 @@ a.tree-label.tree-bookmark-link:hover {
     /* 限制布局和样式计算的影响范围，提升性能 */
     display: flex;
     flex-direction: column;
+    /* 使用 clip 裁剪内容，确保圆角生效 */
+    /* 使用 visible 允许 resize handle 显示在外部 */
     overflow: visible;
-    /* Allow external connection anchors to show */
+}
+
+/* 色盘打开时允许弹层溢出到栏目上方 */
+.temp-canvas-node:has(.temp-color-popover.open) {
+    overflow: visible;
 }
 
 [data-theme="dark"] .temp-canvas-node {
-    background: linear-gradient(to bottom, #1f242b 0%, #14171c 100%);
+    background: transparent;
     border-color: rgba(56, 139, 253, 0.25);
     box-shadow: 0 8px 24px rgba(0, 0, 0, 0.55), 0 2px 8px rgba(0, 0, 0, 0.45);
 }
@@ -5989,6 +6015,9 @@ a.tree-label.tree-bookmark-link:hover {
     cursor: move;
     user-select: none;
     gap: 10px;
+    /* 外层 overflow:hidden 会自动裁剪圆角，无需单独设置 */
+    border-top-left-radius: 9px;
+    border-top-right-radius: 9px;
 }
 
 .temp-node-title-container {
@@ -6006,12 +6035,21 @@ a.tree-label.tree-bookmark-link:hover {
     width: 22px;
     height: 22px;
     border-radius: 50%;
-    background: rgba(255, 255, 255, 0.25);
+    background: rgba(255, 255, 255, 0.35);
     font-size: 11px;
     font-weight: 700;
     color: white;
     flex-shrink: 0;
-    border: 1.5px solid rgba(255, 255, 255, 0.4);
+    border: 1.5px solid rgba(255, 255, 255, 0.5);
+    text-shadow: 0 1px 3px rgba(0, 0, 0, 0.4);
+    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.15);
+}
+
+.temp-node-sequence-badge-wide {
+    width: auto;
+    min-width: 22px;
+    padding: 0 8px;
+    border-radius: 999px;
 }
 
 .temp-node-title {
@@ -6024,6 +6062,7 @@ a.tree-label.tree-bookmark-link:hover {
     outline: none;
     letter-spacing: -0.1px;
     min-width: 0;
+    text-shadow: 0 1px 3px rgba(0, 0, 0, 0.4);
 }
 
 .temp-node-title::placeholder {
@@ -6064,6 +6103,13 @@ a.tree-label.tree-bookmark-link:hover {
     display: flex;
     align-items: center;
     gap: 8px;
+    position: relative;
+}
+
+.temp-node-color-wrap {
+    position: relative;
+    display: inline-flex;
+    align-items: center;
 }
 
 .temp-node-action-btn {
@@ -6133,6 +6179,114 @@ a.tree-label.tree-bookmark-link:hover {
     pointer-events: none;
 }
 
+.temp-node-color-wrap .temp-color-popover {
+    position: absolute;
+    bottom: calc(100% + 6px);
+    left: 50%;
+    right: auto;
+    transform: translateX(-50%);
+    display: none;
+    z-index: 30;
+    white-space: nowrap;
+}
+
+.temp-node-color-wrap .temp-color-popover.open {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.temp-color-chip-row {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    flex-wrap: nowrap;
+}
+
+.temp-color-chip-row .md-color-chip,
+.temp-color-chip-row .md-color-picker-btn {
+    width: 21px;
+    height: 21px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0;
+    box-sizing: border-box;
+    border-width: 2px;
+}
+
+.temp-color-chip-row .md-color-picker-btn svg {
+    width: 15px;
+    height: 15px;
+}
+
+.temp-color-divider {
+    width: 1px;
+    height: 21px;
+    background: rgba(15, 23, 42, 0.2);
+    flex-shrink: 0;
+}
+
+[data-theme="dark"] .temp-color-divider {
+    background: rgba(248, 250, 252, 0.25);
+}
+
+
+.temp-color-lock-btn {
+    width: 20px;
+    height: 20px;
+    border-radius: 0;
+    border: none;
+    background: transparent;
+    color: rgba(15, 23, 42, 0.85);
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    transition: transform 0.12s ease, color 0.12s ease;
+    box-shadow: none;
+}
+
+.temp-color-lock-btn svg {
+    width: 18px;
+    height: 18px;
+}
+
+.temp-color-lock-btn:hover {
+    transform: scale(1.08);
+    color: rgba(15, 23, 42, 1);
+    background: transparent;
+    box-shadow: none;
+}
+
+.temp-color-lock-btn.locked {
+    color: #22c55e;
+    background: transparent;
+    box-shadow: none;
+}
+
+.temp-color-lock-btn:focus-visible,
+.temp-color-lock-btn:active {
+    background: transparent;
+    box-shadow: none;
+    outline: none;
+}
+
+
+[data-theme="dark"] .temp-node-color-wrap .temp-color-popover {
+    background: #2c2d2e;
+    border-color: rgba(99, 110, 123, 0.45);
+    box-shadow: 0 6px 18px rgba(0, 0, 0, 0.35);
+}
+
+[data-theme="dark"] .temp-color-lock-btn {
+    color: rgba(226, 232, 240, 0.85);
+}
+
+[data-theme="dark"] .temp-color-lock-btn.locked {
+    color: #22c55e;
+}
+
 .temp-node-close {
     color: inherit;
 }
@@ -6143,6 +6297,17 @@ a.tree-label.tree-bookmark-link:hover {
     overflow-y: auto;
     overflow-x: hidden;
     backdrop-filter: blur(0px);
+    /* 外层 overflow:visible，需手动设置圆角 */
+    border-bottom-left-radius: 9px;
+    border-bottom-right-radius: 9px;
+    /* 移除多余 margin，让 body 完全贴合边缘 */
+    margin: 0;
+    /* 背景色填充整个区域 */
+    background: linear-gradient(to bottom, #ffffff 0%, #f8fafc 100%);
+}
+
+[data-theme="dark"] .temp-node-body {
+    background: linear-gradient(to bottom, #1f242b 0%, #14171c 100%);
 }
 
 .temp-node-description-container {
@@ -6151,6 +6316,9 @@ a.tree-label.tree-bookmark-link:hover {
     background: rgba(0, 0, 0, 0.05);
     border-top: 1px solid rgba(0, 0, 0, 0.08);
     border-bottom: 1px solid rgba(0, 0, 0, 0.08);
+    /* 稍微加深边框 */
+    border-top-left-radius: 9px;
+    border-top-right-radius: 9px;
     display: flex;
     align-items: center;
     gap: 4px;
@@ -6977,6 +7145,16 @@ a.tree-label.tree-bookmark-link:hover {
     overflow-wrap: break-word;
 }
 
+/* 空白栏目非编辑模式时，文本区域不拦截鼠标事件（允许画布滚动穿透） */
+.md-canvas-node:not(.editing) .md-canvas-text {
+    pointer-events: none;
+}
+
+/* 编辑模式下恢复文本区域的鼠标事件 */
+.md-canvas-node.editing .md-canvas-text {
+    pointer-events: auto;
+}
+
 .md-canvas-editor {
     resize: none;
     cursor: text;
@@ -6994,13 +7172,13 @@ a.tree-label.tree-bookmark-link:hover {
 
 .md-wysiwyg-editor:empty::before {
     content: attr(data-placeholder);
-    color: #999;
+    color: rgba(0, 0, 0, 0.4);
     font-style: italic;
     pointer-events: none;
 }
 
 [data-theme="dark"] .md-wysiwyg-editor:empty::before {
-    color: #666;
+    color: rgba(255, 255, 255, 0.5);
 }
 
 /* WYSIWYG编辑器与视图共享的元素样式在下方 .md-canvas-text 中定义 */
@@ -8109,10 +8287,11 @@ a.tree-label.tree-bookmark-link:hover {
     pointer-events: auto;
     position: relative;
     z-index: 1;
-    scrollbar-width: thin;
+    /* scrollbar-width: thin; -- 移除，统一使用与永久栏目相同的滚动条大小 */
     overscroll-behavior: contain;
     will-change: scroll-position;
     contain: layout paint;
+    margin: 0 2px 2px 0;
 }
 
 /* 编辑模式下仍显示文本光标，避免与拖动光标冲突 */
@@ -8219,6 +8398,173 @@ a.tree-label.tree-bookmark-link:hover {
 .md-canvas-text h3,
 .md-wysiwyg-editor h3 {
     font-size: 1.1em;
+}
+
+/* Heading collapse (outline-style) */
+.md-heading-hidden {
+    display: none !important;
+}
+
+.md-canvas-text h1[data-md-collapsible="true"],
+.md-canvas-text h2[data-md-collapsible="true"],
+.md-canvas-text h3[data-md-collapsible="true"],
+.md-canvas-text h4[data-md-collapsible="true"],
+.md-canvas-text h5[data-md-collapsible="true"],
+.md-canvas-text h6[data-md-collapsible="true"],
+.temp-node-description h1[data-md-collapsible="true"],
+.temp-node-description h2[data-md-collapsible="true"],
+.temp-node-description h3[data-md-collapsible="true"],
+.temp-node-description h4[data-md-collapsible="true"],
+.temp-node-description h5[data-md-collapsible="true"],
+.temp-node-description h6[data-md-collapsible="true"],
+.permanent-section-tip h1[data-md-collapsible="true"],
+.permanent-section-tip h2[data-md-collapsible="true"],
+.permanent-section-tip h3[data-md-collapsible="true"],
+.permanent-section-tip h4[data-md-collapsible="true"],
+.permanent-section-tip h5[data-md-collapsible="true"],
+.permanent-section-tip h6[data-md-collapsible="true"] {
+    position: relative;
+    padding-left: 18px;
+    padding-right: 20px;
+}
+
+.md-canvas-text h1[data-md-collapsible="true"]::before,
+.md-canvas-text h2[data-md-collapsible="true"]::before,
+.md-canvas-text h3[data-md-collapsible="true"]::before,
+.md-canvas-text h4[data-md-collapsible="true"]::before,
+.md-canvas-text h5[data-md-collapsible="true"]::before,
+.md-canvas-text h6[data-md-collapsible="true"]::before,
+.temp-node-description h1[data-md-collapsible="true"]::before,
+.temp-node-description h2[data-md-collapsible="true"]::before,
+.temp-node-description h3[data-md-collapsible="true"]::before,
+.temp-node-description h4[data-md-collapsible="true"]::before,
+.temp-node-description h5[data-md-collapsible="true"]::before,
+.temp-node-description h6[data-md-collapsible="true"]::before,
+.permanent-section-tip h1[data-md-collapsible="true"]::before,
+.permanent-section-tip h2[data-md-collapsible="true"]::before,
+.permanent-section-tip h3[data-md-collapsible="true"]::before,
+.permanent-section-tip h4[data-md-collapsible="true"]::before,
+.permanent-section-tip h5[data-md-collapsible="true"]::before,
+.permanent-section-tip h6[data-md-collapsible="true"]::before {
+    content: '>';
+    position: absolute;
+    left: 0;
+    top: 50%;
+    font-size: 0.9em;
+    line-height: 1;
+    opacity: 0;
+    color: var(--section-color, var(--accent-primary));
+    transition: opacity 0.18s ease, transform 0.18s ease;
+    transform: translateY(-50%) rotate(90deg);
+}
+
+.md-canvas-text h1[data-md-collapsible="true"][data-md-collapsed="true"]::before,
+.md-canvas-text h2[data-md-collapsible="true"][data-md-collapsed="true"]::before,
+.md-canvas-text h3[data-md-collapsible="true"][data-md-collapsed="true"]::before,
+.md-canvas-text h4[data-md-collapsible="true"][data-md-collapsed="true"]::before,
+.md-canvas-text h5[data-md-collapsible="true"][data-md-collapsed="true"]::before,
+.md-canvas-text h6[data-md-collapsible="true"][data-md-collapsed="true"]::before,
+.temp-node-description h1[data-md-collapsible="true"][data-md-collapsed="true"]::before,
+.temp-node-description h2[data-md-collapsible="true"][data-md-collapsed="true"]::before,
+.temp-node-description h3[data-md-collapsible="true"][data-md-collapsed="true"]::before,
+.temp-node-description h4[data-md-collapsible="true"][data-md-collapsed="true"]::before,
+.temp-node-description h5[data-md-collapsible="true"][data-md-collapsed="true"]::before,
+.temp-node-description h6[data-md-collapsible="true"][data-md-collapsed="true"]::before,
+.permanent-section-tip h1[data-md-collapsible="true"][data-md-collapsed="true"]::before,
+.permanent-section-tip h2[data-md-collapsible="true"][data-md-collapsed="true"]::before,
+.permanent-section-tip h3[data-md-collapsible="true"][data-md-collapsed="true"]::before,
+.permanent-section-tip h4[data-md-collapsible="true"][data-md-collapsed="true"]::before,
+.permanent-section-tip h5[data-md-collapsible="true"][data-md-collapsed="true"]::before,
+.permanent-section-tip h6[data-md-collapsible="true"][data-md-collapsed="true"]::before {
+    transform: translateY(-50%) rotate(0deg);
+}
+
+.md-canvas-text h1[data-md-collapsible="true"][data-md-collapsed="true"]::after,
+.md-canvas-text h2[data-md-collapsible="true"][data-md-collapsed="true"]::after,
+.md-canvas-text h3[data-md-collapsible="true"][data-md-collapsed="true"]::after,
+.md-canvas-text h4[data-md-collapsible="true"][data-md-collapsed="true"]::after,
+.md-canvas-text h5[data-md-collapsible="true"][data-md-collapsed="true"]::after,
+.md-canvas-text h6[data-md-collapsible="true"][data-md-collapsed="true"]::after,
+.temp-node-description h1[data-md-collapsible="true"][data-md-collapsed="true"]::after,
+.temp-node-description h2[data-md-collapsible="true"][data-md-collapsed="true"]::after,
+.temp-node-description h3[data-md-collapsible="true"][data-md-collapsed="true"]::after,
+.temp-node-description h4[data-md-collapsible="true"][data-md-collapsed="true"]::after,
+.temp-node-description h5[data-md-collapsible="true"][data-md-collapsed="true"]::after,
+.temp-node-description h6[data-md-collapsible="true"][data-md-collapsed="true"]::after,
+.permanent-section-tip h1[data-md-collapsible="true"][data-md-collapsed="true"]::after,
+.permanent-section-tip h2[data-md-collapsible="true"][data-md-collapsed="true"]::after,
+.permanent-section-tip h3[data-md-collapsible="true"][data-md-collapsed="true"]::after,
+.permanent-section-tip h4[data-md-collapsible="true"][data-md-collapsed="true"]::after,
+.permanent-section-tip h5[data-md-collapsible="true"][data-md-collapsed="true"]::after,
+.permanent-section-tip h6[data-md-collapsible="true"][data-md-collapsed="true"]::after {
+    content: '...';
+    position: absolute;
+    right: 0;
+    top: 50%;
+    transform: translateY(-50%);
+    color: var(--section-color, var(--accent-primary));
+    opacity: 0.85;
+    font-weight: 600;
+}
+
+.md-canvas-text h1[data-md-collapsible="true"]:hover::before,
+.md-canvas-text h2[data-md-collapsible="true"]:hover::before,
+.md-canvas-text h3[data-md-collapsible="true"]:hover::before,
+.md-canvas-text h4[data-md-collapsible="true"]:hover::before,
+.md-canvas-text h5[data-md-collapsible="true"]:hover::before,
+.md-canvas-text h6[data-md-collapsible="true"]:hover::before,
+.temp-node-description h1[data-md-collapsible="true"]:hover::before,
+.temp-node-description h2[data-md-collapsible="true"]:hover::before,
+.temp-node-description h3[data-md-collapsible="true"]:hover::before,
+.temp-node-description h4[data-md-collapsible="true"]:hover::before,
+.temp-node-description h5[data-md-collapsible="true"]:hover::before,
+.temp-node-description h6[data-md-collapsible="true"]:hover::before,
+.permanent-section-tip h1[data-md-collapsible="true"]:hover::before,
+.permanent-section-tip h2[data-md-collapsible="true"]:hover::before,
+.permanent-section-tip h3[data-md-collapsible="true"]:hover::before,
+.permanent-section-tip h4[data-md-collapsible="true"]:hover::before,
+.permanent-section-tip h5[data-md-collapsible="true"]:hover::before,
+.permanent-section-tip h6[data-md-collapsible="true"]:hover::before,
+.md-canvas-text h1[data-md-collapsible="true"]:focus-within::before,
+.md-canvas-text h2[data-md-collapsible="true"]:focus-within::before,
+.md-canvas-text h3[data-md-collapsible="true"]:focus-within::before,
+.md-canvas-text h4[data-md-collapsible="true"]:focus-within::before,
+.md-canvas-text h5[data-md-collapsible="true"]:focus-within::before,
+.md-canvas-text h6[data-md-collapsible="true"]:focus-within::before,
+.temp-node-description h1[data-md-collapsible="true"]:focus-within::before,
+.temp-node-description h2[data-md-collapsible="true"]:focus-within::before,
+.temp-node-description h3[data-md-collapsible="true"]:focus-within::before,
+.temp-node-description h4[data-md-collapsible="true"]:focus-within::before,
+.temp-node-description h5[data-md-collapsible="true"]:focus-within::before,
+.temp-node-description h6[data-md-collapsible="true"]:focus-within::before,
+.permanent-section-tip h1[data-md-collapsible="true"]:focus-within::before,
+.permanent-section-tip h2[data-md-collapsible="true"]:focus-within::before,
+.permanent-section-tip h3[data-md-collapsible="true"]:focus-within::before,
+.permanent-section-tip h4[data-md-collapsible="true"]:focus-within::before,
+.permanent-section-tip h5[data-md-collapsible="true"]:focus-within::before,
+.permanent-section-tip h6[data-md-collapsible="true"]:focus-within::before {
+    opacity: 1;
+}
+
+[data-theme="dark"] .md-canvas-text h1[data-md-collapsible="true"]::before,
+[data-theme="dark"] .md-canvas-text h2[data-md-collapsible="true"]::before,
+[data-theme="dark"] .md-canvas-text h3[data-md-collapsible="true"]::before,
+[data-theme="dark"] .md-canvas-text h4[data-md-collapsible="true"]::before,
+[data-theme="dark"] .md-canvas-text h5[data-md-collapsible="true"]::before,
+[data-theme="dark"] .md-canvas-text h6[data-md-collapsible="true"]::before,
+[data-theme="dark"] .temp-node-description h1[data-md-collapsible="true"]::before,
+[data-theme="dark"] .temp-node-description h2[data-md-collapsible="true"]::before,
+[data-theme="dark"] .temp-node-description h3[data-md-collapsible="true"]::before,
+[data-theme="dark"] .temp-node-description h4[data-md-collapsible="true"]::before,
+[data-theme="dark"] .temp-node-description h5[data-md-collapsible="true"]::before,
+[data-theme="dark"] .temp-node-description h6[data-md-collapsible="true"]::before,
+[data-theme="dark"] .permanent-section-tip h1[data-md-collapsible="true"]::before,
+[data-theme="dark"] .permanent-section-tip h2[data-md-collapsible="true"]::before,
+[data-theme="dark"] .permanent-section-tip h3[data-md-collapsible="true"]::before,
+[data-theme="dark"] .permanent-section-tip h4[data-md-collapsible="true"]::before,
+[data-theme="dark"] .permanent-section-tip h5[data-md-collapsible="true"]::before,
+[data-theme="dark"] .permanent-section-tip h6[data-md-collapsible="true"]::before {
+    color: var(--section-color, rgba(255, 255, 255, 0.6));
 }
 
 .md-canvas-text ul,
@@ -8391,6 +8737,12 @@ a.tree-label.tree-bookmark-link:hover {
     background: linear-gradient(to bottom, #fff, #f3f4f6);
     cursor: pointer;
     position: relative;
+    opacity: 0;
+    transform: translateX(-4px);
+    pointer-events: none;
+    transition: opacity 0.18s ease, transform 0.18s ease;
+    margin-left: -2px;
+    margin-right: 4px;
 }
 
 .md-callout-toggle::after {
@@ -8418,6 +8770,13 @@ a.tree-label.tree-bookmark-link:hover {
 [data-theme="dark"] .md-callout-toggle {
     border-color: rgba(148, 163, 184, 0.4);
     background: linear-gradient(to bottom, #1f2937, #111827);
+}
+
+.md-callout:hover .md-callout-toggle,
+.md-callout:focus-within .md-callout-toggle {
+    opacity: 1;
+    transform: translateX(0);
+    pointer-events: auto;
 }
 
 [data-theme="dark"] .md-callout-toggle::after,
@@ -10259,11 +10618,7 @@ a.tree-label.tree-bookmark-link:hover {
     color: var(--text-tertiary);
 }
 
-justify-content: center;
-gap: 12px;
-font-size: 12px;
-color: var(--text-secondary);
-}
+
 
 .card-stats span {
     padding: 4px 8px;
@@ -12667,11 +13022,11 @@ color: var(--text-secondary);
 
 .manual-selector-dialog {
     background: var(--bg-primary);
-    border-radius: 10px;
+    border-radius: 12px;
     box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
-    width: 80%;
-    max-width: 600px;
-    max-height: 60vh;
+    width: 90%;
+    max-width: 720px;
+    max-height: 70vh;
     display: flex;
     flex-direction: column;
     animation: slideUp 0.3s ease-out;
@@ -12700,11 +13055,13 @@ color: var(--text-secondary);
 }
 
 .manual-selector-header {
-    padding: 14px 18px;
+    padding: 16px 20px;
     border-bottom: 1px solid var(--border-color);
     display: flex;
     align-items: center;
     justify-content: space-between;
+    gap: 16px;
+    flex-wrap: wrap;
 }
 
 .manual-selector-title {
@@ -12760,7 +13117,8 @@ color: var(--text-secondary);
     border-bottom: 1px solid var(--border-color);
     display: flex;
     align-items: center;
-    gap: 6px;
+    justify-content: space-between;
+    gap: 8px;
 }
 
 .manual-selector-help-icon {
@@ -13068,4 +13426,342 @@ color: var(--text-secondary);
 [data-theme="dark"] .import-group-hint {
     color: #8b949e;
     /* Muted text for dark mode */
+}
+
+/* Popover Shield: Block underlying interactions when secondary UI is active */
+body.canvas-popover-active .connection-point,
+body.canvas-popover-active .temp-node-resize-handle,
+body.canvas-popover-active .temp-node-header {
+    pointer-events: none !important;
+}
+
+/* Ensure the popover itself and toolbar actions remain interactive */
+body.canvas-popover-active .temp-node-header .temp-node-actions,
+body.canvas-popover-active .md-node-toolbar,
+body.canvas-popover-active .md-format-popover,
+body.canvas-popover-active .md-color-popover,
+body.canvas-popover-active .temp-color-popover {
+    pointer-events: auto !important;
+}
+
+/* Popover Shield Fix - CORRECTED SELECTORS */
+body.canvas-popover-active .canvas-node-anchor,
+body.canvas-popover-active .resize-handle,
+body.canvas-popover-active .temp-node-header,
+body.canvas-popover-active .md-canvas-node,
+body.canvas-popover-active .temp-canvas-node {
+    pointer-events: none !important;
+}
+
+/* Re-enable interactions for active UI elements */
+body.canvas-popover-active .md-node-toolbar,
+body.canvas-popover-active .temp-node-actions,
+body.canvas-popover-active .md-format-popover,
+body.canvas-popover-active .md-color-popover,
+body.canvas-popover-active .temp-color-popover,
+body.canvas-popover-active .md-delete-options-popover,
+body.canvas-popover-active .md-fontcolor-popover,
+body.canvas-popover-active .md-heading-popover,
+body.canvas-popover-active .md-align-popover,
+body.canvas-popover-active .md-list-popover {
+    pointer-events: auto !important;
+}
+
+/* Popover Interaction Fixes: Reset cursor and stop drag propagation visual cues */
+.md-format-popover,
+.md-fontcolor-popover,
+.md-color-popover,
+.temp-color-popover,
+.md-delete-options-popover,
+.md-heading-popover,
+.md-align-popover,
+.md-list-popover {
+    cursor: default !important;
+}
+
+/* Ensure buttons inside have pointer cursor */
+.md-format-btn,
+.md-color-chip,
+.md-fontcolor-chip,
+.temp-node-action-btn {
+    cursor: pointer;
+}
+
+/* ==================== 批量选择器额外样式 ==================== */
+
+/* 批量选择器header中的h3标题 */
+.manual-selector-header h3 {
+    margin: 0;
+    font-size: 16px;
+    font-weight: 600;
+    color: var(--text-primary);
+    flex: 1;
+    min-width: 0;
+}
+
+/* 书签计数标签 */
+.manual-selector-count {
+    font-size: 13px;
+    color: var(--accent-primary);
+    background: var(--accent-light);
+    padding: 5px 12px;
+    border-radius: 12px;
+    font-weight: 600;
+    white-space: nowrap;
+}
+
+/* 取消按钮 */
+.manual-selector-btn-cancel {
+    background: var(--bg-secondary);
+    color: var(--text-primary);
+    border: 1px solid var(--border-color);
+}
+
+.manual-selector-btn-cancel:hover {
+    background: var(--hover-bg);
+    border-color: var(--text-secondary);
+}
+
+/* 标签组颜色指示器 */
+.manual-selector-group-color {
+    display: inline-block;
+    width: 12px;
+    height: 12px;
+    border-radius: 3px;
+    margin-right: 8px;
+    flex-shrink: 0;
+}
+
+/* Chrome标签组颜色 */
+.group-color-grey {
+    background-color: #5f6368;
+}
+
+.group-color-blue {
+    background-color: #1a73e8;
+}
+
+.group-color-red {
+    background-color: #ea4335;
+}
+
+.group-color-yellow {
+    background-color: #fbbc04;
+}
+
+.group-color-green {
+    background-color: #34a853;
+}
+
+.group-color-pink {
+    background-color: #e91e63;
+}
+
+.group-color-purple {
+    background-color: #a142f4;
+}
+
+.group-color-cyan {
+    background-color: #24c1e0;
+}
+
+.group-color-orange {
+    background-color: #fa7b17;
+}
+
+/* 列表项名称样式 */
+.manual-selector-item-name {
+    font-size: 13px;
+    font-weight: 500;
+    color: var(--text-primary);
+    flex: 1;
+}
+
+/* 列表项信息样式 */
+.manual-selector-item-info {
+    font-size: 11px;
+    color: var(--text-secondary);
+    margin-left: auto;
+}
+
+/* 空提示样式 */
+.manual-selector-empty {
+    padding: 30px 16px;
+    text-align: center;
+    color: var(--text-secondary);
+    font-size: 12px;
+}
+
+/* 面板内的列表容器 */
+.manual-selector-panels {
+    display: flex;
+    flex: 1;
+    overflow: hidden;
+}
+
+/* ==================== 批量选择器层级控制样式 ==================== */
+
+/* 头部右侧区域 */
+.manual-selector-header-right {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    flex-shrink: 0;
+}
+
+/* 层级控制容器 */
+.manual-selector-depth-control {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 6px 12px;
+    background: var(--bg-secondary);
+    border-radius: 8px;
+    border: 1px solid var(--border-color);
+}
+
+/* 复选框标签 */
+.manual-selector-depth-checkbox {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    cursor: pointer;
+    font-size: 13px;
+    color: var(--text-primary);
+    user-select: none;
+    font-weight: 500;
+}
+
+.manual-selector-depth-checkbox input[type="checkbox"] {
+    width: 15px;
+    height: 15px;
+    cursor: pointer;
+    accent-color: var(--accent-primary);
+}
+
+.manual-selector-depth-checkbox span {
+    white-space: nowrap;
+}
+
+/* 层级选择下拉框 */
+.manual-selector-depth-select {
+    padding: 5px 10px;
+    font-size: 12px;
+    border: 1px solid var(--border-color);
+    border-radius: 6px;
+    background: var(--bg-primary);
+    color: var(--text-primary);
+    cursor: pointer;
+    min-width: 90px;
+    font-weight: 500;
+}
+
+.manual-selector-depth-select:disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
+    background: var(--bg-tertiary);
+}
+
+.manual-selector-depth-select:not(:disabled):hover {
+    border-color: var(--accent-primary);
+}
+
+.manual-selector-depth-select:not(:disabled):focus {
+    outline: none;
+    border-color: var(--accent-primary);
+    box-shadow: 0 0 0 2px var(--accent-light);
+}
+
+/* 面板提示文字 */
+.manual-selector-panel-hint {
+    font-size: 10px;
+    color: var(--text-tertiary);
+    font-weight: normal;
+    margin-left: 6px;
+}
+
+/* 窗口序号标签 */
+.manual-selector-window-index {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 20px;
+    height: 20px;
+    padding: 0 6px;
+    background: var(--accent-primary);
+    color: white;
+    border-radius: 10px;
+    font-size: 11px;
+    font-weight: 600;
+    margin-right: 8px;
+}
+
+/* 特色功能说明区域 */
+.manual-selector-features {
+    padding: 12px 16px;
+    background: linear-gradient(135deg, var(--accent-light) 0%, var(--bg-secondary) 100%);
+    border-top: 1px solid var(--border-color);
+}
+
+.manual-selector-features-title {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--accent-primary);
+    margin-bottom: 10px;
+}
+
+.manual-selector-features-title i {
+    color: #f59e0b;
+    font-size: 14px;
+}
+
+.manual-selector-features-grid {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 8px 16px;
+}
+
+.manual-selector-feature-item {
+    display: flex;
+    align-items: flex-start;
+    gap: 8px;
+    font-size: 11px;
+    color: var(--text-secondary);
+    line-height: 1.4;
+}
+
+.manual-selector-feature-item i {
+    color: var(--accent-primary);
+    font-size: 12px;
+    margin-top: 2px;
+    flex-shrink: 0;
+}
+
+.manual-selector-feature-item span {
+    flex: 1;
+}
+
+/* 小屏幕适配 */
+@media (max-width: 600px) {
+    .manual-selector-features-grid {
+        grid-template-columns: 1fr;
+    }
+}
+
+/* 深色主题适配 */
+[data-theme="dark"] .manual-selector-depth-control {
+    background: rgba(255, 255, 255, 0.05);
+    border-color: rgba(255, 255, 255, 0.1);
+}
+
+[data-theme="dark"] .manual-selector-depth-select {
+    background: var(--bg-secondary);
+    border-color: rgba(255, 255, 255, 0.15);
+}
+
+[data-theme="dark"] .manual-selector-depth-select:disabled {
+    background: rgba(255, 255, 255, 0.03);
 }

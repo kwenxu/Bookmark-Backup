@@ -15742,6 +15742,15 @@ function updateLanguageDependentUI() {
         btn.setAttribute('aria-label', label);
     });
 
+    document.querySelectorAll('.temp-color-lock-btn').forEach(btn => {
+        const locked = btn.classList.contains('locked');
+        const label = locked
+            ? (isEn ? 'Unlock color' : '解除锁定')
+            : (isEn ? 'Lock color' : '锁定颜色');
+        btn.title = label;
+        btn.setAttribute('aria-label', label);
+    });
+
     document.querySelectorAll('.temp-node-close').forEach(btn => {
         const label = isEn ? 'Remove section' : '删除临时栏目';
         btn.title = label;

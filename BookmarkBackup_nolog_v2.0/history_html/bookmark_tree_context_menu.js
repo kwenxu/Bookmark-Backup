@@ -17,13 +17,13 @@ const bookmarkOpenDebounce = {
 function shouldAllowBookmarkOpen(actionKey) {
     const now = Date.now();
     const timeSinceLastAction = now - bookmarkOpenDebounce.lastActionTime;
-    
+
     // 如果是相同的操作且时间间隔小于防抖延迟，则忽略
     if (bookmarkOpenDebounce.lastActionKey === actionKey && timeSinceLastAction < bookmarkOpenDebounce.debounceDelay) {
         console.log(`[防抖] 忽略重复的书签打开操作: ${actionKey}, 距离上次 ${timeSinceLastAction}ms`);
         return false;
     }
-    
+
     // 更新最后操作时间和key
     bookmarkOpenDebounce.lastActionTime = now;
     bookmarkOpenDebounce.lastActionKey = actionKey;
@@ -99,13 +99,13 @@ window.getDefaultOpenMode = () => defaultOpenMode;
             }
             // 初始化作用域映射（分栏位）
             if (data && data.bookmarkScopedCurrentGroups && typeof data.bookmarkScopedCurrentGroups === 'object') {
-                try { scopedCurrentGroups = data.bookmarkScopedCurrentGroups || {}; } catch(_) {}
+                try { scopedCurrentGroups = data.bookmarkScopedCurrentGroups || {}; } catch (_) { }
             }
             if (data && data.bookmarkScopedWindows && typeof data.bookmarkScopedWindows === 'object') {
-                try { scopedWindows = data.bookmarkScopedWindows || {}; } catch(_) {}
+                try { scopedWindows = data.bookmarkScopedWindows || {}; } catch (_) { }
             }
             if (data && data[SAME_WINDOW_SPECIFIC_GROUP_SCOPES_KEY] && typeof data[SAME_WINDOW_SPECIFIC_GROUP_SCOPES_KEY] === 'object') {
-                try { sameWindowSpecificGroupScopes = data[SAME_WINDOW_SPECIFIC_GROUP_SCOPES_KEY] || {}; } catch(_) {}
+                try { sameWindowSpecificGroupScopes = data[SAME_WINDOW_SPECIFIC_GROUP_SCOPES_KEY] || {}; } catch (_) { }
             }
         } else {
             const mode = localStorage.getItem('bookmarkDefaultOpenMode');
@@ -118,17 +118,17 @@ window.getDefaultOpenMode = () => defaultOpenMode;
             if (Number.isInteger(gwid)) specificGroupWindowId = gwid;
             const combinedWinId = parseInt(localStorage.getItem(SAME_WINDOW_SPECIFIC_GROUP_WINDOW_KEY) || '', 10);
             if (Number.isInteger(combinedWinId)) sameWindowSpecificGroupWindowId = combinedWinId;
-            try { scopedCurrentGroups = JSON.parse(localStorage.getItem('bookmarkScopedCurrentGroups') || '{}'); } catch(_) {}
-            try { scopedWindows = JSON.parse(localStorage.getItem('bookmarkScopedWindows') || '{}'); } catch(_) {}
+            try { scopedCurrentGroups = JSON.parse(localStorage.getItem('bookmarkScopedCurrentGroups') || '{}'); } catch (_) { }
+            try { scopedWindows = JSON.parse(localStorage.getItem('bookmarkScopedWindows') || '{}'); } catch (_) { }
             try {
                 const storedScopes = localStorage.getItem(SAME_WINDOW_SPECIFIC_GROUP_SCOPES_KEY);
                 if (storedScopes) {
                     sameWindowSpecificGroupScopes = JSON.parse(storedScopes) || {};
                 }
-            } catch(_) {}
+            } catch (_) { }
         }
-        try { window.defaultOpenMode = defaultOpenMode; } catch(_) {}
-    } catch (_) {}
+        try { window.defaultOpenMode = defaultOpenMode; } catch (_) { }
+    } catch (_) { }
 })();
 
 // 读取持久化默认打开方式（超链接系统）
@@ -143,19 +143,19 @@ window.getDefaultOpenMode = () => defaultOpenMode;
             const mode = localStorage.getItem('hyperlinkDefaultOpenMode');
             if (mode) hyperlinkDefaultOpenMode = mode;
         }
-    } catch (_) {}
+    } catch (_) { }
 })();
 
 async function setDefaultOpenMode(mode) {
     defaultOpenMode = mode;
-    try { window.defaultOpenMode = mode; } catch(_) {}
+    try { window.defaultOpenMode = mode; } catch (_) { }
     try {
         if (typeof chrome !== 'undefined' && chrome.storage && chrome.storage.local) {
             await chrome.storage.local.set({ bookmarkDefaultOpenMode: mode });
         } else {
             localStorage.setItem('bookmarkDefaultOpenMode', mode);
         }
-    } catch (_) {}
+    } catch (_) { }
 }
 
 async function setSpecificWindowId(winId) {
@@ -166,7 +166,7 @@ async function setSpecificWindowId(winId) {
         } else {
             localStorage.setItem('bookmarkSpecificWindowId', String(winId));
         }
-    } catch (_) {}
+    } catch (_) { }
 }
 
 async function resetSpecificWindowId() {
@@ -177,7 +177,7 @@ async function resetSpecificWindowId() {
         } else {
             localStorage.removeItem('bookmarkSpecificWindowId');
         }
-    } catch(_) {}
+    } catch (_) { }
 }
 
 async function setSpecificGroupInfo(groupId, windowId) {
@@ -193,7 +193,7 @@ async function setSpecificGroupInfo(groupId, windowId) {
             localStorage.setItem('bookmarkSpecificGroupId', String(groupId));
             localStorage.setItem('bookmarkSpecificGroupWindowId', String(windowId));
         }
-    } catch (_) {}
+    } catch (_) { }
 }
 
 async function resetSpecificGroupInfo() {
@@ -206,7 +206,7 @@ async function resetSpecificGroupInfo() {
             localStorage.removeItem('bookmarkSpecificGroupId');
             localStorage.removeItem('bookmarkSpecificGroupWindowId');
         }
-    } catch (_) {}
+    } catch (_) { }
 }
 
 function getScopeFromContext(context) {
@@ -255,7 +255,7 @@ async function writeScopedGroupRegistry(reg) {
         } else {
             localStorage.setItem(PLUGIN_SCOPED_GROUP_REGISTRY_KEY, JSON.stringify(safe));
         }
-    } catch (_) {}
+    } catch (_) { }
 }
 
 async function readScopedWindowRegistry() {
@@ -277,7 +277,7 @@ async function writeScopedWindowRegistry(reg) {
         } else {
             localStorage.setItem(PLUGIN_SCOPED_WINDOW_REGISTRY_KEY, JSON.stringify(safe));
         }
-    } catch (_) {}
+    } catch (_) { }
 }
 
 function getSameWindowSpecificGroupEntry(scopeKey) {
@@ -298,7 +298,7 @@ async function persistSameWindowSpecificGroupScopes() {
         } else {
             localStorage.setItem(SAME_WINDOW_SPECIFIC_GROUP_SCOPES_KEY, JSON.stringify(payload));
         }
-    } catch (_) {}
+    } catch (_) { }
 }
 
 async function setSameWindowSpecificGroupScope(scopeKey, groupId, windowId, number) {
@@ -328,7 +328,7 @@ async function resetSameWindowSpecificGroupScopes() {
         } else {
             localStorage.removeItem(SAME_WINDOW_SPECIFIC_GROUP_SCOPES_KEY);
         }
-    } catch (_) {}
+    } catch (_) { }
 }
 
 async function setSameWindowSpecificGroupWindowId(winId) {
@@ -339,7 +339,7 @@ async function setSameWindowSpecificGroupWindowId(winId) {
         } else {
             localStorage.setItem(SAME_WINDOW_SPECIFIC_GROUP_WINDOW_KEY, String(winId));
         }
-    } catch (_) {}
+    } catch (_) { }
 }
 
 async function resetSameWindowSpecificGroupState() {
@@ -350,7 +350,7 @@ async function resetSameWindowSpecificGroupState() {
         } else {
             localStorage.removeItem(SAME_WINDOW_SPECIFIC_GROUP_WINDOW_KEY);
         }
-    } catch (_) {}
+    } catch (_) { }
     await resetSameWindowSpecificGroupScopes();
 }
 
@@ -529,7 +529,7 @@ async function handleTrackedWindowRemoved(windowId) {
         if (specificGroupWindowId === windowId) {
             await resetSpecificGroupInfo();
         }
-        
+
         // 超链接系统：窗口关闭时重置
         if (hyperlinkSpecificWindowId === windowId) {
             hyperlinkSpecificWindowId = null;
@@ -547,7 +547,7 @@ async function handleTrackedWindowRemoved(windowId) {
             hyperlinkSameWindowSpecificGroupScopes = {};
             console.log('[超链接 LifecycleGuards] 同窗特定组窗口已关闭，重置');
         }
-        
+
         const scopedWindowEntries = Object.entries(scopedWindows || {});
         for (const [scopeKey, winId] of scopedWindowEntries) {
             if (winId === windowId) {
@@ -586,7 +586,7 @@ async function handleTrackedGroupRemoved(groupInfo) {
         if (specificTabGroupId === groupId) {
             await resetSpecificGroupInfo();
         }
-        
+
         // 超链接系统：分组关闭时重置
         if (hyperlinkSpecificTabGroupId === groupId) {
             hyperlinkSpecificTabGroupId = null;
@@ -594,7 +594,7 @@ async function handleTrackedGroupRemoved(groupInfo) {
             hyperlinkGroupCounter = 0; // 重置分组计数器
             console.log('[超链接 LifecycleGuards] 分组已关闭，重置 ID 和计数器');
         }
-        
+
         // 检查超链接的同窗特定组作用域
         const hyperlinkScopeEntries = Object.entries(hyperlinkSameWindowSpecificGroupScopes || {});
         for (const [scopeKey, entry] of hyperlinkScopeEntries) {
@@ -603,7 +603,7 @@ async function handleTrackedGroupRemoved(groupInfo) {
                 console.log(`[超链接 LifecycleGuards] 作用域 ${scopeKey} 的分组已关闭`);
             }
         }
-        
+
         const scopedGroupEntries = Object.entries(scopedCurrentGroups || {});
         for (const [scopeKey, entry] of scopedGroupEntries) {
             if (entry && entry.groupId === groupId) {
@@ -642,7 +642,7 @@ function registerLifecycleGuards() {
     }
 }
 
-try { registerLifecycleGuards(); } catch(_) {}
+try { registerLifecycleGuards(); } catch (_) { }
 
 async function pruneDeadScopedWindows() {
     let reg = await readScopedWindowRegistry();
@@ -653,7 +653,7 @@ async function pruneDeadScopedWindows() {
         let ok = false;
         try {
             if (chrome && chrome.windows && chrome.windows.get) {
-                const w = await chrome.windows.get(windowId, { populate:false });
+                const w = await chrome.windows.get(windowId, { populate: false });
                 ok = !!(w && w.id === windowId);
             }
         } catch (_) { ok = false; }
@@ -722,7 +722,7 @@ async function setScopedCurrentGroup(scopeKey, groupId, windowId) {
         } else {
             localStorage.setItem('bookmarkScopedCurrentGroups', JSON.stringify(scopedCurrentGroups));
         }
-    } catch(_) {}
+    } catch (_) { }
 }
 
 async function removeScopedCurrentGroup(scopeKey) {
@@ -734,7 +734,7 @@ async function removeScopedCurrentGroup(scopeKey) {
         } else {
             localStorage.setItem('bookmarkScopedCurrentGroups', JSON.stringify(scopedCurrentGroups));
         }
-    } catch(_) {}
+    } catch (_) { }
 }
 
 async function setScopedWindow(scopeKey, windowId) {
@@ -745,7 +745,7 @@ async function setScopedWindow(scopeKey, windowId) {
         } else {
             localStorage.setItem('bookmarkScopedWindows', JSON.stringify(scopedWindows));
         }
-    } catch(_) {}
+    } catch (_) { }
 }
 
 async function removeScopedWindowEntry(scopeKey) {
@@ -757,7 +757,7 @@ async function removeScopedWindowEntry(scopeKey) {
         } else {
             localStorage.setItem('bookmarkScopedWindows', JSON.stringify(scopedWindows));
         }
-    } catch(_) {}
+    } catch (_) { }
 }
 
 async function readPluginGroupRegistry() {
@@ -779,7 +779,7 @@ async function writePluginGroupRegistry(reg) {
         } else {
             localStorage.setItem(PLUGIN_GROUP_REGISTRY_KEY, JSON.stringify(safe));
         }
-    } catch (_) {}
+    } catch (_) { }
 }
 
 // ==== 插件生成的（全局"同一窗口"）窗口登记簿 ====
@@ -802,7 +802,7 @@ async function writePluginWindowRegistry(reg) {
         } else {
             localStorage.setItem(PLUGIN_WINDOW_REGISTRY_KEY, JSON.stringify(safe));
         }
-    } catch (_) {}
+    } catch (_) { }
 }
 
 async function pruneDeadPluginWindows() {
@@ -814,7 +814,7 @@ async function pruneDeadPluginWindows() {
         let ok = false;
         try {
             if (chrome && chrome.windows && chrome.windows.get) {
-                const w = await chrome.windows.get(windowId, { populate:false });
+                const w = await chrome.windows.get(windowId, { populate: false });
                 ok = !!(w && w.id === windowId);
             }
         } catch (_) { ok = false; }
@@ -857,7 +857,7 @@ async function writeHyperlinkWindowRegistry(reg) {
         } else {
             localStorage.setItem(HYPERLINK_WINDOW_REGISTRY_KEY, JSON.stringify(safe));
         }
-    } catch (_) {}
+    } catch (_) { }
 }
 
 async function pruneDeadHyperlinkWindows() {
@@ -1108,16 +1108,16 @@ function getBatchPanelAnchorKey(info) {
 function findBatchPanelColumnElement(treeType, sectionId) {
     if (treeType === 'temporary' && sectionId) {
         return document.getElementById(sectionId) ||
-               document.querySelector(`.temp-canvas-node[data-section-id="${sectionId}"]`) ||
-               document.querySelector(`.bookmark-tree[data-section-id="${sectionId}"][data-tree-type="temporary"]`);
+            document.querySelector(`.temp-canvas-node[data-section-id="${sectionId}"]`) ||
+            document.querySelector(`.bookmark-tree[data-section-id="${sectionId}"][data-tree-type="temporary"]`);
     }
     if (treeType === 'permanent') {
         return document.querySelector('.permanent-bookmark-section') ||
-               document.getElementById('bookmarkTree')?.closest('.permanent-bookmark-section') ||
-               document.getElementById('bookmarkTree');
+            document.getElementById('bookmarkTree')?.closest('.permanent-bookmark-section') ||
+            document.getElementById('bookmarkTree');
     }
     return document.getElementById('bookmarkTree') ||
-           document.querySelector('.bookmark-tree');
+        document.querySelector('.bookmark-tree');
 }
 
 function getBatchPanelAnchorInfoFromElement(element) {
@@ -1241,12 +1241,12 @@ function attachHyperlinkContextMenu() {
     document.addEventListener('contextmenu', (e) => {
         const linkElement = e.target.closest('a[href]');
         if (!linkElement) return;
-        
+
         // 检查是否在描述区域内
         const inPermanentTip = linkElement.closest('.permanent-section-tip, .permanent-section-tip-editor');
         const inTempDescription = linkElement.closest('.temp-node-description, .temp-node-description-editor');
         const inMdNodeContent = linkElement.closest('.md-canvas-text, .md-canvas-editor');
-        
+
         if (inPermanentTip || inTempDescription || inMdNodeContent) {
             // 编辑模式下不拦截（允许正常编辑/系统菜单）
             const inEditingArea = linkElement.closest('.md-canvas-node.editing, .temp-node-description-container.editing, .permanent-section-tip-container.editing');
@@ -1255,7 +1255,7 @@ function attachHyperlinkContextMenu() {
             // 阻止默认右键菜单
             e.preventDefault();
             e.stopPropagation();
-            
+
             console.log('[右键菜单] 检测到超链接右键:', {
                 url: linkElement.href,
                 text: linkElement.textContent,
@@ -1263,7 +1263,7 @@ function attachHyperlinkContextMenu() {
                 inTempDescription: !!inTempDescription,
                 inMdNodeContent: !!inMdNodeContent
             });
-            
+
             // 显示超链接专用菜单
             if (typeof showHyperlinkContextMenu === 'function') {
                 showHyperlinkContextMenu(e, linkElement);
@@ -1272,17 +1272,17 @@ function attachHyperlinkContextMenu() {
             }
         }
     }, true); // 使用捕获阶段，优先处理
-    
+
     // 2. 左键点击：按照勾选的默认方式打开
     document.addEventListener('click', async (e) => {
         const linkElement = e.target.closest('a[href]');
         if (!linkElement) return;
-        
+
         // 检查是否在描述区域内
         const inPermanentTip = linkElement.closest('.permanent-section-tip, .permanent-section-tip-editor');
         const inTempDescription = linkElement.closest('.temp-node-description, .temp-node-description-editor');
         const inMdNodeContent = linkElement.closest('.md-canvas-text, .md-canvas-editor');
-        
+
         if (inPermanentTip || inTempDescription || inMdNodeContent) {
             // 编辑模式下不拦截（允许光标定位/修改链接文本）
             const inEditingArea = linkElement.closest('.md-canvas-node.editing, .temp-node-description-container.editing, .permanent-section-tip-container.editing');
@@ -1292,11 +1292,11 @@ function attachHyperlinkContextMenu() {
             if (e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) {
                 return;
             }
-            
+
             // 阻止默认行为
             e.preventDefault();
             e.stopPropagation();
-            
+
             const url = linkElement.href;
             const context = {
                 url: url,
@@ -1305,33 +1305,33 @@ function attachHyperlinkContextMenu() {
                 treeType: linkElement.closest('.temp-canvas-node') ? 'temporary' : 'permanent',
                 sectionId: linkElement.closest('.temp-canvas-node')?.dataset.sectionId || null
             };
-            
+
             console.log('[超链接] 左键点击，使用模式:', hyperlinkDefaultOpenMode);
-            
+
             // 根据超链接的默认模式打开（5个选项）
             try {
                 switch (hyperlinkDefaultOpenMode) {
                     case 'new-tab':
                         await openHyperlinkNewTab(url);
                         break;
-                        
+
                     case 'new-window':
                         await openHyperlinkNewWindow(url);
                         break;
-                        
+
                     case 'specific-window':
                         await openHyperlinkInSpecificWindow(url);
                         break;
-                        
+
                     case 'specific-group':
                         await openHyperlinkInSpecificTabGroup(url);
                         break;
-                        
+
                     case 'manual-select':
                         // 使用手动选择的窗口/组打开
                         await openBookmarkWithManualSelection(url);
                         break;
-                        
+
                     default:
                         // 默认使用新标签页
                         await openHyperlinkNewTab(url);
@@ -1342,7 +1342,7 @@ function attachHyperlinkContextMenu() {
             }
         }
     }, true); // 使用捕获阶段
-    
+
     console.log('[右键菜单] 超链接右键菜单和左键点击已绑定');
 }
 
@@ -1361,10 +1361,10 @@ function initContextMenu() {
 
     // 初始挂载到body，使用时会动态插入到目标节点附近
     document.body.appendChild(contextMenu);
-    
+
     // 绑定超链接的右键菜单
     attachHyperlinkContextMenu();
-    
+
     // 【修复】添加滚轮事件监听器，允许在菜单上滚动栏目
     // 当鼠标在菜单上滚动时，将事件传递给滚动容器
     contextMenu.addEventListener('wheel', (e) => {
@@ -1373,16 +1373,16 @@ function initContextMenu() {
         if (scrollContainer) {
             // 阻止菜单本身的默认滚动行为（因为菜单不是滚动容器）
             e.preventDefault();
-            
+
             // 手动触发滚动容器的滚动
             // 使用 deltaY 和 deltaX 来支持纵向和横向滚动
             scrollContainer.scrollTop += e.deltaY;
             scrollContainer.scrollLeft += e.deltaX;
-            
+
             // 注意：不调用 e.stopPropagation()，保持事件冒泡
         }
     }, { passive: false }); // 使用 passive: false 以允许 preventDefault()
-    
+
     // 点击其他地方关闭菜单（使用捕获阶段，优先处理）
     document.addEventListener('click', (e) => {
         // 如果点击的不是菜单内部，关闭菜单
@@ -1390,7 +1390,7 @@ function initContextMenu() {
             hideContextMenu();
         }
     }, true);  // 使用捕获阶段
-    
+
     // 也监听右键事件，关闭已打开的菜单
     document.addEventListener('contextmenu', (e) => {
         // 检查是否是超链接
@@ -1399,29 +1399,29 @@ function initContextMenu() {
             const inPermanentTip = linkElement.closest('.permanent-section-tip, .permanent-section-tip-editor');
             const inTempDescription = linkElement.closest('.temp-node-description, .temp-node-description-editor');
             const inMdNodeContent = linkElement.closest('.md-canvas-text, .md-canvas-editor'); // 修复：使用 md-canvas-text
-            
+
             // 如果是描述区域的超链接，不要关闭菜单（由超链接处理器处理）
             if (inPermanentTip || inTempDescription || inMdNodeContent) {
                 return;
             }
         }
-        
+
         // 如果不是在树节点上右键，关闭菜单
         if (!e.target.closest('.tree-item[data-node-id]')) {
             hideContextMenu();
         }
     }, true);
-    
+
     // ESC键关闭菜单
     document.addEventListener('keydown', (e) => {
         if (e.key === 'Escape') {
             hideContextMenu();
         }
     });
-    
+
     // Resize时不调整菜单位置（保持嵌入式相对定位）
     // 嵌入式菜单会随DOM自然调整，无需手动处理
-    
+
     console.log('[右键菜单] 初始化完成');
 }
 
@@ -1443,27 +1443,27 @@ async function showHyperlinkContextMenu(e, linkElement) {
     console.log('[超链接菜单] ========== 开始显示超链接菜单 ==========');
     console.log('[超链接菜单] linkElement:', linkElement);
     console.log('[超链接菜单] event:', e);
-    
+
     e.preventDefault();
     e.stopPropagation();
-    
+
     const url = linkElement.href;
     console.log('[超链接菜单] URL:', url);
-    
+
     if (!url) {
         console.warn('[右键菜单] 超链接URL无效');
         return;
     }
-    
+
     // 移除链接元素的title属性，避免显示浏览器默认tooltip
     if (linkElement.hasAttribute('title')) {
         linkElement.removeAttribute('title');
     }
-    
+
     // 获取上下文（判断是永久栏目还是临时栏目）
     const permanentSection = linkElement.closest('#permanentSection, .permanent-bookmark-section');
     const tempNode = linkElement.closest('.temp-canvas-node');
-    
+
     const context = {
         url: url,
         title: linkElement.textContent || linkElement.title || url,
@@ -1471,36 +1471,36 @@ async function showHyperlinkContextMenu(e, linkElement) {
         treeType: tempNode ? 'temporary' : 'permanent',
         sectionId: tempNode ? tempNode.dataset.sectionId : null
     };
-    
+
     console.log('[右键菜单] 显示超链接菜单:', context);
-    
+
     // 刷新跟踪的打开目标
     await refreshTrackedOpenTargets();
-    
+
     // 构建超链接菜单项
     const menuItems = buildHyperlinkMenuItems(context);
-    
+
     // 渲染菜单
     const lang = currentLang || 'zh_CN';
     contextMenu.classList.remove('lang-zh', 'lang-en');
     contextMenu.classList.add(lang === 'zh_CN' ? 'lang-zh' : 'lang-en');
-    
+
     // 超链接菜单始终使用紧凑的纵向布局
     contextMenu.classList.remove('horizontal-layout');
     contextMenu.classList.add('density-sm');
-    
+
     let menuHTML = menuItems.map(item => {
         if (item.separator) {
             return '<div class="context-menu-separator"></div>';
         }
-        
+
         const icon = item.icon ? `<i class="fas fa-${item.icon}"></i>` : '';
         const disabled = item.disabled ? 'disabled' : '';
         const selected = item.selected ? 'selected-open' : '';
         const colorClass = item.action === 'hyperlink-open-label' ? 'section-label' : '';
         const hiddenStyle = item.hidden ? 'style="display:none;"' : '';
         const labelContent = item.labelHTML ? item.labelHTML : `<span>${item.label || ''}</span>`;
-        
+
         // 添加空title属性以防止浏览器默认tooltip
         return `
             <div class="context-menu-item ${disabled} ${colorClass} ${selected}" data-action="${item.action}" ${hiddenStyle} title="">
@@ -1509,9 +1509,9 @@ async function showHyperlinkContextMenu(e, linkElement) {
             </div>
         `;
     }).join('');
-    
+
     contextMenu.innerHTML = menuHTML;
-    
+
     // 绑定sub-badge点击事件（同窗特定组的快捷操作）
     contextMenu.querySelectorAll('.sub-badge[data-sub-action]').forEach(badge => {
         badge.addEventListener('click', async (event) => {
@@ -1533,22 +1533,22 @@ async function showHyperlinkContextMenu(e, linkElement) {
             hideContextMenu();
         });
     });
-    
+
     // 绑定点击事件
     contextMenu.querySelectorAll('.context-menu-item:not(.disabled)').forEach(item => {
         item.addEventListener('click', (e) => {
             e.stopPropagation();
             const action = item.dataset.action;
-            
+
             if (action === 'hyperlink-open-label') {
                 return;
             }
-            
+
             handleHyperlinkMenuAction(action, context);
             hideContextMenu();
         });
     });
-    
+
     // 将菜单嵌入到DOM中
     embedContextMenu(linkElement);
     contextMenu.style.display = 'block';
@@ -1558,17 +1558,17 @@ async function showHyperlinkContextMenu(e, linkElement) {
 function buildHyperlinkMenuItems(context) {
     const lang = currentLang || 'zh_CN';
     const items = [];
-    
+
     // 标题：打开超链接
-    items.push({ 
-        action: 'hyperlink-open-label', 
-        label: lang === 'zh_CN' ? '打开超链接：' : 'Open Hyperlink:', 
-        icon: '', 
-        disabled: true 
+    items.push({
+        action: 'hyperlink-open-label',
+        label: lang === 'zh_CN' ? '打开超链接：' : 'Open Hyperlink:',
+        icon: '',
+        disabled: true
     });
-    
+
     // === 超链接系统：4个选项 ===
-    
+
     // 1. in New Tab（新标签页）
     items.push({
         action: 'hyperlink-open-new-tab',
@@ -1576,14 +1576,14 @@ function buildHyperlinkMenuItems(context) {
         icon: 'window-maximize',
         selected: hyperlinkDefaultOpenMode === 'new-tab'
     });
-    
+
     // 2. in Same Group（同一标签组）
     (() => {
         const showBadge = !!hyperlinkSpecificTabGroupId;
         const baseLabelZh = '同一标签组';
         const baseLabelEn = 'in Same Group';
         const badge = showBadge ? (lang === 'zh_CN' ? ' <span class="sub-badge">新分组</span>' : ' <span class="sub-badge">New Group</span>') : '';
-        
+
         items.push({
             action: 'hyperlink-open-same-group',
             label: (lang === 'zh_CN' ? baseLabelZh : baseLabelEn) + badge,
@@ -1591,9 +1591,9 @@ function buildHyperlinkMenuItems(context) {
             selected: hyperlinkDefaultOpenMode === 'specific-group'
         });
     })();
-    
+
     items.push({ separatorShort: true });
-    
+
     // 3. in New Window（新窗口）
     items.push({
         action: 'hyperlink-open-new-window',
@@ -1601,14 +1601,14 @@ function buildHyperlinkMenuItems(context) {
         icon: 'window-restore',
         selected: hyperlinkDefaultOpenMode === 'new-window'
     });
-    
+
     // 4. in Same Window（同一窗口，带提示标识）
     (() => {
         const showBadge = !!hyperlinkSpecificWindowId;
         const baseLabelZh = '同一窗口';
         const baseLabelEn = 'in Same Window';
         const badge = showBadge ? (lang === 'zh_CN' ? ' <span class="sub-badge">新窗口</span>' : ' <span class="sub-badge">New Window</span>') : '';
-        
+
         items.push({
             action: 'hyperlink-open-specific-window',
             label: (lang === 'zh_CN' ? baseLabelZh : baseLabelEn) + badge,
@@ -1616,15 +1616,15 @@ function buildHyperlinkMenuItems(context) {
             selected: hyperlinkDefaultOpenMode === 'specific-window'
         });
     })();
-    
+
     // 5. 手动选择窗口+组（可勾选）
-    items.push({ 
-        action: 'hyperlink-open-manual-select', 
-        label: lang === 'zh_CN' ? '手动选择...' : 'Manual Select...', 
+    items.push({
+        action: 'hyperlink-open-manual-select',
+        label: lang === 'zh_CN' ? '手动选择...' : 'Manual Select...',
         icon: 'crosshairs',
         selected: hyperlinkDefaultOpenMode === 'manual-select'
     });
-    
+
     return items;
 }
 
@@ -1632,36 +1632,36 @@ function buildHyperlinkMenuItems(context) {
 async function handleHyperlinkMenuAction(action, context) {
     const url = context.url;
     const lang = currentLang || 'zh_CN';
-    
+
     try {
         switch (action) {
             case 'hyperlink-open-new-tab':
                 await openHyperlinkNewTab(url);
                 await setHyperlinkDefaultOpenMode('new-tab');
                 break;
-                
+
             case 'hyperlink-open-new-window':
                 await openHyperlinkNewWindow(url);
                 await setHyperlinkDefaultOpenMode('new-window');
                 break;
-                
+
             case 'hyperlink-open-same-group':
                 // forceNew: true，每次右键点击都新建分组
                 await openHyperlinkInSpecificTabGroup(url, { forceNew: true });
                 await setHyperlinkDefaultOpenMode('specific-group');
                 break;
-                
+
             case 'hyperlink-open-specific-window':
                 // forceNew: true，每次右键点击都新建窗口
                 await openHyperlinkInSpecificWindow(url, { forceNew: true });
                 await setHyperlinkDefaultOpenMode('specific-window');
                 break;
-                
+
             case 'hyperlink-open-manual-select':
                 // 打开手动选择窗口+组的选择器
                 await showManualWindowGroupSelector({ nodeUrl: url, isHyperlink: true });
                 break;
-                
+
             default:
                 console.warn('[超链接菜单] 未处理的操作:', action);
         }
@@ -1680,24 +1680,24 @@ async function setHyperlinkDefaultOpenMode(mode) {
         } else {
             localStorage.setItem('hyperlinkDefaultOpenMode', mode);
         }
-    } catch (_) {}
+    } catch (_) { }
 }
 
 // 显示右键菜单
 async function showContextMenu(e, node) {
     e.preventDefault();
     e.stopPropagation();
-    
+
     currentContextNode = node;
-    
+
     // 移除之前的右键选中标识
     document.querySelectorAll('.tree-item.context-selected').forEach(item => {
         item.classList.remove('context-selected');
     });
-    
+
     // 添加右键选中标识
     node.classList.add('context-selected');
-    
+
     // 获取节点信息
     const context = getNodeContext(node);
     if (!context || !context.nodeId) {
@@ -1735,7 +1735,7 @@ async function showContextMenu(e, node) {
         if (savedTypeLayout === 'horizontal') contextMenuHorizontal = true;
         else if (savedTypeLayout === 'vertical') contextMenuHorizontal = false;
         else contextMenuHorizontal = availableWidth >= baseBreak;
-    } catch(_) {
+    } catch (_) {
         contextMenuHorizontal = availableWidth >= baseBreak;
     }
 
@@ -1750,11 +1750,11 @@ async function showContextMenu(e, node) {
 
     // 渲染菜单
     const lang = currentLang || 'zh_CN';
-    
+
     // 添加语言class，用于CSS中区分中英文样式
     contextMenu.classList.remove('lang-zh', 'lang-en');
     contextMenu.classList.add(lang === 'zh_CN' ? 'lang-zh' : 'lang-en');
-    
+
     let menuHTML;
 
     if (contextMenuHorizontal) {
@@ -1780,7 +1780,7 @@ async function showContextMenu(e, node) {
         if (groups.select) explicitOrder.push('select');
         if (groups.open) explicitOrder.push('open');
         // 其余分组保持出现顺序
-        groupOrder.forEach(g => { if (!['select','open'].includes(g)) explicitOrder.push(g); });
+        groupOrder.forEach(g => { if (!['select', 'open'].includes(g)) explicitOrder.push(g); });
 
         const groupElements = explicitOrder.map((groupName, idx) => {
             const groupItems = groups[groupName];
@@ -1880,10 +1880,10 @@ async function showContextMenu(e, node) {
             hideContextMenu();
         });
     });
-    
+
     // 将菜单嵌入到DOM中（插入到被右键的节点后面）
     embedContextMenu(node);
-    
+
     contextMenu.style.display = 'block';
 }
 
@@ -1896,13 +1896,13 @@ function buildMenuItems(context) {
     const treeType = context.treeType || 'permanent';
     const lang = currentLang || 'zh_CN';
     const items = [];
-    
+
     // 检查是否有选中项
     const hasSelection = selectedNodes.size > 0;
-    
+
     // 检查当前右键的项是否已被选中
     const isNodeSelected = selectedNodes.has(nodeId);
-    
+
     // 如果右键的是已选中的项，且有多个选中项，显示批量操作菜单
     if (isNodeSelected && selectedNodes.size > 0) {
         items.push(
@@ -1921,7 +1921,7 @@ function buildMenuItems(context) {
         );
         return items;
     }
-    
+
     // 普通单项菜单
     if (isFolder) {
         // 文件夹菜单 - 按分组组织
@@ -1994,10 +1994,10 @@ function buildMenuItems(context) {
                 };
             })(),
             // 新增：手动选择窗口+组（可勾选）
-            { 
-                action: 'open-manual-select', 
-                label: lang === 'zh_CN' ? '手动选择...' : 'Manual Select...', 
-                icon: 'crosshairs', 
+            {
+                action: 'open-manual-select',
+                label: lang === 'zh_CN' ? '手动选择...' : 'Manual Select...',
+                icon: 'crosshairs',
                 group: 'open',
                 selected: defaultOpenMode === 'manual-select'
             },
@@ -2051,7 +2051,7 @@ function buildMenuItems(context) {
             { action: 'toggle-context-menu-layout', label: contextMenuHorizontal ? (lang === 'zh_CN' ? '纵向布局' : 'Vertical') : (lang === 'zh_CN' ? '横向布局' : 'Horizontal'), icon: 'exchange-alt', group: 'settings' }
         );
     }
-    
+
     return items;
 }
 
@@ -2061,18 +2061,18 @@ function embedContextMenu(node) {
     if (contextMenu.parentElement) {
         contextMenu.parentElement.removeChild(contextMenu);
     }
-    
+
     // 找到合适的插入位置
     // 将菜单插入到被右键的节点后面
     const parent = node.parentElement;
     const nextSibling = node.nextSibling;
-    
+
     if (nextSibling) {
         parent.insertBefore(contextMenu, nextSibling);
     } else {
         parent.appendChild(contextMenu);
     }
-    
+
     // 使用相对定位，嵌入文档流
     contextMenu.style.cssText = `
         position: relative !important;
@@ -2081,8 +2081,8 @@ function embedContextMenu(node) {
         margin-top: 5px !important;
         margin-bottom: 5px !important;
     `;
-    
-    console.log('[右键菜单] 嵌入到DOM:', { 
+
+    console.log('[右键菜单] 嵌入到DOM:', {
         parent: parent.className,
         position: 'relative',
         note: '嵌入式菜单，跟随元素滚动'
@@ -2093,18 +2093,18 @@ function embedContextMenu(node) {
 function hideContextMenu() {
     if (contextMenu) {
         contextMenu.style.display = 'none';
-        
+
         // 将菜单移回body，避免影响DOM结构
         if (contextMenu.parentElement !== document.body) {
             document.body.appendChild(contextMenu);
         }
     }
-    
+
     // 移除右键选中标识
     document.querySelectorAll('.tree-item.context-selected').forEach(item => {
         item.classList.remove('context-selected');
     });
-    
+
     currentContextNode = null;
 }
 
@@ -2182,7 +2182,7 @@ function collectTempUrls(sectionId, nodeId) {
     if (!manager) return [];
     const entry = manager.findItem(sectionId, nodeId);
     if (!entry || !entry.item) return [];
-    
+
     const urls = [];
     const traverse = (item) => {
         if (!item) return;
@@ -2193,7 +2193,7 @@ function collectTempUrls(sectionId, nodeId) {
             item.children.forEach(traverse);
         }
     };
-    
+
     traverse(entry.item);
     return urls;
 }
@@ -2204,7 +2204,7 @@ async function openUrlList(urls, { newWindow = false, incognito = false, tabGrou
         alert(lang === 'zh_CN' ? '没有可打开的书签' : 'No bookmarks to open');
         return;
     }
-    
+
     if (urls.length > 10) {
         const lang = currentLang || 'zh_CN';
         const message = lang === 'zh_CN'
@@ -2212,7 +2212,7 @@ async function openUrlList(urls, { newWindow = false, incognito = false, tabGrou
             : `Open ${urls.length} bookmarks?`;
         if (!confirm(message)) return;
     }
-    
+
     if (newWindow) {
         if (chrome && chrome.windows) {
             try {
@@ -2220,7 +2220,7 @@ async function openUrlList(urls, { newWindow = false, incognito = false, tabGrou
             } catch (error) {
                 if (incognito && error.message && error.message.includes('Incognito mode is disabled')) {
                     const lang = currentLang || 'zh_CN';
-                    const message = lang === 'zh_CN' 
+                    const message = lang === 'zh_CN'
                         ? '无痕模式已被禁用。将在普通窗口中打开。\n\n若要使用无痕模式，请在扩展管理页面启用"在无痕模式下启用"。'
                         : 'Incognito mode is disabled. Opening in normal window.\n\nTo use incognito mode, enable "Allow in Incognito" in extension settings.';
                     alert(message);
@@ -2236,7 +2236,7 @@ async function openUrlList(urls, { newWindow = false, incognito = false, tabGrou
         }
         return;
     }
-    
+
     const openedTabIds = [];
     if (chrome && chrome.tabs) {
         for (const url of urls) {
@@ -2249,7 +2249,7 @@ async function openUrlList(urls, { newWindow = false, incognito = false, tabGrou
                 console.warn('[临时栏目] 打开标签失败:', error);
             }
         }
-        
+
         if (tabGroup && openedTabIds.length && chrome.tabs.group) {
             try {
                 const groupId = await chrome.tabs.group({ tabIds: openedTabIds });
@@ -2279,15 +2279,15 @@ function getTempPasteTarget(context) {
     const manager = ensureTempManager();
     const sectionId = context.sectionId;
     if (!sectionId) throw new Error('未找到临时栏目');
-    
+
     // 如果没有 nodeId，说明是在空白处粘贴，粘贴到根目录
     if (!context.nodeId) {
         return { sectionId, parentId: null, index: null };
     }
-    
+
     let parentId = context.nodeId;
     let index = null;
-    
+
     // 如果是文件夹，粘贴到文件夹内部
     if (context.isFolder) {
         parentId = context.nodeId;
@@ -2304,7 +2304,7 @@ function getTempPasteTarget(context) {
             index = null;
         }
     }
-    
+
     return { sectionId, parentId, index };
 }
 
@@ -2312,7 +2312,7 @@ async function editTempNode(context) {
     const manager = ensureTempManager();
     const { sectionId, nodeId, nodeTitle, nodeUrl, isFolder } = context;
     const lang = currentLang || 'zh_CN';
-    
+
     if (isFolder) {
         const newTitle = prompt(
             lang === 'zh_CN' ? '重命名文件夹:' : 'Rename folder:',
@@ -2323,19 +2323,19 @@ async function editTempNode(context) {
         }
         return;
     }
-    
+
     const newTitle = prompt(
         lang === 'zh_CN' ? '书签名称:' : 'Bookmark name:',
         nodeTitle || ''
     );
     if (newTitle === null) return;
-    
+
     const newUrl = prompt(
         lang === 'zh_CN' ? '书签地址:' : 'Bookmark URL:',
         nodeUrl || 'https://'
     );
     if (newUrl === null) return;
-    
+
     manager.updateBookmark(sectionId, nodeId, {
         title: newTitle.trim(),
         url: newUrl.trim()
@@ -2347,19 +2347,19 @@ async function addTempBookmarkAction(context) {
     const { sectionId, nodeId, isFolder } = context;
     const target = isFolder ? nodeId : getTempPasteTarget(context).parentId;
     const lang = currentLang || 'zh_CN';
-    
+
     const title = prompt(
         lang === 'zh_CN' ? '新书签名称:' : 'New bookmark name:',
         ''
     );
     if (title === null) return;
-    
+
     const url = prompt(
         lang === 'zh_CN' ? '新书签地址:' : 'New bookmark URL:',
         'https://'
     );
     if (url === null) return;
-    
+
     manager.createBookmark(sectionId, target, title.trim(), url.trim());
 }
 
@@ -2368,20 +2368,20 @@ async function addTempFolderAction(context) {
     const { sectionId, nodeId, isFolder } = context;
     const target = isFolder ? nodeId : getTempPasteTarget(context).parentId;
     const lang = currentLang || 'zh_CN';
-    
+
     const title = prompt(
         lang === 'zh_CN' ? '新文件夹名称:' : 'New folder name:',
         ''
     );
     if (title === null) return;
-    
+
     manager.createFolder(sectionId, target, title.trim());
 }
 
 async function deleteTempNodes(nodeIds, sectionId, nodeTitle, isFolder) {
     const manager = ensureTempManager();
     const ids = Array.isArray(nodeIds) ? nodeIds : [nodeIds];
-    
+
     // 普通删除不需要二次确认，直接删除
     manager.removeItems(sectionId, ids);
 }
@@ -2390,7 +2390,7 @@ function copyTempNodes(sectionId, nodeIds) {
     const manager = ensureTempManager();
     const ids = Array.isArray(nodeIds) ? nodeIds : [nodeIds];
     const payload = manager.extractPayload(sectionId, ids);
-    
+
     bookmarkClipboard = {
         action: 'copy',
         source: 'temporary',
@@ -2402,7 +2402,7 @@ function copyTempNodes(sectionId, nodeIds) {
     clipboardOperation = 'copy';
     unmarkCutNode();
     showPasteButton();
-    
+
     console.log('[临时栏目] 已复制节点:', ids.length);
 }
 
@@ -2410,7 +2410,7 @@ async function cutTempNodes(sectionId, nodeIds) {
     const manager = ensureTempManager();
     const ids = Array.isArray(nodeIds) ? nodeIds : [nodeIds];
     const payload = manager.extractPayload(sectionId, ids);
-    
+
     bookmarkClipboard = {
         action: 'cut',
         source: 'temporary',
@@ -2420,11 +2420,11 @@ async function cutTempNodes(sectionId, nodeIds) {
         timestamp: Date.now()
     };
     clipboardOperation = 'cut';
-    
+
     unmarkCutNode();
     ids.forEach(id => markCutNode(id));
     showPasteButton();
-    
+
     console.log('[临时栏目] 已剪切节点:', ids.length);
 }
 
@@ -2432,7 +2432,7 @@ async function pasteIntoTemp(context) {
     if (!bookmarkClipboard) return;
     const manager = ensureTempManager();
     const target = getTempPasteTarget(context);
-    
+
     try {
         if (bookmarkClipboard.source === 'temporary') {
             if (bookmarkClipboard.action === 'copy') {
@@ -2449,7 +2449,7 @@ async function pasteIntoTemp(context) {
             }
             return;
         }
-        
+
         if (bookmarkClipboard.source === 'permanent') {
             let payload = bookmarkClipboard.payload;
             if (!payload || !payload.length) {
@@ -2463,11 +2463,11 @@ async function pasteIntoTemp(context) {
                     }
                 }
             }
-            
+
             if (payload && payload.length) {
                 manager.insertFromPayload(target.sectionId, target.parentId, payload, target.index);
             }
-            
+
             if (bookmarkClipboard.action === 'cut' && bookmarkClipboard.nodeIds) {
                 for (const id of bookmarkClipboard.nodeIds) {
                     try {
@@ -2718,25 +2718,25 @@ async function handleMenuAction(action, context) {
         await handleTempMenuAction(action, context);
         return;
     }
-    
+
     try {
         switch (action) {
             case 'open':
                 await openBookmark(nodeUrl);
                 break;
-                
+
             case 'open-new-tab':
                 if (!shouldAllowBookmarkOpen(`${action}-${nodeUrl}`)) return;
                 await openBookmarkNewTab(nodeUrl);
                 await setDefaultOpenMode('new-tab');
                 break;
-                
+
             case 'open-new-window':
                 if (!shouldAllowBookmarkOpen(`${action}-${nodeUrl}`)) return;
                 await openBookmarkNewWindow(nodeUrl, false);
                 await setDefaultOpenMode('new-window');
                 break;
-                
+
             case 'open-incognito':
                 if (!shouldAllowBookmarkOpen(`${action}-${nodeUrl}`)) return;
                 await openBookmarkNewWindow(nodeUrl, true);
@@ -2772,64 +2772,68 @@ async function handleMenuAction(action, context) {
                 await openInScopedWindow(nodeUrl, { context, forceNew: true });
                 await setDefaultOpenMode('scoped-window');
                 break;
-                
+
             case 'open-all':
                 await openAllBookmarks(nodeId, false, false);
                 break;
-                
+
             case 'open-all-new-window':
                 await openAllBookmarks(nodeId, true, false);
                 break;
-                
+
             case 'open-all-incognito':
                 await openAllBookmarks(nodeId, true, true);
                 break;
-                
+
             case 'open-all-tab-group':
                 await openAllInTabGroup(nodeId);
                 break;
-                
+
             case 'open-selected':
                 await openSelectedBookmarks();
                 break;
-                
+
             case 'open-selected-tab-group':
                 await openSelectedInTabGroup();
                 break;
-            
+
             // 批量操作
             case 'batch-open':
                 await batchOpen();
                 break;
-                
+
             case 'batch-open-tab-group':
                 await batchOpenTabGroup();
                 break;
-                
+
+            case 'batch-open-manual-select':
+                await batchOpenWithManualSelection();
+                break;
+
             case 'batch-cut':
                 await batchCut();
                 break;
-                
+
             case 'batch-delete':
                 await batchDelete();
                 break;
-                
+
             case 'batch-rename':
                 await batchRename();
                 break;
-                
+
             case 'batch-export-html':
                 await batchExportHTML();
                 break;
-                
+
             case 'batch-export-json':
                 await batchExportJSON();
                 break;
-                
+
             case 'batch-merge-folder':
                 await batchMergeFolder();
                 break;
-                
+
             case 'select-item':
                 enterSelectMode();
                 // 切换当前右键点击的节点的选中状态
@@ -2837,25 +2841,25 @@ async function handleMenuAction(action, context) {
                     toggleSelectItem(nodeId);
                 }
                 break;
-                
+
             case 'deselect-all':
                 deselectAll();
                 updateBatchToolbar();
                 break;
-                
+
             case 'edit':
             case 'rename':
                 await editBookmark(nodeId, nodeTitle, nodeUrl, isFolder);
                 break;
-                
+
             case 'add-page':
                 await addBookmark(nodeId);
                 break;
-                
+
             case 'add-folder':
                 await addFolder(nodeId);
                 break;
-                
+
             case 'cut':
                 await cutBookmark(nodeId, nodeTitle, isFolder);
                 showPasteButton();
@@ -2865,15 +2869,15 @@ async function handleMenuAction(action, context) {
                 await copyBookmark(nodeId, nodeTitle, isFolder);
                 showPasteButton();
                 break;
-                
+
             case 'paste':
                 await pasteBookmark(nodeId, isFolder);
                 break;
-                
+
             case 'copy-url':
                 await copyUrl(nodeUrl);
                 break;
-                
+
             case 'delete':
                 await deleteBookmark(nodeId, nodeTitle, isFolder);
                 break;
@@ -2900,13 +2904,13 @@ async function handleMenuAction(action, context) {
 // 打开书签（根据defaultOpenMode决定打开方式）
 async function openBookmark(url) {
     if (!url) return;
-    
+
     // 如果默认打开方式是手动选择，使用保存的窗口/组打开
     if (defaultOpenMode === 'manual-select') {
         await openBookmarkWithManualSelection(url);
         return;
     }
-    
+
     window.open(url, '_blank');
 }
 
@@ -2924,7 +2928,7 @@ async function openBookmarkNewTab(url) {
 async function openInNewTab(url, opts = {}) {
     const { context = null, isHyperlink = false } = opts || {};
     if (!url) return;
-    
+
     if (isHyperlink) {
         // 超链接打开：暂不添加特殊标识，直接打开
         // 未来可以考虑创建带标识的组
@@ -2938,7 +2942,7 @@ async function openInNewTab(url, opts = {}) {
 async function openInNewWindow(url, opts = {}) {
     const { context = null, isHyperlink = false, incognito = false } = opts || {};
     if (!url) return;
-    
+
     if (isHyperlink) {
         // 超链接在新窗口打开：创建带"超链接"标记的窗口
         try {
@@ -2946,7 +2950,7 @@ async function openInNewWindow(url, opts = {}) {
                 const lang = currentLang || 'zh_CN';
                 const hyperlinkTitle = lang === 'zh_CN' ? '超链接' : 'Hyperlink';
                 const created = await chrome.windows.create({ url });
-                
+
                 // 添加标记页
                 if (created && created.id) {
                     try {
@@ -2956,19 +2960,19 @@ async function openInNewWindow(url, opts = {}) {
                             ? chrome.runtime.getURL(`history_html/window_marker.html?${params.toString()}`)
                             : null;
                         if (markerUrl) {
-                            const markerTab = await chrome.tabs.create({ 
-                                windowId: created.id, 
-                                url: markerUrl, 
-                                pinned: false, 
-                                active: false 
+                            const markerTab = await chrome.tabs.create({
+                                windowId: created.id,
+                                url: markerUrl,
+                                pinned: false,
+                                active: false
                             });
-                            try { 
+                            try {
                                 if (markerTab && markerTab.id != null) {
-                                    await chrome.tabs.move(markerTab.id, { index: 0 }); 
+                                    await chrome.tabs.move(markerTab.id, { index: 0 });
                                 }
-                            } catch(_) {}
+                            } catch (_) { }
                         }
-                    } catch(_) {}
+                    } catch (_) { }
                 }
             } else {
                 window.open(url, '_blank');
@@ -2986,22 +2990,22 @@ async function openInNewWindow(url, opts = {}) {
 async function openInSameGroup(url, opts = {}) {
     const { context = null, isHyperlink = false, forceNew = false } = opts || {};
     if (!url) return;
-    
+
     if (isHyperlink) {
         // 超链接在标签组打开：使用"超链接"标题
         if (typeof chrome === 'undefined' || !chrome.tabs) {
             window.open(url, '_blank');
             return;
         }
-        
+
         try {
             const lang = currentLang || 'zh_CN';
             const hyperlinkTitle = lang === 'zh_CN' ? '超链接' : 'Hyperlink';
-            
+
             // 检查是否已有超链接专用组（使用特殊标识）
             const HYPERLINK_GROUP_KEY = '_hyperlink_group_id';
             let hyperlinkGroupId = null;
-            
+
             try {
                 const stored = localStorage.getItem(HYPERLINK_GROUP_KEY);
                 if (stored) {
@@ -3015,7 +3019,7 @@ async function openInSameGroup(url, opts = {}) {
                 hyperlinkGroupId = null;
                 localStorage.removeItem(HYPERLINK_GROUP_KEY);
             }
-            
+
             if (hyperlinkGroupId) {
                 // 复用现有超链接组
                 const tab = await chrome.tabs.create({ url, active: false });
@@ -3025,12 +3029,12 @@ async function openInSameGroup(url, opts = {}) {
                 const tab = await chrome.tabs.create({ url, active: false });
                 const groupId = await chrome.tabs.group({ tabIds: tab.id });
                 if (chrome.tabGroups && chrome.tabGroups.update) {
-                    try { 
-                        await chrome.tabGroups.update(groupId, { 
-                            title: hyperlinkTitle, 
-                            color: 'cyan' 
-                        }); 
-                    } catch (_) {}
+                    try {
+                        await chrome.tabGroups.update(groupId, {
+                            title: hyperlinkTitle,
+                            color: 'cyan'
+                        });
+                    } catch (_) { }
                 }
                 localStorage.setItem(HYPERLINK_GROUP_KEY, String(groupId));
             }
@@ -3053,7 +3057,7 @@ async function openBookmarkNewWindow(url, incognito = false) {
             // 处理无痕模式被禁用的错误
             if (incognito && error.message && error.message.includes('Incognito mode is disabled')) {
                 const lang = currentLang || 'zh_CN';
-                const message = lang === 'zh_CN' 
+                const message = lang === 'zh_CN'
                     ? '无痕模式已被禁用。\n\n请在扩展管理页面启用"在无痕模式下启用"选项：\n1. 右键点击扩展图标\n2. 选择"管理扩展程序"\n3. 启用"在无痕模式下启用"'
                     : 'Incognito mode is disabled.\n\nPlease enable "Allow in Incognito" in extension settings:\n1. Right-click extension icon\n2. Select "Manage extensions"\n3. Enable "Allow in Incognito"';
                 alert(message);
@@ -3109,13 +3113,13 @@ async function openInSpecificTabGroup(url, options = {}) {
         const groupId = await chrome.tabs.group({ tabIds: tab.id });
         await setSpecificGroupInfo(groupId, tab.windowId || null);
         if (chrome.tabGroups && chrome.tabGroups.update) {
-            try { await chrome.tabGroups.update(groupId, { title: String(nextNumber), color: 'blue' }); } catch (_) {}
+            try { await chrome.tabGroups.update(groupId, { title: String(nextNumber), color: 'blue' }); } catch (_) { }
         }
         await registerPluginGroup(groupId, tab.windowId || null, nextNumber);
     } catch (error) {
         console.warn('[特定标签组] 打开失败:', error);
         // 兜底回退
-        try { window.open(url, '_blank'); } catch (_) {}
+        try { window.open(url, '_blank'); } catch (_) { }
     }
 }
 
@@ -3162,9 +3166,9 @@ async function openInSpecificWindow(url, options = {}) {
                         : null;
                     if (markerUrl && chrome && chrome.tabs && chrome.tabs.create) {
                         const markerTab = await chrome.tabs.create({ windowId: created.id, url: markerUrl, pinned: false, active: false });
-                        try { if (markerTab && markerTab.id != null) await chrome.tabs.move(markerTab.id, { index: 0 }); } catch(_) {}
+                        try { if (markerTab && markerTab.id != null) await chrome.tabs.move(markerTab.id, { index: 0 }); } catch (_) { }
                     }
-                } catch(_) {}
+                } catch (_) { }
             }
         } else {
             // 非扩展环境：退回到新窗口
@@ -3204,7 +3208,7 @@ async function openInScopedTabGroup(url, opts = {}) {
                         } else {
                             localStorage.setItem('bookmarkScopedCurrentGroups', JSON.stringify(scopedCurrentGroups));
                         }
-                    } catch(_) {}
+                    } catch (_) { }
                 }
             }
         }
@@ -3218,13 +3222,13 @@ async function openInScopedTabGroup(url, opts = {}) {
             ? `A-Z ${nextNumber}`
             : `${scope.prefix || ''}${nextNumber}`;
         if (chrome.tabGroups && chrome.tabGroups.update) {
-            try { await chrome.tabGroups.update(groupId, { title, color: 'blue' }); } catch(_) {}
+            try { await chrome.tabGroups.update(groupId, { title, color: 'blue' }); } catch (_) { }
         }
         await setScopedCurrentGroup(scope.key, groupId, windowId);
         await registerScopedGroup(scope.key, groupId, windowId, nextNumber);
     } catch (error) {
         console.warn('[分栏特定标签组] 打开失败:', error);
-        try { window.open(url, '_blank'); } catch(_) {}
+        try { window.open(url, '_blank'); } catch (_) { }
     }
 }
 
@@ -3251,7 +3255,7 @@ async function openInScopedWindow(url, opts = {}) {
                         } else {
                             localStorage.setItem('bookmarkScopedWindows', JSON.stringify(scopedWindows));
                         }
-                    } catch(_) {}
+                    } catch (_) { }
                 }
             }
         }
@@ -3279,13 +3283,13 @@ async function openInScopedWindow(url, opts = {}) {
                     : null;
                 if (markerUrl && chrome && chrome.tabs && chrome.tabs.create) {
                     const markerTab = await chrome.tabs.create({ windowId: created.id, url: markerUrl, pinned: false, active: false });
-                    try { if (markerTab && markerTab.id != null) await chrome.tabs.move(markerTab.id, { index: 0 }); } catch(_) {}
+                    try { if (markerTab && markerTab.id != null) await chrome.tabs.move(markerTab.id, { index: 0 }); } catch (_) { }
                 }
-            } catch(_) {}
+            } catch (_) { }
         }
     } catch (error) {
         console.error('[分栏特定窗口] 打开失败:', error);
-        try { window.open(url, '_blank'); } catch(_) {}
+        try { window.open(url, '_blank'); } catch (_) { }
     }
 }
 
@@ -3319,7 +3323,7 @@ async function createSameWindowSpecificGroupWindow(context) {
         if (chrome.runtime && chrome.runtime.getURL) {
             markerUrl = chrome.runtime.getURL(`history_html/window_marker.html?${params.toString()}`);
         }
-    } catch (_) {}
+    } catch (_) { }
     const createArgs = markerUrl ? { url: markerUrl } : {};
     const created = await chrome.windows.create(createArgs);
     if (!created || created.id == null) {
@@ -3341,12 +3345,12 @@ async function openInSameWindowSpecificGroup(url, opts = {}) {
         if (forceNewWindow) {
             await resetSameWindowSpecificGroupState();
         }
-        
+
         // 如果是超链接，使用特殊的作用域键
-        const scope = isHyperlink 
+        const scope = isHyperlink
             ? { key: '_hyperlink_swsg', prefix: '' }
             : getScopeFromContext(context || {});
-            
+
         const windowId = await ensureSameWindowSpecificGroupWindow(context);
         if (forceNewGroup) {
             await clearSameWindowSpecificGroupScope(scope.key);
@@ -3372,11 +3376,11 @@ async function openInSameWindowSpecificGroup(url, opts = {}) {
         if (!tab || tab.id == null) {
             throw new Error('无法创建标签页');
         }
-        
+
         // 激活窗口，确保显示最新打开的书签页面（而不是书签画布标识页）
         try {
             await chrome.windows.update(windowId, { focused: true });
-        } catch (_) {}
+        } catch (_) { }
 
         if (reuseGroupId) {
             await chrome.tabs.group({ groupId: reuseGroupId, tabIds: tab.id });
@@ -3385,11 +3389,11 @@ async function openInSameWindowSpecificGroup(url, opts = {}) {
 
         // 创建标签组
         const groupId = await chrome.tabs.group({ tabIds: tab.id, createProperties: { windowId } });
-        
+
         // 如果是超链接，使用特殊的标题
         let title;
         let groupNumber = null;
-        
+
         if (isHyperlink) {
             const lang = currentLang || 'zh_CN';
             title = lang === 'zh_CN' ? '超链接' : 'Hyperlink';
@@ -3400,20 +3404,20 @@ async function openInSameWindowSpecificGroup(url, opts = {}) {
                 : `${scope.prefix || ''}${groupNumber}`;
             await registerScopedGroup(scope.key, groupId, windowId, groupNumber);
         }
-        
+
         if (chrome.tabGroups && chrome.tabGroups.update) {
-            try { 
-                await chrome.tabGroups.update(groupId, { 
-                    title, 
-                    color: isHyperlink ? 'cyan' : 'blue' 
-                }); 
-            } catch(_) {}
+            try {
+                await chrome.tabGroups.update(groupId, {
+                    title,
+                    color: isHyperlink ? 'cyan' : 'blue'
+                });
+            } catch (_) { }
         }
-        
+
         await setSameWindowSpecificGroupScope(scope.key, groupId, windowId, groupNumber);
     } catch (error) {
         console.error('[同窗特定标签组] 打开失败:', error);
-        try { window.open(url, '_blank'); } catch(_) {}
+        try { window.open(url, '_blank'); } catch (_) { }
     }
 }
 
@@ -3422,7 +3426,7 @@ try {
     window.openInScopedTabGroup = openInScopedTabGroup;
     window.openInScopedWindow = openInScopedWindow;
     window.openInSameWindowSpecificGroup = openInSameWindowSpecificGroup;
-} catch(_) {}
+} catch (_) { }
 
 // 打开文件夹中所有书签
 async function openAllBookmarks(folderId, newWindow = false, incognito = false) {
@@ -3430,12 +3434,12 @@ async function openAllBookmarks(folderId, newWindow = false, incognito = false) 
         alert('此功能需要Chrome扩展环境');
         return;
     }
-    
+
     // 获取文件夹中的所有书签（递归）
     async function getAllUrls(folderId) {
         const urls = [];
         const children = await chrome.bookmarks.getChildren(folderId);
-        
+
         for (const child of children) {
             if (child.url) {
                 urls.push(child.url);
@@ -3445,27 +3449,27 @@ async function openAllBookmarks(folderId, newWindow = false, incognito = false) 
                 urls.push(...subUrls);
             }
         }
-        
+
         return urls;
     }
-    
+
     const urls = await getAllUrls(folderId);
-    
+
     if (urls.length === 0) {
         const lang = currentLang || 'zh_CN';
         alert(lang === 'zh_CN' ? '文件夹中没有书签' : 'No bookmarks in folder');
         return;
     }
-    
+
     // 确认是否打开大量书签
     if (urls.length > 10) {
         const lang = currentLang || 'zh_CN';
-        const message = lang === 'zh_CN' 
-            ? `确定要打开 ${urls.length} 个书签吗？` 
+        const message = lang === 'zh_CN'
+            ? `确定要打开 ${urls.length} 个书签吗？`
             : `Open ${urls.length} bookmarks?`;
         if (!confirm(message)) return;
     }
-    
+
     if (newWindow) {
         // 在新窗口中打开
         if (chrome.windows) {
@@ -3474,7 +3478,7 @@ async function openAllBookmarks(folderId, newWindow = false, incognito = false) 
             } catch (error) {
                 if (incognito && error.message && error.message.includes('Incognito mode is disabled')) {
                     const lang = currentLang || 'zh_CN';
-                    const message = lang === 'zh_CN' 
+                    const message = lang === 'zh_CN'
                         ? '无痕模式已被禁用。将在普通窗口中打开。\n\n若要使用无痕模式，请在扩展管理页面启用"在无痕模式下启用"。'
                         : 'Incognito mode is disabled. Opening in normal window.\n\nTo use incognito mode, enable "Allow in Incognito" in extension settings.';
                     alert(message);
@@ -3499,7 +3503,7 @@ async function openAllBookmarks(folderId, newWindow = false, incognito = false) 
 // 编辑书签 - 使用自定义模态框
 async function editBookmark(nodeId, currentTitle, currentUrl, isFolder) {
     const lang = currentLang || 'zh_CN';
-    
+
     // 获取模态框元素
     const modal = document.getElementById('editBookmarkModal');
     const titleInput = document.getElementById('editBookmarkTitle');
@@ -3511,12 +3515,12 @@ async function editBookmark(nodeId, currentTitle, currentUrl, isFolder) {
     const saveBtn = document.getElementById('editBookmarkSaveBtn');
     const cancelBtn = document.getElementById('editBookmarkCancelBtn');
     const closeBtn = document.getElementById('editBookmarkModalClose');
-    
+
     if (!modal) {
         console.error('[编辑] 未找到编辑模态框');
         return;
     }
-    
+
     // 设置标题和标签文本
     if (isFolder) {
         modalTitle.textContent = lang === 'zh_CN' ? '编辑文件夹' : 'Edit Folder';
@@ -3528,25 +3532,25 @@ async function editBookmark(nodeId, currentTitle, currentUrl, isFolder) {
         urlLabel.textContent = lang === 'zh_CN' ? '书签地址' : 'Bookmark URL';
         urlField.style.display = 'flex';
     }
-    
+
     // 设置按钮文本
     saveBtn.textContent = lang === 'zh_CN' ? '保存' : 'Save';
     cancelBtn.textContent = lang === 'zh_CN' ? '取消' : 'Cancel';
-    
+
     // 设置输入框占位符
     titleInput.placeholder = lang === 'zh_CN' ? '输入名称...' : 'Enter name...';
     urlInput.placeholder = 'https://...';
-    
+
     // 填入当前值
     titleInput.value = currentTitle || '';
     urlInput.value = currentUrl || '';
-    
+
     // 显示模态框
     modal.classList.add('show');
-    
+
     // 聚焦到标题输入框
     setTimeout(() => titleInput.focus(), 100);
-    
+
     // 创建 Promise 来等待用户操作
     return new Promise((resolve) => {
         // 清理之前的事件监听器
@@ -3556,26 +3560,26 @@ async function editBookmark(nodeId, currentTitle, currentUrl, isFolder) {
         saveBtn.parentNode.replaceChild(newSaveBtn, saveBtn);
         cancelBtn.parentNode.replaceChild(newCancelBtn, cancelBtn);
         closeBtn.parentNode.replaceChild(newCloseBtn, closeBtn);
-        
+
         const closeModal = () => {
             modal.classList.remove('show');
             resolve();
         };
-        
+
         const handleSave = async () => {
             const newTitle = titleInput.value.trim();
             const newUrl = urlInput.value.trim();
-            
+
             if (!newTitle) {
                 titleInput.focus();
                 return;
             }
-            
+
             if (!isFolder && !newUrl) {
                 urlInput.focus();
                 return;
             }
-            
+
             try {
                 if (chrome && chrome.bookmarks) {
                     if (isFolder) {
@@ -3586,7 +3590,7 @@ async function editBookmark(nodeId, currentTitle, currentUrl, isFolder) {
                         const updates = {};
                         if (newTitle !== currentTitle) updates.title = newTitle;
                         if (newUrl !== currentUrl) updates.url = newUrl;
-                        
+
                         if (Object.keys(updates).length > 0) {
                             await chrome.bookmarks.update(nodeId, updates);
                         }
@@ -3596,15 +3600,15 @@ async function editBookmark(nodeId, currentTitle, currentUrl, isFolder) {
                 console.error('[编辑] 保存失败:', error);
                 alert(lang === 'zh_CN' ? `保存失败: ${error.message}` : `Save failed: ${error.message}`);
             }
-            
+
             closeModal();
         };
-        
+
         // 绑定事件
         newSaveBtn.addEventListener('click', handleSave);
         newCancelBtn.addEventListener('click', closeModal);
         newCloseBtn.addEventListener('click', closeModal);
-        
+
         // Enter 键保存
         const handleKeydown = (e) => {
             if (e.key === 'Enter') {
@@ -3614,10 +3618,10 @@ async function editBookmark(nodeId, currentTitle, currentUrl, isFolder) {
                 closeModal();
             }
         };
-        
+
         titleInput.addEventListener('keydown', handleKeydown);
         urlInput.addEventListener('keydown', handleKeydown);
-        
+
         // 点击背景关闭
         const handleBackgroundClick = (e) => {
             if (e.target === modal) {
@@ -3631,7 +3635,7 @@ async function editBookmark(nodeId, currentTitle, currentUrl, isFolder) {
 // 添加书签 - 使用自定义模态框
 async function addBookmark(parentId) {
     const lang = currentLang || 'zh_CN';
-    
+
     // 获取模态框元素
     const modal = document.getElementById('editBookmarkModal');
     const titleInput = document.getElementById('editBookmarkTitle');
@@ -3643,34 +3647,34 @@ async function addBookmark(parentId) {
     const saveBtn = document.getElementById('editBookmarkSaveBtn');
     const cancelBtn = document.getElementById('editBookmarkCancelBtn');
     const closeBtn = document.getElementById('editBookmarkModalClose');
-    
+
     if (!modal) {
         console.error('[添加书签] 未找到模态框');
         return;
     }
-    
+
     // 设置标题和标签文本
     modalTitle.textContent = lang === 'zh_CN' ? '添加书签' : 'Add Bookmark';
     titleLabel.textContent = lang === 'zh_CN' ? '书签名称' : 'Bookmark Name';
     urlLabel.textContent = lang === 'zh_CN' ? '书签地址' : 'Bookmark URL';
     urlField.style.display = 'flex';
-    
+
     // 设置按钮文本
     saveBtn.textContent = lang === 'zh_CN' ? '添加' : 'Add';
     cancelBtn.textContent = lang === 'zh_CN' ? '取消' : 'Cancel';
-    
+
     // 设置输入框占位符并清空
     titleInput.placeholder = lang === 'zh_CN' ? '输入书签名称...' : 'Enter bookmark name...';
     urlInput.placeholder = 'https://...';
     titleInput.value = '';
     urlInput.value = 'https://';
-    
+
     // 显示模态框
     modal.classList.add('show');
-    
+
     // 聚焦到标题输入框
     setTimeout(() => titleInput.focus(), 100);
-    
+
     // 创建 Promise 来等待用户操作
     return new Promise((resolve) => {
         // 清理之前的事件监听器
@@ -3680,26 +3684,26 @@ async function addBookmark(parentId) {
         saveBtn.parentNode.replaceChild(newSaveBtn, saveBtn);
         cancelBtn.parentNode.replaceChild(newCancelBtn, cancelBtn);
         closeBtn.parentNode.replaceChild(newCloseBtn, closeBtn);
-        
+
         const closeModal = () => {
             modal.classList.remove('show');
             resolve();
         };
-        
+
         const handleSave = async () => {
             const newTitle = titleInput.value.trim();
             const newUrl = urlInput.value.trim();
-            
+
             if (!newTitle) {
                 titleInput.focus();
                 return;
             }
-            
+
             if (!newUrl) {
                 urlInput.focus();
                 return;
             }
-            
+
             try {
                 if (chrome && chrome.bookmarks) {
                     await chrome.bookmarks.create({
@@ -3712,15 +3716,15 @@ async function addBookmark(parentId) {
                 console.error('[添加书签] 失败:', error);
                 alert(lang === 'zh_CN' ? `添加失败: ${error.message}` : `Add failed: ${error.message}`);
             }
-            
+
             closeModal();
         };
-        
+
         // 绑定事件
         newSaveBtn.addEventListener('click', handleSave);
         newCancelBtn.addEventListener('click', closeModal);
         newCloseBtn.addEventListener('click', closeModal);
-        
+
         // Enter 键保存
         const handleKeydown = (e) => {
             if (e.key === 'Enter') {
@@ -3730,10 +3734,10 @@ async function addBookmark(parentId) {
                 closeModal();
             }
         };
-        
+
         titleInput.addEventListener('keydown', handleKeydown);
         urlInput.addEventListener('keydown', handleKeydown);
-        
+
         // 点击背景关闭
         const handleBackgroundClick = (e) => {
             if (e.target === modal) {
@@ -3747,7 +3751,7 @@ async function addBookmark(parentId) {
 // 添加文件夹 - 使用自定义模态框
 async function addFolder(parentId) {
     const lang = currentLang || 'zh_CN';
-    
+
     // 获取模态框元素
     const modal = document.getElementById('editBookmarkModal');
     const titleInput = document.getElementById('editBookmarkTitle');
@@ -3757,31 +3761,31 @@ async function addFolder(parentId) {
     const saveBtn = document.getElementById('editBookmarkSaveBtn');
     const cancelBtn = document.getElementById('editBookmarkCancelBtn');
     const closeBtn = document.getElementById('editBookmarkModalClose');
-    
+
     if (!modal) {
         console.error('[添加文件夹] 未找到模态框');
         return;
     }
-    
+
     // 设置标题和标签文本
     modalTitle.textContent = lang === 'zh_CN' ? '添加文件夹' : 'Add Folder';
     titleLabel.textContent = lang === 'zh_CN' ? '文件夹名称' : 'Folder Name';
     urlField.style.display = 'none';
-    
+
     // 设置按钮文本
     saveBtn.textContent = lang === 'zh_CN' ? '添加' : 'Add';
     cancelBtn.textContent = lang === 'zh_CN' ? '取消' : 'Cancel';
-    
+
     // 设置输入框占位符并清空
     titleInput.placeholder = lang === 'zh_CN' ? '输入文件夹名称...' : 'Enter folder name...';
     titleInput.value = '';
-    
+
     // 显示模态框
     modal.classList.add('show');
-    
+
     // 聚焦到标题输入框
     setTimeout(() => titleInput.focus(), 100);
-    
+
     // 创建 Promise 来等待用户操作
     return new Promise((resolve) => {
         // 清理之前的事件监听器
@@ -3791,20 +3795,20 @@ async function addFolder(parentId) {
         saveBtn.parentNode.replaceChild(newSaveBtn, saveBtn);
         cancelBtn.parentNode.replaceChild(newCancelBtn, cancelBtn);
         closeBtn.parentNode.replaceChild(newCloseBtn, closeBtn);
-        
+
         const closeModal = () => {
             modal.classList.remove('show');
             resolve();
         };
-        
+
         const handleSave = async () => {
             const newTitle = titleInput.value.trim();
-            
+
             if (!newTitle) {
                 titleInput.focus();
                 return;
             }
-            
+
             try {
                 if (chrome && chrome.bookmarks) {
                     await chrome.bookmarks.create({
@@ -3816,15 +3820,15 @@ async function addFolder(parentId) {
                 console.error('[添加文件夹] 失败:', error);
                 alert(lang === 'zh_CN' ? `添加失败: ${error.message}` : `Add failed: ${error.message}`);
             }
-            
+
             closeModal();
         };
-        
+
         // 绑定事件
         newSaveBtn.addEventListener('click', handleSave);
         newCancelBtn.addEventListener('click', closeModal);
         newCloseBtn.addEventListener('click', closeModal);
-        
+
         // Enter 键保存
         const handleKeydown = (e) => {
             if (e.key === 'Enter') {
@@ -3834,9 +3838,9 @@ async function addFolder(parentId) {
                 closeModal();
             }
         };
-        
+
         titleInput.addEventListener('keydown', handleKeydown);
-        
+
         // 点击背景关闭
         const handleBackgroundClick = (e) => {
             if (e.target === modal) {
@@ -3850,7 +3854,7 @@ async function addFolder(parentId) {
 // 复制URL
 async function copyUrl(url) {
     if (!url) return;
-    
+
     try {
         await navigator.clipboard.writeText(url);
         const lang = currentLang || 'zh_CN';
@@ -3879,11 +3883,11 @@ async function cutBookmark(nodeId, nodeTitle, isFolder) {
         alert('此功能需要Chrome扩展环境');
         return;
     }
-    
+
     try {
         const nodes = await chrome.bookmarks.getSubTree(nodeId);
         const node = nodes && nodes[0];
-        
+
         bookmarkClipboard = {
             action: 'cut',
             source: 'permanent',
@@ -3893,11 +3897,11 @@ async function cutBookmark(nodeId, nodeTitle, isFolder) {
             timestamp: Date.now()
         };
         clipboardOperation = 'cut';
-        
+
         console.log('[剪切] 已剪切:', nodeTitle);
-        
+
         markCutNode(nodeId);
-        
+
     } catch (error) {
         console.error('[剪切] 失败:', error);
     }
@@ -3909,10 +3913,10 @@ async function copyBookmark(nodeId, nodeTitle, isFolder) {
         alert('此功能需要Chrome扩展环境');
         return;
     }
-    
+
     try {
         const [node] = await chrome.bookmarks.getSubTree(nodeId);
-        
+
         bookmarkClipboard = {
             action: 'copy',
             source: 'permanent',
@@ -3923,9 +3927,9 @@ async function copyBookmark(nodeId, nodeTitle, isFolder) {
         };
         clipboardOperation = 'copy';
         showPasteButton();
-        
+
         console.log('[复制] 已复制:', nodeTitle);
-        
+
     } catch (error) {
         console.error('[复制] 失败:', error);
     }
@@ -3937,15 +3941,15 @@ async function pasteBookmark(targetNodeId, isFolder) {
         alert('此功能需要Chrome扩展环境');
         return;
     }
-    
+
     if (!bookmarkClipboard) {
         return;
     }
-    
+
     try {
         // 确定目标文件夹ID
         let targetFolderId;
-        
+
         if (isFolder) {
             // 如果目标是文件夹，粘贴到文件夹内
             targetFolderId = targetNodeId;
@@ -3958,7 +3962,7 @@ async function pasteBookmark(targetNodeId, isFolder) {
                 throw new Error('无法找到父文件夹');
             }
         }
-        
+
         if (bookmarkClipboard.source === 'temporary') {
             const payload = bookmarkClipboard.payload || [];
             if (payload.length) {
@@ -3992,9 +3996,9 @@ async function pasteBookmark(targetNodeId, isFolder) {
                 }
             }
         }
-        
+
         // 不调用 refreshBookmarkTree()，让 onMoved/onCreated 事件触发增量更新
-        
+
     } catch (error) {
         console.error('[粘贴] 失败:', error);
         const lang = currentLang || 'zh_CN';
@@ -4008,21 +4012,21 @@ async function duplicateNode(node, parentId) {
         parentId: parentId,
         title: node.title
     };
-    
+
     if (node.url) {
         newNode.url = node.url;
     }
-    
+
     // 创建节点
     const created = await chrome.bookmarks.create(newNode);
-    
+
     // 如果有子节点，递归复制
     if (node.children) {
         for (const child of node.children) {
             await duplicateNode(child, created.id);
         }
     }
-    
+
     return created;
 }
 
@@ -4049,41 +4053,41 @@ async function openAllInTabGroup(folderId) {
         alert('此功能需要Chrome扩展环境');
         return;
     }
-    
+
     try {
         // 获取所有URL
         const urls = await getAllUrlsFromFolder(folderId);
-        
+
         if (urls.length === 0) {
             const lang = currentLang || 'zh_CN';
             alert(lang === 'zh_CN' ? '文件夹中没有书签' : 'No bookmarks in folder');
             return;
         }
-        
+
         // 确认是否打开大量书签
         if (urls.length > 10) {
             const lang = currentLang || 'zh_CN';
-            const message = lang === 'zh_CN' 
-                ? `确定要打开 ${urls.length} 个书签吗？` 
+            const message = lang === 'zh_CN'
+                ? `确定要打开 ${urls.length} 个书签吗？`
                 : `Open ${urls.length} bookmarks?`;
             if (!confirm(message)) return;
         }
-        
+
         // 获取文件夹信息作为组名
         const [folder] = await chrome.bookmarks.get(folderId);
         const groupTitle = folder.title;
-        
+
         // 创建标签页
         const tabIds = [];
         for (const url of urls) {
             const tab = await chrome.tabs.create({ url: url, active: false });
             tabIds.push(tab.id);
         }
-        
+
         // 创建标签页组
         if (chrome.tabs.group) {
             const groupId = await chrome.tabs.group({ tabIds: tabIds });
-            
+
             // 设置组标题和颜色
             if (chrome.tabGroups) {
                 await chrome.tabGroups.update(groupId, {
@@ -4092,9 +4096,9 @@ async function openAllInTabGroup(folderId) {
                 });
             }
         }
-        
+
         console.log('[标签页组] 已创建:', groupTitle, tabIds.length, '个标签页');
-        
+
     } catch (error) {
         console.error('[标签页组] 打开失败:', error);
         const lang = currentLang || 'zh_CN';
@@ -4106,7 +4110,7 @@ async function openAllInTabGroup(folderId) {
 async function getAllUrlsFromFolder(folderId) {
     const urls = [];
     const children = await chrome.bookmarks.getChildren(folderId);
-    
+
     for (const child of children) {
         if (child.url) {
             urls.push(child.url);
@@ -4115,7 +4119,7 @@ async function getAllUrlsFromFolder(folderId) {
             urls.push(...subUrls);
         }
     }
-    
+
     return urls;
 }
 
@@ -4126,7 +4130,7 @@ function toggleNodeSelection(nodeId, nodeElement) {
     if (!nodeElement) {
         nodeElement = document.querySelector(`.tree-item[data-node-id="${nodeId}"]`);
     }
-    
+
     if (selectedNodes.has(nodeId)) {
         selectedNodes.delete(nodeId);
         selectedNodeMeta.delete(nodeId);
@@ -4147,7 +4151,7 @@ function toggleNodeSelection(nodeId, nodeElement) {
             selectedNodeMeta.delete(nodeId);
         }
     }
-    
+
     console.log('[多选] 当前选中:', selectedNodes.size, '个');
 }
 
@@ -4156,12 +4160,12 @@ function selectRange(startNodeId, endNodeId) {
     const allNodes = Array.from(document.querySelectorAll('.tree-item[data-node-id]'));
     const startIndex = allNodes.findIndex(n => n.dataset.nodeId === startNodeId);
     const endIndex = allNodes.findIndex(n => n.dataset.nodeId === endNodeId);
-    
+
     if (startIndex === -1 || endIndex === -1) return;
-    
+
     const start = Math.min(startIndex, endIndex);
     const end = Math.max(startIndex, endIndex);
-    
+
     // 选中范围内的所有节点
     for (let i = start; i <= end; i++) {
         const node = allNodes[i];
@@ -4173,9 +4177,9 @@ function selectRange(startNodeId, endNodeId) {
         });
         node.classList.add('selected');
     }
-    
+
     rememberBatchSelection(allNodes[end]);
-    
+
     console.log('[多选] 范围选择:', selectedNodes.size, '个');
 }
 
@@ -4189,10 +4193,10 @@ function selectAll() {
         });
         node.classList.add('selected');
     });
-    
+
     const firstNode = document.querySelector('.tree-item[data-node-id]');
     rememberBatchSelection(firstNode);
-    
+
     console.log('[多选] 全选:', selectedNodes.size, '个');
 }
 
@@ -4204,7 +4208,7 @@ function deselectAll() {
     selectedNodes.clear();
     selectedNodeMeta.clear();
     lastBatchSelectionInfo = null;
-    
+
     console.log('[多选] 已取消全选');
 }
 
@@ -4214,7 +4218,7 @@ async function openSelectedBookmarks() {
         alert('此功能需要Chrome扩展环境');
         return;
     }
-    
+
     try {
         const permanentIds = getSelectedPermanentNodeIds();
         const tempNodes = getSelectedTempNodes();
@@ -4231,18 +4235,18 @@ async function openSelectedBookmarks() {
             }
         });
         const urls = Array.from(urlSet);
-        
+
         if (urls.length === 0) {
             const lang = currentLang || 'zh_CN';
             alert(lang === 'zh_CN' ? '没有选中书签' : 'No bookmarks selected');
             return;
         }
-        
+
         // 打开所有URL
         await openUrlList(urls, {});
-        
+
         console.log('[多选] 已打开:', urls.length, '个书签');
-        
+
     } catch (error) {
         console.error('[多选] 打开失败:', error);
     }
@@ -4254,7 +4258,7 @@ async function openSelectedInTabGroup() {
         alert('此功能需要Chrome扩展环境');
         return;
     }
-    
+
     try {
         const permanentIds = getSelectedPermanentNodeIds();
         const tempNodes = getSelectedTempNodes();
@@ -4271,16 +4275,16 @@ async function openSelectedInTabGroup() {
             }
         });
         const urls = Array.from(urlSet);
-        
+
         if (urls.length === 0) {
             const lang = currentLang || 'zh_CN';
             alert(lang === 'zh_CN' ? '没有选中书签' : 'No bookmarks selected');
             return;
         }
-        
+
         await openUrlList(urls, { tabGroup: true });
         console.log('[多选] 已在标签页组中打开:', urls.length, '个书签');
-        
+
     } catch (error) {
         console.error('[多选] 打开失败:', error);
         const lang = currentLang || 'zh_CN';
@@ -4351,7 +4355,7 @@ async function deleteSelected() {
 async function getSelectedUrls(nodeIdList) {
     const urls = [];
     const ids = nodeIdList || Array.from(selectedNodes);
-    
+
     for (const nodeId of ids) {
         try {
             const [node] = await chrome.bookmarks.get(nodeId);
@@ -4366,22 +4370,22 @@ async function getSelectedUrls(nodeIdList) {
             console.error('[多选] 获取URL失败:', nodeId, error);
         }
     }
-    
+
     return urls;
 }
 
 // 刷新书签树（批量操作后专用，不显示变更标记）
 async function refreshBookmarkTree() {
     console.log('[批量操作] 开始刷新书签树（无diff模式）');
-    
+
     if (typeof renderTreeView === 'function') {
         // 临时清空旧数据，避免显示变更标记
         await chrome.storage.local.set({ lastBookmarkData: null });
         console.log('[批量操作] 已临时清除旧数据，避免diff');
-        
+
         // 渲染当前书签树（不会检测变更）
         await renderTreeView(true);
-        
+
         // 获取当前书签数据并更新为新的基准数据（重要：这样下次对比就基于删除后的状态）
         if (chrome && chrome.bookmarks) {
             const bookmarkTree = await chrome.bookmarks.getTree();
@@ -4398,23 +4402,23 @@ async function refreshBookmarkTree() {
 // 进入Select模式
 function enterSelectMode() {
     selectMode = true;
-    
+
     // 显示全局蓝框和提示
     showSelectModeOverlay();
-    
+
     // 隐藏顶部工具栏
     const toolbar = document.getElementById('batch-toolbar');
     if (toolbar) {
         toolbar.style.display = 'none';
         console.log('[Select模式] 隐藏顶部工具栏');
     }
-    
+
     // 更新批量工具栏（但不显示，因为我们要显示批量菜单）
     updateBatchToolbar();
-    
+
     // 关闭右键菜单
     hideContextMenu();
-    
+
     // 检查上次的显示状态，决定是显示批量菜单还是工具栏
     try {
         const savedState = localStorage.getItem('batchPanelState');
@@ -4433,31 +4437,31 @@ function enterSelectMode() {
     } catch (e) {
         console.error('[Select模式] 读取保存状态失败:', e);
     }
-    
+
     // 默认或上次是显示状态，自动显示批量菜单
     setTimeout(() => {
-        const fakeEvent = { preventDefault: () => {}, stopPropagation: () => {} };
+        const fakeEvent = { preventDefault: () => { }, stopPropagation: () => { } };
         showBatchContextMenu(fakeEvent);
         console.log('[Select模式] 自动显示批量菜单');
     }, 100);
-    
+
     console.log('[Select模式] 已进入');
 }
 
 // 退出Select模式
 function exitSelectMode() {
     selectMode = false;
-    
+
     // 隐藏蓝框
     hideSelectModeOverlay();
-    
+
     // 隐藏批量操作面板
     hideBatchActionPanel();
-    
+
     // 清空选中
     deselectAll();
     updateBatchToolbar();
-    
+
     console.log('[Select模式] 已退出');
 }
 
@@ -4478,22 +4482,22 @@ function showSelectModeOverlay() {
         overlay.style.display = 'block';
         return;
     }
-    
+
     // 创建蓝框（不包含顶部提示）
     overlay = document.createElement('div');
     overlay.id = 'select-mode-overlay';
     overlay.className = 'select-mode-overlay';
-    
+
     // 找到树容器
-    const treeContainer = document.getElementById('bookmarkTree') || 
-                         document.querySelector('.bookmark-tree') || 
-                         document.querySelector('.tree-view-container') || 
-                         document.body;
+    const treeContainer = document.getElementById('bookmarkTree') ||
+        document.querySelector('.bookmark-tree') ||
+        document.querySelector('.tree-view-container') ||
+        document.body;
     treeContainer.style.position = 'relative';
     treeContainer.appendChild(overlay);
-    
+
     console.log('[Select模式] 蓝框已添加到:', treeContainer.id || treeContainer.className);
-    
+
     // 允许拖动穿透：按住左键准备拖动时，让事件传递给下方的书签项
     // 但单击已选中的书签应该取消选中，而不是穿透
     overlay.addEventListener('mousedown', (e) => {
@@ -4511,7 +4515,7 @@ function showSelectModeOverlay() {
         const isTreeItem = !!treeItem;
         const hasMultiSelection = (typeof selectedNodes !== 'undefined' && selectedNodes && selectedNodes.size > 1);
         const isSelectedItem = !!(treeItem && treeItem.classList && treeItem.classList.contains('selected'));
-        
+
         // 如果没有多选，不进行拖拽穿透，让点击事件正常处理（可以取消选中）
         if (!isTreeItem || !hasMultiSelection) return;
 
@@ -4543,14 +4547,14 @@ function showSelectModeOverlay() {
     // 绑定点击事件 - 点击overlay上的位置，找到下面的书签元素
     overlay.addEventListener('click', (e) => {
         console.log('[Select模式] overlay点击事件:', e.target);
-        
+
         // 暂时隐藏overlay以获取下面的元素
         overlay.style.pointerEvents = 'none';
         const elementBelow = document.elementFromPoint(e.clientX, e.clientY);
         overlay.style.pointerEvents = 'auto';
-        
+
         console.log('[Select模式] 下面的元素:', elementBelow);
-        
+
         // 检查是否点击折叠按钮或其附近区域
         const toggleBtn = elementBelow?.closest('.tree-toggle');
         if (toggleBtn) {
@@ -4559,7 +4563,7 @@ function showSelectModeOverlay() {
             toggleBtn.click();
             return;
         }
-        
+
         // 检查是否点击在折叠按钮右侧30px范围内
         const treeItem = elementBelow?.closest('.tree-item[data-node-id]');
         if (treeItem) {
@@ -4575,16 +4579,16 @@ function showSelectModeOverlay() {
                 }
             }
         }
-        
+
         // 找到最近的tree-item
         if (!treeItem) {
             console.log('[Select模式] 未找到tree-item');
             return;
         }
-        
+
         const nodeId = treeItem.dataset.nodeId;
         console.log('[Select模式] 找到节点:', nodeId);
-        
+
         // Ctrl/Cmd + Click: 多选
         if (e.ctrlKey || e.metaKey) {
             toggleSelectItem(nodeId);
@@ -4592,20 +4596,20 @@ function showSelectModeOverlay() {
             console.log('[Select模式] Ctrl+Click多选');
             return;
         }
-        
+
         // Shift + Click: 范围选择
         if (e.shiftKey && lastClickedNode) {
             selectRange(lastClickedNode, nodeId);
             console.log('[Select模式] Shift+Click范围选择');
             return;
         }
-        
+
         // 普通点击: 切换选择
         toggleSelectItem(nodeId);
         lastClickedNode = nodeId;
         console.log('[Select模式] 普通点击');
     });
-    
+
     // 绑定右键事件 - 在蓝框区域右键显示批量菜单
     overlay.addEventListener('contextmenu', (e) => {
         console.log('[Select模式] 右键事件:', { selectedCount: selectedNodes.size });
@@ -4615,7 +4619,7 @@ function showSelectModeOverlay() {
             showBatchContextMenu(e);
         }
     });
-    
+
     // 使overlay可以接收点击和右键事件
     overlay.style.pointerEvents = 'auto';
 }
@@ -4632,9 +4636,9 @@ function hideSelectModeOverlay() {
 function showBatchContextMenu(e) {
     e.preventDefault();
     e.stopPropagation();
-    
+
     console.log('[批量菜单] 显示固定面板');
-    
+
     let anchorInfo = resolveBatchPanelAnchorInfo(e);
     if (!anchorInfo) {
         anchorInfo = {
@@ -4645,7 +4649,7 @@ function showBatchContextMenu(e) {
     }
     currentBatchPanelAnchorInfo = anchorInfo;
     const anchorKey = getBatchPanelAnchorKey(anchorInfo);
-    
+
     // 检查是否已存在批量面板
     let batchPanel = document.getElementById('batch-action-panel');
     if (batchPanel) {
@@ -4665,7 +4669,7 @@ function showBatchContextMenu(e) {
         console.log('[批量菜单] 面板已存在，直接显示并更新定位');
         return;
     }
-    
+
     // 创建固定位置的批量操作面板
     batchPanel = document.createElement('div');
     batchPanel.id = 'batch-action-panel';
@@ -4675,9 +4679,9 @@ function showBatchContextMenu(e) {
     if (anchorInfo.sectionId) {
         batchPanel.dataset.sectionId = anchorInfo.sectionId;
     }
-    
+
     const lang = currentLang || 'zh_CN';
-    
+
     // 构建批量菜单 - 分组显示（简化版本）
     const itemGroups = [
         // 打开组
@@ -4685,7 +4689,8 @@ function showBatchContextMenu(e) {
             name: lang === 'zh_CN' ? '打开' : 'Open',
             items: [
                 { action: 'batch-open', label: lang === 'zh_CN' ? `打开(${selectedNodes.size})` : `Open(${selectedNodes.size})`, icon: 'folder-open' },
-                { action: 'batch-open-tab-group', label: lang === 'zh_CN' ? '标签组' : 'Group', icon: 'object-group' }
+                { action: 'batch-open-tab-group', label: lang === 'zh_CN' ? '标签组' : 'Group', icon: 'object-group' },
+                { action: 'batch-open-manual-select', label: lang === 'zh_CN' ? '手动选择...' : 'Manual...', icon: 'hand-pointer' }
             ]
         },
         // 编辑组
@@ -4715,7 +4720,7 @@ function showBatchContextMenu(e) {
             ]
         }
     ];
-    
+
     batchPanel.innerHTML = `
         <div class="batch-panel-header" id="batch-panel-header">
             <span class="batch-panel-title" title="${lang === 'zh_CN' ? '拖动移动窗口' : 'Drag to move'}">${lang === 'zh_CN' ? '批量操作' : 'Batch Actions'}</span>
@@ -4736,18 +4741,18 @@ function showBatchContextMenu(e) {
         </div>
         <div class="batch-panel-content">
             ${itemGroups.map((group, groupIndex) => {
-                const groupItems = group.items.map(item => {
-                    const icon = item.icon ? `<i class="fas fa-${item.icon}"></i>` : '';
-                    const exitClass = item.isExit ? 'exit-item' : '';
-                    return `
+        const groupItems = group.items.map(item => {
+            const icon = item.icon ? `<i class="fas fa-${item.icon}"></i>` : '';
+            const exitClass = item.isExit ? 'exit-item' : '';
+            return `
                         <div class="context-menu-item ${exitClass}" data-action="${item.action}">
                             ${icon}
                             <span>${item.label}</span>
                         </div>
                     `;
-                }).join('');
-                
-                return `
+        }).join('');
+
+        return `
                     <div class="batch-menu-group" data-group="${group.name}">
                         <div class="batch-group-label">${group.name}</div>
                         <div class="batch-group-items">
@@ -4755,29 +4760,48 @@ function showBatchContextMenu(e) {
                         </div>
                     </div>
                 `;
-            }).join('')}
+    }).join('')}
         </div>
     `;
-    
+
     // 绑定点击事件
     batchPanel.querySelectorAll('.context-menu-item').forEach(item => {
         item.addEventListener('click', async (e) => {
             e.stopPropagation();
             const action = item.dataset.action;
             console.log('[批量菜单] 点击操作:', action);
-            
+
             if (action === 'exit-select-mode') {
                 exitSelectMode();
             } else if (action === 'hide-batch-panel') {
                 hideBatchPanel();
             } else if (action === 'toggle-batch-layout') {
                 toggleBatchPanelLayout();
+            } else if (action === 'batch-open') {
+                await batchOpen();
+            } else if (action === 'batch-open-tab-group') {
+                await batchOpenTabGroup();
+            } else if (action === 'batch-open-manual-select') {
+                await batchOpenWithManualSelection();
+            } else if (action === 'batch-cut') {
+                await batchCut();
+            } else if (action === 'batch-delete') {
+                await batchDelete();
+            } else if (action === 'batch-rename') {
+                await batchRename();
+            } else if (action === 'batch-export-html') {
+                await batchExportHTML();
+            } else if (action === 'batch-export-json') {
+                await batchExportJSON();
+            } else if (action === 'batch-merge-folder') {
+                await batchMergeFolder();
             } else {
+                // 其他操作通过handleMenuAction处理（需要context）
                 await handleMenuAction(action, null, null, null, false);
             }
         });
     });
-    
+
     // 绑定标题栏退出按钮事件
     const headerExitBtn = batchPanel.querySelector('.batch-panel-exit-btn');
     if (headerExitBtn) {
@@ -4787,31 +4811,31 @@ function showBatchContextMenu(e) {
                 exitSelectMode();
             } catch (_) {
                 // 兜底：显式关闭面板与蓝框并清空选择
-                try { selectMode = false; } catch(_) {}
-                try { hideBatchActionPanel(); } catch(_) {}
-                try { hideSelectModeOverlay(); } catch(_) {}
-                try { if (typeof deselectAll === 'function') deselectAll(); } catch(_) {}
-                try { updateBatchToolbar(); } catch(_) {}
+                try { selectMode = false; } catch (_) { }
+                try { hideBatchActionPanel(); } catch (_) { }
+                try { hideSelectModeOverlay(); } catch (_) { }
+                try { if (typeof deselectAll === 'function') deselectAll(); } catch (_) { }
+                try { updateBatchToolbar(); } catch (_) { }
             }
             console.log('[批量菜单] 点击标题栏退出按钮');
         });
     }
-    
+
     // 添加拖拽移动功能
     initBatchPanelDrag(batchPanel);
-    
+
     // 添加调整大小功能（四边和四角）
     initBatchPanelResize(batchPanel);
-    
+
     // 添加窗口大小变化监听器（用于横向布局自适应）
     initBatchPanelWindowResize(batchPanel);
-    
+
     // 始终挂载到 body，避免祖先 transform 影响定位
     if (batchPanel.parentNode !== document.body) {
         document.body.appendChild(batchPanel);
         console.log('[批量菜单] 固定面板已添加到body');
     }
-    
+
     // 恢复保存的位置和大小，或设置初始定位
     restoreBatchPanelState(batchPanel, anchorInfo);
 }
@@ -4825,7 +4849,7 @@ function toggleSelectItem(nodeId) {
         console.log('[批量] 未找到节点元素:', nodeId);
         return;
     }
-    
+
     if (selectedNodes.has(nodeId)) {
         selectedNodes.delete(nodeId);
         selectedNodeMeta.delete(nodeId);
@@ -4844,7 +4868,7 @@ function toggleSelectItem(nodeId) {
         rememberBatchSelection(nodeElement);
         console.log('[批量] 选中:', nodeId);
     }
-    
+
     updateBatchToolbar();
     updateBatchPanelCount(); // 实时更新批量面板计数
     console.log('[批量] 选中状态:', selectedNodes.size, '个');
@@ -4856,7 +4880,7 @@ async function batchOpen() {
         alert('此功能需要Chrome扩展环境');
         return;
     }
-    
+
     const lang = currentLang || 'zh_CN';
     const permanentIds = getSelectedPermanentNodeIds();
     if (!permanentIds.length) {
@@ -4864,23 +4888,23 @@ async function batchOpen() {
         return;
     }
     const urls = await getSelectedUrls(permanentIds);
-    
+
     if (urls.length === 0) {
         alert(lang === 'zh_CN' ? '没有可打开的书签' : 'No bookmarks to open');
         return;
     }
-    
+
     if (urls.length > 10) {
-        const message = lang === 'zh_CN' 
-            ? `确定要打开 ${urls.length} 个书签吗？` 
+        const message = lang === 'zh_CN'
+            ? `确定要打开 ${urls.length} 个书签吗？`
             : `Open ${urls.length} bookmarks?`;
         if (!confirm(message)) return;
     }
-    
+
     for (const url of urls) {
         await chrome.tabs.create({ url: url, active: false });
     }
-    
+
     console.log('[批量] 已打开:', urls.length, '个书签');
 }
 
@@ -4890,7 +4914,7 @@ async function batchOpenTabGroup() {
         alert('此功能需要Chrome扩展环境');
         return;
     }
-    
+
     const lang = currentLang || 'zh_CN';
     const permanentIds = getSelectedPermanentNodeIds();
     if (!permanentIds.length) {
@@ -4898,12 +4922,12 @@ async function batchOpenTabGroup() {
         return;
     }
     const urls = await getSelectedUrls(permanentIds);
-    
+
     if (urls.length === 0) {
         alert(lang === 'zh_CN' ? '没有可打开的书签' : 'No bookmarks to open');
         return;
     }
-    
+
     try {
         // 创建标签页
         const tabIds = [];
@@ -4911,11 +4935,11 @@ async function batchOpenTabGroup() {
             const tab = await chrome.tabs.create({ url: url, active: false });
             tabIds.push(tab.id);
         }
-        
+
         // 创建标签页组
         if (chrome.tabs.group) {
             const groupId = await chrome.tabs.group({ tabIds: tabIds });
-            
+
             if (chrome.tabGroups) {
                 await chrome.tabGroups.update(groupId, {
                     title: lang === 'zh_CN' ? `选中的书签 (${urls.length})` : `Selected (${urls.length})`,
@@ -4923,10 +4947,886 @@ async function batchOpenTabGroup() {
                 });
             }
         }
-        
+
         console.log('[批量] 已在标签页组中打开:', urls.length, '个书签');
     } catch (error) {
         console.error('[批量] 打开失败:', error);
+        alert(lang === 'zh_CN' ? `打开失败: ${error.message}` : `Failed to open: ${error.message}`);
+    }
+}
+
+// 批量打开（手动选择窗口/组）
+async function batchOpenWithManualSelection() {
+    console.log('[批量手动选择] 开始执行 batchOpenWithManualSelection');
+
+    if (!chrome || !chrome.tabs) {
+        alert('此功能需要Chrome扩展环境');
+        return;
+    }
+
+    const lang = currentLang || 'zh_CN';
+
+    // 获取所有选中项的详细信息（不只是URL，还需要知道是书签还是文件夹）
+    const permanentIds = getSelectedPermanentNodeIds();
+    const tempNodes = getSelectedTempNodes();
+
+    // 收集选中项的详细信息
+    const selectionInfo = {
+        folders: [],      // { id, title, type: 'permanent'|'temporary', sectionId? }
+        bookmarks: [],    // { url, title }
+        hasFolders: false,
+        hasBookmarks: false
+    };
+
+    // 处理永久书签
+    for (const nodeId of permanentIds) {
+        try {
+            const [node] = await chrome.bookmarks.get(nodeId);
+            if (node.url) {
+                selectionInfo.bookmarks.push({ url: node.url, title: node.title });
+                selectionInfo.hasBookmarks = true;
+            } else {
+                selectionInfo.folders.push({
+                    id: nodeId,
+                    title: node.title,
+                    type: 'permanent'
+                });
+                selectionInfo.hasFolders = true;
+            }
+        } catch (error) {
+            console.error('[批量手动选择] 获取节点失败:', nodeId, error);
+        }
+    }
+
+    // 处理临时书签
+    const tempManager = (window.CanvasModule && window.CanvasModule.temp) ? window.CanvasModule.temp : null;
+    tempNodes.forEach(node => {
+        if (node.url && !node.isFolder) {
+            selectionInfo.bookmarks.push({ url: node.url, title: node.title });
+            selectionInfo.hasBookmarks = true;
+        } else if (node.isFolder) {
+            selectionInfo.folders.push({
+                id: node.id,
+                title: node.title,
+                type: 'temporary',
+                sectionId: node.sectionId
+            });
+            selectionInfo.hasFolders = true;
+        }
+    });
+
+    if (!selectionInfo.hasFolders && !selectionInfo.hasBookmarks) {
+        alert(lang === 'zh_CN' ? '没有选中任何书签或文件夹' : 'No bookmarks or folders selected');
+        return;
+    }
+
+    // 显示手动选择对话框（传递详细信息）
+    await showBatchManualWindowGroupSelector(selectionInfo, lang);
+}
+
+/**
+ * 显示批量手动选择窗口+组的选择器
+ */
+async function showBatchManualWindowGroupSelector(selectionInfo, lang) {
+    try {
+        lang = lang || currentLang || 'zh_CN';
+
+        // 计算初始书签数量（单层模式）
+        let initialCount = selectionInfo.bookmarks.length;
+        for (const folder of selectionInfo.folders) {
+            const urls = await getFolderUrls(folder, 1); // 单层
+            initialCount += urls.length;
+        }
+
+        // 创建遮罩层
+        const overlay = document.createElement('div');
+        overlay.className = 'manual-selector-overlay';
+
+        // 创建对话框
+        const dialog = document.createElement('div');
+        dialog.className = 'manual-selector-dialog';
+
+        // 头部（包含层级选项）
+        const header = document.createElement('div');
+        header.className = 'manual-selector-header';
+        header.innerHTML = `
+            <h3>${lang === 'zh_CN' ? '批量打开 - 选择目标窗口/标签组' : 'Batch Open - Select Target Window/Group'}</h3>
+            <div class="manual-selector-header-right">
+                <span class="manual-selector-count" id="batch-bookmark-count">${initialCount} ${lang === 'zh_CN' ? '个书签' : 'bookmarks'}</span>
+                ${selectionInfo.hasFolders ? `
+                    <div class="manual-selector-depth-control">
+                        <label class="manual-selector-depth-checkbox">
+                            <input type="checkbox" id="include-subfolders-checkbox">
+                            <span>${lang === 'zh_CN' ? '包含子文件夹' : 'Include subfolders'}</span>
+                        </label>
+                        <select id="depth-level-select" class="manual-selector-depth-select" disabled>
+                            <option value="all">${lang === 'zh_CN' ? '全部层级' : 'All levels'}</option>
+                            <option value="1">${lang === 'zh_CN' ? '1层' : '1 level'}</option>
+                            <option value="2">${lang === 'zh_CN' ? '2层' : '2 levels'}</option>
+                            <option value="3">${lang === 'zh_CN' ? '3层' : '3 levels'}</option>
+                            <option value="4">${lang === 'zh_CN' ? '4层' : '4 levels'}</option>
+                            <option value="5">${lang === 'zh_CN' ? '5层' : '5 levels'}</option>
+                        </select>
+                    </div>
+                ` : ''}
+                <button class="manual-selector-close">&times;</button>
+            </div>
+        `;
+
+        // 内容区 - 使用DOM方式创建以便绑定帮助提示事件
+        const body = document.createElement('div');
+        body.className = 'manual-selector-body';
+
+        // 左侧：窗口列表面板
+        const windowPanel = document.createElement('div');
+        windowPanel.className = 'manual-selector-panel';
+        windowPanel.id = 'batch-window-panel';
+        windowPanel.style.position = 'relative';
+        windowPanel.innerHTML = `
+            <div class="manual-selector-panel-title">
+                <span>${lang === 'zh_CN' ? '窗口' : 'Windows'}</span>
+                <span style="position: relative; display: inline-flex; align-items: center;">
+                    <i class="fas fa-question-circle manual-selector-help-icon"></i>
+                </span>
+            </div>
+            <div class="manual-selector-help-tooltip">
+                <p>${lang === 'zh_CN'
+                ? 'Chrome/Edge扩展API无法获取窗口的自定义名称（即使您在浏览器中设置了"命名窗口"）。'
+                : 'Chrome/Edge extension API cannot access custom window names (even if you set "Name Window" in browser).'}</p>
+                <p>${lang === 'zh_CN'
+                ? '显示的是活动标签页标题，您可以点击编辑按钮（<i class="fas fa-edit"></i>）设置自定义名称。'
+                : 'Showing active tab title, you can click edit button (<i class="fas fa-edit"></i>) to set custom name.'}</p>
+            </div>
+            <div class="manual-selector-list" data-type="windows"></div>
+        `;
+
+        // 绑定帮助图标hover事件
+        const helpIcon = windowPanel.querySelector('.manual-selector-help-icon');
+        const helpTooltip = windowPanel.querySelector('.manual-selector-help-tooltip');
+
+        // 动态计算箭头位置
+        const updateArrowPosition = () => {
+            const panelRect = windowPanel.getBoundingClientRect();
+            const iconRect = helpIcon.getBoundingClientRect();
+            const arrowOffset = iconRect.left - panelRect.left + (iconRect.width / 2);
+            helpTooltip.style.setProperty('--arrow-offset', `${arrowOffset}px`);
+        };
+
+        helpIcon.addEventListener('mouseenter', () => {
+            updateArrowPosition();
+            helpTooltip.style.opacity = '1';
+            helpTooltip.style.visibility = 'visible';
+        });
+
+        helpIcon.addEventListener('mouseleave', () => {
+            helpTooltip.style.opacity = '0';
+            helpTooltip.style.visibility = 'hidden';
+        });
+
+        helpTooltip.addEventListener('mouseenter', () => {
+            helpTooltip.style.opacity = '1';
+            helpTooltip.style.visibility = 'visible';
+        });
+
+        helpTooltip.addEventListener('mouseleave', () => {
+            helpTooltip.style.opacity = '0';
+            helpTooltip.style.visibility = 'hidden';
+        });
+
+        // 右侧：标签组列表面板
+        const groupPanel = document.createElement('div');
+        groupPanel.className = 'manual-selector-panel';
+        groupPanel.id = 'batch-group-panel';
+        groupPanel.innerHTML = `
+            <div class="manual-selector-panel-title">
+                <span>${lang === 'zh_CN' ? '标签组' : 'Tab Groups'}</span>
+                ${selectionInfo.hasFolders ? `
+                    <span class="manual-selector-panel-hint" id="group-panel-hint">
+                        ${lang === 'zh_CN' ? '(不选择则文件夹自动成组)' : '(Folders become groups if none selected)'}
+                    </span>
+                ` : ''}
+            </div>
+            <div class="manual-selector-list" data-type="groups"></div>
+        `;
+
+        // 创建panels容器并添加两个面板
+        const panelsContainer = document.createElement('div');
+        panelsContainer.className = 'manual-selector-panels';
+        panelsContainer.appendChild(windowPanel);
+        panelsContainer.appendChild(groupPanel);
+
+        body.appendChild(panelsContainer);
+
+        // 特色功能说明区域
+        const featuresSection = document.createElement('div');
+        featuresSection.className = 'manual-selector-features';
+        featuresSection.innerHTML = `
+            <div class="manual-selector-features-title">
+                <i class="fas fa-lightbulb"></i>
+                <span>${lang === 'zh_CN' ? '特色功能' : 'Features'}</span>
+            </div>
+            <div class="manual-selector-features-grid">
+                <div class="manual-selector-feature-item">
+                    <i class="fas fa-check-square"></i>
+                    <span>${lang === 'zh_CN' ? '多选模式：右键 → 选择（批量操作），支持跨栏目多选' : 'Multi-select: Right-click → Select, supports cross-column selection'}</span>
+                </div>
+                <div class="manual-selector-feature-item">
+                    <i class="fas fa-folder-open"></i>
+                    <span>${lang === 'zh_CN' ? '文件夹智能分组：不选择标签组时，每个文件夹自动创建对应标签组' : 'Smart grouping: Each folder auto-creates its own tab group when none selected'}</span>
+                </div>
+                <div class="manual-selector-feature-item">
+                    <i class="fas fa-sitemap"></i>
+                    <span>${lang === 'zh_CN' ? '层级控制：可选择包含子文件夹，并控制递归深度' : 'Depth control: Include subfolders with customizable depth'}</span>
+                </div>
+                <div class="manual-selector-feature-item">
+                    <i class="fas fa-window-restore"></i>
+                    <span>${lang === 'zh_CN' ? '灵活目标：选择窗口+标签组，或仅选窗口让文件夹自动成组' : 'Flexible target: Choose window + group, or just window for auto-grouping'}</span>
+                </div>
+            </div>
+        `;
+        body.appendChild(featuresSection);
+
+        // 底部
+        const footer = document.createElement('div');
+        footer.className = 'manual-selector-footer';
+        footer.innerHTML = `
+            <button class="manual-selector-btn manual-selector-btn-clear">${lang === 'zh_CN' ? '清除选择' : 'Clear'}</button>
+            <button class="manual-selector-btn manual-selector-btn-cancel">${lang === 'zh_CN' ? '取消' : 'Cancel'}</button>
+            <button class="manual-selector-btn manual-selector-btn-confirm">${lang === 'zh_CN' ? '打开' : 'Open'}</button>
+        `;
+
+        // 组装
+        dialog.appendChild(header);
+        dialog.appendChild(body);
+        dialog.appendChild(footer);
+        overlay.appendChild(dialog);
+
+        // 将overlay添加到画布工作区或body
+        const canvasWorkspace = document.getElementById('canvasWorkspace');
+        const canvasContainer = canvasWorkspace || document.body;
+        canvasContainer.appendChild(overlay);
+
+        // 存储批量选择的临时状态
+        let batchSelectedWindowId = null;
+        let batchSelectedGroupId = null;
+        let includeSubfolders = false;
+        let depthLevel = 'all';
+
+        // 设置层级选择事件
+        const checkbox = overlay.querySelector('#include-subfolders-checkbox');
+        const depthSelect = overlay.querySelector('#depth-level-select');
+        const countDisplay = overlay.querySelector('#batch-bookmark-count');
+
+        const updateBookmarkCount = async () => {
+            let count = selectionInfo.bookmarks.length;
+            const depth = includeSubfolders ? (depthLevel === 'all' ? Infinity : parseInt(depthLevel)) : 1;
+
+            for (const folder of selectionInfo.folders) {
+                const urls = await getFolderUrls(folder, depth);
+                count += urls.length;
+            }
+
+            countDisplay.textContent = `${count} ${lang === 'zh_CN' ? '个书签' : 'bookmarks'}`;
+        };
+
+        if (checkbox) {
+            checkbox.addEventListener('change', async () => {
+                includeSubfolders = checkbox.checked;
+                if (depthSelect) {
+                    depthSelect.disabled = !includeSubfolders;
+                }
+                await updateBookmarkCount();
+            });
+        }
+
+        if (depthSelect) {
+            depthSelect.addEventListener('change', async () => {
+                depthLevel = depthSelect.value;
+                await updateBookmarkCount();
+            });
+        }
+
+        // 加载窗口和组列表
+        await loadBatchWindowsAndGroups(overlay, lang, (windowId, groupId) => {
+            batchSelectedWindowId = windowId;
+            batchSelectedGroupId = groupId;
+        });
+
+        // 设置事件
+        setupBatchSelectorEventsV2(overlay, selectionInfo, lang, () => ({
+            windowId: batchSelectedWindowId,
+            groupId: batchSelectedGroupId,
+            includeSubfolders,
+            depthLevel
+        }));
+
+    } catch (error) {
+        console.error('[批量手动选择器] 创建失败:', error);
+    }
+}
+
+/**
+ * 获取文件夹的URL列表（支持层级限制）
+ */
+async function getFolderUrls(folder, maxDepth = 1) {
+    const urls = [];
+
+    if (folder.type === 'permanent') {
+        await collectPermanentFolderUrls(folder.id, urls, 1, maxDepth);
+    } else if (folder.type === 'temporary') {
+        const tempManager = (window.CanvasModule && window.CanvasModule.temp) ? window.CanvasModule.temp : null;
+        if (tempManager) {
+            try {
+                const itemEntry = tempManager.findItem(folder.sectionId, folder.id);
+                if (itemEntry && itemEntry.item) {
+                    collectTempFolderUrls(itemEntry.item, urls, 1, maxDepth);
+                }
+            } catch (err) {
+                console.warn('[批量手动选择] 获取临时文件夹内容失败:', err);
+            }
+        }
+    }
+
+    return urls;
+}
+
+/**
+ * 递归收集永久文件夹的URL（带层级限制）
+ */
+async function collectPermanentFolderUrls(folderId, urls, currentDepth, maxDepth) {
+    if (currentDepth > maxDepth) return;
+
+    try {
+        const children = await chrome.bookmarks.getChildren(folderId);
+        for (const child of children) {
+            if (child.url) {
+                urls.push(child.url);
+            } else if (currentDepth < maxDepth) {
+                await collectPermanentFolderUrls(child.id, urls, currentDepth + 1, maxDepth);
+            }
+        }
+    } catch (error) {
+        console.error('[批量手动选择] 获取文件夹子项失败:', error);
+    }
+}
+
+/**
+ * 递归收集临时文件夹的URL（带层级限制）
+ */
+function collectTempFolderUrls(item, urls, currentDepth, maxDepth) {
+    if (!item || currentDepth > maxDepth) return;
+
+    if (item.children && Array.isArray(item.children)) {
+        for (const child of item.children) {
+            if (child.url && child.type !== 'folder') {
+                urls.push(child.url);
+            } else if (child.type === 'folder' && currentDepth < maxDepth) {
+                collectTempFolderUrls(child, urls, currentDepth + 1, maxDepth);
+            }
+        }
+    }
+}
+
+/**
+ * 设置批量选择器事件（V2版本，支持智能分组）
+ */
+function setupBatchSelectorEventsV2(overlay, selectionInfo, lang, getSelection) {
+    // 关闭按钮
+    const closeBtn = overlay.querySelector('.manual-selector-close');
+    closeBtn.addEventListener('click', () => {
+        overlay.remove();
+    });
+
+    // 点击遮罩关闭
+    overlay.addEventListener('click', (e) => {
+        if (e.target === overlay) {
+            overlay.remove();
+        }
+    });
+
+    // 取消按钮
+    const cancelBtn = overlay.querySelector('.manual-selector-btn-cancel');
+    cancelBtn.addEventListener('click', () => {
+        overlay.remove();
+    });
+
+    // 清除按钮
+    const clearBtn = overlay.querySelector('.manual-selector-btn-clear');
+    clearBtn.addEventListener('click', () => {
+        overlay.querySelectorAll('.manual-selector-item.selected').forEach(item => {
+            item.classList.remove('selected');
+        });
+    });
+
+    // 确认按钮
+    const confirmBtn = overlay.querySelector('.manual-selector-btn-confirm');
+    confirmBtn.addEventListener('click', async () => {
+        const selection = getSelection();
+        const { windowId, groupId, includeSubfolders, depthLevel } = selection;
+
+        console.log('[批量手动选择器] 确认打开:', { windowId, groupId, includeSubfolders, depthLevel });
+
+        // 关闭选择器
+        overlay.remove();
+
+        // 批量打开书签（使用新的智能打开逻辑）
+        await batchOpenWithSmartGrouping(selectionInfo, windowId, groupId, includeSubfolders, depthLevel, lang);
+    });
+}
+
+/**
+ * 智能分组打开书签
+ * - 如果选择了标签组：所有书签打开到该组
+ * - 如果只选择了窗口：文件夹各自成组，单个书签作为独立标签
+ */
+async function batchOpenWithSmartGrouping(selectionInfo, windowId, groupId, includeSubfolders, depthLevel, lang) {
+    try {
+        const depth = includeSubfolders ? (depthLevel === 'all' ? Infinity : parseInt(depthLevel)) : 1;
+
+        // 情况1：选择了标签组 - 所有书签打开到该组
+        if (groupId) {
+            const allUrls = [];
+
+            // 收集单个书签
+            selectionInfo.bookmarks.forEach(b => allUrls.push(b.url));
+
+            // 收集文件夹中的书签
+            for (const folder of selectionInfo.folders) {
+                const urls = await getFolderUrls(folder, depth);
+                allUrls.push(...urls);
+            }
+
+            if (allUrls.length > 0) {
+                await batchOpenUrlsWithSelection(allUrls, windowId, groupId, lang);
+            }
+        }
+        // 情况2：只选择了窗口或都不选 - 文件夹各自成组，单个书签独立
+        else {
+            const targetWindowId = windowId || (await chrome.windows.getCurrent()).id;
+
+            // 1. 先处理文件夹 - 每个文件夹创建一个标签组
+            for (const folder of selectionInfo.folders) {
+                const urls = await getFolderUrls(folder, depth);
+                if (urls.length > 0) {
+                    const tabIds = [];
+                    for (const url of urls) {
+                        const tab = await chrome.tabs.create({ url, windowId: targetWindowId, active: false });
+                        tabIds.push(tab.id);
+                    }
+
+                    // 创建标签组，以文件夹名命名
+                    if (tabIds.length > 0 && chrome.tabs.group) {
+                        const newGroupId = await chrome.tabs.group({ tabIds });
+                        if (chrome.tabGroups) {
+                            await chrome.tabGroups.update(newGroupId, {
+                                title: folder.title || (lang === 'zh_CN' ? '文件夹' : 'Folder'),
+                                collapsed: false
+                            });
+                        }
+                        console.log('[批量手动选择器] 创建标签组:', folder.title, '包含', tabIds.length, '个标签');
+                    }
+                }
+            }
+
+            // 2. 处理单个书签 - 作为独立标签页
+            for (const bookmark of selectionInfo.bookmarks) {
+                await chrome.tabs.create({ url: bookmark.url, windowId: targetWindowId, active: false });
+            }
+
+            console.log('[批量手动选择器] 已打开:', selectionInfo.folders.length, '个文件夹组,', selectionInfo.bookmarks.length, '个独立书签');
+        }
+
+    } catch (error) {
+        console.error('[批量手动选择器] 智能分组打开失败:', error);
+        alert(lang === 'zh_CN' ? `打开失败: ${error.message}` : `Failed to open: ${error.message}`);
+    }
+}
+
+/**
+ * 加载批量选择器的窗口和组列表
+ */
+async function loadBatchWindowsAndGroups(overlay, lang, onSelectionChange) {
+    try {
+        // 获取所有窗口
+        const windows = await chrome.windows.getAll({ populate: true });
+        const windowsList = overlay.querySelector('.manual-selector-list[data-type="windows"]');
+
+        // 重置窗口序号映射
+        windowIdToIndexMap = {};
+
+        if (windows.length === 0) {
+            windowsList.innerHTML = `<div class="manual-selector-empty">${lang === 'zh_CN' ? '没有窗口' : 'No windows'}</div>`;
+        } else {
+            windowsList.innerHTML = '';
+
+            // 获取当前窗口ID
+            const currentWindow = await chrome.windows.getCurrent();
+            const currentWindowId = currentWindow.id;
+
+            // 构建窗口ID到序号的映射
+            windows.forEach((win, index) => {
+                windowIdToIndexMap[win.id] = index + 1;
+            });
+
+            // 当前选中的窗口ID（用于状态管理）
+            let selectedWindowId = null;
+
+            windows.forEach((win, index) => {
+                const windowIndex = index + 1;  // 窗口序号（从1开始）
+                const isCurrent = win.id === currentWindowId;
+                const tabCount = win.tabs ? win.tabs.length : 0;
+
+                // 获取活动标签页标题
+                const activeTab = win.tabs ? win.tabs.find(tab => tab.active) : null;
+                const activeTabTitle = activeTab ? activeTab.title : `Window #${win.id}`;
+
+                // 获取显示名称（优先使用自定义名称）
+                const displayName = getWindowDisplayName(win.id, activeTabTitle);
+                const hasCustomName = !!customWindowNames[win.id];
+
+                // 窗口状态
+                const stateIcon = {
+                    'maximized': '<i class="fas fa-window-maximize"></i>',
+                    'minimized': '<i class="fas fa-window-minimize"></i>',
+                    'fullscreen': '<i class="fas fa-expand"></i>',
+                    'normal': '<i class="fas fa-window-restore"></i>'
+                }[win.state] || '';
+
+                const stateText = {
+                    'maximized': lang === 'zh_CN' ? '最大化' : 'Maximized',
+                    'minimized': lang === 'zh_CN' ? '最小化' : 'Minimized',
+                    'fullscreen': lang === 'zh_CN' ? '全屏' : 'Fullscreen',
+                    'normal': lang === 'zh_CN' ? '正常' : 'Normal'
+                }[win.state] || '';
+
+                const item = document.createElement('div');
+                item.className = 'manual-selector-item';
+                item.dataset.windowId = win.id;
+                item.dataset.windowIndex = windowIndex;
+
+                item.innerHTML = `
+                    <div class="manual-selector-item-header">
+                        <div class="manual-selector-item-title">
+                            <span class="manual-selector-window-index">${windowIndex}</span>
+                            ${win.incognito ? '🕶️' : '🪟'} ${displayName}
+                            ${isCurrent ? `<span class="manual-selector-item-badge">${lang === 'zh_CN' ? '当前' : 'Current'}</span>` : ''}
+                            ${hasCustomName ? `<span class="manual-selector-item-badge" style="background: var(--accent-primary);">✓</span>` : ''}
+                        </div>
+                        <div class="manual-selector-item-actions">
+                            <button class="manual-selector-edit-btn" data-window-id="${win.id}" title="${lang === 'zh_CN' ? '编辑名称' : 'Edit name'}">
+                                <i class="fas fa-edit"></i>
+                            </button>
+                        </div>
+                    </div>
+                    <div class="manual-selector-item-info">
+                        <span class="manual-selector-item-meta">${stateIcon} ${stateText}</span>
+                        <span class="manual-selector-item-meta"><i class="fas fa-layer-group"></i> ${tabCount} ${lang === 'zh_CN' ? '个标签页' : 'tabs'}</span>
+                        ${win.incognito ? `<span class="manual-selector-item-meta"><i class="fas fa-user-secret"></i> ${lang === 'zh_CN' ? '无痕模式' : 'Incognito'}</span>` : ''}
+                    </div>
+                `;
+
+                // 绑定编辑按钮事件
+                const editBtn = item.querySelector('.manual-selector-edit-btn');
+                editBtn.addEventListener('click', async (e) => {
+                    e.stopPropagation();
+                    await showWindowNameEditor(item, win.id, displayName, lang);
+                });
+
+                // 点击选择窗口
+                item.addEventListener('click', async (e) => {
+                    // 如果处于编辑模式，不触发选择
+                    if (item.dataset.editing === 'true') {
+                        return;
+                    }
+                    // 如果点击的是编辑按钮或输入框，不触发选择
+                    if (e.target.closest('.manual-selector-edit-btn') || e.target.closest('.manual-selector-item-input')) {
+                        return;
+                    }
+
+                    // 切换选中状态
+                    const wasSelected = item.classList.contains('selected');
+                    overlay.querySelectorAll('.manual-selector-list[data-type="windows"] .manual-selector-item').forEach(i => {
+                        i.classList.remove('selected');
+                    });
+
+                    if (!wasSelected) {
+                        item.classList.add('selected');
+                        selectedWindowId = win.id;
+                        onSelectionChange(win.id, null);
+                        // 加载该窗口的组
+                        await loadBatchGroupsForWindow(overlay, win.id, lang, onSelectionChange);
+                    } else {
+                        selectedWindowId = null;
+                        onSelectionChange(null, null);
+                        // 清除组选择
+                        overlay.querySelectorAll('.manual-selector-list[data-type="groups"] .manual-selector-item').forEach(i => {
+                            i.classList.remove('selected');
+                        });
+                        // 加载所有组
+                        await loadBatchGroupsForWindow(overlay, null, lang, onSelectionChange);
+                    }
+                });
+
+                windowsList.appendChild(item);
+            });
+        }
+
+        // 加载所有组
+        await loadBatchGroupsForWindow(overlay, null, lang, onSelectionChange);
+
+    } catch (error) {
+        console.error('[批量手动选择器] 加载失败:', error);
+    }
+}
+
+/**
+ * 加载批量选择器的组列表
+ */
+async function loadBatchGroupsForWindow(overlay, windowId, lang, onSelectionChange) {
+    try {
+        const groupsList = overlay.querySelector('.manual-selector-list[data-type="groups"]');
+
+        // 查询组
+        const query = windowId ? { windowId } : {};
+        const groups = await chrome.tabGroups.query(query);
+
+        if (groups.length === 0) {
+            groupsList.innerHTML = `<div class="manual-selector-empty">${windowId
+                ? (lang === 'zh_CN' ? '该窗口没有标签组' : 'No groups in this window')
+                : (lang === 'zh_CN' ? '选择窗口以查看其标签组，或直接选择所有组' : 'Select a window to see its groups, or choose from all groups')}</div>`;
+
+            // 如果没有选择窗口，显示所有组
+            if (!windowId) {
+                const allGroups = await chrome.tabGroups.query({});
+                if (allGroups.length > 0) {
+                    renderBatchGroups(overlay, allGroups, lang, onSelectionChange);
+                }
+            }
+        } else {
+            renderBatchGroups(overlay, groups, lang, onSelectionChange);
+        }
+    } catch (error) {
+        console.error('[批量手动选择器] 加载组失败:', error);
+    }
+}
+
+/**
+ * 渲染批量选择器的组列表
+ */
+function renderBatchGroups(overlay, groups, lang, onSelectionChange) {
+    const groupsList = overlay.querySelector('.manual-selector-list[data-type="groups"]');
+    groupsList.innerHTML = '';
+
+    // 按窗口分组显示
+    const groupsByWindow = {};
+    groups.forEach(group => {
+        if (!groupsByWindow[group.windowId]) {
+            groupsByWindow[group.windowId] = [];
+        }
+        groupsByWindow[group.windowId].push(group);
+    });
+
+    // 获取窗口ID列表（如果有多个窗口的组，显示窗口分隔）
+    const windowIds = Object.keys(groupsByWindow);
+    const showWindowHeaders = windowIds.length > 1;
+
+    windowIds.forEach(winId => {
+        // 获取窗口序号
+        const windowIndex = windowIdToIndexMap[winId] || winId;
+
+        // 如果有多个窗口，显示窗口标题
+        if (showWindowHeaders) {
+            const header = document.createElement('div');
+            header.className = 'manual-selector-item-info';
+            header.style.padding = '8px 16px';
+            header.style.fontWeight = '600';
+            header.style.borderBottom = '1px solid var(--border-color)';
+            header.style.marginBottom = '6px';
+            header.innerHTML = `<i class="fas fa-window-restore"></i> ${lang === 'zh_CN' ? '窗口' : 'Window'} ${windowIndex}`;
+            groupsList.appendChild(header);
+        }
+
+        groupsByWindow[winId].forEach(group => {
+            const colorMap = {
+                'grey': '⚪',
+                'blue': '🔵',
+                'red': '🔴',
+                'yellow': '🟡',
+                'green': '🟢',
+                'pink': '🟣',
+                'purple': '🟣',
+                'cyan': '🔵',
+                'orange': '🟠'
+            };
+            const colorIcon = colorMap[group.color] || '⚪';
+
+            const item = document.createElement('div');
+            item.className = 'manual-selector-item';
+            item.dataset.groupId = group.id;
+            item.dataset.windowId = group.windowId;
+
+            const title = group.title || (lang === 'zh_CN' ? '(无标题)' : '(Untitled)');
+            const groupWindowIndex = windowIdToIndexMap[group.windowId] || group.windowId;
+
+            item.innerHTML = `
+                <div class="manual-selector-item-title">
+                    ${colorIcon} ${title}
+                </div>
+                <div class="manual-selector-item-info">${lang === 'zh_CN' ? '窗口' : 'Window'} ${groupWindowIndex}</div>
+            `;
+
+            // 点击选择组
+            item.addEventListener('click', () => {
+                const wasSelected = item.classList.contains('selected');
+                overlay.querySelectorAll('.manual-selector-list[data-type="groups"] .manual-selector-item').forEach(i => {
+                    i.classList.remove('selected');
+                });
+
+                if (!wasSelected) {
+                    item.classList.add('selected');
+                    // 获取当前选中的窗口
+                    const selectedWindowItem = overlay.querySelector('.manual-selector-list[data-type="windows"] .manual-selector-item.selected');
+                    const currentWindowId = selectedWindowItem ? parseInt(selectedWindowItem.dataset.windowId) : null;
+                    onSelectionChange(currentWindowId, group.id);
+                } else {
+                    const selectedWindowItem = overlay.querySelector('.manual-selector-list[data-type="windows"] .manual-selector-item.selected');
+                    const currentWindowId = selectedWindowItem ? parseInt(selectedWindowItem.dataset.windowId) : null;
+                    onSelectionChange(currentWindowId, null);
+                }
+            });
+
+            groupsList.appendChild(item);
+        });
+    });
+}
+
+/**
+ * 设置批量选择器事件
+ */
+function setupBatchSelectorEvents(overlay, urls, lang, getSelection) {
+    // 关闭按钮
+    const closeBtn = overlay.querySelector('.manual-selector-close');
+    closeBtn.addEventListener('click', () => {
+        overlay.remove();
+    });
+
+    // 点击遮罩关闭
+    overlay.addEventListener('click', (e) => {
+        if (e.target === overlay) {
+            overlay.remove();
+        }
+    });
+
+    // 取消按钮
+    const cancelBtn = overlay.querySelector('.manual-selector-btn-cancel');
+    cancelBtn.addEventListener('click', () => {
+        overlay.remove();
+    });
+
+    // 清除按钮
+    const clearBtn = overlay.querySelector('.manual-selector-btn-clear');
+    clearBtn.addEventListener('click', () => {
+        overlay.querySelectorAll('.manual-selector-item.selected').forEach(item => {
+            item.classList.remove('selected');
+        });
+    });
+
+    // 确认按钮
+    const confirmBtn = overlay.querySelector('.manual-selector-btn-confirm');
+    confirmBtn.addEventListener('click', async () => {
+        const selection = getSelection();
+        const { windowId, groupId } = selection;
+
+        console.log('[批量手动选择器] 确认打开, 窗口:', windowId, ', 组:', groupId, ', 书签数:', urls.length);
+
+        // 关闭选择器
+        overlay.remove();
+
+        // 批量打开书签
+        await batchOpenUrlsWithSelection(urls, windowId, groupId, lang);
+    });
+}
+
+/**
+ * 使用选择的窗口/组批量打开URL
+ */
+async function batchOpenUrlsWithSelection(urls, windowId, groupId, lang) {
+    try {
+        const tabIds = [];
+
+        // 情况1: 窗口 + 组
+        if (windowId && groupId) {
+            // 验证组是否存在且在指定窗口中
+            try {
+                const group = await chrome.tabGroups.get(groupId);
+                if (group.windowId !== windowId) {
+                    throw new Error('组不在指定窗口中');
+                }
+
+                // 在指定窗口的指定组中打开
+                for (const url of urls) {
+                    const tab = await chrome.tabs.create({ url, windowId, active: false });
+                    tabIds.push(tab.id);
+                }
+
+                // 添加到组
+                if (tabIds.length > 0) {
+                    await chrome.tabs.group({ groupId, tabIds });
+                }
+
+            } catch (error) {
+                console.warn('[批量手动选择器] 组不存在，在窗口中创建新标签组:', error);
+                // 在窗口中创建新标签和组
+                for (const url of urls) {
+                    const tab = await chrome.tabs.create({ url, windowId, active: false });
+                    tabIds.push(tab.id);
+                }
+                if (tabIds.length > 0 && chrome.tabs.group) {
+                    const newGroupId = await chrome.tabs.group({ tabIds });
+                    if (chrome.tabGroups) {
+                        await chrome.tabGroups.update(newGroupId, {
+                            title: lang === 'zh_CN' ? `批量打开 (${urls.length})` : `Batch (${urls.length})`,
+                            collapsed: false
+                        });
+                    }
+                }
+            }
+        }
+        // 情况2: 仅窗口
+        else if (windowId) {
+            for (const url of urls) {
+                await chrome.tabs.create({ url, windowId, active: false });
+            }
+        }
+        // 情况3: 仅组
+        else if (groupId) {
+            try {
+                const group = await chrome.tabGroups.get(groupId);
+                for (const url of urls) {
+                    const tab = await chrome.tabs.create({ url, windowId: group.windowId, active: false });
+                    tabIds.push(tab.id);
+                }
+                if (tabIds.length > 0) {
+                    await chrome.tabs.group({ groupId, tabIds });
+                }
+            } catch (error) {
+                console.warn('[批量手动选择器] 组不存在，在新标签中打开:', error);
+                for (const url of urls) {
+                    await chrome.tabs.create({ url, active: false });
+                }
+            }
+        }
+        // 情况4: 都不选（新标签页）
+        else {
+            for (const url of urls) {
+                await chrome.tabs.create({ url, active: false });
+            }
+        }
+
+        console.log('[批量手动选择器] 已打开:', urls.length, '个书签');
+
+    } catch (error) {
+        console.error('[批量手动选择器] 打开书签失败:', error);
         alert(lang === 'zh_CN' ? `打开失败: ${error.message}` : `Failed to open: ${error.message}`);
     }
 }
@@ -4969,7 +5869,7 @@ async function batchDelete() {
         alert('此功能需要Chrome扩展环境');
         return;
     }
-    
+
     const lang = currentLang || 'zh_CN';
     const permanentIds = getSelectedPermanentNodeIds();
     if (!permanentIds.length) {
@@ -4977,19 +5877,19 @@ async function batchDelete() {
         return;
     }
     const count = permanentIds.length;
-    
+
     // 二次确认
-    const message = lang === 'zh_CN' 
-        ? `确定要删除选中的 ${count} 项吗？此操作不可撤销！` 
+    const message = lang === 'zh_CN'
+        ? `确定要删除选中的 ${count} 项吗？此操作不可撤销！`
         : `Delete ${count} selected items? This cannot be undone!`;
-    
+
     if (!confirm(message)) return;
-    
+
     try {
         let successCount = 0;
         let failCount = 0;
         const affectedParentIds = new Set(); // 记录受影响的父文件夹ID
-        
+
         // 先收集所有要删除的节点的父ID
         for (const nodeId of permanentIds) {
             try {
@@ -5001,7 +5901,7 @@ async function batchDelete() {
                 console.error('[批量] 获取节点信息失败:', nodeId, error);
             }
         }
-        
+
         // 执行删除
         for (const nodeId of permanentIds) {
             try {
@@ -5017,36 +5917,36 @@ async function batchDelete() {
                 failCount++;
             }
         }
-        
+
         // 先清空选择状态（重要：避免残留蓝色标记）
         deselectAll();
         updateBatchToolbar();
-        
+
         // 存储受影响的父文件夹列表到临时存储，供比较算法使用
         if (affectedParentIds.size > 0) {
-            await chrome.storage.local.set({ 
+            await chrome.storage.local.set({
                 tempDeletedParents: Array.from(affectedParentIds),
                 tempDeleteTimestamp: Date.now()
             });
             console.log('[批量删除] 已记录受影响的父文件夹:', Array.from(affectedParentIds));
         }
-        
+
         // 不调用 refreshBookmarkTree()，让 onRemoved 事件触发增量更新
         // 增量更新会添加删除标记，用户可以通过"清理变动标识"功能来清除
-        
+
         // 清除临时标记（延迟清除，给渲染留出更长时间，从1秒增加到5秒）
         setTimeout(async () => {
             await chrome.storage.local.remove(['tempDeletedParents', 'tempDeleteTimestamp']);
             console.log('[批量删除] 已清除临时标记');
         }, 5000);
-        
-        const result = lang === 'zh_CN' 
-            ? `已删除 ${successCount} 项${failCount > 0 ? `，失败 ${failCount} 项` : ''}` 
+
+        const result = lang === 'zh_CN'
+            ? `已删除 ${successCount} 项${failCount > 0 ? `，失败 ${failCount} 项` : ''}`
             : `Deleted ${successCount} items${failCount > 0 ? `, failed ${failCount}` : ''}`;
-        
+
         alert(result);
         console.log('[批量] 删除完成:', { successCount, failCount });
-        
+
     } catch (error) {
         console.error('[批量] 删除失败:', error);
         alert(lang === 'zh_CN' ? `删除失败: ${error.message}` : `Delete failed: ${error.message}`);
@@ -5061,24 +5961,24 @@ async function batchRename() {
         await batchRenameTemp();
         return;
     }
-    
+
     const prefix = prompt(
         lang === 'zh_CN' ? '请输入统一前缀（可选）:' : 'Enter prefix (optional):',
         ''
     );
-    
+
     const suffix = prompt(
         lang === 'zh_CN' ? '请输入统一后缀（可选）:' : 'Enter suffix (optional):',
         ''
     );
-    
+
     if (prefix === null && suffix === null) return;
-    
+
     if (!chrome || !chrome.bookmarks) {
         alert('此功能需要Chrome扩展环境');
         return;
     }
-    
+
     try {
         let count = 0;
         for (const nodeId of permanentIds) {
@@ -5087,11 +5987,11 @@ async function batchRename() {
             await chrome.bookmarks.update(nodeId, { title: newTitle });
             count++;
         }
-        
+
         // 不调用 refreshBookmarkTree()，让 onChanged 事件触发增量更新
         alert(lang === 'zh_CN' ? `已重命名 ${count} 项` : `Renamed ${count} items`);
         console.log('[批量] 重命名完成:', count);
-        
+
     } catch (error) {
         console.error('[批量] 重命名失败:', error);
         alert(lang === 'zh_CN' ? `重命名失败: ${error.message}` : `Rename failed: ${error.message}`);
@@ -5104,16 +6004,16 @@ async function batchExportHTML() {
         alert('此功能需要Chrome扩展环境');
         return;
     }
-    
+
     const lang = currentLang || 'zh_CN';
-    
+
     try {
         let html = '<!DOCTYPE NETSCAPE-Bookmark-file-1>\n';
         html += '<META HTTP-EQUIV="Content-Type" CONTENT="text/html; charset=UTF-8">\n';
         html += '<TITLE>Bookmarks</TITLE>\n';
         html += '<H1>Bookmarks</H1>\n';
         html += '<DL><p>\n';
-        
+
         for (const nodeId of selectedNodes) {
             const [node] = await chrome.bookmarks.get(nodeId);
             if (node.url) {
@@ -5131,9 +6031,9 @@ async function batchExportHTML() {
                 html += `    </DL><p>\n`;
             }
         }
-        
+
         html += '</DL><p>\n';
-        
+
         // 下载文件
         const blob = new Blob([html], { type: 'text/html' });
         const url = URL.createObjectURL(blob);
@@ -5142,10 +6042,10 @@ async function batchExportHTML() {
         a.download = 'bookmarks.html';
         a.click();
         URL.revokeObjectURL(url);
-        
+
         alert(lang === 'zh_CN' ? '导出成功！' : 'Export successful!');
         console.log('[批量] 导出HTML完成');
-        
+
     } catch (error) {
         console.error('[批量] 导出HTML失败:', error);
         alert(lang === 'zh_CN' ? `导出失败: ${error.message}` : `Export failed: ${error.message}`);
@@ -5158,12 +6058,12 @@ async function batchExportJSON() {
         alert('此功能需要Chrome扩展环境');
         return;
     }
-    
+
     const lang = currentLang || 'zh_CN';
-    
+
     try {
         const bookmarks = [];
-        
+
         for (const nodeId of selectedNodes) {
             const [node] = await chrome.bookmarks.get(nodeId);
             const bookmark = {
@@ -5173,7 +6073,7 @@ async function batchExportJSON() {
                 dateAdded: node.dateAdded,
                 dateGroupModified: node.dateGroupModified
             };
-            
+
             if (!node.url) {
                 // 如果是文件夹，获取子项
                 const children = await chrome.bookmarks.getChildren(nodeId);
@@ -5183,12 +6083,12 @@ async function batchExportJSON() {
                     url: child.url || null
                 }));
             }
-            
+
             bookmarks.push(bookmark);
         }
-        
+
         const json = JSON.stringify(bookmarks, null, 2);
-        
+
         // 下载文件
         const blob = new Blob([json], { type: 'application/json' });
         const url = URL.createObjectURL(blob);
@@ -5197,10 +6097,10 @@ async function batchExportJSON() {
         a.download = 'bookmarks.json';
         a.click();
         URL.revokeObjectURL(url);
-        
+
         alert(lang === 'zh_CN' ? '导出成功！' : 'Export successful!');
         console.log('[批量] 导出JSON完成');
-        
+
     } catch (error) {
         console.error('[批量] 导出JSON失败:', error);
         alert(lang === 'zh_CN' ? `导出失败: ${error.message}` : `Export failed: ${error.message}`);
@@ -5213,16 +6113,16 @@ async function batchMergeFolder() {
         alert('此功能需要Chrome扩展环境');
         return;
     }
-    
+
     const lang = currentLang || 'zh_CN';
-    
+
     const folderName = prompt(
         lang === 'zh_CN' ? '请输入新文件夹名称:' : 'Enter new folder name:',
         lang === 'zh_CN' ? '合并的文件夹' : 'Merged Folder'
     );
-    
+
     if (!folderName) return;
-    
+
     try {
         // 创建新文件夹（默认在根目录的"其他书签"中）
         const bookmarkBar = (await chrome.bookmarks.getTree())[0].children.find(n => n.id === '1');
@@ -5230,7 +6130,7 @@ async function batchMergeFolder() {
             parentId: bookmarkBar.id,
             title: folderName
         });
-        
+
         // 移动所有选中项到新文件夹
         let count = 0;
         for (const nodeId of selectedNodes) {
@@ -5241,14 +6141,14 @@ async function batchMergeFolder() {
                 console.error('[批量] 移动失败:', nodeId, error);
             }
         }
-        
+
         deselectAll();
         updateBatchToolbar();
         // 不调用 refreshBookmarkTree()，让 onCreated/onMoved 事件触发增量更新
-        
+
         alert(lang === 'zh_CN' ? `已将 ${count} 项合并到新文件夹` : `Merged ${count} items to new folder`);
         console.log('[批量] 合并完成:', count);
-        
+
     } catch (error) {
         console.error('[批量] 合并失败:', error);
         alert(lang === 'zh_CN' ? `合并失败: ${error.message}` : `Merge failed: ${error.message}`);
@@ -5260,23 +6160,23 @@ async function batchMergeFolder() {
 // 初始化批量操作工具栏
 function initBatchToolbar() {
     // 查找书签树视图的标题
-    const pageTitle = document.querySelector('#treeViewTitle') || 
-                     document.querySelector('#treeView h2') ||
-                     document.querySelector('h2');
+    const pageTitle = document.querySelector('#treeViewTitle') ||
+        document.querySelector('#treeView h2') ||
+        document.querySelector('h2');
     if (!pageTitle) {
         console.warn('[批量工具栏] 未找到页面标题');
         return;
     }
-    
+
     console.log('[批量工具栏] 找到标题:', pageTitle.textContent);
-    
+
     // 创建工具栏容器（在标题同一行）
     const titleContainer = pageTitle.parentElement;
     titleContainer.style.display = 'flex';
     titleContainer.style.alignItems = 'center';
     titleContainer.style.gap = '20px';
     titleContainer.style.flexWrap = 'wrap';
-    
+
     // 创建工具栏
     const toolbar = document.createElement('div');
     toolbar.id = 'batch-toolbar';
@@ -5298,10 +6198,10 @@ function initBatchToolbar() {
         <button class="batch-btn" data-action="batch-merge-folder"><i class="fas fa-folder-plus"></i> 合并</button>
         <button class="batch-btn exit-select-btn" data-action="exit-select-mode"><i class="fas fa-times"></i> 退出</button>
     `;
-    
+
     // 插入到标题旁边
     titleContainer.appendChild(toolbar);
-    
+
     // 绑定按钮事件
     toolbar.querySelectorAll('.batch-btn').forEach(btn => {
         btn.addEventListener('click', async (e) => {
@@ -5315,7 +6215,7 @@ function initBatchToolbar() {
             }
         });
     });
-    
+
     console.log('[批量工具栏] 初始化完成');
 }
 
@@ -5326,12 +6226,12 @@ function updateBatchToolbar() {
         console.warn('[批量工具栏] 未找到工具栏元素');
         return;
     }
-    
+
     const lang = currentLang || 'zh_CN';
     const count = selectedNodes.size;
-    
+
     console.log('[批量工具栏] 更新:', { selectMode, count });
-    
+
     // 在Select模式下，默认不显示工具栏（显示批量菜单）
     // 除非用户点击了"隐藏批量菜单"按钮
     // 如果不在Select模式，也隐藏
@@ -5340,14 +6240,14 @@ function updateBatchToolbar() {
         console.log('[批量工具栏] 已隐藏（非Select模式）');
         return;
     }
-    
+
     // 更新计数文本
     const countText = lang === 'zh_CN' ? `已选中 ${count} 项` : `${count} Selected`;
     const countElement = toolbar.querySelector('.selected-count');
     if (countElement) {
         countElement.textContent = countText;
     }
-    
+
     console.log('[批量工具栏] 已更新计数:', countText);
 }
 
@@ -5361,17 +6261,17 @@ function initKeyboardShortcuts() {
             exitSelectMode();
             return;
         }
-        
+
         // 只在Select模式下响应其他快捷键
         if (!selectMode) return;
-        
+
         // Ctrl/Cmd + A - 全选
         if ((e.ctrlKey || e.metaKey) && e.key === 'a') {
             e.preventDefault();
             selectAll();
         }
     });
-    
+
     console.log('[快捷键] 初始化完成');
 }
 
@@ -5384,14 +6284,14 @@ function initClickSelect() {
 function updateBatchPanelCount() {
     const batchPanel = document.getElementById('batch-action-panel');
     if (!batchPanel) return;
-    
+
     const countElement = batchPanel.querySelector('#batch-panel-count');
     if (!countElement) return;
-    
+
     const lang = currentLang || 'zh_CN';
     const count = selectedNodes.size;
     countElement.textContent = `${count} ${lang === 'zh_CN' ? '项已选' : 'selected'}`;
-    
+
     console.log('[批量面板] 更新计数:', count);
 }
 
@@ -5399,25 +6299,25 @@ function updateBatchPanelCount() {
 function initBatchPanelDrag(panel) {
     const header = panel.querySelector('#batch-panel-header');
     if (!header) return;
-    
+
     let dragState = null;
     let rafId = null;
-    
+
     const shouldIgnoreTarget = (target) => {
         if (!target) return false;
         return target.closest('.batch-panel-exit-btn') ||
-               target.closest('.context-menu-item') ||
-               target.closest('button') ||
-               target.closest('a') ||
-               target.closest('input') ||
-               target.closest('.resize-handle');
+            target.closest('.context-menu-item') ||
+            target.closest('button') ||
+            target.closest('a') ||
+            target.closest('input') ||
+            target.closest('.resize-handle');
     };
-    
+
     const clamp = (value, min, max) => Math.min(Math.max(value, min), max);
-    
+
     header.style.cursor = 'grab';
     header.style.touchAction = 'none';
-    
+
     const applyDragPosition = () => {
         if (!dragState) return;
         rafId = null;
@@ -5435,12 +6335,12 @@ function initBatchPanelDrag(panel) {
         panel.style.right = 'auto';
         panel.style.bottom = 'auto';
     };
-    
+
     const scheduleUpdate = () => {
         if (rafId !== null) return;
         rafId = requestAnimationFrame(applyDragPosition);
     };
-    
+
     const finishDrag = () => {
         if (!dragState) return;
         try {
@@ -5461,7 +6361,7 @@ function initBatchPanelDrag(panel) {
         }
         console.log('[批量面板] 拖动完成');
     };
-    
+
     header.addEventListener('pointerdown', (e) => {
         if (shouldIgnoreTarget(e.target)) return;
         const rect = panel.getBoundingClientRect();
@@ -5490,30 +6390,30 @@ function initBatchPanelDrag(panel) {
         e.preventDefault();
         console.log('[批量面板] 开始拖动');
     });
-    
+
     header.addEventListener('pointermove', (e) => {
         if (!dragState || e.pointerId !== dragState.pointerId) return;
         dragState.pendingLeft = e.clientX - dragState.offsetX;
         dragState.pendingTop = e.clientY - dragState.offsetY;
         scheduleUpdate();
     });
-    
+
     const onPointerUp = (e) => {
         if (!dragState || e.pointerId !== dragState.pointerId) return;
         finishDrag();
     };
-    
+
     header.addEventListener('pointerup', onPointerUp);
     header.addEventListener('pointercancel', onPointerUp);
     window.addEventListener('pointerup', onPointerUp);
-    
+
     console.log('[批量面板] 拖拽移动功能已初始化');
 }
 
 // 根据高度更新tall-layout类（横向布局专用）
 function updateTallLayoutClass(panel, height) {
     const threshold = 200; // 高度阈值：200px
-    
+
     if (height >= threshold) {
         if (!panel.classList.contains('tall-layout')) {
             panel.classList.add('tall-layout');
@@ -5531,36 +6431,36 @@ function updateTallLayoutClass(panel, height) {
 function initBatchPanelResize(panel) {
     const handles = panel.querySelectorAll('.resize-handle');
     if (handles.length === 0) return;
-    
+
     let isResizing = false;
     let startX, startY, startWidth, startHeight, startLeft, startTop;
     let direction = '';
-    
+
     handles.forEach(handle => {
         handle.addEventListener('mousedown', (e) => {
             isResizing = true;
             startX = e.clientX;
             startY = e.clientY;
-            
+
             const rect = panel.getBoundingClientRect();
             startWidth = rect.width;
             startHeight = rect.height;
             startLeft = rect.left;
             startTop = rect.top;
-            
+
             direction = handle.dataset.direction;
-            
+
             // 防止文字选中
             e.preventDefault();
             e.stopPropagation();
-            
+
             console.log('[批量面板] 开始调整大小:', direction);
         });
     });
-    
+
     document.addEventListener('mousemove', (e) => {
         if (!isResizing) return;
-        
+
         const deltaX = e.clientX - startX;
         const deltaY = e.clientY - startY;
         const isVertical = panel.classList.contains('vertical-batch-layout');
@@ -5568,12 +6468,12 @@ function initBatchPanelResize(panel) {
         const maxWidth = isVertical ? 500 : Math.min((window.innerWidth || 1920) * 0.95, 2000);
         const minHeight = isVertical ? 200 : 10;
         const maxHeight = (window.innerHeight || 1080) * 0.8;
-        
+
         let newWidth = startWidth;
         let newHeight = startHeight;
         let newLeft = startLeft;
         let newTop = startTop;
-        
+
         // 根据方向调整
         if (direction.includes('e')) {
             newWidth = Math.min(maxWidth, Math.max(minWidth, startWidth + deltaX));
@@ -5589,15 +6489,15 @@ function initBatchPanelResize(panel) {
             newHeight = Math.min(maxHeight, Math.max(minHeight, startHeight - deltaY));
             newTop = startTop + (startHeight - newHeight);
         }
-        
+
         panel.style.width = newWidth + 'px';
         panel.style.height = newHeight + 'px';  // 始终设置高度为计算值，实现无极调整
-        
+
         // 根据高度动态切换横向/纵向布局（只对横向布局生效）
         if (!isVertical) {
             updateTallLayoutClass(panel, newHeight);
         }
-        
+
         if (direction.includes('w')) {
             panel.style.left = newLeft + 'px';
             panel.style.right = 'auto';
@@ -5607,7 +6507,7 @@ function initBatchPanelResize(panel) {
             panel.style.bottom = 'auto';
         }
     });
-    
+
     document.addEventListener('mouseup', () => {
         if (isResizing) {
             isResizing = false;
@@ -5617,13 +6517,13 @@ function initBatchPanelResize(panel) {
                 const currentHeight = parseFloat(panel.style.height) || panel.offsetHeight;
                 updateTallLayoutClass(panel, currentHeight);
             }
-            
+
             // 保存大小
             saveBatchPanelState(panel);
             console.log('[批量面板] 调整大小完成，当前高度:', panel.style.height);
         }
     });
-    
+
     console.log('[批量面板] 四边四角调整大小功能已初始化');
 }
 
@@ -5636,7 +6536,7 @@ function initBatchPanelWindowResize(panel) {
         resizeTimer = setTimeout(() => {
             const batchPanel = document.getElementById('batch-action-panel');
             if (!batchPanel) return;
-            
+
             // 只在横向布局时自动调整宽度
             if (batchPanel.classList.contains('horizontal-batch-layout')) {
                 const viewportWidth = window.innerWidth;
@@ -5651,7 +6551,7 @@ function initBatchPanelWindowResize(panel) {
             }
         }, 200); // 防抖延迟200ms
     });
-    
+
     console.log('[批量面板] 窗口大小变化监听器已初始化');
 }
 
@@ -5660,19 +6560,19 @@ let batchPanelHorizontal = false; // 默认纵向
 function toggleBatchPanelLayout() {
     const batchPanel = document.getElementById('batch-action-panel');
     if (!batchPanel) return;
-    
+
     batchPanelHorizontal = !batchPanelHorizontal;
-    
+
     if (batchPanelHorizontal) {
         batchPanel.classList.add('horizontal-batch-layout');
         batchPanel.classList.remove('vertical-batch-layout');
-        
+
         // 根据当前窗口大小计算合适的宽度
         const viewportWidth = window.innerWidth;
         const viewportHeight = window.innerHeight;
         const maxPanelWidthScreen = Math.min(viewportWidth * 0.95, 2000);
         const defaultWidthScreen = Math.min(1000, maxPanelWidthScreen);
-        
+
         // 恢复横向布局的默认样式
         batchPanel.style.width = `${defaultWidthScreen}px`;
         batchPanel.style.height = 'auto'; // 初始高度自适应，之后可无极调整
@@ -5695,7 +6595,7 @@ function toggleBatchPanelLayout() {
             fitBatchPanelToContent(batchPanel, { delay: 0, retries: 2 });
         }, 50);
         fitBatchPanelToContent(batchPanel, { delay: 0, retries: 2 });
-        
+
         console.log('[批量面板] 切换到横向布局');
         // 更新按钮文字
         const btn = batchPanel.querySelector('[data-action="toggle-batch-layout"] span');
@@ -5707,7 +6607,7 @@ function toggleBatchPanelLayout() {
         batchPanel.classList.remove('horizontal-batch-layout');
         batchPanel.classList.add('vertical-batch-layout');
         batchPanel.classList.remove('tall-layout'); // 纵向布局不需要tall-layout
-        
+
         // 设置纵向布局的默认样式
         const viewportHeight = window.innerHeight;
         const viewportWidth = window.innerWidth || 1920;
@@ -5737,7 +6637,7 @@ function toggleBatchPanelLayout() {
         }
         fitBatchPanelToContent(batchPanel, { delay: 0, retries: 2 });
     }
-    
+
     // 保存状态
     try {
         localStorage.setItem('batchPanelLayout', batchPanelHorizontal ? 'horizontal' : 'vertical');
@@ -5760,7 +6660,7 @@ function saveBatchPanelState(panel, anchorInfo) {
             ? info.element.getBoundingClientRect()
             : null;
         const currentZoom = getCurrentBatchPanelZoom();
-        
+
         const isVertical = panel.classList.contains('vertical-batch-layout');
         const isVisible = panel && panel.style.display !== 'none';
         const state = {
@@ -5788,7 +6688,7 @@ function saveBatchPanelState(panel, anchorInfo) {
                 bottom: anchorRect.bottom
             } : null
         };
-        
+
         const stateMapRaw = localStorage.getItem(BATCH_PANEL_STATE_MAP_KEY);
         const stateMap = stateMapRaw ? JSON.parse(stateMapRaw) : {};
         stateMap[anchorKey] = state;
@@ -5809,83 +6709,83 @@ function restoreBatchPanelState(panel, anchorInfo) {
             console.warn('[批量面板] 缺少定位信息，维持默认位置');
             return;
         }
-        
+
         const resolvedElement = info.element || findBatchPanelColumnElement(info.treeType, info.sectionId);
         const anchorKey = getBatchPanelAnchorKey({ treeType: info.treeType, sectionId: info.sectionId });
-        
+
         currentBatchPanelAnchorInfo = {
             treeType: info.treeType || 'permanent',
             sectionId: info.sectionId || (info.treeType === 'permanent' ? PERMANENT_SECTION_ANCHOR_ID : null),
             element: resolvedElement
         };
-        
+
         panel.dataset.anchorKey = anchorKey;
         panel.dataset.treeType = currentBatchPanelAnchorInfo.treeType;
         if (currentBatchPanelAnchorInfo.sectionId) {
-        panel.dataset.sectionId = currentBatchPanelAnchorInfo.sectionId;
-    } else {
-        delete panel.dataset.sectionId;
-    }
-    
-    panel.style.position = 'fixed';
-    const margin = 16;
-    
-    const anchorRect = resolvedElement && typeof resolvedElement.getBoundingClientRect === 'function'
-        ? resolvedElement.getBoundingClientRect()
-        : null;
-    const viewportWidth = window.innerWidth || 1920;
-    const viewportHeight = window.innerHeight || 1080;
-    const currentZoom = getCurrentBatchPanelZoom();
-    const sizing = computeBatchPanelSizing(anchorRect, currentZoom, viewportWidth, viewportHeight, margin);
-    const {
-        minWidth,
-        maxWidth,
-        minHeight,
-        maxHeight,
-        defaultWidth,
-        defaultHeight,
-        gap,
-        normalizedZoom
-    } = sizing;
-    panel.dataset.anchorZoom = String(normalizedZoom);
-
-    const computeAnchorAlignedPosition = (rect, panelWidth, panelHeight) => {
-        let left = clampValue(viewportWidth - panelWidth - margin, margin, viewportWidth - panelWidth - margin);
-        let top = clampValue(margin, margin, viewportHeight - panelHeight - margin);
-        if (!rect) {
-            return { left, top };
-        }
-        const spaceOnRight = viewportWidth - rect.right - margin;
-        const spaceOnLeft = rect.left - margin;
-        if (spaceOnRight >= panelWidth + gap || spaceOnRight >= spaceOnLeft) {
-            left = clampValue(rect.right + gap, margin, viewportWidth - panelWidth - margin);
-        } else if (spaceOnLeft >= panelWidth + gap) {
-            left = clampValue(rect.left - gap - panelWidth, margin, viewportWidth - panelWidth - margin);
+            panel.dataset.sectionId = currentBatchPanelAnchorInfo.sectionId;
         } else {
-            left = clampValue(rect.right + gap, margin, viewportWidth - panelWidth - margin);
+            delete panel.dataset.sectionId;
         }
-        const idealTop = rect.top;
-        top = clampValue(idealTop, margin, viewportHeight - panelHeight - margin);
-        return { left, top };
-    };
 
-    const deriveManualCoordinate = (primary, secondary, viewportSize, panelSize) => {
-        if (primary && primary !== 'auto') {
-            const numeric = parseFloat(primary);
-            if (Number.isFinite(numeric)) {
-                return clampValue(numeric, margin, viewportSize - panelSize - margin);
+        panel.style.position = 'fixed';
+        const margin = 16;
+
+        const anchorRect = resolvedElement && typeof resolvedElement.getBoundingClientRect === 'function'
+            ? resolvedElement.getBoundingClientRect()
+            : null;
+        const viewportWidth = window.innerWidth || 1920;
+        const viewportHeight = window.innerHeight || 1080;
+        const currentZoom = getCurrentBatchPanelZoom();
+        const sizing = computeBatchPanelSizing(anchorRect, currentZoom, viewportWidth, viewportHeight, margin);
+        const {
+            minWidth,
+            maxWidth,
+            minHeight,
+            maxHeight,
+            defaultWidth,
+            defaultHeight,
+            gap,
+            normalizedZoom
+        } = sizing;
+        panel.dataset.anchorZoom = String(normalizedZoom);
+
+        const computeAnchorAlignedPosition = (rect, panelWidth, panelHeight) => {
+            let left = clampValue(viewportWidth - panelWidth - margin, margin, viewportWidth - panelWidth - margin);
+            let top = clampValue(margin, margin, viewportHeight - panelHeight - margin);
+            if (!rect) {
+                return { left, top };
             }
-        }
-        if (secondary && secondary !== 'auto') {
-            const numeric = parseFloat(secondary);
-            if (Number.isFinite(numeric)) {
-                const inferred = viewportSize - panelSize - numeric;
-                return clampValue(inferred, margin, viewportSize - panelSize - margin);
+            const spaceOnRight = viewportWidth - rect.right - margin;
+            const spaceOnLeft = rect.left - margin;
+            if (spaceOnRight >= panelWidth + gap || spaceOnRight >= spaceOnLeft) {
+                left = clampValue(rect.right + gap, margin, viewportWidth - panelWidth - margin);
+            } else if (spaceOnLeft >= panelWidth + gap) {
+                left = clampValue(rect.left - gap - panelWidth, margin, viewportWidth - panelWidth - margin);
+            } else {
+                left = clampValue(rect.right + gap, margin, viewportWidth - panelWidth - margin);
             }
-        }
-        return null;
-    };
-        
+            const idealTop = rect.top;
+            top = clampValue(idealTop, margin, viewportHeight - panelHeight - margin);
+            return { left, top };
+        };
+
+        const deriveManualCoordinate = (primary, secondary, viewportSize, panelSize) => {
+            if (primary && primary !== 'auto') {
+                const numeric = parseFloat(primary);
+                if (Number.isFinite(numeric)) {
+                    return clampValue(numeric, margin, viewportSize - panelSize - margin);
+                }
+            }
+            if (secondary && secondary !== 'auto') {
+                const numeric = parseFloat(secondary);
+                if (Number.isFinite(numeric)) {
+                    const inferred = viewportSize - panelSize - numeric;
+                    return clampValue(inferred, margin, viewportSize - panelSize - margin);
+                }
+            }
+            return null;
+        };
+
         let state = null;
         const stateMapRaw = localStorage.getItem(BATCH_PANEL_STATE_MAP_KEY);
         if (stateMapRaw) {
@@ -5896,7 +6796,7 @@ function restoreBatchPanelState(panel, anchorInfo) {
                 console.warn('[批量面板] 状态映射解析失败，忽略:', err);
             }
         }
-        
+
         if (!state) {
             const legacyRaw = localStorage.getItem(BATCH_PANEL_LEGACY_KEY);
             if (legacyRaw) {
@@ -5910,7 +6810,7 @@ function restoreBatchPanelState(panel, anchorInfo) {
                 }
             }
         }
-        
+
         if (state) {
             console.log('[批量面板] 恢复状态:', anchorKey, state);
             const storedWidth = parseFloat(state.width);
@@ -5932,7 +6832,7 @@ function restoreBatchPanelState(panel, anchorInfo) {
                 ? Math.abs((anchorRect.width || 0) - (previousAnchorRect.width || 0))
                 : 0;
             const shouldSnapToAnchor = !storedManual || zoomDelta > 0.05 || sizeShift > 24 || anchorShift > 48 || !anchorRect;
-            
+
             if (state.layout === 'vertical') {
                 batchPanelHorizontal = false;
                 panel.classList.remove('horizontal-batch-layout', 'tall-layout');
@@ -5957,7 +6857,7 @@ function restoreBatchPanelState(panel, anchorInfo) {
                 } else {
                     panel.style.height = `${heightValue}px`;
                 }
-                
+
                 let left;
                 let top;
                 const alignHeight = Number.isFinite(heightValue) ? heightValue : minHeight;
@@ -6028,7 +6928,7 @@ function restoreBatchPanelState(panel, anchorInfo) {
             fitBatchPanelToContent(panel);
             return;
         }
-        
+
         console.log('[批量面板] 没有保存的状态，使用默认定位');
         batchPanelHorizontal = false;
         panel.classList.remove('horizontal-batch-layout', 'tall-layout');
@@ -6049,7 +6949,7 @@ function restoreBatchPanelState(panel, anchorInfo) {
         panel.style.right = 'auto';
         panel.style.bottom = 'auto';
         applyBatchPanelTransform(panel, { baseTransform: 'none' });
-        
+
         console.log('[批量面板] 默认定位完成:', { left: aligned.left, top: aligned.top, anchorKey });
         fitBatchPanelToContent(panel, { delay: 0 });
     } catch (e) {
@@ -6065,24 +6965,24 @@ function hideBatchPanel() {
         // 保存隐藏状态
         saveBatchPanelState(batchPanel);
     }
-    
+
     // 显示顶部工具栏
     updateBatchToolbar();
     const toolbar = document.getElementById('batch-toolbar');
     if (toolbar) {
         toolbar.style.display = 'flex';
     }
-    
+
     console.log('[批量面板] 已隐藏，显示顶部工具栏');
 }
 
 // 显示批量面板，隐藏顶部工具栏
 function showBatchPanel() {
     const batchPanel = document.getElementById('batch-action-panel');
-    
+
     // 如果面板不存在，创建它
     if (!batchPanel) {
-        const fakeEvent = { preventDefault: () => {}, stopPropagation: () => {} };
+        const fakeEvent = { preventDefault: () => { }, stopPropagation: () => { } };
         showBatchContextMenu(fakeEvent);
         console.log('[批量面板] 重新创建批量菜单');
     } else {
@@ -6098,13 +6998,13 @@ function showBatchPanel() {
         saveBatchPanelState(batchPanel);
         fitBatchPanelToContent(batchPanel, { delay: 0 });
     }
-    
+
     // 隐藏顶部工具栏
     const toolbar = document.getElementById('batch-toolbar');
     if (toolbar) {
         toolbar.style.display = 'none';
     }
-    
+
     console.log('[批量面板] 已显示，隐藏顶部工具栏');
 }
 
@@ -6160,10 +7060,10 @@ function restoreContextMenuLayout() {
 function showBlankAreaContextMenu(e, sectionId, treeType) {
     e.preventDefault();
     e.stopPropagation();
-    
+
     const lang = currentLang || 'zh_CN';
     const menuItems = [];
-    
+
     // 粘贴选项（如果剪贴板有内容）
     if (hasClipboard()) {
         menuItems.push({
@@ -6174,7 +7074,7 @@ function showBlankAreaContextMenu(e, sectionId, treeType) {
             treeType
         });
     }
-    
+
     // 新建文件夹选项
     if (treeType === 'temporary') {
         menuItems.push({
@@ -6193,15 +7093,15 @@ function showBlankAreaContextMenu(e, sectionId, treeType) {
         // 永久栏目暂不支持在空白处创建，因为需要 parentId
         // 用户可以右键文件夹来创建
     }
-    
+
     if (menuItems.length === 0) {
         return; // 没有可用的菜单项
     }
-    
+
     // 渲染菜单
     const contextMenu = document.getElementById('bookmark-context-menu');
     if (!contextMenu) return;
-    
+
     const menuHTML = menuItems.map(item => {
         const icon = item.icon ? `<i class="fas fa-${item.icon}"></i>` : '';
         return `
@@ -6211,9 +7111,9 @@ function showBlankAreaContextMenu(e, sectionId, treeType) {
             </div>
         `;
     }).join('');
-    
+
     contextMenu.innerHTML = menuHTML;
-    
+
     // 绑定点击事件
     contextMenu.querySelectorAll('.context-menu-item').forEach(item => {
         item.addEventListener('click', async (clickEvent) => {
@@ -6221,9 +7121,9 @@ function showBlankAreaContextMenu(e, sectionId, treeType) {
             const action = item.dataset.action;
             const sid = item.dataset.sectionId;
             const ttype = item.dataset.treeType;
-            
+
             hideContextMenu();
-            
+
             if (action === 'paste-blank') {
                 if (ttype === 'temporary' && sid) {
                     await pasteIntoTemp({ sectionId: sid, parentId: null, index: null });
@@ -6253,13 +7153,13 @@ function showBlankAreaContextMenu(e, sectionId, treeType) {
             }
         });
     });
-    
+
     // 使用固定定位显示菜单（不嵌入DOM）
     contextMenu.style.position = 'fixed';
     contextMenu.style.left = e.clientX + 'px';
     contextMenu.style.top = e.clientY + 'px';
     contextMenu.style.display = 'block';
-    
+
     // 移除之前的嵌入样式
     contextMenu.style.position = 'fixed';
     if (contextMenu.parentElement && contextMenu.parentElement !== document.body) {
@@ -6287,7 +7187,7 @@ if (typeof window !== 'undefined') {
     window.exitSelectMode = exitSelectMode;
     window.toggleContextMenuLayout = toggleContextMenuLayout;
     window.restoreContextMenuLayout = restoreContextMenuLayout;
-    
+
     // 页面加载时恢复布局
     if (document.readyState === 'loading') {
         document.addEventListener('DOMContentLoaded', restoreContextMenuLayout);
@@ -6332,19 +7232,19 @@ async function openHyperlinkNewWindow(url) {
 async function openHyperlinkInSpecificTabGroup(url, options = {}) {
     const { forceNew = false } = options;
     const lang = currentLang || 'zh_CN';
-    
+
     if (!url) return;
     if (typeof chrome === 'undefined' || !chrome.tabs) {
         window.open(url, '_blank');
         return;
     }
-    
+
     try {
         if (forceNew) {
             hyperlinkSpecificTabGroupId = null;
             hyperlinkSpecificGroupWindowId = null;
         }
-        
+
         // 检查已有分组是否有效
         if (hyperlinkSpecificTabGroupId && Number.isInteger(hyperlinkSpecificTabGroupId)) {
             try {
@@ -6354,21 +7254,21 @@ async function openHyperlinkInSpecificTabGroup(url, options = {}) {
                 if (hyperlinkSpecificGroupWindowId && chrome.windows && chrome.windows.get) {
                     await chrome.windows.get(hyperlinkSpecificGroupWindowId, { populate: false });
                 }
-                
+
                 // 分组有效，在该分组中创建标签
                 const tab = await chrome.tabs.create({
                     url,
                     windowId: hyperlinkSpecificGroupWindowId || undefined,
                     active: true
                 });
-                
+
                 if (chrome.tabs.group) {
                     await chrome.tabs.group({
                         tabIds: [tab.id],
                         groupId: hyperlinkSpecificTabGroupId
                     });
                 }
-                
+
                 console.log(`[超链接] 在现有分组中打开: ${url}`);
                 return;
             } catch (error) {
@@ -6377,28 +7277,28 @@ async function openHyperlinkInSpecificTabGroup(url, options = {}) {
                 hyperlinkSpecificGroupWindowId = null;
             }
         }
-        
+
         // 创建新分组，递增计数器
         hyperlinkGroupCounter++;
         const groupTitle = `Hyperlink ${hyperlinkGroupCounter}`;
-        
+
         const currentWindow = await chrome.windows.getCurrent({ populate: false });
         const tab = await chrome.tabs.create({
             url,
             windowId: currentWindow.id,
             active: true
         });
-        
+
         if (chrome.tabs.group && chrome.tabGroups && chrome.tabGroups.update) {
             const groupId = await chrome.tabs.group({ tabIds: [tab.id] });
             await chrome.tabGroups.update(groupId, {
                 title: groupTitle,
                 collapsed: false
             });
-            
+
             hyperlinkSpecificTabGroupId = groupId;
             hyperlinkSpecificGroupWindowId = currentWindow.id;
-            
+
             console.log(`[超链接] 创建新分组"${groupTitle}": ${url}`);
         }
     } catch (error) {
@@ -6411,14 +7311,14 @@ async function openHyperlinkInSpecificTabGroup(url, options = {}) {
 async function openHyperlinkInSpecificWindow(url, options = {}) {
     const { forceNew = false } = options;
     const lang = currentLang || 'zh_CN';
-    
+
     if (!url) return;
     try {
         if (typeof chrome !== 'undefined' && chrome.windows && chrome.tabs) {
             if (forceNew) {
                 hyperlinkSpecificWindowId = null;
             }
-            
+
             // 检查窗口是否存在
             if (hyperlinkSpecificWindowId) {
                 try {
@@ -6439,11 +7339,11 @@ async function openHyperlinkInSpecificWindow(url, options = {}) {
                     hyperlinkSpecificWindowId = null;
                 }
             }
-            
+
             // 创建新窗口，使用独立的注册表系统
             const nextNumber = await allocateNextHyperlinkWindowNumber();
             const windowTitle = `Hyperlink ${nextNumber}`;
-            
+
             // 构建window_marker.html的URL（用于标识窗口）
             let markerUrl = null;
             try {
@@ -6453,26 +7353,26 @@ async function openHyperlinkInSpecificWindow(url, options = {}) {
                 if (chrome.runtime && chrome.runtime.getURL) {
                     markerUrl = chrome.runtime.getURL(`history_html/window_marker.html?${params.toString()}`);
                 }
-            } catch (_) {}
-            
+            } catch (_) { }
+
             // 先创建窗口，默认打开目标URL
-            const created = await chrome.windows.create({ 
+            const created = await chrome.windows.create({
                 url: url,
-                focused: true 
+                focused: true
             });
             hyperlinkSpecificWindowId = created.id;
-            
+
             // 注册到超链接窗口注册表
             await registerHyperlinkWindow(created.id, nextNumber);
-            
+
             // 创建书签画布标识tab（固定在第一位）
             if (markerUrl) {
                 try {
-                    const markerTab = await chrome.tabs.create({ 
-                        windowId: created.id, 
-                        url: markerUrl, 
-                        pinned: false, 
-                        active: false 
+                    const markerTab = await chrome.tabs.create({
+                        windowId: created.id,
+                        url: markerUrl,
+                        pinned: false,
+                        active: false
                     });
                     // 移动到第一位
                     if (markerTab && markerTab.id != null) {
@@ -6482,7 +7382,7 @@ async function openHyperlinkInSpecificWindow(url, options = {}) {
                     console.warn('[超链接] 创建标识标签失败:', markerError);
                 }
             }
-            
+
             console.log(`[超链接] 创建新窗口"${windowTitle}": ${url}`);
         } else {
             window.open(url, '_blank');
@@ -6497,13 +7397,13 @@ async function openHyperlinkInSpecificWindow(url, options = {}) {
 async function openHyperlinkInSameWindowSpecificGroup(url) {
     const lang = currentLang || 'zh_CN';
     const groupTitle = lang === 'zh_CN' ? '超链接' : 'Hyperlink';
-    
+
     if (!url) return;
     if (typeof chrome === 'undefined' || !chrome.tabs || !chrome.windows) {
         window.open(url, '_blank');
         return;
     }
-    
+
     try {
         // 确保窗口存在
         let windowId = hyperlinkSameWindowSpecificGroupWindowId;
@@ -6512,7 +7412,7 @@ async function openHyperlinkInSameWindowSpecificGroup(url) {
             windowId = currentWindow.id;
             hyperlinkSameWindowSpecificGroupWindowId = windowId;
         }
-        
+
         // 检查窗口是否有效
         try {
             await chrome.windows.get(windowId, { populate: false });
@@ -6521,11 +7421,11 @@ async function openHyperlinkInSameWindowSpecificGroup(url) {
             windowId = currentWindow.id;
             hyperlinkSameWindowSpecificGroupWindowId = windowId;
         }
-        
+
         // 检查作用域中的分组
         const scopeEntry = hyperlinkSameWindowSpecificGroupScopes['_hyperlink'];
         let groupId = null;
-        
+
         if (scopeEntry && scopeEntry.windowId === windowId && Number.isInteger(scopeEntry.groupId)) {
             try {
                 if (chrome.tabGroups && chrome.tabGroups.get) {
@@ -6537,14 +7437,14 @@ async function openHyperlinkInSameWindowSpecificGroup(url) {
                 groupId = null;
             }
         }
-        
+
         // 创建标签
         const tab = await chrome.tabs.create({
             url,
             windowId: windowId,
             active: true
         });
-        
+
         if (chrome.tabs.group && chrome.tabGroups && chrome.tabGroups.update) {
             if (groupId) {
                 // 复用现有分组
@@ -6559,7 +7459,7 @@ async function openHyperlinkInSameWindowSpecificGroup(url) {
                     title: groupTitle,
                     collapsed: false
                 });
-                
+
                 // 保存到作用域
                 hyperlinkSameWindowSpecificGroupScopes['_hyperlink'] = {
                     groupId: groupId,
@@ -6568,7 +7468,7 @@ async function openHyperlinkInSameWindowSpecificGroup(url) {
                 };
             }
         }
-        
+
         console.log(`[超链接] 同窗特定组打开: ${url}`);
     } catch (error) {
         console.error('[超链接] 同窗特定组打开失败:', error);
@@ -6587,21 +7487,24 @@ let manualSelectedGroupId = null;
 // 存储自定义窗口名称
 let customWindowNames = {};
 
+// 存储窗口ID到序号的映射（用于在标签组中显示友好序号）
+let windowIdToIndexMap = {};
+
 /**
  * 显示手动选择窗口+组的选择器
  */
 async function showManualWindowGroupSelector(context) {
     try {
         const lang = currentLang || 'zh_CN';
-        
+
         // 创建遮罩层
         const overlay = document.createElement('div');
         overlay.className = 'manual-selector-overlay';
-        
+
         // 创建对话框
         const dialog = document.createElement('div');
         dialog.className = 'manual-selector-dialog';
-        
+
         // 头部
         const header = document.createElement('div');
         header.className = 'manual-selector-header';
@@ -6609,11 +7512,11 @@ async function showManualWindowGroupSelector(context) {
             <div class="manual-selector-title">${lang === 'zh_CN' ? '选择窗口和标签组' : 'Select Window and Tab Group'}</div>
             <button class="manual-selector-close">×</button>
         `;
-        
+
         // 主体
         const body = document.createElement('div');
         body.className = 'manual-selector-body';
-        
+
         // 左侧：窗口列表
         const windowPanel = document.createElement('div');
         windowPanel.className = 'manual-selector-panel';
@@ -6626,20 +7529,20 @@ async function showManualWindowGroupSelector(context) {
                 </span>
             </div>
             <div class="manual-selector-help-tooltip">
-                <p>${lang === 'zh_CN' 
-                    ? 'Chrome/Edge扩展API无法获取窗口的自定义名称（即使您在浏览器中设置了"命名窗口"）。' 
-                    : 'Chrome/Edge extension API cannot access custom window names (even if you set "Name Window" in browser).'}</p>
-                <p>${lang === 'zh_CN' 
-                    ? '显示的是活动标签页标题，您可以点击编辑按钮（<i class="fas fa-edit"></i>）设置自定义名称。' 
-                    : 'Showing active tab title, you can click edit button (<i class="fas fa-edit"></i>) to set custom name.'}</p>
+                <p>${lang === 'zh_CN'
+                ? 'Chrome/Edge扩展API无法获取窗口的自定义名称（即使您在浏览器中设置了"命名窗口"）。'
+                : 'Chrome/Edge extension API cannot access custom window names (even if you set "Name Window" in browser).'}</p>
+                <p>${lang === 'zh_CN'
+                ? '显示的是活动标签页标题，您可以点击编辑按钮（<i class="fas fa-edit"></i>）设置自定义名称。'
+                : 'Showing active tab title, you can click edit button (<i class="fas fa-edit"></i>) to set custom name.'}</p>
             </div>
             <div class="manual-selector-list" data-type="windows"></div>
         `;
-        
+
         // 绑定帮助图标hover事件
         const helpIcon = windowPanel.querySelector('.manual-selector-help-icon');
         const helpTooltip = windowPanel.querySelector('.manual-selector-help-tooltip');
-        
+
         // 动态计算箭头位置
         const updateArrowPosition = () => {
             const panelRect = windowPanel.getBoundingClientRect();
@@ -6647,28 +7550,28 @@ async function showManualWindowGroupSelector(context) {
             const arrowOffset = iconRect.left - panelRect.left + (iconRect.width / 2);
             helpTooltip.style.setProperty('--arrow-offset', `${arrowOffset}px`);
         };
-        
+
         helpIcon.addEventListener('mouseenter', () => {
             updateArrowPosition();
             helpTooltip.style.opacity = '1';
             helpTooltip.style.visibility = 'visible';
         });
-        
+
         helpIcon.addEventListener('mouseleave', () => {
             helpTooltip.style.opacity = '0';
             helpTooltip.style.visibility = 'hidden';
         });
-        
+
         helpTooltip.addEventListener('mouseenter', () => {
             helpTooltip.style.opacity = '1';
             helpTooltip.style.visibility = 'visible';
         });
-        
+
         helpTooltip.addEventListener('mouseleave', () => {
             helpTooltip.style.opacity = '0';
             helpTooltip.style.visibility = 'hidden';
         });
-        
+
         // 右侧：组列表
         const groupPanel = document.createElement('div');
         groupPanel.className = 'manual-selector-panel';
@@ -6676,10 +7579,10 @@ async function showManualWindowGroupSelector(context) {
             <div class="manual-selector-panel-title">${lang === 'zh_CN' ? '标签组' : 'Tab Groups'}</div>
             <div class="manual-selector-list" data-type="groups"></div>
         `;
-        
+
         body.appendChild(windowPanel);
         body.appendChild(groupPanel);
-        
+
         // 底部按钮
         const footer = document.createElement('div');
         footer.className = 'manual-selector-footer';
@@ -6687,18 +7590,18 @@ async function showManualWindowGroupSelector(context) {
             <button class="manual-selector-btn manual-selector-btn-clear">${lang === 'zh_CN' ? '清除选择' : 'Clear'}</button>
             <button class="manual-selector-btn manual-selector-btn-confirm">${lang === 'zh_CN' ? '确认' : 'Confirm'}</button>
         `;
-        
+
         // 组装
         dialog.appendChild(header);
         dialog.appendChild(body);
         dialog.appendChild(footer);
         overlay.appendChild(dialog);
-        
+
         // 将overlay添加到画布工作区，而不是body
         const canvasWorkspace = document.getElementById('canvasWorkspace');
         const canvasContainer = canvasWorkspace || document.body;
         canvasContainer.appendChild(overlay);
-        
+
         // 如果添加到画布工作区，确保容器是relative定位
         if (canvasWorkspace) {
             const originalPosition = canvasWorkspace.style.position;
@@ -6706,34 +7609,34 @@ async function showManualWindowGroupSelector(context) {
                 canvasWorkspace.style.position = 'relative';
             }
         }
-        
+
         // 加载窗口和组数据
         await loadWindowsAndGroups(overlay, lang);
-        
+
         // 阻止选择器内的所有滚动相关事件冒泡到画布
         const preventBubble = (e) => {
             e.stopPropagation();
         };
-        
+
         // 滚轮事件
         dialog.addEventListener('wheel', preventBubble, { passive: false });
-        
+
         // 触摸事件
         dialog.addEventListener('touchmove', preventBubble, { passive: false });
-        
+
         // 鼠标拖动事件（可能影响滚动）
         dialog.addEventListener('mousedown', (e) => {
             e.stopPropagation();
         });
-        
+
         // 防止点击事件冒泡导致画布交互
         dialog.addEventListener('click', (e) => {
             e.stopPropagation();
         });
-        
+
         // 事件处理
         setupSelectorEvents(overlay, context, lang);
-        
+
     } catch (error) {
         console.error('[手动选择器] 显示失败:', error);
     }
@@ -6747,28 +7650,38 @@ async function loadWindowsAndGroups(overlay, lang) {
         // 获取所有窗口
         const windows = await chrome.windows.getAll({ populate: true });
         const windowsList = overlay.querySelector('.manual-selector-list[data-type="windows"]');
-        
+
+        // 重置窗口序号映射
+        windowIdToIndexMap = {};
+
         if (windows.length === 0) {
             windowsList.innerHTML = `<div class="manual-selector-empty">${lang === 'zh_CN' ? '没有窗口' : 'No windows'}</div>`;
         } else {
             windowsList.innerHTML = '';
-            
+
             // 获取当前窗口ID
             const currentWindow = await chrome.windows.getCurrent();
             const currentWindowId = currentWindow.id;
-            
-            windows.forEach(win => {
+
+            // 构建窗口ID到序号的映射
+            windows.forEach((win, index) => {
+                windowIdToIndexMap[win.id] = index + 1;
+            });
+
+            windows.forEach((win, index) => {
+                const windowIndex = index + 1;  // 窗口序号（从1开始）
                 const isCurrent = win.id === currentWindowId;
                 const tabCount = win.tabs ? win.tabs.length : 0;
-                
+
                 // 获取活动标签页标题
                 const activeTab = win.tabs ? win.tabs.find(tab => tab.active) : null;
                 const activeTabTitle = activeTab ? activeTab.title : `Window #${win.id}`;
-                
+
                 // 获取显示名称（优先使用自定义名称）
                 const displayName = getWindowDisplayName(win.id, activeTabTitle);
                 const hasCustomName = !!customWindowNames[win.id];
-                
+
+
                 // 窗口状态
                 const stateIcon = {
                     'maximized': '<i class="fas fa-window-maximize"></i>',
@@ -6776,26 +7689,28 @@ async function loadWindowsAndGroups(overlay, lang) {
                     'fullscreen': '<i class="fas fa-expand"></i>',
                     'normal': '<i class="fas fa-window-restore"></i>'
                 }[win.state] || '';
-                
+
                 const stateText = {
                     'maximized': lang === 'zh_CN' ? '最大化' : 'Maximized',
                     'minimized': lang === 'zh_CN' ? '最小化' : 'Minimized',
                     'fullscreen': lang === 'zh_CN' ? '全屏' : 'Fullscreen',
                     'normal': lang === 'zh_CN' ? '正常' : 'Normal'
                 }[win.state] || '';
-                
+
                 const item = document.createElement('div');
                 item.className = 'manual-selector-item';
                 item.dataset.windowId = win.id;
-                
+                item.dataset.windowIndex = windowIndex;
+
                 // 如果是当前选中的窗口，添加选中样式
                 if (manualSelectedWindowId === win.id) {
                     item.classList.add('selected');
                 }
-                
+
                 item.innerHTML = `
                     <div class="manual-selector-item-header">
                         <div class="manual-selector-item-title">
+                            <span class="manual-selector-window-index">${windowIndex}</span>
                             ${win.incognito ? '🕶️' : '🪟'} ${displayName}
                             ${isCurrent ? `<span class="manual-selector-item-badge">${lang === 'zh_CN' ? '当前' : 'Current'}</span>` : ''}
                             ${hasCustomName ? `<span class="manual-selector-item-badge" style="background: var(--accent-primary);">✓</span>` : ''}
@@ -6812,14 +7727,14 @@ async function loadWindowsAndGroups(overlay, lang) {
                         ${win.incognito ? `<span class="manual-selector-item-meta"><i class="fas fa-user-secret"></i> ${lang === 'zh_CN' ? '无痕模式' : 'Incognito'}</span>` : ''}
                     </div>
                 `;
-                
+
                 // 绑定编辑按钮事件
                 const editBtn = item.querySelector('.manual-selector-edit-btn');
                 editBtn.addEventListener('click', async (e) => {
                     e.stopPropagation();
                     await showWindowNameEditor(item, win.id, displayName, lang);
                 });
-                
+
                 // 点击选择窗口
                 item.addEventListener('click', async (e) => {
                     // 如果处于编辑模式，不触发选择
@@ -6835,25 +7750,25 @@ async function loadWindowsAndGroups(overlay, lang) {
                     overlay.querySelectorAll('.manual-selector-list[data-type="windows"] .manual-selector-item').forEach(i => {
                         i.classList.remove('selected');
                     });
-                    
+
                     if (!wasSelected) {
                         item.classList.add('selected');
                         manualSelectedWindowId = win.id;
                     } else {
                         manualSelectedWindowId = null;
                     }
-                    
+
                     // 更新组列表
                     await loadGroupsForWindow(overlay, manualSelectedWindowId, lang);
                 });
-                
+
                 windowsList.appendChild(item);
             });
         }
-        
+
         // 初始加载组列表
         await loadGroupsForWindow(overlay, manualSelectedWindowId, lang);
-        
+
     } catch (error) {
         console.error('[手动选择器] 加载窗口和组失败:', error);
     }
@@ -6865,14 +7780,14 @@ async function loadWindowsAndGroups(overlay, lang) {
 async function loadGroupsForWindow(overlay, windowId, lang) {
     try {
         const groupsList = overlay.querySelector('.manual-selector-list[data-type="groups"]');
-        
+
         // 查询组
         const query = windowId ? { windowId } : {};
         const groups = await chrome.tabGroups.query(query);
-        
+
         if (groups.length === 0) {
             groupsList.innerHTML = `<div class="manual-selector-empty">${windowId ? (lang === 'zh_CN' ? '该窗口没有标签组' : 'No groups in this window') : (lang === 'zh_CN' ? '选择窗口以查看其标签组，或直接选择所有组' : 'Select a window to see its groups, or choose from all groups')}</div>`;
-            
+
             // 如果没有选择窗口，显示所有组
             if (!windowId) {
                 const allGroups = await chrome.tabGroups.query({});
@@ -6894,7 +7809,7 @@ async function loadGroupsForWindow(overlay, windowId, lang) {
 function renderGroups(overlay, groups, lang) {
     const groupsList = overlay.querySelector('.manual-selector-list[data-type="groups"]');
     groupsList.innerHTML = '';
-    
+
     // 按窗口分组显示
     const groupsByWindow = {};
     groups.forEach(group => {
@@ -6903,22 +7818,27 @@ function renderGroups(overlay, groups, lang) {
         }
         groupsByWindow[group.windowId].push(group);
     });
-    
+
     // 获取窗口ID列表（如果有多个窗口的组，显示窗口分隔）
     const windowIds = Object.keys(groupsByWindow);
     const showWindowHeaders = windowIds.length > 1;
-    
+
     windowIds.forEach(winId => {
+        // 获取窗口序号
+        const windowIndex = windowIdToIndexMap[winId] || winId;
+
         // 如果有多个窗口，显示窗口标题
         if (showWindowHeaders) {
             const header = document.createElement('div');
             header.className = 'manual-selector-item-info';
             header.style.padding = '8px 16px';
             header.style.fontWeight = '600';
-            header.innerHTML = `${lang === 'zh_CN' ? '窗口' : 'Window'} #${winId}`;
+            header.style.borderBottom = '1px solid var(--border-color)';
+            header.style.marginBottom = '6px';
+            header.innerHTML = `<i class="fas fa-window-restore"></i> ${lang === 'zh_CN' ? '窗口' : 'Window'} ${windowIndex}`;
             groupsList.appendChild(header);
         }
-        
+
         groupsByWindow[winId].forEach(group => {
             const colorMap = {
                 'grey': '⚪',
@@ -6932,26 +7852,27 @@ function renderGroups(overlay, groups, lang) {
                 'orange': '🟠'
             };
             const colorIcon = colorMap[group.color] || '⚪';
-            
+
             const item = document.createElement('div');
             item.className = 'manual-selector-item';
             item.dataset.groupId = group.id;
             item.dataset.windowId = group.windowId;
-            
+
             // 如果是当前选中的组，添加选中样式
             if (manualSelectedGroupId === group.id) {
                 item.classList.add('selected');
             }
-            
+
             const title = group.title || (lang === 'zh_CN' ? '(无标题)' : '(Untitled)');
-            
+            const groupWindowIndex = windowIdToIndexMap[group.windowId] || group.windowId;
+
             item.innerHTML = `
                 <div class="manual-selector-item-title">
                     ${colorIcon} ${title}
                 </div>
-                <div class="manual-selector-item-info">${lang === 'zh_CN' ? '窗口' : 'Window'} #${group.windowId}</div>
+                <div class="manual-selector-item-info">${lang === 'zh_CN' ? '窗口' : 'Window'} ${groupWindowIndex}</div>
             `;
-            
+
             // 点击选择组
             item.addEventListener('click', () => {
                 // 切换选择
@@ -6959,7 +7880,7 @@ function renderGroups(overlay, groups, lang) {
                 overlay.querySelectorAll('.manual-selector-list[data-type="groups"] .manual-selector-item').forEach(i => {
                     i.classList.remove('selected');
                 });
-                
+
                 if (!wasSelected) {
                     item.classList.add('selected');
                     manualSelectedGroupId = group.id;
@@ -6967,7 +7888,7 @@ function renderGroups(overlay, groups, lang) {
                     manualSelectedGroupId = null;
                 }
             });
-            
+
             groupsList.appendChild(item);
         });
     });
@@ -6982,48 +7903,48 @@ function setupSelectorEvents(overlay, context, lang) {
     closeBtn.addEventListener('click', () => {
         overlay.remove();
     });
-    
+
     // 点击遮罩关闭
     overlay.addEventListener('click', (e) => {
         if (e.target === overlay) {
             overlay.remove();
         }
     });
-    
+
     // 清除按钮
     const clearBtn = overlay.querySelector('.manual-selector-btn-clear');
     clearBtn.addEventListener('click', () => {
         manualSelectedWindowId = null;
         manualSelectedGroupId = null;
-        
+
         // 清除选中样式
         overlay.querySelectorAll('.manual-selector-item').forEach(item => {
             item.classList.remove('selected');
         });
-        
+
         // 重新加载组列表
         loadGroupsForWindow(overlay, null, lang);
-        
+
         // 保存到storage
         saveManualSelection();
     });
-    
+
     // 确认按钮
     const confirmBtn = overlay.querySelector('.manual-selector-btn-confirm');
     confirmBtn.addEventListener('click', async () => {
         // 保存选择
         await saveManualSelection();
-        
+
         // 设置为默认打开方式
         if (context && context.isHyperlink) {
             await setHyperlinkDefaultOpenMode('manual-select');
         } else {
             await setDefaultOpenMode('manual-select');
         }
-        
+
         // 关闭选择器
         overlay.remove();
-        
+
         // 如果有书签URL，立即使用选择的窗口/组打开
         if (context && context.nodeUrl) {
             await openBookmarkWithManualSelection(context.nodeUrl);
@@ -7072,73 +7993,73 @@ function getWindowDisplayName(windowId, activeTabTitle) {
 async function showWindowNameEditor(item, windowId, currentName, lang) {
     const titleDiv = item.querySelector('.manual-selector-item-title');
     const actionsDiv = item.querySelector('.manual-selector-item-actions');
-    
+
     // 保存原始HTML
     const originalTitleHTML = titleDiv.innerHTML;
     const originalActionsHTML = actionsDiv.innerHTML;
-    
+
     // 标记为编辑模式，防止item的click事件触发
     item.dataset.editing = 'true';
-    
+
     // 创建输入框
     const input = document.createElement('input');
     input.type = 'text';
     input.className = 'manual-selector-item-input';
     input.value = currentName;
     input.placeholder = lang === 'zh_CN' ? '输入自定义名称' : 'Enter custom name';
-    
+
     // 创建操作按钮
     const saveBtn = document.createElement('button');
     saveBtn.className = 'manual-selector-edit-btn';
     saveBtn.innerHTML = '<i class="fas fa-check"></i>';
     saveBtn.title = lang === 'zh_CN' ? '保存' : 'Save';
-    
+
     const cancelBtn = document.createElement('button');
     cancelBtn.className = 'manual-selector-edit-btn';
     cancelBtn.innerHTML = '<i class="fas fa-times"></i>';
     cancelBtn.title = lang === 'zh_CN' ? '取消' : 'Cancel';
-    
+
     const clearBtn = document.createElement('button');
     clearBtn.className = 'manual-selector-edit-btn';
     clearBtn.innerHTML = '<i class="fas fa-undo"></i>';
     clearBtn.title = lang === 'zh_CN' ? '还原为默认名称' : 'Restore default name';
     clearBtn.style.color = '#dc3545';
-    
+
     // 替换内容
     titleDiv.innerHTML = '';
     titleDiv.appendChild(input);
-    
+
     actionsDiv.innerHTML = '';
     actionsDiv.appendChild(saveBtn);
     actionsDiv.appendChild(clearBtn);
     actionsDiv.appendChild(cancelBtn);
     actionsDiv.style.opacity = '1'; // 始终显示
-    
+
     // 聚焦并选中文本
     input.focus();
     input.select();
-    
+
     // 保存函数
     const save = async () => {
         const newName = input.value.trim();
         await setCustomWindowName(windowId, newName);
-        
+
         // 重新加载窗口列表以刷新显示
         const overlay = item.closest('.manual-selector-overlay');
         if (overlay) {
             await loadWindowsAndGroups(overlay, lang);
         }
     };
-    
+
     // 取消函数
     const cancel = () => {
         // 移除编辑模式标记
         delete item.dataset.editing;
-        
+
         titleDiv.innerHTML = originalTitleHTML;
         actionsDiv.innerHTML = originalActionsHTML;
         actionsDiv.style.opacity = '';
-        
+
         // 重新绑定编辑按钮
         const editBtn = actionsDiv.querySelector('.manual-selector-edit-btn');
         if (editBtn) {
@@ -7148,7 +8069,7 @@ async function showWindowNameEditor(item, windowId, currentName, lang) {
             });
         }
     };
-    
+
     // 清除函数
     const clear = async () => {
         await setCustomWindowName(windowId, '');
@@ -7157,23 +8078,23 @@ async function showWindowNameEditor(item, windowId, currentName, lang) {
             await loadWindowsAndGroups(overlay, lang);
         }
     };
-    
+
     // 绑定事件
     saveBtn.addEventListener('click', (e) => {
         e.stopPropagation();
         save();
     });
-    
+
     cancelBtn.addEventListener('click', (e) => {
         e.stopPropagation();
         cancel();
     });
-    
+
     clearBtn.addEventListener('click', (e) => {
         e.stopPropagation();
         clear();
     });
-    
+
     // Enter保存，Escape取消
     input.addEventListener('keydown', (e) => {
         e.stopPropagation();
@@ -7183,7 +8104,7 @@ async function showWindowNameEditor(item, windowId, currentName, lang) {
             cancel();
         }
     });
-    
+
     // 阻止点击输入框时触发窗口选择
     input.addEventListener('click', (e) => {
         e.stopPropagation();
@@ -7210,12 +8131,12 @@ async function loadManualSelection() {
 async function openBookmarkWithManualSelection(url) {
     try {
         if (!url) return;
-        
+
         const windowId = manualSelectedWindowId;
         const groupId = manualSelectedGroupId;
-        
+
         console.log('[手动选择器] 打开书签:', { url, windowId, groupId });
-        
+
         // 情况1: 窗口 + 组
         if (windowId && groupId) {
             // 验证组是否存在且在指定窗口中
@@ -7224,11 +8145,11 @@ async function openBookmarkWithManualSelection(url) {
                 if (group.windowId !== windowId) {
                     throw new Error('组不在指定窗口中');
                 }
-                
+
                 // 在指定窗口的指定组中打开
                 const tab = await chrome.tabs.create({ url, windowId, active: true });
                 await chrome.tabs.group({ groupId, tabIds: [tab.id] });
-                
+
             } catch (error) {
                 console.warn('[手动选择器] 组不存在，在窗口中创建新标签:', error);
                 await chrome.tabs.create({ url, windowId, active: true });
@@ -7253,7 +8174,7 @@ async function openBookmarkWithManualSelection(url) {
         else {
             await chrome.tabs.create({ url, active: true });
         }
-        
+
     } catch (error) {
         console.error('[手动选择器] 打开书签失败:', error);
         window.open(url, '_blank');
@@ -7266,4 +8187,4 @@ loadManualSelection();
 // 导出到全局供其他模块调用
 try {
     window.openBookmarkWithManualSelection = openBookmarkWithManualSelection;
-} catch(_) {}
+} catch (_) { }

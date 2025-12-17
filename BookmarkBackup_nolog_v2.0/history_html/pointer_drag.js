@@ -396,8 +396,10 @@ async function handleDropToCanvas(event, workspaceRect) {
     const nodeTitle = draggedElement.dataset.nodeTitle;
     const nodeUrl = draggedElement.dataset.nodeUrl;
     const isFolder = draggedElement.dataset.nodeType === 'folder';
+    const sourceTreeType = draggedElement.dataset.treeType || 'permanent';
+    const sourceSectionId = draggedElement.dataset.sectionId || null;
     
-    console.log('[指针拖拽] 拖到Canvas外，创建临时栏目:', { nodeId, nodeTitle, isFolder });
+    console.log('[指针拖拽] 拖到Canvas外，创建临时栏目:', { nodeId, nodeTitle, isFolder, sourceTreeType });
     
     // 获取Canvas状态（缩放和平移）
     const CanvasState = window.CanvasModule?.CanvasState || window.CanvasState;
@@ -415,7 +417,8 @@ async function handleDropToCanvas(event, workspaceRect) {
         title: nodeTitle,
         url: nodeUrl,
         type: isFolder ? 'folder' : 'bookmark',
-        source: 'permanent'
+        source: sourceTreeType === 'temporary' ? 'temporary' : 'permanent',
+        sectionId: sourceTreeType === 'temporary' ? sourceSectionId : null
     };
     
     try {

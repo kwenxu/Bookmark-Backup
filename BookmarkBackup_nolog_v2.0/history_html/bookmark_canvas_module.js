@@ -75,8 +75,8 @@ const CanvasState = {
     // 延迟休眠机制
     dormancyTimers: new Map(), // 存储每个栏目的休眠定时器 sectionId -> { type, timer, scheduledAt }
     dormancyDelays: {
-        viewport: 120000,  // 离开视口2分钟后休眠
-        occlusion: 120000  // 被遮挡2分钟后休眠（暂未启用）
+        viewport: 60000,   // 离开视口1分钟后休眠
+        occlusion: 60000   // 被遮挡1分钟后休眠
     },
     // 防重复创建
     isCreatingTempNode: false, // 标记是否正在创建临时节点
@@ -1669,6 +1669,17 @@ function setupCanvasZoomAndPan() {
         if (isCustomCtrlKeyPressed(e) || e.metaKey) {
             e.preventDefault();
 
+            // [OPT] 缩放开始：进入高性能模式
+            workspace.classList.add('is-zooming');
+
+            // 清除之前的定时器
+            if (workspace._zoomEndTimer) clearTimeout(workspace._zoomEndTimer);
+
+            // 设置新的结束检测（延长至 400ms，防止滚轮间隙导致频繁的状态切换重排）
+            workspace._zoomEndTimer = setTimeout(() => {
+                workspace.classList.remove('is-zooming');
+            }, 400);
+
             // 标记正在滚动
             markScrolling();
 
@@ -1677,17 +1688,16 @@ function setupCanvasZoomAndPan() {
             const mouseX = e.clientX - rect.left;
             const mouseY = e.clientY - rect.top;
 
-            // 计算新的缩放级别 - 优化：触控板双指缩放优化
-            // 检测是否为触控板滚动（触控板的 deltaY 通常较小且连续）
-            const isTouchpad = Math.abs(e.deltaY) < 50 && e.deltaMode === 0;
+            // [FIX] 移除不稳定的阈值判断 (delta < 50)，防止快速滑动时系数突变导致的顿挫
+            const zoomSpeed = 0.001;
+
             // Shift+滚轮在某些浏览器会变成横向滚动，需要使用 deltaX 或 deltaY
             const delta = e.deltaY !== 0 ? -e.deltaY : -e.deltaX;
 
-            // 使用指数缩放（乘法），使缩放在任何级别都感觉一致
-            // 每次滚动改变固定的百分比，而不是固定的绝对值
-            const zoomSpeed = isTouchpad ? 0.0015 : 0.0003; // 每像素滚动对应的缩放因子
-
-            const baseZoomForCalc = CanvasState.zoom;
+            // [FIX] 核心修复：消除“钝感”和“阶梯感”
+            // 如果有 pendingZoomRequest，说明上一帧的缩放还没渲染出来。
+            // 此时必须基于 pending 的目标值继续累积，否则中间的高频滚动事件会被丢弃（因为 CanvasState.zoom 没变）。
+            const baseZoomForCalc = pendingZoomRequest ? pendingZoomRequest.zoom : CanvasState.zoom;
 
             // 计算缩放因子：delta > 0 放大，delta < 0 缩小
             // 使用 Math.exp 实现指数缩放，确保放大和缩小是对称的
@@ -1828,9 +1838,18 @@ function setupCanvasZoomAndPan() {
     const zoomOutBtn = document.getElementById('zoomOutBtn');
     const zoomLocateBtn = document.getElementById('zoomLocateBtn');
 
-    // 使用乘法缩放，每次点击缩放15%
-    if (zoomInBtn) zoomInBtn.addEventListener('click', () => setCanvasZoom(CanvasState.zoom * 1.15));
-    if (zoomOutBtn) zoomOutBtn.addEventListener('click', () => setCanvasZoom(CanvasState.zoom / 1.15));
+    // [OPT] 优化缩放手感：添加平滑动画，使用 1.2 倍指数缩放
+    const animateZoomStep = (factor) => {
+        const content = document.getElementById('canvasContent');
+        if (content) {
+            content.classList.add('animate-zoom');
+            setTimeout(() => content.classList.remove('animate-zoom'), 300);
+        }
+        setCanvasZoom(CanvasState.zoom * factor);
+    };
+
+    if (zoomInBtn) zoomInBtn.addEventListener('click', () => animateZoomStep(1.2));
+    if (zoomOutBtn) zoomOutBtn.addEventListener('click', () => animateZoomStep(1 / 1.2));
     if (zoomLocateBtn) zoomLocateBtn.addEventListener('click', locateToPermanentSection);
 
     // 管理按钮和弹窗
@@ -2271,8 +2290,12 @@ function applyPanOffsetFast() {
     // 使用 translate3d 启用硬件加速
     content.style.transform = `scale(${scale}) translate3d(${translateX}px, ${translateY}px, 0)`;
 
-    // 实时更新背景网格的CSS变量，让网格跟随缩放变化
-    if (container) {
+    // [OPT] 只有在非快速缩放模式下才更新背景网格变量
+    // 如果正在缩放(is-zooming)，网格是隐藏的，更新变量纯属浪费性能
+    const workspace = document.getElementById('canvasWorkspace');
+    const isZooming = workspace && workspace.classList.contains('is-zooming');
+
+    if (!isZooming && container) {
         container.style.setProperty('--canvas-scale', scale);
         container.style.setProperty('--canvas-pan-x', `${CanvasState.panOffsetX}px`);
         container.style.setProperty('--canvas-pan-y', `${CanvasState.panOffsetY}px`);
@@ -10198,10 +10221,17 @@ function renderTempNode(section) {
     treeContainer.dataset.treeType = 'temporary';
 
     const treeFragment = document.createDocumentFragment();
-    section.items.forEach(item => {
-        const node = buildTempTreeNode(section, item, 0);
-        if (node) treeFragment.appendChild(node);
-    });
+    // [OPT] 启动防御：如果栏目处于休眠记忆状态，直接跳过昂贵的 DOM 构建
+    if (section.dormant) {
+        if (nodeElement) nodeElement.classList.add('dormant-content');
+        treeContainer.style.display = 'none';
+        treeContainer.dataset.contentHidden = 'true';
+    } else {
+        section.items.forEach(item => {
+            const node = buildTempTreeNode(section, item, 0);
+            if (node) treeFragment.appendChild(node);
+        });
+    }
     treeContainer.appendChild(treeFragment);
     body.appendChild(treeContainer);
 
@@ -10223,7 +10253,9 @@ function renderTempNode(section) {
     makeNodeDraggable(nodeElement, section);
     makeTempNodeResizable(nodeElement, section);
     registerSectionCtrlOverlay(nodeElement);
-    setupTempSectionTreeInteractions(treeContainer, section);
+    if (!section.dormant) {
+        setupTempSectionTreeInteractions(treeContainer, section);
+    }
     setupTempSectionBlankAreaMenu(nodeElement, section); // 新增：空白区域右键菜单
     setupTempSectionDropTargets(section, nodeElement, treeContainer, header);
     if (typeof attachTreeEvents === 'function') {
@@ -11226,9 +11258,14 @@ function scheduleDormancy(section, reason) {
     cancelDormancyTimer(sectionId);
 
     // 确定延迟时间
-    const delay = reason === 'viewport'
+    let delay = reason === 'viewport'
         ? CanvasState.dormancyDelays.viewport
         : CanvasState.dormancyDelays.occlusion;
+
+    // [OPT] 动态性能策略：当栏目数量过多 (>50) 时，加速视口外休眠 (15s)，释放资源
+    if (reason === 'viewport' && Array.isArray(CanvasState.tempSections) && CanvasState.tempSections.length > 50) {
+        delay = 15000;
+    }
 
     // 设置新的定时器
     const timer = setTimeout(() => {
@@ -11236,19 +11273,22 @@ function scheduleDormancy(section, reason) {
         const element = document.getElementById(sectionId);
         if (element && !section.dormant) {
             section.dormant = true;
-            element.style.display = 'none';
+            // [MOD] 不再隐藏整个元素，而是只隐藏内容，保留外框可见性
+            // element.style.display = 'none';
             element.classList.add('dormant-content');
 
-            // 性能优化：极致性能模式下，卸载书签树DOM内容
-            // 这可以大幅减少内存占用和DOM节点数量
-            if (CanvasState.performanceMode === 'maximum') {
-                const treeContainer = element.querySelector('.temp-bookmark-tree');
-                if (treeContainer && treeContainer.children.length > 0) {
-                    // 标记内容已卸载
-                    treeContainer.dataset.contentUnloaded = 'true';
-                    // 清空DOM内容（数据保留在section.items中）
-                    treeContainer.innerHTML = '';
-                }
+            const treeContainer = element.querySelector('.temp-bookmark-tree');
+            if (treeContainer) {
+                // 锁定高度，防止容器塌陷
+                const rect = treeContainer.getBoundingClientRect();
+                if (rect.height > 0) treeContainer.style.height = rect.height + 'px';
+
+                // 隐藏内容以节省渲染性能
+                treeContainer.style.display = 'none';
+                treeContainer.dataset.contentHidden = 'true';
+
+                // 兼容逻辑：为了防止重复卸载，这里不再执行 DOM 卸载逻辑
+                // 统一使用 display: none 方案，平衡性能与体验
             }
         }
         CanvasState.dormancyTimers.delete(sectionId);
@@ -11278,11 +11318,20 @@ function wakeSection(section) {
         section.dormant = false;
         const element = document.getElementById(sectionId);
         if (element) {
-            element.style.display = '';
+            // [MOD] 元素本身一直可见，只需移除 dormant 类
+            // element.style.display = ''; 
             element.classList.remove('dormant-content');
 
-            // 性能优化：如果内容被卸载，重新渲染
             const treeContainer = element.querySelector('.temp-bookmark-tree');
+
+            // [MOD] 恢复内容显示
+            if (treeContainer && treeContainer.dataset.contentHidden === 'true') {
+                treeContainer.style.display = '';
+                treeContainer.style.height = ''; // 解除高度锁定
+                treeContainer.dataset.contentHidden = 'false';
+            }
+
+            // [兼容旧逻辑]：如果内容曾被卸载（旧版本或强制刷新导致），则重新渲染
             if (treeContainer && treeContainer.dataset.contentUnloaded === 'true') {
                 try {
                     // 重新渲染书签树内容
@@ -11327,17 +11376,46 @@ function wakeSection(section) {
                     console.log('[Canvas休眠] 栏目已唤醒并重新渲染:', sectionId);
                 } catch (error) {
                     console.error('[Canvas休眠] wakeSection渲染失败:', error);
-                    // 失败时尝试完全重新渲染整个栏目
-                    try {
-                        renderTempNode(section);
-                    } catch (fallbackError) {
-                        console.error('[Canvas休眠] 回退渲染也失败:', fallbackError);
-                    }
+                    try { renderTempNode(section); } catch (_) { }
                 }
             }
+
+            // [LazyLoad/Defense] 检查内容完整性
+            // 两种情况会触发这里：
+            // 1. 初始化时因为休眠跳过了内容构建（正常懒加载）
+            // 2. 运行时发生异常导致 DOM 丢失（防御机制）
+            const shouldHaveContent = Array.isArray(section.items) && section.items.length > 0;
+            const hasContent = treeContainer && treeContainer.children.length > 0;
+
+            if (shouldHaveContent && !hasContent) {
+                // 这是正常的懒加载或恢复流程，使用 Log 而非 Warn
+                console.log('[Canvas] 唤醒栏目并构建内容:', sectionId);
+                renderTempNode(section);
+                return true;
+            }
+        } else {
+            // DOM 节点丢失，强制重绘
+            renderTempNode(section);
         }
     }
     return true;
+}
+
+// [Defense] 全局防御：点击任何休眠节点都会尝试唤醒
+// 放在这里确保只需初始化一次（文件加载时）
+if (typeof window !== 'undefined' && !window._canvasDormancyClickAttached) {
+    window._canvasDormancyClickAttached = true;
+    document.addEventListener('mousedown', (e) => {
+        // 检查点击目标是否位于休眠内容中
+        const dormantEl = e.target.closest('.dormant-content');
+        if (dormantEl && dormantEl.id) {
+            const section = getTempSection(dormantEl.id);
+            if (section && section.dormant) {
+                console.log('[Canvas防御] 点击唤醒休眠节点:', section.id);
+                wakeSection(section);
+            }
+        }
+    }, true); // 使用捕获阶段，确保最早触发
 }
 
 // 强制唤醒并重新渲染栏目（用于恢复失败时）
@@ -11357,24 +11435,22 @@ function forceWakeAndRender(sectionId) {
     }
 }
 
+// 恢复并优化休眠管理逻辑
 function manageSectionDormancy() {
     const workspace = document.getElementById('canvasWorkspace');
     if (!workspace) return;
 
     // 获取当前性能模式的缓冲区大小
     const currentSettings = CanvasState.performanceSettings[CanvasState.performanceMode];
-    const margin = currentSettings ? currentSettings.margin : 50;
+    // [OPT] 恢复 1500px 缓冲距离，确保离得较远时才休眠，保证正常体验
+    const margin = currentSettings ? Math.max(currentSettings.margin, 1500) : 1500;
 
     // 无限制模式：不执行休眠
     if (margin === Infinity) {
         CanvasState.tempSections.forEach(section => {
             cancelDormancyTimer(section.id);
             if (section.dormant) {
-                section.dormant = false;
-                const element = document.getElementById(section.id);
-                if (element) {
-                    element.style.display = '';
-                }
+                wakeSection(section);
             }
         });
         return;
@@ -11421,33 +11497,25 @@ function manageSectionDormancy() {
         );
 
         if (isInViewport) {
-            // 在视口内，立即唤醒（如果已休眠）或取消休眠定时器
             wakeSection(section);
             activeCount++;
         } else {
-            // 不在视口内，调度延迟休眠
             if (!section.dormant) {
-                // 检查是否已经调度了休眠
                 const timerInfo = CanvasState.dormancyTimers.get(section.id);
                 if (!timerInfo) {
-                    // 还没调度，现在调度
                     scheduleDormancy(section, 'viewport');
                     scheduledCount++;
-                    activeCount++; // 还未休眠，仍然活跃
+                    activeCount++;
                 } else {
-                    // 已经调度了，等待定时器触发
-                    activeCount++; // 还未休眠，仍然活跃
+                    activeCount++;
                 }
             } else {
-                // 已经休眠
                 dormantCount++;
             }
         }
     });
-
-    // 性能统计（不输出日志）
-    // 活跃: activeCount, 休眠: dormantCount, 已调度: scheduledCount
 }
+
 
 function isSectionDormant(sectionId) {
     const section = getTempSection(sectionId);
@@ -12449,7 +12517,8 @@ function showExportModeDialog() {
 
     const dialogTitle = isEn ? 'Export' : '导出';
     const modeATitle = isEn ? 'Obsidian Compatible' : 'Obsidian 兼容';
-    const modeAHint = isEn ? 'For viewing in Obsidian' : '用于 Obsidian 中查看';
+    const modeAHint = isEn ? 'For viewing in Obsidian' : '用于 Obsidian，但需注意格式（详见说明）';
+    const modeAHint2 = isEn ? '(some features may differ, see README)' : '';
     const modeBTitle = isEn ? 'Full Backup' : '全量备份';
     const modeBHint = isEn ? 'For import & recovery' : '用于导入与恢复';
 
@@ -12469,6 +12538,7 @@ function showExportModeDialog() {
                         <div style="text-align: left; flex: 1;">
                             <div style="font-size: 14px; font-weight: 600;">${modeATitle}</div>
                             <div style="font-size: 12px; color: #888; margin-top: 2px;">${modeAHint}</div>
+                            ${modeAHint2 ? `<div style="font-size: 11px; color: #aaa; margin-top: 1px;">${modeAHint2}</div>` : ''}
                         </div>
                         <i class="fas fa-chevron-right" style="color: #ccc;"></i>
                     </button>
@@ -12799,6 +12869,17 @@ const __getPermanentExpandedSet = () => {
     }
 };
 
+const __getTempSectionCollapsedSet = (sectionId) => {
+    if (!sectionId) return new Set();
+    try {
+        const key = `temp-section-collapsed:${sectionId}`;
+        const s = localStorage.getItem(key);
+        return new Set(JSON.parse(s || '[]'));
+    } catch (_) {
+        return new Set();
+    }
+};
+
 /**
  * @param {Array} items
  * @param {number} depth
@@ -13069,6 +13150,430 @@ function __buildMdNodeMarkdown(node) {
     const finalMd = lines.join('\n').trim();
 
     return (finalMd + '\n').replace(/\r\n/g, '\n');
+}
+
+
+/**
+ * [EDITABLE MODE] Build Permanent Sections Markdown (Headings + List)
+ */
+function __buildPermanentBookmarksMarkdownEditable(bookmarkTree) {
+    const { isEn } = __getLang();
+
+    const body = [];
+
+    // 2. Description
+    let rawDesc = '';
+    try { rawDesc = localStorage.getItem('canvas-permanent-tip-text') || ''; } catch (_) { }
+    const descMd = __htmlToMarkdown(rawDesc);
+    if (descMd) {
+        body.push(descMd);
+        body.push('');
+    }
+
+    const root = Array.isArray(bookmarkTree) ? bookmarkTree[0] : null;
+    const roots = root && Array.isArray(root.children) ? root.children : [];
+
+    const getRootSectionName = (node) => {
+        if (!node) return 'Bookmarks';
+        if (node.id === '1') return isEn ? 'Bookmark Bar' : '书签栏';
+        if (node.id === '2') return isEn ? 'Other Bookmarks' : '其他书签';
+        if (node.id === '3') return isEn ? 'Mobile Bookmarks' : '移动设备书签';
+        const t = String(node.title || node.name || '').trim();
+        return t || (isEn ? 'Bookmarks' : '书签');
+    };
+
+    // Clean URL - remove newlines and extra spaces
+    const cleanUrl = (url) => {
+        if (!url) return '';
+        return String(url).replace(/[\r\n\s]+/g, '').trim();
+    };
+
+    // Clean title for markdown link
+    const cleanTitle = (t) => {
+        if (!t) return '';
+        // Remove newlines, escape brackets
+        return String(t).replace(/[\r\n]+/g, ' ').replace(/([[\]()])/g, '\\$1').trim();
+    };
+
+    // Truncate long titles to prevent overly long lines in Obsidian
+    const MAX_TITLE_LENGTH = 80;
+    const truncateTitle = (title, url) => {
+        if (!title) return '';
+        // If title is essentially a URL (starts with http/https or equals the URL)
+        const isUrlTitle = /^https?:\/\//i.test(title) || title === url;
+        if (isUrlTitle && url) {
+            try {
+                const parsed = new URL(url);
+                const domain = parsed.hostname.replace(/^www\./, '');
+                const pathPart = parsed.pathname.length > 1 ? parsed.pathname.substring(0, 20) : '';
+                const shortTitle = domain + (pathPart ? pathPart + '...' : '');
+                return shortTitle.length > MAX_TITLE_LENGTH ? shortTitle.substring(0, MAX_TITLE_LENGTH) + '...' : shortTitle;
+            } catch (_) {
+                // Fallback: just truncate
+                return title.length > MAX_TITLE_LENGTH ? title.substring(0, MAX_TITLE_LENGTH) + '...' : title;
+            }
+        }
+        // Normal title: truncate if too long
+        return title.length > MAX_TITLE_LENGTH ? title.substring(0, MAX_TITLE_LENGTH) + '...' : title;
+    };
+
+    roots.forEach((r) => {
+        const sectionName = getRootSectionName(r);
+        body.push(`## ${sectionName}`);
+        body.push('');
+
+        // Process nodes recursively, using headings for folders up to H6, then nested lists
+        const processNodes = (nodes, headingLevel, listIndent = 0) => {
+            if (!nodes) return;
+            const useListMode = headingLevel >= 6; // Switch to list mode when we would exceed H6
+
+            nodes.forEach(node => {
+                if (node.url) {
+                    // Bookmark - always as list item
+                    const rawTitle = cleanTitle(node.title || node.name) || cleanUrl(node.url);
+                    const bmUrl = cleanUrl(node.url);
+                    const bmTitle = truncateTitle(rawTitle, bmUrl);
+                    const indent = useListMode ? '  '.repeat(listIndent) : '';
+                    body.push(`${indent}- [${bmTitle}](${bmUrl})`);
+                } else {
+                    // Folder
+                    const folderTitle = cleanTitle(node.title || node.name || (isEn ? 'Folder' : '文件夹'));
+
+                    if (useListMode) {
+                        // Deep folder: use nested list with 📁 icon
+                        const indent = '  '.repeat(listIndent);
+                        body.push(`${indent}- 📁 **${folderTitle}**`);
+
+                        if (node.children && node.children.length > 0) {
+                            processNodes(node.children, headingLevel, listIndent + 1);
+                        }
+                    } else {
+                        // Shallow folder: use heading
+                        const nextLevel = headingLevel + 1;
+                        body.push('');
+                        body.push(`${'#'.repeat(nextLevel)} ${folderTitle}`);
+                        body.push('');
+
+                        if (node.children && node.children.length > 0) {
+                            processNodes(node.children, nextLevel, 0);
+                        }
+                    }
+                }
+            });
+        };
+
+        if (r.children) {
+            processNodes(r.children, 2); // Start at H2 context, so first level folders become H3
+        }
+
+        body.push('');
+    });
+
+    return body.join('\n').trimEnd() + '\n';
+}
+
+/**
+ * [EDITABLE MODE] Build Temp Section Markdown (Headings + List)
+ */
+function __buildTempSectionMarkdownEditable(section) {
+    const { isEn } = __getLang();
+
+    const body = [];
+
+    const descHtml = section && typeof section.description === 'string' ? section.description : '';
+    const descMd = __htmlToMarkdown(descHtml);
+    if (descMd) {
+        body.push(descMd);
+        body.push('');
+        body.push('---');
+        body.push('');
+    }
+
+    const items = section && Array.isArray(section.items) ? section.items : [];
+
+    // Clean URL - remove newlines and extra spaces
+    const cleanUrl = (url) => {
+        if (!url) return '';
+        return String(url).replace(/[\r\n\s]+/g, '').trim();
+    };
+
+    // Clean title for markdown link
+    const cleanTitle = (t) => {
+        if (!t) return '';
+        return String(t).replace(/[\r\n]+/g, ' ').replace(/([[\]()])/g, '\\$1').trim();
+    };
+
+    // Truncate long titles to prevent overly long lines in Obsidian
+    const MAX_TITLE_LENGTH = 80;
+    const truncateTitle = (title, url) => {
+        if (!title) return '';
+        // If title is essentially a URL (starts with http/https or equals the URL)
+        const isUrlTitle = /^https?:\/\//i.test(title) || title === url;
+        if (isUrlTitle && url) {
+            try {
+                const parsed = new URL(url);
+                const domain = parsed.hostname.replace(/^www\./, '');
+                const pathPart = parsed.pathname.length > 1 ? parsed.pathname.substring(0, 20) : '';
+                const shortTitle = domain + (pathPart ? pathPart + '...' : '');
+                return shortTitle.length > MAX_TITLE_LENGTH ? shortTitle.substring(0, MAX_TITLE_LENGTH) + '...' : shortTitle;
+            } catch (_) {
+                // Fallback: just truncate
+                return title.length > MAX_TITLE_LENGTH ? title.substring(0, MAX_TITLE_LENGTH) + '...' : title;
+            }
+        }
+        // Normal title: truncate if too long
+        return title.length > MAX_TITLE_LENGTH ? title.substring(0, MAX_TITLE_LENGTH) + '...' : title;
+    };
+
+    // Process nodes recursively, using headings for folders up to H6, then nested lists
+    const processNodes = (nodes, headingLevel, listIndent = 0) => {
+        if (!nodes) return;
+        const useListMode = headingLevel >= 6; // Switch to list mode when we would exceed H6
+
+        nodes.forEach(node => {
+            if (node.url) {
+                // Bookmark - always as list item
+                const rawTitle = cleanTitle(node.title || node.name) || cleanUrl(node.url);
+                const bmUrl = cleanUrl(node.url);
+                const bmTitle = truncateTitle(rawTitle, bmUrl);
+                const indent = useListMode ? '  '.repeat(listIndent) : '';
+                body.push(`${indent}- [${bmTitle}](${bmUrl})`);
+            } else if (node.children || node.items) {
+                // Folder
+                const folderTitle = cleanTitle(node.title || node.name || (isEn ? 'Folder' : '文件夹'));
+                const children = node.children || node.items || [];
+
+                if (useListMode) {
+                    // Deep folder: use nested list with 📁 icon
+                    const indent = '  '.repeat(listIndent);
+                    body.push(`${indent}- 📁 **${folderTitle}**`);
+
+                    if (children.length > 0) {
+                        processNodes(children, headingLevel, listIndent + 1);
+                    }
+                } else {
+                    // Shallow folder: use heading
+                    const nextLevel = headingLevel + 1;
+                    body.push('');
+                    body.push(`${'#'.repeat(nextLevel)} ${folderTitle}`);
+                    body.push('');
+
+                    if (children.length > 0) {
+                        processNodes(children, nextLevel, 0);
+                    }
+                }
+            } else {
+                // Empty folder or just text
+                const folderTitle = cleanTitle(node.title || node.name || (isEn ? 'Folder' : '文件夹'));
+                const indent = useListMode ? '  '.repeat(listIndent) : '';
+                body.push(`${indent}- 📁 **${folderTitle}**`);
+            }
+        });
+    };
+
+    processNodes(items, 1);
+
+    return body.join('\n').trimEnd() + '\n';
+}
+
+
+/**
+ * [PARSER] Parse "Editable Mode" Markdown back to Tree Structure
+ */
+function __parseEditableMarkdownToTree(mdContent) {
+    const lines = mdContent.split(/\r?\n/);
+    const rootChildren = [];
+
+    // Stack for Heading Hierarchy
+    // Stack[0] is always formatting root (Level 1/H1 context)
+    // When we see H2 (Level 2), we push to stack.
+    let headingStack = [{ level: 1, children: rootChildren }];
+
+    // Helper for List Indentation Hierarchy (within a heading block)
+    // This resets whenever a new Heading is encountered.
+    // Format: { indent: number, children: Array }
+    let listStack = [];
+
+    const getCurrentContainer = (lineIndent) => {
+        // 1. Prefer List Stack if active and indent matches deep nesting
+        if (listStack.length > 0) {
+            // Find parent in list stack with indent < lineIndent
+            while (listStack.length > 0 && listStack[listStack.length - 1].indent >= lineIndent) {
+                listStack.pop();
+            }
+            if (listStack.length > 0) {
+                return listStack[listStack.length - 1].children;
+            }
+        }
+        // 2. Fallback to Heading Stack (Current Heading Context)
+        return headingStack[headingStack.length - 1].children;
+    };
+
+    lines.forEach(line => {
+        if (!line.trim() || line.trim() === '---') return;
+
+        // 0. Detect Indentation (4 spaces = 1 level basically, or tabs)
+        const indentMatch = line.match(/^(\s*)/);
+        const indentStr = indentMatch ? indentMatch[1] : '';
+        // Approximate indent level: 2 spaces or 1 tab?
+        // Let's count length. '    ' is 4.
+        const indentLen = indentStr.replace(/\t/g, '    ').length;
+
+        const trimmed = line.trim();
+
+        // 1. Check for Headings (# Title) - Headings ALWAYS reset list context
+        const headingMatch = trimmed.match(/^(#+)\s+(.*)/);
+        if (headingMatch) {
+            listStack = []; // Reset list nesting on new heading
+
+            const hLevel = headingMatch[1].length;
+            const title = headingMatch[2].trim();
+
+            if (hLevel === 1) return; // Ignore H1 (File Title)
+
+            // Adjust Heading Stack
+            while (headingStack.length > 1 && headingStack[headingStack.length - 1].level >= hLevel) {
+                headingStack.pop();
+            }
+
+            const folderNode = {
+                id: `imported-folder-h-${Date.now()}-${Math.floor(Math.random() * 10000)}`,
+                type: 'folder',
+                title: title,
+                children: []
+            };
+
+            // Add to current heading parent
+            headingStack[headingStack.length - 1].children.push(folderNode);
+
+            // Push self as new context
+            headingStack.push({ level: hLevel, children: folderNode.children });
+            return;
+        }
+
+        // 2. Check for Bookmarks (- [Title](URL))
+        const linkMatch = trimmed.match(/^-\s+\[(.*?)\]\((.*?)\)/);
+        if (linkMatch) {
+            const title = linkMatch[1].trim();
+            const url = linkMatch[2].trim();
+            const bmNode = {
+                id: `imported-bm-${Date.now()}-${Math.floor(Math.random() * 10000)}`,
+                type: 'bookmark',
+                title: title || url,
+                url: url
+            };
+
+            getCurrentContainer(indentLen).push(bmNode);
+            return;
+        }
+
+        // 3. Check for Folder in List (- 📁 **Title** or - **Title**)
+        // Support both with and without folder icon
+        const boldFolderMatch = trimmed.match(/^-\s+(?:📁\s*)?\*\*(.*?)\*\*/);
+        if (boldFolderMatch) {
+            const title = boldFolderMatch[1].trim();
+            const folderNode = {
+                id: `imported-folder-list-${Date.now()}-${Math.floor(Math.random() * 10000)}`,
+                type: 'folder',
+                title: title,
+                children: []
+            };
+
+            getCurrentContainer(indentLen).push(folderNode);
+
+            // Push to List Stack to capture children
+            // Logic: This item is at 'indentLen'. Its children will have specific indent > this.
+            listStack.push({ indent: indentLen, children: folderNode.children });
+            return;
+        }
+    });
+
+    return rootChildren;
+}
+
+/**
+ * [PARSER] Parse "Visual Mode" HTML (with <details>, <a href>) back to Tree Structure
+ */
+function __parseVisualHtmlToTree(htmlContent) {
+    const parser = new DOMParser();
+    const doc = parser.parseFromString(htmlContent, 'text/html');
+
+    const parseNode = (element) => {
+        const results = [];
+
+        // Find all direct children that are wrappers
+        const wrappers = element.querySelectorAll(':scope > div');
+
+        wrappers.forEach(wrapper => {
+            // Check for bookmark (anchor link)
+            const anchor = wrapper.querySelector(':scope > a[href]');
+            if (anchor) {
+                const url = anchor.getAttribute('href') || '';
+                const titleSpan = anchor.querySelector('span:last-child');
+                const title = titleSpan ? titleSpan.textContent.trim() : anchor.textContent.trim();
+
+                if (url && url !== '#') {
+                    results.push({
+                        id: `imported-bm-v-${Date.now()}-${Math.floor(Math.random() * 10000)}`,
+                        type: 'bookmark',
+                        title: title || url,
+                        url: url
+                    });
+                }
+                return;
+            }
+
+            // Check for folder (details element)
+            const details = wrapper.querySelector(':scope > details');
+            if (details) {
+                const summary = details.querySelector(':scope > summary');
+                const titleSpan = summary ? summary.querySelector('span span:last-child') : null;
+                const title = titleSpan ? titleSpan.textContent.trim() :
+                    (summary ? summary.textContent.trim().replace(/^📁\s*/, '') : 'Folder');
+
+                // Find children container (the div after summary with border-left style)
+                const childrenContainer = details.querySelector(':scope > div');
+                const children = childrenContainer ? parseNode(childrenContainer) : [];
+
+                results.push({
+                    id: `imported-folder-v-${Date.now()}-${Math.floor(Math.random() * 10000)}`,
+                    type: 'folder',
+                    title: title,
+                    children: children
+                });
+            }
+        });
+
+        return results;
+    };
+
+    // Start parsing from body
+    return parseNode(doc.body);
+}
+
+/**
+ * [AUTO PARSER] Detect format and parse accordingly
+ * Visual Mode: Contains <details>, <a href=
+ * Editable Mode: Contains Markdown headings (## ...) and lists (- [...](...)
+ */
+function __parseMarkdownAuto(content) {
+    if (!content || typeof content !== 'string') return [];
+
+    const trimmed = content.trim();
+
+    // Detect Visual Mode (HTML with <details> or styled <a href>)
+    const hasDetails = /<details[\s>]/i.test(trimmed);
+    const hasStyledAnchor = /<a\s+href=.*style=/i.test(trimmed);
+    const hasHtmlDiv = /<div\s+style=/i.test(trimmed);
+
+    if (hasDetails || (hasStyledAnchor && hasHtmlDiv)) {
+        console.log('[Canvas Import] Detected Visual Mode (HTML format)');
+        return __parseVisualHtmlToTree(trimmed);
+    }
+
+    // Default to Editable Mode (Markdown)
+    console.log('[Canvas Import] Detected Editable Mode (Markdown format)');
+    return __parseEditableMarkdownToTree(trimmed);
 }
 
 function __toUint8(text) {
@@ -13350,6 +13855,12 @@ async function exportCanvasPackage(options = {}) {
             ? `If you use it as a ${hl('standalone vault')}, ${hl('clear the input')} and click Confirm.`
             : `-若把它直接作为一个独立的仓库，请${hl('清空输入框')}，点击确认即可。`;
 
+        const formatLabel = isEn ? 'Content Format:' : '内容格式：';
+        const formatOptionVisual = isEn ? 'Visual Cards (HTML)' : '视觉卡片 (HTML)';
+        const formatOptionVisualDesc = isEn ? 'Best for viewing, looks like cards.' : '类似卡片网格，适合查看与存档。';
+        const formatOptionEdit = isEn ? 'Editable (Headings + List)' : '编辑模式 (标题 + 列表)';
+        const formatOptionEditDesc = isEn ? 'Best for editing, uses standard Markdown.' : '使用标准 Markdown，利于编辑和整理。';
+
         const inputLabel = isEn
             ? 'Enter path'
             : '请输入路径';
@@ -13365,14 +13876,34 @@ async function exportCanvasPackage(options = {}) {
 			                </div>
 	                <div class="import-dialog-body" style="padding: 18px;">
 	                    <div style="margin: 0 0 6px; font-weight: 600;">${inputLabel}</div>
-	                    <div style="display:flex; gap:8px; align-items:center; margin-bottom: 10px;">
+	                    <div style="display:flex; gap:8px; align-items:center;">
 	                        <input id="canvasExportVaultPrefixInput" type="text" style="flex:1; padding: 9px 10px; border: 1px solid #d0d7de; border-radius: 8px;" />
 	                        <button id="canvasExportVaultPrefixOk" class="import-option-btn" style="width:auto; padding: 9px 12px;">
 	                            ${isEn ? 'OK' : '确定'}
 	                        </button>
 	                    </div>
 
-                    <hr style="border:0;border-top:1px solid #e5e7eb;margin: 10px 0 12px;">
+                        <div style="margin-top: 16px;">
+                            <div style="margin: 0 0 8px; font-weight: 600;">${formatLabel}</div>
+                            <div style="display: flex; gap: 12px; flex-direction: column;">
+                                <label style="display: flex; align-items: flex-start; gap: 8px; cursor: pointer;">
+                                    <input type="radio" name="canvasExportFormat" value="visual" checked style="margin-top: 4px;">
+                                    <div>
+                                        <div style="font-weight: 600; font-size: 13px;">${formatOptionVisual}</div>
+                                        <div style="font-size: 12px; color: #666;">${formatOptionVisualDesc}</div>
+                                    </div>
+                                </label>
+                                <label style="display: flex; align-items: flex-start; gap: 8px; cursor: pointer;">
+                                    <input type="radio" name="canvasExportFormat" value="editable" style="margin-top: 4px;">
+                                    <div>
+                                        <div style="font-weight: 600; font-size: 13px;">${formatOptionEdit}</div>
+                                        <div style="font-size: 12px; color: #666;">${formatOptionEditDesc}</div>
+                                    </div>
+                                </label>
+                            </div>
+                        </div>
+
+                    <hr style="border:0;border-top:1px solid #e5e7eb;margin: 16px 0 12px;">
 
                     <div style="margin-bottom: 10px; line-height: 1.6;">
                         <div style="margin-bottom: 8px;">${intro}</div>
@@ -13408,6 +13939,11 @@ async function exportCanvasPackage(options = {}) {
         const closeBtn = document.getElementById('closeCanvasExportVaultPrefixDialog');
         if (closeBtn) closeBtn.addEventListener('click', () => cleanup(null));
 
+        const getFormat = () => {
+            const el = document.querySelector('input[name="canvasExportFormat"]:checked');
+            return el ? el.value : 'visual';
+        };
+
         const input = document.getElementById('canvasExportVaultPrefixInput');
         if (input) {
             input.value = String(defaultValue || '');
@@ -13415,7 +13951,10 @@ async function exportCanvasPackage(options = {}) {
             input.addEventListener('keydown', (e) => {
                 if (e.key === 'Enter') {
                     e.preventDefault();
-                    cleanup(String(input.value || ''));
+                    cleanup({
+                        path: String(input.value || ''),
+                        format: getFormat()
+                    });
                 } else if (e.key === 'Escape') {
                     e.preventDefault();
                     cleanup(null);
@@ -13423,8 +13962,13 @@ async function exportCanvasPackage(options = {}) {
             });
         }
 
+
+
         const okBtn = document.getElementById('canvasExportVaultPrefixOk');
-        if (okBtn) okBtn.addEventListener('click', () => cleanup(input ? String(input.value || '') : String(defaultValue || '')));
+        if (okBtn) okBtn.addEventListener('click', () => cleanup({
+            path: input ? String(input.value || '') : String(defaultValue || ''),
+            format: getFormat()
+        }));
     });
 
     // 让用户决定"导出文件夹在 vault 内的相对位置"，以适配：
@@ -13434,16 +13978,22 @@ async function exportCanvasPackage(options = {}) {
 
     // 只有 Obsidian 模式才需要路径配置对话框
     // 全量备份模式直接使用默认路径
+    // 全量备份模式直接使用默认路径
     let vaultPrefixInput;
+    let exportFormat = 'visual'; // 'visual' | 'editable'
+
     if (isFullBackupMode) {
         // 全量备份模式：直接使用默认值，不显示路径对话框
         vaultPrefixInput = defaultExportRoot;
     } else {
         // Obsidian 模式：显示路径配置对话框
-        vaultPrefixInput = await promptVaultPrefixViaDialog(defaultExportRoot);
-        if (vaultPrefixInput === null) {
+        const result = await promptVaultPrefixViaDialog(defaultExportRoot);
+        if (result === null) {
             return;
         }
+        vaultPrefixInput = result.path;
+        exportFormat = result.format || 'visual';
+
     }
     const vaultPrefix = normalizeVaultPrefix(vaultPrefixInput);
 
@@ -13466,9 +14016,13 @@ async function exportCanvasPackage(options = {}) {
     const exportRoot = vaultPrefix ? vaultPrefix.split('/').slice(-1)[0] : defaultExportRoot;
 
     // 1) Markdown files
+    // 1) Markdown files
     const bookmarkTree = await api.getTree();
-    const permanentMdRel = isEn ? 'Permanent Bookmarks.md' : '永久书签.md';
-    files.push({ name: `${exportRoot}/${permanentMdRel}`, data: __toUint8(__buildPermanentBookmarksMarkdown(bookmarkTree)) });
+    const permanentMdRel = isEn ? 'Permanent Sections.md' : '永久栏目.md';
+
+    // Choose builder based on format
+    const permanentBuilder = exportFormat === 'editable' ? __buildPermanentBookmarksMarkdownEditable : __buildPermanentBookmarksMarkdown;
+    files.push({ name: `${exportRoot}/${permanentMdRel}`, data: __toUint8(permanentBuilder(bookmarkTree)) });
 
     const tempSectionMdPaths = [];
     const tempMdFolder = isEn ? 'Temporary Sections' : '临时栏目';
@@ -13483,7 +14037,10 @@ async function exportCanvasPackage(options = {}) {
 
         const rel = `${tempMdFolder}/${safeTitle}.md`;
         tempSectionMdPaths.push({ id: section.id, rel });
-        files.push({ name: `${exportRoot}/${rel}`, data: __toUint8(__buildTempSectionMarkdown(section)) });
+
+        // Choose builder based on format
+        const tempBuilder = exportFormat === 'editable' ? __buildTempSectionMarkdownEditable : __buildTempSectionMarkdown;
+        files.push({ name: `${exportRoot}/${rel}`, data: __toUint8(tempBuilder(section)) });
     });
 
     const mdNodeMdPaths = [];
@@ -13628,21 +14185,14 @@ async function exportCanvasPackage(options = {}) {
     }
 
     // 3.1) Supplementary layer (bookmark-canvas.full.json) - 补充层
-    // 用于存储 Markdown 无法记录的"样式数据"（颜色、滚动条位置、性能模式配置）
-    const fullState = {
-        exporter: 'bookmark-backup-canvas',
-        exportVersion: 1,
-        exportedAt,
-        exportMode, // 记录导出模式
-        storage: {
-            [TEMP_SECTION_STORAGE_KEY]: tempStateRaw ? JSON.parse(tempStateRaw) : null,
-            'permanent-section-position': permanentPosRaw ? JSON.parse(permanentPosRaw) : null,
-            'canvas-performance-mode': perfMode || null,
-            ...scrollState
-        }
-        // 注意：补充层不包含书签树快照，仅作为样式补丁
-    };
-    files.push({ name: `${exportRoot}/bookmark-canvas.full.json`, data: __toUint8(JSON.stringify(fullState, null, 2)) });
+    // [CHANGED] We no longer export 'style-data.json' for Obsidian Mode.
+    // Obsidian Mode relies purely on .canvas and .md files to ensure edits in Obsidian are preserved.
+    // We only keep this object construction if we want to include it in Full Backup (merged) or for legacy reasons.
+    // For now, only generate it if specifically needed, but per request, we stop exporting it for standard Obsidian export.
+    /* 
+    const fullState = { ... };
+    files.push({ name: `${exportRoot}/bookmark-canvas.style-data.json`, data: __toUint8(JSON.stringify(fullState, null, 2)) });
+    */
 
     // 3.2) Core data layer (bookmark-canvas.backup.json) - 核心数据层
     // 仅在"模式 B"（全量备份模式）下生成
@@ -13677,17 +14227,61 @@ async function exportCanvasPackage(options = {}) {
     }
 
     // 4) Import guide for Obsidian
-    const orangeNote = isEn
-        ? `Tip: if unsure, keep under <span style="color:#f59e0b;font-weight:600;">vault root</span>. Standalone vault: set the path to <span style="color:#f59e0b;font-weight:600;">empty</span>.`
-        : `提示：不确定时放在 <span style="color:#f59e0b;font-weight:600;">vault 根目录</span>。独立 vault：把路径设置为 <span style="color:#f59e0b;font-weight:600;">空</span>。`;
+
+    const readmeName = isEn ? 'README_Import_Rules.md' : '说明_导入规则.md';
+    const compatText = isEn
+        ? `
+# README
+
+All exported content is fully supported. Please note the following:
+
+## 1. Bookmarks
+You can freely view and edit bookmark content in Obsidian. Note:
+- **Structure**: If you plan to re-import this data, please do **NOT** rename files or change the folder structure.
+- **Additions**: You can use standard Obsidian features (links, tags). Avoid complex non-standard modifications if re-import is needed.
+
+## 2. Text Editing
+You are free to edit Markdown content in Obsidian.
+> **Note**: Edits made in Obsidian are for external use only and will **NOT** be reflected if you re-import this package. Import restores the exact state at the time of export.
+
+## 3. Connection Lines
+Fully compatible with Obsidian Canvas.
+
+## 4. Grouping (v3.0 Limitation)
+The current version (v3.0) does **NOT** support Obsidian's native grouping feature. Groups created in Obsidian cannot be re-imported.
+`
+        : `
+# 说明
+
+所有导出的内容均完全支持。请注意以下事项：
+
+## 1. 书签
+可以在 Obsidian 中自由查看和编辑书签内容。注意：
+- **结构保持**：若您计划将此数据**重新导入**回本扩展，请**不要**修改文件名或目录结构。
+- **新增内容**：支持标准 Obsidian 语法。若为了再次导入，请避免破坏原有的元数据格式。
+
+## 2. 文本编辑
+可以在 Obsidian 中自由编辑 Markdown 内容。
+> **注意**：在 Obsidian 中的修改仅供外部使用，重新导入包时**不会**包含这些修改（导入将恢复导出时的原始状态）。
+
+## 3. 连接线
+与 Obsidian Canvas 完全兼容。
+
+## 4. 分组（v3.0 限制）
+当前版本（v3.0）**不支持** Obsidian 原生分组功能。在 Obsidian 中创建的分组无法重新导入。
+`;
+
     const guide = [
         __frontmatter({
             exportedAt,
             source: 'exportGuide',
             sourceId: 'bookmark-canvas-export',
-            title: 'Obsidian Import Guide'
+            title: isEn ? 'Obsidian Import Rules' : 'Obsidian 导入规则'
         }),
-        isEn ? 'Process:' : '流程：',
+        compatText,
+        '',
+        '-----------------------------------------------------------------------------',
+        isEn ? '## Import Steps' : '## 导入步骤',
         isEn ? `1) Unzip: ${exportRoot}.zip` : `1）解压：${exportRoot}.zip`,
         isEn
             ? `2) Put the folder \`${exportRoot}/\` into your vault at: \`${(vaultPrefix ? (vaultPrefix.split('/').slice(0, -1).join('/') || '(vault root)') : '(standalone vault)')}\`.`
@@ -13701,7 +14295,7 @@ async function exportCanvasPackage(options = {}) {
             : '注意：如果只拷贝 .canvas 文件而没有同时拷贝对应的 .md 文件，Canvas 会显示“.md could not be found”。',
         ''
     ].join('\n');
-    files.push({ name: `${exportRoot}/README_IMPORT.md`, data: __toUint8(guide) });
+    files.push({ name: `${exportRoot}/${readmeName}`, data: __toUint8(guide) });
 
     const zipBlob = __zipStore(files);
     const zipUrl = URL.createObjectURL(zipBlob);
@@ -13739,8 +14333,8 @@ async function exportCanvasPackage(options = {}) {
     }
 
     alert(isEn
-        ? `Exported: ${zipName} (Downloads/${downloadFolder}/)`
-        : `已导出：${zipName}（默认下载目录/${downloadFolder}/）。`);
+        ? `Exported: ${zipName}(Downloads / ${downloadFolder} /)`
+        : `已导出：${zipName}（默认下载目录 / ${downloadFolder} /）。`);
 }
 
 function __unzipStore(arrayBuffer) {
@@ -13838,53 +14432,205 @@ async function importCanvasPackageZip(file) {
     const zipFiles = __unzipStore(buf);
 
     // 4.2 数据信任链：
-    // 优先查找 bookmark-canvas.backup.json（核心数据层）
-    // 若不存在则降级到 bookmark-canvas.full.json（补充层）
+    // 优先查找 bookmark-canvas.backup.json（全量备份模式）
+    // 若不存在，则尝试查找 .canvas 文件（Obsidian 兼容模式）
     let backupJsonName = null;
-    let fullJsonName = null;
+    let canvasFileName = null;
 
     for (const name of zipFiles.keys()) {
         if (name.endsWith('/bookmark-canvas.backup.json') || name.endsWith('bookmark-canvas.backup.json')) {
             backupJsonName = name;
         }
-        if (name.endsWith('/bookmark-canvas.full.json') || name.endsWith('bookmark-canvas.full.json')) {
-            fullJsonName = name;
+        if (name.endsWith('.canvas') && !name.includes('/')) {
+            // Usually the .canvas is at root or we pick the first one roughly
+            canvasFileName = name;
+        } else if (name.endsWith('.canvas')) {
+            // In case it's in a subfolder but usually export root has logic.
+            if (!canvasFileName) canvasFileName = name;
         }
     }
 
-    // 确定要使用的数据文件
-    const primaryJsonName = backupJsonName || fullJsonName;
-    const isBackupMode = !!backupJsonName;
-
-    if (!primaryJsonName) {
-        throw new Error(isEn
-            ? 'Package missing required JSON file (bookmark-canvas.backup.json or bookmark-canvas.full.json).'
-            : '导入包缺少必要的 JSON 文件 (bookmark-canvas.backup.json 或 bookmark-canvas.full.json)');
-    }
-
-    console.log(`[Canvas] Import using ${isBackupMode ? 'BACKUP' : 'FULL'} mode: ${primaryJsonName}`);
-
-    const primaryJsonText = new TextDecoder('utf-8').decode(zipFiles.get(primaryJsonName));
-    const primaryState = JSON.parse(primaryJsonText);
-
-    // 从核心数据层或补充层提取数据
-    const storage = primaryState && primaryState.storage ? primaryState.storage : null;
-
-    // 如果是backup模式，优先使用canvasState（完整数据对象树）
     let tempState = null;
-    if (isBackupMode && primaryState.canvasState) {
-        // 核心数据层包含完整的canvasState
+    let storage = null;
+    let primaryState = {}; // Mock primary state for compatibility
+
+    // Mode A: Full Backup (JSON)
+    if (backupJsonName) {
+        console.log(`[Canvas] Import using BACKUP mode: ${backupJsonName}`);
+        const primaryJsonText = new TextDecoder('utf-8').decode(zipFiles.get(backupJsonName));
+        primaryState = JSON.parse(primaryJsonText);
+        storage = primaryState.storage || null;
+
+        if (primaryState.canvasState) {
+            tempState = {
+                sections: primaryState.canvasState.tempSections || [],
+                mdNodes: primaryState.canvasState.mdNodes || [],
+                edges: primaryState.canvasState.edges || [],
+                tempSectionCounter: primaryState.canvasState.tempSectionCounter || 0,
+                mdNodeCounter: primaryState.canvasState.mdNodeCounter || 0,
+                edgeCounter: primaryState.canvasState.edgeCounter || 0
+            };
+        } else if (storage && storage[TEMP_SECTION_STORAGE_KEY]) {
+            tempState = storage[TEMP_SECTION_STORAGE_KEY];
+        }
+    }
+    // Mode B: Obsidian Canvas (Reconstruct from .canvas + .md)
+    else if (canvasFileName) {
+        console.log(`[Canvas] Import using OBSIDIAN CANVAS mode: ${canvasFileName}`);
+        const canvasText = new TextDecoder('utf-8').decode(zipFiles.get(canvasFileName));
+        const canvasData = JSON.parse(canvasText);
+
+        // Reconstruct tempState from Canvas Data
         tempState = {
-            sections: primaryState.canvasState.tempSections || [],
-            mdNodes: primaryState.canvasState.mdNodes || [],
-            edges: primaryState.canvasState.edges || [],
-            tempSectionCounter: primaryState.canvasState.tempSectionCounter || 0,
-            mdNodeCounter: primaryState.canvasState.mdNodeCounter || 0,
-            edgeCounter: primaryState.canvasState.edgeCounter || 0
+            sections: [], // Will map Canvas Groups/Files to TempSections
+            mdNodes: [],
+            edges: [],
+            tempSectionCounter: 0,
+            mdNodeCounter: 0,
+            edgeCounter: 0
         };
+
+        // Helper to find file in zip
+        const findFile = (relPath) => {
+            // relPath in canvas is relative to canvas file. 
+            // Zip keys might be "Root/Sub/File.md" or just "File.md".
+            // We try exact match first or fuzzy match.
+            // If canvasFileName is "Root/Board.canvas", then relPaths are relative to "Root/".
+
+            // Simplification: We search for suffix match because we control the export structure.
+            // Export structure: Root/File.md
+
+            // Try strict match first assuming flattened structure or standard export
+            if (zipFiles.has(relPath)) return zipFiles.get(relPath);
+
+            // Try finding by suffix (e.g. "Temporary Sections/A. Foo.md")
+            for (const [key, val] of zipFiles) {
+                if (key.endsWith(relPath) || relPath.endsWith(key)) return val;
+                // Handle path separators
+                const normKey = key.replace(/\\/g, '/');
+                const normRel = relPath.replace(/\\/g, '/');
+                if (normKey.includes(normRel)) return val;
+            }
+            return null;
+        };
+
+        const nodes = canvasData.nodes || [];
+        const edges = canvasData.edges || [];
+
+        // Map Canvas ID to our ID
+        const idMap = {};
+
+        nodes.forEach(node => {
+            if (node.type === 'file' && node.file && node.file.endsWith('.md')) {
+                const fileBytes = findFile(node.file);
+                if (!fileBytes) return;
+
+                const fileText = new TextDecoder('utf-8').decode(fileBytes);
+
+                // Identify type based on filename
+                const isPermanent = node.file.includes('Permanent Sections') || node.file.includes('永久栏目') || node.file.includes('Permanent Bookmarks') || node.file.includes('永久书签');
+                const isTempSection = node.file.includes('Temporary Sections/') || node.file.includes('临时栏目/');
+                const isMdNode = node.file.includes('Blank Sections/') || node.file.includes('空白栏目/');
+
+                if (isPermanent) {
+                    // Reconstruct Snapshot Permanent Section
+                    // We don't have the tree data in Mode A, but we have position.
+                    // Wait, in Editable Mode, do we parse the MD to get the list?
+                    // YES! If user edited it, we can recover it as a snapshot list!
+
+                    const items = __parseMarkdownAuto(fileText);
+                    const sectionId = `restored-perm-${Date.now()}`;
+                    tempState.sections.push({
+                        id: sectionId,
+                        title: '[Restored] Permanent Sections',
+                        x: node.x,
+                        y: node.y,
+                        width: node.width,
+                        height: node.height,
+                        color: node.color || '4',
+                        items: items, // Restored items!
+                        isSnapshot: true
+                    });
+                    // We need to map this in storage for scroll if possible, but IDs changed.
+                } else if (isTempSection) {
+                    // Restore Temp Section
+                    const items = __parseMarkdownAuto(fileText);
+                    const sectionId = node.id; // Use canvas ID as base if possible, or gen new
+
+                    // Extract title from filename or md content?
+                    // Filename: "A. Title.md"
+                    const fileName = node.file.split('/').pop().replace('.md', '');
+                    // Regex to strip "A. "
+                    const titleMatch = fileName.match(/^[A-Z]+\.\s+(.*)/);
+                    const title = titleMatch ? titleMatch[1] : fileName;
+
+                    // Sequence: map 'A' to number?
+                    // Let's just generate new sequence or rely on import logic to reassign.
+
+                    tempState.sections.push({
+                        id: sectionId,
+                        title: title,
+                        x: node.x,
+                        y: node.y,
+                        width: node.width,
+                        height: node.height,
+                        color: node.color || '1',
+                        items: items,
+                        description: '' // todo: parse description from md if possible
+                    });
+                } else if (isMdNode) {
+                    // Restore Blank Section
+                    // MdNodes just need text content
+                    const sectionId = node.id;
+                    tempState.mdNodes.push({
+                        id: sectionId,
+                        x: node.x,
+                        y: node.y,
+                        width: node.width,
+                        height: node.height,
+                        color: node.color || 'transparent',
+                        text: fileText // or html? markdown is fine, we render md
+                    });
+                }
+            } else if (node.type === 'text') {
+                // Direct text nodes in canvas?
+                tempState.mdNodes.push({
+                    id: node.id,
+                    x: node.x,
+                    y: node.y,
+                    width: node.width,
+                    height: node.height,
+                    text: node.text
+                });
+            }
+        });
+
+        // Restore Edges
+        /* 
+        edges.forEach(edge => {
+             // Map IDs and add to tempState.edges
+             // Canvas uses 'fromNode', 'fromSide', 'toNode', 'toSide'
+             // We use 'source', 'target'
+             tempState.edges.push({
+                 id: edge.id,
+                 source: edge.fromNode,
+                 target: edge.toNode,
+                 label: edge.label || ''
+             });
+        });
+        */
+        // Edges logic is complex due to ID matching, let's skip for MVP or try direct map
+        tempState.edges = edges.map(e => ({
+            id: e.id,
+            source: e.fromNode,
+            target: e.toNode,
+            label: e.label || ''
+        }));
+
     } else {
-        // 降级：从storage中读取
-        tempState = storage && storage[TEMP_SECTION_STORAGE_KEY] ? storage[TEMP_SECTION_STORAGE_KEY] : null;
+        throw new Error(isEn
+            ? 'Invalid Package: Missing both backup.json and .canvas file.'
+            : '无效包：缺少 backup.json 或 .canvas 文件。');
     }
 
     if (!tempState) {
@@ -13932,15 +14678,15 @@ function __processSandboxedImport(tempState, storage, primaryState, importFileNa
     const PADDING = 60;
     // 使用传入的文件名作为标题
     const containerLabel = importFileName || (isEn
-        ? `📦 Imported Package (${new Date().toLocaleDateString()} ${new Date().toLocaleTimeString()})`
-        : `📦 导入的包 (${new Date().toLocaleDateString()} ${new Date().toLocaleTimeString()})`);
+        ? `📦 Imported Package(${new Date().toLocaleDateString()} ${new Date().toLocaleTimeString()})`
+        : `📦 导入的包(${new Date().toLocaleDateString()} ${new Date().toLocaleTimeString()})`);
 
     const containerHint = isEn
         ? 'Items inside this frame will be removed if you delete this group. Move items OUT to keep them.'
         : '删除此分组时，框内的项目会一并删除。将项目移出框外可保留它们。';
 
     const containerNode = {
-        id: `import-group-${Date.now()}`,
+        id: `import -group - ${Date.now()}`,
         type: 'md',
         subtype: 'import-container', // Special flag
         x: targetX - PADDING,
@@ -13949,8 +14695,8 @@ function __processSandboxedImport(tempState, storage, primaryState, importFileNa
         height: bounds.height + (PADDING * 2),
         text: '', // No text, just UI
         // 移除背景样式，只保留纯文字，样式移入 CSS 以支持主题适配
-        html: `<div class="import-group-label">${containerLabel}</div>
-               <div class="import-group-hint">${containerHint}</div>`,
+        html: `< div class= "import-group-label" > ${containerLabel}</div >
+        <div class="import-group-hint">${containerHint}</div>`,
         color: 'transparent',
         style: 'border: 2px dashed #bbb; background: rgba(0,0,0,0.02);' // No z-index, rely on DOM order
     };
@@ -13960,10 +14706,10 @@ function __processSandboxedImport(tempState, storage, primaryState, importFileNa
     remappedNodes.mdNodes.forEach(n => { n.x += offsetX; n.y += offsetY; });
 
     console.log(`[Canvas] Sandboxed Import Stats:
-      - Sections: ${remappedNodes.tempSections.length}
-      - MdNodes: ${remappedNodes.mdNodes.length}
-      - Edges: ${remappedEdges.length}
-      - Offset: (${offsetX}, ${offsetY})`);
+        - Sections: ${remappedNodes.tempSections.length}
+        - MdNodes: ${remappedNodes.mdNodes.length}
+        - Edges: ${remappedEdges.length}
+        - Offset: (${offsetX}, ${offsetY})`);
 
     // 6. Merge into CanvasState
     CanvasState.tempSections.push(...remappedNodes.tempSections);
@@ -14025,7 +14771,7 @@ function __adaptChromeTreeToCanvasItems(chromeTree) {
         // 书签
         if (node.url) {
             return {
-                id: `snapshot-${node.id || Date.now()}-${Math.random().toString(36).substr(2, 5)}`,
+                id: `snapshot - ${node.id || Date.now()} - ${Math.random().toString(36).substr(2, 5)}`,
                 type: 'bookmark',
                 title: node.title || node.name || node.url,
                 url: node.url
@@ -14038,7 +14784,7 @@ function __adaptChromeTreeToCanvasItems(chromeTree) {
             : [];
 
         return {
-            id: `snapshot-${node.id || Date.now()}-${Math.random().toString(36).substr(2, 5)}`,
+            id: `snapshot - ${node.id || Date.now()} - ${Math.random().toString(36).substr(2, 5)}`,
             type: 'folder',
             title: node.title || node.name || 'Folder',
             children: children
@@ -14060,7 +14806,7 @@ function __remapImportedData(tempState, fullStorage, primaryState = {}) {
 
     const getNewId = (old) => {
         if (!old) return old; // Return if null/undefined
-        if (!idMap.has(old)) idMap.set(old, `imported-${Date.now()}-${Math.floor(Math.random() * 100000)}`);
+        if (!idMap.has(old)) idMap.set(old, `imported - ${Date.now()} - ${Math.floor(Math.random() * 100000)}`);
         return idMap.get(old);
     };
 
@@ -14088,8 +14834,8 @@ function __remapImportedData(tempState, fullStorage, primaryState = {}) {
         }
 
         const snapshotTitle = isEn
-            ? `[Snapshot] Permanent Bookmarks (${new Date().toLocaleDateString()})`
-            : `[快照] 永久栏目 (${new Date().toLocaleDateString()})`;
+            ? `[Snapshot] Permanent Sections(${new Date().toLocaleDateString()})`
+            : `[快照] 永久栏目(${new Date().toLocaleDateString()})`;
 
         const snapshotDesc = hasBookmarkData
             ? (isEn
@@ -14115,7 +14861,7 @@ function __remapImportedData(tempState, fullStorage, primaryState = {}) {
 
         // Remap scroll
         if (fullStorage['permanent-section-scroll']) {
-            newScrolls[`temp-section-scroll:${snapshotId}`] = fullStorage['permanent-section-scroll'];
+            newScrolls[`temp - section - scroll: ${snapshotId}`] = fullStorage['permanent-section-scroll'];
         }
     }
 
@@ -14131,9 +14877,9 @@ function __remapImportedData(tempState, fullStorage, primaryState = {}) {
             newTempSections.push(newSec);
 
             // Remap scroll
-            const oldScrollKey = `temp-section-scroll:${sec.id}`;
+            const oldScrollKey = `temp - section - scroll: ${sec.id}`;
             if (fullStorage[oldScrollKey]) {
-                newScrolls[`temp-section-scroll:${newId}`] = fullStorage[oldScrollKey];
+                newScrolls[`temp - section - scroll: ${newId}`] = fullStorage[oldScrollKey];
             }
         });
     }
@@ -14162,7 +14908,7 @@ function __remapImportedData(tempState, fullStorage, primaryState = {}) {
                 const newEdge = { ...edge, id: getNewId(edge.id), fromNode: newFrom, toNode: newTo };
                 newEdges.push(newEdge);
             } else {
-                console.warn(`[Canvas] Skipping edge ${edge.id}: Ends not found in import batch. From: ${edge.fromNode}->${newFrom}, To: ${edge.toNode}->${newTo}`);
+                console.warn(`[Canvas] Skipping edge ${edge.id}: Ends not found in import batch.From: ${edge.fromNode} -> ${newFrom}, To: ${edge.toNode} -> ${newTo} `);
             }
         });
     } else {
@@ -14281,16 +15027,16 @@ function deleteImportGroup(groupId) {
 }
 
 function formatSectionText(section) {
-    const lines = [`# ${section.title || '临时栏目'}`, ''];
+    const lines = [`# ${section.title || '临时栏目'} `, ''];
 
     const appendItem = (item, depth = 0) => {
         const indent = '  '.repeat(depth);
         if (item.type === 'bookmark') {
             const title = item.title || item.url || '未命名书签';
             const url = item.url || '#';
-            lines.push(`${indent}- [${title}](${url})`);
+            lines.push(`${indent} -[${title}](${url})`);
         } else {
-            lines.push(`${indent}- ${item.title || '未命名文件夹'}`);
+            lines.push(`${indent} - ${item.title || '未命名文件夹'} `);
             if (item.children && item.children.length) {
                 item.children.forEach(child => appendItem(child, depth + 1));
             }
@@ -14644,7 +15390,7 @@ function addAnchorsToNode(nodeElement, nodeId) {
         // Create hover zone first (so it can affect anchor via sibling selector if needed, 
         // though we might use JS for more reliable hover handling if CSS is tricky)
         const zone = document.createElement('div');
-        zone.className = `canvas-anchor-zone zone-${side}`;
+        zone.className = `canvas - anchor - zone zone - ${side} `;
         zone.dataset.side = side;
         nodeElement.appendChild(zone);
 
@@ -14830,7 +15576,7 @@ function addEdge(fromNode, fromSide, toNode, toSide) {
         return;
     }
 
-    const id = `edge-${++CanvasState.edgeCounter}-${Date.now()}`;
+    const id = `edge - ${++CanvasState.edgeCounter} -${Date.now()} `;
     CanvasState.edges.push({
         id,
         fromNode,

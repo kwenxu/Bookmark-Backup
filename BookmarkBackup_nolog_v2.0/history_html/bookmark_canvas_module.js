@@ -257,6 +257,8 @@ let cachedCanvasContent = null;
 // 性能优化：休眠管理节流
 let dormancyUpdateTimer = null;
 let dormancyUpdatePending = false;
+let lastDormancyCheckTime = 0; // [Fix] 用于滚动过程中的节流检查
+let lastResizeTime = 0; // [Fix] 用于防止Resize过程中的闪烁
 // 防止重复绑定：临时栏目书签链接点击处理器
 let tempLinkClickHandler = null;
 
@@ -3180,6 +3182,20 @@ function setupCanvasZoomAndPan() {
     if (zoomOutBtn) zoomOutBtn.addEventListener('click', () => animateZoomStep(1 / 1.2));
     if (zoomLocateBtn) zoomLocateBtn.addEventListener('click', locateToPermanentSection);
 
+    // [Fix] 窗口大小改变时，重新计算可视区域休眠状态
+    // 使用 debounce (300ms) 防止高频触发导致连续闪烁
+    let resizeTimer = null;
+    window.addEventListener('resize', () => {
+        lastResizeTime = Date.now(); // 记录最后一次 Resize 时间
+        if (resizeTimer) clearTimeout(resizeTimer);
+        resizeTimer = setTimeout(() => {
+            if (CanvasState.performanceMode !== 'unlimited') {
+                manageSectionDormancy();
+            }
+            updateCanvasScrollBounds({ recomputeBounds: true, initial: false });
+        }, 300);
+    });
+
     // 管理按钮和弹窗
     setupCanvasManageModal();
     // 快捷键帮助按钮和弹窗
@@ -3518,8 +3534,8 @@ function setCanvasZoom(zoom, centerX = null, centerY = null, options = {}) {
 
     const oldZoom = CanvasState.zoom;
 
-    // 限制缩放范围
-    zoom = Math.max(0.1, Math.min(3, zoom));
+    // 限制缩放范围 (0.006 ≈ 1% at base 0.6)
+    zoom = Math.max(0.006, Math.min(3, zoom));
 
     // 如果没有指定中心点，使用 workspace 的中心点
     if (centerX === null || centerY === null) {
@@ -3544,6 +3560,8 @@ function setCanvasZoom(zoom, centerX = null, centerY = null, options = {}) {
         container.style.setProperty('--canvas-scale', zoom);
         updateCanvasScrollBounds({ initial: false, recomputeBounds });
         savePanOffsetThrottled();
+        // [Fix] 缩放后立即检查唤醒状态，确保新进入视野的栏目可见
+        requestAnimationFrame(() => manageSectionDormancy());
     } else {
         // 滚动时使用极速平移（直接 transform）
         applyPanOffsetFast();
@@ -3554,7 +3572,13 @@ function setCanvasZoom(zoom, centerX = null, centerY = null, options = {}) {
     if (zoomValue) {
         const base = (CanvasState.baseZoom && CanvasState.baseZoom > 0) ? CanvasState.baseZoom : 1;
         const displayZoom = zoom / base;
-        zoomValue.textContent = Math.round(displayZoom * 100) + '%';
+        zoomValue.textContent = (displayZoom * 100).toFixed(0) + '%';
+        // [Fix] 如果小于 10%，显示一位小数
+        if (displayZoom < 0.1) {
+            zoomValue.textContent = (displayZoom * 100).toFixed(1) + '%';
+        } else {
+            zoomValue.textContent = Math.round(displayZoom * 100) + '%';
+        }
     }
 
     // 保存缩放级别
@@ -3618,6 +3642,9 @@ function applyPanOffsetFast() {
     // 使用 translate3d 启用硬件加速
     content.style.transform = `scale(${scale}) translate3d(${translateX}px, ${translateY}px, 0)`;
 
+    // [Fix] 移除交互过程中的实时唤醒检查，通过 onScrollStop 在停止时统一处理
+    // 之前尝试的 150ms 节流检查会导致高频 DOM 操作引发闪烁
+
     // [OPT] 只有在非快速缩放模式下才更新背景网格变量
     // 如果正在缩放(is-zooming)，网格是隐藏的，更新变量纯属浪费性能
     const workspace = document.getElementById('canvasWorkspace');
@@ -3653,11 +3680,24 @@ function onScrollStop() {
     const content = getCachedContent();
 
     if (container && content) {
+        // [Fix] 在切换渲染模式（Inline Transform -> CSS Vars）前，强制关闭过渡
+        // 防止移除 Inline 样式瞬间触发 CSS transition 导致的闪烁/回弹
+        const originalTransition = content.style.transition;
+        content.style.transition = 'none';
+
         // 恢复使用 CSS 变量
         container.style.setProperty('--canvas-scale', CanvasState.zoom);
         container.style.setProperty('--canvas-pan-x', `${CanvasState.panOffsetX}px`);
         container.style.setProperty('--canvas-pan-y', `${CanvasState.panOffsetY}px`);
         content.style.transform = ''; // 清除直接 transform
+
+        // 强制回流，确保上面的变更立即生效且无动画
+        void content.offsetHeight;
+
+        // 恢复过渡设置（下一帧）
+        requestAnimationFrame(() => {
+            content.style.transition = '';
+        });
     }
 
     // 启动惯性滚动（拖尾阻尼效果）
@@ -9456,6 +9496,11 @@ function renderMdNode(node) {
             toggleMdColorPopover(toolbar, node, btn);
         } else if (action === 'md-color-preset') {
             const preset = String(btn.getAttribute('data-color') || '').trim();
+            // 更新颜色历史
+            const newColor = presetToHex(preset);
+            if (newColor && node.colorHex) {
+                CanvasState.mdNodePrevColor = node.colorHex;
+            }
             setMdNodeColor(node, preset);
             closeMdColorPopover(toolbar);
         } else if (action === 'md-color-default') {
@@ -9468,7 +9513,36 @@ function renderMdNode(node) {
         } else if (action === 'md-color-picker-toggle') {
             // RGB选择器切换由ensureMdColorPopover中的事件处理
         } else if (action === 'md-color-custom') {
-            // handled by input change event
+            // 自定义颜色快捷选项（灰色、默认蓝色等）
+            const customColor = btn.getAttribute('data-color');
+            if (customColor) {
+                // 更新颜色历史
+                if (node.colorHex) {
+                    CanvasState.mdNodePrevColor = node.colorHex;
+                }
+                node.color = null;
+                node.colorHex = customColor;
+                const el2 = document.getElementById(node.id);
+                if (el2) applyMdNodeColor(el2, node);
+                saveTempNodes();
+                closeMdColorPopover(toolbar);
+            }
+        } else if (action === 'md-color-recent') {
+            // 上一次颜色
+            const recentColor = btn.getAttribute('data-color') || CanvasState.mdNodePrevColor;
+            if (recentColor) {
+                const oldColor = node.colorHex;
+                node.color = null;
+                node.colorHex = recentColor;
+                const el2 = document.getElementById(node.id);
+                if (el2) applyMdNodeColor(el2, node);
+                // 交换颜色历史
+                if (oldColor) {
+                    CanvasState.mdNodePrevColor = oldColor;
+                }
+                saveTempNodes();
+                closeMdColorPopover(toolbar);
+            }
         } else if (action === 'md-focus') {
             selectMdNode(node.id);
             locateAndZoomToMdNode(node.id);
@@ -9578,14 +9652,14 @@ function renderMdNode(node) {
 
 // —— 工具栏动作实现 ——
 function presetToHex(preset) {
-    // Obsidian Canvas 风格颜色
+    // Obsidian Canvas 官方颜色：红橙黄绿青紫
     switch (String(preset)) {
-        case '1': return '#ff6666'; // red
-        case '2': return '#ffaa66'; // orange
-        case '3': return '#ffdd66'; // yellow
-        case '4': return '#66dd99'; // green
-        case '5': return '#66bbff'; // blue
-        case '6': return '#bb99ff'; // purple
+        case '1': return '#fb464c'; // 红色 (Red)
+        case '2': return '#e9973f'; // 橙色 (Orange)
+        case '3': return '#e0de71'; // 黄色 (Yellow)
+        case '4': return '#44cf6e'; // 绿色 (Green)
+        case '5': return '#53dfdd'; // 青蓝色 (Cyan)
+        case '6': return '#a882ff'; // 紫色 (Purple)
         default: return null;
     }
 }
@@ -9642,17 +9716,20 @@ function ensureMdColorPopover(toolbar, node) {
     const lang = typeof currentLang !== 'undefined' ? currentLang : 'zh';
     const rgbPickerTitle = lang === 'en' ? 'RGB Color Picker' : 'RGB颜色选择器';
     const customColorTitle = lang === 'en' ? 'Select custom color' : '选择自定义颜色';
-    const defaultTitle = lang === 'en' ? 'Default color' : '默认颜色';
+    const recentTitle = lang === 'en' ? 'Previous color' : '上一次颜色';
 
     // 使用 Obsidian Canvas 风格的颜色
     pop.innerHTML = `
-        <span class="md-color-chip" data-action="md-color-default" title="${defaultTitle}" style="background: repeating-linear-gradient(45deg, #eee, #eee 4px, #fff 4px, #fff 8px); border:1px solid #c9d1d9;"></span>
-        <span class="md-color-chip" data-action="md-color-preset" data-color="1" style="background:#ff6666"></span>
-        <span class="md-color-chip" data-action="md-color-preset" data-color="2" style="background:#ffaa66"></span>
-        <span class="md-color-chip" data-action="md-color-preset" data-color="3" style="background:#ffdd66"></span>
-        <span class="md-color-chip" data-action="md-color-preset" data-color="4" style="background:#66dd99"></span>
-        <span class="md-color-chip" data-action="md-color-preset" data-color="5" style="background:#66bbff"></span>
-        <span class="md-color-chip" data-action="md-color-preset" data-color="6" style="background:#bb99ff"></span>
+        <span class="md-color-chip" data-action="md-color-custom" data-color="#888888" style="background:#888888" title="${lang === 'en' ? 'Gray' : '灰色'}"></span>
+        <span class="md-color-chip" data-action="md-color-custom" data-color="#66bbff" style="background:#66bbff" title="${lang === 'en' ? 'Default Blue' : '默认蓝色'}"></span>
+        <span class="md-color-chip" data-action="md-color-preset" data-color="1" style="background:#fb464c"></span>
+        <span class="md-color-chip" data-action="md-color-preset" data-color="2" style="background:#e9973f"></span>
+        <span class="md-color-chip" data-action="md-color-preset" data-color="3" style="background:#e0de71"></span>
+        <span class="md-color-chip" data-action="md-color-preset" data-color="4" style="background:#44cf6e"></span>
+        <span class="md-color-chip" data-action="md-color-preset" data-color="5" style="background:#53dfdd"></span>
+        <span class="md-color-chip" data-action="md-color-preset" data-color="6" style="background:#a882ff"></span>
+        <span class="md-color-divider" aria-hidden="true"></span>
+        <span class="md-color-chip md-color-recent-chip" data-action="md-color-recent" title="${recentTitle}"></span>
         <button class="md-color-chip md-color-picker-btn" data-action="md-color-picker-toggle" title="${rgbPickerTitle}">
             <svg viewBox="0 0 24 24" width="14" height="14">
                 <circle cx="12" cy="12" r="10" fill="url(#rainbow-gradient)" />
@@ -9671,11 +9748,26 @@ function ensureMdColorPopover(toolbar, node) {
         </button>
     `;
 
+    // 上一次颜色功能
+    const recentChipEl = pop.querySelector('.md-color-recent-chip');
+    const resolveHistoryColor = (value) => {
+        const normalized = normalizeHexColor(value || '');
+        return normalized ? `#${normalized}` : '#66bbff';
+    };
+    const syncHistoryChip = (value) => {
+        if (!recentChipEl) return;
+        const safe = resolveHistoryColor(value);
+        recentChipEl.dataset.color = safe;
+        recentChipEl.style.backgroundColor = safe;
+    };
+    // 初始化上一次颜色
+    syncHistoryChip(CanvasState.mdNodePrevColor || '#66bbff');
+
     // RGB选择器UI（显示在色盘上方）
     const rgbPicker = document.createElement('div');
     rgbPicker.className = 'md-rgb-picker';
     rgbPicker.innerHTML = `
-        <input class="md-color-input" type="color" value="${node.colorHex || '#2563eb'}" title="${customColorTitle}" />
+        <input class="md-color-input" type="color" value="${node.colorHex || '#66bbff'}" title="${customColorTitle}" />
     `;
     pop.appendChild(rgbPicker);
 
@@ -12471,7 +12563,7 @@ function renderTempNode(section) {
     const colorInput = document.createElement('input');
     colorInput.type = 'color';
     colorInput.className = 'temp-node-color-input md-color-input';
-    colorInput.value = section.color || TEMP_SECTION_DEFAULT_COLOR;
+    colorInput.value = section.color || '#66bbff';
     colorInput.title = colorLabel;
 
     const lockBtn = document.createElement('button');
@@ -12508,31 +12600,19 @@ function renderTempNode(section) {
     const recentTitle = (typeof currentLang !== 'undefined' && currentLang === 'en') ? 'Previous color' : '上上次颜色';
     const chipRow = document.createElement('div');
     chipRow.className = 'temp-color-chip-row';
+    const lang = typeof currentLang !== 'undefined' ? currentLang : 'zh';
     chipRow.innerHTML = `
-        <span class="md-color-chip" data-action="md-color-preset" data-color="1" style="background:#ff6666"></span>
-        <span class="md-color-chip" data-action="md-color-preset" data-color="2" style="background:#ffaa66"></span>
-        <span class="md-color-chip" data-action="md-color-preset" data-color="3" style="background:#ffdd66"></span>
-        <span class="md-color-chip" data-action="md-color-preset" data-color="4" style="background:#66dd99"></span>
-        <span class="md-color-chip" data-action="md-color-preset" data-color="5" style="background:#66bbff"></span>
-        <span class="md-color-chip" data-action="md-color-preset" data-color="6" style="background:#bb99ff"></span>
+        <span class="md-color-chip" data-action="md-color-custom" data-color="#888888" style="background:#888888" title="${lang === 'en' ? 'Gray' : '灰色'}"></span>
+        <span class="md-color-chip" data-action="md-color-custom" data-color="#66bbff" style="background:#66bbff" title="${lang === 'en' ? 'Default Blue' : '默认蓝色'}"></span>
+        <span class="md-color-chip" data-action="md-color-preset" data-color="1" style="background:#fb464c"></span>
+        <span class="md-color-chip" data-action="md-color-preset" data-color="2" style="background:#e9973f"></span>
+        <span class="md-color-chip" data-action="md-color-preset" data-color="3" style="background:#e0de71"></span>
+        <span class="md-color-chip" data-action="md-color-preset" data-color="4" style="background:#44cf6e"></span>
+        <span class="md-color-chip" data-action="md-color-preset" data-color="5" style="background:#53dfdd"></span>
+        <span class="md-color-chip" data-action="md-color-preset" data-color="6" style="background:#a882ff"></span>
         <span class="temp-color-divider" aria-hidden="true"></span>
         <span class="md-color-chip temp-color-current-chip" data-action="md-color-recent" title="${recentTitle}"></span>
-        <button class="md-color-chip md-color-picker-btn" data-action="md-color-picker-toggle" title="${rgbPickerTitle}">
-            <svg viewBox="0 0 24 24" width="14" height="14">
-                <circle cx="12" cy="12" r="10" fill="url(#rainbow-gradient-temp)" />
-                <defs>
-                    <linearGradient id="rainbow-gradient-temp" x1="0%" y1="0%" x2="100%" y2="100%">
-                        <stop offset="0%" style="stop-color:#ff0000" />
-                        <stop offset="16.67%" style="stop-color:#ff9900" />
-                        <stop offset="33.33%" style="stop-color:#ffff00" />
-                        <stop offset="50%" style="stop-color:#00ff00" />
-                        <stop offset="66.67%" style="stop-color:#0099ff" />
-                        <stop offset="83.33%" style="stop-color:#9900ff" />
-                        <stop offset="100%" style="stop-color:#ff0099" />
-                    </linearGradient>
-                </defs>
-            </svg>
-        </button>
+        <button class="md-color-chip md-color-picker-btn temp-rainbow-btn" data-action="md-color-picker-toggle" title="${rgbPickerTitle}"></button>
     `;
     const defaultChipEl = chipRow.querySelector('.temp-color-current-chip');
     const resolveHistoryColor = (value) => {
@@ -12649,6 +12729,18 @@ function renderTempNode(section) {
             updateColorHistory(nextColor);
             saveTempNodes();
             closeColorPopover();
+        }
+
+        if (action === 'md-color-custom') {
+            const customColor = btn.getAttribute('data-color');
+            if (customColor) {
+                section.color = customColor;
+                applyTempSectionColor(section, nodeElement, header, colorBtn, colorInput);
+                propagateTempSectionColor(section, customColor);
+                updateColorHistory(customColor);
+                saveTempNodes();
+                closeColorPopover();
+            }
         }
     });
 
@@ -13108,6 +13200,48 @@ function renderTempNode(section) {
     }
 
     addAnchorsToNode(nodeElement, section.id);
+}
+
+/**
+ * 将 Obsidian Canvas 颜色格式转换为十六进制颜色
+ * Obsidian 使用数字 1-6 表示预设颜色，或直接使用十六进制
+ * @param {string|number} obsidianColor - Obsidian 颜色值
+ * @returns {string} - 十六进制颜色
+ */
+function convertObsidianColor(obsidianColor) {
+    if (!obsidianColor) return null;
+
+    // Obsidian 官方预设颜色映射 (1-6)：红橙黄绿青紫
+    const OBSIDIAN_COLOR_MAP = {
+        '1': '#fb464c', // 红色 (Red)
+        '2': '#e9973f', // 橙色 (Orange)
+        '3': '#e0de71', // 黄色 (Yellow)
+        '4': '#44cf6e', // 绿色 (Green)
+        '5': '#53dfdd', // 青蓝色 (Cyan)
+        '6': '#a882ff'  // 紫色 (Purple)
+    };
+
+    const colorStr = String(obsidianColor).trim();
+
+    // 如果是数字 1-6，转换为对应的十六进制颜色
+    if (OBSIDIAN_COLOR_MAP[colorStr]) {
+        console.log(`[Canvas] 转换 Obsidian 颜色: ${colorStr} -> ${OBSIDIAN_COLOR_MAP[colorStr]}`);
+        return OBSIDIAN_COLOR_MAP[colorStr];
+    }
+
+    // 如果已经是十六进制颜色，直接返回
+    if (colorStr.startsWith('#')) {
+        return colorStr;
+    }
+
+    // 如果是 6 位十六进制（不带 #）
+    if (/^[0-9a-f]{6}$/i.test(colorStr)) {
+        return `#${colorStr}`;
+    }
+
+    // 其他情况返回原值
+    console.log(`[Canvas] 保留原始颜色值: ${obsidianColor}`);
+    return obsidianColor;
 }
 
 function normalizeHexColor(hex) {
@@ -14241,6 +14375,12 @@ function manageSectionDormancy() {
     // [OPT] 恢复 1500px 缓冲距离，确保离得较远时才休眠，保证正常体验
     const margin = currentSettings ? Math.max(currentSettings.margin, 1500) : 1500;
 
+    // [Fix] 防止 Resize 过程中闪烁：如果最近 300ms 内发生过 Resize，跳过本次更新
+    // (Resize 事件本身会触发 updateCanvasScrollBounds -> computeCanvasContentBounds，可能间接触发重绘)
+    if (Date.now() - lastResizeTime < 300) {
+        return;
+    }
+
     // 无限制模式：不执行休眠
     if (margin === Infinity) {
         CanvasState.tempSections.forEach(section => {
@@ -14296,13 +14436,26 @@ function manageSectionDormancy() {
             wakeSection(section);
             activeCount++;
         } else {
+            // [Fix] 交互过程中暂停调度新的休眠，防止快速操作时误判导致闪烁
+            // 检测是否正在进行用户交互（滚动、拖动、缩放）
+            const isInteracting = isScrolling || CanvasState.isPanning || CanvasState.dragState.isDragging || (workspace.classList.contains('is-zooming'));
+
             if (!section.dormant) {
-                const timerInfo = CanvasState.dormancyTimers.get(section.id);
-                if (!timerInfo) {
-                    scheduleDormancy(section, 'viewport');
-                    scheduledCount++;
-                    activeCount++;
+                if (!isInteracting) {
+                    const timerInfo = CanvasState.dormancyTimers.get(section.id);
+                    if (!timerInfo) {
+                        scheduleDormancy(section, 'viewport');
+                        scheduledCount++;
+                        activeCount++;
+                    } else {
+                        activeCount++;
+                    }
                 } else {
+                    // 交互中：保持唤醒状态，取消可能存在的休眠倒计时
+                    const timerInfo = CanvasState.dormancyTimers.get(section.id);
+                    if (timerInfo) {
+                        cancelDormancyTimer(section.id);
+                    }
                     activeCount++;
                 }
             } else {
@@ -14396,12 +14549,12 @@ function clearAllTempNodes() {
     const isEn = lang === 'en' || lang === 'en_US' || lang === 'en-GB' || String(lang).toLowerCase().startsWith('en');
     const text = {
         noneToClear: isEn
-            ? 'Nothing to clear (nodes with edges are kept).'
-            : '没有可清理的未标注/空白节点（已自动跳过有连接线的节点）。',
+            ? 'Nothing to clear (nodes with descriptions, custom titles, or edges are kept).'
+            : '没有可清理的未标注节点（有说明、自定义标题或连接线的节点已自动跳过）。',
         confirmTitle: isEn ? 'Confirm' : '确认',
         confirmBody: (tempCount, mdCount) => isEn
-            ? `Will clear:\n- ${tempCount} temp bookmark section(s) with empty description\n- ${mdCount} empty blank node(s)\n\nNote: nodes with edges will be kept.\n\nContinue?`
-            : `将清理：\n- ${tempCount} 个「说明为空」的书签型临时栏目\n- ${mdCount} 个空的「空白栏目」\n\n注：带连接线的节点会被保留。\n\n确定继续吗？`
+            ? `Will clear:\n- ${tempCount} unlabeled temp bookmark section(s) (no description, default title)\n- ${mdCount} empty blank node(s)\n\nNote: nodes with descriptions, custom titles, or edges will be kept.\n\nContinue?`
+            : `将清理：\n- ${tempCount} 个未标注的书签型临时栏目（无说明、默认标题）\n- ${mdCount} 个空的「空白栏目」\n\n注：有说明、自定义标题或连接线的节点会被保留。\n\n确定继续吗？`
     };
 
     const hasEdgeForNode = (nodeId) => {
@@ -14421,8 +14574,40 @@ function clearAllTempNodes() {
         return t.replace(/\u200B/g, '').trim().length === 0;
     };
 
+    // 判断标题是否为自动生成的默认格式（用户未修改）
+    // 自动生成的标题格式包括：
+    // 1. 时间戳格式：YYYY-MM-DD HH:MM:SS
+    // 2. 导入书签格式：导入的书签 (X) - 时间 / Imported Bookmarks (X) - 时间
+    // 3. 浏览器拖入格式：日期 时间 | X个书签 | 浏览器拖入 / Browser drop
+    // 4. 空标题
+    const isAutoGeneratedTitle = (title) => {
+        if (!title || typeof title !== 'string') return true;
+        const t = title.trim();
+        if (!t) return true;
+
+        // 时间戳格式：YYYY-MM-DD HH:MM:SS
+        if (/^\d{4}-\d{2}-\d{2}\s+\d{2}:\d{2}:\d{2}$/.test(t)) return true;
+
+        // 导入书签格式（中文）：导入的书签 (X) - 时间
+        if (/^导入的书签\s*\(\d+\)\s*-/.test(t)) return true;
+
+        // 导入书签格式（英文）：Imported Bookmarks (X) - 时间
+        if (/^Imported Bookmarks\s*\(\d+\)\s*-/i.test(t)) return true;
+
+        // 浏览器拖入格式：日期 时间 | X个书签 | 浏览器拖入 / Browser drop
+        if (/\|\s*\d+\s*(个书签|bookmarks)\s*\|\s*(浏览器拖入|Browser drop)/i.test(t)) return true;
+
+        // 其他情况认为是用户自定义的标题
+        return false;
+    };
+
+    // 清除「未标注」的临时栏目：
+    // - 说明为空
+    // - 标题是自动生成的（未被用户修改）
+    // - 没有连接线
+    // 注：即使有书签内容，只要没有标注也会被清除
     const removableTempIds = CanvasState.tempSections
-        .filter(section => section && section.id && isEmptyDesc(section.description) && !hasEdgeForNode(section.id))
+        .filter(section => section && section.id && isEmptyDesc(section.description) && isAutoGeneratedTitle(section.title) && !hasEdgeForNode(section.id))
         .map(section => section.id);
 
     const removableMdIds = CanvasState.mdNodes
@@ -14456,10 +14641,12 @@ function clearAllTempNodes() {
 
     // 清理可能的选中态
     if (CanvasState.selectedTempSectionId && removableTempIdSet.has(CanvasState.selectedTempSectionId)) {
-        clearTempSelection();
+        CanvasState.selectedTempSectionId = null;
+        try { if (typeof clearTempSelection === 'function') clearTempSelection(); } catch (_) { }
     }
     if (CanvasState.selectedMdNodeId && removableMdIdSet.has(CanvasState.selectedMdNodeId)) {
-        clearMdSelection();
+        CanvasState.selectedMdNodeId = null;
+        try { if (typeof clearMdSelection === 'function') clearMdSelection(); } catch (_) { }
     }
 
     // 重新计算序号：让剩余临时栏目的序号连续
@@ -14469,6 +14656,416 @@ function clearAllTempNodes() {
     scheduleBoundsUpdate();
     scheduleScrollbarUpdate();
     scheduleDormancyUpdate();
+}
+
+// =============================================================================
+// 清除全部（永久栏目除外）
+// =============================================================================
+
+function clearAllExceptPermanent() {
+    const lang = (typeof currentLang === 'string' && currentLang) ? currentLang : 'zh_CN';
+    const isEn = lang === 'en' || lang === 'en_US' || lang === 'en-GB' || String(lang).toLowerCase().startsWith('en');
+
+    const tempCount = CanvasState.tempSections.length;
+    const mdCount = CanvasState.mdNodes.length;
+    const edgeCount = CanvasState.edges.length;
+    const total = tempCount + mdCount;
+
+    if (!total) {
+        alert(isEn ? 'Nothing to clear.' : '没有可清理的内容。');
+        return;
+    }
+
+    const confirmMsg = isEn
+        ? `This will clear ALL content except the permanent section:\n\n- ${tempCount} bookmark temp section(s)\n- ${mdCount} blank node(s)\n- ${edgeCount} connection edge(s)\n\nThis action cannot be undone. Continue?`
+        : `这将清除除永久栏目外的所有内容：\n\n- ${tempCount} 个书签型临时栏目\n- ${mdCount} 个空白栏目\n- ${edgeCount} 条连接线\n\n此操作不可撤销。确定继续吗？`;
+
+    if (!confirm(confirmMsg)) return;
+
+    // 删除所有临时栏目的DOM
+    CanvasState.tempSections.forEach(section => {
+        if (section && section.id) {
+            const el = document.getElementById(section.id);
+            if (el) el.remove();
+        }
+    });
+
+    // 删除所有空白栏目的DOM
+    CanvasState.mdNodes.forEach(node => {
+        if (node && node.id) {
+            const el = document.getElementById(node.id);
+            if (el) el.remove();
+        }
+    });
+
+    // 清空数据
+    CanvasState.tempSections = [];
+    CanvasState.mdNodes = [];
+    CanvasState.edges = [];
+
+    // 清除连接线选中状态
+    CanvasState.selectedEdgeId = null;
+    try { if (typeof hideEdgeToolbar === 'function') hideEdgeToolbar(); } catch (_) { }
+
+    // 清理选中态（使用try-catch，因为这些函数可能在其他文件中定义）
+    CanvasState.selectedTempSectionId = null;
+    CanvasState.selectedMdNodeId = null;
+    try { if (typeof clearTempSelection === 'function') clearTempSelection(); } catch (_) { }
+    try { if (typeof clearMdSelection === 'function') clearMdSelection(); } catch (_) { }
+
+    // 清空SVG中的所有连接线DOM元素
+    const svg = document.querySelector('.canvas-edges');
+    if (svg) {
+        Array.from(svg.querySelectorAll('.canvas-edge, .canvas-edge-label, .canvas-edge-label-bg, .canvas-edge-hit-area, foreignObject.edge-label-fo')).forEach(el => {
+            el.remove();
+        });
+    }
+
+    // 重新渲染连接线（会清空）
+    renderEdges();
+
+    saveTempNodes();
+    scheduleBoundsUpdate();
+    scheduleScrollbarUpdate();
+    scheduleDormancyUpdate();
+
+    const successMsg = isEn
+        ? `Cleared ${tempCount} temp section(s), ${mdCount} blank node(s), and ${edgeCount} edge(s).`
+        : `已清除 ${tempCount} 个临时栏目、${mdCount} 个空白栏目和 ${edgeCount} 条连接线。`;
+    showCanvasToast(successMsg, 'success');
+}
+
+// =============================================================================
+// 点击清除模式
+// =============================================================================
+
+// 点击清除模式状态
+let clickToClearModeActive = false;
+let clickToClearSelectedIds = new Set();
+
+function startClickToClearMode() {
+    const lang = (typeof currentLang === 'string' && currentLang) ? currentLang : 'zh_CN';
+    const isEn = lang === 'en' || lang === 'en_US' || lang === 'en-GB' || String(lang).toLowerCase().startsWith('en');
+
+    const tempCount = CanvasState.tempSections.length;
+    const mdCount = CanvasState.mdNodes.length;
+
+    if (!tempCount && !mdCount) {
+        alert(isEn ? 'No items to clear.' : '没有可清理的项目。');
+        return;
+    }
+
+    clickToClearModeActive = true;
+    clickToClearSelectedIds = new Set();
+
+    // 添加模式标识到画布
+    const workspace = document.getElementById('canvasWorkspace');
+    if (workspace) {
+        workspace.classList.add('click-to-clear-mode');
+    }
+
+    // 为所有临时栏目和空白栏目添加点击选择监听
+    addClickToClearListeners();
+
+    // 显示浮动工具栏
+    showClickToClearToolbar();
+}
+
+function addClickToClearListeners() {
+    // 为临时栏目添加点击监听
+    CanvasState.tempSections.forEach(section => {
+        if (!section || !section.id) return;
+        const el = document.getElementById(section.id);
+        if (!el) return;
+        el.classList.add('click-to-clear-selectable');
+        el.addEventListener('click', handleClickToClearSelect, true);
+    });
+
+    // 为空白栏目添加点击监听
+    CanvasState.mdNodes.forEach(node => {
+        if (!node || !node.id) return;
+        const el = document.getElementById(node.id);
+        if (!el) return;
+        el.classList.add('click-to-clear-selectable');
+        el.addEventListener('click', handleClickToClearSelect, true);
+    });
+}
+
+function handleClickToClearSelect(e) {
+    if (!clickToClearModeActive) return;
+
+    e.preventDefault();
+    e.stopPropagation();
+
+    const el = e.currentTarget;
+    const id = el.id;
+
+    if (clickToClearSelectedIds.has(id)) {
+        clickToClearSelectedIds.delete(id);
+        el.classList.remove('click-to-clear-selected');
+    } else {
+        clickToClearSelectedIds.add(id);
+        el.classList.add('click-to-clear-selected');
+    }
+
+    // 更新工具栏计数
+    updateClickToClearToolbar();
+}
+
+function showClickToClearToolbar() {
+    const lang = (typeof currentLang === 'string' && currentLang) ? currentLang : 'zh_CN';
+    const isEn = lang === 'en' || lang === 'en_US' || lang === 'en-GB' || String(lang).toLowerCase().startsWith('en');
+
+    // 移除已有的工具栏
+    const existing = document.getElementById('clickToClearToolbar');
+    if (existing) existing.remove();
+
+    const toolbar = document.createElement('div');
+    toolbar.id = 'clickToClearToolbar';
+    toolbar.className = 'click-to-clear-toolbar';
+    toolbar.innerHTML = `
+        <div class="click-to-clear-toolbar-content">
+            <span class="click-to-clear-hint">
+                <i class="fas fa-mouse-pointer"></i>
+                <span id="clickToClearHintText">${isEn ? 'Click items to select, then confirm to delete' : '点击选择要清除的项目，然后确认删除'}</span>
+            </span>
+            <span class="click-to-clear-count">
+                <span id="clickToClearCountText">${isEn ? 'Selected' : '已选择'}:</span>
+                <span id="clickToClearCountNum">0</span>
+            </span>
+            <div class="click-to-clear-actions">
+                <button class="click-to-clear-btn select-all" id="clickToClearSelectAllBtn">
+                    <i class="fas fa-check-double"></i>
+                    <span>${isEn ? 'Select All' : '全选'}</span>
+                </button>
+                <button class="click-to-clear-btn confirm" id="clickToClearConfirmBtn" disabled>
+                    <i class="fas fa-trash-alt"></i>
+                    <span>${isEn ? 'Delete' : '删除'}</span>
+                </button>
+                <button class="click-to-clear-btn cancel" id="clickToClearCancelBtn">
+                    <i class="fas fa-times"></i>
+                    <span>${isEn ? 'Cancel' : '取消'}</span>
+                </button>
+            </div>
+        </div>
+    `;
+
+    document.body.appendChild(toolbar);
+
+    // 绑定事件
+    document.getElementById('clickToClearSelectAllBtn').addEventListener('click', selectAllForClickToClear);
+    document.getElementById('clickToClearConfirmBtn').addEventListener('click', confirmClickToClear);
+    document.getElementById('clickToClearCancelBtn').addEventListener('click', cancelClickToClearMode);
+}
+
+function updateClickToClearToolbar() {
+    const countEl = document.getElementById('clickToClearCountNum');
+    const confirmBtn = document.getElementById('clickToClearConfirmBtn');
+
+    if (countEl) {
+        countEl.textContent = clickToClearSelectedIds.size;
+    }
+
+    if (confirmBtn) {
+        confirmBtn.disabled = clickToClearSelectedIds.size === 0;
+    }
+}
+
+function selectAllForClickToClear() {
+    // 选择所有临时栏目
+    CanvasState.tempSections.forEach(section => {
+        if (!section || !section.id) return;
+        const el = document.getElementById(section.id);
+        if (!el) return;
+        clickToClearSelectedIds.add(section.id);
+        el.classList.add('click-to-clear-selected');
+    });
+
+    // 选择所有空白栏目
+    CanvasState.mdNodes.forEach(node => {
+        if (!node || !node.id) return;
+        const el = document.getElementById(node.id);
+        if (!el) return;
+        clickToClearSelectedIds.add(node.id);
+        el.classList.add('click-to-clear-selected');
+    });
+
+    updateClickToClearToolbar();
+}
+
+function confirmClickToClear() {
+    const lang = (typeof currentLang === 'string' && currentLang) ? currentLang : 'zh_CN';
+    const isEn = lang === 'en' || lang === 'en_US' || lang === 'en-GB' || String(lang).toLowerCase().startsWith('en');
+
+    const count = clickToClearSelectedIds.size;
+    if (!count) return;
+
+    // 移除已有的确认弹窗
+    const existingPopup = document.getElementById('clickToClearConfirmPopup');
+    if (existingPopup) existingPopup.remove();
+
+    // 获取删除按钮的位置
+    const confirmBtn = document.getElementById('clickToClearConfirmBtn');
+    if (!confirmBtn) return;
+
+    const btnRect = confirmBtn.getBoundingClientRect();
+
+    // 创建确认弹窗
+    const popup = document.createElement('div');
+    popup.id = 'clickToClearConfirmPopup';
+    popup.className = 'click-to-clear-confirm-popup';
+    popup.style.left = `${btnRect.left + btnRect.width / 2}px`;
+    popup.style.bottom = `${window.innerHeight - btnRect.top + 8}px`;
+
+    popup.innerHTML = `
+        <div class="click-to-clear-confirm-content">
+            <div class="click-to-clear-confirm-icon">
+                <i class="fas fa-exclamation-triangle"></i>
+            </div>
+            <div class="click-to-clear-confirm-text">
+                ${isEn ? `Delete ${count} selected item(s)?` : `删除选中的 ${count} 个项目？`}
+            </div>
+            <div class="click-to-clear-confirm-hint">
+                ${isEn ? 'This action cannot be undone.' : '此操作不可撤销'}
+            </div>
+            <div class="click-to-clear-confirm-actions">
+                <button class="click-to-clear-confirm-btn cancel" id="clickToClearPopupCancelBtn">
+                    ${isEn ? 'Cancel' : '取消'}
+                </button>
+                <button class="click-to-clear-confirm-btn delete" id="clickToClearPopupDeleteBtn">
+                    <i class="fas fa-trash-alt"></i>
+                    ${isEn ? 'Delete' : '删除'}
+                </button>
+            </div>
+        </div>
+    `;
+
+    document.body.appendChild(popup);
+
+    // 绑定事件
+    document.getElementById('clickToClearPopupCancelBtn').addEventListener('click', () => {
+        popup.remove();
+    });
+
+    document.getElementById('clickToClearPopupDeleteBtn').addEventListener('click', () => {
+        popup.remove();
+        executeClickToClearDeletion();
+    });
+
+    // 点击弹窗外部关闭
+    const handleOutsideClick = (e) => {
+        if (!popup.contains(e.target) && e.target !== confirmBtn) {
+            popup.remove();
+            document.removeEventListener('click', handleOutsideClick);
+        }
+    };
+    // 延迟添加监听器，避免立即触发
+    setTimeout(() => {
+        document.addEventListener('click', handleOutsideClick);
+    }, 100);
+}
+
+// 实际执行删除操作
+function executeClickToClearDeletion() {
+    const lang = (typeof currentLang === 'string' && currentLang) ? currentLang : 'zh_CN';
+    const isEn = lang === 'en' || lang === 'en_US' || lang === 'en-GB' || String(lang).toLowerCase().startsWith('en');
+
+    const count = clickToClearSelectedIds.size;
+    const selectedIdSet = new Set(clickToClearSelectedIds);
+
+    // 删除选中的临时栏目
+    const removedTempIds = [];
+    CanvasState.tempSections.forEach(section => {
+        if (section && section.id && selectedIdSet.has(section.id)) {
+            removedTempIds.push(section.id);
+            const el = document.getElementById(section.id);
+            if (el) el.remove();
+        }
+    });
+    CanvasState.tempSections = CanvasState.tempSections.filter(s => s && !selectedIdSet.has(s.id));
+
+    // 删除选中的空白栏目
+    const removedMdIds = [];
+    CanvasState.mdNodes.forEach(node => {
+        if (node && node.id && selectedIdSet.has(node.id)) {
+            removedMdIds.push(node.id);
+            const el = document.getElementById(node.id);
+            if (el) el.remove();
+        }
+    });
+    CanvasState.mdNodes = CanvasState.mdNodes.filter(n => n && !selectedIdSet.has(n.id));
+
+    // 删除相关的连接线
+    CanvasState.edges = CanvasState.edges.filter(edge => {
+        if (!edge) return false;
+        return !selectedIdSet.has(edge.fromNode) && !selectedIdSet.has(edge.toNode);
+    });
+
+    // 清理选中态
+    if (CanvasState.selectedTempSectionId && selectedIdSet.has(CanvasState.selectedTempSectionId)) {
+        CanvasState.selectedTempSectionId = null;
+        try { if (typeof clearTempSelection === 'function') clearTempSelection(); } catch (_) { }
+    }
+    if (CanvasState.selectedMdNodeId && selectedIdSet.has(CanvasState.selectedMdNodeId)) {
+        CanvasState.selectedMdNodeId = null;
+        try { if (typeof clearMdSelection === 'function') clearMdSelection(); } catch (_) { }
+    }
+
+    // 重新计算序号
+    reorderSectionSequenceNumbers();
+
+    // 清除连接线选中状态
+    CanvasState.selectedEdgeId = null;
+    try { if (typeof hideEdgeToolbar === 'function') hideEdgeToolbar(); } catch (_) { }
+
+    // 重新渲染连接线
+    renderEdges();
+
+    saveTempNodes();
+    scheduleBoundsUpdate();
+    scheduleScrollbarUpdate();
+    scheduleDormancyUpdate();
+
+    // 退出模式
+    cancelClickToClearMode();
+
+    const successMsg = isEn
+        ? `Deleted ${count} item(s).`
+        : `已删除 ${count} 个项目。`;
+    showCanvasToast(successMsg, 'success');
+}
+
+function cancelClickToClearMode() {
+    clickToClearModeActive = false;
+
+    // 移除模式标识
+    const workspace = document.getElementById('canvasWorkspace');
+    if (workspace) {
+        workspace.classList.remove('click-to-clear-mode');
+    }
+
+    // 移除所有选中状态和监听器
+    CanvasState.tempSections.forEach(section => {
+        if (!section || !section.id) return;
+        const el = document.getElementById(section.id);
+        if (!el) return;
+        el.classList.remove('click-to-clear-selectable', 'click-to-clear-selected');
+        el.removeEventListener('click', handleClickToClearSelect, true);
+    });
+
+    CanvasState.mdNodes.forEach(node => {
+        if (!node || !node.id) return;
+        const el = document.getElementById(node.id);
+        if (!el) return;
+        el.classList.remove('click-to-clear-selectable', 'click-to-clear-selected');
+        el.removeEventListener('click', handleClickToClearSelect, true);
+    });
+
+    // 移除工具栏
+    const toolbar = document.getElementById('clickToClearToolbar');
+    if (toolbar) toolbar.remove();
+
+    clickToClearSelectedIds.clear();
 }
 
 // 重新计算所有临时栏目的序号，使其连续
@@ -15023,11 +15620,94 @@ function setupCanvasEventListeners() {
     // 工具栏按钮
     const importBtn = document.getElementById('importCanvasBtn');
     const exportBtn = document.getElementById('exportCanvasBtn');
-    const clearBtn = document.getElementById('clearTempNodesBtn');
 
     if (importBtn) importBtn.addEventListener('click', showImportDialog);
     if (exportBtn) exportBtn.addEventListener('click', exportCanvas);
+
+    // 清除菜单按钮 - 显示/隐藏下拉菜单
+    const clearMenuBtn = document.getElementById('clearMenuBtn');
+    const clearDropdown = document.getElementById('canvasClearDropdown');
+    const clearDropdownMenu = document.getElementById('clearDropdownMenu');
+
+    if (clearMenuBtn && clearDropdownMenu && clearDropdown) {
+        clearMenuBtn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            const isVisible = clearDropdownMenu.style.display === 'block';
+            clearDropdownMenu.style.display = isVisible ? 'none' : 'block';
+            clearDropdown.classList.toggle('open', !isVisible);
+        });
+
+        // 点击下拉菜单内部不关闭（除非点击的是菜单项）
+        clearDropdownMenu.addEventListener('click', (e) => {
+            e.stopPropagation();
+        });
+
+        // 点击其他地方关闭菜单
+        document.addEventListener('click', (e) => {
+            if (!clearDropdown.contains(e.target)) {
+                clearDropdownMenu.style.display = 'none';
+                clearDropdown.classList.remove('open');
+            }
+        });
+    }
+
+    // 清空未标注节点按钮 (原有功能)
+    const clearBtn = document.getElementById('clearTempNodesBtn');
     if (clearBtn) clearBtn.addEventListener('click', clearAllTempNodes);
+
+    // 清除规则帮助按钮 - 点击显示提示框
+    const clearHelpBtn = document.getElementById('clearTempNodesHelpBtn');
+    const clearRulesTooltip = document.getElementById('clearRulesTooltip');
+    if (clearHelpBtn && clearRulesTooltip) {
+        // 点击帮助按钮切换显示/隐藏
+        clearHelpBtn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            const isVisible = clearRulesTooltip.style.display === 'block';
+            clearRulesTooltip.style.display = isVisible ? 'none' : 'block';
+        });
+
+        // 点击提示框内部不关闭
+        clearRulesTooltip.addEventListener('click', (e) => {
+            e.stopPropagation();
+        });
+
+        // 点击其他地方关闭提示框
+        document.addEventListener('click', (e) => {
+            if (!clearHelpBtn.contains(e.target) && !clearRulesTooltip.contains(e.target)) {
+                clearRulesTooltip.style.display = 'none';
+            }
+        });
+    }
+
+    // 点击清除按钮
+    const clearByClickBtn = document.getElementById('clearByClickBtn');
+    if (clearByClickBtn) {
+        clearByClickBtn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            // 关闭下拉菜单
+            if (clearDropdownMenu) {
+                clearDropdownMenu.style.display = 'none';
+                clearDropdown.classList.remove('open');
+            }
+            // 启动点击清除模式
+            startClickToClearMode();
+        });
+    }
+
+    // 清除全部按钮
+    const clearAllBtn = document.getElementById('clearAllBtn');
+    if (clearAllBtn) {
+        clearAllBtn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            // 关闭下拉菜单
+            if (clearDropdownMenu) {
+                clearDropdownMenu.style.display = 'none';
+                clearDropdown.classList.remove('open');
+            }
+            // 执行清除全部
+            clearAllExceptPermanent();
+        });
+    }
 
     // 设置永久栏目拖放目标
     setupPermanentDropTarget();
@@ -15113,20 +15793,31 @@ function showImportDialog() {
             </div>
             <div class="import-dialog-body">
                 <div class="import-options">
+                    <div class="import-section-label">${isEn ? '📦 Canvas Snapshot' : '📦 画布快照'}</div>
                     <button class="import-option-btn" id="importCanvasZipBtn">
                         <i class="fas fa-file-archive" style="font-size: 24px;"></i>
-                        <span>${isEn ? 'Import Canvas Snapshot (.zip / .json)' : '导入书签画布快照 (.zip / .json)'}</span>
+                        <span>${isEn ? 'Import Archive (.zip / .7z)' : '导入压缩包 (.zip / .7z)'}</span>
                     </button>
+                    <button class="import-option-btn" id="importCanvasFolderBtn">
+                        <i class="fas fa-folder-open" style="font-size: 24px;"></i>
+                        <span>${isEn ? 'Import Folder' : '导入文件夹快照'}</span>
+                    </button>
+                    <button class="import-option-btn" id="importCanvasJsonBtn">
+                        <i class="fas fa-file-code" style="font-size: 24px;"></i>
+                        <span>${isEn ? 'Import JSON (.json)' : '导入 JSON 快照 (.json)'}</span>
+                    </button>
+                    <div class="import-section-label" style="margin-top: 16px;">${isEn ? '📑 Bookmarks (to Temp Section)' : '📑 书签文件（导入为临时栏目）'}</div>
                     <button class="import-option-btn" id="importHtmlBtn">
                         <i class="fas fa-file-code" style="font-size: 24px;"></i>
-                        <span>${isEn ? 'Import HTML Bookmarks' : '导入 HTML 书签（临时栏目）'}</span>
+                        <span>${isEn ? 'Import HTML Bookmarks' : '导入 HTML 书签'}</span>
                     </button>
                     <button class="import-option-btn" id="importJsonBtn">
                         <i class="fas fa-file-code" style="font-size: 24px;"></i>
-                        <span>${isEn ? 'Import JSON Bookmarks' : '导入 JSON 书签（临时栏目）'}</span>
+                        <span>${isEn ? 'Import JSON Bookmarks' : '导入 JSON 书签'}</span>
                     </button>
                 </div>
-                <input type="file" id="canvasFileInput" accept=".zip,.html,.json" style="display: none;">
+                <input type="file" id="canvasFileInput" accept=".zip,.7z,.html,.json" style="display: none;">
+                <input type="file" id="canvasFolderInput" webkitdirectory directory style="display: none;">
             </div>
         </div>
     `;
@@ -15144,9 +15835,23 @@ function showImportDialog() {
 
     document.getElementById('importCanvasZipBtn').addEventListener('click', () => {
         const input = document.getElementById('canvasFileInput');
-        // 3.4 格式适配器：同时支持 ZIP 和 JSON 单文件
-        input.accept = '.zip,.json';
-        input.dataset.type = 'package';
+        // 支持 ZIP 和 7z 压缩包
+        input.accept = '.zip,.7z';
+        input.dataset.type = 'package-archive';
+        input.click();
+    });
+
+    // 文件夹导入按钮
+    document.getElementById('importCanvasFolderBtn').addEventListener('click', () => {
+        const input = document.getElementById('canvasFolderInput');
+        input.click();
+    });
+
+    // JSON 快照导入按钮
+    document.getElementById('importCanvasJsonBtn').addEventListener('click', () => {
+        const input = document.getElementById('canvasFileInput');
+        input.accept = '.json';
+        input.dataset.type = 'package-json';
         input.click();
     });
 
@@ -15165,6 +15870,7 @@ function showImportDialog() {
     });
 
     document.getElementById('canvasFileInput').addEventListener('change', handleFileImport);
+    document.getElementById('canvasFolderInput').addEventListener('change', handleFolderImport);
 }
 
 async function handleFileImport(e) {
@@ -15174,7 +15880,7 @@ async function handleFileImport(e) {
     const type = e.target.dataset.type;
 
     try {
-        if (type === 'package') {
+        if (type === 'package-archive' || type === 'package-json') {
             const { isEn } = __getLang();
             const ok = confirm(isEn
                 ? 'Importing a canvas package will add content to the current canvas (sandboxed). Continue?'
@@ -15184,18 +15890,21 @@ async function handleFileImport(e) {
                 return;
             }
 
-            // 3.4 格式适配器：根据文件扩展名选择处理方式
-            const fileName = file.name.toLowerCase();
-            if (fileName.endsWith('.zip')) {
-                // ZIP 压缩包处理
-                await importCanvasPackageZip(file);
-            } else if (fileName.endsWith('.json')) {
+            if (type === 'package-archive') {
+                // 根据文件扩展名选择处理方式
+                const fileName = file.name.toLowerCase();
+                if (fileName.endsWith('.zip')) {
+                    await importCanvasPackageZip(file);
+                } else if (fileName.endsWith('.7z')) {
+                    await importCanvasPackage7z(file);
+                } else {
+                    throw new Error(isEn
+                        ? 'Unsupported archive format. Please use .zip or .7z file.'
+                        : '不支持的压缩格式。请使用 .zip 或 .7z 文件。');
+                }
+            } else if (type === 'package-json') {
                 // JSON 单文件处理
                 await importCanvasPackageJson(file);
-            } else {
-                throw new Error(isEn
-                    ? 'Unsupported file format. Please use .zip or .json file.'
-                    : '不支持的文件格式。请使用 .zip 或 .json 文件。');
             }
         } else {
             const text = await file.text();
@@ -15211,6 +15920,40 @@ async function handleFileImport(e) {
     } catch (error) {
         console.error('[Canvas] 导入失败:', error);
         const { isEn } = __getLang();
+        showCanvasToast((isEn ? 'Import failed: ' : '导入失败: ') + (error && error.message ? error.message : error), 'error');
+    }
+
+    e.target.value = '';
+}
+
+/**
+ * 处理文件夹导入
+ * 支持导入已解压的画布快照文件夹
+ */
+async function handleFolderImport(e) {
+    const files = e.target.files;
+    if (!files || files.length === 0) return;
+
+    const { isEn } = __getLang();
+
+    try {
+
+        // 将文件列表转换为 Map<相对路径, 内容>
+        const folderName = files[0].webkitRelativePath.split('/')[0];
+        const folderFiles = new Map();
+
+        for (const file of files) {
+            // 获取相对路径（去掉根文件夹名）
+            const relativePath = file.webkitRelativePath;
+            const content = new Uint8Array(await file.arrayBuffer());
+            folderFiles.set(relativePath, content);
+        }
+
+        await importCanvasPackageFolder(folderFiles, folderName);
+
+        document.getElementById('canvasImportDialog').remove();
+    } catch (error) {
+        console.error('[Canvas] 文件夹导入失败:', error);
         showCanvasToast((isEn ? 'Import failed: ' : '导入失败: ') + (error && error.message ? error.message : error), 'error');
     }
 
@@ -17714,46 +18457,127 @@ The current version (v3.0) does **NOT** support Obsidian's native grouping featu
         : `已导出：${zipName}（默认下载目录 / ${downloadFolder} /）。`);
 }
 
-function __unzipStore(arrayBuffer) {
+/**
+ * 解压 ZIP 文件（支持 store 和 deflate 压缩方式）
+ * 使用中央目录方式解析，正确支持 macOS 压缩的 ZIP 文件
+ * @param {ArrayBuffer} arrayBuffer - ZIP 文件的 ArrayBuffer
+ * @returns {Promise<Map<string, Uint8Array>>} - 文件名到内容的 Map
+ */
+async function __unzipStore(arrayBuffer) {
     const bytes = new Uint8Array(arrayBuffer);
     const dv = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
     const files = new Map();
-    let offset = 0;
 
     const readU16 = (o) => dv.getUint16(o, true);
     const readU32 = (o) => dv.getUint32(o, true);
 
-    while (offset + 4 <= bytes.length) {
-        const sig = readU32(offset);
-        if (sig !== 0x04034b50) break;
+    // 检查是否支持 DecompressionStream
+    const supportsDeflate = typeof DecompressionStream !== 'undefined';
 
-        const gpFlag = readU16(offset + 6);
-        const method = readU16(offset + 8);
-        const compSize = readU32(offset + 18);
-        const nameLen = readU16(offset + 26);
-        const extraLen = readU16(offset + 28);
-
-        const nameStart = offset + 30;
-        const nameEnd = nameStart + nameLen;
-        const extraEnd = nameEnd + extraLen;
-        if (extraEnd > bytes.length) break;
-
-        const nameBytes = bytes.slice(nameStart, nameEnd);
-        const useUtf8 = !!(gpFlag & 0x0800);
-        const name = new TextDecoder(useUtf8 ? 'utf-8' : 'utf-8').decode(nameBytes);
-
-        const dataStart = extraEnd;
-        const dataEnd = dataStart + compSize;
-        if (dataEnd > bytes.length) break;
-
-        if (method !== 0) {
-            throw new Error('仅支持 store(不压缩) 的 zip 包（请使用本插件导出的zip）。');
+    // 1. 查找 End of Central Directory (EOCD)
+    let eocdOffset = -1;
+    for (let i = bytes.length - 22; i >= 0 && i >= bytes.length - 65536; i--) {
+        if (readU32(i) === 0x06054b50) {
+            eocdOffset = i;
+            break;
         }
-        files.set(name, bytes.slice(dataStart, dataEnd));
-        offset = dataEnd;
     }
 
+    if (eocdOffset === -1) {
+        throw new Error('无效的 ZIP 文件：未找到中央目录');
+    }
+
+    const cdEntryCount = readU16(eocdOffset + 10);
+    const cdOffset = readU32(eocdOffset + 16);
+    console.log(`[ZIP] 中央目录: ${cdEntryCount} 个条目, 偏移 ${cdOffset}`);
+
+    // 2. 遍历中央目录
+    let cdPos = cdOffset;
+    for (let i = 0; i < cdEntryCount; i++) {
+        if (cdPos + 46 > bytes.length || readU32(cdPos) !== 0x02014b50) break;
+
+        const gpFlag = readU16(cdPos + 8);
+        const method = readU16(cdPos + 10);
+        const compSize = readU32(cdPos + 20);
+        const nameLen = readU16(cdPos + 28);
+        const extraLen = readU16(cdPos + 30);
+        const commentLen = readU16(cdPos + 32);
+        const localOffset = readU32(cdPos + 42);
+
+        const name = new TextDecoder(gpFlag & 0x0800 ? 'utf-8' : 'utf-8')
+            .decode(bytes.slice(cdPos + 46, cdPos + 46 + nameLen));
+
+        cdPos += 46 + nameLen + extraLen + commentLen;
+
+        // 跳过目录和 macOS 元数据
+        const baseName = name.split('/').pop();
+        if (name.endsWith('/') || name.includes('__MACOSX') || baseName.startsWith('._')) {
+            console.log(`[ZIP] 跳过: ${name}`);
+            continue;
+        }
+
+        // 3. 读取本地文件头获取数据位置
+        const localNameLen = readU16(localOffset + 26);
+        const localExtraLen = readU16(localOffset + 28);
+        const dataStart = localOffset + 30 + localNameLen + localExtraLen;
+        const compressedData = bytes.slice(dataStart, dataStart + compSize);
+
+        console.log(`[ZIP] 条目: "${name}", method=${method}, size=${compSize}`);
+
+        // 4. 解压
+        if (method === 0) {
+            files.set(name, compressedData);
+        } else if (method === 8) {
+            if (!supportsDeflate) {
+                throw new Error('浏览器不支持 Deflate 解压');
+            }
+            const decompressed = await __inflateDeflate(compressedData);
+            files.set(name, decompressed);
+            console.log(`[ZIP] 解压: ${name}, ${compSize} -> ${decompressed.length}`);
+        } else {
+            throw new Error(`不支持的压缩方法 ${method}`);
+        }
+    }
+
+    console.log(`[ZIP] 完成，共 ${files.size} 个文件`);
     return files;
+}
+
+/**
+ * 使用 DecompressionStream 解压 Deflate 数据
+ * @param {Uint8Array} compressed - 压缩的数据
+ * @returns {Promise<Uint8Array>} - 解压后的数据
+ */
+async function __inflateDeflate(compressed) {
+    // DecompressionStream 需要 'deflate-raw' 格式（不带 zlib 头）
+    const ds = new DecompressionStream('deflate-raw');
+    const writer = ds.writable.getWriter();
+    const reader = ds.readable.getReader();
+
+    // 写入压缩数据
+    writer.write(compressed);
+    writer.close();
+
+    // 读取解压后的数据
+    const chunks = [];
+    let totalLength = 0;
+
+    while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        chunks.push(value);
+        totalLength += value.length;
+    }
+
+    // 合并所有块
+    const result = new Uint8Array(totalLength);
+    let pos = 0;
+    for (const chunk of chunks) {
+        result.set(chunk, pos);
+        pos += chunk.length;
+    }
+
+    return result;
 }
 
 function __resetCanvasDomAndStateForImport() {
@@ -17806,7 +18630,7 @@ function __applyImportedTempState(state) {
 async function importCanvasPackageZip(file) {
     const { isEn } = __getLang();
     const buf = await file.arrayBuffer();
-    const zipFiles = __unzipStore(buf);
+    const zipFiles = await __unzipStore(buf);
 
     // 4.2 数据信任链：
     // 优先查找 bookmark-canvas.backup.json（全量备份模式）
@@ -17814,16 +18638,25 @@ async function importCanvasPackageZip(file) {
     let backupJsonName = null;
     let canvasFileName = null;
 
+    // 记录所有文件用于调试
+    console.log('[Canvas] ZIP 包含的文件:', Array.from(zipFiles.keys()));
+
     for (const name of zipFiles.keys()) {
-        if (name.endsWith('/bookmark-canvas.backup.json') || name.endsWith('bookmark-canvas.backup.json')) {
+        // 获取文件名（不含路径）
+        const baseName = name.split('/').pop();
+
+        // 查找 backup.json - 支持任意目录深度
+        if (baseName === 'bookmark-canvas.backup.json') {
             backupJsonName = name;
+            console.log('[Canvas] 找到备份文件:', name);
         }
-        if (name.endsWith('.canvas') && !name.includes('/')) {
-            // Usually the .canvas is at root or we pick the first one roughly
-            canvasFileName = name;
-        } else if (name.endsWith('.canvas')) {
-            // In case it's in a subfolder but usually export root has logic.
-            if (!canvasFileName) canvasFileName = name;
+
+        // 查找 .canvas 文件 - 支持任意目录深度
+        if (baseName.endsWith('.canvas')) {
+            if (!canvasFileName) {
+                canvasFileName = name;
+                console.log('[Canvas] 找到 canvas 文件:', name);
+            }
         }
     }
 
@@ -17916,7 +18749,7 @@ async function importCanvasPackageZip(file) {
                     // YES! If user edited it, we can recover it as a snapshot list!
 
                     const items = __parseMarkdownAuto(fileText);
-                    const sectionId = `restored-perm-${Date.now()}`;
+                    const sectionId = node.id; // 使用原始 node.id 以便边缘正确映射
                     tempState.sections.push({
                         id: sectionId,
                         title: '[Restored] Permanent Sections',
@@ -17924,7 +18757,7 @@ async function importCanvasPackageZip(file) {
                         y: node.y,
                         width: node.width,
                         height: node.height,
-                        color: node.color || '4',
+                        color: convertObsidianColor(node.color) || '#44cf6e',
                         items: items, // Restored items!
                         isSnapshot: true
                     });
@@ -17951,7 +18784,7 @@ async function importCanvasPackageZip(file) {
                         y: node.y,
                         width: node.width,
                         height: node.height,
-                        color: node.color || '1',
+                        color: convertObsidianColor(node.color) || '#fb464c',
                         items: items,
                         description: '' // todo: parse description from md if possible
                     });
@@ -17959,13 +18792,16 @@ async function importCanvasPackageZip(file) {
                     // Restore Blank Section
                     // MdNodes just need text content
                     const sectionId = node.id;
+                    const convertedColor = convertObsidianColor(node.color);
+                    const isHex = convertedColor && convertedColor.startsWith('#');
                     tempState.mdNodes.push({
                         id: sectionId,
                         x: node.x,
                         y: node.y,
                         width: node.width,
                         height: node.height,
-                        color: node.color || 'transparent',
+                        color: isHex ? null : node.color,
+                        colorHex: isHex ? convertedColor : null,
                         text: fileText // or html? markdown is fine, we render md
                     });
                 }
@@ -17997,12 +18833,21 @@ async function importCanvasPackageZip(file) {
         });
         */
         // Edges logic is complex due to ID matching, let's skip for MVP or try direct map
-        tempState.edges = edges.map(e => ({
-            id: e.id,
-            source: e.fromNode,
-            target: e.toNode,
-            label: e.label || ''
-        }));
+        tempState.edges = edges.map(e => {
+            const convertedColor = convertObsidianColor(e.color);
+            // 如果是十六进制颜色，存储到 colorHex；如果是预设数字，存储到 color
+            const isHex = convertedColor && convertedColor.startsWith('#');
+            return {
+                id: e.id,
+                fromNode: e.fromNode,
+                toNode: e.toNode,
+                fromSide: e.fromSide || '',
+                toSide: e.toSide || '',
+                label: e.label || '',
+                color: isHex ? null : e.color,
+                colorHex: isHex ? convertedColor : null
+            };
+        });
 
     } else {
         throw new Error(isEn
@@ -18016,6 +18861,212 @@ async function importCanvasPackageZip(file) {
 
     // 调用共享的沙箱导入处理逻辑
     __processSandboxedImport(tempState, storage, primaryState, file.name);
+}
+
+/**
+ * 导入 7z 压缩包
+ * 注意：7z 格式使用 LZMA/LZMA2 压缩，浏览器原生不支持
+ * 暂时提示用户使用文件夹导入，未来可引入 7z 解压库
+ */
+async function importCanvasPackage7z(file) {
+    const { isEn } = __getLang();
+
+    // 检查文件头以确认是 7z 格式
+    const buf = await file.arrayBuffer();
+    const header = new Uint8Array(buf.slice(0, 6));
+    const is7z = header[0] === 0x37 && header[1] === 0x7A &&
+        header[2] === 0xBC && header[3] === 0xAF &&
+        header[4] === 0x27 && header[5] === 0x1C;
+
+    if (!is7z) {
+        throw new Error(isEn
+            ? 'Invalid 7z file format.'
+            : '无效的 7z 文件格式。');
+    }
+
+    // 暂不支持直接解压 7z，提示用户使用文件夹导入
+    throw new Error(isEn
+        ? '.7z format requires external decompression. Please extract the archive first and use "Import Folder" instead.'
+        : '.7z 格式需要外部解压。请先解压文件，然后使用「导入文件夹快照」功能。');
+}
+
+/**
+ * 导入已解压的画布快照文件夹
+ * 与 importCanvasPackageZip 类似，但处理的是已解压的文件夹
+ * @param {Map<string, Uint8Array>} folderFiles - 文件夹中的文件 Map<路径, 内容>
+ * @param {string} folderName - 文件夹名称
+ */
+async function importCanvasPackageFolder(folderFiles, folderName) {
+    const { isEn } = __getLang();
+
+    // 4.2 数据信任链：
+    // 优先查找 bookmark-canvas.backup.json（全量备份模式）
+    // 若不存在，则尝试查找 .canvas 文件（Obsidian 兼容模式）
+    let backupJsonName = null;
+    let canvasFileName = null;
+
+    for (const name of folderFiles.keys()) {
+        if (name.endsWith('/bookmark-canvas.backup.json') || name.endsWith('bookmark-canvas.backup.json')) {
+            backupJsonName = name;
+        }
+        if (name.endsWith('.canvas') && !name.includes('/')) {
+            canvasFileName = name;
+        } else if (name.endsWith('.canvas')) {
+            if (!canvasFileName) canvasFileName = name;
+        }
+    }
+
+    let tempState = null;
+    let storage = null;
+    let primaryState = {};
+
+    // Mode A: Full Backup (JSON)
+    if (backupJsonName) {
+        console.log(`[Canvas] Folder Import using BACKUP mode: ${backupJsonName}`);
+        const primaryJsonText = new TextDecoder('utf-8').decode(folderFiles.get(backupJsonName));
+        primaryState = JSON.parse(primaryJsonText);
+        storage = primaryState.storage || null;
+
+        if (primaryState.canvasState) {
+            tempState = {
+                sections: primaryState.canvasState.tempSections || [],
+                mdNodes: primaryState.canvasState.mdNodes || [],
+                edges: primaryState.canvasState.edges || [],
+                tempSectionCounter: primaryState.canvasState.tempSectionCounter || 0,
+                mdNodeCounter: primaryState.canvasState.mdNodeCounter || 0,
+                edgeCounter: primaryState.canvasState.edgeCounter || 0
+            };
+        } else if (storage && storage[TEMP_SECTION_STORAGE_KEY]) {
+            tempState = storage[TEMP_SECTION_STORAGE_KEY];
+        }
+    }
+    // Mode B: Obsidian Canvas (Reconstruct from .canvas + .md)
+    else if (canvasFileName) {
+        console.log(`[Canvas] Folder Import using OBSIDIAN CANVAS mode: ${canvasFileName}`);
+        const canvasText = new TextDecoder('utf-8').decode(folderFiles.get(canvasFileName));
+        const canvasData = JSON.parse(canvasText);
+
+        tempState = {
+            sections: [],
+            mdNodes: [],
+            edges: [],
+            tempSectionCounter: 0,
+            mdNodeCounter: 0,
+            edgeCounter: 0
+        };
+
+        // Helper to find file in folder
+        const findFile = (relPath) => {
+            if (folderFiles.has(relPath)) return folderFiles.get(relPath);
+
+            for (const [key, val] of folderFiles) {
+                if (key.endsWith(relPath) || relPath.endsWith(key)) return val;
+                const normKey = key.replace(/\\/g, '/');
+                const normRel = relPath.replace(/\\/g, '/');
+                if (normKey.includes(normRel)) return val;
+            }
+            return null;
+        };
+
+        const nodes = canvasData.nodes || [];
+        const edges = canvasData.edges || [];
+
+        nodes.forEach(node => {
+            if (node.type === 'file' && node.file && node.file.endsWith('.md')) {
+                const fileBytes = findFile(node.file);
+                if (!fileBytes) return;
+
+                const fileText = new TextDecoder('utf-8').decode(fileBytes);
+
+                const isPermanent = node.file.includes('Permanent Sections') || node.file.includes('永久栏目') || node.file.includes('Permanent Bookmarks') || node.file.includes('永久书签');
+                const isTempSection = node.file.includes('Temporary Sections/') || node.file.includes('临时栏目/');
+                const isMdNode = node.file.includes('Blank Sections/') || node.file.includes('空白栏目/');
+
+                if (isPermanent) {
+                    const items = __parseMarkdownAuto(fileText);
+                    const sectionId = node.id; // 使用原始 node.id 以便边缘正确映射
+                    tempState.sections.push({
+                        id: sectionId,
+                        title: '[Restored] Permanent Sections',
+                        x: node.x,
+                        y: node.y,
+                        width: node.width,
+                        height: node.height,
+                        color: convertObsidianColor(node.color) || '#44cf6e',
+                        items: items,
+                        isSnapshot: true
+                    });
+                } else if (isTempSection) {
+                    const items = __parseMarkdownAuto(fileText);
+                    const sectionId = node.id;
+                    const fileName = node.file.split('/').pop().replace('.md', '');
+                    const titleMatch = fileName.match(/^[A-Z]+\.\s+(.*)/);
+                    const title = titleMatch ? titleMatch[1] : fileName;
+
+                    tempState.sections.push({
+                        id: sectionId,
+                        title: title,
+                        x: node.x,
+                        y: node.y,
+                        width: node.width,
+                        height: node.height,
+                        color: convertObsidianColor(node.color) || '#fb464c',
+                        items: items,
+                        description: ''
+                    });
+                } else if (isMdNode) {
+                    const sectionId = node.id;
+                    const convertedColor = convertObsidianColor(node.color);
+                    const isHex = convertedColor && convertedColor.startsWith('#');
+                    tempState.mdNodes.push({
+                        id: sectionId,
+                        x: node.x,
+                        y: node.y,
+                        width: node.width,
+                        height: node.height,
+                        color: isHex ? null : node.color,
+                        colorHex: isHex ? convertedColor : null,
+                        text: fileText
+                    });
+                }
+            } else if (node.type === 'text') {
+                tempState.mdNodes.push({
+                    id: node.id,
+                    x: node.x,
+                    y: node.y,
+                    width: node.width,
+                    height: node.height,
+                    text: node.text
+                });
+            }
+        });
+
+        tempState.edges = edges.map(e => {
+            const convertedColor = convertObsidianColor(e.color);
+            const isHex = convertedColor && convertedColor.startsWith('#');
+            return {
+                id: e.id,
+                fromNode: e.fromNode,
+                toNode: e.toNode,
+                fromSide: e.fromSide || '',
+                toSide: e.toSide || '',
+                label: e.label || '',
+                color: isHex ? null : e.color,
+                colorHex: isHex ? convertedColor : null
+            };
+        });
+
+    } else {
+        throw new Error(isEn
+            ? 'Invalid Folder: Missing both backup.json and .canvas file.'
+            : '无效文件夹：缺少 backup.json 或 .canvas 文件。');
+    }
+
+    if (!tempState) {
+        throw new Error(isEn ? 'Invalid folder state.' : '文件夹状态无效');
+    }
+
+    __processSandboxedImport(tempState, storage, primaryState, folderName);
 }
 
 /**
@@ -18237,7 +19288,7 @@ function __remapImportedData(tempState, fullStorage, primaryState = {}) {
         newTempSections.push(snapshotSection);
 
         // Remap scroll
-        if (fullStorage['permanent-section-scroll']) {
+        if (fullStorage && fullStorage['permanent-section-scroll']) {
             newScrolls[`temp - section - scroll: ${snapshotId}`] = fullStorage['permanent-section-scroll'];
         }
     }
@@ -18255,7 +19306,7 @@ function __remapImportedData(tempState, fullStorage, primaryState = {}) {
 
             // Remap scroll
             const oldScrollKey = `temp - section - scroll: ${sec.id}`;
-            if (fullStorage[oldScrollKey]) {
+            if (fullStorage && fullStorage[oldScrollKey]) {
                 newScrolls[`temp - section - scroll: ${newId}`] = fullStorage[oldScrollKey];
             }
         });
@@ -19405,28 +20456,28 @@ function showEdgeToolbar(edgeId, x, y) {
     // 保存当前选中的连接线 ID
     toolbar.dataset.edgeId = edgeId;
 
-    // Multi-language support
+    // Multi-language support - 每次显示都更新内容以确保语言正确
     const lang = typeof currentLang !== 'undefined' ? currentLang : 'zh';
     const deleteTitle = lang === 'en' ? 'Delete' : '删除';
     const colorTitle = lang === 'en' ? 'Color' : '颜色';
     const focusTitle = lang === 'en' ? 'Locate and zoom' : '定位并放大';
-    const directionTitle = lang === 'en' ? 'Line direction' : '直线方向';
-    const labelTitle = lang === 'en' ? 'Edit label' : '编辑文字';
+    const directionTitle = lang === 'en' ? 'Line direction' : '连接线方向';
+    const labelTitle = lang === 'en' ? 'Edit label' : '编辑标签';
 
     toolbar.innerHTML = `
-        <button class="md-node-toolbar-btn" data-action="edge-delete" title="${deleteTitle}">
+        <button class="md-node-toolbar-btn" data-action="edge-delete" data-tooltip="${deleteTitle}">
             <i class="far fa-trash-alt"></i>
         </button>
-        <button class="md-node-toolbar-btn" data-action="edge-color-toggle" title="${colorTitle}">
+        <button class="md-node-toolbar-btn" data-action="edge-color-toggle" data-tooltip="${colorTitle}">
             <i class="fas fa-palette"></i>
         </button>
-        <button class="md-node-toolbar-btn" data-action="edge-focus" title="${focusTitle}">
+        <button class="md-node-toolbar-btn" data-action="edge-focus" data-tooltip="${focusTitle}">
             <i class="fas fa-search-plus"></i>
         </button>
-        <button class="md-node-toolbar-btn" data-action="edge-direction" title="${directionTitle}">
+        <button class="md-node-toolbar-btn" data-action="edge-direction" data-tooltip="${directionTitle}">
             <i class="fas fa-arrows-alt-h"></i>
         </button>
-        <button class="md-node-toolbar-btn" data-action="edge-label" title="${labelTitle}">
+        <button class="md-node-toolbar-btn" data-action="edge-label" data-tooltip="${labelTitle}">
             <i class="far fa-edit"></i>
         </button>
     `;
@@ -19473,18 +20524,45 @@ function showEdgeToolbar(edgeId, x, y) {
                 editEdgeLabel(currentEdgeId);
             } else if (action === 'md-color-preset') {
                 const preset = String(btn.getAttribute('data-color') || '').trim();
+                // 更新颜色历史
+                const newColor = presetToHex(preset);
+                if (newColor && currentEdge.colorHex) {
+                    CanvasState.edgePrevColor = currentEdge.colorHex;
+                }
                 setEdgeColor(currentEdge, preset);
-                closeEdgeColorPopover(toolbar);
-            } else if (action === 'edge-color-default') {
-                currentEdge.color = null;
-                currentEdge.colorHex = null;
-                renderEdges();
-                saveTempNodes();
                 closeEdgeColorPopover(toolbar);
             } else if (action === 'edge-direction-set') {
                 const dir = String(btn.getAttribute('data-dir') || 'none');
                 setEdgeDirection(currentEdge, dir);
                 closeEdgeDirectionPopover(toolbar);
+            } else if (action === 'edge-color-custom') {
+                const customColor = btn.getAttribute('data-color');
+                if (customColor) {
+                    // 更新颜色历史
+                    if (currentEdge.colorHex) {
+                        CanvasState.edgePrevColor = currentEdge.colorHex;
+                    }
+                    currentEdge.color = null;
+                    currentEdge.colorHex = customColor;
+                    renderEdges();
+                    saveTempNodes();
+                    closeEdgeColorPopover(toolbar);
+                }
+            } else if (action === 'edge-color-recent') {
+                // 上一次颜色
+                const recentColor = btn.getAttribute('data-color') || CanvasState.edgePrevColor;
+                if (recentColor) {
+                    const oldColor = currentEdge.colorHex;
+                    currentEdge.color = null;
+                    currentEdge.colorHex = recentColor;
+                    renderEdges();
+                    // 交换颜色历史
+                    if (oldColor) {
+                        CanvasState.edgePrevColor = oldColor;
+                    }
+                    saveTempNodes();
+                    closeEdgeColorPopover(toolbar);
+                }
             }
         });
         toolbar.dataset.eventsBound = 'true';
@@ -19572,17 +20650,20 @@ function ensureEdgeColorPopover(toolbar, edge) {
     const lang = typeof currentLang !== 'undefined' ? currentLang : 'zh';
     const rgbPickerTitle = lang === 'en' ? 'RGB Color Picker' : 'RGB颜色选择器';
     const customColorTitle = lang === 'en' ? 'Select custom color' : '选择自定义颜色';
-    const defaultTitle = lang === 'en' ? 'Default color' : '默认颜色';
+    const recentTitle = lang === 'en' ? 'Previous color' : '上一次颜色';
 
     // 使用 Obsidian Canvas 风格的颜色（与空白栏目完全一致）
     pop.innerHTML = `
-        <span class="md-color-chip" data-action="edge-color-default" title="${defaultTitle}" style="background: repeating-linear-gradient(45deg, #eee, #eee 4px, #fff 4px, #fff 8px); border:1px solid #c9d1d9;"></span>
-        <span class="md-color-chip" data-action="md-color-preset" data-color="1" style="background:#ff6666"></span>
-        <span class="md-color-chip" data-action="md-color-preset" data-color="2" style="background:#ffaa66"></span>
-        <span class="md-color-chip" data-action="md-color-preset" data-color="3" style="background:#ffdd66"></span>
-        <span class="md-color-chip" data-action="md-color-preset" data-color="4" style="background:#66dd99"></span>
-        <span class="md-color-chip" data-action="md-color-preset" data-color="5" style="background:#66bbff"></span>
-        <span class="md-color-chip" data-action="md-color-preset" data-color="6" style="background:#bb99ff"></span>
+        <span class="md-color-chip" data-action="edge-color-custom" data-color="#888888" style="background:#888888" title="${lang === 'en' ? 'Gray' : '灰色'}"></span>
+        <span class="md-color-chip" data-action="edge-color-custom" data-color="#66bbff" style="background:#66bbff" title="${lang === 'en' ? 'Default Blue' : '默认蓝色'}"></span>
+        <span class="md-color-chip" data-action="md-color-preset" data-color="1" style="background:#fb464c"></span>
+        <span class="md-color-chip" data-action="md-color-preset" data-color="2" style="background:#e9973f"></span>
+        <span class="md-color-chip" data-action="md-color-preset" data-color="3" style="background:#e0de71"></span>
+        <span class="md-color-chip" data-action="md-color-preset" data-color="4" style="background:#44cf6e"></span>
+        <span class="md-color-chip" data-action="md-color-preset" data-color="5" style="background:#53dfdd"></span>
+        <span class="md-color-chip" data-action="md-color-preset" data-color="6" style="background:#a882ff"></span>
+        <span class="md-color-divider" aria-hidden="true"></span>
+        <span class="md-color-chip md-color-recent-chip" data-action="edge-color-recent" title="${recentTitle}"></span>
         <button class="md-color-chip md-color-picker-btn" data-action="md-color-picker-toggle" title="${rgbPickerTitle}">
             <svg viewBox="0 0 24 24" width="14" height="14">
                 <circle cx="12" cy="12" r="10" fill="url(#rainbow-gradient-edge)" />
@@ -19600,6 +20681,21 @@ function ensureEdgeColorPopover(toolbar, edge) {
             </svg>
         </button>
     `;
+
+    // 上一次颜色功能
+    const recentChipEl = pop.querySelector('.md-color-recent-chip');
+    const resolveHistoryColor = (value) => {
+        const normalized = normalizeHexColor(value || '');
+        return normalized ? `#${normalized}` : '#66bbff';
+    };
+    const syncHistoryChip = (value) => {
+        if (!recentChipEl) return;
+        const safe = resolveHistoryColor(value);
+        recentChipEl.dataset.color = safe;
+        recentChipEl.style.backgroundColor = safe;
+    };
+    // 初始化上一次颜色
+    syncHistoryChip(CanvasState.edgePrevColor || '#66bbff');
 
     // RGB选择器UI（显示在色盘上方，与空白栏目完全一致）
     const rgbPicker = document.createElement('div');

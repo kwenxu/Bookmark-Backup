@@ -36,9 +36,9 @@
     pointer-events: none;
     z-index: 0;
 
-    /* Obsidian 风格网格点 */
-    background-image: radial-gradient(circle, #d0d7de 1px, transparent 1px);
-    background-size: calc(var(--canvas-scale) * 60px) calc(var(--canvas-scale) * 60px);
+    /* Obsidian 风格网格点 - 简化为单一点阵 */
+    background-image: radial-gradient(#d0d7de 1px, transparent 1px);
+    background-size: calc(var(--canvas-scale) * 40px) calc(var(--canvas-scale) * 40px);
     background-position: var(--canvas-pan-x) var(--canvas-pan-y);
 
     will-change: background-size, background-position;
@@ -52,7 +52,7 @@
 }
 
 [data-theme="dark"] .canvas-workspace::before {
-    background-image: radial-gradient(circle, #3a3b3c 1px, transparent 1px);
+    background-image: radial-gradient(#3a3b3c 1px, transparent 1px);
 }
 
 .canvas-content {
@@ -392,7 +392,10 @@
 
 /* 优化缩放动画 */
 .canvas-content {
-    transition: transform 0.05s ease-out;
+    /* [Fix] 移除默认的 transform 过渡，防止与 JS 驱动的平移/缩放发生冲突导致闪烁 */
+    /* transition: transform 0.05s ease-out; */
+    will-change: transform;
+    /* 确保始终提升为合成层 */
 }
 
 /* 拖动时禁用过渡，确保跟手 */

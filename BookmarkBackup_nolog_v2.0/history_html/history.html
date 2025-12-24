@@ -15,7 +15,7 @@
     <script src="bookmark_tree_context_menu.js" defer></script>
     <script src="bookmark_tree_drag_drop.js" defer></script>
     <script src="pointer_drag.js" defer></script>
-    <script src="bookmark_canvas_module.js?v=2.1" defer></script>
+    <script src="bookmark_canvas_module.js?v=3.7" defer></script>
     <script src="shortcuts_helpers.js" defer></script>
     <script src="bookmark_calendar.js" defer></script>
     <script src="browsing_history_calendar.js" defer></script>
@@ -1116,10 +1116,72 @@
                                     <i class="fas fa-file-export"></i>
                                     <span id="exportCanvasText">导出</span>
                                 </button>
-                                <button id="clearTempNodesBtn" class="canvas-manage-btn danger">
-                                    <i class="fas fa-trash-alt"></i>
-                                    <span id="clearTempNodesText">清空未标注节点</span>
-                                </button>
+                                <!-- 清除按钮组（主按钮 + 下拉菜单） -->
+                                <div class="canvas-clear-dropdown" id="canvasClearDropdown">
+                                    <button id="clearMenuBtn" class="canvas-manage-btn danger">
+                                        <i class="fas fa-trash-alt"></i>
+                                        <span id="clearMenuText">清除</span>
+                                        <i class="fas fa-chevron-down clear-dropdown-arrow"></i>
+                                    </button>
+                                    <!-- 清除下拉菜单 -->
+                                    <div class="clear-dropdown-menu" id="clearDropdownMenu" style="display: none;">
+                                        <!-- 选项1：点击清除 -->
+                                        <button class="clear-dropdown-item" id="clearByClickBtn">
+                                            <i class="fas fa-mouse-pointer"></i>
+                                            <span id="clearByClickText">点击清除</span>
+                                        </button>
+                                        <!-- 选项2：清空未标注节点（原有功能） -->
+                                        <div class="clear-dropdown-item-group">
+                                            <button class="clear-dropdown-item" id="clearTempNodesBtn">
+                                                <i class="fas fa-eraser"></i>
+                                                <span id="clearTempNodesText">清空未标注节点</span>
+                                            </button>
+                                            <button class="clear-dropdown-help-btn" id="clearTempNodesHelpBtn"
+                                                title="查看清除规则">
+                                                <i class="fas fa-question-circle"></i>
+                                            </button>
+                                            <!-- 清除规则提示框 -->
+                                            <div class="clear-rules-tooltip" id="clearRulesTooltip"
+                                                style="display: none;">
+                                                <div class="clear-rules-header">
+                                                    <i class="fas fa-info-circle"></i>
+                                                    <span id="clearRulesTooltipTitle">清除规则</span>
+                                                </div>
+                                                <div class="clear-rules-content">
+                                                    <div class="clear-rules-section">
+                                                        <div class="clear-rules-section-title" id="clearRulesWillClear">
+                                                            会被清除：
+                                                        </div>
+                                                        <ul>
+                                                            <li id="clearRuleTemp"><strong>书签型临时栏目</strong>：无说明 + 默认标题 +
+                                                                无连接线
+                                                            </li>
+                                                            <li id="clearRuleMd"><strong>空白栏目</strong>：内容为空 + 无连接线</li>
+                                                        </ul>
+                                                    </div>
+                                                    <div class="clear-rules-section">
+                                                        <div class="clear-rules-section-title" id="clearRulesWillKeep">
+                                                            会被保留：
+                                                        </div>
+                                                        <ul>
+                                                            <li id="clearRuleKeepDesc"><i class="fas fa-check"></i>
+                                                                有说明文字</li>
+                                                            <li id="clearRuleKeepTitle"><i class="fas fa-check"></i>
+                                                                标题被修改过</li>
+                                                            <li id="clearRuleKeepEdge"><i class="fas fa-check"></i> 有连接线
+                                                            </li>
+                                                        </ul>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        </div>
+                                        <!-- 选项3：清除全部（永久栏目除外） -->
+                                        <button class="clear-dropdown-item clear-all-danger" id="clearAllBtn">
+                                            <i class="fas fa-trash"></i>
+                                            <span id="clearAllText">清除全部（永久栏目除外）</span>
+                                        </button>
+                                    </div>
+                                </div>
                             </div>
                         </div>
 

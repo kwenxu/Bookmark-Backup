@@ -1185,9 +1185,53 @@ const i18n = {
         'zh_CN': '导出',
         'en': 'Export'
     },
+    clearMenuText: {
+        'zh_CN': '清除',
+        'en': 'Clear'
+    },
+    clearByClickText: {
+        'zh_CN': '点击清除',
+        'en': 'Click to Clear'
+    },
     clearTempNodesText: {
         'zh_CN': '清空未标注节点',
         'en': 'Clear Unmarked Nodes'
+    },
+    clearAllText: {
+        'zh_CN': '清除全部（永久栏目除外）',
+        'en': 'Clear All (Except Permanent)'
+    },
+    clearRulesTooltipTitle: {
+        'zh_CN': '清除规则',
+        'en': 'Clear Rules'
+    },
+    clearRulesWillClear: {
+        'zh_CN': '会被清除：',
+        'en': 'Will be cleared:'
+    },
+    clearRulesWillKeep: {
+        'zh_CN': '会被保留：',
+        'en': 'Will be kept:'
+    },
+    clearRuleTemp: {
+        'zh_CN': '<strong>书签型临时栏目</strong>：无说明 + 默认标题 + 无连接线',
+        'en': '<strong>Temp Section</strong>: No description + Default title + No edges'
+    },
+    clearRuleMd: {
+        'zh_CN': '<strong>空白栏目</strong>：内容为空 + 无连接线',
+        'en': '<strong>Blank Node</strong>: Empty content + No edges'
+    },
+    clearRuleKeepDesc: {
+        'zh_CN': '<i class="fas fa-check"></i> 有说明文字',
+        'en': '<i class="fas fa-check"></i> Has description'
+    },
+    clearRuleKeepTitle: {
+        'zh_CN': '<i class="fas fa-check"></i> 标题被修改过',
+        'en': '<i class="fas fa-check"></i> Custom title'
+    },
+    clearRuleKeepEdge: {
+        'zh_CN': '<i class="fas fa-check"></i> 有连接线',
+        'en': '<i class="fas fa-check"></i> Has edges'
     },
     canvasFullscreenEnter: {
         'zh_CN': '全屏',
@@ -2629,8 +2673,32 @@ function applyLanguage() {
     if (importCanvasText) importCanvasText.textContent = i18n.importCanvasText[currentLang];
     const exportCanvasText = document.getElementById('exportCanvasText');
     if (exportCanvasText) exportCanvasText.textContent = i18n.exportCanvasText[currentLang];
+    const clearMenuText = document.getElementById('clearMenuText');
+    if (clearMenuText) clearMenuText.textContent = i18n.clearMenuText[currentLang];
+    const clearByClickText = document.getElementById('clearByClickText');
+    if (clearByClickText) clearByClickText.textContent = i18n.clearByClickText[currentLang];
     const clearTempNodesText = document.getElementById('clearTempNodesText');
     if (clearTempNodesText) clearTempNodesText.textContent = i18n.clearTempNodesText[currentLang];
+    const clearAllText = document.getElementById('clearAllText');
+    if (clearAllText) clearAllText.textContent = i18n.clearAllText[currentLang];
+
+    // 清除规则提示框翻译
+    const clearRulesTooltipTitle = document.getElementById('clearRulesTooltipTitle');
+    if (clearRulesTooltipTitle) clearRulesTooltipTitle.textContent = i18n.clearRulesTooltipTitle[currentLang];
+    const clearRulesWillClear = document.getElementById('clearRulesWillClear');
+    if (clearRulesWillClear) clearRulesWillClear.textContent = i18n.clearRulesWillClear[currentLang];
+    const clearRulesWillKeep = document.getElementById('clearRulesWillKeep');
+    if (clearRulesWillKeep) clearRulesWillKeep.textContent = i18n.clearRulesWillKeep[currentLang];
+    const clearRuleTemp = document.getElementById('clearRuleTemp');
+    if (clearRuleTemp) clearRuleTemp.innerHTML = i18n.clearRuleTemp[currentLang];
+    const clearRuleMd = document.getElementById('clearRuleMd');
+    if (clearRuleMd) clearRuleMd.innerHTML = i18n.clearRuleMd[currentLang];
+    const clearRuleKeepDesc = document.getElementById('clearRuleKeepDesc');
+    if (clearRuleKeepDesc) clearRuleKeepDesc.innerHTML = i18n.clearRuleKeepDesc[currentLang];
+    const clearRuleKeepTitle = document.getElementById('clearRuleKeepTitle');
+    if (clearRuleKeepTitle) clearRuleKeepTitle.innerHTML = i18n.clearRuleKeepTitle[currentLang];
+    const clearRuleKeepEdge = document.getElementById('clearRuleKeepEdge');
+    if (clearRuleKeepEdge) clearRuleKeepEdge.innerHTML = i18n.clearRuleKeepEdge[currentLang];
 
     // Canvas 缩放控制器
     const canvasZoomLabel = document.getElementById('canvasZoomLabel');

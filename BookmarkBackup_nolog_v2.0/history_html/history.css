@@ -5378,9 +5378,9 @@ a.tree-label.tree-bookmark-link:hover {
     width: 100%;
     height: 100%;
     background-color: var(--bg-secondary);
-    background-image:
-        radial-gradient(circle, var(--border-color) 1px, transparent 1px);
-    background-size: 20px 20px;
+    /* [Fix] 移除旧的重复网格定义，统一由 canvas_obsidian_style.css 的伪元素管理 */
+    /* background-image: radial-gradient(circle, var(--border-color) 1px, transparent 1px); */
+    /* background-size: 20px 20px; */
     overflow: auto;
     cursor: default;
     --drop-x: 50%;
@@ -6220,6 +6220,19 @@ a.tree-label.tree-bookmark-link:hover {
     height: 15px;
 }
 
+/* 临时栏目彩虹按钮使用 CSS 渐变，避免 SVG ID 冲突 */
+.temp-color-chip-row .md-color-picker-btn.temp-rainbow-btn {
+    background: linear-gradient(135deg,
+            #ff0000 0%,
+            #ff9900 16.67%,
+            #ffff00 33.33%,
+            #00ff00 50%,
+            #0099ff 66.67%,
+            #9900ff 83.33%,
+            #ff0099 100%) !important;
+    border: 1px solid rgba(0, 0, 0, 0.2) !important;
+}
+
 .temp-color-divider {
     width: 1px;
     height: 21px;
@@ -6228,6 +6241,19 @@ a.tree-label.tree-bookmark-link:hover {
 }
 
 [data-theme="dark"] .temp-color-divider {
+    background: rgba(248, 250, 252, 0.25);
+}
+
+/* 空白栏目和连接线颜色选择器的分隔线 */
+.md-color-divider {
+    width: 1px;
+    height: 18px;
+    background: rgba(15, 23, 42, 0.2);
+    flex-shrink: 0;
+    margin: 0 2px;
+}
+
+[data-theme="dark"] .md-color-divider {
     background: rgba(248, 250, 252, 0.25);
 }
 
@@ -6815,6 +6841,17 @@ a.tree-label.tree-bookmark-link:hover {
 .import-option-btn i {
     flex-shrink: 0;
     color: var(--accent-primary);
+}
+
+/* 导入对话框分组标签 */
+.import-section-label {
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--text-secondary);
+    padding: 4px 0 4px 4px;
+    margin: 0;
+    text-transform: none;
+    letter-spacing: 0.3px;
 }
 
 /* 空状态 */
@@ -12800,7 +12837,7 @@ a.tree-label.tree-bookmark-link:hover {
 .canvas-manage-btn {
     display: flex;
     align-items: center;
-    gap: 10px;
+    gap: 8px;
     width: 100%;
     padding: 10px 12px;
     background: var(--bg-secondary);
@@ -12820,8 +12857,26 @@ a.tree-label.tree-bookmark-link:hover {
 .canvas-manage-btn i {
     font-size: 14px;
     color: var(--accent-primary);
-    width: 18px;
+    width: 20px;
     text-align: center;
+    flex-shrink: 0;
+}
+
+/* 调整导入/导出图标位置，使SVG内部的文件部分对齐，同时保持文字左对齐 */
+#importCanvasBtn i.fa-file-import {
+    margin-left: -2px;
+    margin-right: 2px;
+}
+
+#exportCanvasBtn i.fa-file-export {
+    margin-left: 2px;
+    margin-right: -2px;
+}
+
+.canvas-manage-btn span {
+    position: relative;
+    top: 0;
+    /* 文字向下微调 */
 }
 
 .canvas-manage-btn.danger {
@@ -12835,6 +12890,261 @@ a.tree-label.tree-bookmark-link:hover {
 .canvas-manage-btn.danger:hover {
     background: var(--error-light);
     border-color: var(--error);
+}
+
+/* Canvas 清除按钮下拉菜单样式 */
+.canvas-clear-dropdown {
+    position: relative;
+}
+
+/* 清除主按钮（带下拉箭头） */
+.canvas-clear-dropdown .canvas-manage-btn {
+    padding-right: 32px;
+    /* 给箭头留空间 */
+}
+
+/* 下拉箭头 */
+.clear-dropdown-arrow {
+    position: absolute;
+    right: 10px;
+    top: 50%;
+    transform: translateY(-50%);
+    font-size: 10px;
+    color: var(--error);
+    transition: transform 0.2s ease;
+}
+
+.canvas-clear-dropdown.open .clear-dropdown-arrow {
+    transform: translateY(-50%) rotate(180deg);
+}
+
+/* 下拉菜单容器 */
+.clear-dropdown-menu {
+    position: absolute;
+    top: calc(100% + 4px);
+    left: 0;
+    right: 0;
+    min-width: 220px;
+    background: var(--bg-primary);
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.15);
+    z-index: 1020;
+    padding: 4px;
+    animation: dropdownFadeIn 0.15s ease-out;
+}
+
+@keyframes dropdownFadeIn {
+    from {
+        opacity: 0;
+        transform: translateY(-4px);
+    }
+
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+/* 下拉菜单项 */
+.clear-dropdown-item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    width: 100%;
+    padding: 10px 12px;
+    background: transparent;
+    border: none;
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 13px;
+    color: var(--text-primary);
+    transition: all 0.15s ease;
+    text-align: left;
+}
+
+.clear-dropdown-item:hover {
+    background: var(--bg-tertiary);
+}
+
+.clear-dropdown-item i {
+    font-size: 14px;
+    color: var(--text-secondary);
+    width: 18px;
+    text-align: center;
+    flex-shrink: 0;
+}
+
+.clear-dropdown-item:hover i {
+    color: var(--accent-primary);
+}
+
+/* 危险操作样式 */
+.clear-dropdown-item.clear-all-danger {
+    color: var(--error);
+}
+
+.clear-dropdown-item.clear-all-danger i {
+    color: var(--error);
+}
+
+.clear-dropdown-item.clear-all-danger:hover {
+    background: var(--error-light);
+}
+
+/* 菜单项组（清空未标注节点 + 帮助按钮） */
+.clear-dropdown-item-group {
+    display: flex;
+    align-items: stretch;
+    position: relative;
+}
+
+.clear-dropdown-item-group .clear-dropdown-item {
+    flex: 1;
+    padding-right: 36px;
+    /* 给帮助按钮留空间 */
+}
+
+/* 下拉菜单内的帮助按钮 */
+.clear-dropdown-help-btn {
+    position: absolute;
+    right: 8px;
+    top: 50%;
+    transform: translateY(-50%);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 22px;
+    height: 22px;
+    background: transparent;
+    border: none;
+    border-radius: 50%;
+    cursor: pointer;
+    color: var(--text-tertiary);
+    font-size: 13px;
+    transition: all 0.15s ease;
+    padding: 0;
+    z-index: 1;
+}
+
+.clear-dropdown-help-btn:hover {
+    color: var(--accent-primary);
+    background: rgba(0, 122, 255, 0.1);
+}
+
+/* 清除规则提示框（在下拉菜单内） */
+.clear-dropdown-item-group .clear-rules-tooltip {
+    position: absolute;
+    top: 50%;
+    transform: translateY(-50%);
+    left: calc(100% + 8px);
+    width: 320px;
+    background: var(--bg-primary);
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.15);
+    z-index: 1030;
+}
+
+/* 深色模式 */
+[data-theme="dark"] .clear-dropdown-menu {
+    background: rgba(36, 37, 38, 0.98);
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4);
+}
+
+[data-theme="dark"] .clear-dropdown-item-group .clear-rules-tooltip {
+    background: rgba(36, 37, 38, 0.98);
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4);
+}
+
+/* 保留原有的清除规则提示框样式 */
+.clear-rules-tooltip {
+    position: absolute;
+    top: calc(100% + 8px);
+    left: 0;
+    width: 360px;
+    background: var(--bg-primary);
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.15);
+    z-index: 1010;
+}
+
+@keyframes tooltipFadeIn {
+    from {
+        opacity: 0;
+        transform: translateY(-4px);
+    }
+
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+.clear-rules-header {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 10px 14px;
+    border-bottom: 1px solid var(--border-color);
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--text-primary);
+}
+
+.clear-rules-header i {
+    color: var(--accent-primary);
+}
+
+.clear-rules-content {
+    padding: 12px 14px;
+}
+
+.clear-rules-section {
+    margin-bottom: 12px;
+}
+
+.clear-rules-section:last-child {
+    margin-bottom: 0;
+}
+
+.clear-rules-section-title {
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--text-secondary);
+    margin-bottom: 6px;
+}
+
+.clear-rules-section ul {
+    margin: 0;
+    padding-left: 0;
+    list-style: none;
+}
+
+.clear-rules-section li {
+    font-size: 12px;
+    color: var(--text-primary);
+    padding: 4px 0;
+    display: flex;
+    align-items: flex-start;
+    gap: 6px;
+}
+
+.clear-rules-section li strong {
+    color: var(--accent-primary);
+    font-weight: 600;
+}
+
+.clear-rules-section li i.fa-check {
+    color: #22c55e;
+    font-size: 11px;
+    margin-top: 2px;
+}
+
+[data-theme="dark"] .clear-rules-tooltip {
+    background: rgba(36, 37, 38, 0.98);
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4);
 }
 
 [data-theme="dark"] .canvas-manage-modal {
@@ -13764,4 +14074,294 @@ body.canvas-popover-active .md-list-popover {
 
 [data-theme="dark"] .manual-selector-depth-select:disabled {
     background: rgba(255, 255, 255, 0.03);
+}
+
+/* ==================== 点击清除模式样式 ==================== */
+
+/* 点击清除模式下的画布 */
+.canvas-workspace.click-to-clear-mode {
+    cursor: crosshair;
+}
+
+/* 可选择的项目 */
+.click-to-clear-selectable {
+    cursor: pointer !important;
+    transition: transform 0.15s ease, box-shadow 0.15s ease, outline 0.15s ease;
+}
+
+.click-to-clear-selectable:hover {
+    outline: 2px dashed var(--accent-primary);
+    outline-offset: 2px;
+}
+
+/* 选中的项目 */
+.click-to-clear-selected {
+    outline: 3px solid var(--error) !important;
+    outline-offset: 2px;
+    box-shadow: 0 0 20px rgba(239, 68, 68, 0.4) !important;
+}
+
+.click-to-clear-selected::after {
+    content: '✓';
+    position: absolute;
+    top: -10px;
+    right: -10px;
+    width: 24px;
+    height: 24px;
+    background: var(--error);
+    color: white;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 14px;
+    font-weight: bold;
+    z-index: 1000;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+}
+
+/* 点击清除浮动工具栏 */
+.click-to-clear-toolbar {
+    position: fixed;
+    bottom: 24px;
+    left: 50%;
+    transform: translateX(-50%);
+    background: rgba(255, 255, 255, 0.98);
+    border: 1px solid var(--border-color);
+    border-radius: 12px;
+    padding: 12px 20px;
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.2);
+    z-index: 100000;
+    backdrop-filter: blur(10px);
+    animation: toolbarSlideUp 0.3s ease-out;
+}
+
+@keyframes toolbarSlideUp {
+    from {
+        opacity: 0;
+        transform: translateX(-50%) translateY(20px);
+    }
+
+    to {
+        opacity: 1;
+        transform: translateX(-50%) translateY(0);
+    }
+}
+
+.click-to-clear-toolbar-content {
+    display: flex;
+    align-items: center;
+    gap: 20px;
+    flex-wrap: wrap;
+    justify-content: center;
+}
+
+.click-to-clear-hint {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 13px;
+    color: var(--text-secondary);
+}
+
+.click-to-clear-hint i {
+    color: var(--accent-primary);
+}
+
+.click-to-clear-count {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 13px;
+    color: var(--text-primary);
+    font-weight: 500;
+    padding: 6px 12px;
+    background: var(--bg-tertiary);
+    border-radius: 6px;
+}
+
+#clickToClearCountNum {
+    color: var(--accent-primary);
+    font-weight: 700;
+    min-width: 20px;
+    text-align: center;
+}
+
+.click-to-clear-actions {
+    display: flex;
+    gap: 8px;
+}
+
+.click-to-clear-btn {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 8px 14px;
+    border: 1px solid var(--border-color);
+    border-radius: 6px;
+    background: var(--bg-secondary);
+    color: var(--text-primary);
+    font-size: 13px;
+    cursor: pointer;
+    transition: all 0.15s ease;
+}
+
+.click-to-clear-btn:hover:not(:disabled) {
+    background: var(--bg-tertiary);
+    border-color: var(--accent-primary);
+}
+
+.click-to-clear-btn:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
+.click-to-clear-btn.select-all {
+    color: var(--accent-primary);
+}
+
+.click-to-clear-btn.select-all i {
+    color: var(--accent-primary);
+}
+
+.click-to-clear-btn.confirm {
+    background: var(--error);
+    color: white;
+    border-color: var(--error);
+}
+
+.click-to-clear-btn.confirm:hover:not(:disabled) {
+    background: #dc2626;
+    border-color: #dc2626;
+}
+
+.click-to-clear-btn.confirm:disabled {
+    background: var(--bg-tertiary);
+    color: var(--text-tertiary);
+    border-color: var(--border-color);
+}
+
+.click-to-clear-btn.cancel {
+    color: var(--text-secondary);
+}
+
+.click-to-clear-btn.cancel:hover {
+    background: var(--bg-tertiary);
+    color: var(--text-primary);
+}
+
+/* 深色模式 */
+[data-theme="dark"] .click-to-clear-toolbar {
+    background: rgba(36, 37, 38, 0.98);
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
+}
+
+[data-theme="dark"] .click-to-clear-selected {
+    box-shadow: 0 0 20px rgba(239, 68, 68, 0.5) !important;
+}
+
+/* 点击清除确认弹窗 */
+.click-to-clear-confirm-popup {
+    position: fixed;
+    transform: translateX(-50%);
+    background: var(--bg-primary);
+    border: 1px solid var(--border-color);
+    border-radius: 12px;
+    padding: 16px 20px;
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.25);
+    z-index: 100001;
+    min-width: 220px;
+    animation: popupSlideDown 0.2s ease-out;
+}
+
+@keyframes popupSlideDown {
+    from {
+        opacity: 0;
+        transform: translateX(-50%) translateY(10px);
+    }
+
+    to {
+        opacity: 1;
+        transform: translateX(-50%) translateY(0);
+    }
+}
+
+.click-to-clear-confirm-content {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 10px;
+    text-align: center;
+}
+
+.click-to-clear-confirm-icon {
+    width: 40px;
+    height: 40px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: var(--error-light);
+    border-radius: 50%;
+    color: var(--error);
+    font-size: 18px;
+}
+
+.click-to-clear-confirm-text {
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--text-primary);
+}
+
+.click-to-clear-confirm-hint {
+    font-size: 12px;
+    color: var(--text-tertiary);
+}
+
+.click-to-clear-confirm-actions {
+    display: flex;
+    gap: 10px;
+    margin-top: 6px;
+    width: 100%;
+}
+
+.click-to-clear-confirm-btn {
+    flex: 1;
+    padding: 8px 16px;
+    border-radius: 6px;
+    font-size: 13px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.15s ease;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+}
+
+.click-to-clear-confirm-btn.cancel {
+    background: var(--bg-secondary);
+    border: 1px solid var(--border-color);
+    color: var(--text-secondary);
+}
+
+.click-to-clear-confirm-btn.cancel:hover {
+    background: var(--bg-tertiary);
+    color: var(--text-primary);
+}
+
+.click-to-clear-confirm-btn.delete {
+    background: var(--error);
+    border: 1px solid var(--error);
+    color: white;
+}
+
+.click-to-clear-confirm-btn.delete:hover {
+    background: #dc2626;
+    border-color: #dc2626;
+}
+
+/* 深色模式 - 确认弹窗 */
+[data-theme="dark"] .click-to-clear-confirm-popup {
+    background: rgba(36, 37, 38, 0.98);
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
 }

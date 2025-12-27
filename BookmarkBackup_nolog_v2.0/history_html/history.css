@@ -6808,13 +6808,13 @@ a.tree-label.tree-bookmark-link:hover {
 }
 
 .import-dialog-body {
-    padding: 24px;
+    padding: 16px 20px 18px 20px;
 }
 
 .import-options {
     display: flex;
     flex-direction: column;
-    gap: 12px;
+    gap: 8px;
 }
 
 .import-option-btn {
@@ -6853,6 +6853,80 @@ a.tree-label.tree-bookmark-link:hover {
     text-transform: none;
     letter-spacing: 0.3px;
 }
+
+/* 导入对话框行布局 */
+.import-row {
+    display: flex;
+    gap: 10px;
+}
+
+/* 紧凑型导入按钮 */
+.import-option-btn-compact {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    padding: 16px 12px;
+    background: var(--bg-secondary);
+    border: 2px solid var(--border-color);
+    border-radius: 8px;
+    cursor: pointer;
+    transition: all 0.2s;
+    font-size: 13px;
+    color: var(--text-primary);
+    text-align: center;
+    min-width: 0;
+}
+
+.import-option-btn-compact:hover {
+    background: var(--bg-elevated);
+    border-color: var(--accent-primary);
+    transform: translateY(-1px);
+}
+
+.import-option-btn-compact:active {
+    transform: translateY(0);
+}
+
+.import-option-btn-compact i {
+    font-size: 22px;
+    color: var(--accent-primary);
+}
+
+.import-option-btn-compact span {
+    font-weight: 500;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: 100%;
+}
+
+/* 大标题样式（无emoji） */
+.import-section-label-large {
+    font-size: 14px;
+    font-weight: 700;
+    color: var(--text-primary);
+    padding: 2px 0 6px 0;
+    margin: 0;
+}
+
+/* 两列布局（书签文件行） - 让两个按钮和三个按钮保持相同尺寸 */
+.import-row-2cols {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 10px;
+}
+
+.import-row-2cols .import-option-btn-compact:nth-child(1) {
+    grid-column: 1;
+}
+
+.import-row-2cols .import-option-btn-compact:nth-child(2) {
+    grid-column: 2;
+}
+
 
 /* 空状态 */
 .canvas-empty-state {

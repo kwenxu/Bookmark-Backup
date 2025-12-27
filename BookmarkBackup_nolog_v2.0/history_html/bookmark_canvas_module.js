@@ -14545,6 +14545,10 @@ function clearAllTempNodes() {
     const container = document.getElementById('canvasContent');
     if (!container) return;
 
+    // 先关闭管理模态框，防止 confirm 对话框与模态框交互冲突
+    const manageModal = document.getElementById('canvasManageModal');
+    if (manageModal) manageModal.style.display = 'none';
+
     const lang = (typeof currentLang === 'string' && currentLang) ? currentLang : 'zh_CN';
     const isEn = lang === 'en' || lang === 'en_US' || lang === 'en-GB' || String(lang).toLowerCase().startsWith('en');
     const text = {
@@ -14665,6 +14669,10 @@ function clearAllTempNodes() {
 function clearAllExceptPermanent() {
     const lang = (typeof currentLang === 'string' && currentLang) ? currentLang : 'zh_CN';
     const isEn = lang === 'en' || lang === 'en_US' || lang === 'en-GB' || String(lang).toLowerCase().startsWith('en');
+
+    // 先关闭管理模态框，防止 confirm 对话框与模态框交互冲突
+    const manageModal = document.getElementById('canvasManageModal');
+    if (manageModal) manageModal.style.display = 'none';
 
     const tempCount = CanvasState.tempSections.length;
     const mdCount = CanvasState.mdNodes.length;
@@ -15653,7 +15661,18 @@ function setupCanvasEventListeners() {
 
     // 清空未标注节点按钮 (原有功能)
     const clearBtn = document.getElementById('clearTempNodesBtn');
-    if (clearBtn) clearBtn.addEventListener('click', clearAllTempNodes);
+    if (clearBtn) {
+        clearBtn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            // 关闭下拉菜单
+            if (clearDropdownMenu) {
+                clearDropdownMenu.style.display = 'none';
+                clearDropdown.classList.remove('open');
+            }
+            // 执行清除
+            clearAllTempNodes();
+        });
+    }
 
     // 清除规则帮助按钮 - 点击显示提示框
     const clearHelpBtn = document.getElementById('clearTempNodesHelpBtn');
@@ -15793,28 +15812,32 @@ function showImportDialog() {
             </div>
             <div class="import-dialog-body">
                 <div class="import-options">
-                    <div class="import-section-label">${isEn ? '📦 Canvas Snapshot' : '📦 画布快照'}</div>
-                    <button class="import-option-btn" id="importCanvasZipBtn">
-                        <i class="fas fa-file-archive" style="font-size: 24px;"></i>
-                        <span>${isEn ? 'Import Archive (.zip / .7z)' : '导入压缩包 (.zip / .7z)'}</span>
-                    </button>
-                    <button class="import-option-btn" id="importCanvasFolderBtn">
-                        <i class="fas fa-folder-open" style="font-size: 24px;"></i>
-                        <span>${isEn ? 'Import Folder' : '导入文件夹快照'}</span>
-                    </button>
-                    <button class="import-option-btn" id="importCanvasJsonBtn">
-                        <i class="fas fa-file-code" style="font-size: 24px;"></i>
-                        <span>${isEn ? 'Import JSON (.json)' : '导入 JSON 快照 (.json)'}</span>
-                    </button>
-                    <div class="import-section-label" style="margin-top: 16px;">${isEn ? '📑 Bookmarks (to Temp Section)' : '📑 书签文件（导入为临时栏目）'}</div>
-                    <button class="import-option-btn" id="importHtmlBtn">
-                        <i class="fas fa-file-code" style="font-size: 24px;"></i>
-                        <span>${isEn ? 'Import HTML Bookmarks' : '导入 HTML 书签'}</span>
-                    </button>
-                    <button class="import-option-btn" id="importJsonBtn">
-                        <i class="fas fa-file-code" style="font-size: 24px;"></i>
-                        <span>${isEn ? 'Import JSON Bookmarks' : '导入 JSON 书签'}</span>
-                    </button>
+                    <div class="import-section-label-large">${isEn ? 'Canvas Snapshot' : '画布快照'}</div>
+                    <div class="import-row">
+                        <button class="import-option-btn-compact" id="importCanvasJsonBtn" title="${isEn ? 'Import JSON (.json)' : '导入 JSON 快照 (.json)'}">
+                            <i class="fas fa-file-code"></i>
+                            <span>${isEn ? 'JSON' : 'JSON'}</span>
+                        </button>
+                        <button class="import-option-btn-compact" id="importCanvasFolderBtn" title="${isEn ? 'Import Folder' : '导入文件夹快照'}">
+                            <i class="fas fa-folder-open"></i>
+                            <span>${isEn ? 'Folder' : '文件夹'}</span>
+                        </button>
+                        <button class="import-option-btn-compact" id="importCanvasZipBtn" title="${isEn ? 'Import Archive (.zip / .7z)' : '导入压缩包 (.zip / .7z)'}">
+                            <i class="fas fa-file-archive"></i>
+                            <span>${isEn ? 'Archive' : '压缩包'}</span>
+                        </button>
+                    </div>
+                    <div class="import-section-label-large" style="margin-top: 12px;">${isEn ? 'Bookmarks' : '书签文件'}</div>
+                    <div class="import-row import-row-2cols">
+                        <button class="import-option-btn-compact" id="importHtmlBtn" title="${isEn ? 'Import HTML Bookmarks' : '导入 HTML 书签'}">
+                            <i class="fas fa-code"></i>
+                            <span>${isEn ? 'HTML' : 'HTML 书签'}</span>
+                        </button>
+                        <button class="import-option-btn-compact" id="importJsonBtn" title="${isEn ? 'Import JSON Bookmarks' : '导入 JSON 书签'}">
+                            <i class="fas fa-file-alt"></i>
+                            <span>${isEn ? 'JSON' : 'JSON 书签'}</span>
+                        </button>
+                    </div>
                 </div>
                 <input type="file" id="canvasFileInput" accept=".zip,.7z,.html,.json" style="display: none;">
                 <input type="file" id="canvasFolderInput" webkitdirectory directory style="display: none;">

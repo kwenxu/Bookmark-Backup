@@ -18,7 +18,7 @@ var __hoverExpandState = (typeof window !== 'undefined' && window.__hoverExpandS
 if (typeof window !== 'undefined') window.__hoverExpandState = __hoverExpandState;
 
 // 长时间不拖动后重置的阈值（毫秒）
-const HOVER_EXPAND_RESET_THRESHOLD = 5000; // 5秒不拖动则重置
+var HOVER_EXPAND_RESET_THRESHOLD = 5000; // 5秒不拖动则重置
 
 function getHoverDelayForFolder(folderId) {
     // 检查是否距离上次拖动结束已经过了很长时间，如果是则重置计数

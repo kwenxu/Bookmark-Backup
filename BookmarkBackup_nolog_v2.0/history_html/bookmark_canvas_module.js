@@ -21040,6 +21040,9 @@ window.CanvasModule = {
     scheduleDormancyUpdate: scheduleDormancyUpdate,
     forceWakeAndRender: forceWakeAndRender,
     clearLazyLoadState: clearLazyLoadState,
+    // 懒加载：供拖拽模块调用
+    loadFolderChildren: loadFolderChildren,
+    getTempSection: getTempSection,
     temp: {
         getSection: getTempSection,
         findItem: findTempItemEntry,

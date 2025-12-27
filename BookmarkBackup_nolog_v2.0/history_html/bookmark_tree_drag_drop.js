@@ -13,51 +13,126 @@ let lastScrollTime = 0;
 let hoverExpandTimer = null;
 // 记录文件夹被悬停展开的次数和定时器，加快二次与后续展开
 var __hoverExpandState = (typeof window !== 'undefined' && window.__hoverExpandState)
-  ? window.__hoverExpandState
-  : { timers: new Map(), counts: new Map(), lastAt: new Map(), session: 0 };
+    ? window.__hoverExpandState
+    : { timers: new Map(), counts: new Map(), lastAt: new Map(), session: 0, lastDragEndTime: 0 };
 if (typeof window !== 'undefined') window.__hoverExpandState = __hoverExpandState;
 
+// 长时间不拖动后重置的阈值（毫秒）
+const HOVER_EXPAND_RESET_THRESHOLD = 5000; // 5秒不拖动则重置
+
 function getHoverDelayForFolder(folderId) {
-  // 仅依赖“本次拖动内”的识别次数：
-  // 0 次 → 2000ms；1 次 → 240ms；≥2 次 → 120ms
-  // 不再使用跨时间的记忆（since/lastAt），以满足“仅限当前一次拖动”。
-  const count = __hoverExpandState.counts.get(folderId) || 0;
-  if (count >= 2) return 120;
-  if (count >= 1) return 240;
-  return 2000;
+    // 检查是否距离上次拖动结束已经过了很长时间，如果是则重置计数
+    const now = Date.now();
+    if (__hoverExpandState.lastDragEndTime > 0 &&
+        (now - __hoverExpandState.lastDragEndTime) > HOVER_EXPAND_RESET_THRESHOLD) {
+        // 距离上次拖动结束超过阈值，重置所有计数
+        __hoverExpandState.counts.clear();
+        __hoverExpandState.lastDragEndTime = 0;
+    }
+
+    // 延迟逻辑：首次 2000ms，后续统一 1200ms
+    const count = __hoverExpandState.counts.get(folderId) || 0;
+    if (count >= 1) return 1200;
+    return 2000;
 }
 
 function scheduleFolderExpand(targetNode) {
-  if (!targetNode || targetNode.dataset.nodeType !== 'folder') return;
-  const folderId = targetNode.dataset.nodeId;
-  // 若已有定时器，仅重置定时而不增加识别计数（避免连续 dragover 快速累加）
-  const hadTimer = __hoverExpandState.timers.has(folderId);
-  // 若已有定时器，保持不变，避免把“首次 3 秒”意外缩短为更快延迟
-  if (hadTimer) return;
+    if (!targetNode || targetNode.dataset.nodeType !== 'folder') return;
+    const folderId = targetNode.dataset.nodeId;
+    // 若已有定时器，仅重置定时而不增加识别计数（避免连续 dragover 快速累加）
+    const hadTimer = __hoverExpandState.timers.has(folderId);
+    // 若已有定时器，保持不变，避免把“首次 3 秒”意外缩短为更快延迟
+    if (hadTimer) return;
 
-  const delay = getHoverDelayForFolder(folderId);
+    const delay = getHoverDelayForFolder(folderId);
 
-  // 在“安排定时器”的时刻记录一次识别，使得：
-  // - 第一次安排 → 使用 3000ms，同时计数从 0→1；
-  // - 第二次（离开后再次悬停并安排）→ 使用 240ms，计数 1→2；
-  // - 后续 → 使用 120ms；
-  const prev = __hoverExpandState.counts.get(folderId) || 0;
-  __hoverExpandState.counts.set(folderId, Math.min(prev + 1, 2));
-  __hoverExpandState.lastAt.set(folderId, Date.now());
+    // 在“安排定时器”的时刻记录一次识别，使得：
+    // - 第一次安排 → 使用 2500ms，同时计数从 0→1；
+    // - 第二次（离开后再次悬停并安排）→ 使用 400ms，计数 1→2；
+    // - 后续 → 使用 200ms；
+    const prev = __hoverExpandState.counts.get(folderId) || 0;
+    __hoverExpandState.counts.set(folderId, Math.min(prev + 1, 2));
+    __hoverExpandState.lastAt.set(folderId, Date.now());
 
-  const sessionAtSchedule = __hoverExpandState.session;
-  const timer = setTimeout(() => {
-    try {
-      if (__hoverExpandState.session !== sessionAtSchedule) return; // 仅限当前拖动会话
-      const children = targetNode.nextElementSibling;
-      const toggle = targetNode.querySelector('.tree-toggle');
-      if (children && children.classList.contains('tree-children') && !children.classList.contains('expanded')) {
-        children.classList.add('expanded');
-        if (toggle) toggle.classList.add('expanded');
-      }
-    } catch (_) {}
-  }, delay);
-  __hoverExpandState.timers.set(folderId, timer);
+    const sessionAtSchedule = __hoverExpandState.session;
+    const timer = setTimeout(() => {
+        try {
+            if (__hoverExpandState.session !== sessionAtSchedule) return; // 仅限当前拖动会话
+
+            const treeNode = targetNode.closest('.tree-node');
+            const children = treeNode ? treeNode.querySelector(':scope > .tree-children') : targetNode.nextElementSibling;
+            const toggle = targetNode.querySelector('.tree-toggle');
+            const icon = targetNode.querySelector('.tree-icon.fas');
+
+            if (children && children.classList.contains('tree-children') && !children.classList.contains('expanded')) {
+                children.classList.add('expanded');
+                if (toggle) toggle.classList.add('expanded');
+
+                // 更新文件夹图标
+                if (icon) {
+                    icon.classList.remove('fa-folder');
+                    icon.classList.add('fa-folder-open');
+                }
+
+                // 【关键修复】触发懒加载：检查子节点是否需要加载
+                const treeType = targetNode.dataset.treeType;
+                const sectionId = targetNode.dataset.sectionId;
+                const childrenLoaded = targetNode.dataset.childrenLoaded;
+                const hasChildren = targetNode.dataset.hasChildren;
+                const nodeId = targetNode.dataset.nodeId;
+
+                if (childrenLoaded === 'false' && hasChildren === 'true') {
+                    if (treeType === 'temporary' && sectionId) {
+                        // 临时栏目：调用 Canvas 模块的懒加载函数
+                        try {
+                            const loadFolderChildren = window.CanvasModule?.loadFolderChildren;
+                            const getTempSection = window.CanvasModule?.getTempSection;
+                            if (loadFolderChildren && getTempSection) {
+                                const section = getTempSection(sectionId);
+                                if (section) {
+                                    loadFolderChildren(section, nodeId, children);
+                                }
+                            }
+                        } catch (loadErr) {
+                            console.warn('[拖拽展开] 临时栏目懒加载失败:', loadErr);
+                        }
+                    } else if (treeType === 'permanent' || !treeType) {
+                        // 永久栏目：调用 history.js 的懒加载函数
+                        try {
+                            if (typeof loadPermanentFolderChildrenLazy === 'function') {
+                                loadPermanentFolderChildrenLazy(nodeId, children, 0, null);
+                            }
+                        } catch (loadErr) {
+                            console.warn('[拖拽展开] 永久栏目懒加载失败:', loadErr);
+                        }
+                    }
+                }
+
+                // 【新增】保存展开状态
+                try {
+                    if (treeType === 'temporary' && sectionId) {
+                        // 临时栏目：更新 LAZY_LOAD_THRESHOLD 并保存
+                        const folderId = `${sectionId}-${nodeId}`;
+                        if (window.CanvasModule?.clearLazyLoadState) {
+                            // 使用 Canvas 模块的内部状态管理
+                            // LAZY_LOAD_THRESHOLD 是内部变量，通过间接方式更新
+                        }
+                        // 调用 saveTempExpandState（如果存在）
+                        if (typeof saveTempExpandState === 'function') {
+                            saveTempExpandState();
+                        }
+                    } else {
+                        // 永久栏目：调用 saveTreeExpandState
+                        const treeContainer = targetNode.closest('.bookmark-tree');
+                        if (treeContainer && typeof saveTreeExpandState === 'function') {
+                            saveTreeExpandState(treeContainer);
+                        }
+                    }
+                } catch (_) { }
+            }
+        } catch (_) { }
+    }, delay);
+    __hoverExpandState.timers.set(folderId, timer);
 }
 let draggedNodeTreeType = 'permanent';
 let draggedNodeSectionId = null;
@@ -83,17 +158,17 @@ function initDragDrop() {
     dropIndicator.className = 'drop-indicator';
     dropIndicator.style.display = 'none';
     document.body.appendChild(dropIndicator);
-    
+
     console.log('[拖拽] 初始化完成');
 }
 
 // 为树节点绑定拖拽事件
 function attachDragEvents(treeContainer) {
     if (!treeContainer) return;
-    
+
     // 获取所有可拖拽的节点
     const draggableNodes = treeContainer.querySelectorAll('.tree-item[data-node-id]');
-    
+
     draggableNodes.forEach(node => {
         // 避免重复绑定：renderTreeView/懒加载可能多次调用 attachDragEvents
         if (node.dataset.dragEventsBound === 'true') return;
@@ -101,26 +176,26 @@ function attachDragEvents(treeContainer) {
 
         // 设置可拖拽
         node.setAttribute('draggable', 'true');
-        
+
         // 拖拽开始
         node.addEventListener('dragstart', handleDragStart);
-        
+
         // 拖拽经过
         node.addEventListener('dragover', handleDragOver);
-        
+
         // 拖拽进入
         node.addEventListener('dragenter', handleDragEnter);
-        
+
         // 拖拽离开
         node.addEventListener('dragleave', handleDragLeave);
-        
+
         // 放下
         node.addEventListener('drop', handleDrop);
-        
+
         // 拖拽结束
         node.addEventListener('dragend', handleDragEnd);
     });
-    
+
     console.log('[拖拽] 绑定拖拽事件:', draggableNodes.length, '个节点');
 
     // 额外：在滚动容器层面也监听 dragover，用于容器空白区域的自动滚动
@@ -135,7 +210,7 @@ function attachDragEvents(treeContainer) {
             scrollContainer.__autoScrollHooked = true;
             console.log('[拖拽] 已在滚动容器绑定 dragover 自动滚动监听');
         }
-    } catch (_) {}
+    } catch (_) { }
 }
 
 // 拖拽开始
@@ -144,46 +219,46 @@ function handleDragStart(e) {
     draggedNodeId = draggedNode?.dataset?.nodeId;
     draggedNodeTreeType = draggedNode?.dataset?.treeType || 'permanent';
     draggedNodeSectionId = draggedNode?.dataset?.sectionId || null;
-    
+
     // 获取被拖动节点的父级（tree-node 容器）
     draggedNodeParent = draggedNode.parentElement;
-    
+
     // 获取同级节点中相邻的上下节点
     // tree-item 的上一个兄弟是 tree-children 或另一个 tree-node
     // 需要找到前一个 tree-item 和后一个 tree-item
     let prevSibling = draggedNodeParent?.previousElementSibling;
     let nextSibling = draggedNodeParent?.nextElementSibling;
-    
+
     // 如果前一个是 tree-children，继续往前找
     while (prevSibling && prevSibling.classList.contains('tree-children')) {
         prevSibling = prevSibling.previousElementSibling;
     }
-    
+
     // 如果后一个是 tree-children，继续往后找
     while (nextSibling && nextSibling.classList.contains('tree-children')) {
         nextSibling = nextSibling.nextElementSibling;
     }
-    
+
     // 找到前一个节点的 tree-item
     draggedNodePrev = prevSibling?.querySelector('.tree-item') || null;
-    
+
     // 后一个节点的 tree-item 就是 nextSibling（如果存在的话）
-    draggedNodeNext = nextSibling?.classList.contains('tree-node') ? 
+    draggedNodeNext = nextSibling?.classList.contains('tree-node') ?
         nextSibling.querySelector('.tree-item') : null;
-    
+
     // 设置拖拽数据
     e.dataTransfer.effectAllowed = 'move';
     e.dataTransfer.setData('text/plain', draggedNodeId);
-    
+
     // 添加拖拽样式
     draggedNode.classList.add('dragging');
-    
+
     console.log('[拖拽] ===== 开始拖拽 =====');
     console.log('[拖拽] 被拖动节点ID:', draggedNodeId);
     console.log('[拖拽] 被拖动节点标题:', draggedNode?.dataset?.nodeTitle);
     console.log('[拖拽] 上一个同级节点ID:', draggedNodePrev?.dataset?.nodeId);
     console.log('[拖拽] 下一个同级节点ID:', draggedNodeNext?.dataset?.nodeId);
-    
+
     // 启动自动滚动检测
     startAutoScroll();
 
@@ -197,19 +272,19 @@ function handleDragStart(e) {
             __hoverExpandState.counts.clear();
             __hoverExpandState.lastAt.clear();
         }
-    } catch (_) {}
+    } catch (_) { }
 }
 
 // 拖拽经过
 function handleDragOver(e) {
     e.preventDefault();
     e.stopPropagation();
-    
+
     const targetNode = e.currentTarget;
     const targetNodeId = targetNode?.dataset?.nodeId;
-    
+
     e.dataTransfer.dropEffect = 'move';
-    
+
     // 显示拖拽指示器（包含屏蔽逻辑）
     showDropIndicator(targetNode, e);
 
@@ -217,15 +292,15 @@ function handleDragOver(e) {
     if (targetNode.dataset.nodeType === 'folder') {
         scheduleFolderExpand(targetNode);
     }
-    
+
     // 当来源为临时栏目时，对永久栏目的文件夹增加蓝色候选高亮
     try {
         // 无论来源（永久/临时/指针），只要目标是文件夹都蓝色候选高亮
         if (targetNode.dataset.nodeType === 'folder') {
             targetNode.classList.add('temp-tree-drop-highlight');
         }
-    } catch (_) {}
-    
+    } catch (_) { }
+
     // 更新自动滚动
     updateAutoScroll(e);
 }
@@ -234,7 +309,7 @@ function handleDragOver(e) {
 function handleDragEnter(e) {
     e.preventDefault();
     e.stopPropagation();
-    
+
     const targetNode = e.currentTarget;
     if (targetNode !== draggedNode && !isDescendant(targetNode, draggedNode)) {
         targetNode.classList.add('drag-over');
@@ -245,10 +320,10 @@ function handleDragEnter(e) {
         if (targetNode.dataset.nodeType === 'folder') {
             targetNode.classList.add('temp-tree-drop-highlight');
         }
-    } catch (_) {}
+    } catch (_) { }
 
     // 悬停自动展开文件夹（带二次与后续加速）
-    try { clearTimeout(hoverExpandTimer); } catch(_) {}
+    try { clearTimeout(hoverExpandTimer); } catch (_) { }
     scheduleFolderExpand(targetNode);
 }
 
@@ -256,11 +331,11 @@ function handleDragEnter(e) {
 function handleDragLeave(e) {
     e.preventDefault();
     e.stopPropagation();
-    
+
     const targetNode = e.currentTarget;
     targetNode.classList.remove('drag-over');
     targetNode.classList.remove('temp-tree-drop-highlight');
-    try { clearTimeout(hoverExpandTimer); } catch(_) {}
+    try { clearTimeout(hoverExpandTimer); } catch (_) { }
     if (targetNode && targetNode.dataset && targetNode.dataset.nodeId) {
         const t = __hoverExpandState.timers.get(targetNode.dataset.nodeId);
         if (t) { clearTimeout(t); __hoverExpandState.timers.delete(targetNode.dataset.nodeId); }
@@ -271,18 +346,18 @@ function handleDragLeave(e) {
 async function handleDrop(e) {
     e.preventDefault();
     e.stopPropagation();
-    
+
     const targetNode = e.currentTarget;
     targetNode.classList.remove('drag-over');
     targetNode.classList.remove('temp-tree-drop-highlight');
-    
+
     const targetNodeId = targetNode.dataset.nodeId;
     const targetIsFolder = targetNode.dataset.nodeType === 'folder';
     const position = dropIndicator ? dropIndicator.dataset.position : null;
-    
+
     // 隐藏拖拽指示器
     hideDropIndicator();
-    
+
     const targetTreeType = targetNode.dataset.treeType || 'permanent';
     const targetSectionId = targetNode.dataset.sectionId || null;
     await moveBookmark(draggedNodeId, targetNodeId, targetIsFolder, {
@@ -301,7 +376,7 @@ function handleDragEnd(e) {
     if (draggedNode) {
         draggedNode.classList.remove('dragging');
     }
-    
+
     // 移除所有drag-over样式
     document.querySelectorAll('.drag-over').forEach(node => {
         node.classList.remove('drag-over');
@@ -310,13 +385,13 @@ function handleDragEnd(e) {
     document.querySelectorAll('.temp-tree-drop-highlight').forEach(node => {
         node.classList.remove('temp-tree-drop-highlight');
     });
-    
+
     // 隐藏拖拽指示器
     hideDropIndicator();
-    
+
     // 停止自动滚动
     stopAutoScroll();
-    
+
     draggedNode = null;
     draggedNodeId = null;
     draggedNodeParent = null;
@@ -332,35 +407,36 @@ function handleDragEnd(e) {
         __hoverExpandState.session = (__hoverExpandState.session || 0) + 1;
         __hoverExpandState.timers.forEach((t) => clearTimeout(t));
         __hoverExpandState.timers.clear();
-        // 同时重置计数与时间戳，确保下一次拖动从“首 3 秒”开始
-        __hoverExpandState.counts.clear();
+        // 记录拖动结束时间，用于判断是否需要重置延迟
+        // 不立即清除计数，让后续拖动可以继续使用1.2秒的快速延迟
+        __hoverExpandState.lastDragEndTime = Date.now();
         __hoverExpandState.lastAt.clear();
-    } catch (_) {}
-    
+    } catch (_) { }
+
     console.log('[拖拽] 拖拽结束');
 }
 
 // 显示拖拽指示器
 function showDropIndicator(targetNode, e) {
     if (!dropIndicator) return;
-    
+
     const rect = targetNode.getBoundingClientRect();
     const mouseY = e.clientY;
     const targetIsFolder = targetNode?.dataset?.nodeType === 'folder';
-    
+
     // 检查是否是当前层级的第一个节点
     const treeNode = targetNode.closest('.tree-node');
     const isFirstInLevel = treeNode && !treeNode.previousElementSibling;
-    
+
     // 检查文件夹是否展开
     let isFolderExpanded = false;
     if (targetIsFolder && treeNode) {
         const childrenContainer = treeNode.querySelector(':scope > .tree-children');
         isFolderExpanded = childrenContainer && childrenContainer.classList.contains('expanded');
     }
-    
+
     let position;
-    
+
     if (targetIsFolder) {
         if (isFolderExpanded) {
             // 展开的文件夹：上半部分 = before（如果是首位）或 inside，下半部分也是 inside（没有 after）
@@ -387,7 +463,7 @@ function showDropIndicator(targetNode, e) {
             position = 'after';
         }
     }
-    
+
     // 设置指示器位置
     if (position === 'before') {
         dropIndicator.style.top = (rect.top + window.scrollY) + 'px';
@@ -405,7 +481,7 @@ function showDropIndicator(targetNode, e) {
         // inside - 隐藏线条（文件夹高亮显示）
         dropIndicator.style.display = 'none';
     }
-    
+
     dropIndicator.dataset.position = position;
 }
 
@@ -506,7 +582,7 @@ async function moveBookmark(sourceId, targetId, targetIsFolder, context) {
             }
             return;
         }
-        
+
         if (sourceTreeType === 'temporary' && targetTreeType === 'permanent' && manager && chrome && chrome.bookmarks) {
             const payload = manager.extractPayload(sourceSectionId, [sourceId]);
             // 临时栏目到永久栏目不需要调整索引（源不在永久栏目中）
@@ -520,7 +596,7 @@ async function moveBookmark(sourceId, targetId, targetIsFolder, context) {
             console.log('[拖拽] 临时->永久完成，等待 onCreated 事件增量更新');
             return;
         }
-        
+
         if (sourceTreeType === 'permanent' && targetTreeType === 'temporary' && manager && chrome && chrome.bookmarks) {
             const nodes = await chrome.bookmarks.getSubTree(sourceId);
             const payload = nodes && nodes[0] ? [serializeBookmarkNode(nodes[0])] : [];
@@ -528,39 +604,39 @@ async function moveBookmark(sourceId, targetId, targetIsFolder, context) {
             manager.insertFromPayload(targetSectionId, targetInfo.parentId, payload, targetInfo.index);
             return;
         }
-        
+
         if (!chrome || !chrome.bookmarks) {
             console.warn('[拖拽] Chrome扩展环境不可用');
             return;
         }
-        
+
         const [sourceNode] = await chrome.bookmarks.get(sourceId);
         const [targetNode] = await chrome.bookmarks.get(targetId);
         const insertInfo = await computePermanentInsertion(targetId, targetIsFolder, position);
-        
+
         console.log('[拖拽] 永久栏目内移动:', {
             source: sourceNode?.title,
             target: targetNode?.title,
             position,
             insertInfo
         });
-        
+
         // 【测试】只执行Chrome API，完全依赖 onMoved 事件来更新视觉
         // 先标记
         try {
             if (typeof explicitMovedIds !== 'undefined') {
                 explicitMovedIds.set(sourceId, Date.now() + Infinity);
             }
-        } catch (_) {}
-        
+        } catch (_) { }
+
         // 执行Chrome API移动
         await chrome.bookmarks.move(sourceId, {
             parentId: insertInfo.parentId,
             index: insertInfo.index
         });
-        
+
         console.log('[拖拽] Chrome API 移动成功，等待 onMoved 事件更新视觉');
-        
+
     } catch (error) {
         console.error('[拖拽] 移动操作失败:', error);
     }
@@ -569,7 +645,7 @@ async function moveBookmark(sourceId, targetId, targetIsFolder, context) {
 // 启动自动滚动
 function startAutoScroll() {
     if (autoScrollInterval) return;
-    
+
     autoScrollInterval = setInterval(() => {
         // 由 updateAutoScroll 控制实际滚动
     }, 10); // 100fps，更高的帧率提供更流畅的拖拽体验
@@ -650,20 +726,20 @@ if (typeof window !== 'undefined') {
     window.__treeDnd = {
         // 显示放置指示器
         showIndicator: showDropIndicator,
-        
+
         // 隐藏放置指示器
         hideIndicator: hideDropIndicator,
-        
+
         // 获取当前指示器位置
-        getIndicatorPosition: function() {
+        getIndicatorPosition: function () {
             return dropIndicator ? dropIndicator.dataset.position : 'inside';
         },
-        
+
         // 执行移动操作
         performMove: moveBookmark,
-        
+
         // 获取拖拽的节点信息
-        getDraggedNodeInfo: function() {
+        getDraggedNodeInfo: function () {
             return {
                 nodeId: draggedNodeId,
                 treeType: draggedNodeTreeType,

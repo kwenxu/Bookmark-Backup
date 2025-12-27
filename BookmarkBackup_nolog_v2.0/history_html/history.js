@@ -13111,6 +13111,9 @@ function loadPermanentFolderChildrenLazy(parentId, childrenContainer, startIndex
         console.warn('[Canvas Tree Lazy] load children failed:', e);
     }
 }
+// 导出到全局，供拖拽模块在悬浮展开时调用
+window.loadPermanentFolderChildrenLazy = loadPermanentFolderChildrenLazy;
+
 
 // 计算节点在指定树中的“索引地址路径”（示例：/1/2/3），从根的第一层开始使用 1 基索引
 function getIndexAddressPathFromTree(tree, targetId) {

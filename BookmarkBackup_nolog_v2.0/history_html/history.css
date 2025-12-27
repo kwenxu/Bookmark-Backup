@@ -5669,6 +5669,21 @@ a.tree-label.tree-bookmark-link:hover {
     color: #93c5fd;
     text-decoration: none;
     border-bottom: 1px solid rgba(147, 197, 253, 0.4);
+    cursor: pointer;
+    /* 使用伪元素扩大点击区域，不影响视觉效果 */
+    position: relative;
+    /* 确保链接始终可以接收鼠标事件（右键菜单、点击跳转） */
+    pointer-events: auto;
+}
+
+/* 使用::before伪元素扩大点击区域 */
+.permanent-section-tip a::before {
+    content: '';
+    position: absolute;
+    top: -4px;
+    left: -4px;
+    right: -4px;
+    bottom: -4px;
 }
 
 .permanent-section-tip a:hover {
@@ -6462,6 +6477,21 @@ a.tree-label.tree-bookmark-link:hover {
     color: #2563eb;
     text-decoration: none;
     border-bottom: 1px solid rgba(37, 99, 235, 0.3);
+    cursor: pointer;
+    /* 使用伪元素扩大点击区域，不影响视觉效果 */
+    position: relative;
+    /* 确保链接始终可以接收鼠标事件（右键菜单、点击跳转） */
+    pointer-events: auto;
+}
+
+/* 使用::before伪元素扩大点击区域 */
+.temp-node-description a::before {
+    content: '';
+    position: absolute;
+    top: -4px;
+    left: -4px;
+    right: -4px;
+    bottom: -4px;
 }
 
 .temp-node-description a:hover {
@@ -7259,6 +7289,11 @@ a.tree-label.tree-bookmark-link:hover {
 /* 空白栏目非编辑模式时，文本区域不拦截鼠标事件（允许画布滚动穿透） */
 .md-canvas-node:not(.editing) .md-canvas-text {
     pointer-events: none;
+}
+
+/* 非编辑模式下，仍允许链接接收鼠标事件（右键菜单、点击跳转），模仿Obsidian行为 */
+.md-canvas-node:not(.editing) .md-canvas-text a {
+    pointer-events: auto;
 }
 
 /* 编辑模式下恢复文本区域的鼠标事件 */
@@ -8769,16 +8804,26 @@ a.tree-label.tree-bookmark-link:hover {
     text-decoration: none;
     border-bottom: 1px solid rgba(37, 99, 235, 0.3);
     cursor: pointer;
-    padding: 2px 4px;
-    margin: -2px -4px;
-    display: inline-block;
+    /* 使用伪元素扩大点击区域，不影响视觉效果 */
+    position: relative;
+    /* 确保链接始终可以接收鼠标事件（右键菜单、点击跳转），即使在非编辑模式下 */
+    pointer-events: auto;
+}
+
+/* 使用::before伪元素扩大点击区域 */
+.md-canvas-text a::before,
+.md-wysiwyg-editor a::before {
+    content: '';
+    position: absolute;
+    top: -4px;
+    left: -4px;
+    right: -4px;
+    bottom: -4px;
 }
 
 .md-canvas-text a:hover,
 .md-wysiwyg-editor a:hover {
     border-bottom-color: rgba(37, 99, 235, 0.6);
-    background: rgba(37, 99, 235, 0.08);
-    border-radius: 3px;
 }
 
 [data-theme="dark"] .md-canvas-text a,
@@ -8790,7 +8835,6 @@ a.tree-label.tree-bookmark-link:hover {
 [data-theme="dark"] .md-canvas-text a:hover,
 [data-theme="dark"] .md-wysiwyg-editor a:hover {
     border-bottom-color: rgba(147, 197, 253, 0.7);
-    background: rgba(147, 197, 253, 0.12);
 }
 
 /* 任务列表样式 */
@@ -13831,9 +13875,7 @@ body.canvas-popover-active .temp-color-popover {
 /* Popover Shield Fix - CORRECTED SELECTORS */
 body.canvas-popover-active .canvas-node-anchor,
 body.canvas-popover-active .resize-handle,
-body.canvas-popover-active .temp-node-header,
-body.canvas-popover-active .md-canvas-node,
-body.canvas-popover-active .temp-canvas-node {
+body.canvas-popover-active .temp-node-header {
     pointer-events: none !important;
 }
 

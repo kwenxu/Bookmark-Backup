@@ -6274,7 +6274,6 @@ function renderMdNode(node) {
         const fontColorTitle = lang === 'en' ? 'Font Color' : '字体颜色';
         const strikeTitle = lang === 'en' ? 'Strikethrough' : '删除线';
         const codeTitle = lang === 'en' ? 'Code' : '代码';
-        const linkTitle = lang === 'en' ? 'Link' : '链接';
         const headingTitle = lang === 'en' ? 'Heading' : '标题';
         const alignTitle = lang === 'en' ? 'Alignment' : '对齐';
         const listTitle = lang === 'en' ? 'List' : '列表';
@@ -6296,7 +6295,6 @@ function renderMdNode(node) {
                 <button class="md-format-btn md-format-fontcolor-btn" data-action="md-fontcolor-toggle" title="${fontColorTitle}"><span style="border-bottom:2px solid #2DC26B;padding:0 2px;">A</span></button>
                 <button class="md-format-btn" data-action="md-insert-strike" title="${strikeTitle}"><s>S</s></button>
                 <button class="md-format-btn" data-action="md-insert-code" title="${codeTitle}"><code>&lt;/&gt;</code></button>
-                <button class="md-format-btn" data-action="md-insert-link" title="${linkTitle}"><i class="fas fa-link"></i></button>
                 <span class="md-format-sep"></span>
                 <button class="md-format-btn md-format-list-btn" data-action="md-list-toggle" title="${listTitle}"><i class="fas fa-list"></i></button>
                 <button class="md-format-btn" data-action="md-insert-quote" title="${quoteTitle}"><i class="fas fa-quote-left"></i></button>
@@ -6900,15 +6898,6 @@ function renderMdNode(node) {
                 wrapper = document.createElement('code');
                 wrapper.textContent = insertText;
                 break;
-            case 'link':
-                const url = prompt(lang === 'en' ? 'Enter URL:' : '请输入链接地址:', 'https://');
-                if (url) {
-                    wrapper = document.createElement('a');
-                    wrapper.href = url;
-                    wrapper.textContent = insertText;
-                    wrapper.target = '_blank';
-                }
-                break;
             case 'h1':
                 wrapper = document.createElement('h1');
                 wrapper.textContent = insertText;
@@ -6982,8 +6971,8 @@ function renderMdNode(node) {
     editor.style.fontSize = node.fontSize + 'px';
 
     const mdPlaceholder = (lang === 'en')
-        ? 'Type Markdown: **bold**, *italic*, ==highlight=='
-        : '输入 Markdown：**粗体**、*斜体*、==高亮==';
+        ? 'Type Markdown: **bold**, *italic*, ==highlight==, [text](URL), https://example.com, www.example.com'
+        : '输入 Markdown：**粗体**、*斜体*、==高亮==、[文字](URL)、https://example.com、www.example.com';
     editor.setAttribute('data-placeholder', mdPlaceholder);
     editor.setAttribute('aria-label', mdPlaceholder);
 
@@ -6994,7 +6983,7 @@ function renderMdNode(node) {
         const raw = typeof node.text === 'string' ? node.text : '';
         if (raw) {
             if (typeof marked !== 'undefined') {
-                try { editor.innerHTML = marked.parse(raw); } catch { editor.textContent = raw; }
+                try { editor.innerHTML = __renderMarkdownToCanvasRichHtml(raw); } catch { editor.textContent = raw; }
             } else {
                 editor.textContent = raw;
             }
@@ -7196,6 +7185,20 @@ function renderMdNode(node) {
                 prefix: checked ? '- [x] ' : '- [ ] ',
                 suffix: '',
                 type: 'task'
+            };
+        }
+
+        // external link: [text](URL)
+        if (tagName === 'A') {
+            const href = String(el.getAttribute('href') || '').trim();
+            if (!href) return null;
+            const labelRaw = String(el.textContent || href);
+            const label = labelRaw.replace(/]/g, '\\]');
+            return {
+                source: `[${label}](${href})`,
+                prefix: '[',
+                suffix: `](${href})`,
+                type: 'link'
             };
         }
 
@@ -7619,12 +7622,27 @@ function renderMdNode(node) {
 
         // Markdown 模式列表（按优先级排序）
         const patterns = [
+            { type: 'link', regex: /\[([^\]]+?)\]\(([^)]+?)\)/, tag: 'a', contentIndex: 1, hrefIndex: 2 }, // [文字](URL)
             { regex: /\*\*(.+?)\*\*/, tag: 'strong' },           // **粗体**
             { regex: /\*(.+?)\*/, tag: 'em' },                   // *斜体*
             { regex: /~~(.+?)~~/, tag: 'del' },                  // ~~删除线~~
             { regex: /==(.+?)==/, tag: 'mark' },                 // ==高亮==
             { regex: /`([^`]+)`/, tag: 'code' },                 // `代码`
             { regex: /\[\[(.+?)\]\]/, tag: 'span', className: 'md-wikilink' }, // [[链接]]
+            {
+                type: 'bare-url',
+                regex: /(^|[\s(\[{\<"'“‘*_~`])((?:https?:\/\/|mailto:|tel:)[^\s<>"“”'‘’]+?)(?=$|[\s)\]}>.,;:!?"'“”‘’])/i,
+                tag: 'a',
+                boundaryGroupIndex: 1,
+                urlGroupIndex: 2
+            },
+            {
+                type: 'www-url',
+                regex: /(^|[\s(\[{\<"'“‘*_~`])((?:www\.)[a-z0-9-]+(?:\.[a-z0-9-]+)+(?:\/[^\s<>"“”'‘’]*)?)(?=$|[\s)\]}>.,;:!?"'“”‘’])/i,
+                tag: 'a',
+                boundaryGroupIndex: 1,
+                urlGroupIndex: 2
+            }
         ];
 
         // HTML 标签模式（font color, center, p align）
@@ -7938,30 +7956,146 @@ function renderMdNode(node) {
             const match = text.match(pattern.regex);
             if (match && match.index !== undefined) {
                 const matchStart = match.index;
-                const matchEnd = matchStart + match[0].length;
+                let matchEnd = matchStart + match[0].length;
 
                 // 只在光标位于匹配文本之后时才渲染（即用户刚完成输入）
                 if (cursorPos >= matchEnd) {
-                    const before = text.substring(0, matchStart);
-                    const content = match[1];
-                    const after = text.substring(matchEnd);
-                    const cursorInAfter = Math.max(0, Math.min(cursorPos - matchEnd, after.length));
+                    const countChar = (s, ch) => {
+                        let c = 0;
+                        for (let i = 0; i < s.length; i++) if (s[i] === ch) c++;
+                        return c;
+                    };
+                    const splitAutoUrlSuffix = (candidateUrl) => {
+                        let url = String(candidateUrl || '');
+                        let suffix = '';
+                        if (!url) return { url: '', suffix: '' };
+
+                        const takeLast = () => {
+                            suffix = url.slice(-1) + suffix;
+                            url = url.slice(0, -1);
+                        };
+
+                        const stripUnbalanced = (openCh, closeCh) => {
+                            while (url && url.endsWith(closeCh) && countChar(url, closeCh) > countChar(url, openCh)) {
+                                takeLast();
+                            }
+                        };
+
+                        let changed = true;
+                        while (changed && url) {
+                            changed = false;
+                            while (url) {
+                                const last = url[url.length - 1];
+                                if (/[.,;:!?]/.test(last) || /["'“”‘’`>]/.test(last)) {
+                                    takeLast();
+                                    changed = true;
+                                    continue;
+                                }
+                                break;
+                            }
+                            const beforeLen = url.length;
+                            stripUnbalanced('(', ')');
+                            stripUnbalanced('[', ']');
+                            stripUnbalanced('{', '}');
+                            if (url.length !== beforeLen) changed = true;
+                        }
+
+                        return { url, suffix };
+                    };
+                    const sanitizeAutoHref = (href) => {
+                        const raw = String(href || '').trim();
+                        if (!raw) return null;
+                        try {
+                            if (typeof ObsidianMarkdown !== 'undefined' && typeof ObsidianMarkdown.sanitizeHref === 'function') {
+                                return ObsidianMarkdown.sanitizeHref(raw);
+                            }
+                        } catch (_) { }
+                        const normalized = /^www\./i.test(raw) ? `http://${raw}` : (raw.startsWith('//') ? `https:${raw}` : raw);
+                        if (normalized.startsWith('#')) return normalized;
+                        try {
+                            const u = new URL(normalized, 'https://dummy.local');
+                            const ok = u.protocol === 'http:' || u.protocol === 'https:' || u.protocol === 'mailto:' || u.protocol === 'tel:';
+                            return ok ? normalized : null;
+                        } catch (_) {
+                            return null;
+                        }
+                    };
+
+                    let before = '';
+                    let after = '';
+                    let afterText = '';
+                    let cursorInAfter = 0;
+                    let content = match[1];
+                    let hrefRaw = '';
+                    let autoUrlDisplay = '';
+                    let autoUrlHref = '';
+                    let autoUrlSuffix = '';
+
+                    if (pattern.type === 'bare-url' || pattern.type === 'www-url') {
+                        const boundary = match[pattern.boundaryGroupIndex] || '';
+                        const rawUrl = match[pattern.urlGroupIndex] || '';
+                        const replaceStart = matchStart + boundary.length;
+                        matchEnd = replaceStart + rawUrl.length;
+                        if (cursorPos < matchEnd) continue;
+                        // While typing: if the URL reaches the end of this text node (or only ZWSP remains),
+                        // defer auto-linking until the user types a delimiter (space/punctuation).
+                        const remaining = text.substring(matchEnd).replace(/\u200B/g, '');
+                        if (!remaining) continue;
+
+                        const split = splitAutoUrlSuffix(rawUrl);
+                        autoUrlDisplay = split.url;
+                        autoUrlSuffix = split.suffix;
+                        if (!autoUrlDisplay) continue;
+                        autoUrlHref = sanitizeAutoHref(autoUrlDisplay);
+                        if (!autoUrlHref) continue;
+
+                        before = text.substring(0, replaceStart);
+                        after = autoUrlSuffix + text.substring(matchEnd);
+                        afterText = after || '\u200B';
+                        cursorInAfter = after
+                            ? Math.max(0, Math.min(autoUrlSuffix.length + (cursorPos - matchEnd), after.length))
+                            : 1;
+                    } else {
+                        before = text.substring(0, matchStart);
+                        after = text.substring(matchEnd);
+                        afterText = after || '\u200B';
+                        cursorInAfter = after
+                            ? Math.max(0, Math.min(cursorPos - matchEnd, after.length))
+                            : 1;
+                    }
 
                     // 创建新元素
-                    const newEl = document.createElement(pattern.tag);
-                    if (pattern.className) newEl.className = pattern.className;
-                    // 如果内容包含 HTML 标签则用 innerHTML
-                    if (/<[^>]+>/.test(content)) {
-                        newEl.innerHTML = content;
+                    let newEl = null;
+                    if (pattern.type === 'link') {
+                        hrefRaw = String(match[pattern.hrefIndex] || '').trim();
+                        const safeHref = sanitizeAutoHref(hrefRaw);
+                        if (!safeHref) continue;
+                        newEl = document.createElement('a');
+                        newEl.setAttribute('href', safeHref);
+                        newEl.setAttribute('target', '_blank');
+                        newEl.setAttribute('rel', 'noopener noreferrer');
+                        newEl.textContent = String(match[pattern.contentIndex] || '').trim() || safeHref;
+                    } else if (pattern.type === 'bare-url' || pattern.type === 'www-url') {
+                        newEl = document.createElement('a');
+                        newEl.setAttribute('href', autoUrlHref);
+                        newEl.setAttribute('target', '_blank');
+                        newEl.setAttribute('rel', 'noopener noreferrer');
+                        newEl.textContent = autoUrlDisplay;
                     } else {
-                        newEl.textContent = content;
+                        newEl = document.createElement(pattern.tag);
+                        if (pattern.className) newEl.className = pattern.className;
+                        // 如果内容包含 HTML 标签则用 innerHTML
+                        if (/<[^>]+>/.test(content)) {
+                            newEl.innerHTML = content;
+                        } else {
+                            newEl.textContent = content;
+                        }
                     }
 
                     // 替换文本节点
                     const parent = textNode.parentNode;
                     const beforeNode = document.createTextNode(before);
-                    // 如果后面没有内容，添加零宽空格确保光标位置正确且后续输入不继承格式
-                    const afterNode = document.createTextNode(after || '\u200B');
+                    const afterNode = document.createTextNode(afterText || '\u200B');
 
                     parent.insertBefore(beforeNode, textNode);
                     parent.insertBefore(newEl, textNode);
@@ -7997,6 +8131,33 @@ function renderMdNode(node) {
             return;
         }
 
+        const normalizeExternalHref = (href) => {
+            const h = String(href || '').trim();
+            if (!h) return '';
+            if (h.startsWith('#')) return h;
+            if (/^www\./i.test(h)) return `http://${h}`;
+            if (h.startsWith('//')) return `https:${h}`;
+            return h;
+        };
+
+        const sanitizeLinkHref = (href) => {
+            const normalized = normalizeExternalHref(href);
+            if (!normalized) return null;
+            try {
+                if (typeof ObsidianMarkdown !== 'undefined' && typeof ObsidianMarkdown.sanitizeHref === 'function') {
+                    return ObsidianMarkdown.sanitizeHref(normalized);
+                }
+            } catch (_) { }
+            if (normalized.startsWith('#')) return normalized;
+            try {
+                const u = new URL(normalized, 'https://dummy.local');
+                const ok = u.protocol === 'http:' || u.protocol === 'https:' || u.protocol === 'mailto:' || u.protocol === 'tel:' || u.protocol === 'obsidian:';
+                return ok ? normalized : null;
+            } catch (_) {
+                return null;
+            }
+        };
+
         // 辅助函数：将内联 Markdown 语法转换为 HTML
         const parseInlineMarkdown = (text) => {
             if (!text) return text;
@@ -8011,11 +8172,34 @@ function renderMdNode(node) {
         const textNode = expandedElement;
         const text = textNode.textContent;
         const savedType = expandedType;
+        const normalizedText = String(text || '').replace(/\u200B/g, '').trim();
 
         // 清除展开状态（必须在渲染前清除）
         expandedElement = null;
         expandedMarkdown = null;
         expandedType = null;
+
+        // Link: [text](URL) 还原回 <a>
+        if (savedType === 'link') {
+            const m = normalizedText.match(/^\[([^\]]+?)\]\(([^)]+?)\)$/);
+            if (m) {
+                const label = m[1];
+                const hrefRaw = m[2];
+                const safeHref = sanitizeLinkHref(hrefRaw);
+                if (safeHref) {
+                    const a = document.createElement('a');
+                    a.setAttribute('href', safeHref);
+                    a.setAttribute('target', '_blank');
+                    a.setAttribute('rel', 'noopener noreferrer');
+                    const parsed = parseInlineMarkdown(label);
+                    if (/<[^>]+>/.test(parsed)) a.innerHTML = parsed;
+                    else a.textContent = label;
+                    textNode.parentNode.replaceChild(a, textNode);
+                    saveEditorContent();
+                    return;
+                }
+            }
+        }
 
         // 列表项：LI 级别的源码 → 还原回 <li>
         if (savedType === 'li-ul' || savedType === 'li-ol') {
@@ -8740,6 +8924,7 @@ function renderMdNode(node) {
         });
 
         // 保存内容
+        try { __finalizeInlinePatternsInEditor(editor); } catch (_) { }
         saveEditorContent();
     };
 
@@ -8939,7 +9124,7 @@ function renderMdNode(node) {
                 }
 
                 // 情况C：光标在格式化元素内部的开头
-                const formattedParent = container.parentElement?.closest('strong, b, em, i, u, del, s, mark, code, font, center, p[align], blockquote, hr, li, .md-task-item, h1, h2, h3, h4, h5, h6');
+                const formattedParent = container.parentElement?.closest('strong, b, em, i, u, del, s, mark, code, a, font, center, p[align], blockquote, hr, li, .md-task-item, h1, h2, h3, h4, h5, h6');
                 if (formattedParent && editor.contains(formattedParent)) {
                     const isAtStart = (container.nodeType === Node.TEXT_NODE && offset === 0) ||
                         (container === formattedParent && offset === 0);
@@ -9057,7 +9242,7 @@ function renderMdNode(node) {
 
                     let formattedEl = null;
                     if (container.nodeType === Node.ELEMENT_NODE) {
-                        formattedEl = container.closest('strong, b, em, i, u, del, s, mark, code, font, center, p[align], blockquote, hr, li, .md-task-item, h1, h2, h3, h4, h5, h6');
+                        formattedEl = container.closest('strong, b, em, i, u, del, s, mark, code, a, font, center, p[align], blockquote, hr, li, .md-task-item, h1, h2, h3, h4, h5, h6');
                     }
 
                     if (formattedEl && editor.contains(formattedEl)) {
@@ -9108,7 +9293,7 @@ function renderMdNode(node) {
         const isClickInsideExpanded = isCaretInsideExpandedSource() || rawTarget === expandedElement;
 
         // 点击格式化元素时展开为 Markdown 源码（包括 HTML 格式）- 排除checkbox
-        let formattedEl = target.closest('strong, b, em, i, u, del, s, mark, code, font, center, p[align], blockquote, hr, li, .md-task-item, h1, h2, h3, h4, h5, h6');
+        let formattedEl = target.closest('strong, b, em, i, u, del, s, mark, code, a, font, center, p[align], blockquote, hr, li, .md-task-item, h1, h2, h3, h4, h5, h6');
         // 标题是高频操作：无论点击标题内部的哪个子元素，都优先按整个标题处理（保留 # / ## / ### 语义）
         const headingEl = target.closest('h1, h2, h3, h4, h5, h6');
         if (headingEl && editor.contains(headingEl)) {
@@ -9315,7 +9500,7 @@ function renderMdNode(node) {
             if (trimmed && (isMultiLine || looksLikeBlockMd) && typeof marked !== 'undefined') {
                 e.preventDefault();
                 let parsedHtml = '';
-                try { parsedHtml = marked.parse(trimmed); } catch (_) { parsedHtml = ''; }
+                try { parsedHtml = __renderMarkdownToCanvasRichHtml(trimmed); } catch (_) { parsedHtml = ''; }
                 const safe = __normalizeCanvasRichHtml(parsedHtml);
                 if (safe) {
                     __insertHtmlAtSelection(safe);
@@ -9408,6 +9593,9 @@ function renderMdNode(node) {
         // 延迟检查，避免点击工具栏时误退出
         setTimeout(() => {
             if (document.activeElement !== editor && !el.contains(document.activeElement)) {
+                // Finalize deferred auto-links (e.g. bare URL at end) before leaving edit mode
+                try { __finalizeInlinePatternsInEditor(editor); } catch (_) { }
+                try { saveEditorContent(); } catch (_) { }
                 exitEditMode();
             }
         }, 100);
@@ -9464,9 +9652,9 @@ function renderMdNode(node) {
 
     // 工具栏mousedown：阻止默认行为防止编辑器失焦
     toolbar.addEventListener('mousedown', (e) => {
-        const btn = e.target.closest('.md-format-btn, .md-fontcolor-chip, .md-align-option, .md-heading-option, .md-list-option, .md-fontcolor-input');
-        if (btn && node.isEditing) {
-            e.preventDefault(); // 防止编辑器失去焦点
+        const btn = e.target.closest('button');
+        if (btn && toolbar.contains(btn)) {
+            e.preventDefault(); // 防止 editor 失焦 / 编辑态被动退出
         }
     });
 
@@ -9477,6 +9665,25 @@ function renderMdNode(node) {
         e.preventDefault();
         e.stopPropagation();
         const action = btn.getAttribute('data-action');
+        const shouldEnterEditForAction = (() => {
+            if (!action) return false;
+            if (action.startsWith('md-insert-')) return true;
+            if (action === 'md-format-toggle') return true;
+            if (action === 'md-format-close') return true;
+            if (action === 'md-fontcolor-toggle' || action === 'md-fontcolor-apply') return true;
+            if (action === 'md-heading-toggle' || action === 'md-heading-apply') return true;
+            if (action === 'md-align-toggle' || action === 'md-align-apply') return true;
+            if (action === 'md-list-toggle' || action === 'md-list-apply') return true;
+            return false;
+        })();
+
+        if (shouldEnterEditForAction && !ctrlPausedEdit) {
+            if (!isInEditMode || !node.isEditing) {
+                try { selectMdNode(node.id); } catch (_) { }
+                enterEditMode();
+            }
+        }
+
         if (action === 'md-edit') {
             selectMdNode(node.id);
             enterEditMode();
@@ -9589,8 +9796,6 @@ function renderMdNode(node) {
             insertFormat('strike');
         } else if (action === 'md-insert-code') {
             insertFormat('code');
-        } else if (action === 'md-insert-link') {
-            insertFormat('link');
         } else if (action === 'md-heading-toggle') {
             toggleHeadingPopover(btn);
         } else if (action === 'md-heading-apply') {
@@ -10071,8 +10276,18 @@ function __sanitizeCanvasRichTextHtml(html) {
 
     const allowedAlign = new Set(['left', 'center', 'right', 'justify']);
 
-    const sanitizeHref = (href) => {
+    const normalizeExternalHref = (href) => {
         const h = String(href || '').trim();
+        if (!h) return '';
+        if (h.startsWith('#')) return h;
+        if (/^www\./i.test(h)) return `http://${h}`;
+        if (h.startsWith('//')) return `https:${h}`;
+        return h;
+    };
+
+    const sanitizeHref = (href) => {
+        const h0 = String(href || '').trim();
+        const h = normalizeExternalHref(h0);
         if (!h) return null;
         try {
             if (typeof ObsidianMarkdown !== 'undefined' && typeof ObsidianMarkdown.sanitizeHref === 'function') {
@@ -10243,6 +10458,72 @@ function __tryConvertInlinePatternsInTextNode(editorEl, explicitNode = null) {
 
     const text = textNode.textContent || '';
 
+    const countChar = (s, ch) => {
+        let c = 0;
+        for (let i = 0; i < s.length; i++) if (s[i] === ch) c++;
+        return c;
+    };
+
+    const splitAutoUrlSuffix = (candidateUrl) => {
+        let url = String(candidateUrl || '');
+        let suffix = '';
+        if (!url) return { url: '', suffix: '' };
+
+        const takeLast = () => {
+            suffix = url.slice(-1) + suffix;
+            url = url.slice(0, -1);
+        };
+
+        const stripUnbalanced = (openCh, closeCh) => {
+            while (url && url.endsWith(closeCh) && countChar(url, closeCh) > countChar(url, openCh)) {
+                takeLast();
+            }
+        };
+
+        // Strip common trailing punctuation (keep it outside the link, Obsidian-style)
+        // Repeat because balancing may expose new trailing punctuation (e.g. "url.)")
+        let changed = true;
+        while (changed && url) {
+            changed = false;
+            while (url) {
+                const last = url[url.length - 1];
+                if (/[.,;:!?]/.test(last) || /["'“”‘’`>]/.test(last)) {
+                    takeLast();
+                    changed = true;
+                    continue;
+                }
+                break;
+            }
+
+            const beforeLen = url.length;
+            stripUnbalanced('(', ')');
+            stripUnbalanced('[', ']');
+            stripUnbalanced('{', '}');
+            if (url.length !== beforeLen) changed = true;
+        }
+
+        return { url, suffix };
+    };
+
+    const sanitizeAutoHref = (href) => {
+        const raw = String(href || '').trim();
+        if (!raw) return null;
+        try {
+            if (typeof ObsidianMarkdown !== 'undefined' && typeof ObsidianMarkdown.sanitizeHref === 'function') {
+                return ObsidianMarkdown.sanitizeHref(raw);
+            }
+        } catch (_) { }
+        const normalized = /^www\./i.test(raw) ? `http://${raw}` : (raw.startsWith('//') ? `https:${raw}` : raw);
+        if (normalized.startsWith('#')) return normalized;
+        try {
+            const u = new URL(normalized, 'https://dummy.local');
+            const ok = u.protocol === 'http:' || u.protocol === 'https:' || u.protocol === 'mailto:' || u.protocol === 'tel:';
+            return ok ? normalized : null;
+        } catch (_) {
+            return null;
+        }
+    };
+
     const patterns = [
         // HTML-like explicit syntax
         { type: 'font', regex: /<font\s+color=["']?([^"'>\s]+)["']?>([^<]*)<\/font>/i, tag: 'font', attrName: 'color', attrIndex: 1, contentIndex: 2 },
@@ -10258,6 +10539,21 @@ function __tryConvertInlinePatternsInTextNode(editorEl, explicitNode = null) {
         { type: 'code', regex: /`([^`]+)`/, tag: 'code', contentIndex: 1 },
         { type: 'wikilink', regex: /\[\[([^\]]+?)\]\]/, tag: 'span', className: 'md-wikilink', contentIndex: 1 },
         { type: 'link', regex: /\[([^\]]+?)\]\(([^)]+?)\)/, tag: 'a', contentIndex: 1, hrefIndex: 2 },
+        // Obsidian-style auto external links (bare URL / www.*)
+        {
+            type: 'bare-url',
+            regex: /(^|[\s(\[{\<"'“‘*_~`])((?:https?:\/\/|mailto:|tel:)[^\s<>"“”'‘’]+?)(?=$|[\s)\]}>.,;:!?"'“”‘’])/i,
+            tag: 'a',
+            boundaryGroupIndex: 1,
+            urlGroupIndex: 2
+        },
+        {
+            type: 'www-url',
+            regex: /(^|[\s(\[{\<"'“‘*_~`])((?:www\.)[a-z0-9-]+(?:\.[a-z0-9-]+)+(?:\/[^\s<>"“”'‘’]*)?)(?=$|[\s)\]}>.,;:!?"'“”‘’])/i,
+            tag: 'a',
+            boundaryGroupIndex: 1,
+            urlGroupIndex: 2
+        }
     ];
 
     for (const pattern of patterns) {
@@ -10265,12 +10561,52 @@ function __tryConvertInlinePatternsInTextNode(editorEl, explicitNode = null) {
         if (!match || match.index == null) continue;
 
         const matchStart = match.index;
-        const matchEnd = matchStart + match[0].length;
-        if (cursorPos < matchEnd) continue; // user still typing inside the pattern
 
-        const before = text.substring(0, matchStart);
-        const after = text.substring(matchEnd);
-        const afterText = after || '\u200B';
+        let replaceStart = matchStart;
+        let typingEnd = matchStart + match[0].length;
+        let before = '';
+        let after = '';
+        let afterText = '';
+
+        let autoUrlRaw = '';
+        let autoUrlDisplay = '';
+        let autoUrlHref = '';
+        let autoUrlSuffix = '';
+
+        let caretMatchEnd = 0;
+        let caretExtraOffset = 0;
+
+        if (pattern.boundaryGroupIndex && pattern.urlGroupIndex) {
+            const boundary = match[pattern.boundaryGroupIndex] || '';
+            autoUrlRaw = match[pattern.urlGroupIndex] || '';
+            replaceStart = matchStart + boundary.length;
+            typingEnd = replaceStart + autoUrlRaw.length;
+            if (cursorPos < typingEnd) continue; // user still typing inside the URL
+            // While typing: if the URL reaches the end of this text node (or only ZWSP remains),
+            // defer auto-linking until the user types a delimiter (space/punctuation) or we run an explicit scan.
+            if (!explicitNode) {
+                const remaining = text.substring(typingEnd).replace(/\u200B/g, '');
+                if (!remaining) continue;
+            }
+            before = text.substring(0, replaceStart);
+            after = text.substring(typingEnd);
+
+            const split = splitAutoUrlSuffix(autoUrlRaw);
+            autoUrlDisplay = split.url;
+            autoUrlSuffix = split.suffix;
+            if (!autoUrlDisplay) continue;
+            autoUrlHref = sanitizeAutoHref(autoUrlDisplay);
+            if (!autoUrlHref) continue;
+            afterText = (autoUrlSuffix + after) || '\u200B';
+            caretMatchEnd = typingEnd;
+            caretExtraOffset = autoUrlSuffix.length;
+        } else {
+            caretMatchEnd = matchStart + match[0].length;
+            if (cursorPos < caretMatchEnd) continue; // user still typing inside the pattern
+            before = text.substring(0, matchStart);
+            after = text.substring(caretMatchEnd);
+            afterText = after || '\u200B';
+        }
 
         const parent = textNode.parentNode;
         if (!parent) return false;
@@ -10314,6 +10650,14 @@ function __tryConvertInlinePatternsInTextNode(editorEl, explicitNode = null) {
                 setContent(a, match[pattern.contentIndex] || '');
                 newNode = a;
             }
+        } else if (pattern.type === 'bare-url' || pattern.type === 'www-url') {
+            const a = document.createElement('a');
+            a.setAttribute('href', autoUrlHref);
+            a.setAttribute('target', '_blank');
+            a.setAttribute('rel', 'noopener noreferrer');
+            // Auto link: keep raw URL text, do not parse inline markdown inside it
+            a.textContent = autoUrlDisplay;
+            newNode = a;
         } else {
             const newEl = document.createElement(pattern.tag);
             if (pattern.className) newEl.className = pattern.className;
@@ -10333,7 +10677,9 @@ function __tryConvertInlinePatternsInTextNode(editorEl, explicitNode = null) {
         if (!explicitNode && sel) {
             try {
                 const newRange = document.createRange();
-                const offsetInAfter = after ? Math.min(afterNode.length, Math.max(0, cursorPos - matchEnd)) : 1;
+                const offsetInAfter = after
+                    ? Math.min(afterNode.length, Math.max(0, caretExtraOffset + (cursorPos - caretMatchEnd)))
+                    : 1;
                 newRange.setStart(afterNode, offsetInAfter);
                 newRange.collapse(true);
                 sel.removeAllRanges();
@@ -10347,15 +10693,70 @@ function __tryConvertInlinePatternsInTextNode(editorEl, explicitNode = null) {
     return false;
 }
 
+function __finalizeInlinePatternsInEditor(editorEl) {
+    if (!editorEl) return false;
+    let changedOverall = false;
+    let loop = 0;
+    while (loop++ < 10) {
+        let changed = false;
+        const walker = document.createTreeWalker(editorEl, NodeFilter.SHOW_TEXT, null, false);
+        const textNodes = [];
+        let n;
+        while (n = walker.nextNode()) textNodes.push(n);
+
+        for (const tn of textNodes) {
+            if (!tn || !tn.parentNode) continue;
+            if (tn.parentNode.closest('code, pre')) continue;
+            if (__tryConvertInlinePatternsInTextNode(editorEl, tn)) {
+                changed = true;
+                changedOverall = true;
+            }
+        }
+
+        if (!changed) break;
+    }
+
+    try { __applyHeadingCollapse(editorEl); } catch (_) { }
+    return changedOverall;
+}
+
+function __renderMarkdownToCanvasRichHtml(markdownText) {
+    const val = String(markdownText || '');
+    if (!val.trim()) return '';
+    if (typeof marked === 'undefined') return val;
+    let parsedHtml = '';
+    try { parsedHtml = marked.parse(val); } catch (_) { return val; }
+
+    // Post-process: Obsidian-style auto link for bare URLs / www.* (and keep editor inline rules consistent)
+    const tmp = document.createElement('div');
+    tmp.innerHTML = parsedHtml;
+    let changed = true;
+    let loop = 0;
+    while (changed && loop++ < 10) {
+        changed = false;
+        const walker = document.createTreeWalker(tmp, NodeFilter.SHOW_TEXT, null, false);
+        const textNodes = [];
+        let n;
+        while (n = walker.nextNode()) textNodes.push(n);
+
+        for (const tn of textNodes) {
+            if (!tn || !tn.parentNode) continue;
+            if (tn.parentNode.closest('code, pre, a')) continue;
+            if (__tryConvertInlinePatternsInTextNode(tmp, tn)) {
+                changed = true;
+            }
+        }
+    }
+
+    return tmp.innerHTML;
+}
+
 function __coerceDescriptionSourceToHtml(raw) {
     const val = String(raw || '');
     if (!val.trim()) return '';
     const looksLikeHtml = /<\s*(?:a|p|div|span|br|strong|em|b|i|u|del|s|mark|code|blockquote|ul|ol|li|hr|h[1-6]|font|center|input)\b/i.test(val);
     if (looksLikeHtml) return val;
-    if (typeof marked !== 'undefined') {
-        try { return marked.parse(val); } catch (_) { return val; }
-    }
-    return val;
+    return __renderMarkdownToCanvasRichHtml(val);
 }
 
 function __hasMeaningfulRichContent(root) {
@@ -10867,7 +11268,7 @@ function __mountMdCloneDescriptionEditor({ editor, toolbar, formatToggleBtn, isE
             if (trimmed && (isMultiLine || looksLikeBlockMd) && typeof marked !== 'undefined') {
                 e.preventDefault();
                 let parsedHtml = '';
-                try { parsedHtml = marked.parse(trimmed); } catch (_) { parsedHtml = ''; }
+                try { parsedHtml = __renderMarkdownToCanvasRichHtml(trimmed); } catch (_) { parsedHtml = ''; }
                 const safe = __normalizeCanvasRichHtml(parsedHtml);
                 if (safe) {
                     __insertHtmlAtSelection(safe);
@@ -11165,7 +11566,7 @@ function __mountMdCloneDescriptionEditor({ editor, toolbar, formatToggleBtn, isE
         if (node.nodeType === Node.TEXT_NODE) node = node.parentNode;
 
         // Only auto-expand inline-like formats here; block elements are handled by click rules.
-        const formatted = node.closest('strong, b, em, i, u, del, s, mark, code, font, center, p[align], h1, h2, h3, h4, h5, h6, hr');
+        const formatted = node.closest('strong, b, em, i, u, del, s, mark, code, a, font, center, p[align], h1, h2, h3, h4, h5, h6, hr');
         if (formatted && editor.contains(formatted)) {
             // Expand it!
             expandToMarkdown(formatted);
@@ -11193,6 +11594,33 @@ function __mountMdCloneDescriptionEditor({ editor, toolbar, formatToggleBtn, isE
             return;
         }
 
+        const normalizeExternalHref = (href) => {
+            const h = String(href || '').trim();
+            if (!h) return '';
+            if (h.startsWith('#')) return h;
+            if (/^www\./i.test(h)) return `http://${h}`;
+            if (h.startsWith('//')) return `https:${h}`;
+            return h;
+        };
+
+        const sanitizeLinkHref = (href) => {
+            const normalized = normalizeExternalHref(href);
+            if (!normalized) return null;
+            try {
+                if (typeof ObsidianMarkdown !== 'undefined' && typeof ObsidianMarkdown.sanitizeHref === 'function') {
+                    return ObsidianMarkdown.sanitizeHref(normalized);
+                }
+            } catch (_) { }
+            if (normalized.startsWith('#')) return normalized;
+            try {
+                const u = new URL(normalized, 'https://dummy.local');
+                const ok = u.protocol === 'http:' || u.protocol === 'https:' || u.protocol === 'mailto:' || u.protocol === 'tel:' || u.protocol === 'obsidian:';
+                return ok ? normalized : null;
+            } catch (_) {
+                return null;
+            }
+        };
+
         // 辅助函数：将内联 Markdown 语法转换为 HTML
         const parseInlineMarkdown = (text) => {
             if (!text) return text;
@@ -11217,6 +11645,28 @@ function __mountMdCloneDescriptionEditor({ editor, toolbar, formatToggleBtn, isE
         if (!rawText.replace(/\u200B/g, '').trim()) {
             try { el.remove(); } catch (_) { }
             return;
+        }
+
+        // Link: [text](URL) 还原回 <a>
+        if (savedType === 'link') {
+            const m = text.match(/^\[([^\]]+?)\]\(([^)]+?)\)$/);
+            if (m) {
+                const label = m[1];
+                const hrefRaw = m[2];
+                const safeHref = sanitizeLinkHref(hrefRaw);
+                if (safeHref) {
+                    const a = document.createElement('a');
+                    a.setAttribute('href', safeHref);
+                    a.setAttribute('target', '_blank');
+                    a.setAttribute('rel', 'noopener noreferrer');
+                    const parsed = parseInlineMarkdown(label);
+                    if (/<[^>]+>/.test(parsed)) a.innerHTML = parsed;
+                    else a.textContent = label;
+                    parent.replaceChild(a, el);
+                    saveEditorContent();
+                    return;
+                }
+            }
         }
 
         // 列表项：LI 级别的源码 → 还原回 <li>
@@ -11488,6 +11938,20 @@ function __mountMdCloneDescriptionEditor({ editor, toolbar, formatToggleBtn, isE
             };
         }
 
+        // external link: [text](URL)
+        if (tagName === 'A') {
+            const href = String(el.getAttribute('href') || '').trim();
+            if (!href) return null;
+            const labelRaw = String(el.textContent || href);
+            const label = labelRaw.replace(/]/g, '\\]');
+            return {
+                source: `[${label}](${href})`,
+                prefix: '[',
+                suffix: `](${href})`,
+                type: 'link'
+            };
+        }
+
         // 标题: H1-H6 （保留内部 HTML）
         if (tagName === 'H1') {
             return { source: `# ${htmlContent}`, prefix: '# ', suffix: '', type: 'heading' };
@@ -11592,7 +12056,7 @@ function __mountMdCloneDescriptionEditor({ editor, toolbar, formatToggleBtn, isE
         // If clicked inside editor but not on text directly
         if (target !== editor && editor.contains(target)) {
             // Find closest formatted element (including block-level elements)
-            const formatted = target.closest('strong, b, em, i, u, del, s, mark, code, font, center, blockquote, h1, h2, h3, h4, h5, h6, hr, li, .md-task-item, p[align]');
+            const formatted = target.closest('strong, b, em, i, u, del, s, mark, code, a, font, center, blockquote, h1, h2, h3, h4, h5, h6, hr, li, .md-task-item, p[align]');
 
             if (formatted && editor.contains(formatted)) {
                 const isBlockRestricted = formatted.tagName === 'LI' || formatted.tagName === 'BLOCKQUOTE';
@@ -11663,7 +12127,6 @@ function __mountMdCloneDescriptionEditor({ editor, toolbar, formatToggleBtn, isE
         const fontColorTitle = lang === 'en' ? 'Font Color' : '字体颜色';
         const strikeTitle = lang === 'en' ? 'Strikethrough' : '删除线';
         const codeTitle = lang === 'en' ? 'Code' : '代码';
-        const linkTitle = lang === 'en' ? 'Link' : '链接';
         const headingTitle = lang === 'en' ? 'Heading' : '标题';
         const alignTitle = lang === 'en' ? 'Alignment' : '对齐';
         const listTitle = lang === 'en' ? 'List' : '列表';
@@ -11681,7 +12144,6 @@ function __mountMdCloneDescriptionEditor({ editor, toolbar, formatToggleBtn, isE
                 <button class="md-format-btn md-format-fontcolor-btn" data-action="md-fontcolor-toggle" title="${fontColorTitle}"><span style="border-bottom:2px solid ${currentFontColor};padding:0 2px;">A</span></button>
                 <button class="md-format-btn" data-action="md-insert-strike" title="${strikeTitle}"><s>S</s></button>
                 <button class="md-format-btn" data-action="md-insert-code" title="${codeTitle}"><code>&lt;/&gt;</code></button>
-                <button class="md-format-btn" data-action="md-insert-link" title="${linkTitle}"><i class="fas fa-link"></i></button>
                 <span class="md-format-sep"></span>
                 <button class="md-format-btn md-format-list-btn" data-action="md-list-toggle" title="${listTitle}"><i class="fas fa-list"></i></button>
                 <button class="md-format-btn" data-action="md-insert-quote" title="${quoteTitle}"><i class="fas fa-quote-left"></i></button>
@@ -12214,22 +12676,6 @@ function __mountMdCloneDescriptionEditor({ editor, toolbar, formatToggleBtn, isE
                 wrapper = document.createElement('code');
                 wrapper.textContent = insertText;
                 break;
-            case 'link': {
-                const url = prompt(lang === 'en' ? 'Enter URL:' : '请输入链接地址:', 'https://');
-                if (url) {
-                    const safe = (typeof ObsidianMarkdown !== 'undefined' && typeof ObsidianMarkdown.sanitizeHref === 'function')
-                        ? ObsidianMarkdown.sanitizeHref(url)
-                        : url;
-                    if (safe) {
-                        wrapper = document.createElement('a');
-                        wrapper.href = safe;
-                        wrapper.textContent = insertText;
-                        wrapper.target = '_blank';
-                        wrapper.rel = 'noopener noreferrer';
-                    }
-                }
-                break;
-            }
             case 'h1':
                 wrapper = document.createElement('h1');
                 wrapper.textContent = insertText;
@@ -12288,8 +12734,9 @@ function __mountMdCloneDescriptionEditor({ editor, toolbar, formatToggleBtn, isE
     };
 
     toolbar.addEventListener('mousedown', (e) => {
-        const btn = e.target.closest('.md-format-btn, .md-fontcolor-chip, .md-align-option, .md-heading-option, .md-list-option, .md-fontcolor-input');
-        if (btn && typeof isEditing === 'function' && isEditing()) {
+        // Prevent editor blur when clicking toolbar buttons (keep editing state)
+        const btn = e.target.closest('button');
+        if (btn && toolbar.contains(btn)) {
             e.preventDefault();
         }
     });
@@ -12370,7 +12817,6 @@ function __mountMdCloneDescriptionEditor({ editor, toolbar, formatToggleBtn, isE
         if (action === 'md-insert-highlight') return insertFormat('highlight');
         if (action === 'md-insert-strike') return insertFormat('strike');
         if (action === 'md-insert-code') return insertFormat('code');
-        if (action === 'md-insert-link') return insertFormat('link');
         if (action === 'md-insert-quote') return insertFormat('quote');
 
         if (action === 'md-format-close') {
@@ -12443,7 +12889,10 @@ function __mountMdCloneDescriptionEditor({ editor, toolbar, formatToggleBtn, isE
 
     return {
         closeAllPopovers,
-        flush: reRenderExpanded,
+        flush: () => {
+            try { reRenderExpanded(); } catch (_) { }
+            try { __finalizeInlinePatternsInEditor(editor); } catch (_) { }
+        },
         recordSnapshot: () => {
             if (undoManager) undoManager.recordNow('manual');
         },
@@ -12772,7 +13221,10 @@ function renderTempNode(section) {
 
     titleInput.addEventListener('mousedown', (ev) => {
         if (!titleInput.classList.contains('editing')) {
-            ev.preventDefault();
+            // [Fix] 仅阻止左键点击（避免进入光标），但不阻止右键菜单
+            if (ev.button === 0) {
+                ev.preventDefault();
+            }
         }
     });
 
@@ -12826,7 +13278,9 @@ function renderTempNode(section) {
     // 获取占位符文字（支持多语言）
     const getPlaceholderText = () => {
         const lang = typeof currentLang !== 'undefined' ? currentLang : 'zh';
-        return lang === 'en' ? 'Click to add description...' : '点击添加说明...';
+        return lang === 'en'
+            ? 'Click to add description... (supports [text](URL), https://..., www...)'
+            : '点击添加说明...（支持 [文字](URL)、https://...、www...）';
     };
 
     // 获取编辑提示（支持多语言）
@@ -13017,7 +13471,12 @@ function renderTempNode(section) {
 
     descriptionText.addEventListener('blur', () => {
         if (!isEditingDesc) return;
-        exitEditingDescription({ commit: true });
+        // Clicking toolbar/popovers should not end editing
+        setTimeout(() => {
+            if (!isEditingDesc) return;
+            if (descriptionContainer && descriptionContainer.contains(document.activeElement)) return;
+            exitEditingDescription({ commit: true });
+        }, 0);
     });
 
     // 复制时转换为 Markdown 源码格式（而非渲染后的富文本）
@@ -13836,7 +14295,17 @@ function setupTempSectionBlankAreaMenu(sectionElement, section) {
     if (!sectionElement) return;
 
     // 在整个栏目容器上监听右键菜单
+    // 在整个栏目容器上监听右键菜单
     sectionElement.addEventListener('contextmenu', (e) => {
+        // [Fix] 允许在标题输入框、说明文字编辑器、以及其中的链接/输入元素上触发原生右键菜单
+        if (e.target.closest('.temp-node-title-input') ||
+            e.target.closest('.temp-node-description') ||
+            e.target.closest('input') ||
+            e.target.closest('textarea') ||
+            e.target.closest('.md-canvas-editor')) {
+            return;
+        }
+
         // 检查是否点击在树节点上
         const treeItem = e.target.closest('.tree-item[data-node-id]');
         // 检查是否点击在操作按钮上
@@ -15142,7 +15611,9 @@ function setupPermanentSectionTipClose() {
         collapsedBar = document.createElement('div');
         collapsedBar.className = 'permanent-section-tip-collapsed';
         const lang = typeof currentLang !== 'undefined' ? currentLang : 'zh';
-        const text = lang === 'en' ? 'Click to add description...' : '点击添加说明...';
+        const text = lang === 'en'
+            ? 'Click to add description... (supports [text](URL), https://..., www...)'
+            : '点击添加说明...（支持 [文字](URL)、https://...、www...）';
         collapsedBar.innerHTML = `<i class="fas fa-info-circle" style="font-size:12px;"></i><span>${text}</span>`;
         tipContainer.appendChild(collapsedBar);
     }
@@ -15153,7 +15624,9 @@ function setupPermanentSectionTipClose() {
     // 多语言占位文本
     const getPlaceholderText = () => {
         const lang = typeof currentLang !== 'undefined' ? currentLang : 'zh';
-        return lang === 'en' ? 'Click to add description...' : '点击添加说明...';
+        return lang === 'en'
+            ? 'Click to add description... (supports [text](URL), https://..., www...)'
+            : '点击添加说明...（支持 [文字](URL)、https://...、www...）';
     };
 
     const getEditTitle = () => {
@@ -15317,7 +15790,12 @@ function setupPermanentSectionTipClose() {
 
     tipText.addEventListener('blur', () => {
         if (!isEditingTip) return;
-        exitEditingTip({ commit: true });
+        // Clicking toolbar/popovers should not end editing
+        setTimeout(() => {
+            if (!isEditingTip) return;
+            if (tipContainer && tipContainer.contains(document.activeElement)) return;
+            exitEditingTip({ commit: true });
+        }, 0);
     });
 
     // 复制时转换为 Markdown 源码格式（而非渲染后的富文本）

@@ -18,12 +18,25 @@
       .replace(/'/g, '&#39;');
 
   const allowedProtocols = new Set(['http:', 'https:', 'mailto:', 'tel:', 'obsidian:']);
+
+  const normalizeExternalHref = (href = '') => {
+    const h = String(href || '').trim();
+    if (!h) return '';
+    if (h.startsWith('#')) return h;
+    // Obsidian-style: treat "www.xxx" as an external link -> "http://www.xxx"
+    if (/^www\./i.test(h)) return `http://${h}`;
+    // Protocol-relative URL
+    if (h.startsWith('//')) return `https:${h}`;
+    return h;
+  };
+
   const sanitizeHref = (href = '') => {
-    if (!href) return null;
-    if (href.startsWith('#')) return href;
+    const normalized = normalizeExternalHref(href);
+    if (!normalized) return null;
+    if (normalized.startsWith('#')) return normalized;
     try {
-      const url = new URL(href, 'https://dummy.local');
-      return allowedProtocols.has(url.protocol) ? href : null;
+      const url = new URL(normalized, 'https://dummy.local');
+      return allowedProtocols.has(url.protocol) ? normalized : null;
     } catch (_) {
       return null;
     }

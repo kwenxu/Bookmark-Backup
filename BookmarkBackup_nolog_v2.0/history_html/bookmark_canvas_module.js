@@ -9282,10 +9282,22 @@ function renderMdNode(node) {
 
         // 链接点击
         const link = target.closest('a');
-        if (link && link.href && !node.isEditing) {
+        if (link && link.href) {
+            // 已被全局超链接处理器接管（避免重复打开）
+            if (e.defaultPrevented) return;
+            // 修饰键交给浏览器默认行为
+            if (e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
             e.preventDefault();
             e.stopPropagation();
-            window.open(link.href, '_blank', 'noopener,noreferrer');
+            try {
+                if (typeof window.openHyperlinkWithDefaultMode === 'function') {
+                    window.openHyperlinkWithDefaultMode(link.href);
+                } else {
+                    window.open(link.href, '_blank', 'noopener,noreferrer');
+                }
+            } catch (_) {
+                window.open(link.href, '_blank', 'noopener,noreferrer');
+            }
             return;
         }
 
@@ -13428,6 +13440,7 @@ function renderTempNode(section) {
     // 单击也可以编辑（当没有说明时）
     // 单击进入编辑（只要不在编辑模式）
     descriptionText.addEventListener('click', (e) => {
+        if (e.defaultPrevented) return;
         if (isEditingDesc) return;
         e.preventDefault();
         e.stopPropagation();
@@ -15760,6 +15773,7 @@ function setupPermanentSectionTipClose() {
 
     // Events
     tipText.addEventListener('click', (e) => {
+        if (e.defaultPrevented) return;
         if (isEditingTip) return;
         e.preventDefault();
         e.stopPropagation();

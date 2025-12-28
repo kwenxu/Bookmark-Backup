@@ -37,7 +37,7 @@ let specificTabGroupId = null; // chrome.tabGroups Group ID（在“特定标签
 let specificGroupWindowId = null; // 保存分组所在窗口，确保新开的标签在同一窗口
 
 // 超链接系统：独立的打开方式与窗口/分组ID（与书签系统完全隔离）
-let hyperlinkDefaultOpenMode = 'specific-group'; // 超链接的默认打开方式：'specific-group'（in Same Group）
+let hyperlinkDefaultOpenMode = 'specific-window'; // 超链接的默认打开方式：'specific-window'（in Same Window）
 let hyperlinkSpecificWindowId = null; // 超链接专用的窗口ID
 let hyperlinkSpecificTabGroupId = null; // 超链接专用的分组ID
 let hyperlinkSpecificGroupWindowId = null; // 超链接分组所在窗口
@@ -67,6 +67,9 @@ let liveGroupSeedCache = null;
 let liveGroupSeedCacheTs = 0;
 // 暴露给其他脚本（如 history.js）
 window.getDefaultOpenMode = () => defaultOpenMode;
+try {
+    window.getHyperlinkDefaultOpenMode = () => hyperlinkDefaultOpenMode;
+} catch (_) { }
 
 // 读取持久化默认打开方式（书签系统）
 (async function initDefaultOpenMode() {
@@ -188,6 +191,7 @@ window.getDefaultOpenMode = () => defaultOpenMode;
             hyperlinkSpecificTabGroupId,
             hyperlinkSpecificGroupWindowId
         });
+        try { window.hyperlinkDefaultOpenMode = hyperlinkDefaultOpenMode; } catch (_) { }
     } catch (err) {
         console.error('[超链接初始化] 失败:', err);
     }
@@ -1388,10 +1392,6 @@ function attachHyperlinkContextMenu() {
         const inMdNodeContent = linkElement.closest('.md-canvas-text, .md-canvas-editor');
 
         if (inPermanentTip || inTempDescription || inMdNodeContent) {
-            // 编辑模式下不拦截（允许光标定位/修改链接文本）
-            const inEditingArea = linkElement.closest('.md-canvas-node.editing, .temp-node-description-container.editing, .permanent-section-tip-container.editing');
-            if (inEditingArea) return;
-
             // 如果有系统快捷键，走浏览器默认行为
             if (e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) {
                 return;
@@ -1412,39 +1412,8 @@ function attachHyperlinkContextMenu() {
 
             console.log('[超链接] 左键点击，使用模式:', hyperlinkDefaultOpenMode);
 
-            // 根据超链接的默认模式打开（6个选项）
             try {
-                switch (hyperlinkDefaultOpenMode) {
-                    case 'new-tab':
-                        await openHyperlinkNewTab(url);
-                        break;
-
-                    case 'new-window':
-                        await openHyperlinkNewWindow(url);
-                        break;
-
-                    case 'specific-window':
-                        await openHyperlinkInSpecificWindow(url);
-                        break;
-
-                    case 'specific-group':
-                        await openHyperlinkInSpecificTabGroup(url);
-                        break;
-
-                    case 'manual-select':
-                        // 使用手动选择的窗口/组打开
-                        await openBookmarkWithManualSelection(url);
-                        break;
-
-                    case 'incognito':
-                        // 无痕窗口
-                        await openHyperlinkIncognito(url);
-                        break;
-
-                    default:
-                        // 默认使用新标签页
-                        await openHyperlinkNewTab(url);
-                }
+                await openHyperlinkWithDefaultMode(url, { context });
             } catch (error) {
                 console.error('[超链接] 左键打开失败:', error);
                 window.open(url, '_blank'); // 失败时回退
@@ -1632,13 +1601,13 @@ async function showHyperlinkContextMenu(e, linkElement) {
                 switch (subAction) {
                     // 同一标签组的"新分组"徽标
                     case 'hyperlink-same-group-new':
+                        setHyperlinkDefaultOpenMode('specific-group');
                         await openHyperlinkInSpecificTabGroup(context.url, { forceNew: true });
-                        await setHyperlinkDefaultOpenMode('specific-group');
                         break;
                     // 同一窗口的"新窗口"徽标
                     case 'hyperlink-same-window-new':
+                        setHyperlinkDefaultOpenMode('specific-window');
                         await openHyperlinkInSpecificWindow(context.url, { forceNew: true });
-                        await setHyperlinkDefaultOpenMode('specific-window');
                         break;
                     default:
                         console.warn('[超链接菜单] 未知的 sub-action:', subAction);
@@ -1838,38 +1807,38 @@ async function handleHyperlinkMenuAction(action, context) {
     try {
         switch (action) {
             case 'hyperlink-open-new-tab':
+                setHyperlinkDefaultOpenMode('new-tab');
                 await openHyperlinkNewTab(url);
-                await setHyperlinkDefaultOpenMode('new-tab');
                 break;
 
             case 'hyperlink-open-new-window':
+                setHyperlinkDefaultOpenMode('new-window');
                 await openHyperlinkNewWindow(url);
-                await setHyperlinkDefaultOpenMode('new-window');
                 break;
 
             case 'hyperlink-open-same-group':
                 // 右键点击 = 勾选模式 + 复用已有分组打开（点击 sub-badge 才强制新建）
+                setHyperlinkDefaultOpenMode('specific-group');
                 await openHyperlinkInSpecificTabGroup(url);
-                await setHyperlinkDefaultOpenMode('specific-group');
                 break;
 
             case 'hyperlink-open-specific-window':
                 // 右键点击 = 勾选模式 + 复用已有窗口打开（点击 sub-badge 才强制新建）
+                setHyperlinkDefaultOpenMode('specific-window');
                 await openHyperlinkInSpecificWindow(url);
-                await setHyperlinkDefaultOpenMode('specific-window');
                 break;
 
             case 'hyperlink-open-manual-select':
                 // 打开手动选择窗口+组的选择器（超链接模式）
+                setHyperlinkDefaultOpenMode('manual-select');
                 await showManualWindowGroupSelector({ nodeUrl: url, isHyperlink: true });
-                await setHyperlinkDefaultOpenMode('manual-select');
                 break;
 
 
             case 'hyperlink-open-incognito':
                 // 无痕窗口
+                setHyperlinkDefaultOpenMode('incognito');
                 await openHyperlinkIncognito(url);
-                await setHyperlinkDefaultOpenMode('incognito');
                 break;
 
             default:
@@ -1885,6 +1854,7 @@ async function handleHyperlinkMenuAction(action, context) {
 async function setHyperlinkDefaultOpenMode(mode) {
     console.log('[超链接] setHyperlinkDefaultOpenMode:', mode);
     hyperlinkDefaultOpenMode = mode;
+    try { window.hyperlinkDefaultOpenMode = mode; } catch (_) { }
     try {
         if (typeof chrome !== 'undefined' && chrome.storage && chrome.storage.local) {
             await chrome.storage.local.set({ hyperlinkDefaultOpenMode: mode });
@@ -1897,6 +1867,47 @@ async function setHyperlinkDefaultOpenMode(mode) {
         console.error('[超链接] 保存失败:', err);
     }
 }
+
+// 按超链接默认模式打开（供左键/其他模块复用）
+async function openHyperlinkWithDefaultMode(url, options = {}) {
+    if (!url) return;
+    const { context } = (options && typeof options === 'object') ? options : {};
+    try {
+        switch (hyperlinkDefaultOpenMode) {
+            case 'new-tab':
+                await openHyperlinkNewTab(url);
+                break;
+            case 'new-window':
+                await openHyperlinkNewWindow(url);
+                break;
+            case 'specific-window':
+                await openHyperlinkInSpecificWindow(url, { context });
+                break;
+            case 'specific-group':
+                await openHyperlinkInSpecificTabGroup(url, { context });
+                break;
+            case 'manual-select':
+                if (typeof openBookmarkWithManualSelection === 'function') {
+                    await openBookmarkWithManualSelection(url);
+                } else {
+                    await openHyperlinkNewTab(url);
+                }
+                break;
+            case 'incognito':
+                await openHyperlinkIncognito(url);
+                break;
+            default:
+                await openHyperlinkNewTab(url);
+        }
+    } catch (err) {
+        console.warn('[超链接] openHyperlinkWithDefaultMode 失败，回退 window.open:', err);
+        window.open(url, '_blank');
+    }
+}
+
+try {
+    window.openHyperlinkWithDefaultMode = openHyperlinkWithDefaultMode;
+} catch (_) { }
 
 // 显示右键菜单
 async function showContextMenu(e, node) {

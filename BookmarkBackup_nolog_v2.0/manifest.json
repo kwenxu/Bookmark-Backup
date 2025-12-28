@@ -66,6 +66,7 @@
       "alarms",
       "commands",
       "scripting",
+      "webNavigation",
       "windows",
       "tabs",
       "tabGroups",

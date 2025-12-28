@@ -1,5 +1,5 @@
 // 在文件顶部添加全局错误处理，捕获并忽略特定的连接错误
-self.addEventListener('unhandledrejection', function(event) {
+self.addEventListener('unhandledrejection', function (event) {
     // 检查错误消息是否是想要抑制的连接错误
     if (event.reason &&
         event.reason.message &&
@@ -11,7 +11,7 @@ self.addEventListener('unhandledrejection', function(event) {
         event.stopPropagation();
 
         // 可选：记录一个更友好的调试信息
-return false; // 阻止错误传播
+        return false; // 阻止错误传播
     }
 });
 
@@ -49,13 +49,19 @@ import {
     getSessionsByUrl,
     getSessionsByTimeRange,
     getBookmarkActiveTimeStats,
+    getTrackingStats,
     rebuildBookmarkCache as rebuildActiveTimeBookmarkCache,
     clearAllSessions,
+    clearTrackingDisplayData,  // 清除显示数据（兼容旧接口）
+    clearCurrentTrackingSessions,  // 仅清除正在追踪
+    clearTrackingStatsByRange,  // 按时间范围清除综合排行
+    syncTrackingData,  // 数据一致性检查
+    noteAutoBookmarkNavigation,
     saveAllActiveSessions
 } from './active_time_tracker/index.js';
 
 // 浏览器兼容性处理
-const browserAPI = (function() {
+const browserAPI = (function () {
     if (typeof chrome !== 'undefined') {
         if (typeof browser !== 'undefined') {
             // Firefox
@@ -174,32 +180,32 @@ if (browserAPI.commands && browserAPI.commands.onCommand) {
 function initializeOperationTracking() {
     // 监听书签移动事件
     browserAPI.bookmarks.onMoved.addListener((id, moveInfo) => {
-// 确定被移动的是书签还是文件夹
+        // 确定被移动的是书签还是文件夹
         browserAPI.bookmarks.get(id, (nodes) => {
             if (nodes && nodes.length > 0) {
                 const node = nodes[0];
                 if (node.url) {
                     // 是书签
                     bookmarkMoved = true;
-	} else {
+                } else {
                     // 是文件夹
                     folderMoved = true;
-	}
+                }
 
-// 记录最近移动的节点到 storage（供前端读取做稳定标识）
-async function recordRecentMovedId(movedId, info) {
-    try {
-        const now = Date.now();
-        const data = await browserAPI.storage.local.get(['recentMovedIds']);
-        const list = Array.isArray(data.recentMovedIds) ? data.recentMovedIds : [];
-        const filtered = list.filter(r => (now - (r.time || 0)) < RECENT_MOVED_TTL_MS);
-        filtered.push({ id: movedId, time: now, parentId: info && info.parentId, oldParentId: info && info.oldParentId, index: info && info.index });
-        // 取消限制，记录所有历史移动
-        await browserAPI.storage.local.set({ recentMovedIds: filtered });
-    } catch (e) {
-        // 忽略
-    }
-}
+                // 记录最近移动的节点到 storage（供前端读取做稳定标识）
+                async function recordRecentMovedId(movedId, info) {
+                    try {
+                        const now = Date.now();
+                        const data = await browserAPI.storage.local.get(['recentMovedIds']);
+                        const list = Array.isArray(data.recentMovedIds) ? data.recentMovedIds : [];
+                        const filtered = list.filter(r => (now - (r.time || 0)) < RECENT_MOVED_TTL_MS);
+                        filtered.push({ id: movedId, time: now, parentId: info && info.parentId, oldParentId: info && info.oldParentId, index: info && info.index });
+                        // 取消限制，记录所有历史移动
+                        await browserAPI.storage.local.set({ recentMovedIds: filtered });
+                    } catch (e) {
+                        // 忽略
+                    }
+                }
 
                 // 保存状态
                 browserAPI.storage.local.set({
@@ -215,8 +221,8 @@ async function recordRecentMovedId(movedId, info) {
                 try {
                     recordRecentMovedId(id, { parentId: moveInfo.parentId, oldParentId: moveInfo.oldParentId, index: moveInfo.index });
                     // 立即广播本次移动，避免依赖后续分析刷新导致的首次后不再标蓝问题
-                    try { browserAPI.runtime.sendMessage({ action: 'recentMovedBroadcast', id }); } catch (_) {}
-                } catch(_) {}
+                    try { browserAPI.runtime.sendMessage({ action: 'recentMovedBroadcast', id }); } catch (_) { }
+                } catch (_) { }
             }
         });
     });
@@ -250,14 +256,14 @@ async function recordRecentMovedId(movedId, info) {
 
     // 监听书签修改事件
     browserAPI.bookmarks.onChanged.addListener((id, changeInfo) => {
-// 确定被修改的是书签还是文件夹
+        // 确定被修改的是书签还是文件夹
         browserAPI.bookmarks.get(id, (nodes) => {
             if (nodes && nodes.length > 0) {
                 const node = nodes[0];
                 if (node.url) {
                     // 是书签
                     bookmarkModified = true;
-                    
+
                     // 如果URL被修改，通知历史查看器清除favicon缓存
                     if (changeInfo.url) {
                         try {
@@ -269,10 +275,10 @@ async function recordRecentMovedId(movedId, info) {
                             // 如果没有监听器也没关系
                         }
                     }
-} else {
+                } else {
                     // 是文件夹
                     folderModified = true;
-}
+                }
 
                 // 保存状态
                 browserAPI.storage.local.set({
@@ -291,7 +297,7 @@ async function recordRecentMovedId(movedId, info) {
 
 // 在初始化时设置角标
 async function initializeBadge() {
-try {
+    try {
         const { autoSync, lastSyncStatus, isYellowHandActive } = await browserAPI.storage.local.get({
             autoSync: true,
             lastSyncStatus: 'success',
@@ -299,18 +305,18 @@ try {
         });
 
         if (!autoSync) {
-// 如果是手动模式，根据 isYellowHandActive 状态决定是否启动循环提醒
+            // 如果是手动模式，根据 isYellowHandActive 状态决定是否启动循环提醒
             if (isYellowHandActive) {
-await startLoopReminder();
+                await startLoopReminder();
             } else {
-await stopLoopReminder(); // 确保是停止状态
+                await stopLoopReminder(); // 确保是停止状态
             }
         }
-        
+
         // 初始设置角标颜色和文字
         await setBadge();
     } catch (error) {
-await browserAPI.action.setBadgeText({ text: '!' });
+        await browserAPI.action.setBadgeText({ text: '!' });
         await browserAPI.action.setBadgeBackgroundColor({ color: '#FF0000' }); // 红色
     }
 }
@@ -341,7 +347,7 @@ async function initializeAutoSync() {
 }
         */
     } catch (error) {
-}
+    }
 }
 
 // 创建或更新定时备份任务
@@ -361,7 +367,7 @@ async function updateSyncAlarm() {
 } else {
 } */
     } catch (error) {
-}
+    }
 }
 
 // 页面加载时初始化操作状态跟踪
@@ -371,7 +377,7 @@ initializeOperationTracking();
 if (!hasInitializedBackupReminder) {
     hasInitializedBackupReminder = true;
     initializeBackupReminder().catch(error => {
-hasInitializedBackupReminder = false; // 重置标志以允许未来重试
+        hasInitializedBackupReminder = false; // 重置标志以允许未来重试
     });
 }
 
@@ -382,7 +388,7 @@ hasInitializedBackupReminder = false; // 重置标志以允许未来重试
 
 // 初始化定时任务
 browserAPI.runtime.onInstalled.addListener(async (details) => { // 添加 async 和 details 参数
-// 新增：初始化存储，确保首次运行时有基准
+    // 新增：初始化存储，确保首次运行时有基准
     if (details.reason === 'install' || details.reason === 'update') {
         try {
             const currentData = await browserAPI.storage.local.get([
@@ -399,14 +405,14 @@ browserAPI.runtime.onInstalled.addListener(async (details) => { // 添加 async 
                 updateObj.lastCalculatedDiff = { bookmarkDiff: 0, folderDiff: 0, timestamp: null }; // 设为默认值
             }
             if (!currentData.lastSyncStats) {
-                 updateObj.lastSyncStats = null; // 明确设为 null
+                updateObj.lastSyncStats = null; // 明确设为 null
             }
 
             if (Object.keys(updateObj).length > 0) {
                 await browserAPI.storage.local.set(updateObj);
-}
+            }
         } catch (error) {
-}
+        }
     }
 
     updateSyncAlarm();
@@ -417,16 +423,16 @@ browserAPI.runtime.onInstalled.addListener(async (details) => { // 添加 async 
     if (!hasInitializedBackupReminder) {
         hasInitializedBackupReminder = true;
         initializeBackupReminder().catch(error => {
-hasInitializedBackupReminder = false; // 重置标志以允许未来重试
+            hasInitializedBackupReminder = false; // 重置标志以允许未来重试
         });
     } else {
-}
+    }
 });
 
 // 确保定时器在浏览器启动时也能正确创建
 // 注意：此处不调用 initializeBadge()，避免与下方统一的 onStartup 重复
 browserAPI.runtime.onStartup.addListener(async () => {
-updateSyncAlarm();
+    updateSyncAlarm();
     // initializeBadge(); // 已移除：避免重复调用（下方统一的 onStartup 会调用）
     // initializeAutoSync(); // Not awaiting it as per original structure potentially
 
@@ -434,11 +440,11 @@ updateSyncAlarm();
     if (!hasInitializedBackupReminder) {
         hasInitializedBackupReminder = true;
         initializeBackupReminder().catch(error => {
-hasInitializedBackupReminder = false; // 重置标志以允许未来重试
+            hasInitializedBackupReminder = false; // 重置标志以允许未来重试
         });
     } else {
-}
-    
+    }
+
     // 初始化自动备份定时器系统
     try {
         // 设置定时器系统的回调函数（必须在任何定时器操作前设置）
@@ -455,13 +461,13 @@ hasInitializedBackupReminder = false; // 重置标志以允许未来重试
     syncDownloadState();
     // 首次启动时预热缓存
     await updateAndCacheAnalysis();
-    
+
     // 浏览器启动后，直接初始化定时器系统（包含遗漏检查）
     try {
         const { autoSync = true } = await browserAPI.storage.local.get(['autoSync']);
         if (autoSync) {
             console.log('[自动备份定时器] 浏览器启动，初始化定时器并检查遗漏任务');
-            
+
             // 检查是否有变化（角标是否应该黄）
             const changeResult = await checkBookmarkChangesForAutoBackup();
             if (changeResult && changeResult.hasChanges) {
@@ -484,7 +490,7 @@ hasInitializedBackupReminder = false; // 重置标志以允许未来重试
  */
 async function syncDownloadState() {
     try {
-// 查询由本扩展创建的书签相关下载（最近500项）
+        // 查询由本扩展创建的书签相关下载（最近500项）
         const bookmarkDownloads = await new Promise(resolve => {
             browserAPI.downloads.search({
                 limit: 500,
@@ -493,7 +499,7 @@ async function syncDownloadState() {
                 resolve(items.filter(item => {
                     // 使用更准确的条件识别书签备份下载
                     if (!item.filename) return false;
-                    
+
                     // 检查是否为书签备份文件 - 简化识别逻辑
                     return (
                         // 1. 路径中包含Bookmarks目录
@@ -506,38 +512,38 @@ async function syncDownloadState() {
                 }));
             });
         });
-        
+
         // 筛选进行中的书签下载
         const activeBookmarkDownloads = bookmarkDownloads.filter(
             item => item.state && item.state === 'in_progress'
         );
-        
+
         // 筛选最近完成但可能尚未被处理的书签下载
         const recentlyCompletedDownloads = bookmarkDownloads.filter(
-            item => item.state && item.state === 'complete' && 
-            item.endTime && (new Date(item.endTime).getTime() > extensionStartupTime - 60000)  // 最近1分钟完成的
+            item => item.state && item.state === 'complete' &&
+                item.endTime && (new Date(item.endTime).getTime() > extensionStartupTime - 60000)  // 最近1分钟完成的
         );
-        
+
         // 处理进行中的和最近完成的书签下载
         const downloadsToProcess = [...activeBookmarkDownloads, ...recentlyCompletedDownloads];
-        
+
         if (downloadsToProcess.length > 0) {
-// 将历史处理标志设为true，以避免onCreated处理器输出大量日志
+            // 将历史处理标志设为true，以避免onCreated处理器输出大量日志
             isProcessingHistoricalDownloads = true;
-            
+
             // 处理每个需要关注的下载项
             for (const download of downloadsToProcess) {
                 // 模拟onCreated事件的处理，但不输出冗长日志
                 bookmarkDownloadIds.add(download.id);
             }
-            
+
             // 处理完成后重置标志
             isProcessingHistoricalDownloads = false;
-            
-} else {
-}
+
+        } else {
+        }
     } catch (error) {
-isProcessingHistoricalDownloads = false; // 确保在出错时重置标志
+        isProcessingHistoricalDownloads = false; // 确保在出错时重置标志
     }
 }
 
@@ -557,8 +563,8 @@ browserAPI.downloads.onCreated.addListener(async (downloadItem) => {
         );
 
         // 判断是否为历史下载项的重新通知（根据启动时间或处理标志）
-        const isHistoricalDownload = isProcessingHistoricalDownloads || 
-                                   (downloadItem.startTime && new Date(downloadItem.startTime).getTime() < extensionStartupTime);
+        const isHistoricalDownload = isProcessingHistoricalDownloads ||
+            (downloadItem.startTime && new Date(downloadItem.startTime).getTime() < extensionStartupTime);
 
         if (isBookmarkDownload) {
             // 将此下载ID加入书签下载集合
@@ -567,7 +573,7 @@ browserAPI.downloads.onCreated.addListener(async (downloadItem) => {
         } else if (isBookmarkBackupInProgress) {
             // 如果有正在进行的书签备份，且有其他非书签备份下载，需要特殊处理
             nonBookmarkDownloadCount++; // 增加计数
-// 获取当前防干扰设置
+            // 获取当前防干扰设置
             const { hideDownloadShelf } = await browserAPI.storage.local.get(['hideDownloadShelf']);
             const shouldHideDownloadShelf = hideDownloadShelf !== false; // 默认为true
 
@@ -580,14 +586,14 @@ browserAPI.downloads.onCreated.addListener(async (downloadItem) => {
                         resolve(result);
                     });
                 } catch (error) {
-resolve(false);
+                    resolve(false);
                 }
             });
 
             // 如果开启了防干扰功能，且当前有其他下载，临时显示下载栏
             if (shouldHideDownloadShelf && hasDownloadShelfPermission && nonBookmarkDownloadCount === 1) {
                 // 只在第一个非书签下载时恢复下载栏显示
-await browserAPI.downloads.setShelfEnabled(true);
+                await browserAPI.downloads.setShelfEnabled(true);
             }
 
             // 监听这个下载的完成事件
@@ -598,10 +604,10 @@ await browserAPI.downloads.setShelfEnabled(true);
 
                     // 减少非书签下载计数
                     nonBookmarkDownloadCount = Math.max(0, nonBookmarkDownloadCount - 1);
-// 如果书签备份仍在进行，且需要隐藏下载栏，且没有其他非书签下载了，则恢复隐藏状态
+                    // 如果书签备份仍在进行，且需要隐藏下载栏，且没有其他非书签下载了，则恢复隐藏状态
                     if (isBookmarkBackupInProgress && shouldHideDownloadShelf &&
                         hasDownloadShelfPermission && nonBookmarkDownloadCount === 0) {
-await browserAPI.downloads.setShelfEnabled(false);
+                        await browserAPI.downloads.setShelfEnabled(false);
                     }
                 }
             };
@@ -610,13 +616,13 @@ await browserAPI.downloads.setShelfEnabled(false);
             browserAPI.downloads.onChanged.addListener(onDownloadComplete);
         }
     } catch (error) {
-}
+    }
 });
 
 // 监听下载完成事件，清理书签下载ID记录
 browserAPI.downloads.onChanged.addListener((downloadDelta) => {
     if (downloadDelta.state &&
-       (downloadDelta.state.current === 'complete' || downloadDelta.state.current === 'interrupted')) {
+        (downloadDelta.state.current === 'complete' || downloadDelta.state.current === 'interrupted')) {
         // 如果是书签备份下载完成，从集合中移除
         if (bookmarkDownloadIds.has(downloadDelta.id)) {
             bookmarkDownloadIds.delete(downloadDelta.id);
@@ -697,13 +703,72 @@ const BookmarkSnapshotCache = {
 
 // 监听来自popup的消息
 browserAPI.runtime.onMessage.addListener((message, sender, sendResponse) => {
-// 基础校验
+    // 基础校验
     if (!message || typeof message !== 'object' || !message.action) {
         sendResponse({ success: false, error: '无效的消息格式' });
         return;
     }
 
     try {
+        if (message.action === "extensionBookmarkOpen") {
+            (async () => {
+                try {
+                    const url = message.url;
+                    const tabId = typeof message.tabId === 'number' ? message.tabId : null;
+                    const title = typeof message.title === 'string' ? message.title : '';
+                    const bookmarkId = typeof message.bookmarkId === 'string' ? message.bookmarkId : null;
+
+                    if (!url || typeof url !== 'string' || (!url.startsWith('http://') && !url.startsWith('https://'))) {
+                        sendResponse({ success: false, error: '无效URL' });
+                        return;
+                    }
+
+                    const visitTime = Date.now();
+                    if (tabId != null) {
+                        noteAutoBookmarkNavigation({
+                            tabId,
+                            bookmarkUrl: url,
+                            bookmarkId,
+                            bookmarkTitle: title || '',
+                            timeStamp: visitTime,
+                            source: 'extension'
+                        });
+                    }
+
+                    sendResponse({ success: true });
+                } catch (error) {
+                    sendResponse({ success: false, error: error?.message || String(error) });
+                }
+            })();
+            return true;
+        }
+        if (message.action === "attributedBookmarkOpen") {
+            (async () => {
+                try {
+                    const url = message.url;
+                    const title = typeof message.title === 'string' ? message.title : '';
+                    const transition = typeof message.transition === 'string' ? message.transition : 'attributed';
+
+                    if (!url || typeof url !== 'string' || (!url.startsWith('http://') && !url.startsWith('https://'))) {
+                        sendResponse({ success: false, error: '无效URL' });
+                        return;
+                    }
+
+                    const visitTime = Date.now();
+                    await appendPendingAutoBookmarkClick({
+                        id: `attributed-${Math.floor(visitTime)}`,
+                        title: title || url,
+                        url,
+                        visitTime,
+                        transition
+                    });
+                    sendResponse({ success: true });
+                } catch (error) {
+                    sendResponse({ success: false, error: error?.message || String(error) });
+                }
+            })();
+            return true;
+        }
         if (message.action === "getBookmarkSnapshot") {
             (async () => {
                 try {
@@ -726,19 +791,19 @@ browserAPI.runtime.onMessage.addListener((message, sender, sendResponse) => {
                     let newAutoSyncState;
                     if (useSpecificValue) {
                         newAutoSyncState = !!message.enabled;
-} else {
+                    } else {
                         newAutoSyncState = !autoSync;
-}
+                    }
 
                     if (newAutoSyncState === previousAutoSyncState) {
-return { success: true, autoSync: previousAutoSyncState, message: '状态未变化' };
+                        return { success: true, autoSync: previousAutoSyncState, message: '状态未变化' };
                     }
 
                     // 更新存储中的 autoSync 状态
                     await browserAPI.storage.local.set({ autoSync: newAutoSyncState });
-// 确保清除活动标志 (无论切换到哪个模式，都清除一次以保证状态正确)
+                    // 确保清除活动标志 (无论切换到哪个模式，都清除一次以保证状态正确)
                     await browserAPI.storage.local.remove('hasBookmarkActivitySinceLastCheck');
-// 直接调用 onAutoBackupToggled 函数
+                    // 直接调用 onAutoBackupToggled 函数
                     await onAutoBackupToggled(newAutoSyncState);
 
                     // 如果从自动模式切换到手动模式：不做切换备份，不重置“需要更新的”状态
@@ -762,7 +827,7 @@ return { success: true, autoSync: previousAutoSyncState, message: '状态未变�
                     return { success: true, autoSync: newAutoSyncState, message: '自动备份状态已更新' };
 
                 } catch (error) {
-return { success: false, error: error.message || '切换失败' };
+                    return { success: false, error: error.message || '切换失败' };
                 }
             };
 
@@ -771,7 +836,7 @@ return { success: false, error: error.message || '切换失败' };
                     sendResponse(response);
                 } catch (e) {
                     if (!(e.message.includes('Receiving end does not exist') || e.message.includes('Port closed'))) {
-}
+                    }
                 }
             });
 
@@ -779,7 +844,7 @@ return { success: false, error: error.message || '切换失败' };
 
         } else if (message.action === "exportHistoryToWebDAV") {
             // 处理导出历史记录到WebDAV的请求
-// 使用异步立即执行函数处理
+            // 使用异步立即执行函数处理
             (async () => {
                 try {
                     // 检查必要参数
@@ -827,7 +892,7 @@ return { success: false, error: error.message || '切换失败' };
                     if (checkFolderResponse.status === 401) {
                         throw new Error('WebDAV认证失败，请检查账号密码是否正确');
                     } else if (checkFolderResponse.status === 404) {
-const mkcolResponse = await fetch(folderUrl, {
+                        const mkcolResponse = await fetch(folderUrl, {
                             method: 'MKCOL',
                             headers: {
                                 'Authorization': authHeader
@@ -842,7 +907,7 @@ const mkcolResponse = await fetch(folderUrl, {
                     }
 
                     // 上传内容到WebDAV
-const response = await fetch(fullUrl, {
+                    const response = await fetch(fullUrl, {
                         method: 'PUT',
                         headers: {
                             'Authorization': authHeader,
@@ -854,15 +919,15 @@ const response = await fetch(fullUrl, {
 
                     if (!response.ok) {
                         const responseText = await response.text();
-throw new Error(`上传失败: ${response.status} - ${response.statusText}`);
+                        throw new Error(`上传失败: ${response.status} - ${response.statusText}`);
                     }
 
-sendResponse({
+                    sendResponse({
                         success: true,
                         message: '历史记录已成功上传到WebDAV'
                     });
                 } catch (error) {
-sendResponse({
+                    sendResponse({
                         success: false,
                         error: error.message || '导出历史记录到WebDAV失败'
                     });
@@ -872,7 +937,7 @@ sendResponse({
             return true;  // 保持消息通道开放
         } else if (message.action === "exportHistoryToLocal") {
             // 处理导出历史记录到本地的请求
-// 使用异步立即执行函数处理
+            // 使用异步立即执行函数处理
             (async () => {
                 try {
                     // 检查必要参数
@@ -910,32 +975,32 @@ sendResponse({
                     if (browserAPI.downloads.setShelfEnabled) {
                         try {
                             await browserAPI.downloads.setShelfEnabled(true);
-} catch (shelfError) {
-}
+                        } catch (shelfError) {
+                        }
                     }
 
                     // 执行下载
-const downloadId = await new Promise((resolve, reject) => {
+                    const downloadId = await new Promise((resolve, reject) => {
                         browserAPI.downloads.download({
                             url: dataUrl,
                             filename: 'Bookmarks_History/' + fileName,
                             saveAs: false
                         }, (id) => {
                             if (browserAPI.runtime.lastError) {
-reject(new Error(browserAPI.runtime.lastError.message));
+                                reject(new Error(browserAPI.runtime.lastError.message));
                             } else {
                                 resolve(id);
                             }
                         });
                     });
 
-sendResponse({
+                    sendResponse({
                         success: true,
                         message: '历史记录已成功下载到本地',
                         downloadId: downloadId
                     });
                 } catch (error) {
-sendResponse({
+                    sendResponse({
                         success: false,
                         error: error.message || '导出历史记录到本地失败'
                     });
@@ -944,23 +1009,23 @@ sendResponse({
 
             return true;  // 保持消息通道开放
         } else if (message.action === "syncBookmarks") {
-// <--- Log 6
+            // <--- Log 6
 
             // 检查消息中是否包含 isSwitchToAutoBackup 标志
             const isSwitchTriggered = message.isSwitchToAutoBackup === true;
             const syncDirection = message.direction || null; // 获取方向
             const isManualFromMessage = message.isManual === true; // 获取是否手动备份
             const autoBackupReason = message.autoBackupReason || null; // 获取自动备份原因
-// <--- Log 7
+            // <--- Log 7
 
             if (isSwitchTriggered) {
-// <--- Log 8a
+                // <--- Log 8a
                 // 调用 syncBookmarks，设置 isManual=false, isSwitchToAutoBackup=true
                 syncBookmarks(false, syncDirection, true, autoBackupReason)
                     .then(result => sendResponse(result))
                     .catch(error => sendResponse({ success: false, error: error.message }));
             } else {
-// <--- Log 8b
+                // <--- Log 8b
                 // 调用 syncBookmarks，根据消息中的 isManual 值
                 const isManual = isManualFromMessage ? true : !autoBackupReason; // 如果有 autoBackupReason，说明是自动备份
                 syncBookmarks(isManual, syncDirection, false, autoBackupReason)
@@ -970,7 +1035,7 @@ sendResponse({
             return true; // 保持消息通道开放
         } else if (message.action === "manualBackupCompleted") {
             // 处理手动备份完成消息
-// 使用异步立即执行函数处理
+            // 使用异步立即执行函数处理
             (async () => {
                 try {
                     // 重置备份提醒系统
@@ -989,7 +1054,7 @@ sendResponse({
 
                     // 强制更新缓存分析数据
                     await updateAndCacheAnalysis();
-                    
+
                     // 确保角标显示为蓝色（手动模式无变动）
                     try {
                         const { autoSync = false, preferredLang = 'zh_CN' } = await browserAPI.storage.local.get(['autoSync', 'preferredLang']);
@@ -999,30 +1064,30 @@ sendResponse({
                             await browserAPI.action.setBadgeText({ text: badgeText });
                             await browserAPI.action.setBadgeBackgroundColor({ color: '#0000FF' }); // 蓝色
                             await browserAPI.storage.local.set({ isYellowHandActive: false });
-} else {
+                        } else {
                             // 自动模式下，使用正常的setBadge
                             await setBadge();
                         }
                     } catch (badgeError) {
-await setBadge(); // 回退到正常的setBadge
+                        await setBadge(); // 回退到正常的setBadge
                     }
 
-sendResponse({ success: true });
+                    sendResponse({ success: true });
                 } catch (error) {
-sendResponse({ success: false, error: error.message });
+                    sendResponse({ success: false, error: error.message });
                 }
             })();
 
             return true;  // 保持消息通道开放
         } else if (message.action === "resetAllData") {
-// 使用异步立即执行函数处理
+            // 使用异步立即执行函数处理
             (async () => {
                 try {
                     await resetAllData();
-// 立即响应
+                    // 立即响应
                     sendResponse({ success: true });
                 } catch (error) {
-sendResponse({ success: false, error: error.message || '重置失败' });
+                    sendResponse({ success: false, error: error.message || '重置失败' });
                 }
             })();
 
@@ -1087,7 +1152,7 @@ sendResponse({ success: false, error: error.message || '重置失败' });
                         let idx = 0; const running = new Set();
                         const runNext = () => {
                             if (idx >= items.length) return Promise.resolve();
-                            const i = idx++; const p = Promise.resolve().then(() => worker(items[i])).catch(() => {}).finally(() => running.delete(p));
+                            const i = idx++; const p = Promise.resolve().then(() => worker(items[i])).catch(() => { }).finally(() => running.delete(p));
                             running.add(p);
                             if (running.size >= concurrency) {
                                 return Promise.race(running).then(runNext);
@@ -1109,7 +1174,7 @@ sendResponse({ success: false, error: error.message || '重置失败' });
                                 } else {
                                     await browserAPI.bookmarks.remove(child.id);
                                 }
-                            } catch (_) {}
+                            } catch (_) { }
                         }, 10);
                     }
 
@@ -1150,7 +1215,7 @@ sendResponse({ success: false, error: error.message || '重置失败' });
 
                     // 清理状态并更新角标与缓存
                     resetOperationStatus();
-                    try { await browserAPI.storage.local.remove('hasBookmarkActivitySinceLastCheck'); } catch (_) {}
+                    try { await browserAPI.storage.local.remove('hasBookmarkActivitySinceLastCheck'); } catch (_) { }
                     await updateAndCacheAnalysis();
                     await setBadge();
 
@@ -1162,12 +1227,12 @@ sendResponse({ success: false, error: error.message || '重置失败' });
             return true;
 
         } else if (message.action === "initSync") {
-if (message.direction === "upload") {
+            if (message.direction === "upload") {
                 // 上传本地书签到云端/本地
                 browserAPI.bookmarks.getTree()
                     .then(async (bookmarks) => {
                         try {
-let webDAVSuccess = false;
+                            let webDAVSuccess = false;
                             let localSuccess = false;
                             let errors = [];
 
@@ -1209,11 +1274,11 @@ let webDAVSuccess = false;
                                     if (uploadResult.success) {
                                         webDAVSuccess = true;
                                     } else if (uploadResult.webDAVNotConfigured) {
-} else {
+                                    } else {
                                         errors.push(uploadResult.error || '上传到WebDAV失败');
                                     }
                                 } catch (error) {
-errors.push(error.message || '上传到WebDAV失败');
+                                    errors.push(error.message || '上传到WebDAV失败');
                                 }
                             }
 
@@ -1222,10 +1287,10 @@ errors.push(error.message || '上传到WebDAV失败');
                                 try {
                                     const localResult = await uploadBookmarksToLocal(bookmarks);
                                     localSuccess = true;
-// 记录文件名信息，以便返回给调用者
+                                    // 记录文件名信息，以便返回给调用者
                                     result.localFileName = localResult.fileName;
                                 } catch (error) {
-errors.push(`本地备份失败: ${error.message}`);
+                                    errors.push(`本地备份失败: ${error.message}`);
                                 }
                             }
 
@@ -1251,7 +1316,7 @@ errors.push(`本地备份失败: ${error.message}`);
                                 try {
                                     await setBadge(); // 更新角标为自动状态
                                 } catch (badgeError) {
-}
+                                }
                             }
                             // --- 结束新增 ---
 
@@ -1263,14 +1328,14 @@ errors.push(`本地备份失败: ${error.message}`);
                                 error: errors.length > 0 ? errors.join('; ') : null
                             });
                         } catch (error) {
-sendResponse({
+                            sendResponse({
                                 success: false,
                                 error: error.message || '上传失败'
                             });
                         }
                     })
                     .catch(error => {
-sendResponse({
+                        sendResponse({
                             success: false,
                             error: error.message || '获取书签失败'
                         });
@@ -1293,7 +1358,7 @@ sendResponse({
                                 try {
                                     await setBadge(); // 更新角标为自动状态
                                 } catch (badgeError) {
-}
+                                }
                                 // --- 结束新增 ---
 
                                 sendResponse({ success: true });
@@ -1309,14 +1374,14 @@ sendResponse({
                                 });
                             }
                         } catch (error) {
-sendResponse({
+                            sendResponse({
                                 success: false,
                                 error: error.message || '更新本地书签失败'
                             });
                         }
                     })
                     .catch(error => {
-sendResponse({
+                        sendResponse({
                             success: false,
                             error: error.message || '下载失败'
                         });
@@ -1336,7 +1401,7 @@ sendResponse({
                     sendResponse({ success: true });
                 })
                 .catch(error => {
-sendResponse({
+                    sendResponse({
                         success: false,
                         error: error.message || '重置失败'
                     });
@@ -1346,7 +1411,7 @@ sendResponse({
             // 使用统一的内部函数，确保数据一致性和缓存机制
             // 支持 forceRefresh 参数，强制重新计算（用于History Viewer初始化）
             const forceRefresh = message.forceRefresh === true;
-            
+
             if (forceRefresh) {
                 console.log('[getBackupStats] 强制刷新缓存...');
                 updateAndCacheAnalysis()
@@ -1381,7 +1446,7 @@ sendResponse({
             }
             return true; // 保持消息通道开放
         } else if (message.action === "getSyncHistory") {
-// 从存储中获取备份历史记录
+            // 从存储中获取备份历史记录
             browserAPI.storage.local.get(['syncHistory'], (data) => {
                 const syncHistory = data.syncHistory || [];
                 sendResponse({
@@ -1391,7 +1456,7 @@ sendResponse({
             });
             return true; // 保持消息通道开放
         } else if (message.action === "openReminderSettings") {
-// 打开主UI并直接触发"手动备份动态提醒设置"按钮
+            // 打开主UI并直接触发"手动备份动态提醒设置"按钮
             try {
                 // 在新窗口中打开popup.html，并添加参数，直接打开手动备份动态提醒设置
                 browserAPI.windows.create({
@@ -1401,10 +1466,10 @@ sendResponse({
                     height: 700,
                     focused: true
                 }, (window) => {
-sendResponse({success: true, message: "主UI窗口已打开，将自动打开手动备份动态提醒设置"});
+                    sendResponse({ success: true, message: "主UI窗口已打开，将自动打开手动备份动态提醒设置" });
                 });
             } catch (error) {
-sendResponse({success: false, error: error.message || "处理请求失败"});
+                sendResponse({ success: false, error: error.message || "处理请求失败" });
             }
             return true; // 保持消息通道开放
         } else if (message.action === "saveLocalBackupConfig") {
@@ -1462,7 +1527,7 @@ sendResponse({success: false, error: error.message || "处理请求失败"});
                                 path: dirPath
                             });
                         } catch (error) {
-sendResponse({
+                            sendResponse({
                                 success: false,
                                 error: '获取文件夹路径时出错: ' + error.message
                             });
@@ -1490,7 +1555,7 @@ sendResponse({
                 input.click();
 
             } catch (error) {
-sendResponse({
+                sendResponse({
                     success: false,
                     error: '打开文件夹选择对话框时出错: ' + error.message
                 });
@@ -1531,20 +1596,20 @@ sendResponse({
             // 尝试打开下载设置页面
             try {
                 // 方法1：直接尝试打开chrome URL
-                browserAPI.tabs.create({ url: 'chrome://settings/downloads' }, function(tab) {
+                browserAPI.tabs.create({ url: 'chrome://settings/downloads' }, function (tab) {
                     if (browserAPI.runtime.lastError) {
-sendResponse({ success: false, error: browserAPI.runtime.lastError.message });
+                        sendResponse({ success: false, error: browserAPI.runtime.lastError.message });
                     } else {
-sendResponse({ success: true });
+                        sendResponse({ success: true });
                     }
                 });
             } catch (error) {
-sendResponse({ success: false, error: error.message });
+                sendResponse({ success: false, error: error.message });
             }
             return true;
         } else if (message.action === 'showManualBackupNotification') {
             // 处理来自 popup 的手动备份通知请求
-if (message.statusText) {
+            if (message.statusText) {
                 // 使用传递过来的 statusText 创建通知
                 browserAPI.notifications.create({
                     type: 'basic',
@@ -1554,15 +1619,15 @@ if (message.statusText) {
                     priority: 0 // 默认优先级
                 }, (notificationId) => {
                     if (browserAPI.runtime.lastError) {
-sendResponse({ success: false, error: browserAPI.runtime.lastError.message });
+                        sendResponse({ success: false, error: browserAPI.runtime.lastError.message });
                     } else {
-sendResponse({ success: true, notificationId: notificationId });
+                        sendResponse({ success: true, notificationId: notificationId });
                     }
                 });
 
                 return true; // 异步处理响应
             } else {
-sendResponse({ success: false, error: '缺少状态文本' });
+                sendResponse({ success: false, error: '缺少状态文本' });
             }
         } else if (message.action === "resetOperationStatus") {
             // 重置操作状态
@@ -1574,7 +1639,7 @@ sendResponse({ success: false, error: '缺少状态文本' });
             setBadge().then(() => {
                 sendResponse({ success: true });
             }).catch(error => {
-sendResponse({ success: false, error: error.message });
+                sendResponse({ success: false, error: error.message });
             });
             return true; // 保持消息通道开放
 
@@ -1604,7 +1669,7 @@ sendResponse({ success: false, error: error.message });
                 // 执行下载
                 browserAPI.downloads.download(downloadOptions, (downloadId) => {
                     if (browserAPI.runtime.lastError) {
-sendResponse({ success: false, error: browserAPI.runtime.lastError.message });
+                        sendResponse({ success: false, error: browserAPI.runtime.lastError.message });
                     } else {
                         // 确保下载架(shelf)可见
                         if (browserAPI.downloads.setShelfEnabled) {
@@ -1612,22 +1677,22 @@ sendResponse({ success: false, error: browserAPI.runtime.lastError.message });
                         }
 
                         // 记录这不是书签备份下载，不需要隐藏下载栏
-sendResponse({ success: true, downloadId: downloadId });
+                        sendResponse({ success: true, downloadId: downloadId });
                     }
                 });
             } catch (error) {
-sendResponse({ success: false, error: error.message });
+                sendResponse({ success: false, error: error.message });
             }
 
             return true; // 异步响应
         } else if (message.action === "autoBackupStateChangedInBackground") {
             // 此处理器现在可能是多余的，如果所有状态更改都通过 onAutoBackupToggled 处理，请考虑删除。
-// 如果 popup 打开，则可能会更新 UI 元素
+            // 如果 popup 打开，则可能会更新 UI 元素
             return false;
 
         } else if (message.action === 'showReminderSettings') {
             // 处理来自 popup 的手动备份通知请求
-if (message.statusText) {
+            if (message.statusText) {
                 // 使用传递过来的 statusText 创建通知
                 browserAPI.notifications.create({
                     type: 'basic',
@@ -1637,18 +1702,18 @@ if (message.statusText) {
                     priority: 0 // 默认优先级
                 }, (notificationId) => {
                     if (browserAPI.runtime.lastError) {
-sendResponse({ success: false, error: browserAPI.runtime.lastError.message });
+                        sendResponse({ success: false, error: browserAPI.runtime.lastError.message });
                     } else {
-sendResponse({ success: true, notificationId: notificationId });
+                        sendResponse({ success: true, notificationId: notificationId });
                     }
                 });
 
                 return true; // 异步处理响应
             } else {
-sendResponse({ success: false, error: '缺少状态文本' });
+                sendResponse({ success: false, error: '缺少状态文本' });
             }
         }
-        
+
         // ===== 自动备份定时器相关消息处理 =====
         else if (message.action === "autoBackupModeChanged") {
             // 备份模式切换（realtime, regular, specific）
@@ -1697,11 +1762,11 @@ sendResponse({ success: false, error: '缺少状态文本' });
                     sendResponse(result);
                 } catch (error) {
                     console.error('[自动备份定时器] 检查书签变化失败:', error);
-                    sendResponse({ 
-                        success: false, 
-                        hasChanges: false, 
+                    sendResponse({
+                        success: false,
+                        hasChanges: false,
                         changeDescription: '',
-                        error: error.message 
+                        error: error.message
                     });
                 }
             })();
@@ -1733,13 +1798,15 @@ sendResponse({ success: false, error: '缺少状态文本' });
             return true;
         }
         else if (message.action === "getCurrentActiveSessions") {
-            try {
-                const sessions = getCurrentActiveSessions();
-                sendResponse({ success: true, sessions });
-            } catch (error) {
-                sendResponse({ success: false, error: error.message });
-            }
-            return false;
+            (async () => {
+                try {
+                    const sessions = await getCurrentActiveSessions();
+                    sendResponse({ success: true, sessions });
+                } catch (error) {
+                    sendResponse({ success: false, error: error.message });
+                }
+            })();
+            return true;  // 异步响应
         }
         else if (message.action === "getBookmarkActiveTime") {
             (async () => {
@@ -1768,6 +1835,17 @@ sendResponse({ success: false, error: '缺少状态文本' });
                 try {
                     const sessions = await getSessionsByUrl(message.url, message.startTime, message.endTime);
                     sendResponse({ success: true, sessions });
+                } catch (error) {
+                    sendResponse({ success: false, error: error.message });
+                }
+            })();
+            return true;
+        }
+        else if (message.action === "getTrackingStats") {
+            (async () => {
+                try {
+                    const stats = await getTrackingStats();
+                    sendResponse({ success: true, stats });
                 } catch (error) {
                     sendResponse({ success: false, error: error.message });
                 }
@@ -1814,9 +1892,10 @@ sendResponse({ success: false, error: '缺少状态文本' });
             return false;
         }
         else if (message.action === "clearAllTrackingSessions") {
+            // 兼容旧接口：清除全部显示数据
             (async () => {
                 try {
-                    await clearAllSessions();
+                    await clearTrackingDisplayData();
                     sendResponse({ success: true });
                 } catch (error) {
                     sendResponse({ success: false, error: error.message });
@@ -1824,9 +1903,45 @@ sendResponse({ success: false, error: '缺少状态文本' });
             })();
             return true;
         }
-        
+        else if (message.action === "clearCurrentTrackingSessions") {
+            // 仅清除正在追踪的会话
+            (async () => {
+                try {
+                    await clearCurrentTrackingSessions();
+                    sendResponse({ success: true });
+                } catch (error) {
+                    sendResponse({ success: false, error: error.message });
+                }
+            })();
+            return true;
+        }
+        else if (message.action === "clearTrackingStatsByRange") {
+            // 按时间范围清除综合排行数据
+            (async () => {
+                try {
+                    const result = await clearTrackingStatsByRange(message.range);
+                    sendResponse({ success: true, ...result });
+                } catch (error) {
+                    sendResponse({ success: false, error: error.message });
+                }
+            })();
+            return true;
+        }
+        else if (message.action === "syncTrackingData") {
+            // 数据一致性检查
+            (async () => {
+                try {
+                    const result = await syncTrackingData();
+                    sendResponse({ success: true, ...result });
+                } catch (error) {
+                    sendResponse({ success: false, error: error.message });
+                }
+            })();
+            return true;
+        }
+
     } catch (error) {
-sendResponse({ success: false, error: error.message || '未知错误' });
+        sendResponse({ success: false, error: error.message || '未知错误' });
     }
 
     // 对于不需要异步处理的消息，返回false
@@ -1835,14 +1950,14 @@ sendResponse({ success: false, error: error.message || '未知错误' });
 
 // 监听计时器警报
 browserAPI.alarms.onAlarm.addListener(async (alarm) => {
-if (alarm.name === "syncBookmarks") {
-try {
+    if (alarm.name === "syncBookmarks") {
+        try {
             // 自动备份时传入完整参数
             const result = await syncBookmarks(false, null, false, null);
-// 在备份完成后调用 updateBadgeAfterSync
+            // 在备份完成后调用 updateBadgeAfterSync
             updateBadgeAfterSync(result.success);
         } catch (error) {
-// 备份失败也要更新角标为错误状态
+            // 备份失败也要更新角标为错误状态
             updateBadgeAfterSync(false);
         }
     }
@@ -1934,10 +2049,10 @@ async function handleBookmarkChange() {
             await browserAPI.storage.local.set({
                 lastBookmarkChangeTime: Date.now()
             });
-// 只有在手动备份模式下才设置活动标志
+            // 只有在手动备份模式下才设置活动标志
             if (!autoSync) {
                 await browserAPI.storage.local.set({ hasBookmarkActivitySinceLastCheck: true });
-}
+            }
 
             // 先更新分析缓存，再更新角标：
             // - 避免 setBadge() 读到旧的 cachedBookmarkAnalysis，导致“移动/修改（数量不变）时角标不变黄”
@@ -1955,31 +2070,31 @@ async function handleBookmarkChange() {
             try {
                 const response = await browserAPI.runtime.sendMessage({ action: "bookmarkChanged" });
                 if (!response || !response.success) {
-}
+                }
             } catch (error) {
                 // 如果Popup页面未打开，会抛出错误，忽略即可
                 if (error.message && error.message.includes('Receiving end does not exist')) {
-} else {
-}
+                } else {
+                }
             }
 
             // 仅在自动备份模式且备份模式为"实时"时才立即触发自动备份
             // 常规时间和特定时间模式下，备份由定时器触发，而非书签变化立即触发
             if (autoSync && backupMode === 'realtime') {
                 syncBookmarks(false, null, false, null).then(result => { // 传递完整参数
-// 在备份完成后调用 updateBadgeAfterSync
+                    // 在备份完成后调用 updateBadgeAfterSync
                     updateBadgeAfterSync(result.success);
                     // 如果成功，则更新缓存
                     if (result.success) {
                         updateAndCacheAnalysis();
                     }
                 }).catch(error => {
-// 备份失败也要更新角标为错误状态
+                    // 备份失败也要更新角标为错误状态
                     updateBadgeAfterSync(false);
                 });
             }
         } catch (error) {
-}
+        }
     }, 250); // 延迟250毫秒，合并短时间内的多次变化（降低角标反馈延迟）
 }
 
@@ -2028,7 +2143,7 @@ async function uploadBookmarks(bookmarks) {
         if (checkFolderResponse.status === 401) {
             throw new Error('WebDAV认证失败，请检查账号密码是否正确');
         } else if (checkFolderResponse.status === 404) {
-const mkcolResponse = await fetch(folderUrl, {
+            const mkcolResponse = await fetch(folderUrl, {
                 method: 'MKCOL',
                 headers: {
                     'Authorization': authHeader
@@ -2047,17 +2162,17 @@ const mkcolResponse = await fetch(folderUrl, {
 
         // 尝试删除已存在的文件
         try {
-await fetch(fullUrl, {
+            await fetch(fullUrl, {
                 method: 'DELETE',
                 headers: {
                     'Authorization': authHeader
                 }
             });
-} catch (error) {
-}
+        } catch (error) {
+        }
 
         // 上传新文件
-const response = await fetch(fullUrl, {
+        const response = await fetch(fullUrl, {
             method: 'PUT',
             headers: {
                 'Authorization': authHeader,
@@ -2067,14 +2182,14 @@ const response = await fetch(fullUrl, {
             body: htmlContent
         });
 
-if (!response.ok) {
+        if (!response.ok) {
             const responseText = await response.text();
-throw new Error(`上传失败: ${response.status} - ${response.statusText}`);
+            throw new Error(`上传失败: ${response.status} - ${response.statusText}`);
         }
 
-return { success: true };
+        return { success: true };
     } catch (error) {
-if (error.message.includes('Failed to fetch')) {
+        if (error.message.includes('Failed to fetch')) {
             throw new Error('无法连接到WebDAV服务器，请检查地址是否正确或网络是否正常');
         }
         throw error;
@@ -2118,9 +2233,9 @@ async function updateBookmarksFromNutstore() {
         // 更新浏览器书签
         await updateBookmarks(bookmarksData);
 
-return true;
+        return true;
     } catch (error) {
-throw error;
+        throw error;
     }
 }
 
@@ -2178,7 +2293,7 @@ async function uploadBookmarksToLocal(bookmarks) {
                         resolve(result);
                     });
                 } catch (error) {
-resolve(false);
+                    resolve(false);
                 }
             });
 
@@ -2191,10 +2306,10 @@ resolve(false);
                     // 直接设置下载栏为隐藏状态，不再尝试先获取当前状态
                     // 因为Chrome没有提供getShelfEnabled API
                     await browserAPI.downloads.setShelfEnabled(false);
-} catch (error) {
-}
+                } catch (error) {
+                }
             } else if (shouldHideDownloadShelf && !hasDownloadShelfPermission) {
-}
+            }
 
             try {
                 // 使用downloads API直接保存到默认下载位置
@@ -2216,7 +2331,7 @@ resolve(false);
                     });
                 });
 
-// 监听下载完成事件
+                // 监听下载完成事件
                 await new Promise(resolve => {
                     const onDownloadComplete = (delta) => {
                         if (delta.id === downloadId && (delta.state && (delta.state.current === 'complete' || delta.state.current === 'interrupted'))) {
@@ -2235,8 +2350,8 @@ resolve(false);
                 if (shouldHideDownloadShelf && hasDownloadShelfPermission) {
                     try {
                         await browserAPI.downloads.setShelfEnabled(true);
-} catch (error) {
-}
+                    } catch (error) {
+                    }
                 }
 
                 // 标记书签备份结束
@@ -2249,8 +2364,8 @@ resolve(false);
                 if (shouldHideDownloadShelf && hasDownloadShelfPermission) {
                     try {
                         await browserAPI.downloads.setShelfEnabled(true);
-} catch (restoreError) {
-}
+                    } catch (restoreError) {
+                    }
                 }
 
                 // 标记书签备份结束
@@ -2262,7 +2377,7 @@ resolve(false);
         // 自定义文件夹方式
         if (customFolderEnabled) {
             // 待实现：使用FileSystem Access API
-// TODO: 由于Chrome扩展的限制，这里暂时不实现
+            // TODO: 由于Chrome扩展的限制，这里暂时不实现
             // 实际上，我们需要在用户界面直接使用FileSystem Access API
         }
 
@@ -2277,13 +2392,13 @@ resolve(false);
             // 写入文件
             await writeFile(fullPath, htmlContent);
 
-// 更新结果
+            // 更新结果
             result.success = true;
         }
 
         return result;
     } catch (error) {
-throw error;
+        throw error;
     }
 }
 
@@ -2294,11 +2409,11 @@ function ensureDirectoryExists(dirPath) {
             // 在Chrome扩展中，可以使用HTML5的文件系统API
             // 但这需要用户授权和选择目录
             // 这里改为通过消息传递，让用户在popup界面选择目录
-// 假设目录已存在，或者已在选择目录时创建
+            // 假设目录已存在，或者已在选择目录时创建
             // 这个函数在实际应用中应由Native App或用户交互来处理
             resolve(true);
         } catch (error) {
-reject(error);
+            reject(error);
         }
     });
 }
@@ -2315,7 +2430,7 @@ function writeFile(filePath, content) {
             const isLargeContent = content.length > 500000; // 约0.5MB
 
             if (isLargeContent) {
-// 对于大文件，使用blob URL创建方式在main世界执行
+                // 对于大文件，使用blob URL创建方式在main世界执行
                 // 我们需要向活动标签页注入脚本来执行此操作
 
                 // 首先获取当前的活动标签页
@@ -2333,7 +2448,7 @@ function writeFile(filePath, content) {
                         target: { tabId: activeTab.id },
                         func: (content, fileName) => {
                             // 这段代码会在content script环境中执行
-                            const blob = new Blob([content], {type: 'text/html'});
+                            const blob = new Blob([content], { type: 'text/html' });
                             const url = URL.createObjectURL(blob);
 
                             // 创建下载链接并模拟点击
@@ -2354,12 +2469,12 @@ function writeFile(filePath, content) {
                         args: [content, 'Bookmarks/' + fileName]
                     }, (results) => {
                         if (browserAPI.runtime.lastError) {
-// 回退到data:URL方法
+                            // 回退到data:URL方法
                             useDataUrlMethod();
                         } else if (results && results[0] && results[0].result === true) {
-resolve(true);
+                            resolve(true);
                         } else {
-// 回退到data:URL方法
+                            // 回退到data:URL方法
                             useDataUrlMethod();
                         }
                     });
@@ -2382,17 +2497,17 @@ resolve(true);
                         saveAs: false
                     }, (downloadId) => {
                         if (browserAPI.runtime.lastError) {
-reject(new Error(browserAPI.runtime.lastError.message));
+                            reject(new Error(browserAPI.runtime.lastError.message));
                         } else {
-resolve(true);
+                            resolve(true);
                         }
                     });
                 } catch (error) {
-reject(error);
+                    reject(error);
                 }
             }
         } catch (error) {
-reject(error);
+            reject(error);
         }
     });
 }
@@ -2404,9 +2519,9 @@ async function exportHistoryToTxt(records, lang) {
         en: {
             exportTitle: "# Bookmark Backup History",
             exportNote: "Note: This file (.txt) contains content in Markdown table format.\n" +
-                        "You can either:\n" +
-                        "1. Copy and paste the content of this file into a Markdown-supporting editor (e.g., Typora, Obsidian) to view the table.\n" +
-                        "2. Or, change the file extension from (.txt) to (.md) and open it with a Markdown viewer.",
+                "You can either:\n" +
+                "1. Copy and paste the content of this file into a Markdown-supporting editor (e.g., Typora, Obsidian) to view the table.\n" +
+                "2. Or, change the file extension from (.txt) to (.md) and open it with a Markdown viewer.",
             tableHeaders: {
                 timestamp: "Timestamp",
                 bookmarkCount: "Bookmarks",
@@ -2420,7 +2535,7 @@ async function exportHistoryToTxt(records, lang) {
             },
             structureChangeValues: { yes: "Yes", no: "No" },
             locationValues: { local: "Local", cloud: "Cloud", webdav: "Cloud", both: "Cloud & Local", none: "None", upload: "Cloud", download: "Local" },
-            typeValues: { auto: "Auto", manual: "Manual", switch: "Switch", auto_switch: "Switch", migration:"Migration", check:"Check" },
+            typeValues: { auto: "Auto", manual: "Manual", switch: "Switch", auto_switch: "Switch", migration: "Migration", check: "Check" },
             statusValues: { success: "Success", error: "Error", locked: "File Locked", no_backup_needed: "No backup needed", check_completed: "Check completed" },
             filenameBase: "Bookmark_Backup_History",
             na: "N/A"
@@ -2428,9 +2543,9 @@ async function exportHistoryToTxt(records, lang) {
         zh_CN: {
             exportTitle: "# 书签备份历史记录",
             exportNote: "注意：此文件 (.txt) 包含 Markdown 表格格式的内容。\n" +
-                        "您可以：\n" +
-                        "1. 将此文件内容复制粘贴到支持 Markdown 的编辑器（如 Typora, Obsidian 等）中查看表格。\n" +
-                        "2. 或者，将此文件的扩展名从 .txt 修改为 .md 后，使用 Markdown 查看器打开。",
+                "您可以：\n" +
+                "1. 将此文件内容复制粘贴到支持 Markdown 的编辑器（如 Typora, Obsidian 等）中查看表格。\n" +
+                "2. 或者，将此文件的扩展名从 .txt 修改为 .md 后，使用 Markdown 查看器打开。",
             tableHeaders: {
                 timestamp: "时间戳",
                 bookmarkCount: "书签数",
@@ -2444,7 +2559,7 @@ async function exportHistoryToTxt(records, lang) {
             },
             structureChangeValues: { yes: "是", no: "否" },
             locationValues: { local: "本地", cloud: "云端", webdav: "云端", both: "云端与本地", none: "无", upload: "云端", download: "本地" },
-            typeValues: { auto: "自动", manual: "手动", switch: "切换", auto_switch: "切换", migration:"迁移", check:"检查" },
+            typeValues: { auto: "自动", manual: "手动", switch: "切换", auto_switch: "切换", migration: "迁移", check: "检查" },
             statusValues: { success: "成功", error: "错误", locked: "文件锁定", no_backup_needed: "无需备份", check_completed: "检查完成" },
             filenameBase: "书签备份历史记录",
             na: "无"
@@ -2477,31 +2592,31 @@ async function exportHistoryToTxt(records, lang) {
 
     // 对记录按时间排序，新的在前
     const sortedRecords = [...records].sort((a, b) => new Date(b.time) - new Date(a.time));
-    
+
     // 添加日期分界线的处理
     let previousDateStr = null;
 
     for (const record of sortedRecords) {
         const recordDate = new Date(record.time);
         const time = formatTimeForExport(record.time);
-        
+
         // 检查日期是否变化（年月日）
         const currentDateStr = `${recordDate.getFullYear()}-${recordDate.getMonth() + 1}-${recordDate.getDate()}`;
-        
+
         // 如果日期变化，添加分界线
         if (previousDateStr && previousDateStr !== currentDateStr) {
             // 使用Markdown格式添加日期分界线，并入表格中
-            const formattedPreviousDate = lang === 'en' ? 
-                        `${previousDateStr.split('-')[0]}-${previousDateStr.split('-')[1].padStart(2, '0')}-${previousDateStr.split('-')[2].padStart(2, '0')}` :
-                        `${previousDateStr.split('-')[0]}年${previousDateStr.split('-')[1]}月${previousDateStr.split('-')[2]}日`;
-            
+            const formattedPreviousDate = lang === 'en' ?
+                `${previousDateStr.split('-')[0]}-${previousDateStr.split('-')[1].padStart(2, '0')}-${previousDateStr.split('-')[2].padStart(2, '0')}` :
+                `${previousDateStr.split('-')[0]}年${previousDateStr.split('-')[1]}月${previousDateStr.split('-')[2]}日`;
+
             // 添加简洁的分界线，并入表格中
             txtContent += `| ${formattedPreviousDate} |  |  |  |  |  |  |  |  |\n`;
         }
-        
+
         // 更新前一个日期
         previousDateStr = currentDateStr;
-        
+
         const currentBookmarks = record.bookmarkStats?.currentBookmarkCount ?? record.bookmarkStats?.currentBookmarks ?? t.na;
         const currentFolders = record.bookmarkStats?.currentFolderCount ?? record.bookmarkStats?.currentFolders ?? t.na;
         const bookmarkDiff = record.bookmarkStats?.bookmarkDiff;
@@ -2516,11 +2631,11 @@ async function exportHistoryToTxt(records, lang) {
         let statusText = t.na;
         const recordStatusKey = record.status?.toLowerCase();
         if (recordStatusKey === 'success') {
-             if (recordDirection === 'none' || recordTypeKey === 'check') {
+            if (recordDirection === 'none' || recordTypeKey === 'check') {
                 statusText = t.statusValues.check_completed || t.statusValues.no_backup_needed;
-             } else {
+            } else {
                 statusText = t.statusValues.success;
-             }
+            }
         } else if (recordStatusKey === 'error') {
             statusText = record.errorMessage ? `${t.statusValues.error}: ${record.errorMessage}` : t.statusValues.error;
         } else if (t.statusValues[recordStatusKey]) {
@@ -2533,10 +2648,10 @@ async function exportHistoryToTxt(records, lang) {
 
     // 添加最后一个日期的分界线
     if (previousDateStr) {
-        const formattedPreviousDate = lang === 'en' ? 
-                    `${previousDateStr.split('-')[0]}-${previousDateStr.split('-')[1].padStart(2, '0')}-${previousDateStr.split('-')[2].padStart(2, '0')}` :
-                    `${previousDateStr.split('-')[0]}年${previousDateStr.split('-')[1]}月${previousDateStr.split('-')[2]}日`;
-        
+        const formattedPreviousDate = lang === 'en' ?
+            `${previousDateStr.split('-')[0]}-${previousDateStr.split('-')[1].padStart(2, '0')}-${previousDateStr.split('-')[2].padStart(2, '0')}` :
+            `${previousDateStr.split('-')[0]}年${previousDateStr.split('-')[1]}月${previousDateStr.split('-')[2]}日`;
+
         // 添加简洁的分界线，并入表格中
         txtContent += `| ${formattedPreviousDate} |  |  |  |  |  |  |  |  |\n`;
     }
@@ -2570,7 +2685,7 @@ async function exportHistoryToTxt(records, lang) {
     // WebDAV导出
     if (webDAVConfigured && webDAVEnabled) {
         try {
-const serverAddress = config.serverAddress.replace(/\/+$/, '/');
+            const serverAddress = config.serverAddress.replace(/\/+$/, '/');
             const folderPath = 'Bookmarks_History/'; // 使用专门的文件夹存放历史记录
             const fullUrl = `${serverAddress}${folderPath}${fileName}`;
             const folderUrl = `${serverAddress}${folderPath}`;
@@ -2592,7 +2707,7 @@ const serverAddress = config.serverAddress.replace(/\/+$/, '/');
             if (checkFolderResponse.status === 401) {
                 exportResults.push('WebDAV认证失败，请检查账号密码是否正确');
             } else if (checkFolderResponse.status === 404) {
-const mkcolResponse = await fetch(folderUrl, {
+                const mkcolResponse = await fetch(folderUrl, {
                     method: 'MKCOL',
                     headers: {
                         'Authorization': authHeader
@@ -2619,13 +2734,13 @@ const mkcolResponse = await fetch(folderUrl, {
 
             if (!response.ok) {
                 const responseText = await response.text();
-exportResults.push(`上传历史记录到WebDAV失败: ${response.status} - ${response.statusText}`);
+                exportResults.push(`上传历史记录到WebDAV失败: ${response.status} - ${response.statusText}`);
             } else {
-webDAVSuccess = true;
+                webDAVSuccess = true;
                 exportResults.push(`历史记录已成功上传到WebDAV: ${fileName}`);
             }
         } catch (error) {
-exportResults.push(`WebDAV导出失败: ${error.message}`);
+            exportResults.push(`WebDAV导出失败: ${error.message}`);
         }
     }
 
@@ -2639,29 +2754,29 @@ exportResults.push(`WebDAV导出失败: ${error.message}`);
             if (browserAPI.downloads.setShelfEnabled) {
                 try {
                     await browserAPI.downloads.setShelfEnabled(true);
-} catch (shelfError) {
-}
+                } catch (shelfError) {
+                }
             }
 
             // 确保文件夹存在（注意：使用斜杠而非下划线来指示文件夹）
-const downloadId = await new Promise((resolve, reject) => {
+            const downloadId = await new Promise((resolve, reject) => {
                 browserAPI.downloads.download({
                     url: dataUrl,
                     filename: 'Bookmarks_History/' + fileName,
                     saveAs: false
                 }, (id) => {
                     if (browserAPI.runtime.lastError) {
-reject(new Error(browserAPI.runtime.lastError.message));
+                        reject(new Error(browserAPI.runtime.lastError.message));
                     } else {
                         resolve(id);
                     }
                 });
             });
 
-localSuccess = true;
+            localSuccess = true;
             exportResults.push(`历史记录已成功下载到本地: ${fileName}`);
         } catch (error) {
-exportResults.push(`本地下载失败: ${error.message}`);
+            exportResults.push(`本地下载失败: ${error.message}`);
         }
     }
 
@@ -2708,13 +2823,13 @@ if (browserAPI.alarms) {
 // 双向备份书签
 async function syncBookmarks(isManual = false, direction = null, isSwitchToAutoBackup = false, autoBackupReason = null) { // 添加 autoBackupReason 参数
     console.log('[syncBookmarks] 参数:', { isManual, direction, isSwitchToAutoBackup, autoBackupReason });
-    
+
     if (isSyncing) {
-return { success: false, error: '已有备份操作正在进行' };
+        return { success: false, error: '已有备份操作正在进行' };
     }
 
     isSyncing = true;
-try {
+    try {
         // 结果对象，用于存储过程中的信息
         const result = {
             localFileName: null
@@ -2748,7 +2863,7 @@ try {
 
         // 如果两种配置都未启用，则跳过备份
         if (!hasAtLeastOneConfigured) {
-return { success: false, error: '备份配置未完成或未启用' };
+            return { success: false, error: '备份配置未完成或未启用' };
         }
 
         // 检查自动备份状态
@@ -2757,7 +2872,7 @@ return { success: false, error: '备份配置未完成或未启用' };
         // 如果是普通的自动备份请求，并且自动备份已关闭，则跳过
         // 允许 isSwitchToAutoBackup 为 true 的情况通过
         if (!isManual && !isSwitchToAutoBackup && !autoSync) {
-return { success: false, error: '自动备份已关闭' };
+            return { success: false, error: '自动备份已关闭' };
         }
 
         // 获取本地书签
@@ -2784,14 +2899,14 @@ return { success: false, error: '自动备份已关闭' };
                             webDAVSuccess = true;
                             return { success: true };
                         } else if (uploadResult.webDAVNotConfigured) {
-return { success: false, error: 'WebDAV未配置' };
+                            return { success: false, error: 'WebDAV未配置' };
                         } else {
                             return { success: false, error: uploadResult.error || 'WebDAV上传失败' };
                         }
                     }
                     return { success: true };
                 } catch (error) {
-return { success: false, error: `WebDAV备份失败: ${error.message}` };
+                    return { success: false, error: `WebDAV备份失败: ${error.message}` };
                 }
             })();
             backupTasks.push(webDAVTask);
@@ -2805,11 +2920,11 @@ return { success: false, error: `WebDAV备份失败: ${error.message}` };
                 try {
                     const localResult = await uploadBookmarksToLocal(localBookmarks);
                     localSuccess = true;
-// 记录文件名信息
+                    // 记录文件名信息
                     result.localFileName = localResult.fileName;
                     return { success: true, fileName: localResult.fileName };
                 } catch (error) {
-return { success: false, error: `本地备份失败: ${error.message}` };
+                    return { success: false, error: `本地备份失败: ${error.message}` };
                 }
             })();
             backupTasks.push(localTask);
@@ -2825,12 +2940,12 @@ return { success: false, error: `本地备份失败: ${error.message}` };
             }
         });
 
-// 确定备份状态
+        // 确定备份状态
         const syncTime = new Date().toISOString();
         let syncStatus = 'error';
         // 修改: 统一使用 'switch' 而不是 'auto_switch'
         let syncType = isManual ? 'manual' : (isSwitchToAutoBackup ? 'switch' : 'auto');
-let errorMessage = errorMessages.join('; ');
+        let errorMessage = errorMessages.join('; ');
         let syncSuccess = false; // 用于判断是否清除标志
 
         if (webDAVSuccess || localSuccess) { // 只要有一个成功就算成功
@@ -2849,8 +2964,8 @@ let errorMessage = errorMessages.join('; ');
         if (syncSuccess && (isManual || isSwitchToAutoBackup)) {
             try {
                 await browserAPI.storage.local.remove('hasBookmarkActivitySinceLastCheck');
-} catch (clearError) {
-}
+            } catch (clearError) {
+            }
         }
 
         // 备份成功后，更新角标和缓存
@@ -2863,10 +2978,10 @@ let errorMessage = errorMessages.join('; ');
                 // 清理移动历史，避免备份后仍然出现蓝色移动标识
                 try {
                     await browserAPI.storage.local.set({ recentMovedIds: [] });
-                } catch (_) {}
+                } catch (_) { }
                 try {
                     browserAPI.runtime.sendMessage({ action: 'clearExplicitMoved' });
-                } catch (_) {}
+                } catch (_) { }
             } catch (updateError) {
                 console.error('[syncBookmarks] 更新角标和缓存失败:', updateError);
             }
@@ -2881,7 +2996,7 @@ let errorMessage = errorMessages.join('; ');
             // Original did not explicitly return direction and time here, they were part of updateSyncStatus
         };
     } catch (error) {
-return { success: false, error: error.message || '备份失败' };
+        return { success: false, error: error.message || '备份失败' };
     } finally {
         isSyncing = false;
     }
@@ -2904,31 +3019,31 @@ function safeBase64(str) {
 
 // 以下是简化版的searchBookmarks函数，只返回"功能已被移除"的消息
 async function searchBookmarks(query) {
-return { success: false, error: '搜索功能已被移除' };
+    return { success: false, error: '搜索功能已被移除' };
 }
 
 // 添加重置所有数据的函数
 async function resetAllData() {
     try {
-// 记录要删除的初始备份记录信息（用于日志调试）
+        // 记录要删除的初始备份记录信息（用于日志调试）
         const initialBackupRecord = await browserAPI.storage.local.get(['initialBackupRecord']);
         if (initialBackupRecord && initialBackupRecord.initialBackupRecord) {
-}
+        }
 
         // 1. 完全清除所有存储的数据，不保留任何信息
         await browserAPI.storage.local.clear();
-// 2. 清除所有定时器
+        // 2. 清除所有定时器
         await browserAPI.alarms.clearAll();
-// 3. 重置角标到初始状态（不显示）
+        // 3. 重置角标到初始状态（不显示）
         await browserAPI.action.setBadgeText({ text: '' });
-// 4. 恢复到初始状态
-// 5. 重新执行初始化流程，模拟首次安装
-await initializeLanguagePreference();
+        // 4. 恢复到初始状态
+        // 5. 重新执行初始化流程，模拟首次安装
+        await initializeLanguagePreference();
         await initializeAutoSync();
         await initializeBadge();
-return true;
+        return true;
     } catch (error) {
-throw error;
+        throw error;
     }
 }
 
@@ -2970,7 +3085,7 @@ function parseEdgeBookmarks(doc) {
 // 更新本地书签
 async function updateLocalBookmarks(newBookmarks) {
     // 功能已移除
-return;
+    return;
 }
 
 // 获取浏览器信息
@@ -2982,7 +3097,7 @@ function getBrowserInfo() {
     if (userAgent.includes("Edge")) {
         browserName = "Edge";
         browserVersion = userAgent.match(/Edge\/(\d+)/)?.[1] ||
-                        userAgent.match(/Edg\/(\d+)/)?.[1];
+            userAgent.match(/Edg\/(\d+)/)?.[1];
     } else if (userAgent.includes("Chrome")) {
         browserName = "Chrome";
         browserVersion = userAgent.match(/Chrome\/(\d+)/)?.[1];
@@ -3005,9 +3120,9 @@ async function updateBookmarks(bookmarksData) {
 
 // 更新备份状态的辅助函数
 async function updateSyncStatus(direction, time, status = 'success', errorMessage = '', syncType = 'auto', autoBackupReason = null) {
-// <--- Log 11
+    // <--- Log 11
     console.log('[updateSyncStatus] 参数:', { direction, time, status, errorMessage, syncType, autoBackupReason });
-    
+
     try {
         const { syncHistory = [], lastBookmarkData = null, lastSyncOperations = {}, preferredLang = 'zh_CN' } = await browserAPI.storage.local.get([
             'syncHistory',
@@ -3057,7 +3172,7 @@ async function updateSyncStatus(direction, time, status = 'success', errorMessag
 
             // 生成当前书签指纹（使用已经声明的 localBookmarks 变量）
             const currentPrints = generateFingerprints(localBookmarks);
-            
+
             await browserAPI.storage.local.set({
                 lastBookmarkData: {
                     bookmarkCount: currentBookmarkCount,
@@ -3070,7 +3185,7 @@ async function updateSyncStatus(direction, time, status = 'success', errorMessag
             });
 
             resetOperationStatus();
-            
+
             // 备份成功后，差异应该重置为 0（因为 lastBookmarkData 已经更新为当前值）
             bookmarkDiff = 0;
             folderDiff = 0;
@@ -3106,14 +3221,14 @@ async function updateSyncStatus(direction, time, status = 'success', errorMessag
         try {
             if (preferredLang === 'en') {
                 defaultNote = (syncType === 'switch') ? 'Switch Backup'
-                              : (syncType === 'manual') ? 'Manual Backup'
-                              : 'Auto Backup';
+                    : (syncType === 'manual') ? 'Manual Backup'
+                        : 'Auto Backup';
             } else {
                 defaultNote = (syncType === 'switch') ? '切换备份'
-                              : (syncType === 'manual') ? '手动备份'
-                              : '自动备份';
+                    : (syncType === 'manual') ? '手动备份'
+                        : '自动备份';
             }
-        } catch (_) {}
+        } catch (_) { }
 
         const newSyncRecord = {
             time: time,
@@ -3125,14 +3240,14 @@ async function updateSyncStatus(direction, time, status = 'success', errorMessag
             isFirstBackup: !syncHistory || syncHistory.length === 0,
             // 如果有 autoBackupReason 则附加，否则使用默认备注（中英文）
             note: (autoBackupReason && typeof autoBackupReason === 'string' && autoBackupReason.trim())
-                    ? `${defaultNote}${preferredLang === 'en' ? ' - ' : ' - '}${autoBackupReason.trim()}`
-                    : defaultNote,
+                ? `${defaultNote}${preferredLang === 'en' ? ' - ' : ' - '}${autoBackupReason.trim()}`
+                : defaultNote,
             bookmarkTree: shouldSaveTree ? localBookmarks : null, // 只保存最近10条的书签树
             fingerprint: fingerprint
         };
 
         let currentSyncHistory = [...syncHistory, newSyncRecord];
-        
+
         // 清理旧记录的 bookmarkTree 以节省空间（保留最近20条）
         if (currentSyncHistory.length > 20) {
             currentSyncHistory = currentSyncHistory.map((record, index) => {
@@ -3144,7 +3259,7 @@ async function updateSyncStatus(direction, time, status = 'success', errorMessag
                 return record;
             });
         }
-        
+
         let historyToStore = currentSyncHistory;
 
         if (currentSyncHistory.length >= 100) {
@@ -3162,9 +3277,9 @@ async function updateSyncStatus(direction, time, status = 'success', errorMessag
             lastSyncDirection: status === 'success' ? direction : status,
             syncHistory: historyToStore,
             lastCalculatedDiff: {
-                 bookmarkDiff: bookmarkDiff,
-                 folderDiff: folderDiff,
-                 timestamp: time
+                bookmarkDiff: bookmarkDiff,
+                folderDiff: folderDiff,
+                timestamp: time
             }
         };
 
@@ -3190,10 +3305,10 @@ async function updateSyncStatus(direction, time, status = 'success', errorMessag
             });
 
             await setBadge();
-}
+        }
 
     } catch (error) {
-throw error;
+        throw error;
     }
 }
 
@@ -3322,7 +3437,7 @@ function countAllBookmarks(bookmarks) {
         }
     }
     if (bookmarks && bookmarks.length > 0) {
-         bookmarks.forEach(traverse);
+        bookmarks.forEach(traverse);
     }
     // 需要从总数中减去节点本身（如果根节点被计入），但这取决于 traverse 的起始点
     // 假设 traverse 从 root 开始，根节点本身不是书签，所以不需要调整
@@ -3347,7 +3462,7 @@ function countAllFolders(bookmarks) {
     if (bookmarks && bookmarks.length > 0 && bookmarks[0].children) {
         bookmarks[0].children.forEach(traverse);
     }
-return folderCount;
+    return folderCount;
 }
 
 // --- Badge Related Functions ---
@@ -3359,7 +3474,7 @@ async function setBadge() { // 不再接收 status 参数
     try {
         // 首先获取当前模式
         const { autoSync } = await browserAPI.storage.local.get({ autoSync: true });
-        
+
         let badgeText = '';
         let badgeColor = '';
         let hasChanges = false;
@@ -3371,38 +3486,38 @@ async function setBadge() { // 不再接收 status 参数
                 'autoBackupTimerSettings'
             ]);
             badgeText = badgeTextMap['auto'][preferredLang] || '自';
-            
+
             // 获取备份模式
             const backupMode = autoBackupTimerSettings?.backupMode || 'regular';
-            
+
             if (backupMode === 'realtime') {
                 // 实时备份：绿色角标（会在备份时闪烁）
                 badgeColor = '#00FF00'; // 亮绿色
             } else {
                 // 常规时间/特定时间：检查是否有变化
                 const stats = await getBackupStatsInternal();
-                
+
                 if (stats && stats.success && stats.stats) {
                     // 任何数量或结构的变化都算作变化
-                    if (stats.stats.bookmarkDiff !== 0 || 
-                        stats.stats.folderDiff !== 0 || 
-                        stats.stats.bookmarkMoved || 
-                        stats.stats.bookmarkModified || 
-                        stats.stats.folderMoved || 
+                    if (stats.stats.bookmarkDiff !== 0 ||
+                        stats.stats.folderDiff !== 0 ||
+                        stats.stats.bookmarkMoved ||
+                        stats.stats.bookmarkModified ||
+                        stats.stats.folderMoved ||
                         stats.stats.folderModified) {
                         hasChanges = true;
                     }
                 }
-                
+
                 if (hasChanges) {
                     badgeColor = '#FFFF00'; // 黄色，表示有变动
-                    
+
                     // 检查定时器是否真的在运行（通过检查alarm是否存在）
                     const alarms = await browserAPI.alarms.getAll();
-                    const hasAlarm = alarms.some(alarm => 
+                    const hasAlarm = alarms.some(alarm =>
                         alarm.name.startsWith('autoBackup_')
                     );
-                    
+
                     // 有变化但定时器未运行：启动自动备份定时器
                     if (!hasAlarm) {
                         console.log('[自动备份定时器] 角标变黄（检测到变化），启动定时器');
@@ -3427,13 +3542,13 @@ async function setBadge() { // 不再接收 status 参数
                     }
                 } else {
                     badgeColor = '#00FF00'; // 绿色，表示无变动
-                    
+
                     // 检查是否有alarm在运行
                     const alarms = await browserAPI.alarms.getAll();
-                    const hasAlarm = alarms.some(alarm => 
+                    const hasAlarm = alarms.some(alarm =>
                         alarm.name.startsWith('autoBackup_')
                     );
-                    
+
                     // 无变化但定时器仍在运行：停止自动备份定时器
                     if (hasAlarm) {
                         console.log('[自动备份定时器] 角标变绿（无变化），停止定时器');
@@ -3454,10 +3569,10 @@ async function setBadge() { // 不再接收 status 参数
             // 手动模式
             const { preferredLang = 'zh_CN' } = await browserAPI.storage.local.get(['preferredLang']);
             badgeText = badgeTextMap['manual'][preferredLang] || '手';
-            
+
             // 在手动模式下，检查是否有变化
             const stats = await getBackupStatsInternal();
-            
+
             if (stats) {
                 // 任何数量或结构的变化都算作变化
                 if (stats.stats.bookmarkDiff !== 0 || stats.stats.folderDiff !== 0 || stats.stats.bookmarkMoved || stats.stats.bookmarkModified || stats.stats.folderMoved || stats.stats.folderModified) {
@@ -3469,13 +3584,13 @@ async function setBadge() { // 不再接收 status 参数
                 badgeColor = '#FFFF00'; // 黄色，表示有变动
                 await browserAPI.storage.local.set({ isYellowHandActive: true });
                 // --- 新增逻辑 ---
-await startLoopReminder();
+                await startLoopReminder();
                 // --- 结束 ---
             } else {
                 badgeColor = '#0000FF'; // 蓝色，表示无变动
                 await browserAPI.storage.local.set({ isYellowHandActive: false });
                 // --- 新增逻辑 ---
-await stopLoopReminder();
+                await stopLoopReminder();
                 // --- 结束 ---
             }
         }
@@ -3483,8 +3598,8 @@ await stopLoopReminder();
         await browserAPI.action.setBadgeText({ text: badgeText });
         await browserAPI.action.setBadgeBackgroundColor({ color: badgeColor });
 
-} catch (error) {
-await browserAPI.action.setBadgeText({ text: '!' });
+    } catch (error) {
+        await browserAPI.action.setBadgeText({ text: '!' });
         await browserAPI.action.setBadgeBackgroundColor({ color: '#FF0000' }); // 红色表示错误
         await browserAPI.storage.local.set({ isYellowHandActive: false });
     }
@@ -3523,22 +3638,22 @@ async function flashBadge(preferredLang = 'zh_CN') {
                             const { preferredLang: currentLang = 'zh_CN' } = await browserAPI.storage.local.get(['preferredLang']);
                             await browserAPI.action.setBadgeBackgroundColor({ color: '#00FF00' }); // 亮绿色
                             await browserAPI.action.setBadgeText({ text: badgeTextMap['auto'][currentLang] || '自' });
-}
+                        }
                     }, 500); // 延迟500毫秒确保最终状态正确
                 }, 250);
             }, 250);
         }, 250);
     } catch (error) {
-// 出错时也尝试恢复到亮绿色
+        // 出错时也尝试恢复到亮绿色
         try {
             const { autoSync = true } = await browserAPI.storage.local.get(['autoSync']);
             if (autoSync) {
                 const { preferredLang = 'zh_CN' } = await browserAPI.storage.local.get(['preferredLang']);
                 await browserAPI.action.setBadgeBackgroundColor({ color: '#00FF00' }); // 亮绿色
                 await browserAPI.action.setBadgeText({ text: badgeTextMap['auto'][preferredLang] || '自' });
-}
+            }
         } catch (recoveryError) {
-}
+        }
     }
 }
 
@@ -3551,30 +3666,30 @@ async function updateBadgeAfterSync(success) {
             const { preferredLang = 'zh_CN' } = await browserAPI.storage.local.get(['preferredLang']);
             await browserAPI.action.setBadgeBackgroundColor({ color: '#FF0000' }); // Red
             await browserAPI.action.setBadgeText({ text: badgeTextMap['error'][preferredLang] || '!' });
-} catch (badgeError) {
-}
+        } catch (badgeError) {
+        }
     } else {
         // 备份成功，检查是否有变化
         try {
             const stats = await getBackupStatsInternal(); // 获取最新统计信息
             const hasChanges = (stats.stats.bookmarkDiff !== 0) ||
-                               (stats.stats.folderDiff !== 0) ||
-                               stats.stats.bookmarkMoved ||
-                               stats.stats.folderMoved ||
-                               stats.stats.bookmarkModified ||
-                               stats.stats.folderModified;
+                (stats.stats.folderDiff !== 0) ||
+                stats.stats.bookmarkMoved ||
+                stats.stats.folderMoved ||
+                stats.stats.bookmarkModified ||
+                stats.stats.folderModified;
 
-if (hasChanges) {
+            if (hasChanges) {
                 // 有变化，执行闪烁
-// 获取当前语言传入flashBadge
+                // 获取当前语言传入flashBadge
                 const { preferredLang = 'zh_CN' } = await browserAPI.storage.local.get(['preferredLang']);
                 await flashBadge(preferredLang);
             } else {
                 // 无变化，调用 setBadge 显示静态成功状态
-await setBadge();
+                await setBadge();
             }
         } catch (error) {
-// 出错时，默认显示静态成功状态
+            // 出错时，默认显示静态成功状态
             await setBadge();
         }
     }
@@ -3595,7 +3710,7 @@ async function analyzeBookmarkChanges() {
     // 获取当前书签和文件夹总数
     const currentCounts = await getCurrentBookmarkCountsInternal();
     console.log('[analyzeBookmarkChanges] currentCounts:', currentCounts);
-    
+
     // 获取上次备份时的书签和文件夹总数
     const prevBookmarkCount = lastBookmarkData?.bookmarkCount ?? 0;
     const prevFolderCount = lastBookmarkData?.folderCount ?? 0;
@@ -3612,7 +3727,7 @@ async function analyzeBookmarkChanges() {
     if (lastBookmarkData && lastBookmarkData.bookmarkPrints) {
         const localBookmarks = await new Promise(resolve => browserAPI.bookmarks.getTree(resolve));
         const currentPrints = generateFingerprints(localBookmarks);
-        
+
         const oldBPs = new Set(lastBookmarkData.bookmarkPrints);
         const newBPs = new Set(currentPrints.bookmarks);
         if (!areSetsEqual(oldBPs, newBPs)) {
@@ -3625,7 +3740,7 @@ async function analyzeBookmarkChanges() {
             folderStructureChanged = true;
         }
     }
-    
+
     // 如果没有上次备份数据，说明是首次运行或还未进行过备份
     // 此时不应该显示为"有变化"，而应该等待用户进行第一次备份
     if (!lastBookmarkData) {
@@ -3656,7 +3771,7 @@ async function analyzeBookmarkChanges() {
 
 // 添加一个内部函数来获取备份统计信息，以便在 background.js 内部调用
 async function getBackupStatsInternal() {
-try {
+    try {
         const { lastSyncTime } = await browserAPI.storage.local.get(['lastSyncTime']);
         // 优先使用缓存，如果缓存不存在（例如首次运行），则触发一次分析和缓存
         const stats = cachedBookmarkAnalysis || await updateAndCacheAnalysis();
@@ -3667,10 +3782,10 @@ try {
             success: true
         };
 
-return response;
+        return response;
 
     } catch (error) {
-return { success: false, error: error.message, stats: null };
+        return { success: false, error: error.message, stats: null };
     }
 }
 
@@ -3678,7 +3793,7 @@ return { success: false, error: error.message, stats: null };
 async function checkBookmarkChangesForAutoBackup() {
     try {
         const stats = await getBackupStatsInternal();
-        
+
         if (!stats || !stats.success || !stats.stats) {
             return {
                 success: false,
@@ -3687,9 +3802,9 @@ async function checkBookmarkChangesForAutoBackup() {
                 error: '无法获取备份统计信息'
             };
         }
-        
+
         const { preferredLang = 'zh_CN' } = await browserAPI.storage.local.get(['preferredLang']);
-        
+
         // 检查是否有任何变化
         const hasChanges = (
             stats.stats.bookmarkDiff !== 0 ||
@@ -3699,7 +3814,7 @@ async function checkBookmarkChangesForAutoBackup() {
             stats.stats.folderMoved ||
             stats.stats.folderModified
         );
-        
+
         // 构建变化描述
         let changeDescription = '';
         if (hasChanges) {
@@ -3718,7 +3833,7 @@ async function checkBookmarkChangesForAutoBackup() {
             }
             changeDescription = `(${changes.join('，')})`;
         }
-        
+
         return {
             success: true,
             hasChanges,
@@ -3756,8 +3871,8 @@ function countBookmarksAndFolders(bookmarkNodes) {
             countItemsRecursive(rootChild);
         }
     }
-    
-return { bookmarks, folders };
+
+    return { bookmarks, folders };
 }
 
 // 假设有一个内部版本的 getCurrentBookmarkCounts
@@ -3809,7 +3924,7 @@ function generateFingerprints(bookmarkNodes) {
                         directFolderCount++;
                     }
                 }
-                
+
                 // 文件夹的身份 = 它的完整路径 + 它的名称 + 它包含的内容（数量限定）
                 const contentQuantitySignature = `c:${directBookmarkCount},${directFolderCount}`;
                 const folderFingerprint = `F:${currentPath}|${contentQuantitySignature}`;
@@ -3825,7 +3940,7 @@ function generateFingerprints(bookmarkNodes) {
     if (bookmarkNodes && bookmarkNodes.length > 0 && bookmarkNodes[0].children) {
         traverse(bookmarkNodes[0].children, '');
     }
-    
+
     return {
         bookmarks: [...bookmarkPrints],
         folders: [...folderPrints]
@@ -3865,7 +3980,7 @@ async function updateAndCacheAnalysis() {
             bookmarkCount: analysis.bookmarkCount,
             folderCount: analysis.folderCount
         });
-        
+
         // 分析完成后，向前端发送消息（analysis + 最近移动兜底）
         browserAPI.runtime.sendMessage({ action: "analysisUpdated", ...analysis }).catch(() => {
             // 忽略错误，因为popup可能未打开
@@ -3877,10 +3992,10 @@ async function updateAndCacheAnalysis() {
             const now = Date.now();
             const fresh = recentMovedIds.filter(r => (now - (r.time || 0)) < RECENT_MOVED_TTL_MS);
             for (const r of fresh) {
-                browserAPI.runtime.sendMessage({ action: 'recentMovedBroadcast', id: r.id }).catch(() => {});
+                browserAPI.runtime.sendMessage({ action: 'recentMovedBroadcast', id: r.id }).catch(() => { });
             }
-        } catch(_) {}
-        
+        } catch (_) { }
+
         return cachedBookmarkAnalysis;
     } catch (error) {
         console.error('[updateAndCacheAnalysis] 分析失败:', error);
@@ -3905,29 +4020,29 @@ async function initializeLanguagePreference() {
             if (browserLang.startsWith('zh')) {
                 // 浏览器语言是中文
                 preferredLang = 'zh_CN';
-} else {
+            } else {
                 // 浏览器语言为任何非中文语言
                 preferredLang = 'en';
-}
+            }
 
-            await browserAPI.storage.local.set({ 
+            await browserAPI.storage.local.set({
                 preferredLang: preferredLang,
-                languageAutoDetected: true 
+                languageAutoDetected: true
             });
         }
     } catch (e) {
-}
+    }
 }
 
 // 全局变量
 // ... existing code ...
 // 浏览器启动、安装或更新时执行的初始化
 browserAPI.runtime.onStartup.addListener(async () => {
-await initializeLanguagePreference(); // 新增：初始化语言偏好
+    await initializeLanguagePreference(); // 新增：初始化语言偏好
     await initializeBadge();
     await initializeAutoSync();
     initializeOperationTracking();
-    
+
     // 初始化活跃时间追踪
     await initializeActiveTimeTracker();
     setupActiveTimeTrackerListeners();
@@ -3957,22 +4072,22 @@ browserAPI.tabs.onUpdated.addListener(async (tabId, changeInfo, tab) => {
         if (!tab.url.startsWith('http://') && !tab.url.startsWith('https://')) {
             return;
         }
-        
+
         // 检查是否是本地/内网地址（静默）
         try {
             const urlObj = new URL(tab.url);
             const hostname = urlObj.hostname.toLowerCase();
-            
+
             // 本地地址
             if (hostname === 'localhost' || hostname === '127.0.0.1' || hostname === '::1') {
                 return;
             }
-            
+
             // 内网地址
             if (hostname.match(/^(10\.|172\.(1[6-9]|2[0-9]|3[01])\.|192\.168\.)/)) {
                 return;
             }
-            
+
             // .local 域名
             if (hostname.endsWith('.local')) {
                 return;
@@ -3980,22 +4095,22 @@ browserAPI.tabs.onUpdated.addListener(async (tabId, changeInfo, tab) => {
         } catch (e) {
             return;
         }
-        
+
         // 记录处理时间
         processedFavicons.set(tab.url, now);
-        
+
         // 定期清理旧记录（避免内存泄漏）
         if (processedFavicons.size > 1000) {
             const entries = Array.from(processedFavicons.entries());
             entries.sort((a, b) => a[1] - b[1]); // 按时间排序
             entries.slice(0, 500).forEach(([url]) => processedFavicons.delete(url)); // 删除一半旧记录
         }
-        
+
         // 将 favicon URL 转换为 Base64
         try {
             const faviconUrl = changeInfo.favIconUrl || tab.favIconUrl;
             const dataUrl = await convertFaviconToBase64(faviconUrl);
-            
+
             // 发送消息给 history.js 更新缓存
             browserAPI.runtime.sendMessage({
                 action: 'updateFaviconFromTab',
@@ -4004,7 +4119,7 @@ browserAPI.tabs.onUpdated.addListener(async (tabId, changeInfo, tab) => {
             }).catch(() => {
                 // 忽略错误，history.js 可能未打开
             });
-            
+
             // 简洁日志：只显示域名
             // 静默更新缓存
         } catch (error) {
@@ -4051,20 +4166,20 @@ async function convertFaviconToBase64(faviconUrl) {
 // =================================================================================
 
 browserAPI.runtime.onInstalled.addListener(async (details) => {
-await initializeLanguagePreference(); // 新增：初始化语言偏好
+    await initializeLanguagePreference(); // 新增：初始化语言偏好
     await initializeBadge();
     await initializeAutoSync();
     initializeOperationTracking();
-    
+
     // 初始化活跃时间追踪
     await initializeActiveTimeTracker();
     setupActiveTimeTrackerListeners();
 
     if (details.reason === 'install') {
-// browserAPI.tabs.create({ url: 'welcome.html' });
+        // browserAPI.tabs.create({ url: 'welcome.html' });
     } else if (details.reason === 'update') {
         const previousVersion = details.previousVersion;
-}
+    }
 });
 
 // =================================================================================
@@ -4076,7 +4191,7 @@ await initializeLanguagePreference(); // 新增：初始化语言偏好
 
 (async function initializeOnLoad() {
     console.log('[Background] Service Worker 加载，执行顶层初始化...');
-    
+
     try {
         // 初始化活跃时间追踪（包含 IndexedDB 和书签缓存）
         await initializeActiveTimeTracker();
@@ -4103,7 +4218,87 @@ if (browserAPI.windows && browserAPI.windows.onRemoved) {
 }
 
 // =================================================================================
-// X. 书签推荐 S值计算系统（在background.js中统一管理）
+// X. 书签打开监测（用于「点击记录」与「时间追踪」归因）
+// =================================================================================
+
+const PENDING_AUTO_BOOKMARK_CLICKS_KEY = 'bb_pending_auto_bookmark_clicks_v1';
+const PENDING_AUTO_BOOKMARK_CLICKS_MAX = 5000;
+const PENDING_AUTO_BOOKMARK_CLICKS_KEEP_MS = 400 * 24 * 60 * 60 * 1000; // ~400天
+
+async function appendPendingAutoBookmarkClick(event) {
+    try {
+        const result = await browserAPI.storage.local.get([PENDING_AUTO_BOOKMARK_CLICKS_KEY]);
+        const existing = result[PENDING_AUTO_BOOKMARK_CLICKS_KEY];
+        const list = Array.isArray(existing) ? existing : [];
+
+        list.push(event);
+
+        const now = Date.now();
+        const cutoff = now - PENDING_AUTO_BOOKMARK_CLICKS_KEEP_MS;
+        const pruned = list
+            .filter(e => e && typeof e.visitTime === 'number' && e.visitTime >= cutoff)
+            .slice(-PENDING_AUTO_BOOKMARK_CLICKS_MAX);
+
+        await browserAPI.storage.local.set({ [PENDING_AUTO_BOOKMARK_CLICKS_KEY]: pruned });
+    } catch (error) {
+        console.warn('[AutoBookmarkOpen] 写入待消费点击记录失败:', error);
+    }
+}
+
+function setupAutoBookmarkOpenMonitoring() {
+    try {
+        if (!browserAPI.webNavigation || !browserAPI.webNavigation.onCommitted) {
+            return;
+        }
+
+        browserAPI.webNavigation.onCommitted.addListener(async (details) => {
+            try {
+                if (!details || details.frameId !== 0) return;
+                if (details.transitionType !== 'auto_bookmark') return;
+
+                const url = details.url;
+                if (!url || (typeof url !== 'string')) return;
+                if (!url.startsWith('http://') && !url.startsWith('https://')) return;
+
+                let bookmarkId = null;
+                let bookmarkTitle = '';
+
+                try {
+                    const matches = await browserAPI.bookmarks.search({ url });
+                    if (Array.isArray(matches) && matches.length > 0) {
+                        bookmarkId = matches[0].id || null;
+                        bookmarkTitle = matches[0].title || '';
+                    }
+                } catch (_) { }
+
+                if (!bookmarkTitle) {
+                    try {
+                        const tab = await browserAPI.tabs.get(details.tabId);
+                        bookmarkTitle = tab?.title || '';
+                    } catch (_) { }
+                }
+
+                noteAutoBookmarkNavigation({
+                    tabId: details.tabId,
+                    bookmarkUrl: url,
+                    bookmarkId,
+                    bookmarkTitle,
+                    timeStamp: typeof details.timeStamp === 'number' ? details.timeStamp : Date.now(),
+                    source: 'browser_auto_bookmark'
+                });
+            } catch (error) {
+                console.warn('[AutoBookmarkOpen] 处理失败:', error);
+            }
+        });
+    } catch (error) {
+        console.warn('[AutoBookmarkOpen] 初始化失败:', error);
+    }
+}
+
+setupAutoBookmarkOpenMonitoring();
+
+// =================================================================================
+// XI. 书签推荐 S值计算系统（在background.js中统一管理）
 // =================================================================================
 
 let isComputingScores = false;
@@ -4149,7 +4344,7 @@ async function saveScoresCache(cache) {
                 // 清理过期数据：已翻阅记录、过期待复习、缩略图缓存
                 const keysToCheck = ['flippedBookmarks', 'thumbnailCache', 'recommend_postponed'];
                 const data = await browserAPI.storage.local.get(keysToCheck);
-                
+
                 // 清理已翻阅（只保留最近7天）
                 if (data.flippedBookmarks) {
                     const oneWeekAgo = Date.now() - 7 * 24 * 60 * 60 * 1000;
@@ -4159,12 +4354,12 @@ async function saveScoresCache(cache) {
                     }
                     await browserAPI.storage.local.set({ flippedBookmarks: filtered });
                 }
-                
+
                 // 清理缩略图缓存（全部清除以腾出空间）
                 if (data.thumbnailCache) {
                     await browserAPI.storage.local.remove(['thumbnailCache']);
                 }
-                
+
                 // 重试保存
                 await browserAPI.storage.local.set({ recommend_scores_cache: cache });
                 console.log('[S值缓存] 清理后保存成功');
@@ -4189,30 +4384,24 @@ async function getReviewDataForScore() {
     return result.recommend_reviews || {};
 }
 
-// 获取追踪数据（从活跃时间追踪模块）
+// 获取追踪数据（从 trackingStats 读取，与综合排行一致）
 async function getTrackingDataForScore() {
     try {
-        const sessions = await getSessionsByTimeRange(0, Date.now());
-        const titleStats = new Map();
-        
-        for (const session of sessions) {
-            const key = session.title || session.url;
-            if (!titleStats.has(key)) {
-                titleStats.set(key, { url: session.url, title: session.title, compositeMs: 0 });
-            }
-            const stat = titleStats.get(key);
-            const sessionComposite = session.compositeMs || 
-                ((session.activeMs || 0) + 
-                 (session.idleFocusMs || session.pauseTotalMs || 0) * 0.8 +
-                 (session.visibleMs || 0) * 0.5 +
-                 (session.backgroundMs || 0) * 0.1);
-            stat.compositeMs += sessionComposite;
+        const stats = await getTrackingStats();
+        const byUrl = new Map();
+        const byTitle = new Map();
+
+        for (const [key, stat] of Object.entries(stats)) {
+            const data = {
+                url: stat.url,
+                title: stat.title || key,
+                compositeMs: stat.totalCompositeMs || 0
+            };
+            if (stat.url) byUrl.set(stat.url, data);
+            if (stat.title) byTitle.set(stat.title, data);
         }
-        
-        return {
-            byUrl: new Map([...titleStats.values()].filter(s => s.url).map(s => [s.url, s])),
-            byTitle: new Map([...titleStats.values()].filter(s => s.title).map(s => [s.title, s]))
-        };
+
+        return { byUrl, byTitle };
     } catch (e) {
         console.warn('[S值计算] 获取追踪数据失败:', e);
         return { byUrl: new Map(), byTitle: new Map() };
@@ -4231,7 +4420,7 @@ function calculateFactorValue(value, threshold, inverse = false) {
 function calculateBookmarkScore(bookmark, historyStats, trackingData, config, postponedList, reviewData) {
     const now = Date.now();
     const thresholds = config.thresholds;
-    
+
     // 获取历史统计（URL匹配优先，然后标题匹配）
     let history = historyStats.get(bookmark.url);
     if (!history || history.visitCount === 0) {
@@ -4241,7 +4430,7 @@ function calculateBookmarkScore(bookmark, historyStats, trackingData, config, po
         }
     }
     history = history || { visitCount: 0, lastVisitTime: 0 };
-    
+
     // 获取追踪数据（T值）- URL匹配优先，然后标题匹配
     let compositeMs = 0;
     if (bookmark.url && trackingData.byUrl.has(bookmark.url)) {
@@ -4249,32 +4438,32 @@ function calculateBookmarkScore(bookmark, historyStats, trackingData, config, po
     } else if (bookmark.title && trackingData.byTitle.has(bookmark.title)) {
         compositeMs = trackingData.byTitle.get(bookmark.title).compositeMs;
     }
-    
+
     // F (新鲜度)
     const daysSinceAdded = (now - (bookmark.dateAdded || now)) / (1000 * 60 * 60 * 24);
     const F = calculateFactorValue(daysSinceAdded, thresholds.freshness, true);
-    
+
     // C (冷门度)
     const C = calculateFactorValue(history.visitCount, thresholds.coldness, true);
-    
+
     // T (时间度)
     const compositeMinutes = compositeMs / (1000 * 60);
     const T = calculateFactorValue(compositeMinutes, thresholds.shallowRead, true);
-    
+
     // D (遗忘度)
     let daysSinceLastVisit = thresholds.forgetting;
     if (history.lastVisitTime > 0) {
         daysSinceLastVisit = (now - history.lastVisitTime) / (1000 * 60 * 60 * 24);
     }
     const D = calculateFactorValue(daysSinceLastVisit, thresholds.forgetting, false);
-    
+
     // L (待复习)
     let L = 0;
     const postponeInfo = postponedList.find(p => p.bookmarkId === bookmark.id);
     if (postponeInfo && postponeInfo.manuallyAdded) {
         L = 1;
     }
-    
+
     // R (记忆度)
     let R = 1;
     const review = reviewData[bookmark.id];
@@ -4287,14 +4476,14 @@ function calculateBookmarkScore(bookmark, historyStats, trackingData, config, po
         R = 0.7 + 0.3 * needReview;
         R = Math.max(0.7, Math.min(1, R));
     }
-    
+
     // 获取权重
     let w1 = config.weights.freshness || 0.15;
     let w2 = config.weights.coldness || 0.25;
     let w3 = config.weights.shallowRead || 0.20;
     let w4 = config.weights.forgetting || 0.25;
     let w5 = config.weights.laterReview || 0.15;
-    
+
     // 追踪关闭时，T权重变0，其他权重重新归一化
     if (!config.trackingEnabled) {
         const remaining = w1 + w2 + w4 + w5;
@@ -4306,12 +4495,12 @@ function calculateBookmarkScore(bookmark, historyStats, trackingData, config, po
         }
         w3 = 0;
     }
-    
+
     const basePriority = w1 * F + w2 * C + w3 * T + w4 * D + w5 * L;
     const priority = basePriority * R;
     const randomFactor = (Math.random() - 0.5) * 0.1;
     const S = Math.max(0, Math.min(1, priority + randomFactor));
-    
+
     return { S, F, C, T, D, L, R };
 }
 
@@ -4319,9 +4508,9 @@ function calculateBookmarkScore(bookmark, historyStats, trackingData, config, po
 async function getBatchHistoryDataWithTitle() {
     const urlMap = new Map();
     const titleMap = new Map();
-    
+
     if (!browserAPI.history) return { urlMap, titleMap };
-    
+
     try {
         // 获取最近180天的历史记录（折中：相比90天更完整，同时避免一年/10万条带来的峰值压力）
         // 说明：如果后续仍遇到重度历史导致卡顿，可再引入“自适应回退”（先180天，必要时扩展到365天）
@@ -4333,17 +4522,17 @@ async function getBatchHistoryDataWithTitle() {
                 maxResults: 50000
             }, resolve);
         });
-        
+
         for (const item of historyItems) {
             if (!item.url) continue;
             const data = {
                 visitCount: item.visitCount || 0,
                 lastVisitTime: item.lastVisitTime || 0
             };
-            
+
             // URL映射
             urlMap.set(item.url, data);
-            
+
             // 标题映射（合并同标题的访问）
             const title = item.title && item.title.trim();
             if (title) {
@@ -4358,12 +4547,12 @@ async function getBatchHistoryDataWithTitle() {
                 }
             }
         }
-        
+
         console.log('[S值计算] 历史数据已加载:', urlMap.size, '条URL,', titleMap.size, '条标题');
     } catch (e) {
         console.warn('[S值计算] 批量获取历史数据失败:', e);
     }
-    
+
     // 返回带titleMap的对象
     const result = urlMap;
     result.titleMap = titleMap;
@@ -4376,10 +4565,10 @@ async function computeAllBookmarkScores() {
         console.log('[S值计算] 已有计算任务在运行，跳过');
         return false;
     }
-    
+
     isComputingScores = true;
     console.log('[S值计算] 开始全量计算...');
-    
+
     try {
         // 获取所有书签
         const tree = await new Promise(resolve => browserAPI.bookmarks.getTree(resolve));
@@ -4391,12 +4580,12 @@ async function computeAllBookmarkScores() {
             }
         }
         traverse(tree);
-        
+
         if (allBookmarks.length === 0) {
             isComputingScores = false;
             return true;
         }
-        
+
         // 获取屏蔽数据和配置
         const [blocked, config, historyStats, trackingData, postponedList, reviewData] = await Promise.all([
             getBlockedDataForScore(),
@@ -4406,7 +4595,7 @@ async function computeAllBookmarkScores() {
             getPostponedBookmarksForScore(),
             getReviewDataForScore()
         ]);
-        
+
         // 过滤屏蔽书签
         const isBlockedDomain = (bookmark) => {
             if (blocked.domains.size === 0 || !bookmark.url) return false;
@@ -4417,16 +4606,16 @@ async function computeAllBookmarkScores() {
                 return false;
             }
         };
-        
-        const availableBookmarks = allBookmarks.filter(b => 
+
+        const availableBookmarks = allBookmarks.filter(b =>
             !blocked.bookmarks.has(b.id) &&
             !blocked.folders.has(b.parentId) &&
             !isBlockedDomain(b)
         );
-        
+
         const totalCount = availableBookmarks.length;
         console.log('[S值计算] 需要计算的书签数量:', totalCount, '(总计:', allBookmarks.length, ')');
-        
+
         // 根据书签数量确定批次数（与history.js一致）
         let batchCount = 1;
         if (totalCount > 1000) {
@@ -4435,31 +4624,31 @@ async function computeAllBookmarkScores() {
             batchCount = 2;
         }
         const batchSize = Math.ceil(totalCount / batchCount);
-        
+
         // 分批计算
         const newCache = {};
         for (let i = 0; i < batchCount; i++) {
             const start = i * batchSize;
             const end = Math.min(start + batchSize, totalCount);
             const batchBookmarks = availableBookmarks.slice(start, end);
-            
+
             console.log('[S值计算] 第', i + 1, '批，书签', start + 1, '-', end);
-            
+
             for (const bookmark of batchBookmarks) {
                 const scores = calculateBookmarkScore(bookmark, historyStats, trackingData, config, postponedList, reviewData);
                 newCache[bookmark.id] = scores;
             }
-            
+
             // 批次间暂停50ms，避免阻塞
             if (i < batchCount - 1) {
                 await new Promise(resolve => setTimeout(resolve, 50));
             }
         }
-        
+
         // 保存缓存
         await saveScoresCache(newCache);
         console.log('[S值计算] 全量计算完成，共', Object.keys(newCache).length, '个书签');
-        
+
         isComputingScores = false;
         return true;
     } catch (error) {
@@ -4474,9 +4663,9 @@ async function updateSingleBookmarkScore(bookmarkId) {
     try {
         const bookmarks = await new Promise(resolve => browserAPI.bookmarks.get([bookmarkId], resolve));
         if (!bookmarks || bookmarks.length === 0) return;
-        
+
         const bookmark = bookmarks[0];
-        
+
         // 获取该书签的历史数据（URL和标题双匹配）
         const historyStats = new Map();
         if (browserAPI.history && bookmark.url) {
@@ -4487,7 +4676,7 @@ async function updateSingleBookmarkScore(bookmarkId) {
                 visitCount: visits?.length || 0,
                 lastVisitTime: visits?.length > 0 ? Math.max(...visits.map(v => v.visitTime)) : 0
             });
-            
+
             // 如果需要标题匹配，可以搜索历史
             if (bookmark.title) {
                 historyStats.titleMap = new Map();
@@ -4509,20 +4698,20 @@ async function updateSingleBookmarkScore(bookmarkId) {
                 }
             }
         }
-        
+
         const [config, trackingData, postponedList, reviewData] = await Promise.all([
             getFormulaConfig(),
             getTrackingDataForScore(),
             getPostponedBookmarksForScore(),
             getReviewDataForScore()
         ]);
-        
+
         const scores = calculateBookmarkScore(bookmark, historyStats, trackingData, config, postponedList, reviewData);
-        
+
         const cache = await getScoresCache();
         cache[bookmarkId] = scores;
         await saveScoresCache(cache);
-        
+
         console.log('[S值计算] 增量更新:', bookmark.title?.substring(0, 20), 'S=', scores.S.toFixed(3));
     } catch (e) {
         console.warn('[S值计算] 增量更新失败:', e);
@@ -4536,14 +4725,14 @@ let urlUpdateTimer = null;
 async function scheduleScoreUpdateByUrl(url) {
     if (!url) return;
     pendingUrlUpdates.add(url);
-    
+
     if (urlUpdateTimer) clearTimeout(urlUpdateTimer);
-    
+
     urlUpdateTimer = setTimeout(async () => {
         const urls = [...pendingUrlUpdates];
         pendingUrlUpdates.clear();
         urlUpdateTimer = null;
-        
+
         try {
             const tree = await new Promise(resolve => browserAPI.bookmarks.getTree(resolve));
             const bookmarks = [];
@@ -4554,11 +4743,11 @@ async function scheduleScoreUpdateByUrl(url) {
                 }
             }
             traverse(tree);
-            
+
             for (const bookmark of bookmarks) {
                 await updateSingleBookmarkScore(bookmark.id);
             }
-            
+
             if (bookmarks.length > 0) {
                 console.log('[S值计算] URL增量更新完成，共', bookmarks.length, '个书签');
             }

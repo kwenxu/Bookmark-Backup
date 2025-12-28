@@ -52,6 +52,7 @@ function formatYearMonth(year, month) {
 const BROWSING_HISTORY_LOOKBACK_DAYS = 0;
 const BROWSING_HISTORY_MAX_VISITS_PER_URL = 400; // 单个站点最多缓存多少次点击
 const BROWSING_HISTORY_CACHE_KEY = 'bb_cache_browsing_history_v1';
+const PENDING_AUTO_BOOKMARK_CLICKS_KEY = 'bb_pending_auto_bookmark_clicks_v1';
 const BROWSING_HISTORY_INCREMENTAL_PADDING_MS = 60 * 1000; // 增量同步时回溯1分钟
 
 function getHistoryCacheStorageArea() {
@@ -99,6 +100,20 @@ function writeHistoryCacheValue(key, value) {
         } catch (error) {
             console.warn('[BrowsingHistoryCalendar] 写入缓存失败:', error);
         }
+        resolve();
+    });
+}
+
+function removeHistoryCacheValue(key) {
+    return new Promise((resolve) => {
+        const storageArea = getHistoryCacheStorageArea();
+        if (storageArea) {
+            storageArea.remove([key], () => resolve());
+            return;
+        }
+        try {
+            localStorage.removeItem(key);
+        } catch (_) { }
         resolve();
     });
 }
@@ -345,6 +360,19 @@ class BrowsingHistoryCalendar {
             }
         }
 
+        // 合并后台实时记录的「书签打开(auto_bookmark)」事件，避免 URL/标题变更导致漏记
+        if (!this.useNewArchitecture) {
+            const lookbackMs = (typeof BROWSING_HISTORY_LOOKBACK_DAYS === 'number' && BROWSING_HISTORY_LOOKBACK_DAYS > 0)
+                ? BROWSING_HISTORY_LOOKBACK_DAYS * 24 * 60 * 60 * 1000
+                : 0;
+            const now = Date.now();
+            const cutoffTime = lookbackMs ? (now - lookbackMs) : 0;
+            const consumed = await this.consumePendingAutoBookmarkClicks({ cutoffTime });
+            if (consumed > 0) {
+                await this.saveBrowsingHistoryCache();
+            }
+        }
+
         // 从localStorage恢复勾选模式和视图状态
         this.restoreSelectMode();
 
@@ -386,6 +414,42 @@ class BrowsingHistoryCalendar {
 
         // 恢复后更新按钮状态
         this.updateSelectModeButton();
+    }
+
+    async consumePendingAutoBookmarkClicks({ cutoffTime = 0 } = {}) {
+        try {
+            const pending = await readHistoryCacheValue(PENDING_AUTO_BOOKMARK_CLICKS_KEY);
+            if (!Array.isArray(pending) || pending.length === 0) return 0;
+
+            let added = 0;
+            for (const evt of pending) {
+                const url = evt?.url;
+                const visitTime = typeof evt?.visitTime === 'number' ? evt.visitTime : 0;
+                if (!url || !visitTime) continue;
+                if (cutoffTime && visitTime < cutoffTime) continue;
+
+                const ok = this.addVisitRecordFromHistory({
+                    url,
+                    title: evt?.title || url,
+                    typedCount: 0
+                }, visitTime, {
+                    id: evt?.id || `${url}-${visitTime}`,
+                    transition: evt?.transition || 'auto_bookmark',
+                    referringVisitId: null,
+                    count: 1
+                }, cutoffTime);
+
+                if (ok) {
+                    added += 1;
+                }
+            }
+
+            await removeHistoryCacheValue(PENDING_AUTO_BOOKMARK_CLICKS_KEY);
+            return added;
+        } catch (error) {
+            console.warn('[BrowsingHistoryCalendar] 消费待处理书签打开事件失败:', error);
+            return 0;
+        }
     }
     
     /**

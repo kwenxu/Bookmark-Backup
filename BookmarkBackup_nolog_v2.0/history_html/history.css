@@ -11082,6 +11082,50 @@ a.tree-label.tree-bookmark-link:hover {
     background: var(--danger-light, rgba(239, 68, 68, 0.1));
 }
 
+/* 清除记录下拉菜单 */
+.tracking-clear-menu {
+    background: var(--bg-primary);
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+    min-width: 180px;
+    z-index: 1000;
+    overflow: hidden;
+}
+
+.tracking-clear-menu-title {
+    padding: 8px 12px 4px;
+    font-size: 11px;
+    color: var(--text-tertiary);
+    font-weight: 500;
+}
+
+.tracking-clear-menu-item {
+    padding: 8px 12px;
+    font-size: 13px;
+    color: var(--text-primary);
+    cursor: pointer;
+    transition: background 0.15s;
+}
+
+.tracking-clear-menu-item:hover {
+    background: var(--bg-secondary);
+}
+
+.tracking-clear-menu-item.danger {
+    color: var(--danger);
+}
+
+.tracking-clear-menu-item.danger:hover {
+    background: var(--danger-light, rgba(239, 68, 68, 0.1));
+}
+
+.tracking-clear-menu-divider {
+    height: 1px;
+    background: var(--border-color);
+    margin: 4px 0;
+}
+
 /* 追踪开关 */
 .tracking-btn {
     display: inline-flex;
@@ -11233,7 +11277,7 @@ a.tree-label.tree-bookmark-link:hover {
 }
 
 .tracking-table thead th:nth-child(3) {
-    width: 70px;
+    width: 110px;
 }
 
 .tracking-table thead th:nth-child(4) {
@@ -11367,6 +11411,153 @@ a.tree-label.tree-bookmark-link:hover {
     color: var(--warning);
     border-radius: 4px;
     white-space: nowrap;
+}
+
+/* 分组徽章（显示相同书签的数量） */
+.tracking-group-badge {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 18px;
+    height: 18px;
+    padding: 0 5px;
+    font-size: 11px;
+    font-weight: 600;
+    background: var(--accent-primary);
+    color: white;
+    border-radius: 9px;
+    margin-left: 6px;
+    cursor: pointer;
+}
+
+.tracking-group-badge:hover {
+    background: var(--accent-secondary);
+}
+
+/* 展开/折叠图标 */
+.tracking-expand-icon {
+    display: inline-block;
+    font-size: 10px;
+    color: var(--text-tertiary);
+    margin-right: 6px;
+    transition: transform 0.2s;
+    cursor: pointer;
+}
+
+.tracking-expand-icon.expanded {
+    transform: rotate(90deg);
+}
+
+.tracking-expand-icon:hover {
+    color: var(--accent-primary);
+}
+
+/* 分组头行 */
+.tracking-group-header.has-children {
+    cursor: pointer;
+}
+
+.tracking-group-header.has-children:hover {
+    background: var(--accent-light);
+}
+
+/* 子行样式 */
+.tracking-group-child {
+    background: var(--bg-tertiary);
+}
+
+.tracking-group-child:hover {
+    background: var(--accent-light);
+}
+
+.tracking-child-title {
+    padding-left: 24px;
+}
+
+.tracking-window-label {
+    font-size: 11px;
+    color: var(--text-tertiary);
+    font-style: italic;
+}
+
+/* 综合时间梯度蓝色 */
+.time-level-0 {
+    color: #a8d4f0 !important;
+    /* 最浅蓝 0-1分钟 */
+}
+
+.time-level-1 {
+    color: #7bc0e8 !important;
+    /* 浅蓝 1-5分钟 */
+}
+
+.time-level-2 {
+    color: #4da8de !important;
+    /* 中蓝 5-15分钟 */
+}
+
+.time-level-3 {
+    color: #2196f3 !important;
+    /* 较深蓝 15-30分钟 */
+    font-weight: 500;
+}
+
+.time-level-4 {
+    color: #1565c0 !important;
+    /* 深蓝 30分钟+ */
+    font-weight: 600;
+}
+
+.time-level-5 {
+    color: #7b1fa2 !important;
+    /* 深紫色 - 极端使用/挚爱书签 */
+    font-weight: 700;
+    text-shadow: 0 0 2px rgba(123, 31, 162, 0.3);
+}
+
+/* 保留旧的蓝色类作为备用 */
+.tracking-time-blue {
+    color: var(--accent-primary) !important;
+    font-weight: 500;
+}
+
+/* 活跃率梯度颜色 */
+.tracking-ratio.ratio-idle {
+    color: var(--warning) !important;
+    font-weight: 600;
+}
+
+.tracking-ratio.ratio-level-0 {
+    color: #a8d5a8 !important;
+    /* 最浅绿 0-19% */
+}
+
+.tracking-ratio.ratio-level-1 {
+    color: #7ec87e !important;
+    /* 浅绿 20-39% */
+}
+
+.tracking-ratio.ratio-level-2 {
+    color: #5cb85c !important;
+    /* 中绿 40-59% */
+}
+
+.tracking-ratio.ratio-level-3 {
+    color: #4cae4c !important;
+    /* 较深绿 60-79% */
+}
+
+.tracking-ratio.ratio-level-4,
+.tracking-ratio.ratio-level-5 {
+    color: #3d9140 !important;
+    /* 深绿 80-100% */
+    font-weight: 600;
+}
+
+/* 唤醒次数高频高亮（橙色） */
+.wakes-highlight {
+    color: var(--warning) !important;
+    font-weight: 600;
 }
 
 .tracking-empty {
@@ -12215,6 +12406,18 @@ a.tree-label.tree-bookmark-link:hover {
     border-bottom: 1px solid var(--border-color);
 }
 
+/* 排行控制区域（排行类型 + 时间范围） */
+.tracking-ranking-controls {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+/* 排行主要指标高亮样式 */
+.ranking-primary {
+    font-weight: 600 !important;
+}
+
 .tracking-section-title {
     display: flex;
     align-items: center;
@@ -12452,6 +12655,60 @@ a.tree-label.tree-bookmark-link:hover {
     font-size: 11px;
     color: var(--text-tertiary);
     margin-top: 2px;
+}
+
+/* 书签选择列表样式 */
+.add-bookmark-list {
+    overflow-y: auto;
+    border-radius: 8px;
+    background: var(--bg-secondary);
+}
+
+.add-bookmark-item {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 10px 12px;
+    border-bottom: 1px solid var(--border-color);
+    cursor: pointer;
+    transition: background 0.2s;
+}
+
+.add-bookmark-item:last-child {
+    border-bottom: none;
+}
+
+.add-bookmark-item:hover {
+    background: var(--bg-tertiary);
+}
+
+.add-bookmark-item.selected {
+    background: rgba(var(--accent-primary-rgb), 0.1);
+}
+
+.add-bookmark-item input[type="checkbox"] {
+    flex-shrink: 0;
+}
+
+.add-bookmark-favicon {
+    width: 18px;
+    height: 18px;
+    flex-shrink: 0;
+    object-fit: contain;
+}
+
+.add-bookmark-info {
+    flex: 1;
+    min-width: 0;
+}
+
+.add-bookmark-title {
+    font-size: 13px;
+    font-weight: 500;
+    color: var(--text-primary);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
 }
 
 .add-mode-options {

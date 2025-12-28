@@ -214,12 +214,12 @@
                                     <td id="stateSleepLabel">睡眠</td>
                                     <td id="stateSleepCondition">用户空闲（任何标签）</td>
                                     <td class="state-rate-cell">×0</td>
-                                    <td id="stateSleepExample">离开电脑、锁屏</td>
+                                    <td id="stateSleepExample">离开电脑、锁屏、页面自动睡眠</td>
                                 </tr>
                             </tbody>
                         </table>
                         <div class="tracking-state-formula">
-                            <code>综合时间 = 活跃×1.0 + 前台静止×0.8 + 可见参考×0.5 + 后台×0.1</code>
+                            <code id="trackingStateFormula">综合时间 = 活跃×1.0 + 前台静止×0.8 + 可见参考×0.5 + 后台×0.1</code>
                         </div>
                     </div>
                 </div>
@@ -611,6 +611,10 @@
                                 <i class="fas fa-trash-alt"></i>
                                 <span id="clearTrackingText">清除</span>
                             </button>
+                            <button id="trackingBlockBtn" class="tracking-action-btn" title="屏蔽管理">
+                                <i class="fas fa-ban"></i>
+                                <span id="trackingBlockText">屏蔽</span>
+                            </button>
                             <button id="trackingToggleBtn" class="tracking-toggle-btn active">
                                 <span class="tracking-indicator"></span>
                                 <span id="trackingToggleText">开启</span>
@@ -635,7 +639,7 @@
                                                 class="fas fa-question-circle tracking-state-help"
                                                 id="trackingStateHelpBtn" title="状态说明"></i></th>
                                         <th id="trackingHeaderTitle">书签</th>
-                                        <th id="trackingHeaderTime">综合时间</th>
+                                        <th id="trackingHeaderTime">综合时间（当前）</th>
                                         <th id="trackingHeaderWakes">唤醒</th>
                                         <th id="trackingHeaderRatio">活跃</th>
                                     </tr>
@@ -651,20 +655,26 @@
                         </div>
                     </div>
 
-                    <!-- 活跃时间排行 -->
+                    <!-- 综合排行 -->
                     <div class="tracking-section">
                         <div class="tracking-section-header">
                             <span class="tracking-section-title">
                                 <i class="fas fa-chart-bar"></i>
-                                <span id="trackingRankingTitle">活跃时间排行</span>
+                                <span id="trackingRankingTitle">综合排行</span>
                             </span>
-                            <select id="trackingRankingRange" class="tracking-range-select">
-                                <option value="today" id="trackingRangeToday">今天</option>
-                                <option value="week" selected id="trackingRangeWeek">本周</option>
-                                <option value="month" id="trackingRangeMonth">本月</option>
-                                <option value="year" id="trackingRangeYear">当年</option>
-                                <option value="all" id="trackingRangeAll">全部</option>
-                            </select>
+                            <div class="tracking-ranking-controls">
+                                <select id="trackingRankingType" class="tracking-range-select">
+                                    <option value="composite" id="trackingRankingTypeComposite">综合时间</option>
+                                    <option value="wakes" id="trackingRankingTypeWakes">唤醒次数</option>
+                                </select>
+                                <select id="trackingRankingRange" class="tracking-range-select">
+                                    <option value="today" id="trackingRangeToday">今天</option>
+                                    <option value="week" selected id="trackingRangeWeek">本周</option>
+                                    <option value="month" id="trackingRangeMonth">本月</option>
+                                    <option value="year" id="trackingRangeYear">当年</option>
+                                    <option value="all" id="trackingRangeAll">全部</option>
+                                </select>
+                            </div>
                         </div>
                         <div class="tracking-list" id="trackingRankingList">
                             <div class="empty-state-small">
@@ -1570,25 +1580,204 @@
         </div>
     </div>
 
+    <!-- 时间追踪屏蔽管理弹窗 -->
+    <div id="trackingBlockModal" class="modal content-center">
+        <div class="modal-content" style="max-width: 600px; max-height: 80vh;">
+            <div class="modal-header compact">
+                <h3 id="trackingBlockModalTitle">时间追踪屏蔽管理</h3>
+                <button class="modal-close" id="trackingBlockModalClose">
+                    <i class="fas fa-times"></i>
+                </button>
+            </div>
+            <div class="modal-body" style="max-height: 60vh; overflow-y: auto; padding: 16px 20px;">
+                <!-- 已屏蔽书签 -->
+                <div class="block-subsection">
+                    <div class="block-subsection-header">
+                        <span><i class="fas fa-bookmark"></i> <span id="trackingBlockedBookmarksTitle">已屏蔽书签</span>
+                            (<span id="trackingBlockedBookmarksCount">0</span>)</span>
+                        <button class="block-add-btn" id="addTrackingBlockBookmarkBtn"><i
+                                class="fas fa-plus"></i></button>
+                    </div>
+                    <div class="block-list" id="trackingBlockedBookmarksList">
+                        <div class="empty-state-inline" id="trackingBlockedBookmarksEmpty">
+                            <span id="trackingBlockedBookmarksEmptyText">暂无已屏蔽书签</span>
+                        </div>
+                    </div>
+                </div>
+                <!-- 已屏蔽文件夹 -->
+                <div class="block-subsection">
+                    <div class="block-subsection-header">
+                        <span><i class="fas fa-folder"></i> <span id="trackingBlockedFoldersTitle">已屏蔽文件夹</span>
+                            (<span id="trackingBlockedFoldersCount">0</span>)</span>
+                        <button class="block-add-btn" id="addTrackingBlockFolderBtn"><i
+                                class="fas fa-plus"></i></button>
+                    </div>
+                    <div class="block-list" id="trackingBlockedFoldersList">
+                        <div class="empty-state-inline" id="trackingBlockedFoldersEmpty">
+                            <span id="trackingBlockedFoldersEmptyText">暂无已屏蔽文件夹</span>
+                        </div>
+                    </div>
+                </div>
+                <!-- 已屏蔽域名 -->
+                <div class="block-subsection">
+                    <div class="block-subsection-header">
+                        <span><i class="fas fa-globe"></i> <span id="trackingBlockedDomainsTitle">已屏蔽域名</span>
+                            (<span id="trackingBlockedDomainsCount">0</span>)</span>
+                        <button class="block-add-btn" id="addTrackingBlockDomainBtn"><i
+                                class="fas fa-plus"></i></button>
+                    </div>
+                    <div class="block-list" id="trackingBlockedDomainsList">
+                        <div class="empty-state-inline" id="trackingBlockedDomainsEmpty">
+                            <span id="trackingBlockedDomainsEmptyText">暂无已屏蔽域名</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 时间追踪添加域名屏蔽弹窗 -->
+    <div id="addTrackingBlockDomainModal" class="modal content-center">
+        <div class="modal-content add-postponed-modal" style="max-width: 500px;">
+            <div class="modal-header">
+                <h3 id="addTrackingBlockDomainModalTitle">添加屏蔽域名（时间追踪）</h3>
+                <button class="modal-close" id="addTrackingBlockDomainModalClose">
+                    <i class="fas fa-times"></i>
+                </button>
+            </div>
+            <div class="modal-body">
+                <div class="add-search-container">
+                    <input type="text" id="addTrackingBlockDomainSearchInput" class="add-search-input"
+                        placeholder="搜索或输入域名...">
+                    <i class="fas fa-search add-search-icon"></i>
+                </div>
+                <div class="add-domain-list" id="addTrackingBlockDomainList" style="height: 300px; margin-top: 10px;">
+                    <div class="add-results-empty" id="addTrackingBlockDomainLoading">加载域名列表中...</div>
+                </div>
+                <!-- 底部操作栏 -->
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 16px;">
+                    <div class="add-selected-count">
+                        <span id="addTrackingBlockDomainSelectedText">已选择</span>: <span
+                            id="addTrackingBlockDomainSelectedCount">0</span>
+                    </div>
+                    <div style="display: flex; gap: 10px;">
+                        <button id="addTrackingBlockDomainCancelBtn" class="modal-btn">取消</button>
+                        <button id="addTrackingBlockDomainConfirmBtn" class="modal-btn primary">添加屏蔽</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 时间追踪选择文件夹屏蔽弹窗 -->
+    <div id="selectTrackingBlockFolderModal" class="modal content-center">
+        <div class="modal-content" style="max-width: 500px; max-height: 70vh;">
+            <div class="modal-header compact">
+                <h3 id="selectTrackingBlockFolderModalTitle">选择要屏蔽的文件夹（时间追踪）</h3>
+                <button class="modal-close" id="selectTrackingBlockFolderModalClose">
+                    <i class="fas fa-times"></i>
+                </button>
+            </div>
+            <div class="modal-body" style="max-height: 50vh; overflow-y: auto;">
+                <div id="trackingBlockFolderTreeContainer" class="folder-tree-container">
+                    <!-- 文件夹树将动态生成 -->
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 时间追踪添加屏蔽书签弹窗 -->
+    <div id="addTrackingBlockBookmarkModal" class="modal content-center">
+        <div class="modal-content add-postponed-modal" style="max-width: 600px;">
+            <div class="modal-header">
+                <h3 id="addTrackingBlockBookmarkModalTitle">添加屏蔽书签（时间追踪）</h3>
+                <button class="modal-close" id="addTrackingBlockBookmarkModalClose">
+                    <i class="fas fa-times"></i>
+                </button>
+            </div>
+            <div class="modal-body">
+                <!-- 标签页 -->
+                <div class="add-postponed-tabs">
+                    <button class="add-postponed-tab active" data-tab="tracking" id="trackingBlockBookmarkTabTracking">
+                        <i class="fas fa-broadcast-tower"></i> 正在追踪
+                    </button>
+                    <button class="add-postponed-tab" data-tab="ranking" id="trackingBlockBookmarkTabRanking">
+                        <i class="fas fa-chart-bar"></i> 综合排行
+                    </button>
+                    <button class="add-postponed-tab" data-tab="tree" id="trackingBlockBookmarkTabTree">
+                        <i class="fas fa-search"></i> 搜索
+                    </button>
+                </div>
+
+                <!-- 正在追踪面板 -->
+                <div class="add-postponed-panel active" data-panel="tracking">
+                    <div class="add-bookmark-list" id="addTrackingBlockBookmarkTrackingList" style="height: 300px;">
+                        <div class="add-results-empty">加载中...</div>
+                    </div>
+                </div>
+
+                <!-- 综合排行面板 -->
+                <div class="add-postponed-panel" data-panel="ranking">
+                    <div class="add-bookmark-list" id="addTrackingBlockBookmarkRankingList" style="height: 300px;">
+                        <div class="add-results-empty">加载中...</div>
+                    </div>
+                </div>
+
+                <!-- 书签树面板 -->
+                <div class="add-postponed-panel" data-panel="tree">
+                    <div class="add-search-container">
+                        <input type="text" id="addTrackingBlockBookmarkSearchInput" class="add-search-input"
+                            placeholder="搜索书签...">
+                        <i class="fas fa-search add-search-icon"></i>
+                    </div>
+                    <div class="add-bookmark-list" id="addTrackingBlockBookmarkTreeList"
+                        style="height: 260px; margin-top: 10px;">
+                        <div class="add-results-empty">输入关键词搜索书签</div>
+                    </div>
+                </div>
+
+                <!-- 底部操作栏 -->
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 16px;">
+                    <div class="add-selected-count">
+                        <span id="addTrackingBlockBookmarkSelectedText">已选择</span>: <span
+                            id="addTrackingBlockBookmarkSelectedCount">0</span>
+                    </div>
+                    <div style="display: flex; gap: 10px;">
+                        <button id="addTrackingBlockBookmarkCancelBtn" class="modal-btn">取消</button>
+                        <button id="addTrackingBlockBookmarkConfirmBtn" class="modal-btn primary">添加屏蔽</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <!-- 添加域名屏蔽弹窗 -->
     <div id="addDomainModal" class="modal content-center">
-        <div class="modal-content" style="max-width: 400px;">
-            <div class="modal-header compact">
+        <div class="modal-content add-postponed-modal" style="max-width: 500px;">
+            <div class="modal-header">
                 <h3 id="addDomainModalTitle">添加屏蔽域名</h3>
                 <button class="modal-close" id="addDomainModalClose">
                     <i class="fas fa-times"></i>
                 </button>
             </div>
             <div class="modal-body">
-                <p id="addDomainModalDesc" style="color: var(--text-secondary); margin-bottom: 12px;">输入要屏蔽的域名（如
-                    example.com）：</p>
-                <input type="text" id="addDomainInput" class="modal-input" placeholder="example.com"
-                    style="width: 100%; padding: 10px; border: 1px solid var(--border-color); border-radius: 6px; background: var(--bg-secondary); color: var(--text-primary);">
-                <div style="display: flex; gap: 10px; margin-top: 16px; justify-content: flex-end;">
-                    <button id="addDomainCancelBtn" class="modal-btn"
-                        style="padding: 8px 16px; border: 1px solid var(--border-color); border-radius: 6px; background: var(--bg-secondary); color: var(--text-primary); cursor: pointer;">取消</button>
-                    <button id="addDomainConfirmBtn" class="modal-btn primary"
-                        style="padding: 8px 16px; border: none; border-radius: 6px; background: var(--accent-primary); color: white; cursor: pointer;">添加</button>
+                <div class="add-search-container">
+                    <input type="text" id="addBlockDomainSearchInput" class="add-search-input" placeholder="搜索或输入域名...">
+                    <i class="fas fa-search add-search-icon"></i>
+                </div>
+                <div class="add-domain-list" id="addBlockDomainList" style="height: 300px; margin-top: 10px;">
+                    <div class="add-results-empty" id="addBlockDomainLoading">加载域名列表中...</div>
+                </div>
+                <!-- 底部操作栏 -->
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 16px;">
+                    <div class="add-selected-count">
+                        <span id="addBlockDomainSelectedText">已选择</span>: <span
+                            id="addBlockDomainSelectedCount">0</span>
+                    </div>
+                    <div style="display: flex; gap: 10px;">
+                        <button id="addDomainCancelBtn" class="modal-btn">取消</button>
+                        <button id="addDomainConfirmBtn" class="modal-btn primary">添加屏蔽</button>
+                    </div>
                 </div>
             </div>
         </div>

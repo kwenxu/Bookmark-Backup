@@ -3137,14 +3137,44 @@ async function openBookmark(url) {
         return;
     }
 
-    window.open(url, '_blank');
+    // 使用 tabs.create 以便 background 能拿到 tabId 做“点击记录/时间追踪”归因
+    await openBookmarkNewTab(url, { source: 'history_ui' });
+}
+
+async function reportExtensionBookmarkOpen({ tabId, url, title = '', bookmarkId = null, source = 'history_ui' } = {}) {
+    try {
+        if (typeof chrome === 'undefined' || !chrome.runtime || !chrome.runtime.sendMessage) return;
+        if (typeof tabId !== 'number') return;
+        if (!url || typeof url !== 'string') return;
+        await chrome.runtime.sendMessage({
+            action: 'extensionBookmarkOpen',
+            tabId,
+            url,
+            title,
+            bookmarkId,
+            source
+        });
+    } catch (_) { }
 }
 
 // 在新标签页中打开
-async function openBookmarkNewTab(url) {
+async function openBookmarkNewTab(url, meta = {}) {
     if (!url) return;
     if (chrome && chrome.tabs) {
-        chrome.tabs.create({ url: url });
+        try {
+            const tab = await chrome.tabs.create({ url: url });
+            if (tab && tab.id != null) {
+                await reportExtensionBookmarkOpen({
+                    tabId: tab.id,
+                    url,
+                    title: meta.title || '',
+                    bookmarkId: meta.bookmarkId || null,
+                    source: meta.source || 'history_ui'
+                });
+            }
+        } catch (_) {
+            window.open(url, '_blank');
+        }
     } else {
         window.open(url, '_blank');
     }
@@ -3158,9 +3188,9 @@ async function openInNewTab(url, opts = {}) {
     if (isHyperlink) {
         // 超链接打开：暂不添加特殊标识，直接打开
         // 未来可以考虑创建带标识的组
-        await openBookmarkNewTab(url);
+        await openBookmarkNewTab(url, opts);
     } else {
-        await openBookmarkNewTab(url);
+        await openBookmarkNewTab(url, opts);
     }
 }
 
@@ -3208,7 +3238,7 @@ async function openInNewWindow(url, opts = {}) {
             window.open(url, '_blank');
         }
     } else {
-        await openBookmarkNewWindow(url, incognito);
+        await openBookmarkNewWindow(url, incognito, opts);
     }
 }
 
@@ -3274,11 +3304,21 @@ async function openInSameGroup(url, opts = {}) {
 }
 
 // 在新窗口中打开
-async function openBookmarkNewWindow(url, incognito = false) {
+async function openBookmarkNewWindow(url, incognito = false, meta = {}) {
     if (!url) return;
     if (chrome && chrome.windows) {
         try {
-            await chrome.windows.create({ url: url, incognito: incognito });
+            const created = await chrome.windows.create({ url: url, incognito: incognito });
+            const tabId = created?.tabs?.[0]?.id ?? null;
+            if (tabId != null) {
+                await reportExtensionBookmarkOpen({
+                    tabId,
+                    url,
+                    title: meta.title || '',
+                    bookmarkId: meta.bookmarkId || null,
+                    source: meta.source || 'history_ui'
+                });
+            }
         } catch (error) {
             // 处理无痕模式被禁用的错误
             if (incognito && error.message && error.message.includes('Incognito mode is disabled')) {
@@ -3288,7 +3328,17 @@ async function openBookmarkNewWindow(url, incognito = false) {
                     : 'Incognito mode is disabled.\n\nPlease enable "Allow in Incognito" in extension settings:\n1. Right-click extension icon\n2. Select "Manage extensions"\n3. Enable "Allow in Incognito"';
                 alert(message);
                 // 降级为普通新窗口
-                await chrome.windows.create({ url: url, incognito: false });
+                const created = await chrome.windows.create({ url: url, incognito: false });
+                const tabId = created?.tabs?.[0]?.id ?? null;
+                if (tabId != null) {
+                    await reportExtensionBookmarkOpen({
+                        tabId,
+                        url,
+                        title: meta.title || '',
+                        bookmarkId: meta.bookmarkId || null,
+                        source: meta.source || 'history_ui'
+                    });
+                }
             } else {
                 console.error('[新窗口] 打开失败:', error);
                 window.open(url, '_blank');
@@ -3326,6 +3376,9 @@ async function openInSpecificTabGroup(url, options = {}) {
                 }
                 const tab = await chrome.tabs.create({ url, active: false, windowId: specificGroupWindowId || undefined });
                 await chrome.tabs.group({ groupId: specificTabGroupId, tabIds: tab.id });
+                if (tab && tab.id != null) {
+                    await reportExtensionBookmarkOpen({ tabId: tab.id, url, source: 'history_ui' });
+                }
                 return;
             } catch (err) {
                 // 可能分组或窗口失效，重置后走创建逻辑
@@ -3337,6 +3390,9 @@ async function openInSpecificTabGroup(url, options = {}) {
         const nextNumber = await allocateNextGroupNumber();
         const tab = await chrome.tabs.create({ url, active: false });
         const groupId = await chrome.tabs.group({ tabIds: tab.id });
+        if (tab && tab.id != null) {
+            await reportExtensionBookmarkOpen({ tabId: tab.id, url, source: 'history_ui' });
+        }
         await setSpecificGroupInfo(groupId, tab.windowId || null);
         if (chrome.tabGroups && chrome.tabGroups.update) {
             try { await chrome.tabGroups.update(groupId, { title: String(nextNumber), color: 'blue' }); } catch (_) { }
@@ -3365,7 +3421,10 @@ async function openInSpecificWindow(url, options = {}) {
                 try {
                     const win = await chrome.windows.get(specificWindowId, { populate: false });
                     if (win && win.id) {
-                        await chrome.tabs.create({ windowId: specificWindowId, url });
+                        const tab = await chrome.tabs.create({ windowId: specificWindowId, url });
+                        if (tab && tab.id != null) {
+                            await reportExtensionBookmarkOpen({ tabId: tab.id, url, source: 'history_ui' });
+                        }
                         return;
                     }
                 } catch (_) {
@@ -3375,6 +3434,10 @@ async function openInSpecificWindow(url, options = {}) {
             const created = await chrome.windows.create({ url });
             if (created && created.id) {
                 await setSpecificWindowId(created.id);
+                const firstTabId = created?.tabs?.[0]?.id ?? null;
+                if (firstTabId != null) {
+                    await reportExtensionBookmarkOpen({ tabId: firstTabId, url, source: 'history_ui' });
+                }
                 // 为“同一窗口”创建可见标记页（用于命名），标题使用连续编号
                 try {
                     const nextNum = await allocateNextWindowNumber();
@@ -8535,15 +8598,24 @@ async function openBookmarkWithManualSelection(url) {
                 // 在指定窗口的指定组中打开
                 const tab = await chrome.tabs.create({ url, windowId, active: true });
                 await chrome.tabs.group({ groupId, tabIds: [tab.id] });
+                if (tab && tab.id != null) {
+                    await reportExtensionBookmarkOpen({ tabId: tab.id, url, source: 'history_ui' });
+                }
 
             } catch (error) {
                 console.warn('[手动选择器] 组不存在，在窗口中创建新标签:', error);
-                await chrome.tabs.create({ url, windowId, active: true });
+                const tab = await chrome.tabs.create({ url, windowId, active: true });
+                if (tab && tab.id != null) {
+                    await reportExtensionBookmarkOpen({ tabId: tab.id, url, source: 'history_ui' });
+                }
             }
         }
         // 情况2: 仅窗口
         else if (windowId) {
-            await chrome.tabs.create({ url, windowId, active: true });
+            const tab = await chrome.tabs.create({ url, windowId, active: true });
+            if (tab && tab.id != null) {
+                await reportExtensionBookmarkOpen({ tabId: tab.id, url, source: 'history_ui' });
+            }
         }
         // 情况3: 仅组
         else if (groupId) {
@@ -8551,14 +8623,23 @@ async function openBookmarkWithManualSelection(url) {
                 const group = await chrome.tabGroups.get(groupId);
                 const tab = await chrome.tabs.create({ url, windowId: group.windowId, active: true });
                 await chrome.tabs.group({ groupId, tabIds: [tab.id] });
+                if (tab && tab.id != null) {
+                    await reportExtensionBookmarkOpen({ tabId: tab.id, url, source: 'history_ui' });
+                }
             } catch (error) {
                 console.warn('[手动选择器] 组不存在，在新标签页打开:', error);
-                await chrome.tabs.create({ url, active: true });
+                const tab = await chrome.tabs.create({ url, active: true });
+                if (tab && tab.id != null) {
+                    await reportExtensionBookmarkOpen({ tabId: tab.id, url, source: 'history_ui' });
+                }
             }
         }
         // 情况4: 都不选（新标签页）
         else {
-            await chrome.tabs.create({ url, active: true });
+            const tab = await chrome.tabs.create({ url, active: true });
+            if (tab && tab.id != null) {
+                await reportExtensionBookmarkOpen({ tabId: tab.id, url, source: 'history_ui' });
+            }
         }
 
     } catch (error) {
@@ -8572,5 +8653,13 @@ loadManualSelection();
 
 // 导出到全局供其他模块调用
 try {
+    // Canvas / History UI 里会优先调用这些 window.* 打开函数（否则会 fallback 到 window.open，无法归因）
+    window.openBookmarkNewTab = openBookmarkNewTab;
+    window.openBookmarkNewWindow = openBookmarkNewWindow;
+    window.openInNewTab = openInNewTab;
+    window.openInNewWindow = openInNewWindow;
+    window.openInSpecificTabGroup = openInSpecificTabGroup;
+    window.openInSpecificWindow = openInSpecificWindow;
+    window.reportExtensionBookmarkOpen = reportExtensionBookmarkOpen;
     window.openBookmarkWithManualSelection = openBookmarkWithManualSelection;
 } catch (_) { }

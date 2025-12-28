@@ -1925,6 +1925,62 @@ const i18n = {
         'zh_CN': '清除记录',
         'en': 'Clear Records'
     },
+    trackingBlockBtn: {
+        'zh_CN': '屏蔽管理',
+        'en': 'Block Manager'
+    },
+    trackingBlockModalTitle: {
+        'zh_CN': '时间追踪屏蔽管理',
+        'en': 'Time Tracking Block Manager'
+    },
+    trackingBlockedBookmarksTitle: {
+        'zh_CN': '已屏蔽书签',
+        'en': 'Blocked Bookmarks'
+    },
+    trackingBlockedFoldersTitle: {
+        'zh_CN': '已屏蔽文件夹',
+        'en': 'Blocked Folders'
+    },
+    trackingBlockedDomainsTitle: {
+        'zh_CN': '已屏蔽域名',
+        'en': 'Blocked Domains'
+    },
+    trackingBlockedBookmarksEmpty: {
+        'zh_CN': '暂无已屏蔽书签',
+        'en': 'No blocked bookmarks'
+    },
+    trackingBlockedFoldersEmpty: {
+        'zh_CN': '暂无已屏蔽文件夹',
+        'en': 'No blocked folders'
+    },
+    trackingBlockedDomainsEmpty: {
+        'zh_CN': '暂无已屏蔽域名',
+        'en': 'No blocked domains'
+    },
+    addTrackingBlockDomainModalTitle: {
+        'zh_CN': '添加屏蔽域名（时间追踪）',
+        'en': 'Add Block Domain (Time Tracking)'
+    },
+    selectTrackingBlockFolderModalTitle: {
+        'zh_CN': '选择要屏蔽的文件夹（时间追踪）',
+        'en': 'Select Folder to Block (Time Tracking)'
+    },
+    addTrackingBlockBookmarkModalTitle: {
+        'zh_CN': '添加屏蔽书签（时间追踪）',
+        'en': 'Add Block Bookmark (Time Tracking)'
+    },
+    trackingBlockBookmarkTabTracking: {
+        'zh_CN': '正在追踪',
+        'en': 'Tracking'
+    },
+    trackingBlockBookmarkTabRanking: {
+        'zh_CN': '综合排行',
+        'en': 'Ranking'
+    },
+    trackingBlockBookmarkTabTree: {
+        'zh_CN': '搜索',
+        'en': 'Search'
+    },
     trackingCurrentTitle: {
         'zh_CN': '正在追踪的书签',
         'en': 'Currently Tracking'
@@ -1942,8 +1998,8 @@ const i18n = {
         'en': 'Bookmark'
     },
     trackingHeaderTime: {
-        'zh_CN': '综合时间',
-        'en': 'Composite Time'
+        'zh_CN': '综合时间（当前）',
+        'en': 'Composite Time (Current)'
     },
     trackingHeaderWakes: {
         'zh_CN': '唤醒',
@@ -1954,8 +2010,16 @@ const i18n = {
         'en': 'Active'
     },
     trackingRankingTitle: {
-        'zh_CN': '综合时间排行',
-        'en': 'Composite Time Ranking'
+        'zh_CN': '综合排行',
+        'en': 'Ranking'
+    },
+    trackingRankingTypeComposite: {
+        'zh_CN': '综合时间',
+        'en': 'Composite Time'
+    },
+    trackingRankingTypeWakes: {
+        'zh_CN': '唤醒次数',
+        'en': 'Wake Count'
     },
     trackingRangeToday: {
         'zh_CN': '今天',
@@ -1985,9 +2049,37 @@ const i18n = {
         'zh_CN': '确定要清除所有时间追踪记录吗？此操作不可撤销。',
         'en': 'Are you sure you want to clear all tracking records? This action cannot be undone.'
     },
+    trackingClearRangeConfirm: {
+        'zh_CN': '确定要清除{range}以前的综合排行数据吗？',
+        'en': 'Are you sure you want to clear ranking data older than {range}?'
+    },
+    trackingClearCurrentConfirm: {
+        'zh_CN': '确定要清除正在追踪的会话吗？',
+        'en': 'Are you sure you want to clear current tracking sessions?'
+    },
+    trackingClearRange: {
+        'zh_CN': { week: '一周', month: '一个月', year: '一年', all: '全部' },
+        'en': { week: '1 week', month: '1 month', year: '1 year', all: 'all time' }
+    },
     trackingCleared: {
         'zh_CN': '追踪记录已清除',
         'en': 'Tracking records cleared'
+    },
+    trackingClearedCount: {
+        'zh_CN': '已清除 {count} 条记录',
+        'en': 'Cleared {count} records'
+    },
+    trackingSyncBtn: {
+        'zh_CN': '数据同步',
+        'en': 'Sync Data'
+    },
+    trackingSynced: {
+        'zh_CN': '数据已同步',
+        'en': 'Data synced'
+    },
+    trackingNoSyncNeeded: {
+        'zh_CN': '数据一致，无需同步',
+        'en': 'Data consistent, no sync needed'
     },
     trackingIdle: {
         'zh_CN': '挂机',
@@ -2401,6 +2493,12 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     // 初始化时间捕捉小组件
     initTimeTrackingWidget();
+
+    // 初始化时间追踪屏蔽管理
+    initTrackingBlockModal();
+    initSelectTrackingBlockFolderModal();
+    initAddTrackingBlockDomainModal();
+    initAddTrackingBlockBookmarkModal();
 
     // 初始化右键菜单和拖拽功能
     if (typeof initContextMenu === 'function') {
@@ -3101,6 +3199,85 @@ function applyLanguage() {
     const clearTrackingBtn = document.getElementById('clearTrackingBtn');
     if (clearTrackingBtn) clearTrackingBtn.title = i18n.trackingClearBtn[currentLang];
 
+    // 时间追踪屏蔽按钮和弹窗国际化
+    const trackingBlockBtn = document.getElementById('trackingBlockBtn');
+    if (trackingBlockBtn) {
+        trackingBlockBtn.title = i18n.trackingBlockBtn[currentLang];
+        const textSpan = trackingBlockBtn.querySelector('#trackingBlockText');
+        if (textSpan) textSpan.textContent = currentLang === 'en' ? 'Block' : '屏蔽';
+    }
+
+    const trackingBlockModalTitle = document.getElementById('trackingBlockModalTitle');
+    if (trackingBlockModalTitle) trackingBlockModalTitle.textContent = i18n.trackingBlockModalTitle[currentLang];
+
+    const trackingBlockedBookmarksTitle = document.getElementById('trackingBlockedBookmarksTitle');
+    if (trackingBlockedBookmarksTitle) trackingBlockedBookmarksTitle.textContent = i18n.trackingBlockedBookmarksTitle[currentLang];
+
+    const trackingBlockedFoldersTitle = document.getElementById('trackingBlockedFoldersTitle');
+    if (trackingBlockedFoldersTitle) trackingBlockedFoldersTitle.textContent = i18n.trackingBlockedFoldersTitle[currentLang];
+
+    const trackingBlockedDomainsTitle = document.getElementById('trackingBlockedDomainsTitle');
+    if (trackingBlockedDomainsTitle) trackingBlockedDomainsTitle.textContent = i18n.trackingBlockedDomainsTitle[currentLang];
+
+    const trackingBlockedBookmarksEmptyText = document.getElementById('trackingBlockedBookmarksEmptyText');
+    if (trackingBlockedBookmarksEmptyText) trackingBlockedBookmarksEmptyText.textContent = i18n.trackingBlockedBookmarksEmpty[currentLang];
+
+    const trackingBlockedFoldersEmptyText = document.getElementById('trackingBlockedFoldersEmptyText');
+    if (trackingBlockedFoldersEmptyText) trackingBlockedFoldersEmptyText.textContent = i18n.trackingBlockedFoldersEmpty[currentLang];
+
+    const trackingBlockedDomainsEmptyText = document.getElementById('trackingBlockedDomainsEmptyText');
+    if (trackingBlockedDomainsEmptyText) trackingBlockedDomainsEmptyText.textContent = i18n.trackingBlockedDomainsEmpty[currentLang];
+
+    const addTrackingBlockDomainModalTitle = document.getElementById('addTrackingBlockDomainModalTitle');
+    if (addTrackingBlockDomainModalTitle) addTrackingBlockDomainModalTitle.textContent = i18n.addTrackingBlockDomainModalTitle[currentLang];
+
+    const selectTrackingBlockFolderModalTitle = document.getElementById('selectTrackingBlockFolderModalTitle');
+    if (selectTrackingBlockFolderModalTitle) selectTrackingBlockFolderModalTitle.textContent = i18n.selectTrackingBlockFolderModalTitle[currentLang];
+
+    // 添加域名弹窗的国际化
+    const addTrackingBlockDomainSearchInput = document.getElementById('addTrackingBlockDomainSearchInput');
+    if (addTrackingBlockDomainSearchInput) addTrackingBlockDomainSearchInput.placeholder = currentLang === 'en' ? 'Search or enter domain...' : '搜索或输入域名...';
+
+    const addTrackingBlockDomainSelectedText = document.getElementById('addTrackingBlockDomainSelectedText');
+    if (addTrackingBlockDomainSelectedText) addTrackingBlockDomainSelectedText.textContent = currentLang === 'en' ? 'Selected' : '已选择';
+
+    const addTrackingBlockDomainCancelBtn = document.getElementById('addTrackingBlockDomainCancelBtn');
+    if (addTrackingBlockDomainCancelBtn) addTrackingBlockDomainCancelBtn.textContent = currentLang === 'en' ? 'Cancel' : '取消';
+
+    const addTrackingBlockDomainConfirmBtn = document.getElementById('addTrackingBlockDomainConfirmBtn');
+    if (addTrackingBlockDomainConfirmBtn) addTrackingBlockDomainConfirmBtn.textContent = currentLang === 'en' ? 'Add Block' : '添加屏蔽';
+
+    // 添加书签弹窗的国际化
+    const addTrackingBlockBookmarkModalTitle = document.getElementById('addTrackingBlockBookmarkModalTitle');
+    if (addTrackingBlockBookmarkModalTitle) addTrackingBlockBookmarkModalTitle.textContent = i18n.addTrackingBlockBookmarkModalTitle[currentLang];
+
+    const trackingBlockBookmarkTabTracking = document.getElementById('trackingBlockBookmarkTabTracking');
+    if (trackingBlockBookmarkTabTracking) {
+        trackingBlockBookmarkTabTracking.innerHTML = `<i class="fas fa-broadcast-tower"></i> ${i18n.trackingBlockBookmarkTabTracking[currentLang]}`;
+    }
+
+    const trackingBlockBookmarkTabRanking = document.getElementById('trackingBlockBookmarkTabRanking');
+    if (trackingBlockBookmarkTabRanking) {
+        trackingBlockBookmarkTabRanking.innerHTML = `<i class="fas fa-chart-bar"></i> ${i18n.trackingBlockBookmarkTabRanking[currentLang]}`;
+    }
+
+    const trackingBlockBookmarkTabTree = document.getElementById('trackingBlockBookmarkTabTree');
+    if (trackingBlockBookmarkTabTree) {
+        trackingBlockBookmarkTabTree.innerHTML = `<i class="fas fa-search"></i> ${i18n.trackingBlockBookmarkTabTree[currentLang]}`;
+    }
+
+    const addTrackingBlockBookmarkSearchInput = document.getElementById('addTrackingBlockBookmarkSearchInput');
+    if (addTrackingBlockBookmarkSearchInput) addTrackingBlockBookmarkSearchInput.placeholder = currentLang === 'en' ? 'Search bookmarks...' : '搜索书签...';
+
+    const addTrackingBlockBookmarkSelectedText = document.getElementById('addTrackingBlockBookmarkSelectedText');
+    if (addTrackingBlockBookmarkSelectedText) addTrackingBlockBookmarkSelectedText.textContent = currentLang === 'en' ? 'Selected' : '已选择';
+
+    const addTrackingBlockBookmarkCancelBtn = document.getElementById('addTrackingBlockBookmarkCancelBtn');
+    if (addTrackingBlockBookmarkCancelBtn) addTrackingBlockBookmarkCancelBtn.textContent = currentLang === 'en' ? 'Cancel' : '取消';
+
+    const addTrackingBlockBookmarkConfirmBtn = document.getElementById('addTrackingBlockBookmarkConfirmBtn');
+    if (addTrackingBlockBookmarkConfirmBtn) addTrackingBlockBookmarkConfirmBtn.textContent = currentLang === 'en' ? 'Add Block' : '添加屏蔽';
+
     const trackingCurrentTitle = document.getElementById('trackingCurrentTitle');
     if (trackingCurrentTitle) trackingCurrentTitle.textContent = i18n.trackingCurrentTitle[currentLang];
 
@@ -3131,6 +3308,12 @@ function applyLanguage() {
 
     const trackingRankingTitle = document.getElementById('trackingRankingTitle');
     if (trackingRankingTitle) trackingRankingTitle.textContent = i18n.trackingRankingTitle[currentLang];
+
+    const trackingRankingTypeComposite = document.getElementById('trackingRankingTypeComposite');
+    if (trackingRankingTypeComposite) trackingRankingTypeComposite.textContent = i18n.trackingRankingTypeComposite[currentLang];
+
+    const trackingRankingTypeWakes = document.getElementById('trackingRankingTypeWakes');
+    if (trackingRankingTypeWakes) trackingRankingTypeWakes.textContent = i18n.trackingRankingTypeWakes[currentLang];
 
     const trackingRangeToday = document.getElementById('trackingRangeToday');
     if (trackingRangeToday) trackingRangeToday.textContent = i18n.trackingRangeToday[currentLang];
@@ -4114,37 +4297,70 @@ async function updateTimeTrackingWidget() {
 
             if (response && response.success && response.sessions && response.sessions.length > 0) {
                 const sessions = response.sessions;
+
+                // 按标题分组（与正在追踪的折叠逻辑一致）
+                const groupedSessions = new Map();
+                for (const session of sessions) {
+                    const key = session.title || session.url;
+                    if (!groupedSessions.has(key)) {
+                        groupedSessions.set(key, []);
+                    }
+                    groupedSessions.get(key).push(session);
+                }
+
+                // 转换为显示数据（每组只显示一行，显示总和）
+                const displayItems = [];
+                for (const [groupKey, groupSessions] of groupedSessions) {
+                    const totalCompositeMs = groupSessions.reduce((sum, s) => sum + (s.compositeMs || s.activeMs || 0), 0);
+                    // 确定显示的状态（优先显示最活跃的状态）
+                    const stateOrder = ['active', 'visible', 'paused', 'background', 'sleeping'];
+                    const bestState = groupSessions.reduce((best, s) => {
+                        const bestIdx = stateOrder.indexOf(best);
+                        const currIdx = stateOrder.indexOf(s.state);
+                        return currIdx < bestIdx ? s.state : best;
+                    }, 'sleeping');
+
+                    displayItems.push({
+                        title: groupSessions[0].title,
+                        url: groupSessions[0].url,
+                        state: bestState,
+                        compositeMs: totalCompositeMs,
+                        count: groupSessions.length
+                    });
+                }
+
                 const maxShow = 5;
-                const showSessions = sessions.slice(0, maxShow);
-                const remaining = sessions.length - maxShow;
+                const showItems = displayItems.slice(0, maxShow);
+                const remaining = displayItems.length - maxShow;
 
                 widgetList.innerHTML = '';
 
-                showSessions.forEach(session => {
-                    const item = document.createElement('div');
-                    item.className = 'time-tracking-widget-item';
+                showItems.forEach(item => {
+                    const el = document.createElement('div');
+                    el.className = 'time-tracking-widget-item';
 
                     const stateIcon = document.createElement('span');
                     stateIcon.className = 'item-state';
-                    // 🟢活跃 🟡前台静止 🔵可见参考 ⚪后台 💤睡眠
-                    stateIcon.textContent = session.state === 'active' ? '🟢' :
-                        (session.state === 'sleeping' ? '💤' :
-                            (session.state === 'background' ? '⚪' :
-                                (session.state === 'visible' ? '🔵' : '🟡')));
+                    stateIcon.textContent = item.state === 'active' ? '🟢' :
+                        (item.state === 'sleeping' ? '💤' :
+                            (item.state === 'background' ? '⚪' :
+                                (item.state === 'visible' ? '🔵' : '🟡')));
 
                     const title = document.createElement('span');
                     title.className = 'item-title';
-                    title.textContent = session.title || new URL(session.url).hostname;
-                    title.title = session.title || session.url;
+                    let titleText = item.title || new URL(item.url).hostname;
+                    if (item.count > 1) titleText += ` (${item.count})`;
+                    title.textContent = titleText;
+                    title.title = item.title || item.url;
 
                     const time = document.createElement('span');
                     time.className = 'item-time';
-                    time.textContent = formatActiveTime(session.compositeMs || session.activeMs);
+                    time.textContent = formatActiveTime(item.compositeMs);
 
-                    item.appendChild(stateIcon);
-                    item.appendChild(title);
-                    item.appendChild(time);
-                    widgetList.appendChild(item);
+                    el.appendChild(stateIcon);
+                    el.appendChild(title);
+                    el.appendChild(time);
+                    widgetList.appendChild(el);
                 });
 
                 if (remaining > 0) {
@@ -4738,6 +4954,11 @@ function renderRecommendView() {
         initSelectFolderModal();
         initBlockManageButtons();
 
+        // 初始化时间追踪屏蔽管理
+        initTrackingBlockModal();
+        initSelectTrackingBlockFolderModal();
+        initAddTrackingBlockDomainModal();
+
         // 初始化添加到稍后复习弹窗
         initAddToPostponedModal();
 
@@ -5278,11 +5499,16 @@ async function openInRecommendWindow(url) {
             try {
                 await browserAPI.windows.get(windowId);
                 // 窗口存在，在其中打开新标签页
-                await browserAPI.tabs.create({
+                const tab = await browserAPI.tabs.create({
                     windowId: windowId,
                     url: url,
                     active: true
                 });
+                try {
+                    if (typeof window.reportExtensionBookmarkOpen === 'function' && tab && tab.id != null) {
+                        await window.reportExtensionBookmarkOpen({ tabId: tab.id, url, source: 'recommend_window' });
+                    }
+                } catch (_) { }
                 await browserAPI.windows.update(windowId, { focused: true });
                 return;
             } catch (e) {
@@ -5303,6 +5529,12 @@ async function openInRecommendWindow(url) {
             width, height, left, top,
             focused: true
         });
+        try {
+            const tabId = win?.tabs?.[0]?.id ?? null;
+            if (typeof window.reportExtensionBookmarkOpen === 'function' && tabId != null) {
+                await window.reportExtensionBookmarkOpen({ tabId, url, source: 'recommend_window' });
+            }
+        } catch (_) { }
         // 保存窗口ID到storage，供popup和history共享
         await saveSharedRecommendWindowId(win.id);
 
@@ -5338,6 +5570,32 @@ function initCardInteractions() {
         });
     });
 }
+
+// 捕捉 extension 页面内的超链接打开（<a target="_blank">），统一走 tabs.create 以便做书签归因兜底
+try {
+    document.addEventListener('click', async (e) => {
+        const anchor = e.target && typeof e.target.closest === 'function'
+            ? e.target.closest('a[target="_blank"]')
+            : null;
+        if (!anchor) return;
+
+        const href = anchor.getAttribute('href') || '';
+        if (!href || (!href.startsWith('http://') && !href.startsWith('https://'))) return;
+
+        // 已被其他逻辑处理则跳过
+        if (e.defaultPrevented) return;
+
+        e.preventDefault();
+        e.stopPropagation();
+
+        const title = (anchor.textContent || '').trim();
+        if (typeof window.openBookmarkNewTab === 'function') {
+            await window.openBookmarkNewTab(href, { title, source: 'history_ui_link' });
+        } else {
+            window.open(href, '_blank');
+        }
+    }, true);
+} catch (_) { }
 
 // 应用预设模式
 function applyPresetMode(mode) {
@@ -5466,6 +5724,14 @@ function initTrackingToggle() {
         });
     }
 
+    // 排行类型选择器（综合时间 / 唤醒次数）
+    const rankingTypeSelect = document.getElementById('trackingRankingType');
+    if (rankingTypeSelect) {
+        rankingTypeSelect.addEventListener('change', () => {
+            loadActiveTimeRanking();
+        });
+    }
+
     // 时间范围选择器
     const rangeSelect = document.getElementById('trackingRankingRange');
     if (rangeSelect) {
@@ -5474,28 +5740,12 @@ function initTrackingToggle() {
         });
     }
 
-    // 清除记录按钮
+    // 清除记录按钮 - 改为下拉菜单
     const clearBtn = document.getElementById('clearTrackingBtn');
     if (clearBtn) {
-        clearBtn.addEventListener('click', async (e) => {
+        clearBtn.addEventListener('click', (e) => {
             e.stopPropagation();
-
-            if (!confirm(i18n.trackingClearConfirm[currentLang])) return;
-
-            try {
-                const response = await browserAPI.runtime.sendMessage({
-                    action: 'clearAllTrackingSessions'
-                });
-
-                if (response && response.success) {
-                    // 刷新显示
-                    await loadCurrentTrackingSessions();
-                    await loadActiveTimeRanking();
-                    console.log('[时间捕捉]', i18n.trackingCleared[currentLang]);
-                }
-            } catch (error) {
-                console.error('[时间捕捉] 清除记录失败:', error);
-            }
+            showTrackingClearMenu(clearBtn);
         });
     }
 
@@ -5587,7 +5837,15 @@ function updateTrackingStateModalI18n() {
 
     document.getElementById('stateSleepLabel').textContent = isEn ? 'Sleep' : '睡眠';
     document.getElementById('stateSleepCondition').textContent = isEn ? 'User idle (any tab)' : '用户空闲（任何标签）';
-    document.getElementById('stateSleepExample').textContent = isEn ? 'Away from computer, screen locked' : '离开电脑、锁屏';
+    document.getElementById('stateSleepExample').textContent = isEn ? 'Away from computer, screen locked, tab auto-sleep' : '离开电脑、锁屏、页面自动睡眠';
+
+    // 综合时间公式
+    const formulaEl = document.getElementById('trackingStateFormula');
+    if (formulaEl) {
+        formulaEl.textContent = isEn
+            ? 'Composite = Active×1.0 + Idle×0.8 + Visible×0.5 + Background×0.1'
+            : '综合时间 = 活跃×1.0 + 前台静止×0.8 + 可见参考×0.5 + 后台×0.1';
+    }
 }
 
 // 更新公式说明弹窗的国际化文本
@@ -5658,7 +5916,9 @@ function updateFormulaHelpModalI18n() {
 // 推荐卡片数据
 let recommendCards = [];
 let trackingRefreshInterval = null;
-const TRACKING_REFRESH_INTERVAL = 1000; // 1秒刷新一次，更实时
+let rankingRefreshInterval = null;  // 排行榜刷新定时器
+const TRACKING_REFRESH_INTERVAL = 1000; // 1秒刷新一次当前会话，更实时
+const RANKING_REFRESH_INTERVAL = 1000; // 1秒刷新一次排行榜，与正在追踪同步
 
 // 跳过和屏蔽数据
 let skippedBookmarks = new Set(); // 本次会话跳过的书签（内存，刷新页面后清空）
@@ -6267,6 +6527,9 @@ function initRefreshSettingsModal() {
     }
 }
 
+let addBlockDomainSelected = new Set();
+let addBlockDomainData = [];
+
 // 初始化添加域名弹窗
 function initAddDomainModal() {
     const modal = document.getElementById('addDomainModal');
@@ -6275,11 +6538,11 @@ function initAddDomainModal() {
     const closeBtn = document.getElementById('addDomainModalClose');
     const cancelBtn = document.getElementById('addDomainCancelBtn');
     const confirmBtn = document.getElementById('addDomainConfirmBtn');
-    const input = document.getElementById('addDomainInput');
+    const searchInput = document.getElementById('addBlockDomainSearchInput');
 
     const hideModal = () => {
         modal.classList.remove('show');
-        if (input) input.value = '';
+        if (searchInput) searchInput.value = '';
     };
 
     if (closeBtn) closeBtn.onclick = hideModal;
@@ -6289,21 +6552,44 @@ function initAddDomainModal() {
         if (e.target === modal) hideModal();
     };
 
-    if (confirmBtn) {
-        confirmBtn.onclick = async () => {
-            const domain = input.value.trim();
-            if (domain) {
-                await blockDomain(domain);
-                hideModal();
-                await loadBlockedLists();
-                await refreshRecommendCards();
-            }
+    // 搜索输入
+    let searchTimer = null;
+    if (searchInput) {
+        searchInput.oninput = () => {
+            clearTimeout(searchTimer);
+            searchTimer = setTimeout(() => {
+                filterBlockDomainList(searchInput.value);
+            }, 200);
+        };
+        // Allow Enter to confirm
+        searchInput.onkeypress = (e) => {
+            if (e.key === 'Enter') confirmBtn.click();
         };
     }
 
-    if (input) {
-        input.onkeypress = (e) => {
-            if (e.key === 'Enter') confirmBtn.click();
+    if (confirmBtn) {
+        confirmBtn.onclick = async () => {
+            const selectedDomains = Array.from(addBlockDomainSelected);
+
+            // Allow manual entry if not in list
+            const inputVal = searchInput ? searchInput.value.trim() : '';
+            if (inputVal && !addBlockDomainSelected.has(inputVal)) {
+                if (inputVal.includes('.') || inputVal.includes('localhost')) {
+                    selectedDomains.push(inputVal);
+                }
+            }
+
+            if (selectedDomains.length > 0) {
+                for (const domain of selectedDomains) {
+                    await blockDomain(domain);
+                }
+                hideModal();
+                await loadBlockedLists();
+                await refreshRecommendCards();
+            } else {
+                const isZh = currentLang === 'zh_CN';
+                alert(isZh ? '请选择或输入要屏蔽的域名' : 'Please select or enter a domain to block');
+            }
         };
     }
 }
@@ -6327,16 +6613,123 @@ function initSelectFolderModal() {
 }
 
 // 显示添加域名弹窗
-function showAddDomainModal() {
+async function showAddDomainModal() {
     const modal = document.getElementById('addDomainModal');
     if (modal) {
-        modal.classList.add('show');
-        const input = document.getElementById('addDomainInput');
-        if (input) {
-            input.value = '';
-            input.focus();
+        addBlockDomainSelected.clear();
+        updateBlockDomainCount();
+        const searchInput = document.getElementById('addBlockDomainSearchInput');
+        if (searchInput) {
+            searchInput.value = '';
+            searchInput.focus();
         }
+
+        modal.classList.add('show');
+        await loadBlockDomainList();
     }
+}
+
+// 加载屏蔽域名列表
+async function loadBlockDomainList() {
+    const listEl = document.getElementById('addBlockDomainList');
+    if (!listEl) return;
+
+    const isZh = currentLang === 'zh_CN';
+    listEl.innerHTML = `<div class="add-results-empty">${isZh ? '加载中...' : 'Loading...'}</div>`;
+
+    try {
+        const allBookmarks = await getAllBookmarksFlat();
+        const blocked = await getBlockedBookmarks();
+        const blockedDomains = new Set(blocked.domains);
+
+        const domainMap = new Map();
+        for (const b of allBookmarks) {
+            if (!b.url) continue;
+            try {
+                const url = new URL(b.url);
+                const domain = url.hostname;
+                if (!domainMap.has(domain)) {
+                    domainMap.set(domain, { count: 0 });
+                }
+                domainMap.get(domain).count++;
+            } catch { }
+        }
+
+        const validDomains = [];
+        for (const [domain, data] of domainMap.entries()) {
+            if (!blockedDomains.has(domain)) {
+                validDomains.push([domain, data]);
+            }
+        }
+
+        addBlockDomainData = validDomains.sort((a, b) => b[1].count - a[1].count);
+        renderBlockDomainList(addBlockDomainData);
+
+    } catch (e) {
+        console.error('Failed to load domains', e);
+        const isZh = currentLang === 'zh_CN';
+        listEl.innerHTML = `<div class="add-results-empty">${isZh ? '加载失败' : 'Failed to load'}</div>`;
+    }
+}
+
+// 渲染屏蔽域名列表
+function renderBlockDomainList(domains) {
+    const listEl = document.getElementById('addBlockDomainList');
+    if (!listEl) return;
+
+    const displayDomains = domains.slice(0, 100);
+    const isZh = currentLang === 'zh_CN';
+
+    if (displayDomains.length === 0) {
+        listEl.innerHTML = `<div class="add-results-empty">${isZh ? '没有可屏蔽的新域名' : 'No new domains to block'}</div>`;
+        return;
+    }
+
+    listEl.innerHTML = displayDomains.map(([domain, data]) => `
+        <div class="add-domain-item ${addBlockDomainSelected.has(domain) ? 'selected' : ''}" data-domain="${escapeHtml(domain)}">
+            <input type="checkbox" ${addBlockDomainSelected.has(domain) ? 'checked' : ''}>
+            <div class="add-domain-info">
+                <div class="add-domain-name">${escapeHtml(domain)}</div>
+                <div class="add-domain-count">${data.count} ${isZh ? '个书签' : 'bookmarks'}</div>
+            </div>
+        </div>
+    `).join('');
+
+    listEl.querySelectorAll('.add-domain-item').forEach(item => {
+        item.addEventListener('click', () => {
+            const domain = item.dataset.domain;
+            const checkbox = item.querySelector('input[type="checkbox"]');
+            if (addBlockDomainSelected.has(domain)) {
+                addBlockDomainSelected.delete(domain);
+                item.classList.remove('selected');
+                checkbox.checked = false;
+            } else {
+                addBlockDomainSelected.add(domain);
+                item.classList.add('selected');
+                checkbox.checked = true;
+            }
+            updateBlockDomainCount();
+        });
+    });
+}
+
+// 过滤屏蔽域名列表
+function filterBlockDomainList(keyword) {
+    if (!keyword.trim()) {
+        renderBlockDomainList(addBlockDomainData);
+        return;
+    }
+    const keywordLower = keyword.toLowerCase();
+    const filtered = addBlockDomainData.filter(([domain]) =>
+        domain.toLowerCase().includes(keywordLower)
+    );
+    renderBlockDomainList(filtered);
+}
+
+// 更新选中数量
+function updateBlockDomainCount() {
+    const el = document.getElementById('addBlockDomainSelectedCount');
+    if (el) el.textContent = addBlockDomainSelected.size;
 }
 
 // 显示选择文件夹弹窗
@@ -6425,6 +6818,1048 @@ function initBlockManageButtons() {
 
     if (addDomainBtn) {
         addDomainBtn.onclick = () => showAddDomainModal();
+    }
+}
+
+// =============================================================================
+// 时间追踪屏蔽管理
+// =============================================================================
+
+let trackingBlockDomainSelected = new Set();
+let trackingBlockDomainData = [];
+
+// 获取时间追踪屏蔽列表
+async function getTrackingBlocked() {
+    try {
+        const result = await new Promise(resolve => {
+            browserAPI.storage.local.get(['timetracking_blocked'], resolve);
+        });
+        return result.timetracking_blocked || {
+            bookmarks: [],
+            folders: [],
+            domains: []
+        };
+    } catch (e) {
+        return { bookmarks: [], folders: [], domains: [] };
+    }
+}
+
+function normalizeTrackingDomain(domain) {
+    if (!domain || typeof domain !== 'string') return '';
+    return domain.trim().toLowerCase().replace(/^www\./, '');
+}
+
+function normalizeTrackingUrl(url) {
+    if (!url || typeof url !== 'string') return null;
+    try {
+        const parsed = new URL(url);
+        if (!['http:', 'https:'].includes(parsed.protocol)) return null;
+        let normalized = parsed.origin + parsed.pathname;
+        if (parsed.search) {
+            normalized += parsed.search;
+        }
+        normalized = normalized.replace(/\/+$/, '');
+        return normalized.toLowerCase();
+    } catch {
+        return null;
+    }
+}
+
+let trackingBookmarkCache = {
+    loadedAt: 0,
+    idToParents: new Map(),
+    urlToIds: new Map()
+};
+
+async function getTrackingBookmarkCache() {
+    const now = Date.now();
+    if (trackingBookmarkCache.loadedAt && (now - trackingBookmarkCache.loadedAt) < 60 * 1000) {
+        return trackingBookmarkCache;
+    }
+
+    const idToParents = new Map();
+    const urlToIds = new Map();
+
+    try {
+        const tree = await browserAPI.bookmarks.getTree();
+        const traverse = (nodes, ancestors = []) => {
+            for (const node of nodes) {
+                if (node.url) {
+                    idToParents.set(node.id, ancestors);
+                    const normalizedUrl = normalizeTrackingUrl(node.url);
+                    if (normalizedUrl) {
+                        if (!urlToIds.has(normalizedUrl)) {
+                            urlToIds.set(normalizedUrl, new Set());
+                        }
+                        urlToIds.get(normalizedUrl).add(node.id);
+                    }
+                }
+                if (node.children) {
+                    const nextAncestors = node.url ? ancestors : [...ancestors, node.id];
+                    traverse(node.children, nextAncestors);
+                }
+            }
+        };
+        traverse(tree, []);
+    } catch (e) {
+        console.warn('[时间追踪屏蔽] 构建书签缓存失败:', e);
+    }
+
+    trackingBookmarkCache = {
+        loadedAt: now,
+        idToParents,
+        urlToIds
+    };
+
+    return trackingBookmarkCache;
+}
+
+async function getTrackingBlockedSets() {
+    const blocked = await getTrackingBlocked();
+    return {
+        bookmarks: new Set(blocked.bookmarks || []),
+        folders: new Set(blocked.folders || []),
+        domains: new Set((blocked.domains || []).map(normalizeTrackingDomain).filter(Boolean))
+    };
+}
+
+function isBookmarkIdBlockedByFolders(bookmarkId, blockedFolders, cache) {
+    if (!bookmarkId || blockedFolders.size === 0) return false;
+    const parentIds = cache.idToParents.get(bookmarkId) || [];
+    for (const parentId of parentIds) {
+        if (blockedFolders.has(parentId)) return true;
+    }
+    return false;
+}
+
+async function isTrackingItemBlocked(item, blockedSets, cache) {
+    if (item.bookmarkId && blockedSets.bookmarks.has(item.bookmarkId)) {
+        return true;
+    }
+
+    if (item.bookmarkId && isBookmarkIdBlockedByFolders(item.bookmarkId, blockedSets.folders, cache)) {
+        return true;
+    }
+
+    if (item.url && blockedSets.domains.size > 0) {
+        try {
+            const domain = normalizeTrackingDomain(new URL(item.url).hostname);
+            if (domain && blockedSets.domains.has(domain)) {
+                return true;
+            }
+        } catch { }
+    }
+
+    if (!item.bookmarkId && item.url) {
+        const normalizedUrl = normalizeTrackingUrl(item.url);
+        if (normalizedUrl && cache.urlToIds.has(normalizedUrl)) {
+            for (const id of cache.urlToIds.get(normalizedUrl)) {
+                if (blockedSets.bookmarks.has(id)) return true;
+                if (isBookmarkIdBlockedByFolders(id, blockedSets.folders, cache)) return true;
+            }
+        }
+    }
+
+    return false;
+}
+
+// 检查书签是否被时间追踪屏蔽
+async function isTrackingBlocked(bookmark) {
+    const blocked = await getTrackingBlocked();
+    const blockedDomains = new Set((blocked.domains || []).map(normalizeTrackingDomain).filter(Boolean));
+
+    // 检查书签ID
+    if (blocked.bookmarks.includes(bookmark.id)) {
+        return true;
+    }
+
+    // 检查文件夹
+    if (bookmark.parentId && blocked.folders.includes(bookmark.parentId)) {
+        return true;
+    }
+    if (bookmark.ancestorFolderIds && bookmark.ancestorFolderIds.length > 0) {
+        for (const folderId of bookmark.ancestorFolderIds) {
+            if (blocked.folders.includes(folderId)) return true;
+        }
+    }
+
+    // 检查域名
+    if (bookmark.url) {
+        try {
+            const url = new URL(bookmark.url);
+            if (blockedDomains.has(normalizeTrackingDomain(url.hostname))) {
+                return true;
+            }
+        } catch { }
+    }
+
+    return false;
+}
+
+// 屏蔽/恢复书签（时间追踪）
+async function blockTrackingBookmark(bookmarkId) {
+    try {
+        const blocked = await getTrackingBlocked();
+        if (!blocked.bookmarks.includes(bookmarkId)) {
+            blocked.bookmarks.push(bookmarkId);
+            await browserAPI.storage.local.set({ timetracking_blocked: blocked });
+        }
+        return true;
+    } catch (e) {
+        return false;
+    }
+}
+
+async function unblockTrackingBookmark(bookmarkId) {
+    try {
+        const blocked = await getTrackingBlocked();
+        blocked.bookmarks = blocked.bookmarks.filter(id => id !== bookmarkId);
+        await browserAPI.storage.local.set({ timetracking_blocked: blocked });
+        return true;
+    } catch (e) {
+        return false;
+    }
+}
+
+// 屏蔽/恢复文件夹（时间追踪）
+async function blockTrackingFolder(folderId) {
+    try {
+        const blocked = await getTrackingBlocked();
+        if (!blocked.folders.includes(folderId)) {
+            blocked.folders.push(folderId);
+            await browserAPI.storage.local.set({ timetracking_blocked: blocked });
+        }
+        return true;
+    } catch (e) {
+        return false;
+    }
+}
+
+async function unblockTrackingFolder(folderId) {
+    try {
+        const blocked = await getTrackingBlocked();
+        blocked.folders = blocked.folders.filter(id => id !== folderId);
+        await browserAPI.storage.local.set({ timetracking_blocked: blocked });
+        return true;
+    } catch (e) {
+        return false;
+    }
+}
+
+// 屏蔽/恢复域名（时间追踪）
+async function blockTrackingDomain(domain) {
+    try {
+        const blocked = await getTrackingBlocked();
+        const normalized = normalizeTrackingDomain(domain);
+        if (!normalized) return false;
+        if (!blocked.domains.includes(normalized)) {
+            blocked.domains.push(normalized);
+            await browserAPI.storage.local.set({ timetracking_blocked: blocked });
+        }
+        return true;
+    } catch (e) {
+        return false;
+    }
+}
+
+async function unblockTrackingDomain(domain) {
+    try {
+        const blocked = await getTrackingBlocked();
+        const normalized = normalizeTrackingDomain(domain);
+        blocked.domains = blocked.domains.filter(d => d !== normalized);
+        await browserAPI.storage.local.set({ timetracking_blocked: blocked });
+        return true;
+    } catch (e) {
+        return false;
+    }
+}
+
+// 初始化时间追踪屏蔽管理弹窗
+function initTrackingBlockModal() {
+    const modal = document.getElementById('trackingBlockModal');
+    const blockBtn = document.getElementById('trackingBlockBtn');
+    const closeBtn = document.getElementById('trackingBlockModalClose');
+    const addFolderBtn = document.getElementById('addTrackingBlockFolderBtn');
+    const addDomainBtn = document.getElementById('addTrackingBlockDomainBtn');
+    const addBookmarkBtn = document.getElementById('addTrackingBlockBookmarkBtn');
+
+    console.log('[时间追踪屏蔽] 初始化屏蔽管理弹窗, modal:', !!modal, ', blockBtn:', !!blockBtn);
+
+    if (!modal) {
+        console.warn('[时间追踪屏蔽] 弹窗元素未找到');
+        return;
+    }
+
+    // 打开弹窗
+    if (blockBtn) {
+        blockBtn.onclick = async () => {
+            console.log('[时间追踪屏蔽] 点击屏蔽按钮');
+            await loadTrackingBlockedLists();
+            modal.classList.add('show');
+        };
+        console.log('[时间追踪屏蔽] 屏蔽按钮事件已绑定');
+    } else {
+        console.warn('[时间追踪屏蔽] 屏蔽按钮元素未找到');
+    }
+
+    // 关闭弹窗
+    const hideModal = () => modal.classList.remove('show');
+    if (closeBtn) closeBtn.onclick = hideModal;
+    modal.onclick = (e) => {
+        if (e.target === modal) hideModal();
+    };
+
+    // 添加书签按钮
+    if (addBookmarkBtn) {
+        addBookmarkBtn.onclick = () => showAddTrackingBlockBookmarkModal();
+    }
+
+    // 添加文件夹按钮
+    if (addFolderBtn) {
+        addFolderBtn.onclick = () => showSelectTrackingBlockFolderModal();
+    }
+
+    // 添加域名按钮
+    if (addDomainBtn) {
+        addDomainBtn.onclick = () => showAddTrackingBlockDomainModal();
+    }
+}
+
+// 加载时间追踪屏蔽列表
+async function loadTrackingBlockedLists() {
+    const blocked = await getTrackingBlocked();
+
+    // 加载已屏蔽书签
+    await loadTrackingBlockedBookmarksList(blocked.bookmarks);
+
+    // 加载已屏蔽文件夹
+    await loadTrackingBlockedFoldersList(blocked.folders);
+
+    // 加载已屏蔽域名
+    await loadTrackingBlockedDomainsList(blocked.domains);
+}
+
+// 加载已屏蔽书签列表（时间追踪）
+async function loadTrackingBlockedBookmarksList(bookmarkIds) {
+    const listEl = document.getElementById('trackingBlockedBookmarksList');
+    const countEl = document.getElementById('trackingBlockedBookmarksCount');
+    const emptyEl = document.getElementById('trackingBlockedBookmarksEmpty');
+    if (!listEl) return;
+
+    // 更新计数
+    if (countEl) countEl.textContent = bookmarkIds.length;
+
+    // 清空列表
+    const items = listEl.querySelectorAll('.block-item');
+    items.forEach(item => item.remove());
+
+    if (bookmarkIds.length === 0) {
+        if (emptyEl) emptyEl.style.display = 'block';
+        return;
+    }
+
+    if (emptyEl) emptyEl.style.display = 'none';
+
+    const isZh = currentLang === 'zh_CN';
+
+    for (const id of bookmarkIds) {
+        try {
+            const bookmarks = await new Promise(resolve => {
+                browserAPI.bookmarks.get(id, resolve);
+            });
+            if (!bookmarks || bookmarks.length === 0) continue;
+            const bookmark = bookmarks[0];
+
+            const item = document.createElement('div');
+            item.className = 'block-item';
+            item.innerHTML = `
+                <img class="block-item-icon" src="${getFaviconUrl(bookmark.url)}" alt="">
+                <div class="block-item-info">
+                    <div class="block-item-title">${escapeHtml(bookmark.title || bookmark.url)}</div>
+                </div>
+                <button class="block-item-btn">${isZh ? '恢复' : 'Restore'}</button>
+            `;
+
+            const btn = item.querySelector('.block-item-btn');
+            btn.onclick = async () => {
+                await unblockTrackingBookmark(id);
+                await loadTrackingBlockedLists();
+            };
+
+            listEl.appendChild(item);
+        } catch (e) { }
+    }
+}
+
+// 加载已屏蔽文件夹列表（时间追踪）
+async function loadTrackingBlockedFoldersList(folderIds) {
+    const listEl = document.getElementById('trackingBlockedFoldersList');
+    const countEl = document.getElementById('trackingBlockedFoldersCount');
+    const emptyEl = document.getElementById('trackingBlockedFoldersEmpty');
+    if (!listEl) return;
+
+    if (countEl) countEl.textContent = folderIds.length;
+
+    const items = listEl.querySelectorAll('.block-item');
+    items.forEach(item => item.remove());
+
+    if (folderIds.length === 0) {
+        if (emptyEl) emptyEl.style.display = 'block';
+        return;
+    }
+
+    if (emptyEl) emptyEl.style.display = 'none';
+
+    const isZh = currentLang === 'zh_CN';
+
+    for (const id of folderIds) {
+        try {
+            const folders = await new Promise(resolve => {
+                browserAPI.bookmarks.get(id, resolve);
+            });
+            if (!folders || folders.length === 0) continue;
+            const folder = folders[0];
+
+            const item = document.createElement('div');
+            item.className = 'block-item';
+            item.innerHTML = `
+                <i class="fas fa-folder block-item-icon" style="font-size: 18px; color: var(--warning);"></i>
+                <div class="block-item-info">
+                    <div class="block-item-title">${escapeHtml(folder.title)}</div>
+                </div>
+                <button class="block-item-btn" data-id="${id}">${isZh ? '恢复' : 'Restore'}</button>
+            `;
+
+            const btn = item.querySelector('.block-item-btn');
+            btn.onclick = async () => {
+                await unblockTrackingFolder(id);
+                await loadTrackingBlockedLists();
+            };
+
+            listEl.appendChild(item);
+        } catch (e) { }
+    }
+}
+
+// 加载已屏蔽域名列表（时间追踪）
+async function loadTrackingBlockedDomainsList(domains) {
+    const listEl = document.getElementById('trackingBlockedDomainsList');
+    const countEl = document.getElementById('trackingBlockedDomainsCount');
+    const emptyEl = document.getElementById('trackingBlockedDomainsEmpty');
+    if (!listEl) return;
+
+    if (countEl) countEl.textContent = domains.length;
+
+    const items = listEl.querySelectorAll('.block-item');
+    items.forEach(item => item.remove());
+
+    if (domains.length === 0) {
+        if (emptyEl) emptyEl.style.display = 'block';
+        return;
+    }
+
+    if (emptyEl) emptyEl.style.display = 'none';
+
+    const isZh = currentLang === 'zh_CN';
+
+    for (const domain of domains) {
+        const item = document.createElement('div');
+        item.className = 'block-item';
+        item.innerHTML = `
+            <i class="fas fa-globe block-item-icon" style="font-size: 18px; color: var(--accent-primary);"></i>
+            <div class="block-item-info">
+                <div class="block-item-title">${escapeHtml(domain)}</div>
+            </div>
+            <button class="block-item-btn" data-domain="${domain}">${isZh ? '恢复' : 'Restore'}</button>
+        `;
+
+        const btn = item.querySelector('.block-item-btn');
+        btn.onclick = async () => {
+            await unblockTrackingDomain(domain);
+            await loadTrackingBlockedLists();
+        };
+
+        listEl.appendChild(item);
+    }
+}
+
+// 显示选择文件夹弹窗（时间追踪）
+async function showSelectTrackingBlockFolderModal() {
+    const modal = document.getElementById('selectTrackingBlockFolderModal');
+    const container = document.getElementById('trackingBlockFolderTreeContainer');
+    if (!modal || !container) return;
+
+    // 获取已屏蔽的文件夹
+    const blocked = await getTrackingBlocked();
+    const blockedFolderSet = new Set(blocked.folders);
+
+    // 获取所有文件夹
+    const tree = await new Promise(resolve => {
+        browserAPI.bookmarks.getTree(resolve);
+    });
+
+    // 生成文件夹树HTML
+    container.innerHTML = '';
+
+    function countBookmarks(node) {
+        let count = 0;
+        if (node.url) count = 1;
+        if (node.children) {
+            for (const child of node.children) {
+                count += countBookmarks(child);
+            }
+        }
+        return count;
+    }
+
+    function renderFolders(nodes, parentEl, depth = 0) {
+        const isZh = currentLang === 'zh_CN';
+        const unnamedFolder = i18n.unnamedFolderLabel ? i18n.unnamedFolderLabel[currentLang] : '未命名文件夹';
+        for (const node of nodes) {
+            if (!node.url && node.children) {
+                if (blockedFolderSet.has(node.id)) continue;
+
+                const bookmarkCount = countBookmarks(node);
+
+                const nodeWrapper = document.createElement('div');
+                nodeWrapper.className = 'folder-tree-node';
+
+                const item = document.createElement('div');
+                item.className = 'folder-tree-item';
+                item.innerHTML = `
+                    <i class="fas fa-folder"></i>
+                    <span>${escapeHtml(node.title || unnamedFolder)}</span>
+                    <span class="folder-count">${bookmarkCount}</span>
+                `;
+                item.onclick = async () => {
+                    await blockTrackingFolder(node.id);
+                    modal.classList.remove('show');
+                    await loadTrackingBlockedLists();
+                };
+                nodeWrapper.appendChild(item);
+
+                const childFolders = node.children.filter(c => !c.url && c.children && !blockedFolderSet.has(c.id));
+                if (childFolders.length > 0) {
+                    const childrenContainer = document.createElement('div');
+                    childrenContainer.className = 'folder-tree-children';
+                    renderFolders(node.children, childrenContainer, depth + 1);
+                    nodeWrapper.appendChild(childrenContainer);
+                }
+
+                parentEl.appendChild(nodeWrapper);
+            }
+        }
+    }
+
+    renderFolders(tree, container);
+    modal.classList.add('show');
+}
+
+// 初始化选择文件夹弹窗（时间追踪）
+function initSelectTrackingBlockFolderModal() {
+    const modal = document.getElementById('selectTrackingBlockFolderModal');
+    if (!modal) return;
+
+    const closeBtn = document.getElementById('selectTrackingBlockFolderModalClose');
+
+    const hideModal = () => modal.classList.remove('show');
+
+    if (closeBtn) closeBtn.onclick = hideModal;
+
+    modal.onclick = (e) => {
+        if (e.target === modal) hideModal();
+    };
+}
+
+// 显示添加域名弹窗（时间追踪）
+async function showAddTrackingBlockDomainModal() {
+    const modal = document.getElementById('addTrackingBlockDomainModal');
+    if (modal) {
+        trackingBlockDomainSelected.clear();
+        updateTrackingBlockDomainCount();
+        const searchInput = document.getElementById('addTrackingBlockDomainSearchInput');
+        if (searchInput) {
+            searchInput.value = '';
+            searchInput.focus();
+        }
+
+        modal.classList.add('show');
+        await loadTrackingBlockDomainList();
+    }
+}
+
+// 加载屏蔽域名列表（时间追踪）
+async function loadTrackingBlockDomainList() {
+    const listEl = document.getElementById('addTrackingBlockDomainList');
+    if (!listEl) return;
+
+    const isZh = currentLang === 'zh_CN';
+    listEl.innerHTML = `<div class="add-results-empty">${isZh ? '加载中...' : 'Loading...'}</div>`;
+
+    try {
+        const allBookmarks = await getAllBookmarksFlat();
+        const blocked = await getTrackingBlocked();
+        const blockedDomains = new Set((blocked.domains || []).map(normalizeTrackingDomain).filter(Boolean));
+
+        const domainMap = new Map();
+        for (const b of allBookmarks) {
+            if (!b.url) continue;
+            try {
+                const url = new URL(b.url);
+                const domain = normalizeTrackingDomain(url.hostname);
+                if (!domain) continue;
+                if (!domainMap.has(domain)) {
+                    domainMap.set(domain, { count: 0 });
+                }
+                domainMap.get(domain).count++;
+            } catch { }
+        }
+
+        const validDomains = [];
+        for (const [domain, data] of domainMap.entries()) {
+            if (!blockedDomains.has(domain)) {
+                validDomains.push([domain, data]);
+            }
+        }
+
+        trackingBlockDomainData = validDomains.sort((a, b) => b[1].count - a[1].count);
+        renderTrackingBlockDomainList(trackingBlockDomainData);
+
+    } catch (e) {
+        console.error('Failed to load domains', e);
+        const isZh = currentLang === 'zh_CN';
+        listEl.innerHTML = `<div class="add-results-empty">${isZh ? '加载失败' : 'Failed to load'}</div>`;
+    }
+}
+
+// 渲染屏蔽域名列表（时间追踪）
+function renderTrackingBlockDomainList(domains) {
+    const listEl = document.getElementById('addTrackingBlockDomainList');
+    if (!listEl) return;
+
+    const displayDomains = domains.slice(0, 100);
+    const isZh = currentLang === 'zh_CN';
+
+    if (displayDomains.length === 0) {
+        listEl.innerHTML = `<div class="add-results-empty">${isZh ? '没有可屏蔽的新域名' : 'No new domains to block'}</div>`;
+        return;
+    }
+
+    listEl.innerHTML = displayDomains.map(([domain, data]) => `
+        <div class="add-domain-item ${trackingBlockDomainSelected.has(domain) ? 'selected' : ''}" data-domain="${escapeHtml(domain)}">
+            <input type="checkbox" ${trackingBlockDomainSelected.has(domain) ? 'checked' : ''}>
+            <div class="add-domain-info">
+                <div class="add-domain-name">${escapeHtml(domain)}</div>
+                <div class="add-domain-count">${data.count} ${isZh ? '个书签' : 'bookmarks'}</div>
+            </div>
+        </div>
+    `).join('');
+
+    listEl.querySelectorAll('.add-domain-item').forEach(item => {
+        item.addEventListener('click', () => {
+            const domain = item.dataset.domain;
+            const checkbox = item.querySelector('input[type="checkbox"]');
+            if (trackingBlockDomainSelected.has(domain)) {
+                trackingBlockDomainSelected.delete(domain);
+                item.classList.remove('selected');
+                checkbox.checked = false;
+            } else {
+                trackingBlockDomainSelected.add(domain);
+                item.classList.add('selected');
+                checkbox.checked = true;
+            }
+            updateTrackingBlockDomainCount();
+        });
+    });
+}
+
+// 过滤屏蔽域名列表（时间追踪）
+function filterTrackingBlockDomainList(keyword) {
+    if (!keyword.trim()) {
+        renderTrackingBlockDomainList(trackingBlockDomainData);
+        return;
+    }
+    const keywordLower = keyword.toLowerCase();
+    const filtered = trackingBlockDomainData.filter(([domain]) =>
+        domain.toLowerCase().includes(keywordLower)
+    );
+    renderTrackingBlockDomainList(filtered);
+}
+
+// 更新选中数量（时间追踪）
+function updateTrackingBlockDomainCount() {
+    const el = document.getElementById('addTrackingBlockDomainSelectedCount');
+    if (el) el.textContent = trackingBlockDomainSelected.size;
+}
+
+// 初始化添加域名弹窗（时间追踪）
+function initAddTrackingBlockDomainModal() {
+    const modal = document.getElementById('addTrackingBlockDomainModal');
+    if (!modal) return;
+
+    const closeBtn = document.getElementById('addTrackingBlockDomainModalClose');
+    const cancelBtn = document.getElementById('addTrackingBlockDomainCancelBtn');
+    const confirmBtn = document.getElementById('addTrackingBlockDomainConfirmBtn');
+    const searchInput = document.getElementById('addTrackingBlockDomainSearchInput');
+
+    const hideModal = () => {
+        modal.classList.remove('show');
+        if (searchInput) searchInput.value = '';
+    };
+
+    if (closeBtn) closeBtn.onclick = hideModal;
+    if (cancelBtn) cancelBtn.onclick = hideModal;
+
+    modal.onclick = (e) => {
+        if (e.target === modal) hideModal();
+    };
+
+    // 搜索输入
+    let searchTimer = null;
+    if (searchInput) {
+        searchInput.oninput = () => {
+            clearTimeout(searchTimer);
+            searchTimer = setTimeout(() => {
+                filterTrackingBlockDomainList(searchInput.value);
+            }, 200);
+        };
+        searchInput.onkeypress = (e) => {
+            if (e.key === 'Enter') confirmBtn.click();
+        };
+    }
+
+    if (confirmBtn) {
+        confirmBtn.onclick = async () => {
+            const selectedDomains = Array.from(trackingBlockDomainSelected);
+
+            // Allow manual entry if not in list
+            const inputVal = searchInput ? searchInput.value.trim() : '';
+            if (inputVal && !trackingBlockDomainSelected.has(inputVal)) {
+                if (inputVal.includes('.') || inputVal.includes('localhost')) {
+                    selectedDomains.push(inputVal);
+                }
+            }
+
+            if (selectedDomains.length > 0) {
+                for (const domain of selectedDomains) {
+                    await blockTrackingDomain(domain);
+                }
+                hideModal();
+                await loadTrackingBlockedLists();
+            } else {
+                const isZh = currentLang === 'zh_CN';
+                alert(isZh ? '请选择或输入要屏蔽的域名' : 'Please select or enter a domain to block');
+            }
+        };
+    }
+}
+
+// =============================================================================
+// 时间追踪添加屏蔽书签弹窗
+// =============================================================================
+
+let trackingBlockBookmarkSelected = new Set();
+
+// 显示添加屏蔽书签弹窗（时间追踪）
+async function showAddTrackingBlockBookmarkModal() {
+    const modal = document.getElementById('addTrackingBlockBookmarkModal');
+    if (!modal) return;
+
+    trackingBlockBookmarkSelected.clear();
+    updateTrackingBlockBookmarkCount();
+
+    // 重置标签页
+    const tabs = modal.querySelectorAll('.add-postponed-tab');
+    const panels = modal.querySelectorAll('.add-postponed-panel');
+    tabs.forEach(t => t.classList.remove('active'));
+    panels.forEach(p => p.classList.remove('active'));
+    tabs[0]?.classList.add('active');
+    panels[0]?.classList.add('active');
+
+    modal.classList.add('show');
+
+    // 加载正在追踪的书签
+    await loadTrackingBlockBookmarkTrackingList();
+}
+
+// 加载正在追踪的书签列表
+async function loadTrackingBlockBookmarkTrackingList() {
+    const listEl = document.getElementById('addTrackingBlockBookmarkTrackingList');
+    if (!listEl) return;
+
+    const isZh = currentLang === 'zh_CN';
+    listEl.innerHTML = `<div class="add-results-empty">${isZh ? '加载中...' : 'Loading...'}</div>`;
+
+    try {
+        const response = await browserAPI.runtime.sendMessage({
+            action: 'getCurrentActiveSessions'
+        });
+
+        if (!response?.success || !response.sessions?.length) {
+            listEl.innerHTML = `<div class="add-results-empty">${isZh ? '暂无正在追踪的书签' : 'No active tracking sessions'}</div>`;
+            return;
+        }
+
+        const blockedSets = await getTrackingBlockedSets();
+        const cache = await getTrackingBookmarkCache();
+
+        // 按标题分组去重
+        const uniqueBookmarks = new Map();
+        for (const session of response.sessions) {
+            const key = session.title || session.url;
+            if (!uniqueBookmarks.has(key)) {
+                uniqueBookmarks.set(key, {
+                    id: session.bookmarkId,
+                    url: session.url,
+                    title: session.title || session.url
+                });
+            }
+        }
+
+        const items = Array.from(uniqueBookmarks.values());
+        const blockedFlags = await Promise.all(
+            items.map(item => isTrackingItemBlocked(item, blockedSets, cache))
+        );
+        const filteredItems = items.filter((_, index) => !blockedFlags[index]);
+
+        if (filteredItems.length === 0) {
+            listEl.innerHTML = `<div class="add-results-empty">${isZh ? '所有正在追踪的书签都已被屏蔽' : 'All tracking sessions are already blocked'}</div>`;
+            return;
+        }
+
+        renderTrackingBlockBookmarkList(listEl, filteredItems);
+
+    } catch (e) {
+        console.error('[时间追踪屏蔽] 加载正在追踪书签失败:', e);
+        listEl.innerHTML = `<div class="add-results-empty">${isZh ? '加载失败' : 'Failed to load'}</div>`;
+    }
+}
+
+// 加载综合排行书签列表
+async function loadTrackingBlockBookmarkRankingList() {
+    const listEl = document.getElementById('addTrackingBlockBookmarkRankingList');
+    if (!listEl) return;
+
+    const isZh = currentLang === 'zh_CN';
+    listEl.innerHTML = `<div class="add-results-empty">${isZh ? '加载中...' : 'Loading...'}</div>`;
+
+    try {
+        const statsResponse = await browserAPI.runtime.sendMessage({ action: 'getTrackingStats' });
+
+        if (!statsResponse?.success || !statsResponse.stats) {
+            listEl.innerHTML = `<div class="add-results-empty">${isZh ? '暂无排行数据' : 'No ranking data'}</div>`;
+            return;
+        }
+
+        const blockedSets = await getTrackingBlockedSets();
+        const cache = await getTrackingBookmarkCache();
+
+        // 转换为数组
+        const items = Object.values(statsResponse.stats).map(stat => ({
+            id: stat.bookmarkId || null,
+            url: stat.url,
+            title: stat.title || stat.url
+        }));
+        const blockedFlags = await Promise.all(
+            items.map(item => isTrackingItemBlocked(item, blockedSets, cache))
+        );
+        const filteredItems = items.filter((_, index) => !blockedFlags[index]);
+
+        if (filteredItems.length === 0) {
+            listEl.innerHTML = `<div class="add-results-empty">${isZh ? '没有可屏蔽的书签' : 'No bookmarks to block'}</div>`;
+            return;
+        }
+
+        renderTrackingBlockBookmarkList(listEl, filteredItems.slice(0, 50));
+
+    } catch (e) {
+        console.error('[时间追踪屏蔽] 加载综合排行失败:', e);
+        listEl.innerHTML = `<div class="add-results-empty">${isZh ? '加载失败' : 'Failed to load'}</div>`;
+    }
+}
+
+// 搜索书签树
+async function searchTrackingBlockBookmarks(keyword) {
+    const listEl = document.getElementById('addTrackingBlockBookmarkTreeList');
+    if (!listEl) return;
+
+    const isZh = currentLang === 'zh_CN';
+
+    if (!keyword.trim()) {
+        listEl.innerHTML = `<div class="add-results-empty">${isZh ? '输入关键词搜索书签' : 'Enter keyword to search bookmarks'}</div>`;
+        return;
+    }
+
+    listEl.innerHTML = `<div class="add-results-empty">${isZh ? '搜索中...' : 'Searching...'}</div>`;
+
+    try {
+        const allBookmarks = await getAllBookmarksFlat();
+        const keywordLower = keyword.toLowerCase();
+
+        const blockedSets = await getTrackingBlockedSets();
+        const cache = await getTrackingBookmarkCache();
+
+        const matchedBookmarks = [];
+        for (const b of allBookmarks) {
+            if (!b.url) continue; // 跳过文件夹
+            const matches = (b.title && b.title.toLowerCase().includes(keywordLower)) ||
+                (b.url && b.url.toLowerCase().includes(keywordLower));
+            if (!matches) continue;
+            const blocked = await isTrackingItemBlocked({ bookmarkId: b.id, url: b.url }, blockedSets, cache);
+            if (blocked) continue;
+            matchedBookmarks.push(b);
+        }
+
+        if (matchedBookmarks.length === 0) {
+            listEl.innerHTML = `<div class="add-results-empty">${isZh ? '未找到匹配的书签' : 'No matching bookmarks found'}</div>`;
+            return;
+        }
+
+        const items = matchedBookmarks.slice(0, 50).map(b => ({
+            id: b.id,
+            url: b.url,
+            title: b.title || b.url
+        }));
+
+        renderTrackingBlockBookmarkList(listEl, items);
+
+    } catch (e) {
+        console.error('[时间追踪屏蔽] 搜索书签失败:', e);
+        listEl.innerHTML = `<div class="add-results-empty">${isZh ? '搜索失败' : 'Search failed'}</div>`;
+    }
+}
+
+// 渲染书签列表
+function renderTrackingBlockBookmarkList(listEl, items) {
+    const isZh = currentLang === 'zh_CN';
+
+    listEl.innerHTML = items.map(item => {
+        const faviconUrl = getFaviconUrl(item.url);
+        const displayTitle = item.title.length > 50 ? item.title.substring(0, 50) + '...' : item.title;
+        const itemKey = item.id || item.url; // 用ID或URL作为唯一标识
+        const isSelected = trackingBlockBookmarkSelected.has(itemKey);
+
+        return `
+            <div class="add-bookmark-item ${isSelected ? 'selected' : ''}" data-key="${escapeHtml(itemKey)}" data-id="${item.id || ''}" data-url="${escapeHtml(item.url || '')}">
+                <input type="checkbox" ${isSelected ? 'checked' : ''}>
+                <img class="add-bookmark-favicon" src="${faviconUrl}" alt="">
+                <div class="add-bookmark-info">
+                    <div class="add-bookmark-title">${escapeHtml(displayTitle)}</div>
+                </div>
+            </div>
+        `;
+    }).join('');
+
+    // 绑定点击事件
+    listEl.querySelectorAll('.add-bookmark-item').forEach(itemEl => {
+        itemEl.addEventListener('click', () => {
+            const key = itemEl.dataset.key;
+            const checkbox = itemEl.querySelector('input[type="checkbox"]');
+            if (trackingBlockBookmarkSelected.has(key)) {
+                trackingBlockBookmarkSelected.delete(key);
+                itemEl.classList.remove('selected');
+                checkbox.checked = false;
+            } else {
+                trackingBlockBookmarkSelected.add(key);
+                itemEl.classList.add('selected');
+                checkbox.checked = true;
+            }
+            updateTrackingBlockBookmarkCount();
+        });
+    });
+}
+
+// 更新选中数量
+function updateTrackingBlockBookmarkCount() {
+    const el = document.getElementById('addTrackingBlockBookmarkSelectedCount');
+    if (el) el.textContent = trackingBlockBookmarkSelected.size;
+}
+
+// 初始化添加屏蔽书签弹窗（时间追踪）
+function initAddTrackingBlockBookmarkModal() {
+    const modal = document.getElementById('addTrackingBlockBookmarkModal');
+    if (!modal) return;
+
+    const closeBtn = document.getElementById('addTrackingBlockBookmarkModalClose');
+    const cancelBtn = document.getElementById('addTrackingBlockBookmarkCancelBtn');
+    const confirmBtn = document.getElementById('addTrackingBlockBookmarkConfirmBtn');
+    const searchInput = document.getElementById('addTrackingBlockBookmarkSearchInput');
+    const tabs = modal.querySelectorAll('.add-postponed-tab');
+    const panels = modal.querySelectorAll('.add-postponed-panel');
+
+    const hideModal = () => {
+        modal.classList.remove('show');
+        trackingBlockBookmarkSelected.clear();
+        if (searchInput) searchInput.value = '';
+    };
+
+    if (closeBtn) closeBtn.onclick = hideModal;
+    if (cancelBtn) cancelBtn.onclick = hideModal;
+
+
+    modal.onclick = (e) => {
+        if (e.target === modal) hideModal();
+    };
+
+    // 标签页切换
+    tabs.forEach(tab => {
+        tab.addEventListener('click', async () => {
+            const tabName = tab.dataset.tab;
+            tabs.forEach(t => t.classList.remove('active'));
+            panels.forEach(p => p.classList.remove('active'));
+            tab.classList.add('active');
+            modal.querySelector(`.add-postponed-panel[data-panel="${tabName}"]`)?.classList.add('active');
+
+            // 加载对应的数据
+            if (tabName === 'tracking') {
+                await loadTrackingBlockBookmarkTrackingList();
+            } else if (tabName === 'ranking') {
+                await loadTrackingBlockBookmarkRankingList();
+            }
+            // tree 面板通过搜索框触发
+        });
+    });
+
+    // 搜索输入
+    let searchTimer = null;
+    if (searchInput) {
+        searchInput.oninput = () => {
+            clearTimeout(searchTimer);
+            searchTimer = setTimeout(() => {
+                searchTrackingBlockBookmarks(searchInput.value);
+            }, 300);
+        };
+    }
+
+    // 确认按钮
+    if (confirmBtn) {
+        confirmBtn.onclick = async () => {
+            if (trackingBlockBookmarkSelected.size === 0) {
+                const isZh = currentLang === 'zh_CN';
+                alert(isZh ? '请选择要屏蔽的书签' : 'Please select bookmarks to block');
+                return;
+            }
+
+            // 遍历选中项，根据ID或URL来屏蔽
+            for (const key of trackingBlockBookmarkSelected) {
+                // 如果key是书签ID格式（数字字符串），则按ID屏蔽
+                // 否则按URL生成的域名屏蔽（简化处理：直接屏蔽书签ID）
+                if (key) {
+                    await blockTrackingBookmark(key);
+                }
+            }
+
+            hideModal();
+            await loadTrackingBlockedLists();
+        };
+    }
+}
+
+// 在屏蔽管理弹窗中绑定添加书签按钮
+function bindAddTrackingBlockBookmarkBtn() {
+    const addBookmarkBtn = document.getElementById('addTrackingBlockBookmarkBtn');
+    if (addBookmarkBtn) {
+        addBookmarkBtn.onclick = () => showAddTrackingBlockBookmarkModal();
     }
 }
 
@@ -7997,24 +9432,37 @@ function calculatePriorityWithReview(basePriority, bookmarkId, reviewData, postp
     return Math.min(priority, 1.5); // 最高1.5
 }
 
-// 启动时间捕捉实时刷新（只刷新当前会话，排行榜不自动刷新）
+// 启动时间捕捉实时刷新（当前会话1秒刷新，排行榜10秒刷新）
 function startTrackingRefresh() {
     // 清除已有定时器
     if (trackingRefreshInterval) {
         clearInterval(trackingRefreshInterval);
     }
+    if (rankingRefreshInterval) {
+        clearInterval(rankingRefreshInterval);
+    }
 
-    // 只刷新当前会话状态，排行榜只在数据变化时刷新
+    // 当前会话状态实时刷新（1秒）
     trackingRefreshInterval = setInterval(() => {
         if (currentView === 'additions') {
             const trackingPanel = document.getElementById('additionsTrackingPanel');
             if (trackingPanel && trackingPanel.classList.contains('active')) {
                 // 只刷新当前会话（实时显示计时）
                 loadCurrentTrackingSessions();
-                // 排行榜不再定时刷新，改为事件触发
             }
         }
     }, TRACKING_REFRESH_INTERVAL);
+
+    // 排行榜定时刷新（10秒）
+    rankingRefreshInterval = setInterval(() => {
+        if (currentView === 'additions') {
+            const trackingPanel = document.getElementById('additionsTrackingPanel');
+            if (trackingPanel && trackingPanel.classList.contains('active')) {
+                // 刷新排行榜
+                loadActiveTimeRanking();
+            }
+        }
+    }, RANKING_REFRESH_INTERVAL);
 }
 
 // 停止实时刷新
@@ -8022,6 +9470,10 @@ function stopTrackingRefresh() {
     if (trackingRefreshInterval) {
         clearInterval(trackingRefreshInterval);
         trackingRefreshInterval = null;
+    }
+    if (rankingRefreshInterval) {
+        clearInterval(rankingRefreshInterval);
+        rankingRefreshInterval = null;
     }
 }
 
@@ -8281,6 +9733,8 @@ async function refreshRecommendCards(force = false) {
 
 // 缓存当前追踪列表的会话 ID，用于判断是否需要完整刷新
 let lastTrackingSessionIds = [];
+// 记录展开状态的分组
+let expandedTrackingGroups = new Set();
 
 async function loadCurrentTrackingSessions() {
     const trackingCurrentList = document.getElementById('trackingCurrentList');
@@ -8293,7 +9747,15 @@ async function loadCurrentTrackingSessions() {
         });
 
         if (response && response.success && response.sessions) {
-            const sessions = response.sessions;
+            let sessions = response.sessions;
+
+            // 过滤掉被时间追踪屏蔽的会话
+            const blockedSets = await getTrackingBlockedSets();
+            const cache = await getTrackingBookmarkCache();
+            const blockedFlags = await Promise.all(
+                sessions.map(session => isTrackingItemBlocked(session, blockedSets, cache))
+            );
+            sessions = sessions.filter((_, index) => !blockedFlags[index]);
 
             // 更新计数
             if (trackingCurrentCount) {
@@ -8308,6 +9770,16 @@ async function loadCurrentTrackingSessions() {
                     </tr>
                 `;
                 return;
+            }
+
+            // 按标题分组（标题相同视为同一书签）
+            const groupedSessions = new Map();
+            for (const session of sessions) {
+                const key = session.title || session.url;
+                if (!groupedSessions.has(key)) {
+                    groupedSessions.set(key, []);
+                }
+                groupedSessions.get(key).push(session);
             }
 
             // 检查会话列表是否有变化（新增/删除会话）
@@ -8325,77 +9797,246 @@ async function loadCurrentTrackingSessions() {
                 // 会话列表有变化，需要完整渲染
                 lastTrackingSessionIds = sessions.map(s => s.tabId);
 
-                trackingCurrentList.innerHTML = sessions.map(session => {
-                    const compositeTime = formatActiveTime(session.compositeMs || session.activeMs);
-                    const activeRatio = Math.round(session.activeRatio * 100);
-                    const stateIcon = session.state === 'active' ? '🟢' :
-                        (session.state === 'sleeping' ? '💤' :
-                            (session.state === 'background' ? '⚪' :
-                                (session.state === 'visible' ? '🔵' : '🟡')));
-                    const idleTag = session.isIdle ?
-                        `<span class="idle-tag">⚠${i18n.trackingIdle[currentLang]}</span>` : '';
-                    const displayTitle = truncateTitle(session.title || session.url);
-                    const faviconUrl = getFaviconUrl(session.url);
+                let html = '';
+                for (const [groupKey, groupSessions] of groupedSessions) {
+                    const isMultiple = groupSessions.length > 1;
+                    const isExpanded = expandedTrackingGroups.has(groupKey);
 
-                    return `
-                        <tr data-tab-id="${session.tabId}" data-bookmark-url="${escapeHtml(session.url)}">
+                    // 使用第一个会话作为代表
+                    const primarySession = groupSessions[0];
+
+                    // 计算分组的汇总数据
+                    const totalCompositeMs = groupSessions.reduce((sum, s) => sum + (s.compositeMs || s.activeMs || 0), 0);
+                    const totalWakeCount = groupSessions.reduce((sum, s) => sum + (s.wakeCount || 0), 0);
+                    const avgActiveRatio = groupSessions.reduce((sum, s) => sum + (s.activeRatio || 0), 0) / groupSessions.length;
+
+                    // 确定显示的状态（优先显示最活跃的状态）
+                    const stateOrder = ['active', 'visible', 'paused', 'background', 'sleeping'];
+                    const bestState = groupSessions.reduce((best, s) => {
+                        const bestIdx = stateOrder.indexOf(best);
+                        const currIdx = stateOrder.indexOf(s.state);
+                        return currIdx < bestIdx ? s.state : best;
+                    }, 'sleeping');
+
+                    const stateIcon = bestState === 'active' ? '🟢' :
+                        (bestState === 'sleeping' ? '💤' :
+                            (bestState === 'background' ? '⚪' :
+                                (bestState === 'visible' ? '🔵' : '🟡')));
+
+                    const compositeTime = formatActiveTime(totalCompositeMs);
+                    const activeRatio = Math.round(avgActiveRatio * 100);
+                    const displayTitle = truncateTitle(primarySession.title || primarySession.url);
+                    const faviconUrl = getFaviconUrl(primarySession.url);
+
+                    // 判断是否有任一会话处于挂机状态
+                    const hasIdle = groupSessions.some(s => s.isIdle);
+                    // 活跃率颜色：挂机=橙色，否则按梯度绿色
+                    const ratioColorClass = hasIdle ? 'ratio-idle' : `ratio-level-${Math.min(Math.floor(activeRatio / 20), 5)}`;
+                    // 唤醒次数高亮（≥15次用橙色）
+                    const wakesHighlight = totalWakeCount >= 15 ? 'wakes-highlight' : '';
+                    // 综合时间梯度蓝色
+                    const timeGradientClass = `time-level-${getTimeGradientLevel(totalCompositeMs)}`;
+
+                    // 主行（分组头）
+                    const groupBadge = isMultiple ?
+                        `<span class="tracking-group-badge" data-group-key="${escapeHtml(groupKey)}">${groupSessions.length}</span>` : '';
+                    const expandIcon = isMultiple ?
+                        `<span class="tracking-expand-icon ${isExpanded ? 'expanded' : ''}" data-group-key="${escapeHtml(groupKey)}">▶</span>` : '';
+
+                    html += `
+                        <tr class="tracking-group-header ${isMultiple ? 'has-children' : ''}" 
+                            data-tab-id="${primarySession.tabId}" 
+                            data-bookmark-url="${escapeHtml(primarySession.url)}"
+                            data-group-key="${escapeHtml(groupKey)}">
                             <td><span class="tracking-state">${stateIcon}</span></td>
                             <td>
                                 <div class="tracking-title-cell">
+                                    ${expandIcon}
                                     <img class="tracking-favicon" src="${faviconUrl}" alt="">
-                                    <span class="tracking-title" title="${escapeHtml(session.title || session.url)}">${escapeHtml(displayTitle)}</span>
+                                    <span class="tracking-title" title="${escapeHtml(primarySession.title || primarySession.url)}">${escapeHtml(displayTitle)}</span>
+                                    ${groupBadge}
                                 </div>
                             </td>
-                            <td><span class="tracking-time">${compositeTime}</span></td>
-                            <td><span class="tracking-wakes">${session.wakeCount || 0}${currentLang === 'en' ? 'x' : '次'}</span></td>
+                            <td><span class="tracking-time ${timeGradientClass}">${compositeTime}</span></td>
+                            <td><span class="tracking-wakes ${wakesHighlight}">${totalWakeCount}${currentLang === 'en' ? 'x' : '次'}</span></td>
                             <td>
                                 <div class="tracking-ratio-cell">
-                                    <span class="tracking-ratio">${activeRatio}%</span>
-                                    ${idleTag}
+                                    <span class="tracking-ratio ${ratioColorClass}">${activeRatio}%</span>
                                 </div>
                             </td>
                         </tr>
                     `;
-                }).join('');
 
-                // 点击切换到对应标签页
-                trackingCurrentList.querySelectorAll('tr[data-tab-id]').forEach(item => {
-                    item.addEventListener('click', () => {
-                        const tabId = parseInt(item.dataset.tabId);
+                    // 展开的子行（仅当有多个且展开时显示）
+                    if (isMultiple && isExpanded) {
+                        for (const session of groupSessions) {
+                            const subStateIcon = session.state === 'active' ? '🟢' :
+                                (session.state === 'sleeping' ? '💤' :
+                                    (session.state === 'background' ? '⚪' :
+                                        (session.state === 'visible' ? '🔵' : '🟡')));
+                            const subCompositeTime = formatActiveTime(session.compositeMs || session.activeMs);
+                            const subActiveRatio = Math.round(session.activeRatio * 100);
+                            // 活跃率颜色：挂机=橙色，否则按梯度绿色
+                            const subRatioColorClass = session.isIdle ? 'ratio-idle' : `ratio-level-${Math.min(Math.floor(subActiveRatio / 20), 5)}`;
+                            // 唤醒次数高亮（≥15次用橙色）
+                            const subWakesHighlight = (session.wakeCount || 0) >= 15 ? 'wakes-highlight' : '';
+                            // 综合时间梯度蓝色
+                            const subTimeGradientClass = `time-level-${getTimeGradientLevel(session.compositeMs || session.activeMs)}`;
+
+                            // 计算会话开始时间
+                            const startTimestamp = Date.now() - (session.totalMs || 0);
+                            const startDate = new Date(startTimestamp);
+                            const month = startDate.getMonth() + 1;
+                            const day = startDate.getDate();
+                            const timeStr = startDate.toLocaleTimeString(currentLang === 'en' ? 'en-US' : 'zh-CN', {
+                                hour: '2-digit',
+                                minute: '2-digit'
+                            });
+                            const dateTimeStr = currentLang === 'en'
+                                ? `${month}/${day} ${timeStr}`
+                                : `${month}月${day}日 ${timeStr}`;
+                            const startLabel = currentLang === 'en' ? `Started ${dateTimeStr}` : `开始于 ${dateTimeStr}`;
+
+                            html += `
+                                <tr class="tracking-group-child" 
+                                    data-tab-id="${session.tabId}" 
+                                    data-bookmark-url="${escapeHtml(session.url)}"
+                                    data-group-key="${escapeHtml(groupKey)}">
+                                    <td><span class="tracking-state">${subStateIcon}</span></td>
+                                    <td>
+                                        <div class="tracking-title-cell tracking-child-title">
+                                            <span class="tracking-window-label">${startLabel}</span>
+                                        </div>
+                                    </td>
+                                    <td><span class="tracking-time ${subTimeGradientClass}">${subCompositeTime}</span></td>
+                                    <td><span class="tracking-wakes ${subWakesHighlight}">${session.wakeCount || 0}${currentLang === 'en' ? 'x' : '次'}</span></td>
+                                    <td>
+                                        <div class="tracking-ratio-cell">
+                                            <span class="tracking-ratio ${subRatioColorClass}">${subActiveRatio}%</span>
+                                        </div>
+                                    </td>
+                                </tr>
+                            `;
+                        }
+                    }
+                }
+
+                trackingCurrentList.innerHTML = html;
+
+                // 点击展开/折叠分组
+                trackingCurrentList.querySelectorAll('.tracking-group-header.has-children').forEach(row => {
+                    row.addEventListener('click', (e) => {
+                        const groupKey = row.dataset.groupKey;
+                        // 如果点击的是展开图标或徽章，切换展开状态
+                        if (e.target.classList.contains('tracking-expand-icon') ||
+                            e.target.classList.contains('tracking-group-badge') ||
+                            e.target.classList.contains('tracking-title-cell')) {
+                            if (expandedTrackingGroups.has(groupKey)) {
+                                expandedTrackingGroups.delete(groupKey);
+                            } else {
+                                expandedTrackingGroups.add(groupKey);
+                            }
+                            // 重新渲染
+                            lastTrackingSessionIds = []; // 强制完整刷新
+                            loadCurrentTrackingSessions();
+                        } else {
+                            // 点击其他区域，切换到对应标签页
+                            const tabId = parseInt(row.dataset.tabId);
+                            if (tabId) {
+                                browserAPI.tabs.update(tabId, { active: true });
+                            }
+                        }
+                    });
+                });
+
+                // 点击子行切换到对应标签页
+                trackingCurrentList.querySelectorAll('.tracking-group-child').forEach(row => {
+                    row.addEventListener('click', () => {
+                        const tabId = parseInt(row.dataset.tabId);
+                        if (tabId) {
+                            browserAPI.tabs.update(tabId, { active: true });
+                        }
+                    });
+                });
+
+                // 单个会话的行也可以点击切换
+                trackingCurrentList.querySelectorAll('.tracking-group-header:not(.has-children)').forEach(row => {
+                    row.addEventListener('click', () => {
+                        const tabId = parseInt(row.dataset.tabId);
                         if (tabId) {
                             browserAPI.tabs.update(tabId, { active: true });
                         }
                     });
                 });
             } else {
-                // 会话列表没变，只更新时间、状态等动态数据（不重新渲染 favicon）
-                sessions.forEach(session => {
-                    const row = trackingCurrentList.querySelector(`tr[data-tab-id="${session.tabId}"]`);
+                // 会话列表没变，只更新时间、状态等动态数据
+                for (const [groupKey, groupSessions] of groupedSessions) {
+                    const row = trackingCurrentList.querySelector(`tr.tracking-group-header[data-group-key="${CSS.escape(groupKey)}"]`);
                     if (row) {
-                        const compositeTime = formatActiveTime(session.compositeMs || session.activeMs);
-                        const activeRatio = Math.round(session.activeRatio * 100);
-                        const stateIcon = session.state === 'active' ? '🟢' :
-                            (session.state === 'sleeping' ? '💤' :
-                                (session.state === 'background' ? '⚪' :
-                                    (session.state === 'visible' ? '🔵' : '🟡')));
+                        const isMultiple = groupSessions.length > 1;
 
-                        // 更新状态图标
+                        // 计算分组的汇总数据
+                        const totalCompositeMs = groupSessions.reduce((sum, s) => sum + (s.compositeMs || s.activeMs || 0), 0);
+                        const totalWakeCount = groupSessions.reduce((sum, s) => sum + (s.wakeCount || 0), 0);
+                        const avgActiveRatio = groupSessions.reduce((sum, s) => sum + (s.activeRatio || 0), 0) / groupSessions.length;
+
+                        // 确定显示的状态
+                        const stateOrder = ['active', 'visible', 'paused', 'background', 'sleeping'];
+                        const bestState = groupSessions.reduce((best, s) => {
+                            const bestIdx = stateOrder.indexOf(best);
+                            const currIdx = stateOrder.indexOf(s.state);
+                            return currIdx < bestIdx ? s.state : best;
+                        }, 'sleeping');
+
+                        const stateIcon = bestState === 'active' ? '🟢' :
+                            (bestState === 'sleeping' ? '💤' :
+                                (bestState === 'background' ? '⚪' :
+                                    (bestState === 'visible' ? '🔵' : '🟡')));
+
+                        const compositeTime = formatActiveTime(totalCompositeMs);
+                        const activeRatio = Math.round(avgActiveRatio * 100);
+
+                        // 更新主行
                         const stateEl = row.querySelector('.tracking-state');
                         if (stateEl) stateEl.textContent = stateIcon;
 
-                        // 更新时间
                         const timeEl = row.querySelector('.tracking-time');
                         if (timeEl) timeEl.textContent = compositeTime;
 
-                        // 更新唤醒次数
                         const wakesEl = row.querySelector('.tracking-wakes');
-                        if (wakesEl) wakesEl.textContent = `${session.wakeCount || 0}${currentLang === 'en' ? 'x' : '次'}`;
+                        if (wakesEl) wakesEl.textContent = `${totalWakeCount}${currentLang === 'en' ? 'x' : '次'}`;
 
-                        // 更新活跃率
                         const ratioEl = row.querySelector('.tracking-ratio');
                         if (ratioEl) ratioEl.textContent = `${activeRatio}%`;
                     }
-                });
+
+                    // 更新子行
+                    if (expandedTrackingGroups.has(groupKey)) {
+                        for (const session of groupSessions) {
+                            const childRow = trackingCurrentList.querySelector(`tr.tracking-group-child[data-tab-id="${session.tabId}"]`);
+                            if (childRow) {
+                                const subStateIcon = session.state === 'active' ? '🟢' :
+                                    (session.state === 'sleeping' ? '💤' :
+                                        (session.state === 'background' ? '⚪' :
+                                            (session.state === 'visible' ? '🔵' : '🟡')));
+                                const subCompositeTime = formatActiveTime(session.compositeMs || session.activeMs);
+                                const subActiveRatio = Math.round(session.activeRatio * 100);
+
+                                const stateEl = childRow.querySelector('.tracking-state');
+                                if (stateEl) stateEl.textContent = subStateIcon;
+
+                                const timeEl = childRow.querySelector('.tracking-time');
+                                if (timeEl) timeEl.textContent = subCompositeTime;
+
+                                const wakesEl = childRow.querySelector('.tracking-wakes');
+                                if (wakesEl) wakesEl.textContent = `${session.wakeCount || 0}${currentLang === 'en' ? 'x' : '次'}`;
+
+                                const ratioEl = childRow.querySelector('.tracking-ratio');
+                                if (ratioEl) ratioEl.textContent = `${subActiveRatio}%`;
+                            }
+                        }
+                    }
+                }
             }
         }
     } catch (error) {
@@ -9031,7 +10672,94 @@ async function showHeatmapMonthDetail(year, month) {
 }
 
 // =============================================================================
-// 综合时间排行
+// 清除记录菜单
+// =============================================================================
+
+function showTrackingClearMenu(anchorEl) {
+    // 移除已有菜单
+    const existingMenu = document.getElementById('trackingClearMenu');
+    if (existingMenu) existingMenu.remove();
+
+    const isEn = currentLang === 'en';
+    const rangeLabels = i18n.trackingClearRange[currentLang];
+
+    const menu = document.createElement('div');
+    menu.id = 'trackingClearMenu';
+    menu.className = 'tracking-clear-menu';
+    menu.innerHTML = `
+        <div class="tracking-clear-menu-title">${isEn ? 'Clear Current Sessions' : '清除正在追踪'}</div>
+        <div class="tracking-clear-menu-item" data-action="current">${isEn ? 'Clear all current sessions' : '清除全部当前会话'}</div>
+        <div class="tracking-clear-menu-divider"></div>
+        <div class="tracking-clear-menu-title">${isEn ? 'Clear Ranking Data' : '清除综合排行'}</div>
+        <div class="tracking-clear-menu-item" data-action="ranking" data-range="week">${isEn ? 'Older than 1 week' : '一周以前'}</div>
+        <div class="tracking-clear-menu-item" data-action="ranking" data-range="month">${isEn ? 'Older than 1 month' : '一个月以前'}</div>
+        <div class="tracking-clear-menu-item" data-action="ranking" data-range="year">${isEn ? 'Older than 1 year' : '一年以前'}</div>
+        <div class="tracking-clear-menu-item danger" data-action="ranking" data-range="all">${isEn ? 'Clear all' : '清除全部'}</div>
+    `;
+
+    // 定位菜单
+    const rect = anchorEl.getBoundingClientRect();
+    menu.style.position = 'fixed';
+    menu.style.top = `${rect.bottom + 4}px`;
+    menu.style.right = `${window.innerWidth - rect.right}px`;
+
+    document.body.appendChild(menu);
+
+    // 点击菜单项
+    menu.querySelectorAll('.tracking-clear-menu-item').forEach(item => {
+        item.addEventListener('click', async () => {
+            const action = item.dataset.action;
+            const range = item.dataset.range;
+
+            if (action === 'current') {
+                if (!confirm(i18n.trackingClearCurrentConfirm[currentLang])) {
+                    menu.remove();
+                    return;
+                }
+                try {
+                    await browserAPI.runtime.sendMessage({ action: 'clearCurrentTrackingSessions' });
+                    await loadCurrentTrackingSessions();
+                    console.log('[时间捕捉] 正在追踪的会话已清除');
+                } catch (e) {
+                    console.error('[时间捕捉] 清除失败:', e);
+                }
+            } else if (action === 'ranking') {
+                const rangeLabel = rangeLabels[range];
+                const confirmMsg = i18n.trackingClearRangeConfirm[currentLang].replace('{range}', rangeLabel);
+                if (!confirm(confirmMsg)) {
+                    menu.remove();
+                    return;
+                }
+                try {
+                    const response = await browserAPI.runtime.sendMessage({
+                        action: 'clearTrackingStatsByRange',
+                        range: range
+                    });
+                    if (response && response.success) {
+                        const msg = i18n.trackingClearedCount[currentLang].replace('{count}', response.cleared);
+                        console.log('[时间捕捉]', msg);
+                        await loadActiveTimeRanking();
+                    }
+                } catch (e) {
+                    console.error('[时间捕捉] 清除失败:', e);
+                }
+            }
+            menu.remove();
+        });
+    });
+
+    // 点击外部关闭
+    const closeMenu = (e) => {
+        if (!menu.contains(e.target) && e.target !== anchorEl) {
+            menu.remove();
+            document.removeEventListener('click', closeMenu);
+        }
+    };
+    setTimeout(() => document.addEventListener('click', closeMenu), 0);
+}
+
+// =============================================================================
+// 综合排行
 // =============================================================================
 
 async function loadActiveTimeRanking() {
@@ -9041,88 +10769,100 @@ async function loadActiveTimeRanking() {
     // 排行榜刷新时，清除T值缓存，下次计算S值时会获取最新数据
     clearTrackingRankingCache();
 
-    console.log('[时间排行] 开始加载...');
-
     try {
+        // 获取排行类型（综合时间 / 唤醒次数）
+        const rankingTypeSelect = document.getElementById('trackingRankingType');
+        const rankingType = rankingTypeSelect ? rankingTypeSelect.value : 'composite';
+
         // 获取时间范围
         const rangeSelect = document.getElementById('trackingRankingRange');
         const range = rangeSelect ? rangeSelect.value : 'week';
-        console.log('[时间排行] 时间范围:', range);
 
-        const now = Date.now();
-        const today = new Date();
-        let startTime;
-        switch (range) {
-            case 'today':
-                // 当天：今天 0:00
-                startTime = new Date(today.getFullYear(), today.getMonth(), today.getDate()).getTime();
-                break;
-            case 'week':
-                // 本周：本周一 0:00
-                const dayOfWeek = today.getDay();
-                const daysToMonday = dayOfWeek === 0 ? 6 : dayOfWeek - 1;  // 周日是0，需要回退6天
-                const monday = new Date(today.getFullYear(), today.getMonth(), today.getDate() - daysToMonday);
-                startTime = monday.getTime();
-                break;
-            case 'month':
-                // 本月：本月1号 0:00
-                startTime = new Date(today.getFullYear(), today.getMonth(), 1).getTime();
-                break;
-            case 'year':
-                // 当年：今年1月1日 0:00
-                startTime = new Date(today.getFullYear(), 0, 1).getTime();
-                break;
-            default:
-                // 全部
-                startTime = 0;
+        // 并行获取：已保存的统计 + 当前正在追踪的会话
+        const [statsResponse, sessionsResponse] = await Promise.all([
+            browserAPI.runtime.sendMessage({ action: 'getTrackingStats' }),
+            browserAPI.runtime.sendMessage({ action: 'getCurrentActiveSessions' })
+        ]);
+
+        // 合并数据：已保存的 + 当前正在追踪的
+        const titleStats = new Map();
+
+        // 1. 先加载已保存的统计
+        if (statsResponse?.success && statsResponse.stats) {
+            for (const stat of Object.values(statsResponse.stats)) {
+                const key = stat.title || stat.url;
+                titleStats.set(key, {
+                    url: stat.url,
+                    title: stat.title || stat.url,
+                    totalCompositeMs: stat.totalCompositeMs || 0,
+                    wakeCount: stat.totalWakeCount || 0,
+                    sessionCount: stat.sessionCount || 0,
+                    lastUpdate: stat.lastUpdate
+                });
+            }
         }
 
-        // 从 background.js 获取活跃会话数据
-        console.log('[时间排行] 发送请求 getActiveSessions...');
-        const response = await browserAPI.runtime.sendMessage({
-            action: 'getActiveSessions',
-            startTime,
-            endTime: now
-        });
-        console.log('[时间排行] 响应:', response);
+        // 2. 再加上当前正在追踪的会话（只加尚未保存的部分，避免与 trackingStats 重复）
+        if (sessionsResponse?.success && sessionsResponse.sessions) {
+            // 按标题分组，计算每组尚未保存的总和
+            const groupedByTitle = new Map();
+            for (const session of sessionsResponse.sessions) {
+                const key = session.title || session.url;
+                if (!groupedByTitle.has(key)) {
+                    groupedByTitle.set(key, {
+                        url: session.url,
+                        title: session.title || session.url,
+                        unsavedCompositeMs: 0,
+                        unsavedWakeCount: 0
+                    });
+                }
+                const group = groupedByTitle.get(key);
+                // 使用 unsavedCompositeMs（尚未保存的时间），避免重复
+                group.unsavedCompositeMs += session.unsavedCompositeMs || 0;
+                group.unsavedWakeCount += session.unsavedWakeCount || 0;
+            }
 
-        if (!response || !response.success || !response.sessions) {
-            console.log('[时间排行] 无数据或请求失败');
+            // 合并到排行榜
+            for (const [key, group] of groupedByTitle) {
+                if (titleStats.has(key)) {
+                    const existing = titleStats.get(key);
+                    existing.totalCompositeMs += group.unsavedCompositeMs;
+                    existing.wakeCount += group.unsavedWakeCount;
+                } else {
+                    titleStats.set(key, {
+                        url: group.url,
+                        title: group.title,
+                        totalCompositeMs: group.unsavedCompositeMs,
+                        wakeCount: group.unsavedWakeCount,
+                        sessionCount: 1,
+                        lastUpdate: Date.now()
+                    });
+                }
+            }
+        }
+
+        if (titleStats.size === 0) {
             container.innerHTML = `<div class="tracking-empty">${i18n.trackingNoData[currentLang]}</div>`;
             return;
         }
 
-        console.log('[时间排行] 获取到', response.sessions.length, '条会话记录');
+        // 过滤掉被时间追踪屏蔽的项目
+        const blockedSets = await getTrackingBlockedSets();
+        const cache = await getTrackingBookmarkCache();
+        const items = Array.from(titleStats.values());
+        const blockedFlags = await Promise.all(
+            items.map(item => isTrackingItemBlocked(item, blockedSets, cache))
+        );
 
-        // 按标题聚合综合时间（统一用标题作为 key）
-        const titleStats = new Map();
-        for (const session of response.sessions) {
-            const key = session.title || session.url;  // 优先用标题
-            if (!titleStats.has(key)) {
-                titleStats.set(key, {
-                    url: session.url,
-                    title: session.title || session.url,
-                    bookmarkId: session.bookmarkId,
-                    totalCompositeMs: 0,
-                    wakeCount: 0,
-                    sessionCount: 0
-                });
-            }
-            const stat = titleStats.get(key);
-            // 使用综合时间：活跃×1.0 + 前台静止×0.8 + 可见参考×0.5 + 后台×0.1
-            const sessionComposite = session.compositeMs ||
-                ((session.activeMs || 0) +
-                    (session.idleFocusMs || session.pauseTotalMs || 0) * 0.8 +
-                    (session.visibleMs || 0) * 0.5 +
-                    (session.backgroundMs || 0) * 0.1);
-            stat.totalCompositeMs += sessionComposite;
-            stat.wakeCount += session.wakeCount || 0;
-            stat.sessionCount++;
-        }
-
-        // 排序（按综合时间）
-        const sorted = Array.from(titleStats.values())
-            .sort((a, b) => b.totalCompositeMs - a.totalCompositeMs)
+        // 根据排行类型排序，并过滤掉被屏蔽的项目
+        const sorted = items
+            .filter((_, index) => !blockedFlags[index])
+            .sort((a, b) => {
+                if (rankingType === 'wakes') {
+                    return b.wakeCount - a.wakeCount;
+                }
+                return b.totalCompositeMs - a.totalCompositeMs;
+            })
             .slice(0, 10);
 
         if (sorted.length === 0) {
@@ -9130,8 +10870,10 @@ async function loadActiveTimeRanking() {
             return;
         }
 
-        // 计算最大值用于进度条
-        const maxMs = sorted[0].totalCompositeMs;
+        // 计算最大值用于进度条（根据排行类型）
+        const maxValue = rankingType === 'wakes'
+            ? sorted[0].wakeCount
+            : sorted[0].totalCompositeMs;
 
         // 截断标题函数
         const truncateTitle = (title, maxLen = 45) => {
@@ -9139,12 +10881,38 @@ async function loadActiveTimeRanking() {
             return title.length > maxLen ? title.substring(0, maxLen) + '...' : title;
         };
 
+        // 唤醒次数高频阈值（根据时间范围）
+        const wakeThresholds = {
+            'today': 15,
+            'week': 50,
+            'month': 100,
+            'year': 500,
+            'all': 1000
+        };
+        const wakeThreshold = wakeThresholds[range] || 15;
+
         // 渲染列表
         container.innerHTML = sorted.map((item, index) => {
             const compositeTime = formatActiveTime(item.totalCompositeMs);
-            const barWidth = maxMs > 0 ? (item.totalCompositeMs / maxMs * 100) : 0;
+            // 根据排行类型计算进度条宽度
+            const barWidth = maxValue > 0
+                ? ((rankingType === 'wakes' ? item.wakeCount : item.totalCompositeMs) / maxValue * 100)
+                : 0;
             const displayTitle = truncateTitle(item.title || item.url);
             const faviconUrl = getFaviconUrl(item.url);
+
+            // 高亮逻辑：根据排行类型选择主要指标的高亮
+            let wakeHighlight = '';
+            let timeHighlight = '';
+            if (rankingType === 'wakes') {
+                // 唤醒次数排行：唤醒次数用强调色（primary），时间正常显示
+                wakeHighlight = 'ranking-primary';
+                timeHighlight = `time-level-${getTimeGradientLevel(item.totalCompositeMs, range)}`;
+            } else {
+                // 综合时间排行：高频唤醒用橙色，时间用梯度蓝色
+                wakeHighlight = item.wakeCount >= wakeThreshold ? 'wakes-highlight' : '';
+                timeHighlight = `time-level-${getTimeGradientLevel(item.totalCompositeMs, range)} ranking-primary`;
+            }
 
             return `
                 <div class="tracking-ranking-item" data-url="${escapeHtml(item.url)}" data-bookmark-url="${escapeHtml(item.url)}">
@@ -9156,8 +10924,8 @@ async function loadActiveTimeRanking() {
                             <div class="ranking-bar-fill" style="width: ${barWidth}%"></div>
                         </div>
                     </div>
-                    <span class="ranking-time">${compositeTime}</span>
-                    <span class="ranking-wakes">${item.wakeCount}${currentLang === 'en' ? 'x' : '次'}</span>
+                    <span class="ranking-wakes ${wakeHighlight}">${item.wakeCount}${currentLang === 'en' ? 'x' : '次'}</span>
+                    <span class="ranking-time ${timeHighlight}">${compositeTime}</span>
                 </div>
             `;
         }).join('');
@@ -9173,7 +10941,7 @@ async function loadActiveTimeRanking() {
         });
 
     } catch (error) {
-        console.error('[综合时间排行] 加载失败:', error);
+        console.error('[综合排行] 加载失败:', error);
         container.innerHTML = `<div class="tracking-empty">${i18n.trackingLoadFailed[currentLang]}</div>`;
     }
 }
@@ -9194,6 +10962,48 @@ function formatActiveTime(ms) {
     }
 }
 
+// 获取综合时间的梯度级别（用于蓝色深浅）
+// range: 'today', 'week', 'month', 'year', 'all', 'current'（正在追踪）
+// Level 0-4: 正常梯度蓝色，Level 5: 极端使用（深紫色）
+function getTimeGradientLevel(ms, range = 'today') {
+    const minutes = (ms || 0) / 60000;
+    const hours = minutes / 60;
+
+    // 根据时间范围使用不同的阈值
+    if (range === 'week') {
+        // 本周：30分钟、2小时、5小时、10小时、20小时（极端）
+        if (minutes < 30) return 0;
+        if (hours < 2) return 1;
+        if (hours < 5) return 2;
+        if (hours < 10) return 3;
+        if (hours < 20) return 4;
+        return 5;  // 极端：20小时+
+    } else if (range === 'month') {
+        // 本月：2小时、10小时、30小时、60小时、100小时（极端）
+        if (hours < 2) return 0;
+        if (hours < 10) return 1;
+        if (hours < 30) return 2;
+        if (hours < 60) return 3;
+        if (hours < 100) return 4;
+        return 5;  // 极端：100小时+
+    } else if (range === 'year' || range === 'all') {
+        // 本年/全部：10小时、50小时、150小时、300小时、500小时（极端）
+        if (hours < 10) return 0;
+        if (hours < 50) return 1;
+        if (hours < 150) return 2;
+        if (hours < 300) return 3;
+        if (hours < 500) return 4;
+        return 5;  // 极端：500小时+
+    } else {
+        // 今日/正在追踪（current）：1分钟、5分钟、15分钟、30分钟、2小时（极端）
+        if (minutes < 1) return 0;
+        if (minutes < 5) return 1;
+        if (minutes < 15) return 2;
+        if (minutes < 30) return 3;
+        if (hours < 2) return 4;
+        return 5;  // 极端：2小时+
+    }
+}
 
 
 // =============================================================================

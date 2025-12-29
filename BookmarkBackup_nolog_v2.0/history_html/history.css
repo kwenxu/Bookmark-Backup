@@ -5438,6 +5438,13 @@ a.tree-label.tree-bookmark-link:hover {
     /* 使用flex布局 */
     flex-direction: column;
     /* 垂直方向 */
+    /* 性能优化：布局隔离 */
+    contain: layout style;
+    /* 强制 2D 平面渲染，避免缩放时文字模糊 */
+    transform-style: flat;
+    /* macOS 字体平滑优化 */
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
 }
 
 [data-theme="dark"] .permanent-bookmark-section {

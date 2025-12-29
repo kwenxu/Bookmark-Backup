@@ -62,11 +62,14 @@
     transform-origin: left top;
     position: relative;
     will-change: transform;
-    /* 强制硬件加速 */
+    /* GPU 加速：使用 translateZ(0) 替代 perspective，避免 3D 模式导致文字模糊 */
     backface-visibility: hidden;
     -webkit-backface-visibility: hidden;
-    perspective: 1000px;
-    -webkit-perspective: 1000px;
+    transform-style: flat;
+    /* 强制 2D 渲染，避免 perspective 引起的亚像素抗锯齿问题 */
+    /* macOS 字体平滑优化 */
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
 }
 
 .canvas-workspace.space-pressed {
@@ -1021,10 +1024,15 @@
 
 /* ========== 丝滑缩放性能架构 (Core Performance) ========== */
 
-/* 1. 静态优化：布局隔离 */
+/* 1. 静态优化：布局隔离 + 文字渲染优化 */
 .temp-canvas-node,
 .md-canvas-node {
     contain: layout style;
+    /* 强制 2D 平面渲染，避免缩放时文字模糊 */
+    transform-style: flat;
+    /* macOS 字体平滑优化 */
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
 }
 
 /* ========== 动态优化回退 ========== */

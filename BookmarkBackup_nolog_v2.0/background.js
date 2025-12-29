@@ -4390,21 +4390,24 @@ async function getTrackingDataForScore() {
         const stats = await getTrackingStats();
         const byUrl = new Map();
         const byTitle = new Map();
+        const byBookmarkId = new Map();
 
         for (const [key, stat] of Object.entries(stats)) {
             const data = {
                 url: stat.url,
                 title: stat.title || key,
-                compositeMs: stat.totalCompositeMs || 0
+                compositeMs: stat.totalCompositeMs || 0,
+                bookmarkId: stat.bookmarkId || null
             };
             if (stat.url) byUrl.set(stat.url, data);
             if (stat.title) byTitle.set(stat.title, data);
+            if (stat.bookmarkId) byBookmarkId.set(stat.bookmarkId, data);
         }
 
-        return { byUrl, byTitle };
+        return { byUrl, byTitle, byBookmarkId };
     } catch (e) {
         console.warn('[S值计算] 获取追踪数据失败:', e);
-        return { byUrl: new Map(), byTitle: new Map() };
+        return { byUrl: new Map(), byTitle: new Map(), byBookmarkId: new Map() };
     }
 }
 
@@ -4431,12 +4434,23 @@ function calculateBookmarkScore(bookmark, historyStats, trackingData, config, po
     }
     history = history || { visitCount: 0, lastVisitTime: 0 };
 
-    // 获取追踪数据（T值）- URL匹配优先，然后标题匹配
+    // 获取追踪数据（T值）- bookmarkId 匹配优先，然后 URL 匹配；
+    // 标题只作为“安全兜底”：仅在能确认对应到同一书签时才使用，避免把同名书签/浏览历史关联误算到别的书签上。
     let compositeMs = 0;
-    if (bookmark.url && trackingData.byUrl.has(bookmark.url)) {
+    if (bookmark.id && trackingData.byBookmarkId && trackingData.byBookmarkId.has(bookmark.id)) {
+        compositeMs = trackingData.byBookmarkId.get(bookmark.id).compositeMs;
+    } else if (bookmark.url && trackingData.byUrl.has(bookmark.url)) {
         compositeMs = trackingData.byUrl.get(bookmark.url).compositeMs;
-    } else if (bookmark.title && trackingData.byTitle.has(bookmark.title)) {
-        compositeMs = trackingData.byTitle.get(bookmark.title).compositeMs;
+    } else if (bookmark.title && trackingData.byTitle && trackingData.byTitle.has(bookmark.title)) {
+        const titleHit = trackingData.byTitle.get(bookmark.title);
+        if (titleHit) {
+            if (bookmark.id && titleHit.bookmarkId && titleHit.bookmarkId === bookmark.id) {
+                compositeMs = titleHit.compositeMs;
+            } else if (!bookmark.id && !titleHit.bookmarkId) {
+                // 兼容极旧数据：两边都没有 bookmarkId 时，允许标题兜底
+                compositeMs = titleHit.compositeMs;
+            }
+        }
     }
 
     // F (新鲜度)

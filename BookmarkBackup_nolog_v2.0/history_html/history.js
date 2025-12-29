@@ -4482,6 +4482,14 @@ function startTimeTrackingWidgetRefresh() {
     timeTrackingWidgetInterval = setInterval(updateTimeTrackingWidget, 1000);  // 1秒刷新，更实时
 }
 
+function stopTimeTrackingWidgetRefresh() {
+    if (timeTrackingWidgetInterval) {
+        clearInterval(timeTrackingWidgetInterval);
+        timeTrackingWidgetInterval = null;
+        console.log('[时间捕捉小组件] 已停止刷新（侧边栏收起）');
+    }
+}
+
 function initTimeTrackingWidget() {
     const widget = document.getElementById('timeTrackingWidget');
     if (!widget) return;
@@ -4496,7 +4504,14 @@ function initTimeTrackingWidget() {
         }, 100);
     });
 
-    startTimeTrackingWidgetRefresh();
+    // 检查侧边栏状态，只有展开时才启动刷新
+    const sidebar = document.getElementById('sidebar');
+    const isCollapsed = sidebar && sidebar.classList.contains('collapsed');
+    if (!isCollapsed) {
+        startTimeTrackingWidgetRefresh();
+    } else {
+        console.log('[时间捕捉小组件] 侧边栏收起，跳过刷新启动');
+    }
 }
 
 // =============================================================================
@@ -4542,6 +4557,13 @@ function initSidebarToggle() {
 
         // 更新 CSS 变量（用于弹窗定位）
         syncSidebarWidth();
+
+        // 控制时间捕捉小组件刷新：收起时停止，展开时恢复
+        if (isCollapsed) {
+            stopTimeTrackingWidgetRefresh();
+        } else {
+            startTimeTrackingWidgetRefresh();
+        }
 
         console.log('[侧边栏]', isCollapsed ? '已收起' : '已展开');
     });

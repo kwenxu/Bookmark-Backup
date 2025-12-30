@@ -2968,6 +2968,22 @@ a.tree-label.tree-bookmark-link:hover {
     font-size: 12px;
 }
 
+/* 仅图标样式 - 透明淡蓝色 */
+.diff-edit-btn.icon-only {
+    padding: 6px;
+    background: rgba(33, 150, 243, 0.1);
+    color: #2196F3;
+    border-radius: 6px;
+}
+
+.diff-edit-btn.icon-only:hover {
+    background: rgba(33, 150, 243, 0.2);
+}
+
+.diff-edit-btn.icon-only svg {
+    display: block;
+}
+
 .diff-stats {
     color: var(--text-secondary);
     font-size: 13px;

@@ -4243,12 +4243,14 @@ function buildChangeSummary(diffMeta, stats, lang) {
         const modifiedCount = (typeof stats?.bookmarkModified === 'number' ? stats.bookmarkModified : 0) + (typeof stats?.folderModified === 'number' ? stats.folderModified : 0);
 
         if (bookmarkMoved || folderMoved) {
-            structuralParts.push(`${effectiveLang === 'en' ? 'Moved' : '移动'}${movedCount > 0 ? ` (${movedCount})` : ''}`);
-            summary.structuralItems.push(`${effectiveLang === 'en' ? 'Moved' : '移动'}${movedCount > 0 ? ` (${movedCount})` : ''}`);
+            const movedLabel = effectiveLang === 'en' ? (movedCount > 0 ? `${movedCount} moved` : 'Moved') : (movedCount > 0 ? `${movedCount}个移动` : '移动');
+            structuralParts.push(movedLabel);
+            summary.structuralItems.push(movedLabel);
         }
         if (bookmarkModified || folderModified) {
-            structuralParts.push(`${effectiveLang === 'en' ? 'Modified' : '修改'}${modifiedCount > 0 ? ` (${modifiedCount})` : ''}`);
-            summary.structuralItems.push(`${effectiveLang === 'en' ? 'Modified' : '修改'}${modifiedCount > 0 ? ` (${modifiedCount})` : ''}`);
+            const modifiedLabel = effectiveLang === 'en' ? (modifiedCount > 0 ? `${modifiedCount} modified` : 'Modified') : (modifiedCount > 0 ? `${modifiedCount}个修改` : '修改');
+            structuralParts.push(modifiedLabel);
+            summary.structuralItems.push(modifiedLabel);
         }
 
 
@@ -11662,33 +11664,83 @@ async function renderCurrentChangesView(forceRefresh = false, options = {}) {
                 }
             }
 
-            // 结构变化部分
-            if (hasStructureChange && summary.structuralItems && summary.structuralItems.length > 0) {
+            // 结构变化部分 - 直接使用 changeData 中的 moved 和 modified 数组
+            // 如果 changeData.moved 为空但有移动标记，尝试从 recentMovedIds 获取数量
+            let movedCount = (changeData.moved && changeData.moved.length) || 0;
+            let modifiedCount = (changeData.modified && changeData.modified.length) || 0;
+
+            // 如果没有从 changeData 获取到移动数量，但有移动标记，尝试从 recentMovedIds 获取
+            if (movedCount === 0 && (stats.bookmarkMoved || stats.folderMoved)) {
+                try {
+                    const data = await new Promise(resolve => {
+                        browserAPI.storage.local.get(['recentMovedIds'], result => resolve(result));
+                    });
+                    const recentMovedIds = data && Array.isArray(data.recentMovedIds) ? data.recentMovedIds : [];
+                    movedCount = recentMovedIds.length;
+                    console.log('[书签变化统计] 从 recentMovedIds 获取移动数量:', movedCount);
+                } catch (e) {
+                    console.warn('[书签变化统计] 获取 recentMovedIds 失败:', e);
+                }
+            }
+
+            // 如果没有从 changeData 获取到修改数量，但有修改标记，尝试从 recentModifiedIds 获取
+            if (modifiedCount === 0 && (stats.bookmarkModified || stats.folderModified)) {
+                try {
+                    const data = await new Promise(resolve => {
+                        browserAPI.storage.local.get(['recentModifiedIds'], result => resolve(result));
+                    });
+                    const recentModifiedIds = data && Array.isArray(data.recentModifiedIds) ? data.recentModifiedIds : [];
+                    modifiedCount = recentModifiedIds.length;
+                    console.log('[书签变化统计] 从 recentModifiedIds 获取修改数量:', modifiedCount);
+                } catch (e) {
+                    console.warn('[书签变化统计] 获取 recentModifiedIds 失败:', e);
+                }
+            }
+
+            const hasMovedOrModified = movedCount > 0 || modifiedCount > 0 || hasStructureChange;
+
+            if (hasMovedOrModified) {
                 const isZh = currentLang === 'zh_CN';
-                summary.structuralItems.forEach(item => {
-                    let diffClass = 'modified';
-                    let prefix = '~';
 
-                    if (item.includes('Moved') || item.includes('移动')) {
-                        diffClass = 'moved';
-                        prefix = '↔';
-                    } else if (item.includes('Modified') || item.includes('修改')) {
-                        diffClass = 'modified';
-                        prefix = '~';
-                    }
+                // 显示移动行
+                if (movedCount > 0 || (stats.bookmarkMoved || stats.folderMoved)) {
+                    const displayCount = movedCount > 0 ? movedCount : '';
+                    const movedText = isZh
+                        ? (displayCount ? `${displayCount}个移动` : '移动')
+                        : (displayCount ? `${displayCount} moved` : 'Moved');
 
-                    html += `<div class="diff-line ${diffClass} clickable" data-change-type="${diffClass}" style="display: flex; align-items: center; justify-content: space-between;">`;
+                    html += `<div class="diff-line moved clickable" data-change-type="moved" style="display: flex; align-items: center; justify-content: space-between;">`;
                     html += '<div style="display: flex; align-items: baseline;">';
-                    html += `<span class="diff-prefix">${prefix}</span>`;
-                    html += `<span class="diff-content">${item}</span>`;
+                    html += `<span class="diff-prefix">↔</span>`;
+                    html += `<span class="diff-content">${movedText}</span>`;
                     html += '</div>';
                     html += '<div class="jump-to-related-btn-container" style="opacity: 0; transition: opacity 0.2s ease; margin-right: 8px;">';
-                    html += `<button class="jump-to-related-btn" data-change-type="${diffClass}" title="${isZh ? '跳转至对应位置' : 'Jump to changes'}">`;
+                    html += `<button class="jump-to-related-btn" data-change-type="moved" title="${isZh ? '跳转至对应位置' : 'Jump to changes'}">`;
                     html += '<i class="fas fa-external-link-alt"></i>';
                     html += '</button>';
                     html += '</div>';
                     html += '</div>';
-                });
+                }
+
+                // 显示修改行
+                if (modifiedCount > 0 || (stats.bookmarkModified || stats.folderModified)) {
+                    const displayCount = modifiedCount > 0 ? modifiedCount : '';
+                    const modifiedText = isZh
+                        ? (displayCount ? `${displayCount}个修改` : '修改')
+                        : (displayCount ? `${displayCount} modified` : 'Modified');
+
+                    html += `<div class="diff-line modified clickable" data-change-type="modified" style="display: flex; align-items: center; justify-content: space-between;">`;
+                    html += '<div style="display: flex; align-items: baseline;">';
+                    html += `<span class="diff-prefix">~</span>`;
+                    html += `<span class="diff-content">${modifiedText}</span>`;
+                    html += '</div>';
+                    html += '<div class="jump-to-related-btn-container" style="opacity: 0; transition: opacity 0.2s ease; margin-right: 8px;">';
+                    html += `<button class="jump-to-related-btn" data-change-type="modified" title="${isZh ? '跳转至对应位置' : 'Jump to changes'}">`;
+                    html += '<i class="fas fa-external-link-alt"></i>';
+                    html += '</button>';
+                    html += '</div>';
+                    html += '</div>';
+                }
             }
 
             // 如果没有任何变化
@@ -12037,28 +12089,42 @@ async function getDetailedChanges(forceRefresh = false) {
                         const moved = [];
                         const modified = [];
 
-                        // 解析新增和可能的移动
+                        // 解析新增、移动和修改
                         for (const print of newBookmarkPrints) {
                             if (!oldBookmarkPrints.has(print)) {
                                 const bookmark = parseBookmarkFingerprint(print);
                                 if (bookmark) {
-                                    // 检查是否是移动
-                                    let isMoved = false;
+                                    // 检查是否是移动或修改
+                                    let isMovedOrModified = false;
                                     for (const oldPrint of oldBookmarkPrints) {
                                         const oldBookmark = parseBookmarkFingerprint(oldPrint);
                                         if (oldBookmark && oldBookmark.url === bookmark.url) {
-                                            if (oldBookmark.path !== bookmark.path || oldBookmark.title !== bookmark.title) {
-                                                isMoved = true;
+                                            // URL 相同，检查是移动还是修改
+                                            const pathChanged = oldBookmark.path !== bookmark.path;
+                                            const titleChanged = oldBookmark.title !== bookmark.title;
+
+                                            if (pathChanged) {
+                                                // 位置改变 = 移动
+                                                isMovedOrModified = true;
                                                 moved.push({
                                                     ...bookmark,
                                                     oldPath: oldBookmark.path,
-                                                    oldTitle: oldBookmark.title
+                                                    oldTitle: oldBookmark.title,
+                                                    changeType: 'moved'
+                                                });
+                                            } else if (titleChanged) {
+                                                // 只有标题改变 = 修改
+                                                isMovedOrModified = true;
+                                                modified.push({
+                                                    ...bookmark,
+                                                    oldTitle: oldBookmark.title,
+                                                    changeType: 'modified'
                                                 });
                                             }
                                             break;
                                         }
                                     }
-                                    if (!isMoved) {
+                                    if (!isMovedOrModified) {
                                         added.push(bookmark);
                                     }
                                 }

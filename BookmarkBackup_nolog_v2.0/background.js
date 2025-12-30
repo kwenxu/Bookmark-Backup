@@ -135,7 +135,10 @@ function resetOperationStatus() {
             bookmarkModified: false,
             folderModified: false,
             resetTime: new Date().toISOString()
-        }
+        },
+        // 同时清除移动和修改的历史记录
+        recentMovedIds: [],
+        recentModifiedIds: []
     });
 }
 
@@ -280,6 +283,21 @@ function initializeOperationTracking() {
                     folderModified = true;
                 }
 
+                // 记录最近修改的节点到 storage（供前端读取做稳定标识和数量统计）
+                async function recordRecentModifiedId(modifiedId, info) {
+                    try {
+                        const now = Date.now();
+                        const data = await browserAPI.storage.local.get(['recentModifiedIds']);
+                        const list = Array.isArray(data.recentModifiedIds) ? data.recentModifiedIds : [];
+                        // 过滤掉过期的记录（与移动记录保持一致，无限期保留直到备份）
+                        const filtered = list.filter(r => (now - (r.time || 0)) < RECENT_MOVED_TTL_MS);
+                        filtered.push({ id: modifiedId, time: now, changeInfo: info });
+                        await browserAPI.storage.local.set({ recentModifiedIds: filtered });
+                    } catch (e) {
+                        // 忽略
+                    }
+                }
+
                 // 保存状态
                 browserAPI.storage.local.set({
                     lastSyncOperations: {
@@ -290,6 +308,11 @@ function initializeOperationTracking() {
                         lastUpdateTime: new Date().toISOString()
                     }
                 });
+
+                // 记录最近修改的节点
+                try {
+                    recordRecentModifiedId(id, changeInfo);
+                } catch (_) { }
             }
         });
     });
@@ -2975,9 +2998,9 @@ async function syncBookmarks(isManual = false, direction = null, isSwitchToAutoB
                 await updateAndCacheAnalysis();
                 // 更新角标
                 await setBadge();
-                // 清理移动历史，避免备份后仍然出现蓝色移动标识
+                // 清理移动和修改历史，避免备份后仍然出现蓝色移动标识或错误的数量统计
                 try {
-                    await browserAPI.storage.local.set({ recentMovedIds: [] });
+                    await browserAPI.storage.local.set({ recentMovedIds: [], recentModifiedIds: [] });
                 } catch (_) { }
                 try {
                     browserAPI.runtime.sendMessage({ action: 'clearExplicitMoved' });

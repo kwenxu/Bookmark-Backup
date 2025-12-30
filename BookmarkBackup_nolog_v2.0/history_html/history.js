@@ -11291,14 +11291,18 @@ async function renderChangesTreePreview(changeData) {
                 el.dataset.readonly = 'true';
             });
 
-            // 首次挂载到目标容器
+            // 首次挂载到目标容器（优化：先隐藏，避免渲染过程闪烁）
             targetContainer.innerHTML = '';
+            targetContainer.style.visibility = 'hidden';
             targetContainer.appendChild(clonedSection);
         } else {
             console.log('[书签树映射预览] 复用已有预览容器，仅更新树内容');
             const sourceTree = permanentSection.querySelector('#bookmarkTree');
             const previewTree = clonedSection.querySelector('.bookmark-tree');
             if (sourceTree && previewTree) {
+                // 优化：仅替换内容，不需要隐藏（避免白屏闪烁）
+                // targetContainer.style.visibility = 'hidden';
+
                 // 只替换内部结构，保持外层容器与滚动条稳定
                 previewTree.innerHTML = sourceTree.innerHTML;
 
@@ -11423,6 +11427,13 @@ async function renderChangesTreePreview(changeData) {
 
         console.log('[书签树映射预览] 完成');
 
+        // 8. 恢复显示（优化：渲染完成后一次性显示）
+        if (targetContainer) {
+            requestAnimationFrame(() => {
+                targetContainer.style.visibility = '';
+            });
+        }
+
     } catch (error) {
         console.error('[书签树映射预览] 失败:', error);
         targetContainer.innerHTML = '';
@@ -11533,10 +11544,10 @@ async function renderCurrentChangesViewWithRetry(maxRetries = 3, forceRefresh = 
             const next = pendingCurrentChangesRender;
             pendingCurrentChangesRender = null;
             console.log('[渲染重试] 处理挂起的渲染请求:', next);
-            // 不递归阻塞：异步延迟一帧再执行
+            // 不递归阻塞：异步延迟一段时间再执行，防抖动
             setTimeout(() => {
                 renderCurrentChangesViewWithRetry(next.maxRetries, next.forceRefresh);
-            }, 0);
+            }, 300);
         }
     }
 }
@@ -11767,7 +11778,7 @@ async function renderCurrentChangesView(forceRefresh = false, options = {}) {
         }
 
         // 2. 智能分析书签变化 + 生成 Git diff
-        browserAPI.storage.local.get(['lastBookmarkData'], async (lastData) => {
+        browserAPI.storage.local.get(['lastBookmarkData', 'currentChangesViewMode'], async (lastData) => {
             // 获取当前书签树（working directory）
             browserAPI.bookmarks.getTree(async (currentTree) => {
                 // 获取上次备份的书签树（HEAD / last commit）
@@ -11778,110 +11789,148 @@ async function renderCurrentChangesView(forceRefresh = false, options = {}) {
 
                 container.innerHTML = html;
 
-                // 渲染书签树映射预览（内嵌到Bookmark Changes内部）
-                await renderChangesTreePreview(changeData);
+                // =================================================================
+                // 1. 立即绑定基础事件 (Fix: 移到渲染前，避免被阻塞)
+                // =================================================================
 
-                // 添加事件监听器
-                setTimeout(() => {
-                    // 添加跳转到Canvas编辑按钮事件
-                    const jumpToCanvasBtn = document.getElementById('jumpToCanvasBtn');
-                    if (jumpToCanvasBtn) {
-                        jumpToCanvasBtn.addEventListener('click', () => {
-                            document.querySelector('[data-view="canvas"]')?.click();
-                        });
-                    }
+                // 保存展开函数的引用，供渲染后调用
+                let expandFoldersRef = null;
 
-                    // 添加diff行点击高亮对应书签树节点的事件
-                    document.querySelectorAll('.diff-line.clickable').forEach(line => {
-                        line.addEventListener('click', (e) => {
-                            // 如果点击的是跳转按钮，不触发行点击事件
-                            if (e.target.closest('.jump-to-related-btn-container') || e.target.closest('.jump-to-related-btn')) {
-                                return;
-                            }
-                            const changeType = line.dataset.changeType;
-                            highlightTreeNodesByChangeType(changeType);
-                        });
-                    });
+                // 详略切换按钮逻辑
+                const toggleTreeDetailBtn = document.getElementById('toggleTreeDetailBtn');
+                const treePreviewContainer = document.getElementById('changesTreePreviewInline');
 
-                    // 添加跳转按钮点击事件
-                    document.querySelectorAll('.jump-to-related-btn').forEach(btn => {
-                        btn.addEventListener('click', (e) => {
-                            e.stopPropagation(); // 阻止事件冒泡到diff-line
-                            const changeType = btn.dataset.changeType;
-                            highlightTreeNodesByChangeType(changeType);
-                        });
-                    });
+                if (toggleTreeDetailBtn && treePreviewContainer) {
+                    const expandFoldersWithChanges = () => {
+                        const changeClasses = ['.tree-change-added', '.tree-change-deleted', '.tree-change-modified', '.tree-change-moved'];
+                        const selector = changeClasses.join(', ');
+                        const changedItems = treePreviewContainer.querySelectorAll(selector);
 
-                    // 添加详略切换按钮事件
-                    const toggleTreeDetailBtn = document.getElementById('toggleTreeDetailBtn');
-                    const treePreviewContainer = document.getElementById('changesTreePreviewInline');
-                    if (toggleTreeDetailBtn && treePreviewContainer) {
-                        // 展开包含变化的文件夹的辅助函数
-                        const expandFoldersWithChanges = () => {
-                            const changeClasses = ['.tree-change-added', '.tree-change-deleted', '.tree-change-modified', '.tree-change-moved'];
-                            const selector = changeClasses.join(', ');
-                            const changedItems = treePreviewContainer.querySelectorAll(selector);
+                        console.log('[详略切换] 找到变化节点数:', changedItems.length);
 
-                            console.log('[详略切换] 找到变化节点数:', changedItems.length);
-
-                            changedItems.forEach(item => {
-                                // 向上查找所有父级 .tree-node 并展开其包含的 .tree-children
-                                let parent = item.closest('.tree-node');
-                                while (parent) {
-                                    // 查找兄弟的 tree-children (与 tree-item 同级)
-                                    const children = parent.querySelector(':scope > .tree-children');
-                                    if (children) {
-                                        children.classList.add('expanded');
-                                        children.style.display = '';
-                                    }
-                                    // 查找 tree-item 中的 toggle
-                                    const treeItem = parent.querySelector(':scope > .tree-item');
-                                    if (treeItem) {
-                                        const toggle = treeItem.querySelector('.tree-toggle');
-                                        if (toggle) {
-                                            toggle.classList.add('expanded');
-                                        }
-                                        // 更新文件夹图标
-                                        const icon = treeItem.querySelector('.tree-icon.fas');
-                                        if (icon) {
-                                            icon.classList.remove('fa-folder');
-                                            icon.classList.add('fa-folder-open');
-                                        }
-                                    }
-                                    // 继续向上查找父级
-                                    const parentChildren = parent.parentElement;
-                                    parent = parentChildren ? parentChildren.closest('.tree-node') : null;
+                        changedItems.forEach(item => {
+                            let parent = item.closest('.tree-node');
+                            while (parent) {
+                                const children = parent.querySelector(':scope > .tree-children');
+                                if (children) {
+                                    children.classList.add('expanded');
+                                    children.style.display = '';
                                 }
-                            });
-                        };
-
-                        // 默认简略模式 - 展开包含变化的文件夹
-                        treePreviewContainer.classList.add('compact-mode');
-                        // 使用 requestAnimationFrame 确保 DOM 已渲染
-                        requestAnimationFrame(() => {
-                            setTimeout(() => {
-                                expandFoldersWithChanges();
-                            }, 50);
-                        });
-
-                        toggleTreeDetailBtn.addEventListener('click', () => {
-                            const isCompact = treePreviewContainer.classList.contains('compact-mode');
-                            treePreviewContainer.classList.toggle('compact-mode');
-                            toggleTreeDetailBtn.classList.toggle('active', !isCompact);
-
-                            // 简略模式时展开包含变化的文件夹
-                            if (!isCompact) {
-                                // 切换到简略模式
-                                expandFoldersWithChanges();
+                                const treeItem = parent.querySelector(':scope > .tree-item');
+                                if (treeItem) {
+                                    const toggle = treeItem.querySelector('.tree-toggle');
+                                    if (toggle) toggle.classList.add('expanded');
+                                    const icon = treeItem.querySelector('.tree-icon.fas');
+                                    if (icon) {
+                                        icon.classList.remove('fa-folder');
+                                        icon.classList.add('fa-folder-open');
+                                    }
+                                }
+                                const parentChildren = parent.parentElement;
+                                parent = parentChildren ? parentChildren.closest('.tree-node') : null;
                             }
-
-                            // 更新按钮 title
-                            toggleTreeDetailBtn.title = isCompact
-                                ? (currentLang === 'zh_CN' ? '切换为简略' : 'Switch to Compact')
-                                : (currentLang === 'zh_CN' ? '切换为详细' : 'Switch to Detailed');
                         });
+                    };
+                    expandFoldersRef = expandFoldersWithChanges;
+
+                    // 初始化状态：读取存储的模式（默认为简略模式 'compact'）
+                    const savedMode = lastData.currentChangesViewMode || 'compact';
+                    const isCompactInit = savedMode === 'compact';
+
+                    if (isCompactInit) {
+                        treePreviewContainer.classList.add('compact-mode');
+                        toggleTreeDetailBtn.classList.add('active');
+                        toggleTreeDetailBtn.title = currentLang === 'zh_CN' ? '切换为详细' : 'Switch to Detailed';
+                    } else {
+                        treePreviewContainer.classList.remove('compact-mode');
+                        toggleTreeDetailBtn.classList.remove('active');
+                        toggleTreeDetailBtn.title = currentLang === 'zh_CN' ? '切换为简略' : 'Switch to Compact';
                     }
-                }, 100);
+
+                    // 绑定点击事件
+                    toggleTreeDetailBtn.addEventListener('click', () => {
+                        const isCompact = treePreviewContainer.classList.contains('compact-mode');
+                        // 切换状态
+                        if (isCompact) {
+                            // 当前是简略，切换到详细
+                            treePreviewContainer.classList.remove('compact-mode');
+                            toggleTreeDetailBtn.classList.remove('active');
+                            toggleTreeDetailBtn.title = currentLang === 'zh_CN' ? '切换为简略' : 'Switch to Compact';
+                            // 保存状态
+                            browserAPI.storage.local.set({ currentChangesViewMode: 'detailed' });
+                        } else {
+                            // 当前是详细，切换到简略
+                            treePreviewContainer.classList.add('compact-mode');
+                            toggleTreeDetailBtn.classList.add('active');
+                            toggleTreeDetailBtn.title = currentLang === 'zh_CN' ? '切换为详细' : 'Switch to Detailed';
+                            // 展开变化
+                            expandFoldersWithChanges();
+                            // 保存状态
+                            browserAPI.storage.local.set({ currentChangesViewMode: 'compact' });
+                        }
+                    });
+                }
+
+                // 跳转Canvas按钮
+                const jumpToCanvasBtn = document.getElementById('jumpToCanvasBtn');
+                if (jumpToCanvasBtn) {
+                    jumpToCanvasBtn.addEventListener('click', () => {
+                        document.querySelector('[data-view="canvas"]')?.click();
+                    });
+                }
+
+                // Diff行点击事件
+                document.querySelectorAll('.diff-line.clickable').forEach(line => {
+                    line.addEventListener('click', (e) => {
+                        if (e.target.closest('.jump-to-related-btn-container') || e.target.closest('.jump-to-related-btn')) {
+                            return;
+                        }
+                        const changeType = line.dataset.changeType;
+                        highlightTreeNodesByChangeType(changeType);
+                    });
+                });
+
+                document.querySelectorAll('.jump-to-related-btn').forEach(btn => {
+                    btn.addEventListener('click', (e) => {
+                        e.stopPropagation();
+                        const changeType = btn.dataset.changeType;
+                        highlightTreeNodesByChangeType(changeType);
+                    });
+                });
+
+                // =================================================================
+                // 2. 渲染预览树
+                // =================================================================
+                try {
+                    // 渲染书签树映射预览（内嵌到Bookmark Changes内部）
+                    await renderChangesTreePreview(changeData);
+                } catch (err) {
+                    console.warn('[CurrentChanges] Tree preview render error:', err);
+                }
+
+                // 渲染后再次尝试展开（如果有变化）
+                if (expandFoldersRef) {
+                    // 暂时禁用过渡动画，避免刷新时出现"展开动作"
+                    const style = document.createElement('style');
+                    style.id = 'temp-disable-transition';
+                    style.innerHTML = `
+                        .tree-children, .tree-toggle {
+                            transition: none !important;
+                        }
+                    `;
+                    document.head.appendChild(style);
+
+                    // 执行展开
+                    expandFoldersRef();
+
+                    // 恢复动画 (延迟一点以确保渲染完成)
+                    requestAnimationFrame(() => {
+                        setTimeout(() => {
+                            const s = document.getElementById('temp-disable-transition');
+                            if (s) s.remove();
+                        }, 100);
+                    });
+                }
             });
         });
     } catch (error) {

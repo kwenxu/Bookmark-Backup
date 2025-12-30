@@ -2417,6 +2417,11 @@ a.tree-label.tree-bookmark-link:hover {
     display: block !important;
 }
 
+/* 简略模式：隐藏"此文件夹下有变化"的灰色圆点（仅在详细模式显示） */
+.changes-tree-preview-inline.compact-mode .change-badge.has-changes {
+    display: none !important;
+}
+
 /* 详略切换按钮激活状态 */
 .diff-edit-btn.icon-only.active {
     background: rgba(33, 150, 243, 0.25);

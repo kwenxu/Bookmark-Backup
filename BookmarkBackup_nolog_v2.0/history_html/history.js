@@ -11610,9 +11610,15 @@ async function renderCurrentChangesView(forceRefresh = false, options = {}) {
             html += `<span class="legend-item"><span class="legend-dot moved"></span>${currentLang === 'zh_CN' ? '移动' : 'Moved'}</span>`;
             html += '</span>';
             html += '<span class="diff-header-spacer"></span>';
+            // 详略切换按钮
+            html += `<button class="diff-edit-btn icon-only" id="toggleTreeDetailBtn" title="${currentLang === 'zh_CN' ? '详略切换' : 'Toggle Detail'}">`;
+            html += '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3"></path></svg>';
+            html += '</button>';
+            // 编辑按钮
             html += `<button class="diff-edit-btn icon-only" id="jumpToCanvasBtn" title="${currentLang === 'zh_CN' ? '在画布中编辑' : 'Edit in Canvas'}">`;
             html += '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path></svg>';
             html += '</button>';
+            // 全部撤销按钮
             html += `<button class="diff-edit-btn icon-only" id="revertAllCurrentBtn" title="${currentLang === 'zh_CN' ? '全部撤销' : 'Revert All'}">`;
             html += '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"></path><path d="M3 3v5h5"></path></svg>';
             html += '</button>';
@@ -11805,7 +11811,77 @@ async function renderCurrentChangesView(forceRefresh = false, options = {}) {
                             highlightTreeNodesByChangeType(changeType);
                         });
                     });
-                }, 0);
+
+                    // 添加详略切换按钮事件
+                    const toggleTreeDetailBtn = document.getElementById('toggleTreeDetailBtn');
+                    const treePreviewContainer = document.getElementById('changesTreePreviewInline');
+                    if (toggleTreeDetailBtn && treePreviewContainer) {
+                        // 展开包含变化的文件夹的辅助函数
+                        const expandFoldersWithChanges = () => {
+                            const changeClasses = ['.tree-change-added', '.tree-change-deleted', '.tree-change-modified', '.tree-change-moved'];
+                            const selector = changeClasses.join(', ');
+                            const changedItems = treePreviewContainer.querySelectorAll(selector);
+
+                            console.log('[详略切换] 找到变化节点数:', changedItems.length);
+
+                            changedItems.forEach(item => {
+                                // 向上查找所有父级 .tree-node 并展开其包含的 .tree-children
+                                let parent = item.closest('.tree-node');
+                                while (parent) {
+                                    // 查找兄弟的 tree-children (与 tree-item 同级)
+                                    const children = parent.querySelector(':scope > .tree-children');
+                                    if (children) {
+                                        children.classList.add('expanded');
+                                        children.style.display = '';
+                                    }
+                                    // 查找 tree-item 中的 toggle
+                                    const treeItem = parent.querySelector(':scope > .tree-item');
+                                    if (treeItem) {
+                                        const toggle = treeItem.querySelector('.tree-toggle');
+                                        if (toggle) {
+                                            toggle.classList.add('expanded');
+                                        }
+                                        // 更新文件夹图标
+                                        const icon = treeItem.querySelector('.tree-icon.fas');
+                                        if (icon) {
+                                            icon.classList.remove('fa-folder');
+                                            icon.classList.add('fa-folder-open');
+                                        }
+                                    }
+                                    // 继续向上查找父级
+                                    const parentChildren = parent.parentElement;
+                                    parent = parentChildren ? parentChildren.closest('.tree-node') : null;
+                                }
+                            });
+                        };
+
+                        // 默认简略模式 - 展开包含变化的文件夹
+                        treePreviewContainer.classList.add('compact-mode');
+                        // 使用 requestAnimationFrame 确保 DOM 已渲染
+                        requestAnimationFrame(() => {
+                            setTimeout(() => {
+                                expandFoldersWithChanges();
+                            }, 50);
+                        });
+
+                        toggleTreeDetailBtn.addEventListener('click', () => {
+                            const isCompact = treePreviewContainer.classList.contains('compact-mode');
+                            treePreviewContainer.classList.toggle('compact-mode');
+                            toggleTreeDetailBtn.classList.toggle('active', !isCompact);
+
+                            // 简略模式时展开包含变化的文件夹
+                            if (!isCompact) {
+                                // 切换到简略模式
+                                expandFoldersWithChanges();
+                            }
+
+                            // 更新按钮 title
+                            toggleTreeDetailBtn.title = isCompact
+                                ? (currentLang === 'zh_CN' ? '切换为简略' : 'Switch to Compact')
+                                : (currentLang === 'zh_CN' ? '切换为详细' : 'Switch to Detailed');
+                        });
+                    }
+                }, 100);
             });
         });
     } catch (error) {

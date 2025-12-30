@@ -2396,6 +2396,32 @@ a.tree-label.tree-bookmark-link:hover {
     padding: 0 !important;
 }
 
+/* 简略模式：隐藏没有变化的节点（.tree-node 包含 .tree-item 但没有 tree-change-xxx 类） */
+.changes-tree-preview-inline.compact-mode .tree-node:not(:has(.tree-change-added)):not(:has(.tree-change-deleted)):not(:has(.tree-change-modified)):not(:has(.tree-change-moved)) {
+    display: none !important;
+}
+
+/* 简略模式：确保有变化的节点显示 */
+.changes-tree-preview-inline.compact-mode .tree-node:has(.tree-change-added),
+.changes-tree-preview-inline.compact-mode .tree-node:has(.tree-change-deleted),
+.changes-tree-preview-inline.compact-mode .tree-node:has(.tree-change-modified),
+.changes-tree-preview-inline.compact-mode .tree-node:has(.tree-change-moved) {
+    display: block !important;
+}
+
+/* 简略模式：确保 tree-children 在有变化时显示 */
+.changes-tree-preview-inline.compact-mode .tree-children:has(.tree-change-added),
+.changes-tree-preview-inline.compact-mode .tree-children:has(.tree-change-deleted),
+.changes-tree-preview-inline.compact-mode .tree-children:has(.tree-change-modified),
+.changes-tree-preview-inline.compact-mode .tree-children:has(.tree-change-moved) {
+    display: block !important;
+}
+
+/* 详略切换按钮激活状态 */
+.diff-edit-btn.icon-only.active {
+    background: rgba(33, 150, 243, 0.25);
+}
+
 /* 点击diff行时高亮对应节点 */
 .diff-line.clickable {
     cursor: pointer;

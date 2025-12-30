@@ -1006,7 +1006,7 @@ const i18n = {
         'en': 'Open Source Info & Shortcuts'
     },
     navCurrentChanges: {
-        'zh_CN': '当前 数量/结构 变化',
+        'zh_CN': '当前变化',
         'en': 'Current Changes'
     },
     navHistory: {
@@ -1162,7 +1162,7 @@ const i18n = {
         'en': 'Click Ranking'
     },
     currentChangesViewTitle: {
-        'zh_CN': '当前 数量/结构 变化',
+        'zh_CN': '当前变化',
         'en': 'Current Changes'
     },
     historyViewTitle: {
@@ -1438,7 +1438,7 @@ const i18n = {
         'en': 'Manage shortcuts in browser'
     },
     shortcutCurrentChanges: {
-        'zh_CN': '打开「当前 数量/结构 变化」视图',
+        'zh_CN': '打开「当前变化」视图',
         'en': 'Open "Current Changes" view'
     },
     shortcutHistory: {
@@ -2749,7 +2749,8 @@ function applyLanguage() {
     const timeTrackingWidgetEmptyText = document.getElementById('timeTrackingWidgetEmptyText');
     if (timeTrackingWidgetEmptyText) timeTrackingWidgetEmptyText.textContent = i18n.timeTrackingWidgetEmpty[currentLang];
 
-    document.getElementById('currentChangesViewTitle').textContent = i18n.currentChangesViewTitle[currentLang];
+    const currentChangesViewTitle = document.getElementById('currentChangesViewTitle');
+    if (currentChangesViewTitle) currentChangesViewTitle.textContent = i18n.currentChangesViewTitle[currentLang];
     document.getElementById('historyViewTitle').textContent = i18n.historyViewTitle[currentLang];
 
     // 书签树映射预览翻译
@@ -11600,7 +11601,7 @@ async function renderCurrentChangesView(forceRefresh = false, options = {}) {
 
             // diff 头部
             html += '<div class="diff-header">';
-            html += `<span class="diff-title">${currentLang === 'zh_CN' ? '书签变化统计' : 'Bookmark Changes'}</span>`;
+            html += `<span class="diff-title">${currentLang === 'zh_CN' ? '当前变化' : 'Current Changes'}</span>`;
             // 图例放在标题右边
             html += '<span class="diff-header-legend">';
             html += `<span class="legend-item"><span class="legend-dot added"></span>${currentLang === 'zh_CN' ? '新增' : 'Added'}</span>`;
@@ -11611,6 +11612,9 @@ async function renderCurrentChangesView(forceRefresh = false, options = {}) {
             html += '<span class="diff-header-spacer"></span>';
             html += `<button class="diff-edit-btn icon-only" id="jumpToCanvasBtn" title="${currentLang === 'zh_CN' ? '在画布中编辑' : 'Edit in Canvas'}">`;
             html += '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path></svg>';
+            html += '</button>';
+            html += `<button class="diff-edit-btn icon-only" id="revertAllCurrentBtn" title="${currentLang === 'zh_CN' ? '全部撤销' : 'Revert All'}">`;
+            html += '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"></path><path d="M3 3v5h5"></path></svg>';
             html += '</button>';
             html += '</div>';
 

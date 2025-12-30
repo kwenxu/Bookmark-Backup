@@ -20354,6 +20354,19 @@ function addAnchorsToNode(nodeElement, nodeId) {
         }, true);
     });
 
+    // =============================================================================
+    // 【重要架构】临时栏目书签左键点击处理器
+    // =============================================================================
+    // 本处理器是「书签系统」的一部分，与永久栏目的处理逻辑（history.js:attachTreeEvents）
+    // 必须保持同步！两者都使用 window.defaultOpenMode 变量。
+    //
+    // ⚠️ 添加新的打开模式时，必须同时修改：
+    //   1. history.js → attachTreeEvents → clickHandler（永久栏目）
+    //   2. 本文件 → tempLinkClickHandler（临时栏目）
+    //   3. bookmark_tree_context_menu.js → 右键菜单action处理
+    //
+    // 详见：.agent/workflows/link-click-handling.md
+    // =============================================================================
     // 左键点击临时栏目（书签型）中的书签链接时，按全局默认打开方式处理
     if (tempLinkClickHandler) {
         document.removeEventListener('click', tempLinkClickHandler, true);
@@ -20392,6 +20405,8 @@ function addAnchorsToNode(nodeElement, nodeId) {
             if (typeof window.openInScopedTabGroup === 'function') window.openInScopedTabGroup(url, { context: scopedContext }); else window.open(url, '_blank');
         } else if (mode === 'same-window-specific-group') {
             if (typeof window.openInSameWindowSpecificGroup === 'function') window.openInSameWindowSpecificGroup(url, { context: scopedContext }); else window.open(url, '_blank');
+        } else if (mode === 'manual-select') {
+            if (typeof window.openBookmarkWithManualSelection === 'function') window.openBookmarkWithManualSelection(url); else window.open(url, '_blank');
         } else {
             if (typeof window.openBookmarkNewTab === 'function') window.openBookmarkNewTab(url); else window.open(url, '_blank');
         }

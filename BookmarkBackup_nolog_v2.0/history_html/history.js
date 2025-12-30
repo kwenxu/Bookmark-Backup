@@ -5593,13 +5593,35 @@ function initCardInteractions() {
     });
 }
 
+// =============================================================================
+// 【重要架构】全局链接点击兜底监听器 - 时间捕捉归因
+// =============================================================================
+// 本项目有三套独立的链接点击处理系统，互不干扰：
+//   1. 书签系统（defaultOpenMode）- 处理 .tree-bookmark-link
+//      → history.js:attachTreeEvents + bookmark_canvas_module.js:tempLinkClickHandler
+//   2. 超链接系统（hyperlinkDefaultOpenMode）- 处理说明框/Markdown卡片内链接
+//      → bookmark_tree_context_menu.js:attachHyperlinkContextMenu
+//   3. 时间捕捉兜底（本监听器）- 处理其他所有 target="_blank" 链接
+//
+// ⚠️ 添加新功能时必须注意：
+//   - 如果新增链接区域有自己的处理逻辑，必须在下面添加排除条件！
+//   - 否则会导致链接被打开两次（本监听器 + 专用监听器都处理）
+//   - 详见：.agent/workflows/link-click-handling.md
+// =============================================================================
 // 捕捉 extension 页面内的超链接打开（<a target="_blank">），统一走 tabs.create 以便做书签归因兜底
+// 排除书签链接（.tree-bookmark-link）和超链接区域，让其走专门的处理逻辑
 try {
     document.addEventListener('click', async (e) => {
         const anchor = e.target && typeof e.target.closest === 'function'
             ? e.target.closest('a[target="_blank"]')
             : null;
         if (!anchor) return;
+
+        // 排除书签链接：书签链接有专门的处理逻辑（支持 defaultOpenMode 记忆）
+        if (anchor.classList.contains('tree-bookmark-link')) return;
+
+        // 排除超链接区域：说明框、Markdown卡片内的链接有专门的超链接处理逻辑（hyperlinkDefaultOpenMode）
+        if (anchor.closest('.permanent-section-tip, .permanent-section-tip-editor, .temp-node-description, .temp-node-description-editor, .md-canvas-text, .md-canvas-editor')) return;
 
         const href = anchor.getAttribute('href') || '';
         if (!href || (!href.startsWith('http://') && !href.startsWith('https://'))) return;
@@ -15636,6 +15658,20 @@ function attachTreeEvents(treeContainer) {
             return;
         }
 
+        // =============================================================================
+        // 【重要架构】永久栏目书签左键点击处理器
+        // =============================================================================
+        // 本处理器是「书签系统」的一部分，与临时栏目的处理逻辑
+        // （bookmark_canvas_module.js:tempLinkClickHandler）必须保持同步！
+        // 两者都使用 window.defaultOpenMode 变量。
+        //
+        // ⚠️ 添加新的打开模式时，必须同时修改：
+        //   1. 本文件 → attachTreeEvents → clickHandler（永久栏目）
+        //   2. bookmark_canvas_module.js → tempLinkClickHandler（临时栏目）
+        //   3. bookmark_tree_context_menu.js → 右键菜单action处理
+        //
+        // 详见：.agent/workflows/link-click-handling.md
+        // =============================================================================
         // 左键点击书签标签，根据默认打开方式打开（避免重复绑定多个 click 监听器）
         try {
             const link = e.target && e.target.closest ? e.target.closest('a.tree-bookmark-link') : null;

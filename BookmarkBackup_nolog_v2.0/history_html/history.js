@@ -11600,7 +11600,6 @@ async function renderCurrentChangesView(forceRefresh = false, options = {}) {
 
             // diff 头部
             html += '<div class="diff-header">';
-            html += '<span class="diff-icon">📊</span>';
             html += `<span class="diff-title">${currentLang === 'zh_CN' ? '书签变化统计' : 'Bookmark Changes'}</span>`;
             // 图例放在标题右边
             html += '<span class="diff-header-legend">';

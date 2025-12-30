@@ -77,6 +77,18 @@ function resetPermanentSectionChangeMarkers() {
                 if (badges) badges.innerHTML = '';
             });
 
+            // 3) 清理灰色引导标识 (.change-badge.has-changes)
+            // 这些标识可能存在于没有变化类的文件夹节点上（表示"此文件夹下有变化"）
+            tree.querySelectorAll('.change-badge.has-changes').forEach(badge => {
+                badge.remove();
+            });
+
+            // 4) 清理图例（备份后没有变化，无需显示图例）
+            const legend = tree.querySelector('.tree-legend');
+            if (legend) {
+                legend.remove();
+            }
+
             if (body != null && prevScrollTop != null) {
                 body.scrollTop = prevScrollTop;
             }
@@ -4849,14 +4861,14 @@ function renderCurrentView() {
                     console.log('[Canvas] 永久栏目已存在，跳过创建');
                 }
 
-                // 2. 性能优化：只在首次进入或强制刷新时渲染书签树
-                // 如果已初始化，跳过书签树的完整渲染，只做增量更新
-                if (!isCanvasInitialized) {
-                    // 首次初始化：渲染书签树
-                    try {
-                        renderTreeView();
+                // 2. 渲染书签树
+                // 即使是已初始化状态，也需要调用 renderTreeView 检查是否有数据更新（内部有缓存机制，开销很小）
+                renderTreeView().catch(e => console.error('[Canvas] 书签树渲染失败:', e));
 
-                        // 3. 初始化Canvas功能（缩放、平移、拖拽等）
+                // 3. 初始化Canvas功能（缩放、平移、拖拽等）- 仅首次执行
+                if (!isCanvasInitialized) {
+                    // 首次初始化
+                    try {
                         if (window.CanvasModule) {
                             window.CanvasModule.init();
                         }
@@ -4872,22 +4884,22 @@ function renderCurrentView() {
                         // 初始化失败时不标记为已初始化，下次会重试
                     }
                 } else {
-                    // 已初始化：只恢复显示，触发休眠管理
-                    console.log('[Canvas] 使用缓存状态，跳过重新初始化');
+                    // 已初始化：验证状态
+                    console.log('[Canvas] 使用缓存状态，检查完整性');
 
                     // 验证Canvas状态是否有效
                     const canvasWorkspace = document.getElementById('canvasWorkspace');
                     const canvasContentEl = document.getElementById('canvasContent');
-                    const hasValidState = canvasWorkspace && canvasContentEl && canvasContentEl.children.length > 0;
+                    // 只要容器存在即可，children.length 检查交由 renderTreeView 保证
+                    const hasValidState = canvasWorkspace && canvasContentEl;
 
                     if (!hasValidState) {
-                        // 状态无效，需要重新初始化
-                        console.warn('[Canvas] 缓存状态无效，重新初始化');
+                        // 状态无效，尝试重新初始化模块
+                        console.warn('[Canvas] 缓存状态无效，重新初始化模块');
                         if (canvasView) {
                             canvasView.dataset.initialized = 'false';
                         }
                         try {
-                            renderTreeView();
                             if (window.CanvasModule) {
                                 window.CanvasModule.init();
                             }
@@ -14749,6 +14761,19 @@ let cachedCurrentTreeIndex = null; // id -> node（懒加载用，按需构建�
 const CANVAS_PERMANENT_TREE_LAZY_ENABLED = true;
 const CANVAS_PERMANENT_TREE_CHILD_BATCH = 200;
 
+// Canvas 懒加载模式下的“变化提示缓存”（仅四类：新增/删除/修改/移动）
+const CANVAS_LAZY_CHANGE_HINT_TTL_MS = 5 * 60 * 1000;
+let canvasLazyChangeHints = {
+    updatedAt: 0,
+    added: new Set(),
+    modified: new Set(),
+    moved: new Set(),
+    movedInfo: new Map(), // key -> { oldPath }
+    deletedCount: 0,
+    hasAny: false
+};
+let canvasLazyChangeHintsPromise = null;
+
 // 清除树缓存（供拖拽模块调用，防止缓存覆盖DOM更新）
 function clearTreeCache() {
     cachedTreeData = null;
@@ -14758,6 +14783,169 @@ function clearTreeCache() {
     console.log('[树缓存] 已清除');
 }
 window.clearTreeCache = clearTreeCache;
+
+function clearCanvasLazyChangeHints(reason = '') {
+    canvasLazyChangeHints = {
+        updatedAt: 0,
+        added: new Set(),
+        modified: new Set(),
+        moved: new Set(),
+        movedInfo: new Map(),
+        deletedCount: 0,
+        hasAny: false
+    };
+    if (reason) console.log('[Canvas变化提示] 已清空:', reason);
+}
+
+function buildFingerprintKeyFromChangeItem(item) {
+    if (!item) return '';
+    const path = typeof item.path === 'string' ? item.path : '';
+    const title = typeof item.title === 'string' ? item.title : '';
+    const url = typeof item.url === 'string' ? item.url : '';
+    return `B:${path}|${title}|${url}`;
+}
+
+function getFolderPathFromBreadcrumb(bc) {
+    if (!bc) return '';
+    const parts = bc.split(' > ').map(s => s.trim()).filter(Boolean);
+    const rootTitle = cachedCurrentTree && cachedCurrentTree[0] ? cachedCurrentTree[0].title : '';
+    if (rootTitle && parts[0] === rootTitle) parts.shift();
+    if (parts.length <= 1) return '';
+    parts.pop(); // 移除当前节点名
+    return parts.join('/');
+}
+
+function buildFingerprintKeyForBookmarkNode(node) {
+    if (!node || !node.url) return '';
+    const bc = cachedCurrentTree ? getNamedPathFromTree(cachedCurrentTree, node.id) : '';
+    const folderPath = getFolderPathFromBreadcrumb(bc);
+    return `B:${folderPath}|${node.title || ''}|${node.url || ''}`;
+}
+
+function formatFingerprintPathToSlash(path) {
+    if (typeof path !== 'string' || !path.length) return '/';
+    return path.startsWith('/') ? path : `/${path}`;
+}
+
+async function ensureCanvasLazyChangeHints(forceRefresh = false) {
+    if (!(currentView === 'canvas' && CANVAS_PERMANENT_TREE_LAZY_ENABLED)) return null;
+    const now = Date.now();
+    if (!forceRefresh && canvasLazyChangeHints.updatedAt && (now - canvasLazyChangeHints.updatedAt) < CANVAS_LAZY_CHANGE_HINT_TTL_MS) {
+        return canvasLazyChangeHints;
+    }
+    if (canvasLazyChangeHintsPromise) return canvasLazyChangeHintsPromise;
+
+    canvasLazyChangeHintsPromise = (async () => {
+        try {
+            let changeData = await getDetailedChanges(forceRefresh);
+            if (!forceRefresh && (!changeData || !changeData.hasChanges)) {
+                changeData = await getDetailedChanges(true);
+            }
+            const added = new Set();
+            const modified = new Set();
+            const moved = new Set();
+            const movedInfo = new Map();
+            let deletedCount = 0;
+
+            const stats = changeData && changeData.stats ? changeData.stats : null;
+            const statsHasAny = !!(stats && (
+                stats.bookmarkDiff || stats.folderDiff ||
+                stats.bookmarkMoved || stats.folderMoved ||
+                stats.bookmarkModified || stats.folderModified
+            ));
+
+            if (changeData && (changeData.hasChanges || statsHasAny)) {
+                if (Array.isArray(changeData.added)) {
+                    changeData.added.forEach(item => {
+                        const key = buildFingerprintKeyFromChangeItem(item);
+                        if (key) added.add(key);
+                    });
+                }
+                if (Array.isArray(changeData.modified)) {
+                    changeData.modified.forEach(item => {
+                        const key = buildFingerprintKeyFromChangeItem(item);
+                        if (key) modified.add(key);
+                    });
+                }
+                if (Array.isArray(changeData.moved)) {
+                    changeData.moved.forEach(item => {
+                        const key = buildFingerprintKeyFromChangeItem(item);
+                        if (key) {
+                            moved.add(key);
+                            if (item.oldPath) movedInfo.set(key, { oldPath: item.oldPath });
+                        }
+                    });
+                }
+                if (Array.isArray(changeData.deleted)) {
+                    deletedCount = changeData.deleted.length;
+                }
+            }
+
+            canvasLazyChangeHints = {
+                updatedAt: Date.now(),
+                added,
+                modified,
+                moved,
+                movedInfo,
+                deletedCount,
+                hasAny: added.size > 0 || modified.size > 0 || moved.size > 0 || deletedCount > 0 || statsHasAny
+            };
+            return canvasLazyChangeHints;
+        } catch (e) {
+            console.warn('[Canvas变化提示] 生成失败，回退为空:', e);
+            canvasLazyChangeHints = {
+                updatedAt: Date.now(),
+                added: new Set(),
+                modified: new Set(),
+                moved: new Set(),
+                movedInfo: new Map(),
+                deletedCount: 0,
+                hasAny: false
+            };
+            return canvasLazyChangeHints;
+        } finally {
+            canvasLazyChangeHintsPromise = null;
+        }
+    })();
+
+    return canvasLazyChangeHintsPromise;
+}
+
+function getCanvasLazyHintForBookmark(node) {
+    if (!node || !node.url) return null;
+    if (!(currentView === 'canvas' && CANVAS_PERMANENT_TREE_LAZY_ENABLED)) return null;
+    if (!canvasLazyChangeHints || !canvasLazyChangeHints.hasAny) return null;
+    const key = buildFingerprintKeyForBookmarkNode(node);
+    if (!key) return null;
+    if (canvasLazyChangeHints.added.has(key)) return { type: 'added' };
+    if (canvasLazyChangeHints.modified.has(key)) return { type: 'modified' };
+    if (canvasLazyChangeHints.moved.has(key)) {
+        const info = canvasLazyChangeHints.movedInfo.get(key) || {};
+        return { type: 'moved', oldPath: info.oldPath || '' };
+    }
+    return null;
+}
+
+function ensureCanvasLazyLegend(treeContainer) {
+    if (!(currentView === 'canvas' && CANVAS_PERMANENT_TREE_LAZY_ENABLED)) return;
+    const container = treeContainer || document.getElementById('bookmarkTree');
+    if (!container) return;
+    const existing = container.querySelector('.tree-legend');
+    if (!canvasLazyChangeHints || !canvasLazyChangeHints.hasAny) {
+        if (existing) existing.remove();
+        return;
+    }
+    if (existing) return;
+    const legend = document.createElement('div');
+    legend.className = 'tree-legend';
+    legend.innerHTML = `
+        <span class="legend-item"><span class="legend-dot added"></span> ${currentLang === 'zh_CN' ? '新增' : 'Added'}</span>
+        <span class="legend-item"><span class="legend-dot deleted"></span> ${currentLang === 'zh_CN' ? '删除' : 'Deleted'}</span>
+        <span class="legend-item"><span class="legend-dot modified"></span> ${currentLang === 'zh_CN' ? '修改' : 'Modified'}</span>
+        <span class="legend-item"><span class="legend-dot moved"></span> ${currentLang === 'zh_CN' ? '移动' : 'Moved'}</span>
+    `;
+    container.insertBefore(legend, container.firstChild);
+}
 
 // 生成书签树指纹（快速哈希）
 function getTreeFingerprint(tree) {
@@ -15302,13 +15490,18 @@ async function renderTreeView(forceRefresh = false) {
     // 如果已有缓存且不强制刷新，直接使用（快速路径）
     if (!forceRefresh && cachedTreeData && cachedTreeData.treeFragment) {
         console.log('[renderTreeView] 使用现有缓存（快速显示）');
+        if (currentView === 'canvas' && CANVAS_PERMANENT_TREE_LAZY_ENABLED) {
+            await ensureCanvasLazyChangeHints(false);
+        }
         // Canvas 视图下尽量避免整树替换，减少“重新加载感”
         if (currentView === 'canvas' && treeContainer.children.length) {
             treeContainer.style.display = 'block';
+            ensureCanvasLazyLegend(treeContainer);
         } else {
             treeContainer.innerHTML = '';
             treeContainer.appendChild(cachedTreeData.treeFragment.cloneNode(true));
             treeContainer.style.display = 'block';
+            ensureCanvasLazyLegend(treeContainer);
         }
 
         // 重新绑定事件
@@ -15436,6 +15629,10 @@ async function renderTreeView(forceRefresh = false) {
             if (currentView === 'canvas' && treeContainer.children.length) {
                 cachedCurrentTree = currentTree;
                 cachedCurrentTreeIndex = null;
+                if (currentView === 'canvas' && CANVAS_PERMANENT_TREE_LAZY_ENABLED) {
+                    await ensureCanvasLazyChangeHints(false);
+                    ensureCanvasLazyLegend(treeContainer);
+                }
                 // 恢复滚动位置
                 if (permBody && permScrollTop !== null && !isScrollRestoreBlocked()) {
                     permBody.scrollTop = permScrollTop;
@@ -15454,6 +15651,10 @@ async function renderTreeView(forceRefresh = false) {
             treeContainer.innerHTML = '';
             treeContainer.appendChild(cachedTreeData.treeFragment.cloneNode(true));
             treeContainer.style.display = 'block';
+            if (currentView === 'canvas' && CANVAS_PERMANENT_TREE_LAZY_ENABLED) {
+                await ensureCanvasLazyChangeHints(false);
+                ensureCanvasLazyLegend(treeContainer);
+            }
 
             // 重新绑定事件
             attachTreeEvents(treeContainer);
@@ -15526,8 +15727,11 @@ async function renderTreeView(forceRefresh = false) {
         console.log('[renderTreeView] oldTree[0] 存在:', !!(oldTree && oldTree[0]));
 
         if (currentView === 'canvas' && CANVAS_PERMANENT_TREE_LAZY_ENABLED) {
-            // Canvas 永久栏目优先保证跟手/流畅：跳过全量 diff 检测（会遍历整棵树）
-            treeChangeMap = new Map();
+            // [Modified] In lazy mode, we still need diff detection to show "Add/Reduce/Modify/Move" indicators
+            // previously we skipped it for performance, now we keep it but optimize rendering
+            // treeChangeMap = new Map(); // Don't skip!
+            console.log('[renderTreeView] Canvas lazy mode: executing diff detection to show indicators');
+            treeChangeMap = await detectTreeChangesFast(oldTree, currentTree);
         } else if (oldTree && oldTree[0]) {
             console.log('[renderTreeView] 开始检测变动...');
             treeChangeMap = await detectTreeChangesFast(oldTree, currentTree);
@@ -15543,6 +15747,12 @@ async function renderTreeView(forceRefresh = false) {
         } else {
             treeChangeMap = new Map(); // 无备份数据，不显示任何变化标记
             console.log('[renderTreeView] 无上次备份数据，不显示变化标记');
+        }
+
+        // Canvas 懒加载：使用轻量变化提示缓存（用于显示四类图例/标识）
+        let canvasHints = null;
+        if (currentView === 'canvas' && CANVAS_PERMANENT_TREE_LAZY_ENABLED) {
+            canvasHints = await ensureCanvasLazyChangeHints(false);
         }
 
         // 合并旧树和新树，显示删除的节点
@@ -15571,21 +15781,30 @@ async function renderTreeView(forceRefresh = false) {
         // 使用 DocumentFragment 优化渲染
         const fragment = document.createDocumentFragment();
 
-        // 只在有变化时才显示图例
-        if (treeChangeMap.size > 0) {
+        // 只在有变化时才显示图例（Canvas 懒加载可使用变化提示缓存）
+        // 只在有变化时才显示图例（Canvas 懒加载可使用变化提示缓存）
+        if (treeChangeMap.size > 0 || (canvasHints && canvasHints.hasAny)) {
             const legend = document.createElement('div');
             legend.className = 'tree-legend';
+            const cursorStyle = 'cursor: pointer; user-select: none;';
             legend.innerHTML = `
-                <span class="legend-item"><span class="legend-dot added"></span> ${currentLang === 'zh_CN' ? '新增' : 'Added'}</span>
-                <span class="legend-item"><span class="legend-dot deleted"></span> ${currentLang === 'zh_CN' ? '删除' : 'Deleted'}</span>
-                <span class="legend-item"><span class="legend-dot modified"></span> ${currentLang === 'zh_CN' ? '修改' : 'Modified'}</span>
-                <span class="legend-item"><span class="legend-dot moved"></span> ${currentLang === 'zh_CN' ? '移动' : 'Moved'}</span>
+                <span class="legend-item" data-change-type="added" style="${cursorStyle}" title="${currentLang === 'zh_CN' ? '点击查看新增项' : 'Click to view added items'}"><span class="legend-dot added"></span> ${currentLang === 'zh_CN' ? '新增' : 'Added'}</span>
+                <span class="legend-item" data-change-type="deleted" style="${cursorStyle}" title="${currentLang === 'zh_CN' ? '点击查看删除项' : 'Click to view deleted items'}"><span class="legend-dot deleted"></span> ${currentLang === 'zh_CN' ? '删除' : 'Deleted'}</span>
+                <span class="legend-item" data-change-type="modified" style="${cursorStyle}" title="${currentLang === 'zh_CN' ? '点击查看修改项' : 'Click to view modified items'}"><span class="legend-dot modified"></span> ${currentLang === 'zh_CN' ? '修改' : 'Modified'}</span>
+                <span class="legend-item" data-change-type="moved" style="${cursorStyle}" title="${currentLang === 'zh_CN' ? '点击查看移动项' : 'Click to view moved items'}"><span class="legend-dot moved"></span> ${currentLang === 'zh_CN' ? '移动' : 'Moved'}</span>
             `;
             fragment.appendChild(legend);
         }
 
+        // Canvas 懒加载优化：计算需要强制展开的节点集合（包含变化的节点的路径上所有父节点）
+        let forceExpandSet = new Set();
+        if (treeChangeMap.size > 0 && currentView === 'canvas' && CANVAS_PERMANENT_TREE_LAZY_ENABLED) {
+            forceExpandSet = computeForceExpandSet(treeToRender, treeChangeMap);
+            console.log('[renderTreeView] Force expand nodes count:', forceExpandSet.size);
+        }
+
         const tempDiv = document.createElement('div');
-        tempDiv.innerHTML = renderTreeNodeWithChanges(treeToRender[0], 0);
+        tempDiv.innerHTML = renderTreeNodeWithChanges(treeToRender[0], 0, 50, new Set(), forceExpandSet);
         while (tempDiv.firstChild) {
             fragment.appendChild(tempDiv.firstChild);
         }
@@ -15593,7 +15812,8 @@ async function renderTreeView(forceRefresh = false) {
         // 更新缓存
         cachedTreeData = {
             treeFragment: fragment.cloneNode(true),
-            currentTree: currentTree
+            currentTree: currentTree,
+            renderTree: treeToRender
         };
         if (canUseVersion) {
             lastTreeSnapshotVersion = snapshotVersion;
@@ -15853,6 +16073,226 @@ function attachTreeEvents(treeContainer) {
 
     // 恢复展开状态
     restoreTreeExpandState(treeContainer);
+
+    // 绑定Permanent Section图例点击事件
+    setupLegendClickHandlers(treeContainer);
+}
+
+// 绑定图例点击导航功能
+function setupLegendClickHandlers(container) {
+    const legends = container.querySelectorAll('.tree-legend .legend-item[data-change-type]');
+    legends.forEach(item => {
+        item.addEventListener('click', (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            const type = item.getAttribute('data-change-type');
+            if (type) {
+                jumpToNextChangeType(type, container);
+            }
+        });
+    });
+}
+
+// 导航到下一个指定类型的变动节点
+// 维护每个类型的当前索引，实现循环跳转
+const _changeTypeIndices = { added: -1, deleted: -1, modified: -1, moved: -1 };
+async function jumpToNextChangeType(type, container) {
+    if (!treeChangeMap || treeChangeMap.size === 0) {
+        const msg = currentLang === 'zh_CN' ? '当前没有变动' : 'No changes detected';
+        // 使用简单的提示，或者 custom toast
+        console.log(msg);
+        return;
+    }
+
+    // 收集所有符合类型的节点ID
+    let targetIds = [];
+    const candidates = new Set();
+    for (const [id, change] of treeChangeMap.entries()) {
+        let match = false;
+        if (type === 'added' && change.type === 'added') match = true;
+        else if (type === 'deleted' && change.type === 'deleted') match = true;
+        else if (type === 'modified' && change.type.includes('modified')) match = true;
+        else if (type === 'moved' && change.type.includes('moved')) match = true;
+
+        if (match) candidates.add(id);
+    }
+
+    // 还有显式移动的
+    if (type === 'moved' && explicitMovedIds) {
+        const now = Date.now();
+        for (const [id, expiry] of explicitMovedIds.entries()) {
+            if (expiry > now) {
+                candidates.add(id);
+            }
+        }
+    }
+
+    // [New] 按照树的视觉顺序（从上到下）排序 targetIds
+    if (candidates.size > 0) {
+        if (cachedTreeData && cachedTreeData.renderTree) {
+            const sorted = [];
+            const traverse = (nodes) => {
+                if (!nodes || !Array.isArray(nodes)) return;
+                for (const node of nodes) {
+                    if (candidates.has(node.id)) {
+                        sorted.push(node.id);
+                    }
+                    if (node.children && node.children.length > 0) {
+                        traverse(node.children);
+                    }
+                }
+            };
+            // 根节点通常是虚拟的或者就是 treeToRender[0]
+            traverse(cachedTreeData.renderTree);
+            targetIds = sorted;
+
+            // 兜底：如果有遗漏（理论上不应该，除非 renderTree 不全），把剩下的追加在后面
+            if (sorted.length < candidates.size) {
+                candidates.forEach(id => {
+                    if (!sorted.includes(id)) targetIds.push(id);
+                });
+            }
+        } else {
+            // 降级：无树结构缓存，使用默认 Map 顺序
+            targetIds = Array.from(candidates);
+        }
+    }
+
+
+
+    if (targetIds.length === 0) {
+        const typeLabels = {
+            added: currentLang === 'zh_CN' ? '新增' : 'Added',
+            deleted: currentLang === 'zh_CN' ? '删除' : 'Deleted',
+            modified: currentLang === 'zh_CN' ? '修改' : 'Modified',
+            moved: currentLang === 'zh_CN' ? '移动' : 'Moved'
+        };
+        const msg = currentLang === 'zh_CN'
+            ? `没有找到"${typeLabels[type]}"类型的变动`
+            : `No items found for "${typeLabels[type]}"`;
+        alert(msg);
+        return;
+    }
+
+    // 循环索引
+    _changeTypeIndices[type]++;
+    if (_changeTypeIndices[type] >= targetIds.length) {
+        _changeTypeIndices[type] = 0;
+    }
+    const targetId = targetIds[_changeTypeIndices[type]];
+
+    console.log(`[JumpToChange] Type: ${type}, Index: ${_changeTypeIndices[type]}/${targetIds.length}, ID: ${targetId}`);
+
+    // 如果节点未渲染（在懒加载的折叠文件夹中），需要先展开父级
+    // 我们复用 computeForceExpandSet 的逻辑思想，但这里针对单个节点
+    // 1. 找到该节点的所有父ID
+    // 2. 强制展开这些父ID
+    // 3. 滚动到该节点
+
+    // 获取路径
+    // 由于我们可能是在 collapsed 的文件夹里，DOM里可能没有这个元素
+    let targetItem = container.querySelector(`.tree-item[data-node-id="${targetId}"]`);
+
+    if (!targetItem) {
+        // 尝试在 cachedTreeData.currentTree (或者 rebuilding logic) 中找路径
+        // 但最简单的是：触发一次带 forceExpand 的渲染，但这比较重
+        // 替代方案：根据 treeChangeMap 里的 info (detectTreeChangesFast 里有 parentId) 
+        // 但 fast map里存的结构可能不全。
+        // 可靠方案：如果 treeChangeMap 存在，说明我们有完整树数据。
+        // 我们利用 search 的 jumpToResult 逻辑（如果它通用），或者简单地：
+        // 强制把这个 targetId 加入 forceExpandSet（如果能传进去），然后重绘? 
+        // 不，重绘太慢。
+
+        // 更好的方式：利用 loadPermanentFolderChildrenLazy 递归加载/展开路径
+        // 但我们需要知道路径。
+        // 如果我们有 cachedOldTree 和 cachedCurrentTree (treeToRender)，我们可以遍历找到路径。
+
+        // 这里简化处理：如果找不到DOM，提示用户展开文件夹，或者尝试触发一次“定位重绘”
+        // 实际上，我们之前的 forceExpandSet 逻辑应该已经保证了“有变动的节点”是渲染了的（除非是“此文件夹下有变化”的深层节点）
+        // 等等，之前的 forceExpandSet 是把**所有**变动节点都强制展开了吗？
+        // 是的：computeForceExpandSet 递归检查，如果子节点有变动，父节点加入set。
+        // 此时 renderTreeView 会使用 set 来决定是否截断懒加载。
+        // 所以，如果 renderTreeView 已经运行过且正确，target element 应该已经在 DOM 中了！
+        // 除非 target element 本身是折叠状态（但 forceExpandSet 也会展开它？不，forceExpandSet 是让它*被渲染*，是否 `expanded` 取决于 `expanded` class）
+
+        // 检查 renderTreeNodeWithChanges:
+        // const shouldForceExpand = forceExpandSet && forceExpandSet.has(node.id);
+        // <span class="tree-children ${level === 0 || shouldForceExpand ? 'expanded' : ''}">
+        // 所以，如果有变动，父文件夹应该是 expanded 的。
+        // 唯一的例外是：如果是 lazy rendering 初次加载，可能还在进行中？或者 forceExpandSet 被漏了？
+        // 前面的修复确保了 Canvas 模式下总是计算 forceExpandSet。
+
+        // 所以理论上 targetItem 应该存在。如果不存在，可能是：
+        // 1. 这是一个删除的节点，且父节点被折叠 (?)
+        // 2. 这是一个“移动”的节点，在 lazy load 区域 (?)
+    }
+
+    if (targetItem) {
+        // 确保父级视觉上展开 (css check)
+        let parent = targetItem.closest('.tree-children');
+        let expandedAny = false;
+        while (parent && parent !== container) {
+            if (!parent.classList.contains('expanded')) {
+                parent.classList.add('expanded');
+                expandedAny = true;
+                const pNode = parent.closest('.tree-node');
+                if (pNode) {
+                    const toggle = pNode.querySelector('.tree-toggle');
+                    if (toggle) toggle.classList.add('expanded');
+                    const icon = pNode.querySelector('.tree-icon.fas.fa-folder');
+                    if (icon) {
+                        icon.classList.remove('fa-folder');
+                        icon.classList.add('fa-folder-open');
+                    }
+                }
+            }
+            parent = parent.parentElement ? parent.parentElement.closest('.tree-children') : null;
+        }
+
+        // 如果展开了任何文件夹，保存展开状态以实现持久化
+        if (expandedAny) {
+            saveTreeExpandState(container);
+        }
+
+        // 滚动并高亮
+        targetItem.scrollIntoView({ behavior: 'smooth', block: 'center' });
+
+        // 移除旧的高亮
+        container.querySelectorAll('.highlight-target').forEach(el => {
+            el.classList.remove('highlight-target');
+            el.style.animation = 'none';
+        });
+
+        // 高亮所有该类型的节点 (Added matches Added, Modified matches Modifed, etc)
+        // 从 targetIds 列表里找，只要 DOM 里存在的都高亮
+        let highlightCount = 0;
+        targetIds.forEach(id => {
+            const item = container.querySelector(`.tree-item[data-node-id="${id}"]`);
+            if (item) {
+                // 确保样式类存在并触发重绘
+                item.classList.add('highlight-target');
+                item.style.animation = 'none';
+                item.offsetHeight; /* trigger reflow */
+                // 强制应用动画（以防 CSS 优先级或未生效）
+                item.style.animation = 'highlightPulse 2s ease-out infinite';
+                highlightCount++;
+
+                // 3秒后移除动画
+                setTimeout(() => {
+                    // 检查是否还在 DOM 中（防止已经被重新渲染替换）
+                    if (item.isConnected) {
+                        item.style.animation = '';
+                        item.classList.remove('highlight-target');
+                    }
+                }, 3000);
+            }
+        });
+
+        console.log(`[JumpToChange] Scrolled to ${targetId}, Highlighted ${highlightCount} items`);
+    } else {
+        console.warn(`[JumpToChange] Element ${targetId} not found in DOM even after force expand check.`);
+        // fallback?
+    }
 }
 
 // 保存JSON滚动位置
@@ -16631,7 +17071,42 @@ function findNodePathInTree(tree, nodeId) {
 }
 
 // 渲染带变动标记的树节点
-function renderTreeNodeWithChanges(node, level = 0, maxDepth = 50, visitedIds = new Set()) {
+// Helper to identify nodes that must be expanded because they contain changes
+function computeForceExpandSet(nodes, changeMap) {
+    const set = new Set();
+    if (!nodes || !changeMap || changeMap.size === 0) return set;
+
+    // Recursive check. Returns true if node or descendants have changes.
+    const check = (node) => {
+        if (!node) return false;
+        let hasChange = changeMap.has(node.id);
+
+        if (node.children) {
+            node.children.forEach(child => {
+                if (check(child)) {
+                    hasChange = true;
+                }
+            });
+        }
+
+        // If this node or any child has changes, this node must be expanded/rendered
+        // Note: we might want to distinguish between "render children" and "expand visually".
+        // Here we put it in the set, meaning "override lazy loading stop".
+        if (hasChange) {
+            set.add(node.id);
+        }
+        return hasChange;
+    };
+
+    if (Array.isArray(nodes)) {
+        nodes.forEach(node => check(node));
+    } else {
+        check(nodes);
+    }
+    return set;
+}
+
+function renderTreeNodeWithChanges(node, level = 0, maxDepth = 50, visitedIds = new Set(), forceExpandSet = null) {
     // 防止无限递归的保护机制
     const MAX_DEPTH = maxDepth;
     const MAX_NODES = 10000;
@@ -16662,6 +17137,7 @@ function renderTreeNodeWithChanges(node, level = 0, maxDepth = 50, visitedIds = 
         // 叶子（书签）
         if (node.url) {
             const isExplicitMovedOnly = explicitMovedIds.has(node.id) && explicitMovedIds.get(node.id) > Date.now();
+            const lazyHint = getCanvasLazyHintForBookmark(node);
             if (change) {
                 if (change.type === 'added') {
                     changeClass = 'tree-change-added';
@@ -16700,6 +17176,18 @@ function renderTreeNodeWithChanges(node, level = 0, maxDepth = 50, visitedIds = 
                             statusIcon += `<span class="change-badge moved" data-move-from="${escapeHtml(slash)}" title="${escapeHtml(slash)}"><i class="fas fa-arrows-alt"></i><span class="move-tooltip">${slashPathToChipsHTML(slash)}</span></span>`;
                         }
                     }
+                }
+            } else if (lazyHint) {
+                if (lazyHint.type === 'added') {
+                    changeClass = 'tree-change-added';
+                    statusIcon = '<span class="change-badge added">+</span>';
+                } else if (lazyHint.type === 'modified') {
+                    changeClass = 'tree-change-modified';
+                    statusIcon += '<span class="change-badge modified">~</span>';
+                } else if (lazyHint.type === 'moved') {
+                    changeClass = 'tree-change-moved';
+                    const slash = formatFingerprintPathToSlash(lazyHint.oldPath || '');
+                    statusIcon += `<span class="change-badge moved" data-move-from="${escapeHtml(slash)}" title="${escapeHtml(slash)}"><i class="fas fa-arrows-alt"></i><span class="move-tooltip">${slashPathToChipsHTML(slash)}</span></span>`;
                 }
             } else if (isExplicitMovedOnly) {
                 // 无 diff 记录但存在显式移动标识：也显示蓝色移动徽标
@@ -16778,7 +17266,11 @@ function renderTreeNodeWithChanges(node, level = 0, maxDepth = 50, visitedIds = 
     }
 
     // Canvas 视图性能：永久栏目采用懒加载，避免首次进入遍历/渲染整棵书签树
-    if (CANVAS_PERMANENT_TREE_LAZY_ENABLED && currentView === 'canvas' && level > 0) {
+    // [Modified] If node is in forceExpandSet, we override lazy loading to show changes
+    const shouldForceExpand = forceExpandSet && forceExpandSet.has(node.id);
+    const isLazyStop = !shouldForceExpand && CANVAS_PERMANENT_TREE_LAZY_ENABLED && currentView === 'canvas' && level > 0;
+
+    if (isLazyStop) {
         const childCount = Array.isArray(node.children) ? node.children.length : 0;
         const hasChildren = childCount > 0;
         return `
@@ -16796,7 +17288,11 @@ function renderTreeNodeWithChanges(node, level = 0, maxDepth = 50, visitedIds = 
 
     // 若文件夹本身无变化，但其子树存在变化，追加灰色“指引”标识
     // 注意：Canvas 永久栏目懒加载模式下，禁止做整棵子树扫描（会导致首次进入严重卡顿）
-    if (!change && !(CANVAS_PERMANENT_TREE_LAZY_ENABLED && currentView === 'canvas')) {
+    // [Modified] If we computed forceExpandSet, we already know about descendants, so we can allow logic (or use forceExpandSet check)
+    // Actually, if we are here (not lazy stopped), we are either rendering recursively OR we are at root.
+    // If we rely on hasDescendantChangesFast, it iterates immediate children. It is safe.
+    // The previous check blocked it globally for Canvas. We allow it now if we are tracking changes.
+    if (!change && (!CANVAS_PERMANENT_TREE_LAZY_ENABLED || currentView !== 'canvas' || treeChangeMap.size > 0)) {
         try {
             const hasDescendant = (function hasDescendantChangesFast(n) {
                 if (!n || !Array.isArray(n.children) || n.children.length === 0) return false;
@@ -16857,15 +17353,44 @@ function renderTreeNodeWithChanges(node, level = 0, maxDepth = 50, visitedIds = 
         <div class="tree-node">
             <div class="tree-item ${changeClass}" data-node-id="${node.id}" data-node-title="${escapeHtml(node.title)}" data-node-type="folder" data-node-level="${level}" data-has-children="${Array.isArray(node.children) && node.children.length ? 'true' : 'false'}" data-children-loaded="true" data-node-index="${typeof node.index === 'number' ? node.index : ''}">
                 <span class="tree-toggle ${level === 0 ? 'expanded' : ''}"><i class="fas fa-chevron-right"></i></span>
-                <i class="tree-icon fas fa-folder"></i>
+                <i class="tree-icon fas fa-folder${level === 0 ? '-open' : ''}"></i>
                 <span class="tree-label">${escapeHtml(node.title)}</span>
                 <span class="change-badges">${statusIcon}</span>
             </div>
             <div class="tree-children ${level === 0 ? 'expanded' : ''}">
-                ${sortedChildren.map(child => renderTreeNodeWithChanges(child, level + 1, maxDepth, visitedIds)).join('')}
+                ${sortedChildren.map(child => renderTreeNodeWithChanges(child, level + 1, maxDepth, visitedIds, forceExpandSet)).join('')}
             </div>
         </div>
     `;
+}
+
+// ===== 辅助函数：确保图例存在 =====
+// 在增量更新时，如果图例不存在，则创建并插入到书签树顶部
+function ensureTreeLegendExists(container) {
+    if (!container) return;
+
+    // 检查图例是否已存在
+    const existingLegend = container.querySelector('.tree-legend');
+    if (existingLegend) return; // 已存在，无需创建
+
+    // 创建图例
+    const legend = document.createElement('div');
+    legend.className = 'tree-legend';
+    const cursorStyle = 'cursor: pointer; user-select: none;';
+    legend.innerHTML = `
+        <span class="legend-item" data-change-type="added" style="${cursorStyle}" title="${currentLang === 'zh_CN' ? '点击查看新增项' : 'Click to view added items'}"><span class="legend-dot added"></span> ${currentLang === 'zh_CN' ? '新增' : 'Added'}</span>
+        <span class="legend-item" data-change-type="deleted" style="${cursorStyle}" title="${currentLang === 'zh_CN' ? '点击查看删除项' : 'Click to view deleted items'}"><span class="legend-dot deleted"></span> ${currentLang === 'zh_CN' ? '删除' : 'Deleted'}</span>
+        <span class="legend-item" data-change-type="modified" style="${cursorStyle}" title="${currentLang === 'zh_CN' ? '点击查看修改项' : 'Click to view modified items'}"><span class="legend-dot modified"></span> ${currentLang === 'zh_CN' ? '修改' : 'Modified'}</span>
+        <span class="legend-item" data-change-type="moved" style="${cursorStyle}" title="${currentLang === 'zh_CN' ? '点击查看移动项' : 'Click to view moved items'}"><span class="legend-dot moved"></span> ${currentLang === 'zh_CN' ? '移动' : 'Moved'}</span>
+    `;
+
+    // 插入到容器顶部
+    container.insertBefore(legend, container.firstChild);
+
+    // 绑定点击事件
+    setupLegendClickHandlers(container);
+
+    console.log('[增量更新] 图例已创建');
 }
 
 // ===== 增量更新：创建 =====
@@ -16876,29 +17401,14 @@ async function applyIncrementalCreateToTree(id, bookmark) {
     if (!container) return;
     // 获取父节点 DOM
     const parentId = bookmark.parentId;
-    const parentItem = container.querySelector(`.tree-item[data-node-id="${parentId}"]`);
     if (!parentItem) {
-        if (currentView === 'canvas' && CANVAS_PERMANENT_TREE_LAZY_ENABLED) {
-            // 懒加载模式下：父节点未渲染属正常情况（未展开），不触发整树重渲
-            cachedTreeData = null;
-            lastTreeFingerprint = null;
-            lastTreeSnapshotVersion = null;
-            cachedCurrentTreeIndex = null;
-            return;
-        }
+        // 如果找不到父节点，说明父节点可能未渲染（懒加载），此时必须触发完整渲染
+        // 以便 detectTreeChangesFast 能检测到变化并强制展开路径
         await renderTreeView(true);
         return;
     }
-    const parentNode = parentItem.nextElementSibling && parentItem.nextElementSibling.classList.contains('tree-children')
-        ? parentItem.nextElementSibling : null;
     if (!parentNode) {
-        if (currentView === 'canvas' && CANVAS_PERMANENT_TREE_LAZY_ENABLED) {
-            cachedTreeData = null;
-            lastTreeFingerprint = null;
-            lastTreeSnapshotVersion = null;
-            cachedCurrentTreeIndex = null;
-            return;
-        }
+        // 找不到子容器，触发重绘
         await renderTreeView(true);
         return;
     }
@@ -16961,6 +17471,8 @@ async function applyIncrementalCreateToTree(id, bookmark) {
             window.CanvasModule.enhance();
         }
     }
+    // 确保图例存在
+    ensureTreeLegendExists(container);
     // 恢复滚动位置
     if (permBody && permScrollTop !== null) permBody.scrollTop = permScrollTop;
 }
@@ -16972,7 +17484,11 @@ function applyIncrementalRemoveFromTree(id) {
     const container = document.getElementById('bookmarkTree');
     if (!container) return;
     const item = container.querySelector(`.tree-item[data-node-id="${id}"]`);
-    if (!item) return;
+    if (!item) {
+        // 如果找不到节点（可能是Canvas懒加载隐藏的），强制刷新以更新父级状态
+        renderTreeView(true).catch(e => console.error(e));
+        return;
+    }
 
     // 先添加红色标识和删除类
     item.classList.add('tree-change-deleted');
@@ -17003,6 +17519,8 @@ function applyIncrementalRemoveFromTree(id) {
 
     // 保持删除标识在原位显示，不自动移除节点
     // 用户可以通过"清理变动标识"功能来清除这些已删除的项目
+    // 确保图例存在
+    ensureTreeLegendExists(container);
     // 恢复滚动位置
     if (permBody && permScrollTop !== null) permBody.scrollTop = permScrollTop;
 }
@@ -17015,13 +17533,7 @@ async function applyIncrementalChangeToTree(id, changeInfo) {
     if (!container) return;
     const item = container.querySelector(`.tree-item[data-node-id="${id}"]`);
     if (!item) {
-        if (currentView === 'canvas' && CANVAS_PERMANENT_TREE_LAZY_ENABLED) {
-            cachedTreeData = null;
-            lastTreeFingerprint = null;
-            lastTreeSnapshotVersion = null;
-            cachedCurrentTreeIndex = null;
-            return;
-        }
+        // 找不到节点（懒加载），触发重绘以确保变化可见
         await renderTreeView(true);
         return;
     }
@@ -17073,6 +17585,8 @@ async function applyIncrementalChangeToTree(id, changeInfo) {
     if (badges && !badges.querySelector('.modified')) {
         badges.insertAdjacentHTML('beforeend', '<span class="change-badge modified">~</span>');
     }
+    // 确保图例存在
+    ensureTreeLegendExists(container);
     // 恢复滚动位置
     if (permBody && permScrollTop !== null) permBody.scrollTop = permScrollTop;
 }
@@ -17087,7 +17601,21 @@ async function applyIncrementalMoveToTree(id, moveInfo) {
     if (!container) return;
     const item = container.querySelector(`.tree-item[data-node-id="${id}"]`);
     if (!item) {
-        console.warn('[增量移动] 找不到节点，跳过（可能由即时视觉更新处理）');
+        // 在 Canvas 懒加载模式下，节点可能未渲染，需要触发刷新以显示变化标识
+        // 只有在拖拽操作不是由本地 dragMoveHandled 集合处理时才触发刷新
+        const isDragHandled = window.__dragMoveHandled && window.__dragMoveHandled.has(id);
+        if (!isDragHandled) {
+            // 检查是否是 Canvas 懒加载模式
+            const isCanvasLazyMode = currentView === 'canvas' && CANVAS_PERMANENT_TREE_LAZY_ENABLED;
+            if (isCanvasLazyMode) {
+                // 懒加载模式下节点未渲染，需要刷新以显示标识（使用 log 级别避免报错干扰）
+                console.log('[增量移动] Canvas懒加载模式，节点未渲染，触发刷新以显示标识:', id);
+            } else {
+                // 非懒加载模式下找不到节点
+                console.log('[增量移动] 找不到节点，触发刷新以更新视图');
+            }
+            renderTreeView(true).catch(e => console.error(e));
+        }
         return;
     }
     const node = item.closest('.tree-node');
@@ -17193,6 +17721,8 @@ async function applyIncrementalMoveToTree(id, moveInfo) {
             labelSpan.style.setProperty('font-weight', '500', 'important');
         }
     }
+    // 确保图例存在
+    ensureTreeLegendExists(container);
     // 恢复滚动位置
     if (permBody && permScrollTop !== null) permBody.scrollTop = permScrollTop;
 }
@@ -17994,6 +18524,7 @@ function setupBookmarkListener() {
                 await applyIncrementalCreateToTree(id, bookmark);
                 scheduleCachedCurrentTreeSnapshotRefresh('onCreated');
             }
+            clearCanvasLazyChangeHints('onCreated');
             // 立即刷新当前变化（轻量重绘容器，不刷新页面）
             if (currentView === 'current-changes') {
                 await renderCurrentChangesViewWithRetry(1, true);
@@ -18028,6 +18559,7 @@ function setupBookmarkListener() {
                 applyIncrementalRemoveFromTree(id);
                 scheduleCachedCurrentTreeSnapshotRefresh('onRemoved');
             }
+            clearCanvasLazyChangeHints('onRemoved');
             if (currentView === 'current-changes') {
                 await renderCurrentChangesViewWithRetry(1, true);
             }
@@ -18064,6 +18596,7 @@ function setupBookmarkListener() {
                 await applyIncrementalChangeToTree(id, changeInfo);
                 scheduleCachedCurrentTreeSnapshotRefresh('onChanged');
             }
+            clearCanvasLazyChangeHints('onChanged');
             if (currentView === 'current-changes') {
                 await renderCurrentChangesViewWithRetry(1, true);
             }
@@ -18091,6 +18624,7 @@ function setupBookmarkListener() {
                 applyIncrementalMoveToCachedCurrentTree(id, moveInfo);
                 scheduleCachedCurrentTreeSnapshotRefresh('onMoved');
             }
+            clearCanvasLazyChangeHints('onMoved');
             if (currentView === 'current-changes') {
                 await renderCurrentChangesViewWithRetry(1, true);
             }

@@ -13,7 +13,7 @@ import { startReminderTimer, stopReminderTimer, pauseReminderTimer, resumeRemind
  * 封装浏览器API，提供跨浏览器兼容性。
  * @returns {object} 浏览器API对象 (chrome 或 browser)。
  */
-const browserAPI = (function() {
+const browserAPI = (function () {
     if (typeof chrome !== 'undefined') {
         if (typeof browser !== 'undefined') {
             // Firefox 环境
@@ -52,7 +52,7 @@ const MIN_INIT_INTERVAL = 3000; // 3秒内不允许重复初始化
  * @param {number|null} windowId - 新的窗口ID。
  */
 function updateActiveNotificationWindowId(windowId) {
-activeNotificationWindowId = windowId;
+    activeNotificationWindowId = windowId;
 }
 
 /**
@@ -60,7 +60,7 @@ activeNotificationWindowId = windowId;
  * @param {boolean} isPaused - 计时器是否暂停。
  */
 function setTimerPausedBySettingsUI(isPaused) {
-isTimerPausedBySettingsUI = isPaused;
+    isTimerPausedBySettingsUI = isPaused;
 }
 
 /**
@@ -85,7 +85,7 @@ async function getBackupInfo() {
             folderCount: counts.folders
         };
     } catch (error) {
-return { lastBackupTime: null, bookmarkCount: 0, folderCount: 0, error: error.message };
+        return { lastBackupTime: null, bookmarkCount: 0, folderCount: 0, error: error.message };
     }
 }
 
@@ -99,7 +99,7 @@ async function getBookmarkCount() {
         const counts = countItems(tree);
         return { bookmarks: counts.bookmarks, folders: counts.folders };
     } catch (error) {
-return { bookmarks: 0, folders: 0 };
+        return { bookmarks: 0, folders: 0 };
     }
 
     /**
@@ -114,9 +114,9 @@ return { bookmarks: 0, folders: 0 };
             if (node.children) {
                 // 根节点或特殊节点不计入文件夹数量
                 if (node.id !== '0' && node.id !== 'root________' && node.id !== 'unfiled_____') {
-                     // 只计算实际的文件夹，排除根节点等
-                     if (node.title !== "" || (node.children && node.children.length > 0)) {
-                         folders++;
+                    // 只计算实际的文件夹，排除根节点等
+                    if (node.title !== "" || (node.children && node.children.length > 0)) {
+                        folders++;
                     }
                 }
                 const counts = countItems(node.children);
@@ -141,54 +141,54 @@ async function initializeBackupReminder() {
     try {
         const { autoSync } = await browserAPI.storage.local.get({ autoSync: true });
         if (autoSync) {
-return;
+            return;
         }
     } catch (error) {
-}
+    }
     // 添加时间戳检查，防止重复初始化
     const now = Date.now();
     if (now - lastInitAttemptTime < MIN_INIT_INTERVAL) {
-return;
+        return;
     }
     lastInitAttemptTime = now;
-    
+
     initializationAttempts++; // 增加初始化尝试次数
 
     // 如果已经初始化完成，则跳过
     if (isBackupReminderInitialized) {
-return;
+        return;
     }
 
     // 如果正在初始化中，则跳过
     if (isBackupReminderInitializationInProgress) {
-return;
+        return;
     }
 
     isBackupReminderInitializationInProgress = true; // 标记为正在初始化
-try {
+    try {
         await initializeReminderTimerSystem(); // 初始化计时器系统
 
         // 监听浏览器窗口焦点变化
         if (!browserAPI.windows.onFocusChanged.hasListener(handleWindowFocusChange)) {
             browserAPI.windows.onFocusChanged.addListener(handleWindowFocusChange);
-} else {
-}
+        } else {
+        }
 
         // 监听来自popup窗口的消息
         if (!browserAPI.runtime.onMessage.hasListener(handleRuntimeMessage)) {
             browserAPI.runtime.onMessage.addListener(handleRuntimeMessage);
-} else {
-}
+        } else {
+        }
 
         // 监听窗口关闭事件 - 确保只添加一次
         if (!browserAPI.windows.onRemoved.hasListener(handleWindowRemoved)) {
             browserAPI.windows.onRemoved.addListener(handleWindowRemoved);
-} else {
-}
+        } else {
+        }
 
         isBackupReminderInitialized = true; // 标记为已初始化
-} catch (error) {
-isBackupReminderInitializationInProgress = false; // 重置初始化状态，允许下次重试
+    } catch (error) {
+        isBackupReminderInitializationInProgress = false; // 重置初始化状态，允许下次重试
         throw error;
     } finally {
         isBackupReminderInitializationInProgress = false; // 完成初始化过程
@@ -213,13 +213,13 @@ async function handleWindowFocusChange(windowId) {
         // 仅在手动模式、黄手图标激活（有变动）且循环提醒开启时应用此逻辑
         if (!autoSync && isYellowHandActive && reminderEnabled) {
             if (windowId === browserAPI.windows.WINDOW_ID_NONE) {
-pauseReminderTimer();
+                pauseReminderTimer();
             } else {
-resumeReminderTimer();
+                resumeReminderTimer();
             }
         }
     } catch (error) {
-}
+    }
 }
 
 /**
@@ -232,78 +232,78 @@ resumeReminderTimer();
 async function handleRuntimeMessage(message, sender, sendResponse) {
     if (message.action === "notificationUserAction") {
         if (sender.tab && sender.tab.windowId) {
-userClosedWindowIds.add(sender.tab.windowId);
+            userClosedWindowIds.add(sender.tab.windowId);
         } else if (activeNotificationWindowId !== null) {
-userClosedWindowIds.add(activeNotificationWindowId);
+            userClosedWindowIds.add(activeNotificationWindowId);
         } else {
-}
+        }
         return false;
     }
 
     if (message.action === "zeroChangeDetected") {
-console.log('注意: 零变化检测已在timer.js中提前处理，该消息不再需要');
+        console.log('注意: 零变化检测已在timer.js中提前处理，该消息不再需要');
         return false;
     }
 
     if (message.action === "closeNotificationFromSettings") {
-try {
+        try {
             if (activeNotificationWindowId !== null) {
                 await clearNotification(activeNotificationWindowId);
-updateActiveNotificationWindowId(null);
+                updateActiveNotificationWindowId(null);
                 sendResponse({ success: true });
             } else {
-sendResponse({ success: false, error: 'No active notification window' });
+                sendResponse({ success: false, error: 'No active notification window' });
             }
         } catch (error) {
-sendResponse({ success: false, error: error.message });
+            sendResponse({ success: false, error: error.message });
         }
         return true;
     }
 
     if (message.action === "readyToClose") {
-try {
+        try {
             if (activeNotificationWindowId !== null) {
                 try {
                     await browserAPI.windows.get(activeNotificationWindowId);
                     clearNotification(activeNotificationWindowId);
                 } catch (err) {
-}
+                }
                 updateActiveNotificationWindowId(null);
             }
         } catch (error) {
-}
+        }
         return false;
     }
 
     if (message.action === "autoBackupToggled") {
-onAutoBackupToggled(message.enabled, false);
+        onAutoBackupToggled(message.enabled, false);
         return false;
     }
 
     if (message.action === "notificationAction") {
-if (message.buttonIndex === 0) {
-toggleAutoBackup(true);
+        if (message.buttonIndex === 0) {
+            toggleAutoBackup(true);
             sendResponse({ success: true, action: "toggleAutoBackup", status: "执行中" });
         } else if (message.buttonIndex === 1) {
-performManualBackup();
+            performManualBackup();
             sendResponse({ success: true, action: "manualBackup", status: "执行中" });
         } else {
-sendResponse({ success: false, error: "未知按钮索引" });
+            sendResponse({ success: false, error: "未知按钮索引" });
         }
         return true;
     } else if (message.action === "getBackupInfo") {
         getBackupInfo().then(info => {
             sendResponse(info);
         }).catch(error => {
-sendResponse({ error: error.message });
+            sendResponse({ error: error.message });
         });
         return true;
     } else if (message.action === "getTimerDebugInfo") {
         try {
             const debugInfo = getDebugInfo();
-sendResponse(debugInfo);
+            sendResponse(debugInfo);
         } catch (error) {
-sendResponse({
+            sendResponse({
                 success: false,
                 error: error.message,
                 state: {
@@ -319,26 +319,26 @@ sendResponse({
         return true;
     } else if (message.action === "resetReminderState") {
         try {
-resetReminderState();
+            resetReminderState();
             sendResponse({ success: true });
         } catch (error) {
-sendResponse({ success: false, error: error.message });
+            sendResponse({ success: false, error: error.message });
         }
         return true;
     } else if (message.action === "startNextReminderCycle") {
         try {
-resetReminderState();
+            resetReminderState();
             setTimeout(async () => {
                 await startReminderTimer();
-}, 300);
+            }, 300);
             sendResponse({ success: true });
         } catch (error) {
-sendResponse({ success: false, error: error.message });
+            sendResponse({ success: false, error: error.message });
         }
         return true;
     } else if (message.action === "resetFixedTimeAlarm") {
         try {
-if (typeof resetFixedTimeAlarm === 'function') { // This function is not imported or defined in index.js
+            if (typeof resetFixedTimeAlarm === 'function') { // This function is not imported or defined in index.js
                 const result = await resetFixedTimeAlarm(message.alarmName);
                 sendResponse({ success: true, result });
             } else {
@@ -351,16 +351,16 @@ if (typeof resetFixedTimeAlarm === 'function') { // This function is not importe
                 sendResponse({ success: true, method: 'forwarded' });
             }
         } catch (error) {
-sendResponse({ success: false, error: error.message });
+            sendResponse({ success: false, error: error.message });
         }
         return true;
     } else if (message.action === "forceSendNotification") {
         try {
-let hasResponded = false;
+            let hasResponded = false;
             let notificationShown = false;
             const timeoutId = setTimeout(() => {
                 if (!hasResponded) {
-hasResponded = true;
+                    hasResponded = true;
                     sendResponse({ success: true, method: 'timeout', message: '通知请求超时，但可能已成功' });
                 }
             }, 3000);
@@ -369,7 +369,7 @@ hasResponded = true;
                 try {
                     const existingWindow = await browserAPI.windows.get(activeNotificationWindowId);
                     if (existingWindow) {
-await browserAPI.windows.update(activeNotificationWindowId, { focused: true });
+                        await browserAPI.windows.update(activeNotificationWindowId, { focused: true });
                         if (!hasResponded) {
                             clearTimeout(timeoutId); hasResponded = true;
                             sendResponse({ success: true, windowId: activeNotificationWindowId, method: 'existing' });
@@ -378,7 +378,7 @@ await browserAPI.windows.update(activeNotificationWindowId, { focused: true });
                         return true;
                     }
                 } catch (err) {
-activeNotificationWindowId = null;
+                    activeNotificationWindowId = null;
                 }
             }
 
@@ -387,7 +387,7 @@ activeNotificationWindowId = null;
                     const forceWindowId = await showForceBackupReminder(activeNotificationWindowId);
                     if (forceWindowId) {
                         notificationShown = true; activeNotificationWindowId = forceWindowId;
-if (!hasResponded) {
+                        if (!hasResponded) {
                             clearTimeout(timeoutId); hasResponded = true;
                             sendResponse({ success: true, windowId: forceWindowId, method: 'force' });
                         }
@@ -400,7 +400,7 @@ if (!hasResponded) {
                     const normalWindowId = await showBackupReminder(activeNotificationWindowId);
                     if (normalWindowId) {
                         notificationShown = true; activeNotificationWindowId = normalWindowId;
-if (!hasResponded) {
+                        if (!hasResponded) {
                             clearTimeout(timeoutId); hasResponded = true;
                             sendResponse({ success: true, windowId: normalWindowId, method: 'normal' });
                         }
@@ -413,35 +413,35 @@ if (!hasResponded) {
                     if (activeNotificationWindowId !== null) {
                         try {
                             await browserAPI.windows.get(activeNotificationWindowId);
-if (!hasResponded) {
+                            if (!hasResponded) {
                                 clearTimeout(timeoutId); hasResponded = true;
                                 sendResponse({ success: true, windowId: activeNotificationWindowId, method: 'existing' });
                             }
                             return true;
                         } catch (err) {
-activeNotificationWindowId = null;
+                            activeNotificationWindowId = null;
                         }
                     }
                     const url = browserAPI.runtime.getURL('backup_reminder/notification_popup.html') + '?force=true&emergency=true&t=' + Date.now();
                     const window = await browserAPI.windows.create({ url: url, type: 'popup', width: 620, height: 580, focused: true });
                     notificationShown = true; activeNotificationWindowId = window.id;
-if (!hasResponded) {
+                    if (!hasResponded) {
                         clearTimeout(timeoutId); hasResponded = true;
                         sendResponse({ success: true, windowId: window.id, method: 'direct' });
                     }
                 } catch (directError) {
-if (!hasResponded) {
+                    if (!hasResponded) {
                         clearTimeout(timeoutId); hasResponded = true;
                         sendResponse({ success: false, error: directError.message || '所有通知方法都失败' });
                     }
                 }
             }
         } catch (error) {
-sendResponse({ success: false, error: error.message || '未知错误' });
+            sendResponse({ success: false, error: error.message || '未知错误' });
         }
         return true;
     } else if (message.action === "showTestNotification") {
-try {
+        try {
             if (activeNotificationWindowId !== null) {
                 try { await clearNotification(activeNotificationWindowId); }
                 catch (err) { console.log('清除现有通知窗口失败，但继续创建测试通知:', err); }
@@ -451,23 +451,23 @@ try {
             if (windowId !== null) {
                 updateActiveNotificationWindowId(windowId);
                 if (message.noTimer === true) {
-userClosedWindowIds.add(windowId);
+                    userClosedWindowIds.add(windowId);
                 }
                 sendResponse({ success: true, windowId });
             } else { sendResponse({ success: false, error: '创建测试通知失败' }); }
         } catch (error) {
-sendResponse({ success: false, error: error.message });
+            sendResponse({ success: false, error: error.message });
         }
         return true;
     } else if (message.action === "openReminderSettings") {
-try {
+        try {
             browserAPI.runtime.sendMessage({ action: "showReminderSettings" }, (response) => {
                 const error = browserAPI.runtime.lastError;
                 if (error) { console.log('发送showReminderSettings消息时出错:', error.message); sendResponse({ success: false, error: error.message }); }
                 else { console.log('showReminderSettings消息发送成功'); sendResponse({ success: true }); }
             });
         } catch (error) {
-sendResponse({ success: false, error: error.message });
+            sendResponse({ success: false, error: error.message });
         }
         return true;
     } else if (message.action === "getReminderSettings") {
@@ -480,50 +480,50 @@ sendResponse({ success: false, error: error.message });
             const settings = data.reminderSettings || defaultSettings;
             sendResponse({ success: true, settings: settings });
         } catch (error) {
-sendResponse({ success: false, error: error.message });
+            sendResponse({ success: false, error: error.message });
         }
         return true;
     } else if (message.action === "updateReminderSettings") {
-try {
-await browserAPI.storage.local.set({ reminderSettings: message.settings });
-console.log('[index.js] 尝试设置准点定时闹钟...');
+        try {
+            await browserAPI.storage.local.set({ reminderSettings: message.settings });
+            console.log('[index.js] 尝试设置准点定时闹钟...');
             await setupFixedTimeAlarms(message.settings);
-if (message.settings.reminderEnabled === false) {
-stopReminderTimer();
+            if (message.settings.reminderEnabled === false) {
+                stopReminderTimer();
             } else {
-const { autoSync = true } = await browserAPI.storage.local.get(['autoSync']);
-if (!autoSync) {
-stopReminderTimer();
+                const { autoSync = true } = await browserAPI.storage.local.get(['autoSync']);
+                if (!autoSync) {
+                    stopReminderTimer();
                     if (message.resetTimer) {
-await resetReminderState();
-}
+                        await resetReminderState();
+                    }
                     const newMinutes = message.settings.firstReminderMinutes;
-if (newMinutes > 0) {
-await startReminderTimer(true);
-} else { console.log('[index.js] 新设置的时间间隔为0或无效，不启动计时器'); }
+                    if (newMinutes > 0) {
+                        await startReminderTimer(true);
+                    } else { console.log('[index.js] 新设置的时间间隔为0或无效，不启动计时器'); }
                 } else { console.log('[index.js] 自动备份已启用，不启动循环计时器'); }
             }
-sendResponse({ success: true });
+            sendResponse({ success: true });
         } catch (error) {
-sendResponse({ success: false, error: error.message });
+            sendResponse({ success: false, error: error.message });
         }
         return true;
     } else if (message.action === "pauseReminderTimer") {
-if (message.pausedBy === 'settingsUI') { isTimerPausedBySettingsUI = true; console.log('计时器因设置UI打开而被标记为暂停'); }
+        if (message.pausedBy === 'settingsUI') { isTimerPausedBySettingsUI = true; console.log('计时器因设置UI打开而被标记为暂停'); }
         pauseReminderTimer();
         sendResponse({ success: true });
         return true;
     } else if (message.action === "resumeReminderTimer") {
-isTimerPausedBySettingsUI = false;
+        isTimerPausedBySettingsUI = false;
         resumeReminderTimer();
         sendResponse({ success: true });
         return true;
     } else if (message.action === "stopReminderTimer") {
-try { stopReminderTimer(); sendResponse({ success: true }); }
+        try { stopReminderTimer(); sendResponse({ success: true }); }
         catch (error) { console.error('停止提醒计时器失败:', error); sendResponse({ success: false, error: error.message }); }
         return true;
     } else if (message.action === "getActiveNotificationId") {
-sendResponse({ notificationId: activeNotificationWindowId });
+        sendResponse({ notificationId: activeNotificationWindowId });
     }
     return false; // 未处理的消息
 }
@@ -533,11 +533,11 @@ sendResponse({ notificationId: activeNotificationWindowId });
  * @param {number} windowId - 关闭的窗口ID。
  */
 function handleWindowRemoved(windowId) {
-if (windowId === activeNotificationWindowId) {
-updateActiveNotificationWindowId(null);
+    if (windowId === activeNotificationWindowId) {
+        updateActiveNotificationWindowId(null);
     } else {
         if (userClosedWindowIds.has(windowId)) {
-userClosedWindowIds.delete(windowId);
+            userClosedWindowIds.delete(windowId);
         }
     }
 }
@@ -552,17 +552,17 @@ userClosedWindowIds.delete(windowId);
  * @param {boolean} [shouldCloseWindow=true] - 是否应该关闭通知窗口（如果存在）。
  */
 async function onAutoBackupToggled(isAutoBackupEnabled, shouldCloseWindow = true) {
-try {
+    try {
         if (isAutoBackupEnabled) {
             // 切换到自动模式时，停止所有提醒
             stopLoopReminder();
-// 注意：此处不移除 onFocusChanged 等监听器，因为它们在手动模式下才有实际作用，
+            // 注意：此处不移除 onFocusChanged 等监听器，因为它们在手动模式下才有实际作用，
             // 留在自动模式下不会产生影响，且避免了反复增删监听器的复杂性。
             if (shouldCloseWindow && activeNotificationWindowId) {
-await clearNotification();
+                await clearNotification();
             }
         } else {
-// 错误修正：调用总初始化函数，以确保所有监听器（包括焦点检测）都被激活。
+            // 错误修正：调用总初始化函数，以确保所有监听器（包括焦点检测）都被激活。
             await initializeBackupReminder();
         }
 
@@ -573,32 +573,32 @@ await clearNotification();
         if (browserAPI.action && typeof browserAPI.action.setBadgeText === 'function') {
             await browserAPI.action.setBadgeText({ text: badgeText });
             if (typeof browserAPI.action.setBadgeBackgroundColor === 'function') {
-                 await browserAPI.action.setBadgeBackgroundColor({ color: badgeColor });
-}
+                await browserAPI.action.setBadgeBackgroundColor({ color: badgeColor });
+            }
         } else {
             browserAPI.browserAction.setBadgeText({ text: badgeText });
             browserAPI.browserAction.setBadgeBackgroundColor({ color: badgeColor });
-}
+        }
     } catch (error) {
-}
+    }
 }
 
 /**
  * 处理手动备份完成事件。
  */
 async function onManualBackupCompleted() {
-markManualBackupDone();
-    
-    // 备份完成后将角标颜色更新为蓝色（与自动备份模式一致）
-try {
-        const badgeColor = '#0000FF'; // 蓝色，表示手动模式无变动
+    markManualBackupDone();
+
+    // 备份完成后将角标颜色更新为蓝色（与初始手动备份模式一致）
+    try {
+        const badgeColor = '#2196F3'; // 蓝色，表示手动模式无变动
         if (browserAPI.action && typeof browserAPI.action.setBadgeBackgroundColor === 'function') {
             await browserAPI.action.setBadgeBackgroundColor({ color: badgeColor });
         } else if (typeof browserAPI.browserAction.setBadgeBackgroundColor === 'function') {
             browserAPI.browserAction.setBadgeBackgroundColor({ color: badgeColor });
         }
     } catch (error) {
-}
+    }
 }
 
 /**
@@ -606,20 +606,20 @@ try {
  * @param {boolean} enable - 是否启用自动备份。
  */
 async function toggleAutoBackup(enable) {
-try {
+    try {
         await browserAPI.runtime.sendMessage({ action: "toggleAutoSync", enabled: enable });
-} catch (error) {
-}
+    } catch (error) {
+    }
 }
 
 /**
  * 执行立即手动备份。
  */
 async function performManualBackup() {
-try {
+    try {
         const response = await browserAPI.runtime.sendMessage({ action: "syncBookmarks", direction: "upload" });
-} catch (error) {
-}
+    } catch (error) {
+    }
 }
 
 // =======================================================
@@ -630,28 +630,28 @@ try {
  * 监听浏览器运行时连接事件。
  */
 browserAPI.runtime.onConnect.addListener((port) => {
-// 处理来自 Popup UI 的连接 - 相关功能已移除
+    // 处理来自 Popup UI 的连接 - 相关功能已移除
     if (port.name === "popupConnect") {
-// 不再保留 port 引用或添加 onDisconnect 监听器
+        // 不再保留 port 引用或添加 onDisconnect 监听器
 
-    // 处理来自设置窗口 (为某个通知打开) 的连接
+        // 处理来自设置窗口 (为某个通知打开) 的连接
     } else if (port.name && port.name.startsWith('settings-for-notification-')) {
         const parts = port.name.split('-');
         const notificationId = parseInt(parts[parts.length - 1], 10);
 
         if (!isNaN(notificationId)) {
-port.onDisconnect.addListener(() => {
-try {
+            port.onDisconnect.addListener(() => {
+                try {
                     resumeAutoCloseTimer(notificationId);
-} catch (error) {
-}
+                } catch (error) {
+                }
             });
         } else {
-}
+        }
 
-    // 处理其他未知连接
+        // 处理其他未知连接
     } else {
-}
+    }
 });
 
 // =======================================================
@@ -666,11 +666,11 @@ try {
  * @returns {boolean} - 是否异步响应。
  */
 browserAPI.runtime.onMessage.addListener((message, sender, sendResponse) => {
-// 处理手动备份完成消息
+    // 处理手动备份完成消息
     if (message.action === "manualBackupCompleted") {
-onManualBackupCompleted();
+        onManualBackupCompleted();
     }
-    
+
     // 更好的做法是将所有消息处理逻辑合并到一个 onMessage 监听器中
     // 但为了清晰地添加新功能，暂时分开写，后续应考虑合并
     return false;

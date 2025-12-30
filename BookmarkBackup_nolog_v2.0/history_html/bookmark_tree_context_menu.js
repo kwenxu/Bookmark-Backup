@@ -31,7 +31,7 @@ function shouldAllowBookmarkOpen(actionKey) {
 }
 
 // 全局：默认打开方式与特定窗口/分组ID
-let defaultOpenMode = 'scoped-group'; // 默认：'scoped-group'（in Specific Group）。可选：'new-tab' | 'new-window' | 'incognito' | 'specific-window' | 'specific-group' | 'scoped-window' | 'scoped-group' | 'same-window-specific-group'
+let defaultOpenMode = 'specific-window'; // 默认：'specific-window'（in Same Window）。可选：'new-tab' | 'new-window' | 'incognito' | 'specific-window' | 'specific-group' | 'scoped-window' | 'scoped-group' | 'same-window-specific-group'
 let specificWindowId = null; // chrome.windows Window ID
 let specificTabGroupId = null; // chrome.tabGroups Group ID（在“特定标签组”模式下复用）
 let specificGroupWindowId = null; // 保存分组所在窗口，确保新开的标签在同一窗口
@@ -2204,8 +2204,8 @@ function buildMenuItems(context) {
                 if (hasWindow) {
                     badges.push(`<span class="sub-badge" data-sub-action="swsg-new-window">${lang === 'zh_CN' ? '新窗口' : 'New Window'}</span>`);
                 }
-                const baseLabelZh = '同窗特定组';
-                const baseLabelEn = 'In Same Window & Specific Group';
+                const baseLabelZh = '同窗专属组';
+                const baseLabelEn = 'In Same Window & Exclusive Group';
                 const badgeHtml = badges.length ? `<div class="swsg-badge-row">${badges.join('')}</div>` : '';
                 const titleClass = lang === 'zh_CN' ? 'swsg-title' : 'swsg-title swsg-title-compact';
                 const titleHtml = `<span class="${titleClass}">${lang === 'zh_CN' ? baseLabelZh : baseLabelEn}</span>`;
@@ -2241,8 +2241,8 @@ function buildMenuItems(context) {
             (() => {
                 const scope = getScopeFromContext(context);
                 const showBadge = (scope.key === 'permanent') && !!(scopedCurrentGroups && scopedCurrentGroups[scope.key]);
-                const baseLabelZh = '特定标签组';
-                const baseLabelEn = 'in Specific Group';
+                const baseLabelZh = '专属标签组';
+                const baseLabelEn = 'in Exclusive Group';
                 const badge = showBadge ? (lang === 'zh_CN' ? ' <span class="sub-badge">新分组</span>' : ' <span class="sub-badge">New Group</span>') : '';
                 return { action: 'open-scoped-group', label: (lang === 'zh_CN' ? baseLabelZh : baseLabelEn) + badge, icon: 'object-group', group: 'open', selected: defaultOpenMode === 'scoped-group' };
             })(),
@@ -2261,8 +2261,8 @@ function buildMenuItems(context) {
             (() => {
                 const scope = getScopeFromContext(context);
                 const showBadge = (scope.key === 'permanent') && !!(scopedWindows && scopedWindows[scope.key]);
-                const baseLabelZh = '特定窗口';
-                const baseLabelEn = 'in Specific Window';
+                const baseLabelZh = '专属窗口';
+                const baseLabelEn = 'in Exclusive Window';
                 const badge = showBadge ? (lang === 'zh_CN' ? ' <span class="sub-badge">新窗口</span>' : ' <span class="sub-badge">New Window</span>') : '';
                 return { action: 'open-scoped-window', label: (lang === 'zh_CN' ? baseLabelZh : baseLabelEn) + badge, icon: 'window-restore', group: 'open2', selected: defaultOpenMode === 'scoped-window' };
             })(),

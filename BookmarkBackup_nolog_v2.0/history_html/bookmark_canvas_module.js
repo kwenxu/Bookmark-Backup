@@ -721,10 +721,10 @@ function createInitialDemoTemplate() {
 </ul>
 <h3>可选打开方式</h3>
 <ul>
-<li><strong>同窗特定组</strong>：在同一窗口的特定标签组中打开</li>
+<li><strong>同窗专属组</strong>：在同一窗口的专属标签组中打开</li>
 <li><strong>手动选择...</strong>：每次手动选择目标窗口和标签组</li>
-<li>新标签页 / 同一标签组 / 特定标签组</li>
-<li>新窗口 / 同一窗口 / 特定窗口 / 无痕窗口</li>
+<li>新标签页 / 同一标签组 / 专属标签组</li>
+<li>新窗口 / 同一窗口 / 专属窗口 / 无痕窗口</li>
 </ul>
 <h3>批量操作</h3>
 <ul>
@@ -743,10 +743,10 @@ function createInitialDemoTemplate() {
 </ul>
 <h3>Available Open Modes</h3>
 <ul>
-<li><strong>Same Window + Specific Group</strong>: Open in specific tab group of same window</li>
+<li><strong>Same Window + Exclusive Group</strong>: Open in exclusive tab group of same window</li>
 <li><strong>Manual Select...</strong>: Manually choose target window and tab group each time</li>
-<li>New Tab / Same Group / Specific Group</li>
-<li>New Window / Same Window / Specific Window / Incognito</li>
+<li>New Tab / Same Group / Exclusive Group</li>
+<li>New Window / Same Window / Exclusive Window / Incognito</li>
 </ul>
 <h3>Batch Operations</h3>
 <ul>

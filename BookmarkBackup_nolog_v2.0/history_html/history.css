@@ -83,6 +83,50 @@
     --git-moved-bg: #172554;
 }
 
+@keyframes pulse-green {
+    0% {
+        box-shadow: 0 0 0 0 rgba(66, 183, 42, 0.7);
+    }
+
+    70% {
+        box-shadow: 0 0 0 10px rgba(66, 183, 42, 0);
+    }
+
+    100% {
+        box-shadow: 0 0 0 0 rgba(66, 183, 42, 0);
+    }
+}
+
+@keyframes pulse-blue {
+    0% {
+        box-shadow: 0 0 0 0 rgba(24, 119, 242, 0.7);
+    }
+
+    70% {
+        box-shadow: 0 0 0 10px rgba(24, 119, 242, 0);
+    }
+
+    100% {
+        box-shadow: 0 0 0 0 rgba(24, 119, 242, 0);
+    }
+}
+
+@keyframes bounce-in {
+    0% {
+        transform: scale(0);
+        opacity: 0;
+    }
+
+    60% {
+        transform: scale(1.2);
+    }
+
+    100% {
+        transform: scale(1);
+        opacity: 1;
+    }
+}
+
 /* ==================== 基础样式 ==================== */
 * {
     margin: 0;

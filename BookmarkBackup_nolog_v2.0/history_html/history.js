@@ -1810,6 +1810,148 @@ const i18n = {
         'zh_CN': '未来会在这里加入基于 Anki 的复习节奏，帮助你按记忆曲线重新回顾书签。',
         'en': 'An Anki-based review flow will be added here to help you revisit bookmarks along a memory curve.'
     },
+    // ==================== 导出变化功能翻译 ====================
+    exportChangesModalTitle: {
+        'zh_CN': '导出书签变化',
+        'en': 'Export Bookmark Changes'
+    },
+    exportChangesFormatLabel: {
+        'zh_CN': '导出格式',
+        'en': 'Export Format'
+    },
+    exportChangesLegendHelp: {
+        'zh_CN': '标记说明',
+        'en': 'Legend'
+    },
+    exportChangesLegendTitle: {
+        'zh_CN': '标记说明：',
+        'en': 'Legend:'
+    },
+    legendAdded: {
+        'zh_CN': '新增',
+        'en': 'Added'
+    },
+    legendDeleted: {
+        'zh_CN': '删除',
+        'en': 'Deleted'
+    },
+    legendModified: {
+        'zh_CN': '修改',
+        'en': 'Modified'
+    },
+    legendMoved: {
+        'zh_CN': '移动',
+        'en': 'Moved'
+    },
+    exportChangesModeLabel: {
+        'zh_CN': '导出模式',
+        'en': 'Export Mode'
+    },
+    exportChangesModeSimple: {
+        'zh_CN': '简单',
+        'en': 'Simple'
+    },
+    exportChangesModeDetailed: {
+        'zh_CN': '详细',
+        'en': 'Detailed'
+    },
+    exportChangesDetailedHelp: {
+        'zh_CN': '功能说明',
+        'en': 'Function Info'
+    },
+    exportChangesActionLabel: {
+        'zh_CN': '操作方式',
+        'en': 'Action'
+    },
+    exportChangesActionDownload: {
+        'zh_CN': '导出文件',
+        'en': 'Download File'
+    },
+    exportChangesActionCopy: {
+        'zh_CN': '复制到剪贴板',
+        'en': 'Copy to Clipboard'
+    },
+    exportChangesDepthLabel: {
+        'zh_CN': '扩展层级',
+        'en': 'Depth'
+    },
+    exportChangesDepth0: {
+        'zh_CN': '仅同级',
+        'en': 'Siblings only'
+    },
+    // ==================== 导出变化功能翻译 ====================
+    exportChangesModalTitle: {
+        'zh_CN': '导出书签变化',
+        'en': 'Export Bookmark Changes'
+    },
+    exportChangesFormatLabel: {
+        'zh_CN': '导出格式',
+        'en': 'Export Format'
+    },
+    exportChangesLegendHelp: {
+        'zh_CN': '标记说明',
+        'en': 'Legend'
+    },
+    exportChangesLegendTitle: {
+        'zh_CN': '标记说明：',
+        'en': 'Legend:'
+    },
+    legendAdded: {
+        'zh_CN': '新增',
+        'en': 'Added'
+    },
+    legendDeleted: {
+        'zh_CN': '删除',
+        'en': 'Deleted'
+    },
+    legendModified: {
+        'zh_CN': '修改',
+        'en': 'Modified'
+    },
+    legendMoved: {
+        'zh_CN': '移动',
+        'en': 'Moved'
+    },
+    exportChangesModeLabel: {
+        'zh_CN': '导出模式',
+        'en': 'Export Mode'
+    },
+    exportChangesModeSimple: {
+        'zh_CN': '简单',
+        'en': 'Simple'
+    },
+    exportChangesModeDetailed: {
+        'zh_CN': '详细',
+        'en': 'Detailed'
+    },
+    exportChangesDetailedHelp: {
+        'zh_CN': '功能说明',
+        'en': 'Function Info'
+    },
+    exportChangesActionLabel: {
+        'zh_CN': '操作方式',
+        'en': 'Action'
+    },
+    exportChangesActionDownload: {
+        'zh_CN': '导出文件',
+        'en': 'Download File'
+    },
+    exportChangesActionCopy: {
+        'zh_CN': '复制到剪贴板',
+        'en': 'Copy to Clipboard'
+    },
+    exportChangesDepthLabel: {
+        'zh_CN': '扩展层级',
+        'en': 'Depth'
+    },
+    exportChangesDepth0: {
+        'zh_CN': '仅同级',
+        'en': 'Siblings only'
+    },
+    doExportChangesBtnText: {
+        'zh_CN': '确认',
+        'en': 'Confirm'
+    },
     // 导出功能翻译
     exportTooltip: {
         'zh_CN': '导出记录',
@@ -2764,6 +2906,58 @@ function applyLanguage() {
     const currentChangesViewTitle = document.getElementById('currentChangesViewTitle');
     if (currentChangesViewTitle) currentChangesViewTitle.textContent = i18n.currentChangesViewTitle[currentLang];
     document.getElementById('historyViewTitle').textContent = i18n.historyViewTitle[currentLang];
+
+    // 导出书签变化模态框
+    const exportChangesModalTitle = document.getElementById('exportChangesModalTitle');
+    if (exportChangesModalTitle) exportChangesModalTitle.textContent = i18n.exportChangesModalTitle[currentLang];
+    const exportChangesFormatLabel = document.getElementById('exportChangesFormatLabel');
+    if (exportChangesFormatLabel) exportChangesFormatLabel.textContent = i18n.exportChangesFormatLabel[currentLang];
+    const exportChangesLegendHelp = document.getElementById('exportChangesLegendHelp');
+    if (exportChangesLegendHelp) exportChangesLegendHelp.title = i18n.exportChangesLegendHelp[currentLang];
+    const legendAdded = document.getElementById('legendAdded');
+    if (legendAdded) legendAdded.textContent = i18n.legendAdded[currentLang];
+    const legendDeleted = document.getElementById('legendDeleted');
+    if (legendDeleted) legendDeleted.textContent = i18n.legendDeleted[currentLang];
+    const legendModified = document.getElementById('legendModified');
+    if (legendModified) legendModified.textContent = i18n.legendModified[currentLang];
+    const legendMoved = document.getElementById('legendMoved');
+    if (legendMoved) legendMoved.textContent = i18n.legendMoved[currentLang];
+    const exportChangesModeLabel = document.getElementById('exportChangesModeLabel');
+    if (exportChangesModeLabel) exportChangesModeLabel.textContent = i18n.exportChangesModeLabel[currentLang];
+    const exportChangesModeSimple = document.getElementById('exportChangesModeSimple');
+    if (exportChangesModeSimple) exportChangesModeSimple.textContent = i18n.exportChangesModeSimple[currentLang];
+    const exportChangesModeDetailed = document.getElementById('exportChangesModeDetailed');
+    if (exportChangesModeDetailed) exportChangesModeDetailed.textContent = i18n.exportChangesModeDetailed[currentLang];
+    const exportChangesDetailedHelp = document.getElementById('exportChangesDetailedHelp');
+    if (exportChangesDetailedHelp) exportChangesDetailedHelp.title = i18n.exportChangesDetailedHelp[currentLang];
+    const exportChangesActionLabel = document.getElementById('exportChangesActionLabel');
+    if (exportChangesActionLabel) exportChangesActionLabel.textContent = i18n.exportChangesActionLabel[currentLang];
+    const exportChangesActionDownload = document.getElementById('exportChangesActionDownload');
+    if (exportChangesActionDownload) exportChangesActionDownload.textContent = i18n.exportChangesActionDownload[currentLang];
+    const exportChangesActionCopy = document.getElementById('exportChangesActionCopy');
+    if (exportChangesActionCopy) exportChangesActionCopy.textContent = i18n.exportChangesActionCopy[currentLang];
+    const exportChangesDepthLabel = document.getElementById('exportChangesDepthLabel');
+    if (exportChangesDepthLabel) exportChangesDepthLabel.textContent = i18n.exportChangesDepthLabel[currentLang];
+    const exportChangesDepth0 = document.getElementById('exportChangesDepth0');
+    if (exportChangesDepth0) exportChangesDepth0.textContent = i18n.exportChangesDepth0[currentLang];
+
+    // update doExportChangesBtnText which has HTML content
+    const doExportChangesBtnText = document.getElementById('doExportChangesBtnText');
+    if (doExportChangesBtnText) {
+        doExportChangesBtnText.innerHTML = i18n.doExportChangesBtnText[currentLang];
+    }
+
+    // 更新 hidden legend title (hacky way because it is inside a structure that might not exist or be hidden)
+    // We can query it by selector if we give it a class or ID. I gave it no ID.
+    // Wait, I should have given the "Legend:" span an ID in previous steps. 
+    // I added <span style="font-weight: bold; color: var(--text-primary);">标记说明：</span> in step 3. 
+    // It has no ID. I should fix that in HTML first or just rely on the new translations for next render. But UI update is live.
+    // For now I will skip the "Legend:" static text update in live mode, or I can select it via parent.
+    const legendHelpContent = document.getElementById('exportChangesLegendHelpContent');
+    if (legendHelpContent) {
+        const titleSpan = legendHelpContent.querySelector('span[style*="font-weight: bold"]');
+        if (titleSpan && i18n.exportChangesLegendTitle) titleSpan.textContent = i18n.exportChangesLegendTitle[currentLang];
+    }
 
     // 书签树映射预览翻译
     const changesTreeTitleText = document.getElementById('changesTreeTitleText');
@@ -11710,6 +11904,11 @@ async function renderCurrentChangesView(forceRefresh = false, options = {}) {
             html += `<span class="legend-item"><span class="legend-dot moved"></span>${currentLang === 'zh_CN' ? '移动' : 'Moved'}</span>`;
             html += '</span>';
             html += '<span class="diff-header-spacer"></span>';
+            // 导出按钮
+            html += `<button class="diff-edit-btn icon-only" id="exportChangesBtn">`;
+            html += '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>';
+            html += `<span class="btn-tooltip">${currentLang === 'zh_CN' ? '导出变化' : 'Export Changes'}</span>`;
+            html += '</button>';
             // 详略切换按钮 - 使用两个SVG图标，根据状态显示不同图标
             // 详细模式图标：4条横线（表示展开全部）
             // 简略模式图标：2条横线（表示只显示变化）
@@ -11995,6 +12194,14 @@ async function renderCurrentChangesView(forceRefresh = false, options = {}) {
                 if (jumpToCanvasBtn) {
                     jumpToCanvasBtn.addEventListener('click', () => {
                         document.querySelector('[data-view="canvas"]')?.click();
+                    });
+                }
+
+                // 导出按钮
+                const exportChangesBtn = document.getElementById('exportChangesBtn');
+                if (exportChangesBtn) {
+                    exportChangesBtn.addEventListener('click', () => {
+                        showExportChangesModal(changeData);
                     });
                 }
 
@@ -22434,4 +22641,721 @@ function initScrollToTopButtons() {
 // 在 DOMContentLoaded 后初始化
 document.addEventListener('DOMContentLoaded', () => {
     setTimeout(initScrollToTopButtons, 1000);
+    // 初始化导出变化模态框
+    initExportChangesModal();
 });
+
+// ==================== 导出变化功能 ====================
+
+// 当前导出的变化数据（供模态框使用）
+let currentExportChangeData = null;
+
+// 显示导出变化模态框
+function showExportChangesModal(changeData) {
+    console.log('[showExportChangesModal] 接收到的 changeData:', changeData);
+    console.log('[showExportChangesModal] changeData 的所有属性:', Object.keys(changeData || {}));
+    console.log('[showExportChangesModal] hasChanges:', changeData?.hasChanges);
+    console.log('[showExportChangesModal] stats:', changeData?.stats);
+    console.log('[showExportChangesModal] diffMeta:', changeData?.diffMeta);
+    console.log('[showExportChangesModal] added:', changeData?.added?.length || 0, changeData?.added);
+    console.log('[showExportChangesModal] deleted:', changeData?.deleted?.length || 0, changeData?.deleted);
+    console.log('[showExportChangesModal] modified:', changeData?.modified?.length || 0, changeData?.modified);
+    console.log('[showExportChangesModal] moved:', changeData?.moved?.length || 0, changeData?.moved);
+
+    currentExportChangeData = changeData;
+    const modal = document.getElementById('exportChangesModal');
+    if (modal) {
+        modal.classList.add('show');
+        // 重置为默认值
+        const formatHtml = modal.querySelector('input[name="exportChangesFormat"][value="html"]');
+        if (formatHtml) formatHtml.checked = true;
+        const modeSimple = modal.querySelector('input[name="exportChangesMode"][value="simple"]');
+        if (modeSimple) modeSimple.checked = true;
+        const actionDownload = modal.querySelector('input[name="exportChangesAction"][value="download"]');
+        if (actionDownload) actionDownload.checked = true;
+        // 隐藏扩展层级
+        const depthSection = document.getElementById('exportChangesDepthSection');
+        if (depthSection) depthSection.style.display = 'none';
+
+        // 隐藏详细模式说明
+        const helpContent = document.getElementById('exportChangesDetailedHelpContent');
+        if (helpContent) helpContent.style.display = 'none';
+
+        // 隐藏标记说明
+        const legendHelpContent = document.getElementById('exportChangesLegendHelpContent');
+        if (legendHelpContent) legendHelpContent.style.display = 'none';
+    }
+}
+
+// 初始化导出变化模态框
+function initExportChangesModal() {
+    const modal = document.getElementById('exportChangesModal');
+    if (!modal) return;
+
+    // 关闭按钮
+    const closeBtn = document.getElementById('exportChangesModalClose');
+    if (closeBtn) {
+        closeBtn.addEventListener('click', () => {
+            modal.classList.remove('show');
+        });
+    }
+
+    // 点击遮罩关闭
+    modal.addEventListener('click', (e) => {
+        if (e.target === modal) {
+            modal.classList.remove('show');
+        }
+    });
+
+    // 模式切换 - 控制扩展层级显示
+    const modeRadios = modal.querySelectorAll('input[name="exportChangesMode"]');
+    const depthSection = document.getElementById('exportChangesDepthSection');
+    modeRadios.forEach(radio => {
+        radio.addEventListener('change', () => {
+            if (depthSection) {
+                // 新的详细模式（快照）不需要手动选择层级，完全依赖界面展开状态
+                // 所以隐藏层级选择器
+                depthSection.style.display = 'none';
+            }
+            // 切换模式时隐藏帮助内容
+            const helpContent = document.getElementById('exportChangesDetailedHelpContent');
+            if (helpContent) helpContent.style.display = 'none';
+        });
+    });
+
+    // 绑定标记说明图标点击事件
+    const legendHelpIcon = document.getElementById('exportChangesLegendHelp');
+    if (legendHelpIcon) {
+        legendHelpIcon.addEventListener('click', (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            const legendHelpContent = document.getElementById('exportChangesLegendHelpContent');
+            if (legendHelpContent) {
+                legendHelpContent.style.display = legendHelpContent.style.display === 'none' ? 'block' : 'none';
+            }
+        });
+    }
+
+    // 绑定帮助图标点击事件
+    const helpIcon = document.getElementById('exportChangesDetailedHelp');
+    if (helpIcon) {
+        helpIcon.addEventListener('click', (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+
+            // 切换到详细模式
+            const modeDetailed = document.querySelector('input[name="exportChangesMode"][value="detailed"]');
+            if (modeDetailed) {
+                modeDetailed.checked = true;
+                // 注意：这里不手动触发 change 事件，或者是触发后我们要单独处理 toggle
+                // 如果触发 change，上面的 listener 会隐藏 helpContent
+                // 所以我们需要在触发 change 之后再显示 helpContent
+
+                // 仅当 checked 状态改变时才触发 change (虽然 radio 点击总会触发)
+                // 这里我们手动调用 logic 比较保险
+                // modeDetailed.dispatchEvent(new Event('change'));
+
+                // 为了兼容性，我们还是触发 change，然后专门显示 helpContent
+                // 但是 change listener 会 sync setting，这里逻辑也简单:
+                // 先 check，后 toggle
+                if (depthSection) depthSection.style.display = 'none';
+            }
+
+            // 切换功能说明显示状态
+            const helpContent = document.getElementById('exportChangesDetailedHelpContent');
+            if (helpContent) {
+                if (helpContent.style.display === 'none') {
+                    const isZh = currentLang === 'zh_CN';
+                    helpContent.innerHTML = isZh
+                        ? '<strong>功能说明：</strong><br>即导出当前『详细视图』的“快照”（所见即所得）：<br>• 仅导出界面上<strong>已展开</strong>的文件夹内容。<br>• “数量/结构 变化”默认展开。'
+                        : '<strong>Function Explanation:</strong><br>Exports a "snapshot" of the current "Detailed View" (WYSIWYG):<br>• Only content of <strong>expanded</strong> folders is exported.<br>• "Quantity/Structure Changes" is expanded by default.';
+                    helpContent.style.display = 'block';
+                } else {
+                    helpContent.style.display = 'none';
+                }
+            }
+        });
+    }
+
+    // 扩展层级滑块
+    const depthSlider = document.getElementById('exportChangesDepth');
+    const depthValue = document.getElementById('exportChangesDepthValue');
+    if (depthSlider && depthValue) {
+        depthSlider.addEventListener('input', () => {
+            const val = parseInt(depthSlider.value);
+            const isZh = currentLang === 'zh_CN';
+            if (val === 0) {
+                depthValue.textContent = isZh ? '仅同级' : 'Same level';
+            } else {
+                depthValue.textContent = isZh ? `${val} 层` : `${val} level${val > 1 ? 's' : ''}`;
+            }
+        });
+    }
+
+    // 开始导出按钮
+    const exportBtn = document.getElementById('doExportChangesBtn');
+    if (exportBtn) {
+        exportBtn.addEventListener('click', () => {
+            executeExportChanges();
+        });
+    }
+}
+
+// 执行导出
+async function executeExportChanges() {
+    const modal = document.getElementById('exportChangesModal');
+    if (!modal || !currentExportChangeData) return;
+
+    const format = modal.querySelector('input[name="exportChangesFormat"]:checked')?.value || 'html';
+    const mode = modal.querySelector('input[name="exportChangesMode"]:checked')?.value || 'simple';
+    const action = modal.querySelector('input[name="exportChangesAction"]:checked')?.value || 'download';
+    const depth = parseInt(document.getElementById('exportChangesDepth')?.value || '1');
+    const confirmBtn = document.getElementById('doExportChangesBtn');
+
+    // 保存原始按钮状态
+    const originalBtnHTML = confirmBtn.innerHTML;
+    const isZh = currentLang === 'zh_CN';
+
+    try {
+        let content = '';
+        let filename = '';
+        const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
+
+        // 设置按钮加载状态
+        confirmBtn.disabled = true;
+        confirmBtn.innerHTML = `<i class="fas fa-spinner fa-spin"></i> ${isZh ? '处理中...' : 'Processing...'}`;
+
+        // 稍微延迟一下让UI更新，避免大计算量卡顿
+        await new Promise(resolve => setTimeout(resolve, 50));
+
+        if (format === 'html') {
+            content = await generateChangesHTML(currentExportChangeData, mode, depth);
+            filename = `bookmark-changes-${timestamp}.html`;
+        } else {
+            content = await generateChangesJSON(currentExportChangeData, mode, depth);
+            filename = `bookmark-changes-${timestamp}.json`;
+            // 如果是 JSON 格式，content 是对象，需要 stringify
+            if (typeof content === 'object') {
+                content = JSON.stringify(content, null, 2);
+            }
+        }
+
+        if (action === 'download') {
+            // 下载文件
+            const blob = new Blob([content], { type: format === 'html' ? 'text/html' : 'application/json' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = filename;
+            a.click();
+            URL.revokeObjectURL(url);
+        } else {
+            // 复制到剪贴板
+            await navigator.clipboard.writeText(content);
+        }
+
+        // 显示成功状态（绿色背景 + 绿色脉冲）
+        confirmBtn.style.setProperty('background-color', 'var(--success)', 'important');
+        confirmBtn.style.setProperty('color', 'white', 'important');
+        confirmBtn.style.setProperty('border-color', 'var(--success)', 'important');
+        confirmBtn.style.animation = 'pulse-green 1s';
+
+        // 图标白色，并添加弹跳动画
+        confirmBtn.innerHTML = `<i class="fas fa-check-circle" style="color: white; animation: bounce-in 0.5s cubic-bezier(0.175, 0.885, 0.32, 1.275); font-size: 1.2em;"></i> ${isZh ? '成功' : 'Success'}`;
+
+        // 1.5秒后关闭模态框并恢复按钮
+        setTimeout(() => {
+            modal.classList.remove('show');
+            // 恢复按钮状态
+            setTimeout(() => {
+                confirmBtn.disabled = false;
+                confirmBtn.innerHTML = originalBtnHTML;
+                confirmBtn.style.backgroundColor = '';
+                confirmBtn.style.color = '';
+                confirmBtn.style.borderColor = '';
+                confirmBtn.style.animation = ''; // 清除动画
+            }, 300);
+        }, 1200);
+
+    } catch (error) {
+        console.error('[导出变化] 失败:', error);
+
+        // 显示错误状态
+        confirmBtn.style.backgroundColor = 'var(--danger-color)';
+        confirmBtn.style.color = 'white';
+        confirmBtn.innerHTML = `<i class="fas fa-exclamation-triangle"></i> ${isZh ? '失败' : 'Failed'}`;
+
+        alert(isZh ? `导出失败: ${error.message}` : `Export failed: ${error.message}`);
+
+        // 恢复按钮状态
+        setTimeout(() => {
+            confirmBtn.disabled = false;
+            confirmBtn.innerHTML = originalBtnHTML;
+            confirmBtn.style.backgroundColor = '';
+            confirmBtn.style.color = '';
+        }, 2000);
+    }
+}
+
+// 生成变化HTML
+async function generateChangesHTML(changeData, mode, depth) {
+    const isZh = currentLang === 'zh_CN';
+    const now = new Date().toLocaleString();
+
+    let html = '<!DOCTYPE NETSCAPE-Bookmark-file-1>\n';
+    html += '<META HTTP-EQUIV="Content-Type" CONTENT="text/html; charset=UTF-8">\n';
+    html += `<TITLE>${isZh ? '书签变化' : 'Bookmark Changes'}</TITLE>\n`;
+    html += `<H1>${isZh ? '书签变化' : 'Bookmark Changes'}</H1>\n`;
+    html += '<DL><p>\n';
+
+    // 添加图例说明（一行）
+    const legendText = isZh
+        ? '📋 前缀说明: [+]新增  [-]删除  [~]修改  [↔]移动'
+        : '📋 Prefix legend: [+]Added  [-]Deleted  [~]Modified  [↔]Moved';
+    html += `    <DT><H3>${legendText}</H3>\n`;
+
+    // 从 DOM 提取书签树
+    const treeContainer = document.getElementById('changesTreePreviewInline');
+    if (!treeContainer) {
+        console.log('[generateChangesHTML] 未找到 changesTreePreviewInline');
+        html += `    <DT><H3>${isZh ? '(无书签树数据)' : '(No bookmark tree data)'}</H3>\n`;
+        html += '</DL><p>\n';
+        return html;
+    }
+
+    const bookmarkTree = treeContainer.querySelector('.bookmark-tree');
+    if (!bookmarkTree) {
+        console.log('[generateChangesHTML] 未找到 .bookmark-tree');
+        html += `    <DT><H3>${isZh ? '(无书签树数据)' : '(No bookmark tree data)'}</H3>\n`;
+        html += '</DL><p>\n';
+        return html;
+    }
+
+    console.log('[generateChangesHTML] 找到书签树, 开始提取变化');
+
+    // 递归检查节点是否包含变化（自身或子节点）
+    function hasChanges(treeNode) {
+        const treeItem = treeNode.querySelector(':scope > .tree-item');
+        if (!treeItem) return false;
+
+        // 检查自身是否有变化
+        if (treeItem.classList.contains('tree-change-added') ||
+            treeItem.classList.contains('tree-change-deleted') ||
+            treeItem.classList.contains('tree-change-modified') ||
+            treeItem.classList.contains('tree-change-moved')) {
+            return true;
+        }
+
+        // 检查子节点
+        const childrenContainer = treeNode.querySelector(':scope > .tree-children');
+        if (childrenContainer) {
+            const childNodes = childrenContainer.querySelectorAll(':scope > .tree-node');
+            for (const child of childNodes) {
+                if (hasChanges(child)) return true;
+            }
+        }
+
+        return false;
+    }
+
+    // 递归生成 HTML
+    function generateNodeHTML(nodeEl, indentLevel) {
+        let result = '';
+        const indent = '    '.repeat(indentLevel);
+
+        const treeNodes = nodeEl.querySelectorAll(':scope > .tree-node');
+
+        treeNodes.forEach(treeNode => {
+            const treeItem = treeNode.querySelector(':scope > .tree-item');
+            if (!treeItem) return;
+
+            // 简单模式：只导出有变化的分支
+            // 详细模式（快照）：只要是可见的（这里假设如果是递归调用进来的，说明父级是展开的）
+            // 但如果当前节点是文件夹，我们需要决定是否递归子节点
+
+            if (mode !== 'detailed' && !hasChanges(treeNode)) return;
+
+            // 从 data 属性获取标题和 URL（空标题用根目录表示）
+            let title = treeItem.dataset.nodeTitle || treeItem.querySelector('.tree-label')?.textContent?.trim() || '';
+            if (!title) title = currentLang === 'zh_CN' ? '根目录' : 'Root';
+            const url = treeItem.dataset.nodeUrl || '';
+            const nodeType = treeItem.dataset.nodeType;
+
+            // 检查变化类型并添加前缀
+            let prefix = '';
+            if (treeItem.classList.contains('tree-change-added')) {
+                prefix = '[+] ';
+            } else if (treeItem.classList.contains('tree-change-deleted')) {
+                prefix = '[-] ';
+            } else if (treeItem.classList.contains('tree-change-modified')) {
+                prefix = '[~] ';
+            } else if (treeItem.classList.contains('tree-change-moved')) {
+                prefix = '[↔] ';
+            }
+
+            const displayTitle = prefix + title;
+            const isFolder = nodeType === 'folder' || !url;
+
+            if (isFolder) {
+                // 文件夹
+                result += `${indent}<DT><H3>${escapeHtml(displayTitle)}</H3>\n`;
+                result += `${indent}<DL><p>\n`;
+
+                // 递归处理子节点
+                const childrenContainer = treeNode.querySelector(':scope > .tree-children');
+                if (childrenContainer) {
+                    // 核心修改：详细模式下，只有当文件夹展开时才递归子节点
+                    // 简单模式下，只要有变化就递归（原逻辑）
+                    let shouldRecurse = false;
+
+                    if (mode === 'detailed') {
+                        // 检查展开状态
+                        if (childrenContainer.classList.contains('expanded')) {
+                            shouldRecurse = true;
+                        }
+                    } else {
+                        // 简单模式：基于 hasChanges (上面已经 check 过 hasChanges(treeNode) 了，所以只要 logic says yes)
+                        // hasChanges 保证了至少有一个子孙有变化，所以必须递归去寻找那个变化
+                        shouldRecurse = true;
+                    }
+
+                    if (shouldRecurse) {
+                        result += generateNodeHTML(childrenContainer, indentLevel + 1);
+                    }
+                }
+
+                result += `${indent}</DL><p>\n`;
+            } else {
+                // 书签
+                result += `${indent}<DT><A HREF="${escapeHtml(url)}">${escapeHtml(displayTitle)}</A>\n`;
+            }
+        });
+
+        return result;
+    }
+
+    // 生成书签树 HTML
+    html += generateNodeHTML(bookmarkTree, 1);
+
+    html += '</DL><p>\n';
+
+    console.log('[generateChangesHTML] 生成的 HTML 长度:', html.length);
+
+    return html;
+}
+
+// 生成变化JSON
+async function generateChangesJSON(changeData, mode, depth) {
+    const isZh = currentLang === 'zh_CN';
+    const now = new Date().toISOString();
+
+    // 从 DOM 提取书签树中的变化节点
+    const treeContainer = document.getElementById('changesTreePreviewInline');
+    const bookmarkTreeEl = treeContainer?.querySelector('.bookmark-tree');
+
+    // 递归检查节点是否包含变化
+    function hasChanges(treeNode) {
+        const treeItem = treeNode.querySelector(':scope > .tree-item');
+        if (!treeItem) return false;
+
+        if (treeItem.classList.contains('tree-change-added') ||
+            treeItem.classList.contains('tree-change-deleted') ||
+            treeItem.classList.contains('tree-change-modified') ||
+            treeItem.classList.contains('tree-change-moved')) {
+            return true;
+        }
+
+        const childrenContainer = treeNode.querySelector(':scope > .tree-children');
+        if (childrenContainer) {
+            const childNodes = childrenContainer.querySelectorAll(':scope > .tree-node');
+            for (const child of childNodes) {
+                if (hasChanges(child)) return true;
+            }
+        }
+
+        return false;
+    }
+
+    // 递归提取树结构
+    function extractTree(nodeEl) {
+        const result = [];
+        const treeNodes = nodeEl.querySelectorAll(':scope > .tree-node');
+
+        treeNodes.forEach(treeNode => {
+            const treeItem = treeNode.querySelector(':scope > .tree-item');
+            if (!treeItem) return;
+
+            // 简单模式：只导出有变化的分支
+            // 详细模式（快照）：只要是可见的（这里假设如果是递归调用进来的，说明父级是展开的）
+            if (mode !== 'detailed' && !hasChanges(treeNode)) return;
+
+            let title = treeItem.dataset.nodeTitle || treeItem.querySelector('.tree-label')?.textContent?.trim() || '';
+            if (!title) title = currentLang === 'zh_CN' ? '根目录' : 'Root';
+            const url = treeItem.dataset.nodeUrl || '';
+            const nodeType = treeItem.dataset.nodeType;
+
+            let changeType = null;
+            if (treeItem.classList.contains('tree-change-added')) {
+                changeType = 'added';
+            } else if (treeItem.classList.contains('tree-change-deleted')) {
+                changeType = 'deleted';
+            } else if (treeItem.classList.contains('tree-change-modified')) {
+                changeType = 'modified';
+            } else if (treeItem.classList.contains('tree-change-moved')) {
+                changeType = 'moved';
+            }
+
+            const isFolder = nodeType === 'folder' || !url;
+
+            const item = {
+                title: changeType ? `${getChangePrefix(changeType)} ${title}` : title,
+                type: isFolder ? 'folder' : 'bookmark',
+                ...(url ? { url } : {}),
+                ...(changeType ? { changeType } : {})
+            };
+
+            if (isFolder) {
+                const childrenContainer = treeNode.querySelector(':scope > .tree-children');
+                if (childrenContainer) {
+                    let shouldRecurse = false;
+
+                    if (mode === 'detailed') {
+                        // 详细模式：检查展开状态
+                        if (childrenContainer.classList.contains('expanded')) {
+                            shouldRecurse = true;
+                        }
+                    } else {
+                        // 简单模式：基于 hasChanges (上面已经 check 过 hasChanges(treeNode) 了)
+                        shouldRecurse = true;
+                    }
+
+                    if (shouldRecurse) {
+                        item.children = extractTree(childrenContainer);
+                    } else {
+                        item.children = [];
+                    }
+                } else {
+                    item.children = [];
+                }
+            }
+
+            result.push(item);
+        });
+
+        return result;
+    }
+
+    const bookmarkTree = bookmarkTreeEl ? extractTree(bookmarkTreeEl) : [];
+
+    // 构建兼容 Chrome bookmarks API 格式的输出
+    // Chrome API 格式: {id, title, children: [...]}
+    const result = {
+        // 标准字段
+        title: isZh ? '书签变化导出' : 'Bookmark Changes Export',
+        children: bookmarkTree,
+        // 元信息（下划线前缀表示非标准扩展字段）
+        _exportInfo: {
+            exportDate: now,
+            exportMode: mode,
+            source: 'bookmark-backup-changes',
+            legend: {
+                '[+]': isZh ? '新增' : 'Added',
+                '[-]': isZh ? '删除' : 'Deleted',
+                '[~]': isZh ? '修改' : 'Modified',
+                '[↔]': isZh ? '移动' : 'Moved'
+            }
+        }
+    };
+
+    return JSON.stringify(result, null, 2);
+}
+
+// 收集要导出的变化项
+function collectChangesForExport(changeData, mode, depth) {
+    let changes = [];
+
+    console.log('[导出变化] changeData:', changeData);
+    console.log('[导出变化] mode:', mode, 'depth:', depth);
+
+    if (!changeData) {
+        console.warn('[导出变化] changeData 为空');
+        return changes;
+    }
+
+    // 添加基本变化
+    if (changeData.added && Array.isArray(changeData.added)) {
+        console.log('[导出变化] added 数量:', changeData.added.length);
+        for (const item of changeData.added) {
+            changes.push({ ...item, changeType: 'added' });
+        }
+    }
+    if (changeData.deleted && Array.isArray(changeData.deleted)) {
+        console.log('[导出变化] deleted 数量:', changeData.deleted.length);
+        for (const item of changeData.deleted) {
+            changes.push({ ...item, changeType: 'deleted' });
+        }
+    }
+    if (changeData.modified && Array.isArray(changeData.modified)) {
+        console.log('[导出变化] modified 数量:', changeData.modified.length);
+        for (const item of changeData.modified) {
+            changes.push({ ...item, changeType: 'modified' });
+        }
+    }
+    if (changeData.moved && Array.isArray(changeData.moved)) {
+        console.log('[导出变化] moved 数量:', changeData.moved.length);
+        for (const item of changeData.moved) {
+            changes.push({ ...item, changeType: 'moved' });
+        }
+    }
+
+    // 如果变化数组为空，尝试从 DOM 提取变化
+    if (changes.length === 0) {
+        console.log('[导出变化] 变化数组为空，尝试从 DOM 提取');
+        changes = collectChangesFromDOM();
+    }
+
+    console.log('[导出变化] 收集到的变化总数:', changes.length);
+    if (changes.length > 0) {
+        console.log('[导出变化] 第一个变化项示例:', changes[0]);
+    }
+
+    // 如果是详细模式，扩展上下文
+    if (mode === 'detailed' && depth > 0) {
+        // TODO: 实现上下文扩展逻辑
+        // 这里需要获取变化项的父级和同级书签
+        // 暂时只返回变化项本身
+        console.log('[导出变化] 详细模式，扩展层级:', depth);
+    }
+
+    return changes;
+}
+
+// 从 DOM 中提取完整的书签树数据（简单模式）
+function collectChangesFromDOM() {
+    const treeContainer = document.getElementById('changesTreePreviewInline');
+
+    if (!treeContainer) {
+        console.warn('[导出变化] 未找到书签树容器');
+        return [];
+    }
+
+    // 递归提取书签树
+    function extractTreeNode(nodeEl, depth = 0) {
+        const result = [];
+
+        // 找到当前节点下的所有直接 tree-node
+        const treeNodes = nodeEl.querySelectorAll(':scope > .tree-node');
+
+        treeNodes.forEach(treeNode => {
+            const treeItem = treeNode.querySelector(':scope > .tree-item');
+            if (!treeItem) return;
+
+            // 获取标题
+            const labelEl = treeItem.querySelector('.tree-label');
+            const linkEl = treeItem.querySelector('a.tree-label');
+
+            const title = labelEl?.textContent?.trim() || linkEl?.textContent?.trim() || 'Untitled';
+            const url = linkEl?.href || '';
+
+            // 检查变化类型
+            let changeType = null;
+            if (treeItem.classList.contains('tree-change-added')) {
+                changeType = 'added';
+            } else if (treeItem.classList.contains('tree-change-deleted')) {
+                changeType = 'deleted';
+            } else if (treeItem.classList.contains('tree-change-modified')) {
+                changeType = 'modified';
+            } else if (treeItem.classList.contains('tree-change-moved')) {
+                changeType = 'moved';
+            }
+
+            const isFolder = !url;
+
+            const item = {
+                title,
+                url,
+                changeType,
+                isFolder,
+                depth,
+                children: []
+            };
+
+            // 如果是文件夹，递归获取子项
+            if (isFolder) {
+                const childrenContainer = treeNode.querySelector(':scope > .tree-children');
+                if (childrenContainer) {
+                    item.children = extractTreeNode(childrenContainer, depth + 1);
+                }
+            }
+
+            result.push(item);
+        });
+
+        return result;
+    }
+
+    // 从根节点开始提取
+    const rootChildren = treeContainer.querySelector('.tree-children');
+    if (!rootChildren) {
+        // 尝试直接从容器开始
+        const directNodes = treeContainer.querySelectorAll('.tree-node');
+        if (directNodes.length === 0) {
+            console.warn('[导出变化] 书签树为空');
+            return [];
+        }
+    }
+
+    const tree = extractTreeNode(treeContainer, 0);
+    console.log('[导出变化] 从 DOM 提取的书签树:', tree);
+
+    // 展平树结构为变化列表（保留路径信息）
+    const flatChanges = [];
+
+    function flattenTree(nodes, path = '') {
+        for (const node of nodes) {
+            const currentPath = path ? `${path}/${node.title}` : node.title;
+
+            // 添加到结果
+            flatChanges.push({
+                title: node.title,
+                url: node.url,
+                changeType: node.changeType,
+                path: path,
+                isFolder: node.isFolder,
+                depth: node.depth
+            });
+
+            // 递归子节点
+            if (node.children && node.children.length > 0) {
+                flattenTree(node.children, node.isFolder ? currentPath : path);
+            }
+        }
+    }
+
+    flattenTree(tree);
+    console.log('[导出变化] 展平后的变化列表:', flatChanges.length, '项');
+
+    return flatChanges;
+}
+
+// 获取变化类型前缀
+function getChangePrefix(changeType) {
+    switch (changeType) {
+        case 'added': return '[+]';
+        case 'deleted': return '[-]';
+        case 'modified': return '[~]';
+        case 'moved': return '[↔]';
+        default: return '';
+    }
+}
+
+// HTML转义
+function escapeHtml(str) {
+    if (!str) return '';
+    return str
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
+}

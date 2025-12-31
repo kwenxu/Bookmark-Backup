@@ -1233,6 +1233,124 @@
         </main>
     </div>
 
+    <!-- 导出变化模态框 -->
+    <div id="exportChangesModal" class="modal content-center">
+        <div class="modal-content" style="max-width: 420px;">
+            <div class="modal-header compact">
+                <h3 id="exportChangesModalTitle">导出书签变化</h3>
+                <button class="modal-close" id="exportChangesModalClose">
+                    <i class="fas fa-times"></i>
+                </button>
+            </div>
+            <div class="modal-body" style="padding: 16px 20px;">
+                <!-- 格式选择 -->
+                <div class="export-section" style="margin-bottom: 16px;">
+                    <div style="display: flex; align-items: center; margin-bottom: 10px;">
+                        <h4 style="font-size: 14px; color: var(--text-secondary); margin: 0; margin-right: 6px;"
+                            id="exportChangesFormatLabel">导出格式</h4>
+                        <i class="fas fa-question-circle" id="exportChangesLegendHelp" title="标记说明"
+                            style="color: var(--text-tertiary); cursor: pointer; font-size: 13px;"></i>
+                    </div>
+                    <div class="radio-group" style="display: flex; gap: 20px;">
+                        <label class="radio-label"
+                            style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
+                            <input type="radio" name="exportChangesFormat" value="html" checked>
+                            <span>HTML</span>
+                        </label>
+                        <label class="radio-label"
+                            style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
+                            <input type="radio" name="exportChangesFormat" value="json">
+                            <span>JSON</span>
+                        </label>
+                    </div>
+                    <!-- 标记说明内容 -->
+                    <div id="exportChangesLegendHelpContent"
+                        style="display: none; margin-top: 10px; padding: 10px; background: var(--bg-tertiary); border-radius: 4px; font-size: 12px; color: var(--text-secondary); line-height: 1.6; border: 1px solid var(--border-color);">
+                        <div style="display: flex; gap: 12px; flex-wrap: wrap; align-items: center;">
+                            <span style="font-weight: bold; color: var(--text-primary);">标记说明：</span>
+                            <span><span style="color: var(--success-color); font-weight: bold;">[+]</span> <span
+                                    id="legendAdded">新增</span></span>
+                            <span><span style="color: var(--danger-color); font-weight: bold;">[-]</span> <span
+                                    id="legendDeleted">删除</span></span>
+                            <span><span style="color: var(--warning-color); font-weight: bold;">[~]</span> <span
+                                    id="legendModified">修改</span></span>
+                            <span><span style="color: var(--info-color); font-weight: bold;">[↔]</span> <span
+                                    id="legendMoved">移动</span></span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 模式选择 -->
+                <div class="export-section" style="margin-bottom: 16px;">
+                    <h4 style="margin-bottom: 10px; font-size: 14px; color: var(--text-secondary);"
+                        id="exportChangesModeLabel">导出模式</h4>
+                    <div class="radio-group" style="display: flex; gap: 20px;">
+                        <label class="radio-label"
+                            style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
+                            <input type="radio" name="exportChangesMode" value="simple" checked>
+                            <span id="exportChangesModeSimple">简单</span>
+                        </label>
+                        <label class="radio-label"
+                            style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
+                            <input type="radio" name="exportChangesMode" value="detailed">
+                            <span id="exportChangesModeDetailed">详细</span>
+                            <i class="fas fa-question-circle" id="exportChangesDetailedHelp" title="功能说明"
+                                style="color: var(--text-tertiary); cursor: pointer; margin-left: 4px;"></i>
+                        </label>
+                    </div>
+                    <!-- 详细模式说明内容 -->
+                    <div id="exportChangesDetailedHelpContent"
+                        style="display: none; margin-top: 10px; padding: 10px; background: var(--bg-tertiary); border-radius: 4px; font-size: 13px; color: var(--text-secondary); line-height: 1.6; border: 1px solid var(--border-color);">
+                    </div>
+                </div>
+
+                <!-- 扩展层级（仅详细模式显示） -->
+                <div class="export-section" id="exportChangesDepthSection" style="margin-bottom: 16px; display: none;">
+                    <h4 style="margin-bottom: 10px; font-size: 14px; color: var(--text-secondary);"
+                        id="exportChangesDepthLabel">扩展层级</h4>
+                    <div style="display: flex; align-items: center; gap: 12px;">
+                        <input type="range" id="exportChangesDepth" min="0" max="3" value="1" style="flex: 1;">
+                        <span id="exportChangesDepthValue"
+                            style="min-width: 40px; text-align: center; font-weight: 500;">1 层</span>
+                    </div>
+                    <div
+                        style="display: flex; justify-content: space-between; font-size: 11px; color: var(--text-tertiary); margin-top: 4px;">
+                        <span id="exportChangesDepth0">仅同级</span>
+                        <span id="exportChangesDepth1">1层</span>
+                        <span id="exportChangesDepth2">2层</span>
+                        <span id="exportChangesDepth3">3层</span>
+                    </div>
+                </div>
+
+                <!-- 操作选择 -->
+                <div class="export-section" style="margin-bottom: 16px;">
+                    <h4 style="margin-bottom: 10px; font-size: 14px; color: var(--text-secondary);"
+                        id="exportChangesActionLabel">操作方式</h4>
+                    <div class="radio-group" style="display: flex; gap: 20px;">
+                        <label class="radio-label"
+                            style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
+                            <input type="radio" name="exportChangesAction" value="download" checked>
+                            <span id="exportChangesActionDownload">导出文件</span>
+                        </label>
+                        <label class="radio-label"
+                            style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
+                            <input type="radio" name="exportChangesAction" value="copy">
+                            <span id="exportChangesActionCopy">复制到剪贴板</span>
+                        </label>
+                    </div>
+                </div>
+
+                <!-- 操作按钮 -->
+                <div class="export-actions"
+                    style="text-align: right; border-top: 1px solid var(--border-color); padding-top: 16px;">
+                    <button id="doExportChangesBtn" class="view-action-btn" style="display: inline-flex; width: auto;">
+                        <i class="fas fa-file-export"></i> <span id="doExportChangesBtnText">确认</span>
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <!-- 撤销覆盖层 -->
     <div id="revertOverlay" class="revert-overlay" style="display: none;">
         <div class="revert-overlay-content">

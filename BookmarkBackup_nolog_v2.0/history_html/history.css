@@ -2396,6 +2396,19 @@ a.tree-label.tree-bookmark-link:hover {
     padding: 0 !important;
 }
 
+/* 当前变化视图：隐藏拉伸手柄（只读视图不需要调整大小） */
+.changes-tree-preview-inline .changes-preview-readonly .resize-handle,
+.changes-tree-preview-inline .changes-preview-readonly .resize-handle-nw,
+.changes-tree-preview-inline .changes-preview-readonly .resize-handle-ne,
+.changes-tree-preview-inline .changes-preview-readonly .resize-handle-sw,
+.changes-tree-preview-inline .changes-preview-readonly .resize-handle-se,
+.changes-tree-preview-inline .changes-preview-readonly .resize-handle-n,
+.changes-tree-preview-inline .changes-preview-readonly .resize-handle-s,
+.changes-tree-preview-inline .changes-preview-readonly .resize-handle-e,
+.changes-tree-preview-inline .changes-preview-readonly .resize-handle-w {
+    display: none !important;
+}
+
 /* 简略模式：隐藏没有变化的节点（.tree-node 包含 .tree-item 但没有 tree-change-xxx 类） */
 .changes-tree-preview-inline.compact-mode .tree-node:not(:has(.tree-change-added)):not(:has(.tree-change-deleted)):not(:has(.tree-change-modified)):not(:has(.tree-change-moved)) {
     display: none !important;
@@ -2915,7 +2928,7 @@ a.tree-label.tree-bookmark-link:hover {
     border-bottom: 1px solid var(--border-color);
     padding: 12px 16px;
     display: flex;
-    align-items: baseline;
+    align-items: center;
     gap: 12px;
     font-weight: 600;
 }
@@ -3013,6 +3026,38 @@ a.tree-label.tree-bookmark-link:hover {
 
 .diff-edit-btn.icon-only svg {
     display: block;
+}
+
+/* 快速显示 tooltip - 当前变化视图的按钮 */
+.diff-header .diff-edit-btn.icon-only {
+    position: relative;
+}
+
+.diff-header .diff-edit-btn.icon-only::after {
+    content: attr(title);
+    position: absolute;
+    bottom: calc(100% + 6px);
+    left: 50%;
+    transform: translateX(-50%);
+    padding: 4px 8px;
+    background: var(--bg-elevated);
+    color: var(--text-primary);
+    border: 1px solid var(--border-color);
+    border-radius: 4px;
+    font-size: 11px;
+    font-weight: 400;
+    white-space: nowrap;
+    opacity: 0;
+    visibility: hidden;
+    transition: opacity 0.1s ease, visibility 0.1s ease;
+    pointer-events: none;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+    z-index: 1000;
+}
+
+.diff-header .diff-edit-btn.icon-only:hover::after {
+    opacity: 1;
+    visibility: visible;
 }
 
 .diff-stats {

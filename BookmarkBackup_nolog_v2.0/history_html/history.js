@@ -11633,9 +11633,14 @@ async function renderCurrentChangesView(forceRefresh = false, options = {}) {
             html += `<span class="legend-item"><span class="legend-dot moved"></span>${currentLang === 'zh_CN' ? '移动' : 'Moved'}</span>`;
             html += '</span>';
             html += '<span class="diff-header-spacer"></span>';
-            // 详略切换按钮
-            html += `<button class="diff-edit-btn icon-only" id="toggleTreeDetailBtn" title="${currentLang === 'zh_CN' ? '详略切换' : 'Toggle Detail'}">`;
-            html += '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3"></path></svg>';
+            // 详略切换按钮 - 使用两个SVG图标，根据状态显示不同图标
+            // 详细模式图标：4条横线（表示展开全部）
+            // 简略模式图标：2条横线（表示只显示变化）
+            html += `<button class="diff-edit-btn icon-only" id="toggleTreeDetailBtn" title="${currentLang === 'zh_CN' ? '切换为简略（只显示变化）' : 'Switch to compact (changes only)'}">`;
+            // 默认显示详细模式图标（4条横线）
+            html += '<svg class="icon-detail" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="4" y1="6" x2="20" y2="6"/><line x1="4" y1="10" x2="20" y2="10"/><line x1="4" y1="14" x2="20" y2="14"/><line x1="4" y1="18" x2="20" y2="18"/></svg>';
+            // 简略模式图标（2条横线+高亮）- 默认隐藏
+            html += '<svg class="icon-compact" style="display:none" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="4" y1="9" x2="20" y2="9"/><line x1="4" y1="15" x2="20" y2="15"/><circle cx="2" cy="9" r="1.5" fill="currentColor" stroke="none"/><circle cx="2" cy="15" r="1.5" fill="currentColor" stroke="none"/></svg>';
             html += '</button>';
             // 编辑按钮
             html += `<button class="diff-edit-btn icon-only" id="jumpToCanvasBtn" title="${currentLang === 'zh_CN' ? '在画布中编辑' : 'Edit in Canvas'}">`;
@@ -11849,14 +11854,31 @@ async function renderCurrentChangesView(forceRefresh = false, options = {}) {
                     const savedMode = lastData.currentChangesViewMode || 'compact';
                     const isCompactInit = savedMode === 'compact';
 
+                    // 辅助函数：更新图标显示
+                    const updateDetailToggleIcon = (isCompact) => {
+                        const iconDetail = toggleTreeDetailBtn.querySelector('.icon-detail');
+                        const iconCompact = toggleTreeDetailBtn.querySelector('.icon-compact');
+                        if (isCompact) {
+                            // 简略模式：显示简略图标，隐藏详细图标
+                            if (iconDetail) iconDetail.style.display = 'none';
+                            if (iconCompact) iconCompact.style.display = 'block';
+                        } else {
+                            // 详细模式：显示详细图标，隐藏简略图标
+                            if (iconDetail) iconDetail.style.display = 'block';
+                            if (iconCompact) iconCompact.style.display = 'none';
+                        }
+                    };
+
                     if (isCompactInit) {
                         treePreviewContainer.classList.add('compact-mode');
                         toggleTreeDetailBtn.classList.add('active');
-                        toggleTreeDetailBtn.title = currentLang === 'zh_CN' ? '切换为详细' : 'Switch to Detailed';
+                        toggleTreeDetailBtn.title = currentLang === 'zh_CN' ? '切换为详细（显示全部）' : 'Switch to detailed (show all)';
+                        updateDetailToggleIcon(true);
                     } else {
                         treePreviewContainer.classList.remove('compact-mode');
                         toggleTreeDetailBtn.classList.remove('active');
-                        toggleTreeDetailBtn.title = currentLang === 'zh_CN' ? '切换为简略' : 'Switch to Compact';
+                        toggleTreeDetailBtn.title = currentLang === 'zh_CN' ? '切换为简略（只显示变化）' : 'Switch to compact (changes only)';
+                        updateDetailToggleIcon(false);
                     }
 
                     // 绑定点击事件
@@ -11867,14 +11889,16 @@ async function renderCurrentChangesView(forceRefresh = false, options = {}) {
                             // 当前是简略，切换到详细
                             treePreviewContainer.classList.remove('compact-mode');
                             toggleTreeDetailBtn.classList.remove('active');
-                            toggleTreeDetailBtn.title = currentLang === 'zh_CN' ? '切换为简略' : 'Switch to Compact';
+                            toggleTreeDetailBtn.title = currentLang === 'zh_CN' ? '切换为简略（只显示变化）' : 'Switch to compact (changes only)';
+                            updateDetailToggleIcon(false);
                             // 保存状态
                             browserAPI.storage.local.set({ currentChangesViewMode: 'detailed' });
                         } else {
                             // 当前是详细，切换到简略
                             treePreviewContainer.classList.add('compact-mode');
                             toggleTreeDetailBtn.classList.add('active');
-                            toggleTreeDetailBtn.title = currentLang === 'zh_CN' ? '切换为详细' : 'Switch to Detailed';
+                            toggleTreeDetailBtn.title = currentLang === 'zh_CN' ? '切换为详细（显示全部）' : 'Switch to detailed (show all)';
+                            updateDetailToggleIcon(true);
                             // 展开变化
                             expandFoldersWithChanges();
                             // 保存状态

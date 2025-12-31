@@ -3028,36 +3028,44 @@ a.tree-label.tree-bookmark-link:hover {
     display: block;
 }
 
-/* 快速显示 tooltip - 当前变化视图的按钮 */
+/* 快速显示 tooltip - 当前变化视图的按钮（与顶部按钮一致的样式） */
 .diff-header .diff-edit-btn.icon-only {
     position: relative;
 }
 
-.diff-header .diff-edit-btn.icon-only::after {
-    content: attr(title);
+/* 当前变化视图按钮的tooltip（继承顶部按钮样式） */
+.diff-header .diff-edit-btn.icon-only .btn-tooltip {
     position: absolute;
-    bottom: calc(100% + 6px);
+    top: calc(100% + 8px);
     left: 50%;
     transform: translateX(-50%);
-    padding: 4px 8px;
-    background: var(--bg-elevated);
-    color: var(--text-primary);
-    border: 1px solid var(--border-color);
-    border-radius: 4px;
-    font-size: 11px;
-    font-weight: 400;
+    background: rgba(0, 0, 0, 0.9);
+    color: white;
+    padding: 6px 10px;
+    border-radius: 6px;
+    font-size: 12px;
     white-space: nowrap;
-    opacity: 0;
     visibility: hidden;
-    transition: opacity 0.1s ease, visibility 0.1s ease;
+    opacity: 0;
+    transition: opacity 0.05s ease, visibility 0.05s ease;
     pointer-events: none;
-    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
-    z-index: 1000;
+    z-index: 10000;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.25);
 }
 
-.diff-header .diff-edit-btn.icon-only:hover::after {
-    opacity: 1;
+.diff-header .diff-edit-btn.icon-only .btn-tooltip::before {
+    content: '';
+    position: absolute;
+    bottom: 100%;
+    left: 50%;
+    transform: translateX(-50%);
+    border: 5px solid transparent;
+    border-bottom-color: rgba(0, 0, 0, 0.9);
+}
+
+.diff-header .diff-edit-btn.icon-only:hover .btn-tooltip {
     visibility: visible;
+    opacity: 1;
 }
 
 .diff-stats {

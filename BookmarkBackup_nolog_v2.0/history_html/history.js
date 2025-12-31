@@ -10113,6 +10113,83 @@ function escapeHtml(str) {
         .replace(/'/g, '&#039;');
 }
 
+// 快速 Tooltip 初始化（用于当前变化视图的按钮）
+// 使用全局tooltip元素，附加到body，避免层级问题
+let globalTooltipElement = null;
+let tooltipHideTimer = null;
+
+function initFastTooltips() {
+    // 创建全局tooltip元素（如果不存在）
+    if (!globalTooltipElement) {
+        globalTooltipElement = document.createElement('div');
+        globalTooltipElement.className = 'global-tooltip';
+        document.body.appendChild(globalTooltipElement);
+    }
+
+    // 为当前变化视图的按钮绑定tooltip
+    const buttons = document.querySelectorAll('.diff-header .diff-edit-btn.icon-only[title]');
+
+    buttons.forEach(btn => {
+        // 保存原始title并移除（防止浏览器原生tooltip）
+        const tooltipText = btn.getAttribute('title');
+        btn.dataset.tooltipText = tooltipText;
+        btn.removeAttribute('title');
+
+        btn.addEventListener('mouseenter', (e) => {
+            if (tooltipHideTimer) {
+                clearTimeout(tooltipHideTimer);
+                tooltipHideTimer = null;
+            }
+
+            const text = btn.dataset.tooltipText;
+            if (!text) return;
+
+            globalTooltipElement.textContent = text;
+
+            // 计算位置（按钮上方居中）
+            const rect = btn.getBoundingClientRect();
+            const tooltipRect = globalTooltipElement.getBoundingClientRect();
+
+            let left = rect.left + rect.width / 2 - tooltipRect.width / 2;
+            let top = rect.top - 8 - globalTooltipElement.offsetHeight;
+
+            // 确保不超出视口
+            if (left < 8) left = 8;
+            if (left + tooltipRect.width > window.innerWidth - 8) {
+                left = window.innerWidth - tooltipRect.width - 8;
+            }
+            if (top < 8) {
+                // 如果上方空间不足，显示在下方
+                top = rect.bottom + 8;
+            }
+
+            globalTooltipElement.style.left = left + 'px';
+            globalTooltipElement.style.top = top + 'px';
+            globalTooltipElement.classList.add('visible');
+        });
+
+        btn.addEventListener('mouseleave', () => {
+            tooltipHideTimer = setTimeout(() => {
+                globalTooltipElement.classList.remove('visible');
+            }, 100);
+        });
+
+        // 当按钮title动态更新时，同步更新dataset
+        const observer = new MutationObserver((mutations) => {
+            mutations.forEach((mutation) => {
+                if (mutation.type === 'attributes' && mutation.attributeName === 'title') {
+                    const newTitle = btn.getAttribute('title');
+                    if (newTitle) {
+                        btn.dataset.tooltipText = newTitle;
+                        btn.removeAttribute('title');
+                    }
+                }
+            });
+        });
+        observer.observe(btn, { attributes: true });
+    });
+}
+
 // =============================================================================
 // 复习热力图 (GitHub 风格，当前月份在左)
 // =============================================================================
@@ -11636,19 +11713,22 @@ async function renderCurrentChangesView(forceRefresh = false, options = {}) {
             // 详略切换按钮 - 使用两个SVG图标，根据状态显示不同图标
             // 详细模式图标：4条横线（表示展开全部）
             // 简略模式图标：2条横线（表示只显示变化）
-            html += `<button class="diff-edit-btn icon-only" id="toggleTreeDetailBtn" title="${currentLang === 'zh_CN' ? '切换为简略（只显示变化）' : 'Switch to compact (changes only)'}">`;
+            html += `<button class="diff-edit-btn icon-only" id="toggleTreeDetailBtn">`;
             // 默认显示详细模式图标（4条横线）
             html += '<svg class="icon-detail" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="4" y1="6" x2="20" y2="6"/><line x1="4" y1="10" x2="20" y2="10"/><line x1="4" y1="14" x2="20" y2="14"/><line x1="4" y1="18" x2="20" y2="18"/></svg>';
             // 简略模式图标（2条横线+高亮）- 默认隐藏
             html += '<svg class="icon-compact" style="display:none" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="4" y1="9" x2="20" y2="9"/><line x1="4" y1="15" x2="20" y2="15"/><circle cx="2" cy="9" r="1.5" fill="currentColor" stroke="none"/><circle cx="2" cy="15" r="1.5" fill="currentColor" stroke="none"/></svg>';
+            html += `<span class="btn-tooltip" id="toggleTreeDetailTooltip">${currentLang === 'zh_CN' ? '切换为简略' : 'Switch to compact'}</span>`;
             html += '</button>';
             // 编辑按钮
-            html += `<button class="diff-edit-btn icon-only" id="jumpToCanvasBtn" title="${currentLang === 'zh_CN' ? '在画布中编辑' : 'Edit in Canvas'}">`;
+            html += `<button class="diff-edit-btn icon-only" id="jumpToCanvasBtn">`;
             html += '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path></svg>';
+            html += `<span class="btn-tooltip">${currentLang === 'zh_CN' ? '在画布中编辑' : 'Edit in Canvas'}</span>`;
             html += '</button>';
             // 全部撤销按钮
-            html += `<button class="diff-edit-btn icon-only" id="revertAllCurrentBtn" title="${currentLang === 'zh_CN' ? '全部撤销' : 'Revert All'}">`;
+            html += `<button class="diff-edit-btn icon-only" id="revertAllCurrentBtn">`;
             html += '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"></path><path d="M3 3v5h5"></path></svg>';
+            html += `<span class="btn-tooltip">${currentLang === 'zh_CN' ? '全部撤销' : 'Revert All'}</span>`;
             html += '</button>';
             html += '</div>';
 
@@ -11869,15 +11949,18 @@ async function renderCurrentChangesView(forceRefresh = false, options = {}) {
                         }
                     };
 
+                    // 获取tooltip元素
+                    const toggleTooltip = document.getElementById('toggleTreeDetailTooltip');
+
                     if (isCompactInit) {
                         treePreviewContainer.classList.add('compact-mode');
                         toggleTreeDetailBtn.classList.add('active');
-                        toggleTreeDetailBtn.title = currentLang === 'zh_CN' ? '切换为详细（显示全部）' : 'Switch to detailed (show all)';
+                        if (toggleTooltip) toggleTooltip.textContent = currentLang === 'zh_CN' ? '切换为详细' : 'Switch to detailed';
                         updateDetailToggleIcon(true);
                     } else {
                         treePreviewContainer.classList.remove('compact-mode');
                         toggleTreeDetailBtn.classList.remove('active');
-                        toggleTreeDetailBtn.title = currentLang === 'zh_CN' ? '切换为简略（只显示变化）' : 'Switch to compact (changes only)';
+                        if (toggleTooltip) toggleTooltip.textContent = currentLang === 'zh_CN' ? '切换为简略' : 'Switch to compact';
                         updateDetailToggleIcon(false);
                     }
 
@@ -11889,7 +11972,7 @@ async function renderCurrentChangesView(forceRefresh = false, options = {}) {
                             // 当前是简略，切换到详细
                             treePreviewContainer.classList.remove('compact-mode');
                             toggleTreeDetailBtn.classList.remove('active');
-                            toggleTreeDetailBtn.title = currentLang === 'zh_CN' ? '切换为简略（只显示变化）' : 'Switch to compact (changes only)';
+                            if (toggleTooltip) toggleTooltip.textContent = currentLang === 'zh_CN' ? '切换为简略' : 'Switch to compact';
                             updateDetailToggleIcon(false);
                             // 保存状态
                             browserAPI.storage.local.set({ currentChangesViewMode: 'detailed' });
@@ -11897,7 +11980,7 @@ async function renderCurrentChangesView(forceRefresh = false, options = {}) {
                             // 当前是详细，切换到简略
                             treePreviewContainer.classList.add('compact-mode');
                             toggleTreeDetailBtn.classList.add('active');
-                            toggleTreeDetailBtn.title = currentLang === 'zh_CN' ? '切换为详细（显示全部）' : 'Switch to detailed (show all)';
+                            if (toggleTooltip) toggleTooltip.textContent = currentLang === 'zh_CN' ? '切换为详细' : 'Switch to detailed';
                             updateDetailToggleIcon(true);
                             // 展开变化
                             expandFoldersWithChanges();

@@ -5,6 +5,18 @@
 let currentLang = 'zh_CN';
 window.currentLang = currentLang; // 暴露给其他模块使用
 let currentTheme = 'light';
+let historyDetailMode = (() => {
+    try {
+        return localStorage.getItem('historyDetailMode') || 'simple';
+    } catch (e) {
+        return 'simple';
+    }
+})();
+const HISTORY_DETAIL_MODE_PREFIX = 'historyDetailMode:';
+const HISTORY_DETAIL_EXPANDED_PREFIX = 'historyDetailExpanded:';
+let currentDetailRecordMode = null;
+let currentDetailRecord = null;
+let currentExportHistoryTreeContainer = null;
 // 从 localStorage 立即恢复视图，避免页面闪烁
 let currentView = (() => {
     try {
@@ -1561,6 +1573,14 @@ const i18n = {
         'zh_CN': '复制所有记录',
         'en': 'Copy All Records'
     },
+    historyDetailModeSimple: {
+        'zh_CN': '简略',
+        'en': 'Simple'
+    },
+    historyDetailModeDetailed: {
+        'zh_CN': '详细',
+        'en': 'Detailed'
+    },
     revertAll: {
         'zh_CN': '全部撤销',
         'en': 'Revert All'
@@ -2907,6 +2927,22 @@ function applyLanguage() {
     if (currentChangesViewTitle) currentChangesViewTitle.textContent = i18n.currentChangesViewTitle[currentLang];
     document.getElementById('historyViewTitle').textContent = i18n.historyViewTitle[currentLang];
 
+    // 备份历史详略模式切换按钮
+    const historyDetailModeSimpleText = document.getElementById('historyDetailModeSimpleText');
+    if (historyDetailModeSimpleText) historyDetailModeSimpleText.textContent = i18n.historyDetailModeSimple[currentLang];
+    const historyDetailModeDetailedText = document.getElementById('historyDetailModeDetailedText');
+    if (historyDetailModeDetailedText) historyDetailModeDetailedText.textContent = i18n.historyDetailModeDetailed[currentLang];
+    const historyDetailModeSimpleModalText = document.getElementById('historyDetailModeSimpleModalText');
+    if (historyDetailModeSimpleModalText) historyDetailModeSimpleModalText.textContent = i18n.historyDetailModeSimple[currentLang];
+    const historyDetailModeDetailedModalText = document.getElementById('historyDetailModeDetailedModalText');
+    if (historyDetailModeDetailedModalText) historyDetailModeDetailedModalText.textContent = i18n.historyDetailModeDetailed[currentLang];
+    const modalTitle = document.getElementById('modalTitle');
+    if (modalTitle) modalTitle.textContent = i18n.modalTitle[currentLang];
+    const detailExportChangesBtn = document.getElementById('detailExportChangesBtn');
+    if (detailExportChangesBtn) {
+        detailExportChangesBtn.title = currentLang === 'zh_CN' ? '导出变化' : 'Export Changes';
+    }
+
     // 导出书签变化模态框
     const exportChangesModalTitle = document.getElementById('exportChangesModalTitle');
     if (exportChangesModalTitle) exportChangesModalTitle.textContent = i18n.exportChangesModalTitle[currentLang];
@@ -3875,6 +3911,11 @@ function initializeUI() {
     });
 
     // 注意：不再在这里调用 updateUIForCurrentView()，因为已经在 DOMContentLoaded 早期调用了 applyViewState()
+
+    // 初始化备份历史详情模式切换按钮
+    initHistoryDetailModeToggle();
+    initDetailModalActions();
+
     console.log('[initializeUI] UI事件监听器初始化完成，当前视图:', currentView);
 }
 
@@ -4067,19 +4108,9 @@ async function loadAllData(options = {}) {
 
         syncHistory = storageData.syncHistory || [];
 
-        // 清理bookmarkTree以减少内存占用和防止复制时卡顿
-        // 只保留最近3条记录的bookmarkTree用于显示详情
-        syncHistory = syncHistory.map((record, index) => {
-            // 保留最新的3条记录的bookmarkTree
-            if (index >= syncHistory.length - 3) {
-                return record;
-            }
-            // 其他记录删除bookmarkTree
-            const { bookmarkTree, ...recordWithoutTree } = record;
-            return recordWithoutTree;
-        });
-
-        console.log('[loadAllData] 已清理历史记录中的大数据，保留最新3条的bookmarkTree');
+        // 注意：不再清理 bookmarkTree，保留所有记录的详细数据
+        // 用户存储空间无限制
+        console.log('[loadAllData] 保留所有历史记录的详细数据');
 
         // 将 ISO 字符串格式转换为时间戳（毫秒）
         lastBackupTime = storageData.lastSyncTime ? new Date(storageData.lastSyncTime).getTime() : null;
@@ -12021,7 +12052,7 @@ async function renderCurrentChangesView(forceRefresh = false, options = {}) {
                 if (movedCount > 0 || (stats.bookmarkMoved || stats.folderMoved)) {
                     const displayCount = movedCount > 0 ? movedCount : '';
                     const movedText = isZh
-                        ? (displayCount ? `${displayCount}个移动` : '移动')
+                        ? (displayCount ? `${displayCount} 个移动` : '移动')
                         : (displayCount ? `${displayCount} moved` : 'Moved');
 
                     html += `<div class="diff-line moved clickable" data-change-type="moved" style="display: flex; align-items: center; justify-content: space-between;">`;
@@ -12041,7 +12072,7 @@ async function renderCurrentChangesView(forceRefresh = false, options = {}) {
                 if (modifiedCount > 0 || (stats.bookmarkModified || stats.folderModified)) {
                     const displayCount = modifiedCount > 0 ? modifiedCount : '';
                     const modifiedText = isZh
-                        ? (displayCount ? `${displayCount}个修改` : '修改')
+                        ? (displayCount ? `${displayCount} 个修改` : '修改')
                         : (displayCount ? `${displayCount} modified` : 'Modified');
 
                     html += `<div class="diff-line modified clickable" data-change-type="modified" style="display: flex; align-items: center; justify-content: space-between;">`;
@@ -13379,12 +13410,6 @@ function renderHistoryView() {
                         </button>
                     </div>
                     <div class="commit-actions">
-                        <button class="action-btn copy-btn" data-time="${record.time}" title="${currentLang === 'zh_CN' ? '复制Diff (JSON格式)' : 'Copy Diff (JSON)'}">
-                            <i class="fas fa-copy"></i>
-                        </button>
-                        <button class="action-btn export-btn" data-time="${record.time}" title="${currentLang === 'zh_CN' ? '导出为HTML文件' : 'Export as HTML'}">
-                            <i class="fas fa-file-export"></i>
-                        </button>
                         <button class="action-btn detail-btn" data-time="${record.time}" title="${currentLang === 'zh_CN' ? '查看详情' : 'View Details'}">
                             <i class="fas fa-info-circle"></i>
                         </button>
@@ -13411,20 +13436,13 @@ function renderHistoryView() {
     }).join('');
 
     // 添加按钮事件（使用事件委托）
-    container.querySelectorAll('.action-btn').forEach(btn => {
+    container.querySelectorAll('.action-btn.detail-btn').forEach(btn => {
         btn.addEventListener('click', (e) => {
             e.stopPropagation();
             e.preventDefault();
             const recordTime = btn.dataset.time;
-
-            if (btn.classList.contains('copy-btn')) {
-                window.copyHistoryDiff(recordTime);
-            } else if (btn.classList.contains('export-btn')) {
-                window.exportHistoryDiffToHTML(recordTime);
-            } else if (btn.classList.contains('detail-btn')) {
-                const record = syncHistory.find(r => r.time === recordTime);
-                if (record) showDetailModal(record);
-            }
+            const record = syncHistory.find(r => r.time === recordTime);
+            if (record) showDetailModal(record);
         });
     });
 
@@ -13505,6 +13523,12 @@ function calculateChanges(record, index, reversedHistory) {
     const bookmarkModified = bookmarkStats.bookmarkModified || false;
     const folderModified = bookmarkStats.folderModified || false;
 
+    // 获取结构变化的具体数量（如果是数字则使用，否则为0或1）
+    const bookmarkMovedCount = typeof bookmarkStats.bookmarkMoved === 'number' ? bookmarkStats.bookmarkMoved : (bookmarkMoved ? 1 : 0);
+    const folderMovedCount = typeof bookmarkStats.folderMoved === 'number' ? bookmarkStats.folderMoved : (folderMoved ? 1 : 0);
+    const bookmarkModifiedCount = typeof bookmarkStats.bookmarkModified === 'number' ? bookmarkStats.bookmarkModified : (bookmarkModified ? 1 : 0);
+    const folderModifiedCount = typeof bookmarkStats.folderModified === 'number' ? bookmarkStats.folderModified : (folderModified ? 1 : 0);
+
     // 判断变化类型
     const hasNumericalChange = bookmarkDiff !== 0 || folderDiff !== 0;
     const hasStructuralChange = bookmarkMoved || folderMoved || bookmarkModified || folderModified;
@@ -13520,7 +13544,12 @@ function calculateChanges(record, index, reversedHistory) {
         bookmarkMoved,
         folderMoved,
         bookmarkModified,
-        folderModified
+        folderModified,
+        // 新增：具体数量
+        bookmarkMovedCount,
+        folderMovedCount,
+        bookmarkModifiedCount,
+        folderModifiedCount
     };
 }
 
@@ -13594,7 +13623,7 @@ function renderCommitStats(changes) {
 // 用于在中间行显示的内联变化信息
 function renderCommitStatsInline(changes) {
     if (changes.isFirst) {
-        return `<span class="stat-badge">${currentLang === 'zh_CN' ? '首次备份' : 'First Backup'}</span>`;
+        return `<span class="stat-badge first">${currentLang === 'zh_CN' ? '首次备份' : 'First Backup'}</span>`;
     }
 
     // 使用bookmarkStats的数据来判断是否有变化
@@ -13607,43 +13636,66 @@ function renderCommitStatsInline(changes) {
         `;
     }
 
-    const parts = [];
+    // 收集所有统计项，合并到一个横条里
+    const statItems = [];
 
-    // 显示数量变化
-    if (changes.hasNumericalChange) {
-        const bookmarkParts = [];
-        const folderParts = [];
-
-        if (changes.bookmarkDiff !== 0) {
-            const bookmarkClass = changes.bookmarkDiff > 0 ? 'added' : 'deleted';
+    // 增加的统计
+    if (changes.bookmarkDiff > 0 || changes.folderDiff > 0) {
+        const addedParts = [];
+        if (changes.bookmarkDiff > 0) {
             const bookmarkLabel = currentLang === 'zh_CN' ? '书签' : 'BKM';
-            bookmarkParts.push(`<span class="stat-label">${bookmarkLabel}</span> <span class="stat-color ${bookmarkClass}">${changes.bookmarkDiff > 0 ? '+' : ''}${changes.bookmarkDiff}</span>`);
+            addedParts.push(`<span class="stat-label">${bookmarkLabel}</span> <span class="stat-color added">+${changes.bookmarkDiff}</span>`);
         }
-
-        if (changes.folderDiff !== 0) {
-            const folderClass = changes.folderDiff > 0 ? 'added' : 'deleted';
+        if (changes.folderDiff > 0) {
             const folderLabel = currentLang === 'zh_CN' ? '文件夹' : 'FLD';
-            folderParts.push(`<span class="stat-label">${folderLabel}</span> <span class="stat-color ${folderClass}">${changes.folderDiff > 0 ? '+' : ''}${changes.folderDiff}</span>`);
+            addedParts.push(`<span class="stat-label">${folderLabel}</span> <span class="stat-color added">+${changes.folderDiff}</span>`);
         }
-
-        const quantityText = [...bookmarkParts, ...folderParts].join(' ');
-        parts.push(`<span class="stat-badge quantity">${quantityText}</span>`);
+        if (addedParts.length > 0) statItems.push(addedParts.join(' '));
     }
 
-    // 显示结构变化的具体类型 - 使用不同的颜色
+    // 删除的统计
+    if (changes.bookmarkDiff < 0 || changes.folderDiff < 0) {
+        const deletedParts = [];
+        if (changes.bookmarkDiff < 0) {
+            const bookmarkLabel = currentLang === 'zh_CN' ? '书签' : 'BKM';
+            deletedParts.push(`<span class="stat-label">${bookmarkLabel}</span> <span class="stat-color deleted">${changes.bookmarkDiff}</span>`);
+        }
+        if (changes.folderDiff < 0) {
+            const folderLabel = currentLang === 'zh_CN' ? '文件夹' : 'FLD';
+            deletedParts.push(`<span class="stat-label">${folderLabel}</span> <span class="stat-color deleted">${changes.folderDiff}</span>`);
+        }
+        if (deletedParts.length > 0) statItems.push(deletedParts.join(' '));
+    }
+
+    // 移动的统计（只显示总数）
     if (changes.bookmarkMoved || changes.folderMoved) {
-        parts.push(`<span class="stat-badge struct moved"><i class="fas fa-arrows-alt"></i> ${currentLang === 'zh_CN' ? '移动' : 'Moved'}</span>`);
+        const movedTotal = (changes.bookmarkMovedCount || 0) + (changes.folderMovedCount || 0);
+        const movedLabel = currentLang === 'zh_CN' ? '移动' : 'Moved';
+        if (movedTotal > 0) {
+            statItems.push(`<span class="stat-label">${movedLabel}</span> <span class="stat-color moved">${movedTotal}</span>`);
+        } else {
+            statItems.push(`<span class="stat-color moved">${movedLabel}</span>`);
+        }
     }
 
+    // 修改的统计（只显示总数）
     if (changes.bookmarkModified || changes.folderModified) {
-        parts.push(`<span class="stat-badge struct modified"><i class="fas fa-edit"></i> ${currentLang === 'zh_CN' ? '修改' : 'Modified'}</span>`);
+        const modifiedTotal = (changes.bookmarkModifiedCount || 0) + (changes.folderModifiedCount || 0);
+        const modifiedLabel = currentLang === 'zh_CN' ? '修改' : 'Modified';
+        if (modifiedTotal > 0) {
+            statItems.push(`<span class="stat-label">${modifiedLabel}</span> <span class="stat-color modified">${modifiedTotal}</span>`);
+        } else {
+            statItems.push(`<span class="stat-color modified">${modifiedLabel}</span>`);
+        }
     }
 
-    if (parts.length === 0) {
-        parts.push(`<span class="stat-badge no-change">${currentLang === 'zh_CN' ? '无变化' : 'No Changes'}</span>`);
+    if (statItems.length === 0) {
+        return `<span class="stat-badge no-change">${currentLang === 'zh_CN' ? '无变化' : 'No Changes'}</span>`;
     }
 
-    return parts.join('');
+    // 所有项目合并到一个横条里，用分隔符分开
+    const separator = ' <span style="color:var(--text-tertiary);margin:0 4px;">|</span> ';
+    return `<span class="stat-badge quantity">${statItems.join(separator)}</span>`;
 }
 
 // =============================================================================
@@ -17470,8 +17522,9 @@ function renderTreeNodeWithChanges(node, level = 0, maxDepth = 50, visitedIds = 
                         statusIcon += '<span class="change-badge modified">~</span>';
                     }
 
-                    // 只有显式拖动的节点才显示蓝色移动标记
-                    if (isExplicitMoved) {
+                    // 移动标记：检测到 moved 类型就显示，不仅限于显式拖动
+                    // isMoved 为 true 表示 detectTreeChangesFast 检测到了跨级移动
+                    if (isMoved) {
                         // 如果既有modified又有moved，添加mixed类
                         if (hasModified) {
                             changeClass = 'tree-change-mixed';
@@ -17547,8 +17600,9 @@ function renderTreeNodeWithChanges(node, level = 0, maxDepth = 50, visitedIds = 
                 statusIcon += '<span class="change-badge modified">~</span>';
             }
 
-            // 只有显式拖动的节点才显示蓝色移动标记
-            if (isExplicitMoved) {
+            // 移动标记：检测到 moved 类型就显示，不仅限于显式拖动
+            // isMoved 为 true 表示 detectTreeChangesFast 检测到了跨级移动
+            if (isMoved) {
                 // 如果既有modified又有moved，添加mixed类
                 if (hasModified) {
                     changeClass = 'tree-change-mixed';
@@ -18047,23 +18101,258 @@ async function applyIncrementalMoveToTree(id, moveInfo) {
 // 详情弹窗
 // =============================================================================
 
-function showDetailModal(record) {
-    const modal = document.getElementById('detailModal');
+function getRecordDetailMode(recordTime) {
+    if (!recordTime) return historyDetailMode || 'simple';
+    try {
+        return localStorage.getItem(`${HISTORY_DETAIL_MODE_PREFIX}${recordTime}`) || historyDetailMode || 'simple';
+    } catch (e) {
+        return historyDetailMode || 'simple';
+    }
+}
+
+function setRecordDetailMode(recordTime, mode) {
+    if (!recordTime) return;
+    try {
+        localStorage.setItem(`${HISTORY_DETAIL_MODE_PREFIX}${recordTime}`, mode);
+    } catch (e) {
+        console.warn('[详情模式] 保存失败:', e);
+    }
+}
+
+function hasRecordExpandedState(recordTime) {
+    if (!recordTime) return false;
+    try {
+        return localStorage.getItem(`${HISTORY_DETAIL_EXPANDED_PREFIX}${recordTime}`) != null;
+    } catch (e) {
+        return false;
+    }
+}
+
+function getRecordExpandedState(recordTime) {
+    if (!recordTime) return new Set();
+    try {
+        const raw = localStorage.getItem(`${HISTORY_DETAIL_EXPANDED_PREFIX}${recordTime}`);
+        const parsed = raw ? JSON.parse(raw) : [];
+        const ids = Array.isArray(parsed) ? parsed.map(id => String(id)) : [];
+        return new Set(ids);
+    } catch (e) {
+        return new Set();
+    }
+}
+
+function saveRecordExpandedState(recordTime, nodeId, isExpanded) {
+    if (!recordTime || !nodeId) return;
+    try {
+        const key = `${HISTORY_DETAIL_EXPANDED_PREFIX}${recordTime}`;
+        const raw = localStorage.getItem(key);
+        const parsed = raw ? JSON.parse(raw) : [];
+        const ids = new Set(Array.isArray(parsed) ? parsed.map(id => String(id)) : []);
+        const idStr = String(nodeId);
+        if (isExpanded) {
+            ids.add(idStr);
+        } else {
+            ids.delete(idStr);
+        }
+        localStorage.setItem(key, JSON.stringify([...ids]));
+    } catch (e) {
+        console.warn('[详情展开] 保存失败:', e);
+    }
+}
+
+function captureRecordExpandedState(recordTime, treeContainer) {
+    if (!recordTime || !treeContainer) return;
+    try {
+        const expandedIds = [];
+        treeContainer.querySelectorAll('.tree-item[data-node-id]').forEach(item => {
+            const nodeId = item.getAttribute('data-node-id');
+            if (!nodeId) return;
+            const treeNode = item.closest('.tree-node');
+            const children = treeNode?.querySelector(':scope > .tree-children');
+            if (children && children.classList.contains('expanded')) {
+                expandedIds.push(String(nodeId));
+            }
+        });
+        localStorage.setItem(`${HISTORY_DETAIL_EXPANDED_PREFIX}${recordTime}`, JSON.stringify(expandedIds));
+    } catch (e) {
+        console.warn('[详情展开] 初始化保存失败:', e);
+    }
+}
+
+function applyRecordExpandedState(recordTime, treeContainer) {
+    if (!recordTime || !treeContainer) return;
+    const expandedIds = getRecordExpandedState(recordTime);
+    if (!expandedIds.size) return;
+
+    // 重置所有展开状态
+    treeContainer.querySelectorAll('.tree-children').forEach(children => {
+        children.classList.remove('expanded');
+    });
+    treeContainer.querySelectorAll('.tree-toggle').forEach(toggle => {
+        toggle.classList.remove('expanded');
+    });
+    treeContainer.querySelectorAll('.tree-item[data-node-type="folder"] .tree-icon.fa-folder-open').forEach(icon => {
+        icon.classList.remove('fa-folder-open');
+        icon.classList.add('fa-folder');
+    });
+
+    const expandItem = (item) => {
+        const treeNode = item?.closest('.tree-node');
+        const children = treeNode?.querySelector(':scope > .tree-children');
+        const toggle = item?.querySelector('.tree-toggle:not([style*="opacity: 0"])');
+        if (children && toggle) {
+            children.classList.add('expanded');
+            toggle.classList.add('expanded');
+            const folderIcon = item.querySelector('.tree-icon.fa-folder, .tree-icon.fa-folder-open');
+            if (folderIcon) {
+                folderIcon.classList.remove('fa-folder');
+                folderIcon.classList.add('fa-folder-open');
+            }
+        }
+    };
+
+    const expandParents = (item) => {
+        let parent = item?.closest('.tree-children');
+        while (parent) {
+            parent.classList.add('expanded');
+            const parentItem = parent.previousElementSibling;
+            if (parentItem && parentItem.classList.contains('tree-item')) {
+                const parentToggle = parentItem.querySelector('.tree-toggle');
+                if (parentToggle) parentToggle.classList.add('expanded');
+                const parentIcon = parentItem.querySelector('.tree-icon.fa-folder, .tree-icon.fa-folder-open');
+                if (parentIcon) {
+                    parentIcon.classList.remove('fa-folder');
+                    parentIcon.classList.add('fa-folder-open');
+                }
+            }
+            parent = parent.parentElement ? parent.parentElement.closest('.tree-children') : null;
+        }
+    };
+
+    treeContainer.querySelectorAll('.tree-item[data-node-id]').forEach(item => {
+        const nodeId = item.getAttribute('data-node-id');
+        if (!nodeId || !expandedIds.has(String(nodeId))) return;
+        expandParents(item);
+        expandItem(item);
+    });
+}
+
+function updateDetailModalToggleUI(mode) {
+    const simpleBtn = document.getElementById('historyDetailModeSimpleModal');
+    const detailedBtn = document.getElementById('historyDetailModeDetailedModal');
+    if (!simpleBtn || !detailedBtn) return;
+
+    if (mode === 'detailed') {
+        simpleBtn.classList.remove('active');
+        detailedBtn.classList.add('active');
+    } else {
+        simpleBtn.classList.add('active');
+        detailedBtn.classList.remove('active');
+    }
+}
+
+function initDetailModalActions() {
+    const simpleBtn = document.getElementById('historyDetailModeSimpleModal');
+    const detailedBtn = document.getElementById('historyDetailModeDetailedModal');
+    const exportBtn = document.getElementById('detailExportChangesBtn');
+
+    if (simpleBtn && !simpleBtn.hasAttribute('data-listener-attached')) {
+        simpleBtn.addEventListener('click', () => {
+            if (!currentDetailRecordTime) return;
+            if (currentDetailRecordMode === 'simple') return;
+            currentDetailRecordMode = 'simple';
+            setRecordDetailMode(currentDetailRecordTime, 'simple');
+            updateDetailModalToggleUI('simple');
+            if (currentDetailRecord) renderDetailModalContent(currentDetailRecord, 'simple');
+        });
+        simpleBtn.setAttribute('data-listener-attached', 'true');
+    }
+
+    if (detailedBtn && !detailedBtn.hasAttribute('data-listener-attached')) {
+        detailedBtn.addEventListener('click', () => {
+            if (!currentDetailRecordTime) return;
+            if (currentDetailRecordMode === 'detailed') return;
+            currentDetailRecordMode = 'detailed';
+            setRecordDetailMode(currentDetailRecordTime, 'detailed');
+            updateDetailModalToggleUI('detailed');
+            if (currentDetailRecord) renderDetailModalContent(currentDetailRecord, 'detailed');
+        });
+        detailedBtn.setAttribute('data-listener-attached', 'true');
+    }
+
+    if (exportBtn && !exportBtn.hasAttribute('data-listener-attached')) {
+        exportBtn.addEventListener('click', () => {
+            if (!currentDetailRecord) return;
+            const treeContainer = document.querySelector('#modalBody .history-tree-container');
+            showHistoryExportChangesModal(currentDetailRecord.time, {
+                preferredMode: currentDetailRecordMode || getRecordDetailMode(currentDetailRecord.time),
+                useDomTreeContainer: true,
+                treeContainer
+            });
+        });
+        exportBtn.setAttribute('data-listener-attached', 'true');
+    }
+}
+
+function renderDetailModalContent(record, mode) {
     const body = document.getElementById('modalBody');
+    if (!body) return;
 
-    // 保存当前打开的记录时间，用于关闭时滚动
-    currentDetailRecordTime = record.time;
-
-    // 显示加载状态
     body.innerHTML = `<div class="loading">${i18n.loading[currentLang]}</div>`;
-    modal.classList.add('show');
 
-    // 异步生成详情内容
-    generateDetailContent(record).then(html => {
+    generateDetailContent(record, mode).then(html => {
         body.innerHTML = html;
 
-        // 添加 hunk 折叠事件监听
         setTimeout(() => {
+            initDetailModalActions();
+            updateDetailModalToggleUI(mode);
+            const treeContainer = body.querySelector('.history-tree-container');
+            if (treeContainer) {
+                if (mode === 'detailed') {
+                    if (hasRecordExpandedState(record.time)) {
+                        applyRecordExpandedState(record.time, treeContainer);
+                    } else {
+                        captureRecordExpandedState(record.time, treeContainer);
+                    }
+                }
+
+                treeContainer.addEventListener('click', (e) => {
+                    const treeItem = e.target.closest('.tree-item');
+                    if (!treeItem) return;
+
+                    // 允许链接点击
+                    if (e.target.closest('a')) return;
+
+                    // 展开/折叠
+                    const treeNode = treeItem.closest('.tree-node');
+                    const children = treeNode?.querySelector('.tree-children');
+                    const toggle = treeItem.querySelector('.tree-toggle:not([style*="opacity: 0"])');
+
+                    if (children && toggle) {
+                        const isExpanding = !children.classList.contains('expanded');
+                        toggle.classList.toggle('expanded');
+                        children.classList.toggle('expanded');
+
+                        // 更新文件夹图标
+                        const folderIcon = treeItem.querySelector('.tree-icon.fa-folder, .tree-icon.fa-folder-open');
+                        if (folderIcon) {
+                            if (isExpanding) {
+                                folderIcon.classList.remove('fa-folder');
+                                folderIcon.classList.add('fa-folder-open');
+                            } else {
+                                folderIcon.classList.remove('fa-folder-open');
+                                folderIcon.classList.add('fa-folder');
+                            }
+                        }
+
+                        if (mode === 'detailed') {
+                            const nodeId = treeItem.getAttribute('data-node-id');
+                            if (nodeId) saveRecordExpandedState(record.time, nodeId, isExpanding);
+                        }
+                    }
+                });
+            }
+
+            // 兼容旧的 hunk 折叠事件监听
             body.querySelectorAll('.diff-hunk-header.collapsible').forEach(header => {
                 const hunkId = header.getAttribute('data-hunk-id');
                 if (hunkId) {
@@ -18072,11 +18361,46 @@ function showDetailModal(record) {
                     });
                 }
             });
+
+            body.querySelectorAll('.commit-note-edit-btn').forEach(btn => {
+                if (btn.hasAttribute('data-listener-attached')) return;
+                btn.addEventListener('click', async (e) => {
+                    e.stopPropagation();
+                    e.preventDefault();
+                    await editCommitNote(record.time);
+                    const updatedRecord = syncHistory.find(r => r.time === record.time);
+                    if (updatedRecord) {
+                        currentDetailRecord = updatedRecord;
+                        renderDetailModalContent(updatedRecord, currentDetailRecordMode || getRecordDetailMode(record.time));
+                    }
+                });
+                btn.setAttribute('data-listener-attached', 'true');
+            });
         }, 0);
     }).catch(error => {
         console.error('[详情弹窗] 生成失败:', error);
         body.innerHTML = `<div class="detail-empty"><i class="fas fa-exclamation-circle"></i>加载失败: ${error.message}</div>`;
     });
+}
+
+function showDetailModal(record) {
+    const modal = document.getElementById('detailModal');
+
+    // 保存当前打开的记录时间，用于关闭时滚动
+    currentDetailRecordTime = record.time;
+    currentDetailRecord = record;
+    currentDetailRecordMode = getRecordDetailMode(record.time);
+
+    updateDetailModalToggleUI(currentDetailRecordMode);
+
+    const exportBtn = document.getElementById('detailExportChangesBtn');
+    if (exportBtn) {
+        exportBtn.title = currentLang === 'zh_CN' ? '导出变化' : 'Export Changes';
+    }
+
+    modal.classList.add('show');
+
+    renderDetailModalContent(record, currentDetailRecordMode);
 }
 
 function closeModal() {
@@ -18113,48 +18437,102 @@ function closeModal() {
                 }, 1200);
             }
             currentDetailRecordTime = null;
+            currentDetailRecord = null;
+            currentDetailRecordMode = null;
         }, 100);
     }
 }
 
+// =============================================================================
+// 备份历史详情模式切换
+// =============================================================================
+
+// 初始化备份历史详情模式切换按钮
+function initHistoryDetailModeToggle() {
+    const simpleBtn = document.getElementById('historyDetailModeSimple');
+    const detailedBtn = document.getElementById('historyDetailModeDetailed');
+
+    if (!simpleBtn || !detailedBtn) return;
+
+    // 恢复保存的模式状态
+    if (historyDetailMode === 'detailed') {
+        simpleBtn.classList.remove('active');
+        detailedBtn.classList.add('active');
+    } else {
+        simpleBtn.classList.add('active');
+        detailedBtn.classList.remove('active');
+    }
+
+    // 点击事件
+    simpleBtn.addEventListener('click', () => {
+        if (historyDetailMode === 'simple') return;
+        historyDetailMode = 'simple';
+        localStorage.setItem('historyDetailMode', 'simple');
+        simpleBtn.classList.add('active');
+        detailedBtn.classList.remove('active');
+    });
+
+    detailedBtn.addEventListener('click', () => {
+        if (historyDetailMode === 'detailed') return;
+        historyDetailMode = 'detailed';
+        localStorage.setItem('historyDetailMode', 'detailed');
+        detailedBtn.classList.add('active');
+        simpleBtn.classList.remove('active');
+    });
+}
+
 // 生成详情内容（异步）
-async function generateDetailContent(record) {
+async function generateDetailContent(record, mode) {
     const stats = record.bookmarkStats || {};
+    const detailMode = mode || getRecordDetailMode(record.time);
 
     let html = '';
 
-    if (record.note) {
-        html += `
-            <div class="detail-section">
-                <div class="detail-section-title">
-                    <i class="fas fa-sticky-note detail-section-icon"></i>
-                    ${currentLang === 'zh_CN' ? '备注' : 'Note'}
-                </div>
-                <div class="detail-item">
-                    ${escapeHtml(record.note)}
+    const noteText = (record.note && record.note.trim())
+        ? record.note
+        : (currentLang === 'zh_CN' ? '（无备注）' : '(No note)');
+    html += `
+        <div class="detail-section">
+            <div class="detail-note-row">
+                <span class="detail-note-label">${currentLang === 'zh_CN' ? '备注：' : 'Note:'}</span>
+                <span class="detail-note-text-wrapper">
+                    <span class="detail-note-text">${escapeHtml(noteText)}</span>
+                    <button class="commit-note-edit-btn detail-note-edit-btn" data-time="${record.time}" title="${currentLang === 'zh_CN' ? '编辑备注' : 'Edit Note'}">
+                        <i class="fas fa-edit"></i>
+                    </button>
+                </span>
+                <div class="detail-actions-right">
+                    <button id="detailExportChangesBtn" class="action-btn" title="${currentLang === 'zh_CN' ? '导出变化' : 'Export Changes'}">
+                        <i class="fas fa-file-export"></i>
+                    </button>
+                    <div class="toggle-btn-group" id="historyDetailModeToggleModal">
+                        <button id="historyDetailModeSimpleModal" class="toggle-btn" data-mode="simple" title="${currentLang === 'zh_CN' ? '简略模式' : 'Simple mode'}">
+                            <i class="fas fa-list"></i>
+                            <span id="historyDetailModeSimpleModalText">${currentLang === 'zh_CN' ? '简略' : 'Simple'}</span>
+                        </button>
+                        <button id="historyDetailModeDetailedModal" class="toggle-btn" data-mode="detailed" title="${currentLang === 'zh_CN' ? '详细模式' : 'Detailed mode'}">
+                            <i class="fas fa-stream"></i>
+                            <span id="historyDetailModeDetailedModalText">${currentLang === 'zh_CN' ? '详细' : 'Detailed'}</span>
+                        </button>
+                    </div>
                 </div>
             </div>
-        `;
-    }
+        </div>
+    `;
 
-    // 尝试获取详细变化
+    // 尝试获取详细变化 - 使用树形视图
     try {
-        const diffHtml = await generateDetailedChanges(record);
-        if (diffHtml) {
-            html += diffHtml;
+        const treeHtml = await generateTreeBasedChanges(record, detailMode);
+        if (treeHtml) {
+            html += treeHtml;
         } else {
             html += `
                 <div class="detail-section">
                     <div class="detail-empty">
                         <i class="fas fa-info-circle"></i>
                         ${currentLang === 'zh_CN'
-                    ? '无详细变化记录（旧记录的详细数据已清理以优化性能）'
-                    : 'No detailed changes available (old records cleaned for performance)'}
-                        <div style="margin-top: 10px; font-size: 0.9em; color: var(--text-tertiary);">
-                            ${currentLang === 'zh_CN'
-                    ? '提示：只保留最新3条记录的详细变化数据'
-                    : 'Note: Only the latest 3 records retain detailed change data'}
-                        </div>
+                    ? '无详细变化记录（该记录可能来自旧版本）'
+                    : 'No detailed changes available (this record may be from an older version)'}
                     </div>
                 </div>
             `;
@@ -18172,6 +18550,378 @@ async function generateDetailContent(record) {
     }
 
     return html;
+}
+
+// 生成树形视图的变化详情
+async function generateTreeBasedChanges(record, mode) {
+    console.log('[树形视图] ========== 开始生成详细变化 ==========');
+    console.log('[树形视图] 记录时间:', record.time);
+    console.log('[树形视图] 显示模式:', mode);
+
+    // 检查当前记录是否有 bookmarkTree
+    if (!record.bookmarkTree) {
+        console.log('[树形视图] ❌ 当前记录没有 bookmarkTree（可能是旧记录或保存失败）');
+        return null;
+    }
+
+    // 找到上一条记录进行对比
+    const recordIndex = syncHistory.findIndex(r => r.time === record.time);
+    console.log('[树形视图] 记录索引:', recordIndex);
+
+    let previousRecord = null;
+    if (recordIndex > 0) {
+        for (let i = recordIndex - 1; i >= 0; i--) {
+            if (syncHistory[i].status === 'success' && syncHistory[i].bookmarkTree) {
+                previousRecord = syncHistory[i];
+                break;
+            }
+        }
+    }
+
+    // 使用与「当前变化」相同的 detectTreeChangesFast 函数计算变化
+    let changeMap = new Map();
+    let treeToRender = record.bookmarkTree;
+
+    if (previousRecord && previousRecord.bookmarkTree) {
+        console.log('[树形视图] 找到上一条记录:', previousRecord.time);
+        changeMap = await detectTreeChangesFast(previousRecord.bookmarkTree, record.bookmarkTree);
+
+        // 关键：如果有删除的节点，需要重建树结构（与"当前变化"一致）
+        let hasDeleted = false;
+        for (const [, change] of changeMap) {
+            if (change.type && change.type.includes('deleted')) {
+                hasDeleted = true;
+                break;
+            }
+        }
+        if (hasDeleted) {
+            try {
+                treeToRender = rebuildTreeWithDeleted(previousRecord.bookmarkTree, record.bookmarkTree, changeMap);
+                console.log('[树形视图] 已重建包含删除节点的树');
+            } catch (error) {
+                console.error('[树形视图] 重建树失败:', error);
+                treeToRender = record.bookmarkTree;
+            }
+        }
+    } else if (record.isFirstBackup) {
+        console.log('[树形视图] 第一次备份，所有书签都是新增');
+        // 第一次备份，所有书签都是新增
+        const allNodes = flattenBookmarkTree(record.bookmarkTree);
+        allNodes.forEach(item => {
+            if (item.id) changeMap.set(item.id, { type: 'added' });
+        });
+    }
+
+    console.log('[树形视图] 变化统计: changeMap.size =', changeMap.size);
+
+    if (changeMap.size === 0) {
+        return `
+            <div class="detail-section">
+                <div class="detail-empty">
+                    <i class="fas fa-check-circle"></i>
+                    ${currentLang === 'zh_CN' ? '无变化' : 'No changes'}
+                </div>
+            </div>
+        `;
+    }
+
+    // 生成树形 HTML（使用重建后的树）
+    return generateHistoryTreeHtml(treeToRender, changeMap, mode);
+}
+
+// 计算两个书签树之间的变化
+function computeBookmarkChanges(oldTree, newTree) {
+    const oldMap = buildBookmarkMap(oldTree);
+    const newMap = buildBookmarkMap(newTree);
+
+    const added = [];
+    const deleted = [];
+    const modified = [];
+    const moved = [];
+
+    // 检测新增和修改/移动
+    for (const [id, newItem] of newMap) {
+        const oldItem = oldMap.get(id);
+        if (!oldItem) {
+            // 新增
+            added.push(newItem);
+        } else {
+            // 检测修改
+            if (oldItem.title !== newItem.title || oldItem.url !== newItem.url) {
+                modified.push({ ...newItem, oldTitle: oldItem.title, oldUrl: oldItem.url });
+            }
+            // 检测移动
+            if (oldItem.parentId !== newItem.parentId || oldItem.index !== newItem.index) {
+                moved.push({ ...newItem, oldParentId: oldItem.parentId, oldIndex: oldItem.index });
+            }
+        }
+    }
+
+    // 检测删除
+    for (const [id, oldItem] of oldMap) {
+        if (!newMap.has(id)) {
+            deleted.push(oldItem);
+        }
+    }
+
+    return { added, deleted, modified, moved };
+}
+
+// 构建书签ID映射
+function buildBookmarkMap(tree, map = new Map(), parentId = '0') {
+    if (!tree) return map;
+
+    const nodes = Array.isArray(tree) ? tree : [tree];
+    nodes.forEach((node, index) => {
+        if (node.id) {
+            map.set(node.id, {
+                id: node.id,
+                title: node.title || '',
+                url: node.url || '',
+                parentId: parentId,
+                index: node.index !== undefined ? node.index : index,
+                isFolder: !node.url && node.children
+            });
+        }
+        if (node.children) {
+            buildBookmarkMap(node.children, map, node.id);
+        }
+    });
+
+    return map;
+}
+
+// 展平书签树为数组
+function flattenBookmarkTree(tree, result = []) {
+    if (!tree) return result;
+
+    const nodes = Array.isArray(tree) ? tree : [tree];
+    nodes.forEach(node => {
+        if (node.id && (node.title || node.url)) {
+            result.push({
+                id: node.id,
+                title: node.title || '',
+                url: node.url || '',
+                isFolder: !node.url && node.children
+            });
+        }
+        if (node.children) {
+            flattenBookmarkTree(node.children, result);
+        }
+    });
+
+    return result;
+}
+
+// 生成备份历史的树形 HTML（与"当前变化"视图保持一致的结构）
+// changeMap: Map<id, {type: 'added'|'deleted'|'modified'|'moved'|'modified+moved', moved?: {...}}>
+function generateHistoryTreeHtml(bookmarkTree, changeMap, mode) {
+    const isZh = currentLang === 'zh_CN';
+
+    // 检查某个节点或其子节点是否有变化
+    function hasChangesRecursive(node) {
+        if (!node) return false;
+        if (changeMap.has(node.id)) return true;
+        if (node.children) {
+            return node.children.some(child => hasChangesRecursive(child));
+        }
+        return false;
+    }
+
+    // 递归生成树形 HTML（使用与永久栏目相同的结构）
+    function renderHistoryTreeNode(node, level = 0) {
+        if (!node) return '';
+
+        // 简略模式下只显示有变化的节点
+        const shouldInclude = mode === 'detailed' || hasChangesRecursive(node);
+        if (!shouldInclude) return '';
+
+        const change = changeMap.get(node.id);
+        let changeClass = '';
+        let statusIcon = '';
+
+        if (change) {
+            const types = change.type ? change.type.split('+') : [];
+            const isAdded = types.includes('added');
+            const isDeleted = types.includes('deleted');
+            const isModified = types.includes('modified');
+            const isMoved = types.includes('moved');
+
+            if (isAdded) {
+                changeClass = 'tree-change-added';
+                statusIcon = '<span class="change-badge added">+</span>';
+            } else if (isDeleted) {
+                changeClass = 'tree-change-deleted';
+                statusIcon = '<span class="change-badge deleted">-</span>';
+            } else {
+                // 处理 modified 和 moved 的组合（与"当前变化"一致）
+                if (isModified) {
+                    changeClass = 'tree-change-modified';
+                    statusIcon += '<span class="change-badge modified">~</span>';
+                }
+
+                if (isMoved) {
+                    // 如果既有modified又有moved，添加mixed类
+                    if (isModified) {
+                        changeClass = 'tree-change-mixed';
+                    } else {
+                        changeClass = 'tree-change-moved';
+                    }
+                    // 使用与"当前变化"相同的路径格式和tooltip
+                    let slash = '';
+                    if (change.moved && change.moved.oldPath) {
+                        slash = breadcrumbToSlashFolders(change.moved.oldPath);
+                    }
+                    statusIcon += `<span class="change-badge moved" data-move-from="${escapeHtml(slash)}" title="${escapeHtml(slash)}"><i class="fas fa-arrows-alt"></i><span class="move-tooltip">${slashPathToChipsHTML(slash)}</span></span>`;
+                }
+            }
+        } else if (hasChangesRecursive(node) && mode === 'detailed') {
+            // 文件夹本身无变化，但子节点有变化（简略模式不显示灰点）
+            statusIcon = `<span class="change-badge has-changes" title="${isZh ? '此文件夹下有变化' : 'Contains changes'}">•</span>`;
+        }
+
+        const title = escapeHtml(node.title || (isZh ? '(无标题)' : '(Untitled)'));
+        const isFolder = !node.url && node.children;
+        const hasChildren = isFolder && node.children && node.children.length > 0;
+
+        // 展开逻辑：
+        // - 详细模式：根节点展开，包含变化的文件夹也展开
+        // - 简略模式：只显示有变化的节点，所以始终展开
+        const shouldExpand = level === 0 || hasChangesRecursive(node);
+
+        if (isFolder) {
+            // 文件夹节点
+            const childrenHtml = hasChildren
+                ? node.children.map(child => renderHistoryTreeNode(child, level + 1)).join('')
+                : '';
+
+            return `
+                <div class="tree-node">
+                    <div class="tree-item ${changeClass}" data-node-id="${node.id}" data-node-type="folder" data-node-level="${level}">
+                        <span class="tree-toggle ${shouldExpand ? 'expanded' : ''}"><i class="fas fa-chevron-right"></i></span>
+                        <i class="tree-icon fas fa-folder${shouldExpand ? '-open' : ''}"></i>
+                        <span class="tree-label">${title}</span>
+                        <span class="change-badges">${statusIcon}</span>
+                    </div>
+                    <div class="tree-children ${shouldExpand ? 'expanded' : ''}">
+                        ${childrenHtml}
+                    </div>
+                </div>
+            `;
+        } else {
+            // 书签节点
+            const favicon = typeof getFaviconUrl === 'function' ? getFaviconUrl(node.url) : '';
+            return `
+                <div class="tree-node">
+                    <div class="tree-item ${changeClass}" data-node-id="${node.id}" data-node-type="bookmark" data-node-level="${level}">
+                        <span class="tree-toggle" style="opacity: 0"></span>
+                        ${favicon ? `<img class="tree-icon" src="${favicon}" alt="">` : `<i class="tree-icon fas fa-bookmark"></i>`}
+                        <a href="${escapeHtml(node.url || '')}" target="_blank" class="tree-label tree-bookmark-link" rel="noopener noreferrer">${title}</a>
+                        <span class="change-badges">${statusIcon}</span>
+                    </div>
+                </div>
+            `;
+        }
+    }
+
+    // 生成树内容
+    let treeContent = '';
+    const nodes = Array.isArray(bookmarkTree) ? bookmarkTree : [bookmarkTree];
+    nodes.forEach(node => {
+        if (node.children) {
+            node.children.forEach(child => {
+                treeContent += renderHistoryTreeNode(child, 0);
+            });
+        }
+    });
+
+    if (!treeContent) {
+        return `
+            <div class="detail-section">
+                <div class="detail-empty">
+                    <i class="fas fa-check-circle"></i>
+                    ${isZh ? '无变化' : 'No changes'}
+                </div>
+            </div>
+        `;
+    }
+
+    // 获取各类型变化数量（区分文件夹F和书签B）
+    let addedFolders = 0, addedBookmarks = 0;
+    let deletedFolders = 0, deletedBookmarks = 0;
+    let modifiedFolders = 0, modifiedBookmarks = 0;
+    let movedFolders = 0, movedBookmarks = 0;
+
+    // 构建节点ID到节点的映射，用于判断节点类型
+    const nodeMap = new Map();
+    function buildNodeMap(node) {
+        if (!node) return;
+        if (node.id) nodeMap.set(node.id, node);
+        if (node.children) node.children.forEach(buildNodeMap);
+    }
+    const treeNodes = Array.isArray(bookmarkTree) ? bookmarkTree : [bookmarkTree];
+    treeNodes.forEach(buildNodeMap);
+
+    changeMap.forEach((change, id) => {
+        const node = nodeMap.get(id);
+        const isFolder = node && !node.url && node.children;
+        const types = change.type ? change.type.split('+') : [];
+
+        if (types.includes('added')) {
+            if (isFolder) addedFolders++; else addedBookmarks++;
+        }
+        if (types.includes('deleted')) {
+            if (isFolder) deletedFolders++; else deletedBookmarks++;
+        }
+        if (types.includes('modified')) {
+            if (isFolder) modifiedFolders++; else modifiedBookmarks++;
+        }
+        if (types.includes('moved')) {
+            if (isFolder) movedFolders++; else movedBookmarks++;
+        }
+    });
+
+    // 生成图例（内联在标题行，带数量，区分F/B）
+    const formatCount = (folders, bookmarks) => {
+        const parts = [];
+        if (folders > 0) parts.push(`${folders}F`);
+        if (bookmarks > 0) parts.push(`${bookmarks}B`);
+        return parts.join(' ');
+    };
+
+    const legendItems = [];
+    const addedTotal = addedFolders + addedBookmarks;
+    const deletedTotal = deletedFolders + deletedBookmarks;
+    const modifiedTotal = modifiedFolders + modifiedBookmarks;
+    const movedTotal = movedFolders + movedBookmarks;
+
+    // 增加和删除显示F/B详情，移动和修改只显示总数
+    if (addedTotal > 0) legendItems.push(`<span class="legend-item"><span class="legend-dot added"></span><span class="legend-count">:${formatCount(addedFolders, addedBookmarks)}</span></span>`);
+    if (deletedTotal > 0) legendItems.push(`<span class="legend-item"><span class="legend-dot deleted"></span><span class="legend-count">:${formatCount(deletedFolders, deletedBookmarks)}</span></span>`);
+    if (modifiedTotal > 0) legendItems.push(`<span class="legend-item"><span class="legend-dot modified"></span><span class="legend-count">:${modifiedTotal}</span></span>`);
+    if (movedTotal > 0) legendItems.push(`<span class="legend-item"><span class="legend-dot moved"></span><span class="legend-count">:${movedTotal}</span></span>`);
+    const legend = legendItems.join('');
+
+    return `
+        <div class="detail-section">
+            <div class="detail-section-title detail-section-title-with-legend">
+                <span class="detail-title-left">
+                    ${isZh ? '书签变化' : 'Bookmark Changes'}
+                    <span class="detail-mode-label">(${mode === 'detailed' ? (isZh ? '详细' : 'Detailed') : (isZh ? '简略' : 'Simple')})</span>
+                </span>
+                <span class="detail-title-legend">${legend}</span>
+            </div>
+            <div class="history-tree-container bookmark-tree">
+                ${treeContent}
+            </div>
+        </div>
+    `;
+}
+
+// 截断 URL 显示
+function truncateUrl(url, maxLength) {
+    if (!url || url.length <= maxLength) return url;
+    return url.substring(0, maxLength) + '...';
 }
 
 // 生成详细变化的 HTML（Git diff 风格）
@@ -22649,6 +23399,10 @@ document.addEventListener('DOMContentLoaded', () => {
 
 // 当前导出的变化数据（供模态框使用）
 let currentExportChangeData = null;
+// 当前导出的历史记录（供备份历史导出使用）
+let currentExportHistoryRecord = null;
+// 当前导出的书签树（供备份历史导出使用）
+let currentExportBookmarkTree = null;
 
 // 显示导出变化模态框
 function showExportChangesModal(changeData) {
@@ -22687,6 +23441,106 @@ function showExportChangesModal(changeData) {
     }
 }
 
+// 显示备份历史的导出变化模态框
+async function showHistoryExportChangesModal(recordTime, options = {}) {
+    console.log('[showHistoryExportChangesModal] 记录时间:', recordTime);
+    const { preferredMode, useDomTreeContainer, treeContainer } = options;
+
+    // 查找记录
+    const record = syncHistory.find(r => r.time === recordTime);
+    if (!record) {
+        showToast(currentLang === 'zh_CN' ? '未找到记录' : 'Record not found');
+        return;
+    }
+
+    // 检查是否有 bookmarkTree
+    if (!record.bookmarkTree) {
+        showToast(currentLang === 'zh_CN' ? '该记录没有详细数据（旧记录已清理）' : 'No detailed data available (old records cleaned)');
+        return;
+    }
+
+    // 找到上一条记录进行对比
+    const recordIndex = syncHistory.findIndex(r => r.time === recordTime);
+    let previousRecord = null;
+    if (recordIndex > 0) {
+        for (let i = recordIndex - 1; i >= 0; i--) {
+            if (syncHistory[i].status === 'success' && syncHistory[i].bookmarkTree) {
+                previousRecord = syncHistory[i];
+                break;
+            }
+        }
+    }
+
+    // 计算变化 - 使用与"当前变化"相同的 detectTreeChangesFast
+    let changeMap = new Map();
+    let treeToExport = record.bookmarkTree;
+
+    if (previousRecord && previousRecord.bookmarkTree) {
+        changeMap = await detectTreeChangesFast(previousRecord.bookmarkTree, record.bookmarkTree);
+
+        // 关键：如果有删除的节点，需要重建树结构（与"当前变化"一致）
+        let hasDeleted = false;
+        for (const [, change] of changeMap) {
+            if (change.type && change.type.includes('deleted')) {
+                hasDeleted = true;
+                break;
+            }
+        }
+        if (hasDeleted) {
+            try {
+                treeToExport = rebuildTreeWithDeleted(previousRecord.bookmarkTree, record.bookmarkTree, changeMap);
+                console.log('[showHistoryExportChangesModal] 已重建包含删除节点的树');
+            } catch (error) {
+                console.error('[showHistoryExportChangesModal] 重建树失败:', error);
+                treeToExport = record.bookmarkTree;
+            }
+        }
+    } else if (record.isFirstBackup) {
+        // 第一次备份，所有书签都是新增
+        const allNodes = flattenBookmarkTree(record.bookmarkTree);
+        allNodes.forEach(item => {
+            if (item.id) changeMap.set(item.id, { type: 'added' });
+        });
+    }
+
+    console.log('[showHistoryExportChangesModal] 变化统计:', changeMap.size);
+
+    // 保存当前导出数据（现在是 Map 格式）
+    currentExportChangeData = changeMap;
+    currentExportHistoryRecord = record;
+    currentExportBookmarkTree = treeToExport;
+    currentExportHistoryTreeContainer = useDomTreeContainer ? (treeContainer || document.querySelector('#modalBody .history-tree-container')) : null;
+
+    // 显示模态框
+    const modal = document.getElementById('exportChangesModal');
+    if (modal) {
+        modal.classList.add('show');
+        // 重置为默认值
+        const formatHtml = modal.querySelector('input[name="exportChangesFormat"][value="html"]');
+        if (formatHtml) formatHtml.checked = true;
+
+        // 使用当前备份历史的详略模式
+        const modeValue = preferredMode || getRecordDetailMode(recordTime) || historyDetailMode || 'simple';
+        const modeRadio = modal.querySelector(`input[name="exportChangesMode"][value="${modeValue}"]`);
+        if (modeRadio) modeRadio.checked = true;
+
+        const actionDownload = modal.querySelector('input[name="exportChangesAction"][value="download"]');
+        if (actionDownload) actionDownload.checked = true;
+
+        // 隐藏扩展层级
+        const depthSection = document.getElementById('exportChangesDepthSection');
+        if (depthSection) depthSection.style.display = 'none';
+
+        // 隐藏详细模式说明
+        const helpContent = document.getElementById('exportChangesDetailedHelpContent');
+        if (helpContent) helpContent.style.display = 'none';
+
+        // 隐藏标记说明
+        const legendHelpContent = document.getElementById('exportChangesLegendHelpContent');
+        if (legendHelpContent) legendHelpContent.style.display = 'none';
+    }
+}
+
 // 初始化导出变化模态框
 function initExportChangesModal() {
     const modal = document.getElementById('exportChangesModal');
@@ -22697,6 +23551,10 @@ function initExportChangesModal() {
     if (closeBtn) {
         closeBtn.addEventListener('click', () => {
             modal.classList.remove('show');
+            // 清除历史导出数据
+            currentExportHistoryRecord = null;
+            currentExportBookmarkTree = null;
+            currentExportHistoryTreeContainer = null;
         });
     }
 
@@ -22704,6 +23562,10 @@ function initExportChangesModal() {
     modal.addEventListener('click', (e) => {
         if (e.target === modal) {
             modal.classList.remove('show');
+            // 清除历史导出数据
+            currentExportHistoryRecord = null;
+            currentExportBookmarkTree = null;
+            currentExportHistoryTreeContainer = null;
         }
     });
 
@@ -22816,6 +23678,10 @@ async function executeExportChanges() {
     const originalBtnHTML = confirmBtn.innerHTML;
     const isZh = currentLang === 'zh_CN';
 
+    // 判断是否是备份历史导出
+    const isHistoryExport = !!currentExportHistoryRecord;
+    const useHistoryDomTree = isHistoryExport && !!currentExportHistoryTreeContainer;
+
     try {
         let content = '';
         let filename = '';
@@ -22829,11 +23695,29 @@ async function executeExportChanges() {
         await new Promise(resolve => setTimeout(resolve, 50));
 
         if (format === 'html') {
-            content = await generateChangesHTML(currentExportChangeData, mode, depth);
-            filename = `bookmark-changes-${timestamp}.html`;
+            if (isHistoryExport) {
+                // 备份历史导出 - 优先使用详情面板DOM（所见即所得）
+                content = useHistoryDomTree
+                    ? await generateHistoryChangesHTMLFromDOM(currentExportHistoryTreeContainer, mode)
+                    : await generateHistoryChangesHTML(currentExportBookmarkTree, currentExportChangeData, mode);
+                filename = `bookmark-history-${timestamp}.html`;
+            } else {
+                // 当前变化导出 - 从 DOM 提取
+                content = await generateChangesHTML(currentExportChangeData, mode, depth);
+                filename = `bookmark-changes-${timestamp}.html`;
+            }
         } else {
-            content = await generateChangesJSON(currentExportChangeData, mode, depth);
-            filename = `bookmark-changes-${timestamp}.json`;
+            if (isHistoryExport) {
+                // 备份历史导出 - 优先使用详情面板DOM（所见即所得）
+                content = useHistoryDomTree
+                    ? await generateHistoryChangesJSONFromDOM(currentExportHistoryTreeContainer, mode)
+                    : await generateHistoryChangesJSON(currentExportBookmarkTree, currentExportChangeData, mode);
+                filename = `bookmark-history-${timestamp}.json`;
+            } else {
+                // 当前变化导出 - 从 DOM 提取
+                content = await generateChangesJSON(currentExportChangeData, mode, depth);
+                filename = `bookmark-changes-${timestamp}.json`;
+            }
             // 如果是 JSON 格式，content 是对象，需要 stringify
             if (typeof content === 'object') {
                 content = JSON.stringify(content, null, 2);
@@ -22866,6 +23750,10 @@ async function executeExportChanges() {
         // 1.5秒后关闭模态框并恢复按钮
         setTimeout(() => {
             modal.classList.remove('show');
+            // 清除历史导出数据
+            currentExportHistoryRecord = null;
+            currentExportBookmarkTree = null;
+            currentExportHistoryTreeContainer = null;
             // 恢复按钮状态
             setTimeout(() => {
                 confirmBtn.disabled = false;
@@ -22897,6 +23785,144 @@ async function executeExportChanges() {
     }
 }
 
+function formatExportTimeText(date = new Date()) {
+    try {
+        if (typeof formatTime === 'function') {
+            return formatTime(date);
+        }
+        return date.toLocaleString();
+    } catch (e) {
+        return new Date().toISOString();
+    }
+}
+
+function getChangeCountsFromChangeData(changeData) {
+    if (!changeData) return null;
+    const diffMeta = changeData.diffMeta || {};
+    const stats = changeData.stats || {};
+
+    const bookmarkDiff = typeof diffMeta.bookmarkDiff === 'number' ? diffMeta.bookmarkDiff : 0;
+    const folderDiff = typeof diffMeta.folderDiff === 'number' ? diffMeta.folderDiff : 0;
+
+    const addedBookmarks = bookmarkDiff > 0 ? bookmarkDiff : 0;
+    const deletedBookmarks = bookmarkDiff < 0 ? Math.abs(bookmarkDiff) : 0;
+    const addedFolders = folderDiff > 0 ? folderDiff : 0;
+    const deletedFolders = folderDiff < 0 ? Math.abs(folderDiff) : 0;
+
+    const bookmarkMoved = typeof stats.bookmarkMoved === 'number' ? stats.bookmarkMoved : (stats.bookmarkMoved ? 1 : 0);
+    const folderMoved = typeof stats.folderMoved === 'number' ? stats.folderMoved : (stats.folderMoved ? 1 : 0);
+    const bookmarkModified = typeof stats.bookmarkModified === 'number' ? stats.bookmarkModified : (stats.bookmarkModified ? 1 : 0);
+    const folderModified = typeof stats.folderModified === 'number' ? stats.folderModified : (stats.folderModified ? 1 : 0);
+
+    const counts = {
+        added: { bookmarks: addedBookmarks, folders: addedFolders },
+        deleted: { bookmarks: deletedBookmarks, folders: deletedFolders },
+        modified: { bookmarks: bookmarkModified, folders: folderModified },
+        moved: { bookmarks: bookmarkMoved, folders: folderMoved }
+    };
+
+    if (addedBookmarks || addedFolders || deletedBookmarks || deletedFolders || bookmarkModified || folderModified || bookmarkMoved || folderMoved) {
+        return counts;
+    }
+    return null;
+}
+
+function countChangeTypesFromDOM(treeContainer) {
+    if (!treeContainer) {
+        return {
+            added: { bookmarks: 0, folders: 0 },
+            deleted: { bookmarks: 0, folders: 0 },
+            modified: { bookmarks: 0, folders: 0 },
+            moved: { bookmarks: 0, folders: 0 }
+        };
+    }
+    const treeRoot = treeContainer.querySelector('.bookmark-tree') || treeContainer;
+    if (!treeRoot) {
+        return {
+            added: { bookmarks: 0, folders: 0 },
+            deleted: { bookmarks: 0, folders: 0 },
+            modified: { bookmarks: 0, folders: 0 },
+            moved: { bookmarks: 0, folders: 0 }
+        };
+    }
+
+    const counts = {
+        added: { bookmarks: 0, folders: 0 },
+        deleted: { bookmarks: 0, folders: 0 },
+        modified: { bookmarks: 0, folders: 0 },
+        moved: { bookmarks: 0, folders: 0 }
+    };
+    treeRoot.querySelectorAll('.tree-item').forEach(item => {
+        const type = item.dataset.nodeType || (item.querySelector('.tree-bookmark-link') ? 'bookmark' : 'folder');
+        const target = type === 'folder' ? 'folders' : 'bookmarks';
+        if (item.classList.contains('tree-change-added')) counts.added[target] += 1;
+        if (item.classList.contains('tree-change-deleted')) counts.deleted[target] += 1;
+        if (item.classList.contains('tree-change-modified')) counts.modified[target] += 1;
+        if (item.classList.contains('tree-change-moved')) counts.moved[target] += 1;
+        if (item.classList.contains('tree-change-mixed')) {
+            counts.modified[target] += 1;
+            counts.moved[target] += 1;
+        }
+    });
+    return counts;
+}
+
+function getHistoryChangeCounts(changeMap, bookmarkTree) {
+    const counts = {
+        added: { bookmarks: 0, folders: 0 },
+        deleted: { bookmarks: 0, folders: 0 },
+        modified: { bookmarks: 0, folders: 0 },
+        moved: { bookmarks: 0, folders: 0 }
+    };
+    if (!changeMap) return counts;
+
+    const nodeMap = new Map();
+    function buildNodeMap(node) {
+        if (!node) return;
+        if (node.id) nodeMap.set(node.id, node);
+        if (node.children) node.children.forEach(buildNodeMap);
+    }
+    const treeNodes = Array.isArray(bookmarkTree) ? bookmarkTree : [bookmarkTree];
+    treeNodes.forEach(buildNodeMap);
+
+    changeMap.forEach((change, id) => {
+        if (!change || !change.type) return;
+        const node = nodeMap.get(id);
+        const isFolder = node && !node.url && node.children;
+        const bucket = isFolder ? 'folders' : 'bookmarks';
+        const types = change.type.split('+');
+        if (types.includes('added')) counts.added[bucket] += 1;
+        if (types.includes('deleted')) counts.deleted[bucket] += 1;
+        if (types.includes('modified')) counts.modified[bucket] += 1;
+        if (types.includes('moved')) counts.moved[bucket] += 1;
+    });
+
+    return counts;
+}
+
+function formatCountsLine(counts, isZh) {
+    const labels = isZh
+        ? { added: '新增', deleted: '删除', modified: '修改', moved: '移动', b: '书签', f: '文件夹' }
+        : { added: 'Added', deleted: 'Deleted', modified: 'Modified', moved: 'Moved', b: 'BKM', f: 'FLD' };
+    const formatPair = (pair) => {
+        const parts = [];
+        if (pair.bookmarks) parts.push(`${pair.bookmarks}${labels.b}`);
+        if (pair.folders) parts.push(`${pair.folders}${labels.f}`);
+        return parts.join(' ');
+    };
+    const parts = [];
+    if (counts.added.bookmarks || counts.added.folders) parts.push(`${labels.added}:${formatPair(counts.added)}`);
+    if (counts.deleted.bookmarks || counts.deleted.folders) parts.push(`${labels.deleted}:${formatPair(counts.deleted)}`);
+    if (counts.modified.bookmarks || counts.modified.folders) parts.push(`${labels.modified}:${formatPair(counts.modified)}`);
+    if (counts.moved.bookmarks || counts.moved.folders) parts.push(`${labels.moved}:${formatPair(counts.moved)}`);
+    return parts.join('  ');
+}
+
+function hasAnyCounts(counts) {
+    if (!counts) return false;
+    return Object.values(counts).some(pair => (pair?.bookmarks || pair?.folders));
+}
+
 // 生成变化HTML
 async function generateChangesHTML(changeData, mode, depth) {
     const isZh = currentLang === 'zh_CN';
@@ -22913,6 +23939,14 @@ async function generateChangesHTML(changeData, mode, depth) {
         ? '📋 前缀说明: [+]新增  [-]删除  [~]修改  [↔]移动'
         : '📋 Prefix legend: [+]Added  [-]Deleted  [~]Modified  [↔]Moved';
     html += `    <DT><H3>${legendText}</H3>\n`;
+    const countsFromData = getChangeCountsFromChangeData(changeData);
+    const countsFromDom = countChangeTypesFromDOM(document.getElementById('changesTreePreviewInline'));
+    const counts = hasAnyCounts(countsFromData) ? countsFromData : countsFromDom;
+    const exportTimeText = formatExportTimeText();
+    html += `    <DL><p>\n`;
+    html += `        <DT><A HREF="about:blank">${isZh ? '操作统计' : 'Operation Counts'}: ${formatCountsLine(counts, isZh)}</A>\n`;
+    html += `        <DT><A HREF="about:blank">${isZh ? '导出时间' : 'Export Time'}: ${escapeHtml(exportTimeText)}</A>\n`;
+    html += `    </DL><p>\n`;
 
     // 从 DOM 提取书签树
     const treeContainer = document.getElementById('changesTreePreviewInline');
@@ -23146,13 +24180,32 @@ async function generateChangesJSON(changeData, mode, depth) {
     }
 
     const bookmarkTree = bookmarkTreeEl ? extractTree(bookmarkTreeEl) : [];
+    const countsFromData = getChangeCountsFromChangeData(changeData);
+    const countsFromDom = countChangeTypesFromDOM(document.getElementById('changesTreePreviewInline'));
+    const counts = hasAnyCounts(countsFromData) ? countsFromData : countsFromDom;
+    const exportTimeText = formatExportTimeText();
+    const legendFolder = {
+        title: isZh
+            ? '📋 前缀说明: [+]新增  [-]删除  [~]修改  [↔]移动'
+            : '📋 Prefix legend: [+]Added  [-]Deleted  [~]Modified  [↔]Moved',
+        children: [
+            {
+                title: `${isZh ? '操作统计' : 'Operation Counts'}: ${formatCountsLine(counts, isZh)}`,
+                url: 'about:blank'
+            },
+            {
+                title: `${isZh ? '导出时间' : 'Export Time'}: ${exportTimeText}`,
+                url: 'about:blank'
+            }
+        ]
+    };
 
     // 构建兼容 Chrome bookmarks API 格式的输出
     // Chrome API 格式: {id, title, children: [...]}
     const result = {
         // 标准字段
         title: isZh ? '书签变化导出' : 'Bookmark Changes Export',
-        children: bookmarkTree,
+        children: [legendFolder, ...bookmarkTree],
         // 元信息（下划线前缀表示非标准扩展字段）
         _exportInfo: {
             exportDate: now,
@@ -23168,6 +24221,577 @@ async function generateChangesJSON(changeData, mode, depth) {
     };
 
     return JSON.stringify(result, null, 2);
+}
+
+// 生成备份历史的变化HTML（从详情面板DOM提取，所见即所得）
+async function generateHistoryChangesHTMLFromDOM(treeContainer, mode) {
+    const isZh = currentLang === 'zh_CN';
+
+    let html = '<!DOCTYPE NETSCAPE-Bookmark-file-1>\n';
+    html += '<META HTTP-EQUIV="Content-Type" CONTENT="text/html; charset=UTF-8">\n';
+    html += `<TITLE>${isZh ? '书签变化' : 'Bookmark Changes'}</TITLE>\n`;
+    html += `<H1>${isZh ? '书签变化' : 'Bookmark Changes'}</H1>\n`;
+    html += '<DL><p>\n';
+
+    const legendText = isZh
+        ? '📋 前缀说明: [+]新增  [-]删除  [~]修改  [↔]移动'
+        : '📋 Prefix legend: [+]Added  [-]Deleted  [~]Modified  [↔]Moved';
+    html += `    <DT><H3>${legendText}</H3>\n`;
+    const counts = getHistoryChangeCounts(currentExportChangeData, currentExportBookmarkTree);
+    const exportTimeText = formatExportTimeText();
+    const backupTimeText = currentExportHistoryRecord?.time
+        ? (typeof formatTime === 'function' ? formatTime(new Date(currentExportHistoryRecord.time)) : new Date(currentExportHistoryRecord.time).toLocaleString())
+        : '';
+    const noteText = currentExportHistoryRecord?.note ? currentExportHistoryRecord.note : (isZh ? '（无备注）' : '(No note)');
+    html += `    <DL><p>\n`;
+    html += `        <DT><A HREF="about:blank">${isZh ? '操作统计' : 'Operation Counts'}: ${formatCountsLine(counts, isZh)}</A>\n`;
+    html += `        <DT><A HREF="about:blank">${isZh ? '导出时间' : 'Export Time'}: ${escapeHtml(exportTimeText)}</A>\n`;
+    html += `        <DT><A HREF="about:blank">${isZh ? '备份时间' : 'Backup Time'}: ${escapeHtml(backupTimeText)}</A>\n`;
+    html += `        <DT><A HREF="about:blank">${isZh ? '备注' : 'Note'}: ${escapeHtml(noteText)}</A>\n`;
+    html += `    </DL><p>\n`;
+
+    const bookmarkTree = treeContainer?.classList?.contains('bookmark-tree')
+        ? treeContainer
+        : treeContainer?.querySelector?.('.bookmark-tree');
+
+    if (!bookmarkTree) {
+        html += `    <DT><H3>${isZh ? '(无书签树数据)' : '(No bookmark tree data)'}</H3>\n`;
+        html += '</DL><p>\n';
+        return html;
+    }
+
+    function hasChanges(treeNode) {
+        const treeItem = treeNode.querySelector(':scope > .tree-item');
+        if (!treeItem) return false;
+
+        if (treeItem.classList.contains('tree-change-added') ||
+            treeItem.classList.contains('tree-change-deleted') ||
+            treeItem.classList.contains('tree-change-modified') ||
+            treeItem.classList.contains('tree-change-moved') ||
+            treeItem.classList.contains('tree-change-mixed')) {
+            return true;
+        }
+
+        const childrenContainer = treeNode.querySelector(':scope > .tree-children');
+        if (childrenContainer) {
+            const childNodes = childrenContainer.querySelectorAll(':scope > .tree-node');
+            for (const child of childNodes) {
+                if (hasChanges(child)) return true;
+            }
+        }
+
+        return false;
+    }
+
+    function getChangePrefixFromItem(treeItem) {
+        if (treeItem.classList.contains('tree-change-added')) return '[+] ';
+        if (treeItem.classList.contains('tree-change-deleted')) return '[-] ';
+        if (treeItem.classList.contains('tree-change-mixed')) return '[~↔] ';
+        if (treeItem.classList.contains('tree-change-modified')) return '[~] ';
+        if (treeItem.classList.contains('tree-change-moved')) return '[↔] ';
+        return '';
+    }
+
+    function generateNodeHTML(nodeEl, indentLevel) {
+        let result = '';
+        const indent = '    '.repeat(indentLevel);
+        const treeNodes = nodeEl.querySelectorAll(':scope > .tree-node');
+
+        treeNodes.forEach(treeNode => {
+            const treeItem = treeNode.querySelector(':scope > .tree-item');
+            if (!treeItem) return;
+
+            if (mode !== 'detailed' && !hasChanges(treeNode)) return;
+
+            const link = treeItem.querySelector('a.tree-bookmark-link') || treeItem.querySelector('a');
+            const url = link ? link.getAttribute('href') : '';
+            let title = treeItem.dataset.nodeTitle || treeItem.querySelector('.tree-label')?.textContent?.trim() || '';
+            if (!title && link) title = link.textContent.trim();
+            if (!title) title = isZh ? '根目录' : 'Root';
+
+            const nodeType = treeItem.dataset.nodeType;
+            const isFolder = nodeType === 'folder' || !url;
+            const displayTitle = getChangePrefixFromItem(treeItem) + title;
+
+            if (isFolder) {
+                result += `${indent}<DT><H3>${escapeHtml(displayTitle)}</H3>\n`;
+                result += `${indent}<DL><p>\n`;
+
+                const childrenContainer = treeNode.querySelector(':scope > .tree-children');
+                if (childrenContainer) {
+                    let shouldRecurse = false;
+                    if (mode === 'detailed') {
+                        shouldRecurse = childrenContainer.classList.contains('expanded');
+                    } else {
+                        shouldRecurse = true;
+                    }
+
+                    if (shouldRecurse) {
+                        result += generateNodeHTML(childrenContainer, indentLevel + 1);
+                    }
+                }
+
+                result += `${indent}</DL><p>\n`;
+            } else {
+                result += `${indent}<DT><A HREF="${escapeHtml(url)}">${escapeHtml(displayTitle)}</A>\n`;
+            }
+        });
+
+        return result;
+    }
+
+    html += generateNodeHTML(bookmarkTree, 1);
+    html += '</DL><p>\n';
+
+    return html;
+}
+
+// 生成备份历史的变化JSON（从详情面板DOM提取，所见即所得）
+async function generateHistoryChangesJSONFromDOM(treeContainer, mode) {
+    const isZh = currentLang === 'zh_CN';
+    const now = new Date().toISOString();
+
+    const bookmarkTree = treeContainer?.classList?.contains('bookmark-tree')
+        ? treeContainer
+        : treeContainer?.querySelector?.('.bookmark-tree');
+
+    if (!bookmarkTree) {
+        return {
+            title: isZh ? '书签变化导出' : 'Bookmark Changes Export',
+            children: [],
+            _exportInfo: {
+                exportDate: now,
+                exportMode: mode,
+                source: 'bookmark-backup-history',
+                error: isZh ? '无书签树数据' : 'No bookmark tree data'
+            }
+        };
+    }
+
+    function hasChanges(treeNode) {
+        const treeItem = treeNode.querySelector(':scope > .tree-item');
+        if (!treeItem) return false;
+
+        if (treeItem.classList.contains('tree-change-added') ||
+            treeItem.classList.contains('tree-change-deleted') ||
+            treeItem.classList.contains('tree-change-modified') ||
+            treeItem.classList.contains('tree-change-moved') ||
+            treeItem.classList.contains('tree-change-mixed')) {
+            return true;
+        }
+
+        const childrenContainer = treeNode.querySelector(':scope > .tree-children');
+        if (childrenContainer) {
+            const childNodes = childrenContainer.querySelectorAll(':scope > .tree-node');
+            for (const child of childNodes) {
+                if (hasChanges(child)) return true;
+            }
+        }
+
+        return false;
+    }
+
+    function getChangeTypeFromItem(treeItem) {
+        if (treeItem.classList.contains('tree-change-added')) return 'added';
+        if (treeItem.classList.contains('tree-change-deleted')) return 'deleted';
+        if (treeItem.classList.contains('tree-change-mixed')) return 'modified+moved';
+        if (treeItem.classList.contains('tree-change-modified')) return 'modified';
+        if (treeItem.classList.contains('tree-change-moved')) return 'moved';
+        return null;
+    }
+
+    function extractTree(nodeEl) {
+        const result = [];
+        const treeNodes = nodeEl.querySelectorAll(':scope > .tree-node');
+
+        treeNodes.forEach(treeNode => {
+            const treeItem = treeNode.querySelector(':scope > .tree-item');
+            if (!treeItem) return;
+
+            if (mode !== 'detailed' && !hasChanges(treeNode)) return;
+
+            const link = treeItem.querySelector('a.tree-bookmark-link') || treeItem.querySelector('a');
+            const url = link ? link.getAttribute('href') : '';
+            let title = treeItem.dataset.nodeTitle || treeItem.querySelector('.tree-label')?.textContent?.trim() || '';
+            if (!title && link) title = link.textContent.trim();
+            if (!title) title = isZh ? '根目录' : 'Root';
+
+            const nodeType = treeItem.dataset.nodeType;
+            const isFolder = nodeType === 'folder' || !url;
+            const changeType = getChangeTypeFromItem(treeItem);
+
+            const item = {
+                title: changeType ? `${getChangePrefix(changeType)} ${title}` : title,
+                type: isFolder ? 'folder' : 'bookmark',
+                ...(url ? { url } : {}),
+                ...(changeType ? { changeType } : {})
+            };
+
+            if (isFolder) {
+                const childrenContainer = treeNode.querySelector(':scope > .tree-children');
+                if (childrenContainer) {
+                    let shouldRecurse = false;
+                    if (mode === 'detailed') {
+                        shouldRecurse = childrenContainer.classList.contains('expanded');
+                    } else {
+                        shouldRecurse = true;
+                    }
+
+                    item.children = shouldRecurse ? extractTree(childrenContainer) : [];
+                }
+            }
+
+            result.push(item);
+        });
+
+        return result;
+    }
+
+    const counts = getHistoryChangeCounts(currentExportChangeData, currentExportBookmarkTree);
+    const exportTimeText = formatExportTimeText();
+    const backupTimeText = currentExportHistoryRecord?.time
+        ? (typeof formatTime === 'function' ? formatTime(new Date(currentExportHistoryRecord.time)) : new Date(currentExportHistoryRecord.time).toLocaleString())
+        : '';
+    const noteText = currentExportHistoryRecord?.note ? currentExportHistoryRecord.note : (isZh ? '（无备注）' : '(No note)');
+    const legendFolder = {
+        title: isZh
+            ? '📋 前缀说明: [+]新增  [-]删除  [~]修改  [↔]移动'
+            : '📋 Prefix legend: [+]Added  [-]Deleted  [~]Modified  [↔]Moved',
+        children: [
+            {
+                title: `${isZh ? '操作统计' : 'Operation Counts'}: ${formatCountsLine(counts, isZh)}`,
+                url: 'about:blank'
+            },
+            {
+                title: `${isZh ? '导出时间' : 'Export Time'}: ${exportTimeText}`,
+                url: 'about:blank'
+            },
+            {
+                title: `${isZh ? '备份时间' : 'Backup Time'}: ${backupTimeText}`,
+                url: 'about:blank'
+            },
+            {
+                title: `${isZh ? '备注' : 'Note'}: ${noteText}`,
+                url: 'about:blank'
+            }
+        ]
+    };
+
+    return {
+        title: isZh ? '书签变化导出' : 'Bookmark Changes Export',
+        children: [legendFolder, ...extractTree(bookmarkTree)],
+        _exportInfo: {
+            exportDate: now,
+            exportMode: mode,
+            source: 'bookmark-backup-history',
+            legend: {
+                '[+]': isZh ? '新增' : 'Added',
+                '[-]': isZh ? '删除' : 'Deleted',
+                '[~]': isZh ? '修改' : 'Modified',
+                '[↔]': isZh ? '移动' : 'Moved',
+                '[~↔]': isZh ? '修改+移动' : 'Modified+Moved'
+            }
+        }
+    };
+}
+
+// 生成备份历史的变化HTML（从书签树直接生成，不依赖DOM）
+// changeMap: Map<id, {type: 'added'|'deleted'|'modified'|'moved'|'modified+moved', moved?: {...}}>
+async function generateHistoryChangesHTML(bookmarkTree, changeMap, mode) {
+    const isZh = currentLang === 'zh_CN';
+    const now = new Date().toLocaleString();
+
+    let html = '<!DOCTYPE NETSCAPE-Bookmark-file-1>\n';
+    html += '<META HTTP-EQUIV="Content-Type" CONTENT="text/html; charset=UTF-8">\n';
+    html += `<TITLE>${isZh ? '书签变化' : 'Bookmark Changes'}</TITLE>\n`;
+    html += `<H1>${isZh ? '书签变化' : 'Bookmark Changes'}</H1>\n`;
+    html += '<DL><p>\n';
+
+    // 添加图例说明（一行）
+    const legendText = isZh
+        ? '📋 前缀说明: [+]新增  [-]删除  [~]修改  [↔]移动'
+        : '📋 Prefix legend: [+]Added  [-]Deleted  [~]Modified  [↔]Moved';
+    html += `    <DT><H3>${legendText}</H3>\n`;
+    const counts = getHistoryChangeCounts(changeMap, bookmarkTree);
+    const exportTimeText = formatExportTimeText();
+    const backupTimeText = currentExportHistoryRecord?.time
+        ? (typeof formatTime === 'function' ? formatTime(new Date(currentExportHistoryRecord.time)) : new Date(currentExportHistoryRecord.time).toLocaleString())
+        : '';
+    const noteText = currentExportHistoryRecord?.note ? currentExportHistoryRecord.note : (isZh ? '（无备注）' : '(No note)');
+    html += `    <DL><p>\n`;
+    html += `        <DT><A HREF="about:blank">${isZh ? '操作统计' : 'Operation Counts'}: ${formatCountsLine(counts, isZh)}</A>\n`;
+    html += `        <DT><A HREF="about:blank">${isZh ? '导出时间' : 'Export Time'}: ${escapeHtml(exportTimeText)}</A>\n`;
+    html += `        <DT><A HREF="about:blank">${isZh ? '备份时间' : 'Backup Time'}: ${escapeHtml(backupTimeText)}</A>\n`;
+    html += `        <DT><A HREF="about:blank">${isZh ? '备注' : 'Note'}: ${escapeHtml(noteText)}</A>\n`;
+    html += `    </DL><p>\n`;
+
+    if (!bookmarkTree) {
+        html += `    <DT><H3>${isZh ? '(无书签树数据)' : '(No bookmark tree data)'}</H3>\n`;
+        html += '</DL><p>\n';
+        return html;
+    }
+
+    // 检查某个节点或其子节点是否有变化
+    function hasChangesRecursive(node) {
+        if (!node) return false;
+        if (changeMap.has(node.id)) return true;
+        if (node.children) {
+            return node.children.some(child => hasChangesRecursive(child));
+        }
+        return false;
+    }
+
+    // 递归生成 HTML
+    // 详细模式：显示所有节点，但只展开有变化的路径（与"当前变化"一致）
+    // 简单模式：只导出有变化的分支
+    function generateNodeHTML(node, indentLevel) {
+        if (!node) return '';
+
+        // 检查该节点或其子节点是否有变化
+        const nodeHasChanges = hasChangesRecursive(node);
+
+        // 简单模式：只导出有变化的分支
+        if (mode !== 'detailed' && !nodeHasChanges) return '';
+
+        let result = '';
+        const indent = '    '.repeat(indentLevel);
+
+        const title = node.title || (isZh ? '(无标题)' : '(Untitled)');
+        const url = node.url || '';
+        const isFolder = !url && node.children;
+
+        // 检查变化类型并添加前缀（支持组合类型如 'modified+moved'）
+        let prefix = '';
+        const change = changeMap.get(node.id);
+        if (change) {
+            const types = change.type ? change.type.split('+') : [];
+            if (types.includes('added')) {
+                prefix = '[+] ';
+            } else if (types.includes('deleted')) {
+                prefix = '[-] ';
+            } else if (types.includes('modified') && types.includes('moved')) {
+                prefix = '[~↔] ';
+            } else if (types.includes('modified')) {
+                prefix = '[~] ';
+            } else if (types.includes('moved')) {
+                prefix = '[↔] ';
+            }
+        }
+
+        const displayTitle = prefix + escapeHtml(title);
+
+        if (isFolder) {
+            // 文件夹
+            result += `${indent}<DT><H3>${displayTitle}</H3>\n`;
+            result += `${indent}<DL><p>\n`;
+
+            // 递归处理子节点
+            // 详细模式：只有该节点路径有变化时才展开（递归子节点）
+            // 简单模式：只要有变化就递归
+            if (node.children && node.children.length > 0) {
+                let shouldRecurse = false;
+
+                if (mode === 'detailed') {
+                    // 详细模式：只有有变化的路径才展开
+                    shouldRecurse = nodeHasChanges;
+                } else {
+                    // 简单模式：一定有变化才能到这里，所以递归
+                    shouldRecurse = true;
+                }
+
+                if (shouldRecurse) {
+                    node.children.forEach(child => {
+                        result += generateNodeHTML(child, indentLevel + 1);
+                    });
+                }
+            }
+
+            result += `${indent}</DL><p>\n`;
+        } else if (url) {
+            // 书签
+            result += `${indent}<DT><A HREF="${escapeHtml(url)}">${displayTitle}</A>\n`;
+        }
+
+        return result;
+    }
+
+    // 生成书签树 HTML
+    const nodes = Array.isArray(bookmarkTree) ? bookmarkTree : [bookmarkTree];
+    nodes.forEach(node => {
+        if (node.children) {
+            node.children.forEach(child => {
+                html += generateNodeHTML(child, 1);
+            });
+        }
+    });
+
+    html += '</DL><p>\n';
+
+    console.log('[generateHistoryChangesHTML] 生成的 HTML 长度:', html.length);
+
+    return html;
+}
+
+// 生成备份历史的变化JSON（从书签树直接生成，不依赖DOM）
+// changeMap: Map<id, {type: 'added'|'deleted'|'modified'|'moved'|'modified+moved', moved?: {...}}>
+async function generateHistoryChangesJSON(bookmarkTree, changeMap, mode) {
+    const isZh = currentLang === 'zh_CN';
+    const now = new Date().toISOString();
+
+    if (!bookmarkTree) {
+        return {
+            title: isZh ? '书签变化导出' : 'Bookmark Changes Export',
+            children: [],
+            _exportInfo: {
+                exportDate: now,
+                exportMode: mode,
+                source: 'bookmark-backup-history',
+                error: isZh ? '无书签树数据' : 'No bookmark tree data'
+            }
+        };
+    }
+
+    // 检查某个节点或其子节点是否有变化
+    function hasChangesRecursive(node) {
+        if (!node) return false;
+        if (changeMap.has(node.id)) return true;
+        if (node.children) {
+            return node.children.some(child => hasChangesRecursive(child));
+        }
+        return false;
+    }
+
+    // 递归提取树结构
+    // 详细模式：显示所有节点，但只展开有变化的路径（与"当前变化"一致）
+    // 简单模式：只导出有变化的分支
+    function extractTree(node) {
+        if (!node) return null;
+
+        // 检查该节点或其子节点是否有变化
+        const nodeHasChanges = hasChangesRecursive(node);
+
+        // 简单模式：只导出有变化的分支
+        if (mode !== 'detailed' && !nodeHasChanges) return null;
+
+        const title = node.title || (isZh ? '(无标题)' : '(Untitled)');
+        const url = node.url || '';
+        const isFolder = !url && node.children;
+
+        // 检查变化类型（支持组合类型如 'modified+moved'）
+        const change = changeMap.get(node.id);
+        let prefix = '';
+        let changeType = null;
+        if (change) {
+            changeType = change.type;
+            const types = change.type ? change.type.split('+') : [];
+            if (types.includes('added')) {
+                prefix = '[+] ';
+            } else if (types.includes('deleted')) {
+                prefix = '[-] ';
+            } else if (types.includes('modified') && types.includes('moved')) {
+                prefix = '[~↔] ';
+            } else if (types.includes('modified')) {
+                prefix = '[~] ';
+            } else if (types.includes('moved')) {
+                prefix = '[↔] ';
+            }
+        }
+
+        const item = {
+            title: prefix + title,
+            type: isFolder ? 'folder' : 'bookmark',
+            ...(url ? { url } : {}),
+            ...(changeType ? { changeType } : {})
+        };
+
+        if (isFolder && node.children) {
+            // 详细模式：只有有变化的路径才展开（递归子节点）
+            // 简单模式：一定有变化才能到这里，所以递归
+            let shouldRecurse = false;
+
+            if (mode === 'detailed') {
+                // 详细模式：只有有变化的路径才展开
+                shouldRecurse = nodeHasChanges;
+            } else {
+                // 简单模式：一定有变化才能到这里，所以递归
+                shouldRecurse = true;
+            }
+
+            if (shouldRecurse) {
+                item.children = node.children
+                    .map(child => extractTree(child))
+                    .filter(child => child !== null);
+            } else {
+                item.children = [];
+            }
+        }
+
+        return item;
+    }
+
+    // 提取书签树
+    const nodes = Array.isArray(bookmarkTree) ? bookmarkTree : [bookmarkTree];
+    const children = [];
+    nodes.forEach(node => {
+        if (node.children) {
+            node.children.forEach(child => {
+                const extracted = extractTree(child);
+                if (extracted) {
+                    children.push(extracted);
+                }
+            });
+        }
+    });
+
+    // 构建兼容 Chrome bookmarks API 格式的输出
+    const counts = getHistoryChangeCounts(changeMap, bookmarkTree);
+    const exportTimeText = formatExportTimeText();
+    const backupTimeText = currentExportHistoryRecord?.time
+        ? (typeof formatTime === 'function' ? formatTime(new Date(currentExportHistoryRecord.time)) : new Date(currentExportHistoryRecord.time).toLocaleString())
+        : '';
+    const noteText = currentExportHistoryRecord?.note ? currentExportHistoryRecord.note : (isZh ? '（无备注）' : '(No note)');
+    const legendFolder = {
+        title: isZh
+            ? '📋 前缀说明: [+]新增  [-]删除  [~]修改  [↔]移动'
+            : '📋 Prefix legend: [+]Added  [-]Deleted  [~]Modified  [↔]Moved',
+        children: [
+            {
+                title: `${isZh ? '操作统计' : 'Operation Counts'}: ${formatCountsLine(counts, isZh)}`,
+                url: 'about:blank'
+            },
+            {
+                title: `${isZh ? '导出时间' : 'Export Time'}: ${exportTimeText}`,
+                url: 'about:blank'
+            },
+            {
+                title: `${isZh ? '备份时间' : 'Backup Time'}: ${backupTimeText}`,
+                url: 'about:blank'
+            },
+            {
+                title: `${isZh ? '备注' : 'Note'}: ${noteText}`,
+                url: 'about:blank'
+            }
+        ]
+    };
+
+    const result = {
+        title: isZh ? '书签变化导出' : 'Bookmark Changes Export',
+        children: [legendFolder, ...children],
+        _exportInfo: {
+            exportDate: now,
+            exportMode: mode,
+            source: 'bookmark-backup-history',
+            legend: {
+                '[+]': isZh ? '新增' : 'Added',
+                '[-]': isZh ? '删除' : 'Deleted',
+                '[~]': isZh ? '修改' : 'Modified',
+                '[↔]': isZh ? '移动' : 'Moved',
+                '[~↔]': isZh ? '修改+移动' : 'Modified+Moved'
+            }
+        }
+    };
+
+    return result;
 }
 
 // 收集要导出的变化项
@@ -23345,6 +24969,7 @@ function getChangePrefix(changeType) {
         case 'deleted': return '[-]';
         case 'modified': return '[~]';
         case 'moved': return '[↔]';
+        case 'modified+moved': return '[~↔]';
         default: return '';
     }
 }

@@ -943,6 +943,16 @@ body {
     pointer-events: none;
 }
 
+.detail-actions-right .action-btn {
+    z-index: 2;
+}
+
+.detail-actions-right .action-btn::after {
+    z-index: 30000;
+    bottom: auto;
+    top: calc(100% + 8px);
+}
+
 .action-btn:hover::after {
     visibility: visible;
     opacity: 1;
@@ -1003,7 +1013,6 @@ body {
 .commit-badge.direction {
     background: var(--bg-tertiary);
     color: var(--text-secondary);
-    border: 1px solid var(--border-color);
 }
 
 /* 切换备份标识 */
@@ -1075,6 +1084,14 @@ body {
     color: var(--git-deleted);
 }
 
+.stat-color.moved {
+    color: var(--git-moved);
+}
+
+.stat-color.modified {
+    color: var(--git-modified);
+}
+
 .stat-label {
     font-size: 10px;
     font-weight: 600;
@@ -1098,6 +1115,11 @@ body {
 }
 
 .stat-badge.no-change {
+    background: var(--success-light);
+    color: var(--success);
+}
+
+.stat-badge.first {
     background: var(--success-light);
     color: var(--success);
 }
@@ -2084,7 +2106,7 @@ a.tree-label.tree-bookmark-link:hover {
 /* 混合类型（modified+moved）*/
 .tree-change-mixed>.tree-label,
 .tree-change-mixed>a.tree-label {
-    background: linear-gradient(90deg, #fd7e14 0%, #0d6efd 100%);
+    background: linear-gradient(180deg, #fd7e14 0%, #0d6efd 100%);
     -webkit-background-clip: text;
     -webkit-text-fill-color: transparent;
     background-clip: text;
@@ -2242,6 +2264,10 @@ a.tree-label.tree-bookmark-link:hover {
     justify-content: center;
 }
 
+.modal#exportChangesModal {
+    z-index: 22000;
+}
+
 .modal.show {
     display: flex;
 }
@@ -2289,8 +2315,15 @@ a.tree-label.tree-bookmark-link:hover {
     display: flex;
     justify-content: space-between;
     align-items: center;
-    padding: 20px 24px;
+    padding: 14px 24px;
     border-bottom: 1px solid var(--border-color);
+}
+
+.modal-header-left {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    min-width: 0;
 }
 
 .modal-header h3 {
@@ -2380,6 +2413,288 @@ a.tree-label.tree-bookmark-link:hover {
     font-size: 14px;
 }
 
+/* 内联备注样式 */
+.detail-section-inline {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: 6px;
+    margin-bottom: 16px;
+    line-height: 1.5;
+}
+
+.detail-section-title-inline {
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--text-primary);
+    display: inline-flex;
+    align-items: baseline;
+    gap: 6px;
+    flex-shrink: 0;
+}
+
+.detail-section-title-inline .detail-section-icon {
+    align-self: center;
+}
+
+.detail-item-inline {
+    font-size: 14px;
+    color: var(--text-secondary);
+    line-height: 1.5;
+}
+
+/* 标题行带图例 */
+.detail-section-title-with-legend {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    flex-wrap: nowrap;
+    gap: 12px;
+}
+
+.detail-title-left {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    flex-shrink: 0;
+}
+
+.detail-actions-row {
+    display: flex;
+    justify-content: flex-end;
+    align-items: center;
+    margin-bottom: 8px;
+}
+
+.detail-actions-right {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    height: 32px;
+    margin-left: auto;
+    flex-shrink: 0;
+    position: relative;
+    z-index: 2;
+}
+
+.detail-actions-right .toggle-btn-group,
+.detail-actions-right .toggle-btn,
+.detail-actions-right .action-btn {
+    height: 32px;
+}
+
+.detail-actions-right .toggle-btn {
+    padding: 0 10px;
+}
+
+.detail-note-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 16px;
+    font-weight: 600;
+    color: var(--text-primary);
+    flex-wrap: wrap;
+    min-width: 0;
+    padding: 0;
+    margin: -2px 0;
+    line-height: 1.2;
+    overflow: visible;
+}
+
+.detail-note-label {
+    flex-shrink: 0;
+}
+
+.detail-note-text {
+    font-size: 16px;
+    font-weight: 600;
+    color: var(--text-primary);
+    flex: 0 1 auto;
+    min-width: 0;
+    white-space: normal;
+    word-break: break-word;
+}
+
+.detail-note-text-wrapper {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 4px;
+    flex: 1 1 auto;
+    min-width: 0;
+}
+
+.detail-note-edit-btn {
+    margin-left: 2px;
+}
+
+.detail-mode-label {
+    font-size: 0.85em;
+    color: var(--text-tertiary);
+}
+
+.detail-title-legend {
+    display: inline-flex;
+    align-items: center;
+    gap: 10px;
+    flex-shrink: 0;
+}
+
+.detail-title-legend .legend-item {
+    display: inline-flex;
+    align-items: center;
+    gap: 3px;
+}
+
+.detail-title-legend .legend-dot {
+    width: 12px;
+    height: 12px;
+}
+
+.detail-title-legend .legend-count {
+    font-size: 14px;
+    font-weight: 500;
+    color: var(--text-secondary);
+}
+
+/* 备份历史树容器 */
+.history-tree-container {
+    max-height: 400px;
+    overflow-y: auto;
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    padding: 12px;
+    background: var(--bg-secondary);
+}
+
+/* 备份历史树形视图样式 */
+.history-tree-node {
+    padding: 4px 8px;
+    line-height: 1.6;
+    transition: background-color 0.15s ease;
+    border-radius: 4px;
+}
+
+.history-tree-node:hover {
+    background: var(--bg-tertiary);
+}
+
+.history-tree-folder,
+.history-tree-bookmark {
+    display: flex;
+    align-items: center;
+    font-size: 13px;
+}
+
+.history-tree-folder {
+    font-weight: 500;
+    color: var(--text-primary);
+}
+
+.history-tree-bookmark {
+    color: var(--text-primary);
+}
+
+.history-tree-url {
+    flex-shrink: 1;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.history-tree-node.tree-change-added {
+    background: var(--git-added-bg);
+}
+
+.history-tree-node.tree-change-deleted {
+    background: var(--git-deleted-bg);
+}
+
+.history-tree-node.tree-change-modified {
+    background: var(--git-modified-bg);
+}
+
+.history-tree-node.tree-change-moved {
+    background: var(--git-moved-bg);
+}
+
+.history-tree-node.tree-change-mixed {
+    background: linear-gradient(180deg, var(--git-modified-bg) 0%, var(--git-moved-bg) 100%);
+}
+
+/* 详略模式切换按钮组 */
+.toggle-btn-group {
+    display: inline-flex;
+    border: 1px solid var(--border-color);
+    border-radius: 6px;
+    overflow: hidden;
+}
+
+.toggle-btn {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    padding: 6px 10px;
+    font-size: 12px;
+    background: var(--bg-secondary);
+    border: none;
+    color: var(--text-secondary);
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+
+.toggle-btn:not(:last-child) {
+    border-right: 1px solid var(--border-color);
+}
+
+.toggle-btn:hover {
+    background: var(--bg-tertiary);
+    color: var(--text-primary);
+}
+
+.toggle-btn.active {
+    background: var(--accent-primary);
+    color: white;
+}
+
+.toggle-btn i {
+    font-size: 11px;
+}
+
+/* 备份历史树形视图连接线 */
+.history-tree-container .tree-children {
+    margin-left: 16px;
+    padding-left: 12px;
+    position: relative;
+    border-left: 1px solid var(--border-color);
+}
+
+.history-tree-container .tree-node {
+    position: relative;
+}
+
+.history-tree-container .tree-children>.tree-node::before {
+    content: '';
+    position: absolute;
+    left: -12px;
+    top: 14px;
+    width: 12px;
+    height: 1px;
+    background: var(--border-color);
+}
+
+/* 确保最后一个子节点的连接线正确 */
+.history-tree-container .tree-children>.tree-node:last-child::after {
+    content: '';
+    position: absolute;
+    left: -13px;
+    top: 14px;
+    bottom: 0;
+    width: 1px;
+    background: var(--bg-secondary);
+}
+
 /* ==================== 滚动条样式 ==================== */
 ::-webkit-scrollbar {
     width: 8px;
@@ -2454,7 +2769,7 @@ a.tree-label.tree-bookmark-link:hover {
 }
 
 /* 简略模式：隐藏没有变化的节点（.tree-node 包含 .tree-item 但没有 tree-change-xxx 类） */
-.changes-tree-preview-inline.compact-mode .tree-node:not(:has(.tree-change-added)):not(:has(.tree-change-deleted)):not(:has(.tree-change-modified)):not(:has(.tree-change-moved)) {
+.changes-tree-preview-inline.compact-mode .tree-node:not(:has(.tree-change-added)):not(:has(.tree-change-deleted)):not(:has(.tree-change-modified)):not(:has(.tree-change-moved)):not(:has(.tree-change-mixed)) {
     display: none !important;
 }
 
@@ -2462,7 +2777,8 @@ a.tree-label.tree-bookmark-link:hover {
 .changes-tree-preview-inline.compact-mode .tree-node:has(.tree-change-added),
 .changes-tree-preview-inline.compact-mode .tree-node:has(.tree-change-deleted),
 .changes-tree-preview-inline.compact-mode .tree-node:has(.tree-change-modified),
-.changes-tree-preview-inline.compact-mode .tree-node:has(.tree-change-moved) {
+.changes-tree-preview-inline.compact-mode .tree-node:has(.tree-change-moved),
+.changes-tree-preview-inline.compact-mode .tree-node:has(.tree-change-mixed) {
     display: block !important;
 }
 
@@ -2470,7 +2786,8 @@ a.tree-label.tree-bookmark-link:hover {
 .changes-tree-preview-inline.compact-mode .tree-children:has(.tree-change-added),
 .changes-tree-preview-inline.compact-mode .tree-children:has(.tree-change-deleted),
 .changes-tree-preview-inline.compact-mode .tree-children:has(.tree-change-modified),
-.changes-tree-preview-inline.compact-mode .tree-children:has(.tree-change-moved) {
+.changes-tree-preview-inline.compact-mode .tree-children:has(.tree-change-moved),
+.changes-tree-preview-inline.compact-mode .tree-children:has(.tree-change-mixed) {
     display: block !important;
 }
 

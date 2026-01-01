@@ -324,6 +324,19 @@
                         <h2 id="historyViewTitle">备份历史记录</h2>
                     </div>
                     <div class="view-header-right">
+                        <!-- 详略切换按钮 -->
+                        <div class="toggle-btn-group" id="historyDetailModeToggle"
+                            style="display: inline-flex; margin-right: 8px;">
+                            <button id="historyDetailModeSimple" class="toggle-btn active" data-mode="simple"
+                                title="简略模式">
+                                <i class="fas fa-list"></i>
+                                <span id="historyDetailModeSimpleText">简略</span>
+                            </button>
+                            <button id="historyDetailModeDetailed" class="toggle-btn" data-mode="detailed" title="详细模式">
+                                <i class="fas fa-stream"></i>
+                                <span id="historyDetailModeDetailedText">详细</span>
+                            </button>
+                        </div>
                         <button id="copyAllHistoryBtn" class="view-action-btn" data-action="copyAllHistory">
                             <i class="fas fa-copy"></i>
                             <span id="copyAllHistoryText">复制所有记录</span>
@@ -1234,7 +1247,7 @@
     </div>
 
     <!-- 导出变化模态框 -->
-    <div id="exportChangesModal" class="modal content-center">
+    <div id="exportChangesModal" class="modal">
         <div class="modal-content" style="max-width: 420px;">
             <div class="modal-header compact">
                 <h3 id="exportChangesModalTitle">导出书签变化</h3>
@@ -1492,7 +1505,9 @@
     <div id="detailModal" class="modal">
         <div class="modal-content">
             <div class="modal-header">
-                <h3 id="modalTitle">变化详情</h3>
+                <div class="modal-header-left">
+                    <h3 id="modalTitle">变化详情</h3>
+                </div>
                 <button class="modal-close" id="modalClose">
                     <i class="fas fa-times"></i>
                 </button>

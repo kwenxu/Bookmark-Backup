@@ -245,6 +245,100 @@ function formatChangeDescription(description) {
 }
 
 /**
+ * 根据 background 的统计摘要渲染变化（与主UI状态卡片口径一致）。
+ * - 支持 +/− 同时显示（净差为0也能显示）
+ * - moved/modified 显示具体数量
+ * @param {object} stats
+ * @returns {string}
+ */
+function formatChangeSummaryFromStats(stats) {
+    if (!stats || typeof stats !== 'object') {
+        return '';
+    }
+
+    const bmAdded = typeof stats.bookmarkAdded === 'number' ? stats.bookmarkAdded : 0;
+    const bmDeleted = typeof stats.bookmarkDeleted === 'number' ? stats.bookmarkDeleted : 0;
+    const fdAdded = typeof stats.folderAdded === 'number' ? stats.folderAdded : 0;
+    const fdDeleted = typeof stats.folderDeleted === 'number' ? stats.folderDeleted : 0;
+
+    const movedCount = typeof stats.movedCount === 'number' ? stats.movedCount : 0;
+    const modifiedCount = typeof stats.modifiedCount === 'number' ? stats.modifiedCount : 0;
+
+    const hasQuantityChange = bmAdded > 0 || bmDeleted > 0 || fdAdded > 0 || fdDeleted > 0 ||
+        (typeof stats.bookmarkDiff === 'number' && stats.bookmarkDiff !== 0) ||
+        (typeof stats.folderDiff === 'number' && stats.folderDiff !== 0);
+
+    const hasStructuralChange = movedCount > 0 || modifiedCount > 0 ||
+        stats.bookmarkMoved || stats.folderMoved || stats.bookmarkModified || stats.folderModified;
+
+    if (!hasQuantityChange && !hasStructuralChange) {
+        return '';
+    }
+
+    const joinDelta = (parts) => {
+        const sep = '<span style="display:inline-block;width:3px;"></span>/<span style="display:inline-block;width:3px;"></span>';
+        return parts.join(sep);
+    };
+
+    const buildDual = (added, deleted, labelZh, labelEn) => {
+        const parts = [];
+        if (added > 0) parts.push(`<span style="color:#4CAF50;font-weight:bold;">+${added}</span>`);
+        if (deleted > 0) parts.push(`<span style="color:#F44336;font-weight:bold;">-${deleted}</span>`);
+        if (parts.length === 0) return '';
+
+        const numbersHTML = joinDelta(parts);
+        return currentLang === 'en' ? `${numbersHTML} ${labelEn}` : `${numbersHTML} ${labelZh}`;
+    };
+
+    const quantityParts = [];
+    const bookmarkLabelZh = '书签';
+    const folderLabelZh = '文件夹';
+    const bookmarkLabelEn = 'BKM';
+    const folderLabelEn = 'FLD';
+
+    const bookmarkPart = buildDual(bmAdded, bmDeleted, bookmarkLabelZh, bookmarkLabelEn);
+    const folderPart = buildDual(fdAdded, fdDeleted, folderLabelZh, folderLabelEn);
+    if (bookmarkPart) quantityParts.push(bookmarkPart);
+    if (folderPart) quantityParts.push(folderPart);
+
+    const structuralParts = [];
+    if (movedCount > 0 || stats.bookmarkMoved || stats.folderMoved) {
+        const movedLabel = currentLang === 'en' ? 'Moved' : '移动';
+        const movedText = movedCount > 0
+            ? (currentLang === 'en'
+                ? `<span style="color:#2196F3;font-weight:bold;">${movedCount}</span> ${movedLabel}`
+                : `<span style="color:#2196F3;font-weight:bold;">${movedCount}</span> 个${movedLabel}`)
+            : movedLabel;
+        structuralParts.push(movedText);
+    }
+    if (modifiedCount > 0 || stats.bookmarkModified || stats.folderModified) {
+        const modifiedLabel = currentLang === 'en' ? 'Modified' : '修改';
+        const modifiedText = modifiedCount > 0
+            ? (currentLang === 'en'
+                ? `<span style="color:#FF9800;font-weight:bold;">${modifiedCount}</span> ${modifiedLabel}`
+                : `<span style="color:#FF9800;font-weight:bold;">${modifiedCount}</span> 个${modifiedLabel}`)
+            : modifiedLabel;
+        structuralParts.push(modifiedText);
+    }
+
+    const separator = currentLang === 'zh_CN' ? '，' : ', ';
+    let result = '';
+
+    if (quantityParts.length > 0) {
+        result += `(${quantityParts.join(separator)})`;
+        if (structuralParts.length > 0) {
+            result += '<br>';
+        }
+    }
+
+    if (structuralParts.length > 0) {
+        result += `(${structuralParts.join(currentLang === 'en' ? ' <span style="color:var(--text-tertiary);">|</span> ' : '、')})`;
+    }
+
+    return result;
+}
+
+/**
  * 显示操作状态消息。
  * @param {string} message - 消息内容。
  * @param {'success' | 'error' | 'warning'} type - 消息类型。
@@ -601,8 +695,14 @@ reminderSettingsResponse = { success: true, settings: { reminderEnabled: true, f
         }
 
         if (changeDescriptionElement) {
-            if (changeDescriptionParam) {
-                changeDescriptionElement.innerHTML = formatChangeDescription(changeDescriptionParam);
+            const statsBased = (backupResponse && backupResponse.success && backupResponse.stats)
+                ? formatChangeSummaryFromStats(backupResponse.stats)
+                : '';
+            const paramBased = changeDescriptionParam ? formatChangeDescription(changeDescriptionParam) : '';
+            const finalHtml = statsBased || paramBased;
+
+            if (finalHtml) {
+                changeDescriptionElement.innerHTML = finalHtml;
                 changeDescriptionElement.style.display = 'block';
             } else {
                 changeDescriptionElement.style.display = 'none';

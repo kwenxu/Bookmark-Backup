@@ -136,11 +136,13 @@ function resetOperationStatus() {
             folderModified: false,
             resetTime: new Date().toISOString()
         },
-        // 同时清除移动和修改的历史记录
+        // 同时清除移动、修改和新增的历史记录（书签Git风格：备份后重置基线）
         recentMovedIds: [],
-        recentModifiedIds: []
+        recentModifiedIds: [],
+        recentAddedIds: []
     });
 }
+
 
 // =================================================================================
 // Keyboard commands for opening history views (Alt/Option + 1~4)
@@ -179,8 +181,122 @@ if (browserAPI.commands && browserAPI.commands.onCommand) {
     });
 }
 
-// 初始化操作状态跟踪
+// 初始化操作状态跟踪 - 实现「书签Git」风格的变化检测
+// 核心原则：与上次备份进行对比，而不是累计操作次数
 function initializeOperationTracking() {
+
+    // 辅助函数：记录移动的节点（去重，同一ID只记录一次）
+    async function recordRecentMovedId(movedId, info) {
+        try {
+            const now = Date.now();
+            const data = await browserAPI.storage.local.get(['recentMovedIds']);
+            const list = Array.isArray(data.recentMovedIds) ? data.recentMovedIds : [];
+            // 过滤掉过期的记录
+            const filtered = list.filter(r => (now - (r.time || 0)) < RECENT_MOVED_TTL_MS);
+            // 去重：如果已存在该ID，更新而不是新增（书签Git风格：只记录最终位置）
+            const existingIndex = filtered.findIndex(r => r.id === movedId);
+            const newRecord = { id: movedId, time: now, parentId: info && info.parentId, oldParentId: info && info.oldParentId, index: info && info.index };
+            if (existingIndex >= 0) {
+                filtered[existingIndex] = newRecord; // 更新现有记录
+            } else {
+                filtered.push(newRecord); // 新增记录
+            }
+            await browserAPI.storage.local.set({ recentMovedIds: filtered });
+        } catch (e) {
+            // 忽略
+        }
+    }
+
+    // 辅助函数：记录修改的节点（去重，同一ID只记录一次）
+    async function recordRecentModifiedId(modifiedId, info) {
+        try {
+            const now = Date.now();
+            const data = await browserAPI.storage.local.get(['recentModifiedIds']);
+            const list = Array.isArray(data.recentModifiedIds) ? data.recentModifiedIds : [];
+            // 过滤掉过期的记录
+            const filtered = list.filter(r => (now - (r.time || 0)) < RECENT_MOVED_TTL_MS);
+            // 去重：如果已存在该ID，更新而不是新增
+            const existingIndex = filtered.findIndex(r => r.id === modifiedId);
+            const newRecord = { id: modifiedId, time: now, changeInfo: info };
+            if (existingIndex >= 0) {
+                filtered[existingIndex] = newRecord; // 更新现有记录
+            } else {
+                filtered.push(newRecord); // 新增记录
+            }
+            await browserAPI.storage.local.set({ recentModifiedIds: filtered });
+        } catch (e) {
+            // 忽略
+        }
+    }
+
+    // 辅助函数：记录新增的节点
+    async function recordRecentAddedId(addedId, info) {
+        try {
+            const now = Date.now();
+            const data = await browserAPI.storage.local.get(['recentAddedIds']);
+            const list = Array.isArray(data.recentAddedIds) ? data.recentAddedIds : [];
+            // 过滤掉过期的记录
+            const filtered = list.filter(r => (now - (r.time || 0)) < RECENT_MOVED_TTL_MS);
+            // 去重
+            const existingIndex = filtered.findIndex(r => r.id === addedId);
+            const newRecord = { id: addedId, time: now, ...info };
+            if (existingIndex >= 0) {
+                filtered[existingIndex] = newRecord;
+            } else {
+                filtered.push(newRecord);
+            }
+            await browserAPI.storage.local.set({ recentAddedIds: filtered });
+        } catch (e) {
+            // 忽略
+        }
+    }
+
+    // 辅助函数：从所有记录中移除已删除的节点（书签Git风格：删除后不再显示为"新增"或"移动"）
+    async function removeFromAllRecords(removedId) {
+        try {
+            const data = await browserAPI.storage.local.get(['recentMovedIds', 'recentModifiedIds', 'recentAddedIds']);
+            const movedList = Array.isArray(data.recentMovedIds) ? data.recentMovedIds : [];
+            const modifiedList = Array.isArray(data.recentModifiedIds) ? data.recentModifiedIds : [];
+            const addedList = Array.isArray(data.recentAddedIds) ? data.recentAddedIds : [];
+
+            const filteredMoved = movedList.filter(r => r.id !== removedId);
+            const filteredModified = modifiedList.filter(r => r.id !== removedId);
+            const filteredAdded = addedList.filter(r => r.id !== removedId);
+
+            await browserAPI.storage.local.set({
+                recentMovedIds: filteredMoved,
+                recentModifiedIds: filteredModified,
+                recentAddedIds: filteredAdded
+            });
+
+            console.log('[书签Git] 已从记录中移除删除的节点:', removedId);
+        } catch (e) {
+            console.warn('[书签Git] 移除删除节点失败:', e);
+        }
+    }
+
+    // 监听书签创建事件
+    browserAPI.bookmarks.onCreated.addListener((id, bookmark) => {
+        // 记录新增的节点
+        try {
+            recordRecentAddedId(id, {
+                title: bookmark.title,
+                url: bookmark.url,
+                parentId: bookmark.parentId,
+                index: bookmark.index,
+                isFolder: !bookmark.url
+            });
+        } catch (_) { }
+    });
+
+    // 监听书签删除事件
+    browserAPI.bookmarks.onRemoved.addListener((id, removeInfo) => {
+        // 从所有记录中移除该节点（书签Git风格）
+        try {
+            removeFromAllRecords(id);
+        } catch (_) { }
+    });
+
     // 监听书签移动事件
     browserAPI.bookmarks.onMoved.addListener((id, moveInfo) => {
         // 确定被移动的是书签还是文件夹
@@ -195,21 +311,6 @@ function initializeOperationTracking() {
                     folderMoved = true;
                 }
 
-                // 记录最近移动的节点到 storage（供前端读取做稳定标识）
-                async function recordRecentMovedId(movedId, info) {
-                    try {
-                        const now = Date.now();
-                        const data = await browserAPI.storage.local.get(['recentMovedIds']);
-                        const list = Array.isArray(data.recentMovedIds) ? data.recentMovedIds : [];
-                        const filtered = list.filter(r => (now - (r.time || 0)) < RECENT_MOVED_TTL_MS);
-                        filtered.push({ id: movedId, time: now, parentId: info && info.parentId, oldParentId: info && info.oldParentId, index: info && info.index });
-                        // 取消限制，记录所有历史移动
-                        await browserAPI.storage.local.set({ recentMovedIds: filtered });
-                    } catch (e) {
-                        // 忽略
-                    }
-                }
-
                 // 保存状态
                 browserAPI.storage.local.set({
                     lastSyncOperations: {
@@ -220,7 +321,7 @@ function initializeOperationTracking() {
                         lastUpdateTime: new Date().toISOString()
                     }
                 });
-                // 记录最近移动的节点，供前端稳定打标
+                // 记录最近移动的节点，供前端稳定打标（去重）
                 try {
                     recordRecentMovedId(id, { parentId: moveInfo.parentId, oldParentId: moveInfo.oldParentId, index: moveInfo.index });
                     // 立即广播本次移动，避免依赖后续分析刷新导致的首次后不再标蓝问题
@@ -231,13 +332,13 @@ function initializeOperationTracking() {
     });
 
     // 监听文件夹子项重排事件：
-    // - 某些“同父级排序/批量调整”场景可能只触发 onChildrenReordered（未必逐个触发 onMoved）
+    // - 某些"同父级排序/批量调整"场景可能只触发 onChildrenReordered（未必逐个触发 onMoved）
     // - 如果不记录为结构变化，角标不会变黄（用户会误以为没有变化）
     try {
         if (browserAPI.bookmarks.onChildrenReordered) {
             browserAPI.bookmarks.onChildrenReordered.addListener((parentId, reorderInfo) => {
                 try {
-                    // 重排本质上就是“结构变化（移动）”
+                    // 重排本质上就是"结构变化（移动）"
                     // 这里无法可靠区分被重排的是书签还是文件夹，因此同时置为 true，保证变化检测准确触发。
                     bookmarkMoved = true;
                     folderMoved = true;
@@ -283,21 +384,6 @@ function initializeOperationTracking() {
                     folderModified = true;
                 }
 
-                // 记录最近修改的节点到 storage（供前端读取做稳定标识和数量统计）
-                async function recordRecentModifiedId(modifiedId, info) {
-                    try {
-                        const now = Date.now();
-                        const data = await browserAPI.storage.local.get(['recentModifiedIds']);
-                        const list = Array.isArray(data.recentModifiedIds) ? data.recentModifiedIds : [];
-                        // 过滤掉过期的记录（与移动记录保持一致，无限期保留直到备份）
-                        const filtered = list.filter(r => (now - (r.time || 0)) < RECENT_MOVED_TTL_MS);
-                        filtered.push({ id: modifiedId, time: now, changeInfo: info });
-                        await browserAPI.storage.local.set({ recentModifiedIds: filtered });
-                    } catch (e) {
-                        // 忽略
-                    }
-                }
-
                 // 保存状态
                 browserAPI.storage.local.set({
                     lastSyncOperations: {
@@ -309,7 +395,7 @@ function initializeOperationTracking() {
                     }
                 });
 
-                // 记录最近修改的节点
+                // 记录最近修改的节点（去重）
                 try {
                     recordRecentModifiedId(id, changeInfo);
                 } catch (_) { }
@@ -317,6 +403,7 @@ function initializeOperationTracking() {
         });
     });
 }
+
 
 // 在初始化时设置角标
 async function initializeBadge() {
@@ -3147,12 +3234,31 @@ async function updateSyncStatus(direction, time, status = 'success', errorMessag
     console.log('[updateSyncStatus] 参数:', { direction, time, status, errorMessage, syncType, autoBackupReason });
 
     try {
-        const { syncHistory = [], lastBookmarkData = null, lastSyncOperations = {}, preferredLang = 'zh_CN' } = await browserAPI.storage.local.get([
+        const { syncHistory = [], lastBookmarkData = null, lastSyncOperations = {}, preferredLang = 'zh_CN', recentMovedIds = [], recentModifiedIds = [], recentAddedIds = [] } = await browserAPI.storage.local.get([
             'syncHistory',
             'lastBookmarkData',
             'lastSyncOperations',
-            'preferredLang'
+            'preferredLang',
+            'recentMovedIds',
+            'recentModifiedIds',
+            'recentAddedIds'
         ]);
+
+        // 计算移动、修改、新增的数量（优先使用“与上次备份对比”的净变化；否则回退到 recentXxxIds）
+        let movedCount = Array.isArray(recentMovedIds) ? recentMovedIds.length : 0;
+        let modifiedCount = Array.isArray(recentModifiedIds) ? recentModifiedIds.length : 0;
+        let addedCount = Array.isArray(recentAddedIds) ? recentAddedIds.length : 0;
+        let deletedCount = 0;
+        let bookmarkAdded = 0;
+        let bookmarkDeleted = 0;
+        let folderAdded = 0;
+        let folderDeleted = 0;
+        let movedBookmarkCount = 0;
+        let movedFolderCount = 0;
+        let modifiedBookmarkCount = 0;
+        let modifiedFolderCount = 0;
+        let explicitMovedIdListForRecord = [];
+
 
         // 计算书签操作统计
         let bookmarkStats = null;
@@ -3180,6 +3286,105 @@ async function updateSyncStatus(direction, time, status = 'success', errorMessag
                 folderDiff = 0;
             }
 
+            // 计算净变化（与上次备份的 bookmarkTree 对比）：
+            // - 支持“+/-同时存在但净差为0”的显示
+            // - 支持“移动/修改后又改回去”自动归零
+            try {
+                if (lastBookmarkData && lastBookmarkData.bookmarkTree) {
+                    const explicitMovedIdSet = new Set(
+                        (Array.isArray(recentMovedIds) ? recentMovedIds : [])
+                            .map(r => r && r.id)
+                            .filter(Boolean)
+                    );
+                    const diffSummary = computeBookmarkGitDiffSummary(lastBookmarkData.bookmarkTree, localBookmarks, {
+                        explicitMovedIds: explicitMovedIdSet
+                    });
+
+                    bookmarkAdded = diffSummary.bookmarkAdded;
+                    bookmarkDeleted = diffSummary.bookmarkDeleted;
+                    folderAdded = diffSummary.folderAdded;
+                    folderDeleted = diffSummary.folderDeleted;
+                    movedBookmarkCount = diffSummary.movedBookmarkCount;
+                    movedFolderCount = diffSummary.movedFolderCount;
+                    modifiedBookmarkCount = diffSummary.modifiedBookmarkCount;
+                    modifiedFolderCount = diffSummary.modifiedFolderCount;
+
+                    movedCount = diffSummary.movedCount;
+                    modifiedCount = diffSummary.modifiedCount;
+                    addedCount = diffSummary.bookmarkAdded + diffSummary.folderAdded;
+                    deletedCount = diffSummary.bookmarkDeleted + diffSummary.folderDeleted;
+
+                    // 保存“显式移动ID”（用于备份历史复现同级移动蓝标：只标记被拖动对象）
+                    // 说明：
+                    // - recentMovedIds 可能包含“移动后又移回去”的操作，这里按净变化过滤
+                    // - 仅保存数量受控的 ID 列表，避免记录过大
+                    try {
+                        if (explicitMovedIdSet.size > 0) {
+                            const oldIndex = buildTreeIndexForDiff(lastBookmarkData.bookmarkTree);
+                            const newIndex = buildTreeIndexForDiff(localBookmarks);
+
+                            const commonPosCache = new Map(); // parentId -> { oldPosById, newPosById }
+                            const getCommonPositions = (parentId) => {
+                                if (commonPosCache.has(parentId)) return commonPosCache.get(parentId);
+
+                                const oldList = oldIndex.byParent.get(parentId) || [];
+                                const newList = newIndex.byParent.get(parentId) || [];
+                                const newIdSet = new Set(newList.map(x => x.id));
+
+                                const oldPosById = new Map();
+                                let oldPos = 0;
+                                for (const item of oldList) {
+                                    if (newIdSet.has(item.id)) oldPosById.set(item.id, oldPos++);
+                                }
+
+                                const newPosById = new Map();
+                                let newPos = 0;
+                                for (const item of newList) {
+                                    if (oldPosById.has(item.id)) newPosById.set(item.id, newPos++);
+                                }
+
+                                const entry = { oldPosById, newPosById };
+                                commonPosCache.set(parentId, entry);
+                                return entry;
+                            };
+
+                            for (const rawId of explicitMovedIdSet) {
+                                const id = String(rawId);
+                                const o = oldIndex.nodes.get(id);
+                                const n = newIndex.nodes.get(id);
+                                if (!o || !n) continue;
+                                if (!o.parentId || !n.parentId) continue;
+
+                                // 跨级移动：直接记录
+                                if (o.parentId !== n.parentId) {
+                                    explicitMovedIdListForRecord.push(id);
+                                    continue;
+                                }
+
+                                // 同级移动：按 common ids 的相对位置判断（可抵消 add/delete 导致的 index 假象）
+                                const parentId = n.parentId;
+                                const { oldPosById, newPosById } = getCommonPositions(parentId);
+                                const oldPos = oldPosById.get(id);
+                                const newPos = newPosById.get(id);
+                                if (typeof oldPos === 'number' && typeof newPos === 'number' && oldPos !== newPos) {
+                                    explicitMovedIdListForRecord.push(id);
+                                }
+                            }
+
+                            explicitMovedIdListForRecord = Array.from(new Set(explicitMovedIdListForRecord));
+                            const MAX_EXPLICIT_MOVED_IDS = 2000;
+                            if (explicitMovedIdListForRecord.length > MAX_EXPLICIT_MOVED_IDS) {
+                                explicitMovedIdListForRecord = explicitMovedIdListForRecord.slice(0, MAX_EXPLICIT_MOVED_IDS);
+                            }
+                        }
+                    } catch (e) {
+                        console.warn('[updateSyncStatus] 计算显式移动ID列表失败:', e);
+                    }
+                }
+            } catch (e) {
+                console.warn('[updateSyncStatus] 计算净变化失败，回退到 recentXxxIds:', e);
+            }
+
             bookmarkStats = {
                 currentBookmarkCount: currentBookmarkCount,
                 currentFolderCount: currentFolderCount,
@@ -3187,11 +3392,34 @@ async function updateSyncStatus(direction, time, status = 'success', errorMessag
                 prevFolderCount: prevFolderCount,
                 bookmarkDiff: bookmarkDiff,
                 folderDiff: folderDiff,
-                bookmarkMoved: lastSyncOperations.bookmarkMoved || bookmarkMoved,
-                folderMoved: lastSyncOperations.folderMoved || folderMoved,
-                bookmarkModified: lastSyncOperations.bookmarkModified || bookmarkModified,
-                folderModified: lastSyncOperations.folderModified || folderModified
+                // 保存净变化：新增/删除（用于“+/-同时存在但净差为0”的情况）
+                bookmarkAdded: bookmarkAdded,
+                bookmarkDeleted: bookmarkDeleted,
+                folderAdded: folderAdded,
+                folderDeleted: folderDeleted,
+                // 备份历史复现用：显式移动 ID（只用于 UI 打标，不参与计数计算）
+                explicitMovedIds: explicitMovedIdListForRecord,
+
+                // 结构变化（优先用净变化；回退到操作标记）
+                bookmarkMoved: (movedBookmarkCount > 0) || lastSyncOperations.bookmarkMoved || bookmarkMoved,
+                folderMoved: (movedFolderCount > 0) || lastSyncOperations.folderMoved || folderMoved,
+                bookmarkModified: (modifiedBookmarkCount > 0) || lastSyncOperations.bookmarkModified || bookmarkModified,
+                folderModified: (modifiedFolderCount > 0) || lastSyncOperations.folderModified || folderModified,
+
+                // 保存移动、修改、新增、删除的具体数量（书签Git风格）
+                movedCount: movedCount,
+                modifiedCount: modifiedCount,
+                addedCount: addedCount,
+                deletedCount: deletedCount,
+
+                // 细分统计（可用于UI显示更精确的数字）
+                movedBookmarkCount: movedBookmarkCount,
+                movedFolderCount: movedFolderCount,
+                modifiedBookmarkCount: modifiedBookmarkCount,
+                modifiedFolderCount: modifiedFolderCount
             };
+
+
 
             // 生成当前书签指纹（使用已经声明的 localBookmarks 变量）
             const currentPrints = generateFingerprints(localBookmarks);
@@ -3522,12 +3750,20 @@ async function setBadge() { // 不再接收 status 参数
 
                 if (stats && stats.success && stats.stats) {
                     // 任何数量或结构的变化都算作变化
-                    if (stats.stats.bookmarkDiff !== 0 ||
+                    if (
+                        stats.stats.bookmarkDiff !== 0 ||
                         stats.stats.folderDiff !== 0 ||
+                        (typeof stats.stats.bookmarkAdded === 'number' && stats.stats.bookmarkAdded > 0) ||
+                        (typeof stats.stats.bookmarkDeleted === 'number' && stats.stats.bookmarkDeleted > 0) ||
+                        (typeof stats.stats.folderAdded === 'number' && stats.stats.folderAdded > 0) ||
+                        (typeof stats.stats.folderDeleted === 'number' && stats.stats.folderDeleted > 0) ||
+                        (typeof stats.stats.movedCount === 'number' && stats.stats.movedCount > 0) ||
+                        (typeof stats.stats.modifiedCount === 'number' && stats.stats.modifiedCount > 0) ||
                         stats.stats.bookmarkMoved ||
                         stats.stats.bookmarkModified ||
                         stats.stats.folderMoved ||
-                        stats.stats.folderModified) {
+                        stats.stats.folderModified
+                    ) {
                         hasChanges = true;
                     }
                 }
@@ -3598,7 +3834,20 @@ async function setBadge() { // 不再接收 status 参数
 
             if (stats) {
                 // 任何数量或结构的变化都算作变化
-                if (stats.stats.bookmarkDiff !== 0 || stats.stats.folderDiff !== 0 || stats.stats.bookmarkMoved || stats.stats.bookmarkModified || stats.stats.folderMoved || stats.stats.folderModified) {
+                if (
+                    stats.stats.bookmarkDiff !== 0 ||
+                    stats.stats.folderDiff !== 0 ||
+                    (typeof stats.stats.bookmarkAdded === 'number' && stats.stats.bookmarkAdded > 0) ||
+                    (typeof stats.stats.bookmarkDeleted === 'number' && stats.stats.bookmarkDeleted > 0) ||
+                    (typeof stats.stats.folderAdded === 'number' && stats.stats.folderAdded > 0) ||
+                    (typeof stats.stats.folderDeleted === 'number' && stats.stats.folderDeleted > 0) ||
+                    (typeof stats.stats.movedCount === 'number' && stats.stats.movedCount > 0) ||
+                    (typeof stats.stats.modifiedCount === 'number' && stats.stats.modifiedCount > 0) ||
+                    stats.stats.bookmarkMoved ||
+                    stats.stats.bookmarkModified ||
+                    stats.stats.folderMoved ||
+                    stats.stats.folderModified
+                ) {
                     hasChanges = true;
                 }
             }
@@ -3695,12 +3944,20 @@ async function updateBadgeAfterSync(success) {
         // 备份成功，检查是否有变化
         try {
             const stats = await getBackupStatsInternal(); // 获取最新统计信息
-            const hasChanges = (stats.stats.bookmarkDiff !== 0) ||
+            const hasChanges = (
+                (stats.stats.bookmarkDiff !== 0) ||
                 (stats.stats.folderDiff !== 0) ||
+                (typeof stats.stats.bookmarkAdded === 'number' && stats.stats.bookmarkAdded > 0) ||
+                (typeof stats.stats.bookmarkDeleted === 'number' && stats.stats.bookmarkDeleted > 0) ||
+                (typeof stats.stats.folderAdded === 'number' && stats.stats.folderAdded > 0) ||
+                (typeof stats.stats.folderDeleted === 'number' && stats.stats.folderDeleted > 0) ||
+                (typeof stats.stats.movedCount === 'number' && stats.stats.movedCount > 0) ||
+                (typeof stats.stats.modifiedCount === 'number' && stats.stats.modifiedCount > 0) ||
                 stats.stats.bookmarkMoved ||
                 stats.stats.folderMoved ||
                 stats.stats.bookmarkModified ||
-                stats.stats.folderModified;
+                stats.stats.folderModified
+            );
 
             if (hasChanges) {
                 // 有变化，执行闪烁
@@ -3720,75 +3977,606 @@ async function updateBadgeAfterSync(success) {
 
 // --- Internal Helpers for Stats (Original Versions) ---
 /**
+ * 为书签树构建索引，便于做“与上次备份对比”的净变化计算（Git 风格：看最终状态，而不是累计操作次数）。
+ * @param {Array} tree - chrome.bookmarks.getTree() 的返回值。
+ * @returns {{nodes: Map<string, {id: string, title: string, url?: string, parentId?: string|null, index?: number|null}>, byParent: Map<string, Array<{id: string, index: number|null}>>}}
+ */
+function buildTreeIndexForDiff(tree) {
+    const nodes = new Map();
+    const byParent = new Map();
+
+    const traverse = (node, parentId = null) => {
+        if (!node || !node.id) return;
+
+        const record = {
+            id: node.id,
+            title: node.title || '',
+            url: node.url,
+            parentId: node.parentId || parentId,
+            index: typeof node.index === 'number' ? node.index : null
+        };
+
+        nodes.set(record.id, record);
+
+        if (record.parentId) {
+            if (!byParent.has(record.parentId)) byParent.set(record.parentId, []);
+            byParent.get(record.parentId).push({ id: record.id, index: record.index });
+        }
+
+        if (Array.isArray(node.children)) {
+            for (const child of node.children) {
+                traverse(child, node.id);
+            }
+        }
+    };
+
+    if (Array.isArray(tree) && tree[0]) {
+        traverse(tree[0], null);
+    }
+
+    // 保证同父级列表按 index 排序（稳定对比）
+    for (const list of byParent.values()) {
+        list.sort((a, b) => {
+            const ai = typeof a.index === 'number' ? a.index : 0;
+            const bi = typeof b.index === 'number' ? b.index : 0;
+            return ai - bi;
+        });
+    }
+
+    return { nodes, byParent };
+}
+
+/**
+ * 计算“与上次备份对比”的净变化摘要（支持 +/-, 以及移动/修改回滚后归零）。
+ * 说明：
+ * - moved：跨级移动（parentId变化）+ 同级排序移动（index变化，但父级无 add/delete 干扰）
+ * - modified：title/url 变化（文件夹仅看 title）
+ * - added/deleted：按节点 id 直接对比（能识别“加减相同数量但内容不同”的情况）
+ *
+ * @param {Array|null} oldTree - 上次备份保存的书签树（lastBookmarkData.bookmarkTree）。
+ * @param {Array|null} newTree - 当前书签树（chrome.bookmarks.getTree())。
+ * @param {{explicitMovedIds?: Set<string>}} [options]
+ * @returns {{
+ *   bookmarkAdded:number, bookmarkDeleted:number, folderAdded:number, folderDeleted:number,
+ *   movedCount:number, modifiedCount:number,
+ *   movedBookmarkCount:number, movedFolderCount:number, modifiedBookmarkCount:number, modifiedFolderCount:number,
+ *   bookmarkMoved:boolean, folderMoved:boolean, bookmarkModified:boolean, folderModified:boolean
+ * }}
+ */
+function computeBookmarkGitDiffSummary(oldTree, newTree, options = {}) {
+    const explicitMovedIds = options.explicitMovedIds instanceof Set ? options.explicitMovedIds : null;
+
+    const summary = {
+        bookmarkAdded: 0,
+        bookmarkDeleted: 0,
+        folderAdded: 0,
+        folderDeleted: 0,
+        movedCount: 0,
+        modifiedCount: 0,
+        movedBookmarkCount: 0,
+        movedFolderCount: 0,
+        modifiedBookmarkCount: 0,
+        modifiedFolderCount: 0,
+        bookmarkMoved: false,
+        folderMoved: false,
+        bookmarkModified: false,
+        folderModified: false
+    };
+
+    if (!Array.isArray(oldTree) || !Array.isArray(newTree) || !oldTree[0] || !newTree[0]) {
+        return summary;
+    }
+
+    const oldIndex = buildTreeIndexForDiff(oldTree);
+    const newIndex = buildTreeIndexForDiff(newTree);
+
+    const addedIds = new Set();
+    const deletedIds = new Set();
+    const modifiedIds = new Set();
+    const movedIds = new Set();
+    const crossParentMovedIds = new Set();
+
+    // 新增 / 修改 / 跨级移动
+    for (const [id, n] of newIndex.nodes.entries()) {
+        const o = oldIndex.nodes.get(id);
+        if (!o) {
+            addedIds.add(id);
+            continue;
+        }
+
+        const isFolder = !n.url;
+        const isModified = isFolder ? (o.title !== n.title) : (o.title !== n.title || o.url !== n.url);
+        if (isModified) modifiedIds.add(id);
+
+        const crossMove = o.parentId !== n.parentId;
+        if (crossMove) {
+            movedIds.add(id);
+            crossParentMovedIds.add(id);
+        }
+    }
+
+    // 删除
+    for (const id of oldIndex.nodes.keys()) {
+        if (!newIndex.nodes.has(id)) deletedIds.add(id);
+    }
+
+    // 建立“子节点集合发生变化”的父级集合（避免因为 add/delete / 跨级移动导致的被动位移被误判为 moved）
+    const parentsWithChildSetChange = new Set();
+    for (const id of addedIds) {
+        const node = newIndex.nodes.get(id);
+        if (node && node.parentId) parentsWithChildSetChange.add(node.parentId);
+    }
+    for (const id of deletedIds) {
+        const node = oldIndex.nodes.get(id);
+        if (node && node.parentId) parentsWithChildSetChange.add(node.parentId);
+    }
+    for (const id of crossParentMovedIds) {
+        const o = oldIndex.nodes.get(id);
+        const n = newIndex.nodes.get(id);
+        if (o && o.parentId) parentsWithChildSetChange.add(o.parentId);
+        if (n && n.parentId) parentsWithChildSetChange.add(n.parentId);
+    }
+
+    const hasExplicitMovedInfo = explicitMovedIds && explicitMovedIds.size > 0;
+
+    // 同级排序移动（重要：只标记“被拖动”的对象；不标记同级被动位移）
+    // - 有显式 moved IDs（onMoved）时：仅按显式集合打标（即使该父级 children 集合也发生了变化）
+    // - 无显式 moved IDs 时：仅在该父级 children 集合未变化时，用 LIS 推导最小 moved 集合
+    if (hasExplicitMovedInfo) {
+        const commonPosCache = new Map(); // parentId -> { oldPosById, newPosById }（只针对 common ids）
+        const getCommonPositions = (parentId) => {
+            if (commonPosCache.has(parentId)) return commonPosCache.get(parentId);
+
+            const oldList = oldIndex.byParent.get(parentId) || [];
+            const newList = newIndex.byParent.get(parentId) || [];
+            const newIdSet = new Set(newList.map(x => x.id));
+
+            const oldPosById = new Map();
+            let oldPos = 0;
+            for (const item of oldList) {
+                if (newIdSet.has(item.id)) {
+                    oldPosById.set(item.id, oldPos++);
+                }
+            }
+
+            const newPosById = new Map();
+            let newPos = 0;
+            for (const item of newList) {
+                if (oldPosById.has(item.id)) {
+                    newPosById.set(item.id, newPos++);
+                }
+            }
+
+            const entry = { oldPosById, newPosById };
+            commonPosCache.set(parentId, entry);
+            return entry;
+        };
+
+        for (const id of explicitMovedIds) {
+            const o = oldIndex.nodes.get(id);
+            const n = newIndex.nodes.get(id);
+            if (!o || !n) continue; // added/deleted: Git 口径不算 moved
+            if (!o.parentId || !n.parentId) continue;
+            if (o.parentId !== n.parentId) continue; // 跨级 moved 已在上方加入 movedIds
+
+            const parentId = n.parentId;
+            const { oldPosById, newPosById } = getCommonPositions(parentId);
+            const oldPos = oldPosById.get(id);
+            const newPos = newPosById.get(id);
+            if (typeof oldPos === 'number' && typeof newPos === 'number' && oldPos !== newPos) {
+                movedIds.add(id);
+            }
+        }
+    } else {
+        for (const [parentId, newList] of newIndex.byParent.entries()) {
+            if (parentsWithChildSetChange.has(parentId)) continue;
+
+            const oldList = oldIndex.byParent.get(parentId) || [];
+            if (oldList.length === 0 || newList.length === 0) continue;
+            if (oldList.length !== newList.length) continue;
+
+            // 快速判等（完全一致则跳过）
+            let sameOrder = true;
+            for (let i = 0; i < oldList.length; i++) {
+                if (oldList[i].id !== newList[i].id) {
+                    sameOrder = false;
+                    break;
+                }
+            }
+            if (sameOrder) continue;
+
+            const oldPosById = new Map();
+            for (let i = 0; i < oldList.length; i++) {
+                oldPosById.set(oldList[i].id, i);
+            }
+
+            const seq = [];
+            for (const item of newList) {
+                const oldPos = oldPosById.get(item.id);
+                if (typeof oldPos !== 'number') {
+                    seq.length = 0;
+                    break;
+                }
+                seq.push({ id: item.id, oldPos });
+            }
+            if (seq.length === 0) continue;
+
+            // 计算 LIS（基于 oldPos，得到最大稳定子序列），其余视为 moved
+            const tails = [];
+            const tailsIdx = [];
+            const prevIdx = new Array(seq.length).fill(-1);
+
+            for (let i = 0; i < seq.length; i++) {
+                const v = seq[i].oldPos;
+                let lo = 0;
+                let hi = tails.length;
+                while (lo < hi) {
+                    const mid = (lo + hi) >> 1;
+                    if (tails[mid] < v) lo = mid + 1;
+                    else hi = mid;
+                }
+                const pos = lo;
+                if (pos > 0) prevIdx[i] = tailsIdx[pos - 1];
+                if (pos === tails.length) {
+                    tails.push(v);
+                    tailsIdx.push(i);
+                } else {
+                    tails[pos] = v;
+                    tailsIdx[pos] = i;
+                }
+            }
+
+            const stableIds = new Set();
+            let k = tailsIdx.length ? tailsIdx[tailsIdx.length - 1] : -1;
+            while (k >= 0) {
+                stableIds.add(seq[k].id);
+                k = prevIdx[k];
+            }
+
+            for (const item of seq) {
+                if (!stableIds.has(item.id)) {
+                    movedIds.add(item.id);
+                }
+            }
+        }
+    }
+
+    // Git 风格：新增的东西不算“移动/修改”，只算新增
+    for (const id of addedIds) {
+        movedIds.delete(id);
+        modifiedIds.delete(id);
+    }
+
+    const isBookmark = (node) => !!(node && node.url);
+
+    for (const id of addedIds) {
+        const node = newIndex.nodes.get(id);
+        if (isBookmark(node)) summary.bookmarkAdded++;
+        else summary.folderAdded++;
+    }
+
+    for (const id of deletedIds) {
+        const node = oldIndex.nodes.get(id);
+        if (isBookmark(node)) summary.bookmarkDeleted++;
+        else summary.folderDeleted++;
+    }
+
+    for (const id of movedIds) {
+        const node = newIndex.nodes.get(id);
+        if (isBookmark(node)) summary.movedBookmarkCount++;
+        else summary.movedFolderCount++;
+    }
+
+    for (const id of modifiedIds) {
+        const node = newIndex.nodes.get(id);
+        if (isBookmark(node)) summary.modifiedBookmarkCount++;
+        else summary.modifiedFolderCount++;
+    }
+
+    summary.movedCount = summary.movedBookmarkCount + summary.movedFolderCount;
+    summary.modifiedCount = summary.modifiedBookmarkCount + summary.modifiedFolderCount;
+    summary.bookmarkMoved = summary.movedBookmarkCount > 0;
+    summary.folderMoved = summary.movedFolderCount > 0;
+    summary.bookmarkModified = summary.modifiedBookmarkCount > 0;
+    summary.folderModified = summary.modifiedFolderCount > 0;
+
+    return summary;
+}
+
+/**
  * 分析当前书签状态与上次备份的差异，返回详细的变更对象。
  * 这是变化检测的核心函数。
  * @returns {Promise<object>}
  */
 async function analyzeBookmarkChanges() {
-    const { lastBookmarkData, lastSyncOperations } = await browserAPI.storage.local.get(['lastBookmarkData', 'lastSyncOperations']);
+    const {
+        lastBookmarkData,
+        recentMovedIds = [],
+        recentModifiedIds = [],
+        recentAddedIds = []
+    } = await browserAPI.storage.local.get([
+        'lastBookmarkData',
+        'recentMovedIds',
+        'recentModifiedIds',
+        'recentAddedIds'
+    ]);
 
     console.log('[analyzeBookmarkChanges] lastBookmarkData:', lastBookmarkData);
-    console.log('[analyzeBookmarkChanges] lastSyncOperations:', lastSyncOperations);
 
-    // 获取当前书签和文件夹总数
-    const currentCounts = await getCurrentBookmarkCountsInternal();
-    console.log('[analyzeBookmarkChanges] currentCounts:', currentCounts);
+    // 获取当前书签树（一次 getTree 同时用于计数与净变化计算）
+    const localBookmarks = await new Promise(resolve => browserAPI.bookmarks.getTree(resolve));
 
-    // 获取上次备份时的书签和文件夹总数
+    const currentBookmarkCount = countAllBookmarks(localBookmarks);
+    const currentFolderCount = countAllFolders(localBookmarks);
+
     const prevBookmarkCount = lastBookmarkData?.bookmarkCount ?? 0;
     const prevFolderCount = lastBookmarkData?.folderCount ?? 0;
-    console.log('[analyzeBookmarkChanges] prevBookmarkCount:', prevBookmarkCount, 'prevFolderCount:', prevFolderCount);
 
-    let bookmarkDiff = currentCounts.bookmarks - prevBookmarkCount;
-    let folderDiff = currentCounts.folders - prevFolderCount;
-    console.log('[analyzeBookmarkChanges] 计算差异 bookmarkDiff:', bookmarkDiff, 'folderDiff:', folderDiff);
+    let bookmarkDiff = currentBookmarkCount - prevBookmarkCount;
+    let folderDiff = currentFolderCount - prevFolderCount;
 
-    let bookmarkStructureChanged = lastSyncOperations?.bookmarkMoved || lastSyncOperations?.bookmarkModified || false;
-    let folderStructureChanged = lastSyncOperations?.folderMoved || lastSyncOperations?.folderModified || false;
-
-    // 只有在上次备份数据和指纹都存在时，才进行深度比较
-    if (lastBookmarkData && lastBookmarkData.bookmarkPrints) {
-        const localBookmarks = await new Promise(resolve => browserAPI.bookmarks.getTree(resolve));
-        const currentPrints = generateFingerprints(localBookmarks);
-
-        const oldBPs = new Set(lastBookmarkData.bookmarkPrints);
-        const newBPs = new Set(currentPrints.bookmarks);
-        if (!areSetsEqual(oldBPs, newBPs)) {
-            bookmarkStructureChanged = true;
-        }
-
-        const oldFPs = new Set(lastBookmarkData.folderPrints);
-        const newFPs = new Set(currentPrints.folders);
-        if (!areSetsEqual(oldFPs, newFPs)) {
-            folderStructureChanged = true;
-        }
-    }
-
-    // 如果没有上次备份数据，说明是首次运行或还未进行过备份
+    // 如果没有上次备份数据，说明是首次运行或还未进行过备份：
     // 此时不应该显示为"有变化"，而应该等待用户进行第一次备份
     if (!lastBookmarkData) {
         bookmarkDiff = 0;
         folderDiff = 0;
-        bookmarkStructureChanged = false;
-        folderStructureChanged = false;
+        return {
+            bookmarkCount: currentBookmarkCount,
+            folderCount: currentFolderCount,
+            prevBookmarkCount: prevBookmarkCount,
+            prevFolderCount: prevFolderCount,
+            bookmarkDiff: bookmarkDiff,
+            folderDiff: folderDiff,
+            bookmarkAdded: 0,
+            bookmarkDeleted: 0,
+            folderAdded: 0,
+            folderDeleted: 0,
+            movedCount: 0,
+            modifiedCount: 0,
+            movedBookmarkCount: 0,
+            movedFolderCount: 0,
+            modifiedBookmarkCount: 0,
+            modifiedFolderCount: 0,
+            bookmarkMoved: false,
+            folderMoved: false,
+            bookmarkModified: false,
+            folderModified: false
+        };
     }
 
-    // 只有真正的修改操作才算"修改"，增加/删除只体现在数量变化中
-    // 不应该把所有结构变化都归类为"修改"
-    const finalBookmarkModified = lastSyncOperations?.bookmarkModified || false;
-    const finalFolderModified = lastSyncOperations?.folderModified || false;
+    // 优先使用“与上次备份对比”的净变化（Git 风格）
+    let diffSummary = null;
+    try {
+        if (lastBookmarkData && lastBookmarkData.bookmarkTree) {
+            const explicitMovedIdSet = new Set(
+                (Array.isArray(recentMovedIds) ? recentMovedIds : [])
+                    .map(r => r && r.id)
+                    .filter(Boolean)
+            );
+            diffSummary = computeBookmarkGitDiffSummary(lastBookmarkData.bookmarkTree, localBookmarks, {
+                explicitMovedIds: explicitMovedIdSet
+            });
+
+            // 归并/清理 recentXxxIds：回滚后不再显示；新增的也不算移动/修改
+            try {
+                const oldTree = lastBookmarkData.bookmarkTree;
+                if (Array.isArray(oldTree) && oldTree[0]) {
+                    const oldIndex = buildTreeIndexForDiff(oldTree);
+                    const newIndex = buildTreeIndexForDiff(localBookmarks);
+
+                    const addedIds = new Set();
+                    const deletedIds = new Set();
+                    for (const id of newIndex.nodes.keys()) {
+                        if (!oldIndex.nodes.has(id)) addedIds.add(id);
+                    }
+                    for (const id of oldIndex.nodes.keys()) {
+                        if (!newIndex.nodes.has(id)) deletedIds.add(id);
+                    }
+
+                    const movedIds = new Set();
+                    const modifiedIds = new Set();
+                    const crossParentMovedIds = new Set();
+
+                    // 跨级移动/修改
+                    for (const [id, n] of newIndex.nodes.entries()) {
+                        const o = oldIndex.nodes.get(id);
+                        if (!o) continue;
+                        const isFolder = !n.url;
+                        const isModified = isFolder ? (o.title !== n.title) : (o.title !== n.title || o.url !== n.url);
+                        if (isModified) modifiedIds.add(id);
+                        if (o.parentId !== n.parentId) {
+                            movedIds.add(id);
+                            crossParentMovedIds.add(id);
+                        }
+                    }
+
+                    // 建立“子节点集合发生变化”的父级集合（避免因为 add/delete / 跨级移动导致的被动位移被误判为 moved）
+                    const parentsWithChildSetChange = new Set();
+                    for (const id of addedIds) {
+                        const node = newIndex.nodes.get(id);
+                        if (node && node.parentId) parentsWithChildSetChange.add(node.parentId);
+                    }
+                    for (const id of deletedIds) {
+                        const node = oldIndex.nodes.get(id);
+                        if (node && node.parentId) parentsWithChildSetChange.add(node.parentId);
+                    }
+                    for (const id of crossParentMovedIds) {
+                        const o = oldIndex.nodes.get(id);
+                        const n = newIndex.nodes.get(id);
+                        if (o && o.parentId) parentsWithChildSetChange.add(o.parentId);
+                        if (n && n.parentId) parentsWithChildSetChange.add(n.parentId);
+                    }
+
+                    const hasExplicitMovedInfo = explicitMovedIdSet instanceof Set && explicitMovedIdSet.size > 0;
+
+                    // 同级排序移动（按 computeBookmarkGitDiffSummary 的口径）
+                    if (hasExplicitMovedInfo) {
+                        const commonPosCache = new Map(); // parentId -> { oldPosById, newPosById }
+                        const getCommonPositions = (parentId) => {
+                            if (commonPosCache.has(parentId)) return commonPosCache.get(parentId);
+
+                            const oldList = oldIndex.byParent.get(parentId) || [];
+                            const newList = newIndex.byParent.get(parentId) || [];
+                            const newIdSet = new Set(newList.map(x => x.id));
+
+                            const oldPosById = new Map();
+                            let oldPos = 0;
+                            for (const item of oldList) {
+                                if (newIdSet.has(item.id)) oldPosById.set(item.id, oldPos++);
+                            }
+
+                            const newPosById = new Map();
+                            let newPos = 0;
+                            for (const item of newList) {
+                                if (oldPosById.has(item.id)) newPosById.set(item.id, newPos++);
+                            }
+
+                            const entry = { oldPosById, newPosById };
+                            commonPosCache.set(parentId, entry);
+                            return entry;
+                        };
+
+                        for (const id of explicitMovedIdSet) {
+                            const o = oldIndex.nodes.get(id);
+                            const n = newIndex.nodes.get(id);
+                            if (!o || !n) continue;
+                            if (!o.parentId || !n.parentId) continue;
+                            if (o.parentId !== n.parentId) continue; // 跨级 moved 已加入 movedIds
+
+                            const parentId = n.parentId;
+                            const { oldPosById, newPosById } = getCommonPositions(parentId);
+                            const oldPos = oldPosById.get(id);
+                            const newPos = newPosById.get(id);
+                            if (typeof oldPos === 'number' && typeof newPos === 'number' && oldPos !== newPos) {
+                                movedIds.add(id);
+                            }
+                        }
+                    } else {
+                        for (const [parentId, newList] of newIndex.byParent.entries()) {
+                            if (parentsWithChildSetChange.has(parentId)) continue;
+                            const oldList = oldIndex.byParent.get(parentId) || [];
+                            if (oldList.length === 0 || newList.length === 0) continue;
+                            if (oldList.length !== newList.length) continue;
+
+                            // 快速判等
+                            let sameOrder = true;
+                            for (let i = 0; i < oldList.length; i++) {
+                                if (oldList[i].id !== newList[i].id) {
+                                    sameOrder = false;
+                                    break;
+                                }
+                            }
+                            if (sameOrder) continue;
+
+                            const oldPosById = new Map();
+                            for (let i = 0; i < oldList.length; i++) oldPosById.set(oldList[i].id, i);
+
+                            const seq = [];
+                            for (const item of newList) {
+                                const oldPos = oldPosById.get(item.id);
+                                if (typeof oldPos !== 'number') {
+                                    seq.length = 0;
+                                    break;
+                                }
+                                seq.push({ id: item.id, oldPos });
+                            }
+                            if (seq.length === 0) continue;
+
+                            const tails = [];
+                            const tailsIdx = [];
+                            const prevIdx = new Array(seq.length).fill(-1);
+
+                            for (let i = 0; i < seq.length; i++) {
+                                const v = seq[i].oldPos;
+                                let lo = 0;
+                                let hi = tails.length;
+                                while (lo < hi) {
+                                    const mid = (lo + hi) >> 1;
+                                    if (tails[mid] < v) lo = mid + 1;
+                                    else hi = mid;
+                                }
+                                const pos = lo;
+                                if (pos > 0) prevIdx[i] = tailsIdx[pos - 1];
+                                if (pos === tails.length) {
+                                    tails.push(v);
+                                    tailsIdx.push(i);
+                                } else {
+                                    tails[pos] = v;
+                                    tailsIdx[pos] = i;
+                                }
+                            }
+
+                            const stableIds = new Set();
+                            let k = tailsIdx.length ? tailsIdx[tailsIdx.length - 1] : -1;
+                            while (k >= 0) {
+                                stableIds.add(seq[k].id);
+                                k = prevIdx[k];
+                            }
+
+                            for (const item of seq) {
+                                if (!stableIds.has(item.id)) {
+                                    movedIds.add(item.id);
+                                }
+                            }
+                        }
+                    }
+
+                    // 新增的不算移动/修改
+                    for (const id of addedIds) {
+                        movedIds.delete(id);
+                        modifiedIds.delete(id);
+                    }
+
+                    // 只做过滤，不做“补全”（避免误判/膨胀）
+                    const normalizedRecentMoved = (Array.isArray(recentMovedIds) ? recentMovedIds : []).filter(r => r && movedIds.has(r.id));
+                    const normalizedRecentModified = (Array.isArray(recentModifiedIds) ? recentModifiedIds : []).filter(r => r && modifiedIds.has(r.id));
+                    const normalizedRecentAdded = (Array.isArray(recentAddedIds) ? recentAddedIds : []).filter(r => r && addedIds.has(r.id));
+
+                    // 仅在数量发生变化时写入，减少 storage 写放大
+                    if (normalizedRecentMoved.length !== (Array.isArray(recentMovedIds) ? recentMovedIds.length : 0) ||
+                        normalizedRecentModified.length !== (Array.isArray(recentModifiedIds) ? recentModifiedIds.length : 0) ||
+                        normalizedRecentAdded.length !== (Array.isArray(recentAddedIds) ? recentAddedIds.length : 0)) {
+                        await browserAPI.storage.local.set({
+                            recentMovedIds: normalizedRecentMoved,
+                            recentModifiedIds: normalizedRecentModified,
+                            recentAddedIds: normalizedRecentAdded
+                        });
+                    }
+                }
+            } catch (_) { }
+        }
+    } catch (e) {
+        console.warn('[analyzeBookmarkChanges] 净变化计算失败，回退到旧逻辑:', e);
+    }
+
+    if (!diffSummary) {
+        // 回退：至少保证不崩溃（数量差异仍可用）
+        diffSummary = {
+            bookmarkAdded: bookmarkDiff > 0 ? bookmarkDiff : 0,
+            bookmarkDeleted: bookmarkDiff < 0 ? Math.abs(bookmarkDiff) : 0,
+            folderAdded: folderDiff > 0 ? folderDiff : 0,
+            folderDeleted: folderDiff < 0 ? Math.abs(folderDiff) : 0,
+            movedCount: 0,
+            modifiedCount: 0,
+            movedBookmarkCount: 0,
+            movedFolderCount: 0,
+            modifiedBookmarkCount: 0,
+            modifiedFolderCount: 0,
+            bookmarkMoved: false,
+            folderMoved: false,
+            bookmarkModified: false,
+            folderModified: false
+        };
+    }
 
     return {
-        bookmarkCount: currentCounts.bookmarks,
-        folderCount: currentCounts.folders,
+        bookmarkCount: currentBookmarkCount,
+        folderCount: currentFolderCount,
         prevBookmarkCount: prevBookmarkCount,
         prevFolderCount: prevFolderCount,
         bookmarkDiff: bookmarkDiff,
         folderDiff: folderDiff,
-        bookmarkMoved: lastSyncOperations?.bookmarkMoved || false,
-        folderMoved: lastSyncOperations?.folderMoved || false,
-        bookmarkModified: finalBookmarkModified,
-        folderModified: finalFolderModified
+        ...diffSummary
     };
 }
 
@@ -3828,10 +4616,16 @@ async function checkBookmarkChangesForAutoBackup() {
 
         const { preferredLang = 'zh_CN' } = await browserAPI.storage.local.get(['preferredLang']);
 
-        // 检查是否有任何变化
+        // 检查是否有任何变化（支持“+/-同时存在但净差为0”的场景）
         const hasChanges = (
             stats.stats.bookmarkDiff !== 0 ||
             stats.stats.folderDiff !== 0 ||
+            (typeof stats.stats.bookmarkAdded === 'number' && stats.stats.bookmarkAdded > 0) ||
+            (typeof stats.stats.bookmarkDeleted === 'number' && stats.stats.bookmarkDeleted > 0) ||
+            (typeof stats.stats.folderAdded === 'number' && stats.stats.folderAdded > 0) ||
+            (typeof stats.stats.folderDeleted === 'number' && stats.stats.folderDeleted > 0) ||
+            (typeof stats.stats.movedCount === 'number' && stats.stats.movedCount > 0) ||
+            (typeof stats.stats.modifiedCount === 'number' && stats.stats.modifiedCount > 0) ||
             stats.stats.bookmarkMoved ||
             stats.stats.bookmarkModified ||
             stats.stats.folderMoved ||
@@ -3842,17 +4636,50 @@ async function checkBookmarkChangesForAutoBackup() {
         let changeDescription = '';
         if (hasChanges) {
             const changes = [];
-            if (stats.stats.bookmarkDiff !== 0) {
+            // 数量变化：优先用新增/删除分开显示；否则回退到净差
+            const bmAdded = typeof stats.stats.bookmarkAdded === 'number' ? stats.stats.bookmarkAdded : 0;
+            const bmDeleted = typeof stats.stats.bookmarkDeleted === 'number' ? stats.stats.bookmarkDeleted : 0;
+            const fdAdded = typeof stats.stats.folderAdded === 'number' ? stats.stats.folderAdded : 0;
+            const fdDeleted = typeof stats.stats.folderDeleted === 'number' ? stats.stats.folderDeleted : 0;
+
+            if (bmAdded > 0) {
+                changes.push(`+${bmAdded} ${preferredLang === 'zh_CN' ? '书签' : 'bookmarks'}`);
+            }
+            if (bmDeleted > 0) {
+                changes.push(`-${bmDeleted} ${preferredLang === 'zh_CN' ? '书签' : 'bookmarks'}`);
+            }
+            if (fdAdded > 0) {
+                changes.push(`+${fdAdded} ${preferredLang === 'zh_CN' ? '文件夹' : 'folders'}`);
+            }
+            if (fdDeleted > 0) {
+                changes.push(`-${fdDeleted} ${preferredLang === 'zh_CN' ? '文件夹' : 'folders'}`);
+            }
+
+            // 回退：如果没有新增/删除数据，再使用净差
+            if (bmAdded === 0 && bmDeleted === 0 && stats.stats.bookmarkDiff !== 0) {
                 changes.push(`${stats.stats.bookmarkDiff > 0 ? '+' : ''}${stats.stats.bookmarkDiff} ${preferredLang === 'zh_CN' ? '书签' : 'bookmarks'}`);
             }
-            if (stats.stats.folderDiff !== 0) {
+            if (fdAdded === 0 && fdDeleted === 0 && stats.stats.folderDiff !== 0) {
                 changes.push(`${stats.stats.folderDiff > 0 ? '+' : ''}${stats.stats.folderDiff} ${preferredLang === 'zh_CN' ? '文件夹' : 'folders'}`);
             }
-            if (stats.stats.bookmarkMoved || stats.stats.folderMoved) {
-                changes.push(preferredLang === 'zh_CN' ? '移动' : 'moved');
+
+            // 结构变化：优先用计数；否则回退到布尔标记
+            const movedCount = typeof stats.stats.movedCount === 'number' ? stats.stats.movedCount : 0;
+            const modifiedCount = typeof stats.stats.modifiedCount === 'number' ? stats.stats.modifiedCount : 0;
+
+            if (movedCount > 0 || stats.stats.bookmarkMoved || stats.stats.folderMoved) {
+                if (movedCount > 0) {
+                    changes.push(preferredLang === 'zh_CN' ? `${movedCount}个移动` : `${movedCount} moved`);
+                } else {
+                    changes.push(preferredLang === 'zh_CN' ? '移动' : 'moved');
+                }
             }
-            if (stats.stats.bookmarkModified || stats.stats.folderModified) {
-                changes.push(preferredLang === 'zh_CN' ? '修改' : 'modified');
+            if (modifiedCount > 0 || stats.stats.bookmarkModified || stats.stats.folderModified) {
+                if (modifiedCount > 0) {
+                    changes.push(preferredLang === 'zh_CN' ? `${modifiedCount}个修改` : `${modifiedCount} modified`);
+                } else {
+                    changes.push(preferredLang === 'zh_CN' ? '修改' : 'modified');
+                }
             }
             changeDescription = `(${changes.join('，')})`;
         }
@@ -4003,6 +4830,14 @@ async function updateAndCacheAnalysis() {
             bookmarkCount: analysis.bookmarkCount,
             folderCount: analysis.folderCount
         });
+
+        // 将摘要快照持久化到 storage（供提醒系统/页面在缓存未命中时兜底使用）
+        try {
+            await browserAPI.storage.local.set({
+                cachedBookmarkAnalysisSnapshot: analysis,
+                cachedBookmarkAnalysisSnapshotTime: Date.now()
+            });
+        } catch (_) { }
 
         // 分析完成后，向前端发送消息（analysis + 最近移动兜底）
         browserAPI.runtime.sendMessage({ action: "analysisUpdated", ...analysis }).catch(() => {

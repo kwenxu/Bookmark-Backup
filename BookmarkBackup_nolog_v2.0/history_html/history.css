@@ -2796,6 +2796,16 @@ a.tree-label.tree-bookmark-link:hover {
     display: none !important;
 }
 
+/* 简略模式：展开“移动文件夹”时，允许显示其全部子树（即使子节点无变化） */
+.changes-tree-preview-inline.compact-mode .tree-node.compact-reveal-all .tree-node {
+    display: block !important;
+}
+
+/* 覆盖简略模式的“无变化节点隐藏规则”（需要更高特异性，避免被 :not(:has(...)) + !important 压制） */
+.changes-tree-preview-inline.compact-mode .tree-node.compact-reveal-all .tree-node:not(:has(.tree-change-added)):not(:has(.tree-change-deleted)):not(:has(.tree-change-modified)):not(:has(.tree-change-moved)):not(:has(.tree-change-mixed)) {
+    display: block !important;
+}
+
 /* 详略切换按钮激活状态 */
 .diff-edit-btn.icon-only.active {
     background: rgba(33, 150, 243, 0.25);

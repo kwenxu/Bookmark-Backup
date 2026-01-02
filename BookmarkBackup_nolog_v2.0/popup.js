@@ -69,7 +69,7 @@ function formatTime(date) {
 
         return `${year}/${month}/${day} ${hours}:${minutes}:${seconds}`;
     } catch (error) {
-return '未知时间';
+        return '未知时间';
     }
 }
 
@@ -82,11 +82,11 @@ return '未知时间';
 function showStatus(message, type = 'info', duration = 3000) {
     const statusDiv = document.getElementById('status');
     if (!statusDiv) {
-return;
+        return;
     }
 
     // 获取当前语言
-    chrome.storage.local.get(['preferredLang'], function(result) {
+    chrome.storage.local.get(['preferredLang'], function (result) {
         const currentLang = result.preferredLang || 'zh_CN';
 
         // 消息映射表 - 将中文消息映射到消息键
@@ -242,7 +242,7 @@ return;
 
                 // 3. 检查模式匹配
                 if (!matched) {
-                    for (const {pattern, getKey} of patternMap) {
+                    for (const { pattern, getKey } of patternMap) {
                         if (pattern.test(message)) {
                             const key = getKey(message);
                             // 回退到内存中的字符串映射
@@ -284,7 +284,7 @@ function countBookmarks(text) {
             folders: foldersMatch ? parseInt(foldersMatch[1]) : 0
         };
     } catch (error) {
-return { bookmarks: 0, folders: 0 };
+        return { bookmarks: 0, folders: 0 };
     }
 }
 
@@ -295,10 +295,10 @@ return { bookmarks: 0, folders: 0 };
  */
 function toggleConfigPanel(contentElement, headerElement) {
     if (!contentElement || !headerElement) {
-return;
+        return;
     }
 
-// 切换内容显示状态
+    // 切换内容显示状态
     const isHidden = contentElement.style.display === 'none' || contentElement.style.display === '';
     contentElement.style.display = isHidden ? 'block' : 'none';
 
@@ -495,17 +495,17 @@ function adjustLocalConfigLabels() {
  */
 function connectToBackground() {
     try {
-        backgroundPort = chrome.runtime.connect({name: "popupConnect"});
-isBackgroundConnected = true;
+        backgroundPort = chrome.runtime.connect({ name: "popupConnect" });
+        isBackgroundConnected = true;
         connectionAttempts = 0;
 
         backgroundPort.onDisconnect.addListener(() => {
             isBackgroundConnected = false;
 
             // 只在控制台记录信息，不显示警告，避免用户担心
-// 检查是否需要重新连接（只有在页面还处于活动状态且尝试次数未超过上限时）
+            // 检查是否需要重新连接（只有在页面还处于活动状态且尝试次数未超过上限时）
             if (document.visibilityState === 'visible' && connectionAttempts < MAX_CONNECTION_ATTEMPTS) {
-connectionAttempts++;
+                connectionAttempts++;
 
                 // 延迟重连，避免过于频繁
                 setTimeout(connectToBackground, 1000);
@@ -514,11 +514,11 @@ connectionAttempts++;
 
         // (可选) 监听来自后台的消息
         backgroundPort.onMessage.addListener((msg) => {
-// 收到消息表示连接正常
+            // 收到消息表示连接正常
             isBackgroundConnected = true;
         });
     } catch (error) {
-isBackgroundConnected = false;
+        isBackgroundConnected = false;
 
         // 自动重试连接，但限制尝试次数
         if (connectionAttempts < MAX_CONNECTION_ATTEMPTS) {
@@ -536,7 +536,7 @@ isBackgroundConnected = false;
 function sendMessageToBackground(message, callback) {
     // 检查连接状态
     if (!isBackgroundConnected || !backgroundPort) {
-// 重新连接
+        // 重新连接
         connectToBackground();
 
         // 延迟发送消息，等待连接建立
@@ -546,20 +546,20 @@ function sendMessageToBackground(message, callback) {
                     backgroundPort.postMessage(message);
                     if (callback) callback(true);
                 } catch (error) {
-if (callback) callback(false, error);
+                    if (callback) callback(false, error);
                 }
             } else {
-// 使用chrome.runtime.sendMessage作为备选方案
+                // 使用chrome.runtime.sendMessage作为备选方案
                 try {
                     chrome.runtime.sendMessage(message, (response) => {
                         if (chrome.runtime.lastError) {
-if (callback) callback(false, chrome.runtime.lastError);
+                            if (callback) callback(false, chrome.runtime.lastError);
                         } else {
-if (callback) callback(true, response);
+                            if (callback) callback(true, response);
                         }
                     });
                 } catch (fallbackError) {
-if (callback) callback(false, fallbackError);
+                    if (callback) callback(false, fallbackError);
                 }
             }
         }, 300);
@@ -569,7 +569,7 @@ if (callback) callback(false, fallbackError);
             backgroundPort.postMessage(message);
             if (callback) callback(true);
         } catch (error) {
-// 连接可能已断开但状态未更新，尝试重新连接
+            // 连接可能已断开但状态未更新，尝试重新连接
             isBackgroundConnected = false;
             connectToBackground();
 
@@ -577,13 +577,13 @@ if (callback) callback(false, fallbackError);
             try {
                 chrome.runtime.sendMessage(message, (response) => {
                     if (chrome.runtime.lastError) {
-if (callback) callback(false, chrome.runtime.lastError);
+                        if (callback) callback(false, chrome.runtime.lastError);
                     } else {
-if (callback) callback(true, response);
+                        if (callback) callback(true, response);
                     }
                 });
             } catch (fallbackError) {
-if (callback) callback(false, fallbackError);
+                if (callback) callback(false, fallbackError);
             }
         }
     }
@@ -606,26 +606,26 @@ async function initializeWebDAVConfigSection() {
     const webDAVToggle = document.getElementById('webDAVToggle');
 
     if (!configHeader || !configContent) {
-return;
+        return;
     }
 
-// 设置初始状态
+    // 设置初始状态
     configContent.style.display = 'none';
 
     // 绑定点击事件
-    configHeader.addEventListener('click', function(event) {
+    configHeader.addEventListener('click', function (event) {
         // 检查点击是否在开关元素上，如果是则不切换面板
         if (event.target.id === 'webDAVToggle' || event.target.closest('.switch')) {
-return;
+            return;
         }
 
-toggleConfigPanel(configContent, configHeader);
+        toggleConfigPanel(configContent, configHeader);
     });
 
     // 添加保存WebDAV配置的处理
     const saveButton = document.getElementById('saveKey');
     if (saveButton) {
-        saveButton.addEventListener('click', function() {
+        saveButton.addEventListener('click', function () {
             const serverAddress = document.getElementById('serverAddress').value.trim();
             const username = document.getElementById('username').value.trim();
             const password = document.getElementById('password').value;
@@ -641,7 +641,7 @@ toggleConfigPanel(configContent, configHeader);
                 username: username,
                 password: password,
                 webDAVEnabled: true  // 自动打开开关
-            }, function() {
+            }, function () {
                 // 保存成功后切换开关为打开状态
                 const webDAVToggle = document.getElementById('webDAVToggle');
                 if (webDAVToggle) {
@@ -688,7 +688,7 @@ function initializeLocalConfigSection() {
 
     // 设置点击事件，展开/折叠配置面板
     if (localConfigHeader) {
-        localConfigHeader.addEventListener('click', function() {
+        localConfigHeader.addEventListener('click', function () {
             if (localConfigContent.style.display === 'none' || localConfigContent.style.display === '') {
                 localConfigContent.style.display = 'block';
                 setTimeout(() => {
@@ -704,7 +704,7 @@ function initializeLocalConfigSection() {
     }
 
     // 初始化，加载默认下载路径状态
-    chrome.storage.local.get(['defaultDownloadEnabled', 'hideDownloadShelf', 'customDownloadPath'], function(result) {
+    chrome.storage.local.get(['defaultDownloadEnabled', 'hideDownloadShelf', 'customDownloadPath'], function (result) {
         // 默认值设置
         let defaultDownloadEnabled = result.defaultDownloadEnabled === true;
         let hideDownloadShelf = result.hideDownloadShelf !== false; // 默认启用
@@ -730,7 +730,7 @@ function initializeLocalConfigSection() {
 
     // 处理默认下载位置开关
     if (defaultDownloadToggle) {
-        defaultDownloadToggle.addEventListener('change', function() {
+        defaultDownloadToggle.addEventListener('change', function () {
             const enabled = this.checked;
 
             // 如果开启了开关且面板是展开状态，先立即折叠面板
@@ -747,7 +747,7 @@ function initializeLocalConfigSection() {
             chrome.storage.local.set({
                 defaultDownloadEnabled: enabled,
                 localBackupEnabled: enabled // 兼容旧版本
-            }, function() {
+            }, function () {
                 showStatus(`本地备份已${enabled ? '启用' : '禁用'}`, 'success');
                 updateLocalStatusDot();
             });
@@ -756,11 +756,11 @@ function initializeLocalConfigSection() {
 
     // 处理隐藏下载栏开关
     if (hideDownloadShelfToggle) {
-        hideDownloadShelfToggle.addEventListener('change', function() {
+        hideDownloadShelfToggle.addEventListener('change', function () {
             const enabled = this.checked;
 
             // 保存配置
-            chrome.storage.local.set({ hideDownloadShelf: enabled }, function() {
+            chrome.storage.local.set({ hideDownloadShelf: enabled }, function () {
                 showStatus(`备份时${enabled ? '将' : '不再'}隐藏下载栏`, 'info');
             });
         });
@@ -771,21 +771,21 @@ function initializeLocalConfigSection() {
         // 更改按钮样式
         calibratePathBtn.style.backgroundColor = "#007AFF"; // 修改为蓝色
         // 保持原有事件处理
-        calibratePathBtn.addEventListener('click', function() {
+        calibratePathBtn.addEventListener('click', function () {
             calibrateDownloadPath();
         });
     }
 
     // 打开Chrome下载设置
     if (openDownloadSettings) {
-        openDownloadSettings.addEventListener('click', function(e) {
+        openDownloadSettings.addEventListener('click', function (e) {
             e.preventDefault();
 
             // 方法1：直接使用runtime.openOptionsPage 打开浏览器内部页面
-            chrome.runtime.sendMessage({ action: "openDownloadSettings" }, function(response) {
+            chrome.runtime.sendMessage({ action: "openDownloadSettings" }, function (response) {
                 if (response && response.success) {
-} else {
-// 方法2：提供备用方案，让用户手动访问
+                } else {
+                    // 方法2：提供备用方案，让用户手动访问
                     const msg = '请手动复制并在新标签页打开: chrome://settings/downloads';
                     showStatus(msg, 'info', 5000);
 
@@ -795,7 +795,7 @@ function initializeLocalConfigSection() {
                             showStatus('设置地址已复制到剪贴板', 'success');
                         });
                     } catch (clipboardError) {
-}
+                    }
                 }
             });
         });
@@ -808,9 +808,9 @@ function initializeLocalConfigSection() {
 function initializeWebDAVToggle() {
     const webDAVToggle = document.getElementById('webDAVToggle');
     if (webDAVToggle) {
-        webDAVToggle.addEventListener('change', function() {
+        webDAVToggle.addEventListener('change', function () {
             const enabled = webDAVToggle.checked;
-            chrome.storage.local.set({ webDAVEnabled: enabled }, function() { // 使用 chrome.storage
+            chrome.storage.local.set({ webDAVEnabled: enabled }, function () { // 使用 chrome.storage
                 showStatus(`WebDAV备份已${enabled ? '启用' : '禁用'}`, 'success');
             });
         });
@@ -826,17 +826,17 @@ let isDialogOpen = false;
 function initScrollToTopButton() {
     const 일반scrollToTopBtn = document.getElementById('scrollToTopBtn'); // 通用回到顶部按钮
     const scrollToTopFloating = document.getElementById('scrollToTopFloating'); // 新的悬浮向上箭头按钮
-    
+
     // 统一的按钮显示控制变量
     let generalScrollBtn = null;
     let hasUserScrolled = false;
-    
+
     // 监听用户第一次滚动操作
     const markUserHasScrolled = () => {
         hasUserScrolled = true;
         window.removeEventListener('scroll', markUserHasScrolled);
     };
-    
+
     window.addEventListener('scroll', markUserHasScrolled, { passive: true, once: true });
 
     // 处理通用回到顶部按钮
@@ -846,14 +846,14 @@ function initScrollToTopButton() {
         일반scrollToTopBtn.parentNode.replaceChild(newGeneralScrollBtn, 일반scrollToTopBtn);
         generalScrollBtn = newGeneralScrollBtn;
 
-        newGeneralScrollBtn.addEventListener('click', function() {
+        newGeneralScrollBtn.addEventListener('click', function () {
             window.scrollTo(0, 0);
             this.style.transform = 'scale(0.9)';
             setTimeout(() => {
                 this.style.transform = 'scale(1)';
             }, 150);
         });
-        
+
         // 初始隐藏
         generalScrollBtn.style.display = 'none';
     }
@@ -861,33 +861,33 @@ function initScrollToTopButton() {
     // 新的右下角悬浮向上箭头按钮
     if (scrollToTopFloating) {
         // 点击返回页面顶部
-        scrollToTopFloating.addEventListener('click', function() {
+        scrollToTopFloating.addEventListener('click', function () {
             window.scrollTo({ top: 0, behavior: 'smooth' });
             this.style.transform = 'translateX(-50%) scale(0.95)';
-            setTimeout(() => { 
-                this.style.transform = 'translateX(-50%) scale(1)'; 
+            setTimeout(() => {
+                this.style.transform = 'translateX(-50%) scale(1)';
             }, 200);
         });
 
         // 鼠标悬停效果
-        scrollToTopFloating.addEventListener('mouseenter', function() {
+        scrollToTopFloating.addEventListener('mouseenter', function () {
             this.style.transform = 'translateX(-50%) scale(1.05)';
             this.style.background = 'rgba(0, 0, 0, 0.25)';
             this.style.borderColor = 'rgba(255, 255, 255, 0.3)';
             this.style.boxShadow = '0 4px 12px rgba(0, 0, 0, 0.2)';
         });
-        
-        scrollToTopFloating.addEventListener('mouseleave', function() {
+
+        scrollToTopFloating.addEventListener('mouseleave', function () {
             this.style.transform = 'translateX(-50%) scale(1)';
             this.style.background = 'rgba(0, 0, 0, 0.15)';
             this.style.borderColor = 'rgba(255, 255, 255, 0.2)';
             this.style.boxShadow = '0 2px 8px rgba(0, 0, 0, 0.1)';
         });
-        
+
         // 初始隐藏
         scrollToTopFloating.style.display = 'none';
     }
-    
+
     // 统一的显示控制逻辑 - 基于「备份检查记录」区域的下边缘
     const updateButtonsVisibility = () => {
         // 如果有对话框打开，不显示按钮
@@ -896,14 +896,14 @@ function initScrollToTopButton() {
             if (generalScrollBtn) generalScrollBtn.style.display = 'none';
             return;
         }
-        
+
         // 如果用户还未进行过滚动操作，不显示按钮
         if (!hasUserScrolled) {
             if (scrollToTopFloating) scrollToTopFloating.style.display = 'none';
             if (generalScrollBtn) generalScrollBtn.style.display = 'none';
             return;
         }
-        
+
         // 查找备份检查记录区域
         const syncHistoryElement = document.querySelector('.sync-history');
         if (!syncHistoryElement) {
@@ -912,15 +912,15 @@ function initScrollToTopButton() {
             if (generalScrollBtn) generalScrollBtn.style.display = 'none';
             return;
         }
-        
+
         // 使用getBoundingClientRect检测备份检查记录区域的位置
         const rect = syncHistoryElement.getBoundingClientRect();
         const windowHeight = window.innerHeight || document.documentElement.clientHeight || 0;
-        
+
         // 仅当「备份检查记录」区域的最下边缘进入视野时才显示按钮
         // rect.bottom > 0 && rect.bottom <= windowHeight 表示下边缘在视口内
         const shouldShow = rect.bottom > 0 && rect.bottom <= windowHeight;
-        
+
         // 统一控制两个按钮的显示/隐藏
         if (scrollToTopFloating) {
             scrollToTopFloating.style.display = shouldShow ? 'flex' : 'none';
@@ -947,7 +947,7 @@ function initializeOpenSourceInfo() {
     const openSourceTooltip = document.getElementById('openSourceTooltip');
 
     if (!openSourceInfoBtn || !openSourceInfoDialog || !closeOpenSourceDialog) {
-return;
+        return;
     }
 
     // 点击开源信息按钮显示对话框
@@ -997,7 +997,7 @@ async function loadAndDisplayWebDAVConfig() {
     const configStatus = document.getElementById('configStatus');
 
     if (!serverAddressInput || !usernameInput || !passwordInput || !webDAVToggle || !configStatus) {
-return;
+        return;
     }
 
     try {
@@ -1010,7 +1010,7 @@ return;
             });
         });
 
-if (data.serverAddress) {
+        if (data.serverAddress) {
             serverAddressInput.value = data.serverAddress;
         }
         if (data.username) {
@@ -1038,7 +1038,7 @@ if (data.serverAddress) {
         }
 
     } catch (error) {
-// 确保UI处于未配置状态
+        // 确保UI处于未配置状态
         serverAddressInput.value = '';
         usernameInput.value = '';
         passwordInput.value = '';
@@ -1064,7 +1064,7 @@ async function loadWebDAVToggleStatus() {
             webDAVToggle.checked = config.webDAVEnabled === true;
         }
     } catch (error) {
-}
+    }
 }
 
 /**
@@ -1080,7 +1080,7 @@ function updateDownloadPathDisplay() {
     downloadPathDisplay.style.color = "#666";
 
     // 获取浏览器默认下载路径
-    chrome.runtime.sendMessage({ action: "getDownloadPath" }, function(response) {
+    chrome.runtime.sendMessage({ action: "getDownloadPath" }, function (response) {
         if (response && response.path) {
             // 显示估计的路径
             downloadPathDisplay.textContent = response.path;
@@ -1102,7 +1102,7 @@ function updateLocalStatusDot() {
     // 从storage中获取状态和路径
     chrome.storage.local.get([ // 使用 chrome.storage
         'defaultDownloadEnabled'
-    ], function(result) {
+    ], function (result) {
         const defaultDownloadEnabled = result.defaultDownloadEnabled === true;
 
         // 只有当defaultDownloadEnabled为true时才显示绿点，否则显示红点
@@ -1285,31 +1285,31 @@ function updateSyncHistory(passedLang) { // Added passedLang parameter
             reversedHistory.forEach((record, index) => {
                 const historyItem = document.createElement('div');
                 historyItem.className = 'history-item';
-                
+
                 const time = new Date(record.time);
-                
+
                 // 检查日期是否变化（年月日）
                 const currentDateStr = `${time.getFullYear()}-${time.getMonth() + 1}-${time.getDate()}`;
                 const previousDateObj = previousDate ? new Date(previousDate) : null;
                 const previousDateStr = previousDateObj ? `${previousDateObj.getFullYear()}-${previousDateObj.getMonth() + 1}-${previousDateObj.getDate()}` : null;
-                
+
                 // 如果日期变化且不是第一条记录，为上一个条目添加日期分界线
                 if (previousDateStr && currentDateStr !== previousDateStr && lastHistoryItem) {
                     // 使用统一的蓝色
                     const dividerColor = '#007AFF'; // 蓝色
                     const textColor = '#007AFF';    // 蓝色文字
-                    
+
                     // 为上一个条目添加底部边框作为分界线
                     lastHistoryItem.style.borderBottom = `1px solid ${dividerColor}`;
                     lastHistoryItem.style.position = 'relative';
                     lastHistoryItem.style.marginBottom = '15px'; // 添加底部间距
-                    
+
                     // 创建日期标签 - 椭圆形状
                     const dateLabel = document.createElement('div');
-                    
+
                     // 现在只有两栏，日期标签放在两栏之间的中间位置
                     const leftPosition = '50%';
-                    
+
                     dateLabel.style.cssText = `
                         position: absolute;
                         bottom: -12px;
@@ -1323,21 +1323,21 @@ function updateSyncHistory(passedLang) { // Added passedLang parameter
                         border-radius: 12px;
                         z-index: 10;
                     `;
-                    
+
                     // 格式化日期显示
-                    const formattedDate = currentLang === 'en' ? 
+                    const formattedDate = currentLang === 'en' ?
                         `${previousDateObj.getFullYear()}-${(previousDateObj.getMonth() + 1).toString().padStart(2, '0')}-${previousDateObj.getDate().toString().padStart(2, '0')}` :
                         `${previousDateObj.getFullYear()}年${previousDateObj.getMonth() + 1}月${previousDateObj.getDate()}日`;
                     dateLabel.textContent = formattedDate;
-                    
+
                     // 添加日期标签到上一个条目
                     lastHistoryItem.appendChild(dateLabel);
                 }
-                
+
                 // 更新前一条记录的时间和元素引用，用于下次比较
                 previousDate = record.time;
                 lastHistoryItem = historyItem;
-                
+
                 let statusHTML = '';
                 let statusClass = '';
 
@@ -1412,12 +1412,12 @@ function updateSyncHistory(passedLang) { // Added passedLang parameter
                         folderDiff = currentFolderCount - prevFolderCountFromCache;
 
                         cacheWasUsedForListDisplay = true; // 标记缓存被用于列表显示
-}
+                    }
                     // 场景 2: 记录本身包含显式差异 (且未被缓存场景覆盖)
                     else if (recordHasAnyExplicitDiff) {
                         bookmarkDiff = explicitBookmarkDiffInRecord !== undefined ? explicitBookmarkDiffInRecord : 0;
                         folderDiff = explicitFolderDiffInRecord !== undefined ? explicitFolderDiffInRecord : 0;
-}
+                    }
                     // 场景 3: 无缓存覆盖、无记录内显式差异，则尝试与列表中的上一条(时间上更早的)记录比较
                     else if ((index + 1) < reversedHistory.length) { // index + 1 起向后寻找最近一条带统计的记录
                         let prevRecordInList = null;
@@ -1439,14 +1439,20 @@ function updateSyncHistory(passedLang) { // Added passedLang parameter
                     }
                     // 其他情况 (如列表中的第一条记录，但无缓存或不满足缓存条件，且自身无显式差异): diff 保持为 0
                     else {
-}
+                    }
 
                     // ... (原有的根据 bookmarkDiff, folderDiff, 结构变化等格式化 bookmarkStatsHTML 的逻辑)
                     const bookmarkMoved = record.bookmarkStats.bookmarkMoved || false;
                     const folderMoved = record.bookmarkStats.folderMoved || false;
                     const bookmarkModified = record.bookmarkStats.bookmarkModified || false;
                     const folderModified = record.bookmarkStats.folderModified || false;
-                    const hasAnyNumberColor = bookmarkDiff !== 0 || folderDiff !== 0;
+                    const recordBookmarkAdded = typeof record.bookmarkStats.bookmarkAdded === 'number' ? record.bookmarkStats.bookmarkAdded : 0;
+                    const recordBookmarkDeleted = typeof record.bookmarkStats.bookmarkDeleted === 'number' ? record.bookmarkStats.bookmarkDeleted : 0;
+                    const recordFolderAdded = typeof record.bookmarkStats.folderAdded === 'number' ? record.bookmarkStats.folderAdded : 0;
+                    const recordFolderDeleted = typeof record.bookmarkStats.folderDeleted === 'number' ? record.bookmarkStats.folderDeleted : 0;
+                    const hasAnyNumberColor = bookmarkDiff !== 0 || folderDiff !== 0 ||
+                        recordBookmarkAdded > 0 || recordBookmarkDeleted > 0 ||
+                        recordFolderAdded > 0 || recordFolderDeleted > 0;
                     const hasStructuralChange = bookmarkMoved || folderMoved || bookmarkModified || folderModified;
                     const hasAnyChange = hasAnyNumberColor || hasStructuralChange;
 
@@ -1461,96 +1467,130 @@ function updateSyncHistory(passedLang) { // Added passedLang parameter
                         formattedBookmarkCount = `${currentBookmarkCount} ${bookmarkText}`;
                         formattedFolderCount = `${currentFolderCount} ${folderText}`;
                     } else {
-                        // 中文：数字和单位之间没有空格
-                        formattedBookmarkCount = `${currentBookmarkCount}${bookmarkText}`;
-                        formattedFolderCount = `${currentFolderCount}${folderText}`;
+                        // 中文：数字和单位之间加空格
+                        formattedBookmarkCount = `${currentBookmarkCount} ${bookmarkText}`;
+                        formattedFolderCount = `${currentFolderCount} ${folderText}`;
                     }
 
-                    if (currentLang === 'zh_CN') {
-                        bookmarkStatsHTML = `<div style="font-weight: bold; display: flex; justify-content: center; align-items: baseline;">
-                                                <span style="padding-right: 2px;">${formattedBookmarkCount}</span>
-                                                <span>,</span>
-                                                <span style="padding-left: 2px;">${formattedFolderCount}</span>
-                                           </div>`;
-                    } else {
-                        bookmarkStatsHTML = `<div style="font-weight: bold; text-align: center;">${formattedBookmarkCount}<span style="display:inline-block; width:6px;"></span>,<span style="display:inline-block; width:6px;"></span>${formattedFolderCount}</div>`;
-                    }
+                    const buildStatBadge = () => {
+                        const parts = [];
+                        const firstLineParts = [];
+                        const secondLineParts = [];
+                        const sep = ' <span class="history-stat-sep">|</span> ';
+                        const bookmarkLabel = currentLang === 'en' ? 'BKM' : '书签';
+                        const folderLabel = currentLang === 'en' ? 'FLD' : '文件夹';
+
+                        let hasAdded = false;
+                        let hasDeleted = false;
+                        let hasMoved = false;
+                        let hasModified = false;
+
+                        const bookmarkAddedCount = (typeof record.bookmarkStats.bookmarkAdded === 'number')
+                            ? record.bookmarkStats.bookmarkAdded
+                            : (bookmarkDiff > 0 ? bookmarkDiff : 0);
+                        const bookmarkDeletedCount = (typeof record.bookmarkStats.bookmarkDeleted === 'number')
+                            ? record.bookmarkStats.bookmarkDeleted
+                            : (bookmarkDiff < 0 ? Math.abs(bookmarkDiff) : 0);
+                        const folderAddedCount = (typeof record.bookmarkStats.folderAdded === 'number')
+                            ? record.bookmarkStats.folderAdded
+                            : (folderDiff > 0 ? folderDiff : 0);
+                        const folderDeletedCount = (typeof record.bookmarkStats.folderDeleted === 'number')
+                            ? record.bookmarkStats.folderDeleted
+                            : (folderDiff < 0 ? Math.abs(folderDiff) : 0);
+
+                        if (bookmarkAddedCount > 0 || folderAddedCount > 0) {
+                            const addedParts = [];
+                            if (bookmarkAddedCount > 0) addedParts.push(`<span class="history-stat-label">${bookmarkLabel}</span> <span class="history-stat-color added">+${bookmarkAddedCount}</span>`);
+                            if (folderAddedCount > 0) addedParts.push(`<span class="history-stat-label">${folderLabel}</span> <span class="history-stat-color added">+${folderAddedCount}</span>`);
+                            if (addedParts.length > 0) {
+                                const line = addedParts.join(' ');
+                                parts.push(line);
+                                firstLineParts.push(line);
+                                hasAdded = true;
+                            }
+                        }
+
+                        if (bookmarkDeletedCount > 0 || folderDeletedCount > 0) {
+                            const deletedParts = [];
+                            if (bookmarkDeletedCount > 0) deletedParts.push(`<span class="history-stat-label">${bookmarkLabel}</span> <span class="history-stat-color deleted">-${bookmarkDeletedCount}</span>`);
+                            if (folderDeletedCount > 0) deletedParts.push(`<span class="history-stat-label">${folderLabel}</span> <span class="history-stat-color deleted">-${folderDeletedCount}</span>`);
+                            if (deletedParts.length > 0) {
+                                const line = deletedParts.join(' ');
+                                parts.push(line);
+                                firstLineParts.push(line);
+                                hasDeleted = true;
+                            }
+                        }
+
+                        // 优先使用保存的 movedCount（与当前变化视图一致的计算方式）
+                        let movedTotal = 0;
+                        if (typeof record.bookmarkStats.movedCount === 'number' && record.bookmarkStats.movedCount > 0) {
+                            movedTotal = record.bookmarkStats.movedCount;
+                        } else {
+                            // 兼容旧数据：从 bookmarkMoved 和 folderMoved 计算
+                            const bookmarkMovedCount = typeof record.bookmarkStats.bookmarkMoved === 'number'
+                                ? record.bookmarkStats.bookmarkMoved
+                                : (record.bookmarkStats.bookmarkMoved ? 1 : 0);
+                            const folderMovedCount = typeof record.bookmarkStats.folderMoved === 'number'
+                                ? record.bookmarkStats.folderMoved
+                                : (record.bookmarkStats.folderMoved ? 1 : 0);
+                            movedTotal = bookmarkMovedCount + folderMovedCount;
+                        }
+                        if (movedTotal > 0) {
+                            const movedLabel = currentLang === 'en' ? 'Moved' : '移动';
+                            const line = `<span class="history-stat-label">${movedLabel}</span> <span class="history-stat-color moved">${movedTotal}</span>`;
+                            parts.push(line);
+                            secondLineParts.push(line);
+                            hasMoved = true;
+                        }
+
+                        // 优先使用保存的 modifiedCount（与当前变化视图一致的计算方式）
+                        let modifiedTotal = 0;
+                        if (typeof record.bookmarkStats.modifiedCount === 'number' && record.bookmarkStats.modifiedCount > 0) {
+                            modifiedTotal = record.bookmarkStats.modifiedCount;
+                        } else {
+                            // 兼容旧数据：从 bookmarkModified 和 folderModified 计算
+                            const bookmarkModifiedCount = typeof record.bookmarkStats.bookmarkModified === 'number'
+                                ? record.bookmarkStats.bookmarkModified
+                                : (record.bookmarkStats.bookmarkModified ? 1 : 0);
+                            const folderModifiedCount = typeof record.bookmarkStats.folderModified === 'number'
+                                ? record.bookmarkStats.folderModified
+                                : (record.bookmarkStats.folderModified ? 1 : 0);
+                            modifiedTotal = bookmarkModifiedCount + folderModifiedCount;
+                        }
+                        if (modifiedTotal > 0) {
+                            const modifiedLabel = currentLang === 'en' ? 'Modified' : '修改';
+                            const line = `<span class="history-stat-label">${modifiedLabel}</span> <span class="history-stat-color modified">${modifiedTotal}</span>`;
+                            parts.push(line);
+                            secondLineParts.push(line);
+                            hasModified = true;
+                        }
+
+
+                        if (parts.length === 0) {
+                            const isFirstBackup = record.isFirstBackup === true || (!record.time || syncHistory.length <= 1);
+                            if (isFirstBackup && !(cachedRecord && syncHistory.length === 1 && record.time > cachedRecord.time)) {
+                                return `<span class="history-stat-badge first">${dynamicTextStrings.firstBackupText[currentLang] || '第一次备份'}</span>`;
+                            }
+                            return `<span class="history-stat-badge no-change">${dynamicTextStrings.noChangesText[currentLang] || '无变化'}</span>`;
+                        }
+
+                        const totalItems = parts.length;
+                        const shouldSplit = totalItems >= 3 && (hasMoved || hasModified);
+                        if (shouldSplit) {
+                            const firstLine = firstLineParts.length ? firstLineParts.join(sep) : parts.slice(0, Math.ceil(totalItems / 2)).join(sep);
+                            const secondLine = secondLineParts.length ? secondLineParts.join(sep) : parts.slice(Math.ceil(totalItems / 2)).join(sep);
+                            const singleTopClass = firstLineParts.length === 1 ? ' single-top' : '';
+                            return `<span class="history-stat-badge multi-line${singleTopClass}"><span class="history-stat-line">${firstLine}</span><span class="history-stat-line">${secondLine}</span></span>`;
+                        }
+
+                        return `<span class="history-stat-badge">${parts.join(sep)}</span>`;
+                    };
 
                     if (hasAnyChange) {
-                        let numericalDiffHTML = "";
-                        let structuralDiffHTML = ""; // structuralDiffHTML 保持不变，因为它现在用 "、"
-
-                        if (hasAnyNumberColor) {
-                            let partB_diff = "";
-                            if (bookmarkDiff !== 0) {
-                                const bookmarkSign = bookmarkDiff > 0 ? "+" : "";
-                                const bookmarkColor = bookmarkDiff > 0 ? "#4CAF50" : (bookmarkDiff < 0 ? "#F44336" : "#777777");
-                                if (currentLang === 'en') {
-                                    partB_diff += `<span style="color: ${bookmarkColor}; font-weight: bold;">${bookmarkSign}${bookmarkDiff}</span> ${dynamicTextStrings.bookmarksText[currentLang] || 'bookmarks'}`;
-                                } else {
-                                    partB_diff += `<span style="color: ${bookmarkColor}; font-weight: bold;">${bookmarkSign}${bookmarkDiff}</span>${dynamicTextStrings.bookmarksText[currentLang] || '书签'}`;
-                                }
-                            }
-
-                            let partF_diff = "";
-                            if (folderDiff !== 0) {
-                                const folderSign = folderDiff > 0 ? "+" : "";
-                                const folderColor = folderDiff > 0 ? "#4CAF50" : (folderDiff < 0 ? "#F44336" : "#777777");
-                                if (currentLang === 'en') {
-                                    partF_diff += `<span style="color: ${folderColor}; font-weight: bold;">${folderSign}${folderDiff}</span> ${dynamicTextStrings.foldersText[currentLang] || 'folders'}`;
-                                } else {
-                                    partF_diff += `<span style="color: ${folderColor}; font-weight: bold;">${folderSign}${folderDiff}</span>${dynamicTextStrings.foldersText[currentLang] || '文件夹'}`;
-                                }
-                            }
-
-                            if (currentLang === 'zh_CN' && bookmarkDiff !== 0 && folderDiff !== 0) {
-                                numericalDiffHTML = `<div style="margin-top: 4px; display: flex; justify-content: center; align-items: baseline; white-space: nowrap; font-size: inherit;">
-                                                        <span>(</span>
-                                                        <span style="padding-right: 2px;">${partB_diff}</span>
-                                                        <span>,</span>
-                                                        <span style="padding-left: 2px;">${partF_diff}</span>
-                                                        <span>)</span>
-                                                   </div>`;
-                            } else {
-                                let numDiffCombined = "";
-                                if (partB_diff) numDiffCombined += partB_diff;
-                                if (partB_diff && partF_diff) {
-                                    numDiffCombined += `<span style="display:inline-block; width:6px;"></span>,<span style="display:inline-block; width:6px;"></span>`;
-                                }
-                                if (partF_diff) numDiffCombined += partF_diff;
-                                if (numDiffCombined) numericalDiffHTML = `<div style="margin-top: 4px; text-align: center; white-space: nowrap; font-size: inherit;">(${numDiffCombined})</div>`;
-                            }
-                        }
-
-                        // 结构变动部分 (structuralDiffHTML) - 显示具体变化类型而非通用标签
-                        if (hasStructuralChange) {
-                            const structDiffParts = [];
-                            
-                            // 根据具体的结构变化类型构建标签
-                            if (bookmarkMoved || folderMoved) {
-                                structDiffParts.push(`<span style="color: #FF9800; font-weight: bold;">${currentLang === 'en' ? 'Moved' : '移动'}</span>`);
-                            }
-                            if (bookmarkModified || folderModified) {
-                                structDiffParts.push(`<span style="color: #2196F3; font-weight: bold;">${currentLang === 'en' ? 'Modified' : '修改'}</span>`);
-                            }
-                            
-                            const separator = currentLang === 'en' ? '<span style="display:inline-block; width:4px;"></span>|<span style="display:inline-block; width:4px;"></span>' : '、';
-                            const structDiffPart = structDiffParts.join(separator);
-
-                            const marginTop = numericalDiffHTML ? 'margin-top: 2px;' : 'margin-top: 4px;';
-                            const widthStyle = currentLang === 'en' ? 'width: auto; overflow: visible;' : '';
-                            if (structDiffPart) structuralDiffHTML = `<div style="${marginTop} text-align: center; white-space: nowrap; font-size: inherit; ${widthStyle}">(${structDiffPart})</div>`;
-                        }
-
-                        bookmarkStatsHTML += numericalDiffHTML + structuralDiffHTML;
+                        bookmarkStatsHTML += `<div class="history-stat-row">${buildStatBadge()}</div>`;
                     } else {
-                        const isFirstBackup = record.isFirstBackup === true || (!record.time || syncHistory.length <= 1);
-                        if (isFirstBackup && !(cachedRecord && syncHistory.length === 1 && record.time > cachedRecord.time)) { // 只有在未使用缓存作为差异基础时才显示"第一次备份"
-                            // 修改样式，使用与正常记录一致的样式
-                            bookmarkStatsHTML += `<div style="margin-top: 4px; text-align: center; font-size: inherit;"><span style="color: #4CAF50;">${dynamicTextStrings.firstBackupText[currentLang] || '第一次备份'}</span></div>`;
-                        } else if (!hasAnyChange) { // 如果确实无任何变化（包括未使用缓存计算出变化的情况）
-                            bookmarkStatsHTML += `<div style="margin-top: 4px; text-align: center;"><span style="color: #777777;">${dynamicTextStrings.noChangesText[currentLang] || '无变化'}</span></div>`;
-                        }
+                        bookmarkStatsHTML += `<div class="history-stat-row">${buildStatBadge()}</div>`;
                     }
                     // ... (结束 bookmarkStatsHTML 格式化逻辑)
                 } else {
@@ -1570,7 +1610,7 @@ function updateSyncHistory(passedLang) { // Added passedLang parameter
                 if (displayNote) {
                     noteHtml = `<div style="margin-top: 4px; text-align: center; font-size: 12px; color: var(--theme-text-primary); max-width: 100%; overflow-wrap: break-word; word-wrap: break-word; word-break: break-all;">${displayNote}</div>`;
                 }
-                
+
                 // 添加备注按钮
                 const addNoteButton = `
                     <div class="add-note-btn" data-record-time="${record.time}" style="margin-top: 4px; text-align: center; cursor: pointer;">
@@ -1605,12 +1645,12 @@ function updateSyncHistory(passedLang) { // Added passedLang parameter
             // 如果缓存被用于列表显示，或者历史记录已不止一条（缓存的过渡作用已结束），则清除缓存
             if (cachedRecord && (cacheWasUsedForListDisplay || syncHistory.length > 1)) {
                 chrome.storage.local.remove('cachedRecordAfterClear', () => {
-});
+                });
             }
 
             // 为添加备注按钮绑定事件
             document.querySelectorAll('.add-note-btn').forEach(btn => {
-                btn.addEventListener('click', function(e) {
+                btn.addEventListener('click', function (e) {
                     const recordTime = this.getAttribute('data-record-time');
                     showAddNoteDialog(recordTime);
                 });
@@ -1629,7 +1669,7 @@ function updateSyncHistory(passedLang) { // Added passedLang parameter
 
         updateLastSyncInfo(currentLang); // Pass currentLang when calling updateLastSyncInfo
     }).catch(error => {
-const historyList = document.getElementById('syncHistoryList');
+        const historyList = document.getElementById('syncHistoryList');
         if (historyList) {
             const headerRow = historyList.querySelector('.history-header');
             historyList.innerHTML = '';
@@ -1758,9 +1798,9 @@ function updateBookmarkCountDisplay(passedLang) {
                             quantityText = `<span style="font-weight: bold; color: var(--theme-text-primary);">${currentBookmarkCount} ${bmDisplayTerm}<span style="display:inline-block; width:6px;"></span>,<span style="display:inline-block; width:6px;"></span>${currentFolderCount} ${fldDisplayTerm}</span>`;
                         } else {
                             quantityText = `<span style="font-weight: bold; color: var(--theme-text-primary); display: flex; justify-content: center; align-items: baseline;">
-                                                <span style="padding-right: 2px;">${currentBookmarkCount}${i18nBookmarksLabel}</span>
+                                                <span style="padding-right: 2px;">${currentBookmarkCount}&nbsp;${i18nBookmarksLabel}</span>
                                                 <span>,</span>
-                                                <span style="padding-left: 2px;">${currentFolderCount}${i18nFoldersLabel}</span>
+                                                <span style="padding-left: 2px;">${currentFolderCount}&nbsp;${i18nFoldersLabel}</span>
                                             </span>`;
                         }
                         if (bookmarkCountSpan) {
@@ -1770,20 +1810,20 @@ function updateBookmarkCountDisplay(passedLang) {
                         if (bookmarkCountSpan) {
                             bookmarkCountSpan.innerHTML = `<span style="color: orange;">${currentLang === 'en' ? 'Counts unavailable' : '数量暂无法获取'}</span>`;
                         }
-}
+                    }
                 });
 
                 // 2. 更新 "上次变动" 区域 - 根据备份模式和变化状态显示不同内容
                 chrome.storage.local.get(['autoBackupTimerSettings'], (result) => {
                     const backupMode = result.autoBackupTimerSettings?.backupMode || 'regular';
-                    
+
                     chrome.runtime.sendMessage({ action: "getBackupStats" }, backupResponse => {
                         let statusText = '';
-                        
+
                         if (backupMode === 'realtime') {
                             // 实时备份：显示"监测中"
-                            statusText = currentLang === 'en' ? 
-                                '「Realtime」Auto Backup: Monitoring' : 
+                            statusText = currentLang === 'en' ?
+                                '「Realtime」Auto Backup: Monitoring' :
                                 '「实时」自动备份：监测中';
                         } else if (backupMode === 'regular' || backupMode === 'specific' || backupMode === 'both') {
                             // 常规时间/特定时间：使用和手动备份完全一致的差异计算逻辑
@@ -1798,8 +1838,17 @@ function updateBookmarkCountDisplay(passedLang) {
                                     chrome.storage.local.get('cachedRecordAfterClear', result => {
                                         resolve(result.cachedRecordAfterClear);
                                     });
+                                }),
+                                // 获取 recentMovedIds 和 recentModifiedIds（与当前变化视图一致）
+                                new Promise((resolve) => {
+                                    chrome.storage.local.get(['recentMovedIds', 'recentModifiedIds'], result => {
+                                        resolve({
+                                            recentMovedIds: Array.isArray(result.recentMovedIds) ? result.recentMovedIds : [],
+                                            recentModifiedIds: Array.isArray(result.recentModifiedIds) ? result.recentModifiedIds : []
+                                        });
+                                    });
                                 })
-                            ]).then(([syncHistory, cachedRecordFromStorage]) => {
+                            ]).then(([syncHistory, cachedRecordFromStorage, recentIds]) => {
                                 if (!backupResponse || !backupResponse.success || !backupResponse.stats) {
                                     const containerStyle = "display: inline-block; margin: 2px 0 2px 0; padding: 6px 8px 6px 10px; background-color: transparent; border-radius: 6px; font-size: 12.5px; text-align: center;";
                                     const mainItemStyle = "word-break: break-all; color: var(--theme-status-card-auto-text); text-align: center;";
@@ -1807,16 +1856,24 @@ function updateBookmarkCountDisplay(passedLang) {
                                     changeDescriptionContainer.innerHTML = `<div style="${containerStyle}"><div style="${mainItemStyle}">${noChangeText}</div></div>`;
                                     return;
                                 }
-                                
+
                                 const currentBookmarkCount = backupResponse.stats.bookmarkCount || 0;
                                 const currentFolderCount = backupResponse.stats.folderCount || 0;
-                                
+
                                 // 使用和备份检查记录完全相同的判断逻辑
                                 const bookmarkMoved = backupResponse.stats.bookmarkMoved || false;
                                 const folderMoved = backupResponse.stats.folderMoved || false;
                                 const bookmarkModified = backupResponse.stats.bookmarkModified || false;
                                 const folderModified = backupResponse.stats.folderModified || false;
-                                const hasStructuralChanges = bookmarkMoved || folderMoved || bookmarkModified || folderModified;
+
+                                // 优先使用 background 的净变化计数；否则回退到 recentXxxIds
+                                const movedTotal = (typeof backupResponse.stats.movedCount === 'number')
+                                    ? backupResponse.stats.movedCount
+                                    : recentIds.recentMovedIds.length;
+                                const modifiedTotal = (typeof backupResponse.stats.modifiedCount === 'number')
+                                    ? backupResponse.stats.modifiedCount
+                                    : recentIds.recentModifiedIds.length;
+                                const hasStructuralChanges = bookmarkMoved || folderMoved || bookmarkModified || folderModified || movedTotal > 0 || modifiedTotal > 0;
 
                                 // 完全复制手动备份的差异计算逻辑
                                 let bookmarkDiff = 0;
@@ -1830,7 +1887,7 @@ function updateBookmarkCountDisplay(passedLang) {
                                         const rec = syncHistory[i];
                                         const stats = rec && rec.bookmarkStats;
                                         if (stats && (stats.currentBookmarkCount !== undefined || stats.currentBookmarks !== undefined)
-                                                   && (stats.currentFolderCount !== undefined || stats.currentFolders !== undefined)) {
+                                            && (stats.currentFolderCount !== undefined || stats.currentFolders !== undefined)) {
                                             prevRecordWithStats = stats;
                                             break;
                                         }
@@ -1852,8 +1909,7 @@ function updateBookmarkCountDisplay(passedLang) {
                                     const cachedStats = cachedRecordFromStorage.bookmarkStats;
                                     if (cachedStats &&
                                         (cachedStats.currentBookmarkCount !== undefined || cachedStats.currentBookmarks !== undefined) &&
-                                        (cachedStats.currentFolderCount !== undefined || cachedStats.currentFolders !== undefined))
-                                    {
+                                        (cachedStats.currentFolderCount !== undefined || cachedStats.currentFolders !== undefined)) {
                                         const prevBookmarkCountFromCache = cachedStats.currentBookmarkCount ?? cachedStats.currentBookmarks ?? 0;
                                         const prevFolderCountFromCache = cachedStats.currentFolderCount ?? cachedStats.currentFolders ?? 0;
                                         bookmarkDiff = currentBookmarkCount - prevBookmarkCountFromCache;
@@ -1870,8 +1926,15 @@ function updateBookmarkCountDisplay(passedLang) {
                                     if (backupResponse.stats.bookmarkDiff !== undefined || backupResponse.stats.folderDiff !== undefined) canCalculateDiff = true;
                                 }
 
-                                const hasNumericalChange = canCalculateDiff && (bookmarkDiff !== 0 || folderDiff !== 0);
-                                
+                                const bmAdded = typeof backupResponse.stats.bookmarkAdded === 'number' ? backupResponse.stats.bookmarkAdded : null;
+                                const bmDeleted = typeof backupResponse.stats.bookmarkDeleted === 'number' ? backupResponse.stats.bookmarkDeleted : null;
+                                const fdAdded = typeof backupResponse.stats.folderAdded === 'number' ? backupResponse.stats.folderAdded : null;
+                                const fdDeleted = typeof backupResponse.stats.folderDeleted === 'number' ? backupResponse.stats.folderDeleted : null;
+                                const hasDetailedQuantity = (bmAdded !== null) || (bmDeleted !== null) || (fdAdded !== null) || (fdDeleted !== null);
+                                const hasNumericalChange = hasDetailedQuantity
+                                    ? ((bmAdded || 0) > 0 || (bmDeleted || 0) > 0 || (fdAdded || 0) > 0 || (fdDeleted || 0) > 0)
+                                    : (canCalculateDiff && (bookmarkDiff !== 0 || folderDiff !== 0));
+
                                 const i18nBookmarkChangedLabel = window.i18nLabels?.bookmarkChangedLabel || (currentLang === 'en' ? "BKM changed" : "书签变动");
                                 const i18nFolderChangedLabel = window.i18nLabels?.folderChangedLabel || (currentLang === 'en' ? "FLD changed" : "文件夹变动");
                                 const i18nBookmarkAndFolderChangedLabel = window.i18nLabels?.bookmarkAndFolderChangedLabel || (currentLang === 'en' ? "BKM & FLD changed" : "书签和文件夹变动");
@@ -1882,28 +1945,52 @@ function updateBookmarkCountDisplay(passedLang) {
                                 // 数量变化部分（带红绿色）
                                 if (hasNumericalChange) {
                                     let bPartHTML = "";
-                                    if (bookmarkDiff !== 0) {
-                                        const bookmarkSign = bookmarkDiff > 0 ? "+" : "";
-                                        const bookmarkColor = bookmarkDiff > 0 ? "#4CAF50" : (bookmarkDiff < 0 ? "#F44336" : "#777777");
-                                        if (currentLang === 'en') {
-                                            const bmDiffTerm = "BKM";
-                                            bPartHTML = `<span style="color: ${bookmarkColor}; font-weight: bold;">${bookmarkSign}${bookmarkDiff}</span> ${bmDiffTerm}`;
-                                        } else {
-                                            bPartHTML = `<span style="color: ${bookmarkColor}; font-weight: bold;">${bookmarkSign}${bookmarkDiff}</span>${i18nBookmarksLabel}`;
-                                        }
-                                    }
                                     let fPartHTML = "";
-                                    if (folderDiff !== 0) {
-                                        const folderSign = folderDiff > 0 ? "+" : "";
-                                        const folderColor = folderDiff > 0 ? "#4CAF50" : (folderDiff < 0 ? "#F44336" : "#777777");
-                                        if (currentLang === 'en') {
-                                            const fldDiffTerm = "FLD";
-                                            fPartHTML = `<span style="color: ${folderColor}; font-weight: bold;">${folderSign}${folderDiff}</span> ${fldDiffTerm}`;
-                                        } else {
-                                            fPartHTML = `<span style="color: ${folderColor}; font-weight: bold;">${folderSign}${folderDiff}</span>${i18nFoldersLabel}`;
+
+                                    if (hasDetailedQuantity) {
+                                        const joinDelta = (posParts) => {
+                                            const sep = '<span style="display:inline-block; width:3px;"></span>/<span style="display:inline-block; width:3px;"></span>';
+                                            return posParts.join(sep);
+                                        };
+
+                                        const buildDual = (added, deleted, zhLabel, enLabel) => {
+                                            const parts = [];
+                                            if (added > 0) parts.push(`<span style="color: #4CAF50; font-weight: bold;">+${added}</span>`);
+                                            if (deleted > 0) parts.push(`<span style="color: #F44336; font-weight: bold;">-${deleted}</span>`);
+                                            if (parts.length === 0) return "";
+
+                                            const numbersHTML = joinDelta(parts);
+                                            return currentLang === 'en'
+                                                ? `${numbersHTML} ${enLabel}`
+                                                : `${numbersHTML}${zhLabel}`;
+                                        };
+
+                                        bPartHTML = buildDual(bmAdded || 0, bmDeleted || 0, i18nBookmarksLabel, 'BKM');
+                                        fPartHTML = buildDual(fdAdded || 0, fdDeleted || 0, i18nFoldersLabel, 'FLD');
+                                    } else {
+                                        if (bookmarkDiff !== 0) {
+                                            const bookmarkSign = bookmarkDiff > 0 ? "+" : "";
+                                            const bookmarkColor = bookmarkDiff > 0 ? "#4CAF50" : (bookmarkDiff < 0 ? "#F44336" : "#777777");
+                                            if (currentLang === 'en') {
+                                                const bmDiffTerm = "BKM";
+                                                bPartHTML = `<span style="color: ${bookmarkColor}; font-weight: bold;">${bookmarkSign}${bookmarkDiff}</span> ${bmDiffTerm}`;
+                                            } else {
+                                                bPartHTML = `<span style="color: ${bookmarkColor}; font-weight: bold;">${bookmarkSign}${bookmarkDiff}</span>${i18nBookmarksLabel}`;
+                                            }
+                                        }
+                                        if (folderDiff !== 0) {
+                                            const folderSign = folderDiff > 0 ? "+" : "";
+                                            const folderColor = folderDiff > 0 ? "#4CAF50" : (folderDiff < 0 ? "#F44336" : "#777777");
+                                            if (currentLang === 'en') {
+                                                const fldDiffTerm = "FLD";
+                                                fPartHTML = `<span style="color: ${folderColor}; font-weight: bold;">${folderSign}${folderDiff}</span> ${fldDiffTerm}`;
+                                            } else {
+                                                fPartHTML = `<span style="color: ${folderColor}; font-weight: bold;">${folderSign}${folderDiff}</span>${i18nFoldersLabel}`;
+                                            }
                                         }
                                     }
-                                    if (currentLang === 'zh_CN' && bookmarkDiff !== 0 && folderDiff !== 0) {
+
+                                    if (currentLang === 'zh_CN' && bPartHTML && fPartHTML) {
                                         quantityChangesHTML = `${bPartHTML}<span style="display:inline;">,</span>${fPartHTML}`;
                                     } else {
                                         let temp = "";
@@ -1919,14 +2006,26 @@ function updateBookmarkCountDisplay(passedLang) {
                                 // 结构变化部分 - 显示具体变化类型而非通用标签（使用本地变量）
                                 if (hasStructuralChanges) {
                                     const structuralParts = [];
-                                    
+
                                     if (bookmarkMoved || folderMoved) {
-                                        structuralParts.push(`<span style="color: #FF9800; font-weight: bold;">${currentLang === 'en' ? 'Moved' : '移动'}</span>`);
+                                        const movedLabel = currentLang === 'en' ? 'Moved' : '移动';
+                                        const movedText = movedTotal > 0
+                                            ? (currentLang === 'en'
+                                                ? `<span style="color: #2196F3; font-weight: bold;">${movedTotal}</span> ${movedLabel}`
+                                                : `<span style="color: #2196F3; font-weight: bold;">${movedTotal}</span><span style="color: var(--theme-status-card-auto-text); font-weight: 600;"> 个${movedLabel}</span>`)
+                                            : movedLabel;
+                                        structuralParts.push(`<span>${movedText}</span>`);
                                     }
                                     if (bookmarkModified || folderModified) {
-                                        structuralParts.push(`<span style="color: #2196F3; font-weight: bold;">${currentLang === 'en' ? 'Modified' : '修改'}</span>`);
+                                        const modifiedLabel = currentLang === 'en' ? 'Modified' : '修改';
+                                        const modifiedText = modifiedTotal > 0
+                                            ? (currentLang === 'en'
+                                                ? `<span style="color: #FF9800; font-weight: bold;">${modifiedTotal}</span> ${modifiedLabel}`
+                                                : `<span style="color: #FF9800; font-weight: bold;">${modifiedTotal}</span><span style="color: var(--theme-status-card-auto-text); font-weight: 600;"> 个${modifiedLabel}</span>`)
+                                            : modifiedLabel;
+                                        structuralParts.push(`<span>${modifiedText}</span>`);
                                     }
-                                    
+
                                     const separator = currentLang === 'en' ? '<span style="display:inline-block; width:4px;"></span>|<span style="display:inline-block; width:4px;"></span>' : '、';
                                     structuralChangesHTML = structuralParts.join(separator);
                                 }
@@ -1935,7 +2034,7 @@ function updateBookmarkCountDisplay(passedLang) {
                                 const containerStyle = "display: inline-block; margin: 2px 0 2px 0; padding: 6px 8px 6px 10px; background-color: transparent; border-radius: 6px; font-size: 12.5px; text-align: center;";
                                 const mainItemStyle = "word-break: break-all; color: var(--theme-status-card-auto-text); text-align: center;";
                                 const secondaryItemStyle = "margin-top: 8px; word-break: break-all; color: var(--theme-status-card-auto-text); text-align: center;";
-                                
+
                                 let statusText = "";
                                 if (quantityChangesHTML || structuralChangesHTML) {
                                     let mainContent = "";
@@ -1956,7 +2055,7 @@ function updateBookmarkCountDisplay(passedLang) {
                                     const noChangeText = currentLang === 'en' ? "No changes" : "无变化";
                                     statusText = `<div style="${containerStyle}"><div style="${mainItemStyle}">${noChangeText}</div></div>`;
                                 }
-                                
+
                                 // 直接设置HTML内容
                                 changeDescriptionContainer.innerHTML = statusText;
                             });
@@ -1993,8 +2092,17 @@ function updateBookmarkCountDisplay(passedLang) {
                         chrome.storage.local.get('cachedRecordAfterClear', result => {
                             resolve(result.cachedRecordAfterClear);
                         });
+                    }),
+                    // 获取 recentMovedIds 和 recentModifiedIds（与当前变化视图一致）
+                    new Promise((resolve) => {
+                        chrome.storage.local.get(['recentMovedIds', 'recentModifiedIds'], result => {
+                            resolve({
+                                recentMovedIds: Array.isArray(result.recentMovedIds) ? result.recentMovedIds : [],
+                                recentModifiedIds: Array.isArray(result.recentModifiedIds) ? result.recentModifiedIds : []
+                            });
+                        });
                     })
-                ]).then(([backupResponse, syncHistory, cachedRecordFromStorage]) => {
+                ]).then(([backupResponse, syncHistory, cachedRecordFromStorage, recentIds]) => {
                     // 更新 "当前数量/结构:" (Details)
                     const currentBookmarkCount = backupResponse.stats.bookmarkCount || 0;
                     const currentFolderCount = backupResponse.stats.folderCount || 0;
@@ -2005,21 +2113,30 @@ function updateBookmarkCountDisplay(passedLang) {
                         quantityText = `<span style="font-weight: bold; color: var(--theme-text-primary);">${currentBookmarkCount} ${bmDisplayTerm}<span style="display:inline-block; width:6px;"></span>,<span style="display:inline-block; width:6px;"></span>${currentFolderCount} ${fldDisplayTerm}</span>`;
                     } else {
                         quantityText = `<span style="font-weight: bold; color: var(--theme-text-primary); display: flex; justify-content: center; align-items: baseline;">
-                                            <span style="padding-right: 2px;">${currentBookmarkCount}${i18nBookmarksLabel}</span>
+                                            <span style="padding-right: 2px;">${currentBookmarkCount}&nbsp;${i18nBookmarksLabel}</span>
                                             <span>,</span>
-                                            <span style="padding-left: 2px;">${currentFolderCount}${i18nFoldersLabel}</span>
+                                            <span style="padding-left: 2px;">${currentFolderCount}&nbsp;${i18nFoldersLabel}</span>
                                         </span>`;
                     }
                     if (bookmarkCountSpan) {
                         bookmarkCountSpan.innerHTML = quantityText;
                     }
-                    
+
                     // 使用和备份检查记录完全相同的判断逻辑
                     const bookmarkMoved = backupResponse.stats.bookmarkMoved || false;
                     const folderMoved = backupResponse.stats.folderMoved || false;
                     const bookmarkModified = backupResponse.stats.bookmarkModified || false;
                     const folderModified = backupResponse.stats.folderModified || false;
-                    const hasStructuralChanges = bookmarkMoved || folderMoved || bookmarkModified || folderModified;
+
+                    // 优先使用 background 的净变化计数；否则回退到 recentXxxIds
+                    const movedTotal = (typeof backupResponse.stats.movedCount === 'number')
+                        ? backupResponse.stats.movedCount
+                        : recentIds.recentMovedIds.length;
+                    const modifiedTotal = (typeof backupResponse.stats.modifiedCount === 'number')
+                        ? backupResponse.stats.modifiedCount
+                        : recentIds.recentModifiedIds.length;
+                    const hasStructuralChanges = bookmarkMoved || folderMoved || bookmarkModified || folderModified || movedTotal > 0 || modifiedTotal > 0;
+
 
                     let bookmarkDiffManual = 0; // Renamed to avoid conflict
                     let folderDiffManual = 0;   // Renamed to avoid conflict
@@ -2032,7 +2149,7 @@ function updateBookmarkCountDisplay(passedLang) {
                             const rec = syncHistory[i];
                             const stats = rec && rec.bookmarkStats;
                             if (stats && (stats.currentBookmarkCount !== undefined || stats.currentBookmarks !== undefined)
-                                       && (stats.currentFolderCount !== undefined || stats.currentFolders !== undefined)) {
+                                && (stats.currentFolderCount !== undefined || stats.currentFolders !== undefined)) {
                                 prevRecordWithStats = stats;
                                 break;
                             }
@@ -2049,14 +2166,13 @@ function updateBookmarkCountDisplay(passedLang) {
                             if (backupResponse.stats.bookmarkDiff !== undefined) bookmarkDiffManual = backupResponse.stats.bookmarkDiff;
                             if (backupResponse.stats.folderDiff !== undefined) folderDiffManual = backupResponse.stats.folderDiff;
                             if (backupResponse.stats.bookmarkDiff !== undefined || backupResponse.stats.folderDiff !== undefined) canCalculateDiff = true;
-                            else console.warn("历史记录中没有可用统计，且 backupResponse 未提供 diff。" );
+                            else console.warn("历史记录中没有可用统计，且 backupResponse 未提供 diff。");
                         }
                     } else if (cachedRecordFromStorage) {
                         const cachedStats = cachedRecordFromStorage.bookmarkStats;
                         if (cachedStats &&
                             (cachedStats.currentBookmarkCount !== undefined || cachedStats.currentBookmarks !== undefined) &&
-                            (cachedStats.currentFolderCount !== undefined || cachedStats.currentFolders !== undefined))
-                        {
+                            (cachedStats.currentFolderCount !== undefined || cachedStats.currentFolders !== undefined)) {
                             const prevBookmarkCountFromCache = cachedStats.currentBookmarkCount ?? cachedStats.currentBookmarks ?? 0;
                             const prevFolderCountFromCache = cachedStats.currentFolderCount ?? cachedStats.currentFolders ?? 0;
                             bookmarkDiffManual = currentBookmarkCount - prevBookmarkCountFromCache;
@@ -2076,7 +2192,14 @@ function updateBookmarkCountDisplay(passedLang) {
                         else console.log("手动模式下无历史、无缓存、backupResponse无diff，不显示数量差异。");
                     }
 
-                    const hasNumericalChange = canCalculateDiff && (bookmarkDiffManual !== 0 || folderDiffManual !== 0);
+                    const bmAdded = typeof backupResponse.stats.bookmarkAdded === 'number' ? backupResponse.stats.bookmarkAdded : null;
+                    const bmDeleted = typeof backupResponse.stats.bookmarkDeleted === 'number' ? backupResponse.stats.bookmarkDeleted : null;
+                    const fdAdded = typeof backupResponse.stats.folderAdded === 'number' ? backupResponse.stats.folderAdded : null;
+                    const fdDeleted = typeof backupResponse.stats.folderDeleted === 'number' ? backupResponse.stats.folderDeleted : null;
+                    const hasDetailedQuantity = (bmAdded !== null) || (bmDeleted !== null) || (fdAdded !== null) || (fdDeleted !== null);
+                    const hasNumericalChange = hasDetailedQuantity
+                        ? ((bmAdded || 0) > 0 || (bmDeleted || 0) > 0 || (fdAdded || 0) > 0 || (fdDeleted || 0) > 0)
+                        : (canCalculateDiff && (bookmarkDiffManual !== 0 || folderDiffManual !== 0));
                     const i18nBookmarkChangedLabel = window.i18nLabels?.bookmarkChangedLabel || (currentLang === 'en' ? "BKM changed" : "书签变动");
                     const i18nFolderChangedLabel = window.i18nLabels?.folderChangedLabel || (currentLang === 'en' ? "FLD changed" : "文件夹变动");
                     const i18nBookmarkAndFolderChangedLabel = window.i18nLabels?.bookmarkAndFolderChangedLabel || (currentLang === 'en' ? "BKM & FLD changed" : "书签和文件夹变动");
@@ -2086,28 +2209,52 @@ function updateBookmarkCountDisplay(passedLang) {
 
                     if (hasNumericalChange) {
                         let bPartHTML = "";
-                        if (bookmarkDiffManual !== 0) {
-                            const bookmarkSign = bookmarkDiffManual > 0 ? "+" : "";
-                            const bookmarkColor = bookmarkDiffManual > 0 ? "#4CAF50" : (bookmarkDiffManual < 0 ? "#F44336" : "#777777");
-                            if (currentLang === 'en') {
-                                const bmDiffTerm = "BKM";
-                                bPartHTML = `<span style="color: ${bookmarkColor}; font-weight: bold;">${bookmarkSign}${bookmarkDiffManual}</span> ${bmDiffTerm}`;
-                            } else {
-                                bPartHTML = `<span style="color: ${bookmarkColor}; font-weight: bold;">${bookmarkSign}${bookmarkDiffManual}</span>${i18nBookmarksLabel}`; // Chinese label remains plural form
-                            }
-                        }
                         let fPartHTML = "";
-                        if (folderDiffManual !== 0) {
-                            const folderSign = folderDiffManual > 0 ? "+" : "";
-                            const folderColor = folderDiffManual > 0 ? "#4CAF50" : (folderDiffManual < 0 ? "#F44336" : "#777777");
-                            if (currentLang === 'en') {
-                                const fldDiffTerm = "FLD";
-                                fPartHTML = `<span style="color: ${folderColor}; font-weight: bold;">${folderSign}${folderDiffManual}</span> ${fldDiffTerm}`;
-                            } else {
-                                fPartHTML = `<span style="color: ${folderColor}; font-weight: bold;">${folderSign}${folderDiffManual}</span>${i18nFoldersLabel}`; // Chinese label remains plural form
+
+                        if (hasDetailedQuantity) {
+                            const joinDelta = (posParts) => {
+                                const sep = '<span style="display:inline-block; width:3px;"></span>/<span style="display:inline-block; width:3px;"></span>';
+                                return posParts.join(sep);
+                            };
+
+                            const buildDual = (added, deleted, zhLabel, enLabel) => {
+                                const parts = [];
+                                if (added > 0) parts.push(`<span style="color: #4CAF50; font-weight: bold;">+${added}</span>`);
+                                if (deleted > 0) parts.push(`<span style="color: #F44336; font-weight: bold;">-${deleted}</span>`);
+                                if (parts.length === 0) return "";
+
+                                const numbersHTML = joinDelta(parts);
+                                return currentLang === 'en'
+                                    ? `${numbersHTML} ${enLabel}`
+                                    : `${numbersHTML}${zhLabel}`;
+                            };
+
+                            bPartHTML = buildDual(bmAdded || 0, bmDeleted || 0, i18nBookmarksLabel, 'BKM');
+                            fPartHTML = buildDual(fdAdded || 0, fdDeleted || 0, i18nFoldersLabel, 'FLD');
+                        } else {
+                            if (bookmarkDiffManual !== 0) {
+                                const bookmarkSign = bookmarkDiffManual > 0 ? "+" : "";
+                                const bookmarkColor = bookmarkDiffManual > 0 ? "#4CAF50" : (bookmarkDiffManual < 0 ? "#F44336" : "#777777");
+                                if (currentLang === 'en') {
+                                    const bmDiffTerm = "BKM";
+                                    bPartHTML = `<span style="color: ${bookmarkColor}; font-weight: bold;">${bookmarkSign}${bookmarkDiffManual}</span> ${bmDiffTerm}`;
+                                } else {
+                                    bPartHTML = `<span style="color: ${bookmarkColor}; font-weight: bold;">${bookmarkSign}${bookmarkDiffManual}</span>${i18nBookmarksLabel}`; // Chinese label remains plural form
+                                }
+                            }
+                            if (folderDiffManual !== 0) {
+                                const folderSign = folderDiffManual > 0 ? "+" : "";
+                                const folderColor = folderDiffManual > 0 ? "#4CAF50" : (folderDiffManual < 0 ? "#F44336" : "#777777");
+                                if (currentLang === 'en') {
+                                    const fldDiffTerm = "FLD";
+                                    fPartHTML = `<span style="color: ${folderColor}; font-weight: bold;">${folderSign}${folderDiffManual}</span> ${fldDiffTerm}`;
+                                } else {
+                                    fPartHTML = `<span style="color: ${folderColor}; font-weight: bold;">${folderSign}${folderDiffManual}</span>${i18nFoldersLabel}`; // Chinese label remains plural form
+                                }
                             }
                         }
-                        if (currentLang === 'zh_CN' && bookmarkDiffManual !== 0 && folderDiffManual !== 0) {
+
+                        if (currentLang === 'zh_CN' && bPartHTML && fPartHTML) {
                             quantityChangesHTML = `${bPartHTML}<span style="display:inline;">,</span>${fPartHTML}`;
                         } else {
                             let temp = "";
@@ -2123,14 +2270,26 @@ function updateBookmarkCountDisplay(passedLang) {
                     // 结构变化部分 - 显示具体变化类型而非通用标签（使用本地变量）
                     if (hasStructuralChanges) {
                         const structuralParts = [];
-                        
+
                         if (bookmarkMoved || folderMoved) {
-                            structuralParts.push(`<span style="color: #FF9800; font-weight: bold;">${currentLang === 'en' ? 'Moved' : '移动'}</span>`);
+                            const movedLabel = currentLang === 'en' ? 'Moved' : '移动';
+                            const movedText = movedTotal > 0
+                                ? (currentLang === 'en'
+                                    ? `<span style="color: #2196F3; font-weight: bold;">${movedTotal}</span> ${movedLabel}`
+                                    : `<span style="color: #2196F3; font-weight: bold;">${movedTotal}</span><span style="color: var(--theme-status-card-manual-text); font-weight: 600;"> 个${movedLabel}</span>`)
+                                : movedLabel;
+                            structuralParts.push(`<span>${movedText}</span>`);
                         }
                         if (bookmarkModified || folderModified) {
-                            structuralParts.push(`<span style="color: #2196F3; font-weight: bold;">${currentLang === 'en' ? 'Modified' : '修改'}</span>`);
+                            const modifiedLabel = currentLang === 'en' ? 'Modified' : '修改';
+                            const modifiedText = modifiedTotal > 0
+                                ? (currentLang === 'en'
+                                    ? `<span style="color: #FF9800; font-weight: bold;">${modifiedTotal}</span> ${modifiedLabel}`
+                                    : `<span style="color: #FF9800; font-weight: bold;">${modifiedTotal}</span><span style="color: var(--theme-status-card-manual-text); font-weight: 600;"> 个${modifiedLabel}</span>`)
+                                : modifiedLabel;
+                            structuralParts.push(`<span>${modifiedText}</span>`);
                         }
-                        
+
                         const separator = currentLang === 'en' ? '<span style="display:inline-block; width:4px;"></span>|<span style="display:inline-block; width:4px;"></span>' : '、';
                         structuralChangesHTML = structuralParts.join(separator);
                     }
@@ -2170,7 +2329,7 @@ function updateBookmarkCountDisplay(passedLang) {
             }
         })
         .catch(initialError => {
-const bookmarkCountSpan = document.getElementById('bookmarkCount');
+            const bookmarkCountSpan = document.getElementById('bookmarkCount');
             const changeDescriptionContainer = document.getElementById('change-description-row');
             if (bookmarkCountSpan) bookmarkCountSpan.innerHTML = `<span style="color: red;">${'加载失败'}</span>`;
             if (changeDescriptionContainer) changeDescriptionContainer.innerHTML = ''; // 清空以避免显示旧内容
@@ -2217,7 +2376,7 @@ function calibrateDownloadPath() {
     gridContainer.style.width = '100%';
 
     // 获取当前语言
-    chrome.storage.local.get(['preferredLang'], function(result) {
+    chrome.storage.local.get(['preferredLang'], function (result) {
         const currentLang = result.preferredLang || 'zh_CN';
 
         // 第一行第一列：原有内容（不包括按钮）
@@ -2337,7 +2496,7 @@ function calibrateDownloadPath() {
         saveBtn.style.width = '100%';
         saveBtn.style.cursor = 'pointer';
         saveBtn.style.fontSize = '14px';
-        saveBtn.addEventListener('click', function() {
+        saveBtn.addEventListener('click', function () {
             const path = input.value.trim();
             if (!path) {
                 // IMPORTANT: Do not use alert(). Replace with a custom modal UI.
@@ -2356,7 +2515,7 @@ function calibrateDownloadPath() {
             formattedPath += 'Bookmarks/';
 
             // 保存自定义路径
-            chrome.storage.local.set({ customDownloadPath: formattedPath }, function() {
+            chrome.storage.local.set({ customDownloadPath: formattedPath }, function () {
                 // 更新显示
                 const downloadPathDisplay = document.getElementById('downloadPathDisplay');
                 if (downloadPathDisplay) {
@@ -2531,7 +2690,7 @@ function calibrateDownloadPath() {
         openSettingsBtn.style.width = '90%';
         openSettingsBtn.style.cursor = 'pointer';
         openSettingsBtn.style.fontSize = '14px';
-        openSettingsBtn.addEventListener('click', function() {
+        openSettingsBtn.addEventListener('click', function () {
             chrome.runtime.sendMessage({ action: "openDownloadSettings" });
         });
 
@@ -2553,7 +2712,7 @@ function calibrateDownloadPath() {
         cancelBtn.style.width = '90%';
         cancelBtn.style.cursor = 'pointer';
         cancelBtn.style.fontSize = '14px';
-        cancelBtn.addEventListener('click', function() {
+        cancelBtn.addEventListener('click', function () {
             document.body.removeChild(overlay);
         });
 
@@ -2607,7 +2766,7 @@ function handleAutoSync() {
                 // assuming it's meant to trigger a syncBookmarks action.
                 // For now, keeping it as is to avoid changing functionality.
                 // syncBookmarks();
-}
+            }
         }
     });
 }
@@ -2620,7 +2779,7 @@ function handleAutoSyncToggle(event) {
     const isChecked = event.target.checked;
     const wasChecked = !isChecked; // 开关切换前的状态
 
-// 备份所有自动备份开关状态
+    // 备份所有自动备份开关状态
     const autoSyncToggle = document.getElementById('autoSyncToggle');
     const autoSyncToggle2 = document.getElementById('autoSyncToggle2');
 
@@ -2718,7 +2877,7 @@ function handleAutoSyncToggle(event) {
                 // 无法获取统计：直接切换到自动
                 chrome.runtime.sendMessage({ action: 'toggleAutoSync', enabled: isChecked }, () => {
                     // 即使失败，仍尝试更新UI显示
-                    setTimeout(() => { try { updateBookmarkCountDisplay(); } catch (e) {} }, 120);
+                    setTimeout(() => { try { updateBookmarkCountDisplay(); } catch (e) { } }, 120);
                 });
                 return; // 阻断默认流程
             }
@@ -2740,10 +2899,10 @@ function handleAutoSyncToggle(event) {
                         // 刷新备份历史
                         updateSyncHistory();
                         // 稍候刷新右侧状态卡片/“需要更新的”
-                        setTimeout(() => { try { updateBookmarkCountDisplay(); } catch (e) {} }, 120);
+                        setTimeout(() => { try { updateBookmarkCountDisplay(); } catch (e) { } }, 120);
                         // 切换备份成功后再正式切到自动模式，避免并发触发自动备份
                         chrome.runtime.sendMessage({ action: 'toggleAutoSync', enabled: true }, () => {
-                            setTimeout(() => { try { updateBookmarkCountDisplay(); } catch (e) {} }, 120);
+                            setTimeout(() => { try { updateBookmarkCountDisplay(); } catch (e) { } }, 120);
                         });
                     } else {
                         showStatus('切换备份失败: ' + (syncResponse?.error || '未知错误'), 'error');
@@ -2757,7 +2916,7 @@ function handleAutoSyncToggle(event) {
             } else {
                 // 没有变化：直接切到自动模式
                 chrome.runtime.sendMessage({ action: 'toggleAutoSync', enabled: true }, () => {
-                    setTimeout(() => { try { updateBookmarkCountDisplay(); } catch (e) {} }, 120);
+                    setTimeout(() => { try { updateBookmarkCountDisplay(); } catch (e) { } }, 120);
                 });
             }
         });
@@ -2770,7 +2929,7 @@ function handleAutoSyncToggle(event) {
     chrome.runtime.sendMessage({ action: 'toggleAutoSync', enabled: isChecked }, (response) => {
         if (response && response.success) {
             const currentAutoSyncState = response.autoSync;
-// 确保UI开关与后台确认的状态一致
+            // 确保UI开关与后台确认的状态一致
             if (autoSyncToggle) autoSyncToggle.checked = currentAutoSyncState;
             if (autoSyncToggle2) autoSyncToggle2.checked = currentAutoSyncState;
 
@@ -2801,7 +2960,7 @@ function handleAutoSyncToggle(event) {
                             const currentQuantityElement = statsLabels[1];
                             const syncStatusSection = document.getElementById('syncStatus');
                             if (syncStatusSection) {
-syncStatusSection.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                                syncStatusSection.scrollIntoView({ behavior: 'smooth', block: 'start' });
                                 // 稍微调整位置，确保良好的可视效果
                                 window.scrollTo({
                                     top: syncStatusSection.offsetTop + 5,
@@ -2811,7 +2970,7 @@ syncStatusSection.scrollIntoView({ behavior: 'smooth', block: 'start' });
                         } else {
                             // 回退方案：如果找不到"当前数量/结构:"元素，则滚动到页面顶部
                             window.scrollTo({ top: 0, behavior: 'smooth' });
-}
+                        }
                     }, 100);
                 } else {
                     // 自动备份关闭时，启用按钮并恢复正常外观
@@ -2842,9 +3001,9 @@ syncStatusSection.scrollIntoView({ behavior: 'smooth', block: 'start' });
             setTimeout(() => {
                 updateBookmarkCountDisplay();
             }, 100);
-            
-if (wasChecked && !currentAutoSyncState) {
-}
+
+            if (wasChecked && !currentAutoSyncState) {
+            }
 
         } else {
             showStatus('切换自动备份失败' + (response?.error ? `: ${response.error}` : ''), 'error');
@@ -2896,7 +3055,7 @@ if (wasChecked && !currentAutoSyncState) {
 
             // 即使切换失败，也尝试更新显示以反映当前的实际状态
             updateBookmarkCountDisplay();
-}
+        }
     });
 }
 
@@ -2938,7 +3097,7 @@ function handleInitUpload() {
                     backupType: response.localSuccess ? '本地' : (response.webDAVSuccess ? '云端' : '未知')
                 };
                 chrome.storage.local.set({ initialBackupRecord: initialBackupRecord });
-}
+            }
 
             // 折叠初始化区块
             const initHeader = document.getElementById('initHeader');
@@ -2955,15 +3114,15 @@ function handleInitUpload() {
             }
 
             // 更新备份历史记录 - 确保应用当前语言
-            chrome.storage.local.get(['preferredLang'], function(result) {
+            chrome.storage.local.get(['preferredLang'], function (result) {
                 const currentLang = result.preferredLang || 'zh_CN';
-updateSyncHistory();
+                updateSyncHistory();
             });
 
             // 显示手动备份选项，但根据自动备份状态决定
             const manualSyncOptions = document.getElementById('manualSyncOptions');
             if (manualSyncOptions) {
-                chrome.storage.local.get(['autoSync'], function(autoSyncData) {
+                chrome.storage.local.get(['autoSync'], function (autoSyncData) {
                     const autoSyncEnabled = autoSyncData.autoSync !== false;
                     manualSyncOptions.style.display = autoSyncEnabled ? 'none' : 'block';
                 });
@@ -2982,8 +3141,8 @@ updateSyncHistory();
                 action: "setBadge"
             }, (badgeResponse) => {
                 if (chrome.runtime.lastError) {
-} else if (badgeResponse && badgeResponse.success) {
-}
+                } else if (badgeResponse && badgeResponse.success) {
+                }
             });
         } else {
             const errorMessage = response?.error || '未知错误';
@@ -3034,14 +3193,14 @@ function handleManualUpload() {
             }
 
             // 更新备份历史记录 - 确保应用当前语言
-            chrome.storage.local.get(['preferredLang'], function(result) {
+            chrome.storage.local.get(['preferredLang'], function (result) {
                 const currentLang = result.preferredLang || 'zh_CN';
-updateSyncHistory();
+                updateSyncHistory();
             });
 
             const manualSyncOptions = document.getElementById('manualSyncOptions');
             if (manualSyncOptions) {
-                chrome.storage.local.get(['autoSync'], function(autoSyncData) {
+                chrome.storage.local.get(['autoSync'], function (autoSyncData) {
                     const autoSyncEnabled = autoSyncData.autoSync !== false;
                     manualSyncOptions.style.display = autoSyncEnabled ? 'none' : 'block';
                 });
@@ -3052,7 +3211,7 @@ updateSyncHistory();
                     const currentQuantityElement = statsLabels[1];
                     const syncStatusSection = document.getElementById('syncStatus');
                     if (syncStatusSection) {
-syncStatusSection.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                        syncStatusSection.scrollIntoView({ behavior: 'smooth', block: 'start' });
                         // 稍微调整位置，确保良好的可视效果
                         window.scrollTo({
                             top: syncStatusSection.offsetTop + 5,
@@ -3062,7 +3221,7 @@ syncStatusSection.scrollIntoView({ behavior: 'smooth', block: 'start' });
                 } else {
                     // 回退方案：如果找不到"当前数量/结构:"元素，则滚动到页面顶部
                     window.scrollTo({ top: 0, behavior: 'smooth' });
-}
+                }
             }, 50);
             chrome.storage.local.set({ initialized: true });
         } else {
@@ -3174,7 +3333,7 @@ function exportSyncHistory() {
         // Table Rows
         // 添加日期分界线的处理
         let previousDateStr = null;
-        
+
         // 对记录按时间排序，新的在前
         const sortedHistory = [...syncHistory].sort((a, b) => new Date(b.time) - new Date(a.time));
 
@@ -3184,18 +3343,18 @@ function exportSyncHistory() {
 
             // 检查日期是否变化（年月日）
             const currentDateStr = `${recordDate.getFullYear()}-${recordDate.getMonth() + 1}-${recordDate.getDate()}`;
-            
+
             // 如果日期变化，添加分界线
             if (previousDateStr && previousDateStr !== currentDateStr) {
                 // 使用Markdown格式添加日期分界线
-                const formattedPreviousDate = lang === 'en' ? 
+                const formattedPreviousDate = lang === 'en' ?
                     `${previousDateStr.split('-')[0]}-${previousDateStr.split('-')[1].padStart(2, '0')}-${previousDateStr.split('-')[2].padStart(2, '0')}` :
                     `${previousDateStr.split('-')[0]}年${previousDateStr.split('-')[1]}月${previousDateStr.split('-')[2]}日`;
-                
+
                 // 添加简洁的分界线，并入表格中
                 txtContent += `| ${formattedPreviousDate} |  |  |  |  |  |  |  |  |  |\n`;
             }
-            
+
             // 更新前一个日期
             previousDateStr = currentDateStr;
 
@@ -3267,13 +3426,13 @@ function exportSyncHistory() {
 
             txtContent += `| ${time} | ${record.note || ''} | ${currentBookmarks} | ${currentFolders} | ${bookmarkDiffFormatted} | ${folderDiffFormatted} | ${structuralChanges} | ${locationText} | ${typeText} | ${statusText} |\n`;
         });
-        
+
         // 添加最后一个日期的分界线
         if (previousDateStr) {
-            const formattedPreviousDate = lang === 'en' ? 
+            const formattedPreviousDate = lang === 'en' ?
                 `${previousDateStr.split('-')[0]}-${previousDateStr.split('-')[1].padStart(2, '0')}-${previousDateStr.split('-')[2].padStart(2, '0')}` :
                 `${previousDateStr.split('-')[0]}年${previousDateStr.split('-')[1]}月${previousDateStr.split('-')[2]}日`;
-            
+
             // 添加简洁的分界线，并入表格中
             txtContent += `| ${formattedPreviousDate} |  |  |  |  |  |  |  |  |  |\n`;
         }
@@ -3304,7 +3463,7 @@ function exportSyncHistory() {
                     exportResults.push(window.i18nLabels?.exportToWebDAVFailed || '导出到云端失败: ' + (result?.error || '未知错误'));
                 }
             } catch (error) {
-exportResults.push(window.i18nLabels?.exportToWebDAVFailed || `导出到云端失败: ${error.message || '未知错误'}`);
+                exportResults.push(window.i18nLabels?.exportToWebDAVFailed || `导出到云端失败: ${error.message || '未知错误'}`);
             }
         }
 
@@ -3327,7 +3486,7 @@ exportResults.push(window.i18nLabels?.exportToWebDAVFailed || `导出到云端�
                     exportResults.push(window.i18nLabels?.exportToLocalFailed || `导出到本地失败: ${result?.error || '未知错误'}`);
                 }
             } catch (error) {
-exportResults.push(window.i18nLabels?.exportToLocalFailed || `导出到本地失败: ${error.message || '未知错误'}`);
+                exportResults.push(window.i18nLabels?.exportToLocalFailed || `导出到本地失败: ${error.message || '未知错误'}`);
             }
         }
 
@@ -3346,17 +3505,17 @@ exportResults.push(window.i18nLabels?.exportToLocalFailed || `导出到本地失
  * 清空备份历史记录。
  */
 function clearSyncHistory() {
-// 1. 获取当前历史记录以缓存最后一条记录
+    // 1. 获取当前历史记录以缓存最后一条记录
     chrome.runtime.sendMessage({ action: "getSyncHistory" }, (historyResponse) => {
         if (historyResponse && historyResponse.success && historyResponse.syncHistory && historyResponse.syncHistory.length > 0) {
             const latestRecord = historyResponse.syncHistory[historyResponse.syncHistory.length - 1];
             chrome.storage.local.set({ cachedRecordAfterClear: latestRecord }, () => {
-// 2. 继续清除实际的历史记录
+                // 2. 继续清除实际的历史记录
                 proceedToClearActualHistory();
             });
         } else {
             // 没有历史记录可缓存，或者获取失败，则确保清除任何可能存在的旧缓存
-chrome.storage.local.remove('cachedRecordAfterClear', () => {
+            chrome.storage.local.remove('cachedRecordAfterClear', () => {
                 proceedToClearActualHistory();
             });
         }
@@ -3371,7 +3530,7 @@ chrome.storage.local.remove('cachedRecordAfterClear', () => {
                 showStatus('历史记录已清空', 'success');
             } else {
                 showStatus('清空历史记录失败', 'error');
-}
+            }
         });
     }
 }
@@ -3419,8 +3578,8 @@ async function loadReminderSettings() {
         updateToggleState(fixedTimeToggle2, settings.fixedTimeEnabled2 === true);
         fixedTime2.value = settings.fixedTime2 || defaultSettings.fixedTime2;
 
-} catch (error) {
-// 失败时应用默认设置
+    } catch (error) {
+        // 失败时应用默认设置
         updateToggleState(reminderToggle, defaultSettings.reminderEnabled);
         firstReminderMinutes.value = defaultSettings.firstReminderMinutes;
         updateToggleState(fixedTimeToggle1, defaultSettings.fixedTimeEnabled1);
@@ -3454,8 +3613,8 @@ async function saveReminderSettingsFunc() {
         };
 
         await chrome.storage.local.set({ reminderSettings: settings }); // 使用 chrome.storage
-// 向后台发送设置更新消息，并添加重置标志
-// 首先发送停止当前计时器的消息
+        // 向后台发送设置更新消息，并添加重置标志
+        // 首先发送停止当前计时器的消息
         await chrome.runtime.sendMessage({ action: "stopReminderTimer" }); // 使用 chrome.runtime
 
         // 然后发送更新设置并重新开始计时的消息
@@ -3465,15 +3624,15 @@ async function saveReminderSettingsFunc() {
             resetTimer: true,
             restartTimer: true
         }).then(response => {
-}).catch(error => {
-});
+        }).catch(error => {
+        });
 
         // 显示保存成功提示
         showSettingsSavedIndicator();
 
         return true;
     } catch (error) {
-return false;
+        return false;
     }
 }
 
@@ -3502,13 +3661,13 @@ function checkUrlParams() {
     const openDialog = urlParams.get('openReminderSettings');
 
     if (openDialog === 'true') {
-// 确保页面完全加载后再自动点击按钮
+        // 确保页面完全加载后再自动点击按钮
         setTimeout(() => {
             const reminderSettingsBtn = document.getElementById('reminderSettingsBtn');
             if (reminderSettingsBtn) {
-reminderSettingsBtn.click();
+                reminderSettingsBtn.click();
             } else {
-}
+            }
         }, 500);
     }
 }
@@ -3529,17 +3688,17 @@ async function initializeLanguageSwitcher() {
     try {
         // 直接从存储中获取已设置的语言偏好
         const result = await new Promise(resolve => chrome.storage.local.get('preferredLang', resolve));
-        
+
         if (result.preferredLang) {
             currentLang = result.preferredLang;
         } else {
             // 这是一个备用逻辑，正常情况下 background.js 会处理好
-}
+        }
 
         document.documentElement.setAttribute('lang', currentLang === 'en' ? 'en' : 'zh');
         await applyLocalizedContent(currentLang);
     } catch (e) {
-document.documentElement.setAttribute('lang', 'zh'); // Fallback
+        document.documentElement.setAttribute('lang', 'zh'); // Fallback
         await applyLocalizedContent('zh_CN'); // Fallback
     }
 
@@ -3556,18 +3715,18 @@ document.documentElement.setAttribute('lang', 'zh'); // Fallback
                         action: "setBadge"
                     }, (response) => {
                         if (chrome.runtime.lastError) {
-} else if (response && response.success) {
-}
+                        } else if (response && response.success) {
+                        }
                     });
                 }
             } catch (e) {
-}
+            }
 
             await applyLocalizedContent(currentLang);
             updateSyncHistory(currentLang); // Pass currentLang
             // updateBookmarkCountDisplay is called by applyLocalizedContent via updateLastSyncInfo
 
-});
+        });
     }
 }
 
@@ -4379,9 +4538,9 @@ const applyLocalizedContent = async (lang) => { // Added lang parameter
     // 检查重置确认对话框是否打开，如果打开则更新其中的初始备份文件信息
     const resetConfirmDialog = document.getElementById('resetConfirmDialog');
     if (resetConfirmDialog && resetConfirmDialog.style.display === 'block') {
-// 获取初始备份记录
-        chrome.storage.local.get(['initialBackupRecord', 'preferredLang'], function(data) {
-const currentLang = data.preferredLang || 'zh_CN';
+        // 获取初始备份记录
+        chrome.storage.local.get(['initialBackupRecord', 'preferredLang'], function (data) {
+            const currentLang = data.preferredLang || 'zh_CN';
 
             // 确保国际化字符串已经初始化
             if (!initialBackupFileStrings || !backupTypeStrings || !timeStrings ||
@@ -4433,7 +4592,7 @@ const currentLang = data.preferredLang || 'zh_CN';
                             const date = new Date(data.initialBackupRecord.time);
                             timeStr = formatTime(date);
                         } catch (e) {
-}
+                        }
                     }
 
                     // 添加备份类型和时间信息
@@ -4459,10 +4618,10 @@ const currentLang = data.preferredLang || 'zh_CN';
 
                     // 显示备份信息区域
                     initialBackupInfo.style.display = 'block';
-} else {
+                } else {
                     // 没有备份记录时，隐藏信息区域
                     initialBackupInfo.style.display = 'none';
-}
+                }
             }
 
             // 显示重置对话框
@@ -4828,7 +4987,7 @@ const currentLang = data.preferredLang || 'zh_CN';
     };
 
     // 更新弹窗提示的国际化文本
-    if(typeof webdavConfigMissingStrings !== 'undefined') {
+    if (typeof webdavConfigMissingStrings !== 'undefined') {
         webdavConfigMissingStrings = {
             'zh_CN': "请填写完整的WebDAV配置信息",
             'en': "Please fill in all WebDAV configuration information"
@@ -5166,7 +5325,7 @@ const currentLang = data.preferredLang || 'zh_CN';
     // 更新校准路径对话框的内容（如果正在显示）
     const calibratePathOverlay = document.querySelector('div[style*="position: fixed"][style*="z-index: 1000"]');
     if (calibratePathOverlay) {
-// 获取对话框中的所有文本元素
+        // 获取对话框中的所有文本元素
         const dialogTitle = calibratePathOverlay.querySelector('h4');
         const instructionList = calibratePathOverlay.querySelector('ol');
         const inputLabel = calibratePathOverlay.querySelector('label');
@@ -5244,9 +5403,9 @@ const currentLang = data.preferredLang || 'zh_CN';
 // DOMContentLoaded 事件监听器 (Main Entry Point)
 // =============================================================================
 
-document.addEventListener('DOMContentLoaded', function() {
-// 添加全局未处理 Promise 错误监听器，捕获并忽略特定的连接错误
-    window.addEventListener('unhandledrejection', function(event) {
+document.addEventListener('DOMContentLoaded', function () {
+    // 添加全局未处理 Promise 错误监听器，捕获并忽略特定的连接错误
+    window.addEventListener('unhandledrejection', function (event) {
         // 检查错误消息是否是我们想要抑制的连接错误
         if (event.reason &&
             event.reason.message &&
@@ -5258,7 +5417,7 @@ document.addEventListener('DOMContentLoaded', function() {
             event.stopPropagation();
 
             // 可选：记录一个更友好的信息，帮助调试，不会影响用户
-return false; // 阻止错误传播
+            return false; // 阻止错误传播
         }
     });
 
@@ -5281,12 +5440,12 @@ return false; // 阻止错误传播
     }
 
     // 加载自动备份状态并设置界面
-    chrome.storage.local.get(['autoSync', 'initialized'], function(result) { // 使用 chrome.storage
+    chrome.storage.local.get(['autoSync', 'initialized'], function (result) { // 使用 chrome.storage
         // 默认值：如果从未设置过，则默认为true (开启)
         const autoSyncEnabled = result.autoSync !== undefined ? result.autoSync : true;
         const initialized = result.initialized === true;
 
-// 设置开关状态
+        // 设置开关状态
         const autoSyncToggle = document.getElementById('autoSyncToggle');
         const autoSyncToggle2 = document.getElementById('autoSyncToggle2');
 
@@ -5337,7 +5496,7 @@ return false; // 阻止错误传播
             }
         }
 
-console.log('手动备份按钮显示状态:', manualButtonsContainer ? manualButtonsContainer.style.display : 'element not found');
+        console.log('手动备份按钮显示状态:', manualButtonsContainer ? manualButtonsContainer.style.display : 'element not found');
 
         // 更新整体UI状态（例如备份状态区域的显示）
         const syncStatusDiv = document.getElementById('syncStatus');
@@ -5402,10 +5561,10 @@ console.log('手动备份按钮显示状态:', manualButtonsContainer ? manualBu
 
     if (resetAllButton && !resetAllButton.hasAttribute('data-listener-attached')) {
         resetAllButton.addEventListener('click', () => {
-if (resetConfirmDialog) {
+            if (resetConfirmDialog) {
                 // 打开对话框前，先检查并加载初始备份记录
-                chrome.storage.local.get(['initialBackupRecord', 'preferredLang'], function(data) {
-const currentLang = data.preferredLang || 'zh_CN';
+                chrome.storage.local.get(['initialBackupRecord', 'preferredLang'], function (data) {
+                    const currentLang = data.preferredLang || 'zh_CN';
 
                     // 确保国际化字符串已经初始化
                     if (!initialBackupFileStrings || !backupTypeStrings || !timeStrings ||
@@ -5457,7 +5616,7 @@ const currentLang = data.preferredLang || 'zh_CN';
                                     const date = new Date(data.initialBackupRecord.time);
                                     timeStr = formatTime(date);
                                 } catch (e) {
-}
+                                }
                             }
 
                             // 添加备份类型和时间信息
@@ -5483,10 +5642,10 @@ const currentLang = data.preferredLang || 'zh_CN';
 
                             // 显示备份信息区域
                             initialBackupInfo.style.display = 'block';
-} else {
+                        } else {
                             // 没有备份记录时，隐藏信息区域
                             initialBackupInfo.style.display = 'none';
-}
+                        }
                     }
 
                     // 显示重置对话框
@@ -5558,7 +5717,7 @@ const currentLang = data.preferredLang || 'zh_CN';
     const initHeader = document.getElementById('initHeader');
     const initContent = document.getElementById('initContent');
     if (initHeader && !initHeader.hasAttribute('data-listener-attached')) {
-        initHeader.addEventListener('click', function() {
+        initHeader.addEventListener('click', function () {
             // 切换内容区域显示状态
             toggleConfigPanel(initContent, initHeader);
         });
@@ -5568,7 +5727,7 @@ const currentLang = data.preferredLang || 'zh_CN';
     // ... (其他初始化代码，包括加载状态和绑定其他事件)
 
     // ... (例如，在加载initialized状态后也调用，确保按钮可用时监听器附加)
-    chrome.storage.local.get(['initialized'], function(result) { // 使用 chrome.storage
+    chrome.storage.local.get(['initialized'], function (result) { // 使用 chrome.storage
         if (result.initialized) {
             // 确保按钮存在再调用一次，覆盖之前的绑定或在按钮动态添加后绑定
             initScrollToTopButton();
@@ -5586,7 +5745,7 @@ const currentLang = data.preferredLang || 'zh_CN';
         exportHistoryBtn.addEventListener('click', exportSyncHistory);
 
         // 添加悬停提示
-        exportHistoryBtn.addEventListener('mouseenter', function() {
+        exportHistoryBtn.addEventListener('mouseenter', function () {
             const tooltip = this.querySelector('.tooltip');
             if (tooltip) {
                 tooltip.style.visibility = 'visible';
@@ -5594,7 +5753,7 @@ const currentLang = data.preferredLang || 'zh_CN';
             }
         });
 
-        exportHistoryBtn.addEventListener('mouseleave', function() {
+        exportHistoryBtn.addEventListener('mouseleave', function () {
             const tooltip = this.querySelector('.tooltip');
             if (tooltip) {
                 tooltip.style.visibility = 'hidden';
@@ -5605,7 +5764,7 @@ const currentLang = data.preferredLang || 'zh_CN';
 
     if (clearHistoryBtn) {
         // 修改清空功能，先显示确认对话框
-        clearHistoryBtn.addEventListener('click', function() {
+        clearHistoryBtn.addEventListener('click', function () {
             // 显示确认对话框
             const clearHistoryConfirmDialog = document.getElementById('clearHistoryConfirmDialog');
             if (clearHistoryConfirmDialog) {
@@ -5614,7 +5773,7 @@ const currentLang = data.preferredLang || 'zh_CN';
         });
 
         // 添加悬停提示
-        clearHistoryBtn.addEventListener('mouseenter', function() {
+        clearHistoryBtn.addEventListener('mouseenter', function () {
             const tooltip = this.querySelector('.tooltip');
             if (tooltip) {
                 tooltip.style.visibility = 'visible';
@@ -5622,7 +5781,7 @@ const currentLang = data.preferredLang || 'zh_CN';
             }
         });
 
-        clearHistoryBtn.addEventListener('mouseleave', function() {
+        clearHistoryBtn.addEventListener('mouseleave', function () {
             const tooltip = this.querySelector('.tooltip');
             if (tooltip) {
                 tooltip.style.visibility = 'hidden';
@@ -5635,7 +5794,7 @@ const currentLang = data.preferredLang || 'zh_CN';
     const openHistoryViewerBtn = document.getElementById('openHistoryViewerBtn');
     if (openHistoryViewerBtn) {
         // 设置 tooltip 文本（根据语言）
-        chrome.storage.local.get(['preferredLang'], function(result) {
+        chrome.storage.local.get(['preferredLang'], function (result) {
             const currentLang = result.preferredLang || 'zh_CN';
             const tooltip = document.getElementById('historyViewerTooltip');
             if (tooltip) {
@@ -5643,13 +5802,13 @@ const currentLang = data.preferredLang || 'zh_CN';
             }
         });
 
-        openHistoryViewerBtn.addEventListener('click', async function() {
+        openHistoryViewerBtn.addEventListener('click', async function () {
             // 打开历史查看器页面
             await safeCreateTab({ url: chrome.runtime.getURL('history_html/history.html') });
         });
 
         // 添加悬停提示
-        openHistoryViewerBtn.addEventListener('mouseenter', function() {
+        openHistoryViewerBtn.addEventListener('mouseenter', function () {
             const tooltip = document.getElementById('historyViewerTooltip');
             if (tooltip) {
                 tooltip.style.visibility = 'visible';
@@ -5661,7 +5820,7 @@ const currentLang = data.preferredLang || 'zh_CN';
             this.style.transform = 'translateY(-1px)';
         });
 
-        openHistoryViewerBtn.addEventListener('mouseleave', function() {
+        openHistoryViewerBtn.addEventListener('mouseleave', function () {
             const tooltip = document.getElementById('historyViewerTooltip');
             if (tooltip) {
                 tooltip.style.visibility = 'hidden';
@@ -5677,19 +5836,19 @@ const currentLang = data.preferredLang || 'zh_CN';
     // 添加状态卡片点击事件 - 直接跳转到当前变化视图
     const statusCard = document.getElementById('change-description-row');
     if (statusCard) {
-        statusCard.addEventListener('click', async function() {
+        statusCard.addEventListener('click', async function () {
             // 打开历史查看器的当前变化视图
             const url = chrome.runtime.getURL('history_html/history.html?view=current-changes');
             await safeCreateTab({ url: url });
         });
 
         // 添加 hover 效果
-        statusCard.addEventListener('mouseenter', function() {
+        statusCard.addEventListener('mouseenter', function () {
             this.style.transform = 'scale(1.02)';
             this.style.boxShadow = '0 4px 12px rgba(0, 0, 0, 0.15)';
         });
 
-        statusCard.addEventListener('mouseleave', function() {
+        statusCard.addEventListener('mouseleave', function () {
             this.style.transform = 'scale(1)';
             this.style.boxShadow = '';
         });
@@ -5701,7 +5860,7 @@ const currentLang = data.preferredLang || 'zh_CN';
     const clearHistoryConfirmDialog = document.getElementById('clearHistoryConfirmDialog');
 
     if (confirmClearHistory && clearHistoryConfirmDialog) {
-        confirmClearHistory.addEventListener('click', function() {
+        confirmClearHistory.addEventListener('click', function () {
             // 隐藏对话框
             clearHistoryConfirmDialog.style.display = 'none';
             // 执行清空操作
@@ -5710,7 +5869,7 @@ const currentLang = data.preferredLang || 'zh_CN';
     }
 
     if (cancelClearHistory && clearHistoryConfirmDialog) {
-        cancelClearHistory.addEventListener('click', function() {
+        cancelClearHistory.addEventListener('click', function () {
             // 隐藏对话框
             clearHistoryConfirmDialog.style.display = 'none';
         });
@@ -5728,7 +5887,7 @@ const currentLang = data.preferredLang || 'zh_CN';
     };
 
     if (autoOptionEl && !autoOptionEl.hasAttribute('data-mode-listener')) {
-        autoOptionEl.addEventListener('click', function(evt) {
+        autoOptionEl.addEventListener('click', function (evt) {
             if (shouldIgnoreClick(evt)) return;
             const autoSyncToggle2 = document.getElementById('autoSyncToggle2');
             if (autoSyncToggle2 && !autoSyncToggle2.checked) {
@@ -5740,7 +5899,7 @@ const currentLang = data.preferredLang || 'zh_CN';
     }
 
     if (manualOptionEl && !manualOptionEl.hasAttribute('data-mode-listener')) {
-        manualOptionEl.addEventListener('click', function(evt) {
+        manualOptionEl.addEventListener('click', function (evt) {
             if (shouldIgnoreClick(evt)) return;
             const autoSyncToggle2 = document.getElementById('autoSyncToggle2');
             if (autoSyncToggle2 && autoSyncToggle2.checked) {
@@ -5752,7 +5911,7 @@ const currentLang = data.preferredLang || 'zh_CN';
     }
 
     // 初始化备份状态
-    chrome.storage.local.get(['autoSync'], function(result) {
+    chrome.storage.local.get(['autoSync'], function (result) {
         const autoSyncEnabled = result.autoSync !== undefined ? result.autoSync : true;
 
         // 更新开关UI状态
@@ -5794,7 +5953,7 @@ const currentLang = data.preferredLang || 'zh_CN';
     });
 
     // 监听来自后台的书签变化消息和获取变化描述请求
-    chrome.runtime.onMessage.addListener(function(message, sender, sendResponse) {
+    chrome.runtime.onMessage.addListener(function (message, sender, sendResponse) {
         if (message && message.action === "bookmarkChanged") {
             // 更新书签计数和状态显示
             updateBookmarkCountDisplay();
@@ -5814,19 +5973,19 @@ const currentLang = data.preferredLang || 'zh_CN';
                     tempDiv.innerHTML = htmlContent;
                     const content = tempDiv.textContent || tempDiv.innerText || "";
 
-sendResponse({
+                    sendResponse({
                         success: true,
                         content: content
                     });
                 } else {
-sendResponse({
+                    sendResponse({
                         success: false,
                         error: "未找到变化描述容器元素",
                         content: "" // 提供空内容
                     });
                 }
             } catch (error) {
-sendResponse({
+                sendResponse({
                     success: false,
                     error: error.message,
                     content: "" // 提供空内容
@@ -5853,21 +6012,21 @@ sendResponse({
 
     // 设置开关点击事件监听
     if (reminderToggle) {
-        reminderToggle.addEventListener('click', function() {
+        reminderToggle.addEventListener('click', function () {
             const currentState = getToggleState(this);
             updateToggleState(this, !currentState);
         });
     }
 
     if (fixedTimeToggle1) {
-        fixedTimeToggle1.addEventListener('click', function() {
+        fixedTimeToggle1.addEventListener('click', function () {
             const currentState = getToggleState(this);
             updateToggleState(this, !currentState);
         });
     }
 
     if (fixedTimeToggle2) {
-        fixedTimeToggle2.addEventListener('click', function() {
+        fixedTimeToggle2.addEventListener('click', function () {
             const currentState = getToggleState(this);
             updateToggleState(this, !currentState);
         });
@@ -5875,8 +6034,8 @@ sendResponse({
 
     // 绑定设置面板打开按钮点击事件
     if (reminderSettingsBtn) {
-        reminderSettingsBtn.addEventListener('click', async function() {
-// 暂停计时器
+        reminderSettingsBtn.addEventListener('click', async function () {
+            // 暂停计时器
             await pauseTimerForSettings();
 
             // 加载最新设置
@@ -5891,8 +6050,8 @@ sendResponse({
 
     // 绑定设置面板关闭按钮点击事件
     if (closeReminderSettings) {
-        closeReminderSettings.addEventListener('click', async function() {
-// 隐藏设置对话框
+        closeReminderSettings.addEventListener('click', async function () {
+            // 隐藏设置对话框
             if (reminderSettingsDialog) {
                 reminderSettingsDialog.style.display = 'none';
             }
@@ -5942,8 +6101,8 @@ sendResponse({
 
     // 绑定保存设置按钮点击事件
     if (saveReminderSettings) {
-        saveReminderSettings.addEventListener('click', async function() {
-const success = await saveReminderSettingsFunc();
+        saveReminderSettings.addEventListener('click', async function () {
+            const success = await saveReminderSettingsFunc();
 
             if (success) {
                 // 使用国际化字符串
@@ -5958,7 +6117,7 @@ const success = await saveReminderSettingsFunc();
                         reminderSettingsDialog.style.display = 'none';
                     }
                     // 保存设置后，新设置立即生效，不需要额外恢复计时器
-}, 1000);
+                }, 1000);
             } else {
                 // 使用国际化字符串
                 settingsSavedIndicator.textContent = window.i18nLabels.saveFailedStrings || '保存设置失败';
@@ -5970,7 +6129,7 @@ const success = await saveReminderSettingsFunc();
 
     // 点击对话框外部关闭对话框
     if (reminderSettingsDialog) {
-        reminderSettingsDialog.addEventListener('click', function(event) {
+        reminderSettingsDialog.addEventListener('click', function (event) {
             const dialogContent = reminderSettingsDialog.querySelector('.modal-content');
 
             // 判断点击是否在对话框外部
@@ -5986,7 +6145,7 @@ const success = await saveReminderSettingsFunc();
 
                 // 恢复计时器
                 resumeTimerForSettings();
-// 2秒后清除标记，允许后续的连接断开处理
+                // 2秒后清除标记，允许后续的连接断开处理
                 setTimeout(() => {
                     window.reminderDialogUserClosed = false;
                 }, 2000);
@@ -5997,30 +6156,30 @@ const success = await saveReminderSettingsFunc();
     // ================================
     // 自动备份设置对话框（新UI）
     // ================================
-    
+
     // 辅助函数：隐藏所有"Back to Top"按钮
     function hideAllScrollToTopButtons() {
         // 设置全局标志
         isDialogOpen = true;
-        
+
         const scrollToTopFloating = document.getElementById('scrollToTopFloating');
         const scrollToTopBtn = document.getElementById('scrollToTopBtn');
         const scrollToTopEmbedded = document.getElementById('scrollToTopEmbedded');
-        
+
         if (scrollToTopFloating) scrollToTopFloating.style.display = 'none';
         if (scrollToTopBtn) scrollToTopBtn.style.display = 'none';
         if (scrollToTopEmbedded) scrollToTopEmbedded.style.display = 'none';
     }
-    
+
     // 辅助函数：恢复"Back to Top"按钮的自动显示逻辑
     function restoreScrollToTopButtons() {
         // 清除全局标志
         isDialogOpen = false;
-        
+
         // 触发一次滚动事件来重新计算按钮的显示状态
         window.dispatchEvent(new Event('scroll'));
     }
-    
+
     const autoBackupSettingsBtnEl = document.getElementById('autoBackupSettingsBtn');
     const autoBackupSettingsDialog = document.getElementById('autoBackupSettingsDialog');
     const closeAutoBackupSettingsBtn = document.getElementById('closeAutoBackupSettings');
@@ -6099,19 +6258,19 @@ const success = await saveReminderSettingsFunc();
     }
 
     if (autoBackupSettingsBtnEl && autoBackupSettingsDialog) {
-        autoBackupSettingsBtnEl.addEventListener('click', async function() {
+        autoBackupSettingsBtnEl.addEventListener('click', async function () {
             // 初始化自动备份定时器UI（首次打开时）
             console.log('[自动备份设置] 开始初始化UI...');
             const container = document.getElementById('autoBackupTimerUIContainer');
             console.log('[自动备份设置] 容器元素:', container);
-            
+
             if (!container) {
                 console.error('[自动备份设置] 找不到容器元素 autoBackupTimerUIContainer');
                 alert('错误：找不到UI容器元素');
             } else {
                 // 检查是否已经初始化（通过查找我们创建的特定元素）
                 const alreadyInitialized = container.querySelector('#autoBackupTimerContainer');
-                
+
                 if (!alreadyInitialized) {
                     console.log('[自动备份设置] 首次初始化，开始创建UI');
                     try {
@@ -6121,22 +6280,22 @@ const success = await saveReminderSettingsFunc();
                             });
                         });
                         console.log('[自动备份设置] 当前语言:', lang);
-                        
+
                         // 清空容器（移除测试内容）
                         container.innerHTML = '';
-                        
+
                         // 创建并插入UI
                         console.log('[自动备份设置] 调用 createAutoBackupTimerUI...');
                         const ui = createAutoBackupTimerUI(lang);
                         console.log('[自动备份设置] UI创建成功:', ui);
-                        
+
                         container.appendChild(ui);
                         console.log('[自动备份设置] UI已插入到容器');
-                        
+
                         // 初始化UI事件
                         console.log('[自动备份设置] 初始化UI事件...');
                         await initializeAutoBackupTimerUIEvents();
-                        
+
                         // 加载设置
                         console.log('[自动备份设置] 加载设置...');
                         await loadAutoBackupSettings();
@@ -6152,32 +6311,32 @@ const success = await saveReminderSettingsFunc();
                     await loadAutoBackupSettings();
                 }
             }
-            
+
             await initRealtimeBackupToggle();
             await applyAutoBackupSettingsLanguage();
             autoBackupSettingsDialog.style.display = 'block';
-            
+
             // 隐藏"Back to Top"按钮
             hideAllScrollToTopButtons();
         });
     }
 
     if (closeAutoBackupSettingsBtn && autoBackupSettingsDialog) {
-        closeAutoBackupSettingsBtn.addEventListener('click', function() {
+        closeAutoBackupSettingsBtn.addEventListener('click', function () {
             autoBackupSettingsDialog.style.display = 'none';
-            
+
             // 恢复"Back to Top"按钮
             restoreScrollToTopButtons();
         });
     }
 
     if (autoBackupSettingsDialog) {
-        autoBackupSettingsDialog.addEventListener('click', function(event) {
+        autoBackupSettingsDialog.addEventListener('click', function (event) {
             const dialogContent = autoBackupSettingsDialog.querySelector('.modal-content');
             const isOutside = event.target === autoBackupSettingsDialog || (dialogContent && !dialogContent.contains(event.target));
             if (isOutside) {
                 autoBackupSettingsDialog.style.display = 'none';
-                
+
                 // 恢复"Back to Top"按钮
                 restoreScrollToTopButtons();
             }
@@ -6185,7 +6344,7 @@ const success = await saveReminderSettingsFunc();
     }
 
     if (realtimeBackupToggle) {
-        realtimeBackupToggle.addEventListener('click', async function() {
+        realtimeBackupToggle.addEventListener('click', async function () {
             const current = getToggleState(realtimeBackupToggle);
             const next = !current;
             updateToggleState(realtimeBackupToggle, next);
@@ -6198,23 +6357,23 @@ const success = await saveReminderSettingsFunc();
     }
 
     if (restoreAutoBackupDefaultsBtn) {
-        restoreAutoBackupDefaultsBtn.addEventListener('click', async function() {
+        restoreAutoBackupDefaultsBtn.addEventListener('click', async function () {
             // 默认：开启实时备份；其它（循环、定时）暂不实现保存逻辑
             updateToggleState(realtimeBackupToggle, true);
             try {
                 await new Promise(resolve => chrome.storage.local.set({ realtimeBackupEnabled: true }, resolve));
-            } catch (e) {}
+            } catch (e) { }
             showAutoBackupSettingsSavedIndicator();
         });
     }
 
     if (saveAutoBackupSettingsBtn && autoBackupSettingsDialog) {
-        saveAutoBackupSettingsBtn.addEventListener('click', function() {
+        saveAutoBackupSettingsBtn.addEventListener('click', function () {
             // 目前仅即时保存实时备份开关，其它设置预留
             showAutoBackupSettingsSavedIndicator();
-            setTimeout(() => { 
+            setTimeout(() => {
                 autoBackupSettingsDialog.style.display = 'none';
-                
+
                 // 恢复"Back to Top"按钮
                 restoreScrollToTopButtons();
             }, 600);
@@ -6238,7 +6397,7 @@ const success = await saveReminderSettingsFunc();
     // 添加消息监听器处理showReminderSettings消息
     chrome.runtime.onMessage.addListener((message, sender, sendResponse) => { // 使用 chrome.runtime
         if (message.action === "showReminderSettings") {
-// 重新获取对话框引用，防止引用丢失
+            // 重新获取对话框引用，防止引用丢失
             const reminderSettingsDialog = document.getElementById('reminderSettingsDialog');
 
             // 如果设置对话框已存在，打开它
@@ -6250,13 +6409,13 @@ const success = await saveReminderSettingsFunc();
                 chrome.runtime.sendMessage({ // 使用 chrome.runtime
                     action: "pauseReminderTimer"
                 }).catch(error => {
-});
+                });
 
                 // 显示对话框
                 reminderSettingsDialog.style.display = 'block';
                 sendResponse({ success: true });
             } else {
-sendResponse({ success: false, error: '找不到设置对话框元素' });
+                sendResponse({ success: false, error: '找不到设置对话框元素' });
             }
 
             return true;
@@ -6269,7 +6428,7 @@ sendResponse({ success: false, error: '找不到设置对话框元素' });
     } else {
         initializeLanguageSwitcher();
     }
-    
+
     // 在popup打开时，主动刷新一次状态卡片，确保显示最新的变化状态
     // 延迟执行以确保所有初始化完成
     setTimeout(() => {
@@ -6284,17 +6443,17 @@ function showAddNoteDialog(recordTime) {
     if (existingDialog) {
         document.body.removeChild(existingDialog);
     }
-    
+
     // 获取当前的历史记录
     chrome.storage.local.get(['syncHistory', 'preferredLang'], (data) => {
         const syncHistory = data.syncHistory || [];
         const currentLang = data.preferredLang || 'zh_CN';
         const record = syncHistory.find(r => r.time === recordTime);
-        
+
         if (!record) {
-return;
+            return;
         }
-        
+
         // 创建对话框
         const dialogOverlay = document.createElement('div');
         dialogOverlay.id = 'noteDialog';
@@ -6310,7 +6469,7 @@ return;
             justify-content: center;
             z-index: 1000;
         `;
-        
+
         // 创建对话框内容
         const dialogContent = document.createElement('div');
         dialogContent.style.cssText = `
@@ -6321,17 +6480,17 @@ return;
             box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
             position: relative;
         `;
-        
+
         // 标题
         const title = document.createElement('h3');
         title.textContent = currentLang === 'en' ? 'Note' : '备注';
         title.style.cssText = 'margin-top: 0; margin-bottom: 15px;';
-        
+
         // 时间提示
         const timeInfo = document.createElement('div');
         timeInfo.textContent = `${formatTime(new Date(recordTime))}`;
         timeInfo.style.cssText = 'margin-bottom: 15px; color: #007AFF; font-weight: bold;';
-        
+
         // 文本区域
         const textarea = document.createElement('textarea');
         textarea.value = record.note || '';
@@ -6347,35 +6506,35 @@ return;
             margin-bottom: 15px;
             font-size: 14px;
         `;
-        
+
         // 字数提示
         const charCount = document.createElement('div');
         const suggestedChars = 20;
         const updateCharCount = () => {
             const count = textarea.value.length;
             const overLimit = count > suggestedChars;
-            
+
             if (currentLang === 'en') {
-                charCount.textContent = overLimit ? 
-                    `${count} characters (suggested: ${suggestedChars})` : 
+                charCount.textContent = overLimit ?
+                    `${count} characters (suggested: ${suggestedChars})` :
                     `${count} / ${suggestedChars} characters`;
             } else {
-                charCount.textContent = overLimit ? 
-                    `${count} 个字符（建议: ${suggestedChars}）` : 
+                charCount.textContent = overLimit ?
+                    `${count} 个字符（建议: ${suggestedChars}）` :
                     `${count} / ${suggestedChars} 个字符`;
             }
-            
+
             // 只改变颜色提示，不强制限制
             charCount.style.color = overLimit ? '#FF9800' : '#666';
         };
         updateCharCount();
         textarea.addEventListener('input', updateCharCount);
         charCount.style.cssText = 'text-align: right; font-size: 12px; margin-bottom: 15px; color: #666;';
-        
+
         // 按钮容器
         const buttonContainer = document.createElement('div');
         buttonContainer.style.cssText = 'display: flex; justify-content: space-between; gap: 10px;';
-        
+
         // 监听语言切换事件
         const handleLanguageChange = (changes, area) => {
             if (area === 'local' && changes.preferredLang) {
@@ -6390,15 +6549,15 @@ return;
                                 showAddNoteDialog(recordTime);
                             }
                         } catch (error) {
-}
+                        }
                     }
                 });
             }
         };
-        
+
         // 添加语言切换事件监听
         chrome.storage.onChanged.addListener(handleLanguageChange);
-        
+
         // 取消按钮
         const cancelButton = document.createElement('button');
         cancelButton.textContent = currentLang === 'en' ? 'Cancel' : '取消';
@@ -6416,7 +6575,7 @@ return;
             chrome.storage.onChanged.removeListener(handleLanguageChange);
             document.body.removeChild(dialogOverlay);
         };
-        
+
         // 保存按钮
         const saveButton = document.createElement('button');
         saveButton.textContent = currentLang === 'en' ? 'Save' : '保存';
@@ -6435,7 +6594,7 @@ return;
             saveNoteForRecord(recordTime, textarea.value);
             document.body.removeChild(dialogOverlay);
         };
-        
+
         // 添加所有元素
         buttonContainer.appendChild(cancelButton);
         buttonContainer.appendChild(saveButton);
@@ -6445,15 +6604,15 @@ return;
         dialogContent.appendChild(charCount);
         dialogContent.appendChild(buttonContainer);
         dialogOverlay.appendChild(dialogContent);
-        
+
         document.body.appendChild(dialogOverlay);
         textarea.focus();
-        
+
         // 确保在对话框被意外关闭时也能清理监听器
         dialogOverlay.addEventListener('remove', () => {
             chrome.storage.onChanged.removeListener(handleLanguageChange);
         });
-        
+
         // 添加点击空白区域关闭对话框的功能
         dialogOverlay.addEventListener('click', (event) => {
             if (event.target === dialogOverlay) {
@@ -6475,10 +6634,10 @@ function saveNoteForRecord(recordTime, noteText) {
             }
             return record;
         });
-        
+
         chrome.storage.local.set({ syncHistory: updatedHistory }, () => {
-updateSyncHistory(); // 更新显示
-            
+            updateSyncHistory(); // 更新显示
+
             // 使用国际化字符串
             const noteSavedText = {
                 'zh_CN': '备注已保存',
@@ -6556,12 +6715,12 @@ let popupOpenCountRecorded = false; // 防止重复记录
 async function incrementPopupOpenCount() {
     if (popupOpenCountRecorded) return false; // 本次 popup 打开只记录一次
     popupOpenCountRecorded = true;
-    
+
     try {
         const result = await new Promise(resolve => {
             browserAPI.storage.local.get('recommendRefreshSettings', resolve);
         });
-        
+
         const DEFAULT_SETTINGS = {
             refreshEveryNOpens: 3,
             refreshAfterHours: 0,
@@ -6569,21 +6728,21 @@ async function incrementPopupOpenCount() {
             lastRefreshTime: 0,
             openCountSinceRefresh: 0
         };
-        
+
         const settings = { ...DEFAULT_SETTINGS, ...result.recommendRefreshSettings };
         settings.openCountSinceRefresh = (settings.openCountSinceRefresh || 0) + 1;
-        
+
         // 检查是否需要自动刷新
         let shouldRefresh = false;
         const now = Date.now();
-        
+
         // 条件1: 每N次打开
-        if (settings.refreshEveryNOpens > 0 && 
+        if (settings.refreshEveryNOpens > 0 &&
             settings.openCountSinceRefresh >= settings.refreshEveryNOpens) {
             console.log('[Popup] 达到打开次数阈值，需要刷新');
             shouldRefresh = true;
         }
-        
+
         // 条件2: 超过X小时
         if (!shouldRefresh && settings.refreshAfterHours > 0 && settings.lastRefreshTime > 0) {
             const hoursSinceRefresh = (now - settings.lastRefreshTime) / 3600000;
@@ -6592,7 +6751,7 @@ async function incrementPopupOpenCount() {
                 shouldRefresh = true;
             }
         }
-        
+
         // 条件3: 超过X天
         if (!shouldRefresh && settings.refreshAfterDays > 0 && settings.lastRefreshTime > 0) {
             const daysSinceRefresh = (now - settings.lastRefreshTime) / 86400000;
@@ -6601,17 +6760,17 @@ async function incrementPopupOpenCount() {
                 shouldRefresh = true;
             }
         }
-        
+
         // 如果需要刷新，重置计数
         if (shouldRefresh) {
             settings.openCountSinceRefresh = 0;
             settings.lastRefreshTime = now;
         }
-        
+
         await new Promise(resolve => {
             browserAPI.storage.local.set({ recommendRefreshSettings: settings }, resolve);
         });
-        
+
         console.log('[Popup] 打开次数已记录:', settings.openCountSinceRefresh, '需要刷新:', shouldRefresh);
         return shouldRefresh;
     } catch (e) {
@@ -6645,7 +6804,7 @@ browserAPI.storage.onChanged.addListener((changes, areaName) => {
             console.log('[卡片同步] 忽略本页面保存触发的变化');
             return;
         }
-        
+
         // 检查是否全部勾选，如果是则刷新获取新卡片（来自history页面的翻牌完成）
         const newValue = changes.popupCurrentCards.newValue;
         if (newValue && newValue.cardIds && newValue.flippedIds) {
@@ -6744,12 +6903,12 @@ function initializeBookmarkToolbox() {
                 img.src = thumbnail;
                 img.alt = 'Bookmark Canvas Thumbnail';
                 img.style.borderRadius = '4px';
-                
+
                 // 直接用 cover，保持比例裁剪边缘，不拉伸变形
                 img.style.width = '100%';
                 img.style.height = '100%';
                 img.style.objectFit = 'cover';
-                
+
                 canvasThumbnailContainer.appendChild(img);
             }
         } catch (e) {
@@ -6953,18 +7112,18 @@ async function getPopupCurrentCards() {
 async function savePopupCurrentCards(cardIds, flippedIds, cardData = null) {
     // 标记本次保存时间，防止触发循环刷新
     popupLastSaveTime = Date.now();
-    
+
     const data = {
         cardIds: cardIds,
         flippedIds: flippedIds,
         timestamp: Date.now()
     };
-    
+
     // 如果提供了cardData，保存它（用于HTML页面同步）
     if (cardData) {
         data.cardData = cardData;
     }
-    
+
     await browserAPI.storage.local.set({ popupCurrentCards: data });
 }
 
@@ -6972,13 +7131,13 @@ async function savePopupCurrentCards(cardIds, flippedIds, cardData = null) {
 async function markPopupCardFlipped(bookmarkId) {
     const currentCards = await getPopupCurrentCards();
     if (!currentCards) return false;
-    
+
     // 添加到已勾选列表
     if (!currentCards.flippedIds.includes(bookmarkId)) {
         currentCards.flippedIds.push(bookmarkId);
         await savePopupCurrentCards(currentCards.cardIds, currentCards.flippedIds);
     }
-    
+
     // 检查是否全部勾选
     const allFlipped = currentCards.cardIds.every(id => currentCards.flippedIds.includes(id));
     return allFlipped;
@@ -6997,7 +7156,7 @@ async function refreshPopupRecommendCards(force = false) {
         console.log('[Popup] 满足自动刷新条件，强制刷新卡片');
         force = true;
     }
-    
+
     popupRecommendLoading = true;
 
     try {
@@ -7005,16 +7164,16 @@ async function refreshPopupRecommendCards(force = false) {
         const currentCards = await getPopupCurrentCards();
         const bookmarks = await fetchAllBookmarksFlat();
         const bookmarkMap = new Map(bookmarks.map(b => [b.id, b]));
-        
+
         // 如果有保存的卡片且不是全部勾选，则显示保存的卡片
         if (currentCards && currentCards.cardIds && currentCards.cardIds.length > 0 && !force) {
             const allFlipped = currentCards.cardIds.every(id => currentCards.flippedIds.includes(id));
-            
+
             if (!allFlipped) {
                 // 显示保存的卡片
                 const reviewData = await getPopupReviewData();
                 const postponedList = await getPopupPostponedBookmarks();
-                
+
                 // 构建缓存的卡片数据映射（包含favicon和priority）
                 const cachedCardDataMap = new Map();
                 if (currentCards.cardData && Array.isArray(currentCards.cardData)) {
@@ -7027,17 +7186,17 @@ async function refreshPopupRecommendCards(force = false) {
                         }
                     });
                 }
-                
+
                 // 从S值缓存读取（与history.js共享），确保S值始终一致
                 let scoresCache = await getPopupScoresCache();
-                
+
                 // 如果S值缓存为空，请求background.js计算
                 if (Object.keys(scoresCache).length === 0 && bookmarks.length > 0) {
                     console.log('[Popup] S值缓存为空（恢复卡片时），请求background计算...');
                     await requestComputeScores();
                     scoresCache = await getPopupScoresCache();
                 }
-                
+
                 popupRecommendCards = currentCards.cardIds.map(id => {
                     const bookmark = bookmarkMap.get(id);
                     if (bookmark) {
@@ -7050,7 +7209,7 @@ async function refreshPopupRecommendCards(force = false) {
                     }
                     return null;
                 }).filter(Boolean);
-                
+
                 cards.forEach((card, index) => {
                     const bookmark = popupRecommendCards[index];
                     if (bookmark) {
@@ -7065,12 +7224,12 @@ async function refreshPopupRecommendCards(force = false) {
                         resetPopupRecommendCard(card, '--');
                     }
                 });
-                
+
                 popupRecommendLoading = false;
                 return;
             }
         }
-        
+
         // 获取新的推荐卡片
         const [flippedList, blockedData, postponedList] = await Promise.all([
             getPopupFlippedBookmarks(),
@@ -7125,14 +7284,14 @@ async function refreshPopupRecommendCards(force = false) {
         const reviewData = await getPopupReviewData();
         // 从S值缓存读取（与history.js共享），保持一致性
         let scoresCache = await getPopupScoresCache();
-        
+
         // 如果S值缓存为空，请求background.js计算
         if (Object.keys(scoresCache).length === 0 && bookmarks.length > 0) {
             console.log('[Popup] S值缓存为空，请求background计算...');
             await requestComputeScores();
             scoresCache = await getPopupScoresCache();
         }
-        
+
         const bookmarksWithPriority = availableBookmarks.map(bookmark => {
             const cached = scoresCache[bookmark.id];
             // 使用缓存的S值（与history.js一致），缓存不存在时使用默认值0.5
@@ -7246,7 +7405,7 @@ function populatePopupRecommendCard(card, bookmark, cachedFaviconUrl = null) {
             await recordPopupReview(bookmark.id);
             await openPopupRecommendTarget(bookmark.url);
             card.classList.add('flipped');
-            
+
             // 更新本地卡片勾选状态（storage监听器会自动处理刷新）
             await markPopupCardFlipped(bookmark.id);
         } catch (error) {
@@ -7555,7 +7714,7 @@ async function openPopupRecommendTarget(url) {
     try {
         // 从storage获取共享的窗口ID
         let windowId = await getRecommendWindowId();
-        
+
         if (windowId) {
             try {
                 await browserAPI.windows.get(windowId);

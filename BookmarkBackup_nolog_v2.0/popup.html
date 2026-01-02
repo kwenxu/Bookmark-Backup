@@ -1345,6 +1345,84 @@
             margin-right: 4px;
         }
 
+        .history-stat-row {
+            margin-top: 4px;
+            display: flex;
+            justify-content: center;
+        }
+
+        .history-stat-badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            padding: 3px 6px;
+            border-radius: 6px;
+            border: 1px solid var(--theme-border-primary);
+            background: var(--theme-bg-secondary);
+            font-size: 11px;
+            color: var(--theme-text-secondary);
+            white-space: nowrap;
+        }
+
+        .history-stat-badge.multi-line {
+            flex-direction: column;
+            align-items: center;
+            gap: 2px;
+        }
+
+        .history-stat-line {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            justify-content: center;
+            width: 100%;
+        }
+
+        .history-stat-badge.multi-line.single-top {
+            align-items: center;
+        }
+
+        .history-stat-badge.multi-line.single-top .history-stat-line:first-child {
+            justify-content: center;
+            width: 100%;
+        }
+
+        .history-stat-badge.no-change {
+            color: var(--theme-text-tertiary);
+        }
+
+        .history-stat-badge.first {
+            color: var(--theme-success-color);
+        }
+
+        .history-stat-label {
+            color: var(--theme-text-secondary);
+        }
+
+        .history-stat-color {
+            font-weight: 600;
+        }
+
+        .history-stat-color.added {
+            color: #4CAF50;
+        }
+
+        .history-stat-color.deleted {
+            color: #F44336;
+        }
+
+        .history-stat-color.moved {
+            color: #2196F3;
+        }
+
+        .history-stat-color.modified {
+            color: #FF9800;
+        }
+
+        .history-stat-sep {
+            color: var(--theme-text-tertiary);
+        }
+
         /* 美化滚动条样式 */
         .history-list::-webkit-scrollbar {
             width: 6px;

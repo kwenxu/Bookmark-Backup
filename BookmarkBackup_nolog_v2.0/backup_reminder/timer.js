@@ -481,6 +481,65 @@ return true;
 async function calculateChanges() {
     let currentChangeDescription = "无变化";
     let currentHasChanges = false;
+
+    // 优先使用 background 预热/缓存的“净变化摘要”（Git 风格：对比上次备份的最终状态）
+    // 这样可避免：移动/修改后又改回去仍被算作变更；以及“加减相同数量但内容不同”被漏检。
+    try {
+        const { cachedBookmarkAnalysisSnapshot } = await browserAPI.storage.local.get(['cachedBookmarkAnalysisSnapshot']);
+        const snapshot = cachedBookmarkAnalysisSnapshot;
+        if (snapshot && typeof snapshot === 'object') {
+            const bmAdded = typeof snapshot.bookmarkAdded === 'number' ? snapshot.bookmarkAdded : 0;
+            const bmDeleted = typeof snapshot.bookmarkDeleted === 'number' ? snapshot.bookmarkDeleted : 0;
+            const fdAdded = typeof snapshot.folderAdded === 'number' ? snapshot.folderAdded : 0;
+            const fdDeleted = typeof snapshot.folderDeleted === 'number' ? snapshot.folderDeleted : 0;
+
+            const movedCount = typeof snapshot.movedCount === 'number' ? snapshot.movedCount : 0;
+            const modifiedCount = typeof snapshot.modifiedCount === 'number' ? snapshot.modifiedCount : 0;
+
+            const hasQuantityChanges = bmAdded > 0 || bmDeleted > 0 || fdAdded > 0 || fdDeleted > 0 ||
+                (typeof snapshot.bookmarkDiff === 'number' && snapshot.bookmarkDiff !== 0) ||
+                (typeof snapshot.folderDiff === 'number' && snapshot.folderDiff !== 0);
+
+            const hasStructuralChanges = movedCount > 0 || modifiedCount > 0 ||
+                snapshot.bookmarkMoved || snapshot.folderMoved || snapshot.bookmarkModified || snapshot.folderModified;
+
+            currentHasChanges = hasQuantityChanges || hasStructuralChanges;
+
+            if (currentHasChanges) {
+                const changeInfo = [];
+
+                // 数量变化：优先用新增/删除分开显示；否则回退到净差
+                if (bmAdded > 0) changeInfo.push(`+${bmAdded} 书签`);
+                if (bmDeleted > 0) changeInfo.push(`-${bmDeleted} 书签`);
+                if (fdAdded > 0) changeInfo.push(`+${fdAdded} 文件夹`);
+                if (fdDeleted > 0) changeInfo.push(`-${fdDeleted} 文件夹`);
+
+                if (bmAdded === 0 && bmDeleted === 0 && typeof snapshot.bookmarkDiff === 'number' && snapshot.bookmarkDiff !== 0) {
+                    changeInfo.push(`${snapshot.bookmarkDiff > 0 ? '+' : ''}${snapshot.bookmarkDiff} 书签`);
+                }
+                if (fdAdded === 0 && fdDeleted === 0 && typeof snapshot.folderDiff === 'number' && snapshot.folderDiff !== 0) {
+                    changeInfo.push(`${snapshot.folderDiff > 0 ? '+' : ''}${snapshot.folderDiff} 文件夹`);
+                }
+
+                const bookmarkStructural = (typeof snapshot.movedBookmarkCount === 'number' && snapshot.movedBookmarkCount > 0) ||
+                    (typeof snapshot.modifiedBookmarkCount === 'number' && snapshot.modifiedBookmarkCount > 0) ||
+                    snapshot.bookmarkMoved || snapshot.bookmarkModified;
+                const folderStructural = (typeof snapshot.movedFolderCount === 'number' && snapshot.movedFolderCount > 0) ||
+                    (typeof snapshot.modifiedFolderCount === 'number' && snapshot.modifiedFolderCount > 0) ||
+                    snapshot.folderMoved || snapshot.folderModified;
+
+                if (bookmarkStructural) changeInfo.push("书签变动");
+                if (folderStructural) changeInfo.push("文件夹变动");
+
+                currentChangeDescription = `(${changeInfo.join('，')})`;
+            } else {
+                currentChangeDescription = "无变化";
+            }
+
+            return { currentChangeDescription, currentHasChanges };
+        }
+    } catch (_) { }
+
     try {
         const {
             lastSyncTime,

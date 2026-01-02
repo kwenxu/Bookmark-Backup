@@ -1190,7 +1190,7 @@ const i18n = {
         'en': 'Current Changes'
     },
     historyViewTitle: {
-        'zh_CN': '备份历史记录',
+        'zh_CN': '备份历史',
         'en': 'Backup History'
     },
     additionsViewTitle: {
@@ -1569,10 +1569,7 @@ const i18n = {
         'zh_CN': '暂无备份记录',
         'en': 'No backup records'
     },
-    copyAllHistory: {
-        'zh_CN': '复制所有记录',
-        'en': 'Copy All Records'
-    },
+
     historyDetailModeSimple: {
         'zh_CN': '简略',
         'en': 'Simple'
@@ -1868,7 +1865,7 @@ const i18n = {
         'en': 'Export Mode'
     },
     exportChangesModeSimple: {
-        'zh_CN': '简单',
+        'zh_CN': '简略',
         'en': 'Simple'
     },
     exportChangesModeDetailed: {
@@ -1937,7 +1934,7 @@ const i18n = {
         'en': 'Export Mode'
     },
     exportChangesModeSimple: {
-        'zh_CN': '简单',
+        'zh_CN': '简略',
         'en': 'Simple'
     },
     exportChangesModeDetailed: {
@@ -3188,10 +3185,7 @@ function applyLanguage() {
     }
 
     // 更新按钮文本
-    const copyAllHistoryText = document.getElementById('copyAllHistoryText');
-    if (copyAllHistoryText) {
-        copyAllHistoryText.textContent = i18n.copyAllHistory[currentLang];
-    }
+
     const revertAllCurrentText = document.getElementById('revertAllCurrentText');
     if (revertAllCurrentText) revertAllCurrentText.textContent = i18n.revertAll[currentLang];
 
@@ -3220,9 +3214,12 @@ function applyLanguage() {
     document.getElementById('modalTitle').textContent = i18n.modalTitle[currentLang];
 
     // 更新工具按钮气泡
-    document.getElementById('refreshTooltip').textContent = i18n.refreshTooltip[currentLang];
-    document.getElementById('themeTooltip').textContent = i18n.themeTooltip[currentLang];
-    document.getElementById('langTooltip').textContent = i18n.langTooltip[currentLang];
+    const refreshTooltip = document.getElementById('refreshTooltip');
+    if (refreshTooltip) refreshTooltip.textContent = i18n.refreshTooltip[currentLang];
+    const themeTooltip = document.getElementById('themeTooltip');
+    if (themeTooltip) themeTooltip.textContent = i18n.themeTooltip[currentLang];
+    const langTooltip = document.getElementById('langTooltip');
+    if (langTooltip) langTooltip.textContent = i18n.langTooltip[currentLang];
     const helpTooltip = document.getElementById('helpTooltip');
     if (helpTooltip) {
         helpTooltip.textContent = i18n.helpTooltip[currentLang];
@@ -3863,7 +3860,7 @@ function initializeUI() {
     initAdditionsSubTabs();
 
     // 工具按钮
-    document.getElementById('refreshBtn').addEventListener('click', refreshData);
+
     document.getElementById('themeToggle').addEventListener('click', toggleTheme);
     document.getElementById('langToggle').addEventListener('click', toggleLanguage);
     const helpToggle = document.getElementById('helpToggle');
@@ -13554,8 +13551,9 @@ function renderHistoryView() {
                         </button>
                     </div>
                     <div class="commit-actions">
-                        <button class="action-btn detail-btn" data-time="${record.time}" title="${currentLang === 'zh_CN' ? '查看详情' : 'View Details'}">
-                            <i class="fas fa-info-circle"></i>
+                        <button class="action-btn detail-btn" data-time="${record.time}">
+                            <i class="fas fa-external-link-alt"></i>
+                            <span>${currentLang === 'zh_CN' ? '详情' : 'Details'}</span>
                         </button>
                     </div>
                 </div>
@@ -13564,10 +13562,10 @@ function renderHistoryView() {
                         <i class="fas fa-clock"></i> ${time}
                     </div>
                     ${renderCommitStatsInline(changes)}
-                    <span class="commit-badge ${isAuto ? 'auto' : 'manual'}">
+                    ${!typeBadge ? `<span class="commit-badge ${isAuto ? 'auto' : 'manual'}">
                         <i class="fas ${isAuto ? 'fa-robot' : 'fa-hand-pointer'}"></i>
                         ${isAuto ? i18n.autoBackup[currentLang] : i18n.manualBackup[currentLang]}
-                    </span>
+                    </span>` : ''}
                     ${typeBadge}
                     <span class="commit-badge direction">
                         ${directionIcon}
@@ -20159,9 +20157,7 @@ function setupEventDelegation() {
                         await window.copyHistoryDiff(recordTime);
                     }
                     break;
-                case 'copyAllHistory':
-                    await window.copyAllHistoryDiff();
-                    break;
+
                 case 'copyJSONDiff':
                     await copyJSONDiff();
                     break;
@@ -20298,39 +20294,7 @@ function showToast(message) {
     }, 2000);
 }
 
-async function refreshData() {
-    const btn = document.getElementById('refreshBtn');
-    const icon = btn.querySelector('i');
 
-    icon.style.animation = 'spin 0.5s linear infinite';
-
-    // 手动刷新时，强制刷新background缓存
-    await loadAllData({ skipRender: true });
-
-    if (currentView === 'additions') {
-        try {
-            renderAdditionsView();
-        } catch (error) {
-            console.warn('[refreshData] 渲染书签添加记录失败:', error);
-        }
-    }
-
-    await refreshBrowsingHistoryData({ forceFull: true, silent: true });
-
-    // 如果当前在变化视图，强制刷新渲染
-    if (currentView === 'current-changes') {
-        await renderCurrentChangesViewWithRetry(3, true);
-    }
-
-    // 如果当前在树视图，强制刷新树视图
-    if (currentView === 'tree') {
-        await renderTreeView(true);
-    }
-
-    icon.style.animation = '';
-
-    showToast(currentLang === 'zh_CN' ? '数据已刷新' : 'Data Refreshed');
-}
 
 // 添加动画样式
 const style = document.createElement('style');
@@ -20550,40 +20514,7 @@ function extractBookmarksFromTree(tree) {
     return bookmarks;
 }
 
-// 复制所有历史记录的diff（JSON格式，排除bookmarkTree以防止卡顿）
-window.copyAllHistoryDiff = async function () {
-    try {
-        const allDiffs = syncHistory.map(record => ({
-            timestamp: record.time,
-            direction: record.direction,
-            status: record.status,
-            syncType: record.type,
-            note: record.note || '',
-            errorMessage: record.errorMessage || '',
-            isFirstBackup: record.isFirstBackup || false,
-            // 只保留统计数字，不包含完整树结构
-            bookmarkStats: record.bookmarkStats ? {
-                currentBookmarkCount: record.bookmarkStats.currentBookmarkCount,
-                currentFolderCount: record.bookmarkStats.currentFolderCount,
-                prevBookmarkCount: record.bookmarkStats.prevBookmarkCount,
-                prevFolderCount: record.bookmarkStats.prevFolderCount,
-                bookmarkDiff: record.bookmarkStats.bookmarkDiff,
-                folderDiff: record.bookmarkStats.folderDiff,
-                bookmarkMoved: record.bookmarkStats.bookmarkMoved,
-                folderMoved: record.bookmarkStats.folderMoved,
-                bookmarkModified: record.bookmarkStats.bookmarkModified,
-                folderModified: record.bookmarkStats.folderModified
-            } : null
-        }));
 
-        const jsonString = JSON.stringify(allDiffs, null, 2);
-        await navigator.clipboard.writeText(jsonString);
-        showToast(currentLang === 'zh_CN' ? `已复制${allDiffs.length}条历史记录` : `Copied ${allDiffs.length} records`);
-    } catch (error) {
-        console.error('[复制所有历史Diff] 失败:', error);
-        showToast(currentLang === 'zh_CN' ? '复制失败' : 'Copy failed');
-    }
-};
 
 // 导出历史记录的diff为HTML（可视化格式）
 window.exportHistoryDiffToHTML = async function (recordTime) {
@@ -24293,8 +24224,18 @@ async function generateChangesHTML(changeData, mode, depth) {
         return false;
     }
 
+    // 检查当前节点（treeItem）是否自身有变化标记
+    function hasSelfChange(treeItem) {
+        if (!treeItem) return false;
+        return treeItem.classList.contains('tree-change-added') ||
+            treeItem.classList.contains('tree-change-deleted') ||
+            treeItem.classList.contains('tree-change-modified') ||
+            treeItem.classList.contains('tree-change-moved');
+    }
+
     // 递归生成 HTML
-    function generateNodeHTML(nodeEl, indentLevel) {
+    // forceInclude: 如果为true，表示父级文件夹有变化标记，当前节点应该被强制导出
+    function generateNodeHTML(nodeEl, indentLevel, forceInclude = false) {
         let result = '';
         const indent = '    '.repeat(indentLevel);
 
@@ -24304,11 +24245,9 @@ async function generateChangesHTML(changeData, mode, depth) {
             const treeItem = treeNode.querySelector(':scope > .tree-item');
             if (!treeItem) return;
 
-            // 简单模式：只导出有变化的分支
-            // 详细模式（快照）：只要是可见的（这里假设如果是递归调用进来的，说明父级是展开的）
-            // 但如果当前节点是文件夹，我们需要决定是否递归子节点
-
-            if (mode !== 'detailed' && !hasChanges(treeNode)) return;
+            // 简略模式：只导出有变化的分支，或者被强制包含的节点
+            // 详细模式（快照）：只要是可见的
+            if (mode !== 'detailed' && !forceInclude && !hasChanges(treeNode)) return;
 
             // 从 data 属性获取标题和 URL（空标题用根目录表示）
             let title = treeItem.dataset.nodeTitle || treeItem.querySelector('.tree-label')?.textContent?.trim() || '';
@@ -24339,23 +24278,23 @@ async function generateChangesHTML(changeData, mode, depth) {
                 // 递归处理子节点
                 const childrenContainer = treeNode.querySelector(':scope > .tree-children');
                 if (childrenContainer) {
-                    // 核心修改：详细模式下，只有当文件夹展开时才递归子节点
-                    // 简单模式下，只要有变化就递归（原逻辑）
                     let shouldRecurse = false;
+                    // 简略模式下，如果当前文件夹自身有变化标记，则强制包含所有子节点
+                    const shouldForceIncludeChildren = mode !== 'detailed' && !forceInclude && hasSelfChange(treeItem);
+                    const nextForceInclude = forceInclude || shouldForceIncludeChildren;
 
                     if (mode === 'detailed') {
-                        // 检查展开状态
+                        // 详细模式：检查展开状态
                         if (childrenContainer.classList.contains('expanded')) {
                             shouldRecurse = true;
                         }
                     } else {
-                        // 简单模式：基于 hasChanges (上面已经 check 过 hasChanges(treeNode) 了，所以只要 logic says yes)
-                        // hasChanges 保证了至少有一个子孙有变化，所以必须递归去寻找那个变化
+                        // 简略模式：如果有变化或者被强制包含，则递归
                         shouldRecurse = true;
                     }
 
                     if (shouldRecurse) {
-                        result += generateNodeHTML(childrenContainer, indentLevel + 1);
+                        result += generateNodeHTML(childrenContainer, indentLevel + 1, nextForceInclude);
                     }
                 }
 
@@ -24411,8 +24350,18 @@ async function generateChangesJSON(changeData, mode, depth) {
         return false;
     }
 
+    // 检查当前节点（treeItem）是否自身有变化标记
+    function hasSelfChange(treeItem) {
+        if (!treeItem) return false;
+        return treeItem.classList.contains('tree-change-added') ||
+            treeItem.classList.contains('tree-change-deleted') ||
+            treeItem.classList.contains('tree-change-modified') ||
+            treeItem.classList.contains('tree-change-moved');
+    }
+
     // 递归提取树结构
-    function extractTree(nodeEl) {
+    // forceInclude: 如果为true，表示父级文件夹有变化标记，当前节点应该被强制导出
+    function extractTree(nodeEl, forceInclude = false) {
         const result = [];
         const treeNodes = nodeEl.querySelectorAll(':scope > .tree-node');
 
@@ -24420,9 +24369,9 @@ async function generateChangesJSON(changeData, mode, depth) {
             const treeItem = treeNode.querySelector(':scope > .tree-item');
             if (!treeItem) return;
 
-            // 简单模式：只导出有变化的分支
-            // 详细模式（快照）：只要是可见的（这里假设如果是递归调用进来的，说明父级是展开的）
-            if (mode !== 'detailed' && !hasChanges(treeNode)) return;
+            // 简略模式：只导出有变化的分支，或者被强制包含的节点
+            // 详细模式（快照）：只要是可见的
+            if (mode !== 'detailed' && !forceInclude && !hasChanges(treeNode)) return;
 
             let title = treeItem.dataset.nodeTitle || treeItem.querySelector('.tree-label')?.textContent?.trim() || '';
             if (!title) title = currentLang === 'zh_CN' ? '根目录' : 'Root';
@@ -24453,6 +24402,9 @@ async function generateChangesJSON(changeData, mode, depth) {
                 const childrenContainer = treeNode.querySelector(':scope > .tree-children');
                 if (childrenContainer) {
                     let shouldRecurse = false;
+                    // 简略模式下，如果当前文件夹自身有变化标记，则强制包含所有子节点
+                    const shouldForceIncludeChildren = mode !== 'detailed' && !forceInclude && hasSelfChange(treeItem);
+                    const nextForceInclude = forceInclude || shouldForceIncludeChildren;
 
                     if (mode === 'detailed') {
                         // 详细模式：检查展开状态
@@ -24460,12 +24412,12 @@ async function generateChangesJSON(changeData, mode, depth) {
                             shouldRecurse = true;
                         }
                     } else {
-                        // 简单模式：基于 hasChanges (上面已经 check 过 hasChanges(treeNode) 了)
+                        // 简略模式：如果有变化或者被强制包含，则递归
                         shouldRecurse = true;
                     }
 
                     if (shouldRecurse) {
-                        item.children = extractTree(childrenContainer);
+                        item.children = extractTree(childrenContainer, nextForceInclude);
                     } else {
                         item.children = [];
                     }
@@ -24593,7 +24545,18 @@ async function generateHistoryChangesHTMLFromDOM(treeContainer, mode) {
         return '';
     }
 
-    function generateNodeHTML(nodeEl, indentLevel) {
+    // 检查当前节点（treeItem）是否自身有变化标记
+    function hasSelfChange(treeItem) {
+        if (!treeItem) return false;
+        return treeItem.classList.contains('tree-change-added') ||
+            treeItem.classList.contains('tree-change-deleted') ||
+            treeItem.classList.contains('tree-change-modified') ||
+            treeItem.classList.contains('tree-change-moved') ||
+            treeItem.classList.contains('tree-change-mixed');
+    }
+
+    // forceInclude: 如果为true，表示父级文件夹有变化标记，当前节点应该被强制导出
+    function generateNodeHTML(nodeEl, indentLevel, forceInclude = false) {
         let result = '';
         const indent = '    '.repeat(indentLevel);
         const treeNodes = nodeEl.querySelectorAll(':scope > .tree-node');
@@ -24602,7 +24565,8 @@ async function generateHistoryChangesHTMLFromDOM(treeContainer, mode) {
             const treeItem = treeNode.querySelector(':scope > .tree-item');
             if (!treeItem) return;
 
-            if (mode !== 'detailed' && !hasChanges(treeNode)) return;
+            // 简略模式：只导出有变化的分支，或者被强制包含的节点
+            if (mode !== 'detailed' && !forceInclude && !hasChanges(treeNode)) return;
 
             const link = treeItem.querySelector('a.tree-bookmark-link') || treeItem.querySelector('a');
             const url = link ? link.getAttribute('href') : '';
@@ -24621,6 +24585,10 @@ async function generateHistoryChangesHTMLFromDOM(treeContainer, mode) {
                 const childrenContainer = treeNode.querySelector(':scope > .tree-children');
                 if (childrenContainer) {
                     let shouldRecurse = false;
+                    // 简略模式下，如果当前文件夹自身有变化标记，则强制包含所有子节点
+                    const shouldForceIncludeChildren = mode !== 'detailed' && !forceInclude && hasSelfChange(treeItem);
+                    const nextForceInclude = forceInclude || shouldForceIncludeChildren;
+
                     if (mode === 'detailed') {
                         shouldRecurse = childrenContainer.classList.contains('expanded');
                     } else {
@@ -24628,7 +24596,7 @@ async function generateHistoryChangesHTMLFromDOM(treeContainer, mode) {
                     }
 
                     if (shouldRecurse) {
-                        result += generateNodeHTML(childrenContainer, indentLevel + 1);
+                        result += generateNodeHTML(childrenContainer, indentLevel + 1, nextForceInclude);
                     }
                 }
 
@@ -24701,7 +24669,18 @@ async function generateHistoryChangesJSONFromDOM(treeContainer, mode) {
         return null;
     }
 
-    function extractTree(nodeEl) {
+    // 检查当前节点（treeItem）是否自身有变化标记
+    function hasSelfChange(treeItem) {
+        if (!treeItem) return false;
+        return treeItem.classList.contains('tree-change-added') ||
+            treeItem.classList.contains('tree-change-deleted') ||
+            treeItem.classList.contains('tree-change-modified') ||
+            treeItem.classList.contains('tree-change-moved') ||
+            treeItem.classList.contains('tree-change-mixed');
+    }
+
+    // forceInclude: 如果为true，表示父级文件夹有变化标记，当前节点应该被强制导出
+    function extractTree(nodeEl, forceInclude = false) {
         const result = [];
         const treeNodes = nodeEl.querySelectorAll(':scope > .tree-node');
 
@@ -24709,7 +24688,8 @@ async function generateHistoryChangesJSONFromDOM(treeContainer, mode) {
             const treeItem = treeNode.querySelector(':scope > .tree-item');
             if (!treeItem) return;
 
-            if (mode !== 'detailed' && !hasChanges(treeNode)) return;
+            // 简略模式：只导出有变化的分支，或者被强制包含的节点
+            if (mode !== 'detailed' && !forceInclude && !hasChanges(treeNode)) return;
 
             const link = treeItem.querySelector('a.tree-bookmark-link') || treeItem.querySelector('a');
             const url = link ? link.getAttribute('href') : '';
@@ -24732,13 +24712,17 @@ async function generateHistoryChangesJSONFromDOM(treeContainer, mode) {
                 const childrenContainer = treeNode.querySelector(':scope > .tree-children');
                 if (childrenContainer) {
                     let shouldRecurse = false;
+                    // 简略模式下，如果当前文件夹自身有变化标记，则强制包含所有子节点
+                    const shouldForceIncludeChildren = mode !== 'detailed' && !forceInclude && hasSelfChange(treeItem);
+                    const nextForceInclude = forceInclude || shouldForceIncludeChildren;
+
                     if (mode === 'detailed') {
                         shouldRecurse = childrenContainer.classList.contains('expanded');
                     } else {
                         shouldRecurse = true;
                     }
 
-                    item.children = shouldRecurse ? extractTree(childrenContainer) : [];
+                    item.children = shouldRecurse ? extractTree(childrenContainer, nextForceInclude) : [];
                 }
             }
 
@@ -24844,14 +24828,14 @@ async function generateHistoryChangesHTML(bookmarkTree, changeMap, mode) {
 
     // 递归生成 HTML
     // 详细模式：显示所有节点，但只展开有变化的路径（与"当前变化"一致）
-    // 简单模式：只导出有变化的分支
+    // 简略模式：只导出有变化的分支
     function generateNodeHTML(node, indentLevel) {
         if (!node) return '';
 
         // 检查该节点或其子节点是否有变化
         const nodeHasChanges = hasChangesRecursive(node);
 
-        // 简单模式：只导出有变化的分支
+        // 简略模式：只导出有变化的分支
         if (mode !== 'detailed' && !nodeHasChanges) return '';
 
         let result = '';
@@ -24888,7 +24872,7 @@ async function generateHistoryChangesHTML(bookmarkTree, changeMap, mode) {
 
             // 递归处理子节点
             // 详细模式：只有该节点路径有变化时才展开（递归子节点）
-            // 简单模式：只要有变化就递归
+            // 简略模式：只要有变化就递归
             if (node.children && node.children.length > 0) {
                 let shouldRecurse = false;
 
@@ -24896,7 +24880,7 @@ async function generateHistoryChangesHTML(bookmarkTree, changeMap, mode) {
                     // 详细模式：只有有变化的路径才展开
                     shouldRecurse = nodeHasChanges;
                 } else {
-                    // 简单模式：一定有变化才能到这里，所以递归
+                    // 简略模式：一定有变化才能到这里，所以递归
                     shouldRecurse = true;
                 }
 
@@ -24964,14 +24948,14 @@ async function generateHistoryChangesJSON(bookmarkTree, changeMap, mode) {
 
     // 递归提取树结构
     // 详细模式：显示所有节点，但只展开有变化的路径（与"当前变化"一致）
-    // 简单模式：只导出有变化的分支
+    // 简略模式：只导出有变化的分支
     function extractTree(node) {
         if (!node) return null;
 
         // 检查该节点或其子节点是否有变化
         const nodeHasChanges = hasChangesRecursive(node);
 
-        // 简单模式：只导出有变化的分支
+        // 简略模式：只导出有变化的分支
         if (mode !== 'detailed' && !nodeHasChanges) return null;
 
         const title = node.title || (isZh ? '(无标题)' : '(Untitled)');
@@ -25007,14 +24991,14 @@ async function generateHistoryChangesJSON(bookmarkTree, changeMap, mode) {
 
         if (isFolder && node.children) {
             // 详细模式：只有有变化的路径才展开（递归子节点）
-            // 简单模式：一定有变化才能到这里，所以递归
+            // 简略模式：一定有变化才能到这里，所以递归
             let shouldRecurse = false;
 
             if (mode === 'detailed') {
                 // 详细模式：只有有变化的路径才展开
                 shouldRecurse = nodeHasChanges;
             } else {
-                // 简单模式：一定有变化才能到这里，所以递归
+                // 简略模式：一定有变化才能到这里，所以递归
                 shouldRecurse = true;
             }
 
@@ -25155,7 +25139,7 @@ function collectChangesForExport(changeData, mode, depth) {
     return changes;
 }
 
-// 从 DOM 中提取完整的书签树数据（简单模式）
+// 从 DOM 中提取完整的书签树数据（简略模式）
 function collectChangesFromDOM() {
     const treeContainer = document.getElementById('changesTreePreviewInline');
 

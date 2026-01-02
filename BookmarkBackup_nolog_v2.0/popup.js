@@ -688,9 +688,15 @@ function initializeLocalConfigSection() {
 
     // 设置点击事件，展开/折叠配置面板
     if (localConfigHeader) {
-        localConfigHeader.addEventListener('click', function () {
+        localConfigHeader.addEventListener('click', function (event) {
+            // 检查点击是否在开关元素上，如果是则不切换面板
+            if (event.target.id === 'defaultDownloadToggle' || event.target.closest('.switch')) {
+                return;
+            }
+
             if (localConfigContent.style.display === 'none' || localConfigContent.style.display === '') {
                 localConfigContent.style.display = 'block';
+                localConfigHeader.classList.remove('collapsed');
                 setTimeout(() => {
                     window.scrollBy({
                         top: 160,
@@ -699,6 +705,7 @@ function initializeLocalConfigSection() {
                 }, 100);
             } else {
                 localConfigContent.style.display = 'none';
+                localConfigHeader.classList.add('collapsed');
             }
         });
     }
@@ -913,13 +920,18 @@ function initScrollToTopButton() {
             return;
         }
 
-        // 使用getBoundingClientRect检测备份检查记录区域的位置
-        const rect = syncHistoryElement.getBoundingClientRect();
-        const windowHeight = window.innerHeight || document.documentElement.clientHeight || 0;
+        // 统一控制两个按钮的显示/隐藏
+        // 新逻辑：只要备份检查记录区域（syncHistoryElement）的顶端已经进入视口或者滚动超过了它，
+        // 并且页面发生了一定程度的滚动，就显示按钮。
+        // 不再要求底部边缘进入视口。
 
-        // 仅当「备份检查记录」区域的最下边缘进入视野时才显示按钮
-        // rect.bottom > 0 && rect.bottom <= windowHeight 表示下边缘在视口内
-        const shouldShow = rect.bottom > 0 && rect.bottom <= windowHeight;
+        // 简单的阈值：滚动超过 300px 就显示，或者如果能检测到 syncHistoryElement，当它靠近视口顶部时显示
+        const scrollY = window.scrollY || window.pageYOffset;
+        const rect = syncHistoryElement.getBoundingClientRect();
+
+        // 只要滚动超过一定距离 (例如 200px) 或者 历史记录区域出现，就显示
+        // 结合用户体验：当内容足够长需要滚动回来时显示
+        const shouldShow = scrollY > 200;
 
         // 统一控制两个按钮的显示/隐藏
         if (scrollToTopFloating) {
@@ -1599,7 +1611,7 @@ function updateSyncHistory(passedLang) { // Added passedLang parameter
 
                 const formattedTime = `<span style="font-weight: bold; color: #007AFF; text-align: center;">${formatTime(time)}</span>`;
 
-                // 备注部分：无备注时按类型给出默认备注（中英文）
+                // 备注部分：可点击编辑，悬浮时出现虚线框
                 let noteHtml = '';
                 const fallbackNote = (() => {
                     if (record.type === 'switch') return currentLang === 'en' ? 'Switch Backup' : '切换备份';
@@ -1608,22 +1620,17 @@ function updateSyncHistory(passedLang) { // Added passedLang parameter
                 })();
                 const displayNote = (record.note && record.note.trim()) ? record.note : fallbackNote;
                 if (displayNote) {
-                    noteHtml = `<div style="margin-top: 4px; text-align: center; font-size: 12px; color: var(--theme-text-primary); max-width: 100%; overflow-wrap: break-word; word-wrap: break-word; word-break: break-all;">${displayNote}</div>`;
+                    // 备注文本可点击，悬浮时出现虚线框
+                    noteHtml = `<div class="editable-note" data-record-time="${record.time}" style="margin-top: 4px; text-align: center; font-size: 12px; color: var(--theme-text-primary); max-width: 100%; overflow-wrap: break-word; word-wrap: break-word; word-break: break-all; cursor: pointer; padding: 2px 6px; border: 1px dashed transparent; border-radius: 3px; transition: border-color 0.2s;">${displayNote}</div>`;
                 }
-
-                // 添加备注按钮
-                const addNoteButton = `
-                    <div class="add-note-btn" data-record-time="${record.time}" style="margin-top: 4px; text-align: center; cursor: pointer;">
-                        <span style="color: #777; font-size: 12px; padding: 2px 6px; border: 1px dashed #aaa; border-radius: 3px;">${currentLang === 'en' ? 'Edit' : '编辑'}</span>
-                    </div>
-                `;
 
                 // 只保留两栏的样式
                 let timeColStyle = "flex: 1; text-align: center;";
                 let qtyColStyle = "flex: 1; text-align: center; padding-right: 20px;";
 
+                // 详情按钮：默认透明，悬浮时显示
                 const detailsBtn = `
-                    <button class="details-btn" data-record-time="${record.time}" title="${currentLang === 'en' ? 'View Details' : '查看详情'}" style="position: absolute; right: 3.2px; top: 50%; transform: translateY(-50%); padding: 0; margin: 0; cursor: pointer; background: none; border: none; color: #999; transition: color 0.2s; width: auto; height: auto; display: flex; align-items: center; justify-content: center;">
+                    <button class="details-btn" data-record-time="${record.time}" style="position: absolute; right: 3.2px; top: 50%; transform: translateY(-50%); padding: 0; margin: 0; cursor: pointer; background: none; border: none; color: #999; transition: opacity 0.2s, color 0.2s; width: auto; height: auto; display: flex; align-items: center; justify-content: center; opacity: 0.2;">
                         <i class="fas fa-info-circle" style="font-size: 18px;"></i>
                     </button>
                 `;
@@ -1632,7 +1639,6 @@ function updateSyncHistory(passedLang) { // Added passedLang parameter
                     <div class="history-item-time" style="${timeColStyle}">
                         ${formattedTime}
                         ${noteHtml}
-                        ${addNoteButton}
                     </div>
                     <div class="history-item-count" style="${qtyColStyle}; display: flex; align-items: center; justify-content: center; position: relative;">
                         <div style="flex: 1; text-align: center;">${bookmarkStatsHTML}</div>
@@ -1648,9 +1654,9 @@ function updateSyncHistory(passedLang) { // Added passedLang parameter
                 });
             }
 
-            // 为添加备注按钮绑定事件
-            document.querySelectorAll('.add-note-btn').forEach(btn => {
-                btn.addEventListener('click', function (e) {
+            // 为可编辑备注绑定事件（点击编辑）
+            document.querySelectorAll('.editable-note').forEach(note => {
+                note.addEventListener('click', function (e) {
                     const recordTime = this.getAttribute('data-record-time');
                     showAddNoteDialog(recordTime);
                 });
@@ -3885,7 +3891,7 @@ const applyLocalizedContent = async (lang) => { // Added lang parameter
     };
 
     const historyRecordsDescriptionStrings = {
-        'zh_CN': "备份检查记录",
+        'zh_CN': "备份历史",
         'en': "Backup History"
     };
 
@@ -5798,7 +5804,7 @@ document.addEventListener('DOMContentLoaded', function () {
             const currentLang = result.preferredLang || 'zh_CN';
             const tooltip = document.getElementById('historyViewerTooltip');
             if (tooltip) {
-                tooltip.textContent = currentLang === 'zh_CN' ? '打开历史查看器' : 'Open History Viewer';
+                tooltip.textContent = currentLang === 'zh_CN' ? '跳转至备份历史' : 'Jump to Backup History';
             }
         });
 

@@ -911,15 +911,26 @@ body {
 
 /* 详情按钮特殊样式 */
 .action-btn.detail-btn {
-    background: var(--accent-primary);
-    color: #ffffff;
-    border-color: var(--accent-primary);
+    background: transparent;
+    color: var(--text-secondary);
+    border: 1px solid var(--border-color);
+    padding: 6px 12px;
+    gap: 6px;
+}
+
+.action-btn.detail-btn i {
+    font-size: 12px;
 }
 
 .action-btn.detail-btn:hover {
-    background: var(--accent-hover);
-    color: #ffffff;
-    border-color: var(--accent-hover);
+    background: var(--bg-tertiary);
+    color: var(--text-secondary);
+    border-color: var(--accent-primary);
+}
+
+/* 详情按钮不显示tooltip */
+.action-btn.detail-btn::after {
+    display: none;
 }
 
 /* 操作按钮的自定义tooltip - 快速显示 */
@@ -973,8 +984,8 @@ body {
     align-items: center;
     gap: 12px;
     flex-wrap: wrap;
-    margin-bottom: 12px;
-    padding: 12px;
+    margin-bottom: 0;
+    padding: 10px 12px;
     border: 1px solid var(--border-color);
     border-radius: 6px;
     background: var(--bg-secondary);
@@ -1928,12 +1939,19 @@ a.tree-label.tree-bookmark-link:hover {
     text-decoration: underline;
 }
 
-/* 变动标记 */
+/* 变动标记 - 统一所有状态标识的UI大小 */
 .change-badge {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 22px;
+    height: 20px;
     font-size: 11px;
     font-weight: bold;
     padding: 2px 6px;
     border-radius: 4px;
+    line-height: 1;
+    vertical-align: middle;
 }
 
 .change-badge.added {
@@ -1969,6 +1987,12 @@ a.tree-label.tree-bookmark-link:hover {
 .change-badge.moved:hover {
     background: rgba(13, 110, 253, 0.25);
     transform: scale(1.1);
+}
+
+/* 统一移动标识内图标的大小 */
+.change-badge.moved i {
+    font-size: 11px;
+    line-height: 1;
 }
 
 .change-badge.moved:hover::before {

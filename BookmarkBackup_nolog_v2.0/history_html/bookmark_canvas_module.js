@@ -611,7 +611,7 @@ function createInitialDemoTemplate() {
 <ul>
 <li><strong>创建连接</strong>：点击栏目边缘连接点，拖向另一栏目</li>
 <li><strong>编辑连接</strong>：点击连接线，可修改颜色、方向、标签</li>
-<li><strong>预设颜色</strong>：<font color="#ff6666">红</font> <font color="#ffaa66">橙</font> <font color="#ffdd66">黄</font> <font color="#66ffaa">绿</font> <font color="#66bbff">蓝</font> <font color="#bf66ff">紫</font></li>
+<li><strong>预设颜色</strong>：<font color="#ff6666">红</font> <font color="#66bbff">蓝</font> <font color="#ffdd66">黄</font> <font color="#66ffaa">绿</font> <font color="#ffaa66">橙</font> <font color="#bf66ff">紫</font></li>
 </ul>
 <p><em>提示：此卡片可自由编辑或删除</em></p>`;
 
@@ -634,7 +634,7 @@ function createInitialDemoTemplate() {
 <ul>
 <li><strong>Create connection</strong>: Click section edge anchor, drag to another section</li>
 <li><strong>Edit connection</strong>: Click line to change color, direction, label</li>
-<li><strong>Preset colors</strong>: <font color="#ff6666">Red</font> <font color="#ffaa66">Orange</font> <font color="#ffdd66">Yellow</font> <font color="#66ffaa">Green</font> <font color="#66bbff">Blue</font> <font color="#bf66ff">Purple</font></li>
+<li><strong>Preset colors</strong>: <font color="#ff6666">Red</font> <font color="#66bbff">Blue</font> <font color="#ffdd66">Yellow</font> <font color="#66ffaa">Green</font> <font color="#ffaa66">Orange</font> <font color="#bf66ff">Purple</font></li>
 </ul>
 <p><em>Tip: This card can be freely edited or deleted</em></p>`;
 
@@ -20332,6 +20332,8 @@ function setupCanvasEdgesLayer() {
 
 function addAnchorsToNode(nodeElement, nodeId) {
     if (!nodeElement) return;
+    // Don't add anchors to the permanent section
+    if (nodeId === 'permanent-section' || nodeElement.id === 'permanentSection') return;
     // Remove existing anchors and zones if any to avoid duplicates
     nodeElement.querySelectorAll('.canvas-node-anchor, .canvas-anchor-zone').forEach(el => el.remove());
 

@@ -5,7 +5,7 @@
  * 获取浏览器兼容的API对象。
  * @returns {object} 浏览器API对象 (chrome 或 browser)。
  */
-const browserAPI = (function() {
+const browserAPI = (function () {
     if (typeof chrome !== 'undefined') {
         if (typeof browser !== 'undefined') {
             // Firefox 环境
@@ -47,7 +47,7 @@ function loadThemePreference() {
     try {
         return localStorage.getItem('themePreference') || ThemeType.SYSTEM;
     } catch (e) {
-return ThemeType.SYSTEM;
+        return ThemeType.SYSTEM;
     }
 }
 
@@ -161,7 +161,7 @@ function formatDateTime(timestamp) {
         }
         return date.toLocaleString(); // 使用系统标准的时间格式
     } catch (error) {
-return statusStrings.unknownTime[currentLang] || statusStrings.unknownTime['zh_CN'];
+        return statusStrings.unknownTime[currentLang] || statusStrings.unknownTime['zh_CN'];
     }
 }
 
@@ -205,12 +205,39 @@ function formatChangeDescription(description) {
                 }
             }
             quantityParts.push(`<span style="color: ${color}; font-weight: bold;">${sign}${number}</span> ${type}`);
-        } else if (part === "书签变动") {
-            hasBookmarksChanged = true;
-        } else if (part === "文件夹变动") {
-            hasFoldersChanged = true;
         } else {
-            quantityParts.push(part);
+            // Check for specific Moved/Modified counts (e.g., "5 移动", "2 修改")
+            const movedMatch = part.match(/^(\d+)\s*移动$/);
+            const modifiedMatch = part.match(/^(\d+)\s*修改$/);
+
+            if (movedMatch) {
+                const count = movedMatch[1];
+                const label = currentLang === 'en' ? 'Moved' : '移动';
+                // Similar style to popup.js status card
+                const html = currentLang === 'en'
+                    ? `<span style="color:#2196F3;font-weight:bold;">${count}</span> ${label}`
+                    : `<span style="color:#2196F3;font-weight:bold;">${count}</span> 个${label}`;
+                structuralChangeParts.push(html);
+            } else if (modifiedMatch) {
+                const count = modifiedMatch[1];
+                const label = currentLang === 'en' ? 'Modified' : '修改';
+                const html = currentLang === 'en'
+                    ? `<span style="color:#FF9800;font-weight:bold;">${count}</span> ${label}`
+                    : `<span style="color:#FF9800;font-weight:bold;">${count}</span> 个${label}`;
+                structuralChangeParts.push(html);
+            } else if (part === "移动" || part === "书签/文件夹移动") {
+                const label = currentLang === 'en' ? 'Moved' : '移动';
+                structuralChangeParts.push(`<span style="color:#2196F3;font-weight:bold;">${label}</span>`);
+            } else if (part === "修改" || part === "书签/文件夹修改") {
+                const label = currentLang === 'en' ? 'Modified' : '修改';
+                structuralChangeParts.push(`<span style="color:#FF9800;font-weight:bold;">${label}</span>`);
+            } else if (part === "书签变动") {
+                hasBookmarksChanged = true;
+            } else if (part === "文件夹变动") {
+                hasFoldersChanged = true;
+            } else {
+                quantityParts.push(part);
+            }
         }
     });
 
@@ -397,20 +424,20 @@ function showOperationStatus(message, type) {
  */
 function sendMessagePromise(message) {
     const isCriticalOperation = message.action === "toggleAutoSync" ||
-                               message.action === "syncBookmarks" ||
-                               message.action === "notificationAction" ||
-                               message.action === "manualBackupCompleted" ||
-                               message.action === "notificationUserAction" ||
-                               message.action === "openReminderSettings";
+        message.action === "syncBookmarks" ||
+        message.action === "notificationAction" ||
+        message.action === "manualBackupCompleted" ||
+        message.action === "notificationUserAction" ||
+        message.action === "openReminderSettings";
 
     if (message.action === "getReminderSettings") {
         if (window.cachedReminderSettings) {
-return Promise.resolve({ success: true, settings: window.cachedReminderSettings });
+            return Promise.resolve({ success: true, settings: window.cachedReminderSettings });
         }
     }
 
     if (window.isClosing && !isCriticalOperation) {
-if (message.action === "getReminderSettings") {
+        if (message.action === "getReminderSettings") {
             return Promise.resolve({
                 success: true,
                 settings: {
@@ -427,7 +454,7 @@ if (message.action === "getReminderSettings") {
         let timeoutId = null;
 
         try {
-browserAPI.runtime.sendMessage(message, (response) => {
+            browserAPI.runtime.sendMessage(message, (response) => {
                 if (timeoutId) { clearTimeout(timeoutId); }
                 if (hasResponded) return;
                 hasResponded = true;
@@ -435,21 +462,21 @@ browserAPI.runtime.sendMessage(message, (response) => {
                 const error = browserAPI.runtime.lastError;
                 if (error) {
                     if (window.isClosing && message.action === "getTimerDebugInfo") {
-resolve({ success: false, error: '窗口正在关闭', state: { elapsedTime: 15000 } });
+                        resolve({ success: false, error: '窗口正在关闭', state: { elapsedTime: 15000 } });
                         return;
                     }
                     if (message.action === "getReminderSettings") {
-const defaultSettings = { reminderEnabled: true, firstReminderMinutes: 10, secondReminderMinutes: 30, thirdReminderMinutes: 120, repeatReminderDays: 2 };
+                        const defaultSettings = { reminderEnabled: true, firstReminderMinutes: 10, secondReminderMinutes: 30, thirdReminderMinutes: 120, repeatReminderDays: 2 };
                         resolve({ success: true, settings: defaultSettings });
                         return;
                     }
                     if (message.action === "getTimerDebugInfo") {
-resolve({ success: false, error: error.message || '未知错误', state: { elapsedTime: 15000, timerId: null, startTime: null, reminderShown: false, isActive: true, manualBackupDone: false } });
+                        resolve({ success: false, error: error.message || '未知错误', state: { elapsedTime: 15000, timerId: null, startTime: null, reminderShown: false, isActive: true, manualBackupDone: false } });
                         return;
                     }
-reject(error);
+                    reject(error);
                 } else if (!response) {
-if (message.action === "getTimerDebugInfo") {
+                    if (message.action === "getTimerDebugInfo") {
                         resolve({ success: false, error: '无响应数据', state: { elapsedTime: 15000 } });
                     } else if (message.action === "getReminderSettings") {
                         resolve({ success: true, settings: { reminderEnabled: true, firstReminderMinutes: 10, secondReminderMinutes: 30, thirdReminderMinutes: 120, repeatReminderDays: 2 } });
@@ -457,7 +484,7 @@ if (message.action === "getTimerDebugInfo") {
                         resolve(null);
                     }
                 } else {
-if (message.action === "getReminderSettings" && response.success && response.settings) {
+                    if (message.action === "getReminderSettings" && response.success && response.settings) {
                         window.cachedReminderSettings = response.settings;
                     }
                     resolve(response);
@@ -467,21 +494,21 @@ if (message.action === "getReminderSettings" && response.success && response.set
             timeoutId = setTimeout(() => {
                 if (hasResponded) return;
                 hasResponded = true;
-if (message.action === "getTimerDebugInfo") {
-resolve({ success: false, error: '请求超时', state: { elapsedTime: 15000 } });
+                if (message.action === "getTimerDebugInfo") {
+                    resolve({ success: false, error: '请求超时', state: { elapsedTime: 15000 } });
                 } else if (message.action === "getReminderSettings") {
-resolve({ success: true, settings: { reminderEnabled: true, firstReminderMinutes: 10, secondReminderMinutes: 30, thirdReminderMinutes: 120, repeatReminderDays: 2 } });
+                    resolve({ success: true, settings: { reminderEnabled: true, firstReminderMinutes: 10, secondReminderMinutes: 30, thirdReminderMinutes: 120, repeatReminderDays: 2 } });
                 } else {
                     reject(new Error('请求超时，但操作可能已成功'));
                 }
             }, 2000);
         } catch (error) {
-if (hasResponded) return;
+            if (hasResponded) return;
             hasResponded = true;
             if (message.action === "getTimerDebugInfo") {
                 resolve({ success: false, error: error.message || '发送消息出错', state: { elapsedTime: 15000 } });
             } else if (message.action === "getReminderSettings") {
-resolve({ success: true, settings: { reminderEnabled: true, firstReminderMinutes: 10, secondReminderMinutes: 30, thirdReminderMinutes: 120, repeatReminderDays: 2 } });
+                resolve({ success: true, settings: { reminderEnabled: true, firstReminderMinutes: 10, secondReminderMinutes: 30, thirdReminderMinutes: 120, repeatReminderDays: 2 } });
             } else {
                 reject(error);
             }
@@ -571,8 +598,8 @@ async function loadReminderSettings() {
         if (fixedTimeToggle2) updateToggleState(fixedTimeToggle2, settings.fixedTimeEnabled2 === true);
         if (fixedTime2) fixedTime2.value = settings.fixedTime2 || defaultSettings.fixedTime2;
 
-} catch (error) {
-if (reminderToggle) updateToggleState(reminderToggle, defaultSettings.reminderEnabled);
+    } catch (error) {
+        if (reminderToggle) updateToggleState(reminderToggle, defaultSettings.reminderEnabled);
         if (firstReminderMinutes) firstReminderMinutes.value = defaultSettings.firstReminderMinutes;
         if (fixedTimeToggle1) updateToggleState(fixedTimeToggle1, defaultSettings.fixedTimeEnabled1);
         if (fixedTime1) fixedTime1.value = defaultSettings.fixedTime1;
@@ -610,20 +637,20 @@ async function saveReminderSettingsFunc() {
         };
 
         await browserAPI.storage.local.set({ reminderSettings: settings });
-console.log('发送更新设置消息 (不重置计时器)');
+        console.log('发送更新设置消息 (不重置计时器)');
         await browserAPI.runtime.sendMessage({
             action: "updateReminderSettings",
             settings: settings,
             resetTimer: false,
             restartTimer: false
         }).then(response => {
-}).catch(error => {
-});
+        }).catch(error => {
+        });
 
         showSettingsSavedIndicator();
         return true;
     } catch (error) {
-return false;
+        return false;
     }
 }
 
@@ -634,11 +661,11 @@ async function resumeNotificationAutoCloseTimer() {
     // 直接使用已经获取的自身窗口ID
     if (selfWindowId !== null) {
         try {
-await browserAPI.runtime.sendMessage({ action: "resumeNotificationAutoClose", windowId: selfWindowId });
-} catch (err) {
-}
+            await browserAPI.runtime.sendMessage({ action: "resumeNotificationAutoClose", windowId: selfWindowId });
+        } catch (err) {
+        }
     } else {
-}
+    }
 }
 
 /**
@@ -655,22 +682,22 @@ async function loadBackupInfo(changeDescriptionParam) {
         let backupResponse;
         try {
             backupResponse = await sendMessagePromise({ action: "getBackupStats" });
-} catch (error) {
-backupResponse = { success: false, error: error.message };
+        } catch (error) {
+            backupResponse = { success: false, error: error.message };
         }
 
         let timerStateResponse;
         try {
             timerStateResponse = await sendMessagePromise({ action: "getTimerDebugInfo" });
         } catch (error) {
-timerStateResponse = { success: false, error: error.message };
+            timerStateResponse = { success: false, error: error.message };
         }
 
         let reminderSettingsResponse;
         try {
             reminderSettingsResponse = await sendMessagePromise({ action: "getReminderSettings" });
         } catch (error) {
-reminderSettingsResponse = { success: true, settings: { reminderEnabled: true, firstReminderMinutes: 30, repeatReminderDays: 2 } };
+            reminderSettingsResponse = { success: true, settings: { reminderEnabled: true, firstReminderMinutes: 30, repeatReminderDays: 2 } };
         }
 
         if (backupResponse && backupResponse.success) {
@@ -711,10 +738,10 @@ reminderSettingsResponse = { success: true, settings: { reminderEnabled: true, f
 
         if (timerStateResponse && timerStateResponse.state) {
             const elapsedTime = timerStateResponse.state.elapsedTime || 0;
-}
+        }
         return true;
     } catch (error) {
-return false;
+        return false;
     }
 }
 
@@ -803,7 +830,7 @@ function applyLocalizedContent(lang) {
     const reminderExample = document.getElementById('reminderExample');
 
     if (manualBackupReminderDesc) { manualBackupReminderDesc.innerHTML = manualBackupReminderDescStrings[lang] || manualBackupReminderDescStrings['zh_CN']; }
-    if (reminderExample) { 
+    if (reminderExample) {
         // 内容已被合并到上面的字符串中，隐藏此元素
         reminderExample.style.display = 'none';
     }
@@ -812,7 +839,7 @@ function applyLocalizedContent(lang) {
         const reminderDescriptionElements = document.querySelectorAll('.setting-block div[style*="margin-bottom: 6px"]');
         if (reminderDescriptionElements.length > 0) { reminderDescriptionElements[0].innerHTML = manualBackupReminderDescStrings[lang] || manualBackupReminderDescStrings['zh_CN']; }
         const exampleElements = document.querySelectorAll('.setting-block div:not([style*="margin-bottom"])');
-        if (exampleElements.length > 0) { 
+        if (exampleElements.length > 0) {
             const exampleText = reminderExampleStrings[lang];
             if (exampleText !== undefined && exampleText !== "") {
                 exampleElements[0].innerHTML = exampleText;
@@ -905,10 +932,10 @@ document.addEventListener('DOMContentLoaded', async () => {
         const currentWindow = await new Promise(resolve => browserAPI.windows.getCurrent({}, resolve));
         if (currentWindow && typeof currentWindow.id === 'number') {
             selfWindowId = currentWindow.id;
-} else {
-}
+        } else {
+        }
     } catch (error) {
-}
+    }
 
     // 获取元素
     const toggleAutoBackupBtn = document.getElementById('toggleAutoBackup');
@@ -939,7 +966,7 @@ document.addEventListener('DOMContentLoaded', async () => {
             const browserLang = navigator.language.toLowerCase();
             if (browserLang.startsWith('zh')) { currentLang = 'zh_CN'; }
             else { currentLang = 'en'; }
-}
+        }
     } catch (error) { console.error('获取语言设置失败，使用默认中文:', error); }
 
     // 应用国际化文本
@@ -957,8 +984,8 @@ document.addEventListener('DOMContentLoaded', async () => {
     if (timeLabel) {
         // 直接使用timeLabel作为标题，因为在notification.js中已经包含了完整的本地化文本
         notificationTitle.textContent = timeLabel;
-    } else if (phaseLabel) { 
-        notificationTitle.textContent = phaseLabel; 
+    } else if (phaseLabel) {
+        notificationTitle.textContent = phaseLabel;
     }
 
     if (isTestNotification) {
@@ -977,13 +1004,13 @@ document.addEventListener('DOMContentLoaded', async () => {
     closeButton.addEventListener('click', () => {
         browserAPI.runtime.sendMessage({ action: "notificationUserClose", closeMethod: "xButton", preserveMode: true });
         localStorage.removeItem('lastActiveNotificationId');
-window.isClosing = true;
+        window.isClosing = true;
         window.close();
     });
 
     // 切换为自动备份按钮点击事件
     toggleAutoBackupBtn.addEventListener('click', async () => {
-// 禁用按钮，防止重复点击
+        // 禁用按钮，防止重复点击
         toggleAutoBackupBtn.disabled = true;
         manualBackupBtn.disabled = true;
         operationStatusElement.style.display = 'none';
@@ -998,7 +1025,7 @@ window.isClosing = true;
             isSwitchToAutoBackup: true,
             direction: 'upload'
         }, (syncResponse) => {
-if (syncResponse && syncResponse.success) {
+            if (syncResponse && syncResponse.success) {
                 // 备份成功
                 showOperationStatus(statusStrings.switchToAutoBackupSuccess[currentLang] || statusStrings.switchToAutoBackupSuccess['zh_CN'], 'success');
             } else {
@@ -1016,8 +1043,8 @@ if (syncResponse && syncResponse.success) {
             action: "toggleAutoSync",
             enabled: true
         }, (toggleResponse) => {
-if (!toggleResponse || !toggleResponse.success) {
-// 可以在这里添加一个不影响主流程的警告
+            if (!toggleResponse || !toggleResponse.success) {
+                // 可以在这里添加一个不影响主流程的警告
             }
         });
 
@@ -1025,9 +1052,9 @@ if (!toggleResponse || !toggleResponse.success) {
         function prepareToClose() {
             // 延迟关闭，以确保用户能看到最终的状态消息
             setTimeout(() => {
-window.isClosing = true;
+                window.isClosing = true;
                 // 尝试通知后台窗口将要关闭
-                browserAPI.runtime.sendMessage({ action: "readyToClose", windowId: browserAPI.windows.WINDOW_ID_CURRENT }).catch(e => {});
+                browserAPI.runtime.sendMessage({ action: "readyToClose", windowId: browserAPI.windows.WINDOW_ID_CURRENT }).catch(e => { });
                 // 最终关闭
                 window.close();
             }, 1200); // 延迟1.2秒，让用户有时间看清"成功/失败"提示
@@ -1036,7 +1063,7 @@ window.isClosing = true;
 
     // 立即手动备份按钮点击事件
     manualBackupBtn.addEventListener('click', async () => {
-operationStatusElement.style.display = 'none';
+        operationStatusElement.style.display = 'none';
 
         browserAPI.runtime.sendMessage({ action: "notificationUserAction", button: "manualBackup", alarmName: alarmName, windowId: browserAPI.windows.WINDOW_ID_CURRENT }).catch(error => console.warn("发送手动备份用户操作信号失败:", error));
 
@@ -1044,15 +1071,15 @@ operationStatusElement.style.display = 'none';
         manualBackupBtn.disabled = true;
 
         showOperationStatus(statusStrings.manualBackupCompleted[currentLang] || statusStrings.manualBackupCompleted['zh_CN'], 'success');
-let operationCompleted = false;
+        let operationCompleted = false;
         const forceCloseTimeoutId = setTimeout(() => {
-window.isClosing = true;
+            window.isClosing = true;
             window.close();
         }, 5000);
 
         const closeTimeoutId = setTimeout(() => {
             if (!operationCompleted) {
-operationCompleted = true;
+                operationCompleted = true;
                 clearTimeout(closeTimeoutId);
                 clearTimeout(forceCloseTimeoutId);
 
@@ -1066,15 +1093,15 @@ operationCompleted = true;
                             .catch(err => console.error('直接设置角标颜色失败:', err));
                     } else if (typeof browserAPI.browserAction !== 'undefined' && typeof browserAPI.browserAction.setBadgeBackgroundColor === 'function') {
                         browserAPI.browserAction.setBadgeBackgroundColor({ color: badgeColor });
-}
-                    
+                    }
+
                     browserAPI.runtime.sendMessage({
                         action: "syncBookmarks", direction: "upload", isManual: true,
                         bookmarkStats: { bookmarkMoved: false, folderMoved: false, bookmarkModified: false, folderModified: false },
                         fromNotification: true
                     }).then(() => {
                         browserAPI.runtime.sendMessage({ action: "manualBackupCompleted" });
-}).catch(error => { console.log('发送syncBookmarks消息失败:', error); });
+                    }).catch(error => { console.log('发送syncBookmarks消息失败:', error); });
                 } catch (e) { console.log('发送备份完成消息失败，但继续关闭窗口:', e); }
 
                 setTimeout(() => {
@@ -1089,25 +1116,25 @@ operationCompleted = true;
     // 设置按钮点击事件
     if (reminderSettingsBtn) {
         reminderSettingsBtn.addEventListener('click', async () => {
-// 直接使用已经获取的自身窗口ID
+            // 直接使用已经获取的自身窗口ID
             if (selfWindowId !== null) {
-                 try {
-await browserAPI.runtime.sendMessage({ action: "pauseNotificationAutoClose", windowId: selfWindowId });
-} catch (err) { console.error('发送暂停自动关闭请求失败:', err); }
-            } else { 
-}
+                try {
+                    await browserAPI.runtime.sendMessage({ action: "pauseNotificationAutoClose", windowId: selfWindowId });
+                } catch (err) { console.error('发送暂停自动关闭请求失败:', err); }
+            } else {
+            }
 
             if (reminderSettingsDialog) {
-                 await loadReminderSettings();
-                 reminderSettingsDialog.style.display = 'flex';
-} else { console.error('找不到设置对话框元素'); }
+                await loadReminderSettings();
+                reminderSettingsDialog.style.display = 'flex';
+            } else { console.error('找不到设置对话框元素'); }
         });
     }
 
     // 关闭设置对话框按钮点击事件
     if (closeReminderSettings) {
         closeReminderSettings.addEventListener('click', async () => {
-if (reminderSettingsDialog) { reminderSettingsDialog.style.display = 'none'; console.log('设置对话框已关闭'); }
+            if (reminderSettingsDialog) { reminderSettingsDialog.style.display = 'none'; console.log('设置对话框已关闭'); }
             await resumeNotificationAutoCloseTimer();
         });
     }
@@ -1117,15 +1144,15 @@ if (reminderSettingsDialog) { reminderSettingsDialog.style.display = 'none'; con
         reminderSettingsDialog.addEventListener('click', async (event) => {
             if (event.target === reminderSettingsDialog) {
                 reminderSettingsDialog.style.display = 'none';
-await resumeNotificationAutoCloseTimer();
+                await resumeNotificationAutoCloseTimer();
             }
         });
     }
 
     // 绑定开关按钮点击事件
-    if (reminderToggle) { reminderToggle.addEventListener('click', function() { const currentState = getToggleState(this); updateToggleState(this, !currentState); }); }
-    if (fixedTimeToggle1) { fixedTimeToggle1.addEventListener('click', function() { const currentState = getToggleState(this); updateToggleState(this, !currentState); }); }
-    if (fixedTimeToggle2) { fixedTimeToggle2.addEventListener('click', function() { const currentState = getToggleState(this); updateToggleState(this, !currentState); }); }
+    if (reminderToggle) { reminderToggle.addEventListener('click', function () { const currentState = getToggleState(this); updateToggleState(this, !currentState); }); }
+    if (fixedTimeToggle1) { fixedTimeToggle1.addEventListener('click', function () { const currentState = getToggleState(this); updateToggleState(this, !currentState); }); }
+    if (fixedTimeToggle2) { fixedTimeToggle2.addEventListener('click', function () { const currentState = getToggleState(this); updateToggleState(this, !currentState); }); }
 
     // 绑定恢复默认设置按钮点击事件
     if (restoreDefaultSettings) {
@@ -1175,15 +1202,15 @@ await resumeNotificationAutoCloseTimer();
 
     // 绑定保存设置按钮点击事件
     if (saveReminderSettings) {
-        saveReminderSettings.addEventListener('click', async function() {
-const success = await saveReminderSettingsFunc();
+        saveReminderSettings.addEventListener('click', async function () {
+            const success = await saveReminderSettingsFunc();
 
             if (success) {
                 settingsSavedIndicator.textContent = settingsSavedStrings[currentLang] || settingsSavedStrings['zh_CN'];
                 showSettingsSavedIndicator();
                 setTimeout(() => {
                     if (reminderSettingsDialog) { reminderSettingsDialog.style.display = 'none'; }
-}, 1000);
+                }, 1000);
             } else {
                 settingsSavedIndicator.textContent = statusStrings.savingSettingsFailed[currentLang] || statusStrings.savingSettingsFailed['zh_CN'];
                 settingsSavedIndicator.style.color = '#c62828';
@@ -1204,8 +1231,8 @@ const success = await saveReminderSettingsFunc();
  * @returns {boolean} - 是否异步响应。
  */
 browserAPI.runtime.onMessage.addListener((message, sender, sendResponse) => {
-if (message.action === "closeNotificationFromSettings") {
-window.close();
+    if (message.action === "closeNotificationFromSettings") {
+        window.close();
         return true;
     }
     return false;

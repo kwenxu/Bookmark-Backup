@@ -11718,7 +11718,7 @@ async function renderChangesTreePreview(changeData) {
             }
 
             // 绑定新的只读事件
-	            treeContainer.addEventListener('click', (e) => {
+            treeContainer.addEventListener('click', (e) => {
                 // 阻止右键菜单
                 if (e.button === 2) {
                     e.preventDefault();
@@ -11737,37 +11737,37 @@ async function renderChangesTreePreview(changeData) {
                 const toggle = treeItem.querySelector('.tree-toggle:not(.placeholder)');
                 const nodeId = treeItem.dataset.nodeId;
 
-	                if (children && toggle) {
-	                    const isExpanding = !children.classList.contains('expanded');
-	                    toggle.classList.toggle('expanded');
-	                    children.classList.toggle('expanded');
+                if (children && toggle) {
+                    const isExpanding = !children.classList.contains('expanded');
+                    toggle.classList.toggle('expanded');
+                    children.classList.toggle('expanded');
 
-	                    // 简略模式（compact-mode）下：变更文件夹需要能“展开查看内容”
-	                    // 说明：compact-mode 会隐藏无变化的子节点，但文件夹发生移动/修改/新增/删除时，用户需要确认文件夹里包含什么。
-	                    try {
-	                        const previewRoot = treeContainer.closest('.changes-tree-preview-inline');
-	                        const isCompactMode = !!(previewRoot && previewRoot.classList.contains('compact-mode'));
-	                        const isFolder = treeItem.dataset.nodeType === 'folder';
-	                        const isChangedFolder = isFolder && (
-	                            treeItem.classList.contains('tree-change-added') ||
-	                            treeItem.classList.contains('tree-change-deleted') ||
-	                            treeItem.classList.contains('tree-change-modified') ||
-	                            treeItem.classList.contains('tree-change-moved') ||
-	                            treeItem.classList.contains('tree-change-mixed')
-	                        );
-	                        if (isCompactMode && treeNode && isChangedFolder) {
-	                            if (isExpanding) treeNode.classList.add('compact-reveal-all');
-	                            else treeNode.classList.remove('compact-reveal-all');
-	                        } else if (treeNode) {
-	                            treeNode.classList.remove('compact-reveal-all');
-	                        }
-	                    } catch (_) { /* ignore */ }
+                    // 简略模式（compact-mode）下：变更文件夹需要能“展开查看内容”
+                    // 说明：compact-mode 会隐藏无变化的子节点，但文件夹发生移动/修改/新增/删除时，用户需要确认文件夹里包含什么。
+                    try {
+                        const previewRoot = treeContainer.closest('.changes-tree-preview-inline');
+                        const isCompactMode = !!(previewRoot && previewRoot.classList.contains('compact-mode'));
+                        const isFolder = treeItem.dataset.nodeType === 'folder';
+                        const isChangedFolder = isFolder && (
+                            treeItem.classList.contains('tree-change-added') ||
+                            treeItem.classList.contains('tree-change-deleted') ||
+                            treeItem.classList.contains('tree-change-modified') ||
+                            treeItem.classList.contains('tree-change-moved') ||
+                            treeItem.classList.contains('tree-change-mixed')
+                        );
+                        if (isCompactMode && treeNode && isChangedFolder) {
+                            if (isExpanding) treeNode.classList.add('compact-reveal-all');
+                            else treeNode.classList.remove('compact-reveal-all');
+                        } else if (treeNode) {
+                            treeNode.classList.remove('compact-reveal-all');
+                        }
+                    } catch (_) { /* ignore */ }
 
-	                    // 更新文件夹图标
-	                    const folderIcon = treeItem.querySelector('.tree-icon, .folder-icon');
-	                    if (folderIcon) {
-	                        if (isExpanding) {
-	                            folderIcon.classList.remove('fa-folder');
+                    // 更新文件夹图标
+                    const folderIcon = treeItem.querySelector('.tree-icon, .folder-icon');
+                    if (folderIcon) {
+                        if (isExpanding) {
+                            folderIcon.classList.remove('fa-folder');
                             folderIcon.classList.add('fa-folder-open');
                         } else {
                             folderIcon.classList.remove('fa-folder-open');
@@ -11991,8 +11991,8 @@ async function renderCurrentChangesView(forceRefresh = false, options = {}) {
             html += '<span class="diff-header-legend">';
             html += `<span class="legend-item"><span class="legend-dot added"></span>${currentLang === 'zh_CN' ? '新增' : 'Added'}</span>`;
             html += `<span class="legend-item"><span class="legend-dot deleted"></span>${currentLang === 'zh_CN' ? '删除' : 'Deleted'}</span>`;
-            html += `<span class="legend-item"><span class="legend-dot modified"></span>${currentLang === 'zh_CN' ? '修改' : 'Modified'}</span>`;
             html += `<span class="legend-item"><span class="legend-dot moved"></span>${currentLang === 'zh_CN' ? '移动' : 'Moved'}</span>`;
+            html += `<span class="legend-item"><span class="legend-dot modified"></span>${currentLang === 'zh_CN' ? '修改' : 'Modified'}</span>`;
             html += '</span>';
             html += '<span class="diff-header-spacer"></span>';
             // 导出按钮
@@ -12199,95 +12199,95 @@ async function renderCurrentChangesView(forceRefresh = false, options = {}) {
                 const treePreviewContainer = document.getElementById('changesTreePreviewInline');
 
                 if (toggleTreeDetailBtn && treePreviewContainer) {
-		                    const expandFoldersWithChanges = (forceCollapseChangedFolders = false) => {
-	                        const changeClasses = ['.tree-change-added', '.tree-change-deleted', '.tree-change-modified', '.tree-change-moved', '.tree-change-mixed'];
-	                        const selector = changeClasses.join(', ');
-	                        const changedItems = treePreviewContainer.querySelectorAll(selector);
+                    const expandFoldersWithChanges = (forceCollapseChangedFolders = false) => {
+                        const changeClasses = ['.tree-change-added', '.tree-change-deleted', '.tree-change-modified', '.tree-change-moved', '.tree-change-mixed'];
+                        const selector = changeClasses.join(', ');
+                        const changedItems = treePreviewContainer.querySelectorAll(selector);
 
-	                        console.log('[详略切换] 找到变化节点数:', changedItems.length);
+                        console.log('[详略切换] 找到变化节点数:', changedItems.length);
 
-		                    const isCompactMode = treePreviewContainer.classList.contains('compact-mode');
-		                    const isChangedFolderItem = (item) => {
-		                        try {
-		                            const type = (item.getAttribute('data-node-type') || item.dataset.nodeType);
-		                            if (type !== 'folder') return false;
-		                            return item.classList.contains('tree-change-added') ||
-		                                item.classList.contains('tree-change-deleted') ||
-		                                item.classList.contains('tree-change-modified') ||
-		                                item.classList.contains('tree-change-moved') ||
-		                                item.classList.contains('tree-change-mixed');
-		                        } catch (_) {
-		                            return false;
-		                        }
-		                    };
-		                    const syncCompactRevealAll = () => {
-		                        if (!isCompactMode) return;
-		                        try {
-		                            treePreviewContainer.querySelectorAll('.tree-item[data-node-type="folder"]').forEach(item => {
-		                                const treeNode = item.closest('.tree-node');
-		                                const children = treeNode?.querySelector(':scope > .tree-children');
-		                                if (!treeNode || !children) return;
-		                                const isChangedFolder = isChangedFolderItem(item);
-		                                if (isChangedFolder && children.classList.contains('expanded')) {
-		                                    treeNode.classList.add('compact-reveal-all');
-		                                } else {
-		                                    treeNode.classList.remove('compact-reveal-all');
-		                                }
-		                            });
-		                        } catch (_) { /* ignore */ }
-		                    };
+                        const isCompactMode = treePreviewContainer.classList.contains('compact-mode');
+                        const isChangedFolderItem = (item) => {
+                            try {
+                                const type = (item.getAttribute('data-node-type') || item.dataset.nodeType);
+                                if (type !== 'folder') return false;
+                                return item.classList.contains('tree-change-added') ||
+                                    item.classList.contains('tree-change-deleted') ||
+                                    item.classList.contains('tree-change-modified') ||
+                                    item.classList.contains('tree-change-moved') ||
+                                    item.classList.contains('tree-change-mixed');
+                            } catch (_) {
+                                return false;
+                            }
+                        };
+                        const syncCompactRevealAll = () => {
+                            if (!isCompactMode) return;
+                            try {
+                                treePreviewContainer.querySelectorAll('.tree-item[data-node-type="folder"]').forEach(item => {
+                                    const treeNode = item.closest('.tree-node');
+                                    const children = treeNode?.querySelector(':scope > .tree-children');
+                                    if (!treeNode || !children) return;
+                                    const isChangedFolder = isChangedFolderItem(item);
+                                    if (isChangedFolder && children.classList.contains('expanded')) {
+                                        treeNode.classList.add('compact-reveal-all');
+                                    } else {
+                                        treeNode.classList.remove('compact-reveal-all');
+                                    }
+                                });
+                            } catch (_) { /* ignore */ }
+                        };
 
-		                    // 切换到简略模式时：强制把“变更文件夹对象”折叠回去（祖先路径仍可展开）
-		                    if (isCompactMode && forceCollapseChangedFolders) {
-		                        try {
-		                            treePreviewContainer.querySelectorAll('.tree-item[data-node-type="folder"]').forEach(item => {
-		                                if (!isChangedFolderItem(item)) return;
-		                                const treeNode = item.closest('.tree-node');
-		                                const children = treeNode?.querySelector(':scope > .tree-children');
-		                                const toggle = item.querySelector('.tree-toggle');
-		                                if (children) children.classList.remove('expanded');
-		                                if (toggle) toggle.classList.remove('expanded');
-		                                const folderIcon = item.querySelector('.tree-icon.fas.fa-folder-open');
-		                                if (folderIcon) {
-		                                    folderIcon.classList.remove('fa-folder-open');
-		                                    folderIcon.classList.add('fa-folder');
-		                                }
-		                                if (treeNode) treeNode.classList.remove('compact-reveal-all');
-		                            });
-		                        } catch (_) { /* ignore */ }
-		                    }
+                        // 切换到简略模式时：强制把“变更文件夹对象”折叠回去（祖先路径仍可展开）
+                        if (isCompactMode && forceCollapseChangedFolders) {
+                            try {
+                                treePreviewContainer.querySelectorAll('.tree-item[data-node-type="folder"]').forEach(item => {
+                                    if (!isChangedFolderItem(item)) return;
+                                    const treeNode = item.closest('.tree-node');
+                                    const children = treeNode?.querySelector(':scope > .tree-children');
+                                    const toggle = item.querySelector('.tree-toggle');
+                                    if (children) children.classList.remove('expanded');
+                                    if (toggle) toggle.classList.remove('expanded');
+                                    const folderIcon = item.querySelector('.tree-icon.fas.fa-folder-open');
+                                    if (folderIcon) {
+                                        folderIcon.classList.remove('fa-folder-open');
+                                        folderIcon.classList.add('fa-folder');
+                                    }
+                                    if (treeNode) treeNode.classList.remove('compact-reveal-all');
+                                });
+                            } catch (_) { /* ignore */ }
+                        }
 
-		                    changedItems.forEach(item => {
-		                        // 简略模式：变更文件夹本身默认折叠，但其祖先路径保持展开
-		                        // 同时：变更文件夹即使包含其他变化，也不自动展开（由用户手动展开）
-		                        let parent = item.closest('.tree-node');
-		                        while (parent) {
-		                            const children = parent.querySelector(':scope > .tree-children');
-		                            const treeItem = parent.querySelector(':scope > .tree-item');
+                        changedItems.forEach(item => {
+                            // 简略模式：变更文件夹本身默认折叠，但其祖先路径保持展开
+                            // 同时：变更文件夹即使包含其他变化，也不自动展开（由用户手动展开）
+                            let parent = item.closest('.tree-node');
+                            while (parent) {
+                                const children = parent.querySelector(':scope > .tree-children');
+                                const treeItem = parent.querySelector(':scope > .tree-item');
 
-		                            // compact 模式下：遇到“变更文件夹”则保持折叠（但仍继续展开其祖先）
-		                            const shouldSkipExpand = isCompactMode && treeItem && isChangedFolderItem(treeItem);
+                                // compact 模式下：遇到“变更文件夹”则保持折叠（但仍继续展开其祖先）
+                                const shouldSkipExpand = isCompactMode && treeItem && isChangedFolderItem(treeItem);
 
-		                            if (!shouldSkipExpand && children) {
-		                                children.classList.add('expanded');
-		                                children.style.display = '';
-		                            }
-		                            if (!shouldSkipExpand && treeItem) {
-		                                const toggle = treeItem.querySelector('.tree-toggle');
-		                                if (toggle) toggle.classList.add('expanded');
-		                                const icon = treeItem.querySelector('.tree-icon.fas');
-		                                if (icon) {
-		                                    icon.classList.remove('fa-folder');
-		                                    icon.classList.add('fa-folder-open');
-		                                }
-		                            }
+                                if (!shouldSkipExpand && children) {
+                                    children.classList.add('expanded');
+                                    children.style.display = '';
+                                }
+                                if (!shouldSkipExpand && treeItem) {
+                                    const toggle = treeItem.querySelector('.tree-toggle');
+                                    if (toggle) toggle.classList.add('expanded');
+                                    const icon = treeItem.querySelector('.tree-icon.fas');
+                                    if (icon) {
+                                        icon.classList.remove('fa-folder');
+                                        icon.classList.add('fa-folder-open');
+                                    }
+                                }
 
-		                            const parentChildren = parent.parentElement;
-		                            parent = parentChildren ? parentChildren.closest('.tree-node') : null;
-		                        }
-		                    });
-		                    syncCompactRevealAll();
-		                };
+                                const parentChildren = parent.parentElement;
+                                parent = parentChildren ? parentChildren.closest('.tree-node') : null;
+                            }
+                        });
+                        syncCompactRevealAll();
+                    };
                     expandFoldersRef = expandFoldersWithChanges;
 
                     // 初始化状态：读取存储的模式（默认为简略模式 'compact'）
@@ -12336,17 +12336,17 @@ async function renderCurrentChangesView(forceRefresh = false, options = {}) {
                             updateDetailToggleIcon(false);
                             // 保存状态
                             browserAPI.storage.local.set({ currentChangesViewMode: 'detailed' });
-	                        } else {
-	                            // 当前是详细，切换到简略
-	                            treePreviewContainer.classList.add('compact-mode');
-	                            toggleTreeDetailBtn.classList.add('active');
-	                            if (toggleTooltip) toggleTooltip.textContent = currentLang === 'zh_CN' ? '切换为详细' : 'Switch to detailed';
-	                            updateDetailToggleIcon(true);
-	                            // 展开变化
-	                            expandFoldersWithChanges(true);
-	                            // 保存状态
-	                            browserAPI.storage.local.set({ currentChangesViewMode: 'compact' });
-	                        }
+                        } else {
+                            // 当前是详细，切换到简略
+                            treePreviewContainer.classList.add('compact-mode');
+                            toggleTreeDetailBtn.classList.add('active');
+                            if (toggleTooltip) toggleTooltip.textContent = currentLang === 'zh_CN' ? '切换为详细' : 'Switch to detailed';
+                            updateDetailToggleIcon(true);
+                            // 展开变化
+                            expandFoldersWithChanges(true);
+                            // 保存状态
+                            browserAPI.storage.local.set({ currentChangesViewMode: 'compact' });
+                        }
                     });
                 }
 
@@ -13758,7 +13758,7 @@ function renderCommitStats(changes) {
     // 显示结构变化的具体类型
     if (changes.bookmarkMoved || changes.folderMoved) {
         parts.push(`
-            <span class="stat-change modified">
+            <span class="stat-change moved">
                 <i class="fas fa-arrows-alt"></i>
                 ${currentLang === 'zh_CN' ? '移动' : 'Moved'}
             </span>
@@ -15468,8 +15468,8 @@ function ensureCanvasLazyLegend(treeContainer) {
     legend.innerHTML = `
         <span class="legend-item"><span class="legend-dot added"></span> ${currentLang === 'zh_CN' ? '新增' : 'Added'}</span>
         <span class="legend-item"><span class="legend-dot deleted"></span> ${currentLang === 'zh_CN' ? '删除' : 'Deleted'}</span>
-        <span class="legend-item"><span class="legend-dot modified"></span> ${currentLang === 'zh_CN' ? '修改' : 'Modified'}</span>
         <span class="legend-item"><span class="legend-dot moved"></span> ${currentLang === 'zh_CN' ? '移动' : 'Moved'}</span>
+        <span class="legend-item"><span class="legend-dot modified"></span> ${currentLang === 'zh_CN' ? '修改' : 'Modified'}</span>
     `;
     container.insertBefore(legend, container.firstChild);
 }
@@ -16317,8 +16317,8 @@ async function renderTreeView(forceRefresh = false) {
             legend.innerHTML = `
                 <span class="legend-item" data-change-type="added" style="${cursorStyle}" title="${currentLang === 'zh_CN' ? '点击查看新增项' : 'Click to view added items'}"><span class="legend-dot added"></span> ${currentLang === 'zh_CN' ? '新增' : 'Added'}</span>
                 <span class="legend-item" data-change-type="deleted" style="${cursorStyle}" title="${currentLang === 'zh_CN' ? '点击查看删除项' : 'Click to view deleted items'}"><span class="legend-dot deleted"></span> ${currentLang === 'zh_CN' ? '删除' : 'Deleted'}</span>
-                <span class="legend-item" data-change-type="modified" style="${cursorStyle}" title="${currentLang === 'zh_CN' ? '点击查看修改项' : 'Click to view modified items'}"><span class="legend-dot modified"></span> ${currentLang === 'zh_CN' ? '修改' : 'Modified'}</span>
                 <span class="legend-item" data-change-type="moved" style="${cursorStyle}" title="${currentLang === 'zh_CN' ? '点击查看移动项' : 'Click to view moved items'}"><span class="legend-dot moved"></span> ${currentLang === 'zh_CN' ? '移动' : 'Moved'}</span>
+                <span class="legend-item" data-change-type="modified" style="${cursorStyle}" title="${currentLang === 'zh_CN' ? '点击查看修改项' : 'Click to view modified items'}"><span class="legend-dot modified"></span> ${currentLang === 'zh_CN' ? '修改' : 'Modified'}</span>
             `;
             fragment.appendChild(legend);
         }
@@ -18025,8 +18025,8 @@ function ensureTreeLegendExists(container) {
     legend.innerHTML = `
         <span class="legend-item" data-change-type="added" style="${cursorStyle}" title="${currentLang === 'zh_CN' ? '点击查看新增项' : 'Click to view added items'}"><span class="legend-dot added"></span> ${currentLang === 'zh_CN' ? '新增' : 'Added'}</span>
         <span class="legend-item" data-change-type="deleted" style="${cursorStyle}" title="${currentLang === 'zh_CN' ? '点击查看删除项' : 'Click to view deleted items'}"><span class="legend-dot deleted"></span> ${currentLang === 'zh_CN' ? '删除' : 'Deleted'}</span>
-        <span class="legend-item" data-change-type="modified" style="${cursorStyle}" title="${currentLang === 'zh_CN' ? '点击查看修改项' : 'Click to view modified items'}"><span class="legend-dot modified"></span> ${currentLang === 'zh_CN' ? '修改' : 'Modified'}</span>
         <span class="legend-item" data-change-type="moved" style="${cursorStyle}" title="${currentLang === 'zh_CN' ? '点击查看移动项' : 'Click to view moved items'}"><span class="legend-dot moved"></span> ${currentLang === 'zh_CN' ? '移动' : 'Moved'}</span>
+        <span class="legend-item" data-change-type="modified" style="${cursorStyle}" title="${currentLang === 'zh_CN' ? '点击查看修改项' : 'Click to view modified items'}"><span class="legend-dot modified"></span> ${currentLang === 'zh_CN' ? '修改' : 'Modified'}</span>
     `;
 
     // 插入到容器顶部
@@ -19194,8 +19194,8 @@ function generateHistoryTreeHtml(bookmarkTree, changeMap, mode) {
     // 增加和删除显示F/B详情，移动和修改只显示总数
     if (addedTotal > 0) legendItems.push(`<span class="legend-item"><span class="legend-dot added"></span><span class="legend-count">:${formatCount(addedFolders, addedBookmarks)}</span></span>`);
     if (deletedTotal > 0) legendItems.push(`<span class="legend-item"><span class="legend-dot deleted"></span><span class="legend-count">:${formatCount(deletedFolders, deletedBookmarks)}</span></span>`);
-    if (modifiedTotal > 0) legendItems.push(`<span class="legend-item"><span class="legend-dot modified"></span><span class="legend-count">:${modifiedTotal}</span></span>`);
     if (movedTotal > 0) legendItems.push(`<span class="legend-item"><span class="legend-dot moved"></span><span class="legend-count">:${movedTotal}</span></span>`);
+    if (modifiedTotal > 0) legendItems.push(`<span class="legend-item"><span class="legend-dot modified"></span><span class="legend-count">:${modifiedTotal}</span></span>`);
     const legend = legendItems.join('');
 
     return `
@@ -19580,8 +19580,8 @@ function updateLanguageDependentUI() {
         legend.innerHTML = `
             <span class="legend-item"><span class="legend-dot added"></span> ${isEn ? 'Added' : '新增'}</span>
             <span class="legend-item"><span class="legend-dot deleted"></span> ${isEn ? 'Deleted' : '删除'}</span>
-            <span class="legend-item"><span class="legend-dot modified"></span> ${isEn ? 'Modified' : '修改'}</span>
             <span class="legend-item"><span class="legend-dot moved"></span> ${isEn ? 'Moved' : '移动'}</span>
+            <span class="legend-item"><span class="legend-dot modified"></span> ${isEn ? 'Modified' : '修改'}</span>
         `;
     });
 

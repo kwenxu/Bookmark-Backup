@@ -13,7 +13,7 @@ import { activeNotificationWindowId, updateActiveNotificationWindowId, setTimerP
  * 获取浏览器兼容的API对象。
  * @returns {object} 浏览器API对象 (chrome 或 browser)。
  */
-const browserAPI = (function() {
+const browserAPI = (function () {
     if (typeof chrome !== 'undefined') {
         if (typeof browser !== 'undefined') {
             // Firefox 环境
@@ -82,14 +82,14 @@ const timerController = {
         this.clearMainTimer();
         this.clearProgressTracker();
         this.timerGeneration++; // 递增计数器代数
-},
+    },
 
     /**
      * 清除主计时器闹钟。
      * @returns {boolean} 是否成功清除。
      */
     clearMainTimer() {
-browserAPI.alarms.clear(BACKUP_REMINDER_ALARM);
+        browserAPI.alarms.clear(BACKUP_REMINDER_ALARM);
         return true;
     },
 
@@ -98,7 +98,7 @@ browserAPI.alarms.clear(BACKUP_REMINDER_ALARM);
      * @returns {boolean} 是否成功清除。
      */
     clearProgressTracker() {
-browserAPI.alarms.clear(PROGRESS_TRACKER_ALARM);
+        browserAPI.alarms.clear(PROGRESS_TRACKER_ALARM);
         return true;
     },
 
@@ -107,7 +107,7 @@ browserAPI.alarms.clear(PROGRESS_TRACKER_ALARM);
      * @returns {boolean} 是否成功清除。
      */
     clearFixedTimeAlarms() {
-browserAPI.alarms.clear(FIXED_TIME_ALARM_1);
+        browserAPI.alarms.clear(FIXED_TIME_ALARM_1);
         browserAPI.alarms.clear(FIXED_TIME_ALARM_2);
         return true;
     },
@@ -118,7 +118,7 @@ browserAPI.alarms.clear(FIXED_TIME_ALARM_1);
      * @returns {boolean} 是否成功清除。
      */
     clearFixedTimeAlarm(alarmName) {
-browserAPI.alarms.clear(alarmName);
+        browserAPI.alarms.clear(alarmName);
         return true;
     },
 
@@ -133,7 +133,7 @@ browserAPI.alarms.clear(alarmName);
         const whenTime = Date.now() + delay;
         await browserAPI.alarms.create(BACKUP_REMINDER_ALARM, { when: whenTime });
         const delayInSeconds = delay / 1000;
-return BACKUP_REMINDER_ALARM;
+        return BACKUP_REMINDER_ALARM;
     },
 
     /**
@@ -146,7 +146,7 @@ return BACKUP_REMINDER_ALARM;
         const currentGeneration = this.timerGeneration;
         const intervalInMinutes = interval / 60000;
         await browserAPI.alarms.create(PROGRESS_TRACKER_ALARM, { periodInMinutes: intervalInMinutes });
-return PROGRESS_TRACKER_ALARM;
+        return PROGRESS_TRACKER_ALARM;
     },
 
     /**
@@ -161,7 +161,7 @@ return PROGRESS_TRACKER_ALARM;
         const whenTime = calculateNextFixedTime(timeStr, forceNextDay);
         if (!whenTime) { addLog(`计时器控制器: 无法为时间 ${timeStr} 创建准点定时闹钟1`); return null; }
         await browserAPI.alarms.create(FIXED_TIME_ALARM_1, { when: whenTime });
-return FIXED_TIME_ALARM_1;
+        return FIXED_TIME_ALARM_1;
     },
 
     /**
@@ -176,7 +176,7 @@ return FIXED_TIME_ALARM_1;
         const whenTime = calculateNextFixedTime(timeStr, forceNextDay);
         if (!whenTime) { addLog(`计时器控制器: 无法为时间 ${timeStr} 创建准点定时闹钟2`); return null; }
         await browserAPI.alarms.create(FIXED_TIME_ALARM_2, { when: whenTime });
-return FIXED_TIME_ALARM_2;
+        return FIXED_TIME_ALARM_2;
     }
 };
 
@@ -205,12 +205,12 @@ const debugTools = {
      * @param {string} newPhase - 新阶段。
      * @param {string} reason - 变更原因。
      */
-    recordPhaseChange: function(oldPhase, newPhase, reason) {
+    recordPhaseChange: function (oldPhase, newPhase, reason) {
         const timestamp = new Date().toISOString();
         const record = { timestamp, oldPhase, newPhase, reason };
         this.phaseHistory.unshift(record);
         if (this.phaseHistory.length > 20) { this.phaseHistory.pop(); }
-console.log('阶段变更记录:', record);
+        console.log('阶段变更记录:', record);
         browserAPI.storage.local.set({ phaseHistoryDebug: this.phaseHistory });
     },
 
@@ -218,13 +218,13 @@ console.log('阶段变更记录:', record);
      * 获取阶段历史。
      * @returns {Promise<Array<object>>} 阶段历史记录数组。
      */
-    getPhaseHistory: async function() {
+    getPhaseHistory: async function () {
         try {
             const data = await browserAPI.storage.local.get('phaseHistoryDebug');
             if (data.phaseHistoryDebug) { this.phaseHistory = data.phaseHistoryDebug; }
             return this.phaseHistory;
         } catch (error) {
-return [];
+            return [];
         }
     }
 };
@@ -241,7 +241,7 @@ function addLog(message) {
     const now = new Date();
     const timeString = now.toLocaleString();
     const fullMessage = `[备份提醒计时器] [${timeString}] [循环提醒] ${message}`;
-recentLogs.push(fullMessage);
+    recentLogs.push(fullMessage);
     if (recentLogs.length > MAX_LOGS) { recentLogs.shift(); }
 }
 
@@ -274,7 +274,7 @@ async function getReminderSettings() {
         const settings = data.reminderSettings || {};
         return { ...defaultSettings, ...settings };
     } catch (error) {
-return {
+        return {
             reminderEnabled: true, firstReminderMinutes: 30,
             fixedTimeEnabled1: true, fixedTime1: "09:30",
             fixedTimeEnabled2: false, fixedTime2: "16:00"
@@ -303,13 +303,13 @@ function getPhaseConfig(phase, settings) {
 async function getCurrentPhaseDelay() {
     const settings = await getReminderSettings();
     if (settings.reminderEnabled === false) {
-return Number.MAX_SAFE_INTEGER;
+        return Number.MAX_SAFE_INTEGER;
     }
     if (settings.firstReminderMinutes <= 0) {
-return Number.MAX_SAFE_INTEGER;
+        return Number.MAX_SAFE_INTEGER;
     }
     const delayMs = (settings.firstReminderMinutes || 1) * 60 * 1000;
-return delayMs;
+    return delayMs;
 }
 
 /**
@@ -320,16 +320,16 @@ async function checkReminderStatus() {
     try {
         const autoBackupEnabled = await isAutoBackupEnabled();
         if (autoBackupEnabled) { addLog(`当前自动备份状态: 已启用，无需显示提醒`); return false; }
-const settings = await getReminderSettings();
+        const settings = await getReminderSettings();
         if (!settings.reminderEnabled) { addLog(`手动备份提醒功能已禁用，无需显示提醒`); return false; }
         const reminderTime = await getCurrentPhaseDelay();
         if (reminderState.currentPhase === REMINDER_PHASE.FIRST && settings.firstReminderMinutes === 0) { addLog(`第一次提醒已禁用，无需显示提醒`); return false; }
         if (reminderState.currentPhase === REMINDER_PHASE.SECOND && settings.secondReminderMinutes === 0) { addLog(`第二次提醒已禁用，无需显示提醒`); setupNextPhase(true); startReminderTimer(true); return false; }
         if (reminderState.currentPhase === REMINDER_PHASE.THIRD && settings.thirdReminderMinutes === 0) { addLog(`第三次提醒已禁用，无需显示提醒`); reminderState.currentPhase = REMINDER_PHASE.REPEAT; startReminderTimer(true); return false; }
         if (reminderState.currentPhase === REMINDER_PHASE.REPEAT && settings.repeatReminderDays === 0) { addLog(`重复提醒已禁用，无需显示提醒`); resetReminderState(); return false; }
-return true;
+        return true;
     } catch (error) {
-return true;
+        return true;
     }
 }
 
@@ -356,9 +356,9 @@ function createProgressCheckpoints(totalDelay) {
 
     if (totalDelay > 2 * 60 * 1000) {
         checkpoints.push(targetTime - preCheckInterval);
-addLog(`检查点: ${new Date(checkpoints[0]).toLocaleString()}, 目标时间: ${new Date(targetTime).toLocaleString()}`);
+        addLog(`检查点: ${new Date(checkpoints[0]).toLocaleString()}, 目标时间: ${new Date(targetTime).toLocaleString()}`);
     } else {
-}
+    }
     return checkpoints;
 }
 
@@ -376,7 +376,7 @@ async function setNextProgressCheckpoint(checkpoints) {
     timerController.clearProgressTracker();
     await browserAPI.alarms.create(PROGRESS_TRACKER_ALARM, { when: nextCheckpoint });
     const delayInSeconds = delay / 1000;
-reminderState.progressCheckpoints = checkpoints;
+    reminderState.progressCheckpoints = checkpoints;
     saveReminderState();
     return true;
 }
@@ -392,14 +392,14 @@ function calculateNextFixedTime(timeStr, forceNextDay = false) {
         if (!timeStr || typeof timeStr !== 'string') { addLog(`无效的时间字符串: ${timeStr} (${typeof timeStr})`); return null; }
         const timePattern = /^([0-1]?[0-9]|2[0-3]):([0-5][0-9])$/;
         if (!timePattern.test(timeStr)) {
-const parts = timeStr.split(':');
+            const parts = timeStr.split(':');
             if (parts.length === 2) {
                 let hour = parseInt(parts[0], 10);
                 let minute = parseInt(parts[1], 10);
                 if (!isNaN(hour)) { hour = Math.max(0, Math.min(23, hour)); } else { addLog(`无法解析小时值: ${parts[0]}`); return null; }
                 if (!isNaN(minute)) { minute = Math.max(0, Math.min(59, minute)); } else { addLog(`无法解析分钟值: ${parts[1]}`); return null; }
                 const fixedTimeStr = `${hour.toString().padStart(2, '0')}:${minute.toString().padStart(2, '0')}`;
-timeStr = fixedTimeStr;
+                timeStr = fixedTimeStr;
             } else { addLog(`无法修复时间格式: ${timeStr}`); return null; }
         }
         const [hourStr, minuteStr] = timeStr.split(':');
@@ -415,7 +415,7 @@ timeStr = fixedTimeStr;
         } else { addLog(`目标时间 ${timeStr} 设置为今天 ${targetTime.toLocaleString()}`); }
         return targetTime.getTime();
     } catch (error) {
-return null;
+        return null;
     }
 }
 
@@ -449,15 +449,15 @@ async function countBookmarks() {
         }
 
         if (bookmarks && bookmarks.length > 0 && bookmarks[0].children) {
-             for (const rootChild of bookmarks[0].children) {
-                  const counts = countItemsRecursive(rootChild);
-                  bookmarkCount += counts.bookmarks;
-                  folderCount += counts.folders;
-             }
+            for (const rootChild of bookmarks[0].children) {
+                const counts = countItemsRecursive(rootChild);
+                bookmarkCount += counts.bookmarks;
+                folderCount += counts.folders;
+            }
         }
-return { bookmarkCount, folderCount };
+        return { bookmarkCount, folderCount };
     } catch (error) {
-return { bookmarkCount: 0, folderCount: 0 };
+        return { bookmarkCount: 0, folderCount: 0 };
     }
 }
 
@@ -470,7 +470,7 @@ async function isAutoBackupEnabled() {
         const { autoSync = true } = await browserAPI.storage.local.get(['autoSync']);
         return autoSync;
     } catch (error) {
-return true;
+        return true;
     }
 }
 
@@ -521,15 +521,25 @@ async function calculateChanges() {
                     changeInfo.push(`${snapshot.folderDiff > 0 ? '+' : ''}${snapshot.folderDiff} 文件夹`);
                 }
 
-                const bookmarkStructural = (typeof snapshot.movedBookmarkCount === 'number' && snapshot.movedBookmarkCount > 0) ||
-                    (typeof snapshot.modifiedBookmarkCount === 'number' && snapshot.modifiedBookmarkCount > 0) ||
-                    snapshot.bookmarkMoved || snapshot.bookmarkModified;
-                const folderStructural = (typeof snapshot.movedFolderCount === 'number' && snapshot.movedFolderCount > 0) ||
-                    (typeof snapshot.modifiedFolderCount === 'number' && snapshot.modifiedFolderCount > 0) ||
-                    snapshot.folderMoved || snapshot.folderModified;
+                const movedCountTotal = (typeof snapshot.movedCount === 'number') ? snapshot.movedCount :
+                    ((typeof snapshot.movedBookmarkCount === 'number' ? snapshot.movedBookmarkCount : 0) +
+                        (typeof snapshot.movedFolderCount === 'number' ? snapshot.movedFolderCount : 0));
 
-                if (bookmarkStructural) changeInfo.push("书签变动");
-                if (folderStructural) changeInfo.push("文件夹变动");
+                const modifiedCountTotal = (typeof snapshot.modifiedCount === 'number') ? snapshot.modifiedCount :
+                    ((typeof snapshot.modifiedBookmarkCount === 'number' ? snapshot.modifiedBookmarkCount : 0) +
+                        (typeof snapshot.modifiedFolderCount === 'number' ? snapshot.modifiedFolderCount : 0));
+
+                if (movedCountTotal > 0) {
+                    changeInfo.push(`${movedCountTotal} 移动`);
+                } else if (snapshot.bookmarkMoved || snapshot.folderMoved) {
+                    changeInfo.push("移动");
+                }
+
+                if (modifiedCountTotal > 0) {
+                    changeInfo.push(`${modifiedCountTotal} 修改`);
+                } else if (snapshot.bookmarkModified || snapshot.folderModified) {
+                    changeInfo.push("修改");
+                }
 
                 currentChangeDescription = `(${changeInfo.join('，')})`;
             } else {
@@ -556,20 +566,20 @@ async function calculateChanges() {
         const currentCounts = await countBookmarks();
         const currentBookmarkCount = currentCounts.bookmarkCount;
         const currentFolderCount = currentCounts.folderCount;
-const isSyncHistoryEmpty = !syncHistory || syncHistory.length === 0;
+        const isSyncHistoryEmpty = !syncHistory || syncHistory.length === 0;
 
         if (isSyncHistoryEmpty) {
-if (cachedRecordAfterClear && cachedRecordAfterClear.bookmarkStats) {
+            if (cachedRecordAfterClear && cachedRecordAfterClear.bookmarkStats) {
                 const prevStats = cachedRecordAfterClear.bookmarkStats;
                 const prevBookmarkCount = prevStats.currentBookmarkCount ?? prevStats.currentBookmarks ?? 0;
                 const prevFolderCount = prevStats.currentFolderCount ?? prevStats.currentFolders ?? 0;
-const bookmarkDiff = currentBookmarkCount - prevBookmarkCount;
+                const bookmarkDiff = currentBookmarkCount - prevBookmarkCount;
                 const folderDiff = currentFolderCount - prevFolderCount;
-const bookmarkMoved = lastSyncOperations?.bookmarkMoved || false;
+                const bookmarkMoved = lastSyncOperations?.bookmarkMoved || false;
                 const folderMoved = lastSyncOperations?.folderMoved || false;
                 const bookmarkModified = lastSyncOperations?.bookmarkModified || false;
                 const folderModified = lastSyncOperations?.folderModified || false;
-const hasStructuralChanges = bookmarkMoved || folderMoved || bookmarkModified || folderModified;
+                const hasStructuralChanges = bookmarkMoved || folderMoved || bookmarkModified || folderModified;
                 const hasNumericalChanges = bookmarkDiff !== 0 || folderDiff !== 0;
                 currentHasChanges = hasStructuralChanges || hasNumericalChanges;
 
@@ -577,31 +587,39 @@ const hasStructuralChanges = bookmarkMoved || folderMoved || bookmarkModified ||
                     let changeInfo = [];
                     if (bookmarkDiff !== 0) changeInfo.push(`${bookmarkDiff > 0 ? '+' : ''}${bookmarkDiff} 书签`);
                     if (folderDiff !== 0) changeInfo.push(`${folderDiff > 0 ? '+' : ''}${folderDiff} 文件夹`);
-                    if (bookmarkModified || bookmarkMoved) changeInfo.push("书签变动");
-                    if (folderModified || folderMoved) changeInfo.push("文件夹变动");
+                    if (bookmarkModified || bookmarkMoved || folderModified || folderMoved) {
+                        const movedCount = (lastSyncOperations?.movedBookmarkCount || 0) + (lastSyncOperations?.movedFolderCount || 0);
+                        const modifiedCount = (lastSyncOperations?.modifiedBookmarkCount || 0) + (lastSyncOperations?.modifiedFolderCount || 0);
+
+                        if (movedCount > 0) changeInfo.push(`${movedCount} 移动`);
+                        else if (bookmarkMoved || folderMoved) changeInfo.push("移动");
+
+                        if (modifiedCount > 0) changeInfo.push(`${modifiedCount} 修改`);
+                        else if (bookmarkModified || folderModified) changeInfo.push("修改");
+                    }
                     currentChangeDescription = `(${changeInfo.join('，')})`;
                 } else {
                     currentChangeDescription = "无变化 (与缓存记录比较)";
                 }
-} else {
-currentHasChanges = false;
+            } else {
+                currentHasChanges = false;
                 currentChangeDescription = "无历史记录可比较";
             }
         } else {
-const latestRecord = syncHistory[syncHistory.length - 1];
+            const latestRecord = syncHistory[syncHistory.length - 1];
             let prevBookmarkCount = 0;
             let prevFolderCount = 0;
 
             if (latestRecord && latestRecord.bookmarkStats) {
                 prevBookmarkCount = latestRecord.bookmarkStats.currentBookmarkCount ?? latestRecord.bookmarkStats.currentBookmarks ?? 0;
                 prevFolderCount = latestRecord.bookmarkStats.currentFolderCount ?? latestRecord.bookmarkStats.currentFolders ?? 0;
-const bookmarkDiff = currentBookmarkCount - prevBookmarkCount;
+                const bookmarkDiff = currentBookmarkCount - prevBookmarkCount;
                 const folderDiff = currentFolderCount - prevFolderCount;
-const bookmarkMoved = lastSyncOperations?.bookmarkMoved || false;
+                const bookmarkMoved = lastSyncOperations?.bookmarkMoved || false;
                 const folderMoved = lastSyncOperations?.folderMoved || false;
                 const bookmarkModified = lastSyncOperations?.bookmarkModified || false;
                 const folderModified = lastSyncOperations?.folderModified || false;
-const hasStructuralChanges = bookmarkMoved || folderMoved || bookmarkModified || folderModified;
+                const hasStructuralChanges = bookmarkMoved || folderMoved || bookmarkModified || folderModified;
                 const hasNumericalChanges = bookmarkDiff !== 0 || folderDiff !== 0;
                 currentHasChanges = hasStructuralChanges || hasNumericalChanges;
 
@@ -609,19 +627,28 @@ const hasStructuralChanges = bookmarkMoved || folderMoved || bookmarkModified ||
                     let changeInfo = [];
                     if (bookmarkDiff !== 0) changeInfo.push(`${bookmarkDiff > 0 ? '+' : ''}${bookmarkDiff} 书签`);
                     if (folderDiff !== 0) changeInfo.push(`${folderDiff > 0 ? '+' : ''}${folderDiff} 文件夹`);
-                    if (bookmarkModified || bookmarkMoved) changeInfo.push("书签变动");
-                    if (folderModified || folderMoved) changeInfo.push("文件夹变动");
+                    if (bookmarkModified || bookmarkMoved || folderModified || folderMoved) {
+                        // 尝试从 lastSyncOperations 获取具体数量（如果有）
+                        const movedCount = (lastSyncOperations?.movedBookmarkCount || 0) + (lastSyncOperations?.movedFolderCount || 0);
+                        const modifiedCount = (lastSyncOperations?.modifiedBookmarkCount || 0) + (lastSyncOperations?.modifiedFolderCount || 0);
+
+                        if (movedCount > 0) changeInfo.push(`${movedCount} 移动`);
+                        else if (bookmarkMoved || folderMoved) changeInfo.push("移动");
+
+                        if (modifiedCount > 0) changeInfo.push(`${modifiedCount} 修改`);
+                        else if (bookmarkModified || folderModified) changeInfo.push("修改");
+                    }
                     currentChangeDescription = `(${changeInfo.join('，')})`;
                 } else {
                     currentChangeDescription = "无变化";
                 }
-} else {
-currentHasChanges = true;
+            } else {
+                currentHasChanges = true;
                 currentChangeDescription = "(无法计算具体变化)";
             }
         }
     } catch (error) {
-currentHasChanges = true;
+        currentHasChanges = true;
         currentChangeDescription = "(检查备份状态时出错)";
     }
     return { currentChangeDescription, currentHasChanges };
@@ -647,14 +674,14 @@ function saveReminderState() {
         };
         browserAPI.storage.local.set({ reminderState: stateToSave });
     } catch (error) {
-}
+    }
 }
 
 /**
  * 从存储加载计时器状态。
  */
 async function loadReminderState() {
-try {
+    try {
         const data = await browserAPI.storage.local.get(['reminderState', 'autoSync', 'lastReminderDate']);
         const autoSync = data.autoSync !== undefined ? data.autoSync : true;
 
@@ -665,14 +692,14 @@ try {
         await browserAPI.storage.local.set({ lastReminderDate: today });
 
         if (isNewDay && data.reminderState && data.reminderState.startTime) {
-timerController.clearAllTimers();
+            timerController.clearAllTimers();
             reminderState.startTime = null; reminderState.targetTime = null; reminderState.elapsedTime = 0;
             reminderState.reminderShown = false; reminderState.isActive = true; reminderState.manualBackupDone = false;
             reminderState.pauseTime = null; reminderState.isPaused = false; reminderState.remainingTime = 0; reminderState.currentPhase = REMINDER_PHASE.FIRST;
             reminderState.progressCheckpoints = [];
             saveReminderState();
             if (!autoSync) {
-// 直接调用，不使用setTimeout
+                // 直接调用，不使用setTimeout
                 await startReminderTimer(true);
             }
             return;
@@ -682,9 +709,9 @@ timerController.clearAllTimers();
 
         if (data.reminderState) {
             if (!autoSync) {
-resetReminderState();
+                resetReminderState();
                 manualStartupResetHandled = true;
-// 直接调用，不使用setTimeout
+                // 直接调用，不使用setTimeout
                 await startReminderTimer(true);
                 return;
             }
@@ -701,7 +728,7 @@ resetReminderState();
             reminderState.currentPhase = data.reminderState.currentPhase || REMINDER_PHASE.FIRST;
             reminderState.progressCheckpoints = data.reminderState.progressCheckpoints || [];
 
-if (reminderState.targetTime && !reminderState.reminderShown && !reminderState.manualBackupDone && !autoSync) {
+            if (reminderState.targetTime && !reminderState.reminderShown && !reminderState.manualBackupDone && !autoSync) {
                 const now = Date.now();
                 if (now < reminderState.targetTime) {
                     const remainingTime = reminderState.targetTime - now;
@@ -710,28 +737,28 @@ if (reminderState.targetTime && !reminderState.reminderShown && !reminderState.m
                         const newCheckpoints = createProgressCheckpoints(remainingTime);
                         reminderState.progressCheckpoints = newCheckpoints;
                         await setNextProgressCheckpoint(newCheckpoints);
-}, 100);
+                    }, 100);
                 } else {
-setTimeout(() => { timerTriggered(); }, 500);
+                    setTimeout(() => { timerTriggered(); }, 500);
                 }
             } else if (!autoSync && !reminderState.reminderShown && !reminderState.manualBackupDone) {
-// 直接调用，不使用setTimeout
+                // 直接调用，不使用setTimeout
                 await startReminderTimer(true);
             }
         } else {
-reminderState.currentPhase = REMINDER_PHASE.FIRST;
+            reminderState.currentPhase = REMINDER_PHASE.FIRST;
             if (!autoSync) {
-// 直接调用，不使用setTimeout
+                // 直接调用，不使用setTimeout
                 await startReminderTimer(true);
             }
         }
     } catch (error) {
-}
+    }
 }
 
 // 确保在加载提醒状态后也加载阶段历史
 const originalLoadReminderState = loadReminderState;
-loadReminderState = async function() {
+loadReminderState = async function () {
     await originalLoadReminderState();
     await debugTools.getPhaseHistory();
 };
@@ -747,13 +774,13 @@ async function checkDateChange() {
             const lastCheckedDate = data.lastCheckedDate || today;
             const dateChanged = lastCheckedDate !== today;
             if (dateChanged) {
-return browserAPI.storage.local.set({ lastCheckedDate: today })
+                return browserAPI.storage.local.set({ lastCheckedDate: today })
                     .then(() => { return { dateChanged: true, previousDate: lastCheckedDate, currentDate: today, timestamp: Date.now() }; });
             }
             return { dateChanged: false, currentDate: today, previousDate: lastCheckedDate, timestamp: Date.now() };
         })
         .catch(err => {
-return { dateChanged: false, currentDate: today, previousDate: today, timestamp: Date.now(), error: err.message };
+            return { dateChanged: false, currentDate: today, previousDate: today, timestamp: Date.now(), error: err.message };
         });
 }
 
@@ -770,25 +797,25 @@ async function startReminderTimer(skipInitialReminder = false) {
     // 添加时间戳检查，防止重复启动
     const now = Date.now();
     if (now - lastTimerStartAttemptTime < MIN_TIMER_START_INTERVAL) {
-return true; // 返回true以避免调用者认为启动失败
+        return true; // 返回true以避免调用者认为启动失败
     }
     lastTimerStartAttemptTime = now;
-    
+
     if (!globalThis.startReminderTimerRecursionCount) { globalThis.startReminderTimerRecursionCount = 0; }
     globalThis.startReminderTimerRecursionCount++;
     if (globalThis.startReminderTimerRecursionCount > 5) {
-globalThis.startReminderTimerRecursionCount = 0;
+        globalThis.startReminderTimerRecursionCount = 0;
         return false;
     }
 
     try {
-if (globalThis.isCleaningUp) {
-setTimeout(() => startReminderTimer(skipInitialReminder), 500);
+        if (globalThis.isCleaningUp) {
+            setTimeout(() => startReminderTimer(skipInitialReminder), 500);
             return false;
         }
 
-const delayMs = await getCurrentPhaseDelay();
-timerController.clearMainTimer();
+        const delayMs = await getCurrentPhaseDelay();
+        timerController.clearMainTimer();
 
         let shouldShowReminder = false;
         let changeDescriptionToShow = "";
@@ -799,10 +826,10 @@ timerController.clearMainTimer();
                 try {
                     const changes = await calculateChanges();
                     changeDescriptionToShow = changes.currentChangeDescription || "";
-} catch (calcError) {
-changeDescriptionToShow = "";
+                } catch (calcError) {
+                    changeDescriptionToShow = "";
                 }
-await showBackupReminder(reminderState.currentPhase, changeDescriptionToShow);
+                await showBackupReminder(reminderState.currentPhase, changeDescriptionToShow);
             } else { addLog(`不满足显示条件，跳过初始提醒`); }
         } else { addLog(`已指定跳过初始提醒，仅设置计时器`); }
 
@@ -814,7 +841,7 @@ await showBackupReminder(reminderState.currentPhase, changeDescriptionToShow);
         await timerController.setMainTimer(delayMs);
 
         if (delayMs <= 5 * 60 * 1000) {
-reminderState.progressCheckpoints = [];
+            reminderState.progressCheckpoints = [];
         } else {
             const checkpoints = createProgressCheckpoints(delayMs);
             reminderState.progressCheckpoints = checkpoints;
@@ -823,10 +850,10 @@ reminderState.progressCheckpoints = [];
 
         if (!reminderState.progressCheckpoints || reminderState.progressCheckpoints.length === 0) { addLog(`没有可用的检查点`); }
         await saveReminderState();
-globalThis.startReminderTimerRecursionCount = 0;
+        globalThis.startReminderTimerRecursionCount = 0;
         return true;
     } catch (error) {
-globalThis.startReminderTimerRecursionCount = 0;
+        globalThis.startReminderTimerRecursionCount = 0;
         return false;
     }
 }
@@ -837,7 +864,7 @@ globalThis.startReminderTimerRecursionCount = 0;
  */
 function stopReminderTimer() {
     if (!reminderState.startTime) { addLog('没有正在运行的循环提醒计时器，忽略停止操作'); return; }
-timerController.clearAllTimers();
+    timerController.clearAllTimers();
     reminderState.startTime = null; reminderState.targetTime = null; reminderState.elapsedTime = 0;
     reminderState.reminderShown = false; reminderState.isActive = true; reminderState.manualBackupDone = false;
     reminderState.pauseTime = null; reminderState.isPaused = false; reminderState.remainingTime = 0; reminderState.currentPhase = REMINDER_PHASE.FIRST;
@@ -852,9 +879,9 @@ timerController.clearAllTimers();
 function pauseReminderTimer() {
     browserAPI.alarms.get(BACKUP_REMINDER_ALARM, (alarm) => {
         if (!alarm) {
-return;
+            return;
         }
-        
+
         const remainingTime = alarm.scheduledTime - Date.now();
         if (remainingTime > 0) {
             timerController.clearAllTimers();
@@ -862,8 +889,8 @@ return;
             reminderState.remainingTime = remainingTime;
             reminderState.isPaused = true;
             saveReminderState();
-} else {
-}
+        } else {
+        }
     });
 }
 
@@ -875,12 +902,12 @@ async function resumeReminderTimer() {
     const { reminderState: storedState } = await browserAPI.storage.local.get('reminderState');
 
     if (storedState && storedState.isPaused && storedState.remainingTime > 0) {
-// 清除可能存在的旧闹钟
+        // 清除可能存在的旧闹钟
         timerController.clearMainTimer();
 
         // 使用剩余时间创建新的闹钟
         await timerController.setMainTimer(storedState.remainingTime);
-        
+
         // 更新状态
         const newState = {
             ...storedState,
@@ -888,12 +915,12 @@ async function resumeReminderTimer() {
             pauseTime: null,
             remainingTime: 0,
             // 重新计算目标时间
-            targetTime: Date.now() + storedState.remainingTime 
+            targetTime: Date.now() + storedState.remainingTime
         };
         await browserAPI.storage.local.set({ reminderState: newState });
-        
-} else {
-}
+
+    } else {
+    }
 }
 
 /**
@@ -901,10 +928,10 @@ async function resumeReminderTimer() {
  * @returns {void}
  */
 function markManualBackupDone() {
-reminderState.manualBackupDone = true;
+    reminderState.manualBackupDone = true;
     reminderState.reminderShown = false;
     browserAPI.storage.local.remove('hasBookmarkActivitySinceLastCheck');
-startReminderTimer(true);
+    startReminderTimer(true);
 }
 
 /**
@@ -913,48 +940,48 @@ startReminderTimer(true);
  */
 async function timerTriggered() {
     try {
-timerController.clearAllTimers();
+        timerController.clearAllTimers();
 
         const { autoSync } = await browserAPI.storage.local.get(['autoSync']);
         if (autoSync) { addLog(`当前为自动备份模式，忽略循环提醒触发`); return; }
-const { hasBookmarkActivitySinceLastCheck, lastNotificationClosedReason } = await browserAPI.storage.local.get(['hasBookmarkActivitySinceLastCheck', 'lastNotificationClosedReason']);
+        const { hasBookmarkActivitySinceLastCheck, lastNotificationClosedReason } = await browserAPI.storage.local.get(['hasBookmarkActivitySinceLastCheck', 'lastNotificationClosedReason']);
         await browserAPI.storage.local.remove('lastNotificationClosedReason');
-if (hasBookmarkActivitySinceLastCheck) {
-const { currentChangeDescription, currentHasChanges } = await calculateChanges();
-if (currentHasChanges) {
+        if (hasBookmarkActivitySinceLastCheck) {
+            const { currentChangeDescription, currentHasChanges } = await calculateChanges();
+            if (currentHasChanges) {
                 const timeAllows = await checkReminderStatus();
                 if (timeAllows) {
-await browserAPI.storage.local.set({ lastNotificationChangeDescription: currentChangeDescription });
+                    await browserAPI.storage.local.set({ lastNotificationChangeDescription: currentChangeDescription });
                     await showBackupReminder(reminderState.currentPhase, currentChangeDescription);
-} else {
-startReminderTimer(true);
+                } else {
+                    startReminderTimer(true);
                 }
             } else {
-startReminderTimer(true);
+                startReminderTimer(true);
             }
         } else {
-if (lastNotificationClosedReason === 'timeout' || lastNotificationClosedReason === 'manual_close') {
-const { currentChangeDescription, currentHasChanges } = await calculateChanges();
-if (currentHasChanges) {
+            if (lastNotificationClosedReason === 'timeout' || lastNotificationClosedReason === 'manual_close') {
+                const { currentChangeDescription, currentHasChanges } = await calculateChanges();
+                if (currentHasChanges) {
                     const timeAllows = await checkReminderStatus();
                     if (timeAllows) {
-await browserAPI.storage.local.set({ lastNotificationChangeDescription: currentChangeDescription });
+                        await browserAPI.storage.local.set({ lastNotificationChangeDescription: currentChangeDescription });
                         await showBackupReminder(reminderState.currentPhase, currentChangeDescription);
-} else {
-startReminderTimer(true);
+                    } else {
+                        startReminderTimer(true);
                     }
                 } else {
-startReminderTimer(true);
+                    startReminderTimer(true);
                 }
             } else {
-startReminderTimer(true);
+                startReminderTimer(true);
             }
         }
     } catch (error) {
-try {
+        try {
             await browserAPI.storage.local.remove('hasBookmarkActivitySinceLastCheck');
             await browserAPI.storage.local.remove('lastNotificationClosedReason');
-} catch (removeError) { addLog(`顶层错误处理中重置标志失败: ${removeError.message}`); }
+        } catch (removeError) { addLog(`顶层错误处理中重置标志失败: ${removeError.message}`); }
         startReminderTimer(true);
     }
 }
@@ -965,7 +992,7 @@ try {
  */
 function handleAlarm(alarm) {
     const alarmName = alarm.name;
-if (alarmName === BACKUP_REMINDER_ALARM) {
+    if (alarmName === BACKUP_REMINDER_ALARM) {
         timerTriggered();
     } else if (alarmName === PROGRESS_TRACKER_ALARM) {
         if (reminderState.startTime && !reminderState.reminderShown) {
@@ -973,12 +1000,12 @@ if (alarmName === BACKUP_REMINDER_ALARM) {
             reminderState.elapsedTime = elapsedTime;
             saveReminderState();
             const targetTime = reminderState.targetTime;
-if (reminderState.progressCheckpoints && reminderState.progressCheckpoints.length > 0) {
+            if (reminderState.progressCheckpoints && reminderState.progressCheckpoints.length > 0) {
                 setNextProgressCheckpoint(reminderState.progressCheckpoints);
             }
         }
     } else if (alarmName === FIXED_TIME_ALARM_1 || alarmName === FIXED_TIME_ALARM_2) {
-handleFixedTimeAlarm(alarmName).catch(error => { addLog(`处理准点定时闹钟${alarmName}失败: ${error.message}`); });
+        handleFixedTimeAlarm(alarmName).catch(error => { addLog(`处理准点定时闹钟${alarmName}失败: ${error.message}`); });
     }
 }
 
@@ -989,16 +1016,16 @@ handleFixedTimeAlarm(alarmName).catch(error => { addLog(`处理准点定时闹�
  */
 async function handleFixedTimeAlarm(alarmName) {
     try {
-timerController.clearFixedTimeAlarm(alarmName);
+        timerController.clearFixedTimeAlarm(alarmName);
         const settings = await getReminderSettings();
         const autoBackupEnabled = await isAutoBackupEnabled();
 
         if (autoBackupEnabled) {
-await resetFixedTimeAlarm(alarmName, 0);
+            await resetFixedTimeAlarm(alarmName, 0);
             return;
         }
 
-const reasonKey = alarmName === FIXED_TIME_ALARM_1 ? 'lastFT1NotificationClosedReason' : 'lastFT2NotificationClosedReason';
+        const reasonKey = alarmName === FIXED_TIME_ALARM_1 ? 'lastFT1NotificationClosedReason' : 'lastFT2NotificationClosedReason';
         const descriptionKey = alarmName === FIXED_TIME_ALARM_1 ? 'lastFT1NotificationChangeDescription' : 'lastFT2NotificationChangeDescription';
 
         const {
@@ -1012,42 +1039,42 @@ const reasonKey = alarmName === FIXED_TIME_ALARM_1 ? 'lastFT1NotificationClosedR
         ]);
 
         await browserAPI.storage.local.remove(reasonKey);
-let shouldShowNotification = false;
+        let shouldShowNotification = false;
         let changeDescriptionToShow = "";
 
         if (hasBookmarkActivitySinceLastCheck) {
-try {
-                const {currentChangeDescription, currentHasChanges} = await calculateChanges();
+            try {
+                const { currentChangeDescription, currentHasChanges } = await calculateChanges();
                 if (currentHasChanges) {
-await browserAPI.storage.local.set({ [descriptionKey]: currentChangeDescription });
+                    await browserAPI.storage.local.set({ [descriptionKey]: currentChangeDescription });
                     changeDescriptionToShow = currentChangeDescription;
                     shouldShowNotification = true;
                 } else {
-shouldShowNotification = false;
+                    shouldShowNotification = false;
                 }
             } catch (error) {
-await browserAPI.storage.local.remove(descriptionKey);
-                 changeDescriptionToShow = "(检查备份状态时出错)";
-                 shouldShowNotification = true;
-}
+                await browserAPI.storage.local.remove(descriptionKey);
+                changeDescriptionToShow = "(检查备份状态时出错)";
+                shouldShowNotification = true;
+            }
         } else {
-if (lastNotificationClosedReason === 'timeout' || lastNotificationClosedReason === 'manual_close') {
-let currentChanges = { currentChangeDescription: "", currentHasChanges: false };
-                 try {
-                     currentChanges = await calculateChanges();
-} catch(calcError) {
-currentChanges.currentHasChanges = false;
-                 }
+            if (lastNotificationClosedReason === 'timeout' || lastNotificationClosedReason === 'manual_close') {
+                let currentChanges = { currentChangeDescription: "", currentHasChanges: false };
+                try {
+                    currentChanges = await calculateChanges();
+                } catch (calcError) {
+                    currentChanges.currentHasChanges = false;
+                }
 
-                 if (currentChanges.currentHasChanges) {
-changeDescriptionToShow = currentChanges.currentChangeDescription;
-                     await browserAPI.storage.local.set({ [descriptionKey]: currentChanges.currentChangeDescription });
-                     shouldShowNotification = true;
-                 } else {
-shouldShowNotification = false;
-                 }
+                if (currentChanges.currentHasChanges) {
+                    changeDescriptionToShow = currentChanges.currentChangeDescription;
+                    await browserAPI.storage.local.set({ [descriptionKey]: currentChanges.currentChangeDescription });
+                    shouldShowNotification = true;
+                } else {
+                    shouldShowNotification = false;
+                }
             } else {
-shouldShowNotification = false;
+                shouldShowNotification = false;
             }
         }
 
@@ -1055,12 +1082,12 @@ shouldShowNotification = false;
             const timeLabel = alarmName === FIXED_TIME_ALARM_1 ?
                 `准点定时1 (${settings.fixedTime1 || '未设置'})` :
                 `准点定时2 (${settings.fixedTime2 || '未设置'})`;
-await showBackupReminder(alarmName, changeDescriptionToShow);
-} else {
-await resetFixedTimeAlarm(alarmName, 0);
+            await showBackupReminder(alarmName, changeDescriptionToShow);
+        } else {
+            await resetFixedTimeAlarm(alarmName, 0);
         }
     } catch (error) {
-try { await resetFixedTimeAlarm(alarmName, 0); }
+        try { await resetFixedTimeAlarm(alarmName, 0); }
         catch (resetError) { addLog(`在错误处理中重置准点定时闹钟 ${alarmName} 也失败了: ${resetError.message}`); }
     }
 }
@@ -1081,8 +1108,8 @@ async function resetFixedTimeAlarm(alarmName, retryCount = 0) {
             result = await timerController.setFixedTimeAlarm1(settings.fixedTime1, true);
             if (result) { addLog(`准点定时闹钟1已重置为明天 ${settings.fixedTime1}`); }
             else {
-if (retryCount < MAX_RETRIES) {
-await new Promise(resolve => setTimeout(resolve, 1000));
+                if (retryCount < MAX_RETRIES) {
+                    await new Promise(resolve => setTimeout(resolve, 1000));
                     return resetFixedTimeAlarm(alarmName, retryCount + 1);
                 }
             }
@@ -1091,18 +1118,18 @@ await new Promise(resolve => setTimeout(resolve, 1000));
             result = await timerController.setFixedTimeAlarm2(settings.fixedTime2, true);
             if (result) { addLog(`准点定时闹钟2已重置为明天 ${settings.fixedTime2}`); }
             else {
-if (retryCount < MAX_RETRIES) {
-await new Promise(resolve => setTimeout(resolve, 1000));
+                if (retryCount < MAX_RETRIES) {
+                    await new Promise(resolve => setTimeout(resolve, 1000));
                     return resetFixedTimeAlarm(alarmName, retryCount + 1);
                 }
             }
             return { success: !!result, alarm: FIXED_TIME_ALARM_2 };
         } else {
-return { success: false, alarm: alarmName, error: '设置已禁用或无效' };
+            return { success: false, alarm: alarmName, error: '设置已禁用或无效' };
         }
     } catch (error) {
-if (retryCount < MAX_RETRIES) {
-await new Promise(resolve => setTimeout(resolve, 1000));
+        if (retryCount < MAX_RETRIES) {
+            await new Promise(resolve => setTimeout(resolve, 1000));
             return resetFixedTimeAlarm(alarmName, retryCount + 1);
         }
         return { success: false, alarm: alarmName, error: error.message };
@@ -1114,7 +1141,7 @@ await new Promise(resolve => setTimeout(resolve, 1000));
  * @returns {void}
  */
 function resetReminderState() {
-addLog('重置循环提醒状态');
+    addLog('重置循环提醒状态');
     stopReminderTimer();
     reminderState.manualBackupDone = false;
     saveReminderState();
@@ -1149,8 +1176,8 @@ function getDebugInfo() {
 async function initializeReminderTimerSystem() {
     initializationAttempts++;
     const logPrefix = `[备份提醒计时器] [${formatDateTimeForLog(new Date().toISOString())}] [准点定时]`;
-if (isInitializationInProgress) {
-return;
+    if (isInitializationInProgress) {
+        return;
     }
     isInitializationInProgress = true;
 
@@ -1164,10 +1191,10 @@ return;
 
         // 3. 设置日期变更检查器 (对准点定时必要)
         setupDateChangeChecker();
-        
+
         isReminderTimerSystemInitialized = true;
-} catch (error) {
-isReminderTimerSystemInitialized = false;
+    } catch (error) {
+        isReminderTimerSystemInitialized = false;
     } finally {
         isInitializationInProgress = false;
     }
@@ -1177,15 +1204,15 @@ isReminderTimerSystemInitialized = false;
  * 初始化闹钟监听器。
  */
 function initAlarmListeners() {
-try {
+    try {
         if (browserAPI.alarms && browserAPI.alarms.onAlarm.hasListener(handleAlarm)) {
             browserAPI.alarms.onAlarm.removeListener(handleAlarm);
-}
+        }
     } catch (removeError) { addLog(`尝试移除旧闹钟监听器失败 (可能不支持): ${removeError.message}`); }
 
     if (browserAPI.alarms) {
         browserAPI.alarms.onAlarm.addListener(handleAlarm);
-} else { addLog("错误：浏览器不支持 alarms API，无法设置监听器。", 'error'); }
+    } else { addLog("错误：浏览器不支持 alarms API，无法设置监听器。", 'error'); }
 }
 
 /**
@@ -1205,9 +1232,9 @@ async function setupFixedTimeAlarms(settings) {
             todayTarget.setHours(hours, minutes, 0, 0);
             if (todayTarget > now) {
                 results.fixedTime1 = await timerController.setFixedTimeAlarm1(settings.fixedTime1);
-} else {
+            } else {
                 results.fixedTime1 = await timerController.setFixedTimeAlarm1(settings.fixedTime1);
-}
+            }
         } else { addLog('准点定时1未启用或时间无效'); }
 
         if (settings.fixedTimeEnabled2 && settings.fixedTime2) {
@@ -1216,13 +1243,13 @@ async function setupFixedTimeAlarms(settings) {
             todayTarget.setHours(hours, minutes, 0, 0);
             if (todayTarget > now) {
                 results.fixedTime2 = await timerController.setFixedTimeAlarm2(settings.fixedTime2);
-} else {
+            } else {
                 results.fixedTime2 = await timerController.setFixedTimeAlarm2(settings.fixedTime2);
-}
+            }
         } else { addLog('准点定时2未启用或时间无效'); }
         return { success: true, results: results };
     } catch (error) {
-return { success: false, error: error.message };
+        return { success: false, error: error.message };
     }
 }
 
@@ -1233,45 +1260,45 @@ return { success: false, error: error.message };
  * @returns {Promise<object>} 设置结果。
  */
 async function setupFixedTimeAlarmsOnStartup() {
-try {
+    try {
         const settings = await getReminderSettings();
         await timerController.clearFixedTimeAlarms();
         let results = [];
 
         if (settings.fixedTimeEnabled1) {
-const today = new Date();
+            const today = new Date();
             const [hours, minutes] = settings.fixedTime1.split(':').map(num => parseInt(num));
             const todayTarget = new Date();
             todayTarget.setHours(hours, minutes, 0, 0);
             if (todayTarget > today) {
-await timerController.setFixedTimeAlarm1(settings.fixedTime1, false);
+                await timerController.setFixedTimeAlarm1(settings.fixedTime1, false);
             } else { addLog(`准点定时1今天 ${settings.fixedTime1} 已过，不设置闹钟`); }
         } else { addLog("准点定时1未启用，跳过设置"); }
 
         if (settings.fixedTimeEnabled2) {
-const today = new Date();
+            const today = new Date();
             const [hours, minutes] = settings.fixedTime2.split(':').map(num => parseInt(num));
             const todayTarget = new Date();
             todayTarget.setHours(hours, minutes, 0, 0);
             if (todayTarget > today) {
-await timerController.setFixedTimeAlarm2(settings.fixedTime2, false);
+                await timerController.setFixedTimeAlarm2(settings.fixedTime2, false);
             } else { addLog(`准点定时2今天 ${settings.fixedTime2} 已过，不设置闹钟`); }
         } else { addLog("准点定时2未启用，跳过设置"); }
 
         if (settings.reminderEnabled && !await isAutoBackupEnabled()) {
             if (manualStartupResetHandled) {
                 manualStartupResetHandled = false;
-} else {
+            } else {
                 const firstReminderMinutes = settings.firstReminderMinutes || 30;
                 if (firstReminderMinutes > 0) {
-resetReminderState();
+                    resetReminderState();
                     await startReminderTimer(true);
                 } else { addLog('循环提醒时间间隔为0，不启动计时器'); }
             }
         } else { addLog(`循环提醒未启用或自动备份已开启，不启动计时器`); }
-return { success: true, message: "准点定时功能已初始化" };
+        return { success: true, message: "准点定时功能已初始化" };
     } catch (error) {
-return { success: false, error: error.message };
+        return { success: false, error: error.message };
     }
 }
 
@@ -1283,19 +1310,19 @@ function setupDateChangeChecker() {
     const midnightPlus5Sec = new Date(now);
     midnightPlus5Sec.setHours(24, 0, 5, 0);
     const msUntilMidnightPlus5 = midnightPlus5Sec.getTime() - now.getTime();
-setTimeout(() => { scheduleMidnightCheck(); }, msUntilMidnightPlus5);
+    setTimeout(() => { scheduleMidnightCheck(); }, msUntilMidnightPlus5);
 
     function scheduleMidnightCheck() {
         checkDateChange().then(dateCheck => {
             if (dateCheck.dateChanged) {
-setupFixedTimeAlarmsOnStartup().catch(err => { addLog(`重新设置准点定时闹钟失败: ${err.message}`); });
+                setupFixedTimeAlarmsOnStartup().catch(err => { addLog(`重新设置准点定时闹钟失败: ${err.message}`); });
             }
             const nextCheckTime = new Date();
             nextCheckTime.setHours(24, 0, 5, 0);
             const timeToNextCheck = nextCheckTime.getTime() - Date.now();
             setTimeout(() => { scheduleMidnightCheck(); }, timeToNextCheck);
-}).catch(err => {
-setTimeout(() => { scheduleMidnightCheck(); }, 30 * 60 * 1000);
+        }).catch(err => {
+            setTimeout(() => { scheduleMidnightCheck(); }, 30 * 60 * 1000);
         });
     }
 }
@@ -1307,7 +1334,7 @@ setTimeout(() => { scheduleMidnightCheck(); }, 30 * 60 * 1000);
  * @returns {Promise<boolean>} 是否设置了闹钟。
  */
 async function checkFixedTimeAlarmsOnActive() {
-const now = new Date();
+    const now = new Date();
     const settings = await getReminderSettings();
     let hasSetAlarm = false;
 
@@ -1320,7 +1347,7 @@ const now = new Date();
             const existingAlarm = alarms.find(a => a.name === FIXED_TIME_ALARM_1);
             if (!existingAlarm) {
                 await timerController.setFixedTimeAlarm1(settings.fixedTime1);
-} else { addLog(`准点定时1已存在，触发时间: ${new Date(existingAlarm.scheduledTime).toLocaleString()}`); }
+            } else { addLog(`准点定时1已存在，触发时间: ${new Date(existingAlarm.scheduledTime).toLocaleString()}`); }
             hasSetAlarm = true;
         } else { addLog(`准点定时1今天 ${settings.fixedTime1} 已过，不设置闹钟`); }
     }
@@ -1334,7 +1361,7 @@ const now = new Date();
             const existingAlarm = alarms.find(a => a.name === FIXED_TIME_ALARM_2);
             if (!existingAlarm) {
                 await timerController.setFixedTimeAlarm2(settings.fixedTime2);
-} else { addLog(`准点定时2已存在，触发时间: ${new Date(existingAlarm.scheduledTime).toLocaleString()}`); }
+            } else { addLog(`准点定时2已存在，触发时间: ${new Date(existingAlarm.scheduledTime).toLocaleString()}`); }
             hasSetAlarm = true;
         } else { addLog(`准点定时2今天 ${settings.fixedTime2} 已过，不设置闹钟`); }
     }
@@ -1359,10 +1386,10 @@ function handleTimerMessages(message, sender, sendResponse) {
         try {
             const functionName = message.function;
             const args = message.args || [];
-if (functionName === 'pauseReminderTimer' && message.pausedBy === 'settingsUI') {
+            if (functionName === 'pauseReminderTimer' && message.pausedBy === 'settingsUI') {
                 try {
                     setTimerPausedBySettingsUI(true);
-} catch(e) { addLog(`[handleTimerMessages] 调用 setTimerPausedBySettingsUI(true) 失败: ${e.message}`); }
+                } catch (e) { addLog(`[handleTimerMessages] 调用 setTimerPausedBySettingsUI(true) 失败: ${e.message}`); }
             }
 
             let result;
@@ -1377,18 +1404,18 @@ if (functionName === 'pauseReminderTimer' && message.pausedBy === 'settingsUI') 
                 case "resetReminderState": result = resetReminderState(...args); break;
                 case "getDebugInfo": result = getDebugInfo(...args); break;
                 default:
-sendResponse({ success: false, error: `函数 ${functionName} 不存在或不可调用` });
+                    sendResponse({ success: false, error: `函数 ${functionName} 不存在或不可调用` });
                     return true;
             }
 
             if (result instanceof Promise) {
                 result.then(value => { sendResponse({ success: true, result: value }); }).catch(error => {
-sendResponse({ success: false, error: error.message });
+                    sendResponse({ success: false, error: error.message });
                 });
                 return true;
             } else { sendResponse({ success: true, result }); }
         } catch (error) {
-sendResponse({ success: false, error: error.message });
+            sendResponse({ success: false, error: error.message });
         }
         return true;
     }
@@ -1428,18 +1455,18 @@ const MIN_LOOP_REMINDER_INTERVAL = 2000; // 2秒
 export async function startLoopReminder() {
     const now = Date.now();
     if (now - lastLoopReminderStartTime < MIN_LOOP_REMINDER_INTERVAL) {
-return;
+        return;
     }
     lastLoopReminderStartTime = now;
 
-const { autoSync } = await browserAPI.storage.local.get({ autoSync: true });
+    const { autoSync } = await browserAPI.storage.local.get({ autoSync: true });
     if (autoSync) {
-return;
+        return;
     }
 
     // 从 loadReminderState 加载状态，它会处理启动时的状态检查
     await loadReminderState();
-    
+
     // loadReminderState 会在需要时调用 startReminderTimer
 }
 
@@ -1447,5 +1474,5 @@ return;
  * 停止循环提醒功能。
  */
 export function stopLoopReminder() {
-stopReminderTimer();
+    stopReminderTimer();
 }

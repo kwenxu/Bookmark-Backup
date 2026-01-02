@@ -277,6 +277,7 @@ function initializeOperationTracking() {
 
     // 监听书签创建事件
     browserAPI.bookmarks.onCreated.addListener((id, bookmark) => {
+        cachedBookmarkAnalysis = null; // Invalidate cache
         // 记录新增的节点
         try {
             recordRecentAddedId(id, {
@@ -291,6 +292,7 @@ function initializeOperationTracking() {
 
     // 监听书签删除事件
     browserAPI.bookmarks.onRemoved.addListener((id, removeInfo) => {
+        cachedBookmarkAnalysis = null; // Invalidate cache
         // 从所有记录中移除该节点（书签Git风格）
         try {
             removeFromAllRecords(id);
@@ -299,6 +301,7 @@ function initializeOperationTracking() {
 
     // 监听书签移动事件
     browserAPI.bookmarks.onMoved.addListener((id, moveInfo) => {
+        cachedBookmarkAnalysis = null; // Invalidate cache
         // 确定被移动的是书签还是文件夹
         browserAPI.bookmarks.get(id, (nodes) => {
             if (nodes && nodes.length > 0) {
@@ -337,6 +340,7 @@ function initializeOperationTracking() {
     try {
         if (browserAPI.bookmarks.onChildrenReordered) {
             browserAPI.bookmarks.onChildrenReordered.addListener((parentId, reorderInfo) => {
+                cachedBookmarkAnalysis = null; // Invalidate cache
                 try {
                     // 重排本质上就是"结构变化（移动）"
                     // 这里无法可靠区分被重排的是书签还是文件夹，因此同时置为 true，保证变化检测准确触发。
@@ -360,6 +364,7 @@ function initializeOperationTracking() {
 
     // 监听书签修改事件
     browserAPI.bookmarks.onChanged.addListener((id, changeInfo) => {
+        cachedBookmarkAnalysis = null; // Invalidate cache
         // 确定被修改的是书签还是文件夹
         browserAPI.bookmarks.get(id, (nodes) => {
             if (nodes && nodes.length > 0) {

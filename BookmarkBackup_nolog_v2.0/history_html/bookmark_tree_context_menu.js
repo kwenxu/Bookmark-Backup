@@ -30,6 +30,15 @@ function shouldAllowBookmarkOpen(actionKey) {
     return true;
 }
 
+function escapeHtml(str) {
+    return String(str ?? '')
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
+}
+
 // 全局：默认打开方式与特定窗口/分组ID
 let defaultOpenMode = 'specific-window'; // 默认：'specific-window'（in Same Window）。可选：'new-tab' | 'new-window' | 'incognito' | 'specific-window' | 'specific-group' | 'scoped-window' | 'scoped-group' | 'same-window-specific-group'
 let specificWindowId = null; // chrome.windows Window ID
@@ -5797,7 +5806,7 @@ async function loadBatchWindowsAndGroups(overlay, lang, onSelectionChange) {
                     <div class="manual-selector-item-header">
                         <div class="manual-selector-item-title">
                             <span class="manual-selector-window-index">${windowIndex}</span>
-                            ${win.incognito ? '🕶️' : '🪟'} ${displayName}
+                            ${win.incognito ? '🕶️' : '🪟'} ${escapeHtml(displayName)}
                             ${isCurrent ? `<span class="manual-selector-item-badge">${lang === 'zh_CN' ? '当前' : 'Current'}</span>` : ''}
                             ${hasCustomName ? `<span class="manual-selector-item-badge" style="background: var(--accent-primary);">✓</span>` : ''}
                         </div>
@@ -5959,7 +5968,7 @@ function renderBatchGroups(overlay, groups, lang, onSelectionChange) {
 
             item.innerHTML = `
                 <div class="manual-selector-item-title">
-                    ${colorIcon} ${title}
+                    ${colorIcon} ${escapeHtml(title)}
                 </div>
                 <div class="manual-selector-item-info">${lang === 'zh_CN' ? '窗口' : 'Window'} ${groupWindowIndex}</div>
             `;
@@ -8160,7 +8169,7 @@ async function loadWindowsAndGroups(overlay, lang) {
                     <div class="manual-selector-item-header">
                         <div class="manual-selector-item-title">
                             <span class="manual-selector-window-index">${windowIndex}</span>
-                            ${win.incognito ? '🕶️' : '🪟'} ${displayName}
+                            ${win.incognito ? '🕶️' : '🪟'} ${escapeHtml(displayName)}
                             ${isCurrent ? `<span class="manual-selector-item-badge">${lang === 'zh_CN' ? '当前' : 'Current'}</span>` : ''}
                             ${hasCustomName ? `<span class="manual-selector-item-badge" style="background: var(--accent-primary);">✓</span>` : ''}
                         </div>
@@ -8317,7 +8326,7 @@ function renderGroups(overlay, groups, lang) {
 
             item.innerHTML = `
                 <div class="manual-selector-item-title">
-                    ${colorIcon} ${title}
+                    ${colorIcon} ${escapeHtml(title)}
                 </div>
                 <div class="manual-selector-item-info">${lang === 'zh_CN' ? '窗口' : 'Window'} ${groupWindowIndex}</div>
             `;

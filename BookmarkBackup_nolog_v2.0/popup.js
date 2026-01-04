@@ -6317,7 +6317,20 @@ document.addEventListener('DOMContentLoaded', function () {
                     } catch (error) {
                         console.error('[自动备份设置] 初始化失败:', error);
                         console.error('[自动备份设置] 错误堆栈:', error.stack);
-                        container.innerHTML = `<div style="color: red; padding: 20px;">初始化失败: ${error.message}<br><pre>${error.stack}</pre></div>`;
+                        container.innerHTML = '';
+                        const wrapper = document.createElement('div');
+                        wrapper.style.color = 'red';
+                        wrapper.style.padding = '20px';
+
+                        const msg = document.createElement('div');
+                        msg.textContent = `初始化失败: ${error && error.message ? error.message : String(error)}`;
+
+                        const pre = document.createElement('pre');
+                        pre.textContent = (error && error.stack) ? error.stack : '';
+
+                        wrapper.appendChild(msg);
+                        wrapper.appendChild(pre);
+                        container.appendChild(wrapper);
                     }
                 } else {
                     console.log('[自动备份设置] 已初始化，重新加载设置');

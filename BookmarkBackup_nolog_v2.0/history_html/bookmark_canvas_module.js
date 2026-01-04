@@ -932,7 +932,10 @@ function showCanvasToast(message, type = 'info', duration = 3000) {
             break;
     }
 
-    toast.innerHTML = `${icon}<span>${message}</span>`;
+    toast.innerHTML = icon;
+    const messageEl = document.createElement('span');
+    messageEl.textContent = String(message ?? '');
+    toast.appendChild(messageEl);
 
     // 添加动画样式（如果还没有）
     if (!document.getElementById('canvas-toast-styles')) {
@@ -1994,6 +1997,16 @@ async function handleSingleUrlDrop(url, htmlData, dropX, dropY) {
     }, dropX, dropY);
 }
 
+function __escapeHtml(value) {
+    if (value === null || value === undefined) return '';
+    return String(value)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
+}
+
 /**
  * 显示导入选择对话框：让用户选择导入单个书签还是整个文件夹
  */
@@ -2023,6 +2036,9 @@ async function showImportChoiceDialog(bookmark, parentFolder, dropX, dropY) {
         }
     } catch (e) { }
 
+    const bookmarkTitleEsc = __escapeHtml(bookmark && (bookmark.title || bookmark.url));
+    const parentFolderTitleEsc = __escapeHtml(parentFolder && parentFolder.title);
+
     // 创建对话框
     const dialog = document.createElement('div');
     dialog.id = 'importChoiceDialog';
@@ -2036,8 +2052,8 @@ async function showImportChoiceDialog(bookmark, parentFolder, dropX, dropY) {
             <div class="import-dialog-body">
                 <p style="margin-bottom: 16px; color: var(--text-secondary);">
                     ${isEn
-            ? `This bookmark is in folder "${parentFolder.title}". What would you like to import?`
-            : `此书签位于文件夹「${parentFolder.title}」中，您要导入什么？`}
+            ? `This bookmark is in folder "${parentFolderTitleEsc}". What would you like to import?`
+            : `此书签位于文件夹「${parentFolderTitleEsc}」中，您要导入什么？`}
                 </p>
                 <div class="import-options">
                     <button class="import-option-btn" id="importSingleBtn">
@@ -2045,7 +2061,7 @@ async function showImportChoiceDialog(bookmark, parentFolder, dropX, dropY) {
                         <div style="flex: 1; text-align: left;">
                             <div style="font-weight: 600;">${isEn ? 'Single Bookmark' : '单个书签'}</div>
                             <div style="font-size: 12px; color: var(--text-secondary); margin-top: 2px;">
-                                ${bookmark.title || bookmark.url}
+                                ${bookmarkTitleEsc}
                             </div>
                         </div>
                     </button>
@@ -2054,7 +2070,7 @@ async function showImportChoiceDialog(bookmark, parentFolder, dropX, dropY) {
                         <div style="flex: 1; text-align: left;">
                             <div style="font-weight: 600;">${isEn ? 'Entire Folder' : '整个文件夹'}</div>
                             <div style="font-size: 12px; color: var(--text-secondary); margin-top: 2px;">
-                                ${parentFolder.title} (${folderBookmarkCount} ${isEn ? 'bookmarks' : '个书签'})
+                                ${parentFolderTitleEsc} (${folderBookmarkCount} ${isEn ? 'bookmarks' : '个书签'})
                             </div>
                         </div>
                     </button>
@@ -2547,9 +2563,9 @@ async function showFolderSelectionDialog(folders, dropX, dropY) {
                         <button class="import-option-btn folder-select-btn" data-index="${index}">
                             <i class="fas fa-folder" style="color: var(--warning);"></i>
                             <div style="flex: 1; text-align: left;">
-                                <div style="font-weight: 600;">${folder.title}</div>
+                                <div style="font-weight: 600;">${__escapeHtml(folder.title)}</div>
                                 <div style="font-size: 12px; color: var(--text-secondary); margin-top: 2px;">
-                                    ${folder.path}
+                                    ${__escapeHtml(folder.path)}
                                 </div>
                             </div>
                         </button>

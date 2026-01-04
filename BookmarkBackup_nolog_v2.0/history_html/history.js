@@ -946,7 +946,7 @@ function updateFaviconImages(url, dataUrl) {
         const domain = urlObj.hostname;
 
         // 查找所有相关的img标签（通过data-favicon-domain或父元素的data-node-url）
-        const allImages = document.querySelectorAll('img.tree-icon, img.addition-icon, img.change-tree-item-icon, img.canvas-bookmark-icon, img.tracking-favicon, img.ranking-favicon');
+        const allImages = document.querySelectorAll('img.tree-icon, img.addition-icon, img.change-tree-item-icon, img.canvas-bookmark-icon, img.tracking-favicon, img.ranking-favicon, img.add-result-favicon, img.heatmap-detail-favicon');
 
         allImages.forEach(img => {
             // 检查是否是fallback图标（SVG data URL）且对应的书签URL匹配
@@ -984,7 +984,9 @@ function setupGlobalImageErrorHandler() {
                 e.target.classList.contains('change-tree-item-icon') ||
                 e.target.classList.contains('canvas-bookmark-icon') ||
                 e.target.classList.contains('tracking-favicon') ||
-                e.target.classList.contains('ranking-favicon'))) {
+                e.target.classList.contains('ranking-favicon') ||
+                e.target.classList.contains('add-result-favicon') ||
+                e.target.classList.contains('heatmap-detail-favicon'))) {
             // 只在src不是fallbackIcon时才替换，避免无限循环
             // fallbackIcon 是 data URL，不会加载失败
             if (e.target.src !== fallbackIcon && !e.target.src.startsWith('data:image/svg+xml')) {
@@ -8433,7 +8435,7 @@ async function searchBookmarksForAdd(keyword) {
         resultsEl.innerHTML = bookmarks.map(b => `
             <div class="add-result-item ${addPostponedSearchSelected.has(b.id) ? 'selected' : ''}" data-id="${b.id}">
                 <input type="checkbox" class="add-result-checkbox" ${addPostponedSearchSelected.has(b.id) ? 'checked' : ''}>
-                <img class="add-result-favicon" src="${getFaviconUrl(b.url)}" onerror="this.src='icons/default-favicon.png'">
+                <img class="add-result-favicon" src="${getFaviconUrl(b.url)}">
                 <div class="add-result-info">
                     <div class="add-result-title">${escapeHtml(b.title || b.url)}</div>
                     <div class="add-result-url">${escapeHtml(b.url)}</div>
@@ -10907,7 +10909,7 @@ async function showHeatmapDateDetail(dateStr) {
             if (bookmark) {
                 html += `
                     <div class="heatmap-detail-item" data-url="${escapeHtml(bookmark.url)}">
-                        <img class="heatmap-detail-favicon" src="${getFaviconUrl(bookmark.url)}" onerror="this.src='icons/default-favicon.png'">
+                        <img class="heatmap-detail-favicon" src="${getFaviconUrl(bookmark.url)}">
                         <div class="heatmap-detail-info">
                             <div class="heatmap-detail-item-title">${escapeHtml(bookmark.title || bookmark.url)}</div>
                             <div class="heatmap-detail-item-url">${escapeHtml(bookmark.url)}</div>
@@ -11028,7 +11030,7 @@ async function showHeatmapMonthDetail(year, month) {
                 html += `
                     <div class="heatmap-detail-item heatmap-ranking-item" data-url="${escapeHtml(bookmark.url)}">
                         <span class="heatmap-rank ${rank <= 3 ? 'top-' + rank : ''}">${rank}</span>
-                        <img class="heatmap-detail-favicon" src="${getFaviconUrl(bookmark.url)}" onerror="this.src='icons/default-favicon.png'">
+                        <img class="heatmap-detail-favicon" src="${getFaviconUrl(bookmark.url)}">
                         <div class="heatmap-detail-info">
                             <div class="heatmap-detail-item-title">${escapeHtml(bookmark.title || bookmark.url)}</div>
                             <div class="heatmap-detail-item-url">${escapeHtml(bookmark.url)}</div>
@@ -13556,7 +13558,7 @@ function renderHistoryView() {
             <div class="commit-item" data-record-time="${record.time}">
                 <div class="commit-header">
                     <div class="commit-title-group">
-        <div class="commit-title" title="${currentLang === 'zh_CN' ? '点击编辑备注' : 'Click to edit note'}">${record.note || time}</div>
+        <div class="commit-title" title="${currentLang === 'zh_CN' ? '点击编辑备注' : 'Click to edit note'}">${escapeHtml(record.note || time)}</div>
                         <button class="commit-note-edit-btn" data-time="${record.time}" title="${currentLang === 'zh_CN' ? '编辑备注' : 'Edit Note'}">
                             <i class="fas fa-edit"></i>
                         </button>
@@ -13582,7 +13584,7 @@ function renderHistoryView() {
                         ${directionIcon}
                         ${directionText}
                     </span>
-                    <span class="commit-fingerprint" title="提交指纹号">#${fingerprint}</span>
+                    <span class="commit-fingerprint" title="提交指纹号">#${escapeHtml(fingerprint)}</span>
                 </div>
             </div>
         `;
@@ -14643,13 +14645,16 @@ async function renderBrowsingFolderRankingList(container, items, range, stats) {
         const main = document.createElement('div');
         main.className = 'ranking-main';
         const pathDisplay = folder.fullPath !== folder.name ? folder.fullPath : '';
+        const safeFolderName = escapeHtml(folder.name);
+        const safeFolderFullPath = escapeHtml(folder.fullPath);
+        const safePathDisplay = escapeHtml(pathDisplay);
         main.innerHTML = `
             <div class="ranking-icon" style="color: var(--accent-primary);">
                 <i class="fas fa-folder"></i>
             </div>
             <div class="ranking-info">
-                <div class="ranking-title" title="${folder.fullPath}">${folder.name}</div>
-                <div class="ranking-meta">${pathDisplay ? `${pathDisplay} · ` : ''}${isZh ? `${folder.items.length} 个书签` : `${folder.items.length} bookmarks`}</div>
+                <div class="ranking-title" title="${safeFolderFullPath}">${safeFolderName}</div>
+                <div class="ranking-meta">${pathDisplay ? `${safePathDisplay} · ` : ''}${isZh ? `${folder.items.length} 个书签` : `${folder.items.length} bookmarks`}</div>
             </div>
         `;
         header.appendChild(main);
@@ -14686,13 +14691,17 @@ async function renderBrowsingFolderRankingList(container, items, range, stats) {
             bookmarkItem.style.cursor = 'pointer';
             bookmarkItem.style.transition = 'background 0.2s';
 
-	            bookmarkItem.innerHTML = `
-	                <img src="${typeof getFaviconUrl === 'function' ? getFaviconUrl(item.url) : `${(navigator.userAgent || '').includes('Edg/') ? 'edge' : 'chrome'}://favicon/${item.url}`}" 
-	                     style="width:16px;height:16px;flex-shrink:0;" onerror="this.style.display='none'">
-	                <span style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:12px;" 
-	                      title="${item.title}">${item.title}</span>
-	                <span style="font-size:11px;color:var(--text-tertiary);flex-shrink:0;">${item.count}</span>
-	            `;
+            const itemTitle = item.title || item.url || '';
+            const faviconSrc = typeof getFaviconUrl === 'function'
+                ? getFaviconUrl(item.url)
+                : `${(navigator.userAgent || '').includes('Edg/') ? 'edge' : 'chrome'}://favicon/${item.url || ''}`;
+
+            bookmarkItem.innerHTML = `
+                <img class="ranking-favicon" src="${escapeHtml(faviconSrc)}" style="width:16px;height:16px;flex-shrink:0;">
+                <span style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:12px;" 
+                      title="${escapeHtml(itemTitle)}">${escapeHtml(itemTitle)}</span>
+                <span style="font-size:11px;color:var(--text-tertiary);flex-shrink:0;">${item.count}</span>
+            `;
 
             bookmarkItem.addEventListener('mouseenter', () => {
                 bookmarkItem.style.background = 'var(--bg-tertiary)';
@@ -16395,7 +16404,7 @@ async function renderTreeView(forceRefresh = false) {
         }
     }).catch(error => {
         console.error('[renderTreeView] 错误:', error);
-        treeContainer.innerHTML = `<div class="error">加载失败: ${error.message}</div>`;
+        treeContainer.innerHTML = `<div class="error">加载失败: ${escapeHtml(error && error.message ? error.message : String(error))}</div>`;
         treeContainer.style.display = 'block';
 
         // 重置渲染标志
@@ -18665,7 +18674,7 @@ function renderDetailModalContent(record, mode) {
         }, 0);
     }).catch(error => {
         console.error('[详情弹窗] 生成失败:', error);
-        body.innerHTML = `<div class="detail-empty"><i class="fas fa-exclamation-circle"></i>加载失败: ${error.message}</div>`;
+        body.innerHTML = `<div class="detail-empty"><i class="fas fa-exclamation-circle"></i>加载失败: ${escapeHtml(error && error.message ? error.message : String(error))}</div>`;
     });
 }
 
@@ -20275,7 +20284,7 @@ function showError(message) {
         container.innerHTML = `
             <div class="empty-state">
                 <div class="empty-state-icon"><i class="fas fa-exclamation-triangle"></i></div>
-                <div class="empty-state-title">${message}</div>
+                <div class="empty-state-title">${escapeHtml(message)}</div>
             </div>
         `;
     }

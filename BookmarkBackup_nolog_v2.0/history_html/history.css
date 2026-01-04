@@ -13375,6 +13375,16 @@ a.tree-label.tree-bookmark-link:hover {
     background: var(--accent-hover);
 }
 
+.modal-btn.danger {
+    border: none;
+    background: var(--error);
+    color: white;
+}
+
+.modal-btn.danger:hover {
+    filter: brightness(0.95);
+}
+
 /* 选择文件夹弹窗内嵌树形结构 */
 .add-folder-tree {
     max-height: 250px;

@@ -18,13 +18,24 @@ let currentDetailRecordMode = null;
 let currentDetailRecord = null;
 let currentExportHistoryTreeContainer = null;
 // 从 localStorage 立即恢复视图，避免页面闪烁
+// 从 URL 参数或 localStorage 恢复视图
 let currentView = (() => {
     try {
+        // 1. 优先尝试从 URL 参数获取
+        // 注意：此时 window.location.search 可能已经可用
+        const params = new URLSearchParams(window.location.search);
+        const viewFromUrl = params.get('view');
+        if (viewFromUrl) {
+            console.log('[全局初始化] URL 参数中的视图:', viewFromUrl);
+            return viewFromUrl;
+        }
+
+        // 2. 其次尝试从 localStorage 获取
         const saved = localStorage.getItem('lastActiveView');
         console.log('[全局初始化] localStorage中的视图:', saved);
         return saved || 'current-changes';
     } catch (e) {
-        console.error('[全局初始化] 读取localStorage失败:', e);
+        console.error('[全局初始化] 读取视图失败:', e);
         return 'current-changes';
     }
 })();
@@ -1197,6 +1208,42 @@ const i18n = {
     historyViewTitle: {
         'zh_CN': '备份历史',
         'en': 'Backup History'
+    },
+    clearBackupHistoryTooltip: {
+        'zh_CN': '清除记录',
+        'en': 'Clear history'
+    },
+    clearBackupHistoryModalTitle: {
+        'zh_CN': '确认清空记录',
+        'en': 'Confirm Clear History'
+    },
+    clearBackupHistoryModalDesc: {
+        'zh_CN': '确定要清空所有备份历史记录吗？',
+        'en': 'Are you sure you want to clear all backup history records?'
+    },
+    clearBackupHistoryModalWarning: {
+        'zh_CN': '此操作不可撤销，清空后无法恢复这些记录。<br>不会删除你的书签本身，也不会删除已导出的备份文件。',
+        'en': 'This action cannot be undone.<br>This will NOT delete your actual bookmarks or any exported backup files.'
+    },
+    clearBackupHistoryModalInfoText: {
+        'zh_CN': '当备份记录达到100条时，<br>将自动导出并清理前50条旧记录。',
+        'en': 'When backup records reach 100,<br>the oldest 50 records will be auto-exported and cleared.'
+    },
+    clearBackupHistoryCancelBtn: {
+        'zh_CN': '取消',
+        'en': 'Cancel'
+    },
+    clearBackupHistoryConfirmBtn: {
+        'zh_CN': '确认清空',
+        'en': 'Confirm Clear'
+    },
+    clearBackupHistorySuccess: {
+        'zh_CN': '历史记录已清空',
+        'en': 'History cleared'
+    },
+    clearBackupHistoryFailed: {
+        'zh_CN': '清空历史记录失败',
+        'en': 'Failed to clear history'
     },
     additionsViewTitle: {
         'zh_CN': '书签记录',
@@ -2929,6 +2976,22 @@ function applyLanguage() {
     if (currentChangesViewTitle) currentChangesViewTitle.textContent = i18n.currentChangesViewTitle[currentLang];
     document.getElementById('historyViewTitle').textContent = i18n.historyViewTitle[currentLang];
 
+    // 备份历史：清除记录按钮与确认弹窗
+    const clearBackupHistoryBtn = document.getElementById('clearBackupHistoryBtn');
+    if (clearBackupHistoryBtn) clearBackupHistoryBtn.title = i18n.clearBackupHistoryTooltip[currentLang];
+    const clearBackupHistoryModalTitle = document.getElementById('clearBackupHistoryModalTitle');
+    if (clearBackupHistoryModalTitle) clearBackupHistoryModalTitle.textContent = i18n.clearBackupHistoryModalTitle[currentLang];
+    const clearBackupHistoryModalDesc = document.getElementById('clearBackupHistoryModalDesc');
+    if (clearBackupHistoryModalDesc) clearBackupHistoryModalDesc.textContent = i18n.clearBackupHistoryModalDesc[currentLang];
+    const clearBackupHistoryModalWarning = document.getElementById('clearBackupHistoryModalWarning');
+    if (clearBackupHistoryModalWarning) clearBackupHistoryModalWarning.innerHTML = i18n.clearBackupHistoryModalWarning[currentLang];
+    const clearBackupHistoryModalInfoText = document.getElementById('clearBackupHistoryModalInfoText');
+    if (clearBackupHistoryModalInfoText) clearBackupHistoryModalInfoText.innerHTML = i18n.clearBackupHistoryModalInfoText[currentLang];
+    const clearBackupHistoryCancelBtn = document.getElementById('clearBackupHistoryCancelBtn');
+    if (clearBackupHistoryCancelBtn) clearBackupHistoryCancelBtn.textContent = i18n.clearBackupHistoryCancelBtn[currentLang];
+    const clearBackupHistoryConfirmBtn = document.getElementById('clearBackupHistoryConfirmBtn');
+    if (clearBackupHistoryConfirmBtn) clearBackupHistoryConfirmBtn.textContent = i18n.clearBackupHistoryConfirmBtn[currentLang];
+
     // 备份历史详略模式切换按钮
     const historyDetailModeSimpleText = document.getElementById('historyDetailModeSimpleText');
     if (historyDetailModeSimpleText) historyDetailModeSimpleText.textContent = i18n.historyDetailModeSimple[currentLang];
@@ -3912,6 +3975,9 @@ function initializeUI() {
         if (e.target.id === 'detailModal') closeModal();
     });
 
+    // 清空备份历史
+    initClearBackupHistoryModal();
+
     // 注意：不再在这里调用 updateUIForCurrentView()，因为已经在 DOMContentLoaded 早期调用了 applyViewState()
 
     // 初始化备份历史详情模式切换按钮
@@ -3919,6 +3985,81 @@ function initializeUI() {
     initDetailModalActions();
 
     console.log('[initializeUI] UI事件监听器初始化完成，当前视图:', currentView);
+}
+
+function clearBackupHistoryRecordsInBackground() {
+    return new Promise((resolve) => {
+        try {
+            browserAPI.runtime.sendMessage({ action: "clearSyncHistory" }, (response) => {
+                if (browserAPI.runtime.lastError) {
+                    resolve({ success: false, error: browserAPI.runtime.lastError.message });
+                    return;
+                }
+                resolve(response || { success: false, error: 'no response' });
+            });
+        } catch (error) {
+            resolve({ success: false, error: error?.message || String(error) });
+        }
+    });
+}
+
+function initClearBackupHistoryModal() {
+    const btn = document.getElementById('clearBackupHistoryBtn');
+    const modal = document.getElementById('clearBackupHistoryModal');
+    const closeBtn = document.getElementById('clearBackupHistoryModalClose');
+    const cancelBtn = document.getElementById('clearBackupHistoryCancelBtn');
+    const confirmBtn = document.getElementById('clearBackupHistoryConfirmBtn');
+
+    if (!btn || !modal || !confirmBtn) return;
+
+    const openClearModal = () => modal.classList.add('show');
+    const closeClearModal = () => modal.classList.remove('show');
+
+    if (!btn.hasAttribute('data-listener-attached')) {
+        btn.addEventListener('click', (e) => {
+            e.preventDefault();
+            openClearModal();
+        });
+        btn.setAttribute('data-listener-attached', 'true');
+    }
+
+    if (closeBtn && !closeBtn.hasAttribute('data-listener-attached')) {
+        closeBtn.addEventListener('click', closeClearModal);
+        closeBtn.setAttribute('data-listener-attached', 'true');
+    }
+
+    if (cancelBtn && !cancelBtn.hasAttribute('data-listener-attached')) {
+        cancelBtn.addEventListener('click', closeClearModal);
+        cancelBtn.setAttribute('data-listener-attached', 'true');
+    }
+
+    if (!modal.hasAttribute('data-listener-attached')) {
+        modal.addEventListener('click', (e) => {
+            if (e.target === modal) closeClearModal();
+        });
+        modal.setAttribute('data-listener-attached', 'true');
+    }
+
+    if (!confirmBtn.hasAttribute('data-listener-attached')) {
+        confirmBtn.addEventListener('click', async () => {
+            confirmBtn.disabled = true;
+            try {
+                const resp = await clearBackupHistoryRecordsInBackground();
+                closeClearModal();
+
+                if (resp && resp.success) {
+                    syncHistory = [];
+                    try { renderHistoryView(); } catch (_) { }
+                    showToast(i18n.clearBackupHistorySuccess[currentLang]);
+                } else {
+                    showToast(i18n.clearBackupHistoryFailed[currentLang]);
+                }
+            } finally {
+                confirmBtn.disabled = false;
+            }
+        });
+        confirmBtn.setAttribute('data-listener-attached', 'true');
+    }
 }
 
 // 用于防止Revert结果显示多次的标志
@@ -13659,7 +13800,10 @@ function calculateChanges(record, index, reversedHistory) {
     const bookmarkStats = record.bookmarkStats || {};
 
     // 如果是第一次备份
-    if (record.isFirstBackup || index === reversedHistory.length - 1) {
+    // 兼容旧数据：如果没有 isFirstBackup 字段，则把最旧的一条视为首次备份
+    const isFirstBackup = record.isFirstBackup === true ||
+        (typeof record.isFirstBackup !== 'boolean' && index === reversedHistory.length - 1);
+    if (isFirstBackup) {
         return {
             bookmarkDiff: bookmarkStats.currentBookmarkCount || 0,
             folderDiff: bookmarkStats.currentFolderCount || 0,
@@ -18910,6 +19054,18 @@ async function generateTreeBasedChanges(record, mode) {
         allNodes.forEach(item => {
             if (item.id) changeMap.set(item.id, { type: 'added' });
         });
+    } else {
+        // 例如：用户清空了备份历史后，这条记录变成“第一条记录”，但它并不是“首次备份”，无法与上一条对比计算差异
+        return `
+            <div class="detail-section">
+                <div class="detail-empty">
+                    <i class="fas fa-info-circle"></i>
+                    ${currentLang === 'zh_CN'
+                        ? '无法计算变化：缺少上一条可对比的备份记录（上一条记录可能来自旧版本，或你刚清空了备份历史）'
+                        : 'Cannot compute changes: no previous backup record to compare (the previous record may be from an older version, or you may have just cleared the backup history).'}
+                </div>
+            </div>
+        `;
     }
 
     console.log('[树形视图] 变化统计: changeMap.size =', changeMap.size);
@@ -19727,6 +19883,40 @@ function handleStorageChange(changes, namespace) {
     if (namespace !== 'local') return;
 
     console.log('[存储监听] 检测到变化:', Object.keys(changes));
+
+    // 备份历史被清空：关闭详情弹窗并清理本地状态，避免残留旧记录内容/展开状态
+    if (changes.syncHistory) {
+        try {
+            const newHistory = changes.syncHistory.newValue || [];
+            if (Array.isArray(newHistory) && newHistory.length === 0) {
+                const modal = document.getElementById('detailModal');
+                if (modal && modal.classList.contains('show')) {
+                    closeModal();
+                } else {
+                    currentDetailRecordTime = null;
+                    currentDetailRecord = null;
+                    currentDetailRecordMode = null;
+                }
+
+                try {
+                    for (let i = localStorage.length - 1; i >= 0; i--) {
+                        const key = localStorage.key(i);
+                        if (!key) continue;
+                        if (key.startsWith(HISTORY_DETAIL_MODE_PREFIX) || key.startsWith(HISTORY_DETAIL_EXPANDED_PREFIX)) {
+                            localStorage.removeItem(key);
+                        }
+                    }
+                } catch (_) { }
+
+                try {
+                    const body = document.getElementById('modalBody');
+                    if (body) body.innerHTML = '';
+                } catch (_) { }
+            }
+        } catch (e) {
+            console.warn('[存储监听] 清空备份历史后的 UI 清理失败:', e);
+        }
+    }
 
     // 成功备份后（自动/手动/切换），立即清理 Canvas 永久栏目内的颜色标识，并清空显式移动集合
     try {

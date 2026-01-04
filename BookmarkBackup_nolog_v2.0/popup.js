@@ -1258,8 +1258,8 @@ function updateSyncHistory(passedLang) { // Added passedLang parameter
                 'en': "FLD changed" // Changed from "folders changed"
             },
             'backupHistoryTitle': {
-                'zh_CN': "备份历史 (最多100条记录--静默清理与导出txt)",
-                'en': "Backup History (Up to 100 records--silent clear & export txt)"
+                'zh_CN': "备份历史 (满100条时自动导出并清理前50条)",
+                'en': "Backup History (Auto-export & clear oldest 50 when reaching 100)"
             },
             'quantityStructureTitle': {
                 'zh_CN': "数量/结构",
@@ -1406,60 +1406,22 @@ function updateSyncHistory(passedLang) { // Added passedLang parameter
                     let explicitBookmarkDiffInRecord, explicitFolderDiffInRecord;
                     let recordHasAnyExplicitDiff = false;
 
+                    // 这里的旧逻辑主要是为了那些没有详细 added/deleted 字段的老旧记录
+                    // 但由于UI已经不再显示单纯的 diff 总数，这些变量主要用于内部逻辑完整性
                     if (record.bookmarkStats.bookmarkDiff !== undefined) {
                         explicitBookmarkDiffInRecord = record.bookmarkStats.bookmarkDiff;
-                        recordHasAnyExplicitDiff = true;
-                    } else if (record.bookmarkStats.added !== undefined && record.bookmarkStats.removed !== undefined) {
-                        explicitBookmarkDiffInRecord = record.bookmarkStats.added - record.bookmarkStats.removed;
                         recordHasAnyExplicitDiff = true;
                     }
 
                     if (record.bookmarkStats.folderDiff !== undefined) {
                         explicitFolderDiffInRecord = record.bookmarkStats.folderDiff;
                         recordHasAnyExplicitDiff = true;
-                    } else if (record.bookmarkStats.foldersAdded !== undefined && record.bookmarkStats.foldersRemoved !== undefined) {
-                        explicitFolderDiffInRecord = record.bookmarkStats.foldersAdded - record.bookmarkStats.foldersRemoved;
-                        recordHasAnyExplicitDiff = true;
                     }
 
-                    // 场景1: 如果是清空后的第一条新记录，并且 cachedRecord 存在，则使用它来计算差异
-                    // (index === 0 是因为 reversedHistory 将最新记录放在了最前面)
-                    if (cachedRecord && syncHistory.length === 1 && record.time > cachedRecord.time && index === 0) {
-                        const prevBookmarkCountFromCache = cachedRecord.bookmarkStats?.currentBookmarks ?? cachedRecord.bookmarkStats?.currentBookmarkCount ?? 0;
-                        const prevFolderCountFromCache = cachedRecord.bookmarkStats?.currentFolders ?? cachedRecord.bookmarkStats?.currentFolderCount ?? 0;
-
-                        bookmarkDiff = currentBookmarkCount - prevBookmarkCountFromCache;
-                        folderDiff = currentFolderCount - prevFolderCountFromCache;
-
-                        cacheWasUsedForListDisplay = true; // 标记缓存被用于列表显示
-                    }
-                    // 场景 2: 记录本身包含显式差异 (且未被缓存场景覆盖)
-                    else if (recordHasAnyExplicitDiff) {
-                        bookmarkDiff = explicitBookmarkDiffInRecord !== undefined ? explicitBookmarkDiffInRecord : 0;
-                        folderDiff = explicitFolderDiffInRecord !== undefined ? explicitFolderDiffInRecord : 0;
-                    }
-                    // 场景 3: 无缓存覆盖、无记录内显式差异，则尝试与列表中的上一条(时间上更早的)记录比较
-                    else if ((index + 1) < reversedHistory.length) { // index + 1 起向后寻找最近一条带统计的记录
-                        let prevRecordInList = null;
-                        for (let j = index + 1; j < reversedHistory.length; j++) {
-                            const candidate = reversedHistory[j];
-                            if (candidate && candidate.bookmarkStats &&
-                                (candidate.bookmarkStats.currentBookmarks !== undefined || candidate.bookmarkStats.currentBookmarkCount !== undefined) &&
-                                (candidate.bookmarkStats.currentFolders !== undefined || candidate.bookmarkStats.currentFolderCount !== undefined)) {
-                                prevRecordInList = candidate;
-                                break;
-                            }
-                        }
-                        if (prevRecordInList) {
-                            const prevBCount = prevRecordInList.bookmarkStats.currentBookmarks ?? prevRecordInList.bookmarkStats.currentBookmarkCount ?? 0;
-                            const prevFCount = prevRecordInList.bookmarkStats.currentFolders ?? prevRecordInList.bookmarkStats.currentFolderCount ?? 0;
-                            bookmarkDiff = currentBookmarkCount - prevBCount;
-                            folderDiff = currentFolderCount - prevFCount;
-                        }
-                    }
-                    // 其他情况 (如列表中的第一条记录，但无缓存或不满足缓存条件，且自身无显式差异): diff 保持为 0
-                    else {
-                    }
+                    // 即使没有详细统计，我们也不再通过对比历史记录来“猜测”差异
+                    // 直接信任记录中保存的 diff 值（如果有的话），或者为 0
+                    bookmarkDiff = explicitBookmarkDiffInRecord !== undefined ? explicitBookmarkDiffInRecord : 0;
+                    folderDiff = explicitFolderDiffInRecord !== undefined ? explicitFolderDiffInRecord : 0;
 
                     // ... (原有的根据 bookmarkDiff, folderDiff, 结构变化等格式化 bookmarkStatsHTML 的逻辑)
                     const bookmarkMoved = record.bookmarkStats.bookmarkMoved || false;
@@ -1588,7 +1550,10 @@ function updateSyncHistory(passedLang) { // Added passedLang parameter
 
 
                         if (parts.length === 0) {
-                            const isFirstBackup = record.isFirstBackup === true || (!record.time || syncHistory.length <= 1);
+                            // 仅当明确标记为首次备份时展示“第一次备份”；
+                            // 兼容旧数据：若没有 isFirstBackup 字段，再退回到“只有一条记录”的判断
+                            const isFirstBackup = record.isFirstBackup === true ||
+                                (typeof record.isFirstBackup !== 'boolean' && (!record.time || syncHistory.length <= 1));
                             if (isFirstBackup && !(cachedRecord && syncHistory.length === 1 && record.time > cachedRecord.time)) {
                                 return `<span class="history-stat-badge first">${dynamicTextStrings.firstBackupText[currentLang] || '第一次备份'}</span>`;
                             }
@@ -3292,20 +3257,13 @@ function exportSyncHistory() {
         const tableHeaders = {
             timestamp: { 'zh_CN': "时间戳", 'en': "Timestamp" },
             notes: { 'zh_CN': "备注", 'en': "Notes" },
-            bookmarkCount: { 'zh_CN': "书签数", 'en': "Bookmarks" },
-            folderCount: { 'zh_CN': "文件夹数", 'en': "Folders" },
-            bookmarkChange: { 'zh_CN': "书签变化", 'en': "Bookmark Change" },
-            folderChange: { 'zh_CN': "文件夹变化", 'en': "Folder Change" },
-            structureChange: { 'zh_CN': "结构变动", 'en': "Structural Changes" },
+            bookmarkChange: { 'zh_CN': "书签变化", 'en': "BKM Change" },
+            folderChange: { 'zh_CN': "文件夹变化", 'en': "FLD Change" },
+            movedCount: { 'zh_CN': "移动", 'en': "Moved" },
+            modifiedCount: { 'zh_CN': "修改", 'en': "Modified" },
             location: { 'zh_CN': "位置", 'en': "Location" },
             type: { 'zh_CN': "类型", 'en': "Type" },
             status: { 'zh_CN': "状态/错误", 'en': "Status/Error" }
-        };
-
-        // Value mappings for the table
-        const structureChangeValues = {
-            yes: { 'zh_CN': "是", 'en': "Yes" },
-            no: { 'zh_CN': "否", 'en': "No" }
         };
         const locationValues = {
             cloud: { 'zh_CN': "云端", 'en': "Cloud" },
@@ -3341,8 +3299,8 @@ function exportSyncHistory() {
         txtContent += exportNote[lang] + "\n\n";
 
         // Table Headers
-        txtContent += `| ${tableHeaders.timestamp[lang]} | ${tableHeaders.notes[lang]} | ${tableHeaders.bookmarkCount[lang]} | ${tableHeaders.folderCount[lang]} | ${tableHeaders.bookmarkChange[lang]} | ${tableHeaders.folderChange[lang]} | ${tableHeaders.structureChange[lang]} | ${tableHeaders.location[lang]} | ${tableHeaders.type[lang]} | ${tableHeaders.status[lang]} |\n`;
-        txtContent += "|---|---|---|---|---|---|---|---|---|---|\n";
+        txtContent += `| ${tableHeaders.timestamp[lang]} | ${tableHeaders.notes[lang]} | ${tableHeaders.bookmarkChange[lang]} | ${tableHeaders.folderChange[lang]} | ${tableHeaders.movedCount[lang]} | ${tableHeaders.modifiedCount[lang]} | ${tableHeaders.location[lang]} | ${tableHeaders.type[lang]} | ${tableHeaders.status[lang]} |\n`;
+        txtContent += "|---|---|---|---|---|---|---|---|---|\n";
 
         // Table Rows
         // 添加日期分界线的处理
@@ -3372,36 +3330,72 @@ function exportSyncHistory() {
             // 更新前一个日期
             previousDateStr = currentDateStr;
 
-            const currentBookmarks = record.bookmarkStats?.currentBookmarks ?? record.bookmarkStats?.currentBookmarkCount ?? 'N/A';
-            const currentFolders = record.bookmarkStats?.currentFolders ?? record.bookmarkStats?.currentFolderCount ?? 'N/A';
+            // 直接使用记录中保存的绝对值（与主UI保持一致）
+            const bookmarkAdded = typeof record.bookmarkStats?.bookmarkAdded === 'number' ? record.bookmarkStats.bookmarkAdded : 0;
+            const bookmarkDeleted = typeof record.bookmarkStats?.bookmarkDeleted === 'number' ? record.bookmarkStats.bookmarkDeleted : 0;
+            const folderAdded = typeof record.bookmarkStats?.folderAdded === 'number' ? record.bookmarkStats.folderAdded : 0;
+            const folderDeleted = typeof record.bookmarkStats?.folderDeleted === 'number' ? record.bookmarkStats.folderDeleted : 0;
 
-            let bookmarkDiff = '0';
-            let folderDiff = '0';
-
-            if (record.bookmarkStats) {
-                if (record.bookmarkStats.bookmarkDiff !== undefined) {
-                    bookmarkDiff = record.bookmarkStats.bookmarkDiff;
-                } else if (record.bookmarkStats.added !== undefined && record.bookmarkStats.removed !== undefined) {
-                    bookmarkDiff = record.bookmarkStats.added - record.bookmarkStats.removed;
-                }
-
-                if (record.bookmarkStats.folderDiff !== undefined) {
-                    folderDiff = record.bookmarkStats.folderDiff;
-                } else if (record.bookmarkStats.foldersAdded !== undefined && record.bookmarkStats.foldersRemoved !== undefined) {
-                    folderDiff = record.bookmarkStats.foldersAdded - record.bookmarkStats.foldersRemoved;
-                }
+            // 格式化书签变化（+x/-y 或者 0）
+            let bookmarkChangeText = '';
+            if (bookmarkAdded > 0 && bookmarkDeleted > 0) {
+                bookmarkChangeText = `+${bookmarkAdded}/-${bookmarkDeleted}`;
+            } else if (bookmarkAdded > 0) {
+                bookmarkChangeText = `+${bookmarkAdded}`;
+            } else if (bookmarkDeleted > 0) {
+                bookmarkChangeText = `-${bookmarkDeleted}`;
+            } else {
+                // 兼容旧数据：使用 bookmarkDiff
+                const diff = record.bookmarkStats?.bookmarkDiff ?? 0;
+                bookmarkChangeText = diff > 0 ? `+${diff}` : (diff < 0 ? `${diff}` : '0');
             }
 
-            const formatDiff = (diff) => {
-                if (diff === 'N/A' || diff === undefined) return '0';
-                const val = Number(diff);
-                return val > 0 ? `+${val}` : `${val}`;
-            };
+            // 格式化文件夹变化（+x/-y 或者 0）
+            let folderChangeText = '';
+            if (folderAdded > 0 && folderDeleted > 0) {
+                folderChangeText = `+${folderAdded}/-${folderDeleted}`;
+            } else if (folderAdded > 0) {
+                folderChangeText = `+${folderAdded}`;
+            } else if (folderDeleted > 0) {
+                folderChangeText = `-${folderDeleted}`;
+            } else {
+                // 兼容旧数据：使用 folderDiff
+                const diff = record.bookmarkStats?.folderDiff ?? 0;
+                folderChangeText = diff > 0 ? `+${diff}` : (diff < 0 ? `${diff}` : '0');
+            }
 
-            const bookmarkDiffFormatted = formatDiff(bookmarkDiff);
-            const folderDiffFormatted = formatDiff(folderDiff);
+            // 直接使用保存的移动数量（与主UI保持一致）
+            let movedTotal = 0;
+            if (typeof record.bookmarkStats?.movedCount === 'number' && record.bookmarkStats.movedCount > 0) {
+                movedTotal = record.bookmarkStats.movedCount;
+            } else {
+                // 兼容旧数据
+                const bookmarkMovedCount = typeof record.bookmarkStats?.bookmarkMoved === 'number'
+                    ? record.bookmarkStats.bookmarkMoved
+                    : (record.bookmarkStats?.bookmarkMoved ? 1 : 0);
+                const folderMovedCount = typeof record.bookmarkStats?.folderMoved === 'number'
+                    ? record.bookmarkStats.folderMoved
+                    : (record.bookmarkStats?.folderMoved ? 1 : 0);
+                movedTotal = bookmarkMovedCount + folderMovedCount;
+            }
+            const movedText = movedTotal > 0 ? String(movedTotal) : '-';
 
-            const structuralChanges = (record.bookmarkStats?.bookmarkMoved || record.bookmarkStats?.folderMoved || record.bookmarkStats?.bookmarkModified || record.bookmarkStats?.folderModified) ? structureChangeValues.yes[lang] : structureChangeValues.no[lang];
+            // 直接使用保存的修改数量（与主UI保持一致）
+            let modifiedTotal = 0;
+            if (typeof record.bookmarkStats?.modifiedCount === 'number' && record.bookmarkStats.modifiedCount > 0) {
+                modifiedTotal = record.bookmarkStats.modifiedCount;
+            } else {
+                // 兼容旧数据
+                const bookmarkModifiedCount = typeof record.bookmarkStats?.bookmarkModified === 'number'
+                    ? record.bookmarkStats.bookmarkModified
+                    : (record.bookmarkStats?.bookmarkModified ? 1 : 0);
+                const folderModifiedCount = typeof record.bookmarkStats?.folderModified === 'number'
+                    ? record.bookmarkStats.folderModified
+                    : (record.bookmarkStats?.folderModified ? 1 : 0);
+                modifiedTotal = bookmarkModifiedCount + folderModifiedCount;
+            }
+            const modifiedText = modifiedTotal > 0 ? String(modifiedTotal) : '-';
+
 
             let locationText = 'N/A';
             if (record.direction === 'upload' || record.direction === 'webdav') {
@@ -3438,7 +3432,7 @@ function exportSyncHistory() {
                 statusText = statusValues.locked[lang];
             }
 
-            txtContent += `| ${time} | ${record.note || ''} | ${currentBookmarks} | ${currentFolders} | ${bookmarkDiffFormatted} | ${folderDiffFormatted} | ${structuralChanges} | ${locationText} | ${typeText} | ${statusText} |\n`;
+            txtContent += `| ${time} | ${record.note || ''} | ${bookmarkChangeText} | ${folderChangeText} | ${movedText} | ${modifiedText} | ${locationText} | ${typeText} | ${statusText} |\n`;
         });
 
         // 添加最后一个日期的分界线
@@ -3448,7 +3442,7 @@ function exportSyncHistory() {
                 `${previousDateStr.split('-')[0]}年${previousDateStr.split('-')[1]}月${previousDateStr.split('-')[2]}日`;
 
             // 添加简洁的分界线，并入表格中
-            txtContent += `| ${formattedPreviousDate} |  |  |  |  |  |  |  |  |  |\n`;
+            txtContent += `| ${formattedPreviousDate} |  |  |  |  |  |  |  |  |\n`;
         }
 
         // 根据配置决定导出方式
@@ -3519,35 +3513,30 @@ function exportSyncHistory() {
  * 清空备份历史记录。
  */
 function clearSyncHistory() {
-    // 1. 获取当前历史记录以缓存最后一条记录
-    chrome.runtime.sendMessage({ action: "getSyncHistory" }, (historyResponse) => {
-        if (historyResponse && historyResponse.success && historyResponse.syncHistory && historyResponse.syncHistory.length > 0) {
-            const latestRecord = historyResponse.syncHistory[historyResponse.syncHistory.length - 1];
-            chrome.storage.local.set({ cachedRecordAfterClear: latestRecord }, () => {
-                // 2. 继续清除实际的历史记录
-                proceedToClearActualHistory();
-            });
+    chrome.runtime.sendMessage({ action: "clearSyncHistory" }, (clearResponse) => {
+        if (clearResponse && clearResponse.success) {
+            // 清理缓存（虽然不再需要，但为了清理旧数据）
+            chrome.storage.local.remove('cachedRecordAfterClear', () => { });
+
+            // 清理 History Viewer（history.html）里按记录持久化的详情状态（模式/展开），避免残留旧记录痕迹
+            try {
+                for (let i = localStorage.length - 1; i >= 0; i--) {
+                    const key = localStorage.key(i);
+                    if (!key) continue;
+                    if (key.startsWith('historyDetailMode:') || key.startsWith('historyDetailExpanded:')) {
+                        localStorage.removeItem(key);
+                    }
+                }
+            } catch (_) { }
+
+            updateSyncHistory();
+            showStatus('历史记录已清空', 'success');
         } else {
-            // 没有历史记录可缓存，或者获取失败，则确保清除任何可能存在的旧缓存
-            chrome.storage.local.remove('cachedRecordAfterClear', () => {
-                proceedToClearActualHistory();
-            });
+            showStatus('清空历史记录失败', 'error');
         }
     });
-
-    function proceedToClearActualHistory() {
-        chrome.runtime.sendMessage({ action: "clearSyncHistory" }, (clearResponse) => {
-            if (clearResponse && clearResponse.success) {
-                // updateSyncHistory 会被调用，它会进而调用 updateBookmarkCountDisplay
-                // updateBookmarkCountDisplay 将有机会使用上面设置的 cachedRecordAfterClear
-                updateSyncHistory();
-                showStatus('历史记录已清空', 'success');
-            } else {
-                showStatus('清空历史记录失败', 'error');
-            }
-        });
-    }
 }
+
 
 
 // =============================================================================
@@ -4436,18 +4425,18 @@ const applyLocalizedContent = async (lang) => { // Added lang parameter
     };
 
     const clearHistoryDialogDescriptionStrings = {
-        'zh_CN': "确定要清空所有备份历史记录吗？",
-        'en': "Are you sure you want to clear all backup history records?"
+        'zh_CN': "确定要清空所有备份历史记录吗？（主界面 + 历史查看器都会清空）",
+        'en': "Are you sure you want to clear all backup history records? (Both the main UI and History Viewer will be cleared.)"
     };
 
     const clearHistoryWarningStrings = {
-        'zh_CN': "此操作不可撤销，清空后无法恢复这些记录。",
-        'en': "This action cannot be undone.<br>Records will be permanently deleted."
+        'zh_CN': "此操作不可撤销，清空后无法恢复这些记录。<br>不会删除你的书签本身，也不会删除已导出的备份文件。",
+        'en': "This action cannot be undone.<br>Records will be permanently deleted.<br>This will NOT delete your actual bookmarks or any exported backup files."
     };
 
     const clearHistoryInfoStrings = {
-        'zh_CN': "备份记录保留至100条记录，<br>超出后将静默清空并自动导出txt文件。",
-        'en': "Backup records are kept up to 100 entries,<br>excess records will be automatically cleared and exported to txt file."
+        'zh_CN': "当备份记录达到100条时，<br>将自动导出并清理前50条旧记录。",
+        'en': "When backup records reach 100,<br>the oldest 50 records will be auto-exported and cleared."
     };
 
     const confirmClearButtonStrings = {
@@ -5817,8 +5806,8 @@ document.addEventListener('DOMContentLoaded', function () {
         });
 
         openHistoryViewerBtn.addEventListener('click', async function () {
-            // 打开历史查看器页面
-            await safeCreateTab({ url: chrome.runtime.getURL('history_html/history.html') });
+            // 打开历史查看器页面，明确指定视图为 backup history
+            await safeCreateTab({ url: chrome.runtime.getURL('history_html/history.html?view=history') });
         });
 
         // 添加悬停提示

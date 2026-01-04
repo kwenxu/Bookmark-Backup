@@ -1695,13 +1695,16 @@ browserAPI.runtime.onMessage.addListener((message, sender, sendResponse) => {
             return true; // 保持消息通道开放
 
         } else if (message.action === "clearSyncHistory") {
-            // 清空备份历史记录
-            browserAPI.storage.local.get(['syncHistory'], (data) => {
-                // 不再保留最后一条记录，直接设置为空数组
-                const newHistory = [];
-
-                browserAPI.storage.local.set({ syncHistory: newHistory }, () => {
-                    sendResponse({ success: true });
+            // 清空备份历史记录（包含详情缓存）
+            Promise.all([
+                browserAPI.storage.local.set({ syncHistory: [] }),
+                browserAPI.storage.local.remove(['cachedRecordAfterClear'])
+            ]).then(() => {
+                sendResponse({ success: true });
+            }).catch(error => {
+                sendResponse({
+                    success: false,
+                    error: error?.message || '清空备份历史记录失败'
                 });
             });
             return true; // 异步响应
@@ -2575,16 +2578,15 @@ async function exportHistoryToTxt(records, lang) {
                 "2. Or, change the file extension from (.txt) to (.md) and open it with a Markdown viewer.",
             tableHeaders: {
                 timestamp: "Timestamp",
-                bookmarkCount: "Bookmarks",
-                folderCount: "Folders",
-                bookmarkChange: "Bookmark Change",
-                folderChange: "Folder Change",
-                structureChange: "Structural Changes",
+                notes: "Notes",
+                bookmarkChange: "BKM Change",
+                folderChange: "FLD Change",
+                movedCount: "Moved",
+                modifiedCount: "Modified",
                 location: "Location",
                 type: "Type",
                 status: "Status/Error"
             },
-            structureChangeValues: { yes: "Yes", no: "No" },
             locationValues: { local: "Local", cloud: "Cloud", webdav: "Cloud", both: "Cloud & Local", none: "None", upload: "Cloud", download: "Local" },
             typeValues: { auto: "Auto", manual: "Manual", switch: "Switch", auto_switch: "Switch", migration: "Migration", check: "Check" },
             statusValues: { success: "Success", error: "Error", locked: "File Locked", no_backup_needed: "No backup needed", check_completed: "Check completed" },
@@ -2599,16 +2601,15 @@ async function exportHistoryToTxt(records, lang) {
                 "2. 或者，将此文件的扩展名从 .txt 修改为 .md 后，使用 Markdown 查看器打开。",
             tableHeaders: {
                 timestamp: "时间戳",
-                bookmarkCount: "书签数",
-                folderCount: "文件夹数",
+                notes: "备注",
                 bookmarkChange: "书签变化",
                 folderChange: "文件夹变化",
-                structureChange: "结构变动",
+                movedCount: "移动",
+                modifiedCount: "修改",
                 location: "位置",
                 type: "类型",
                 status: "状态/错误"
             },
-            structureChangeValues: { yes: "是", no: "否" },
             locationValues: { local: "本地", cloud: "云端", webdav: "云端", both: "云端与本地", none: "无", upload: "云端", download: "本地" },
             typeValues: { auto: "自动", manual: "手动", switch: "切换", auto_switch: "切换", migration: "迁移", check: "检查" },
             statusValues: { success: "成功", error: "错误", locked: "文件锁定", no_backup_needed: "无需备份", check_completed: "检查完成" },
@@ -2622,7 +2623,8 @@ async function exportHistoryToTxt(records, lang) {
     let txtContent = t.exportTitle + "\n\n";
     txtContent += t.exportNote + "\n\n";
 
-    txtContent += `| ${t.tableHeaders.timestamp} | ${t.tableHeaders.bookmarkCount} | ${t.tableHeaders.folderCount} | ${t.tableHeaders.bookmarkChange} | ${t.tableHeaders.folderChange} | ${t.tableHeaders.structureChange} | ${t.tableHeaders.location} | ${t.tableHeaders.type} | ${t.tableHeaders.status} |\n`;
+    // 新格式：9列（与 popup.js 一致）
+    txtContent += `| ${t.tableHeaders.timestamp} | ${t.tableHeaders.notes} | ${t.tableHeaders.bookmarkChange} | ${t.tableHeaders.folderChange} | ${t.tableHeaders.movedCount} | ${t.tableHeaders.modifiedCount} | ${t.tableHeaders.location} | ${t.tableHeaders.type} | ${t.tableHeaders.status} |\n`;
     txtContent += "|---|---|---|---|---|---|---|---|---|\n";
 
     const formatTimeForExport = (isoString) => {
@@ -2633,12 +2635,6 @@ async function exportHistoryToTxt(records, lang) {
         } catch (e) {
             return isoString;
         }
-    };
-
-    const formatDiff = (diff) => {
-        if (diff === undefined || diff === null || Number.isNaN(Number(diff))) return '0';
-        const val = Number(diff);
-        return val > 0 ? `+${val}` : `${val}`;
     };
 
     // 对记录按时间排序，新的在前
@@ -2661,24 +2657,87 @@ async function exportHistoryToTxt(records, lang) {
                 `${previousDateStr.split('-')[0]}-${previousDateStr.split('-')[1].padStart(2, '0')}-${previousDateStr.split('-')[2].padStart(2, '0')}` :
                 `${previousDateStr.split('-')[0]}年${previousDateStr.split('-')[1]}月${previousDateStr.split('-')[2]}日`;
 
-            // 添加简洁的分界线，并入表格中
+            // 添加简洁的分界线，并入表格中（9列）
             txtContent += `| ${formattedPreviousDate} |  |  |  |  |  |  |  |  |\n`;
         }
 
         // 更新前一个日期
         previousDateStr = currentDateStr;
 
-        const currentBookmarks = record.bookmarkStats?.currentBookmarkCount ?? record.bookmarkStats?.currentBookmarks ?? t.na;
-        const currentFolders = record.bookmarkStats?.currentFolderCount ?? record.bookmarkStats?.currentFolders ?? t.na;
-        const bookmarkDiff = record.bookmarkStats?.bookmarkDiff;
-        const folderDiff = record.bookmarkStats?.folderDiff;
-        const bookmarkDiffFormatted = formatDiff(bookmarkDiff);
-        const folderDiffFormatted = formatDiff(folderDiff);
-        const structuralChanges = (record.bookmarkStats?.bookmarkMoved || record.bookmarkStats?.folderMoved || record.bookmarkStats?.bookmarkModified || record.bookmarkStats?.folderModified) ? t.structureChangeValues.yes : t.structureChangeValues.no;
+        // 备注
+        const noteText = record.note || '';
+
+        // 直接使用记录中保存的绝对值（与 popup.js 保持一致）
+        const bookmarkAdded = typeof record.bookmarkStats?.bookmarkAdded === 'number' ? record.bookmarkStats.bookmarkAdded : 0;
+        const bookmarkDeleted = typeof record.bookmarkStats?.bookmarkDeleted === 'number' ? record.bookmarkStats.bookmarkDeleted : 0;
+        const folderAdded = typeof record.bookmarkStats?.folderAdded === 'number' ? record.bookmarkStats.folderAdded : 0;
+        const folderDeleted = typeof record.bookmarkStats?.folderDeleted === 'number' ? record.bookmarkStats.folderDeleted : 0;
+
+        // 格式化书签变化
+        let bookmarkChangeText = '';
+        if (bookmarkAdded > 0 && bookmarkDeleted > 0) {
+            bookmarkChangeText = `+${bookmarkAdded}/-${bookmarkDeleted}`;
+        } else if (bookmarkAdded > 0) {
+            bookmarkChangeText = `+${bookmarkAdded}`;
+        } else if (bookmarkDeleted > 0) {
+            bookmarkChangeText = `-${bookmarkDeleted}`;
+        } else {
+            const diff = record.bookmarkStats?.bookmarkDiff ?? 0;
+            bookmarkChangeText = diff > 0 ? `+${diff}` : (diff < 0 ? `${diff}` : '0');
+        }
+
+        // 格式化文件夹变化
+        let folderChangeText = '';
+        if (folderAdded > 0 && folderDeleted > 0) {
+            folderChangeText = `+${folderAdded}/-${folderDeleted}`;
+        } else if (folderAdded > 0) {
+            folderChangeText = `+${folderAdded}`;
+        } else if (folderDeleted > 0) {
+            folderChangeText = `-${folderDeleted}`;
+        } else {
+            const diff = record.bookmarkStats?.folderDiff ?? 0;
+            folderChangeText = diff > 0 ? `+${diff}` : (diff < 0 ? `${diff}` : '0');
+        }
+
+        // 移动数量
+        let movedTotal = 0;
+        if (typeof record.bookmarkStats?.movedCount === 'number' && record.bookmarkStats.movedCount > 0) {
+            movedTotal = record.bookmarkStats.movedCount;
+        } else {
+            const bookmarkMovedCount = typeof record.bookmarkStats?.bookmarkMoved === 'number'
+                ? record.bookmarkStats.bookmarkMoved
+                : (record.bookmarkStats?.bookmarkMoved ? 1 : 0);
+            const folderMovedCount = typeof record.bookmarkStats?.folderMoved === 'number'
+                ? record.bookmarkStats.folderMoved
+                : (record.bookmarkStats?.folderMoved ? 1 : 0);
+            movedTotal = bookmarkMovedCount + folderMovedCount;
+        }
+        const movedText = movedTotal > 0 ? String(movedTotal) : '-';
+
+        // 修改数量
+        let modifiedTotal = 0;
+        if (typeof record.bookmarkStats?.modifiedCount === 'number' && record.bookmarkStats.modifiedCount > 0) {
+            modifiedTotal = record.bookmarkStats.modifiedCount;
+        } else {
+            const bookmarkModifiedCount = typeof record.bookmarkStats?.bookmarkModified === 'number'
+                ? record.bookmarkStats.bookmarkModified
+                : (record.bookmarkStats?.bookmarkModified ? 1 : 0);
+            const folderModifiedCount = typeof record.bookmarkStats?.folderModified === 'number'
+                ? record.bookmarkStats.folderModified
+                : (record.bookmarkStats?.folderModified ? 1 : 0);
+            modifiedTotal = bookmarkModifiedCount + folderModifiedCount;
+        }
+        const modifiedText = modifiedTotal > 0 ? String(modifiedTotal) : '-';
+
+        // 位置
         const recordDirection = record.direction?.toLowerCase() || 'none';
         const locationText = t.locationValues[recordDirection] || t.locationValues.none;
+
+        // 类型
         const recordTypeKey = record.type?.toLowerCase();
-        const typeText = t.typeValues[recordTypeKey] || recordTypeKey;
+        const typeText = t.typeValues[recordTypeKey] || recordTypeKey || t.na;
+
+        // 状态
         let statusText = t.na;
         const recordStatusKey = record.status?.toLowerCase();
         if (recordStatusKey === 'success') {
@@ -2694,7 +2753,8 @@ async function exportHistoryToTxt(records, lang) {
         } else if (record.status) {
             statusText = record.status;
         }
-        txtContent += `| ${time} | ${currentBookmarks} | ${currentFolders} | ${bookmarkDiffFormatted} | ${folderDiffFormatted} | ${structuralChanges} | ${locationText} | ${typeText} | ${statusText} |\n`;
+
+        txtContent += `| ${time} | ${noteText} | ${bookmarkChangeText} | ${folderChangeText} | ${movedText} | ${modifiedText} | ${locationText} | ${typeText} | ${statusText} |\n`;
     }
 
     // 添加最后一个日期的分界线
@@ -2703,7 +2763,7 @@ async function exportHistoryToTxt(records, lang) {
             `${previousDateStr.split('-')[0]}-${previousDateStr.split('-')[1].padStart(2, '0')}-${previousDateStr.split('-')[2].padStart(2, '0')}` :
             `${previousDateStr.split('-')[0]}年${previousDateStr.split('-')[1]}月${previousDateStr.split('-')[2]}日`;
 
-        // 添加简洁的分界线，并入表格中
+        // 添加简洁的分界线，并入表格中（9列）
         txtContent += `| ${formattedPreviousDate} |  |  |  |  |  |  |  |  |\n`;
     }
 
@@ -3429,7 +3489,9 @@ async function updateSyncStatus(direction, time, status = 'success', errorMessag
             status: status,
             errorMessage: errorMessage,
             bookmarkStats: bookmarkStats,
-            isFirstBackup: !syncHistory || syncHistory.length === 0,
+            // 仅在“真正的首次备份（没有任何历史 + 没有基准快照）”时标记为首次备份；
+            // 这样用户清空备份历史后，再次备份不会被误判为“首次备份”
+            isFirstBackup: (!syncHistory || syncHistory.length === 0) && (!lastBookmarkData || !lastBookmarkData.bookmarkTree),
             // 如果有 autoBackupReason 则附加，否则使用默认备注（中英文）
             note: (autoBackupReason && typeof autoBackupReason === 'string' && autoBackupReason.trim())
                 ? `${defaultNote}${preferredLang === 'en' ? ' - ' : ' - '}${autoBackupReason.trim()}`
@@ -3454,13 +3516,14 @@ async function updateSyncStatus(direction, time, status = 'success', errorMessag
 
         let historyToStore = currentSyncHistory;
 
+        // 当记录达到 100 条时，导出并清理前 50 条旧记录，保留最新的 50 条
         if (currentSyncHistory.length >= 100) {
-            const recordsToExport = currentSyncHistory.slice(0, 100);
-            historyToStore = currentSyncHistory.slice(100); // 保留最早100条记录之后的部分
+            const recordsToExport = currentSyncHistory.slice(0, 50); // 导出前50条（最旧的）
+            historyToStore = currentSyncHistory.slice(50); // 保留后50条（最新的）
 
             // 异步导出，不阻塞主流程
             exportHistoryToTxt(recordsToExport, preferredLang)
-                .then(() => console.log("历史记录 TXT 导出已启动。"))
+                .then(() => console.log("历史记录 TXT 导出已启动（已清理前50条）。"))
                 .catch(err => console.error("历史记录 TXT 导出启动失败:", err));
         }
 

@@ -2117,7 +2117,7 @@
         /* 本地配置框样式 */
         #localConfigContent {
             padding: 10px 20px;
-            border-top: 1px solid #eee;
+            border-top: 1px solid var(--theme-border-primary);
             display: none;
             animation: slideDown 0.3s cubic-bezier(0.4, 0, 0.2, 1);
         }
@@ -2847,7 +2847,7 @@
                 </div>
 
                 <!-- 分隔线 -->
-                <div style="border-top: 1px solid #eee; margin: 6px 0;"></div>
+                <div style="border-top: 1px solid var(--theme-border-primary); margin: 6px 0;"></div>
 
                 <!-- 区块三：安全规则说明 -->
                 <div class="form-group" style="margin-bottom: 6px; padding-left: 5px;">
@@ -3422,7 +3422,7 @@
             <!-- 添加蓝色信息区块 -->
             <div id="clearHistoryInfo"
                 style="color: var(--theme-link-color); font-size: 13px; margin: 14px 0; line-height: 1.4; background-color: var(--theme-status-info-bg); padding: 8px 10px; border-radius: 6px; margin-left: 2px; border-left: 3px solid var(--theme-link-color);">
-                <span id="clearHistoryInfoText">备份记录保留至100条记录，<br>超出后将静默清空并自动导出txt文件。</span>
+                <span id="clearHistoryInfoText">当备份记录达到100条时，<br>将自动导出并清理前50条旧记录。</span>
             </div>
 
             <div class="button-group" style="margin-top: 18px; justify-content: center; gap: 16px;">

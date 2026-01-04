@@ -335,6 +335,10 @@
                             </button>
                         </div>
 
+                        <!-- 清除备份历史记录（与主UI一致） -->
+                        <button id="clearBackupHistoryBtn" class="action-btn" title="清除记录">
+                            <i class="fas fa-trash-alt"></i>
+                        </button>
                     </div>
                 </div>
                 <div id="historyList" class="history-commits">
@@ -1508,6 +1512,37 @@
             </div>
             <div class="modal-body" id="modalBody">
                 <!-- 动态加载详情内容 -->
+            </div>
+        </div>
+    </div>
+
+    <!-- 清空备份历史确认弹窗 -->
+    <div id="clearBackupHistoryModal" class="modal content-center">
+        <div class="modal-content" style="max-width: 420px;">
+            <div class="modal-header compact">
+                <h3 id="clearBackupHistoryModalTitle">确认清空记录</h3>
+                <button class="modal-close" id="clearBackupHistoryModalClose">
+                    <i class="fas fa-times"></i>
+                </button>
+            </div>
+            <div class="modal-body" style="padding: 16px 20px;">
+                <p id="clearBackupHistoryModalDesc"
+                    style="font-size: 14px; color: var(--text-primary); margin: 0 0 10px 0;">
+                    确定要清空所有备份历史记录吗？
+                </p>
+                <p id="clearBackupHistoryModalWarning"
+                    style="color: var(--error); font-size: 13px; margin: 10px 0; line-height: 1.5; background: var(--error-light); padding: 8px 10px; border-radius: 8px;">
+                    此操作不可撤销，清空后无法恢复这些记录。<br>不会删除你的书签本身，也不会删除已导出的备份文件。
+                </p>
+                <div id="clearBackupHistoryModalInfo"
+                    style="color: var(--link-color); font-size: 13px; margin: 10px 0 0 0; line-height: 1.4; background: var(--info-light); padding: 8px 10px; border-radius: 8px; border-left: 3px solid var(--link-color);">
+                    <span id="clearBackupHistoryModalInfoText">当备份记录达到100条时，<br>将自动导出并清理前50条旧记录。</span>
+                </div>
+                <div class="modal-footer"
+                    style="margin-top: 14px; display: flex; justify-content: flex-end; gap: 10px;">
+                    <button class="modal-btn" id="clearBackupHistoryCancelBtn">取消</button>
+                    <button class="modal-btn danger" id="clearBackupHistoryConfirmBtn">确认清空</button>
+                </div>
             </div>
         </div>
     </div>

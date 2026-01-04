@@ -1197,7 +1197,8 @@
         /* 列表标题行 */
         .history-header {
             display: flex;
-            justify-content: space-between;
+            justify-content: flex-start;
+            gap: 8px;
             padding: 6px 5px;
             /* 进一步减小左右内边距 */
             border-bottom: 2px solid var(--theme-border-primary);
@@ -1207,6 +1208,13 @@
             z-index: 3;
         }
 
+        .history-header .header-item.header-action {
+            flex: 0 0 34px;
+            min-width: 34px;
+            padding: 0;
+            text-align: center;
+        }
+
         .history-header .header-item {
             flex: 1;
             text-align: center;
@@ -1214,18 +1222,18 @@
             /* 缩小字体大小 */
             font-weight: 600;
             color: var(--theme-text-primary);
-            min-width: 100px;
+            min-width: 0;
             /* 进一步减小最小宽度 */
             /* 移除任何可能的边界 */
             border: none;
-            padding: 0 5px;
+            padding: 0;
             /* 添加小的左右padding */
             margin: 0;
         }
 
-        /* 第二栏（数量与结构）向左移动 */
+        /* 让“时间与备注 / Time & Notes”这一栏整体略向右偏移一点 */
         .history-header .header-item:nth-child(2) {
-            padding-right: 20px;
+            padding-left: 12px;
         }
 
         /* 历史记录项 */
@@ -1234,10 +1242,21 @@
             /* 减小左右padding */
             border-bottom: 1px solid var(--theme-border-primary);
             display: flex;
-            justify-content: space-between;
+            justify-content: flex-start;
+            gap: 8px;
             /* 使元素均匀分布 */
             align-items: center;
             /* 垂直居中 */
+            position: relative;
+            cursor: pointer;
+        }
+
+        .history-item-action {
+            flex: 0 0 34px;
+            min-width: 34px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
         }
 
         /* 历史记录项的元素 - 只保留两栏 */
@@ -1245,10 +1264,10 @@
         .history-item-count {
             flex: 1;
             text-align: center;
-            padding: 0 5px;
+            padding: 0;
             /* 添加小的左右padding */
             overflow: visible;
-            min-width: 100px;
+            min-width: 0;
             /* 进一步减小最小宽度 */
             display: flex;
             flex-direction: column;
@@ -1256,6 +1275,10 @@
             align-items: center;
             border: none;
             margin: 0;
+        }
+
+        .history-item-time {
+            padding-left: 12px;
         }
 
         /* 确保历史记录内容换行时的对齐 */
@@ -1274,19 +1297,68 @@
         }
 
         /* 详情按钮悬浮效果：条目悬浮时按钮变清晰 */
-        .history-item:hover .details-btn {
-            opacity: 1 !important;
-            /* 确保覆盖内联样式 */
+        .details-btn {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            gap: 2px;
+            height: 18px;
+            padding: 0 4px;
+            border-radius: 5px;
+            border: 1px solid var(--theme-border-primary);
+            background: var(--theme-bg-secondary);
+            color: var(--theme-text-secondary);
+            cursor: pointer;
+            opacity: 0.35;
+            transition: opacity 0.2s, color 0.2s, border-color 0.2s, background-color 0.2s, transform 0.2s;
         }
 
-        .history-item .details-btn:hover {
-            color: #007AFF !important;
-            opacity: 1 !important;
+        .history-item:hover .details-btn {
+            opacity: 1;
+        }
+
+        .details-btn:hover {
+            color: var(--theme-accent-color);
+            border-color: var(--theme-accent-color);
+            background: var(--theme-bg-elevated);
+            transform: translateY(-1px);
+        }
+
+        .details-btn:active {
+            transform: translateY(0);
+        }
+
+        .details-btn .details-seq {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            font-variant-numeric: tabular-nums;
+            font-weight: 700;
+            font-size: 11px;
+            line-height: 1;
+        }
+
+        .details-btn .details-jump-icon {
+            width: 10px;
+            height: 10px;
+            fill: currentColor;
+            flex: 0 0 auto;
+            display: block;
+        }
+
+        .sync-history-pager {
+            display: inline-flex;
+            align-items: center;
+            gap: 4px;
         }
 
         /* 备注可编辑状态的悬浮效果 */
         .editable-note:hover {
             border-color: #aaa !important;
+        }
+
+        .editable-note {
+            cursor: text;
         }
 
         /* NEW: Base style for history columns */
@@ -2715,6 +2787,45 @@
             margin-right: 0 !important;
             margin-left: 0 !important;
         }
+
+        /* Customize Manual Backup Button: Remove yellow glow (breathe animation) and prevent hover blue color change */
+        #uploadToCloudManual.breathe-animation {
+            animation: none !important;
+            border-color: transparent !important;
+            box-shadow: 0 2px 5px rgba(0, 0, 0, 0.1) !important;
+        }
+
+        #uploadToCloudManual:hover {
+            background-color: #4CAF50 !important;
+            /* Keep base green color on hover */
+            opacity: 0.9;
+            /* Optional: Slight potential feedback without changing color hue, or just remove opacity if strict */
+        }
+
+        /* Animation classes for content transition */
+        /* Animation classes for content transition */
+        .anim-content {
+            display: inline-block;
+            transition: opacity 0.25s cubic-bezier(0.4, 0, 0.2, 1), transform 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+            opacity: 1;
+            transform: scale(1);
+        }
+
+        .anim-content.anim-out {
+            opacity: 0;
+            transform: scale(0.6);
+        }
+
+        /* Override disabled behavior strictly using class */
+        #uploadToCloudManual.success-animating {
+            background-color: #4CAF50 !important;
+            color: white !important;
+            opacity: 1 !important;
+            cursor: default !important;
+            box-shadow: none !important;
+            pointer-events: none !important;
+            /* Disable clicks via CSS instead of 'disabled' attribute to avoid grey flash */
+        }
     </style>
 </head>
 
@@ -2979,22 +3090,39 @@
                         style="margin: 0; flex: 0 0 calc(60% - 7.5px); padding: 12px 10px 12px 20px;">
                         <div
                             style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
-                            <h3 style="margin: 0;">备份历史</h3>
+                            <div style="display: flex; align-items: center; gap: 8px;">
+                                <h3 style="margin: 0;">备份历史</h3>
+                                <!-- 分页控件（10条/页）- 紧靠“备份历史”标题右侧 -->
+                                <div id="syncHistoryPager" class="sync-history-pager" style="display: none;">
+                                    <button id="syncHistoryPrevPage" class="action-button" type="button"
+                                        style="background-color: transparent; color: #666; border: 1px solid var(--theme-border-primary); border-radius: 4px; padding: 0; width: 22px; height: 24px; font-size: 11px; cursor: pointer; display: inline-flex; align-items: center; justify-content: center;">
+                                        <i class="fas fa-chevron-left"></i>
+                                    </button>
+                                    <input id="syncHistoryPageInput" type="text" value="1"
+                                        style="width: 26px; height: 24px; padding: 0; font-size: 11px; text-align: center; border: 1px solid var(--theme-border-primary); border-radius: 4px; background: var(--theme-bg-secondary); color: var(--theme-text-primary);">
+                                    <span style="font-size: 11px; color: #666;">/</span>
+                                    <span id="syncHistoryTotalPages" style="font-size: 11px; color: #666;">1</span>
+                                    <button id="syncHistoryNextPage" class="action-button" type="button"
+                                        style="background-color: transparent; color: #666; border: 1px solid var(--theme-border-primary); border-radius: 4px; padding: 0; width: 22px; height: 24px; font-size: 11px; cursor: pointer; display: inline-flex; align-items: center; justify-content: center;">
+                                        <i class="fas fa-chevron-right"></i>
+                                    </button>
+                                </div>
+                            </div>
                             <div style="display: flex; align-items: center; gap: 8px;">
                                 <button id="clearHistoryBtn" class="action-button"
-                                    style="background-color: transparent; color: #666; border: none; border-radius: 4px; padding: 0; width: 20px; height: 24px; font-size: 11px; cursor: pointer; position: relative; display: inline-flex; align-items: center; justify-content: center;">
+                                    style="display: none; background-color: transparent; color: #666; border: none; border-radius: 4px; padding: 0; width: 20px; height: 24px; font-size: 11px; cursor: pointer; position: relative; align-items: center; justify-content: center;">
                                     <i class="fas fa-trash-alt"></i>
                                     <span class="tooltip"
                                         style="position: absolute; background-color: rgba(0,0,0,0.7); color: white; padding: 2px 8px; border-radius: 4px; font-size: 12px; white-space: nowrap; visibility: hidden; opacity: 0; transition: opacity 0.3s; pointer-events: none; top: -25px; left: 50%; transform: translateX(-50%);">清空记录</span>
                                 </button>
                                 <button id="exportHistoryBtn" class="action-button"
-                                    style="background-color: transparent; color: #666; border: none; border-radius: 4px; padding: 0; width: 20px; height: 24px; font-size: 11px; cursor: pointer; position: relative; display: inline-flex; align-items: center; justify-content: center;">
+                                    style="display: none; background-color: transparent; color: #666; border: none; border-radius: 4px; padding: 0; width: 20px; height: 24px; font-size: 11px; cursor: pointer; position: relative; align-items: center; justify-content: center;">
                                     <i class="fas fa-download"></i>
                                     <span class="tooltip"
                                         style="position: absolute; background-color: rgba(0,0,0,0.7); color: white; padding: 2px 8px; border-radius: 4px; font-size: 12px; white-space: nowrap; visibility: hidden; opacity: 0; transition: opacity 0.3s; pointer-events: none; top: -25px; left: 50%; transform: translateX(-50%);">导出记录</span>
                                 </button>
                                 <button id="openHistoryViewerBtn" class="action-button"
-                                    style="background-color: #007AFF; color: white; border: none; border-radius: 4px; padding: 0; font-size: 11px; cursor: pointer; position: relative; width: 80px; height: 24px; display: inline-flex; align-items: center; justify-content: center;">
+                                    style="background-color: #007AFF; color: white; border: none; border-radius: 4px; padding: 0; font-size: 11px; cursor: pointer; position: relative; width: 32px; height: 24px; display: inline-flex; align-items: center; justify-content: center;">
                                     <i class="fas fa-history" style="font-size: 13px;"></i>
                                     <span class="tooltip" id="historyViewerTooltip"
                                         style="position: absolute; background-color: rgba(0,0,0,0.7); color: white; padding: 2px 8px; border-radius: 4px; font-size: 12px; white-space: nowrap; visibility: hidden; opacity: 0; transition: opacity 0.3s; pointer-events: none; top: -25px; left: 50%; transform: translateX(-50%);"></span>
@@ -3281,7 +3409,7 @@
                             style="font-weight: bold; font-size: 16px; margin-right: 5px; width: 85px; text-align: right; flex-shrink: 0; display: flex; align-items: center; justify-content: flex-end; height: 38px; line-height: 38px;">
                         </div>
                         <div class="setting-input" style="display: flex; align-items: center; width: 160px;">
-                            <input type="number" id="firstReminderMinutes" min="0" value="30"
+                            <input type="number" id="firstReminderMinutes" min="0" value="60"
                                 style="width: 90px; padding: 6px; padding-left: 15px; border-radius: 4px; border: 1px solid #ccc; font-size: 15px; text-align: center; box-sizing: content-box; -moz-appearance: textfield;">
                             <span class="unit" style="margin-left: 6px; min-width: 36px; font-size: 15px;">分钟</span>
                         </div>
@@ -3422,7 +3550,7 @@
             <!-- 添加蓝色信息区块 -->
             <div id="clearHistoryInfo"
                 style="color: var(--theme-link-color); font-size: 13px; margin: 14px 0; line-height: 1.4; background-color: var(--theme-status-info-bg); padding: 8px 10px; border-radius: 6px; margin-left: 2px; border-left: 3px solid var(--theme-link-color);">
-                <span id="clearHistoryInfoText">当备份记录达到100条时，<br>将自动导出并清理前50条旧记录。</span>
+                <span id="clearHistoryInfoText">提示：历史记录不会自动归档/清理。<br>你可以在「备份历史」里按需导出或删除。</span>
             </div>
 
             <div class="button-group" style="margin-top: 18px; justify-content: center; gap: 16px;">

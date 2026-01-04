@@ -261,7 +261,7 @@ async function getReminderSettings() {
     try {
         const data = await browserAPI.storage.local.get('reminderSettings');
         const defaultSettings = {
-            reminderEnabled: true, firstReminderMinutes: 30,
+            reminderEnabled: true, firstReminderMinutes: 60,
             fixedTimeEnabled1: true, fixedTime1: "09:30",
             fixedTimeEnabled2: false, fixedTime2: "16:00"
         };

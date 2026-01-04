@@ -1165,19 +1165,35 @@ function updateSyncHistory(passedLang) { // Added passedLang parameter
         // 强制隐藏横向滚动条
         historyList.style.overflowX = 'hidden';
 
-        // 为详情按钮添加全局事件委托
-        historyList.addEventListener('click', (e) => {
-            if (e.target.closest('.details-btn')) {
-                const btn = e.target.closest('.details-btn');
-                const recordTime = btn.getAttribute('data-record-time');
-                console.log('[详情按钮委托] 点击，recordTime:', recordTime);
-                if (recordTime) {
-                    const historyPageUrl = chrome.runtime.getURL('history_html/history.html') + `?view=history&record=${recordTime}`;
-                    console.log('[详情按钮委托] 打开URL:', historyPageUrl);
-                    window.open(historyPageUrl, '_blank');
+        // 为详情按钮/条目点击添加全局事件委托（只绑定一次，避免分页刷新重复绑定）
+        if (!historyList.hasAttribute('data-details-delegated')) {
+            historyList.addEventListener('click', (e) => {
+                // 备注编辑：不触发跳转
+                if (e.target.closest('.editable-note')) return;
+
+                // 明确的跳转按钮
+                if (e.target.closest('.details-btn')) {
+                    const btn = e.target.closest('.details-btn');
+                    const recordTime = btn.getAttribute('data-record-time');
+                    if (recordTime) {
+                        const historyPageUrl = chrome.runtime.getURL('history_html/history.html') + `?view=history&record=${recordTime}`;
+                        window.open(historyPageUrl, '_blank');
+                    }
+                    return;
                 }
-            }
-        });
+
+                // 点击整条记录任意区域也跳转（不要覆盖备注编辑）
+                const item = e.target.closest('.history-item');
+                if (item) {
+                    const recordTime = item.getAttribute('data-record-time');
+                    if (recordTime) {
+                        const historyPageUrl = chrome.runtime.getURL('history_html/history.html') + `?view=history&record=${recordTime}`;
+                        window.open(historyPageUrl, '_blank');
+                    }
+                }
+            });
+            historyList.setAttribute('data-details-delegated', 'true');
+        }
 
         // 添加动态内容的翻译
         const dynamicTextStrings = {
@@ -1258,8 +1274,8 @@ function updateSyncHistory(passedLang) { // Added passedLang parameter
                 'en': "FLD changed" // Changed from "folders changed"
             },
             'backupHistoryTitle': {
-                'zh_CN': "备份历史 (满100条时自动导出并清理前50条)",
-                'en': "Backup History (Auto-export & clear oldest 50 when reaching 100)"
+                'zh_CN': "备份历史",
+                'en': "Backup History"
             },
             'quantityStructureTitle': {
                 'zh_CN': "数量/结构",
@@ -1280,11 +1296,13 @@ function updateSyncHistory(passedLang) { // Added passedLang parameter
         let headerHTML = '';
         if (currentLang === 'en') {
             headerHTML = `
+                <div class="header-item header-action">No.</div>
                 <div class="header-item" style="flex: 1; text-align: center;">Time & Notes</div>
                 <div class="header-item" style="flex: 1; text-align: center;">Quantity & Structure</div>
             `;
         } else {
             headerHTML = `
+                <div class="header-item header-action">序号</div>
                 <div class="header-item" style="flex: 1; text-align: center;">时间与备注</div>
                 <div class="header-item" style="flex: 1; text-align: center;">数量与结构</div>
             `;
@@ -1297,14 +1315,30 @@ function updateSyncHistory(passedLang) { // Added passedLang parameter
 
         if (syncHistory.length > 0) {
             const reversedHistory = [...syncHistory].reverse(); // 最新记录在前
+            const PAGE_SIZE = 10;
+            // 全局页码状态（挂在 window，避免全局作用域污染冲突）
+            if (typeof window.__syncHistoryCurrentPage !== 'number') window.__syncHistoryCurrentPage = 1;
+
+            const totalPages = Math.max(1, Math.ceil(reversedHistory.length / PAGE_SIZE));
+            window.__syncHistoryTotalPages = totalPages;
+            if (window.__syncHistoryCurrentPage > totalPages) window.__syncHistoryCurrentPage = totalPages;
+            if (window.__syncHistoryCurrentPage < 1) window.__syncHistoryCurrentPage = 1;
+
+            const startIndex = (window.__syncHistoryCurrentPage - 1) * PAGE_SIZE;
+            const endIndex = Math.min(startIndex + PAGE_SIZE, reversedHistory.length);
+            const pageRecords = reversedHistory.slice(startIndex, endIndex);
 
             // 添加一个变量来跟踪上一条记录的日期和上一个元素
             let previousDate = null;
             let lastHistoryItem = null;
 
-            reversedHistory.forEach((record, index) => {
+            pageRecords.forEach((record, index) => {
+                const globalIndex = startIndex + index;
                 const historyItem = document.createElement('div');
                 historyItem.className = 'history-item';
+                historyItem.setAttribute('data-record-time', record.time);
+                // 优先使用记录中的永久序号，兼容旧记录（回退到计算的序号）
+                const seqNumber = record.seqNumber || (reversedHistory.length - globalIndex);
 
                 const time = new Date(record.time);
 
@@ -1599,27 +1633,77 @@ function updateSyncHistory(passedLang) { // Added passedLang parameter
 
                 // 只保留两栏的样式
                 let timeColStyle = "flex: 1; text-align: center;";
-                let qtyColStyle = "flex: 1; text-align: center; padding-right: 20px;";
+                let qtyColStyle = "flex: 1; text-align: center;";
 
-                // 详情按钮：默认透明，悬浮时显示
+                // 详情按钮：序号按钮 + 跳转图标
                 const detailsBtn = `
-                    <button class="details-btn" data-record-time="${record.time}" style="position: absolute; right: 3.2px; top: 50%; transform: translateY(-50%); padding: 0; margin: 0; cursor: pointer; background: none; border: none; color: #999; transition: opacity 0.2s, color 0.2s; width: auto; height: auto; display: flex; align-items: center; justify-content: center; opacity: 0.2;">
-                        <i class="fas fa-info-circle" style="font-size: 18px;"></i>
+                    <button class="details-btn" data-record-time="${record.time}" title="${currentLang === 'zh_CN' ? '跳转至HTML页面' : 'Open HTML page'}">
+                        <span class="details-seq">${seqNumber}</span>
+                        <svg class="details-jump-icon" viewBox="0 0 16 16" aria-hidden="true" focusable="false">
+                            <path d="M6 3.5a.75.75 0 0 1 .75-.75h5.5a.75.75 0 0 1 .75.75v5.5a.75.75 0 0 1-1.5 0V5.31L4.28 12.53a.75.75 0 0 1-1.06-1.06L10.44 4.25H6.75A.75.75 0 0 1 6 3.5z" />
+                        </svg>
                     </button>
                 `;
 
                 historyItem.innerHTML = `
+                    <div class="history-item-action">
+                        ${detailsBtn}
+                    </div>
                     <div class="history-item-time" style="${timeColStyle}">
                         ${formattedTime}
                         ${noteHtml}
                     </div>
-                    <div class="history-item-count" style="${qtyColStyle}; display: flex; align-items: center; justify-content: center; position: relative;">
+                    <div class="history-item-count" style="${qtyColStyle}; display: flex; align-items: center; justify-content: center;">
                         <div style="flex: 1; text-align: center;">${bookmarkStatsHTML}</div>
-                        ${detailsBtn}
                     </div>
                 `;
                 historyList.appendChild(historyItem);
             });
+
+            // 分页控件（只绑定一次）
+            const pager = document.getElementById('syncHistoryPager');
+            const prevBtn = document.getElementById('syncHistoryPrevPage');
+            const nextBtn = document.getElementById('syncHistoryNextPage');
+            const pageInput = document.getElementById('syncHistoryPageInput');
+            const totalPagesEl = document.getElementById('syncHistoryTotalPages');
+
+            if (pager && prevBtn && nextBtn && pageInput && totalPagesEl) {
+                pager.style.display = totalPages > 1 ? 'inline-flex' : 'none';
+                totalPagesEl.textContent = String(totalPages);
+                pageInput.value = String(window.__syncHistoryCurrentPage);
+                prevBtn.disabled = window.__syncHistoryCurrentPage <= 1;
+                nextBtn.disabled = window.__syncHistoryCurrentPage >= totalPages;
+
+                if (!pager.hasAttribute('data-inited')) {
+                    prevBtn.addEventListener('click', () => {
+                        if (window.__syncHistoryCurrentPage > 1) {
+                            window.__syncHistoryCurrentPage -= 1;
+                            updateSyncHistory(currentLang);
+                        }
+                    });
+                    nextBtn.addEventListener('click', () => {
+                        if (window.__syncHistoryCurrentPage < (window.__syncHistoryTotalPages || 1)) {
+                            window.__syncHistoryCurrentPage += 1;
+                            updateSyncHistory(currentLang);
+                        }
+                    });
+                    const applyPageFromInput = () => {
+                        const target = parseInt(pageInput.value, 10);
+                        if (Number.isNaN(target)) {
+                            pageInput.value = String(window.__syncHistoryCurrentPage);
+                            return;
+                        }
+                        const clamped = Math.min(Math.max(target, 1), window.__syncHistoryTotalPages || 1);
+                        window.__syncHistoryCurrentPage = clamped;
+                        updateSyncHistory(currentLang);
+                    };
+                    pageInput.addEventListener('keydown', (e) => {
+                        if (e.key === 'Enter') applyPageFromInput();
+                    });
+                    pageInput.addEventListener('blur', applyPageFromInput);
+                    pager.setAttribute('data-inited', 'true');
+                }
+            }
 
             // 如果缓存被用于列表显示，或者历史记录已不止一条（缓存的过渡作用已结束），则清除缓存
             if (cachedRecord && (cacheWasUsedForListDisplay || syncHistory.length > 1)) {
@@ -1630,12 +1714,16 @@ function updateSyncHistory(passedLang) { // Added passedLang parameter
             // 为可编辑备注绑定事件（点击编辑）
             document.querySelectorAll('.editable-note').forEach(note => {
                 note.addEventListener('click', function (e) {
+                    e.stopPropagation();
+                    e.preventDefault();
                     const recordTime = this.getAttribute('data-record-time');
                     showAddNoteDialog(recordTime);
                 });
             });
 
         } else {
+            const pager = document.getElementById('syncHistoryPager');
+            if (pager) pager.style.display = 'none';
             const emptyItem = document.createElement('div');
             emptyItem.className = 'history-item empty-state';
 
@@ -2831,7 +2919,7 @@ function handleAutoSyncToggle(event) {
             reminderSettingsBtn.classList.remove('disabled');
             uploadToCloudManual.classList.remove('disabled');
             // 添加呼吸动画效果
-            uploadToCloudManual.classList.add('breathe-animation');
+            // uploadToCloudManual.classList.add('breathe-animation'); // Removed yellow glow effect
         }
     }
 
@@ -2958,7 +3046,7 @@ function handleAutoSyncToggle(event) {
                     reminderSettingsBtn.classList.remove('disabled');
                     uploadToCloudManual.classList.remove('disabled');
                     // 添加呼吸动画效果
-                    uploadToCloudManual.classList.add('breathe-animation');
+                    // uploadToCloudManual.classList.add('breathe-animation'); // Removed yellow glow effect
                 }
             }
 
@@ -3016,7 +3104,7 @@ function handleAutoSyncToggle(event) {
                     reminderSettingsBtn.classList.remove('disabled');
                     uploadToCloudManual.classList.remove('disabled');
                     // 添加呼吸动画效果
-                    uploadToCloudManual.classList.add('breathe-animation');
+                    // uploadToCloudManual.classList.add('breathe-animation'); // Removed yellow glow effect
                 }
             }
 
@@ -3184,24 +3272,75 @@ function handleManualUpload() {
                     manualSyncOptions.style.display = autoSyncEnabled ? 'none' : 'block';
                 });
             }
-            setTimeout(() => {
-                const statsLabels = document.querySelectorAll('.stats-label');
-                if (statsLabels.length > 1) {
-                    const currentQuantityElement = statsLabels[1];
-                    const syncStatusSection = document.getElementById('syncStatus');
-                    if (syncStatusSection) {
-                        syncStatusSection.scrollIntoView({ behavior: 'smooth', block: 'start' });
-                        // 稍微调整位置，确保良好的可视效果
-                        window.scrollTo({
-                            top: syncStatusSection.offsetTop + 5,
-                            behavior: 'smooth'
-                        });
-                    }
-                } else {
-                    // 回退方案：如果找不到"当前数量/结构:"元素，则滚动到页面顶部
-                    window.scrollTo({ top: 0, behavior: 'smooth' });
-                }
-            }, 50);
+            if (uploadButton) {
+                // 1. Lock dimensions strictly & Apply Green Background Override
+                uploadButton.classList.add('success-animating'); // pointer-events: none set in CSS
+
+                const rect = uploadButton.getBoundingClientRect();
+                uploadButton.style.flex = `0 0 ${rect.width}px`;
+                uploadButton.style.width = `${rect.width}px`;
+                uploadButton.style.height = `${rect.height}px`;
+
+                uploadButton.style.padding = '0';
+                uploadButton.style.display = 'flex';
+                uploadButton.style.alignItems = 'center';
+                uploadButton.style.justifyContent = 'center';
+
+                const originalHTML = uploadButton.innerHTML;
+
+                // 2. Wrap existing text for animation
+                uploadButton.innerHTML = `<span class="anim-content">${originalHTML}</span>`;
+                // DO NOT set disabled = true, rely on pointer-events: none
+
+                // Force reflow
+                void uploadButton.offsetWidth;
+
+                // Start Fade Out Text
+                uploadButton.querySelector('.anim-content').classList.add('anim-out');
+
+                setTimeout(() => {
+                    // 3. Swap to Checkmark (Start Hidden/Scaled down)
+                    uploadButton.innerHTML = `<i class="fas fa-check anim-content anim-out" style="font-size: 14px; color: white;"></i>`;
+
+                    // Force reflow
+                    void uploadButton.offsetWidth;
+
+                    // Fade In Checkmark
+                    uploadButton.querySelector('.anim-content').classList.remove('anim-out');
+
+                    // 4. Wait, then reverse
+                    setTimeout(() => {
+                        // Fade Out Checkmark
+                        uploadButton.querySelector('.anim-content').classList.add('anim-out');
+
+                        setTimeout(() => {
+                            // 5. Swap back to Text (Start Hidden)
+                            uploadButton.innerHTML = `<span class="anim-content anim-out">${originalHTML}</span>`;
+
+                            // Force reflow
+                            void uploadButton.offsetWidth;
+
+                            // Fade In Text
+                            uploadButton.querySelector('.anim-content').classList.remove('anim-out');
+
+                            setTimeout(() => {
+                                // 6. Cleanup / Restore Original State
+                                uploadButton.innerHTML = originalHTML;
+
+                                uploadButton.classList.remove('success-animating'); // Restore clicks
+
+                                uploadButton.style.flex = '';
+                                uploadButton.style.width = '';
+                                uploadButton.style.height = '';
+                                uploadButton.style.padding = '';
+                                uploadButton.style.display = '';
+                                uploadButton.style.alignItems = '';
+                                uploadButton.style.justifyContent = '';
+                            }, 300); // Wait for text fade in (match transition + buffer)
+                        }, 300); // Wait for checkmark fade out
+                    }, 1200); // Display checkmark duration
+                }, 300); // Wait for text fade out (match transition + buffer)
+            }
             chrome.storage.local.set({ initialized: true });
         } else {
             const errorMessage = response?.error || '未知错误';
@@ -3515,8 +3654,8 @@ function exportSyncHistory() {
 function clearSyncHistory() {
     chrome.runtime.sendMessage({ action: "clearSyncHistory" }, (clearResponse) => {
         if (clearResponse && clearResponse.success) {
-            // 清理缓存（虽然不再需要，但为了清理旧数据）
-            chrome.storage.local.remove('cachedRecordAfterClear', () => { });
+            // 注意：cachedRecordAfterClear 现在由 background.js 在清空时保存
+            // 用于清空后第一条记录的详细变化对比显示
 
             // 清理 History Viewer（history.html）里按记录持久化的详情状态（模式/展开），避免残留旧记录痕迹
             try {
@@ -3551,7 +3690,7 @@ async function loadReminderSettings() {
     // 默认值
     const defaultSettings = {
         reminderEnabled: true,
-        firstReminderMinutes: 30,
+        firstReminderMinutes: 60,
         fixedTimeEnabled1: true,
         fixedTime1: "09:30",
         fixedTimeEnabled2: false,
@@ -4435,8 +4574,8 @@ const applyLocalizedContent = async (lang) => { // Added lang parameter
     };
 
     const clearHistoryInfoStrings = {
-        'zh_CN': "当备份记录达到100条时，<br>将自动导出并清理前50条旧记录。",
-        'en': "When backup records reach 100,<br>the oldest 50 records will be auto-exported and cleared."
+        'zh_CN': "提示：历史记录不会自动归档/清理。<br>你可以在「备份历史」里按需导出或删除。",
+        'en': "Tip: history records are not auto-archived/cleared.<br>You can export or delete them in “Backup History”."
     };
 
     const confirmClearButtonStrings = {
@@ -5483,7 +5622,7 @@ document.addEventListener('DOMContentLoaded', function () {
                 reminderSettingsBtn.classList.remove('disabled');
                 uploadToCloudManual.classList.remove('disabled');
                 // 添加呼吸动画效果
-                uploadToCloudManual.classList.add('breathe-animation');
+                // uploadToCloudManual.classList.add('breathe-animation'); // Removed yellow glow effect
             }
         }
 
@@ -5752,6 +5891,8 @@ document.addEventListener('DOMContentLoaded', function () {
     const exportHistoryBtn = document.getElementById('exportHistoryBtn');
     const clearHistoryBtn = document.getElementById('clearHistoryBtn');
 
+    // 导出/清空按钮已隐藏，功能已迁移至历史页面的全局导出
+    /*
     if (exportHistoryBtn) {
         // 添加导出功能
         exportHistoryBtn.addEventListener('click', exportSyncHistory);
@@ -5801,6 +5942,7 @@ document.addEventListener('DOMContentLoaded', function () {
             }
         });
     }
+    */
 
     // 添加「历史查看器」按钮事件监听
     const openHistoryViewerBtn = document.getElementById('openHistoryViewerBtn');
@@ -5810,7 +5952,7 @@ document.addEventListener('DOMContentLoaded', function () {
             const currentLang = result.preferredLang || 'zh_CN';
             const tooltip = document.getElementById('historyViewerTooltip');
             if (tooltip) {
-                tooltip.textContent = currentLang === 'zh_CN' ? '跳转至备份历史' : 'Jump to Backup History';
+                tooltip.textContent = currentLang === 'zh_CN' ? '跳转至HTML页面' : 'Open HTML page';
             }
         });
 

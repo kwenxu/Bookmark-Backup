@@ -1695,17 +1695,199 @@ browserAPI.runtime.onMessage.addListener((message, sender, sendResponse) => {
             return true; // 保持消息通道开放
 
         } else if (message.action === "clearSyncHistory") {
-            // 清空备份历史记录（包含详情缓存）
-            Promise.all([
-                browserAPI.storage.local.set({ syncHistory: [] }),
-                browserAPI.storage.local.remove(['cachedRecordAfterClear'])
-            ]).then(() => {
+            // 清空备份历史记录
+            // 关键：在清空前保存最后一条记录的 bookmarkTree，以便清空后的第一条记录可以用它来对比
+            (async () => {
+                try {
+                    const data = await browserAPI.storage.local.get(['syncHistory']);
+                    const syncHistory = data.syncHistory || [];
+
+                    // 找到最后一条成功且有 bookmarkTree 的记录
+                    let lastValidRecord = null;
+                    for (let i = syncHistory.length - 1; i >= 0; i--) {
+                        if (syncHistory[i].status === 'success' && syncHistory[i].bookmarkTree) {
+                            lastValidRecord = syncHistory[i];
+                            break;
+                        }
+                    }
+
+                    // 准备保存的缓存记录（仅保留必要的字段）
+                    const cachedRecord = lastValidRecord ? {
+                        bookmarkTree: lastValidRecord.bookmarkTree,
+                        bookmarkStats: lastValidRecord.bookmarkStats,
+                        time: lastValidRecord.time
+                    } : null;
+
+                    // 清空历史并保存缓存记录
+                    const updates = { syncHistory: [] };
+                    if (cachedRecord) {
+                        updates.cachedRecordAfterClear = cachedRecord;
+                    }
+
+                    await browserAPI.storage.local.set(updates);
+
+                    // 如果没有有效记录，也要删除旧的缓存
+                    if (!cachedRecord) {
+                        await browserAPI.storage.local.remove(['cachedRecordAfterClear']);
+                    }
+
+                    sendResponse({ success: true });
+                } catch (error) {
+                    sendResponse({
+                        success: false,
+                        error: error?.message || '清空备份历史记录失败'
+                    });
+                }
+            })();
+            return true; // 异步响应
+
+        } else if (message.action === "clearSyncHistoryPartial") {
+            // 部分删除备份历史记录（删除最旧的N条，保留最新的记录）
+            console.log('[clearSyncHistoryPartial] Received request, deleteCount:', message.deleteCount);
+
+            const deleteCount = parseInt(message.deleteCount, 10) || 0;
+            if (deleteCount <= 0) {
+                console.log('[clearSyncHistoryPartial] deleteCount is 0 or invalid, returning success');
+                sendResponse({ success: true, deleted: 0 });
+                return true;
+            }
+
+            (async () => {
+                try {
+                    const data = await browserAPI.storage.local.get(['syncHistory']);
+                    let syncHistory = data.syncHistory || [];
+
+                    console.log('[clearSyncHistoryPartial] Current history length:', syncHistory.length);
+
+                    if (syncHistory.length === 0) {
+                        console.log('[clearSyncHistoryPartial] No history to delete');
+                        sendResponse({ success: true, deleted: 0, remaining: 0 });
+                        return;
+                    }
+
+                    // 计算实际要删除的数量（不能超过总数）
+                    const actualDeleteCount = Math.min(deleteCount, syncHistory.length);
+                    console.log('[clearSyncHistoryPartial] Actual delete count:', actualDeleteCount);
+
+                    // 保留最新的记录（删除最旧的）
+                    const remainingHistory = syncHistory.slice(actualDeleteCount);
+
+                    // 如果删除后还有记录，找到第一条有效的书签树作为对比基准
+                    let cachedRecord = null;
+                    if (remainingHistory.length > 0) {
+                        // 找最后一条被删除的记录中有书签树的，作为新的对比基准
+                        const deletedRecords = syncHistory.slice(0, actualDeleteCount);
+                        for (let i = deletedRecords.length - 1; i >= 0; i--) {
+                            if (deletedRecords[i].status === 'success' && deletedRecords[i].bookmarkTree) {
+                                cachedRecord = {
+                                    bookmarkTree: deletedRecords[i].bookmarkTree,
+                                    bookmarkStats: deletedRecords[i].bookmarkStats,
+                                    time: deletedRecords[i].time
+                                };
+                                break;
+                            }
+                        }
+                    }
+
+                    // 更新存储
+                    const updates = { syncHistory: remainingHistory };
+                    if (cachedRecord) {
+                        updates.cachedRecordAfterClear = cachedRecord;
+                    }
+                    await browserAPI.storage.local.set(updates);
+
+                    // 如果删除后没有记录，也要更新 cachedRecordAfterClear
+                    if (remainingHistory.length === 0 && cachedRecord) {
+                        await browserAPI.storage.local.set({ cachedRecordAfterClear: cachedRecord });
+                    } else if (remainingHistory.length === 0 && !cachedRecord) {
+                        await browserAPI.storage.local.remove(['cachedRecordAfterClear']);
+                    }
+
+                    console.log('[clearSyncHistoryPartial] Success, deleted:', actualDeleteCount, 'remaining:', remainingHistory.length);
+                    sendResponse({
+                        success: true,
+                        deleted: actualDeleteCount,
+                        remaining: remainingHistory.length
+                    });
+                } catch (error) {
+                    console.error('[clearSyncHistoryPartial] Error:', error);
+                    sendResponse({
+                        success: false,
+                        error: error?.message || '部分删除备份历史记录失败'
+                    });
+                }
+            })();
+            return true; // 异步响应
+
+        } else if (message.action === "deleteSyncHistoryItems") {
+            // 删除指定的备份历史记录
+            const fingerprintsToDelete = message.fingerprints || [];
+            if (!fingerprintsToDelete.length) {
                 sendResponse({ success: true });
-            }).catch(error => {
-                sendResponse({
-                    success: false,
-                    error: error?.message || '清空备份历史记录失败'
-                });
+                return true;
+            }
+
+            browserAPI.storage.local.get(['syncHistory'], (data) => {
+                let syncHistory = data.syncHistory || [];
+                const initialLength = syncHistory.length;
+
+                // 过滤掉要删除的记录
+                syncHistory = syncHistory.filter(item => !fingerprintsToDelete.includes(item.fingerprint));
+
+                if (syncHistory.length !== initialLength) {
+                    const updates = { syncHistory: syncHistory };
+
+                    const setPromise = browserAPI.storage.local.set(updates);
+                    const removePromise = syncHistory.length === 0
+                        ? browserAPI.storage.local.remove(['cachedRecordAfterClear'])
+                        : Promise.resolve();
+
+                    Promise.all([setPromise, removePromise])
+                        .then(() => {
+                            sendResponse({ success: true });
+                        })
+                        .catch(error => {
+                            sendResponse({
+                                success: false,
+                                error: error?.message || '删除记录失败'
+                            });
+                        });
+                } else {
+                    sendResponse({ success: true });
+                }
+            });
+            return true; // 异步响应
+        } else if (message.action === "deleteSyncHistoryItemsByTime") {
+            const timesToDelete = Array.isArray(message.times) ? message.times.map(t => String(t)) : [];
+            if (!timesToDelete.length) {
+                sendResponse({ success: true });
+                return true;
+            }
+
+            browserAPI.storage.local.get(['syncHistory'], (data) => {
+                let syncHistory = data.syncHistory || [];
+                const initialLength = syncHistory.length;
+
+                syncHistory = syncHistory.filter(item => !timesToDelete.includes(String(item.time)));
+
+                const updates = { syncHistory: syncHistory };
+
+                const setPromise = browserAPI.storage.local.set(updates);
+                const removePromise = syncHistory.length === 0
+                    ? browserAPI.storage.local.remove(['cachedRecordAfterClear'])
+                    : Promise.resolve();
+
+                Promise.all([setPromise, removePromise])
+                    .then(() => {
+                        const deleted = initialLength - syncHistory.length;
+                        sendResponse({ success: true, deleted, remaining: syncHistory.length });
+                    })
+                    .catch(error => {
+                        sendResponse({
+                            success: false,
+                            error: error?.message || '删除记录失败'
+                        });
+                    });
             });
             return true; // 异步响应
         } else if (message.action === "downloadWithNotification") {
@@ -3138,37 +3320,37 @@ async function searchBookmarks(query) {
 async function resetAllData() {
     try {
         console.log('[resetAllData] 开始完全重置扩展...');
-        
+
         // 1. 关闭所有扩展页面，释放 IndexedDB 连接
         try {
             const extensionOrigin = browserAPI.runtime.getURL('');
             const allTabs = await browserAPI.tabs.query({});
             for (const tab of allTabs) {
                 if (tab.url && tab.url.startsWith(extensionOrigin) && !tab.url.includes('popup.html')) {
-                    await browserAPI.tabs.remove(tab.id).catch(() => {});
+                    await browserAPI.tabs.remove(tab.id).catch(() => { });
                 }
             }
         } catch (e) { /* 忽略 */ }
-        
+
         // 2. 删除 IndexedDB 数据库
         ['BookmarkFaviconCache', 'BookmarkActiveTimeDB'].forEach(dbName => {
             try { indexedDB.deleteDatabase(dbName); } catch (e) { /* 忽略 */ }
         });
-        
+
         // 3. 清除 chrome.storage.local
         await browserAPI.storage.local.clear();
-        
+
         // 4. 设置标志让将来打开的页面清除 localStorage
         await browserAPI.storage.local.set({ needClearLocalStorage: true });
-        
+
         // 5. 清除所有闹钟
         await browserAPI.alarms.clearAll();
-        
+
         console.log('[resetAllData] 存储已清除，重新加载扩展...');
-        
+
         // 6. 重新加载扩展（这会自动重置所有内存变量）
         setTimeout(() => { browserAPI.runtime.reload(); }, 200);
-        
+
         return true;
     } catch (error) {
         console.error('[resetAllData] 重置失败:', error);
@@ -3500,8 +3682,21 @@ async function updateSyncStatus(direction, time, status = 'success', errorMessag
             }
         } catch (_) { }
 
+        // 计算永久序号：取历史中最大序号 + 1，没有历史则从 1 开始
+        // 这样部分删除后序号不会重置，只有全部清除时才重置
+        let nextSeqNumber = 1;
+        if (syncHistory && syncHistory.length > 0) {
+            // 找到历史中最大的序号
+            const maxSeq = syncHistory.reduce((max, record) => {
+                const seq = record.seqNumber || 0;
+                return seq > max ? seq : max;
+            }, 0);
+            nextSeqNumber = maxSeq + 1;
+        }
+
         const newSyncRecord = {
             time: time,
+            seqNumber: nextSeqNumber, // 永久序号，部分删除后不会重置
             direction: direction,
             type: syncType, // 存储键值: 'auto', 'manual', 'auto_switch'
             status: status,
@@ -3520,30 +3715,10 @@ async function updateSyncStatus(direction, time, status = 'success', errorMessag
 
         let currentSyncHistory = [...syncHistory, newSyncRecord];
 
-        // 清理旧记录的 bookmarkTree 以节省空间（保留最近20条）
-        if (currentSyncHistory.length > 20) {
-            currentSyncHistory = currentSyncHistory.map((record, index) => {
-                if (index < currentSyncHistory.length - 20 && record.bookmarkTree) {
-                    // 删除旧记录的 bookmarkTree
-                    const { bookmarkTree, ...recordWithoutTree } = record;
-                    return recordWithoutTree;
-                }
-                return record;
-            });
-        }
+        // 已移除：书签树20条限制清理（现在所有记录都保留完整的书签树数据）
+        // 已移除：100条记录自动导出并清理前50条的功能（用户可手动管理历史记录）
 
         let historyToStore = currentSyncHistory;
-
-        // 当记录达到 100 条时，导出并清理前 50 条旧记录，保留最新的 50 条
-        if (currentSyncHistory.length >= 100) {
-            const recordsToExport = currentSyncHistory.slice(0, 50); // 导出前50条（最旧的）
-            historyToStore = currentSyncHistory.slice(50); // 保留后50条（最新的）
-
-            // 异步导出，不阻塞主流程
-            exportHistoryToTxt(recordsToExport, preferredLang)
-                .then(() => console.log("历史记录 TXT 导出已启动（已清理前50条）。"))
-                .catch(err => console.error("历史记录 TXT 导出启动失败:", err));
-        }
 
         const updateData = {
             lastSyncTime: time,

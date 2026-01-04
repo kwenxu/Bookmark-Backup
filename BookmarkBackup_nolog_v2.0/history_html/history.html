@@ -321,24 +321,59 @@
                         <h2 id="historyViewTitle">备份历史</h2>
                     </div>
                     <div class="view-header-right">
-                        <!-- 详略切换按钮 -->
-                        <div class="toggle-btn-group" id="historyDetailModeToggle"
-                            style="display: inline-flex; margin-right: 8px;">
-                            <button id="historyDetailModeSimple" class="toggle-btn active" data-mode="simple"
-                                title="简略模式">
-                                <i class="fas fa-list"></i>
-                                <span id="historyDetailModeSimpleText">简略</span>
+                        <!-- 分页控件 -->
+                        <div id="historyPagination"
+                            style="display: flex; align-items: center; gap: 8px; margin-right: 12px;">
+                            <button id="historyPrevPage" class="action-btn compact no-tooltip">
+                                <i class="fas fa-chevron-left"></i>
                             </button>
-                            <button id="historyDetailModeDetailed" class="toggle-btn" data-mode="detailed" title="详细模式">
-                                <i class="fas fa-stream"></i>
-                                <span id="historyDetailModeDetailedText">详细</span>
+                            <input type="text" id="historyPageInput" value="1"
+                                style="width: 32px; height: 28px; padding: 4px; font-size: 13px; text-align: center; border: 1px solid var(--border-color); border-radius: 4px; background: var(--bg-secondary); color: var(--text-primary); outline: none;">
+                            <div
+                                style="display: flex; align-items: center; color: var(--text-secondary); font-size: 13px;">
+                                <span style="margin: 0 4px;">/</span>
+                                <span id="historyTotalPages">1</span>
+                            </div>
+                            <button id="historyNextPage" class="action-btn compact no-tooltip">
+                                <i class="fas fa-chevron-right"></i>
                             </button>
                         </div>
 
                         <!-- 清除备份历史记录（与主UI一致） -->
-                        <button id="clearBackupHistoryBtn" class="action-btn" title="清除记录">
+                        <button id="clearBackupHistoryBtn" class="action-btn compact" title="清除记录">
                             <i class="fas fa-trash-alt"></i>
                         </button>
+                        <!-- 全局导出按钮 -->
+                        <button id="globalExportBtn" class="action-btn compact" title="全局导出">
+                            <i class="fas fa-file-export"></i>
+                        </button>
+
+                        <!-- 详略切换按钮 -->
+                        <div class="toggle-btn-group" id="historyDetailModeToggle">
+                            <button id="historyDetailModeSimple" class="toggle-btn active" data-mode="simple"
+                                title="简略模式">
+                                <svg class="icon-compact" viewBox="0 0 24 24" width="16" height="16" fill="none"
+                                    stroke="currentColor" stroke-width="2" stroke-linecap="round"
+                                    stroke-linejoin="round">
+                                    <line x1="4" y1="9" x2="20" y2="9" />
+                                    <line x1="4" y1="15" x2="20" y2="15" />
+                                    <circle cx="2" cy="9" r="1.5" fill="currentColor" stroke="none" />
+                                    <circle cx="2" cy="15" r="1.5" fill="currentColor" stroke="none" />
+                                </svg>
+                                <span id="historyDetailModeSimpleText">简略</span>
+                            </button>
+                            <button id="historyDetailModeDetailed" class="toggle-btn" data-mode="detailed" title="详细模式">
+                                <svg class="icon-detail" viewBox="0 0 24 24" width="16" height="16" fill="none"
+                                    stroke="currentColor" stroke-width="2" stroke-linecap="round"
+                                    stroke-linejoin="round">
+                                    <line x1="4" y1="6" x2="20" y2="6" />
+                                    <line x1="4" y1="10" x2="20" y2="10" />
+                                    <line x1="4" y1="14" x2="20" y2="14" />
+                                    <line x1="4" y1="18" x2="20" y2="18" />
+                                </svg>
+                                <span id="historyDetailModeDetailedText">详细</span>
+                            </button>
+                        </div>
                     </div>
                 </div>
                 <div id="historyList" class="history-commits">
@@ -1518,34 +1553,132 @@
 
     <!-- 清空备份历史确认弹窗 -->
     <div id="clearBackupHistoryModal" class="modal content-center">
-        <div class="modal-content" style="max-width: 420px;">
+        <div class="modal-content" style="max-width: 480px;">
             <div class="modal-header compact">
-                <h3 id="clearBackupHistoryModalTitle">确认清空记录</h3>
+                <h3 id="clearBackupHistoryModalTitle">清除记录</h3>
                 <button class="modal-close" id="clearBackupHistoryModalClose">
                     <i class="fas fa-times"></i>
                 </button>
             </div>
             <div class="modal-body" style="padding: 16px 20px;">
                 <p id="clearBackupHistoryModalDesc"
-                    style="font-size: 14px; color: var(--text-primary); margin: 0 0 10px 0;">
-                    确定要清空所有备份历史记录吗？
+                    style="font-size: 14px; color: var(--text-primary); margin: 0 0 14px 0;">
+                    选择要删除的备份历史记录范围：
                 </p>
-                <p id="clearBackupHistoryModalWarning"
-                    style="color: var(--error); font-size: 13px; margin: 10px 0; line-height: 1.5; background: var(--error-light); padding: 8px 10px; border-radius: 8px;">
-                    此操作不可撤销，清空后无法恢复这些记录。<br>不会删除你的书签本身，也不会删除已导出的备份文件。
-                </p>
-                <div id="clearBackupHistoryModalInfo"
-                    style="color: var(--link-color); font-size: 13px; margin: 10px 0 0 0; line-height: 1.4; background: var(--info-light); padding: 8px 10px; border-radius: 8px; border-left: 3px solid var(--link-color);">
-                    <span id="clearBackupHistoryModalInfoText">当备份记录达到100条时，<br>将自动导出并清理前50条旧记录。</span>
+
+                <!-- 删除范围选择区域 -->
+                <div id="clearBackupHistoryOptions"
+                    style="background: var(--bg-secondary); border-radius: 8px; padding: 14px 16px; margin-bottom: 14px;">
+
+                    <!-- 双滑块范围选择器 -->
+                    <div id="clearHistoryRangeContainer" class="range-slider-container">
+                        <!-- 滑块轨道容器 -->
+                        <div id="clearHistoryRangeTrack" class="range-slider-track">
+                            <!-- 选中区域高亮 -->
+                            <div id="clearHistoryRangeHighlight" class="range-slider-highlight"></div>
+                        </div>
+
+                        <!-- 左滑块（起始序号） -->
+                        <input type="range" id="clearHistoryRangeMin" class="range-slider-input" min="1" max="100"
+                            value="1">
+
+                        <!-- 右滑块（结束序号） -->
+                        <input type="range" id="clearHistoryRangeMax" class="range-slider-input" min="1" max="100"
+                            value="50">
+
+	                        <!-- 序号刻度 -->
+	                        <div id="clearHistoryRangeLabels" class="range-slider-labels">
+	                            <span id="clearHistoryMinSeqLabel">1</span>
+	                            <span id="clearHistoryMaxSeqLabel">100</span>
+	                        </div>
+	
+	                        <div id="clearHistoryRangeMinBubble" class="range-slider-bubble">1</div>
+	                        <div id="clearHistoryRangeMaxBubble" class="range-slider-bubble">1</div>
+	                    </div>
+
+                    <!-- 选中范围显示 -->
+                    <div id="clearHistorySelectionDisplay" style="text-align: center; margin-top: 8px;">
+                        <span style="font-size: 13px; color: var(--text-secondary);">
+                            <span id="clearHistorySelectionLabel">将删除序号</span>
+                            <span id="clearHistorySelectionRange"
+                                style="font-weight: 600; color: var(--error);">1-50</span>
+                            <span id="clearHistorySelectionCount" style="color: var(--text-secondary);">（共 50 条）</span>
+                        </span>
+                    </div>
+
+                    <!-- 预览删除数量 -->
+                    <div id="clearHistoryPreview"
+                        style="margin-top: 10px; padding-top: 10px; border-top: 1px dashed var(--border-color);">
+                        <span style="font-size: 12px; color: var(--text-tertiary);">
+                            <i class="fas fa-info-circle" style="margin-right: 4px;"></i>
+                            <span id="clearHistoryPreviewText">当前共 0 条记录，将删除 0 条</span>
+                        </span>
+                    </div>
                 </div>
+
                 <div class="modal-footer"
                     style="margin-top: 14px; display: flex; justify-content: flex-end; gap: 10px;">
                     <button class="modal-btn" id="clearBackupHistoryCancelBtn">取消</button>
-                    <button class="modal-btn danger" id="clearBackupHistoryConfirmBtn">确认清空</button>
+                    <button class="modal-btn danger" id="clearBackupHistoryConfirmBtn">确认删除</button>
                 </div>
             </div>
         </div>
     </div>
+
+    <!-- 清除历史二次确认弹窗 -->
+    <div id="clearHistorySecondConfirmModal" class="modal content-center">
+        <div class="modal-content" style="max-width: 400px;">
+            <div class="modal-header compact">
+                <h3 id="clearHistorySecondConfirmTitle">确认删除</h3>
+                <button class="modal-close" id="clearHistorySecondConfirmClose">
+                    <i class="fas fa-times"></i>
+                </button>
+            </div>
+            <div class="modal-body" style="padding: 16px 20px;">
+                <div style="text-align: center; margin-bottom: 16px;">
+                    <div
+                        style="width: 48px; height: 48px; background: var(--error-light); border-radius: 50%; display: inline-flex; align-items: center; justify-content: center; margin-bottom: 12px;">
+                        <i class="fas fa-exclamation-triangle" style="font-size: 20px; color: var(--error);"></i>
+                    </div>
+	                    <p id="clearHistorySecondConfirmText"
+	                        style="font-size: 15px; color: var(--text-primary); margin: 0 0 8px 0; font-weight: 500;">
+	                        <span id="clearHistorySecondConfirmPrefix">即将删除</span>
+	                        <span id="clearHistoryDeleteCountDisplay"
+	                            style="color: var(--error); font-weight: 700;">0</span>
+	                        <span id="clearHistorySecondConfirmSuffix">条记录</span>
+	                        <span id="clearHistoryRangeDisplay"
+	                            style="font-size: 13px; color: var(--text-secondary); font-weight: 400;"></span>
+	                    </p>
+                    <p id="clearHistorySecondConfirmWarning"
+                        style="font-size: 13px; color: var(--text-secondary); margin: 0;">
+                        此操作不可撤销，建议先备份再删除
+                    </p>
+                </div>
+
+                <div style="display: flex; flex-direction: column; gap: 10px;">
+                    <!-- 先备份按钮 -->
+                    <button class="modal-btn" id="clearHistoryExportFirstBtn"
+                        style="width: 100%; display: flex; align-items: center; justify-content: center; gap: 8px; padding: 10px; background: var(--accent-light); border-color: var(--accent-primary); color: var(--accent-primary);">
+                        <i class="fas fa-file-export"></i>
+                        <span id="clearHistoryExportFirstText">先备份这些记录</span>
+                    </button>
+
+                    <!-- 直接删除按钮 -->
+                    <button class="modal-btn danger" id="clearHistoryDirectDeleteBtn"
+                        style="width: 100%; padding: 10px;">
+                        <span id="clearHistoryDirectDeleteText">直接删除</span>
+                    </button>
+
+                    <!-- 返回按钮 -->
+                    <button class="modal-btn" id="clearHistorySecondConfirmCancelBtn"
+                        style="width: 100%; padding: 10px; background: var(--bg-secondary); color: var(--text-secondary);">
+                        <span id="clearHistorySecondConfirmCancelText">返回修改</span>
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
 
     <!-- 自动刷新设置弹窗 -->
     <div id="refreshSettingsModal" class="modal content-center">
@@ -1975,6 +2108,189 @@
                     <button id="editBookmarkCancelBtn" class="modal-btn">取消</button>
                     <button id="editBookmarkSaveBtn" class="modal-btn primary">保存</button>
                 </div>
+            </div>
+        </div>
+    </div>
+    <!-- 全局导出弹窗 -->
+    <div id="globalExportModal" class="modal">
+        <div class="modal-content"
+            style="max-width: 680px; display: flex; flex-direction: column; max-height: 90vh; position: relative;">
+            <div class="modal-header">
+                <div>
+                    <h3 id="globalExportModalTitle" style="font-size: 18px;">全局备份导出</h3>
+                </div>
+                <button class="modal-close" id="globalExportModalClose">
+                    <i class="fas fa-times"></i>
+                </button>
+            </div>
+            <div class="modal-body" style="overflow-y: auto; flex: 1; padding: 24px; padding-bottom: 70px;">
+
+                <!-- 简化后的导出选项区域 -->
+                <div class="export-section"
+                    style="margin-bottom: 24px; padding: 16px; background: var(--bg-secondary); border-radius: 8px;">
+                    <div style="display: flex; gap: 40px; align-items: flex-start;">
+                        <!-- 格式选择 -->
+                        <div style="flex: 1;">
+                            <h4
+                                style="margin-bottom: 12px; font-size: 14px; color: var(--text-secondary); font-weight: 600;">
+                                <i class="fas fa-file-alt" style="margin-right: 6px;"></i><span
+                                    id="globalExportFormatTitle">导出格式</span>
+                            </h4>
+                            <div style="display: flex; gap: 16px;">
+                                <label style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
+                                    <input type="checkbox" id="globalExportFormatHtml" checked>
+                                    <span style="font-size: 13px;">HTML</span>
+                                </label>
+                                <label style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
+                                    <input type="checkbox" id="globalExportFormatJson">
+                                    <span style="font-size: 13px;">JSON</span>
+                                </label>
+                                <label style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
+                                    <input type="checkbox" id="globalExportFormatMd">
+                                    <span style="font-size: 13px;">Markdown</span>
+                                </label>
+                            </div>
+                            <div id="globalExportFormatHint"
+                                style="margin-top: 8px; font-size: 12px; color: var(--text-tertiary);">
+                                勾选即可导出对应格式文件
+                            </div>
+                        </div>
+
+                        <!-- 分隔线 -->
+                        <div style="width: 1px; background: var(--border-color); align-self: stretch;"></div>
+
+                        <!-- 打包结构 -->
+                        <div style="flex: 1;">
+                            <h4
+                                style="margin-bottom: 12px; font-size: 14px; color: var(--text-secondary); font-weight: 600;">
+                                <i class="fas fa-box-open" style="margin-right: 6px;"></i><span
+                                    id="globalExportPackTitle">打包结构</span>
+                            </h4>
+                            <div style="display: flex; gap: 16px;">
+                                <label style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
+                                    <input type="radio" name="globalExportPackMode" id="globalExportPackZip" value="zip"
+                                        checked>
+                                    <span id="globalExportPackZipText" style="font-size: 13px;">ZIP 归档</span>
+                                </label>
+                                <label style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
+                                    <input type="radio" name="globalExportPackMode" id="globalExportPackMerge"
+                                        value="merge">
+                                    <span id="globalExportPackMergeText" style="font-size: 13px;">单一文件合并</span>
+                                </label>
+                            </div>
+                            <div id="globalExportPackHint"
+                                style="margin-top: 8px; font-size: 12px; color: var(--text-tertiary);">
+                                ZIP归档将包含多个独立文件；单一文件合并将生成一个汇总文件
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 预览表格区域 -->
+	                <div class="export-section">
+	                    <div
+	                        style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
+	                        <h4 style="font-size: 14px; color: var(--text-secondary); font-weight: 600; margin: 0;">
+	                            <i class="fas fa-list-check" style="margin-right: 6px;"></i><span
+	                                id="globalExportSelectTitle">选择备份记录</span>
+	                        </h4>
+	                        <!-- 分页控件（在标题行居中） -->
+                        <div id="globalExportPagination" style="display: flex; align-items: center; gap: 6px;">
+                            <button id="globalExportPrevPage" class="modal-btn"
+                                style="padding: 2px 8px; font-size: 11px;">
+                                <i class="fas fa-chevron-left"></i>
+                            </button>
+                            <input type="text" id="globalExportPageInput" value="1"
+                                style="width: 28px; padding: 2px 4px; font-size: 11px; text-align: center; border: 1px solid var(--border-color); border-radius: 4px; background: var(--bg-secondary); color: var(--text-primary);">
+                            <span style="font-size: 11px; color: var(--text-tertiary);">/</span>
+                            <span id="globalExportTotalPages"
+                                style="font-size: 11px; color: var(--text-secondary);">1</span>
+                            <button id="globalExportNextPage" class="modal-btn"
+                                style="padding: 2px 8px; font-size: 11px;">
+                                <i class="fas fa-chevron-right"></i>
+                            </button>
+                        </div>
+	                        <div id="globalExportStatusWrapper" style="display: flex; align-items: center; gap: 6px;">
+	                            <button id="globalExportRangeToggleBtn" class="modal-btn"
+	                                style="padding: 2px 6px; font-size: 11px; line-height: 1; min-width: auto;"
+	                                aria-label="toggle-range">
+	                                <i class="fas fa-chevron-down"></i>
+	                            </button>
+	                            <span id="globalExportStatus"
+	                                style="font-size: 12px; color: var(--accent-primary); font-weight: 500; background: var(--accent-light); padding: 2px 8px; border-radius: 4px;">
+	                                已选 0 项
+	                            </span>
+	                        </div>
+	                    </div>
+
+	                    <!-- 范围选择（折叠面板） -->
+	                    <div id="globalExportRangePanel"
+	                        style="display: none; background: var(--bg-secondary); border: 1px solid var(--border-color); border-radius: 8px; padding: 10px 12px; margin-bottom: 12px;">
+	                        <div style="display: flex; align-items: center; justify-content: space-between; gap: 12px;">
+	                            <div id="globalExportRangePreviewText"
+	                                style="font-size: 12px; color: var(--text-tertiary); white-space: nowrap;"></div>
+	                            <label
+	                                style="display: inline-flex; align-items: center; gap: 8px; cursor: pointer; user-select: none;">
+	                                <span id="globalExportRangeEnabledText"
+	                                    style="font-size: 12px; color: var(--text-secondary);">自动勾选</span>
+	                                <input type="checkbox" id="globalExportRangeEnabled" style="cursor: pointer;">
+	                            </label>
+	                        </div>
+
+	                        <div id="globalExportRangeContainer" class="range-slider-container"
+	                            style="margin-top: 10px; margin-bottom: 0;">
+	                            <div class="range-slider-track">
+	                                <div id="globalExportRangeHighlight" class="range-slider-highlight"></div>
+	                            </div>
+	                            <input type="range" id="globalExportRangeMin" class="range-slider-input" min="1" max="100"
+	                                value="1">
+	                            <input type="range" id="globalExportRangeMax" class="range-slider-input" min="1" max="100"
+	                                value="1">
+	                            <div class="range-slider-labels">
+	                                <span id="globalExportRangeLeftLabel">1</span>
+	                                <span id="globalExportRangeRightLabel">1</span>
+	                            </div>
+	                            <div id="globalExportRangeMinBubble" class="range-slider-bubble">1</div>
+	                            <div id="globalExportRangeMaxBubble" class="range-slider-bubble">1</div>
+	                        </div>
+	                    </div>
+	
+	                    <div class="global-export-table-container">
+	                        <table id="globalExportTable" style="width: 100%; border-collapse: collapse;">
+	                            <thead>
+	                                <tr>
+                                    <th style="text-align: center; width: 40px;">
+                                        <input type="checkbox" id="globalExportSelectAll" style="cursor: pointer;">
+                                    </th>
+                                    <th style="text-align: center; width: 54px;"><span id="globalExportThSeq">序号</span>
+                                    </th>
+                                    <th style="text-align: left;"><span id="globalExportThNote">备注</span></th>
+                                    <th style="text-align: left; width: 110px;"><span id="globalExportThHash">哈希值</span>
+                                    </th>
+                                    <th style="text-align: left; width: 170px;"><span
+                                            id="globalExportThViewMode">视图模式</span></th>
+                                    <th style="text-align: left; width: 160px;"><span id="globalExportThTime">时间</span>
+                                    </th>
+                                </tr>
+                            </thead>
+                            <tbody id="globalExportTableBody">
+                                <!-- 动态生成 -->
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 悬浮按钮区域（透明背景，固定在底部，不随滚动） -->
+            <div
+                style="position: absolute; bottom: 0; left: 0; right: 0; padding: 16px 24px; display: flex; justify-content: flex-end; gap: 12px; background: transparent; pointer-events: none;">
+                <button class="modal-btn" id="globalExportCancelBtn"
+                    style="min-width: 80px; pointer-events: auto;">取消</button>
+                <button class="modal-btn primary" id="globalExportConfirmBtn"
+                    style="min-width: 120px; pointer-events: auto;">
+                    <i class="fas fa-file-export" style="margin-right: 6px;"></i><span
+                        id="globalExportConfirmText">导出选中项</span>
+                </button>
             </div>
         </div>
     </div>

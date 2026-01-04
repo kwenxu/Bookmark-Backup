@@ -794,7 +794,13 @@ body {
 }
 
 .view-header {
-    margin-bottom: 24px;
+    margin-bottom: 8px;
+}
+
+.view-header-right {
+    display: flex;
+    align-items: center;
+    gap: 8px;
 }
 
 .view-header h2 {
@@ -824,6 +830,7 @@ body {
     padding: 16px;
     transition: all 0.2s ease;
     cursor: pointer;
+    position: relative;
 }
 
 .commit-item:hover {
@@ -843,7 +850,23 @@ body {
     display: inline-flex;
     flex-direction: row;
     align-items: center;
-    gap: 2px;
+    gap: 6px;
+}
+
+.commit-seq-badge {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 22px;
+    height: 22px;
+    padding: 0 6px;
+    border-radius: 8px;
+    font-size: 12px;
+    font-weight: 700;
+    line-height: 1;
+    color: var(--text-secondary);
+    background: var(--bg-secondary);
+    border: 1px solid var(--border-color);
 }
 
 .commit-title {
@@ -891,6 +914,45 @@ body {
     justify-content: center;
     min-width: 32px;
     height: 32px;
+    white-space: nowrap;
+    position: relative;
+    overflow: visible;
+}
+
+.action-btn .btn-tooltip {
+    position: absolute;
+    top: calc(100% + 8px);
+    left: 50%;
+    transform: translateX(-50%);
+    background: rgba(0, 0, 0, 0.9);
+    color: white;
+    padding: 6px 10px;
+    border-radius: 6px;
+    font-size: 12px;
+    white-space: nowrap;
+    visibility: hidden;
+    opacity: 0;
+    transition: opacity 0.05s ease, visibility 0.05s ease;
+    pointer-events: none;
+    z-index: 1000;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
+    font-weight: normal;
+    text-transform: none;
+}
+
+.action-btn .btn-tooltip::before {
+    content: '';
+    position: absolute;
+    bottom: 100%;
+    left: 50%;
+    transform: translateX(-50%);
+    border: 5px solid transparent;
+    border-bottom-color: rgba(0, 0, 0, 0.9);
+}
+
+.action-btn:hover .btn-tooltip {
+    visibility: visible;
+    opacity: 1;
 }
 
 .action-btn:hover {
@@ -909,26 +971,36 @@ body {
     font-size: 13px;
 }
 
-/* 详情按钮特殊样式 */
-.action-btn.detail-btn {
-    background: transparent;
-    color: var(--text-secondary);
-    border: 1px solid var(--border-color);
-    padding: 6px 12px;
-    gap: 6px;
+/* 紧凑版按钮 - 与 toggle-btn 尺寸协调 */
+.action-btn.compact {
+    padding: 5px 8px;
+    min-width: 28px;
+    height: 28px;
 }
 
-.action-btn.detail-btn i {
+.action-btn.compact i {
     font-size: 12px;
 }
 
-.action-btn.detail-btn:hover {
-    background: var(--bg-tertiary);
+/* 详情按钮特殊样式 */
+/* 详情按钮特殊样式 - 统一为图标按钮 */
+.action-btn.detail-btn {
+    /* 复用 action-btn 默认样式 (32x32 centered) */
+    background: transparent;
     color: var(--text-secondary);
-    border-color: var(--accent-primary);
+    border: 1px solid var(--border-color);
+    padding: 0;
+    gap: 0;
 }
 
-/* 详情按钮不显示tooltip */
+.action-btn.detail-btn i {
+    font-size: 13px;
+    /* 统一大小 */
+}
+
+/* 移除之前的 hover 覆盖，使用默认 action-btn hover 效果 */
+
+/* 详情按钮不显示旧版伪类tooltip，使用新的 .btn-tooltip */
 .action-btn.detail-btn::after {
     display: none;
 }
@@ -977,6 +1049,20 @@ body {
 
 .action-btn[title]:hover {
     color: inherit;
+}
+
+/* 隐藏 Tooltip */
+.action-btn.no-tooltip::after,
+.action-btn.no-tooltip .btn-tooltip {
+    display: none !important;
+    content: none !important;
+}
+
+/* 清除记录按钮的tooltip显示在下方 */
+#clearBackupHistoryBtn::after {
+    content: attr(data-title);
+    bottom: auto;
+    top: calc(100% + 1px);
 }
 
 .commit-meta {
@@ -2501,15 +2587,7 @@ a.tree-label.tree-bookmark-link:hover {
     z-index: 2;
 }
 
-.detail-actions-right .toggle-btn-group,
-.detail-actions-right .toggle-btn,
-.detail-actions-right .action-btn {
-    height: 32px;
-}
-
-.detail-actions-right .toggle-btn {
-    padding: 0 10px;
-}
+/* Removed overrides to allow global compact styles to apply */
 
 .detail-note-row {
     display: flex;
@@ -2684,6 +2762,11 @@ a.tree-label.tree-bookmark-link:hover {
 
 .toggle-btn i {
     font-size: 11px;
+}
+
+
+.toggle-btn span {
+    margin-top: 1px;
 }
 
 /* 备份历史树形视图连接线 */
@@ -15249,4 +15332,989 @@ body.canvas-popover-active .md-list-popover {
 [data-theme="dark"] .click-to-clear-confirm-popup {
     background: rgba(36, 37, 38, 0.98);
     box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
+}
+
+/* ==================== 全局导出弹窗样式优化 ==================== */
+
+/* 导出选项卡片容器 */
+.export-options-grid {
+    display: flex;
+    gap: 16px;
+    flex-wrap: wrap;
+    margin-bottom: 8px;
+}
+
+/* 导出选项卡片 (Checkbox/Radio 替代品) */
+.export-option-card {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 16px;
+    background: var(--bg-secondary);
+    border: 2px solid var(--border-color);
+    border-radius: 12px;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    min-width: 120px;
+    text-align: center;
+    user-select: none;
+}
+
+.export-option-card:hover {
+    background: var(--bg-tertiary);
+    border-color: var(--border-hover);
+    transform: translateY(-2px);
+}
+
+.export-option-card.selected {
+    background: var(--accent-light);
+    border-color: var(--accent-primary);
+    color: var(--accent-primary);
+}
+
+/* 隐藏实际的 input */
+.export-option-card input {
+    position: absolute;
+    opacity: 0;
+    width: 0;
+    height: 0;
+}
+
+.export-option-card .card-icon {
+    font-size: 24px;
+    margin-bottom: 8px;
+    color: var(--text-secondary);
+    transition: color 0.2s;
+}
+
+.export-option-card.selected .card-icon {
+    color: var(--accent-primary);
+}
+
+.export-option-card .card-title {
+    font-size: 14px;
+    font-weight: 600;
+}
+
+.export-option-card .card-desc {
+    font-size: 11px;
+    color: var(--text-tertiary);
+    margin-top: 4px;
+}
+
+/* 表格容器样式 */
+.global-export-table-container {
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    overflow: hidden;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
+}
+
+/* 表格头部样式 */
+#globalExportTable thead {
+    background: var(--bg-secondary);
+    border-bottom: 2px solid var(--border-color);
+}
+
+#globalExportTable th {
+    font-weight: 600;
+    color: var(--text-secondary);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    font-size: 12px;
+    padding: 12px 10px;
+}
+
+/* 表格行样式 */
+#globalExportTable tbody tr {
+    transition: background 0.15s ease;
+    border-bottom: 1px solid var(--border-color);
+}
+
+#globalExportTable tbody tr:hover {
+    background: var(--bg-tertiary);
+}
+
+#globalExportTable td {
+    padding: 12px 10px;
+    color: var(--text-primary);
+    font-size: 13px;
+    vertical-align: middle;
+}
+
+/* 下拉框自定义样式 */
+.global-export-mode-select {
+    appearance: none;
+    -webkit-appearance: none;
+    -moz-appearance: none;
+    background-color: var(--bg-secondary);
+    border: 1px solid var(--border-color);
+    border-radius: 6px;
+    padding: 6px 24px 6px 10px;
+    font-size: 12px;
+    color: var(--text-primary);
+    cursor: pointer;
+    transition: all 0.2s;
+    background-image: url("data:image/svg+xml;charset=US-ASCII,%3Csvg%20width%3D%2220%22%20height%3D%2220%22%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%3E%3Cpath%20d%3D%22M7%2010l5%205%205-5z%22%20fill%3D%22%23999%22%2F%3E%3C%2Fsvg%3E");
+    background-repeat: no-repeat;
+    background-position: right 4px center;
+    min-width: 90px;
+}
+
+.global-export-mode-select:hover {
+    border-color: var(--accent-primary);
+    background-color: var(--bg-primary);
+}
+
+.global-export-mode-select:focus {
+    outline: none;
+    border-color: var(--accent-primary);
+    box-shadow: 0 0 0 2px var(--accent-light);
+}
+
+/* 导出按钮优化 */
+#globalExportConfirmBtn {
+    background: linear-gradient(135deg, var(--accent-primary), var(--accent-hover));
+    box-shadow: 0 2px 6px rgba(var(--accent-rgb), 0.3);
+    border: none;
+    font-weight: 600;
+}
+
+#globalExportConfirmBtn:hover {
+    box-shadow: 0 4px 12px rgba(var(--accent-rgb), 0.4);
+    transform: translateY(-1px);
+}
+
+#globalExportConfirmBtn:disabled {
+    background: var(--bg-tertiary);
+    color: var(--text-tertiary);
+    box-shadow: none;
+    transform: none;
+    cursor: not-allowed;
+}
+
+/* ==================== 历史记录视图头部优化 ==================== */
+
+/* 控制区域容器 */
+.view-header-right {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    /* 统一间距 */
+}
+
+/* 统一 Action Button 样式 */
+.action-btn {
+    width: 32px;
+    height: 32px;
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    /* 统一圆角 */
+    background: var(--bg-secondary);
+    color: var(--text-primary);
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.2s ease;
+    position: relative;
+    /* 用于定位 tooltip */
+}
+
+.action-btn:hover {
+    background: var(--bg-tertiary);
+    border-color: var(--border-hover);
+    color: var(--text-primary);
+}
+
+.action-btn i {
+    font-size: 14px;
+    /* 统一图标大小 */
+    color: var(--text-secondary);
+}
+
+.action-btn:hover i {
+    color: var(--text-primary);
+}
+
+/* 红色删除按钮特殊样式 */
+#clearBackupHistoryBtn:hover {
+    background: var(--error-light);
+    border-color: var(--error);
+}
+
+#clearBackupHistoryBtn:hover i {
+    color: var(--error);
+}
+
+/* 切换按钮组容器 */
+.toggle-btn-group {
+    display: flex;
+    background: var(--bg-secondary);
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    padding: 2px;
+    gap: 2px;
+}
+
+/* 切换按钮样式 */
+.toggle-btn {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 4px 10px;
+    border: none;
+    background: transparent;
+    color: var(--text-secondary);
+    font-size: 13px;
+    font-weight: 500;
+    border-radius: 6px;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    height: 28px;
+    /* 固定高度，确保对齐 */
+    position: relative;
+    /* 用于 tooltip */
+}
+
+.toggle-btn i,
+.toggle-btn svg {
+    font-size: 13px;
+    width: 14px;
+    height: 14px;
+    fill: currentColor;
+}
+
+.toggle-btn:hover {
+    background: var(--bg-tertiary);
+    color: var(--text-primary);
+}
+
+.toggle-btn.active {
+    background: var(--bg-primary);
+    color: var(--accent-primary);
+    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.1);
+    font-weight: 600;
+}
+
+/* Tooltip 支持 (复用 .btn-tooltip) */
+.action-btn:hover .btn-tooltip,
+.toggle-btn:hover .btn-tooltip {
+    visibility: visible;
+    opacity: 1;
+    transform: translateX(-50%) translateY(4px);
+    /* 微调位置动画 */
+}
+
+/* 修正 tooltip 初始位置 */
+.btn-tooltip {
+    top: 100%;
+    margin-top: 6px;
+}
+
+/* ==================== 全局导出表格 Toggle 按钮样式 ==================== */
+
+/* 覆盖 .toggle-btn-group 在表格中的样式 */
+#globalExportTable .toggle-btn-group {
+    background: transparent;
+    border: none;
+    padding: 0;
+    gap: 4px;
+}
+
+#globalExportTable .toggle-btn {
+    width: 32px;
+    height: 32px;
+    border: 1px solid var(--border-color);
+    border-radius: 6px;
+    background: var(--bg-secondary);
+    color: var(--text-tertiary);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0;
+    transition: all 0.2s ease;
+}
+
+#globalExportTable .toggle-btn i,
+#globalExportTable .toggle-btn svg {
+    width: 16px;
+    height: 16px;
+    fill: currentColor;
+    font-size: 14px;
+}
+
+#globalExportTable .toggle-btn:hover {
+    background: var(--bg-tertiary);
+    color: var(--text-secondary);
+    border-color: var(--border-hover);
+}
+
+#globalExportTable .toggle-btn.active {
+    background: var(--bg-primary);
+    color: var(--accent-primary);
+    border-color: var(--accent-primary);
+    box-shadow: 0 1px 3px rgba(var(--accent-rgb), 0.15);
+}
+
+#globalExportTable .toggle-btn.active svg {
+    fill: var(--accent-primary);
+}
+
+/* 移除 .toggle-btn 默认 tooltip (如果已经在 HTML 中内联定义 title) */
+/* 为了更干净的界面，可以自定义 tooltip */
+#globalExportTable .toggle-btn::after {
+    /* 简单的 CSS tooltip 也许就够了，或者依赖 title 属性的 browser native tooltip */
+}
+
+/* ==================== 视图模式切换按钮优化 ==================== */
+#globalExportTable .toggle-btn-group {
+    background: transparent;
+    border: none;
+    padding: 0;
+    gap: 8px;
+    /* 增加间距 */
+}
+
+#globalExportTable .toggle-btn {
+    width: 28px;
+    /* 稍微调小尺寸，适应表格 */
+    height: 28px;
+    border: 1px solid var(--border-color);
+    border-radius: 6px;
+    background: var(--bg-secondary);
+    color: var(--text-tertiary);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0;
+    transition: all 0.2s ease;
+    position: relative;
+    /* 为 tooltip定位 */
+}
+
+#globalExportTable .toggle-btn i,
+#globalExportTable .toggle-btn svg {
+    width: 14px;
+    height: 14px;
+    fill: currentColor;
+}
+
+/* 激活状态 */
+#globalExportTable .toggle-btn.active {
+    background: var(--bg-primary);
+    color: var(--accent-primary);
+    border-color: var(--accent-primary);
+    box-shadow: 0 1px 3px rgba(var(--accent-rgb), 0.15);
+}
+
+/* Tooltip 下方显示 */
+#globalExportTable .toggle-btn::after {
+    content: attr(title);
+    position: absolute;
+    top: 100%;
+    left: 50%;
+    transform: translateX(-50%);
+    margin-top: 6px;
+    /* 距离按钮的距离 */
+    background: rgba(0, 0, 0, 0.8);
+    color: white;
+    padding: 4px 8px;
+    border-radius: 4px;
+    font-size: 11px;
+    white-space: nowrap;
+    opacity: 0;
+    visibility: hidden;
+    transition: opacity 0.2s;
+    pointer-events: none;
+    z-index: 10;
+}
+
+#globalExportTable .toggle-btn:hover::after {
+    opacity: 1;
+    visibility: visible;
+}
+
+/* 删除原有的 title 属性提示，防止重叠 (需要 JS 配合移除 title 属性，或者使用 data-title) */
+/* 为了简单，CSS 无法禁用浏览器默认 title。JS 中应该把 title 改为 data-title */
+
+/* 模态框底部按钮优化 */
+#globalExportCancelBtn {
+    border: 1px solid var(--border-color);
+    background: var(--bg-secondary);
+    color: var(--text-secondary);
+}
+
+#globalExportCancelBtn:hover {
+    background: var(--bg-tertiary);
+    color: var(--text-primary);
+}
+
+#globalExportConfirmBtn {
+    background: var(--accent-primary);
+    color: white;
+    border: none;
+    box-shadow: 0 2px 6px rgba(var(--accent-rgb), 0.3);
+}
+
+#globalExportConfirmBtn:hover {
+    background: var(--accent-hover);
+    box-shadow: 0 4px 12px rgba(var(--accent-rgb), 0.4);
+}
+
+/* ==================== 视图切换器自定义 (Global Export) ==================== */
+.mode-toggle-group {
+    display: inline-flex;
+    background: var(--bg-tertiary);
+    border-radius: 6px;
+    padding: 2px;
+    border: 1px solid var(--border-color);
+}
+
+.mode-toggle-option {
+    padding: 4px 12px;
+    font-size: 12px;
+    cursor: pointer;
+    border-radius: 4px;
+    color: var(--text-secondary);
+    transition: all 0.2s ease;
+    user-select: none;
+    font-weight: 500;
+}
+
+.mode-toggle-option:hover {
+    color: var(--text-primary);
+}
+
+.mode-toggle-option.active {
+    background: var(--bg-elevated);
+    /* or white */
+    color: var(--accent-primary);
+    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.1);
+    font-weight: 600;
+}
+
+/* 强制详情按钮文字不换行 */
+.detail-btn span {
+    white-space: nowrap;
+}
+
+/* 顶部按钮间距优化 */
+.view-header-right {
+    gap: 12px;
+    /* 增加按钮组之间的间距 */
+}
+
+/* 全局导出按钮的 Tooltip 下方显示 */
+#globalExportBtn .btn-tooltip {
+    top: calc(100% + 10px);
+    /* 确保在下方 */
+    bottom: auto;
+    /* 重置默认可能存在的 bottom 定位 */
+}
+
+#globalExportBtn .btn-tooltip::before {
+    bottom: 100%;
+    /* 箭头在 Tooltip 上方 */
+    top: auto;
+    border-bottom-color: rgba(0, 0, 0, 0.9);
+    border-top-color: transparent;
+}
+
+/* Force hide any residual pseudo-tooltip on Global Export Button */
+/* Global Export Button Tooltip - Re-enable and align with Clear Button */
+/* Global Export Button Tooltip - Exact match with Clear Button */
+#globalExportBtn::after {
+    display: block !important;
+    content: attr(data-title) !important;
+    white-space: nowrap;
+    position: absolute;
+    /* Align with clearBackupHistoryBtn::after */
+    bottom: auto;
+    top: calc(100% + 1px);
+    left: 50%;
+    transform: translateX(-50%);
+    background: rgba(0, 0, 0, 0.9);
+    color: white;
+    padding: 6px 10px;
+    border-radius: 6px;
+    font-size: 12px;
+    visibility: hidden;
+    opacity: 0;
+    transition: opacity 0.05s ease, visibility 0.05s ease;
+    z-index: 1000;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
+    font-weight: normal;
+    text-transform: none;
+    pointer-events: none;
+}
+
+#globalExportBtn:hover::after {
+    visibility: visible;
+    opacity: 1;
+}
+
+
+/* 详情按钮优化：纯文本链接风格 */
+/* 详情按钮重构：稍微醒目一点的按钮 UI */
+.action-btn.detail-btn {
+    width: auto !important;
+    height: 28px !important;
+    padding: 0 8px !important;
+    /* Reduced padding */
+    background: var(--bg-secondary) !important;
+    border: 1px solid var(--border-color) !important;
+    border-radius: 6px !important;
+    color: var(--text-secondary);
+    display: flex;
+    align-items: center;
+    /* Ensures vertical center */
+    justify-content: center;
+    gap: 4px;
+    /* Reduced gap */
+    font-size: 13px;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    line-height: 1;
+    /* Reset line-height to avoid expansion */
+}
+
+.action-btn.detail-btn:hover {
+    color: var(--accent-primary);
+    border-color: var(--accent-primary) !important;
+    background: var(--bg-tertiary) !important;
+    text-decoration: none;
+    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05) !important;
+    transform: translateY(-1px) !important;
+}
+
+.action-btn.detail-btn:active {
+    transform: translateY(0) !important;
+}
+
+.action-btn.detail-btn i {
+    font-size: 12px;
+    color: inherit;
+    /* Follow button color */
+}
+
+.action-btn.detail-btn .btn-tooltip {
+    /* 复原为普通文本 span，不再是 tooltip */
+    position: static !important;
+    visibility: visible !important;
+    opacity: 1 !important;
+    background: transparent !important;
+    color: inherit !important;
+    padding: 0 !important;
+    box-shadow: none !important;
+    transform: none !important;
+    font-size: inherit !important;
+    pointer-events: auto !important;
+    white-space: nowrap;
+}
+
+/* 隐藏内部旧的tooltip并调整文字对齐 */
+/* 隐藏内部旧的tooltip并调整文字对齐 */
+.action-btn.detail-btn .btn-tooltip {
+    display: block;
+    /* Use block to accept line-height/height better if needed, or inline-block */
+    position: static !important;
+    /* Reset position */
+    margin-top: -1px;
+    /* Subtle lift using margin instead of relative pos */
+    background: transparent !important;
+    color: inherit !important;
+    padding: 0 !important;
+    box-shadow: none !important;
+    font-size: inherit !important;
+    visibility: visible !important;
+    opacity: 1 !important;
+    transform: none !important;
+    pointer-events: auto !important;
+    white-space: nowrap;
+    line-height: normal;
+    /* Normal line height */
+}
+
+.action-btn.detail-btn .btn-tooltip::before {
+    display: none !important;
+}
+
+/* Custom Text Switch used in Global Export Modal - Button Group Style */
+.global-export-toggle-group {
+    display: inline-flex;
+    background: var(--bg-tertiary);
+    /* 背景色类似 toggle-btn-group */
+    border-radius: 6px;
+    padding: 2px;
+    border: 1px solid var(--border-color);
+    gap: 2px;
+}
+
+.global-export-toggle-btn {
+    appearance: none;
+    border: none;
+    background: transparent;
+    padding: 4px 12px;
+    font-size: 12px;
+    color: var(--text-secondary);
+    cursor: pointer;
+    border-radius: 4px;
+    /* 内部按钮圆角 */
+    transition: all 0.2s ease;
+    line-height: 1.4;
+    font-weight: 500;
+}
+
+.global-export-toggle-btn:hover {
+    color: var(--text-primary);
+    background: rgba(0, 0, 0, 0.05);
+}
+
+/* 选中状态：白色背景 + 阴影 + 主色文字 */
+.global-export-toggle-btn.active {
+    background: var(--bg-elevated);
+    /* White in Light mode */
+    color: var(--accent-primary);
+    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.1);
+    font-weight: 600;
+}
+
+/* Dark mode adjustment */
+[data-theme="dark"] .global-export-toggle-group {
+    background: rgba(255, 255, 255, 0.05);
+    border-color: rgba(255, 255, 255, 0.1);
+}
+
+[data-theme="dark"] .global-export-toggle-btn.active {
+    background: #3e4042;
+    /* Slightly lighter than bg-secondary */
+    color: var(--accent-primary);
+}
+
+/* ==================== 详情弹窗顶部按钮样式 (一致性) ==================== */
+
+.detail-actions-right {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    /* Consistent with view-header-right */
+}
+
+/* Detail Modal Export Button - Match Global Export Button */
+/* Removed #detailExportChangesBtn specific styles to allow inheritance from .action-btn.compact */
+
+/* Detail Modal Buttons - Inherit from global .action-btn and .toggle-btn classes for consistency */
+/* The specific ID overrides have been removed to ensure the inner UI matches the outer UI exactly. */
+
+/* ==================== 清除历史弹窗双滑块样式 (Premium Design) ==================== */
+
+.range-slider-container {
+    position: relative;
+    width: 100%;
+    height: 36px;
+    /* 增加高度以便操作 */
+    display: flex;
+    align-items: center;
+    margin-bottom: 12px;
+    /* Reduced margin */
+}
+
+/* 轨道背景 - Flip for Largest on Left */
+.range-slider-track {
+    position: absolute;
+    top: 50%;
+    transform: translateY(-50%) scaleX(-1);
+    /* Invert direction */
+    width: 100%;
+    height: 4px;
+    background-color: var(--bg-tertiary);
+    border-radius: 4px;
+    pointer-events: none;
+    overflow: hidden;
+    /* 圆角溢出隐藏 */
+}
+
+/* 选中范围高亮 */
+.range-slider-highlight {
+    position: absolute;
+    top: 0;
+    height: 100%;
+    background-color: var(--error);
+    border-radius: 4px;
+    /* 保持圆角 */
+    pointer-events: none;
+    z-index: 1;
+    /* 确保高亮在轨道之上 */
+    transition: none;
+    /* JS更新频繁，禁用过渡以提高跟手性 */
+}
+
+/* 刻度标签 */
+.range-slider-labels {
+    position: absolute;
+    bottom: -22px;
+    left: 0;
+    width: 100%;
+    display: flex;
+    justify-content: space-between;
+    pointer-events: none;
+}
+
+.range-slider-labels span {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    font-size: 11px;
+    font-weight: 500;
+    color: var(--text-tertiary);
+    transition: color 0.2s ease;
+}
+
+/* 输入控件（隐形轨道） - Flip for Largest on Left */
+.range-slider-input {
+    -webkit-appearance: none;
+    appearance: none;
+    position: absolute;
+    top: 50%;
+    transform: translateY(-50%) scaleX(-1);
+    /* Invert direction */
+    left: 0;
+    width: 100%;
+    height: 20px;
+    /* 高度等于手柄高度，方便垂直对齐 */
+    background: transparent;
+    pointer-events: none;
+    /* 让点击穿透到下方，除了手柄 */
+    margin: 0;
+    z-index: 2;
+    /* 在轨道和高亮之上 */
+}
+
+/* 确保两个滑块重叠时都能操作 */
+#clearHistoryRangeMin {
+    z-index: 3;
+}
+
+#clearHistoryRangeMax {
+    z-index: 4;
+}
+
+/* ==================== 全局导出范围选择滑块样式 ==================== */
+
+#globalExportRangeMin {
+    z-index: 3;
+}
+
+#globalExportRangeMax {
+    z-index: 4;
+}
+
+#globalExportRangeHighlight {
+    background-color: var(--accent-primary);
+}
+
+/* Global Export: keep end labels inside the slider line */
+#globalExportRangeContainer .range-slider-labels {
+    bottom: auto;
+    top: 50%;
+    transform: translateY(-50%);
+    padding: 0;
+    left: 10px;
+    width: calc(100% - 20px);
+}
+
+#globalExportRangeContainer .range-slider-labels span {
+    background: var(--bg-secondary);
+    padding: 1px 6px;
+    border-radius: 999px;
+    border: 1px solid var(--border-color);
+    line-height: 1.2;
+    z-index: 1;
+}
+
+/* Global Export: inset track so thumbs stay inside at both ends */
+#globalExportRangeContainer .range-slider-track,
+#globalExportRangeContainer .range-slider-input {
+    left: 10px;
+    width: calc(100% - 20px);
+}
+
+/* Range slider: value bubbles (numbers over the thumb circles) */
+.range-slider-bubble {
+    position: absolute;
+    top: 50%;
+    transform: translate(-50%, -50%);
+    width: 20px;
+    height: 20px;
+    border-radius: 50%;
+    background: transparent;
+    font-size: 11px;
+    font-weight: 700;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    pointer-events: none;
+    z-index: 6;
+    text-shadow: none;
+}
+
+[data-theme="dark"] .range-slider-bubble {
+    text-shadow: none;
+}
+
+#globalExportRangeContainer .range-slider-bubble {
+    color: var(--accent-primary);
+}
+
+#clearHistoryRangeContainer .range-slider-bubble {
+    color: var(--error);
+}
+
+/* Clear History: keep end labels inside the slider line (match Global Export) */
+#clearHistoryRangeContainer .range-slider-labels {
+    bottom: auto;
+    top: 50%;
+    transform: translateY(-50%);
+    padding: 0;
+    left: 10px;
+    width: calc(100% - 20px);
+}
+
+#clearHistoryRangeContainer .range-slider-labels span {
+    background: var(--bg-secondary);
+    padding: 1px 6px;
+    border-radius: 999px;
+    border: 1px solid var(--border-color);
+    line-height: 1.2;
+    z-index: 1;
+}
+
+/* Clear History: inset track so thumbs stay inside at both ends */
+#clearHistoryRangeContainer .range-slider-track,
+#clearHistoryRangeContainer .range-slider-input {
+    left: 10px;
+    width: calc(100% - 20px);
+}
+
+/* Global Export: keep layout stable by always showing scrollbar (avoid gutter gap) */
+#globalExportModal .modal-body {
+    overflow-y: scroll;
+}
+
+#globalExportModal .modal-content {
+    overflow: hidden;
+}
+
+#globalExportModal .modal-body {
+    background: var(--bg-elevated);
+}
+
+#globalExportModal .modal-body::-webkit-scrollbar {
+    background: transparent;
+}
+
+#globalExportModal .modal-body::-webkit-scrollbar-thumb {
+    border-radius: 999px;
+    border: 2px solid var(--bg-elevated);
+    background-clip: padding-box;
+}
+
+#globalExportModal .modal-body::-webkit-scrollbar-track {
+    border-radius: 999px;
+    background: transparent;
+}
+
+#globalExportModal .modal-body::-webkit-scrollbar-corner {
+    background: transparent;
+}
+
+/* Global Export: thumb active glow should follow accent (blue), not delete (red) */
+#globalExportRangeMin::-webkit-slider-thumb:active,
+#globalExportRangeMax::-webkit-slider-thumb:active {
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3), 0 0 0 4px color-mix(in srgb, var(--accent-primary) 22%, transparent);
+}
+
+#globalExportRangeMin::-moz-range-thumb:active,
+#globalExportRangeMax::-moz-range-thumb:active {
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3), 0 0 0 4px color-mix(in srgb, var(--accent-primary) 22%, transparent);
+}
+
+.range-slider-input:focus {
+    outline: none;
+}
+
+/* Webkit 滑道 (隐形) */
+.range-slider-input::-webkit-slider-runnable-track {
+    width: 100%;
+    height: 20px;
+    cursor: pointer;
+    background: transparent;
+    border: none;
+}
+
+/* Webkit 手柄 (圆形) - Clean White Premium Style */
+.range-slider-input::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 20px;
+    height: 20px;
+    border-radius: 50%;
+    background: #ffffff;
+    border: none;
+    /* 无边框设计，更干净 */
+    cursor: grab;
+    pointer-events: auto;
+    /* 强阴影营造悬浮感 */
+    box-shadow: 0 2px 5px rgba(0, 0, 0, 0.2), 0 0 0 1px rgba(0, 0, 0, 0.05);
+    margin-top: 0px;
+    /* (20 - 20) / 2 = 0px，垂直居中 */
+    transition: transform 0.2s cubic-bezier(0.34, 1.56, 0.64, 1), box-shadow 0.2s ease;
+}
+
+/* 手柄悬停态 */
+.range-slider-input::-webkit-slider-thumb:hover {
+    transform: scale(1.15);
+    box-shadow: 0 4px 8px rgba(0, 0, 0, 0.25), 0 0 0 1px rgba(0, 0, 0, 0.05);
+}
+
+/* 手柄按下态 */
+.range-slider-input::-webkit-slider-thumb:active {
+    cursor: grabbing;
+    transform: scale(1.05);
+    /* 按下时微调阴影和颜色，不改变主色 */
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3), 0 0 0 4px rgba(231, 76, 60, 0.15);
+}
+
+/* Firefox 滑道 */
+.range-slider-input::-moz-range-track {
+    width: 100%;
+    height: 20px;
+    cursor: pointer;
+    background: transparent;
+    border: none;
+}
+
+/* Firefox 手柄 */
+.range-slider-input::-moz-range-thumb {
+    width: 20px;
+    height: 20px;
+    border-radius: 50%;
+    background: #ffffff;
+    border: none;
+    cursor: grab;
+    pointer-events: auto;
+    box-shadow: 0 2px 5px rgba(0, 0, 0, 0.2), 0 0 0 1px rgba(0, 0, 0, 0.05);
+    transform: none;
+}
+
+.range-slider-input::-moz-range-thumb:hover {
+    transform: scale(1.15);
+    box-shadow: 0 4px 8px rgba(0, 0, 0, 0.25), 0 0 0 1px rgba(0, 0, 0, 0.05);
+}
+
+.range-slider-input::-moz-range-thumb:active {
+    cursor: grabbing;
+    transform: scale(1.05);
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3), 0 0 0 4px rgba(231, 76, 60, 0.15);
 }

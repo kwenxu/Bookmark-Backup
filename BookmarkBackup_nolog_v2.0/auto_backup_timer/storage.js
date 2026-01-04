@@ -16,7 +16,7 @@ const browserAPI = (function () {
 const DEFAULT_SETTINGS = {
     // 备份模式：'realtime', 'regular', 'specific'
     backupMode: 'regular',
-    
+
     // 常规时间配置
     regularTime: {
         enabled: true,
@@ -27,12 +27,12 @@ const DEFAULT_SETTINGS = {
         defaultTime: '10:00',
         // 小时间隔配置
         hourInterval: {
-            enabled: false,
-            hours: 2  // 每N小时
+            enabled: true,
+            hours: 1  // 每N小时
         },
         // 分钟间隔配置
         minuteInterval: {
-            enabled: true,
+            enabled: false,
             minutes: 30  // 每N分钟
         },
         // 补充备份记录（防止重复补充）
@@ -40,7 +40,7 @@ const DEFAULT_SETTINGS = {
         // 上次检查遗漏的时间（用于检测休眠恢复）
         lastMissedCheckTime: null  // 时间戳
     },
-    
+
     // 特定时间配置（最多5个）
     specificTime: {
         enabled: false,
@@ -121,13 +121,13 @@ async function updateRegularTimeConfig(regularConfig) {
 async function addSpecificTimeSchedule(schedule) {
     try {
         const settings = await getAutoBackupSettings();
-        
+
         // 检查是否已达到最大数量（5个）
         if (settings.specificTime.schedules.length >= 5) {
             console.error('特定时间计划已达到最大数量（5个）');
             return null;
         }
-        
+
         // 生成唯一ID
         const id = `schedule_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
         const newSchedule = {
@@ -137,10 +137,10 @@ async function addSpecificTimeSchedule(schedule) {
             executed: false,
             createdAt: new Date().toISOString()
         };
-        
+
         settings.specificTime.schedules.push(newSchedule);
         await saveAutoBackupSettings(settings);
-        
+
         return newSchedule;
     } catch (error) {
         console.error('添加特定时间计划失败:', error);
@@ -176,12 +176,12 @@ async function updateSpecificTimeSchedule(scheduleId, updates) {
     try {
         const settings = await getAutoBackupSettings();
         const schedule = settings.specificTime.schedules.find(s => s.id === scheduleId);
-        
+
         if (!schedule) {
             console.error('未找到指定的计划:', scheduleId);
             return false;
         }
-        
+
         Object.assign(schedule, updates);
         return await saveAutoBackupSettings(settings);
     } catch (error) {
@@ -196,7 +196,7 @@ async function updateSpecificTimeSchedule(scheduleId, updates) {
  * @returns {Promise<boolean>}
  */
 async function markScheduleAsExecuted(scheduleId) {
-    return await updateSpecificTimeSchedule(scheduleId, { 
+    return await updateSpecificTimeSchedule(scheduleId, {
         executed: true,
         executedAt: new Date().toISOString()
     });
@@ -210,12 +210,12 @@ async function getPendingSchedules() {
     try {
         const settings = await getAutoBackupSettings();
         const now = new Date().getTime();
-        
+
         return settings.specificTime.schedules.filter(schedule => {
             if (!schedule.enabled || schedule.executed) {
                 return false;
             }
-            
+
             const scheduleTime = new Date(schedule.datetime).getTime();
             return scheduleTime <= now;
         });
@@ -280,17 +280,17 @@ async function shouldCheckMissed(thresholdMinutes = 10) {
     try {
         const settings = await getAutoBackupSettings();
         const lastCheckTime = settings.regularTime.lastMissedCheckTime;
-        
+
         // 如果从未检查过，需要检查
         if (!lastCheckTime) {
             return true;
         }
-        
+
         // 检查距离上次检查的时间
         const now = Date.now();
         const elapsed = now - lastCheckTime;
         const thresholdMs = thresholdMinutes * 60 * 1000;
-        
+
         return elapsed >= thresholdMs;
     } catch (error) {
         console.error('检查遗漏检查条件失败:', error);

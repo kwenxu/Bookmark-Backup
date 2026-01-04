@@ -1214,36 +1214,93 @@ const i18n = {
         'en': 'Clear history'
     },
     clearBackupHistoryModalTitle: {
-        'zh_CN': '确认清空记录',
-        'en': 'Confirm Clear History'
+        'zh_CN': '清除记录',
+        'en': 'Clear Records'
     },
     clearBackupHistoryModalDesc: {
-        'zh_CN': '确定要清空所有备份历史记录吗？',
-        'en': 'Are you sure you want to clear all backup history records?'
+        'zh_CN': '选择要删除的备份历史记录数量：',
+        'en': 'Select the number of backup history records to delete:'
     },
     clearBackupHistoryModalWarning: {
-        'zh_CN': '此操作不可撤销，清空后无法恢复这些记录。<br>不会删除你的书签本身，也不会删除已导出的备份文件。',
+        'zh_CN': '此操作不可撤销。<br>不会删除你的书签本身，也不会删除已导出的备份文件。',
         'en': 'This action cannot be undone.<br>This will NOT delete your actual bookmarks or any exported backup files.'
     },
-    clearBackupHistoryModalInfoText: {
-        'zh_CN': '当备份记录达到100条时，<br>将自动导出并清理前50条旧记录。',
-        'en': 'When backup records reach 100,<br>the oldest 50 records will be auto-exported and cleared.'
+    clearHistoryModePercentLabel: {
+        'zh_CN': '按百分比删除',
+        'en': 'Delete by percentage'
+    },
+    clearHistoryModeCountLabel: {
+        'zh_CN': '按条数删除',
+        'en': 'Delete by count'
+    },
+    clearHistoryPercentLabelBefore: {
+        'zh_CN': '删除最旧的',
+        'en': 'Delete the oldest'
+    },
+    clearHistoryCountLabelBefore: {
+        'zh_CN': '删除最旧的',
+        'en': 'Delete the oldest'
+    },
+    clearHistoryCountLabelAfter: {
+        'zh_CN': '条记录',
+        'en': 'records'
+    },
+    clearHistoryPreviewText: {
+        'zh_CN': (total, toDelete) => `当前共 ${total} 条记录，将删除 ${toDelete} 条`,
+        'en': (total, toDelete) => `Total ${total} records, ${toDelete} will be deleted`
+    },
+    clearBackupHistoryExportFirstBtn: {
+        'zh_CN': '先备份',
+        'en': 'Export First'
     },
     clearBackupHistoryCancelBtn: {
         'zh_CN': '取消',
         'en': 'Cancel'
     },
     clearBackupHistoryConfirmBtn: {
-        'zh_CN': '确认清空',
-        'en': 'Confirm Clear'
+        'zh_CN': '确认删除',
+        'en': 'Confirm Delete'
     },
     clearBackupHistorySuccess: {
-        'zh_CN': '历史记录已清空',
-        'en': 'History cleared'
+        'zh_CN': (deleted) => `已删除 ${deleted} 条历史记录`,
+        'en': (deleted) => `Deleted ${deleted} history records`
     },
     clearBackupHistoryFailed: {
-        'zh_CN': '清空历史记录失败',
-        'en': 'Failed to clear history'
+        'zh_CN': '删除历史记录失败',
+        'en': 'Failed to delete history'
+    },
+    // 二次确认弹窗
+    clearHistorySecondConfirmTitle: {
+        'zh_CN': '确认删除',
+        'en': 'Confirm Delete'
+    },
+    clearHistorySecondConfirmText: {
+        'zh_CN': (count) => `即将删除 ${count} 条记录`,
+        'en': (count) => `About to delete ${count} records`
+    },
+    clearHistorySecondConfirmPrefix: {
+        'zh_CN': '即将删除',
+        'en': 'About to delete'
+    },
+    clearHistorySecondConfirmSuffix: {
+        'zh_CN': '条记录',
+        'en': 'records'
+    },
+    clearHistorySecondConfirmWarning: {
+        'zh_CN': '此操作不可撤销，建议先备份再删除',
+        'en': 'This action cannot be undone. We recommend exporting first.'
+    },
+    clearHistoryExportFirstBtn: {
+        'zh_CN': '先备份这些记录',
+        'en': 'Export these records first'
+    },
+    clearHistoryDirectDeleteBtn: {
+        'zh_CN': '直接删除',
+        'en': 'Delete directly'
+    },
+    clearHistorySecondConfirmCancelBtn: {
+        'zh_CN': '返回修改',
+        'en': 'Go back'
     },
     additionsViewTitle: {
         'zh_CN': '书签记录',
@@ -1620,6 +1677,74 @@ const i18n = {
     emptyHistory: {
         'zh_CN': '暂无备份记录',
         'en': 'No backup records'
+    },
+    globalExport: {
+        'zh_CN': '全局导出',
+        'en': 'Global Export'
+    },
+    globalExportModalTitle: {
+        'zh_CN': '全局备份导出',
+        'en': 'Global Backup Export'
+    },
+    globalExportFormatTitle: {
+        'zh_CN': '导出格式',
+        'en': 'Export Format'
+    },
+    globalExportFormatHint: {
+        'zh_CN': '勾选即可导出对应格式文件',
+        'en': 'Select to export the corresponding file formats'
+    },
+    globalExportPackTitle: {
+        'zh_CN': '打包结构',
+        'en': 'Packaging'
+    },
+    globalExportPackZip: {
+        'zh_CN': 'ZIP 归档',
+        'en': 'ZIP'
+    },
+    globalExportPackMerge: {
+        'zh_CN': '单一文件合并',
+        'en': 'Merge'
+    },
+    globalExportPackHint: {
+        'zh_CN': 'ZIP归档将包含多个独立文件<br>单一文件合并将生成一个汇总文件',
+        'en': 'ZIP contains separate files<br>Merge generates a summary file'
+    },
+    globalExportSelectTitle: {
+        'zh_CN': '选择备份记录',
+        'en': 'Select Backup Records'
+    },
+    globalExportRangeEnabledText: {
+        'zh_CN': '自动勾选',
+        'en': 'Auto select'
+    },
+    globalExportThSeq: {
+        'zh_CN': '序号',
+        'en': 'No.'
+    },
+    globalExportThNote: {
+        'zh_CN': '备注',
+        'en': 'Note'
+    },
+    globalExportThHash: {
+        'zh_CN': '哈希值',
+        'en': 'Hash'
+    },
+    globalExportThViewMode: {
+        'zh_CN': '视图模式',
+        'en': 'View Mode'
+    },
+    globalExportThTime: {
+        'zh_CN': '时间',
+        'en': 'Time'
+    },
+    globalExportCancel: {
+        'zh_CN': '取消',
+        'en': 'Cancel'
+    },
+    globalExportConfirm: {
+        'zh_CN': '导出选中项',
+        'en': 'Export Selected'
     },
 
     historyDetailModeSimple: {
@@ -2739,6 +2864,8 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     // 初始化侧边栏收起功能
     initSidebarToggle();
+    // 初始化全局导出功能
+    initGlobalExport();
 
     // 初始化时间捕捉小组件
     initTimeTrackingWidget();
@@ -3004,19 +3131,48 @@ function applyLanguage() {
 
     // 备份历史：清除记录按钮与确认弹窗
     const clearBackupHistoryBtn = document.getElementById('clearBackupHistoryBtn');
-    if (clearBackupHistoryBtn) clearBackupHistoryBtn.title = i18n.clearBackupHistoryTooltip[currentLang];
+    if (clearBackupHistoryBtn) {
+        // 使用 data-title + CSS tooltip，避免浏览器原生 title 的二次 tooltip
+        clearBackupHistoryBtn.setAttribute('data-title', i18n.clearBackupHistoryTooltip[currentLang]);
+        clearBackupHistoryBtn.removeAttribute('title');
+    }
     const clearBackupHistoryModalTitle = document.getElementById('clearBackupHistoryModalTitle');
     if (clearBackupHistoryModalTitle) clearBackupHistoryModalTitle.textContent = i18n.clearBackupHistoryModalTitle[currentLang];
     const clearBackupHistoryModalDesc = document.getElementById('clearBackupHistoryModalDesc');
     if (clearBackupHistoryModalDesc) clearBackupHistoryModalDesc.textContent = i18n.clearBackupHistoryModalDesc[currentLang];
-    const clearBackupHistoryModalWarning = document.getElementById('clearBackupHistoryModalWarning');
-    if (clearBackupHistoryModalWarning) clearBackupHistoryModalWarning.innerHTML = i18n.clearBackupHistoryModalWarning[currentLang];
-    const clearBackupHistoryModalInfoText = document.getElementById('clearBackupHistoryModalInfoText');
-    if (clearBackupHistoryModalInfoText) clearBackupHistoryModalInfoText.innerHTML = i18n.clearBackupHistoryModalInfoText[currentLang];
+
+    // 删除选项控件
+    const clearHistoryModePercentLabel = document.getElementById('clearHistoryModePercentLabel');
+    if (clearHistoryModePercentLabel) clearHistoryModePercentLabel.textContent = i18n.clearHistoryModePercentLabel[currentLang];
+    const clearHistoryModeCountLabel = document.getElementById('clearHistoryModeCountLabel');
+    if (clearHistoryModeCountLabel) clearHistoryModeCountLabel.textContent = i18n.clearHistoryModeCountLabel[currentLang];
+    const clearHistoryPercentLabelBefore = document.getElementById('clearHistoryPercentLabelBefore');
+    if (clearHistoryPercentLabelBefore) clearHistoryPercentLabelBefore.textContent = i18n.clearHistoryPercentLabelBefore[currentLang];
+    const clearHistoryCountLabelBefore = document.getElementById('clearHistoryCountLabelBefore');
+    if (clearHistoryCountLabelBefore) clearHistoryCountLabelBefore.textContent = i18n.clearHistoryCountLabelBefore[currentLang];
+    const clearHistoryCountLabelAfter = document.getElementById('clearHistoryCountLabelAfter');
+    if (clearHistoryCountLabelAfter) clearHistoryCountLabelAfter.textContent = i18n.clearHistoryCountLabelAfter[currentLang];
+
     const clearBackupHistoryCancelBtn = document.getElementById('clearBackupHistoryCancelBtn');
     if (clearBackupHistoryCancelBtn) clearBackupHistoryCancelBtn.textContent = i18n.clearBackupHistoryCancelBtn[currentLang];
     const clearBackupHistoryConfirmBtn = document.getElementById('clearBackupHistoryConfirmBtn');
     if (clearBackupHistoryConfirmBtn) clearBackupHistoryConfirmBtn.textContent = i18n.clearBackupHistoryConfirmBtn[currentLang];
+
+    // 二次确认弹窗
+    const clearHistorySecondConfirmTitle = document.getElementById('clearHistorySecondConfirmTitle');
+    if (clearHistorySecondConfirmTitle) clearHistorySecondConfirmTitle.textContent = i18n.clearHistorySecondConfirmTitle[currentLang];
+    const clearHistorySecondConfirmPrefix = document.getElementById('clearHistorySecondConfirmPrefix');
+    if (clearHistorySecondConfirmPrefix) clearHistorySecondConfirmPrefix.textContent = i18n.clearHistorySecondConfirmPrefix[currentLang];
+    const clearHistorySecondConfirmSuffix = document.getElementById('clearHistorySecondConfirmSuffix');
+    if (clearHistorySecondConfirmSuffix) clearHistorySecondConfirmSuffix.textContent = i18n.clearHistorySecondConfirmSuffix[currentLang];
+    const clearHistorySecondConfirmWarning = document.getElementById('clearHistorySecondConfirmWarning');
+    if (clearHistorySecondConfirmWarning) clearHistorySecondConfirmWarning.textContent = i18n.clearHistorySecondConfirmWarning[currentLang];
+    const clearHistoryExportFirstText = document.getElementById('clearHistoryExportFirstText');
+    if (clearHistoryExportFirstText) clearHistoryExportFirstText.textContent = i18n.clearHistoryExportFirstBtn[currentLang];
+    const clearHistoryDirectDeleteText = document.getElementById('clearHistoryDirectDeleteText');
+    if (clearHistoryDirectDeleteText) clearHistoryDirectDeleteText.textContent = i18n.clearHistoryDirectDeleteBtn[currentLang];
+    const clearHistorySecondConfirmCancelText = document.getElementById('clearHistorySecondConfirmCancelText');
+    if (clearHistorySecondConfirmCancelText) clearHistorySecondConfirmCancelText.textContent = i18n.clearHistorySecondConfirmCancelBtn[currentLang];
 
     // 备份历史详略模式切换按钮
     const historyDetailModeSimpleText = document.getElementById('historyDetailModeSimpleText');
@@ -3032,6 +3188,53 @@ function applyLanguage() {
     const detailExportChangesBtn = document.getElementById('detailExportChangesBtn');
     if (detailExportChangesBtn) {
         detailExportChangesBtn.title = currentLang === 'zh_CN' ? '导出变化' : 'Export Changes';
+    }
+    const globalExportBtn = document.getElementById('globalExportBtn');
+    if (globalExportBtn) {
+        // 使用 data-title + CSS tooltip，避免浏览器原生 title 的二次 tooltip
+        globalExportBtn.setAttribute('data-title', i18n.globalExport[currentLang]);
+        globalExportBtn.removeAttribute('title');
+    }
+    const globalExportModalTitle = document.getElementById('globalExportModalTitle');
+    if (globalExportModalTitle) globalExportModalTitle.textContent = i18n.globalExportModalTitle[currentLang];
+    const globalExportFormatTitle = document.getElementById('globalExportFormatTitle');
+    if (globalExportFormatTitle) globalExportFormatTitle.textContent = i18n.globalExportFormatTitle[currentLang];
+    const globalExportFormatHint = document.getElementById('globalExportFormatHint');
+    if (globalExportFormatHint) globalExportFormatHint.textContent = i18n.globalExportFormatHint[currentLang];
+    const globalExportPackTitle = document.getElementById('globalExportPackTitle');
+    if (globalExportPackTitle) globalExportPackTitle.textContent = i18n.globalExportPackTitle[currentLang];
+    const globalExportPackZipText = document.getElementById('globalExportPackZipText');
+    if (globalExportPackZipText) globalExportPackZipText.textContent = i18n.globalExportPackZip[currentLang];
+    const globalExportPackMergeText = document.getElementById('globalExportPackMergeText');
+    if (globalExportPackMergeText) globalExportPackMergeText.textContent = i18n.globalExportPackMerge[currentLang];
+    const globalExportPackHint = document.getElementById('globalExportPackHint');
+    if (globalExportPackHint) globalExportPackHint.innerHTML = i18n.globalExportPackHint[currentLang];
+    const globalExportSelectTitle = document.getElementById('globalExportSelectTitle');
+    if (globalExportSelectTitle) globalExportSelectTitle.textContent = i18n.globalExportSelectTitle[currentLang];
+    const globalExportRangeEnabledText = document.getElementById('globalExportRangeEnabledText');
+    if (globalExportRangeEnabledText) globalExportRangeEnabledText.textContent = i18n.globalExportRangeEnabledText[currentLang];
+    const globalExportThSeq = document.getElementById('globalExportThSeq');
+    if (globalExportThSeq) globalExportThSeq.textContent = i18n.globalExportThSeq[currentLang];
+    const globalExportThNote = document.getElementById('globalExportThNote');
+    if (globalExportThNote) globalExportThNote.textContent = i18n.globalExportThNote[currentLang];
+    const globalExportThHash = document.getElementById('globalExportThHash');
+    if (globalExportThHash) globalExportThHash.textContent = i18n.globalExportThHash[currentLang];
+    const globalExportThViewMode = document.getElementById('globalExportThViewMode');
+    if (globalExportThViewMode) globalExportThViewMode.textContent = i18n.globalExportThViewMode[currentLang];
+    const globalExportThTime = document.getElementById('globalExportThTime');
+    if (globalExportThTime) globalExportThTime.textContent = i18n.globalExportThTime[currentLang];
+    const globalExportCancelBtn = document.getElementById('globalExportCancelBtn');
+    if (globalExportCancelBtn) globalExportCancelBtn.textContent = i18n.globalExportCancel[currentLang];
+    const globalExportConfirmText = document.getElementById('globalExportConfirmText');
+    if (globalExportConfirmText) globalExportConfirmText.textContent = i18n.globalExportConfirm[currentLang];
+    const globalExportStatus = document.getElementById('globalExportStatus');
+    if (globalExportStatus) {
+        try {
+            updateGlobalExportStatus();
+            updateGlobalExportRangePreviewText();
+        } catch (e) {
+            // ignore (function may not be available yet during early init)
+        }
     }
 
     // 导出书签变化模态框
@@ -3987,6 +4190,10 @@ function initializeUI() {
     if (revertAllCurrentBtn) {
         revertAllCurrentBtn.addEventListener('click', () => handleRevertAll('current'));
     }
+
+    // 初始化历史列表分页
+    initHistoryPagination();
+
     // Canvas 相关事件监听在 Canvas 模块中处理
 
     // 初始化书签树映射预览的交互
@@ -4036,11 +4243,389 @@ function initClearBackupHistoryModal() {
     const cancelBtn = document.getElementById('clearBackupHistoryCancelBtn');
     const confirmBtn = document.getElementById('clearBackupHistoryConfirmBtn');
 
+    // 二次确认弹窗
+    const secondModal = document.getElementById('clearHistorySecondConfirmModal');
+    const secondCloseBtn = document.getElementById('clearHistorySecondConfirmClose');
+    const secondCancelBtn = document.getElementById('clearHistorySecondConfirmCancelBtn');
+    const exportFirstBtn = document.getElementById('clearHistoryExportFirstBtn');
+    const directDeleteBtn = document.getElementById('clearHistoryDirectDeleteBtn');
+    const deleteCountDisplay = document.getElementById('clearHistoryDeleteCountDisplay');
+    const rangeDisplay = document.getElementById('clearHistoryRangeDisplay');
+
+    // 双滑块范围选择器
+    const rangeMinSlider = document.getElementById('clearHistoryRangeMin');
+    const rangeMaxSlider = document.getElementById('clearHistoryRangeMax');
+    const rangeHighlight = document.getElementById('clearHistoryRangeHighlight');
+    const minSeqLabel = document.getElementById('clearHistoryMinSeqLabel');
+    const maxSeqLabel = document.getElementById('clearHistoryMaxSeqLabel');
+    const selectionRange = document.getElementById('clearHistorySelectionRange');
+    const selectionCount = document.getElementById('clearHistorySelectionCount');
+    const selectionLabel = document.getElementById('clearHistorySelectionLabel');
+    const previewTextEl = document.getElementById('clearHistoryPreviewText');
+
     if (!btn || !modal || !confirmBtn) return;
 
-    const openClearModal = () => modal.classList.add('show');
+    // 存储当前要删除的范围
+    let pendingDeleteMinSeq = 1;
+    let pendingDeleteMaxSeq = 1;
+    let pendingDeleteCount = 0;
+    let clearHistoryActiveThumb = 'max'; // 'min' | 'max'
+
+    // 获取记录的序号列表（按时间排序，最旧的在前）
+    const getRecordSeqNumbers = () => {
+        if (!syncHistory || syncHistory.length === 0) return [];
+        return syncHistory.map((record, index) => {
+            return record.seqNumber || (index + 1);
+        });
+    };
+
+    // 获取序号范围
+    const getSeqRange = () => {
+        const seqNumbers = getRecordSeqNumbers();
+        if (seqNumbers.length === 0) return { min: 1, max: 1 };
+        return {
+            min: Math.min(...seqNumbers),
+            max: Math.max(...seqNumbers)
+        };
+    };
+
+    // 更新滑块范围高亮
+	    const updateRangeHighlight = () => {
+	        if (!rangeHighlight || !rangeMinSlider || !rangeMaxSlider) return;
+
+	        const min = parseInt(rangeMinSlider.min, 10);
+	        const max = parseInt(rangeMinSlider.max, 10);
+	        const range = Math.max(1, max - min);
+
+        const a = parseInt(rangeMinSlider.value, 10);
+        const b = parseInt(rangeMaxSlider.value, 10);
+        const low = Math.min(a, b);
+        const high = Math.max(a, b);
+
+        // Reverse logic: Max is on Left (0%), Min is on Right (100%)
+        // Input logic (flipped by CSS scaleX(-1)):
+        // Input Min (visual right) -> Input Max (visual left)
+        // High Value should be at Left. Low Value should be at Right.
+        // CSS transform: scaleX(-1) on inputs flips them so Left is Max.
+        // So Highlight Logic:
+        // Left Edge = Position of MaxVal. Right Edge = Position of MinVal.
+
+        // Let's rely on standard logic but realizing the container is NOT flipped, only tracks/inputs.
+        // Wait, if track is flipped, highlight inside it is also flipped.
+        // So standard logic applies relative to the flipped coordinate system!
+        // Min (1) -> 0% (Visual Right). Max (50) -> 50% (visual Mid).
+        // Highlight: 0% to 50%.
+        // So visual bar: Right Edge -> Mid. This covers 1 to 50. CORRECT.
+
+	        const leftPercent = ((low - min) / range) * 100;
+	        const widthPercent = ((high - low) / range) * 100;
+
+        rangeHighlight.style.left = `${leftPercent}%`;
+        rangeHighlight.style.width = `${widthPercent}%`;
+
+        updateClearHistoryRangeBubbles();
+    };
+
+    const updateClearHistoryRangeBubbles = () => {
+        const minBubble = document.getElementById('clearHistoryRangeMinBubble');
+        const maxBubble = document.getElementById('clearHistoryRangeMaxBubble');
+        const container = document.getElementById('clearHistoryRangeContainer');
+        if (!rangeMinSlider || !rangeMaxSlider || !minBubble || !maxBubble || !container) return;
+
+        const min = parseInt(rangeMinSlider.min, 10);
+        const max = parseInt(rangeMinSlider.max, 10);
+        const range = Math.max(1, max - min);
+
+        const a = parseInt(rangeMinSlider.value, 10);
+        const b = parseInt(rangeMaxSlider.value, 10);
+
+        const aPercent = ((a - min) / range) * 100;
+        const bPercent = ((b - min) / range) * 100;
+
+        const insetPx = 10;
+        const thumbSizePx = 20;
+        const thumbHalfPx = thumbSizePx / 2;
+        const trackWidthPx = Math.max(1, container.clientWidth - insetPx * 2);
+        const effectiveWidthPx = Math.max(0, trackWidthPx - thumbSizePx);
+
+        // Inputs are flipped (scaleX(-1)), so visual position is mirrored.
+        const ax = insetPx + thumbHalfPx + (1 - (aPercent / 100)) * effectiveWidthPx;
+        const bx = insetPx + thumbHalfPx + (1 - (bPercent / 100)) * effectiveWidthPx;
+
+        minBubble.style.left = `${ax}px`;
+        maxBubble.style.left = `${bx}px`;
+        minBubble.textContent = String(a);
+        maxBubble.textContent = String(b);
+
+        const overlapThresholdPx = 14;
+        const overlap = Math.abs(ax - bx) <= overlapThresholdPx;
+        if (overlap) {
+            if (clearHistoryActiveThumb === 'min') {
+                minBubble.style.opacity = '1';
+                minBubble.style.zIndex = '7';
+                maxBubble.style.opacity = '0';
+                maxBubble.style.zIndex = '6';
+            } else {
+                maxBubble.style.opacity = '1';
+                maxBubble.style.zIndex = '7';
+                minBubble.style.opacity = '0';
+                minBubble.style.zIndex = '6';
+            }
+        } else {
+            minBubble.style.opacity = '1';
+            maxBubble.style.opacity = '1';
+            minBubble.style.zIndex = '6';
+            maxBubble.style.zIndex = '6';
+        }
+    };
+
+    // 计算要删除的记录数量（根据序号范围）
+    const calculateDeleteCount = () => {
+        if (!rangeMinSlider || !rangeMaxSlider) return 0;
+
+        const a = parseInt(rangeMinSlider.value, 10);
+        const b = parseInt(rangeMaxSlider.value, 10);
+        const minSeq = Math.min(a, b);
+        const maxSeq = Math.max(a, b);
+
+        // 统计在范围内的记录数
+        const seqNumbers = getRecordSeqNumbers();
+        let count = 0;
+        for (const seq of seqNumbers) {
+            if (seq >= minSeq && seq <= maxSeq) {
+                count++;
+            }
+        }
+        return count;
+    };
+
+    // 获取将要删除的序号范围字符串
+    const getDeleteSeqRange = () => {
+        if (!rangeMinSlider || !rangeMaxSlider) return '';
+        const a = parseInt(rangeMinSlider.value, 10);
+        const b = parseInt(rangeMaxSlider.value, 10);
+        const minSeq = Math.min(a, b);
+        const maxSeq = Math.max(a, b);
+        if (minSeq === maxSeq) return String(minSeq);
+        return `${minSeq}-${maxSeq}`;
+    };
+
+    // 更新显示
+    const updateDisplay = () => {
+        if (!rangeMinSlider || !rangeMaxSlider) return;
+
+        const a = parseInt(rangeMinSlider.value, 10);
+        const b = parseInt(rangeMaxSlider.value, 10);
+        const minSeq = Math.min(a, b);
+        const maxSeq = Math.max(a, b);
+        const deleteCount = calculateDeleteCount();
+        const total = syncHistory.length;
+
+        // 隐藏原来的中间显示区域
+        if (selectionRange && selectionRange.parentElement && selectionRange.parentElement.parentElement) {
+            selectionRange.parentElement.parentElement.style.display = 'none';
+        }
+
+        // 更新预览文本 - 替换为用户要求的格式
+        if (previewTextEl) {
+            const seqRangeStr = minSeq === maxSeq ? String(minSeq) : `${minSeq}-${maxSeq}`;
+
+            if (currentLang === 'en') {
+                previewTextEl.textContent = `Will delete No. ${seqRangeStr} (${deleteCount} records)`;
+            } else {
+                // 用户要求的格式：「即将删除 2 条记录 (序号 4-5)」
+                previewTextEl.textContent = `即将删除 ${deleteCount} 条记录 (序号 ${seqRangeStr})`;
+            }
+        }
+
+        // 更新高亮
+        updateRangeHighlight();
+    };
+
+    // 滑块事件处理 - 确保最小值不超过最大值
+    const handleMinChange = () => {
+        if (!rangeMinSlider || !rangeMaxSlider) return;
+        clearHistoryActiveThumb = 'min';
+        updateDisplay();
+    };
+
+    const handleMaxChange = () => {
+        if (!rangeMinSlider || !rangeMaxSlider) return;
+        clearHistoryActiveThumb = 'max';
+        updateDisplay();
+    };
+
+    const openClearModal = () => {
+        const seqRange = getSeqRange();
+        const total = syncHistory.length;
+
+        // 设置滑块范围
+        if (rangeMinSlider) {
+            rangeMinSlider.min = seqRange.min;
+            rangeMinSlider.max = seqRange.max;
+            rangeMinSlider.value = seqRange.min; // 起始从最小序号开始
+        }
+        if (rangeMaxSlider) {
+            rangeMaxSlider.min = seqRange.min;
+            rangeMaxSlider.max = seqRange.max;
+            // 默认选中约50%的最旧记录
+            const defaultMaxSeq = seqRange.min + Math.floor((seqRange.max - seqRange.min) / 2);
+            rangeMaxSlider.value = Math.max(seqRange.min, defaultMaxSeq);
+        }
+
+	        // 设置刻度标签 - Largest on Left
+	        if (minSeqLabel) minSeqLabel.textContent = String(seqRange.max); // Left Label = Max
+	        if (maxSeqLabel) maxSeqLabel.textContent = String(seqRange.min); // Right Label = Min
+
+	        modal.classList.add('show');
+	        // Must update after the modal is visible; otherwise container width can be 0 and bubbles won't render.
+	        requestAnimationFrame(() => {
+	            try {
+	                updateDisplay();
+	            } catch (e) {
+	                // ignore
+	            }
+	            requestAnimationFrame(() => {
+	                try {
+	                    updateDisplay();
+	                } catch (e) {
+	                    // ignore
+	                }
+	            });
+	        });
+	    };
+
     const closeClearModal = () => modal.classList.remove('show');
 
+    const openSecondConfirmModal = () => {
+        if (!rangeMinSlider || !rangeMaxSlider) return;
+
+        const a = parseInt(rangeMinSlider.value, 10);
+        const b = parseInt(rangeMaxSlider.value, 10);
+        pendingDeleteMinSeq = Math.min(a, b);
+        pendingDeleteMaxSeq = Math.max(a, b);
+        pendingDeleteCount = calculateDeleteCount();
+
+        if (deleteCountDisplay) {
+            deleteCountDisplay.textContent = pendingDeleteCount;
+        }
+        if (rangeDisplay) {
+            const seqRangeStr = pendingDeleteMinSeq === pendingDeleteMaxSeq
+                ? String(pendingDeleteMinSeq)
+                : `${pendingDeleteMinSeq}-${pendingDeleteMaxSeq}`;
+
+            rangeDisplay.textContent = currentLang === 'en'
+                ? `(No. ${seqRangeStr})`
+                : `(序号 ${seqRangeStr})`;
+        }
+        if (secondModal) {
+            secondModal.classList.add('show');
+        }
+    };
+
+    const closeSecondConfirmModal = () => {
+        if (secondModal) {
+            secondModal.classList.remove('show');
+        }
+    };
+
+    // 执行实际删除
+    const executeDelete = async () => {
+        if (pendingDeleteCount <= 0) {
+            closeSecondConfirmModal();
+            closeClearModal();
+            return;
+        }
+
+        if (directDeleteBtn) directDeleteBtn.disabled = true;
+        try {
+            // 按序号范围删除（支持删除最新/中间/最旧；不重排其它记录的永久序号）
+            const timesToDelete = [];
+            const fingerprintsToDelete = [];
+            for (let i = 0; i < syncHistory.length; i++) {
+                const record = syncHistory[i];
+                const seq = record.seqNumber || (i + 1);
+                if (seq >= pendingDeleteMinSeq && seq <= pendingDeleteMaxSeq) {
+                    if (record.fingerprint) fingerprintsToDelete.push(record.fingerprint);
+                    else timesToDelete.push(record.time);
+                }
+            }
+
+            const resp = await deleteBackupHistoryItems({ fingerprintsToDelete, timesToDelete });
+            closeSecondConfirmModal();
+            closeClearModal();
+
+            if (resp && resp.success) {
+                const deletedCount = resp.deleted || pendingDeleteCount;
+
+                // 从 storage 重新获取数据以确保一致性
+                try {
+                    const data = await new Promise(resolve => {
+                        browserAPI.storage.local.get(['syncHistory'], result => {
+                            resolve(result);
+                        });
+                    });
+                    syncHistory = data.syncHistory || [];
+                } catch (e) {
+                    console.warn('[executeDelete] Failed to reload syncHistory');
+                    syncHistory = syncHistory.slice(deletedCount);
+                }
+
+                try {
+                    renderHistoryView();
+                } catch (e) {
+                    console.warn('[executeDelete] renderHistoryView failed:', e);
+                }
+
+                const successTextFunc = i18n.clearBackupHistorySuccess[currentLang];
+                const successMsg = typeof successTextFunc === 'function'
+                    ? successTextFunc(deletedCount)
+                    : `已删除 ${deletedCount} 条历史记录`;
+                showToast(successMsg);
+            } else {
+                console.error('[executeDelete] Delete failed:', resp);
+                showToast(i18n.clearBackupHistoryFailed[currentLang]);
+            }
+        } finally {
+            if (directDeleteBtn) directDeleteBtn.disabled = false;
+        }
+    };
+
+    const deleteBackupHistoryItems = ({ fingerprintsToDelete, timesToDelete }) => {
+        const fp = Array.isArray(fingerprintsToDelete) ? fingerprintsToDelete : [];
+        const ts = Array.isArray(timesToDelete) ? timesToDelete : [];
+        return new Promise((resolve) => {
+            try {
+                if (fp.length > 0) {
+                    browserAPI.runtime.sendMessage({ action: 'deleteSyncHistoryItems', fingerprints: fp }, (response) => {
+                        if (browserAPI.runtime.lastError) {
+                            resolve({ success: false, error: browserAPI.runtime.lastError.message });
+                            return;
+                        }
+                        resolve(response || { success: true, deleted: fp.length });
+                    });
+                    return;
+                }
+
+                if (ts.length > 0) {
+                    browserAPI.runtime.sendMessage({ action: 'deleteSyncHistoryItemsByTime', times: ts }, (response) => {
+                        if (browserAPI.runtime.lastError) {
+                            resolve({ success: false, error: browserAPI.runtime.lastError.message });
+                            return;
+                        }
+                        resolve(response || { success: true, deleted: ts.length });
+                    });
+                    return;
+                }
+
+                resolve({ success: true, deleted: 0 });
+            } catch (e) {
+                resolve({ success: false, error: e?.message || String(e) });
+            }
+        });
+    };
+
+    // 事件绑定 - 主弹窗
     if (!btn.hasAttribute('data-listener-attached')) {
         btn.addEventListener('click', (e) => {
             e.preventDefault();
@@ -4066,26 +4651,203 @@ function initClearBackupHistoryModal() {
         modal.setAttribute('data-listener-attached', 'true');
     }
 
-    if (!confirmBtn.hasAttribute('data-listener-attached')) {
-        confirmBtn.addEventListener('click', async () => {
-            confirmBtn.disabled = true;
-            try {
-                const resp = await clearBackupHistoryRecordsInBackground();
-                closeClearModal();
+    // 双滑块事件
+    if (rangeMinSlider && !rangeMinSlider.hasAttribute('data-listener-attached')) {
+        rangeMinSlider.addEventListener('input', handleMinChange);
+        rangeMinSlider.addEventListener('pointerdown', () => {
+            clearHistoryActiveThumb = 'min';
+            rangeMinSlider.style.zIndex = '5';
+            rangeMaxSlider.style.zIndex = '4';
+        });
+        rangeMinSlider.setAttribute('data-listener-attached', 'true');
+    }
+    if (rangeMaxSlider && !rangeMaxSlider.hasAttribute('data-listener-attached')) {
+        rangeMaxSlider.addEventListener('input', handleMaxChange);
+        rangeMaxSlider.addEventListener('pointerdown', () => {
+            clearHistoryActiveThumb = 'max';
+            rangeMaxSlider.style.zIndex = '5';
+            rangeMinSlider.style.zIndex = '4';
+        });
+        rangeMaxSlider.setAttribute('data-listener-attached', 'true');
+    }
 
-                if (resp && resp.success) {
-                    syncHistory = [];
-                    try { renderHistoryView(); } catch (_) { }
-                    showToast(i18n.clearBackupHistorySuccess[currentLang]);
-                } else {
-                    showToast(i18n.clearBackupHistoryFailed[currentLang]);
-                }
-            } finally {
-                confirmBtn.disabled = false;
+    // 确认删除按钮 - 打开二次确认弹窗
+    if (!confirmBtn.hasAttribute('data-listener-attached')) {
+        confirmBtn.addEventListener('click', () => {
+            const toDelete = calculateDeleteCount();
+            if (toDelete <= 0) {
+                closeClearModal();
+                return;
             }
+            // 打开二次确认弹窗（不需要传参，函数会直接读取滑块值）
+            openSecondConfirmModal();
         });
         confirmBtn.setAttribute('data-listener-attached', 'true');
     }
+
+    // 事件绑定 - 二次确认弹窗
+    if (secondCloseBtn && !secondCloseBtn.hasAttribute('data-listener-attached')) {
+        secondCloseBtn.addEventListener('click', closeSecondConfirmModal);
+        secondCloseBtn.setAttribute('data-listener-attached', 'true');
+    }
+
+    if (secondCancelBtn && !secondCancelBtn.hasAttribute('data-listener-attached')) {
+        secondCancelBtn.addEventListener('click', closeSecondConfirmModal);
+        secondCancelBtn.setAttribute('data-listener-attached', 'true');
+    }
+
+    if (secondModal && !secondModal.hasAttribute('data-listener-attached')) {
+        secondModal.addEventListener('click', (e) => {
+            if (e.target === secondModal) closeSecondConfirmModal();
+        });
+        secondModal.setAttribute('data-listener-attached', 'true');
+    }
+
+    // "先备份"按钮 - 跳转到全局导出
+    if (exportFirstBtn && !exportFirstBtn.hasAttribute('data-listener-attached')) {
+        exportFirstBtn.addEventListener('click', () => {
+            closeSecondConfirmModal();
+            closeClearModal();
+
+            // 延迟打开全局导出弹窗，并预选要删除的记录（根据序号范围）
+            setTimeout(() => {
+                showGlobalExportModalWithPreselectionBySeqRange(pendingDeleteMinSeq, pendingDeleteMaxSeq);
+            }, 100);
+        });
+        exportFirstBtn.setAttribute('data-listener-attached', 'true');
+    }
+
+    // "直接删除"按钮
+    if (directDeleteBtn && !directDeleteBtn.hasAttribute('data-listener-attached')) {
+        directDeleteBtn.addEventListener('click', executeDelete);
+        directDeleteBtn.setAttribute('data-listener-attached', 'true');
+    }
+}
+
+// 部分删除备份历史记录
+function clearBackupHistoryPartial(deleteCount) {
+    return new Promise((resolve) => {
+        try {
+            console.log('[clearBackupHistoryPartial] Sending request to delete', deleteCount, 'records');
+
+            // 确保 deleteCount 是数字
+            const count = parseInt(deleteCount, 10);
+            if (isNaN(count) || count <= 0) {
+                console.warn('[clearBackupHistoryPartial] Invalid deleteCount:', deleteCount);
+                resolve({ success: true, deleted: 0 });
+                return;
+            }
+
+            browserAPI.runtime.sendMessage({
+                action: "clearSyncHistoryPartial",
+                deleteCount: count
+            }, (response) => {
+                if (browserAPI.runtime.lastError) {
+                    console.error('[clearBackupHistoryPartial] Runtime error:', browserAPI.runtime.lastError);
+                    resolve({ success: false, error: browserAPI.runtime.lastError.message });
+                    return;
+                }
+
+                console.log('[clearBackupHistoryPartial] Response:', response);
+
+                if (!response) {
+                    console.warn('[clearBackupHistoryPartial] No response received');
+                    resolve({ success: false, error: 'no response' });
+                    return;
+                }
+
+                resolve(response);
+            });
+        } catch (error) {
+            console.error('[clearBackupHistoryPartial] Exception:', error);
+            resolve({ success: false, error: error?.message || String(error) });
+        }
+    });
+}
+
+// 显示全局导出弹窗并预选指定数量的最旧记录
+function showGlobalExportModalWithPreselection(preselectCount = 0) {
+    const modal = document.getElementById('globalExportModal');
+    const tbody = document.getElementById('globalExportTableBody');
+
+    if (!modal || !tbody) return;
+
+    // 重置分页状态
+    globalExportCurrentPage = 1;
+    globalExportSelectedState = {};
+
+    if (!syncHistory || syncHistory.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="6" style="padding: 30px; text-align: center; color: var(--text-tertiary);">暂无备份记录</td></tr>';
+        document.getElementById('globalExportPagination').style.display = 'none';
+        modal.classList.add('show');
+        return;
+    }
+
+    // 预选最旧的 preselectCount 条记录
+    syncHistory.forEach((record, index) => {
+        // 索引 0 是最旧的记录
+        globalExportSelectedState[record.time] = (index < preselectCount);
+    });
+
+    globalExportSeqNumberByTime = new Map();
+    syncHistory.forEach((record, index) => {
+        const seqNumber = record.seqNumber || (index + 1);
+        globalExportSeqNumberByTime.set(String(record.time), seqNumber);
+    });
+
+    // 显示分页控件
+    document.getElementById('globalExportPagination').style.display = 'flex';
+
+    // 渲染当前页
+    renderGlobalExportPage();
+
+    updateGlobalExportStatus();
+
+    modal.classList.add('show');
+}
+
+// 显示全局导出弹窗并根据序号范围预选记录
+function showGlobalExportModalWithPreselectionBySeqRange(minSeq, maxSeq) {
+    const modal = document.getElementById('globalExportModal');
+    const tbody = document.getElementById('globalExportTableBody');
+
+    if (!modal || !tbody) return;
+
+    // 重置分页状态
+    globalExportCurrentPage = 1;
+    globalExportSelectedState = {};
+
+    if (!syncHistory || syncHistory.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="6" style="padding: 30px; text-align: center; color: var(--text-tertiary);">暂无备份记录</td></tr>';
+        document.getElementById('globalExportPagination').style.display = 'none';
+        modal.classList.add('show');
+        return;
+    }
+
+    // 根据序号范围预选记录
+    syncHistory.forEach((record, index) => {
+        const seqNumber = record.seqNumber || (index + 1);
+        globalExportSelectedState[record.time] = (seqNumber >= minSeq && seqNumber <= maxSeq);
+    });
+
+    globalExportSeqNumberByTime = new Map();
+    syncHistory.forEach((record, index) => {
+        const seqNumber = record.seqNumber || (index + 1);
+        globalExportSeqNumberByTime.set(String(record.time), seqNumber);
+    });
+
+    // 显示分页控件
+    document.getElementById('globalExportPagination').style.display = 'flex';
+
+    setupGlobalExportRangeUiForOpen({ source: 'delete', minSeq, maxSeq, autoEnable: true, autoExpand: true });
+
+    // 渲染当前页
+    renderGlobalExportPage();
+
+    // 更新选中状态
+    updateGlobalExportStatus();
+
+    modal.classList.add('show');
 }
 
 // 用于防止Revert结果显示多次的标志
@@ -4276,6 +5038,7 @@ async function loadAllData(options = {}) {
         ]);
 
         syncHistory = storageData.syncHistory || [];
+        syncHistory = await ensureSyncHistorySeqNumbersPersisted(syncHistory);
 
         // 注意：不再清理 bookmarkTree，保留所有记录的详细数据
         // 用户存储空间无限制
@@ -4304,6 +5067,50 @@ async function loadAllData(options = {}) {
         console.error('[loadAllData] 加载数据失败:', error);
         showError('加载数据失败');
     }
+}
+
+async function ensureSyncHistorySeqNumbersPersisted(historyRecords) {
+    const records = Array.isArray(historyRecords) ? historyRecords.slice() : [];
+    if (records.length === 0) return records;
+
+    const hasAnyMissing = records.some(r => !(Number.isFinite(Number(r?.seqNumber)) && Number(r?.seqNumber) > 0));
+    if (!hasAnyMissing) return records;
+
+    // One-time migration: assign missing seqNumber in time-ascending order without changing existing ones.
+    const sorted = records.slice().sort((a, b) => Number(a?.time || 0) - Number(b?.time || 0));
+    const used = new Set();
+    for (const r of sorted) {
+        const seq = Number(r?.seqNumber);
+        if (Number.isFinite(seq) && seq > 0) used.add(seq);
+    }
+
+    let next = 1;
+    const updatedByTime = new Map();
+    for (const r of sorted) {
+        const copy = { ...r };
+        let seq = Number(copy.seqNumber);
+        if (!(Number.isFinite(seq) && seq > 0)) {
+            while (used.has(next)) next++;
+            seq = next;
+            used.add(seq);
+            next++;
+        }
+        copy.seqNumber = seq;
+        updatedByTime.set(String(copy.time), copy);
+    }
+
+    const updated = records.map(r => updatedByTime.get(String(r.time)) || r);
+
+    try {
+        await new Promise((resolve) => {
+            browserAPI.storage.local.set({ syncHistory: updated }, resolve);
+        });
+        console.log('[ensureSyncHistorySeqNumbersPersisted] Migrated seqNumber for syncHistory records');
+    } catch (e) {
+        console.warn('[ensureSyncHistorySeqNumbersPersisted] Failed to persist seqNumber migration:', e);
+    }
+
+    return updated;
 }
 
 // 预加载所有视图的数据
@@ -13680,30 +14487,80 @@ function renderChangeTreeItem(bookmark, type) {
 // 备份历史视图
 // =============================================================================
 
+let currentHistoryPage = 1;
+const HISTORY_PAGE_SIZE = 10;
+
 function renderHistoryView() {
     const container = document.getElementById('historyList');
+    // 分页控件元素
+    const pagination = document.getElementById('historyPagination');
+    const pageInput = document.getElementById('historyPageInput');
+    const totalPagesEl = document.getElementById('historyTotalPages');
+    const prevBtn = document.getElementById('historyPrevPage');
+    const nextBtn = document.getElementById('historyNextPage');
 
     if (syncHistory.length === 0) {
-        container.innerHTML = `
-            <div class="empty-state">
-                <div class="empty-state-icon"><i class="fas fa-history"></i></div>
-                <div class="empty-state-title">${i18n.emptyHistory[currentLang]}</div>
-            </div>
-        `;
+        if (container) {
+            container.innerHTML = `
+                <div class="empty-state">
+                    <div class="empty-state-icon"><i class="fas fa-history"></i></div>
+                    <div class="empty-state-title">${i18n.emptyHistory[currentLang]}</div>
+                </div>
+            `;
+        }
+        if (pagination) pagination.style.display = 'none';
         return;
     }
 
     // 反转数组，最新的在前
     const reversedHistory = [...syncHistory].reverse();
+    const totalRecords = reversedHistory.length;
 
-    container.innerHTML = reversedHistory.map((record, index) => {
+    // 分页计算
+    const totalPages = Math.ceil(reversedHistory.length / HISTORY_PAGE_SIZE);
+
+    // 确保当前页码有效
+    if (currentHistoryPage < 1) currentHistoryPage = 1;
+    if (currentHistoryPage > totalPages) currentHistoryPage = totalPages;
+
+    const startIndex = (currentHistoryPage - 1) * HISTORY_PAGE_SIZE;
+    const endIndex = Math.min(startIndex + HISTORY_PAGE_SIZE, reversedHistory.length);
+    const pageRecords = reversedHistory.slice(startIndex, endIndex);
+
+    // 更新分页控件 UI
+    if (pagination) {
+        if (totalPages <= 1) {
+            pagination.style.display = 'none';
+        } else {
+            pagination.style.display = 'flex';
+            if (pageInput) {
+                pageInput.value = currentHistoryPage;
+                // pageInput.max = totalPages; // input type="text" doesn't use max
+            }
+            if (totalPagesEl) totalPagesEl.textContent = totalPages;
+            if (prevBtn) prevBtn.disabled = currentHistoryPage <= 1;
+            if (nextBtn) nextBtn.disabled = currentHistoryPage >= totalPages;
+        }
+    }
+
+    if (!container) return;
+
+    // 使用当前页的数据进行渲染，注意 index 需要加上 offset 以保持 calculateChanges 正确（如果它依赖全局索引）
+    // calculateChanges takes (record, index, allRecords). 
+    // Usually index is used to compare with previous record (index+1).
+    // So passing reversedHistory (full list) to calculateChanges is correct, but we need the correct index in that full list.
+
+    container.innerHTML = pageRecords.map((record, i) => {
+        const globalIndex = startIndex + i; // Index in the full reversedHistory array
+        const seqNumber = Number.isFinite(Number(record.seqNumber)) ? Number(record.seqNumber) : '-';
+
         const time = formatTime(record.time);
         // 使用 type 字段代替 isAutoBackup：'manual', 'auto', 'switch'
         const isAuto = record.type !== 'manual';
         const fingerprint = record.fingerprint || '';
 
         // 计算变化
-        const changes = calculateChanges(record, index, reversedHistory);
+        const changes = calculateChanges(record, globalIndex, reversedHistory);
 
         // 方向标识
         const directionIcon = record.direction === 'upload'
@@ -13715,6 +14572,14 @@ function renderHistoryView() {
 
         // 构建提交项
         // 切换标识徽章（可选显示）
+        // 模式显示文本
+        const savedMode = getRecordDetailMode(record.time);
+        const defaultMode = historyDetailMode || 'simple';
+        const mode = savedMode || defaultMode;
+        const modeText = mode === 'simple'
+            ? (currentLang === 'zh_CN' ? '简略' : 'Simple')
+            : (currentLang === 'zh_CN' ? '详细' : 'Detailed');
+
         const typeBadge = (record.type === 'switch')
             ? `<span class="commit-badge switch" title="${currentLang === 'zh_CN' ? '切换备份' : 'Switch Backup'}">
                    <i class="fas fa-exchange-alt"></i> ${currentLang === 'zh_CN' ? '切换' : 'Switch'}
@@ -13725,6 +14590,7 @@ function renderHistoryView() {
             <div class="commit-item" data-record-time="${record.time}">
                 <div class="commit-header">
                     <div class="commit-title-group">
+                        <span class="commit-seq-badge" title="${currentLang === 'zh_CN' ? '序号' : 'No.'}">${seqNumber}</span>
         <div class="commit-title" title="${currentLang === 'zh_CN' ? '点击编辑备注' : 'Click to edit note'}">${escapeHtml(record.note || time)}</div>
                         <button class="commit-note-edit-btn" data-time="${record.time}" title="${currentLang === 'zh_CN' ? '编辑备注' : 'Edit Note'}">
                             <i class="fas fa-edit"></i>
@@ -13732,8 +14598,8 @@ function renderHistoryView() {
                     </div>
                     <div class="commit-actions">
                         <button class="action-btn detail-btn" data-time="${record.time}">
-                            <i class="fas fa-external-link-alt"></i>
-                            <span>${currentLang === 'zh_CN' ? '详情' : 'Details'}</span>
+                            <i class="fas fa-angle-right"></i>
+                            <span class="btn-tooltip">${modeText}</span>
                         </button>
                     </div>
                 </div>
@@ -13777,6 +14643,69 @@ function renderHistoryView() {
             editCommitNote(recordTime);
         });
     });
+
+    // 添加行点击交互 (详情)
+    container.querySelectorAll('.commit-item').forEach(item => {
+        item.style.cursor = 'pointer';
+        item.addEventListener('click', (e) => {
+            // 如果点击的是按钮或交互元素，则忽略
+            if (e.target.closest('button') || e.target.closest('a') || e.target.closest('.commit-note-edit-btn')) return;
+
+            const recordTime = item.dataset.recordTime;
+            const record = syncHistory.find(r => r.time === recordTime);
+            if (record) showDetailModal(record);
+        });
+    });
+}
+
+function initHistoryPagination() {
+    const prevBtn = document.getElementById('historyPrevPage');
+    const nextBtn = document.getElementById('historyNextPage');
+    const pageInput = document.getElementById('historyPageInput');
+
+    if (prevBtn) {
+        prevBtn.addEventListener('click', () => {
+            if (currentHistoryPage > 1) {
+                currentHistoryPage--;
+                renderHistoryView();
+            }
+        });
+    }
+
+    if (nextBtn) {
+        nextBtn.addEventListener('click', () => {
+            const totalPages = Math.ceil(syncHistory.length / HISTORY_PAGE_SIZE);
+            if (currentHistoryPage < totalPages) {
+                currentHistoryPage++;
+                renderHistoryView();
+            }
+        });
+    }
+
+    if (pageInput) {
+        pageInput.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter') {
+                const totalPages = Math.ceil(syncHistory.length / HISTORY_PAGE_SIZE);
+                let targetPage = parseInt(pageInput.value, 10);
+                if (isNaN(targetPage) || targetPage < 1) targetPage = 1;
+                if (targetPage > totalPages) targetPage = totalPages;
+                currentHistoryPage = targetPage;
+                renderHistoryView();
+            }
+        });
+        pageInput.addEventListener('blur', () => {
+            const totalPages = Math.ceil(syncHistory.length / HISTORY_PAGE_SIZE);
+            let targetPage = parseInt(pageInput.value, 10);
+            if (isNaN(targetPage) || targetPage < 1) targetPage = 1;
+            if (targetPage > totalPages) targetPage = totalPages;
+            if (targetPage !== currentHistoryPage) {
+                currentHistoryPage = targetPage;
+                renderHistoryView();
+            } else {
+                pageInput.value = currentHistoryPage;
+            }
+        });
+    }
 }
 
 // 编辑备注
@@ -14246,14 +15175,14 @@ function initBrowsingSubTabs() {
 // 基于浏览器历史记录的“书签点击排行榜”（书签温故第二个子视图）
 function loadBookmarkClickRankingForAdditions(container) {
     if (!container) return;
-
+ 
     container.innerHTML = `
         <div class="empty-state">
             <div class="empty-state-icon"><i class="fas fa-clock"></i></div>
             <div class="empty-state-title">${currentLang === 'zh_CN' ? '正在读取历史记录...' : 'Loading history...'}</div>
         </div>
     `;
-
+ 
     if (!browserAPI || !browserAPI.history || typeof browserAPI.history.getVisits !== 'function') {
         container.innerHTML = `
             <div class="empty-state">
@@ -14264,7 +15193,7 @@ function loadBookmarkClickRankingForAdditions(container) {
         `;
         return;
     }
-
+ 
     if (!Array.isArray(allBookmarks) || allBookmarks.length === 0) {
         container.innerHTML = `
             <div class="empty-state">
@@ -14274,12 +15203,12 @@ function loadBookmarkClickRankingForAdditions(container) {
         `;
         return;
     }
-
+ 
     // 仅统计有效的 HTTP/HTTPS 书签，限制数量避免开销过大
     const candidates = allBookmarks
         .filter(b => b.url && (b.url.startsWith('http://') || b.url.startsWith('https://')))
         .slice(0, 150);
-
+ 
     if (!candidates.length) {
         container.innerHTML = `
             <div class="empty-state">
@@ -14289,17 +15218,17 @@ function loadBookmarkClickRankingForAdditions(container) {
         `;
         return;
     }
-
+ 
     const now = Date.now();
     const oneDay = 24 * 60 * 60 * 1000;
-
+ 
     const rankingMap = new Map(); // url -> stats
     let pending = candidates.length;
-
+ 
     const finishIfDone = () => {
         pending -= 1;
         if (pending > 0) return;
-
+ 
         const items = Array.from(rankingMap.values())
             // 只保留至少有一次访问的
             .filter(item =>
@@ -14311,7 +15240,7 @@ function loadBookmarkClickRankingForAdditions(container) {
                 item.last180d ||
                 item.last365d
             );
-
+ 
         if (!items.length) {
             container.innerHTML = `
                 <div class="empty-state">
@@ -14322,17 +15251,17 @@ function loadBookmarkClickRankingForAdditions(container) {
             `;
             return;
         }
-
+ 
         // 排序：优先最近 7 天，再看 30 天
         items.sort((a, b) => {
             if (b.last7d !== a.last7d) return b.last7d - a.last7d;
             if (b.last30d !== a.last30d) return b.last30d - a.last30d;
             return (b.last365d || 0) - (a.last365d || 0);
         });
-
+ 
         renderBookmarkClickRankingList(container, items.slice(0, 50));
     };
-
+ 
     candidates.forEach(bookmark => {
         try {
             browserAPI.history.getVisits({ url: bookmark.url }, (visits) => {
@@ -14341,7 +15270,7 @@ function loadBookmarkClickRankingForAdditions(container) {
                     finishIfDone();
                     return;
                 }
-
+ 
                 const key = bookmark.url;
                 let info = rankingMap.get(key);
                 if (!info) {
@@ -14359,16 +15288,16 @@ function loadBookmarkClickRankingForAdditions(container) {
                     };
                     rankingMap.set(key, info);
                 }
-
+ 
                 if (Array.isArray(visits)) {
                     visits.forEach(v => {
                         const t = typeof v.visitTime === 'number' ? v.visitTime : 0;
                         if (!t) return;
-
+ 
                         if (t > info.lastVisitTime) {
                             info.lastVisitTime = t;
                         }
-
+ 
                         const diff = now - t;
                         if (diff <= oneDay) info.last1d += 1;
                         if (diff <= 3 * oneDay) info.last3d += 1;
@@ -14379,7 +15308,7 @@ function loadBookmarkClickRankingForAdditions(container) {
                         if (diff <= 365 * oneDay) info.last365d += 1;
                     });
                 }
-
+ 
                 finishIfDone();
             });
         } catch (e) {
@@ -14387,55 +15316,55 @@ function loadBookmarkClickRankingForAdditions(container) {
         }
     });
 }
-
+ 
 function renderBookmarkClickRankingList(container, items) {
     container.innerHTML = '';
-
+ 
     items.forEach(entry => {
         const row = document.createElement('div');
         row.className = 'addition-item ranking-item';
-
+ 
         const icon = document.createElement('img');
         icon.className = 'addition-icon';
         icon.src = getFaviconUrl(entry.url);
         icon.alt = '';
-
+ 
         const info = document.createElement('div');
         info.className = 'addition-info';
-
+ 
         const titleLink = document.createElement('a');
         titleLink.className = 'addition-title';
         titleLink.href = entry.url;
         titleLink.target = '_blank';
         titleLink.rel = 'noopener noreferrer';
         titleLink.textContent = entry.title;
-
+ 
         const urlDiv = document.createElement('div');
         urlDiv.className = 'addition-url';
         urlDiv.textContent = entry.url;
-
+ 
         info.appendChild(titleLink);
         info.appendChild(urlDiv);
-
+ 
         const counts = document.createElement('div');
         counts.className = 'ranking-counts';
         counts.textContent = currentLang === 'zh_CN'
             ? `7天：${entry.last7d}，30天：${entry.last30d}`
             : `7 days: ${entry.last7d}, 30 days: ${entry.last30d}`;
-
+ 
         const header = document.createElement('div');
         header.className = 'ranking-item-header';
         header.appendChild(info);
         header.appendChild(counts);
-
+ 
         const detail = document.createElement('div');
         detail.className = 'ranking-detail';
         detail.style.display = 'none';
-
+ 
         const lastVisitText = entry.lastVisitTime
             ? new Date(entry.lastVisitTime).toLocaleString()
             : (currentLang === 'zh_CN' ? '无访问记录' : 'No visits');
-
+ 
         if (currentLang === 'zh_CN') {
             detail.textContent =
                 `1天：${entry.last1d}，3天：${entry.last3d}，7天：${entry.last7d}，` +
@@ -14447,24 +15376,24 @@ function renderBookmarkClickRankingList(container, items) {
                 `30 days: ${entry.last30d}, 90 days: ${entry.last90d}, 180 days: ${entry.last180d}, 365 days: ${entry.last365d}; ` +
                 `Last visit: ${lastVisitText}`;
         }
-
+ 
         row.appendChild(icon);
         row.appendChild(header);
         row.appendChild(detail);
-
+ 
         // 整行可点击：展开/收起详细统计，同时打开书签
         row.addEventListener('click', (e) => {
             // 如果直接点击的是标题链接，让浏览器默认打开，不拦截
             if (e.target === titleLink) {
                 return;
             }
-
+ 
             e.preventDefault();
-
+ 
             // 切换详情可见性
             const visible = detail.style.display === 'block';
             detail.style.display = visible ? 'none' : 'block';
-
+ 
             // 打开对应书签
             try {
                 if (browserAPI && browserAPI.tabs && typeof browserAPI.tabs.create === 'function') {
@@ -14476,7 +15405,7 @@ function renderBookmarkClickRankingList(container, items) {
                 console.warn('[Additions] 打开书签失败:', err);
             }
         });
-
+ 
         container.appendChild(row);
     });
 }
@@ -18715,6 +19644,18 @@ function updateDetailModalToggleUI(mode) {
     }
 }
 
+
+function updateHistoryListItemMode(recordTime, mode) {
+    const item = document.querySelector(`.commit-item[data-record-time="${recordTime}"]`);
+    if (!item) return;
+
+    const tooltip = item.querySelector('.action-btn.detail-btn .btn-tooltip');
+    if (!tooltip) return;
+    tooltip.textContent = mode === 'simple'
+        ? (currentLang === 'zh_CN' ? '简略' : 'Simple')
+        : (currentLang === 'zh_CN' ? '详细' : 'Detailed');
+}
+
 function initDetailModalActions() {
     const simpleBtn = document.getElementById('historyDetailModeSimpleModal');
     const detailedBtn = document.getElementById('historyDetailModeDetailedModal');
@@ -18727,6 +19668,7 @@ function initDetailModalActions() {
             currentDetailRecordMode = 'simple';
             setRecordDetailMode(currentDetailRecordTime, 'simple');
             updateDetailModalToggleUI('simple');
+            updateHistoryListItemMode(currentDetailRecordTime, 'simple');
             if (currentDetailRecord) renderDetailModalContent(currentDetailRecord, 'simple');
         });
         simpleBtn.setAttribute('data-listener-attached', 'true');
@@ -18739,6 +19681,7 @@ function initDetailModalActions() {
             currentDetailRecordMode = 'detailed';
             setRecordDetailMode(currentDetailRecordTime, 'detailed');
             updateDetailModalToggleUI('detailed');
+            updateHistoryListItemMode(currentDetailRecordTime, 'detailed');
             if (currentDetailRecord) renderDetailModalContent(currentDetailRecord, 'detailed');
         });
         detailedBtn.setAttribute('data-listener-attached', 'true');
@@ -18935,6 +19878,12 @@ function initHistoryDetailModeToggle() {
         localStorage.setItem('historyDetailMode', 'simple');
         simpleBtn.classList.add('active');
         detailedBtn.classList.remove('active');
+        // 全局覆盖：同步更新每条记录的持久化模式
+        try {
+            (syncHistory || []).forEach(r => setRecordDetailMode(r?.time, 'simple'));
+        } catch (_) { }
+        // 立即刷新列表（未保存单条模式的记录会跟随全局模式）
+        try { renderHistoryView(); } catch (_) { }
     });
 
     detailedBtn.addEventListener('click', () => {
@@ -18943,6 +19892,12 @@ function initHistoryDetailModeToggle() {
         localStorage.setItem('historyDetailMode', 'detailed');
         detailedBtn.classList.add('active');
         simpleBtn.classList.remove('active');
+        // 全局覆盖：同步更新每条记录的持久化模式
+        try {
+            (syncHistory || []).forEach(r => setRecordDetailMode(r?.time, 'detailed'));
+        } catch (_) { }
+        // 立即刷新列表（未保存单条模式的记录会跟随全局模式）
+        try { renderHistoryView(); } catch (_) { }
     });
 }
 
@@ -18953,12 +19908,17 @@ async function generateDetailContent(record, mode) {
 
     let html = '';
 
+    const seqMap = buildSequenceMapFromHistory(syncHistory);
+    const seqNumber = seqMap.get(String(record.time));
+    const seqText = Number.isFinite(seqNumber) ? String(seqNumber) : '-';
+
     const noteText = (record.note && record.note.trim())
         ? record.note
         : (currentLang === 'zh_CN' ? '（无备注）' : '(No note)');
     html += `
         <div class="detail-section">
             <div class="detail-note-row">
+                <span class="commit-seq-badge" title="${currentLang === 'zh_CN' ? '序号' : 'No.'}">${seqText}</span>
                 <span class="detail-note-label">${currentLang === 'zh_CN' ? '备注：' : 'Note:'}</span>
                 <span class="detail-note-text-wrapper">
                     <span class="detail-note-text">${escapeHtml(noteText)}</span>
@@ -18967,16 +19927,26 @@ async function generateDetailContent(record, mode) {
                     </button>
                 </span>
                 <div class="detail-actions-right">
-                    <button id="detailExportChangesBtn" class="action-btn" title="${currentLang === 'zh_CN' ? '导出变化' : 'Export Changes'}">
+                    <button id="detailExportChangesBtn" class="action-btn compact" title="${currentLang === 'zh_CN' ? '导出变化' : 'Export Changes'}">
                         <i class="fas fa-file-export"></i>
                     </button>
                     <div class="toggle-btn-group" id="historyDetailModeToggleModal">
-                        <button id="historyDetailModeSimpleModal" class="toggle-btn" data-mode="simple" title="${currentLang === 'zh_CN' ? '简略模式' : 'Simple mode'}">
-                            <i class="fas fa-list"></i>
+                        <button id="historyDetailModeSimpleModal" class="toggle-btn ${detailMode === 'simple' ? 'active' : ''}" data-mode="simple" title="${currentLang === 'zh_CN' ? '简略模式' : 'Simple mode'}">
+                            <svg class="icon-compact" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                <line x1="4" y1="9" x2="20" y2="9" />
+                                <line x1="4" y1="15" x2="20" y2="15" />
+                                <circle cx="2" cy="9" r="1.5" fill="currentColor" stroke="none" />
+                                <circle cx="2" cy="15" r="1.5" fill="currentColor" stroke="none" />
+                            </svg>
                             <span id="historyDetailModeSimpleModalText">${currentLang === 'zh_CN' ? '简略' : 'Simple'}</span>
                         </button>
-                        <button id="historyDetailModeDetailedModal" class="toggle-btn" data-mode="detailed" title="${currentLang === 'zh_CN' ? '详细模式' : 'Detailed mode'}">
-                            <i class="fas fa-stream"></i>
+                        <button id="historyDetailModeDetailedModal" class="toggle-btn ${detailMode === 'detailed' ? 'active' : ''}" data-mode="detailed" title="${currentLang === 'zh_CN' ? '详细模式' : 'Detailed mode'}">
+                            <svg class="icon-detail" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                <line x1="4" y1="6" x2="20" y2="6" />
+                                <line x1="4" y1="10" x2="20" y2="10" />
+                                <line x1="4" y1="14" x2="20" y2="14" />
+                                <line x1="4" y1="18" x2="20" y2="18" />
+                            </svg>
                             <span id="historyDetailModeDetailedModalText">${currentLang === 'zh_CN' ? '详细' : 'Detailed'}</span>
                         </button>
                     </div>
@@ -19043,6 +20013,23 @@ async function generateTreeBasedChanges(record, mode) {
         }
     }
 
+    // 如果找不到上一条记录，尝试从 cachedRecordAfterClear 获取（清空历史后的第一条记录）
+    if (!previousRecord && recordIndex === 0) {
+        try {
+            const cachedData = await new Promise(resolve => {
+                browserAPI.storage.local.get('cachedRecordAfterClear', result => {
+                    resolve(result.cachedRecordAfterClear);
+                });
+            });
+            if (cachedData && cachedData.bookmarkTree) {
+                console.log('[树形视图] 使用 cachedRecordAfterClear 作为对比基准');
+                previousRecord = cachedData;
+            }
+        } catch (e) {
+            console.warn('[树形视图] 获取 cachedRecordAfterClear 失败:', e);
+        }
+    }
+
     // 使用与「当前变化」相同的 detectTreeChangesFast 函数计算变化
     let changeMap = new Map();
     let treeToRender = record.bookmarkTree;
@@ -19081,7 +20068,7 @@ async function generateTreeBasedChanges(record, mode) {
             if (item.id) changeMap.set(item.id, { type: 'added' });
         });
     } else {
-        // 例如：用户清空了备份历史后，这条记录变成“第一条记录”，但它并不是“首次备份”，无法与上一条对比计算差异
+        // 例如：用户清空了备份历史后，这条记录变成"第一条记录"，但它并不是"首次备份"，也没有缓存可对比
         return `
             <div class="detail-section">
                 <div class="detail-empty">
@@ -20489,6 +21476,134 @@ function formatTime(timestamp) {
     const seconds = String(date.getSeconds()).padStart(2, '0');
 
     return `${year}/${month}/${day} ${hours}:${minutes}:${seconds}`;
+}
+
+// 用于导出文件名的本地时间格式化（避免 toISOString 的 UTC 时区问题）
+function formatTimeForFilename(timestamp) {
+    const date = timestamp ? new Date(timestamp) : new Date();
+    const year = date.getFullYear();
+    const month = String(date.getMonth() + 1).padStart(2, '0');
+    const day = String(date.getDate()).padStart(2, '0');
+    const hours = String(date.getHours()).padStart(2, '0');
+    const minutes = String(date.getMinutes()).padStart(2, '0');
+    const seconds = String(date.getSeconds()).padStart(2, '0');
+    return `${year}-${month}-${day}_${hours}-${minutes}-${seconds}`;
+}
+
+function sanitizeFilenameSegment(text) {
+    return String(text || '')
+        .replace(/[\\/:*?"<>|]/g, '_')
+        .replace(/\s+/g, '_')
+        .replace(/_+/g, '_')
+        .replace(/^_+|_+$/g, '');
+}
+
+function buildSequenceMapFromHistory(historyRecords) {
+    const records = Array.isArray(historyRecords) ? historyRecords.slice() : [];
+    records.sort((a, b) => Number(a?.time || 0) - Number(b?.time || 0));
+    const map = new Map();
+    const used = new Set();
+    for (const r of records) {
+        const seq = Number(r?.seqNumber);
+        if (Number.isFinite(seq) && seq > 0) used.add(seq);
+    }
+    let next = 1;
+    for (const r of records) {
+        let seq = Number(r?.seqNumber);
+        if (!(Number.isFinite(seq) && seq > 0)) {
+            while (used.has(next)) next++;
+            seq = next;
+            used.add(seq);
+            next++;
+        }
+        map.set(String(r.time), seq);
+    }
+    return map;
+}
+
+function formatSelectedSequenceRanges(seqNumbers, lang) {
+    const delim = lang === 'zh_CN' ? '、' : ',';
+    const nums = Array.from(new Set((seqNumbers || []).filter(n => Number.isFinite(n) && n > 0)))
+        .sort((a, b) => a - b);
+    if (nums.length === 0) return '';
+
+    const parts = [];
+    let start = nums[0];
+    let end = nums[0];
+    for (let i = 1; i < nums.length; i++) {
+        const n = nums[i];
+        if (n === end + 1) {
+            end = n;
+            continue;
+        }
+        parts.push(start === end ? String(start) : `${start}-${end}`);
+        start = n;
+        end = n;
+    }
+    parts.push(start === end ? String(start) : `${start}-${end}`);
+    return parts.join(delim);
+}
+
+function generateBookmarkExportHTMLFromTree(treeRoot) {
+    const escapeAttr = (s) => String(s ?? '').replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    const escapeText = (s) => String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+
+    let html = '<!DOCTYPE NETSCAPE-Bookmark-file-1>\n';
+    html += '<META HTTP-EQUIV="Content-Type" CONTENT="text/html; charset=UTF-8">\n';
+    html += '<TITLE>Bookmarks</TITLE>\n';
+    html += '<H1>Bookmarks</H1>\n';
+    html += '<DL><p>\n';
+
+    const generateNodeHTML = (node, indentLevel) => {
+        const indent = '    '.repeat(indentLevel);
+        const title = escapeText(node?.title || '');
+        const url = node?.url ? String(node.url) : '';
+        const isFolder = !url && node && Array.isArray(node.children);
+
+        if (isFolder) {
+            let result = `${indent}<DT><H3>${title}</H3>\n`;
+            result += `${indent}<DL><p>\n`;
+            node.children.forEach(child => {
+                result += generateNodeHTML(child, indentLevel + 1);
+            });
+            result += `${indent}</DL><p>\n`;
+            return result;
+        }
+
+        if (url) {
+            return `${indent}<DT><A HREF="${escapeAttr(url)}">${title}</A>\n`;
+        }
+
+        // fallback: treat as folder-ish if children exists, otherwise skip
+        if (node && Array.isArray(node.children)) {
+            let result = `${indent}<DT><H3>${title}</H3>\n`;
+            result += `${indent}<DL><p>\n`;
+            node.children.forEach(child => {
+                result += generateNodeHTML(child, indentLevel + 1);
+            });
+            result += `${indent}</DL><p>\n`;
+            return result;
+        }
+
+        return '';
+    };
+
+    const nodes = Array.isArray(treeRoot) ? treeRoot : [treeRoot];
+    nodes.forEach(root => {
+        if (!root) return;
+        if (root.title) {
+            html += generateNodeHTML({ title: root.title, children: root.children || [] }, 1);
+            return;
+        }
+        if (Array.isArray(root.children)) {
+            root.children.forEach(child => {
+                html += generateNodeHTML(child, 1);
+            });
+        }
+    });
+
+    html += '</DL><p>\n';
+    return html;
 }
 
 function escapeHtml(text) {
@@ -24162,7 +25277,7 @@ async function executeExportChanges() {
     try {
         let content = '';
         let filename = '';
-        const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
+        const timestamp = formatTimeForFilename(); // 当前时间（导出时间）
 
         // 设置按钮加载状态
         confirmBtn.disabled = true;
@@ -24177,11 +25292,25 @@ async function executeExportChanges() {
                 content = useHistoryDomTree
                     ? await generateHistoryChangesHTMLFromDOM(currentExportHistoryTreeContainer, mode)
                     : await generateHistoryChangesHTML(currentExportBookmarkTree, currentExportChangeData, mode);
-                filename = `bookmark-history-${timestamp}.html`;
+
+                // Construct filename: Note_Hash_Mode_Time
+                const record = currentExportHistoryRecord;
+                const dateStr = formatTimeForFilename(record.time); // 备份时间（本地时间）
+                const cleanNote = record.note ? record.note.replace(/[\\/:*?"<>|]/g, '_').replace(/\s+/g, '_') : '';
+                const fingerprint = record.fingerprint ? `_${record.fingerprint.substring(0, 8)}` : '';
+                const modeStr = mode === 'simple' ? (isZh ? '_简略' : '_Simple') : (isZh ? '_详细' : '_Detailed');
+                const defaultPrefix = isZh ? '书签' : 'bookmark';
+
+                const baseName = cleanNote
+                    ? `${cleanNote}${fingerprint}${modeStr}_${dateStr}`
+                    : `${defaultPrefix}${fingerprint}${modeStr}_${dateStr}`;
+
+                filename = `${baseName}.html`;
             } else {
                 // 当前变化导出 - 从 DOM 提取
                 content = await generateChangesHTML(currentExportChangeData, mode, depth);
-                filename = `bookmark-changes-${timestamp}.html`;
+                const changesPrefix = isZh ? '书签变化' : 'bookmark-changes';
+                filename = `${changesPrefix}-${timestamp}.html`;
             }
         } else {
             if (isHistoryExport) {
@@ -24189,11 +25318,25 @@ async function executeExportChanges() {
                 content = useHistoryDomTree
                     ? await generateHistoryChangesJSONFromDOM(currentExportHistoryTreeContainer, mode)
                     : await generateHistoryChangesJSON(currentExportBookmarkTree, currentExportChangeData, mode);
-                filename = `bookmark-history-${timestamp}.json`;
+
+                // Construct filename: Note_Hash_Mode_Time
+                const record = currentExportHistoryRecord;
+                const dateStr = formatTimeForFilename(record.time); // 备份时间（本地时间）
+                const cleanNote = record.note ? record.note.replace(/[\\/:*?"<>|]/g, '_').replace(/\s+/g, '_') : '';
+                const fingerprint = record.fingerprint ? `_${record.fingerprint.substring(0, 8)}` : '';
+                const modeStr = mode === 'simple' ? (isZh ? '_简略' : '_Simple') : (isZh ? '_详细' : '_Detailed');
+                const defaultPrefix = isZh ? '书签' : 'bookmark';
+
+                const baseName = cleanNote
+                    ? `${cleanNote}${fingerprint}${modeStr}_${dateStr}`
+                    : `${defaultPrefix}${fingerprint}${modeStr}_${dateStr}`;
+
+                filename = `${baseName}.json`;
             } else {
                 // 当前变化导出 - 从 DOM 提取
                 content = await generateChangesJSON(currentExportChangeData, mode, depth);
-                filename = `bookmark-changes-${timestamp}.json`;
+                const changesPrefix = isZh ? '书签变化' : 'bookmark-changes';
+                filename = `${changesPrefix}-${timestamp}.json`;
             }
             // 如果是 JSON 格式，content 是对象，需要 stringify
             if (typeof content === 'object') {
@@ -25027,9 +26170,12 @@ async function generateHistoryChangesJSONFromDOM(treeContainer, mode) {
 
 // 生成备份历史的变化HTML（从书签树直接生成，不依赖DOM）
 // changeMap: Map<id, {type: 'added'|'deleted'|'modified'|'moved'|'modified+moved', moved?: {...}}>
-async function generateHistoryChangesHTML(bookmarkTree, changeMap, mode) {
+async function generateHistoryChangesHTML(bookmarkTree, changeMap, mode, expandedIds = null) {
     const isZh = currentLang === 'zh_CN';
     const now = new Date().toLocaleString();
+
+    // 在详细模式下，如果提供了 expandedIds，则只展开这些节点（WYSIWYG）
+    const useWysiwygExpansion = mode === 'detailed' && expandedIds && expandedIds.size > 0;
 
     let html = '<!DOCTYPE NETSCAPE-Bookmark-file-1>\n';
     html += '<META HTTP-EQUIV="Content-Type" CONTENT="text/html; charset=UTF-8">\n';
@@ -25122,8 +26268,14 @@ async function generateHistoryChangesHTML(bookmarkTree, changeMap, mode) {
                 let shouldRecurse = false;
 
                 if (mode === 'detailed') {
-                    // 详细模式：只有有变化的路径才展开
-                    shouldRecurse = nodeHasChanges;
+                    // 详细模式
+                    if (useWysiwygExpansion) {
+                        // WYSIWYG: 只展开用户手动展开过的节点
+                        shouldRecurse = expandedIds.has(String(node.id));
+                    } else {
+                        // 默认行为：只有有变化的路径才展开
+                        shouldRecurse = nodeHasChanges;
+                    }
                 } else {
                     // 简略模式：一定有变化才能到这里，所以递归
                     shouldRecurse = true;
@@ -25164,9 +26316,12 @@ async function generateHistoryChangesHTML(bookmarkTree, changeMap, mode) {
 
 // 生成备份历史的变化JSON（从书签树直接生成，不依赖DOM）
 // changeMap: Map<id, {type: 'added'|'deleted'|'modified'|'moved'|'modified+moved', moved?: {...}}>
-async function generateHistoryChangesJSON(bookmarkTree, changeMap, mode) {
+async function generateHistoryChangesJSON(bookmarkTree, changeMap, mode, expandedIds = null) {
     const isZh = currentLang === 'zh_CN';
     const now = new Date().toISOString();
+
+    // 在详细模式下，如果提供了 expandedIds，则只展开这些节点（WYSIWYG）
+    const useWysiwygExpansion = mode === 'detailed' && expandedIds && expandedIds.size > 0;
 
     if (!bookmarkTree) {
         return {
@@ -25240,8 +26395,14 @@ async function generateHistoryChangesJSON(bookmarkTree, changeMap, mode) {
             let shouldRecurse = false;
 
             if (mode === 'detailed') {
-                // 详细模式：只有有变化的路径才展开
-                shouldRecurse = nodeHasChanges;
+                // 详细模式
+                if (useWysiwygExpansion) {
+                    // WYSIWYG: 只展开用户手动展开过的节点
+                    shouldRecurse = expandedIds.has(String(node.id));
+                } else {
+                    // 默认行为：只有有变化的路径才展开
+                    shouldRecurse = nodeHasChanges;
+                }
             } else {
                 // 简略模式：一定有变化才能到这里，所以递归
                 shouldRecurse = true;
@@ -25513,4 +26674,1400 @@ function escapeHtml(str) {
         .replace(/>/g, '&gt;')
         .replace(/"/g, '&quot;')
         .replace(/'/g, '&#39;');
+}
+
+// =============================================================================
+// 全局导出功能 (Global Export)
+// =============================================================================
+
+// =============================================================================
+// 全局导出功能 (Global Export)
+// =============================================================================
+
+function initGlobalExport() {
+    const btn = document.getElementById('globalExportBtn');
+    if (btn) {
+        btn.addEventListener('click', showGlobalExportModal);
+    }
+
+    const closeBtn = document.getElementById('globalExportModalClose');
+    if (closeBtn) {
+        closeBtn.addEventListener('click', closeGlobalExportModal);
+    }
+
+    const cancelBtn = document.getElementById('globalExportCancelBtn');
+    if (cancelBtn) {
+        cancelBtn.addEventListener('click', closeGlobalExportModal);
+    }
+
+    const confirmBtn = document.getElementById('globalExportConfirmBtn');
+    if (confirmBtn) {
+        confirmBtn.addEventListener('click', startGlobalExport);
+    }
+
+    // 全选交互
+    const selectAllCbox = document.getElementById('globalExportSelectAll');
+    if (selectAllCbox) {
+        selectAllCbox.addEventListener('change', (e) => {
+            const checked = e.target.checked;
+            // 更新所有记录的选中状态（跨页）
+            Object.keys(globalExportSelectedState).forEach(key => {
+                globalExportSelectedState[key] = checked;
+            });
+            // 更新当前页的 UI
+            document.querySelectorAll('.global-export-row-checkbox').forEach(cb => cb.checked = checked);
+            updateGlobalExportStatus();
+            syncGlobalExportRangeUiAfterListSelectionChange();
+        });
+    }
+
+    initGlobalExportRangeUI();
+
+    // 导出格式：三选一（HTML / JSON / Markdown）
+    const formatHtmlCbox = document.getElementById('globalExportFormatHtml');
+    const formatJsonCbox = document.getElementById('globalExportFormatJson');
+    const formatMdCbox = document.getElementById('globalExportFormatMd');
+
+    const packMergeRadio = document.getElementById('globalExportPackMerge');
+    const packZipRadio = document.getElementById('globalExportPackZip');
+
+    const formatCboxes = [formatHtmlCbox, formatJsonCbox, formatMdCbox].filter(Boolean);
+
+    const applyPackRulesForMd = (isMdSelected) => {
+        if (!packMergeRadio || !packZipRadio) return;
+
+        if (isMdSelected) {
+            // MD 强制“合并”，并禁用 Zip
+            packMergeRadio.checked = true;
+            packZipRadio.disabled = true;
+            if (packZipRadio.parentElement) packZipRadio.parentElement.style.opacity = '0.5';
+        } else {
+            // 非 MD 恢复 Zip 可用
+            packZipRadio.disabled = false;
+            if (packZipRadio.parentElement) packZipRadio.parentElement.style.opacity = '1';
+        }
+    };
+
+    const enforceSingleFormat = (activeCbox) => {
+        formatCboxes.forEach((cbox) => {
+            if (cbox !== activeCbox) cbox.checked = false;
+        });
+        applyPackRulesForMd(Boolean(formatMdCbox?.checked));
+    };
+
+    formatCboxes.forEach((cbox) => {
+        cbox.addEventListener('change', (e) => {
+            const target = e.target;
+            if (target.checked) {
+                enforceSingleFormat(target);
+                return;
+            }
+
+            // 不允许全部取消：如果用户把最后一个也取消，则自动恢复勾选
+            const anyChecked = formatCboxes.some(cb => cb.checked);
+            if (!anyChecked) {
+                target.checked = true;
+            }
+            applyPackRulesForMd(Boolean(formatMdCbox?.checked));
+        });
+    });
+
+    // 初始化一次（防止默认勾选/历史状态导致 pack 状态不一致）
+    applyPackRulesForMd(Boolean(formatMdCbox?.checked));
+
+    // 导出卡片点击交互 (让整个卡片可点击)
+    document.querySelectorAll('.export-option-card').forEach(card => {
+        const checkbox = card.querySelector('input[type="checkbox"]');
+        if (checkbox) {
+            // 初始化状态
+            if (checkbox.checked) card.classList.add('selected');
+
+            checkbox.addEventListener('change', () => {
+                if (checkbox.checked) {
+                    card.classList.add('selected');
+                } else {
+                    card.classList.remove('selected');
+                }
+            });
+        }
+    });
+
+    const modal = document.getElementById('globalExportModal');
+    if (modal) {
+        modal.addEventListener('click', (e) => {
+            if (e.target === modal) closeGlobalExportModal();
+        });
+    }
+}
+
+function closeGlobalExportModal() {
+    document.getElementById('globalExportModal').classList.remove('show');
+}
+
+function updateGlobalExportStatus() {
+    const selectedCount = Object.values(globalExportSelectedState).filter(v => v === true).length;
+    const total = Object.keys(globalExportSelectedState).length;
+    const statusEl = document.getElementById('globalExportStatus');
+
+    if (statusEl) {
+        statusEl.textContent = `${currentLang === 'zh_CN' ? '已选' : 'Selected'} ${selectedCount} / ${total}`;
+    }
+
+    const confirmBtn = document.getElementById('globalExportConfirmBtn');
+    if (confirmBtn) {
+        confirmBtn.disabled = selectedCount === 0;
+        confirmBtn.style.opacity = selectedCount === 0 ? '0.5' : '1';
+    }
+
+    // 联动全选按钮状态
+    updateSelectAllCheckboxState();
+}
+
+// 全局导出分页状态
+let globalExportCurrentPage = 1;
+const GLOBAL_EXPORT_PAGE_SIZE = 10;
+let globalExportSelectedState = {}; // 保存每条记录的选中状态
+
+let globalExportSeqNumberByTime = new Map(); // time(string) -> seqNumber(number)
+
+let globalExportRangeBoundsCache = { min: 1, max: 1 };
+let globalExportRangeApplyingSelection = false;
+let globalExportActiveRangeThumb = 'max'; // 'min' | 'max'
+let globalExportRangeRafPending = false;
+
+function initGlobalExportRangeUI() {
+    const toggleBtn = document.getElementById('globalExportRangeToggleBtn');
+    const panel = document.getElementById('globalExportRangePanel');
+    const enabledCbox = document.getElementById('globalExportRangeEnabled');
+    const minSlider = document.getElementById('globalExportRangeMin');
+    const maxSlider = document.getElementById('globalExportRangeMax');
+
+    if (!toggleBtn || !panel || !enabledCbox || !minSlider || !maxSlider) return;
+
+    if (!toggleBtn.hasAttribute('data-listener-attached')) {
+        toggleBtn.addEventListener('click', () => {
+            const isExpanded = panel.style.display !== 'none';
+            setGlobalExportRangePanelExpanded(!isExpanded);
+        });
+        toggleBtn.setAttribute('data-listener-attached', 'true');
+    }
+
+	    if (!enabledCbox.hasAttribute('data-listener-attached')) {
+	        enabledCbox.addEventListener('change', () => {
+	            const enabled = Boolean(enabledCbox.checked);
+	            setGlobalExportRangeEnabled(enabled);
+	            updateGlobalExportRangeHighlight();
+	            updateGlobalExportRangePreviewText();
+	            if (enabled) {
+	                applyGlobalExportSelectionByCurrentThumbRange();
+	            }
+	        });
+	        enabledCbox.setAttribute('data-listener-attached', 'true');
+	    }
+
+	    const handleMinInput = () => {
+	        updateGlobalExportRangeHighlight();
+	        updateGlobalExportRangePreviewText();
+	        if (isGlobalExportRangePanelExpanded()) {
+	            globalExportCurrentPage = 1;
+	            renderGlobalExportPage();
+	        }
+	        if (enabledCbox.checked) {
+	            applyGlobalExportSelectionByCurrentThumbRange();
+	        }
+	    };
+
+	    const handleMaxInput = () => {
+	        updateGlobalExportRangeHighlight();
+	        updateGlobalExportRangePreviewText();
+	        if (isGlobalExportRangePanelExpanded()) {
+	            globalExportCurrentPage = 1;
+	            renderGlobalExportPage();
+	        }
+	        if (enabledCbox.checked) {
+	            applyGlobalExportSelectionByCurrentThumbRange();
+	        }
+	    };
+
+    if (!minSlider.hasAttribute('data-listener-attached')) {
+        minSlider.addEventListener('input', handleMinInput);
+        minSlider.addEventListener('pointerdown', () => {
+            minSlider.style.zIndex = '5';
+            maxSlider.style.zIndex = '4';
+            globalExportActiveRangeThumb = 'min';
+        });
+        minSlider.setAttribute('data-listener-attached', 'true');
+    }
+    if (!maxSlider.hasAttribute('data-listener-attached')) {
+        maxSlider.addEventListener('input', handleMaxInput);
+        maxSlider.addEventListener('pointerdown', () => {
+            maxSlider.style.zIndex = '5';
+            minSlider.style.zIndex = '4';
+            globalExportActiveRangeThumb = 'max';
+        });
+        maxSlider.setAttribute('data-listener-attached', 'true');
+    }
+
+    setGlobalExportRangePanelExpanded(false);
+    setGlobalExportRangeEnabled(false);
+    updateGlobalExportRangePreviewText();
+}
+
+function scheduleGlobalExportRangeUiUpdate() {
+    if (globalExportRangeRafPending) return;
+    globalExportRangeRafPending = true;
+    requestAnimationFrame(() => {
+        globalExportRangeRafPending = false;
+        updateGlobalExportRangeHighlight();
+        updateGlobalExportRangePreviewText();
+    });
+}
+
+function isGlobalExportRangePanelExpanded() {
+    const panel = document.getElementById('globalExportRangePanel');
+    if (!panel) return false;
+    return panel.style.display !== 'none';
+}
+
+function setGlobalExportRangePanelExpanded(expanded) {
+    const panel = document.getElementById('globalExportRangePanel');
+    const toggleBtn = document.getElementById('globalExportRangeToggleBtn');
+    if (!panel || !toggleBtn) return;
+
+    const wasExpanded = panel.style.display !== 'none';
+    panel.style.display = expanded ? 'block' : 'none';
+    const icon = toggleBtn.querySelector('i');
+    if (icon) {
+        icon.classList.toggle('fa-chevron-down', !expanded);
+        icon.classList.toggle('fa-chevron-up', expanded);
+    }
+
+    // 收起时回到“原来的”模式：关闭范围勾选联动（但不改当前勾选状态）
+    if (!expanded) {
+        const enabledCbox = document.getElementById('globalExportRangeEnabled');
+        if (enabledCbox && enabledCbox.checked) {
+            enabledCbox.checked = false;
+            setGlobalExportRangeEnabled(false);
+            updateGlobalExportRangePreviewText();
+        }
+    }
+
+    // 展开/收起会影响“下方列表显示什么”
+    if (wasExpanded !== expanded) {
+        globalExportCurrentPage = 1;
+        try {
+            renderGlobalExportPage();
+        } catch (e) {
+            // ignore if called before table exists
+        }
+    }
+}
+
+function setGlobalExportRangeEnabled(enabled) {
+    // 注意：滑块在“视觉模式/勾选模式”都应保持可操作、视觉不变暗；
+    // 这里的“启用”仅表示是否将范围应用到列表勾选
+}
+
+function getGlobalExportSeqRangeBounds() {
+    if (!syncHistory || syncHistory.length === 0) return { min: 1, max: 1 };
+
+    let min = Infinity;
+    let max = -Infinity;
+    for (let i = 0; i < syncHistory.length; i++) {
+        const record = syncHistory[i];
+        const seqNumber = record.seqNumber || (i + 1);
+        if (seqNumber < min) min = seqNumber;
+        if (seqNumber > max) max = seqNumber;
+    }
+    if (!Number.isFinite(min) || !Number.isFinite(max)) return { min: 1, max: 1 };
+    return { min, max };
+}
+
+function updateGlobalExportRangeHighlight() {
+    const highlight = document.getElementById('globalExportRangeHighlight');
+    const minSlider = document.getElementById('globalExportRangeMin');
+    const maxSlider = document.getElementById('globalExportRangeMax');
+    if (!highlight || !minSlider || !maxSlider) return;
+
+    const min = parseInt(minSlider.min, 10);
+    const max = parseInt(minSlider.max, 10);
+    const range = Math.max(1, max - min);
+
+    const a = parseInt(minSlider.value, 10);
+    const b = parseInt(maxSlider.value, 10);
+    const low = Math.min(a, b);
+    const high = Math.max(a, b);
+
+    const leftPercent = ((low - min) / range) * 100;
+    const widthPercent = ((high - low) / range) * 100;
+
+    highlight.style.left = `${leftPercent}%`;
+    highlight.style.width = `${widthPercent}%`;
+
+    updateGlobalExportRangeBubbles();
+}
+
+function updateGlobalExportRangeBubbles() {
+    const minSlider = document.getElementById('globalExportRangeMin');
+    const maxSlider = document.getElementById('globalExportRangeMax');
+    const minBubble = document.getElementById('globalExportRangeMinBubble');
+    const maxBubble = document.getElementById('globalExportRangeMaxBubble');
+    const container = document.getElementById('globalExportRangeContainer');
+    const track = container ? container.querySelector('.range-slider-track') : null;
+    const leftLabel = document.getElementById('globalExportRangeLeftLabel');
+    const rightLabel = document.getElementById('globalExportRangeRightLabel');
+    if (!minSlider || !maxSlider || !minBubble || !maxBubble || !container || !track) return;
+
+    const min = parseInt(minSlider.min, 10);
+    const max = parseInt(minSlider.max, 10);
+    const range = Math.max(1, max - min);
+
+    const minVal = parseInt(minSlider.value, 10);
+    const maxVal = parseInt(maxSlider.value, 10);
+
+    // Inputs are flipped (scaleX(-1)), so visual position is mirrored.
+    const minPercent = ((minVal - min) / range) * 100;
+    const maxPercent = ((maxVal - min) / range) * 100;
+
+    // Use container pixels instead of getBoundingClientRect() to avoid occasional
+    // jitter when the table below rerenders and layout shifts during dragging.
+    const insetPx = 10; // keep in sync with #globalExportRangeContainer track/input inset
+    const thumbSizePx = 20; // keep in sync with .range-slider-input thumb size
+    const thumbHalfPx = thumbSizePx / 2;
+
+    const trackWidthPx = Math.max(1, container.clientWidth - insetPx * 2);
+    const effectiveWidthPx = Math.max(0, trackWidthPx - thumbSizePx);
+
+    const minX = insetPx + thumbHalfPx + (1 - (minPercent / 100)) * effectiveWidthPx;
+    const maxX = insetPx + thumbHalfPx + (1 - (maxPercent / 100)) * effectiveWidthPx;
+
+    minBubble.style.left = `${minX}px`;
+    maxBubble.style.left = `${maxX}px`;
+    minBubble.textContent = String(minVal);
+    maxBubble.textContent = String(maxVal);
+
+    // If two thumbs overlap, don't draw both numbers on top of each other.
+    const overlapThresholdPx = 14;
+    const overlap = Math.abs(minX - maxX) <= overlapThresholdPx;
+    if (overlap) {
+        if (globalExportActiveRangeThumb === 'min') {
+            minBubble.style.opacity = '1';
+            minBubble.style.zIndex = '7';
+            maxBubble.style.opacity = '0';
+            maxBubble.style.zIndex = '6';
+        } else {
+            maxBubble.style.opacity = '1';
+            maxBubble.style.zIndex = '7';
+            minBubble.style.opacity = '0';
+            minBubble.style.zIndex = '6';
+        }
+    } else {
+        minBubble.style.opacity = '1';
+        maxBubble.style.opacity = '1';
+        minBubble.style.zIndex = '6';
+        maxBubble.style.zIndex = '6';
+    }
+
+    // When a thumb reaches the end, let it cover the end label (avoid visual clutter).
+    // If either thumb is close to an edge, hide that edge label.
+    const edgeThresholdPx = thumbHalfPx + 2;
+    const leftEdgeX = insetPx;
+    const rightEdgeX = insetPx + trackWidthPx;
+    const nearLeftEdge = Math.min(Math.abs(minX - leftEdgeX), Math.abs(maxX - leftEdgeX)) <= edgeThresholdPx;
+    const nearRightEdge = Math.min(Math.abs(minX - rightEdgeX), Math.abs(maxX - rightEdgeX)) <= edgeThresholdPx;
+
+    if (leftLabel) leftLabel.style.opacity = nearLeftEdge ? '0' : '1';
+    if (rightLabel) rightLabel.style.opacity = nearRightEdge ? '0' : '1';
+}
+
+function updateGlobalExportRangePreviewText() {
+    const previewEl = document.getElementById('globalExportRangePreviewText');
+    const enabledCbox = document.getElementById('globalExportRangeEnabled');
+    const minSlider = document.getElementById('globalExportRangeMin');
+    const maxSlider = document.getElementById('globalExportRangeMax');
+    if (!previewEl || !enabledCbox || !minSlider || !maxSlider) return;
+
+    const a = parseInt(minSlider.value, 10);
+    const b = parseInt(maxSlider.value, 10);
+    const low = Math.min(a, b);
+    const high = Math.max(a, b);
+    const seqRangeStr = low === high ? String(low) : `${low}-${high}`;
+    const countInRange = countGlobalExportRecordsInSeqRange(low, high);
+
+    updateGlobalExportRangeBubbles();
+
+    if (!enabledCbox.checked) {
+        // 视觉查看模式：仅影响下方列表显示范围，不改勾选
+        previewEl.textContent = currentLang === 'en'
+            ? `Showing No. ${seqRangeStr} (${countInRange})`
+            : `显示：序号 ${seqRangeStr}（${countInRange} 条）`;
+        return;
+    }
+
+    // 勾选模式：影响下方列表显示，并把范围应用到勾选
+    previewEl.textContent = currentLang === 'en'
+        ? `Selecting No. ${seqRangeStr} (${countInRange})`
+        : `勾选：序号 ${seqRangeStr}（${countInRange} 条）`;
+}
+
+function countGlobalExportRecordsInSeqRange(minSeq, maxSeq) {
+    if (!syncHistory || syncHistory.length === 0) return 0;
+    let count = 0;
+    for (let i = 0; i < syncHistory.length; i++) {
+        const record = syncHistory[i];
+        const seqNumber = globalExportSeqNumberByTime.get(String(record.time)) || record.seqNumber || (i + 1);
+        if (seqNumber >= minSeq && seqNumber <= maxSeq) count++;
+    }
+    return count;
+}
+
+function applyGlobalExportSelectionByCurrentThumbRange() {
+    const minSlider = document.getElementById('globalExportRangeMin');
+    const maxSlider = document.getElementById('globalExportRangeMax');
+    if (!minSlider || !maxSlider) return;
+
+    const a = parseInt(minSlider.value, 10);
+    const b = parseInt(maxSlider.value, 10);
+    const low = Math.min(a, b);
+    const high = Math.max(a, b);
+
+    applyGlobalExportSelectionBySeqRange(low, high);
+}
+
+function applyGlobalExportSelectionBySeqRange(minSeq, maxSeq) {
+    if (!syncHistory || syncHistory.length === 0) return;
+
+    globalExportRangeApplyingSelection = true;
+    for (let i = 0; i < syncHistory.length; i++) {
+        const record = syncHistory[i];
+        const seqNumber = globalExportSeqNumberByTime.get(String(record.time)) || record.seqNumber || (i + 1);
+        globalExportSelectedState[record.time] = (seqNumber >= minSeq && seqNumber <= maxSeq);
+    }
+
+    document.querySelectorAll('.global-export-row-checkbox').forEach(cb => {
+        const time = cb.dataset.time;
+        cb.checked = globalExportSelectedState[time] === true;
+    });
+
+    updateGlobalExportStatus();
+    updateGlobalExportRangeHighlight();
+    updateGlobalExportRangePreviewText();
+    globalExportRangeApplyingSelection = false;
+}
+
+function setupGlobalExportRangeUiForOpen({ source = 'global', minSeq = null, maxSeq = null, autoEnable = false, autoExpand = false } = {}) {
+    const enabledCbox = document.getElementById('globalExportRangeEnabled');
+    const minSlider = document.getElementById('globalExportRangeMin');
+    const maxSlider = document.getElementById('globalExportRangeMax');
+    const leftLabel = document.getElementById('globalExportRangeLeftLabel');
+    const rightLabel = document.getElementById('globalExportRangeRightLabel');
+
+    if (!enabledCbox || !minSlider || !maxSlider) return;
+
+    globalExportRangeBoundsCache = getGlobalExportSeqRangeBounds();
+    const bounds = globalExportRangeBoundsCache;
+
+    minSlider.min = String(bounds.min);
+    minSlider.max = String(bounds.max);
+    maxSlider.min = String(bounds.min);
+    maxSlider.max = String(bounds.max);
+
+    const nextMinSeq = minSeq == null ? bounds.min : minSeq;
+    const nextMaxSeq = maxSeq == null ? bounds.max : maxSeq;
+
+    minSlider.value = String(nextMinSeq);
+    maxSlider.value = String(nextMaxSeq);
+
+    if (leftLabel) leftLabel.textContent = String(bounds.max);
+    if (rightLabel) rightLabel.textContent = String(bounds.min);
+
+    setGlobalExportRangePanelExpanded(Boolean(autoExpand));
+    enabledCbox.checked = Boolean(autoEnable);
+    setGlobalExportRangeEnabled(Boolean(autoEnable));
+
+    updateGlobalExportRangeHighlight();
+    updateGlobalExportRangePreviewText();
+    updateGlobalExportRangeBubbles();
+
+    if (source === 'delete' && autoEnable) {
+        applyGlobalExportSelectionBySeqRange(parseInt(minSlider.value, 10), parseInt(maxSlider.value, 10));
+    }
+}
+
+function syncGlobalExportRangeUiAfterListSelectionChange() {
+    const enabledCbox = document.getElementById('globalExportRangeEnabled');
+    if (!enabledCbox || !enabledCbox.checked) return;
+    if (globalExportRangeApplyingSelection) return;
+
+    // 如果用户手动改了列表勾选，则退出“范围应用”模式，避免滑块显示与实际勾选不一致
+    enabledCbox.checked = false;
+    setGlobalExportRangeEnabled(false);
+    updateGlobalExportRangePreviewText();
+}
+
+function showGlobalExportModal() {
+    const modal = document.getElementById('globalExportModal');
+    const tbody = document.getElementById('globalExportTableBody');
+
+    if (!modal || !tbody) return;
+
+    // 重置分页状态
+    globalExportCurrentPage = 1;
+    globalExportSelectedState = {};
+
+    if (!syncHistory || syncHistory.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="6" style="padding: 30px; text-align: center; color: var(--text-tertiary);">暂无备份记录</td></tr>';
+        document.getElementById('globalExportPagination').style.display = 'none';
+        modal.classList.add('show');
+        return;
+    }
+
+    // 初始化所有记录为选中状态
+    syncHistory.forEach(record => {
+        globalExportSelectedState[record.time] = true;
+    });
+
+    // 建立序号映射（与删除弹窗口径一致：syncHistory 顺序的 index+1；newer 具有更大序号）
+    globalExportSeqNumberByTime = new Map();
+    syncHistory.forEach((record, index) => {
+        const seqNumber = record.seqNumber || (index + 1);
+        globalExportSeqNumberByTime.set(String(record.time), seqNumber);
+    });
+
+    // 渲染当前页
+    renderGlobalExportPage();
+
+    // 绑定分页按钮事件
+    const prevBtn = document.getElementById('globalExportPrevPage');
+    const nextBtn = document.getElementById('globalExportNextPage');
+    const pageInput = document.getElementById('globalExportPageInput');
+
+    // 移除旧事件（防止重复绑定）
+    prevBtn.replaceWith(prevBtn.cloneNode(true));
+    nextBtn.replaceWith(nextBtn.cloneNode(true));
+    pageInput.replaceWith(pageInput.cloneNode(true));
+
+    document.getElementById('globalExportPrevPage').addEventListener('click', () => {
+        if (globalExportCurrentPage > 1) {
+            globalExportCurrentPage--;
+            renderGlobalExportPage();
+        }
+    });
+
+    document.getElementById('globalExportNextPage').addEventListener('click', () => {
+        const totalPages = Math.ceil(syncHistory.length / GLOBAL_EXPORT_PAGE_SIZE);
+        if (globalExportCurrentPage < totalPages) {
+            globalExportCurrentPage++;
+            renderGlobalExportPage();
+        }
+    });
+
+    // 页码输入框跳转
+    const newPageInput = document.getElementById('globalExportPageInput');
+    newPageInput.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') {
+            const totalPages = Math.ceil(syncHistory.length / GLOBAL_EXPORT_PAGE_SIZE);
+            let targetPage = parseInt(newPageInput.value, 10);
+            if (isNaN(targetPage) || targetPage < 1) targetPage = 1;
+            if (targetPage > totalPages) targetPage = totalPages;
+            globalExportCurrentPage = targetPage;
+            renderGlobalExportPage();
+        }
+    });
+    newPageInput.addEventListener('blur', () => {
+        const totalPages = Math.ceil(syncHistory.length / GLOBAL_EXPORT_PAGE_SIZE);
+        let targetPage = parseInt(newPageInput.value, 10);
+        if (isNaN(targetPage) || targetPage < 1) targetPage = 1;
+        if (targetPage > totalPages) targetPage = totalPages;
+        if (targetPage !== globalExportCurrentPage) {
+            globalExportCurrentPage = targetPage;
+            renderGlobalExportPage();
+        } else {
+            // 只更新输入框显示（防止显示非法值）
+            newPageInput.value = globalExportCurrentPage;
+        }
+    });
+
+    setupGlobalExportRangeUiForOpen({ source: 'global', autoEnable: false, autoExpand: false });
+    updateGlobalExportStatus();
+    modal.classList.add('show');
+}
+
+function renderGlobalExportPage() {
+    const tbody = document.getElementById('globalExportTableBody');
+    const pagination = document.getElementById('globalExportPagination');
+    const prevBtn = document.getElementById('globalExportPrevPage');
+    const nextBtn = document.getElementById('globalExportNextPage');
+    const pageInput = document.getElementById('globalExportPageInput');
+    const totalPagesEl = document.getElementById('globalExportTotalPages');
+
+    if (!tbody) return;
+
+    tbody.innerHTML = '';
+
+    const reversedHistory = [...syncHistory].reverse();
+    let visibleHistory = reversedHistory;
+
+    // 视觉查看模式：如果范围面板展开，则下方列表只显示该范围内的记录
+    if (isGlobalExportRangePanelExpanded()) {
+        const minSlider = document.getElementById('globalExportRangeMin');
+        const maxSlider = document.getElementById('globalExportRangeMax');
+        if (minSlider && maxSlider) {
+            const a = parseInt(minSlider.value, 10);
+            const b = parseInt(maxSlider.value, 10);
+            const minSeq = Math.min(a, b);
+            const maxSeq = Math.max(a, b);
+            visibleHistory = reversedHistory.filter((record) => {
+                const seqNumber = globalExportSeqNumberByTime.get(String(record.time));
+                if (!Number.isFinite(seqNumber)) return true;
+                return seqNumber >= minSeq && seqNumber <= maxSeq;
+            });
+        }
+    }
+
+    if (visibleHistory.length === 0) {
+        const colspan = 6;
+        tbody.innerHTML = `<tr><td colspan="${colspan}" style="padding: 20px; text-align: center; color: var(--text-tertiary);">${currentLang === 'zh_CN' ? '该范围内暂无记录' : 'No records in this range'}</td></tr>`;
+        if (pagination) pagination.style.display = 'none';
+        return;
+    }
+
+    const totalPages = Math.ceil(visibleHistory.length / GLOBAL_EXPORT_PAGE_SIZE);
+    const startIndex = (globalExportCurrentPage - 1) * GLOBAL_EXPORT_PAGE_SIZE;
+    const endIndex = Math.min(startIndex + GLOBAL_EXPORT_PAGE_SIZE, visibleHistory.length);
+    const pageRecords = visibleHistory.slice(startIndex, endIndex);
+
+    // 显示/隐藏分页控件
+    if (totalPages <= 1) {
+        pagination.style.display = 'none';
+    } else {
+        pagination.style.display = 'flex';
+        pageInput.value = globalExportCurrentPage;
+        pageInput.max = totalPages;
+        totalPagesEl.textContent = totalPages;
+        prevBtn.disabled = globalExportCurrentPage <= 1;
+        nextBtn.disabled = globalExportCurrentPage >= totalPages;
+    }
+
+    pageRecords.forEach((record, idx) => {
+        const tr = document.createElement('tr');
+
+        const timeStr = formatTime(record.time);
+        const note = record.note || '';
+        const noteDisplay = note ? escapeHtml(note) : `<span style="color:var(--text-tertiary); font-style: italic;">${currentLang === 'zh_CN' ? '无备注' : 'No Note'}</span>`;
+        const fingerprint = record.fingerprint || '-';
+        const seqNumber = globalExportSeqNumberByTime.get(String(record.time)) || record.seqNumber || '';
+
+        const savedMode = getRecordDetailMode(record.time);
+        const defaultMode = historyDetailMode || 'simple';
+        const mode = savedMode || defaultMode;
+
+        const isChecked = globalExportSelectedState[record.time] !== false;
+
+        tr.innerHTML = `
+            <td style="text-align: center;">
+                <input type="checkbox" class="global-export-row-checkbox" data-time="${record.time}" ${isChecked ? 'checked' : ''}>
+            </td>
+            <td style="text-align: center; font-family: monospace; color: var(--text-secondary);">${seqNumber}</td>
+            <td>
+                <div style="max-width: 90px; overflow: hidden; text-overflow: ellipsis; white-space: normal; line-height: 1.4;">${noteDisplay}</div>
+            </td>
+            <td style="font-family: monospace; color: var(--text-secondary);">${fingerprint}</td>
+            <td>
+            <div class="global-export-toggle-group" data-time="${record.time}">
+                <button class="global-export-toggle-btn ${mode === 'simple' ? 'active' : ''}" data-value="simple">${currentLang === 'zh_CN' ? '简略' : 'Simple'}</button>
+                <button class="global-export-toggle-btn ${mode === 'detailed' ? 'active' : ''}" data-value="detailed">${currentLang === 'zh_CN' ? '详细' : 'Detailed'}</button>
+            </div>
+            </td>
+            <td>
+                <div style="font-weight: 500; white-space: nowrap;">${timeStr}</div>
+            </td>
+        `;
+
+        // 添加行点击交互：点击行任意位置（除了按钮和复选框）触发选中
+        tr.style.cursor = 'pointer';
+        tr.addEventListener('click', (e) => {
+            // 如果点击的是按钮或复选框本身，则忽略
+            if (e.target.closest('.global-export-toggle-btn') || e.target.closest('.global-export-row-checkbox')) return;
+
+            // 切换选中状态
+            const checkbox = tr.querySelector('.global-export-row-checkbox');
+            if (checkbox) {
+                checkbox.checked = !checkbox.checked;
+                // 手动触发 change 事件或者直接更新状态
+                // 这里我们直接更新状态并由 change 事件回调处理（如果触发的话），或者直接复制 change 逻辑
+                // 为了简单，我们直接更新状态
+                globalExportSelectedState[record.time] = checkbox.checked;
+                updateGlobalExportStatus();
+                syncGlobalExportRangeUiAfterListSelectionChange();
+            }
+        });
+
+        tbody.appendChild(tr);
+    });
+
+    // 绑定行复选框事件
+    tbody.querySelectorAll('.global-export-row-checkbox').forEach(cb => {
+        cb.addEventListener('change', (e) => {
+            const time = e.target.dataset.time;
+            globalExportSelectedState[time] = e.target.checked;
+            updateGlobalExportStatus();
+            syncGlobalExportRangeUiAfterListSelectionChange();
+        });
+    });
+
+    // 绑定视图模式切换事件
+    tbody.querySelectorAll('.global-export-toggle-btn').forEach(btn => {
+        btn.addEventListener('click', (e) => {
+            const button = e.currentTarget;
+            if (button.classList.contains('active')) return;
+
+            const container = button.closest('.global-export-toggle-group');
+            const time = container.dataset.time;
+            const newMode = button.dataset.value;
+
+            // 更新UI
+            container.querySelectorAll('.global-export-toggle-btn').forEach(b => b.classList.remove('active'));
+            button.classList.add('active');
+
+            // 更新数据
+            setRecordDetailMode(time, newMode);
+        });
+    });
+
+    // 更新全选框状态
+    updateSelectAllCheckboxState();
+
+    // After rerendering the table, layout may shift slightly; keep bubbles stable.
+    if (isGlobalExportRangePanelExpanded()) {
+        scheduleGlobalExportRangeUiUpdate();
+    }
+}
+
+function updateSelectAllCheckboxState() {
+    const selectAllCheckbox = document.getElementById('globalExportSelectAll');
+    if (!selectAllCheckbox) return;
+
+    const allSelected = Object.values(globalExportSelectedState).every(v => v === true);
+    const noneSelected = Object.values(globalExportSelectedState).every(v => v === false);
+
+    selectAllCheckbox.checked = allSelected;
+    selectAllCheckbox.indeterminate = !allSelected && !noneSelected;
+}
+
+async function startGlobalExport() {
+    // 从 globalExportSelectedState 获取选中的记录
+    const selectedTimes = Object.entries(globalExportSelectedState)
+        .filter(([_, selected]) => selected)
+        .map(([time, _]) => time);
+
+    if (selectedTimes.length === 0) return;
+
+    // 导出顺序：倒序（新的在前）
+    const selectedTimesSorted = selectedTimes
+        .slice()
+        .sort((a, b) => Number(b) - Number(a));
+
+    const seqMap = buildSequenceMapFromHistory(syncHistory);
+    const selectedSeqNumbers = selectedTimes
+        .map(t => seqMap.get(String(t)))
+        .filter(n => Number.isFinite(n) && n > 0)
+        .sort((a, b) => a - b);
+    const rangeText = formatSelectedSequenceRanges(selectedSeqNumbers, currentLang);
+    const selectionLabel = (() => {
+        if (currentLang === 'zh_CN') {
+            return rangeText
+                ? `【序号${rangeText}-共${selectedTimes.length}个】`
+                : `【共${selectedTimes.length}个】`;
+        }
+        return rangeText
+            ? `[No${rangeText}-${selectedTimes.length}items]`
+            : `[${selectedTimes.length}items]`;
+    })();
+    const selectionPrefix = sanitizeFilenameSegment(selectionLabel);
+    const seqWidth = String(Math.max(syncHistory?.length || 1, 1)).length;
+
+    const confirmBtn = document.getElementById('globalExportConfirmBtn');
+    const originalText = confirmBtn.innerHTML;
+    confirmBtn.disabled = true;
+    confirmBtn.innerHTML = `<i class="fas fa-spinner fa-spin"></i> ${currentLang === 'zh_CN' ? '正在处理...' : 'Processing...'}`;
+
+    try {
+        const formatHtml = document.getElementById('globalExportFormatHtml').checked;
+        const formatJson = document.getElementById('globalExportFormatJson').checked;
+        const formatMd = document.getElementById('globalExportFormatMd') ? document.getElementById('globalExportFormatMd').checked : false;
+
+        const packMode = document.querySelector('input[name="globalExportPackMode"]:checked')?.value || 'zip';
+
+        if (!formatHtml && !formatJson && !formatMd) {
+            showToast(currentLang === 'zh_CN' ? '没有选择导出格式' : 'No export format selected');
+            return;
+        }
+
+        let processedCount = 0;
+        const totalCount = selectedTimesSorted.length;
+
+        // ---------------------------------------------------------------------
+        // 模式 A: ZIP 归档 (每个备份独立文件夹)
+        // ---------------------------------------------------------------------
+        if (packMode === 'zip') {
+            const files = [];
+            const timestamp = formatTimeForFilename(); // 导出时间（本地时间）
+            const zipPrefix = currentLang === 'zh_CN' ? '全局备份归档' : 'Global_Backup_Archive';
+            const zipRootFolder = selectionPrefix ? `${selectionPrefix}_${zipPrefix}_${timestamp}` : `${zipPrefix}_${timestamp}`;
+            for (const recordTime of selectedTimesSorted) {
+                // 更新进度
+                processedCount++;
+                confirmBtn.innerHTML = `<i class="fas fa-spinner fa-spin"></i> ${currentLang === 'zh_CN' ? '正在处理' : 'Processing'} (${processedCount}/${totalCount})`;
+                // 让UI有时间渲染
+                await new Promise(r => requestAnimationFrame(r));
+
+                const record = syncHistory.find(r => String(r.time) === String(recordTime));
+                if (!record) continue;
+
+                // 获取保存的视图模式
+                const savedMode = getRecordDetailMode(record.time);
+                const defaultMode = historyDetailMode || 'simple';
+                const mode = savedMode || defaultMode;
+
+                const dateStr = formatTimeForFilename(record.time); // 备份时间（本地时间）
+                // Sanitize note for filename use
+                const cleanNote = record.note ? record.note.replace(/[\\/:*?"<>|]/g, '_').replace(/\s+/g, '_') : '';
+                const fingerprint = record.fingerprint ? `_${record.fingerprint.substring(0, 8)}` : '';
+                const modeStr = mode === 'simple' ? (currentLang === 'zh_CN' ? '_简略' : '_Simple') : (currentLang === 'zh_CN' ? '_详细' : '_Detailed');
+                const defaultPrefix = currentLang === 'zh_CN' ? '书签' : 'bookmark';
+
+                const baseName = cleanNote
+                    ? `${cleanNote}${fingerprint}${modeStr}_${dateStr}`
+                    : `${defaultPrefix}${fingerprint}${modeStr}_${dateStr}`;
+
+                const seqNumber = seqMap.get(String(record.time));
+                const seqStr = Number.isFinite(seqNumber) ? String(seqNumber).padStart(seqWidth, '0') : '00';
+                const fileBasePath = `${zipRootFolder}/${seqStr}_${baseName}`;
+
+                if (formatHtml) {
+                    try {
+                        const htmlContent = await generateExportHtmlContentForGlobal(record, mode);
+                        files.push({
+                            name: `${fileBasePath}.html`,
+                            data: new TextEncoder().encode(htmlContent)
+                        });
+                    } catch (err) {
+                        console.error('HTML Gen Error', err);
+                    }
+                }
+
+                if (formatJson) {
+                    try {
+                        const jsonContentObj = await generateExportJsonContentForGlobal(record, mode);
+                        files.push({
+                            name: `${fileBasePath}.json`,
+                            data: new TextEncoder().encode(JSON.stringify(jsonContentObj, null, 2))
+                        });
+                    } catch (err) {
+                        console.error('JSON Gen Error', err);
+                    }
+                }
+
+                // ZIP mode does not explicitly support MD as per requirements (MD enforces Merge), 
+                // but if we wanted to support it, we'd add it here.
+            }
+
+            if (files.length === 0) {
+                // 如果只选了MD但强行进了Zip模式（不应该发生），则报错
+                throw new Error('No files generated (MD format requires Merge mode)');
+            }
+
+            // 确保 ZIP 内的文件名排序为倒序（大的在前）
+            files.sort((a, b) => String(b.name).localeCompare(String(a.name)));
+
+            const zipBlob = __zipStore(files);
+            const zipUrl = URL.createObjectURL(zipBlob);
+            const zipName = selectionPrefix
+                ? `${selectionPrefix}_${zipPrefix}_${timestamp}.zip`
+                : `${zipPrefix}_${timestamp}.zip`;
+
+            downloadBlob(zipUrl, zipName);
+        }
+        // ---------------------------------------------------------------------
+        // 模式 B: 单一文件合并 (Merged Single File)
+        // ---------------------------------------------------------------------
+        else if (packMode === 'merge') {
+            const mergedRoot = {
+                title: currentLang === 'zh_CN' ? '全局备份合并历史' : 'Global Merged Backup History',
+                children: []
+            };
+
+            const mergedItems = [];
+            for (const recordTime of selectedTimesSorted) {
+                processedCount++;
+                confirmBtn.innerHTML = `<i class="fas fa-spinner fa-spin"></i> ${currentLang === 'zh_CN' ? '正在合并' : 'Merging'} (${processedCount}/${totalCount})`;
+                await new Promise(r => requestAnimationFrame(r));
+
+                const record = syncHistory.find(r => String(r.time) === String(recordTime));
+                if (!record) continue;
+
+                // 获取保存的视图模式
+                const savedMode = getRecordDetailMode(record.time);
+                const defaultMode = historyDetailMode || 'simple';
+                const mode = savedMode || defaultMode;
+
+                // 1. 获取该记录的处理后树（带 [+] [-] 前缀）
+                const processedTree = await getProcessedTreeForRecord(record, mode);
+
+                // 2. 创建容器文件夹
+                const timeStr = formatTime(record.time);
+                // 改为 Note + Hash + Mode + Time 格式
+                const fingerprint = record.fingerprint ? ` [${record.fingerprint.substring(0, 8)}]` : '';
+                const titlePrefix = record.note ? record.note : (currentLang === 'zh_CN' ? '备份' : 'Backup');
+                const modeLabel = mode === 'simple' ? (currentLang === 'zh_CN' ? '简略' : 'Simple') : (currentLang === 'zh_CN' ? '详细' : 'Detailed');
+
+                const seqNumber = seqMap.get(String(record.time));
+                const seqStr = Number.isFinite(seqNumber) ? String(seqNumber).padStart(seqWidth, '0') : '00';
+                const containerTitle = `${seqStr} ${titlePrefix}${fingerprint} (${modeLabel}) (${timeStr})`;
+                const containerFolder = {
+                    title: containerTitle,
+                    children: processedTree.children || [] // processedTree 本身是 root，我们取其 children
+                };
+
+                mergedItems.push({ seq: Number.isFinite(seqNumber) ? seqNumber : -1, folder: containerFolder });
+            }
+
+            // 3. 添加到合并根（倒序：大的在前）
+            mergedItems
+                .sort((a, b) => b.seq - a.seq)
+                .forEach(item => mergedRoot.children.push(item.folder));
+
+            // 4. 生成合并后的文件
+            if (formatHtml) {
+                const htmlContent = generateBookmarkExportHTMLFromTree(mergedRoot);
+                const blob = new Blob([htmlContent], { type: 'text/html' });
+                const url = URL.createObjectURL(blob);
+                const timestamp = formatTimeForFilename();
+                const mergedPrefix = currentLang === 'zh_CN' ? '全局合并历史' : 'Global_Merged_History';
+                const namePrefix = selectionPrefix ? `${selectionPrefix}_${mergedPrefix}` : mergedPrefix;
+                downloadBlob(url, `${namePrefix}_${timestamp}.html`);
+            }
+
+            if (formatJson) {
+                const jsonContent = JSON.stringify(mergedRoot, null, 2);
+                const blob = new Blob([jsonContent], { type: 'application/json' });
+                const url = URL.createObjectURL(blob);
+                const timestamp = formatTimeForFilename();
+                const mergedPrefix = currentLang === 'zh_CN' ? '全局合并历史' : 'Global_Merged_History';
+                const namePrefix = selectionPrefix ? `${selectionPrefix}_${mergedPrefix}` : mergedPrefix;
+                downloadBlob(url, `${namePrefix}_${timestamp}.json`);
+            }
+
+            if (formatMd) {
+                // 使用 generateHistorySummaryMD 生成摘要表格 (替代原来的内容导出)
+                // 注意：这里我们只生成一个包含所有选定记录摘要的文件
+                // 我们不需要遍历记录来生成内容，而是直接传入 selectedTimes（需确保 generateHistorySummaryMD 接受此参数）
+
+                const mdContent = await generateHistorySummaryMD(selectedTimesSorted);
+                const blob = new Blob([mdContent], { type: 'text/markdown;charset=utf-8' });
+                const url = URL.createObjectURL(blob);
+                const timestamp = formatTimeForFilename();
+                const prefix = currentLang === 'zh_CN' ? '书签备份历史记录' : 'Bookmark_Backup_History';
+                const namePrefix = selectionPrefix ? `${selectionPrefix}_${prefix}` : prefix;
+                downloadBlob(url, `${namePrefix}_${timestamp}.md`);
+            }
+        }
+
+        closeGlobalExportModal();
+        showToast(currentLang === 'zh_CN' ? '全局导出成功' : 'Global export successful');
+
+    } catch (e) {
+        console.error('Global Export Failed', e);
+        showToast(currentLang === 'zh_CN' ? '导出失败' : 'Export failed');
+    } finally {
+        confirmBtn.disabled = false;
+        confirmBtn.innerHTML = originalText;
+    }
+}
+
+function downloadBlob(url, filename) {
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    setTimeout(() => URL.revokeObjectURL(url), 10000);
+}
+
+// 辅助：获取 JSON 内容对象（复用 generateHistoryChangesJSON 的逻辑但只返回对象）
+async function generateExportJsonContentForGlobal(record, mode) {
+    // 逻辑同 generateExportHtmlContentForGlobal，准备数据
+    const { treeToExport, changeMap } = await prepareDataForExport(record);
+
+    // 在详细模式下，尝试获取存储的展开状态（WYSIWYG）
+    let expandedIds = null;
+    if (mode === 'detailed' && hasRecordExpandedState(record.time)) {
+        expandedIds = getRecordExpandedState(record.time);
+    }
+
+    return await generateHistoryChangesJSON(treeToExport, changeMap, mode, expandedIds);
+}
+
+// 辅助：准备导出数据 (Tree + ChangeMap)
+async function prepareDataForExport(record) {
+    let changeMap = new Map();
+    const recordIndex = syncHistory.findIndex(r => r.time === record.time);
+    let previousRecord = null;
+    if (recordIndex > 0) {
+        for (let i = recordIndex - 1; i >= 0; i--) {
+            if (syncHistory[i].status === 'success' && syncHistory[i].bookmarkTree) {
+                previousRecord = syncHistory[i];
+                break;
+            }
+        }
+    }
+
+    let treeToExport = record.bookmarkTree;
+    if (previousRecord && previousRecord.bookmarkTree) {
+        changeMap = await detectTreeChangesFast(previousRecord.bookmarkTree, record.bookmarkTree, {
+            useGlobalExplicitMovedIds: false,
+            explicitMovedIdSet: (record.bookmarkStats && Array.isArray(record.bookmarkStats.explicitMovedIds))
+                ? record.bookmarkStats.explicitMovedIds
+                : null
+        });
+
+        // 重建删除节点
+        let hasDeleted = false;
+        for (const [, change] of changeMap) {
+            if (change.type && change.type.includes('deleted')) {
+                hasDeleted = true;
+                break;
+            }
+        }
+        if (hasDeleted) {
+            try {
+                treeToExport = rebuildTreeWithDeleted(previousRecord.bookmarkTree, record.bookmarkTree, changeMap);
+            } catch (error) {
+                treeToExport = record.bookmarkTree; // fallback
+            }
+        }
+    } else if (record.isFirstBackup) {
+        const allNodes = flattenBookmarkTree(record.bookmarkTree);
+        allNodes.forEach(item => {
+            if (item.id) changeMap.set(item.id, { type: 'added' });
+        });
+    }
+
+    return { treeToExport, changeMap };
+}
+
+// 重构：原有的 HTML 生成函数调用
+async function generateExportHtmlContentForGlobal(record, mode) {
+    const { treeToExport, changeMap } = await prepareDataForExport(record);
+
+    // 在详细模式下，尝试获取存储的展开状态（WYSIWYG）
+    let expandedIds = null;
+    if (mode === 'detailed' && hasRecordExpandedState(record.time)) {
+        expandedIds = getRecordExpandedState(record.time);
+    }
+
+    return await generateHistoryChangesHTML(treeToExport, changeMap, mode, expandedIds);
+}
+
+// 辅助：获取处理过的树（带前缀，已过滤）供合并使用
+async function getProcessedTreeForRecord(record, mode) {
+    const { treeToExport, changeMap } = await prepareDataForExport(record);
+
+    // 在详细模式下，尝试获取存储的展开状态（WYSIWYG）
+    let expandedIds = null;
+    if (mode === 'detailed' && hasRecordExpandedState(record.time)) {
+        expandedIds = getRecordExpandedState(record.time);
+    }
+
+    // 我们利用 generateHistoryChangesJSON 的 extractTree 逻辑来获取一个纯净的树对象
+    // 但 generateHistoryChangesJSON 返回的是 { title:..., children:..., _exportInfo:... }
+    // 我们只需要它的 children 部分，且它的 title 已经处理过前缀了。
+
+    const jsonObj = await generateHistoryChangesJSON(treeToExport, changeMap, mode, expandedIds);
+
+    // generateHistoryChangesJSON 返回结构：
+    // { title: '...', children: [Legend, ...ActualTree], _exportInfo: ... }
+
+    // 我们不需要 Legend 文件夹 (LegendFolder 是第一个 child)
+    // 也不需要 _exportInfo
+    // 我们只需要 ActualTree 部分
+
+    const actualChildren = jsonObj.children ? jsonObj.children.filter(child => child.title && !child.title.startsWith('📋') && !child.title.startsWith('Log')) : [];
+
+    // 过滤掉 Legend 之后就是我们的树了。
+    // 但是 generateHistoryChangesJSON 里的 extractTree 会返回兼容 Chrome API 的结构 { title, url, children }
+    // 这正是我们需要的结构，以便再次喂给 generateHistoryChangesHTML
+
+    return {
+        children: actualChildren
+    };
+}
+
+// 辅助：生成 Markdown 内容 (Tree -> MD)
+async function generateHistoryChangesMD(treeRoot, changeMap = new Map(), mode = 'simple') {
+    let mdContent = '';
+
+    // 递归函数生成 MD
+    function traverse(node, depth) {
+        // 跳过特定文件夹
+        if (node.title && (node.title.startsWith('📋') || node.title.startsWith('Log'))) {
+            return;
+        }
+
+        if (node.children) {
+            // Folder
+            if (depth === 0) {
+                // Root level
+                if (node.title) mdContent += `# ${node.title}\n\n`;
+            } else if (depth === 1) {
+                // Level 1: Backup Containers (in merged mode)
+                if (node.title) mdContent += `## ${node.title}\n\n`;
+            } else {
+                // Sub-folders: Nested list item
+                // Adjust indent: depth 2 -> 0 spaces (top level list under header)
+                const indentLevel = Math.max(0, depth - 2);
+                const indent = '  '.repeat(indentLevel);
+                const title = node.title || 'Untitled Folder';
+                mdContent += `${indent}- **${title}**\n`;
+            }
+
+            node.children.forEach(child => traverse(child, depth + 1));
+        } else {
+            // Bookmark
+            const indentLevel = Math.max(0, depth - 2);
+            const indent = '  '.repeat(indentLevel);
+
+            // Standard: - [Title](URL)
+            // Title check
+            const title = node.title || node.url || 'Untitled';
+            const url = node.url || '';
+
+            // Escape brackets in title to avoid breaking MD links?
+            // Simple replace [ ] with ( ) or just escape.
+            const safeTitle = title.replace(/\[/g, '(').replace(/\]/g, ')');
+
+            mdContent += `${indent}- [${safeTitle}](${url})\n`;
+        }
+    }
+
+    traverse(treeRoot, 0);
+    return mdContent;
+}
+
+// 辅助：生成 Markdown 摘要表格 (逻辑移植自 popup.js)
+async function generateHistorySummaryMD(selectedTimes) {
+    let mdContent = '';
+    const lang = currentLang; // 获取当前语言
+    const naText = lang === 'zh_CN' ? '无' : 'N/A';
+
+    // 1. 获取选中的记录并按时间排序 (新的在前)
+    // selectedTimes 是时间戳字符串数组，syncHistory 是记录数组
+    const selectedRecords = syncHistory.filter(r => selectedTimes.includes(String(r.time)))
+        .sort((a, b) => new Date(b.time) - new Date(a.time));
+    const seqMap = buildSequenceMapFromHistory(syncHistory);
+
+    // 2. 准备表头和文本
+    const exportTitle = {
+        'zh_CN': "# 书签备份历史记录",
+        'en': "# Bookmark Backup History"
+    };
+    const exportNote = {
+        'zh_CN': "注意：此文件包含了所选备份历史记录的摘要统计表格。",
+        'en': "Note: This file contains a summary table of the selected backup history records."
+    };
+    const tableHeaders = {
+        seq: { 'zh_CN': "序号", 'en': "No." },
+        notes: { 'zh_CN': "备注", 'en': "Notes" },
+        timestamp: { 'zh_CN': "时间戳", 'en': "Timestamp" },
+        bookmarkChange: { 'zh_CN': "书签变化", 'en': "BKM Change" },
+        folderChange: { 'zh_CN': "文件夹变化", 'en': "FLD Change" },
+        movedCount: { 'zh_CN': "移动", 'en': "Moved" },
+        modifiedCount: { 'zh_CN': "修改", 'en': "Modified" },
+        location: { 'zh_CN': "位置", 'en': "Location" },
+        backupMode: { 'zh_CN': "方式", 'en': "Mode" },
+        status: { 'zh_CN': "状态/错误", 'en': "Status/Error" },
+        hash: { 'zh_CN': "哈希值", 'en': "Hash" }
+    };
+    const locationValues = {
+        cloud: { 'zh_CN': "云端", 'en': "Cloud" },
+        webdav: { 'zh_CN': "云端", 'en': "Cloud" },
+        local: { 'zh_CN': "本地", 'en': "Local" },
+        both: { 'zh_CN': "云端与本地", 'en': "Cloud & Local" },
+        none: { 'zh_CN': "无", 'en': "None" }
+    };
+    const statusValues = {
+        success: { 'zh_CN': "成功", 'en': "Success" },
+        error: { 'zh_CN': "错误", 'en': "Error" },
+        locked: { 'zh_CN': "文件锁定", 'en': "File Locked" },
+        noBackupNeeded: { 'zh_CN': "无需备份", 'en': "No backup needed" },
+        checkCompleted: { 'zh_CN': "检查完成", 'en': "Check completed" }
+    };
+    const backupModeValues = {
+        auto: { 'zh_CN': "自动", 'en': "Auto" },
+        manual: { 'zh_CN': "手动", 'en': "Manual" },
+        switch: { 'zh_CN': "切换", 'en': "Switch" },
+        migration: { 'zh_CN': "迁移", 'en': "Migration" },
+        check: { 'zh_CN': "检查", 'en': "Check" },
+        unknown: { 'zh_CN': "未知", 'en': "Unknown" }
+    };
+
+    const formatTimeForExport = (date) => {
+        return `${date.getFullYear()}/${(date.getMonth() + 1).toString().padStart(2, '0')}/${date.getDate().toString().padStart(2, '0')} ${date.getHours().toString().padStart(2, '0')}:${date.getMinutes().toString().padStart(2, '0')}:${date.getSeconds().toString().padStart(2, '0')}`;
+    };
+
+    // Header section
+    mdContent += exportTitle[lang] + "\n\n";
+    mdContent += exportNote[lang] + "\n\n";
+
+    // Table Headers
+    mdContent += `| ${tableHeaders.seq[lang]} | ${tableHeaders.notes[lang]} | ${tableHeaders.timestamp[lang]} | ${tableHeaders.bookmarkChange[lang]} | ${tableHeaders.folderChange[lang]} | ${tableHeaders.movedCount[lang]} | ${tableHeaders.modifiedCount[lang]} | ${tableHeaders.location[lang]} | ${tableHeaders.backupMode[lang]} | ${tableHeaders.status[lang]} | ${tableHeaders.hash[lang]} |\n`;
+    mdContent += "|---|---|---|---|---|---|---|---|---|---|---|\n";
+
+    // 3. 遍历记录生成表格行
+    let previousDateStr = null;
+
+    selectedRecords.forEach(record => {
+        const recordDate = new Date(record.time);
+        const time = formatTimeForExport(recordDate);
+
+        // 检查日期是否变化（年月日）
+        const currentDateStr = `${recordDate.getFullYear()}-${recordDate.getMonth() + 1}-${recordDate.getDate()}`;
+
+        // 如果日期变化，添加分界线
+        if (previousDateStr && previousDateStr !== currentDateStr) {
+            const formattedPreviousDate = lang === 'en' ?
+                `${previousDateStr.split('-')[0]}-${previousDateStr.split('-')[1].padStart(2, '0')}-${previousDateStr.split('-')[2].padStart(2, '0')}` :
+                `${previousDateStr.split('-')[0]}年${previousDateStr.split('-')[1]}月${previousDateStr.split('-')[2]}日`;
+
+            // 添加简洁的分界线，并入表格中
+            mdContent += `|  | **${formattedPreviousDate}** |  |  |  |  |  |  |  |  |  |\n`;
+        }
+        previousDateStr = currentDateStr;
+
+        // 获取统计数据逻辑（与 popup.js / 主UI一致：显示 +x/-y 的绝对量；旧数据回退到 diff）
+        const bookmarkAdded = typeof record.bookmarkStats?.bookmarkAdded === 'number' ? record.bookmarkStats.bookmarkAdded : 0;
+        const bookmarkDeleted = typeof record.bookmarkStats?.bookmarkDeleted === 'number' ? record.bookmarkStats.bookmarkDeleted : 0;
+        const folderAdded = typeof record.bookmarkStats?.folderAdded === 'number' ? record.bookmarkStats.folderAdded : 0;
+        const folderDeleted = typeof record.bookmarkStats?.folderDeleted === 'number' ? record.bookmarkStats.folderDeleted : 0;
+
+        // 格式化书签变化（+x/-y 或者 0）
+        let bookmarkChangeText = '';
+        if (bookmarkAdded > 0 && bookmarkDeleted > 0) {
+            bookmarkChangeText = `+${bookmarkAdded}/-${bookmarkDeleted}`;
+        } else if (bookmarkAdded > 0) {
+            bookmarkChangeText = `+${bookmarkAdded}`;
+        } else if (bookmarkDeleted > 0) {
+            bookmarkChangeText = `-${bookmarkDeleted}`;
+        } else {
+            // 兼容旧数据：使用 bookmarkDiff
+            const diff = record.bookmarkStats?.bookmarkDiff ?? 0;
+            bookmarkChangeText = diff > 0 ? `+${diff}` : (diff < 0 ? `${diff}` : '0');
+        }
+
+        // 格式化文件夹变化（+x/-y 或者 0）
+        let folderChangeText = '';
+        if (folderAdded > 0 && folderDeleted > 0) {
+            folderChangeText = `+${folderAdded}/-${folderDeleted}`;
+        } else if (folderAdded > 0) {
+            folderChangeText = `+${folderAdded}`;
+        } else if (folderDeleted > 0) {
+            folderChangeText = `-${folderDeleted}`;
+        } else {
+            // 兼容旧数据：使用 folderDiff
+            const diff = record.bookmarkStats?.folderDiff ?? 0;
+            folderChangeText = diff > 0 ? `+${diff}` : (diff < 0 ? `${diff}` : '0');
+        }
+
+        let movedTotal = 0;
+        if (typeof record.bookmarkStats?.movedCount === 'number' && record.bookmarkStats.movedCount > 0) {
+            movedTotal = record.bookmarkStats.movedCount;
+        } else {
+            const bookmarkMovedCount = typeof record.bookmarkStats?.bookmarkMoved === 'number'
+                ? record.bookmarkStats.bookmarkMoved
+                : (record.bookmarkStats?.bookmarkMoved ? 1 : 0);
+            const folderMovedCount = typeof record.bookmarkStats?.folderMoved === 'number'
+                ? record.bookmarkStats.folderMoved
+                : (record.bookmarkStats?.folderMoved ? 1 : 0);
+            movedTotal = bookmarkMovedCount + folderMovedCount;
+        }
+        const movedText = movedTotal > 0 ? String(movedTotal) : '-';
+
+        let modifiedTotal = 0;
+        if (typeof record.bookmarkStats?.modifiedCount === 'number' && record.bookmarkStats.modifiedCount > 0) {
+            modifiedTotal = record.bookmarkStats.modifiedCount;
+        } else {
+            const bookmarkModifiedCount = typeof record.bookmarkStats?.bookmarkModified === 'number'
+                ? record.bookmarkStats.bookmarkModified
+                : (record.bookmarkStats?.bookmarkModified ? 1 : 0);
+            const folderModifiedCount = typeof record.bookmarkStats?.folderModified === 'number'
+                ? record.bookmarkStats.folderModified
+                : (record.bookmarkStats?.folderModified ? 1 : 0);
+            modifiedTotal = bookmarkModifiedCount + folderModifiedCount;
+        }
+        const modifiedText = modifiedTotal > 0 ? String(modifiedTotal) : '-';
+
+        let locationText = naText;
+        if (record.direction === 'upload' || record.direction === 'webdav') {
+            locationText = locationValues.cloud[lang];
+        } else if (record.direction === 'download' || record.direction === 'local') {
+            locationText = locationValues.local[lang];
+        } else if (record.direction === 'both') {
+            locationText = locationValues.both[lang];
+        } else if (record.direction === 'none') {
+            locationText = locationValues.none[lang];
+        }
+
+        const normalizeBackupModeKey = (recordType, direction) => {
+            const raw = (recordType ?? '').toString().trim();
+            const lowered = raw.toLowerCase();
+
+            if (lowered === 'manual' || raw === '（手动）' || raw.includes('手动')) return 'manual';
+            if (lowered === 'switch' || lowered === 'auto_switch' || raw === '（切换）' || raw.includes('切换')) return 'switch';
+            if (lowered === 'migration' || raw === '（迁移）' || raw.includes('迁移')) return 'migration';
+            if (lowered === 'check' || raw.includes('检查')) return 'check';
+            // “direction === none” 基本是检查类记录
+            if (direction === 'none') return 'check';
+            if (lowered === 'auto' || raw === '（自动）' || raw.includes('自动') || !raw) return 'auto';
+            return 'unknown';
+        };
+        const backupModeKey = normalizeBackupModeKey(record.type, record.direction);
+        const backupModeText = (backupModeValues[backupModeKey] || backupModeValues.unknown)[lang];
+
+        let statusText = naText;
+        if (record.status === 'success') {
+            if (record.direction === 'none') {
+                statusText = statusValues.checkCompleted[lang] || statusValues.noBackupNeeded[lang];
+            } else {
+                statusText = statusValues.success[lang];
+            }
+        } else if (record.status === 'error') {
+            statusText = record.errorMessage ? `${statusValues.error[lang]}: ${record.errorMessage}` : statusValues.error[lang];
+        } else if (record.status === 'locked') {
+            statusText = statusValues.locked[lang];
+        }
+
+        const fingerprint = record.fingerprint ? String(record.fingerprint) : '-';
+
+        const safeNote = String(record.note || '').replace(/\|/g, '\\|');
+        const safeStatusText = String(statusText || '').replace(/\|/g, '\\|');
+        const safeFingerprint = String(fingerprint || '').replace(/\|/g, '\\|');
+
+        const seqNumber = seqMap.get(String(record.time));
+        const seqText = Number.isFinite(seqNumber) ? String(seqNumber) : '-';
+
+        // 行数据
+        mdContent += `| ${seqText} | ${safeNote} | ${time} | ${bookmarkChangeText} | ${folderChangeText} | ${movedText} | ${modifiedText} | ${locationText} | ${backupModeText} | ${safeStatusText} | ${safeFingerprint} |\n`;
+    });
+
+    // 最后添加日期分界线
+    if (previousDateStr) {
+        const formattedPreviousDate = lang === 'en' ?
+            `${previousDateStr.split('-')[0]}-${previousDateStr.split('-')[1].padStart(2, '0')}-${previousDateStr.split('-')[2].padStart(2, '0')}` :
+            `${previousDateStr.split('-')[0]}年${previousDateStr.split('-')[1]}月${previousDateStr.split('-')[2]}日`;
+        mdContent += `|  | **${formattedPreviousDate}** |  |  |  |  |  |  |  |  |  |\n`;
+    }
+
+    return mdContent;
 }

@@ -6,14 +6,8 @@
  * @returns {object} 浏览器API对象 (chrome 或 browser)。
  */
 const browserAPI = (function () {
-    if (typeof chrome !== 'undefined') {
-        if (typeof browser !== 'undefined') {
-            // Firefox 环境
-            return browser;
-        }
-        // Chrome, Edge 环境
-        return chrome;
-    }
+    if (typeof chrome !== 'undefined') return chrome; // Chrome, Edge
+    if (typeof browser !== 'undefined') return browser; // Firefox 等
     throw new Error('不支持的浏览器');
 })();
 
@@ -1232,7 +1226,12 @@ document.addEventListener('DOMContentLoaded', async () => {
  */
 browserAPI.runtime.onMessage.addListener((message, sender, sendResponse) => {
     if (message.action === "closeNotificationFromSettings") {
-        window.close();
+        try {
+            sendResponse({ success: true });
+        } catch (e) {
+        }
+        // 延迟关闭，确保响应有机会发回
+        setTimeout(() => window.close(), 0);
         return true;
     }
     return false;

@@ -14,14 +14,8 @@ import { startReminderTimer, stopReminderTimer, pauseReminderTimer, resumeRemind
  * @returns {object} 浏览器API对象 (chrome 或 browser)。
  */
 const browserAPI = (function () {
-    if (typeof chrome !== 'undefined') {
-        if (typeof browser !== 'undefined') {
-            // Firefox 环境
-            return browser;
-        }
-        // Chrome, Edge 环境
-        return chrome;
-    }
+    if (typeof chrome !== 'undefined') return chrome; // Chrome, Edge
+    if (typeof browser !== 'undefined') return browser; // Firefox 等
     throw new Error('不支持的浏览器');
 })();
 
@@ -229,7 +223,7 @@ async function handleWindowFocusChange(windowId) {
  * @param {function} sendResponse - 回复函数。
  * @returns {boolean} - 是否异步响应。
  */
-async function handleRuntimeMessage(message, sender, sendResponse) {
+function handleRuntimeMessage(message, sender, sendResponse) {
     if (message.action === "notificationUserAction") {
         if (sender.tab && sender.tab.windowId) {
             userClosedWindowIds.add(sender.tab.windowId);
@@ -246,32 +240,36 @@ async function handleRuntimeMessage(message, sender, sendResponse) {
     }
 
     if (message.action === "closeNotificationFromSettings") {
-        try {
-            if (activeNotificationWindowId !== null) {
-                await clearNotification(activeNotificationWindowId);
-                updateActiveNotificationWindowId(null);
-                sendResponse({ success: true });
-            } else {
-                sendResponse({ success: false, error: 'No active notification window' });
+        (async () => {
+            try {
+                if (activeNotificationWindowId !== null) {
+                    await clearNotification(activeNotificationWindowId);
+                    updateActiveNotificationWindowId(null);
+                    sendResponse({ success: true });
+                } else {
+                    sendResponse({ success: false, error: 'No active notification window' });
+                }
+            } catch (error) {
+                sendResponse({ success: false, error: error.message });
             }
-        } catch (error) {
-            sendResponse({ success: false, error: error.message });
-        }
+        })();
         return true;
     }
 
     if (message.action === "readyToClose") {
-        try {
-            if (activeNotificationWindowId !== null) {
-                try {
-                    await browserAPI.windows.get(activeNotificationWindowId);
-                    clearNotification(activeNotificationWindowId);
-                } catch (err) {
+        (async () => {
+            try {
+                if (activeNotificationWindowId !== null) {
+                    try {
+                        await browserAPI.windows.get(activeNotificationWindowId);
+                        clearNotification(activeNotificationWindowId);
+                    } catch (err) {
+                    }
+                    updateActiveNotificationWindowId(null);
                 }
-                updateActiveNotificationWindowId(null);
+            } catch (error) {
             }
-        } catch (error) {
-        }
+        })();
         return false;
     }
 
@@ -337,25 +335,28 @@ async function handleRuntimeMessage(message, sender, sendResponse) {
         }
         return true;
     } else if (message.action === "resetFixedTimeAlarm") {
-        try {
-            if (typeof resetFixedTimeAlarm === 'function') { // This function is not imported or defined in index.js
-                const result = await resetFixedTimeAlarm(message.alarmName);
-                sendResponse({ success: true, result });
-            } else {
-                // Forward the message to timer.js if resetFixedTimeAlarm is not directly available
-                await browserAPI.runtime.sendMessage({
-                    action: "callTimerFunction",
-                    function: "resetFixedTimeAlarm",
-                    args: [message.alarmName]
-                });
-                sendResponse({ success: true, method: 'forwarded' });
+        (async () => {
+            try {
+                if (typeof resetFixedTimeAlarm === 'function') { // This function is not imported or defined in index.js
+                    const result = await resetFixedTimeAlarm(message.alarmName);
+                    sendResponse({ success: true, result });
+                } else {
+                    // Forward the message to timer.js if resetFixedTimeAlarm is not directly available
+                    await browserAPI.runtime.sendMessage({
+                        action: "callTimerFunction",
+                        function: "resetFixedTimeAlarm",
+                        args: [message.alarmName]
+                    });
+                    sendResponse({ success: true, method: 'forwarded' });
+                }
+            } catch (error) {
+                sendResponse({ success: false, error: error.message });
             }
-        } catch (error) {
-            sendResponse({ success: false, error: error.message });
-        }
+        })();
         return true;
     } else if (message.action === "forceSendNotification") {
-        try {
+        (async () => {
+            try {
             let hasResponded = false;
             let notificationShown = false;
             const timeoutId = setTimeout(() => {
@@ -436,28 +437,31 @@ async function handleRuntimeMessage(message, sender, sendResponse) {
                     }
                 }
             }
-        } catch (error) {
-            sendResponse({ success: false, error: error.message || '未知错误' });
-        }
+            } catch (error) {
+                sendResponse({ success: false, error: error.message || '未知错误' });
+            }
+        })();
         return true;
     } else if (message.action === "showTestNotification") {
-        try {
-            if (activeNotificationWindowId !== null) {
-                try { await clearNotification(activeNotificationWindowId); }
-                catch (err) { console.log('清除现有通知窗口失败，但继续创建测试通知:', err); }
-                updateActiveNotificationWindowId(null);
-            }
-            const windowId = await showTestNotification(null);
-            if (windowId !== null) {
-                updateActiveNotificationWindowId(windowId);
-                if (message.noTimer === true) {
-                    userClosedWindowIds.add(windowId);
+        (async () => {
+            try {
+                if (activeNotificationWindowId !== null) {
+                    try { await clearNotification(activeNotificationWindowId); }
+                    catch (err) { console.log('清除现有通知窗口失败，但继续创建测试通知:', err); }
+                    updateActiveNotificationWindowId(null);
                 }
-                sendResponse({ success: true, windowId });
-            } else { sendResponse({ success: false, error: '创建测试通知失败' }); }
-        } catch (error) {
-            sendResponse({ success: false, error: error.message });
-        }
+                const windowId = await showTestNotification(null);
+                if (windowId !== null) {
+                    updateActiveNotificationWindowId(windowId);
+                    if (message.noTimer === true) {
+                        userClosedWindowIds.add(windowId);
+                    }
+                    sendResponse({ success: true, windowId });
+                } else { sendResponse({ success: false, error: '创建测试通知失败' }); }
+            } catch (error) {
+                sendResponse({ success: false, error: error.message });
+            }
+        })();
         return true;
     } else if (message.action === "openReminderSettings") {
         try {
@@ -471,42 +475,46 @@ async function handleRuntimeMessage(message, sender, sendResponse) {
         }
         return true;
     } else if (message.action === "getReminderSettings") {
-        try {
-            const data = await browserAPI.storage.local.get('reminderSettings');
-            const defaultSettings = {
-                reminderEnabled: true, firstReminderMinutes: 10,
-                secondReminderMinutes: 30, thirdReminderMinutes: 120, repeatReminderDays: 2
-            };
-            const settings = data.reminderSettings || defaultSettings;
-            sendResponse({ success: true, settings: settings });
-        } catch (error) {
-            sendResponse({ success: false, error: error.message });
-        }
+        (async () => {
+            try {
+                const data = await browserAPI.storage.local.get('reminderSettings');
+                const defaultSettings = {
+                    reminderEnabled: true, firstReminderMinutes: 10,
+                    secondReminderMinutes: 30, thirdReminderMinutes: 120, repeatReminderDays: 2
+                };
+                const settings = data.reminderSettings || defaultSettings;
+                sendResponse({ success: true, settings: settings });
+            } catch (error) {
+                sendResponse({ success: false, error: error.message });
+            }
+        })();
         return true;
     } else if (message.action === "updateReminderSettings") {
-        try {
-            await browserAPI.storage.local.set({ reminderSettings: message.settings });
-            console.log('[index.js] 尝试设置准点定时闹钟...');
-            await setupFixedTimeAlarms(message.settings);
-            if (message.settings.reminderEnabled === false) {
-                stopReminderTimer();
-            } else {
-                const { autoSync = true } = await browserAPI.storage.local.get(['autoSync']);
-                if (!autoSync) {
+        (async () => {
+            try {
+                await browserAPI.storage.local.set({ reminderSettings: message.settings });
+                console.log('[index.js] 尝试设置准点定时闹钟...');
+                await setupFixedTimeAlarms(message.settings);
+                if (message.settings.reminderEnabled === false) {
                     stopReminderTimer();
-                    if (message.resetTimer) {
-                        await resetReminderState();
-                    }
-                    const newMinutes = message.settings.firstReminderMinutes;
-                    if (newMinutes > 0) {
-                        await startReminderTimer(true);
-                    } else { console.log('[index.js] 新设置的时间间隔为0或无效，不启动计时器'); }
-                } else { console.log('[index.js] 自动备份已启用，不启动循环计时器'); }
+                } else {
+                    const { autoSync = true } = await browserAPI.storage.local.get(['autoSync']);
+                    if (!autoSync) {
+                        stopReminderTimer();
+                        if (message.resetTimer) {
+                            await resetReminderState();
+                        }
+                        const newMinutes = message.settings.firstReminderMinutes;
+                        if (newMinutes > 0) {
+                            await startReminderTimer(true);
+                        } else { console.log('[index.js] 新设置的时间间隔为0或无效，不启动计时器'); }
+                    } else { console.log('[index.js] 自动备份已启用，不启动循环计时器'); }
+                }
+                sendResponse({ success: true });
+            } catch (error) {
+                sendResponse({ success: false, error: error.message });
             }
-            sendResponse({ success: true });
-        } catch (error) {
-            sendResponse({ success: false, error: error.message });
-        }
+        })();
         return true;
     } else if (message.action === "pauseReminderTimer") {
         if (message.pausedBy === 'settingsUI') { isTimerPausedBySettingsUI = true; console.log('计时器因设置UI打开而被标记为暂停'); }

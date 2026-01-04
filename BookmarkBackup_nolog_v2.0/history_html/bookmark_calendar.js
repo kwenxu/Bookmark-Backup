@@ -2022,7 +2022,9 @@ class BookmarkCalendar {
             faviconImg.src = getFaviconUrl(bookmark.url);
         } else {
             // 降级方案
-            faviconImg.src = `chrome://favicon/${bookmark.url}`;
+            const ua = navigator.userAgent || '';
+            const isEdge = ua.includes('Edg/');
+            faviconImg.src = `${isEdge ? 'edge' : 'chrome'}://favicon/${bookmark.url}`;
         }
 
         item.appendChild(faviconImg);

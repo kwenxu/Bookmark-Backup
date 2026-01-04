@@ -61,15 +61,11 @@ import {
 } from './active_time_tracker/index.js';
 
 // 浏览器兼容性处理
+// 注意：Edge 也可能暴露 `browser` 命名空间，但其行为与 Firefox 不完全一致。
+// 本项目在 MV3 下同时使用了回调式与 Promise 式 API，因此优先使用 `chrome`（Chrome/Edge）。
 const browserAPI = (function () {
-    if (typeof chrome !== 'undefined') {
-        if (typeof browser !== 'undefined') {
-            // Firefox
-            return browser;
-        }
-        // Chrome, Edge
-        return chrome;
-    }
+    if (typeof chrome !== 'undefined') return chrome; // Chrome, Edge
+    if (typeof browser !== 'undefined') return browser; // Firefox 等
     throw new Error('不支持的浏览器');
 })();
 
@@ -1607,77 +1603,13 @@ browserAPI.runtime.onMessage.addListener((message, sender, sendResponse) => {
             });
             return true;
         } else if (message.action === 'selectDirectory') {
-            try {
-                // 创建一个临时的input元素用于选择文件夹
-                const input = document.createElement('input');
-                input.type = 'file';
-                input.webkitdirectory = true; // 支持选择文件夹
-                input.directory = true; // Firefox支持
-
-                // 添加change事件监听器
-                input.addEventListener('change', (e) => {
-                    if (e.target.files.length > 0) {
-                        try {
-                            // 尝试获取选择的文件夹路径
-                            const file = e.target.files[0];
-                            let dirPath = '';
-
-                            // 尝试不同的方法获取路径
-                            if (file.path) {
-                                // Chrome支持的path属性
-                                dirPath = file.path.substring(0, file.path.lastIndexOf('/') + 1);
-                            } else if (file.webkitRelativePath) {
-                                // WebKit浏览器支持的相对路径
-                                const parts = file.webkitRelativePath.split('/');
-                                dirPath = parts[0]; // 只取文件夹名称
-                            } else {
-                                // 仅使用名称作为路径（不理想但是可以作为后备）
-                                const parent = file.name.substring(0, file.name.lastIndexOf('/'));
-                                dirPath = parent || file.name;
-                            }
-
-                            // 返回成功结果
-                            sendResponse({
-                                success: true,
-                                path: dirPath
-                            });
-                        } catch (error) {
-                            sendResponse({
-                                success: false,
-                                error: '获取文件夹路径时出错: ' + error.message
-                            });
-                        }
-                    } else {
-                        // 未选择任何文件
-                        sendResponse({
-                            success: false,
-                            error: '未选择文件夹'
-                        });
-                    }
-                });
-
-                // 处理可能的取消操作
-                window.setTimeout(() => {
-                    if (!input.files || input.files.length === 0) {
-                        sendResponse({
-                            success: false,
-                            error: '未选择文件夹或操作已取消'
-                        });
-                    }
-                }, 10000); // 10秒超时
-
-                // 触发点击事件，打开文件选择对话框
-                input.click();
-
-            } catch (error) {
-                sendResponse({
-                    success: false,
-                    error: '打开文件夹选择对话框时出错: ' + error.message
-                });
-            }
-
-            // 返回true表示将异步发送响应
-            return true;
+            // MV3 Service Worker 环境没有 DOM，无法在这里弹出文件夹选择器（Edge/Chrome 都一样）。
+            // 如需选择目录，请在可见的扩展页面（popup/options）中完成，再把结果通过 storage 或 message 传回。
+            sendResponse({
+                success: false,
+                error: '当前环境不支持选择文件夹（MV3 Service Worker 无法打开文件选择器）'
+            });
+            return false;
         } else if (message.action === "getDownloadPath") {
             // 直接返回估计的下载路径，不尝试在chrome://页面执行脚本
             fallbackToEstimatedPath();
@@ -1710,8 +1642,12 @@ browserAPI.runtime.onMessage.addListener((message, sender, sendResponse) => {
         } else if (message.action === "openDownloadSettings") {
             // 尝试打开下载设置页面
             try {
-                // 方法1：直接尝试打开chrome URL
-                browserAPI.tabs.create({ url: 'chrome://settings/downloads' }, function (tab) {
+                const ua = (typeof navigator !== 'undefined' && navigator.userAgent) ? navigator.userAgent : '';
+                const isEdge = ua.includes('Edg/');
+                const settingsUrl = isEdge ? 'edge://settings/downloads' : 'chrome://settings/downloads';
+
+                // 方法1：直接尝试打开浏览器设置页面
+                browserAPI.tabs.create({ url: settingsUrl }, function (tab) {
                     if (browserAPI.runtime.lastError) {
                         sendResponse({ success: false, error: browserAPI.runtime.lastError.message });
                     } else {

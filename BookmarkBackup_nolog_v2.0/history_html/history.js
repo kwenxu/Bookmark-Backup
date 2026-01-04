@@ -1008,6 +1008,9 @@ async function getFaviconUrlAsync(url) {
 // Fallback 图标 - 星标书签图标
 const fallbackIcon = 'data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 16 16%22%3E%3Cpath fill=%22%23999%22 d=%22M8 0l2.8 5.5 6.2 0.5-4.5 4 1.5 6-5.5-3.5-5.5 3.5 1.5-6-4.5-4 6.2-0.5z%22/%3E%3C/svg%3E';
 
+// Edge/Chrome 内置页面 scheme 不同（仅用于展示/跳转提示）
+const internalScheme = (navigator.userAgent || '').includes('Edg/') ? 'edge://' : 'chrome://';
+
 // =============================================================================
 // 国际化文本
 // =============================================================================
@@ -1808,12 +1811,12 @@ const i18n = {
         'en': 'Shift + Wheel'
     },
     nativeHistoryButtonText: {
-        'zh_CN': '历史记录 (chrome://history/)',
-        'en': 'History (chrome://history/)'
+        'zh_CN': `历史记录 (${internalScheme}history/)`,
+        'en': `History (${internalScheme}history/)`
     },
     groupedHistoryButtonText: {
-        'zh_CN': '分组历史 (chrome://history/grouped)',
-        'en': 'Grouped History (chrome://history/grouped)'
+        'zh_CN': `分组历史 (${internalScheme}history/grouped)`,
+        'en': `Grouped History (${internalScheme}history/grouped)`
     },
     bookmarkRankingDescription: {
         'zh_CN': '结合浏览器历史记录，对当前书签的点击次数进行「书签点击排行」。点击某一行可展开查看不同时间范围的统计。',
@@ -12442,6 +12445,10 @@ async function getDetailedChanges(forceRefresh = false) {
                     action: "getBackupStats",
                     forceRefresh: forceRefresh
                 }, response => {
+                    if (browserAPI.runtime.lastError) {
+                        rej(new Error(browserAPI.runtime.lastError.message));
+                        return;
+                    }
                     if (response && response.success) res(response);
                     else rej(new Error(response?.error || '获取备份统计失败'));
                 });
@@ -12449,6 +12456,10 @@ async function getDetailedChanges(forceRefresh = false) {
             // 2. 获取备份历史
             new Promise((res, rej) => {
                 browserAPI.runtime.sendMessage({ action: "getSyncHistory" }, response => {
+                    if (browserAPI.runtime.lastError) {
+                        rej(new Error(browserAPI.runtime.lastError.message));
+                        return;
+                    }
                     if (response && response.success) res(response.syncHistory || []);
                     else rej(new Error(response?.error || '获取备份历史失败'));
                 });
@@ -14675,13 +14686,13 @@ async function renderBrowsingFolderRankingList(container, items, range, stats) {
             bookmarkItem.style.cursor = 'pointer';
             bookmarkItem.style.transition = 'background 0.2s';
 
-            bookmarkItem.innerHTML = `
-                <img src="${typeof getFaviconUrl === 'function' ? getFaviconUrl(item.url) : `chrome://favicon/${item.url}`}" 
-                     style="width:16px;height:16px;flex-shrink:0;" onerror="this.style.display='none'">
-                <span style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:12px;" 
-                      title="${item.title}">${item.title}</span>
-                <span style="font-size:11px;color:var(--text-tertiary);flex-shrink:0;">${item.count}</span>
-            `;
+	            bookmarkItem.innerHTML = `
+	                <img src="${typeof getFaviconUrl === 'function' ? getFaviconUrl(item.url) : `${(navigator.userAgent || '').includes('Edg/') ? 'edge' : 'chrome'}://favicon/${item.url}`}" 
+	                     style="width:16px;height:16px;flex-shrink:0;" onerror="this.style.display='none'">
+	                <span style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:12px;" 
+	                      title="${item.title}">${item.title}</span>
+	                <span style="font-size:11px;color:var(--text-tertiary);flex-shrink:0;">${item.count}</span>
+	            `;
 
             bookmarkItem.addEventListener('mouseenter', () => {
                 bookmarkItem.style.background = 'var(--bg-tertiary)';

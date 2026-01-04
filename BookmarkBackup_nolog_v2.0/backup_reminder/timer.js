@@ -14,14 +14,8 @@ import { activeNotificationWindowId, updateActiveNotificationWindowId, setTimerP
  * @returns {object} 浏览器API对象 (chrome 或 browser)。
  */
 const browserAPI = (function () {
-    if (typeof chrome !== 'undefined') {
-        if (typeof browser !== 'undefined') {
-            // Firefox 环境
-            return browser;
-        }
-        // Chrome, Edge 环境
-        return chrome;
-    }
+    if (typeof chrome !== 'undefined') return chrome; // Chrome, Edge
+    if (typeof browser !== 'undefined') return browser; // Firefox 等
     throw new Error('不支持的浏览器');
 })();
 

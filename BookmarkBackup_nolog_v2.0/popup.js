@@ -793,12 +793,15 @@ function initializeLocalConfigSection() {
                 if (response && response.success) {
                 } else {
                     // 方法2：提供备用方案，让用户手动访问
-                    const msg = '请手动复制并在新标签页打开: chrome://settings/downloads';
+                    const ua = navigator.userAgent || '';
+                    const isEdge = ua.includes('Edg/');
+                    const settingsUrl = isEdge ? 'edge://settings/downloads' : 'chrome://settings/downloads';
+                    const msg = `请手动复制并在新标签页打开: ${settingsUrl}`;
                     showStatus(msg, 'info', 5000);
 
                     // 尝试复制到剪贴板
                     try {
-                        navigator.clipboard.writeText('chrome://settings/downloads').then(() => {
+                        navigator.clipboard.writeText(settingsUrl).then(() => {
                             showStatus('设置地址已复制到剪贴板', 'success');
                         });
                     } catch (clipboardError) {
@@ -1139,12 +1142,17 @@ function updateSyncHistory(passedLang) { // Added passedLang parameter
 
     Promise.all([
         getLangPromise, // Add promise to get language
-        new Promise(resolve => {
-            chrome.runtime.sendMessage({ action: "getSyncHistory" }, response => {
-                if (response && response.success) resolve(response.syncHistory || []);
-                else { console.error('获取备份历史记录失败 in Promise'); resolve([]); }
-            });
-        }),
+	        new Promise(resolve => {
+	            chrome.runtime.sendMessage({ action: "getSyncHistory" }, response => {
+	                if (chrome.runtime.lastError) {
+	                    console.error('获取备份历史记录失败:', chrome.runtime.lastError.message);
+	                    resolve([]);
+	                    return;
+	                }
+	                if (response && response.success) resolve(response.syncHistory || []);
+	                else { console.error('获取备份历史记录失败 in Promise:', response); resolve([]); }
+	            });
+	        }),
         new Promise(resolve => {
             chrome.storage.local.get('cachedRecordAfterClear', result => {
                 resolve(result.cachedRecordAfterClear);

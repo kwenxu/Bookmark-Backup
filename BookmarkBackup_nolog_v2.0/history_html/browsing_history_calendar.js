@@ -2565,8 +2565,10 @@ class BrowsingHistoryCalendar {
         if (typeof getFaviconUrl === 'function') {
             faviconImg.src = getFaviconUrl(bookmark.url);
         } else {
-            // 降级方案
-            faviconImg.src = `chrome://favicon/${bookmark.url}`;
+            // 降级方案（Edge/Chrome 内置 favicon 端点不同）
+            const ua = navigator.userAgent || '';
+            const isEdge = ua.includes('Edg/');
+            faviconImg.src = `${isEdge ? 'edge' : 'chrome'}://favicon/${bookmark.url}`;
         }
 
         item.appendChild(faviconImg);
@@ -3172,7 +3174,9 @@ class BrowsingHistoryCalendar {
         if (typeof getFaviconUrl === 'function') {
             faviconImg.src = getFaviconUrl(bookmark.url);
         } else {
-            faviconImg.src = `chrome://favicon/${bookmark.url}`;
+            const ua = navigator.userAgent || '';
+            const isEdge = ua.includes('Edg/');
+            faviconImg.src = `${isEdge ? 'edge' : 'chrome'}://favicon/${bookmark.url}`;
         }
 
         item.appendChild(faviconImg);

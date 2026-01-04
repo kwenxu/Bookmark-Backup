@@ -1142,17 +1142,17 @@ function updateSyncHistory(passedLang) { // Added passedLang parameter
 
     Promise.all([
         getLangPromise, // Add promise to get language
-	        new Promise(resolve => {
-	            chrome.runtime.sendMessage({ action: "getSyncHistory" }, response => {
-	                if (chrome.runtime.lastError) {
-	                    console.error('获取备份历史记录失败:', chrome.runtime.lastError.message);
-	                    resolve([]);
-	                    return;
-	                }
-	                if (response && response.success) resolve(response.syncHistory || []);
-	                else { console.error('获取备份历史记录失败 in Promise:', response); resolve([]); }
-	            });
-	        }),
+        new Promise(resolve => {
+            chrome.runtime.sendMessage({ action: "getSyncHistory" }, response => {
+                if (chrome.runtime.lastError) {
+                    console.error('获取备份历史记录失败:', chrome.runtime.lastError.message);
+                    resolve([]);
+                    return;
+                }
+                if (response && response.success) resolve(response.syncHistory || []);
+                else { console.error('获取备份历史记录失败 in Promise:', response); resolve([]); }
+            });
+        }),
         new Promise(resolve => {
             chrome.storage.local.get('cachedRecordAfterClear', result => {
                 resolve(result.cachedRecordAfterClear);
@@ -4072,8 +4072,8 @@ const applyLocalizedContent = async (lang) => { // Added lang parameter
     };
 
     const hideDownloadBarLabelStrings = {
-        'zh_CN': "防干扰：只在本地备份时隐藏下载栏",
-        'en': "Non-interference: Hide Download Bar Only During Backup"
+        'zh_CN': "防干扰：只在本地备份时隐藏下载栏（Edge 119+ 暂不适用）",
+        'en': "Non-interference: Hide Download Bar Only During Backup (Edge 119+ not supported)"
     };
 
     const instructionsLabelStrings = {

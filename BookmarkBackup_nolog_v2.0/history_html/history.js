@@ -2641,6 +2641,31 @@ document.addEventListener('DOMContentLoaded', async () => {
     console.log('历史查看器初始化...');
 
     // ========================================================================
+    // 【关键步骤 -1】检测是否需要清除 localStorage（"恢复到初始状态"功能触发）
+    // ========================================================================
+    try {
+        const resetCheck = await new Promise(resolve => {
+            browserAPI.storage.local.get(['needClearLocalStorage'], result => resolve(result));
+        });
+
+        if (resetCheck && resetCheck.needClearLocalStorage === true) {
+            console.log('[初始化] 检测到重置标志，正在清除 localStorage...');
+
+            // 清除当前页面上下文的所有 localStorage
+            localStorage.clear();
+
+            // 移除重置标志（避免重复清除）
+            await new Promise(resolve => {
+                browserAPI.storage.local.remove(['needClearLocalStorage'], resolve);
+            });
+
+            console.log('[初始化] localStorage 已清除，重置标志已移除');
+        }
+    } catch (error) {
+        console.warn('[初始化] 检测重置标志时出错:', error);
+    }
+
+    // ========================================================================
     // 【关键步骤 0】初始化 Favicon 缓存系统
     // ========================================================================
     try {
@@ -2648,6 +2673,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     } catch (error) {
         // 静默处理
     }
+
 
     // 设置全局图片错误处理（避免CSP内联事件处理器）
     setupGlobalImageErrorHandler();
@@ -19061,8 +19087,8 @@ async function generateTreeBasedChanges(record, mode) {
                 <div class="detail-empty">
                     <i class="fas fa-info-circle"></i>
                     ${currentLang === 'zh_CN'
-                        ? '无法计算变化：缺少上一条可对比的备份记录（上一条记录可能来自旧版本，或你刚清空了备份历史）'
-                        : 'Cannot compute changes: no previous backup record to compare (the previous record may be from an older version, or you may have just cleared the backup history).'}
+                ? '无法计算变化：缺少上一条可对比的备份记录（上一条记录可能来自旧版本，或你刚清空了备份历史）'
+                : 'Cannot compute changes: no previous backup record to compare (the previous record may be from an older version, or you may have just cleared the backup history).'}
                 </div>
             </div>
         `;
@@ -20339,6 +20365,15 @@ function setupRealtimeMessageListener() {
                         }
                     }
                 } catch (_) { }
+            }
+        } else if (message.action === 'clearLocalStorage') {
+            // 收到来自 background.js 的清除 localStorage 请求（"恢复到初始状态"功能）
+            console.log('[history.js] 收到清除 localStorage 请求');
+            try {
+                localStorage.clear();
+                console.log('[history.js] localStorage 已清除');
+            } catch (e) {
+                console.warn('[history.js] 清除 localStorage 失败:', e);
             }
         }
     });

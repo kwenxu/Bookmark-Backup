@@ -5679,6 +5679,15 @@ document.addEventListener('DOMContentLoaded', function () {
                 if (response && response.success) {
                     showStatus('已恢复到初始状态', 'success');
 
+                    // 清除 popup 的 localStorage（与 history.html 共享同一个扩展源）
+                    // 这会清除书签画布、时间追踪等所有偏好设置
+                    try {
+                        localStorage.clear();
+                        console.log('[resetAllData] popup localStorage 已清除');
+                    } catch (e) {
+                        console.warn('[resetAllData] 清除 localStorage 失败:', e);
+                    }
+
                     // 重置完成后，直接刷新整个页面，确保UI和状态完全重建
                     setTimeout(() => {
                         window.location.reload(true);

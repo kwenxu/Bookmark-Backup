@@ -3134,26 +3134,44 @@ async function searchBookmarks(query) {
 }
 
 // 添加重置所有数据的函数
+// 简化版：清除所有持久化存储 + chrome.runtime.reload()
 async function resetAllData() {
     try {
-        // 记录要删除的初始备份记录信息（用于日志调试）
-        const initialBackupRecord = await browserAPI.storage.local.get(['initialBackupRecord']);
-        if (initialBackupRecord && initialBackupRecord.initialBackupRecord) {
-        }
-
-        // 1. 完全清除所有存储的数据，不保留任何信息
+        console.log('[resetAllData] 开始完全重置扩展...');
+        
+        // 1. 关闭所有扩展页面，释放 IndexedDB 连接
+        try {
+            const extensionOrigin = browserAPI.runtime.getURL('');
+            const allTabs = await browserAPI.tabs.query({});
+            for (const tab of allTabs) {
+                if (tab.url && tab.url.startsWith(extensionOrigin) && !tab.url.includes('popup.html')) {
+                    await browserAPI.tabs.remove(tab.id).catch(() => {});
+                }
+            }
+        } catch (e) { /* 忽略 */ }
+        
+        // 2. 删除 IndexedDB 数据库
+        ['BookmarkFaviconCache', 'BookmarkActiveTimeDB'].forEach(dbName => {
+            try { indexedDB.deleteDatabase(dbName); } catch (e) { /* 忽略 */ }
+        });
+        
+        // 3. 清除 chrome.storage.local
         await browserAPI.storage.local.clear();
-        // 2. 清除所有定时器
+        
+        // 4. 设置标志让将来打开的页面清除 localStorage
+        await browserAPI.storage.local.set({ needClearLocalStorage: true });
+        
+        // 5. 清除所有闹钟
         await browserAPI.alarms.clearAll();
-        // 3. 重置角标到初始状态（不显示）
-        await browserAPI.action.setBadgeText({ text: '' });
-        // 4. 恢复到初始状态
-        // 5. 重新执行初始化流程，模拟首次安装
-        await initializeLanguagePreference();
-        await initializeAutoSync();
-        await initializeBadge();
+        
+        console.log('[resetAllData] 存储已清除，重新加载扩展...');
+        
+        // 6. 重新加载扩展（这会自动重置所有内存变量）
+        setTimeout(() => { browserAPI.runtime.reload(); }, 200);
+        
         return true;
     } catch (error) {
+        console.error('[resetAllData] 重置失败:', error);
         throw error;
     }
 }

@@ -930,8 +930,8 @@ browserAPI.runtime.onMessage.addListener((message, sender, sendResponse) => {
             })();
             return true;
         }
-        if (message.action === "toggleAutoSync") {
-            const useSpecificValue = message.hasOwnProperty('enabled');
+	        if (message.action === "toggleAutoSync") {
+	            const useSpecificValue = message.hasOwnProperty('enabled');
 
             const handleToggle = async () => {
                 try {
@@ -990,12 +990,90 @@ browserAPI.runtime.onMessage.addListener((message, sender, sendResponse) => {
                 }
             });
 
-            return true;
+	            return true;
 
-        } else if (message.action === "exportHistoryToWebDAV") {
-            // 处理导出历史记录到WebDAV的请求
-            // 使用异步立即执行函数处理
-            (async () => {
+	        } else if (message.action === "testWebDAVConnection") {
+	            (async () => {
+	                try {
+	                    const serverAddressRaw = typeof message.serverAddress === 'string' ? message.serverAddress : '';
+	                    const usernameRaw = typeof message.username === 'string' ? message.username : '';
+	                    const passwordRaw = typeof message.password === 'string' ? message.password : '';
+
+	                    const serverAddress = serverAddressRaw.trim();
+	                    const username = usernameRaw.trim();
+	                    const password = passwordRaw.trim();
+
+	                    if (!serverAddress || !username || !password) {
+	                        sendResponse({ success: false, error: 'WebDAV 配置不完整' });
+	                        return;
+	                    }
+
+	                    const normalizedServerAddress = serverAddress.replace(/\/+$/, '/') || serverAddress;
+	                    const authHeader = 'Basic ' + safeBase64(`${username}:${password}`);
+	                    const propfindBody = '<?xml version="1.0" encoding="utf-8"?><propfind xmlns="DAV:"><prop><resourcetype/></prop></propfind>';
+
+	                    let response;
+	                    try {
+	                        response = await fetch(normalizedServerAddress, {
+	                            method: 'PROPFIND',
+	                            headers: {
+	                                'Authorization': authHeader,
+	                                'Depth': '0',
+	                                'Content-Type': 'application/xml'
+	                            },
+	                            body: propfindBody
+	                        });
+	                    } catch (fetchError) {
+	                        sendResponse({ success: false, error: fetchError?.message || '无法连接到WebDAV服务器' });
+	                        return;
+	                    }
+
+	                    // 某些服务不允许 PROPFIND 在特定入口，降级到 OPTIONS
+	                    if (response && response.status === 405) {
+	                        try {
+	                            response = await fetch(normalizedServerAddress, {
+	                                method: 'OPTIONS',
+	                                headers: { 'Authorization': authHeader }
+	                            });
+	                        } catch (fetchError) {
+	                            sendResponse({ success: false, error: fetchError?.message || '无法连接到WebDAV服务器' });
+	                            return;
+	                        }
+	                    }
+
+	                    if (!response) {
+	                        sendResponse({ success: false, error: '无法连接到WebDAV服务器' });
+	                        return;
+	                    }
+
+	                    if (response.status === 401) {
+	                        sendResponse({ success: false, error: 'WebDAV认证失败，请检查账号密码是否正确' });
+	                        return;
+	                    }
+	                    if (response.status === 403) {
+	                        sendResponse({ success: false, error: 'WebDAV拒绝访问（403），请检查权限或路径是否正确' });
+	                        return;
+	                    }
+	                    if (response.status === 404) {
+	                        sendResponse({ success: false, error: 'WebDAV地址不存在（404），请检查服务器地址是否正确' });
+	                        return;
+	                    }
+	                    if (!response.ok) {
+	                        sendResponse({ success: false, error: `连接失败: ${response.status} - ${response.statusText}` });
+	                        return;
+	                    }
+
+	                    sendResponse({ success: true });
+	                } catch (error) {
+	                    sendResponse({ success: false, error: error?.message || '未知错误' });
+	                }
+	            })();
+	            return true;
+
+	        } else if (message.action === "exportHistoryToWebDAV") {
+	            // 处理导出历史记录到WebDAV的请求
+	            // 使用异步立即执行函数处理
+	            (async () => {
                 try {
                     // 检查必要参数
                     if (!message.content) {

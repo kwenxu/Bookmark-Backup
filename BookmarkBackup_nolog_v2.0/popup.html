@@ -1858,66 +1858,80 @@
             box-shadow: 0 4px 8px rgba(76, 175, 80, 0.15);
         }
 
-        /* 密码输入框容器 */
-        .password-container {
-            position: relative;
-            width: 100%;
+        /* 重构：密码输入框组合容器（模拟Input外观） */
+        .password-group-wrapper {
             display: flex;
-            /* 添加 flex 布局 */
             align-items: center;
-            /* 垂直居中 */
+            width: 100%;
+            background-color: var(--theme-input-bg);
+            border: 1px solid var(--theme-input-border);
+            border-radius: 8px;
+            padding: 2px;
+            /* 移除多余内边距，让内容贴边 */
+            transition: border-color 0.3s, box-shadow 0.3s;
+            box-sizing: border-box;
+            position: relative;
         }
 
-        /* 密码输入框样式 */
-        #password {
+        .password-group-wrapper:focus-within {
+            border-color: var(--theme-input-focus-border);
+            box-shadow: 0 0 0 3px var(--theme-input-focus-shadow);
+        }
+
+        /* 内部真正的输入框：去除所有边框和背景，填满剩余空间 */
+        .password-group-wrapper input#password {
             flex: 1;
-            /* 让输入框占据剩余空间 */
-            padding-right: 35px;
-            /* 为图标留出空间 */
+            border: none !important;
+            box-shadow: none !important;
+            background: transparent !important;
+            outline: none !important;
+            padding: 10px 8px !important;
+            /* 微调输入框内边距 */
+            width: 0 !important;
+            /* 允许Flex收缩 */
+            min-width: 0 !important;
+            height: auto !important;
+            margin: 0 !important;
         }
 
-        /* 调整密码显示/隐藏按钮位置 */
-        .password-toggle {
-            position: absolute;
-            right: 8px;
-            top: 50%;
-            transform: translateY(-50%);
-            cursor: pointer;
-            width: 20px;
-            height: 20px;
-            background: none;
+        /* 内部的显隐按钮：静态定位，Flex布局自动对齐 */
+        .password-group-wrapper .password-visibility-btn {
+            position: static !important;
+            transform: none !important;
+            width: auto !important;
+            /* 完全由图标决定宽度 */
+            min-width: 0 !important;
+            /* 移除最小宽度限制 */
+            flex: 0 0 auto !important;
+            /* 不伸缩，保持原始内容大小 */
+            height: 32px;
+            margin-left: 2px;
+            margin-right: 12px;
+            /* 向左微调：进一步增加右侧间距至12px */
+            background: transparent;
             border: none;
-            padding: 0;
-            opacity: 0;
-            transition: opacity 0.2s ease;
-            /* 只保留透明度的过渡效果 */
-            z-index: 1;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: var(--theme-text-secondary);
+            font-size: 13px;
+            opacity: 0.7;
+            border-radius: 4px;
+            padding: 0 !important;
+            /* 0内边距，严丝合缝 */
+            transition: all 0.2s;
         }
 
-        /* 调整眼睛图标样式 */
-        .password-toggle::before {
-            content: '';
-            position: absolute;
-            width: 18px;
-            height: 18px;
-            left: 50%;
-            top: 50%;
-            transform: translate(-50%, -50%);
-            background: url('data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="%23666" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/><line x1="3" y1="3" x2="21" y2="21"/></svg>') center/contain no-repeat;
-        }
-
-        /* 添加睁眼状态 */
-        .password-toggle.show::before {
-            background-image: url('data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="%23666" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>');
-        }
-
-        /* 密码输入框获得焦点时显示切换按钮 */
-        .password-container:focus-within .password-toggle {
-            opacity: 0.6;
-        }
-
-        .password-toggle:hover {
+        .password-group-wrapper .password-visibility-btn:hover {
             opacity: 1;
+            background-color: var(--theme-bg-tertiary);
+        }
+
+        /* 再次确保原生按钮隐藏 */
+        input#password::-ms-reveal,
+        input#password::-ms-clear {
+            display: none !important;
         }
 
         /* 危险按钮样式 */
@@ -2894,16 +2908,20 @@
 
                 <div class="form-group" style="padding-left: 5px;">
                     <label for="password" style="display: block; margin-bottom: 5px;" id="passwordLabel"></label>
-                    <div class="password-container" style="width: 100%;">
-                        <input type="password" id="password" placeholder="" style="width: 100%;">
-                        <button type="button" class="password-toggle" aria-label="显示/隐藏密码"></button>
+                    <div class="password-group-wrapper">
+                        <input type="password" id="password" placeholder="" autocomplete="off" autocapitalize="none"
+                            autocorrect="off" spellcheck="false">
+                        <button type="button" id="passwordVisibilityBtn" class="password-visibility-btn"
+                            aria-label="显示密码"></button>
                     </div>
                 </div>
 
                 <div class="button-group"
-                    style="margin-top: 15px; display: flex; justify-content: center; padding-left: 5px; padding-right: 5px; margin-bottom: 5px;">
+                    style="margin-top: 15px; display: flex; justify-content: center; gap: 8px; flex-wrap: wrap; padding-left: 5px; padding-right: 5px; margin-bottom: 5px;">
+                    <button id="testWebdavBtn"
+                        style="width: auto; min-width: 140px; background-color: #007AFF; color: white; border: none; border-radius: 4px; padding: 8px 12px; cursor: pointer;"></button>
                     <button id="saveKey"
-                        style="width: auto; min-width: 200px; background-color: #4CAF50; color: white; border: none; border-radius: 4px; padding: 8px 12px; cursor: pointer;"></button>
+                        style="width: auto; min-width: 140px; background-color: #4CAF50; color: white; border: none; border-radius: 4px; padding: 8px 12px; cursor: pointer;"></button>
                 </div>
             </div>
         </div>

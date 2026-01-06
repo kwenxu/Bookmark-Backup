@@ -26,6 +26,8 @@ const MAX_CONNECTION_ATTEMPTS = 3;
 
 // 国际化文本对象（全局定义，在 applyLocalizedContent 中初始化）
 let webdavConfigMissingStrings, webdavConfigSavedStrings, webdavBackupEnabledStrings, webdavBackupDisabledStrings;
+let testingWebdavConnectionStrings, webdavConnectionTestSuccessStrings, webdavConnectionTestFailedStrings;
+let webdavPasswordTrimmedStrings;
 let localBackupEnabledStrings, localBackupDisabledStrings, hideDownloadBarEnabledStrings, hideDownloadBarDisabledStrings;
 let downloadPathCalibratedStrings, downloadSettingsAddressCopiedStrings;
 let autoBackupEnabledStrings, autoBackupDisabledStrings, detectedChangesBackingUpStrings;
@@ -38,6 +40,17 @@ let restoringToDefaultStrings, restoredToDefaultStrings, restoreFailedStrings;
 let getSyncHistoryFailedStrings, noHistoryToExportStrings, historyExportedStrings;
 let exportHistoryFailedStrings, historyExportErrorStrings, historyClearedStrings;
 let clearHistoryFailedStrings, unknownErrorStrings;
+
+let webdavDraftSaveTimer = null;
+const WEBDAV_DRAFT_KEYS = {
+    serverAddress: 'webdavDraftServerAddress',
+    username: 'webdavDraftUsername',
+    password: 'webdavDraftPassword'
+};
+
+const WEBDAV_UI_STATE_KEYS = {
+    panelOpen: 'webdavConfigPanelOpen'
+};
 
 let openSourceInfoTitleStrings, openSourceAuthorInfoStrings, openSourceDescriptionStrings;
 let openSourceGithubLabelStrings, openSourceIssueLabelStrings, openSourceIssueTextStrings, openSourceCloseBtnStrings;
@@ -94,6 +107,9 @@ function showStatus(message, type = 'info', duration = 3000) {
             // WebDAV配置相关
             '请填写完整的WebDAV配置信息': 'webdavConfigMissing',
             'WebDAV配置已保存，备份已启用': 'webdavConfigSaved',
+            '正在测试WebDAV连接...': 'testingWebdavConnection',
+            'WebDAV连接测试成功': 'webdavConnectionTestSuccess',
+            '已自动去除密码首尾空格/换行': 'webdavPasswordTrimmed',
 
             // 本地配置相关
             '下载路径已校准': 'downloadPathCalibrated',
@@ -142,7 +158,8 @@ function showStatus(message, type = 'info', duration = 3000) {
             '初始化上传失败:': 'initUploadFailed',
             '手动上传失败:': 'manualUploadFailed',
             '恢复失败:': 'restoreFailed',
-            '导出历史记录失败:': 'historyExportError'
+            '导出历史记录失败:': 'historyExportError',
+            'WebDAV连接测试失败:': 'webdavConnectionTestFailed'
         };
 
         // 特殊模式匹配 - 用于根据模式决定使用哪个消息键
@@ -171,6 +188,10 @@ function showStatus(message, type = 'info', duration = 3000) {
             'webdavConfigSaved': webdavConfigSavedStrings,
             'webdavBackupEnabled': webdavBackupEnabledStrings,
             'webdavBackupDisabled': webdavBackupDisabledStrings,
+            'testingWebdavConnection': testingWebdavConnectionStrings,
+            'webdavConnectionTestSuccess': webdavConnectionTestSuccessStrings,
+            'webdavConnectionTestFailed': webdavConnectionTestFailedStrings,
+            'webdavPasswordTrimmed': webdavPasswordTrimmedStrings,
             'localBackupEnabled': localBackupEnabledStrings,
             'localBackupDisabled': localBackupDisabledStrings,
             'hideDownloadBarEnabled': hideDownloadBarEnabledStrings,
@@ -593,6 +614,153 @@ function sendMessageToBackground(message, callback) {
 // UI 初始化函数 (UI Initialization Functions)
 // =============================================================================
 
+function getWebdavInputElements() {
+    const serverAddressInput = document.getElementById('serverAddress');
+    const usernameInput = document.getElementById('username');
+    const passwordInput = document.getElementById('password');
+    return { serverAddressInput, usernameInput, passwordInput };
+}
+
+function readWebdavInputs({ trimPassword = true } = {}) {
+    const { serverAddressInput, usernameInput, passwordInput } = getWebdavInputElements();
+    const serverAddress = serverAddressInput ? serverAddressInput.value.trim() : '';
+    const username = usernameInput ? usernameInput.value.trim() : '';
+    const rawPassword = passwordInput ? passwordInput.value : '';
+    const password = trimPassword ? rawPassword.trim() : rawPassword;
+    return { serverAddress, username, password, rawPassword };
+}
+
+function saveWebdavDraftNow() {
+    const { serverAddress, username, password, rawPassword } = readWebdavInputs({ trimPassword: true });
+    if (!serverAddress && !username && !password && !rawPassword) {
+        return;
+    }
+    try {
+        chrome.storage.local.set({
+            [WEBDAV_DRAFT_KEYS.serverAddress]: serverAddress,
+            [WEBDAV_DRAFT_KEYS.username]: username,
+            [WEBDAV_DRAFT_KEYS.password]: password
+        });
+    } catch (e) {
+    }
+}
+
+function scheduleSaveWebdavDraft() {
+    if (webdavDraftSaveTimer) {
+        clearTimeout(webdavDraftSaveTimer);
+        webdavDraftSaveTimer = null;
+    }
+    webdavDraftSaveTimer = setTimeout(() => {
+        webdavDraftSaveTimer = null;
+        saveWebdavDraftNow();
+    }, 250);
+}
+
+function initializeWebdavDraftPersistence() {
+    const { serverAddressInput, usernameInput, passwordInput } = getWebdavInputElements();
+    if (!serverAddressInput || !usernameInput || !passwordInput) {
+        return;
+    }
+
+    const onInput = () => scheduleSaveWebdavDraft();
+    serverAddressInput.addEventListener('input', onInput);
+    usernameInput.addEventListener('input', onInput);
+    passwordInput.addEventListener('input', onInput);
+
+    serverAddressInput.addEventListener('blur', saveWebdavDraftNow);
+    usernameInput.addEventListener('blur', saveWebdavDraftNow);
+    passwordInput.addEventListener('blur', () => {
+        const trimmed = passwordInput.value.trim();
+        if (trimmed !== passwordInput.value) {
+            passwordInput.value = trimmed;
+            showStatus('已自动去除密码首尾空格/换行', 'info', 2200);
+        }
+        saveWebdavDraftNow();
+    });
+
+    window.addEventListener('beforeunload', saveWebdavDraftNow);
+}
+
+function initializePasswordVisibilityButton() {
+    const { passwordInput } = getWebdavInputElements();
+    const button = document.getElementById('passwordVisibilityBtn');
+    if (!passwordInput || !button) {
+        return;
+    }
+
+    let currentLang = 'zh_CN';
+    try {
+        chrome.storage.local.get(['preferredLang'], (result) => {
+            const lang = result && result.preferredLang;
+            if (lang === 'en' || lang === 'zh_CN') {
+                currentLang = lang;
+            }
+            update();
+        });
+    } catch (e) {
+    }
+
+    const tooltipMap = {
+        show: { zh_CN: '显示密码', en: 'Show password' },
+        hide: { zh_CN: '隐藏密码', en: 'Hide password' }
+    };
+
+    const update = () => {
+        const showing = passwordInput.type === 'text';
+
+        // Use icons for better alignment
+        // If showing (text visible), button should toggle to hide -> use "eye-slash"
+        // If hidden (dots visible), button should toggle to show -> use "eye"
+        button.innerHTML = showing ? '<i class="fas fa-eye-slash"></i>' : '<i class="fas fa-eye"></i>';
+
+        const tooltip = showing ? tooltipMap.hide[currentLang] : tooltipMap.show[currentLang];
+        button.setAttribute('aria-label', tooltip);
+        button.setAttribute('title', tooltip);
+    };
+
+    // Default hidden
+    passwordInput.type = 'password';
+    update();
+
+    button.addEventListener('mousedown', (e) => {
+        // Prevent button from stealing focus which might hide it if logic depends on focus-within
+        e.preventDefault();
+    });
+    button.addEventListener('click', (e) => {
+        e.preventDefault();
+        passwordInput.type = passwordInput.type === 'password' ? 'text' : 'password';
+        update();
+        passwordInput.focus();
+    });
+}
+
+function setWebdavConfigPanelOpen(open, { persist = true } = {}) {
+    const configHeader = document.getElementById('configHeader');
+    const configContent = document.getElementById('configContent');
+    if (!configHeader || !configContent) {
+        return;
+    }
+
+    configContent.style.display = open ? 'block' : 'none';
+    configHeader.classList.toggle('collapsed', !open);
+    webDAVConfigPanelOpen = !!open;
+
+    if (persist) {
+        try {
+            chrome.storage.local.set({ [WEBDAV_UI_STATE_KEYS.panelOpen]: !!open });
+        } catch (e) {
+        }
+    }
+}
+
+async function testWebdavConnection({ serverAddress, username, password }) {
+    return await callBackgroundFunction('testWebDAVConnection', {
+        serverAddress,
+        username,
+        password
+    });
+}
+
 /**
  * 初始化WebDAV配置部分。
  * @async
@@ -609,8 +777,13 @@ async function initializeWebDAVConfigSection() {
         return;
     }
 
-    // 设置初始状态
-    configContent.style.display = 'none';
+    // 设置初始状态：从存储恢复“是否展开”
+    try {
+        const uiState = await chrome.storage.local.get([WEBDAV_UI_STATE_KEYS.panelOpen]);
+        setWebdavConfigPanelOpen(uiState[WEBDAV_UI_STATE_KEYS.panelOpen] === true, { persist: false });
+    } catch (e) {
+        setWebdavConfigPanelOpen(false, { persist: false });
+    }
 
     // 绑定点击事件
     configHeader.addEventListener('click', function (event) {
@@ -620,29 +793,54 @@ async function initializeWebDAVConfigSection() {
         }
 
         toggleConfigPanel(configContent, configHeader);
+        const open = configContent.style.display === 'block';
+        setWebdavConfigPanelOpen(open, { persist: true });
     });
 
     // 添加保存WebDAV配置的处理
     const saveButton = document.getElementById('saveKey');
     if (saveButton) {
-        saveButton.addEventListener('click', function () {
-            const serverAddress = document.getElementById('serverAddress').value.trim();
-            const username = document.getElementById('username').value.trim();
-            const password = document.getElementById('password').value;
+        saveButton.addEventListener('click', async function () {
+            const { serverAddress, username, password, rawPassword } = readWebdavInputs({ trimPassword: true });
+            const { passwordInput } = getWebdavInputElements();
+
+            // 先保存草稿，避免关闭弹窗丢失输入
+            saveWebdavDraftNow();
 
             if (!serverAddress || !username || !password) {
                 showStatus('请填写完整的WebDAV配置信息', 'error');
                 return;
             }
 
-            // 保存配置并自动打开开关
+            if (rawPassword !== rawPassword.trim()) {
+                if (passwordInput) passwordInput.value = password;
+                showStatus('已自动去除密码首尾空格/换行', 'info', 2200);
+            }
+
+            showStatus('正在测试WebDAV连接...', 'info', 3500);
+            let testResult;
+            try {
+                testResult = await testWebdavConnection({ serverAddress, username, password });
+            } catch (error) {
+                showStatus(`WebDAV连接测试失败: ${error.message || '未知错误'}`, 'error', 4500);
+                return;
+            }
+
+            if (!testResult || testResult.success !== true) {
+                showStatus(`WebDAV连接测试失败: ${testResult?.error || '未知错误'}`, 'error', 4500);
+                return;
+            }
+
+            // 测试通过后保存配置并自动打开开关
             chrome.storage.local.set({
-                serverAddress: serverAddress,
-                username: username,
-                password: password,
-                webDAVEnabled: true  // 自动打开开关
+                serverAddress,
+                username,
+                password,
+                webDAVEnabled: true,
+                [WEBDAV_DRAFT_KEYS.serverAddress]: serverAddress,
+                [WEBDAV_DRAFT_KEYS.username]: username,
+                [WEBDAV_DRAFT_KEYS.password]: password
             }, function () {
-                // 保存成功后切换开关为打开状态
                 const webDAVToggle = document.getElementById('webDAVToggle');
                 if (webDAVToggle) {
                     webDAVToggle.checked = true;
@@ -650,27 +848,54 @@ async function initializeWebDAVConfigSection() {
 
                 showStatus('WebDAV配置已保存，备份已启用', 'success');
 
-                // 更新状态指示器
                 const configStatus = document.getElementById('configStatus');
                 if (configStatus) {
                     configStatus.classList.remove('not-configured');
                     configStatus.classList.add('configured');
                 }
 
-                // 自动折叠面板
+                // 保存后自动折叠
                 setTimeout(() => {
-                    const configContent = document.getElementById('configContent');
-                    const configHeader = document.getElementById('configHeader');
-                    if (configContent && configHeader) {
-                        // 如果当前是展开状态才折叠
-                        if (configContent.style.display === 'block') {
-                            toggleConfigPanel(configContent, configHeader);
-                        }
-                    }
-                }, 500); // 延迟500ms，让用户可以看到保存成功的提示
+                    setWebdavConfigPanelOpen(false, { persist: true });
+                }, 150);
             });
         });
     }
+
+    // 添加WebDAV连接测试按钮（不保存）
+    const testBtn = document.getElementById('testWebdavBtn');
+    if (testBtn) {
+        testBtn.addEventListener('click', async function () {
+            const { serverAddress, username, password, rawPassword } = readWebdavInputs({ trimPassword: true });
+            const { passwordInput } = getWebdavInputElements();
+            saveWebdavDraftNow();
+
+            if (!serverAddress || !username || !password) {
+                showStatus('请填写完整的WebDAV配置信息', 'error');
+                return;
+            }
+
+            if (rawPassword !== rawPassword.trim()) {
+                if (passwordInput) passwordInput.value = password;
+                showStatus('已自动去除密码首尾空格/换行', 'info', 2200);
+            }
+
+            showStatus('正在测试WebDAV连接...', 'info', 3500);
+            try {
+                const result = await testWebdavConnection({ serverAddress, username, password });
+                if (result && result.success === true) {
+                    showStatus('WebDAV连接测试成功', 'success', 2400);
+                } else {
+                    showStatus(`WebDAV连接测试失败: ${result?.error || '未知错误'}`, 'error', 4500);
+                }
+            } catch (error) {
+                showStatus(`WebDAV连接测试失败: ${error.message || '未知错误'}`, 'error', 4500);
+            }
+        });
+    }
+
+    initializeWebdavDraftPersistence();
+    initializePasswordVisibilityButton();
 }
 
 /**
@@ -1017,7 +1242,10 @@ async function loadAndDisplayWebDAVConfig() {
 
     try {
         const data = await new Promise((resolve, reject) => {
-            chrome.storage.local.get(['serverAddress', 'username', 'password', 'webDAVEnabled'], (result) => {
+            chrome.storage.local.get([
+                'serverAddress', 'username', 'password', 'webDAVEnabled',
+                WEBDAV_DRAFT_KEYS.serverAddress, WEBDAV_DRAFT_KEYS.username, WEBDAV_DRAFT_KEYS.password
+            ], (result) => {
                 if (chrome.runtime.lastError) {
                     return reject(chrome.runtime.lastError);
                 }
@@ -1025,15 +1253,23 @@ async function loadAndDisplayWebDAVConfig() {
             });
         });
 
-        if (data.serverAddress) {
-            serverAddressInput.value = data.serverAddress;
-        }
-        if (data.username) {
-            usernameInput.value = data.username;
-        }
-        if (data.password) {
-            passwordInput.value = data.password;
-        }
+        const draftServerAddress = data[WEBDAV_DRAFT_KEYS.serverAddress];
+        const draftUsername = data[WEBDAV_DRAFT_KEYS.username];
+        const draftPassword = data[WEBDAV_DRAFT_KEYS.password];
+
+        const displayServerAddress = (typeof draftServerAddress === 'string' && draftServerAddress.length > 0)
+            ? draftServerAddress
+            : (data.serverAddress || '');
+        const displayUsername = (typeof draftUsername === 'string' && draftUsername.length > 0)
+            ? draftUsername
+            : (data.username || '');
+        const displayPassword = (typeof draftPassword === 'string' && draftPassword.length > 0)
+            ? draftPassword
+            : (data.password || '');
+
+        serverAddressInput.value = displayServerAddress;
+        usernameInput.value = displayUsername;
+        passwordInput.value = displayPassword;
 
         const isConfigured = data.serverAddress && data.username && data.password;
         const isEnabled = data.webDAVEnabled === true; // 明确检查true
@@ -4178,6 +4414,11 @@ const applyLocalizedContent = async (lang) => { // Added lang parameter
         'en': "Save Config"
     };
 
+    const testWebdavButtonStrings = {
+        'zh_CN': "测试连接",
+        'en': "Test Connection"
+    };
+
     // 本地配置部分
     const localConfigTitleStrings = {
         'zh_CN': "本地配置（本地私密、曲线onedrive/icould等）",
@@ -4385,6 +4626,26 @@ const applyLocalizedContent = async (lang) => { // Added lang parameter
     webdavBackupDisabledStrings = {
         'zh_CN': "WebDAV备份已禁用",
         'en': "WebDAV backup disabled"
+    };
+
+    testingWebdavConnectionStrings = {
+        'zh_CN': "正在测试WebDAV连接...",
+        'en': "Testing WebDAV connection..."
+    };
+
+    webdavConnectionTestSuccessStrings = {
+        'zh_CN': "WebDAV连接测试成功",
+        'en': "WebDAV connection test succeeded"
+    };
+
+    webdavConnectionTestFailedStrings = {
+        'zh_CN': "WebDAV连接测试失败:",
+        'en': "WebDAV connection test failed:"
+    };
+
+    webdavPasswordTrimmedStrings = {
+        'zh_CN': "已自动去除密码首尾空格/换行",
+        'en': "Trimmed leading/trailing spaces/newlines in password"
     };
 
     // 本地配置相关提示
@@ -4810,6 +5071,11 @@ const applyLocalizedContent = async (lang) => { // Added lang parameter
     const saveKeyButton = document.getElementById('saveKey');
     if (saveKeyButton) {
         saveKeyButton.textContent = saveConfigButtonText;
+    }
+
+    const testWebdavBtn = document.getElementById('testWebdavBtn');
+    if (testWebdavBtn) {
+        testWebdavBtn.textContent = testWebdavButtonStrings[lang] || testWebdavButtonStrings['zh_CN'];
     }
 
     // 更新本地配置部分

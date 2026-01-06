@@ -2,6 +2,10 @@
 // Bookmark Canvas Module - 基于原有Bookmark Tree改造的Canvas功能
 // =============================================================================
 
+// Unified Export Folder Paths - 统一的导出文件夹路径（根据语言动态选择）
+const getCanvasExportRootFolder = () => (typeof currentLang !== 'undefined' && currentLang === 'zh_CN') ? '书签快照 & 工具箱' : 'Bookmark Git & Toolbox';
+const getCanvasExportFolder = () => (typeof currentLang !== 'undefined' && currentLang === 'zh_CN') ? '书签画布' : 'Canvas';
+
 // Canvas状态管理
 const CANVAS_BASE_ZOOM_DEFAULT = 0.6; // 新默认基准缩放：旧 60% 视图 = 新 100%
 
@@ -18238,9 +18242,9 @@ async function exportCanvasPackage(options = {}) {
     const ymd = `${now.getFullYear()}${pad2(now.getMonth() + 1)}${pad2(now.getDate())}`;
 
     const exportedAt = new Date().toISOString();
-    // zip 保存到浏览器默认下载目录下的固定父目录：bookmark-canvas-export/
+    // zip 保存到浏览器默认下载目录下的统一父目录（根据语言动态选择）
     // 需求：不同日期的 zip 都归档在同一个文件夹下
-    const downloadFolder = 'bookmark-canvas-export';
+    const downloadFolder = `${getCanvasExportRootFolder()}/${getCanvasExportFolder()}`;
     // 默认导出文件夹名（也作为默认 zip 名与默认 .canvas 名）
     // - zh_CN: 书签画布-YYYYMMDD
     // - en: bookmark-canvas-YYYYMMDD

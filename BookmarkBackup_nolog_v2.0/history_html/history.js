@@ -2,6 +2,11 @@
 // 全局变量和常量
 // =============================================================================
 
+// Unified Export Folder Paths - 统一的导出文件夹路径（根据语言动态选择）
+const getHistoryExportRootFolder = () => currentLang === 'zh_CN' ? '书签快照 & 工具箱' : 'Bookmark Git & Toolbox';
+const getHistoryExportFolder = () => currentLang === 'zh_CN' ? '备份历史' : 'Bookmarks_History';
+const getCurrentChangesExportFolder = () => currentLang === 'zh_CN' ? '当前变化' : 'Current Changes';
+
 let currentLang = 'zh_CN';
 window.currentLang = currentLang; // 暴露给其他模块使用
 let currentTheme = 'light';
@@ -4290,12 +4295,12 @@ function initClearBackupHistoryModal() {
     };
 
     // 更新滑块范围高亮
-	    const updateRangeHighlight = () => {
-	        if (!rangeHighlight || !rangeMinSlider || !rangeMaxSlider) return;
+    const updateRangeHighlight = () => {
+        if (!rangeHighlight || !rangeMinSlider || !rangeMaxSlider) return;
 
-	        const min = parseInt(rangeMinSlider.min, 10);
-	        const max = parseInt(rangeMinSlider.max, 10);
-	        const range = Math.max(1, max - min);
+        const min = parseInt(rangeMinSlider.min, 10);
+        const max = parseInt(rangeMinSlider.max, 10);
+        const range = Math.max(1, max - min);
 
         const a = parseInt(rangeMinSlider.value, 10);
         const b = parseInt(rangeMaxSlider.value, 10);
@@ -4317,8 +4322,8 @@ function initClearBackupHistoryModal() {
         // Highlight: 0% to 50%.
         // So visual bar: Right Edge -> Mid. This covers 1 to 50. CORRECT.
 
-	        const leftPercent = ((low - min) / range) * 100;
-	        const widthPercent = ((high - low) / range) * 100;
+        const leftPercent = ((low - min) / range) * 100;
+        const widthPercent = ((high - low) / range) * 100;
 
         rangeHighlight.style.left = `${leftPercent}%`;
         rangeHighlight.style.width = `${widthPercent}%`;
@@ -4473,27 +4478,27 @@ function initClearBackupHistoryModal() {
             rangeMaxSlider.value = Math.max(seqRange.min, defaultMaxSeq);
         }
 
-	        // 设置刻度标签 - Largest on Left
-	        if (minSeqLabel) minSeqLabel.textContent = String(seqRange.max); // Left Label = Max
-	        if (maxSeqLabel) maxSeqLabel.textContent = String(seqRange.min); // Right Label = Min
+        // 设置刻度标签 - Largest on Left
+        if (minSeqLabel) minSeqLabel.textContent = String(seqRange.max); // Left Label = Max
+        if (maxSeqLabel) maxSeqLabel.textContent = String(seqRange.min); // Right Label = Min
 
-	        modal.classList.add('show');
-	        // Must update after the modal is visible; otherwise container width can be 0 and bubbles won't render.
-	        requestAnimationFrame(() => {
-	            try {
-	                updateDisplay();
-	            } catch (e) {
-	                // ignore
-	            }
-	            requestAnimationFrame(() => {
-	                try {
-	                    updateDisplay();
-	                } catch (e) {
-	                    // ignore
-	                }
-	            });
-	        });
-	    };
+        modal.classList.add('show');
+        // Must update after the modal is visible; otherwise container width can be 0 and bubbles won't render.
+        requestAnimationFrame(() => {
+            try {
+                updateDisplay();
+            } catch (e) {
+                // ignore
+            }
+            requestAnimationFrame(() => {
+                try {
+                    updateDisplay();
+                } catch (e) {
+                    // ignore
+                }
+            });
+        });
+    };
 
     const closeClearModal = () => modal.classList.remove('show');
 
@@ -25345,14 +25350,40 @@ async function executeExportChanges() {
         }
 
         if (action === 'download') {
-            // 下载文件
+            // 下载文件 - 使用统一的导出文件夹结构
             const blob = new Blob([content], { type: format === 'html' ? 'text/html' : 'application/json' });
             const url = URL.createObjectURL(blob);
-            const a = document.createElement('a');
-            a.href = url;
-            a.download = filename;
-            a.click();
-            URL.revokeObjectURL(url);
+
+            // 根据导出类型选择不同的子文件夹（根据语言动态选择）
+            const exportSubFolder = isHistoryExport ? getHistoryExportFolder() : getCurrentChangesExportFolder();
+            const exportPath = `${getHistoryExportRootFolder()}/${exportSubFolder}`;
+
+            // 尝试使用 chrome.downloads API 以支持子目录
+            if (chrome && chrome.downloads && typeof chrome.downloads.download === 'function') {
+                chrome.downloads.download({
+                    url: url,
+                    filename: `${exportPath}/${filename}`,
+                    saveAs: false,
+                    conflictAction: 'uniquify'
+                }, (downloadId) => {
+                    if (chrome.runtime.lastError) {
+                        console.warn('chrome.downloads API failed, falling back to <a> tag:', chrome.runtime.lastError);
+                        // 降级方案
+                        const a = document.createElement('a');
+                        a.href = url;
+                        a.download = filename;
+                        a.click();
+                    }
+                    setTimeout(() => URL.revokeObjectURL(url), 10000);
+                });
+            } else {
+                // 降级方案
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = filename;
+                a.click();
+                setTimeout(() => URL.revokeObjectURL(url), 10000);
+            }
         } else {
             // 复制到剪贴板
             await navigator.clipboard.writeText(content);
@@ -26852,42 +26883,42 @@ function initGlobalExportRangeUI() {
         toggleBtn.setAttribute('data-listener-attached', 'true');
     }
 
-	    if (!enabledCbox.hasAttribute('data-listener-attached')) {
-	        enabledCbox.addEventListener('change', () => {
-	            const enabled = Boolean(enabledCbox.checked);
-	            setGlobalExportRangeEnabled(enabled);
-	            updateGlobalExportRangeHighlight();
-	            updateGlobalExportRangePreviewText();
-	            if (enabled) {
-	                applyGlobalExportSelectionByCurrentThumbRange();
-	            }
-	        });
-	        enabledCbox.setAttribute('data-listener-attached', 'true');
-	    }
+    if (!enabledCbox.hasAttribute('data-listener-attached')) {
+        enabledCbox.addEventListener('change', () => {
+            const enabled = Boolean(enabledCbox.checked);
+            setGlobalExportRangeEnabled(enabled);
+            updateGlobalExportRangeHighlight();
+            updateGlobalExportRangePreviewText();
+            if (enabled) {
+                applyGlobalExportSelectionByCurrentThumbRange();
+            }
+        });
+        enabledCbox.setAttribute('data-listener-attached', 'true');
+    }
 
-	    const handleMinInput = () => {
-	        updateGlobalExportRangeHighlight();
-	        updateGlobalExportRangePreviewText();
-	        if (isGlobalExportRangePanelExpanded()) {
-	            globalExportCurrentPage = 1;
-	            renderGlobalExportPage();
-	        }
-	        if (enabledCbox.checked) {
-	            applyGlobalExportSelectionByCurrentThumbRange();
-	        }
-	    };
+    const handleMinInput = () => {
+        updateGlobalExportRangeHighlight();
+        updateGlobalExportRangePreviewText();
+        if (isGlobalExportRangePanelExpanded()) {
+            globalExportCurrentPage = 1;
+            renderGlobalExportPage();
+        }
+        if (enabledCbox.checked) {
+            applyGlobalExportSelectionByCurrentThumbRange();
+        }
+    };
 
-	    const handleMaxInput = () => {
-	        updateGlobalExportRangeHighlight();
-	        updateGlobalExportRangePreviewText();
-	        if (isGlobalExportRangePanelExpanded()) {
-	            globalExportCurrentPage = 1;
-	            renderGlobalExportPage();
-	        }
-	        if (enabledCbox.checked) {
-	            applyGlobalExportSelectionByCurrentThumbRange();
-	        }
-	    };
+    const handleMaxInput = () => {
+        updateGlobalExportRangeHighlight();
+        updateGlobalExportRangePreviewText();
+        if (isGlobalExportRangePanelExpanded()) {
+            globalExportCurrentPage = 1;
+            renderGlobalExportPage();
+        }
+        if (enabledCbox.checked) {
+            applyGlobalExportSelectionByCurrentThumbRange();
+        }
+    };
 
     if (!minSlider.hasAttribute('data-listener-attached')) {
         minSlider.addEventListener('input', handleMinInput);
@@ -27687,13 +27718,39 @@ async function startGlobalExport() {
 }
 
 function downloadBlob(url, filename) {
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = filename;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    setTimeout(() => URL.revokeObjectURL(url), 10000);
+    // 使用统一的导出文件夹结构（根据语言动态选择）
+    const exportPath = `${getHistoryExportRootFolder()}/${getHistoryExportFolder()}`;
+
+    // 尝试使用 chrome.downloads API 以支持子目录
+    if (chrome && chrome.downloads && typeof chrome.downloads.download === 'function') {
+        chrome.downloads.download({
+            url: url,
+            filename: `${exportPath}/${filename}`,
+            saveAs: false,
+            conflictAction: 'uniquify'
+        }, (downloadId) => {
+            if (chrome.runtime.lastError) {
+                console.warn('chrome.downloads API failed, falling back to <a> tag:', chrome.runtime.lastError);
+                // 降级方案
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = filename;
+                document.body.appendChild(a);
+                a.click();
+                document.body.removeChild(a);
+            }
+            setTimeout(() => URL.revokeObjectURL(url), 10000);
+        });
+    } else {
+        // 降级方案
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = filename;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        setTimeout(() => URL.revokeObjectURL(url), 10000);
+    }
 }
 
 // 辅助：获取 JSON 内容对象（复用 generateHistoryChangesJSON 的逻辑但只返回对象）

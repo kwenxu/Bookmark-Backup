@@ -1,6 +1,10 @@
 // 书签日历 - iOS风格层级导航
 // 默认月视图，每个视图下方显示书签列表
 
+// Unified Export Folder Paths - 统一的导出文件夹路径（根据语言动态选择）
+const getCalendarExportRootFolder = () => (typeof currentLang !== 'undefined' && currentLang === 'zh_CN') ? '书签快照 & 工具箱' : 'Bookmark Git & Toolbox';
+const getCalendarExportFolder = () => (typeof currentLang !== 'undefined' && currentLang === 'zh_CN') ? '书签记录' : 'Records';
+
 // 翻译辅助函数
 function t(key, ...args) {
     if (typeof i18n === 'undefined' || typeof currentLang === 'undefined') {
@@ -1677,17 +1681,17 @@ class BookmarkCalendar {
                 type: 'day',
                 data: { date: new Date(date) }
             });
-            
+
             // 创建排序按钮
             const sortBtn = this.createSortToggleButton();
-            
+
             // 创建按钮容器
             const buttonsContainer = document.createElement('div');
             buttonsContainer.style.display = 'flex';
             buttonsContainer.style.gap = '8px';
             buttonsContainer.appendChild(exportBtn);
             buttonsContainer.appendChild(sortBtn);
-            
+
             dayHeader.appendChild(titleContainer);
             dayHeader.appendChild(buttonsContainer);
             contentArea.appendChild(dayHeader);
@@ -1748,17 +1752,17 @@ class BookmarkCalendar {
                 type: 'hour',
                 data: { date: new Date(date), hour }
             });
-            
+
             // 创建排序按钮
             const sortBtn = this.createSortToggleButton();
-            
+
             // 创建按钮容器
             const buttonsContainer = document.createElement('div');
             buttonsContainer.style.display = 'flex';
             buttonsContainer.style.gap = '8px';
             buttonsContainer.appendChild(exportBtn);
             buttonsContainer.appendChild(sortBtn);
-            
+
             hourHeader.appendChild(titleContainer);
             hourHeader.appendChild(buttonsContainer);
             contentArea.appendChild(hourHeader);
@@ -1806,17 +1810,17 @@ class BookmarkCalendar {
                 type: 'week',
                 data: { weekNum, weekStart }
             });
-            
+
             // 创建排序按钮
             const sortBtn = this.createSortToggleButton();
-            
+
             // 创建按钮容器
             const buttonsContainer = document.createElement('div');
             buttonsContainer.style.display = 'flex';
             buttonsContainer.style.gap = '8px';
             buttonsContainer.appendChild(exportBtn);
             buttonsContainer.appendChild(sortBtn);
-            
+
             weekHeader.appendChild(titleContainer);
             weekHeader.appendChild(buttonsContainer);
             contentArea.appendChild(weekHeader);
@@ -1886,17 +1890,17 @@ class BookmarkCalendar {
                 type: 'all',
                 data: { viewLevel: 'month', year: this.currentYear, month: this.currentMonth }
             });
-            
+
             // 创建排序按钮
             const sortBtn = this.createSortToggleButton();
-            
+
             // 创建按钮容器
             const buttonsContainer = document.createElement('div');
             buttonsContainer.style.display = 'flex';
             buttonsContainer.style.gap = '8px';
             buttonsContainer.appendChild(exportBtn);
             buttonsContainer.appendChild(sortBtn);
-            
+
             allHeader.appendChild(titleContainer);
             allHeader.appendChild(buttonsContainer);
             contentArea.appendChild(allHeader);
@@ -2055,14 +2059,14 @@ class BookmarkCalendar {
         jumpBtn.dataset.url = bookmark.url;
         jumpBtn.dataset.title = bookmark.title;
         jumpBtn.dataset.dateAdded = bookmark.dateAdded.getTime();
-        
+
         jumpBtn.addEventListener('click', (e) => {
             e.stopPropagation();
             if (typeof jumpToRelatedHistoryFromAdditions === 'function') {
                 jumpToRelatedHistoryFromAdditions(bookmark.url, bookmark.title, bookmark.dateAdded.getTime());
             }
         });
-        
+
         jumpBtnContainer.appendChild(jumpBtn);
         item.appendChild(jumpBtnContainer);
 
@@ -3056,17 +3060,17 @@ class BookmarkCalendar {
                     type: 'day',
                     data: { date: new Date(date) }
                 });
-                
+
                 // 创建排序按钮
                 const sortBtn = this.createSortToggleButton();
-                
+
                 // 创建按钮容器
                 const buttonsContainer = document.createElement('div');
                 buttonsContainer.style.display = 'flex';
                 buttonsContainer.style.gap = '8px';
                 buttonsContainer.appendChild(exportBtn);
                 buttonsContainer.appendChild(sortBtn);
-                
+
                 dayHeader.appendChild(titleContainer);
                 dayHeader.appendChild(buttonsContainer);
                 contentArea.appendChild(dayHeader);
@@ -3118,17 +3122,17 @@ class BookmarkCalendar {
                     type: 'hour',
                     data: { date: new Date(date), hour }
                 });
-                
+
                 // 创建排序按钮
                 const sortBtn = this.createSortToggleButton();
-                
+
                 // 创建按钮容器
                 const buttonsContainer = document.createElement('div');
                 buttonsContainer.style.display = 'flex';
                 buttonsContainer.style.gap = '8px';
                 buttonsContainer.appendChild(exportBtn);
                 buttonsContainer.appendChild(sortBtn);
-                
+
                 hourHeader.appendChild(titleContainer);
                 hourHeader.appendChild(buttonsContainer);
                 contentArea.appendChild(hourHeader);
@@ -3178,17 +3182,17 @@ class BookmarkCalendar {
                     type: 'all',
                     data: { viewLevel: 'week', weekStart: this.currentWeekStart }
                 });
-                
+
                 // 创建排序按钮
                 const sortBtn = this.createSortToggleButton();
-                
+
                 // 创建按钮容器
                 const buttonsContainer = document.createElement('div');
                 buttonsContainer.style.display = 'flex';
                 buttonsContainer.style.gap = '8px';
                 buttonsContainer.appendChild(exportBtn);
                 buttonsContainer.appendChild(sortBtn);
-                
+
                 allHeader.appendChild(titleContainer);
                 allHeader.appendChild(buttonsContainer);
                 contentArea.appendChild(allHeader);
@@ -3484,17 +3488,17 @@ class BookmarkCalendar {
                 type: 'all',
                 data: { viewLevel: 'day', date: this.currentDay }
             });
-            
+
             // 创建排序按钮
             const sortBtn = this.createSortToggleButton();
-            
+
             // 创建按钮容器
             const buttonsContainer = document.createElement('div');
             buttonsContainer.style.display = 'flex';
             buttonsContainer.style.gap = '8px';
             buttonsContainer.appendChild(exportBtn);
             buttonsContainer.appendChild(sortBtn);
-            
+
             allHeader.appendChild(titleContainer);
             allHeader.appendChild(buttonsContainer);
             contentArea.appendChild(allHeader);
@@ -3546,7 +3550,7 @@ class BookmarkCalendar {
             `;
 
             // 创建导出按钮 - 包含完整日期
-            const fullDate = currentLang === 'zh_CN' 
+            const fullDate = currentLang === 'zh_CN'
                 ? `${this.currentDay.getFullYear()}年${this.currentDay.getMonth() + 1}月${this.currentDay.getDate()}日`
                 : `${this.currentDay.getFullYear()}-${String(this.currentDay.getMonth() + 1).padStart(2, '0')}-${String(this.currentDay.getDate()).padStart(2, '0')}`;
             const headerText = `${fullDate} ${String(hour).padStart(2, '0')}:00-${String(hour).padStart(2, '0')}:59`;
@@ -3555,17 +3559,17 @@ class BookmarkCalendar {
                 type: 'hour',
                 data: { date: this.currentDay, hour }
             });
-            
+
             // 创建排序按钮
             const sortBtn = this.createSortToggleButton();
-            
+
             // 创建按钮容器
             const buttonsContainer = document.createElement('div');
             buttonsContainer.style.display = 'flex';
             buttonsContainer.style.gap = '8px';
             buttonsContainer.appendChild(exportBtn);
             buttonsContainer.appendChild(sortBtn);
-            
+
             hourHeader.appendChild(titleContainer);
             hourHeader.appendChild(buttonsContainer);
             contentArea.appendChild(hourHeader);
@@ -3657,7 +3661,7 @@ class BookmarkCalendar {
 
         const btn = document.createElement('button');
         btn.className = 'calendar-action-btn';
-        
+
         // 只显示图标
         const icon = document.createElement('i');
         icon.className = 'fas fa-file-export';
@@ -3683,12 +3687,12 @@ class BookmarkCalendar {
     createSortToggleButton() {
         const btn = document.createElement('button');
         btn.className = 'calendar-action-btn';
-        
+
         // 如果处于冷却期，添加防抖类
         if (this.sortButtonCooldown) {
             btn.classList.add('sort-cooldown');
         }
-        
+
         // 显示图标（根据当前排序状态）
         const icon = document.createElement('i');
         icon.className = this.bookmarkSortAsc ? 'fas fa-sort-amount-down' : 'fas fa-sort-amount-up';
@@ -3699,7 +3703,7 @@ class BookmarkCalendar {
         tooltip.className = 'btn-tooltip';
         const t = window.i18n || {};
         const updateTooltip = () => {
-            tooltip.textContent = this.bookmarkSortAsc 
+            tooltip.textContent = this.bookmarkSortAsc
                 ? (t.currentAscending?.[currentLang] || (currentLang === 'zh_CN' ? '当前：正序' : 'Current: Ascending'))
                 : (t.currentDescending?.[currentLang] || (currentLang === 'zh_CN' ? '当前：倒序' : 'Current: Descending'));
         };
@@ -3710,13 +3714,13 @@ class BookmarkCalendar {
         btn.addEventListener('click', () => {
             // 设置冷却标志
             this.sortButtonCooldown = true;
-            
+
             this.bookmarkSortAsc = !this.bookmarkSortAsc;
             // 保存排序状态
             localStorage.setItem('bookmarkCalendar_sortAsc', this.bookmarkSortAsc.toString());
             updateTooltip();
             this.render(); // 重新渲染当前视图
-            
+
             // 800ms后清除冷却标志并移除所有按钮上的防抖类
             setTimeout(() => {
                 this.sortButtonCooldown = false;
@@ -4429,12 +4433,12 @@ class BookmarkCalendar {
 
         // 尝试使用 chrome.downloads API 以支持子目录
         if (chrome.downloads) {
-            // 确定文件夹名称：中文环境下使用中文，否则使用英文
-            const folderName = i18n.exportFolderName[currentLang] || 'Bookmark Records';
+            // 使用统一的导出文件夹结构（根据语言动态选择）
+            const exportPath = `${getCalendarExportRootFolder()}/${getCalendarExportFolder()}`;
 
             chrome.downloads.download({
                 url: url,
-                filename: `${folderName}/${filename}`,
+                filename: `${exportPath}/${filename}`,
                 saveAs: false,
                 conflictAction: 'uniquify'
             }, (downloadId) => {

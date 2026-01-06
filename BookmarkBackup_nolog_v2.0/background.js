@@ -86,6 +86,35 @@ const badgeTextMap = { // 添加角标文本的国际化映射对象 - 在文件
     }
 };
 
+// Unified Export Folder Paths - 统一的导出文件夹路径（根据语言动态选择）
+// const EXPORT_ROOT_FOLDER = 'Bookmark Git & Toolbox';  // 父文件夹保持英文 - REMOVED
+
+async function getExportRootFolder() {
+    const lang = await getCurrentLang();
+    return lang === 'zh_CN' ? '书签快照 & 工具箱' : 'Bookmark Git & Toolbox';
+}
+
+// 异步获取当前语言的辅助函数
+async function getCurrentLang() {
+    try {
+        const { currentLang } = await browserAPI.storage.local.get(['currentLang']);
+        return currentLang || 'zh_CN';
+    } catch (e) {
+        return 'zh_CN';
+    }
+}
+
+// 获取本地化的文件夹名称
+async function getBackupFolder() {
+    const lang = await getCurrentLang();
+    return lang === 'zh_CN' ? '书签备份' : 'Bookmark Backup';
+}
+
+async function getHistoryFolder() {
+    const lang = await getCurrentLang();
+    return lang === 'zh_CN' ? '备份历史' : 'Bookmarks_History';
+}
+
 // Global Variables
 // 添加文件锁定状态追踪
 let lastLockTime = null;
@@ -601,6 +630,9 @@ browserAPI.runtime.onStartup.addListener(async () => {
  */
 async function syncDownloadState() {
     try {
+        // 获取本地化的父文件夹名称
+        const exportRootFolder = await getExportRootFolder();
+
         // 查询由本扩展创建的书签相关下载（最近500项）
         const bookmarkDownloads = await new Promise(resolve => {
             browserAPI.downloads.search({
@@ -611,13 +643,15 @@ async function syncDownloadState() {
                     // 使用更准确的条件识别书签备份下载
                     if (!item.filename) return false;
 
-                    // 检查是否为书签备份文件 - 简化识别逻辑
+                    // 检查是否为书签备份文件 - 使用统一文件夹路径
                     return (
-                        // 1. 路径中包含Bookmarks目录
+                        // 1. 路径中包含统一父文件夹
+                        item.filename.includes(`/${exportRootFolder}/`) ||
+                        // 2. 路径中包含Bookmarks目录（兼容旧版）
                         item.filename.includes('/Bookmarks/') ||
-                        // 2. 路径中包含Bookmarks_History目录
+                        // 3. 路径中包含Bookmarks_History目录（兼容旧版）
                         item.filename.includes('/Bookmarks_History/') ||
-                        // 3. 数据URL方式的HTML内容
+                        // 4. 数据URL方式的HTML内容
                         (item.url && item.url.includes('data:text/html') && item.url.includes('charset=utf-8'))
                     );
                 }));
@@ -663,13 +697,18 @@ browserAPI.downloads.onCreated.addListener(async (downloadItem) => {
     try {
         // 不再输出"下载开始"日志
 
-        // 使用更准确的条件识别书签备份下载 - 简化识别逻辑
+        // 获取本地化的父文件夹名称
+        const exportRootFolder = await getExportRootFolder();
+
+        // 使用更准确的条件识别书签备份下载 - 使用统一文件夹路径
         const isBookmarkDownload = downloadItem.filename && (
-            // 1. 路径中包含Bookmarks目录
+            // 1. 路径中包含统一父文件夹
+            downloadItem.filename.includes(`/${exportRootFolder}/`) ||
+            // 2. 路径中包含Bookmarks目录（兼容旧版）
             downloadItem.filename.includes('/Bookmarks/') ||
-            // 2. 路径中包含Bookmarks_History目录
+            // 3. 路径中包含Bookmarks_History目录（兼容旧版）
             downloadItem.filename.includes('/Bookmarks_History/') ||
-            // 3. 数据URL方式的HTML内容
+            // 4. 数据URL方式的HTML内容
             (downloadItem.url && downloadItem.url.includes('data:text/html') && downloadItem.url.includes('charset=utf-8'))
         );
 
@@ -979,16 +1018,43 @@ browserAPI.runtime.onMessage.addListener((message, sender, sendResponse) => {
                         throw new Error('WebDAV 已禁用');
                     }
 
-                    // 构建WebDAV路径
+                    // 构建WebDAV路径 - 使用统一文件夹结构（根据语言动态选择）
                     const serverAddress = config.serverAddress.replace(/\/+$/, '/');
-                    const folderPath = 'Bookmarks_History/'; // 使用专门的文件夹存放历史记录
+                    const historyFolder = await getHistoryFolder();
+                    const exportRootFolder = await getExportRootFolder();
+                    const folderPath = `${exportRootFolder}/${historyFolder}/`;
                     const fullUrl = `${serverAddress}${folderPath}${fileName}`;
                     const folderUrl = `${serverAddress}${folderPath}`;
+                    const parentFolderUrl = `${serverAddress}${exportRootFolder}/`;
 
                     // 认证头
                     const authHeader = 'Basic ' + safeBase64(`${config.username}:${config.password}`);
 
-                    // 检查文件夹是否存在
+                    // 检查并创建父文件夹（如果不存在）
+                    const checkParentResponse = await fetch(parentFolderUrl, {
+                        method: 'PROPFIND',
+                        headers: {
+                            'Authorization': authHeader,
+                            'Depth': '0',
+                            'Content-Type': 'application/xml'
+                        },
+                        body: '<?xml version="1.0" encoding="utf-8"?><propfind xmlns="DAV:"><prop><resourcetype/></prop></propfind>'
+                    });
+
+                    if (checkParentResponse.status === 404) {
+                        // 创建父文件夹
+                        const mkcolParentResponse = await fetch(parentFolderUrl, {
+                            method: 'MKCOL',
+                            headers: { 'Authorization': authHeader }
+                        });
+                        if (!mkcolParentResponse.ok && mkcolParentResponse.status !== 405) {
+                            throw new Error(`创建父文件夹失败: ${mkcolParentResponse.status} - ${mkcolParentResponse.statusText}`);
+                        }
+                    } else if (checkParentResponse.status === 401) {
+                        throw new Error('WebDAV认证失败，请检查账号密码是否正确');
+                    }
+
+                    // 检查子文件夹是否存在
                     const checkFolderResponse = await fetch(folderUrl, {
                         method: 'PROPFIND',
                         headers: {
@@ -1090,11 +1156,13 @@ browserAPI.runtime.onMessage.addListener((message, sender, sendResponse) => {
                         }
                     }
 
-                    // 执行下载
+                    // 执行下载 - 使用统一文件夹结构（根据语言动态选择）
+                    const localHistoryFolder = await getHistoryFolder();
+                    const exportRootFolder = await getExportRootFolder();
                     const downloadId = await new Promise((resolve, reject) => {
                         browserAPI.downloads.download({
                             url: dataUrl,
-                            filename: 'Bookmarks_History/' + fileName,
+                            filename: `${exportRootFolder}/${localHistoryFolder}/${fileName}`,
                             saveAs: false
                         }, (id) => {
                             if (browserAPI.runtime.lastError) {
@@ -1616,21 +1684,23 @@ browserAPI.runtime.onMessage.addListener((message, sender, sendResponse) => {
             return true;
 
             // 如果无法从页面获取，返回估计的路径
-            function fallbackToEstimatedPath() {
-                // 估计默认下载路径
+            async function fallbackToEstimatedPath() {
+                // 估计默认下载路径（根据语言动态选择）
+                const estimatedBackupFolder = await getBackupFolder();
+                const exportRootFolder = await getExportRootFolder();
                 let defaultPath = '';
                 const isWindows = navigator.platform.indexOf('Win') > -1;
                 const isMac = navigator.platform.indexOf('Mac') > -1;
                 const isLinux = navigator.platform.indexOf('Linux') > -1;
 
                 if (isWindows) {
-                    defaultPath = 'C:\\Users\\<username>\\Downloads\\Bookmarks\\';
+                    defaultPath = `C:\\Users\\<username>\\Downloads\\${exportRootFolder}\\${estimatedBackupFolder}\\`;
                 } else if (isMac) {
-                    defaultPath = '/Users/<username>/Downloads/Bookmarks/';
+                    defaultPath = `/Users/<username>/Downloads/${exportRootFolder}/${estimatedBackupFolder}/`;
                 } else if (isLinux) {
-                    defaultPath = '/home/<username>/Downloads/Bookmarks/';
+                    defaultPath = `/home/<username>/Downloads/${exportRootFolder}/${estimatedBackupFolder}/`;
                 } else {
-                    defaultPath = '您浏览器的默认下载文件夹/Bookmarks/';
+                    defaultPath = `您浏览器的默认下载文件夹/${exportRootFolder}/${estimatedBackupFolder}/`;
                 }
 
                 sendResponse({
@@ -2354,17 +2424,45 @@ async function uploadBookmarks(bookmarks) {
     }
 
     const serverAddress = config.serverAddress.replace(/\/+$/, '/');
-    const folderPath = 'Bookmarks/';
+    // 获取本地化的文件夹名称
+    const backupFolder = await getBackupFolder();
+    const exportRootFolder = await getExportRootFolder();
+    const folderPath = `${exportRootFolder}/${backupFolder}/`; // 使用统一的文件夹结构（根据语言动态选择）
     // 获取当前日期和时间作为文件名，精确到秒
     const currentDate = new Date();
     const fileName = `${currentDate.getFullYear()}${(currentDate.getMonth() + 1).toString().padStart(2, '0')}${currentDate.getDate().toString().padStart(2, '0')}_${currentDate.getHours().toString().padStart(2, '0')}${currentDate.getMinutes().toString().padStart(2, '0')}${currentDate.getSeconds().toString().padStart(2, '0')}.html`;
     const fullUrl = `${serverAddress}${folderPath}${fileName}`;
     const folderUrl = `${serverAddress}${folderPath}`;
+    const parentFolderUrl = `${serverAddress}${exportRootFolder}/`;
 
     const authHeader = 'Basic ' + safeBase64(`${config.username}:${config.password}`);
 
     try {
-        // 检查文件夹是否存在
+        // 检查并创建父文件夹（如果不存在）
+        const checkParentResponse = await fetch(parentFolderUrl, {
+            method: 'PROPFIND',
+            headers: {
+                'Authorization': authHeader,
+                'Depth': '0',
+                'Content-Type': 'application/xml'
+            },
+            body: '<?xml version="1.0" encoding="utf-8"?><propfind xmlns="DAV:"><prop><resourcetype/></prop></propfind>'
+        });
+
+        if (checkParentResponse.status === 404) {
+            // 创建父文件夹
+            const mkcolParentResponse = await fetch(parentFolderUrl, {
+                method: 'MKCOL',
+                headers: { 'Authorization': authHeader }
+            });
+            if (!mkcolParentResponse.ok && mkcolParentResponse.status !== 405) {
+                throw new Error(`创建父文件夹失败: ${mkcolParentResponse.status} - ${mkcolParentResponse.statusText}`);
+            }
+        } else if (checkParentResponse.status === 401) {
+            throw new Error('WebDAV认证失败，请检查账号密码是否正确');
+        }
+
+        // 检查子文件夹是否存在
         const checkFolderResponse = await fetch(folderUrl, {
             method: 'PROPFIND',
             headers: {
@@ -2447,8 +2545,10 @@ async function updateBookmarksFromNutstore() {
             throw new Error("请先配置 WebDAV 信息");
         }
 
-        // 构建完整的 WebDAV URL
-        const folderPath = '/bookmarks/';
+        // 构建完整的 WebDAV URL - 使用统一文件夹结构（根据语言动态选择）
+        const backupFolderName = await getBackupFolder();
+        const exportRootFolder = await getExportRootFolder();
+        const folderPath = `/${exportRootFolder}/${backupFolderName}/`;
         const fileName = 'chrome_bookmarks.json';
         const fullUrl = `${config.serverAddress}${folderPath}${fileName}`;
 
@@ -2548,13 +2648,15 @@ async function uploadBookmarksToLocal(bookmarks) {
             }
 
             try {
-                // 使用downloads API直接保存到默认下载位置
+                // 使用downloads API直接保存到默认下载位置（根据语言动态选择文件夹名）
                 const dataUrl = 'data:text/html;charset=utf-8,' + encodeURIComponent(htmlContent);
+                const localBackupFolder = await getBackupFolder();
+                const exportRootFolder = await getExportRootFolder();
 
                 const downloadId = await new Promise((resolve, reject) => {
                     browserAPI.downloads.download({
                         url: dataUrl,
-                        filename: 'Bookmarks/' + fileName,
+                        filename: `${exportRootFolder}/${localBackupFolder}/${fileName}`,
                         saveAs: false
                     }, (id) => {
                         if (browserAPI.runtime.lastError) {
@@ -2617,13 +2719,15 @@ async function uploadBookmarksToLocal(bookmarks) {
             // 实际上，我们需要在用户界面直接使用FileSystem Access API
         }
 
-        // 兼容旧版本
+        // 兼容旧版本（根据语言动态选择文件夹名）
         if (oldConfigEnabled) {
+            const legacyBackupFolder = await getBackupFolder();
+            const exportRootFolder = await getExportRootFolder();
             const folderPath = config.localBackupPath.endsWith('/') ? config.localBackupPath : config.localBackupPath + '/';
-            const fullPath = folderPath + 'Bookmarks/' + fileName;
+            const fullPath = `${folderPath}${exportRootFolder}/${legacyBackupFolder}/${fileName}`;
 
             // 创建文件夹（如果不存在）
-            await ensureDirectoryExists(folderPath + 'Bookmarks/');
+            await ensureDirectoryExists(`${folderPath}${exportRootFolder}/${legacyBackupFolder}/`);
 
             // 写入文件
             await writeFile(fullPath, htmlContent);
@@ -2654,8 +2758,12 @@ function ensureDirectoryExists(dirPath) {
     });
 }
 
-// 写入文件
-function writeFile(filePath, content) {
+// 写入文件（根据语言动态选择文件夹名）
+async function writeFile(filePath, content) {
+    // 在外层获取本地化的文件夹名，避免在内嵌函数中使用 await
+    const writeBackupFolder = await getBackupFolder();
+    const writeExportRootFolder = await getExportRootFolder();
+
     return new Promise((resolve, reject) => {
         try {
             // 在Chrome扩展的service worker中，不能使用URL.createObjectURL
@@ -2720,7 +2828,7 @@ function writeFile(filePath, content) {
                 useDataUrlMethod();
             }
 
-            // 使用data:URL方法的辅助函数
+            // 使用data:URL方法的辅助函数（使用预获取的文件夹名）
             function useDataUrlMethod() {
                 try {
                     // 创建data:URL
@@ -2729,7 +2837,7 @@ function writeFile(filePath, content) {
                     // 使用下载API下载文件
                     browserAPI.downloads.download({
                         url: dataUrl,
-                        filename: 'Bookmarks/' + fileName,
+                        filename: `${writeExportRootFolder}/${writeBackupFolder}/${fileName}`,
                         saveAs: false
                     }, (downloadId) => {
                         if (browserAPI.runtime.lastError) {
@@ -2975,17 +3083,44 @@ async function exportHistoryToTxt(records, lang) {
     let localSuccess = false;
     let exportResults = [];
 
-    // WebDAV导出
+    // WebDAV导出（根据语言动态选择文件夹名）
     if (webDAVConfigured && webDAVEnabled) {
         try {
             const serverAddress = config.serverAddress.replace(/\/+$/, '/');
-            const folderPath = 'Bookmarks_History/'; // 使用专门的文件夹存放历史记录
+            const archiveHistoryFolder = await getHistoryFolder();
+            const exportRootFolder = await getExportRootFolder();
+            const folderPath = `${exportRootFolder}/${archiveHistoryFolder}/`; // 使用统一的文件夹结构（根据语言动态选择）
             const fullUrl = `${serverAddress}${folderPath}${fileName}`;
             const folderUrl = `${serverAddress}${folderPath}`;
+            const parentFolderUrl = `${serverAddress}${exportRootFolder}/`;
 
             const authHeader = 'Basic ' + safeBase64(`${config.username}:${config.password}`);
 
-            // 检查文件夹是否存在
+            // 检查并创建父文件夹（如果不存在）
+            const checkParentResponse = await fetch(parentFolderUrl, {
+                method: 'PROPFIND',
+                headers: {
+                    'Authorization': authHeader,
+                    'Depth': '0',
+                    'Content-Type': 'application/xml'
+                },
+                body: '<?xml version="1.0" encoding="utf-8"?><propfind xmlns="DAV:"><prop><resourcetype/></prop></propfind>'
+            });
+
+            if (checkParentResponse.status === 404) {
+                // 创建父文件夹
+                const mkcolParentResponse = await fetch(parentFolderUrl, {
+                    method: 'MKCOL',
+                    headers: { 'Authorization': authHeader }
+                });
+                if (!mkcolParentResponse.ok && mkcolParentResponse.status !== 405) {
+                    exportResults.push(`创建父文件夹失败: ${mkcolParentResponse.status} - ${mkcolParentResponse.statusText}`);
+                }
+            } else if (checkParentResponse.status === 401) {
+                exportResults.push('WebDAV认证失败，请检查账号密码是否正确');
+            }
+
+            // 检查子文件夹是否存在
             const checkFolderResponse = await fetch(folderUrl, {
                 method: 'PROPFIND',
                 headers: {
@@ -3051,11 +3186,13 @@ async function exportHistoryToTxt(records, lang) {
                 }
             }
 
-            // 确保文件夹存在（注意：使用斜杠而非下划线来指示文件夹）
+            // 确保文件夹存在（根据语言动态选择文件夹名）
+            const localArchiveHistoryFolder = await getHistoryFolder();
+            const exportRootFolder = await getExportRootFolder();
             const downloadId = await new Promise((resolve, reject) => {
                 browserAPI.downloads.download({
                     url: dataUrl,
-                    filename: 'Bookmarks_History/' + fileName,
+                    filename: `${exportRootFolder}/${localArchiveHistoryFolder}/${fileName}`,
                     saveAs: false
                 }, (id) => {
                     if (browserAPI.runtime.lastError) {

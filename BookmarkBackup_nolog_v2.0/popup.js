@@ -4009,24 +4009,77 @@ function handleAutoSyncToggle(event) {
 
 /**
  * 处理初始化上传函数。
+ * 优化：立即执行UI跳转，上传操作在后台异步执行，完成后通过系统通知告知结果。
  */
 function handleInitUpload() {
-    showStatus('开始初始化上传...', 'info');
+    // 获取当前语言设置
+    chrome.storage.local.get(['preferredLang'], function (langResult) {
+        const lang = langResult.preferredLang || 'zh_CN';
+        const statusText = lang === 'en' ? 'Initializing backup in background...' : '正在后台初始化备份...';
+        showStatus(statusText, 'info');
+    });
 
-    // 获取上传按钮并禁用
+    // 获取上传按钮并禁用（防止重复点击）
     const uploadToCloud = document.getElementById('uploadToCloud');
     if (uploadToCloud) uploadToCloud.disabled = true;
 
-    // 发送初始化请求
+    // ========== 立即执行UI更新（不等待上传完成） ==========
+
+    // 折叠初始化区块
+    const initHeader = document.getElementById('initHeader');
+    const initContent = document.getElementById('initContent');
+    if (initHeader && initContent) {
+        initContent.style.display = 'none';
+        initHeader.classList.add('collapsed');
+    }
+
+    // 显示备份状态区域
+    const syncStatusDiv = document.getElementById('syncStatus');
+    if (syncStatusDiv) {
+        syncStatusDiv.style.display = 'block';
+    }
+
+    // 显示手动备份选项，但根据自动备份状态决定
+    const manualSyncOptions = document.getElementById('manualSyncOptions');
+    if (manualSyncOptions) {
+        chrome.storage.local.get(['autoSync'], function (autoSyncData) {
+            const autoSyncEnabled = autoSyncData.autoSync !== false;
+            manualSyncOptions.style.display = autoSyncEnabled ? 'none' : 'block';
+        });
+    }
+
+    // 立即跳转到目标位置
+    setTimeout(() => {
+        scrollToPositionA('smooth');
+    }, 50);
+
+    // 设置初始化标记（乐观更新，假设会成功）
+    chrome.storage.local.set({ initialized: true });
+
+    // ========== 异步发送初始化请求到后台（Fire and Forget） ==========
+    // 后台会在完成后发送系统通知，即使popup关闭也能继续执行
     chrome.runtime.sendMessage({
-        action: "initSync", // <-- 修改 action
-        direction: "upload"
+        action: "initSync",
+        direction: "upload",
+        showNotification: true  // 告诉后台需要发送通知
     }, (response) => {
+        // 如果popup还开着，更新UI状态
+        if (chrome.runtime.lastError) {
+            // popup可能已关闭，忽略错误
+            return;
+        }
+
         // 恢复按钮状态
         if (uploadToCloud) uploadToCloud.disabled = false;
 
         if (response && response.success) {
-            // 显示详细的成功信息（云端1/云端2/本地）
+            // 更新备份历史记录
+            updateSyncHistory();
+
+            // 主动请求更新角标
+            chrome.runtime.sendMessage({ action: "setBadge" });
+
+            // 如果popup还开着，显示成功消息
             chrome.storage.local.get(['preferredLang'], function (langResult) {
                 const lang = langResult.preferredLang || 'zh_CN';
                 const targets = [];
@@ -4055,55 +4108,15 @@ function handleInitUpload() {
                 };
                 chrome.storage.local.set({ initialBackupRecord: initialBackupRecord });
             }
+        } else if (response && !response.success) {
+            // 如果失败，回滚初始化标记
+            chrome.storage.local.set({ initialized: false });
 
-            // 折叠初始化区块
-            const initHeader = document.getElementById('initHeader');
-            const initContent = document.getElementById('initContent');
-            if (initHeader && initContent) {
-                initContent.style.display = 'none';
-                initHeader.classList.add('collapsed');
-            }
-
-            // 显示备份状态区域
-            const syncStatusDiv = document.getElementById('syncStatus');
-            if (syncStatusDiv) {
-                syncStatusDiv.style.display = 'block';
-            }
-
-            // 更新备份历史记录 - 确保应用当前语言
-            chrome.storage.local.get(['preferredLang'], function (result) {
-                const currentLang = result.preferredLang || 'zh_CN';
-                updateSyncHistory();
-            });
-
-            // 显示手动备份选项，但根据自动备份状态决定
-            const manualSyncOptions = document.getElementById('manualSyncOptions');
-            if (manualSyncOptions) {
-                chrome.storage.local.get(['autoSync'], function (autoSyncData) {
-                    const autoSyncEnabled = autoSyncData.autoSync !== false;
-                    manualSyncOptions.style.display = autoSyncEnabled ? 'none' : 'block';
-                });
-            }
-
-            // 优化定位1：点击“初始化：上传书签到云端/本地”后，平滑下滑至「定位A」
-            setTimeout(() => {
-                scrollToPositionA('smooth');
-            }, 50);
-
-            // 设置初始化标记
-            chrome.storage.local.set({ initialized: true });
-
-            // 主动请求更新角标，确保角标显示语言与当前设置一致
-            chrome.runtime.sendMessage({
-                action: "setBadge"
-            }, (badgeResponse) => {
-                if (chrome.runtime.lastError) {
-                } else if (badgeResponse && badgeResponse.success) {
-                }
-            });
-        } else {
             const errorMessage = response?.error || '未知错误';
-            showStatus('初始化上传失败: ' + errorMessage, 'error');
+            chrome.storage.local.get(['preferredLang'], function (langResult) {
+                const lang = langResult.preferredLang || 'zh_CN';
+                showStatus((lang === 'en' ? 'Initialization failed: ' : '初始化上传失败: ') + errorMessage, 'error');
+            });
         }
     });
 }
@@ -4311,16 +4324,16 @@ function exportSyncHistory() {
         };
         const locationValues = {
             upload: { 'zh_CN': "云端", 'en': "Cloud" }, // 兼容旧记录
-            cloud: { 'zh_CN': "云端1&云端2", 'en': "Cloud 1 & Cloud 2" },
+            cloud: { 'zh_CN': "云端1, 云端2", 'en': "Cloud 1, Cloud 2" },
             webdav: { 'zh_CN': "云端1(WebDAV)", 'en': "Cloud 1 (WebDAV)" },
             github_repo: { 'zh_CN': "云端2(GitHub仓库)", 'en': "Cloud 2 (GitHub Repo)" },
             gist: { 'zh_CN': "云端2(GitHub仓库)", 'en': "Cloud 2 (GitHub Repo)" }, // legacy
-            cloud_local: { 'zh_CN': "云端1&云端2与本地", 'en': "Cloud 1 & Cloud 2 & Local" },
-            webdav_local: { 'zh_CN': "云端1(WebDAV)与本地", 'en': "Cloud 1 (WebDAV) & Local" },
-            github_repo_local: { 'zh_CN': "云端2(GitHub仓库)与本地", 'en': "Cloud 2 (GitHub Repo) & Local" },
-            gist_local: { 'zh_CN': "云端2(GitHub仓库)与本地", 'en': "Cloud 2 (GitHub Repo) & Local" }, // legacy
+            cloud_local: { 'zh_CN': "云端1, 云端2, 本地", 'en': "Cloud 1, Cloud 2, Local" },
+            webdav_local: { 'zh_CN': "云端1(WebDAV), 本地", 'en': "Cloud 1 (WebDAV), Local" },
+            github_repo_local: { 'zh_CN': "云端2(GitHub仓库), 本地", 'en': "Cloud 2 (GitHub Repo), Local" },
+            gist_local: { 'zh_CN': "云端2(GitHub仓库), 本地", 'en': "Cloud 2 (GitHub Repo), Local" }, // legacy
             local: { 'zh_CN': "本地", 'en': "Local" },
-            both: { 'zh_CN': "云端1(WebDAV)与本地", 'en': "Cloud 1 (WebDAV) & Local" }, // 兼容旧记录
+            both: { 'zh_CN': "云端1(WebDAV), 本地", 'en': "Cloud 1 (WebDAV), Local" }, // 兼容旧记录
             none: { 'zh_CN': "无", 'en': "None" }
         };
         const typeValues = {

@@ -225,6 +225,46 @@ const extensionStartupTime = Date.now();
 // 智能缓存书签分析结果
 let cachedBookmarkAnalysis = null;
 
+// 角标闪烁动画相关变量（用于初始化上传等操作的进度指示）
+let badgeBlinkIntervalId = null;
+let badgeBlinkState = false;
+
+/**
+ * 启动角标呼吸闪烁动画
+ * @param {string} text - 闪烁时显示的文字（默认为 "..."）
+ * @param {string} color1 - 颜色1（默认橙色）
+ * @param {string} color2 - 颜色2（默认浅橙色）
+ * @param {number} interval - 闪烁间隔毫秒数（默认500ms）
+ */
+function startBadgeBlink(text = '...', color1 = '#FF9800', color2 = '#FFE0B2', interval = 500) {
+    // 如果已经在闪烁，先停止
+    stopBadgeBlink();
+
+    badgeBlinkState = false;
+
+    // 设置初始状态
+    browserAPI.action.setBadgeText({ text: text });
+    browserAPI.action.setBadgeBackgroundColor({ color: color1 });
+
+    // 启动闪烁定时器
+    badgeBlinkIntervalId = setInterval(() => {
+        badgeBlinkState = !badgeBlinkState;
+        const color = badgeBlinkState ? color2 : color1;
+        browserAPI.action.setBadgeBackgroundColor({ color: color });
+    }, interval);
+}
+
+/**
+ * 停止角标闪烁动画并恢复正常状态
+ */
+function stopBadgeBlink() {
+    if (badgeBlinkIntervalId) {
+        clearInterval(badgeBlinkIntervalId);
+        badgeBlinkIntervalId = null;
+    }
+    badgeBlinkState = false;
+}
+
 // 最近移动的节点（用于前端稳定显示蓝色移动标识）
 const RECENT_MOVED_TTL_MS = Infinity; // 永久记录移动历史，取消2分钟限制
 
@@ -1014,8 +1054,8 @@ browserAPI.runtime.onMessage.addListener((message, sender, sendResponse) => {
             })();
             return true;
         }
-	        if (message.action === "toggleAutoSync") {
-	            const useSpecificValue = message.hasOwnProperty('enabled');
+        if (message.action === "toggleAutoSync") {
+            const useSpecificValue = message.hasOwnProperty('enabled');
 
             const handleToggle = async () => {
                 try {
@@ -1074,257 +1114,257 @@ browserAPI.runtime.onMessage.addListener((message, sender, sendResponse) => {
                 }
             });
 
-	            return true;
+            return true;
 
-	        } else if (message.action === "testWebDAVConnection") {
-	            (async () => {
-	                try {
-	                    const serverAddressRaw = typeof message.serverAddress === 'string' ? message.serverAddress : '';
-	                    const usernameRaw = typeof message.username === 'string' ? message.username : '';
-	                    const passwordRaw = typeof message.password === 'string' ? message.password : '';
+        } else if (message.action === "testWebDAVConnection") {
+            (async () => {
+                try {
+                    const serverAddressRaw = typeof message.serverAddress === 'string' ? message.serverAddress : '';
+                    const usernameRaw = typeof message.username === 'string' ? message.username : '';
+                    const passwordRaw = typeof message.password === 'string' ? message.password : '';
 
-	                    const serverAddress = serverAddressRaw.trim();
-	                    const username = usernameRaw.trim();
-	                    const password = passwordRaw.trim();
+                    const serverAddress = serverAddressRaw.trim();
+                    const username = usernameRaw.trim();
+                    const password = passwordRaw.trim();
 
-	                    if (!serverAddress || !username || !password) {
-	                        sendResponse({ success: false, error: 'WebDAV 配置不完整' });
-	                        return;
-	                    }
+                    if (!serverAddress || !username || !password) {
+                        sendResponse({ success: false, error: 'WebDAV 配置不完整' });
+                        return;
+                    }
 
-	                    const normalizedServerAddress = serverAddress.replace(/\/+$/, '/') || serverAddress;
-	                    const authHeader = 'Basic ' + safeBase64(`${username}:${password}`);
-	                    const propfindBody = '<?xml version="1.0" encoding="utf-8"?><propfind xmlns="DAV:"><prop><resourcetype/></prop></propfind>';
+                    const normalizedServerAddress = serverAddress.replace(/\/+$/, '/') || serverAddress;
+                    const authHeader = 'Basic ' + safeBase64(`${username}:${password}`);
+                    const propfindBody = '<?xml version="1.0" encoding="utf-8"?><propfind xmlns="DAV:"><prop><resourcetype/></prop></propfind>';
 
-	                    let response;
-	                    try {
-	                        response = await fetch(normalizedServerAddress, {
-	                            method: 'PROPFIND',
-	                            headers: {
-	                                'Authorization': authHeader,
-	                                'Depth': '0',
-	                                'Content-Type': 'application/xml'
-	                            },
-	                            body: propfindBody
-	                        });
-	                    } catch (fetchError) {
-	                        sendResponse({ success: false, error: fetchError?.message || '无法连接到WebDAV服务器' });
-	                        return;
-	                    }
+                    let response;
+                    try {
+                        response = await fetch(normalizedServerAddress, {
+                            method: 'PROPFIND',
+                            headers: {
+                                'Authorization': authHeader,
+                                'Depth': '0',
+                                'Content-Type': 'application/xml'
+                            },
+                            body: propfindBody
+                        });
+                    } catch (fetchError) {
+                        sendResponse({ success: false, error: fetchError?.message || '无法连接到WebDAV服务器' });
+                        return;
+                    }
 
-	                    // 某些服务不允许 PROPFIND 在特定入口，降级到 OPTIONS
-	                    if (response && response.status === 405) {
-	                        try {
-	                            response = await fetch(normalizedServerAddress, {
-	                                method: 'OPTIONS',
-	                                headers: { 'Authorization': authHeader }
-	                            });
-	                        } catch (fetchError) {
-	                            sendResponse({ success: false, error: fetchError?.message || '无法连接到WebDAV服务器' });
-	                            return;
-	                        }
-	                    }
+                    // 某些服务不允许 PROPFIND 在特定入口，降级到 OPTIONS
+                    if (response && response.status === 405) {
+                        try {
+                            response = await fetch(normalizedServerAddress, {
+                                method: 'OPTIONS',
+                                headers: { 'Authorization': authHeader }
+                            });
+                        } catch (fetchError) {
+                            sendResponse({ success: false, error: fetchError?.message || '无法连接到WebDAV服务器' });
+                            return;
+                        }
+                    }
 
-	                    if (!response) {
-	                        sendResponse({ success: false, error: '无法连接到WebDAV服务器' });
-	                        return;
-	                    }
+                    if (!response) {
+                        sendResponse({ success: false, error: '无法连接到WebDAV服务器' });
+                        return;
+                    }
 
-	                    if (response.status === 401) {
-	                        sendResponse({ success: false, error: 'WebDAV认证失败，请检查账号密码是否正确' });
-	                        return;
-	                    }
-	                    if (response.status === 403) {
-	                        sendResponse({ success: false, error: 'WebDAV拒绝访问（403），请检查权限或路径是否正确' });
-	                        return;
-	                    }
-	                    if (response.status === 404) {
-	                        sendResponse({ success: false, error: 'WebDAV地址不存在（404），请检查服务器地址是否正确' });
-	                        return;
-	                    }
-	                    if (!response.ok) {
-	                        sendResponse({ success: false, error: `连接失败: ${response.status} - ${response.statusText}` });
-	                        return;
-	                    }
+                    if (response.status === 401) {
+                        sendResponse({ success: false, error: 'WebDAV认证失败，请检查账号密码是否正确' });
+                        return;
+                    }
+                    if (response.status === 403) {
+                        sendResponse({ success: false, error: 'WebDAV拒绝访问（403），请检查权限或路径是否正确' });
+                        return;
+                    }
+                    if (response.status === 404) {
+                        sendResponse({ success: false, error: 'WebDAV地址不存在（404），请检查服务器地址是否正确' });
+                        return;
+                    }
+                    if (!response.ok) {
+                        sendResponse({ success: false, error: `连接失败: ${response.status} - ${response.statusText}` });
+                        return;
+                    }
 
-	                    sendResponse({ success: true });
-	                } catch (error) {
-	                    sendResponse({ success: false, error: error?.message || '未知错误' });
-	                }
-	            })();
-	            return true;
+                    sendResponse({ success: true });
+                } catch (error) {
+                    sendResponse({ success: false, error: error?.message || '未知错误' });
+                }
+            })();
+            return true;
 
-			        } else if (message.action === "testGitHubRepoConnection") {
-			            // GitHub Repository 连接测试（云端2）
-			            (async () => {
-			                try {
-			                    const token = message.token || message.githubRepoToken || message.githubToken;
-			                    const owner = message.owner || message.githubRepoOwner;
-			                    const repo = message.repo || message.githubRepoName;
-			                    const branch = message.branch || message.githubRepoBranch;
-			                    const basePath = message.basePath || message.githubRepoBasePath;
+        } else if (message.action === "testGitHubRepoConnection") {
+            // GitHub Repository 连接测试（云端2）
+            (async () => {
+                try {
+                    const token = message.token || message.githubRepoToken || message.githubToken;
+                    const owner = message.owner || message.githubRepoOwner;
+                    const repo = message.repo || message.githubRepoName;
+                    const branch = message.branch || message.githubRepoBranch;
+                    const basePath = message.basePath || message.githubRepoBasePath;
 
-			                    if (!token) {
-			                        sendResponse({ success: false, error: 'GitHub Token 未配置' });
-			                        return;
-			                    }
+                    if (!token) {
+                        sendResponse({ success: false, error: 'GitHub Token 未配置' });
+                        return;
+                    }
 
-			                    if (!owner || !repo) {
-			                        sendResponse({ success: false, error: '仓库未配置' });
-			                        return;
-			                    }
+                    if (!owner || !repo) {
+                        sendResponse({ success: false, error: '仓库未配置' });
+                        return;
+                    }
 
-			                    const result = await testRepoConnection({ token, owner, repo, branch, basePath });
-			                    if (result && result.success === true) {
-			                        sendResponse({
-			                            success: true,
-			                            repo: result.repo || null,
-			                            resolvedBranch: result.resolvedBranch || null,
-			                            basePathExists: typeof result.basePathExists === 'boolean' ? result.basePathExists : null
-			                        });
-			                    } else {
-			                        sendResponse({ success: false, error: result?.error || '未知错误' });
-			                    }
-			                } catch (error) {
-			                    sendResponse({ success: false, error: error?.message || '未知错误' });
-			                }
-			            })();
-			            return true;
+                    const result = await testRepoConnection({ token, owner, repo, branch, basePath });
+                    if (result && result.success === true) {
+                        sendResponse({
+                            success: true,
+                            repo: result.repo || null,
+                            resolvedBranch: result.resolvedBranch || null,
+                            basePathExists: typeof result.basePathExists === 'boolean' ? result.basePathExists : null
+                        });
+                    } else {
+                        sendResponse({ success: false, error: result?.error || '未知错误' });
+                    }
+                } catch (error) {
+                    sendResponse({ success: false, error: error?.message || '未知错误' });
+                }
+            })();
+            return true;
 
-			        } else if (message.action === "ensureGitHubRepoInitialized") {
-			            // 确保 GitHub 仓库配置可用（用于在配置保存后展示仓库信息）
-			            (async () => {
-			                try {
-			                    const config = await browserAPI.storage.local.get([
-			                        'githubRepoToken',
-			                        'githubRepoOwner',
-			                        'githubRepoName',
-			                        'githubRepoBranch',
-			                        'githubRepoBasePath',
-			                        'githubRepoEnabled'
-			                    ]);
+        } else if (message.action === "ensureGitHubRepoInitialized") {
+            // 确保 GitHub 仓库配置可用（用于在配置保存后展示仓库信息）
+            (async () => {
+                try {
+                    const config = await browserAPI.storage.local.get([
+                        'githubRepoToken',
+                        'githubRepoOwner',
+                        'githubRepoName',
+                        'githubRepoBranch',
+                        'githubRepoBasePath',
+                        'githubRepoEnabled'
+                    ]);
 
-			                    if (!config.githubRepoToken) {
-			                        sendResponse({ success: false, error: 'GitHub Token 未配置' });
-			                        return;
-			                    }
-			                    if (!config.githubRepoOwner || !config.githubRepoName) {
-			                        sendResponse({ success: false, error: '仓库未配置' });
-			                        return;
-			                    }
-			                    if (config.githubRepoEnabled === false) {
-			                        sendResponse({ success: false, error: 'GitHub 仓库备份已禁用' });
-			                        return;
-			                    }
+                    if (!config.githubRepoToken) {
+                        sendResponse({ success: false, error: 'GitHub Token 未配置' });
+                        return;
+                    }
+                    if (!config.githubRepoOwner || !config.githubRepoName) {
+                        sendResponse({ success: false, error: '仓库未配置' });
+                        return;
+                    }
+                    if (config.githubRepoEnabled === false) {
+                        sendResponse({ success: false, error: 'GitHub 仓库备份已禁用' });
+                        return;
+                    }
 
-			                    const result = await testRepoConnection({
-			                        token: config.githubRepoToken,
-			                        owner: config.githubRepoOwner,
-			                        repo: config.githubRepoName,
-			                        branch: config.githubRepoBranch,
-			                        basePath: config.githubRepoBasePath
-			                    });
+                    const result = await testRepoConnection({
+                        token: config.githubRepoToken,
+                        owner: config.githubRepoOwner,
+                        repo: config.githubRepoName,
+                        branch: config.githubRepoBranch,
+                        basePath: config.githubRepoBasePath
+                    });
 
-			                    if (!result || result.success !== true) {
-			                        sendResponse({ success: false, error: result?.error || '获取仓库信息失败' });
-			                        return;
-			                    }
+                    if (!result || result.success !== true) {
+                        sendResponse({ success: false, error: result?.error || '获取仓库信息失败' });
+                        return;
+                    }
 
-			                    const hasBranchConfigured =
-			                        typeof config.githubRepoBranch === 'string' && config.githubRepoBranch.trim().length > 0;
-			                    if (!hasBranchConfigured && result.resolvedBranch) {
-			                        try {
-			                            await browserAPI.storage.local.set({ githubRepoBranch: result.resolvedBranch });
-			                        } catch (_) { }
-			                    }
+                    const hasBranchConfigured =
+                        typeof config.githubRepoBranch === 'string' && config.githubRepoBranch.trim().length > 0;
+                    if (!hasBranchConfigured && result.resolvedBranch) {
+                        try {
+                            await browserAPI.storage.local.set({ githubRepoBranch: result.resolvedBranch });
+                        } catch (_) { }
+                    }
 
-			                    sendResponse({
-			                        success: true,
-			                        repo: result.repo || null,
-			                        resolvedBranch: result.resolvedBranch || null,
-			                        basePathExists: typeof result.basePathExists === 'boolean' ? result.basePathExists : null
-			                    });
-			                } catch (error) {
-			                    sendResponse({ success: false, error: error?.message || '获取仓库信息失败' });
-			                }
-			            })();
-			            return true;
+                    sendResponse({
+                        success: true,
+                        repo: result.repo || null,
+                        resolvedBranch: result.resolvedBranch || null,
+                        basePathExists: typeof result.basePathExists === 'boolean' ? result.basePathExists : null
+                    });
+                } catch (error) {
+                    sendResponse({ success: false, error: error?.message || '获取仓库信息失败' });
+                }
+            })();
+            return true;
 
-			        } else if (message.action === "exportHistoryToGitHubRepo") {
-			            // 导出历史记录到 GitHub Repository（云端2）
-			            (async () => {
-			                try {
-			                    if (!message.content) {
-			                        throw new Error('缺少导出内容');
-			                    }
+        } else if (message.action === "exportHistoryToGitHubRepo") {
+            // 导出历史记录到 GitHub Repository（云端2）
+            (async () => {
+                try {
+                    if (!message.content) {
+                        throw new Error('缺少导出内容');
+                    }
 
-			                    const content = message.content;
-			                    const baseFileName =
-			                        message.fileName ||
-			                        `书签备份历史记录_${new Date().toISOString().replace(/[:.]/g, '-').replace(/T/g, '_').slice(0, -4)}.txt`;
-			                    const lang = message.lang || await getCurrentLang();
+                    const content = message.content;
+                    const baseFileName =
+                        message.fileName ||
+                        `书签备份历史记录_${new Date().toISOString().replace(/[:.]/g, '-').replace(/T/g, '_').slice(0, -4)}.txt`;
+                    const lang = message.lang || await getCurrentLang();
 
-			                    const config = await browserAPI.storage.local.get([
-			                        'githubRepoToken',
-			                        'githubRepoOwner',
-			                        'githubRepoName',
-			                        'githubRepoBranch',
-			                        'githubRepoBasePath',
-			                        'githubRepoEnabled'
-			                    ]);
+                    const config = await browserAPI.storage.local.get([
+                        'githubRepoToken',
+                        'githubRepoOwner',
+                        'githubRepoName',
+                        'githubRepoBranch',
+                        'githubRepoBasePath',
+                        'githubRepoEnabled'
+                    ]);
 
-			                    if (!config.githubRepoToken) {
-			                        throw new Error('GitHub Token 未配置');
-			                    }
-			                    if (!config.githubRepoOwner || !config.githubRepoName) {
-			                        throw new Error('仓库未配置');
-			                    }
-			                    if (config.githubRepoEnabled === false) {
-			                        throw new Error('GitHub 仓库备份已禁用');
-			                    }
+                    if (!config.githubRepoToken) {
+                        throw new Error('GitHub Token 未配置');
+                    }
+                    if (!config.githubRepoOwner || !config.githubRepoName) {
+                        throw new Error('仓库未配置');
+                    }
+                    if (config.githubRepoEnabled === false) {
+                        throw new Error('GitHub 仓库备份已禁用');
+                    }
 
-			                    const filePath = buildGitHubRepoFilePath({
-			                        basePath: config.githubRepoBasePath,
-			                        lang,
-			                        folderKey: 'history',
-			                        fileName: baseFileName
-			                    });
+                    const filePath = buildGitHubRepoFilePath({
+                        basePath: config.githubRepoBasePath,
+                        lang,
+                        folderKey: 'history',
+                        fileName: baseFileName
+                    });
 
-			                    const commitMessage = `Bookmark Backup: export history ${baseFileName}`;
-			                    const result = await upsertRepoFile({
-			                        token: config.githubRepoToken,
-			                        owner: config.githubRepoOwner,
-			                        repo: config.githubRepoName,
-			                        branch: config.githubRepoBranch,
-			                        path: filePath,
-			                        message: commitMessage,
-			                        contentBase64: textToBase64(String(content ?? ''))
-			                    });
+                    const commitMessage = `Bookmark Backup: export history ${baseFileName}`;
+                    const result = await upsertRepoFile({
+                        token: config.githubRepoToken,
+                        owner: config.githubRepoOwner,
+                        repo: config.githubRepoName,
+                        branch: config.githubRepoBranch,
+                        path: filePath,
+                        message: commitMessage,
+                        contentBase64: textToBase64(String(content ?? ''))
+                    });
 
-			                    if (!result || result.success !== true) {
-			                        throw new Error(result?.error || '上传到 GitHub 仓库失败');
-			                    }
+                    if (!result || result.success !== true) {
+                        throw new Error(result?.error || '上传到 GitHub 仓库失败');
+                    }
 
-			                    sendResponse({
-			                        success: true,
-			                        message: '历史记录已成功上传到GitHub仓库',
-			                        path: result.path || filePath,
-			                        htmlUrl: result.htmlUrl || null
-			                    });
-			                } catch (error) {
-			                    sendResponse({
-			                        success: false,
-			                        error: error.message || '导出历史记录到GitHub仓库失败'
-			                    });
-			                }
-			            })();
-			            return true; // 保持消息通道开放
+                    sendResponse({
+                        success: true,
+                        message: '历史记录已成功上传到GitHub仓库',
+                        path: result.path || filePath,
+                        htmlUrl: result.htmlUrl || null
+                    });
+                } catch (error) {
+                    sendResponse({
+                        success: false,
+                        error: error.message || '导出历史记录到GitHub仓库失败'
+                    });
+                }
+            })();
+            return true; // 保持消息通道开放
 
-		        } else if (message.action === "exportHistoryToWebDAV") {
-		            // 处理导出历史记录到WebDAV的请求
-		            // 使用异步立即执行函数处理
-		            (async () => {
-	                try {
+        } else if (message.action === "exportHistoryToWebDAV") {
+            // 处理导出历史记录到WebDAV的请求
+            // 使用异步立即执行函数处理
+            (async () => {
+                try {
                     // 检查必要参数
                     if (!message.content) {
                         throw new Error('缺少导出内容');
@@ -1523,7 +1563,27 @@ browserAPI.runtime.onMessage.addListener((message, sender, sendResponse) => {
                     const fileName = String(message.fileName || '').trim();
                     const folderKey = String(message.folderKey || '').trim();
                     const contentType = message.contentType;
-                    const contentArrayBuffer = message.contentArrayBuffer || null;
+                    // 支持两种方式传递二进制数据：
+                    // 1. contentArrayBuffer - 直接传递 ArrayBuffer（可能在某些情况下丢失）
+                    // 2. contentBase64Binary - Base64 编码的二进制数据（推荐，可靠传递）
+                    let contentArrayBuffer = message.contentArrayBuffer || null;
+
+                    // 如果收到 Base64 编码的二进制数据，转换回 ArrayBuffer
+                    if (!contentArrayBuffer && message.contentBase64Binary) {
+                        try {
+                            const base64 = message.contentBase64Binary;
+                            const binaryString = atob(base64);
+                            const len = binaryString.length;
+                            const bytes = new Uint8Array(len);
+                            for (let i = 0; i < len; i++) {
+                                bytes[i] = binaryString.charCodeAt(i);
+                            }
+                            contentArrayBuffer = bytes.buffer;
+                        } catch (e) {
+                            console.error('[exportFileToClouds] Base64 解码失败:', e);
+                        }
+                    }
+
                     const content = message.content;
 
                     if (!fileName) throw new Error('缺少文件名');
@@ -1787,14 +1847,17 @@ browserAPI.runtime.onMessage.addListener((message, sender, sendResponse) => {
 
         } else if (message.action === "initSync") {
             if (message.direction === "upload") {
+                // 启动角标呼吸闪烁，提示用户正在进行初始化上传
+                startBadgeBlink('...', '#FF9800', '#FFE0B2', 400);
+
                 // 上传本地书签到云端/本地
                 browserAPI.bookmarks.getTree()
                     .then(async (bookmarks) => {
                         try {
-	                            let webDAVSuccess = false;
-	                            let githubRepoSuccess = false;
-	                            let localSuccess = false;
-	                            let errors = [];
+                            let webDAVSuccess = false;
+                            let githubRepoSuccess = false;
+                            let localSuccess = false;
+                            let errors = [];
 
                             // 添加结果对象用于存储过程信息
                             const result = {
@@ -1804,25 +1867,25 @@ browserAPI.runtime.onMessage.addListener((message, sender, sendResponse) => {
                             // 添加errorMessages数组用于收集错误信息
                             const errorMessages = [];
 
-	                            // 检查云端1：WebDAV配置
-	                            const webDAVconfig = await browserAPI.storage.local.get(['serverAddress', 'username', 'password', 'webDAVEnabled']);
-	                            const webDAVConfigured = webDAVconfig.serverAddress && webDAVconfig.username && webDAVconfig.password;
-	                            const webDAVEnabled = webDAVconfig.webDAVEnabled !== false;
+                            // 检查云端1：WebDAV配置
+                            const webDAVconfig = await browserAPI.storage.local.get(['serverAddress', 'username', 'password', 'webDAVEnabled']);
+                            const webDAVConfigured = webDAVconfig.serverAddress && webDAVconfig.username && webDAVconfig.password;
+                            const webDAVEnabled = webDAVconfig.webDAVEnabled !== false;
 
-	                            // 检查云端2：GitHub Repository 配置
-	                            const githubRepoConfig = await browserAPI.storage.local.get([
-	                                'githubRepoToken',
-	                                'githubRepoOwner',
-	                                'githubRepoName',
-	                                'githubRepoEnabled'
-	                            ]);
-	                            const githubRepoConfigured = !!(
-	                                githubRepoConfig &&
-	                                githubRepoConfig.githubRepoToken &&
-	                                githubRepoConfig.githubRepoOwner &&
-	                                githubRepoConfig.githubRepoName
-	                            );
-	                            const githubRepoEnabled = githubRepoConfig.githubRepoEnabled !== false;
+                            // 检查云端2：GitHub Repository 配置
+                            const githubRepoConfig = await browserAPI.storage.local.get([
+                                'githubRepoToken',
+                                'githubRepoOwner',
+                                'githubRepoName',
+                                'githubRepoEnabled'
+                            ]);
+                            const githubRepoConfigured = !!(
+                                githubRepoConfig &&
+                                githubRepoConfig.githubRepoToken &&
+                                githubRepoConfig.githubRepoOwner &&
+                                githubRepoConfig.githubRepoName
+                            );
+                            const githubRepoEnabled = githubRepoConfig.githubRepoEnabled !== false;
 
                             // 检查本地备份配置
                             const localConfig = await browserAPI.storage.local.get([
@@ -1857,27 +1920,27 @@ browserAPI.runtime.onMessage.addListener((message, sender, sendResponse) => {
                                 }
                             }
 
-	                            // 上传到 GitHub 仓库（如果启用且已配置）
-	                            if (githubRepoConfigured && githubRepoEnabled) {
-	                                try {
-	                                    const uploadResult = await uploadBookmarksToGitHubRepo(bookmarks);
-	                                    if (uploadResult && uploadResult.success) {
-	                                        githubRepoSuccess = true;
-	                                    } else if (uploadResult && uploadResult.repoNotConfigured) {
-	                                        // ignore
-	                                    } else {
-	                                        errors.push(uploadResult?.error || '上传到GitHub仓库失败');
-	                                    }
-	                                } catch (error) {
-	                                    errors.push(error.message || '上传到GitHub仓库失败');
-	                                }
-	                            }
+                            // 上传到 GitHub 仓库（如果启用且已配置）
+                            if (githubRepoConfigured && githubRepoEnabled) {
+                                try {
+                                    const uploadResult = await uploadBookmarksToGitHubRepo(bookmarks);
+                                    if (uploadResult && uploadResult.success) {
+                                        githubRepoSuccess = true;
+                                    } else if (uploadResult && uploadResult.repoNotConfigured) {
+                                        // ignore
+                                    } else {
+                                        errors.push(uploadResult?.error || '上传到GitHub仓库失败');
+                                    }
+                                } catch (error) {
+                                    errors.push(error.message || '上传到GitHub仓库失败');
+                                }
+                            }
 
-	                            // 上传到本地（如果启用且已配置）
-	                            if (localBackupConfigured) {
-	                                try {
-	                                    const localResult = await uploadBookmarksToLocal(bookmarks);
-	                                    localSuccess = true;
+                            // 上传到本地（如果启用且已配置）
+                            if (localBackupConfigured) {
+                                try {
+                                    const localResult = await uploadBookmarksToLocal(bookmarks);
+                                    localSuccess = true;
                                     // 记录文件名信息，以便返回给调用者
                                     result.localFileName = localResult.fileName;
                                 } catch (error) {
@@ -1885,58 +1948,77 @@ browserAPI.runtime.onMessage.addListener((message, sender, sendResponse) => {
                                 }
                             }
 
-	                            // 确定备份方向
-	                            let syncDirection = 'none';
-	                            if (localSuccess && webDAVSuccess && githubRepoSuccess) {
-	                                syncDirection = 'cloud_local';
-	                            } else if (localSuccess && webDAVSuccess) {
-	                                syncDirection = 'webdav_local';
-	                            } else if (localSuccess && githubRepoSuccess) {
-	                                syncDirection = 'github_repo_local';
-	                            } else if (localSuccess) {
-	                                syncDirection = 'local';
-	                            } else if (webDAVSuccess && githubRepoSuccess) {
-	                                syncDirection = 'cloud';
-	                            } else if (webDAVSuccess) {
-	                                syncDirection = 'webdav';
-	                            } else if (githubRepoSuccess) {
-	                                syncDirection = 'github_repo';
-	                            } else {
-	                                syncDirection = 'none';
-	                            }
+                            // 确定备份方向
+                            let syncDirection = 'none';
+                            if (localSuccess && webDAVSuccess && githubRepoSuccess) {
+                                syncDirection = 'cloud_local';
+                            } else if (localSuccess && webDAVSuccess) {
+                                syncDirection = 'webdav_local';
+                            } else if (localSuccess && githubRepoSuccess) {
+                                syncDirection = 'github_repo_local';
+                            } else if (localSuccess) {
+                                syncDirection = 'local';
+                            } else if (webDAVSuccess && githubRepoSuccess) {
+                                syncDirection = 'cloud';
+                            } else if (webDAVSuccess) {
+                                syncDirection = 'webdav';
+                            } else if (githubRepoSuccess) {
+                                syncDirection = 'github_repo';
+                            } else {
+                                syncDirection = 'none';
+                            }
 
                             // 添加首次上传记录
                             const syncTime = new Date().toISOString();
-	                            const syncStatus = (webDAVSuccess || githubRepoSuccess || localSuccess) ? 'success' : 'error';
+                            const syncStatus = (webDAVSuccess || githubRepoSuccess || localSuccess) ? 'success' : 'error';
                             const errorMessage = errors.length > 0 ? errors.join('; ') : '';
                             // --- 修改：传递 'auto' 作为 syncType ---
                             await updateSyncStatus(syncDirection, syncTime, syncStatus, errorMessage, 'auto', null);
 
                             // --- 新增：在成功后调用 setBadge ---
-                            if (syncStatus === 'success') {
-                                try {
-                                    await setBadge(); // 更新角标为自动状态
-                                } catch (badgeError) {
-                                }
+                            // 停止角标闪烁
+                            stopBadgeBlink();
+
+                            // 恢复正常角标状态
+                            try {
+                                await setBadge(); // 更新角标为正常状态
+                            } catch (badgeError) {
+                                console.error('[initSync] 更新角标失败:', badgeError);
                             }
                             // --- 结束新增 ---
 
-	                            sendResponse({
-	                                success: (webDAVSuccess || githubRepoSuccess || localSuccess),
-	                                webDAVSuccess,
-	                                githubRepoSuccess,
-	                                localSuccess,
-	                                localFileName: result.localFileName, // 添加文件名到响应
-	                                error: errors.length > 0 ? errors.join('; ') : null
-	                            });
+                            // 注意：角标闪烁已停止，用户可通过角标恢复正常状态判断操作完成
+
+                            sendResponse({
+                                success: (webDAVSuccess || githubRepoSuccess || localSuccess),
+                                webDAVSuccess,
+                                githubRepoSuccess,
+                                localSuccess,
+                                localFileName: result.localFileName, // 添加文件名到响应
+                                error: errors.length > 0 ? errors.join('; ') : null
+                            });
                         } catch (error) {
+                            // 停止角标闪烁
+                            stopBadgeBlink();
+                            // 尝试恢复正常角标状态
+                            try {
+                                await setBadge();
+                            } catch (e) { }
+
                             sendResponse({
                                 success: false,
                                 error: error.message || '上传失败'
                             });
                         }
                     })
-                    .catch(error => {
+                    .catch(async (error) => {
+                        // 停止角标闪烁
+                        stopBadgeBlink();
+                        // 尝试恢复正常角标状态
+                        try {
+                            await setBadge();
+                        } catch (e) { }
+
                         sendResponse({
                             success: false,
                             error: error.message || '获取书签失败'
@@ -3598,15 +3680,15 @@ async function exportHistoryToTxt(records, lang) {
             locationValues: {
                 local: "Local",
                 upload: "Cloud",
-                cloud: "Cloud 1 & Cloud 2",
+                cloud: "Cloud 1, Cloud 2",
                 webdav: "Cloud 1 (WebDAV)",
                 github_repo: "Cloud 2 (GitHub Repo)",
                 gist: "Cloud 2 (GitHub Repo)", // legacy
-                cloud_local: "Cloud 1 & Cloud 2 & Local",
-                webdav_local: "Cloud 1 (WebDAV) & Local",
-                github_repo_local: "Cloud 2 (GitHub Repo) & Local",
-                gist_local: "Cloud 2 (GitHub Repo) & Local", // legacy
-                both: "Cloud 1 (WebDAV) & Local",
+                cloud_local: "Cloud 1, Cloud 2, Local",
+                webdav_local: "Cloud 1 (WebDAV), Local",
+                github_repo_local: "Cloud 2 (GitHub Repo), Local",
+                gist_local: "Cloud 2 (GitHub Repo), Local", // legacy
+                both: "Cloud 1 (WebDAV), Local",
                 none: "None",
                 download: "Local"
             },
@@ -3635,15 +3717,15 @@ async function exportHistoryToTxt(records, lang) {
             locationValues: {
                 local: "本地",
                 upload: "云端",
-                cloud: "云端1&云端2",
+                cloud: "云端1, 云端2",
                 webdav: "云端1(WebDAV)",
                 github_repo: "云端2(GitHub仓库)",
                 gist: "云端2(GitHub仓库)", // legacy
-                cloud_local: "云端1&云端2与本地",
-                webdav_local: "云端1(WebDAV)与本地",
-                github_repo_local: "云端2(GitHub仓库)与本地",
-                gist_local: "云端2(GitHub仓库)与本地", // legacy
-                both: "云端1(WebDAV)与本地",
+                cloud_local: "云端1, 云端2, 本地",
+                webdav_local: "云端1(WebDAV), 本地",
+                github_repo_local: "云端2(GitHub仓库), 本地",
+                gist_local: "云端2(GitHub仓库), 本地", // legacy
+                both: "云端1(WebDAV), 本地",
                 none: "无",
                 download: "本地"
             },

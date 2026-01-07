@@ -2924,6 +2924,17 @@ document.addEventListener('DOMContentLoaded', async () => {
             console.log('[初始化] 找到记录，立即打开详情面板');
             // 立即打开详情面板，不等待UI渲染
             setTimeout(() => showDetailModal(record), 0);
+
+            // 清除 URL 中的 record 参数，避免刷新后再次弹出详情
+            // 使用 replaceState 避免产生新的浏览历史记录
+            try {
+                const cleanUrl = new URL(window.location.href);
+                cleanUrl.searchParams.delete('record');
+                window.history.replaceState({}, '', cleanUrl.toString());
+                console.log('[初始化] 已清除 URL 中的 record 参数');
+            } catch (e) {
+                console.warn('[初始化] 清除 record 参数失败:', e);
+            }
         }
     }
 
@@ -14573,7 +14584,7 @@ function renderHistoryView() {
         const cloud2Label = currentLang === 'zh_CN' ? '云端2' : 'Cloud 2';
         const localLabel = currentLang === 'zh_CN' ? '本地' : 'Local';
         const cloudLabel = currentLang === 'zh_CN' ? '云端' : 'Cloud';
-        const joinText = currentLang === 'en' ? ' & ' : '与';
+        const joinText = ', ';
 
         const directionInfoMap = {
             // Legacy
@@ -27820,12 +27831,21 @@ function downloadBlob(url, filename) {
                     }
 
                     const buf = await res.arrayBuffer();
+                    // Chrome sendMessage 不支持直接传递 ArrayBuffer，需转换为 Base64
+                    const bytes = new Uint8Array(buf);
+                    const chunkSize = 0x2000;
+                    let binary = '';
+                    for (let i = 0; i < bytes.length; i += chunkSize) {
+                        const chunk = bytes.subarray(i, i + chunkSize);
+                        binary += String.fromCharCode(...chunk);
+                    }
+                    const base64 = btoa(binary);
                     chrome.runtime.sendMessage({
                         action: 'exportFileToClouds',
                         folderKey: 'history',
                         lang: currentLang,
                         fileName: filename,
-                        contentArrayBuffer: buf,
+                        contentBase64Binary: base64,
                         contentType
                     }, () => { });
                 } catch (_) { }
@@ -28064,16 +28084,16 @@ async function generateHistorySummaryMD(selectedTimes) {
     };
     const locationValues = {
         upload: { 'zh_CN': "云端", 'en': "Cloud" }, // 兼容旧记录
-        cloud: { 'zh_CN': "云端1&云端2", 'en': "Cloud 1 & Cloud 2" },
+        cloud: { 'zh_CN': "云端1, 云端2", 'en': "Cloud 1, Cloud 2" },
         webdav: { 'zh_CN': "云端1(WebDAV)", 'en': "Cloud 1 (WebDAV)" },
         github_repo: { 'zh_CN': "云端2(GitHub仓库)", 'en': "Cloud 2 (GitHub Repo)" },
         gist: { 'zh_CN': "云端2(GitHub仓库)", 'en': "Cloud 2 (GitHub Repo)" }, // legacy
-        cloud_local: { 'zh_CN': "云端1&云端2与本地", 'en': "Cloud 1 & Cloud 2 & Local" },
-        webdav_local: { 'zh_CN': "云端1(WebDAV)与本地", 'en': "Cloud 1 (WebDAV) & Local" },
-        github_repo_local: { 'zh_CN': "云端2(GitHub仓库)与本地", 'en': "Cloud 2 (GitHub Repo) & Local" },
-        gist_local: { 'zh_CN': "云端2(GitHub仓库)与本地", 'en': "Cloud 2 (GitHub Repo) & Local" }, // legacy
+        cloud_local: { 'zh_CN': "云端1, 云端2, 本地", 'en': "Cloud 1, Cloud 2, Local" },
+        webdav_local: { 'zh_CN': "云端1(WebDAV), 本地", 'en': "Cloud 1 (WebDAV), Local" },
+        github_repo_local: { 'zh_CN': "云端2(GitHub仓库), 本地", 'en': "Cloud 2 (GitHub Repo), Local" },
+        gist_local: { 'zh_CN': "云端2(GitHub仓库), 本地", 'en': "Cloud 2 (GitHub Repo), Local" }, // legacy
         local: { 'zh_CN': "本地", 'en': "Local" },
-        both: { 'zh_CN': "云端1(WebDAV)与本地", 'en': "Cloud 1 (WebDAV) & Local" }, // 兼容旧记录
+        both: { 'zh_CN': "云端1(WebDAV), 本地", 'en': "Cloud 1 (WebDAV), Local" }, // 兼容旧记录
         none: { 'zh_CN': "无", 'en': "None" }
     };
     const statusValues = {

@@ -18974,12 +18974,21 @@ The current version (v3.0) does **NOT** support Obsidian's native grouping featu
     try {
         if (chrome && chrome.runtime && typeof chrome.runtime.sendMessage === 'function' && zipBlob && typeof zipBlob.arrayBuffer === 'function') {
             zipBlob.arrayBuffer().then((buf) => {
+                // Chrome sendMessage 不支持直接传递 ArrayBuffer，需转换为 Base64
+                const bytes = new Uint8Array(buf);
+                const chunkSize = 0x2000;
+                let binary = '';
+                for (let i = 0; i < bytes.length; i += chunkSize) {
+                    const chunk = bytes.subarray(i, i + chunkSize);
+                    binary += String.fromCharCode(...chunk);
+                }
+                const base64 = btoa(binary);
                 chrome.runtime.sendMessage({
                     action: 'exportFileToClouds',
                     folderKey: 'canvas',
                     lang: (typeof currentLang !== 'undefined' ? currentLang : 'zh_CN'),
                     fileName: zipName,
-                    contentArrayBuffer: buf,
+                    contentBase64Binary: base64,
                     contentType: 'application/zip'
                 }, () => { });
             }).catch(() => { });

@@ -18,6 +18,7 @@ console.log('🟢 [popup.js] 模块导入成功!', { createAutoBackupTimerUI, in
 // =============================================================================
 
 let webDAVConfigPanelOpen = false;
+let githubRepoConfigPanelOpen = false;
 let localConfigPanelOpen = false;
 
 let isBackgroundConnected = false;
@@ -28,6 +29,9 @@ const MAX_CONNECTION_ATTEMPTS = 3;
 let webdavConfigMissingStrings, webdavConfigSavedStrings, webdavBackupEnabledStrings, webdavBackupDisabledStrings;
 let testingWebdavConnectionStrings, webdavConnectionTestSuccessStrings, webdavConnectionTestFailedStrings;
 let webdavPasswordTrimmedStrings;
+let githubRepoConfigMissingStrings, githubRepoConfigSavedStrings, githubRepoBackupEnabledStrings, githubRepoBackupDisabledStrings;
+let testingGithubRepoConnectionStrings, githubRepoConnectionTestSuccessStrings, githubRepoConnectionTestFailedStrings;
+let githubRepoTokenTrimmedStrings;
 let localBackupEnabledStrings, localBackupDisabledStrings, hideDownloadBarEnabledStrings, hideDownloadBarDisabledStrings;
 let downloadPathCalibratedStrings, downloadSettingsAddressCopiedStrings;
 let autoBackupEnabledStrings, autoBackupDisabledStrings, detectedChangesBackingUpStrings;
@@ -50,6 +54,19 @@ const WEBDAV_DRAFT_KEYS = {
 
 const WEBDAV_UI_STATE_KEYS = {
     panelOpen: 'webdavConfigPanelOpen'
+};
+
+let githubRepoDraftSaveTimer = null;
+const GITHUB_REPO_DRAFT_KEYS = {
+    owner: 'githubRepoDraftOwner',
+    name: 'githubRepoDraftName',
+    branch: 'githubRepoDraftBranch',
+    basePath: 'githubRepoDraftBasePath',
+    token: 'githubRepoDraftToken'
+};
+
+const GITHUB_REPO_UI_STATE_KEYS = {
+    panelOpen: 'githubRepoConfigPanelOpen'
 };
 
 let openSourceInfoTitleStrings, openSourceAuthorInfoStrings, openSourceDescriptionStrings;
@@ -111,6 +128,13 @@ function showStatus(message, type = 'info', duration = 3000) {
             'WebDAV连接测试成功': 'webdavConnectionTestSuccess',
             '已自动去除密码首尾空格/换行': 'webdavPasswordTrimmed',
 
+            // GitHub Repository 配置相关
+            '请填写完整的GitHub仓库配置信息': 'githubRepoConfigMissing',
+            'GitHub仓库配置已保存，备份已启用': 'githubRepoConfigSaved',
+            '正在测试GitHub仓库连接...': 'testingGithubRepoConnection',
+            'GitHub仓库连接测试成功': 'githubRepoConnectionTestSuccess',
+            '已自动去除Token首尾空格/换行': 'githubRepoTokenTrimmed',
+
             // 本地配置相关
             '下载路径已校准': 'downloadPathCalibrated',
             '设置地址已复制到剪贴板': 'downloadSettingsAddressCopied',
@@ -159,7 +183,8 @@ function showStatus(message, type = 'info', duration = 3000) {
             '手动上传失败:': 'manualUploadFailed',
             '恢复失败:': 'restoreFailed',
             '导出历史记录失败:': 'historyExportError',
-            'WebDAV连接测试失败:': 'webdavConnectionTestFailed'
+            'WebDAV连接测试失败:': 'webdavConnectionTestFailed',
+            'GitHub仓库连接测试失败:': 'githubRepoConnectionTestFailed'
         };
 
         // 特殊模式匹配 - 用于根据模式决定使用哪个消息键
@@ -177,6 +202,10 @@ function showStatus(message, type = 'info', duration = 3000) {
                 getKey: (m) => m.includes('启用') ? 'webdavBackupEnabled' : 'webdavBackupDisabled'
             },
             {
+                pattern: /GitHub仓库备份已(启用|禁用)/,
+                getKey: (m) => m.includes('启用') ? 'githubRepoBackupEnabled' : 'githubRepoBackupDisabled'
+            },
+            {
                 pattern: /自动备份已(启用|禁用)/,
                 getKey: (m) => m.includes('启用') ? 'autoBackupEnabled' : 'autoBackupDisabled'
             }
@@ -192,6 +221,14 @@ function showStatus(message, type = 'info', duration = 3000) {
             'webdavConnectionTestSuccess': webdavConnectionTestSuccessStrings,
             'webdavConnectionTestFailed': webdavConnectionTestFailedStrings,
             'webdavPasswordTrimmed': webdavPasswordTrimmedStrings,
+            'githubRepoConfigMissing': githubRepoConfigMissingStrings,
+            'githubRepoConfigSaved': githubRepoConfigSavedStrings,
+            'githubRepoBackupEnabled': githubRepoBackupEnabledStrings,
+            'githubRepoBackupDisabled': githubRepoBackupDisabledStrings,
+            'testingGithubRepoConnection': testingGithubRepoConnectionStrings,
+            'githubRepoConnectionTestSuccess': githubRepoConnectionTestSuccessStrings,
+            'githubRepoConnectionTestFailed': githubRepoConnectionTestFailedStrings,
+            'githubRepoTokenTrimmed': githubRepoTokenTrimmedStrings,
             'localBackupEnabled': localBackupEnabledStrings,
             'localBackupDisabled': localBackupDisabledStrings,
             'hideDownloadBarEnabled': hideDownloadBarEnabledStrings,
@@ -761,6 +798,175 @@ async function testWebdavConnection({ serverAddress, username, password }) {
     });
 }
 
+function getGitHubRepoInputElements() {
+    const ownerInput = document.getElementById('githubRepoOwner');
+    const nameInput = document.getElementById('githubRepoName');
+    const branchInput = document.getElementById('githubRepoBranch');
+    const basePathInput = document.getElementById('githubRepoBasePath');
+    const tokenInput = document.getElementById('githubRepoToken');
+    const githubRepoInfoDisplay = document.getElementById('githubRepoInfoDisplay');
+    return { ownerInput, nameInput, branchInput, basePathInput, tokenInput, githubRepoInfoDisplay };
+}
+
+function readGitHubRepoInputs({ trimToken = true } = {}) {
+    const { ownerInput, nameInput, branchInput, basePathInput, tokenInput } = getGitHubRepoInputElements();
+    const rawToken = tokenInput ? tokenInput.value : '';
+    const token = trimToken ? rawToken.trim() : rawToken;
+    return {
+        owner: ownerInput ? ownerInput.value.trim() : '',
+        repo: nameInput ? nameInput.value.trim() : '',
+        branch: branchInput ? branchInput.value.trim() : '',
+        basePath: basePathInput ? basePathInput.value.trim() : '',
+        token,
+        rawToken
+    };
+}
+
+function saveGitHubRepoDraftNow() {
+    const { owner, repo, branch, basePath, token, rawToken } = readGitHubRepoInputs({ trimToken: true });
+    if (!owner && !repo && !branch && !basePath && !token && !rawToken) {
+        return;
+    }
+    try {
+        chrome.storage.local.set({
+            [GITHUB_REPO_DRAFT_KEYS.owner]: owner,
+            [GITHUB_REPO_DRAFT_KEYS.name]: repo,
+            [GITHUB_REPO_DRAFT_KEYS.branch]: branch,
+            [GITHUB_REPO_DRAFT_KEYS.basePath]: basePath,
+            [GITHUB_REPO_DRAFT_KEYS.token]: token
+        });
+    } catch (e) {
+    }
+}
+
+function scheduleSaveGitHubRepoDraft() {
+    if (githubRepoDraftSaveTimer) {
+        clearTimeout(githubRepoDraftSaveTimer);
+        githubRepoDraftSaveTimer = null;
+    }
+    githubRepoDraftSaveTimer = setTimeout(() => {
+        githubRepoDraftSaveTimer = null;
+        saveGitHubRepoDraftNow();
+    }, 250);
+}
+
+function initializeGitHubRepoDraftPersistence() {
+    const { ownerInput, nameInput, branchInput, basePathInput, tokenInput } = getGitHubRepoInputElements();
+    if (!tokenInput) {
+        return;
+    }
+
+    const onInput = () => scheduleSaveGitHubRepoDraft();
+    [ownerInput, nameInput, branchInput, basePathInput, tokenInput].filter(Boolean).forEach((el) => {
+        el.addEventListener('input', onInput);
+    });
+
+    const trimField = (el) => {
+        if (!el) return;
+        const trimmed = el.value.trim();
+        if (trimmed !== el.value) {
+            el.value = trimmed;
+        }
+    };
+
+    [ownerInput, nameInput, branchInput, basePathInput].filter(Boolean).forEach((el) => {
+        el.addEventListener('blur', () => {
+            trimField(el);
+            saveGitHubRepoDraftNow();
+        });
+    });
+
+    tokenInput.addEventListener('blur', () => {
+        const trimmed = tokenInput.value.trim();
+        if (trimmed !== tokenInput.value) {
+            tokenInput.value = trimmed;
+            showStatus('已自动去除Token首尾空格/换行', 'info', 2200);
+        }
+        saveGitHubRepoDraftNow();
+    });
+
+    window.addEventListener('beforeunload', saveGitHubRepoDraftNow);
+}
+
+function initializeGitHubRepoTokenVisibilityButton() {
+    const { tokenInput } = getGitHubRepoInputElements();
+    const button = document.getElementById('githubRepoTokenVisibilityBtn');
+    if (!tokenInput || !button) {
+        return;
+    }
+
+    let currentLang = 'zh_CN';
+    try {
+        chrome.storage.local.get(['preferredLang'], (result) => {
+            const lang = result && result.preferredLang;
+            if (lang === 'en' || lang === 'zh_CN') {
+                currentLang = lang;
+            }
+            update();
+        });
+    } catch (e) {
+    }
+
+    const tooltipMap = {
+        show: { zh_CN: '显示Token', en: 'Show token' },
+        hide: { zh_CN: '隐藏Token', en: 'Hide token' }
+    };
+
+    const update = () => {
+        const showing = tokenInput.type === 'text';
+        button.innerHTML = showing ? '<i class="fas fa-eye-slash"></i>' : '<i class="fas fa-eye"></i>';
+        const tooltip = showing ? tooltipMap.hide[currentLang] : tooltipMap.show[currentLang];
+        button.setAttribute('aria-label', tooltip);
+        button.setAttribute('title', tooltip);
+    };
+
+    tokenInput.type = 'password';
+    update();
+
+    button.addEventListener('mousedown', (e) => {
+        e.preventDefault();
+    });
+    button.addEventListener('click', (e) => {
+        e.preventDefault();
+        tokenInput.type = tokenInput.type === 'password' ? 'text' : 'password';
+        update();
+        tokenInput.focus();
+    });
+}
+
+function setGitHubRepoConfigPanelOpen(open, { persist = true } = {}) {
+    const configHeader = document.getElementById('githubRepoConfigHeader');
+    const configContent = document.getElementById('githubRepoConfigContent');
+    if (!configHeader || !configContent) {
+        return;
+    }
+
+    configContent.style.display = open ? 'block' : 'none';
+    configHeader.classList.toggle('collapsed', !open);
+    githubRepoConfigPanelOpen = !!open;
+
+    if (persist) {
+        try {
+            chrome.storage.local.set({ [GITHUB_REPO_UI_STATE_KEYS.panelOpen]: !!open });
+        } catch (e) {
+        }
+    }
+}
+
+async function testGitHubRepoConnection({ token, owner, repo, branch, basePath }) {
+    return await callBackgroundFunction('testGitHubRepoConnection', {
+        token,
+        owner,
+        repo,
+        branch,
+        basePath
+    });
+}
+
+async function ensureGitHubRepoInitialized() {
+    return await callBackgroundFunction('ensureGitHubRepoInitialized', {});
+}
+
 /**
  * 初始化WebDAV配置部分。
  * @async
@@ -896,6 +1102,257 @@ async function initializeWebDAVConfigSection() {
 
     initializeWebdavDraftPersistence();
     initializePasswordVisibilityButton();
+}
+
+/**
+ * 初始化 GitHub Repository 配置部分（云端2）。
+ * @async
+ */
+async function initializeGitHubRepoConfigSection() {
+    // 在函数开始时加载并显示已保存的配置
+    await loadAndDisplayGitHubRepoConfig();
+
+    const configHeader = document.getElementById('githubRepoConfigHeader');
+    const configContent = document.getElementById('githubRepoConfigContent');
+
+    if (!configHeader || !configContent) {
+        return;
+    }
+
+    // 设置初始状态：从存储恢复“是否展开”
+    try {
+        const uiState = await chrome.storage.local.get([GITHUB_REPO_UI_STATE_KEYS.panelOpen]);
+        setGitHubRepoConfigPanelOpen(uiState[GITHUB_REPO_UI_STATE_KEYS.panelOpen] === true, { persist: false });
+    } catch (e) {
+        setGitHubRepoConfigPanelOpen(false, { persist: false });
+    }
+
+    // 绑定点击事件
+    configHeader.addEventListener('click', function (event) {
+        if (event.target.id === 'githubRepoToggle' || event.target.closest('.switch')) {
+            return;
+        }
+
+        toggleConfigPanel(configContent, configHeader);
+        const open = configContent.style.display === 'block';
+        setGitHubRepoConfigPanelOpen(open, { persist: true });
+    });
+
+    // 保存配置（保存前先测试）
+    const saveButton = document.getElementById('saveGithubRepoConfigBtn');
+    if (saveButton) {
+        saveButton.addEventListener('click', async function () {
+            const { owner, repo, branch, basePath, token, rawToken } = readGitHubRepoInputs({ trimToken: true });
+            const { tokenInput } = getGitHubRepoInputElements();
+
+            saveGitHubRepoDraftNow();
+
+            if (!owner || !repo || !token) {
+                showStatus('请填写完整的GitHub仓库配置信息', 'error');
+                return;
+            }
+
+            if (rawToken !== rawToken.trim()) {
+                if (tokenInput) tokenInput.value = token;
+                showStatus('已自动去除Token首尾空格/换行', 'info', 2200);
+            }
+
+            showStatus('正在测试GitHub仓库连接...', 'info', 3500);
+            let testResult;
+            try {
+                testResult = await testGitHubRepoConnection({ token, owner, repo, branch, basePath });
+            } catch (error) {
+                showStatus(`GitHub仓库连接测试失败: ${error.message || '未知错误'}`, 'error', 4500);
+                return;
+            }
+
+            if (!testResult || testResult.success !== true) {
+                showStatus(`GitHub仓库连接测试失败: ${testResult?.error || '未知错误'}`, 'error', 4500);
+                return;
+            }
+
+            const resolvedBranch = branch || testResult.resolvedBranch || '';
+
+            const updates = {
+                githubRepoToken: token,
+                githubRepoOwner: owner,
+                githubRepoName: repo,
+                githubRepoBranch: resolvedBranch,
+                githubRepoBasePath: basePath || '',
+                githubRepoEnabled: true,
+                [GITHUB_REPO_DRAFT_KEYS.owner]: owner,
+                [GITHUB_REPO_DRAFT_KEYS.name]: repo,
+                [GITHUB_REPO_DRAFT_KEYS.branch]: resolvedBranch,
+                [GITHUB_REPO_DRAFT_KEYS.basePath]: basePath || '',
+                [GITHUB_REPO_DRAFT_KEYS.token]: token
+            };
+
+            chrome.storage.local.set(updates, async function () {
+                const toggle = document.getElementById('githubRepoToggle');
+                if (toggle) {
+                    toggle.checked = true;
+                }
+
+                showStatus('GitHub仓库配置已保存，备份已启用', 'success');
+
+                const statusDot = document.getElementById('githubRepoConfigStatus');
+                if (statusDot) {
+                    statusDot.classList.remove('not-configured');
+                    statusDot.classList.add('configured');
+                }
+
+                try {
+                    const initResult = await ensureGitHubRepoInitialized();
+                    if (!initResult || initResult.success !== true) {
+                        showStatus(`仓库信息获取失败: ${initResult?.error || '未知错误'}`, 'error', 4500);
+                    }
+                } catch (error) {
+                    showStatus(`仓库信息获取失败: ${error?.message || '未知错误'}`, 'error', 4500);
+                }
+
+                loadAndDisplayGitHubRepoConfig();
+
+                setTimeout(() => {
+                    setGitHubRepoConfigPanelOpen(false, { persist: true });
+                }, 150);
+            });
+        });
+    }
+
+    // 测试连接（不保存）
+    const testBtn = document.getElementById('testGithubRepoBtn');
+    if (testBtn) {
+        testBtn.addEventListener('click', async function () {
+            const { owner, repo, branch, basePath, token, rawToken } = readGitHubRepoInputs({ trimToken: true });
+            const { tokenInput } = getGitHubRepoInputElements();
+            saveGitHubRepoDraftNow();
+
+            if (!owner || !repo || !token) {
+                showStatus('请填写完整的GitHub仓库配置信息', 'error');
+                return;
+            }
+
+            if (rawToken !== rawToken.trim()) {
+                if (tokenInput) tokenInput.value = token;
+                showStatus('已自动去除Token首尾空格/换行', 'info', 2200);
+            }
+
+            showStatus('正在测试GitHub仓库连接...', 'info', 3500);
+            try {
+                const result = await testGitHubRepoConnection({ token, owner, repo, branch, basePath });
+                if (result && result.success === true) {
+                    showStatus('GitHub仓库连接测试成功', 'success', 2400);
+
+                    // 在信息框中展示更直观的 Base Path 含义与写入预览（不保存）
+                    try {
+                        const { githubRepoInfoDisplay } = getGitHubRepoInputElements();
+                        if (githubRepoInfoDisplay) {
+                            const { preferredLang } = await new Promise(resolve => chrome.storage.local.get(['preferredLang'], resolve));
+                            const isEn = preferredLang === 'en';
+                            const repoText = result?.repo?.fullName || `${owner}/${repo}`;
+                            const resolvedBranch = branch || result?.resolvedBranch || '';
+                            const branchText = resolvedBranch || (isEn ? 'Default branch' : '默认分支');
+
+                            const basePathTrimmed = String(basePath || '').trim().replace(/^\/+/, '').replace(/\/+$/, '');
+                            const basePathText = basePathTrimmed || (isEn ? 'Repository root' : '仓库根目录');
+                            const exportRootFolder = isEn ? 'Bookmark Git & Toolbox' : '书签快照 & 工具箱';
+                            const previewPath = `${basePathTrimmed ? `${basePathTrimmed}/` : ''}${exportRootFolder}/...`;
+
+                            const lines = isEn
+                                ? [
+                                    `Repository: ${repoText}`,
+                                    `Branch: ${branchText}`,
+                                    `Base Path: ${basePathText}`,
+                                    `Write to: ${previewPath}`,
+                                    basePathTrimmed
+                                        ? (result.basePathExists === true
+                                            ? 'Base Path status: exists'
+                                            : (result.basePathExists === false
+                                                ? 'Base Path status: not found (will be created on first backup)'
+                                                : ''))
+                                        : 'Note: Leave Base Path empty to use repo root.',
+                                    `Note: Folders are created automatically; structure matches WebDAV/Local exports.`
+                                ].filter(Boolean)
+                                : [
+                                    `仓库：${repoText}`,
+                                    `分支：${branchText}`,
+                                    `Base Path：${basePathText}`,
+                                    `写入预览：${previewPath}`,
+                                    basePathTrimmed
+                                        ? (result.basePathExists === true
+                                            ? 'Base Path 状态：已存在'
+                                            : (result.basePathExists === false
+                                                ? 'Base Path 状态：不存在（首次备份会自动创建）'
+                                                : ''))
+                                        : '提示：Base Path 留空即可写入仓库根目录。',
+                                    `说明：目录结构与 WebDAV/本地导出一致（目录不存在会自动创建）。`
+                                ].filter(Boolean);
+
+                            githubRepoInfoDisplay.textContent = lines.join('\n');
+                            githubRepoInfoDisplay.style.color = 'var(--theme-text-secondary)';
+                        }
+                    } catch (_) {
+                    }
+                } else {
+                    showStatus(`GitHub仓库连接测试失败: ${result?.error || '未知错误'}`, 'error', 4500);
+                }
+            } catch (error) {
+                showStatus(`GitHub仓库连接测试失败: ${error.message || '未知错误'}`, 'error', 4500);
+            }
+        });
+    }
+
+    // Token 配置说明按钮
+    const guideBtn = document.getElementById('openGithubTokenGuideBtn');
+    if (guideBtn && !guideBtn.dataset.bound) {
+        guideBtn.dataset.bound = 'true';
+        guideBtn.addEventListener('click', async (e) => {
+            e.preventDefault();
+            try {
+                let langParam = 'zh';
+                try {
+                    // 优先尝试获取用户设置的首选语言
+                    const { preferredLang } = await new Promise(resolve => chrome.storage.local.get(['preferredLang'], resolve));
+                    if (preferredLang) {
+                        langParam = preferredLang === 'en' ? 'en' : 'zh';
+                    } else {
+                        // 如果没有设置首选语言，则检测浏览器 UI 语言
+                        const uiLang = chrome.i18n.getUILanguage();
+                        langParam = uiLang.startsWith('en') ? 'en' : 'zh';
+                    }
+                } catch (_) {
+                    // 发生错误时的后备方案
+                    const uiLang = chrome.i18n.getUILanguage();
+                    langParam = uiLang.startsWith('en') ? 'en' : 'zh';
+                }
+
+                // 检测当前主题 (优先使用 localStorage 中的设置，否则跟随系统)
+                let themeParam = 'light';
+                try {
+                    const savedTheme = localStorage.getItem('themeMode') || localStorage.getItem('historyViewerCustomTheme');
+                    if (savedTheme === 'dark' || savedTheme === 'light') {
+                        themeParam = savedTheme;
+                    } else {
+                        themeParam = window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+                    }
+                } catch (_) {
+                    themeParam = window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+                }
+
+                const url = chrome.runtime.getURL(`github-token-guide.html?lang=${langParam}&theme=${themeParam}`);
+                if (chrome.tabs && chrome.tabs.create) {
+                    chrome.tabs.create({ url });
+                } else {
+                    window.open(url, '_blank');
+                }
+            } catch (err) {
+                showStatus(`打开说明失败: ${err?.message || '未知错误'}`, 'error', 4500);
+            }
+        });
+    }
+
+    initializeGitHubRepoDraftPersistence();
+    initializeGitHubRepoTokenVisibilityButton();
 }
 
 /**
@@ -1047,6 +1504,21 @@ function initializeWebDAVToggle() {
             const enabled = webDAVToggle.checked;
             chrome.storage.local.set({ webDAVEnabled: enabled }, function () { // 使用 chrome.storage
                 showStatus(`WebDAV备份已${enabled ? '启用' : '禁用'}`, 'success');
+            });
+        });
+    }
+}
+
+/**
+ * 处理 GitHub Repository 配置开关（云端2）。
+ */
+function initializeGitHubRepoToggle() {
+    const toggle = document.getElementById('githubRepoToggle');
+    if (toggle) {
+        toggle.addEventListener('change', function () {
+            const enabled = toggle.checked;
+            chrome.storage.local.set({ githubRepoEnabled: enabled }, function () {
+                showStatus(`GitHub仓库备份已${enabled ? '启用' : '禁用'}`, 'success');
             });
         });
     }
@@ -1319,6 +1791,139 @@ async function loadWebDAVToggleStatus() {
 }
 
 /**
+ * 加载并显示 GitHub Repository 配置（云端2）。
+ * @async
+ */
+async function loadAndDisplayGitHubRepoConfig() {
+    const { ownerInput, nameInput, branchInput, basePathInput, tokenInput, githubRepoInfoDisplay } = getGitHubRepoInputElements();
+    const toggle = document.getElementById('githubRepoToggle');
+    const configStatus = document.getElementById('githubRepoConfigStatus');
+
+    if (!ownerInput || !nameInput || !branchInput || !basePathInput || !tokenInput || !githubRepoInfoDisplay || !toggle || !configStatus) {
+        return;
+    }
+
+    try {
+        const data = await new Promise((resolve, reject) => {
+            chrome.storage.local.get([
+                'preferredLang',
+                'githubRepoToken',
+                'githubRepoOwner',
+                'githubRepoName',
+                'githubRepoBranch',
+                'githubRepoBasePath',
+                'githubRepoEnabled',
+                GITHUB_REPO_DRAFT_KEYS.owner,
+                GITHUB_REPO_DRAFT_KEYS.name,
+                GITHUB_REPO_DRAFT_KEYS.branch,
+                GITHUB_REPO_DRAFT_KEYS.basePath,
+                GITHUB_REPO_DRAFT_KEYS.token
+            ], (result) => {
+                if (chrome.runtime.lastError) {
+                    return reject(chrome.runtime.lastError);
+                }
+                resolve(result);
+            });
+        });
+
+        const lang = data.preferredLang === 'en' ? 'en' : 'zh_CN';
+        const isEn = lang === 'en';
+
+        const draftOwner = data[GITHUB_REPO_DRAFT_KEYS.owner];
+        const draftName = data[GITHUB_REPO_DRAFT_KEYS.name];
+        const draftBranch = data[GITHUB_REPO_DRAFT_KEYS.branch];
+        const draftBasePath = data[GITHUB_REPO_DRAFT_KEYS.basePath];
+        const draftToken = data[GITHUB_REPO_DRAFT_KEYS.token];
+
+        const displayOwner = (typeof draftOwner === 'string' && draftOwner.length > 0) ? draftOwner : (data.githubRepoOwner || '');
+        const displayName = (typeof draftName === 'string' && draftName.length > 0) ? draftName : (data.githubRepoName || '');
+        const displayBranch = (typeof draftBranch === 'string' && draftBranch.length > 0) ? draftBranch : (data.githubRepoBranch || '');
+        const displayBasePath = (typeof draftBasePath === 'string' && draftBasePath.length > 0) ? draftBasePath : (data.githubRepoBasePath || '');
+        const displayToken = (typeof draftToken === 'string' && draftToken.length > 0) ? draftToken : (data.githubRepoToken || '');
+
+        ownerInput.value = displayOwner;
+        nameInput.value = displayName;
+        branchInput.value = displayBranch;
+        basePathInput.value = displayBasePath;
+        tokenInput.value = displayToken;
+
+        const repoText = displayOwner && displayName
+            ? `${displayOwner}/${displayName}`
+            : (isEn ? '(not configured)' : '（未配置）');
+        const branchText = displayBranch
+            ? displayBranch
+            : (isEn ? 'Default branch' : '默认分支');
+        const basePathText = displayBasePath
+            ? displayBasePath
+            : (isEn ? 'Repository root' : '仓库根目录');
+
+        const exportRootFolder = isEn ? 'Bookmark Git & Toolbox' : '书签快照 & 工具箱';
+        const basePathTrimmed = String(displayBasePath || '').trim().replace(/^\/+/, '').replace(/\/+$/, '');
+        const previewPath = `${basePathTrimmed ? `${basePathTrimmed}/` : ''}${exportRootFolder}/...`;
+
+        const lines = isEn
+            ? [
+                `Repository: ${repoText}`,
+                `Branch: ${branchText}`,
+                `Base Path: ${basePathText}`,
+                `Write to: ${previewPath}`,
+                `Note: Folders are created automatically; structure matches WebDAV/Local exports.`
+            ]
+            : [
+                `仓库：${repoText}`,
+                `分支：${branchText}`,
+                `Base Path：${basePathText}`,
+                `写入预览：${previewPath}`,
+                `说明：目录结构与 WebDAV/本地导出一致（目录不存在会自动创建）。`
+            ];
+
+        githubRepoInfoDisplay.textContent = lines.join('\n');
+        githubRepoInfoDisplay.style.color = 'var(--theme-text-secondary)';
+
+        const isConfigured = !!(data.githubRepoToken && data.githubRepoOwner && data.githubRepoName);
+        const isEnabled = data.githubRepoEnabled === true;
+
+        toggle.checked = isEnabled;
+
+        if (isConfigured && isEnabled) {
+            configStatus.classList.remove('not-configured');
+            configStatus.classList.add('configured');
+        } else {
+            configStatus.classList.remove('configured');
+            configStatus.classList.add('not-configured');
+        }
+    } catch (error) {
+        ownerInput.value = '';
+        nameInput.value = '';
+        branchInput.value = '';
+        basePathInput.value = '';
+        tokenInput.value = '';
+        githubRepoInfoDisplay.textContent = '—';
+        toggle.checked = false;
+        configStatus.classList.remove('configured');
+        configStatus.classList.add('not-configured');
+    }
+}
+
+/**
+ * 加载 GitHub Repository 开关状态。
+ * @async
+ */
+async function loadGitHubRepoToggleStatus() {
+    try {
+        const config = await new Promise(resolve => {
+            chrome.storage.local.get(['githubRepoEnabled'], resolve);
+        });
+
+        const toggle = document.getElementById('githubRepoToggle');
+        if (toggle) {
+            toggle.checked = config.githubRepoEnabled === true;
+        }
+    } catch (error) {
+    }
+}
+
+/**
  * 更新下载路径显示。
  */
 function updateDownloadPathDisplay() {
@@ -1444,6 +2049,14 @@ function updateSyncHistory(passedLang) { // Added passedLang parameter
             'cloudText': {
                 'zh_CN': "云端",
                 'en': "Cloud"
+            },
+            'cloud1Text': {
+                'zh_CN': "云端1(WebDAV)",
+                'en': "Cloud 1 (WebDAV)"
+            },
+            'cloud2Text': {
+                'zh_CN': "云端2(GitHub仓库)",
+                'en': "Cloud 2 (GitHub Repo)"
             },
             'localText': {
                 'zh_CN': "本地",
@@ -1641,12 +2254,32 @@ function updateSyncHistory(passedLang) { // Added passedLang parameter
                     let locationText = '';
                     if (record.direction === 'none') {
                         locationText = dynamicTextStrings.noBackupNeededText[currentLang] || '无需备份';
-                    } else if (record.direction === 'upload' || record.direction === 'webdav') {
-                        locationText = `<span style="color: #007AFF; font-weight: bold;">${dynamicTextStrings.cloudText[currentLang] || '云端'}</span>`;
-                    } else if (record.direction === 'download' || record.direction === 'local') {
-                        locationText = `<span style="color: #9370DB; font-weight: bold;">${dynamicTextStrings.localText[currentLang] || '本地'}</span>`;
-                    } else if (record.direction === 'both') {
-                        locationText = `<span style="color: #007AFF; font-weight: bold;">${dynamicTextStrings.cloudText[currentLang] || '云端'}</span>${currentLang === 'en' ? ' &' : '与'}<span style="color: #9370DB; font-weight: bold;">${dynamicTextStrings.localText[currentLang] || '本地'}</span>`;
+                    } else {
+                        const cloudStyle = "color: #007AFF; font-weight: bold;";
+                        const localStyle = "color: #9370DB; font-weight: bold;";
+                        const cloud1Text = dynamicTextStrings.cloud1Text?.[currentLang] || dynamicTextStrings.cloud1Text?.zh_CN || '云端1(WebDAV)';
+                        const cloud2Text = dynamicTextStrings.cloud2Text?.[currentLang] || dynamicTextStrings.cloud2Text?.zh_CN || '云端2(GitHub仓库)';
+                        const cloudText = dynamicTextStrings.cloudText?.[currentLang] || dynamicTextStrings.cloudText?.zh_CN || '云端';
+                        const localText = dynamicTextStrings.localText?.[currentLang] || dynamicTextStrings.localText?.zh_CN || '本地';
+                        const joinText = currentLang === 'en' ? ' & ' : '与';
+
+                        if (record.direction === 'cloud_local') {
+                            locationText = `<span style="${cloudStyle}">${cloud1Text}</span>${joinText}<span style="${cloudStyle}">${cloud2Text}</span>${joinText}<span style="${localStyle}">${localText}</span>`;
+                        } else if (record.direction === 'webdav_local' || record.direction === 'both') {
+                            locationText = `<span style="${cloudStyle}">${cloud1Text}</span>${joinText}<span style="${localStyle}">${localText}</span>`;
+                        } else if (record.direction === 'github_repo_local' || record.direction === 'gist_local') {
+                            locationText = `<span style="${cloudStyle}">${cloud2Text}</span>${joinText}<span style="${localStyle}">${localText}</span>`;
+                        } else if (record.direction === 'cloud') {
+                            locationText = `<span style="${cloudStyle}">${cloud1Text}</span>${joinText}<span style="${cloudStyle}">${cloud2Text}</span>`;
+                        } else if (record.direction === 'webdav') {
+                            locationText = `<span style="${cloudStyle}">${cloud1Text}</span>`;
+                        } else if (record.direction === 'github_repo' || record.direction === 'gist') {
+                            locationText = `<span style="${cloudStyle}">${cloud2Text}</span>`;
+                        } else if (record.direction === 'local' || record.direction === 'download') {
+                            locationText = `<span style="${localStyle}">${localText}</span>`;
+                        } else if (record.direction === 'upload') {
+                            locationText = `<span style="${cloudStyle}">${cloudText}</span>`;
+                        }
                     }
                     let actionText = (record.direction === 'none') ?
                         (dynamicTextStrings.checkCompletedText[currentLang] || '检查完成') :
@@ -2024,12 +2657,24 @@ function updateLastSyncInfo(passedLang) { // Added passedLang parameter
             } else {
                 // 第一行：备份位置
                 let locationText = '';
-                if (data.lastSyncDirection === 'both') {
-                    locationText = '<span style="color: #007AFF; font-weight: bold;">云端</span>与<span style="color: #9370DB; font-weight: bold;">本地</span>';
+                const cloud1Html = '<span style="color: #007AFF; font-weight: bold;">云端1(WebDAV)</span>';
+                const cloud2Html = '<span style="color: #007AFF; font-weight: bold;">云端2(GitHub仓库)</span>';
+                const localHtml = '<span style="color: #9370DB; font-weight: bold;">本地</span>';
+
+                if (data.lastSyncDirection === 'cloud_local') {
+                    locationText = `${cloud1Html}与${cloud2Html}与${localHtml}`;
+                } else if (data.lastSyncDirection === 'webdav_local' || data.lastSyncDirection === 'both') {
+                    locationText = `${cloud1Html}与${localHtml}`;
+                } else if (data.lastSyncDirection === 'github_repo_local' || data.lastSyncDirection === 'gist_local') {
+                    locationText = `${cloud2Html}与${localHtml}`;
+                } else if (data.lastSyncDirection === 'cloud') {
+                    locationText = `${cloud1Html}与${cloud2Html}`;
                 } else if (data.lastSyncDirection === 'webdav' || data.lastSyncDirection === 'upload') {
-                    locationText = '<span style="color: #007AFF; font-weight: bold;">云端</span>';
+                    locationText = cloud1Html;
+                } else if (data.lastSyncDirection === 'github_repo' || data.lastSyncDirection === 'gist') {
+                    locationText = cloud2Html;
                 } else if (data.lastSyncDirection === 'local' || data.lastSyncDirection === 'download') {
-                    locationText = '<span style="color: #9370DB; font-weight: bold;">本地</span>';
+                    locationText = localHtml;
                 }
 
                 // 获取备份类型
@@ -3381,16 +4026,25 @@ function handleInitUpload() {
         if (uploadToCloud) uploadToCloud.disabled = false;
 
         if (response && response.success) {
-            // 显示详细的成功信息
-            let successMessage = '初始化上传成功！';
-            if (response.webDAVSuccess && response.localSuccess) {
-                successMessage = '成功初始化到云端和本地！';
-            } else if (response.webDAVSuccess) {
-                successMessage = '成功初始化到云端！';
-            } else if (response.localSuccess) {
-                successMessage = '成功初始化到本地！';
-            }
-            showStatus(successMessage, 'success');
+            // 显示详细的成功信息（云端1/云端2/本地）
+            chrome.storage.local.get(['preferredLang'], function (langResult) {
+                const lang = langResult.preferredLang || 'zh_CN';
+                const targets = [];
+                if (response.webDAVSuccess) targets.push(lang === 'en' ? 'Cloud 1 (WebDAV)' : '云端1(WebDAV)');
+                if (response.githubRepoSuccess) targets.push(lang === 'en' ? 'Cloud 2 (GitHub Repo)' : '云端2(GitHub仓库)');
+                if (response.localSuccess) targets.push(lang === 'en' ? 'Local' : '本地');
+
+                let targetsText = targets.join(lang === 'en' ? ' & ' : '和');
+                if (!targetsText) {
+                    targetsText = lang === 'en' ? 'Unknown target' : '未知位置';
+                }
+
+                const successMessage = lang === 'en'
+                    ? `Initialized to ${targetsText}!`
+                    : `成功初始化到${targetsText}！`;
+
+                showStatus(successMessage, 'success');
+            });
 
             // 保存初始备份文件名（如果有）
             if (response.localFileName) {
@@ -3474,15 +4128,24 @@ function handleManualUpload() {
 
         if (response && response.success) {
             // ... (保持原有的成功处理逻辑，包括发送 manualBackupCompleted)
-            let successMessage = '手动上传成功！';
-            if (response.webDAVSuccess && response.localSuccess) {
-                successMessage = '成功备份到云端和本地！';
-            } else if (response.webDAVSuccess) {
-                successMessage = '成功备份到云端！';
-            } else if (response.localSuccess) {
-                successMessage = '成功备份到本地！';
-            }
-            showStatus(successMessage, 'success');
+            chrome.storage.local.get(['preferredLang'], function (langResult) {
+                const lang = langResult.preferredLang || 'zh_CN';
+                const targets = [];
+                if (response.webDAVSuccess) targets.push(lang === 'en' ? 'Cloud 1 (WebDAV)' : '云端1(WebDAV)');
+                if (response.githubRepoSuccess) targets.push(lang === 'en' ? 'Cloud 2 (GitHub Repo)' : '云端2(GitHub仓库)');
+                if (response.localSuccess) targets.push(lang === 'en' ? 'Local' : '本地');
+
+                let targetsText = targets.join(lang === 'en' ? ' & ' : '和');
+                if (!targetsText) {
+                    targetsText = lang === 'en' ? 'Unknown target' : '未知位置';
+                }
+
+                const successMessage = lang === 'en'
+                    ? `Backed up to ${targetsText}!`
+                    : `成功备份到${targetsText}！`;
+
+                showStatus(successMessage, 'success');
+            });
             chrome.runtime.sendMessage({ action: "manualBackupCompleted" });
             const initHeader = document.getElementById('initHeader');
             const initContent = document.getElementById('initContent');
@@ -3593,8 +4256,10 @@ function exportSyncHistory() {
 
     chrome.storage.local.get([
         'syncHistory', 'preferredLang',
-        // WebDAV配置
+        // 云端1：WebDAV配置
         'serverAddress', 'username', 'password', 'webDAVEnabled',
+        // 云端2：GitHub Repository 配置
+        'githubRepoToken', 'githubRepoOwner', 'githubRepoName', 'githubRepoBranch', 'githubRepoBasePath', 'githubRepoEnabled',
         // 本地配置
         'defaultDownloadEnabled', 'customFolderEnabled', 'customFolderPath',
         'localBackupPath', 'localBackupEnabled'
@@ -3602,9 +4267,13 @@ function exportSyncHistory() {
         const syncHistory = data.syncHistory || [];
         const lang = data.preferredLang || 'zh_CN';
 
-        // 检查WebDAV配置
+        // 检查云端1：WebDAV配置
         const webDAVConfigured = data.serverAddress && data.username && data.password;
         const webDAVEnabled = data.webDAVEnabled !== false;
+
+        // 检查云端2：GitHub Repository 配置
+        const githubRepoConfigured = !!(data.githubRepoToken && data.githubRepoOwner && data.githubRepoName);
+        const githubRepoEnabled = data.githubRepoEnabled !== false;
 
         // 检查本地备份配置
         const defaultDownloadEnabled = data.defaultDownloadEnabled === true;
@@ -3641,10 +4310,17 @@ function exportSyncHistory() {
             status: { 'zh_CN': "状态/错误", 'en': "Status/Error" }
         };
         const locationValues = {
-            cloud: { 'zh_CN': "云端", 'en': "Cloud" },
-            webdav: { 'zh_CN': "云端", 'en': "Cloud" },
+            upload: { 'zh_CN': "云端", 'en': "Cloud" }, // 兼容旧记录
+            cloud: { 'zh_CN': "云端1&云端2", 'en': "Cloud 1 & Cloud 2" },
+            webdav: { 'zh_CN': "云端1(WebDAV)", 'en': "Cloud 1 (WebDAV)" },
+            github_repo: { 'zh_CN': "云端2(GitHub仓库)", 'en': "Cloud 2 (GitHub Repo)" },
+            gist: { 'zh_CN': "云端2(GitHub仓库)", 'en': "Cloud 2 (GitHub Repo)" }, // legacy
+            cloud_local: { 'zh_CN': "云端1&云端2与本地", 'en': "Cloud 1 & Cloud 2 & Local" },
+            webdav_local: { 'zh_CN': "云端1(WebDAV)与本地", 'en': "Cloud 1 (WebDAV) & Local" },
+            github_repo_local: { 'zh_CN': "云端2(GitHub仓库)与本地", 'en': "Cloud 2 (GitHub Repo) & Local" },
+            gist_local: { 'zh_CN': "云端2(GitHub仓库)与本地", 'en': "Cloud 2 (GitHub Repo) & Local" }, // legacy
             local: { 'zh_CN': "本地", 'en': "Local" },
-            both: { 'zh_CN': "云端与本地", 'en': "Cloud & Local" },
+            both: { 'zh_CN': "云端1(WebDAV)与本地", 'en': "Cloud 1 (WebDAV) & Local" }, // 兼容旧记录
             none: { 'zh_CN': "无", 'en': "None" }
         };
         const typeValues = {
@@ -3773,13 +4449,13 @@ function exportSyncHistory() {
 
 
             let locationText = 'N/A';
-            if (record.direction === 'upload' || record.direction === 'webdav') {
-                locationText = locationValues.cloud[lang];
-            } else if (record.direction === 'download' || record.direction === 'local') {
+            const recordDirection = (record.direction ?? 'none').toString();
+            if (locationValues[recordDirection]) {
+                locationText = locationValues[recordDirection][lang];
+            } else if (recordDirection === 'download') {
+                // 兼容旧记录
                 locationText = locationValues.local[lang];
-            } else if (record.direction === 'both') {
-                locationText = locationValues.both[lang];
-            } else if (record.direction === 'none') {
+            } else if (recordDirection === 'none') {
                 locationText = locationValues.none[lang];
             }
 
@@ -3823,14 +4499,15 @@ function exportSyncHistory() {
         // 根据配置决定导出方式
         let exportResults = [];
         let webDAVSuccess = false;
+        let githubRepoSuccess = false;
         let localSuccess = false;
         const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
         const fileName = `${filenameBase[lang]}_${timestamp}.txt`;
 
-        // WebDAV导出
+        // 云端1：WebDAV 导出
         if (webDAVConfigured && webDAVEnabled) {
             try {
-                showStatus(window.i18nLabels?.exportingToWebDAV || '正在导出到云端...', 'info');
+                showStatus(window.i18nLabels?.exportingToWebDAV || '正在导出到云端1...', 'info');
 
                 // 使用background.js中已有的WebDAV导出功能
                 const result = await callBackgroundFunction('exportHistoryToWebDAV', {
@@ -3841,17 +4518,40 @@ function exportSyncHistory() {
 
                 if (result && result.success) {
                     webDAVSuccess = true;
-                    exportResults.push(window.i18nLabels?.exportedToWebDAV || '历史记录已成功导出到云端');
+                    exportResults.push(window.i18nLabels?.exportedToWebDAV || '历史记录已成功导出到云端1');
                 } else {
-                    exportResults.push(window.i18nLabels?.exportToWebDAVFailed || '导出到云端失败: ' + (result?.error || '未知错误'));
+                    exportResults.push(window.i18nLabels?.exportToWebDAVFailed || '导出到云端1失败: ' + (result?.error || '未知错误'));
                 }
             } catch (error) {
-                exportResults.push(window.i18nLabels?.exportToWebDAVFailed || `导出到云端失败: ${error.message || '未知错误'}`);
+                exportResults.push(window.i18nLabels?.exportToWebDAVFailed || `导出到云端1失败: ${error.message || '未知错误'}`);
+            }
+        }
+
+        // 云端2：GitHub Repository 导出
+        if (githubRepoConfigured && githubRepoEnabled) {
+            try {
+                showStatus(window.i18nLabels?.exportingToGithubRepo || '正在导出到云端2...', 'info');
+
+                const result = await callBackgroundFunction('exportHistoryToGitHubRepo', {
+                    content: txtContent,
+                    fileName: fileName,
+                    lang: lang
+                });
+
+                if (result && result.success) {
+                    githubRepoSuccess = true;
+                    exportResults.push(window.i18nLabels?.exportedToGithubRepo || '历史记录已成功导出到云端2');
+                } else {
+                    exportResults.push(window.i18nLabels?.exportToGithubRepoFailed || '导出到云端2失败: ' + (result?.error || '未知错误'));
+                }
+            } catch (error) {
+                exportResults.push(window.i18nLabels?.exportToGithubRepoFailed || `导出到云端2失败: ${error.message || '未知错误'}`);
             }
         }
 
         // 本地导出
-        if (localBackupConfigured || (!webDAVConfigured && !webDAVEnabled)) {
+        const cloudExportEnabled = (webDAVConfigured && webDAVEnabled) || (githubRepoConfigured && githubRepoEnabled);
+        if (localBackupConfigured || !cloudExportEnabled) {
             try {
                 showStatus(window.i18nLabels?.exportingToLocal || '正在导出到本地...', 'info');
 
@@ -3874,13 +4574,9 @@ function exportSyncHistory() {
         }
 
         // 显示最终结果
-        if (webDAVSuccess && localSuccess) {
-            showStatus(window.i18nLabels?.exportedToBoth || '历史记录已成功导出到云端与本地', 'success', 3000);
-        } else if (webDAVSuccess || localSuccess) {
-            showStatus(exportResults.join('，'), 'success', 3000);
-        } else {
-            showStatus(exportResults.join('，'), 'error', 3000);
-        }
+        const anySuccess = webDAVSuccess || githubRepoSuccess || localSuccess;
+        const resultText = exportResults.length > 0 ? exportResults.join('，') : (window.i18nLabels?.exportHistoryFailed || '导出历史记录失败');
+        showStatus(resultText, anySuccess ? 'success' : 'error', 3000);
     });
 }
 
@@ -4127,8 +4823,13 @@ const applyLocalizedContent = async (lang) => { // Added lang parameter
     };
 
     const exportingToWebDAVStrings = {
-        'zh_CN': "正在导出到云端...",
-        'en': "Exporting to cloud..."
+        'zh_CN': "正在导出到云端1...",
+        'en': "Exporting to Cloud 1..."
+    };
+
+    const exportingToGithubRepoStrings = {
+        'zh_CN': "正在导出到云端2...",
+        'en': "Exporting to Cloud 2..."
     };
 
     const exportingToLocalStrings = {
@@ -4137,8 +4838,13 @@ const applyLocalizedContent = async (lang) => { // Added lang parameter
     };
 
     const exportedToWebDAVStrings = {
-        'zh_CN': "历史记录已成功导出到云端",
-        'en': "History successfully exported to cloud"
+        'zh_CN': "历史记录已成功导出到云端1",
+        'en': "History successfully exported to Cloud 1"
+    };
+
+    const exportedToGithubRepoStrings = {
+        'zh_CN': "历史记录已成功导出到云端2",
+        'en': "History successfully exported to Cloud 2"
     };
 
     const exportedToLocalStrings = {
@@ -4152,8 +4858,13 @@ const applyLocalizedContent = async (lang) => { // Added lang parameter
     };
 
     const exportToWebDAVFailedStrings = {
-        'zh_CN': "导出到云端失败",
-        'en': "Failed to export to cloud"
+        'zh_CN': "导出到云端1失败",
+        'en': "Failed to export to Cloud 1"
+    };
+
+    const exportToGithubRepoFailedStrings = {
+        'zh_CN': "导出到云端2失败",
+        'en': "Failed to export to Cloud 2"
     };
 
     const exportToLocalFailedStrings = {
@@ -4373,15 +5084,15 @@ const applyLocalizedContent = async (lang) => { // Added lang parameter
         'en': "Manual Backup"
     };
 
-    // WebDAV配置部分
+    // 云端1：WebDAV 配置部分
     const webdavConfigTitleStrings = {
-        'zh_CN': "WebDAV配置（坚果云、NAS服务等）",
-        'en': "WebDAV Config (Nutstore, NAS, etc.)"
+        'zh_CN': "云端1：WebDAV配置（坚果云、NAS服务等）",
+        'en': "Cloud 1: WebDAV Config (Nutstore, NAS, etc.)"
     };
 
     const serverAddressLabelStrings = {
-        'zh_CN': "服务器地址:",
-        'en': "Server Address:"
+        'zh_CN': "服务器地址",
+        'en': "Server Address"
     };
 
     const serverAddressPlaceholderStrings = {
@@ -4390,8 +5101,8 @@ const applyLocalizedContent = async (lang) => { // Added lang parameter
     };
 
     const usernameLabelStrings = {
-        'zh_CN': "账户:",
-        'en': "Username:"
+        'zh_CN': "账户",
+        'en': "Username"
     };
 
     const usernamePlaceholderStrings = {
@@ -4400,8 +5111,8 @@ const applyLocalizedContent = async (lang) => { // Added lang parameter
     };
 
     const passwordLabelStrings = {
-        'zh_CN': "密码:",
-        'en': "Password:"
+        'zh_CN': "密码",
+        'en': "Password"
     };
 
     const passwordPlaceholderStrings = {
@@ -4415,6 +5126,82 @@ const applyLocalizedContent = async (lang) => { // Added lang parameter
     };
 
     const testWebdavButtonStrings = {
+        'zh_CN': "测试连接",
+        'en': "Test Connection"
+    };
+
+    // 云端2：GitHub Repository 配置部分
+    const githubRepoConfigTitleStrings = {
+        'zh_CN': "云端2：GitHub仓库配置",
+        'en': "Cloud 2: GitHub Repo Config"
+    };
+
+    const githubRepoNoticeStrings = {
+        'zh_CN': "",
+        'en': ""
+    };
+
+    const githubRepoInfoLabelStrings = {
+        'zh_CN': "仓库信息（显示）",
+        'en': "Repo Info (display)"
+    };
+
+    const githubRepoOwnerLabelStrings = {
+        'zh_CN': "Owner（用户名/组织）*",
+        'en': "Owner (user/org) *"
+    };
+
+    const githubRepoOwnerPlaceholderStrings = {
+        'zh_CN': "例如：kwenxu",
+        'en': "e.g. kwenxu"
+    };
+
+    const githubRepoNameLabelStrings = {
+        'zh_CN': "Repo（仓库名）*",
+        'en': "Repository name *"
+    };
+
+    const githubRepoNamePlaceholderStrings = {
+        'zh_CN': "例如：Bookmark-Backup",
+        'en': "e.g. Bookmark-Backup"
+    };
+
+    const githubRepoBranchLabelStrings = {
+        'zh_CN': "Branch（可选）",
+        'en': "Branch (optional)"
+    };
+
+    const githubRepoBranchPlaceholderStrings = {
+        'zh_CN': "留空=默认分支（推荐）",
+        'en': "Empty = default branch (recommended)"
+    };
+
+    const githubRepoBasePathLabelStrings = {
+        'zh_CN': "Base Path（可选，前缀目录）",
+        'en': "Base Path (optional, prefix folder)"
+    };
+
+    const githubRepoBasePathPlaceholderStrings = {
+        'zh_CN': "例如：kk/bookmark（选填，留空则存入仓库根目录）",
+        'en': "e.g. kk/bookmark (Optional, empty = repo root)"
+    };
+
+    const githubRepoTokenLabelStrings = {
+        'zh_CN': "GitHub Token（PAT）*",
+        'en': "GitHub Token (PAT) *"
+    };
+
+    const githubRepoTokenPlaceholderStrings = {
+        'zh_CN': "建议使用 Fine-grained Token；权限需 Contents: Read and write、Metadata: Read",
+        'en': "Fine-grained Token recommended; Requires Contents: Read and write, Metadata: Read"
+    };
+
+    const saveGithubRepoConfigButtonStrings = {
+        'zh_CN': "保存配置",
+        'en': "Save Config"
+    };
+
+    const testGithubRepoButtonStrings = {
         'zh_CN': "测试连接",
         'en': "Test Connection"
     };
@@ -4486,8 +5273,8 @@ const applyLocalizedContent = async (lang) => { // Added lang parameter
     };
 
     const initUploadButtonStrings = {
-        'zh_CN': "初始化：上传书签到云端/本地",
-        'en': "Initialize: Upload to Cloud/Local"
+        'zh_CN': "初始化：上传书签到云端1/云端2/本地",
+        'en': "Initialize: Upload to Cloud 1/Cloud 2/Local"
     };
 
     // 校准路径对话框部分
@@ -4646,6 +5433,46 @@ const applyLocalizedContent = async (lang) => { // Added lang parameter
     webdavPasswordTrimmedStrings = {
         'zh_CN': "已自动去除密码首尾空格/换行",
         'en': "Trimmed leading/trailing spaces/newlines in password"
+    };
+
+    githubRepoConfigMissingStrings = {
+        'zh_CN': "请填写完整的GitHub仓库配置信息",
+        'en': "Please fill in all GitHub repo configuration information"
+    };
+
+    githubRepoConfigSavedStrings = {
+        'zh_CN': "GitHub仓库配置已保存，备份已启用",
+        'en': "GitHub repo configuration saved, backup enabled"
+    };
+
+    githubRepoBackupEnabledStrings = {
+        'zh_CN': "GitHub仓库备份已启用",
+        'en': "GitHub repo backup enabled"
+    };
+
+    githubRepoBackupDisabledStrings = {
+        'zh_CN': "GitHub仓库备份已禁用",
+        'en': "GitHub repo backup disabled"
+    };
+
+    testingGithubRepoConnectionStrings = {
+        'zh_CN': "正在测试GitHub仓库连接...",
+        'en': "Testing GitHub repo connection..."
+    };
+
+    githubRepoConnectionTestSuccessStrings = {
+        'zh_CN': "GitHub仓库连接测试成功",
+        'en': "GitHub repo connection test succeeded"
+    };
+
+    githubRepoConnectionTestFailedStrings = {
+        'zh_CN': "GitHub仓库连接测试失败:",
+        'en': "GitHub repo connection test failed:"
+    };
+
+    githubRepoTokenTrimmedStrings = {
+        'zh_CN': "已自动去除Token首尾空格/换行",
+        'en': "Trimmed leading/trailing spaces/newlines in token"
     };
 
     // 本地配置相关提示
@@ -4864,6 +5691,22 @@ const applyLocalizedContent = async (lang) => { // Added lang parameter
     const passwordLabelText = passwordLabelStrings[lang] || passwordLabelStrings['zh_CN'];
     const passwordPlaceholderText = passwordPlaceholderStrings[lang] || passwordPlaceholderStrings['zh_CN'];
     const saveConfigButtonText = saveConfigButtonStrings[lang] || saveConfigButtonStrings['zh_CN'];
+    const githubRepoConfigTitleText = githubRepoConfigTitleStrings[lang] || githubRepoConfigTitleStrings['zh_CN'];
+    const githubRepoNoticeText = githubRepoNoticeStrings[lang] || githubRepoNoticeStrings['zh_CN'];
+    const githubRepoInfoLabelText = githubRepoInfoLabelStrings[lang] || githubRepoInfoLabelStrings['zh_CN'];
+    const githubRepoOwnerLabelText = githubRepoOwnerLabelStrings[lang] || githubRepoOwnerLabelStrings['zh_CN'];
+    const githubRepoOwnerPlaceholderText = githubRepoOwnerPlaceholderStrings[lang] || githubRepoOwnerPlaceholderStrings['zh_CN'];
+    const githubRepoNameLabelText = githubRepoNameLabelStrings[lang] || githubRepoNameLabelStrings['zh_CN'];
+    const githubRepoNamePlaceholderText = githubRepoNamePlaceholderStrings[lang] || githubRepoNamePlaceholderStrings['zh_CN'];
+    const githubRepoBranchLabelText = githubRepoBranchLabelStrings[lang] || githubRepoBranchLabelStrings['zh_CN'];
+    const githubRepoBranchPlaceholderText = githubRepoBranchPlaceholderStrings[lang] || githubRepoBranchPlaceholderStrings['zh_CN'];
+    const githubRepoBasePathLabelText = githubRepoBasePathLabelStrings[lang] || githubRepoBasePathLabelStrings['zh_CN'];
+    const githubRepoBasePathPlaceholderText = githubRepoBasePathPlaceholderStrings[lang] || githubRepoBasePathPlaceholderStrings['zh_CN'];
+    const githubRepoTokenLabelText = githubRepoTokenLabelStrings[lang] || githubRepoTokenLabelStrings['zh_CN'];
+    const githubRepoTokenPlaceholderText = githubRepoTokenPlaceholderStrings[lang] || githubRepoTokenPlaceholderStrings['zh_CN'];
+    const saveGithubRepoConfigButtonText = saveGithubRepoConfigButtonStrings[lang] || saveGithubRepoConfigButtonStrings['zh_CN'];
+    const testGithubRepoButtonText = testGithubRepoButtonStrings[lang] || testGithubRepoButtonStrings['zh_CN'];
+    const openGithubTokenGuideButtonText = lang === 'en' ? 'Open Token Guide' : '打开 Token 配置说明';
     const localConfigTitleText = localConfigTitleStrings[lang] || localConfigTitleStrings['zh_CN'];
     const localBackupPathLabelText = localBackupPathLabelStrings[lang] || localBackupPathLabelStrings['zh_CN'];
     const calibrateButtonText = calibrateButtonStrings[lang] || calibrateButtonStrings['zh_CN'];
@@ -5078,6 +5921,89 @@ const applyLocalizedContent = async (lang) => { // Added lang parameter
         testWebdavBtn.textContent = testWebdavButtonStrings[lang] || testWebdavButtonStrings['zh_CN'];
     }
 
+    // 更新 GitHub Repository 配置部分
+    const githubRepoConfigTitleElement = document.getElementById('githubRepoConfigTitle');
+    if (githubRepoConfigTitleElement) {
+        githubRepoConfigTitleElement.textContent = githubRepoConfigTitleText;
+    }
+
+    const githubRepoNoticeElement = document.getElementById('githubRepoNotice');
+    if (githubRepoNoticeElement) {
+        githubRepoNoticeElement.innerHTML = githubRepoNoticeText;
+    }
+
+    const githubRepoOwnerLabelElement = document.getElementById('githubRepoOwnerLabel');
+    if (githubRepoOwnerLabelElement) {
+        githubRepoOwnerLabelElement.textContent = githubRepoOwnerLabelText;
+    }
+
+    const githubRepoOwnerInput = document.getElementById('githubRepoOwner');
+    if (githubRepoOwnerInput) {
+        githubRepoOwnerInput.placeholder = githubRepoOwnerPlaceholderText;
+    }
+
+    const githubRepoNameLabelElement = document.getElementById('githubRepoNameLabel');
+    if (githubRepoNameLabelElement) {
+        githubRepoNameLabelElement.textContent = githubRepoNameLabelText;
+    }
+
+    const githubRepoNameInput = document.getElementById('githubRepoName');
+    if (githubRepoNameInput) {
+        githubRepoNameInput.placeholder = githubRepoNamePlaceholderText;
+    }
+
+    const githubRepoBranchLabelElement = document.getElementById('githubRepoBranchLabel');
+    if (githubRepoBranchLabelElement) {
+        githubRepoBranchLabelElement.textContent = githubRepoBranchLabelText;
+    }
+
+    const githubRepoBranchInput = document.getElementById('githubRepoBranch');
+    if (githubRepoBranchInput) {
+        githubRepoBranchInput.placeholder = githubRepoBranchPlaceholderText;
+    }
+
+    const githubRepoBasePathLabelElement = document.getElementById('githubRepoBasePathLabel');
+    if (githubRepoBasePathLabelElement) {
+        githubRepoBasePathLabelElement.textContent = githubRepoBasePathLabelText;
+    }
+
+    const githubRepoBasePathInput = document.getElementById('githubRepoBasePath');
+    if (githubRepoBasePathInput) {
+        githubRepoBasePathInput.placeholder = githubRepoBasePathPlaceholderText;
+    }
+
+    const githubRepoTokenLabelElement = document.getElementById('githubRepoTokenLabel');
+    if (githubRepoTokenLabelElement) {
+        githubRepoTokenLabelElement.textContent = githubRepoTokenLabelText;
+    }
+
+    const githubRepoTokenInput = document.getElementById('githubRepoToken');
+    if (githubRepoTokenInput) {
+        githubRepoTokenInput.placeholder = githubRepoTokenPlaceholderText;
+    }
+
+    const githubRepoInfoLabelElement = document.getElementById('githubRepoInfoLabel');
+    if (githubRepoInfoLabelElement) {
+        githubRepoInfoLabelElement.textContent = githubRepoInfoLabelText;
+    }
+
+    loadAndDisplayGitHubRepoConfig();
+
+    const saveGithubRepoConfigBtn = document.getElementById('saveGithubRepoConfigBtn');
+    if (saveGithubRepoConfigBtn) {
+        saveGithubRepoConfigBtn.textContent = saveGithubRepoConfigButtonText;
+    }
+
+    const testGithubRepoBtn = document.getElementById('testGithubRepoBtn');
+    if (testGithubRepoBtn) {
+        testGithubRepoBtn.textContent = testGithubRepoButtonText;
+    }
+
+    const openGithubTokenGuideBtn = document.getElementById('openGithubTokenGuideBtn');
+    if (openGithubTokenGuideBtn) {
+        openGithubTokenGuideBtn.textContent = openGithubTokenGuideButtonText;
+    }
+
     // 更新本地配置部分
     const localConfigTitleElement = document.getElementById('localConfigTitle');
     if (localConfigTitleElement) {
@@ -5114,6 +6040,24 @@ const applyLocalizedContent = async (lang) => { // Added lang parameter
     const defaultPathExamplesElement = document.getElementById('defaultPathExamples');
     if (defaultPathExamplesElement) {
         defaultPathExamplesElement.textContent = defaultPathExamplesText;
+    }
+
+    const exportRootFolder = lang === 'zh_CN' ? '书签快照 & 工具箱' : 'Bookmark Git & Toolbox';
+    const exportBackupFolder = lang === 'zh_CN' ? '书签备份' : 'Bookmark Backup';
+
+    const defaultPathMacElement = document.getElementById('defaultPathMac');
+    if (defaultPathMacElement) {
+        defaultPathMacElement.textContent = `/Users/<username>/Downloads/${exportRootFolder}/${exportBackupFolder}/`;
+    }
+
+    const defaultPathWindowsElement = document.getElementById('defaultPathWindows');
+    if (defaultPathWindowsElement) {
+        defaultPathWindowsElement.textContent = `C:\\Users\\<username>\\Downloads\\${exportRootFolder}\\${exportBackupFolder}\\`;
+    }
+
+    const defaultPathLinuxElement = document.getElementById('defaultPathLinux');
+    if (defaultPathLinuxElement) {
+        defaultPathLinuxElement.textContent = `/home/<username>/Downloads/${exportRootFolder}/${exportBackupFolder}/`;
     }
 
     const rulesNoCalibrationElement = document.getElementById('rulesNoCalibration');
@@ -5385,11 +6329,14 @@ const applyLocalizedContent = async (lang) => { // Added lang parameter
         // 添加导出历史记录相关的国际化标签
         exportingHistory: exportingHistoryStrings[lang] || exportingHistoryStrings['zh_CN'],
         exportingToWebDAV: exportingToWebDAVStrings[lang] || exportingToWebDAVStrings['zh_CN'],
+        exportingToGithubRepo: exportingToGithubRepoStrings[lang] || exportingToGithubRepoStrings['zh_CN'],
         exportingToLocal: exportingToLocalStrings[lang] || exportingToLocalStrings['zh_CN'],
         exportedToWebDAV: exportedToWebDAVStrings[lang] || exportedToWebDAVStrings['zh_CN'],
+        exportedToGithubRepo: exportedToGithubRepoStrings[lang] || exportedToGithubRepoStrings['zh_CN'],
         exportedToLocal: exportedToLocalStrings[lang] || exportedToLocalStrings['zh_CN'],
         exportedToBoth: exportedToBothStrings[lang] || exportedToBothStrings['zh_CN'],
         exportToWebDAVFailed: exportToWebDAVFailedStrings[lang] || exportToWebDAVFailedStrings['zh_CN'],
+        exportToGithubRepoFailed: exportToGithubRepoFailedStrings[lang] || exportToGithubRepoFailedStrings['zh_CN'],
         exportToLocalFailed: exportToLocalFailedStrings[lang] || exportToLocalFailedStrings['zh_CN'],
         historyExportedSuccess: exportedToBothStrings[lang] || exportedToBothStrings['zh_CN']
     };
@@ -5835,8 +6782,11 @@ document.addEventListener('DOMContentLoaded', function () {
     // 初始化UI部分
     loadWebDAVToggleStatus();
     initializeWebDAVConfigSection();
+    loadGitHubRepoToggleStatus();
+    initializeGitHubRepoConfigSection();
     initializeLocalConfigSection();
     initializeWebDAVToggle();
+    initializeGitHubRepoToggle();
     initializeOpenSourceInfo(); // 初始化开源信息功能
 
     // 在确定按钮存在后调用初始化函数

@@ -14567,13 +14567,36 @@ function renderHistoryView() {
         // 计算变化
         const changes = calculateChanges(record, globalIndex, reversedHistory);
 
-        // 方向标识
-        const directionIcon = record.direction === 'upload'
-            ? '<i class="fas fa-cloud-upload-alt"></i>'
-            : '<i class="fas fa-cloud-download-alt"></i>';
-        const directionText = record.direction === 'upload'
-            ? (currentLang === 'zh_CN' ? '上传' : 'Upload')
-            : (currentLang === 'zh_CN' ? '本地' : 'Local');
+        // 位置/方向标识（兼容旧记录 + 云端1/云端2）
+        const directionKey = (record.direction || 'none').toString().toLowerCase();
+        const cloud1Label = currentLang === 'zh_CN' ? '云端1' : 'Cloud 1';
+        const cloud2Label = currentLang === 'zh_CN' ? '云端2' : 'Cloud 2';
+        const localLabel = currentLang === 'zh_CN' ? '本地' : 'Local';
+        const cloudLabel = currentLang === 'zh_CN' ? '云端' : 'Cloud';
+        const joinText = currentLang === 'en' ? ' & ' : '与';
+
+        const directionInfoMap = {
+            // Legacy
+            upload: { icon: '<i class="fas fa-cloud-upload-alt"></i>', text: cloudLabel },
+            download: { icon: '<i class="fas fa-hdd"></i>', text: localLabel },
+            both: { icon: '<i class="fas fa-cloud"></i> <i class="fas fa-hdd"></i>', text: `${cloud1Label}${joinText}${localLabel}` },
+
+            // New
+            webdav: { icon: '<i class="fas fa-cloud"></i>', text: `${cloud1Label} (WebDAV)` },
+            github_repo: { icon: '<i class="fab fa-github"></i>', text: `${cloud2Label} (GitHub Repo)` },
+            gist: { icon: '<i class="fab fa-github"></i>', text: `${cloud2Label} (GitHub Repo)` }, // legacy
+            cloud: { icon: '<i class="fas fa-cloud"></i> <i class="fab fa-github"></i>', text: `${cloud1Label}${joinText}${cloud2Label}` },
+            webdav_local: { icon: '<i class="fas fa-cloud"></i> <i class="fas fa-hdd"></i>', text: `${cloud1Label} (WebDAV)${joinText}${localLabel}` },
+            github_repo_local: { icon: '<i class="fab fa-github"></i> <i class="fas fa-hdd"></i>', text: `${cloud2Label} (GitHub Repo)${joinText}${localLabel}` },
+            gist_local: { icon: '<i class="fab fa-github"></i> <i class="fas fa-hdd"></i>', text: `${cloud2Label} (GitHub Repo)${joinText}${localLabel}` }, // legacy
+            cloud_local: { icon: '<i class="fas fa-cloud"></i> <i class="fab fa-github"></i> <i class="fas fa-hdd"></i>', text: `${cloud1Label}${joinText}${cloud2Label}${joinText}${localLabel}` },
+            local: { icon: '<i class="fas fa-hdd"></i>', text: localLabel },
+            none: { icon: '<i class="fas fa-minus-circle"></i>', text: currentLang === 'zh_CN' ? '无' : 'None' }
+        };
+
+        const directionInfo = directionInfoMap[directionKey] || { icon: '<i class="fas fa-question-circle"></i>', text: directionKey };
+        const directionIcon = directionInfo.icon;
+        const directionText = directionInfo.text;
 
         // 构建提交项
         // 切换标识徽章（可选显示）
@@ -25350,6 +25373,51 @@ async function executeExportChanges() {
         }
 
         if (action === 'download') {
+            // 同步导出到云端（云端1 WebDAV + 云端2 GitHub Repo）
+            try {
+                if (chrome && chrome.runtime && typeof chrome.runtime.sendMessage === 'function') {
+                    const folderKey = isHistoryExport ? 'history' : 'current_changes';
+                    const contentType = format === 'html' ? 'text/html;charset=utf-8' : 'application/json;charset=utf-8';
+                    chrome.runtime.sendMessage({
+                        action: 'exportFileToClouds',
+                        folderKey,
+                        lang: currentLang,
+                        fileName: filename,
+                        content,
+                        contentType
+                    }, (resp) => {
+                        try {
+                            if (!resp) return;
+                            const isEnLang = currentLang !== 'zh_CN';
+
+                            const webdavOk = resp.webdav && resp.webdav.success === true;
+                            const githubRepoOk = resp.githubRepo && resp.githubRepo.success === true;
+                            const webdavSkipped = resp.webdav && resp.webdav.skipped === true;
+                            const githubRepoSkipped = resp.githubRepo && resp.githubRepo.skipped === true;
+
+                            if (webdavOk && githubRepoOk) {
+                                showToast(isEnLang ? 'Uploaded to Cloud 1 & Cloud 2' : '已上传到云端1&云端2');
+                                return;
+                            }
+                            if (webdavOk) {
+                                showToast(isEnLang ? 'Uploaded to Cloud 1 (WebDAV)' : '已上传到云端1(WebDAV)');
+                                return;
+                            }
+                            if (githubRepoOk) {
+                                showToast(isEnLang ? 'Uploaded to Cloud 2 (GitHub Repo)' : '已上传到云端2(GitHub仓库)');
+                                return;
+                            }
+
+                            const attempted = !(webdavSkipped && githubRepoSkipped);
+                            const errorMsg = resp.webdav?.error || resp.githubRepo?.error || resp.error || null;
+                            if (attempted && errorMsg) {
+                                showToast(isEnLang ? `Cloud upload failed: ${errorMsg}` : `云端上传失败：${errorMsg}`);
+                            }
+                        } catch (_) { }
+                    });
+                }
+            } catch (_) { }
+
             // 下载文件 - 使用统一的导出文件夹结构
             const blob = new Blob([content], { type: format === 'html' ? 'text/html' : 'application/json' });
             const url = URL.createObjectURL(blob);
@@ -27718,6 +27786,53 @@ async function startGlobalExport() {
 }
 
 function downloadBlob(url, filename) {
+    // 同步导出到云端（云端1 WebDAV + 云端2 GitHub Repo）
+    try {
+        if (chrome && chrome.runtime && typeof chrome.runtime.sendMessage === 'function') {
+            const lower = String(filename || '').toLowerCase();
+            const ext = lower.includes('.') ? lower.slice(lower.lastIndexOf('.')) : '';
+            const contentTypeMap = {
+                '.html': 'text/html;charset=utf-8',
+                '.json': 'application/json;charset=utf-8',
+                '.md': 'text/markdown;charset=utf-8',
+                '.txt': 'text/plain;charset=utf-8',
+                '.zip': 'application/zip'
+            };
+            const contentType = contentTypeMap[ext] || 'application/octet-stream';
+            const isText = ext === '.html' || ext === '.json' || ext === '.md' || ext === '.txt';
+
+            (async () => {
+                try {
+                    const res = await fetch(url);
+                    if (!res.ok) return;
+
+                    if (isText) {
+                        const text = await res.text();
+                        chrome.runtime.sendMessage({
+                            action: 'exportFileToClouds',
+                            folderKey: 'history',
+                            lang: currentLang,
+                            fileName: filename,
+                            content: text,
+                            contentType
+                        }, () => { });
+                        return;
+                    }
+
+                    const buf = await res.arrayBuffer();
+                    chrome.runtime.sendMessage({
+                        action: 'exportFileToClouds',
+                        folderKey: 'history',
+                        lang: currentLang,
+                        fileName: filename,
+                        contentArrayBuffer: buf,
+                        contentType
+                    }, () => { });
+                } catch (_) { }
+            })();
+        }
+    } catch (_) { }
+
     // 使用统一的导出文件夹结构（根据语言动态选择）
     const exportPath = `${getHistoryExportRootFolder()}/${getHistoryExportFolder()}`;
 
@@ -27948,10 +28063,17 @@ async function generateHistorySummaryMD(selectedTimes) {
         hash: { 'zh_CN': "哈希值", 'en': "Hash" }
     };
     const locationValues = {
-        cloud: { 'zh_CN': "云端", 'en': "Cloud" },
-        webdav: { 'zh_CN': "云端", 'en': "Cloud" },
+        upload: { 'zh_CN': "云端", 'en': "Cloud" }, // 兼容旧记录
+        cloud: { 'zh_CN': "云端1&云端2", 'en': "Cloud 1 & Cloud 2" },
+        webdav: { 'zh_CN': "云端1(WebDAV)", 'en': "Cloud 1 (WebDAV)" },
+        github_repo: { 'zh_CN': "云端2(GitHub仓库)", 'en': "Cloud 2 (GitHub Repo)" },
+        gist: { 'zh_CN': "云端2(GitHub仓库)", 'en': "Cloud 2 (GitHub Repo)" }, // legacy
+        cloud_local: { 'zh_CN': "云端1&云端2与本地", 'en': "Cloud 1 & Cloud 2 & Local" },
+        webdav_local: { 'zh_CN': "云端1(WebDAV)与本地", 'en': "Cloud 1 (WebDAV) & Local" },
+        github_repo_local: { 'zh_CN': "云端2(GitHub仓库)与本地", 'en': "Cloud 2 (GitHub Repo) & Local" },
+        gist_local: { 'zh_CN': "云端2(GitHub仓库)与本地", 'en': "Cloud 2 (GitHub Repo) & Local" }, // legacy
         local: { 'zh_CN': "本地", 'en': "Local" },
-        both: { 'zh_CN': "云端与本地", 'en': "Cloud & Local" },
+        both: { 'zh_CN': "云端1(WebDAV)与本地", 'en': "Cloud 1 (WebDAV) & Local" }, // 兼容旧记录
         none: { 'zh_CN': "无", 'en': "None" }
     };
     const statusValues = {
@@ -28066,13 +28188,13 @@ async function generateHistorySummaryMD(selectedTimes) {
         const modifiedText = modifiedTotal > 0 ? String(modifiedTotal) : '-';
 
         let locationText = naText;
-        if (record.direction === 'upload' || record.direction === 'webdav') {
-            locationText = locationValues.cloud[lang];
-        } else if (record.direction === 'download' || record.direction === 'local') {
+        const recordDirection = (record.direction ?? 'none').toString();
+        if (locationValues[recordDirection]) {
+            locationText = locationValues[recordDirection][lang];
+        } else if (recordDirection === 'download') {
+            // 兼容旧记录
             locationText = locationValues.local[lang];
-        } else if (record.direction === 'both') {
-            locationText = locationValues.both[lang];
-        } else if (record.direction === 'none') {
+        } else if (recordDirection === 'none') {
             locationText = locationValues.none[lang];
         }
 

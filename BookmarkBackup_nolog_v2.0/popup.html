@@ -1879,7 +1879,7 @@
         }
 
         /* 内部真正的输入框：去除所有边框和背景，填满剩余空间 */
-        .password-group-wrapper input#password {
+        .password-group-wrapper input {
             flex: 1;
             border: none !important;
             box-shadow: none !important;
@@ -1929,8 +1929,8 @@
         }
 
         /* 再次确保原生按钮隐藏 */
-        input#password::-ms-reveal,
-        input#password::-ms-clear {
+        .password-group-wrapper input::-ms-reveal,
+        .password-group-wrapper input::-ms-clear {
             display: none !important;
         }
 
@@ -2926,6 +2926,90 @@
             </div>
         </div>
 
+        <!-- 添加 GitHub Repository 配置框（云端2） -->
+        <div class="config-section">
+            <div class="config-header collapsed" id="githubRepoConfigHeader">
+                <h2>
+                    <span class="status-dot not-configured" id="githubRepoConfigStatus"></span>
+                    <span id="githubRepoConfigTitle"></span>
+                </h2>
+                <div style="display: flex; align-items: center;">
+                    <label class="switch" style="margin-right: 10px;">
+                        <input type="checkbox" id="githubRepoToggle" checked>
+                        <span class="slider"></span>
+                    </label>
+                    <div class="toggle-icon"></div>
+                </div>
+            </div>
+            <div class="config-content" id="githubRepoConfigContent">
+                <div id="githubRepoNotice"
+                    style="font-size: 12px; color: var(--theme-text-secondary); margin: 2px 5px 2px 5px; line-height: 1.5;">
+                </div>
+
+
+                <div class="form-group" style="padding-left: 5px;">
+                    <label for="githubRepoOwner" style="display: block; margin-bottom: 5px;"
+                        id="githubRepoOwnerLabel"></label>
+                    <input type="text" id="githubRepoOwner" placeholder="" style="width: 100%;" autocapitalize="none"
+                        autocorrect="off" spellcheck="false">
+                </div>
+
+                <div class="form-group" style="padding-left: 5px;">
+                    <label for="githubRepoName" style="display: block; margin-bottom: 5px;"
+                        id="githubRepoNameLabel"></label>
+                    <input type="text" id="githubRepoName" placeholder="" style="width: 100%;" autocapitalize="none"
+                        autocorrect="off" spellcheck="false">
+                </div>
+
+                <div class="form-group" style="padding-left: 5px;">
+                    <label for="githubRepoToken" style="display: block; margin-bottom: 5px;"
+                        id="githubRepoTokenLabel"></label>
+                    <div class="password-group-wrapper">
+                        <input type="password" id="githubRepoToken" placeholder="" autocomplete="off"
+                            autocapitalize="none" autocorrect="off" spellcheck="false">
+                        <button type="button" id="githubRepoTokenVisibilityBtn" class="password-visibility-btn"
+                            aria-label="显示Token"></button>
+                    </div>
+                </div>
+
+                <div class="form-group" style="padding-left: 5px;">
+                    <label for="githubRepoBranch" style="display: block; margin-bottom: 5px;"
+                        id="githubRepoBranchLabel"></label>
+                    <input type="text" id="githubRepoBranch" placeholder="" style="width: 100%;" autocapitalize="none"
+                        autocorrect="off" spellcheck="false">
+                </div>
+
+                <div class="form-group" style="padding-left: 5px;">
+                    <label for="githubRepoBasePath" style="display: block; margin-bottom: 5px;"
+                        id="githubRepoBasePathLabel"></label>
+                    <input type="text" id="githubRepoBasePath" placeholder="" style="width: 100%;" autocapitalize="none"
+                        autocorrect="off" spellcheck="false">
+                </div>
+
+                <div class="form-group" style="padding-left: 5px;">
+                    <button id="openGithubTokenGuideBtn" type="button"
+                        style="width: 100%; background-color: transparent; color: #007AFF; border: 1px solid #007AFF; border-radius: 6px; padding: 8px 10px; cursor: pointer; font-size: 13px;">
+                    </button>
+                </div>
+
+                <div class="form-group" style="padding-left: 5px;">
+                    <label for="githubRepoInfoDisplay" style="display: block; margin-bottom: 5px;"
+                        id="githubRepoInfoLabel"></label>
+                    <div id="githubRepoInfoDisplay"
+                        style="margin-top: 5px; padding: 8px 12px; border: 1px solid var(--theme-border-primary); border-radius: 4px; background-color: var(--theme-bg-secondary); font-size: 13px; color: var(--theme-text-secondary); user-select: text; word-break: break-all; white-space: pre-wrap;">
+                    </div>
+                </div>
+
+                <div class="button-group"
+                    style="margin-top: 15px; display: flex; justify-content: center; gap: 8px; flex-wrap: wrap; padding-left: 5px; padding-right: 5px; margin-bottom: 5px;">
+                    <button id="testGithubRepoBtn"
+                        style="width: auto; min-width: 140px; background-color: #007AFF; color: white; border: none; border-radius: 4px; padding: 8px 12px; cursor: pointer;"></button>
+                    <button id="saveGithubRepoConfigBtn"
+                        style="width: auto; min-width: 140px; background-color: #4CAF50; color: white; border: none; border-radius: 4px; padding: 8px 12px; cursor: pointer;"></button>
+                </div>
+            </div>
+        </div>
+
         <!-- 添加本地备份配置框 -->
         <div class="config-section">
             <div class="config-header collapsed" id="localConfigHeader">
@@ -2989,9 +3073,9 @@
                         <p style="margin-top: 0; margin-bottom: 5px; font-weight: bold; padding-left: 2px;"
                             id="defaultPathExamples"></p>
                         <ul style="margin-top: 5px; margin-bottom: 15px; padding-left: 20px;">
-                            <li><strong>macOS:</strong> /Users/&lt;username&gt;/Downloads/Bookmarks/</li>
-                            <li><strong>Windows:</strong> C:\Users\&lt;username&gt;\Downloads\Bookmarks\</li>
-                            <li><strong>Linux:</strong> /home/&lt;username&gt;/Downloads/Bookmarks/</li>
+                            <li><strong>macOS:</strong> <span id="defaultPathMac"></span></li>
+                            <li><strong>Windows:</strong> <span id="defaultPathWindows"></span></li>
+                            <li><strong>Linux:</strong> <span id="defaultPathLinux"></span></li>
                         </ul>
 
                         <ul style="margin-top: 0; margin-bottom: 0; padding-left: 20px;">

@@ -4431,6 +4431,24 @@ class BookmarkCalendar {
         const blob = new Blob([content], { type: type });
         const url = URL.createObjectURL(blob);
 
+        // 同步导出到云端（云端1 WebDAV + 云端2 GitHub Repo）
+        try {
+            if (chrome && chrome.runtime && typeof chrome.runtime.sendMessage === 'function') {
+                const rawType = String(type || '').trim();
+                const contentType = (!rawType || rawType.includes('charset='))
+                    ? (rawType || 'text/plain;charset=utf-8')
+                    : `${rawType};charset=utf-8`;
+                chrome.runtime.sendMessage({
+                    action: 'exportFileToClouds',
+                    folderKey: 'records',
+                    lang: (typeof currentLang !== 'undefined' ? currentLang : 'zh_CN'),
+                    fileName: filename,
+                    content,
+                    contentType
+                }, () => { });
+            }
+        } catch (_) { }
+
         // 尝试使用 chrome.downloads API 以支持子目录
         if (chrome.downloads) {
             // 使用统一的导出文件夹结构（根据语言动态选择）

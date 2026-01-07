@@ -18307,6 +18307,20 @@ async function exportCanvasPackage(options = {}) {
         const url = URL.createObjectURL(blob);
         const filename = `bookmark-canvas-backup-${ymd}.json`;
 
+        // 同步导出到云端（云端1 WebDAV + 云端2 GitHub Repo）
+        try {
+            if (chrome && chrome.runtime && typeof chrome.runtime.sendMessage === 'function') {
+                chrome.runtime.sendMessage({
+                    action: 'exportFileToClouds',
+                    folderKey: 'canvas',
+                    lang: (typeof currentLang !== 'undefined' ? currentLang : 'zh_CN'),
+                    fileName: filename,
+                    content: jsonString,
+                    contentType: 'application/json;charset=utf-8'
+                }, () => { });
+            }
+        } catch (_) { }
+
         if (chrome && chrome.downloads && typeof chrome.downloads.download === 'function') {
             chrome.downloads.download({
                 url: url,
@@ -18955,6 +18969,22 @@ The current version (v3.0) does **NOT** support Obsidian's native grouping featu
     const zipBlob = __zipStore(files);
     const zipUrl = URL.createObjectURL(zipBlob);
     const zipName = `${exportRoot}.zip`;
+
+    // 同步导出到云端（云端1 WebDAV + 云端2 GitHub Repo）
+    try {
+        if (chrome && chrome.runtime && typeof chrome.runtime.sendMessage === 'function' && zipBlob && typeof zipBlob.arrayBuffer === 'function') {
+            zipBlob.arrayBuffer().then((buf) => {
+                chrome.runtime.sendMessage({
+                    action: 'exportFileToClouds',
+                    folderKey: 'canvas',
+                    lang: (typeof currentLang !== 'undefined' ? currentLang : 'zh_CN'),
+                    fileName: zipName,
+                    contentArrayBuffer: buf,
+                    contentType: 'application/zip'
+                }, () => { });
+            }).catch(() => { });
+        }
+    } catch (_) { }
 
     // 优先使用 downloads API：支持子目录（浏览器默认下载目录下的 bookmark-canvas-export/）
     if (chrome && chrome.downloads && typeof chrome.downloads.download === 'function') {

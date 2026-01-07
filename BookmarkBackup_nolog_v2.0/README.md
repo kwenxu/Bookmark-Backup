@@ -33,7 +33,8 @@
     *   点击"加载已解压的扩展程序"，然后选择 `BookmarkBackup_nolog_vx.xx` 目录（或扩展程序的根目录）。
 
 ## 重要提示
-*   确保您的 WebDAV 服务器详细信息正确且互联网连接稳定，以成功进行云备份。
+*   使用 **云端1（WebDAV）** 时：确保 WebDAV 服务器详细信息正确且互联网连接稳定。
+*   使用 **云端2（GitHub Repository）** 时：确保 GitHub Token 具备目标仓库的 **Contents: Read and write** 权限（建议使用 Fine-grained Token，并仅授权该仓库）。
 *   曲线云端备份：本地备份时，修改浏览器默认下载路径至云盘处（或进行路径关联）。
 
 *   在执行大规模书签操作（导入、导出、大量重组）时，建议暂时禁用"实时自动备份"。
@@ -57,7 +58,10 @@
 ## 功能特性
 
 *   **备份目的地：**
-    *   **云端备份：** 安全地将您的书签备份到您首选的支持 WebDAV 的云存储服务（例如：坚果云、Nextcloud）。
+    *   **云端备份：**
+        *   **云端1（WebDAV）：** 备份到支持 WebDAV 的云存储服务（例如：坚果云、Nextcloud、NAS）。
+        *   **云端2（GitHub Repository）：** 备份到 GitHub 仓库（通过 Token 授权，支持真实文件夹与二进制导出）。
+            *   **说明：** 推荐使用 Fine-grained PAT，并授予目标仓库：**Contents: Read and write**、**Metadata: Read**；分支留空则使用默认分支；可选设置 Base Path 以将导出集中存放在仓库某个目录下。
     *   **本地备份：** 将您的书签以 HTML 文件形式保存到浏览器默认的本地下载路径（可更改）。
 
 *   **灵活的备份模式：**
@@ -191,7 +195,8 @@ Bookmark Backup & Reminder is a Chrome/Edge browser extension designed to provid
     *   Click "Load unpacked" and select the `BookmarkBackup_nolog_vx.xx` directory (or the extension\'s root directory).
 
 ## Important Notes
-*   Ensure your WebDAV server details are correct and your internet connection is stable for successful cloud backups.
+*   For **Cloud 1 (WebDAV)**: ensure your WebDAV server details are correct and your internet connection is stable.
+*   For **Cloud 2 (GitHub Repository)**: ensure your GitHub Token has **Contents: Read and write** access to the target repo (Fine-grained token recommended, scoped to that repo only).
 *   Workaround for cloud backup: When performing local backups, change the browser\'s default download path to your cloud drive\'s synchronized folder (or link the paths).
 *   When performing large-scale bookmark operations (importing, exporting, extensive reorganization), it is recommended to temporarily disable "Real-time Automatic Backup".
 *   In manual backup mode, the **Backup Reminder System** will be activated by default and will only remind you when bookmark operations (changes in quantity/structure) occur.
@@ -213,7 +218,10 @@ Contributions, issues, and feature requests are welcome! Please feel free to che
 ## Features
 
 *   **Backup Destinations:**
-    *   **Cloud Backup:** Securely back up your bookmarks to your preferred WebDAV-enabled cloud storage service (e.g., Nutstore, Nextcloud).
+    *   **Cloud Backup:**
+        *   **Cloud 1 (WebDAV):** Back up to WebDAV-enabled cloud storage (e.g., Nutstore, Nextcloud, NAS).
+        *   **Cloud 2 (GitHub Repository):** Back up to a GitHub repo via token auth (real folders and binary exports supported).
+            *   **Note:** Fine-grained PAT is recommended with **Contents: Read and write** and **Metadata: Read** on the target repo. Leave branch empty to use the default branch; Base Path is optional to keep exports under a dedicated folder.
     *   **Local Backup:** Save your bookmarks as an HTML file to the browser\'s default local download path (changeable).
 
 *   **Flexible Backup Modes:**

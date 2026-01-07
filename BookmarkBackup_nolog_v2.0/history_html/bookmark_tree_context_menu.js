@@ -1,6 +1,14 @@
 // 书签树右键菜单功能
 // 提供类似Chrome原生书签管理器的功能
 
+// Unified Export Folder Paths - 统一的导出文件夹路径（根据语言动态选择）
+const getTreeExportRootFolder = () => (typeof currentLang !== 'undefined' && currentLang === 'zh_CN')
+    ? '书签快照 & 工具箱'
+    : 'Bookmark Git & Toolbox';
+const getTreeExportFolder = () => (typeof currentLang !== 'undefined' && currentLang === 'zh_CN')
+    ? '书签备份'
+    : 'Bookmark Backup';
+
 // 全局变量
 let contextMenu = null;
 let currentContextNode = null;
@@ -6335,11 +6343,49 @@ async function batchExportHTML() {
         // 下载文件
         const blob = new Blob([html], { type: 'text/html' });
         const url = URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = 'bookmarks.html';
-        a.click();
-        URL.revokeObjectURL(url);
+        const exportPath = `${getTreeExportRootFolder()}/${getTreeExportFolder()}`;
+        const filename = 'bookmarks.html';
+
+        // 同步导出到云端（云端1 WebDAV + 云端2 GitHub Repo）
+        try {
+            if (chrome && chrome.runtime && typeof chrome.runtime.sendMessage === 'function') {
+                chrome.runtime.sendMessage({
+                    action: 'exportFileToClouds',
+                    folderKey: 'backup',
+                    lang,
+                    fileName: filename,
+                    content: html,
+                    contentType: 'text/html;charset=utf-8'
+                }, () => { });
+            }
+        } catch (_) { }
+
+        if (chrome && chrome.downloads && typeof chrome.downloads.download === 'function') {
+            chrome.downloads.download({
+                url: url,
+                filename: `${exportPath}/${filename}`,
+                saveAs: false,
+                conflictAction: 'uniquify'
+            }, () => {
+                if (chrome.runtime && chrome.runtime.lastError) {
+                    const a = document.createElement('a');
+                    a.href = url;
+                    a.download = filename;
+                    document.body.appendChild(a);
+                    a.click();
+                    document.body.removeChild(a);
+                }
+                setTimeout(() => URL.revokeObjectURL(url), 10000);
+            });
+        } else {
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = filename;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            setTimeout(() => URL.revokeObjectURL(url), 10000);
+        }
 
         alert(lang === 'zh_CN' ? '导出成功！' : 'Export successful!');
         console.log('[批量] 导出HTML完成');
@@ -6390,11 +6436,49 @@ async function batchExportJSON() {
         // 下载文件
         const blob = new Blob([json], { type: 'application/json' });
         const url = URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = 'bookmarks.json';
-        a.click();
-        URL.revokeObjectURL(url);
+        const exportPath = `${getTreeExportRootFolder()}/${getTreeExportFolder()}`;
+        const filename = 'bookmarks.json';
+
+        // 同步导出到云端（云端1 WebDAV + 云端2 GitHub Repo）
+        try {
+            if (chrome && chrome.runtime && typeof chrome.runtime.sendMessage === 'function') {
+                chrome.runtime.sendMessage({
+                    action: 'exportFileToClouds',
+                    folderKey: 'backup',
+                    lang,
+                    fileName: filename,
+                    content: json,
+                    contentType: 'application/json;charset=utf-8'
+                }, () => { });
+            }
+        } catch (_) { }
+
+        if (chrome && chrome.downloads && typeof chrome.downloads.download === 'function') {
+            chrome.downloads.download({
+                url: url,
+                filename: `${exportPath}/${filename}`,
+                saveAs: false,
+                conflictAction: 'uniquify'
+            }, () => {
+                if (chrome.runtime && chrome.runtime.lastError) {
+                    const a = document.createElement('a');
+                    a.href = url;
+                    a.download = filename;
+                    document.body.appendChild(a);
+                    a.click();
+                    document.body.removeChild(a);
+                }
+                setTimeout(() => URL.revokeObjectURL(url), 10000);
+            });
+        } else {
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = filename;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            setTimeout(() => URL.revokeObjectURL(url), 10000);
+        }
 
         alert(lang === 'zh_CN' ? '导出成功！' : 'Export successful!');
         console.log('[批量] 导出JSON完成');

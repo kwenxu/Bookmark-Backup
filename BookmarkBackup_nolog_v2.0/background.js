@@ -60,6 +60,9 @@ import {
     saveAllActiveSessions
 } from './active_time_tracker/index.js';
 
+// 导入 GitHub Repository 云端模块（云端2）
+import { getRepoInfo, testRepoConnection, upsertRepoFile } from './github/repo-api.js';
+
 // 浏览器兼容性处理
 // 注意：Edge 也可能暴露 `browser` 命名空间，但其行为与 Firefox 不完全一致。
 // 本项目在 MV3 下同时使用了回调式与 Promise 式 API，因此优先使用 `chrome`（Chrome/Edge）。
@@ -89,30 +92,111 @@ const badgeTextMap = { // 添加角标文本的国际化映射对象 - 在文件
 // Unified Export Folder Paths - 统一的导出文件夹路径（根据语言动态选择）
 // const EXPORT_ROOT_FOLDER = 'Bookmark Git & Toolbox';  // 父文件夹保持英文 - REMOVED
 
+function getExportRootFolderByLang(lang) {
+    return lang === 'zh_CN' ? '书签快照 & 工具箱' : 'Bookmark Git & Toolbox';
+}
+
+function getLegacyExportRootFolderByLang(lang) {
+    return lang === 'zh_CN' ? '书签快照 & 工具箱' : 'Bookmark Git & Toolbox';
+}
+
+function getAllExportRootFolderCandidates() {
+    return [
+        getExportRootFolderByLang('zh_CN'),
+        getExportRootFolderByLang('en'),
+        getLegacyExportRootFolderByLang('zh_CN'),
+        getLegacyExportRootFolderByLang('en')
+    ];
+}
+
 async function getExportRootFolder() {
     const lang = await getCurrentLang();
-    return lang === 'zh_CN' ? '书签快照 & 工具箱' : 'Bookmark Git & Toolbox';
+    return getExportRootFolderByLang(lang);
 }
 
 // 异步获取当前语言的辅助函数
 async function getCurrentLang() {
     try {
-        const { currentLang } = await browserAPI.storage.local.get(['currentLang']);
-        return currentLang || 'zh_CN';
+        const { currentLang, preferredLang } = await browserAPI.storage.local.get(['currentLang', 'preferredLang']);
+        return currentLang || preferredLang || 'zh_CN';
     } catch (e) {
         return 'zh_CN';
     }
 }
 
 // 获取本地化的文件夹名称
+function getBackupFolderByLang(lang) {
+    return lang === 'zh_CN' ? '书签备份' : 'Bookmark Backup';
+}
+
+function getHistoryFolderByLang(lang) {
+    return lang === 'zh_CN' ? '备份历史' : 'Bookmarks_History';
+}
+
+function getCurrentChangesFolderByLang(lang) {
+    return lang === 'zh_CN' ? '当前变化' : 'Current Changes';
+}
+
+function getCanvasFolderByLang(lang) {
+    return lang === 'zh_CN' ? '书签画布' : 'Canvas';
+}
+
+function getRecordsFolderByLang(lang) {
+    return lang === 'zh_CN' ? '书签记录' : 'Records';
+}
+
+function getClickHistoryFolderByLang(lang) {
+    return lang === 'zh_CN' ? '点击记录' : 'Click History';
+}
+
 async function getBackupFolder() {
     const lang = await getCurrentLang();
-    return lang === 'zh_CN' ? '书签备份' : 'Bookmark Backup';
+    return getBackupFolderByLang(lang);
 }
 
 async function getHistoryFolder() {
     const lang = await getCurrentLang();
-    return lang === 'zh_CN' ? '备份历史' : 'Bookmarks_History';
+    return getHistoryFolderByLang(lang);
+}
+
+async function getCurrentChangesFolder() {
+    const lang = await getCurrentLang();
+    return getCurrentChangesFolderByLang(lang);
+}
+
+async function getCanvasFolder() {
+    const lang = await getCurrentLang();
+    return getCanvasFolderByLang(lang);
+}
+
+async function getRecordsFolder() {
+    const lang = await getCurrentLang();
+    return getRecordsFolderByLang(lang);
+}
+
+async function getClickHistoryFolder() {
+    const lang = await getCurrentLang();
+    return getClickHistoryFolderByLang(lang);
+}
+
+function resolveExportSubFolderByKey(folderKey, lang) {
+    const key = String(folderKey || '').trim();
+    switch (key) {
+        case 'backup':
+            return getBackupFolderByLang(lang);
+        case 'history':
+            return getHistoryFolderByLang(lang);
+        case 'current_changes':
+            return getCurrentChangesFolderByLang(lang);
+        case 'canvas':
+            return getCanvasFolderByLang(lang);
+        case 'records':
+            return getRecordsFolderByLang(lang);
+        case 'click_history':
+            return getClickHistoryFolderByLang(lang);
+        default:
+            return getHistoryFolderByLang(lang);
+    }
 }
 
 // Global Variables
@@ -630,8 +714,8 @@ browserAPI.runtime.onStartup.addListener(async () => {
  */
 async function syncDownloadState() {
     try {
-        // 获取本地化的父文件夹名称
-        const exportRootFolder = await getExportRootFolder();
+        // 获取所有可能的父文件夹名称（兼容：中/英 + 新/旧命名）
+        const exportRootFolderCandidates = getAllExportRootFolderCandidates();
 
         // 查询由本扩展创建的书签相关下载（最近500项）
         const bookmarkDownloads = await new Promise(resolve => {
@@ -646,7 +730,7 @@ async function syncDownloadState() {
                     // 检查是否为书签备份文件 - 使用统一文件夹路径
                     return (
                         // 1. 路径中包含统一父文件夹
-                        item.filename.includes(`/${exportRootFolder}/`) ||
+                        exportRootFolderCandidates.some(root => item.filename.includes(`/${root}/`)) ||
                         // 2. 路径中包含Bookmarks目录（兼容旧版）
                         item.filename.includes('/Bookmarks/') ||
                         // 3. 路径中包含Bookmarks_History目录（兼容旧版）
@@ -697,13 +781,13 @@ browserAPI.downloads.onCreated.addListener(async (downloadItem) => {
     try {
         // 不再输出"下载开始"日志
 
-        // 获取本地化的父文件夹名称
-        const exportRootFolder = await getExportRootFolder();
+        // 获取所有可能的父文件夹名称（兼容：中/英 + 新/旧命名）
+        const exportRootFolderCandidates = getAllExportRootFolderCandidates();
 
         // 使用更准确的条件识别书签备份下载 - 使用统一文件夹路径
         const isBookmarkDownload = downloadItem.filename && (
             // 1. 路径中包含统一父文件夹
-            downloadItem.filename.includes(`/${exportRootFolder}/`) ||
+            exportRootFolderCandidates.some(root => downloadItem.filename.includes(`/${root}/`)) ||
             // 2. 路径中包含Bookmarks目录（兼容旧版）
             downloadItem.filename.includes('/Bookmarks/') ||
             // 3. 路径中包含Bookmarks_History目录（兼容旧版）
@@ -1070,11 +1154,177 @@ browserAPI.runtime.onMessage.addListener((message, sender, sendResponse) => {
 	            })();
 	            return true;
 
-	        } else if (message.action === "exportHistoryToWebDAV") {
-	            // 处理导出历史记录到WebDAV的请求
-	            // 使用异步立即执行函数处理
-	            (async () => {
-                try {
+			        } else if (message.action === "testGitHubRepoConnection") {
+			            // GitHub Repository 连接测试（云端2）
+			            (async () => {
+			                try {
+			                    const token = message.token || message.githubRepoToken || message.githubToken;
+			                    const owner = message.owner || message.githubRepoOwner;
+			                    const repo = message.repo || message.githubRepoName;
+			                    const branch = message.branch || message.githubRepoBranch;
+			                    const basePath = message.basePath || message.githubRepoBasePath;
+
+			                    if (!token) {
+			                        sendResponse({ success: false, error: 'GitHub Token 未配置' });
+			                        return;
+			                    }
+
+			                    if (!owner || !repo) {
+			                        sendResponse({ success: false, error: '仓库未配置' });
+			                        return;
+			                    }
+
+			                    const result = await testRepoConnection({ token, owner, repo, branch, basePath });
+			                    if (result && result.success === true) {
+			                        sendResponse({
+			                            success: true,
+			                            repo: result.repo || null,
+			                            resolvedBranch: result.resolvedBranch || null,
+			                            basePathExists: typeof result.basePathExists === 'boolean' ? result.basePathExists : null
+			                        });
+			                    } else {
+			                        sendResponse({ success: false, error: result?.error || '未知错误' });
+			                    }
+			                } catch (error) {
+			                    sendResponse({ success: false, error: error?.message || '未知错误' });
+			                }
+			            })();
+			            return true;
+
+			        } else if (message.action === "ensureGitHubRepoInitialized") {
+			            // 确保 GitHub 仓库配置可用（用于在配置保存后展示仓库信息）
+			            (async () => {
+			                try {
+			                    const config = await browserAPI.storage.local.get([
+			                        'githubRepoToken',
+			                        'githubRepoOwner',
+			                        'githubRepoName',
+			                        'githubRepoBranch',
+			                        'githubRepoBasePath',
+			                        'githubRepoEnabled'
+			                    ]);
+
+			                    if (!config.githubRepoToken) {
+			                        sendResponse({ success: false, error: 'GitHub Token 未配置' });
+			                        return;
+			                    }
+			                    if (!config.githubRepoOwner || !config.githubRepoName) {
+			                        sendResponse({ success: false, error: '仓库未配置' });
+			                        return;
+			                    }
+			                    if (config.githubRepoEnabled === false) {
+			                        sendResponse({ success: false, error: 'GitHub 仓库备份已禁用' });
+			                        return;
+			                    }
+
+			                    const result = await testRepoConnection({
+			                        token: config.githubRepoToken,
+			                        owner: config.githubRepoOwner,
+			                        repo: config.githubRepoName,
+			                        branch: config.githubRepoBranch,
+			                        basePath: config.githubRepoBasePath
+			                    });
+
+			                    if (!result || result.success !== true) {
+			                        sendResponse({ success: false, error: result?.error || '获取仓库信息失败' });
+			                        return;
+			                    }
+
+			                    const hasBranchConfigured =
+			                        typeof config.githubRepoBranch === 'string' && config.githubRepoBranch.trim().length > 0;
+			                    if (!hasBranchConfigured && result.resolvedBranch) {
+			                        try {
+			                            await browserAPI.storage.local.set({ githubRepoBranch: result.resolvedBranch });
+			                        } catch (_) { }
+			                    }
+
+			                    sendResponse({
+			                        success: true,
+			                        repo: result.repo || null,
+			                        resolvedBranch: result.resolvedBranch || null,
+			                        basePathExists: typeof result.basePathExists === 'boolean' ? result.basePathExists : null
+			                    });
+			                } catch (error) {
+			                    sendResponse({ success: false, error: error?.message || '获取仓库信息失败' });
+			                }
+			            })();
+			            return true;
+
+			        } else if (message.action === "exportHistoryToGitHubRepo") {
+			            // 导出历史记录到 GitHub Repository（云端2）
+			            (async () => {
+			                try {
+			                    if (!message.content) {
+			                        throw new Error('缺少导出内容');
+			                    }
+
+			                    const content = message.content;
+			                    const baseFileName =
+			                        message.fileName ||
+			                        `书签备份历史记录_${new Date().toISOString().replace(/[:.]/g, '-').replace(/T/g, '_').slice(0, -4)}.txt`;
+			                    const lang = message.lang || await getCurrentLang();
+
+			                    const config = await browserAPI.storage.local.get([
+			                        'githubRepoToken',
+			                        'githubRepoOwner',
+			                        'githubRepoName',
+			                        'githubRepoBranch',
+			                        'githubRepoBasePath',
+			                        'githubRepoEnabled'
+			                    ]);
+
+			                    if (!config.githubRepoToken) {
+			                        throw new Error('GitHub Token 未配置');
+			                    }
+			                    if (!config.githubRepoOwner || !config.githubRepoName) {
+			                        throw new Error('仓库未配置');
+			                    }
+			                    if (config.githubRepoEnabled === false) {
+			                        throw new Error('GitHub 仓库备份已禁用');
+			                    }
+
+			                    const filePath = buildGitHubRepoFilePath({
+			                        basePath: config.githubRepoBasePath,
+			                        lang,
+			                        folderKey: 'history',
+			                        fileName: baseFileName
+			                    });
+
+			                    const commitMessage = `Bookmark Backup: export history ${baseFileName}`;
+			                    const result = await upsertRepoFile({
+			                        token: config.githubRepoToken,
+			                        owner: config.githubRepoOwner,
+			                        repo: config.githubRepoName,
+			                        branch: config.githubRepoBranch,
+			                        path: filePath,
+			                        message: commitMessage,
+			                        contentBase64: textToBase64(String(content ?? ''))
+			                    });
+
+			                    if (!result || result.success !== true) {
+			                        throw new Error(result?.error || '上传到 GitHub 仓库失败');
+			                    }
+
+			                    sendResponse({
+			                        success: true,
+			                        message: '历史记录已成功上传到GitHub仓库',
+			                        path: result.path || filePath,
+			                        htmlUrl: result.htmlUrl || null
+			                    });
+			                } catch (error) {
+			                    sendResponse({
+			                        success: false,
+			                        error: error.message || '导出历史记录到GitHub仓库失败'
+			                    });
+			                }
+			            })();
+			            return true; // 保持消息通道开放
+
+		        } else if (message.action === "exportHistoryToWebDAV") {
+		            // 处理导出历史记录到WebDAV的请求
+		            // 使用异步立即执行函数处理
+		            (async () => {
+	                try {
                     // 检查必要参数
                     if (!message.content) {
                         throw new Error('缺少导出内容');
@@ -1098,8 +1348,8 @@ browserAPI.runtime.onMessage.addListener((message, sender, sendResponse) => {
 
                     // 构建WebDAV路径 - 使用统一文件夹结构（根据语言动态选择）
                     const serverAddress = config.serverAddress.replace(/\/+$/, '/');
-                    const historyFolder = await getHistoryFolder();
-                    const exportRootFolder = await getExportRootFolder();
+                    const historyFolder = getHistoryFolderByLang(lang);
+                    const exportRootFolder = getExportRootFolderByLang(lang);
                     const folderPath = `${exportRootFolder}/${historyFolder}/`;
                     const fullUrl = `${serverAddress}${folderPath}${fileName}`;
                     const folderUrl = `${serverAddress}${folderPath}`;
@@ -1235,8 +1485,9 @@ browserAPI.runtime.onMessage.addListener((message, sender, sendResponse) => {
                     }
 
                     // 执行下载 - 使用统一文件夹结构（根据语言动态选择）
-                    const localHistoryFolder = await getHistoryFolder();
-                    const exportRootFolder = await getExportRootFolder();
+                    const lang = message.lang || await getCurrentLang();
+                    const localHistoryFolder = getHistoryFolderByLang(lang);
+                    const exportRootFolder = getExportRootFolderByLang(lang);
                     const downloadId = await new Promise((resolve, reject) => {
                         browserAPI.downloads.download({
                             url: dataUrl,
@@ -1265,6 +1516,57 @@ browserAPI.runtime.onMessage.addListener((message, sender, sendResponse) => {
             })();
 
             return true;  // 保持消息通道开放
+        } else if (message.action === "exportFileToClouds") {
+            // 通用导出：同步到云端1(WebDAV) + 云端2(GitHub Repo)
+            (async () => {
+                try {
+                    const fileName = String(message.fileName || '').trim();
+                    const folderKey = String(message.folderKey || '').trim();
+                    const contentType = message.contentType;
+                    const contentArrayBuffer = message.contentArrayBuffer || null;
+                    const content = message.content;
+
+                    if (!fileName) throw new Error('缺少文件名');
+                    if (!folderKey) throw new Error('缺少导出类型');
+                    if (!contentArrayBuffer && (content == null || content === '')) throw new Error('缺少导出内容');
+
+                    const lang = message.lang || await getCurrentLang();
+
+                    const [webdav, githubRepo] = await Promise.all([
+                        uploadExportFileToWebDAV({
+                            lang,
+                            folderKey,
+                            fileName,
+                            content,
+                            contentArrayBuffer,
+                            contentType
+                        }),
+                        uploadExportFileToGitHubRepo({
+                            lang,
+                            folderKey,
+                            fileName,
+                            content,
+                            contentArrayBuffer
+                        })
+                    ]);
+
+                    const success =
+                        (webdav && webdav.success === true) || (githubRepo && githubRepo.success === true);
+
+                    sendResponse({
+                        success,
+                        webdav,
+                        githubRepo
+                    });
+                } catch (error) {
+                    sendResponse({
+                        success: false,
+                        error: error?.message || '导出到云端失败'
+                    });
+                }
+            })();
+
+            return true; // 保持消息通道开放
         } else if (message.action === "syncBookmarks") {
             // <--- Log 6
 
@@ -1489,9 +1791,10 @@ browserAPI.runtime.onMessage.addListener((message, sender, sendResponse) => {
                 browserAPI.bookmarks.getTree()
                     .then(async (bookmarks) => {
                         try {
-                            let webDAVSuccess = false;
-                            let localSuccess = false;
-                            let errors = [];
+	                            let webDAVSuccess = false;
+	                            let githubRepoSuccess = false;
+	                            let localSuccess = false;
+	                            let errors = [];
 
                             // 添加结果对象用于存储过程信息
                             const result = {
@@ -1501,10 +1804,25 @@ browserAPI.runtime.onMessage.addListener((message, sender, sendResponse) => {
                             // 添加errorMessages数组用于收集错误信息
                             const errorMessages = [];
 
-                            // 检查WebDAV配置
-                            const webDAVconfig = await browserAPI.storage.local.get(['serverAddress', 'username', 'password', 'webDAVEnabled']);
-                            const webDAVConfigured = webDAVconfig.serverAddress && webDAVconfig.username && webDAVconfig.password;
-                            const webDAVEnabled = webDAVconfig.webDAVEnabled !== false;
+	                            // 检查云端1：WebDAV配置
+	                            const webDAVconfig = await browserAPI.storage.local.get(['serverAddress', 'username', 'password', 'webDAVEnabled']);
+	                            const webDAVConfigured = webDAVconfig.serverAddress && webDAVconfig.username && webDAVconfig.password;
+	                            const webDAVEnabled = webDAVconfig.webDAVEnabled !== false;
+
+	                            // 检查云端2：GitHub Repository 配置
+	                            const githubRepoConfig = await browserAPI.storage.local.get([
+	                                'githubRepoToken',
+	                                'githubRepoOwner',
+	                                'githubRepoName',
+	                                'githubRepoEnabled'
+	                            ]);
+	                            const githubRepoConfigured = !!(
+	                                githubRepoConfig &&
+	                                githubRepoConfig.githubRepoToken &&
+	                                githubRepoConfig.githubRepoOwner &&
+	                                githubRepoConfig.githubRepoName
+	                            );
+	                            const githubRepoEnabled = githubRepoConfig.githubRepoEnabled !== false;
 
                             // 检查本地备份配置
                             const localConfig = await browserAPI.storage.local.get([
@@ -1539,11 +1857,27 @@ browserAPI.runtime.onMessage.addListener((message, sender, sendResponse) => {
                                 }
                             }
 
-                            // 上传到本地（如果启用且已配置）
-                            if (localBackupConfigured) {
-                                try {
-                                    const localResult = await uploadBookmarksToLocal(bookmarks);
-                                    localSuccess = true;
+	                            // 上传到 GitHub 仓库（如果启用且已配置）
+	                            if (githubRepoConfigured && githubRepoEnabled) {
+	                                try {
+	                                    const uploadResult = await uploadBookmarksToGitHubRepo(bookmarks);
+	                                    if (uploadResult && uploadResult.success) {
+	                                        githubRepoSuccess = true;
+	                                    } else if (uploadResult && uploadResult.repoNotConfigured) {
+	                                        // ignore
+	                                    } else {
+	                                        errors.push(uploadResult?.error || '上传到GitHub仓库失败');
+	                                    }
+	                                } catch (error) {
+	                                    errors.push(error.message || '上传到GitHub仓库失败');
+	                                }
+	                            }
+
+	                            // 上传到本地（如果启用且已配置）
+	                            if (localBackupConfigured) {
+	                                try {
+	                                    const localResult = await uploadBookmarksToLocal(bookmarks);
+	                                    localSuccess = true;
                                     // 记录文件名信息，以便返回给调用者
                                     result.localFileName = localResult.fileName;
                                 } catch (error) {
@@ -1551,19 +1885,29 @@ browserAPI.runtime.onMessage.addListener((message, sender, sendResponse) => {
                                 }
                             }
 
-                            // 确定备份方向
-                            let syncDirection = 'none';
-                            if (webDAVSuccess && localSuccess) {
-                                syncDirection = 'both';
-                            } else if (webDAVSuccess) {
-                                syncDirection = 'webdav';
-                            } else if (localSuccess) {
-                                syncDirection = 'local';
-                            }
+	                            // 确定备份方向
+	                            let syncDirection = 'none';
+	                            if (localSuccess && webDAVSuccess && githubRepoSuccess) {
+	                                syncDirection = 'cloud_local';
+	                            } else if (localSuccess && webDAVSuccess) {
+	                                syncDirection = 'webdav_local';
+	                            } else if (localSuccess && githubRepoSuccess) {
+	                                syncDirection = 'github_repo_local';
+	                            } else if (localSuccess) {
+	                                syncDirection = 'local';
+	                            } else if (webDAVSuccess && githubRepoSuccess) {
+	                                syncDirection = 'cloud';
+	                            } else if (webDAVSuccess) {
+	                                syncDirection = 'webdav';
+	                            } else if (githubRepoSuccess) {
+	                                syncDirection = 'github_repo';
+	                            } else {
+	                                syncDirection = 'none';
+	                            }
 
                             // 添加首次上传记录
                             const syncTime = new Date().toISOString();
-                            const syncStatus = (webDAVSuccess || localSuccess) ? 'success' : 'error';
+	                            const syncStatus = (webDAVSuccess || githubRepoSuccess || localSuccess) ? 'success' : 'error';
                             const errorMessage = errors.length > 0 ? errors.join('; ') : '';
                             // --- 修改：传递 'auto' 作为 syncType ---
                             await updateSyncStatus(syncDirection, syncTime, syncStatus, errorMessage, 'auto', null);
@@ -1577,13 +1921,14 @@ browserAPI.runtime.onMessage.addListener((message, sender, sendResponse) => {
                             }
                             // --- 结束新增 ---
 
-                            sendResponse({
-                                success: (webDAVSuccess || localSuccess),
-                                webDAVSuccess,
-                                localSuccess,
-                                localFileName: result.localFileName, // 添加文件名到响应
-                                error: errors.length > 0 ? errors.join('; ') : null
-                            });
+	                            sendResponse({
+	                                success: (webDAVSuccess || githubRepoSuccess || localSuccess),
+	                                webDAVSuccess,
+	                                githubRepoSuccess,
+	                                localSuccess,
+	                                localFileName: result.localFileName, // 添加文件名到响应
+	                                error: errors.length > 0 ? errors.join('; ') : null
+	                            });
                         } catch (error) {
                             sendResponse({
                                 success: false,
@@ -2067,6 +2412,36 @@ browserAPI.runtime.onMessage.addListener((message, sender, sendResponse) => {
             } catch (error) {
                 sendResponse({ success: false, error: error.message });
             }
+
+            return true; // 异步响应
+        } else if (message.action === "downloadBlobUrl") {
+            // 处理来自 content script 的 blob URL 下载（用于大文件导出，支持子目录）
+            (async () => {
+                try {
+                    const url = message.url;
+                    const filename = message.filename;
+                    if (!url || !filename) throw new Error('缺少下载参数');
+
+                    const downloadId = await new Promise((resolve, reject) => {
+                        browserAPI.downloads.download({
+                            url,
+                            filename,
+                            saveAs: false,
+                            conflictAction: 'uniquify'
+                        }, (id) => {
+                            if (browserAPI.runtime.lastError) {
+                                reject(new Error(browserAPI.runtime.lastError.message));
+                            } else {
+                                resolve(id);
+                            }
+                        });
+                    });
+
+                    sendResponse({ success: true, downloadId });
+                } catch (error) {
+                    sendResponse({ success: false, error: error.message || '下载失败' });
+                }
+            })();
 
             return true; // 异步响应
         } else if (message.action === "autoBackupStateChangedInBackground") {
@@ -2608,6 +2983,223 @@ async function uploadBookmarks(bookmarks) {
     }
 }
 
+// 上传书签到 GitHub Repository（云端2）
+async function uploadBookmarksToGitHubRepo(bookmarks) {
+    const config = await browserAPI.storage.local.get([
+        'githubRepoToken',
+        'githubRepoOwner',
+        'githubRepoName',
+        'githubRepoBranch',
+        'githubRepoBasePath',
+        'githubRepoEnabled'
+    ]);
+
+    if (!config.githubRepoToken) {
+        return { success: false, error: "GitHub Token 未配置", repoNotConfigured: true };
+    }
+    if (!config.githubRepoOwner || !config.githubRepoName) {
+        return { success: false, error: "仓库未配置", repoNotConfigured: true };
+    }
+    if (config.githubRepoEnabled === false) {
+        return { success: false, error: "GitHub 仓库已禁用", repoDisabled: true };
+    }
+
+    // 将书签数据转换为Edge格式的HTML
+    const htmlContent = convertToEdgeHTML(bookmarks);
+
+    // 文件名：与 WebDAV “不覆盖”一致，使用时间戳精确到秒
+    const currentDate = new Date();
+    const timestamp = `${currentDate.getFullYear()}${(currentDate.getMonth() + 1).toString().padStart(2, '0')}${currentDate.getDate().toString().padStart(2, '0')}_${currentDate.getHours().toString().padStart(2, '0')}${currentDate.getMinutes().toString().padStart(2, '0')}${currentDate.getSeconds().toString().padStart(2, '0')}`;
+    const baseFileName = `${timestamp}.html`;
+    const lang = await getCurrentLang();
+
+    const filePath = buildGitHubRepoFilePath({
+        basePath: config.githubRepoBasePath,
+        lang,
+        folderKey: 'backup',
+        fileName: baseFileName
+    });
+
+    const result = await upsertRepoFile({
+        token: config.githubRepoToken,
+        owner: config.githubRepoOwner,
+        repo: config.githubRepoName,
+        branch: config.githubRepoBranch,
+        path: filePath,
+        message: `Bookmark Backup: add backup ${baseFileName}`,
+        contentBase64: textToBase64(htmlContent)
+    });
+
+    if (result && result.success === true) {
+        return { success: true, path: result.path || filePath, htmlUrl: result.htmlUrl || null };
+    }
+
+    return { success: false, error: result?.error || '上传到 GitHub 仓库失败' };
+}
+
+function sanitizeGitHubRepoPathPart(part) {
+    let s = String(part == null ? '' : part);
+    s = s.replace(/[\x00-\x1F\x7F]/g, ''); // 移除控制字符
+    s = s.replace(/[\\/]/g, '_'); // 防止注入路径分隔符
+    s = s.replace(/\s+/g, ' ').trim();
+    return s;
+}
+
+function buildGitHubRepoFilePath({ basePath, lang, folderKey, fileName }) {
+    const baseRaw = String(basePath || '').trim().replace(/^\/+/, '').replace(/\/+$/, '');
+    const baseParts = baseRaw
+        ? baseRaw.split('/').filter(Boolean).map(sanitizeGitHubRepoPathPart).filter(Boolean)
+        : [];
+    const root = sanitizeGitHubRepoPathPart(getExportRootFolderByLang(lang));
+    const sub = sanitizeGitHubRepoPathPart(resolveExportSubFolderByKey(folderKey, lang));
+    const leaf = sanitizeGitHubRepoPathPart(String(fileName || '').split('/').pop());
+    const joined = [...baseParts, root, sub, leaf].filter(Boolean).join('/');
+    return joined || 'export.txt';
+}
+
+function arrayBufferToBase64(arrayBuffer) {
+    const bytes = new Uint8Array(arrayBuffer);
+    const chunkSize = 0x2000;
+    let binary = '';
+    for (let i = 0; i < bytes.length; i += chunkSize) {
+        const chunk = bytes.subarray(i, i + chunkSize);
+        binary += String.fromCharCode(...chunk);
+    }
+    return btoa(binary);
+}
+
+function textToBase64(text) {
+    const encoder = new TextEncoder();
+    const buf = encoder.encode(String(text ?? '')).buffer;
+    return arrayBufferToBase64(buf);
+}
+
+async function ensureWebDAVCollectionExists(url, authHeader, errorPrefix) {
+    const checkResponse = await fetch(url, {
+        method: 'PROPFIND',
+        headers: {
+            'Authorization': authHeader,
+            'Depth': '0',
+            'Content-Type': 'application/xml'
+        },
+        body: '<?xml version="1.0" encoding="utf-8"?><propfind xmlns="DAV:"><prop><resourcetype/></prop></propfind>'
+    });
+
+    if (checkResponse.status === 401) {
+        throw new Error('WebDAV认证失败，请检查账号密码是否正确');
+    }
+
+    if (checkResponse.status === 404) {
+        const mkcolResponse = await fetch(url, {
+            method: 'MKCOL',
+            headers: { 'Authorization': authHeader }
+        });
+        if (!mkcolResponse.ok && mkcolResponse.status !== 405) {
+            throw new Error(`${errorPrefix}: ${mkcolResponse.status} - ${mkcolResponse.statusText}`);
+        }
+        return;
+    }
+
+    if (!checkResponse.ok) {
+        throw new Error(`${errorPrefix}: ${checkResponse.status} - ${checkResponse.statusText}`);
+    }
+}
+
+async function uploadExportFileToWebDAV({ lang, folderKey, fileName, content, contentArrayBuffer, contentType }) {
+    const config = await browserAPI.storage.local.get(['serverAddress', 'username', 'password', 'webDAVEnabled']);
+    if (!config.serverAddress || !config.username || !config.password) {
+        return { success: false, skipped: true, error: "WebDAV 配置不完整" };
+    }
+    if (config.webDAVEnabled === false) {
+        return { success: false, skipped: true, error: "WebDAV 已禁用" };
+    }
+
+    const serverAddress = config.serverAddress.replace(/\/+$/, '/');
+    const exportRootFolder = getExportRootFolderByLang(lang);
+    const exportSubFolder = resolveExportSubFolderByKey(folderKey, lang);
+    const folderPath = `${exportRootFolder}/${exportSubFolder}/`;
+
+    const fullUrl = `${serverAddress}${folderPath}${fileName}`;
+    const folderUrl = `${serverAddress}${folderPath}`;
+    const parentFolderUrl = `${serverAddress}${exportRootFolder}/`;
+
+    const authHeader = 'Basic ' + safeBase64(`${config.username}:${config.password}`);
+
+    try {
+        await ensureWebDAVCollectionExists(parentFolderUrl, authHeader, '创建父文件夹失败');
+        await ensureWebDAVCollectionExists(folderUrl, authHeader, '创建导出文件夹失败');
+
+        const response = await fetch(fullUrl, {
+            method: 'PUT',
+            headers: {
+                'Authorization': authHeader,
+                'Content-Type': contentType || 'text/plain;charset=utf-8',
+                'Overwrite': 'T'
+            },
+            body: contentArrayBuffer ? contentArrayBuffer : String(content ?? '')
+        });
+
+        if (!response.ok) {
+            throw new Error(`上传失败: ${response.status} - ${response.statusText}`);
+        }
+
+        return { success: true };
+    } catch (error) {
+        if (String(error?.message || '').includes('Failed to fetch')) {
+            return { success: false, error: '无法连接到WebDAV服务器，请检查地址是否正确或网络是否正常' };
+        }
+        return { success: false, error: error?.message || '上传到WebDAV失败' };
+    }
+}
+
+async function uploadExportFileToGitHubRepo({ lang, folderKey, fileName, content, contentArrayBuffer }) {
+    const config = await browserAPI.storage.local.get([
+        'githubRepoToken',
+        'githubRepoOwner',
+        'githubRepoName',
+        'githubRepoBranch',
+        'githubRepoBasePath',
+        'githubRepoEnabled'
+    ]);
+
+    if (!config.githubRepoToken) {
+        return { success: false, skipped: true, error: "GitHub Token 未配置" };
+    }
+    if (!config.githubRepoOwner || !config.githubRepoName) {
+        return { success: false, skipped: true, error: "仓库未配置" };
+    }
+    if (config.githubRepoEnabled === false) {
+        return { success: false, skipped: true, error: "GitHub 仓库已禁用" };
+    }
+
+    const filePath = buildGitHubRepoFilePath({ basePath: config.githubRepoBasePath, lang, folderKey, fileName });
+
+    const leaf = String(fileName || '').split('/').pop() || 'export';
+    const commitMessage = `Bookmark Backup: export ${folderKey} ${leaf}`;
+
+    const contentBase64 = contentArrayBuffer ? arrayBufferToBase64(contentArrayBuffer) : textToBase64(content);
+
+    try {
+        const result = await upsertRepoFile({
+            token: config.githubRepoToken,
+            owner: config.githubRepoOwner,
+            repo: config.githubRepoName,
+            branch: config.githubRepoBranch,
+            path: filePath,
+            message: commitMessage,
+            contentBase64
+        });
+
+        if (result && result.success === true) {
+            return { success: true, path: result.path || filePath, htmlUrl: result.htmlUrl || null };
+        }
+
+        return { success: false, error: result?.error || '上传到 GitHub 仓库失败' };
+    } catch (error) {
+        return { success: false, error: error?.message || '上传到 GitHub 仓库失败' };
+    }
+}
+
 // 从服务器下载书签
 async function downloadBookmarks() {
     // 功能已移除，返回错误信息
@@ -2868,27 +3460,75 @@ async function writeFile(filePath, content) {
                     // 注入执行下载的脚本
                     browserAPI.scripting.executeScript({
                         target: { tabId: activeTab.id },
-                        func: (content, fileName) => {
-                            // 这段代码会在content script环境中执行
+                        func: (content, filePath) => {
                             const blob = new Blob([content], { type: 'text/html' });
                             const url = URL.createObjectURL(blob);
+                            const leafName = String(filePath || '').split('/').pop() || 'bookmarks.html';
 
-                            // 创建下载链接并模拟点击
-                            const a = document.createElement('a');
-                            a.href = url;
-                            a.download = fileName;
-                            document.body.appendChild(a);
-                            a.click();
+                            return new Promise((resolve) => {
+                                try {
+                                    chrome.runtime.sendMessage({
+                                        action: 'downloadBlobUrl',
+                                        url,
+                                        filename: filePath
+                                    }, (resp) => {
+                                        if (chrome.runtime && chrome.runtime.lastError) {
+                                            // 降级：直接触发下载（不保证子目录）
+                                            try {
+                                                const a = document.createElement('a');
+                                                a.href = url;
+                                                a.download = leafName;
+                                                document.body.appendChild(a);
+                                                a.click();
+                                                document.body.removeChild(a);
+                                            } catch (_) { }
+                                            setTimeout(() => {
+                                                try { URL.revokeObjectURL(url); } catch (_) { }
+                                            }, 10000);
+                                            resolve(true);
+                                            return;
+                                        }
 
-                            // 清理
-                            setTimeout(() => {
-                                document.body.removeChild(a);
-                                URL.revokeObjectURL(url);
-                            }, 100);
+                                        if (!resp || resp.success !== true) {
+                                            // 降级：直接触发下载（不保证子目录）
+                                            try {
+                                                const a = document.createElement('a');
+                                                a.href = url;
+                                                a.download = leafName;
+                                                document.body.appendChild(a);
+                                                a.click();
+                                                document.body.removeChild(a);
+                                            } catch (_) { }
+                                            setTimeout(() => {
+                                                try { URL.revokeObjectURL(url); } catch (_) { }
+                                            }, 10000);
+                                            resolve(true);
+                                            return;
+                                        }
 
-                            return true;
+                                        setTimeout(() => {
+                                            try { URL.revokeObjectURL(url); } catch (_) { }
+                                        }, 10000);
+                                        resolve(true);
+                                    });
+                                } catch (_) {
+                                    // 降级：直接触发下载（不保证子目录）
+                                    try {
+                                        const a = document.createElement('a');
+                                        a.href = url;
+                                        a.download = leafName;
+                                        document.body.appendChild(a);
+                                        a.click();
+                                        document.body.removeChild(a);
+                                    } catch (_) { }
+                                    setTimeout(() => {
+                                        try { URL.revokeObjectURL(url); } catch (_) { }
+                                    }, 10000);
+                                    resolve(true);
+                                }
+                            });
                         },
-                        args: [content, 'Bookmarks/' + fileName]
+                        args: [content, `${writeExportRootFolder}/${writeBackupFolder}/${fileName}`]
                     }, (results) => {
                         if (browserAPI.runtime.lastError) {
                             // 回退到data:URL方法
@@ -2955,7 +3595,21 @@ async function exportHistoryToTxt(records, lang) {
                 type: "Type",
                 status: "Status/Error"
             },
-            locationValues: { local: "Local", cloud: "Cloud", webdav: "Cloud", both: "Cloud & Local", none: "None", upload: "Cloud", download: "Local" },
+            locationValues: {
+                local: "Local",
+                upload: "Cloud",
+                cloud: "Cloud 1 & Cloud 2",
+                webdav: "Cloud 1 (WebDAV)",
+                github_repo: "Cloud 2 (GitHub Repo)",
+                gist: "Cloud 2 (GitHub Repo)", // legacy
+                cloud_local: "Cloud 1 & Cloud 2 & Local",
+                webdav_local: "Cloud 1 (WebDAV) & Local",
+                github_repo_local: "Cloud 2 (GitHub Repo) & Local",
+                gist_local: "Cloud 2 (GitHub Repo) & Local", // legacy
+                both: "Cloud 1 (WebDAV) & Local",
+                none: "None",
+                download: "Local"
+            },
             typeValues: { auto: "Auto", manual: "Manual", switch: "Switch", auto_switch: "Switch", migration: "Migration", check: "Check" },
             statusValues: { success: "Success", error: "Error", locked: "File Locked", no_backup_needed: "No backup needed", check_completed: "Check completed" },
             filenameBase: "Bookmark_Backup_History",
@@ -2978,7 +3632,21 @@ async function exportHistoryToTxt(records, lang) {
                 type: "类型",
                 status: "状态/错误"
             },
-            locationValues: { local: "本地", cloud: "云端", webdav: "云端", both: "云端与本地", none: "无", upload: "云端", download: "本地" },
+            locationValues: {
+                local: "本地",
+                upload: "云端",
+                cloud: "云端1&云端2",
+                webdav: "云端1(WebDAV)",
+                github_repo: "云端2(GitHub仓库)",
+                gist: "云端2(GitHub仓库)", // legacy
+                cloud_local: "云端1&云端2与本地",
+                webdav_local: "云端1(WebDAV)与本地",
+                github_repo_local: "云端2(GitHub仓库)与本地",
+                gist_local: "云端2(GitHub仓库)与本地", // legacy
+                both: "云端1(WebDAV)与本地",
+                none: "无",
+                download: "本地"
+            },
             typeValues: { auto: "自动", manual: "手动", switch: "切换", auto_switch: "切换", migration: "迁移", check: "检查" },
             statusValues: { success: "成功", error: "错误", locked: "文件锁定", no_backup_needed: "无需备份", check_completed: "检查完成" },
             filenameBase: "书签备份历史记录",
@@ -3346,10 +4014,25 @@ async function syncBookmarks(isManual = false, direction = null, isSwitchToAutoB
         // 确定要备份的方向
         let syncDirection = direction;
 
-        // 检查WebDAV配置
+        // 检查云端1：WebDAV 配置
         const webDAVconfig = await browserAPI.storage.local.get(['serverAddress', 'username', 'password', 'webDAVEnabled']);
         const webDAVConfigured = webDAVconfig.serverAddress && webDAVconfig.username && webDAVconfig.password;
         const webDAVEnabled = webDAVconfig.webDAVEnabled !== false;
+
+        // 检查云端2：GitHub Repository 配置
+        const githubRepoConfig = await browserAPI.storage.local.get([
+            'githubRepoToken',
+            'githubRepoOwner',
+            'githubRepoName',
+            'githubRepoEnabled'
+        ]);
+        const githubRepoConfigured = !!(
+            githubRepoConfig &&
+            githubRepoConfig.githubRepoToken &&
+            githubRepoConfig.githubRepoOwner &&
+            githubRepoConfig.githubRepoName
+        );
+        const githubRepoEnabled = githubRepoConfig.githubRepoEnabled !== false;
 
         // 检查本地备份配置
         const localConfig = await browserAPI.storage.local.get([
@@ -3367,7 +4050,10 @@ async function syncBookmarks(isManual = false, direction = null, isSwitchToAutoB
 
         // 检查至少有一种备份方式已配置
         const localBackupConfigured = defaultDownloadEnabled || customFolderEnabled || oldConfigEnabled;
-        const hasAtLeastOneConfigured = (webDAVConfigured && webDAVEnabled) || localBackupConfigured;
+        const hasAtLeastOneConfigured =
+            (webDAVConfigured && webDAVEnabled) ||
+            (githubRepoConfigured && githubRepoEnabled) ||
+            localBackupConfigured;
 
         // 如果两种配置都未启用，则跳过备份
         if (!hasAtLeastOneConfigured) {
@@ -3390,6 +4076,7 @@ async function syncBookmarks(isManual = false, direction = null, isSwitchToAutoB
 
         // 执行备份操作 - 修改为并行执行
         let webDAVSuccess = false;
+        let githubRepoSuccess = false;
         let localSuccess = false;
         let errorMessages = [];
 
@@ -3418,8 +4105,32 @@ async function syncBookmarks(isManual = false, direction = null, isSwitchToAutoB
                 }
             })();
             backupTasks.push(webDAVTask);
-        } else if ((direction === 'upload' || direction === 'download') && !localBackupConfigured) { // This was the original logic
-            errorMessages.push('WebDAV未配置或未启用');
+        }
+
+        // GitHub 仓库 备份任务
+        if (githubRepoConfigured && githubRepoEnabled) {
+            const githubRepoTask = (async () => {
+                try {
+                    // 只处理上传
+                    if (direction === 'upload' || !direction) {
+                        const uploadResult = await uploadBookmarksToGitHubRepo(localBookmarks);
+                        if (uploadResult && uploadResult.success) {
+                            githubRepoSuccess = true;
+                            return { success: true };
+                        } else if (uploadResult && uploadResult.repoNotConfigured) {
+                            return { success: false, error: 'GitHub 仓库未配置' };
+                        } else if (uploadResult && uploadResult.repoDisabled) {
+                            return { success: false, error: 'GitHub 仓库已禁用' };
+                        } else {
+                            return { success: false, error: uploadResult?.error || 'GitHub 仓库上传失败' };
+                        }
+                    }
+                    return { success: true };
+                } catch (error) {
+                    return { success: false, error: `GitHub 仓库备份失败: ${error.message}` };
+                }
+            })();
+            backupTasks.push(githubRepoTask);
         }
 
         // 本地备份任务
@@ -3456,13 +4167,26 @@ async function syncBookmarks(isManual = false, direction = null, isSwitchToAutoB
         let errorMessage = errorMessages.join('; ');
         let syncSuccess = false; // 用于判断是否清除标志
 
-        if (webDAVSuccess || localSuccess) { // 只要有一个成功就算成功
+        if (webDAVSuccess || githubRepoSuccess || localSuccess) { // 只要有一个成功就算成功
             syncStatus = 'success';
             syncSuccess = true;
-            // 更精确的方向判断 (original logic for this part)
-            if (webDAVSuccess && localSuccess) syncDirection = 'both';
-            else if (webDAVSuccess) syncDirection = 'webdav';
-            else syncDirection = 'local'; // This was the original simplified assignment
+            if (localSuccess && webDAVSuccess && githubRepoSuccess) {
+                syncDirection = 'cloud_local';
+            } else if (localSuccess && webDAVSuccess) {
+                syncDirection = 'webdav_local';
+            } else if (localSuccess && githubRepoSuccess) {
+                syncDirection = 'github_repo_local';
+            } else if (localSuccess) {
+                syncDirection = 'local';
+            } else if (webDAVSuccess && githubRepoSuccess) {
+                syncDirection = 'cloud';
+            } else if (webDAVSuccess) {
+                syncDirection = 'webdav';
+            } else if (githubRepoSuccess) {
+                syncDirection = 'github_repo';
+            } else {
+                syncDirection = 'none';
+            }
         }
 
         // 更新备份状态
@@ -3498,6 +4222,7 @@ async function syncBookmarks(isManual = false, direction = null, isSwitchToAutoB
         return {
             success: syncSuccess,
             webDAVSuccess,
+            githubRepoSuccess,
             localSuccess,
             localFileName: result && result.localFileName, // 添加文件名
             error: errorMessages.length > 0 ? errorMessages.join('; ') : null
@@ -3682,7 +4407,7 @@ async function updateSyncStatus(direction, time, status = 'success', errorMessag
         let folderDiff = 0;
         let localBookmarks = null; // 声明在外部作用域，以便在 newSyncRecord 中使用
 
-        if (status === 'success' && (direction === 'upload' || direction === 'download' || direction === 'webdav' || direction === 'local' || direction === 'both')) {
+        if (status === 'success' && (direction === 'upload' || direction === 'download' || direction === 'webdav' || direction === 'github_repo' || direction === 'gist' || direction === 'cloud' || direction === 'webdav_local' || direction === 'github_repo_local' || direction === 'gist_local' || direction === 'cloud_local' || direction === 'local' || direction === 'both')) {
             localBookmarks = await new Promise((resolve) => {
                 browserAPI.bookmarks.getTree((bookmarks) => resolve(bookmarks));
             });
@@ -3947,14 +4672,14 @@ async function updateSyncStatus(direction, time, status = 'success', errorMessag
         };
 
         if (status === 'success' &&
-            (direction === 'upload' || direction === 'webdav' || direction === 'local' || direction === 'both')) {
+            (direction === 'upload' || direction === 'webdav' || direction === 'github_repo' || direction === 'gist' || direction === 'cloud' || direction === 'webdav_local' || direction === 'github_repo_local' || direction === 'gist_local' || direction === 'cloud_local' || direction === 'local' || direction === 'both')) {
             updateData.lastBookmarkUpdate = time;
         }
 
         await browserAPI.storage.local.set(updateData);
 
         const isInitSync = (!syncHistory || syncHistory.length === 0) && newSyncRecord.isFirstBackup; // More precise check for initial sync completion effect
-        if (isInitSync && status === 'success' && (direction === 'upload' || direction === 'webdav' || direction === 'local' || direction === 'both')) {
+        if (isInitSync && status === 'success' && (direction === 'upload' || direction === 'webdav' || direction === 'github_repo' || direction === 'gist' || direction === 'cloud' || direction === 'webdav_local' || direction === 'github_repo_local' || direction === 'gist_local' || direction === 'cloud_local' || direction === 'local' || direction === 'both')) {
             await browserAPI.storage.local.set({ isInitialized: true });
 
             await browserAPI.storage.local.set({

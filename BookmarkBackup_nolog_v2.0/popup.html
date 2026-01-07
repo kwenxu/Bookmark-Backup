@@ -2840,6 +2840,390 @@
             pointer-events: none !important;
             /* Disable clicks via CSS instead of 'disabled' attribute to avoid grey flash */
         }
+
+        /* Compact Modern Settings Box */
+        .settings-box {
+            background: var(--theme-bg-secondary);
+            border: 1px solid var(--theme-border-primary);
+            border-radius: 8px;
+            padding: 0 12px;
+            margin-bottom: 8px;
+        }
+
+        .setting-row-compact {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 8px 0;
+            /* Reduced from 10px */
+            border-bottom: 1px solid var(--theme-border-primary);
+            min-height: 32px;
+            /* Reduced from 36px */
+        }
+
+        .setting-row-compact:last-child {
+            border-bottom: none;
+        }
+
+        .setting-title-compact {
+            font-size: 13px;
+            font-weight: 500;
+            color: var(--theme-text-primary);
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+
+        /* Segmented Control - Refined */
+        .segmented-control {
+            display: inline-flex;
+            background: var(--theme-bg-tertiary);
+            padding: 2px;
+            border-radius: 6px;
+            border: 1px solid var(--theme-border-primary);
+            flex-shrink: 0;
+        }
+
+        .segment-label {
+            position: relative;
+            cursor: pointer;
+            z-index: 1;
+            margin: 0;
+        }
+
+        .segment-label input {
+            position: absolute;
+            opacity: 0;
+            width: 0;
+            height: 0;
+            margin: 0;
+            padding: 0;
+        }
+
+        .segment-item {
+            padding: 4px 10px;
+            font-size: 12px;
+            font-weight: 500;
+            color: var(--theme-text-secondary);
+            border-radius: 4px;
+            transition: all 0.2s ease;
+            white-space: nowrap;
+            text-align: center;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            min-width: 60px;
+            line-height: 1.2;
+        }
+
+        .segment-label input:checked+.segment-item {
+            background: var(--theme-bg-elevated);
+            color: var(--theme-accent-color);
+            box-shadow: 0 1px 2px rgba(0, 0, 0, 0.1);
+            font-weight: 600;
+        }
+
+        html[data-theme="dark"] .segment-label input:checked+.segment-item {
+            background: #4a4a4a;
+            color: var(--theme-accent-color);
+        }
+
+        .segment-label:hover .segment-item {
+            color: var(--theme-text-primary);
+        }
+
+        .segment-label input:disabled+.segment-item {
+            opacity: 0.5;
+            cursor: not-allowed;
+            color: var(--theme-text-disabled);
+        }
+
+        /* Init Buttons Grid */
+        .init-buttons-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 12px;
+        }
+
+        /* Redesigned Actions Buttons */
+        .init-action-btn {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+            height: 36px;
+            border: 1px solid var(--theme-border-primary);
+            border-radius: 8px;
+            font-size: 13px;
+            font-weight: 500;
+            cursor: pointer;
+            transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+            background-color: var(--theme-bg-secondary);
+            color: var(--theme-text-primary);
+            box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
+        }
+
+        .init-action-btn:hover {
+            transform: translateY(-1px);
+            box-shadow: 0 3px 6px rgba(0, 0, 0, 0.1);
+        }
+
+        .init-action-btn:active {
+            transform: translateY(0);
+        }
+
+        .init-action-btn.danger {
+            color: var(--theme-error-color);
+        }
+
+        .init-action-btn.danger:hover {
+            background-color: var(--theme-error-color);
+            color: white;
+            border-color: var(--theme-error-color);
+        }
+
+        .init-action-btn.primary {
+            color: var(--theme-success-color);
+        }
+
+        .init-action-btn.primary:hover {
+            background-color: var(--theme-success-color);
+            color: white;
+            border-color: var(--theme-success-color);
+        }
+
+        .badge-coming-soon {
+            font-size: 10px;
+            padding: 1px 5px;
+            border-radius: 4px;
+            background: var(--theme-bg-tertiary);
+            color: var(--theme-text-secondary);
+            border: 1px solid var(--theme-border-primary);
+        }
+
+        .setting-info-compact {
+            display: flex;
+            flex-direction: column;
+            gap: 1px;
+            /* Reduced from 2px */
+            justify-content: center;
+            /* Ensure contents are centered vertically */
+        }
+
+        .setting-desc-compact {
+            font-size: 11px;
+            color: var(--theme-text-tertiary);
+            font-weight: 400;
+        }
+
+        .setting-row-compact.has-desc {
+            align-items: flex-start;
+            /* Align segmented control to top if description makes row tall, or center if desired */
+            /* Better to keep center for rows, let's stick to center unless text wraps significantly */
+            align-items: center;
+        }
+
+        /* Modern Transparent/Glass UI Redesign for Init Section */
+
+        .modern-init-content {
+            padding: 8px 12px 15px 12px;
+            display: flex;
+            flex-direction: column;
+            gap: 15px;
+        }
+
+        .settings-split-container {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 15px;
+            align-items: stretch;
+        }
+
+        /* Glass Panel Styling */
+        .glass-panel {
+            background: linear-gradient(145deg, var(--theme-bg-secondary), var(--theme-bg-tertiary));
+            border: 1px solid var(--theme-border-primary);
+            border-radius: 12px;
+            padding: 12px;
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+            box-shadow: 0 4px 10px rgba(0, 0, 0, 0.03);
+            position: relative;
+            overflow: hidden;
+        }
+
+        /* Subtle shine effect */
+        .glass-panel::after {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            height: 1px;
+            background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.2), transparent);
+        }
+
+        /* Row Styling inside Glass Panel */
+        .glass-row {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            min-height: 28px;
+        }
+
+        /* When row is hidden via JS */
+        .glass-row[style*="display: none"] {
+            min-height: 0;
+        }
+
+        .glass-label {
+            font-size: 13px;
+            color: var(--theme-text-primary);
+            font-weight: 500;
+            white-space: nowrap;
+        }
+
+        /* Clean Segmented Control */
+        .clean-segment-group {
+            background-color: var(--theme-bg-elevated);
+            border-radius: 6px;
+            padding: 2px;
+            display: inline-flex;
+            gap: 2px;
+            border: 1px solid var(--theme-border-secondary);
+        }
+
+        .clean-segment-label {
+            cursor: pointer;
+            position: relative;
+            user-select: none;
+            margin: 0;
+        }
+
+        .clean-segment-label input {
+            display: none;
+        }
+
+        .clean-segment-item {
+            font-size: 11px;
+            padding: 3px 8px;
+            border-radius: 4px;
+            color: var(--theme-text-secondary);
+            transition: all 0.2s ease;
+            text-align: center;
+            min-width: 40px;
+        }
+
+        .clean-segment-label input:checked+.clean-segment-item {
+            background-color: var(--theme-accent-color);
+            color: white;
+            box-shadow: 0 1px 3px rgba(0, 0, 0, 0.15);
+            font-weight: 500;
+        }
+
+        /* Sync Block Specifics */
+        .sync-panel-content {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            height: 100%;
+            gap: 8px;
+            min-height: 80px;
+            text-align: center;
+            padding: 10px 0;
+        }
+
+        .sync-icon-large {
+            font-size: 20px;
+            color: var(--theme-text-disabled);
+            margin-bottom: 2px;
+            opacity: 0.7;
+        }
+
+        .sync-title {
+            font-size: 13px;
+            font-weight: 500;
+            color: var(--theme-text-primary);
+        }
+
+        /* Modern Init Buttons */
+        .modern-init-buttons-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 15px;
+            margin-top: 5px;
+        }
+
+        .modern-init-btn {
+            border: none;
+            border-radius: 10px;
+            padding: 12px;
+            font-size: 14px;
+            font-weight: 500;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+            transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+            position: relative;
+            overflow: hidden;
+        }
+
+        /* Ripple/Glass effect on buttons */
+        .modern-init-btn::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: linear-gradient(rgba(255, 255, 255, 0.1), rgba(255, 255, 255, 0));
+            opacity: 0;
+            transition: opacity 0.2s;
+        }
+
+        .modern-init-btn:hover::before {
+            opacity: 1;
+        }
+
+        .modern-init-btn.reset-btn {
+            background-color: var(--theme-bg-secondary);
+            color: var(--theme-error-color);
+            border: 1px solid var(--theme-border-secondary);
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.02);
+        }
+
+        .modern-init-btn.reset-btn:hover {
+            background-color: var(--theme-status-error-bg);
+            border-color: var(--theme-status-error-border);
+            transform: translateY(-1px);
+            box-shadow: 0 4px 8px rgba(0, 0, 0, 0.05);
+        }
+
+        .modern-init-btn.upload-btn {
+            background: linear-gradient(135deg, var(--theme-accent-color), var(--theme-accent-color-hover));
+            color: white;
+            box-shadow: 0 4px 10px rgba(0, 122, 255, 0.25);
+        }
+
+        .modern-init-btn.upload-btn:hover {
+            transform: translateY(-1px);
+            box-shadow: 0 6px 14px rgba(0, 122, 255, 0.35);
+        }
+
+        /* Coming Soon Badge */
+        .badge-soon-modern {
+            background-color: var(--theme-bg-elevated);
+            color: var(--theme-text-disabled);
+            padding: 2px 8px;
+            border-radius: 100px;
+            font-size: 10px;
+            border: 1px solid var(--theme-border-secondary);
+            margin-top: 4px;
+        }
     </style>
 </head>
 
@@ -3089,33 +3473,127 @@
             </div>
         </div>
 
-        <!-- 替换原来的init-sync-dialog为新的折叠区块 -->
+        <!-- 设置与初始化区块 (Redesigned) -->
         <div class="config-section" style="margin-top: 8px;">
             <div class="config-header" id="initHeader">
                 <h2>
-                    <span class="status-dot configured" style="background-color: #007AFF;"></span>
-                    <span id="initButtonsTitle"></span>
+                    <span class="status-dot configured" style="background-color: var(--theme-accent-color);"></span>
+                    <span id="initButtonsTitle">Settings & Initialization</span>
                 </h2>
                 <div style="display: flex; align-items: center;">
                     <div class="toggle-icon"></div>
                 </div>
             </div>
-            <div class="config-content" id="initContent" style="display: block; padding: 5px;">
-                <div class="init-sync-buttons"
-                    style="display: flex; justify-content: space-between; gap: 10px; margin: 10px 0; padding: 0 20px;">
-                    <button id="resetAll" class="danger-button"
-                        style="background-color: #dc3545; flex: 1; height: 38px; font-weight: 500; border-radius: 8px;"></button>
-                    <button id="uploadToCloud"
-                        style="background-color: #4CAF50; flex: 1; height: 38px; font-weight: 500; border-radius: 8px;"></button>
+            <div class="config-content modern-init-content" id="initContent" style="display: block;">
+
+                <!-- Main Grid: Backup Settings (Left) & Sync (Right) -->
+                <div class="settings-split-container">
+
+                    <!-- Left Panel: Backup & Overwrite -->
+                    <div class="glass-panel">
+                        <!-- Backup Mode -->
+                        <div class="glass-row">
+                            <span class="glass-label" id="backupModeLabel">Backup Mode</span>
+                            <div class="clean-segment-group">
+                                <label class="clean-segment-label">
+                                    <input type="checkbox" id="backupModeFull" checked>
+                                    <div class="clean-segment-item" id="backupModeFullLabel">Full</div>
+                                </label>
+                                <label class="clean-segment-label">
+                                    <input type="checkbox" id="backupModeIncremental">
+                                    <div class="clean-segment-item" id="backupModeIncrementalLabel">Inc</div>
+                                </label>
+                            </div>
+                        </div>
+
+                        <!-- Incremental Detail (Hidden by default or managed by JS) -->
+                        <div class="glass-row" id="incrementalDetailRow">
+                            <span class="glass-label" id="incrementalDetailLabel">Detail</span>
+                            <div class="clean-segment-group" id="incrementalDetailGroup">
+                                <label class="clean-segment-label">
+                                    <input type="checkbox" id="incrementalSimple" checked>
+                                    <div class="clean-segment-item" id="incrementalSimpleLabel">Simple</div>
+                                </label>
+                                <label class="clean-segment-label">
+                                    <input type="checkbox" id="incrementalDetailed">
+                                    <div class="clean-segment-item" id="incrementalDetailedLabel">Detail</div>
+                                </label>
+                            </div>
+                        </div>
+
+                        <!-- Overwrite Policy -->
+                        <div class="glass-row">
+                            <span class="glass-label" id="overwritePolicyLabel">Overwrite</span>
+                            <div class="clean-segment-group">
+                                <label class="clean-segment-label">
+                                    <input type="checkbox" id="overwriteVersioned" checked>
+                                    <div class="clean-segment-item" id="overwriteVersionedLabel">Versioned</div>
+                                </label>
+                                <label class="clean-segment-label">
+                                    <input type="checkbox" id="overwriteOverwrite">
+                                    <div class="clean-segment-item" id="overwriteOverwriteLabel">Overwrite</div>
+                                </label>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Right Panel: Sync & Restore -->
+                    <div class="glass-panel">
+                        <div class="sync-panel-content">
+                            <div class="sync-icon-large">
+                                <i class="fas fa-sync-alt"></i>
+                            </div>
+                            <div class="sync-title" id="syncRestoreTitle">Sync & Restore</div>
+                            <span class="badge-soon-modern" id="syncRestoreComingSoon">Soon</span>
+                        </div>
+                    </div>
+
                 </div>
+
+                <!-- Action Buttons -->
+                <div class="modern-init-buttons-grid">
+                    <button id="resetAll" class="modern-init-btn reset-btn">
+                        <i class="fas fa-undo"></i>
+                        <span id="resetAllText">Reset</span>
+                    </button>
+                    <button id="uploadToCloud" class="modern-init-btn upload-btn">
+                        <div class="upload-icons-container">
+                            <i id="uploadIconWebDAV" class="fas fa-cloud init-icon"></i>
+                            <i id="uploadIconGitHub" class="fab fa-github init-icon"></i>
+                            <i id="uploadIconLocal" class="fas fa-hdd init-icon"></i>
+                        </div>
+                        <span id="uploadToCloudText">Upload</span>
+                    </button>
+                    <style>
+                        .upload-icons-container {
+                            display: flex;
+                            gap: 4px;
+                            margin-right: 6px;
+                        }
+
+                        .init-icon {
+                            font-size: 14px;
+                            color: rgba(255, 255, 255, 0.4);
+                            transition: color 0.3s;
+                        }
+
+                        .init-icon.active {
+                            color: #a3ffac;
+                            /* Bright lime green for visibility on blue */
+                            text-shadow: 0 0 5px rgba(0, 0, 0, 0.2);
+                        }
+                    </style>
+                </div>
+
+                <!-- Hidden Compatibility Elements -->
                 <div class="setting-item" style="display: none;">
                     <span class="setting-label">启用自动备份</span>
                     <label class="switch">
                         <input type="checkbox" id="autoSyncToggle" checked>
                         <span class="slider"></span>
                     </label>
-                    <span class="setting-tip">（大规模修改时建议关闭，下方会弹出手动备份的按钮）</span>
                 </div>
+                <span id="initActionsTitle" style="display:none">Initialization</span>
             </div>
         </div>
 

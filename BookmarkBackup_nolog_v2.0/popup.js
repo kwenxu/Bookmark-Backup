@@ -5276,18 +5276,137 @@ const applyLocalizedContent = async (lang) => { // Added lang parameter
     };
 
     const initButtonsTitleStrings = {
-        'zh_CN': "初始化与重置按钮",
-        'en': "Initialize & Reset Buttons"
+        'zh_CN': "设置与初始化",
+        'en': "Settings & Initialization"
     };
 
     const resetButtonStrings = {
-        'zh_CN': "恢复到初始状态",
-        'en': "Restore to Default"
+        'zh_CN': "恢复初始状态",
+        'en': "Reset to Initial"
     };
 
     const initUploadButtonStrings = {
-        'zh_CN': "初始化：上传书签到云端1/云端2/本地",
-        'en': "Initialize: Upload to Cloud 1/Cloud 2/Local"
+        'zh_CN': "初始化上传",
+        'en': "Initialize Upload"
+    };
+
+    // 备份设置相关国际化字符串
+    const backupSettingsTitleStrings = {
+        'zh_CN': "备份设置",
+        'en': "Backup Settings"
+    };
+
+    const backupModeLabelStrings = {
+        'zh_CN': "备份模式:",
+        'en': "Backup Mode:"
+    };
+
+    const backupModeFullStrings = {
+        'zh_CN': "全量",
+        'en': "Full"
+    };
+
+    const backupModeIncrementalStrings = {
+        'zh_CN': "增量",
+        'en': "Incremental"
+    };
+
+    const incrementalSimpleStrings = {
+        'zh_CN': "简略",
+        'en': "Simple"
+    };
+
+    const incrementalDetailedStrings = {
+        'zh_CN': "详情",
+        'en': "Detailed"
+    };
+
+    const overwritePolicyLabelStrings = {
+        'zh_CN': "覆盖策略:",
+        'en': "Overwrite Policy:"
+    };
+
+    const overwriteVersionedStrings = {
+        'zh_CN': "版本化",
+        'en': "Versioned"
+    };
+
+    const overwriteVersionedDescStrings = {
+        'zh_CN': "(多文件)",
+        'en': "(multi-file)"
+    };
+
+    const overwriteOverwriteStrings = {
+        'zh_CN': "覆盖",
+        'en': "Overwrite"
+    };
+
+    const overwriteOverwriteDescStrings = {
+        'zh_CN': "(单文件)",
+        'en': "(single file)"
+    };
+
+    // 同步与恢复相关国际化字符串
+    const syncRestoreTitleStrings = {
+        'zh_CN': "同步与恢复",
+        'en': "Sync & Restore"
+    };
+
+    const syncRestoreComingSoonStrings = {
+        'zh_CN': "即将推出",
+        'en': "Coming Soon"
+    };
+
+    const restoreFromCloudStrings = {
+        'zh_CN': "从云端恢复",
+        'en': "Restore from Cloud"
+    };
+
+    const conflictResolutionStrings = {
+        'zh_CN': "冲突处理",
+        'en': "Conflict Resolution"
+    };
+
+    // 初始化操作相关国际化字符串
+    const initActionsTitleStrings = {
+        'zh_CN': "初始化操作",
+        'en': "Initialization Actions"
+    };
+
+    // New Descriptions for Settings
+    const backupModeDescStrings = {
+        'zh_CN': "标准或增量备份",
+        'en': "Standard or incremental"
+    };
+
+    const incrementalDetailLabelStrings = {
+        'zh_CN': "详情",
+        'en': "Detail"
+    };
+
+    const incrementalDetailDescStrings = {
+        'zh_CN': "变更日志的详细程度",
+        'en': "Level of detail for logs"
+    };
+
+    const overwritePolicyDescStrings = {
+        'zh_CN': "存储策略",
+        'en': "Storage strategy"
+    };
+
+    const syncRestoreDescStrings = {
+        'zh_CN': "云端恢复",
+        'en': "Cloud recovery"
+    };
+
+    const resetDescStrings = {
+        'zh_CN': "重置所有设置",
+        'en': "Reset all settings"
+    };
+
+    const uploadDescStrings = {
+        'zh_CN': "初次上传",
+        'en': "Initial upload"
     };
 
     // 校准路径对话框部分
@@ -5735,6 +5854,34 @@ const applyLocalizedContent = async (lang) => { // Added lang parameter
     const resetButtonText = resetButtonStrings[lang] || resetButtonStrings['zh_CN'];
     const initUploadButtonText = initUploadButtonStrings[lang] || initUploadButtonStrings['zh_CN'];
 
+    // 备份设置相关文本
+    const backupSettingsTitleText = backupSettingsTitleStrings[lang] || backupSettingsTitleStrings['zh_CN'];
+    const backupModeLabelText = backupModeLabelStrings[lang] || backupModeLabelStrings['zh_CN'];
+    const backupModeFullText = backupModeFullStrings[lang] || backupModeFullStrings['zh_CN'];
+    const backupModeIncrementalText = backupModeIncrementalStrings[lang] || backupModeIncrementalStrings['zh_CN'];
+    const incrementalSimpleText = incrementalSimpleStrings[lang] || incrementalSimpleStrings['zh_CN'];
+    const incrementalDetailedText = incrementalDetailedStrings[lang] || incrementalDetailedStrings['zh_CN'];
+
+    // New Description Texts
+    const backupModeDescText = backupModeDescStrings[lang] || backupModeDescStrings['zh_CN'];
+    const incrementalDetailLabelText = incrementalDetailLabelStrings[lang] || incrementalDetailLabelStrings['zh_CN'];
+    const incrementalDetailDescText = incrementalDetailDescStrings[lang] || incrementalDetailDescStrings['zh_CN'];
+    const overwritePolicyDescText = overwritePolicyDescStrings[lang] || overwritePolicyDescStrings['zh_CN'];
+    const syncRestoreDescText = syncRestoreDescStrings[lang] || syncRestoreDescStrings['zh_CN'];
+    const resetDescText = resetDescStrings[lang] || resetDescStrings['zh_CN'];
+    const uploadDescText = uploadDescStrings[lang] || uploadDescStrings['zh_CN'];
+
+    const overwritePolicyLabelText = overwritePolicyLabelStrings[lang] || overwritePolicyLabelStrings['zh_CN'];
+    const overwriteVersionedText = overwriteVersionedStrings[lang] || overwriteVersionedStrings['zh_CN'];
+    const overwriteVersionedDescText = overwriteVersionedDescStrings[lang] || overwriteVersionedDescStrings['zh_CN'];
+    const overwriteOverwriteText = overwriteOverwriteStrings[lang] || overwriteOverwriteStrings['zh_CN'];
+    const overwriteOverwriteDescText = overwriteOverwriteDescStrings[lang] || overwriteOverwriteDescStrings['zh_CN'];
+    const syncRestoreTitleText = syncRestoreTitleStrings[lang] || syncRestoreTitleStrings['zh_CN'];
+    const syncRestoreComingSoonText = syncRestoreComingSoonStrings[lang] || syncRestoreComingSoonStrings['zh_CN'];
+    const restoreFromCloudText = restoreFromCloudStrings[lang] || restoreFromCloudStrings['zh_CN'];
+    const conflictResolutionText = conflictResolutionStrings[lang] || conflictResolutionStrings['zh_CN'];
+    const initActionsTitleText = initActionsTitleStrings[lang] || initActionsTitleStrings['zh_CN'];
+
     // 校准路径对话框部分
     const calibratePathDialogTitleText = calibratePathDialogTitleStrings[lang] || calibratePathDialogTitleStrings['zh_CN'];
     const calibratePathInstruction1Text = calibratePathInstruction1Strings[lang] || calibratePathInstruction1Strings['zh_CN'];
@@ -6101,13 +6248,85 @@ const applyLocalizedContent = async (lang) => { // Added lang parameter
 
     const resetAllButton = document.getElementById('resetAll');
     if (resetAllButton) {
-        resetAllButton.textContent = resetButtonText;
+        const resetAllTextSpan = document.getElementById('resetAllText');
+        if (resetAllTextSpan) {
+            resetAllTextSpan.textContent = resetButtonText;
+        } else {
+            resetAllButton.textContent = resetButtonText;
+        }
     }
 
     const uploadToCloudButton = document.getElementById('uploadToCloud');
     if (uploadToCloudButton) {
-        uploadToCloudButton.textContent = initUploadButtonText;
+        const uploadToCloudTextSpan = document.getElementById('uploadToCloudText');
+        if (uploadToCloudTextSpan) {
+            uploadToCloudTextSpan.textContent = initUploadButtonText;
+        } else {
+            uploadToCloudButton.textContent = initUploadButtonText;
+        }
     }
+
+    // 更新备份设置区域文本
+    const backupSettingsTitleEl = document.getElementById('backupSettingsTitle');
+    if (backupSettingsTitleEl) backupSettingsTitleEl.textContent = backupSettingsTitleText;
+
+    const backupModeLabelEl = document.getElementById('backupModeLabel');
+    if (backupModeLabelEl) backupModeLabelEl.textContent = backupModeLabelText;
+
+    const backupModeFullLabelEl = document.getElementById('backupModeFullLabel');
+    if (backupModeFullLabelEl) backupModeFullLabelEl.textContent = backupModeFullText;
+
+    const backupModeIncrementalLabelEl = document.getElementById('backupModeIncrementalLabel');
+    if (backupModeIncrementalLabelEl) backupModeIncrementalLabelEl.textContent = backupModeIncrementalText;
+
+    // Incremental Detail Labels
+    const incrementalDetailLabelEl = document.getElementById('incrementalDetailLabel');
+    if (incrementalDetailLabelEl) incrementalDetailLabelEl.textContent = incrementalDetailLabelText;
+
+    const incrementalSimpleLabelEl = document.getElementById('incrementalSimpleLabel');
+    if (incrementalSimpleLabelEl) incrementalSimpleLabelEl.textContent = incrementalSimpleText;
+
+    const incrementalDetailedLabelEl = document.getElementById('incrementalDetailedLabel');
+    if (incrementalDetailedLabelEl) incrementalDetailedLabelEl.textContent = incrementalDetailedText;
+
+    // Descriptions
+    const backupModeDescEl = document.getElementById('backupModeDesc');
+    if (backupModeDescEl) backupModeDescEl.textContent = backupModeDescText;
+
+    const incrementalDetailDescEl = document.getElementById('incrementalDetailDesc');
+    if (incrementalDetailDescEl) incrementalDetailDescEl.textContent = incrementalDetailDescText;
+
+    const overwritePolicyDescEl = document.getElementById('overwritePolicyDesc');
+    if (overwritePolicyDescEl) overwritePolicyDescEl.textContent = overwritePolicyDescText;
+
+    const syncRestoreDescEl = document.getElementById('syncRestoreDesc');
+    if (syncRestoreDescEl) syncRestoreDescEl.textContent = syncRestoreDescText;
+
+    const resetDescEl = document.getElementById('resetDesc');
+    if (resetDescEl) resetDescEl.textContent = resetDescText;
+
+    const uploadDescEl = document.getElementById('uploadDesc');
+    if (uploadDescEl) uploadDescEl.textContent = uploadDescText;
+
+    const overwritePolicyLabelEl = document.getElementById('overwritePolicyLabel');
+    if (overwritePolicyLabelEl) overwritePolicyLabelEl.textContent = overwritePolicyLabelText;
+
+    const overwriteVersionedLabelEl = document.getElementById('overwriteVersionedLabel');
+    if (overwriteVersionedLabelEl) overwriteVersionedLabelEl.textContent = overwriteVersionedText;
+
+    const overwriteOverwriteLabelEl = document.getElementById('overwriteOverwriteLabel');
+    if (overwriteOverwriteLabelEl) overwriteOverwriteLabelEl.textContent = overwriteOverwriteText;
+
+    // 更新同步与恢复区域文本
+    const syncRestoreTitleEl = document.getElementById('syncRestoreTitle');
+    if (syncRestoreTitleEl) syncRestoreTitleEl.textContent = syncRestoreTitleText;
+
+    const syncRestoreComingSoonEl = document.getElementById('syncRestoreComingSoon');
+    if (syncRestoreComingSoonEl) syncRestoreComingSoonEl.textContent = syncRestoreComingSoonText;
+
+    // 更新初始化操作区域文本
+    const initActionsTitleEl = document.getElementById('initActionsTitle');
+    if (initActionsTitleEl) initActionsTitleEl.textContent = initActionsTitleText;
 
     // 更新重置对话框文本
     const resetDialogTitleElement = document.getElementById('resetDialogTitle');
@@ -6768,6 +6987,222 @@ const applyLocalizedContent = async (lang) => { // Added lang parameter
 
 
 // =============================================================================
+// 备份设置初始化 (Backup Settings Initialization)
+// =============================================================================
+
+/**
+ * 初始化备份设置区域的交互逻辑
+ * - 备份模式：全量/增量互斥
+ * - 增量详情：简略/详情互斥，仅增量模式时启用
+ * - 覆盖策略：版本化/覆盖互斥
+ */
+function initializeBackupSettings() {
+    // 获取所有勾选框元素
+    const incrementalDetailRow = document.getElementById('incrementalDetailRow');
+    const backupModeFull = document.getElementById('backupModeFull');
+    const backupModeIncremental = document.getElementById('backupModeIncremental');
+    const incrementalSimple = document.getElementById('incrementalSimple');
+    const incrementalDetailed = document.getElementById('incrementalDetailed');
+    const incrementalDetailGroup = document.getElementById('incrementalDetailGroup');
+    const overwriteVersioned = document.getElementById('overwriteVersioned');
+    const overwriteOverwrite = document.getElementById('overwriteOverwrite');
+
+    if (!backupModeFull || !backupModeIncremental) return;
+
+    // 加载保存的设置
+    chrome.storage.local.get(['backupMode', 'incrementalDetail', 'overwriteMode'], function (result) {
+        const backupMode = result.backupMode || 'full';
+        const incrementalDetail = result.incrementalDetail || 'simple';
+        const overwriteMode = result.overwriteMode || 'versioned';
+
+        // 应用备份模式
+        if (backupMode === 'full') {
+            backupModeFull.checked = true;
+            backupModeIncremental.checked = false;
+        } else {
+            backupModeFull.checked = false;
+            backupModeIncremental.checked = true;
+        }
+
+        // 应用增量详情
+        if (incrementalDetail === 'simple') {
+            incrementalSimple.checked = true;
+            incrementalDetailed.checked = false;
+        } else {
+            incrementalSimple.checked = false;
+            incrementalDetailed.checked = true;
+        }
+
+        // 应用覆盖策略
+        if (overwriteMode === 'versioned') {
+            overwriteVersioned.checked = true;
+            overwriteOverwrite.checked = false;
+        } else {
+            overwriteVersioned.checked = false;
+            overwriteOverwrite.checked = true;
+        }
+
+        // 更新增量详情区域状态
+        updateIncrementalDetailState();
+    });
+
+    // 更新增量详情区域的启用/禁用状态
+    function updateIncrementalDetailState() {
+        const isIncremental = backupModeIncremental.checked;
+
+        // 当非增量模式时，直接隐藏详情行，而不是仅禁用
+        if (incrementalDetailRow) {
+            incrementalDetailRow.style.display = isIncremental ? 'flex' : 'none';
+        } else if (incrementalDetailGroup) {
+            // Fallback for compatibility if row ID not found
+            incrementalDetailGroup.style.opacity = isIncremental ? '1' : '0.4';
+            incrementalDetailGroup.style.pointerEvents = isIncremental ? 'auto' : 'none';
+        }
+
+        if (incrementalSimple) incrementalSimple.disabled = !isIncremental;
+        if (incrementalDetailed) incrementalDetailed.disabled = !isIncremental;
+    }
+
+    // 保存设置到存储
+    function saveBackupSettings() {
+        const settings = {
+            backupMode: backupModeIncremental.checked ? 'incremental' : 'full',
+            incrementalDetail: incrementalDetailed.checked ? 'detailed' : 'simple',
+            overwriteMode: overwriteOverwrite.checked ? 'overwrite' : 'versioned'
+        };
+        chrome.storage.local.set(settings);
+    }
+
+    // 备份模式：全量勾选
+    backupModeFull.addEventListener('change', function () {
+        if (this.checked) {
+            backupModeIncremental.checked = false;
+        } else {
+            // 至少要选择一个
+            backupModeIncremental.checked = true;
+        }
+        updateIncrementalDetailState();
+        saveBackupSettings();
+    });
+
+    // 备份模式：增量勾选
+    backupModeIncremental.addEventListener('change', function () {
+        if (this.checked) {
+            backupModeFull.checked = false;
+        } else {
+            // 至少要选择一个
+            backupModeFull.checked = true;
+        }
+        updateIncrementalDetailState();
+        saveBackupSettings();
+    });
+
+    // 增量详情：简略勾选
+    if (incrementalSimple) {
+        incrementalSimple.addEventListener('change', function () {
+            if (this.checked) {
+                incrementalDetailed.checked = false;
+            } else {
+                incrementalDetailed.checked = true;
+            }
+            saveBackupSettings();
+        });
+    }
+
+    // 增量详情：详情勾选
+    if (incrementalDetailed) {
+        incrementalDetailed.addEventListener('change', function () {
+            if (this.checked) {
+                incrementalSimple.checked = false;
+            } else {
+                incrementalSimple.checked = true;
+            }
+            saveBackupSettings();
+        });
+    }
+
+    // 覆盖策略：版本化勾选
+    if (overwriteVersioned) {
+        overwriteVersioned.addEventListener('change', function () {
+            if (this.checked) {
+                overwriteOverwrite.checked = false;
+            } else {
+                overwriteOverwrite.checked = true;
+            }
+            saveBackupSettings();
+        });
+    }
+
+    // 覆盖策略：覆盖勾选
+    if (overwriteOverwrite) {
+        overwriteOverwrite.addEventListener('change', function () {
+            if (this.checked) {
+                overwriteVersioned.checked = false;
+            } else {
+                overwriteVersioned.checked = true;
+            }
+            saveBackupSettings();
+        });
+    }
+
+    // 更新上传按钮上的图标状态
+    function updateUploadButtonIcons() {
+        // 重新获取元素，确保在函数调用时获取最新状态
+        // 注意：这里使用的是函数作用域内的变量名如果它们被提升，但这里我们使用 getElementById 确保安全
+        const webDAVToggle = document.getElementById('webDAVToggle');
+        const githubRepoToggle = document.getElementById('githubRepoToggle');
+        const defaultDownloadToggle = document.getElementById('defaultDownloadToggle');
+
+        const uploadIconWebDAV = document.getElementById('uploadIconWebDAV');
+        const uploadIconGitHub = document.getElementById('uploadIconGitHub');
+        const uploadIconLocal = document.getElementById('uploadIconLocal');
+
+        if (uploadIconWebDAV) {
+            if (webDAVToggle && webDAVToggle.checked) {
+                uploadIconWebDAV.classList.add('active');
+            } else {
+                uploadIconWebDAV.classList.remove('active');
+            }
+        }
+
+        if (uploadIconGitHub) {
+            if (githubRepoToggle && githubRepoToggle.checked) {
+                uploadIconGitHub.classList.add('active');
+            } else {
+                uploadIconGitHub.classList.remove('active');
+            }
+        }
+
+        if (uploadIconLocal) {
+            if (defaultDownloadToggle && defaultDownloadToggle.checked) {
+                uploadIconLocal.classList.add('active');
+            } else {
+                uploadIconLocal.classList.remove('active');
+            }
+        }
+    }
+
+    // 初始化时调用一次
+    updateUploadButtonIcons();
+
+    // 监听相关开关的变化
+    const webDAVToggle = document.getElementById('webDAVToggle');
+    const githubRepoToggle = document.getElementById('githubRepoToggle');
+    const defaultDownloadToggle = document.getElementById('defaultDownloadToggle');
+
+    if (webDAVToggle) {
+        webDAVToggle.addEventListener('change', updateUploadButtonIcons);
+    }
+    if (githubRepoToggle) {
+        githubRepoToggle.addEventListener('change', updateUploadButtonIcons);
+    }
+    if (defaultDownloadToggle) {
+        defaultDownloadToggle.addEventListener('change', updateUploadButtonIcons);
+    }
+}
+
+
+// =============================================================================
 // DOMContentLoaded 事件监听器 (Main Entry Point)
 // =============================================================================
 
@@ -6801,6 +7236,7 @@ document.addEventListener('DOMContentLoaded', function () {
     initializeWebDAVToggle();
     initializeGitHubRepoToggle();
     initializeOpenSourceInfo(); // 初始化开源信息功能
+    initializeBackupSettings(); // 初始化备份设置区域
 
     // 在确定按钮存在后调用初始化函数
     // 确保在DOM完全加载后执行

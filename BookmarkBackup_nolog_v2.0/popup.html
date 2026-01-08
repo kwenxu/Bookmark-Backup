@@ -3122,6 +3122,155 @@
             font-weight: 500;
         }
 
+        /* Segment Divider */
+        .clean-segment-divider {
+            font-size: 10px;
+            color: var(--theme-text-disabled);
+            padding: 0 4px;
+            display: flex;
+            align-items: center;
+        }
+
+        /* ===== Stacked Settings Design (Phase 2) ===== */
+        .stacked-settings {
+            display: flex;
+            flex-direction: column;
+            gap: 0;
+            padding: 0;
+        }
+
+        .settings-section {
+            border-bottom: 1px solid var(--theme-border-secondary);
+        }
+
+        .settings-section:last-child {
+            border-bottom: none;
+        }
+
+        .section-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 8px 12px;
+            background: var(--theme-bg-tertiary);
+        }
+
+        .section-title {
+            font-size: 12px;
+            font-weight: 600;
+            color: var(--theme-text-primary);
+        }
+
+        .section-content {
+            padding: 8px 12px;
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+        }
+
+        .section-content.disabled {
+            opacity: 0.4;
+            pointer-events: none;
+        }
+
+        .setting-row {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 12px;
+        }
+
+        .setting-label {
+            font-size: 11px;
+            color: var(--theme-text-secondary);
+            min-width: 60px;
+        }
+
+        /* Mini Toggle Switch */
+        .toggle-switch-mini {
+            position: relative;
+            display: inline-block;
+            width: 32px;
+            height: 18px;
+            cursor: pointer;
+        }
+
+        .toggle-switch-mini input {
+            display: none;
+        }
+
+        .toggle-slider-mini {
+            position: absolute;
+            cursor: pointer;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background-color: var(--theme-text-disabled);
+            transition: 0.3s;
+            border-radius: 18px;
+        }
+
+        .toggle-slider-mini::before {
+            position: absolute;
+            content: "";
+            height: 14px;
+            width: 14px;
+            left: 2px;
+            bottom: 2px;
+            background-color: white;
+            transition: 0.3s;
+            border-radius: 50%;
+            box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
+        }
+
+        .toggle-switch-mini input:checked+.toggle-slider-mini {
+            background-color: var(--theme-accent-color);
+        }
+
+        .toggle-switch-mini input:checked+.toggle-slider-mini::before {
+            transform: translateX(14px);
+        }
+
+        /* Collapsible Section Styles */
+        .section-header.clickable {
+            cursor: pointer;
+            user-select: none;
+        }
+
+        .section-header.clickable:hover {
+            background: var(--theme-bg-hover);
+        }
+
+        .header-left {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+
+        .collapse-icon {
+            font-size: 10px;
+            color: var(--theme-text-secondary);
+            transition: transform 0.2s ease;
+        }
+
+        .settings-section.collapsed .collapse-icon {
+            transform: rotate(-90deg);
+        }
+
+        .settings-section.collapsible .section-content {
+            overflow: hidden;
+            transition: max-height 0.2s ease, padding 0.2s ease, opacity 0.2s ease;
+            max-height: 200px;
+        }
+
+        .settings-section.collapsed .section-content {
+            max-height: 0;
+            padding-top: 0;
+            padding-bottom: 0;
+            opacity: 0;
+        }
+
         /* Sync Block Specifics */
         .sync-panel-content {
             display: flex;
@@ -3489,50 +3638,115 @@
                 <!-- Main Grid: Backup Settings (Left) & Sync (Right) -->
                 <div class="settings-split-container">
 
-                    <!-- Left Panel: Backup & Overwrite -->
-                    <div class="glass-panel">
-                        <!-- Backup Mode -->
-                        <div class="glass-row">
-                            <span class="glass-label" id="backupModeLabel">Backup Mode</span>
-                            <div class="clean-segment-group">
-                                <label class="clean-segment-label">
-                                    <input type="checkbox" id="backupModeFull" checked>
-                                    <div class="clean-segment-item" id="backupModeFullLabel">Full</div>
-                                </label>
-                                <label class="clean-segment-label">
-                                    <input type="checkbox" id="backupModeIncremental">
-                                    <div class="clean-segment-item" id="backupModeIncrementalLabel">Inc</div>
-                                </label>
+                    <!-- Left Panel: Backup Settings (Stacked Design) -->
+                    <div class="glass-panel stacked-settings">
+                        <!-- Section 1: 书签备份设置 -->
+                        <div class="settings-section">
+                            <div class="section-header">
+                                <span class="section-title" id="bookmarkBackupTitle">Bookmark Backup</span>
+                            </div>
+                            <div class="section-content">
+                                <div class="setting-row">
+                                    <span class="setting-label" id="bookmarkModeLabel">Mode</span>
+                                    <div class="clean-segment-group">
+                                        <label class="clean-segment-label">
+                                            <input type="checkbox" id="backupModeAuto" checked>
+                                            <div class="clean-segment-item" id="backupModeAutoLabel">Auto</div>
+                                        </label>
+                                        <label class="clean-segment-label">
+                                            <input type="checkbox" id="backupModeManual">
+                                            <div class="clean-segment-item" id="backupModeManualLabel">Manual</div>
+                                        </label>
+                                    </div>
+                                </div>
+                                <div class="setting-row" id="backupSettingsRow">
+                                    <span class="setting-label" id="backupTimeLabel">Time</span>
+                                    <div style="margin-left: auto;">
+                                        <button id="autoBackupSettingsBtnNew" class="settings-button-small"
+                                            style="padding: 6px; width: 32px; height: 32px; border: 1px solid var(--theme-border-primary); background: var(--theme-bg-secondary); border-radius: 4px; color: var(--theme-text-primary); cursor: pointer; display: flex; align-items: center; justify-content: center;"
+                                            title="Auto Backup Settings">
+                                            <i class="fas fa-cog"></i>
+                                        </button>
+                                        <button id="reminderSettingsBtnNew" class="settings-button-small"
+                                            style="display:none; padding: 6px; width: 32px; height: 32px; border: 1px solid var(--theme-border-primary); background: var(--theme-bg-secondary); border-radius: 4px; color: var(--theme-text-primary); cursor: pointer; align-items: center; justify-content: center;"
+                                            title="Reminder Settings">
+                                            <i class="fas fa-cog"></i>
+                                        </button>
+                                    </div>
+                                </div>
+                                <div class="setting-row">
+                                    <span class="setting-label" id="bookmarkOverwriteLabel">Overwrite</span>
+                                    <div class="clean-segment-group">
+                                        <label class="clean-segment-label">
+                                            <input type="checkbox" id="overwriteVersioned" checked>
+                                            <div class="clean-segment-item" id="overwriteVersionedLabel">Versioned</div>
+                                        </label>
+                                        <label class="clean-segment-label">
+                                            <input type="checkbox" id="overwriteOverwrite">
+                                            <div class="clean-segment-item" id="overwriteOverwriteLabel">Overwrite</div>
+                                        </label>
+                                    </div>
+                                </div>
                             </div>
                         </div>
 
-                        <!-- Incremental Detail (Hidden by default or managed by JS) -->
-                        <div class="glass-row" id="incrementalDetailRow">
-                            <span class="glass-label" id="incrementalDetailLabel">Detail</span>
-                            <div class="clean-segment-group" id="incrementalDetailGroup">
-                                <label class="clean-segment-label">
-                                    <input type="checkbox" id="incrementalSimple" checked>
-                                    <div class="clean-segment-item" id="incrementalSimpleLabel">Simple</div>
-                                </label>
-                                <label class="clean-segment-label">
-                                    <input type="checkbox" id="incrementalDetailed">
-                                    <div class="clean-segment-item" id="incrementalDetailedLabel">Detail</div>
+                        <!-- Section 2: 备份历史设置 (可折叠) -->
+                        <div class="settings-section collapsible" id="historySyncSection">
+                            <div class="section-header clickable" id="historySyncHeader">
+                                <div class="header-left">
+                                    <i class="fas fa-chevron-down collapse-icon" id="historySyncCollapseIcon"></i>
+                                    <span class="section-title" id="historyBackupTitle">Backup History</span>
+                                </div>
+                                <label class="toggle-switch-mini" onclick="event.stopPropagation();">
+                                    <input type="checkbox" id="historySyncEnabled" checked>
+                                    <span class="toggle-slider-mini"></span>
                                 </label>
                             </div>
-                        </div>
-
-                        <!-- Overwrite Policy -->
-                        <div class="glass-row">
-                            <span class="glass-label" id="overwritePolicyLabel">Overwrite</span>
-                            <div class="clean-segment-group">
-                                <label class="clean-segment-label">
-                                    <input type="checkbox" id="overwriteVersioned" checked>
-                                    <div class="clean-segment-item" id="overwriteVersionedLabel">Versioned</div>
-                                </label>
-                                <label class="clean-segment-label">
-                                    <input type="checkbox" id="overwriteOverwrite">
-                                    <div class="clean-segment-item" id="overwriteOverwriteLabel">Overwrite</div>
-                                </label>
+                            <div class="section-content" id="historySyncContent">
+                                <!-- 覆盖策略 -->
+                                <div class="setting-row">
+                                    <span class="setting-label" id="historyOverwriteLabel">Overwrite</span>
+                                    <div class="clean-segment-group">
+                                        <label class="clean-segment-label">
+                                            <input type="checkbox" id="historySyncVersioned" checked>
+                                            <div class="clean-segment-item" id="historySyncVersionedLabel">Versioned
+                                            </div>
+                                        </label>
+                                        <label class="clean-segment-label">
+                                            <input type="checkbox" id="historySyncOverwrite">
+                                            <div class="clean-segment-item" id="historySyncOverwriteLabel">Overwrite
+                                            </div>
+                                        </label>
+                                    </div>
+                                </div>
+                                <!-- 导出格式 -->
+                                <div class="setting-row">
+                                    <span class="setting-label" id="historyFormatLabel">Format</span>
+                                    <div class="clean-segment-group">
+                                        <label class="clean-segment-label">
+                                            <input type="checkbox" id="historySyncHtml" checked>
+                                            <div class="clean-segment-item" id="historySyncHtmlLabel">HTML</div>
+                                        </label>
+                                        <label class="clean-segment-label">
+                                            <input type="checkbox" id="historySyncJson">
+                                            <div class="clean-segment-item" id="historySyncJsonLabel">JSON</div>
+                                        </label>
+                                    </div>
+                                </div>
+                                <!-- 视图模式 -->
+                                <div class="setting-row">
+                                    <span class="setting-label" id="historyViewModeLabel">View</span>
+                                    <div class="clean-segment-group">
+                                        <label class="clean-segment-label">
+                                            <input type="checkbox" id="historySyncSimple" checked>
+                                            <div class="clean-segment-item" id="historySyncSimpleLabel">Simple</div>
+                                        </label>
+                                        <label class="clean-segment-label">
+                                            <input type="checkbox" id="historySyncDetailed">
+                                            <div class="clean-segment-item" id="historySyncDetailedLabel">Detail</div>
+                                        </label>
+                                    </div>
+                                </div>
                             </div>
                         </div>
                     </div>
@@ -3603,41 +3817,18 @@
                 <!-- 第一行：A（备份模式切换区域，包含B状态卡片在右侧）-->
                 <div class="sync-controls"
                     style="margin: 0; background-color: transparent; border-radius: 8px; padding: 15px 20px; border: 1px solid var(--theme-border-primary); box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05); display: flex; gap: 15px; align-items: stretch;">
-                    <!-- A的主要内容：备份模式切换 -->
-                    <div style="flex: 1; display: flex; align-items: stretch;">
-                        <div id="backupModeSwitch" class="backup-mode-switch auto" style="width: 100%;">
-                            <div class="backup-mode-slider"></div>
-                            <div class="backup-mode-option auto-option">
-                                <span class="option-label" id="autoOptionLabel">自动备份</span>
-                                <div id="autoButtonsContainer" class="manual-buttons option-actions">
-                                    <button id="autoBackupSettingsBtn" class="settings-button"
-                                        style="margin: 0; position: relative;" aria-label="自动备份设置">
-                                        <i class="fas fa-cog"></i>
-                                        <span class="tooltip"
-                                            style="position: absolute; background-color: var(--theme-tooltip-bg, rgba(0,0,0,0.7)); color: var(--theme-tooltip-text, white); padding: 2px 8px; border-radius: 4px; font-size: 12px; white-space: nowrap; visibility: hidden; opacity: 0; transition: opacity 0.3s; pointer-events: none;"
-                                            id="autoBackupTooltip">自动备份设置</span>
-                                    </button>
-                                </div>
-                            </div>
-                            <div class="backup-mode-option manual-option">
-                                <span class="option-label" id="manualOptionLabel">手动备份</span>
-                                <div id="manualButtonsContainer" class="manual-buttons option-actions">
-                                    <button id="reminderSettingsBtn" class="settings-button disabled"
-                                        style="margin: 0; position: relative;" aria-label="动态提醒设置">
-                                        <i class="fas fa-cog"></i>
-                                        <span class="tooltip"
-                                            style="position: absolute; background-color: var(--theme-tooltip-bg, rgba(0,0,0,0.7)); color: var(--theme-tooltip-text, white); padding: 2px 8px; border-radius: 4px; font-size: 12px; white-space: nowrap; visibility: hidden; opacity: 0; transition: opacity 0.3s; pointer-events: none;"
-                                            id="reminderSettingsTooltip">动态提醒设置</span>
-                                    </button>
-                                    <button id="uploadToCloudManual" class="backup-button disabled">手动备份</button>
-                                </div>
-                            </div>
-                            <input type="checkbox" id="autoSyncToggle2" style="display:none;" checked>
-                        </div>
+
+                    <!-- 隐藏的Slider相关元素，保留 IDs 以防 JS 报错，稍后在 JS 中处理 -->
+                    <div style="display: none;">
+                        <input type="checkbox" id="autoSyncToggle2" checked>
+                        <!-- 旧的按钮，可能被 JS 引用 -->
+                        <button id="autoBackupSettingsBtn"></button>
+                        <button id="reminderSettingsBtn"></button>
+                        <button id="uploadToCloudManual"></button>
                     </div>
 
-                    <!-- B：状态卡片（移到A的右侧）-->
-                    <div id="rightStatusContainer" style="flex: 0 0 calc(40% - 7.5px);">
+                    <!-- B：状态卡片（全宽）-->
+                    <div id="rightStatusContainer" style="flex: 1; width: 100%;">
                         <div id="change-description-row" class="status-card" style="
                             padding: 12px;
                             border-radius: 12px;
@@ -3652,13 +3843,32 @@
                             box-sizing: border-box;
                             cursor: pointer;
                             position: relative;
-                            width: auto;
-                            margin-left: 20px;
-                            margin-right: -6.5px;
+                            width: 100%; /* Ensure full width */
+                            margin: 0;   /* Remove margins */
                         " title="点击查看详细变化">
                             <div id="statusCardText">自动备份模式</div>
                             <i class="fas fa-chevron-right"
                                 style="position: absolute; right: 12px; opacity: 0.5; font-size: 16px;"></i>
+
+                            <!-- Manual Backup Button Overlay -->
+                            <button id="manualBackupBtnOverlay" style="
+                                position: absolute;
+                                right: 12px;
+                                bottom: 12px;
+                                background: rgba(255, 255, 255, 0.3);
+                                border: 1px solid rgba(255, 255, 255, 0.5);
+                                border-radius: 4px;
+                                padding: 4px 8px;
+                                font-size: 12px;
+                                color: inherit;
+                                cursor: pointer;
+                                display: none; /* Initially hidden */
+                                align-items: center;
+                                gap: 4px;
+                                z-index: 10;
+                            ">
+                                <i class="fas fa-save"></i> <span id="manualBackupBtnText">手动备份</span>
+                            </button>
                         </div>
                     </div>
                 </div>

@@ -206,6 +206,8 @@ function resolveExportSubFolderByKey(folderKey, lang) {
             return getClickHistoryFolderByLang(lang);
         case 'incremental_log':
             return getIncrementalLogFolderByLang(lang);
+        case 'backup_history':
+            return lang === 'zh_CN' ? '备份历史' : 'Backup_History';
         default:
             return getHistoryFolderByLang(lang);
     }
@@ -4121,138 +4123,213 @@ if (browserAPI.alarms) {
 // VIII. CORE SYNC LOGIC (核心同步逻辑)
 // =================================================================================
 
+// 注：generateIncrementalLogContent 函数已移除
+// 增量备份功能将在 Phase 2 的备份历史自动同步中实现
+
+// =================================================================================
+// Phase 2: 备份历史自动同步
+// =================================================================================
+
 /**
- * 生成增量备份记录内容（HTML或JSON格式）
- * @param {Object} options - 配置选项
- * @param {Object} options.bookmarkStats - 书签统计数据
- * @param {string} options.incrementalDetail - 'simple' 或 'detailed'
- * @param {string} options.lang - 语言 'zh_CN' 或 'en'
- * @param {string} options.format - 'html' 或 'json'
- * @returns {string} 生成的内容
+ * 生成备份历史导出的 HTML 内容
+ * @param {Array} syncHistory - 同步历史记录数组
+ * @param {string} viewMode - 视图模式 'simple' 或 'detailed'
+ * @param {string} lang - 语言 'zh_CN' 或 'en'
+ * @returns {string} HTML 内容
  */
-function generateIncrementalLogContent(options = {}) {
-    const { bookmarkStats, incrementalDetail = 'simple', lang = 'zh_CN', format = 'html' } = options;
-
-    if (!bookmarkStats) {
-        return format === 'json' ? '{}' : '<html><body><p>No changes detected</p></body></html>';
-    }
-
+function generateSyncHistoryHtml(syncHistory, viewMode = 'simple', lang = 'zh_CN') {
     const isZh = lang === 'zh_CN';
     const timestamp = new Date().toISOString().replace('T', ' ').split('.')[0];
 
-    // 构建变化摘要
-    const summary = {
-        timestamp,
-        currentBookmarkCount: bookmarkStats.currentBookmarkCount || 0,
-        currentFolderCount: bookmarkStats.currentFolderCount || 0,
-        bookmarkDiff: bookmarkStats.bookmarkDiff || 0,
-        folderDiff: bookmarkStats.folderDiff || 0,
-        bookmarkAdded: bookmarkStats.bookmarkAdded || 0,
-        bookmarkDeleted: bookmarkStats.bookmarkDeleted || 0,
-        folderAdded: bookmarkStats.folderAdded || 0,
-        folderDeleted: bookmarkStats.folderDeleted || 0,
-        movedCount: bookmarkStats.movedCount || 0,
-        modifiedCount: bookmarkStats.modifiedCount || 0
+    const title = isZh ? '备份历史记录' : 'Backup History';
+    const modeLabel = viewMode === 'simple'
+        ? (isZh ? '简略视图' : 'Simple View')
+        : (isZh ? '详细视图' : 'Detailed View');
+
+    // 表头
+    const headers = {
+        seq: isZh ? '序号' : 'Seq',
+        time: isZh ? '时间' : 'Time',
+        type: isZh ? '类型' : 'Type',
+        status: isZh ? '状态' : 'Status',
+        note: isZh ? '备注' : 'Note',
+        stats: isZh ? '变化统计' : 'Changes'
     };
 
-    // 如果是详情模式，添加更多数据
-    if (incrementalDetail === 'detailed') {
-        summary.movedBookmarkCount = bookmarkStats.movedBookmarkCount || 0;
-        summary.movedFolderCount = bookmarkStats.movedFolderCount || 0;
-        summary.modifiedBookmarkCount = bookmarkStats.modifiedBookmarkCount || 0;
-        summary.modifiedFolderCount = bookmarkStats.modifiedFolderCount || 0;
-        summary.prevBookmarkCount = bookmarkStats.prevBookmarkCount || 0;
-        summary.prevFolderCount = bookmarkStats.prevFolderCount || 0;
-    }
+    // 类型映射
+    const typeLabels = {
+        auto: isZh ? '自动' : 'Auto',
+        manual: isZh ? '手动' : 'Manual',
+        switch: isZh ? '切换' : 'Switch'
+    };
 
-    if (format === 'json') {
-        return JSON.stringify(summary, null, 2);
-    }
+    let tableRows = '';
 
-    // HTML格式
-    const title = isZh ? '增量备份记录' : 'Incremental Backup Log';
-    const timeLabel = isZh ? '备份时间' : 'Backup Time';
-    const summaryLabel = isZh ? '变化摘要' : 'Change Summary';
-    const bookmarkLabel = isZh ? '书签' : 'Bookmarks';
-    const folderLabel = isZh ? '文件夹' : 'Folders';
-    const currentLabel = isZh ? '当前数量' : 'Current Count';
-    const changeLabel = isZh ? '变化' : 'Change';
-    const addedLabel = isZh ? '新增' : 'Added';
-    const deletedLabel = isZh ? '删除' : 'Deleted';
-    const movedLabel = isZh ? '移动' : 'Moved';
-    const modifiedLabel = isZh ? '修改' : 'Modified';
+    // 按时间倒序排列
+    const sortedHistory = [...syncHistory].sort((a, b) => {
+        const timeA = new Date(a.time).getTime();
+        const timeB = new Date(b.time).getTime();
+        return timeB - timeA;
+    });
+
+    sortedHistory.forEach((record, index) => {
+        const seq = record.seqNumber || (syncHistory.length - index);
+        const recordTime = new Date(record.time).toLocaleString(isZh ? 'zh-CN' : 'en-US');
+        const type = typeLabels[record.type] || record.type || '-';
+        const status = record.status === 'success'
+            ? (isZh ? '✅ 成功' : '✅ Success')
+            : (isZh ? '❌ 失败' : '❌ Failed');
+        const note = record.note || '-';
+
+        // 变化统计
+        let statsHtml = '-';
+        if (record.bookmarkStats) {
+            const bs = record.bookmarkStats;
+            if (viewMode === 'simple') {
+                // 简略模式：只显示摘要数字
+                const total = (bs.bookmarkAdded || 0) + (bs.bookmarkDeleted || 0) +
+                    (bs.folderAdded || 0) + (bs.folderDeleted || 0) +
+                    (bs.movedCount || 0) + (bs.modifiedCount || 0);
+                if (total > 0) {
+                    const addedTotal = (bs.bookmarkAdded || 0) + (bs.folderAdded || 0);
+                    const deletedTotal = (bs.bookmarkDeleted || 0) + (bs.folderDeleted || 0);
+                    statsHtml = `<span class="stat-added">+${addedTotal}</span> <span class="stat-deleted">-${deletedTotal}</span>`;
+                    if (bs.movedCount) statsHtml += ` <span class="stat-moved">↔${bs.movedCount}</span>`;
+                    if (bs.modifiedCount) statsHtml += ` <span class="stat-modified">~${bs.modifiedCount}</span>`;
+                } else {
+                    statsHtml = isZh ? '无变化' : 'No changes';
+                }
+            } else {
+                // 详细模式：显示完整统计
+                const parts = [];
+                if (bs.bookmarkAdded) parts.push(`<span class="stat-added">[+] ${isZh ? '书签' : 'Bookmark'}: ${bs.bookmarkAdded}</span>`);
+                if (bs.bookmarkDeleted) parts.push(`<span class="stat-deleted">[-] ${isZh ? '书签' : 'Bookmark'}: ${bs.bookmarkDeleted}</span>`);
+                if (bs.folderAdded) parts.push(`<span class="stat-added">[+] ${isZh ? '文件夹' : 'Folder'}: ${bs.folderAdded}</span>`);
+                if (bs.folderDeleted) parts.push(`<span class="stat-deleted">[-] ${isZh ? '文件夹' : 'Folder'}: ${bs.folderDeleted}</span>`);
+                if (bs.movedBookmarkCount) parts.push(`<span class="stat-moved">[↔] ${isZh ? '移动书签' : 'Moved Bookmark'}: ${bs.movedBookmarkCount}</span>`);
+                if (bs.movedFolderCount) parts.push(`<span class="stat-moved">[↔] ${isZh ? '移动文件夹' : 'Moved Folder'}: ${bs.movedFolderCount}</span>`);
+                if (bs.modifiedBookmarkCount) parts.push(`<span class="stat-modified">[~] ${isZh ? '修改书签' : 'Modified Bookmark'}: ${bs.modifiedBookmarkCount}</span>`);
+                if (bs.modifiedFolderCount) parts.push(`<span class="stat-modified">[~] ${isZh ? '修改文件夹' : 'Modified Folder'}: ${bs.modifiedFolderCount}</span>`);
+
+                statsHtml = parts.length > 0 ? parts.join('<br>') : (isZh ? '无变化' : 'No changes');
+            }
+        }
+
+        tableRows += `
+            <tr>
+                <td class="col-seq">${seq}</td>
+                <td class="col-time">${recordTime}</td>
+                <td class="col-type">${type}</td>
+                <td class="col-status">${status}</td>
+                <td class="col-note">${note}</td>
+                <td class="col-stats">${statsHtml}</td>
+            </tr>
+        `;
+    });
 
     const html = `<!DOCTYPE html>
-<html>
+<html lang="${isZh ? 'zh-CN' : 'en'}">
 <head>
     <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>${title} - ${timestamp}</title>
     <style>
-        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; padding: 20px; max-width: 800px; margin: 0 auto; background: #f5f5f5; }
-        .header { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 20px; border-radius: 10px; margin-bottom: 20px; }
-        .header h1 { margin: 0; font-size: 24px; }
-        .header .time { opacity: 0.9; margin-top: 8px; font-size: 14px; }
-        .card { background: white; border-radius: 10px; padding: 20px; margin-bottom: 15px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }
-        .card h2 { margin: 0 0 15px 0; font-size: 18px; color: #333; border-bottom: 2px solid #667eea; padding-bottom: 10px; }
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { 
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; 
+            padding: 20px; 
+            background: linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%);
+            min-height: 100vh;
+        }
+        .container { max-width: 1200px; margin: 0 auto; }
+        .header { 
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); 
+            color: white; 
+            padding: 24px 32px; 
+            border-radius: 16px 16px 0 0; 
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        .header h1 { font-size: 28px; font-weight: 600; }
+        .header .meta { font-size: 14px; opacity: 0.9; text-align: right; }
+        .header .meta .mode { 
+            background: rgba(255,255,255,0.2); 
+            padding: 4px 12px; 
+            border-radius: 20px; 
+            margin-bottom: 4px;
+            display: inline-block;
+        }
+        .content { 
+            background: white; 
+            border-radius: 0 0 16px 16px; 
+            box-shadow: 0 10px 40px rgba(0,0,0,0.1); 
+            overflow: hidden;
+        }
         table { width: 100%; border-collapse: collapse; }
-        th, td { padding: 10px; text-align: left; border-bottom: 1px solid #eee; }
-        th { color: #666; font-weight: 600; }
-        .positive { color: #28a745; font-weight: bold; }
-        .negative { color: #dc3545; font-weight: bold; }
-        .neutral { color: #6c757d; }
-        .badge { display: inline-block; padding: 2px 8px; border-radius: 10px; font-size: 12px; }
-        .badge-success { background: #d4edda; color: #155724; }
-        .badge-danger { background: #f8d7da; color: #721c24; }
-        .badge-info { background: #d1ecf1; color: #0c5460; }
+        th { 
+            background: #f8f9fa; 
+            padding: 14px 16px; 
+            text-align: left; 
+            font-weight: 600; 
+            color: #495057;
+            border-bottom: 2px solid #e9ecef;
+        }
+        td { 
+            padding: 12px 16px; 
+            border-bottom: 1px solid #e9ecef; 
+            color: #212529;
+        }
+        tr:hover { background: #f8f9fa; }
+        .col-seq { width: 60px; text-align: center; font-weight: 500; color: #6c757d; }
+        .col-time { width: 180px; }
+        .col-type { width: 80px; }
+        .col-status { width: 100px; }
+        .col-note { max-width: 200px; }
+        .col-stats { min-width: 150px; }
+        .stat-added { color: #28a745; font-weight: 500; }
+        .stat-deleted { color: #dc3545; font-weight: 500; }
+        .stat-moved { color: #17a2b8; font-weight: 500; }
+        .stat-modified { color: #fd7e14; font-weight: 500; }
+        .footer { 
+            padding: 16px 32px; 
+            text-align: center; 
+            color: #6c757d; 
+            font-size: 13px;
+            background: #f8f9fa;
+        }
     </style>
 </head>
 <body>
-    <div class="header">
-        <h1>${title}</h1>
-        <div class="time">${timeLabel}: ${timestamp}</div>
-    </div>
-    
-    <div class="card">
-        <h2>${summaryLabel}</h2>
-        <table>
-            <tr>
-                <th></th>
-                <th>${bookmarkLabel}</th>
-                <th>${folderLabel}</th>
-            </tr>
-            <tr>
-                <td><strong>${currentLabel}</strong></td>
-                <td>${summary.currentBookmarkCount}</td>
-                <td>${summary.currentFolderCount}</td>
-            </tr>
-            <tr>
-                <td><strong>${changeLabel}</strong></td>
-                <td class="${summary.bookmarkDiff > 0 ? 'positive' : summary.bookmarkDiff < 0 ? 'negative' : 'neutral'}">
-                    ${summary.bookmarkDiff > 0 ? '+' : ''}${summary.bookmarkDiff}
-                </td>
-                <td class="${summary.folderDiff > 0 ? 'positive' : summary.folderDiff < 0 ? 'negative' : 'neutral'}">
-                    ${summary.folderDiff > 0 ? '+' : ''}${summary.folderDiff}
-                </td>
-            </tr>
-            <tr>
-                <td><strong>${addedLabel}</strong></td>
-                <td class="positive">+${summary.bookmarkAdded}</td>
-                <td class="positive">+${summary.folderAdded}</td>
-            </tr>
-            <tr>
-                <td><strong>${deletedLabel}</strong></td>
-                <td class="negative">-${summary.bookmarkDeleted}</td>
-                <td class="negative">-${summary.folderDeleted}</td>
-            </tr>
-            <tr>
-                <td><strong>${movedLabel}</strong></td>
-                <td colspan="2">${summary.movedCount} <span class="badge badge-info">${isZh ? '项' : 'items'}</span></td>
-            </tr>
-            <tr>
-                <td><strong>${modifiedLabel}</strong></td>
-                <td colspan="2">${summary.modifiedCount} <span class="badge badge-info">${isZh ? '项' : 'items'}</span></td>
-            </tr>
-        </table>
+    <div class="container">
+        <div class="header">
+            <h1>${title}</h1>
+            <div class="meta">
+                <div class="mode">${modeLabel}</div>
+                <div>${isZh ? '导出时间' : 'Exported'}: ${timestamp}</div>
+                <div>${isZh ? '共' : 'Total'} ${syncHistory.length} ${isZh ? '条记录' : 'records'}</div>
+            </div>
+        </div>
+        <div class="content">
+            <table>
+                <thead>
+                    <tr>
+                        <th>${headers.seq}</th>
+                        <th>${headers.time}</th>
+                        <th>${headers.type}</th>
+                        <th>${headers.status}</th>
+                        <th>${headers.note}</th>
+                        <th>${headers.stats}</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    ${tableRows}
+                </tbody>
+            </table>
+        </div>
+        <div class="footer">
+            Bookmark Backup Extension - ${isZh ? '备份历史导出' : 'Backup History Export'}
+        </div>
     </div>
 </body>
 </html>`;
@@ -4261,130 +4338,251 @@ function generateIncrementalLogContent(options = {}) {
 }
 
 /**
- * 上传增量记录到各个备份目标
- * @param {Object} options
- * @param {string} options.content - HTML内容
- * @param {string} options.lang - 语言
- * @param {string} options.overwriteMode - 覆盖模式 'versioned' 或 'overwrite'
- * @param {boolean} options.webDAVConfigured - WebDAV是否已配置
- * @param {boolean} options.githubRepoConfigured - GitHub是否已配置
- * @param {boolean} options.localBackupConfigured - 本地备份是否已配置
+ * 生成备份历史导出的 JSON 内容
+ * @param {Array} syncHistory - 同步历史记录数组
+ * @param {string} viewMode - 视图模式 'simple' 或 'detailed'
+ * @returns {string} JSON 字符串
  */
-async function uploadIncrementalLog(options = {}) {
-    const { content, lang = 'zh_CN', overwriteMode = 'versioned', webDAVConfigured, githubRepoConfigured, localBackupConfigured } = options;
+function generateSyncHistoryJson(syncHistory, viewMode = 'simple') {
+    const exportData = {
+        exportTime: new Date().toISOString(),
+        viewMode: viewMode,
+        recordCount: syncHistory.length,
+        records: syncHistory.map(record => {
+            const baseRecord = {
+                seqNumber: record.seqNumber,
+                time: record.time,
+                type: record.type,
+                status: record.status,
+                note: record.note,
+                fingerprint: record.fingerprint
+            };
 
-    // 生成文件名
-    let fileName;
-    if (overwriteMode === 'overwrite') {
-        fileName = 'incremental_backup.html';
-    } else {
-        const currentDate = new Date();
-        const timestamp = `${currentDate.getFullYear()}${(currentDate.getMonth() + 1).toString().padStart(2, '0')}${currentDate.getDate().toString().padStart(2, '0')}_${currentDate.getHours().toString().padStart(2, '0')}${currentDate.getMinutes().toString().padStart(2, '0')}${currentDate.getSeconds().toString().padStart(2, '0')}`;
-        fileName = `incremental_${timestamp}.html`;
-    }
-
-    const tasks = [];
-
-    // WebDAV 增量记录上传
-    if (webDAVConfigured) {
-        tasks.push((async () => {
-            try {
-                const config = await browserAPI.storage.local.get(['serverAddress', 'username', 'password']);
-                if (!config.serverAddress || !config.username || !config.password) return;
-
-                const serverAddress = config.serverAddress.replace(/\/+$/, '/');
-                const exportRootFolder = getExportRootFolderByLang(lang);
-                const incrementalFolder = getIncrementalLogFolderByLang(lang);
-                const folderPath = `${exportRootFolder}/${incrementalFolder}/`;
-                const fullUrl = `${serverAddress}${folderPath}${fileName}`;
-                const folderUrl = `${serverAddress}${folderPath}`;
-                const parentUrl = `${serverAddress}${exportRootFolder}/`;
-
-                const authHeader = 'Basic ' + safeBase64(`${config.username}:${config.password}`);
-
-                // 确保文件夹存在
-                await ensureWebDAVCollectionExists(parentUrl, authHeader, '创建父文件夹失败');
-                await ensureWebDAVCollectionExists(folderUrl, authHeader, '创建增量记录文件夹失败');
-
-                // 上传文件
-                await fetch(fullUrl, {
-                    method: 'PUT',
-                    headers: {
-                        'Authorization': authHeader,
-                        'Content-Type': 'text/html',
-                        'Overwrite': 'T'
-                    },
-                    body: content
-                });
-            } catch (e) {
-                console.warn('[uploadIncrementalLog] WebDAV上传失败:', e);
+            if (viewMode === 'detailed') {
+                baseRecord.bookmarkStats = record.bookmarkStats;
+                baseRecord.direction = record.direction;
+                baseRecord.errorMessage = record.errorMessage;
+                baseRecord.isFirstBackup = record.isFirstBackup;
+            } else {
+                // 简略模式只包含统计摘要
+                if (record.bookmarkStats) {
+                    baseRecord.changesSummary = {
+                        added: (record.bookmarkStats.bookmarkAdded || 0) + (record.bookmarkStats.folderAdded || 0),
+                        deleted: (record.bookmarkStats.bookmarkDeleted || 0) + (record.bookmarkStats.folderDeleted || 0),
+                        moved: record.bookmarkStats.movedCount || 0,
+                        modified: record.bookmarkStats.modifiedCount || 0
+                    };
+                }
             }
-        })());
-    }
 
-    // GitHub 仓库增量记录上传
-    if (githubRepoConfigured) {
-        tasks.push((async () => {
-            try {
-                const config = await browserAPI.storage.local.get([
-                    'githubRepoToken', 'githubRepoOwner', 'githubRepoName', 'githubRepoBranch', 'githubRepoBasePath'
-                ]);
+            return baseRecord;
+        })
+    };
 
-                if (!config.githubRepoToken || !config.githubRepoOwner || !config.githubRepoName) return;
+    return JSON.stringify(exportData, null, 2);
+}
 
-                const filePath = buildGitHubRepoFilePath({
-                    basePath: config.githubRepoBasePath,
-                    lang,
-                    folderKey: 'incremental_log',
-                    fileName
-                });
+/**
+ * 导出备份历史到云端
+ * @param {Object} options - 配置选项
+ * @returns {Promise<Object>} 导出结果
+ */
+async function exportSyncHistoryToCloud(options = {}) {
+    try {
+        // 获取设置和数据
+        const settings = await browserAPI.storage.local.get([
+            'syncHistory',
+            'historySyncEnabled', // 备份历史自动同步开关
+            'historySyncFormat',
+            'historySyncViewMode',
+            'historySyncOverwriteMode', // 备份历史自己的覆盖策略
+            'serverAddress',
+            'username',
+            'password',
+            'webDAVToggle',
+            'githubRepoToken',
+            'githubRepoOwner',
+            'githubRepoName',
+            'githubRepoBranch',
+            'githubRepoBasePath',
+            'githubRepoToggle',
+            'defaultDownloadEnabled'
+        ]);
 
-                await upsertRepoFile({
-                    token: config.githubRepoToken,
-                    owner: config.githubRepoOwner,
-                    repo: config.githubRepoName,
-                    branch: config.githubRepoBranch,
-                    path: filePath,
-                    message: `Incremental Backup Log: ${fileName}`,
-                    contentBase64: textToBase64(content)
-                });
-            } catch (e) {
-                console.warn('[uploadIncrementalLog] GitHub上传失败:', e);
+        // 检查是否启用备份历史自动同步
+        if (settings.historySyncEnabled === false) {
+            console.log('[exportSyncHistoryToCloud] 备份历史同步已禁用，跳过导出');
+            return { success: true, skipped: true, reason: 'disabled' };
+        }
+
+        const syncHistory = settings.syncHistory || [];
+        if (syncHistory.length === 0) {
+            console.log('[exportSyncHistoryToCloud] 无备份历史，跳过导出');
+            return { success: true, skipped: true };
+        }
+
+        const format = settings.historySyncFormat || 'html';
+        const viewMode = settings.historySyncViewMode || 'simple';
+        const overwriteMode = settings.historySyncOverwriteMode || 'versioned'; // 使用备份历史自己的覆盖策略
+        const lang = await getCurrentLang();
+
+        // 生成内容
+        let htmlContent = null;
+        let jsonContent = null;
+
+        if (format === 'html' || format === 'both') {
+            htmlContent = generateSyncHistoryHtml(syncHistory, viewMode, lang);
+        }
+        if (format === 'json' || format === 'both') {
+            jsonContent = generateSyncHistoryJson(syncHistory, viewMode);
+        }
+
+        // 生成文件名
+        const timestamp = new Date();
+        const timestampStr = `${timestamp.getFullYear()}${(timestamp.getMonth() + 1).toString().padStart(2, '0')}${timestamp.getDate().toString().padStart(2, '0')}_${timestamp.getHours().toString().padStart(2, '0')}${timestamp.getMinutes().toString().padStart(2, '0')}${timestamp.getSeconds().toString().padStart(2, '0')}`;
+
+        const baseFileName = overwriteMode === 'overwrite'
+            ? 'backup_history'
+            : `backup_history_${timestampStr}`;
+
+        const tasks = [];
+        const exportRootFolder = getExportRootFolderByLang(lang);
+        const historyFolder = lang === 'zh_CN' ? '备份历史' : 'Backup_History';
+
+        // WebDAV 上传
+        const webDAVConfigured = settings.serverAddress && settings.username && settings.password;
+        const webDAVEnabled = settings.webDAVToggle !== false;
+
+        if (webDAVConfigured && webDAVEnabled) {
+            if (htmlContent) {
+                tasks.push(uploadHistoryToWebDAV(htmlContent, `${baseFileName}.html`, exportRootFolder, historyFolder, settings));
             }
-        })());
-    }
-
-    // 本地增量记录下载
-    if (localBackupConfigured) {
-        tasks.push((async () => {
-            try {
-                const config = await browserAPI.storage.local.get(['defaultDownloadEnabled']);
-                if (!config.defaultDownloadEnabled) return;
-
-                const dataUrl = 'data:text/html;charset=utf-8,' + encodeURIComponent(content);
-                const exportRootFolder = getExportRootFolderByLang(lang);
-                const incrementalFolder = getIncrementalLogFolderByLang(lang);
-
-                await new Promise((resolve, reject) => {
-                    browserAPI.downloads.download({
-                        url: dataUrl,
-                        filename: `${exportRootFolder}/${incrementalFolder}/${fileName}`,
-                        saveAs: false
-                    }, (id) => {
-                        if (browserAPI.runtime.lastError) {
-                            reject(new Error(browserAPI.runtime.lastError.message));
-                        } else {
-                            resolve(id);
-                        }
-                    });
-                });
-            } catch (e) {
-                console.warn('[uploadIncrementalLog] 本地下载失败:', e);
+            if (jsonContent) {
+                tasks.push(uploadHistoryToWebDAV(jsonContent, `${baseFileName}.json`, exportRootFolder, historyFolder, settings));
             }
-        })());
-    }
+        }
 
-    await Promise.all(tasks);
+        // GitHub 仓库上传
+        const githubConfigured = settings.githubRepoToken && settings.githubRepoOwner && settings.githubRepoName;
+        const githubEnabled = settings.githubRepoToggle !== false;
+
+        if (githubConfigured && githubEnabled) {
+            if (htmlContent) {
+                tasks.push(uploadHistoryToGitHub(htmlContent, `${baseFileName}.html`, historyFolder, settings, lang));
+            }
+            if (jsonContent) {
+                tasks.push(uploadHistoryToGitHub(jsonContent, `${baseFileName}.json`, historyFolder, settings, lang));
+            }
+        }
+
+        // 本地下载
+        if (settings.defaultDownloadEnabled) {
+            if (htmlContent) {
+                tasks.push(downloadHistoryLocal(htmlContent, `${baseFileName}.html`, exportRootFolder, historyFolder));
+            }
+            if (jsonContent) {
+                tasks.push(downloadHistoryLocal(jsonContent, `${baseFileName}.json`, exportRootFolder, historyFolder));
+            }
+        }
+
+        if (tasks.length === 0) {
+            console.log('[exportSyncHistoryToCloud] 没有配置任何导出目标');
+            return { success: true, skipped: true };
+        }
+
+        await Promise.all(tasks);
+        console.log('[exportSyncHistoryToCloud] 备份历史导出完成');
+        return { success: true };
+
+    } catch (error) {
+        console.error('[exportSyncHistoryToCloud] 导出失败:', error);
+        return { success: false, error: error.message };
+    }
+}
+
+// 辅助函数：上传到 WebDAV
+async function uploadHistoryToWebDAV(content, fileName, rootFolder, subFolder, settings) {
+    try {
+        const serverAddress = settings.serverAddress.replace(/\/+$/, '/');
+        const folderPath = `${rootFolder}/${subFolder}/`;
+        const fullUrl = `${serverAddress}${folderPath}${fileName}`;
+        const folderUrl = `${serverAddress}${folderPath}`;
+        const parentUrl = `${serverAddress}${rootFolder}/`;
+
+        const authHeader = 'Basic ' + safeBase64(`${settings.username}:${settings.password}`);
+
+        // 确保文件夹存在
+        await ensureWebDAVCollectionExists(parentUrl, authHeader, '创建父文件夹失败');
+        await ensureWebDAVCollectionExists(folderUrl, authHeader, '创建备份历史文件夹失败');
+
+        // 上传文件
+        const contentType = fileName.endsWith('.json') ? 'application/json' : 'text/html';
+        await fetch(fullUrl, {
+            method: 'PUT',
+            headers: {
+                'Authorization': authHeader,
+                'Content-Type': `${contentType}; charset=utf-8`,
+                'Overwrite': 'T'
+            },
+            body: content
+        });
+
+        console.log(`[uploadHistoryToWebDAV] 上传成功: ${fileName}`);
+    } catch (e) {
+        console.warn('[uploadHistoryToWebDAV] 上传失败:', e);
+    }
+}
+
+// 辅助函数：上传到 GitHub
+async function uploadHistoryToGitHub(content, fileName, subFolder, settings, lang) {
+    try {
+        const filePath = buildGitHubRepoFilePath({
+            basePath: settings.githubRepoBasePath,
+            lang,
+            folderKey: 'backup_history',
+            fileName
+        });
+
+        await upsertRepoFile({
+            token: settings.githubRepoToken,
+            owner: settings.githubRepoOwner,
+            repo: settings.githubRepoName,
+            branch: settings.githubRepoBranch,
+            path: filePath,
+            message: `Backup History: ${fileName}`,
+            contentBase64: textToBase64(content)
+        });
+
+        console.log(`[uploadHistoryToGitHub] 上传成功: ${fileName}`);
+    } catch (e) {
+        console.warn('[uploadHistoryToGitHub] 上传失败:', e);
+    }
+}
+
+// 辅助函数：本地下载
+async function downloadHistoryLocal(content, fileName, rootFolder, subFolder) {
+    try {
+        const contentType = fileName.endsWith('.json') ? 'application/json' : 'text/html';
+        const dataUrl = `data:${contentType};charset=utf-8,${encodeURIComponent(content)}`;
+
+        await new Promise((resolve, reject) => {
+            browserAPI.downloads.download({
+                url: dataUrl,
+                filename: `${rootFolder}/${subFolder}/${fileName}`,
+                saveAs: false
+            }, (id) => {
+                if (browserAPI.runtime.lastError) {
+                    reject(new Error(browserAPI.runtime.lastError.message));
+                } else {
+                    resolve(id);
+                }
+            });
+        });
+
+        console.log(`[downloadHistoryLocal] 下载成功: ${fileName}`);
+    } catch (e) {
+        console.warn('[downloadHistoryLocal] 下载失败:', e);
+    }
 }
 
 // 双向备份书签
@@ -4606,43 +4804,8 @@ async function syncBookmarks(isManual = false, direction = null, isSwitchToAutoB
                     browserAPI.runtime.sendMessage({ action: 'clearExplicitMoved' });
                 } catch (_) { }
 
-                // [增量模式] 如果启用了增量备份模式，额外输出增量记录文件
-                try {
-                    const { backupMode = 'full', incrementalDetail = 'simple' } = await browserAPI.storage.local.get(['backupMode', 'incrementalDetail']);
-                    if (backupMode === 'incremental') {
-                        // 获取最新的同步历史记录（包含bookmarkStats）
-                        const { syncHistory = [] } = await browserAPI.storage.local.get(['syncHistory']);
-                        if (syncHistory.length > 0) {
-                            const latestRecord = syncHistory[syncHistory.length - 1];
-                            if (latestRecord && latestRecord.bookmarkStats) {
-                                const lang = await getCurrentLang();
-                                const { overwriteMode = 'versioned' } = await browserAPI.storage.local.get(['overwriteMode']);
-
-                                // 生成增量记录内容
-                                const incrementalContent = generateIncrementalLogContent({
-                                    bookmarkStats: latestRecord.bookmarkStats,
-                                    incrementalDetail,
-                                    lang,
-                                    format: 'html'
-                                });
-
-                                // 输出增量记录到各个目标
-                                await uploadIncrementalLog({
-                                    content: incrementalContent,
-                                    lang,
-                                    overwriteMode,
-                                    webDAVConfigured: webDAVConfigured && webDAVEnabled,
-                                    githubRepoConfigured: githubRepoConfigured && githubRepoEnabled,
-                                    localBackupConfigured
-                                });
-                                console.log('[syncBookmarks] 增量记录已输出');
-                            }
-                        }
-                    }
-                } catch (incrementalError) {
-                    console.warn('[syncBookmarks] 增量记录输出失败:', incrementalError);
-                    // 增量记录失败不影响主备份流程
-                }
+                // 注：增量备份功能已移至备份历史自动同步（Phase 2）
+                // 原有的 generateIncrementalLogContent 和 uploadIncrementalLog 已移除
             } catch (updateError) {
                 console.error('[syncBookmarks] 更新角标和缓存失败:', updateError);
             }
@@ -5122,6 +5285,22 @@ async function updateSyncStatus(direction, time, status = 'success', errorMessag
             });
 
             await setBadge();
+        }
+
+        // Phase 2: 备份成功后自动同步备份历史
+        if (status === 'success') {
+            try {
+                // 异步执行，不阻塞主流程
+                exportSyncHistoryToCloud().then(result => {
+                    if (result.success && !result.skipped) {
+                        console.log('[updateSyncStatus] 备份历史同步完成');
+                    }
+                }).catch(err => {
+                    console.warn('[updateSyncStatus] 备份历史同步失败:', err);
+                });
+            } catch (e) {
+                console.warn('[updateSyncStatus] 触发备份历史同步失败:', e);
+            }
         }
 
     } catch (error) {

@@ -3734,6 +3734,30 @@ function handleAutoSyncToggle(event) {
     if (autoSyncToggle) autoSyncToggle.checked = isChecked;
     if (autoSyncToggle2) autoSyncToggle2.checked = isChecked;
 
+    // Phase 2.1 Update: Update Settings Panel Checkboxes
+    const backupModeAuto = document.getElementById('backupModeAuto');
+    const backupModeManual = document.getElementById('backupModeManual');
+    if (backupModeAuto) backupModeAuto.checked = isChecked;
+    if (backupModeManual) backupModeManual.checked = !isChecked;
+
+    // Phase 2.1 Update: Toggle Settings Buttons visibility
+    const autoBackupSettingsBtnNew = document.getElementById('autoBackupSettingsBtnNew');
+    const reminderSettingsBtnNew = document.getElementById('reminderSettingsBtnNew');
+
+    if (isChecked) {
+        if (autoBackupSettingsBtnNew) autoBackupSettingsBtnNew.style.display = 'flex';
+        if (reminderSettingsBtnNew) reminderSettingsBtnNew.style.display = 'none';
+
+        const manualBackupBtnOverlay = document.getElementById('manualBackupBtnOverlay');
+        if (manualBackupBtnOverlay) manualBackupBtnOverlay.style.display = 'none';
+    } else {
+        if (autoBackupSettingsBtnNew) autoBackupSettingsBtnNew.style.display = 'none';
+        if (reminderSettingsBtnNew) reminderSettingsBtnNew.style.display = 'flex';
+
+        const manualBackupBtnOverlay = document.getElementById('manualBackupBtnOverlay');
+        if (manualBackupBtnOverlay) manualBackupBtnOverlay.style.display = 'flex';
+    }
+
     // 更新界面元素状态
     const backupModeSwitch = document.getElementById('backupModeSwitch');
     if (backupModeSwitch) {
@@ -6992,46 +7016,20 @@ const applyLocalizedContent = async (lang) => { // Added lang parameter
 
 /**
  * 初始化备份设置区域的交互逻辑
- * - 备份模式：全量/增量互斥
- * - 增量详情：简略/详情互斥，仅增量模式时启用
  * - 覆盖策略：版本化/覆盖互斥
+ * 
+ * 注：增量备份功能已移至备份历史自动同步（Phase 2）
  */
 function initializeBackupSettings() {
-    // 获取所有勾选框元素
-    const incrementalDetailRow = document.getElementById('incrementalDetailRow');
-    const backupModeFull = document.getElementById('backupModeFull');
-    const backupModeIncremental = document.getElementById('backupModeIncremental');
-    const incrementalSimple = document.getElementById('incrementalSimple');
-    const incrementalDetailed = document.getElementById('incrementalDetailed');
-    const incrementalDetailGroup = document.getElementById('incrementalDetailGroup');
+    // 获取覆盖策略勾选框元素
     const overwriteVersioned = document.getElementById('overwriteVersioned');
     const overwriteOverwrite = document.getElementById('overwriteOverwrite');
 
-    if (!backupModeFull || !backupModeIncremental) return;
+    if (!overwriteVersioned || !overwriteOverwrite) return;
 
     // 加载保存的设置
-    chrome.storage.local.get(['backupMode', 'incrementalDetail', 'overwriteMode'], function (result) {
-        const backupMode = result.backupMode || 'full';
-        const incrementalDetail = result.incrementalDetail || 'simple';
+    chrome.storage.local.get(['overwriteMode'], function (result) {
         const overwriteMode = result.overwriteMode || 'versioned';
-
-        // 应用备份模式
-        if (backupMode === 'full') {
-            backupModeFull.checked = true;
-            backupModeIncremental.checked = false;
-        } else {
-            backupModeFull.checked = false;
-            backupModeIncremental.checked = true;
-        }
-
-        // 应用增量详情
-        if (incrementalDetail === 'simple') {
-            incrementalSimple.checked = true;
-            incrementalDetailed.checked = false;
-        } else {
-            incrementalSimple.checked = false;
-            incrementalDetailed.checked = true;
-        }
 
         // 应用覆盖策略
         if (overwriteMode === 'versioned') {
@@ -7041,107 +7039,215 @@ function initializeBackupSettings() {
             overwriteVersioned.checked = false;
             overwriteOverwrite.checked = true;
         }
-
-        // 更新增量详情区域状态
-        updateIncrementalDetailState();
     });
-
-    // 更新增量详情区域的启用/禁用状态
-    function updateIncrementalDetailState() {
-        const isIncremental = backupModeIncremental.checked;
-
-        // 当非增量模式时，直接隐藏详情行，而不是仅禁用
-        if (incrementalDetailRow) {
-            incrementalDetailRow.style.display = isIncremental ? 'flex' : 'none';
-        } else if (incrementalDetailGroup) {
-            // Fallback for compatibility if row ID not found
-            incrementalDetailGroup.style.opacity = isIncremental ? '1' : '0.4';
-            incrementalDetailGroup.style.pointerEvents = isIncremental ? 'auto' : 'none';
-        }
-
-        if (incrementalSimple) incrementalSimple.disabled = !isIncremental;
-        if (incrementalDetailed) incrementalDetailed.disabled = !isIncremental;
-    }
 
     // 保存设置到存储
     function saveBackupSettings() {
         const settings = {
-            backupMode: backupModeIncremental.checked ? 'incremental' : 'full',
-            incrementalDetail: incrementalDetailed.checked ? 'detailed' : 'simple',
             overwriteMode: overwriteOverwrite.checked ? 'overwrite' : 'versioned'
         };
         chrome.storage.local.set(settings);
     }
 
-    // 备份模式：全量勾选
-    backupModeFull.addEventListener('change', function () {
-        if (this.checked) {
-            backupModeIncremental.checked = false;
-        } else {
-            // 至少要选择一个
-            backupModeIncremental.checked = true;
-        }
-        updateIncrementalDetailState();
-        saveBackupSettings();
-    });
-
-    // 备份模式：增量勾选
-    backupModeIncremental.addEventListener('change', function () {
-        if (this.checked) {
-            backupModeFull.checked = false;
-        } else {
-            // 至少要选择一个
-            backupModeFull.checked = true;
-        }
-        updateIncrementalDetailState();
-        saveBackupSettings();
-    });
-
-    // 增量详情：简略勾选
-    if (incrementalSimple) {
-        incrementalSimple.addEventListener('change', function () {
-            if (this.checked) {
-                incrementalDetailed.checked = false;
-            } else {
-                incrementalDetailed.checked = true;
-            }
-            saveBackupSettings();
-        });
-    }
-
-    // 增量详情：详情勾选
-    if (incrementalDetailed) {
-        incrementalDetailed.addEventListener('change', function () {
-            if (this.checked) {
-                incrementalSimple.checked = false;
-            } else {
-                incrementalSimple.checked = true;
-            }
-            saveBackupSettings();
-        });
-    }
-
     // 覆盖策略：版本化勾选
-    if (overwriteVersioned) {
-        overwriteVersioned.addEventListener('change', function () {
-            if (this.checked) {
-                overwriteOverwrite.checked = false;
-            } else {
-                overwriteOverwrite.checked = true;
-            }
-            saveBackupSettings();
-        });
-    }
+    overwriteVersioned.addEventListener('change', function () {
+        if (this.checked) {
+            overwriteOverwrite.checked = false;
+        } else {
+            overwriteOverwrite.checked = true;
+        }
+        saveBackupSettings();
+    });
 
     // 覆盖策略：覆盖勾选
-    if (overwriteOverwrite) {
-        overwriteOverwrite.addEventListener('change', function () {
-            if (this.checked) {
-                overwriteVersioned.checked = false;
+    overwriteOverwrite.addEventListener('change', function () {
+        if (this.checked) {
+            overwriteVersioned.checked = false;
+        } else {
+            overwriteVersioned.checked = true;
+        }
+        saveBackupSettings();
+    });
+
+    // ===== 备份历史同步设置 (Phase 2) =====
+    const historySyncEnabled = document.getElementById('historySyncEnabled');
+    const historySyncContent = document.getElementById('historySyncContent');
+    const historySyncHtml = document.getElementById('historySyncHtml');
+    const historySyncJson = document.getElementById('historySyncJson');
+    const historySyncSimple = document.getElementById('historySyncSimple');
+    const historySyncDetailed = document.getElementById('historySyncDetailed');
+
+    // 更新备份历史设置区域的启用/禁用状态
+    function updateHistorySyncContentState() {
+        if (historySyncContent) {
+            if (historySyncEnabled && historySyncEnabled.checked) {
+                historySyncContent.classList.remove('disabled');
             } else {
-                overwriteVersioned.checked = true;
+                historySyncContent.classList.add('disabled');
             }
-            saveBackupSettings();
+        }
+    }
+
+    // 加载备份历史启用状态
+    chrome.storage.local.get(['historySyncEnabled'], function (result) {
+        const enabled = result.historySyncEnabled !== false; // 默认开启
+        if (historySyncEnabled) historySyncEnabled.checked = enabled;
+        updateHistorySyncContentState();
+    });
+
+    // 备份历史启用开关事件
+    if (historySyncEnabled) {
+        historySyncEnabled.addEventListener('change', function () {
+            chrome.storage.local.set({ historySyncEnabled: this.checked });
+            updateHistorySyncContentState();
+        });
+    }
+
+    // ===== 备份历史区域折叠功能 =====
+    const historySyncHeader = document.getElementById('historySyncHeader');
+    const historySyncSection = document.getElementById('historySyncSection');
+
+    // 加载折叠状态（默认收起）
+    chrome.storage.local.get(['historySyncCollapsed'], function (result) {
+        const collapsed = result.historySyncCollapsed !== false; // 默认收起
+        if (collapsed && historySyncSection) {
+            historySyncSection.classList.add('collapsed');
+        }
+    });
+
+    // 点击标题切换折叠状态
+    if (historySyncHeader && historySyncSection) {
+        historySyncHeader.addEventListener('click', function () {
+            historySyncSection.classList.toggle('collapsed');
+            const isCollapsed = historySyncSection.classList.contains('collapsed');
+            chrome.storage.local.set({ historySyncCollapsed: isCollapsed });
+        });
+    }
+
+    // 加载备份历史同步设置
+    chrome.storage.local.get(['historySyncFormat', 'historySyncViewMode'], function (result) {
+        // 格式设置
+        const format = result.historySyncFormat || 'html';
+        if (historySyncHtml) historySyncHtml.checked = (format === 'html' || format === 'both');
+        if (historySyncJson) historySyncJson.checked = (format === 'json' || format === 'both');
+
+        // 视图模式设置
+        const viewMode = result.historySyncViewMode || 'simple';
+        if (historySyncSimple) historySyncSimple.checked = (viewMode === 'simple');
+        if (historySyncDetailed) historySyncDetailed.checked = (viewMode === 'detailed');
+    });
+
+    // 保存备份历史同步设置（格式）
+    function saveHistorySyncFormatSettings() {
+        const htmlChecked = historySyncHtml?.checked || false;
+        const jsonChecked = historySyncJson?.checked || false;
+
+        let format = 'html'; // 默认
+        if (htmlChecked && jsonChecked) {
+            format = 'both';
+        } else if (jsonChecked) {
+            format = 'json';
+        } else {
+            format = 'html';
+        }
+
+        chrome.storage.local.set({ historySyncFormat: format });
+    }
+
+    // 保存备份历史同步设置（视图模式）
+    function saveHistorySyncViewModeSettings() {
+        const viewMode = historySyncDetailed?.checked ? 'detailed' : 'simple';
+        chrome.storage.local.set({ historySyncViewMode: viewMode });
+    }
+
+    // HTML 格式勾选
+    if (historySyncHtml) {
+        historySyncHtml.addEventListener('change', function () {
+            // 至少选一个格式
+            if (!this.checked && !historySyncJson.checked) {
+                historySyncJson.checked = true;
+            }
+            saveHistorySyncFormatSettings();
+        });
+    }
+
+    // JSON 格式勾选
+    if (historySyncJson) {
+        historySyncJson.addEventListener('change', function () {
+            // 至少选一个格式
+            if (!this.checked && !historySyncHtml.checked) {
+                historySyncHtml.checked = true;
+            }
+            saveHistorySyncFormatSettings();
+        });
+    }
+
+    // 简略视图模式勾选（互斥）
+    if (historySyncSimple) {
+        historySyncSimple.addEventListener('change', function () {
+            if (this.checked) {
+                if (historySyncDetailed) historySyncDetailed.checked = false;
+            } else {
+                // 至少选一个
+                if (historySyncDetailed) historySyncDetailed.checked = true;
+            }
+            saveHistorySyncViewModeSettings();
+        });
+    }
+
+    // 详情视图模式勾选（互斥）
+    if (historySyncDetailed) {
+        historySyncDetailed.addEventListener('change', function () {
+            if (this.checked) {
+                if (historySyncSimple) historySyncSimple.checked = false;
+            } else {
+                // 至少选一个
+                if (historySyncSimple) historySyncSimple.checked = true;
+            }
+            saveHistorySyncViewModeSettings();
+        });
+    }
+
+    // ===== 备份历史覆盖策略 =====
+    const historySyncVersioned = document.getElementById('historySyncVersioned');
+    const historySyncOverwrite = document.getElementById('historySyncOverwrite');
+
+    // 加载备份历史覆盖策略
+    chrome.storage.local.get(['historySyncOverwriteMode'], function (result) {
+        const mode = result.historySyncOverwriteMode || 'versioned';
+        if (historySyncVersioned) historySyncVersioned.checked = (mode === 'versioned');
+        if (historySyncOverwrite) historySyncOverwrite.checked = (mode === 'overwrite');
+    });
+
+    // 保存备份历史覆盖策略
+    function saveHistorySyncOverwriteModeSettings() {
+        const mode = historySyncOverwrite?.checked ? 'overwrite' : 'versioned';
+        chrome.storage.local.set({ historySyncOverwriteMode: mode });
+    }
+
+    // 版本化勾选（互斥）
+    if (historySyncVersioned) {
+        historySyncVersioned.addEventListener('change', function () {
+            if (this.checked) {
+                if (historySyncOverwrite) historySyncOverwrite.checked = false;
+            } else {
+                // 至少选一个
+                if (historySyncOverwrite) historySyncOverwrite.checked = true;
+            }
+            saveHistorySyncOverwriteModeSettings();
+        });
+    }
+
+    // 覆盖勾选（互斥）
+    if (historySyncOverwrite) {
+        historySyncOverwrite.addEventListener('change', function () {
+            if (this.checked) {
+                if (historySyncVersioned) historySyncVersioned.checked = false;
+            } else {
+                // 至少选一个
+                if (historySyncVersioned) historySyncVersioned.checked = true;
+            }
+            saveHistorySyncOverwriteModeSettings();
         });
     }
 
@@ -7694,39 +7800,59 @@ document.addEventListener('DOMContentLoaded', function () {
         });
     }
 
-    // 初始化备份模式切换：上半区=自动，下半区=手动；不再整块点击切换
-    const backupModeSwitch = document.getElementById('backupModeSwitch');
-    const autoOptionEl = document.querySelector('.backup-mode-option.auto-option');
-    const manualOptionEl = document.querySelector('.backup-mode-option.manual-option');
+    // 初始化备份模式切换 (Settings & Initialization checkboxes)
+    const backupModeAuto = document.getElementById('backupModeAuto');
+    const backupModeManual = document.getElementById('backupModeManual');
 
-    const shouldIgnoreClick = (evt) => {
-        // 点击操作按钮区域不切换模式
-        const target = evt.target;
-        return !!(target.closest && target.closest('.option-actions'));
+    // 通用切换函数
+    const handleModeChange = function (targetMode) {
+        const autoSyncToggle2 = document.getElementById('autoSyncToggle2');
+        if (!autoSyncToggle2) return;
+
+        const currentMode = autoSyncToggle2.checked ? 'auto' : 'manual';
+        if (targetMode === currentMode) return; // No change
+
+        if (targetMode === 'auto') {
+            autoSyncToggle2.checked = true;
+            autoSyncToggle2.dispatchEvent(new Event('change'));
+        } else {
+            autoSyncToggle2.checked = false;
+            autoSyncToggle2.dispatchEvent(new Event('change'));
+        }
     };
 
-    if (autoOptionEl && !autoOptionEl.hasAttribute('data-mode-listener')) {
-        autoOptionEl.addEventListener('click', function (evt) {
-            if (shouldIgnoreClick(evt)) return;
-            const autoSyncToggle2 = document.getElementById('autoSyncToggle2');
-            if (autoSyncToggle2 && !autoSyncToggle2.checked) {
-                autoSyncToggle2.checked = true;
-                autoSyncToggle2.dispatchEvent(new Event('change'));
+    if (backupModeAuto) {
+        backupModeAuto.addEventListener('change', function (e) {
+            if (e.target.checked) {
+                // Uncheck manual
+                if (backupModeManual) backupModeManual.checked = false;
+                handleModeChange('auto');
+            } else {
+                // Prevent unchecking if it's the only one (enforce radio behavior)
+                // e.target.checked = true; // Optional: Force one to be checked
+                // But if user unchecks Auto, maybe they mean Manual?
+                if (backupModeManual && !backupModeManual.checked) {
+                    backupModeManual.checked = true;
+                    handleModeChange('manual');
+                }
             }
         });
-        autoOptionEl.setAttribute('data-mode-listener', 'true');
     }
 
-    if (manualOptionEl && !manualOptionEl.hasAttribute('data-mode-listener')) {
-        manualOptionEl.addEventListener('click', function (evt) {
-            if (shouldIgnoreClick(evt)) return;
-            const autoSyncToggle2 = document.getElementById('autoSyncToggle2');
-            if (autoSyncToggle2 && autoSyncToggle2.checked) {
-                autoSyncToggle2.checked = false;
-                autoSyncToggle2.dispatchEvent(new Event('change'));
+    if (backupModeManual) {
+        backupModeManual.addEventListener('change', function (e) {
+            if (e.target.checked) {
+                // Uncheck auto
+                if (backupModeAuto) backupModeAuto.checked = false;
+                handleModeChange('manual');
+            } else {
+                // Prevent unchecking if it's the only one
+                if (backupModeAuto && !backupModeAuto.checked) {
+                    backupModeAuto.checked = true;
+                    handleModeChange('auto');
+                }
             }
         });
-        manualOptionEl.setAttribute('data-mode-listener', 'true');
     }
 
     // 初始化备份状态
@@ -7734,15 +7860,8 @@ document.addEventListener('DOMContentLoaded', function () {
         const autoSyncEnabled = result.autoSync !== undefined ? result.autoSync : true;
 
         // 更新开关UI状态
-        if (backupModeSwitch) {
-            if (autoSyncEnabled) {
-                backupModeSwitch.classList.add('auto');
-                backupModeSwitch.classList.remove('manual');
-            } else {
-                backupModeSwitch.classList.add('manual');
-                backupModeSwitch.classList.remove('auto');
-            }
-        }
+        // Initialize status card and tips
+        // backupModeSwitch is removed from HTML, so we skip its class toggling
 
         // 初始化右侧状态卡片的配色
         const changeDescriptionContainerAtInit = document.getElementById('change-description-row');
@@ -7769,7 +7888,36 @@ document.addEventListener('DOMContentLoaded', function () {
                 manualTip.style.display = 'inline-block';
             }
         }
+
+        // Phase 2.1: Initialize New UI Elements
+        const backupModeAuto = document.getElementById('backupModeAuto');
+        const backupModeManual = document.getElementById('backupModeManual');
+        if (backupModeAuto) backupModeAuto.checked = autoSyncEnabled;
+        if (backupModeManual) backupModeManual.checked = !autoSyncEnabled;
+
+        const autoBackupSettingsBtnNew = document.getElementById('autoBackupSettingsBtnNew');
+        const reminderSettingsBtnNew = document.getElementById('reminderSettingsBtnNew');
+        const manualBackupBtnOverlay = document.getElementById('manualBackupBtnOverlay');
+
+        if (autoSyncEnabled) {
+            if (autoBackupSettingsBtnNew) autoBackupSettingsBtnNew.style.display = 'flex';
+            if (reminderSettingsBtnNew) reminderSettingsBtnNew.style.display = 'none';
+            if (manualBackupBtnOverlay) manualBackupBtnOverlay.style.display = 'none';
+        } else {
+            if (autoBackupSettingsBtnNew) autoBackupSettingsBtnNew.style.display = 'none';
+            if (reminderSettingsBtnNew) reminderSettingsBtnNew.style.display = 'flex';
+            if (manualBackupBtnOverlay) manualBackupBtnOverlay.style.display = 'flex';
+        }
     });
+
+    // Initialize Manual Backup Overlay Button
+    const manualBackupBtnOverlay = document.getElementById('manualBackupBtnOverlay');
+    if (manualBackupBtnOverlay) {
+        manualBackupBtnOverlay.addEventListener('click', function (e) {
+            e.stopPropagation(); // Prevent card click
+            handleManualUpload();
+        });
+    }
 
     // 监听来自后台的书签变化消息和获取变化描述请求
     chrome.runtime.onMessage.addListener(function (message, sender, sendResponse) {
@@ -7854,6 +8002,23 @@ document.addEventListener('DOMContentLoaded', function () {
     // 绑定设置面板打开按钮点击事件
     if (reminderSettingsBtn) {
         reminderSettingsBtn.addEventListener('click', async function () {
+            // 暂停计时器
+            await pauseTimerForSettings();
+
+            // 加载最新设置
+            await loadReminderSettings();
+
+            // 显示设置对话框
+            if (reminderSettingsDialog) {
+                reminderSettingsDialog.style.display = 'block';
+            }
+        });
+    }
+
+    // New Reminder Settings Button (in Settings Panel)
+    const reminderSettingsBtnNew = document.getElementById('reminderSettingsBtnNew');
+    if (reminderSettingsBtnNew) {
+        reminderSettingsBtnNew.addEventListener('click', async function () {
             // 暂停计时器
             await pauseTimerForSettings();
 
@@ -8149,6 +8314,40 @@ document.addEventListener('DOMContentLoaded', function () {
             autoBackupSettingsDialog.style.display = 'block';
 
             // 隐藏"Back to Top"按钮
+            hideAllScrollToTopButtons();
+        });
+    }
+
+    // New Auto Backup Settings Button (in Settings Panel)
+    const autoBackupSettingsBtnNew = document.getElementById('autoBackupSettingsBtnNew');
+    if (autoBackupSettingsBtnNew) {
+        autoBackupSettingsBtnNew.addEventListener('click', async function () {
+            // Reuse the existing logic by triggering click on the old button (which handles init)
+            // Or copy the init logic. Since init logic is complex and handles "alreadyInitialized", triggering click is safer/easier
+            // BUT reusing the code block is cleaner if we extract it.
+            // For now, let's just trigger the old button's click handler if it exists, or duplicate the logic.
+            // Duplicating logic is better to avoid dependency on hidden DOM elements working perfectly.
+
+            // ... copy of Auto Backup Settings Init Logic ...
+            console.log('[自动备份设置(New)] 开始初始化UI...');
+            const container = document.getElementById('autoBackupTimerUIContainer');
+            if (container) {
+                const alreadyInitialized = container.querySelector('#autoBackupTimerContainer');
+                if (!alreadyInitialized) {
+                    try {
+                        const lang = await new Promise(resolve => chrome.storage.local.get(['preferredLang'], r => resolve(r.preferredLang || 'zh_CN')));
+                        container.innerHTML = '';
+                        container.appendChild(createAutoBackupTimerUI(lang));
+                        await initializeAutoBackupTimerUIEvents();
+                        await loadAutoBackupSettings();
+                    } catch (e) { console.error(e); }
+                } else {
+                    await loadAutoBackupSettings();
+                }
+            }
+            await initRealtimeBackupToggle();
+            await applyAutoBackupSettingsLanguage();
+            if (autoBackupSettingsDialog) autoBackupSettingsDialog.style.display = 'block';
             hideAllScrollToTopButtons();
         });
     }

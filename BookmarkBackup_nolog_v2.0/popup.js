@@ -6341,6 +6341,11 @@ const applyLocalizedContent = async (lang) => { // Added lang parameter
     const overwriteOverwriteLabelEl = document.getElementById('overwriteOverwriteLabel');
     if (overwriteOverwriteLabelEl) overwriteOverwriteLabelEl.textContent = overwriteOverwriteText;
 
+    // 更新备份设置已保存提示文本
+    const settingsSavedText = settingsSavedStrings[lang] || settingsSavedStrings['zh_CN'];
+    const backupSettingsSavedTextEl = document.getElementById('backupSettingsSavedText');
+    if (backupSettingsSavedTextEl) backupSettingsSavedTextEl.textContent = settingsSavedText;
+
     // 更新同步与恢复区域文本
     const syncRestoreTitleEl = document.getElementById('syncRestoreTitle');
     if (syncRestoreTitleEl) syncRestoreTitleEl.textContent = syncRestoreTitleText;
@@ -7041,12 +7046,32 @@ function initializeBackupSettings() {
         }
     });
 
-    // 保存设置到存储
+    // 保存设置到存储（带回调确认和视觉反馈）
     function saveBackupSettings() {
         const settings = {
             overwriteMode: overwriteOverwrite.checked ? 'overwrite' : 'versioned'
         };
-        chrome.storage.local.set(settings);
+
+        // 使用回调确认保存成功
+        chrome.storage.local.set(settings, function () {
+            if (chrome.runtime.lastError) {
+                console.error('[备份设置] 保存失败:', chrome.runtime.lastError);
+                return;
+            }
+
+            console.log('[备份设置] 已保存覆盖策略:', settings.overwriteMode);
+
+            // 显示保存成功指示器
+            const savedIndicator = document.getElementById('backupSettingsSavedIndicator');
+            if (savedIndicator) {
+                savedIndicator.style.opacity = '1';
+
+                // 2秒后淡出
+                setTimeout(() => {
+                    savedIndicator.style.opacity = '0';
+                }, 2000);
+            }
+        });
     }
 
     // 覆盖策略：版本化勾选

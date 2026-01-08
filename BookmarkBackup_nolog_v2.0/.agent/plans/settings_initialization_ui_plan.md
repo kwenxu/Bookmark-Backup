@@ -483,4 +483,36 @@ Time 设置按钮根据 Mode 选择打开不同弹窗：
 
 ---
 
+---
+
+## 十五、技术总结：本地备份覆盖策略 (Enhanced Overwrite Strategy)
+
+>用于解决 Chrome 下载 API 无法直接覆盖同名文件的问题。
+
+### 15.1 问题背景
+Chrome 的 `downloads.download` API 出于安全考虑，当目标路径存在同名文件时，会自动重命名（如添加 `(1)`, `(2)` 后缀），无法实现真正的“覆盖”效果。
+
+### 15.2 解决方案核心逻辑
+
+采用 **"ID持久化 + 预删除"** 的策略：
+
+1.  **持久化存储 ID**：
+    *   每次本地备份成功后，将生成的 `downloadId` 写入 `chrome.storage.local` (Key: `lastLocalBackupId`)。
+    *   不依赖内存中的 ID，防止 Browser 重启或 Service Worker 休眠导致 ID 丢失。
+
+2.  **优先 ID 删除 (Primary Strategy)**：
+    *   再次备份前，读取 `lastLocalBackupId`。
+    *   使用 `chrome.downloads.search({id})` 确认文件是否仍在下载历史中。
+    *   若存在，调用 `chrome.downloads.removeFile(id)` 删除物理文件，并调用 `chrome.downloads.erase({id})` 清除历史记录。
+
+3.  **备选 搜索删除 (Fallback Strategy)**：
+    *   如果 ID 无效（如用户清空了下载历史），回退到使用 `filenameRegex` 搜索同名文件。
+    *   找到匹配项后尝试删除。
+
+### 15.3 适用范围
+*   目前已应用于：**书签本地备份 (Bookmark Backup - Local)** 的覆盖模式。
+*   后续可推广至：**备份历史同步 (Backup History)** 的本地导出覆盖模式。
+
+---
+
 *计划书结束*

@@ -3449,18 +3449,81 @@ async function uploadBookmarksToLocal(bookmarks) {
                 const dataUrl = 'data:text/html;charset=utf-8,' + encodeURIComponent(htmlContent);
                 const localBackupFolder = await getBackupFolder();
                 const exportRootFolder = await getExportRootFolder();
+                const fullFilePath = `${exportRootFolder}/${localBackupFolder}/${fileName}`;
+
+                // 覆盖模式：尝试删除旧文件
+                if (overwriteMode === 'overwrite') {
+                    try {
+                        let deleted = false;
+
+                        // 方法1：尝试通过持久化存储的 ID 删除（最可靠）
+                        const { lastLocalBackupId } = await browserAPI.storage.local.get(['lastLocalBackupId']);
+                        if (lastLocalBackupId) {
+                            try {
+                                // 检查该 ID 是否还存在于下载历史中
+                                const exists = await new Promise(resolve => {
+                                    browserAPI.downloads.search({ id: lastLocalBackupId }, results => {
+                                        resolve(results && results.length > 0);
+                                    });
+                                });
+
+                                if (exists) {
+                                    await new Promise(resolve => browserAPI.downloads.removeFile(lastLocalBackupId, resolve));
+                                    await new Promise(resolve => browserAPI.downloads.erase({ id: lastLocalBackupId }, resolve));
+                                    console.log('[本地备份] 通过ID已删除旧文件:', lastLocalBackupId);
+                                    deleted = true;
+                                }
+                            } catch (e) {
+                                console.warn('[本地备份] ID删除失败:', e);
+                            }
+                        }
+
+                        // 方法2：如果方法1失效，尝试通过文件名搜索删除（备选）
+                        if (!deleted) {
+                            const existingDownloads = await new Promise((resolve) => {
+                                browserAPI.downloads.search({
+                                    filenameRegex: `.*${fileName.replace('.', '\\.')}$`,
+                                    state: 'complete'
+                                }, (results) => {
+                                    resolve(results || []);
+                                });
+                            });
+
+                            for (const item of existingDownloads) {
+                                if (item.filename && item.filename.endsWith(fileName)) {
+                                    try {
+                                        await new Promise(resolve => browserAPI.downloads.removeFile(item.id, resolve));
+                                        await new Promise(resolve => browserAPI.downloads.erase({ id: item.id }, resolve));
+                                        console.log('[本地备份] 通过搜索已删除旧文件:', item.filename);
+                                    } catch (err) {
+                                        console.warn('[本地备份] 搜索删除失败:', err);
+                                    }
+                                }
+                            }
+                        }
+                    } catch (searchError) {
+                        console.warn('[本地备份] 清理旧文件流程出错:', searchError);
+                    }
+                }
 
                 const downloadId = await new Promise((resolve, reject) => {
                     browserAPI.downloads.download({
                         url: dataUrl,
-                        filename: `${exportRootFolder}/${localBackupFolder}/${fileName}`,
-                        saveAs: false
+                        filename: fullFilePath,
+                        saveAs: false,
+                        conflictAction: 'overwrite'
                     }, (id) => {
                         if (browserAPI.runtime.lastError) {
                             reject(new Error(browserAPI.runtime.lastError.message));
                         } else {
-                            // 将此下载ID记录为书签备份下载
+                            // 记录下载ID到内存（即时用）
                             bookmarkDownloadIds.add(id);
+
+                            // 关键修改：持久化存储下载ID（用于下次覆盖）
+                            if (overwriteMode === 'overwrite') {
+                                browserAPI.storage.local.set({ lastLocalBackupId: id });
+                            }
+
                             resolve(id);
                         }
                     });

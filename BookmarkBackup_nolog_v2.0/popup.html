@@ -3642,8 +3642,22 @@
                     <div class="glass-panel stacked-settings">
                         <!-- Section 1: 书签备份设置 -->
                         <div class="settings-section">
-                            <div class="section-header">
+                            <div class="section-header"
+                                style="display: flex; justify-content: space-between; align-items: center;">
                                 <span class="section-title" id="bookmarkBackupTitle">Bookmark Backup</span>
+                                <span id="backupSettingsSavedIndicator" style="
+                                    font-size: 11px;
+                                    color: #4CAF50;
+                                    opacity: 0;
+                                    transition: opacity 0.3s ease;
+                                    margin-left: 8px;
+                                    display: flex;
+                                    align-items: center;
+                                    gap: 4px;
+                                ">
+                                    <i class="fas fa-check-circle"></i>
+                                    <span id="backupSettingsSavedText">已保存</span>
+                                </span>
                             </div>
                             <div class="section-content">
                                 <div class="setting-row">

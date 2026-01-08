@@ -5434,6 +5434,9 @@ const applyLocalizedContent = async (lang) => { // Added lang parameter
     const historyViewModeLabelStrings = { 'zh_CN': "视图", 'en': "View" };
     const historySyncSimpleLabelStrings = { 'zh_CN': "精简", 'en': "Simple" };
     const historySyncDetailedLabelStrings = { 'zh_CN': "详细", 'en': "Detail" };
+    const historyPackModeLabelStrings = { 'zh_CN': "打包", 'en': "Pack" };
+    const historySyncPackZipLabelStrings = { 'zh_CN': "ZIP归档", 'en': "ZIP" };
+    const historySyncPackMergeLabelStrings = { 'zh_CN': "合并", 'en': "Merge" };
 
     const overwritePolicyDescStrings = {
         'zh_CN': "存储策略",
@@ -5935,6 +5938,9 @@ const applyLocalizedContent = async (lang) => { // Added lang parameter
     const historyViewModeLabelText = historyViewModeLabelStrings[lang] || historyViewModeLabelStrings['zh_CN'];
     const historySyncSimpleLabelText = historySyncSimpleLabelStrings[lang] || historySyncSimpleLabelStrings['zh_CN'];
     const historySyncDetailedLabelText = historySyncDetailedLabelStrings[lang] || historySyncDetailedLabelStrings['zh_CN'];
+    const historyPackModeLabelText = historyPackModeLabelStrings[lang] || historyPackModeLabelStrings['zh_CN'];
+    const historySyncPackZipLabelText = historySyncPackZipLabelStrings[lang] || historySyncPackZipLabelStrings['zh_CN'];
+    const historySyncPackMergeLabelText = historySyncPackMergeLabelStrings[lang] || historySyncPackMergeLabelStrings['zh_CN'];
 
     const overwritePolicyLabelText = overwritePolicyLabelStrings[lang] || overwritePolicyLabelStrings['zh_CN'];
     const overwriteVersionedText = overwriteVersionedStrings[lang] || overwriteVersionedStrings['zh_CN'];
@@ -6424,6 +6430,15 @@ const applyLocalizedContent = async (lang) => { // Added lang parameter
 
     const historySyncDetailedLabelElement = document.getElementById('historySyncDetailedLabel');
     if (historySyncDetailedLabelElement) historySyncDetailedLabelElement.textContent = historySyncDetailedLabelText;
+
+    const historyPackModeLabelElement = document.getElementById('historyPackModeLabel');
+    if (historyPackModeLabelElement) historyPackModeLabelElement.textContent = historyPackModeLabelText;
+
+    const historySyncPackZipLabelElement = document.getElementById('historySyncPackZipLabel');
+    if (historySyncPackZipLabelElement) historySyncPackZipLabelElement.textContent = historySyncPackZipLabelText;
+
+    const historySyncPackMergeLabelElement = document.getElementById('historySyncPackMergeLabel');
+    if (historySyncPackMergeLabelElement) historySyncPackMergeLabelElement.textContent = historySyncPackMergeLabelText;
 
     // Backup History Settings Saved Indicator
     const historySettingsSavedTextEl = document.getElementById('historySettingsSavedText');
@@ -7337,6 +7352,36 @@ function initializeBackupSettings() {
         });
     }
 
+    // ===== 备份历史打包结构设置 =====
+    const historySyncPackZip = document.getElementById('historySyncPackZip');
+    const historySyncPackMerge = document.getElementById('historySyncPackMerge');
+
+    // 加载打包结构设置
+    chrome.storage.local.get(['historySyncPackMode'], function (result) {
+        const packMode = result.historySyncPackMode || 'zip'; // 默认 ZIP
+        if (historySyncPackZip) historySyncPackZip.checked = (packMode === 'zip');
+        if (historySyncPackMerge) historySyncPackMerge.checked = (packMode === 'merge');
+    });
+
+    // 保存打包结构设置
+    function saveHistorySyncPackModeSettings() {
+        const packMode = historySyncPackMerge?.checked ? 'merge' : 'zip';
+        chrome.storage.local.set({ historySyncPackMode: packMode }, function () {
+            if (!chrome.runtime.lastError) {
+                console.log('[备份历史] 已保存打包结构:', packMode);
+                showHistorySettingsSavedFeedback();
+            }
+        });
+    }
+
+    // 打包结构 radio 事件监听
+    if (historySyncPackZip) {
+        historySyncPackZip.addEventListener('change', saveHistorySyncPackModeSettings);
+    }
+    if (historySyncPackMerge) {
+        historySyncPackMerge.addEventListener('change', saveHistorySyncPackModeSettings);
+    }
+
     /* Old logic removed: View Mode & Overwrite Strategy are now enforced defaults */
 
     // 更新上传按钮上的图标状态
@@ -7401,6 +7446,88 @@ function initializeBackupSettings() {
 // =============================================================================
 
 document.addEventListener('DOMContentLoaded', function () {
+    // Format Help Tooltip Logic (Fixed Position to avoid overflow clipping)
+    const formatHelpBtn = document.getElementById('historyFormatHelp');
+    let formatHelpTooltip = null;
+
+    if (formatHelpBtn) {
+        // Create tooltip on hover
+        formatHelpBtn.addEventListener('mouseenter', () => {
+            if (!formatHelpTooltip) {
+                formatHelpTooltip = document.createElement('div');
+                formatHelpTooltip.style.cssText = `
+                    position: fixed;
+                    z-index: 99999;
+                    background-color: var(--theme-bg-elevated);
+                    border: 1px solid var(--theme-border-primary);
+                    border-radius: 8px;
+                    padding: 12px;
+                    box-shadow: 0 8px 24px rgba(0,0,0,0.25);
+                    width: 250px;
+                    pointer-events: none;
+                    opacity: 0;
+                    transform: translateY(10px);
+                    transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+                 `;
+
+                // Use innerHTML for flexible content
+                formatHelpTooltip.innerHTML = `
+                    <div style="display: flex; flex-direction: column; gap: 8px;">
+                        <div style="padding: 8px; background: var(--theme-bg-secondary); border-radius: 6px;">
+                            <div style="font-weight: 600; font-size: 12px; color: var(--theme-text-primary); margin-bottom: 2px;">HTML (可视化)</div>
+                            <div style="font-size: 12px; color: var(--theme-text-secondary); line-height: 1.3;">自动归档的预览网页。<br><span style="color: var(--theme-warning-color);">仅供浏览，不可恢复。</span></div>
+                        </div>
+                        <div style="padding: 8px; background: var(--theme-bg-secondary); border-radius: 6px;">
+                            <div style="font-weight: 600; font-size: 12px; color: var(--theme-text-primary); margin-bottom: 2px;">JSON (数据源)</div>
+                            <div style="font-size: 12px; color: var(--theme-text-secondary); line-height: 1.3;">用于“恢复”的数据文件。<br><span style="color: var(--theme-success-color);">支持差异对比与迁移。</span></div>
+                        </div>
+                    </div>
+                 `;
+                document.body.appendChild(formatHelpTooltip);
+            }
+
+            // Calculate Position
+            const rect = formatHelpBtn.getBoundingClientRect();
+            // Default: Position below the icon, slightly shifted left to align nicely
+            let top = rect.bottom + 8;
+            let left = rect.left - 20;
+
+            // Boundary Check: If goes off screen bottom, flip to top
+            if (top + 200 > window.innerHeight) {
+                top = rect.top - formatHelpTooltip.offsetHeight - 8;
+            }
+            // Boundary Check: If goes off screen left/right
+            if (left + 250 > window.innerWidth) {
+                left = window.innerWidth - 260;
+            }
+            if (left < 10) left = 10;
+
+            formatHelpTooltip.style.top = top + 'px';
+            formatHelpTooltip.style.left = left + 'px';
+
+            // Trigger animation
+            requestAnimationFrame(() => {
+                formatHelpTooltip.style.opacity = '1';
+                formatHelpTooltip.style.transform = 'translateY(0)';
+            });
+        });
+
+        // Hide tooltip on leave
+        formatHelpBtn.addEventListener('mouseleave', () => {
+            if (formatHelpTooltip) {
+                formatHelpTooltip.style.opacity = '0';
+                formatHelpTooltip.style.transform = 'translateY(5px)';
+
+                // Keep reference but remove from DOM after animation
+                const tooltipToRemove = formatHelpTooltip;
+                formatHelpTooltip = null; // Reset current pointer
+
+                setTimeout(() => {
+                    tooltipToRemove.remove();
+                }, 200);
+            }
+        });
+    }
     // 添加全局未处理 Promise 错误监听器，捕获并忽略特定的连接错误
     window.addEventListener('unhandledrejection', function (event) {
         // 检查错误消息是否是我们想要抑制的连接错误

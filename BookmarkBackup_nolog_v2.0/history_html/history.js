@@ -10,15 +10,158 @@ const getCurrentChangesExportFolder = () => currentLang === 'zh_CN' ? '当前变
 let currentLang = 'zh_CN';
 window.currentLang = currentLang; // 暴露给其他模块使用
 let currentTheme = 'light';
-let historyDetailMode = (() => {
-    try {
-        return localStorage.getItem('historyDetailMode') || 'simple';
-    } catch (e) {
-        return 'simple';
-    }
-})();
+
+// =============================================================================
+// 统一存储架构：historyViewSettings
+// 将所有视图设置存储在 chrome.storage.local，替代分散的 localStorage
+// 这样 background.js (Service Worker) 也能访问这些设置，实现 WYSIWYG 导出
+// =============================================================================
+let historyDetailMode = 'simple'; // 默认值，将在初始化时从 chrome.storage.local 加载
+let historyViewSettings = null;   // 缓存视图设置对象
+let historyViewSettingsSaveTimeout = null; // 防抖保存定时器
+
+// 旧的 localStorage 键前缀（用于迁移）
 const HISTORY_DETAIL_MODE_PREFIX = 'historyDetailMode:';
 const HISTORY_DETAIL_EXPANDED_PREFIX = 'historyDetailExpanded:';
+
+/**
+ * 从 chrome.storage.local 加载视图设置
+ * @returns {Promise<Object>} 视图设置对象
+ */
+async function loadHistoryViewSettings() {
+    return new Promise(resolve => {
+        const browserAPI = (typeof chrome !== 'undefined' && chrome.storage) ? chrome : (typeof browser !== 'undefined' ? browser : null);
+        if (!browserAPI || !browserAPI.storage) {
+            console.warn('[历史视图设置] 无法访问 storage API');
+            historyViewSettings = { defaultMode: 'simple', recordModes: {}, recordExpandedStates: {} };
+            historyDetailMode = 'simple';
+            resolve(historyViewSettings);
+            return;
+        }
+        browserAPI.storage.local.get(['historyViewSettings'], result => {
+            historyViewSettings = result.historyViewSettings || {
+                defaultMode: 'simple',
+                recordModes: {},
+                recordExpandedStates: {}
+            };
+            historyDetailMode = historyViewSettings.defaultMode || 'simple';
+            console.log('[历史视图设置] 已加载:', {
+                defaultMode: historyDetailMode,
+                recordModesCount: Object.keys(historyViewSettings.recordModes || {}).length,
+                expandedStatesCount: Object.keys(historyViewSettings.recordExpandedStates || {}).length
+            });
+            resolve(historyViewSettings);
+        });
+    });
+}
+
+/**
+ * 保存视图设置到 chrome.storage.local（带防抖 300ms）
+ * @returns {Promise<void>}
+ */
+async function saveHistoryViewSettings() {
+    if (historyViewSettingsSaveTimeout) {
+        clearTimeout(historyViewSettingsSaveTimeout);
+    }
+    return new Promise(resolve => {
+        historyViewSettingsSaveTimeout = setTimeout(async () => {
+            const browserAPI = (typeof chrome !== 'undefined' && chrome.storage) ? chrome : (typeof browser !== 'undefined' ? browser : null);
+            if (!browserAPI || !browserAPI.storage || !historyViewSettings) {
+                resolve();
+                return;
+            }
+            await new Promise(r => {
+                browserAPI.storage.local.set({ historyViewSettings }, r);
+            });
+            console.log('[历史视图设置] 已保存到 chrome.storage.local');
+            resolve();
+        }, 300);
+    });
+}
+
+/**
+ * 将 localStorage 中的历史视图设置迁移到 chrome.storage.local
+ * 只在首次加载时执行一次
+ */
+async function migrateHistoryViewSettingsFromLocalStorage() {
+    const browserAPI = (typeof chrome !== 'undefined' && chrome.storage) ? chrome : (typeof browser !== 'undefined' ? browser : null);
+    if (!browserAPI || !browserAPI.storage) return;
+
+    // 检查是否已迁移
+    const result = await new Promise(resolve => {
+        browserAPI.storage.local.get(['historyViewSettingsMigrated'], resolve);
+    });
+
+    if (result.historyViewSettingsMigrated) {
+        console.log('[迁移] 历史视图设置已迁移，跳过');
+        return;
+    }
+
+    console.log('[迁移] 开始迁移 localStorage 中的历史视图设置...');
+
+    const newSettings = {
+        defaultMode: 'simple',
+        recordModes: {},
+        recordExpandedStates: {}
+    };
+
+    try {
+        // 迁移全局默认模式
+        const defaultMode = localStorage.getItem('historyDetailMode');
+        if (defaultMode === 'simple' || defaultMode === 'detailed') {
+            newSettings.defaultMode = defaultMode;
+        }
+
+        // 遍历 localStorage，找出所有历史相关的 key
+        for (let i = 0; i < localStorage.length; i++) {
+            const key = localStorage.key(i);
+            if (!key) continue;
+
+            // 迁移每条记录的视图模式
+            if (key.startsWith(HISTORY_DETAIL_MODE_PREFIX)) {
+                const recordTime = key.replace(HISTORY_DETAIL_MODE_PREFIX, '');
+                const mode = localStorage.getItem(key);
+                if (mode === 'simple' || mode === 'detailed') {
+                    newSettings.recordModes[recordTime] = mode;
+                }
+            }
+
+            // 迁移每条记录的展开状态
+            if (key.startsWith(HISTORY_DETAIL_EXPANDED_PREFIX)) {
+                const recordTime = key.replace(HISTORY_DETAIL_EXPANDED_PREFIX, '');
+                try {
+                    const expandedIds = JSON.parse(localStorage.getItem(key));
+                    if (Array.isArray(expandedIds)) {
+                        newSettings.recordExpandedStates[recordTime] = expandedIds;
+                    }
+                } catch (e) { }
+            }
+        }
+
+        // 保存到 chrome.storage.local
+        await new Promise(resolve => {
+            browserAPI.storage.local.set({
+                historyViewSettings: newSettings,
+                historyViewSettingsMigrated: true
+            }, resolve);
+        });
+
+        // 更新全局变量
+        historyViewSettings = newSettings;
+        historyDetailMode = newSettings.defaultMode;
+
+        console.log('[迁移] 历史视图设置迁移完成');
+        console.log('[迁移] 迁移的数据:', {
+            defaultMode: newSettings.defaultMode,
+            recordModesCount: Object.keys(newSettings.recordModes).length,
+            recordExpandedStatesCount: Object.keys(newSettings.recordExpandedStates).length
+        });
+
+    } catch (error) {
+        console.error('[迁移] 迁移失败:', error);
+    }
+}
+
 let currentDetailRecordMode = null;
 let currentDetailRecord = null;
 let currentExportHistoryTreeContainer = null;
@@ -2804,6 +2947,19 @@ document.addEventListener('DOMContentLoaded', async () => {
         // 静默处理
     }
 
+    // ========================================================================
+    // 【关键步骤 0.5】迁移并加载历史视图设置（统一存储架构）
+    // 将 localStorage 中的视图设置迁移到 chrome.storage.local
+    // 这样 background.js 也能访问这些设置，实现 WYSIWYG 导出
+    // ========================================================================
+    try {
+        await migrateHistoryViewSettingsFromLocalStorage();
+        await loadHistoryViewSettings();
+        console.log('[初始化] 历史视图设置已加载，当前模式:', historyDetailMode);
+    } catch (error) {
+        console.warn('[初始化] 加载历史视图设置失败:', error);
+    }
+
 
     // 设置全局图片错误处理（避免CSP内联事件处理器）
     setupGlobalImageErrorHandler();
@@ -4209,6 +4365,9 @@ function initializeUI() {
 
     // 初始化历史列表分页
     initHistoryPagination();
+
+    // 初始化恢复模态框
+    initRestoreModal();
 
     // Canvas 相关事件监听在 Canvas 模块中处理
 
@@ -14619,23 +14778,119 @@ function renderHistoryView() {
             ? (currentLang === 'zh_CN' ? '简略' : 'Simple')
             : (currentLang === 'zh_CN' ? '详细' : 'Detailed');
 
-        const typeBadge = (record.type === 'switch')
-            ? `<span class="commit-badge switch" title="${currentLang === 'zh_CN' ? '切换备份' : 'Switch Backup'}">
+        // 特殊处理恢复记录
+        const isRestore = record.type === 'restore';
+        if (isRestore) {
+            // 隐藏统计信息：不显示具体的书签文件夹数量
+            changes.isRestoreHiddenStats = true;
+        }
+
+        // 构建显示标题
+        let displayTitle = record.note;
+
+        // 尝试构建更详细的标题（包含源备份的备注）
+        if (isRestore && record.restoreInfo) {
+            let { sourceSeqNumber, sourceTime, sourceNote } = record.restoreInfo;
+
+            // 如果 restoreInfo 中没有 sourceNote（旧记录），尝试从历史记录中查找
+            if (!sourceNote && sourceTime) {
+                const sourceRecord = syncHistory.find(r => r.time === sourceTime);
+                if (sourceRecord) {
+                    sourceNote = sourceRecord.note;
+                }
+            }
+
+            // 构造标题：恢复至 #序号 [源备注]
+            const timeStr = formatTime(sourceTime);
+            let newTitle = currentLang === 'zh_CN'
+                ? `恢复至 #${sourceSeqNumber}`
+                : `Restored to #${sourceSeqNumber}`;
+
+            if (sourceNote) {
+                newTitle += ` ${sourceNote}`;
+            } else {
+                newTitle += ` (${timeStr})`;
+            }
+
+            // 覆盖显示标题
+            displayTitle = newTitle;
+        }
+
+        // 如果仍然没有备注，回退到时间
+        displayTitle = displayTitle || time;
+
+        if (isRestore && record.restoreInfo) {
+            // 用户要求格式：恢复至序号备注 哈希值
+            // 优先使用源哈希值，如果不存在（旧记录）则回退到当前哈希
+            let hashToUse = record.restoreInfo.sourceFingerprint;
+
+            // 如果没有直接保存 sourceFingerprint，尝试通过 sourceTime 查找源记录
+            if (!hashToUse && record.restoreInfo.sourceTime) {
+                const sourceRecord = syncHistory.find(r => r.time === record.restoreInfo.sourceTime);
+                if (sourceRecord) {
+                    hashToUse = sourceRecord.fingerprint;
+                }
+            }
+
+            // 兜底：如果还是找不到（比如源记录已被删除），才显示当前的（虽然不准确，但总比没有好，或者也可以选择不显示）
+            // 用户反馈明确说“哈希值变成了他自己的...而不是我们恢复的那个”，所以如果找不到源哈希，也许应该显示一个提示或者什么都不显示？
+            // 但为了保持格式一致性，我们暂时回退到 current fingerprint，或者仅仅为空？
+            // 用户的意图是想看到它是“从哪个版本”恢复来的。如果源版本都没了，显示当前版本哈希也没意义（因为它肯定和源版本哈希一样...如果恢复成功的话。其实 current fingerprint 就是 restored content fingerprint，也就是 source content fingerprint）。
+            // 等等，如果恢复成功，Current Fingerprint 应该等于 Source Fingerprint！
+            // 除非... 恢复过程中有变化？或者指纹计算 包含 时间戳/元数据？
+            // "Bookmarks Fingerprint" usually relies on content (URL, Title, Structure).
+            // Let's check generateFingerprints in background.js.
+            // It relies on Path, Title, URL. So logicallly restored content hash == source content hash.
+            // User says: "his hash value became his own hash... instead of the hash of the thing we restored from"
+            // This suggests the "Restore Record" itself has a different fingerprint than the "Source Record".
+            // Why? Maybe because "Auto Backup" triggered after restore captures the state *after* restore.
+            // If the restore was perfect, content is same.
+            // BUT, if the user had some other changes or if "Restore" added a "Restore Note" that is NOT part of bookmark content...
+            // Wait, fingerprint calculation `generateFingerprints` only looks at bookmarks.
+            // Maybe the user refers to the "Fingerprint" displayed in the UI which might be a Commit Hash (Sequence Number treated as ID?) or something else?
+            // "Commit ID" / "Fingerprint".
+            // Let's assume the user wants to see the "Source Fingerprint" explicitly to verify it matches.
+
+            // If `hashToUse` is found (Source Fingerprint), use it.
+            // If not found, use `record.fingerprint`.
+            const finalHash = hashToUse || record.fingerprint;
+
+            const shortHash = (finalHash || '').substring(0, 7);
+            if (shortHash && !displayTitle.includes(shortHash)) {
+                displayTitle = `${displayTitle} (${shortHash})`;
+            }
+        }
+
+        let typeBadge = '';
+        if (record.type === 'switch') {
+            typeBadge = `<span class="commit-badge switch" title="${currentLang === 'zh_CN' ? '切换备份' : 'Switch Backup'}">
                    <i class="fas fa-exchange-alt"></i> ${currentLang === 'zh_CN' ? '切换' : 'Switch'}
-               </span>`
-            : '';
+               </span>`;
+        } else if (isRestore) {
+            typeBadge = `<span class="commit-badge restore" title="${currentLang === 'zh_CN' ? '恢复操作' : 'Restore Operation'}" style="background: var(--accent-light); color: var(--accent-primary); border: 1px solid var(--accent-primary);">
+                   <i class="fas fa-undo"></i> ${currentLang === 'zh_CN' ? '恢复' : 'Restore'}
+               </span>`;
+        }
+
+        // ...
+
+        const titleClass = isRestore ? 'commit-title restore-title' : 'commit-title';
+        const seqClass = isRestore ? 'commit-seq-badge restore-seq' : 'commit-seq-badge';
 
         return `
             <div class="commit-item" data-record-time="${record.time}">
                 <div class="commit-header">
                     <div class="commit-title-group">
-                        <span class="commit-seq-badge" title="${currentLang === 'zh_CN' ? '序号' : 'No.'}">${seqNumber}</span>
-        <div class="commit-title" title="${currentLang === 'zh_CN' ? '点击编辑备注' : 'Click to edit note'}">${escapeHtml(record.note || time)}</div>
+                        <span class="${seqClass}" title="${currentLang === 'zh_CN' ? '序号' : 'No.'}">${seqNumber}</span>
+                        <div class="${titleClass}" title="${currentLang === 'zh_CN' ? '点击编辑备注' : 'Click to edit note'}">${escapeHtml(displayTitle)}</div>
                         <button class="commit-note-edit-btn" data-time="${record.time}" title="${currentLang === 'zh_CN' ? '编辑备注' : 'Edit Note'}">
                             <i class="fas fa-edit"></i>
                         </button>
                     </div>
                     <div class="commit-actions">
+                        <button class="action-btn restore-btn" data-time="${record.time}" data-display-title="${escapeHtml(displayTitle)}" title="${currentLang === 'zh_CN' ? '恢复到此版本' : 'Restore to this version'}">
+                            <i class="fas fa-undo"></i>
+                        </button>
                         <button class="action-btn detail-btn" data-time="${record.time}">
                             <i class="fas fa-angle-right"></i>
                             <span class="btn-tooltip">${modeText}</span>
@@ -14656,7 +14911,7 @@ function renderHistoryView() {
                         ${directionIcon}
                         ${directionText}
                     </span>
-                    <span class="commit-fingerprint" title="提交指纹号">#${escapeHtml(fingerprint)}</span>
+                    <span class="commit-fingerprint" title="${currentLang === 'zh_CN' ? '提交指纹号' : 'Commit Fingerprint'}">#${escapeHtml(fingerprint.substring(0, 7))}</span>
                 </div>
             </div>
         `;
@@ -14680,6 +14935,18 @@ function renderHistoryView() {
             e.preventDefault();
             const recordTime = btn.dataset.time;
             editCommitNote(recordTime);
+        });
+    });
+
+    // 添加恢复按钮事件
+    container.querySelectorAll('.action-btn.restore-btn').forEach(btn => {
+        btn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            e.preventDefault();
+            const recordTime = btn.dataset.time;
+            const record = syncHistory.find(r => r.time === recordTime);
+            const displayTitle = btn.dataset.displayTitle;
+            if (record) showRestoreModal(record, displayTitle);
         });
     });
 
@@ -14932,6 +15199,17 @@ function renderCommitStats(changes) {
 
 // 用于在中间行显示的内联变化信息
 function renderCommitStatsInline(changes) {
+    // 恢复操作：隐藏具体的增删数量统计
+    if (changes.isRestoreHiddenStats) {
+        return '';
+    }
+
+    if (changes.isRestore) { // 之前的逻辑保留备用，但现在主要靠 isRestoreHiddenStats
+        return `<span class="stat-badge restore" style="background: var(--accent-light); color: var(--accent-primary); border: 1px solid var(--accent-primary);">
+                    <i class="fas fa-undo"></i> ${currentLang === 'zh_CN' ? '恢复' : 'Restore'}
+                </span>`;
+    }
+
     if (changes.isFirst) {
         return `<span class="stat-badge first">${currentLang === 'zh_CN' ? '首次备份' : 'First Backup'}</span>`;
     }
@@ -19534,81 +19812,127 @@ async function applyIncrementalMoveToTree(id, moveInfo) {
 // 详情弹窗
 // =============================================================================
 
+/**
+ * 获取指定记录的视图模式
+ * @param {string} recordTime - 记录时间戳
+ * @returns {string} 'simple' 或 'detailed'
+ */
 function getRecordDetailMode(recordTime) {
     if (!recordTime) return historyDetailMode || 'simple';
-    try {
-        return localStorage.getItem(`${HISTORY_DETAIL_MODE_PREFIX}${recordTime}`) || historyDetailMode || 'simple';
-    } catch (e) {
-        return historyDetailMode || 'simple';
+    // 从统一存储对象中读取
+    if (historyViewSettings && historyViewSettings.recordModes) {
+        const mode = historyViewSettings.recordModes[String(recordTime)];
+        if (mode) return mode;
     }
+    return historyDetailMode || 'simple';
 }
 
+/**
+ * 设置指定记录的视图模式（异步保存到 chrome.storage.local）
+ * @param {string} recordTime - 记录时间戳
+ * @param {string} mode - 'simple' 或 'detailed'
+ */
 function setRecordDetailMode(recordTime, mode) {
-    if (!recordTime) return;
-    try {
-        localStorage.setItem(`${HISTORY_DETAIL_MODE_PREFIX}${recordTime}`, mode);
-    } catch (e) {
-        console.warn('[详情模式] 保存失败:', e);
+    if (!recordTime || !mode) return;
+    // 确保 historyViewSettings 已初始化
+    if (!historyViewSettings) {
+        historyViewSettings = { defaultMode: 'simple', recordModes: {}, recordExpandedStates: {} };
     }
+    historyViewSettings.recordModes[String(recordTime)] = mode;
+    // 异步保存（带防抖）
+    saveHistoryViewSettings();
 }
 
+/**
+ * 检查指定记录是否有保存的展开状态
+ * @param {string} recordTime - 记录时间戳
+ * @returns {boolean}
+ */
 function hasRecordExpandedState(recordTime) {
     if (!recordTime) return false;
-    try {
-        return localStorage.getItem(`${HISTORY_DETAIL_EXPANDED_PREFIX}${recordTime}`) != null;
-    } catch (e) {
-        return false;
+    if (historyViewSettings && historyViewSettings.recordExpandedStates) {
+        return historyViewSettings.recordExpandedStates[String(recordTime)] != null;
     }
+    return false;
 }
 
+/**
+ * 获取指定记录的展开状态
+ * @param {string} recordTime - 记录时间戳
+ * @returns {Set<string>} 展开的节点 ID 集合
+ */
 function getRecordExpandedState(recordTime) {
     if (!recordTime) return new Set();
-    try {
-        const raw = localStorage.getItem(`${HISTORY_DETAIL_EXPANDED_PREFIX}${recordTime}`);
-        const parsed = raw ? JSON.parse(raw) : [];
-        const ids = Array.isArray(parsed) ? parsed.map(id => String(id)) : [];
-        return new Set(ids);
-    } catch (e) {
-        return new Set();
+    if (historyViewSettings && historyViewSettings.recordExpandedStates) {
+        const ids = historyViewSettings.recordExpandedStates[String(recordTime)];
+        if (Array.isArray(ids)) {
+            return new Set(ids.map(id => String(id)));
+        }
     }
+    return new Set();
 }
 
+/**
+ * 保存单个节点的展开状态变化（WYSIWYG）
+ * @param {string} recordTime - 记录时间戳
+ * @param {string} nodeId - 节点 ID
+ * @param {boolean} isExpanded - 是否展开
+ */
 function saveRecordExpandedState(recordTime, nodeId, isExpanded) {
     if (!recordTime || !nodeId) return;
-    try {
-        const key = `${HISTORY_DETAIL_EXPANDED_PREFIX}${recordTime}`;
-        const raw = localStorage.getItem(key);
-        const parsed = raw ? JSON.parse(raw) : [];
-        const ids = new Set(Array.isArray(parsed) ? parsed.map(id => String(id)) : []);
-        const idStr = String(nodeId);
-        if (isExpanded) {
-            ids.add(idStr);
-        } else {
-            ids.delete(idStr);
-        }
-        localStorage.setItem(key, JSON.stringify([...ids]));
-    } catch (e) {
-        console.warn('[详情展开] 保存失败:', e);
+    // 确保 historyViewSettings 已初始化
+    if (!historyViewSettings) {
+        historyViewSettings = { defaultMode: 'simple', recordModes: {}, recordExpandedStates: {} };
     }
+    if (!historyViewSettings.recordExpandedStates) {
+        historyViewSettings.recordExpandedStates = {};
+    }
+
+    const timeKey = String(recordTime);
+    const currentIds = historyViewSettings.recordExpandedStates[timeKey] || [];
+    const ids = new Set(Array.isArray(currentIds) ? currentIds.map(id => String(id)) : []);
+    const idStr = String(nodeId);
+
+    if (isExpanded) {
+        ids.add(idStr);
+    } else {
+        ids.delete(idStr);
+    }
+
+    historyViewSettings.recordExpandedStates[timeKey] = Array.from(ids);
+    // 异步保存（带防抖）
+    saveHistoryViewSettings();
 }
 
+/**
+ * 捕获当前树容器的展开状态并保存（WYSIWYG）
+ * @param {string} recordTime - 记录时间戳
+ * @param {HTMLElement} treeContainer - 树容器元素
+ */
 function captureRecordExpandedState(recordTime, treeContainer) {
     if (!recordTime || !treeContainer) return;
-    try {
-        const expandedIds = [];
-        treeContainer.querySelectorAll('.tree-item[data-node-id]').forEach(item => {
-            const nodeId = item.getAttribute('data-node-id');
-            if (!nodeId) return;
-            const treeNode = item.closest('.tree-node');
-            const children = treeNode?.querySelector(':scope > .tree-children');
-            if (children && children.classList.contains('expanded')) {
-                expandedIds.push(String(nodeId));
-            }
-        });
-        localStorage.setItem(`${HISTORY_DETAIL_EXPANDED_PREFIX}${recordTime}`, JSON.stringify(expandedIds));
-    } catch (e) {
-        console.warn('[详情展开] 初始化保存失败:', e);
+    // 确保 historyViewSettings 已初始化
+    if (!historyViewSettings) {
+        historyViewSettings = { defaultMode: 'simple', recordModes: {}, recordExpandedStates: {} };
     }
+    if (!historyViewSettings.recordExpandedStates) {
+        historyViewSettings.recordExpandedStates = {};
+    }
+
+    const expandedIds = [];
+    treeContainer.querySelectorAll('.tree-item[data-node-id]').forEach(item => {
+        const nodeId = item.getAttribute('data-node-id');
+        if (!nodeId) return;
+        const treeNode = item.closest('.tree-node');
+        const children = treeNode?.querySelector(':scope > .tree-children');
+        if (children && children.classList.contains('expanded')) {
+            expandedIds.push(String(nodeId));
+        }
+    });
+
+    historyViewSettings.recordExpandedStates[String(recordTime)] = expandedIds;
+    // 异步保存（带防抖）
+    saveHistoryViewSettings();
 }
 
 function applyRecordExpandedState(recordTime, treeContainer) {
@@ -19891,6 +20215,1148 @@ function closeModal() {
 }
 
 // =============================================================================
+// 书签恢复功能
+// =============================================================================
+
+let currentRestoreRecord = null; // 当前要恢复的记录
+
+/**
+ * 计算节点统计信息 (书签数和文件夹数)
+ */
+function calculateNodeStats(nodes) {
+    let stats = { bookmarks: 0, folders: 0 };
+    if (!nodes) return stats;
+
+    // Check if it's an array (root) or single node
+    const list = Array.isArray(nodes) ? nodes : [nodes];
+
+    for (const node of list) {
+        if (node.children) {
+            // Include root node and system folders to match background.js counting logic
+            // (background.js countAllFolders counts any node with children and no url)
+            stats.folders++;
+            const childStats = calculateNodeStats(node.children);
+            stats.bookmarks += childStats.bookmarks;
+            stats.folders += childStats.folders;
+        } else {
+            // It's a bookmark
+            stats.bookmarks++;
+        }
+    }
+    return stats;
+}
+
+/**
+ * 显示恢复确认模态框
+ * @param {Object} record - 要恢复的备份记录
+ */
+// =============================================================================
+// 书签 Diff 辅助函数 (移植自 background.js)
+// =============================================================================
+
+function buildTreeIndexForDiff(tree) {
+    const nodes = new Map();
+    const byParent = new Map();
+
+    const traverse = (node, parentId = null) => {
+        if (!node || !node.id) return;
+
+        const record = {
+            id: node.id,
+            title: node.title || '',
+            url: node.url,
+            parentId: node.parentId || parentId,
+            index: typeof node.index === 'number' ? node.index : null
+        };
+
+        nodes.set(record.id, record);
+
+        if (record.parentId) {
+            if (!byParent.has(record.parentId)) byParent.set(record.parentId, []);
+            byParent.get(record.parentId).push({ id: record.id, index: record.index });
+        }
+
+        if (Array.isArray(node.children)) {
+            for (const child of node.children) {
+                traverse(child, node.id);
+            }
+        }
+    };
+
+    if (Array.isArray(tree) && tree[0]) {
+        traverse(tree[0], null);
+    }
+
+    // 保证同父级列表按 index 排序（稳定对比）
+    for (const list of byParent.values()) {
+        list.sort((a, b) => {
+            const ai = typeof a.index === 'number' ? a.index : 0;
+            const bi = typeof b.index === 'number' ? b.index : 0;
+            return ai - bi;
+        });
+    }
+
+    return { nodes, byParent };
+}
+
+function computeBookmarkGitDiffSummary(oldTree, newTree, options = {}) {
+    const explicitMovedIds = options.explicitMovedIds instanceof Set ? options.explicitMovedIds : null;
+
+    const summary = {
+        bookmarkAdded: 0,
+        bookmarkDeleted: 0,
+        folderAdded: 0,
+        folderDeleted: 0,
+        movedCount: 0,
+        modifiedCount: 0,
+        movedBookmarkCount: 0,
+        movedFolderCount: 0,
+        modifiedBookmarkCount: 0,
+        modifiedFolderCount: 0,
+        bookmarkMoved: false,
+        folderMoved: false,
+        bookmarkModified: false,
+        folderModified: false
+    };
+
+    if (!Array.isArray(oldTree) || !Array.isArray(newTree) || !oldTree[0] || !newTree[0]) {
+        return summary;
+    }
+
+    const oldIndex = buildTreeIndexForDiff(oldTree);
+    const newIndex = buildTreeIndexForDiff(newTree);
+
+    const addedIds = new Set();
+    const deletedIds = new Set();
+    const modifiedIds = new Set();
+    const movedIds = new Set();
+    const crossParentMovedIds = new Set();
+
+    // 新增 / 修改 / 跨级移动
+    for (const [id, n] of newIndex.nodes.entries()) {
+        const o = oldIndex.nodes.get(id);
+        if (!o) {
+            addedIds.add(id);
+            continue;
+        }
+
+        const isFolder = !n.url;
+        const isModified = isFolder ? (o.title !== n.title) : (o.title !== n.title || o.url !== n.url);
+        if (isModified) modifiedIds.add(id);
+
+        const crossMove = o.parentId !== n.parentId;
+        if (crossMove) {
+            movedIds.add(id);
+            crossParentMovedIds.add(id);
+        }
+    }
+
+    // 删除
+    for (const id of oldIndex.nodes.keys()) {
+        if (!newIndex.nodes.has(id)) deletedIds.add(id);
+    }
+
+    // =========================================================================
+    // 智能修正：基于内容（URL）的节点匹配
+    // 解决因 Re-import 或 Sync 导致 ID 变更，从而被误判为“全部删除+全部新增”的问题
+    // =========================================================================
+    const urlToDeletedId = new Map();
+    for (const id of deletedIds) {
+        const node = oldIndex.nodes.get(id);
+        if (node && node.url) { // 仅匹配书签，文件夹重名概率太高
+            urlToDeletedId.set(node.url, id);
+        }
+    }
+
+    const reconciledAddedIds = new Set();
+
+    for (const id of addedIds) {
+        const newNode = newIndex.nodes.get(id);
+        if (!newNode || !newNode.url) continue;
+
+        const oldId = urlToDeletedId.get(newNode.url);
+        if (oldId) {
+            // 找到 URL 相同的“已删除”节点 -> 视为同一节点
+            const oldNode = oldIndex.nodes.get(oldId);
+
+            // 1. 它是匹配节点，不再是新增/删除
+            reconciledAddedIds.add(id);
+            deletedIds.delete(oldId);
+            // 注意：此时还需要从 addedIds 中移除（循环后处理）
+
+            // 既然匹配了，我们还需要修正“跨级移动”判定
+            // 原有逻辑是基于 ID 相同的。现在 ID 不同，我们需要用新 ID 重新判定 Modify 和 Move
+
+            // 2. 检测修改 (Title)
+            if (oldNode.title !== newNode.title) {
+                modifiedIds.add(id);
+            }
+
+            // 3. 检测移动 (Parent)
+            // 由于 ID 体系可能完全不同，我们不能简单比较 parentId
+            // 策略：比较 Parent 的 Title。如果 Parent Title 相同，视为未移动。
+            // (这只是一个启发式策略，但在 Restore 预览场景下足够有效)
+            const oldParent = oldIndex.nodes.get(oldNode.parentId);
+            const newParent = newIndex.nodes.get(newNode.parentId);
+
+            // 如果父节点都存在，且标题不同，则视为移动
+            // 如果父节点标题相同，视为原地没动 (忽略 ID 变化)
+            if (oldParent && newParent && oldParent.title !== newParent.title) {
+                movedIds.add(id);
+                // 既然是移动，也可能涉及跨级，为了兼容性我们也标记一下（虽然本函数后半部分主要用 movedIds）
+                crossParentMovedIds.add(id);
+            }
+
+            // 从 map 中移除，避免多对一匹配
+            urlToDeletedId.delete(newNode.url);
+        }
+    }
+
+    // 移除已修正的 Added ID
+    for (const id of reconciledAddedIds) {
+        addedIds.delete(id);
+    }
+    // =========================================================================
+
+
+    // 建立“子节点集合发生变化”的父级集合（避免因为 add/delete / 跨级移动导致的被动位移被误判为 moved）
+    const parentsWithChildSetChange = new Set();
+    for (const id of addedIds) {
+        const node = newIndex.nodes.get(id);
+        if (node && node.parentId) parentsWithChildSetChange.add(node.parentId);
+    }
+    for (const id of deletedIds) {
+        const node = oldIndex.nodes.get(id);
+        if (node && node.parentId) parentsWithChildSetChange.add(node.parentId);
+    }
+    for (const id of crossParentMovedIds) {
+        //此处 crossParentMovedIds 混合了 ID 匹配的和 URL 匹配的(使用新ID)
+        //对于 URL 匹配的新 ID，它在 newIndex 里有，在 oldIndex 里没有直接对应 ID
+        //所以要小心获取 o
+
+        // 尝试获取旧节点：如果是 ID 匹配的，直接取；如果是 URL 匹配的，我们已经在上面处理了逻辑，
+        // 但这里主要是为了标记父级 Dirty。
+        // 对于 URL 匹配的情况，id 是新 ID。oldIndex.nodes.get(id) 是 undefined。
+        // 这会导致 o 为空。
+
+        const n = newIndex.nodes.get(id);
+        let o = oldIndex.nodes.get(id);
+
+        // 如果是 URL 匹配产生的 Move，我们需要找到它对应的 Old ID 才能找到 Old Parent
+        // 但我们在循环里没有保存映射。不过，只要我们将 New Parent 标记为 Dirty 即可。
+        // 至于 Old Parent 的 Dirty 标记，主要影响的是 Old Parent 列表的 LIS 计算。
+        // 如果我们不标记 Old Parent Dirty，可能会导致误判。
+        // 但鉴于这只是 UI 展示，且 ID 全变的情况下 LIS 计算本身就很难匹配（因为 ID 都不一样）。
+        // 所以这里只要保证代码不报错即可。
+
+        if (o && o.parentId) parentsWithChildSetChange.add(o.parentId);
+        if (n && n.parentId) parentsWithChildSetChange.add(n.parentId);
+    }
+
+    const hasExplicitMovedInfo = explicitMovedIds && explicitMovedIds.size > 0;
+
+    // 同级排序移动
+    if (hasExplicitMovedInfo) {
+        // ... (省略显式移动逻辑，因为 Restore Modal 中可能无法获取显式移动 IDs，这里简化处理)
+        // 注意：Restore对比时，我们通常没有“显式移动操作”的上下文，所以只能做全量diff。
+        // background.js 中的逻辑依赖 recentMovedIds。
+        // 在这里我们无法获取 recentMovedIds (除非从 storage 读取，但那是相对于上次备份的)。
+        // Restore 对比的是 Current vs BackupRecord，这两者之间没有任何"操作记录"。
+        // 所以在这里只能退化为仅检测跨级移动，或者全量检测 LIS 移动。
+        // 下面的 else 分支就是全量检测 LIS 移动的逻辑。
+    }
+
+    // 强制进入全量检测逻辑 (因为我们没有 Recent Moved Context)
+    // 或者我们保留原有逻辑结构，但 hasExplicitMovedInfo 始终为 false
+    {
+        for (const [parentId, newList] of newIndex.byParent.entries()) {
+            if (parentsWithChildSetChange.has(parentId)) continue;
+
+            const oldList = oldIndex.byParent.get(parentId) || [];
+            if (oldList.length === 0 || newList.length === 0) continue;
+            if (oldList.length !== newList.length) continue;
+
+            // 快速判等
+            let sameOrder = true;
+            for (let i = 0; i < oldList.length; i++) {
+                if (oldList[i].id !== newList[i].id) {
+                    sameOrder = false;
+                    break;
+                }
+            }
+            if (sameOrder) continue;
+
+            const oldPosById = new Map();
+            for (let i = 0; i < oldList.length; i++) {
+                oldPosById.set(oldList[i].id, i);
+            }
+
+            const seq = [];
+            for (const item of newList) {
+                const oldPos = oldPosById.get(item.id);
+                if (typeof oldPos !== 'number') {
+                    seq.length = 0;
+                    break;
+                }
+                seq.push({ id: item.id, oldPos });
+            }
+            if (seq.length === 0) continue;
+
+            // 计算 LIS
+            const tails = [];
+            const tailsIdx = [];
+            const prevIdx = new Array(seq.length).fill(-1);
+
+            for (let i = 0; i < seq.length; i++) {
+                const v = seq[i].oldPos;
+                let lo = 0;
+                let hi = tails.length;
+                while (lo < hi) {
+                    const mid = (lo + hi) >> 1;
+                    if (tails[mid] < v) lo = mid + 1;
+                    else hi = mid;
+                }
+                const pos = lo;
+                if (pos > 0) prevIdx[i] = tailsIdx[pos - 1];
+                if (pos === tails.length) {
+                    tails.push(v);
+                    tailsIdx.push(i);
+                } else {
+                    tails[pos] = v;
+                    tailsIdx[pos] = i;
+                }
+            }
+
+            const stableIds = new Set();
+            let k = tailsIdx.length ? tailsIdx[tailsIdx.length - 1] : -1;
+            while (k >= 0) {
+                stableIds.add(seq[k].id);
+                k = prevIdx[k];
+            }
+
+            for (const item of seq) {
+                if (!stableIds.has(item.id)) {
+                    movedIds.add(item.id);
+                }
+            }
+        }
+    }
+
+    // Git 风格：新增的东西不算“移动/修改”
+    for (const id of addedIds) {
+        movedIds.delete(id);
+        modifiedIds.delete(id);
+    }
+
+    const isBookmark = (node) => !!(node && node.url);
+
+    for (const id of addedIds) {
+        const node = newIndex.nodes.get(id);
+        if (isBookmark(node)) summary.bookmarkAdded++;
+        else summary.folderAdded++;
+    }
+
+    for (const id of deletedIds) {
+        const node = oldIndex.nodes.get(id);
+        if (isBookmark(node)) summary.bookmarkDeleted++;
+        else summary.folderDeleted++;
+    }
+
+    for (const id of movedIds) {
+        const node = newIndex.nodes.get(id);
+        if (isBookmark(node)) summary.movedBookmarkCount++;
+        else summary.movedFolderCount++;
+    }
+
+    for (const id of modifiedIds) {
+        const node = newIndex.nodes.get(id);
+        if (isBookmark(node)) summary.modifiedBookmarkCount++;
+        else summary.modifiedFolderCount++;
+    }
+
+    summary.movedCount = summary.movedBookmarkCount + summary.movedFolderCount;
+    summary.modifiedCount = summary.modifiedBookmarkCount + summary.modifiedFolderCount;
+    summary.bookmarkMoved = summary.movedBookmarkCount > 0;
+    summary.folderMoved = summary.movedFolderCount > 0;
+    summary.bookmarkModified = summary.modifiedBookmarkCount > 0;
+    summary.folderModified = summary.modifiedFolderCount > 0;
+
+    return summary;
+}
+
+/**
+ * 惰性加载备份数据
+ * @param {string|number} recordTime 
+ * @returns {Promise<Object>} bookmarkTree
+ */
+async function getBackupDataLazy(recordTime) {
+    return new Promise(resolve => {
+        browserAPI.runtime.sendMessage({
+            action: 'getBackupData',
+            time: recordTime
+        }, response => {
+            if (response && response.success) {
+                resolve(response.bookmarkTree);
+            } else {
+                console.warn('[getBackupDataLazy] Failed or data missing:', response?.error);
+                resolve(null);
+            }
+        });
+    });
+}
+
+async function showRestoreModal(record, displayTitle) {
+    if (!record) {
+        console.error('[showRestoreModal] 无效的记录');
+        return;
+    }
+
+    // 检查是否有书签树数据
+    if (!record.bookmarkTree) {
+        // 尝试从新存储加载 (Index vs Data 架构)
+        if (record.hasData || record.status === 'success') {
+            const loadingToast = showToast(currentLang === 'zh_CN' ? '正在加载备份数据...' : 'Loading data...', 'info');
+            try {
+                const tree = await getBackupDataLazy(record.time);
+                if (tree) {
+                    record.bookmarkTree = tree; // Cache for this session
+                    // Remove loading toast if possible, or let it timeout
+                } else {
+                    showToast(currentLang === 'zh_CN'
+                        ? '数据加载失败'
+                        : 'Failed to load data', 'error');
+                    return;
+                }
+            } catch (e) {
+                showToast(currentLang === 'zh_CN' ? '数据加载出错' : 'Error loading data', 'error');
+                return;
+            }
+        } else {
+            showToast(currentLang === 'zh_CN'
+                ? '此记录不包含书签树数据，无法恢复'
+                : 'This record does not contain bookmark tree data', 'error');
+            return;
+        }
+    }
+
+    currentRestoreRecord = record;
+
+    const modal = document.getElementById('restoreModal');
+    if (!modal) {
+        console.error('[showRestoreModal] 找不到恢复模态框');
+        return;
+    }
+
+    // --- START: 统计对比逻辑 ---
+    // 重置显示
+    document.getElementById('restoreCurrentCount').textContent = '--';
+    document.getElementById('restoreCurrentFolders').textContent = '--';
+
+    // [Modified] 重置视图状态 (简单切换模式)
+    const mainView = document.getElementById('restoreMainView');
+    const previewView = document.getElementById('restorePreviewView');
+    const previewContent = document.getElementById('restorePreviewContent');
+
+    if (mainView) mainView.style.display = 'block';
+    if (previewView) previewView.style.display = 'none';
+    if (previewContent) previewContent.removeAttribute('data-loaded'); // 每次重新打开都重新加载
+
+    // 重置关闭按钮为标准关闭行为
+    const closeBtn = document.getElementById('restoreModalClose');
+    if (closeBtn) {
+        const newCloseBtn = closeBtn.cloneNode(true);
+        closeBtn.parentNode.replaceChild(newCloseBtn, closeBtn);
+        newCloseBtn.addEventListener('click', () => {
+            document.getElementById('restoreModal').classList.remove('show');
+        });
+    }
+
+    const title = document.getElementById('restoreModalTitle');
+    if (title) title.textContent = currentLang === 'zh_CN' ? '恢复书签' : 'Restore Bookmarks';
+
+    document.getElementById('restoreBackupCount').textContent = '--';
+    document.getElementById('restoreBackupFolders').textContent = '--';
+    const diffContainer = document.getElementById('restoreDiffSummary');
+    if (diffContainer) diffContainer.textContent = currentLang === 'zh_CN' ? '正在计算差异...' : 'Calculating differences...';
+
+    // 1. 获取当前浏览器书签统计
+    // 1. 获取当前浏览器书签统计
+    chrome.bookmarks.getTree(async (currentTree) => {
+        const currentStats = calculateNodeStats(currentTree);
+        document.getElementById('restoreCurrentCount').textContent = currentStats.bookmarks;
+        document.getElementById('restoreCurrentFolders').textContent = currentStats.folders;
+
+        // --- 智能 ID 匹配 (Fuzzy Matching) ---
+        // 用户反馈：恢复预览时，如果名字和URL相同，应该视为同一个书签，而不是一删一增。
+        // 因此我们需要克隆并"标准化"备份记录的树：如果 ID 不同但在当前树中找到相同内容，则修改备份树的 ID 以匹配当前树。
+        let targetTree = record.bookmarkTree;
+        try {
+            // 深拷贝以避免修改原始记录
+            targetTree = JSON.parse(JSON.stringify(record.bookmarkTree));
+            normalizeTreeIds(targetTree, currentTree);
+            console.log('[恢复] 已执行智能 ID 匹配');
+        } catch (e) {
+            console.error('[恢复] ID 匹配失败，将使用原始树:', e);
+            targetTree = record.bookmarkTree;
+        }
+
+        // 2. 获取备份记录统计 (使用原始树或标准化后的树? 统计本身不受 ID 影响，但为了一致性使用 targetTree)
+        const backupStats = calculateNodeStats(targetTree);
+        document.getElementById('restoreBackupCount').textContent = backupStats.bookmarks;
+        document.getElementById('restoreBackupFolders').textContent = backupStats.folders;
+
+        // 3. 计算完整差异 (使用 Git Diff 逻辑: Current -> Target)
+        // 注意：现在使用的是标准化后的树，所以内容相同的节点 ID 也相同，会被识别为 Unchanged
+        const diffSummary = computeBookmarkGitDiffSummary(currentTree, targetTree);
+
+        // 构造 changes 对象供 renderCommitStatsInline 使用
+        const changes = {
+            bookmarkAdded: diffSummary.bookmarkAdded,
+            bookmarkDeleted: diffSummary.bookmarkDeleted,
+            folderAdded: diffSummary.folderAdded,
+            folderDeleted: diffSummary.folderDeleted,
+            bookmarkMoved: diffSummary.bookmarkMoved,
+            folderMoved: diffSummary.folderMoved,
+            bookmarkModified: diffSummary.bookmarkModified,
+            folderModified: diffSummary.folderModified,
+
+            // Allow renderCommitStatsInline to show counts for Structure changes
+            bookmarkMovedCount: diffSummary.movedBookmarkCount,
+            folderMovedCount: diffSummary.movedFolderCount,
+            bookmarkModifiedCount: diffSummary.modifiedBookmarkCount,
+            folderModifiedCount: diffSummary.modifiedFolderCount,
+
+            hasNumericalChange: (diffSummary.bookmarkAdded > 0 || diffSummary.bookmarkDeleted > 0 || diffSummary.folderAdded > 0 || diffSummary.folderDeleted > 0),
+            hasStructuralChange: (diffSummary.bookmarkMoved || diffSummary.folderMoved || diffSummary.bookmarkModified || diffSummary.folderModified),
+            hasNoChange: false,
+            isRestoreHiddenStats: false,
+            isFirst: false
+        };
+        changes.hasNoChange = !changes.hasNumericalChange && !changes.hasStructuralChange;
+
+        if (diffContainer) {
+            const prefix = currentLang === 'zh_CN' ? '相较当前: ' : 'Different from current: ';
+            const html = renderCommitStatsInline(changes);
+
+            // 如果无变化，显示特定的无变化 UI
+            if (changes.hasNoChange) {
+                diffContainer.innerHTML = `<span style="color: var(--text-tertiary);"><i class="fas fa-check-circle"></i> ${currentLang === 'zh_CN' ? '数量与结构一致' : 'Identical quantity & structure'}</span>`;
+            } else {
+                // 将 renderCommitStatsInline 的结果稍微包装一下
+                diffContainer.innerHTML = `
+                    <div style="display: flex; align-items: center; justify-content: flex-start; gap: 8px; flex-wrap: wrap;">
+                        <span style="font-size: 13px; color: var(--text-secondary);">${prefix}</span>
+                        ${html}
+                    </div>
+                `;
+            }
+        }
+
+        // --- 4. 设置预览按钮 (三级UI) ---
+        const previewBtn = document.getElementById('restorePreviewBtn');
+        if (previewBtn) {
+            previewBtn.style.display = 'block';
+            const btnText = document.getElementById('restorePreviewBtnText');
+            if (btnText) btnText.textContent = currentLang === 'zh_CN' ? '预览' : 'Preview';
+
+            // Unbind old listeners by cloning
+            const newBtn = previewBtn.cloneNode(true);
+            previewBtn.parentNode.replaceChild(newBtn, previewBtn);
+
+            newBtn.addEventListener('click', () => {
+                switchToRestorePreview(currentTree, targetTree);
+            });
+        }
+    });
+    // --- END: 统计对比逻辑 ---
+
+    // 构建预览条目 (完全复用列表样式)
+    const isRestore = record.type === 'restore';
+    const seqNumber = record.seqNumber || '-';
+    // 强制使用相同的样式类
+    const titleClass = isRestore ? 'commit-title restore-title' : 'commit-title';
+    const seqClass = isRestore ? 'commit-seq-badge restore-seq' : 'commit-seq-badge';
+    // 如果没有传入 displayTitle，就用默认 note
+    const titleToUse = displayTitle || record.note || formatTime(record.time);
+
+    const itemHtml = `
+        <div style="margin-bottom: 10px; font-size: 13px; color: var(--text-secondary); text-align: left;">${currentLang === 'zh_CN' ? '即将恢复到以下版本:' : 'Restore to the following version:'}</div>
+        <div class="commit-item" style="cursor: default; pointer-events: none; border: 1px solid var(--accent-primary); box-shadow: none; background: var(--bg-secondary); margin: 0; padding: 12px; display: flex;">
+            <div class="commit-header" style="margin-bottom: 0; width: 100%;">
+                <div class="commit-title-group" style="max-width: 100%;">
+                    <span class="${seqClass}">#${seqNumber}</span>
+                    <div class="${titleClass}" style="font-size: 14px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 260px;">${escapeHtml(titleToUse)}</div>
+                </div>
+                <div class="commit-time" style="margin-left: auto; font-size: 12px; white-space: nowrap;">
+                     ${formatTime(record.time)}
+                </div>
+            </div>
+        </div>
+    `;
+
+    const infoContainer = document.getElementById('restoreVersionInfo');
+    if (infoContainer) {
+        infoContainer.innerHTML = itemHtml;
+        // 重置容器样式，移除之前的 padding/border
+        infoContainer.style.background = 'transparent';
+        infoContainer.style.border = 'none';
+        infoContainer.style.padding = '0';
+        infoContainer.style.textAlign = 'left';
+    }
+
+    // 重置进度区域
+    document.getElementById('restoreProgressSection').style.display = 'none';
+    document.getElementById('restoreProgressBar').style.width = '0%';
+    document.getElementById('restoreProgressPercent').textContent = '0%';
+    document.getElementById('restoreProgressText').textContent = currentLang === 'zh_CN' ? '准备中...' : 'Preparing...';
+
+    // 重置按钮状态
+    const confirmBtn = document.getElementById('restoreConfirmBtn');
+    if (confirmBtn) {
+        confirmBtn.disabled = false;
+        confirmBtn.textContent = currentLang === 'zh_CN' ? '恢复书签' : 'Restore Bookmarks';
+    }
+    document.getElementById('restoreCancelBtn').disabled = false;
+
+    // 更新多语言文本 (仅部分)
+    updateRestoreModalI18n();
+
+    // [New] 更新备份记录标签为 Hash 值 (Fingerprint)
+    const backupLabel = document.getElementById('restoreBackupLabel');
+    if (backupLabel && record && record.fingerprint) {
+        backupLabel.textContent = record.fingerprint;
+        backupLabel.title = record.fingerprint; // 鼠标悬停显示完整指纹
+        backupLabel.style.fontFamily = 'SF Mono, Monaco, Consolas, monospace';
+        backupLabel.style.fontSize = '11px';
+        backupLabel.style.letterSpacing = '-0.5px'; // 稍微紧凑一点以适应长Hash
+    }
+
+    // 显示模态框
+    modal.classList.add('show');
+}
+
+/**
+ * 打开恢复后预览模态框 (三级UI)
+ */
+/**
+ * 切换到恢复后预览视图 (二代UI：同模态框内平滑切换)
+ */
+async function switchToRestorePreview(currentTree, targetTree) {
+    const mainView = document.getElementById('restoreMainView');
+    const previewView = document.getElementById('restorePreviewView');
+    const title = document.getElementById('restoreModalTitle');
+    const previewContent = document.getElementById('restorePreviewContent');
+
+    if (!mainView || !previewView) return;
+
+    // 1. 切换视图状态 (简单显隐，保持 Small Window)
+    mainView.style.display = 'none';
+    previewView.style.display = 'flex'; // 使用 flex 布局以支持内部滚动
+
+    // 2. [Removed] 不需要调整模态框宽度/高度，保持原有紧凑尺寸
+
+    // 3. 更新头部
+    // Hijack Close Button to act as "Back"
+    const closeBtn = document.getElementById('restoreModalClose');
+    if (closeBtn) {
+        // Clone to strip existing "Close Modal" listeners
+        const newCloseBtn = closeBtn.cloneNode(true);
+        closeBtn.parentNode.replaceChild(newCloseBtn, closeBtn);
+
+        // Define Back Handler
+        const handleBack = () => {
+            // Switch UI back
+            mainView.style.display = 'block';
+            previewView.style.display = 'none';
+
+            if (title) title.textContent = currentLang === 'zh_CN' ? '恢复书签' : 'Restore Bookmarks';
+
+            // Restore "Close Modal" behavior
+            const finalCloseBtn = newCloseBtn.cloneNode(true);
+            newCloseBtn.parentNode.replaceChild(finalCloseBtn, newCloseBtn);
+
+            finalCloseBtn.addEventListener('click', () => {
+                document.getElementById('restoreModal').classList.remove('show');
+            });
+
+            // Clean up preview data if needed (optional)
+            if (previewContent) {
+                previewContent.innerHTML = '';
+                previewContent.removeAttribute('data-loaded');
+            }
+        };
+
+        newCloseBtn.addEventListener('click', handleBack);
+    }
+
+    if (title) title.textContent = currentLang === 'zh_CN' ? '预览' : 'Preview';
+
+    // 4. 加载内容 (如果尚未加载)
+    if (!previewContent.hasAttribute('data-loaded')) {
+        previewContent.innerHTML = `<div class="loading" style="padding: 40px; color: var(--text-secondary); text-align: center;">
+            <i class="fas fa-spinner fa-spin" style="font-size: 24px; margin-bottom: 20px; opacity: 0.5;"></i><br>
+            ${currentLang === 'zh_CN' ? '正在生成详细预览...' : 'Generating detailed preview...'}
+        </div>`;
+
+        // 异步生成树
+        setTimeout(async () => {
+            try {
+                const changeMap = await detectTreeChangesFast(currentTree, targetTree, {
+                    useGlobalExplicitMovedIds: false
+                });
+
+                let treeToRender = targetTree;
+                let hasDeleted = false;
+                for (const [, change] of changeMap) {
+                    if (change.type && change.type.includes('deleted')) {
+                        hasDeleted = true;
+                        break;
+                    }
+                }
+
+                if (hasDeleted) {
+                    try {
+                        treeToRender = rebuildTreeWithDeleted(currentTree, targetTree, changeMap);
+                    } catch (e) {
+                        console.error('[恢复预览] 重建树失败:', e);
+                    }
+                }
+
+                const treeHtml = generateHistoryTreeHtml(treeToRender, changeMap, 'detailed', {
+                    maxDepth: 2,
+                    customTitle: currentLang === 'zh_CN' ? '恢复后的书签树（临时缓存）' : 'Restored Bookmark Tree (Temporary Cache)'
+                });
+
+                previewContent.innerHTML = treeHtml || `<div style="padding: 20px; color: var(--text-tertiary); text-align: center;">No Data</div>`;
+                previewContent.setAttribute('data-loaded', 'true');
+
+                // 绑定折叠事件
+                previewContent.querySelectorAll('.tree-toggle').forEach(toggle => {
+                    toggle.addEventListener('click', (e) => {
+                        e.stopPropagation();
+                        const children = e.target.closest('.tree-node').querySelector('.tree-children');
+                        if (children) {
+                            children.classList.toggle('expanded');
+                            toggle.classList.toggle('expanded');
+                            const icon = e.target.closest('.tree-item').querySelector('.tree-icon.fa-folder, .tree-icon.fa-folder-open');
+                            if (icon) {
+                                icon.classList.toggle('fa-folder');
+                                icon.classList.toggle('fa-folder-open');
+                            }
+                        }
+                    });
+                });
+
+            } catch (err) {
+                previewContent.innerHTML = `<div style="padding: 20px; color: var(--warning);">Error: ${err.message}</div>`;
+            }
+        }, 100);
+    }
+}
+
+// 确保在 updateRestoreModalI18n 中也更新按钮文本
+function updateRestoreModalI18n() {
+    const isZh = currentLang === 'zh_CN';
+
+    const texts = {
+        restoreModalTitle: isZh ? '恢复书签' : 'Restore Bookmarks',
+        restoreVersionLabel: isZh ? '即将恢复到以下版本:' : 'Restore to the following version:',
+        restoreWarningTitle: isZh ? '警告' : 'Warning',
+        restoreWarningText: isZh
+            ? '此操作将【覆盖】当前浏览器的所有书签。恢复完成后会自动创建一条新的备份记录。'
+            : 'This operation will [OVERWRITE] all current browser bookmarks. A new backup record will be created automatically.',
+        restoreProgressLabel: isZh ? '正在恢复...' : 'Restoring...',
+        restoreConfirmBtnText: isZh ? '确认恢复' : 'Confirm Restore',
+        restoreCancelBtn: isZh ? '取消' : 'Cancel',
+        // New Comparison Labels
+        restoreCurrentLabel: isZh ? '当前浏览器' : 'Current Browser',
+        restoreCurrentBookmarksLabel: isZh ? '书签' : 'Bookmarks',
+        restoreCurrentFoldersLabel: isZh ? '文件夹' : 'Folders',
+        restoreBackupLabel: isZh ? '备份记录' : 'Backup Record',
+        restoreBackupBookmarksLabel: isZh ? '书签' : 'Bookmarks',
+        restoreBackupFoldersLabel: isZh ? '文件夹' : 'Folders',
+        restorePreviewBtnText: isZh ? '预览' : 'Preview'
+    };
+
+    Object.entries(texts).forEach(([id, text]) => {
+        const el = document.getElementById(id);
+        if (el) el.textContent = text;
+    });
+}
+
+/**
+ * 关闭恢复模态框
+ */
+function closeRestoreModal() {
+    const modal = document.getElementById('restoreModal');
+    if (modal) {
+        modal.classList.remove('show');
+    }
+    currentRestoreRecord = null;
+}
+
+/**
+ * 执行恢复操作
+ */
+async function executeRestore() {
+    if (!currentRestoreRecord) {
+        showToast(currentLang === 'zh_CN' ? '没有可恢复的记录' : 'No record to restore', 'error');
+        return;
+    }
+
+    const bookmarkTree = currentRestoreRecord.bookmarkTree;
+    if (!bookmarkTree) {
+        showToast(currentLang === 'zh_CN' ? '此记录不包含书签树数据' : 'This record does not contain bookmark tree data', 'error');
+        return;
+    }
+
+    const strategy = 'overwrite';
+
+    // 禁用按钮
+    document.getElementById('restoreConfirmBtn').disabled = true;
+    document.getElementById('restoreCancelBtn').disabled = true;
+
+    // 显示进度区域
+    document.getElementById('restoreProgressSection').style.display = 'block';
+    updateRestoreProgress(0, currentLang === 'zh_CN' ? '正在准备恢复...' : 'Preparing to restore...');
+
+    try {
+        // 1. 设置恢复标志（暂停书签监听）
+        await browserAPI.runtime.sendMessage({ action: 'setBookmarkRestoringFlag', value: true });
+        updateRestoreProgress(5, currentLang === 'zh_CN' ? '已暂停书签监听...' : 'Bookmark listening paused...');
+
+        let result;
+        if (strategy === 'overwrite') {
+            result = await executeOverwriteRestore(bookmarkTree);
+        } else {
+            result = await executeMergeRestore(bookmarkTree);
+        }
+
+        // 2. 重置恢复标志
+        await browserAPI.runtime.sendMessage({ action: 'setBookmarkRestoringFlag', value: false });
+
+        updateRestoreProgress(90, currentLang === 'zh_CN' ? '正在创建恢复记录...' : 'Creating restore record...');
+
+        // 3. 触发一次备份（作为恢复记录）
+        const restoreNote = currentLang === 'zh_CN'
+            ? `恢复至 #${currentRestoreRecord.seqNumber} (${formatTime(currentRestoreRecord.time)})`
+            : `Restored to #${currentRestoreRecord.seqNumber} (${formatTime(currentRestoreRecord.time)})`;
+
+        await browserAPI.runtime.sendMessage({
+            action: 'triggerRestoreBackup',
+            note: restoreNote,
+            sourceSeqNumber: currentRestoreRecord.seqNumber,
+            sourceTime: currentRestoreRecord.time,
+            sourceNote: currentRestoreRecord.note || '',
+            sourceFingerprint: currentRestoreRecord.fingerprint || '',
+            strategy: strategy
+        });
+
+        updateRestoreProgress(100, currentLang === 'zh_CN' ? '恢复完成！' : 'Restore completed!');
+
+        // 显示成功提示
+        const successMsg = currentLang === 'zh_CN'
+            ? `恢复成功！${strategy === 'overwrite' ? `创建 ${result.created} 个节点` : `添加 ${result.added} 个书签`}`
+            : `Restore successful! ${strategy === 'overwrite' ? `Created ${result.created} nodes` : `Added ${result.added} bookmarks`}`;
+        showToast(successMsg, 'success');
+
+        // 延迟关闭模态框并刷新数据
+        setTimeout(async () => {
+            closeRestoreModal();
+
+            // 刷新备份历史数据
+            await loadAllData({ skipRender: true });
+            renderHistoryView();
+        }, 1500);
+
+    } catch (error) {
+        console.error('[executeRestore] 恢复失败:', error);
+
+        // 重置恢复标志
+        try {
+            await browserAPI.runtime.sendMessage({ action: 'setBookmarkRestoringFlag', value: false });
+        } catch (_) { }
+
+        // 恢复按钮状态
+        document.getElementById('restoreConfirmBtn').disabled = false;
+        document.getElementById('restoreCancelBtn').disabled = false;
+        document.getElementById('restoreProgressSection').style.display = 'none';
+
+        showToast(currentLang === 'zh_CN'
+            ? `恢复失败: ${error.message}`
+            : `Restore failed: ${error.message}`, 'error');
+    }
+}
+
+/**
+ * 覆盖模式恢复
+ */
+async function executeOverwriteRestore(bookmarkTree) {
+    updateRestoreProgress(10, currentLang === 'zh_CN' ? '正在清空当前书签...' : 'Clearing current bookmarks...');
+
+    // 1. 获取根节点
+    const [root] = await browserAPI.bookmarks.getTree();
+
+    // 查找书签栏和其他书签（兼容 Chrome 和 Firefox）
+    // Chrome: id='1' (书签栏), id='2' (其他书签)
+    // Firefox: 可能使用不同的 id
+    let bookmarkBar = root.children?.find(c => c.id === '1');
+    let otherBookmarks = root.children?.find(c => c.id === '2');
+
+    // 如果找不到，尝试通过标题查找
+    if (!bookmarkBar) {
+        bookmarkBar = root.children?.find(c =>
+            c.title === '书签栏' ||
+            c.title === 'Bookmarks Bar' ||
+            c.title === 'Bookmarks bar' ||
+            c.title === 'toolbar_____'
+        );
+    }
+    if (!otherBookmarks) {
+        otherBookmarks = root.children?.find(c =>
+            c.title === '其他书签' ||
+            c.title === 'Other Bookmarks' ||
+            c.title === 'Other bookmarks' ||
+            c.title === 'menu________' ||
+            c.title === 'unfiled_____'
+        );
+    }
+
+    // 如果仍然找不到，使用第一个和第二个子节点
+    if (!bookmarkBar && root.children?.length > 0) {
+        bookmarkBar = root.children[0];
+    }
+    if (!otherBookmarks && root.children?.length > 1) {
+        otherBookmarks = root.children[1];
+    }
+
+    console.log('[executeOverwriteRestore] bookmarkBar:', bookmarkBar?.id, bookmarkBar?.title);
+    console.log('[executeOverwriteRestore] otherBookmarks:', otherBookmarks?.id, otherBookmarks?.title);
+
+    // 2. 清空书签栏和其他书签下的所有内容
+    let deletedCount = 0;
+    for (const container of [bookmarkBar, otherBookmarks]) {
+        if (container && container.children) {
+            for (const child of [...container.children]) {
+                try {
+                    await browserAPI.bookmarks.removeTree(child.id);
+                    deletedCount++;
+                } catch (e) {
+                    console.warn('[executeOverwriteRestore] 删除节点失败:', child.id, e);
+                }
+            }
+        }
+    }
+
+    updateRestoreProgress(40, currentLang === 'zh_CN' ? `已清空 ${deletedCount} 个节点，正在重建...` : `Cleared ${deletedCount} nodes, rebuilding...`);
+
+    // 3. 从备份树重建书签
+    let createdCount = 0;
+    const nodes = Array.isArray(bookmarkTree) ? bookmarkTree : [bookmarkTree];
+
+    for (const node of nodes) {
+        if (node.children) {
+            for (const topFolder of node.children) {
+                // 确定目标容器（书签栏或其他书签）
+                const isBookmarkBarFolder = topFolder.id === '1' ||
+                    topFolder.title === '书签栏' ||
+                    topFolder.title === 'Bookmarks Bar' ||
+                    topFolder.title === 'Bookmarks bar' ||
+                    topFolder.title === 'toolbar_____';
+
+                // 确保目标容器存在
+                const targetContainer = isBookmarkBarFolder ? bookmarkBar : otherBookmarks;
+                if (!targetContainer) {
+                    console.warn('[executeOverwriteRestore] 目标容器不存在，跳过:', topFolder.title);
+                    continue;
+                }
+                const targetId = targetContainer.id;
+
+                for (const child of topFolder.children || []) {
+                    try {
+                        createdCount += await createNodeRecursive(child, targetId);
+                        updateRestoreProgress(40 + Math.min(45, (createdCount / 100) * 45),
+                            currentLang === 'zh_CN' ? `已创建 ${createdCount} 个节点...` : `Created ${createdCount} nodes...`);
+                    } catch (e) {
+                        console.warn('[executeOverwriteRestore] 创建节点失败:', child, e);
+                    }
+                }
+            }
+        }
+    }
+
+    return { success: true, created: createdCount, deleted: deletedCount };
+}
+
+/**
+ * 合并模式恢复
+ */
+async function executeMergeRestore(bookmarkTree) {
+    updateRestoreProgress(10, currentLang === 'zh_CN' ? '正在分析当前书签...' : 'Analyzing current bookmarks...');
+
+    // 1. 获取当前书签的 URL 集合
+    const [root] = await browserAPI.bookmarks.getTree();
+    const existingUrls = new Set();
+
+    function collectUrls(node) {
+        if (node.url) existingUrls.add(node.url);
+        if (node.children) node.children.forEach(collectUrls);
+    }
+    root.children?.forEach(collectUrls);
+
+    updateRestoreProgress(30, currentLang === 'zh_CN' ? `发现 ${existingUrls.size} 个现有书签...` : `Found ${existingUrls.size} existing bookmarks...`);
+
+    // 2. 遍历备份树，添加不存在的书签
+    let addedCount = 0;
+    let skippedCount = 0;
+
+    // 获取"其他书签"作为默认添加位置（兼容多浏览器）
+    let otherBookmarks = root.children?.find(c => c.id === '2');
+    if (!otherBookmarks) {
+        otherBookmarks = root.children?.find(c =>
+            c.title === '其他书签' ||
+            c.title === 'Other Bookmarks' ||
+            c.title === 'Other bookmarks'
+        );
+    }
+    if (!otherBookmarks && root.children?.length > 1) {
+        otherBookmarks = root.children[1];
+    }
+    if (!otherBookmarks && root.children?.length > 0) {
+        otherBookmarks = root.children[0];
+    }
+
+    if (!otherBookmarks) {
+        throw new Error(currentLang === 'zh_CN' ? '找不到书签根目录' : 'Cannot find bookmark root folder');
+    }
+
+    console.log('[executeMergeRestore] otherBookmarks:', otherBookmarks?.id, otherBookmarks?.title);
+
+    async function addMissingBookmarks(node, parentId) {
+        if (node.url) {
+            if (!existingUrls.has(node.url)) {
+                try {
+                    await browserAPI.bookmarks.create({
+                        parentId,
+                        title: node.title || '',
+                        url: node.url
+                    });
+                    addedCount++;
+                    if (addedCount % 10 === 0) {
+                        updateRestoreProgress(30 + Math.min(55, (addedCount / 100) * 55),
+                            currentLang === 'zh_CN' ? `已添加 ${addedCount} 个书签...` : `Added ${addedCount} bookmarks...`);
+                    }
+                } catch (e) {
+                    console.warn('[executeMergeRestore] 添加书签失败:', node, e);
+                }
+            } else {
+                skippedCount++;
+            }
+        }
+        if (node.children) {
+            for (const child of node.children) {
+                await addMissingBookmarks(child, parentId);
+            }
+        }
+    }
+
+    const nodes = Array.isArray(bookmarkTree) ? bookmarkTree : [bookmarkTree];
+    for (const node of nodes) {
+        if (node.children) {
+            for (const topFolder of node.children) {
+                if (topFolder.children) {
+                    for (const child of topFolder.children) {
+                        await addMissingBookmarks(child, otherBookmarks.id);
+                    }
+                }
+            }
+        }
+    }
+
+    return { success: true, added: addedCount, skipped: skippedCount };
+}
+
+/**
+ * 递归创建书签/文件夹
+ */
+async function createNodeRecursive(node, parentId) {
+    let count = 0;
+
+    try {
+        if (node.url) {
+            // 创建书签
+            await browserAPI.bookmarks.create({
+                parentId,
+                title: node.title || '',
+                url: node.url
+            });
+            count = 1;
+        } else if (node.children !== undefined) {
+            // 创建文件夹
+            const folder = await browserAPI.bookmarks.create({
+                parentId,
+                title: node.title || ''
+            });
+            count = 1;
+
+            // 递归创建子节点
+            for (const child of node.children || []) {
+                count += await createNodeRecursive(child, folder.id);
+            }
+        }
+    } catch (e) {
+        console.warn('[createNodeRecursive] 创建节点失败:', node, e);
+    }
+
+    return count;
+}
+
+/**
+ * 更新恢复进度
+ */
+function updateRestoreProgress(percent, text) {
+    const progressBar = document.getElementById('restoreProgressBar');
+    const progressPercent = document.getElementById('restoreProgressPercent');
+    const progressText = document.getElementById('restoreProgressText');
+
+    if (progressBar) progressBar.style.width = `${percent}%`;
+    if (progressPercent) progressPercent.textContent = `${Math.round(percent)}%`;
+    if (progressText) progressText.textContent = text;
+}
+
+/**
+ * 初始化恢复模态框事件
+ */
+function initRestoreModal() {
+    const modal = document.getElementById('restoreModal');
+    const closeBtn = document.getElementById('restoreModalClose');
+    const cancelBtn = document.getElementById('restoreCancelBtn');
+    const confirmBtn = document.getElementById('restoreConfirmBtn');
+
+    if (closeBtn) {
+        closeBtn.addEventListener('click', closeRestoreModal);
+    }
+
+    if (cancelBtn) {
+        cancelBtn.addEventListener('click', closeRestoreModal);
+    }
+
+    if (confirmBtn) {
+        confirmBtn.addEventListener('click', executeRestore);
+    }
+
+    // 点击模态框外部关闭
+    if (modal) {
+        modal.addEventListener('click', (e) => {
+            if (e.target === modal) {
+                closeRestoreModal();
+            }
+        });
+    }
+}
+
+
+// =============================================================================
 // 备份历史详情模式切换
 // =============================================================================
 
@@ -19914,7 +21380,11 @@ function initHistoryDetailModeToggle() {
     simpleBtn.addEventListener('click', () => {
         if (historyDetailMode === 'simple') return;
         historyDetailMode = 'simple';
-        localStorage.setItem('historyDetailMode', 'simple');
+        // 更新统一存储
+        if (historyViewSettings) {
+            historyViewSettings.defaultMode = 'simple';
+            saveHistoryViewSettings();
+        }
         simpleBtn.classList.add('active');
         detailedBtn.classList.remove('active');
         // 全局覆盖：同步更新每条记录的持久化模式
@@ -19928,7 +21398,11 @@ function initHistoryDetailModeToggle() {
     detailedBtn.addEventListener('click', () => {
         if (historyDetailMode === 'detailed') return;
         historyDetailMode = 'detailed';
-        localStorage.setItem('historyDetailMode', 'detailed');
+        // 更新统一存储
+        if (historyViewSettings) {
+            historyViewSettings.defaultMode = 'detailed';
+            saveHistoryViewSettings();
+        }
         detailedBtn.classList.add('active');
         simpleBtn.classList.remove('active');
         // 全局覆盖：同步更新每条记录的持久化模式
@@ -20221,10 +21695,214 @@ function flattenBookmarkTree(tree, result = []) {
     return result;
 }
 
+/**
+ * 标准化书签树 ID (用于恢复预览时的 Smart/Fuzzy Matching)
+ * 策略：让备份树(Target)尽可能对齐参考树(Reference/Current)，以减少"误报"的变化。
+ * 优先级：
+ * 1. ID 精确匹配 (ID Persistence)
+ * 2. 结构位置匹配 (Same Parent + Same Title/URL)
+ * 3. 全局内容匹配 (Same URL for Bookmarks)
+ * 
+ * @param {Array} targetTree 要修改的树 (通常是备份记录的深拷贝)
+ * @param {Array} referenceTree 参考树 (通常是当前浏览器书签树)
+ */
+function normalizeTreeIds(targetTree, referenceTree) {
+    if (!targetTree || !referenceTree) return;
+
+    // --- 0. 准备工作：建立参考树索引 ---
+    const refPool = {
+        ids: new Set(),         // 已存在的 ID 集合
+        claimedIds: new Set(),  // 已被 Target 匹配领用的 ID 集合 (1-to-1 Mapping)
+        nodeMap: new Map(),     // ID -> Node
+        urlMap: new Map(),      // URL -> Set<Node> (仅书签)
+    };
+
+    const indexRef = (nodes) => {
+        if (!nodes) return;
+        const list = Array.isArray(nodes) ? nodes : [nodes];
+        list.forEach(node => {
+            if (node.id) {
+                refPool.ids.add(String(node.id));
+                refPool.nodeMap.set(String(node.id), node);
+
+                if (node.url) {
+                    // 书签：索引 URL
+                    if (!refPool.urlMap.has(node.url)) {
+                        refPool.urlMap.set(node.url, new Set());
+                    }
+                    refPool.urlMap.get(node.url).add(node);
+                }
+            }
+            if (node.children) indexRef(node.children);
+        });
+    };
+    indexRef(referenceTree);
+
+    // 辅助：更改节点 ID 并递归更新子节点的 parentId
+    const updateNodeId = (node, newId) => {
+        if (!node) return;
+        const oldId = node.id;
+        node.id = newId;
+
+        // 更新子节点的 parentId 指向新 ID
+        if (node.children) {
+            node.children.forEach(child => {
+                child.parentId = newId;
+            });
+        }
+    };
+
+    // --- Pass 1: ID 精确匹配 (Lock-in) ---
+    // 遍历 Target，如果 ID 在 Reference 中存在且类型兼容，优先锁定。
+    const pass1_IDMatch = (nodes) => {
+        if (!nodes) return;
+        const list = Array.isArray(nodes) ? nodes : [nodes];
+        list.forEach(node => {
+            const id = String(node.id);
+            if (refPool.ids.has(id)) {
+                // 检查 Reference 中该节点是否已被认领 (本 Pass 不应该发生，除非 Ref 有重复 ID)
+                if (!refPool.claimedIds.has(id)) {
+                    // 类型检查（简单）：有无 URL
+                    const refNode = refPool.nodeMap.get(id);
+                    const isSameType = (!!node.url === !!refNode.url);
+                    if (isSameType) {
+                        refPool.claimedIds.add(id);
+                        node._matchedRefNode = refNode; // 暂存匹配关系供 Pass 2 使用
+                    }
+                }
+            }
+            if (node.children) pass1_IDMatch(node.children);
+        });
+    };
+    pass1_IDMatch(targetTree);
+
+    // --- Pass 2: 结构位置匹配 (Relative Position) ---
+    // 遍历 Target (Top-Down)，对于未匹配的节点，
+    // 如果其 Parent 已匹配，则在 Parent 对应的 RefNode children 中寻找“包含相同 Title/URL”的未认领节点。
+    const pass2_StructureMatch = (nodes, parentMatchedRefNode) => {
+        if (!nodes) return;
+        const list = Array.isArray(nodes) ? nodes : [nodes];
+
+        list.forEach(node => {
+            // 如果该节点在 Pass 1 还没匹配
+            if (!node._matchedRefNode) {
+                // 尝试结构匹配
+                // 条件：父节点必须已匹配 (parentMatchedRefNode 存在)
+                if (parentMatchedRefNode && parentMatchedRefNode.children) {
+                    const isBookmark = !!node.url;
+
+                    // 在参考父节点的子节点中寻找候选
+                    const candidate = parentMatchedRefNode.children.find(refChild => {
+                        const refId = String(refChild.id);
+                        if (refPool.claimedIds.has(refId)) return false; // 已被别人认领
+
+                        const refIsBookmark = !!refChild.url;
+                        if (isBookmark !== refIsBookmark) return false; // 类型不同
+
+                        // 匹配标准：名字相同
+                        if (node.title !== refChild.title) return false;
+
+                        // 如果是书签，URL 也必须相同
+                        if (isBookmark && node.url !== refChild.url) return false;
+
+                        return true;
+                    });
+
+                    if (candidate) {
+                        // 匹配成功！
+                        const newId = String(candidate.id);
+                        // 修改 Target 节点 ID
+                        updateNodeId(node, newId);
+                        // 标记领用
+                        refPool.claimedIds.add(newId);
+                        node._matchedRefNode = candidate;
+                    }
+                }
+            }
+
+            // 递归子节点 (传入当前节点匹配到的 RefObj，如果没匹配到则传 null，导致子链断裂无法进行结构匹配)
+            if (node.children) {
+                pass2_StructureMatch(node.children, node._matchedRefNode);
+            }
+        });
+    };
+    // 根节点处理：通常 root (id:0) 在 Pass 1 已经匹配。
+    // targetTree 本身可能是 root 数组，或者 root 对象
+    // 我们假设 targetTree[0] 是 root
+    const rootNodes = Array.isArray(targetTree) ? targetTree : [targetTree];
+    // 为了启动 Top-Down，我们需要根节点的 Ref。
+    // 如果根节点 Pass 1 匹配了，就传进去。
+    rootNodes.forEach(root => {
+        // 通常 root 已经有 id=0 匹配了
+        pass2_StructureMatch(root.children, root._matchedRefNode);
+    });
+
+    // --- Pass 3: 全局内容匹配 (Same URL - Fallback) ---
+    // 对于书签，如果结构匹配失败（例如书签被移动到了不同文件夹），尝试全局 URL 匹配。
+    // 仅限书签。文件夹名字太通用，不宜全局匹配。
+    const pass3_GlobalUrlMatch = (nodes) => {
+        if (!nodes) return;
+        const list = Array.isArray(nodes) ? nodes : [nodes];
+        list.forEach(node => {
+            // 如果还没匹配，且是书签
+            if (!node._matchedRefNode && node.url) {
+                const candidates = refPool.urlMap.get(node.url);
+                if (candidates) {
+                    // 找一个未认领的 ID
+                    // 优先找 Title 也相同的?
+                    let bestMatch = null;
+
+                    // 策略：先找 Title 相同的未认领项
+                    for (const cand of candidates) {
+                        if (!refPool.claimedIds.has(String(cand.id))) {
+                            if (cand.title === node.title) {
+                                bestMatch = cand;
+                                break;
+                            }
+                        }
+                    }
+
+                    // 如果没找到 Title 相同的，随便找一个未认领的 URL 相同的 (视为改名 + 移动)
+                    if (!bestMatch) {
+                        for (const cand of candidates) {
+                            if (!refPool.claimedIds.has(String(cand.id))) {
+                                bestMatch = cand;
+                                break;
+                            }
+                        }
+                    }
+
+                    if (bestMatch) {
+                        const newId = String(bestMatch.id);
+                        updateNodeId(node, newId);
+                        refPool.claimedIds.add(newId);
+                        node._matchedRefNode = bestMatch;
+                    }
+                }
+            }
+            if (node.children) pass3_GlobalUrlMatch(node.children);
+        });
+    };
+    pass3_GlobalUrlMatch(targetTree);
+
+    // 清理临时属性
+    const cleanup = (nodes) => {
+        if (!nodes) return;
+        const list = Array.isArray(nodes) ? nodes : [nodes];
+        list.forEach(node => {
+            delete node._matchedRefNode;
+            if (node.children) cleanup(node.children);
+        });
+    };
+    cleanup(targetTree);
+}
+
 // 生成备份历史的树形 HTML（与"当前变化"视图保持一致的结构）
 // changeMap: Map<id, {type: 'added'|'deleted'|'modified'|'moved'|'modified+moved', moved?: {...}}>
-function generateHistoryTreeHtml(bookmarkTree, changeMap, mode) {
+// options: { maxDepth: number } - 控制默认展开深度
+function generateHistoryTreeHtml(bookmarkTree, changeMap, mode, options = {}) {
     const isZh = currentLang === 'zh_CN';
+    const maxDepth = options.maxDepth !== undefined ? options.maxDepth : 999;
 
     // 检查某个节点或其子节点是否有变化
     function hasChangesRecursive(node) {
@@ -20296,10 +21974,34 @@ function generateHistoryTreeHtml(bookmarkTree, changeMap, mode) {
         // 展开逻辑：
         // - 详细模式：根节点展开，包含变化的文件夹也展开
         // - 简略模式：祖先路径保持展开；若“变更对象本身是文件夹”，默认折叠（但内容已渲染，允许手动展开查看）
+        // UPDATE: 增加 maxDepth 支持
         const isSelfChangedFolder = !!(isFolder && change && change.type);
-        const shouldExpand = (mode === 'detailed')
-            ? (level === 0 || hasChangesRecursive(node))
-            : ((level === 0 || hasChangesRecursive(node)) && !isSelfChangedFolder);
+
+        // 默认展开条件：
+        // 1. 深度小于 maxDepth
+        // 2. 或者是 detailed 模式且有子节点变化 (但这会导致全展开，所以我们要限制)
+        // 修改为：(level < maxDepth) OR (shouldExpandRecursive && level < maxDepth + 1) ?
+        // 简单点：只展开 maxDepth 层级。详细的让用户点。
+        // 但是对于 Restore Result Preview，如果只显示根节点，用户看不到里面的变化。
+        // 所以我们保留原有的 hasChangesRecursive 逻辑，加上 level 限制。
+
+        let shouldExpand = false;
+
+        if (mode === 'detailed') {
+            // 详细模式 (Restore Preview 用这个):
+            // 默认展开根节点 (level 0) 和 第一级 (level 1)
+            // 即使有深层变化，也默认折叠，防止内容太多。用户看到红点/绿点自己展开。
+            shouldExpand = level < maxDepth;
+
+            // 如果在 auto backup 详情弹窗里，我们可能希望还是尽量展开？
+            // 传入的 maxDepth 如果很大 (999)，就保持原样
+            if (options.maxDepth === undefined || options.maxDepth === null || options.maxDepth > 100) {
+                shouldExpand = (level === 0 || hasChangesRecursive(node));
+            }
+        } else {
+            // 简略模式
+            shouldExpand = ((level === 0 || hasChangesRecursive(node)) && !isSelfChangedFolder);
+        }
 
         // 关键：当“文件夹本身发生移动（拖动）”时，简略模式也需要允许展开查看其内容。
         // 否则简略模式只会显示这个文件夹节点，展开后是空的，用户无法确认“移动的是什么”。
@@ -20428,8 +22130,8 @@ function generateHistoryTreeHtml(bookmarkTree, changeMap, mode) {
         <div class="detail-section">
             <div class="detail-section-title detail-section-title-with-legend">
                 <span class="detail-title-left">
-                    ${isZh ? '书签变化' : 'Bookmark Changes'}
-                    <span class="detail-mode-label">(${mode === 'detailed' ? (isZh ? '详细' : 'Detailed') : (isZh ? '简略' : 'Simple')})</span>
+                    ${options.customTitle ? options.customTitle : (isZh ? '书签变化' : 'Bookmark Changes')}
+                    ${!options.customTitle ? `<span class="detail-mode-label">(${mode === 'detailed' ? (isZh ? '详细' : 'Detailed') : (isZh ? '简略' : 'Simple')})</span>` : ''}
                 </span>
                 <span class="detail-title-legend">${legend}</span>
             </div>
@@ -25336,7 +27038,7 @@ async function executeExportChanges() {
                 const record = currentExportHistoryRecord;
                 const dateStr = formatTimeForFilename(record.time); // 备份时间（本地时间）
                 const cleanNote = record.note ? record.note.replace(/[\\/:*?"<>|]/g, '_').replace(/\s+/g, '_') : '';
-                const fingerprint = record.fingerprint ? `_${record.fingerprint.substring(0, 8)}` : '';
+                const fingerprint = record.fingerprint ? `_${record.fingerprint.substring(0, 7)}` : '';
                 const modeStr = mode === 'simple' ? (isZh ? '_简略' : '_Simple') : (isZh ? '_详细' : '_Detailed');
                 const defaultPrefix = isZh ? '书签' : 'bookmark';
 
@@ -25362,7 +27064,7 @@ async function executeExportChanges() {
                 const record = currentExportHistoryRecord;
                 const dateStr = formatTimeForFilename(record.time); // 备份时间（本地时间）
                 const cleanNote = record.note ? record.note.replace(/[\\/:*?"<>|]/g, '_').replace(/\s+/g, '_') : '';
-                const fingerprint = record.fingerprint ? `_${record.fingerprint.substring(0, 8)}` : '';
+                const fingerprint = record.fingerprint ? `_${record.fingerprint.substring(0, 7)}` : '';
                 const modeStr = mode === 'simple' ? (isZh ? '_简略' : '_Simple') : (isZh ? '_详细' : '_Detailed');
                 const defaultPrefix = isZh ? '书签' : 'bookmark';
 
@@ -27643,7 +29345,7 @@ async function startGlobalExport() {
                 const dateStr = formatTimeForFilename(record.time); // 备份时间（本地时间）
                 // Sanitize note for filename use
                 const cleanNote = record.note ? record.note.replace(/[\\/:*?"<>|]/g, '_').replace(/\s+/g, '_') : '';
-                const fingerprint = record.fingerprint ? `_${record.fingerprint.substring(0, 8)}` : '';
+                const fingerprint = record.fingerprint ? `_${record.fingerprint.substring(0, 7)}` : '';
                 const modeStr = mode === 'simple' ? (currentLang === 'zh_CN' ? '_简略' : '_Simple') : (currentLang === 'zh_CN' ? '_详细' : '_Detailed');
                 const defaultPrefix = currentLang === 'zh_CN' ? '书签' : 'bookmark';
 
@@ -27728,7 +29430,7 @@ async function startGlobalExport() {
                 // 2. 创建容器文件夹
                 const timeStr = formatTime(record.time);
                 // 改为 Note + Hash + Mode + Time 格式
-                const fingerprint = record.fingerprint ? ` [${record.fingerprint.substring(0, 8)}]` : '';
+                const fingerprint = record.fingerprint ? ` [${record.fingerprint.substring(0, 7)}]` : '';
                 const titlePrefix = record.note ? record.note : (currentLang === 'zh_CN' ? '备份' : 'Backup');
                 const modeLabel = mode === 'simple' ? (currentLang === 'zh_CN' ? '简略' : 'Simple') : (currentLang === 'zh_CN' ? '详细' : 'Detailed');
 
@@ -27907,41 +29609,63 @@ async function prepareDataForExport(record) {
     let changeMap = new Map();
     const recordIndex = syncHistory.findIndex(r => r.time === record.time);
     let previousRecord = null;
+
     if (recordIndex > 0) {
         for (let i = recordIndex - 1; i >= 0; i--) {
-            if (syncHistory[i].status === 'success' && syncHistory[i].bookmarkTree) {
+            if (syncHistory[i].status === 'success' && (syncHistory[i].hasData || syncHistory[i].bookmarkTree)) {
                 previousRecord = syncHistory[i];
                 break;
             }
         }
     }
 
+    // Lazy load current tree
     let treeToExport = record.bookmarkTree;
-    if (previousRecord && previousRecord.bookmarkTree) {
-        changeMap = await detectTreeChangesFast(previousRecord.bookmarkTree, record.bookmarkTree, {
-            useGlobalExplicitMovedIds: false,
-            explicitMovedIdSet: (record.bookmarkStats && Array.isArray(record.bookmarkStats.explicitMovedIds))
-                ? record.bookmarkStats.explicitMovedIds
-                : null
-        });
+    if (!treeToExport && (record.hasData || record.status === 'success')) {
+        treeToExport = await getBackupDataLazy(record.time);
+    }
 
-        // 重建删除节点
-        let hasDeleted = false;
-        for (const [, change] of changeMap) {
-            if (change.type && change.type.includes('deleted')) {
-                hasDeleted = true;
-                break;
+    // Lazy load previous tree
+    let prevTree = null;
+    if (previousRecord) {
+        prevTree = previousRecord.bookmarkTree;
+        if (!prevTree && (previousRecord.hasData || previousRecord.status === 'success')) {
+            prevTree = await getBackupDataLazy(previousRecord.time);
+        }
+    }
+
+    if (prevTree) {
+        if (treeToExport) {
+            changeMap = await detectTreeChangesFast(prevTree, treeToExport, {
+                useGlobalExplicitMovedIds: false,
+                explicitMovedIdSet: (record.bookmarkStats && Array.isArray(record.bookmarkStats.explicitMovedIds))
+                    ? record.bookmarkStats.explicitMovedIds
+                    : null
+            });
+
+            // 重建删除节点
+            let hasDeleted = false;
+            for (const [, change] of changeMap) {
+                if (change.type && change.type.includes('deleted')) {
+                    hasDeleted = true;
+                    break;
+                }
+            }
+            if (hasDeleted) {
+                try {
+                    treeToExport = rebuildTreeWithDeleted(prevTree, treeToExport, changeMap);
+                } catch (error) {
+                    // Fallback to pure current tree if rebuild fails
+                    if (!record.bookmarkTree) {
+                        // If we lazy loaded, we have it in treeToExport variable
+                    } else {
+                        treeToExport = record.bookmarkTree;
+                    }
+                }
             }
         }
-        if (hasDeleted) {
-            try {
-                treeToExport = rebuildTreeWithDeleted(previousRecord.bookmarkTree, record.bookmarkTree, changeMap);
-            } catch (error) {
-                treeToExport = record.bookmarkTree; // fallback
-            }
-        }
-    } else if (record.isFirstBackup) {
-        const allNodes = flattenBookmarkTree(record.bookmarkTree);
+    } else if (record.isFirstBackup && treeToExport) {
+        const allNodes = flattenBookmarkTree(treeToExport);
         allNodes.forEach(item => {
             if (item.id) changeMap.set(item.id, { type: 'added' });
         });
@@ -27949,6 +29673,7 @@ async function prepareDataForExport(record) {
 
     return { treeToExport, changeMap };
 }
+
 
 // 重构：原有的 HTML 生成函数调用
 async function generateExportHtmlContentForGlobal(record, mode) {

@@ -3745,7 +3745,12 @@
                             <div class="section-content" id="historySyncContent">
                                 <!-- 导出格式 -->
                                 <div class="setting-row">
-                                    <span class="setting-label" id="historyFormatLabel">Format</span>
+                                    <div style="display: flex; align-items: center; gap: 0;" id="formatHelpWrapper">
+                                        <span class="setting-label" id="historyFormatLabel"
+                                            style="margin: 0; min-width: auto;">Format</span>
+                                        <i class="fas fa-question-circle" id="historyFormatHelp"
+                                            style="color: var(--theme-text-secondary); cursor: help; font-size: 14px; margin-left: 1px;"></i>
+                                    </div>
                                     <div class="clean-segment-group">
                                         <label class="clean-segment-label">
                                             <input type="checkbox" id="historySyncHtml" checked>
@@ -3757,36 +3762,20 @@
                                         </label>
                                     </div>
                                 </div>
-                                <!-- 覆盖策略 & 视图模式 (合并行) -->
+                                <!-- 打包结构 -->
                                 <div class="setting-row">
-                                    <!-- Strategy -->
-                                    <div style="display: flex; align-items: center; gap: 8px; flex: 1;">
-                                        <span class="setting-label" id="historyOverwriteLabel"
-                                            style="width: auto; min-width: unset;">Strategy</span>
-                                        <div class="clean-segment-group">
-                                            <label class="clean-segment-label">
-                                                <input type="checkbox" checked disabled>
-                                                <div class="clean-segment-item active prohibited"
-                                                    id="historySyncOverwriteLabel"
-                                                    style="cursor: default; opacity: 1; background-color: var(--theme-accent-color); color: white; border-color: var(--theme-accent-color);">
-                                                    Overwrite</div>
-                                            </label>
-                                        </div>
-                                    </div>
-                                    <!-- View -->
-                                    <div
-                                        style="display: flex; align-items: center; gap: 8px; flex: 1; justify-content: flex-end;">
-                                        <span class="setting-label" id="historyViewModeLabel"
-                                            style="width: auto; min-width: unset;">View</span>
-                                        <div class="clean-segment-group">
-                                            <label class="clean-segment-label">
-                                                <input type="checkbox" checked disabled>
-                                                <div class="clean-segment-item active prohibited"
-                                                    id="historySyncDetailedLabel"
-                                                    style="cursor: default; opacity: 1; background-color: var(--theme-accent-color); color: white; border-color: var(--theme-accent-color);">
-                                                    Detail</div>
-                                            </label>
-                                        </div>
+                                    <span class="setting-label" id="historyPackModeLabel">Pack</span>
+                                    <div class="clean-segment-group">
+                                        <label class="clean-segment-label">
+                                            <input type="radio" name="historySyncPackMode" id="historySyncPackZip"
+                                                value="zip" checked>
+                                            <div class="clean-segment-item" id="historySyncPackZipLabel">ZIP</div>
+                                        </label>
+                                        <label class="clean-segment-label">
+                                            <input type="radio" name="historySyncPackMode" id="historySyncPackMerge"
+                                                value="merge">
+                                            <div class="clean-segment-item" id="historySyncPackMergeLabel">Merge</div>
+                                        </label>
                                     </div>
                                 </div>
                             </div>

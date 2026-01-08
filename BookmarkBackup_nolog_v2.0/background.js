@@ -660,12 +660,63 @@ if (!hasInitializedBackupReminder) {
 }
 
 
+// 迁移到分离存储架构
+async function migrateToSplitStorage() {
+    try {
+        const { syncHistory } = await browserAPI.storage.local.get(['syncHistory']);
+        if (!syncHistory || !Array.isArray(syncHistory) || syncHistory.length === 0) return;
+
+        // 检查是否需要迁移（检查是否有 bookmarkTree 字段）
+        const needsMigration = syncHistory.some(r => r.bookmarkTree !== undefined && r.bookmarkTree !== null);
+
+        if (!needsMigration) {
+            // console.log('[Migration] Storage already split or empty.');
+            return;
+        }
+
+        console.log('[Migration] Starting migration to split storage (Index vs Data)...');
+        const newIndex = [];
+        const storageUpdates = {};
+
+        // 批量写入大小限制，分批处理如果需要，但这里先把所有放在一个对象里（chrome.storage.local通常可以处理较大的单一对象，但如果整个历史太大可能会有问题）
+        // 考虑到内存限制，我们应该谨慎。但在 Worker 中内存通常够用。
+
+        for (const record of syncHistory) {
+            // 克隆记录用于索引
+            const indexRecord = { ...record };
+
+            // 提取书签树
+            if (record.bookmarkTree) {
+                const treeKey = `backup_data_${record.time}`;
+                storageUpdates[treeKey] = record.bookmarkTree;
+                delete indexRecord.bookmarkTree; // 从索引中移除
+                indexRecord.hasData = true; // 标记数据存在
+            } else {
+                indexRecord.hasData = false;
+            }
+            newIndex.push(indexRecord);
+        }
+
+        storageUpdates.syncHistory = newIndex;
+
+        // 写入 storage
+        await browserAPI.storage.local.set(storageUpdates);
+        console.log('[Migration] Migration completed. Records processed:', newIndex.length);
+
+    } catch (e) {
+        console.error('[Migration] Failed:', e);
+    }
+}
+
 // =================================================================================
 // II. CORE EVENT LISTENERS (核心事件监听器)
 // =================================================================================
 
 // 初始化定时任务
 browserAPI.runtime.onInstalled.addListener(async (details) => { // 添加 async 和 details 参数
+    // 立即尝试迁移旧数据
+    await migrateToSplitStorage();
+
     // 新增：初始化存储，确保首次运行时有基准
     if (details.reason === 'install' || details.reason === 'update') {
         try {
@@ -927,6 +978,7 @@ browserAPI.downloads.onChanged.addListener((downloadDelta) => {
 // - Chrome 书签管理器“导入书签”会触发 onImportBegan/onImportEnded（并伴随大量 onCreated/onMoved 等）
 // - 导入期间允许 UI 继续读旧快照，等导入结束后再统一刷新
 let isBookmarkImporting = false;
+let isBookmarkRestoring = false; // 书签恢复期间暂停监听
 let bookmarkImportFlushTimer = null;
 
 const BookmarkSnapshotCache = {
@@ -1712,6 +1764,72 @@ browserAPI.runtime.onMessage.addListener((message, sender, sendResponse) => {
             })();
 
             return true;  // 保持消息通道开放
+        } else if (message.action === "setBookmarkRestoringFlag") {
+            // 设置/重置书签恢复标志
+            isBookmarkRestoring = !!message.value;
+            console.log('[setBookmarkRestoringFlag]', isBookmarkRestoring);
+            sendResponse({ success: true, isRestoring: isBookmarkRestoring });
+            return false;
+        } else if (message.action === "triggerRestoreBackup") {
+            // 恢复完成后触发一次备份（作为恢复记录）
+            (async () => {
+                try {
+                    const note = message.note || '';
+                    const sourceSeqNumber = message.sourceSeqNumber;
+                    const sourceTime = message.sourceTime;
+                    const sourceNote = message.sourceNote || '';
+                    const strategy = message.strategy || 'overwrite';
+
+                    // 执行备份
+                    const result = await syncBookmarks(false, null, false, null);
+
+                    if (result.success) {
+                        // 更新最新的记录，添加恢复标识
+                        const { syncHistory = [] } = await browserAPI.storage.local.get(['syncHistory']);
+                        if (syncHistory.length > 0) {
+                            const latestRecord = syncHistory[syncHistory.length - 1];
+                            latestRecord.type = 'restore'; // 标记为恢复类型
+                            latestRecord.note = note;
+                            latestRecord.restoreInfo = {
+                                sourceSeqNumber,
+                                sourceTime,
+                                sourceNote,
+                                sourceFingerprint: message.sourceFingerprint || '',
+                                strategy
+                            };
+                            await browserAPI.storage.local.set({ syncHistory });
+                        }
+
+                        // ⭐ 重要：恢复后更新状态（相当于完成一次备份）
+                        // 1. 更新角标为绿色（已同步状态）
+                        await updateBadgeAfterSync(true);
+
+                        // 2. 强制刷新分析缓存
+                        await updateAndCacheAnalysis();
+
+                        // 3. 更新角标（确保显示正确状态）
+                        await setBadge();
+
+                        // 4. 通知前端刷新状态
+                        try {
+                            await browserAPI.runtime.sendMessage({
+                                action: 'bookmarkChanged',
+                                source: 'restore'
+                            });
+                        } catch (_) {
+                            // 如果前端不可用，忽略
+                        }
+
+                        console.log('[triggerRestoreBackup] 恢复备份完成，状态已更新');
+                    }
+
+                    sendResponse(result);
+                } catch (error) {
+                    console.error('[triggerRestoreBackup] 失败:', error);
+                    sendResponse({ success: false, error: error.message });
+                }
+            })();
+            return true;
         } else if (message.action === "resetAllData") {
             // 使用异步立即执行函数处理
             (async () => {
@@ -2144,7 +2262,7 @@ browserAPI.runtime.onMessage.addListener((message, sender, sendResponse) => {
             }
             return true; // 保持消息通道开放
         } else if (message.action === "getSyncHistory") {
-            // 从存储中获取备份历史记录
+            // 仅返回索引列表（不包含书签树详细数据）
             browserAPI.storage.local.get(['syncHistory'], (data) => {
                 const syncHistory = data.syncHistory || [];
                 sendResponse({
@@ -2152,7 +2270,40 @@ browserAPI.runtime.onMessage.addListener((message, sender, sendResponse) => {
                     syncHistory: syncHistory
                 });
             });
-            return true; // 保持消息通道开放
+            return true;
+
+        } else if (message.action === "getBackupData") {
+            // 新增：按需加载单个备份的详细数据
+            const recordTime = message.time;
+            if (!recordTime) {
+                sendResponse({ success: false, error: 'Missing time parameter' });
+                return false;
+            }
+
+            (async () => {
+                try {
+                    const treeKey = `backup_data_${recordTime}`;
+                    const data = await browserAPI.storage.local.get([treeKey]);
+                    const bookmarkTree = data[treeKey];
+
+                    if (bookmarkTree) {
+                        sendResponse({ success: true, bookmarkTree });
+                    } else {
+                        // 回退检查：如果是旧数据可能还在 syncHistory 中（理论上已迁移，但为了健壮性）
+                        const { syncHistory = [] } = await browserAPI.storage.local.get(['syncHistory']);
+                        const record = syncHistory.find(r => r.time === recordTime);
+                        if (record && record.bookmarkTree) {
+                            sendResponse({ success: true, bookmarkTree: record.bookmarkTree });
+                        } else {
+                            sendResponse({ success: false, error: 'Data not found' });
+                        }
+                    }
+                } catch (e) {
+                    sendResponse({ success: false, error: e.message });
+                }
+            })();
+            return true;
+            // 保持消息通道开放
         } else if (message.action === "openReminderSettings") {
             // 打开主UI并直接触发"手动备份动态提醒设置"按钮
             try {
@@ -2294,30 +2445,49 @@ browserAPI.runtime.onMessage.addListener((message, sender, sendResponse) => {
                     // 找到最后一条成功且有 bookmarkTree 的记录
                     let lastValidRecord = null;
                     for (let i = syncHistory.length - 1; i >= 0; i--) {
-                        if (syncHistory[i].status === 'success' && syncHistory[i].bookmarkTree) {
+                        if (syncHistory[i].status === 'success' && (syncHistory[i].hasData || syncHistory[i].bookmarkTree)) {
                             lastValidRecord = syncHistory[i];
                             break;
                         }
                     }
 
-                    // 准备保存的缓存记录（仅保留必要的字段）
-                    const cachedRecord = lastValidRecord ? {
-                        bookmarkTree: lastValidRecord.bookmarkTree,
-                        bookmarkStats: lastValidRecord.bookmarkStats,
-                        time: lastValidRecord.time
-                    } : null;
+                    // 收集需要删除的 keys
+                    const keysToRemove = [];
+                    syncHistory.forEach(record => {
+                        // 保留最后一条（如果需要）
+                        if (lastValidRecord && record.time === lastValidRecord.time && !message.forceClearAll) {
+                            return;
+                        }
+                        // 记录该记录对应的数据 key
+                        keysToRemove.push(`backup_data_${record.time}`);
+                    });
 
-                    // 清空历史并保存缓存记录
-                    const updates = { syncHistory: [] };
-                    if (cachedRecord) {
-                        updates.cachedRecordAfterClear = cachedRecord;
+                    // 执行数据删除
+                    if (keysToRemove.length > 0) {
+                        await browserAPI.storage.local.remove(keysToRemove);
                     }
 
-                    await browserAPI.storage.local.set(updates);
+                    // 更新 syncHistory (保留一条或清空)
+                    let remainingHistory = [];
+                    if (lastValidRecord && !message.forceClearAll) {
+                        remainingHistory = [lastValidRecord];
+                    }
 
+                    await browserAPI.storage.local.set({ syncHistory: remainingHistory });
+
+                    // 重新设置 syncHistory，确保是空的或仅包含保留项
+                    const updates = { syncHistory: remainingHistory };
                     // 如果没有有效记录，也要删除旧的缓存
-                    if (!cachedRecord) {
+                    if (!lastValidRecord || message.forceClearAll) {
                         await browserAPI.storage.local.remove(['cachedRecordAfterClear']);
+                    } else {
+                        // 如果保留了最后一条，更新 cachedRecordAfterClear
+                        const cachedRecord = {
+                            bookmarkTree: lastValidRecord.bookmarkTree, // 此时 bookmarkTree 应该还在单独的 key 中
+                            bookmarkStats: lastValidRecord.bookmarkStats,
+                            time: lastValidRecord.time
+                        };
+                        await browserAPI.storage.local.set({ cachedRecordAfterClear: cachedRecord });
                     }
 
                     sendResponse({ success: true });
@@ -2361,36 +2531,35 @@ browserAPI.runtime.onMessage.addListener((message, sender, sendResponse) => {
                     // 保留最新的记录（删除最旧的）
                     const remainingHistory = syncHistory.slice(actualDeleteCount);
 
+                    // 删除对应的数据 Keys
+                    const deletedRecords = syncHistory.slice(0, actualDeleteCount);
+                    const keysToRemove = deletedRecords.map(r => `backup_data_${r.time}`);
+
+                    if (keysToRemove.length > 0) {
+                        await browserAPI.storage.local.remove(keysToRemove);
+                    }
+
+                    await browserAPI.storage.local.set({ syncHistory: remainingHistory });
+
                     // 如果删除后还有记录，找到第一条有效的书签树作为对比基准
                     let cachedRecord = null;
                     if (remainingHistory.length > 0) {
                         // 找最后一条被删除的记录中有书签树的，作为新的对比基准
-                        const deletedRecords = syncHistory.slice(0, actualDeleteCount);
-                        for (let i = deletedRecords.length - 1; i >= 0; i--) {
-                            if (deletedRecords[i].status === 'success' && deletedRecords[i].bookmarkTree) {
-                                cachedRecord = {
-                                    bookmarkTree: deletedRecords[i].bookmarkTree,
-                                    bookmarkStats: deletedRecords[i].bookmarkStats,
-                                    time: deletedRecords[i].time
-                                };
-                                break;
-                            }
-                        }
+                        // 注意：这里cachedRecordAfterClear应该指向被删除的最后一条记录的数据
+                        // 理论上，如果remainingHistory不为空，cachedRecordAfterClear应该指向remainingHistory[0]之前的那条
+                        // 但为了简化和兼容，我们只在remainingHistory为空时才考虑清除cachedRecordAfterClear
+                        // 否则，cachedRecordAfterClear应该由其他逻辑维护
                     }
-
-                    // 更新存储
-                    const updates = { syncHistory: remainingHistory };
-                    if (cachedRecord) {
-                        updates.cachedRecordAfterClear = cachedRecord;
-                    }
-                    await browserAPI.storage.local.set(updates);
 
                     // 如果删除后没有记录，也要更新 cachedRecordAfterClear
-                    if (remainingHistory.length === 0 && cachedRecord) {
-                        await browserAPI.storage.local.set({ cachedRecordAfterClear: cachedRecord });
-                    } else if (remainingHistory.length === 0 && !cachedRecord) {
+                    if (remainingHistory.length === 0) {
                         await browserAPI.storage.local.remove(['cachedRecordAfterClear']);
                     }
+                    // else {
+                    //     // 如果还有记录，cachedRecordAfterClear应该指向remainingHistory[0]之前的最后一条有数据的记录
+                    //     // 这一部分逻辑在迁移后可能需要重新审视，目前保持不变或简化
+                    //     // 暂时不在这里更新 cachedRecordAfterClear，依赖 updateAndCacheAnalysis 来更新
+                    // }
 
                     console.log('[clearSyncHistoryPartial] Success, deleted:', actualDeleteCount, 'remaining:', remainingHistory.length);
                     sendResponse({
@@ -2420,27 +2589,32 @@ browserAPI.runtime.onMessage.addListener((message, sender, sendResponse) => {
                 let syncHistory = data.syncHistory || [];
                 const initialLength = syncHistory.length;
 
-                // 过滤掉要删除的记录
+                // 找出被删除的记录
+                const deletedRecords = syncHistory.filter(item => fingerprintsToDelete.includes(item.fingerprint));
+
+                // 更新 syncHistory
                 syncHistory = syncHistory.filter(item => !fingerprintsToDelete.includes(item.fingerprint));
 
-                if (syncHistory.length !== initialLength) {
+                if (deletedRecords.length > 0) {
+                    // 删除对应的数据 Keys
+                    const keysToRemove = deletedRecords.map(r => `backup_data_${r.time}`);
+                    if (keysToRemove.length > 0) {
+                        browserAPI.storage.local.remove(keysToRemove); // 异步删除，不await也可以
+                    }
+
                     const updates = { syncHistory: syncHistory };
+                    browserAPI.storage.local.set(updates, () => {
+                        // 广播
+                        try { browserAPI.runtime.sendMessage({ action: 'syncHistoryUpdated', syncHistory }); } catch (_) { }
 
-                    const setPromise = browserAPI.storage.local.set(updates);
-                    const removePromise = syncHistory.length === 0
-                        ? browserAPI.storage.local.remove(['cachedRecordAfterClear'])
-                        : Promise.resolve();
+                        const removePromise = syncHistory.length === 0
+                            ? browserAPI.storage.local.remove(['lastBookmarkData', 'lastCalculatedDiff', 'lastSyncStats', 'cachedRecordAfterClear'])
+                            : Promise.resolve();
 
-                    Promise.all([setPromise, removePromise])
-                        .then(() => {
-                            sendResponse({ success: true });
-                        })
-                        .catch(error => {
-                            sendResponse({
-                                success: false,
-                                error: error?.message || '删除记录失败'
-                            });
+                        removePromise.then(() => {
+                            sendResponse({ success: true, deleted: deletedRecords.length, remaining: syncHistory.length });
                         });
+                    });
                 } else {
                     sendResponse({ success: true });
                 }
@@ -2457,26 +2631,42 @@ browserAPI.runtime.onMessage.addListener((message, sender, sendResponse) => {
                 let syncHistory = data.syncHistory || [];
                 const initialLength = syncHistory.length;
 
+                // 找出被删除的记录
+                const deletedRecords = syncHistory.filter(item => timesToDelete.includes(String(item.time)));
+
+                // 更新 syncHistory
                 syncHistory = syncHistory.filter(item => !timesToDelete.includes(String(item.time)));
 
-                const updates = { syncHistory: syncHistory };
+                if (deletedRecords.length > 0) {
+                    // 删除对应的数据 Keys
+                    const keysToRemove = deletedRecords.map(r => `backup_data_${r.time}`);
+                    if (keysToRemove.length > 0) {
+                        browserAPI.storage.local.remove(keysToRemove);
+                    }
 
-                const setPromise = browserAPI.storage.local.set(updates);
-                const removePromise = syncHistory.length === 0
-                    ? browserAPI.storage.local.remove(['cachedRecordAfterClear'])
-                    : Promise.resolve();
+                    const updates = { syncHistory: syncHistory };
+                    browserAPI.storage.local.set(updates, () => {
+                        try { browserAPI.runtime.sendMessage({ action: 'syncHistoryUpdated', syncHistory }); } catch (_) { }
 
-                Promise.all([setPromise, removePromise])
-                    .then(() => {
-                        const deleted = initialLength - syncHistory.length;
-                        sendResponse({ success: true, deleted, remaining: syncHistory.length });
-                    })
-                    .catch(error => {
-                        sendResponse({
-                            success: false,
-                            error: error?.message || '删除记录失败'
-                        });
+                        const removePromise = syncHistory.length === 0
+                            ? browserAPI.storage.local.remove(['cachedRecordAfterClear', 'lastBookmarkData', 'lastCalculatedDiff', 'lastSyncStats'])
+                            : Promise.resolve();
+
+                        Promise.all([removePromise]) // Only one promise now
+                            .then(() => {
+                                const deleted = initialLength - syncHistory.length;
+                                sendResponse({ success: true, deleted, remaining: syncHistory.length });
+                            })
+                            .catch(error => {
+                                sendResponse({
+                                    success: false,
+                                    error: error?.message || '删除记录失败'
+                                });
+                            });
                     });
+                } else {
+                    sendResponse({ success: true, deleted: 0, remaining: syncHistory.length });
+                }
             });
             return true; // 异步响应
         } else if (message.action === "downloadWithNotification") {
@@ -2892,8 +3082,8 @@ async function handleBookmarkChange() {
 
     bookmarkChangeTimeout = setTimeout(async () => {
         try {
-            // 导入期间：避免触发昂贵的分析/通信/可能的实时备份；导入结束后会统一 flush
-            if (isBookmarkImporting) {
+            // 导入期间或恢复期间：避免触发昂贵的分析/通信/可能的实时备份
+            if (isBookmarkImporting || isBookmarkRestoring) {
                 return;
             }
             // 读取自动模式和自动备份定时器设置
@@ -3190,6 +3380,137 @@ function textToBase64(text) {
     const buf = encoder.encode(String(text ?? '')).buffer;
     return arrayBufferToBase64(buf);
 }
+
+// ============= ZIP 归档辅助函数 (用于备份历史打包导出) =============
+const __crc32Table = (() => {
+    const table = new Uint32Array(256);
+    for (let i = 0; i < 256; i++) {
+        let c = i;
+        for (let k = 0; k < 8; k++) {
+            c = (c & 1) ? (0xEDB88320 ^ (c >>> 1)) : (c >>> 1);
+        }
+        table[i] = c >>> 0;
+    }
+    return table;
+})();
+
+function __crc32(bytes) {
+    let crc = 0 ^ -1;
+    for (let i = 0; i < bytes.length; i++) {
+        crc = (crc >>> 8) ^ __crc32Table[(crc ^ bytes[i]) & 0xFF];
+    }
+    return (crc ^ -1) >>> 0;
+}
+
+function __toUint8(text) {
+    return new TextEncoder().encode(String(text || ''));
+}
+
+/**
+ * 创建 ZIP 归档 Blob (Store 方式，无压缩)
+ * @param {Array<{name: string, data: Uint8Array}>} files - 文件列表
+ * @returns {Blob} ZIP 文件 Blob
+ */
+function __zipStore(files) {
+    const parts = [];
+    const central = [];
+    let offset = 0;
+
+    const writeU16 = (v) => {
+        const b = new Uint8Array(2);
+        new DataView(b.buffer).setUint16(0, v, true);
+        return b;
+    };
+    const writeU32 = (v) => {
+        const b = new Uint8Array(4);
+        new DataView(b.buffer).setUint32(0, v >>> 0, true);
+        return b;
+    };
+
+    const dosTime = 0;
+    const dosDate = 0;
+    const gpFlag = 0x0800; // UTF-8
+    const method = 0; // store
+
+    files.forEach((f) => {
+        const name = String(f.name || '').replace(/^\/+/, '');
+        const nameBytes = __toUint8(name);
+        const data = f.data instanceof Uint8Array ? f.data : new Uint8Array();
+        const crc = __crc32(data);
+
+        const localHeader = [
+            writeU32(0x04034b50),
+            writeU16(20),
+            writeU16(gpFlag),
+            writeU16(method),
+            writeU16(dosTime),
+            writeU16(dosDate),
+            writeU32(crc),
+            writeU32(data.length),
+            writeU32(data.length),
+            writeU16(nameBytes.length),
+            writeU16(0)
+        ];
+        parts.push(...localHeader, nameBytes, data);
+
+        const centralHeader = [
+            writeU32(0x02014b50),
+            writeU16(0x031E),
+            writeU16(20),
+            writeU16(gpFlag),
+            writeU16(method),
+            writeU16(dosTime),
+            writeU16(dosDate),
+            writeU32(crc),
+            writeU32(data.length),
+            writeU32(data.length),
+            writeU16(nameBytes.length),
+            writeU16(0),
+            writeU16(0),
+            writeU16(0),
+            writeU16(0),
+            writeU32(0),
+            writeU32(offset)
+        ];
+        central.push(...centralHeader, nameBytes);
+
+        const localSize = localHeader.reduce((sum, b) => sum + b.length, 0) + nameBytes.length + data.length;
+        offset += localSize;
+    });
+
+    const centralSize = central.reduce((sum, b) => sum + b.length, 0);
+    const end = [
+        writeU32(0x06054b50),
+        writeU16(0),
+        writeU16(0),
+        writeU16(files.length),
+        writeU16(files.length),
+        writeU32(centralSize),
+        writeU32(offset),
+        writeU16(0)
+    ];
+
+    return new Blob([...parts, ...central, ...end], { type: 'application/zip' });
+}
+
+/**
+ * 将 Blob 转换为 Base64 字符串
+ * @param {Blob} blob - Blob 对象
+ * @returns {Promise<string>} Base64 字符串
+ */
+async function blobToBase64(blob) {
+    const arrayBuffer = await blob.arrayBuffer();
+    const bytes = new Uint8Array(arrayBuffer);
+    const chunkSize = 0x2000;
+    let binary = '';
+    for (let i = 0; i < bytes.length; i += chunkSize) {
+        const chunk = bytes.subarray(i, i + chunkSize);
+        binary += String.fromCharCode(...chunk);
+    }
+    return btoa(binary);
+}
+// ============= ZIP 归档辅助函数结束 =============
+
 
 async function ensureWebDAVCollectionExists(url, authHeader, errorPrefix) {
     const checkResponse = await fetch(url, {
@@ -4193,6 +4514,668 @@ if (browserAPI.alarms) {
 // Phase 2: 备份历史自动同步
 // =================================================================================
 
+// 辅助函数：HTML 转义
+function escapeHtmlBg(str) {
+    if (!str) return '';
+    return String(str)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
+}
+
+// =================================================================================
+// 变化检测函数（从 history.js 复制）
+// =================================================================================
+
+/**
+ * 快速检测书签树变化（用于导出）
+ * @param {Array} oldTree - 旧树
+ * @param {Array} newTree - 新树
+ * @param {Object} options - 选项
+ * @returns {Map} 变化映射 id -> {type, moved?}
+ */
+function detectTreeChangesFastBg(oldTree, newTree, options = {}) {
+    const changes = new Map();
+    if (!oldTree || !newTree) return changes;
+
+    let explicitMovedIdSet = null;
+    if (options && options.explicitMovedIdSet) {
+        const src = options.explicitMovedIdSet;
+        if (Array.isArray(src)) {
+            explicitMovedIdSet = new Set(src.map(v => String(v)));
+        }
+    }
+    const hasExplicitMovedInfo = explicitMovedIdSet instanceof Set && explicitMovedIdSet.size > 0;
+
+    const oldNodes = new Map();
+    const newNodes = new Map();
+    const oldByParent = new Map();
+    const newByParent = new Map();
+
+    const traverse = (node, map, byParent, parentId = null) => {
+        if (node && node.id) {
+            const record = {
+                title: node.title,
+                url: node.url,
+                parentId: node.parentId || parentId,
+                index: node.index
+            };
+            map.set(node.id, record);
+            if (record.parentId) {
+                if (!byParent.has(record.parentId)) byParent.set(record.parentId, []);
+                byParent.get(record.parentId).push({ id: node.id, index: record.index });
+            }
+        }
+        if (node && node.children) node.children.forEach(child => traverse(child, map, byParent, node.id));
+    };
+
+    // 兼容数组和单个对象
+    const oldRoot = Array.isArray(oldTree) ? oldTree[0] : oldTree;
+    const newRoot = Array.isArray(newTree) ? newTree[0] : newTree;
+
+    if (oldRoot) traverse(oldRoot, oldNodes, oldByParent, null);
+    if (newRoot) traverse(newRoot, newNodes, newByParent, null);
+
+    const getNodePath = (tree, targetId) => {
+        const path = [];
+        const dfs = (node, cur) => {
+            if (!node) return false;
+            if (node.id === targetId) { path.push(...cur, node.title); return true; }
+            if (node.children) {
+                for (const c of node.children) { if (dfs(c, [...cur, node.title])) return true; }
+            }
+            return false;
+        };
+        const root = Array.isArray(tree) ? tree[0] : tree;
+        if (root) dfs(root, []);
+        return path.join(' > ');
+    };
+
+    // 新增 / 修改 / 跨级移动
+    newNodes.forEach((n, id) => {
+        const o = oldNodes.get(id);
+        if (!o) { changes.set(id, { type: 'added' }); return; }
+        const modified = (o.title !== n.title) || (o.url !== n.url);
+        const crossMove = o.parentId !== n.parentId;
+        if (modified || crossMove) {
+            const types = [];
+            const detail = {};
+            if (modified) types.push('modified');
+            if (crossMove) {
+                types.push('moved');
+                detail.moved = {
+                    oldPath: getNodePath(oldTree, id),
+                    newPath: getNodePath(newTree, id),
+                    oldParentId: o.parentId,
+                    newParentId: n.parentId
+                };
+            }
+            changes.set(id, { type: types.join('+'), ...detail });
+        }
+    });
+
+    // 删除
+    oldNodes.forEach((_, id) => { if (!newNodes.has(id)) changes.set(id, { type: 'deleted' }); });
+
+    // 同级移动处理
+    const parentsWithChildSetChange = new Set();
+    changes.forEach((change, id) => {
+        if (!change || !change.type) return;
+        if (change.type.includes('added') || change.type.includes('deleted')) {
+            const node = change.type.includes('added') ? newNodes.get(id) : oldNodes.get(id);
+            if (node && node.parentId) parentsWithChildSetChange.add(node.parentId);
+        }
+        if (change.type.includes('moved') && change.moved && change.moved.oldParentId !== change.moved.newParentId) {
+            if (change.moved.oldParentId) parentsWithChildSetChange.add(change.moved.oldParentId);
+            if (change.moved.newParentId) parentsWithChildSetChange.add(change.moved.newParentId);
+        }
+    });
+
+    const markMoved = (id) => {
+        const existing = changes.get(id);
+        const types = existing && existing.type ? new Set(existing.type.split('+')) : new Set();
+        types.add('moved');
+        const movedDetail = { oldPath: getNodePath(oldTree, id), newPath: getNodePath(newTree, id) };
+        changes.set(id, { type: Array.from(types).join('+'), moved: movedDetail });
+    };
+
+    if (hasExplicitMovedInfo) {
+        for (const id of explicitMovedIdSet) {
+            const o = oldNodes.get(id);
+            const n = newNodes.get(id);
+            if (!o || !n) continue;
+            if (!o.parentId || !n.parentId) continue;
+            if (o.parentId !== n.parentId) continue;
+            markMoved(id);
+        }
+    }
+
+    return changes;
+}
+
+/**
+ * 展平书签树为数组
+ */
+function flattenBookmarkTreeBg(tree, result = []) {
+    if (!tree) return result;
+    const nodes = Array.isArray(tree) ? tree : [tree];
+    nodes.forEach(node => {
+        if (node.id && (node.title || node.url)) {
+            result.push({
+                id: node.id,
+                title: node.title || '',
+                url: node.url || '',
+                isFolder: !node.url && node.children
+            });
+        }
+        if (node.children) {
+            flattenBookmarkTreeBg(node.children, result);
+        }
+    });
+    return result;
+}
+
+/**
+ * 重建树结构，包含删除的节点（简化版）
+ */
+function rebuildTreeWithDeletedBg(oldTree, newTree, changeMap) {
+    if (!oldTree || !oldTree[0] || !newTree || !newTree[0]) {
+        return newTree;
+    }
+
+    const visitedIds = new Set();
+    const MAX_DEPTH = 50;
+
+    function rebuildNode(oldNode, newNodes, depth = 0) {
+        if (!oldNode || typeof oldNode.id === 'undefined') return null;
+        if (depth > MAX_DEPTH) return null;
+        if (visitedIds.has(oldNode.id)) return null;
+        visitedIds.add(oldNode.id);
+
+        const newNode = newNodes ? newNodes.find(n => n && n.id === oldNode.id) : null;
+        const change = changeMap ? changeMap.get(oldNode.id) : null;
+
+        if (change && change.type === 'deleted') {
+            const deletedNodeCopy = JSON.parse(JSON.stringify(oldNode));
+            if (oldNode.children && oldNode.children.length > 0) {
+                deletedNodeCopy.children = oldNode.children.map(child => rebuildNode(child, null, depth + 1)).filter(n => n !== null);
+            }
+            return deletedNodeCopy;
+        } else if (newNode) {
+            const nodeCopy = JSON.parse(JSON.stringify(newNode));
+            if (oldNode.children || newNode.children) {
+                const childrenMap = new Map();
+                if (oldNode.children) {
+                    oldNode.children.forEach((child, index) => {
+                        childrenMap.set(child.id, { node: child, index, source: 'old' });
+                    });
+                }
+                if (newNode.children) {
+                    newNode.children.forEach((child, index) => {
+                        childrenMap.set(child.id, { node: child, index, source: 'new' });
+                    });
+                }
+
+                const rebuiltChildren = [];
+                if (oldNode.children) {
+                    oldNode.children.forEach(oldChild => {
+                        if (!oldChild) return;
+                        const childInfo = childrenMap.get(oldChild.id);
+                        if (childInfo) {
+                            const rebuiltChild = rebuildNode(oldChild, newNode.children, depth + 1);
+                            if (rebuiltChild) rebuiltChildren.push(rebuiltChild);
+                        }
+                    });
+                }
+                if (newNode.children) {
+                    newNode.children.forEach(newChild => {
+                        if (!newChild) return;
+                        if (!oldNode.children || !oldNode.children.find(c => c && c.id === newChild.id)) {
+                            rebuiltChildren.push(newChild);
+                        }
+                    });
+                }
+                nodeCopy.children = rebuiltChildren;
+            }
+            return nodeCopy;
+        }
+        return null;
+    }
+
+    const rebuiltRoot = rebuildNode(oldTree[0], [newTree[0]]);
+    return [rebuiltRoot];
+}
+
+/**
+ * 准备导出数据（树 + 变化映射）
+ * @param {Object} record - 当前记录
+ * @param {Array} syncHistory - 完整历史
+ * @returns {Object} { treeToExport, changeMap }
+ */
+function prepareDataForExportBg(record, syncHistory) {
+    let changeMap = new Map();
+    const recordIndex = syncHistory.findIndex(r => r.time === record.time);
+    let previousRecord = null;
+
+    if (recordIndex > 0) {
+        for (let i = recordIndex - 1; i >= 0; i--) {
+            if (syncHistory[i].status === 'success' && syncHistory[i].bookmarkTree) {
+                previousRecord = syncHistory[i];
+                break;
+            }
+        }
+    }
+
+    let treeToExport = record.bookmarkTree;
+
+    if (previousRecord && previousRecord.bookmarkTree) {
+        changeMap = detectTreeChangesFastBg(previousRecord.bookmarkTree, record.bookmarkTree, {
+            explicitMovedIdSet: (record.bookmarkStats && Array.isArray(record.bookmarkStats.explicitMovedIds))
+                ? record.bookmarkStats.explicitMovedIds
+                : null
+        });
+
+        // 检查是否有删除
+        let hasDeleted = false;
+        for (const [, change] of changeMap) {
+            if (change.type && change.type.includes('deleted')) {
+                hasDeleted = true;
+                break;
+            }
+        }
+        if (hasDeleted) {
+            try {
+                treeToExport = rebuildTreeWithDeletedBg(previousRecord.bookmarkTree, record.bookmarkTree, changeMap);
+            } catch (error) {
+                treeToExport = record.bookmarkTree;
+            }
+        }
+    } else if (record.isFirstBackup) {
+        const allNodes = flattenBookmarkTreeBg(record.bookmarkTree);
+        allNodes.forEach(item => {
+            if (item.id) changeMap.set(item.id, { type: 'added' });
+        });
+    }
+
+    return { treeToExport, changeMap };
+}
+
+/**
+ * 生成合并模式的 HTML（Netscape Bookmark 格式）
+ * @param {Object} mergedRoot - 合并后的树 { title, children }
+ * @param {string} lang - 语言
+ * @returns {string} HTML 内容
+ */
+function generateMergedBookmarkHtml(mergedRoot, lang = 'zh_CN') {
+    const isZh = lang === 'zh_CN';
+    const exportTime = new Date().toLocaleString(isZh ? 'zh-CN' : 'en-US');
+
+    let html = '<!DOCTYPE NETSCAPE-Bookmark-file-1>\n';
+    html += '<META HTTP-EQUIV="Content-Type" CONTENT="text/html; charset=UTF-8">\n';
+    html += `<TITLE>${escapeHtmlBg(mergedRoot.title)}</TITLE>\n`;
+    html += `<H1>${escapeHtmlBg(mergedRoot.title)}</H1>\n`;
+    html += '<DL><p>\n';
+
+    // 添加导出时间
+    html += `    <DT><A HREF="about:blank">${isZh ? '导出时间' : 'Export Time'}: ${escapeHtmlBg(exportTime)}</A>\n`;
+
+    // 递归生成节点 HTML
+    function generateNode(node, indentLevel) {
+        if (!node) return '';
+
+        let result = '';
+        const indent = '    '.repeat(indentLevel);
+        const title = node.title || (isZh ? '(无标题)' : '(Untitled)');
+        const url = node.url;
+        const isFolder = node.children !== undefined;
+
+        if (isFolder) {
+            result += `${indent}<DT><H3>${escapeHtmlBg(title)}</H3>\n`;
+            result += `${indent}<DL><p>\n`;
+
+            if (node.children && node.children.length > 0) {
+                node.children.forEach(child => {
+                    result += generateNode(child, indentLevel + 1);
+                });
+            }
+
+            result += `${indent}</DL><p>\n`;
+        } else if (url) {
+            result += `${indent}<DT><A HREF="${escapeHtmlBg(url)}">${escapeHtmlBg(title)}</A>\n`;
+        } else {
+            // 纯文本项（没有 URL 也没有 children）
+            result += `${indent}<DT>${escapeHtmlBg(title)}\n`;
+        }
+
+        return result;
+    }
+
+    // 生成所有子节点
+    if (mergedRoot.children && mergedRoot.children.length > 0) {
+        mergedRoot.children.forEach(child => {
+            html += generateNode(child, 1);
+        });
+    }
+
+    html += '</DL><p>\n';
+    return html;
+}
+
+/**
+ * 生成完整书签树的 HTML（Netscape Bookmark 格式）
+ * 使用变化检测，添加 [+]、[-]、[~]、[↔] 等前缀标记
+ * 与 history.js 的全局导出一致
+ * @param {Object} record - 备份记录
+ * @param {Object} historyViewSettings - 视图设置（包含展开状态）
+ * @param {string} lang - 语言
+ * @param {Array} syncHistory - 完整历史（用于变化检测）
+ * @returns {string} HTML 内容
+ */
+function generateFullBookmarkTreeHtml(record, historyViewSettings, lang = 'zh_CN', syncHistory = []) {
+    try {
+        const isZh = lang === 'zh_CN';
+        const stats = record?.bookmarkStats || {};
+
+        // 使用变化检测准备数据（添加错误处理）
+        let treeToExport = record?.bookmarkTree;
+        let changeMap = new Map();
+
+        try {
+            const prepared = prepareDataForExportBg(record, syncHistory);
+            if (prepared) {
+                treeToExport = prepared.treeToExport || record?.bookmarkTree;
+                changeMap = prepared.changeMap || new Map();
+            }
+        } catch (prepError) {
+            console.warn('[generateFullBookmarkTreeHtml] 变化检测失败，使用原始树:', prepError);
+        }
+
+        // 获取展开状态（WYSIWYG）
+        const recordTimeKey = String(record?.time || Date.now());
+        const expandedIds = historyViewSettings?.recordExpandedStates?.[recordTimeKey] || [];
+        const expandedSet = new Set(expandedIds.map(id => String(id)));
+        const hasExpandedState = expandedSet.size > 0;
+
+        // 格式化时间
+        const backupTime = new Date(record?.time || Date.now()).toLocaleString(isZh ? 'zh-CN' : 'en-US');
+        const exportTime = new Date().toLocaleString(isZh ? 'zh-CN' : 'en-US');
+
+        let html = '<!DOCTYPE NETSCAPE-Bookmark-file-1>\n';
+        html += '<META HTTP-EQUIV="Content-Type" CONTENT="text/html; charset=UTF-8">\n';
+        html += `<TITLE>${isZh ? '书签变化' : 'Bookmark Changes'}</TITLE>\n`;
+        html += `<H1>${isZh ? '书签变化' : 'Bookmark Changes'}</H1>\n`;
+        html += '<DL><p>\n';
+
+        // 添加图例和元数据
+        const legendText = isZh
+            ? '📋 前缀说明: [+]新增  [-]删除  [~]修改  [↔]移动'
+            : '📋 Prefix legend: [+]Added  [-]Deleted  [~]Modified  [↔]Moved';
+        html += `    <DT><H3>${legendText}</H3>\n`;
+        html += '    <DL><p>\n';
+
+        // 统计信息
+        const statsText = [];
+        if (stats.bookmarkAdded) statsText.push(`[+]${isZh ? '书签' : 'Bookmark'}:${stats.bookmarkAdded}`);
+        if (stats.bookmarkDeleted) statsText.push(`[-]${isZh ? '书签' : 'Bookmark'}:${stats.bookmarkDeleted}`);
+        if (stats.folderAdded) statsText.push(`[+]${isZh ? '文件夹' : 'Folder'}:${stats.folderAdded}`);
+        if (stats.folderDeleted) statsText.push(`[-]${isZh ? '文件夹' : 'Folder'}:${stats.folderDeleted}`);
+        if (stats.movedCount) statsText.push(`[↔]${isZh ? '移动' : 'Moved'}:${stats.movedCount}`);
+        if (stats.modifiedCount) statsText.push(`[~]${isZh ? '修改' : 'Modified'}:${stats.modifiedCount}`);
+
+        html += `        <DT><A HREF="about:blank">${isZh ? '操作统计' : 'Operation Counts'}: ${statsText.length > 0 ? statsText.join(' ') : (isZh ? '无变化' : 'No changes')}</A>\n`;
+        html += `        <DT><A HREF="about:blank">${isZh ? '导出时间' : 'Export Time'}: ${escapeHtmlBg(exportTime)}</A>\n`;
+        html += `        <DT><A HREF="about:blank">${isZh ? '备份时间' : 'Backup Time'}: ${escapeHtmlBg(backupTime)}</A>\n`;
+        html += `        <DT><A HREF="about:blank">${isZh ? '备注' : 'Note'}: ${escapeHtmlBg(record.note || (isZh ? '无备注' : 'No note'))}</A>\n`;
+        html += '    </DL><p>\n';
+
+        // 检查某个节点或其子节点是否有变化
+        function hasChangesRecursive(node) {
+            if (!node) return false;
+            if (changeMap.has(node.id)) return true;
+            if (node.children) {
+                return node.children.some(child => hasChangesRecursive(child));
+            }
+            return false;
+        }
+
+        // 递归生成书签树（带变化标记）
+        function generateNode(node, indentLevel) {
+            if (!node) return '';
+
+            // 检查该节点或其子节点是否有变化
+            const nodeHasChanges = hasChangesRecursive(node);
+
+            let result = '';
+            const indent = '    '.repeat(indentLevel);
+            const title = node.title || (isZh ? '(无标题)' : '(Untitled)');
+            const url = node.url;
+            const isFolder = !url && node.children;
+
+            // 检查变化类型并添加前缀
+            let prefix = '';
+            const change = changeMap.get(node.id);
+            if (change) {
+                const types = change.type ? change.type.split('+') : [];
+                if (types.includes('added')) {
+                    prefix = '[+] ';
+                } else if (types.includes('deleted')) {
+                    prefix = '[-] ';
+                } else if (types.includes('modified') && types.includes('moved')) {
+                    prefix = '[~↔] ';
+                } else if (types.includes('modified')) {
+                    prefix = '[~] ';
+                } else if (types.includes('moved')) {
+                    prefix = '[↔] ';
+                }
+            }
+
+            const displayTitle = prefix + escapeHtmlBg(title);
+
+            if (isFolder) {
+                result += `${indent}<DT><H3>${displayTitle}</H3>\n`;
+                result += `${indent}<DL><p>\n`;
+
+                // 检查是否应该展开（WYSIWYG）
+                let shouldExpand = false;
+                if (hasExpandedState) {
+                    // WYSIWYG: 只展开用户手动展开过的节点
+                    shouldExpand = expandedSet.has(String(node.id));
+                } else {
+                    // 默认行为：只有有变化的路径才展开
+                    shouldExpand = nodeHasChanges;
+                }
+
+                if (node.children && node.children.length > 0 && shouldExpand) {
+                    node.children.forEach(child => {
+                        result += generateNode(child, indentLevel + 1);
+                    });
+                }
+
+                result += `${indent}</DL><p>\n`;
+            } else if (url) {
+                result += `${indent}<DT><A HREF="${escapeHtmlBg(url)}">${displayTitle}</A>\n`;
+            }
+
+            return result;
+        }
+
+        // 生成书签树内容
+        if (treeToExport) {
+            const nodes = Array.isArray(treeToExport) ? treeToExport : [treeToExport];
+            nodes.forEach(node => {
+                if (node && node.children) {
+                    node.children.forEach(child => {
+                        html += generateNode(child, 1);
+                    });
+                }
+            });
+        } else {
+            html += `    <DT><H3>${isZh ? '(无书签数据)' : '(No bookmark data)'}</H3>\n`;
+        }
+
+        html += '</DL><p>\n';
+        return html;
+    } catch (error) {
+        console.error('[generateFullBookmarkTreeHtml] 生成失败:', error);
+        const isZh = lang === 'zh_CN';
+        return `<!DOCTYPE NETSCAPE-Bookmark-file-1>
+<META HTTP-EQUIV="Content-Type" CONTENT="text/html; charset=UTF-8">
+<TITLE>${isZh ? '书签备份（错误）' : 'Bookmark Backup (Error)'}</TITLE>
+<H1>${isZh ? '生成失败' : 'Generation Failed'}</H1>
+<DL><p>
+    <DT><A HREF="about:blank">${isZh ? '错误信息' : 'Error'}: ${escapeHtmlBg(error.message)}</A>
+</DL><p>
+`;
+    }
+}
+/**
+ * 生成完整书签树的 JSON
+ * 使用变化检测，添加变化类型标记
+ * 与 history.js 的全局导出一致
+ * @param {Object} record - 备份记录
+ * @param {Object} historyViewSettings - 视图设置（包含展开状态）
+ * @param {string} lang - 语言
+ * @param {Array} syncHistory - 完整历史（用于变化检测）
+ * @returns {string} JSON 内容
+ */
+function generateFullBookmarkTreeJson(record, historyViewSettings, lang = 'zh_CN', syncHistory = []) {
+    try {
+        const isZh = lang === 'zh_CN';
+        const stats = record?.bookmarkStats || {};
+
+        // 使用变化检测准备数据（添加错误处理）
+        let treeToExport = record?.bookmarkTree;
+        let changeMap = new Map();
+
+        try {
+            const prepared = prepareDataForExportBg(record, syncHistory);
+            if (prepared) {
+                treeToExport = prepared.treeToExport || record?.bookmarkTree;
+                changeMap = prepared.changeMap || new Map();
+            }
+        } catch (prepError) {
+            console.warn('[generateFullBookmarkTreeJson] 变化检测失败，使用原始树:', prepError);
+        }
+
+        // 获取展开状态（WYSIWYG）
+        const recordTimeKey = String(record?.time || Date.now());
+        const expandedIds = historyViewSettings?.recordExpandedStates?.[recordTimeKey] || [];
+        const expandedSet = new Set(expandedIds.map(id => String(id)));
+        const hasExpandedState = expandedSet.size > 0;
+
+        // 检查某个节点或其子节点是否有变化
+        function hasChangesRecursive(node) {
+            if (!node) return false;
+            if (changeMap.has(node.id)) return true;
+            if (node.children) {
+                return node.children.some(child => hasChangesRecursive(child));
+            }
+            return false;
+        }
+
+        // 递归提取树（带变化标记）
+        function extractNode(node) {
+            if (!node) return null;
+
+            const nodeHasChanges = hasChangesRecursive(node);
+            const title = node.title || (isZh ? '(无标题)' : '(Untitled)');
+            const url = node.url;
+            const isFolder = !url && node.children;
+
+            // 检查变化类型并添加前缀
+            let prefix = '';
+            let changeType = null;
+            const change = changeMap.get(node.id);
+            if (change) {
+                changeType = change.type;
+                const types = change.type ? change.type.split('+') : [];
+                if (types.includes('added')) {
+                    prefix = '[+] ';
+                } else if (types.includes('deleted')) {
+                    prefix = '[-] ';
+                } else if (types.includes('modified') && types.includes('moved')) {
+                    prefix = '[~↔] ';
+                } else if (types.includes('modified')) {
+                    prefix = '[~] ';
+                } else if (types.includes('moved')) {
+                    prefix = '[↔] ';
+                }
+            }
+
+            const item = {
+                id: node.id || null,  // 保存 ID 用于恢复
+                title: prefix + title,
+                type: isFolder ? 'folder' : 'bookmark',
+                ...(url ? { url } : {}),
+                ...(changeType ? { changeType } : {})
+            };
+
+            if (isFolder && node.children) {
+                // 检查是否应该展开（WYSIWYG）
+                let shouldExpand = false;
+                if (hasExpandedState) {
+                    shouldExpand = expandedSet.has(String(node.id));
+                } else {
+                    shouldExpand = nodeHasChanges;
+                }
+
+                if (shouldExpand) {
+                    item.children = node.children
+                        .map(child => extractNode(child))
+                        .filter(child => child !== null);
+                } else {
+                    item.children = [];
+                    item._collapsed = true;
+                }
+            }
+
+            return item;
+        }
+
+        const exportData = {
+            title: isZh ? '书签变化导出' : 'Bookmark Changes Export',
+            _exportInfo: {
+                backupTime: record?.time,
+                exportTime: new Date().toISOString(),
+                note: record?.note || null,
+                seqNumber: record?.seqNumber,
+                fingerprint: record?.fingerprint,
+                stats: stats,
+                // 恢复支持：保存展开状态
+                expandedIds: expandedIds,
+                viewMode: hasExpandedState ? 'detailed' : 'auto'
+            },
+            // 恢复支持：保存原始书签树（用于完整恢复）
+            _rawBookmarkTree: record?.bookmarkTree || null,
+            children: []
+        };
+
+        if (treeToExport) {
+            const nodes = Array.isArray(treeToExport) ? treeToExport : [treeToExport];
+            nodes.forEach(node => {
+                if (node && node.children) {
+                    node.children.forEach(child => {
+                        const extracted = extractNode(child);
+                        if (extracted) exportData.children.push(extracted);
+                    });
+                }
+            });
+        }
+
+        return JSON.stringify(exportData, null, 2);
+    } catch (error) {
+        console.error('[generateFullBookmarkTreeJson] 生成失败:', error);
+        const isZh = lang === 'zh_CN';
+        return JSON.stringify({
+            title: isZh ? '书签备份（错误）' : 'Bookmark Backup (Error)',
+            error: error.message,
+            children: []
+        }, null, 2);
+    }
+}
+
 /**
  * 生成备份历史导出的 HTML 内容
  * @param {Array} syncHistory - 同步历史记录数组
@@ -4447,18 +5430,21 @@ function generateSyncHistoryJson(syncHistory, viewMode = 'simple') {
 
 /**
  * 导出备份历史到云端
+ * 支持两种打包模式：
+ * - zip: 生成 ZIP 归档文件，每条记录作为独立文件
+ * - merge: 生成单一合并文件，所有记录合并在一起
  * @param {Object} options - 配置选项
  * @returns {Promise<Object>} 导出结果
  */
 async function exportSyncHistoryToCloud(options = {}) {
     try {
-        // 获取设置和数据
+        // 获取设置和数据（包括统一存储的视图设置）
         const settings = await browserAPI.storage.local.get([
             'syncHistory',
+            'historyViewSettings',  // 统一存储的视图设置（WYSIWYG）
             'historySyncEnabled', // 备份历史自动同步开关
             'historySyncFormat',
-            'historySyncViewMode',
-            'historySyncOverwriteMode', // 备份历史自己的覆盖策略
+            'historySyncPackMode', // 打包模式：'zip' 或 'merge'
             'serverAddress',
             'username',
             'password',
@@ -4484,67 +5470,268 @@ async function exportSyncHistoryToCloud(options = {}) {
             return { success: true, skipped: true };
         }
 
-        const format = settings.historySyncFormat || 'html';
-        const viewMode = settings.historySyncViewMode || 'simple';
-        const overwriteMode = settings.historySyncOverwriteMode || 'versioned'; // 使用备份历史自己的覆盖策略
+        // 获取视图设置（用于 WYSIWYG 导出）
+        const historyViewSettings = settings.historyViewSettings || {
+            defaultMode: 'detailed',
+            recordModes: {},
+            recordExpandedStates: {}
+        };
+        console.log('[exportSyncHistoryToCloud] 视图设置:', {
+            defaultMode: historyViewSettings.defaultMode,
+            recordModesCount: Object.keys(historyViewSettings.recordModes || {}).length,
+            expandedStatesCount: Object.keys(historyViewSettings.recordExpandedStates || {}).length
+        });
+
+        const format = settings.historySyncFormat || 'json'; // 默认 JSON（包含完整恢复信息）
+        const packMode = settings.historySyncPackMode || 'zip'; // 默认 ZIP 模式
         const lang = await getCurrentLang();
+        const isZh = lang === 'zh_CN';
 
-        // 生成内容
-        let htmlContent = null;
-        let jsonContent = null;
-
-        if (format === 'html' || format === 'both') {
-            htmlContent = generateSyncHistoryHtml(syncHistory, viewMode, lang);
-        }
-        if (format === 'json' || format === 'both') {
-            jsonContent = generateSyncHistoryJson(syncHistory, viewMode);
-        }
-
-        // 生成文件名
+        // 生成时间戳
         const timestamp = new Date();
         const timestampStr = `${timestamp.getFullYear()}${(timestamp.getMonth() + 1).toString().padStart(2, '0')}${timestamp.getDate().toString().padStart(2, '0')}_${timestamp.getHours().toString().padStart(2, '0')}${timestamp.getMinutes().toString().padStart(2, '0')}${timestamp.getSeconds().toString().padStart(2, '0')}`;
 
-        const baseFileName = overwriteMode === 'overwrite'
-            ? 'backup_history'
-            : `backup_history_${timestampStr}`;
-
         const tasks = [];
         const exportRootFolder = getExportRootFolderByLang(lang);
-        const historyFolder = lang === 'zh_CN' ? '备份历史' : 'Backup_History';
+        const historyFolder = isZh ? '备份历史' : 'Backup_History';
 
-        // WebDAV 上传
+        // 检查导出目标
         const webDAVConfigured = settings.serverAddress && settings.username && settings.password;
         const webDAVEnabled = settings.webDAVToggle !== false;
-
-        if (webDAVConfigured && webDAVEnabled) {
-            if (htmlContent) {
-                tasks.push(uploadHistoryToWebDAV(htmlContent, `${baseFileName}.html`, exportRootFolder, historyFolder, settings));
-            }
-            if (jsonContent) {
-                tasks.push(uploadHistoryToWebDAV(jsonContent, `${baseFileName}.json`, exportRootFolder, historyFolder, settings));
-            }
-        }
-
-        // GitHub 仓库上传
         const githubConfigured = settings.githubRepoToken && settings.githubRepoOwner && settings.githubRepoName;
         const githubEnabled = settings.githubRepoToggle !== false;
+        const localEnabled = settings.defaultDownloadEnabled;
 
-        if (githubConfigured && githubEnabled) {
-            if (htmlContent) {
-                tasks.push(uploadHistoryToGitHub(htmlContent, `${baseFileName}.html`, historyFolder, settings, lang));
+        // ============= ZIP 归档模式 =============
+        if (packMode === 'zip') {
+            console.log('[exportSyncHistoryToCloud] 使用 ZIP 归档模式');
+
+            const files = [];
+            const zipPrefix = isZh ? '备份历史归档' : 'Backup_History_Archive';
+            const zipRootFolder = `${zipPrefix}_${timestampStr}`;
+            const seqWidth = String(syncHistory.length).length;
+
+            // 按时间倒序排列（新的在前）
+            const sortedHistory = [...syncHistory].sort((a, b) => {
+                const timeA = new Date(a.time).getTime();
+                const timeB = new Date(b.time).getTime();
+                return timeB - timeA;
+            });
+
+            // 直接从存储生成完整书签树（不依赖 history.html 页面）
+            for (let idx = 0; idx < sortedHistory.length; idx++) {
+                const record = sortedHistory[idx];
+
+                try {
+                    const seqNumber = record.seqNumber || (syncHistory.length - idx);
+                    const seqStr = String(seqNumber).padStart(seqWidth, '0');
+                    const recordTime = new Date(record.time);
+                    const dateStr = `${recordTime.getFullYear()}${(recordTime.getMonth() + 1).toString().padStart(2, '0')}${recordTime.getDate().toString().padStart(2, '0')}_${recordTime.getHours().toString().padStart(2, '0')}${recordTime.getMinutes().toString().padStart(2, '0')}`;
+                    const fingerprint = record.fingerprint ? `_${record.fingerprint.substring(0, 7)}` : '';
+                    const cleanNote = record.note ? record.note.replace(/[\\/:*?"<>|]/g, '_').replace(/\s+/g, '_').substring(0, 30) : '';
+                    const notePrefix = cleanNote || (isZh ? '备份' : 'backup');
+
+                    const baseName = `${seqStr}_${notePrefix}${fingerprint}_${dateStr}`;
+                    const filePath = `${zipRootFolder}/${baseName}`;
+
+                    // 使用 generateFullBookmarkTreeHtml/Json 生成完整书签树（支持变化检测和 WYSIWYG 展开状态）
+                    if (format === 'html') {
+                        console.log('[exportSyncHistoryToCloud] 生成 HTML:', record.time);
+                        const htmlContent = generateFullBookmarkTreeHtml(record, historyViewSettings, lang, syncHistory);
+                        files.push({
+                            name: `${filePath}.html`,
+                            data: __toUint8(htmlContent)
+                        });
+                    }
+                    if (format === 'json') {
+                        console.log('[exportSyncHistoryToCloud] 生成 JSON:', record.time);
+                        const jsonContent = generateFullBookmarkTreeJson(record, historyViewSettings, lang, syncHistory);
+                        files.push({
+                            name: `${filePath}.json`,
+                            data: __toUint8(jsonContent)
+                        });
+                    }
+                } catch (recordError) {
+                    console.error('[exportSyncHistoryToCloud] 处理记录失败:', record.time, recordError);
+                }
             }
-            if (jsonContent) {
-                tasks.push(uploadHistoryToGitHub(jsonContent, `${baseFileName}.json`, historyFolder, settings, lang));
+
+            console.log('[exportSyncHistoryToCloud] 生成文件数量:', files.length);
+
+            if (files.length > 0) {
+                // 创建 ZIP Blob
+                const zipBlob = __zipStore(files);
+                // 使用固定文件名（覆盖模式）- ZIP 内部仍然按时间组织
+                const zipFileName = isZh ? '备份历史归档.zip' : 'Backup_History_Archive.zip';
+                const zipBase64 = await blobToBase64(zipBlob);
+
+                // 上传到 WebDAV
+                if (webDAVConfigured && webDAVEnabled) {
+                    tasks.push(uploadHistoryBinaryToWebDAV(zipBase64, zipFileName, exportRootFolder, historyFolder, settings));
+                }
+
+                // 上传到 GitHub
+                if (githubConfigured && githubEnabled) {
+                    tasks.push(uploadHistoryBinaryToGitHub(zipBase64, zipFileName, historyFolder, settings, lang));
+                }
+
+                // 本地下载
+                if (localEnabled) {
+                    tasks.push(downloadHistoryBinaryLocal(zipBlob, zipFileName, exportRootFolder, historyFolder));
+                }
             }
         }
+        // ============= 单一文件合并模式 =============
+        else if (packMode === 'merge') {
+            console.log('[exportSyncHistoryToCloud] 使用单一文件合并模式');
 
-        // 本地下载
-        if (settings.defaultDownloadEnabled) {
-            if (htmlContent) {
-                tasks.push(downloadHistoryLocal(htmlContent, `${baseFileName}.html`, exportRootFolder, historyFolder, overwriteMode));
+            // 按时间倒序排列（新的在前）
+            const sortedHistory = [...syncHistory].sort((a, b) => {
+                const timeA = new Date(a.time).getTime();
+                const timeB = new Date(b.time).getTime();
+                return timeB - timeA;
+            });
+
+            const seqWidth = String(syncHistory.length).length;
+            // 使用固定文件名（覆盖模式）
+            const baseFileName = isZh ? '备份历史合并' : 'Backup_History_Merged';
+
+            // 构建合并后的树
+            const mergedRoot = {
+                title: isZh ? '全局备份合并历史' : 'Global Merged Backup History',
+                children: []
+            };
+
+            for (let idx = 0; idx < sortedHistory.length; idx++) {
+                const record = sortedHistory[idx];
+
+                try {
+                    // 使用变化检测准备数据
+                    let treeToExport = record?.bookmarkTree;
+                    let changeMap = new Map();
+
+                    try {
+                        const prepared = prepareDataForExportBg(record, syncHistory);
+                        if (prepared) {
+                            treeToExport = prepared.treeToExport || record?.bookmarkTree;
+                            changeMap = prepared.changeMap || new Map();
+                        }
+                    } catch (prepError) {
+                        console.warn('[exportSyncHistoryToCloud] 合并模式变化检测失败:', prepError);
+                    }
+
+                    // 获取展开状态（WYSIWYG）
+                    const recordTimeKey = String(record?.time || Date.now());
+                    const expandedIds = historyViewSettings?.recordExpandedStates?.[recordTimeKey] || [];
+                    const expandedSet = new Set(expandedIds.map(id => String(id)));
+                    const hasExpandedState = expandedSet.size > 0;
+
+                    // 构建处理过的树（带前缀）
+                    function processNode(node) {
+                        if (!node) return null;
+
+                        // 检查该节点或其子节点是否有变化
+                        function hasChangesRecursive(n) {
+                            if (!n) return false;
+                            if (changeMap.has(n.id)) return true;
+                            if (n.children) return n.children.some(c => hasChangesRecursive(c));
+                            return false;
+                        }
+
+                        const nodeHasChanges = hasChangesRecursive(node);
+                        const title = node.title || (isZh ? '(无标题)' : '(Untitled)');
+                        const url = node.url;
+                        const isFolder = !url && node.children;
+
+                        // 添加变化前缀
+                        let prefix = '';
+                        const change = changeMap.get(node.id);
+                        if (change) {
+                            const types = change.type ? change.type.split('+') : [];
+                            if (types.includes('added')) prefix = '[+] ';
+                            else if (types.includes('deleted')) prefix = '[-] ';
+                            else if (types.includes('modified') && types.includes('moved')) prefix = '[~↔] ';
+                            else if (types.includes('modified')) prefix = '[~] ';
+                            else if (types.includes('moved')) prefix = '[↔] ';
+                        }
+
+                        const item = {
+                            title: prefix + title,
+                            ...(url ? { url } : {})
+                        };
+
+                        if (isFolder && node.children) {
+                            let shouldExpand = hasExpandedState ? expandedSet.has(String(node.id)) : nodeHasChanges;
+                            if (shouldExpand) {
+                                item.children = node.children.map(c => processNode(c)).filter(c => c !== null);
+                            } else {
+                                item.children = [];
+                            }
+                        }
+
+                        return item;
+                    }
+
+                    // 处理树
+                    let processedChildren = [];
+                    if (treeToExport) {
+                        const nodes = Array.isArray(treeToExport) ? treeToExport : [treeToExport];
+                        nodes.forEach(node => {
+                            if (node && node.children) {
+                                node.children.forEach(child => {
+                                    const processed = processNode(child);
+                                    if (processed) processedChildren.push(processed);
+                                });
+                            }
+                        });
+                    }
+
+                    // 创建容器文件夹
+                    const seqNumber = record.seqNumber || (syncHistory.length - idx);
+                    const seqStr = String(seqNumber).padStart(seqWidth, '0');
+                    const timeStr = new Date(record.time).toLocaleString(isZh ? 'zh-CN' : 'en-US');
+                    const fingerprint = record.fingerprint ? ` [${record.fingerprint.substring(0, 7)}]` : '';
+                    const titlePrefix = record.note || (isZh ? '备份' : 'Backup');
+
+                    const containerTitle = `${seqStr} ${titlePrefix}${fingerprint} (${timeStr})`;
+                    const containerFolder = {
+                        title: containerTitle,
+                        children: processedChildren
+                    };
+
+                    mergedRoot.children.push(containerFolder);
+                } catch (recordError) {
+                    console.error('[exportSyncHistoryToCloud] 合并模式处理记录失败:', record.time, recordError);
+                }
             }
-            if (jsonContent) {
-                tasks.push(downloadHistoryLocal(jsonContent, `${baseFileName}.json`, exportRootFolder, historyFolder, overwriteMode));
+
+            // 生成合并后的文件
+            if (format === 'html') {
+                const htmlContent = generateMergedBookmarkHtml(mergedRoot, lang);
+
+                if (webDAVConfigured && webDAVEnabled) {
+                    tasks.push(uploadHistoryToWebDAV(htmlContent, `${baseFileName}.html`, exportRootFolder, historyFolder, settings));
+                }
+                if (githubConfigured && githubEnabled) {
+                    tasks.push(uploadHistoryToGitHub(htmlContent, `${baseFileName}.html`, historyFolder, settings, lang));
+                }
+                if (localEnabled) {
+                    tasks.push(downloadHistoryLocal(htmlContent, `${baseFileName}.html`, exportRootFolder, historyFolder, 'overwrite'));
+                }
+            }
+
+            if (format === 'json') {
+                const jsonContent = JSON.stringify(mergedRoot, null, 2);
+
+                if (webDAVConfigured && webDAVEnabled) {
+                    tasks.push(uploadHistoryToWebDAV(jsonContent, `${baseFileName}.json`, exportRootFolder, historyFolder, settings));
+                }
+                if (githubConfigured && githubEnabled) {
+                    tasks.push(uploadHistoryToGitHub(jsonContent, `${baseFileName}.json`, historyFolder, settings, lang));
+                }
+                if (localEnabled) {
+                    tasks.push(downloadHistoryLocal(jsonContent, `${baseFileName}.json`, exportRootFolder, historyFolder, 'overwrite'));
+                }
             }
         }
 
@@ -4560,6 +5747,166 @@ async function exportSyncHistoryToCloud(options = {}) {
     } catch (error) {
         console.error('[exportSyncHistoryToCloud] 导出失败:', error);
         return { success: false, error: error.message };
+    }
+}
+
+// 辅助函数：上传二进制文件到 WebDAV (用于 ZIP)
+async function uploadHistoryBinaryToWebDAV(base64Content, fileName, rootFolder, subFolder, settings) {
+    try {
+        const serverAddress = settings.serverAddress.replace(/\/+$/, '/');
+        const folderPath = `${rootFolder}/${subFolder}/`;
+        const fullUrl = `${serverAddress}${folderPath}${fileName}`;
+        const folderUrl = `${serverAddress}${folderPath}`;
+        const parentUrl = `${serverAddress}${rootFolder}/`;
+
+        const authHeader = 'Basic ' + safeBase64(`${settings.username}:${settings.password}`);
+
+        // 确保文件夹存在
+        await ensureWebDAVCollectionExists(parentUrl, authHeader, '创建父文件夹失败');
+        await ensureWebDAVCollectionExists(folderUrl, authHeader, '创建备份历史文件夹失败');
+
+        // 将 Base64 转换为 ArrayBuffer
+        const binaryString = atob(base64Content);
+        const bytes = new Uint8Array(binaryString.length);
+        for (let i = 0; i < binaryString.length; i++) {
+            bytes[i] = binaryString.charCodeAt(i);
+        }
+
+        // 上传文件
+        await fetch(fullUrl, {
+            method: 'PUT',
+            headers: {
+                'Authorization': authHeader,
+                'Content-Type': 'application/zip',
+                'Overwrite': 'T'
+            },
+            body: bytes.buffer
+        });
+
+        console.log(`[uploadHistoryBinaryToWebDAV] 上传成功: ${fileName}`);
+    } catch (e) {
+        console.warn('[uploadHistoryBinaryToWebDAV] 上传失败:', e);
+    }
+}
+
+// 辅助函数：上传二进制文件到 GitHub (用于 ZIP)
+async function uploadHistoryBinaryToGitHub(base64Content, fileName, subFolder, settings, lang) {
+    try {
+        const filePath = buildGitHubRepoFilePath({
+            basePath: settings.githubRepoBasePath,
+            lang,
+            folderKey: 'backup_history',
+            fileName
+        });
+
+        await upsertRepoFile({
+            token: settings.githubRepoToken,
+            owner: settings.githubRepoOwner,
+            repo: settings.githubRepoName,
+            branch: settings.githubRepoBranch,
+            path: filePath,
+            message: `Backup History Archive: ${fileName}`,
+            contentBase64: base64Content
+        });
+
+        console.log(`[uploadHistoryBinaryToGitHub] 上传成功: ${fileName}`);
+    } catch (e) {
+        console.warn('[uploadHistoryBinaryToGitHub] 上传失败:', e);
+    }
+}
+
+// 辅助函数：本地下载二进制文件 (用于 ZIP)
+// 使用与书签备份相同的覆盖策略：ID 持久化 + 预删除
+async function downloadHistoryBinaryLocal(blob, fileName, rootFolder, subFolder, overwriteMode = 'overwrite') {
+    try {
+        // Manifest V3 Service Worker 不支持 URL.createObjectURL
+        // 使用 Data URL 代替
+        const base64 = await blobToBase64(blob);
+        const url = `data:application/zip;base64,${base64}`;
+        const fullFilePath = `${rootFolder}/${subFolder}/${fileName}`;
+        const storageKey = 'lastLocalHistoryZipId'; // ZIP 文件专用的持久化 ID
+
+        // 覆盖模式：尝试删除旧文件
+        if (overwriteMode === 'overwrite') {
+            try {
+                let deleted = false;
+
+                // 方法1：尝试通过持久化存储的 ID 删除（最可靠）
+                const storageResult = await browserAPI.storage.local.get([storageKey]);
+                const lastId = storageResult[storageKey];
+
+                if (lastId) {
+                    try {
+                        // 检查该 ID 是否还存在于下载历史中
+                        const exists = await new Promise(resolve => {
+                            browserAPI.downloads.search({ id: lastId }, results => {
+                                resolve(results && results.length > 0);
+                            });
+                        });
+
+                        if (exists) {
+                            await new Promise(resolve => browserAPI.downloads.removeFile(lastId, resolve));
+                            await new Promise(resolve => browserAPI.downloads.erase({ id: lastId }, resolve));
+                            console.log('[downloadHistoryBinaryLocal] 通过ID已删除旧ZIP文件:', lastId);
+                            deleted = true;
+                        }
+                    } catch (e) {
+                        console.warn('[downloadHistoryBinaryLocal] ZIP ID删除失败:', e);
+                    }
+                }
+
+                // 方法2：如果方法1失效，尝试通过文件名搜索删除（备选）
+                if (!deleted) {
+                    const existingDownloads = await new Promise((resolve) => {
+                        browserAPI.downloads.search({
+                            filenameRegex: `.*${fileName.replace('.', '\\\\.')}$`,
+                            state: 'complete'
+                        }, (results) => {
+                            resolve(results || []);
+                        });
+                    });
+
+                    for (const item of existingDownloads) {
+                        if (item.filename && item.filename.endsWith(fileName)) {
+                            try {
+                                await new Promise(resolve => browserAPI.downloads.removeFile(item.id, resolve));
+                                await new Promise(resolve => browserAPI.downloads.erase({ id: item.id }, resolve));
+                                console.log('[downloadHistoryBinaryLocal] 通过搜索已删除旧ZIP文件:', item.filename);
+                            } catch (err) {
+                                console.warn('[downloadHistoryBinaryLocal] ZIP搜索删除失败:', err);
+                            }
+                        }
+                    }
+                }
+            } catch (cleanupError) {
+                console.warn('[downloadHistoryBinaryLocal] 清理旧ZIP文件失败:', cleanupError);
+            }
+        }
+
+        await new Promise((resolve, reject) => {
+            browserAPI.downloads.download({
+                url: url,
+                filename: fullFilePath,
+                saveAs: false,
+                conflictAction: 'overwrite'
+            }, (id) => {
+                if (browserAPI.runtime.lastError) {
+                    reject(new Error(browserAPI.runtime.lastError.message));
+                } else {
+                    // 覆盖模式下：保存新的下载ID（用于下次覆盖）
+                    if (overwriteMode === 'overwrite') {
+                        const updates = {};
+                        updates[storageKey] = id;
+                        browserAPI.storage.local.set(updates);
+                    }
+                    resolve(id);
+                }
+            });
+        });
+
+        console.log(`[downloadHistoryBinaryLocal] 下载成功: ${fileName}`);
+    } catch (e) {
+        console.warn('[downloadHistoryBinaryLocal] 下载失败:', e);
     }
 }
 
@@ -5322,9 +6669,9 @@ async function updateSyncStatus(direction, time, status = 'success', errorMessag
                     h ^= payload.charCodeAt(i);
                     h = Math.imul(h, 16777619) >>> 0;
                 }
-                // Return short hex
-                return ('00000000' + h.toString(16)).slice(-8);
-            } catch (_) { return (Date.now() % 0xffffffff).toString(16); }
+                // Return short hex (7 chars to match GitHub short hash)
+                return ('00000000' + h.toString(16)).slice(-7);
+            } catch (_) { return (Date.now() % 0xfffffff).toString(16).padStart(7, '0').slice(-7); }
         })();
 
         // 生成默认备注（区分中英文）
@@ -5368,11 +6715,19 @@ async function updateSyncStatus(direction, time, status = 'success', errorMessag
             note: (autoBackupReason && typeof autoBackupReason === 'string' && autoBackupReason.trim())
                 ? `${defaultNote}${preferredLang === 'en' ? ' - ' : ' - '}${autoBackupReason.trim()}`
                 : defaultNote,
-            bookmarkTree: shouldSaveTree ? localBookmarks : null, // 只保存最近10条的书签树
+            // bookmarkTree: shouldSaveTree ? localBookmarks : null, // 不再存放在 Index 记录中
+            hasData: shouldSaveTree, // 标记数据存在
             fingerprint: fingerprint
         };
 
+        // 独立保存书签树数据
+        if (shouldSaveTree && localBookmarks) {
+            const treeKey = `backup_data_${time}`;
+            await browserAPI.storage.local.set({ [treeKey]: localBookmarks });
+        }
+
         let currentSyncHistory = [...syncHistory, newSyncRecord];
+
 
         // 已移除：书签树20条限制清理（现在所有记录都保留完整的书签树数据）
         // 已移除：100条记录自动导出并清理前50条的功能（用户可手动管理历史记录）

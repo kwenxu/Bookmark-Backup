@@ -4541,10 +4541,10 @@ async function exportSyncHistoryToCloud(options = {}) {
         // 本地下载
         if (settings.defaultDownloadEnabled) {
             if (htmlContent) {
-                tasks.push(downloadHistoryLocal(htmlContent, `${baseFileName}.html`, exportRootFolder, historyFolder));
+                tasks.push(downloadHistoryLocal(htmlContent, `${baseFileName}.html`, exportRootFolder, historyFolder, overwriteMode));
             }
             if (jsonContent) {
-                tasks.push(downloadHistoryLocal(jsonContent, `${baseFileName}.json`, exportRootFolder, historyFolder));
+                tasks.push(downloadHistoryLocal(jsonContent, `${baseFileName}.json`, exportRootFolder, historyFolder, overwriteMode));
             }
         }
 
@@ -4623,20 +4623,84 @@ async function uploadHistoryToGitHub(content, fileName, subFolder, settings, lan
 }
 
 // 辅助函数：本地下载
-async function downloadHistoryLocal(content, fileName, rootFolder, subFolder) {
+async function downloadHistoryLocal(content, fileName, rootFolder, subFolder, overwriteMode = 'versioned') {
     try {
         const contentType = fileName.endsWith('.json') ? 'application/json' : 'text/html';
         const dataUrl = `data:${contentType};charset=utf-8,${encodeURIComponent(content)}`;
+        const fullFilePath = `${rootFolder}/${subFolder}/${fileName}`;
+        const fileType = fileName.endsWith('.json') ? 'JSON' : 'HTML';
+        const storageKey = `lastLocalHistoryId_${fileType}`; // lastLocalHistoryId_JSON or lastLocalHistoryId_HTML
+
+        // 覆盖模式：尝试删除旧文件
+        if (overwriteMode === 'overwrite') {
+            try {
+                let deleted = false;
+
+                // 方法1：尝试通过持久化存储的 ID 删除
+                const storageResult = await browserAPI.storage.local.get([storageKey]);
+                const lastId = storageResult[storageKey];
+
+                if (lastId) {
+                    try {
+                        const exists = await new Promise(resolve => {
+                            browserAPI.downloads.search({ id: lastId }, results => {
+                                resolve(results && results.length > 0);
+                            });
+                        });
+
+                        if (exists) {
+                            await new Promise(resolve => browserAPI.downloads.removeFile(lastId, resolve));
+                            await new Promise(resolve => browserAPI.downloads.erase({ id: lastId }, resolve));
+                            console.log(`[downloadHistoryLocal] 通过ID已删除旧${fileType}文件:`, lastId);
+                            deleted = true;
+                        }
+                    } catch (e) {
+                        console.warn(`[downloadHistoryLocal] ${fileType} ID删除失败:`, e);
+                    }
+                }
+
+                // 方法2：文件名搜索删除 (备选)
+                if (!deleted) {
+                    const existingDownloads = await new Promise((resolve) => {
+                        browserAPI.downloads.search({
+                            filenameRegex: `.*${fileName.replace('.', '\\.')}$`,
+                            state: 'complete'
+                        }, (results) => {
+                            resolve(results || []);
+                        });
+                    });
+
+                    for (const item of existingDownloads) {
+                        if (item.filename && item.filename.endsWith(fileName)) {
+                            try {
+                                await new Promise(resolve => browserAPI.downloads.removeFile(item.id, resolve));
+                                await new Promise(resolve => browserAPI.downloads.erase({ id: item.id }, resolve));
+                                console.log(`[downloadHistoryLocal] 通过搜索已删除旧${fileType}文件:`, item.filename);
+                            } catch (err) { }
+                        }
+                    }
+                }
+            } catch (cleanupError) {
+                console.warn(`[downloadHistoryLocal] 清理旧${fileType}文件失败:`, cleanupError);
+            }
+        }
 
         await new Promise((resolve, reject) => {
             browserAPI.downloads.download({
                 url: dataUrl,
-                filename: `${rootFolder}/${subFolder}/${fileName}`,
-                saveAs: false
+                filename: fullFilePath,
+                saveAs: false,
+                conflictAction: 'overwrite'
             }, (id) => {
                 if (browserAPI.runtime.lastError) {
                     reject(new Error(browserAPI.runtime.lastError.message));
                 } else {
+                    // 覆盖模式下：保存新的下载ID
+                    if (overwriteMode === 'overwrite') {
+                        const updates = {};
+                        updates[storageKey] = id;
+                        browserAPI.storage.local.set(updates);
+                    }
                     resolve(id);
                 }
             });

@@ -3113,6 +3113,14 @@
             transition: all 0.2s ease;
             text-align: center;
             min-width: 40px;
+            cursor: pointer;
+            /* Ensure hand cursor */
+        }
+
+        .clean-segment-item:hover {
+            background-color: var(--theme-bg-hover);
+            /* visual feedback on hover */
+            color: var(--theme-text-primary);
         }
 
         .clean-segment-label input:checked+.clean-segment-item {
@@ -3153,6 +3161,8 @@
             align-items: center;
             padding: 8px 12px;
             background: var(--theme-bg-tertiary);
+            min-height: 34px;
+            box-sizing: border-box;
         }
 
         .section-title {
@@ -3674,7 +3684,7 @@
                                     </div>
                                 </div>
                                 <div class="setting-row" id="backupSettingsRow">
-                                    <span class="setting-label" id="backupTimeLabel">Time</span>
+                                    <span class="setting-label" id="backupTimeLabel">Time Frequency</span>
                                     <div style="margin-left: auto;">
                                         <button id="autoBackupSettingsBtnNew" class="settings-button-small"
                                             style="padding: 6px; width: 32px; height: 32px; border: 1px solid var(--theme-border-primary); background: var(--theme-bg-secondary); border-radius: 4px; color: var(--theme-text-primary); cursor: pointer; display: flex; align-items: center; justify-content: center;"
@@ -3708,31 +3718,31 @@
                         <div class="settings-section collapsible" id="historySyncSection">
                             <div class="section-header clickable" id="historySyncHeader">
                                 <div class="header-left">
-                                    <i class="fas fa-chevron-down collapse-icon" id="historySyncCollapseIcon"></i>
                                     <span class="section-title" id="historyBackupTitle">Backup History</span>
+                                    <span id="historySettingsSavedIndicator" style="
+                                        font-size: 11px;
+                                        color: #4CAF50;
+                                        opacity: 0;
+                                        transition: opacity 0.3s ease;
+                                        margin-left: 8px;
+                                        display: flex;
+                                        align-items: center;
+                                        gap: 4px;
+                                    ">
+                                        <i class="fas fa-check-circle"></i>
+                                        <span id="historySettingsSavedText">已保存</span>
+                                    </span>
                                 </div>
-                                <label class="toggle-switch-mini" onclick="event.stopPropagation();">
-                                    <input type="checkbox" id="historySyncEnabled" checked>
-                                    <span class="toggle-slider-mini"></span>
-                                </label>
+                                <div class="header-right" style="display: flex; align-items: center;">
+                                    <label class="switch" onclick="event.stopPropagation();"
+                                        style="margin: 0; margin-right: 10px;">
+                                        <input type="checkbox" id="historySyncEnabled" checked>
+                                        <span class="slider"></span>
+                                    </label>
+                                    <i class="fas fa-plus collapse-icon" id="historySyncCollapseIcon"></i>
+                                </div>
                             </div>
                             <div class="section-content" id="historySyncContent">
-                                <!-- 覆盖策略 -->
-                                <div class="setting-row">
-                                    <span class="setting-label" id="historyOverwriteLabel">Overwrite</span>
-                                    <div class="clean-segment-group">
-                                        <label class="clean-segment-label">
-                                            <input type="checkbox" id="historySyncVersioned" checked>
-                                            <div class="clean-segment-item" id="historySyncVersionedLabel">Versioned
-                                            </div>
-                                        </label>
-                                        <label class="clean-segment-label">
-                                            <input type="checkbox" id="historySyncOverwrite">
-                                            <div class="clean-segment-item" id="historySyncOverwriteLabel">Overwrite
-                                            </div>
-                                        </label>
-                                    </div>
-                                </div>
                                 <!-- 导出格式 -->
                                 <div class="setting-row">
                                     <span class="setting-label" id="historyFormatLabel">Format</span>
@@ -3747,18 +3757,36 @@
                                         </label>
                                     </div>
                                 </div>
-                                <!-- 视图模式 -->
+                                <!-- 覆盖策略 & 视图模式 (合并行) -->
                                 <div class="setting-row">
-                                    <span class="setting-label" id="historyViewModeLabel">View</span>
-                                    <div class="clean-segment-group">
-                                        <label class="clean-segment-label">
-                                            <input type="checkbox" id="historySyncSimple" checked>
-                                            <div class="clean-segment-item" id="historySyncSimpleLabel">Simple</div>
-                                        </label>
-                                        <label class="clean-segment-label">
-                                            <input type="checkbox" id="historySyncDetailed">
-                                            <div class="clean-segment-item" id="historySyncDetailedLabel">Detail</div>
-                                        </label>
+                                    <!-- Strategy -->
+                                    <div style="display: flex; align-items: center; gap: 8px; flex: 1;">
+                                        <span class="setting-label" id="historyOverwriteLabel"
+                                            style="width: auto; min-width: unset;">Strategy</span>
+                                        <div class="clean-segment-group">
+                                            <label class="clean-segment-label">
+                                                <input type="checkbox" checked disabled>
+                                                <div class="clean-segment-item active prohibited"
+                                                    id="historySyncOverwriteLabel"
+                                                    style="cursor: default; opacity: 1; background-color: var(--theme-accent-color); color: white; border-color: var(--theme-accent-color);">
+                                                    Overwrite</div>
+                                            </label>
+                                        </div>
+                                    </div>
+                                    <!-- View -->
+                                    <div
+                                        style="display: flex; align-items: center; gap: 8px; flex: 1; justify-content: flex-end;">
+                                        <span class="setting-label" id="historyViewModeLabel"
+                                            style="width: auto; min-width: unset;">View</span>
+                                        <div class="clean-segment-group">
+                                            <label class="clean-segment-label">
+                                                <input type="checkbox" checked disabled>
+                                                <div class="clean-segment-item active prohibited"
+                                                    id="historySyncDetailedLabel"
+                                                    style="cursor: default; opacity: 1; background-color: var(--theme-accent-color); color: white; border-color: var(--theme-accent-color);">
+                                                    Detail</div>
+                                            </label>
+                                        </div>
                                     </div>
                                 </div>
                             </div>

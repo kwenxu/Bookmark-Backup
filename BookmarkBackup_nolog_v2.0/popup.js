@@ -5413,6 +5413,28 @@ const applyLocalizedContent = async (lang) => { // Added lang parameter
         'en': "Level of detail for logs"
     };
 
+    // --- UI 重构补充的国际化字符串 ---
+
+    // Bookmark Backup Settings
+    const bookmarkBackupTitleStrings = { 'zh_CN': "书签备份", 'en': "Bookmark Backup" };
+    const bookmarkModeLabelStrings = { 'zh_CN': "模式", 'en': "Mode" };
+    const backupModeAutoLabelStrings = { 'zh_CN': "自动", 'en': "Auto" };
+    const backupModeManualLabelStrings = { 'zh_CN': "手动", 'en': "Manual" };
+    const backupTimeLabelStrings = { 'zh_CN': "时间频率", 'en': "Time Frequency" };
+    const bookmarkOverwriteLabelStrings = { 'zh_CN': "策略", 'en': "Strategy" };
+
+    // Backup History Settings
+    const historyBackupTitleStrings = { 'zh_CN': "备份历史", 'en': "Backup History" };
+    const historyOverwriteLabelStrings = { 'zh_CN': "策略", 'en': "Strategy" }; // Overwrite policy for history
+    const historySyncVersionedLabelStrings = { 'zh_CN': "版本化", 'en': "Versioned" };
+    const historySyncOverwriteLabelStrings = { 'zh_CN': "覆盖", 'en': "Overwrite" };
+    const historyFormatLabelStrings = { 'zh_CN': "格式", 'en': "Format" };
+    const historySyncHtmlLabelStrings = { 'zh_CN': "HTML", 'en': "HTML" }; // Keep as HTML
+    const historySyncJsonLabelStrings = { 'zh_CN': "JSON", 'en': "JSON" }; // Keep as JSON
+    const historyViewModeLabelStrings = { 'zh_CN': "视图", 'en': "View" };
+    const historySyncSimpleLabelStrings = { 'zh_CN': "精简", 'en': "Simple" };
+    const historySyncDetailedLabelStrings = { 'zh_CN': "详细", 'en': "Detail" };
+
     const overwritePolicyDescStrings = {
         'zh_CN': "存储策略",
         'en': "Storage strategy"
@@ -5895,6 +5917,25 @@ const applyLocalizedContent = async (lang) => { // Added lang parameter
     const resetDescText = resetDescStrings[lang] || resetDescStrings['zh_CN'];
     const uploadDescText = uploadDescStrings[lang] || uploadDescStrings['zh_CN'];
 
+    // --- Retrieve UI 重构补充的国际化字符串 ---
+    const bookmarkBackupTitleText = bookmarkBackupTitleStrings[lang] || bookmarkBackupTitleStrings['zh_CN'];
+    const bookmarkModeLabelText = bookmarkModeLabelStrings[lang] || bookmarkModeLabelStrings['zh_CN'];
+    const backupModeAutoLabelText = backupModeAutoLabelStrings[lang] || backupModeAutoLabelStrings['zh_CN'];
+    const backupModeManualLabelText = backupModeManualLabelStrings[lang] || backupModeManualLabelStrings['zh_CN'];
+    const backupTimeLabelText = backupTimeLabelStrings[lang] || backupTimeLabelStrings['zh_CN'];
+    const bookmarkOverwriteLabelText = bookmarkOverwriteLabelStrings[lang] || bookmarkOverwriteLabelStrings['zh_CN'];
+
+    const historyBackupTitleText = historyBackupTitleStrings[lang] || historyBackupTitleStrings['zh_CN'];
+    const historyOverwriteLabelText = historyOverwriteLabelStrings[lang] || historyOverwriteLabelStrings['zh_CN'];
+    const historySyncVersionedLabelText = historySyncVersionedLabelStrings[lang] || historySyncVersionedLabelStrings['zh_CN'];
+    const historySyncOverwriteLabelText = historySyncOverwriteLabelStrings[lang] || historySyncOverwriteLabelStrings['zh_CN'];
+    const historyFormatLabelText = historyFormatLabelStrings[lang] || historyFormatLabelStrings['zh_CN'];
+    const historySyncHtmlLabelText = historySyncHtmlLabelStrings[lang] || historySyncHtmlLabelStrings['zh_CN'];
+    const historySyncJsonLabelText = historySyncJsonLabelStrings[lang] || historySyncJsonLabelStrings['zh_CN'];
+    const historyViewModeLabelText = historyViewModeLabelStrings[lang] || historyViewModeLabelStrings['zh_CN'];
+    const historySyncSimpleLabelText = historySyncSimpleLabelStrings[lang] || historySyncSimpleLabelStrings['zh_CN'];
+    const historySyncDetailedLabelText = historySyncDetailedLabelStrings[lang] || historySyncDetailedLabelStrings['zh_CN'];
+
     const overwritePolicyLabelText = overwritePolicyLabelStrings[lang] || overwritePolicyLabelStrings['zh_CN'];
     const overwriteVersionedText = overwriteVersionedStrings[lang] || overwriteVersionedStrings['zh_CN'];
     const overwriteVersionedDescText = overwriteVersionedDescStrings[lang] || overwriteVersionedDescStrings['zh_CN'];
@@ -6331,6 +6372,62 @@ const applyLocalizedContent = async (lang) => { // Added lang parameter
 
     const uploadDescEl = document.getElementById('uploadDesc');
     if (uploadDescEl) uploadDescEl.textContent = uploadDescText;
+
+    // --- 应用 UI 重构补充的国际化字符串 ---
+
+    // Bookmark Backup Settings
+    const bookmarkBackupTitleElement = document.getElementById('bookmarkBackupTitle');
+    if (bookmarkBackupTitleElement) bookmarkBackupTitleElement.textContent = bookmarkBackupTitleText;
+
+    const bookmarkModeLabelElement = document.getElementById('bookmarkModeLabel');
+    if (bookmarkModeLabelElement) bookmarkModeLabelElement.textContent = bookmarkModeLabelText;
+
+    const backupModeAutoLabelElement = document.getElementById('backupModeAutoLabel');
+    if (backupModeAutoLabelElement) backupModeAutoLabelElement.textContent = backupModeAutoLabelText;
+
+    const backupModeManualLabelElement = document.getElementById('backupModeManualLabel');
+    if (backupModeManualLabelElement) backupModeManualLabelElement.textContent = backupModeManualLabelText;
+
+    const backupTimeLabelElement = document.getElementById('backupTimeLabel');
+    if (backupTimeLabelElement) backupTimeLabelElement.textContent = backupTimeLabelText;
+
+    const bookmarkOverwriteLabelElement = document.getElementById('bookmarkOverwriteLabel');
+    if (bookmarkOverwriteLabelElement) bookmarkOverwriteLabelElement.textContent = bookmarkOverwriteLabelText;
+
+    // Backup History Settings
+    const historyBackupTitleElement = document.getElementById('historyBackupTitle');
+    if (historyBackupTitleElement) historyBackupTitleElement.textContent = historyBackupTitleText;
+
+    const historyOverwriteLabelElement = document.getElementById('historyOverwriteLabel');
+    if (historyOverwriteLabelElement) historyOverwriteLabelElement.textContent = historyOverwriteLabelText;
+
+    const historySyncVersionedLabelElement = document.getElementById('historySyncVersionedLabel');
+    if (historySyncVersionedLabelElement) historySyncVersionedLabelElement.textContent = historySyncVersionedLabelText;
+
+    const historySyncOverwriteLabelElement = document.getElementById('historySyncOverwriteLabel');
+    if (historySyncOverwriteLabelElement) historySyncOverwriteLabelElement.textContent = historySyncOverwriteLabelText;
+
+    const historyFormatLabelElement = document.getElementById('historyFormatLabel');
+    if (historyFormatLabelElement) historyFormatLabelElement.textContent = historyFormatLabelText;
+
+    const historySyncHtmlLabelElement = document.getElementById('historySyncHtmlLabel');
+    if (historySyncHtmlLabelElement) historySyncHtmlLabelElement.textContent = historySyncHtmlLabelText;
+
+    const historySyncJsonLabelElement = document.getElementById('historySyncJsonLabel');
+    if (historySyncJsonLabelElement) historySyncJsonLabelElement.textContent = historySyncJsonLabelText;
+
+    const historyViewModeLabelElement = document.getElementById('historyViewModeLabel');
+    if (historyViewModeLabelElement) historyViewModeLabelElement.textContent = historyViewModeLabelText;
+
+    const historySyncSimpleLabelElement = document.getElementById('historySyncSimpleLabel');
+    if (historySyncSimpleLabelElement) historySyncSimpleLabelElement.textContent = historySyncSimpleLabelText;
+
+    const historySyncDetailedLabelElement = document.getElementById('historySyncDetailedLabel');
+    if (historySyncDetailedLabelElement) historySyncDetailedLabelElement.textContent = historySyncDetailedLabelText;
+
+    // Backup History Settings Saved Indicator
+    const historySettingsSavedTextEl = document.getElementById('historySettingsSavedText');
+    if (historySettingsSavedTextEl) historySettingsSavedTextEl.textContent = settingsSavedStrings[lang] || settingsSavedStrings['zh_CN'];
 
     const overwritePolicyLabelEl = document.getElementById('overwritePolicyLabel');
     if (overwritePolicyLabelEl) overwritePolicyLabelEl.textContent = overwritePolicyLabelText;
@@ -7120,10 +7217,25 @@ function initializeBackupSettings() {
         updateHistorySyncContentState();
     });
 
+    // 显示备份历史设置已保存反馈
+    function showHistorySettingsSavedFeedback() {
+        const savedIndicator = document.getElementById('historySettingsSavedIndicator');
+        if (savedIndicator) {
+            savedIndicator.style.opacity = '1';
+            setTimeout(() => {
+                savedIndicator.style.opacity = '0';
+            }, 2000);
+        }
+    }
+
     // 备份历史启用开关事件
     if (historySyncEnabled) {
         historySyncEnabled.addEventListener('change', function () {
-            chrome.storage.local.set({ historySyncEnabled: this.checked });
+            chrome.storage.local.set({ historySyncEnabled: this.checked }, function () {
+                if (!chrome.runtime.lastError) {
+                    showHistorySettingsSavedFeedback();
+                }
+            });
             updateHistorySyncContentState();
         });
     }
@@ -7132,11 +7244,23 @@ function initializeBackupSettings() {
     const historySyncHeader = document.getElementById('historySyncHeader');
     const historySyncSection = document.getElementById('historySyncSection');
 
-    // 加载折叠状态（默认收起）
+    // 初始化折叠状态
     chrome.storage.local.get(['historySyncCollapsed'], function (result) {
-        const collapsed = result.historySyncCollapsed !== false; // 默认收起
+        const collapsed = result.historySyncCollapsed;
+        const icon = document.getElementById('historySyncCollapseIcon');
+
         if (collapsed && historySyncSection) {
             historySyncSection.classList.add('collapsed');
+            if (icon) {
+                icon.classList.remove('fa-minus');
+                icon.classList.add('fa-plus');
+            }
+        } else {
+            // 默认展开
+            if (icon) {
+                icon.classList.remove('fa-plus');
+                icon.classList.add('fa-minus');
+            }
         }
     });
 
@@ -7146,135 +7270,74 @@ function initializeBackupSettings() {
             historySyncSection.classList.toggle('collapsed');
             const isCollapsed = historySyncSection.classList.contains('collapsed');
             chrome.storage.local.set({ historySyncCollapsed: isCollapsed });
+
+            const icon = document.getElementById('historySyncCollapseIcon');
+            if (icon) {
+                if (isCollapsed) {
+                    icon.classList.remove('fa-minus');
+                    icon.classList.add('fa-plus');
+                } else {
+                    icon.classList.remove('fa-plus');
+                    icon.classList.add('fa-minus');
+                }
+            }
         });
     }
 
     // 加载备份历史同步设置
-    chrome.storage.local.get(['historySyncFormat', 'historySyncViewMode'], function (result) {
-        // 格式设置
-        const format = result.historySyncFormat || 'html';
-        if (historySyncHtml) historySyncHtml.checked = (format === 'html' || format === 'both');
-        if (historySyncJson) historySyncJson.checked = (format === 'json' || format === 'both');
+    chrome.storage.local.get(['historySyncFormat'], function (result) {
+        // 格式设置 (默认 JSON - 互斥/单选)
+        const format = result.historySyncFormat || 'json';
+        if (historySyncHtml) historySyncHtml.checked = (format === 'html');
+        if (historySyncJson) historySyncJson.checked = (format === 'json');
 
-        // 视图模式设置
-        const viewMode = result.historySyncViewMode || 'simple';
-        if (historySyncSimple) historySyncSimple.checked = (viewMode === 'simple');
-        if (historySyncDetailed) historySyncDetailed.checked = (viewMode === 'detailed');
+        // 强制设置不可配置的默认值 (详细视图 + 覆盖模式)
+        // 确保后台逻辑读取到正确的值
+        chrome.storage.local.set({
+            historySyncViewMode: 'detailed',
+            historySyncOverwriteMode: 'overwrite'
+        });
     });
 
     // 保存备份历史同步设置（格式）
     function saveHistorySyncFormatSettings() {
-        const htmlChecked = historySyncHtml?.checked || false;
-        const jsonChecked = historySyncJson?.checked || false;
+        const format = historySyncJson?.checked ? 'json' : 'html';
 
-        let format = 'html'; // 默认
-        if (htmlChecked && jsonChecked) {
-            format = 'both';
-        } else if (jsonChecked) {
-            format = 'json';
-        } else {
-            format = 'html';
-        }
-
-        chrome.storage.local.set({ historySyncFormat: format });
+        chrome.storage.local.set({ historySyncFormat: format }, function () {
+            if (!chrome.runtime.lastError) {
+                console.log('[备份历史] 已保存格式设置:', format);
+                showHistorySettingsSavedFeedback();
+            }
+        });
     }
 
-    // 保存备份历史同步设置（视图模式）
-    function saveHistorySyncViewModeSettings() {
-        const viewMode = historySyncDetailed?.checked ? 'detailed' : 'simple';
-        chrome.storage.local.set({ historySyncViewMode: viewMode });
-    }
-
-    // HTML 格式勾选
+    // HTML 格式勾选（互斥）
     if (historySyncHtml) {
         historySyncHtml.addEventListener('change', function () {
-            // 至少选一个格式
-            if (!this.checked && !historySyncJson.checked) {
-                historySyncJson.checked = true;
+            if (this.checked) {
+                if (historySyncJson) historySyncJson.checked = false;
+            } else {
+                // 至少选一个，既然取消了自己，就必须选中另一个
+                if (historySyncJson) historySyncJson.checked = true;
             }
             saveHistorySyncFormatSettings();
         });
     }
 
-    // JSON 格式勾选
+    // JSON 格式勾选（互斥）
     if (historySyncJson) {
         historySyncJson.addEventListener('change', function () {
-            // 至少选一个格式
-            if (!this.checked && !historySyncHtml.checked) {
-                historySyncHtml.checked = true;
+            if (this.checked) {
+                if (historySyncHtml) historySyncHtml.checked = false;
+            } else {
+                // 至少选一个，既然取消了自己，就必须选中另一个
+                if (historySyncHtml) historySyncHtml.checked = true;
             }
             saveHistorySyncFormatSettings();
         });
     }
 
-    // 简略视图模式勾选（互斥）
-    if (historySyncSimple) {
-        historySyncSimple.addEventListener('change', function () {
-            if (this.checked) {
-                if (historySyncDetailed) historySyncDetailed.checked = false;
-            } else {
-                // 至少选一个
-                if (historySyncDetailed) historySyncDetailed.checked = true;
-            }
-            saveHistorySyncViewModeSettings();
-        });
-    }
-
-    // 详情视图模式勾选（互斥）
-    if (historySyncDetailed) {
-        historySyncDetailed.addEventListener('change', function () {
-            if (this.checked) {
-                if (historySyncSimple) historySyncSimple.checked = false;
-            } else {
-                // 至少选一个
-                if (historySyncSimple) historySyncSimple.checked = true;
-            }
-            saveHistorySyncViewModeSettings();
-        });
-    }
-
-    // ===== 备份历史覆盖策略 =====
-    const historySyncVersioned = document.getElementById('historySyncVersioned');
-    const historySyncOverwrite = document.getElementById('historySyncOverwrite');
-
-    // 加载备份历史覆盖策略
-    chrome.storage.local.get(['historySyncOverwriteMode'], function (result) {
-        const mode = result.historySyncOverwriteMode || 'versioned';
-        if (historySyncVersioned) historySyncVersioned.checked = (mode === 'versioned');
-        if (historySyncOverwrite) historySyncOverwrite.checked = (mode === 'overwrite');
-    });
-
-    // 保存备份历史覆盖策略
-    function saveHistorySyncOverwriteModeSettings() {
-        const mode = historySyncOverwrite?.checked ? 'overwrite' : 'versioned';
-        chrome.storage.local.set({ historySyncOverwriteMode: mode });
-    }
-
-    // 版本化勾选（互斥）
-    if (historySyncVersioned) {
-        historySyncVersioned.addEventListener('change', function () {
-            if (this.checked) {
-                if (historySyncOverwrite) historySyncOverwrite.checked = false;
-            } else {
-                // 至少选一个
-                if (historySyncOverwrite) historySyncOverwrite.checked = true;
-            }
-            saveHistorySyncOverwriteModeSettings();
-        });
-    }
-
-    // 覆盖勾选（互斥）
-    if (historySyncOverwrite) {
-        historySyncOverwrite.addEventListener('change', function () {
-            if (this.checked) {
-                if (historySyncVersioned) historySyncVersioned.checked = false;
-            } else {
-                // 至少选一个
-                if (historySyncVersioned) historySyncVersioned.checked = true;
-            }
-            saveHistorySyncOverwriteModeSettings();
-        });
-    }
+    /* Old logic removed: View Mode & Overwrite Strategy are now enforced defaults */
 
     // 更新上传按钮上的图标状态
     function updateUploadButtonIcons() {

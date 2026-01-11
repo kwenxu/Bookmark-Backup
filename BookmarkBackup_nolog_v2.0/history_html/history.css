@@ -16357,3 +16357,122 @@ body.canvas-popover-active .md-list-popover {
     transform: scale(1.05);
     box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3), 0 0 0 4px rgba(231, 76, 60, 0.15);
 }
+
+/* ========================================
+   Restore Modal - 恢复弹窗专属样式
+   ======================================== */
+
+/* 模态框标题栏 - 简洁设计，与 exportChangesModal 一致 */
+#restoreModal .modal-header.compact {
+    padding: 8px 16px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    border-bottom: 1px solid var(--border-color);
+}
+
+#restoreModal .modal-header.compact h3 {
+    margin: 0;
+    margin-left: 0;
+    font-size: 15px;
+    font-weight: 600;
+    color: var(--text-primary);
+    line-height: 28px;
+}
+
+#restoreModal .modal-header.compact .modal-close {
+    width: 28px;
+    height: 28px;
+    border-radius: 6px;
+    flex-shrink: 0;
+}
+
+/* 模态框主体 - 减少垂直间距 */
+#restoreModal .modal-content {
+    border-radius: 12px;
+    overflow: hidden;
+}
+
+#restoreModal #restoreMainView {
+    padding: 12px 20px 14px;
+}
+
+/* 版本信息区域 - 更紧凑 */
+#restoreModal #restoreVersionInfo {
+    margin-bottom: 12px !important;
+}
+
+#restoreModal #restoreVersionInfo .commit-item {
+    padding: 10px 12px !important;
+    margin: 0 !important;
+}
+
+/* 对比统计区域 - 更紧凑 */
+#restoreModal #restoreComparison {
+    margin-bottom: 14px !important;
+}
+
+#restoreModal #restoreComparison>div:first-child {
+    gap: 10px !important;
+}
+
+#restoreModal #restoreComparison>div:first-child>div {
+    padding: 10px 8px !important;
+}
+
+/* 差异摘要行 - 更紧凑 */
+#restoreModal #restoreComparison>div:last-child {
+    margin-top: 8px !important;
+    padding: 6px 10px !important;
+}
+
+/* 警告提示区域 - 更紧凑 */
+#restoreModal .modal-body [style*="warning-light"] {
+    padding: 10px !important;
+    margin-bottom: 12px !important;
+}
+
+/* 进度区域 - 更紧凑 */
+#restoreModal #restoreProgressSection {
+    margin-bottom: 12px !important;
+}
+
+/* 底部按钮区域 - 更紧凑 */
+#restoreModal .modal-footer {
+    padding-top: 12px !important;
+    gap: 8px !important;
+}
+
+/* 按钮样式优化 */
+#restoreModal .modal-btn {
+    padding: 8px 16px;
+    font-size: 13px;
+    border-radius: 6px;
+    transition: all 0.2s ease;
+}
+
+#restoreModal .modal-btn.primary {
+    background: linear-gradient(135deg, var(--accent-primary) 0%, var(--accent-secondary, #6366f1) 100%);
+    border: none;
+    box-shadow: 0 2px 8px rgba(99, 102, 241, 0.3);
+}
+
+#restoreModal .modal-btn.primary:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 4px 12px rgba(99, 102, 241, 0.4);
+}
+
+#restoreModal .modal-btn.primary:disabled {
+    opacity: 0.6;
+    transform: none;
+    box-shadow: none;
+}
+
+/* 预览视图样式 */
+#restoreModal #restorePreviewView {
+    max-height: 400px;
+}
+
+#restoreModal #restorePreviewContent {
+    padding: 8px 20px !important;
+}

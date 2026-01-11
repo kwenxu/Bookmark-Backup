@@ -130,7 +130,8 @@ function getBackupFolderByLang(lang) {
 }
 
 function getHistoryFolderByLang(lang) {
-    return lang === 'zh_CN' ? '备份历史' : 'Bookmarks_History';
+    // 2024-01-11: User requested a dedicated subfolder for automatic history archives
+    return lang === 'zh_CN' ? '备份历史/自动备份归档' : 'Backup_History/Auto_Archive';
 }
 
 function getCurrentChangesFolderByLang(lang) {
@@ -3509,6 +3510,63 @@ async function blobToBase64(blob) {
     }
     return btoa(binary);
 }
+
+/**
+ * 解压 Store 模式 ZIP 的轻量级实现 (无压缩)
+ * @param {Blob} zipBlob - ZIP 文件的 Blob
+ * @returns {Promise<Array<{name: string, content: string}>>} 解压后的文件列表
+ */
+async function unzipStore(zipBlob) {
+    const buffer = await zipBlob.arrayBuffer();
+    const data = new DataView(buffer);
+    const uint8 = new Uint8Array(buffer);
+    let offset = 0;
+    const files = [];
+    const textDecoder = new TextDecoder('utf-8');
+
+    // 简单的防止死循环 (ZIP 大小限制)
+    while (offset < buffer.byteLength) {
+        // 检查签名是否为 Local File Header (0x04034b50)
+        if (data.getUint32(offset, true) !== 0x04034b50) {
+            // 如果不是文件头，可能是中央目录的开始 (0x02014b50) 或目录结束，停止解析
+            break;
+        }
+
+        // 跳过版本(2)、标志(2)、压缩方法(2)、时间(2)、日期(2)、CRC(4)
+        // 压缩方法在 offset + 8，必须为 0 (Storage)
+        const compressionMethod = data.getUint16(offset + 8, true);
+        if (compressionMethod !== 0) {
+            console.warn('[unzipStore] 发现非 Store 模式压缩的文件，跳过 (仅支持 Store 模式)');
+            // 简单的跳过逻辑可能不准确，这里直接中止以防错误
+            break;
+        }
+
+        const compressedSize = data.getUint32(offset + 18, true); // 实际上等于未压缩大小
+        const uncompressedSize = data.getUint32(offset + 22, true);
+        const fileNameLength = data.getUint16(offset + 26, true);
+        const extraFieldLength = data.getUint16(offset + 28, true);
+
+        // 文件名起始位置
+        const fileNameStart = offset + 30;
+        const fileNameBytes = uint8.subarray(fileNameStart, fileNameStart + fileNameLength);
+        const fileName = textDecoder.decode(fileNameBytes);
+
+        // 数据起始位置
+        const dataStart = fileNameStart + fileNameLength + extraFieldLength;
+        const fileDataBytes = uint8.subarray(dataStart, dataStart + compressedSize);
+        const fileContent = textDecoder.decode(fileDataBytes);
+
+        files.push({
+            name: fileName,
+            content: fileContent
+        });
+
+        // 移动到下一个文件 (Header 30 + Name + Extra + Data)
+        offset = dataStart + compressedSize;
+    }
+
+    return files;
+}
 // ============= ZIP 归档辅助函数结束 =============
 
 
@@ -3789,8 +3847,8 @@ async function uploadBookmarksToLocal(bookmarks) {
                                 });
 
                                 if (exists) {
-                                    await new Promise(resolve => browserAPI.downloads.removeFile(lastLocalBackupId, resolve));
-                                    await new Promise(resolve => browserAPI.downloads.erase({ id: lastLocalBackupId }, resolve));
+                                    await downloadsRemoveFileSafe(lastLocalBackupId);
+                                    await downloadsEraseSafe({ id: lastLocalBackupId });
                                     console.log('[本地备份] 通过ID已删除旧文件:', lastLocalBackupId);
                                     deleted = true;
                                 }
@@ -3813,8 +3871,8 @@ async function uploadBookmarksToLocal(bookmarks) {
                             for (const item of existingDownloads) {
                                 if (item.filename && item.filename.endsWith(fileName)) {
                                     try {
-                                        await new Promise(resolve => browserAPI.downloads.removeFile(item.id, resolve));
-                                        await new Promise(resolve => browserAPI.downloads.erase({ id: item.id }, resolve));
+                                        await downloadsRemoveFileSafe(item.id);
+                                        await downloadsEraseSafe({ id: item.id });
                                         console.log('[本地备份] 通过搜索已删除旧文件:', item.filename);
                                     } catch (err) {
                                         console.warn('[本地备份] 搜索删除失败:', err);
@@ -5483,7 +5541,7 @@ async function exportSyncHistoryToCloud(options = {}) {
         });
 
         const format = settings.historySyncFormat || 'json'; // 默认 JSON（包含完整恢复信息）
-        const packMode = settings.historySyncPackMode || 'zip'; // 默认 ZIP 模式
+        const packMode = settings.historySyncPackMode || 'merge'; // 默认 Merge（生成 backup_history.json）
         const lang = await getCurrentLang();
         const isZh = lang === 'zh_CN';
 
@@ -5581,9 +5639,13 @@ async function exportSyncHistoryToCloud(options = {}) {
                 }
             }
         }
-        // ============= 单一文件合并模式 =============
+        // ============= 合并历史模式（用于恢复版本选择） =============
         else if (packMode === 'merge') {
-            console.log('[exportSyncHistoryToCloud] 使用单一文件合并模式');
+            console.log('[exportSyncHistoryToCloud] 使用合并历史模式: backup_history.json');
+
+            if (format !== 'json') {
+                console.warn('[exportSyncHistoryToCloud] 合并历史模式仅支持 JSON，已忽略 format:', format);
+            }
 
             // 按时间倒序排列（新的在前）
             const sortedHistory = [...syncHistory].sort((a, b) => {
@@ -5592,146 +5654,49 @@ async function exportSyncHistoryToCloud(options = {}) {
                 return timeB - timeA;
             });
 
-            const seqWidth = String(syncHistory.length).length;
-            // 使用固定文件名（覆盖模式）
-            const baseFileName = isZh ? '备份历史合并' : 'Backup_History_Merged';
+            const exportTime = new Date().toISOString();
+            const mergedRecords = [];
 
-            // 构建合并后的树
-            const mergedRoot = {
-                title: isZh ? '全局备份合并历史' : 'Global Merged Backup History',
-                children: []
-            };
-
-            for (let idx = 0; idx < sortedHistory.length; idx++) {
-                const record = sortedHistory[idx];
-
+            for (const record of sortedHistory) {
                 try {
-                    // 使用变化检测准备数据
-                    let treeToExport = record?.bookmarkTree;
-                    let changeMap = new Map();
-
-                    try {
-                        const prepared = prepareDataForExportBg(record, syncHistory);
-                        if (prepared) {
-                            treeToExport = prepared.treeToExport || record?.bookmarkTree;
-                            changeMap = prepared.changeMap || new Map();
-                        }
-                    } catch (prepError) {
-                        console.warn('[exportSyncHistoryToCloud] 合并模式变化检测失败:', prepError);
+                    let bookmarkTree = record?.bookmarkTree || null;
+                    if (!bookmarkTree && record?.hasData) {
+                        const key = `backup_data_${record.time}`;
+                        const data = await browserAPI.storage.local.get([key]);
+                        bookmarkTree = data?.[key] || null;
                     }
 
-                    // 获取展开状态（WYSIWYG）
-                    const recordTimeKey = String(record?.time || Date.now());
-                    const expandedIds = historyViewSettings?.recordExpandedStates?.[recordTimeKey] || [];
-                    const expandedSet = new Set(expandedIds.map(id => String(id)));
-                    const hasExpandedState = expandedSet.size > 0;
-
-                    // 构建处理过的树（带前缀）
-                    function processNode(node) {
-                        if (!node) return null;
-
-                        // 检查该节点或其子节点是否有变化
-                        function hasChangesRecursive(n) {
-                            if (!n) return false;
-                            if (changeMap.has(n.id)) return true;
-                            if (n.children) return n.children.some(c => hasChangesRecursive(c));
-                            return false;
-                        }
-
-                        const nodeHasChanges = hasChangesRecursive(node);
-                        const title = node.title || (isZh ? '(无标题)' : '(Untitled)');
-                        const url = node.url;
-                        const isFolder = !url && node.children;
-
-                        // 添加变化前缀
-                        let prefix = '';
-                        const change = changeMap.get(node.id);
-                        if (change) {
-                            const types = change.type ? change.type.split('+') : [];
-                            if (types.includes('added')) prefix = '[+] ';
-                            else if (types.includes('deleted')) prefix = '[-] ';
-                            else if (types.includes('modified') && types.includes('moved')) prefix = '[~↔] ';
-                            else if (types.includes('modified')) prefix = '[~] ';
-                            else if (types.includes('moved')) prefix = '[↔] ';
-                        }
-
-                        const item = {
-                            title: prefix + title,
-                            ...(url ? { url } : {})
-                        };
-
-                        if (isFolder && node.children) {
-                            let shouldExpand = hasExpandedState ? expandedSet.has(String(node.id)) : nodeHasChanges;
-                            if (shouldExpand) {
-                                item.children = node.children.map(c => processNode(c)).filter(c => c !== null);
-                            } else {
-                                item.children = [];
-                            }
-                        }
-
-                        return item;
+                    if (!bookmarkTree) {
+                        continue;
                     }
 
-                    // 处理树
-                    let processedChildren = [];
-                    if (treeToExport) {
-                        const nodes = Array.isArray(treeToExport) ? treeToExport : [treeToExport];
-                        nodes.forEach(node => {
-                            if (node && node.children) {
-                                node.children.forEach(child => {
-                                    const processed = processNode(child);
-                                    if (processed) processedChildren.push(processed);
-                                });
-                            }
-                        });
-                    }
-
-                    // 创建容器文件夹
-                    const seqNumber = record.seqNumber || (syncHistory.length - idx);
-                    const seqStr = String(seqNumber).padStart(seqWidth, '0');
-                    const timeStr = new Date(record.time).toLocaleString(isZh ? 'zh-CN' : 'en-US');
-                    const fingerprint = record.fingerprint ? ` [${record.fingerprint.substring(0, 7)}]` : '';
-                    const titlePrefix = record.note || (isZh ? '备份' : 'Backup');
-
-                    const containerTitle = `${seqStr} ${titlePrefix}${fingerprint} (${timeStr})`;
-                    const containerFolder = {
-                        title: containerTitle,
-                        children: processedChildren
-                    };
-
-                    mergedRoot.children.push(containerFolder);
+                    mergedRecords.push({
+                        _exportInfo: {
+                            backupTime: record?.time || null,
+                            exportTime: exportTime,
+                            note: record?.note || null,
+                            seqNumber: record?.seqNumber || null,
+                            fingerprint: record?.fingerprint || null,
+                            stats: record?.bookmarkStats || {}
+                        },
+                        _rawBookmarkTree: bookmarkTree
+                    });
                 } catch (recordError) {
-                    console.error('[exportSyncHistoryToCloud] 合并模式处理记录失败:', record.time, recordError);
+                    console.error('[exportSyncHistoryToCloud] 合并历史记录处理失败:', record?.time, recordError);
                 }
             }
 
-            // 生成合并后的文件
-            if (format === 'html') {
-                const htmlContent = generateMergedBookmarkHtml(mergedRoot, lang);
+            const fileName = 'backup_history.json';
+            const jsonContent = JSON.stringify(mergedRecords, null, 2);
 
-                if (webDAVConfigured && webDAVEnabled) {
-                    tasks.push(uploadHistoryToWebDAV(htmlContent, `${baseFileName}.html`, exportRootFolder, historyFolder, settings));
-                }
-                if (githubConfigured && githubEnabled) {
-                    tasks.push(uploadHistoryToGitHub(htmlContent, `${baseFileName}.html`, historyFolder, settings, lang));
-                }
-                if (localEnabled) {
-                    tasks.push(downloadHistoryLocal(htmlContent, `${baseFileName}.html`, exportRootFolder, historyFolder, 'overwrite'));
-                }
+            if (webDAVConfigured && webDAVEnabled) {
+                tasks.push(uploadHistoryToWebDAV(jsonContent, fileName, exportRootFolder, historyFolder, settings));
             }
-
-            if (format === 'json') {
-                const jsonContent = JSON.stringify(mergedRoot, null, 2);
-
-                if (webDAVConfigured && webDAVEnabled) {
-                    tasks.push(uploadHistoryToWebDAV(jsonContent, `${baseFileName}.json`, exportRootFolder, historyFolder, settings));
-                }
-                if (githubConfigured && githubEnabled) {
-                    tasks.push(uploadHistoryToGitHub(jsonContent, `${baseFileName}.json`, historyFolder, settings, lang));
-                }
-                if (localEnabled) {
-                    tasks.push(downloadHistoryLocal(jsonContent, `${baseFileName}.json`, exportRootFolder, historyFolder, 'overwrite'));
-                }
+            if (githubConfigured && githubEnabled) {
+                tasks.push(uploadHistoryToGitHub(jsonContent, fileName, historyFolder, settings, lang));
+            }
+            if (localEnabled) {
+                tasks.push(downloadHistoryLocal(jsonContent, fileName, exportRootFolder, historyFolder, 'overwrite'));
             }
         }
 
@@ -5845,8 +5810,8 @@ async function downloadHistoryBinaryLocal(blob, fileName, rootFolder, subFolder,
                         });
 
                         if (exists) {
-                            await new Promise(resolve => browserAPI.downloads.removeFile(lastId, resolve));
-                            await new Promise(resolve => browserAPI.downloads.erase({ id: lastId }, resolve));
+                            await downloadsRemoveFileSafe(lastId);
+                            await downloadsEraseSafe({ id: lastId });
                             console.log('[downloadHistoryBinaryLocal] 通过ID已删除旧ZIP文件:', lastId);
                             deleted = true;
                         }
@@ -5869,8 +5834,8 @@ async function downloadHistoryBinaryLocal(blob, fileName, rootFolder, subFolder,
                     for (const item of existingDownloads) {
                         if (item.filename && item.filename.endsWith(fileName)) {
                             try {
-                                await new Promise(resolve => browserAPI.downloads.removeFile(item.id, resolve));
-                                await new Promise(resolve => browserAPI.downloads.erase({ id: item.id }, resolve));
+                                await downloadsRemoveFileSafe(item.id);
+                                await downloadsEraseSafe({ id: item.id });
                                 console.log('[downloadHistoryBinaryLocal] 通过搜索已删除旧ZIP文件:', item.filename);
                             } catch (err) {
                                 console.warn('[downloadHistoryBinaryLocal] ZIP搜索删除失败:', err);
@@ -5969,6 +5934,1108 @@ async function uploadHistoryToGitHub(content, fileName, subFolder, settings, lan
     }
 }
 
+// [New] 获取远程文件列表 (WebDAV/GitHub)
+// 说明：用于“恢复/同步”扫描；会返回 ZIP / HTML / 合并历史(JSON) 的候选文件。
+async function listRemoteFiles(source) {
+    try {
+        const lang = await getCurrentLang();
+        const settings = await browserAPI.storage.local.get([
+            'serverAddress', 'username', 'password',
+            'githubRepoToken', 'githubRepoOwner', 'githubRepoName', 'githubRepoBranch', 'githubRepoBasePath'
+        ]);
+
+        const files = [];
+
+        const exportRootFolderCandidates = Array.from(new Set(getAllExportRootFolderCandidates().map(s => String(s || '').trim()).filter(Boolean)));
+        const backupFolderCandidates = Array.from(new Set([
+            getBackupFolderByLang('zh_CN'),
+            getBackupFolderByLang('en')
+        ].map(s => String(s || '').trim()).filter(Boolean)));
+        const historyRootFolderCandidates = Array.from(new Set([
+            resolveExportSubFolderByKey('backup_history', 'zh_CN'),
+            resolveExportSubFolderByKey('backup_history', 'en')
+        ].map(s => String(s || '').trim()).filter(Boolean)));
+        const historyAutoArchiveFolderCandidates = Array.from(new Set([
+            getHistoryFolderByLang('zh_CN'),
+            getHistoryFolderByLang('en')
+        ].map(s => String(s || '').trim()).filter(Boolean)));
+
+        function isBackupHtmlName(name) {
+            const n = String(name || '');
+            return n === 'bookmark_backup.html' || /^(?:backup_)?\d{8}_\d{6}\.html$/i.test(n);
+        }
+
+        async function webdavPropfind(folderUrl, authHeader) {
+            const response = await fetch(folderUrl, {
+                method: 'PROPFIND',
+                headers: {
+                    'Authorization': authHeader,
+                    'Depth': '1',
+                    'Content-Type': 'application/xml'
+                },
+                body: '<?xml version="1.0" encoding="utf-8"?><propfind xmlns="DAV:"><prop><displayname/><getlastmodified/><getcontentlength/><resourcetype/></prop></propfind>'
+            });
+
+            if (response.status === 404) return [];
+            if (!response.ok) {
+                throw new Error(`WebDAV Error: ${response.status}`);
+            }
+
+            const text = await response.text();
+            const entries = [];
+            const responseReg = /<d:response>([\s\S]*?)<\/d:response>/g;
+            let match;
+            while ((match = responseReg.exec(text)) !== null) {
+                const content = match[1];
+                if (content.includes('<d:collection/>')) continue; // 跳过文件夹
+                const nameMatch = /<d:displayname>(.*?)<\/d:displayname>/.exec(content);
+                const name = nameMatch ? nameMatch[1] : '';
+                if (!name) continue;
+                entries.push(name);
+            }
+            return entries;
+        }
+
+        // WebDAV
+        if (source === 'webdav') {
+            const serverAddress = (settings.serverAddress || '').replace(/\/+$/, '/');
+            if (!serverAddress) return [];
+
+            const authHeader = 'Basic ' + safeBase64(`${settings.username || ''}:${settings.password || ''}`);
+
+            // 1) 合并历史：Backup_History/backup_history.json
+            for (const exportRootFolder of exportRootFolderCandidates) {
+                for (const historyRootFolder of historyRootFolderCandidates) {
+                    try {
+                        const historyRootUrl = `${serverAddress}${exportRootFolder}/${historyRootFolder}/`;
+                        const names = await webdavPropfind(historyRootUrl, authHeader);
+                        for (const name of names) {
+                            if (name === 'backup_history.json') {
+                                files.push({ name, url: historyRootUrl + name, source: 'webdav', type: 'merged_history' });
+                            } else if (name.endsWith('.zip')) {
+                                // 兼容：部分版本把 ZIP 放在备份历史根目录
+                                files.push({ name, url: historyRootUrl + name, source: 'webdav', type: 'zip' });
+                            }
+                        }
+                    } catch (e) {
+                        console.warn('[listRemoteFiles] Scan history root failed:', e);
+                    }
+                }
+            }
+
+            // 2) ZIP：备份历史/自动备份归档
+            for (const exportRootFolder of exportRootFolderCandidates) {
+                for (const historyAutoArchiveFolder of historyAutoArchiveFolderCandidates) {
+                    try {
+                        const folderUrl = `${serverAddress}${exportRootFolder}/${historyAutoArchiveFolder}/`;
+                        const names = await webdavPropfind(folderUrl, authHeader);
+                        for (const name of names) {
+                            if (name.endsWith('.zip')) {
+                                files.push({ name, url: folderUrl + name, source: 'webdav', type: 'zip' });
+                            }
+                        }
+                    } catch (e) {
+                        console.warn('[listRemoteFiles] Scan auto-archive failed:', e);
+                    }
+                }
+            }
+
+            // 3) HTML：书签备份
+            for (const exportRootFolder of exportRootFolderCandidates) {
+                for (const backupFolder of backupFolderCandidates) {
+                    try {
+                        const htmlFolderUrl = `${serverAddress}${exportRootFolder}/${backupFolder}/`;
+                        const names = await webdavPropfind(htmlFolderUrl, authHeader);
+                        for (const name of names) {
+                            if (name.endsWith('.html') && isBackupHtmlName(name)) {
+                                files.push({ name, url: htmlFolderUrl + name, source: 'webdav', type: 'html_backup' });
+                            }
+                        }
+                    } catch (e) {
+                        console.warn('[listRemoteFiles] Scan HTML folder failed:', e);
+                    }
+                }
+            }
+
+            // 去重（同一个文件可能在不同语言路径被重复扫描到）
+            return Array.from(new Map(files.map(f => [`${f.source}|${f.type}|${f.url}`, f])).values());
+        }
+
+        // GitHub
+        if (source === 'github') {
+            const token = settings.githubRepoToken;
+            const owner = settings.githubRepoOwner;
+            const repo = settings.githubRepoName;
+            const branch = settings.githubRepoBranch;
+            const basePath = (settings.githubRepoBasePath || '').replace(/^\/+/, '').replace(/\/+$/, '');
+            const prefix = basePath ? `${basePath}/` : '';
+
+            if (!token || !owner || !repo || !branch) return [];
+
+            function encodeGitHubPath(path) {
+                return String(path || '')
+                    .split('/')
+                    .filter(Boolean)
+                    .map((segment) => encodeURIComponent(segment))
+                    .join('/');
+            }
+
+            async function listGitHubDir(dirPath) {
+                const apiUrl = `https://api.github.com/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/contents/${encodeGitHubPath(dirPath)}?ref=${encodeURIComponent(branch)}`;
+                const response = await fetch(apiUrl, {
+                    headers: {
+                        'Authorization': `token ${token}`,
+                        'Accept': 'application/vnd.github.v3+json'
+                    }
+                });
+                if (response.status === 404) return [];
+                if (!response.ok) throw new Error(`GitHub Error: ${response.status}`);
+                const data = await response.json();
+                return Array.isArray(data) ? data : [];
+            }
+
+            // 1) 合并历史：Backup_History/backup_history.json
+            for (const exportRootFolder of exportRootFolderCandidates) {
+                for (const historyRootFolder of historyRootFolderCandidates) {
+                    try {
+                        const historyRootPath = `${prefix}${exportRootFolder}/${historyRootFolder}`;
+                        const items = await listGitHubDir(historyRootPath);
+                        for (const item of items) {
+                            if (item.type !== 'file') continue;
+                            if (item.name === 'backup_history.json') {
+                                files.push({ name: item.name, url: item.download_url, source: 'github', type: 'merged_history' });
+                            } else if (item.name.endsWith('.zip')) {
+                                files.push({ name: item.name, url: item.download_url, source: 'github', type: 'zip' });
+                            }
+                        }
+                    } catch (e) {
+                        console.warn('[listRemoteFiles] Scan history root GitHub failed:', e);
+                    }
+                }
+            }
+
+            // 2) ZIP：备份历史/自动备份归档
+            for (const exportRootFolder of exportRootFolderCandidates) {
+                for (const historyAutoArchiveFolder of historyAutoArchiveFolderCandidates) {
+                    try {
+                        const autoArchivePath = `${prefix}${exportRootFolder}/${historyAutoArchiveFolder}`;
+                        const items = await listGitHubDir(autoArchivePath);
+                        for (const item of items) {
+                            if (item.type === 'file' && item.name.endsWith('.zip')) {
+                                files.push({ name: item.name, url: item.download_url, source: 'github', type: 'zip' });
+                            }
+                        }
+                    } catch (e) {
+                        console.warn('[listRemoteFiles] Scan auto-archive GitHub failed:', e);
+                    }
+                }
+            }
+
+            // 3) HTML：书签备份
+            for (const exportRootFolder of exportRootFolderCandidates) {
+                for (const backupFolder of backupFolderCandidates) {
+                    try {
+                        const backupPath = `${prefix}${exportRootFolder}/${backupFolder}`;
+                        const items = await listGitHubDir(backupPath);
+                        for (const item of items) {
+                            if (item.type === 'file' && item.name.endsWith('.html') && isBackupHtmlName(item.name)) {
+                                files.push({ name: item.name, url: item.download_url, source: 'github', type: 'html_backup' });
+                            }
+                        }
+                    } catch (e) {
+                        console.warn('[listRemoteFiles] Scan HTML GitHub failed:', e);
+                    }
+                }
+            }
+
+            return Array.from(new Map(files.map(f => [`${f.source}|${f.type}|${f.url}`, f])).values());
+        }
+
+        return [];
+    } catch (e) {
+        console.error('[listRemoteFiles] Failed:', e);
+        return [];
+    }
+}
+
+// [New] 下载远程文件
+async function downloadRemoteFile({ url, source }) {
+    if (source === 'local') {
+        const res = await fetch(url);
+        return await res.blob();
+    }
+    try {
+        const headers = {};
+        if (source === 'webdav') {
+            const settings = await browserAPI.storage.local.get(['username', 'password']);
+            headers['Authorization'] = 'Basic ' + safeBase64(`${settings.username}:${settings.password}`);
+        } else if (source === 'github') {
+            const settings = await browserAPI.storage.local.get(['githubRepoToken']);
+            headers['Authorization'] = `token ${settings.githubRepoToken}`;
+            headers['Accept'] = 'application/vnd.github.v3.raw';
+        }
+
+        const response = await fetch(url, { headers });
+        if (!response.ok) throw new Error(`Download Failed: ${response.status}`);
+        return await response.blob();
+    } catch (e) {
+        console.error('[downloadRemoteFile] Failed:', e);
+        throw e;
+    }
+}
+
+function safeNumber(value, fallback = 0) {
+    return typeof value === 'number' && Number.isFinite(value) ? value : fallback;
+}
+
+function shouldIgnoreDownloadsLastErrorMessage(message) {
+    const msg = String(message || '');
+    return msg.includes('already deleted') || msg.includes('Download file already deleted');
+}
+
+async function downloadsRemoveFileSafe(downloadId) {
+    const id = Number(downloadId);
+    if (!Number.isFinite(id) || id <= 0) return;
+    await new Promise((resolve) => {
+        try {
+            browserAPI.downloads.removeFile(id, () => {
+                const err = browserAPI.runtime?.lastError;
+                if (err && !shouldIgnoreDownloadsLastErrorMessage(err.message)) {
+                    console.warn('[downloadsRemoveFileSafe] removeFile failed:', err.message);
+                }
+                resolve();
+            });
+        } catch (e) {
+            resolve();
+        }
+    });
+}
+
+async function downloadsEraseSafe(query) {
+    const q = query && typeof query === 'object' ? query : null;
+    if (!q) return;
+    await new Promise((resolve) => {
+        try {
+            browserAPI.downloads.erase(q, () => {
+                const err = browserAPI.runtime?.lastError;
+                if (err && !shouldIgnoreDownloadsLastErrorMessage(err.message)) {
+                    console.warn('[downloadsEraseSafe] erase failed:', err.message);
+                }
+                resolve();
+            });
+        } catch (e) {
+            resolve();
+        }
+    });
+}
+
+function parseTimeToMs(input) {
+    if (typeof input === 'number' && Number.isFinite(input)) return input;
+    if (typeof input !== 'string') return null;
+    const ms = Date.parse(input);
+    return Number.isFinite(ms) ? ms : null;
+}
+
+function formatDateTime(ms) {
+    const d = new Date(ms);
+    const pad = (n) => String(n).padStart(2, '0');
+    return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
+}
+
+function buildRestoreStats(bookmarkStats) {
+    const stats = bookmarkStats || {};
+    return {
+        bookmarkAdded: safeNumber(stats.bookmarkAdded),
+        bookmarkDeleted: safeNumber(stats.bookmarkDeleted),
+        folderAdded: safeNumber(stats.folderAdded),
+        folderDeleted: safeNumber(stats.folderDeleted),
+        movedCount: safeNumber(stats.movedCount),
+        modifiedCount: safeNumber(stats.modifiedCount),
+        bookmarkCount: (typeof stats.bookmarkCount === 'number' ? stats.bookmarkCount : (typeof stats.bookmarks === 'number' ? stats.bookmarks : null)),
+        folderCount: (typeof stats.folderCount === 'number' ? stats.folderCount : (typeof stats.folders === 'number' ? stats.folders : null))
+    };
+}
+
+function normalizeRestoreVersionMeta(meta) {
+    return {
+        id: meta.id,
+        time: meta.time,
+        displayTime: meta.displayTime,
+        seqNumber: meta.seqNumber,
+        note: meta.note,
+        fingerprint: meta.fingerprint,
+        stats: meta.stats,
+        source: meta.source,
+        sourceType: meta.sourceType,
+        originalFile: meta.originalFile,
+        restoreRef: meta.restoreRef,
+        canRestore: meta.canRestore !== false
+    };
+}
+
+function buildRestoreVersionFromExportData(exportData, { source, originalFile, fileUrl, localFileKey, zipEntryName, recordIndex }) {
+    const exportInfo = exportData?._exportInfo || exportData?.exportInfo || exportData?.export_info || {};
+    const timeStr = exportInfo.backupTime || exportData?.time || null;
+    const timeMs = parseTimeToMs(timeStr) ?? null;
+    const seqNumber = exportInfo.seqNumber || exportData?.seqNumber || null;
+    const note = exportInfo.note || exportData?.note || '';
+    const fingerprint = exportInfo.fingerprint || exportData?.fingerprint || '';
+    const stats = buildRestoreStats(exportInfo.stats || exportData?.bookmarkStats || exportData?.stats || null);
+
+    const idBase = `${source}:${originalFile}:${zipEntryName || ''}:${timeMs || timeStr || recordIndex || ''}:${fingerprint || ''}`;
+
+    const restoreRef = {
+        source,
+        sourceType: zipEntryName ? 'zip' : 'json',
+        originalFile,
+        fileUrl: fileUrl || null,
+        localFileKey: localFileKey || null,
+        zipEntryName: zipEntryName || null,
+        recordIndex: typeof recordIndex === 'number' ? recordIndex : null,
+        recordTime: timeStr || null,
+        fingerprint: fingerprint || null
+    };
+
+    return normalizeRestoreVersionMeta({
+        id: idBase,
+        time: timeMs,
+        displayTime: timeMs ? formatDateTime(timeMs) : (timeStr || ''),
+        seqNumber,
+        note,
+        fingerprint,
+        stats,
+        source,
+        sourceType: zipEntryName ? 'zip' : 'json',
+        originalFile,
+        restoreRef,
+        canRestore: true
+    });
+}
+
+function buildRestoreVersionFromHtmlFile({ source, originalFile, fileUrl, localFileKey, fileName, lastModifiedMs }) {
+    // 文件名：
+    // - YYYYMMDD_HHMMSS.html（当前导出）
+    // - backup_YYYYMMDD_HHMMSS.html（兼容旧命名）
+    // - bookmark_backup.html（覆盖模式，使用 lastModified 兜底）
+    const name = fileName || originalFile;
+    let timeMs = null;
+    const nameMatch = /(?:backup_)?(\d{8})_(\d{6})/i.exec(name || '');
+    if (nameMatch) {
+        const ds = nameMatch[1];
+        const ts = nameMatch[2];
+        const iso = `${ds.substring(0, 4)}-${ds.substring(4, 6)}-${ds.substring(6, 8)}T${ts.substring(0, 2)}:${ts.substring(2, 4)}:${ts.substring(4, 6)}`;
+        timeMs = parseTimeToMs(iso);
+    }
+    if (!timeMs && typeof lastModifiedMs === 'number') {
+        timeMs = lastModifiedMs;
+    }
+
+    const restoreRef = {
+        source,
+        sourceType: 'html',
+        originalFile,
+        fileUrl: fileUrl || null,
+        localFileKey: localFileKey || null,
+        recordIndex: null,
+        recordTime: null,
+        fingerprint: null
+    };
+
+    return normalizeRestoreVersionMeta({
+        id: `${source}:${originalFile}:${timeMs || ''}`,
+        time: timeMs,
+        displayTime: timeMs ? formatDateTime(timeMs) : name,
+        seqNumber: null,
+        note: 'HTML Snapshot',
+        fingerprint: '',
+        stats: {
+            bookmarkAdded: 0,
+            bookmarkDeleted: 0,
+            folderAdded: 0,
+            folderDeleted: 0,
+            movedCount: 0,
+            modifiedCount: 0,
+            bookmarkCount: null,
+            folderCount: null
+        },
+        source,
+        sourceType: 'html',
+        originalFile,
+        restoreRef,
+        canRestore: true
+    });
+}
+
+function parseRestoreVersionsFromMergedHistoryJsonText(text, { source, originalFile, fileUrl, localFileKey }) {
+    let parsed;
+    try {
+        parsed = JSON.parse(text);
+    } catch (e) {
+        console.warn('[parseRestoreVersionsFromMergedHistoryJsonText] JSON parse failed:', e);
+        return [];
+    }
+
+    const records = Array.isArray(parsed) ? parsed : (Array.isArray(parsed?.records) ? parsed.records : null);
+    if (!Array.isArray(records)) return [];
+
+    const versions = [];
+    for (let i = 0; i < records.length; i++) {
+        const item = records[i];
+        if (!item) continue;
+        const itemExportInfo = item._exportInfo || item.exportInfo || item.export_info || null;
+        if (itemExportInfo && (item._rawBookmarkTree || item.bookmarkTree)) {
+            versions.push(buildRestoreVersionFromExportData(item, { source, originalFile, fileUrl, localFileKey, zipEntryName: null, recordIndex: i }));
+            continue;
+        }
+
+        // 兼容：直接存储的 history record（time/note/fingerprint/bookmarkTree/bookmarkStats）
+        const pseudoExport = {
+            time: item.time,
+            note: item.note,
+            fingerprint: item.fingerprint,
+            seqNumber: item.seqNumber,
+            bookmarkStats: item.bookmarkStats || item.stats || null,
+            _rawBookmarkTree: item.bookmarkTree || item._rawBookmarkTree || null,
+            _exportInfo: {
+                backupTime: item.time,
+                note: item.note,
+                seqNumber: item.seqNumber,
+                fingerprint: item.fingerprint,
+                stats: item.bookmarkStats || item.stats || null
+            }
+        };
+
+        if (pseudoExport._rawBookmarkTree) {
+            versions.push(buildRestoreVersionFromExportData(pseudoExport, { source, originalFile, fileUrl, localFileKey, zipEntryName: null, recordIndex: i }));
+        }
+    }
+    return versions;
+}
+
+async function parseRestoreVersionsFromZipBlob(zipBlob, { source, originalFile, fileUrl, localFileKey }) {
+    const files = await unzipStore(zipBlob);
+    const versions = [];
+
+    for (const file of files) {
+        if (!file?.name || !file.name.endsWith('.json')) continue;
+        try {
+            const data = JSON.parse(file.content);
+            if (data && (data._exportInfo || data.time)) {
+                versions.push(buildRestoreVersionFromExportData(data, {
+                    source,
+                    originalFile,
+                    fileUrl,
+                    localFileKey,
+                    zipEntryName: file.name,
+                    recordIndex: null
+                }));
+            }
+        } catch (_) {
+            // ignore
+        }
+    }
+
+    return versions;
+}
+
+function dedupeAndSortRestoreVersions(versions) {
+    const map = new Map();
+    for (const v of versions || []) {
+        if (!v || !v.id) continue;
+        map.set(v.id, v);
+    }
+    const list = Array.from(map.values());
+    list.sort((a, b) => (b.time || 0) - (a.time || 0));
+    return list;
+}
+
+// [New] 扫描并解析恢复数据源，统一返回“可恢复版本”列表
+async function scanAndParseRestoreSource(source, localFiles = null) {
+    try {
+        let candidates = [];
+
+        if (source === 'local') {
+            candidates = Array.isArray(localFiles) ? localFiles : [];
+        } else {
+            candidates = await listRemoteFiles(source);
+        }
+
+        // 1) 优先：合并历史 backup_history.json
+        const mergedJsonCandidates = candidates.filter(f => f && f.type === 'merged_history');
+        if (mergedJsonCandidates.length > 0) {
+            const file = mergedJsonCandidates[0];
+            let text = '';
+            if (source === 'local') {
+                text = String(file.text || '');
+            } else {
+                const blob = await downloadRemoteFile({ url: file.url, source });
+                text = await blob.text();
+            }
+            const versions = parseRestoreVersionsFromMergedHistoryJsonText(text, {
+                source,
+                originalFile: file.name,
+                fileUrl: file.url || null,
+                localFileKey: file.localFileKey || null
+            });
+            const normalized = dedupeAndSortRestoreVersions(versions);
+            if (normalized.length > 0) {
+                return { success: true, sourceType: 'json', versions: normalized };
+            }
+            console.warn('[scanAndParseRestoreSource] merged history found but parsed 0 versions, falling back...');
+        }
+
+        // 2) ZIP：解压并提取多个版本
+        const zipCandidates = candidates.filter(f => f && f.type === 'zip');
+        if (zipCandidates.length > 0) {
+            const all = [];
+            for (const file of zipCandidates) {
+                let blob;
+                if (source === 'local') {
+                    const ab = file.arrayBuffer;
+                    if (!ab) continue;
+                    blob = new Blob([ab], { type: 'application/zip' });
+                } else {
+                    blob = await downloadRemoteFile({ url: file.url, source });
+                }
+                const versions = await parseRestoreVersionsFromZipBlob(blob, {
+                    source,
+                    originalFile: file.name,
+                    fileUrl: file.url || null,
+                    localFileKey: file.localFileKey || null
+                });
+                all.push(...versions);
+            }
+            const normalized = dedupeAndSortRestoreVersions(all);
+            if (normalized.length > 0) {
+                return { success: true, sourceType: 'zip', versions: normalized };
+            }
+            console.warn('[scanAndParseRestoreSource] zip candidates found but parsed 0 versions, falling back...');
+        }
+
+        // 3) HTML：从文件名生成版本（兜底；恢复时再读取/解析文件内容）
+        const htmlCandidates = candidates.filter(f => f && f.type === 'html_backup');
+        if (htmlCandidates.length > 0) {
+            const versions = htmlCandidates.map(f => buildRestoreVersionFromHtmlFile({
+                source,
+                originalFile: f.name,
+                fileUrl: f.url || null,
+                localFileKey: f.localFileKey || null,
+                fileName: f.name,
+                lastModifiedMs: typeof f.lastModified === 'number' ? f.lastModified : null
+            }));
+            const normalized = dedupeAndSortRestoreVersions(versions);
+            if (normalized.length > 0) {
+                return { success: true, sourceType: 'html', versions: normalized };
+            }
+        }
+
+        return { success: true, versions: [] };
+    } catch (e) {
+        console.error('[scanAndParseRestoreSource] Failed:', e);
+        return { success: false, error: e.message };
+    }
+}
+
+async function findBookmarkContainers() {
+    const [root] = await browserAPI.bookmarks.getTree();
+    const children = root?.children || [];
+
+    let bookmarkBar = children.find(c => c.id === '1');
+    let otherBookmarks = children.find(c => c.id === '2');
+
+    if (!bookmarkBar) {
+        bookmarkBar = children.find(c =>
+            c.title === '书签栏' ||
+            c.title === 'Bookmarks Bar' ||
+            c.title === 'Bookmarks bar' ||
+            c.title === 'toolbar_____'
+        );
+    }
+
+    if (!otherBookmarks) {
+        otherBookmarks = children.find(c =>
+            c.title === '其他书签' ||
+            c.title === 'Other Bookmarks' ||
+            c.title === 'Other bookmarks'
+        );
+    }
+
+    return { root, bookmarkBar, otherBookmarks };
+}
+
+async function removeAllChildren(parentId) {
+    const children = await browserAPI.bookmarks.getChildren(parentId);
+    for (const child of children || []) {
+        try {
+            await browserAPI.bookmarks.removeTree(child.id);
+        } catch (e) {
+            console.warn('[removeAllChildren] Remove failed:', child?.id, e);
+        }
+    }
+}
+
+async function createNodeRecursive(node, parentId) {
+    if (!node) return 0;
+    const title = node.title || '';
+    const isFolder = Array.isArray(node.children) && !node.url;
+
+    if (isFolder) {
+        const createdFolder = await browserAPI.bookmarks.create({ parentId, title });
+        let created = 1;
+        for (const child of node.children || []) {
+            created += await createNodeRecursive(child, createdFolder.id);
+        }
+        return created;
+    }
+
+    if (node.url) {
+        await browserAPI.bookmarks.create({ parentId, title, url: node.url });
+        return 1;
+    }
+
+    return 0;
+}
+
+async function executeOverwriteBookmarkRestore(bookmarkTree) {
+    const { bookmarkBar, otherBookmarks } = await findBookmarkContainers();
+    if (!bookmarkBar || !otherBookmarks) {
+        throw new Error('Cannot find bookmark containers');
+    }
+
+    await removeAllChildren(bookmarkBar.id);
+    await removeAllChildren(otherBookmarks.id);
+
+    let createdCount = 0;
+    const nodes = Array.isArray(bookmarkTree) ? bookmarkTree : [bookmarkTree];
+
+    for (const node of nodes) {
+        if (!node?.children) continue;
+        for (const topFolder of node.children || []) {
+            const isBookmarkBarFolder = topFolder.id === '1' ||
+                topFolder.title === '书签栏' ||
+                topFolder.title === 'Bookmarks Bar' ||
+                topFolder.title === 'Bookmarks bar' ||
+                topFolder.title === 'toolbar_____';
+
+            const targetContainer = isBookmarkBarFolder ? bookmarkBar : otherBookmarks;
+            for (const child of topFolder.children || []) {
+                try {
+                    createdCount += await createNodeRecursive(child, targetContainer.id);
+                } catch (e) {
+                    console.warn('[executeOverwriteBookmarkRestore] Create failed:', e);
+                }
+            }
+        }
+    }
+
+    return { created: createdCount };
+}
+
+async function executeMergeBookmarkRestore(bookmarkTree) {
+    // Merge = “导入式导入” (类似浏览器导入 HTML 的行为)：不覆盖现有树，而是在根容器下新增一个导入文件夹。
+    const { otherBookmarks } = await findBookmarkContainers();
+    if (!otherBookmarks) throw new Error('Cannot find "Other Bookmarks" container');
+
+    const lang = await getCurrentLang();
+    const isEn = lang === 'en';
+
+    const now = new Date();
+    const timestamp = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')} ` +
+        `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}:${String(now.getSeconds()).padStart(2, '0')}`;
+
+    const importRootTitle = isEn ? `Imported - ${timestamp}` : `导入 - ${timestamp}`;
+    const importRootFolder = await browserAPI.bookmarks.create({
+        parentId: otherBookmarks.id,
+        title: importRootTitle
+    });
+
+    let createdCount = 1; // importRootFolder
+    const nodes = Array.isArray(bookmarkTree) ? bookmarkTree : [bookmarkTree];
+
+    for (const node of nodes) {
+        if (!Array.isArray(node?.children)) continue;
+        for (const topFolder of node.children || []) {
+            const topTitle = String(topFolder?.title || '').trim() || (isEn ? 'Bookmarks' : '书签');
+            const topContainer = await browserAPI.bookmarks.create({
+                parentId: importRootFolder.id,
+                title: topTitle
+            });
+            createdCount += 1; // topContainer
+
+            for (const child of topFolder.children || []) {
+                try {
+                    createdCount += await createNodeRecursive(child, topContainer.id);
+                } catch (e) {
+                    console.warn('[executeMergeBookmarkRestore] Create failed:', e);
+                }
+            }
+        }
+    }
+
+    return { created: createdCount, importedFolderId: importRootFolder.id, importedFolderTitle: importRootTitle };
+}
+
+function decodeHtmlEntities(text) {
+    const s = String(text == null ? '' : text);
+    return s
+        .replace(/&nbsp;/gi, ' ')
+        .replace(/&amp;/gi, '&')
+        .replace(/&lt;/gi, '<')
+        .replace(/&gt;/gi, '>')
+        .replace(/&quot;/gi, '"')
+        .replace(/&#39;/gi, "'")
+        .replace(/&#(\d+);/g, (_, num) => {
+            const code = Number(num);
+            return Number.isFinite(code) ? String.fromCharCode(code) : _;
+        })
+        .replace(/&#x([0-9a-fA-F]+);/g, (_, hex) => {
+            const code = parseInt(hex, 16);
+            return Number.isFinite(code) ? String.fromCharCode(code) : _;
+        });
+}
+
+function stripHtmlTags(text) {
+    return String(text == null ? '' : text).replace(/<[^>]*>/g, '');
+}
+
+function normalizeParsedBookmarkTreeForRestore(root) {
+    if (!root || !Array.isArray(root.children)) return root;
+    if (root.children.length !== 1) return root;
+
+    const wrapper = root.children[0];
+    if (!wrapper || !Array.isArray(wrapper.children)) return root;
+
+    const wrapperTitle = String(wrapper.title || '').trim().toLowerCase();
+    const wrapperLooksLikeRoot = wrapperTitle === '' ||
+        wrapperTitle === 'bookmarks' ||
+        wrapperTitle === 'favorites' ||
+        wrapperTitle === '收藏夹' ||
+        wrapperTitle === '书签';
+
+    const hasContainerFolder = (wrapper.children || []).some(c => {
+        const t = String(c?.title || '').toLowerCase();
+        return t === '书签栏' ||
+            t === '其他书签' ||
+            t === 'bookmarks bar' ||
+            t === 'bookmarks toolbar' ||
+            t === 'other bookmarks' ||
+            t === 'other bookmarks';
+    });
+
+    if (wrapperLooksLikeRoot && hasContainerFolder) {
+        root.children = wrapper.children;
+    }
+
+    return root;
+}
+
+function parseNetscapeBookmarkHtmlToTree(htmlText) {
+    const root = { title: 'root', children: [] };
+    const stack = [root];
+    let lastCreatedFolder = null;
+
+    const lines = String(htmlText || '').split(/\r?\n/);
+    for (const raw of lines) {
+        const line = raw.trim();
+        if (!line) continue;
+
+        const lower = line.toLowerCase();
+        if (lower.startsWith('<dl')) {
+            if (lastCreatedFolder) {
+                stack.push(lastCreatedFolder);
+                lastCreatedFolder = null;
+            }
+            continue;
+        }
+
+        if (lower.startsWith('</dl')) {
+            if (stack.length > 1) stack.pop();
+            lastCreatedFolder = null;
+            continue;
+        }
+
+        const h3Match = /<h3[^>]*>([\s\S]*?)<\/h3>/i.exec(line);
+        if (h3Match) {
+            const title = decodeHtmlEntities(stripHtmlTags(h3Match[1])).trim();
+            const folder = { title, children: [] };
+            stack[stack.length - 1].children.push(folder);
+            lastCreatedFolder = folder;
+            continue;
+        }
+
+        const aMatch = /<a[^>]*href\s*=\s*"(.*?)"[^>]*>([\s\S]*?)<\/a>/i.exec(line)
+            || /<a[^>]*href\s*=\s*'(.*?)'[^>]*>([\s\S]*?)<\/a>/i.exec(line);
+        if (aMatch) {
+            const url = decodeHtmlEntities(aMatch[1]).trim();
+            const title = decodeHtmlEntities(stripHtmlTags(aMatch[2])).trim();
+            if (!url) continue;
+            // 忽略用于说明的 about:blank 行（某些导出会包含）
+            if (url === 'about:blank') continue;
+            stack[stack.length - 1].children.push({ title, url });
+            lastCreatedFolder = null;
+            continue;
+        }
+    }
+
+    return normalizeParsedBookmarkTreeForRestore(root);
+}
+
+async function extractBookmarkTreeForRestore(restoreRef, localPayload) {
+    if (!restoreRef || !restoreRef.sourceType) {
+        throw new Error('Missing restoreRef');
+    }
+
+    if (restoreRef.sourceType === 'html') {
+        let text = '';
+        if (restoreRef.source === 'local') {
+            text = String(localPayload?.text || '');
+        } else {
+            if (!restoreRef.fileUrl) throw new Error('Missing fileUrl');
+            const blob = await downloadRemoteFile({ url: restoreRef.fileUrl, source: restoreRef.source });
+            text = await blob.text();
+        }
+
+        if (!text) throw new Error('Empty HTML content');
+        const tree = parseNetscapeBookmarkHtmlToTree(text);
+        if (!tree || !Array.isArray(tree.children) || tree.children.length === 0) {
+            throw new Error('Failed to parse HTML bookmark file');
+        }
+        return tree;
+    }
+
+    if (restoreRef.sourceType === 'zip') {
+        let zipBlob;
+        if (restoreRef.source === 'local') {
+            const ab = localPayload?.arrayBuffer;
+            if (!ab) throw new Error('Missing local ZIP data');
+            zipBlob = new Blob([ab], { type: 'application/zip' });
+        } else {
+            if (!restoreRef.fileUrl) throw new Error('Missing fileUrl');
+            zipBlob = await downloadRemoteFile({ url: restoreRef.fileUrl, source: restoreRef.source });
+        }
+
+        const files = await unzipStore(zipBlob);
+        const targetName = restoreRef.zipEntryName;
+        let matched = null;
+
+        if (targetName) {
+            matched = files.find(f => f?.name === targetName) || null;
+        }
+
+        // 兜底：按时间匹配
+        if (!matched && restoreRef.recordTime) {
+            for (const f of files) {
+                if (!f?.name || !f.name.endsWith('.json')) continue;
+                try {
+                    const data = JSON.parse(f.content);
+                    const backupTime = data?._exportInfo?.backupTime || data?.time || null;
+                    if (backupTime && String(backupTime) === String(restoreRef.recordTime)) {
+                        matched = f;
+                        break;
+                    }
+                } catch (_) { }
+            }
+        }
+
+        if (!matched) throw new Error('Target version not found in ZIP');
+
+        const data = JSON.parse(matched.content);
+        return data?._rawBookmarkTree || data?.bookmarkTree || null;
+    }
+
+    if (restoreRef.sourceType === 'json') {
+        let text = '';
+        if (restoreRef.source === 'local') {
+            text = String(localPayload?.text || '');
+        } else {
+            if (!restoreRef.fileUrl) throw new Error('Missing fileUrl');
+            const blob = await downloadRemoteFile({ url: restoreRef.fileUrl, source: restoreRef.source });
+            text = await blob.text();
+        }
+
+        let parsed;
+        try {
+            parsed = JSON.parse(text);
+        } catch (e) {
+            throw new Error('Merged history JSON parse failed');
+        }
+
+        const records = Array.isArray(parsed) ? parsed : (Array.isArray(parsed?.records) ? parsed.records : null);
+        if (!Array.isArray(records)) throw new Error('Merged history format not supported');
+
+        const idx = typeof restoreRef.recordIndex === 'number' ? restoreRef.recordIndex : null;
+        let record = null;
+        if (idx !== null && records[idx]) {
+            record = records[idx];
+        }
+
+        if (!record && restoreRef.recordTime) {
+            record = records.find(r => {
+                const t = r?._exportInfo?.backupTime || r?.exportInfo?.backupTime || r?.export_info?.backupTime || r?.time || null;
+                return t && String(t) === String(restoreRef.recordTime);
+            }) || null;
+        }
+
+        if (!record) throw new Error('Target version not found in merged history');
+
+        return record?._rawBookmarkTree || record?.bookmarkTree || record?.bookmarkTree || null;
+    }
+
+    throw new Error(`Unsupported sourceType: ${restoreRef.sourceType}`);
+}
+
+async function restoreSelectedVersion({ restoreRef, strategy, localPayload }) {
+    try {
+        isBookmarkRestoring = true;
+        const tree = await extractBookmarkTreeForRestore(restoreRef, localPayload);
+        if (!tree) {
+            return { success: false, error: 'No bookmark tree data found for selected version' };
+        }
+
+        if (strategy === 'overwrite') {
+            const result = await executeOverwriteBookmarkRestore(tree);
+            return { success: true, strategy: 'overwrite', ...result };
+        }
+
+        const result = await executeMergeBookmarkRestore(tree);
+        return { success: true, strategy: 'merge', ...result };
+    } catch (e) {
+        console.error('[restoreSelectedVersion] Failed:', e);
+        return { success: false, error: e.message };
+    } finally {
+        isBookmarkRestoring = false;
+    }
+}
+
+
+
+// [New] 从归档恢复核心逻辑
+async function restoreHistoryFromArchive(blob, strategy = 'merge', fileType = 'zip', fileName = '') {
+    try {
+        const restoredRecords = [];
+
+        if (fileType === 'html_backup') {
+            console.log('[restoreHistoryFromArchive] Processing HTML backup:', fileName);
+            const text = await blob.text();
+            let parsedDate = new Date();
+            const nameMatch = /backup_(\d{8})_(\d{6})/.exec(fileName);
+            if (nameMatch) {
+                const ds = nameMatch[1];
+                const ts = nameMatch[2];
+                parsedDate = new Date(`${ds.substr(0, 4)}-${ds.substr(4, 2)}-${ds.substr(6, 2)}T${ts.substr(0, 2)}:${ts.substr(2, 2)}:${ts.substr(4, 2)}`);
+            }
+
+            restoredRecords.push({
+                time: parsedDate.toISOString(),
+                note: 'Restored from HTML Backup',
+                seqNumber: Date.now(),
+                fingerprint: 'reconstructed',
+                type: 'manual',
+                status: 'success',
+                bookmarkTree: [],
+                htmlContent: text,
+                bookmarkStats: { total: 0, folders: 0 }
+            });
+        } else {
+            console.log('[restoreHistoryFromArchive] Start unzip...');
+            const files = await unzipStore(blob);
+            console.log(`[restoreHistoryFromArchive] Extracted ${files.length} files.`);
+
+            for (const file of files) {
+                if (file.name.endsWith('.json')) {
+                    try {
+                        const data = JSON.parse(file.content);
+                        if (data._exportInfo) {
+                            const info = data._exportInfo;
+                            restoredRecords.push({
+                                time: info.backupTime,
+                                note: info.note,
+                                seqNumber: info.seqNumber,
+                                fingerprint: info.fingerprint,
+                                type: 'manual',
+                                status: 'success',
+                                bookmarkTree: data._rawBookmarkTree,
+                                bookmarkStats: info.stats
+                            });
+                        }
+                    } catch (jsonErr) {
+                        console.warn('JSON Parse Error:', file.name);
+                    }
+                }
+            }
+        }
+
+        if (restoredRecords.length === 0) {
+            return { success: false, error: 'No valid records found in archive.' };
+        }
+
+        // 保存到 storage
+        const currentData = await browserAPI.storage.local.get(['syncHistory']);
+        let finalHistory = [];
+
+        if (strategy === 'overwrite') { // Git Reset Mode
+            console.log('[restoreHistoryFromArchive] Strategy: Overwrite (Git Reset)');
+            finalHistory = restoredRecords;
+        } else { // Merge Mode
+            console.log('[restoreHistoryFromArchive] Strategy: Merge');
+            const currentHistory = currentData.syncHistory || [];
+            const existingMap = new Map(currentHistory.map(r => [r.time, r]));
+            restoredRecords.forEach(r => existingMap.set(r.time, r)); // Overwrite if same ID exists
+            finalHistory = Array.from(existingMap.values());
+        }
+
+        // 重新排序
+        finalHistory.sort((a, b) => new Date(b.time) - new Date(a.time));
+
+        await browserAPI.storage.local.set({ syncHistory: finalHistory });
+
+        // 触发迁移逻辑以确保数据结构正确
+        await migrateToSplitStorage();
+
+        // [Fix] Restore completes initialization state to prevent "Not Configured" overwrites
+        await browserAPI.storage.local.set({ initialized: true });
+
+        return { success: true, count: restoredRecords.length };
+
+    } catch (e) {
+        console.error('[restoreHistoryFromArchive] Error:', e);
+        return { success: false, error: e.message };
+    }
+}
+
+// 监听来自 popup 的消息
+browserAPI.runtime.onMessage.addListener((request, sender, sendResponse) => {
+    if (request.action === 'listRemoteArchives') {
+        listRemoteFiles(request.source).then(files => sendResponse({ success: true, files })).catch(e => sendResponse({ success: false, error: e.message }));
+        return true;
+    }
+    if (request.action === 'scanAndParseRestoreSource') {
+        scanAndParseRestoreSource(request.source, request.localFiles)
+            .then(result => sendResponse(result))
+            .catch(e => sendResponse({ success: false, error: e.message }));
+        return true;
+    }
+    if (request.action === 'restoreSelectedVersion') {
+        restoreSelectedVersion({
+            restoreRef: request.restoreRef,
+            strategy: request.strategy,
+            localPayload: request.localPayload
+        })
+            .then(result => sendResponse(result))
+            .catch(e => sendResponse({ success: false, error: e.message }));
+        return true;
+    }
+    if (request.action === 'restoreArchive') {
+        const { url, source, strategy, fileType, fileName } = request;
+        downloadRemoteFile({ url, source })
+            .then(blob => restoreHistoryFromArchive(blob, strategy, fileType, fileName))
+            .then(result => sendResponse(result))
+            .catch(e => sendResponse({ success: false, error: e.message }));
+        return true;
+    }
+    // ... 原有的监听器 ...
+});
+
 // 辅助函数：本地下载
 async function downloadHistoryLocal(content, fileName, rootFolder, subFolder, overwriteMode = 'versioned') {
     try {
@@ -5996,8 +7063,8 @@ async function downloadHistoryLocal(content, fileName, rootFolder, subFolder, ov
                         });
 
                         if (exists) {
-                            await new Promise(resolve => browserAPI.downloads.removeFile(lastId, resolve));
-                            await new Promise(resolve => browserAPI.downloads.erase({ id: lastId }, resolve));
+                            await downloadsRemoveFileSafe(lastId);
+                            await downloadsEraseSafe({ id: lastId });
                             console.log(`[downloadHistoryLocal] 通过ID已删除旧${fileType}文件:`, lastId);
                             deleted = true;
                         }
@@ -6020,8 +7087,8 @@ async function downloadHistoryLocal(content, fileName, rootFolder, subFolder, ov
                     for (const item of existingDownloads) {
                         if (item.filename && item.filename.endsWith(fileName)) {
                             try {
-                                await new Promise(resolve => browserAPI.downloads.removeFile(item.id, resolve));
-                                await new Promise(resolve => browserAPI.downloads.erase({ id: item.id }, resolve));
+                                await downloadsRemoveFileSafe(item.id);
+                                await downloadsEraseSafe({ id: item.id });
                                 console.log(`[downloadHistoryLocal] 通过搜索已删除旧${fileType}文件:`, item.filename);
                             } catch (err) { }
                         }

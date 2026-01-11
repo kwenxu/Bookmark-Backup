@@ -3383,6 +3383,300 @@
             border: 1px solid var(--theme-border-secondary);
             margin-top: 4px;
         }
+
+        /* Restore Modal - Version Table (match history.html global export table style) */
+        #restoreVersionTable th,
+        #restoreVersionTable td {
+            padding: 10px 12px;
+            border-bottom: 1px solid var(--theme-border-primary);
+            font-size: 12px;
+            color: var(--theme-text-primary);
+            vertical-align: middle;
+        }
+
+        #restoreVersionTable thead th {
+            background: var(--theme-bg-secondary);
+            color: var(--theme-text-secondary);
+            font-weight: 600;
+            position: sticky;
+            top: 0;
+            z-index: 1;
+        }
+
+        #restoreVersionTable tbody tr {
+            cursor: pointer;
+            transition: background-color 0.15s ease;
+        }
+
+        #restoreVersionTable tbody tr:hover {
+            background: var(--theme-hover-bg);
+        }
+
+        #restoreVersionTable tbody tr[data-selected="1"] {
+            background: var(--theme-selected-item-bg);
+        }
+
+        #restoreVersionTable td.restore-cell-center {
+            text-align: center;
+        }
+
+        #restoreVersionTable td.restore-cell-mono {
+            font-family: monospace;
+            color: var(--theme-text-secondary);
+        }
+
+        #restoreVersionTable .restore-note {
+            font-weight: 600;
+            font-size: 13px;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            max-width: 240px;
+        }
+
+        #restoreVersionTable .restore-stats {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            flex-wrap: wrap;
+            color: var(--theme-text-secondary);
+        }
+
+        #restoreVersionTable .restore-stats .pos {
+            color: #4CAF50;
+            font-weight: 600;
+        }
+
+        #restoreVersionTable .restore-stats .neg {
+            color: #E57373;
+            font-weight: 600;
+        }
+
+        #restoreVersionTable .restore-stats .move {
+            color: #4FC3F7;
+            font-weight: 600;
+        }
+
+        #restoreVersionTable .restore-stats .mod {
+            color: #FFB74D;
+            font-weight: 600;
+        }
+
+        /* Restore Modal - Action Buttons (same size, bottom-right) */
+        .restore-modal-action-btn {
+            min-width: 92px;
+            height: 34px;
+            padding: 0 12px;
+            border-radius: 8px;
+            font-size: 14px;
+            line-height: 1;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            white-space: nowrap;
+            cursor: pointer;
+            user-select: none;
+        }
+
+        .restore-modal-action-btn.secondary {
+            background-color: var(--theme-bg-tertiary);
+            color: var(--theme-text-secondary);
+            border: 1px solid var(--theme-border-primary);
+        }
+
+        .restore-modal-action-btn.secondary:hover:not(:disabled) {
+            background-color: var(--theme-hover-bg);
+            color: var(--theme-text-primary);
+        }
+
+        .restore-modal-action-btn.primary {
+            background-color: var(--theme-accent-color);
+            color: white;
+            border: none;
+        }
+
+        .restore-modal-action-btn.primary:hover:not(:disabled) {
+            background-color: var(--theme-accent-color-hover);
+        }
+
+        .restore-modal-action-btn:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+        }
+
+        /* Restore Modal - Footer (fixed bottom area inside modal) */
+        .restore-modal-footer {
+            padding: 10px 14px;
+            border-top: 1px solid var(--theme-border-primary);
+            background-color: var(--theme-bg-primary);
+            display: flex;
+            justify-content: flex-end;
+            align-items: center;
+        }
+
+        .restore-modal-actions {
+            display: flex;
+            justify-content: flex-end;
+            align-items: center;
+            gap: 8px;
+            flex-wrap: wrap;
+            margin-left: auto;
+        }
+
+        /* Restore Modal - Header (match history.html "global export" header spacing) */
+        /* Restore Modal - Header (Compact & Aligned) */
+        .restore-modal-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 8px 16px;
+            border-bottom: 1px solid var(--theme-border-primary);
+            min-height: 48px;
+            box-sizing: border-box;
+        }
+
+        .restore-modal-title {
+            font-size: 16px;
+            font-weight: 600;
+            margin: 0;
+            color: var(--theme-text-primary);
+            text-align: left;
+            line-height: 1.5;
+            position: relative;
+            top: 10px;
+            /* 用户测试：大幅向下移动 10px */
+        }
+
+        .popup-modal-close {
+            /* Override global button styles in popup.html */
+            flex: 0 0 auto;
+            padding: 0;
+            width: 32px;
+            height: 32px;
+            border: none;
+            border-radius: 50%;
+            background: var(--theme-bg-secondary);
+            color: var(--theme-text-primary);
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            box-shadow: none;
+            transform: none;
+            transition: all 0.2s ease;
+        }
+
+        .popup-modal-close:hover {
+            background: var(--theme-bg-tertiary);
+            box-shadow: none;
+            transform: none;
+        }
+
+        /* Restore Modal - Strategy (candidate pills) */
+        #restoreStrategySegment {
+            display: inline-flex;
+            align-items: center;
+        }
+
+        .restore-strategy-group {
+            height: 34px;
+            padding: 2px;
+            border-radius: 8px;
+            border: 1px solid var(--theme-border-primary);
+            background-color: var(--theme-bg-tertiary);
+            display: inline-flex;
+            gap: 2px;
+            box-sizing: border-box;
+        }
+
+        .restore-strategy-group.disabled {
+            opacity: 0.6;
+            pointer-events: none;
+        }
+
+        .restore-strategy-label {
+            cursor: pointer;
+            user-select: none;
+            margin: 0;
+            height: 100%;
+            display: flex;
+        }
+
+        .restore-strategy-label input {
+            display: none;
+        }
+
+        .restore-strategy-option {
+            height: 100%;
+            padding: 0 9px;
+            border-radius: 7px;
+            font-size: 13px;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            gap: 6px;
+            color: var(--theme-text-secondary);
+            transition: all 0.2s ease;
+            white-space: nowrap;
+        }
+
+        .restore-strategy-option:hover {
+            background-color: var(--theme-bg-hover);
+            color: var(--theme-text-primary);
+        }
+
+        .restore-strategy-icon {
+            display: none;
+            /* only render when checked to avoid leading blank */
+            font-size: 12px;
+            margin-left: -3px;
+            /* icon slightly to the left */
+            opacity: 0.95;
+        }
+
+        .restore-strategy-label input:checked+.restore-strategy-option {
+            background-color: var(--theme-accent-color);
+            color: white;
+            box-shadow: 0 1px 3px rgba(0, 0, 0, 0.15);
+            font-weight: 500;
+        }
+
+        .restore-strategy-label input:checked+.restore-strategy-option .restore-strategy-icon {
+            display: inline-flex;
+        }
+
+        /* Restore Confirm Modal */
+        .restore-confirm-summary {
+            background-color: var(--theme-bg-secondary);
+            border: 1px solid var(--theme-border-primary);
+            border-radius: 8px;
+            padding: 10px 12px;
+            color: var(--theme-text-secondary);
+            font-size: 13px;
+            line-height: 1.45;
+            white-space: pre-wrap;
+        }
+
+        .restore-confirm-warning {
+            margin-top: 12px;
+            border-left: 3px solid var(--theme-error-color);
+            background-color: var(--theme-status-error-bg);
+            color: var(--theme-error-color);
+            padding: 10px 12px;
+            border-radius: 8px;
+            font-size: 13px;
+            line-height: 1.45;
+        }
+
+        .restore-modal-action-btn.danger {
+            background-color: var(--theme-error-color);
+            color: white;
+            border: none;
+        }
+
+        .restore-modal-action-btn.danger:hover:not(:disabled) {
+            filter: brightness(0.95);
+        }
     </style>
 </head>
 
@@ -3431,7 +3725,7 @@
                 </h2>
                 <div style="display: flex; align-items: center;">
                     <label class="switch" style="margin-right: 10px;">
-                        <input type="checkbox" id="webDAVToggle" checked>
+                        <input type="checkbox" id="webDAVToggle">
                         <span class="slider"></span>
                     </label>
                     <div class="toggle-icon"></div>
@@ -3478,7 +3772,7 @@
                 </h2>
                 <div style="display: flex; align-items: center;">
                     <label class="switch" style="margin-right: 10px;">
-                        <input type="checkbox" id="githubRepoToggle" checked>
+                        <input type="checkbox" id="githubRepoToggle">
                         <span class="slider"></span>
                     </label>
                     <div class="toggle-icon"></div>
@@ -3562,7 +3856,7 @@
                 </h2>
                 <div style="display: flex; align-items: center;">
                     <label class="switch" style="margin-right: 10px;">
-                        <input type="checkbox" id="defaultDownloadToggle" checked=false>
+                        <input type="checkbox" id="defaultDownloadToggle">
                         <span class="slider"></span>
                     </label>
                     <div class="toggle-icon"></div>
@@ -3602,7 +3896,10 @@
                     </div>
                 </div>
 
-                <!-- 分隔线 -->
+                <!-- 隐藏的文件输入框 (用于本地恢复) -->
+                <input type="file" id="localRestoreInput" style="display: none;" webkitdirectory directory>
+
+                <!-- 脚本引用 -->
                 <div style="border-top: 1px solid var(--theme-border-primary); margin: 6px 0;"></div>
 
                 <!-- 区块三：安全规则说明 -->
@@ -3743,39 +4040,42 @@
                                 </div>
                             </div>
                             <div class="section-content" id="historySyncContent">
-                                <!-- 导出格式 -->
-                                <div class="setting-row">
-                                    <div style="display: flex; align-items: center; gap: 0;" id="formatHelpWrapper">
-                                        <span class="setting-label" id="historyFormatLabel"
-                                            style="margin: 0; min-width: auto;">Format</span>
-                                        <i class="fas fa-question-circle" id="historyFormatHelp"
-                                            style="color: var(--theme-text-secondary); cursor: help; font-size: 14px; margin-left: 1px;"></i>
-                                    </div>
-                                    <div class="clean-segment-group">
-                                        <label class="clean-segment-label">
-                                            <input type="checkbox" id="historySyncHtml" checked>
-                                            <div class="clean-segment-item" id="historySyncHtmlLabel">HTML</div>
-                                        </label>
-                                        <label class="clean-segment-label">
-                                            <input type="checkbox" id="historySyncJson">
-                                            <div class="clean-segment-item" id="historySyncJsonLabel">JSON</div>
-                                        </label>
-                                    </div>
-                                </div>
-                                <!-- 打包结构 -->
+                                <!-- 打包结构 (第一行) -->
                                 <div class="setting-row">
                                     <span class="setting-label" id="historyPackModeLabel">Pack</span>
                                     <div class="clean-segment-group">
                                         <label class="clean-segment-label">
                                             <input type="radio" name="historySyncPackMode" id="historySyncPackZip"
-                                                value="zip" checked>
+                                                value="zip">
                                             <div class="clean-segment-item" id="historySyncPackZipLabel">ZIP</div>
                                         </label>
                                         <label class="clean-segment-label">
                                             <input type="radio" name="historySyncPackMode" id="historySyncPackMerge"
-                                                value="merge">
+                                                value="merge" checked>
                                             <div class="clean-segment-item" id="historySyncPackMergeLabel">Merge</div>
                                         </label>
+                                    </div>
+                                </div>
+
+                                <!-- 格式 & 策略 (合并为一行) -->
+                                <!-- 格式 & 策略 (合并为一行) -->
+                                <div class="setting-row">
+                                    <span class="setting-label" id="historyFormatStrategyLabel">Format / Strategy</span>
+                                    <div style="display: flex; align-items: center; gap: 8px;">
+                                        <div class="clean-segment-group">
+                                            <label class="clean-segment-label">
+                                                <input type="checkbox" id="historySyncJson" checked disabled>
+                                                <div class="clean-segment-item" id="historySyncJsonLabel">JSON</div>
+                                            </label>
+                                        </div>
+                                        <span class="clean-segment-divider">/</span>
+                                        <div class="clean-segment-group">
+                                            <label class="clean-segment-label">
+                                                <input type="checkbox" id="historySyncOverwrite" checked disabled>
+                                                <div class="clean-segment-item" id="historySyncOverwriteLabel">Overwrite
+                                                </div>
+                                            </label>
+                                        </div>
                                     </div>
                                 </div>
                             </div>
@@ -3784,14 +4084,75 @@
 
                     <!-- Right Panel: Sync & Restore -->
                     <div class="glass-panel">
-                        <div class="sync-panel-content">
+                        <div class="sync-panel-content" id="syncRestorePanelContent">
                             <div class="sync-icon-large">
                                 <i class="fas fa-sync-alt"></i>
                             </div>
                             <div class="sync-title" id="syncRestoreTitle">Sync & Restore</div>
-                            <span class="badge-soon-modern" id="syncRestoreComingSoon">Soon</span>
+
+                            <!-- State 1: Coming Soon (Default/No Config) -->
+                            <span class="badge-soon-modern" id="syncRestoreComingSoon">Config First</span>
+
+                            <!-- State 2: Restore Actions (Hidden by default) -->
+                            <div id="restoreActionsList" class="restore-actions-list" style="display: none;">
+                                <button id="restoreFromWebDAVBtn" class="restore-action-item" style="display: none;">
+                                    <i class="fas fa-cloud restore-icon-webdav"></i>
+                                    <span class="restore-label">WebDAV</span>
+                                </button>
+                                <button id="restoreFromGitHubBtn" class="restore-action-item" style="display: none;">
+                                    <i class="fab fa-github restore-icon-github"></i>
+                                    <span class="restore-label">GitHub</span>
+                                </button>
+                                <button id="restoreFromLocalBtn" class="restore-action-item" style="display: none;">
+                                    <i class="fas fa-hdd restore-icon-local"></i>
+                                    <span class="restore-label">Local</span>
+                                </button>
+                            </div>
                         </div>
                     </div>
+                    <style>
+                        .restore-actions-list {
+                            width: 100%;
+                            display: flex;
+                            flex-direction: column;
+                            gap: 6px;
+                            margin-top: 12px;
+                        }
+
+                        .restore-action-item {
+                            display: flex;
+                            align-items: center;
+                            gap: 10px;
+                            width: 100%;
+                            padding: 8px 12px;
+                            background: rgba(255, 255, 255, 0.05);
+                            border: 1px solid var(--theme-border-primary);
+                            border-radius: 6px;
+                            color: var(--theme-text-primary);
+                            cursor: pointer;
+                            transition: all 0.2s ease;
+                            font-size: 13px;
+                            text-align: left;
+                        }
+
+                        .restore-action-item:hover {
+                            background: rgba(255, 255, 255, 0.1);
+                            border-color: var(--theme-link-color);
+                            transform: translateX(2px);
+                        }
+
+                        .restore-icon-webdav {
+                            color: #4FC3F7;
+                        }
+
+                        .restore-icon-github {
+                            color: #e6e6e6;
+                        }
+
+                        .restore-icon-local {
+                            color: #FFA726;
+                        }
+                    </style>
 
                 </div>
 
@@ -4424,6 +4785,94 @@
             </div>
         </div>
     </div>
+    <!-- 恢复历史选择对话框 -->
+    <div id="restoreModal" class="modal">
+        <div class="modal-content"
+            style="width: 720px; max-width: calc(100% - 24px); display: flex; flex-direction: column; max-height: 90vh; position: relative; top: auto; right: auto; margin: 6% auto; box-shadow: 0 6px 18px rgba(0,0,0,0.15); border-radius: 12px; padding: 0;">
+            <div class="restore-modal-header">
+                <h3 id="restoreModalTitle" class="restore-modal-title">Restore History</h3>
+                <button id="closeRestoreModal" class="popup-modal-close" aria-label="Close">
+                    <i class="fas fa-times"></i>
+                </button>
+            </div>
+
+            <div class="modal-body" style="overflow-y: auto; flex: 1; padding: 12px 16px;">
+                <div class="global-export-table-container"
+                    style="border: 1px solid var(--theme-border-primary); border-radius: 8px; overflow: hidden;">
+                    <table id="restoreVersionTable" style="width: 100%; border-collapse: collapse;">
+                        <thead>
+                            <tr>
+                                <th style="text-align: center; width: 40px;"></th>
+                                <th style="text-align: center; width: 54px;"><span id="restoreThSeq">序号</span></th>
+                                <th style="text-align: left;"><span id="restoreThNote">备注</span></th>
+                                <th style="text-align: left; width: 90px;"><span id="restoreThHash">哈希值</span></th>
+                                <th style="text-align: left; width: 145px;"><span id="restoreThTime">时间</span></th>
+                                <th style="text-align: left; width: 210px;"><span id="restoreThStats">数量与结构</span>
+                                </th>
+                            </tr>
+                        </thead>
+                        <tbody id="restoreVersionTableBody">
+                            <tr>
+                                <td colspan="6"
+                                    style="padding: 14px; text-align: center; color: var(--theme-text-secondary);">
+                                    Loading...
+                                </td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+            <div class="restore-modal-footer">
+                <div class="restore-modal-actions">
+                    <button id="cancelRestoreBtnRef" class="restore-modal-action-btn secondary">Cancel</button>
+                    <div id="restoreStrategySegment">
+                        <div id="restoreStrategyGroup" class="restore-strategy-group disabled">
+                            <label class="restore-strategy-label" title="" id="restoreStrategyOverwriteLabelWrap">
+                                <input type="radio" name="restoreStrategy" id="restoreStrategyOverwrite"
+                                    value="overwrite" checked disabled>
+                                <div class="restore-strategy-option" id="restoreStrategyOverwriteLabel">
+                                    <span class="restore-strategy-icon">✓</span>
+                                    <span>Overwrite</span>
+                                </div>
+                            </label>
+                            <label class="restore-strategy-label" title="" id="restoreStrategyMergeLabelWrap">
+                                <input type="radio" name="restoreStrategy" id="restoreStrategyMerge" value="merge"
+                                    disabled>
+                                <div class="restore-strategy-option" id="restoreStrategyMergeLabel">
+                                    <span class="restore-strategy-icon">✓</span>
+                                    <span>Merge</span>
+                                </div>
+                            </label>
+                        </div>
+                    </div>
+                    <button id="confirmRestoreBtnRef" class="restore-modal-action-btn primary" disabled>Restore</button>
+                </div>
+            </div>
+        </div>
+    </div>
+    </div>
+
+    <!-- Restore 二级确认对话框 -->
+    <div id="restoreConfirmModal" class="modal">
+        <div class="modal-content"
+            style="position: relative; top: auto; right: auto; margin: 12% auto; width: 520px; max-width: calc(100% - 24px); box-shadow: 0 6px 18px rgba(0,0,0,0.15); border-radius: 12px; padding: 16px 18px;">
+            <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px;">
+                <h3 id="restoreConfirmTitle"
+                    style="font-size: 16px; margin: 0; color: var(--theme-text-primary); text-align: left;">
+                    确认恢复
+                </h3>
+                <button id="closeRestoreConfirmModal" class="popup-modal-close" aria-label="Close">
+                    <i class="fas fa-times"></i>
+                </button>
+            </div>
+            <div id="restoreConfirmSummary" class="restore-confirm-summary"></div>
+            <div id="restoreConfirmWarning" class="restore-confirm-warning"></div>
+            <div class="button-group" style="margin-top: 14px; justify-content: flex-end; gap: 10px;">
+                <button id="restoreConfirmCancelBtn" class="restore-modal-action-btn secondary">取消</button>
+                <button id="restoreConfirmConfirmBtn" class="restore-modal-action-btn danger">确认恢复</button>
+            </div>
+        </div>
     </div>
 
     <!-- 页面底部正中央透明长条向上箭头按钮 -->

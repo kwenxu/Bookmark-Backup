@@ -1959,6 +1959,10 @@
             height: 100%;
             background-color: rgba(0, 0, 0, 0.5);
             z-index: 1000;
+            align-items: center;
+            justify-content: center;
+            padding: 24px 12px;
+            box-sizing: border-box;
         }
 
         .modal-content {
@@ -3394,6 +3398,12 @@
             vertical-align: middle;
         }
 
+        /* Snapshot mode: compact table and equal spacing */
+        #restoreVersionTable.snapshot-mode th,
+        #restoreVersionTable.snapshot-mode td {
+            padding: 8px 10px;
+        }
+
         #restoreVersionTable thead th {
             background: var(--theme-bg-secondary);
             color: var(--theme-text-secondary);
@@ -3650,22 +3660,55 @@
             background-color: var(--theme-bg-secondary);
             border: 1px solid var(--theme-border-primary);
             border-radius: 8px;
-            padding: 10px 12px;
+            padding: 8px 10px;
             color: var(--theme-text-secondary);
             font-size: 13px;
-            line-height: 1.45;
-            white-space: pre-wrap;
+            line-height: 1.25;
+        }
+
+        .restore-confirm-summary-grid {
+            display: grid;
+            grid-template-columns: 72px 1fr;
+            column-gap: 8px;
+            row-gap: 4px;
+            align-items: start;
+        }
+
+        .restore-confirm-summary-key {
+            color: var(--theme-text-secondary);
+            opacity: 0.9;
+            white-space: nowrap;
+        }
+
+        .restore-confirm-summary-val {
+            color: var(--theme-text-primary);
+            word-break: break-word;
+        }
+
+        .restore-confirm-summary-val.mono {
+            font-family: 'SF Mono', 'Monaco', 'Consolas', monospace;
+            font-size: 12px;
+            color: var(--theme-text-secondary);
         }
 
         .restore-confirm-warning {
-            margin-top: 12px;
-            border-left: 3px solid var(--theme-error-color);
-            background-color: var(--theme-status-error-bg);
-            color: var(--theme-error-color);
-            padding: 10px 12px;
+            margin-top: 10px;
+            padding: 8px 10px;
             border-radius: 8px;
             font-size: 13px;
-            line-height: 1.45;
+            line-height: 1.25;
+        }
+
+        .restore-confirm-warning.danger {
+            border-left: 3px solid var(--theme-error-color);
+            background-color: var(--theme-status-error-bg);
+            color: var(--theme-status-error-text);
+        }
+
+        .restore-confirm-warning.info {
+            border-left: 3px solid var(--theme-status-info-text);
+            background-color: var(--theme-status-info-bg);
+            color: var(--theme-status-info-text);
         }
 
         .restore-modal-action-btn.danger {
@@ -4088,7 +4131,12 @@
                             <div class="sync-icon-large">
                                 <i class="fas fa-sync-alt"></i>
                             </div>
-                            <div class="sync-title" id="syncRestoreTitle">Sync & Restore</div>
+                            <div class="sync-title-container">
+                                <div class="sync-title" id="syncRestoreTitle">Sync & Restore</div>
+                                <button id="syncRestoreHelpBtn" class="sync-restore-help-btn" aria-label="Help">
+                                    <i class="fas fa-question-circle"></i>
+                                </button>
+                            </div>
 
                             <!-- State 1: Coming Soon (Default/No Config) -->
                             <span class="badge-soon-modern" id="syncRestoreComingSoon">Config First</span>
@@ -4105,7 +4153,10 @@
                                 </button>
                                 <button id="restoreFromLocalBtn" class="restore-action-item" style="display: none;">
                                     <i class="fas fa-hdd restore-icon-local"></i>
-                                    <span class="restore-label">Local</span>
+                                    <span class="restore-label-inline">
+                                        <span class="restore-label">Local</span>
+                                        <span id="restoreLocalFolderHint" class="restore-folder-hint">（请选择父文件夹：书签快照 &amp; 工具箱）</span>
+                                    </span>
                                 </button>
                             </div>
                         </div>
@@ -4135,6 +4186,21 @@
                             text-align: left;
                         }
 
+                        .restore-label-inline {
+                            display: inline-flex;
+                            align-items: center;
+                            gap: 6px;
+                            min-width: 0;
+                        }
+
+                        .restore-folder-hint {
+                            font-size: 11px;
+                            color: var(--theme-text-secondary);
+                            opacity: 0.85;
+                            line-height: 1.2;
+                            white-space: nowrap;
+                        }
+
                         .restore-action-item:hover {
                             background: rgba(255, 255, 255, 0.1);
                             border-color: var(--theme-link-color);
@@ -4151,6 +4217,39 @@
 
                         .restore-icon-local {
                             color: #FFA726;
+                        }
+
+                        /* Sync & Restore Title Container */
+                        .sync-title-container {
+                            display: flex;
+                            align-items: center;
+                            justify-content: center;
+                            gap: 6px;
+                        }
+
+                        /* Sync & Restore Help Button */
+                        .sync-restore-help-btn {
+                            display: flex;
+                            align-items: center;
+                            justify-content: center;
+                            width: 18px;
+                            height: 18px;
+                            padding: 0;
+                            margin: 0;
+                            background: transparent;
+                            border: none;
+                            border-radius: 50%;
+                            color: var(--theme-text-secondary);
+                            cursor: pointer;
+                            font-size: 12px;
+                            opacity: 0.5;
+                            transition: all 0.2s ease;
+                        }
+
+                        .sync-restore-help-btn:hover {
+                            opacity: 1;
+                            color: var(--theme-link-color);
+                            background: rgba(0, 122, 255, 0.1);
                         }
                     </style>
 
@@ -4788,7 +4887,7 @@
     <!-- 恢复历史选择对话框 -->
     <div id="restoreModal" class="modal">
         <div class="modal-content"
-            style="width: 720px; max-width: calc(100% - 24px); display: flex; flex-direction: column; max-height: 90vh; position: relative; top: auto; right: auto; margin: 6% auto; box-shadow: 0 6px 18px rgba(0,0,0,0.15); border-radius: 12px; padding: 0;">
+            style="width: 720px; max-width: calc(100% - 24px); display: flex; flex-direction: column; max-height: 90vh; position: relative; top: auto; right: auto; margin: 0; box-shadow: 0 6px 18px rgba(0,0,0,0.15); border-radius: 12px; padding: 0;">
             <div class="restore-modal-header">
                 <h3 id="restoreModalTitle" class="restore-modal-title">Restore History</h3>
                 <button id="closeRestoreModal" class="popup-modal-close" aria-label="Close">
@@ -4797,6 +4896,25 @@
             </div>
 
             <div class="modal-body" style="overflow-y: auto; flex: 1; padding: 12px 16px;">
+                <div id="restoreVersionTypeSegment" style="display: flex; justify-content: flex-start; margin-bottom: 10px;">
+                    <div id="restoreVersionTypeGroup" class="restore-strategy-group">
+                        <label class="restore-strategy-label" title="" id="restoreVersionTypeHistoryLabelWrap">
+                            <input type="radio" name="restoreVersionType" id="restoreVersionTypeHistory" value="history" checked>
+                            <div class="restore-strategy-option" id="restoreVersionTypeHistoryLabel">
+                                <span class="restore-strategy-icon">✓</span>
+                                <span id="restoreVersionTypeHistoryText">Backup History</span>
+                            </div>
+                        </label>
+                        <label class="restore-strategy-label" title="" id="restoreVersionTypeSnapshotLabelWrap">
+                            <input type="radio" name="restoreVersionType" id="restoreVersionTypeSnapshot" value="snapshot">
+                            <div class="restore-strategy-option" id="restoreVersionTypeSnapshotLabel">
+                                <span class="restore-strategy-icon">✓</span>
+                                <span id="restoreVersionTypeSnapshotText">Bookmark Backup Versions</span>
+                            </div>
+                        </label>
+                    </div>
+                </div>
+
                 <div class="global-export-table-container"
                     style="border: 1px solid var(--theme-border-primary); border-radius: 8px; overflow: hidden;">
                     <table id="restoreVersionTable" style="width: 100%; border-collapse: collapse;">
@@ -4856,7 +4974,7 @@
     <!-- Restore 二级确认对话框 -->
     <div id="restoreConfirmModal" class="modal">
         <div class="modal-content"
-            style="position: relative; top: auto; right: auto; margin: 12% auto; width: 520px; max-width: calc(100% - 24px); box-shadow: 0 6px 18px rgba(0,0,0,0.15); border-radius: 12px; padding: 16px 18px;">
+            style="position: relative; top: auto; right: auto; margin: 0; width: 520px; max-width: calc(100% - 24px); box-shadow: 0 6px 18px rgba(0,0,0,0.15); border-radius: 12px; padding: 16px 18px;">
             <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px;">
                 <h3 id="restoreConfirmTitle"
                     style="font-size: 16px; margin: 0; color: var(--theme-text-primary); text-align: left;">

@@ -4049,6 +4049,13 @@ function applyLanguage() {
     const recommendHelpBtn = document.getElementById('recommendHelpBtn');
     if (recommendHelpBtn) recommendHelpBtn.title = i18n.recommendHelpTooltip[currentLang];
 
+    const formulaHelpBtn = document.getElementById('formulaHelpBtn');
+    if (formulaHelpBtn) {
+        formulaHelpBtn.title = currentLang === 'en'
+            ? 'S calculation & performance'
+            : 'S值计算说明';
+    }
+
     const legendScore = document.getElementById('legendScore');
     if (legendScore) legendScore.textContent = i18n.legendScore[currentLang];
 
@@ -7328,11 +7335,30 @@ function updateFormulaHelpModalI18n() {
 
     // 标题
     const title = document.getElementById('formulaHelpModalTitle');
-    if (title) title.textContent = isEn ? 'Formula Explanation' : '权重公式说明';
+    if (title) title.textContent = isEn ? 'S Score Guide' : 'S值计算说明';
+
+    // S值说明
+    const scoreTitle = document.getElementById('formulaHelpScoreTitle');
+    if (scoreTitle) scoreTitle.textContent = isEn ? 'What is S?' : 'S 值是什么？';
+
+    const score1 = document.getElementById('formulaHelpScore1');
+    if (score1) score1.innerHTML = isEn
+        ? '<strong>S</strong> is a recommendation score (0–1). Higher means more likely to be recommended.'
+        : '<strong>S</strong> 是推荐分数（0~1），值越高越优先推荐';
+
+    const score2 = document.getElementById('formulaHelpScore2');
+    if (score2) score2.innerHTML = isEn
+        ? '<strong>Overall</strong>: S = (w1×F + w2×C + w3×T + w4×D + w5×L) × R (plus a small random jitter to break ties)'
+        : '<strong>总公式</strong>：S = (w1×F + w2×C + w3×T + w4×D + w5×L) × R（再加少量随机扰动用于打散同分）';
+
+    const score3 = document.getElementById('formulaHelpScore3');
+    if (score3) score3.innerHTML = isEn
+        ? '<strong>Weights</strong> are auto-normalized; if Time Tracking is disabled, T weight becomes 0 automatically.'
+        : '<strong>权重</strong> 会自动归一化；关闭时间捕捉时，T 的权重会自动变为 0';
 
     // 通用公式
     const generalTitle = document.getElementById('formulaHelpGeneralTitle');
-    if (generalTitle) generalTitle.textContent = isEn ? 'General Formula' : '通用公式';
+    if (generalTitle) generalTitle.textContent = isEn ? 'Factor Decay Formula' : '通用公式';
 
     const codeEl = document.querySelector('.formula-help-code code');
     if (codeEl) codeEl.textContent = isEn
@@ -7356,6 +7382,20 @@ function updateFormulaHelpModalI18n() {
         ? '<strong>Large value friendly</strong>: 1000 clicks still has 0.02 differentiation'
         : '<strong>大数值友好</strong>：1000次点击仍有0.02的区分度';
 
+    // 注意事项
+    const notesTitle = document.getElementById('formulaHelpNotesTitle');
+    if (notesTitle) notesTitle.textContent = isEn ? 'Notes' : '注意事项';
+
+    document.getElementById('formulaHelpNote1').innerHTML = isEn
+        ? '<strong>F, C, T</strong> use inverse mode: larger value = smaller factor (e.g., more clicks = lower coldness)'
+        : '<strong>F、C、T</strong> 使用 inverse 模式：值越大，因子越小（如点击越多，冷门度越低）';
+    document.getElementById('formulaHelpNote2').innerHTML = isEn
+        ? '<strong>D</strong> uses direct mode: more unvisited days = higher forgetting'
+        : '<strong>D</strong> 使用正向模式：未访问天数越多，遗忘度越高';
+    document.getElementById('formulaHelpNote3').innerHTML = isEn
+        ? '<strong>L</strong> is boolean: manually added = 1, otherwise = 0'
+        : '<strong>L</strong> 是布尔值：手动添加=1，否则=0';
+
     // 效果示例
     const exampleTitle = document.getElementById('formulaHelpExampleTitle');
     if (exampleTitle) exampleTitle.textContent = isEn ? 'Examples' : '效果示例';
@@ -7372,24 +7412,192 @@ function updateFormulaHelpModalI18n() {
     document.getElementById('formulaHelpMeaning5').textContent = isEn ? 'Very low' : '很低';
     document.getElementById('formulaHelpMeaning6').textContent = isEn ? 'Minimal but distinct' : '极低但仍有区分';
 
-    // 注意事项
-    const notesTitle = document.getElementById('formulaHelpNotesTitle');
-    if (notesTitle) notesTitle.textContent = isEn ? 'Notes' : '注意事项';
+    // 数据来源
+    const dataTitle = document.getElementById('formulaHelpDataTitle');
+    if (dataTitle) dataTitle.textContent = isEn ? 'Data Sources' : '数据来源';
 
-    document.getElementById('formulaHelpNote1').innerHTML = isEn
-        ? '<strong>F, C, T</strong> use inverse mode: larger value = smaller factor (e.g., more clicks = lower coldness)'
-        : '<strong>F、C、T</strong> 使用 inverse 模式：值越大，因子越小（如点击越多，冷门度越低）';
-    document.getElementById('formulaHelpNote2').innerHTML = isEn
-        ? '<strong>D</strong> uses direct mode: more unvisited days = higher forgetting'
-        : '<strong>D</strong> 使用正向模式：未访问天数越多，遗忘度越高';
-    document.getElementById('formulaHelpNote3').innerHTML = isEn
-        ? '<strong>L</strong> is boolean: manually added = 1, otherwise = 0'
-        : '<strong>L</strong> 是布尔值：手动添加=1，否则=0';
+    const data1 = document.getElementById('formulaHelpData1');
+    if (data1) data1.innerHTML = isEn
+        ? '<strong>F</strong>: bookmark age from <code>dateAdded</code>'
+        : '<strong>F</strong>：来自书签添加时间（dateAdded）';
+
+    const data2 = document.getElementById('formulaHelpData2');
+    if (data2) data2.innerHTML = isEn
+        ? '<strong>C / D</strong>: browser history (visitCount / lastVisitTime). Default window: last 180 days, max 50,000 items.'
+        : '<strong>C / D</strong>：来自浏览历史（访问次数 / 最后访问时间；默认读取最近 180 天，最多 50000 条）';
+
+    const data3 = document.getElementById('formulaHelpData3');
+    if (data3) data3.innerHTML = isEn
+        ? '<strong>T</strong>: Time Tracking “Composite time” (Active/Idle/Visible/Background weighted).'
+        : '<strong>T</strong>：来自时间捕捉的“综合时间”（活跃/前台静止/可见参考/后台加权）';
+
+    const data4 = document.getElementById('formulaHelpData4');
+    if (data4) data4.innerHTML = isEn
+        ? '<strong>L</strong>: from “Later review” manual flag (manually added = 1, else 0).'
+        : '<strong>L</strong>：来自“稍后复习”里手动添加标记（手动添加=1，否则=0）';
+
+    const data5 = document.getElementById('formulaHelpData5');
+    if (data5) data5.innerHTML = isEn
+        ? '<strong>R</strong>: recall factor from review history (recently reviewed items are temporarily deprioritized).'
+        : '<strong>R</strong>：来自复习记录（复习后降低推荐，随后逐渐恢复；用于避免刚复习过的书签再次被推送）';
+
+    // 性能与刷新策略
+    const perfTitle = document.getElementById('formulaHelpPerformanceTitle');
+    if (perfTitle) perfTitle.textContent = isEn ? 'Performance & Refresh Strategy' : '性能与刷新策略';
+
+    const perf1 = document.getElementById('formulaHelpPerf1');
+    if (perf1) perf1.innerHTML = isEn
+        ? '<strong>Incremental (default)</strong>: for small daily changes, only the affected bookmarks are updated (e.g., create/edit, or visiting a bookmarked URL). No full recompute.'
+        : '<strong>增量更新（默认）</strong>：日常少量变化时，只更新受影响的书签（例如：新增/修改书签、访问某个书签对应的URL），不会全量重算';
+
+    const perf2 = document.getElementById('formulaHelpPerf2');
+    if (perf2) perf2.innerHTML = isEn
+        ? '<strong>Full recompute (only when needed)</strong>: triggered only when cache is empty/invalidated or when the formula changes (affects all bookmarks). If cache exists and is not invalidated, it will NOT recompute everything.'
+        : '<strong>全量重算（只在需要时）</strong>：仅在“缓存为空/被标记失效”或“公式变更影响所有书签”时触发；如果缓存已存在且未失效，不会全量重算';
+
+    const perf4 = document.getElementById('formulaHelpPerf4');
+    if (perf4) perf4.innerHTML = isEn
+        ? '<strong>What invalidates the cache?</strong>: overwrite restore, browser import, or a short burst of massive create/delete operations (bulk guard). During these, incremental updates are suspended and the cache is invalidated; next time you open Recommend, it will run ONE background recompute.'
+        : '<strong>哪些情况会让缓存失效</strong>：覆盖恢复、浏览器导入书签、短时间内大量新增/删除（触发批量保护）等大变更会暂停增量更新并让缓存失效；随后在你打开推荐时后台重算一次（只触发一次）';
+
+    const perf5 = document.getElementById('formulaHelpPerf5');
+    if (perf5) perf5.innerHTML = isEn
+        ? '<strong>When does UI refresh?</strong>: entering the page or clicking refresh renders from the current cache immediately; if a recompute is running, it shows old/default values first and auto-refreshes when done.'
+        : '<strong>什么时候刷新</strong>：打开页面或点击刷新会立即用“当前缓存”渲染；若后台正在重算，会先显示旧值/默认值，重算完成后自动刷新一轮';
+
+    const perf3 = document.getElementById('formulaHelpPerf3');
+    if (perf3) perf3.innerHTML = isEn
+        ? '<strong>Non-blocking</strong>: full recompute runs in background and won\'t freeze the page.'
+        : '<strong>不阻塞 UI</strong>：全量重算在后台运行，不会卡住页面操作';
+
+    const perfEstimate = document.getElementById('formulaHelpPerfEstimate');
+    if (perfEstimate) {
+        perfEstimate.innerHTML = isEn
+            ? '<strong>Scale</strong>: loading...'
+            : '<strong>当前规模</strong>：正在读取...';
+        updateFormulaHelpPerfEstimate().catch(() => { });
+    }
+
+    // 可调整项
+    const tuningTitle = document.getElementById('formulaHelpTuningTitle');
+    if (tuningTitle) tuningTitle.textContent = isEn ? 'What You Can Tune' : '可调整项';
+
+    const tune1 = document.getElementById('formulaHelpTune1');
+    if (tune1) tune1.innerHTML = isEn
+        ? '<strong>Weights / thresholds</strong>: tune F/C/T/D/L weights and thresholds (inputs + preset modes).'
+        : '<strong>权重/阈值</strong>：可调整 F/C/T/D/L 的权重，以及对应阈值（上方输入框 + 预设模式）';
+
+    const tune2 = document.getElementById('formulaHelpTune2');
+    if (tune2) tune2.innerHTML = isEn
+        ? '<strong>Block rules</strong>: blocked bookmarks/folders/domains are excluded from recommendations.'
+        : '<strong>屏蔽规则</strong>：屏蔽书签/文件夹/域名会直接排除推荐';
+
+    const tune3 = document.getElementById('formulaHelpTune3');
+    if (tune3) tune3.innerHTML = isEn
+        ? '<strong>After changes</strong>: editing the formula triggers a background full recompute (wait a few seconds).' 
+        : '<strong>修改公式后</strong>：会触发后台全量重算（建议稍等数秒，或继续操作等待后台完成）';
+}
+
+async function updateFormulaHelpPerfEstimate() {
+    const el = document.getElementById('formulaHelpPerfEstimate');
+    if (!el) return;
+
+    const isEn = currentLang === 'en';
+
+    try {
+        const [tree, storage] = await Promise.all([
+            new Promise((resolve) => {
+                try {
+                    browserAPI.bookmarks.getTree((nodes) => resolve(nodes || []));
+                } catch (_) {
+                    resolve([]);
+                }
+            }),
+            new Promise((resolve) => {
+                try {
+                    browserAPI.storage.local.get(['recommend_scores_cache', 'recommendScoresStaleMeta'], resolve);
+                } catch (_) {
+                    resolve({});
+                }
+            })
+        ]);
+
+        let bookmarkCount = 0;
+        const traverse = (nodes) => {
+            for (const node of nodes || []) {
+                if (node.url) {
+                    bookmarkCount += 1;
+                }
+                if (node.children && node.children.length) {
+                    traverse(node.children);
+                }
+            }
+        };
+        traverse(tree);
+
+        const cacheObj = storage.recommend_scores_cache || {};
+        const cacheCount = Object.keys(cacheObj).length;
+
+        const staleMeta = storage.recommendScoresStaleMeta || null;
+        const staleAt = staleMeta?.staleAt || 0;
+        const rawReason = String(staleMeta?.reason || '').trim();
+
+        const mapReason = () => {
+            if (!rawReason) return isEn ? 'unknown' : '未知';
+            if (rawReason === 'restore') return isEn ? 'restore' : '恢复';
+            if (rawReason === 'import') return isEn ? 'import' : '导入';
+            if (rawReason.startsWith('bulk:')) return isEn ? 'bulk changes' : '批量变更';
+            return rawReason;
+        };
+
+        const batchCount = bookmarkCount > 1000 ? 3 : (bookmarkCount > 500 ? 2 : 1);
+        const staleTimeText = staleAt
+            ? new Date(staleAt).toLocaleString(isEn ? 'en-US' : 'zh-CN')
+            : (isEn ? 'n/a' : '无');
+
+        const reasonText = mapReason();
+
+        el.innerHTML = isEn
+            ? `<strong>Scale</strong>: ~${bookmarkCount} bookmarks; cache: ${cacheCount}; full recompute: ${batchCount} batch(es). Stale: ${reasonText} @ ${staleTimeText}`
+            : `<strong>当前规模</strong>：书签约${bookmarkCount}；缓存${cacheCount}；全量计算分${batchCount}批。失效：${reasonText}（${staleTimeText}）`;
+    } catch (e) {
+        el.innerHTML = isEn
+            ? '<strong>Scale</strong>: unavailable'
+            : '<strong>当前规模</strong>：无法读取';
+    }
 }
 
 // 推荐卡片数据
 let recommendCards = [];
+let recommendScoresComputeInFlight = false;
 let trackingRefreshInterval = null;
+
+function requestRecommendScoresInBackground() {
+    if (recommendScoresComputeInFlight) return;
+    recommendScoresComputeInFlight = true;
+
+    try {
+        browserAPI.runtime.sendMessage({ action: 'computeBookmarkScores' }, (response) => {
+            recommendScoresComputeInFlight = false;
+
+            if (browserAPI.runtime.lastError) {
+                console.warn('[书签推荐] 后台计算S值失败:', browserAPI.runtime.lastError.message);
+                return;
+            }
+
+            if (response?.success) {
+                // 延迟一点，确保缓存写入完成后再刷新
+                setTimeout(() => {
+                    try {
+                        refreshRecommendCards(false);
+                    } catch (_) { }
+                }, 200);
+            }
+        });
+    } catch (e) {
+        recommendScoresComputeInFlight = false;
+    }
+}
 let rankingRefreshInterval = null;  // 排行榜刷新定时器
 const TRACKING_REFRESH_INTERVAL = 1000; // 1秒刷新一次当前会话，更实时
 const RANKING_REFRESH_INTERVAL = 1000; // 1秒刷新一次排行榜，与正在追踪同步
@@ -11023,13 +11231,10 @@ async function refreshRecommendCards(force = false) {
         // 一次性获取所有缓存的S值
         let scoresCache = await getScoresCache();
 
-        // 如果S值缓存为空，请求background.js全量计算
+        // 如果S值缓存为空：在后台触发一次计算（不阻塞UI渲染）
         if (Object.keys(scoresCache).length === 0 && bookmarks.length > 0) {
-            console.log('[书签推荐] S值缓存为空，请求background计算...');
-            await new Promise(resolve => {
-                browserAPI.runtime.sendMessage({ action: 'computeBookmarkScores' }, resolve);
-            });
-            scoresCache = await getScoresCache();
+            console.log('[书签推荐] S值缓存为空，后台计算中...');
+            requestRecommendScoresInBackground();
         }
 
         // 检查是否有已保存的卡片状态（与popup共享）
@@ -14789,8 +14994,13 @@ function renderHistoryView() {
         let displayTitle = record.note;
 
         // 尝试构建更详细的标题（包含源备份的备注）
-        if (isRestore && record.restoreInfo) {
+        // 注意：如果 record.note 已存在（包括用户手动修改），优先展示 record.note，避免显示与编辑不一致。
+        // 只有旧记录没有 note 时，才用 restoreInfo 补全展示标题。
+        if (isRestore && record.restoreInfo && (!displayTitle || !String(displayTitle).trim())) {
             let { sourceSeqNumber, sourceTime, sourceNote } = record.restoreInfo;
+
+            const seqTextRaw = (sourceSeqNumber == null) ? '' : String(sourceSeqNumber);
+            const seqText = (!seqTextRaw || seqTextRaw.trim() === '' || seqTextRaw === 'null') ? '-' : seqTextRaw;
 
             // 如果 restoreInfo 中没有 sourceNote（旧记录），尝试从历史记录中查找
             if (!sourceNote && sourceTime) {
@@ -14801,18 +15011,31 @@ function renderHistoryView() {
             }
 
             // 构造标题：恢复至 #序号 [源备注]
-            const timeStr = formatTime(sourceTime);
+            const timeStr = sourceTime ? formatTime(sourceTime) : '';
             let newTitle = currentLang === 'zh_CN'
-                ? `恢复至 #${sourceSeqNumber}`
-                : `Restored to #${sourceSeqNumber}`;
+                ? `恢复至 #${seqText}`
+                : `Restored to #${seqText}`;
 
-            if (sourceNote) {
-                newTitle += ` ${sourceNote}`;
-            } else {
+            const normalizeRestoreSourceNote = (n) => {
+                const text = String(n || '').trim();
+                if (!text) return '';
+                // Built-in label for bookmark backup snapshot
+                if (text === 'HTML Snapshot') {
+                    return currentLang === 'en' ? 'HTML Snapshot' : 'HTML 快照';
+                }
+                if (text === 'HTML 快照') {
+                    return currentLang === 'en' ? 'HTML Snapshot' : 'HTML 快照';
+                }
+                return text;
+            };
+            const sourceNoteText = normalizeRestoreSourceNote(sourceNote);
+
+            if (sourceNoteText) {
+                newTitle += ` ${sourceNoteText}`;
+            } else if (timeStr) {
                 newTitle += ` (${timeStr})`;
             }
 
-            // 覆盖显示标题
             displayTitle = newTitle;
         }
 

@@ -6469,6 +6469,14 @@ const applyLocalizedContent = async (lang) => { // Added lang parameter
     const syncRestoreComingSoonEl = document.getElementById('syncRestoreComingSoon');
     if (syncRestoreComingSoonEl) syncRestoreComingSoonEl.textContent = syncRestoreComingSoonText;
 
+    // Local restore hint: tell user which folder to pick
+    const restoreLocalFolderHintEl = document.getElementById('restoreLocalFolderHint');
+    if (restoreLocalFolderHintEl) {
+        restoreLocalFolderHintEl.textContent = (lang === 'en')
+            ? '(Select parent folder: Bookmark Git & Toolbox)'
+            : '（请选择父文件夹：书签快照 & 工具箱）';
+    }
+
     // 更新初始化操作区域文本
     const initActionsTitleEl = document.getElementById('initActionsTitle');
     if (initActionsTitleEl) initActionsTitleEl.textContent = initActionsTitleText;
@@ -7521,6 +7529,110 @@ function initializeBackupSettings() {
     if (defaultDownloadToggle) {
         defaultDownloadToggle.addEventListener('change', updateUploadButtonIcons);
         defaultDownloadToggle.addEventListener('change', updateRestorePanelStatus);
+    }
+
+    // [New] 同步与恢复帮助按钮
+    const syncRestoreHelpBtn = document.getElementById('syncRestoreHelpBtn');
+    let syncRestoreHelpTooltip = null;
+
+    if (syncRestoreHelpBtn) {
+        syncRestoreHelpBtn.addEventListener('mouseenter', () => {
+            if (!syncRestoreHelpTooltip) {
+                syncRestoreHelpTooltip = document.createElement('div');
+                syncRestoreHelpTooltip.style.cssText = `
+                    position: fixed;
+                    z-index: 99999;
+                    background-color: var(--theme-bg-elevated);
+                    border: 1px solid var(--theme-border-primary);
+                    border-radius: 8px;
+                    padding: 12px;
+                    box-shadow: 0 8px 24px rgba(0,0,0,0.25);
+                    width: 260px;
+                    pointer-events: none;
+                    opacity: 0;
+                    transform: translateY(10px);
+                    transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+                `;
+
+                // 获取当前语言
+                chrome.storage.local.get(['preferredLang', 'currentLang'], (res) => {
+                    const lang = res?.currentLang || res?.preferredLang || 'zh_CN';
+                    const isEn = lang === 'en';
+
+                    syncRestoreHelpTooltip.innerHTML = `
+                        <div style="display: flex; flex-direction: column; gap: 8px;">
+                            <div style="font-weight: 600; font-size: 13px; color: var(--theme-text-primary); margin-bottom: 4px;">
+                                ${isEn ? '📂 How Restore Works' : '📂 恢复功能说明'}
+                            </div>
+                            <div style="font-size: 12px; color: var(--theme-text-secondary); line-height: 1.5;">
+                                ${isEn
+                            ? 'Scans your backup folders and lists all available versions by date:'
+                            : '扫描你的备份文件夹，按日期列出所有可恢复版本：'}
+                            </div>
+                            <div style="padding: 6px 8px; background: var(--theme-bg-secondary); border-radius: 6px;">
+                                <div style="font-size: 11px; color: var(--theme-text-secondary); margin-bottom: 4px;">
+                                    ${isEn ? '📁 Bookmark Backup' : '📁 书签备份'}
+                                </div>
+                                <div style="font-size: 11px; color: var(--theme-text-primary);">
+                                    ${isEn ? 'Versioned HTML files' : '版本化 HTML 文件'}
+                                </div>
+                            </div>
+                            <div style="padding: 6px 8px; background: var(--theme-bg-secondary); border-radius: 6px;">
+                                <div style="font-size: 11px; color: var(--theme-text-secondary); margin-bottom: 4px;">
+                                    ${isEn ? '📁 Backup History' : '📁 备份历史'}
+                                </div>
+                                <div style="font-size: 11px; color: var(--theme-text-primary);">
+                                    ${isEn ? 'JSON history or ZIP archives' : 'JSON 历史或 ZIP 归档'}
+                                </div>
+                            </div>
+                            <div style="font-size: 10px; color: var(--theme-warning-color); margin-top: 6px; padding: 6px 8px; background: rgba(255, 152, 0, 0.1); border-radius: 4px;">
+                                ${isEn
+                            ? '⚠️ Scanned data is temporary cache and will not be stored permanently.'
+                            : '⚠️ 扫描的数据是临时缓存，不会加入永久存储。'}
+                            </div>
+                        </div>
+                    `;
+                    document.body.appendChild(syncRestoreHelpTooltip);
+
+                    // 计算位置
+                    const rect = syncRestoreHelpBtn.getBoundingClientRect();
+                    let top = rect.bottom + 8;
+                    let left = rect.left - 100;
+
+                    if (top + 280 > window.innerHeight) {
+                        top = rect.top - syncRestoreHelpTooltip.offsetHeight - 8;
+                    }
+                    if (left + 260 > window.innerWidth) {
+                        left = window.innerWidth - 270;
+                    }
+                    if (left < 10) left = 10;
+
+                    syncRestoreHelpTooltip.style.top = top + 'px';
+                    syncRestoreHelpTooltip.style.left = left + 'px';
+
+                    requestAnimationFrame(() => {
+                        if (syncRestoreHelpTooltip) {
+                            syncRestoreHelpTooltip.style.opacity = '1';
+                            syncRestoreHelpTooltip.style.transform = 'translateY(0)';
+                        }
+                    });
+                });
+            }
+        });
+
+        syncRestoreHelpBtn.addEventListener('mouseleave', () => {
+            if (syncRestoreHelpTooltip) {
+                syncRestoreHelpTooltip.style.opacity = '0';
+                syncRestoreHelpTooltip.style.transform = 'translateY(5px)';
+
+                const tooltipToRemove = syncRestoreHelpTooltip;
+                syncRestoreHelpTooltip = null;
+
+                setTimeout(() => {
+                    tooltipToRemove.remove();
+                }, 200);
+            }
+        });
     }
 }
 
@@ -9064,6 +9176,7 @@ let popupCurrentLaterBookmark = null;
 let popupRecommendControlsInitialized = false;
 let popupRecommendOverlayInitialized = false;
 let popupRecommendLoading = false;
+let popupScoresComputeInFlight = false;
 let popupOpenCountRecorded = false; // 防止重复记录
 
 // 增加打开次数（popup 和 history 共享 storage）
@@ -9545,11 +9658,10 @@ async function refreshPopupRecommendCards(force = false) {
                 // 从S值缓存读取（与history.js共享），确保S值始终一致
                 let scoresCache = await getPopupScoresCache();
 
-                // 如果S值缓存为空，请求background.js计算
+                // 如果S值缓存为空：在后台触发一次计算（不阻塞UI渲染）
                 if (Object.keys(scoresCache).length === 0 && bookmarks.length > 0) {
-                    console.log('[Popup] S值缓存为空（恢复卡片时），请求background计算...');
-                    await requestComputeScores();
-                    scoresCache = await getPopupScoresCache();
+                    console.log('[Popup] S值缓存为空（恢复卡片时），后台计算中...');
+                    requestComputeScoresInBackground();
                 }
 
                 popupRecommendCards = currentCards.cardIds.map(id => {
@@ -9640,11 +9752,10 @@ async function refreshPopupRecommendCards(force = false) {
         // 从S值缓存读取（与history.js共享），保持一致性
         let scoresCache = await getPopupScoresCache();
 
-        // 如果S值缓存为空，请求background.js计算
+        // 如果S值缓存为空：在后台触发一次计算（不阻塞UI渲染）
         if (Object.keys(scoresCache).length === 0 && bookmarks.length > 0) {
-            console.log('[Popup] S值缓存为空，请求background计算...');
-            await requestComputeScores();
-            scoresCache = await getPopupScoresCache();
+            console.log('[Popup] S值缓存为空，后台计算中...');
+            requestComputeScoresInBackground();
         }
 
         const bookmarksWithPriority = availableBookmarks.map(bookmark => {
@@ -10031,6 +10142,33 @@ async function requestComputeScores() {
     });
 }
 
+function requestComputeScoresInBackground() {
+    if (popupScoresComputeInFlight) return;
+    popupScoresComputeInFlight = true;
+
+    try {
+        chrome.runtime.sendMessage({ action: 'computeBookmarkScores' }, (response) => {
+            popupScoresComputeInFlight = false;
+
+            if (chrome.runtime.lastError) {
+                console.warn('[Popup] 后台计算S值失败:', chrome.runtime.lastError.message);
+                return;
+            }
+
+            if (response?.success) {
+                // 延迟一点点，确保缓存写入完成后再刷新
+                setTimeout(() => {
+                    try {
+                        refreshPopupRecommendCards(true);
+                    } catch (_) { }
+                }, 200);
+            }
+        });
+    } catch (_) {
+        popupScoresComputeInFlight = false;
+    }
+}
+
 async function getPopupFlippedBookmarks() {
     return new Promise((resolve) => {
         browserAPI.storage.local.get(['flippedBookmarks'], (result) => {
@@ -10231,11 +10369,13 @@ document.addEventListener('DOMContentLoaded', () => {
                     zipFiles.push({ file, name, localFileKey, lastModified: file.lastModified });
                     continue;
                 }
-                if (name.endsWith('.html')) {
+                const nameLower = String(name || '').toLowerCase();
+                if (nameLower.endsWith('.html')) {
                     const pathLower = String(path || '').toLowerCase();
                     const isBookmarkBackupPath = path.includes('书签备份') || pathLower.includes('bookmark backup') || pathLower.includes('bookmark_backup');
-                    const isSnapshotHtmlName = name === 'bookmark_backup.html' || /^(?:backup_)?\d{8}_\d{6}\.html$/i.test(name);
-                    if (isSnapshotHtmlName || isBookmarkBackupPath) {
+                    const isSnapshotHtmlName = nameLower === 'bookmark_backup.html' || /^(?:backup_)?\d{8}_\d{6}\.html$/i.test(nameLower);
+                    const looksLikeBookmarkBackupHtml = nameLower.includes('bookmark_backup') || nameLower.includes('bookmark backup');
+                    if (isSnapshotHtmlName || looksLikeBookmarkBackupHtml || isBookmarkBackupPath) {
                         htmlFiles.push({ file, name, localFileKey, lastModified: file.lastModified });
                     }
                 }
@@ -10339,6 +10479,20 @@ function showRestoreModal(versions, source) {
     const thTime = document.getElementById('restoreThTime');
     const thStats = document.getElementById('restoreThStats');
 
+    const thHashCell = thHash ? thHash.closest('th') : null;
+    const thStatsCell = thStats ? thStats.closest('th') : null;
+
+    const versionTable = document.getElementById('restoreVersionTable');
+    const versionTableContainer = versionTable ? versionTable.closest('.global-export-table-container') : null;
+
+    const versionTypeSegment = document.getElementById('restoreVersionTypeSegment');
+    const versionTypeHistoryRadio = document.getElementById('restoreVersionTypeHistory');
+    const versionTypeSnapshotRadio = document.getElementById('restoreVersionTypeSnapshot');
+    const versionTypeHistoryText = document.getElementById('restoreVersionTypeHistoryText');
+    const versionTypeSnapshotText = document.getElementById('restoreVersionTypeSnapshotText');
+    const versionTypeHistoryLabelWrap = document.getElementById('restoreVersionTypeHistoryLabelWrap');
+    const versionTypeSnapshotLabelWrap = document.getElementById('restoreVersionTypeSnapshotLabelWrap');
+
     if (!modal || !tableBody || !confirmBtn || !strategyGroup || !strategyOverwriteRadio || !strategyMergeRadio || !cancelBtn || !closeBtn) {
         console.warn('[showRestoreModal] Missing modal DOM nodes');
         return;
@@ -10355,6 +10509,40 @@ function showRestoreModal(versions, source) {
     const cancelButton = resetBtn(cancelBtn);
     const closeButton = resetBtn(closeBtn);
 
+    const allVersions = Array.isArray(versions) ? versions : [];
+    const isHtmlVersion = (v) => {
+        const st = v?.sourceType || v?.restoreRef?.sourceType || '';
+        return st === 'html';
+    };
+    const historyVersions = allVersions.filter((v) => v && !isHtmlVersion(v));
+    const snapshotVersions = allVersions.filter((v) => v && isHtmlVersion(v));
+
+    let currentVersionType = 'history';
+    if (historyVersions.length === 0 && snapshotVersions.length > 0) {
+        currentVersionType = 'snapshot';
+    }
+
+    const getVisibleColumnCount = () => (currentVersionType === 'snapshot' ? 4 : 6);
+
+    let cachedLang = 'zh_CN';
+
+    const getVersionTypeLabel = (lang, type) => {
+        const isEn = lang === 'en';
+        if (type === 'snapshot') return isEn ? 'Bookmark Backup Versions' : '书签备份版本';
+        return isEn ? 'Backup History' : '备份历史';
+    };
+
+    const updateTitleText = (lang, type) => {
+        const isEn = lang === 'en';
+        const sourceLabel = source === 'webdav' ? 'WebDAV' : (source === 'github' ? 'GitHub' : (isEn ? 'Local' : '本地'));
+        const typeLabel = getVersionTypeLabel(lang, type);
+        if (title) {
+            title.textContent = isEn
+                ? `Restore from ${sourceLabel} · ${typeLabel}`
+                : `从 ${sourceLabel} 恢复 · ${typeLabel}`;
+        }
+    };
+
     let currentStrategy = strategyMergeRadio.checked ? 'merge' : 'overwrite';
 
     const getPreferredLang = () => new Promise(resolve => {
@@ -10369,16 +10557,35 @@ function showRestoreModal(versions, source) {
 
     const setRestoreModalI18n = async () => {
         const lang = await getPreferredLang();
+        cachedLang = lang;
         const isEn = lang === 'en';
-        const sourceLabel = source === 'webdav' ? 'WebDAV' : (source === 'github' ? 'GitHub' : (isEn ? 'Local' : '本地'));
 
-        if (title) title.textContent = isEn ? `Restore from ${sourceLabel}` : `从 ${sourceLabel} 恢复`;
+        updateTitleText(lang, currentVersionType);
 
         if (thSeq) thSeq.textContent = isEn ? 'Seq' : '序号';
         if (thNote) thNote.textContent = isEn ? 'Note' : '备注';
         if (thHash) thHash.textContent = isEn ? 'Hash' : '哈希值';
         if (thTime) thTime.textContent = isEn ? 'Time' : '时间';
         if (thStats) thStats.textContent = isEn ? 'Stats' : '数量与结构';
+
+        if (versionTypeHistoryText) {
+            const label = isEn ? 'Backup History' : '备份历史';
+            versionTypeHistoryText.textContent = `${label} (${historyVersions.length})`;
+        }
+        if (versionTypeSnapshotText) {
+            const label = isEn ? 'Bookmark Backup Versions' : '书签备份版本';
+            versionTypeSnapshotText.textContent = `${label} (${snapshotVersions.length})`;
+        }
+        if (versionTypeHistoryLabelWrap) {
+            versionTypeHistoryLabelWrap.title = isEn
+                ? 'Backup History: JSON history or ZIP archives.'
+                : '备份历史：JSON 历史或 ZIP 归档。';
+        }
+        if (versionTypeSnapshotLabelWrap) {
+            versionTypeSnapshotLabelWrap.title = isEn
+                ? 'Bookmark Backup Versions: versioned HTML snapshots.'
+                : '书签备份版本：版本化 HTML 快照。';
+        }
 
         cancelButton.textContent = isEn ? 'Cancel' : '取消';
         // 主按钮点击后进入二级确认弹窗
@@ -10409,121 +10616,247 @@ function showRestoreModal(versions, source) {
     setRestoreModalI18n();
 
     // Populate Table
-    tableBody.innerHTML = '';
     let selectedVersion = null;
 
-    // Reset to overwrite by default
-    strategyOverwriteRadio.checked = true;
-    strategyMergeRadio.checked = false;
-    currentStrategy = 'overwrite';
+    const applyDefaultStrategyForType = (type) => {
+        const wantsMerge = type === 'snapshot';
+        strategyOverwriteRadio.checked = !wantsMerge;
+        strategyMergeRadio.checked = wantsMerge;
+        currentStrategy = wantsMerge ? 'merge' : 'overwrite';
+    };
+
+    const applyColumnVisibilityForType = (type) => {
+        const isSnapshot = type === 'snapshot';
+        if (thHashCell) thHashCell.style.display = isSnapshot ? 'none' : '';
+        if (thStatsCell) thStatsCell.style.display = isSnapshot ? 'none' : '';
+    };
+
+    const applyTablePresentationForType = (type) => {
+        const isSnapshot = type === 'snapshot';
+        if (versionTable) {
+            versionTable.style.width = isSnapshot ? 'auto' : '100%';
+            versionTable.classList.toggle('snapshot-mode', isSnapshot);
+        }
+        if (versionTableContainer) {
+            if (isSnapshot) {
+                // Shrink-wrap the border container to avoid empty space on both sides
+                versionTableContainer.style.display = 'block';
+                versionTableContainer.style.width = 'fit-content';
+                versionTableContainer.style.maxWidth = '100%';
+                versionTableContainer.style.margin = '0 auto';
+            } else {
+                versionTableContainer.style.display = '';
+                versionTableContainer.style.width = '';
+                versionTableContainer.style.maxWidth = '';
+                versionTableContainer.style.margin = '';
+            }
+        }
+    };
+
+    // Reset strategy by version type
+    applyDefaultStrategyForType(currentVersionType);
+
     strategyGroup.classList.add('disabled');
     strategyOverwriteRadio.disabled = true;
     strategyMergeRadio.disabled = true;
 
-    const clearSelection = () => {
-        Array.from(tableBody.querySelectorAll('tr[data-selected="1"]')).forEach((tr) => {
-            tr.removeAttribute('data-selected');
-        });
+    // Column visibility / layout by version type
+    applyColumnVisibilityForType(currentVersionType);
+    applyTablePresentationForType(currentVersionType);
+
+    const setLabelDisabled = (labelWrap, disabled) => {
+        if (!labelWrap) return;
+        labelWrap.style.opacity = disabled ? '0.55' : '';
+        labelWrap.style.cursor = disabled ? 'not-allowed' : 'pointer';
     };
 
-    const selectRow = (row, version, index) => {
-        const canRestore = version?.canRestore !== false;
-        const radio = document.getElementById(`rvs_${index}`);
-        if (radio) radio.checked = true;
-        clearSelection();
-        row.setAttribute('data-selected', '1');
-        selectedVersion = version;
-        confirmButton.disabled = !canRestore;
-        strategyOverwriteRadio.disabled = !canRestore;
-        strategyMergeRadio.disabled = !canRestore;
-        strategyGroup.classList.toggle('disabled', !canRestore);
-    };
-
-    (versions || []).forEach((version, index) => {
-        const canRestore = version?.canRestore !== false;
-        const note = String(version?.note || '').trim();
-        const displayNote = note || '';
-        const fingerprint = String(version?.fingerprint || '').slice(0, 7);
-        const displayTime = String(version?.displayTime || '');
-        const seq = version?.seqNumber != null ? String(version.seqNumber) : String(index + 1);
-
-        const bmAdded = version?.stats?.bookmarkAdded || 0;
-        const bmDeleted = version?.stats?.bookmarkDeleted || 0;
-        const folderAdded = version?.stats?.folderAdded || 0;
-        const folderDeleted = version?.stats?.folderDeleted || 0;
-        const movedCount = version?.stats?.movedCount || 0;
-        const modifiedCount = version?.stats?.modifiedCount || 0;
-
+    const setEmptyTableMessage = (message) => {
+        tableBody.innerHTML = '';
         const row = document.createElement('tr');
-        if (!canRestore) row.style.opacity = '0.7';
+        const td = document.createElement('td');
+        td.colSpan = getVisibleColumnCount();
+        td.style.padding = '14px';
+        td.style.textAlign = 'center';
+        td.style.color = 'var(--theme-text-secondary)';
+        td.textContent = message;
+        row.appendChild(td);
+        tableBody.appendChild(row);
+    };
 
-        const tdSelect = document.createElement('td');
-        tdSelect.className = 'restore-cell-center';
-        const radio = document.createElement('input');
-        radio.type = 'radio';
-        radio.name = 'restoreVersionSelect';
-        radio.id = `rvs_${index}`;
-        radio.checked = index === 0;
-        radio.style.cursor = 'pointer';
-        tdSelect.appendChild(radio);
+    const renderVersionTable = (list) => {
+        tableBody.innerHTML = '';
+        selectedVersion = null;
 
-        const tdSeq = document.createElement('td');
-        tdSeq.className = 'restore-cell-center restore-cell-mono';
-        tdSeq.textContent = `#${seq}`;
+        applyColumnVisibilityForType(currentVersionType);
+        applyTablePresentationForType(currentVersionType);
+        const isSnapshotMode = currentVersionType === 'snapshot';
 
-        const tdNote = document.createElement('td');
-        const noteDiv = document.createElement('div');
-        noteDiv.className = 'restore-note';
-        noteDiv.textContent = displayNote;
-        tdNote.appendChild(noteDiv);
+        const items = Array.isArray(list) ? list : [];
+        if (items.length === 0) {
+            setEmptyTableMessage('No versions found / 未找到可恢复版本');
+            confirmButton.disabled = true;
+            strategyOverwriteRadio.disabled = true;
+            strategyMergeRadio.disabled = true;
+            strategyGroup.classList.add('disabled');
+            return;
+        }
 
-        const tdHash = document.createElement('td');
-        tdHash.className = 'restore-cell-mono';
-        tdHash.textContent = fingerprint || '';
+        const clearSelection = () => {
+            Array.from(tableBody.querySelectorAll("tr[data-selected='1']")).forEach((tr) => {
+                tr.removeAttribute('data-selected');
+            });
+        };
 
-        const tdTime = document.createElement('td');
-        tdTime.className = 'restore-cell-mono';
-        tdTime.textContent = displayTime;
+        const selectRow = (row, version, index) => {
+            const canRestore = version?.canRestore !== false;
+            const radio = document.getElementById(`rvs_${index}`);
+            if (radio) radio.checked = true;
+            clearSelection();
+            row.setAttribute('data-selected', '1');
+            selectedVersion = version;
+            confirmButton.disabled = !canRestore;
+            strategyOverwriteRadio.disabled = !canRestore;
+            strategyMergeRadio.disabled = !canRestore;
+            strategyGroup.classList.toggle('disabled', !canRestore);
+        };
 
-        const tdStats = document.createElement('td');
-        const statsDiv = document.createElement('div');
-        statsDiv.className = 'restore-stats';
-        const statsItems = [];
-        if (bmAdded) statsItems.push(`<span><span class="pos">+${bmAdded}</span> B</span>`);
-        if (bmDeleted) statsItems.push(`<span><span class="neg">-${bmDeleted}</span> B</span>`);
-        if (folderAdded) statsItems.push(`<span><span class="pos">+${folderAdded}</span> F</span>`);
-        if (folderDeleted) statsItems.push(`<span><span class="neg">-${folderDeleted}</span> F</span>`);
-        if (movedCount) statsItems.push(`<span><span class="move">↔${movedCount}</span></span>`);
-        if (modifiedCount) statsItems.push(`<span><span class="mod">~${modifiedCount}</span></span>`);
-        statsDiv.innerHTML = statsItems.length ? statsItems.join('') : '<span style="opacity: 0.65;">—</span>';
-        tdStats.appendChild(statsDiv);
+        items.forEach((version, index) => {
+            const canRestore = version?.canRestore !== false;
+            const note = String(version?.note || '').trim();
+            const fingerprint = String(version?.fingerprint || '').slice(0, 7);
+            const displayTime = String(version?.displayTime || '');
+            const isHtml = isHtmlVersion(version);
+            let seq = version?.seqNumber != null ? String(version.seqNumber) : String(index + 1);
+            if (isSnapshotMode && (version?.seqNumber == null)) {
+                // Snapshot uses time-desc ordering; show seq in descending order too.
+                seq = String(items.length - index);
+            }
+            const fileName = String(version?.originalFile || version?.restoreRef?.originalFile || '').trim();
+            const displayNote = isHtml ? (fileName || note || '') : (note || '');
 
-        row.appendChild(tdSelect);
-        row.appendChild(tdSeq);
-        row.appendChild(tdNote);
-        row.appendChild(tdHash);
-        row.appendChild(tdTime);
-        row.appendChild(tdStats);
+            const bmAdded = version?.stats?.bookmarkAdded || 0;
+            const bmDeleted = version?.stats?.bookmarkDeleted || 0;
+            const folderAdded = version?.stats?.folderAdded || 0;
+            const folderDeleted = version?.stats?.folderDeleted || 0;
+            const movedCount = version?.stats?.movedCount || 0;
+            const modifiedCount = version?.stats?.modifiedCount || 0;
 
-        row.addEventListener('click', () => {
-            selectRow(row, version, index);
+            const row = document.createElement('tr');
+            if (!canRestore) row.style.opacity = '0.7';
+
+            const tdSelect = document.createElement('td');
+            tdSelect.className = 'restore-cell-center';
+            const radio = document.createElement('input');
+            radio.type = 'radio';
+            radio.name = 'restoreVersionSelect';
+            radio.id = `rvs_${index}`;
+            radio.checked = index === 0;
+            radio.style.cursor = 'pointer';
+            tdSelect.appendChild(radio);
+
+            const tdSeq = document.createElement('td');
+            tdSeq.className = 'restore-cell-center restore-cell-mono';
+            tdSeq.textContent = `#${seq}`;
+
+            const tdNote = document.createElement('td');
+            const noteDiv = document.createElement('div');
+            noteDiv.className = 'restore-note';
+            noteDiv.textContent = displayNote;
+            tdNote.appendChild(noteDiv);
+
+            let tdHash = null;
+            if (!isSnapshotMode) {
+                tdHash = document.createElement('td');
+                tdHash.className = 'restore-cell-mono';
+                tdHash.textContent = fingerprint || '';
+            }
+
+            const tdTime = document.createElement('td');
+            tdTime.className = 'restore-cell-mono';
+            tdTime.textContent = displayTime;
+
+            let tdStats = null;
+            if (!isSnapshotMode) {
+                tdStats = document.createElement('td');
+                const statsDiv = document.createElement('div');
+                statsDiv.className = 'restore-stats';
+                const statsItems = [];
+                if (bmAdded) statsItems.push(`<span><span class='pos'>+${bmAdded}</span> B</span>`);
+                if (bmDeleted) statsItems.push(`<span><span class='neg'>-${bmDeleted}</span> B</span>`);
+                if (folderAdded) statsItems.push(`<span><span class='pos'>+${folderAdded}</span> F</span>`);
+                if (folderDeleted) statsItems.push(`<span><span class='neg'>-${folderDeleted}</span> F</span>`);
+                if (movedCount) statsItems.push(`<span><span class='move'>↔${movedCount}</span></span>`);
+                if (modifiedCount) statsItems.push(`<span><span class='mod'>~${modifiedCount}</span></span>`);
+                statsDiv.innerHTML = statsItems.length ? statsItems.join('') : "<span style='opacity: 0.65;'>—</span>";
+                tdStats.appendChild(statsDiv);
+            }
+
+            row.appendChild(tdSelect);
+            row.appendChild(tdSeq);
+            row.appendChild(tdNote);
+            if (tdHash) row.appendChild(tdHash);
+            row.appendChild(tdTime);
+            if (tdStats) row.appendChild(tdStats);
+
+            row.addEventListener('click', () => {
+                selectRow(row, version, index);
+            });
+
+            tableBody.appendChild(row);
         });
 
-        tableBody.appendChild(row);
-    });
-
-    // Default selection logic
-    if (versions && versions.length > 0) {
-        selectedVersion = versions[0];
+        // Default selection
+        selectedVersion = items[0];
         const firstRow = tableBody.querySelector('tr');
         if (firstRow) firstRow.setAttribute('data-selected', '1');
         confirmButton.disabled = selectedVersion?.canRestore === false;
         strategyOverwriteRadio.disabled = selectedVersion?.canRestore === false;
         strategyMergeRadio.disabled = selectedVersion?.canRestore === false;
         strategyGroup.classList.toggle('disabled', selectedVersion?.canRestore === false);
+    };
+
+    const hasHistory = historyVersions.length > 0;
+    const hasSnapshot = snapshotVersions.length > 0;
+
+    if (versionTypeSegment) {
+        versionTypeSegment.style.display = 'flex';
     }
 
-    modal.style.display = 'block';
+    if (versionTypeHistoryRadio) versionTypeHistoryRadio.disabled = !hasHistory;
+    if (versionTypeSnapshotRadio) versionTypeSnapshotRadio.disabled = !hasSnapshot;
+    setLabelDisabled(versionTypeHistoryLabelWrap, !hasHistory);
+    setLabelDisabled(versionTypeSnapshotLabelWrap, !hasSnapshot);
+
+    if (currentVersionType === 'snapshot' && !hasSnapshot && hasHistory) {
+        currentVersionType = 'history';
+    }
+    if (currentVersionType === 'history' && !hasHistory && hasSnapshot) {
+        currentVersionType = 'snapshot';
+    }
+
+    if (versionTypeHistoryRadio) versionTypeHistoryRadio.checked = currentVersionType === 'history';
+    if (versionTypeSnapshotRadio) versionTypeSnapshotRadio.checked = currentVersionType === 'snapshot';
+
+    const applyVersionType = () => {
+        const wantsSnapshot = Boolean(versionTypeSnapshotRadio && versionTypeSnapshotRadio.checked);
+        currentVersionType = wantsSnapshot ? 'snapshot' : 'history';
+
+        // Snapshot (Bookmark Backup Versions) defaults to merge/import; Backup History defaults to overwrite.
+        applyDefaultStrategyForType(currentVersionType);
+        strategyGroup.classList.add('disabled');
+        strategyOverwriteRadio.disabled = true;
+        strategyMergeRadio.disabled = true;
+
+        updateTitleText(cachedLang, currentVersionType);
+        renderVersionTable(currentVersionType === 'snapshot' ? snapshotVersions : historyVersions);
+    };
+
+    if (versionTypeHistoryRadio) versionTypeHistoryRadio.onchange = applyVersionType;
+    if (versionTypeSnapshotRadio) versionTypeSnapshotRadio.onchange = applyVersionType;
+
+    renderVersionTable(currentVersionType === 'snapshot' ? snapshotVersions : historyVersions);
+
+    modal.style.display = 'flex';
 
     const closeModal = () => {
         modal.style.display = 'none';
@@ -10556,28 +10889,61 @@ function showRestoreModal(versions, source) {
         const sourceLabel = source === 'webdav' ? 'WebDAV' : (source === 'github' ? 'GitHub' : (isEn ? 'Local' : '本地'));
         const fingerprint = String(version?.fingerprint || '').slice(0, 12);
         const displayTime = String(version?.displayTime || '');
-        const note = String(version?.note || '').trim();
+        const rawNote = String(version?.note || '').trim();
+        const isHtml = isHtmlVersion(version);
+        const fileName = String(version?.originalFile || version?.restoreRef?.originalFile || '').trim();
+        const note = isHtml ? (fileName || rawNote || '') : rawNote;
+        const versionTypeLabel = getVersionTypeLabel(lang, isHtml ? 'snapshot' : 'history');
         const strategyText = strategy === 'overwrite'
             ? (isEn ? 'Overwrite (Replace)' : '覆盖（替换）')
             : (isEn ? 'Merge (Import)' : '合并（导入）');
 
         confirmTitle.textContent = isEn ? 'Confirm Restore' : '确认恢复';
-        confirmSummary.textContent = isEn
-            ? `Source: ${sourceLabel}\nTime: ${displayTime || '-'}\nNote: ${note || '-'}\nHash: ${fingerprint || '-'}\nStrategy: ${strategyText}`
-            : `来源：${sourceLabel}\n时间：${displayTime || '-'}\n备注：${note || '-'}\n哈希：${fingerprint || '-'}\n方式：${strategyText}`;
 
-        confirmWarning.textContent = strategy === 'overwrite'
-            ? (isEn
+        // Compact summary (grid) + hide hash for merge / HTML snapshots
+        const colon = isEn ? ':' : '：';
+        const rows = [
+            { key: isEn ? 'Source' : '来源', val: sourceLabel },
+            { key: isEn ? 'Type' : '类型', val: versionTypeLabel },
+            { key: isEn ? 'Time' : '时间', val: displayTime || '-', mono: true },
+            { key: isEn ? 'Note' : '备注', val: note || '-' }
+        ];
+
+        if (strategy === 'overwrite' && !isHtml) {
+            rows.push({ key: isEn ? 'Hash' : '哈希', val: fingerprint || '-', mono: true });
+        }
+
+        rows.push({ key: isEn ? 'Strategy' : '方式', val: strategyText });
+
+        confirmSummary.innerHTML = `<div class="restore-confirm-summary-grid">${rows.map((r) => {
+            const key = escapeHtml(r.key);
+            const val = escapeHtml(r.val);
+            const cls = r.mono ? 'restore-confirm-summary-val mono' : 'restore-confirm-summary-val';
+            return `<div class="restore-confirm-summary-key">${key}${colon}</div><div class="${cls}">${val}</div>`;
+        }).join('')}</div>`;
+
+        // Merge = info (blue), Overwrite = danger (red)
+        confirmWarning.classList.remove('danger', 'info');
+        confirmConfirmBtn.classList.remove('danger', 'primary');
+
+        if (strategy === 'overwrite') {
+            confirmWarning.classList.add('danger');
+            confirmConfirmBtn.classList.add('danger');
+            confirmWarning.textContent = isEn
                 ? 'Overwrite will replace your current bookmarks (Bookmarks Bar + Other Bookmarks). This cannot be undone.'
-                : '覆盖会替换你当前的「书签栏」与「其他书签」，且无法撤销。')
-            : (isEn
+                : '覆盖会替换你当前的「书签栏」与「其他书签」，且无法撤销。';
+        } else {
+            confirmWarning.classList.add('info');
+            confirmConfirmBtn.classList.add('primary');
+            confirmWarning.textContent = isEn
                 ? 'Merge will import into an “Imported” folder under Other Bookmarks (no deletion).'
-                : '合并会以“导入”方式导入到「其他书签/导入」文件夹（不会删除现有书签）。');
+                : '合并会以“导入”方式导入到「其他书签/导入」文件夹（不会删除现有书签）。';
+        }
 
         confirmCancelBtn.textContent = isEn ? 'Cancel' : '取消';
         confirmConfirmBtn.textContent = isEn ? 'Confirm Restore' : '确认恢复';
 
-        confirmModal.style.display = 'block';
+        confirmModal.style.display = 'flex';
 
         return await new Promise((resolve) => {
             const cleanup = () => {
@@ -10665,6 +11031,64 @@ function showRestoreModal(versions, source) {
                         : `成功：已恢复（合并导入）。在“其他书签/${restoreRes.importedFolderTitle || '导入'}”下创建 ${restoreRes.created || 0} 个节点。`);
                 alert(msg);
                 closeModal();
+
+                // Restore should be recorded as a backup (create a restore record in history)
+                try {
+                    const seqNumber = selectedVersion?.seqNumber;
+                    const displayTime = selectedVersion?.displayTime || '';
+                    const restoreTime = selectedVersion?.recordTime || selectedVersion?.restoreRef?.recordTime || '';
+                    const restoreNote = isEn
+                        ? `Restored to #${seqNumber || '-'} (${displayTime || '-'})`
+                        : `恢复至 #${seqNumber || '-'} (${displayTime || '-'})`;
+
+                    chrome.runtime.sendMessage({
+                        action: 'triggerRestoreBackup',
+                        note: restoreNote,
+                        sourceSeqNumber: seqNumber,
+                        sourceTime: restoreTime,
+                        sourceNote: selectedVersion?.note || '',
+                        sourceFingerprint: selectedVersion?.fingerprint || '',
+                        strategy
+                    }, () => {
+                        // ignore callback; run in background
+                    });
+                } catch (_) { }
+
+                // Restore is equivalent to “first backup”: enter main UI without extra initialization
+                try {
+                    await new Promise(resolve => chrome.storage.local.set({ initialized: true }, resolve));
+                } catch (_) { }
+
+                try {
+                    const initHeader = document.getElementById('initHeader');
+                    const initContent = document.getElementById('initContent');
+                    if (initHeader && initContent) {
+                        initContent.style.display = 'none';
+                        initHeader.classList.add('collapsed');
+                    }
+
+                    const syncStatusDiv = document.getElementById('syncStatus');
+                    if (syncStatusDiv) {
+                        syncStatusDiv.style.display = 'block';
+                    }
+
+                    const manualSyncOptions = document.getElementById('manualSyncOptions');
+                    if (manualSyncOptions) {
+                        chrome.storage.local.get(['autoSync'], function (autoSyncData) {
+                            const autoSyncEnabled = autoSyncData.autoSync !== false;
+                            manualSyncOptions.style.display = autoSyncEnabled ? 'none' : 'block';
+                        });
+                    }
+
+                    updateSyncHistory();
+                    updateLastSyncInfo();
+
+                    setTimeout(() => {
+                        try {
+                            scrollToPositionA('smooth');
+                        } catch (_) { }
+                    }, 50);
+                } catch (_) { }
             } else {
                 alert(`Failed: ${restoreRes?.error || 'Unknown error'}`);
             }
@@ -10686,4 +11110,63 @@ function showRestoreModal(versions, source) {
             }
         }
     };
+}
+
+// [New] Restore Help Modal Logic
+document.addEventListener('DOMContentLoaded', () => {
+    initRestoreHelpModal();
+});
+
+function initRestoreHelpModal() {
+    const btn = document.getElementById('restoreInfoBtn');
+    const modal = document.getElementById('restoreHelpModal');
+    const closeBtn = document.getElementById('closeRestoreHelpModal');
+
+    // Elements to localize
+    const elTitle = document.getElementById('restoreHelpTitle');
+    const elDesc1 = document.getElementById('restoreHelpDesc1');
+    const elPriorityLabel = document.getElementById('restoreHelpPriorityLabel');
+    const elNote = document.getElementById('restoreHelpNote');
+
+    if (!btn || !modal || !closeBtn) return;
+
+    btn.onclick = () => {
+        // Update texts on open based on current language
+        chrome.storage.local.get(['preferredLang', 'currentLang'], (res) => {
+            const lang = res.currentLang || res.preferredLang || 'zh_CN';
+            const isEn = lang === 'en';
+
+            if (elTitle) elTitle.textContent = isEn ? 'Restore Guide' : '恢复功能说明';
+
+            if (elDesc1) {
+                if (isEn) {
+                    elDesc1.innerHTML = 'Our restore system uses <strong>Smart Folder Scanning</strong>. When restoring from Local, please select the <strong>Parent Folder</strong> containing your backups (usually named <code style="background: var(--theme-bg-tertiary); padding: 2px 4px; border-radius: 4px;">Bookmark Git & Toolbox</code>).';
+                } else {
+                    elDesc1.innerHTML = '我们的恢复系统采用<strong>智能文件夹扫描</strong>技术。在进行本地恢复时，请选择包含备份数据的<strong>父文件夹</strong>（通常命名为 <code style="background: var(--theme-bg-tertiary); padding: 2px 4px; border-radius: 4px;">书签快照 & 工具箱</code>）。';
+                }
+            }
+
+            if (elPriorityLabel) {
+                elPriorityLabel.textContent = isEn ? 'Recognition Priority:' : '识别优先级 / Recognition Priority:';
+            }
+
+            if (elNote) {
+                elNote.textContent = isEn
+                    ? 'Restore options are only enabled when the corresponding "Bookmark Backup" or "Backup History" switches are turned on.'
+                    : '只有当左侧的「书签备份」或「备份历史」开关开启时，对应的恢复选项才会启用。';
+            }
+        });
+
+        modal.style.display = 'block';
+    };
+
+    const close = () => { modal.style.display = 'none'; };
+    closeBtn.onclick = close;
+
+    // Click outside to close
+    window.addEventListener('click', (event) => {
+        if (event.target === modal) {
+            close();
+        }
+    });
 }

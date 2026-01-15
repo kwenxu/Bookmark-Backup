@@ -226,7 +226,7 @@
             <div id="formulaHelpModal" class="modal content-center">
                 <div class="modal-content formula-help-modal">
                     <div class="modal-header">
-                        <h2 id="formulaHelpModalTitle">权重公式说明</h2>
+                        <h2 id="formulaHelpModalTitle">S值计算说明</h2>
                         <button id="closeFormulaHelpModal" class="modal-close" aria-label="Close">×</button>
                     </div>
                     <div class="formula-help-content">
@@ -300,6 +300,47 @@
                                     </tr>
                                 </tbody>
                             </table>
+                        </div>
+
+                        <div class="formula-help-section">
+                            <h3 id="formulaHelpScoreTitle">S 值是什么？</h3>
+                            <ul class="formula-help-list">
+                                <li id="formulaHelpScore1"><strong>S</strong> 是推荐分数（0~1），值越高越优先推荐</li>
+                                <li id="formulaHelpScore2"><strong>总公式</strong>：S = (w1×F + w2×C + w3×T + w4×D + w5×L) × R（再加少量随机扰动用于打散同分）</li>
+                                <li id="formulaHelpScore3"><strong>权重</strong> 会自动归一化；关闭时间捕捉时，T 的权重会自动变为 0</li>
+                            </ul>
+                        </div>
+
+                        <div class="formula-help-section">
+                            <h3 id="formulaHelpDataTitle">数据来源</h3>
+                            <ul class="formula-help-list">
+                                <li id="formulaHelpData1"><strong>F</strong>：来自书签添加时间（dateAdded）</li>
+                                <li id="formulaHelpData2"><strong>C / D</strong>：来自浏览历史（访问次数 / 最后访问时间；默认读取最近 180 天，最多 50000 条）</li>
+                                <li id="formulaHelpData3"><strong>T</strong>：来自时间捕捉的“综合时间”（活跃/前台静止/可见参考/后台加权）</li>
+                                <li id="formulaHelpData4"><strong>L</strong>：来自“稍后复习”里手动添加标记（手动添加=1，否则=0）</li>
+                                <li id="formulaHelpData5"><strong>R</strong>：来自复习记录（复习后降低推荐，随后逐渐恢复；用于避免刚复习过的书签再次被推送）</li>
+                            </ul>
+                        </div>
+
+                        <div class="formula-help-section">
+                            <h3 id="formulaHelpPerformanceTitle">性能与刷新策略</h3>
+                            <ul class="formula-help-list">
+                                <li id="formulaHelpPerfEstimate"><strong>当前规模</strong>：正在读取...</li>
+                                <li id="formulaHelpPerf1"><strong>增量更新（默认）</strong>：日常少量变化时，只更新受影响的书签（例如：新增/修改书签、访问某个书签对应的URL），不会全量重算</li>
+                                <li id="formulaHelpPerf2"><strong>全量重算（只在需要时）</strong>：仅在“缓存为空/被标记失效”或“公式变更影响所有书签”时触发；如果缓存已存在且未失效，不会全量重算</li>
+                                <li id="formulaHelpPerf4"><strong>哪些情况会让缓存失效</strong>：覆盖恢复、浏览器导入书签、短时间内大量新增/删除（触发批量保护）等大变更会暂停增量更新并让缓存失效；随后在你打开推荐时后台重算一次（只触发一次）</li>
+                                <li id="formulaHelpPerf5"><strong>什么时候刷新</strong>：打开页面或点击刷新会立即用“当前缓存”渲染；若后台正在重算，会先显示旧值/默认值，重算完成后自动刷新一轮</li>
+                                <li id="formulaHelpPerf3"><strong>不阻塞 UI</strong>：全量重算在后台运行，不会卡住页面操作</li>
+                            </ul>
+                        </div>
+
+                        <div class="formula-help-section">
+                            <h3 id="formulaHelpTuningTitle">可调整项</h3>
+                            <ul class="formula-help-list">
+                                <li id="formulaHelpTune1"><strong>权重/阈值</strong>：可调整 F/C/T/D/L 的权重，以及对应阈值（上方输入框 + 预设模式）</li>
+                                <li id="formulaHelpTune2"><strong>屏蔽规则</strong>：屏蔽书签/文件夹/域名会直接排除推荐</li>
+                                <li id="formulaHelpTune3"><strong>修改公式后</strong>：会触发后台全量重算（建议稍等数秒，或继续操作等待后台完成）</li>
+                            </ul>
                         </div>
                     </div>
                 </div>
@@ -943,7 +984,7 @@
                                         <span class="threshold-item" id="thresholdRecallItem">R =
                                             1-0.9<sup>t/S</sup><span id="recallDesc">（FSRS遗忘曲线：复习后锐减，逐渐恢复）</span></span>
                                     </div>
-                                    <button class="formula-help-btn" id="formulaHelpBtn" title="公式说明">
+                                     <button class="formula-help-btn" id="formulaHelpBtn" title="S值计算说明">
                                         <i class="fas fa-question-circle"></i>
                                     </button>
                                 </div>

@@ -442,6 +442,12 @@ function initializeOperationTracking() {
     // 监听书签创建事件
     browserAPI.bookmarks.onCreated.addListener((id, bookmark) => {
         cachedBookmarkAnalysis = null; // Invalidate cache
+
+        // 恢复/导入/大量变化期间会产生大量事件：这里直接跳过，避免卡顿与 runtime.lastError 噪音
+        if (isBookmarkImporting || isBookmarkRestoring || isBookmarkBulkChanging) {
+            return;
+        }
+
         // 记录新增的节点
         try {
             recordRecentAddedId(id, {
@@ -457,6 +463,12 @@ function initializeOperationTracking() {
     // 监听书签删除事件
     browserAPI.bookmarks.onRemoved.addListener((id, removeInfo) => {
         cachedBookmarkAnalysis = null; // Invalidate cache
+
+        // 恢复/导入/大量变化期间会产生大量删除事件：跳过，避免卡顿
+        if (isBookmarkImporting || isBookmarkRestoring || isBookmarkBulkChanging) {
+            return;
+        }
+
         // 从所有记录中移除该节点（书签Git风格）
         try {
             removeFromAllRecords(id);
@@ -466,8 +478,20 @@ function initializeOperationTracking() {
     // 监听书签移动事件
     browserAPI.bookmarks.onMoved.addListener((id, moveInfo) => {
         cachedBookmarkAnalysis = null; // Invalidate cache
+
+        // 恢复/导入/大量变化期间会产生大量移动/重排：跳过，避免 runtime.lastError 噪音
+        if (isBookmarkImporting || isBookmarkRestoring || isBookmarkBulkChanging) {
+            return;
+        }
+
         // 确定被移动的是书签还是文件夹
         browserAPI.bookmarks.get(id, (nodes) => {
+            const err = browserAPI.runtime && browserAPI.runtime.lastError;
+            if (err) {
+                // 书签可能已被删除（例如批量恢复/清理过程中），忽略即可
+                return;
+            }
+
             if (nodes && nodes.length > 0) {
                 const node = nodes[0];
                 if (node.url) {
@@ -505,6 +529,11 @@ function initializeOperationTracking() {
         if (browserAPI.bookmarks.onChildrenReordered) {
             browserAPI.bookmarks.onChildrenReordered.addListener((parentId, reorderInfo) => {
                 cachedBookmarkAnalysis = null; // Invalidate cache
+
+                if (isBookmarkImporting || isBookmarkRestoring || isBookmarkBulkChanging) {
+                    return;
+                }
+
                 try {
                     // 重排本质上就是"结构变化（移动）"
                     // 这里无法可靠区分被重排的是书签还是文件夹，因此同时置为 true，保证变化检测准确触发。
@@ -529,8 +558,20 @@ function initializeOperationTracking() {
     // 监听书签修改事件
     browserAPI.bookmarks.onChanged.addListener((id, changeInfo) => {
         cachedBookmarkAnalysis = null; // Invalidate cache
+
+        // 恢复/导入/大量变化期间会产生大量修改事件：跳过，避免 runtime.lastError 噪音
+        if (isBookmarkImporting || isBookmarkRestoring || isBookmarkBulkChanging) {
+            return;
+        }
+
         // 确定被修改的是书签还是文件夹
         browserAPI.bookmarks.get(id, (nodes) => {
+            const err = browserAPI.runtime && browserAPI.runtime.lastError;
+            if (err) {
+                // 书签可能已被删除（例如批量恢复/清理过程中），忽略即可
+                return;
+            }
+
             if (nodes && nodes.length > 0) {
                 const node = nodes[0];
                 if (node.url) {
@@ -980,7 +1021,17 @@ browserAPI.downloads.onChanged.addListener((downloadDelta) => {
 // - 导入期间允许 UI 继续读旧快照，等导入结束后再统一刷新
 let isBookmarkImporting = false;
 let isBookmarkRestoring = false; // 书签恢复期间暂停监听
+let isBookmarkBulkChanging = false; // 大量变化期间：暂停昂贵计算（推荐/追踪等）
 let bookmarkImportFlushTimer = null;
+
+// 大量变化检测：当书签事件短时间内爆发时，进入 Bulk Mode
+const BOOKMARK_BULK_WINDOW_MS = 1500;
+const BOOKMARK_BULK_THRESHOLD = 30;
+const BOOKMARK_BULK_QUIET_MS = 1200;
+let bookmarkBulkWindowStart = 0;
+let bookmarkBulkEventCount = 0;
+let bookmarkBulkExitTimer = null;
+let skipNextBulkGuardCount = false;
 
 const BookmarkSnapshotCache = {
     tree: null,
@@ -1041,6 +1092,115 @@ const BookmarkSnapshotCache = {
         }, 800);
     }
 };
+
+// =============================================================================
+// 大量变化防护（Bulk Mode）
+// - 用于“批量导入/批量删除/大范围移动/恢复”等场景
+// - 策略：暂停昂贵的增量计算（推荐S值/ActiveTimeTracker），清理依赖 bookmarkId 的缓存
+// =============================================================================
+
+async function invalidateRecommendCaches(reason = '') {
+    try {
+        await browserAPI.storage.local.set({
+            recommend_scores_cache: {},
+            recommendScoresStaleMeta: {
+                staleAt: Date.now(),
+                reason: reason || 'unknown'
+            }
+        });
+    } catch (_) { }
+
+    // 推荐卡片保存的是 bookmarkId，覆盖/导入/恢复后可能全部失效
+    try {
+        await browserAPI.storage.local.remove(['popupCurrentCards']);
+    } catch (_) { }
+}
+
+function scheduleBookmarkBulkExit() {
+    if (bookmarkBulkExitTimer) {
+        clearTimeout(bookmarkBulkExitTimer);
+    }
+
+    bookmarkBulkExitTimer = setTimeout(() => {
+        bookmarkBulkExitTimer = null;
+        exitBookmarkBulkChangeMode().catch(() => { });
+    }, BOOKMARK_BULK_QUIET_MS);
+}
+
+async function enterBookmarkBulkChangeMode(reason = '') {
+    if (isBookmarkBulkChanging) {
+        scheduleBookmarkBulkExit();
+        return;
+    }
+
+    isBookmarkBulkChanging = true;
+    console.log('[BulkGuard] Enter bulk bookmark change mode:', reason);
+
+    try {
+        await browserAPI.storage.local.set({ bookmarkBulkChangeFlag: true });
+    } catch (_) { }
+
+    await invalidateRecommendCaches(`bulk:${reason}`);
+
+    scheduleBookmarkBulkExit();
+}
+
+async function exitBookmarkBulkChangeMode() {
+    if (!isBookmarkBulkChanging) return;
+
+    isBookmarkBulkChanging = false;
+    bookmarkBulkWindowStart = 0;
+    bookmarkBulkEventCount = 0;
+
+    console.log('[BulkGuard] Exit bulk bookmark change mode');
+
+    try {
+        await browserAPI.storage.local.set({ bookmarkBulkChangeFlag: false });
+    } catch (_) { }
+
+    // Bulk 模式结束后重建一次书签缓存，避免事件风暴期间频繁重建
+    try {
+        const enabled = await isTrackingEnabled();
+        if (enabled) {
+            await rebuildActiveTimeBookmarkCache();
+        }
+    } catch (_) { }
+
+    // 结束后统一触发一次变更处理（角标/分析/可能的实时备份）
+    try {
+        skipNextBulkGuardCount = true;
+        handleBookmarkChange();
+    } catch (_) { }
+}
+
+function noteBookmarkEventForBulkGuard() {
+    // 内部主动 flush 时跳过计数，避免自触发进入 bulk
+    if (skipNextBulkGuardCount) {
+        skipNextBulkGuardCount = false;
+        return;
+    }
+
+    // 导入/恢复本身有独立的 flag，不需要重复进入 bulk
+    if (isBookmarkImporting || isBookmarkRestoring) {
+        return;
+    }
+
+    const now = Date.now();
+    if (!bookmarkBulkWindowStart || (now - bookmarkBulkWindowStart) > BOOKMARK_BULK_WINDOW_MS) {
+        bookmarkBulkWindowStart = now;
+        bookmarkBulkEventCount = 0;
+    }
+
+    bookmarkBulkEventCount += 1;
+
+    if (!isBookmarkBulkChanging && bookmarkBulkEventCount >= BOOKMARK_BULK_THRESHOLD) {
+        enterBookmarkBulkChangeMode(`events=${bookmarkBulkEventCount}`).catch(() => { });
+    }
+
+    if (isBookmarkBulkChanging) {
+        scheduleBookmarkBulkExit();
+    }
+}
 
 // 监听来自popup的消息
 browserAPI.runtime.onMessage.addListener((message, sender, sendResponse) => {
@@ -1767,8 +1927,21 @@ browserAPI.runtime.onMessage.addListener((message, sender, sendResponse) => {
             return true;  // 保持消息通道开放
         } else if (message.action === "setBookmarkRestoringFlag") {
             // 设置/重置书签恢复标志
-            isBookmarkRestoring = !!message.value;
+            const next = !!message.value;
+            const prev = isBookmarkRestoring;
+            isBookmarkRestoring = next;
             console.log('[setBookmarkRestoringFlag]', isBookmarkRestoring);
+
+            // 同步一个可被其他模块订阅的标志（ActiveTimeTracker 用于暂停重建缓存）
+            try {
+                browserAPI.storage.local.set({ bookmarkRestoringFlag: isBookmarkRestoring }, () => { });
+            } catch (_) { }
+
+            // 覆盖恢复会导致大量 bookmarkId 变化：提前让推荐缓存失效（避免错用旧缓存）
+            if (next && !prev) {
+                invalidateRecommendCaches('restore').catch(() => { });
+            }
+
             sendResponse({ success: true, isRestoring: isBookmarkRestoring });
             return false;
         } else if (message.action === "triggerRestoreBackup") {
@@ -3038,6 +3211,7 @@ try {
         browserAPI.bookmarks.onImportBegan.addListener(() => {
             try {
                 isBookmarkImporting = true;
+                try { browserAPI.storage.local.set({ bookmarkImportingFlag: true }, () => { }); } catch (_) { }
                 // 导入开始：停止任何已安排的刷新，避免导入过程中触发分析/快照 rebuild
                 if (bookmarkImportFlushTimer) {
                     clearTimeout(bookmarkImportFlushTimer);
@@ -3060,6 +3234,9 @@ try {
         browserAPI.bookmarks.onImportEnded.addListener(() => {
             try {
                 isBookmarkImporting = false;
+                try { browserAPI.storage.local.set({ bookmarkImportingFlag: false }, () => { }); } catch (_) { }
+                // 导入后书签ID/结构可能大幅变化：推荐缓存需要重新计算（按需触发）
+                invalidateRecommendCaches('import').catch(() => { });
                 // 导入结束后延迟一次统一刷新，避免最后一波事件还在收尾
                 if (bookmarkImportFlushTimer) clearTimeout(bookmarkImportFlushTimer);
                 bookmarkImportFlushTimer = setTimeout(() => {
@@ -3077,14 +3254,18 @@ async function handleBookmarkChange() {
         BookmarkSnapshotCache.markStale('bookmarks event');
     } catch (_) { }
 
+    try {
+        noteBookmarkEventForBulkGuard();
+    } catch (_) { }
+
     if (bookmarkChangeTimeout) {
         clearTimeout(bookmarkChangeTimeout);
     }
 
     bookmarkChangeTimeout = setTimeout(async () => {
         try {
-            // 导入期间或恢复期间：避免触发昂贵的分析/通信/可能的实时备份
-            if (isBookmarkImporting || isBookmarkRestoring) {
+            // 导入/恢复/大量变化期间：避免触发昂贵的分析/通信/可能的实时备份
+            if (isBookmarkImporting || isBookmarkRestoring || isBookmarkBulkChanging) {
                 return;
             }
             // 读取自动模式和自动备份定时器设置
@@ -5949,7 +6130,12 @@ async function listRemoteFiles(source) {
         const exportRootFolderCandidates = Array.from(new Set(getAllExportRootFolderCandidates().map(s => String(s || '').trim()).filter(Boolean)));
         const backupFolderCandidates = Array.from(new Set([
             getBackupFolderByLang('zh_CN'),
-            getBackupFolderByLang('en')
+            getBackupFolderByLang('en'),
+            // Compatibility candidates (user-renamed / legacy naming)
+            'Bookmark_Backup',
+            'bookmark_backup',
+            'BookmarkBackup',
+            'bookmarkbackup'
         ].map(s => String(s || '').trim()).filter(Boolean)));
         const historyRootFolderCandidates = Array.from(new Set([
             resolveExportSubFolderByKey('backup_history', 'zh_CN'),
@@ -5962,7 +6148,17 @@ async function listRemoteFiles(source) {
 
         function isBackupHtmlName(name) {
             const n = String(name || '');
-            return n === 'bookmark_backup.html' || /^(?:backup_)?\d{8}_\d{6}\.html$/i.test(n);
+            const nLower = n.toLowerCase();
+
+            if (nLower === 'bookmark_backup.html') return true;
+            if (/^(?:backup_)?\d{8}_\d{6}\.html$/.test(nLower)) return true;
+
+            // Compatibility: user-renamed but still clearly bookmark backup HTML
+            if (nLower.endsWith('.html') && (nLower.includes('bookmark_backup') || nLower.includes('bookmark backup'))) {
+                return true;
+            }
+
+            return false;
         }
 
         async function webdavPropfind(folderUrl, authHeader) {
@@ -6047,7 +6243,7 @@ async function listRemoteFiles(source) {
                         const htmlFolderUrl = `${serverAddress}${exportRootFolder}/${backupFolder}/`;
                         const names = await webdavPropfind(htmlFolderUrl, authHeader);
                         for (const name of names) {
-                            if (name.endsWith('.html') && isBackupHtmlName(name)) {
+                            if (isBackupHtmlName(name)) {
                                 files.push({ name, url: htmlFolderUrl + name, source: 'webdav', type: 'html_backup' });
                             }
                         }
@@ -6138,7 +6334,7 @@ async function listRemoteFiles(source) {
                         const backupPath = `${prefix}${exportRootFolder}/${backupFolder}`;
                         const items = await listGitHubDir(backupPath);
                         for (const item of items) {
-                            if (item.type === 'file' && item.name.endsWith('.html') && isBackupHtmlName(item.name)) {
+                            if (item.type === 'file' && isBackupHtmlName(item.name)) {
                                 files.push({ name: item.name, url: item.download_url, source: 'github', type: 'html_backup' });
                             }
                         }
@@ -6449,7 +6645,8 @@ function dedupeAndSortRestoreVersions(versions) {
     return list;
 }
 
-// [New] 扫描并解析恢复数据源，统一返回“可恢复版本”列表
+// [New] 扫描并解析恢复数据源，统一返回"可恢复版本"列表
+// 重构：不再使用"优先级短路"模式，而是扫描所有来源并合并
 async function scanAndParseRestoreSource(source, localFiles = null) {
     try {
         let candidates = [];
@@ -6460,35 +6657,37 @@ async function scanAndParseRestoreSource(source, localFiles = null) {
             candidates = await listRemoteFiles(source);
         }
 
-        // 1) 优先：合并历史 backup_history.json
+        // 收集所有版本（不再短路）
+        const allVersions = [];
+
+        // 1) 解析合并历史 backup_history.json（来自 Backup History）
         const mergedJsonCandidates = candidates.filter(f => f && f.type === 'merged_history');
-        if (mergedJsonCandidates.length > 0) {
-            const file = mergedJsonCandidates[0];
-            let text = '';
-            if (source === 'local') {
-                text = String(file.text || '');
-            } else {
-                const blob = await downloadRemoteFile({ url: file.url, source });
-                text = await blob.text();
+        for (const file of mergedJsonCandidates) {
+            try {
+                let text = '';
+                if (source === 'local') {
+                    text = String(file.text || '');
+                } else {
+                    const blob = await downloadRemoteFile({ url: file.url, source });
+                    text = await blob.text();
+                }
+                const versions = parseRestoreVersionsFromMergedHistoryJsonText(text, {
+                    source,
+                    originalFile: file.name,
+                    fileUrl: file.url || null,
+                    localFileKey: file.localFileKey || null
+                });
+                allVersions.push(...versions);
+                console.log(`[scanAndParseRestoreSource] Parsed ${versions.length} versions from ${file.name}`);
+            } catch (e) {
+                console.warn('[scanAndParseRestoreSource] Failed to parse merged history:', file.name, e);
             }
-            const versions = parseRestoreVersionsFromMergedHistoryJsonText(text, {
-                source,
-                originalFile: file.name,
-                fileUrl: file.url || null,
-                localFileKey: file.localFileKey || null
-            });
-            const normalized = dedupeAndSortRestoreVersions(versions);
-            if (normalized.length > 0) {
-                return { success: true, sourceType: 'json', versions: normalized };
-            }
-            console.warn('[scanAndParseRestoreSource] merged history found but parsed 0 versions, falling back...');
         }
 
-        // 2) ZIP：解压并提取多个版本
+        // 2) 解析 ZIP 归档（来自 Backup History/Auto_Archive）
         const zipCandidates = candidates.filter(f => f && f.type === 'zip');
-        if (zipCandidates.length > 0) {
-            const all = [];
-            for (const file of zipCandidates) {
+        for (const file of zipCandidates) {
+            try {
                 let blob;
                 if (source === 'local') {
                     const ab = file.arrayBuffer;
@@ -6503,33 +6702,48 @@ async function scanAndParseRestoreSource(source, localFiles = null) {
                     fileUrl: file.url || null,
                     localFileKey: file.localFileKey || null
                 });
-                all.push(...versions);
+                allVersions.push(...versions);
+                console.log(`[scanAndParseRestoreSource] Parsed ${versions.length} versions from ZIP ${file.name}`);
+            } catch (e) {
+                console.warn('[scanAndParseRestoreSource] Failed to parse ZIP:', file.name, e);
             }
-            const normalized = dedupeAndSortRestoreVersions(all);
-            if (normalized.length > 0) {
-                return { success: true, sourceType: 'zip', versions: normalized };
-            }
-            console.warn('[scanAndParseRestoreSource] zip candidates found but parsed 0 versions, falling back...');
         }
 
-        // 3) HTML：从文件名生成版本（兜底；恢复时再读取/解析文件内容）
+        // 3) 解析 HTML 快照文件（来自 Bookmark Backup）
+        // 这些是独立的版本化备份文件（如果用户选择了"版本化"策略）
         const htmlCandidates = candidates.filter(f => f && f.type === 'html_backup');
-        if (htmlCandidates.length > 0) {
-            const versions = htmlCandidates.map(f => buildRestoreVersionFromHtmlFile({
-                source,
-                originalFile: f.name,
-                fileUrl: f.url || null,
-                localFileKey: f.localFileKey || null,
-                fileName: f.name,
-                lastModifiedMs: typeof f.lastModified === 'number' ? f.lastModified : null
-            }));
-            const normalized = dedupeAndSortRestoreVersions(versions);
-            if (normalized.length > 0) {
-                return { success: true, sourceType: 'html', versions: normalized };
+        for (const f of htmlCandidates) {
+            try {
+                const version = buildRestoreVersionFromHtmlFile({
+                    source,
+                    originalFile: f.name,
+                    fileUrl: f.url || null,
+                    localFileKey: f.localFileKey || null,
+                    fileName: f.name,
+                    lastModifiedMs: typeof f.lastModified === 'number' ? f.lastModified : null
+                });
+                allVersions.push(version);
+            } catch (e) {
+                console.warn('[scanAndParseRestoreSource] Failed to parse HTML:', f.name, e);
             }
         }
 
-        return { success: true, versions: [] };
+        // 去重并按时间倒序排列（最新的在最前面）
+        const normalized = dedupeAndSortRestoreVersions(allVersions);
+
+        console.log(`[scanAndParseRestoreSource] Total versions found: ${normalized.length}`);
+
+        // 确定主要来源类型（用于UI显示）
+        let primarySourceType = 'mixed';
+        if (mergedJsonCandidates.length > 0 && zipCandidates.length === 0 && htmlCandidates.length === 0) {
+            primarySourceType = 'json';
+        } else if (zipCandidates.length > 0 && mergedJsonCandidates.length === 0 && htmlCandidates.length === 0) {
+            primarySourceType = 'zip';
+        } else if (htmlCandidates.length > 0 && mergedJsonCandidates.length === 0 && zipCandidates.length === 0) {
+            primarySourceType = 'html';
+        }
+
+        return { success: true, sourceType: primarySourceType, versions: normalized };
     } catch (e) {
         console.error('[scanAndParseRestoreSource] Failed:', e);
         return { success: false, error: e.message };
@@ -6887,6 +7101,9 @@ async function extractBookmarkTreeForRestore(restoreRef, localPayload) {
 async function restoreSelectedVersion({ restoreRef, strategy, localPayload }) {
     try {
         isBookmarkRestoring = true;
+        try {
+            await browserAPI.storage.local.set({ bookmarkRestoringFlag: true });
+        } catch (_) { }
         const tree = await extractBookmarkTreeForRestore(restoreRef, localPayload);
         if (!tree) {
             return { success: false, error: 'No bookmark tree data found for selected version' };
@@ -6894,16 +7111,42 @@ async function restoreSelectedVersion({ restoreRef, strategy, localPayload }) {
 
         if (strategy === 'overwrite') {
             const result = await executeOverwriteBookmarkRestore(tree);
+
+            // Restore should be treated as “initialized” (equivalent to first backup)
+            await browserAPI.storage.local.set({ initialized: true });
+
+            // Cache invalidation: bookmark IDs/tree may change after restore
+            // - S值缓存依赖 bookmarkId，恢复后需要重新计算
+            await invalidateRecommendCaches('restore').catch(() => { });
+
             return { success: true, strategy: 'overwrite', ...result };
         }
 
         const result = await executeMergeBookmarkRestore(tree);
+
+        // Restore should be treated as “initialized” (equivalent to first backup)
+        await browserAPI.storage.local.set({ initialized: true });
+
+        // Cache invalidation: merge restore also adds many new bookmarkIds
+        await invalidateRecommendCaches('restore').catch(() => { });
+
         return { success: true, strategy: 'merge', ...result };
     } catch (e) {
         console.error('[restoreSelectedVersion] Failed:', e);
         return { success: false, error: e.message };
     } finally {
         isBookmarkRestoring = false;
+        try {
+            await browserAPI.storage.local.set({ bookmarkRestoringFlag: false });
+        } catch (_) { }
+
+        // 恢复结束后重建一次书签缓存，避免恢复过程中频繁重建
+        try {
+            const enabled = await isTrackingEnabled();
+            if (enabled) {
+                await rebuildActiveTimeBookmarkCache();
+            }
+        } catch (_) { }
     }
 }
 
@@ -9827,7 +10070,20 @@ async function computeAllBookmarkScores() {
 // 增量更新单个书签S值
 async function updateSingleBookmarkScore(bookmarkId) {
     try {
-        const bookmarks = await new Promise(resolve => browserAPI.bookmarks.get([bookmarkId], resolve));
+        const bookmarks = await new Promise((resolve) => {
+            try {
+                browserAPI.bookmarks.get([bookmarkId], (nodes) => {
+                    const err = browserAPI.runtime && browserAPI.runtime.lastError;
+                    if (err) {
+                        resolve([]);
+                        return;
+                    }
+                    resolve(nodes || []);
+                });
+            } catch (_) {
+                resolve([]);
+            }
+        });
         if (!bookmarks || bookmarks.length === 0) return;
 
         const bookmark = bookmarks[0];
@@ -9934,13 +10190,27 @@ if (browserAPI.history && browserAPI.history.onVisited) {
 
 // 监听书签创建事件
 browserAPI.bookmarks.onCreated.addListener((id, bookmark) => {
+    // 恢复/导入/大量变化期间会产生海量创建事件：跳过增量S值计算，避免卡顿
+    if (isBookmarkImporting || isBookmarkRestoring || isBookmarkBulkChanging) {
+        return;
+    }
     if (bookmark.url) {
-        setTimeout(() => updateSingleBookmarkScore(id), 500);
+        setTimeout(() => {
+            if (isBookmarkImporting || isBookmarkRestoring || isBookmarkBulkChanging) {
+                return;
+            }
+            updateSingleBookmarkScore(id);
+        }, 500);
     }
 });
 
 // 监听书签删除事件
 browserAPI.bookmarks.onRemoved.addListener(async (id) => {
+    // 恢复/导入/大量变化期间会产生海量删除事件：跳过缓存清理，避免卡顿
+    if (isBookmarkImporting || isBookmarkRestoring || isBookmarkBulkChanging) {
+        return;
+    }
+
     const cache = await getScoresCache();
     if (cache[id]) {
         delete cache[id];
@@ -9950,6 +10220,11 @@ browserAPI.bookmarks.onRemoved.addListener(async (id) => {
 
 // 监听书签修改事件（URL或标题变化时更新S值）
 browserAPI.bookmarks.onChanged.addListener(async (id, changeInfo) => {
+    // 恢复/导入/大量变化期间会产生大量修改事件：跳过增量S值计算，避免卡顿
+    if (isBookmarkImporting || isBookmarkRestoring || isBookmarkBulkChanging) {
+        return;
+    }
+
     if (changeInfo.url || changeInfo.title) {
         console.log('[S值计算] 书签修改，更新S值:', id);
         await updateSingleBookmarkScore(id);

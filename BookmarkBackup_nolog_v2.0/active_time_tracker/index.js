@@ -848,6 +848,32 @@ function normalizeTitle(title) {
     return trimmed.length > 0 ? trimmed : null;
 }
 
+let bookmarkRestoringFlag = false;
+let bookmarkBulkChangeFlag = false;
+let bookmarkImportingFlag = false;
+let bookmarkCacheRebuildTimer = null;
+
+function shouldSuspendBookmarkCacheWork() {
+    return bookmarkRestoringFlag || bookmarkBulkChangeFlag || bookmarkImportingFlag;
+}
+
+async function syncBookmarkRestoringFlag() {
+    try {
+        const result = await browserAPI.storage.local.get([
+            'bookmarkRestoringFlag',
+            'bookmarkBulkChangeFlag',
+            'bookmarkImportingFlag'
+        ]);
+        bookmarkRestoringFlag = result.bookmarkRestoringFlag === true;
+        bookmarkBulkChangeFlag = result.bookmarkBulkChangeFlag === true;
+        bookmarkImportingFlag = result.bookmarkImportingFlag === true;
+    } catch (_) {
+        bookmarkRestoringFlag = false;
+        bookmarkBulkChangeFlag = false;
+        bookmarkImportingFlag = false;
+    }
+}
+
 async function rebuildBookmarkCache() {
     bookmarkUrlSet.clear();
     bookmarkTitleSet.clear();
@@ -1928,6 +1954,9 @@ async function getCurrentActiveSessions() {
 async function initialize() {
     console.log('[ActiveTimeTracker] 初始化...');
 
+    // 读取恢复标志（恢复期间暂停重建缓存/删除清理）
+    await syncBookmarkRestoringFlag();
+
     try {
         // 打开数据库
         await openDatabase();
@@ -2099,6 +2128,27 @@ function setupEventListeners() {
         return;
     }
 
+    // 监听“批量变更/恢复/导入”标志变化（与 background.js 同步）
+    try {
+        if (browserAPI.storage && browserAPI.storage.onChanged) {
+            browserAPI.storage.onChanged.addListener((changes, area) => {
+                if (area !== 'local') return;
+                if (changes.bookmarkRestoringFlag) {
+                    bookmarkRestoringFlag = changes.bookmarkRestoringFlag.newValue === true;
+                }
+                if (changes.bookmarkBulkChangeFlag) {
+                    bookmarkBulkChangeFlag = changes.bookmarkBulkChangeFlag.newValue === true;
+                }
+                if (changes.bookmarkImportingFlag) {
+                    bookmarkImportingFlag = changes.bookmarkImportingFlag.newValue === true;
+                }
+            });
+        }
+    } catch (_) { }
+
+    // 初次同步一次
+    syncBookmarkRestoringFlag().catch(() => { });
+
     // 防止重复注册监听器
     if (eventListenersSetup) {
         console.log('[ActiveTimeTracker] 事件监听器已设置，跳过重复注册');
@@ -2147,19 +2197,35 @@ function setupEventListeners() {
 
     // 书签变化时重建缓存
     if (browserAPI.bookmarks) {
-        const rebuildCache = () => {
-            if (trackingEnabled) {
-                rebuildBookmarkCache();
+        const scheduleRebuildCache = () => {
+            if (!trackingEnabled) return;
+            if (shouldSuspendBookmarkCacheWork()) return;
+
+            if (bookmarkCacheRebuildTimer) {
+                clearTimeout(bookmarkCacheRebuildTimer);
             }
+
+            // 防抖：把大量事件合并为一次重建（恢复/批量操作时尤其重要）
+            bookmarkCacheRebuildTimer = setTimeout(() => {
+                bookmarkCacheRebuildTimer = null;
+                if (!trackingEnabled) return;
+                if (shouldSuspendBookmarkCacheWork()) return;
+                rebuildBookmarkCache();
+            }, 1200);
         };
 
         if (browserAPI.bookmarks.onCreated) {
-            browserAPI.bookmarks.onCreated.addListener(rebuildCache);
+            browserAPI.bookmarks.onCreated.addListener(scheduleRebuildCache);
         }
 
         // 书签删除时：删除对应的时间记录，然后重建缓存
         if (browserAPI.bookmarks.onRemoved) {
             browserAPI.bookmarks.onRemoved.addListener(async (id, removeInfo) => {
+                if (shouldSuspendBookmarkCacheWork()) {
+                    // 恢复/批量导入期间：跳过逐条清理，避免严重卡顿
+                    return;
+                }
+
                 const node = removeInfo.node;
                 if (node && node.url) {
                     // 删除该 URL 的时间记录
@@ -2177,12 +2243,12 @@ function setupEventListeners() {
                     }
                     console.log('[ActiveTimeTracker] 书签已删除，清理对应记录:', node.title || node.url);
                 }
-                rebuildCache();
+                scheduleRebuildCache();
             });
         }
 
         if (browserAPI.bookmarks.onChanged) {
-            browserAPI.bookmarks.onChanged.addListener(rebuildCache);
+            browserAPI.bookmarks.onChanged.addListener(scheduleRebuildCache);
         }
     }
 

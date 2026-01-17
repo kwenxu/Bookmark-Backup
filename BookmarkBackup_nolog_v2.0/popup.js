@@ -2195,45 +2195,57 @@ function updateSyncHistory(passedLang) { // Added passedLang parameter
                 const previousDateObj = previousDate ? new Date(previousDate) : null;
                 const previousDateStr = previousDateObj ? `${previousDateObj.getFullYear()}-${previousDateObj.getMonth() + 1}-${previousDateObj.getDate()}` : null;
 
-                // 如果日期变化且不是第一条记录，为上一个条目添加日期分界线
+                // 如果日期变化且不是第一条记录，在两条记录之间插入日期分割线
                 if (previousDateStr && currentDateStr !== previousDateStr && lastHistoryItem) {
-                    // 使用统一的蓝色
-                    const dividerColor = '#007AFF'; // 蓝色
-                    const textColor = '#007AFF';    // 蓝色文字
+                    const dividerColor = '#007AFF';
+                    const textColor = '#007AFF';
 
-                    // 为上一个条目添加底部边框作为分界线
-                    lastHistoryItem.style.borderBottom = `1px solid ${dividerColor}`;
-                    lastHistoryItem.style.position = 'relative';
-                    lastHistoryItem.style.marginBottom = '15px'; // 添加底部间距
+                    // 移除上一条记录自身的默认底部分割线，避免双线
+                    lastHistoryItem.style.borderBottom = 'none';
 
-                    // 创建日期标签 - 椭圆形状
-                    const dateLabel = document.createElement('div');
+                    // 格式化日期显示（显示上一条记录所属日期）
+                    const formattedDate = currentLang === 'en'
+                        ? `${previousDateObj.getFullYear()}-${(previousDateObj.getMonth() + 1).toString().padStart(2, '0')}-${previousDateObj.getDate().toString().padStart(2, '0')}`
+                        : `${previousDateObj.getFullYear()}年${previousDateObj.getMonth() + 1}月${previousDateObj.getDate()}日`;
 
-                    // 现在只有两栏，日期标签放在两栏之间的中间位置
-                    const leftPosition = '50%';
-
-                    dateLabel.style.cssText = `
-                        position: absolute;
-                        bottom: -12px;
-                        left: ${leftPosition};
-                        transform: translateX(-50%);
-                        background-color: var(--theme-bg-primary, white);
-                        padding: 3px 20px;
-                        font-size: 12px;
-                        color: ${textColor};
-                        border: 1px solid ${dividerColor};
-                        border-radius: 12px;
-                        z-index: 10;
+                    const divider = document.createElement('div');
+                    divider.className = 'history-date-divider';
+                    divider.style.cssText = `
+                        display: flex;
+                        align-items: center;
+                        gap: 10px;
+                        margin: 10px 0;
+                        padding: 0 8px;
                     `;
 
-                    // 格式化日期显示
-                    const formattedDate = currentLang === 'en' ?
-                        `${previousDateObj.getFullYear()}-${(previousDateObj.getMonth() + 1).toString().padStart(2, '0')}-${previousDateObj.getDate().toString().padStart(2, '0')}` :
-                        `${previousDateObj.getFullYear()}年${previousDateObj.getMonth() + 1}月${previousDateObj.getDate()}日`;
-                    dateLabel.textContent = formattedDate;
+                    const lineStyle = `
+                        flex: 1;
+                        height: 0;
+                        border-top: 1px solid ${dividerColor};
+                        opacity: 0.85;
+                    `;
 
-                    // 添加日期标签到上一个条目
-                    lastHistoryItem.appendChild(dateLabel);
+                    const leftLine = document.createElement('span');
+                    leftLine.style.cssText = lineStyle;
+
+                    const text = document.createElement('span');
+                    text.textContent = formattedDate;
+                    text.style.cssText = `
+                        white-space: nowrap;
+                        font-size: 12px;
+                        font-weight: 600;
+                        line-height: 1;
+                        color: ${textColor};
+                    `;
+
+                    const rightLine = document.createElement('span');
+                    rightLine.style.cssText = lineStyle;
+
+                    divider.appendChild(leftLine);
+                    divider.appendChild(text);
+                    divider.appendChild(rightLine);
+
+                    historyList.appendChild(divider);
                 }
 
                 // 更新前一条记录的时间和元素引用，用于下次比较
@@ -2357,17 +2369,13 @@ function updateSyncHistory(passedLang) { // Added passedLang parameter
                     }
 
                     const buildStatBadge = () => {
-                        const parts = [];
-                        const firstLineParts = [];
-                        const secondLineParts = [];
-                        const sep = ' <span class="history-stat-sep">|</span> ';
+                        // 按用户期望固定换行：
+                        // 1) 增加（书签/文件夹）
+                        // 2) 减少（书签/文件夹）
+                        // 3) 结构变化（移动/修改）
+                        const lines = [];
                         const bookmarkLabel = currentLang === 'en' ? 'BKM' : '书签';
                         const folderLabel = currentLang === 'en' ? 'FLD' : '文件夹';
-
-                        let hasAdded = false;
-                        let hasDeleted = false;
-                        let hasMoved = false;
-                        let hasModified = false;
 
                         const bookmarkAddedCount = (typeof record.bookmarkStats.bookmarkAdded === 'number')
                             ? record.bookmarkStats.bookmarkAdded
@@ -2382,28 +2390,26 @@ function updateSyncHistory(passedLang) { // Added passedLang parameter
                             ? record.bookmarkStats.folderDeleted
                             : (folderDiff < 0 ? Math.abs(folderDiff) : 0);
 
-                        if (bookmarkAddedCount > 0 || folderAddedCount > 0) {
-                            const addedParts = [];
-                            if (bookmarkAddedCount > 0) addedParts.push(`<span class="history-stat-label">${bookmarkLabel}</span> <span class="history-stat-color added">+${bookmarkAddedCount}</span>`);
-                            if (folderAddedCount > 0) addedParts.push(`<span class="history-stat-label">${folderLabel}</span> <span class="history-stat-color added">+${folderAddedCount}</span>`);
-                            if (addedParts.length > 0) {
-                                const line = addedParts.join(' ');
-                                parts.push(line);
-                                firstLineParts.push(line);
-                                hasAdded = true;
-                            }
+                        const addedParts = [];
+                        if (bookmarkAddedCount > 0) {
+                            addedParts.push(`<span class="history-stat-label">${bookmarkLabel}</span> <span class="history-stat-color added">+${bookmarkAddedCount}</span>`);
+                        }
+                        if (folderAddedCount > 0) {
+                            addedParts.push(`<span class="history-stat-label">${folderLabel}</span> <span class="history-stat-color added">+${folderAddedCount}</span>`);
+                        }
+                        if (addedParts.length > 0) {
+                            lines.push(addedParts.join(' '));
                         }
 
-                        if (bookmarkDeletedCount > 0 || folderDeletedCount > 0) {
-                            const deletedParts = [];
-                            if (bookmarkDeletedCount > 0) deletedParts.push(`<span class="history-stat-label">${bookmarkLabel}</span> <span class="history-stat-color deleted">-${bookmarkDeletedCount}</span>`);
-                            if (folderDeletedCount > 0) deletedParts.push(`<span class="history-stat-label">${folderLabel}</span> <span class="history-stat-color deleted">-${folderDeletedCount}</span>`);
-                            if (deletedParts.length > 0) {
-                                const line = deletedParts.join(' ');
-                                parts.push(line);
-                                firstLineParts.push(line);
-                                hasDeleted = true;
-                            }
+                        const deletedParts = [];
+                        if (bookmarkDeletedCount > 0) {
+                            deletedParts.push(`<span class="history-stat-label">${bookmarkLabel}</span> <span class="history-stat-color deleted">-${bookmarkDeletedCount}</span>`);
+                        }
+                        if (folderDeletedCount > 0) {
+                            deletedParts.push(`<span class="history-stat-label">${folderLabel}</span> <span class="history-stat-color deleted">-${folderDeletedCount}</span>`);
+                        }
+                        if (deletedParts.length > 0) {
+                            lines.push(deletedParts.join(' '));
                         }
 
                         // 优先使用保存的 movedCount（与当前变化视图一致的计算方式）
@@ -2420,13 +2426,6 @@ function updateSyncHistory(passedLang) { // Added passedLang parameter
                                 : (record.bookmarkStats.folderMoved ? 1 : 0);
                             movedTotal = bookmarkMovedCount + folderMovedCount;
                         }
-                        if (movedTotal > 0) {
-                            const movedLabel = currentLang === 'en' ? 'Moved' : '移动';
-                            const line = `<span class="history-stat-label">${movedLabel}</span> <span class="history-stat-color moved">${movedTotal}</span>`;
-                            parts.push(line);
-                            secondLineParts.push(line);
-                            hasMoved = true;
-                        }
 
                         // 优先使用保存的 modifiedCount（与当前变化视图一致的计算方式）
                         let modifiedTotal = 0;
@@ -2442,16 +2441,21 @@ function updateSyncHistory(passedLang) { // Added passedLang parameter
                                 : (record.bookmarkStats.folderModified ? 1 : 0);
                             modifiedTotal = bookmarkModifiedCount + folderModifiedCount;
                         }
+
+                        const structuralParts = [];
+                        if (movedTotal > 0) {
+                            const movedLabel = currentLang === 'en' ? 'Moved' : '移动';
+                            structuralParts.push(`<span class="history-stat-label">${movedLabel}</span> <span class="history-stat-color moved">${movedTotal}</span>`);
+                        }
                         if (modifiedTotal > 0) {
                             const modifiedLabel = currentLang === 'en' ? 'Modified' : '修改';
-                            const line = `<span class="history-stat-label">${modifiedLabel}</span> <span class="history-stat-color modified">${modifiedTotal}</span>`;
-                            parts.push(line);
-                            secondLineParts.push(line);
-                            hasModified = true;
+                            structuralParts.push(`<span class="history-stat-label">${modifiedLabel}</span> <span class="history-stat-color modified">${modifiedTotal}</span>`);
+                        }
+                        if (structuralParts.length > 0) {
+                            lines.push(structuralParts.join(' '));
                         }
 
-
-                        if (parts.length === 0) {
+                        if (lines.length === 0) {
                             // 仅当明确标记为首次备份时展示“第一次备份”；
                             // 兼容旧数据：若没有 isFirstBackup 字段，再退回到“只有一条记录”的判断
                             const isFirstBackup = record.isFirstBackup === true ||
@@ -2462,16 +2466,11 @@ function updateSyncHistory(passedLang) { // Added passedLang parameter
                             return `<span class="history-stat-badge no-change">${dynamicTextStrings.noChangesText[currentLang] || '无变化'}</span>`;
                         }
 
-                        const totalItems = parts.length;
-                        const shouldSplit = totalItems >= 3 && (hasMoved || hasModified);
-                        if (shouldSplit) {
-                            const firstLine = firstLineParts.length ? firstLineParts.join(sep) : parts.slice(0, Math.ceil(totalItems / 2)).join(sep);
-                            const secondLine = secondLineParts.length ? secondLineParts.join(sep) : parts.slice(Math.ceil(totalItems / 2)).join(sep);
-                            const singleTopClass = firstLineParts.length === 1 ? ' single-top' : '';
-                            return `<span class="history-stat-badge multi-line${singleTopClass}"><span class="history-stat-line">${firstLine}</span><span class="history-stat-line">${secondLine}</span></span>`;
+                        if (lines.length === 1) {
+                            return `<span class="history-stat-badge">${lines[0]}</span>`;
                         }
 
-                        return `<span class="history-stat-badge">${parts.join(sep)}</span>`;
+                        return `<span class="history-stat-badge multi-line">${lines.map(line => `<span class="history-stat-line">${line}</span>`).join('')}</span>`;
                     };
 
                     if (hasAnyChange) {
@@ -2488,12 +2487,65 @@ function updateSyncHistory(passedLang) { // Added passedLang parameter
 
                 // 备注部分：可点击编辑，悬浮时出现虚线框
                 let noteHtml = '';
-                const fallbackNote = (() => {
-                    if (record.type === 'switch') return currentLang === 'en' ? 'Switch Backup' : '切换备份';
-                    if (record.type === 'manual') return currentLang === 'en' ? 'Manual Backup' : '手动备份';
-                    return currentLang === 'en' ? 'Auto Backup' : '自动备份';
+
+                const rawNote = (record.note && typeof record.note === 'string') ? record.note.trim() : '';
+                const isEn = currentLang === 'en';
+
+                const manualLabel = isEn ? 'Manual Backup' : '手动备份';
+                const switchLabel = isEn ? 'Switch Backup' : '切换备份';
+                const autoPrefix = isEn ? 'Auto Backup' : '自动备份';
+                const autoRealtimeLabel = isEn ? `${autoPrefix}--Realtime` : `${autoPrefix}--实时`;
+                const autoRegularLabel = isEn ? `${autoPrefix}--Regular` : `${autoPrefix}--常规`;
+                const autoSpecificLabel = isEn ? `${autoPrefix}--Specific` : `${autoPrefix}--特定`;
+
+                const recordType = record.type || (() => {
+                    if (rawNote === '手动备份' || rawNote === 'Manual Backup') return 'manual';
+                    if (rawNote === '切换备份' || rawNote === 'Switch Backup') return 'switch';
+                    return 'auto';
                 })();
-                const displayNote = (record.note && record.note.trim()) ? record.note : fallbackNote;
+
+                const lowerNote = rawNote.toLowerCase();
+                const looksLikeSpecificReason = rawNote.includes('特定') ||
+                    lowerNote.includes('specific') ||
+                    /\d{4}-\d{2}-\d{2}[ tT]\d{2}:\d{2}/.test(rawNote);
+                const looksLikeRegularReason = rawNote.includes('每') ||
+                    rawNote.includes('周') ||
+                    lowerNote.includes('every');
+                // 兼容旧记录：可能只保存了原因（如：周一/每1小时/特定：...），没有“自动备份 - ”前缀
+                const looksLikeLegacyReasonOnly = (recordType === 'auto') && (looksLikeSpecificReason || looksLikeRegularReason);
+
+                const isSystemManualNote = !rawNote || rawNote === '手动备份' || rawNote === 'Manual Backup';
+                const isSystemSwitchNote = !rawNote || rawNote === '切换备份' || rawNote === 'Switch Backup';
+                const isSystemAutoNote = !rawNote ||
+                    rawNote === '自动备份' ||
+                    rawNote === 'Auto Backup' ||
+                    rawNote.startsWith('自动备份 - ') ||
+                    rawNote.startsWith('Auto Backup - ') ||
+                    rawNote.startsWith('自动备份--') ||
+                    rawNote.startsWith('Auto Backup--') ||
+                    looksLikeLegacyReasonOnly;
+
+                const displayNote = (() => {
+                    if (recordType === 'switch' || recordType === 'auto_switch') {
+                        return isSystemSwitchNote ? switchLabel : rawNote;
+                    }
+
+                    if (recordType === 'manual') {
+                        return isSystemManualNote ? manualLabel : rawNote;
+                    }
+
+                    // 自动备份：按「实时 / 常规 / 特定」归类显示
+                    if (isSystemAutoNote) {
+                        if (looksLikeSpecificReason) return autoSpecificLabel;
+                        if (rawNote.includes('常规') || lowerNote.includes('regular')) return autoRegularLabel;
+                        if (rawNote.includes(' - ') || looksLikeRegularReason) return autoRegularLabel;
+                        return autoRealtimeLabel;
+                    }
+
+                    // 用户自定义备注：原样显示
+                    return rawNote;
+                })();
+
                 if (displayNote) {
                     // 备注文本可点击，悬浮时出现虚线框
                     noteHtml = `<div class="editable-note" data-record-time="${record.time}" style="margin-top: 4px; text-align: center; font-size: 12px; color: var(--theme-text-primary); max-width: 100%; overflow-wrap: break-word; word-wrap: break-word; word-break: break-all; cursor: pointer; padding: 2px 6px; border: 1px dashed transparent; border-radius: 3px; transition: border-color 0.2s;">${displayNote}</div>`;
@@ -2711,18 +2763,103 @@ function updateBookmarkCountDisplay(passedLang) {
     });
 
     // 统一的外部容器样式 (移到顶层作用域，确保在所有分支中可用)
-    const containerStyle = "display: inline-block; margin: 2px 0 2px 0; padding: 6px 8px 6px 10px; background-color: transparent; border-radius: 6px; font-size: 12.5px; text-align: center;";
+    const containerStyle = "display: block; width: 100%; margin: 2px 0; padding: 0; background-color: transparent; border-radius: 6px; font-size: 12.5px; text-align: left;";
     const mainItemStyle = "word-break: break-all; color: var(--theme-text-primary); text-align: left;";
     const secondaryItemStyle = "margin-top: 5px; font-size: 12px; color: var(--theme-text-secondary); text-align: left;";
 
     Promise.all([getLangPromise, getAutoSyncStatePromise])
         .then(([currentLang, isAutoSyncEnabled]) => {
             const bookmarkCountSpan = document.getElementById('bookmarkCount');
-            const changeDescriptionContainer = document.getElementById('change-description-row');
+            const statusCard = document.getElementById('change-description-row');
+            const changeDescriptionContainer = document.getElementById('statusCardText') || statusCard;
+            const statusCardChevron = document.getElementById('statusCardChevron');
 
-            if (!changeDescriptionContainer) {
+            if (!statusCard || !changeDescriptionContainer) {
                 return;
             }
+
+            const applyStatusCardDisplay = ({ html, hasChanges, showChevron }) => {
+                changeDescriptionContainer.innerHTML = html;
+                statusCard.classList.toggle('has-changes', Boolean(hasChanges));
+
+                if (statusCardChevron) {
+                    const shouldShowChevron = (typeof showChevron === 'boolean')
+                        ? showChevron
+                        : Boolean(hasChanges);
+                    statusCardChevron.style.display = shouldShowChevron ? '' : 'none';
+                }
+            };
+
+            const buildStatusCardChangeSummaryHTML = ({
+                bookmarkAddedCount,
+                folderAddedCount,
+                bookmarkDeletedCount,
+                folderDeletedCount,
+                movedTotal,
+                modifiedTotal
+            }) => {
+                const isEn = currentLang === 'en';
+                const bookmarkLabel = isEn ? 'BKM' : '书签';
+                const folderLabel = isEn ? 'FLD' : '文件夹';
+                const movedLabel = isEn ? 'Moved' : '移动';
+                const modifiedLabel = isEn ? 'Modified' : '修改';
+
+                const lines = [];
+
+                const addedItems = [];
+                if (bookmarkAddedCount > 0) {
+                    addedItems.push(
+                        `<span class="status-card-change-item"><span>${bookmarkLabel}</span><span class="history-stat-color added">+${bookmarkAddedCount}</span></span>`
+                    );
+                }
+                if (folderAddedCount > 0) {
+                    addedItems.push(
+                        `<span class="status-card-change-item"><span>${folderLabel}</span><span class="history-stat-color added">+${folderAddedCount}</span></span>`
+                    );
+                }
+                if (addedItems.length > 0) {
+                    lines.push(`<div class="status-card-change-line">${addedItems.join('')}</div>`);
+                }
+
+                const deletedItems = [];
+                if (bookmarkDeletedCount > 0) {
+                    deletedItems.push(
+                        `<span class="status-card-change-item"><span>${bookmarkLabel}</span><span class="history-stat-color deleted">-${bookmarkDeletedCount}</span></span>`
+                    );
+                }
+                if (folderDeletedCount > 0) {
+                    deletedItems.push(
+                        `<span class="status-card-change-item"><span>${folderLabel}</span><span class="history-stat-color deleted">-${folderDeletedCount}</span></span>`
+                    );
+                }
+                if (deletedItems.length > 0) {
+                    lines.push(`<div class="status-card-change-line">${deletedItems.join('')}</div>`);
+                }
+
+                const structuralItems = [];
+                if (movedTotal > 0) {
+                    structuralItems.push(
+                        `<span class="status-card-change-item"><span>${movedLabel}</span><span class="history-stat-color moved">${movedTotal}</span></span>`
+                    );
+                }
+                if (modifiedTotal > 0) {
+                    structuralItems.push(
+                        `<span class="status-card-change-item"><span>${modifiedLabel}</span><span class="history-stat-color modified">${modifiedTotal}</span></span>`
+                    );
+                }
+                if (structuralItems.length > 0) {
+                    lines.push(`<div class="status-card-change-line">${structuralItems.join('')}</div>`);
+                }
+
+                if (lines.length === 0) return '';
+                return `<div class="status-card-change-summary">${lines.join('')}</div>`;
+            };
+
+            const buildStatusCardMessageHTML = (text, extraStyle = '') => {
+                const safeText = (typeof text === 'string') ? text : '';
+                const styleAttr = extraStyle ? ` style="${extraStyle}"` : '';
+                return `<div class="status-card-change-summary"><div${styleAttr}>${safeText}</div></div>`;
+            };
 
             // 获取国际化标签 (确保 window.i18nLabels 已由 applyLocalizedContent 设置)
             const i18nBookmarksLabel = window.i18nLabels?.bookmarksLabel || (currentLang === 'en' ? "bookmarks" : "个书签");
@@ -2730,8 +2867,8 @@ function updateBookmarkCountDisplay(passedLang) {
 
             if (isAutoSyncEnabled) {
                 // 设置右侧状态卡片为自动模式样式
-                changeDescriptionContainer.classList.add('auto-mode');
-                changeDescriptionContainer.classList.remove('manual-mode');
+                statusCard.classList.add('auto-mode');
+                statusCard.classList.remove('manual-mode');
                 // --- 自动同步模式 ---
                 // 1. 更新 "当前数量/结构:" (Details)
                 chrome.runtime.sendMessage({ action: "getBackupStats" }, backupResponse => {
@@ -2769,9 +2906,11 @@ function updateBookmarkCountDisplay(passedLang) {
 
                         if (backupMode === 'realtime') {
                             // 实时备份：显示"监测中"
-                            statusText = currentLang === 'en' ?
-                                '「Realtime」Auto Backup: Monitoring' :
-                                '「实时」自动备份：监测中';
+                            statusText = currentLang === 'en'
+                                ? '「Realtime」Auto Backup: Monitoring'
+                                : '「实时」自动备份：监测中';
+                            applyStatusCardDisplay({ html: buildStatusCardMessageHTML(statusText), hasChanges: false });
+                            return;
                         } else if (backupMode === 'regular' || backupMode === 'specific' || backupMode === 'both') {
                             // 常规时间/特定时间：使用和手动备份完全一致的差异计算逻辑
                             Promise.all([
@@ -2797,10 +2936,8 @@ function updateBookmarkCountDisplay(passedLang) {
                                 })
                             ]).then(([syncHistory, cachedRecordFromStorage, recentIds]) => {
                                 if (!backupResponse || !backupResponse.success || !backupResponse.stats) {
-                                    const containerStyle = "display: inline-block; margin: 2px 0 2px 0; padding: 6px 8px 6px 10px; background-color: transparent; border-radius: 6px; font-size: 12.5px; text-align: center;";
-                                    const mainItemStyle = "word-break: break-all; color: var(--theme-status-card-auto-text); text-align: center;";
-                                    const noChangeText = currentLang === 'en' ? "No changes" : "无变化";
-                                    changeDescriptionContainer.innerHTML = `<div style="${containerStyle}"><div style="${mainItemStyle}">${noChangeText}</div></div>`;
+                                    const noChangeText = currentLang === 'en' ? 'No changes' : '无变化';
+                                    applyStatusCardDisplay({ html: buildStatusCardMessageHTML(noChangeText), hasChanges: false });
                                     return;
                                 }
 
@@ -2816,10 +2953,16 @@ function updateBookmarkCountDisplay(passedLang) {
                                 // 优先使用 background 的净变化计数；否则回退到 recentXxxIds
                                 const movedTotal = (typeof backupResponse.stats.movedCount === 'number')
                                     ? backupResponse.stats.movedCount
-                                    : recentIds.recentMovedIds.length;
+                                    : (recentIds.recentMovedIds.length > 0
+                                        ? recentIds.recentMovedIds.length
+                                        : ((typeof bookmarkMoved === 'number' ? bookmarkMoved : (bookmarkMoved ? 1 : 0)) +
+                                            (typeof folderMoved === 'number' ? folderMoved : (folderMoved ? 1 : 0))));
                                 const modifiedTotal = (typeof backupResponse.stats.modifiedCount === 'number')
                                     ? backupResponse.stats.modifiedCount
-                                    : recentIds.recentModifiedIds.length;
+                                    : (recentIds.recentModifiedIds.length > 0
+                                        ? recentIds.recentModifiedIds.length
+                                        : ((typeof bookmarkModified === 'number' ? bookmarkModified : (bookmarkModified ? 1 : 0)) +
+                                            (typeof folderModified === 'number' ? folderModified : (folderModified ? 1 : 0))));
                                 const hasStructuralChanges = bookmarkMoved || folderMoved || bookmarkModified || folderModified || movedTotal > 0 || modifiedTotal > 0;
 
                                 // 完全复制手动备份的差异计算逻辑
@@ -2977,50 +3120,53 @@ function updateBookmarkCountDisplay(passedLang) {
                                     structuralChangesHTML = structuralParts.join(separator);
                                 }
 
-                                // 组合显示内容（和手动备份完全一致）
-                                const containerStyle = "display: inline-block; margin: 2px 0 2px 0; padding: 6px 8px 6px 10px; background-color: transparent; border-radius: 6px; font-size: 12.5px; text-align: center;";
-                                const mainItemStyle = "word-break: break-all; color: var(--theme-status-card-auto-text); text-align: center;";
-                                const secondaryItemStyle = "margin-top: 8px; word-break: break-all; color: var(--theme-status-card-auto-text); text-align: center;";
+                                const bookmarkAddedCount = (typeof bmAdded === 'number')
+                                    ? bmAdded
+                                    : (canCalculateDiff && bookmarkDiff > 0 ? bookmarkDiff : 0);
+                                const bookmarkDeletedCount = (typeof bmDeleted === 'number')
+                                    ? bmDeleted
+                                    : (canCalculateDiff && bookmarkDiff < 0 ? Math.abs(bookmarkDiff) : 0);
+                                const folderAddedCount = (typeof fdAdded === 'number')
+                                    ? fdAdded
+                                    : (canCalculateDiff && folderDiff > 0 ? folderDiff : 0);
+                                const folderDeletedCount = (typeof fdDeleted === 'number')
+                                    ? fdDeleted
+                                    : (canCalculateDiff && folderDiff < 0 ? Math.abs(folderDiff) : 0);
 
-                                let statusText = "";
-                                if (quantityChangesHTML || structuralChangesHTML) {
-                                    let mainContent = "";
-                                    let secondaryContent = "";
-                                    if (quantityChangesHTML && structuralChangesHTML) {
-                                        mainContent = quantityChangesHTML;
-                                        secondaryContent = structuralChangesHTML;
-                                    } else if (quantityChangesHTML) {
-                                        mainContent = quantityChangesHTML;
-                                    } else if (structuralChangesHTML) {
-                                        mainContent = structuralChangesHTML;
-                                    }
-                                    statusText = `<div style="${containerStyle}">`;
-                                    if (mainContent) statusText += `<div style="${mainItemStyle}">${mainContent}</div>`;
-                                    if (secondaryContent) statusText += `<div style="${secondaryItemStyle}">${secondaryContent}</div>`;
-                                    statusText += `</div>`;
+                                const hasAnyChange = bookmarkAddedCount > 0 ||
+                                    bookmarkDeletedCount > 0 ||
+                                    folderAddedCount > 0 ||
+                                    folderDeletedCount > 0 ||
+                                    movedTotal > 0 ||
+                                    modifiedTotal > 0;
+
+                                if (hasAnyChange) {
+                                    const summaryHTML = buildStatusCardChangeSummaryHTML({
+                                        bookmarkAddedCount,
+                                        folderAddedCount,
+                                        bookmarkDeletedCount,
+                                        folderDeletedCount,
+                                        movedTotal,
+                                        modifiedTotal
+                                    });
+                                    applyStatusCardDisplay({ html: summaryHTML, hasChanges: true });
                                 } else {
-                                    const noChangeText = currentLang === 'en' ? "No changes" : "无变化";
-                                    statusText = `<div style="${containerStyle}"><div style="${mainItemStyle}">${noChangeText}</div></div>`;
+                                    const noChangeText = currentLang === 'en' ? 'No changes' : '无变化';
+                                    applyStatusCardDisplay({ html: buildStatusCardMessageHTML(noChangeText), hasChanges: false });
                                 }
-
-                                // 直接设置HTML内容
-                                changeDescriptionContainer.innerHTML = statusText;
                             });
                         } else {
                             // 其他情况（如 'none' 或未设置）：显示无变化
-                            const containerStyle = "display: inline-block; margin: 2px 0 2px 0; padding: 6px 8px 6px 10px; background-color: transparent; border-radius: 6px; font-size: 12.5px; text-align: center;";
-                            const mainItemStyle = "word-break: break-all; color: var(--theme-status-card-auto-text); text-align: center;";
                             const noChangeText = currentLang === 'en' ? 'No changes' : '无变化';
-                            const statusText = `<div style="${containerStyle}"><div style="${mainItemStyle}">${noChangeText}</div></div>`;
-                            changeDescriptionContainer.innerHTML = statusText;
+                            applyStatusCardDisplay({ html: buildStatusCardMessageHTML(noChangeText), hasChanges: false });
                         }
                     });
                 });
 
             } else {
                 // 设置右侧状态卡片为手动模式样式
-                changeDescriptionContainer.classList.add('manual-mode');
-                changeDescriptionContainer.classList.remove('auto-mode');
+                statusCard.classList.add('manual-mode');
+                statusCard.classList.remove('auto-mode');
                 // --- 手动备份模式 ---
                 Promise.all([
                     new Promise((resolve, reject) => {
@@ -3078,10 +3224,16 @@ function updateBookmarkCountDisplay(passedLang) {
                     // 优先使用 background 的净变化计数；否则回退到 recentXxxIds
                     const movedTotal = (typeof backupResponse.stats.movedCount === 'number')
                         ? backupResponse.stats.movedCount
-                        : recentIds.recentMovedIds.length;
+                        : (recentIds.recentMovedIds.length > 0
+                            ? recentIds.recentMovedIds.length
+                            : ((typeof bookmarkMoved === 'number' ? bookmarkMoved : (bookmarkMoved ? 1 : 0)) +
+                                (typeof folderMoved === 'number' ? folderMoved : (folderMoved ? 1 : 0))));
                     const modifiedTotal = (typeof backupResponse.stats.modifiedCount === 'number')
                         ? backupResponse.stats.modifiedCount
-                        : recentIds.recentModifiedIds.length;
+                        : (recentIds.recentModifiedIds.length > 0
+                            ? recentIds.recentModifiedIds.length
+                            : ((typeof bookmarkModified === 'number' ? bookmarkModified : (bookmarkModified ? 1 : 0)) +
+                                (typeof folderModified === 'number' ? folderModified : (folderModified ? 1 : 0))));
                     const hasStructuralChanges = bookmarkMoved || folderMoved || bookmarkModified || folderModified || movedTotal > 0 || modifiedTotal > 0;
 
 
@@ -3241,45 +3393,70 @@ function updateBookmarkCountDisplay(passedLang) {
                         structuralChangesHTML = structuralParts.join(separator);
                     }
 
-                    let changeDescriptionContent = "";
-                    const manualMainItemStyle = "word-break: break-all; color: var(--theme-status-card-manual-text); text-align: center;";
-                    const manualSecondaryItemStyle = "margin-top: 8px; word-break: break-all; color: var(--theme-status-card-manual-text); text-align: center;";
-                    if (quantityChangesHTML || structuralChangesHTML) {
-                        let mainContent = "";
-                        let secondaryContent = "";
-                        if (quantityChangesHTML && structuralChangesHTML) {
-                            mainContent = quantityChangesHTML;
-                            secondaryContent = structuralChangesHTML;
-                        } else if (quantityChangesHTML) {
-                            mainContent = quantityChangesHTML;
-                        } else if (structuralChangesHTML) {
-                            mainContent = structuralChangesHTML;
-                        }
-                        changeDescriptionContent = `<div style="${containerStyle}">`;
-                        if (mainContent) changeDescriptionContent += `<div style="${manualMainItemStyle}">${mainContent}</div>`;
-                        if (secondaryContent) changeDescriptionContent += `<div style="${manualSecondaryItemStyle}">${secondaryContent}</div>`;
-                        changeDescriptionContent += `</div>`;
+                    const bookmarkAddedCount = (typeof bmAdded === 'number')
+                        ? bmAdded
+                        : (canCalculateDiff && bookmarkDiffManual > 0 ? bookmarkDiffManual : 0);
+                    const bookmarkDeletedCount = (typeof bmDeleted === 'number')
+                        ? bmDeleted
+                        : (canCalculateDiff && bookmarkDiffManual < 0 ? Math.abs(bookmarkDiffManual) : 0);
+                    const folderAddedCount = (typeof fdAdded === 'number')
+                        ? fdAdded
+                        : (canCalculateDiff && folderDiffManual > 0 ? folderDiffManual : 0);
+                    const folderDeletedCount = (typeof fdDeleted === 'number')
+                        ? fdDeleted
+                        : (canCalculateDiff && folderDiffManual < 0 ? Math.abs(folderDiffManual) : 0);
+
+                    const hasAnyChange = bookmarkAddedCount > 0 ||
+                        bookmarkDeletedCount > 0 ||
+                        folderAddedCount > 0 ||
+                        folderDeletedCount > 0 ||
+                        movedTotal > 0 ||
+                        modifiedTotal > 0;
+
+                    if (hasAnyChange) {
+                        const summaryHTML = buildStatusCardChangeSummaryHTML({
+                            bookmarkAddedCount,
+                            folderAddedCount,
+                            bookmarkDeletedCount,
+                            folderDeletedCount,
+                            movedTotal,
+                            modifiedTotal
+                        });
+                        applyStatusCardDisplay({ html: summaryHTML, hasChanges: true });
                     } else {
-                        const noChangeText = currentLang === 'en' ? "No changes" : "无变化";
-                        changeDescriptionContent = `<div style="${containerStyle}"><div style="${manualMainItemStyle}">${noChangeText}</div></div>`;
+                        const noChangeText = currentLang === 'en' ? 'No changes' : '无变化';
+                        applyStatusCardDisplay({ html: buildStatusCardMessageHTML(noChangeText), hasChanges: false });
                     }
-                    changeDescriptionContainer.innerHTML = changeDescriptionContent;
                     // --- 结束原有的手动模式差异计算和显示逻辑 ---
                 }).catch(manualError => {
                     if (bookmarkCountSpan) {
                         bookmarkCountSpan.innerHTML = `<span style="color: red;">${currentLang === 'en' ? 'Details load failed' : '详情加载失败'}</span>`;
                     }
                     if (changeDescriptionContainer) {
-                        changeDescriptionContainer.innerHTML = `<div style="${containerStyle}"><div style="${mainItemStyle} color: red;">${currentLang === 'en' ? 'Change details unavailable' : '变动详情无法加载'}</div></div>`;
+                        const errorText = currentLang === 'en' ? 'Change details unavailable' : '变动详情无法加载';
+                        applyStatusCardDisplay({ html: buildStatusCardMessageHTML(errorText, 'color: red;'), hasChanges: false });
                     }
                 });
             }
         })
         .catch(initialError => {
             const bookmarkCountSpan = document.getElementById('bookmarkCount');
-            const changeDescriptionContainer = document.getElementById('change-description-row');
-            if (bookmarkCountSpan) bookmarkCountSpan.innerHTML = `<span style="color: red;">${'加载失败'}</span>`;
-            if (changeDescriptionContainer) changeDescriptionContainer.innerHTML = ''; // 清空以避免显示旧内容
+            const statusCard = document.getElementById('change-description-row');
+            const changeDescriptionContainer = document.getElementById('statusCardText') || statusCard;
+            const statusCardChevron = document.getElementById('statusCardChevron');
+
+            if (bookmarkCountSpan) {
+                bookmarkCountSpan.innerHTML = `<span style="color: red;">${'加载失败'}</span>`;
+            }
+            if (changeDescriptionContainer) {
+                changeDescriptionContainer.innerHTML = '';
+            }
+            if (statusCard) {
+                statusCard.classList.remove('has-changes');
+            }
+            if (statusCardChevron) {
+                statusCardChevron.style.display = 'none';
+            }
         });
 }
 
@@ -4150,9 +4327,28 @@ function handleInitUpload() {
 function handleManualUpload() {
     showStatus('开始手动上传...', 'info');
 
-    // 获取上传按钮并禁用
-    const uploadButton = document.getElementById('uploadToCloudManual');
-    if (uploadButton) uploadButton.disabled = true;
+    const overlayButton = document.getElementById('manualBackupBtnOverlay');
+    const legacyButton = document.getElementById('uploadToCloudManual');
+
+    const isButtonVisible = (btn) => {
+        if (!btn) return false;
+        try {
+            return window.getComputedStyle(btn).display !== 'none';
+        } catch (_) {
+            return true;
+        }
+    };
+
+    // 优先使用“状态卡片右下角”的按钮作为主按钮（可见、可动画）
+    const primaryButton = isButtonVisible(overlayButton) ? overlayButton : legacyButton;
+
+    // 禁用所有相关按钮，避免重复触发
+    const buttonsToLock = [overlayButton, legacyButton].filter(Boolean);
+    const disabledSnapshot = new Map();
+    buttonsToLock.forEach(btn => {
+        disabledSnapshot.set(btn, btn.disabled);
+        btn.disabled = true;
+    });
 
     // 发送上传请求
     chrome.runtime.sendMessage({
@@ -4160,7 +4356,10 @@ function handleManualUpload() {
         direction: "upload"
     }, (response) => {
         // 恢复按钮状态
-        if (uploadButton) uploadButton.disabled = false;
+        buttonsToLock.forEach(btn => {
+            const prevDisabled = disabledSnapshot.get(btn);
+            btn.disabled = prevDisabled === true;
+        });
 
         if (response && response.success) {
             // ... (保持原有的成功处理逻辑，包括发送 manualBackupCompleted)
@@ -4207,74 +4406,83 @@ function handleManualUpload() {
                     manualSyncOptions.style.display = autoSyncEnabled ? 'none' : 'block';
                 });
             }
-            if (uploadButton) {
-                // 1. Lock dimensions strictly & Apply Green Background Override
-                uploadButton.classList.add('success-animating'); // pointer-events: none set in CSS
+            if (primaryButton) {
+                // 1. Lock dimensions strictly
+                primaryButton.classList.add('success-animating');
 
-                const rect = uploadButton.getBoundingClientRect();
-                uploadButton.style.flex = `0 0 ${rect.width}px`;
-                uploadButton.style.width = `${rect.width}px`;
-                uploadButton.style.height = `${rect.height}px`;
+                const rect = primaryButton.getBoundingClientRect();
+                const originalHTML = primaryButton.innerHTML;
 
-                uploadButton.style.padding = '0';
-                uploadButton.style.display = 'flex';
-                uploadButton.style.alignItems = 'center';
-                uploadButton.style.justifyContent = 'center';
+                // 保存 inline 样式，避免动画结束后把按钮隐藏掉（overlay 的 display 由 JS 控制）
+                const originalStyles = {
+                    flex: primaryButton.style.flex,
+                    width: primaryButton.style.width,
+                    height: primaryButton.style.height,
+                    padding: primaryButton.style.padding,
+                    display: primaryButton.style.display,
+                    alignItems: primaryButton.style.alignItems,
+                    justifyContent: primaryButton.style.justifyContent
+                };
 
-                const originalHTML = uploadButton.innerHTML;
+                primaryButton.style.flex = `0 0 ${rect.width}px`;
+                primaryButton.style.width = `${rect.width}px`;
+                primaryButton.style.height = `${rect.height}px`;
 
-                // 2. Wrap existing text for animation
-                uploadButton.innerHTML = `<span class="anim-content">${originalHTML}</span>`;
-                // DO NOT set disabled = true, rely on pointer-events: none
+                primaryButton.style.padding = '0';
+                primaryButton.style.display = 'flex';
+                primaryButton.style.alignItems = 'center';
+                primaryButton.style.justifyContent = 'center';
+
+                // 2. Wrap existing content for animation
+                primaryButton.innerHTML = `<span class="anim-content">${originalHTML}</span>`;
 
                 // Force reflow
-                void uploadButton.offsetWidth;
+                void primaryButton.offsetWidth;
 
-                // Start Fade Out Text
-                uploadButton.querySelector('.anim-content').classList.add('anim-out');
+                const fadeNode = primaryButton.querySelector('.anim-content');
+                if (fadeNode) fadeNode.classList.add('anim-out');
 
                 setTimeout(() => {
                     // 3. Swap to Checkmark (Start Hidden/Scaled down)
-                    uploadButton.innerHTML = `<i class="fas fa-check anim-content anim-out" style="font-size: 14px; color: white;"></i>`;
+                    primaryButton.innerHTML = `<i class="fas fa-check anim-content anim-out" style="font-size: 14px; color: white;"></i>`;
 
                     // Force reflow
-                    void uploadButton.offsetWidth;
+                    void primaryButton.offsetWidth;
 
-                    // Fade In Checkmark
-                    uploadButton.querySelector('.anim-content').classList.remove('anim-out');
+                    const checkNode = primaryButton.querySelector('.anim-content');
+                    if (checkNode) checkNode.classList.remove('anim-out');
 
                     // 4. Wait, then reverse
                     setTimeout(() => {
-                        // Fade Out Checkmark
-                        uploadButton.querySelector('.anim-content').classList.add('anim-out');
+                        const checkNode2 = primaryButton.querySelector('.anim-content');
+                        if (checkNode2) checkNode2.classList.add('anim-out');
 
                         setTimeout(() => {
-                            // 5. Swap back to Text (Start Hidden)
-                            uploadButton.innerHTML = `<span class="anim-content anim-out">${originalHTML}</span>`;
+                            // 5. Swap back to original content (Start Hidden)
+                            primaryButton.innerHTML = `<span class="anim-content anim-out">${originalHTML}</span>`;
 
                             // Force reflow
-                            void uploadButton.offsetWidth;
+                            void primaryButton.offsetWidth;
 
-                            // Fade In Text
-                            uploadButton.querySelector('.anim-content').classList.remove('anim-out');
+                            const textNode = primaryButton.querySelector('.anim-content');
+                            if (textNode) textNode.classList.remove('anim-out');
 
                             setTimeout(() => {
                                 // 6. Cleanup / Restore Original State
-                                uploadButton.innerHTML = originalHTML;
+                                primaryButton.innerHTML = originalHTML;
+                                primaryButton.classList.remove('success-animating');
 
-                                uploadButton.classList.remove('success-animating'); // Restore clicks
-
-                                uploadButton.style.flex = '';
-                                uploadButton.style.width = '';
-                                uploadButton.style.height = '';
-                                uploadButton.style.padding = '';
-                                uploadButton.style.display = '';
-                                uploadButton.style.alignItems = '';
-                                uploadButton.style.justifyContent = '';
-                            }, 300); // Wait for text fade in (match transition + buffer)
-                        }, 300); // Wait for checkmark fade out
-                    }, 1200); // Display checkmark duration
-                }, 300); // Wait for text fade out (match transition + buffer)
+                                primaryButton.style.flex = originalStyles.flex;
+                                primaryButton.style.width = originalStyles.width;
+                                primaryButton.style.height = originalStyles.height;
+                                primaryButton.style.padding = originalStyles.padding;
+                                primaryButton.style.display = originalStyles.display;
+                                primaryButton.style.alignItems = originalStyles.alignItems;
+                                primaryButton.style.justifyContent = originalStyles.justifyContent;
+                            }, 300);
+                        }, 300);
+                    }, 1200);
+                }, 300);
             }
             chrome.storage.local.set({ initialized: true });
         } else {
@@ -5061,8 +5269,8 @@ const applyLocalizedContent = async (lang) => { // Added lang parameter
     };
 
     const reminderSettingsStrings = {
-        'zh_CN': "动态提醒设置",
-        'en': "Reminder Settings"
+        'zh_CN': "手动备份设置",
+        'en': "Manual Backup Settings"
     };
 
     const cyclicReminderStrings = {
@@ -6587,9 +6795,22 @@ const applyLocalizedContent = async (lang) => { // Added lang parameter
     }
 
     // 应用手动备份按钮文本
+    const manualBackupButtonText = manualBackupButtonStrings[lang] || manualBackupButtonStrings['zh_CN'];
+
     const uploadToCloudManual = document.getElementById('uploadToCloudManual');
     if (uploadToCloudManual) {
-        uploadToCloudManual.textContent = manualBackupButtonStrings[lang] || manualBackupButtonStrings['zh_CN'];
+        uploadToCloudManual.textContent = manualBackupButtonText;
+    }
+
+    const manualBackupBtnText = document.getElementById('manualBackupBtnText');
+    if (manualBackupBtnText) {
+        manualBackupBtnText.textContent = manualBackupButtonText;
+    }
+
+    const manualBackupBtnOverlay = document.getElementById('manualBackupBtnOverlay');
+    if (manualBackupBtnOverlay) {
+        manualBackupBtnOverlay.setAttribute('title', manualBackupButtonText);
+        manualBackupBtnOverlay.setAttribute('aria-label', manualBackupButtonText);
     }
 
     // 应用动态提醒设置按钮文本
@@ -6598,6 +6819,12 @@ const applyLocalizedContent = async (lang) => { // Added lang parameter
     if (reminderSettingsTooltip) {
         reminderSettingsTooltip.textContent = reminderSettingsStrings[lang] || reminderSettingsStrings['zh_CN'];
     }
+
+    const reminderSettingsTitle = document.getElementById('reminderSettingsTitle');
+    if (reminderSettingsTitle) {
+        reminderSettingsTitle.textContent = reminderSettingsStrings[lang] || reminderSettingsStrings['zh_CN'];
+    }
+
     const reminderSettingsBtnRef = document.getElementById('reminderSettingsBtn');
     if (reminderSettingsBtnRef) {
         const tipTextRem = reminderSettingsStrings[lang] || reminderSettingsStrings['zh_CN'];
@@ -8366,8 +8593,9 @@ document.addEventListener('DOMContentLoaded', function () {
         } else if (message && message.action === "getChangeDescription") {
             // 获取变化描述内容
             try {
-                // 获取显示变化描述的容器元素
-                const changeDescriptionContainer = document.getElementById('change-description-row');
+                // 获取显示变化描述的容器元素（优先取内容区，避免包含按钮/图标文字）
+                const statusCardText = document.getElementById('statusCardText');
+                const changeDescriptionContainer = statusCardText || document.getElementById('change-description-row');
                 if (changeDescriptionContainer) {
                     // 返回HTML内容中的纯文本
                     const htmlContent = changeDescriptionContainer.innerHTML || "";

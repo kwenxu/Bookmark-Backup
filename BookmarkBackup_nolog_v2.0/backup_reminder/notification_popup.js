@@ -64,7 +64,7 @@ function applyTheme() {
 // 国际化文本常量
 // =======================================================
 // 提醒设置相关国际化文本
-const reminderSettingsStrings = { 'zh_CN': "动态提醒设置", 'en': "Reminder Settings" };
+const reminderSettingsStrings = { 'zh_CN': "手动备份设置", 'en': "Manual Backup Settings" };
 const cyclicReminderStrings = { 'zh_CN': "循环提醒", 'en': "Cyclic Reminder" };
 const minutesUnitStrings = { 'zh_CN': "分钟", 'en': "minutes" };
 const fixedTime1Strings = { 'zh_CN': "准点定时1", 'en': "Fixed Time 1" };

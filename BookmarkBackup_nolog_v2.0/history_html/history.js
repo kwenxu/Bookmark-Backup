@@ -14870,6 +14870,72 @@ function renderChangeTreeItem(bookmark, type) {
 let currentHistoryPage = 1;
 const HISTORY_PAGE_SIZE = 10;
 
+function getUnifiedHistoryRecordNote(record, lang) {
+    const rawNote = (record && typeof record.note === 'string') ? record.note.trim() : '';
+    const isEn = lang === 'en';
+
+    const manualLabel = isEn ? 'Manual Backup' : '手动备份';
+    const switchLabel = isEn ? 'Switch Backup' : '切换备份';
+    const autoPrefix = isEn ? 'Auto Backup' : '自动备份';
+    const autoRealtimeLabel = isEn ? `${autoPrefix}--Realtime` : `${autoPrefix}--实时`;
+    const autoRegularLabel = isEn ? `${autoPrefix}--Regular` : `${autoPrefix}--常规`;
+    const autoSpecificLabel = isEn ? `${autoPrefix}--Specific` : `${autoPrefix}--特定`;
+
+    const recordType = record?.type || (() => {
+        if (rawNote === '手动备份' || rawNote === 'Manual Backup') return 'manual';
+        if (rawNote === '切换备份' || rawNote === 'Switch Backup') return 'switch';
+        return 'auto';
+    })();
+
+    const isSystemManualNote = !rawNote || rawNote === '手动备份' || rawNote === 'Manual Backup';
+    const isSystemSwitchNote = !rawNote || rawNote === '切换备份' || rawNote === 'Switch Backup';
+
+    if (recordType === 'switch' || recordType === 'auto_switch') {
+        return isSystemSwitchNote ? switchLabel : rawNote;
+    }
+
+    if (recordType === 'manual') {
+        return isSystemManualNote ? manualLabel : rawNote;
+    }
+
+    // restore 类型：保留原样（如果为空，由下游逻辑处理）
+    if (recordType === 'restore') {
+        return rawNote;
+    }
+
+    const lowerNote = rawNote.toLowerCase();
+    const looksLikeSpecificReason = rawNote.includes('特定') ||
+        lowerNote.includes('specific') ||
+        /\d{4}-\d{2}-\d{2}[ tT]\d{2}:\d{2}/.test(rawNote);
+    const looksLikeRegularReason = rawNote.includes('常规') ||
+        lowerNote.includes('regular') ||
+        rawNote.includes(' - ') ||
+        rawNote.includes('每') ||
+        rawNote.includes('周') ||
+        lowerNote.includes('every');
+
+    // 兼容旧记录：可能只保存了原因（如：周一/每1小时/特定：...），没有“自动备份 - ”前缀
+    const looksLikeLegacyReasonOnly = (recordType === 'auto') && (looksLikeSpecificReason || looksLikeRegularReason);
+
+    const isSystemAutoNote = !rawNote ||
+        rawNote === '自动备份' ||
+        rawNote === 'Auto Backup' ||
+        rawNote.startsWith('自动备份 - ') ||
+        rawNote.startsWith('Auto Backup - ') ||
+        rawNote.startsWith('自动备份--') ||
+        rawNote.startsWith('Auto Backup--') ||
+        looksLikeLegacyReasonOnly;
+
+    if (isSystemAutoNote) {
+        if (looksLikeSpecificReason) return autoSpecificLabel;
+        if (looksLikeRegularReason) return autoRegularLabel;
+        return autoRealtimeLabel;
+    }
+
+    // 用户自定义备注：原样返回
+    return rawNote;
+}
+
 function renderHistoryView() {
     const container = document.getElementById('historyList');
     // 分页控件元素
@@ -14991,7 +15057,7 @@ function renderHistoryView() {
         }
 
         // 构建显示标题
-        let displayTitle = record.note;
+        let displayTitle = getUnifiedHistoryRecordNote(record, currentLang);
 
         // 尝试构建更详细的标题（包含源备份的备注）
         // 注意：如果 record.note 已存在（包括用户手动修改），优先展示 record.note，避免显示与编辑不一致。
@@ -21648,8 +21714,9 @@ async function generateDetailContent(record, mode) {
     const seqNumber = seqMap.get(String(record.time));
     const seqText = Number.isFinite(seqNumber) ? String(seqNumber) : '-';
 
-    const noteText = (record.note && record.note.trim())
-        ? record.note
+    const displayNote = getUnifiedHistoryRecordNote(record, currentLang);
+    const noteText = (displayNote && String(displayNote).trim())
+        ? displayNote
         : (currentLang === 'zh_CN' ? '（无备注）' : '(No note)');
     html += `
         <div class="detail-section">

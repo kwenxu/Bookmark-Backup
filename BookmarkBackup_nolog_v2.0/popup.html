@@ -807,8 +807,8 @@
         /* 备份历史记录区域 */
         .sync-history {
             margin-top: 20px;
-            padding: 12px 10px 12px 20px;
-            /* 进一步减小右侧padding */
+            padding: 12px 20px;
+            /* 左右内边距一致 */
             background-color: var(--theme-bg-elevated);
             /* Use CSS variable for background color */
             border-radius: 8px;
@@ -1243,8 +1243,8 @@
             border-bottom: 1px solid var(--theme-border-primary);
             display: flex;
             justify-content: flex-start;
-            gap: 8px;
-            /* 使元素均匀分布 */
+            gap: 4px;
+            /* 缩小栏间距 */
             align-items: center;
             /* 垂直居中 */
             position: relative;
@@ -1278,7 +1278,7 @@
         }
 
         .history-item-time {
-            padding-left: 12px;
+            padding-left: 6px;
         }
 
         /* 确保历史记录内容换行时的对齐 */
@@ -2711,6 +2711,13 @@
             --theme-status-card-manual-text: #1976d2;
             --theme-status-card-manual-border: #90caf9;
             --theme-status-card-manual-shadow: rgba(33, 150, 243, 0.1);
+
+            /* Status card overlay button (glass) */
+            --theme-glass-action-bg: rgba(25, 118, 210, 0.18);
+            --theme-glass-action-bg-hover: rgba(25, 118, 210, 0.24);
+            --theme-glass-action-border: rgba(255, 255, 255, 0.55);
+            --theme-glass-action-border-hover: rgba(255, 255, 255, 0.75);
+            --theme-glass-action-shadow: rgba(0, 0, 0, 0.12);
         }
 
         html[data-theme="dark"] {
@@ -2725,10 +2732,48 @@
             --theme-status-card-manual-text: #64b5f6;
             --theme-status-card-manual-border: #1976d2;
             --theme-status-card-manual-shadow: rgba(33, 150, 243, 0.2);
+
+            /* Status card overlay button (glass) */
+            --theme-glass-action-bg: rgba(255, 255, 255, 0.12);
+            --theme-glass-action-bg-hover: rgba(255, 255, 255, 0.18);
+            --theme-glass-action-border: rgba(255, 255, 255, 0.32);
+            --theme-glass-action-border-hover: rgba(255, 255, 255, 0.42);
+            --theme-glass-action-shadow: rgba(0, 0, 0, 0.35);
         }
 
         .status-card {
             transition: background-color 0.3s ease, border-color 0.3s ease, box-shadow 0.3s ease;
+        }
+
+        .status-card.has-changes {
+            align-items: flex-start !important;
+        }
+
+        .status-card-change-summary {
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+            font-size: 12.5px;
+            text-align: left;
+        }
+
+        .status-card-change-line {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 10px;
+            align-items: baseline;
+        }
+
+        .status-card-change-item {
+            display: inline-flex;
+            align-items: baseline;
+            gap: 6px;
+        }
+
+        #statusCardText {
+            flex: 1;
+            width: 100%;
+            min-width: 0;
         }
 
         /* 右侧状态卡片：根据模式着色 */
@@ -2744,6 +2789,62 @@
             color: var(--theme-status-card-manual-text) !important;
             border: 1px solid var(--theme-status-card-manual-border) !important;
             box-shadow: 0 2px 8px var(--theme-status-card-manual-shadow) !important;
+        }
+
+        /* Manual backup overlay button (glass) */
+        #manualBackupBtnOverlay {
+            position: absolute;
+            right: 12px;
+            bottom: 12px;
+            display: none;
+            align-items: center;
+            gap: 4px;
+            padding: 4px 10px;
+            border-radius: 8px;
+            border: 1px solid var(--theme-glass-action-border);
+            background: var(--theme-glass-action-bg);
+            backdrop-filter: blur(10px) saturate(160%);
+            -webkit-backdrop-filter: blur(10px) saturate(160%);
+            box-shadow: 0 8px 18px var(--theme-glass-action-shadow);
+            cursor: pointer;
+            user-select: none;
+            font-size: 12px;
+            font-weight: 700;
+            letter-spacing: 0.2px;
+            transition: transform 0.15s ease, background-color 0.15s ease, border-color 0.15s ease;
+        }
+
+        #manualBackupBtnOverlay:disabled {
+            opacity: 0.65;
+            cursor: default;
+        }
+
+        #manualBackupBtnOverlay.success-animating {
+            pointer-events: none;
+        }
+
+        #manualBackupBtnOverlay:hover {
+            background: var(--theme-glass-action-bg-hover);
+            border-color: var(--theme-glass-action-border-hover);
+            transform: translateY(-1px);
+        }
+
+        #manualBackupBtnOverlay:active {
+            transform: translateY(0);
+        }
+
+        #manualBackupBtnOverlay i {
+            color: rgba(255, 255, 255, 0.88);
+            filter: drop-shadow(0 1px 1px rgba(0, 0, 0, 0.18));
+        }
+
+        #manualBackupBtnOverlay #manualBackupBtnText {
+            background: linear-gradient(180deg, rgba(255, 255, 255, 0.98), rgba(255, 255, 255, 0.55));
+            -webkit-background-clip: text;
+            background-clip: text;
+            color: transparent;
+            -webkit-text-fill-color: transparent;
+            filter: drop-shadow(0 1px 1px rgba(0, 0, 0, 0.18));
         }
 
         .mode-tip.auto-tip {
@@ -4307,7 +4408,7 @@
             <div style="display: flex; flex-direction: column; gap: 15px;">
                 <!-- 第一行：A（备份模式切换区域，包含B状态卡片在右侧）-->
                 <div class="sync-controls"
-                    style="margin: 0; background-color: transparent; border-radius: 8px; padding: 15px 20px; border: 1px solid var(--theme-border-primary); box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05); display: flex; gap: 15px; align-items: stretch;">
+                    style="margin: 0; width: calc(60% - 7.5px); box-sizing: border-box; padding: 12px 20px; background-color: var(--theme-bg-elevated); border-radius: 8px; border: 1px solid var(--theme-border-primary); box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08); display: flex; flex-direction: column; gap: 8px; align-items: stretch;">
 
                     <!-- 隐藏的Slider相关元素，保留 IDs 以防 JS 报错，稍后在 JS 中处理 -->
                     <div style="display: none;">
@@ -4318,18 +4419,24 @@
                         <button id="uploadToCloudManual"></button>
                     </div>
 
+                    <div style="display: flex; justify-content: space-between; align-items: center;">
+                        <h3
+                            style="margin: 0; font-size: 14px; color: var(--theme-text-primary); font-weight: 500;">
+                            当前变化</h3>
+                    </div>
+
                     <!-- B：状态卡片（全宽）-->
-                    <div id="rightStatusContainer" style="flex: 1; width: 100%;">
+                    <div id="rightStatusContainer" style="width: 100%;">
                         <div id="change-description-row" class="status-card" style="
-                            padding: 12px;
+                            padding: 12px 56px 12px 16px;
                             border-radius: 12px;
                             height: 110px;
                             display: flex;
                             align-items: center;
-                            justify-content: center;
+                            justify-content: flex-start;
                             font-size: 14px;
                             font-weight: 600;
-                            text-align: center;
+                            text-align: left;
                             transition: all 0.3s ease;
                             box-sizing: border-box;
                             cursor: pointer;
@@ -4338,27 +4445,12 @@
                             margin: 0;   /* Remove margins */
                         " title="点击查看详细变化">
                             <div id="statusCardText">自动备份模式</div>
-                            <i class="fas fa-chevron-right"
-                                style="position: absolute; right: 12px; opacity: 0.5; font-size: 16px;"></i>
+                            <i id="statusCardChevron" class="fas fa-chevron-right"
+                                style="position: absolute; right: 12px; opacity: 0.5; font-size: 16px; display: none;"></i>
 
                             <!-- Manual Backup Button Overlay -->
-                            <button id="manualBackupBtnOverlay" style="
-                                position: absolute;
-                                right: 12px;
-                                bottom: 12px;
-                                background: rgba(255, 255, 255, 0.3);
-                                border: 1px solid rgba(255, 255, 255, 0.5);
-                                border-radius: 4px;
-                                padding: 4px 8px;
-                                font-size: 12px;
-                                color: inherit;
-                                cursor: pointer;
-                                display: none; /* Initially hidden */
-                                align-items: center;
-                                gap: 4px;
-                                z-index: 10;
-                            ">
-                                <i class="fas fa-save"></i> <span id="manualBackupBtnText">手动备份</span>
+                            <button id="manualBackupBtnOverlay" type="button">
+                                <i class="fas fa-hand-pointer"></i> <span id="manualBackupBtnText">手动备份</span>
                             </button>
                         </div>
                     </div>
@@ -4368,7 +4460,7 @@
                 <div style="display: flex; gap: 15px; align-items: stretch;">
                     <!-- C：备份检查记录历史 -->
                     <div class="sync-history"
-                        style="margin: 0; flex: 0 0 calc(60% - 7.5px); padding: 12px 10px 12px 20px;">
+                        style="margin: 0; flex: 0 0 calc(60% - 7.5px); padding: 12px 20px;">
                         <div
                             style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
                             <div style="display: flex; align-items: center; gap: 8px;">
@@ -4675,7 +4767,7 @@
         <div class="modal-content"
             style="max-width: 480px; max-height: 90vh; position: fixed; padding: 25px; top: 50%; left: 50%; transform: translate(-50%, -50%); margin: 0; overflow-y: auto;">
             <div style="position: relative; margin-bottom: 12px;">
-                <h3 style="color: #4CAF50; font-size: 20px; margin: 0; display: inline-block;">动态提醒设置</h3>
+                <h3 id="reminderSettingsTitle" style="color: #4CAF50; font-size: 20px; margin: 0; display: inline-block;">手动备份设置</h3>
                 <button id="closeReminderSettings" class="close-button"
                     style="position: absolute; right: 0; top: 50%; transform: translateY(-50%); width: 28px; height: 28px; display: flex; justify-content: center; align-items: center; font-size: 20px; font-weight: bold; background-color: var(--theme-bg-primary); color: #888; border: none; cursor: pointer; border-radius: 50%; box-shadow: 0 1px 3px rgba(0,0,0,0.1); transition: all 0.2s ease;">×</button>
             </div>

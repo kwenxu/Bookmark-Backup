@@ -10694,10 +10694,13 @@ function showRestoreModal(versions, source) {
     const strategyGroup = document.getElementById('restoreStrategyGroup');
     const strategyOverwriteRadio = document.getElementById('restoreStrategyOverwrite');
     const strategyMergeRadio = document.getElementById('restoreStrategyMerge');
+    const strategyPatchRadio = document.getElementById('restoreStrategyPatch');
     const strategyOverwriteLabel = document.getElementById('restoreStrategyOverwriteLabel');
     const strategyMergeLabel = document.getElementById('restoreStrategyMergeLabel');
+    const strategyPatchLabel = document.getElementById('restoreStrategyPatchLabel');
     const strategyOverwriteLabelWrap = document.getElementById('restoreStrategyOverwriteLabelWrap');
     const strategyMergeLabelWrap = document.getElementById('restoreStrategyMergeLabelWrap');
+    const strategyPatchLabelWrap = document.getElementById('restoreStrategyPatchLabelWrap');
     const cancelBtn = document.getElementById('cancelRestoreBtnRef');
     const closeBtn = document.getElementById('closeRestoreModal');
     const title = document.getElementById('restoreModalTitle');
@@ -10721,7 +10724,7 @@ function showRestoreModal(versions, source) {
     const versionTypeHistoryLabelWrap = document.getElementById('restoreVersionTypeHistoryLabelWrap');
     const versionTypeSnapshotLabelWrap = document.getElementById('restoreVersionTypeSnapshotLabelWrap');
 
-    if (!modal || !tableBody || !confirmBtn || !strategyGroup || !strategyOverwriteRadio || !strategyMergeRadio || !cancelBtn || !closeBtn) {
+    if (!modal || !tableBody || !confirmBtn || !strategyGroup || !strategyOverwriteRadio || !strategyMergeRadio || !strategyPatchRadio || !cancelBtn || !closeBtn) {
         console.warn('[showRestoreModal] Missing modal DOM nodes');
         return;
     }
@@ -10771,7 +10774,7 @@ function showRestoreModal(versions, source) {
         }
     };
 
-    let currentStrategy = strategyMergeRadio.checked ? 'merge' : 'overwrite';
+    let currentStrategy = strategyPatchRadio.checked ? 'patch' : (strategyMergeRadio.checked ? 'merge' : 'overwrite');
 
     const getPreferredLang = () => new Promise(resolve => {
         try {
@@ -10825,7 +10828,11 @@ function showRestoreModal(versions, source) {
         }
         if (strategyMergeLabel) {
             const span = strategyMergeLabel.querySelector('span:last-child');
-            if (span) span.textContent = isEn ? 'Merge' : '合并';
+            if (span) span.textContent = isEn ? 'Import Merge' : '导入合并';
+        }
+        if (strategyPatchLabel) {
+            const span = strategyPatchLabel.querySelector('span:last-child');
+            if (span) span.textContent = isEn ? 'Patch Merge' : '补丁合并';
         }
 
         if (strategyOverwriteLabelWrap) {
@@ -10835,8 +10842,13 @@ function showRestoreModal(versions, source) {
         }
         if (strategyMergeLabelWrap) {
             strategyMergeLabelWrap.title = isEn
-                ? 'Merge (import-style): import into an “Imported” folder under Other Bookmarks (no deletion).'
-                : '合并（导入式）：导入到「其他书签/导入」文件夹（不会删除现有书签）。';
+                ? 'Import Merge: import into an “Imported” folder under Other Bookmarks (no deletion).'
+                : '导入合并：导入到「其他书签/导入」文件夹（不会删除现有书签）。';
+        }
+        if (strategyPatchLabelWrap) {
+            strategyPatchLabelWrap.title = isEn
+                ? 'Patch Merge: match this version (add/move/update/remove).'
+                : '补丁合并：按该版本调整（新增/移动/修改/删除）。';
         }
     };
 
@@ -10848,6 +10860,7 @@ function showRestoreModal(versions, source) {
 
     const applyDefaultStrategyForType = (type) => {
         const wantsMerge = type === 'snapshot';
+        strategyPatchRadio.checked = false;
         strategyOverwriteRadio.checked = !wantsMerge;
         strategyMergeRadio.checked = wantsMerge;
         currentStrategy = wantsMerge ? 'merge' : 'overwrite';
@@ -10887,6 +10900,7 @@ function showRestoreModal(versions, source) {
     strategyGroup.classList.add('disabled');
     strategyOverwriteRadio.disabled = true;
     strategyMergeRadio.disabled = true;
+    strategyPatchRadio.disabled = true;
 
     // Column visibility / layout by version type
     applyColumnVisibilityForType(currentVersionType);
@@ -10925,6 +10939,7 @@ function showRestoreModal(versions, source) {
             confirmButton.disabled = true;
             strategyOverwriteRadio.disabled = true;
             strategyMergeRadio.disabled = true;
+            strategyPatchRadio.disabled = true;
             strategyGroup.classList.add('disabled');
             return;
         }
@@ -10945,6 +10960,7 @@ function showRestoreModal(versions, source) {
             confirmButton.disabled = !canRestore;
             strategyOverwriteRadio.disabled = !canRestore;
             strategyMergeRadio.disabled = !canRestore;
+            strategyPatchRadio.disabled = !canRestore;
             strategyGroup.classList.toggle('disabled', !canRestore);
         };
 
@@ -11040,6 +11056,7 @@ function showRestoreModal(versions, source) {
         confirmButton.disabled = selectedVersion?.canRestore === false;
         strategyOverwriteRadio.disabled = selectedVersion?.canRestore === false;
         strategyMergeRadio.disabled = selectedVersion?.canRestore === false;
+        strategyPatchRadio.disabled = selectedVersion?.canRestore === false;
         strategyGroup.classList.toggle('disabled', selectedVersion?.canRestore === false);
     };
 
@@ -11074,6 +11091,7 @@ function showRestoreModal(versions, source) {
         strategyGroup.classList.add('disabled');
         strategyOverwriteRadio.disabled = true;
         strategyMergeRadio.disabled = true;
+        strategyPatchRadio.disabled = true;
 
         updateTitleText(cachedLang, currentVersionType);
         renderVersionTable(currentVersionType === 'snapshot' ? snapshotVersions : historyVersions);
@@ -11095,6 +11113,7 @@ function showRestoreModal(versions, source) {
 
     strategyOverwriteRadio.onchange = () => { currentStrategy = 'overwrite'; };
     strategyMergeRadio.onchange = () => { currentStrategy = 'merge'; };
+    strategyPatchRadio.onchange = () => { currentStrategy = 'patch'; };
 
     const showRestoreConfirmModal = async ({ version, strategy }) => {
         const confirmModal = document.getElementById('restoreConfirmModal');
@@ -11122,9 +11141,11 @@ function showRestoreModal(versions, source) {
         const fileName = String(version?.originalFile || version?.restoreRef?.originalFile || '').trim();
         const note = isHtml ? (fileName || rawNote || '') : rawNote;
         const versionTypeLabel = getVersionTypeLabel(lang, isHtml ? 'snapshot' : 'history');
-        const strategyText = strategy === 'overwrite'
-            ? (isEn ? 'Overwrite (Replace)' : '覆盖（替换）')
-            : (isEn ? 'Merge (Import)' : '合并（导入）');
+        const strategyText = (() => {
+            if (strategy === 'overwrite') return isEn ? 'Overwrite (Replace)' : '覆盖（替换）';
+            if (strategy === 'patch') return isEn ? 'Patch Merge (Match)' : '补丁合并（对齐）';
+            return isEn ? 'Import Merge (Import)' : '导入合并（导入）';
+        })();
 
         confirmTitle.textContent = isEn ? 'Confirm Restore' : '确认恢复';
 
@@ -11137,7 +11158,7 @@ function showRestoreModal(versions, source) {
             { key: isEn ? 'Note' : '备注', val: note || '-' }
         ];
 
-        if (strategy === 'overwrite' && !isHtml) {
+        if ((strategy === 'overwrite' || strategy === 'patch') && !isHtml) {
             rows.push({ key: isEn ? 'Hash' : '哈希', val: fingerprint || '-', mono: true });
         }
 
@@ -11150,7 +11171,7 @@ function showRestoreModal(versions, source) {
             return `<div class="restore-confirm-summary-key">${key}${colon}</div><div class="${cls}">${val}</div>`;
         }).join('')}</div>`;
 
-        // Merge = info (blue), Overwrite = danger (red)
+        // Import merge = info (blue); Overwrite/Patch = danger (red)
         confirmWarning.classList.remove('danger', 'info');
         confirmConfirmBtn.classList.remove('danger', 'primary');
 
@@ -11160,12 +11181,18 @@ function showRestoreModal(versions, source) {
             confirmWarning.textContent = isEn
                 ? 'Overwrite will replace your current bookmarks (Bookmarks Bar + Other Bookmarks). This cannot be undone.'
                 : '覆盖会替换你当前的「书签栏」与「其他书签」，且无法撤销。';
+        } else if (strategy === 'patch') {
+            confirmWarning.classList.add('danger');
+            confirmConfirmBtn.classList.add('danger');
+            confirmWarning.textContent = isEn
+                ? 'Patch merge: adjust bookmarks to selected version (add/move/update/remove).'
+                : '补丁合并：按所选版本调整当前书签（新增/移动/修改/删除）。';
         } else {
             confirmWarning.classList.add('info');
             confirmConfirmBtn.classList.add('primary');
             confirmWarning.textContent = isEn
-                ? 'Merge will import into an “Imported” folder under Other Bookmarks (no deletion).'
-                : '合并会以“导入”方式导入到「其他书签/导入」文件夹（不会删除现有书签）。';
+                ? 'Import merge: import into a new folder under Other Bookmarks (no deletion).'
+                : '导入合并：导入到「其他书签」新文件夹（不删除现有书签）。';
         }
 
         confirmCancelBtn.textContent = isEn ? 'Cancel' : '取消';
@@ -11193,7 +11220,9 @@ function showRestoreModal(versions, source) {
     };
 
     confirmButton.onclick = async () => {
-        const strategy = (strategyMergeRadio && strategyMergeRadio.checked) ? 'merge' : 'overwrite';
+        const strategy = (strategyPatchRadio && strategyPatchRadio.checked)
+            ? 'patch'
+            : ((strategyMergeRadio && strategyMergeRadio.checked) ? 'merge' : 'overwrite');
 
         try {
             if (!selectedVersion || !selectedVersion.restoreRef) {
@@ -11214,6 +11243,7 @@ function showRestoreModal(versions, source) {
             confirmButton.disabled = true;
             strategyOverwriteRadio.disabled = true;
             strategyMergeRadio.disabled = true;
+            strategyPatchRadio.disabled = true;
             strategyGroup.classList.add('disabled');
             closeButton.disabled = true;
             cancelButton.disabled = true;
@@ -11250,13 +11280,27 @@ function showRestoreModal(versions, source) {
             if (restoreRes?.success) {
                 const lang = await getPreferredLang();
                 const isEn = lang === 'en';
-                const msg = strategy === 'overwrite'
-                    ? (isEn
-                        ? `SUCCESS: Restored (overwrite). Created ${restoreRes.created || 0} nodes.`
-                        : `成功：已恢复（覆盖）。创建 ${restoreRes.created || 0} 个节点。`)
-                    : (isEn
-                        ? `SUCCESS: Restored (merge/import). Created ${restoreRes.created || 0} nodes under “Other Bookmarks/${restoreRes.importedFolderTitle || 'Imported'}”.`
-                        : `成功：已恢复（合并导入）。在“其他书签/${restoreRes.importedFolderTitle || '导入'}”下创建 ${restoreRes.created || 0} 个节点。`);
+                const msg = (() => {
+                    if (strategy === 'overwrite') {
+                        return isEn
+                            ? `SUCCESS: Restored (overwrite). Created ${restoreRes.created || 0} nodes.`
+                            : `成功：已恢复（覆盖）。创建 ${restoreRes.created || 0} 个节点。`;
+                    }
+
+                    if (strategy === 'patch') {
+                        const created = restoreRes.created || 0;
+                        const moved = restoreRes.moved || 0;
+                        const updated = restoreRes.updated || 0;
+                        const deleted = restoreRes.deleted || 0;
+                        return isEn
+                            ? `SUCCESS: Patch merge completed. Added ${created}, moved ${moved}, updated ${updated}, removed ${deleted}.`
+                            : `成功：补丁合并完成。新增 ${created}，移动 ${moved}，修改 ${updated}，删除 ${deleted}。`;
+                    }
+
+                    return isEn
+                        ? `SUCCESS: Import merge completed. Created ${restoreRes.created || 0} nodes under “Other Bookmarks/${restoreRes.importedFolderTitle || 'Imported'}”.`
+                        : `成功：导入合并完成。在“其他书签/${restoreRes.importedFolderTitle || '导入'}”下创建 ${restoreRes.created || 0} 个节点。`;
+                })();
                 alert(msg);
                 closeModal();
 
@@ -11326,6 +11370,7 @@ function showRestoreModal(versions, source) {
             confirmButton.disabled = false;
             strategyOverwriteRadio.disabled = selectedVersion?.canRestore === false;
             strategyMergeRadio.disabled = selectedVersion?.canRestore === false;
+            strategyPatchRadio.disabled = selectedVersion?.canRestore === false;
             strategyGroup.classList.toggle('disabled', selectedVersion?.canRestore === false);
             closeButton.disabled = false;
             cancelButton.disabled = false;

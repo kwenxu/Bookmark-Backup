@@ -3756,6 +3756,15 @@
             display: inline-flex;
         }
 
+        .restore-strategy-divider {
+            width: 1px;
+            height: 18px;
+            align-self: center;
+            background-color: var(--theme-border-primary);
+            opacity: 0.85;
+            margin: 0 2px;
+        }
+
         /* Restore Confirm Modal */
         .restore-confirm-summary {
             background-color: var(--theme-bg-secondary);
@@ -5046,6 +5055,15 @@
                                     <span>Overwrite</span>
                                 </div>
                             </label>
+                            <label class="restore-strategy-label" title="" id="restoreStrategyPatchLabelWrap">
+                                <input type="radio" name="restoreStrategy" id="restoreStrategyPatch" value="patch"
+                                    disabled>
+                                <div class="restore-strategy-option" id="restoreStrategyPatchLabel">
+                                    <span class="restore-strategy-icon">✓</span>
+                                    <span>Patch</span>
+                                </div>
+                            </label>
+                            <div class="restore-strategy-divider" aria-hidden="true"></div>
                             <label class="restore-strategy-label" title="" id="restoreStrategyMergeLabelWrap">
                                 <input type="radio" name="restoreStrategy" id="restoreStrategyMerge" value="merge"
                                     disabled>

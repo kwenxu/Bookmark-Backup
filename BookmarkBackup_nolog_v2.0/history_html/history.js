@@ -20961,7 +20961,7 @@ async function showRestoreModal(record, displayTitle) {
     }
 
     const title = document.getElementById('restoreModalTitle');
-    if (title) title.textContent = currentLang === 'zh_CN' ? '恢复书签' : 'Restore Bookmarks';
+    if (title) title.textContent = currentLang === 'zh_CN' ? '恢复到对应版本' : 'Restore to Version';
 
     document.getElementById('restoreBackupCount').textContent = '--';
     document.getElementById('restoreBackupFolders').textContent = '--';
@@ -21069,8 +21069,8 @@ async function showRestoreModal(record, displayTitle) {
     const titleToUse = displayTitle || record.note || formatTime(record.time);
 
     const itemHtml = `
-        <div style="margin-bottom: 10px; font-size: 13px; color: var(--text-secondary); text-align: left;">${currentLang === 'zh_CN' ? '即将恢复到以下版本:' : 'Restore to the following version:'}</div>
-        <div class="commit-item" style="cursor: default; pointer-events: none; border: 1px solid var(--accent-primary); box-shadow: none; background: var(--bg-secondary); margin: 0; padding: 12px; display: flex;">
+        <div class="restore-target-label">${currentLang === 'zh_CN' ? '即将恢复到以下版本:' : 'Restore to the following version:'}</div>
+        <div class="commit-item">
             <div class="commit-header" style="margin-bottom: 0; width: 100%;">
                 <div class="commit-title-group" style="max-width: 100%;">
                     <span class="${seqClass}">#${seqNumber}</span>
@@ -21099,25 +21099,47 @@ async function showRestoreModal(record, displayTitle) {
     document.getElementById('restoreProgressPercent').textContent = '0%';
     document.getElementById('restoreProgressText').textContent = currentLang === 'zh_CN' ? '准备中...' : 'Preparing...';
 
-    // 重置按钮状态
+    // 重置按钮/策略状态（与主 UI 一致：单个恢复按钮 + 策略选择）
     const confirmBtn = document.getElementById('restoreConfirmBtn');
-    if (confirmBtn) {
-        confirmBtn.disabled = false;
-        confirmBtn.textContent = currentLang === 'zh_CN' ? '恢复书签' : 'Restore Bookmarks';
-    }
-    document.getElementById('restoreCancelBtn').disabled = false;
+    const cancelBtn = document.getElementById('restoreCancelBtn');
+    const strategyGroup = document.getElementById('restoreStrategyGroup');
+    const strategyOverwriteRadio = document.getElementById('restoreStrategyOverwrite');
+    const strategyMergeRadio = document.getElementById('restoreStrategyMerge');
+    const strategyPatchRadio = document.getElementById('restoreStrategyPatch');
 
-    // 更新多语言文本 (仅部分)
+    if (confirmBtn) confirmBtn.disabled = false;
+    if (cancelBtn) cancelBtn.disabled = false;
+
+    if (strategyGroup) strategyGroup.classList.remove('disabled');
+
+    if (strategyOverwriteRadio) {
+        strategyOverwriteRadio.disabled = false;
+        strategyOverwriteRadio.checked = true;
+    }
+    if (strategyMergeRadio) {
+        strategyMergeRadio.disabled = false;
+        strategyMergeRadio.checked = false;
+    }
+    if (strategyPatchRadio) {
+        strategyPatchRadio.disabled = false;
+        strategyPatchRadio.checked = false;
+    }
+
     updateRestoreModalI18n();
 
-    // [New] 更新备份记录标签为 Hash 值 (Fingerprint)
-    const backupLabel = document.getElementById('restoreBackupLabel');
-    if (backupLabel && record && record.fingerprint) {
-        backupLabel.textContent = record.fingerprint;
-        backupLabel.title = record.fingerprint; // 鼠标悬停显示完整指纹
-        backupLabel.style.fontFamily = 'SF Mono, Monaco, Consolas, monospace';
-        backupLabel.style.fontSize = '11px';
-        backupLabel.style.letterSpacing = '-0.5px'; // 稍微紧凑一点以适应长Hash
+    // 指纹显示（可选）：显示短指纹，悬停可查看完整值
+    const fingerprintEl = document.getElementById('restoreBackupFingerprint');
+    if (fingerprintEl) {
+        const fp = record && record.fingerprint ? String(record.fingerprint) : '';
+        if (fp) {
+            fingerprintEl.textContent = fp.slice(0, 12);
+            fingerprintEl.title = fp;
+            fingerprintEl.style.display = 'inline-flex';
+        } else {
+            fingerprintEl.textContent = '';
+            fingerprintEl.removeAttribute('title');
+            fingerprintEl.style.display = 'none';
+        }
     }
 
     // 显示模态框
@@ -21158,7 +21180,7 @@ async function switchToRestorePreview(currentTree, targetTree) {
             mainView.style.display = 'block';
             previewView.style.display = 'none';
 
-            if (title) title.textContent = currentLang === 'zh_CN' ? '恢复书签' : 'Restore Bookmarks';
+            if (title) title.textContent = currentLang === 'zh_CN' ? '恢复到对应版本' : 'Restore to Version';
 
             // Restore "Close Modal" behavior
             const finalCloseBtn = newCloseBtn.cloneNode(true);
@@ -21244,18 +21266,78 @@ async function switchToRestorePreview(currentTree, targetTree) {
 }
 
 // 确保在 updateRestoreModalI18n 中也更新按钮文本
+function getSelectedRestoreStrategy() {
+    const selected = document.querySelector('input[name="restoreStrategy"]:checked');
+    const value = selected && selected.value ? String(selected.value) : 'overwrite';
+    if (value === 'merge' || value === 'patch' || value === 'overwrite') return value;
+    return 'overwrite';
+}
+
+function updateRestoreWarningByStrategy(strategy) {
+    const isZh = currentLang === 'zh_CN';
+
+    const box = document.querySelector('#restoreModal .restore-warning');
+    const icon = box ? box.querySelector('i.fas') : null;
+
+    const titleEl = document.getElementById('restoreWarningTitle');
+    const textEl = document.getElementById('restoreWarningText');
+
+    if (!titleEl || !textEl) return;
+
+    let title = isZh ? '警告' : 'Warning';
+    let text = isZh
+        ? '覆盖恢复会清空并重建「书签栏」与「其他书签」，使其与该版本一致。'
+        : 'Overwrite will clear and rebuild Bookmarks Bar + Other Bookmarks to match this version.';
+
+    let boxBg = 'var(--warning-light)';
+    let boxBorder = '1px solid var(--warning)';
+    let iconColor = 'var(--warning)';
+    let iconClass = 'fas fa-exclamation-triangle';
+
+    if (strategy === 'merge') {
+        title = isZh ? '提示' : 'Note';
+        text = isZh
+            ? '导入合并：导入到「其他书签」新文件夹（不删除现有书签）。'
+            : 'Import merge: imports into a new folder under Other Bookmarks (no deletion).';
+        boxBg = 'var(--info-light)';
+        boxBorder = '1px solid var(--info)';
+        iconColor = 'var(--info)';
+        iconClass = 'fas fa-info-circle';
+    } else if (strategy === 'patch') {
+        title = isZh ? '警告' : 'Warning';
+        text = isZh
+            ? '补丁合并：按该版本调整当前书签（新增/移动/修改/删除）。'
+            : 'Patch merge: adjusts current bookmarks to match this version (add/move/update/remove).';
+    } else {
+        // overwrite (default)
+        title = isZh ? '警告' : 'Warning';
+        text = isZh
+            ? '覆盖恢复会清空并重建「书签栏」与「其他书签」，使其与该版本一致。'
+            : 'Overwrite will clear and rebuild Bookmarks Bar + Other Bookmarks to match this version.';
+    }
+
+    titleEl.textContent = title;
+    textEl.textContent = text;
+
+    if (box) {
+        box.style.background = boxBg;
+        box.style.border = boxBorder;
+    }
+
+    if (icon) {
+        icon.className = iconClass;
+        icon.style.color = iconColor;
+    }
+}
+
 function updateRestoreModalI18n() {
     const isZh = currentLang === 'zh_CN';
 
     const texts = {
-        restoreModalTitle: isZh ? '恢复书签' : 'Restore Bookmarks',
+        restoreModalTitle: isZh ? '恢复到对应版本' : 'Restore to Version',
         restoreVersionLabel: isZh ? '即将恢复到以下版本:' : 'Restore to the following version:',
-        restoreWarningTitle: isZh ? '警告' : 'Warning',
-        restoreWarningText: isZh
-            ? '此操作将【覆盖】当前浏览器的所有书签。恢复完成后会自动创建一条新的备份记录。'
-            : 'This operation will [OVERWRITE] all current browser bookmarks. A new backup record will be created automatically.',
         restoreProgressLabel: isZh ? '正在恢复...' : 'Restoring...',
-        restoreConfirmBtnText: isZh ? '确认恢复' : 'Confirm Restore',
+        restoreConfirmBtn: isZh ? '恢复' : 'Restore',
         restoreCancelBtn: isZh ? '取消' : 'Cancel',
         // New Comparison Labels
         restoreCurrentLabel: isZh ? '当前浏览器' : 'Current Browser',
@@ -21271,6 +21353,40 @@ function updateRestoreModalI18n() {
         const el = document.getElementById(id);
         if (el) el.textContent = text;
     });
+
+    const setStrategyLabel = (labelId, text) => {
+        const labelEl = document.getElementById(labelId);
+        if (!labelEl) return;
+        const span = labelEl.querySelector('span:last-child');
+        if (span) span.textContent = text;
+    };
+
+    setStrategyLabel('restoreStrategyOverwriteLabel', isZh ? '覆盖' : 'Overwrite');
+    setStrategyLabel('restoreStrategyMergeLabel', isZh ? '导入合并' : 'Import Merge');
+    setStrategyLabel('restoreStrategyPatchLabel', isZh ? '补丁合并' : 'Patch Merge');
+
+    const overwriteWrap = document.getElementById('restoreStrategyOverwriteLabelWrap');
+    if (overwriteWrap) {
+        overwriteWrap.title = isZh
+            ? '覆盖：用该版本替换当前「书签栏」与「其他书签」。'
+            : 'Overwrite: replace Bookmarks Bar and Other Bookmarks with this version.';
+    }
+
+    const mergeWrap = document.getElementById('restoreStrategyMergeLabelWrap');
+    if (mergeWrap) {
+        mergeWrap.title = isZh
+            ? '导入合并：导入到「其他书签」新文件夹（不删除现有书签）。'
+            : 'Import Merge: import into a new folder under Other Bookmarks (no deletion).';
+    }
+
+    const patchWrap = document.getElementById('restoreStrategyPatchLabelWrap');
+    if (patchWrap) {
+        patchWrap.title = isZh
+            ? '补丁合并：按该版本调整（新增/移动/修改/删除）。'
+            : 'Patch Merge: match this version (add/move/update/remove).';
+    }
+
+    updateRestoreWarningByStrategy(getSelectedRestoreStrategy());
 }
 
 /**
@@ -21287,7 +21403,7 @@ function closeRestoreModal() {
 /**
  * 执行恢复操作
  */
-async function executeRestore() {
+async function executeRestore(strategy = 'overwrite') {
     if (!currentRestoreRecord) {
         showToast(currentLang === 'zh_CN' ? '没有可恢复的记录' : 'No record to restore', 'error');
         return;
@@ -21299,15 +21415,34 @@ async function executeRestore() {
         return;
     }
 
-    const strategy = 'overwrite';
+    // 禁用按钮/策略选择
+    const confirmBtn = document.getElementById('restoreConfirmBtn');
+    const cancelBtn = document.getElementById('restoreCancelBtn');
+    const strategyGroup = document.getElementById('restoreStrategyGroup');
+    const strategyOverwriteRadio = document.getElementById('restoreStrategyOverwrite');
+    const strategyMergeRadio = document.getElementById('restoreStrategyMerge');
+    const strategyPatchRadio = document.getElementById('restoreStrategyPatch');
 
-    // 禁用按钮
-    document.getElementById('restoreConfirmBtn').disabled = true;
-    document.getElementById('restoreCancelBtn').disabled = true;
+    if (confirmBtn) confirmBtn.disabled = true;
+    if (cancelBtn) cancelBtn.disabled = true;
+
+    if (strategyGroup) strategyGroup.classList.add('disabled');
+    if (strategyOverwriteRadio) strategyOverwriteRadio.disabled = true;
+    if (strategyMergeRadio) strategyMergeRadio.disabled = true;
+    if (strategyPatchRadio) strategyPatchRadio.disabled = true;
 
     // 显示进度区域
     document.getElementById('restoreProgressSection').style.display = 'block';
-    updateRestoreProgress(0, currentLang === 'zh_CN' ? '正在准备恢复...' : 'Preparing to restore...');
+
+    const isZh = currentLang === 'zh_CN';
+    const startText = (() => {
+        if (strategy === 'overwrite') return isZh ? '正在准备覆盖恢复...' : 'Preparing overwrite restore...';
+        if (strategy === 'merge') return isZh ? '正在准备导入合并...' : 'Preparing import merge...';
+        if (strategy === 'patch') return isZh ? '正在准备补丁合并...' : 'Preparing patch merge...';
+        return isZh ? '正在准备恢复...' : 'Preparing to restore...';
+    })();
+
+    updateRestoreProgress(0, startText);
 
     try {
         // 1. 设置恢复标志（暂停书签监听）
@@ -21317,8 +21452,12 @@ async function executeRestore() {
         let result;
         if (strategy === 'overwrite') {
             result = await executeOverwriteRestore(bookmarkTree);
-        } else {
+        } else if (strategy === 'merge') {
             result = await executeMergeRestore(bookmarkTree);
+        } else if (strategy === 'patch') {
+            result = await executeMergeRestoreToSnapshot(bookmarkTree);
+        } else {
+            throw new Error(`Unknown restore strategy: ${strategy}`);
         }
 
         // 2. 重置恢复标志
@@ -21327,11 +21466,35 @@ async function executeRestore() {
         updateRestoreProgress(90, currentLang === 'zh_CN' ? '正在创建恢复记录...' : 'Creating restore record...');
 
         // 3. 触发一次备份（作为恢复记录）
-        const restoreNote = currentLang === 'zh_CN'
-            ? `恢复至 #${currentRestoreRecord.seqNumber} (${formatTime(currentRestoreRecord.time)})`
-            : `Restored to #${currentRestoreRecord.seqNumber} (${formatTime(currentRestoreRecord.time)})`;
+        const restoreNote = (() => {
+            const timeText = formatTime(currentRestoreRecord.time);
+            const seqText = currentRestoreRecord.seqNumber;
+            const isZh = currentLang === 'zh_CN';
 
-        await browserAPI.runtime.sendMessage({
+             if (strategy === 'overwrite') {
+                 return isZh
+                     ? `覆盖恢复至 #${seqText} (${timeText})`
+                     : `Overwrite restored to #${seqText} (${timeText})`;
+             }
+ 
+             if (strategy === 'merge') {
+                 return isZh
+                     ? `导入合并自 #${seqText} (${timeText})`
+                     : `Import merged from #${seqText} (${timeText})`;
+             }
+ 
+             if (strategy === 'patch') {
+                 return isZh
+                     ? `补丁合并至 #${seqText} (${timeText})`
+                     : `Patch merged to #${seqText} (${timeText})`;
+             }
+ 
+             return isZh
+                 ? `恢复至 #${seqText} (${timeText})`
+                 : `Restored to #${seqText} (${timeText})`;
+        })();
+
+        const restoreBackupResp = await browserAPI.runtime.sendMessage({
             action: 'triggerRestoreBackup',
             note: restoreNote,
             sourceSeqNumber: currentRestoreRecord.seqNumber,
@@ -21341,13 +21504,55 @@ async function executeRestore() {
             strategy: strategy
         });
 
-        updateRestoreProgress(100, currentLang === 'zh_CN' ? '恢复完成！' : 'Restore completed!');
+        if (restoreBackupResp && restoreBackupResp.success === true) {
+            updateRestoreProgress(100, currentLang === 'zh_CN' ? '恢复完成！' : 'Restore completed!');
+        } else {
+            const errText = restoreBackupResp && restoreBackupResp.error ? String(restoreBackupResp.error) : '';
+            console.warn('[executeRestore] triggerRestoreBackup failed:', restoreBackupResp);
+            updateRestoreProgress(100, currentLang === 'zh_CN'
+                ? `恢复完成，但创建恢复记录失败${errText ? `：${errText}` : ''}`
+                : `Restore completed, but failed to create restore record${errText ? `: ${errText}` : ''}`);
+        }
+
+        try {
+            await browserAPI.runtime.sendMessage({ action: 'rebuildActiveTimeBookmarkCache' });
+        } catch (_) { }
 
         // 显示成功提示
-        const successMsg = currentLang === 'zh_CN'
-            ? `恢复成功！${strategy === 'overwrite' ? `创建 ${result.created} 个节点` : `添加 ${result.added} 个书签`}`
-            : `Restore successful! ${strategy === 'overwrite' ? `Created ${result.created} nodes` : `Added ${result.added} bookmarks`}`;
+        const isZh = currentLang === 'zh_CN';
+        let successMsg = isZh ? '恢复成功！' : 'Restore successful!';
+
+        if (strategy === 'overwrite') {
+            const created = Number.isFinite(Number(result?.created)) ? Number(result.created) : 0;
+            const deleted = Number.isFinite(Number(result?.deleted)) ? Number(result.deleted) : 0;
+            successMsg = isZh
+                ? `覆盖恢复成功！创建 ${created} 个节点，删除 ${deleted} 个节点`
+                : `Overwrite restore successful! Created ${created} nodes, removed ${deleted} nodes`;
+        } else if (strategy === 'merge') {
+            const created = Number.isFinite(Number(result?.created)) ? Number(result.created) : 0;
+            const folderTitle = result?.folderTitle ? String(result.folderTitle) : '';
+            successMsg = isZh
+                ? `导入合并完成！已导入 ${created} 个节点${folderTitle ? `（${folderTitle}）` : ''}`
+                : `Import merge completed! Imported ${created} nodes${folderTitle ? ` (${folderTitle})` : ''}`;
+        } else if (strategy === 'patch') {
+            const created = Number.isFinite(Number(result?.created)) ? Number(result.created) : 0;
+            const moved = Number.isFinite(Number(result?.moved)) ? Number(result.moved) : 0;
+            const updated = Number.isFinite(Number(result?.updated)) ? Number(result.updated) : 0;
+            const deleted = Number.isFinite(Number(result?.deleted)) ? Number(result.deleted) : 0;
+            successMsg = isZh
+                ? `补丁合并完成！新增 ${created}，移动 ${moved}，修改 ${updated}，删除 ${deleted}`
+                : `Patch merge completed! Added ${created}, moved ${moved}, updated ${updated}, removed ${deleted}`;
+        }
+
         showToast(successMsg, 'success');
+
+        // 如果恢复记录创建失败，给出明确提示（恢复本身已完成）
+        if (!restoreBackupResp || restoreBackupResp.success !== true) {
+            const errText = restoreBackupResp && restoreBackupResp.error ? String(restoreBackupResp.error) : '';
+            showToast(currentLang === 'zh_CN'
+                ? `恢复记录创建失败${errText ? `：${errText}` : ''}`
+                : `Failed to create restore record${errText ? `: ${errText}` : ''}`, 'error');
+        }
 
         // 延迟关闭模态框并刷新数据
         setTimeout(async () => {
@@ -21366,9 +21571,22 @@ async function executeRestore() {
             await browserAPI.runtime.sendMessage({ action: 'setBookmarkRestoringFlag', value: false });
         } catch (_) { }
 
-        // 恢复按钮状态
-        document.getElementById('restoreConfirmBtn').disabled = false;
-        document.getElementById('restoreCancelBtn').disabled = false;
+        // 恢复按钮/策略状态
+        const confirmBtn = document.getElementById('restoreConfirmBtn');
+        const cancelBtn = document.getElementById('restoreCancelBtn');
+        const strategyGroup = document.getElementById('restoreStrategyGroup');
+        const strategyOverwriteRadio = document.getElementById('restoreStrategyOverwrite');
+        const strategyMergeRadio = document.getElementById('restoreStrategyMerge');
+        const strategyPatchRadio = document.getElementById('restoreStrategyPatch');
+
+        if (confirmBtn) confirmBtn.disabled = false;
+        if (cancelBtn) cancelBtn.disabled = false;
+
+        if (strategyGroup) strategyGroup.classList.remove('disabled');
+        if (strategyOverwriteRadio) strategyOverwriteRadio.disabled = false;
+        if (strategyMergeRadio) strategyMergeRadio.disabled = false;
+        if (strategyPatchRadio) strategyPatchRadio.disabled = false;
+
         document.getElementById('restoreProgressSection').style.display = 'none';
 
         showToast(currentLang === 'zh_CN'
@@ -21478,34 +21696,24 @@ async function executeOverwriteRestore(bookmarkTree) {
 }
 
 /**
- * 合并模式恢复
+ * 导入式合并（不删除）：把目标版本完整导入到「其他书签」下的新文件夹中。
  */
 async function executeMergeRestore(bookmarkTree) {
-    updateRestoreProgress(10, currentLang === 'zh_CN' ? '正在分析当前书签...' : 'Analyzing current bookmarks...');
+    const isZh = currentLang === 'zh_CN';
 
-    // 1. 获取当前书签的 URL 集合
+    updateRestoreProgress(10, isZh ? '正在创建导入文件夹...' : 'Creating import folder...');
+
     const [root] = await browserAPI.bookmarks.getTree();
-    const existingUrls = new Set();
 
-    function collectUrls(node) {
-        if (node.url) existingUrls.add(node.url);
-        if (node.children) node.children.forEach(collectUrls);
-    }
-    root.children?.forEach(collectUrls);
-
-    updateRestoreProgress(30, currentLang === 'zh_CN' ? `发现 ${existingUrls.size} 个现有书签...` : `Found ${existingUrls.size} existing bookmarks...`);
-
-    // 2. 遍历备份树，添加不存在的书签
-    let addedCount = 0;
-    let skippedCount = 0;
-
-    // 获取"其他书签"作为默认添加位置（兼容多浏览器）
+    // 获取"其他书签"作为导入位置（兼容多浏览器）
     let otherBookmarks = root.children?.find(c => c.id === '2');
     if (!otherBookmarks) {
         otherBookmarks = root.children?.find(c =>
             c.title === '其他书签' ||
             c.title === 'Other Bookmarks' ||
-            c.title === 'Other bookmarks'
+            c.title === 'Other bookmarks' ||
+            c.title === 'menu________' ||
+            c.title === 'unfiled_____'
         );
     }
     if (!otherBookmarks && root.children?.length > 1) {
@@ -21516,53 +21724,577 @@ async function executeMergeRestore(bookmarkTree) {
     }
 
     if (!otherBookmarks) {
-        throw new Error(currentLang === 'zh_CN' ? '找不到书签根目录' : 'Cannot find bookmark root folder');
+        throw new Error(isZh ? '找不到“其他书签”目录' : 'Cannot find "Other Bookmarks"');
     }
 
-    console.log('[executeMergeRestore] otherBookmarks:', otherBookmarks?.id, otherBookmarks?.title);
+    const now = new Date();
+    const ts = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')} ` +
+        `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}:${String(now.getSeconds()).padStart(2, '0')}`;
 
-    async function addMissingBookmarks(node, parentId) {
-        if (node.url) {
-            if (!existingUrls.has(node.url)) {
+    const seqText = currentRestoreRecord && currentRestoreRecord.seqNumber != null ? String(currentRestoreRecord.seqNumber) : '-';
+    const folderTitle = isZh ? `导入合并 - #${seqText} - ${ts}` : `Import Merge - #${seqText} - ${ts}`;
+
+    const importRootFolder = await browserAPI.bookmarks.create({
+        parentId: otherBookmarks.id,
+        title: folderTitle
+    });
+
+    updateRestoreProgress(25, isZh ? '正在导入快照...' : 'Importing snapshot...');
+
+    let createdCount = 1; // importRootFolder
+    const nodes = Array.isArray(bookmarkTree) ? bookmarkTree : [bookmarkTree];
+
+    let processedTop = 0;
+    let totalTop = 0;
+    for (const node of nodes) {
+        if (node && Array.isArray(node.children)) totalTop += node.children.length;
+    }
+    totalTop = Math.max(1, totalTop);
+
+    for (const node of nodes) {
+        if (!node || !Array.isArray(node.children)) continue;
+
+        for (const topFolder of node.children || []) {
+            const topTitle = String(topFolder?.title || '').trim() || (isZh ? '书签' : 'Bookmarks');
+            const topContainer = await browserAPI.bookmarks.create({
+                parentId: importRootFolder.id,
+                title: topTitle
+            });
+            createdCount += 1;
+
+            for (const child of topFolder.children || []) {
+                createdCount += await createNodeRecursive(child, topContainer.id);
+            }
+
+            processedTop += 1;
+            const pct = 25 + Math.min(55, Math.round((processedTop / totalTop) * 55));
+            updateRestoreProgress(pct, isZh ? '正在导入快照...' : 'Importing snapshot...');
+        }
+    }
+
+    return { success: true, created: createdCount, folderId: importRootFolder.id, folderTitle };
+}
+
+/**
+ * 补丁合并：补丁还原（不清空，尽量还原到目标版本）
+ * 思路：复用 Restore Preview 的 ID 对齐 + 差异计算，然后按需执行：
+ * - create: 目标里有、当前里没有
+ * - move: 目标里的 parent/index 不同
+ * - update: title/url 不同
+ * - delete: 当前里有、目标里没有
+ */
+async function executeMergeRestoreToSnapshot(bookmarkTree) {
+    const isZh = currentLang === 'zh_CN';
+
+    updateRestoreProgress(10, isZh ? '正在分析当前书签...' : 'Analyzing current bookmarks...');
+
+    const currentTree = await browserAPI.bookmarks.getTree();
+
+    // 克隆目标树 + 智能 ID 匹配（与预览一致）
+    let targetTree = bookmarkTree;
+    try {
+        targetTree = JSON.parse(JSON.stringify(bookmarkTree));
+    } catch (_) {
+        // Ignore: fallback to raw
+    }
+
+    try {
+        normalizeTreeIds(targetTree, currentTree);
+    } catch (e) {
+        console.warn('[补丁合并] normalizeTreeIds 失败，将继续:', e);
+    }
+
+    updateRestoreProgress(20, isZh ? '正在计算差异...' : 'Computing differences...');
+
+    const changeMap = await detectTreeChangesFast(currentTree, targetTree, {
+        useGlobalExplicitMovedIds: false
+    });
+
+    // 构建索引（parentId/index/title/url）
+    const currentIndex = buildTreeIndexForDiff(currentTree);
+    const targetIndex = buildTreeIndexForDiff(targetTree);
+
+    // 目标节点原始信息（用于 create/update）
+    const targetNodeMap = new Map();
+    (function indexTargetNodes() {
+        const root = Array.isArray(targetTree) ? targetTree[0] : targetTree;
+        const traverse = (node) => {
+            if (!node || !node.id) return;
+            targetNodeMap.set(String(node.id), node);
+            if (Array.isArray(node.children)) {
+                node.children.forEach(traverse);
+            }
+        };
+        if (root) traverse(root);
+    })();
+
+    // 找到当前的根容器（与 overwrite restore 一致）
+    const root = Array.isArray(currentTree) ? currentTree[0] : null;
+    if (!root || !Array.isArray(root.children)) {
+        throw new Error(isZh ? '无法读取当前书签根节点' : 'Cannot read current bookmark root');
+    }
+
+    let bookmarkBar = root.children.find(c => c && c.id === '1');
+    let otherBookmarks = root.children.find(c => c && c.id === '2');
+
+    // 通过标题兜底
+    if (!bookmarkBar) {
+        bookmarkBar = root.children.find(c => c && (
+            c.title === '书签栏' ||
+            c.title === 'Bookmarks Bar' ||
+            c.title === 'Bookmarks bar' ||
+            c.title === 'toolbar_____'
+        ));
+    }
+    if (!otherBookmarks) {
+        otherBookmarks = root.children.find(c => c && (
+            c.title === '其他书签' ||
+            c.title === 'Other Bookmarks' ||
+            c.title === 'Other bookmarks' ||
+            c.title === 'menu________' ||
+            c.title === 'unfiled_____'
+        ));
+    }
+
+    // 如果仍然找不到，使用第一个和第二个子节点
+    if (!bookmarkBar && root.children.length > 0) {
+        bookmarkBar = root.children[0];
+    }
+    if (!otherBookmarks && root.children.length > 1) {
+        otherBookmarks = root.children[1];
+    }
+
+    if (!bookmarkBar || !otherBookmarks) {
+        throw new Error(isZh ? '找不到书签根目录容器' : 'Cannot find bookmark containers');
+    }
+
+    const managedRootIds = new Set([String(bookmarkBar.id), String(otherBookmarks.id)]);
+
+    const isUnderManagedRoot = (id, index) => {
+        let cur = String(id);
+        let guard = 0;
+        while (cur && guard++ < 200) {
+            if (managedRootIds.has(cur)) return true;
+            const rec = index.nodes.get(cur);
+            const parentId = rec && rec.parentId ? String(rec.parentId) : null;
+            if (!parentId) break;
+            cur = parentId;
+        }
+        return false;
+    };
+
+    // 收集变化节点（限定在容器内）
+    const addedIds = [];
+    const movedIds = [];
+    const modifiedIds = [];
+    const deletedIds = [];
+
+    for (const [rawId, change] of changeMap.entries()) {
+        const id = String(rawId);
+        const types = (change && typeof change.type === 'string') ? change.type.split('+') : [];
+
+        if (types.includes('added') && isUnderManagedRoot(id, targetIndex)) addedIds.push(id);
+        if (types.includes('moved') && isUnderManagedRoot(id, targetIndex)) movedIds.push(id);
+        if (types.includes('modified') && isUnderManagedRoot(id, targetIndex)) modifiedIds.push(id);
+        if (types.includes('deleted') && isUnderManagedRoot(id, currentIndex)) deletedIds.push(id);
+    }
+
+    // 统计
+    const stats = {
+        created: 0,
+        moved: 0,
+        updated: 0,
+        deleted: 0
+    };
+
+    // 目标 ID -> 新建 ID（用于“新增父目录后再移动子节点”等场景）
+    const createdIdMap = new Map();
+    const resolveId = (maybeTargetId) => {
+        const key = String(maybeTargetId);
+        return createdIdMap.get(key) || key;
+    };
+
+    // --- 1) 新增：父级优先（按深度排序） ---
+    const depthCache = new Map();
+    const getDepth = (nodeId) => {
+        const key = String(nodeId);
+        if (depthCache.has(key)) return depthCache.get(key);
+        const rec = targetIndex.nodes.get(key);
+        const parentId = rec && rec.parentId ? String(rec.parentId) : null;
+        const d = parentId ? 1 + getDepth(parentId) : 0;
+        depthCache.set(key, d);
+        return d;
+    };
+
+    addedIds.sort((a, b) => getDepth(a) - getDepth(b));
+
+    if (addedIds.length > 0) {
+        updateRestoreProgress(30, isZh ? `正在新增节点... (${addedIds.length})` : `Creating nodes... (${addedIds.length})`);
+    }
+
+    let processed = 0;
+    for (const id of addedIds) {
+        const rec = targetIndex.nodes.get(id);
+        const rawNode = targetNodeMap.get(id);
+        if (!rec || !rawNode) continue;
+
+        // 不允许创建根节点/系统容器
+        const parentId = rec.parentId ? resolveId(rec.parentId) : null;
+        if (!parentId) continue;
+
+        const createOptions = {
+            parentId: String(parentId),
+            title: rawNode.title || ''
+        };
+        if (typeof rec.index === 'number') createOptions.index = rec.index;
+        if (rawNode.url) createOptions.url = rawNode.url;
+
+        let created = null;
+        try {
+            created = await browserAPI.bookmarks.create(createOptions);
+        } catch (e) {
+            if (typeof createOptions.index === 'number') {
+                const fallbackOptions = {
+                    parentId: createOptions.parentId,
+                    title: createOptions.title
+                };
+                if (createOptions.url) fallbackOptions.url = createOptions.url;
                 try {
-                    await browserAPI.bookmarks.create({
-                        parentId,
-                        title: node.title || '',
-                        url: node.url
-                    });
-                    addedCount++;
-                    if (addedCount % 10 === 0) {
-                        updateRestoreProgress(30 + Math.min(55, (addedCount / 100) * 55),
-                            currentLang === 'zh_CN' ? `已添加 ${addedCount} 个书签...` : `Added ${addedCount} bookmarks...`);
-                    }
-                } catch (e) {
-                    console.warn('[executeMergeRestore] 添加书签失败:', node, e);
+                    created = await browserAPI.bookmarks.create(fallbackOptions);
+                } catch (e2) {
+                    console.warn('[补丁合并] 创建失败:', id, e2);
                 }
             } else {
-                skippedCount++;
+                console.warn('[补丁合并] 创建失败:', id, e);
             }
         }
-        if (node.children) {
+        if (created && created.id) {
+            createdIdMap.set(id, String(created.id));
+            stats.created += 1;
+        }
+
+        processed += 1;
+        if (processed % 25 === 0) {
+            const pct = 30 + Math.min(15, Math.round((processed / Math.max(1, addedIds.length)) * 15));
+            updateRestoreProgress(pct, isZh ? `正在新增节点... (${processed}/${addedIds.length})` : `Creating nodes... (${processed}/${addedIds.length})`);
+        }
+    }
+
+    // --- 2) 移动：尽量按目标 index 执行 ---
+    // 说明：移动会影响 index，因此按目标 parent/index 粗排一下，让结果更稳定。
+    movedIds.sort((a, b) => {
+        const ar = targetIndex.nodes.get(a);
+        const br = targetIndex.nodes.get(b);
+        const ap = ar && ar.parentId ? String(ar.parentId) : '';
+        const bp = br && br.parentId ? String(br.parentId) : '';
+        if (ap !== bp) return ap.localeCompare(bp);
+        const ai = typeof ar?.index === 'number' ? ar.index : 0;
+        const bi = typeof br?.index === 'number' ? br.index : 0;
+        return ai - bi;
+    });
+
+    if (movedIds.length > 0) {
+        updateRestoreProgress(50, isZh ? `正在移动节点... (${movedIds.length})` : `Moving nodes... (${movedIds.length})`);
+    }
+
+    processed = 0;
+    for (const id of movedIds) {
+        // 新增节点无需 move（创建时已指定 parent/index）
+        if (createdIdMap.has(id)) continue;
+
+        const rec = targetIndex.nodes.get(id);
+        if (!rec || !rec.parentId) continue;
+
+        const destParentId = resolveId(rec.parentId);
+        const moveInfo = { parentId: String(destParentId) };
+        if (typeof rec.index === 'number') moveInfo.index = rec.index;
+
+        let movedOk = false;
+        try {
+            await browserAPI.bookmarks.move(id, moveInfo);
+            movedOk = true;
+        } catch (e) {
+            try {
+                await browserAPI.bookmarks.move(id, { parentId: String(destParentId) });
+                movedOk = true;
+            } catch (e2) {
+                console.warn('[补丁合并] 移动失败:', id, e2);
+            }
+        }
+        if (movedOk) stats.moved += 1;
+
+        processed += 1;
+        if (processed % 50 === 0) {
+            const pct = 50 + Math.min(12, Math.round((processed / Math.max(1, movedIds.length)) * 12));
+            updateRestoreProgress(pct, isZh ? `正在移动节点... (${processed}/${movedIds.length})` : `Moving nodes... (${processed}/${movedIds.length})`);
+        }
+    }
+
+    // --- 3) 修改：title/url ---
+    if (modifiedIds.length > 0) {
+        updateRestoreProgress(65, isZh ? `正在修改节点... (${modifiedIds.length})` : `Updating nodes... (${modifiedIds.length})`);
+    }
+
+    processed = 0;
+    for (const id of modifiedIds) {
+        if (createdIdMap.has(id)) continue;
+
+        const rawNode = targetNodeMap.get(id);
+        if (!rawNode) continue;
+
+        const updateInfo = { title: rawNode.title || '' };
+        if (rawNode.url) updateInfo.url = rawNode.url;
+
+        try {
+            await browserAPI.bookmarks.update(id, updateInfo);
+            stats.updated += 1;
+        } catch (e) {
+            console.warn('[补丁合并] 修改失败:', id, e);
+        }
+
+        processed += 1;
+        if (processed % 100 === 0) {
+            const pct = 65 + Math.min(10, Math.round((processed / Math.max(1, modifiedIds.length)) * 10));
+            updateRestoreProgress(pct, isZh ? `正在修改节点... (${processed}/${modifiedIds.length})` : `Updating nodes... (${processed}/${modifiedIds.length})`);
+        }
+    }
+
+    // --- 4) 删除：最后执行（避免删掉待移动的子树） ---
+    // 只删除“顶层删除节点”，避免重复 removeTree。
+    const deletedSet = new Set(deletedIds);
+    const hasDeletedAncestor = (nodeId) => {
+        let cur = String(nodeId);
+        let guard = 0;
+        while (cur && guard++ < 200) {
+            const rec = currentIndex.nodes.get(cur);
+            const parentId = rec && rec.parentId ? String(rec.parentId) : null;
+            if (!parentId) break;
+            if (deletedSet.has(parentId)) return true;
+            cur = parentId;
+        }
+        return false;
+    };
+
+    const topDeletedIds = deletedIds.filter(id => !hasDeletedAncestor(id));
+
+    if (topDeletedIds.length > 0) {
+        updateRestoreProgress(78, isZh ? `正在删除节点... (${topDeletedIds.length})` : `Removing nodes... (${topDeletedIds.length})`);
+    }
+
+    processed = 0;
+    for (const id of topDeletedIds) {
+        if (managedRootIds.has(String(id))) continue; // safety
+        try {
+            await browserAPI.bookmarks.removeTree(id);
+            stats.deleted += 1;
+        } catch (e) {
+            console.warn('[补丁合并] 删除失败:', id, e);
+        }
+
+        processed += 1;
+        if (processed % 50 === 0) {
+            const pct = 78 + Math.min(10, Math.round((processed / Math.max(1, topDeletedIds.length)) * 10));
+            updateRestoreProgress(pct, isZh ? `正在删除节点... (${processed}/${topDeletedIds.length})` : `Removing nodes... (${processed}/${topDeletedIds.length})`);
+        }
+    }
+
+    return { success: true, ...stats };
+}
+
+/**
+ * 增量恢复：仅导入变更（不覆盖/不删除，只创建一个“变更包”文件夹）
+ * - 与预览同向：currentTree -> targetTree
+ * - 只导入：added / moved / modified（忽略 deleted）
+ */
+async function executeIncrementalRestoreFromSnapshot(bookmarkTree) {
+    const isZh = currentLang === 'zh_CN';
+
+    updateRestoreProgress(10, isZh ? '正在分析当前书签...' : 'Analyzing current bookmarks...');
+
+    const currentTree = await browserAPI.bookmarks.getTree();
+
+    let targetTree = bookmarkTree;
+    try {
+        targetTree = JSON.parse(JSON.stringify(bookmarkTree));
+    } catch (_) {
+        // Ignore
+    }
+
+    try {
+        normalizeTreeIds(targetTree, currentTree);
+    } catch (e) {
+        console.warn('[增量恢复] normalizeTreeIds 失败，将继续:', e);
+    }
+
+    updateRestoreProgress(20, isZh ? '正在计算增量变更...' : 'Computing incremental changes...');
+
+    const changeMap = await detectTreeChangesFast(currentTree, targetTree, {
+        useGlobalExplicitMovedIds: false
+    });
+
+    // 过滤树：仅保留有变化的节点（simple 模式逻辑，且忽略 deleted）
+    const shouldIncludeChange = (change) => {
+        if (!change || typeof change.type !== 'string') return false;
+        const types = change.type.split('+');
+        if (types.includes('deleted')) return false;
+        return types.includes('added') || types.includes('modified') || types.includes('moved');
+    };
+
+    const getTitlePrefix = (change) => {
+        if (!change || typeof change.type !== 'string') return '';
+        const types = change.type.split('+');
+        if (types.includes('added')) return '[+] ';
+        if (types.includes('modified') && types.includes('moved')) return '[~↔] ';
+        if (types.includes('modified')) return '[~] ';
+        if (types.includes('moved')) return '[↔] ';
+        return '';
+    };
+
+    const pruneNode = (node, forceInclude = false) => {
+        if (!node) return null;
+
+        const id = node.id ? String(node.id) : null;
+        const change = id ? changeMap.get(id) : null;
+        const isFolder = !node.url && node.children !== undefined;
+
+        // 简略模式：有变化，或子树有变化；folder 自身变化时强制包含子树（与 UI 一致）
+        const nextForce = forceInclude || (isFolder && shouldIncludeChange(change));
+
+        let prunedChildren = [];
+        if (isFolder && Array.isArray(node.children)) {
+            if (nextForce) {
+                // 文件夹本身变化：导入完整子树（否则导入一个空文件夹没意义）
+                prunedChildren = node.children.map(child => {
+                    const cloned = pruneNode(child, true);
+                    return cloned;
+                }).filter(Boolean);
+            } else {
+                prunedChildren = node.children.map(child => pruneNode(child, false)).filter(Boolean);
+            }
+        }
+
+        const includeSelf = nextForce || shouldIncludeChange(change) || prunedChildren.length > 0;
+        if (!includeSelf) return null;
+
+        const titleRaw = String(node.title || '').trim() || (isZh ? '(无标题)' : '(Untitled)');
+        const title = shouldIncludeChange(change) ? (getTitlePrefix(change) + titleRaw) : titleRaw;
+
+        const cloned = {
+            title,
+            url: node.url
+        };
+
+        if (isFolder) {
+            cloned.children = prunedChildren;
+        }
+
+        return cloned;
+    };
+
+    const targetRoot = Array.isArray(targetTree) ? targetTree[0] : targetTree;
+    if (!targetRoot || !Array.isArray(targetRoot.children)) {
+        throw new Error(isZh ? '无效的目标书签树' : 'Invalid target bookmark tree');
+    }
+
+    const prunedContainers = targetRoot.children
+        .map(child => pruneNode(child, false))
+        .filter(Boolean);
+
+    // 找到“其他书签”容器作为导入位置
+    const root = Array.isArray(currentTree) ? currentTree[0] : null;
+    if (!root || !Array.isArray(root.children)) {
+        throw new Error(isZh ? '无法读取当前书签根节点' : 'Cannot read current bookmark root');
+    }
+
+    let otherBookmarks = root.children.find(c => c && c.id === '2');
+    if (!otherBookmarks) {
+        otherBookmarks = root.children.find(c => c && (
+            c.title === '其他书签' ||
+            c.title === 'Other Bookmarks' ||
+            c.title === 'Other bookmarks' ||
+            c.title === 'menu________' ||
+            c.title === 'unfiled_____'
+        ));
+    }
+    if (!otherBookmarks && root.children.length > 1) {
+        otherBookmarks = root.children[1];
+    }
+    if (!otherBookmarks && root.children.length > 0) {
+        otherBookmarks = root.children[0];
+    }
+
+    if (!otherBookmarks) {
+        throw new Error(isZh ? '找不到“其他书签”目录' : 'Cannot find "Other Bookmarks"');
+    }
+
+    const now = new Date();
+    const ts = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')} ` +
+        `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}:${String(now.getSeconds()).padStart(2, '0')}`;
+
+    const seqText = currentRestoreRecord && currentRestoreRecord.seqNumber != null ? String(currentRestoreRecord.seqNumber) : '-';
+    const folderTitle = isZh ? `增量恢复变更包 - #${seqText} - ${ts}` : `Incremental Restore Changes - #${seqText} - ${ts}`;
+
+    updateRestoreProgress(35, isZh ? '正在创建变更包文件夹...' : 'Creating changes folder...');
+
+    const importRootFolder = await browserAPI.bookmarks.create({
+        parentId: otherBookmarks.id,
+        title: folderTitle
+    });
+
+    // 递归创建节点（按 children 顺序，不使用原始 index）
+    async function createImportNode(node, parentId) {
+        if (!node) return 0;
+
+        if (node.url) {
+            await browserAPI.bookmarks.create({
+                parentId,
+                title: node.title || '',
+                url: node.url
+            });
+            return 1;
+        }
+
+        const folder = await browserAPI.bookmarks.create({
+            parentId,
+            title: node.title || ''
+        });
+        let created = 1;
+
+        if (Array.isArray(node.children)) {
             for (const child of node.children) {
-                await addMissingBookmarks(child, parentId);
+                created += await createImportNode(child, folder.id);
             }
+        }
+
+        return created;
+    }
+
+    updateRestoreProgress(45, isZh ? '正在导入变更...' : 'Importing changes...');
+
+    let createdCount = 1; // importRootFolder
+
+    for (const containerNode of prunedContainers) {
+        if (!containerNode || !Array.isArray(containerNode.children) || containerNode.children.length === 0) {
+            continue;
+        }
+
+        const containerFolder = await browserAPI.bookmarks.create({
+            parentId: importRootFolder.id,
+            title: containerNode.title || (isZh ? '书签' : 'Bookmarks')
+        });
+        createdCount += 1;
+
+        for (const child of containerNode.children) {
+            createdCount += await createImportNode(child, containerFolder.id);
         }
     }
 
-    const nodes = Array.isArray(bookmarkTree) ? bookmarkTree : [bookmarkTree];
-    for (const node of nodes) {
-        if (node.children) {
-            for (const topFolder of node.children) {
-                if (topFolder.children) {
-                    for (const child of topFolder.children) {
-                        await addMissingBookmarks(child, otherBookmarks.id);
-                    }
-                }
-            }
-        }
-    }
-
-    return { success: true, added: addedCount, skipped: skippedCount };
+    return {
+        success: true,
+        created: createdCount,
+        folderId: importRootFolder.id,
+        folderTitle
+    };
 }
 
 /**
@@ -21631,8 +22363,24 @@ function initRestoreModal() {
     }
 
     if (confirmBtn) {
-        confirmBtn.addEventListener('click', executeRestore);
+        confirmBtn.addEventListener('click', () => {
+            const selected = document.querySelector('input[name="restoreStrategy"]:checked');
+            const strategy = selected && selected.value ? String(selected.value) : 'overwrite';
+            executeRestore(strategy);
+        });
     }
+
+    const strategyOverwriteRadio = document.getElementById('restoreStrategyOverwrite');
+    const strategyMergeRadio = document.getElementById('restoreStrategyMerge');
+    const strategyPatchRadio = document.getElementById('restoreStrategyPatch');
+
+    const handleStrategyChange = () => {
+        updateRestoreWarningByStrategy(getSelectedRestoreStrategy());
+    };
+
+    [strategyOverwriteRadio, strategyMergeRadio, strategyPatchRadio].forEach((radio) => {
+        if (radio) radio.addEventListener('change', handleStrategyChange);
+    });
 
     // 点击模态框外部关闭
     if (modal) {
@@ -21796,6 +22544,19 @@ async function generateTreeBasedChanges(record, mode) {
     console.log('[树形视图] 记录时间:', record.time);
     console.log('[树形视图] 显示模式:', mode);
 
+    // Split storage (Index vs Data)：如果记录本身没有 bookmarkTree，则按需加载
+    if (!record.bookmarkTree && (record.hasData || record.status === 'success')) {
+        console.log('[树形视图] 当前记录缺少 bookmarkTree，尝试按需加载:', record.time);
+        try {
+            const tree = await getBackupDataLazy(record.time);
+            if (tree) {
+                record.bookmarkTree = tree; // Cache for this session
+            }
+        } catch (e) {
+            console.warn('[树形视图] 按需加载 bookmarkTree 失败:', e);
+        }
+    }
+
     // 检查当前记录是否有 bookmarkTree
     if (!record.bookmarkTree) {
         console.log('[树形视图] ❌ 当前记录没有 bookmarkTree（可能是旧记录或保存失败）');
@@ -21809,7 +22570,7 @@ async function generateTreeBasedChanges(record, mode) {
     let previousRecord = null;
     if (recordIndex > 0) {
         for (let i = recordIndex - 1; i >= 0; i--) {
-            if (syncHistory[i].status === 'success' && syncHistory[i].bookmarkTree) {
+            if (syncHistory[i].status === 'success' && (syncHistory[i].bookmarkTree || syncHistory[i].hasData)) {
                 previousRecord = syncHistory[i];
                 break;
             }
@@ -21824,7 +22585,7 @@ async function generateTreeBasedChanges(record, mode) {
                     resolve(result.cachedRecordAfterClear);
                 });
             });
-            if (cachedData && cachedData.bookmarkTree) {
+            if (cachedData && (cachedData.bookmarkTree || cachedData.time)) {
                 console.log('[树形视图] 使用 cachedRecordAfterClear 作为对比基准');
                 previousRecord = cachedData;
             }
@@ -21836,6 +22597,19 @@ async function generateTreeBasedChanges(record, mode) {
     // 使用与「当前变化」相同的 detectTreeChangesFast 函数计算变化
     let changeMap = new Map();
     let treeToRender = record.bookmarkTree;
+
+    // Split storage：上一条记录如果没有 bookmarkTree，也需要按需加载（包含 cachedRecordAfterClear）
+    if (previousRecord && !previousRecord.bookmarkTree && previousRecord.time) {
+        console.log('[树形视图] 上一条记录缺少 bookmarkTree，尝试按需加载:', previousRecord.time);
+        try {
+            const prevTree = await getBackupDataLazy(previousRecord.time);
+            if (prevTree) {
+                previousRecord.bookmarkTree = prevTree; // Cache for this session
+            }
+        } catch (e) {
+            console.warn('[树形视图] 按需加载上一条 bookmarkTree 失败:', e);
+        }
+    }
 
     if (previousRecord && previousRecord.bookmarkTree) {
         console.log('[树形视图] 找到上一条记录:', previousRecord.time);
@@ -22478,10 +23252,11 @@ async function generateDetailedChanges(record) {
     // 获取上一条记录
     let previousRecord = null;
     for (let i = recordIndex - 1; i >= 0; i--) {
-        if (syncHistory[i].status === 'success' && syncHistory[i].bookmarkTree) {
-            previousRecord = syncHistory[i];
-            break;
-        }
+            if (syncHistory[i].status === 'success' && (syncHistory[i].bookmarkTree || syncHistory[i].hasData)) {
+                previousRecord = syncHistory[i];
+                break;
+            }
+
     }
 
     if (!previousRecord || !previousRecord.bookmarkTree) {
@@ -27065,27 +27840,66 @@ async function showHistoryExportChangesModal(recordTime, options = {}) {
     const { preferredMode, useDomTreeContainer, treeContainer } = options;
 
     // 查找记录
-    const record = syncHistory.find(r => r.time === recordTime);
+    const record = syncHistory.find(r => String(r.time) === String(recordTime));
     if (!record) {
         showToast(currentLang === 'zh_CN' ? '未找到记录' : 'Record not found');
         return;
     }
 
+    // Split storage：如果索引记录没有 bookmarkTree，则按需加载
+    if (!record.bookmarkTree && (record.hasData || record.status === 'success')) {
+        try {
+            const tree = await getBackupDataLazy(record.time);
+            if (tree) record.bookmarkTree = tree; // Cache for this session
+        } catch (e) {
+            console.warn('[showHistoryExportChangesModal] 按需加载 bookmarkTree 失败:', e);
+        }
+    }
+
     // 检查是否有 bookmarkTree
     if (!record.bookmarkTree) {
-        showToast(currentLang === 'zh_CN' ? '该记录没有详细数据（旧记录已清理）' : 'No detailed data available (old records cleaned)');
+        showToast(currentLang === 'zh_CN'
+            ? '该记录没有详细数据（可能是旧记录或已清理）'
+            : 'No detailed data available (may be an older record or cleaned)');
         return;
     }
 
     // 找到上一条记录进行对比
-    const recordIndex = syncHistory.findIndex(r => r.time === recordTime);
+    const recordIndex = syncHistory.findIndex(r => String(r.time) === String(record.time));
     let previousRecord = null;
     if (recordIndex > 0) {
         for (let i = recordIndex - 1; i >= 0; i--) {
-            if (syncHistory[i].status === 'success' && syncHistory[i].bookmarkTree) {
+            if (syncHistory[i].status === 'success' && (syncHistory[i].bookmarkTree || syncHistory[i].hasData)) {
                 previousRecord = syncHistory[i];
                 break;
             }
+        }
+    }
+
+    // 如果找不到上一条记录，尝试从 cachedRecordAfterClear 获取（清空历史后的第一条记录）
+    if (!previousRecord && recordIndex === 0) {
+        try {
+            const cachedData = await new Promise(resolve => {
+                browserAPI.storage.local.get('cachedRecordAfterClear', result => {
+                    resolve(result.cachedRecordAfterClear);
+                });
+            });
+            if (cachedData && (cachedData.bookmarkTree || cachedData.time)) {
+                console.log('[showHistoryExportChangesModal] 使用 cachedRecordAfterClear 作为对比基准');
+                previousRecord = cachedData;
+            }
+        } catch (e) {
+            console.warn('[showHistoryExportChangesModal] 获取 cachedRecordAfterClear 失败:', e);
+        }
+    }
+
+    // Split storage：上一条记录如果没有 bookmarkTree，也需要按需加载
+    if (previousRecord && !previousRecord.bookmarkTree && previousRecord.time) {
+        try {
+            const prevTree = await getBackupDataLazy(previousRecord.time);
+            if (prevTree) previousRecord.bookmarkTree = prevTree; // Cache for this session
+        } catch (e) {
+            console.warn('[showHistoryExportChangesModal] 按需加载上一条 bookmarkTree 失败:', e);
         }
     }
 

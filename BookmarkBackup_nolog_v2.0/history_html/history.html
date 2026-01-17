@@ -1596,7 +1596,7 @@
         <div class="modal-content" style="max-width: 500px;">
             <div class="modal-header compact">
 
-                <h3 id="restoreModalTitle">恢复书签</h3>
+                <h3 id="restoreModalTitle">恢复到对应版本</h3>
                 <button class="modal-close" id="restoreModalClose">
                     <i class="fas fa-times"></i>
                 </button>
@@ -1611,7 +1611,7 @@
                     <!-- 1. 主视图 -->
                     <div id="restoreMainView" style="width: 100%; padding: 12px 20px 14px; box-sizing: border-box;">
                         <!-- 版本信息卡片 -->
-                        <div id="restoreVersionInfo" style="margin-bottom: 12px; text-align: center;">
+                        <div id="restoreVersionInfo" style="margin-bottom: 12px; text-align: left;">
                             <div style="font-size: 16px; font-weight: 600; color: var(--text-primary); margin-bottom: 3px;"
                                 id="restoreVersionNote"></div>
                             <div style="font-size: 12px; color: var(--text-secondary);" id="restoreVersionTime"></div>
@@ -1659,20 +1659,24 @@
 
                                 <!-- 备份记录状态 -->
                                 <div
-                                    style="flex: 1; padding: 10px 8px; background: var(--bg-secondary); border-radius: 8px; border: 1px solid var(--accent-light);">
-                                    <div style="color: var(--accent-primary); margin-bottom: 6px; text-align: center; font-weight: 500; font-size: 11px;"
-                                        id="restoreBackupLabel">备份记录</div>
+                                    style="flex: 1; padding: 10px 8px; background: var(--bg-secondary); border-radius: 8px; border: 1px solid var(--border-color);">
+                                    <div
+                                        style="color: var(--text-secondary); margin-bottom: 6px; text-align: center; font-weight: 500; font-size: 11px; display: flex; align-items: center; justify-content: center; gap: 6px; flex-wrap: wrap;">
+                                        <span id="restoreBackupLabel">备份记录</span>
+                                        <span id="restoreBackupFingerprint"
+                                            style="display: none; font-family: SF Mono, Monaco, Consolas, monospace; font-size: 11px; color: var(--text-tertiary); background: var(--bg-tertiary); border: 1px solid var(--border-color); border-radius: 6px; padding: 1px 6px; line-height: 1.2;"></span>
+                                    </div>
                                     <div style="display: flex; justify-content: space-around; align-items: baseline;">
                                         <div style="text-align: center;">
                                             <div id="restoreBackupCount"
-                                                style="font-weight: 600; font-size: 16px; color: var(--accent-primary); line-height: 1;">
+                                                style="font-weight: 600; font-size: 16px; color: var(--text-primary); line-height: 1;">
                                                 --</div>
                                             <div style="font-size: 10px; color: var(--text-tertiary); margin-top: 3px;"
                                                 id="restoreBackupBookmarksLabel">书签</div>
                                         </div>
                                         <div style="text-align: center;">
                                             <div id="restoreBackupFolders"
-                                                style="font-weight: 600; font-size: 16px; color: var(--accent-primary); line-height: 1;">
+                                                style="font-weight: 600; font-size: 16px; color: var(--text-primary); line-height: 1;">
                                                 --</div>
                                             <div style="font-size: 10px; color: var(--text-tertiary); margin-top: 3px;"
                                                 id="restoreBackupFoldersLabel">文件夹</div>
@@ -1681,35 +1685,17 @@
                                 </div>
                             </div>
                             <!-- 差异摘要与预览按钮行 -->
-                            <div
-                                style="margin-top: 8px; background: var(--bg-tertiary); border-radius: 6px; padding: 6px 10px; display: flex; align-items: center; justify-content: space-between; gap: 8px;">
+                            <div class="restore-diff-bar">
                                 <!-- 差异摘要 (左对齐) -->
                                 <div id="restoreDiffSummary"
                                     style="font-size: 11px; color: var(--text-secondary); text-align: left; flex: 1;">
                                     正在计算差异...
                                 </div>
 
-                                <!-- 预览按钮 (纯文字小框) -->
-                                <button id="restorePreviewBtn"
-                                    style="display: none; height: 24px; padding: 0 10px; font-size: 11px; border: 1px solid var(--border-color); background: var(--bg-primary); color: var(--text-primary); border-radius: 4px; cursor: pointer; white-space: nowrap; transition: all 0.2s ease;"
-                                    onmouseover="this.style.borderColor='var(--accent-primary)'; this.style.color='var(--accent-primary)';"
-                                    onmouseout="this.style.borderColor='var(--border-color)'; this.style.color='var(--text-primary)';">
+                                <!-- 预览按钮 -->
+                                <button id="restorePreviewBtn" class="restore-preview-btn" style="display: none;">
                                     <span id="restorePreviewBtnText">预览</span>
                                 </button>
-                            </div>
-                        </div>
-
-                        <!-- 警告提示 -->
-                        <div class="restore-warning"
-                            style="background: var(--warning-light); border: 1px solid var(--warning); border-radius: 6px; padding: 10px; margin-bottom: 12px;">
-                            <div style="display: flex; align-items: flex-start; gap: 8px;">
-                                <i class="fas fa-exclamation-triangle"
-                                    style="color: var(--warning); margin-top: 1px; font-size: 13px;"></i>
-                                <div style="font-size: 12px; color: var(--text-primary); line-height: 1.4;">
-                                    <strong id="restoreWarningTitle">警告</strong>
-                                    <span id="restoreWarningText" style="margin-left: 4px;">
-                                        此操作将修改您的浏览器书签。恢复完成后会自动创建一条新的备份记录。</span>
-                                </div>
                             </div>
                         </div>
 
@@ -1731,13 +1717,54 @@
                                 style="font-size: 11px; color: var(--text-tertiary); margin-top: 4px; text-align: center;">
                                 准备中...</div>
                         </div>
-
-                        <!-- 操作按钮 -->
-                        <div class="modal-footer"
-                            style="display: flex; justify-content: flex-end; gap: 8px; border-top: 1px solid var(--border-color); padding-top: 12px;">
-                            <button class="modal-btn" id="restoreCancelBtn">取消</button>
-                            <button class="modal-btn primary" id="restoreConfirmBtn">
-                                恢复书签
+ 
+                        <!-- 操作按钮（与主 UI 保持一致：三种策略 + 一个恢复按钮） -->
+                        <div class="modal-footer">
+                            <div class="restore-warning">
+                                <div style="display: flex; align-items: flex-start; gap: 8px;">
+                                    <i class="fas fa-exclamation-triangle" style="margin-top: 1px; font-size: 13px;"></i>
+                                    <div style="font-size: 12px; color: var(--text-primary); line-height: 1.4;">
+                                        <strong id="restoreWarningTitle">警告</strong>
+                                        <span id="restoreWarningText" style="margin-left: 4px;">请先选择恢复方式，查看对应说明。</span>
+                                    </div>
+                                </div>
+                            </div>
+ 
+                            <div class="restore-footer-actions">
+                                <button class="modal-btn" id="restoreCancelBtn">取消</button>
+ 
+                                <div id="restoreStrategySegment" style="display: inline-flex; align-items: center;">
+                                    <div id="restoreStrategyGroup" class="restore-strategy-group">
+                                        <label class="restore-strategy-label" title="" id="restoreStrategyOverwriteLabelWrap">
+                                            <input type="radio" name="restoreStrategy" id="restoreStrategyOverwrite"
+                                                value="overwrite" checked>
+                                            <div class="restore-strategy-option" id="restoreStrategyOverwriteLabel">
+                                                <span class="restore-strategy-icon">✓</span>
+                                                <span>覆盖</span>
+                                            </div>
+                                        </label>
+                                        <label class="restore-strategy-label" title="" id="restoreStrategyPatchLabelWrap">
+                                            <input type="radio" name="restoreStrategy" id="restoreStrategyPatch"
+                                                value="patch">
+                                            <div class="restore-strategy-option" id="restoreStrategyPatchLabel">
+                                                <span class="restore-strategy-icon">✓</span>
+                                                <span>补丁合并</span>
+                                            </div>
+                                        </label>
+                                        <div class="restore-strategy-divider" aria-hidden="true"></div>
+                                        <label class="restore-strategy-label" title="" id="restoreStrategyMergeLabelWrap">
+                                            <input type="radio" name="restoreStrategy" id="restoreStrategyMerge"
+                                                value="merge">
+                                            <div class="restore-strategy-option" id="restoreStrategyMergeLabel">
+                                                <span class="restore-strategy-icon">✓</span>
+                                                <span>导入合并</span>
+                                            </div>
+                                        </label>
+                                    </div>
+                                </div>
+ 
+                                <button class="modal-btn primary" id="restoreConfirmBtn">恢复</button>
+                            </div>
                         </div>
                     </div>
 

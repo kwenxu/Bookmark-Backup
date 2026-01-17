@@ -1954,8 +1954,8 @@ browserAPI.runtime.onMessage.addListener((message, sender, sendResponse) => {
                     const sourceNote = message.sourceNote || '';
                     const strategy = message.strategy || 'overwrite';
 
-                    // 执行备份
-                    const result = await syncBookmarks(false, null, false, null);
+                    // 执行备份：恢复是用户主动行为，应按“手动备份”处理（不受 autoSync 开关影响）
+                    const result = await syncBookmarks(true, null, false, null);
 
                     if (result.success) {
                         // 更新最新的记录，添加恢复标识
@@ -2000,6 +2000,19 @@ browserAPI.runtime.onMessage.addListener((message, sender, sendResponse) => {
                     sendResponse(result);
                 } catch (error) {
                     console.error('[triggerRestoreBackup] 失败:', error);
+                    sendResponse({ success: false, error: error.message });
+                }
+            })();
+            return true;
+        } else if (message.action === "rebuildActiveTimeBookmarkCache") {
+            (async () => {
+                try {
+                    const enabled = await isTrackingEnabled();
+                    if (enabled) {
+                        await rebuildActiveTimeBookmarkCache();
+                    }
+                    sendResponse({ success: true });
+                } catch (error) {
                     sendResponse({ success: false, error: error.message });
                 }
             })();
@@ -5745,6 +5758,28 @@ async function exportSyncHistoryToCloud(options = {}) {
         if (packMode === 'zip') {
             console.log('[exportSyncHistoryToCloud] 使用 ZIP 归档模式');
 
+            // Split storage：Zip 模式需要从独立 key 加载 bookmarkTree
+            try {
+                const dataKeys = Array.from(new Set(syncHistory
+                    .filter(r => r && r.hasData && r.time)
+                    .map(r => `backup_data_${r.time}`)));
+
+                if (dataKeys.length > 0) {
+                    const data = await browserAPI.storage.local.get(dataKeys);
+                    for (const r of syncHistory) {
+                        if (!r) continue;
+                        if (!r.bookmarkTree && r.hasData) {
+                            const key = `backup_data_${r.time}`;
+                            if (data && data[key]) {
+                                r.bookmarkTree = data[key];
+                            }
+                        }
+                    }
+                }
+            } catch (e) {
+                console.warn('[exportSyncHistoryToCloud] Zip 模式预加载 bookmarkTree 失败:', e);
+            }
+
             const files = [];
             const zipPrefix = isZh ? '备份历史归档' : 'Backup_History_Archive';
             const zipRootFolder = `${zipPrefix}_${timestampStr}`;
@@ -6889,6 +6924,436 @@ async function executeMergeBookmarkRestore(bookmarkTree) {
     return { created: createdCount, importedFolderId: importRootFolder.id, importedFolderTitle: importRootTitle };
 }
 
+function ensureRestoreTreeIds(targetTree) {
+    let counter = 0;
+
+    const walk = (node, parentId = null) => {
+        if (!node || typeof node !== 'object') return;
+
+        if (!node.id) {
+            const title = String(node.title || '').trim().toLowerCase();
+            if (parentId === null && title === 'root') {
+                node.id = '0';
+            } else {
+                counter += 1;
+                node.id = `__restore_tmp_${counter}`;
+            }
+        }
+
+        if (parentId != null && (node.parentId == null || node.parentId === '')) {
+            node.parentId = String(parentId);
+        }
+
+        if (Array.isArray(node.children)) {
+            for (const child of node.children) {
+                walk(child, node.id);
+            }
+        }
+    };
+
+    const roots = Array.isArray(targetTree) ? targetTree : [targetTree];
+    for (const r of roots) {
+        walk(r, null);
+    }
+}
+
+function normalizeTreeIds(targetTree, referenceTree) {
+    if (!targetTree || !referenceTree) return;
+
+    const refPool = {
+        ids: new Set(),
+        claimedIds: new Set(),
+        nodeMap: new Map(),
+        urlMap: new Map()
+    };
+
+    const indexRef = (nodes) => {
+        if (!nodes) return;
+        const list = Array.isArray(nodes) ? nodes : [nodes];
+        list.forEach(node => {
+            if (node && node.id) {
+                const sid = String(node.id);
+                refPool.ids.add(sid);
+                refPool.nodeMap.set(sid, node);
+
+                if (node.url) {
+                    if (!refPool.urlMap.has(node.url)) {
+                        refPool.urlMap.set(node.url, new Set());
+                    }
+                    refPool.urlMap.get(node.url).add(node);
+                }
+            }
+            if (node && node.children) indexRef(node.children);
+        });
+    };
+    indexRef(referenceTree);
+
+    const updateNodeId = (node, newId) => {
+        if (!node) return;
+        node.id = newId;
+        if (Array.isArray(node.children)) {
+            node.children.forEach(child => {
+                if (child) child.parentId = newId;
+            });
+        }
+    };
+
+    const pass1_IDMatch = (nodes) => {
+        if (!nodes) return;
+        const list = Array.isArray(nodes) ? nodes : [nodes];
+        list.forEach(node => {
+            if (!node) return;
+            const id = String(node.id);
+            if (refPool.ids.has(id) && !refPool.claimedIds.has(id)) {
+                const refNode = refPool.nodeMap.get(id);
+                const isSameType = !!node.url === !!refNode?.url;
+                if (isSameType) {
+                    refPool.claimedIds.add(id);
+                    node._matchedRefNode = refNode;
+                }
+            }
+            if (node.children) pass1_IDMatch(node.children);
+        });
+    };
+    pass1_IDMatch(targetTree);
+
+    const pass2_StructureMatch = (nodes, parentMatchedRefNode) => {
+        if (!nodes) return;
+        const list = Array.isArray(nodes) ? nodes : [nodes];
+
+        list.forEach(node => {
+            if (!node) return;
+
+            if (!node._matchedRefNode) {
+                if (parentMatchedRefNode && Array.isArray(parentMatchedRefNode.children)) {
+                    const isBookmark = !!node.url;
+                    const candidate = parentMatchedRefNode.children.find(refChild => {
+                        if (!refChild) return false;
+                        const refId = String(refChild.id);
+                        if (refPool.claimedIds.has(refId)) return false;
+
+                        const refIsBookmark = !!refChild.url;
+                        if (isBookmark !== refIsBookmark) return false;
+                        if (node.title !== refChild.title) return false;
+                        if (isBookmark && node.url !== refChild.url) return false;
+                        return true;
+                    });
+
+                    if (candidate) {
+                        const newId = String(candidate.id);
+                        updateNodeId(node, newId);
+                        refPool.claimedIds.add(newId);
+                        node._matchedRefNode = candidate;
+                    }
+                }
+            }
+
+            if (node.children) {
+                pass2_StructureMatch(node.children, node._matchedRefNode);
+            }
+        });
+    };
+
+    const rootNodes = Array.isArray(targetTree) ? targetTree : [targetTree];
+    rootNodes.forEach(root => {
+        if (!root) return;
+        pass2_StructureMatch(root.children, root._matchedRefNode);
+    });
+
+    const pass3_GlobalUrlMatch = (nodes) => {
+        if (!nodes) return;
+        const list = Array.isArray(nodes) ? nodes : [nodes];
+        list.forEach(node => {
+            if (!node) return;
+
+            if (!node._matchedRefNode && node.url) {
+                const candidates = refPool.urlMap.get(node.url);
+                if (candidates) {
+                    let bestMatch = null;
+
+                    for (const cand of candidates) {
+                        if (!cand) continue;
+                        const cid = String(cand.id);
+                        if (refPool.claimedIds.has(cid)) continue;
+                        if (cand.title === node.title) {
+                            bestMatch = cand;
+                            break;
+                        }
+                    }
+
+                    if (!bestMatch) {
+                        for (const cand of candidates) {
+                            if (!cand) continue;
+                            const cid = String(cand.id);
+                            if (refPool.claimedIds.has(cid)) continue;
+                            bestMatch = cand;
+                            break;
+                        }
+                    }
+
+                    if (bestMatch) {
+                        const newId = String(bestMatch.id);
+                        updateNodeId(node, newId);
+                        refPool.claimedIds.add(newId);
+                        node._matchedRefNode = bestMatch;
+                    }
+                }
+            }
+
+            if (node.children) pass3_GlobalUrlMatch(node.children);
+        });
+    };
+    pass3_GlobalUrlMatch(targetTree);
+
+    const cleanup = (nodes) => {
+        if (!nodes) return;
+        const list = Array.isArray(nodes) ? nodes : [nodes];
+        list.forEach(node => {
+            if (!node) return;
+            delete node._matchedRefNode;
+            if (node.children) cleanup(node.children);
+        });
+    };
+    cleanup(targetTree);
+}
+
+async function executePatchBookmarkRestore(bookmarkTree) {
+    const { bookmarkBar, otherBookmarks } = await findBookmarkContainers();
+    if (!bookmarkBar || !otherBookmarks) {
+        throw new Error('Cannot find bookmark containers');
+    }
+
+    const currentTree = await browserAPI.bookmarks.getTree();
+
+    let targetTree = bookmarkTree;
+    try {
+        targetTree = JSON.parse(JSON.stringify(bookmarkTree));
+    } catch (_) {
+    }
+
+    ensureRestoreTreeIds(targetTree);
+
+    try {
+        normalizeTreeIds(targetTree, currentTree);
+    } catch (e) {
+        console.warn('[executePatchBookmarkRestore] normalizeTreeIds failed:', e);
+    }
+
+    ensureRestoreTreeIds(targetTree);
+
+    const targetTreeArr = Array.isArray(targetTree) ? targetTree : [targetTree];
+
+    const currentIndex = buildTreeIndexForDiff(currentTree);
+    const targetIndex = buildTreeIndexForDiff(targetTreeArr);
+
+    const targetNodeMap = new Map();
+    (function indexTargetNodes() {
+        const root = Array.isArray(targetTreeArr) ? targetTreeArr[0] : targetTreeArr;
+        const traverse = (node) => {
+            if (!node || !node.id) return;
+            targetNodeMap.set(String(node.id), node);
+            if (Array.isArray(node.children)) {
+                node.children.forEach(traverse);
+            }
+        };
+        if (root) traverse(root);
+    })();
+
+    const managedRootIds = new Set([String(bookmarkBar.id), String(otherBookmarks.id)]);
+
+    const isUnderManagedRoot = (id, index) => {
+        let cur = String(id);
+        let guard = 0;
+        while (cur && guard++ < 200) {
+            if (managedRootIds.has(cur)) return true;
+            const rec = index.nodes.get(cur);
+            const parentId = rec && rec.parentId ? String(rec.parentId) : null;
+            if (!parentId) break;
+            cur = parentId;
+        }
+        return false;
+    };
+
+    const addedIds = [];
+    const movedIds = [];
+    const modifiedIds = [];
+    const deletedIds = [];
+
+    for (const [rawId, t] of targetIndex.nodes.entries()) {
+        const id = String(rawId);
+        if (managedRootIds.has(id)) continue;
+        if (!isUnderManagedRoot(id, targetIndex)) continue;
+
+        const c = currentIndex.nodes.get(id);
+        if (!c) {
+            addedIds.push(id);
+            continue;
+        }
+
+        const isFolder = !t.url;
+        const isModified = isFolder ? (c.title !== t.title) : (c.title !== t.title || c.url !== t.url);
+        if (isModified) modifiedIds.push(id);
+
+        const isMoved = (c.parentId !== t.parentId) ||
+            (typeof c.index === 'number' && typeof t.index === 'number' && c.index !== t.index);
+        if (isMoved) movedIds.push(id);
+    }
+
+    for (const [rawId] of currentIndex.nodes.entries()) {
+        const id = String(rawId);
+        if (managedRootIds.has(id)) continue;
+        if (!isUnderManagedRoot(id, currentIndex)) continue;
+        if (!targetIndex.nodes.has(id)) deletedIds.push(id);
+    }
+
+    const stats = {
+        created: 0,
+        moved: 0,
+        updated: 0,
+        deleted: 0
+    };
+
+    const createdIdMap = new Map();
+    const resolveId = (maybeTargetId) => {
+        const key = String(maybeTargetId);
+        return createdIdMap.get(key) || key;
+    };
+
+    const depthCache = new Map();
+    const getDepth = (nodeId) => {
+        const key = String(nodeId);
+        if (depthCache.has(key)) return depthCache.get(key);
+        const rec = targetIndex.nodes.get(key);
+        const parentId = rec && rec.parentId ? String(rec.parentId) : null;
+        const d = parentId ? 1 + getDepth(parentId) : 0;
+        depthCache.set(key, d);
+        return d;
+    };
+
+    addedIds.sort((a, b) => getDepth(a) - getDepth(b));
+
+    for (const id of addedIds) {
+        const rec = targetIndex.nodes.get(id);
+        const rawNode = targetNodeMap.get(id);
+        if (!rec || !rawNode) continue;
+
+        const parentId = rec.parentId ? resolveId(rec.parentId) : null;
+        if (!parentId) continue;
+        const createOptions = {
+            parentId: String(parentId),
+            title: rawNode.title || ''
+        };
+        if (typeof rec.index === 'number') createOptions.index = rec.index;
+        if (rawNode.url) createOptions.url = rawNode.url;
+
+        let created = null;
+        try {
+            created = await browserAPI.bookmarks.create(createOptions);
+        } catch (e) {
+            if (typeof createOptions.index === 'number') {
+                const fallbackOptions = {
+                    parentId: createOptions.parentId,
+                    title: createOptions.title
+                };
+                if (createOptions.url) fallbackOptions.url = createOptions.url;
+                try {
+                    created = await browserAPI.bookmarks.create(fallbackOptions);
+                } catch (e2) {
+                    console.warn('[executePatchBookmarkRestore] Create failed:', id, e2);
+                }
+            } else {
+                console.warn('[executePatchBookmarkRestore] Create failed:', id, e);
+            }
+        }
+
+        if (created && created.id) {
+            createdIdMap.set(id, String(created.id));
+            stats.created += 1;
+        }
+    }
+
+    movedIds.sort((a, b) => {
+        const ar = targetIndex.nodes.get(a);
+        const br = targetIndex.nodes.get(b);
+        const ap = ar && ar.parentId ? String(ar.parentId) : '';
+        const bp = br && br.parentId ? String(br.parentId) : '';
+        if (ap !== bp) return ap.localeCompare(bp);
+        const ai = typeof ar?.index === 'number' ? ar.index : 0;
+        const bi = typeof br?.index === 'number' ? br.index : 0;
+        return ai - bi;
+    });
+
+    for (const id of movedIds) {
+        if (createdIdMap.has(id)) continue;
+
+        const rec = targetIndex.nodes.get(id);
+        if (!rec || !rec.parentId) continue;
+
+        const destParentId = resolveId(rec.parentId);
+        const moveInfo = { parentId: String(destParentId) };
+        if (typeof rec.index === 'number') moveInfo.index = rec.index;
+
+        let movedOk = false;
+        try {
+            await browserAPI.bookmarks.move(id, moveInfo);
+            movedOk = true;
+        } catch (e) {
+            try {
+                await browserAPI.bookmarks.move(id, { parentId: String(destParentId) });
+                movedOk = true;
+            } catch (e2) {
+                console.warn('[executePatchBookmarkRestore] Move failed:', id, e2);
+            }
+        }
+        if (movedOk) stats.moved += 1;
+    }
+
+    for (const id of modifiedIds) {
+        if (createdIdMap.has(id)) continue;
+
+        const rawNode = targetNodeMap.get(id);
+        if (!rawNode) continue;
+
+        const updateInfo = { title: rawNode.title || '' };
+        if (rawNode.url) updateInfo.url = rawNode.url;
+
+        try {
+            await browserAPI.bookmarks.update(id, updateInfo);
+            stats.updated += 1;
+        } catch (e) {
+            console.warn('[executePatchBookmarkRestore] Update failed:', id, e);
+        }
+    }
+
+    const deletedSet = new Set(deletedIds);
+    const hasDeletedAncestor = (nodeId) => {
+        let cur = String(nodeId);
+        let guard = 0;
+        while (cur && guard++ < 200) {
+            const rec = currentIndex.nodes.get(cur);
+            const parentId = rec && rec.parentId ? String(rec.parentId) : null;
+            if (!parentId) break;
+            if (deletedSet.has(parentId)) return true;
+            cur = parentId;
+        }
+        return false;
+    };
+
+    const topDeletedIds = deletedIds.filter(id => !hasDeletedAncestor(id));
+
+    for (const id of topDeletedIds) {
+        if (managedRootIds.has(String(id))) continue;
+        try {
+            await browserAPI.bookmarks.removeTree(id);
+            stats.deleted += 1;
+        } catch (e) {
+            console.warn('[executePatchBookmarkRestore] Remove failed:', id, e);
+        }
+    }
+
+    return stats;
+}
+
 function decodeHtmlEntities(text) {
     const s = String(text == null ? '' : text);
     return s
@@ -7120,6 +7585,15 @@ async function restoreSelectedVersion({ restoreRef, strategy, localPayload }) {
             await invalidateRecommendCaches('restore').catch(() => { });
 
             return { success: true, strategy: 'overwrite', ...result };
+        }
+
+        if (strategy === 'patch') {
+            const result = await executePatchBookmarkRestore(tree);
+
+            await browserAPI.storage.local.set({ initialized: true });
+            await invalidateRecommendCaches('restore').catch(() => { });
+
+            return { success: true, strategy: 'patch', ...result };
         }
 
         const result = await executeMergeBookmarkRestore(tree);

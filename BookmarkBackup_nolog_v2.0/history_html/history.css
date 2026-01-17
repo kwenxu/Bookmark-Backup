@@ -1019,16 +1019,19 @@ body {
     background: var(--accent-light);
 }
 
-/* 模态框内的预览条目样式 */
+/* 模态框内的目标版本条目样式 */
 #restoreVersionInfo .commit-item {
     margin: 0;
-    border: 1px solid var(--accent-primary);
+    border: 1px solid var(--border-color);
     background: var(--bg-secondary);
     cursor: default;
     box-shadow: none;
+    pointer-events: none;
 }
 
 #restoreVersionInfo .commit-item:hover {
+    border-color: var(--border-color);
+    box-shadow: none;
     transform: none;
 }
 
@@ -16407,6 +16410,16 @@ body.canvas-popover-active .md-list-popover {
     margin: 0 !important;
 }
 
+#restoreModal .restore-title {
+    color: var(--text-primary) !important;
+}
+
+#restoreModal .commit-seq-badge.restore-seq {
+    color: var(--text-secondary);
+    border-color: var(--border-color);
+    background: var(--bg-secondary);
+}
+
 /* 对比统计区域 - 更紧凑 */
 #restoreModal #restoreComparison {
     margin-bottom: 14px !important;
@@ -16426,10 +16439,54 @@ body.canvas-popover-active .md-list-popover {
     padding: 6px 10px !important;
 }
 
-/* 警告提示区域 - 更紧凑 */
-#restoreModal .modal-body [style*="warning-light"] {
-    padding: 10px !important;
-    margin-bottom: 12px !important;
+#restoreModal .restore-diff-bar {
+    margin-top: 8px;
+    background: var(--bg-tertiary);
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    padding: 6px 10px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+}
+
+#restoreModal .restore-preview-btn {
+    height: 24px;
+    padding: 0 10px;
+    font-size: 11px;
+    border: 1px solid var(--border-color);
+    background: var(--bg-primary);
+    color: var(--text-secondary);
+    border-radius: 6px;
+    cursor: pointer;
+    white-space: nowrap;
+    transition: all 0.2s ease;
+}
+
+#restoreModal .restore-preview-btn:hover:not(:disabled) {
+    background: var(--bg-secondary);
+    color: var(--text-primary);
+}
+
+#restoreModal .restore-target-label {
+    margin-bottom: 10px;
+    font-size: 12px;
+    color: var(--text-secondary);
+    text-align: left;
+}
+
+/* 警告/说明（放在操作区分割线下方） */
+#restoreModal .restore-warning {
+    margin: 0;
+    padding: 10px;
+    border-radius: 8px;
+    background: var(--warning-light);
+    border: 1px solid var(--warning);
+}
+
+#restoreModal .restore-warning i {
+    color: var(--warning);
 }
 
 /* 进度区域 - 更紧凑 */
@@ -16437,35 +16494,144 @@ body.canvas-popover-active .md-list-popover {
     margin-bottom: 12px !important;
 }
 
-/* 底部按钮区域 - 更紧凑 */
+/* 底部操作区 - 更聚焦 */
 #restoreModal .modal-footer {
+    border-top: 1px solid var(--border-color);
     padding-top: 12px !important;
-    gap: 8px !important;
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 10px;
 }
 
-/* 按钮样式优化 */
-#restoreModal .modal-btn {
-    padding: 8px 16px;
+#restoreModal .restore-footer-actions {
+    display: flex;
+    justify-content: flex-end;
+    align-items: center;
+    gap: 10px;
+    flex-wrap: wrap;
+}
+
+/* Strategy pills（与主 UI 的 Restore Modal 一致） */
+#restoreModal #restoreStrategySegment {
+    display: inline-flex;
+    align-items: center;
+}
+
+#restoreModal .restore-strategy-group {
+    height: 34px;
+    padding: 2px;
+    border-radius: 8px;
+    border: 1px solid var(--border-color);
+    background-color: var(--bg-tertiary);
+    display: inline-flex;
+    gap: 2px;
+    box-sizing: border-box;
+}
+
+#restoreModal .restore-strategy-group.disabled {
+    opacity: 0.6;
+    pointer-events: none;
+}
+
+#restoreModal .restore-strategy-label {
+    cursor: pointer;
+    user-select: none;
+    margin: 0;
+    height: 100%;
+    display: flex;
+}
+
+#restoreModal .restore-strategy-label input {
+    display: none;
+}
+
+#restoreModal .restore-strategy-option {
+    height: 100%;
+    padding: 0 9px;
+    border-radius: 7px;
     font-size: 13px;
-    border-radius: 6px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    color: var(--text-secondary);
     transition: all 0.2s ease;
+    white-space: nowrap;
+}
+
+#restoreModal .restore-strategy-option:hover {
+    background-color: var(--bg-secondary);
+    color: var(--text-primary);
+}
+
+#restoreModal .restore-strategy-icon {
+    display: none;
+    /* only render when checked to avoid leading blank */
+    font-size: 12px;
+    margin-left: -3px;
+    opacity: 0.95;
+}
+
+#restoreModal .restore-strategy-label input:checked+.restore-strategy-option {
+    background-color: var(--accent-primary);
+    color: #ffffff;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.15);
+    font-weight: 500;
+}
+
+#restoreModal .restore-strategy-label input:checked+.restore-strategy-option .restore-strategy-icon {
+    display: inline-flex;
+}
+
+#restoreModal .restore-strategy-divider {
+    width: 1px;
+    height: 18px;
+    align-self: center;
+    background-color: var(--border-color);
+    opacity: 0.9;
+    margin: 0 2px;
+}
+
+/* Action Buttons（与主 UI 的 Restore Modal 一致） */
+#restoreModal .modal-btn {
+    min-width: 92px;
+    height: 34px;
+    padding: 0 12px;
+    border-radius: 8px;
+    font-size: 14px;
+    line-height: 1;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    white-space: nowrap;
+    cursor: pointer;
+    user-select: none;
+    transition: all 0.2s ease;
+
+    background-color: var(--bg-tertiary);
+    color: var(--text-secondary);
+    border: 1px solid var(--border-color);
+}
+
+#restoreModal .modal-btn:hover:not(:disabled) {
+    background-color: var(--bg-secondary);
+    color: var(--text-primary);
 }
 
 #restoreModal .modal-btn.primary {
-    background: linear-gradient(135deg, var(--accent-primary) 0%, var(--accent-secondary, #6366f1) 100%);
+    background-color: var(--accent-primary);
+    color: #ffffff;
     border: none;
-    box-shadow: 0 2px 8px rgba(99, 102, 241, 0.3);
 }
 
-#restoreModal .modal-btn.primary:hover {
-    transform: translateY(-1px);
-    box-shadow: 0 4px 12px rgba(99, 102, 241, 0.4);
+#restoreModal .modal-btn.primary:hover:not(:disabled) {
+    background-color: var(--accent-hover);
 }
 
-#restoreModal .modal-btn.primary:disabled {
+#restoreModal .modal-btn:disabled {
     opacity: 0.6;
-    transform: none;
-    box-shadow: none;
+    cursor: not-allowed;
 }
 
 /* 预览视图样式 */

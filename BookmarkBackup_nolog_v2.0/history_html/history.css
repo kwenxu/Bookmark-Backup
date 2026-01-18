@@ -13500,6 +13500,27 @@ a.tree-label.tree-bookmark-link:hover {
     background: var(--accent-hover);
 }
 
+/* 恢复弹窗：补丁二次确认按钮状态（黄色提醒 / 红色冲突） */
+.modal-btn.patch-confirm-warning {
+    border: 1px solid var(--warning);
+    background: var(--warning-light);
+    color: var(--warning);
+}
+
+.modal-btn.patch-confirm-warning:hover {
+    filter: brightness(0.98);
+}
+
+.modal-btn.patch-confirm-danger {
+    border: none;
+    background: var(--error);
+    color: white;
+}
+
+.modal-btn.patch-confirm-danger:hover {
+    filter: brightness(0.95);
+}
+
 .modal-btn.danger {
     border: none;
     background: var(--error);
@@ -16451,7 +16472,8 @@ body.canvas-popover-active .md-list-popover {
     gap: 8px;
 }
 
-#restoreModal .restore-preview-btn {
+#restoreModal .restore-preview-btn,
+#restoreModal .restore-ambiguity-btn {
     height: 24px;
     padding: 0 10px;
     font-size: 11px;
@@ -16462,11 +16484,185 @@ body.canvas-popover-active .md-list-popover {
     cursor: pointer;
     white-space: nowrap;
     transition: all 0.2s ease;
+
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    line-height: 1;
+}
+
+#restoreModal .restore-preview-btn:hover:not(:disabled),
+#restoreModal .restore-ambiguity-btn:hover:not(:disabled) {
+    background: var(--bg-secondary);
+    color: var(--text-primary);
 }
 
 #restoreModal .restore-preview-btn:hover:not(:disabled) {
+    background: var(--warning-light);
+    color: var(--warning);
+    border-color: var(--warning);
+}
+
+/* 预览按钮：与补丁二次确认一致的状态色 */
+#restoreModal .restore-preview-btn.preview-warning {
+    border-color: var(--warning);
+    color: var(--warning);
+    background: var(--warning-light);
+}
+
+/* 默认预览按钮：黄色提示（预演阶段入口） */
+#restoreModal .restore-preview-btn {
+    border-color: var(--warning);
+    color: var(--warning);
+    background: var(--warning-light);
+}
+
+#restoreModal .restore-preview-btn.preview-warning:hover:not(:disabled) {
+    border-color: var(--warning);
+    color: var(--warning);
+    background: var(--warning-light);
+}
+
+#restoreModal .restore-preview-btn.preview-warning:focus-visible {
+    outline: none;
+    box-shadow: 0 0 0 3px rgba(255, 152, 0, 0.28);
+}
+
+#restoreModal .restore-preview-btn.preview-danger {
+    border-color: var(--error);
+    color: #ffffff;
+    background: var(--error);
+}
+
+#restoreModal .restore-preview-btn.preview-danger:hover:not(:disabled) {
+    border-color: var(--error);
+    color: #ffffff;
+    background: var(--error);
+}
+
+#restoreModal .restore-preview-btn.preview-danger:focus-visible {
+    outline: none;
+    box-shadow: 0 0 0 3px rgba(231, 76, 60, 0.28);
+}
+
+#restoreModal .restore-ambiguity-btn {
+    border-color: var(--warning);
+    color: var(--warning);
+}
+
+#restoreModal .restore-ambiguity-btn:hover:not(:disabled) {
+    background: var(--warning-light);
+}
+
+#restoreModal .restore-ambiguity-panel {
+    display: none;
+    margin-top: 8px;
+    border: 1px solid var(--border-color);
+    background: var(--bg-secondary);
+    border-radius: 8px;
+    overflow: hidden;
+}
+
+#restoreModal .restore-ambiguity-panel.show {
+    display: block;
+}
+
+#restoreModal .restore-ambiguity-panel-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    padding: 8px 10px;
+    background: var(--bg-tertiary);
+    border-bottom: 1px solid var(--border-color);
+}
+
+#restoreModal .restore-ambiguity-title {
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--text-primary);
+}
+
+#restoreModal .restore-ambiguity-close-btn {
+    height: 24px;
+    padding: 0 10px;
+    font-size: 11px;
+    border: 1px solid var(--border-color);
+    background: var(--bg-primary);
+    color: var(--text-secondary);
+    border-radius: 6px;
+    cursor: pointer;
+    white-space: nowrap;
+}
+
+#restoreModal .restore-ambiguity-close-btn:hover {
     background: var(--bg-secondary);
     color: var(--text-primary);
+}
+
+#restoreModal .restore-ambiguity-list {
+    max-height: 180px;
+    overflow: auto;
+    padding: 8px 10px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+#restoreModal .restore-ambiguity-item {
+    padding: 8px 10px;
+    border: 1px solid var(--border-color);
+    background: var(--bg-primary);
+    border-radius: 8px;
+}
+
+#restoreModal .restore-ambiguity-item-title {
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--text-primary);
+    margin-bottom: 4px;
+}
+
+#restoreModal .restore-ambiguity-item-sub {
+    font-size: 11px;
+    color: var(--text-tertiary);
+    word-break: break-word;
+}
+
+#restoreModal .restore-ambiguity-candidates {
+    margin-top: 6px;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+
+#restoreModal .restore-ambiguity-candidate {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    padding: 6px 8px;
+    border: 1px dashed var(--border-color);
+    border-radius: 8px;
+    font-size: 11px;
+    color: var(--text-secondary);
+    cursor: pointer;
+}
+
+#restoreModal .restore-ambiguity-candidate:hover {
+    background: var(--bg-secondary);
+}
+
+#restoreModal .restore-ambiguity-candidate code {
+    font-family: SF Mono, Monaco, Consolas, monospace;
+    font-size: 11px;
+    color: var(--text-tertiary);
+}
+
+#restoreModal .restore-ambiguity-radio {
+    width: 14px;
+    height: 14px;
+    accent-color: var(--accent-primary);
 }
 
 #restoreModal .restore-target-label {
@@ -16627,6 +16823,43 @@ body.canvas-popover-active .md-list-popover {
 
 #restoreModal .modal-btn.primary:hover:not(:disabled) {
     background-color: var(--accent-hover);
+}
+
+#restoreModal .modal-btn.patch-confirm-warning {
+    border: 1px solid var(--warning);
+    background: var(--warning-light);
+    color: var(--warning);
+}
+
+#restoreModal .modal-btn.patch-confirm-warning:hover:not(:disabled) {
+    background: var(--warning-light);
+    background-color: var(--warning-light);
+    color: var(--warning);
+    border-color: var(--warning);
+    filter: brightness(0.98);
+}
+
+#restoreModal .modal-btn.patch-confirm-warning:focus-visible {
+    outline: none;
+    box-shadow: 0 0 0 3px rgba(255, 152, 0, 0.28);
+}
+
+#restoreModal .modal-btn.patch-confirm-danger {
+    border: none;
+    background: var(--error);
+    color: white;
+}
+
+#restoreModal .modal-btn.patch-confirm-danger:hover:not(:disabled) {
+    background: var(--error);
+    background-color: var(--error);
+    color: #ffffff;
+    filter: brightness(0.95);
+}
+
+#restoreModal .modal-btn.patch-confirm-danger:focus-visible {
+    outline: none;
+    box-shadow: 0 0 0 3px rgba(231, 76, 60, 0.28);
 }
 
 #restoreModal .modal-btn:disabled {

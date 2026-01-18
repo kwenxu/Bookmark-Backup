@@ -20509,6 +20509,491 @@ function closeModal() {
 
 let currentRestoreRecord = null; // 当前要恢复的记录
 
+// Restore diff summary cache (used by the preview bar)
+let restoreDiffSummaryHtmlCurrent = null; // Current Browser -> Selected Snapshot
+let restoreDiffSummaryHtmlMerge = null;   // Previous Backup -> This Backup (Changes View)
+
+// 通用预演状态：用于“第一次点击恢复=预演，第二次=执行”
+// { recordTime, strategy }
+let restoreGeneralPreflight = null;
+
+function setRestoreDiffBarVisible(visible) {
+    const bar = document.getElementById('restoreDiffBar');
+    if (!bar) return;
+    bar.style.display = visible ? 'flex' : 'none';
+
+    const previewBtn = document.getElementById('restorePreviewBtn');
+    if (previewBtn) {
+        previewBtn.style.display = visible ? 'inline-flex' : 'none';
+    }
+}
+
+// Patch 预演（用于“二次确认”：先预演再执行）
+// 结构：{ recordTime, diffSummary, matchReport, userMatches }
+let restorePatchPreflight = null;
+
+// 撤销本次补丁（仅针对 patch restore）
+// 设计：补丁执行前缓存一次“恢复前书签树快照”，点击撤销则用覆盖恢复回到该快照。
+// 注意：这是“状态撤回”，不能保证保留原 bookmarkId（Chrome create 无法指定 id），
+// 但可以保证书签内容/结构回到补丁前，避免用户陷入不可控状态。
+let lastPatchUndoSnapshot = null;
+
+async function undoLastPatchRestore() {
+    const isZh = currentLang === 'zh_CN';
+
+    if (!lastPatchUndoSnapshot || !lastPatchUndoSnapshot.tree) {
+        showToast(isZh ? '没有可撤销的补丁记录' : 'No patch to undo', 2600);
+        return;
+    }
+
+    const confirmed = confirm(isZh
+        ? '确定要撤销“本次补丁合并”吗？\n\n这会用覆盖恢复把书签回到补丁前的状态（内容/结构保证回退，但 bookmarkId 可能变化）。'
+        : 'Undo this patch merge?\n\nThis will overwrite-restore bookmarks to the pre-patch snapshot (content/structure will revert, but bookmark IDs may change).');
+
+    if (!confirmed) return;
+
+    try {
+        // 暂停监听
+        await browserAPI.runtime.sendMessage({ action: 'setBookmarkRestoringFlag', value: true });
+    } catch (_) { }
+
+    const undoBtn = document.getElementById('restoreUndoPatchBtn');
+    const confirmBtn = document.getElementById('restoreConfirmBtn');
+    const cancelBtn = document.getElementById('restoreCancelBtn');
+    const strategyGroup = document.getElementById('restoreStrategyGroup');
+    if (undoBtn) undoBtn.disabled = true;
+    if (confirmBtn) confirmBtn.disabled = true;
+    if (cancelBtn) cancelBtn.disabled = true;
+    if (strategyGroup) strategyGroup.classList.add('disabled');
+
+    document.getElementById('restoreProgressSection').style.display = 'block';
+    updateRestoreProgress(0, isZh ? '正在撤销补丁...' : 'Undoing patch...');
+
+    try {
+        // 直接复用 overwrite restore，把当前树覆盖回“补丁前快照”
+        const result = await executeOverwriteRestore(lastPatchUndoSnapshot.tree);
+
+        updateRestoreProgress(100, isZh ? '撤销完成！' : 'Undo completed!');
+        showToast(isZh
+            ? `已撤销补丁（创建 ${Number(result?.created || 0)}，删除 ${Number(result?.deleted || 0)}）`
+            : `Patch undone (created ${Number(result?.created || 0)}, removed ${Number(result?.deleted || 0)})`,
+            3500);
+
+        // 清空撤销点（一次性）
+        lastPatchUndoSnapshot = null;
+
+        // 刷新界面
+        try {
+            await loadAllData({ skipRender: true });
+            await renderHistoryView();
+        } catch (_) { }
+
+        // 关闭弹窗
+        try { closeRestoreModal(); } catch (_) { }
+
+    } finally {
+        try {
+            await browserAPI.runtime.sendMessage({ action: 'setBookmarkRestoringFlag', value: false });
+        } catch (_) { }
+
+        if (undoBtn) undoBtn.disabled = false;
+        if (confirmBtn) confirmBtn.disabled = false;
+        if (cancelBtn) cancelBtn.disabled = false;
+        if (strategyGroup) strategyGroup.classList.remove('disabled');
+
+        document.getElementById('restoreProgressSection').style.display = 'none';
+    }
+}
+
+let patchPreflightRecomputeTimer = null;
+let patchPreflightRecomputeToken = 0;
+
+function schedulePatchPreflightRecompute() {
+    try {
+        if (patchPreflightRecomputeTimer) clearTimeout(patchPreflightRecomputeTimer);
+    } catch (_) { }
+
+    patchPreflightRecomputeTimer = setTimeout(() => {
+        recomputePatchPreflightAfterManualPick().catch(() => { });
+    }, 180);
+}
+
+function updatePatchConfirmButtonText() {
+    const confirmBtn = document.getElementById('restoreConfirmBtn');
+    const previewBtn = document.getElementById('restorePreviewBtn');
+
+    // 先清理旧的视觉状态
+    if (confirmBtn) {
+        confirmBtn.classList.remove('patch-confirm-warning');
+        confirmBtn.classList.remove('patch-confirm-danger');
+    }
+    if (previewBtn) {
+        previewBtn.classList.remove('preview-warning');
+        previewBtn.classList.remove('preview-danger');
+    }
+
+    if (!confirmBtn) return;
+
+    const strategy = getSelectedRestoreStrategy();
+    if (strategy !== 'patch') return;
+
+    const recordTime = currentRestoreRecord && currentRestoreRecord.time ? String(currentRestoreRecord.time) : '';
+    const isPreflightReady = restorePatchPreflight && restorePatchPreflight.recordTime === recordTime;
+    if (!isPreflightReady) return;
+
+    const baseText = currentLang === 'zh_CN' ? '确认补丁合并' : 'Confirm Patch Merge';
+
+    const report = restorePatchPreflight && restorePatchPreflight.matchReport;
+    const ambiguous = report && Array.isArray(report.ambiguous) ? report.ambiguous : [];
+    const total = ambiguous.length;
+
+    if (total <= 0) {
+        // 没有歧义：黄色提醒（补丁操作本身是“有风险的写操作”）
+        confirmBtn.classList.add('patch-confirm-warning');
+        if (previewBtn) previewBtn.classList.add('preview-warning');
+        confirmBtn.textContent = baseText;
+        return;
+    }
+
+    const userMatches = (restorePatchPreflight && restorePatchPreflight.userMatches && typeof restorePatchPreflight.userMatches === 'object')
+        ? restorePatchPreflight.userMatches
+        : {};
+
+    let selected = 0;
+    for (const item of ambiguous) {
+        const tid = item && item.targetId != null ? String(item.targetId) : '';
+        if (tid && userMatches[tid]) selected += 1;
+    }
+
+    const hasUnresolved = selected < total;
+
+    // 视觉：未解决歧义 -> 红色（更强提醒）
+    // 全部选择完成 -> 黄色（提醒用户仍然是补丁操作）
+    if (hasUnresolved) {
+        confirmBtn.classList.add('patch-confirm-danger');
+        if (previewBtn) previewBtn.classList.add('preview-danger');
+    } else {
+        confirmBtn.classList.add('patch-confirm-warning');
+        if (previewBtn) previewBtn.classList.add('preview-warning');
+    }
+
+    confirmBtn.textContent = currentLang === 'zh_CN'
+        ? `${baseText}（歧义 ${selected}/${total}）`
+        : `${baseText} (Ambig ${selected}/${total})`;
+}
+
+async function recomputePatchPreflightAfterManualPick() {
+    if (!currentRestoreRecord || !restorePatchPreflight) return;
+
+    const recordTime = String(currentRestoreRecord.time || '');
+    if (!recordTime || restorePatchPreflight.recordTime !== recordTime) return;
+
+    const userMatches = restorePatchPreflight.userMatches;
+    if (!userMatches || typeof userMatches !== 'object') return;
+
+    const token = ++patchPreflightRecomputeToken;
+
+    const diffContainer = document.getElementById('restoreDiffSummary');
+    if (diffContainer) {
+        diffContainer.innerHTML = currentLang === 'zh_CN' ? '正在更新补丁预演...' : 'Updating patch preflight...';
+    }
+
+    try {
+        const currentTree = await browserAPI.bookmarks.getTree();
+        const targetTreeForPreflight = JSON.parse(JSON.stringify(currentRestoreRecord.bookmarkTree));
+
+        const matchReport = normalizeTreeIds(targetTreeForPreflight, currentTree, {
+            referenceRootIds: ['1', '2'],
+            strictGlobalUrlMatch: true,
+            manualMatches: userMatches
+        });
+
+        const diffSummary = computeBookmarkGitDiffSummary(currentTree, targetTreeForPreflight);
+
+        if (token !== patchPreflightRecomputeToken) return;
+
+        restorePatchPreflight.matchReport = matchReport;
+        restorePatchPreflight.diffSummary = diffSummary;
+
+        setRestoreAmbiguityUI(matchReport);
+        updatePatchConfirmButtonText();
+
+        if (diffContainer) {
+            const changes = {
+                bookmarkAdded: diffSummary.bookmarkAdded,
+                bookmarkDeleted: diffSummary.bookmarkDeleted,
+                folderAdded: diffSummary.folderAdded,
+                folderDeleted: diffSummary.folderDeleted,
+                bookmarkMoved: diffSummary.bookmarkMoved,
+                folderMoved: diffSummary.folderMoved,
+                bookmarkModified: diffSummary.bookmarkModified,
+                folderModified: diffSummary.folderModified,
+                bookmarkMovedCount: diffSummary.movedBookmarkCount,
+                folderMovedCount: diffSummary.movedFolderCount,
+                bookmarkModifiedCount: diffSummary.modifiedBookmarkCount,
+                folderModifiedCount: diffSummary.modifiedFolderCount,
+                hasNumericalChange: (diffSummary.bookmarkAdded > 0 || diffSummary.bookmarkDeleted > 0 || diffSummary.folderAdded > 0 || diffSummary.folderDeleted > 0),
+                hasStructuralChange: (diffSummary.bookmarkMoved || diffSummary.folderMoved || diffSummary.bookmarkModified || diffSummary.folderModified),
+                hasNoChange: false,
+                isRestoreHiddenStats: false,
+                isFirst: false
+            };
+            changes.hasNoChange = !changes.hasNumericalChange && !changes.hasStructuralChange;
+
+            if (changes.hasNoChange) {
+                diffContainer.innerHTML = `<span style="color: var(--text-tertiary);"><i class="fas fa-check-circle"></i> ${currentLang === 'zh_CN' ? '已一致（无需补丁）' : 'Already identical (no patch needed)'}</span>`;
+            } else {
+                const prefix = currentLang === 'zh_CN' ? '补丁预演: ' : 'Patch preflight: ';
+                const html = renderCommitStatsInline(changes);
+                diffContainer.innerHTML = `
+                    <div style="display: flex; align-items: center; justify-content: flex-start; gap: 8px; flex-wrap: wrap;">
+                        <span style="font-size: 13px; color: var(--info);">${prefix}</span>
+                        ${html}
+                    </div>
+                `;
+            }
+        }
+
+    } catch (e) {
+        console.warn('[patch preflight] recompute failed:', e);
+    }
+}
+
+function setRestoreAmbiguityUI(matchReport) {
+    const btn = document.getElementById('restoreAmbiguityBtn');
+    const btnText = document.getElementById('restoreAmbiguityBtnText');
+    const panel = document.getElementById('restoreAmbiguityPanel');
+    const list = document.getElementById('restoreAmbiguityList');
+
+    if (!btn || !panel || !list) return;
+
+    const ambiguous = matchReport && Array.isArray(matchReport.ambiguous) ? matchReport.ambiguous : [];
+    const count = ambiguous.length;
+
+    const userMatches = (restorePatchPreflight && restorePatchPreflight.userMatches && typeof restorePatchPreflight.userMatches === 'object')
+        ? restorePatchPreflight.userMatches
+        : {};
+
+    if (count <= 0) {
+        btn.style.display = 'none';
+        panel.classList.remove('show');
+        list.innerHTML = '';
+        return;
+    }
+
+    btn.style.display = 'inline-flex';
+    if (btnText) {
+        let selectedCount = 0;
+        try {
+            for (const item of ambiguous) {
+                const tid = item && item.targetId != null ? String(item.targetId) : '';
+                if (tid && userMatches[tid]) selectedCount += 1;
+            }
+        } catch (_) { }
+
+        btnText.textContent = currentLang === 'zh_CN'
+            ? `歧义 ${selectedCount}/${count}`
+            : `Ambiguous ${selectedCount}/${count}`;
+    }
+
+    const wasOpen = panel.classList.contains('show');
+
+    // 默认不展开，由用户点（但如果用户已经展开了，则保持展开状态）
+    if (!wasOpen) {
+        panel.classList.remove('show');
+    }
+    const renderItem = (item, idx) => {
+        const phaseText = (() => {
+            const p = String(item && item.phase ? item.phase : '');
+            if (p === 'structure') return currentLang === 'zh_CN' ? '父级上下文' : 'Structure';
+            if (p === 'url') return currentLang === 'zh_CN' ? 'URL 匹配' : 'URL';
+            return p || (currentLang === 'zh_CN' ? '未知' : 'Unknown');
+        })();
+
+        const typeText = (item && item.type === 'folder')
+            ? (currentLang === 'zh_CN' ? '文件夹' : 'Folder')
+            : (currentLang === 'zh_CN' ? '书签' : 'Bookmark');
+
+        const title = escapeHtml(String(item && item.title ? item.title : ''));
+        const url = escapeHtml(String(item && item.url ? item.url : ''));
+
+        const targetIdRaw = item && item.targetId != null ? String(item.targetId) : '';
+        const targetId = escapeHtml(targetIdRaw);
+        const selectedRefId = targetIdRaw && userMatches[targetIdRaw] ? String(userMatches[targetIdRaw]) : '';
+        const isSelected = !!selectedRefId;
+
+        const candidates = Array.isArray(item && item.candidates) ? item.candidates : [];
+        const candHtml = candidates.map((c) => {
+            const cidRaw = String(c && c.id != null ? c.id : '');
+            const cid = escapeHtml(cidRaw);
+            const ctitle = escapeHtml(String(c && c.title ? c.title : ''));
+            const curl = escapeHtml(String(c && c.url ? c.url : ''));
+            const checked = (selectedRefId && cidRaw === selectedRefId) ? 'checked' : '';
+
+            return `
+                <label class="restore-ambiguity-candidate">
+                    <div style="flex: 1; min-width: 0;">
+                        <div style="font-weight: 600; color: var(--text-primary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">${ctitle || (currentLang === 'zh_CN' ? '(无标题)' : '(Untitled)')}</div>
+                        ${curl ? `<div class="restore-ambiguity-item-sub" style="margin-top: 2px;">${curl}</div>` : ''}
+                    </div>
+                    <div style="display: flex; align-items: center; gap: 8px; flex-shrink: 0;">
+                        <code>#${cid}</code>
+                        <input class="restore-ambiguity-radio" type="radio" name="restoreAmbig_${targetId}" value="${cid}" data-target-id="${targetId}" data-target-raw-id="${escapeHtml(targetIdRaw)}" ${checked} />
+                    </div>
+                </label>
+            `;
+        }).join('');
+
+        const statusBadge = isSelected
+            ? `<span style="margin-left: 8px; font-size: 11px; color: var(--accent-primary);">${currentLang === 'zh_CN' ? '已选择' : 'Selected'}</span>`
+            : `<span style="margin-left: 8px; font-size: 11px; color: var(--text-tertiary);">${currentLang === 'zh_CN' ? '未选择' : 'Unselected'}</span>`;
+
+        return `
+            <div class="restore-ambiguity-item" data-target-id="${targetId}">
+                <div class="restore-ambiguity-item-title">${idx + 1}. ${typeText} · ${phaseText}${statusBadge}</div>
+                <div class="restore-ambiguity-item-sub">${title || (currentLang === 'zh_CN' ? '(无标题)' : '(Untitled)')}${url ? ` — ${url}` : ''}</div>
+                <div class="restore-ambiguity-candidates">${candHtml}</div>
+            </div>
+        `;
+    };
+
+    list.innerHTML = ambiguous.map(renderItem).join('');
+
+    // 绑定选择事件：用户手动指定 targetId -> refId
+    try {
+        list.querySelectorAll('input.restore-ambiguity-radio').forEach((radio) => {
+            radio.addEventListener('change', () => {
+                if (!restorePatchPreflight) return;
+                const tid = radio.getAttribute('data-target-raw-id') || radio.getAttribute('data-target-id');
+                const picked = radio.value;
+                if (!tid || !picked) return;
+
+                if (!restorePatchPreflight.userMatches || typeof restorePatchPreflight.userMatches !== 'object') {
+                    restorePatchPreflight.userMatches = {};
+                }
+                restorePatchPreflight.userMatches[String(tid)] = String(picked);
+
+                // 刷新显示（保持展开状态）
+                try {
+                    setRestoreAmbiguityUI(restorePatchPreflight.matchReport);
+                    updatePatchConfirmButtonText();
+                } catch (_) { }
+
+                // 重新计算预演 diff（让用户选择后能立即看到差异变化）
+                schedulePatchPreflightRecompute();
+            });
+        });
+    } catch (_) { }
+}
+
+function toggleRestoreAmbiguityPanel(force) {
+    const panel = document.getElementById('restoreAmbiguityPanel');
+    if (!panel) return;
+    const shouldShow = (typeof force === 'boolean') ? force : !panel.classList.contains('show');
+    if (shouldShow) panel.classList.add('show');
+    else panel.classList.remove('show');
+}
+
+function buildRestoreMergeDiffSummaryHtml(record) {
+    const isZh = currentLang === 'zh_CN';
+    const bookmarkStats = record?.bookmarkStats || {};
+
+    // First backup: no previous baseline
+    if (record?.isFirstBackup === true) {
+        const html = renderCommitStatsInline({ isFirst: true });
+        const prefix = isZh ? '首次备份: ' : 'First backup: ';
+        return `
+            <div style="display: flex; align-items: center; justify-content: flex-start; gap: 8px; flex-wrap: wrap;">
+                <span style="font-size: 13px; color: var(--text-secondary);">${prefix}</span>
+                ${html}
+            </div>
+        `;
+    }
+
+    // Quantity diff (split added/deleted)
+    const bookmarkDiff = typeof bookmarkStats.bookmarkDiff === 'number' ? bookmarkStats.bookmarkDiff : 0;
+    const folderDiff = typeof bookmarkStats.folderDiff === 'number' ? bookmarkStats.folderDiff : 0;
+
+    const bookmarkAdded = typeof bookmarkStats.bookmarkAdded === 'number' ? bookmarkStats.bookmarkAdded : (bookmarkDiff > 0 ? bookmarkDiff : 0);
+    const bookmarkDeleted = typeof bookmarkStats.bookmarkDeleted === 'number' ? bookmarkStats.bookmarkDeleted : (bookmarkDiff < 0 ? Math.abs(bookmarkDiff) : 0);
+    const folderAdded = typeof bookmarkStats.folderAdded === 'number' ? bookmarkStats.folderAdded : (folderDiff > 0 ? folderDiff : 0);
+    const folderDeleted = typeof bookmarkStats.folderDeleted === 'number' ? bookmarkStats.folderDeleted : (folderDiff < 0 ? Math.abs(folderDiff) : 0);
+
+    // Structural flags
+    const bookmarkMoved = Boolean(bookmarkStats.bookmarkMoved);
+    const folderMoved = Boolean(bookmarkStats.folderMoved);
+    const bookmarkModified = Boolean(bookmarkStats.bookmarkModified);
+    const folderModified = Boolean(bookmarkStats.folderModified);
+
+    // Structural counts
+    const bookmarkMovedCount = typeof bookmarkStats.movedBookmarkCount === 'number'
+        ? bookmarkStats.movedBookmarkCount
+        : (typeof bookmarkStats.bookmarkMoved === 'number' ? bookmarkStats.bookmarkMoved : (bookmarkMoved ? 1 : 0));
+    const folderMovedCount = typeof bookmarkStats.movedFolderCount === 'number'
+        ? bookmarkStats.movedFolderCount
+        : (typeof bookmarkStats.folderMoved === 'number' ? bookmarkStats.folderMoved : (folderMoved ? 1 : 0));
+    const bookmarkModifiedCount = typeof bookmarkStats.modifiedBookmarkCount === 'number'
+        ? bookmarkStats.modifiedBookmarkCount
+        : (typeof bookmarkStats.bookmarkModified === 'number' ? bookmarkStats.bookmarkModified : (bookmarkModified ? 1 : 0));
+    const folderModifiedCount = typeof bookmarkStats.modifiedFolderCount === 'number'
+        ? bookmarkStats.modifiedFolderCount
+        : (typeof bookmarkStats.folderModified === 'number' ? bookmarkStats.folderModified : (folderModified ? 1 : 0));
+
+    const hasNumericalChange = bookmarkAdded > 0 || bookmarkDeleted > 0 || folderAdded > 0 || folderDeleted > 0;
+    const hasStructuralChange = bookmarkMoved || folderMoved || bookmarkModified || folderModified;
+    const hasNoChange = !hasNumericalChange && !hasStructuralChange;
+
+    if (hasNoChange) {
+        return `<span style="color: var(--text-tertiary);"><i class="fas fa-check-circle"></i> ${isZh ? '无变化' : 'No changes'}</span>`;
+    }
+
+    const changes = {
+        bookmarkAdded,
+        bookmarkDeleted,
+        folderAdded,
+        folderDeleted,
+        bookmarkMoved,
+        folderMoved,
+        bookmarkModified,
+        folderModified,
+        bookmarkMovedCount,
+        folderMovedCount,
+        bookmarkModifiedCount,
+        folderModifiedCount,
+        hasNumericalChange,
+        hasStructuralChange,
+        hasNoChange,
+        isFirst: false,
+        isRestoreHiddenStats: false
+    };
+
+    const prefix = isZh ? '相较上一条: ' : 'Different from previous: ';
+    const html = renderCommitStatsInline(changes);
+
+    return `
+        <div style="display: flex; align-items: center; justify-content: flex-start; gap: 8px; flex-wrap: wrap;">
+            <span style="font-size: 13px; color: var(--text-secondary);">${prefix}</span>
+            ${html}
+        </div>
+    `;
+}
+
+function updateRestoreDiffSummaryByStrategy(strategy) {
+    const diffContainer = document.getElementById('restoreDiffSummary');
+    if (!diffContainer) return;
+
+    if (strategy === 'merge') {
+        if (restoreDiffSummaryHtmlMerge) {
+            diffContainer.innerHTML = restoreDiffSummaryHtmlMerge;
+        }
+        return;
+    }
+
+    if (restoreDiffSummaryHtmlCurrent) {
+        diffContainer.innerHTML = restoreDiffSummaryHtmlCurrent;
+    }
+}
+
 /**
  * 计算节点统计信息 (书签数和文件夹数)
  */
@@ -20900,6 +21385,13 @@ async function showRestoreModal(record, displayTitle) {
         return;
     }
 
+    // 每次打开恢复弹窗都重置预演/歧义 UI
+    restorePatchPreflight = null;
+    restoreGeneralPreflight = null;
+    try { setRestoreAmbiguityUI(null); } catch (_) { }
+    try { toggleRestoreAmbiguityPanel(false); } catch (_) { }
+    try { setRestoreDiffBarVisible(false); } catch (_) { }
+
     // 检查是否有书签树数据
     if (!record.bookmarkTree) {
         // 尝试从新存储加载 (Index vs Data 架构)
@@ -20930,6 +21422,10 @@ async function showRestoreModal(record, displayTitle) {
 
     currentRestoreRecord = record;
 
+    // Precompute merge diff summary (does NOT depend on current browser)
+    restoreDiffSummaryHtmlCurrent = null;
+    restoreDiffSummaryHtmlMerge = buildRestoreMergeDiffSummaryHtml(record);
+
     const modal = document.getElementById('restoreModal');
     if (!modal) {
         console.error('[showRestoreModal] 找不到恢复模态框');
@@ -20956,7 +21452,7 @@ async function showRestoreModal(record, displayTitle) {
         const newCloseBtn = closeBtn.cloneNode(true);
         closeBtn.parentNode.replaceChild(newCloseBtn, closeBtn);
         newCloseBtn.addEventListener('click', () => {
-            document.getElementById('restoreModal').classList.remove('show');
+            closeRestoreModal();
         });
     }
 
@@ -20966,7 +21462,7 @@ async function showRestoreModal(record, displayTitle) {
     document.getElementById('restoreBackupCount').textContent = '--';
     document.getElementById('restoreBackupFolders').textContent = '--';
     const diffContainer = document.getElementById('restoreDiffSummary');
-    if (diffContainer) diffContainer.textContent = currentLang === 'zh_CN' ? '正在计算差异...' : 'Calculating differences...';
+    if (diffContainer) diffContainer.textContent = currentLang === 'zh_CN' ? '点击“恢复”生成预演...' : 'Click “Restore” to generate preflight...';
 
     // 1. 获取当前浏览器书签统计
     // 1. 获取当前浏览器书签统计
@@ -20982,7 +21478,10 @@ async function showRestoreModal(record, displayTitle) {
         try {
             // 深拷贝以避免修改原始记录
             targetTree = JSON.parse(JSON.stringify(record.bookmarkTree));
-            normalizeTreeIds(targetTree, currentTree);
+            normalizeTreeIds(targetTree, currentTree, {
+                referenceRootIds: ['1', '2'],
+                strictGlobalUrlMatch: true
+            });
             console.log('[恢复] 已执行智能 ID 匹配');
         } catch (e) {
             console.error('[恢复] ID 匹配失败，将使用原始树:', e);
@@ -21041,21 +21540,51 @@ async function showRestoreModal(record, displayTitle) {
             }
         }
 
-        // --- 4. 设置预览按钮 (三级UI) ---
-        const previewBtn = document.getElementById('restorePreviewBtn');
-        if (previewBtn) {
-            previewBtn.style.display = 'block';
-            const btnText = document.getElementById('restorePreviewBtnText');
-            if (btnText) btnText.textContent = currentLang === 'zh_CN' ? '预览' : 'Preview';
-
-            // Unbind old listeners by cloning
-            const newBtn = previewBtn.cloneNode(true);
-            previewBtn.parentNode.replaceChild(newBtn, previewBtn);
-
-            newBtn.addEventListener('click', () => {
-                switchToRestorePreview(currentTree, targetTree);
-            });
+        if (diffContainer) {
+            restoreDiffSummaryHtmlCurrent = diffContainer.innerHTML;
         }
+        updateRestoreDiffSummaryByStrategy(getSelectedRestoreStrategy());
+ 
+            // --- 4. 设置预览按钮（默认隐藏，等用户点击“恢复”后再显示） ---
+            const previewBtn = document.getElementById('restorePreviewBtn');
+            if (previewBtn) {
+                previewBtn.style.display = 'none';
+                const btnText = document.getElementById('restorePreviewBtnText');
+                if (btnText) btnText.textContent = currentLang === 'zh_CN' ? '预览' : 'Preview';
+
+                // Unbind old listeners by cloning
+                const newBtn = previewBtn.cloneNode(true);
+                previewBtn.parentNode.replaceChild(newBtn, previewBtn);
+
+                newBtn.addEventListener('click', async () => {
+                    try {
+                        const strategy = getSelectedRestoreStrategy();
+                        if (strategy === 'merge') {
+                            switchToRestoreImportMergePreview(record);
+                            return;
+                        }
+
+                        const currentTreeForPreview = await browserAPI.bookmarks.getTree();
+                        const targetTreeForPreview = JSON.parse(JSON.stringify(record.bookmarkTree));
+
+                        const manualMatches = (strategy === 'patch' && restorePatchPreflight && restorePatchPreflight.userMatches)
+                            ? restorePatchPreflight.userMatches
+                            : null;
+
+                        try {
+                            normalizeTreeIds(targetTreeForPreview, currentTreeForPreview, {
+                                referenceRootIds: ['1', '2'],
+                                strictGlobalUrlMatch: true,
+                                manualMatches
+                            });
+                        } catch (_) { }
+
+                        await switchToRestorePreview(currentTreeForPreview, targetTreeForPreview);
+                    } catch (e) {
+                        console.warn('[restore preview] open failed:', e);
+                    }
+                });
+            }
     });
     // --- END: 统计对比逻辑 ---
 
@@ -21160,6 +21689,17 @@ async function switchToRestorePreview(currentTree, targetTree) {
 
     if (!mainView || !previewView) return;
 
+    // Cache by preview kind to avoid showing stale content across strategies
+    if (previewContent) {
+        const kind = 'restore';
+        const prevKind = previewContent.getAttribute('data-preview-kind');
+        if (prevKind !== kind) {
+            previewContent.innerHTML = '';
+            previewContent.removeAttribute('data-loaded');
+        }
+        previewContent.setAttribute('data-preview-kind', kind);
+    }
+
     // 1. 切换视图状态 (简单显隐，保持 Small Window)
     mainView.style.display = 'none';
     previewView.style.display = 'flex'; // 使用 flex 布局以支持内部滚动
@@ -21187,7 +21727,7 @@ async function switchToRestorePreview(currentTree, targetTree) {
             newCloseBtn.parentNode.replaceChild(finalCloseBtn, newCloseBtn);
 
             finalCloseBtn.addEventListener('click', () => {
-                document.getElementById('restoreModal').classList.remove('show');
+                closeRestoreModal();
             });
 
             // Clean up preview data if needed (optional)
@@ -21230,9 +21770,10 @@ async function switchToRestorePreview(currentTree, targetTree) {
                         treeToRender = rebuildTreeWithDeleted(currentTree, targetTree, changeMap);
                     } catch (e) {
                         console.error('[恢复预览] 重建树失败:', e);
+                        treeToRender = targetTree;
                     }
                 }
-
+ 
                 const treeHtml = generateHistoryTreeHtml(treeToRender, changeMap, 'detailed', {
                     maxDepth: 2,
                     customTitle: currentLang === 'zh_CN' ? '恢复后的书签树（临时缓存）' : 'Restored Bookmark Tree (Temporary Cache)'
@@ -21265,6 +21806,289 @@ async function switchToRestorePreview(currentTree, targetTree) {
     }
 }
 
+function resolveRestoreMergeViewMode(record) {
+    try {
+        const mode = record && record.time ? getRecordDetailMode(record.time) : 'simple';
+        return (mode === 'simple' || mode === 'detailed') ? mode : 'simple';
+    } catch (_) {
+        return 'simple';
+    }
+}
+
+function generateImportMergePreviewTreeHtml(treeRoot, options = {}) {
+    const isZh = currentLang === 'zh_CN';
+    const maxDepth = options.maxDepth !== undefined ? options.maxDepth : 2;
+
+    const getChangeMeta = (changeType) => {
+        const types = String(changeType || '').split('+');
+        let changeClass = '';
+        let statusIcon = '';
+
+        if (types.includes('added')) {
+            changeClass = 'tree-change-added';
+            statusIcon = '<span class="change-badge added">+</span>';
+        } else if (types.includes('deleted')) {
+            changeClass = 'tree-change-deleted';
+            statusIcon = '<span class="change-badge deleted">-</span>';
+        } else {
+            const isModified = types.includes('modified');
+            const isMoved = types.includes('moved');
+
+            if (isModified) {
+                changeClass = 'tree-change-modified';
+                statusIcon += '<span class="change-badge modified">~</span>';
+            }
+
+            if (isMoved) {
+                if (isModified) {
+                    changeClass = 'tree-change-mixed';
+                } else {
+                    changeClass = 'tree-change-moved';
+                }
+                statusIcon += '<span class="change-badge moved"><i class="fas fa-arrows-alt"></i></span>';
+            }
+        }
+
+        return { changeClass, statusIcon };
+    };
+
+    // 统计图例（区分 F/B，与 generateHistoryTreeHtml 一致）
+    let addedFolders = 0, addedBookmarks = 0;
+    let deletedFolders = 0, deletedBookmarks = 0;
+    let modifiedFolders = 0, modifiedBookmarks = 0;
+    let movedFolders = 0, movedBookmarks = 0;
+
+    const countChanges = (node) => {
+        if (!node) return;
+        const isFolder = !node.url && Array.isArray(node.children);
+        const types = String(node.changeType || '').split('+').filter(Boolean);
+
+        if (types.includes('added')) {
+            if (isFolder) addedFolders++; else addedBookmarks++;
+        }
+        if (types.includes('deleted')) {
+            if (isFolder) deletedFolders++; else deletedBookmarks++;
+        }
+        if (types.includes('modified')) {
+            if (isFolder) modifiedFolders++; else modifiedBookmarks++;
+        }
+        if (types.includes('moved')) {
+            if (isFolder) movedFolders++; else movedBookmarks++;
+        }
+
+        if (Array.isArray(node.children)) {
+            node.children.forEach(countChanges);
+        }
+    };
+
+    if (treeRoot && Array.isArray(treeRoot.children)) {
+        treeRoot.children.forEach(countChanges);
+    }
+
+    const formatCount = (folders, bookmarks) => {
+        const parts = [];
+        if (folders > 0) parts.push(`${folders}F`);
+        if (bookmarks > 0) parts.push(`${bookmarks}B`);
+        return parts.join(' ');
+    };
+
+    const legendItems = [];
+    const addedTotal = addedFolders + addedBookmarks;
+    const deletedTotal = deletedFolders + deletedBookmarks;
+    const modifiedTotal = modifiedFolders + modifiedBookmarks;
+    const movedTotal = movedFolders + movedBookmarks;
+
+    if (addedTotal > 0) legendItems.push(`<span class="legend-item"><span class="legend-dot added"></span><span class="legend-count">:${formatCount(addedFolders, addedBookmarks)}</span></span>`);
+    if (deletedTotal > 0) legendItems.push(`<span class="legend-item"><span class="legend-dot deleted"></span><span class="legend-count">:${formatCount(deletedFolders, deletedBookmarks)}</span></span>`);
+    if (movedTotal > 0) legendItems.push(`<span class="legend-item"><span class="legend-dot moved"></span><span class="legend-count">:${movedTotal}</span></span>`);
+    if (modifiedTotal > 0) legendItems.push(`<span class="legend-item"><span class="legend-dot modified"></span><span class="legend-count">:${modifiedTotal}</span></span>`);
+
+    const legend = legendItems.join('');
+
+    const safeTitle = (t) => escapeHtml(String(t == null ? '' : t));
+
+    const renderNode = (node, level = 0) => {
+        if (!node) return '';
+
+        const title = safeTitle(node.title || (isZh ? '(无标题)' : '(Untitled)'));
+        const url = node.url ? String(node.url) : '';
+        const isFolder = !url && Array.isArray(node.children);
+        const hasChildren = isFolder && node.children.length > 0;
+
+        const { changeClass, statusIcon } = getChangeMeta(node.changeType);
+        const shouldExpand = level < maxDepth;
+
+        if (isFolder) {
+            const childrenHtml = hasChildren
+                ? node.children.map(child => renderNode(child, level + 1)).join('')
+                : '';
+
+            return `
+                <div class="tree-node">
+                    <div class="tree-item ${changeClass}" data-node-type="folder" data-node-level="${level}">
+                        <span class="tree-toggle ${shouldExpand ? 'expanded' : ''}"><i class="fas fa-chevron-right"></i></span>
+                        <i class="tree-icon fas fa-folder${shouldExpand ? '-open' : ''}"></i>
+                        <span class="tree-label">${title}</span>
+                        <span class="change-badges">${statusIcon}</span>
+                    </div>
+                    <div class="tree-children ${shouldExpand ? 'expanded' : ''}">
+                        ${childrenHtml}
+                    </div>
+                </div>
+            `;
+        }
+
+        const favicon = typeof getFaviconUrl === 'function' ? getFaviconUrl(url) : '';
+        return `
+            <div class="tree-node">
+                <div class="tree-item ${changeClass}" data-node-type="bookmark" data-node-level="${level}">
+                    <span class="tree-toggle" style="opacity: 0"></span>
+                    ${favicon ? `<img class="tree-icon" src="${escapeHtml(favicon)}" alt="">` : `<i class="tree-icon fas fa-bookmark"></i>`}
+                    <a href="${escapeHtml(url)}" target="_blank" class="tree-label tree-bookmark-link" rel="noopener noreferrer">${title}</a>
+                    <span class="change-badges">${statusIcon}</span>
+                </div>
+            </div>
+        `;
+    };
+
+    let treeContent = '';
+    if (treeRoot && Array.isArray(treeRoot.children)) {
+        treeRoot.children.forEach(child => {
+            treeContent += renderNode(child, 0);
+        });
+    }
+
+    if (!treeContent) {
+        return `
+            <div class="detail-section">
+                <div class="detail-empty">
+                    <i class="fas fa-check-circle"></i>
+                    ${isZh ? '无变化' : 'No changes'}
+                </div>
+            </div>
+        `;
+    }
+
+    const titleText = options.customTitle
+        ? options.customTitle
+        : (isZh ? '导入合并（差异视图）' : 'Import Merge (Changes View)');
+
+    return `
+        <div class="detail-section">
+            <div class="detail-section-title detail-section-title-with-legend">
+                <span class="detail-title-left">${titleText}</span>
+                <span class="detail-title-legend">${legend}</span>
+            </div>
+            <div class="history-tree-container bookmark-tree">
+                ${treeContent}
+            </div>
+        </div>
+    `;
+}
+
+/**
+ * 导入合并预览：预览将要“导入”的差异视图树（与全局导出的简略/详细一致）。
+ */
+async function switchToRestoreImportMergePreview(record) {
+    const mainView = document.getElementById('restoreMainView');
+    const previewView = document.getElementById('restorePreviewView');
+    const title = document.getElementById('restoreModalTitle');
+    const previewContent = document.getElementById('restorePreviewContent');
+
+    if (!mainView || !previewView || !previewContent) return;
+
+    // Cache by preview kind
+    const kind = 'import-merge';
+    const prevKind = previewContent.getAttribute('data-preview-kind');
+    if (prevKind !== kind) {
+        previewContent.innerHTML = '';
+        previewContent.removeAttribute('data-loaded');
+    }
+    previewContent.setAttribute('data-preview-kind', kind);
+
+    // 1. 切换视图
+    mainView.style.display = 'none';
+    previewView.style.display = 'flex';
+
+    // 2. 更新头部（Close -> Back）
+    const closeBtn = document.getElementById('restoreModalClose');
+    if (closeBtn) {
+        const newCloseBtn = closeBtn.cloneNode(true);
+        closeBtn.parentNode.replaceChild(newCloseBtn, closeBtn);
+
+        const handleBack = () => {
+            mainView.style.display = 'block';
+            previewView.style.display = 'none';
+
+            if (title) title.textContent = currentLang === 'zh_CN' ? '恢复到对应版本' : 'Restore to Version';
+
+            const finalCloseBtn = newCloseBtn.cloneNode(true);
+            newCloseBtn.parentNode.replaceChild(finalCloseBtn, newCloseBtn);
+            finalCloseBtn.addEventListener('click', () => {
+                closeRestoreModal();
+            });
+
+            previewContent.innerHTML = '';
+            previewContent.removeAttribute('data-loaded');
+        };
+
+        newCloseBtn.addEventListener('click', handleBack);
+    }
+
+    if (title) title.textContent = currentLang === 'zh_CN' ? '预览' : 'Preview';
+
+    // 3. 加载内容
+    if (!previewContent.hasAttribute('data-loaded')) {
+        previewContent.innerHTML = `<div class="loading" style="padding: 40px; color: var(--text-secondary); text-align: center;">
+            <i class="fas fa-spinner fa-spin" style="font-size: 24px; margin-bottom: 20px; opacity: 0.5;"></i><br>
+            ${currentLang === 'zh_CN' ? '正在生成导入预览...' : 'Generating import preview...'}
+        </div>`;
+
+        setTimeout(async () => {
+            try {
+                const sourceRecord = record || currentRestoreRecord;
+                if (!sourceRecord) throw new Error('Missing restore record');
+
+                const viewMode = resolveRestoreMergeViewMode(sourceRecord);
+                const processed = await getProcessedTreeForRecord(sourceRecord, viewMode);
+                const root = { title: 'root', children: processed?.children || [] };
+
+                const customTitle = currentLang === 'zh_CN'
+                    ? `导入合并预览（${viewMode === 'detailed' ? '详细' : '简略'}）`
+                    : `Import Merge Preview (${viewMode === 'detailed' ? 'Detailed' : 'Simple'})`;
+
+                const treeHtml = generateImportMergePreviewTreeHtml(root, {
+                    maxDepth: 2,
+                    customTitle
+                });
+
+                previewContent.innerHTML = treeHtml || `<div style="padding: 20px; color: var(--text-tertiary); text-align: center;">No Data</div>`;
+                previewContent.setAttribute('data-loaded', 'true');
+
+                // 绑定折叠事件（同 switchToRestorePreview）
+                previewContent.querySelectorAll('.tree-toggle').forEach(toggle => {
+                    toggle.addEventListener('click', (e) => {
+                        e.stopPropagation();
+                        const children = e.target.closest('.tree-node').querySelector('.tree-children');
+                        if (children) {
+                            children.classList.toggle('expanded');
+                            toggle.classList.toggle('expanded');
+                            const icon = e.target.closest('.tree-item').querySelector('.tree-icon.fa-folder, .tree-icon.fa-folder-open');
+                            if (icon) {
+                                icon.classList.toggle('fa-folder');
+                                icon.classList.toggle('fa-folder-open');
+                            }
+                        }
+                    });
+                });
+
+            } catch (err) {
+                previewContent.innerHTML = `<div style="padding: 20px; color: var(--warning);">Error: ${escapeHtml(err.message)}</div>`;
+            }
+        }, 100);
+    }
+}
+
 // 确保在 updateRestoreModalI18n 中也更新按钮文本
 function getSelectedRestoreStrategy() {
     const selected = document.querySelector('input[name="restoreStrategy"]:checked');
@@ -21286,8 +22110,8 @@ function updateRestoreWarningByStrategy(strategy) {
 
     let title = isZh ? '警告' : 'Warning';
     let text = isZh
-        ? '覆盖恢复会清空并重建「书签栏」与「其他书签」，使其与该版本一致。'
-        : 'Overwrite will clear and rebuild Bookmarks Bar + Other Bookmarks to match this version.';
+        ? '覆盖恢复：清空并重建「书签栏」与「其他书签」，使其与该版本一致。书签会被重新创建，ID 将变化，可能导致「书签记录」「书签推荐」等依赖书签 ID 的数据失效/重置。'
+        : 'Overwrite will clear and rebuild Bookmarks Bar + Other Bookmarks. Bookmarks will be recreated (IDs will change), which may reset/lose ID-based data (e.g., Records/Recommendations).';
 
     let boxBg = 'var(--warning-light)';
     let boxBorder = '1px solid var(--warning)';
@@ -21297,8 +22121,8 @@ function updateRestoreWarningByStrategy(strategy) {
     if (strategy === 'merge') {
         title = isZh ? '提示' : 'Note';
         text = isZh
-            ? '导入合并：导入到「其他书签」新文件夹（不删除现有书签）。'
-            : 'Import merge: imports into a new folder under Other Bookmarks (no deletion).';
+            ? '导入合并：导入该记录的「差异视图」到「其他书签」新文件夹（不删除现有书签；标题带 [+]/[-]/[~]/[↔] 前缀）。'
+            : 'Import merge: imports this record’s “changes view” into a new folder under Other Bookmarks (no deletion; titles prefixed with [+]/[-]/[~]/[↔]).';
         boxBg = 'var(--info-light)';
         boxBorder = '1px solid var(--info)';
         iconColor = 'var(--info)';
@@ -21312,8 +22136,8 @@ function updateRestoreWarningByStrategy(strategy) {
         // overwrite (default)
         title = isZh ? '警告' : 'Warning';
         text = isZh
-            ? '覆盖恢复会清空并重建「书签栏」与「其他书签」，使其与该版本一致。'
-            : 'Overwrite will clear and rebuild Bookmarks Bar + Other Bookmarks to match this version.';
+            ? '覆盖恢复：清空并重建「书签栏」与「其他书签」，使其与该版本一致。书签会被重新创建，ID 将变化，可能导致「书签记录」「书签推荐」等依赖书签 ID 的数据失效/重置。'
+            : 'Overwrite will clear and rebuild Bookmarks Bar + Other Bookmarks. Bookmarks will be recreated (IDs will change), which may reset/lose ID-based data (e.g., Records/Recommendations).';
     }
 
     titleEl.textContent = title;
@@ -21346,13 +22170,34 @@ function updateRestoreModalI18n() {
         restoreBackupLabel: isZh ? '备份记录' : 'Backup Record',
         restoreBackupBookmarksLabel: isZh ? '书签' : 'Bookmarks',
         restoreBackupFoldersLabel: isZh ? '文件夹' : 'Folders',
-        restorePreviewBtnText: isZh ? '预览' : 'Preview'
+        restorePreviewBtnText: isZh ? '预览' : 'Preview',
+        restoreAmbiguityBtnText: isZh ? '歧义' : 'Ambiguity',
+        restoreAmbiguityTitle: isZh ? '歧义详情' : 'Ambiguity Details',
+        restoreAmbiguityCloseBtn: isZh ? '收起' : 'Collapse',
+        restoreUndoPatchBtnText: isZh ? '撤销本次补丁' : 'Undo This Patch'
     };
 
     Object.entries(texts).forEach(([id, text]) => {
         const el = document.getElementById(id);
         if (el) el.textContent = text;
     });
+
+    // 更新撤销按钮文本（如果存在）
+    const undoText = document.getElementById('restoreUndoPatchBtnText');
+    if (undoText) undoText.textContent = texts.restoreUndoPatchBtnText;
+
+    // 若当前正在 patch 预演确认态，不要把按钮强制改回“恢复”
+    try {
+        const confirmBtn = document.getElementById('restoreConfirmBtn');
+        const strategy = getSelectedRestoreStrategy();
+        if (confirmBtn && strategy === 'patch' && restorePatchPreflight && restorePatchPreflight.recordTime && currentRestoreRecord) {
+            const recordTime = String(currentRestoreRecord.time || '');
+            if (recordTime && restorePatchPreflight.recordTime === recordTime) {
+                confirmBtn.textContent = isZh ? '确认补丁合并' : 'Confirm Patch Merge';
+            }
+        }
+    } catch (_) { }
+
 
     const setStrategyLabel = (labelId, text) => {
         const labelEl = document.getElementById(labelId);
@@ -21368,15 +22213,15 @@ function updateRestoreModalI18n() {
     const overwriteWrap = document.getElementById('restoreStrategyOverwriteLabelWrap');
     if (overwriteWrap) {
         overwriteWrap.title = isZh
-            ? '覆盖：用该版本替换当前「书签栏」与「其他书签」。'
-            : 'Overwrite: replace Bookmarks Bar and Other Bookmarks with this version.';
+            ? '覆盖：用该版本替换当前「书签栏」与「其他书签」（会重建书签并改变 ID，可能影响书签记录/推荐等数据）。'
+            : 'Overwrite: replace Bookmarks Bar + Other Bookmarks (bookmarks are recreated; IDs change, may reset ID-based data).';
     }
 
     const mergeWrap = document.getElementById('restoreStrategyMergeLabelWrap');
     if (mergeWrap) {
         mergeWrap.title = isZh
-            ? '导入合并：导入到「其他书签」新文件夹（不删除现有书签）。'
-            : 'Import Merge: import into a new folder under Other Bookmarks (no deletion).';
+            ? '导入合并：导入该记录的「差异视图」到「其他书签」新文件夹（不删除现有书签；标题带 [+]/[-]/[~]/[↔] 前缀）。'
+            : 'Import Merge: import this record’s changes view into a new folder under Other Bookmarks (no deletion; titles prefixed with [+]/[-]/[~]/[↔]).';
     }
 
     const patchWrap = document.getElementById('restoreStrategyPatchLabelWrap');
@@ -21397,6 +22242,40 @@ function closeRestoreModal() {
     if (modal) {
         modal.classList.remove('show');
     }
+
+    // 清理预演状态（避免影响下一次打开）
+    restorePatchPreflight = null;
+    restoreGeneralPreflight = null;
+    try { setRestoreDiffBarVisible(false); } catch (_) { }
+
+    // 解除策略锁定
+    try {
+        const strategyGroup = document.getElementById('restoreStrategyGroup');
+        const strategyOverwriteRadio = document.getElementById('restoreStrategyOverwrite');
+        const strategyMergeRadio = document.getElementById('restoreStrategyMerge');
+        const strategyPatchRadio = document.getElementById('restoreStrategyPatch');
+
+        if (strategyGroup) strategyGroup.classList.remove('disabled');
+        if (strategyOverwriteRadio) strategyOverwriteRadio.disabled = false;
+        if (strategyMergeRadio) strategyMergeRadio.disabled = false;
+        if (strategyPatchRadio) strategyPatchRadio.disabled = false;
+    } catch (_) { }
+
+    // 关闭歧义面板
+    try {
+        const panel = document.getElementById('restoreAmbiguityPanel');
+        if (panel) panel.classList.remove('show');
+        const btn = document.getElementById('restoreAmbiguityBtn');
+        if (btn) btn.style.display = 'none';
+        const list = document.getElementById('restoreAmbiguityList');
+        if (list) list.innerHTML = '';
+    } catch (_) { }
+
+    const confirmBtn = document.getElementById('restoreConfirmBtn');
+    if (confirmBtn) {
+        confirmBtn.textContent = currentLang === 'zh_CN' ? '恢复' : 'Restore';
+    }
+
     currentRestoreRecord = null;
 }
 
@@ -21413,6 +22292,290 @@ async function executeRestore(strategy = 'overwrite') {
     if (!bookmarkTree) {
         showToast(currentLang === 'zh_CN' ? '此记录不包含书签树数据' : 'This record does not contain bookmark tree data', 'error');
         return;
+    }
+
+    // 通用二次确认：第一次点击生成预演（显示“预览这一行”），第二次才执行
+    // - overwrite: 预演只展示差异/预览，不改书签
+    // - merge: 预演只展示差异/预览，不改书签
+    // - patch: 预演还会计算歧义，并要求用户在确认区解决
+    const recordTime = currentRestoreRecord && currentRestoreRecord.time ? String(currentRestoreRecord.time) : '';
+
+    if (strategy !== 'patch') {
+        const isGeneralReady = restoreGeneralPreflight && restoreGeneralPreflight.recordTime === recordTime && restoreGeneralPreflight.strategy === strategy;
+        if (!isGeneralReady) {
+            restoreGeneralPreflight = { recordTime, strategy };
+
+            // 第一次点击“恢复”（预演）后显示“预览这一行”
+            try { setRestoreDiffBarVisible(true); } catch (_) { }
+
+            // 进入二次确认阶段：锁定策略选择，避免用户预演后又切换策略造成状态错乱
+            try {
+                const strategyGroup = document.getElementById('restoreStrategyGroup');
+                const strategyOverwriteRadio = document.getElementById('restoreStrategyOverwrite');
+                const strategyMergeRadio = document.getElementById('restoreStrategyMerge');
+                const strategyPatchRadio = document.getElementById('restoreStrategyPatch');
+
+                if (strategyGroup) strategyGroup.classList.add('disabled');
+                if (strategyOverwriteRadio) strategyOverwriteRadio.disabled = true;
+                if (strategyMergeRadio) strategyMergeRadio.disabled = true;
+                if (strategyPatchRadio) strategyPatchRadio.disabled = true;
+            } catch (_) { }
+
+            // 显示预览行
+            try { setRestoreDiffBarVisible(true); } catch (_) { }
+            updateRestoreDiffSummaryByStrategy(strategy);
+
+            // 非 patch：确保不残留 patch 的红/黄按钮状态
+            try {
+                const confirmBtn = document.getElementById('restoreConfirmBtn');
+                if (confirmBtn) {
+                    confirmBtn.classList.remove('patch-confirm-warning');
+                    confirmBtn.classList.remove('patch-confirm-danger');
+                }
+                const previewBtn = document.getElementById('restorePreviewBtn');
+                if (previewBtn) {
+                    previewBtn.classList.remove('preview-warning');
+                    previewBtn.classList.remove('preview-danger');
+                }
+
+                toggleRestoreAmbiguityPanel(false);
+                setRestoreAmbiguityUI(null);
+            } catch (_) { }
+
+            // 二次确认按钮文案
+            const confirmBtn = document.getElementById('restoreConfirmBtn');
+            if (confirmBtn) {
+                if (strategy === 'overwrite') {
+                    confirmBtn.textContent = currentLang === 'zh_CN' ? '确认覆盖恢复' : 'Confirm Overwrite';
+                } else if (strategy === 'merge') {
+                    confirmBtn.textContent = currentLang === 'zh_CN' ? '确认导入合并' : 'Confirm Import Merge';
+                }
+            }
+
+            showToast(currentLang === 'zh_CN'
+                ? '已生成预演，请查看差异/预览；再次点击确认按钮才会执行'
+                : 'Preflight ready. Review diff/preview; click confirm again to apply',
+                2600);
+
+            return;
+        }
+
+        // 第二次确认：允许执行，清空通用预演状态
+        restoreGeneralPreflight = null;
+
+        // 已进入执行阶段：策略依然保持锁定（直到执行完成/失败/关闭弹窗）
+    }
+
+    // patch 二次确认（预演 -> 再执行）
+    // 第一次点击“恢复”只做预演：算一遍 target->current 的差异，并把结果显示在差异条里。
+    // 第二次点击“恢复”才真正执行补丁合并。
+    if (strategy === 'patch') {
+        const recordTime = currentRestoreRecord && currentRestoreRecord.time ? String(currentRestoreRecord.time) : '';
+        const isPreflightReady = restorePatchPreflight && restorePatchPreflight.recordTime === recordTime;
+
+        if (!isPreflightReady) {
+            const confirmBtn = document.getElementById('restoreConfirmBtn');
+            if (confirmBtn) {
+                confirmBtn.classList.remove('patch-confirm-warning');
+                confirmBtn.classList.remove('patch-confirm-danger');
+                confirmBtn.textContent = currentLang === 'zh_CN' ? '确认补丁合并' : 'Confirm Patch Merge';
+            }
+            updatePatchConfirmButtonText();
+
+            // 第一次点击“恢复”（预演）后显示“预览这一行”
+            try { setRestoreDiffBarVisible(true); } catch (_) { }
+
+            const diffContainer = document.getElementById('restoreDiffSummary');
+            if (diffContainer) {
+                diffContainer.innerHTML = currentLang === 'zh_CN' ? '正在进行补丁预演...' : 'Running patch preflight...';
+            }
+
+            try {
+                const currentTree = await browserAPI.bookmarks.getTree();
+                const targetTreeForPreflight = JSON.parse(JSON.stringify(bookmarkTree));
+
+                // 与补丁合并一致：先做 ID 对齐（保守模式）
+                let matchReport = null;
+                try {
+                    matchReport = normalizeTreeIds(targetTreeForPreflight, currentTree, {
+                        referenceRootIds: ['1', '2'],
+                        strictGlobalUrlMatch: true,
+                        manualMatches: (restorePatchPreflight && restorePatchPreflight.userMatches) ? restorePatchPreflight.userMatches : null
+                    });
+                } catch (_) {
+                    matchReport = null;
+                }
+
+                const diffSummary = computeBookmarkGitDiffSummary(currentTree, targetTreeForPreflight);
+
+                const changes = {
+                    bookmarkAdded: diffSummary.bookmarkAdded,
+                    bookmarkDeleted: diffSummary.bookmarkDeleted,
+                    folderAdded: diffSummary.folderAdded,
+                    folderDeleted: diffSummary.folderDeleted,
+                    bookmarkMoved: diffSummary.bookmarkMoved,
+                    folderMoved: diffSummary.folderMoved,
+                    bookmarkModified: diffSummary.bookmarkModified,
+                    folderModified: diffSummary.folderModified,
+                    bookmarkMovedCount: diffSummary.movedBookmarkCount,
+                    folderMovedCount: diffSummary.movedFolderCount,
+                    bookmarkModifiedCount: diffSummary.modifiedBookmarkCount,
+                    folderModifiedCount: diffSummary.modifiedFolderCount,
+                    hasNumericalChange: (diffSummary.bookmarkAdded > 0 || diffSummary.bookmarkDeleted > 0 || diffSummary.folderAdded > 0 || diffSummary.folderDeleted > 0),
+                    hasStructuralChange: (diffSummary.bookmarkMoved || diffSummary.folderMoved || diffSummary.bookmarkModified || diffSummary.folderModified),
+                    hasNoChange: false,
+                    isRestoreHiddenStats: false,
+                    isFirst: false
+                };
+                changes.hasNoChange = !changes.hasNumericalChange && !changes.hasStructuralChange;
+
+                        const prevUserMatches = (restorePatchPreflight && restorePatchPreflight.recordTime === recordTime && restorePatchPreflight.userMatches)
+                            ? restorePatchPreflight.userMatches
+                            : {};
+
+                        restorePatchPreflight = {
+                            recordTime,
+                            diffSummary,
+                            matchReport,
+                            userMatches: prevUserMatches
+                        };
+
+                // 进入二次确认阶段：锁定策略选择（patch 也一样）
+                try {
+                    const strategyGroup = document.getElementById('restoreStrategyGroup');
+                    const strategyOverwriteRadio = document.getElementById('restoreStrategyOverwrite');
+                    const strategyMergeRadio = document.getElementById('restoreStrategyMerge');
+                    const strategyPatchRadio = document.getElementById('restoreStrategyPatch');
+
+                    if (strategyGroup) strategyGroup.classList.add('disabled');
+                    if (strategyOverwriteRadio) strategyOverwriteRadio.disabled = true;
+                    if (strategyMergeRadio) strategyMergeRadio.disabled = true;
+                    if (strategyPatchRadio) strategyPatchRadio.disabled = true;
+                } catch (_) { }
+
+                        setRestoreAmbiguityUI(matchReport);
+                        updatePatchConfirmButtonText();
+                // 如果预演结果显示“无需补丁”，按钮依然保持“确认补丁合并”（但这里会提示无需补丁）
+                // 避免按钮文案来回跳导致用户不理解当前处于二次确认阶段
+                if (changes.hasNoChange) {
+                    const confirmBtn = document.getElementById('restoreConfirmBtn');
+                    if (confirmBtn) {
+                        confirmBtn.textContent = currentLang === 'zh_CN' ? '确认补丁合并（无需补丁）' : 'Confirm Patch Merge (No changes)';
+                    }
+                    try {
+                        const previewBtn = document.getElementById('restorePreviewBtn');
+                        if (previewBtn) previewBtn.classList.add('preview-warning');
+                    } catch (_) { }
+                }
+
+                if (diffContainer) {
+                    if (changes.hasNoChange) {
+                        diffContainer.innerHTML = `<span style="color: var(--text-tertiary);"><i class="fas fa-check-circle"></i> ${currentLang === 'zh_CN' ? '已一致（无需补丁）' : 'Already identical (no patch needed)'}</span>`;
+                    } else {
+                        const prefix = currentLang === 'zh_CN' ? '补丁预演: ' : 'Patch preflight: ';
+                        const html = renderCommitStatsInline(changes);
+
+                        // 预演提示歧义：来自 normalizeTreeIds 的匹配报告
+                        const ambiguousCount = matchReport && Array.isArray(matchReport.ambiguous) ? matchReport.ambiguous.length : 0;
+
+                        diffContainer.innerHTML = `
+                            <div style="display: flex; align-items: center; justify-content: flex-start; gap: 8px; flex-wrap: wrap;">
+                                <span style="font-size: 13px; color: var(--info);">${prefix}</span>
+                                ${html}
+                            </div>
+                        `;
+
+                    if (ambiguousCount > 0) {
+                        try { toggleRestoreAmbiguityPanel(true); } catch (_) { }
+                        try { updatePatchConfirmButtonText(); } catch (_) { }
+
+                        const warnText = currentLang === 'zh_CN'
+                            ? `检测到 ${ambiguousCount} 处歧义匹配（同名/同URL导致）。已在确认区展开歧义列表，请先选择候选，再点击“确认补丁合并”。`
+                            : `Detected ${ambiguousCount} ambiguous matches (duplicate title/URL). Ambiguity list is opened. Pick candidates first, then click “Confirm Patch Merge”.`;
+                        showToast(warnText, 5200);
+                    }
+                    }
+                }
+
+                showToast(currentLang === 'zh_CN'
+                    ? '已完成补丁预演，再次点击“确认补丁合并”才会真正修改书签'
+                    : 'Patch preflight ready. Click again to apply patch',
+                    2600);
+
+            } catch (e) {
+                console.warn('[patch preflight] failed:', e);
+                restorePatchPreflight = null;
+                try { setRestoreAmbiguityUI(null); } catch (_) { }
+                const confirmBtn = document.getElementById('restoreConfirmBtn');
+                if (confirmBtn) confirmBtn.textContent = currentLang === 'zh_CN' ? '恢复' : 'Restore';
+                showToast(currentLang === 'zh_CN'
+                    ? `补丁预演失败：${e && e.message ? e.message : String(e)}`
+                    : `Patch preflight failed: ${e && e.message ? e.message : String(e)}`,
+                    4000);
+            }
+
+            return;
+        }
+    }
+
+    // 首次预演后，显示“预览这一行”（所有策略共用）
+    try {
+        setRestoreDiffBarVisible(true);
+    } catch (_) { }
+
+    // patch：如果仍有未解决歧义，则禁止执行，改为跳转到预览视图
+    if (strategy === 'patch') {
+        try {
+            const recordTime = currentRestoreRecord && currentRestoreRecord.time ? String(currentRestoreRecord.time) : '';
+            const isPreflightReady = restorePatchPreflight && restorePatchPreflight.recordTime === recordTime;
+
+            if (isPreflightReady) {
+                const report = restorePatchPreflight && restorePatchPreflight.matchReport;
+                const ambiguous = report && Array.isArray(report.ambiguous) ? report.ambiguous : [];
+                const total = ambiguous.length;
+
+                const userMatches = (restorePatchPreflight && restorePatchPreflight.userMatches && typeof restorePatchPreflight.userMatches === 'object')
+                    ? restorePatchPreflight.userMatches
+                    : {};
+
+                let selected = 0;
+                for (const item of ambiguous) {
+                    const tid = item && item.targetId != null ? String(item.targetId) : '';
+                    if (tid && userMatches[tid]) selected += 1;
+                }
+
+                if (total > 0 && selected < total) {
+                    showToast(currentLang === 'zh_CN'
+                        ? `存在未解决的歧义（${selected}/${total}），已跳转到预览。请先在歧义列表选择候选，再执行补丁合并。`
+                        : `Unresolved ambiguity (${selected}/${total}). Opening preview. Please pick candidates before applying patch.`,
+                        5200);
+
+                    // 展开歧义面板（回到主视图时可见）
+                    try { toggleRestoreAmbiguityPanel(true); } catch (_) { }
+
+                    // 生成“带手动映射”的预览树，并跳转到预览
+                    try {
+                        const currentTree = await browserAPI.bookmarks.getTree();
+                        const targetTreeForPreview = JSON.parse(JSON.stringify(bookmarkTree));
+                        try {
+                            normalizeTreeIds(targetTreeForPreview, currentTree, {
+                                referenceRootIds: ['1', '2'],
+                                strictGlobalUrlMatch: true,
+                                manualMatches: userMatches
+                            });
+                        } catch (_) { }
+
+                        await switchToRestorePreview(currentTree, targetTreeForPreview);
+                    } catch (e) {
+                        console.warn('[patch preflight] open preview failed:', e);
+                    }
+
+                    return;
+                }
+            }
+        } catch (_) {
+            // ignore
+        }
     }
 
     // 禁用按钮/策略选择
@@ -21450,12 +22613,40 @@ async function executeRestore(strategy = 'overwrite') {
         updateRestoreProgress(5, currentLang === 'zh_CN' ? '已暂停书签监听...' : 'Bookmark listening paused...');
 
         let result;
+        let patchHasPostDiff = false;
+
         if (strategy === 'overwrite') {
             result = await executeOverwriteRestore(bookmarkTree);
         } else if (strategy === 'merge') {
             result = await executeMergeRestore(bookmarkTree);
         } else if (strategy === 'patch') {
-            result = await executeMergeRestoreToSnapshot(bookmarkTree);
+            // 二次确认完成：真正执行补丁后，恢复按钮文本恢复为“恢复”
+            const confirmBtn = document.getElementById('restoreConfirmBtn');
+            if (confirmBtn) {
+                confirmBtn.textContent = currentLang === 'zh_CN' ? '恢复' : 'Restore';
+            }
+
+            const manualMatches = (restorePatchPreflight && restorePatchPreflight.userMatches && typeof restorePatchPreflight.userMatches === 'object')
+                ? restorePatchPreflight.userMatches
+                : null;
+
+            // 记录撤销快照：用于“撤销本次补丁”按钮
+            // 这里的撤销是“回到补丁前的内容/结构”，不是 100% 保证 bookmarkId 还原。
+            try {
+                lastPatchUndoSnapshot = {
+                    time: Date.now(),
+                    tree: await browserAPI.bookmarks.getTree(),
+                    sourceRecordTime: currentRestoreRecord && currentRestoreRecord.time ? String(currentRestoreRecord.time) : ''
+                };
+            } catch (e) {
+                console.warn('[undo patch] snapshot failed:', e);
+                lastPatchUndoSnapshot = null;
+            }
+
+            restorePatchPreflight = null;
+            try { setRestoreAmbiguityUI(null); } catch (_) { }
+
+            result = await executeMergeRestoreToSnapshot(bookmarkTree, { manualMatches });
         } else {
             throw new Error(`Unknown restore strategy: ${strategy}`);
         }
@@ -21534,15 +22725,88 @@ async function executeRestore(strategy = 'overwrite') {
             successMsg = isZh
                 ? `导入合并完成！已导入 ${created} 个节点${folderTitle ? `（${folderTitle}）` : ''}`
                 : `Import merge completed! Imported ${created} nodes${folderTitle ? ` (${folderTitle})` : ''}`;
-        } else if (strategy === 'patch') {
-            const created = Number.isFinite(Number(result?.created)) ? Number(result.created) : 0;
-            const moved = Number.isFinite(Number(result?.moved)) ? Number(result.moved) : 0;
-            const updated = Number.isFinite(Number(result?.updated)) ? Number(result.updated) : 0;
-            const deleted = Number.isFinite(Number(result?.deleted)) ? Number(result.deleted) : 0;
-            successMsg = isZh
-                ? `补丁合并完成！新增 ${created}，移动 ${moved}，修改 ${updated}，删除 ${deleted}`
-                : `Patch merge completed! Added ${created}, moved ${moved}, updated ${updated}, removed ${deleted}`;
-        }
+         } else if (strategy === 'patch') {
+             // 显示“撤销本次补丁”按钮（仅对 patch）
+            try {
+                updatePatchConfirmButtonText();
+            } catch (_) { }
+
+             const created = Number.isFinite(Number(result?.created)) ? Number(result.created) : 0;
+             const moved = Number.isFinite(Number(result?.moved)) ? Number(result.moved) : 0;
+             const updated = Number.isFinite(Number(result?.updated)) ? Number(result.updated) : 0;
+             const deleted = Number.isFinite(Number(result?.deleted)) ? Number(result.deleted) : 0;
+
+             // 执行后对照：如果仍有差异，则提示用户（不影响本次恢复结果）
+             const post = result && result.postDiff;
+             const hasPost = post && typeof post === 'object';
+             const hasPostDiff = hasPost && (
+                 (post.bookmarkAdded > 0) || (post.bookmarkDeleted > 0) ||
+                 (post.folderAdded > 0) || (post.folderDeleted > 0) ||
+                 (post.bookmarkMoved) || (post.folderMoved) ||
+                 (post.bookmarkModified) || (post.folderModified)
+             );
+             patchHasPostDiff = hasPostDiff;
+
+             if (hasPostDiff) {
+                 const changes = {
+                     bookmarkAdded: post.bookmarkAdded,
+                     bookmarkDeleted: post.bookmarkDeleted,
+                     folderAdded: post.folderAdded,
+                     folderDeleted: post.folderDeleted,
+                     bookmarkMoved: post.bookmarkMoved,
+                     folderMoved: post.folderMoved,
+                     bookmarkModified: post.bookmarkModified,
+                     folderModified: post.folderModified,
+                     bookmarkMovedCount: post.movedBookmarkCount,
+                     folderMovedCount: post.movedFolderCount,
+                     bookmarkModifiedCount: post.modifiedBookmarkCount,
+                     folderModifiedCount: post.modifiedFolderCount,
+                     hasNumericalChange: (post.bookmarkAdded > 0 || post.bookmarkDeleted > 0 || post.folderAdded > 0 || post.folderDeleted > 0),
+                     hasStructuralChange: (post.bookmarkMoved || post.folderMoved || post.bookmarkModified || post.folderModified),
+                     hasNoChange: false,
+                     isRestoreHiddenStats: false,
+                     isFirst: false
+                 };
+                 changes.hasNoChange = !changes.hasNumericalChange && !changes.hasStructuralChange;
+
+                 const diffContainer = document.getElementById('restoreDiffSummary');
+                 const prefix = isZh ? '补丁后仍有差异: ' : 'Diff remains after patch: ';
+                 const html = renderCommitStatsInline(changes);
+
+                 if (diffContainer && html) {
+                     // 直接把差异展示在 restore modal 的统计条里（最直观，不靠 toast）
+                     diffContainer.innerHTML = `
+                         <div style="display: flex; align-items: center; justify-content: flex-start; gap: 8px; flex-wrap: wrap;">
+                             <span style="font-size: 13px; color: var(--warning);">${prefix}</span>
+                             ${html}
+                         </div>
+                     `;
+                 } else {
+                     // 兜底：toast（用于 modal 已关闭或找不到容器）
+                     const text = (html ? html.replace(/<[^>]+>/g, '') : '');
+                     showToast(isZh
+                         ? `补丁合并已完成，但仍有差异${text ? `：${text}` : ''}`
+                         : `Patch merged but still has differences${text ? `: ${text}` : ''}`,
+                         6000);
+                 }
+
+                 // 如果仍存在歧义列表，提示用户继续选择候选再补丁一次
+                 try {
+                     if (lastPatchUndoSnapshot && lastPatchUndoSnapshot.tree) {
+                         const undoBtn = document.getElementById('restoreUndoPatchBtn');
+                         if (undoBtn) undoBtn.style.display = 'inline-flex';
+                     }
+                     if (restorePatchPreflight && restorePatchPreflight.matchReport) {
+                         setRestoreAmbiguityUI(restorePatchPreflight.matchReport);
+                     }
+                 } catch (_) { }
+             }
+
+             successMsg = isZh
+                 ? `补丁合并完成！新增 ${created}，移动 ${moved}，修改 ${updated}，删除 ${deleted}`
+                 : `Patch merge completed! Added ${created}, moved ${moved}, updated ${updated}, removed ${deleted}`;
+         }
+
 
         showToast(successMsg, 'success');
 
@@ -21555,13 +22819,24 @@ async function executeRestore(strategy = 'overwrite') {
         }
 
         // 延迟关闭模态框并刷新数据
-        setTimeout(async () => {
-            closeRestoreModal();
+        // - patch 模式如果仍有差异：先不自动关闭，让用户看到差异提示
+        const shouldAutoClose = !(strategy === 'patch' && patchHasPostDiff);
 
-            // 刷新备份历史数据
-            await loadAllData({ skipRender: true });
-            renderHistoryView();
-        }, 1500);
+        if (shouldAutoClose) {
+            setTimeout(async () => {
+                closeRestoreModal();
+
+                // 刷新备份历史数据
+                await loadAllData({ skipRender: true });
+                renderHistoryView();
+            }, 1500);
+        } else {
+            // 不自动关闭：仍然刷新数据，但保留弹窗让用户继续操作
+            setTimeout(async () => {
+                await loadAllData({ skipRender: true });
+                renderHistoryView();
+            }, 300);
+        }
 
     } catch (error) {
         console.error('[executeRestore] 恢复失败:', error);
@@ -21696,7 +22971,11 @@ async function executeOverwriteRestore(bookmarkTree) {
 }
 
 /**
- * 导入式合并（不删除）：把目标版本完整导入到「其他书签」下的新文件夹中。
+ * 导入式合并（不删除）：把目标版本导入到「其他书签」下的新文件夹中。
+ *
+ * 改造：默认导入“差异视图”（与“全局导出”的简略/详细一致），使导入后的树带有 [+] / [-] / [~] / [↔] 前缀。
+ * - 对照基线：该记录在备份历史中的上一条成功记录
+ * - 视图模式：沿用该记录保存的视图模式（简略/详细）+ 详细模式下的展开状态（WYSIWYG）
  */
 async function executeMergeRestore(bookmarkTree) {
     const isZh = currentLang === 'zh_CN';
@@ -21727,22 +23006,52 @@ async function executeMergeRestore(bookmarkTree) {
         throw new Error(isZh ? '找不到“其他书签”目录' : 'Cannot find "Other Bookmarks"');
     }
 
+    const resolveViewMode = () => {
+        try {
+            const mode = currentRestoreRecord ? getRecordDetailMode(currentRestoreRecord.time) : 'simple';
+            return (mode === 'simple' || mode === 'detailed') ? mode : 'simple';
+        } catch (_) {
+            return 'simple';
+        }
+    };
+
+    const viewMode = resolveViewMode();
+    const viewModeLabel = viewMode === 'detailed'
+        ? (isZh ? '详细' : 'Detailed')
+        : (isZh ? '简略' : 'Simple');
+
     const now = new Date();
     const ts = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')} ` +
         `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}:${String(now.getSeconds()).padStart(2, '0')}`;
 
     const seqText = currentRestoreRecord && currentRestoreRecord.seqNumber != null ? String(currentRestoreRecord.seqNumber) : '-';
-    const folderTitle = isZh ? `导入合并 - #${seqText} - ${ts}` : `Import Merge - #${seqText} - ${ts}`;
+    const folderTitle = isZh
+        ? `导入合并(${viewModeLabel}) - #${seqText} - ${ts}`
+        : `Import Merge (${viewModeLabel}) - #${seqText} - ${ts}`;
 
     const importRootFolder = await browserAPI.bookmarks.create({
         parentId: otherBookmarks.id,
         title: folderTitle
     });
 
-    updateRestoreProgress(25, isZh ? '正在导入快照...' : 'Importing snapshot...');
+    updateRestoreProgress(25, isZh ? '正在导入差异视图...' : 'Importing changes view...');
+
+    // 默认导入差异视图；如失败则回退导入快照（兼容性兜底）
+    let treeToImport = bookmarkTree;
+    try {
+        if (currentRestoreRecord) {
+            const processed = await getProcessedTreeForRecord(currentRestoreRecord, viewMode);
+            if (processed && Array.isArray(processed.children)) {
+                treeToImport = { title: 'root', children: processed.children };
+            }
+        }
+    } catch (e) {
+        console.warn('[executeMergeRestore] Build diff view failed, fallback to snapshot import:', e);
+        treeToImport = bookmarkTree;
+    }
 
     let createdCount = 1; // importRootFolder
-    const nodes = Array.isArray(bookmarkTree) ? bookmarkTree : [bookmarkTree];
+    const nodes = Array.isArray(treeToImport) ? treeToImport : [treeToImport];
 
     let processedTop = 0;
     let totalTop = 0;
@@ -21768,7 +23077,7 @@ async function executeMergeRestore(bookmarkTree) {
 
             processedTop += 1;
             const pct = 25 + Math.min(55, Math.round((processedTop / totalTop) * 55));
-            updateRestoreProgress(pct, isZh ? '正在导入快照...' : 'Importing snapshot...');
+            updateRestoreProgress(pct, isZh ? '正在导入差异视图...' : 'Importing changes view...');
         }
     }
 
@@ -21783,7 +23092,7 @@ async function executeMergeRestore(bookmarkTree) {
  * - update: title/url 不同
  * - delete: 当前里有、目标里没有
  */
-async function executeMergeRestoreToSnapshot(bookmarkTree) {
+async function executeMergeRestoreToSnapshot(bookmarkTree, options = {}) {
     const isZh = currentLang === 'zh_CN';
 
     updateRestoreProgress(10, isZh ? '正在分析当前书签...' : 'Analyzing current bookmarks...');
@@ -21799,7 +23108,11 @@ async function executeMergeRestoreToSnapshot(bookmarkTree) {
     }
 
     try {
-        normalizeTreeIds(targetTree, currentTree);
+        normalizeTreeIds(targetTree, currentTree, {
+            referenceRootIds: ['1', '2'],
+            strictGlobalUrlMatch: true,
+            manualMatches: (options && options.manualMatches) ? options.manualMatches : null
+        });
     } catch (e) {
         console.warn('[补丁合并] normalizeTreeIds 失败，将继续:', e);
     }
@@ -21870,6 +23183,53 @@ async function executeMergeRestoreToSnapshot(bookmarkTree) {
 
     const managedRootIds = new Set([String(bookmarkBar.id), String(otherBookmarks.id)]);
 
+    // 二次安全阀：当 ID 对齐发生误配时，尽量避免错删/错移/错改。
+    // 原则：宁可“少做一步补丁”，也不要对错对象执行 destructive 操作。
+    const shouldSkipDeleteBecauseMismatch = (id) => {
+        const cur = currentIndex.nodes.get(id);
+        if (!cur) return false;
+
+        // delete 操作的对象，在 targetIndex 中必然不存在
+        // 如果 target 中存在同 URL 的书签，很可能是“同 URL 多份/ID 未能对齐”的情况 -> 跳过删除更安全
+        if (cur.url) {
+            for (const t of targetIndex.nodes.values()) {
+                if (t && t.url && t.url === cur.url) {
+                    return true;
+                }
+            }
+        }
+
+        // 文件夹同名概率高：只要 target 中存在同名文件夹，就认为存在歧义，跳过删除
+        if (!cur.url && cur.title) {
+            const title = String(cur.title || '').trim();
+            for (const t of targetIndex.nodes.values()) {
+                if (!t || t.url) continue;
+                if (String(t.title || '').trim() === title) {
+                    return true;
+                }
+            }
+        }
+
+        return false;
+    };
+
+    const shouldSkipMoveBecauseMismatch = (id) => {
+        const cur = currentIndex.nodes.get(id);
+        const tar = targetIndex.nodes.get(id);
+        if (!cur || !tar) return false;
+        // 书签：URL 不同则高度可疑
+        if (cur.url && tar.url && cur.url !== tar.url) return true;
+        return false;
+    };
+
+    const shouldSkipUpdateBecauseMismatch = (id) => {
+        const cur = currentIndex.nodes.get(id);
+        const tar = targetIndex.nodes.get(id);
+        if (!cur || !tar) return false;
+        if (cur.url && tar.url && cur.url !== tar.url) return true;
+        return false;
+    };
+
     const isUnderManagedRoot = (id, index) => {
         let cur = String(id);
         let guard = 0;
@@ -21896,7 +23256,11 @@ async function executeMergeRestoreToSnapshot(bookmarkTree) {
         if (types.includes('added') && isUnderManagedRoot(id, targetIndex)) addedIds.push(id);
         if (types.includes('moved') && isUnderManagedRoot(id, targetIndex)) movedIds.push(id);
         if (types.includes('modified') && isUnderManagedRoot(id, targetIndex)) modifiedIds.push(id);
-        if (types.includes('deleted') && isUnderManagedRoot(id, currentIndex)) deletedIds.push(id);
+        if (types.includes('deleted') && isUnderManagedRoot(id, currentIndex)) {
+            if (!shouldSkipDeleteBecauseMismatch(id)) {
+                deletedIds.push(id);
+            }
+        }
     }
 
     // 统计
@@ -22009,11 +23373,15 @@ async function executeMergeRestoreToSnapshot(bookmarkTree) {
         const moveInfo = { parentId: String(destParentId) };
         if (typeof rec.index === 'number') moveInfo.index = rec.index;
 
-        let movedOk = false;
-        try {
-            await browserAPI.bookmarks.move(id, moveInfo);
-            movedOk = true;
-        } catch (e) {
+         if (shouldSkipMoveBecauseMismatch(id)) {
+             continue;
+         }
+
+         let movedOk = false;
+         try {
+             await browserAPI.bookmarks.move(id, moveInfo);
+             movedOk = true;
+         } catch (e) {
             try {
                 await browserAPI.bookmarks.move(id, { parentId: String(destParentId) });
                 movedOk = true;
@@ -22045,10 +23413,14 @@ async function executeMergeRestoreToSnapshot(bookmarkTree) {
         const updateInfo = { title: rawNode.title || '' };
         if (rawNode.url) updateInfo.url = rawNode.url;
 
-        try {
-            await browserAPI.bookmarks.update(id, updateInfo);
-            stats.updated += 1;
-        } catch (e) {
+         if (shouldSkipUpdateBecauseMismatch(id)) {
+             continue;
+         }
+
+         try {
+             await browserAPI.bookmarks.update(id, updateInfo);
+             stats.updated += 1;
+         } catch (e) {
             console.warn('[补丁合并] 修改失败:', id, e);
         }
 
@@ -22098,7 +23470,34 @@ async function executeMergeRestoreToSnapshot(bookmarkTree) {
         }
     }
 
-    return { success: true, ...stats };
+    // --- 5) 执行后对照校验 ---
+    // 原则：
+    // - 没差异：正常结束
+    // - 有差异：把“剩余差异”返回给 UI，让用户看到（而不是悄悄失败）
+    // 说明：这里使用 computeBookmarkGitDiffSummary（Current -> Target）来输出统计，
+    // 并复用 restore modal 的统计 UI（renderCommitStatsInline）。
+    let postDiff = null;
+    try {
+        updateRestoreProgress(92, isZh ? '正在校验恢复结果...' : 'Verifying restore result...');
+
+        const afterTree = await browserAPI.bookmarks.getTree();
+        const afterNormalizedTarget = JSON.parse(JSON.stringify(bookmarkTree));
+        try {
+            normalizeTreeIds(afterNormalizedTarget, afterTree, {
+                referenceRootIds: ['1', '2'],
+                strictGlobalUrlMatch: true,
+                manualMatches: (options && options.manualMatches) ? options.manualMatches : null
+            });
+        } catch (_) {
+            // ignore
+        }
+
+        postDiff = computeBookmarkGitDiffSummary(afterTree, afterNormalizedTarget);
+    } catch (e) {
+        console.warn('[补丁合并] 执行后校验失败:', e);
+    }
+
+    return { success: true, ...stats, postDiff };
 }
 
 /**
@@ -22121,7 +23520,10 @@ async function executeIncrementalRestoreFromSnapshot(bookmarkTree) {
     }
 
     try {
-        normalizeTreeIds(targetTree, currentTree);
+        normalizeTreeIds(targetTree, currentTree, {
+            referenceRootIds: ['1', '2'],
+            strictGlobalUrlMatch: true
+        });
     } catch (e) {
         console.warn('[增量恢复] normalizeTreeIds 失败，将继续:', e);
     }
@@ -22354,6 +23756,17 @@ function initRestoreModal() {
     const cancelBtn = document.getElementById('restoreCancelBtn');
     const confirmBtn = document.getElementById('restoreConfirmBtn');
 
+    const ambiguityBtn = document.getElementById('restoreAmbiguityBtn');
+    const ambiguityCloseBtn = document.getElementById('restoreAmbiguityCloseBtn');
+
+    if (ambiguityBtn) {
+        ambiguityBtn.addEventListener('click', () => toggleRestoreAmbiguityPanel());
+    }
+
+    if (ambiguityCloseBtn) {
+        ambiguityCloseBtn.addEventListener('click', () => toggleRestoreAmbiguityPanel(false));
+    }
+
     if (closeBtn) {
         closeBtn.addEventListener('click', closeRestoreModal);
     }
@@ -22370,13 +23783,42 @@ function initRestoreModal() {
         });
     }
 
+    const undoPatchBtn = document.getElementById('restoreUndoPatchBtn');
+    if (undoPatchBtn) {
+        undoPatchBtn.addEventListener('click', () => {
+            undoLastPatchRestore().catch((e) => {
+                showToast(currentLang === 'zh_CN'
+                    ? `撤销失败：${e && e.message ? e.message : String(e)}`
+                    : `Undo failed: ${e && e.message ? e.message : String(e)}`,
+                    4000);
+            });
+        });
+    }
+
     const strategyOverwriteRadio = document.getElementById('restoreStrategyOverwrite');
     const strategyMergeRadio = document.getElementById('restoreStrategyMerge');
     const strategyPatchRadio = document.getElementById('restoreStrategyPatch');
 
-    const handleStrategyChange = () => {
-        updateRestoreWarningByStrategy(getSelectedRestoreStrategy());
-    };
+        const handleStrategyChange = () => {
+            const strategy = getSelectedRestoreStrategy();
+            updateRestoreWarningByStrategy(strategy);
+            updateRestoreDiffSummaryByStrategy(strategy);
+
+            // 非 patch 模式隐藏歧义 UI，避免误导
+            if (strategy !== 'patch') {
+                try {
+                    toggleRestoreAmbiguityPanel(false);
+                    setRestoreAmbiguityUI(null);
+                } catch (_) { }
+            } else {
+                // patch 模式：如果已有预演报告，则恢复展示
+                try {
+                    if (restorePatchPreflight && restorePatchPreflight.matchReport) {
+                        setRestoreAmbiguityUI(restorePatchPreflight.matchReport);
+                    }
+                } catch (_) { }
+            }
+        };
 
     [strategyOverwriteRadio, strategyMergeRadio, strategyPatchRadio].forEach((radio) => {
         if (radio) radio.addEventListener('change', handleStrategyChange);
@@ -22770,8 +24212,98 @@ function flattenBookmarkTree(tree, result = []) {
  * @param {Array} targetTree 要修改的树 (通常是备份记录的深拷贝)
  * @param {Array} referenceTree 参考树 (通常是当前浏览器书签树)
  */
-function normalizeTreeIds(targetTree, referenceTree) {
+function normalizeTreeIds(targetTree, referenceTree, options = {}) {
     if (!targetTree || !referenceTree) return;
+
+    const strictGlobalUrlMatch = options && options.strictGlobalUrlMatch === true;
+
+    const referenceRootIds = (() => {
+        if (!options || !('referenceRootIds' in options)) return null;
+        const src = options.referenceRootIds;
+        if (src instanceof Set) return new Set(Array.from(src).map(v => String(v)));
+        if (Array.isArray(src)) return new Set(src.map(v => String(v)));
+        return null;
+    })();
+
+    const normalizeTitle = (title) => String(title || '').trim().toLowerCase().replace(/\s+/g, ' ');
+
+    // normalizeTreeIds 的输出报告：用于 patch 预演阶段给用户展示“歧义”信息
+    const report = {
+        ambiguous: [],
+        matched: {
+            id: 0,
+            manual: 0,
+            structure: 0,
+            url: 0
+        }
+    };
+
+    const recordAmbiguous = (item) => {
+        try {
+            // 防止极端情况下把 UI 撑爆
+            if (report.ambiguous.length >= 200) return;
+            report.ambiguous.push(item);
+        } catch (_) {
+            // ignore
+        }
+    };
+
+    const pickUniqueClosestByIndex = (targetIndex, candidates) => {
+        if (typeof targetIndex !== 'number' || !Number.isFinite(targetIndex)) return null;
+        if (!Array.isArray(candidates) || candidates.length === 0) return null;
+
+        const withIndex = candidates
+            .filter(c => c && typeof c.index === 'number' && Number.isFinite(c.index))
+            .slice();
+
+        if (withIndex.length === 0) return null;
+
+        withIndex.sort((a, b) => {
+            const da = Math.abs(a.index - targetIndex);
+            const db = Math.abs(b.index - targetIndex);
+            if (da !== db) return da - db;
+            return a.index - b.index;
+        });
+
+        const best = withIndex[0];
+        const bestDist = Math.abs(best.index - targetIndex);
+        const tieCount = withIndex.filter(c => Math.abs(c.index - targetIndex) === bestDist).length;
+        if (tieCount === 1) return best;
+        return null;
+    };
+
+    const manualMatchMap = (() => {
+        if (!options || typeof options !== 'object' || !options.manualMatches) return null;
+        const src = options.manualMatches;
+
+        const m = new Map();
+
+        if (src instanceof Map) {
+            for (const [k, v] of src.entries()) {
+                if (k == null || v == null) continue;
+                m.set(String(k), String(v));
+            }
+            return m.size > 0 ? m : null;
+        }
+
+        if (Array.isArray(src)) {
+            for (const pair of src) {
+                if (!pair || pair.length < 2) continue;
+                m.set(String(pair[0]), String(pair[1]));
+            }
+            return m.size > 0 ? m : null;
+        }
+
+        if (typeof src === 'object') {
+            for (const [k, v] of Object.entries(src)) {
+                if (k == null || v == null) continue;
+                m.set(String(k), String(v));
+            }
+            return m.size > 0 ? m : null;
+        }
+
+        return null;
+    })();
 
     // --- 0. 准备工作：建立参考树索引 ---
     const refPool = {
@@ -22779,28 +24311,40 @@ function normalizeTreeIds(targetTree, referenceTree) {
         claimedIds: new Set(),  // 已被 Target 匹配领用的 ID 集合 (1-to-1 Mapping)
         nodeMap: new Map(),     // ID -> Node
         urlMap: new Map(),      // URL -> Set<Node> (仅书签)
+        parentById: new Map(),  // ID -> parentId（用于 Pass3 消歧）
     };
 
-    const indexRef = (nodes) => {
+    const indexRef = (nodes, underAllowed = false) => {
         if (!nodes) return;
         const list = Array.isArray(nodes) ? nodes : [nodes];
         list.forEach(node => {
-            if (node.id) {
-                refPool.ids.add(String(node.id));
-                refPool.nodeMap.set(String(node.id), node);
+            if (!node) return;
+
+            const id = (node.id != null) ? String(node.id) : null;
+            const isRoot = id === '0';
+            const isAllowedRoot = referenceRootIds ? (id != null && referenceRootIds.has(id)) : false;
+            const shouldIndex = !referenceRootIds || isRoot || underAllowed || isAllowedRoot;
+            const nextUnderAllowed = underAllowed || isAllowedRoot;
+
+            if (shouldIndex && id != null) {
+                refPool.ids.add(id);
+                refPool.nodeMap.set(id, node);
+                if (node.parentId != null && node.parentId !== '') {
+                    refPool.parentById.set(id, String(node.parentId));
+                }
 
                 if (node.url) {
-                    // 书签：索引 URL
                     if (!refPool.urlMap.has(node.url)) {
                         refPool.urlMap.set(node.url, new Set());
                     }
                     refPool.urlMap.get(node.url).add(node);
                 }
             }
-            if (node.children) indexRef(node.children);
+
+            if (node.children) indexRef(node.children, nextUnderAllowed);
         });
     };
-    indexRef(referenceTree);
+    indexRef(referenceTree, false);
 
     // 辅助：更改节点 ID 并递归更新子节点的 parentId
     const updateNodeId = (node, newId) => {
@@ -22832,6 +24376,7 @@ function normalizeTreeIds(targetTree, referenceTree) {
                     if (isSameType) {
                         refPool.claimedIds.add(id);
                         node._matchedRefNode = refNode; // 暂存匹配关系供 Pass 2 使用
+                        report.matched.id += 1;
                     }
                 }
             }
@@ -22839,6 +24384,69 @@ function normalizeTreeIds(targetTree, referenceTree) {
         });
     };
     pass1_IDMatch(targetTree);
+
+    // --- Pass 1.5: 手动匹配（用户在“歧义详情”里指定的映射） ---
+    // 仅对“尚未匹配”的节点生效。
+    if (manualMatchMap && manualMatchMap.size > 0) {
+        const pass1_5_ManualMatch = (nodes) => {
+            if (!nodes) return;
+            const list = Array.isArray(nodes) ? nodes : [nodes];
+            list.forEach(node => {
+                if (!node || !node.id) return;
+
+                if (!node._matchedRefNode) {
+                    const targetId = String(node.id);
+                    const pickedRefId = manualMatchMap.get(targetId);
+                    if (pickedRefId) {
+                        const refNode = refPool.nodeMap.get(String(pickedRefId));
+                        const isSameType = refNode ? (!!node.url === !!refNode.url) : false;
+
+                        if (!refNode) {
+                            recordAmbiguous({
+                                phase: 'manual',
+                                type: node.url ? 'bookmark' : 'folder',
+                                targetId,
+                                title: node.title || '',
+                                url: node.url || '',
+                                picked: String(pickedRefId),
+                                reason: 'ref-not-found'
+                            });
+                        } else if (!isSameType) {
+                            recordAmbiguous({
+                                phase: 'manual',
+                                type: node.url ? 'bookmark' : 'folder',
+                                targetId,
+                                title: node.title || '',
+                                url: node.url || '',
+                                picked: String(pickedRefId),
+                                reason: 'type-mismatch'
+                            });
+                        } else if (refPool.claimedIds.has(String(pickedRefId))) {
+                            recordAmbiguous({
+                                phase: 'manual',
+                                type: node.url ? 'bookmark' : 'folder',
+                                targetId,
+                                title: node.title || '',
+                                url: node.url || '',
+                                picked: String(pickedRefId),
+                                reason: 'ref-already-claimed'
+                            });
+                        } else {
+                            const newId = String(pickedRefId);
+                            updateNodeId(node, newId);
+                            refPool.claimedIds.add(newId);
+                            node._matchedRefNode = refNode;
+                            report.matched.manual += 1;
+                        }
+                    }
+                }
+
+                if (node.children) pass1_5_ManualMatch(node.children);
+            });
+        };
+
+        pass1_5_ManualMatch(targetTree);
+    }
 
     // --- Pass 2: 结构位置匹配 (Relative Position) ---
     // 遍历 Target (Top-Down)，对于未匹配的节点，
@@ -22856,7 +24464,7 @@ function normalizeTreeIds(targetTree, referenceTree) {
                     const isBookmark = !!node.url;
 
                     // 在参考父节点的子节点中寻找候选
-                    const candidate = parentMatchedRefNode.children.find(refChild => {
+                    const candidates = parentMatchedRefNode.children.filter(refChild => {
                         const refId = String(refChild.id);
                         if (refPool.claimedIds.has(refId)) return false; // 已被别人认领
 
@@ -22872,14 +24480,32 @@ function normalizeTreeIds(targetTree, referenceTree) {
                         return true;
                     });
 
+                    let candidate = null;
+                    if (candidates.length === 1) {
+                        candidate = candidates[0];
+                    } else if (candidates.length > 1) {
+                        // 尝试用 index 做唯一消歧
+                        candidate = pickUniqueClosestByIndex(node.index, candidates);
+                        if (!candidate) {
+                                recordAmbiguous({
+                                    phase: 'structure',
+                                    type: isBookmark ? 'bookmark' : 'folder',
+                                    targetId: String(node.id),
+                                    targetParentId: node.parentId != null ? String(node.parentId) : '',
+                                    targetIndex: (typeof node.index === 'number' && Number.isFinite(node.index)) ? node.index : null,
+                                    title: node.title || '',
+                                    url: node.url || '',
+                                    candidates: candidates.slice(0, 6).map(c => ({ id: String(c.id), title: c.title || '', url: c.url || '' }))
+                                });
+                        }
+                    }
+
                     if (candidate) {
-                        // 匹配成功！
                         const newId = String(candidate.id);
-                        // 修改 Target 节点 ID
                         updateNodeId(node, newId);
-                        // 标记领用
                         refPool.claimedIds.add(newId);
                         node._matchedRefNode = candidate;
+                        report.matched.structure += 1;
                     }
                 }
             }
@@ -22902,37 +24528,52 @@ function normalizeTreeIds(targetTree, referenceTree) {
     });
 
     // --- Pass 3: 全局内容匹配 (Same URL - Fallback) ---
-    // 对于书签，如果结构匹配失败（例如书签被移动到了不同文件夹），尝试全局 URL 匹配。
-    // 仅限书签。文件夹名字太通用，不宜全局匹配。
-    const pass3_GlobalUrlMatch = (nodes) => {
+    // URL 是书签的“内容身份”，可以跨文件夹移动、跨标题改名仍保持匹配。
+    // 风险：同 URL 多份时容易误配。
+    // 因此策略：
+    // - 候选唯一：允许 URL-only 匹配（支持改名/移动）
+    // - 候选不唯一：优先用 title / 父级上下文消歧；strictGlobalUrlMatch=true 时不做“随便匹配”
+    const pass3_GlobalUrlMatch = (nodes, parentMatchedRefNode = null) => {
         if (!nodes) return;
         const list = Array.isArray(nodes) ? nodes : [nodes];
         list.forEach(node => {
-            // 如果还没匹配，且是书签
-            if (!node._matchedRefNode && node.url) {
-                const candidates = refPool.urlMap.get(node.url);
-                if (candidates) {
-                    // 找一个未认领的 ID
-                    // 优先找 Title 也相同的?
-                    let bestMatch = null;
+            if (!node) return;
 
-                    // 策略：先找 Title 相同的未认领项
-                    for (const cand of candidates) {
-                        if (!refPool.claimedIds.has(String(cand.id))) {
-                            if (cand.title === node.title) {
-                                bestMatch = cand;
-                                break;
-                            }
-                        }
+            if (!node._matchedRefNode && node.url) {
+                const candidatesSet = refPool.urlMap.get(node.url);
+                if (candidatesSet) {
+                    const candidates = [];
+                    for (const cand of candidatesSet) {
+                        if (!cand || cand.id == null) continue;
+                        const candId = String(cand.id);
+                        if (referenceRootIds && !refPool.ids.has(candId)) continue;
+                        if (refPool.claimedIds.has(candId)) continue;
+                        candidates.push(cand);
                     }
 
-                    // 如果没找到 Title 相同的，随便找一个未认领的 URL 相同的 (视为改名 + 移动)
-                    if (!bestMatch) {
-                        for (const cand of candidates) {
-                            if (!refPool.claimedIds.has(String(cand.id))) {
-                                bestMatch = cand;
-                                break;
+                    let bestMatch = null;
+
+                    if (candidates.length === 1) {
+                        bestMatch = candidates[0];
+                    } else if (candidates.length > 1) {
+                        const nodeTitleNorm = normalizeTitle(node.title);
+                        const titleMatched = candidates.filter(c => normalizeTitle(c.title) === nodeTitleNorm);
+                        if (titleMatched.length === 1) {
+                            bestMatch = titleMatched[0];
+                        } else if (parentMatchedRefNode && parentMatchedRefNode.id != null) {
+                            const parentId = String(parentMatchedRefNode.id);
+                            const parentMatched = candidates.filter(c => {
+                                const cid = String(c.id);
+                                const candParentId = refPool.parentById.get(cid);
+                                return candParentId != null && String(candParentId) === parentId;
+                            });
+                            if (parentMatched.length === 1) {
+                                bestMatch = parentMatched[0];
                             }
+                        }
+
+                        if (!bestMatch && !strictGlobalUrlMatch) {
+                            bestMatch = candidates[0];
                         }
                     }
 
@@ -22941,13 +24582,29 @@ function normalizeTreeIds(targetTree, referenceTree) {
                         updateNodeId(node, newId);
                         refPool.claimedIds.add(newId);
                         node._matchedRefNode = bestMatch;
+                        report.matched.url += 1;
+                    } else if (candidates.length > 1) {
+                        // URL 多候选但无法唯一消歧：记录歧义（预演时提示用户）
+                        recordAmbiguous({
+                            phase: 'url',
+                            type: 'bookmark',
+                            targetId: String(node.id),
+                            targetParentId: node.parentId != null ? String(node.parentId) : '',
+                            targetIndex: (typeof node.index === 'number' && Number.isFinite(node.index)) ? node.index : null,
+                            title: node.title || '',
+                            url: node.url || '',
+                            candidates: candidates.slice(0, 6).map(c => ({ id: String(c.id), title: c.title || '', url: c.url || '' }))
+                        });
                     }
                 }
             }
-            if (node.children) pass3_GlobalUrlMatch(node.children);
+
+            if (node.children) {
+                pass3_GlobalUrlMatch(node.children, node._matchedRefNode || null);
+            }
         });
     };
-    pass3_GlobalUrlMatch(targetTree);
+    pass3_GlobalUrlMatch(targetTree, null);
 
     // 清理临时属性
     const cleanup = (nodes) => {
@@ -22959,6 +24616,9 @@ function normalizeTreeIds(targetTree, referenceTree) {
         });
     };
     cleanup(targetTree);
+
+    // 返回预演报告（可选）。不影响现有调用：不接收返回值时会被忽略。
+    return report;
 }
 
 // 生成备份历史的树形 HTML（与"当前变化"视图保持一致的结构）

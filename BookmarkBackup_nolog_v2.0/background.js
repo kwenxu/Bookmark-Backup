@@ -6880,7 +6880,7 @@ async function executeOverwriteBookmarkRestore(bookmarkTree) {
     return { created: createdCount };
 }
 
-async function executeMergeBookmarkRestore(bookmarkTree) {
+async function executeMergeBookmarkRestore(bookmarkTree, options = {}) {
     // Merge = “导入式导入” (类似浏览器导入 HTML 的行为)：不覆盖现有树，而是在根容器下新增一个导入文件夹。
     const { otherBookmarks } = await findBookmarkContainers();
     if (!otherBookmarks) throw new Error('Cannot find "Other Bookmarks" container');
@@ -6892,7 +6892,27 @@ async function executeMergeBookmarkRestore(bookmarkTree) {
     const timestamp = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')} ` +
         `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}:${String(now.getSeconds()).padStart(2, '0')}`;
 
-    const importRootTitle = isEn ? `Imported - ${timestamp}` : `导入 - ${timestamp}`;
+    const importKind = options && options.importKind === 'changes' ? 'changes' : 'snapshot';
+    const viewMode = options && (options.viewMode === 'simple' || options.viewMode === 'detailed') ? options.viewMode : null;
+    const meta = options && options.meta && typeof options.meta === 'object' ? options.meta : null;
+
+    const viewLabel = viewMode === 'detailed'
+        ? (isEn ? 'Detailed' : '详细')
+        : (isEn ? 'Simple' : '简略');
+
+    const seqText = meta && meta.seqNumber != null ? String(meta.seqNumber) : '-';
+    const fingerprint = meta && meta.fingerprint ? ` [${String(meta.fingerprint).slice(0, 7)}]` : '';
+    const modeSuffix = viewMode ? ` (${viewLabel})` : '';
+
+    const importRootTitle = (() => {
+        if (importKind === 'changes') {
+            return isEn
+                ? `Imported Changes${modeSuffix} - #${seqText}${fingerprint} - ${timestamp}`
+                : `导入变化${modeSuffix} - #${seqText}${fingerprint} - ${timestamp}`;
+        }
+        return isEn ? `Imported - ${timestamp}` : `导入 - ${timestamp}`;
+    })();
+
     const importRootFolder = await browserAPI.bookmarks.create({
         parentId: otherBookmarks.id,
         title: importRootTitle
@@ -7563,13 +7583,370 @@ async function extractBookmarkTreeForRestore(restoreRef, localPayload) {
     throw new Error(`Unsupported sourceType: ${restoreRef.sourceType}`);
 }
 
-async function restoreSelectedVersion({ restoreRef, strategy, localPayload }) {
+function getExportInfoFromHistoryRecord(record) {
+    return record?._exportInfo || record?.exportInfo || record?.export_info || null;
+}
+
+function getHistoryRecordTimeString(record) {
+    const info = getExportInfoFromHistoryRecord(record);
+    return info?.backupTime || record?.time || null;
+}
+
+function getHistoryRecordSeqNumber(record) {
+    const info = getExportInfoFromHistoryRecord(record);
+    return info?.seqNumber || record?.seqNumber || null;
+}
+
+function getHistoryRecordNote(record) {
+    const info = getExportInfoFromHistoryRecord(record);
+    return info?.note || record?.note || '';
+}
+
+function getHistoryRecordFingerprint(record) {
+    const info = getExportInfoFromHistoryRecord(record);
+    return info?.fingerprint || record?.fingerprint || '';
+}
+
+function getHistoryRecordStats(record) {
+    const info = getExportInfoFromHistoryRecord(record);
+    return info?.stats || record?.bookmarkStats || record?.stats || null;
+}
+
+function getHistoryRecordTree(record) {
+    return record?._rawBookmarkTree || record?.bookmarkTree || null;
+}
+
+function isHistoryRecordSuccess(record) {
+    const info = getExportInfoFromHistoryRecord(record);
+    const status = record?.status || info?.status || null;
+    if (!status) return true;
+    return status === 'success';
+}
+
+function findHistoryRecordIndexByRestoreRef(records, restoreRef) {
+    if (!Array.isArray(records)) return -1;
+
+    const idx = typeof restoreRef?.recordIndex === 'number' ? restoreRef.recordIndex : null;
+    if (idx != null && idx >= 0 && idx < records.length) return idx;
+
+    const recordTime = restoreRef?.recordTime ? String(restoreRef.recordTime) : null;
+    if (!recordTime) return -1;
+
+    return records.findIndex(r => {
+        const t = getHistoryRecordTimeString(r);
+        return t && String(t) === recordTime;
+    });
+}
+
+function buildChronologicalHistoryRecordList(records) {
+    const list = [];
+    for (const r of records || []) {
+        if (!r) continue;
+        const timeStr = getHistoryRecordTimeString(r);
+        const tree = getHistoryRecordTree(r);
+        if (!timeStr || !tree) continue;
+
+        const timeKey = String(timeStr);
+        const timeMs = parseTimeToMs(timeKey) || 0;
+        const seqNumber = getHistoryRecordSeqNumber(r);
+        const seq = (typeof seqNumber === 'number' && Number.isFinite(seqNumber)) ? seqNumber : null;
+
+        list.push({ record: r, timeStr: timeKey, timeMs, seq });
+    }
+
+    list.sort((a, b) => {
+        if (a.seq != null && b.seq != null) return a.seq - b.seq;
+        return a.timeMs - b.timeMs;
+    });
+
+    return list;
+}
+
+function findPreviousHistoryRecordChronologically(records, currentTimeStr) {
+    const list = buildChronologicalHistoryRecordList(records);
+    const key = currentTimeStr != null ? String(currentTimeStr) : '';
+    const idx = list.findIndex(item => item.timeStr === key);
+    if (idx <= 0) return null;
+
+    for (let i = idx - 1; i >= 0; i--) {
+        const record = list[i]?.record;
+        if (!record) continue;
+        if (isHistoryRecordSuccess(record)) return record;
+    }
+
+    return null;
+}
+
+async function resolveHistoryViewModeAndExpansion(recordTime, requestedMode) {
+    let mode = requestedMode;
+    let expandedIds = null;
+
+    try {
+        const res = await browserAPI.storage.local.get(['historyViewSettings']);
+        const settings = res?.historyViewSettings || null;
+        const timeKey = recordTime != null ? String(recordTime) : null;
+
+        if (mode !== 'simple' && mode !== 'detailed') {
+            const storedMode = timeKey && settings?.recordModes ? settings.recordModes[timeKey] : null;
+            const defaultMode = settings?.defaultMode || null;
+            mode = storedMode || defaultMode || 'simple';
+        }
+
+        if (mode !== 'simple' && mode !== 'detailed') mode = 'simple';
+
+        if (mode === 'detailed' && timeKey) {
+            const ids = settings?.recordExpandedStates ? settings.recordExpandedStates[timeKey] : null;
+            if (Array.isArray(ids) && ids.length > 0) {
+                expandedIds = new Set(ids.map(id => String(id)));
+            }
+        }
+    } catch (_) {
+        if (mode !== 'simple' && mode !== 'detailed') mode = 'simple';
+    }
+
+    return { mode, expandedIds };
+}
+
+function buildHistoryChangesViewTree(bookmarkTree, changeMap, options = {}) {
+    const mode = options?.mode === 'detailed' ? 'detailed' : 'simple';
+    const expandedIds = options?.expandedIds instanceof Set ? options.expandedIds : null;
+    const useWysiwygExpansion = mode === 'detailed' && expandedIds && expandedIds.size > 0;
+
+    const safeTitle = (t) => {
+        const title = String(t || '').trim();
+        return title ? title : '(Untitled)';
+    };
+
+    const hasChangesRecursive = (node) => {
+        if (!node) return false;
+        if (node.id && changeMap && changeMap.has(node.id)) return true;
+        if (Array.isArray(node.children)) {
+            return node.children.some(child => hasChangesRecursive(child));
+        }
+        return false;
+    };
+
+    const getPrefixForChange = (change) => {
+        if (!change || !change.type) return '';
+        const types = String(change.type).split('+');
+        if (types.includes('added')) return '[+] ';
+        if (types.includes('deleted')) return '[-] ';
+        if (types.includes('modified') && types.includes('moved')) return '[~↔] ';
+        if (types.includes('modified')) return '[~] ';
+        if (types.includes('moved')) return '[↔] ';
+        return '';
+    };
+
+    const extractTree = (node) => {
+        if (!node) return null;
+
+        const nodeHasChanges = hasChangesRecursive(node);
+        if (mode !== 'detailed' && !nodeHasChanges) return null;
+
+        const title = safeTitle(node.title);
+        const url = node.url || '';
+        const isFolder = !url && Array.isArray(node.children);
+
+        const change = node.id ? changeMap.get(node.id) : null;
+        const prefix = getPrefixForChange(change);
+
+        const item = {
+            title: prefix + title
+        };
+
+        if (url) {
+            item.url = url;
+            return item;
+        }
+
+        if (isFolder) {
+            let shouldRecurse = false;
+            if (mode === 'detailed') {
+                shouldRecurse = useWysiwygExpansion ? expandedIds.has(String(node.id)) : nodeHasChanges;
+            } else {
+                shouldRecurse = true;
+            }
+
+            if (shouldRecurse) {
+                item.children = node.children
+                    .map(child => extractTree(child))
+                    .filter(Boolean);
+            } else {
+                item.children = [];
+            }
+        }
+
+        return item;
+    };
+
+    const nodes = Array.isArray(bookmarkTree) ? bookmarkTree : [bookmarkTree];
+    const children = [];
+    nodes.forEach(node => {
+        if (!node || !Array.isArray(node.children)) return;
+        node.children.forEach(child => {
+            const extracted = extractTree(child);
+            if (extracted) children.push(extracted);
+        });
+    });
+
+    return { title: 'root', children };
+}
+
+async function extractHistoryChangesViewTreeForRestore(restoreRef, localPayload, options = {}) {
+    const sourceType = restoreRef?.sourceType;
+    if (sourceType !== 'json' && sourceType !== 'zip') {
+        throw new Error(`Changes view is only supported for history sources (json/zip), got: ${sourceType}`);
+    }
+
+    let records = [];
+    let currentRecord = null;
+
+    if (sourceType === 'json') {
+        let text = '';
+        if (restoreRef.source === 'local') {
+            text = String(localPayload?.text || '');
+        } else {
+            if (!restoreRef.fileUrl) throw new Error('Missing fileUrl');
+            const blob = await downloadRemoteFile({ url: restoreRef.fileUrl, source: restoreRef.source });
+            text = await blob.text();
+        }
+
+        const parsed = JSON.parse(text);
+        const rawRecords = Array.isArray(parsed) ? parsed : (Array.isArray(parsed?.records) ? parsed.records : []);
+        if (!Array.isArray(rawRecords) || rawRecords.length === 0) {
+            throw new Error('Merged history format not supported');
+        }
+
+        const idx = findHistoryRecordIndexByRestoreRef(rawRecords, restoreRef);
+        if (idx < 0 || !rawRecords[idx]) throw new Error('Target history record not found in merged JSON');
+
+        records = rawRecords;
+        currentRecord = rawRecords[idx];
+    } else {
+        // zip
+        let zipBlob;
+        if (restoreRef.source === 'local') {
+            const ab = localPayload?.arrayBuffer;
+            if (!ab) throw new Error('Missing local ZIP data');
+            zipBlob = new Blob([ab], { type: 'application/zip' });
+        } else {
+            if (!restoreRef.fileUrl) throw new Error('Missing fileUrl');
+            zipBlob = await downloadRemoteFile({ url: restoreRef.fileUrl, source: restoreRef.source });
+        }
+
+        const files = await unzipStore(zipBlob);
+        const parsedRecords = [];
+
+        for (const f of files) {
+            if (!f?.name || !f.name.endsWith('.json')) continue;
+            try {
+                const data = JSON.parse(f.content);
+                const timeStr = getHistoryRecordTimeString(data);
+                const tree = getHistoryRecordTree(data);
+                if (!timeStr || !tree) continue;
+                parsedRecords.push({ data, zipEntryName: f.name, timeStr: String(timeStr) });
+            } catch (_) { }
+        }
+
+        if (parsedRecords.length === 0) throw new Error('No valid history records found in ZIP');
+
+        // Find current record
+        let idx = -1;
+        if (restoreRef.zipEntryName) {
+            idx = parsedRecords.findIndex(r => r.zipEntryName === restoreRef.zipEntryName);
+        }
+        if (idx < 0 && restoreRef.recordTime) {
+            const key = String(restoreRef.recordTime);
+            idx = parsedRecords.findIndex(r => r.timeStr === key);
+        }
+        if (idx < 0) throw new Error('Target history record not found in ZIP');
+
+        records = parsedRecords.map(r => r.data);
+        currentRecord = parsedRecords[idx].data;
+    }
+
+    const recordTime = getHistoryRecordTimeString(currentRecord) || restoreRef.recordTime || null;
+    if (!recordTime) throw new Error('Selected record has no recordTime');
+
+    const previousRecord = findPreviousHistoryRecordChronologically(records, recordTime);
+
+    const currentTree = getHistoryRecordTree(currentRecord);
+    if (!currentTree) throw new Error('Selected history record has no bookmark tree');
+
+    const prevTree = previousRecord ? getHistoryRecordTree(previousRecord) : null;
+
+    let treeToExport = currentTree;
+    let changeMap = new Map();
+
+    if (prevTree) {
+        const stats = getHistoryRecordStats(currentRecord) || {};
+        const explicitMovedIdSet = Array.isArray(stats.explicitMovedIds) ? stats.explicitMovedIds : null;
+
+        changeMap = detectTreeChangesFastBg(prevTree, currentTree, {
+            explicitMovedIdSet
+        });
+
+        let hasDeleted = false;
+        for (const [, change] of changeMap) {
+            if (change?.type && String(change.type).includes('deleted')) {
+                hasDeleted = true;
+                break;
+            }
+        }
+        if (hasDeleted) {
+            try {
+                treeToExport = rebuildTreeWithDeletedBg(prevTree, currentTree, changeMap);
+            } catch (_) {
+                treeToExport = currentTree;
+            }
+        }
+    } else {
+        const allNodes = flattenBookmarkTreeBg(currentTree);
+        allNodes.forEach(item => {
+            if (item.id) changeMap.set(item.id, { type: 'added' });
+        });
+    }
+
+    const { mode, expandedIds } = await resolveHistoryViewModeAndExpansion(recordTime, options.viewMode);
+    const tree = buildHistoryChangesViewTree(treeToExport, changeMap, { mode, expandedIds });
+
+    const meta = {
+        recordTime: String(recordTime),
+        seqNumber: getHistoryRecordSeqNumber(currentRecord),
+        note: getHistoryRecordNote(currentRecord),
+        fingerprint: getHistoryRecordFingerprint(currentRecord)
+    };
+
+    return { tree, viewMode: mode, meta };
+}
+
+async function restoreSelectedVersion({ restoreRef, strategy, localPayload, mergeViewMode }) {
     try {
         isBookmarkRestoring = true;
         try {
             await browserAPI.storage.local.set({ bookmarkRestoringFlag: true });
         } catch (_) { }
-        const tree = await extractBookmarkTreeForRestore(restoreRef, localPayload);
+
+        let tree = null;
+        let mergeOptions = null;
+
+        // Merge（导入合并）：对于备份历史（json/zip），默认导入“差异视图”；HTML 快照则导入快照。
+        if (strategy === 'merge' && (restoreRef?.sourceType === 'json' || restoreRef?.sourceType === 'zip')) {
+            const viewMode = (mergeViewMode === 'simple' || mergeViewMode === 'detailed') ? mergeViewMode : null;
+            const extracted = await extractHistoryChangesViewTreeForRestore(restoreRef, localPayload, { viewMode });
+            tree = extracted.tree;
+            mergeOptions = {
+                importKind: 'changes',
+                viewMode: extracted.viewMode,
+                meta: extracted.meta
+            };
+        } else {
+            tree = await extractBookmarkTreeForRestore(restoreRef, localPayload);
+            if (strategy === 'merge') {
+                mergeOptions = { importKind: 'snapshot' };
+            }
+        }
+
         if (!tree) {
             return { success: false, error: 'No bookmark tree data found for selected version' };
         }
@@ -7596,7 +7973,7 @@ async function restoreSelectedVersion({ restoreRef, strategy, localPayload }) {
             return { success: true, strategy: 'patch', ...result };
         }
 
-        const result = await executeMergeBookmarkRestore(tree);
+        const result = await executeMergeBookmarkRestore(tree, mergeOptions);
 
         // Restore should be treated as “initialized” (equivalent to first backup)
         await browserAPI.storage.local.set({ initialized: true });
@@ -7736,7 +8113,8 @@ browserAPI.runtime.onMessage.addListener((request, sender, sendResponse) => {
         restoreSelectedVersion({
             restoreRef: request.restoreRef,
             strategy: request.strategy,
-            localPayload: request.localPayload
+            localPayload: request.localPayload,
+            mergeViewMode: request.mergeViewMode
         })
             .then(result => sendResponse(result))
             .catch(e => sendResponse({ success: false, error: e.message }));

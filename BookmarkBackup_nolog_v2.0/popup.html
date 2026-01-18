@@ -5074,6 +5074,27 @@
                             </label>
                         </div>
                     </div>
+
+                    <!-- Merge view mode (only for Backup History + Merge) -->
+                    <div id="restoreMergeViewModeSegment" style="display: none;">
+                        <div id="restoreMergeViewModeGroup" class="restore-strategy-group">
+                            <label class="restore-strategy-label" title="" id="restoreMergeViewModeSimpleWrap">
+                                <input type="radio" name="restoreMergeViewMode" id="restoreMergeViewModeSimple" value="simple" checked>
+                                <div class="restore-strategy-option" id="restoreMergeViewModeSimpleLabel">
+                                    <span class="restore-strategy-icon">✓</span>
+                                    <span id="restoreMergeViewModeSimpleText">Simple</span>
+                                </div>
+                            </label>
+                            <label class="restore-strategy-label" title="" id="restoreMergeViewModeDetailedWrap">
+                                <input type="radio" name="restoreMergeViewMode" id="restoreMergeViewModeDetailed" value="detailed">
+                                <div class="restore-strategy-option" id="restoreMergeViewModeDetailedLabel">
+                                    <span class="restore-strategy-icon">✓</span>
+                                    <span id="restoreMergeViewModeDetailedText">Detailed</span>
+                                </div>
+                            </label>
+                        </div>
+                    </div>
+
                     <button id="confirmRestoreBtnRef" class="restore-modal-action-btn primary" disabled>Restore</button>
                 </div>
             </div>

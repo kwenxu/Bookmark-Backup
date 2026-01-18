@@ -1684,19 +1684,7 @@
                                     </div>
                                 </div>
                             </div>
-                            <!-- 差异摘要与预览按钮行 -->
-                            <div class="restore-diff-bar">
-                                <!-- 差异摘要 (左对齐) -->
-                                <div id="restoreDiffSummary"
-                                    style="font-size: 11px; color: var(--text-secondary); text-align: left; flex: 1;">
-                                    正在计算差异...
-                                </div>
 
-                                <!-- 预览按钮 -->
-                                <button id="restorePreviewBtn" class="restore-preview-btn" style="display: none;">
-                                    <span id="restorePreviewBtnText">预览</span>
-                                </button>
-                            </div>
                         </div>
 
                         <!-- 进度显示区域（默认隐藏） -->
@@ -1730,9 +1718,39 @@
                                 </div>
                             </div>
  
-                            <div class="restore-footer-actions">
-                                <button class="modal-btn" id="restoreCancelBtn">取消</button>
+                            <!-- 差异摘要与预览按钮行（放在说明下方） -->
+                            <div id="restoreDiffBar" class="restore-diff-bar" style="display: none;">
+                                <!-- 差异摘要 (左对齐) -->
+                                <div id="restoreDiffSummary"
+                                    style="font-size: 11px; color: var(--text-secondary); text-align: left; flex: 1;">
+                                    正在计算差异...
+                                </div>
+
+                                <!-- 歧义按钮（补丁预演/执行后校验有歧义时显示） -->
+                                <button id="restoreAmbiguityBtn" class="restore-ambiguity-btn" style="display: none;">
+                                    <span id="restoreAmbiguityBtnText">歧义</span>
+                                </button>
+
+                                <!-- 预览按钮 -->
+                                <button id="restorePreviewBtn" class="restore-preview-btn" style="display: none;">
+                                    <span id="restorePreviewBtnText">预览</span>
+                                </button>
+                            </div>
+
+                            <!-- 歧义详情（在恢复弹窗内展开） -->
+                            <div id="restoreAmbiguityPanel" class="restore-ambiguity-panel">
+                                <div class="restore-ambiguity-panel-header">
+                                    <div id="restoreAmbiguityTitle" class="restore-ambiguity-title">歧义详情</div>
+                                    <button id="restoreAmbiguityCloseBtn" class="restore-ambiguity-close-btn">收起</button>
+                                </div>
+                                <div id="restoreAmbiguityList" class="restore-ambiguity-list"></div>
+                            </div>
  
+                            <div class="restore-footer-actions">
+                                <button class="modal-btn danger" id="restoreUndoPatchBtn" style="display: none;">
+                                    <span id="restoreUndoPatchBtnText">撤销本次补丁</span>
+                                </button>
+  
                                 <div id="restoreStrategySegment" style="display: inline-flex; align-items: center;">
                                     <div id="restoreStrategyGroup" class="restore-strategy-group">
                                         <label class="restore-strategy-label" title="" id="restoreStrategyOverwriteLabelWrap">
@@ -1762,8 +1780,9 @@
                                         </label>
                                     </div>
                                 </div>
- 
+
                                 <button class="modal-btn primary" id="restoreConfirmBtn">恢复</button>
+                                <button class="modal-btn" id="restoreCancelBtn">取消</button>
                             </div>
                         </div>
                     </div>

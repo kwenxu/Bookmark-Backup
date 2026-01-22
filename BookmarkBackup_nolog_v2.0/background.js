@@ -2392,11 +2392,11 @@ browserAPI.runtime.onMessage.addListener((message, sender, sendResponse) => {
             }
             return true;  // 保持消息通道开放
         } else if (message.action === "searchBookmarks") {
-            // 功能已移除，返回错误消息
-            sendResponse({
-                success: false,
-                error: '搜索功能已被移除'
-            });
+            searchBookmarks(message.query || message.keyword || message.text || '')
+                .then(result => sendResponse(result))
+                .catch(error => {
+                    sendResponse({ success: false, error: error.message || '搜索失败' });
+                });
             return true;  // 保持消息通道开放
         } else if (message.action === "resetAll") { // Duplicate of resetAllData in original
             resetAllData()
@@ -4793,10 +4793,14 @@ function detectTreeChangesFastBg(oldTree, newTree, options = {}) {
     if (!oldTree || !newTree) return changes;
 
     let explicitMovedIdSet = null;
-    if (options && options.explicitMovedIdSet) {
+    if (options && typeof options === 'object' && 'explicitMovedIdSet' in options) {
         const src = options.explicitMovedIdSet;
-        if (Array.isArray(src)) {
+        if (src instanceof Set) {
+            explicitMovedIdSet = new Set(Array.from(src).map(v => String(v)));
+        } else if (Array.isArray(src)) {
             explicitMovedIdSet = new Set(src.map(v => String(v)));
+        } else if (src === null) {
+            explicitMovedIdSet = null;
         }
     }
     const hasExplicitMovedInfo = explicitMovedIdSet instanceof Set && explicitMovedIdSet.size > 0;
@@ -4807,36 +4811,43 @@ function detectTreeChangesFastBg(oldTree, newTree, options = {}) {
     const newByParent = new Map();
 
     const traverse = (node, map, byParent, parentId = null) => {
-        if (node && node.id) {
+        if (node && node.id != null) {
+            const id = String(node.id);
             const record = {
                 title: node.title,
                 url: node.url,
-                parentId: node.parentId || parentId,
+                parentId: (node.parentId != null && node.parentId !== '') ? String(node.parentId) : (parentId != null ? String(parentId) : null),
                 index: node.index
             };
-            map.set(node.id, record);
+            map.set(id, record);
             if (record.parentId) {
                 if (!byParent.has(record.parentId)) byParent.set(record.parentId, []);
-                byParent.get(record.parentId).push({ id: node.id, index: record.index });
+                byParent.get(record.parentId).push({ id, index: record.index });
             }
         }
-        if (node && node.children) node.children.forEach(child => traverse(child, map, byParent, node.id));
+        if (node && node.children) {
+            node.children.forEach(child => traverse(child, map, byParent, node.id));
+        }
     };
 
-    // 兼容数组和单个对象
     const oldRoot = Array.isArray(oldTree) ? oldTree[0] : oldTree;
     const newRoot = Array.isArray(newTree) ? newTree[0] : newTree;
-
     if (oldRoot) traverse(oldRoot, oldNodes, oldByParent, null);
     if (newRoot) traverse(newRoot, newNodes, newByParent, null);
 
     const getNodePath = (tree, targetId) => {
+        const tid = String(targetId);
         const path = [];
         const dfs = (node, cur) => {
             if (!node) return false;
-            if (node.id === targetId) { path.push(...cur, node.title); return true; }
+            if (String(node.id) === tid) {
+                path.push(...cur, node.title);
+                return true;
+            }
             if (node.children) {
-                for (const c of node.children) { if (dfs(c, [...cur, node.title])) return true; }
+                for (const c of node.children) {
+                    if (dfs(c, [...cur, node.title])) return true;
+                }
             }
             return false;
         };
@@ -4848,7 +4859,10 @@ function detectTreeChangesFastBg(oldTree, newTree, options = {}) {
     // 新增 / 修改 / 跨级移动
     newNodes.forEach((n, id) => {
         const o = oldNodes.get(id);
-        if (!o) { changes.set(id, { type: 'added' }); return; }
+        if (!o) {
+            changes.set(id, { type: 'added' });
+            return;
+        }
         const modified = (o.title !== n.title) || (o.url !== n.url);
         const crossMove = o.parentId !== n.parentId;
         if (modified || crossMove) {
@@ -4861,7 +4875,9 @@ function detectTreeChangesFastBg(oldTree, newTree, options = {}) {
                     oldPath: getNodePath(oldTree, id),
                     newPath: getNodePath(newTree, id),
                     oldParentId: o.parentId,
-                    newParentId: n.parentId
+                    oldIndex: o.index,
+                    newParentId: n.parentId,
+                    newIndex: n.index
                 };
             }
             changes.set(id, { type: types.join('+'), ...detail });
@@ -4869,39 +4885,152 @@ function detectTreeChangesFastBg(oldTree, newTree, options = {}) {
     });
 
     // 删除
-    oldNodes.forEach((_, id) => { if (!newNodes.has(id)) changes.set(id, { type: 'deleted' }); });
+    oldNodes.forEach((_, id) => {
+        if (!newNodes.has(id)) changes.set(id, { type: 'deleted' });
+    });
 
-    // 同级移动处理
+    // 子节点集合发生变化的父级集合（避免被动位移误标 moved）
     const parentsWithChildSetChange = new Set();
     changes.forEach((change, id) => {
         if (!change || !change.type) return;
+
         if (change.type.includes('added') || change.type.includes('deleted')) {
             const node = change.type.includes('added') ? newNodes.get(id) : oldNodes.get(id);
             if (node && node.parentId) parentsWithChildSetChange.add(node.parentId);
         }
+
         if (change.type.includes('moved') && change.moved && change.moved.oldParentId !== change.moved.newParentId) {
-            if (change.moved.oldParentId) parentsWithChildSetChange.add(change.moved.oldParentId);
-            if (change.moved.newParentId) parentsWithChildSetChange.add(change.moved.newParentId);
+            if (change.moved.oldParentId) parentsWithChildSetChange.add(String(change.moved.oldParentId));
+            if (change.moved.newParentId) parentsWithChildSetChange.add(String(change.moved.newParentId));
         }
     });
 
     const markMoved = (id) => {
         const existing = changes.get(id);
-        const types = existing && existing.type ? new Set(existing.type.split('+')) : new Set();
+        const types = existing && existing.type ? new Set(String(existing.type).split('+')) : new Set();
         types.add('moved');
         const movedDetail = { oldPath: getNodePath(oldTree, id), newPath: getNodePath(newTree, id) };
         changes.set(id, { type: Array.from(types).join('+'), moved: movedDetail });
     };
 
+    const commonPosCache = new Map();
+    const getCommonPositions = (parentId) => {
+        const pid = String(parentId);
+        if (commonPosCache.has(pid)) return commonPosCache.get(pid);
+
+        const oldList = oldByParent.get(pid) || [];
+        const newList = newByParent.get(pid) || [];
+        const newIdSet = new Set(newList.map(x => String(x.id)));
+
+        const oldPosById = new Map();
+        let oldPos = 0;
+        for (const item of oldList) {
+            const id = String(item.id);
+            if (newIdSet.has(id)) {
+                oldPosById.set(id, oldPos++);
+            }
+        }
+
+        const newPosById = new Map();
+        let newPos = 0;
+        for (const item of newList) {
+            const id = String(item.id);
+            if (oldPosById.has(id)) {
+                newPosById.set(id, newPos++);
+            }
+        }
+
+        const entry = { oldPosById, newPosById };
+        commonPosCache.set(pid, entry);
+        return entry;
+    };
+
+    // 同级移动：显式 moved IDs 或 LIS 推导
     if (hasExplicitMovedInfo) {
-        for (const id of explicitMovedIdSet) {
+        for (const idRaw of explicitMovedIdSet) {
+            const id = String(idRaw);
             const o = oldNodes.get(id);
             const n = newNodes.get(id);
             if (!o || !n) continue;
             if (!o.parentId || !n.parentId) continue;
-            if (o.parentId !== n.parentId) continue;
-            markMoved(id);
+            if (o.parentId !== n.parentId) continue; // 跨级移动已标记
+
+            const parentId = n.parentId;
+            const { oldPosById, newPosById } = getCommonPositions(parentId);
+            const oldPos = oldPosById.get(id);
+            const newPos = newPosById.get(id);
+            if (typeof oldPos === 'number' && typeof newPos === 'number' && oldPos !== newPos) {
+                markMoved(id);
+            }
         }
+    } else {
+        newByParent.forEach((newList, parentId) => {
+            const pid = String(parentId);
+            if (parentsWithChildSetChange.has(pid)) return;
+
+            const oldList = oldByParent.get(pid) || [];
+            if (oldList.length === 0 || newList.length === 0) return;
+            if (oldList.length !== newList.length) return;
+
+            let sameOrder = true;
+            for (let i = 0; i < oldList.length; i++) {
+                if (String(oldList[i].id) !== String(newList[i].id)) {
+                    sameOrder = false;
+                    break;
+                }
+            }
+            if (sameOrder) return;
+
+            const oldPosById = new Map();
+            for (let i = 0; i < oldList.length; i++) {
+                oldPosById.set(String(oldList[i].id), i);
+            }
+
+            const seq = [];
+            for (let i = 0; i < newList.length; i++) {
+                const id = String(newList[i].id);
+                const oldPos = oldPosById.get(id);
+                if (typeof oldPos !== 'number') return;
+                seq.push({ id, oldPos });
+            }
+
+            const tails = [];
+            const tailsIdx = [];
+            const prevIdx = new Array(seq.length).fill(-1);
+
+            for (let i = 0; i < seq.length; i++) {
+                const v = seq[i].oldPos;
+                let lo = 0;
+                let hi = tails.length;
+                while (lo < hi) {
+                    const mid = (lo + hi) >> 1;
+                    if (tails[mid] < v) lo = mid + 1;
+                    else hi = mid;
+                }
+                const pos = lo;
+                if (pos > 0) prevIdx[i] = tailsIdx[pos - 1];
+                if (pos === tails.length) {
+                    tails.push(v);
+                    tailsIdx.push(i);
+                } else {
+                    tails[pos] = v;
+                    tailsIdx[pos] = i;
+                }
+            }
+
+            const stableIds = new Set();
+            let k = tailsIdx.length ? tailsIdx[tailsIdx.length - 1] : -1;
+            while (k >= 0) {
+                stableIds.add(seq[k].id);
+                k = prevIdx[k];
+            }
+
+            for (const item of seq) {
+                if (!stableIds.has(item.id)) {
+                    markMoved(item.id);
+                }
+            }
+        });
     }
 
     return changes;
@@ -6600,7 +6729,7 @@ function buildRestoreVersionFromHtmlFile({ source, originalFile, fileUrl, localF
 function parseRestoreVersionsFromMergedHistoryJsonText(text, { source, originalFile, fileUrl, localFileKey }) {
     let parsed;
     try {
-        parsed = JSON.parse(text);
+        parsed = safeParseJson(text);
     } catch (e) {
         console.warn('[parseRestoreVersionsFromMergedHistoryJsonText] JSON parse failed:', e);
         return [];
@@ -6608,6 +6737,18 @@ function parseRestoreVersionsFromMergedHistoryJsonText(text, { source, originalF
 
     const records = Array.isArray(parsed) ? parsed : (Array.isArray(parsed?.records) ? parsed.records : null);
     if (!Array.isArray(records)) return [];
+
+    // Seed restore cache to avoid re-downloading/re-parsing during diff/preview.
+    try {
+        const cacheKey = getRestoreSourceCacheKey({
+            source,
+            sourceType: 'json',
+            originalFile,
+            fileUrl: fileUrl || null,
+            localFileKey: localFileKey || null
+        });
+        restoreCacheSet(restoreSourceCache.mergedJson, cacheKey, { records });
+    } catch (_) { }
 
     const versions = [];
     for (let i = 0; i < records.length; i++) {
@@ -6645,6 +6786,18 @@ function parseRestoreVersionsFromMergedHistoryJsonText(text, { source, originalF
 
 async function parseRestoreVersionsFromZipBlob(zipBlob, { source, originalFile, fileUrl, localFileKey }) {
     const files = await unzipStore(zipBlob);
+
+    // Seed restore cache to avoid re-downloading/re-unzipping during diff/preview.
+    try {
+        const cacheKey = getRestoreSourceCacheKey({
+            source,
+            sourceType: 'zip',
+            originalFile,
+            fileUrl: fileUrl || null,
+            localFileKey: localFileKey || null
+        });
+        restoreCacheSet(restoreSourceCache.zipFiles, cacheKey, { files });
+    } catch (_) { }
     const versions = [];
 
     for (const file of files) {
@@ -6977,24 +7130,126 @@ function ensureRestoreTreeIds(targetTree) {
     }
 }
 
-function normalizeTreeIds(targetTree, referenceTree) {
+function normalizeTreeIds(targetTree, referenceTree, options = {}) {
     if (!targetTree || !referenceTree) return;
 
+    const strictGlobalUrlMatch = options && options.strictGlobalUrlMatch === true;
+
+    const referenceRootIds = (() => {
+        if (!options || !('referenceRootIds' in options)) return null;
+        const src = options.referenceRootIds;
+        if (src instanceof Set) return new Set(Array.from(src).map(v => String(v)));
+        if (Array.isArray(src)) return new Set(src.map(v => String(v)));
+        return null;
+    })();
+
+    const normalizeTitle = (title) => String(title || '').trim().toLowerCase().replace(/\s+/g, ' ');
+
+    // normalizeTreeIds 的输出报告：用于 patch 预演阶段给用户展示“歧义”信息
+    const report = {
+        ambiguous: [],
+        matched: {
+            id: 0,
+            manual: 0,
+            structure: 0,
+            url: 0
+        }
+    };
+
+    const recordAmbiguous = (item) => {
+        try {
+            // 防止极端情况下把 UI 撑爆
+            if (report.ambiguous.length >= 200) return;
+            report.ambiguous.push(item);
+        } catch (_) {
+            // ignore
+        }
+    };
+
+    const pickUniqueClosestByIndex = (targetIndex, candidates) => {
+        if (typeof targetIndex !== 'number' || !Number.isFinite(targetIndex)) return null;
+        if (!Array.isArray(candidates) || candidates.length === 0) return null;
+
+        const withIndex = candidates
+            .filter(c => c && typeof c.index === 'number' && Number.isFinite(c.index))
+            .slice();
+
+        if (withIndex.length === 0) return null;
+
+        withIndex.sort((a, b) => {
+            const da = Math.abs(a.index - targetIndex);
+            const db = Math.abs(b.index - targetIndex);
+            if (da !== db) return da - db;
+            return a.index - b.index;
+        });
+
+        const best = withIndex[0];
+        const bestDist = Math.abs(best.index - targetIndex);
+        const tieCount = withIndex.filter(c => Math.abs(c.index - targetIndex) === bestDist).length;
+        if (tieCount === 1) return best;
+        return null;
+    };
+
+    const manualMatchMap = (() => {
+        if (!options || typeof options !== 'object' || !options.manualMatches) return null;
+        const src = options.manualMatches;
+
+        const m = new Map();
+
+        if (src instanceof Map) {
+            for (const [k, v] of src.entries()) {
+                if (k == null || v == null) continue;
+                m.set(String(k), String(v));
+            }
+            return m.size > 0 ? m : null;
+        }
+
+        if (Array.isArray(src)) {
+            for (const pair of src) {
+                if (!pair || pair.length < 2) continue;
+                m.set(String(pair[0]), String(pair[1]));
+            }
+            return m.size > 0 ? m : null;
+        }
+
+        if (typeof src === 'object') {
+            for (const [k, v] of Object.entries(src)) {
+                if (k == null || v == null) continue;
+                m.set(String(k), String(v));
+            }
+            return m.size > 0 ? m : null;
+        }
+
+        return null;
+    })();
+
+    // --- 0. 准备工作：建立参考树索引 ---
     const refPool = {
         ids: new Set(),
         claimedIds: new Set(),
         nodeMap: new Map(),
-        urlMap: new Map()
+        urlMap: new Map(),
+        parentById: new Map()
     };
 
-    const indexRef = (nodes) => {
+    const indexRef = (nodes, underAllowed = false) => {
         if (!nodes) return;
         const list = Array.isArray(nodes) ? nodes : [nodes];
         list.forEach(node => {
-            if (node && node.id) {
-                const sid = String(node.id);
-                refPool.ids.add(sid);
-                refPool.nodeMap.set(sid, node);
+            if (!node) return;
+
+            const id = (node.id != null) ? String(node.id) : null;
+            const isRoot = id === '0';
+            const isAllowedRoot = referenceRootIds ? (id != null && referenceRootIds.has(id)) : false;
+            const shouldIndex = !referenceRootIds || isRoot || underAllowed || isAllowedRoot;
+            const nextUnderAllowed = underAllowed || isAllowedRoot;
+
+            if (shouldIndex && id != null) {
+                refPool.ids.add(id);
+                refPool.nodeMap.set(id, node);
+                if (node.parentId != null && node.parentId !== '') {
+                    refPool.parentById.set(id, String(node.parentId));
+                }
 
                 if (node.url) {
                     if (!refPool.urlMap.has(node.url)) {
@@ -7003,33 +7258,38 @@ function normalizeTreeIds(targetTree, referenceTree) {
                     refPool.urlMap.get(node.url).add(node);
                 }
             }
-            if (node && node.children) indexRef(node.children);
+
+            if (node.children) indexRef(node.children, nextUnderAllowed);
         });
     };
-    indexRef(referenceTree);
+    indexRef(referenceTree, false);
 
     const updateNodeId = (node, newId) => {
         if (!node) return;
         node.id = newId;
-        if (Array.isArray(node.children)) {
+        if (node.children) {
             node.children.forEach(child => {
                 if (child) child.parentId = newId;
             });
         }
     };
 
+    // --- Pass 1: ID 精确匹配 ---
     const pass1_IDMatch = (nodes) => {
         if (!nodes) return;
         const list = Array.isArray(nodes) ? nodes : [nodes];
         list.forEach(node => {
-            if (!node) return;
+            if (!node || node.id == null) return;
             const id = String(node.id);
-            if (refPool.ids.has(id) && !refPool.claimedIds.has(id)) {
-                const refNode = refPool.nodeMap.get(id);
-                const isSameType = !!node.url === !!refNode?.url;
-                if (isSameType) {
-                    refPool.claimedIds.add(id);
-                    node._matchedRefNode = refNode;
+            if (refPool.ids.has(id)) {
+                if (!refPool.claimedIds.has(id)) {
+                    const refNode = refPool.nodeMap.get(id);
+                    const isSameType = (!!node.url === !!(refNode && refNode.url));
+                    if (isSameType) {
+                        refPool.claimedIds.add(id);
+                        node._matchedRefNode = refNode;
+                        report.matched.id += 1;
+                    }
                 }
             }
             if (node.children) pass1_IDMatch(node.children);
@@ -7037,6 +7297,69 @@ function normalizeTreeIds(targetTree, referenceTree) {
     };
     pass1_IDMatch(targetTree);
 
+    // --- Pass 1.5: 手动匹配 ---
+    if (manualMatchMap && manualMatchMap.size > 0) {
+        const pass1_5_ManualMatch = (nodes) => {
+            if (!nodes) return;
+            const list = Array.isArray(nodes) ? nodes : [nodes];
+            list.forEach(node => {
+                if (!node || node.id == null) return;
+
+                if (!node._matchedRefNode) {
+                    const targetId = String(node.id);
+                    const pickedRefId = manualMatchMap.get(targetId);
+                    if (pickedRefId) {
+                        const refNode = refPool.nodeMap.get(String(pickedRefId));
+                        const isSameType = refNode ? (!!node.url === !!refNode.url) : false;
+
+                        if (!refNode) {
+                            recordAmbiguous({
+                                phase: 'manual',
+                                type: node.url ? 'bookmark' : 'folder',
+                                targetId,
+                                title: node.title || '',
+                                url: node.url || '',
+                                picked: String(pickedRefId),
+                                reason: 'ref-not-found'
+                            });
+                        } else if (!isSameType) {
+                            recordAmbiguous({
+                                phase: 'manual',
+                                type: node.url ? 'bookmark' : 'folder',
+                                targetId,
+                                title: node.title || '',
+                                url: node.url || '',
+                                picked: String(pickedRefId),
+                                reason: 'type-mismatch'
+                            });
+                        } else if (refPool.claimedIds.has(String(pickedRefId))) {
+                            recordAmbiguous({
+                                phase: 'manual',
+                                type: node.url ? 'bookmark' : 'folder',
+                                targetId,
+                                title: node.title || '',
+                                url: node.url || '',
+                                picked: String(pickedRefId),
+                                reason: 'ref-already-claimed'
+                            });
+                        } else {
+                            const newId = String(pickedRefId);
+                            updateNodeId(node, newId);
+                            refPool.claimedIds.add(newId);
+                            node._matchedRefNode = refNode;
+                            report.matched.manual += 1;
+                        }
+                    }
+                }
+
+                if (node.children) pass1_5_ManualMatch(node.children);
+            });
+        };
+
+        pass1_5_ManualMatch(targetTree);
+    }
+
+    // --- Pass 2: 结构位置匹配 ---
     const pass2_StructureMatch = (nodes, parentMatchedRefNode) => {
         if (!nodes) return;
         const list = Array.isArray(nodes) ? nodes : [nodes];
@@ -7045,13 +7368,11 @@ function normalizeTreeIds(targetTree, referenceTree) {
             if (!node) return;
 
             if (!node._matchedRefNode) {
-                if (parentMatchedRefNode && Array.isArray(parentMatchedRefNode.children)) {
+                if (parentMatchedRefNode && parentMatchedRefNode.children) {
                     const isBookmark = !!node.url;
-                    const candidate = parentMatchedRefNode.children.find(refChild => {
-                        if (!refChild) return false;
+                    const candidates = parentMatchedRefNode.children.filter(refChild => {
                         const refId = String(refChild.id);
                         if (refPool.claimedIds.has(refId)) return false;
-
                         const refIsBookmark = !!refChild.url;
                         if (isBookmark !== refIsBookmark) return false;
                         if (node.title !== refChild.title) return false;
@@ -7059,11 +7380,31 @@ function normalizeTreeIds(targetTree, referenceTree) {
                         return true;
                     });
 
+                    let candidate = null;
+                    if (candidates.length === 1) {
+                        candidate = candidates[0];
+                    } else if (candidates.length > 1) {
+                        candidate = pickUniqueClosestByIndex(node.index, candidates);
+                        if (!candidate) {
+                            recordAmbiguous({
+                                phase: 'structure',
+                                type: isBookmark ? 'bookmark' : 'folder',
+                                targetId: String(node.id),
+                                targetParentId: node.parentId != null ? String(node.parentId) : '',
+                                targetIndex: (typeof node.index === 'number' && Number.isFinite(node.index)) ? node.index : null,
+                                title: node.title || '',
+                                url: node.url || '',
+                                candidates: candidates.slice(0, 6).map(c => ({ id: String(c.id), title: c.title || '', url: c.url || '' }))
+                            });
+                        }
+                    }
+
                     if (candidate) {
                         const newId = String(candidate.id);
                         updateNodeId(node, newId);
                         refPool.claimedIds.add(newId);
                         node._matchedRefNode = candidate;
+                        report.matched.structure += 1;
                     }
                 }
             }
@@ -7080,34 +7421,48 @@ function normalizeTreeIds(targetTree, referenceTree) {
         pass2_StructureMatch(root.children, root._matchedRefNode);
     });
 
-    const pass3_GlobalUrlMatch = (nodes) => {
+    // --- Pass 3: 全局 URL 匹配 ---
+    const pass3_GlobalUrlMatch = (nodes, parentMatchedRefNode = null) => {
         if (!nodes) return;
         const list = Array.isArray(nodes) ? nodes : [nodes];
         list.forEach(node => {
             if (!node) return;
 
             if (!node._matchedRefNode && node.url) {
-                const candidates = refPool.urlMap.get(node.url);
-                if (candidates) {
-                    let bestMatch = null;
-
-                    for (const cand of candidates) {
-                        if (!cand) continue;
-                        const cid = String(cand.id);
-                        if (refPool.claimedIds.has(cid)) continue;
-                        if (cand.title === node.title) {
-                            bestMatch = cand;
-                            break;
-                        }
+                const candidatesSet = refPool.urlMap.get(node.url);
+                if (candidatesSet) {
+                    const candidates = [];
+                    for (const cand of candidatesSet) {
+                        if (!cand || cand.id == null) continue;
+                        const candId = String(cand.id);
+                        if (referenceRootIds && !refPool.ids.has(candId)) continue;
+                        if (refPool.claimedIds.has(candId)) continue;
+                        candidates.push(cand);
                     }
 
-                    if (!bestMatch) {
-                        for (const cand of candidates) {
-                            if (!cand) continue;
-                            const cid = String(cand.id);
-                            if (refPool.claimedIds.has(cid)) continue;
-                            bestMatch = cand;
-                            break;
+                    let bestMatch = null;
+
+                    if (candidates.length === 1) {
+                        bestMatch = candidates[0];
+                    } else if (candidates.length > 1) {
+                        const nodeTitleNorm = normalizeTitle(node.title);
+                        const titleMatched = candidates.filter(c => normalizeTitle(c.title) === nodeTitleNorm);
+                        if (titleMatched.length === 1) {
+                            bestMatch = titleMatched[0];
+                        } else if (parentMatchedRefNode && parentMatchedRefNode.id != null) {
+                            const parentId = String(parentMatchedRefNode.id);
+                            const parentMatched = candidates.filter(c => {
+                                const cid = String(c.id);
+                                const candParentId = refPool.parentById.get(cid);
+                                return candParentId != null && String(candParentId) === parentId;
+                            });
+                            if (parentMatched.length === 1) {
+                                bestMatch = parentMatched[0];
+                            }
+                        }
+
+                        if (!bestMatch && !strictGlobalUrlMatch) {
+                            bestMatch = candidates[0];
                         }
                     }
 
@@ -7116,14 +7471,28 @@ function normalizeTreeIds(targetTree, referenceTree) {
                         updateNodeId(node, newId);
                         refPool.claimedIds.add(newId);
                         node._matchedRefNode = bestMatch;
+                        report.matched.url += 1;
+                    } else if (candidates.length > 1) {
+                        recordAmbiguous({
+                            phase: 'url',
+                            type: 'bookmark',
+                            targetId: String(node.id),
+                            targetParentId: node.parentId != null ? String(node.parentId) : '',
+                            targetIndex: (typeof node.index === 'number' && Number.isFinite(node.index)) ? node.index : null,
+                            title: node.title || '',
+                            url: node.url || '',
+                            candidates: candidates.slice(0, 6).map(c => ({ id: String(c.id), title: c.title || '', url: c.url || '' }))
+                        });
                     }
                 }
             }
 
-            if (node.children) pass3_GlobalUrlMatch(node.children);
+            if (node.children) {
+                pass3_GlobalUrlMatch(node.children, node._matchedRefNode || null);
+            }
         });
     };
-    pass3_GlobalUrlMatch(targetTree);
+    pass3_GlobalUrlMatch(targetTree, null);
 
     const cleanup = (nodes) => {
         if (!nodes) return;
@@ -7135,9 +7504,11 @@ function normalizeTreeIds(targetTree, referenceTree) {
         });
     };
     cleanup(targetTree);
+
+    return report;
 }
 
-async function executePatchBookmarkRestore(bookmarkTree) {
+async function executePatchBookmarkRestore(bookmarkTree, options = {}) {
     const { bookmarkBar, otherBookmarks } = await findBookmarkContainers();
     if (!bookmarkBar || !otherBookmarks) {
         throw new Error('Cannot find bookmark containers');
@@ -7145,36 +7516,49 @@ async function executePatchBookmarkRestore(bookmarkTree) {
 
     const currentTree = await browserAPI.bookmarks.getTree();
 
+    // Clone target tree
     let targetTree = bookmarkTree;
     try {
         targetTree = JSON.parse(JSON.stringify(bookmarkTree));
     } catch (_) {
+        // ignore
     }
 
     ensureRestoreTreeIds(targetTree);
 
+    const referenceRootIds = [String(bookmarkBar.id), String(otherBookmarks.id)];
     try {
-        normalizeTreeIds(targetTree, currentTree);
+        normalizeTreeIds(targetTree, currentTree, {
+            referenceRootIds,
+            strictGlobalUrlMatch: true,
+            manualMatches: (options && options.manualMatches) ? options.manualMatches : null
+        });
     } catch (e) {
         console.warn('[executePatchBookmarkRestore] normalizeTreeIds failed:', e);
     }
 
     ensureRestoreTreeIds(targetTree);
 
-    const targetTreeArr = Array.isArray(targetTree) ? targetTree : [targetTree];
+    // Compute change map with Git-like moved detection (cross-parent + stable same-parent reorder)
+    let changeMap = new Map();
+    try {
+        changeMap = detectTreeChangesFastBg(currentTree, targetTree, { explicitMovedIdSet: null });
+    } catch (e) {
+        console.warn('[executePatchBookmarkRestore] detectTreeChangesFast failed:', e);
+        changeMap = new Map();
+    }
 
     const currentIndex = buildTreeIndexForDiff(currentTree);
-    const targetIndex = buildTreeIndexForDiff(targetTreeArr);
+    const targetIndex = buildTreeIndexForDiff(targetTree);
 
+    // Raw target node map (for create/update)
     const targetNodeMap = new Map();
     (function indexTargetNodes() {
-        const root = Array.isArray(targetTreeArr) ? targetTreeArr[0] : targetTreeArr;
+        const root = Array.isArray(targetTree) ? targetTree[0] : targetTree;
         const traverse = (node) => {
-            if (!node || !node.id) return;
+            if (!node || node.id == null) return;
             targetNodeMap.set(String(node.id), node);
-            if (Array.isArray(node.children)) {
-                node.children.forEach(traverse);
-            }
+            if (Array.isArray(node.children)) node.children.forEach(traverse);
         };
         if (root) traverse(root);
     })();
@@ -7194,36 +7578,67 @@ async function executePatchBookmarkRestore(bookmarkTree) {
         return false;
     };
 
+    // Safety valves: avoid destructive ops when matching is suspicious
+    const shouldSkipDeleteBecauseMismatch = (id) => {
+        const cur = currentIndex.nodes.get(String(id));
+        if (!cur) return false;
+
+        // If target contains same URL, deletion is risky (likely duplicate-url mismatch)
+        if (cur.url) {
+            for (const t of targetIndex.nodes.values()) {
+                if (t && t.url && t.url === cur.url) {
+                    return true;
+                }
+            }
+        }
+
+        // Folders: same-title folders are common; if any target folder has same title, skip deletion
+        if (!cur.url && cur.title) {
+            const title = String(cur.title || '').trim();
+            for (const t of targetIndex.nodes.values()) {
+                if (!t || t.url) continue;
+                if (String(t.title || '').trim() === title) {
+                    return true;
+                }
+            }
+        }
+
+        return false;
+    };
+
+    const shouldSkipMoveBecauseMismatch = (id) => {
+        const cur = currentIndex.nodes.get(String(id));
+        const tar = targetIndex.nodes.get(String(id));
+        if (!cur || !tar) return false;
+        if (cur.url && tar.url && cur.url !== tar.url) return true;
+        return false;
+    };
+
+    const shouldSkipUpdateBecauseMismatch = (id) => {
+        const cur = currentIndex.nodes.get(String(id));
+        const tar = targetIndex.nodes.get(String(id));
+        if (!cur || !tar) return false;
+        if (cur.url && tar.url && cur.url !== tar.url) return true;
+        return false;
+    };
+
     const addedIds = [];
     const movedIds = [];
     const modifiedIds = [];
     const deletedIds = [];
 
-    for (const [rawId, t] of targetIndex.nodes.entries()) {
+    for (const [rawId, change] of changeMap.entries()) {
         const id = String(rawId);
-        if (managedRootIds.has(id)) continue;
-        if (!isUnderManagedRoot(id, targetIndex)) continue;
+        const types = (change && typeof change.type === 'string') ? change.type.split('+') : [];
 
-        const c = currentIndex.nodes.get(id);
-        if (!c) {
-            addedIds.push(id);
-            continue;
+        if (types.includes('added') && isUnderManagedRoot(id, targetIndex)) addedIds.push(id);
+        if (types.includes('moved') && isUnderManagedRoot(id, targetIndex)) movedIds.push(id);
+        if (types.includes('modified') && isUnderManagedRoot(id, targetIndex)) modifiedIds.push(id);
+        if (types.includes('deleted') && isUnderManagedRoot(id, currentIndex)) {
+            if (!shouldSkipDeleteBecauseMismatch(id)) {
+                deletedIds.push(id);
+            }
         }
-
-        const isFolder = !t.url;
-        const isModified = isFolder ? (c.title !== t.title) : (c.title !== t.title || c.url !== t.url);
-        if (isModified) modifiedIds.push(id);
-
-        const isMoved = (c.parentId !== t.parentId) ||
-            (typeof c.index === 'number' && typeof t.index === 'number' && c.index !== t.index);
-        if (isMoved) movedIds.push(id);
-    }
-
-    for (const [rawId] of currentIndex.nodes.entries()) {
-        const id = String(rawId);
-        if (managedRootIds.has(id)) continue;
-        if (!isUnderManagedRoot(id, currentIndex)) continue;
-        if (!targetIndex.nodes.has(id)) deletedIds.push(id);
     }
 
     const stats = {
@@ -7233,12 +7648,14 @@ async function executePatchBookmarkRestore(bookmarkTree) {
         deleted: 0
     };
 
+    // Target ID -> created ID map
     const createdIdMap = new Map();
     const resolveId = (maybeTargetId) => {
         const key = String(maybeTargetId);
         return createdIdMap.get(key) || key;
     };
 
+    // --- 1) Create (parents first)
     const depthCache = new Map();
     const getDepth = (nodeId) => {
         const key = String(nodeId);
@@ -7259,6 +7676,7 @@ async function executePatchBookmarkRestore(bookmarkTree) {
 
         const parentId = rec.parentId ? resolveId(rec.parentId) : null;
         if (!parentId) continue;
+
         const createOptions = {
             parentId: String(parentId),
             title: rawNode.title || ''
@@ -7292,6 +7710,7 @@ async function executePatchBookmarkRestore(bookmarkTree) {
         }
     }
 
+    // --- 2) Move
     movedIds.sort((a, b) => {
         const ar = targetIndex.nodes.get(a);
         const br = targetIndex.nodes.get(b);
@@ -7308,6 +7727,10 @@ async function executePatchBookmarkRestore(bookmarkTree) {
 
         const rec = targetIndex.nodes.get(id);
         if (!rec || !rec.parentId) continue;
+
+        if (shouldSkipMoveBecauseMismatch(id)) {
+            continue;
+        }
 
         const destParentId = resolveId(rec.parentId);
         const moveInfo = { parentId: String(destParentId) };
@@ -7328,11 +7751,16 @@ async function executePatchBookmarkRestore(bookmarkTree) {
         if (movedOk) stats.moved += 1;
     }
 
+    // --- 3) Update
     for (const id of modifiedIds) {
         if (createdIdMap.has(id)) continue;
 
         const rawNode = targetNodeMap.get(id);
         if (!rawNode) continue;
+
+        if (shouldSkipUpdateBecauseMismatch(id)) {
+            continue;
+        }
 
         const updateInfo = { title: rawNode.title || '' };
         if (rawNode.url) updateInfo.url = rawNode.url;
@@ -7345,7 +7773,8 @@ async function executePatchBookmarkRestore(bookmarkTree) {
         }
     }
 
-    const deletedSet = new Set(deletedIds);
+    // --- 4) Delete (top-level deletes only)
+    const deletedSet = new Set(deletedIds.map(id => String(id)));
     const hasDeletedAncestor = (nodeId) => {
         let cur = String(nodeId);
         let guard = 0;
@@ -7371,7 +7800,26 @@ async function executePatchBookmarkRestore(bookmarkTree) {
         }
     }
 
-    return stats;
+    // --- 5) Post-verify (best-effort)
+    let postDiff = null;
+    try {
+        const afterTree = await browserAPI.bookmarks.getTree();
+        const afterNormalizedTarget = JSON.parse(JSON.stringify(bookmarkTree));
+        try {
+            normalizeTreeIds(afterNormalizedTarget, afterTree, {
+                referenceRootIds,
+                strictGlobalUrlMatch: true,
+                manualMatches: (options && options.manualMatches) ? options.manualMatches : null
+            });
+        } catch (_) {
+            // ignore
+        }
+        postDiff = computeBookmarkGitDiffSummary(afterTree, afterNormalizedTarget);
+    } catch (e) {
+        console.warn('[executePatchBookmarkRestore] post-verify failed:', e);
+    }
+
+    return { ...stats, postDiff };
 }
 
 function decodeHtmlEntities(text) {
@@ -7479,20 +7927,226 @@ function parseNetscapeBookmarkHtmlToTree(htmlText) {
     return normalizeParsedBookmarkTreeForRestore(root);
 }
 
+// =============================================================================
+// Restore source caches
+// - Avoid re-downloading the same backup_history.json / zip archive repeatedly
+// - Avoid re-unzipping the same archive repeatedly
+// NOTE: MV3 service worker memory is ephemeral; this is best-effort.
+// =============================================================================
+
+const RESTORE_SOURCE_CACHE_TTL_MS = 15 * 60 * 1000;
+const RESTORE_SOURCE_CACHE_MAX = 8;
+
+const restoreSourceCache = {
+    mergedJson: new Map(), // key -> { ts, value:{ records } }
+    zipFiles: new Map(),   // key -> { ts, value:{ files } }
+    htmlText: new Map()    // key -> { ts, value:{ text } }
+};
+
+// Prevent duplicate download/parse/unzip under concurrency
+const restoreSourcePending = {
+    mergedJson: new Map(), // key -> Promise<{ records:Array }>
+    zipFiles: new Map(),   // key -> Promise<{ files:Array }>
+    htmlText: new Map()    // key -> Promise<{ text:string }>
+};
+
+function getRestoreSourceCacheKey(restoreRef) {
+    const ref = restoreRef || {};
+    const sourceType = String(ref.sourceType || '');
+    const source = String(ref.source || '');
+
+    const locator = (source === 'local')
+        ? String(ref.localFileKey || ref.originalFile || '')
+        : String(ref.fileUrl || ref.originalFile || '');
+
+    return `${sourceType}|${source}|${locator}`;
+}
+
+function restoreCacheGet(map, key) {
+    try {
+        const entry = map.get(key);
+        if (!entry) return null;
+        if (Date.now() - entry.ts > RESTORE_SOURCE_CACHE_TTL_MS) {
+            map.delete(key);
+            return null;
+        }
+        // refresh LRU
+        map.delete(key);
+        map.set(key, entry);
+        return entry.value;
+    } catch (_) {
+        return null;
+    }
+}
+
+function restoreCacheSet(map, key, value) {
+    try {
+        map.set(key, { ts: Date.now(), value });
+        while (map.size > RESTORE_SOURCE_CACHE_MAX) {
+            const firstKey = map.keys().next().value;
+            if (!firstKey) break;
+            map.delete(firstKey);
+        }
+    } catch (_) { }
+}
+
+function sanitizeJsonText(text) {
+    let t = String(text || '');
+    // strip UTF-8 BOM
+    if (t.charCodeAt(0) === 0xFEFF) {
+        t = t.slice(1);
+    }
+    t = t.trim();
+    return t;
+}
+
+function safeParseJson(text) {
+    const t = sanitizeJsonText(text);
+    if (!t) {
+        throw new Error('Empty JSON content');
+    }
+    try {
+        return JSON.parse(t);
+    } catch (_) {
+        // Recovery: try to locate JSON payload within wrapper text
+        const firstObj = t.indexOf('{');
+        const firstArr = t.indexOf('[');
+        const start = (firstObj >= 0 && firstArr >= 0) ? Math.min(firstObj, firstArr)
+            : (firstObj >= 0 ? firstObj : firstArr);
+        const lastObj = t.lastIndexOf('}');
+        const lastArr = t.lastIndexOf(']');
+        const end = (lastObj >= 0 && lastArr >= 0) ? Math.max(lastObj, lastArr)
+            : (lastObj >= 0 ? lastObj : lastArr);
+        if (start >= 0 && end > start) {
+            const sliced = t.slice(start, end + 1);
+            return JSON.parse(sliced);
+        }
+        throw _;
+    }
+}
+
+async function getMergedHistoryRecordsCached(restoreRef, localPayload) {
+    const cacheKey = getRestoreSourceCacheKey(restoreRef);
+    const cached = restoreCacheGet(restoreSourceCache.mergedJson, cacheKey);
+    if (cached && Array.isArray(cached.records)) return cached.records;
+
+    if (restoreSourcePending.mergedJson.has(cacheKey)) {
+        const pending = restoreSourcePending.mergedJson.get(cacheKey);
+        const res = await pending;
+        return res && Array.isArray(res.records) ? res.records : null;
+    }
+
+    const task = (async () => {
+        let text = '';
+        if (restoreRef.source === 'local') {
+            text = String(localPayload?.text || '');
+            if (!text) throw new Error('Missing local JSON data');
+        } else {
+            if (!restoreRef.fileUrl) throw new Error('Missing fileUrl');
+            const blob = await downloadRemoteFile({ url: restoreRef.fileUrl, source: restoreRef.source });
+            text = await blob.text();
+        }
+
+        // Quick detection: HTML error page
+        const trimmed = String(text || '').trim();
+        if (trimmed.startsWith('<!DOCTYPE html') || trimmed.startsWith('<html') || trimmed.startsWith('<')) {
+            throw new Error('Downloaded content is not JSON (maybe auth/permission issue)');
+        }
+
+        const parsed = safeParseJson(text);
+        const records = Array.isArray(parsed) ? parsed : (Array.isArray(parsed?.records) ? parsed.records : null);
+        if (!Array.isArray(records)) {
+            throw new Error('Merged history format not supported');
+        }
+        restoreCacheSet(restoreSourceCache.mergedJson, cacheKey, { records });
+        return { records };
+    })();
+
+    restoreSourcePending.mergedJson.set(cacheKey, task);
+    try {
+        const res = await task;
+        return res && Array.isArray(res.records) ? res.records : null;
+    } finally {
+        restoreSourcePending.mergedJson.delete(cacheKey);
+    }
+}
+
+async function getZipFilesCached(restoreRef, localPayload) {
+    const cacheKey = getRestoreSourceCacheKey(restoreRef);
+    const cached = restoreCacheGet(restoreSourceCache.zipFiles, cacheKey);
+    if (cached && Array.isArray(cached.files)) return cached.files;
+
+    if (restoreSourcePending.zipFiles.has(cacheKey)) {
+        const pending = restoreSourcePending.zipFiles.get(cacheKey);
+        const res = await pending;
+        return res && Array.isArray(res.files) ? res.files : null;
+    }
+
+    const task = (async () => {
+        let zipBlob;
+        if (restoreRef.source === 'local') {
+            const ab = localPayload?.arrayBuffer;
+            if (!ab) throw new Error('Missing local ZIP data');
+            zipBlob = new Blob([ab], { type: 'application/zip' });
+        } else {
+            if (!restoreRef.fileUrl) throw new Error('Missing fileUrl');
+            zipBlob = await downloadRemoteFile({ url: restoreRef.fileUrl, source: restoreRef.source });
+        }
+        const files = await unzipStore(zipBlob);
+        restoreCacheSet(restoreSourceCache.zipFiles, cacheKey, { files });
+        return { files };
+    })();
+
+    restoreSourcePending.zipFiles.set(cacheKey, task);
+    try {
+        const res = await task;
+        return res && Array.isArray(res.files) ? res.files : null;
+    } finally {
+        restoreSourcePending.zipFiles.delete(cacheKey);
+    }
+}
+
+async function getHtmlTextCached(restoreRef, localPayload) {
+    const cacheKey = getRestoreSourceCacheKey(restoreRef);
+    const cached = restoreCacheGet(restoreSourceCache.htmlText, cacheKey);
+    if (cached && typeof cached.text === 'string' && cached.text) return cached.text;
+
+    if (restoreSourcePending.htmlText.has(cacheKey)) {
+        const pending = restoreSourcePending.htmlText.get(cacheKey);
+        const res = await pending;
+        return res && typeof res.text === 'string' ? res.text : '';
+    }
+
+    const task = (async () => {
+        let text = '';
+        if (restoreRef.source === 'local') {
+            text = String(localPayload?.text || '');
+            if (!text) throw new Error('Missing local HTML data');
+        } else {
+            if (!restoreRef.fileUrl) throw new Error('Missing fileUrl');
+            const blob = await downloadRemoteFile({ url: restoreRef.fileUrl, source: restoreRef.source });
+            text = await blob.text();
+        }
+        restoreCacheSet(restoreSourceCache.htmlText, cacheKey, { text });
+        return { text };
+    })();
+
+    restoreSourcePending.htmlText.set(cacheKey, task);
+    try {
+        const res = await task;
+        return res && typeof res.text === 'string' ? res.text : '';
+    } finally {
+        restoreSourcePending.htmlText.delete(cacheKey);
+    }
+}
+
 async function extractBookmarkTreeForRestore(restoreRef, localPayload) {
     if (!restoreRef || !restoreRef.sourceType) {
         throw new Error('Missing restoreRef');
     }
 
     if (restoreRef.sourceType === 'html') {
-        let text = '';
-        if (restoreRef.source === 'local') {
-            text = String(localPayload?.text || '');
-        } else {
-            if (!restoreRef.fileUrl) throw new Error('Missing fileUrl');
-            const blob = await downloadRemoteFile({ url: restoreRef.fileUrl, source: restoreRef.source });
-            text = await blob.text();
-        }
+        const text = await getHtmlTextCached(restoreRef, localPayload);
 
         if (!text) throw new Error('Empty HTML content');
         const tree = parseNetscapeBookmarkHtmlToTree(text);
@@ -7503,17 +8157,9 @@ async function extractBookmarkTreeForRestore(restoreRef, localPayload) {
     }
 
     if (restoreRef.sourceType === 'zip') {
-        let zipBlob;
-        if (restoreRef.source === 'local') {
-            const ab = localPayload?.arrayBuffer;
-            if (!ab) throw new Error('Missing local ZIP data');
-            zipBlob = new Blob([ab], { type: 'application/zip' });
-        } else {
-            if (!restoreRef.fileUrl) throw new Error('Missing fileUrl');
-            zipBlob = await downloadRemoteFile({ url: restoreRef.fileUrl, source: restoreRef.source });
-        }
+        const files = await getZipFilesCached(restoreRef, localPayload);
+        if (!Array.isArray(files)) throw new Error('Failed to read ZIP content');
 
-        const files = await unzipStore(zipBlob);
         const targetName = restoreRef.zipEntryName;
         let matched = null;
 
@@ -7543,24 +8189,10 @@ async function extractBookmarkTreeForRestore(restoreRef, localPayload) {
     }
 
     if (restoreRef.sourceType === 'json') {
-        let text = '';
-        if (restoreRef.source === 'local') {
-            text = String(localPayload?.text || '');
-        } else {
-            if (!restoreRef.fileUrl) throw new Error('Missing fileUrl');
-            const blob = await downloadRemoteFile({ url: restoreRef.fileUrl, source: restoreRef.source });
-            text = await blob.text();
+        const records = await getMergedHistoryRecordsCached(restoreRef, localPayload);
+        if (!Array.isArray(records)) {
+            throw new Error('Merged history format not supported');
         }
-
-        let parsed;
-        try {
-            parsed = JSON.parse(text);
-        } catch (e) {
-            throw new Error('Merged history JSON parse failed');
-        }
-
-        const records = Array.isArray(parsed) ? parsed : (Array.isArray(parsed?.records) ? parsed.records : null);
-        if (!Array.isArray(records)) throw new Error('Merged history format not supported');
 
         const idx = typeof restoreRef.recordIndex === 'number' ? restoreRef.recordIndex : null;
         let record = null;
@@ -7748,18 +8380,22 @@ function buildHistoryChangesViewTree(bookmarkTree, changeMap, options = {}) {
         const isFolder = !url && Array.isArray(node.children);
 
         const change = node.id ? changeMap.get(node.id) : null;
+        const changeType = (change && change.type) ? String(change.type) : '';
         const prefix = getPrefixForChange(change);
 
         const item = {
-            title: prefix + title
+            title: prefix + title,
+            ...(changeType ? { changeType } : {})
         };
 
         if (url) {
             item.url = url;
+            item.type = 'bookmark';
             return item;
         }
 
         if (isFolder) {
+            item.type = 'folder';
             let shouldRecurse = false;
             if (mode === 'detailed') {
                 shouldRecurse = useWysiwygExpansion ? expandedIds.has(String(node.id)) : nodeHasChanges;
@@ -7920,7 +8556,7 @@ async function extractHistoryChangesViewTreeForRestore(restoreRef, localPayload,
     return { tree, viewMode: mode, meta };
 }
 
-async function restoreSelectedVersion({ restoreRef, strategy, localPayload, mergeViewMode }) {
+async function restoreSelectedVersion({ restoreRef, strategy, localPayload, mergeViewMode, manualMatches }) {
     try {
         isBookmarkRestoring = true;
         try {
@@ -7965,7 +8601,9 @@ async function restoreSelectedVersion({ restoreRef, strategy, localPayload, merg
         }
 
         if (strategy === 'patch') {
-            const result = await executePatchBookmarkRestore(tree);
+            const result = await executePatchBookmarkRestore(tree, {
+                manualMatches: manualMatches || null
+            });
 
             await browserAPI.storage.local.set({ initialized: true });
             await invalidateRecommendCaches('restore').catch(() => { });
@@ -7998,6 +8636,290 @@ async function restoreSelectedVersion({ restoreRef, strategy, localPayload, merg
                 await rebuildActiveTimeBookmarkCache();
             }
         } catch (_) { }
+    }
+}
+
+// [New] Patch Merge 预演（用于主 UI 的补丁合并确认/预览）
+async function preflightRestoreSelectedVersion({ restoreRef, strategy, localPayload, manualMatches }) {
+    try {
+        if (strategy !== 'patch') {
+            return { success: false, error: 'Preflight only supports patch strategy' };
+        }
+        if (!restoreRef) {
+            return { success: false, error: 'Missing restoreRef' };
+        }
+
+        const tree = await extractBookmarkTreeForRestore(restoreRef, localPayload);
+        if (!tree) {
+            return { success: false, error: 'No bookmark tree data found for selected version' };
+        }
+
+        const { bookmarkBar, otherBookmarks } = await findBookmarkContainers();
+        const referenceRootIds = (bookmarkBar && otherBookmarks)
+            ? [String(bookmarkBar.id), String(otherBookmarks.id)]
+            : ['1', '2'];
+
+        const currentTree = await browserAPI.bookmarks.getTree();
+
+        let targetTree = tree;
+        try {
+            targetTree = JSON.parse(JSON.stringify(tree));
+        } catch (_) {
+        }
+
+        ensureRestoreTreeIds(targetTree);
+
+        let matchReport = null;
+        try {
+            matchReport = normalizeTreeIds(targetTree, currentTree, {
+                referenceRootIds,
+                strictGlobalUrlMatch: true,
+                manualMatches: manualMatches || null
+            });
+        } catch (e) {
+            console.warn('[preflightRestoreSelectedVersion] normalizeTreeIds failed:', e);
+            matchReport = null;
+        }
+
+        ensureRestoreTreeIds(targetTree);
+
+        const diffSummary = computeBookmarkGitDiffSummary(currentTree, targetTree);
+
+        let changeMap = new Map();
+        try {
+            changeMap = detectTreeChangesFastBg(currentTree, targetTree, { explicitMovedIdSet: null });
+        } catch (e) {
+            console.warn('[preflightRestoreSelectedVersion] detectTreeChangesFast failed:', e);
+            changeMap = new Map();
+        }
+
+        const currentIndex = buildTreeIndexForDiff(currentTree);
+        const targetIndex = buildTreeIndexForDiff(targetTree);
+
+        const previewChanges = [];
+        const maxPreview = 220;
+
+        const typeRank = (type) => {
+            const types = String(type || '').split('+');
+            if (types.includes('deleted')) return 0;
+            if (types.includes('added')) return 1;
+            if (types.includes('moved') && types.includes('modified')) return 2;
+            if (types.includes('moved')) return 3;
+            if (types.includes('modified')) return 4;
+            return 9;
+        };
+
+        const entries = Array.from(changeMap.entries());
+        entries.sort((a, b) => {
+            const ta = typeRank(a?.[1]?.type);
+            const tb = typeRank(b?.[1]?.type);
+            if (ta !== tb) return ta - tb;
+            return String(a?.[0] || '').localeCompare(String(b?.[0] || ''));
+        });
+
+        for (const [rawId, change] of entries) {
+            if (previewChanges.length >= maxPreview) break;
+            const id = String(rawId);
+            const type = change && change.type ? String(change.type) : '';
+            const isDeleted = type.includes('deleted');
+            const rec = isDeleted
+                ? currentIndex.nodes.get(id)
+                : (targetIndex.nodes.get(id) || currentIndex.nodes.get(id));
+            if (!rec) continue;
+
+            previewChanges.push({
+                id,
+                type,
+                title: rec.title || '',
+                url: rec.url || '',
+                moved: change && change.moved ? change.moved : null
+            });
+        }
+
+        return {
+            success: true,
+            diffSummary,
+            matchReport,
+            previewChanges
+        };
+    } catch (e) {
+        console.error('[preflightRestoreSelectedVersion] Failed:', e);
+        return { success: false, error: e.message };
+    }
+}
+
+// [New] Patch Merge preview data builder (for popup confirm modal "Preview" view)
+// Returns { currentTree, targetTree, changeEntries } where:
+// - currentTree: current browser bookmark tree
+// - targetTree: normalized target tree (IDs aligned as much as possible)
+// - changeEntries: Array<[id, change]> (serializable form of changeMap)
+async function buildPatchRestorePreview({ restoreRef, localPayload, manualMatches }) {
+    try {
+        if (!restoreRef) {
+            return { success: false, error: 'Missing restoreRef' };
+        }
+
+        const tree = await extractBookmarkTreeForRestore(restoreRef, localPayload);
+        if (!tree) {
+            return { success: false, error: 'No bookmark tree data found for selected version' };
+        }
+
+        const { bookmarkBar, otherBookmarks } = await findBookmarkContainers();
+        const referenceRootIds = (bookmarkBar && otherBookmarks)
+            ? [String(bookmarkBar.id), String(otherBookmarks.id)]
+            : ['1', '2'];
+
+        const currentTree = await browserAPI.bookmarks.getTree();
+
+        let targetTree = tree;
+        try {
+            targetTree = JSON.parse(JSON.stringify(tree));
+        } catch (_) { }
+
+        ensureRestoreTreeIds(targetTree);
+
+        try {
+            normalizeTreeIds(targetTree, currentTree, {
+                referenceRootIds,
+                strictGlobalUrlMatch: true,
+                manualMatches: manualMatches || null
+            });
+        } catch (_) { }
+
+        ensureRestoreTreeIds(targetTree);
+
+        const changeMap = detectTreeChangesFastBg(currentTree, targetTree, { explicitMovedIdSet: null });
+        const changeEntries = Array.from(changeMap.entries()).map(([id, change]) => [String(id), change]);
+
+        return {
+            success: true,
+            currentTree,
+            targetTree,
+            changeEntries
+        };
+    } catch (e) {
+        console.error('[buildPatchRestorePreview] Failed:', e);
+        return { success: false, error: e.message };
+    }
+}
+
+// [New] Overwrite preview data builder (Current Browser -> Selected Snapshot)
+// Returns { diffSummary, currentTree, targetTree, changeEntries }
+async function buildOverwriteRestorePreview({ restoreRef, localPayload }) {
+    try {
+        if (!restoreRef) {
+            return { success: false, error: 'Missing restoreRef' };
+        }
+
+        const tree = await extractBookmarkTreeForRestore(restoreRef, localPayload);
+        if (!tree) {
+            return { success: false, error: 'No bookmark tree data found for selected version' };
+        }
+
+        const { bookmarkBar, otherBookmarks } = await findBookmarkContainers();
+        const referenceRootIds = (bookmarkBar && otherBookmarks)
+            ? [String(bookmarkBar.id), String(otherBookmarks.id)]
+            : ['1', '2'];
+
+        const currentTree = await browserAPI.bookmarks.getTree();
+
+        let targetTree = tree;
+        try {
+            targetTree = JSON.parse(JSON.stringify(tree));
+        } catch (_) { }
+
+        ensureRestoreTreeIds(targetTree);
+
+        // Normalize IDs for better diff readability.
+        try {
+            normalizeTreeIds(targetTree, currentTree, {
+                referenceRootIds,
+                strictGlobalUrlMatch: true
+            });
+        } catch (_) { }
+
+        ensureRestoreTreeIds(targetTree);
+
+        const diffSummary = computeBookmarkGitDiffSummary(currentTree, targetTree);
+        const changeMap = detectTreeChangesFastBg(currentTree, targetTree, { explicitMovedIdSet: null });
+        const changeEntries = Array.from(changeMap.entries()).map(([id, change]) => [String(id), change]);
+
+        return {
+            success: true,
+            diffSummary,
+            currentTree,
+            targetTree,
+            changeEntries
+        };
+    } catch (e) {
+        console.error('[buildOverwriteRestorePreview] Failed:', e);
+        return { success: false, error: e.message };
+    }
+}
+
+// [New] Lightweight diff summary (Current Browser -> Selected Version)
+// Returns { diffSummary } only (no trees) for restore list display.
+async function computeRestoreDiffSummaryAgainstCurrent({ restoreRef, localPayload }) {
+    try {
+        if (!restoreRef) {
+            return { success: false, error: 'Missing restoreRef' };
+        }
+
+        const tree = await extractBookmarkTreeForRestore(restoreRef, localPayload);
+        if (!tree) {
+            return { success: false, error: 'No bookmark tree data found for selected version' };
+        }
+
+        const { bookmarkBar, otherBookmarks } = await findBookmarkContainers();
+        const referenceRootIds = (bookmarkBar && otherBookmarks)
+            ? [String(bookmarkBar.id), String(otherBookmarks.id)]
+            : ['1', '2'];
+
+        const currentTree = await browserAPI.bookmarks.getTree();
+
+        let targetTree = tree;
+        try {
+            targetTree = JSON.parse(JSON.stringify(tree));
+        } catch (_) { }
+
+        ensureRestoreTreeIds(targetTree);
+
+        try {
+            normalizeTreeIds(targetTree, currentTree, {
+                referenceRootIds,
+                strictGlobalUrlMatch: true
+            });
+        } catch (_) { }
+
+        ensureRestoreTreeIds(targetTree);
+
+        const diffSummary = computeBookmarkGitDiffSummary(currentTree, targetTree);
+        return { success: true, diffSummary };
+    } catch (e) {
+        console.error('[computeRestoreDiffSummaryAgainstCurrent] Failed:', e);
+        return { success: false, error: e.message };
+    }
+}
+
+// [New] Import-merge preview data builder (Previous Backup -> This Backup "changes view")
+// Returns { tree, viewMode, meta }
+async function buildMergeRestorePreview({ restoreRef, localPayload, mergeViewMode }) {
+    try {
+        if (!restoreRef) {
+            return { success: false, error: 'Missing restoreRef' };
+        }
+
+        const viewMode = (mergeViewMode === 'simple' || mergeViewMode === 'detailed') ? mergeViewMode : null;
+        const extracted = await extractHistoryChangesViewTreeForRestore(restoreRef, localPayload, { viewMode });
+        return {
+            success: true,
+            tree: extracted.tree,
+            viewMode: extracted.viewMode,
+            meta: extracted.meta
+        };
+    } catch (e) {
+        console.error('[buildMergeRestorePreview] Failed:', e);
+        return { success: false, error: e.message };
     }
 }
 
@@ -8109,12 +9031,62 @@ browserAPI.runtime.onMessage.addListener((request, sender, sendResponse) => {
             .catch(e => sendResponse({ success: false, error: e.message }));
         return true;
     }
+    if (request.action === 'preflightRestoreSelectedVersion') {
+        preflightRestoreSelectedVersion({
+            restoreRef: request.restoreRef,
+            strategy: request.strategy,
+            localPayload: request.localPayload,
+            manualMatches: request.manualMatches
+        })
+            .then(result => sendResponse(result))
+            .catch(e => sendResponse({ success: false, error: e.message }));
+        return true;
+    }
+    if (request.action === 'buildPatchRestorePreview') {
+        buildPatchRestorePreview({
+            restoreRef: request.restoreRef,
+            localPayload: request.localPayload,
+            manualMatches: request.manualMatches
+        })
+            .then(result => sendResponse(result))
+            .catch(e => sendResponse({ success: false, error: e.message }));
+        return true;
+    }
+    if (request.action === 'buildOverwriteRestorePreview') {
+        buildOverwriteRestorePreview({
+            restoreRef: request.restoreRef,
+            localPayload: request.localPayload
+        })
+            .then(result => sendResponse(result))
+            .catch(e => sendResponse({ success: false, error: e.message }));
+        return true;
+    }
+    if (request.action === 'computeRestoreDiffSummaryAgainstCurrent') {
+        computeRestoreDiffSummaryAgainstCurrent({
+            restoreRef: request.restoreRef,
+            localPayload: request.localPayload
+        })
+            .then(result => sendResponse(result))
+            .catch(e => sendResponse({ success: false, error: e.message }));
+        return true;
+    }
+    if (request.action === 'buildMergeRestorePreview') {
+        buildMergeRestorePreview({
+            restoreRef: request.restoreRef,
+            localPayload: request.localPayload,
+            mergeViewMode: request.mergeViewMode
+        })
+            .then(result => sendResponse(result))
+            .catch(e => sendResponse({ success: false, error: e.message }));
+        return true;
+    }
     if (request.action === 'restoreSelectedVersion') {
         restoreSelectedVersion({
             restoreRef: request.restoreRef,
             strategy: request.strategy,
             localPayload: request.localPayload,
-            mergeViewMode: request.mergeViewMode
+            mergeViewMode: request.mergeViewMode,
+            manualMatches: request.manualMatches
         })
             .then(result => sendResponse(result))
             .catch(e => sendResponse({ success: false, error: e.message }));
@@ -8480,7 +9452,99 @@ function safeBase64(str) {
 
 // 以下是简化版的searchBookmarks函数，只返回"功能已被移除"的消息
 async function searchBookmarks(query) {
-    return { success: false, error: '搜索功能已被移除' };
+    const q = String(query || '').trim();
+    if (!q) {
+        return { success: true, results: [] };
+    }
+
+    // Get matches using the browser built-in search
+    const matches = await new Promise((resolve) => {
+        try {
+            browserAPI.bookmarks.search(q, (nodes) => {
+                resolve(Array.isArray(nodes) ? nodes : []);
+            });
+        } catch (_) {
+            resolve([]);
+        }
+    });
+
+    // Build a quick index for path resolution
+    const tree = await new Promise((resolve) => {
+        try {
+            browserAPI.bookmarks.getTree((t) => resolve(t));
+        } catch (_) {
+            resolve([]);
+        }
+    });
+    const byId = new Map();
+
+    const walk = (node, parentId = null) => {
+        if (!node || node.id == null) return;
+        const id = String(node.id);
+        byId.set(id, {
+            id,
+            title: node.title || '',
+            url: node.url || '',
+            parentId: node.parentId != null ? String(node.parentId) : (parentId != null ? String(parentId) : null)
+        });
+        if (Array.isArray(node.children)) {
+            node.children.forEach(child => walk(child, id));
+        }
+    };
+
+    if (Array.isArray(tree) && tree[0]) {
+        walk(tree[0], null);
+    }
+
+    const getPath = (id) => {
+        const parts = [];
+        let cur = byId.get(String(id));
+        let guard = 0;
+        while (cur && cur.parentId && guard < 64) {
+            const parent = byId.get(String(cur.parentId));
+            if (!parent) break;
+            if (parent.title) parts.push(parent.title);
+            cur = parent;
+            guard += 1;
+        }
+        return parts.reverse().join(' > ');
+    };
+
+    const results = [];
+    const seen = new Set();
+
+    for (const n of matches) {
+        if (!n || n.id == null) continue;
+        const id = String(n.id);
+        if (seen.has(id)) continue;
+        seen.add(id);
+
+        const type = n.url ? 'bookmark' : 'folder';
+        const url = n.url || '';
+        const title = n.title || (url ? url : '');
+        const path = getPath(id);
+
+        results.push({
+            id,
+            type,
+            title,
+            url,
+            parentId: n.parentId != null ? String(n.parentId) : null,
+            path
+        });
+    }
+
+    // Stable sort: folders first, then title
+    results.sort((a, b) => {
+        if (a.type !== b.type) return a.type === 'folder' ? -1 : 1;
+        return String(a.title || '').localeCompare(String(b.title || ''));
+    });
+
+    return {
+        success: true,
+        query: q,
+        results
+    };
 }
 
 // 添加重置所有数据的函数
@@ -9488,6 +10552,59 @@ function computeBookmarkGitDiffSummary(oldTree, newTree, options = {}) {
     for (const id of oldIndex.nodes.keys()) {
         if (!newIndex.nodes.has(id)) deletedIds.add(id);
     }
+
+    // =========================================================================
+    // Smart reconciliation (URL-based) for restore comparisons
+    // - When IDs changed due to sync/import, we try to match bookmarks by URL
+    // - This prevents the diff from degenerating into "all deleted + all added"
+    // Ported from history_html/history.js
+    // =========================================================================
+    const urlToDeletedId = new Map();
+    for (const id of deletedIds) {
+        const node = oldIndex.nodes.get(id);
+        if (node && node.url) {
+            urlToDeletedId.set(node.url, id);
+        }
+    }
+
+    const reconciledAddedIds = new Set();
+    for (const id of addedIds) {
+        const newNode = newIndex.nodes.get(id);
+        if (!newNode || !newNode.url) continue;
+
+        const oldId = urlToDeletedId.get(newNode.url);
+        if (!oldId) continue;
+
+        const oldNode = oldIndex.nodes.get(oldId);
+
+        // 1) treat it as the same bookmark (not added/deleted)
+        reconciledAddedIds.add(id);
+        deletedIds.delete(oldId);
+
+        // 2) detect modify (title)
+        if (oldNode && oldNode.title !== newNode.title) {
+            modifiedIds.add(id);
+        }
+
+        // 3) detect move (heuristic: compare parent titles)
+        // (IDs may be completely different across trees)
+        try {
+            const oldParent = oldNode && oldNode.parentId ? oldIndex.nodes.get(oldNode.parentId) : null;
+            const newParent = newNode.parentId ? newIndex.nodes.get(newNode.parentId) : null;
+            if (oldParent && newParent && oldParent.title !== newParent.title) {
+                movedIds.add(id);
+                crossParentMovedIds.add(id);
+            }
+        } catch (_) { }
+
+        // avoid many-to-one matching
+        urlToDeletedId.delete(newNode.url);
+    }
+
+    for (const id of reconciledAddedIds) {
+        addedIds.delete(id);
+    }
+    // =========================================================================
 
     // 建立“子节点集合发生变化”的父级集合（避免因为 add/delete / 跨级移动导致的被动位移被误判为 moved）
     const parentsWithChildSetChange = new Set();

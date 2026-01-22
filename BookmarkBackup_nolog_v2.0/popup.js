@@ -10721,9 +10721,19 @@ function showRestoreModal(versions, source) {
     const thHash = document.getElementById('restoreThHash');
     const thTime = document.getElementById('restoreThTime');
     const thStats = document.getElementById('restoreThStats');
+    const thStatsCurrent = document.getElementById('restoreThStatsCurrent');
+
+    // Pagination (10 per page)
+    const pagination = document.getElementById('restorePagination');
+    const pageInput = document.getElementById('restorePageInput');
+    const totalPagesEl = document.getElementById('restoreTotalPages');
+    const prevPageBtn = document.getElementById('restorePrevPage');
+    const nextPageBtn = document.getElementById('restoreNextPage');
+    const pageHint = document.getElementById('restorePageHint');
 
     const thHashCell = thHash ? thHash.closest('th') : null;
     const thStatsCell = thStats ? thStats.closest('th') : null;
+    const thStatsCurrentCell = thStatsCurrent ? thStatsCurrent.closest('th') : null;
 
     const versionTable = document.getElementById('restoreVersionTable');
     const versionTableContainer = versionTable ? versionTable.closest('.global-export-table-container') : null;
@@ -10765,7 +10775,13 @@ function showRestoreModal(versions, source) {
         currentVersionType = 'snapshot';
     }
 
-    const getVisibleColumnCount = () => (currentVersionType === 'snapshot' ? 4 : 6);
+    const getVisibleColumnCount = () => (currentVersionType === 'snapshot' ? 4 : 7);
+
+    // Paginated rendering (default: 10 per page)
+    const RESTORE_PAGE_SIZE = 10;
+    let currentHistoryPage = 1;
+    let currentSnapshotPage = 1;
+    let pageComputeToken = 0;
 
     let cachedLang = 'zh_CN';
 
@@ -10809,7 +10825,20 @@ function showRestoreModal(versions, source) {
         if (thNote) thNote.textContent = isEn ? 'Note' : '备注';
         if (thHash) thHash.textContent = isEn ? 'Hash' : '哈希值';
         if (thTime) thTime.textContent = isEn ? 'Time' : '时间';
-        if (thStats) thStats.textContent = isEn ? 'Stats' : '数量与结构';
+        if (thStats) thStats.textContent = isEn ? 'Record delta' : '记录变化';
+        if (thStatsCurrent) thStatsCurrent.textContent = isEn ? 'Impact' : '对当前影响';
+
+        // Header tooltips
+        if (thStatsCell) {
+            thStatsCell.title = isEn
+                ? 'Changes inside this backup history record (compared to the previous record)'
+                : '该备份记录自身的变化（相较上一条记录）';
+        }
+        if (thStatsCurrentCell) {
+            thStatsCurrentCell.title = isEn
+                ? 'Impact if you restore this version (compared to your current browser bookmarks)'
+                : '如果恢复到该版本，相较当前浏览器书签将产生的变化';
+        }
 
         if (versionTypeHistoryText) {
             const label = isEn ? 'Backup History' : '备份历史';
@@ -10833,6 +10862,12 @@ function showRestoreModal(versions, source) {
         cancelButton.textContent = isEn ? 'Cancel' : '取消';
         // 主按钮点击后进入二级确认弹窗
         confirmButton.textContent = isEn ? 'Restore' : '恢复';
+
+        if (pageHint) {
+            pageHint.textContent = isEn
+                ? `${RESTORE_PAGE_SIZE}/page`
+                : `${RESTORE_PAGE_SIZE}/页`;
+        }
 
         if (strategyOverwriteLabel) {
             const span = strategyOverwriteLabel.querySelector('span:last-child');
@@ -10884,6 +10919,129 @@ function showRestoreModal(versions, source) {
     // Populate Table
     let selectedVersion = null;
 
+    // Patch Merge UI state (manual disambiguation mapping: targetId -> currentId)
+    // - key/value are strings
+    // - reset when selectedVersion changes
+    let patchManualMatches = {};
+
+    // Diff vs current-browser cache (computed on-demand per selected row)
+    // - key: version.id
+    // - value: { success:boolean, diffSummary?:object, error?:string }
+    const diffVsCurrentCache = new Map();
+    const diffVsCurrentPending = new Map();
+
+    // Local restore payload cache (avoid re-reading same file repeatedly)
+    // - key: `${sourceType}|${localFileKey}`
+    const localPayloadCache = new Map();
+
+    const buildStatsHtml = (stats, { zeroAsCheck = false } = {}) => {
+        const s = stats || {};
+        const bmAdded = Number(s.bookmarkAdded || 0);
+        const bmDeleted = Number(s.bookmarkDeleted || 0);
+        const folderAdded = Number(s.folderAdded || 0);
+        const folderDeleted = Number(s.folderDeleted || 0);
+        const movedCount = Number(s.movedCount || 0);
+        const modifiedCount = Number(s.modifiedCount || 0);
+
+        const items = [];
+        if (bmAdded) items.push(`<span><span class='pos'>+${bmAdded}</span> B</span>`);
+        if (bmDeleted) items.push(`<span><span class='neg'>-${bmDeleted}</span> B</span>`);
+        if (folderAdded) items.push(`<span><span class='pos'>+${folderAdded}</span> F</span>`);
+        if (folderDeleted) items.push(`<span><span class='neg'>-${folderDeleted}</span> F</span>`);
+        if (movedCount) items.push(`<span><span class='move'>↔${movedCount}</span></span>`);
+        if (modifiedCount) items.push(`<span><span class='mod'>~${modifiedCount}</span></span>`);
+
+        if (items.length === 0) {
+            return zeroAsCheck
+                ? "<span class='pos'>✓</span>"
+                : "<span style='opacity: 0.65;'>—</span>";
+        }
+        return items.join('');
+    };
+
+    const buildLocalPayloadIfNeeded = async (restoreRef) => {
+        if (!restoreRef || restoreRef.source !== 'local') return null;
+
+        const fileKey = restoreRef.localFileKey;
+        const cacheKey = `${restoreRef.sourceType || 'unknown'}|${fileKey || ''}`;
+        if (localPayloadCache.has(cacheKey)) {
+            return localPayloadCache.get(cacheKey);
+        }
+
+        const fileObj = fileKey ? localRestoreFileMap.get(fileKey) : null;
+        if (!fileObj) {
+            throw new Error('Local file handle expired. Please reselect the folder.');
+        }
+
+        let payload = null;
+        if (restoreRef.sourceType === 'zip') {
+            const arrayBuffer = await fileObj.arrayBuffer();
+            payload = { arrayBuffer };
+        } else {
+            const text = await fileObj.text();
+            payload = { text };
+        }
+
+        localPayloadCache.set(cacheKey, payload);
+        return payload;
+    };
+
+    const getDiffSummaryAgainstCurrent = async (version) => {
+        const key = String(version?.id || '');
+        if (!key) {
+            return { success: false, error: 'Missing version id' };
+        }
+
+        if (diffVsCurrentCache.has(key)) {
+            return diffVsCurrentCache.get(key);
+        }
+
+        if (diffVsCurrentPending.has(key)) {
+            return await diffVsCurrentPending.get(key);
+        }
+
+        const task = (async () => {
+            try {
+                const restoreRef = version?.restoreRef;
+                if (!restoreRef) {
+                    return { success: false, error: 'Missing restoreRef' };
+                }
+
+                // Try without localPayload first (background may have cached the file content from scan).
+                let res = await callBackgroundFunction('computeRestoreDiffSummaryAgainstCurrent', {
+                    restoreRef
+                });
+
+                if (!res || res.success !== true) {
+                    // Fallback: for local sources, read the file again and retry once.
+                    if (restoreRef.source === 'local') {
+                        const localPayload = await buildLocalPayloadIfNeeded(restoreRef);
+                        res = await callBackgroundFunction('computeRestoreDiffSummaryAgainstCurrent', {
+                            restoreRef,
+                            localPayload
+                        });
+                    }
+                }
+
+                if (!res || res.success !== true) {
+                    return { success: false, error: res?.error || 'Unknown error' };
+                }
+
+                return { success: true, diffSummary: res.diffSummary || null };
+            } catch (e) {
+                return { success: false, error: e?.message || 'Unknown error' };
+            }
+        })();
+
+        diffVsCurrentPending.set(key, task);
+        const result = await task;
+        diffVsCurrentPending.delete(key);
+        if (result && result.success === true) {
+            diffVsCurrentCache.set(key, result);
+        }
+        return result;
+    };
+
     const getSelectedMergeViewMode = () => {
         if (mergeViewModeDetailedRadio && mergeViewModeDetailedRadio.checked) return 'detailed';
         return 'simple';
@@ -10901,6 +11059,43 @@ function showRestoreModal(versions, source) {
         if (mergeViewModeGroup) mergeViewModeGroup.classList.toggle('disabled', disabled);
     };
 
+    const updateStatsVsCurrentForRow = async (row, version) => {
+        if (!row || !version) return;
+        if (currentVersionType === 'snapshot') return;
+
+        const cell = row.querySelector('.restore-stats-current');
+        if (!cell) return;
+
+        const isEn = cachedLang === 'en';
+        if (version?.canRestore === false) {
+            cell.innerHTML = "<span style='opacity: 0.65;'>—</span>";
+            return;
+        }
+
+        const key = String(version?.id || '');
+        const cached = key ? diffVsCurrentCache.get(key) : null;
+        if (cached && cached.success && cached.diffSummary) {
+            cell.innerHTML = buildStatsHtml(cached.diffSummary, { zeroAsCheck: true });
+            return;
+        }
+        if (cached && cached.success && !cached.diffSummary) {
+            cell.innerHTML = "<span class='pos'>✓</span>";
+            return;
+        }
+        cell.innerHTML = `<span style='opacity: 0.65;'>${isEn ? 'Computing...' : '计算中...'}</span>`;
+
+        const result = await getDiffSummaryAgainstCurrent(version);
+        if (!cell.isConnected) return;
+
+        if (result && result.success && result.diffSummary) {
+            cell.innerHTML = buildStatsHtml(result.diffSummary, { zeroAsCheck: true });
+            return;
+        }
+
+        const err = result?.error ? escapeHtml(String(result.error)) : '';
+        cell.innerHTML = `<span style='opacity: 0.65;' title="${err}">${isEn ? 'Failed (click retry)' : '失败(点行重试)'}</span>`;
+    };
+
     const applyDefaultStrategyForType = (type) => {
         const wantsMerge = type === 'snapshot';
         strategyPatchRadio.checked = false;
@@ -10913,6 +11108,7 @@ function showRestoreModal(versions, source) {
         const isSnapshot = type === 'snapshot';
         if (thHashCell) thHashCell.style.display = isSnapshot ? 'none' : '';
         if (thStatsCell) thStatsCell.style.display = isSnapshot ? 'none' : '';
+        if (thStatsCurrentCell) thStatsCurrentCell.style.display = isSnapshot ? 'none' : '';
     };
 
     const applyTablePresentationForType = (type) => {
@@ -11011,7 +11207,55 @@ function showRestoreModal(versions, source) {
         tableBody.appendChild(row);
     };
 
+    const updatePaginationUi = (totalRecords) => {
+        if (!pagination || !pageInput || !totalPagesEl || !prevPageBtn || !nextPageBtn) return;
+
+        const totalPages = Math.max(1, Math.ceil(Number(totalRecords || 0) / RESTORE_PAGE_SIZE));
+        const current = (currentVersionType === 'snapshot') ? currentSnapshotPage : currentHistoryPage;
+        const safeCurrent = Math.min(Math.max(1, current), totalPages);
+
+        if (currentVersionType === 'snapshot') currentSnapshotPage = safeCurrent;
+        else currentHistoryPage = safeCurrent;
+
+        if (totalPages <= 1) {
+            pagination.style.display = 'none';
+            return;
+        }
+
+        pagination.style.display = 'flex';
+        pageInput.value = String(safeCurrent);
+        totalPagesEl.textContent = String(totalPages);
+        prevPageBtn.disabled = safeCurrent <= 1;
+        nextPageBtn.disabled = safeCurrent >= totalPages;
+    };
+
+    const getCurrentPage = () => (currentVersionType === 'snapshot' ? currentSnapshotPage : currentHistoryPage);
+
+    const computeVsCurrentForPage = (pairs) => {
+        if (currentVersionType === 'snapshot') return;
+        const list = Array.isArray(pairs) ? pairs : [];
+        if (list.length === 0) return;
+
+        const token = ++pageComputeToken;
+        const concurrency = 2;
+        let cursor = 0;
+
+        const worker = async () => {
+            while (cursor < list.length) {
+                if (token !== pageComputeToken) return;
+                const idx = cursor++;
+                const item = list[idx];
+                if (!item || !item.row || !item.row.isConnected) continue;
+                await updateStatsVsCurrentForRow(item.row, item.version);
+            }
+        };
+
+        Promise.all(Array.from({ length: concurrency }, worker)).catch(() => { });
+    };
+
     const renderVersionTable = (list) => {
+        const prevSelectedId = selectedVersion?.id != null ? String(selectedVersion.id) : null;
+
         tableBody.innerHTML = '';
         selectedVersion = null;
 
@@ -11019,8 +11263,10 @@ function showRestoreModal(versions, source) {
         applyTablePresentationForType(currentVersionType);
         const isSnapshotMode = currentVersionType === 'snapshot';
 
-        const items = Array.isArray(list) ? list : [];
-        if (items.length === 0) {
+        const allItems = Array.isArray(list) ? list : [];
+        updatePaginationUi(allItems.length);
+
+        if (allItems.length === 0) {
             setEmptyTableMessage('No versions found / 未找到可恢复版本');
             confirmButton.disabled = true;
             strategyOverwriteRadio.disabled = true;
@@ -11030,45 +11276,65 @@ function showRestoreModal(versions, source) {
             return;
         }
 
+        const totalPages = Math.max(1, Math.ceil(allItems.length / RESTORE_PAGE_SIZE));
+        const currentPage = Math.min(Math.max(1, getCurrentPage()), totalPages);
+        if (currentVersionType === 'snapshot') currentSnapshotPage = currentPage;
+        else currentHistoryPage = currentPage;
+
+        const startIndex = (currentPage - 1) * RESTORE_PAGE_SIZE;
+        const endIndex = Math.min(startIndex + RESTORE_PAGE_SIZE, allItems.length);
+        const pageItems = allItems.slice(startIndex, endIndex);
+
         const clearSelection = () => {
             Array.from(tableBody.querySelectorAll("tr[data-selected='1']")).forEach((tr) => {
                 tr.removeAttribute('data-selected');
             });
         };
 
-        const selectRow = (row, version, index) => {
+        const selectRow = (row, version, radioId) => {
             const canRestore = version?.canRestore !== false;
-            const radio = document.getElementById(`rvs_${index}`);
+            const radio = document.getElementById(`rvs_${radioId}`);
             if (radio) radio.checked = true;
+
             clearSelection();
             row.setAttribute('data-selected', '1');
+
+            const prevId = selectedVersion?.id != null ? String(selectedVersion.id) : null;
+            const nextId = version?.id != null ? String(version.id) : null;
             selectedVersion = version;
+
+            // Reset Patch Merge manual picks ONLY when switching versions
+            if (!prevId || !nextId || prevId !== nextId) {
+                patchManualMatches = {};
+            }
+
             confirmButton.disabled = !canRestore;
             strategyGroup.classList.toggle('disabled', !canRestore);
             updateStrategyAvailabilityUi();
             updateMergeViewModeUi();
         };
 
-        items.forEach((version, index) => {
+        const rowPairs = [];
+        const rowMap = new Map(); // id -> { row, version, radioId }
+        let firstSelectable = null;
+
+        pageItems.forEach((version, pageIndex) => {
+            const globalIndex = startIndex + pageIndex;
+            const radioId = globalIndex;
+
             const canRestore = version?.canRestore !== false;
             const note = String(version?.note || '').trim();
             const fingerprint = String(version?.fingerprint || '').slice(0, 7);
             const displayTime = String(version?.displayTime || '');
             const isHtml = isHtmlVersion(version);
-            let seq = version?.seqNumber != null ? String(version.seqNumber) : String(index + 1);
+
+            let seq = version?.seqNumber != null ? String(version.seqNumber) : String(globalIndex + 1);
             if (isSnapshotMode && (version?.seqNumber == null)) {
-                // Snapshot uses time-desc ordering; show seq in descending order too.
-                seq = String(items.length - index);
+                seq = String(allItems.length - globalIndex);
             }
+
             const fileName = String(version?.originalFile || version?.restoreRef?.originalFile || '').trim();
             const displayNote = isHtml ? (fileName || note || '') : (note || '');
-
-            const bmAdded = version?.stats?.bookmarkAdded || 0;
-            const bmDeleted = version?.stats?.bookmarkDeleted || 0;
-            const folderAdded = version?.stats?.folderAdded || 0;
-            const folderDeleted = version?.stats?.folderDeleted || 0;
-            const movedCount = version?.stats?.movedCount || 0;
-            const modifiedCount = version?.stats?.modifiedCount || 0;
 
             const row = document.createElement('tr');
             if (!canRestore) row.style.opacity = '0.7';
@@ -11078,8 +11344,8 @@ function showRestoreModal(versions, source) {
             const radio = document.createElement('input');
             radio.type = 'radio';
             radio.name = 'restoreVersionSelect';
-            radio.id = `rvs_${index}`;
-            radio.checked = index === 0;
+            radio.id = `rvs_${radioId}`;
+            radio.checked = false;
             radio.style.cursor = 'pointer';
             tdSelect.appendChild(radio);
 
@@ -11105,19 +11371,29 @@ function showRestoreModal(versions, source) {
             tdTime.textContent = displayTime;
 
             let tdStats = null;
+            let tdStatsCurrent = null;
             if (!isSnapshotMode) {
                 tdStats = document.createElement('td');
                 const statsDiv = document.createElement('div');
                 statsDiv.className = 'restore-stats';
-                const statsItems = [];
-                if (bmAdded) statsItems.push(`<span><span class='pos'>+${bmAdded}</span> B</span>`);
-                if (bmDeleted) statsItems.push(`<span><span class='neg'>-${bmDeleted}</span> B</span>`);
-                if (folderAdded) statsItems.push(`<span><span class='pos'>+${folderAdded}</span> F</span>`);
-                if (folderDeleted) statsItems.push(`<span><span class='neg'>-${folderDeleted}</span> F</span>`);
-                if (movedCount) statsItems.push(`<span><span class='move'>↔${movedCount}</span></span>`);
-                if (modifiedCount) statsItems.push(`<span><span class='mod'>~${modifiedCount}</span></span>`);
-                statsDiv.innerHTML = statsItems.length ? statsItems.join('') : "<span style='opacity: 0.65;'>—</span>";
+                statsDiv.innerHTML = buildStatsHtml(version?.stats, { zeroAsCheck: true });
                 tdStats.appendChild(statsDiv);
+
+                tdStatsCurrent = document.createElement('td');
+                const statsCurrentDiv = document.createElement('div');
+                statsCurrentDiv.className = 'restore-stats restore-stats-current';
+                statsCurrentDiv.title = cachedLang === 'en'
+                    ? 'Computing impact vs current browser bookmarks'
+                    : '正在计算对当前浏览器书签的影响';
+                statsCurrentDiv.innerHTML = cachedLang === 'en'
+                    ? "<span style='opacity: 0.55;'>Queued</span>"
+                    : "<span style='opacity: 0.55;'>排队中</span>";
+                statsCurrentDiv.style.cursor = 'pointer';
+                statsCurrentDiv.addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    updateStatsVsCurrentForRow(row, version).catch(() => { });
+                });
+                tdStatsCurrent.appendChild(statsCurrentDiv);
             }
 
             row.appendChild(tdSelect);
@@ -11126,22 +11402,37 @@ function showRestoreModal(versions, source) {
             if (tdHash) row.appendChild(tdHash);
             row.appendChild(tdTime);
             if (tdStats) row.appendChild(tdStats);
+            if (tdStatsCurrent) row.appendChild(tdStatsCurrent);
 
             row.addEventListener('click', () => {
-                selectRow(row, version, index);
+                selectRow(row, version, radioId);
             });
 
             tableBody.appendChild(row);
+
+            const vid = version?.id != null ? String(version.id) : '';
+            if (vid) {
+                rowMap.set(vid, { row, version, radioId });
+            }
+            if (!firstSelectable) {
+                firstSelectable = { row, version, radioId };
+            }
+            if (!isSnapshotMode) {
+                rowPairs.push({ row, version });
+            }
         });
 
-        // Default selection
-        selectedVersion = items[0];
-        const firstRow = tableBody.querySelector('tr');
-        if (firstRow) firstRow.setAttribute('data-selected', '1');
-        confirmButton.disabled = selectedVersion?.canRestore === false;
-        strategyGroup.classList.toggle('disabled', selectedVersion?.canRestore === false);
-        updateStrategyAvailabilityUi();
-        updateMergeViewModeUi();
+        // Selection (preserve previous if it exists on this page)
+        const preferred = prevSelectedId && rowMap.has(prevSelectedId) ? rowMap.get(prevSelectedId) : null;
+        const toSelect = preferred || firstSelectable;
+        if (toSelect) {
+            selectRow(toSelect.row, toSelect.version, toSelect.radioId);
+        }
+
+        // Auto compute "impact" column for current page
+        if (!isSnapshotMode) {
+            computeVsCurrentForPage(rowPairs);
+        }
     };
 
     const hasHistory = historyVersions.length > 0;
@@ -11170,6 +11461,10 @@ function showRestoreModal(versions, source) {
         const wantsSnapshot = Boolean(versionTypeSnapshotRadio && versionTypeSnapshotRadio.checked);
         currentVersionType = wantsSnapshot ? 'snapshot' : 'history';
 
+        // Reset page when switching type
+        if (currentVersionType === 'snapshot') currentSnapshotPage = 1;
+        else currentHistoryPage = 1;
+
         // Snapshot (Bookmark Backup Versions) defaults to merge/import; Backup History defaults to overwrite.
         applyDefaultStrategyForType(currentVersionType);
         strategyGroup.classList.add('disabled');
@@ -11184,12 +11479,45 @@ function showRestoreModal(versions, source) {
     if (versionTypeHistoryRadio) versionTypeHistoryRadio.onchange = applyVersionType;
     if (versionTypeSnapshotRadio) versionTypeSnapshotRadio.onchange = applyVersionType;
 
+    const goToPage = (page) => {
+        const items = (currentVersionType === 'snapshot') ? snapshotVersions : historyVersions;
+        const totalPages = Math.max(1, Math.ceil((items?.length || 0) / RESTORE_PAGE_SIZE));
+        const next = Math.min(Math.max(1, Number(page) || 1), totalPages);
+        if (currentVersionType === 'snapshot') currentSnapshotPage = next;
+        else currentHistoryPage = next;
+        renderVersionTable(items);
+    };
+
+    if (prevPageBtn) {
+        prevPageBtn.onclick = () => {
+            goToPage(getCurrentPage() - 1);
+        };
+    }
+    if (nextPageBtn) {
+        nextPageBtn.onclick = () => {
+            goToPage(getCurrentPage() + 1);
+        };
+    }
+    if (pageInput) {
+        pageInput.onkeydown = (e) => {
+            if (e.key === 'Enter') {
+                e.preventDefault();
+                goToPage(pageInput.value);
+            }
+        };
+        pageInput.onblur = () => {
+            goToPage(pageInput.value);
+        };
+    }
+
     renderVersionTable(currentVersionType === 'snapshot' ? snapshotVersions : historyVersions);
 
     modal.style.display = 'flex';
 
     const closeModal = () => {
         modal.style.display = 'none';
+        // Cancel any in-flight "vs current" computations
+        pageComputeToken += 1;
     };
 
     closeButton.onclick = closeModal;
@@ -11211,21 +11539,58 @@ function showRestoreModal(versions, source) {
         updateMergeViewModeUi();
     };
 
-    const showRestoreConfirmModal = async ({ version, strategy }) => {
+    const showRestoreConfirmModal = async ({ version, strategy, restoreRef, localPayload }) => {
         const confirmModal = document.getElementById('restoreConfirmModal');
         const confirmTitle = document.getElementById('restoreConfirmTitle');
+        const conflictBadge = document.getElementById('restoreConflictBadge');
         const confirmSummary = document.getElementById('restoreConfirmSummary');
         const confirmWarning = document.getElementById('restoreConfirmWarning');
         const confirmCancelBtn = document.getElementById('restoreConfirmCancelBtn');
         const confirmConfirmBtn = document.getElementById('restoreConfirmConfirmBtn');
         const confirmCloseBtn = document.getElementById('closeRestoreConfirmModal');
 
+        // Views
+        const mainView = document.getElementById('restoreConfirmMainView');
+        const actionRow = document.getElementById('restoreConfirmActionRow');
+        const previewView = document.getElementById('restorePreviewView');
+        const previewContent = document.getElementById('restorePreviewContent');
+
+        // Patch Merge UI (same IDs as history.html)
+        const diffBar = document.getElementById('restoreDiffBar');
+        const diffSummary = document.getElementById('restoreDiffSummary');
+        const previewBtn = document.getElementById('restorePreviewBtn');
+        const ambiguityBtn = document.getElementById('restoreAmbiguityBtn');
+        const ambiguityPanel = document.getElementById('restoreAmbiguityPanel');
+        const ambiguityTitle = document.getElementById('restoreAmbiguityTitle');
+        const ambiguityList = document.getElementById('restoreAmbiguityList');
+        const ambiguityCloseBtn = document.getElementById('restoreAmbiguityCloseBtn');
+
         if (!confirmModal || !confirmTitle || !confirmSummary || !confirmWarning || !confirmCancelBtn || !confirmConfirmBtn || !confirmCloseBtn) {
-            // fallback to native confirm if modal nodes missing
             const lang = await getPreferredLang();
             const isEn = lang === 'en';
             return confirm(isEn ? 'Continue restore?' : '确定继续恢复吗？');
         }
+
+        const resetBtn = (btn) => {
+            if (!btn || !btn.parentNode) return btn;
+            const next = btn.cloneNode(true);
+            btn.parentNode.replaceChild(next, btn);
+            return next;
+        };
+
+        // Reset action buttons (avoid duplicated listeners)
+        const cancelBtn = resetBtn(confirmCancelBtn);
+        const confirmBtn = resetBtn(confirmConfirmBtn);
+        const closeBtn = resetBtn(confirmCloseBtn);
+
+        // Reset patch UI buttons (avoid duplicated listeners)
+        const previewButton = resetBtn(previewBtn);
+        const ambiguityButton = resetBtn(ambiguityBtn);
+        const ambiguityCloseButton = resetBtn(ambiguityCloseBtn);
+
+        // Re-query inner spans after cloning
+        const previewBtnText = document.getElementById('restorePreviewBtnText');
+        const ambiguityBtnText = document.getElementById('restoreAmbiguityBtnText');
 
         const lang = await getPreferredLang();
         const isEn = lang === 'en';
@@ -11243,9 +11608,26 @@ function showRestoreModal(versions, source) {
             return isEn ? 'Import Merge (Import)' : '导入合并（导入）';
         })();
 
-        confirmTitle.textContent = isEn ? 'Confirm Restore' : '确认恢复';
+        const titleForMain = () => {
+            if (strategy === 'patch') return isEn ? 'Confirm Patch Merge' : '确认补丁合并';
+            return isEn ? 'Confirm Restore' : '确认恢复';
+        };
 
-        // Compact summary (grid) + hide hash for merge / HTML snapshots
+        // Initial view state
+        let isInPreview = false;
+        if (mainView) mainView.style.display = 'block';
+        if (previewView) previewView.style.display = 'none';
+        if (previewContent) previewContent.innerHTML = '';
+        if (actionRow) actionRow.style.display = '';
+        confirmTitle.textContent = titleForMain();
+
+        if (conflictBadge) {
+            conflictBadge.style.display = 'none';
+            conflictBadge.textContent = '';
+            conflictBadge.classList.remove('danger', 'warning');
+        }
+
+        // Compact summary (grid)
         const colon = isEn ? ':' : '：';
         const rows = [
             { key: isEn ? 'Source' : '来源', val: sourceLabel },
@@ -11275,32 +11657,29 @@ function showRestoreModal(versions, source) {
             return `<div class="restore-confirm-summary-key">${key}${colon}</div><div class="${cls}">${val}</div>`;
         }).join('')}</div>`;
 
-        // Import merge = info (blue); Overwrite/Patch = danger (red)
-        confirmWarning.classList.remove('danger', 'info');
-        confirmConfirmBtn.classList.remove('danger', 'primary');
+        // Warning + main confirm button style (match history.html)
+        confirmWarning.classList.remove('danger', 'info', 'warning');
+        confirmBtn.classList.remove('danger', 'primary', 'patch-confirm-warning', 'patch-confirm-danger');
 
         if (strategy === 'overwrite') {
-            confirmWarning.classList.add('danger');
-            confirmConfirmBtn.classList.add('danger');
+            confirmWarning.classList.add('warning');
+            confirmBtn.classList.add('primary');
             confirmWarning.textContent = isEn
-                ? 'Overwrite will replace your current bookmarks (Bookmarks Bar + Other Bookmarks). Bookmarks will be recreated (IDs change), which may reset/lose ID-based data (e.g., Records/Recommendations). This cannot be undone.'
-                : '覆盖会替换你当前的「书签栏」与「其他书签」。书签会被重新创建，ID 将变化，可能导致「书签记录」「书签推荐」等依赖书签 ID 的数据失效/重置，且无法撤销。';
+                ? 'Overwrite will clear and rebuild Bookmarks Bar + Other Bookmarks. Bookmarks will be recreated (IDs will change), which may reset/lose ID-based data (e.g., Records/Recommendations).'
+                : '覆盖恢复：清空并重建「书签栏」与「其他书签」，使其与该版本一致。书签会被重新创建，ID 将变化，可能导致「书签记录」「书签推荐」等依赖书签 ID 的数据失效/重置。';
         } else if (strategy === 'patch') {
-            confirmWarning.classList.add('danger');
-            confirmConfirmBtn.classList.add('danger');
+            confirmWarning.classList.add('warning');
+            // Patch confirm button styling is handled by updatePatchConfirmButtonText()
             confirmWarning.textContent = isEn
-                ? 'Patch merge: adjust bookmarks to selected version (add/move/update/remove).'
-                : '补丁合并：按所选版本调整当前书签（新增/移动/修改/删除）。';
+                ? 'Patch merge: adjusts current bookmarks to match this version (add/move/update/remove).'
+                : '补丁合并：按该版本调整当前书签（新增/移动/修改/删除）。';
         } else {
             confirmWarning.classList.add('info');
-            confirmConfirmBtn.classList.add('primary');
-
-            // For Backup History: merge imports the “changes view” (with [+]/[-]/[~]/[↔] prefixes).
-            // For HTML snapshots: merge imports the snapshot itself.
+            confirmBtn.classList.add('primary');
             if (!isHtml) {
                 confirmWarning.textContent = isEn
-                    ? 'Import merge: imports the changes view (titles prefixed with [+]/[-]/[~]/[↔]) into a new folder under Other Bookmarks (no deletion).'
-                    : '导入合并：导入该版本的“差异视图”（标题带 [+]/[-]/[~]/[↔] 前缀）到「其他书签」新文件夹（不删除现有书签）。';
+                    ? 'Import merge: imports this record’s “changes view” into a new folder under Other Bookmarks (no deletion; titles prefixed with [+]/[-]/[~]/[↔]).'
+                    : '导入合并：导入该记录的「差异视图」到「其他书签」新文件夹（不删除现有书签；标题带 [+]/[-]/[~]/[↔] 前缀）。';
             } else {
                 confirmWarning.textContent = isEn
                     ? 'Import merge: imports the snapshot into a new folder under Other Bookmarks (no deletion).'
@@ -11308,27 +11687,704 @@ function showRestoreModal(versions, source) {
             }
         }
 
-        confirmCancelBtn.textContent = isEn ? 'Cancel' : '取消';
-        confirmConfirmBtn.textContent = isEn ? 'Confirm Restore' : '确认恢复';
+        // Texts
+        cancelBtn.textContent = isEn ? 'Cancel' : '取消';
+        confirmBtn.textContent = (strategy === 'patch')
+            ? (isEn ? 'Confirm Patch Merge' : '确认补丁合并')
+            : (isEn ? 'Confirm Restore' : '确认恢复');
+
+        if (previewBtnText) previewBtnText.textContent = isEn ? 'Preview' : '预览';
+        if (ambiguityTitle) ambiguityTitle.textContent = isEn ? 'Ambiguity Detail' : '歧义详情';
+        if (ambiguityCloseButton) ambiguityCloseButton.textContent = isEn ? 'Collapse' : '收起';
+        if (ambiguityBtnText) ambiguityBtnText.textContent = isEn ? 'Ambiguity' : '歧义';
+
+        // ---------------------------------------------------------------------
+        // Patch Merge preflight + ambiguity resolution + preview (history-like)
+        // ---------------------------------------------------------------------
+        const isPatchPreflight = (strategy === 'patch') && !isHtml;
+        const isOverwritePreview = (strategy === 'overwrite') && !isHtml;
+        const isMergePreview = (strategy === 'merge');
+        const isMergeHistorySource = isMergePreview && !isHtml && (restoreRef?.sourceType === 'json' || restoreRef?.sourceType === 'zip');
+        let patchPreflightToken = 0;
+        let patchPreflightTimer = null;
+        let patchPreflight = null; // { diffSummary, matchReport }
+
+        let overwritePreviewCache = null; // { diffSummary, currentTree, targetTree, changeEntries }
+
+        const showMainView = () => {
+            isInPreview = false;
+            if (mainView) mainView.style.display = 'block';
+            if (previewView) previewView.style.display = 'none';
+            if (previewContent) {
+                previewContent.innerHTML = '';
+                previewContent.removeAttribute('data-loaded');
+            }
+            confirmTitle.textContent = titleForMain();
+        };
+
+        const showPreviewView = async () => {
+            if (!previewView || !mainView || !previewContent) return;
+
+            isInPreview = true;
+            mainView.style.display = 'none';
+            previewView.style.display = 'flex';
+            confirmTitle.textContent = isEn ? 'Preview' : '预览';
+
+            const loadingText = isMergeHistorySource
+                ? (isEn ? 'Generating import preview...' : '正在生成导入预览...')
+                : (isEn ? 'Generating detailed preview...' : '正在生成详细预览...');
+
+            previewContent.innerHTML = `<div class="loading" style="padding: 40px; color: var(--text-secondary); text-align: center;">
+                <i class="fas fa-spinner fa-spin" style="font-size: 24px; margin-bottom: 20px; opacity: 0.5;"></i><br>
+                ${loadingText}
+            </div>`;
+
+            // Import-merge preview (history sources: json/zip)
+            if (isMergeHistorySource) {
+                try {
+                    const res = await callBackgroundFunction('buildMergeRestorePreview', {
+                        restoreRef,
+                        localPayload,
+                        mergeViewMode: getSelectedMergeViewMode()
+                    });
+
+                    if (!res || res.success !== true) {
+                        previewContent.innerHTML = `<div style="padding: 20px; color: var(--warning);">${isEn ? 'Preview failed: ' : '预览失败：'}${escapeHtml(res?.error || 'Unknown error')}</div>`;
+                        return;
+                    }
+
+                    const vm = res.viewMode === 'detailed' ? 'detailed' : 'simple';
+                    const customTitle = isEn
+                        ? `Import Merge Preview (${vm === 'detailed' ? 'Detailed' : 'Simple'})`
+                        : `导入合并预览（${vm === 'detailed' ? '详细' : '简略'}）`;
+
+                    const treeHtml = generateImportMergePreviewTreeHtml(res.tree, {
+                        maxDepth: 2,
+                        customTitle
+                    }, lang);
+
+                    previewContent.innerHTML = treeHtml || `<div style="padding: 20px; color: var(--text-tertiary); text-align: center;">No Data</div>`;
+                    previewContent.setAttribute('data-loaded', 'true');
+
+                    // Bind collapse toggles
+                    previewContent.querySelectorAll('.tree-toggle').forEach(toggle => {
+                        toggle.addEventListener('click', (e) => {
+                            e.stopPropagation();
+                            const node = e.target.closest('.tree-node');
+                            if (!node) return;
+                            const children = node.querySelector('.tree-children');
+                            if (children) {
+                                children.classList.toggle('expanded');
+                                toggle.classList.toggle('expanded');
+                                const icon = node.querySelector('.tree-item .tree-icon.fa-folder, .tree-item .tree-icon.fa-folder-open');
+                                if (icon) {
+                                    icon.classList.toggle('fa-folder');
+                                    icon.classList.toggle('fa-folder-open');
+                                }
+                            }
+                        });
+                    });
+                    return;
+                } catch (err) {
+                    previewContent.innerHTML = `<div style="padding: 20px; color: var(--warning);">Error: ${escapeHtml(err?.message || 'Unknown error')}</div>`;
+                    return;
+                }
+            }
+
+            // Patch/Overwrite (and non-history merge snapshot) preview: render restored tree with change badges
+            try {
+                let res = null;
+                if (strategy === 'patch') {
+                    res = await callBackgroundFunction('buildPatchRestorePreview', {
+                        restoreRef,
+                        localPayload,
+                        manualMatches: patchManualMatches
+                    });
+                } else {
+                    // overwrite / merge(snapshot)
+                    res = overwritePreviewCache;
+                    if (!res) {
+                        res = await callBackgroundFunction('buildOverwriteRestorePreview', {
+                            restoreRef,
+                            localPayload
+                        });
+                    }
+                }
+
+                if (!res || res.success !== true) {
+                    previewContent.innerHTML = `<div style="padding: 20px; color: var(--warning);">${isEn ? 'Preview failed: ' : '预览失败：'}${escapeHtml(res?.error || 'Unknown error')}</div>`;
+                    return;
+                }
+
+                const changeMap = new Map(Array.isArray(res.changeEntries) ? res.changeEntries : []);
+                let treeToRender = res.targetTree;
+
+                let hasDeleted = false;
+                for (const [, change] of changeMap.entries()) {
+                    if (change && typeof change.type === 'string' && change.type.includes('deleted')) {
+                        hasDeleted = true;
+                        break;
+                    }
+                }
+
+                if (hasDeleted) {
+                    try {
+                        treeToRender = rebuildTreeWithDeleted(res.currentTree, res.targetTree, changeMap);
+                    } catch (_) {
+                        treeToRender = res.targetTree;
+                    }
+                }
+
+                const treeHtml = generateHistoryTreeHtml(treeToRender, changeMap, 'detailed', {
+                    maxDepth: 2,
+                    customTitle: isEn ? 'Restored Bookmark Tree (Temporary Cache)' : '恢复后的书签树（临时缓存）'
+                }, lang);
+
+                previewContent.innerHTML = treeHtml || `<div style="padding: 20px; color: var(--text-tertiary); text-align: center;">No Data</div>`;
+                previewContent.setAttribute('data-loaded', 'true');
+
+                previewContent.querySelectorAll('.tree-toggle').forEach(toggle => {
+                    toggle.addEventListener('click', (e) => {
+                        e.stopPropagation();
+                        const node = e.target.closest('.tree-node');
+                        if (!node) return;
+                        const children = node.querySelector('.tree-children');
+                        if (children) {
+                            children.classList.toggle('expanded');
+                            toggle.classList.toggle('expanded');
+                            const icon = node.querySelector('.tree-item .tree-icon.fa-folder, .tree-item .tree-icon.fa-folder-open');
+                            if (icon) {
+                                icon.classList.toggle('fa-folder');
+                                icon.classList.toggle('fa-folder-open');
+                            }
+                        }
+                    });
+                });
+            } catch (err) {
+                previewContent.innerHTML = `<div style="padding: 20px; color: var(--warning);">Error: ${escapeHtml(err?.message || 'Unknown error')}</div>`;
+            }
+        };
+
+        const toggleRestoreAmbiguityPanel = (force) => {
+            if (!ambiguityPanel) return;
+            const shouldShow = (typeof force === 'boolean') ? force : !ambiguityPanel.classList.contains('show');
+            if (shouldShow) ambiguityPanel.classList.add('show');
+            else ambiguityPanel.classList.remove('show');
+        };
+
+        const updatePatchConfirmButtonText = () => {
+            if (!confirmBtn) return;
+            if (strategy !== 'patch') return;
+            if (!isPatchPreflight) return;
+
+            confirmBtn.classList.remove('patch-confirm-warning', 'patch-confirm-danger', 'danger', 'primary');
+            if (previewButton) {
+                previewButton.classList.remove('preview-warning', 'preview-danger');
+            }
+
+            if (conflictBadge) {
+                conflictBadge.style.display = 'none';
+                conflictBadge.textContent = '';
+                conflictBadge.classList.remove('danger', 'warning');
+            }
+
+            const baseText = isEn ? 'Confirm Patch Merge' : '确认补丁合并';
+            const report = patchPreflight && patchPreflight.matchReport ? patchPreflight.matchReport : null;
+            const ambiguous = report && Array.isArray(report.ambiguous) ? report.ambiguous : [];
+            const total = ambiguous.length;
+
+            if (total <= 0) {
+                confirmBtn.classList.add('patch-confirm-warning');
+                if (previewButton) previewButton.classList.add('preview-warning');
+                confirmBtn.textContent = baseText;
+                // Keep enabled: allow user to proceed even without ambiguity.
+                confirmBtn.disabled = false;
+                return;
+            }
+
+            let selected = 0;
+            for (const item of ambiguous) {
+                const tid = item && item.targetId != null ? String(item.targetId) : '';
+                if (tid && patchManualMatches && patchManualMatches[tid]) selected += 1;
+            }
+
+            const hasUnresolved = selected < total;
+            if (hasUnresolved) {
+                confirmBtn.classList.add('patch-confirm-danger');
+                if (previewButton) previewButton.classList.add('preview-danger');
+                // Align with history.html behavior: warn, but don't block.
+                confirmBtn.disabled = false;
+            } else {
+                confirmBtn.classList.add('patch-confirm-warning');
+                if (previewButton) previewButton.classList.add('preview-warning');
+                confirmBtn.disabled = false;
+            }
+
+            if (conflictBadge) {
+                conflictBadge.style.display = 'inline-flex';
+                conflictBadge.classList.toggle('danger', hasUnresolved);
+                conflictBadge.classList.toggle('warning', !hasUnresolved);
+                conflictBadge.textContent = isEn
+                    ? `Conflict ${selected}/${total}`
+                    : `冲突 ${selected}/${total}`;
+            }
+
+            confirmBtn.textContent = isEn
+                ? `${baseText} (Ambig ${selected}/${total})`
+                : `${baseText}（歧义 ${selected}/${total}）`;
+        };
+
+        const setRestoreAmbiguityUI = (matchReport) => {
+            if (!ambiguityButton || !ambiguityPanel || !ambiguityList) return;
+
+            const ambiguous = matchReport && Array.isArray(matchReport.ambiguous) ? matchReport.ambiguous : [];
+            const count = ambiguous.length;
+
+            if (count <= 0) {
+                ambiguityButton.style.display = 'none';
+                ambiguityPanel.classList.remove('show');
+                ambiguityList.innerHTML = '';
+                return;
+            }
+
+            // Button label: selected / total
+            let selectedCount = 0;
+            try {
+                for (const item of ambiguous) {
+                    const tid = item && item.targetId != null ? String(item.targetId) : '';
+                    if (tid && patchManualMatches && patchManualMatches[tid]) selectedCount += 1;
+                }
+            } catch (_) { }
+
+            ambiguityButton.style.display = 'inline-flex';
+            if (ambiguityBtnText) {
+                ambiguityBtnText.textContent = isEn
+                    ? `Ambiguous ${selectedCount}/${count}`
+                    : `歧义 ${selectedCount}/${count}`;
+            }
+
+            const wasOpen = ambiguityPanel.classList.contains('show');
+            if (!wasOpen) {
+                ambiguityPanel.classList.remove('show');
+            }
+
+            const renderItem = (item, idx) => {
+                const phaseText = (() => {
+                    const p = String(item && item.phase ? item.phase : '');
+                    if (p === 'structure') return isEn ? 'Structure' : '父级上下文';
+                    if (p === 'url') return isEn ? 'URL' : 'URL 匹配';
+                    return p || (isEn ? 'Unknown' : '未知');
+                })();
+
+                const typeText = (item && item.type === 'folder')
+                    ? (isEn ? 'Folder' : '文件夹')
+                    : (isEn ? 'Bookmark' : '书签');
+
+                const title = escapeHtml(String(item && item.title ? item.title : ''));
+                const url = escapeHtml(String(item && item.url ? item.url : ''));
+
+                const targetIdRaw = item && item.targetId != null ? String(item.targetId) : '';
+                const targetId = escapeHtml(targetIdRaw);
+                const selectedRefId = targetIdRaw && patchManualMatches && patchManualMatches[targetIdRaw]
+                    ? String(patchManualMatches[targetIdRaw])
+                    : '';
+                const isSelected = !!selectedRefId;
+
+                const candidates = Array.isArray(item && item.candidates) ? item.candidates : [];
+                const candHtml = candidates.map((c) => {
+                    const cidRaw = String(c && c.id != null ? c.id : '');
+                    const cid = escapeHtml(cidRaw);
+                    const ctitle = escapeHtml(String(c && c.title ? c.title : ''));
+                    const curl = escapeHtml(String(c && c.url ? c.url : ''));
+                    const checked = (selectedRefId && cidRaw === selectedRefId) ? 'checked' : '';
+
+                    return `
+                        <label class="restore-ambiguity-candidate">
+                            <div style="flex: 1; min-width: 0;">
+                                <div style="font-weight: 600; color: var(--text-primary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">${ctitle || (isEn ? '(Untitled)' : '(无标题)')}</div>
+                                ${curl ? `<div class="restore-ambiguity-item-sub" style="margin-top: 2px;">${curl}</div>` : ''}
+                            </div>
+                            <div style="display: flex; align-items: center; gap: 8px; flex-shrink: 0;">
+                                <code>#${cid}</code>
+                                <input class="restore-ambiguity-radio" type="radio" name="restoreAmbig_${targetId}" value="${cid}" data-target-raw-id="${escapeHtml(targetIdRaw)}" ${checked} />
+                            </div>
+                        </label>
+                    `;
+                }).join('');
+
+                const statusBadge = isSelected
+                    ? `<span style="margin-left: 8px; font-size: 11px; color: var(--accent-primary);">${isEn ? 'Selected' : '已选择'}</span>`
+                    : `<span style="margin-left: 8px; font-size: 11px; color: var(--text-tertiary);">${isEn ? 'Unselected' : '未选择'}</span>`;
+
+                return `
+                    <div class="restore-ambiguity-item" data-target-id="${targetId}">
+                        <div class="restore-ambiguity-item-title">${idx + 1}. ${typeText} · ${phaseText}${statusBadge}</div>
+                        <div class="restore-ambiguity-item-sub">${title || (isEn ? '(Untitled)' : '(无标题)')}${url ? ` — ${url}` : ''}</div>
+                        <div class="restore-ambiguity-candidates">${candHtml}</div>
+                    </div>
+                `;
+            };
+
+            ambiguityList.innerHTML = ambiguous.map(renderItem).join('');
+
+            // Bind radio selection: targetId -> currentId
+            try {
+                ambiguityList.querySelectorAll('input.restore-ambiguity-radio').forEach((radio) => {
+                    radio.addEventListener('change', () => {
+                        const tid = radio.getAttribute('data-target-raw-id');
+                        const picked = String(radio.value || '');
+                        if (!tid || !picked) return;
+
+                        patchManualMatches = { ...patchManualMatches, [String(tid)]: String(picked) };
+
+                        // Refresh UI + diff
+                        try {
+                            setRestoreAmbiguityUI(matchReport);
+                            updatePatchConfirmButtonText();
+                        } catch (_) { }
+
+                        schedulePatchPreflight();
+                    });
+                });
+            } catch (_) { }
+        };
+
+        const schedulePatchPreflight = () => {
+            try {
+                if (patchPreflightTimer) clearTimeout(patchPreflightTimer);
+            } catch (_) { }
+
+            patchPreflightTimer = setTimeout(() => {
+                runPatchPreflight().catch(() => { });
+            }, 180);
+        };
+
+        const renderDiffSummaryHtml = (diffSummaryObj) => {
+            if (!diffSummary) return;
+
+            const ds = diffSummaryObj || {};
+            const changes = {
+                bookmarkAdded: ds.bookmarkAdded || 0,
+                bookmarkDeleted: ds.bookmarkDeleted || 0,
+                folderAdded: ds.folderAdded || 0,
+                folderDeleted: ds.folderDeleted || 0,
+                bookmarkMoved: !!ds.bookmarkMoved,
+                folderMoved: !!ds.folderMoved,
+                bookmarkModified: !!ds.bookmarkModified,
+                folderModified: !!ds.folderModified,
+                bookmarkMovedCount: ds.movedBookmarkCount || 0,
+                folderMovedCount: ds.movedFolderCount || 0,
+                bookmarkModifiedCount: ds.modifiedBookmarkCount || 0,
+                folderModifiedCount: ds.modifiedFolderCount || 0,
+                hasNumericalChange: ((ds.bookmarkAdded || 0) > 0 || (ds.bookmarkDeleted || 0) > 0 || (ds.folderAdded || 0) > 0 || (ds.folderDeleted || 0) > 0),
+                hasStructuralChange: (!!ds.bookmarkMoved || !!ds.folderMoved || !!ds.bookmarkModified || !!ds.folderModified),
+                hasNoChange: false,
+                isRestoreHiddenStats: false,
+                isFirst: false
+            };
+            changes.hasNoChange = !changes.hasNumericalChange && !changes.hasStructuralChange;
+
+            if (changes.hasNoChange) {
+                diffSummary.innerHTML = `<span style="color: var(--text-tertiary);"><i class="fas fa-check-circle"></i> ${isEn ? 'Already identical (no patch needed)' : '已一致（无需补丁）'}</span>`;
+                return;
+            }
+
+            const prefix = isEn ? 'Patch preflight: ' : '补丁预演: ';
+            const html = renderCommitStatsInline(changes, lang);
+            diffSummary.innerHTML = `
+                <div style="display: flex; align-items: center; justify-content: flex-start; gap: 8px; flex-wrap: wrap;">
+                    <span style="font-size: 13px; color: var(--info);">${prefix}</span>
+                    ${html}
+                </div>
+            `;
+        };
+
+        const renderCurrentDiffSummaryHtml = (diffSummaryObj) => {
+            if (!diffSummary) return;
+
+            const ds = diffSummaryObj || {};
+            const changes = {
+                bookmarkAdded: ds.bookmarkAdded || 0,
+                bookmarkDeleted: ds.bookmarkDeleted || 0,
+                folderAdded: ds.folderAdded || 0,
+                folderDeleted: ds.folderDeleted || 0,
+                bookmarkMoved: !!ds.bookmarkMoved,
+                folderMoved: !!ds.folderMoved,
+                bookmarkModified: !!ds.bookmarkModified,
+                folderModified: !!ds.folderModified,
+                bookmarkMovedCount: ds.movedBookmarkCount || 0,
+                folderMovedCount: ds.movedFolderCount || 0,
+                bookmarkModifiedCount: ds.modifiedBookmarkCount || 0,
+                folderModifiedCount: ds.modifiedFolderCount || 0,
+                hasNumericalChange: ((ds.bookmarkAdded || 0) > 0 || (ds.bookmarkDeleted || 0) > 0 || (ds.folderAdded || 0) > 0 || (ds.folderDeleted || 0) > 0),
+                hasStructuralChange: (!!ds.bookmarkMoved || !!ds.folderMoved || !!ds.bookmarkModified || !!ds.folderModified),
+                hasNoChange: false,
+                isRestoreHiddenStats: false,
+                isFirst: false
+            };
+            changes.hasNoChange = !changes.hasNumericalChange && !changes.hasStructuralChange;
+
+            if (changes.hasNoChange) {
+                diffSummary.innerHTML = `<span style="color: var(--text-tertiary);"><i class="fas fa-check-circle"></i> ${isEn ? 'Identical quantity & structure' : '数量与结构一致'}</span>`;
+                return;
+            }
+
+            const prefix = isEn ? 'Different from current: ' : '相较当前: ';
+            const html = renderCommitStatsInline(changes, lang);
+            diffSummary.innerHTML = `
+                <div style="display: flex; align-items: center; justify-content: flex-start; gap: 8px; flex-wrap: wrap;">
+                    <span style="font-size: 13px; color: var(--text-secondary);">${prefix}</span>
+                    ${html}
+                </div>
+            `;
+        };
+
+        const renderMergeDiffSummaryHtml = () => {
+            if (!diffSummary) return;
+
+            const s = (version && version.stats) ? version.stats : {};
+
+            const bookmarkAdded = Number(s.bookmarkAdded || 0);
+            const bookmarkDeleted = Number(s.bookmarkDeleted || 0);
+            const folderAdded = Number(s.folderAdded || 0);
+            const folderDeleted = Number(s.folderDeleted || 0);
+            const movedTotal = Number(s.movedCount || 0);
+            const modifiedTotal = Number(s.modifiedCount || 0);
+
+            const hasNumericalChange = bookmarkAdded > 0 || bookmarkDeleted > 0 || folderAdded > 0 || folderDeleted > 0;
+            const hasStructuralChange = movedTotal > 0 || modifiedTotal > 0;
+            const hasNoChange = !hasNumericalChange && !hasStructuralChange;
+
+            if (hasNoChange) {
+                diffSummary.innerHTML = `<span style="color: var(--text-tertiary);"><i class="fas fa-check-circle"></i> ${isEn ? 'No changes' : '无变化'}</span>`;
+                return;
+            }
+
+            const changes = {
+                bookmarkAdded,
+                bookmarkDeleted,
+                folderAdded,
+                folderDeleted,
+                bookmarkMoved: movedTotal > 0,
+                folderMoved: false,
+                bookmarkModified: modifiedTotal > 0,
+                folderModified: false,
+                bookmarkMovedCount: movedTotal,
+                folderMovedCount: 0,
+                bookmarkModifiedCount: modifiedTotal,
+                folderModifiedCount: 0,
+                hasNumericalChange,
+                hasStructuralChange,
+                hasNoChange,
+                isFirst: false,
+                isRestoreHiddenStats: false
+            };
+
+            const prefix = isEn ? 'Different from previous: ' : '相较上一条: ';
+            const html = renderCommitStatsInline(changes, lang);
+
+            diffSummary.innerHTML = `
+                <div style="display: flex; align-items: center; justify-content: flex-start; gap: 8px; flex-wrap: wrap;">
+                    <span style="font-size: 13px; color: var(--text-secondary);">${prefix}</span>
+                    ${html}
+                </div>
+            `;
+        };
+
+        const runPatchPreflight = async () => {
+            if (!isPatchPreflight) return;
+            if (!diffBar || !diffSummary) return;
+            if (!restoreRef) {
+                diffBar.style.display = 'flex';
+                diffSummary.innerHTML = `<span style="color: var(--warning);">${isEn ? 'Preflight unavailable: missing restore reference.' : '预演不可用：缺少恢复引用信息。'}</span>`;
+                confirmBtn.disabled = true;
+
+                if (conflictBadge) {
+                    conflictBadge.style.display = 'none';
+                    conflictBadge.textContent = '';
+                    conflictBadge.classList.remove('danger', 'warning');
+                }
+                return;
+            }
+
+            const token = ++patchPreflightToken;
+
+            // UI: running / updating (keep ambiguity panel state like history.html)
+            diffBar.style.display = 'flex';
+            const isFirstRun = !patchPreflight;
+            diffSummary.textContent = isFirstRun
+                ? (isEn ? 'Running patch preflight...' : '正在进行补丁预演...')
+                : (isEn ? 'Updating patch preflight...' : '正在更新补丁预演...');
+
+            if (isFirstRun) {
+                if (previewButton) previewButton.style.display = 'none';
+                if (ambiguityButton) ambiguityButton.style.display = 'none';
+                if (ambiguityPanel) ambiguityPanel.classList.remove('show');
+                if (ambiguityList) ambiguityList.innerHTML = '';
+
+                if (conflictBadge) {
+                    conflictBadge.style.display = 'none';
+                    conflictBadge.textContent = '';
+                    conflictBadge.classList.remove('danger', 'warning');
+                }
+            }
+
+            confirmBtn.disabled = true;
+
+            try {
+                const res = await callBackgroundFunction('preflightRestoreSelectedVersion', {
+                    restoreRef,
+                    strategy: 'patch',
+                    localPayload,
+                    manualMatches: patchManualMatches
+                });
+
+                if (token !== patchPreflightToken) return;
+
+                if (!res || res.success !== true) {
+                    diffSummary.innerHTML = `<span style="color: var(--warning);">${isEn ? 'Preflight failed: ' : '预演失败：'}${escapeHtml(res?.error || 'Unknown error')}</span>`;
+                    confirmBtn.disabled = true;
+                    return;
+                }
+
+                patchPreflight = {
+                    diffSummary: res.diffSummary,
+                    matchReport: res.matchReport
+                };
+
+                renderDiffSummaryHtml(res.diffSummary);
+                setRestoreAmbiguityUI(res.matchReport);
+
+                if (previewButton) previewButton.style.display = 'inline-flex';
+                updatePatchConfirmButtonText();
+            } catch (e) {
+                if (token !== patchPreflightToken) return;
+                diffSummary.innerHTML = `<span style="color: var(--warning);">${isEn ? 'Preflight error: ' : '预演错误：'}${escapeHtml(e?.message || 'Unknown error')}</span>`;
+                confirmBtn.disabled = true;
+            }
+        };
+
+        const runOverwritePreflight = async () => {
+            if (!isOverwritePreview) return;
+            if (!diffBar || !diffSummary) return;
+            if (!restoreRef) {
+                diffBar.style.display = 'flex';
+                diffSummary.innerHTML = `<span style="color: var(--warning);">${isEn ? 'Preflight unavailable: missing restore reference.' : '预演不可用：缺少恢复引用信息。'}</span>`;
+                return;
+            }
+
+            diffBar.style.display = 'flex';
+            diffSummary.textContent = isEn ? 'Computing diff...' : '正在计算差异...';
+
+            // overwrite has no ambiguity, keep confirm enabled
+            confirmBtn.disabled = false;
+
+            try {
+                const res = await callBackgroundFunction('buildOverwriteRestorePreview', {
+                    restoreRef,
+                    localPayload
+                });
+
+                if (!res || res.success !== true) {
+                    diffSummary.innerHTML = `<span style="color: var(--warning);">${isEn ? 'Preflight failed: ' : '预演失败：'}${escapeHtml(res?.error || 'Unknown error')}</span>`;
+                    return;
+                }
+
+                overwritePreviewCache = res;
+                renderCurrentDiffSummaryHtml(res.diffSummary);
+
+                if (previewButton) previewButton.style.display = 'inline-flex';
+            } catch (e) {
+                diffSummary.innerHTML = `<span style="color: var(--warning);">${isEn ? 'Preflight error: ' : '预演错误：'}${escapeHtml(e?.message || 'Unknown error')}</span>`;
+            }
+        };
+
+        // Init / reset UI
+        const shouldShowDiffBar = isPatchPreflight || isOverwritePreview || isMergePreview;
+        if (diffBar) diffBar.style.display = shouldShowDiffBar ? 'flex' : 'none';
+
+        if (diffSummary) {
+            if (isPatchPreflight) {
+                diffSummary.textContent = isEn ? 'Running patch preflight...' : '正在进行补丁预演...';
+            } else if (isOverwritePreview) {
+                diffSummary.textContent = isEn ? 'Computing diff...' : '正在计算差异...';
+            } else if (isMergePreview) {
+                // filled below
+                diffSummary.textContent = '';
+            } else {
+                diffSummary.textContent = '';
+            }
+        }
+
+        if (previewButton) {
+            // Patch/overwrite: show after preflight; merge: show immediately.
+            previewButton.style.display = isMergePreview ? 'inline-flex' : 'none';
+        }
+
+        if (ambiguityButton) ambiguityButton.style.display = 'none';
+        if (ambiguityPanel) ambiguityPanel.classList.remove('show');
+        if (ambiguityList) ambiguityList.innerHTML = '';
+
+        if (isMergePreview) {
+            renderMergeDiffSummaryHtml();
+        }
+
+        if (previewButton) {
+            previewButton.addEventListener('click', () => {
+                showPreviewView().catch(() => { });
+            });
+        }
+        if (ambiguityButton) {
+            ambiguityButton.addEventListener('click', () => {
+                toggleRestoreAmbiguityPanel();
+            });
+        }
+        if (ambiguityCloseButton) {
+            ambiguityCloseButton.addEventListener('click', () => {
+                toggleRestoreAmbiguityPanel(false);
+            });
+        }
+
+        // Patch preflight should run immediately when opening confirm modal
+        if (isPatchPreflight) {
+            confirmBtn.disabled = true;
+        } else {
+            confirmBtn.disabled = false;
+        }
 
         confirmModal.style.display = 'flex';
+
+        if (isPatchPreflight) {
+            runPatchPreflight().catch(() => { });
+        } else if (isOverwritePreview) {
+            runOverwritePreflight().catch(() => { });
+        }
 
         return await new Promise((resolve) => {
             const cleanup = () => {
                 confirmModal.style.display = 'none';
+                showMainView();
             };
+
             const onCancel = () => {
                 cleanup();
                 resolve(false);
             };
+
             const onConfirm = () => {
                 cleanup();
                 resolve(true);
             };
 
-            confirmCancelBtn.addEventListener('click', onCancel, { once: true });
-            confirmCloseBtn.addEventListener('click', onCancel, { once: true });
-            confirmConfirmBtn.addEventListener('click', onConfirm, { once: true });
+            cancelBtn.addEventListener('click', onCancel);
+            confirmBtn.addEventListener('click', onConfirm);
+            closeBtn.addEventListener('click', () => {
+                if (isInPreview) {
+                    showMainView();
+                    return;
+                }
+                onCancel();
+            });
         });
     };
 
@@ -11344,25 +12400,6 @@ function showRestoreModal(versions, source) {
             if (selectedVersion.canRestore === false) {
                 throw new Error('This version requires manual import (HTML snapshot)');
             }
-
-            // 二级确认：弹窗确认，再执行恢复
-            const ok = await showRestoreConfirmModal({ version: selectedVersion, strategy });
-
-            if (!ok) {
-                return;
-            }
-
-            // 执行恢复：锁定按钮
-            confirmButton.disabled = true;
-            strategyOverwriteRadio.disabled = true;
-            strategyMergeRadio.disabled = true;
-            strategyPatchRadio.disabled = true;
-            strategyGroup.classList.add('disabled');
-            closeButton.disabled = true;
-            cancelButton.disabled = true;
-            const lang = await getPreferredLang();
-            const isEn = lang === 'en';
-            confirmButton.textContent = isEn ? 'Restoring...' : '恢复中...';
 
             const restoreRef = selectedVersion.restoreRef;
             let localPayload = null;
@@ -11384,9 +12421,36 @@ function showRestoreModal(versions, source) {
                 }
             }
 
+            // 二级确认：弹窗确认，再执行恢复
+            const ok = await showRestoreConfirmModal({
+                version: selectedVersion,
+                strategy,
+                restoreRef,
+                localPayload
+            });
+
+            if (!ok) {
+                return;
+            }
+
+            // 执行恢复：锁定按钮
+            confirmButton.disabled = true;
+            strategyOverwriteRadio.disabled = true;
+            strategyMergeRadio.disabled = true;
+            strategyPatchRadio.disabled = true;
+            strategyGroup.classList.add('disabled');
+            closeButton.disabled = true;
+            cancelButton.disabled = true;
+            const lang = await getPreferredLang();
+            const isEn = lang === 'en';
+            confirmButton.textContent = isEn ? 'Restoring...' : '恢复中...';
+
             const restorePayload = { restoreRef, strategy, localPayload };
             if (strategy === 'merge') {
                 restorePayload.mergeViewMode = getSelectedMergeViewMode();
+            }
+            if (strategy === 'patch') {
+                restorePayload.manualMatches = patchManualMatches;
             }
 
             const restoreRes = await callBackgroundFunction('restoreSelectedVersion', restorePayload);
@@ -11394,6 +12458,36 @@ function showRestoreModal(versions, source) {
             if (restoreRes?.success) {
                 const lang = await getPreferredLang();
                 const isEn = lang === 'en';
+
+                const buildPostDiffHint = (postDiff) => {
+                    const ds = (postDiff && typeof postDiff === 'object') ? postDiff : null;
+                    if (!ds) return '';
+
+                    const hasPostDiff = (
+                        (Number(ds.bookmarkAdded || 0) > 0) ||
+                        (Number(ds.bookmarkDeleted || 0) > 0) ||
+                        (Number(ds.folderAdded || 0) > 0) ||
+                        (Number(ds.folderDeleted || 0) > 0) ||
+                        !!ds.bookmarkMoved ||
+                        !!ds.folderMoved ||
+                        !!ds.bookmarkModified ||
+                        !!ds.folderModified
+                    );
+
+                    if (!hasPostDiff) return '';
+
+                    const movedTotal = Number(ds.movedBookmarkCount || 0) + Number(ds.movedFolderCount || 0);
+                    const modifiedTotal = Number(ds.modifiedBookmarkCount || 0) + Number(ds.modifiedFolderCount || 0);
+                    const addText = `+${Number(ds.bookmarkAdded || 0)}/${Number(ds.folderAdded || 0)}`;
+                    const delText = `-${Number(ds.bookmarkDeleted || 0)}/${Number(ds.folderDeleted || 0)}`;
+                    const movedText = `${movedTotal}`;
+                    const modifiedText = `${modifiedTotal}`;
+
+                    return isEn
+                        ? `\n\nWARNING: Diff still remains after patch. (Bookmarks/Folders) Added ${addText}, Deleted ${delText}, Moved ${movedText}, Modified ${modifiedText}.\nTip: resolve ambiguity and run patch again if needed.`
+                        : `\n\n注意：补丁后仍有差异。（书签/文件夹）新增 ${addText}，删除 ${delText}，移动 ${movedText}，修改 ${modifiedText}。\n建议：如需完全一致，可继续处理歧义并再次补丁合并。`;
+                };
+
                 const msg = (() => {
                     if (strategy === 'overwrite') {
                         return isEn
@@ -11406,9 +12500,10 @@ function showRestoreModal(versions, source) {
                         const moved = restoreRes.moved || 0;
                         const updated = restoreRes.updated || 0;
                         const deleted = restoreRes.deleted || 0;
-                        return isEn
+                        const base = isEn
                             ? `SUCCESS: Patch merge completed. Added ${created}, moved ${moved}, updated ${updated}, removed ${deleted}.`
                             : `成功：补丁合并完成。新增 ${created}，移动 ${moved}，修改 ${updated}，删除 ${deleted}。`;
+                        return base + buildPostDiffHint(restoreRes.postDiff);
                     }
 
                     return isEn
@@ -11497,6 +12592,939 @@ function showRestoreModal(versions, source) {
             }
         }
     };
+}
+
+// =============================================================================
+// Restore Patch Preview helpers (ported from history_html/history.js)
+// =============================================================================
+
+function renderCommitStatsInline(changes, lang = 'zh_CN') {
+    const isZh = lang === 'zh_CN';
+
+    if (!changes || typeof changes !== 'object') return '';
+
+    if (changes.isRestoreHiddenStats) {
+        return '';
+    }
+
+    if (changes.isFirst) {
+        return `<span class="stat-badge first">${isZh ? '首次备份' : 'First Backup'}</span>`;
+    }
+
+    if (changes.hasNoChange) {
+        return `
+            <span class="stat-badge no-change">
+                <i class="fas fa-check-circle" style="color: var(--success);"></i>
+                ${isZh ? '无变化' : 'No Changes'}
+            </span>
+        `;
+    }
+
+    const statItems = [];
+
+    // Added
+    if ((changes.bookmarkAdded || 0) > 0 || (changes.folderAdded || 0) > 0) {
+        const parts = [];
+        if ((changes.bookmarkAdded || 0) > 0) {
+            const label = isZh ? '书签' : 'BKM';
+            parts.push(`<span class="stat-label">${label}</span> <span class="stat-color added">+${Number(changes.bookmarkAdded || 0)}</span>`);
+        }
+        if ((changes.folderAdded || 0) > 0) {
+            const label = isZh ? '文件夹' : 'FLD';
+            parts.push(`<span class="stat-label">${label}</span> <span class="stat-color added">+${Number(changes.folderAdded || 0)}</span>`);
+        }
+        if (parts.length) statItems.push(parts.join(' '));
+    }
+
+    // Deleted
+    if ((changes.bookmarkDeleted || 0) > 0 || (changes.folderDeleted || 0) > 0) {
+        const parts = [];
+        if ((changes.bookmarkDeleted || 0) > 0) {
+            const label = isZh ? '书签' : 'BKM';
+            parts.push(`<span class="stat-label">${label}</span> <span class="stat-color deleted">-${Number(changes.bookmarkDeleted || 0)}</span>`);
+        }
+        if ((changes.folderDeleted || 0) > 0) {
+            const label = isZh ? '文件夹' : 'FLD';
+            parts.push(`<span class="stat-label">${label}</span> <span class="stat-color deleted">-${Number(changes.folderDeleted || 0)}</span>`);
+        }
+        if (parts.length) statItems.push(parts.join(' '));
+    }
+
+    // Moved
+    if (changes.bookmarkMoved || changes.folderMoved) {
+        const movedTotal = Number(changes.bookmarkMovedCount || 0) + Number(changes.folderMovedCount || 0);
+        const label = isZh ? '移动' : 'Moved';
+        statItems.push(movedTotal > 0
+            ? `<span class="stat-label">${label}</span> <span class="stat-color moved">${movedTotal}</span>`
+            : `<span class="stat-color moved">${label}</span>`);
+    }
+
+    // Modified
+    if (changes.bookmarkModified || changes.folderModified) {
+        const modifiedTotal = Number(changes.bookmarkModifiedCount || 0) + Number(changes.folderModifiedCount || 0);
+        const label = isZh ? '修改' : 'Modified';
+        statItems.push(modifiedTotal > 0
+            ? `<span class="stat-label">${label}</span> <span class="stat-color modified">${modifiedTotal}</span>`
+            : `<span class="stat-color modified">${label}</span>`);
+    }
+
+    if (!statItems.length) {
+        return `<span class="stat-badge no-change">${isZh ? '无变化' : 'No Changes'}</span>`;
+    }
+
+    const separator = ' <span style="color:var(--text-tertiary);margin:0 4px;">|</span> ';
+    return `<span class="stat-badge quantity">${statItems.join(separator)}</span>`;
+}
+
+function breadcrumbToSlashFolders(bc) {
+    if (!bc) return '';
+    const parts = String(bc).split(' > ').map(s => s.trim()).filter(Boolean);
+    if (parts.length === 0) return '';
+    if (parts.length > 1) parts.pop();
+    else return '/';
+    return '/' + parts.join('/');
+}
+
+function slashPathToChipsHTML(slashPath) {
+    try {
+        if (!slashPath || typeof slashPath !== 'string') return '<span class="breadcrumb-item">/</span>';
+        const parts = slashPath.split('/').filter(Boolean);
+        if (parts.length === 0) return '<span class="breadcrumb-item">/</span>';
+        const chips = parts.map((p) => `<span class="breadcrumb-item">${escapeHtml(p)}</span>`);
+        const sep = '<span class="breadcrumb-separator">/</span>';
+        return chips.join(sep);
+    } catch (_) {
+        return '<span class="breadcrumb-item">/</span>';
+    }
+}
+
+// Fallback favicon - star icon (same as history.html)
+const fallbackIcon = 'data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 16 16%22%3E%3Cpath fill=%22%23999%22 d=%22M8 0l2.8 5.5 6.2 0.5-4.5 4 1.5 6-5.5-3.5-5.5 3.5 1.5-6-4.5-4 6.2-0.5z%22/%3E%3C/svg%3E';
+
+// Favicon cache (IndexedDB + negative cache) - ported from history_html/history.js
+const FaviconCache = {
+    db: null,
+    dbName: 'BookmarkFaviconCache',
+    dbVersion: 1,
+    storeName: 'favicons',
+    failureStoreName: 'failures',
+    memoryCache: new Map(),
+    failureCache: new Set(),
+    pendingRequests: new Map(),
+
+    async init() {
+        if (this.db) return;
+
+        return new Promise((resolve, reject) => {
+            const request = indexedDB.open(this.dbName, this.dbVersion);
+
+            request.onerror = () => {
+                reject(request.error);
+            };
+
+            request.onsuccess = () => {
+                this.db = request.result;
+                resolve();
+            };
+
+            request.onupgradeneeded = (event) => {
+                const db = event.target.result;
+
+                if (!db.objectStoreNames.contains(this.storeName)) {
+                    const store = db.createObjectStore(this.storeName, { keyPath: 'domain' });
+                    store.createIndex('timestamp', 'timestamp', { unique: false });
+                }
+
+                if (!db.objectStoreNames.contains(this.failureStoreName)) {
+                    const store = db.createObjectStore(this.failureStoreName, { keyPath: 'domain' });
+                    store.createIndex('timestamp', 'timestamp', { unique: false });
+                }
+            };
+        });
+    },
+
+    isInvalidUrl(url) {
+        if (!url || typeof url !== 'string') return true;
+
+        try {
+            const urlObj = new URL(url);
+            const hostname = urlObj.hostname.toLowerCase();
+
+            if (hostname === 'localhost' || hostname === '127.0.0.1' || hostname === '::1') {
+                return true;
+            }
+
+            if (hostname.match(/^(10\.|172\.(1[6-9]|2[0-9]|3[01])\.|192\.168\.)/)) {
+                return true;
+            }
+
+            if (hostname.endsWith('.local')) {
+                return true;
+            }
+
+            if (!url.startsWith('http://') && !url.startsWith('https://')) {
+                return true;
+            }
+
+            return false;
+        } catch (_) {
+            return true;
+        }
+    },
+
+    async get(url) {
+        if (this.isInvalidUrl(url)) {
+            return null;
+        }
+
+        try {
+            const domain = new URL(url).hostname;
+
+            if (this.failureCache.has(domain)) {
+                return 'failed';
+            }
+
+            if (this.memoryCache.has(domain)) {
+                return this.memoryCache.get(domain);
+            }
+
+            if (!this.db) await this.init();
+
+            return new Promise((resolve) => {
+                const tx = this.db.transaction([this.storeName, this.failureStoreName], 'readonly');
+                const failureStore = tx.objectStore(this.failureStoreName);
+                const failureReq = failureStore.get(domain);
+
+                failureReq.onsuccess = () => {
+                    if (failureReq.result) {
+                        const age = Date.now() - failureReq.result.timestamp;
+                        if (age < 7 * 24 * 60 * 60 * 1000) {
+                            this.failureCache.add(domain);
+                            resolve('failed');
+                            return;
+                        }
+                    }
+
+                    const store = tx.objectStore(this.storeName);
+                    const req = store.get(domain);
+                    req.onsuccess = () => {
+                        if (req.result) {
+                            this.memoryCache.set(domain, req.result.dataUrl);
+                            resolve(req.result.dataUrl);
+                        } else {
+                            resolve(null);
+                        }
+                    };
+                    req.onerror = () => resolve(null);
+                };
+
+                failureReq.onerror = () => resolve(null);
+            });
+        } catch (_) {
+            return null;
+        }
+    },
+
+    async save(url, dataUrl) {
+        if (this.isInvalidUrl(url)) return;
+
+        try {
+            const domain = new URL(url).hostname;
+            this.memoryCache.set(domain, dataUrl);
+
+            if (!this.db) await this.init();
+            const tx = this.db.transaction([this.storeName], 'readwrite');
+            const store = tx.objectStore(this.storeName);
+            store.put({ domain, dataUrl, timestamp: Date.now() });
+
+            this.failureCache.delete(domain);
+            this.removeFailure(domain);
+        } catch (_) { }
+    },
+
+    async saveFailure(url) {
+        if (this.isInvalidUrl(url)) return;
+        try {
+            const domain = new URL(url).hostname;
+            this.failureCache.add(domain);
+
+            if (!this.db) await this.init();
+            const tx = this.db.transaction([this.failureStoreName], 'readwrite');
+            const store = tx.objectStore(this.failureStoreName);
+            store.put({ domain, timestamp: Date.now() });
+        } catch (_) { }
+    },
+
+    async removeFailure(domain) {
+        try {
+            if (!this.db) await this.init();
+            const tx = this.db.transaction([this.failureStoreName], 'readwrite');
+            tx.objectStore(this.failureStoreName).delete(domain);
+        } catch (_) { }
+    },
+
+    async clear(url) {
+        if (this.isInvalidUrl(url)) return;
+        try {
+            const domain = new URL(url).hostname;
+            this.memoryCache.delete(domain);
+            this.failureCache.delete(domain);
+
+            if (!this.db) await this.init();
+            const tx = this.db.transaction([this.storeName, this.failureStoreName], 'readwrite');
+            tx.objectStore(this.storeName).delete(domain);
+            tx.objectStore(this.failureStoreName).delete(domain);
+        } catch (_) { }
+    },
+
+    async fetch(url) {
+        if (this.isInvalidUrl(url)) {
+            return fallbackIcon;
+        }
+
+        try {
+            const domain = new URL(url).hostname;
+
+            const cached = await this.get(url);
+            if (cached === 'failed') return fallbackIcon;
+            if (cached) return cached;
+
+            if (this.pendingRequests.has(domain)) {
+                return this.pendingRequests.get(domain);
+            }
+
+            const requestPromise = this._fetchFavicon(url);
+            this.pendingRequests.set(domain, requestPromise);
+
+            try {
+                return await requestPromise;
+            } finally {
+                this.pendingRequests.delete(domain);
+            }
+        } catch (_) {
+            return fallbackIcon;
+        }
+    },
+
+    async _fetchFavicon(url) {
+        return new Promise(async (resolve) => {
+            try {
+                const domain = new URL(url).hostname;
+                const sources = [
+                    `https://icons.duckduckgo.com/ip3/${domain}.ico`,
+                    `https://www.google.com/s2/favicons?domain=${domain}&sz=32`
+                ];
+
+                for (let i = 0; i < sources.length; i++) {
+                    const faviconUrl = sources[i];
+                    const result = await this._tryLoadFavicon(faviconUrl, url);
+                    if (result && result !== fallbackIcon) {
+                        resolve(result);
+                        return;
+                    }
+                }
+
+                this.saveFailure(url);
+                resolve(fallbackIcon);
+            } catch (_) {
+                this.saveFailure(url);
+                resolve(fallbackIcon);
+            }
+        });
+    },
+
+    async _tryLoadFavicon(faviconUrl, originalUrl) {
+        return new Promise((resolve) => {
+            const img = new Image();
+            const timeout = setTimeout(() => {
+                img.src = '';
+                resolve(null);
+            }, 3000);
+
+            img.onload = () => {
+                clearTimeout(timeout);
+                if (img.width < 8 || img.height < 8) {
+                    resolve(null);
+                    return;
+                }
+
+                try {
+                    const canvas = document.createElement('canvas');
+                    canvas.width = img.width;
+                    canvas.height = img.height;
+                    const ctx = canvas.getContext('2d');
+                    ctx.drawImage(img, 0, 0);
+                    const dataUrl = canvas.toDataURL('image/png');
+                    this.save(originalUrl, dataUrl);
+                    resolve(dataUrl);
+                } catch (_) {
+                    // CORS: store the remote URL
+                    this.save(originalUrl, faviconUrl);
+                    resolve(faviconUrl);
+                }
+            };
+
+            img.onerror = () => {
+                clearTimeout(timeout);
+                resolve(null);
+            };
+
+            img.src = faviconUrl;
+        });
+    }
+};
+
+function updateFaviconImages(url, dataUrl) {
+    try {
+        const domain = new URL(url).hostname;
+        const allImages = document.querySelectorAll('img.tree-icon');
+
+        allImages.forEach(img => {
+            const item = img.closest('[data-node-url], [data-bookmark-url]');
+            if (!item) return;
+            const itemUrl = item.dataset.nodeUrl || item.dataset.bookmarkUrl;
+            if (!itemUrl) return;
+            try {
+                const itemDomain = new URL(itemUrl).hostname;
+                if (itemDomain === domain) {
+                    img.src = dataUrl;
+                }
+            } catch (_) { }
+        });
+    } catch (_) { }
+}
+
+function setupGlobalImageErrorHandler() {
+    document.addEventListener('error', (e) => {
+        if (e.target.tagName === 'IMG' && e.target.classList.contains('tree-icon')) {
+            if (e.target.src !== fallbackIcon && !e.target.src.startsWith('data:image/svg+xml')) {
+                e.target.src = fallbackIcon;
+            }
+        }
+    }, true);
+}
+
+// Init once (best-effort)
+try { setupGlobalImageErrorHandler(); } catch (_) { }
+try { FaviconCache.init().catch(() => { }); } catch (_) { }
+
+// Receive favicon updates from background.js (share the same cache DB)
+try {
+    const browserAPI = (typeof chrome !== 'undefined') ? chrome : (typeof browser !== 'undefined' ? browser : null);
+    if (browserAPI && browserAPI.runtime && browserAPI.runtime.onMessage) {
+        browserAPI.runtime.onMessage.addListener((message) => {
+            if (!message || !message.action) return;
+
+            if (message.action === 'clearFaviconCache') {
+                if (message.url) {
+                    FaviconCache.clear(message.url);
+                }
+                return;
+            }
+
+            if (message.action === 'updateFaviconFromTab') {
+                if (message.url && message.favIconUrl) {
+                    FaviconCache.save(message.url, message.favIconUrl)
+                        .then(() => {
+                            updateFaviconImages(message.url, message.favIconUrl);
+                        })
+                        .catch(() => { });
+                }
+            }
+        });
+    }
+} catch (_) { }
+
+// Sync version: returns cached favicon or fallback, and triggers async fetch
+function getFaviconUrl(url) {
+    if (!url) return fallbackIcon;
+    if (!url.startsWith('http://') && !url.startsWith('https://')) {
+        return fallbackIcon;
+    }
+
+    if (FaviconCache.isInvalidUrl(url)) {
+        return fallbackIcon;
+    }
+
+    try {
+        const domain = new URL(url).hostname;
+
+        if (FaviconCache.memoryCache.has(domain)) {
+            return FaviconCache.memoryCache.get(domain);
+        }
+
+        if (FaviconCache.failureCache.has(domain)) {
+            return fallbackIcon;
+        }
+
+        FaviconCache.fetch(url).then((dataUrl) => {
+            if (dataUrl && dataUrl !== fallbackIcon) {
+                updateFaviconImages(url, dataUrl);
+            }
+        }).catch(() => { });
+
+        return fallbackIcon;
+    } catch (_) {
+        return fallbackIcon;
+    }
+}
+
+// Expose to global scope (for other scripts / future search integration)
+try {
+    window.FaviconCache = FaviconCache;
+    window.getFaviconUrl = getFaviconUrl;
+    window.getFaviconUrlAsync = async (url) => {
+        return await FaviconCache.fetch(url);
+    };
+} catch (_) { }
+
+function generateHistoryTreeHtml(bookmarkTree, changeMap, mode, options = {}, lang = 'zh_CN') {
+    const isZh = lang === 'zh_CN';
+    const maxDepth = options.maxDepth !== undefined ? options.maxDepth : 999;
+
+    const hasChangesRecursive = (node) => {
+        if (!node) return false;
+        if (changeMap && changeMap.has(node.id)) return true;
+        if (node.children) return node.children.some(child => hasChangesRecursive(child));
+        return false;
+    };
+
+    const renderHistoryTreeNode = (node, level = 0, forceInclude = false) => {
+        if (!node) return '';
+
+        const shouldInclude = mode === 'detailed' || forceInclude || hasChangesRecursive(node);
+        if (!shouldInclude) return '';
+
+        const change = changeMap ? changeMap.get(node.id) : null;
+        let changeClass = '';
+        let statusIcon = '';
+
+        if (change) {
+            const types = change.type ? String(change.type).split('+') : [];
+            const isAdded = types.includes('added');
+            const isDeleted = types.includes('deleted');
+            const isModified = types.includes('modified');
+            const isMoved = types.includes('moved');
+
+            if (isAdded) {
+                changeClass = 'tree-change-added';
+                statusIcon = '<span class="change-badge added">+</span>';
+            } else if (isDeleted) {
+                changeClass = 'tree-change-deleted';
+                statusIcon = '<span class="change-badge deleted">-</span>';
+            } else {
+                if (isModified) {
+                    changeClass = 'tree-change-modified';
+                    statusIcon += '<span class="change-badge modified">~</span>';
+                }
+
+                if (isMoved) {
+                    changeClass = isModified ? 'tree-change-mixed' : 'tree-change-moved';
+                    let slash = '';
+                    if (change.moved && change.moved.oldPath) {
+                        slash = breadcrumbToSlashFolders(change.moved.oldPath);
+                    }
+                    statusIcon += `<span class="change-badge moved" data-move-from="${escapeHtml(slash)}" title="${escapeHtml(slash)}"><i class="fas fa-arrows-alt"></i><span class="move-tooltip">${slashPathToChipsHTML(slash)}</span></span>`;
+                }
+            }
+        } else if (hasChangesRecursive(node) && mode === 'detailed') {
+            statusIcon = `<span class="change-badge has-changes" title="${isZh ? '此文件夹下有变化' : 'Contains changes'}">•</span>`;
+        }
+
+        const title = escapeHtml(node.title || (isZh ? '(无标题)' : '(Untitled)'));
+        const isFolder = !node.url && node.children;
+        const hasChildren = isFolder && node.children && node.children.length > 0;
+
+        const isSelfChangedFolder = !!(isFolder && change && change.type);
+        let shouldExpand = false;
+        if (mode === 'detailed') {
+            shouldExpand = level < maxDepth;
+            if (options.maxDepth === undefined || options.maxDepth === null || options.maxDepth > 100) {
+                shouldExpand = (level === 0 || hasChangesRecursive(node));
+            }
+        } else {
+            shouldExpand = ((level === 0 || hasChangesRecursive(node)) && !isSelfChangedFolder);
+        }
+
+        const shouldForceIncludeChildrenInSimple =
+            mode !== 'detailed' &&
+            !forceInclude &&
+            isFolder &&
+            change &&
+            typeof change.type === 'string';
+        const nextForceInclude = forceInclude || shouldForceIncludeChildrenInSimple;
+
+        if (isFolder) {
+            const childrenHtml = hasChildren
+                ? node.children.map(child => renderHistoryTreeNode(child, level + 1, nextForceInclude)).join('')
+                : '';
+
+            return `
+                <div class="tree-node">
+                    <div class="tree-item ${changeClass}" data-node-id="${escapeHtml(String(node.id))}" data-node-type="folder" data-node-level="${level}">
+                        <span class="tree-toggle ${shouldExpand ? 'expanded' : ''}"><i class="fas fa-chevron-right"></i></span>
+                        <i class="tree-icon fas fa-folder${shouldExpand ? '-open' : ''}"></i>
+                        <span class="tree-label">${title}</span>
+                        <span class="change-badges">${statusIcon}</span>
+                    </div>
+                    <div class="tree-children ${shouldExpand ? 'expanded' : ''}">
+                        ${childrenHtml}
+                    </div>
+                </div>
+            `;
+        }
+
+        const favicon = getFaviconUrl(node.url);
+        return `
+            <div class="tree-node">
+                <div class="tree-item ${changeClass}" data-node-id="${escapeHtml(String(node.id))}" data-node-url="${escapeHtml(node.url || '')}" data-node-type="bookmark" data-node-level="${level}">
+                    <span class="tree-toggle" style="opacity: 0"></span>
+                    ${favicon ? `<img class="tree-icon" src="${escapeHtml(favicon)}" alt="">` : `<i class="tree-icon fas fa-bookmark"></i>`}
+                    <a href="${escapeHtml(node.url || '')}" target="_blank" class="tree-label tree-bookmark-link" rel="noopener noreferrer">${title}</a>
+                    <span class="change-badges">${statusIcon}</span>
+                </div>
+            </div>
+        `;
+    };
+
+    let treeContent = '';
+    const nodes = Array.isArray(bookmarkTree) ? bookmarkTree : [bookmarkTree];
+    nodes.forEach(node => {
+        if (node && node.children) {
+            node.children.forEach(child => {
+                treeContent += renderHistoryTreeNode(child, 0);
+            });
+        }
+    });
+
+    if (!treeContent) {
+        return `
+            <div class="detail-section">
+                <div class="detail-empty">
+                    <i class="fas fa-check-circle"></i>
+                    ${isZh ? '无变化' : 'No changes'}
+                </div>
+            </div>
+        `;
+    }
+
+    // Build node id -> node map to count F/B for legend
+    const nodeMap = new Map();
+    const buildNodeMap = (node) => {
+        if (!node) return;
+        if (node.id) nodeMap.set(String(node.id), node);
+        if (node.children) node.children.forEach(buildNodeMap);
+    };
+    nodes.forEach(buildNodeMap);
+
+    let addedFolders = 0, addedBookmarks = 0;
+    let deletedFolders = 0, deletedBookmarks = 0;
+    let modifiedFolders = 0, modifiedBookmarks = 0;
+    let movedFolders = 0, movedBookmarks = 0;
+
+    if (changeMap && typeof changeMap.forEach === 'function') {
+        changeMap.forEach((change, id) => {
+            const node = nodeMap.get(String(id));
+            const isFolder = node && !node.url && node.children;
+            const types = change && change.type ? String(change.type).split('+') : [];
+
+            if (types.includes('added')) {
+                if (isFolder) addedFolders++; else addedBookmarks++;
+            }
+            if (types.includes('deleted')) {
+                if (isFolder) deletedFolders++; else deletedBookmarks++;
+            }
+            if (types.includes('modified')) {
+                if (isFolder) modifiedFolders++; else modifiedBookmarks++;
+            }
+            if (types.includes('moved')) {
+                if (isFolder) movedFolders++; else movedBookmarks++;
+            }
+        });
+    }
+
+    const formatCount = (folders, bookmarks) => {
+        const parts = [];
+        if (folders > 0) parts.push(`${folders}F`);
+        if (bookmarks > 0) parts.push(`${bookmarks}B`);
+        return parts.join(' ');
+    };
+
+    const legendItems = [];
+    const addedTotal = addedFolders + addedBookmarks;
+    const deletedTotal = deletedFolders + deletedBookmarks;
+    const modifiedTotal = modifiedFolders + modifiedBookmarks;
+    const movedTotal = movedFolders + movedBookmarks;
+
+    if (addedTotal > 0) legendItems.push(`<span class="legend-item"><span class="legend-dot added"></span><span class="legend-count">:${formatCount(addedFolders, addedBookmarks)}</span></span>`);
+    if (deletedTotal > 0) legendItems.push(`<span class="legend-item"><span class="legend-dot deleted"></span><span class="legend-count">:${formatCount(deletedFolders, deletedBookmarks)}</span></span>`);
+    if (movedTotal > 0) legendItems.push(`<span class="legend-item"><span class="legend-dot moved"></span><span class="legend-count">:${movedTotal}</span></span>`);
+    if (modifiedTotal > 0) legendItems.push(`<span class="legend-item"><span class="legend-dot modified"></span><span class="legend-count">:${modifiedTotal}</span></span>`);
+    const legend = legendItems.join('');
+
+    const customTitle = options && options.customTitle ? String(options.customTitle) : '';
+    const titleText = customTitle ? escapeHtml(customTitle) : (isZh ? '书签变化' : 'Bookmark Changes');
+    const modeLabel = mode === 'detailed' ? (isZh ? '详细' : 'Detailed') : (isZh ? '简略' : 'Simple');
+
+    return `
+        <div class="detail-section">
+            <div class="detail-section-title detail-section-title-with-legend">
+                <span class="detail-title-left">
+                    ${titleText}
+                    ${customTitle ? '' : `<span class="detail-mode-label">(${modeLabel})</span>`}
+                </span>
+                <span class="detail-title-legend">${legend}</span>
+            </div>
+            <div class="history-tree-container bookmark-tree">
+                ${treeContent}
+            </div>
+        </div>
+    `;
+}
+
+// Import-merge preview tree HTML (ported from history_html/history.js)
+// treeRoot: { title, children } where nodes may contain { title, url, children, changeType }
+function generateImportMergePreviewTreeHtml(treeRoot, options = {}, lang = 'zh_CN') {
+    const isZh = lang === 'zh_CN';
+    const maxDepth = options.maxDepth !== undefined ? options.maxDepth : 2;
+
+    const getChangeMeta = (changeType) => {
+        const types = String(changeType || '').split('+');
+        let changeClass = '';
+        let statusIcon = '';
+
+        if (types.includes('added')) {
+            changeClass = 'tree-change-added';
+            statusIcon = '<span class="change-badge added">+</span>';
+        } else if (types.includes('deleted')) {
+            changeClass = 'tree-change-deleted';
+            statusIcon = '<span class="change-badge deleted">-</span>';
+        } else {
+            const isModified = types.includes('modified');
+            const isMoved = types.includes('moved');
+
+            if (isModified) {
+                changeClass = 'tree-change-modified';
+                statusIcon += '<span class="change-badge modified">~</span>';
+            }
+
+            if (isMoved) {
+                changeClass = isModified ? 'tree-change-mixed' : 'tree-change-moved';
+                statusIcon += '<span class="change-badge moved"><i class="fas fa-arrows-alt"></i></span>';
+            }
+        }
+
+        return { changeClass, statusIcon };
+    };
+
+    // Legend counts
+    let addedFolders = 0, addedBookmarks = 0;
+    let deletedFolders = 0, deletedBookmarks = 0;
+    let modifiedFolders = 0, modifiedBookmarks = 0;
+    let movedFolders = 0, movedBookmarks = 0;
+
+    const countChanges = (node) => {
+        if (!node) return;
+        const url = node.url ? String(node.url) : '';
+        const isFolder = !url && Array.isArray(node.children);
+        const types = String(node.changeType || '').split('+').filter(Boolean);
+
+        if (types.includes('added')) {
+            if (isFolder) addedFolders++; else addedBookmarks++;
+        }
+        if (types.includes('deleted')) {
+            if (isFolder) deletedFolders++; else deletedBookmarks++;
+        }
+        if (types.includes('modified')) {
+            if (isFolder) modifiedFolders++; else modifiedBookmarks++;
+        }
+        if (types.includes('moved')) {
+            if (isFolder) movedFolders++; else movedBookmarks++;
+        }
+
+        if (Array.isArray(node.children)) {
+            node.children.forEach(countChanges);
+        }
+    };
+
+    if (treeRoot && Array.isArray(treeRoot.children)) {
+        treeRoot.children.forEach(countChanges);
+    }
+
+    const formatCount = (folders, bookmarks) => {
+        const parts = [];
+        if (folders > 0) parts.push(`${folders}F`);
+        if (bookmarks > 0) parts.push(`${bookmarks}B`);
+        return parts.join(' ');
+    };
+
+    const legendItems = [];
+    const addedTotal = addedFolders + addedBookmarks;
+    const deletedTotal = deletedFolders + deletedBookmarks;
+    const modifiedTotal = modifiedFolders + modifiedBookmarks;
+    const movedTotal = movedFolders + movedBookmarks;
+
+    if (addedTotal > 0) legendItems.push(`<span class="legend-item"><span class="legend-dot added"></span><span class="legend-count">:${formatCount(addedFolders, addedBookmarks)}</span></span>`);
+    if (deletedTotal > 0) legendItems.push(`<span class="legend-item"><span class="legend-dot deleted"></span><span class="legend-count">:${formatCount(deletedFolders, deletedBookmarks)}</span></span>`);
+    if (movedTotal > 0) legendItems.push(`<span class="legend-item"><span class="legend-dot moved"></span><span class="legend-count">:${movedTotal}</span></span>`);
+    if (modifiedTotal > 0) legendItems.push(`<span class="legend-item"><span class="legend-dot modified"></span><span class="legend-count">:${modifiedTotal}</span></span>`);
+
+    const legend = legendItems.join('');
+    const safeTitle = (t) => escapeHtml(String(t == null ? '' : t));
+
+    const renderNode = (node, level = 0) => {
+        if (!node) return '';
+
+        const title = safeTitle(node.title || (isZh ? '(无标题)' : '(Untitled)'));
+        const url = node.url ? String(node.url) : '';
+        const isFolder = !url && Array.isArray(node.children);
+        const hasChildren = isFolder && node.children.length > 0;
+
+        const { changeClass, statusIcon } = getChangeMeta(node.changeType);
+        const shouldExpand = level < maxDepth;
+
+        if (isFolder) {
+            const childrenHtml = hasChildren
+                ? node.children.map(child => renderNode(child, level + 1)).join('')
+                : '';
+
+            return `
+                <div class="tree-node">
+                    <div class="tree-item ${changeClass}" data-node-type="folder" data-node-level="${level}">
+                        <span class="tree-toggle ${shouldExpand ? 'expanded' : ''}"><i class="fas fa-chevron-right"></i></span>
+                        <i class="tree-icon fas fa-folder${shouldExpand ? '-open' : ''}"></i>
+                        <span class="tree-label">${title}</span>
+                        <span class="change-badges">${statusIcon}</span>
+                    </div>
+                    <div class="tree-children ${shouldExpand ? 'expanded' : ''}">
+                        ${childrenHtml}
+                    </div>
+                </div>
+            `;
+        }
+
+        const favicon = getFaviconUrl(url);
+        return `
+            <div class="tree-node">
+                <div class="tree-item ${changeClass}" data-node-url="${escapeHtml(url)}" data-node-type="bookmark" data-node-level="${level}">
+                    <span class="tree-toggle" style="opacity: 0"></span>
+                    ${favicon ? `<img class="tree-icon" src="${escapeHtml(favicon)}" alt="">` : `<i class="tree-icon fas fa-bookmark"></i>`}
+                    <a href="${escapeHtml(url)}" target="_blank" class="tree-label tree-bookmark-link" rel="noopener noreferrer">${title}</a>
+                    <span class="change-badges">${statusIcon}</span>
+                </div>
+            </div>
+        `;
+    };
+
+    let treeContent = '';
+    if (treeRoot && Array.isArray(treeRoot.children)) {
+        treeRoot.children.forEach(child => {
+            treeContent += renderNode(child, 0);
+        });
+    }
+
+    const customTitle = options.customTitle ? String(options.customTitle) : '';
+
+    return `
+        <div class="detail-section">
+            <div class="detail-section-title detail-section-title-with-legend">
+                <span class="detail-title-left">${safeTitle(customTitle || (isZh ? '导入合并预览' : 'Import Merge Preview'))}</span>
+                <span class="detail-title-legend">${legend}</span>
+            </div>
+            <div class="history-tree-container bookmark-tree">
+                ${treeContent || `<div class="detail-empty">${isZh ? '无变化' : 'No changes'}</div>`}
+            </div>
+        </div>
+    `;
+}
+
+function rebuildTreeWithDeleted(oldTree, newTree, changeMap) {
+    if (!oldTree || !oldTree[0] || !newTree || !newTree[0]) {
+        return newTree;
+    }
+
+    const visitedIds = new Set();
+    const MAX_DEPTH = 50;
+
+    const rebuildNode = (oldNode, newNodes, depth = 0) => {
+        if (!oldNode || typeof oldNode.id === 'undefined') return null;
+        if (depth > MAX_DEPTH) return null;
+        if (visitedIds.has(oldNode.id)) return null;
+        visitedIds.add(oldNode.id);
+
+        const newNode = newNodes ? newNodes.find(n => n && n.id === oldNode.id) : null;
+        const change = changeMap ? changeMap.get(oldNode.id) : null;
+
+        if (change && change.type === 'deleted') {
+            const deletedNodeCopy = JSON.parse(JSON.stringify(oldNode));
+            if (oldNode.children && oldNode.children.length > 0) {
+                deletedNodeCopy.children = oldNode.children
+                    .map(child => rebuildNode(child, null, depth + 1))
+                    .filter(n => n !== null);
+            }
+            return deletedNodeCopy;
+        }
+
+        if (newNode) {
+            const nodeCopy = JSON.parse(JSON.stringify(newNode));
+
+            if (oldNode.children || newNode.children) {
+                const childrenMap = new Map();
+                if (oldNode.children) {
+                    oldNode.children.forEach((child, index) => {
+                        if (!child) return;
+                        childrenMap.set(child.id, { node: child, index, source: 'old' });
+                    });
+                }
+                if (newNode.children) {
+                    newNode.children.forEach((child, index) => {
+                        if (!child) return;
+                        childrenMap.set(child.id, { node: child, index, source: 'new' });
+                    });
+                }
+
+                const rebuiltChildren = [];
+                if (oldNode.children) {
+                    oldNode.children.forEach(oldChild => {
+                        if (!oldChild) return;
+                        if (childrenMap.has(oldChild.id)) {
+                            const rebuiltChild = rebuildNode(oldChild, newNode.children, depth + 1);
+                            if (rebuiltChild) rebuiltChildren.push(rebuiltChild);
+                        }
+                    });
+                }
+
+                if (newNode.children) {
+                    newNode.children.forEach(newChild => {
+                        if (!newChild) return;
+                        const existed = oldNode.children && oldNode.children.find(c => c && c.id === newChild.id);
+                        if (!existed) {
+                            rebuiltChildren.push(newChild);
+                        }
+                    });
+                }
+
+                nodeCopy.children = rebuiltChildren;
+            }
+
+            return nodeCopy;
+        }
+
+        if (newNodes === null && change && change.type === 'deleted') {
+            const deletedNodeCopy = JSON.parse(JSON.stringify(oldNode));
+            if (oldNode.children && oldNode.children.length > 0) {
+                deletedNodeCopy.children = oldNode.children
+                    .map(child => rebuildNode(child, null, depth + 1))
+                    .filter(n => n !== null);
+            }
+            return deletedNodeCopy;
+        }
+
+        return null;
+    };
+
+    const rebuiltRoot = rebuildNode(oldTree[0], [newTree[0]]);
+    return rebuiltRoot ? [rebuiltRoot] : newTree;
 }
 
 // [New] Restore Help Modal Logic

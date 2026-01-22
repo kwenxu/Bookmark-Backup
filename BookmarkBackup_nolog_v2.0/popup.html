@@ -3821,6 +3821,12 @@
             color: var(--theme-status-info-text);
         }
 
+        .restore-confirm-warning.warning {
+            border-left: 3px solid var(--theme-warning-color);
+            background-color: rgba(255, 152, 0, 0.12);
+            color: var(--theme-text-primary);
+        }
+
         .restore-modal-action-btn.danger {
             background-color: var(--theme-error-color);
             color: white;
@@ -3829,6 +3835,910 @@
 
         .restore-modal-action-btn.danger:hover:not(:disabled) {
             filter: brightness(0.95);
+        }
+
+        /* ------------------------------------------------------------------ */
+        /* Restore Confirm Patch UI (ported from history.html/history.css)     */
+        /* ------------------------------------------------------------------ */
+        #restoreConfirmModal {
+            /* History theme variables (match history_html/history.css) */
+            --bg-primary: #ffffff;
+            --bg-secondary: #f8f9fa;
+            --bg-tertiary: #f0f2f5;
+            --bg-elevated: #ffffff;
+
+            --text-primary: #1c1e21;
+            --text-secondary: #65676b;
+            --text-tertiary: #8a8d91;
+
+            --border-color: #e4e6eb;
+            --border-hover: #ccd0d5;
+
+            --accent-primary: #1877f2;
+            --accent-hover: #166fe5;
+            --accent-light: #e7f3ff;
+            --link-color: #1877f2;
+
+            --success: #42b72a;
+            --success-light: #e7f5e4;
+            --warning: #ff9800;
+            --warning-light: #fff3e0;
+            --error: #e74c3c;
+            --error-light: #ffebee;
+            --info: #17a2b8;
+            --info-light: #e0f7fa;
+
+            --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.1);
+            --shadow-md: 0 2px 8px rgba(0, 0, 0, 0.1);
+            --shadow-lg: 0 4px 16px rgba(0, 0, 0, 0.15);
+
+            /* Git-like colors */
+            --git-added: #22863a;
+            --git-added-bg: #e6ffed;
+            --git-deleted: #cb2431;
+            --git-deleted-bg: #ffeef0;
+            --git-modified: #f97316;
+            --git-modified-bg: #fff7ed;
+            --git-moved: #3b82f6;
+            --git-moved-bg: #eff6ff;
+        }
+
+        html[data-theme="dark"] #restoreConfirmModal {
+            --bg-primary: #18191a;
+            --bg-secondary: #242526;
+            --bg-tertiary: #3a3b3c;
+            --bg-elevated: #242526;
+
+            --text-primary: #e4e6eb;
+            --text-secondary: #b0b3b8;
+            --text-tertiary: #8a8d91;
+
+            --border-color: #3a3b3c;
+            --border-hover: #4e4f50;
+
+            --accent-primary: #2d88ff;
+            --accent-hover: #4d9eff;
+            --accent-light: #1a3a5f;
+            --link-color: #4d9eff;
+
+            --success: #42b72a;
+            --success-light: #1b3a1b;
+            --warning: #ff9800;
+            --warning-light: #3d2b1f;
+            --error: #e74c3c;
+            --error-light: #3d1f1f;
+            --info: #17a2b8;
+            --info-light: #1a3540;
+
+            --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.3);
+            --shadow-md: 0 2px 8px rgba(0, 0, 0, 0.4);
+            --shadow-lg: 0 4px 16px rgba(0, 0, 0, 0.5);
+
+            --git-added: #3fb950;
+            --git-added-bg: #1b3a1b;
+            --git-deleted: #f85149;
+            --git-deleted-bg: #3d1f1f;
+            --git-modified: #fb923c;
+            --git-modified-bg: #431407;
+            --git-moved: #60a5fa;
+            --git-moved-bg: #172554;
+        }
+
+        /* Keep layout consistent with history.html */
+        #restoreConfirmModal,
+        #restoreConfirmModal * {
+            box-sizing: border-box;
+        }
+
+        /* Neutralize global popup button styles inside confirm modal */
+        #restoreConfirmModal button {
+            flex: 0 0 auto !important;
+            box-shadow: none !important;
+            transform: none !important;
+        }
+
+        #restoreConfirmModal button:hover {
+            transform: none !important;
+            box-shadow: none !important;
+        }
+
+        #restoreConfirmModal {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Helvetica', 'Arial', sans-serif;
+            line-height: 1.6;
+        }
+
+        /* Action buttons (match history.html restore modal) */
+        #restoreConfirmModal .restore-modal-action-btn {
+            min-width: 92px;
+            height: 34px;
+            padding: 0 12px;
+            border-radius: 8px;
+            font-size: 14px;
+            line-height: 1;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            white-space: nowrap;
+            cursor: pointer;
+            user-select: none;
+            transition: all 0.2s ease;
+
+            background-color: var(--bg-tertiary);
+            color: var(--text-secondary);
+            border: 1px solid var(--border-color);
+        }
+
+        #restoreConfirmModal .restore-modal-action-btn:hover:not(:disabled) {
+            background-color: var(--bg-secondary);
+            color: var(--text-primary);
+        }
+
+        #restoreConfirmModal .restore-modal-action-btn.primary {
+            background-color: var(--accent-primary);
+            color: #ffffff;
+            border: none;
+        }
+
+        #restoreConfirmModal .restore-modal-action-btn.primary:hover:not(:disabled) {
+            background-color: var(--accent-hover);
+        }
+
+        #restoreConfirmModal .restore-modal-action-btn.secondary {
+            background-color: var(--bg-tertiary);
+            color: var(--text-secondary);
+            border: 1px solid var(--border-color);
+        }
+
+        #restoreConfirmModal .restore-modal-action-btn.secondary:hover:not(:disabled) {
+            background-color: var(--bg-secondary);
+            color: var(--text-primary);
+        }
+
+        #restoreConfirmModal .restore-modal-action-btn:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+        }
+
+        /* Summary + warning colors should follow history theme */
+        #restoreConfirmModal .restore-confirm-summary-key {
+            color: var(--text-secondary);
+            opacity: 1;
+        }
+
+        #restoreConfirmModal .restore-confirm-summary-val {
+            color: var(--text-primary);
+        }
+
+        #restoreConfirmModal .restore-confirm-summary-val.mono {
+            color: var(--text-tertiary);
+        }
+
+        #restoreConfirmModal .restore-confirm-warning.danger {
+            border-left: 3px solid var(--error);
+            background-color: var(--error-light);
+            color: var(--text-primary);
+        }
+
+        #restoreConfirmModal .restore-confirm-warning.info {
+            border-left: 3px solid var(--info);
+            background-color: var(--info-light);
+            color: var(--text-primary);
+        }
+
+        #restoreConfirmModal .restore-confirm-warning.warning {
+            border-left: 3px solid var(--warning);
+            background-color: var(--warning-light);
+            color: var(--text-primary);
+        }
+
+        #restoreConfirmModal #restorePreviewContent {
+            padding: 8px 20px !important;
+        }
+
+        /* Preview: only one vertical scrollbar (use outer container scroll) */
+        #restoreConfirmModal #restorePreviewContent {
+            overflow-y: auto;
+        }
+
+        #restoreConfirmModal #restorePreviewContent .history-tree-container.bookmark-tree {
+            max-height: none;
+            overflow: visible;
+            border: none;
+            padding: 0;
+            background: transparent;
+        }
+
+        #restoreConfirmModal #closeRestoreConfirmModal:hover {
+            background: var(--bg-tertiary) !important;
+        }
+
+        /* Diff bar + buttons (same as history.html restore modal) */
+        #restoreConfirmModal .restore-diff-bar {
+            margin-top: 8px;
+            background: var(--bg-tertiary);
+            border: 1px solid var(--border-color);
+            border-radius: 8px;
+            padding: 6px 10px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 8px;
+        }
+
+        #restoreConfirmModal .restore-preview-btn,
+        #restoreConfirmModal .restore-ambiguity-btn {
+            height: 24px;
+            padding: 0 10px;
+            font-size: 11px;
+            border: 1px solid var(--border-color);
+            background: var(--bg-primary);
+            color: var(--text-secondary);
+            border-radius: 6px;
+            cursor: pointer;
+            white-space: nowrap;
+            transition: all 0.2s ease;
+
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            line-height: 1;
+        }
+
+        #restoreConfirmModal .restore-preview-btn:hover:not(:disabled),
+        #restoreConfirmModal .restore-ambiguity-btn:hover:not(:disabled) {
+            background: var(--bg-secondary);
+            color: var(--text-primary);
+        }
+
+        /* Default preview button = warning */
+        #restoreConfirmModal .restore-preview-btn {
+            border-color: var(--warning);
+            color: var(--warning);
+            background: var(--warning-light);
+        }
+
+        #restoreConfirmModal .restore-preview-btn.preview-warning {
+            border-color: var(--warning);
+            color: var(--warning);
+            background: var(--warning-light);
+        }
+
+        #restoreConfirmModal .restore-preview-btn.preview-warning:focus-visible {
+            outline: none;
+            box-shadow: 0 0 0 3px rgba(255, 152, 0, 0.28);
+        }
+
+        #restoreConfirmModal .restore-preview-btn.preview-danger {
+            border-color: var(--error);
+            color: #ffffff;
+            background: var(--error);
+        }
+
+        #restoreConfirmModal .restore-preview-btn.preview-danger:focus-visible {
+            outline: none;
+            box-shadow: 0 0 0 3px rgba(231, 76, 60, 0.28);
+        }
+
+        #restoreConfirmModal .restore-ambiguity-btn {
+            border-color: var(--warning);
+            color: var(--warning);
+        }
+
+        #restoreConfirmModal .restore-ambiguity-btn:hover:not(:disabled) {
+            background: var(--warning-light);
+        }
+
+        /* Ambiguity panel */
+        #restoreConfirmModal .restore-ambiguity-panel {
+            display: none;
+            margin-top: 8px;
+            border: 1px solid var(--border-color);
+            background: var(--bg-secondary);
+            border-radius: 8px;
+            overflow: hidden;
+        }
+
+        #restoreConfirmModal .restore-ambiguity-panel.show {
+            display: block;
+        }
+
+        #restoreConfirmModal .restore-ambiguity-panel-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 10px;
+            padding: 8px 10px;
+            background: var(--bg-tertiary);
+            border-bottom: 1px solid var(--border-color);
+        }
+
+        #restoreConfirmModal .restore-ambiguity-title {
+            font-size: 12px;
+            font-weight: 600;
+            color: var(--text-primary);
+        }
+
+        #restoreConfirmModal .restore-ambiguity-close-btn {
+            height: 24px;
+            padding: 0 10px;
+            font-size: 11px;
+            border: 1px solid var(--border-color);
+            background: var(--bg-primary);
+            color: var(--text-secondary);
+            border-radius: 6px;
+            cursor: pointer;
+            white-space: nowrap;
+        }
+
+        #restoreConfirmModal .restore-ambiguity-close-btn:hover {
+            background: var(--bg-secondary);
+            color: var(--text-primary);
+        }
+
+        #restoreConfirmModal .restore-ambiguity-list {
+            max-height: 180px;
+            overflow: auto;
+            padding: 8px 10px;
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }
+
+        #restoreConfirmModal .restore-ambiguity-item {
+            padding: 8px 10px;
+            border: 1px solid var(--border-color);
+            background: var(--bg-primary);
+            border-radius: 8px;
+        }
+
+        #restoreConfirmModal .restore-ambiguity-item-title {
+            font-size: 12px;
+            font-weight: 600;
+            color: var(--text-primary);
+            margin-bottom: 4px;
+        }
+
+        #restoreConfirmModal .restore-ambiguity-item-sub {
+            font-size: 11px;
+            color: var(--text-tertiary);
+            word-break: break-word;
+        }
+
+        #restoreConfirmModal .restore-ambiguity-candidates {
+            margin-top: 6px;
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+        }
+
+        #restoreConfirmModal .restore-ambiguity-candidate {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 10px;
+            padding: 6px 8px;
+            border: 1px dashed var(--border-color);
+            border-radius: 8px;
+            font-size: 11px;
+            color: var(--text-secondary);
+            cursor: pointer;
+        }
+
+        #restoreConfirmModal .restore-ambiguity-candidate:hover {
+            background: var(--bg-secondary);
+        }
+
+        #restoreConfirmModal .restore-ambiguity-candidate code {
+            font-family: SF Mono, Monaco, Consolas, monospace;
+            font-size: 11px;
+            color: var(--text-tertiary);
+        }
+
+        #restoreConfirmModal .restore-ambiguity-radio {
+            width: 14px;
+            height: 14px;
+            accent-color: var(--accent-primary);
+        }
+
+        /* Patch confirm button states (match history.html) */
+        #restoreConfirmModal .restore-modal-action-btn.patch-confirm-warning {
+            border: 1px solid var(--warning);
+            background: var(--warning-light);
+            color: var(--warning);
+        }
+
+        #restoreConfirmModal .restore-modal-action-btn.patch-confirm-warning:focus-visible {
+            outline: none;
+            box-shadow: 0 0 0 3px rgba(255, 152, 0, 0.28);
+        }
+
+        #restoreConfirmModal .restore-modal-action-btn.patch-confirm-warning:hover:not(:disabled) {
+            filter: brightness(0.98);
+        }
+
+        #restoreConfirmModal .restore-modal-action-btn.patch-confirm-danger {
+            border: none;
+            background: var(--error);
+            color: #ffffff;
+        }
+
+        #restoreConfirmModal .restore-modal-action-btn.patch-confirm-danger:focus-visible {
+            outline: none;
+            box-shadow: 0 0 0 3px rgba(231, 76, 60, 0.28);
+        }
+
+        #restoreConfirmModal .restore-modal-action-btn.patch-confirm-danger:hover:not(:disabled) {
+            filter: brightness(0.95);
+        }
+
+        /* Patch conflict badge (top-right in confirm modal header) */
+        #restoreConfirmModal .restore-conflict-badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            padding: 2px 8px;
+            border-radius: 999px;
+            font-size: 11px;
+            font-weight: 600;
+            line-height: 1.2;
+            white-space: nowrap;
+        }
+
+        #restoreConfirmModal .restore-conflict-badge.warning {
+            border: 1px solid var(--warning);
+            background: var(--warning-light);
+            color: var(--warning);
+        }
+
+        #restoreConfirmModal .restore-conflict-badge.danger {
+            border: 1px solid rgba(231, 76, 60, 0.35);
+            background: rgba(231, 76, 60, 0.12);
+            color: var(--error);
+        }
+
+        /* Commit stats inline */
+        #restoreConfirmModal .commit-stats {
+            display: flex;
+            gap: 16px;
+            font-size: 13px;
+            color: var(--text-secondary);
+        }
+
+        #restoreConfirmModal .stat-badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 4px;
+            padding: 2px 8px;
+            border-radius: 10px;
+            font-size: 11px;
+            font-weight: 500;
+            background: var(--bg-tertiary);
+            color: var(--text-secondary);
+            white-space: nowrap;
+        }
+
+        #restoreConfirmModal .stat-badge.quantity {
+            background: var(--bg-tertiary);
+            color: var(--text-secondary);
+            border: 1px solid var(--border-color);
+            padding: 4px 12px;
+            font-size: 13px;
+            font-weight: 600;
+        }
+
+        #restoreConfirmModal .stat-badge.no-change {
+            background: var(--success-light);
+            color: var(--success);
+        }
+
+        #restoreConfirmModal .stat-badge.first {
+            background: var(--success-light);
+            color: var(--success);
+        }
+
+        #restoreConfirmModal .stat-color {
+            font-weight: 600;
+        }
+
+        #restoreConfirmModal .stat-color.added {
+            color: var(--git-added);
+        }
+
+        #restoreConfirmModal .stat-color.deleted {
+            color: var(--git-deleted);
+        }
+
+        #restoreConfirmModal .stat-color.moved {
+            color: var(--git-moved);
+        }
+
+        #restoreConfirmModal .stat-color.modified {
+            color: var(--git-modified);
+        }
+
+        #restoreConfirmModal .stat-label {
+            font-size: 10px;
+            font-weight: 600;
+            color: var(--text-tertiary);
+            text-transform: uppercase;
+        }
+
+        /* Preview tree layout */
+        #restoreConfirmModal .detail-section {
+            margin-bottom: 18px;
+        }
+
+        #restoreConfirmModal .detail-section-title {
+            font-size: 14px;
+            font-weight: 600;
+            margin-bottom: 10px;
+            color: var(--text-primary);
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        #restoreConfirmModal .detail-empty {
+            padding: 24px;
+            text-align: center;
+            color: var(--text-secondary);
+            font-size: 14px;
+        }
+
+        #restoreConfirmModal .detail-section-title-with-legend {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            flex-wrap: nowrap;
+            gap: 12px;
+        }
+
+        #restoreConfirmModal .detail-title-left {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            flex-shrink: 0;
+        }
+
+        #restoreConfirmModal .detail-mode-label {
+            font-size: 12px;
+            font-weight: 500;
+            color: var(--text-tertiary);
+        }
+
+        #restoreConfirmModal .detail-title-legend {
+            display: inline-flex;
+            align-items: center;
+            gap: 10px;
+            flex-shrink: 0;
+        }
+
+        #restoreConfirmModal .legend-item {
+            display: inline-flex;
+            align-items: center;
+            gap: 3px;
+            font-size: 12px;
+            color: var(--text-secondary);
+        }
+
+        #restoreConfirmModal .legend-dot {
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+        }
+
+        #restoreConfirmModal .legend-dot.added {
+            background: #28a745;
+        }
+
+        #restoreConfirmModal .legend-dot.deleted {
+            background: #dc3545;
+        }
+
+        #restoreConfirmModal .legend-dot.modified {
+            background: #fd7e14;
+        }
+
+        #restoreConfirmModal .legend-dot.moved {
+            background: #0d6efd;
+        }
+
+        #restoreConfirmModal .legend-count {
+            font-size: 12px;
+            font-weight: 500;
+            color: var(--text-secondary);
+        }
+
+        #restoreConfirmModal .history-tree-container {
+            max-height: 400px;
+            overflow-y: auto;
+            border: 1px solid var(--border-color);
+            border-radius: 8px;
+            padding: 12px;
+            background: var(--bg-secondary);
+        }
+
+        #restoreConfirmModal .tree-node {
+            margin-bottom: 4px;
+        }
+
+        #restoreConfirmModal .tree-item {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 6px 8px;
+            border-radius: 6px;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            user-select: none;
+            position: relative;
+        }
+
+        /* Folder active feedback (same as history.html) */
+        #restoreConfirmModal .tree-node:has(.tree-children) .tree-item:active {
+            background: var(--bg-tertiary);
+            transform: scale(0.99);
+        }
+
+        /* Drag handle hint (same as history.html, visual only) */
+        #restoreConfirmModal .tree-item::after {
+            content: '';
+            position: absolute;
+            right: 8px;
+            top: 50%;
+            transform: translateY(-50%);
+            width: 4px;
+            height: 12px;
+            background: linear-gradient(to bottom,
+                    var(--text-tertiary) 0px,
+                    var(--text-tertiary) 2px,
+                    transparent 2px,
+                    transparent 4px,
+                    var(--text-tertiary) 4px,
+                    var(--text-tertiary) 6px,
+                    transparent 6px,
+                    transparent 8px,
+                    var(--text-tertiary) 8px,
+                    var(--text-tertiary) 10px,
+                    transparent 10px,
+                    transparent 12px);
+            opacity: 0;
+            transition: opacity 0.2s;
+        }
+
+        #restoreConfirmModal .tree-item:hover::after {
+            opacity: 0.3;
+        }
+
+        #restoreConfirmModal .tree-item:hover {
+            background: var(--bg-secondary);
+        }
+
+        #restoreConfirmModal .tree-toggle {
+            width: 16px;
+            height: 16px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            color: var(--text-tertiary);
+            transition: transform 0.2s ease;
+        }
+
+        #restoreConfirmModal .tree-toggle.expanded {
+            transform: rotate(90deg);
+        }
+
+        #restoreConfirmModal .tree-icon {
+            width: 16px;
+            height: 16px;
+            color: var(--text-secondary);
+        }
+
+        #restoreConfirmModal .tree-label {
+            flex: 1;
+            font-size: 14px;
+            color: var(--text-primary);
+            word-break: break-all;
+            overflow-wrap: anywhere;
+        }
+
+        #restoreConfirmModal a.tree-label.tree-bookmark-link {
+            text-decoration: none;
+            cursor: pointer;
+            transition: color 0.2s ease, text-decoration 0.2s ease;
+        }
+
+        #restoreConfirmModal a.tree-label.tree-bookmark-link:hover {
+            color: var(--accent-primary);
+            text-decoration: underline;
+        }
+
+        #restoreConfirmModal .change-badge {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            min-width: 22px;
+            height: 20px;
+            font-size: 11px;
+            font-weight: bold;
+            padding: 2px 6px;
+            border-radius: 4px;
+            line-height: 1;
+            vertical-align: middle;
+        }
+
+        #restoreConfirmModal .change-badge.added {
+            background: rgba(40, 167, 69, 0.15);
+            color: #28a745;
+        }
+
+        #restoreConfirmModal .change-badge.deleted {
+            background: rgba(220, 53, 69, 0.15);
+            color: #dc3545;
+        }
+
+        #restoreConfirmModal .change-badge.modified {
+            background: rgba(253, 126, 20, 0.15);
+            color: #fd7e14;
+        }
+
+        #restoreConfirmModal .change-badge.has-changes {
+            background: rgba(108, 117, 125, 0.15);
+            color: #6c757d;
+        }
+
+        #restoreConfirmModal .change-badge.moved {
+            background: rgba(13, 110, 253, 0.15);
+            color: #0d6efd;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            position: relative;
+        }
+
+        #restoreConfirmModal .change-badge.moved:hover {
+            background: rgba(13, 110, 253, 0.25);
+            transform: scale(1.1);
+        }
+
+        #restoreConfirmModal .change-badge.moved:hover::before {
+            content: '';
+            position: absolute;
+            right: 100%;
+            top: 50%;
+            transform: translateY(-50%);
+            margin-right: -6px;
+            border: 6px solid transparent;
+            border-left-color: var(--border-color);
+            z-index: 1001;
+            opacity: 1;
+        }
+
+        #restoreConfirmModal .change-badge.moved i {
+            font-size: 11px;
+            line-height: 1;
+        }
+
+        #restoreConfirmModal .change-badge.moved .move-tooltip {
+            display: none;
+            position: absolute;
+            right: calc(100% + 8px);
+            top: 50%;
+            transform: translateY(-50%);
+            padding: 10px 12px;
+            background: var(--bg-elevated);
+            border: 1px solid var(--border-color);
+            border-radius: 8px;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+            z-index: 1000;
+            white-space: nowrap;
+            min-width: 200px;
+        }
+
+        #restoreConfirmModal .change-badge.moved:hover .move-tooltip {
+            display: block;
+        }
+
+        #restoreConfirmModal .move-tooltip .breadcrumb-item {
+            display: inline-flex;
+            align-items: center;
+            gap: 4px;
+            padding: 3px 8px;
+            background: rgba(33, 150, 243, 0.08);
+            border: 1px solid rgba(33, 150, 243, 0.2);
+            border-radius: 4px;
+            font-size: 11px;
+            color: var(--text-primary);
+        }
+
+        #restoreConfirmModal .move-tooltip .breadcrumb-separator {
+            color: var(--text-tertiary);
+            font-size: 8px;
+            opacity: 0.5;
+            margin: 0 2px;
+        }
+
+        #restoreConfirmModal .tree-change-added>.tree-label,
+        #restoreConfirmModal .tree-change-added>a.tree-label {
+            color: #28a745;
+            font-weight: 500;
+        }
+
+        #restoreConfirmModal .tree-change-deleted>.tree-label,
+        #restoreConfirmModal .tree-change-deleted>a.tree-label {
+            color: #dc3545;
+            font-weight: 500;
+            text-decoration: line-through;
+            opacity: 0.7;
+        }
+
+        #restoreConfirmModal .tree-change-modified>.tree-label,
+        #restoreConfirmModal .tree-change-modified>a.tree-label {
+            color: #fd7e14;
+            font-weight: 500;
+        }
+
+        #restoreConfirmModal .tree-change-moved>.tree-label,
+        #restoreConfirmModal .tree-change-moved>a.tree-label {
+            color: #0d6efd;
+            font-weight: 500;
+        }
+
+        #restoreConfirmModal .tree-change-mixed>.tree-label,
+        #restoreConfirmModal .tree-change-mixed>a.tree-label {
+            background: linear-gradient(180deg, #fd7e14 0%, #0d6efd 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+            font-weight: 500;
+        }
+
+        #restoreConfirmModal .change-badges {
+            display: inline-flex;
+            align-items: center;
+            gap: 4px;
+            margin-left: auto;
+        }
+
+        #restoreConfirmModal .tree-children {
+            margin-left: 12px;
+            display: none;
+        }
+
+        #restoreConfirmModal .tree-children.expanded {
+            display: block;
+        }
+
+        /* Tree connector lines (same as history.html) */
+        #restoreConfirmModal .history-tree-container .tree-children {
+            margin-left: 16px;
+            padding-left: 12px;
+            position: relative;
+            border-left: 1px solid var(--border-color);
+        }
+
+        #restoreConfirmModal .history-tree-container .tree-node {
+            position: relative;
+        }
+
+        #restoreConfirmModal .history-tree-container .tree-children>.tree-node::before {
+            content: '';
+            position: absolute;
+            left: -12px;
+            top: 14px;
+            width: 12px;
+            height: 1px;
+            background: var(--border-color);
+        }
+
+        #restoreConfirmModal .history-tree-container .tree-children>.tree-node:last-child::after {
+            content: '';
+            position: absolute;
+            left: -13px;
+            top: 14px;
+            bottom: 0;
+            width: 1px;
+            background: var(--bg-secondary);
         }
     </style>
 </head>
@@ -5024,21 +5934,43 @@
                                 <th style="text-align: center; width: 40px;"></th>
                                 <th style="text-align: center; width: 54px;"><span id="restoreThSeq">序号</span></th>
                                 <th style="text-align: left;"><span id="restoreThNote">备注</span></th>
-                                <th style="text-align: left; width: 90px;"><span id="restoreThHash">哈希值</span></th>
-                                <th style="text-align: left; width: 145px;"><span id="restoreThTime">时间</span></th>
-                                <th style="text-align: left; width: 210px;"><span id="restoreThStats">数量与结构</span>
-                                </th>
+                                <th style="text-align: left; width: 74px;"><span id="restoreThHash">哈希值</span></th>
+                                <th style="text-align: left; width: 130px;"><span id="restoreThTime">时间</span></th>
+                                <th style="text-align: left; width: 150px;"><span id="restoreThStats">记录变化</span></th>
+                                <th style="text-align: left; width: 150px;"><span id="restoreThStatsCurrent">对当前影响</span></th>
                             </tr>
                         </thead>
                         <tbody id="restoreVersionTableBody">
                             <tr>
-                                <td colspan="6"
+                                <td colspan="7"
                                     style="padding: 14px; text-align: center; color: var(--theme-text-secondary);">
                                     Loading...
                                 </td>
                             </tr>
                         </tbody>
                     </table>
+                </div>
+
+                <!-- Restore list pagination (10 per page) -->
+                <div id="restorePagination"
+                    style="display: none; align-items: center; justify-content: flex-end; gap: 8px; margin-top: 10px;">
+                    <button id="restorePrevPage" type="button"
+                        style="width: 28px; height: 28px; flex: 0 0 auto; border: 1px solid var(--theme-border-primary); border-radius: 6px; background: var(--theme-bg-secondary); color: var(--theme-text-primary); cursor: pointer; display: inline-flex; align-items: center; justify-content: center; padding: 0; box-shadow: none;">
+                        <i class="fas fa-chevron-left"></i>
+                    </button>
+                    <input type="text" id="restorePageInput" value="1"
+                        style="width: 32px; height: 28px; flex: 0 0 auto; padding: 4px; font-size: 13px; text-align: center; border: 1px solid var(--theme-border-primary); border-radius: 6px; background: var(--theme-bg-secondary); color: var(--theme-text-primary); outline: none; box-sizing: border-box;">
+                    <div style="display: flex; align-items: center; color: var(--theme-text-secondary); font-size: 13px;">
+                        <span style="margin: 0 4px;">/</span>
+                        <span id="restoreTotalPages">1</span>
+                    </div>
+                    <button id="restoreNextPage" type="button"
+                        style="width: 28px; height: 28px; flex: 0 0 auto; border: 1px solid var(--theme-border-primary); border-radius: 6px; background: var(--theme-bg-secondary); color: var(--theme-text-primary); cursor: pointer; display: inline-flex; align-items: center; justify-content: center; padding: 0; box-shadow: none;">
+                        <i class="fas fa-chevron-right"></i>
+                    </button>
+                    <div id="restorePageHint" style="margin-left: 6px; color: var(--theme-text-secondary); font-size: 12px;">
+                        10/页
+                    </div>
                 </div>
             </div>
 
@@ -5105,21 +6037,65 @@
     <!-- Restore 二级确认对话框 -->
     <div id="restoreConfirmModal" class="modal">
         <div class="modal-content"
-            style="position: relative; top: auto; right: auto; margin: 0; width: 520px; max-width: calc(100% - 24px); box-shadow: 0 6px 18px rgba(0,0,0,0.15); border-radius: 12px; padding: 16px 18px;">
-            <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px;">
-                <h3 id="restoreConfirmTitle"
-                    style="font-size: 16px; margin: 0; color: var(--theme-text-primary); text-align: left;">
-                    确认恢复
-                </h3>
-                <button id="closeRestoreConfirmModal" class="popup-modal-close" aria-label="Close">
+            style="position: relative; top: auto; right: auto; margin: 0; width: 500px; max-width: calc(100% - 24px); box-shadow: var(--shadow-lg); border-radius: 12px; padding: 0; overflow: hidden;">
+
+            <div class="modal-header compact"
+                style="display: flex; align-items: center; justify-content: space-between; padding: 12px 20px; border-bottom: 1px solid var(--border-color); background: var(--bg-elevated);">
+                <div style="display: flex; align-items: center; gap: 10px; min-width: 0;">
+                    <h3 id="restoreConfirmTitle" style="font-size: 16px; margin: 0; color: var(--text-primary);">
+                        确认恢复
+                    </h3>
+                    <span id="restoreConflictBadge" class="restore-conflict-badge" style="display: none;"></span>
+                </div>
+                <button id="closeRestoreConfirmModal" aria-label="Close"
+                    style="width: 32px; height: 32px; padding: 0; flex: 0 0 auto; border-radius: 50%; background: var(--bg-secondary); color: var(--text-primary); border: none; cursor: pointer; display: flex; align-items: center; justify-content: center; transition: all 0.2s ease;">
                     <i class="fas fa-times"></i>
                 </button>
             </div>
-            <div id="restoreConfirmSummary" class="restore-confirm-summary"></div>
-            <div id="restoreConfirmWarning" class="restore-confirm-warning"></div>
-            <div class="button-group" style="margin-top: 14px; justify-content: flex-end; gap: 10px;">
-                <button id="restoreConfirmCancelBtn" class="restore-modal-action-btn secondary">取消</button>
-                <button id="restoreConfirmConfirmBtn" class="restore-modal-action-btn danger">确认恢复</button>
+
+            <!-- Main view (summary + warning + patch diff bar + actions) -->
+            <div id="restoreConfirmMainView" style="display: block; padding: 12px 20px 14px; box-sizing: border-box;">
+                <div id="restoreConfirmSummary" class="restore-confirm-summary"></div>
+                <div id="restoreConfirmWarning" class="restore-confirm-warning"></div>
+
+                <!-- Patch Merge: diff bar + ambiguity + preview (EXACT layout from history.html) -->
+                <div id="restoreDiffBar" class="restore-diff-bar" style="display: none;">
+                    <div id="restoreDiffSummary"
+                        style="font-size: 11px; color: var(--text-secondary); text-align: left; flex: 1;">
+                        正在计算差异...
+                    </div>
+
+                    <button id="restoreAmbiguityBtn" class="restore-ambiguity-btn" style="display: none;">
+                        <span id="restoreAmbiguityBtnText">歧义</span>
+                    </button>
+
+                    <button id="restorePreviewBtn" class="restore-preview-btn" style="display: none;">
+                        <span id="restorePreviewBtnText">预览</span>
+                    </button>
+                </div>
+
+                <div id="restoreAmbiguityPanel" class="restore-ambiguity-panel">
+                    <div class="restore-ambiguity-panel-header">
+                        <div id="restoreAmbiguityTitle" class="restore-ambiguity-title">歧义详情</div>
+                        <button id="restoreAmbiguityCloseBtn" class="restore-ambiguity-close-btn">收起</button>
+                    </div>
+                    <div id="restoreAmbiguityList" class="restore-ambiguity-list"></div>
+                </div>
+
+                <div id="restoreConfirmActionRow" class="button-group"
+                    style="margin-top: 14px; justify-content: flex-end; gap: 10px;">
+                    <button id="restoreConfirmCancelBtn" class="restore-modal-action-btn secondary">取消</button>
+                    <button id="restoreConfirmConfirmBtn" class="restore-modal-action-btn danger">确认恢复</button>
+                </div>
+            </div>
+
+            <!-- Preview view (same behavior as history.html: close button becomes Back) -->
+            <div id="restorePreviewView"
+                style="display: none; width: 100%; height: 100%; box-sizing: border-box; flex-direction: column;">
+                <div id="restorePreviewContent" class="history-tree-container"
+                    style="flex: 1; overflow-y: auto; padding: 10px 0;">
+                    <!-- Tree content goes here -->
+                </div>
             </div>
         </div>
     </div>

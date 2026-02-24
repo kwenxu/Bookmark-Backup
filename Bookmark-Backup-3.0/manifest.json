@@ -1,0 +1,70 @@
+{
+   "manifest_version": 3,
+   "default_locale": "en",
+   "name": "__MSG_extensionName__",
+   "version": "3.0.0",
+   "description": "__MSG_extensionDescription__",
+   "author": "kk1",
+   "icons": {
+      "100": "icons/icon200.png"
+   },
+   "action": {
+      "default_icon": {
+         "200": "icons/icon200.png"
+      },
+      "default_title": "__MSG_actionTitle__",
+      "default_popup": "popup.html"
+   },
+   "background": {
+      "service_worker": "background.js",
+      "type": "module"
+   },
+   "commands": {
+      "open_current_changes_view": {
+         "description": "Open 'Current quantity/structure changes' view"
+      },
+      "open_backup_history_view": {
+         "suggested_key": {
+            "default": "Alt+2",
+            "mac": "Alt+2",
+            "windows": "Alt+2",
+            "linux": "Alt+2"
+         },
+         "description": "Open 'Backup history' view"
+      }
+   },
+   "permissions": [
+      "bookmarks",
+      "storage",
+      "unlimitedStorage",
+      "alarms",
+      "commands",
+      "scripting",
+      "windows",
+    "tabs",
+    "tabGroups",
+    "downloads",
+      "downloads.shelf",
+      "activeTab"
+   ],
+   "host_permissions": [
+      "https://*/*",
+      "<all_urls>"
+   ],
+   "web_accessible_resources": [
+      {
+         "matches": [
+            "<all_urls>"
+         ],
+         "resources": [
+            "popup.html",
+            "icons/icon200.png",
+            "backup_reminder/notification_popup.html",
+            "history_html/history.html",
+            "history_html/history.css",
+            "history_html/history.js",
+            "history_html/history_bootstrap.js"
+         ]
+      }
+   ]
+}

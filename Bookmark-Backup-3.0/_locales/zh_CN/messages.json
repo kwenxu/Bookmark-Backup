@@ -1,0 +1,14 @@
+{
+  "extensionName": {
+    "message": "书签备份",
+    "description": "插件名称"
+  },
+  "extensionDescription": {
+    "message": "书签快照（Git）",
+    "description": "插件描述"
+  },
+  "actionTitle": {
+    "message": "书签备份",
+    "description": "工具栏悬浮标题"
+  }
+}

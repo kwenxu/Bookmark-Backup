@@ -1,0 +1,1238 @@
+<!DOCTYPE html>
+<html lang="zh">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title></title>
+    <script src="history_theme_bootstrap.js"></script>
+    <link rel="stylesheet" href="history.css?v=2.1">
+    <link rel="stylesheet" href="search/search.css">
+    <link rel="stylesheet" href="../font-awesome.min.css">
+    <script src="history_bootstrap.js" defer></script>
+    <script src="bookmark_tree_context_menu.js" defer></script>
+    <script src="bookmark_tree_drag_drop.js" defer></script>
+    <script src="pointer_drag.js" defer></script>
+    <script src="shortcuts_helpers.js" defer></script>
+    <script src="history.js" defer></script>
+    <!-- 搜索模块（当前变化 / 备份历史） -->
+    <script src="search/search.js" defer></script>
+</head>
+
+<body>
+    <!-- 头部导航 -->
+    <header class="history-header">
+        <div class="header-left">
+            <h1 id="pageTitle">书签备份</h1>
+            <span class="header-subtitle" id="pageSubtitle"></span>
+        </div>
+        <div class="header-right">
+            <!-- 搜索框 -->
+            <div class="search-container">
+                <button id="searchModeTrigger" class="search-mode-trigger" aria-label="切换搜索模式" title="切换搜索模式">
+                    <i class="fas fa-search"></i>
+                </button>
+                <div id="searchModeMenu" class="search-mode-menu" hidden>
+                    <!-- 模式菜单项动态生成 -->
+                </div>
+                <div class="search-input-wrapper">
+                    <!-- Chip 将插入在这里 -->
+                    <input type="text" id="searchInput" />
+                </div>
+                <!-- 搜索结果面板（当前变化 / 备份历史） -->
+                <div id="searchResultsPanel" class="search-results-panel" role="listbox" aria-label="Search results">
+                </div>
+            </div>
+
+            <!-- 工具按钮组 -->
+            <div class="tool-buttons">
+
+                <!-- 主题切换按钮 - 独立设置，主UI优先 -->
+                <button id="themeToggle" class="tool-btn">
+                    <i class="fas fa-moon"></i>
+                    <span class="btn-tooltip" id="themeTooltip"></span>
+                </button>
+                <!-- 语言切换按钮 - 独立设置，主UI优先 -->
+                <button id="langToggle" class="tool-btn">
+                    <span class="lang-text">EN</span>
+                    <span class="btn-tooltip" id="langTooltip"></span>
+                </button>
+                <!-- 说明按钮：快捷键 & 开源信息 -->
+                <button id="helpToggle" class="tool-btn">
+                    <i class="fab fa-github"></i>
+                    <span class="btn-tooltip" id="helpTooltip"></span>
+                </button>
+            </div>
+        </div>
+    </header>
+
+    <!-- 主内容区域 -->
+    <div class="main-container">
+        <!-- 左侧导航栏 -->
+        <aside class="sidebar" id="sidebar">
+            <!-- 侧边栏收起按钮 -->
+            <button class="sidebar-toggle" id="sidebarToggle" title="收起/展开侧边栏">
+                <i class="fas fa-chevron-left"></i>
+            </button>
+
+            <nav class="nav-tabs">
+                <!-- Bookmark Snapshot 区域组 -->
+                <div class="nav-group">
+                    <div class="nav-group-title" id="bookmarkGitTitle"></div>
+                    <button class="nav-tab" data-view="current-changes">
+                        <i class="fas fa-exchange-alt"></i>
+                        <span id="navCurrentChangesText">当前变化</span>
+                    </button>
+                    <button class="nav-tab" data-view="history">
+                        <i class="fas fa-history"></i>
+                        <span id="navHistoryText">备份历史</span>
+                    </button>
+                </div>
+            </nav>
+
+        </aside>
+
+        <!-- 右侧内容区域 -->
+        <main class="content-area">
+            <!-- 快捷键与开源信息弹窗 -->
+            <div id="shortcutsModal" class="modal">
+                <div class="modal-content shortcuts-modal">
+                    <div class="shortcuts-header">
+                        <h2 id="shortcutsModalTitle"></h2>
+                        <button id="closeShortcutsModal" class="modal-close" aria-label="Close">×</button>
+                    </div>
+                    <div id="openSourceInfo" class="shortcuts-section open-source-section">
+                        <div class="shortcuts-card">
+                            <div style="display: flex; flex-direction: column; gap: 10px;">
+                                <div>
+                                    <p id="openSourceGithubLabel"
+                                        style="font-size: 14px; color: var(--text-secondary); margin: 0 0 4px 0;">GitHub
+                                        仓库:</p>
+                                    <a id="openSourceGithubLink"
+                                        href="https://github.com/kwenxu/Bookmark-Backup?tab=readme-ov-file#readme"
+                                        target="_blank"
+                                        style="display: block; padding: 8px 12px; background-color: var(--bg-tertiary); border-radius: 6px; color: var(--link-color); text-decoration: none; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">
+                                        <i class="fab fa-github" style="margin-right: 5px;"></i>
+                                        https://github.com/kwenxu/Bookmark-Backup
+                                    </a>
+                                </div>
+
+                                <div>
+                                    <p id="openSourceIssueLabel"
+                                        style="font-size: 14px; color: var(--text-secondary); margin: 0 0 4px 0;">问题反馈:
+                                    </p>
+                                    <a id="openSourceIssueLink" href="https://github.com/kwenxu/Bookmark-Backup/issues"
+                                        target="_blank"
+                                        style="display: block; padding: 8px 12px; background-color: var(--bg-tertiary); border-radius: 6px; color: var(--link-color); text-decoration: none;">
+                                        <i class="fas fa-exclamation-circle" style="margin-right: 5px;"></i>
+                                        <span id="openSourceIssueText">提交问题</span>
+                                    </a>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    <hr class="shortcuts-divider" />
+                    <div id="shortcutsContent" class="shortcuts-section"></div>
+                </div>
+            </div>
+
+            <!-- 当前变化视图 -->
+            <div id="current-changesView" class="view">
+
+                <!-- 变化列表（卡片式，书签树预览会内嵌到Bookmark Changes内部） -->
+                <div id="currentChangesList" class="current-changes-container">
+                    <!-- 动态加载当前变化 -->
+                </div>
+            </div>
+
+            <!-- 备份历史视图 -->
+            <div id="historyView" class="view">
+                <div class="view-header">
+                    <div class="view-header-left">
+                        <h2 id="historyViewTitle">备份历史</h2>
+                    </div>
+                    <div class="view-header-right">
+                        <!-- 分页控件 -->
+                        <div id="historyPagination"
+                            style="display: flex; align-items: center; gap: 8px; margin-right: 12px;">
+                            <button id="historyPrevPage" class="action-btn compact no-tooltip">
+                                <i class="fas fa-chevron-left"></i>
+                            </button>
+                            <input type="text" id="historyPageInput" value="1"
+                                style="width: 32px; height: 28px; padding: 4px; font-size: 13px; text-align: center; border: 1px solid var(--border-color); border-radius: 4px; background: var(--bg-secondary); color: var(--text-primary); outline: none;">
+                            <div
+                                style="display: flex; align-items: center; color: var(--text-secondary); font-size: 13px;">
+                                <span style="margin: 0 4px;">/</span>
+                                <span id="historyTotalPages">1</span>
+                            </div>
+                            <button id="historyNextPage" class="action-btn compact no-tooltip">
+                                <i class="fas fa-chevron-right"></i>
+                            </button>
+                        </div>
+
+                        <!-- 清除备份历史记录（与主UI一致） -->
+                        <button id="clearBackupHistoryBtn" class="action-btn compact" title="清除记录">
+                            <i class="fas fa-trash-alt"></i>
+                        </button>
+                        <!-- 全局导出按钮 -->
+                        <button id="globalExportBtn" class="action-btn compact" title="全局导出">
+                            <i class="fas fa-file-export"></i>
+                        </button>
+
+                        <!-- 详略切换按钮 -->
+                        <div class="toggle-btn-group" id="historyDetailModeToggle">
+                            <button id="historyDetailModeSimple" class="toggle-btn active" data-mode="simple"
+                                title="简略模式">
+                                <svg class="icon-compact" viewBox="0 0 24 24" width="16" height="16" fill="none"
+                                    stroke="currentColor" stroke-width="2" stroke-linecap="round"
+                                    stroke-linejoin="round">
+                                    <line x1="4" y1="9" x2="20" y2="9" />
+                                    <line x1="4" y1="15" x2="20" y2="15" />
+                                    <circle cx="2" cy="9" r="1.5" fill="currentColor" stroke="none" />
+                                    <circle cx="2" cy="15" r="1.5" fill="currentColor" stroke="none" />
+                                </svg>
+                                <span id="historyDetailModeSimpleText">简略</span>
+                            </button>
+                            <button id="historyDetailModeDetailed" class="toggle-btn" data-mode="detailed" title="详细模式">
+                                <svg class="icon-detail" viewBox="0 0 24 24" width="16" height="16" fill="none"
+                                    stroke="currentColor" stroke-width="2" stroke-linecap="round"
+                                    stroke-linejoin="round">
+                                    <line x1="4" y1="6" x2="20" y2="6" />
+                                    <line x1="4" y1="10" x2="20" y2="10" />
+                                    <line x1="4" y1="14" x2="20" y2="14" />
+                                    <line x1="4" y1="18" x2="20" y2="18" />
+                                </svg>
+                                <span id="historyDetailModeDetailedText">详细</span>
+                            </button>
+                        </div>
+                    </div>
+                </div>
+                <div id="historyList" class="history-commits">
+                    <!-- 动态加载历史记录 -->
+                </div>
+            </div>
+
+            <!-- 永久栏目 - 在canvas-content内部通过JS添加 -->
+            <template id="permanentSectionTemplate">
+                <div class="permanent-bookmark-section" id="permanentSection">
+                    <div class="permanent-section-header" id="permanentSectionHeader">
+                        <div class="permanent-section-title">
+                            <div class="permanent-section-title-left">
+                                <span class="permanent-section-index-badge" data-permanent-index-badge
+                                    style="display: none;"></span>
+                                <h3 id="permanentSectionTitle">书签树 (永久栏目)</h3>
+                            </div>
+                            <div class="permanent-section-actions">
+                                <button class="permanent-section-action-btn permanent-section-copy-btn" title="复制永久栏目">
+                                    <i class="fas fa-copy"></i>
+                                </button>
+                                <button class="permanent-section-action-btn permanent-section-pin-btn pinned"
+                                    id="permanentSectionPinBtn" title="置顶栏目">
+                                    <i class="fas fa-thumbtack"></i>
+                                </button>
+                                <button class="permanent-section-action-btn permanent-section-remove-btn"
+                                    title="删除该永久栏目副本">
+                                    <i class="fas fa-times"></i>
+                                </button>
+                            </div>
+                        </div>
+                        <div class="permanent-section-tip-container" id="permanentSectionTipContainer">
+                            <div class="permanent-section-tip-content">
+                                <div class="permanent-section-tip" id="permanentSectionTip"></div>
+                                <div class="permanent-section-tip-controls">
+                                    <button class="permanent-section-tip-edit-btn" id="permanentSectionTipEditBtn"
+                                        title="编辑说明">
+                                        <i class="fas fa-edit"></i>
+                                    </button>
+                                    <button class="permanent-section-tip-close" id="permanentSectionTipClose"
+                                        title="关闭提示">
+                                        <i class="fas fa-times"></i>
+                                    </button>
+                                </div>
+                            </div>
+                            <textarea class="permanent-section-tip-editor" id="permanentSectionTipEditor"
+                                style="display: none;" placeholder=""></textarea>
+                        </div>
+                    </div>
+                    <div class="permanent-section-body">
+                        <div id="bookmarkTree" class="bookmark-tree">
+                            <!-- 动态加载书签树 -->
+                        </div>
+                    </div>
+                </div>
+            </template>
+        </main>
+    </div>
+
+    <!-- 导出变化模态框 -->
+    <div id="exportChangesModal" class="modal">
+        <div class="modal-content" style="max-width: 420px;">
+            <div class="modal-header compact">
+                <h3 id="exportChangesModalTitle">导出书签变化</h3>
+                <button class="modal-close" id="exportChangesModalClose">
+                    <i class="fas fa-times"></i>
+                </button>
+            </div>
+            <div class="modal-body" style="padding: 16px 20px;">
+                <!-- 格式选择 -->
+                <div class="export-section" style="margin-bottom: 16px;">
+                    <div style="display: flex; align-items: center; margin-bottom: 10px;">
+                        <h4 style="font-size: 14px; color: var(--text-secondary); margin: 0; margin-right: 6px;"
+                            id="exportChangesFormatLabel">导出格式</h4>
+                        <i class="fas fa-question-circle" id="exportChangesLegendHelp" title="标记说明"
+                            style="color: var(--text-tertiary); cursor: pointer; font-size: 13px;"></i>
+                    </div>
+                    <div class="radio-group" style="display: flex; gap: 20px;">
+                        <label class="radio-label"
+                            style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
+                            <input type="radio" name="exportChangesFormat" value="html" checked>
+                            <span>HTML</span>
+                        </label>
+                        <label class="radio-label"
+                            style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
+                            <input type="radio" name="exportChangesFormat" value="json">
+                            <span>JSON</span>
+                        </label>
+                    </div>
+                    <!-- 标记说明内容 -->
+                    <div id="exportChangesLegendHelpContent"
+                        style="display: none; margin-top: 10px; padding: 10px; background: var(--bg-tertiary); border-radius: 4px; font-size: 12px; color: var(--text-secondary); line-height: 1.6; border: 1px solid var(--border-color);">
+                        <div style="display: flex; gap: 12px; flex-wrap: wrap; align-items: center;">
+                            <span style="font-weight: bold; color: var(--text-primary);">标记说明：</span>
+                            <span><span style="color: var(--success-color); font-weight: bold;">[+]</span> <span
+                                    id="legendAdded">新增</span></span>
+                            <span><span style="color: var(--danger-color); font-weight: bold;">[-]</span> <span
+                                    id="legendDeleted">删除</span></span>
+                            <span><span style="color: var(--warning-color); font-weight: bold;">[~]</span> <span
+                                    id="legendModified">修改</span></span>
+                            <span><span style="color: var(--info-color); font-weight: bold;">[>>]</span> <span
+                                    id="legendMoved">移动</span></span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 模式选择 -->
+                <div class="export-section" style="margin-bottom: 16px;">
+                    <div style="margin-bottom: 10px; display: flex; align-items: center; gap: 6px;">
+                        <h4 style="margin: 0; font-size: 14px; color: var(--text-secondary);"
+                            id="exportChangesModeLabel">导出模式</h4>
+                        <i class="fas fa-question-circle" id="exportChangesDetailedHelp" title="功能说明"
+                            style="color: var(--text-tertiary); cursor: pointer;"></i>
+                    </div>
+                    <div class="radio-group" style="display: flex; gap: 20px;">
+                        <label class="radio-label"
+                            style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
+                            <input type="radio" name="exportChangesMode" value="simple" checked>
+                            <span id="exportChangesModeSimple">简单</span>
+                        </label>
+                        <label class="radio-label"
+                            style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
+                            <input type="radio" name="exportChangesMode" value="detailed">
+                            <span id="exportChangesModeDetailed">详细</span>
+                        </label>
+                        <label class="radio-label"
+                            style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
+                            <input type="radio" name="exportChangesMode" value="collection">
+                            <span id="exportChangesModeCollection">集合</span>
+                        </label>
+                    </div>
+                    <!-- 详细模式说明内容 -->
+                    <div id="exportChangesDetailedHelpContent"
+                        style="display: none; margin-top: 10px; padding: 10px; background: var(--bg-tertiary); border-radius: 4px; font-size: 13px; color: var(--text-secondary); line-height: 1.6; border: 1px solid var(--border-color);">
+                    </div>
+                </div>
+
+                <!-- 扩展层级（仅详细模式显示） -->
+                <div class="export-section" id="exportChangesDepthSection" style="margin-bottom: 16px; display: none;">
+                    <h4 style="margin-bottom: 10px; font-size: 14px; color: var(--text-secondary);"
+                        id="exportChangesDepthLabel">扩展层级</h4>
+                    <div style="display: flex; align-items: center; gap: 12px;">
+                        <input type="range" id="exportChangesDepth" min="0" max="3" value="1" style="flex: 1;">
+                        <span id="exportChangesDepthValue"
+                            style="min-width: 40px; text-align: center; font-weight: 500;">1 层</span>
+                    </div>
+                    <div
+                        style="display: flex; justify-content: space-between; font-size: 11px; color: var(--text-tertiary); margin-top: 4px;">
+                        <span id="exportChangesDepth0">仅同级</span>
+                        <span id="exportChangesDepth1">1层</span>
+                        <span id="exportChangesDepth2">2层</span>
+                        <span id="exportChangesDepth3">3层</span>
+                    </div>
+                </div>
+
+                <!-- 操作选择 -->
+                <div class="export-section" style="margin-bottom: 16px;">
+                    <h4 style="margin-bottom: 10px; font-size: 14px; color: var(--text-secondary);"
+                        id="exportChangesActionLabel">操作方式</h4>
+                    <div class="radio-group" style="display: flex; gap: 20px;">
+                        <label class="radio-label"
+                            style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
+                            <input type="radio" name="exportChangesAction" value="download" checked>
+                            <span id="exportChangesActionDownload">导出文件</span>
+                        </label>
+                        <label class="radio-label"
+                            style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
+                            <input type="radio" name="exportChangesAction" value="copy">
+                            <span id="exportChangesActionCopy">复制到剪贴板</span>
+                        </label>
+                    </div>
+                </div>
+
+                <!-- 操作按钮 -->
+                <div class="export-actions"
+                    style="text-align: right; border-top: 1px solid var(--border-color); padding-top: 16px;">
+                    <button id="doExportChangesBtn" class="view-action-btn" style="display: inline-flex; width: auto;">
+                        <i class="fas fa-file-export"></i> <span id="doExportChangesBtnText">确认</span>
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 撤销覆盖层 -->
+    <div id="revertOverlay" class="revert-overlay" style="display: none;">
+        <div class="revert-overlay-content">
+            <div class="revert-spinner"></div>
+            <div class="revert-text" id="revertOverlayText">正在处理中...</div>
+        </div>
+    </div>
+
+    <!-- 详情弹窗 -->
+    <div id="detailModal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <div class="modal-header-left">
+                    <h3 id="modalTitle">变化详情</h3>
+                </div>
+                <button class="modal-close" id="modalClose">
+                    <i class="fas fa-times"></i>
+                </button>
+            </div>
+            <div class="modal-body" id="modalBody">
+                <!-- 动态加载详情内容 -->
+            </div>
+        </div>
+    </div>
+
+    <!-- 书签恢复确认弹窗 -->
+    <div id="restoreModal" class="modal content-center">
+        <div class="modal-content" style="max-width: 500px;">
+            <div class="modal-header compact">
+
+                <h3 id="restoreModalTitle">恢复到对应版本</h3>
+                <button class="modal-close" id="restoreModalClose">
+                    <i class="fas fa-times"></i>
+                </button>
+            </div>
+            <div class="modal-body"
+                style="padding: 0; overflow: hidden; position: relative; transition: height 0.3s ease;"
+                id="restoreModalBody">
+
+                <!-- 容器：包含两个子视图 (Main + Preview, 通过 display 切换) -->
+                <div id="restoreViewsWrapper" style="display: block; width: 100%; height: 100%;">
+
+                    <!-- 1. 主视图 -->
+                    <div id="restoreMainView" style="width: 100%; padding: 12px 20px 14px; box-sizing: border-box;">
+                        <!-- 版本信息卡片 -->
+                        <div id="restoreVersionInfo" style="margin-bottom: 12px; text-align: left;">
+                            <div style="font-size: 16px; font-weight: 600; color: var(--text-primary); margin-bottom: 3px;"
+                                id="restoreVersionNote"></div>
+                            <div style="font-size: 12px; color: var(--text-secondary);" id="restoreVersionTime"></div>
+
+                            <!-- 隐藏字段，防止JS报错 -->
+                            <span id="restoreVersionSeq" style="display:none"></span>
+                            <span id="restoreVersionStats" style="display:none"></span>
+                            <span id="restoreVersionFingerprint" style="display:none"></span>
+                            <span id="restoreVersionLabel" style="display:none"></span>
+                        </div>
+
+
+
+                        <!-- 书签对比统计区域 -->
+                        <div id="restoreComparison" style="margin-bottom: 14px;">
+                            <div style="display: flex; justify-content: space-between; gap: 10px; font-size: 12px;">
+                                <!-- 当前浏览器状态 -->
+                                <div
+                                    style="flex: 1; padding: 10px 8px; background: var(--bg-secondary); border-radius: 8px; border: 1px solid var(--border-color);">
+                                    <div style="color: var(--text-secondary); margin-bottom: 6px; text-align: center; font-weight: 500; font-size: 11px;"
+                                        id="restoreCurrentLabel">当前浏览器</div>
+                                    <div style="display: flex; justify-content: space-around; align-items: baseline;">
+                                        <div style="text-align: center;">
+                                            <div id="restoreCurrentCount"
+                                                style="font-weight: 600; font-size: 16px; color: var(--text-primary); line-height: 1;">
+                                                --</div>
+                                            <div style="font-size: 10px; color: var(--text-tertiary); margin-top: 3px;"
+                                                id="restoreCurrentBookmarksLabel">书签</div>
+                                        </div>
+                                        <div style="text-align: center;">
+                                            <div id="restoreCurrentFolders"
+                                                style="font-weight: 600; font-size: 16px; color: var(--text-primary); line-height: 1;">
+                                                --</div>
+                                            <div style="font-size: 10px; color: var(--text-tertiary); margin-top: 3px;"
+                                                id="restoreCurrentFoldersLabel">文件夹</div>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <!-- 箭头图标 + 指纹 -->
+                                <div id="restoreComparisonArrow"
+                                    style="display: flex; flex-direction: column; justify-content: center; align-items: center; color: var(--text-tertiary); gap: 4px; min-width: 84px;">
+                                    <i class="fas fa-arrow-right" style="font-size: 14px;"></i>
+                                    <span id="restoreBackupFingerprint"
+                                        style="display: none; font-family: SF Mono, Monaco, Consolas, monospace; font-size: 10px; color: var(--text-tertiary); background: var(--bg-tertiary); border: 1px solid var(--border-color); border-radius: 6px; padding: 1px 6px; line-height: 1.2; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;"></span>
+                                </div>
+
+                                <!-- 备份记录状态 -->
+                                <div
+                                    style="flex: 1; padding: 10px 8px; background: var(--bg-secondary); border-radius: 8px; border: 1px solid var(--border-color);">
+                                    <div
+                                        style="color: var(--text-secondary); margin-bottom: 6px; text-align: center; font-weight: 500; font-size: 11px; display: flex; align-items: center; justify-content: center; gap: 6px; flex-wrap: wrap;">
+                                        <span id="restoreBackupLabel">备份记录</span>
+                                    </div>
+                                    <div style="display: flex; justify-content: space-around; align-items: baseline;">
+                                        <div style="text-align: center;">
+                                            <div id="restoreBackupCount"
+                                                style="font-weight: 600; font-size: 16px; color: var(--text-primary); line-height: 1;">
+                                                --</div>
+                                            <div style="font-size: 10px; color: var(--text-tertiary); margin-top: 3px;"
+                                                id="restoreBackupBookmarksLabel">书签</div>
+                                        </div>
+                                        <div style="text-align: center;">
+                                            <div id="restoreBackupFolders"
+                                                style="font-weight: 600; font-size: 16px; color: var(--text-primary); line-height: 1;">
+                                                --</div>
+                                            <div style="font-size: 10px; color: var(--text-tertiary); margin-top: 3px;"
+                                                id="restoreBackupFoldersLabel">文件夹</div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+
+                        </div>
+
+                        <!-- 进度显示区域（默认隐藏） -->
+                        <div id="restoreProgressSection" style="display: none; margin-bottom: 12px;">
+                            <div
+                                style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
+                                <span id="restoreProgressLabel"
+                                    style="font-size: 12px; color: var(--text-secondary);">正在恢复...</span>
+                                <span id="restoreProgressPercent" style="font-size: 12px; font-weight: 500;">0%</span>
+                            </div>
+                            <div
+                                style="height: 5px; background: var(--bg-tertiary); border-radius: 3px; overflow: hidden;">
+                                <div id="restoreProgressBar"
+                                    style="height: 100%; width: 0%; background: var(--accent-primary); transition: width 0.3s ease;">
+                                </div>
+                            </div>
+                            <div id="restoreProgressText"
+                                style="font-size: 11px; color: var(--text-tertiary); margin-top: 4px; text-align: center;">
+                                准备中...</div>
+                        </div>
+ 
+                        <!-- 操作按钮（与主 UI 保持一致：三种策略 + 一个恢复按钮） -->
+                        <div class="modal-footer">
+                            <div class="restore-warning">
+                                <div style="display: flex; align-items: flex-start; gap: 8px;">
+                                    <i class="fas fa-exclamation-triangle" style="margin-top: 1px; font-size: 13px;"></i>
+                                    <div style="font-size: 12px; color: var(--text-primary); line-height: 1.4;">
+                                        <strong id="restoreWarningTitle">警告</strong>
+                                        <span id="restoreWarningText" style="margin-left: 4px;">请先选择恢复方式，查看对应说明。</span>
+                                    </div>
+                                </div>
+                            </div>
+ 
+                            <!-- 差异摘要与预览按钮行（放在说明下方） -->
+                            <div id="restoreDiffBar" class="restore-diff-bar" style="display: none;">
+                                <!-- 差异摘要 (左对齐) -->
+                                <div id="restoreDiffSummary"
+                                    style="font-size: 11px; color: var(--text-secondary); text-align: left; flex: 1;">
+                                    正在计算差异...
+                                </div>
+
+                                <!-- 导入位置（导入合并时显示） -->
+                                <button id="restoreImportTargetBtn" class="restore-preview-btn" style="display: none;">
+                                    <span id="restoreImportTargetBtnText">导入位置</span>
+                                </button>
+
+                                <!-- 预览按钮 -->
+                                <button id="restorePreviewBtn" class="restore-preview-btn" style="display: none;">
+                                    <span id="restorePreviewBtnText">预览</span>
+                                </button>
+                            </div>
+
+                            <div id="restoreImportTargetHint" class="restore-import-target-hint" style="display: none;"></div>
+
+                            <div class="restore-footer-actions">
+                                <div id="restoreStrategySegment" style="display: inline-flex; align-items: center;">
+                                    <div id="restoreStrategyGroup" class="restore-strategy-group">
+                                        <label class="restore-strategy-label" title="" id="restoreStrategyOverwriteLabelWrap">
+                                            <input type="radio" name="restoreStrategy" id="restoreStrategyOverwrite"
+                                                value="overwrite" checked>
+                                            <div class="restore-strategy-option" id="restoreStrategyOverwriteLabel">
+                                                <span class="restore-strategy-icon">✓</span>
+                                                <span>覆盖</span>
+                                            </div>
+                                        </label>
+                                        <div class="restore-strategy-divider" aria-hidden="true"></div>
+                                        <label class="restore-strategy-label" title="" id="restoreStrategyMergeLabelWrap">
+                                            <input type="radio" name="restoreStrategy" id="restoreStrategyMerge"
+                                                value="merge">
+                                            <div class="restore-strategy-option" id="restoreStrategyMergeLabel">
+                                                <span class="restore-strategy-icon">✓</span>
+                                                <span>导入合并</span>
+                                            </div>
+                                        </label>
+                                    </div>
+                                </div>
+
+                                <button class="modal-btn primary" id="restoreConfirmBtn">恢复</button>
+                                <button class="modal-btn" id="restoreCancelBtn">取消</button>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- 2. 预览视图 (同级切换) -->
+                    <div id="restorePreviewView"
+                        style="display: none; width: 100%; height: 100%; box-sizing: border-box; flex-direction: column;">
+                        <div id="restorePreviewContent" class="history-tree-container"
+                            style="flex: 1; overflow-y: auto; padding: 10px 24px;">
+                            <!-- Tree content goes here -->
+                        </div>
+                    </div>
+
+                </div> <!-- End restoreViewsWrapper -->
+            </div> <!-- End modal-body -->
+        </div>
+    </div>
+
+    <!-- 撤销确认弹窗 -->
+    <div id="revertModal" class="modal content-center">
+        <div class="modal-content" style="width: min(90vw, 620px); max-width: 620px;">
+            <div class="modal-header compact">
+                <h3 id="revertModalTitle">撤销全部变化</h3>
+                <button class="modal-close" id="revertModalClose">
+                    <i class="fas fa-times"></i>
+                </button>
+            </div>
+            <div class="modal-body" style="padding: 0; overflow: hidden; position: relative;"
+                id="revertModalBody">
+                <div id="revertViewsWrapper" style="display: block; width: 100%; height: 100%;">
+                    <div id="revertMainView" style="width: 100%; padding: 12px 20px 14px; box-sizing: border-box;">
+                        <div id="revertSnapshotInfo" class="revert-snapshot-card">
+                            <div class="revert-snapshot-row">
+                                <span id="revertSnapshotBadge" class="revert-snapshot-badge">快照</span>
+                                <span id="revertSnapshotStatusText">参考快照：缺失</span>
+                            </div>
+                            <div id="revertSnapshotSubText" class="revert-snapshot-sub">请先创建备份作为参考快照</div>
+                            <div id="revertSnapshotTime" class="revert-snapshot-time"></div>
+                            <div id="revertSnapshotFingerprint" class="revert-snapshot-fingerprint">快照哈希：无</div>
+                        </div>
+
+                        <!-- 对比统计区域 -->
+                        <div id="revertComparison" style="margin-bottom: 14px;">
+                            <div style="display: flex; justify-content: space-between; gap: 10px; font-size: 12px;">
+                                <!-- 当前浏览器状态 -->
+                                <div
+                                    style="flex: 1; padding: 10px 8px; background: var(--bg-secondary); border-radius: 8px; border: 1px solid var(--border-color);">
+                                    <div id="revertCurrentLabel"
+                                        style="color: var(--text-secondary); margin-bottom: 6px; text-align: center; font-weight: 500; font-size: 11px;">
+                                        当前浏览器</div>
+                                    <div style="display: flex; justify-content: space-around; align-items: baseline;">
+                                        <div style="text-align: center;">
+                                            <div id="revertCurrentCount"
+                                                style="font-weight: 600; font-size: 16px; color: var(--text-primary); line-height: 1;">
+                                                --</div>
+                                            <div id="revertCurrentBookmarksLabel"
+                                                style="font-size: 10px; color: var(--text-tertiary); margin-top: 3px;">
+                                                书签</div>
+                                        </div>
+                                        <div style="text-align: center;">
+                                            <div id="revertCurrentFolders"
+                                                style="font-weight: 600; font-size: 16px; color: var(--text-primary); line-height: 1;">
+                                                --</div>
+                                            <div id="revertCurrentFoldersLabel"
+                                                style="font-size: 10px; color: var(--text-tertiary); margin-top: 3px;">
+                                                文件夹</div>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <div
+                                    style="display: flex; flex-direction: column; justify-content: center; align-items: center; color: var(--text-tertiary); gap: 4px;">
+                                    <i class="fas fa-arrow-right" style="font-size: 14px;"></i>
+                                </div>
+
+                                <!-- 参考快照状态 -->
+                                <div
+                                    style="flex: 1; padding: 10px 8px; background: var(--bg-secondary); border-radius: 8px; border: 1px solid var(--border-color);">
+                                    <div id="revertSnapshotLabel"
+                                        style="color: var(--text-secondary); margin-bottom: 6px; text-align: center; font-weight: 500; font-size: 11px;">
+                                        参考快照</div>
+                                    <div style="display: flex; justify-content: space-around; align-items: baseline;">
+                                        <div style="text-align: center;">
+                                            <div id="revertSnapshotCount"
+                                                style="font-weight: 600; font-size: 16px; color: var(--text-primary); line-height: 1;">
+                                                --</div>
+                                            <div id="revertSnapshotBookmarksLabel"
+                                                style="font-size: 10px; color: var(--text-tertiary); margin-top: 3px;">
+                                                书签</div>
+                                        </div>
+                                        <div style="text-align: center;">
+                                            <div id="revertSnapshotFolders"
+                                                style="font-weight: 600; font-size: 16px; color: var(--text-primary); line-height: 1;">
+                                                --</div>
+                                            <div id="revertSnapshotFoldersLabel"
+                                                style="font-size: 10px; color: var(--text-tertiary); margin-top: 3px;">
+                                                文件夹</div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- 进度显示区域（默认隐藏） -->
+                        <div id="revertProgressSection" style="display: none; margin-bottom: 12px;">
+                            <div
+                                style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
+                                <span id="revertProgressLabel"
+                                    style="font-size: 12px; color: var(--text-secondary);">正在撤销...</span>
+                                <span id="revertProgressPercent" style="font-size: 12px; font-weight: 500;">0%</span>
+                            </div>
+                            <div
+                                style="height: 5px; background: var(--bg-tertiary); border-radius: 3px; overflow: hidden;">
+                                <div id="revertProgressBar"
+                                    style="height: 100%; width: 0%; background: var(--accent-primary); transition: width 0.3s ease;">
+                                </div>
+                            </div>
+                            <div id="revertProgressText"
+                                style="font-size: 11px; color: var(--text-tertiary); margin-top: 4px; text-align: center;">
+                                准备中...</div>
+                        </div>
+
+                        <div class="modal-footer">
+                            <div class="restore-warning">
+                                <div style="display: flex; align-items: flex-start; gap: 8px;">
+                                    <i class="fas fa-exclamation-triangle" style="margin-top: 1px; font-size: 13px;"></i>
+                                    <div style="font-size: 12px; color: var(--text-primary); line-height: 1.4;">
+                                        <strong id="revertWarningTitle">提示</strong>
+                                        <span id="revertWarningText" style="margin-left: 4px;">请选择撤销方式。</span>
+                                        <label id="revertThresholdLabel" class="revert-threshold-label revert-threshold-inline">
+                                            <span id="revertThresholdText">智能阈值</span>
+                                            <input type="number" id="revertPatchThresholdInput" min="1" max="99" step="1" value="40">
+                                            <span class="revert-threshold-unit">%</span>
+                                        </label>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div id="revertDiffBar" class="restore-diff-bar" style="display: none;">
+                                <div id="revertDiffSummary"
+                                    style="font-size: 11px; color: var(--text-secondary); text-align: left; flex: 1;">
+                                    正在计算差异...
+                                </div>
+                                <button id="revertPreviewBtn" class="restore-preview-btn" style="display: none;">
+                                    <span id="revertPreviewBtnText">预览</span>
+                                </button>
+                            </div>
+
+                            <div class="restore-footer-actions">
+                                <div class="revert-strategy-stack">
+                                    <div id="revertModeGroup" class="restore-strategy-group">
+                                        <label class="restore-strategy-label" id="revertStrategyAutoLabelWrap">
+                                            <input type="radio" name="revertMode" id="revertStrategyAuto"
+                                                value="auto" checked>
+                                            <div class="restore-strategy-option" id="revertStrategyAutoLabel">
+                                                <span class="restore-strategy-icon">✓</span>
+                                                <span id="revertStrategyAutoText">自动模式</span>
+                                            </div>
+                                        </label>
+                                        <div class="restore-strategy-divider" aria-hidden="true"></div>
+                                        <label class="restore-strategy-label" id="revertStrategyManualLabelWrap">
+                                            <input type="radio" name="revertMode" id="revertStrategyManual"
+                                                value="manual">
+                                            <div class="restore-strategy-option" id="revertStrategyManualLabel">
+                                                <span class="restore-strategy-icon">✓</span>
+                                                <span id="revertStrategyManualText">手动模式</span>
+                                            </div>
+                                        </label>
+                                    </div>
+
+                                    <div id="revertStrategyGroup" class="restore-strategy-group">
+                                        <label class="restore-strategy-label" id="revertStrategyPatchLabelWrap">
+                                            <input type="radio" name="revertManualStrategy" id="revertStrategyPatch"
+                                                value="patch" checked>
+                                            <div class="restore-strategy-option" id="revertStrategyPatchLabel">
+                                                <span class="restore-strategy-icon">✓</span>
+                                                <span id="revertStrategyPatchText">补丁撤销</span>
+                                            </div>
+                                        </label>
+                                        <div class="restore-strategy-divider" aria-hidden="true"></div>
+                                        <label class="restore-strategy-label" id="revertStrategyOverwriteLabelWrap">
+                                            <input type="radio" name="revertManualStrategy" id="revertStrategyOverwrite"
+                                                value="overwrite">
+                                            <div class="restore-strategy-option" id="revertStrategyOverwriteLabel">
+                                                <span class="restore-strategy-icon">✓</span>
+                                                <span id="revertStrategyOverwriteText">覆盖撤销</span>
+                                            </div>
+                                        </label>
+                                    </div>
+                                </div>
+
+                                <button class="modal-btn primary" id="revertConfirmBtn">撤销</button>
+                                <button class="modal-btn" id="revertCancelBtn">取消</button>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div id="revertPreviewView"
+                        style="display: none; width: 100%; height: 100%; box-sizing: border-box; flex-direction: column;">
+                        <div id="revertPreviewHeader" class="revert-preview-header">
+                            <div class="revert-preview-title-wrap">
+                                <div id="revertPreviewTitle" class="revert-preview-title">补丁撤销预览</div>
+                                <button id="revertPreviewHelpBtn" type="button" class="revert-preview-help-btn"
+                                    title="说明" aria-expanded="false">
+                                    <i class="fas fa-question-circle" aria-hidden="true"></i>
+                                </button>
+                            </div>
+                        </div>
+                        <div id="revertPreviewHelpContent" class="revert-preview-help-content" style="display: none;">
+                            <div id="revertPreviewHelpExecLine" class="revert-preview-help-line">执行层：底层按真实数据执行新增/删除/移动/修改，结果以实际书签树为准。</div>
+                            <div id="revertPreviewHelpDisplayLine" class="revert-preview-help-line">展示层：预览仅展示手动操作项（例如手动移动的 3 项），不展开显示被动联动位移。</div>
+                        </div>
+                        <div id="revertPreviewContent" class="history-tree-container"
+                            style="flex: 1; overflow-y: auto; padding: 10px 24px;">
+                            <!-- Tree content goes here -->
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div id="clearBackupHistoryModal" class="modal content-center">
+        <div class="modal-content" style="max-width: 480px;">
+            <div class="modal-header compact">
+                <h3 id="clearBackupHistoryModalTitle">清除记录</h3>
+                <button class="modal-close" id="clearBackupHistoryModalClose">
+                    <i class="fas fa-times"></i>
+                </button>
+            </div>
+            <div class="modal-body" style="padding: 16px 20px;">
+                <p id="clearBackupHistoryModalDesc"
+                    style="font-size: 14px; color: var(--text-primary); margin: 0 0 14px 0;">
+                    选择要删除的备份历史记录范围：
+                </p>
+
+                <!-- 删除范围选择区域 -->
+                <div id="clearBackupHistoryOptions"
+                    style="background: var(--bg-secondary); border-radius: 8px; padding: 14px 16px; margin-bottom: 14px;">
+
+                    <!-- 双滑块范围选择器 -->
+                    <div id="clearHistoryRangeContainer" class="range-slider-container">
+                        <!-- 滑块轨道容器 -->
+                        <div id="clearHistoryRangeTrack" class="range-slider-track">
+                            <!-- 选中区域高亮 -->
+                            <div id="clearHistoryRangeHighlight" class="range-slider-highlight"></div>
+                        </div>
+
+                        <!-- 左滑块（起始序号） -->
+                        <input type="range" id="clearHistoryRangeMin" class="range-slider-input" min="1" max="100"
+                            value="1">
+
+                        <!-- 右滑块（结束序号） -->
+                        <input type="range" id="clearHistoryRangeMax" class="range-slider-input" min="1" max="100"
+                            value="50">
+
+                        <!-- 序号刻度 -->
+                        <div id="clearHistoryRangeLabels" class="range-slider-labels">
+                            <span id="clearHistoryMinSeqLabel">1</span>
+                            <span id="clearHistoryMaxSeqLabel">100</span>
+                        </div>
+
+                        <div id="clearHistoryRangeMinBubble" class="range-slider-bubble">1</div>
+                        <div id="clearHistoryRangeMaxBubble" class="range-slider-bubble">1</div>
+                    </div>
+
+                    <!-- 选中范围显示 -->
+                    <div id="clearHistorySelectionDisplay" style="text-align: center; margin-top: 8px;">
+                        <span style="font-size: 13px; color: var(--text-secondary);">
+                            <span id="clearHistorySelectionLabel">将删除序号</span>
+                            <span id="clearHistorySelectionRange"
+                                style="font-weight: 600; color: var(--error);">1-50</span>
+                            <span id="clearHistorySelectionCount" style="color: var(--text-secondary);">（共 50 条）</span>
+                        </span>
+                    </div>
+
+                    <!-- 预览删除数量 -->
+                    <div id="clearHistoryPreview"
+                        style="margin-top: 10px; padding-top: 10px; border-top: 1px dashed var(--border-color);">
+                        <span style="font-size: 12px; color: var(--text-tertiary);">
+                            <i class="fas fa-info-circle" style="margin-right: 4px;"></i>
+                            <span id="clearHistoryPreviewText">当前共 0 条记录，将删除 0 条</span>
+                        </span>
+                    </div>
+                </div>
+
+                <div class="modal-footer"
+                    style="margin-top: 14px; display: flex; justify-content: flex-end; gap: 10px;">
+                    <button class="modal-btn" id="clearBackupHistoryCancelBtn">取消</button>
+                    <button class="modal-btn danger" id="clearBackupHistoryConfirmBtn">确认删除</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 清除历史二次确认弹窗 -->
+    <div id="clearHistorySecondConfirmModal" class="modal content-center">
+        <div class="modal-content" style="max-width: 400px;">
+            <div class="modal-header compact">
+                <h3 id="clearHistorySecondConfirmTitle">确认删除</h3>
+                <button class="modal-close" id="clearHistorySecondConfirmClose">
+                    <i class="fas fa-times"></i>
+                </button>
+            </div>
+            <div class="modal-body" style="padding: 16px 20px;">
+                <div style="text-align: center; margin-bottom: 16px;">
+                    <div
+                        style="width: 48px; height: 48px; background: var(--error-light); border-radius: 50%; display: inline-flex; align-items: center; justify-content: center; margin-bottom: 12px;">
+                        <i class="fas fa-exclamation-triangle" style="font-size: 20px; color: var(--error);"></i>
+                    </div>
+                    <p id="clearHistorySecondConfirmText"
+                        style="font-size: 15px; color: var(--text-primary); margin: 0 0 8px 0; font-weight: 500;">
+                        <span id="clearHistorySecondConfirmPrefix">即将删除</span>
+                        <span id="clearHistoryDeleteCountDisplay"
+                            style="color: var(--error); font-weight: 700;">0</span>
+                        <span id="clearHistorySecondConfirmSuffix">条记录</span>
+                        <span id="clearHistoryRangeDisplay"
+                            style="font-size: 13px; color: var(--text-secondary); font-weight: 400;"></span>
+                    </p>
+                    <p id="clearHistorySecondConfirmWarning"
+                        style="font-size: 13px; color: var(--text-secondary); margin: 0;">
+                        此操作不可撤销，建议先备份再删除
+                    </p>
+                </div>
+
+                <div style="display: flex; flex-direction: column; gap: 10px;">
+                    <!-- 先备份按钮 -->
+                    <button class="modal-btn" id="clearHistoryExportFirstBtn"
+                        style="width: 100%; display: flex; align-items: center; justify-content: center; gap: 8px; padding: 10px; background: var(--accent-light); border-color: var(--accent-primary); color: var(--accent-primary);">
+                        <i class="fas fa-file-export"></i>
+                        <span id="clearHistoryExportFirstText">先备份这些记录</span>
+                    </button>
+
+                    <!-- 直接删除按钮 -->
+                    <button class="modal-btn danger" id="clearHistoryDirectDeleteBtn"
+                        style="width: 100%; padding: 10px;">
+                        <span id="clearHistoryDirectDeleteText">直接删除</span>
+                    </button>
+
+                    <!-- 返回按钮 -->
+                    <button class="modal-btn" id="clearHistorySecondConfirmCancelBtn"
+                        style="width: 100%; padding: 10px; background: var(--bg-secondary); color: var(--text-secondary);">
+                        <span id="clearHistorySecondConfirmCancelText">返回修改</span>
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+
+    <!-- 自动刷新设置弹窗 -->
+    <div id="refreshSettingsModal" class="modal content-center">
+        <div class="modal-content refresh-settings-modal">
+            <div class="modal-header compact">
+                <h3 id="refreshSettingsTitle">自动刷新设置</h3>
+                <button class="modal-close" id="refreshSettingsClose">
+                    <i class="fas fa-times"></i>
+                </button>
+            </div>
+            <div class="modal-body">
+                <div class="refresh-settings-section">
+                    <label class="refresh-setting-item">
+                        <input type="checkbox" id="refreshEveryNOpensEnabled" checked>
+                        <span id="refreshEveryNOpensLabel">每打开</span>
+                        <input type="number" id="refreshEveryNOpensValue" value="3" min="1" max="100"
+                            style="width: 50px; margin: 0 6px;">
+                        <span id="refreshEveryNOpensUnit">次刷新</span>
+                    </label>
+                    <label class="refresh-setting-item">
+                        <input type="checkbox" id="refreshAfterHoursEnabled">
+                        <span id="refreshAfterHoursLabel">距上次刷新超过</span>
+                        <input type="number" id="refreshAfterHoursValue" value="1" min="1" max="24"
+                            style="width: 50px; margin: 0 6px;">
+                        <span id="refreshAfterHoursUnit">小时</span>
+                    </label>
+                    <label class="refresh-setting-item">
+                        <input type="checkbox" id="refreshAfterDaysEnabled">
+                        <span id="refreshAfterDaysLabel">距上次刷新超过</span>
+                        <input type="number" id="refreshAfterDaysValue" value="1" min="1" max="30"
+                            style="width: 50px; margin: 0 6px;">
+                        <span id="refreshAfterDaysUnit">天</span>
+                    </label>
+                </div>
+                <div class="refresh-settings-status" id="refreshSettingsStatus"
+                    style="margin-top: 12px; padding: 8px 10px; background: var(--bg-tertiary); border-radius: 6px; font-size: 13px; color: var(--text-secondary);">
+                    <!-- 动态显示状态 -->
+                </div>
+                <div class="refresh-settings-actions" style="margin-top: 12px; text-align: right;">
+                    <button id="refreshSettingsSaveBtn" class="view-action-btn"
+                        style="display: inline-flex; width: auto;">
+                        <i class="fas fa-check"></i> <span id="refreshSettingsSaveText">保存</span>
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+
+
+
+
+
+
+
+
+    <!-- 编辑书签/文件夹弹窗 -->
+    <div id="editBookmarkModal" class="modal content-center">
+        <div class="modal-content" style="max-width: 480px;">
+            <div class="modal-header compact">
+                <h3 id="editBookmarkModalTitle">编辑书签</h3>
+                <button class="modal-close" id="editBookmarkModalClose">
+                    <i class="fas fa-times"></i>
+                </button>
+            </div>
+            <div class="modal-body">
+                <div class="edit-bookmark-form">
+                    <div class="edit-bookmark-field">
+                        <label for="editBookmarkTitle" id="editBookmarkTitleLabel">名称</label>
+                        <input type="text" id="editBookmarkTitle" class="edit-bookmark-input" placeholder="输入名称...">
+                    </div>
+                    <div class="edit-bookmark-field" id="editBookmarkUrlField">
+                        <label for="editBookmarkUrl" id="editBookmarkUrlLabel">地址</label>
+                        <input type="text" id="editBookmarkUrl" class="edit-bookmark-input" placeholder="https://...">
+                    </div>
+                </div>
+                <div class="edit-bookmark-actions">
+                    <button id="editBookmarkCancelBtn" class="modal-btn">取消</button>
+                    <button id="editBookmarkSaveBtn" class="modal-btn primary">保存</button>
+                </div>
+            </div>
+        </div>
+    </div>
+    <!-- 全局导出弹窗 -->
+    <div id="globalExportModal" class="modal">
+        <div class="modal-content"
+            style="max-width: 680px; display: flex; flex-direction: column; max-height: 90vh; position: relative;">
+            <div class="modal-header">
+                <div>
+                    <h3 id="globalExportModalTitle" style="font-size: 18px;">全局备份导出</h3>
+                </div>
+                <button class="modal-close" id="globalExportModalClose">
+                    <i class="fas fa-times"></i>
+                </button>
+            </div>
+            <div class="modal-body" style="overflow-y: auto; flex: 1; padding: 24px; padding-bottom: 70px;">
+
+                <!-- 简化后的导出选项区域 -->
+                <div class="export-section"
+                    style="margin-bottom: 24px; padding: 16px; background: var(--bg-secondary); border-radius: 8px;">
+                    <div style="display: flex; gap: 40px; align-items: flex-start;">
+                        <!-- 格式选择 -->
+                        <div style="flex: 1;">
+                            <h4
+                                style="margin-bottom: 12px; font-size: 14px; color: var(--text-secondary); font-weight: 600;">
+                                <i class="fas fa-file-alt" style="margin-right: 6px;"></i><span
+                                    id="globalExportFormatTitle">导出格式</span>
+                            </h4>
+                            <div style="display: flex; gap: 16px;">
+                                <label style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
+                                    <input type="checkbox" id="globalExportFormatHtml" checked>
+                                    <span style="font-size: 13px;">HTML</span>
+                                </label>
+                                <label style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
+                                    <input type="checkbox" id="globalExportFormatJson">
+                                    <span style="font-size: 13px;">JSON</span>
+                                </label>
+                                <label style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
+                                    <input type="checkbox" id="globalExportFormatMd">
+                                    <span style="font-size: 13px;">Markdown</span>
+                                </label>
+                            </div>
+                            <div id="globalExportFormatHint"
+                                style="margin-top: 8px; font-size: 12px; color: var(--text-tertiary);">
+                                勾选即可导出对应格式文件
+                            </div>
+                        </div>
+
+                        <!-- 分隔线 -->
+                        <div style="width: 1px; background: var(--border-color); align-self: stretch;"></div>
+
+                        <!-- 打包结构 -->
+                        <div style="flex: 1;">
+                            <h4
+                                style="margin-bottom: 12px; font-size: 14px; color: var(--text-secondary); font-weight: 600;">
+                                <i class="fas fa-box-open" style="margin-right: 6px;"></i><span
+                                    id="globalExportPackTitle">打包结构</span>
+                            </h4>
+                            <div style="display: flex; gap: 16px;">
+                                <label style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
+                                    <input type="radio" name="globalExportPackMode" id="globalExportPackZip" value="zip"
+                                        checked>
+                                    <span id="globalExportPackZipText" style="font-size: 13px;">ZIP 归档</span>
+                                </label>
+                                <label style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
+                                    <input type="radio" name="globalExportPackMode" id="globalExportPackMerge"
+                                        value="merge">
+                                    <span id="globalExportPackMergeText" style="font-size: 13px;">单一文件合并</span>
+                                </label>
+                            </div>
+                            <div id="globalExportPackHint"
+                                style="margin-top: 8px; font-size: 12px; color: var(--text-tertiary);">
+                                ZIP归档将包含多个独立文件；单一文件合并将生成一个汇总文件
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 预览表格区域 -->
+                <div class="export-section">
+                    <div
+                        style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
+                        <h4 style="font-size: 14px; color: var(--text-secondary); font-weight: 600; margin: 0;">
+                            <i class="fas fa-list-check" style="margin-right: 6px;"></i><span
+                                id="globalExportSelectTitle">选择备份记录</span>
+                        </h4>
+                        <!-- 分页控件（在标题行居中） -->
+                        <div id="globalExportPagination" style="display: flex; align-items: center; gap: 6px;">
+                            <button id="globalExportPrevPage" class="modal-btn"
+                                style="padding: 2px 8px; font-size: 11px;">
+                                <i class="fas fa-chevron-left"></i>
+                            </button>
+                            <input type="text" id="globalExportPageInput" value="1"
+                                style="width: 28px; padding: 2px 4px; font-size: 11px; text-align: center; border: 1px solid var(--border-color); border-radius: 4px; background: var(--bg-secondary); color: var(--text-primary);">
+                            <span style="font-size: 11px; color: var(--text-tertiary);">/</span>
+                            <span id="globalExportTotalPages"
+                                style="font-size: 11px; color: var(--text-secondary);">1</span>
+                            <button id="globalExportNextPage" class="modal-btn"
+                                style="padding: 2px 8px; font-size: 11px;">
+                                <i class="fas fa-chevron-right"></i>
+                            </button>
+                        </div>
+                        <div id="globalExportStatusWrapper" style="display: flex; align-items: center; gap: 6px;">
+                            <button id="globalExportRangeToggleBtn" class="modal-btn"
+                                style="padding: 2px 6px; font-size: 11px; line-height: 1; min-width: auto;"
+                                aria-label="toggle-range">
+                                <i class="fas fa-chevron-down"></i>
+                            </button>
+                            <span id="globalExportStatus"
+                                style="font-size: 12px; color: var(--accent-primary); font-weight: 500; background: var(--accent-light); padding: 2px 8px; border-radius: 4px;">
+                                已选 0 项
+                            </span>
+                        </div>
+                    </div>
+
+                    <!-- 范围选择（折叠面板） -->
+                    <div id="globalExportRangePanel"
+                        style="display: none; background: var(--bg-secondary); border: 1px solid var(--border-color); border-radius: 8px; padding: 10px 12px; margin-bottom: 12px;">
+                        <div style="display: flex; align-items: center; justify-content: space-between; gap: 12px;">
+                            <div id="globalExportRangePreviewText"
+                                style="font-size: 12px; color: var(--text-tertiary); white-space: nowrap;"></div>
+                            <label
+                                style="display: inline-flex; align-items: center; gap: 8px; cursor: pointer; user-select: none;">
+                                <span id="globalExportRangeEnabledText"
+                                    style="font-size: 12px; color: var(--text-secondary);">自动勾选</span>
+                                <input type="checkbox" id="globalExportRangeEnabled" style="cursor: pointer;">
+                            </label>
+                        </div>
+
+                        <div id="globalExportRangeContainer" class="range-slider-container"
+                            style="margin-top: 10px; margin-bottom: 0;">
+                            <div class="range-slider-track">
+                                <div id="globalExportRangeHighlight" class="range-slider-highlight"></div>
+                            </div>
+                            <input type="range" id="globalExportRangeMin" class="range-slider-input" min="1" max="100"
+                                value="1">
+                            <input type="range" id="globalExportRangeMax" class="range-slider-input" min="1" max="100"
+                                value="1">
+                            <div class="range-slider-labels">
+                                <span id="globalExportRangeLeftLabel">1</span>
+                                <span id="globalExportRangeRightLabel">1</span>
+                            </div>
+                            <div id="globalExportRangeMinBubble" class="range-slider-bubble">1</div>
+                            <div id="globalExportRangeMaxBubble" class="range-slider-bubble">1</div>
+                        </div>
+                    </div>
+
+                    <div class="global-export-table-container">
+                        <table id="globalExportTable" style="width: 100%; border-collapse: collapse;">
+                            <thead>
+                                <tr>
+                                    <th style="text-align: center; width: 40px;">
+                                        <input type="checkbox" id="globalExportSelectAll" style="cursor: pointer;">
+                                    </th>
+                                    <th style="text-align: center; width: 54px;"><span id="globalExportThSeq">序号</span>
+                                    </th>
+                                    <th style="text-align: left;"><span id="globalExportThNote">备注</span></th>
+                                    <th style="text-align: left; width: 110px;"><span id="globalExportThHash">哈希值</span>
+                                    </th>
+                                    <th style="text-align: left; width: 170px;"><span
+                                            id="globalExportThViewMode">视图模式</span></th>
+                                    <th style="text-align: left; width: 160px;"><span id="globalExportThTime">时间</span>
+                                    </th>
+                                </tr>
+                            </thead>
+                            <tbody id="globalExportTableBody">
+                                <!-- 动态生成 -->
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 悬浮按钮区域（透明背景，固定在底部，不随滚动） -->
+            <div
+                style="position: absolute; bottom: 0; left: 0; right: 0; padding: 16px 24px; display: flex; justify-content: flex-end; gap: 12px; background: transparent; pointer-events: none;">
+                <button class="modal-btn" id="globalExportCancelBtn"
+                    style="min-width: 80px; pointer-events: auto;">取消</button>
+                <button class="modal-btn primary" id="globalExportConfirmBtn"
+                    style="min-width: 120px; pointer-events: auto;">
+                    <i class="fas fa-file-export" style="margin-right: 6px;"></i><span
+                        id="globalExportConfirmText">导出选中项</span>
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- 导入合并：选择导入位置 -->
+    <div id="importTargetModal" class="modal">
+        <div class="modal-content"
+            style="position: relative; top: auto; right: auto; margin: 0; width: 420px; max-width: calc(100% - 24px); box-shadow: var(--shadow-lg); border-radius: 12px; padding: 0; overflow: hidden;">
+            <div class="modal-header compact"
+                style="display: flex; align-items: center; justify-content: space-between; padding: 12px 16px; border-bottom: 1px solid var(--border-color); background: var(--bg-elevated);">
+                <h3 id="importTargetTitle" style="font-size: 15px; margin: 0; color: var(--text-primary);">选择导入位置</h3>
+                <div style="display: flex; align-items: center; gap: 8px;">
+                    <button id="clearImportTargetSelectionBtn" aria-label="清除选择"
+                        style="width: 28px; height: 28px; padding: 0; border-radius: 50%; background: var(--bg-secondary); color: var(--text-secondary); border: none; cursor: pointer; display: flex; align-items: center; justify-content: center;">
+                        <i class="fas fa-trash"></i>
+                    </button>
+                    <button id="closeImportTargetModal" aria-label="Close"
+                        style="width: 28px; height: 28px; padding: 0; border-radius: 50%; background: var(--bg-secondary); color: var(--text-primary); border: none; cursor: pointer; display: flex; align-items: center; justify-content: center;">
+                        <i class="fas fa-times"></i>
+                    </button>
+                </div>
+            </div>
+            <div style="padding: 12px 16px;">
+                <div id="importTargetDesc" style="font-size: 12px; color: var(--text-secondary);">
+                    可选择任意文件夹作为导入位置，子文件夹按展开加载。
+                </div>
+                <div id="importTargetList" class="import-target-list"></div>
+                <div class="import-target-actions">
+                    <button id="importTargetCancelBtn" class="restore-modal-action-btn secondary">取消</button>
+                    <button id="importTargetConfirmBtn" class="restore-modal-action-btn primary">确认选择</button>
+                </div>
+            </div>
+        </div>
+    </div>
+</body>
+
+</html>

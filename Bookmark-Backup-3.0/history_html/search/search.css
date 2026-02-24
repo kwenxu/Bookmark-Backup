@@ -1,0 +1,942 @@
+/**
+ * 搜索结果面板样式（Phase 1 + Phase 2）
+ * Search Results Panel Styles (Phase 1: Current Changes + Phase 2: Backup History)
+ * 
+ * 文件位置：history_html/search/search.css
+ * 创建时间：2026-01-15
+ * 更新时间：2026-01-15
+ * 说明：搜索相关样式，支持「当前变化」「备份历史」视图的局部搜索功能
+ */
+
+/* ==================== 搜索结果面板容器 ==================== */
+.search-results-panel {
+    position: absolute;
+    top: calc(100% + 10px);
+    left: 0;
+    right: 0;
+    background: var(--bg-elevated);
+    border: 1px solid var(--border-color);
+    border-radius: 12px;
+    box-shadow: var(--shadow-md);
+    max-height: 360px;
+    overflow-y: auto;
+    overflow-x: hidden;
+    display: none;
+    z-index: 200;
+}
+
+/* [User Request] Fix scrollbar corner transition by adding track margin */
+.search-results-panel::-webkit-scrollbar {
+    width: 10px;
+    /* Match global */
+}
+
+.search-results-panel::-webkit-scrollbar-track {
+    background: transparent;
+    margin-block: 4px;
+    /* Crop top/bottom to avoid rounded corner overlap */
+}
+
+.search-results-panel.visible {
+    display: block;
+}
+
+/* ==================== 空结果提示 ==================== */
+.search-results-panel .search-results-empty {
+    padding: 14px 12px;
+    font-size: 12px;
+    color: var(--text-secondary);
+}
+
+/* ==================== 搜索结果项（通用） ==================== */
+.search-result-item {
+    /* Tighter vertical rhythm for candidates */
+    padding: 8px 12px;
+    cursor: default;
+    /* Changed from pointer to default to imply mixed content */
+    border-bottom: 1px solid var(--border-color);
+    /* user-select: none; -> Removed to allow copying text */
+}
+
+/* Allow text selection on specific content areas */
+.search-result-title,
+.search-result-meta,
+.search-result-match {
+    user-select: text;
+    cursor: text;
+}
+
+/* But keep chips/buttons pointer */
+.search-loc-chip,
+.search-loc-chip-row,
+.search-result-badge-interactive {
+    cursor: pointer;
+    user-select: none;
+}
+
+.search-result-item:last-child {
+    border-bottom: none;
+}
+
+.search-result-item:hover,
+.search-result-item.selected {
+    background: var(--bg-tertiary);
+}
+
+/* ==================== 结果行布局 ==================== */
+.search-result-row {
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+}
+
+.search-result-main {
+    min-width: 0;
+    flex: 1;
+}
+
+/* ==================== 标题区域 ==================== */
+.search-result-title {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--text-primary);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+/* 序号徽章 */
+.search-result-index {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 18px;
+    height: 18px;
+    padding: 0 6px;
+    margin-right: 6px;
+    border-radius: 8px;
+    font-size: 11px;
+    font-weight: 700;
+    line-height: 1;
+    color: var(--text-secondary);
+    background: var(--bg-secondary);
+    border: 1px solid var(--border-color);
+    flex-shrink: 0;
+}
+
+/* 永久栏目序号 - 绿色 */
+.search-result-index.permanent,
+.search-result-index.hash {
+    background: rgba(16, 185, 129, 0.15);
+    color: #059669;
+    border-color: rgba(16, 185, 129, 0.3);
+}
+
+/* 群组前缀 - 蓝色 */
+.search-result-index.group {
+    background: rgba(59, 130, 246, 0.15);
+    color: #2563eb;
+    border-color: rgba(59, 130, 246, 0.3);
+}
+
+/* 暗色主题序号标签 */
+[data-theme="dark"] .search-result-index.permanent,
+[data-theme="dark"] .search-result-index.hash {
+    background: rgba(16, 185, 129, 0.2);
+    color: #34d399;
+    border-color: rgba(16, 185, 129, 0.4);
+}
+
+[data-theme="dark"] .search-result-index.group {
+    background: rgba(59, 130, 246, 0.2);
+    color: #60a5fa;
+    border-color: rgba(59, 130, 246, 0.4);
+}
+
+/* ==================== Phase 1: 变化类型符号前缀 ==================== */
+.search-change-prefix {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 18px;
+    height: 18px;
+    font-size: 14px;
+    font-weight: 700;
+    line-height: 1;
+}
+
+.search-change-prefix.added {
+    color: #28a745;
+}
+
+.search-change-prefix.deleted {
+    color: #dc3545;
+}
+
+.search-change-prefix.modified {
+    color: var(--git-modified);
+}
+
+.search-change-prefix.moved {
+    color: var(--git-moved);
+}
+
+/* 变化图标容器 */
+.search-change-icons {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+}
+
+/* ==================== Phase 1: 元信息（URL等） ==================== */
+.search-result-meta {
+    margin-top: 4px;
+    font-size: 12px;
+    color: var(--text-secondary);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+/* Ensure URL text never triggers horizontal scrolling */
+.search-result-url {
+    display: block;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+/* =============================================================================
+   Phase 2: 备份历史搜索结果样式
+   ============================================================================= */
+
+/* 备份历史搜索结果项 */
+.search-result-history-item {
+    padding: 8px 12px;
+}
+
+/* 备注/标题 */
+.search-result-note {
+    flex: 1;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+/* 右侧容器（哈希值等） */
+.search-result-right {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    align-self: center;
+    /* Keep the hash aligned to the right edge and vertically centered */
+    flex-shrink: 0;
+    margin-left: auto;
+    padding-left: 8px;
+}
+
+/* 哈希值显示 */
+.search-result-hash {
+    font-family: 'SF Mono', 'Monaco', 'Consolas', monospace;
+    font-size: 11px;
+    font-weight: 500;
+    color: var(--text-tertiary);
+    background: var(--bg-secondary);
+    padding: 2px 6px;
+    border-radius: 4px;
+}
+
+/* 备份历史元信息行 */
+.search-result-history-meta {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin-top: 4px;
+    font-size: 11px;
+    color: var(--text-secondary);
+    flex-wrap: wrap;
+}
+
+/* 时间显示 */
+.search-history-time {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+}
+
+.search-history-time i {
+    font-size: 10px;
+    opacity: 0.7;
+}
+
+/* 变化统计容器 */
+.search-history-stats {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+/* 变化统计符号 */
+.search-history-stat {
+    font-size: 11px;
+    font-weight: 600;
+    padding: 1px 4px;
+    border-radius: 3px;
+}
+
+.search-history-stat.added {
+    color: #28a745;
+    background: rgba(40, 167, 69, 0.1);
+}
+
+.search-history-stat.deleted {
+    color: #dc3545;
+    background: rgba(220, 53, 69, 0.1);
+}
+
+.search-history-stat.moved {
+    color: var(--git-moved, #0366d6);
+    background: rgba(3, 102, 214, 0.1);
+}
+
+.search-history-stat.modified {
+    color: var(--git-modified, #e36209);
+    background: rgba(227, 98, 9, 0.1);
+}
+
+/* 首次备份 (文本) - 绿色 */
+.search-history-stat.first {
+    color: #28a745;
+    background: rgba(40, 167, 69, 0.15);
+    padding: 2px 6px;
+    /* 文字需要更多内边距 */
+}
+
+/* 无变化 = - 灰色 */
+.search-history-stat.no-change {
+    color: var(--text-tertiary);
+    background: var(--bg-secondary);
+}
+
+
+
+/* =============================================================================
+   高亮动画（用于定位后闪烁）
+   ============================================================================= */
+
+/* 高亮闪烁动画 */
+@keyframes search-highlight-pulse {
+    0% {
+        background-color: transparent;
+        box-shadow: none;
+    }
+
+    20% {
+        background-color: rgba(59, 130, 246, 0.2);
+        box-shadow: 0 0 0 4px rgba(59, 130, 246, 0.15);
+    }
+
+    40% {
+        background-color: rgba(59, 130, 246, 0.1);
+        box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.1);
+    }
+
+    60% {
+        background-color: rgba(59, 130, 246, 0.15);
+        box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.12);
+    }
+
+    80% {
+        background-color: rgba(59, 130, 246, 0.08);
+        box-shadow: 0 0 0 1px rgba(59, 130, 246, 0.08);
+    }
+
+    100% {
+        background-color: transparent;
+        box-shadow: none;
+    }
+}
+
+.search-highlight-pulse {
+    animation: search-highlight-pulse 1.5s ease-out;
+}
+
+/* 暗色主题适配 */
+[data-theme="dark"] .search-result-hash {
+    background: var(--bg-tertiary);
+}
+
+[data-theme="dark"] .search-history-badge.no-change {
+    background: var(--bg-tertiary);
+}
+
+/* 暗色主题高亮动画（使用 CSS 变量替代嵌套 @keyframes） */
+@keyframes search-highlight-pulse-dark {
+    0% {
+        background-color: transparent;
+        box-shadow: none;
+    }
+
+    20% {
+        background-color: rgba(96, 165, 250, 0.25);
+        box-shadow: 0 0 0 4px rgba(96, 165, 250, 0.15);
+    }
+
+    40% {
+        background-color: rgba(96, 165, 250, 0.12);
+        box-shadow: 0 0 0 2px rgba(96, 165, 250, 0.1);
+    }
+
+    60% {
+        background-color: rgba(96, 165, 250, 0.18);
+        box-shadow: 0 0 0 3px rgba(96, 165, 250, 0.12);
+    }
+
+    80% {
+        background-color: rgba(96, 165, 250, 0.08);
+        box-shadow: 0 0 0 1px rgba(96, 165, 250, 0.08);
+    }
+
+    100% {
+        background-color: transparent;
+        box-shadow: none;
+    }
+}
+
+[data-theme="dark"] .search-highlight-pulse {
+    animation: search-highlight-pulse-dark 1.5s ease-out;
+}
+
+/* ==================== 关键词高亮 ==================== */
+.search-results-panel mark {
+    background: rgba(255, 213, 0, 0.35);
+    color: inherit;
+    padding: 0 2px;
+    border-radius: 2px;
+}
+
+[data-theme="dark"] .search-results-panel mark {
+    background: rgba(255, 213, 0, 0.25);
+}
+
+/* =============================================================================
+   Phase 2.5: 历史详情模态框内搜索样式
+   ============================================================================= */
+
+/* 搜索按钮（在导出按钮左侧） */
+.detail-search-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 32px;
+    height: 32px;
+    border: none;
+    border-radius: 6px;
+    background: transparent;
+    color: var(--text-secondary);
+    cursor: pointer;
+    transition: all 0.15s ease;
+}
+
+.detail-search-btn:hover {
+    background: var(--bg-tertiary);
+    color: var(--text-primary);
+}
+
+.detail-search-btn.active {
+    background: var(--accent-light);
+    color: var(--accent-primary);
+}
+
+.detail-search-btn i {
+    font-size: 14px;
+}
+
+/* 搜索容器（默认隐藏，点击按钮后显示） */
+.detail-search-container {
+    display: none;
+    position: relative;
+    margin-top: 12px;
+    padding: 0 16px;
+}
+
+.detail-search-container.visible {
+    display: block;
+}
+
+/* 搜索输入框包装器 */
+.detail-search-input-wrapper {
+    position: relative;
+    display: flex;
+    align-items: center;
+}
+
+.detail-search-input-wrapper .search-icon {
+    position: absolute;
+    left: 12px;
+    color: var(--text-tertiary);
+    font-size: 13px;
+    pointer-events: none;
+}
+
+/* 搜索输入框 */
+.detail-search-input {
+    width: 100%;
+    padding: 10px 12px 10px 36px;
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    background: var(--bg-secondary);
+    font-size: 13px;
+    color: var(--text-primary);
+    transition: all 0.15s ease;
+}
+
+.detail-search-input:focus {
+    outline: none;
+    border-color: var(--accent-primary);
+    box-shadow: 0 0 0 3px var(--accent-light);
+}
+
+.detail-search-input::placeholder {
+    color: var(--text-tertiary);
+}
+
+/* 搜索结果面板（模态框内） */
+.detail-search-results-panel {
+    /* In-flow panel: avoid covering the tree below while searching */
+    position: relative;
+    top: 0;
+    left: 0;
+    right: 0;
+    margin-top: 8px;
+    background: var(--bg-elevated);
+    border: 1px solid var(--border-color);
+    border-radius: 10px;
+    box-shadow: var(--shadow-lg);
+    max-height: 280px;
+    overflow-y: auto;
+    overflow-x: hidden;
+    display: none;
+    z-index: 1;
+}
+
+.detail-search-results-panel.visible {
+    display: block;
+}
+
+/* 复用搜索结果项样式 */
+.detail-search-results-panel .search-result-item {
+    padding: 8px 12px;
+    cursor: pointer;
+    border-bottom: 1px solid var(--border-color-light, var(--border-color));
+    transition: background 0.1s ease;
+}
+
+.detail-search-results-panel .search-result-item:last-child {
+    border-bottom: none;
+}
+
+.detail-search-results-panel .search-result-item:hover,
+.detail-search-results-panel .search-result-item.selected {
+    background: var(--bg-tertiary);
+}
+
+.detail-search-results-panel .search-results-empty {
+    padding: 16px;
+    text-align: center;
+    font-size: 13px;
+    color: var(--text-secondary);
+}
+
+/* 高亮动画（用于定位后闪烁） */
+.highlight-added {
+    animation: highlight-added-pulse 1.5s ease-out;
+}
+
+.highlight-deleted {
+    animation: highlight-deleted-pulse 1.5s ease-out;
+}
+
+.highlight-moved {
+    animation: highlight-moved-pulse 1.5s ease-out;
+}
+
+.highlight-modified {
+    animation: highlight-modified-pulse 1.5s ease-out;
+}
+
+@keyframes highlight-added-pulse {
+
+    0%,
+    100% {
+        background-color: transparent;
+    }
+
+    25% {
+        background-color: rgba(40, 167, 69, 0.3);
+    }
+
+    50% {
+        background-color: rgba(40, 167, 69, 0.15);
+    }
+
+    75% {
+        background-color: rgba(40, 167, 69, 0.25);
+    }
+}
+
+@keyframes highlight-deleted-pulse {
+
+    0%,
+    100% {
+        background-color: transparent;
+    }
+
+    25% {
+        background-color: rgba(220, 53, 69, 0.3);
+    }
+
+    50% {
+        background-color: rgba(220, 53, 69, 0.15);
+    }
+
+    75% {
+        background-color: rgba(220, 53, 69, 0.25);
+    }
+}
+
+@keyframes highlight-moved-pulse {
+
+    0%,
+    100% {
+        background-color: transparent;
+    }
+
+    25% {
+        background-color: rgba(0, 123, 255, 0.3);
+    }
+
+    50% {
+        background-color: rgba(0, 123, 255, 0.15);
+    }
+
+    75% {
+        background-color: rgba(0, 123, 255, 0.25);
+    }
+}
+
+@keyframes highlight-modified-pulse {
+
+    0%,
+    100% {
+        background-color: transparent;
+    }
+
+    25% {
+        background-color: rgba(227, 98, 9, 0.3);
+    }
+
+    50% {
+        background-color: rgba(227, 98, 9, 0.15);
+    }
+
+    75% {
+        background-color: rgba(227, 98, 9, 0.25);
+    }
+}
+
+/* 暗色主题适配 */
+[data-theme="dark"] .detail-search-btn:hover {
+    background: var(--bg-secondary);
+}
+
+[data-theme="dark"] .detail-search-results-panel {
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+}
+
+[data-theme="dark"] .detail-search-input {
+    background: var(--bg-tertiary);
+}
+
+/* ==================== 搜索结果布局（通用增强） ==================== */
+.search-result-item {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+/* Phase 2 (Backup History): keep the row layout full-width so the hash can
+   truly align to the far right of the panel. */
+.search-result-item.search-result-history-item {
+    display: block;
+}
+
+.search-result-item.search-result-history-item .search-result-row {
+    width: 100%;
+}
+
+.search-result-icon {
+    flex-shrink: 0;
+    width: 20px;
+    height: 20px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 14px;
+    color: var(--text-secondary);
+}
+
+.search-result-content {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+}
+
+.search-result-subtitle {
+    margin-top: 2px;
+    font-size: 11px;
+    color: var(--text-tertiary);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+/* Tree locate outline (bookmark/folder jump) */
+.tree-item.search-locate-outline {
+    outline: 2px solid var(--search-highlight-color, rgba(59, 130, 246, 0.9));
+    outline-offset: 2px;
+    border-radius: 6px;
+    box-shadow: 0 0 0 4px rgba(59, 130, 246, 0.12);
+}
+
+
+/* ==================== 搜索结果空状态 ==================== */
+.search-result-empty {
+    padding: 16px;
+    text-align: center;
+    font-size: 13px;
+    color: var(--text-secondary);
+}
+
+/* ==================== Search Result Icons Styling ==================== */
+
+/* ==================== Search Result Icons Styling ==================== */
+
+/* Container for Icon/Favicon */
+.search-result-left {
+    flex-shrink: 0;
+    width: 32px;
+    height: 32px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    margin-right: 12px;
+}
+
+/* Favicon */
+.search-result-favicon {
+    width: 24px;
+    height: 24px;
+    border-radius: 4px;
+    object-fit: contain;
+}
+
+/* Icon Box (for non-favicon icons) */
+.search-result-icon-box {
+    width: 32px;
+    height: 32px;
+    border-radius: 8px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 16px;
+    transition: all 0.2s ease;
+}
+
+/* Icon Box Colors */
+.search-result-icon-box.blue {
+    background: rgba(24, 119, 242, 0.1);
+    color: #1877f2;
+}
+
+.search-result-icon-box.green {
+    background: rgba(66, 183, 42, 0.1);
+    color: #42b72a;
+}
+
+.search-result-icon-box.orange {
+    background: rgba(255, 152, 0, 0.1);
+    color: #f57c00;
+}
+
+.search-result-icon-box.purple {
+    background: rgba(156, 39, 176, 0.1);
+    color: #9c27b0;
+}
+
+.search-result-icon-box.teal {
+    background: rgba(0, 188, 212, 0.1);
+    color: #00bcd4;
+}
+
+/* Content Area */
+.search-result-content {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+}
+
+/* Title Row */
+.search-result-title-row {
+    display: flex;
+    align-items: center;
+    line-height: 1.3;
+}
+
+.search-result-title-text {
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--text-primary);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+/* Meta Row (Secondary Text) */
+.search-result-meta-row {
+    font-size: 12px;
+    color: var(--text-secondary);
+    margin-top: 2px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+/* Index Tag (if no icon) */
+.search-result-index-tag {
+    font-size: 11px;
+    color: var(--text-tertiary);
+    background: var(--bg-tertiary);
+    padding: 1px 5px;
+    border-radius: 4px;
+    margin-left: 6px;
+}
+
+/* Dark Mode */
+[data-theme="dark"] .search-result-icon-box.blue {
+    background: rgba(24, 119, 242, 0.2);
+    color: #4a9eff;
+}
+
+[data-theme="dark"] .search-result-icon-box.green {
+    background: rgba(66, 183, 42, 0.2);
+    color: #4ade80;
+}
+
+[data-theme="dark"] .search-result-icon-box.orange {
+    background: rgba(255, 152, 0, 0.2);
+    color: #ffcc80;
+}
+
+[data-theme="dark"] .search-result-icon-box.purple {
+    background: rgba(156, 39, 176, 0.2);
+    color: #e1bee7;
+}
+
+[data-theme="dark"] .search-result-icon-box.teal {
+    background: rgba(0, 188, 212, 0.2);
+    color: #b2ebf2;
+}
+
+/* ==================== Exit Positioning Button ==================== */
+/* ==================== Exit Positioning Button ==================== */
+.exit-locate-mode-btn {
+    position: fixed;
+    /* Fixed to viewport or relevant relative container */
+    bottom: 120px;
+    right: 40px;
+    z-index: 9999;
+    /* High Z-Index to stay on top */
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding: 10px 20px;
+    border: none;
+    background: #2ea44f;
+    /* Green */
+    color: #ffffff;
+    border-radius: 50px;
+    /* Pill shape */
+    font-size: 14px;
+    font-weight: 600;
+    cursor: pointer;
+    box-shadow: 0 4px 12px rgba(46, 164, 79, 0.4);
+    /* Green shadow */
+    transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+    transform: translateY(0);
+}
+
+.exit-locate-mode-btn:hover {
+    background: #2c974b;
+    transform: translateY(-2px);
+    box-shadow: 0 6px 16px rgba(46, 164, 79, 0.5);
+}
+
+.exit-locate-mode-btn:active {
+    transform: translateY(0);
+    background: #298e46;
+}
+
+[data-theme="dark"] .exit-locate-mode-btn {
+    background: #238636;
+    /* GitHub Green for dark mode */
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
+}
+
+[data-theme="dark"] .exit-locate-mode-btn:hover {
+    background: #2ea043;
+}
+
+/* ==================== Phase 4: Calendar Search Result Styling ==================== */
+
+.calendar-result-item {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+}
+
+.calendar-result-item .search-result-right {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
+    justify-content: center;
+    margin-left: 12px;
+    flex-shrink: 0;
+    text-align: right;
+}
+
+.search-result-date {
+    font-size: 12px;
+    font-weight: 500;
+    color: var(--text-primary);
+    line-height: 1.4;
+}
+
+.search-result-weekday {
+    font-size: 11px;
+    color: var(--text-tertiary);
+    line-height: 1.4;
+}
+
+/* Ensure global favicon style overrides if needed */
+.search-result-favicon {
+    width: 24px;
+    height: 24px;
+    border-radius: 4px;
+    object-fit: contain;
+}

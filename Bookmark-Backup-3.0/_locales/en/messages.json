@@ -1,0 +1,14 @@
+{
+  "extensionName": {
+    "message": "Bookmark Backup",
+    "description": "Extension name"
+  },
+  "extensionDescription": {
+    "message": "Bookmark Git.",
+    "description": "Extension description"
+  },
+  "actionTitle": {
+    "message": "Bookmark Backup",
+    "description": "Toolbar tooltip title"
+  }
+}

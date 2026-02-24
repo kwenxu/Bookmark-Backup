@@ -5824,6 +5824,12 @@ const applyLocalizedContent = async (lang) => { // Added lang parameter
     const currentChangesArchiveModeCollectionLabelStrings = { 'zh_CN': "集合", 'en': "Collection" };
     const currentChangesArchiveModeHelpAriaStrings = { 'zh_CN': "视图模式说明", 'en': "View mode help" };
     const currentChangesArchiveModeHelpTitleStrings = { 'zh_CN': "视图模式说明", 'en': "View mode help" };
+    const backupStrategyTitleStrings = { 'zh_CN': "备份策略", 'en': "Backup Strategy" };
+    const versionedLogTitleStrings = { 'zh_CN': "多版本log", 'en': "Versioned log" };
+    const versionedLogEveryPrefixStrings = { 'zh_CN': "每", 'en': "Every" };
+    const versionedLogEverySuffixStrings = { 'zh_CN': "次自动更新覆盖", 'en': "overwrite updates" };
+    const versionedLogDecreaseStrings = { 'zh_CN': "减少次数", 'en': "Decrease count" };
+    const versionedLogIncreaseStrings = { 'zh_CN': "增加次数", 'en': "Increase count" };
 
     // 恢复相关国际化字符串
     const syncRestoreTitleStrings = {
@@ -6323,6 +6329,12 @@ const applyLocalizedContent = async (lang) => { // Added lang parameter
     const currentChangesArchiveModeCollectionLabelText = currentChangesArchiveModeCollectionLabelStrings[lang] || currentChangesArchiveModeCollectionLabelStrings['zh_CN'];
     const currentChangesArchiveModeHelpAriaText = currentChangesArchiveModeHelpAriaStrings[lang] || currentChangesArchiveModeHelpAriaStrings['zh_CN'];
     const currentChangesArchiveModeHelpTitleText = currentChangesArchiveModeHelpTitleStrings[lang] || currentChangesArchiveModeHelpTitleStrings['zh_CN'];
+    const backupStrategyTitleText = backupStrategyTitleStrings[lang] || backupStrategyTitleStrings['zh_CN'];
+    const versionedLogTitleText = versionedLogTitleStrings[lang] || versionedLogTitleStrings['zh_CN'];
+    const versionedLogEveryPrefixText = versionedLogEveryPrefixStrings[lang] || versionedLogEveryPrefixStrings['zh_CN'];
+    const versionedLogEverySuffixText = versionedLogEverySuffixStrings[lang] || versionedLogEverySuffixStrings['zh_CN'];
+    const versionedLogDecreaseText = versionedLogDecreaseStrings[lang] || versionedLogDecreaseStrings['zh_CN'];
+    const versionedLogIncreaseText = versionedLogIncreaseStrings[lang] || versionedLogIncreaseStrings['zh_CN'];
     const syncRestoreTitleText = syncRestoreTitleStrings[lang] || syncRestoreTitleStrings['zh_CN'];
     const syncRestoreComingSoonText = syncRestoreComingSoonStrings[lang] || syncRestoreComingSoonStrings['zh_CN'];
     const restoreFromCloudText = restoreFromCloudStrings[lang] || restoreFromCloudStrings['zh_CN'];
@@ -6741,6 +6753,30 @@ const applyLocalizedContent = async (lang) => { // Added lang parameter
     const overwriteOverwriteLabelEl = document.getElementById('overwriteOverwriteLabel');
     if (overwriteOverwriteLabelEl) overwriteOverwriteLabelEl.textContent = overwriteOverwriteText;
 
+    const backupStrategyTitleEl = document.getElementById('backupStrategyTitle');
+    if (backupStrategyTitleEl) backupStrategyTitleEl.textContent = backupStrategyTitleText;
+
+    const versionedLogTitleEl = document.getElementById('versionedLogTitle');
+    if (versionedLogTitleEl) versionedLogTitleEl.textContent = versionedLogTitleText;
+
+    const versionedLogEveryPrefixEl = document.getElementById('versionedLogEveryPrefix');
+    if (versionedLogEveryPrefixEl) versionedLogEveryPrefixEl.textContent = versionedLogEveryPrefixText;
+
+    const versionedLogEverySuffixEl = document.getElementById('versionedLogEverySuffix');
+    if (versionedLogEverySuffixEl) versionedLogEverySuffixEl.textContent = versionedLogEverySuffixText;
+
+    const versionedLogEveryDownBtn = document.getElementById('versionedLogEveryDownBtn');
+    if (versionedLogEveryDownBtn) {
+        versionedLogEveryDownBtn.setAttribute('aria-label', versionedLogDecreaseText);
+        versionedLogEveryDownBtn.setAttribute('title', versionedLogDecreaseText);
+    }
+
+    const versionedLogEveryUpBtn = document.getElementById('versionedLogEveryUpBtn');
+    if (versionedLogEveryUpBtn) {
+        versionedLogEveryUpBtn.setAttribute('aria-label', versionedLogIncreaseText);
+        versionedLogEveryUpBtn.setAttribute('title', versionedLogIncreaseText);
+    }
+
     // 更新当前变化自动归档设置区域文本
     const currentChangesArchiveTitleEl = document.getElementById('currentChangesArchiveTitle');
     if (currentChangesArchiveTitleEl) currentChangesArchiveTitleEl.textContent = currentChangesArchiveTitleText;
@@ -6771,6 +6807,9 @@ const applyLocalizedContent = async (lang) => { // Added lang parameter
 
     const backupSettingsSavedTextEl = document.getElementById('backupSettingsSavedText');
     if (backupSettingsSavedTextEl) backupSettingsSavedTextEl.textContent = settingsSavedStrings[lang] || settingsSavedStrings['zh_CN'];
+
+    const backupStrategySavedTextEl = document.getElementById('backupStrategySavedText');
+    if (backupStrategySavedTextEl) backupStrategySavedTextEl.textContent = settingsSavedStrings[lang] || settingsSavedStrings['zh_CN'];
 
     // 更新同步与恢复区域文本
     const syncRestoreTitleEl = document.getElementById('syncRestoreTitle');
@@ -7461,6 +7500,7 @@ const applyLocalizedContent = async (lang) => { // Added lang parameter
 
 
 let bookmarkBackupSavedIndicatorTimer = null;
+let backupStrategySavedIndicatorTimer = null;
 
 function showBookmarkBackupSavedFeedback() {
     const savedIndicator = document.getElementById('backupSettingsSavedIndicator');
@@ -7478,6 +7518,22 @@ function showBookmarkBackupSavedFeedback() {
     }, 2000);
 }
 
+function showBackupStrategySavedFeedback() {
+    const savedIndicator = document.getElementById('backupStrategySavedIndicator');
+    if (!savedIndicator) return;
+
+    savedIndicator.style.opacity = '1';
+
+    if (backupStrategySavedIndicatorTimer) {
+        clearTimeout(backupStrategySavedIndicatorTimer);
+    }
+
+    backupStrategySavedIndicatorTimer = setTimeout(() => {
+        savedIndicator.style.opacity = '0';
+        backupStrategySavedIndicatorTimer = null;
+    }, 2000);
+}
+
 // =============================================================================
 // 备份设置初始化 (Backup Settings Initialization)
 // =============================================================================
@@ -7489,19 +7545,54 @@ function showBookmarkBackupSavedFeedback() {
  * - 覆盖策略：版本化/覆盖互斥
  */
 function initializeBackupSettings() {
-    // 获取备份模式与覆盖策略元素
     const backupModeAuto = document.getElementById('backupModeAuto');
     const backupModeManual = document.getElementById('backupModeManual');
     const overwriteVersioned = document.getElementById('overwriteVersioned');
     const overwriteOverwrite = document.getElementById('overwriteOverwrite');
+    const versionedLogPanel = document.getElementById('versionedLogPanel');
+    const versionedLogEveryDownBtn = document.getElementById('versionedLogEveryDownBtn');
+    const versionedLogEveryInput = document.getElementById('versionedLogEveryInput');
+    const versionedLogEveryUpBtn = document.getElementById('versionedLogEveryUpBtn');
+    const backupStrategySection = document.getElementById('backupStrategySection');
 
     if (!overwriteVersioned || !overwriteOverwrite) return;
 
-    // 加载保存的设置
-    chrome.storage.local.get(['overwriteMode'], function (result) {
-        const overwriteMode = result.overwriteMode || 'versioned';
+    const normalizeVersionedLogEvery = (value) => {
+        const parsed = Number.parseInt(String(value ?? '').trim(), 10);
+        if (!Number.isFinite(parsed)) return 1;
+        return Math.max(1, Math.min(99, parsed));
+    };
 
-        // 应用覆盖策略
+    const updateVersionedLogPanelVisibility = () => {
+        const isVersioned = overwriteVersioned.checked === true;
+
+        if (versionedLogPanel) {
+            versionedLogPanel.style.display = isVersioned ? 'flex' : 'none';
+        }
+        if (backupStrategySection) {
+            backupStrategySection.classList.toggle('compact', !isVersioned);
+        }
+
+        scheduleInitLayoutSync();
+        setTimeout(() => {
+            scheduleInitLayoutSync();
+        }, 120);
+    };
+
+    const updateVersionedLogStepButtons = () => {
+        const currentValue = normalizeVersionedLogEvery(versionedLogEveryInput?.value);
+        if (versionedLogEveryDownBtn) {
+            versionedLogEveryDownBtn.disabled = currentValue <= 1;
+        }
+        if (versionedLogEveryUpBtn) {
+            versionedLogEveryUpBtn.disabled = currentValue >= 99;
+        }
+    };
+
+    chrome.storage.local.get(['overwriteMode', 'versionedInfoLogEvery'], function (result) {
+        const overwriteMode = result.overwriteMode || 'versioned';
+        const versionedInfoLogEvery = normalizeVersionedLogEvery(result.versionedInfoLogEvery);
+
         if (overwriteMode === 'versioned') {
             overwriteVersioned.checked = true;
             overwriteOverwrite.checked = false;
@@ -7509,22 +7600,48 @@ function initializeBackupSettings() {
             overwriteVersioned.checked = false;
             overwriteOverwrite.checked = true;
         }
+
+        if (versionedLogEveryInput) {
+            versionedLogEveryInput.value = String(versionedInfoLogEvery);
+        }
+
+        updateVersionedLogStepButtons();
+        updateVersionedLogPanelVisibility();
     });
 
-    // 保存设置到存储
     function saveBackupSettings() {
         const settings = {
-            overwriteMode: overwriteOverwrite.checked ? 'overwrite' : 'versioned'
+            overwriteMode: overwriteOverwrite.checked ? 'overwrite' : 'versioned',
+            versionedInfoLogEvery: normalizeVersionedLogEvery(versionedLogEveryInput?.value)
         };
+
+        if (versionedLogEveryInput) {
+            versionedLogEveryInput.value = String(settings.versionedInfoLogEvery);
+        }
+
+        updateVersionedLogStepButtons();
+
         chrome.storage.local.set(settings, function () {
             if (!chrome.runtime.lastError) {
-                showBookmarkBackupSavedFeedback();
-                showCurrentChangesArchiveSavedFeedback();
+                showBackupStrategySavedFeedback();
             }
         });
     }
 
-    // 覆盖策略：版本化勾选
+    const stepVersionedLogEvery = (delta) => {
+        if (!versionedLogEveryInput) return;
+        const currentValue = normalizeVersionedLogEvery(versionedLogEveryInput.value);
+        const nextValue = normalizeVersionedLogEvery(currentValue + delta);
+        if (nextValue === currentValue) {
+            updateVersionedLogStepButtons();
+            return;
+        }
+        versionedLogEveryInput.value = String(nextValue);
+        saveBackupSettings();
+        versionedLogEveryInput.focus();
+        versionedLogEveryInput.select();
+    };
+
     if (overwriteVersioned) {
         overwriteVersioned.addEventListener('change', function () {
             if (this.checked) {
@@ -7532,11 +7649,11 @@ function initializeBackupSettings() {
             } else {
                 overwriteOverwrite.checked = true;
             }
+            updateVersionedLogPanelVisibility();
             saveBackupSettings();
         });
     }
 
-    // 覆盖策略：覆盖勾选
     if (overwriteOverwrite) {
         overwriteOverwrite.addEventListener('change', function () {
             if (this.checked) {
@@ -7544,7 +7661,32 @@ function initializeBackupSettings() {
             } else {
                 overwriteVersioned.checked = true;
             }
+            updateVersionedLogPanelVisibility();
             saveBackupSettings();
+        });
+    }
+
+    if (versionedLogEveryInput) {
+        versionedLogEveryInput.addEventListener('input', function () {
+            updateVersionedLogStepButtons();
+        });
+        versionedLogEveryInput.addEventListener('change', function () {
+            saveBackupSettings();
+        });
+        versionedLogEveryInput.addEventListener('blur', function () {
+            saveBackupSettings();
+        });
+    }
+
+    if (versionedLogEveryDownBtn) {
+        versionedLogEveryDownBtn.addEventListener('click', function () {
+            stepVersionedLogEvery(-1);
+        });
+    }
+
+    if (versionedLogEveryUpBtn) {
+        versionedLogEveryUpBtn.addEventListener('click', function () {
+            stepVersionedLogEvery(1);
         });
     }
 
@@ -7629,7 +7771,6 @@ function initializeBackupSettings() {
 
     const currentChangesArchiveHeader = document.getElementById('currentChangesArchiveHeader');
     const currentChangesArchiveSection = document.getElementById('currentChangesArchiveSection');
-    const currentChangesArchiveCollapseIcon = document.getElementById('currentChangesArchiveCollapseIcon');
     const currentChangesArchiveSwitchWrap = currentChangesArchiveHeader
         ? currentChangesArchiveHeader.querySelector('.switch')
         : null;
@@ -7772,8 +7913,7 @@ function initializeBackupSettings() {
     chrome.storage.local.get([
         'currentChangesArchiveEnabled',
         'currentChangesArchiveFormats',
-        'currentChangesArchiveModes',
-        'currentChangesArchiveCollapsed'
+        'currentChangesArchiveModes'
     ], function (result) {
         const enabled = result.currentChangesArchiveEnabled !== false;
 
@@ -7798,12 +7938,7 @@ function initializeBackupSettings() {
         normalizeExclusiveGroup(currentChangesArchiveModeOptions, 0);
 
         if (currentChangesArchiveSection) {
-            const collapsed = result.currentChangesArchiveCollapsed === true;
-            currentChangesArchiveSection.classList.toggle('collapsed', collapsed);
-            if (currentChangesArchiveCollapseIcon) {
-                currentChangesArchiveCollapseIcon.classList.toggle('fa-plus', collapsed);
-                currentChangesArchiveCollapseIcon.classList.toggle('fa-minus', !collapsed);
-            }
+            currentChangesArchiveSection.classList.remove('collapsed');
         }
 
         updateCurrentChangesArchiveContentState();
@@ -7861,26 +7996,6 @@ function initializeBackupSettings() {
         });
     }
 
-    if (currentChangesArchiveHeader && currentChangesArchiveSection) {
-        currentChangesArchiveHeader.addEventListener('click', function () {
-            currentChangesArchiveSection.classList.toggle('collapsed');
-            const isCollapsed = currentChangesArchiveSection.classList.contains('collapsed');
-            chrome.storage.local.set({ currentChangesArchiveCollapsed: isCollapsed });
-
-            if (currentChangesArchiveCollapseIcon) {
-                currentChangesArchiveCollapseIcon.classList.toggle('fa-plus', isCollapsed);
-                currentChangesArchiveCollapseIcon.classList.toggle('fa-minus', !isCollapsed);
-            }
-
-            requestAnimationFrame(() => {
-                syncInitRightColumnHeights();
-            });
-
-            setTimeout(() => {
-                syncInitRightColumnHeights();
-            }, 220);
-        });
-    }
 }
 
 

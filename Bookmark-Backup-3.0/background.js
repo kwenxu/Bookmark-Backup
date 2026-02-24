@@ -4369,6 +4369,281 @@ function normalizeCurrentChangesArchiveSettings(settings = {}) {
     return { enabled, formats, modes };
 }
 
+function clampVersionedInfoLogEvery(value) {
+    const parsed = Number.parseInt(String(value ?? '').trim(), 10);
+    if (!Number.isFinite(parsed)) return 1;
+    return Math.max(1, Math.min(99, parsed));
+}
+
+function escapeVersionedInfoLogCell(value) {
+    return String(value == null ? '' : value)
+        .replace(/\|/g, '\\|')
+        .replace(/[\r\n]+/g, ' ')
+        .trim();
+}
+
+function formatVersionedInfoLogTime(value) {
+    const date = new Date(value);
+    if (!Number.isFinite(date.getTime())) return String(value || '-');
+    const yyyy = date.getFullYear();
+    const mm = String(date.getMonth() + 1).padStart(2, '0');
+    const dd = String(date.getDate()).padStart(2, '0');
+    const hh = String(date.getHours()).padStart(2, '0');
+    const mi = String(date.getMinutes()).padStart(2, '0');
+    const ss = String(date.getSeconds()).padStart(2, '0');
+    return `${yyyy}/${mm}/${dd} ${hh}:${mi}:${ss}`;
+}
+
+function formatVersionedInfoLogDirection(value, lang = 'zh_CN') {
+    const key = String(value || '').toLowerCase();
+    const mapZh = {
+        upload: '上传',
+        download: '下载',
+        webdav: '云端1',
+        github_repo: '云端2',
+        gist: '云端3',
+        cloud: '云端',
+        local: '本地',
+        both: '云端+本地',
+        webdav_local: '云端1+本地',
+        github_repo_local: '云端2+本地',
+        gist_local: '云端3+本地',
+        cloud_local: '云端+本地'
+    };
+    const mapEn = {
+        upload: 'Upload',
+        download: 'Download',
+        webdav: 'Cloud1',
+        github_repo: 'Cloud2',
+        gist: 'Cloud3',
+        cloud: 'Cloud',
+        local: 'Local',
+        both: 'Cloud+Local',
+        webdav_local: 'Cloud1+Local',
+        github_repo_local: 'Cloud2+Local',
+        gist_local: 'Cloud3+Local',
+        cloud_local: 'Cloud+Local'
+    };
+    const mapped = (lang === 'zh_CN' ? mapZh : mapEn)[key];
+    return mapped || String(value || '-');
+}
+
+function formatVersionedInfoLogType(value, lang = 'zh_CN') {
+    const key = String(value || '').toLowerCase();
+    const mapZh = {
+        auto: '自动',
+        manual: '手动',
+        switch: '切换',
+        auto_switch: '自动切换',
+        restore: '恢复'
+    };
+    const mapEn = {
+        auto: 'Auto',
+        manual: 'Manual',
+        switch: 'Switch',
+        auto_switch: 'Auto Switch',
+        restore: 'Restore'
+    };
+    const mapped = (lang === 'zh_CN' ? mapZh : mapEn)[key];
+    return mapped || String(value || '-');
+}
+
+function formatVersionedInfoLogChanges(record, lang = 'zh_CN') {
+    const stats = record?.bookmarkStats || {};
+    const toNum = (v) => Number.isFinite(Number(v)) ? Number(v) : 0;
+
+    const bookmarkAdded = toNum(stats.bookmarkAdded);
+    const bookmarkDeleted = toNum(stats.bookmarkDeleted);
+    const folderAdded = toNum(stats.folderAdded);
+    const folderDeleted = toNum(stats.folderDeleted);
+    const bookmarkDiff = toNum(stats.bookmarkDiff);
+    const folderDiff = toNum(stats.folderDiff);
+    const movedCount = toNum(stats.movedCount);
+    const modifiedCount = toNum(stats.modifiedCount);
+
+    const parts = [];
+    const hasBookmarkQuantityChange = bookmarkAdded > 0 || bookmarkDeleted > 0 || bookmarkDiff !== 0;
+    const hasFolderQuantityChange = folderAdded > 0 || folderDeleted > 0 || folderDiff !== 0;
+    const hasFineGrained = (bookmarkAdded + bookmarkDeleted + folderAdded + folderDeleted) > 0;
+    const hasAnyChange = hasFineGrained || bookmarkDiff !== 0 || folderDiff !== 0 || movedCount !== 0 || modifiedCount !== 0;
+
+    if (!hasAnyChange) {
+        return lang === 'zh_CN' ? '无变化' : 'No changes';
+    }
+
+    if (hasFineGrained) {
+        if (lang === 'zh_CN') {
+            if (hasBookmarkQuantityChange) parts.push(`书签+${bookmarkAdded}/-${bookmarkDeleted}`);
+            if (hasFolderQuantityChange) parts.push(`文件夹+${folderAdded}/-${folderDeleted}`);
+        } else {
+            if (hasBookmarkQuantityChange) parts.push(`B+${bookmarkAdded}/-${bookmarkDeleted}`);
+            if (hasFolderQuantityChange) parts.push(`F+${folderAdded}/-${folderDeleted}`);
+        }
+    } else {
+        const bookmarkDiffText = `${bookmarkDiff > 0 ? '+' : ''}${bookmarkDiff}`;
+        const folderDiffText = `${folderDiff > 0 ? '+' : ''}${folderDiff}`;
+        if (lang === 'zh_CN') {
+            if (bookmarkDiff !== 0) parts.push(`书签Δ${bookmarkDiffText}`);
+            if (folderDiff !== 0) parts.push(`文件夹Δ${folderDiffText}`);
+        } else {
+            if (bookmarkDiff !== 0) parts.push(`ΔB${bookmarkDiffText}`);
+            if (folderDiff !== 0) parts.push(`ΔF${folderDiffText}`);
+        }
+    }
+
+    if (movedCount > 0) {
+        parts.push(lang === 'zh_CN' ? `移动${movedCount}` : `Moved ${movedCount}`);
+    }
+    if (modifiedCount > 0) {
+        parts.push(lang === 'zh_CN' ? `修改${modifiedCount}` : `Modified ${modifiedCount}`);
+    }
+
+    return parts.join(' / ') || (lang === 'zh_CN' ? '无变化' : 'No changes');
+}
+
+function shouldIncludeVersionedInfoLogRecord(record) {
+    const status = String(record?.status || '').toLowerCase();
+    if (status && status !== 'success') {
+        return true;
+    }
+
+    const stats = record?.bookmarkStats;
+    if (!stats || typeof stats !== 'object') {
+        return false;
+    }
+
+    const toNum = (v) => Number.isFinite(Number(v)) ? Number(v) : 0;
+
+    const bookmarkAdded = toNum(stats.bookmarkAdded);
+    const bookmarkDeleted = toNum(stats.bookmarkDeleted);
+    const folderAdded = toNum(stats.folderAdded);
+    const folderDeleted = toNum(stats.folderDeleted);
+    const bookmarkDiff = toNum(stats.bookmarkDiff);
+    const folderDiff = toNum(stats.folderDiff);
+    const movedCount = toNum(stats.movedCount);
+    const modifiedCount = toNum(stats.modifiedCount);
+
+    return (
+        bookmarkAdded !== 0 ||
+        bookmarkDeleted !== 0 ||
+        folderAdded !== 0 ||
+        folderDeleted !== 0 ||
+        bookmarkDiff !== 0 ||
+        folderDiff !== 0 ||
+        movedCount !== 0 ||
+        modifiedCount !== 0
+    );
+}
+
+function buildVersionedInfoLogMarkdown(records, lang = 'zh_CN') {
+    const isZh = lang === 'zh_CN';
+    const list = (Array.isArray(records) ? records : [])
+        .filter(shouldIncludeVersionedInfoLogRecord)
+        .slice()
+        .sort((a, b) => new Date(b?.time).getTime() - new Date(a?.time).getTime())
+        .slice(0, 300);
+
+    const lines = [];
+    lines.push(isZh ? '# 多版本信息log（实时备注）' : '# Versioned Info Log (Real-time Notes)');
+    lines.push('');
+    lines.push(`${isZh ? '生成时间' : 'Generated at'}: ${formatVersionedInfoLogTime(new Date().toISOString())}`);
+    lines.push(isZh ? '说明：此文件会按设定次数自动覆盖更新。' : 'Note: this file is auto-updated by configured overwrite interval.');
+    lines.push('');
+    lines.push(isZh
+        ? '| 序号 | 备注 | 时间 | 哈希 | 状态 | 方向 | 类型 | 变化 |'
+        : '| Seq | Note | Time | Hash | Status | Direction | Type | Changes |');
+    lines.push('|---|---|---|---|---|---|---|---|');
+
+    for (const record of list) {
+        const seq = record?.seqNumber != null ? String(record.seqNumber) : '-';
+        const note = escapeVersionedInfoLogCell(record?.note || '');
+        const time = escapeVersionedInfoLogCell(formatVersionedInfoLogTime(record?.time));
+        const hash = escapeVersionedInfoLogCell(record?.fingerprint ? String(record.fingerprint).slice(0, 8) : '-');
+        const status = escapeVersionedInfoLogCell(record?.status || '-');
+        const direction = escapeVersionedInfoLogCell(formatVersionedInfoLogDirection(record?.direction, lang));
+        const type = escapeVersionedInfoLogCell(formatVersionedInfoLogType(record?.type, lang));
+        const changes = escapeVersionedInfoLogCell(formatVersionedInfoLogChanges(record, lang));
+        lines.push(`| ${seq} | ${note} | ${time} | ${hash} | ${status} | ${direction} | ${type} | ${changes} |`);
+    }
+
+    return lines.join('\n');
+}
+
+async function syncVersionedInfoLogIfNeeded({ lang = 'zh_CN', overwriteMode = 'versioned', syncHistory = [] } = {}) {
+    if (overwriteMode !== 'versioned') {
+        return { success: false, skipped: true, reason: 'overwrite_mode' };
+    }
+
+    const state = await browserAPI.storage.local.get([
+        'versionedInfoLogEvery',
+        'versionedInfoLogCounter',
+        'defaultDownloadEnabled'
+    ]);
+
+    const every = clampVersionedInfoLogEvery(state.versionedInfoLogEvery);
+    const currentCounter = Number.isFinite(Number(state.versionedInfoLogCounter))
+        ? Number(state.versionedInfoLogCounter)
+        : 0;
+    const nextCounter = currentCounter + 1;
+
+    if (nextCounter < every) {
+        await browserAPI.storage.local.set({
+            versionedInfoLogEvery: every,
+            versionedInfoLogCounter: nextCounter
+        });
+        return { success: true, skipped: true, counter: nextCounter, every };
+    }
+
+    await browserAPI.storage.local.set({
+        versionedInfoLogEvery: every,
+        versionedInfoLogCounter: 0
+    });
+
+    const content = buildVersionedInfoLogMarkdown(syncHistory, lang);
+    const fileName = lang === 'zh_CN' ? '多版本信息log.md' : 'versioned-info-log.md';
+
+    const [webdav, githubRepo] = await Promise.all([
+        uploadExportFileToWebDAV({
+            lang,
+            folderKey: 'backup_root',
+            fileName,
+            content,
+            contentType: 'text/markdown;charset=utf-8'
+        }),
+        uploadExportFileToGitHubRepo({
+            lang,
+            folderKey: 'backup_root',
+            fileName,
+            content
+        })
+    ]);
+
+    const localEnabled = state.defaultDownloadEnabled === true;
+    let local = { success: false, skipped: true, error: 'Local backup disabled' };
+
+    if (localEnabled) {
+        const dataUrl = `data:text/markdown;charset=utf-8,${encodeURIComponent(content)}`;
+        const exportRootFolder = getExportRootFolderByLang(lang);
+        local = await new Promise((resolve) => {
+            browserAPI.downloads.download({
+                url: dataUrl,
+                filename: `${exportRootFolder}/${fileName}`,
+                saveAs: false,
+                conflictAction: 'overwrite'
+            }, (downloadId) => {
+                if (browserAPI.runtime?.lastError) {
+                    resolve({ success: false, error: browserAPI.runtime.lastError.message });
+                } else {
+                    resolve({ success: true, downloadId });
+                }
+            });
+        });
+    }
+
+    const success = (webdav?.success === true) || (githubRepo?.success === true) || (local?.success === true);
+    return { success, skipped: false, webdav, githubRepo, local, fileName, every };
+}
+
 async function buildCurrentChangesSnapshotArtifacts({ localBookmarks, syncTime, lang, explicitMovedIds, previousBookmarks = null, usePreviousBookmarks = false, forceFormats = null, forceModes = null, forceEnabled = null, forceExpandedIds = null }) {
     if (!Array.isArray(localBookmarks) || !localBookmarks.length) {
         return [];
@@ -7858,16 +8133,21 @@ async function updateSyncStatus(direction, time, status = 'success', errorMessag
     console.log('[updateSyncStatus] 参数:', { direction, time, status, errorMessage, syncType, autoBackupReason, snapshotFingerprint });
 
     try {
-        const { syncHistory = [], lastBookmarkData = null, lastSyncOperations = {}, preferredLang = 'zh_CN', recentMovedIds = [], recentModifiedIds = [], recentAddedIds = [], overwriteMode = 'versioned' } = await browserAPI.storage.local.get([
+        const { syncHistory = [], lastBookmarkData = null, lastSyncOperations = {}, preferredLang = 'zh_CN', currentLang = '', recentMovedIds = [], recentModifiedIds = [], recentAddedIds = [], overwriteMode = 'versioned' } = await browserAPI.storage.local.get([
             'syncHistory',
             'lastBookmarkData',
             'lastSyncOperations',
             'preferredLang',
+            'currentLang',
             'recentMovedIds',
             'recentModifiedIds',
             'recentAddedIds',
             'overwriteMode'
         ]);
+
+        const activeLang = currentLang === 'en' || currentLang === 'zh_CN'
+            ? currentLang
+            : (preferredLang === 'en' ? 'en' : 'zh_CN');
 
         // 计算移动、修改、新增的数量（优先使用“与上次备份对比”的净变化；否则回退到 recentXxxIds）
         let movedCount = Array.isArray(recentMovedIds) ? recentMovedIds.length : 0;
@@ -8177,21 +8457,41 @@ async function updateSyncStatus(direction, time, status = 'success', errorMessag
         // 备份成功后自动同步“当前变化”归档
         if (status === 'success') {
             try {
-                // 异步执行，不阻塞主流程
-                exportCurrentChangesArchiveToCloud({
-                    syncTime: time,
-                    fingerprint,
-                    localBookmarks,
-                    previousBookmarks: lastBookmarkData?.bookmarkTree || null,
-                    explicitMovedIds: explicitMovedIdListForRecord,
-                    overwriteMode: overwriteMode === 'overwrite' ? 'overwrite' : 'versioned'
-                }).then(result => {
-                    if (result.success && !result.skipped) {
+                const overwriteStrategy = overwriteMode === 'overwrite' ? 'overwrite' : 'versioned';
+
+                const [archiveResult, versionedLogResult] = await Promise.allSettled([
+                    exportCurrentChangesArchiveToCloud({
+                        syncTime: time,
+                        fingerprint,
+                        localBookmarks,
+                        previousBookmarks: lastBookmarkData?.bookmarkTree || null,
+                        explicitMovedIds: explicitMovedIdListForRecord,
+                        overwriteMode: overwriteStrategy
+                    }),
+                    syncVersionedInfoLogIfNeeded({
+                        lang: activeLang,
+                        overwriteMode: overwriteStrategy,
+                        syncHistory: historyToStore
+                    })
+                ]);
+
+                if (archiveResult.status === 'fulfilled') {
+                    const result = archiveResult.value;
+                    if (result && result.success === true && result.skipped !== true) {
                         console.log('[updateSyncStatus] 当前变化自动归档完成');
                     }
-                }).catch(err => {
-                    console.warn('[updateSyncStatus] 当前变化自动归档失败:', err);
-                });
+                } else {
+                    console.warn('[updateSyncStatus] 当前变化自动归档失败:', archiveResult.reason);
+                }
+
+                if (versionedLogResult.status === 'fulfilled') {
+                    const result = versionedLogResult.value;
+                    if (result && result.success === true && result.skipped !== true) {
+                        console.log('[updateSyncStatus] 多版本信息log已更新');
+                    }
+                } else {
+                    console.warn('[updateSyncStatus] 多版本信息log更新失败:', versionedLogResult.reason);
+                }
             } catch (e) {
                 console.warn('[updateSyncStatus] 触发当前变化自动归档失败:', e);
             }

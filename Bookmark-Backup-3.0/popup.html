@@ -4288,6 +4288,7 @@
             flex-direction: column;
             gap: 0;
             padding: 0;
+            align-self: start;
         }
 
         .settings-section {
@@ -4386,6 +4387,133 @@
             padding-top: 0;
             padding-bottom: 0;
             opacity: 0;
+        }
+
+        .versioned-log-panel {
+            margin-top: 2px;
+            border: 1px solid rgba(13, 110, 253, 0.36);
+            background: rgba(13, 110, 253, 0.08);
+            border-radius: 8px;
+            padding: 6px 8px;
+            display: flex;
+            flex-direction: row;
+            align-items: center;
+            justify-content: center;
+            gap: 6px;
+            flex-wrap: nowrap;
+        }
+
+        .versioned-log-title {
+            font-size: 12px;
+            font-weight: 600;
+            color: #0d6efd;
+            line-height: 1.35;
+            white-space: nowrap;
+        }
+
+        .versioned-log-desc {
+            font-size: 11px;
+            color: var(--theme-text-secondary);
+            line-height: 1.35;
+        }
+
+        .versioned-log-control {
+            display: inline-flex;
+            align-items: center;
+            gap: 5px;
+            font-size: 11px;
+            color: var(--theme-text-primary);
+            flex-wrap: nowrap;
+            white-space: nowrap;
+        }
+
+        .versioned-log-spinner {
+            display: inline-flex;
+            align-items: center;
+            gap: 4px;
+            padding: 0;
+            border: none;
+            background: transparent;
+        }
+
+        .versioned-log-step-btn {
+            width: 18px;
+            height: 18px;
+            border: 1px solid rgba(13, 110, 253, 0.35);
+            border-radius: 4px;
+            background: transparent;
+            color: #0d6efd;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            padding: 0;
+            transition: background-color 0.15s ease, border-color 0.15s ease, color 0.15s ease;
+        }
+
+        html[data-theme="dark"] .versioned-log-step-btn {
+            background: transparent;
+            color: #72a9ff;
+            border-color: rgba(114, 169, 255, 0.45);
+        }
+
+        .versioned-log-step-btn i {
+            font-size: 9px;
+            line-height: 1;
+        }
+
+        .versioned-log-step-btn:hover:not(:disabled) {
+            background: rgba(13, 110, 253, 0.14);
+            border-color: rgba(13, 110, 253, 0.45);
+            color: #0b5ed7;
+        }
+
+        .versioned-log-step-btn:active:not(:disabled) {
+            transform: translateY(1px);
+        }
+
+        .versioned-log-step-btn:disabled {
+            opacity: 0.45;
+            cursor: not-allowed;
+        }
+
+        #versionedLogEveryInput {
+            width: 36px;
+            height: 20px;
+            border: 1px solid rgba(13, 110, 253, 0.35);
+            border-radius: 4px;
+            background: var(--theme-bg-secondary);
+            color: var(--theme-text-primary);
+            font-size: 12px;
+            font-weight: 500;
+            text-align: center;
+            outline: none;
+            padding: 0 2px;
+            box-sizing: border-box;
+        }
+
+        #versionedLogEveryInput:focus {
+            border-color: #0d6efd;
+            box-shadow: none;
+        }
+
+        #versionedLogEveryInput::-webkit-inner-spin-button,
+        #versionedLogEveryInput::-webkit-outer-spin-button {
+            -webkit-appearance: none !important;
+            appearance: none;
+            margin: 0 !important;
+            width: 0 !important;
+            display: none !important;
+        }
+
+        #backupStrategySection.compact .section-content {
+            padding-top: 4px;
+            padding-bottom: 4px;
+            gap: 0;
+        }
+
+        #backupStrategySection.compact #versionedLogPanel {
+            display: none !important;
         }
     </style>
 </head>
@@ -4705,25 +4833,12 @@
                                         </button>
                                     </div>
                                 </div>
-                                <div class="setting-row">
-                                    <span class="setting-label" id="bookmarkOverwriteLabel">Overwrite</span>
-                                    <div class="clean-segment-group">
-                                        <label class="clean-segment-label">
-                                            <input type="checkbox" id="overwriteVersioned" checked>
-                                            <div class="clean-segment-item" id="overwriteVersionedLabel">Versioned</div>
-                                        </label>
-                                        <label class="clean-segment-label">
-                                            <input type="checkbox" id="overwriteOverwrite">
-                                            <div class="clean-segment-item" id="overwriteOverwriteLabel">Overwrite</div>
-                                        </label>
-                                    </div>
-                                </div>
                             </div>
                         </div>
 
                         <!-- Section 2: 当前变化自动归档设置 (可折叠) -->
-                        <div class="settings-section collapsible" id="currentChangesArchiveSection">
-                            <div class="section-header clickable" id="currentChangesArchiveHeader">
+                        <div class="settings-section" id="currentChangesArchiveSection">
+                            <div class="section-header" id="currentChangesArchiveHeader">
                                 <div class="header-left">
                                     <span class="section-title" id="currentChangesArchiveTitle">Current Changes</span>
                                     <span id="currentChangesArchiveSavedIndicator" style="
@@ -4740,13 +4855,12 @@
                                         <span id="currentChangesArchiveSavedText">已保存</span>
                                     </span>
                                 </div>
-                                <div class="header-right" style="display: flex; align-items: center;">
+                                <div class="header-right" style="display: flex; align-items: center; justify-content: flex-end; margin-left: auto;">
                                     <label class="switch"
-                                        style="margin: 0; margin-right: 10px;">
+                                        style="margin: 0;">
                                         <input type="checkbox" id="currentChangesArchiveEnabled" checked>
                                         <span class="slider"></span>
                                     </label>
-                                    <i class="fas fa-plus collapse-icon" id="currentChangesArchiveCollapseIcon"></i>
                                 </div>
                             </div>
                             <div class="section-content" id="currentChangesArchiveContent">
@@ -4784,6 +4898,59 @@
                                             <input type="checkbox" id="currentChangesArchiveModeCollection">
                                             <div class="clean-segment-item" id="currentChangesArchiveModeCollectionLabel">Collection</div>
                                         </label>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="settings-section" id="backupStrategySection">
+                            <div class="section-header">
+                                <div class="header-left">
+                                    <span class="section-title" id="backupStrategyTitle">Backup Strategy</span>
+                                    <span id="backupStrategySavedIndicator" style="
+                                        font-size: 11px;
+                                        color: #4CAF50;
+                                        opacity: 0;
+                                        transition: opacity 0.3s ease;
+                                        margin-left: 8px;
+                                        display: flex;
+                                        align-items: center;
+                                        gap: 4px;
+                                    ">
+                                        <i class="fas fa-check-circle"></i>
+                                        <span id="backupStrategySavedText">已保存</span>
+                                    </span>
+                                </div>
+                            </div>
+                            <div class="section-content" id="backupStrategyContent">
+                                <div class="setting-row">
+                                    <span class="setting-label" id="bookmarkOverwriteLabel">Strategy</span>
+                                    <div class="clean-segment-group">
+                                        <label class="clean-segment-label">
+                                            <input type="checkbox" id="overwriteVersioned" checked>
+                                            <div class="clean-segment-item" id="overwriteVersionedLabel">Versioned</div>
+                                        </label>
+                                        <label class="clean-segment-label">
+                                            <input type="checkbox" id="overwriteOverwrite">
+                                            <div class="clean-segment-item" id="overwriteOverwriteLabel">Overwrite</div>
+                                        </label>
+                                    </div>
+                                </div>
+
+                                <div id="versionedLogPanel" class="versioned-log-panel">
+                                    <div class="versioned-log-title" id="versionedLogTitle">多版本log</div>
+                                    <div class="versioned-log-control">
+                                        <span id="versionedLogEveryPrefix">每</span>
+                                        <div class="versioned-log-spinner">
+                                            <button type="button" id="versionedLogEveryDownBtn" class="versioned-log-step-btn" aria-label="减少次数" title="减少次数">
+                                                <i class="fas fa-chevron-down"></i>
+                                            </button>
+                                            <input type="text" inputmode="numeric" maxlength="2" id="versionedLogEveryInput" value="1">
+                                            <button type="button" id="versionedLogEveryUpBtn" class="versioned-log-step-btn" aria-label="增加次数" title="增加次数">
+                                                <i class="fas fa-chevron-up"></i>
+                                            </button>
+                                        </div>
+                                        <span id="versionedLogEverySuffix">次自动更新覆盖</span>
                                     </div>
                                 </div>
                             </div>

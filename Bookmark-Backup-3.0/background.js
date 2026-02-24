@@ -3549,14 +3549,18 @@ browserAPI.bookmarks.onRemoved.addListener((id, removeInfo) => {
     const shouldSkipDelta = isBookmarkImporting || isBookmarkRestoring || isBookmarkBulkChanging;
     if (!shouldSkipDelta) {
         try {
-            const node = removeInfo && removeInfo.node ? removeInfo.node : null;
+            const sid = (id != null) ? String(id) : '';
+            const idx = BookmarkSnapshotCache.index;
+            const nodeFromIndex = (idx && sid) ? idx.get(sid) : null;
+            const node = removeInfo && removeInfo.node ? removeInfo.node : nodeFromIndex;
             enqueueChangeCacheDelta({
                 kind: 'removed',
                 nodeType: (node && node.url) ? 'bookmark' : 'folder',
                 id,
                 parentId: removeInfo?.parentId || node?.parentId,
                 title: node?.title,
-                url: node?.url
+                url: node?.url,
+                oldParentId: node?.parentId
             });
         } catch (_) { }
     }

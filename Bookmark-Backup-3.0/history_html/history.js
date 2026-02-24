@@ -11082,14 +11082,30 @@ window.clearTreeCache = clearTreeCache;
 function buildTreeIndexFromRoot(root) {
     if (!root) return null;
     const map = new Map();
-    const stack = [root];
+    const stack = [{ node: root, parentId: null, index: null }];
     while (stack.length) {
-        const node = stack.pop();
+        const current = stack.pop();
+        const node = current ? current.node : null;
         if (!node || node.id == null) continue;
+
+        try {
+            if (current && current.parentId != null && typeof node.parentId === 'undefined') {
+                node.parentId = String(current.parentId);
+            }
+            if (
+                current
+                && typeof current.index === 'number'
+                && !Number.isNaN(current.index)
+                && typeof node.index !== 'number'
+            ) {
+                node.index = current.index;
+            }
+        } catch (_) { }
+
         map.set(String(node.id), node);
         if (Array.isArray(node.children) && node.children.length) {
             for (let i = node.children.length - 1; i >= 0; i--) {
-                stack.push(node.children[i]);
+                stack.push({ node: node.children[i], parentId: node.id, index: i });
             }
         }
     }
@@ -11339,20 +11355,117 @@ function scheduleCachedCurrentTreeSnapshotRefresh(reason = '') {
     }, 300);
 }
 
-function applyIncrementalMoveToCachedCurrentTree(id, moveInfo) {
+function applyIncrementalCreateToCachedCurrentTree(id, bookmark) {
     try {
-        if (!(currentView === 'current-changes' && CANVAS_PERMANENT_TREE_LAZY_ENABLED)) return;
-        if (!id || !moveInfo || typeof moveInfo.parentId === 'undefined' || typeof moveInfo.oldParentId === 'undefined') return;
-        if (!cachedCurrentTree || !cachedCurrentTree[0]) return;
+        if (!(currentView === 'current-changes' && CANVAS_PERMANENT_TREE_LAZY_ENABLED)) return false;
+        if (!id || !bookmark || typeof bookmark.parentId === 'undefined') return false;
+        if (!cachedCurrentTree || !cachedCurrentTree[0]) return false;
 
         const index = getCachedCurrentTreeIndex();
-        if (!index) return;
+        if (!index) return false;
+
+        const parent = index.get(String(bookmark.parentId));
+        if (!parent) return false;
+
+        const nodeId = String(id);
+        const children = Array.isArray(parent.children)
+            ? parent.children.filter(child => String(child?.id) !== nodeId)
+            : [];
+        const insertIndex = (typeof bookmark.index === 'number')
+            ? Math.max(0, Math.min(bookmark.index, children.length))
+            : children.length;
+
+        const newNode = {
+            id: nodeId,
+            title: bookmark.title || '',
+            url: bookmark.url || undefined,
+            parentId: String(bookmark.parentId),
+            index: (typeof bookmark.index === 'number') ? bookmark.index : insertIndex
+        };
+        if (!bookmark.url) newNode.children = [];
+
+        children.splice(insertIndex, 0, newNode);
+        parent.children = children;
+
+        if (cachedCurrentTreeIndex instanceof Map) {
+            cachedCurrentTreeIndex.set(nodeId, newNode);
+        }
+        cachedRenderTreeIndex = null;
+        try { window.__canvasRenderTreeIndex = null; } catch (_) { }
+        return true;
+    } catch (_) {
+        return false;
+    }
+}
+
+function applyIncrementalRemoveFromCachedCurrentTree(id, removeInfo) {
+    try {
+        if (!(currentView === 'current-changes' && CANVAS_PERMANENT_TREE_LAZY_ENABLED)) return false;
+        if (!id) return false;
+        if (!cachedCurrentTree || !cachedCurrentTree[0]) return false;
+
+        const index = getCachedCurrentTreeIndex();
+        if (!index) return false;
+
+        const key = String(id);
+        const node = index.get(key);
+        const parentId = (node && typeof node.parentId !== 'undefined')
+            ? node.parentId
+            : (removeInfo && typeof removeInfo.parentId !== 'undefined'
+                ? removeInfo.parentId
+                : (removeInfo && removeInfo.node && typeof removeInfo.node.parentId !== 'undefined'
+                    ? removeInfo.node.parentId
+                    : null));
+        if (!parentId) return false;
+
+        const parent = index.get(String(parentId));
+        if (!parent || !Array.isArray(parent.children)) return false;
+        parent.children = parent.children.filter(child => String(child?.id) !== key);
+
+        cachedCurrentTreeIndex = null;
+        cachedRenderTreeIndex = null;
+        try { window.__canvasRenderTreeIndex = null; } catch (_) { }
+        return true;
+    } catch (_) {
+        return false;
+    }
+}
+
+function applyIncrementalChangeToCachedCurrentTree(id, changeInfo) {
+    try {
+        if (!(currentView === 'current-changes' && CANVAS_PERMANENT_TREE_LAZY_ENABLED)) return false;
+        if (!id || !changeInfo) return false;
+        if (!cachedCurrentTree || !cachedCurrentTree[0]) return false;
+
+        const index = getCachedCurrentTreeIndex();
+        if (!index) return false;
+
+        const node = index.get(String(id));
+        if (!node) return false;
+        if (typeof changeInfo.title !== 'undefined') node.title = changeInfo.title;
+        if (typeof changeInfo.url !== 'undefined') node.url = changeInfo.url || undefined;
+        cachedRenderTreeIndex = null;
+        try { window.__canvasRenderTreeIndex = null; } catch (_) { }
+        return true;
+    } catch (_) {
+        return false;
+    }
+}
+
+function applyIncrementalMoveToCachedCurrentTree(id, moveInfo) {
+    try {
+        if (!(currentView === 'current-changes' && CANVAS_PERMANENT_TREE_LAZY_ENABLED)) return false;
+        if (!id || !moveInfo || typeof moveInfo.parentId === 'undefined' || typeof moveInfo.oldParentId === 'undefined') return false;
+        if (!cachedCurrentTree || !cachedCurrentTree[0]) return false;
+
+        const index = getCachedCurrentTreeIndex();
+        if (!index) return false;
 
         const keyId = String(id);
         const movedNode = index.get(keyId);
         const oldParent = index.get(String(moveInfo.oldParentId));
         const newParent = index.get(String(moveInfo.parentId));
-        if (!movedNode || !oldParent || !newParent) return;
+        if (!movedNode || !oldParent || !newParent) return false;
 
         const oldChildren = Array.isArray(oldParent.children) ? oldParent.children : [];
         oldParent.children = oldChildren.filter(child => String(child?.id) !== keyId);
@@ -11368,8 +11481,12 @@ function applyIncrementalMoveToCachedCurrentTree(id, moveInfo) {
         // 更新节点自身的父信息（供路径/懒加载逻辑使用）
         movedNode.parentId = String(moveInfo.parentId);
         if (typeof moveInfo.index === 'number') movedNode.index = moveInfo.index;
+        cachedRenderTreeIndex = null;
+        try { window.__canvasRenderTreeIndex = null; } catch (_) { }
+        return true;
     } catch (_) {
         // 静默失败：最终会由 refreshCachedCurrentTreeSnapshot() 兜底
+        return false;
     }
 }
 
@@ -16768,6 +16885,117 @@ function handleStorageChange(changes, namespace) {
 // 书签API监听（实时更新书签树）
 // =============================================================================
 
+const BULK_ADD_REMOVE_THRESHOLD = 300;
+const BULK_ADD_REMOVE_QUIET_MS = 220;
+
+let pendingAddRemoveEvents = [];
+let pendingAddRemoveTimer = null;
+let addRemoveFlushInProgress = false;
+let addRemoveFlushQueued = false;
+
+async function handleBookmarkCreateRealtime(id, bookmark) {
+    const appliedToCachedTree = applyIncrementalCreateToCachedCurrentTree(id, bookmark);
+    if (!appliedToCachedTree) {
+        scheduleCachedCurrentTreeSnapshotRefresh('onCreated-fast-fallback');
+    }
+    clearCanvasLazyChangeHints('onCreated');
+}
+
+async function handleBookmarkRemoveRealtime(id, removeInfo) {
+    if (removeInfo && removeInfo.node && removeInfo.node.url) {
+        FaviconCache.clear(removeInfo.node.url);
+    }
+
+    const appliedToCachedTree = applyIncrementalRemoveFromCachedCurrentTree(id, removeInfo);
+    if (!appliedToCachedTree) {
+        scheduleCachedCurrentTreeSnapshotRefresh('onRemoved-fast-fallback');
+    }
+    clearCanvasLazyChangeHints('onRemoved');
+}
+
+function scheduleAddRemoveEventFlush() {
+    if (pendingAddRemoveTimer) {
+        clearTimeout(pendingAddRemoveTimer);
+    }
+    pendingAddRemoveTimer = setTimeout(() => {
+        pendingAddRemoveTimer = null;
+        flushPendingAddRemoveEvents('quiet-window').catch((e) => {
+            console.warn('[书签监听] 批处理 flush 失败:', e);
+        });
+    }, BULK_ADD_REMOVE_QUIET_MS);
+}
+
+function enqueueAddRemoveEvent(event) {
+    if (!event || !event.type || !event.id) return;
+    pendingAddRemoveEvents.push(event);
+    scheduleAddRemoveEventFlush();
+}
+
+async function flushPendingAddRemoveEvents(reason = '') {
+    if (pendingAddRemoveTimer) {
+        clearTimeout(pendingAddRemoveTimer);
+        pendingAddRemoveTimer = null;
+    }
+
+    if (addRemoveFlushInProgress) {
+        addRemoveFlushQueued = true;
+        return;
+    }
+
+    if (!pendingAddRemoveEvents.length) return;
+
+    addRemoveFlushInProgress = true;
+    const batch = pendingAddRemoveEvents;
+    pendingAddRemoveEvents = [];
+
+    try {
+        const isBulk = batch.length >= BULK_ADD_REMOVE_THRESHOLD;
+
+        if (isBulk) {
+            console.log(`[书签监听][批处理] 新增/删除事件数=${batch.length}，触发批处理 (${reason || 'unknown'})`);
+
+            batch.forEach((event) => {
+                if (event.type !== 'removed') return;
+                if (event.removeInfo && event.removeInfo.node && event.removeInfo.node.url) {
+                    FaviconCache.clear(event.removeInfo.node.url);
+                }
+            });
+
+            clearCanvasLazyChangeHints('bulk-add-remove');
+
+            if (currentView === 'current-changes') {
+                if (pendingCurrentChangesEventTimer) {
+                    clearTimeout(pendingCurrentChangesEventTimer);
+                    pendingCurrentChangesEventTimer = null;
+                }
+                await renderCurrentChangesViewWithRetry(1, true);
+                scheduleCachedCurrentTreeSnapshotRefresh('bulk-add-remove');
+            }
+            return;
+        }
+
+        for (const event of batch) {
+            if (event.type === 'created') {
+                await handleBookmarkCreateRealtime(event.id, event.bookmark);
+            } else if (event.type === 'removed') {
+                await handleBookmarkRemoveRealtime(event.id, event.removeInfo);
+            }
+        }
+
+        if (currentView === 'current-changes') {
+            scheduleCurrentChangesRerender(reason || 'add-remove-batch');
+        }
+    } finally {
+        addRemoveFlushInProgress = false;
+        if (addRemoveFlushQueued) {
+            addRemoveFlushQueued = false;
+            flushPendingAddRemoveEvents('queued').catch((e) => {
+                console.warn('[书签监听] queued flush 失败:', e);
+            });
+        }
+    }
+}
+
 function setupBookmarkListener() {
     if (!browserAPI.bookmarks) {
         console.warn('[书签监听] 书签API不可用');
@@ -16777,14 +17005,14 @@ function setupBookmarkListener() {
     console.log('[书签监听] 设置书签API监听器');
 
     // 书签创建
-browserAPI.bookmarks.onCreated.addListener(async (id, bookmark) => {
+browserAPI.bookmarks.onCreated.addListener((id, bookmark) => {
         console.log('[书签监听] 书签创建:', bookmark.title);
         try {
-            clearCanvasLazyChangeHints('onCreated');
-            // 立即刷新当前变化（轻量重绘容器，不刷新页面）
-            if (currentView === 'current-changes') {
-                scheduleCurrentChangesRerender('onCreated');
-            }
+            enqueueAddRemoveEvent({
+                type: 'created',
+                id: String(id),
+                bookmark
+            });
         } catch (e) {
             // 仅记录错误，不触发完全刷新以避免页面闪烁和滚动位置丢失
             console.warn('[书签监听] onCreated 处理异常:', e);
@@ -16792,19 +17020,14 @@ browserAPI.bookmarks.onCreated.addListener(async (id, bookmark) => {
     });
 
     // 书签删除
-browserAPI.bookmarks.onRemoved.addListener(async (id, removeInfo) => {
+browserAPI.bookmarks.onRemoved.addListener((id, removeInfo) => {
         console.log('[书签监听] 书签删除:', id);
         try {
-            // 删除对应的 favicon 缓存
-            // removeInfo.node 包含被删除书签的信息（包括 URL）
-            if (removeInfo.node && removeInfo.node.url) {
-                FaviconCache.clear(removeInfo.node.url);
-            }
-
-            clearCanvasLazyChangeHints('onRemoved');
-            if (currentView === 'current-changes') {
-                scheduleCurrentChangesRerender('onRemoved');
-            }
+            enqueueAddRemoveEvent({
+                type: 'removed',
+                id: String(id),
+                removeInfo
+            });
         } catch (e) {
             // 仅记录错误，不触发完全刷新以避免页面闪烁和滚动位置丢失
             console.warn('[书签监听] onRemoved 处理异常:', e);
@@ -16815,6 +17038,11 @@ browserAPI.bookmarks.onRemoved.addListener(async (id, removeInfo) => {
 browserAPI.bookmarks.onChanged.addListener(async (id, changeInfo) => {
         console.log('[书签监听] 书签修改:', changeInfo);
         try {
+            await flushPendingAddRemoveEvents('before-onChanged');
+            const appliedToCachedTree = applyIncrementalChangeToCachedCurrentTree(id, changeInfo);
+            if (!appliedToCachedTree) {
+                scheduleCachedCurrentTreeSnapshotRefresh('onChanged-fast-fallback');
+            }
             clearCanvasLazyChangeHints('onChanged');
             if (currentView === 'current-changes') {
                 scheduleCurrentChangesRerender('onChanged');
@@ -16830,8 +17058,14 @@ browserAPI.bookmarks.onMoved.addListener(async (id, moveInfo) => {
         console.log('[书签监听] 书签移动:', id);
 
         try {
+            await flushPendingAddRemoveEvents('before-onMoved');
             // 将本次移动记为显式主动移动，确保稳定显示蓝色标识
             explicitMovedIds.set(id, Date.now() + Infinity);
+
+            const appliedToCachedTree = applyIncrementalMoveToCachedCurrentTree(id, moveInfo);
+            if (!appliedToCachedTree) {
+                scheduleCachedCurrentTreeSnapshotRefresh('onMoved-fast-fallback');
+            }
 
             clearCanvasLazyChangeHints('onMoved');
             if (currentView === 'current-changes') {
@@ -16960,6 +17194,12 @@ async function processAnalysisUpdatedMessage(message) {
     console.log('[消息监听] 收到 analysisUpdated 消息:', {
         bookmarkDiff: message.bookmarkDiff,
         folderDiff: message.folderDiff,
+        bookmarkAdded: message.bookmarkAdded,
+        bookmarkDeleted: message.bookmarkDeleted,
+        folderAdded: message.folderAdded,
+        folderDeleted: message.folderDeleted,
+        movedCount: message.movedCount,
+        modifiedCount: message.modifiedCount,
         bookmarkCount: message.bookmarkCount,
         folderCount: message.folderCount
     });
@@ -16967,6 +17207,12 @@ async function processAnalysisUpdatedMessage(message) {
     const analysisSignature = JSON.stringify({
         bookmarkDiff: message.bookmarkDiff,
         folderDiff: message.folderDiff,
+        bookmarkAdded: message.bookmarkAdded,
+        bookmarkDeleted: message.bookmarkDeleted,
+        folderAdded: message.folderAdded,
+        folderDeleted: message.folderDeleted,
+        movedCount: message.movedCount,
+        modifiedCount: message.modifiedCount,
         bookmarkMoved: message.bookmarkMoved,
         folderMoved: message.folderMoved,
         bookmarkModified: message.bookmarkModified,

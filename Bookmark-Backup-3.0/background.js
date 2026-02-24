@@ -128,6 +128,10 @@ function getOverwriteFolderByLang(lang) {
     return lang === 'zh_CN' ? '覆盖' : 'Overwrite';
 }
 
+function getVersionedFolderByLang(lang) {
+    return lang === 'zh_CN' ? '版本化' : 'Versioned';
+}
+
 function formatSyncTimeForFileName(syncTime) {
     const date = syncTime ? new Date(syncTime) : new Date();
     const d = Number.isNaN(date.getTime()) ? new Date() : date;
@@ -230,6 +234,9 @@ function resolveExportSubFolderByKey(folderKey, lang) {
     if (key === 'backup_root_overwrite') {
         return getOverwriteFolderByLang(lang);
     }
+    if (key === 'backup_root_versioned') {
+        return getVersionedFolderByLang(lang);
+    }
     if (key.startsWith('backup/')) {
         const suffix = key.slice('backup/'.length).replace(/^\/+/, '').replace(/\/+$/, '');
         const base = getBackupFolderByLang(lang);
@@ -240,6 +247,8 @@ function resolveExportSubFolderByKey(folderKey, lang) {
             return getBackupFolderByLang(lang);
         case 'backup_overwrite':
             return `${getBackupFolderByLang(lang)}/${getOverwriteFolderByLang(lang)}`;
+        case 'backup_versioned':
+            return `${getBackupFolderByLang(lang)}/${getVersionedFolderByLang(lang)}`;
         case 'history':
             return getHistoryFolderByLang(lang);
         case 'current_changes':
@@ -3755,11 +3764,13 @@ async function uploadBookmarks(bookmarks, options = {}) {
     const naming = buildSnapshotNamingContext(options);
     const snapshotFileName = String(options.snapshotFileName || naming.snapshotName).trim() || naming.snapshotName;
     const snapshotFolderName = String(options.snapshotFolderName || naming.snapshotFolder).trim() || naming.snapshotFolder;
-    const overwriteSubFolder = getOverwriteFolderByLang(await getCurrentLang());
+    const currentLang = await getCurrentLang();
+    const overwriteSubFolder = getOverwriteFolderByLang(currentLang);
+    const versionedSubFolder = getVersionedFolderByLang(currentLang);
 
     // 根据覆盖策略决定文件名与目录
     let fileName = snapshotFileName;
-    let folderPath = `${exportRootFolder}/${snapshotFolderName}/`;
+    let folderPath = `${exportRootFolder}/${versionedSubFolder}/${snapshotFolderName}/`;
     if (overwriteMode === 'overwrite') {
         fileName = getOverwriteSnapshotFileName();
         folderPath = `${exportRootFolder}/${overwriteSubFolder}/`;
@@ -3897,9 +3908,10 @@ async function uploadBookmarksToGitHubRepo(bookmarks, options = {}) {
     const snapshotFolderName = String(options.snapshotFolderName || naming.snapshotFolder).trim() || naming.snapshotFolder;
     const lang = await getCurrentLang();
 
+    const versionedSubFolder = getVersionedFolderByLang(lang);
     const folderKey = overwriteMode === 'overwrite'
         ? 'backup_root_overwrite'
-        : `backup_root/${snapshotFolderName}`;
+        : `backup_root/${versionedSubFolder}/${snapshotFolderName}`;
 
     const filePath = buildGitHubRepoFilePath({
         basePath: config.githubRepoBasePath,
@@ -3972,11 +3984,22 @@ function textToBase64(text) {
     return arrayBufferToBase64(buf);
 }
 
-function getVersionFolderCandidates() {
+function getOverwriteFolderCandidates() {
     return Array.from(new Set([
         getOverwriteFolderByLang('zh_CN'),
         getOverwriteFolderByLang('en')
     ].map(s => String(s || '').trim()).filter(Boolean)));
+}
+
+function getVersionedFolderCandidates() {
+    return Array.from(new Set([
+        getVersionedFolderByLang('zh_CN'),
+        getVersionedFolderByLang('en')
+    ].map(s => String(s || '').trim()).filter(Boolean)));
+}
+
+function getVersionFolderCandidates() {
+    return getOverwriteFolderCandidates();
 }
 
 function __sanitizePathPart(part) {
@@ -4601,7 +4624,10 @@ async function uploadCurrentChangesArtifactsToTargets({ artifacts, naming, lang,
     for (const artifact of list) {
         if (!artifact || !artifact.content) continue;
 
-        const relativeSnapshotFolder = overwriteMode === 'overwrite' ? overwriteFolder : naming.snapshotFolder;
+        const versionedFolder = getVersionedFolderByLang(lang);
+        const relativeSnapshotFolder = overwriteMode === 'overwrite'
+            ? overwriteFolder
+            : `${versionedFolder}/${naming.snapshotFolder}`;
         const cloudFolderKey = `backup_root/${relativeSnapshotFolder}`;
         const fileName = overwriteMode === 'overwrite'
             ? buildCurrentChangesOverwriteLeafName({ mode: artifact.mode, format: artifact.format })
@@ -4928,9 +4954,10 @@ async function uploadBookmarksToLocal(bookmarks, options = {}) {
         const exportRootFolder = await getExportRootFolder();
         const currentLang = await getCurrentLang();
         const overwriteSubFolder = getOverwriteFolderByLang(currentLang);
+        const versionedSubFolder = getVersionedFolderByLang(currentLang);
         const relativePath = overwriteMode === 'overwrite'
             ? `${exportRootFolder}/${overwriteSubFolder}/${fileName}`
-            : `${exportRootFolder}/${snapshotFolderName}/${fileName}`;
+            : `${exportRootFolder}/${versionedSubFolder}/${snapshotFolderName}/${fileName}`;
 
         // 默认下载方式
         // 根据设置决定是否临时禁用下载通知栏
@@ -9630,7 +9657,8 @@ async function listRemoteFiles(source) {
             getHistoryFolderByLang('zh_CN'),
             getHistoryFolderByLang('en')
         ].map(s => String(s || '').trim()).filter(Boolean)));
-        const overwriteFolderCandidates = Array.from(new Set(getVersionFolderCandidates()));
+        const overwriteFolderCandidates = Array.from(new Set(getOverwriteFolderCandidates()));
+        const versionedFolderCandidates = Array.from(new Set(getVersionedFolderCandidates()));
         const snapshotFolderNameReg = /^\d{8}_\d{6}_[0-9a-f]{6,12}$/i;
 
         function isBackupHtmlName(name) {
@@ -9947,6 +9975,48 @@ async function listRemoteFiles(source) {
                     console.warn('[listRemoteFiles] Scan root snapshot folders failed:', e);
                 }
             }
+
+            // 4.2) 版本化模式（新结构）：导出根目录/版本化/{时间+哈希}/
+            for (const exportRootFolder of exportRootFolderCandidates) {
+                for (const versionedFolder of versionedFolderCandidates) {
+                    try {
+                        const parentUrl = `${serverAddress}${exportRootFolder}/${versionedFolder}/`;
+                        const names = await webdavPropfind(parentUrl, authHeader, { onlyCollections: true });
+                        for (const folderName of names) {
+                            if (!snapshotFolderNameReg.test(folderName)) continue;
+                            try {
+                                const childUrl = `${parentUrl}${folderName}/`;
+                                const childNames = await webdavPropfind(childUrl, authHeader);
+                                for (const childName of childNames) {
+                                    if (isBackupHtmlName(childName)) {
+                                        files.push({
+                                            name: childName,
+                                            url: childUrl + childName,
+                                            source: 'webdav',
+                                            type: 'html_backup',
+                                            snapshotFolder: folderName,
+                                            folderPath: `${exportRootFolder}/${versionedFolder}/${folderName}`
+                                        });
+                                    } else if (shouldTreatAsCurrentChangesArtifact({
+                                        fileName: childName,
+                                        folderPath: `${exportRootFolder}/${versionedFolder}/${folderName}`,
+                                        snapshotFolder: folderName
+                                    })) {
+                                        files.push({
+                                            name: childName,
+                                            url: childUrl + childName,
+                                            source: 'webdav',
+                                            type: 'changes_artifact',
+                                            snapshotFolder: folderName,
+                                            folderPath: `${exportRootFolder}/${versionedFolder}/${folderName}`
+                                        });
+                                    }
+                                }
+                            } catch (_) { }
+                        }
+                    } catch (_) { }
+                }
+            }
             // 去重（同一个文件可能在不同语言路径被重复扫描到）
             return Array.from(new Map(files.map(f => [`${f.source}|${f.type}|${f.url}`, f])).values());
         }
@@ -10214,6 +10284,50 @@ async function listRemoteFiles(source) {
                     }
                 } catch (e) {
                     console.warn('[listRemoteFiles] Scan root snapshot folders GitHub failed:', e);
+                }
+            }
+
+            // 4.2) 版本化模式（新结构）：导出根目录/版本化/{时间+哈希}/
+            for (const exportRootFolder of exportRootFolderCandidates) {
+                for (const versionedFolder of versionedFolderCandidates) {
+                    try {
+                        const parentPath = `${prefix}${exportRootFolder}/${versionedFolder}`;
+                        const parentItems = await listGitHubDir(parentPath);
+                        for (const folder of parentItems) {
+                            if (folder.type !== 'dir') continue;
+                            if (!snapshotFolderNameReg.test(folder.name || '')) continue;
+                            try {
+                                const folderPath = `${parentPath}/${folder.name}`;
+                                const leafItems = await listGitHubDir(folderPath);
+                                for (const leaf of leafItems) {
+                                    if (leaf.type !== 'file') continue;
+                                    if (isBackupHtmlName(leaf.name)) {
+                                        files.push({
+                                            name: leaf.name,
+                                            url: leaf.download_url || leaf.url,
+                                            source: 'github',
+                                            type: 'html_backup',
+                                            snapshotFolder: folder.name,
+                                            folderPath
+                                        });
+                                    } else if (shouldTreatAsCurrentChangesArtifact({
+                                        fileName: leaf.name,
+                                        folderPath,
+                                        snapshotFolder: folder.name
+                                    })) {
+                                        files.push({
+                                            name: leaf.name,
+                                            url: leaf.download_url || leaf.url,
+                                            source: 'github',
+                                            type: 'changes_artifact',
+                                            snapshotFolder: folder.name,
+                                            folderPath
+                                        });
+                                    }
+                                }
+                            } catch (_) { }
+                        }
+                    } catch (_) { }
                 }
             }
 

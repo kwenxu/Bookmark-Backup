@@ -1672,6 +1672,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     // ========================================================================
     const recordTime = urlParams.get('record');
     const recordAction = (urlParams.get('action') || '').toLowerCase();
+    const shouldAutoOpenRevertAll = !recordTime && recordAction === 'revert-all';
     console.log('[URL参数] 完整URL:', window.location.href);
     console.log('[URL参数] recordTime:', recordTime, 'viewParam:', viewParam);
 
@@ -1793,6 +1794,26 @@ document.addEventListener('DOMContentLoaded', async () => {
     } else {
         await renderCurrentView();
 
+    }
+
+    if (shouldAutoOpenRevertAll) {
+        try {
+            if (currentView !== 'current-changes') {
+                switchView('current-changes');
+            }
+            await handleRevertAll('url');
+        } catch (e) {
+            console.warn('[初始化] 自动打开全部撤销面板失败:', e);
+        }
+
+        try {
+            const cleanUrl = new URL(window.location.href);
+            cleanUrl.searchParams.delete('action');
+            window.history.replaceState({}, '', cleanUrl.toString());
+            console.log('[初始化] 已清除 URL 中的 action 参数(revert-all)');
+        } catch (e) {
+            console.warn('[初始化] 清除 action 参数(revert-all)失败:', e);
+        }
     }
 
     // 并行预加载其他视图和图标（不阻塞）

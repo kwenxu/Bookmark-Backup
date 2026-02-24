@@ -711,11 +711,13 @@
 
                         <div class="modal-footer">
                             <div class="restore-warning">
-                                <div style="display: flex; align-items: flex-start; gap: 8px;">
-                                    <i class="fas fa-exclamation-triangle" style="margin-top: 1px; font-size: 13px;"></i>
-                                    <div style="font-size: 12px; color: var(--text-primary); line-height: 1.4;">
-                                        <strong id="revertWarningTitle">提示</strong>
-                                        <span id="revertWarningText" style="margin-left: 4px;">请选择撤销方式。</span>
+                                <div class="revert-warning-layout">
+                                    <i class="fas fa-exclamation-triangle revert-warning-icon"></i>
+                                    <div class="revert-warning-content">
+                                        <div class="revert-warning-headline">
+                                            <strong id="revertWarningTitle">提示</strong>
+                                            <span id="revertWarningText">请选择撤销方式。</span>
+                                        </div>
                                         <label id="revertThresholdLabel" class="revert-threshold-label revert-threshold-inline">
                                             <span id="revertThresholdText">智能阈值</span>
                                             <input type="number" id="revertPatchThresholdInput" min="1" max="99" step="1" value="40">

@@ -2516,13 +2516,29 @@
             box-shadow: 0 2px 8px var(--theme-status-card-manual-shadow) !important;
         }
 
-        /* Manual backup overlay button (glass) */
-        #manualBackupBtnOverlay {
+        /* Status card overlay actions (bottom-right) */
+        #statusCardOverlayActions {
             position: absolute;
             right: 12px;
             bottom: 12px;
+            display: flex;
+            align-items: center;
+            justify-content: flex-end;
+            flex-wrap: nowrap;
+            gap: 8px;
+            z-index: 2;
+        }
+
+        #statusCardOverlayActions>button {
+            flex: 0 0 auto;
+        }
+
+        /* Status card overlay button (glass) */
+        #manualBackupBtnOverlay,
+        #undoCurrentChangesBtnOverlay {
             display: none;
             align-items: center;
+            justify-content: center;
             gap: 4px;
             padding: 4px 10px;
             border-radius: 8px;
@@ -2535,35 +2551,47 @@
             user-select: none;
             font-size: 12px;
             font-weight: 700;
+            line-height: 1;
+            min-height: 28px;
             letter-spacing: 0.2px;
+            white-space: nowrap;
             transition: transform 0.15s ease, background-color 0.15s ease, border-color 0.15s ease;
         }
 
-        #manualBackupBtnOverlay:disabled {
+        #manualBackupBtnOverlay:disabled,
+        #undoCurrentChangesBtnOverlay:disabled {
             opacity: 0.65;
             cursor: default;
         }
 
-        #manualBackupBtnOverlay.success-animating {
+        #manualBackupBtnOverlay.success-animating,
+        #undoCurrentChangesBtnOverlay.success-animating {
             pointer-events: none;
         }
 
-        #manualBackupBtnOverlay:hover {
+        #manualBackupBtnOverlay:hover,
+        #undoCurrentChangesBtnOverlay:hover {
             background: var(--theme-glass-action-bg-hover);
             border-color: var(--theme-glass-action-border-hover);
             transform: translateY(-1px);
         }
 
-        #manualBackupBtnOverlay:active {
+        #manualBackupBtnOverlay:active,
+        #undoCurrentChangesBtnOverlay:active {
             transform: translateY(0);
         }
 
-        #manualBackupBtnOverlay i {
+        #manualBackupBtnOverlay i,
+        #undoCurrentChangesBtnOverlay i {
             color: rgba(255, 255, 255, 0.88);
             filter: drop-shadow(0 1px 1px rgba(0, 0, 0, 0.18));
         }
 
-        #manualBackupBtnOverlay #manualBackupBtnText {
+        #manualBackupBtnOverlay #manualBackupBtnText,
+        #undoCurrentChangesBtnOverlay #undoCurrentChangesBtnText {
+            display: inline-block;
+            white-space: nowrap;
+            line-height: 1;
             background: linear-gradient(180deg, rgba(255, 255, 255, 0.98), rgba(255, 255, 255, 0.55));
             -webkit-background-clip: text;
             background-clip: text;
@@ -3077,6 +3105,28 @@
             overflow: hidden;
             text-overflow: ellipsis;
             max-width: 240px;
+        }
+
+        #restoreVersionTable .restore-folder-badge {
+            flex: 0 0 auto;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            padding: 1px 7px;
+            border-radius: 999px;
+            border: 1px solid var(--theme-border-primary);
+            background: var(--theme-bg-secondary);
+            color: var(--theme-text-secondary);
+            font-size: 10px;
+            font-weight: 700;
+            line-height: 1.25;
+            white-space: nowrap;
+        }
+
+        #restoreVersionTable .restore-folder-badge.overwrite {
+            border-color: #0d6efd;
+            background: rgba(13, 110, 253, 0.12);
+            color: #0d6efd;
         }
 
         #restoreVersionTable .restore-stats {
@@ -4858,10 +4908,16 @@
                             <i id="statusCardChevron" class="fas fa-chevron-right"
                                 style="position: absolute; right: 12px; opacity: 0.5; font-size: 16px; display: none;"></i>
 
-                            <!-- Manual Backup Button Overlay -->
-                            <button id="manualBackupBtnOverlay" type="button">
-                                <i class="fas fa-hand-pointer"></i> <span id="manualBackupBtnText">手动备份</span>
-                            </button>
+                            <div id="statusCardOverlayActions">
+                                <button id="undoCurrentChangesBtnOverlay" type="button">
+                                    <i class="fas fa-undo"></i> <span id="undoCurrentChangesBtnText">撤销</span>
+                                </button>
+
+                                <!-- Manual Backup Button Overlay -->
+                                <button id="manualBackupBtnOverlay" type="button">
+                                    <i class="fas fa-hand-pointer"></i> <span id="manualBackupBtnText">手动备份</span>
+                                </button>
+                            </div>
                         </div>
                     </div>
                 </div>

@@ -1850,6 +1850,49 @@ body {
     font-size: 11px;
 }
 
+#revertModal .revert-warning-layout {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+#revertModal .revert-warning-icon {
+    margin-top: 0;
+    transform: translateY(0px);
+    font-size: 13px;
+    flex: 0 0 auto;
+}
+
+#revertModal .revert-warning-content {
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    gap: 8px;
+    font-size: 12px;
+    color: var(--text-primary);
+    min-width: 0;
+    flex-wrap: nowrap;
+}
+
+#revertModal .revert-warning-headline {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    line-height: 1.2;
+    white-space: nowrap;
+}
+
+#revertModal #revertWarningText {
+    margin-left: 0;
+}
+
+#revertModal .revert-threshold-inline {
+    margin-left: 0;
+    display: inline-flex;
+    align-items: center;
+    white-space: nowrap;
+}
+
 #revertModal .revert-threshold-label input {
     width: 56px;
     height: 24px;

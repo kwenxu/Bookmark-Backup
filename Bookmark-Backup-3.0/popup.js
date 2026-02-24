@@ -2951,6 +2951,11 @@ function updateBookmarkCountDisplay(passedLang) {
                 changeDescriptionContainer.innerHTML = html;
                 statusCard.classList.toggle('has-changes', Boolean(hasChanges));
 
+                updateStatusCardOverlayButtonsVisibility({
+                    isAutoSyncEnabled,
+                    hasChanges: Boolean(hasChanges)
+                });
+
                 if (statusCardChevron) {
                     const shouldShowChevron = (typeof showChevron === 'boolean')
                         ? showChevron
@@ -3613,6 +3618,8 @@ function updateBookmarkCountDisplay(passedLang) {
             const statusCard = document.getElementById('change-description-row');
             const changeDescriptionContainer = document.getElementById('statusCardText') || statusCard;
             const statusCardChevron = document.getElementById('statusCardChevron');
+            const autoSyncToggle2 = document.getElementById('autoSyncToggle2');
+            const isAutoSyncEnabled = autoSyncToggle2 ? autoSyncToggle2.checked : true;
 
             if (bookmarkCountSpan) {
                 bookmarkCountSpan.innerHTML = `<span style="color: red;">${'加载失败'}</span>`;
@@ -3626,6 +3633,11 @@ function updateBookmarkCountDisplay(passedLang) {
             if (statusCardChevron) {
                 statusCardChevron.style.display = 'none';
             }
+
+            updateStatusCardOverlayButtonsVisibility({
+                isAutoSyncEnabled,
+                hasChanges: false
+            });
         });
 }
 
@@ -4065,6 +4077,25 @@ function handleAutoSync() {
 }
 
 /**
+ * 同步状态卡片右下角悬浮按钮显隐。
+ * 规则：
+ * - 手动备份按钮：仅手动模式显示
+ * - 撤销按钮：有可撤销变化时显示（自动/手动模式都可显示）
+ */
+function updateStatusCardOverlayButtonsVisibility({ isAutoSyncEnabled, hasChanges }) {
+    const manualBackupBtnOverlay = document.getElementById('manualBackupBtnOverlay');
+    const undoCurrentChangesBtnOverlay = document.getElementById('undoCurrentChangesBtnOverlay');
+
+    if (manualBackupBtnOverlay) {
+        manualBackupBtnOverlay.style.display = isAutoSyncEnabled ? 'none' : 'flex';
+    }
+
+    if (undoCurrentChangesBtnOverlay) {
+        undoCurrentChangesBtnOverlay.style.display = hasChanges ? 'flex' : 'none';
+    }
+}
+
+/**
  * 处理自动备份开关切换事件。
  * @param {Event} event - change事件对象。
  */
@@ -4092,15 +4123,9 @@ function handleAutoSyncToggle(event) {
     if (isChecked) {
         if (autoBackupSettingsBtnNew) autoBackupSettingsBtnNew.style.display = 'flex';
         if (reminderSettingsBtnNew) reminderSettingsBtnNew.style.display = 'none';
-
-        const manualBackupBtnOverlay = document.getElementById('manualBackupBtnOverlay');
-        if (manualBackupBtnOverlay) manualBackupBtnOverlay.style.display = 'none';
     } else {
         if (autoBackupSettingsBtnNew) autoBackupSettingsBtnNew.style.display = 'none';
         if (reminderSettingsBtnNew) reminderSettingsBtnNew.style.display = 'flex';
-
-        const manualBackupBtnOverlay = document.getElementById('manualBackupBtnOverlay');
-        if (manualBackupBtnOverlay) manualBackupBtnOverlay.style.display = 'flex';
     }
 
     // 更新界面元素状态
@@ -4126,6 +4151,12 @@ function handleAutoSyncToggle(event) {
             changeDescriptionContainerForToggle.classList.remove('auto-mode');
         }
     }
+
+    const hasChangesOnCard = Boolean(changeDescriptionContainerForToggle && changeDescriptionContainerForToggle.classList.contains('has-changes'));
+    updateStatusCardOverlayButtonsVisibility({
+        isAutoSyncEnabled: isChecked,
+        hasChanges: hasChangesOnCard
+    });
 
     // 控制提示文本的显示与隐藏
     const autoTip = document.querySelector('.mode-tip.auto-tip');
@@ -5507,6 +5538,11 @@ const applyLocalizedContent = async (lang) => { // Added lang parameter
         'en': "Manual Backup"
     };
 
+    const undoCurrentChangesButtonStrings = {
+        'zh_CN': "撤销",
+        'en': "Undo"
+    };
+
     // 云端1：WebDAV 配置部分
     const webdavConfigTitleStrings = {
         'zh_CN': "云端1：WebDAV配置（坚果云、NAS服务等）",
@@ -6885,6 +6921,18 @@ const applyLocalizedContent = async (lang) => { // Added lang parameter
         manualBackupBtnOverlay.setAttribute('aria-label', manualBackupButtonText);
     }
 
+    const undoCurrentChangesButtonText = undoCurrentChangesButtonStrings[lang] || undoCurrentChangesButtonStrings['zh_CN'];
+    const undoCurrentChangesBtnText = document.getElementById('undoCurrentChangesBtnText');
+    if (undoCurrentChangesBtnText) {
+        undoCurrentChangesBtnText.textContent = undoCurrentChangesButtonText;
+    }
+
+    const undoCurrentChangesBtnOverlay = document.getElementById('undoCurrentChangesBtnOverlay');
+    if (undoCurrentChangesBtnOverlay) {
+        undoCurrentChangesBtnOverlay.setAttribute('title', undoCurrentChangesButtonText);
+        undoCurrentChangesBtnOverlay.setAttribute('aria-label', undoCurrentChangesButtonText);
+    }
+
     // 应用动态提醒设置按钮文本
     // 设置提醒设置按钮的 tooltip 文本
     const reminderSettingsTooltip = document.getElementById('reminderSettingsTooltip');
@@ -8176,7 +8224,89 @@ function showRestoreModal(versions, source) {
         const st = v?.sourceType || v?.restoreRef?.sourceType || '';
         return st === 'html';
     };
-    const historyVersions = allVersions;
+    const OVERWRITE_FOLDER_SEGMENTS = new Set(['覆盖', 'overwrite']);
+    const VERSIONED_FOLDER_SEGMENTS = new Set(['版本化', 'versioned']);
+    const splitPathSegmentsLower = (value) => {
+        return String(value || '')
+            .split('/')
+            .map(part => String(part || '').trim().toLowerCase())
+            .filter(Boolean);
+    };
+    const detectRestoreFolderType = (version) => {
+        const restoreRef = version?.restoreRef || {};
+        const snapshotKey = String(restoreRef.snapshotKey || '').trim().toLowerCase();
+        if (snapshotKey === '__overwrite__') return 'overwrite';
+
+        const valuesToInspect = [
+            restoreRef.snapshotFolder,
+            restoreRef.folderPath,
+            version?.originalFile
+        ];
+
+        let hasVersionedSegment = false;
+        for (const value of valuesToInspect) {
+            const segments = splitPathSegmentsLower(value);
+            if (segments.some(seg => OVERWRITE_FOLDER_SEGMENTS.has(seg))) {
+                return 'overwrite';
+            }
+            if (segments.some(seg => VERSIONED_FOLDER_SEGMENTS.has(seg))) {
+                hasVersionedSegment = true;
+            }
+        }
+
+        if (hasVersionedSegment) return 'versioned';
+        if (isHtmlVersion(version) && snapshotKey && snapshotKey !== '__overwrite__') {
+            return 'versioned';
+        }
+
+        return '';
+    };
+    const getRestoreFolderBadgeText = (lang, folderType) => {
+        if (folderType === 'overwrite') return lang === 'en' ? 'Overwrite' : '覆盖';
+        return '';
+    };
+    const parseSeqNumber = (value) => {
+        const raw = String(value ?? '').trim().replace(/^#/, '');
+        if (!raw) return null;
+        const num = Number(raw);
+        return Number.isFinite(num) ? num : null;
+    };
+    const parseVersionTimeMs = (version) => {
+        const candidates = [
+            version?.recordTime,
+            version?.restoreRef?.recordTime,
+            version?.time,
+            version?.displayTime
+        ];
+        for (const candidate of candidates) {
+            if (candidate == null || candidate === '') continue;
+
+            const dateMs = new Date(candidate).getTime();
+            if (Number.isFinite(dateMs)) return dateMs;
+
+            const numericMs = Number(candidate);
+            if (Number.isFinite(numericMs) && numericMs > 0) return numericMs;
+        }
+        return 0;
+    };
+    const historyVersions = [...allVersions].sort((a, b) => {
+        const aType = detectRestoreFolderType(a);
+        const bType = detectRestoreFolderType(b);
+        if (aType === 'overwrite' && bType !== 'overwrite') return -1;
+        if (bType === 'overwrite' && aType !== 'overwrite') return 1;
+
+        const aSeq = parseSeqNumber(a?.seqNumber);
+        const bSeq = parseSeqNumber(b?.seqNumber);
+        if (aSeq != null && bSeq != null && aSeq !== bSeq) {
+            return bSeq - aSeq;
+        }
+        if (aSeq != null && bSeq == null) return -1;
+        if (aSeq == null && bSeq != null) return 1;
+
+        const timeDiff = parseVersionTimeMs(b) - parseVersionTimeMs(a);
+        if (timeDiff !== 0) return timeDiff;
+        return 0;
+    });
     const snapshotVersions = [];
 
     let currentVersionType = 'history';
@@ -8654,6 +8784,14 @@ function showRestoreModal(versions, source) {
         const endIndex = Math.min(startIndex + RESTORE_PAGE_SIZE, allItems.length);
         const pageItems = allItems.slice(startIndex, endIndex);
 
+        const nonOverwriteOrderByIndex = new Map();
+        let nonOverwriteCount = 0;
+        allItems.forEach((item, index) => {
+            if (detectRestoreFolderType(item) === 'overwrite') return;
+            nonOverwriteCount += 1;
+            nonOverwriteOrderByIndex.set(index, nonOverwriteCount);
+        });
+
         const clearSelection = () => {
             Array.from(tableBody.querySelectorAll("tr[data-selected='1']")).forEach((tr) => {
                 tr.removeAttribute('data-selected');
@@ -8687,16 +8825,18 @@ function showRestoreModal(versions, source) {
             const radioId = globalIndex;
 
             const canRestore = version?.canRestore !== false;
+            const folderType = detectRestoreFolderType(version);
             const note = String(version?.note || '').trim();
             const fingerprint = String(version?.fingerprint || '').slice(0, 7);
             const fingerprintDisplay = fingerprint ? `#${fingerprint}` : '';
             const displayTime = String(version?.displayTime || '');
             const isHtml = isHtmlVersion(version);
+            const nonOverwriteSeq = nonOverwriteOrderByIndex.get(globalIndex) || 1;
+            const fallbackDescendingSeq = Math.max(1, nonOverwriteCount - nonOverwriteSeq + 1);
 
-            let seq = version?.seqNumber != null ? String(version.seqNumber) : String(globalIndex + 1);
-            if (isSnapshotMode && (version?.seqNumber == null)) {
-                seq = String(allItems.length - globalIndex);
-            }
+            let seq = folderType === 'overwrite'
+                ? '0'
+                : (version?.seqNumber != null ? String(version.seqNumber) : String(fallbackDescendingSeq));
 
             const fileName = String(version?.originalFile || version?.restoreRef?.originalFile || '').trim();
             const displayNote = isHtml ? (fileName || note || '') : (note || '');
@@ -8716,7 +8856,15 @@ function showRestoreModal(versions, source) {
 
             const tdSeq = document.createElement('td');
             tdSeq.className = 'restore-cell-center restore-cell-mono';
-            tdSeq.textContent = `#${seq}`;
+            if (folderType === 'overwrite') {
+                const overwriteBadgeText = getRestoreFolderBadgeText(cachedLang, folderType);
+                const overwriteBadge = document.createElement('span');
+                overwriteBadge.className = 'restore-folder-badge overwrite';
+                overwriteBadge.textContent = overwriteBadgeText;
+                tdSeq.appendChild(overwriteBadge);
+            } else {
+                tdSeq.textContent = `#${seq}`;
+            }
 
             const tdNote = document.createElement('td');
             const noteDiv = document.createElement('div');
@@ -8728,7 +8876,7 @@ function showRestoreModal(versions, source) {
             if (!isSnapshotMode) {
                 tdHash = document.createElement('td');
                 tdHash.className = 'restore-cell-mono';
-                tdHash.textContent = fingerprintDisplay;
+                tdHash.textContent = folderType === 'overwrite' ? '-' : fingerprintDisplay;
             }
 
             const tdTime = document.createElement('td');
@@ -9907,17 +10055,22 @@ function showRestoreModal(versions, source) {
 
                 // Restore should be recorded as a backup (create a restore record in history)
                 try {
-                    const seqNumber = selectedVersion?.seqNumber;
+                    const selectedFolderType = detectRestoreFolderType(selectedVersion);
+                    const seqNumberRaw = selectedVersion?.seqNumber;
+                    const seqNumberForRecord = selectedFolderType === 'overwrite' ? '0' : seqNumberRaw;
+                    const seqNumberDisplay = selectedFolderType === 'overwrite'
+                        ? '0'
+                        : (seqNumberRaw != null ? String(seqNumberRaw) : '');
                     const displayTime = selectedVersion?.displayTime || '';
                     const restoreTime = selectedVersion?.recordTime || selectedVersion?.restoreRef?.recordTime || '';
                     const restoreNote = isEn
-                        ? `Restored to #${seqNumber || '-'} (${displayTime || '-'})`
-                        : `恢复至 #${seqNumber || '-'} (${displayTime || '-'})`;
+                        ? `Restored to #${seqNumberDisplay || '-'} (${displayTime || '-'})`
+                        : `恢复至 #${seqNumberDisplay || '-'} (${displayTime || '-'})`;
 
                     chrome.runtime.sendMessage({
                         action: 'triggerRestoreBackup',
                         note: restoreNote,
-                        sourceSeqNumber: seqNumber,
+                        sourceSeqNumber: seqNumberForRecord,
                         sourceTime: restoreTime,
                         sourceNote: selectedVersion?.note || '',
                         sourceFingerprint: selectedVersion?.fingerprint || '',
@@ -12275,18 +12428,30 @@ document.addEventListener('DOMContentLoaded', function () {
 
         const autoBackupSettingsBtnNew = document.getElementById('autoBackupSettingsBtnNew');
         const reminderSettingsBtnNew = document.getElementById('reminderSettingsBtnNew');
-        const manualBackupBtnOverlay = document.getElementById('manualBackupBtnOverlay');
 
         if (autoSyncEnabled) {
             if (autoBackupSettingsBtnNew) autoBackupSettingsBtnNew.style.display = 'flex';
             if (reminderSettingsBtnNew) reminderSettingsBtnNew.style.display = 'none';
-            if (manualBackupBtnOverlay) manualBackupBtnOverlay.style.display = 'none';
         } else {
             if (autoBackupSettingsBtnNew) autoBackupSettingsBtnNew.style.display = 'none';
             if (reminderSettingsBtnNew) reminderSettingsBtnNew.style.display = 'flex';
-            if (manualBackupBtnOverlay) manualBackupBtnOverlay.style.display = 'flex';
         }
+
+        const hasChangesAtInit = Boolean(changeDescriptionContainerAtInit && changeDescriptionContainerAtInit.classList.contains('has-changes'));
+        updateStatusCardOverlayButtonsVisibility({
+            isAutoSyncEnabled: autoSyncEnabled,
+            hasChanges: hasChangesAtInit
+        });
     });
+
+    const undoCurrentChangesBtnOverlay = document.getElementById('undoCurrentChangesBtnOverlay');
+    if (undoCurrentChangesBtnOverlay) {
+        undoCurrentChangesBtnOverlay.addEventListener('click', async function (e) {
+            e.stopPropagation(); // Prevent card click
+            const url = chrome.runtime.getURL('history_html/history.html?view=current-changes&action=revert-all');
+            await safeCreateTab({ url: url });
+        });
+    }
 
     // Initialize Manual Backup Overlay Button
     const manualBackupBtnOverlay = document.getElementById('manualBackupBtnOverlay');

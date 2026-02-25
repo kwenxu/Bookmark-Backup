@@ -2434,7 +2434,7 @@ function updateSyncHistory(passedLang) { // Added passedLang parameter
                         const localText = dynamicTextStrings.localText?.[currentLang] || dynamicTextStrings.localText?.zh_CN || '本地';
                         const joinText = currentLang === 'en' ? ' & ' : '与';
 
-                        if (record.direction === 'cloud_local') {
+                        if (record.direction === 'webdav_github_local' || record.direction === 'cloud_local') {
                             locationText = `<span style="${cloudStyle}">${cloud1Text}</span>${joinText}<span style="${cloudStyle}">${cloud2Text}</span>${joinText}<span style="${localStyle}">${localText}</span>`;
                         } else if (record.direction === 'webdav_local' || record.direction === 'both') {
                             locationText = `<span style="${cloudStyle}">${cloud1Text}</span>${joinText}<span style="${localStyle}">${localText}</span>`;
@@ -2899,7 +2899,7 @@ function updateLastSyncInfo(passedLang) { // Added passedLang parameter
                 const cloud2Html = '<span style="color: #007AFF; font-weight: bold;">云端2(GitHub仓库)</span>';
                 const localHtml = '<span style="color: #9370DB; font-weight: bold;">本地</span>';
 
-                if (data.lastSyncDirection === 'cloud_local') {
+                if (data.lastSyncDirection === 'webdav_github_local' || data.lastSyncDirection === 'cloud_local') {
                     locationText = `${cloud1Html}与${cloud2Html}与${localHtml}`;
                 } else if (data.lastSyncDirection === 'webdav_local' || data.lastSyncDirection === 'both') {
                     locationText = `${cloud1Html}与${localHtml}`;
@@ -4556,10 +4556,10 @@ function handleInitUpload() {
         } else if (response && !response.success) {
             // 如果失败，回滚初始化标记
             chrome.storage.local.set({ initialized: false });
-
-            const errorMessage = response?.error || '未知错误';
             chrome.storage.local.get(['preferredLang'], function (langResult) {
                 const lang = langResult.preferredLang || 'zh_CN';
+                const fallbackError = lang === 'en' ? 'Unknown error' : '未知错误';
+                const errorMessage = response?.error || fallbackError;
                 showStatus((lang === 'en' ? 'Initialization failed: ' : '初始化上传失败: ') + errorMessage, 'error');
             });
         }
@@ -4570,7 +4570,10 @@ function handleInitUpload() {
  * 处理手动上传函数。
  */
 function handleManualUpload() {
-    showStatus('开始手动上传...', 'info');
+    chrome.storage.local.get(['preferredLang', 'currentLang'], function (langResult) {
+        const lang = langResult.currentLang || langResult.preferredLang || 'zh_CN';
+        showStatus(lang === 'en' ? 'Starting manual upload...' : '开始手动上传...', 'info');
+    });
 
     const overlayButton = document.getElementById('manualBackupBtnOverlay');
     const legacyButton = document.getElementById('uploadToCloudManual');
@@ -4731,8 +4734,12 @@ function handleManualUpload() {
             }
             chrome.storage.local.set({ initialized: true });
         } else {
-            const errorMessage = response?.error || '未知错误';
-            showStatus('手动上传失败: ' + errorMessage, 'error');
+            chrome.storage.local.get(['preferredLang', 'currentLang'], function (langResult) {
+                const lang = langResult.currentLang || langResult.preferredLang || 'zh_CN';
+                const fallbackError = lang === 'en' ? 'Unknown error' : '未知错误';
+                const errorMessage = response?.error || fallbackError;
+                showStatus((lang === 'en' ? 'Manual upload failed: ' : '手动上传失败: ') + errorMessage, 'error');
+            });
         }
     });
 }
@@ -4798,15 +4805,16 @@ function exportSyncHistory() {
         const locationValues = {
             upload: { 'zh_CN': "云端", 'en': "Cloud" }, // 兼容旧记录
             cloud: { 'zh_CN': "云端1, 云端2", 'en': "Cloud 1, Cloud 2" },
-            webdav: { 'zh_CN': "云端1(WebDAV)", 'en': "Cloud 1 (WebDAV)" },
-            github_repo: { 'zh_CN': "云端2(GitHub仓库)", 'en': "Cloud 2 (GitHub Repo)" },
-            gist: { 'zh_CN': "云端2(GitHub仓库)", 'en': "Cloud 2 (GitHub Repo)" }, // legacy
+            webdav: { 'zh_CN': "云端1", 'en': "Cloud 1" },
+            github_repo: { 'zh_CN': "云端2", 'en': "Cloud 2" },
+            gist: { 'zh_CN': "云端2", 'en': "Cloud 2" }, // legacy
+            webdav_github_local: { 'zh_CN': "云端1, 云端2, 本地", 'en': "Cloud 1, Cloud 2, Local" },
             cloud_local: { 'zh_CN': "云端1, 云端2, 本地", 'en': "Cloud 1, Cloud 2, Local" },
-            webdav_local: { 'zh_CN': "云端1(WebDAV), 本地", 'en': "Cloud 1 (WebDAV), Local" },
-            github_repo_local: { 'zh_CN': "云端2(GitHub仓库), 本地", 'en': "Cloud 2 (GitHub Repo), Local" },
-            gist_local: { 'zh_CN': "云端2(GitHub仓库), 本地", 'en': "Cloud 2 (GitHub Repo), Local" }, // legacy
+            webdav_local: { 'zh_CN': "云端1, 本地", 'en': "Cloud 1, Local" },
+            github_repo_local: { 'zh_CN': "云端2, 本地", 'en': "Cloud 2, Local" },
+            gist_local: { 'zh_CN': "云端2, 本地", 'en': "Cloud 2, Local" }, // legacy
             local: { 'zh_CN': "本地", 'en': "Local" },
-            both: { 'zh_CN': "云端1(WebDAV), 本地", 'en': "Cloud 1 (WebDAV), Local" }, // 兼容旧记录
+            both: { 'zh_CN': "云端1, 本地", 'en': "Cloud 1, Local" }, // 兼容旧记录
             none: { 'zh_CN': "无", 'en': "None" }
         };
         const typeValues = {
@@ -5843,11 +5851,12 @@ const applyLocalizedContent = async (lang) => { // Added lang parameter
     const currentChangesArchiveModeHelpAriaStrings = { 'zh_CN': "视图模式说明", 'en': "View mode help" };
     const currentChangesArchiveModeHelpTitleStrings = { 'zh_CN': "视图模式说明", 'en': "View mode help" };
     const backupStrategyTitleStrings = { 'zh_CN': "备份策略", 'en': "Backup Strategy" };
-    const versionedLogTitleStrings = { 'zh_CN': "备份历史log", 'en': "Backup History Log" };
-    const versionedLogEveryPrefixStrings = { 'zh_CN': "每", 'en': "Every" };
-    const versionedLogEverySuffixStrings = { 'zh_CN': "次自动更新覆盖", 'en': "overwrite updates" };
+    const versionedLogTitleStrings = { 'zh_CN': "备份历史log（索引）", 'en': "Backup History log (Index)" };
+    const versionedLogEveryPrefixStrings = { 'zh_CN': "每备份", 'en': "Every backup" };
+    const versionedLogEverySuffixStrings = { 'zh_CN': "次更新", 'en': "updates" };
     const versionedLogDecreaseStrings = { 'zh_CN': "减少次数", 'en': "Decrease count" };
     const versionedLogIncreaseStrings = { 'zh_CN': "增加次数", 'en': "Increase count" };
+    const manualExportCloudUploadTitleStrings = { 'zh_CN': "手动导出上传至云端", 'en': "Upload manual exports to cloud" };
 
     // 恢复相关国际化字符串
     const syncRestoreTitleStrings = {
@@ -6353,6 +6362,7 @@ const applyLocalizedContent = async (lang) => { // Added lang parameter
     const versionedLogEverySuffixText = versionedLogEverySuffixStrings[lang] || versionedLogEverySuffixStrings['zh_CN'];
     const versionedLogDecreaseText = versionedLogDecreaseStrings[lang] || versionedLogDecreaseStrings['zh_CN'];
     const versionedLogIncreaseText = versionedLogIncreaseStrings[lang] || versionedLogIncreaseStrings['zh_CN'];
+    const manualExportCloudUploadTitleText = manualExportCloudUploadTitleStrings[lang] || manualExportCloudUploadTitleStrings['zh_CN'];
     const syncRestoreTitleText = syncRestoreTitleStrings[lang] || syncRestoreTitleStrings['zh_CN'];
     const syncRestoreComingSoonText = syncRestoreComingSoonStrings[lang] || syncRestoreComingSoonStrings['zh_CN'];
     const restoreFromCloudText = restoreFromCloudStrings[lang] || restoreFromCloudStrings['zh_CN'];
@@ -6795,6 +6805,9 @@ const applyLocalizedContent = async (lang) => { // Added lang parameter
         versionedLogEveryUpBtn.setAttribute('title', versionedLogIncreaseText);
     }
 
+    const manualExportCloudUploadTitleEl = document.getElementById('manualExportCloudUploadTitle');
+    if (manualExportCloudUploadTitleEl) manualExportCloudUploadTitleEl.textContent = manualExportCloudUploadTitleText;
+
     // 更新当前变化自动归档设置区域文本
     const currentChangesArchiveTitleEl = document.getElementById('currentChangesArchiveTitle');
     if (currentChangesArchiveTitleEl) currentChangesArchiveTitleEl.textContent = currentChangesArchiveTitleText;
@@ -6820,6 +6833,20 @@ const applyLocalizedContent = async (lang) => { // Added lang parameter
         currentChangesArchiveModeHelpBtn.setAttribute('title', currentChangesArchiveModeHelpTitleText);
     }
 
+    const syncRestoreHelpBtnEl = document.getElementById('syncRestoreHelpBtn');
+    if (syncRestoreHelpBtnEl) {
+        const syncRestoreHelpTitle = lang === 'en' ? 'Local restore guide' : '本地恢复说明';
+        syncRestoreHelpBtnEl.setAttribute('aria-label', syncRestoreHelpTitle);
+        syncRestoreHelpBtnEl.setAttribute('title', syncRestoreHelpTitle);
+    }
+
+    const restoreModalHelpBtnEl = document.getElementById('restoreModalHelpBtn');
+    if (restoreModalHelpBtnEl) {
+        const restoreModalHelpTitle = lang === 'en' ? 'Restore strategy guide' : '恢复策略说明';
+        restoreModalHelpBtnEl.setAttribute('aria-label', restoreModalHelpTitle);
+        restoreModalHelpBtnEl.setAttribute('title', restoreModalHelpTitle);
+    }
+
     const currentChangesArchiveSavedTextEl = document.getElementById('currentChangesArchiveSavedText');
     if (currentChangesArchiveSavedTextEl) currentChangesArchiveSavedTextEl.textContent = settingsSavedStrings[lang] || settingsSavedStrings['zh_CN'];
 
@@ -6840,8 +6867,22 @@ const applyLocalizedContent = async (lang) => { // Added lang parameter
     const restoreLocalFolderHintEl = document.getElementById('restoreLocalFolderHint');
     if (restoreLocalFolderHintEl) {
         restoreLocalFolderHintEl.textContent = (lang === 'en')
-            ? '(Select parent folder: Bookmark Backup)'
-            : '（请选择父文件夹：书签备份）';
+            ? '(Recommended: select Bookmark Backup folder first)'
+            : '（推荐先选择书签备份文件夹）';
+    }
+
+    const restoreLocalFolderQuickBtnEl = document.getElementById('restoreFromLocalFolderQuickBtn');
+    if (restoreLocalFolderQuickBtnEl) {
+        const label = lang === 'en' ? 'Select folder' : '选择文件夹';
+        restoreLocalFolderQuickBtnEl.setAttribute('aria-label', label);
+        restoreLocalFolderQuickBtnEl.setAttribute('title', label);
+    }
+
+    const restoreLocalFileQuickBtnEl = document.getElementById('restoreFromLocalFileQuickBtn');
+    if (restoreLocalFileQuickBtnEl) {
+        const label = lang === 'en' ? 'Select files (multi-select)' : '选择文件（支持多选）';
+        restoreLocalFileQuickBtnEl.setAttribute('aria-label', label);
+        restoreLocalFileQuickBtnEl.setAttribute('title', label);
     }
 
     const restoreFromCloudLabelEl = document.getElementById('restoreFromCloudLabel');
@@ -7568,10 +7609,12 @@ function initializeBackupSettings() {
     const overwriteVersioned = document.getElementById('overwriteVersioned');
     const overwriteOverwrite = document.getElementById('overwriteOverwrite');
     const versionedLogPanel = document.getElementById('versionedLogPanel');
+    const versionedLogEnabled = document.getElementById('versionedLogEnabled');
+    const versionedLogControl = document.getElementById('versionedLogControl');
     const versionedLogEveryDownBtn = document.getElementById('versionedLogEveryDownBtn');
     const versionedLogEveryInput = document.getElementById('versionedLogEveryInput');
     const versionedLogEveryUpBtn = document.getElementById('versionedLogEveryUpBtn');
-    const backupStrategySection = document.getElementById('backupStrategySection');
+    const manualExportCloudUploadEnabled = document.getElementById('manualExportCloudUploadEnabled');
 
     if (!overwriteVersioned || !overwriteOverwrite) return;
 
@@ -7581,14 +7624,40 @@ function initializeBackupSettings() {
         return Math.max(1, Math.min(99, parsed));
     };
 
-    const updateVersionedLogPanelVisibility = () => {
-        const isVersioned = overwriteVersioned.checked === true;
+    const isVersionedStrategySelected = () => overwriteVersioned.checked === true && overwriteOverwrite.checked !== true;
+
+    const updateVersionedLogControlState = () => {
+        const forceVersionedPolicy = isVersionedStrategySelected();
+        const enabled = forceVersionedPolicy
+            ? true
+            : (versionedLogEnabled ? versionedLogEnabled.checked === true : true);
+
+        if (versionedLogEnabled) {
+            versionedLogEnabled.checked = enabled;
+            versionedLogEnabled.disabled = forceVersionedPolicy;
+        }
+
+        if (versionedLogControl) {
+            versionedLogControl.classList.toggle('disabled', !enabled || forceVersionedPolicy);
+        }
+        if (versionedLogEveryInput) {
+            if (forceVersionedPolicy) {
+                versionedLogEveryInput.value = '1';
+            }
+            versionedLogEveryInput.disabled = !enabled || forceVersionedPolicy;
+        }
+
+        const currentValue = normalizeVersionedLogEvery(versionedLogEveryInput?.value);
+        if (versionedLogEveryDownBtn) {
+            versionedLogEveryDownBtn.disabled = !enabled || forceVersionedPolicy || currentValue <= 1;
+        }
+        if (versionedLogEveryUpBtn) {
+            versionedLogEveryUpBtn.disabled = !enabled || forceVersionedPolicy || currentValue >= 99;
+        }
 
         if (versionedLogPanel) {
-            versionedLogPanel.style.display = isVersioned ? 'flex' : 'none';
-        }
-        if (backupStrategySection) {
-            backupStrategySection.classList.toggle('compact', !isVersioned);
+            versionedLogPanel.style.display = 'flex';
+            versionedLogPanel.classList.toggle('force-versioned', forceVersionedPolicy);
         }
 
         scheduleInitLayoutSync();
@@ -7598,18 +7667,31 @@ function initializeBackupSettings() {
     };
 
     const updateVersionedLogStepButtons = () => {
+        const forceVersionedPolicy = isVersionedStrategySelected();
+        const enabled = forceVersionedPolicy
+            ? true
+            : (versionedLogEnabled ? versionedLogEnabled.checked === true : true);
+
+        if (forceVersionedPolicy && versionedLogEveryInput) {
+            versionedLogEveryInput.value = '1';
+        }
+
         const currentValue = normalizeVersionedLogEvery(versionedLogEveryInput?.value);
         if (versionedLogEveryDownBtn) {
-            versionedLogEveryDownBtn.disabled = currentValue <= 1;
+            versionedLogEveryDownBtn.disabled = !enabled || forceVersionedPolicy || currentValue <= 1;
         }
         if (versionedLogEveryUpBtn) {
-            versionedLogEveryUpBtn.disabled = currentValue >= 99;
+            versionedLogEveryUpBtn.disabled = !enabled || forceVersionedPolicy || currentValue >= 99;
         }
     };
 
-    chrome.storage.local.get(['overwriteMode', 'versionedInfoLogEvery'], function (result) {
-        const overwriteMode = result.overwriteMode || 'versioned';
-        const versionedInfoLogEvery = normalizeVersionedLogEvery(result.versionedInfoLogEvery);
+    chrome.storage.local.get(['overwriteMode', 'versionedInfoLogEvery', 'versionedInfoLogEnabled', 'manualExportCloudUploadEnabled'], function (result) {
+        const overwriteModeRaw = String(result.overwriteMode || '').trim().toLowerCase();
+        const overwriteMode = overwriteModeRaw === 'overwrite' ? 'overwrite' : 'versioned';
+        const forceVersionedPolicy = overwriteMode === 'versioned';
+        const versionedInfoLogEvery = forceVersionedPolicy ? 1 : normalizeVersionedLogEvery(result.versionedInfoLogEvery);
+        const versionedInfoLogEnabled = forceVersionedPolicy ? true : (result.versionedInfoLogEnabled !== false);
+        const manualExportCloudUpload = result.manualExportCloudUploadEnabled === true;
 
         if (overwriteMode === 'versioned') {
             overwriteVersioned.checked = true;
@@ -7622,22 +7704,43 @@ function initializeBackupSettings() {
         if (versionedLogEveryInput) {
             versionedLogEveryInput.value = String(versionedInfoLogEvery);
         }
+        if (versionedLogEnabled) {
+            versionedLogEnabled.checked = versionedInfoLogEnabled;
+        }
+        if (manualExportCloudUploadEnabled) {
+            manualExportCloudUploadEnabled.checked = manualExportCloudUpload;
+        }
 
         updateVersionedLogStepButtons();
-        updateVersionedLogPanelVisibility();
+        updateVersionedLogControlState();
+        chrome.storage.local.set({
+            overwriteMode: overwriteMode,
+            versionedInfoLogEnabled: versionedInfoLogEnabled,
+            versionedInfoLogEvery: versionedInfoLogEvery,
+            manualExportCloudUploadEnabled: manualExportCloudUpload
+        }, function () { });
     });
 
     function saveBackupSettings() {
+        const overwriteMode = overwriteOverwrite.checked ? 'overwrite' : 'versioned';
+        const forceVersionedPolicy = overwriteMode === 'versioned';
         const settings = {
-            overwriteMode: overwriteOverwrite.checked ? 'overwrite' : 'versioned',
-            versionedInfoLogEvery: normalizeVersionedLogEvery(versionedLogEveryInput?.value)
+            overwriteMode: overwriteMode,
+            versionedInfoLogEvery: forceVersionedPolicy ? 1 : normalizeVersionedLogEvery(versionedLogEveryInput?.value),
+            versionedInfoLogEnabled: forceVersionedPolicy ? true : (versionedLogEnabled ? versionedLogEnabled.checked === true : true),
+            manualExportCloudUploadEnabled: manualExportCloudUploadEnabled ? manualExportCloudUploadEnabled.checked === true : false
         };
+
+        if (versionedLogEnabled) {
+            versionedLogEnabled.checked = settings.versionedInfoLogEnabled;
+        }
 
         if (versionedLogEveryInput) {
             versionedLogEveryInput.value = String(settings.versionedInfoLogEvery);
         }
 
         updateVersionedLogStepButtons();
+        updateVersionedLogControlState();
 
         chrome.storage.local.set(settings, function () {
             if (!chrome.runtime.lastError) {
@@ -7647,7 +7750,7 @@ function initializeBackupSettings() {
     }
 
     const stepVersionedLogEvery = (delta) => {
-        if (!versionedLogEveryInput) return;
+        if (!versionedLogEveryInput || versionedLogEveryInput.disabled) return;
         const currentValue = normalizeVersionedLogEvery(versionedLogEveryInput.value);
         const nextValue = normalizeVersionedLogEvery(currentValue + delta);
         if (nextValue === currentValue) {
@@ -7667,7 +7770,6 @@ function initializeBackupSettings() {
             } else {
                 overwriteOverwrite.checked = true;
             }
-            updateVersionedLogPanelVisibility();
             saveBackupSettings();
         });
     }
@@ -7679,7 +7781,13 @@ function initializeBackupSettings() {
             } else {
                 overwriteVersioned.checked = true;
             }
-            updateVersionedLogPanelVisibility();
+            saveBackupSettings();
+        });
+    }
+
+    if (versionedLogEnabled) {
+        versionedLogEnabled.addEventListener('change', function () {
+            updateVersionedLogControlState();
             saveBackupSettings();
         });
     }
@@ -7705,6 +7813,12 @@ function initializeBackupSettings() {
     if (versionedLogEveryUpBtn) {
         versionedLogEveryUpBtn.addEventListener('click', function () {
             stepVersionedLogEvery(1);
+        });
+    }
+
+    if (manualExportCloudUploadEnabled) {
+        manualExportCloudUploadEnabled.addEventListener('change', function () {
+            saveBackupSettings();
         });
     }
 
@@ -8018,6 +8132,7 @@ function initializeBackupSettings() {
 
 
 const localRestoreFileMap = new Map();
+let lastLocalRestoreSelectionMeta = null;
 
 function escapeHtml(str) {
     return String(str == null ? '' : str)
@@ -8050,16 +8165,49 @@ function setRestoreSourceButtonLoading(source, loading) {
     }
 }
 
-// [New] 处理云端恢复点击：扫描并解析为“版本列表”
-async function handleRestoreFromCloud(source) {
-    if (source === 'local') {
-        const fileInput = document.getElementById('localRestoreInput');
-        if (fileInput) {
-            fileInput.value = ''; // Reset
+function triggerLocalRestorePicker(mode = 'folder') {
+    const fileInput = document.getElementById(mode === 'file' ? 'localRestoreFileInput' : 'localRestoreInput');
+    if (!fileInput) return;
+    fileInput.value = '';
+    try {
+        if (typeof fileInput.showPicker === 'function') {
+            fileInput.showPicker();
+        } else {
             fileInput.click();
         }
+    } catch (error) {
+        try {
+            fileInput.click();
+        } catch (_) {
+            console.warn('[Local Restore] picker requires user activation:', error);
+        }
+    }
+}
+
+function bindLocalQuickAction(el, mode) {
+    if (!el || el.hasAttribute('data-listener-attached')) return;
+
+    const trigger = (event) => {
+        if (event) {
+            event.preventDefault();
+            event.stopPropagation();
+        }
+        triggerLocalRestorePicker(mode);
+    };
+
+    el.addEventListener('click', trigger);
+    el.setAttribute('data-listener-attached', 'true');
+}
+
+// [New] 处理云端恢复点击：扫描并解析为“版本列表”
+async function handleRestoreFromCloud(source, options = {}) {
+    if (source === 'local') {
+        const localSelectMode = options?.localSelectMode === 'file' ? 'file' : 'folder';
+        triggerLocalRestorePicker(localSelectMode);
         return;
     }
+
+    lastLocalRestoreSelectionMeta = null;
 
     setRestoreSourceButtonLoading(source, true);
 
@@ -8079,203 +8227,549 @@ async function handleRestoreFromCloud(source) {
     }
 }
 
-// [New] 本地文件选择监听 (支持文件夹扫描)
-// 确保在DOM加载后绑定
+async function collectLocalRestoreCandidates(files, { allowStandalone = false } = {}) {
+    const list = Array.isArray(files) ? files : [];
+    if (list.length === 0) {
+        return { localCandidates: [], hasMarkdownOnly: false };
+    }
+
+    localRestoreFileMap.clear();
+    const localCandidates = [];
+    const snapshotFolderNameReg = /^\d{8}_\d{4}(?:\d{2})?(?:_[0-9a-f]{6,12})?$/i;
+
+    const isHtmlFileName = (name) => /\.(?:html?|xhtml)$/i.test(String(name || '').trim());
+
+    const stripBrowserDuplicateSuffix = (name) => String(name || '').replace(/\s*\(\d+\)(?=\.[^.]+$)/, '').trim();
+
+    const isLikelyNetscapeBookmarkHtmlText = (text) => {
+        const lower = String(text || '').toLowerCase();
+        if (!lower) return false;
+        if (lower.includes('netscape-bookmark-file-1')) return true;
+        if (lower.includes('<dl><p>') && (lower.includes('<h3') || lower.includes('<a href='))) return true;
+        return false;
+    };
+
+    const isCurrentChangesLikeName = (name) => {
+        const text = String(name || '').trim();
+        const lower = text.toLowerCase();
+        if (!text) return false;
+        if (!/\.(json|html?|xhtml)$/i.test(lower)) return false;
+        return lower.includes('current_changes')
+            || lower.includes('current-changes')
+            || lower.includes('bookmark-changes')
+            || lower.includes('bookmark_changes')
+            || lower.includes('bookmark changes')
+            || text.includes('当前变化')
+            || text.includes('书签变化');
+    };
+
+    const isCurrentChangesArtifactHtmlText = (text) => {
+        const lower = String(text || '').toLowerCase();
+        if (!lower) return false;
+        if (lower.includes('bookmarkcurrentchangesdata')) return true;
+        if (lower.includes('<title>书签变化') || lower.includes('<h1>书签变化')) return true;
+        if (lower.includes('<title>bookmark changes') || lower.includes('<h1>bookmark changes')) return true;
+        return false;
+    };
+
+    const isCurrentChangesArtifactJsonText = (text) => {
+        const raw = String(text || '').trim();
+        if (!raw) return false;
+
+        let parsed = null;
+        try {
+            parsed = JSON.parse(raw);
+        } catch (_) {
+            return false;
+        }
+
+        if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+            return false;
+        }
+
+        const source = String(parsed?._exportInfo?.source || '').toLowerCase();
+        if (source.includes('bookmark-backup-changes')) return true;
+
+        const title = String(parsed?.title || '').toLowerCase();
+        if (title.includes('书签变化') || title.includes('bookmark changes')) return true;
+
+        const children = Array.isArray(parsed?.children) ? parsed.children : [];
+        if (children.length > 0) {
+            const firstTitle = String(children[0]?.title || '').toLowerCase();
+            if (firstTitle.includes('操作统计') || firstTitle.includes('operation counts')) {
+                return true;
+            }
+        }
+
+        return false;
+    };
+
+    const isSnapshotHtmlName = (name) => {
+        const n = stripBrowserDuplicateSuffix(name);
+        const lower = n.toLowerCase();
+        if (!isHtmlFileName(lower)) return false;
+        if (isCurrentChangesLikeName(n)) return false;
+
+        if (/^\d{8}_\d{4}(?:\d{2})?_[0-9a-f]{6,12}\.(?:html?|xhtml)$/i.test(lower)) return true;
+        if (/^(?:backup_)?\d{8}_\d{4}(?:\d{2})?(?:_[0-9a-f]{6,12})?\.(?:html?|xhtml)$/i.test(lower)) return true;
+        if (/^bookmark[ _-]?backup\.(?:html?|xhtml)$/i.test(lower)) return true;
+        if (parseSnapshotKeyFromTextLocal(lower)) return true;
+        if (lower.includes('bookmark_backup') || lower.includes('bookmark backup') || lower.includes('bookmark-backup')) return true;
+
+        return false;
+    };
+
+    const isOverwriteFolderName = (name) => {
+        const text = String(name || '').trim().toLowerCase();
+        return text === '覆盖' || text === 'overwrite';
+    };
+
+    const isOverwritePathLike = (pathText) => {
+        const parts = String(pathText || '')
+            .split('/')
+            .map((part) => String(part || '').trim())
+            .filter(Boolean);
+        return parts.some((part) => isOverwriteFolderName(part));
+    };
+
+    const parseSnapshotKeyFromTextLocal = (input) => {
+        const text = String(input || '');
+        const fullMatch = /(\d{8}_\d{4}(?:\d{2})?_[0-9a-f]{6,12})/i.exec(text);
+        if (fullMatch) return String(fullMatch[1]).toLowerCase();
+
+        const legacyMatch = /(?:backup_)?(\d{8}_\d{4}(?:\d{2})?)(?!_[0-9a-f]{6,12})/i.exec(text);
+        return legacyMatch ? String(legacyMatch[1]).toLowerCase() : '';
+    };
+
+    const extractSnapshotFolderFromPath = (pathText) => {
+        const parts = String(pathText || '').split('/').filter(Boolean);
+        if (parts.length === 0) return '';
+
+        for (let i = parts.length - 1; i >= 0; i--) {
+            const part = String(parts[i] || '').trim();
+            if (!part) continue;
+            if (snapshotFolderNameReg.test(part)) return part;
+            if (isOverwriteFolderName(part)) return part;
+        }
+        return '';
+    };
+
+    const resolveSnapshotKeyForLocalCandidate = (pathText, snapshotFolder, name) => {
+        const folder = String(snapshotFolder || '').trim();
+        if (snapshotFolderNameReg.test(folder)) return folder.toLowerCase();
+        if (isOverwriteFolderName(folder)) return '__overwrite__';
+
+        const fromPath = parseSnapshotKeyFromTextLocal(pathText);
+        if (fromPath) return fromPath;
+
+        const fromName = parseSnapshotKeyFromTextLocal(name);
+        if (fromName) return fromName;
+
+        if (isOverwritePathLike(pathText)) return '__overwrite__';
+        return '';
+    };
+
+    const isInSnapshotOrOverwriteFolder = (pathText, snapshotFolder = '') => {
+        if (snapshotFolderNameReg.test(String(snapshotFolder || ''))) return true;
+        if (isOverwriteFolderName(snapshotFolder)) return true;
+
+        const parts = String(pathText || '')
+            .split('/')
+            .map(part => String(part || '').trim())
+            .filter(Boolean);
+        return parts.some(part => snapshotFolderNameReg.test(part) || isOverwriteFolderName(part));
+    };
+
+    const isCurrentChangesArtifactName = (name) => {
+        const text = String(name || '').trim();
+        const lower = text.toLowerCase();
+        if (!text) return false;
+        if (!/\.(json|html?|xhtml)$/i.test(lower)) return false;
+        return lower.includes('current_changes')
+            || lower.includes('current-changes')
+            || lower.includes('bookmark-changes')
+            || lower.includes('bookmark_changes')
+            || text.includes('当前变化')
+            || text.includes('书签变化');
+    };
+
+    const isVersionedInfoLogName = (name) => {
+        const lower = String(name || '').trim().toLowerCase();
+        return lower === '备份历史log.md'
+            || lower === 'backup-history-log.md';
+    };
+
+    const isVersionedInfoLogJsonName = (name) => {
+        const lower = String(name || '').trim().toLowerCase();
+        return lower === 'backup-history-log.json'
+            || lower === '备份历史log.json';
+    };
+
+    const hasStandaloneChangesArtifactHints = (name) => {
+        const text = String(name || '').trim();
+        const lower = text.toLowerCase();
+        if (!text) return false;
+
+        if (isCurrentChangesLikeName(text)) return true;
+        if (isCurrentChangesArtifactName(text)) return true;
+        if (parseSnapshotKeyFromTextLocal(text) && (lower.includes('changes') || text.includes('变化'))) return true;
+        if (text.includes('详细') || text.includes('简略') || text.includes('集合')) return true;
+        if (lower.includes('detailed') || lower.includes('simple') || lower.includes('collection')) return true;
+
+        return false;
+    };
+
+    const MANUAL_EXPORT_FOLDER_SEGMENTS = new Set(['手动导出', 'manual export', 'manual_export', 'manual-export']);
+    const CURRENT_CHANGES_FOLDER_SEGMENTS = new Set(['当前变化', 'current changes', 'current_changes', 'current-changes']);
+    const MANUAL_HISTORY_FOLDER_SEGMENTS = new Set([
+        '备份历史',
+        'backup history',
+        'backup_history',
+        'backup-history',
+        'bookmarks history',
+        'bookmarks_history',
+        'bookmarks-history'
+    ]);
+
+    const shouldTreatAsChangesArtifact = ({ name, pathText, snapshotFolder }) => {
+        const fileName = String(name || '').trim();
+        if (!fileName) return false;
+        if (isSnapshotHtmlName(fileName)) return false;
+        if (!/\.(json|html?|xhtml)$/i.test(fileName)) return false;
+
+        const pathSegments = String(pathText || '')
+            .replace(/\\/g, '/')
+            .split('/')
+            .map((segment) => String(segment || '').trim().toLowerCase())
+            .filter(Boolean);
+        const inManualExportFolder = pathSegments.some((segment) => MANUAL_EXPORT_FOLDER_SEGMENTS.has(segment));
+        const inCurrentChangesFolder = pathSegments.some((segment) => CURRENT_CHANGES_FOLDER_SEGMENTS.has(segment));
+        const inManualHistoryFolder = pathSegments.some((segment) => MANUAL_HISTORY_FOLDER_SEGMENTS.has(segment));
+
+        const inManualHistoryExportFolder = inManualExportFolder && inManualHistoryFolder;
+        const inSnapshotOrOverwriteFolder = isInSnapshotOrOverwriteFolder(pathText, snapshotFolder);
+        const hasChangesNameHint = isCurrentChangesLikeName(fileName) || isCurrentChangesArtifactName(fileName);
+
+        if (inCurrentChangesFolder) return true;
+        if (inManualHistoryExportFolder) return true;
+        if (inSnapshotOrOverwriteFolder && hasChangesNameHint) return true;
+        if (allowStandalone && hasStandaloneChangesArtifactHints(fileName)) return true;
+        return hasChangesNameHint;
+    };
+
+    const shouldTreatAsSnapshotHtmlByFolder = ({ name, pathText, snapshotFolder }) => {
+        const fileName = String(name || '').trim();
+        if (!fileName) return false;
+        if (!/\.(html?|xhtml)$/i.test(fileName)) return false;
+        if (shouldTreatAsChangesArtifact({ name: fileName, pathText, snapshotFolder })) return false;
+        if (isSnapshotHtmlName(fileName)) return true;
+        return isInSnapshotOrOverwriteFolder(pathText, snapshotFolder);
+    };
+
+    let hasMarkdownOnly = false;
+
+    const orderedFiles = allowStandalone
+        ? list
+        : list.slice().sort((a, b) => {
+            const getPriority = (fileName) => {
+                if (isVersionedInfoLogName(fileName) || isVersionedInfoLogJsonName(fileName)) return 0;
+                return 1;
+            };
+            const ap = getPriority(a?.name);
+            const bp = getPriority(b?.name);
+            return ap - bp;
+        });
+
+    for (const file of orderedFiles) {
+        const name = String(file.name || '');
+        const pathText = String(file.webkitRelativePath || name || '');
+        const pathLower = pathText.toLowerCase();
+        const localFileKey = pathText;
+        localRestoreFileMap.set(localFileKey, file);
+
+        try {
+            if (/\.md$/i.test(name)) {
+                hasMarkdownOnly = true;
+
+                const versionedIndexMarkdown = isVersionedInfoLogName(name);
+
+                if (!allowStandalone && versionedIndexMarkdown) {
+                    const indexText = await file.text();
+
+                    localCandidates.push({
+                        name,
+                        source: 'local',
+                        type: 'index_markdown',
+                        localFileKey,
+                        text: indexText,
+                        lastModified: file.lastModified,
+                        snapshotFolder: '',
+                        folderPath: pathText.includes('/') ? pathText.slice(0, pathText.lastIndexOf('/')) : ''
+                    });
+                    continue;
+                }
+            }
+
+            if (!allowStandalone && isVersionedInfoLogJsonName(name)) {
+                const indexText = await file.text();
+                localCandidates.push({
+                    name,
+                    source: 'local',
+                    type: 'index_json',
+                    localFileKey,
+                    text: indexText,
+                    lastModified: file.lastModified,
+                    snapshotFolder: '',
+                    folderPath: pathText.includes('/') ? pathText.slice(0, pathText.lastIndexOf('/')) : ''
+                });
+                continue;
+            }
+
+            if (isSnapshotHtmlName(name)) {
+                const snapshotFolder = extractSnapshotFolderFromPath(pathText);
+                const snapshotKey = resolveSnapshotKeyForLocalCandidate(pathText, snapshotFolder, name);
+                const folderPath = pathText.includes('/')
+                    ? pathText.slice(0, pathText.lastIndexOf('/'))
+                    : '';
+                const inBackupPath = pathText.includes('书签备份')
+                    || pathLower.includes('bookmark backup')
+                    || pathLower.includes('bookmark_backup')
+                    || pathLower.includes('bookmarkbackup');
+
+                if (snapshotFolder || inBackupPath || allowStandalone || snapshotKey) {
+                    localCandidates.push({
+                        name,
+                        source: 'local',
+                        type: 'html_backup',
+                        localFileKey,
+                        lastModified: file.lastModified,
+                        snapshotFolder,
+                        folderPath
+                    });
+                    continue;
+                }
+            }
+
+            if (!allowStandalone && isHtmlFileName(name)) {
+                const snapshotFolder = extractSnapshotFolderFromPath(pathText);
+                const snapshotKey = resolveSnapshotKeyForLocalCandidate(pathText, snapshotFolder, name);
+                const folderPath = pathText.includes('/')
+                    ? pathText.slice(0, pathText.lastIndexOf('/'))
+                    : '';
+                const inSnapshotPath = isInSnapshotOrOverwriteFolder(pathText, snapshotFolder);
+
+                if (shouldTreatAsSnapshotHtmlByFolder({ name, pathText, snapshotFolder }) && (inSnapshotPath || snapshotKey)) {
+                    localCandidates.push({
+                        name,
+                        source: 'local',
+                        type: 'html_backup',
+                        localFileKey,
+                        lastModified: file.lastModified,
+                        snapshotFolder,
+                        folderPath
+                    });
+                    continue;
+                }
+            }
+
+            if (allowStandalone && isHtmlFileName(name)) {
+                const snapshotFolder = extractSnapshotFolderFromPath(pathText);
+                const folderPath = pathText.includes('/')
+                    ? pathText.slice(0, pathText.lastIndexOf('/'))
+                    : '';
+                const headText = typeof file.slice === 'function'
+                    ? await file.slice(0, 64 * 1024).text()
+                    : await file.text();
+
+                if (isCurrentChangesArtifactHtmlText(headText)) {
+                    const artifactText = typeof file.text === 'function'
+                        ? await file.text()
+                        : headText;
+                    localCandidates.push({
+                        name,
+                        source: 'local',
+                        type: 'changes_artifact',
+                        localFileKey,
+                        text: artifactText,
+                        lastModified: file.lastModified,
+                        snapshotFolder,
+                        folderPath
+                    });
+                    continue;
+                }
+
+                if (isLikelyNetscapeBookmarkHtmlText(headText)) {
+                    localCandidates.push({
+                        name,
+                        source: 'local',
+                        type: 'html_backup',
+                        localFileKey,
+                        lastModified: file.lastModified,
+                        snapshotFolder,
+                        folderPath
+                    });
+                    continue;
+                }
+
+                // 文件模式兜底：任意 HTML 先按快照候选纳入，
+                // 以兼容其他插件导出的 Netscape 书签 HTML（即使命名不符合本插件规则）。
+                localCandidates.push({
+                    name,
+                    source: 'local',
+                    type: 'html_backup',
+                    localFileKey,
+                    lastModified: file.lastModified,
+                    snapshotFolder,
+                    folderPath
+                });
+                continue;
+            }
+
+            if (allowStandalone && /\.json$/i.test(name)) {
+                const snapshotFolder = extractSnapshotFolderFromPath(pathText);
+                const folderPath = pathText.includes('/')
+                    ? pathText.slice(0, pathText.lastIndexOf('/'))
+                    : '';
+                const jsonText = typeof file.text === 'function'
+                    ? await file.text()
+                    : '';
+
+                if (hasStandaloneChangesArtifactHints(name) || isCurrentChangesArtifactJsonText(jsonText)) {
+                    localCandidates.push({
+                        name,
+                        source: 'local',
+                        type: 'changes_artifact',
+                        localFileKey,
+                        text: jsonText,
+                        lastModified: file.lastModified,
+                        snapshotFolder,
+                        folderPath
+                    });
+                    continue;
+                }
+            }
+
+            const snapshotFolder = extractSnapshotFolderFromPath(pathText);
+            if (shouldTreatAsChangesArtifact({ name, pathText, snapshotFolder })) {
+                const artifactText = allowStandalone ? await file.text() : '';
+                const folderPath = pathText.includes('/')
+                    ? pathText.slice(0, pathText.lastIndexOf('/'))
+                    : '';
+                localCandidates.push({
+                    name,
+                    source: 'local',
+                    type: 'changes_artifact',
+                    localFileKey,
+                    text: artifactText,
+                    lastModified: file.lastModified,
+                    snapshotFolder,
+                    folderPath
+                });
+            }
+        } catch (err) {
+            console.warn('[Local Restore] Read file failed:', name, err);
+        }
+    }
+
+    return { localCandidates, hasMarkdownOnly };
+}
+
+async function handleLocalRestoreSelection(fileList, options = {}) {
+    const files = Array.isArray(fileList) ? fileList : [];
+    if (!files || files.length === 0) return;
+
+    const { localCandidates, hasMarkdownOnly } = await collectLocalRestoreCandidates(files, options);
+    const effectiveCandidateCount = localCandidates.filter((item) => {
+        if (!item) return false;
+        return item.type !== 'index_markdown'
+            && item.type !== 'index_json';
+    }).length;
+    const hasDirectoryEntries = files.some((file) => String(file?.webkitRelativePath || '').includes('/'));
+
+    if (effectiveCandidateCount === 0) {
+        lastLocalRestoreSelectionMeta = null;
+        if (hasMarkdownOnly) {
+            alert('Detected index files only. Please select Bookmark Backup folder or a specific version folder.');
+        } else {
+            alert('No valid backup files found (Snapshot HTML / Current Changes JSON|HTML).');
+        }
+        return;
+    }
+
+    try {
+        const response = await callBackgroundFunction('scanAndParseRestoreSource', {
+            source: 'local',
+            localFiles: localCandidates
+        });
+        if (response?.success && Array.isArray(response.versions) && response.versions.length > 0) {
+            const normalizedIndexKeys = Array.isArray(response?.indexMeta?.snapshotKeys)
+                ? response.indexMeta.snapshotKeys
+                    .map((value) => String(value || '').trim().toLowerCase())
+                    .filter(Boolean)
+                : [];
+
+            lastLocalRestoreSelectionMeta = {
+                mode: options?.allowStandalone ? 'file' : 'folder',
+                fileCount: files.length,
+                candidateCount: localCandidates.length,
+                hasDirectoryEntries,
+                hasIndexCandidate: localCandidates.some((item) => item && (item.type === 'index_markdown' || item.type === 'index_json')),
+                indexFileName: String(response?.indexMeta?.fileName || ''),
+                indexEntryCount: Number.isFinite(Number(response?.indexMeta?.entryCount)) ? Number(response.indexMeta.entryCount) : 0,
+                indexSnapshotKeys: normalizedIndexKeys,
+                updatedAt: Date.now()
+            };
+
+            showRestoreModal(response.versions, 'local');
+        } else if (response?.success) {
+            lastLocalRestoreSelectionMeta = {
+                mode: options?.allowStandalone ? 'file' : 'folder',
+                fileCount: files.length,
+                candidateCount: localCandidates.length,
+                hasDirectoryEntries,
+                hasIndexCandidate: localCandidates.some((item) => item && (item.type === 'index_markdown' || item.type === 'index_json')),
+                indexFileName: String(response?.indexMeta?.fileName || ''),
+                indexEntryCount: Number.isFinite(Number(response?.indexMeta?.entryCount)) ? Number(response.indexMeta.entryCount) : 0,
+                indexSnapshotKeys: Array.isArray(response?.indexMeta?.snapshotKeys)
+                    ? response.indexMeta.snapshotKeys
+                        .map((value) => String(value || '').trim().toLowerCase())
+                        .filter(Boolean)
+                    : [],
+                updatedAt: Date.now()
+            };
+
+            const hasChangesArtifact = localCandidates.some((item) => item && item.type === 'changes_artifact');
+            if (hasChangesArtifact) {
+                alert('Detected Current Changes files, but no restorable version was produced. Please reload extension and retry.');
+            } else {
+                alert('No restore versions found in selected folder.');
+            }
+        } else {
+            lastLocalRestoreSelectionMeta = null;
+            alert(`Scan failed: ${response?.error || 'Unknown error'}`);
+        }
+    } catch (err) {
+        lastLocalRestoreSelectionMeta = null;
+        alert(`Scan error: ${err.message}`);
+    }
+}
+
+// [New] 本地文件选择监听 (文件夹优先)
 document.addEventListener('DOMContentLoaded', () => {
     const localInput = document.getElementById('localRestoreInput');
+    const localFileInput = document.getElementById('localRestoreFileInput');
+
     if (localInput) {
         localInput.addEventListener('change', async (e) => {
-            const files = Array.from(e.target.files);
-            if (!files || files.length === 0) return;
-            localRestoreFileMap.clear();
+            const files = Array.from(e.target.files || []);
+            await handleLocalRestoreSelection(files, { allowStandalone: false });
+        });
+    }
 
-            const localCandidates = [];
-
-            const snapshotFolderNameReg = /^\d{8}_\d{6}_[0-9a-f]{6,12}$/i;
-
-            const isLikelyHistoryZip = (name, path) => {
-                const rawName = String(name || '');
-                const rawPath = String(path || '');
-                const nameLower = rawName.toLowerCase();
-                const pathLower = rawPath.toLowerCase();
-
-                const inHistoryPath = rawPath.includes('备份历史') ||
-                    rawPath.includes('自动备份归档') ||
-                    pathLower.includes('backup_history') ||
-                    pathLower.includes('auto_archive');
-
-                const nameLooksRight = rawName === '备份历史归档.zip' ||
-                    rawName === 'Backup_History_Archive.zip' ||
-                    rawName.includes('备份历史') ||
-                    rawName.includes('归档') ||
-                    nameLower.includes('backup_history') ||
-                    nameLower.includes('archive');
-
-                return inHistoryPath || nameLooksRight;
-            };
-
-            const isSnapshotHtmlName = (name) => {
-                const n = String(name || '');
-                const lower = n.toLowerCase();
-                if (/^\d{8}_\d{6}_[0-9a-f]{6,12}\.html$/i.test(lower)) return true;
-                if (/^(?:backup_)?\d{8}_\d{6}\.html$/i.test(lower)) return true;
-                if (lower === 'bookmark_backup.html') return true;
-                if (lower.endsWith('.html') && (lower.includes('bookmark_backup') || lower.includes('bookmark backup'))) return true;
-                return false;
-            };
-
-            const isOverwriteFolderName = (name) => {
-                const text = String(name || '').trim().toLowerCase();
-                return text === '覆盖' || text === 'overwrite';
-            };
-
-            const extractSnapshotFolderFromPath = (pathText) => {
-                const parts = String(pathText || '').split('/').filter(Boolean);
-                if (parts.length === 0) return '';
-
-                for (let i = parts.length - 1; i >= 0; i--) {
-                    const part = String(parts[i] || '').trim();
-                    if (!part) continue;
-                    if (snapshotFolderNameReg.test(part)) return part;
-                    if (part === '覆盖' || String(part).toLowerCase() === 'overwrite') return part;
-                }
-                return '';
-            };
-
-            const isInSnapshotOrOverwriteFolder = (pathText, snapshotFolder = '') => {
-                if (snapshotFolderNameReg.test(String(snapshotFolder || ''))) return true;
-                if (isOverwriteFolderName(snapshotFolder)) return true;
-
-                const parts = String(pathText || '')
-                    .split('/')
-                    .map(part => String(part || '').trim())
-                    .filter(Boolean);
-                return parts.some(part => snapshotFolderNameReg.test(part) || isOverwriteFolderName(part));
-            };
-
-            const shouldTreatAsChangesArtifact = ({ name, pathText, snapshotFolder }) => {
-                const fileName = String(name || '').trim();
-                if (!fileName) return false;
-                if (isSnapshotHtmlName(fileName)) return false;
-                if (!/\.(json|html)$/i.test(fileName)) return false;
-
-                return isInSnapshotOrOverwriteFolder(pathText, snapshotFolder);
-            };
-
-            const zipFiles = [];
-
-            for (const file of files) {
-                const name = String(file.name || '');
-                const pathText = String(file.webkitRelativePath || name || '');
-                const pathLower = pathText.toLowerCase();
-                const localFileKey = pathText;
-                localRestoreFileMap.set(localFileKey, file);
-
-                try {
-                    if (name === 'backup_history.json') {
-                        const text = await file.text();
-                        localCandidates.push({
-                            name,
-                            source: 'local',
-                            type: 'merged_history',
-                            localFileKey,
-                            text,
-                            lastModified: file.lastModified
-                        });
-                        continue;
-                    }
-
-                    if (name.toLowerCase().endsWith('.zip') && isLikelyHistoryZip(name, pathText)) {
-                        zipFiles.push({ file, name, localFileKey, lastModified: file.lastModified });
-                        continue;
-                    }
-
-                    if (isSnapshotHtmlName(name)) {
-                        const snapshotFolder = extractSnapshotFolderFromPath(pathText);
-                        const folderPath = pathText.includes('/')
-                            ? pathText.slice(0, pathText.lastIndexOf('/'))
-                            : '';
-                        const inBackupPath = pathText.includes('书签备份') ||
-                            pathLower.includes('bookmark backup') ||
-                            pathLower.includes('bookmark_backup') ||
-                            pathLower.includes('bookmarkbackup');
-                        if (snapshotFolder || inBackupPath) {
-                            localCandidates.push({
-                                name,
-                                source: 'local',
-                                type: 'html_backup',
-                                localFileKey,
-                                lastModified: file.lastModified,
-                                snapshotFolder,
-                                folderPath
-                            });
-                            continue;
-                        }
-                    }
-
-                    const snapshotFolder = extractSnapshotFolderFromPath(pathText);
-                    if (shouldTreatAsChangesArtifact({ name, pathText, snapshotFolder })) {
-                        const text = await file.text();
-                        const folderPath = pathText.includes('/')
-                            ? pathText.slice(0, pathText.lastIndexOf('/'))
-                            : '';
-                        localCandidates.push({
-                            name,
-                            source: 'local',
-                            type: 'changes_artifact',
-                            localFileKey,
-                            text,
-                            lastModified: file.lastModified,
-                            snapshotFolder,
-                            folderPath
-                        });
-                    }
-                } catch (err) {
-                    console.warn('[Local Restore] Read file failed:', name, err);
-                }
-            }
-
-            if (zipFiles.length > 0) {
-                zipFiles.sort((a, b) => (b.lastModified || 0) - (a.lastModified || 0));
-                const maxZip = Math.min(3, zipFiles.length);
-                for (let i = 0; i < maxZip; i++) {
-                    const { file, name, localFileKey } = zipFiles[i];
-                    try {
-                        const arrayBuffer = await file.arrayBuffer();
-                        localCandidates.push({
-                            name,
-                            source: 'local',
-                            type: 'zip',
-                            localFileKey,
-                            arrayBuffer,
-                            lastModified: file.lastModified
-                        });
-                    } catch (err) {
-                        console.warn('[Local Restore] Read zip failed:', name, err);
-                    }
-                }
-            }
-
-            if (localCandidates.length === 0) {
-                alert('No valid backup files found (Snapshot HTML / Current Changes JSON|HTML / backup_history.json / ZIP).');
-                return;
-            }
-
-            try {
-                const response = await callBackgroundFunction('scanAndParseRestoreSource', {
-                    source: 'local',
-                    localFiles: localCandidates
-                });
-                if (response?.success && Array.isArray(response.versions) && response.versions.length > 0) {
-                    showRestoreModal(response.versions, 'local');
-                } else if (response?.success) {
-                    alert('No restore versions found in selected folder.');
-                } else {
-                    alert(`Scan failed: ${response?.error || 'Unknown error'}`);
-                }
-            } catch (err) {
-                alert(`Scan error: ${err.message}`);
-            }
+    if (localFileInput) {
+        localFileInput.addEventListener('change', async (e) => {
+            const files = Array.from(e.target.files || []);
+            await handleLocalRestoreSelection(files, { allowStandalone: true });
         });
     }
 });
@@ -8285,6 +8779,7 @@ function showRestoreModal(versions, source) {
     const modal = document.getElementById('restoreModal');
     const tableBody = document.getElementById('restoreVersionTableBody');
     const confirmBtn = document.getElementById('confirmRestoreBtnRef');
+    const strategySegment = document.getElementById('restoreStrategySegment');
     const strategyGroup = document.getElementById('restoreStrategyGroup');
     const strategyOverwriteRadio = document.getElementById('restoreStrategyOverwrite');
     const strategyMergeRadio = document.getElementById('restoreStrategyMerge');
@@ -8301,10 +8796,13 @@ function showRestoreModal(versions, source) {
     const mergeViewModeGroup = document.getElementById('restoreMergeViewModeGroup');
     const mergeViewModeSimpleRadio = document.getElementById('restoreMergeViewModeSimple');
     const mergeViewModeDetailedRadio = document.getElementById('restoreMergeViewModeDetailed');
+    const mergeViewModeCollectionRadio = document.getElementById('restoreMergeViewModeCollection');
     const mergeViewModeSimpleText = document.getElementById('restoreMergeViewModeSimpleText');
     const mergeViewModeDetailedText = document.getElementById('restoreMergeViewModeDetailedText');
+    const mergeViewModeCollectionText = document.getElementById('restoreMergeViewModeCollectionText');
     const mergeViewModeSimpleWrap = document.getElementById('restoreMergeViewModeSimpleWrap');
     const mergeViewModeDetailedWrap = document.getElementById('restoreMergeViewModeDetailedWrap');
+    const mergeViewModeCollectionWrap = document.getElementById('restoreMergeViewModeCollectionWrap');
 
     const cancelBtn = document.getElementById('cancelRestoreBtnRef');
     const closeBtn = document.getElementById('closeRestoreModal');
@@ -8314,7 +8812,7 @@ function showRestoreModal(versions, source) {
     const thHash = document.getElementById('restoreThHash');
     const thTime = document.getElementById('restoreThTime');
     const thStats = document.getElementById('restoreThStats');
-    const thStatsCurrent = document.getElementById('restoreThStatsCurrent');
+    const thViewMode = document.getElementById('restoreThViewMode');
 
     // Pagination (10 per page)
     const pagination = document.getElementById('restorePagination');
@@ -8326,18 +8824,37 @@ function showRestoreModal(versions, source) {
 
     const thHashCell = thHash ? thHash.closest('th') : null;
     const thStatsCell = thStats ? thStats.closest('th') : null;
-    const thStatsCurrentCell = thStatsCurrent ? thStatsCurrent.closest('th') : null;
+    const thViewModeCell = thViewMode ? thViewMode.closest('th') : null;
 
     const versionTable = document.getElementById('restoreVersionTable');
     const versionTableContainer = versionTable ? versionTable.closest('.global-export-table-container') : null;
 
     const versionTypeSegment = document.getElementById('restoreVersionTypeSegment');
-    const versionTypeHistoryRadio = document.getElementById('restoreVersionTypeHistory');
-    const versionTypeSnapshotRadio = document.getElementById('restoreVersionTypeSnapshot');
-    const versionTypeHistoryText = document.getElementById('restoreVersionTypeHistoryText');
-    const versionTypeSnapshotText = document.getElementById('restoreVersionTypeSnapshotText');
-    const versionTypeHistoryLabelWrap = document.getElementById('restoreVersionTypeHistoryLabelWrap');
-    const versionTypeSnapshotLabelWrap = document.getElementById('restoreVersionTypeSnapshotLabelWrap');
+    const versionTypeVersionedRadio = document.getElementById('restoreVersionTypeVersioned');
+    const versionTypeOverwriteRadio = document.getElementById('restoreVersionTypeOverwrite');
+    const versionTypeManualExportRadio = document.getElementById('restoreVersionTypeManualExport');
+    const versionTypeVersionedText = document.getElementById('restoreVersionTypeVersionedText');
+    const versionTypeOverwriteText = document.getElementById('restoreVersionTypeOverwriteText');
+    const versionTypeManualExportText = document.getElementById('restoreVersionTypeManualExportText');
+    const versionTypeVersionedLabelWrap = document.getElementById('restoreVersionTypeVersionedLabelWrap');
+    const versionTypeOverwriteLabelWrap = document.getElementById('restoreVersionTypeOverwriteLabelWrap');
+    const versionTypeManualExportLabelWrap = document.getElementById('restoreVersionTypeManualExportLabelWrap');
+    const versionedIndexFilterSegment = document.getElementById('restoreVersionedIndexFilterSegment');
+    const versionedIndexFilterIndexedRadio = document.getElementById('restoreVersionedIndexFilterIndexed');
+    const versionedIndexFilterNonIndexedRadio = document.getElementById('restoreVersionedIndexFilterNonIndexed');
+    const versionedIndexFilterIndexedText = document.getElementById('restoreVersionedIndexFilterIndexedText');
+    const versionedIndexFilterNonIndexedText = document.getElementById('restoreVersionedIndexFilterNonIndexedText');
+    const versionedIndexFilterIndexedLabelWrap = document.getElementById('restoreVersionedIndexFilterIndexedLabelWrap');
+    const versionedIndexFilterNonIndexedLabelWrap = document.getElementById('restoreVersionedIndexFilterNonIndexedLabelWrap');
+    const restoreSubModeSegment = document.getElementById('restoreSubModeSegment');
+    const restoreSubModeSnapshotRadio = document.getElementById('restoreSubModeSnapshot');
+    const restoreSubModeChangesRadio = document.getElementById('restoreSubModeChanges');
+    const restoreSubModeSnapshotText = document.getElementById('restoreSubModeSnapshotText');
+    const restoreSubModeChangesText = document.getElementById('restoreSubModeChangesText');
+    const restoreSubModeSnapshotLabelWrap = document.getElementById('restoreSubModeSnapshotLabelWrap');
+    const restoreSubModeChangesLabelWrap = document.getElementById('restoreSubModeChangesLabelWrap');
+    const localSelectionMeta = source === 'local' ? (lastLocalRestoreSelectionMeta || null) : null;
+    const isLocalFileSelection = source === 'local' && localSelectionMeta?.mode === 'file';
 
     if (!modal || !tableBody || !confirmBtn || !strategyGroup || !strategyOverwriteRadio || !strategyMergeRadio || !strategyPatchRadio || !cancelBtn || !closeBtn) {
         console.warn('[showRestoreModal] Missing modal DOM nodes');
@@ -8356,46 +8873,158 @@ function showRestoreModal(versions, source) {
     const closeButton = resetBtn(closeBtn);
 
     const allVersions = Array.isArray(versions) ? versions : [];
+    const isSnapshotLikeVersion = (v) => {
+        const st = String(v?.sourceType || v?.restoreRef?.sourceType || '').toLowerCase();
+        return st === 'html' || st === 'json' || st === 'zip';
+    };
     const isHtmlVersion = (v) => {
-        const st = v?.sourceType || v?.restoreRef?.sourceType || '';
+        const st = String(v?.sourceType || v?.restoreRef?.sourceType || '').toLowerCase();
         return st === 'html';
     };
     const OVERWRITE_FOLDER_SEGMENTS = new Set(['覆盖', 'overwrite']);
-    const VERSIONED_FOLDER_SEGMENTS = new Set(['版本化', 'versioned']);
+    const VERSIONED_FOLDER_SEGMENTS = new Set(['版本化', '多版本', 'versioned', 'versioning']);
+    const MANUAL_EXPORT_FOLDER_SEGMENTS = new Set(['手动导出', 'manual export', 'manual_export', 'manual-export']);
+    const MANUAL_HISTORY_FOLDER_SEGMENTS = new Set([
+        '备份历史',
+        'backup history',
+        'backup_history',
+        'backup-history',
+        'bookmarks history',
+        'bookmarks_history',
+        'bookmarks-history'
+    ]);
+    const CURRENT_CHANGES_FOLDER_SEGMENTS = new Set(['当前变化', 'current changes', 'current_changes', 'current-changes']);
+    const normalizePathTextForSegments = (value) => {
+        const raw = String(value || '').trim();
+        if (!raw) return '';
+
+        const withoutQuery = raw.split('?')[0].split('#')[0];
+        try {
+            return decodeURIComponent(withoutQuery);
+        } catch (_) {
+            return withoutQuery;
+        }
+    };
     const splitPathSegmentsLower = (value) => {
-        return String(value || '')
+        return normalizePathTextForSegments(value)
+            .replace(/\\/g, '/')
             .split('/')
             .map(part => String(part || '').trim().toLowerCase())
             .filter(Boolean);
+    };
+    const collectRestoreCorePathValues = (version, restoreRef) => {
+        const values = [
+            restoreRef.snapshotFolder,
+            restoreRef.folderPath,
+            restoreRef.localFileKey,
+            restoreRef.fileUrl
+        ];
+
+        const originalFile = String(version?.originalFile || restoreRef?.originalFile || '').trim();
+        if (originalFile.includes('/') || originalFile.includes('\\')) {
+            values.push(originalFile);
+        }
+
+        return values.filter(Boolean);
+    };
+    const collectChangesArtifactPathValues = (restoreRef) => {
+        const values = [];
+        const artifact = restoreRef?.changesArtifact;
+        if (!artifact || typeof artifact !== 'object') return values;
+
+        const pushValue = (candidate) => {
+            const text = String(candidate || '').trim();
+            if (text) values.push(text);
+        };
+
+        pushValue(artifact.name);
+        pushValue(artifact.localFileKey);
+        pushValue(artifact.fileUrl);
+        pushValue(artifact.snapshotFolder);
+        pushValue(artifact.folderPath);
+
+        if (artifact.modes && typeof artifact.modes === 'object') {
+            Object.values(artifact.modes).forEach((entry) => {
+                if (!entry || typeof entry !== 'object') return;
+                pushValue(entry.name);
+                pushValue(entry.localFileKey);
+                pushValue(entry.fileUrl);
+                pushValue(entry.snapshotFolder);
+                pushValue(entry.folderPath);
+            });
+        }
+
+        return values;
+    };
+    const detectTypeFromPathValues = (values) => {
+        let hasManualExportSegment = false;
+        let hasVersionedSegment = false;
+        let hasManualHistoryOrCurrentChangesSegment = false;
+
+        for (const value of values) {
+            const segments = splitPathSegmentsLower(value);
+            if (segments.some(seg => OVERWRITE_FOLDER_SEGMENTS.has(seg))) {
+                return 'overwrite';
+            }
+            if (segments.some(seg => MANUAL_EXPORT_FOLDER_SEGMENTS.has(seg))) {
+                hasManualExportSegment = true;
+            }
+            if (segments.some(seg => VERSIONED_FOLDER_SEGMENTS.has(seg))) {
+                hasVersionedSegment = true;
+            }
+            if (segments.some(seg => MANUAL_HISTORY_FOLDER_SEGMENTS.has(seg) || CURRENT_CHANGES_FOLDER_SEGMENTS.has(seg))) {
+                hasManualHistoryOrCurrentChangesSegment = true;
+            }
+        }
+
+        if (hasManualExportSegment) return 'manual_export';
+        if (hasVersionedSegment) return 'versioned';
+        if (hasManualHistoryOrCurrentChangesSegment) return 'manual_export';
+        return '';
     };
     const detectRestoreFolderType = (version) => {
         const restoreRef = version?.restoreRef || {};
         const snapshotKey = String(restoreRef.snapshotKey || '').trim().toLowerCase();
         if (snapshotKey === '__overwrite__') return 'overwrite';
 
-        const valuesToInspect = [
-            restoreRef.snapshotFolder,
-            restoreRef.folderPath,
-            version?.originalFile
-        ];
+        const overwriteMode = String(restoreRef.overwriteMode || '').trim().toLowerCase();
+        if (overwriteMode === 'overwrite') return 'overwrite';
+        if (overwriteMode === 'versioned') return 'versioned';
 
-        let hasVersionedSegment = false;
-        for (const value of valuesToInspect) {
-            const segments = splitPathSegmentsLower(value);
-            if (segments.some(seg => OVERWRITE_FOLDER_SEGMENTS.has(seg))) {
-                return 'overwrite';
-            }
-            if (segments.some(seg => VERSIONED_FOLDER_SEGMENTS.has(seg))) {
-                hasVersionedSegment = true;
-            }
+        const sourceType = String(version?.sourceType || restoreRef?.sourceType || '').trim().toLowerCase();
+        const coreType = detectTypeFromPathValues(collectRestoreCorePathValues(version, restoreRef));
+
+        if (sourceType === 'changes_artifact') {
+            if (coreType === 'manual_export') return 'manual_export';
+            if (coreType === 'overwrite') return 'overwrite';
+
+            const artifactType = detectTypeFromPathValues(collectChangesArtifactPathValues(restoreRef));
+            if (artifactType === 'manual_export') return 'manual_export';
+            if (artifactType === 'overwrite') return 'overwrite';
+
+            if (snapshotKey && snapshotKey !== '__overwrite__') return 'versioned';
+
+            // 规则：当前变化文件不归类到“多版本”，避免与快照主线混淆
+            return 'overwrite';
         }
 
-        if (hasVersionedSegment) return 'versioned';
+        if (coreType) return coreType;
+
+        const artifactType = detectTypeFromPathValues(collectChangesArtifactPathValues(restoreRef));
+        if (artifactType) return artifactType;
+
+        const fileName = String(version?.originalFile || restoreRef?.originalFile || '').trim().toLowerCase();
+        const isOverwriteSnapshotName = fileName === 'bookmark_backup.html'
+            || fileName === 'bookmark backup.html'
+            || fileName === 'bookmark-backup.html';
+        const isOverwriteCurrentChangesName = /^bookmark-changes-(?:simple|detailed|collection)\.(?:json|html?|xhtml)$/i.test(fileName);
+        if (isOverwriteSnapshotName || isOverwriteCurrentChangesName) return 'overwrite';
+
         if (isHtmlVersion(version) && snapshotKey && snapshotKey !== '__overwrite__') {
             return 'versioned';
         }
 
-        return '';
+        return 'versioned';
     };
     const getRestoreFolderBadgeText = (lang, folderType) => {
         if (folderType === 'overwrite') return lang === 'en' ? 'Overwrite' : '覆盖';
@@ -8425,46 +9054,378 @@ function showRestoreModal(versions, source) {
         }
         return 0;
     };
-    const historyVersions = [...allVersions].sort((a, b) => {
-        const aType = detectRestoreFolderType(a);
-        const bType = detectRestoreFolderType(b);
-        if (aType === 'overwrite' && bType !== 'overwrite') return -1;
-        if (bType === 'overwrite' && aType !== 'overwrite') return 1;
 
-        const aSeq = parseSeqNumber(a?.seqNumber);
-        const bSeq = parseSeqNumber(b?.seqNumber);
-        if (aSeq != null && bSeq != null && aSeq !== bSeq) {
-            return bSeq - aSeq;
+    const extractLeafFileName = (value) => {
+        const text = String(value || '').trim().replace(/\\/g, '/');
+        if (!text) return '';
+        const parts = text.split('/').filter(Boolean);
+        return String(parts.length > 0 ? parts[parts.length - 1] : text).trim();
+    };
+
+    const resolveSnapshotDisplayFileName = (version) => {
+        const restoreRef = version?.restoreRef || {};
+        const sourceType = String(version?.sourceType || restoreRef?.sourceType || '').trim().toLowerCase();
+        const snapshotKey = String(restoreRef?.snapshotKey || '').trim().toLowerCase();
+        const isCurrentChangesLikeName = (value) => {
+            const lower = String(value || '').trim().toLowerCase();
+            if (!lower) return false;
+            return lower.includes('current_changes')
+                || lower.includes('current-changes')
+                || lower.includes('bookmark-changes')
+                || lower.includes('bookmark_changes')
+                || lower.includes('bookmark changes')
+                || lower.includes('书签变化')
+                || lower.includes('当前变化');
+        };
+
+        if (sourceType === 'changes_artifact') {
+            if (snapshotKey && snapshotKey !== '__overwrite__') return `${snapshotKey}.html`;
+            if (snapshotKey === '__overwrite__') return 'bookmark_backup.html';
         }
-        if (aSeq != null && bSeq == null) return -1;
-        if (aSeq == null && bSeq != null) return 1;
 
-        const timeDiff = parseVersionTimeMs(b) - parseVersionTimeMs(a);
-        if (timeDiff !== 0) return timeDiff;
-        return 0;
-    });
-    const snapshotVersions = [];
+        const candidates = [
+            version?.snapshotName,
+            restoreRef?.snapshotName,
+            restoreRef?.snapshotFileName,
+            version?.originalFile,
+            restoreRef?.originalFile,
+            restoreRef?.sourceFile,
+            restoreRef?.localFileKey,
+            restoreRef?.fileUrl
+        ];
+        for (const candidate of candidates) {
+            const leaf = extractLeafFileName(candidate);
+            if (!leaf) continue;
+            if (isCurrentChangesLikeName(leaf) && snapshotKey && snapshotKey !== '__overwrite__') {
+                continue;
+            }
+            if (/^\d{8}_\d{4}(?:\d{2})?(?:_[0-9a-f]{6,12})?$/i.test(leaf)) {
+                return `${leaf}.html`;
+            }
+            return leaf;
+        }
+        if (snapshotKey && snapshotKey !== '__overwrite__') return `${snapshotKey}.html`;
+        if (snapshotKey === '__overwrite__') return 'bookmark_backup.html';
+        return '';
+    };
 
-    let currentVersionType = 'history';
+    const resolveChangesDisplayFileName = (version) => {
+        const artifact = version?.restoreRef?.changesArtifact;
+        if (!artifact || typeof artifact !== 'object') return '';
+
+        const modeEntries = artifact.modes && typeof artifact.modes === 'object'
+            ? artifact.modes
+            : {};
+        const modeOrder = [
+            artifact.preferredMode,
+            artifact.mode,
+            ...Object.keys(modeEntries)
+        ].filter(Boolean);
+
+        for (const mode of modeOrder) {
+            const entry = modeEntries[mode] || (mode === artifact.mode || mode === artifact.preferredMode ? artifact : null);
+            if (!entry) continue;
+            const candidates = [entry.name, entry.localFileKey, entry.fileUrl];
+            for (const candidate of candidates) {
+                const leaf = extractLeafFileName(candidate);
+                if (leaf) return leaf;
+            }
+        }
+
+        const fallbackCandidates = [artifact.name, artifact.localFileKey, artifact.fileUrl];
+        for (const candidate of fallbackCandidates) {
+            const leaf = extractLeafFileName(candidate);
+            if (leaf) return leaf;
+        }
+        return '';
+    };
+
+    const resolveRestoreDisplayName = (version, { preferChangesFileName = false, lang = cachedLang } = {}) => {
+        const fileName = preferChangesFileName
+            ? (resolveChangesDisplayFileName(version) || resolveSnapshotDisplayFileName(version))
+            : (resolveSnapshotDisplayFileName(version) || resolveChangesDisplayFileName(version));
+        if (preferChangesFileName) {
+            return localizeRestoreDisplayText(fileName || '-', lang);
+        }
+        const rawNote = String(version?.note || '').trim();
+        const noteLooksMeaningful = !!rawNote
+            && !/^html\s*snapshot$/i.test(rawNote)
+            && !/^current changes\b/i.test(rawNote);
+        const noteLooksLikeRestoreAction = /^(?:恢复至|覆盖恢复至|补丁恢复至|导入合并自|restored to|overwrite restored to|patch restored to|import merged from)(?:$|\s|[#:（(])/i.test(rawNote);
+        const restoreRef = version?.restoreRef || {};
+        const seq = parseSeqNumber(version?.seqNumber);
+        const id = String(version?.id || '').trim();
+        const isIndexBacked = seq != null
+            && seq > 0
+            && (
+                restoreRef?.indexMatched === true
+                || id.startsWith('index:')
+                || String(restoreRef?.indexChanges || '').trim().length > 0
+                || !!(restoreRef?.indexStats && typeof restoreRef.indexStats === 'object')
+            );
+
+        const displayRaw = (isIndexBacked && noteLooksMeaningful && !noteLooksLikeRestoreAction)
+            ? rawNote
+            : (fileName || rawNote || '-');
+        return localizeRestoreDisplayText(displayRaw, lang);
+    };
+    const sortByTimeDesc = (list) => {
+        return (Array.isArray(list) ? list : []).sort((a, b) => {
+            const timeDiff = parseVersionTimeMs(b) - parseVersionTimeMs(a);
+            if (timeDiff !== 0) return timeDiff;
+
+            const aSeq = parseSeqNumber(a?.seqNumber);
+            const bSeq = parseSeqNumber(b?.seqNumber);
+            if (aSeq != null && bSeq != null && aSeq !== bSeq) {
+                return bSeq - aSeq;
+            }
+            if (aSeq != null && bSeq == null) return -1;
+            if (aSeq == null && bSeq != null) return 1;
+            return 0;
+        });
+    };
+
+    const hasIndexBackedSeq = (version) => {
+        if (!version || typeof version !== 'object') return false;
+        const seq = parseSeqNumber(version?.seqNumber);
+        if (seq == null || seq <= 0) return false;
+        const restoreRef = version?.restoreRef || {};
+        const id = String(version?.id || '').trim();
+        const hasIndexChanges = String(restoreRef?.indexChanges || '').trim().length > 0;
+        const hasIndexStats = !!(restoreRef?.indexStats && typeof restoreRef.indexStats === 'object');
+        return restoreRef?.indexMatched === true || id.startsWith('index:') || hasIndexChanges || hasIndexStats;
+    };
+
+    const sortByIndexThenTime = (list) => {
+        const indexed = [];
+        const nonIndexed = [];
+
+        (Array.isArray(list) ? list : []).forEach((item) => {
+            if (hasIndexBackedSeq(item)) {
+                indexed.push(item);
+            } else {
+                nonIndexed.push(item);
+            }
+        });
+
+        indexed.sort((a, b) => {
+            const aSeq = parseSeqNumber(a?.seqNumber) || 0;
+            const bSeq = parseSeqNumber(b?.seqNumber) || 0;
+            if (aSeq !== bSeq) return bSeq - aSeq;
+
+            const timeDiff = parseVersionTimeMs(b) - parseVersionTimeMs(a);
+            if (timeDiff !== 0) return timeDiff;
+
+            return 0;
+        });
+
+        sortByTimeDesc(nonIndexed);
+        return [...indexed, ...nonIndexed];
+    };
+
+    const sortedVersions = sortByTimeDesc([...allVersions]);
+    const unifiedFileSelectionVersions = isLocalFileSelection
+        ? sortByTimeDesc([...sortedVersions])
+        : [];
+
+    const versionedVersions = [];
+    const overwriteVersions = [];
+    const manualExportVersions = [];
+    for (const version of sortedVersions) {
+        const folderType = detectRestoreFolderType(version);
+        if (folderType === 'overwrite') {
+            overwriteVersions.push(version);
+            continue;
+        }
+        if (folderType === 'manual_export') {
+            manualExportVersions.push(version);
+            continue;
+        }
+        versionedVersions.push(version);
+    }
+
+    // 多版本：索引内版本按索引序号；索引外版本按时间
+    const orderedVersioned = sortByIndexThenTime(versionedVersions);
+    versionedVersions.length = 0;
+    versionedVersions.push(...orderedVersioned);
+
+    const isStandaloneChangesArtifactVersion = (version) => {
+        const sourceType = String(version?.sourceType || version?.restoreRef?.sourceType || '').trim().toLowerCase();
+        return sourceType === 'changes_artifact';
+    };
+
+    const hasChangesArtifactCapability = (version) => {
+        if (!version || typeof version !== 'object') return false;
+        if (isStandaloneChangesArtifactVersion(version)) return true;
+
+        const artifact = version?.restoreRef?.changesArtifact;
+        if (!artifact || typeof artifact !== 'object') return false;
+
+        const hasModeEntries = artifact.modes && typeof artifact.modes === 'object' && Object.keys(artifact.modes).length > 0;
+        const hasAvailableModes = Array.isArray(artifact.availableModes) && artifact.availableModes.length > 0;
+        const hasLocator = !!String(artifact.localFileKey || artifact.fileUrl || artifact.name || '').trim();
+        return hasModeEntries || hasAvailableModes || hasLocator;
+    };
+
+    const versionedSnapshotVersions = versionedVersions.filter((version) => !isStandaloneChangesArtifactVersion(version));
+    const versionedChangesVersions = versionedVersions.filter((version) => hasChangesArtifactCapability(version));
+    const overwriteSnapshotVersions = overwriteVersions.filter((version) => !isStandaloneChangesArtifactVersion(version));
+    const overwriteChangesVersions = overwriteVersions.filter((version) => hasChangesArtifactCapability(version));
+
+    const versionedSnapshotIndexedVersions = versionedSnapshotVersions.filter((version) => hasIndexBackedSeq(version));
+    const versionedSnapshotNonIndexedVersions = versionedSnapshotVersions.filter((version) => !hasIndexBackedSeq(version));
+    const versionedChangesIndexedVersions = versionedChangesVersions.filter((version) => hasIndexBackedSeq(version));
+    const versionedChangesNonIndexedVersions = versionedChangesVersions.filter((version) => !hasIndexBackedSeq(version));
+
+    const resolveFirstAvailableVersionedIndexFilter = () => {
+        if (versionedSnapshotIndexedVersions.length > 0) return 'indexed';
+        if (versionedSnapshotNonIndexedVersions.length > 0) return 'non_indexed';
+        return 'indexed';
+    };
+
+    let currentVersionedIndexFilter = resolveFirstAvailableVersionedIndexFilter();
+
+    const getRestoreSubModeAvailabilityByType = (type) => {
+        if (isLocalFileSelection) {
+            return { enabled: false, snapshot: false, changes: false };
+        }
+
+        if (type === 'versioned') {
+            return {
+                enabled: true,
+                snapshot: versionedSnapshotVersions.length > 0,
+                changes: versionedChangesVersions.length > 0
+            };
+        }
+
+        if (type === 'overwrite') {
+            return {
+                enabled: true,
+                snapshot: overwriteSnapshotVersions.length > 0,
+                changes: overwriteChangesVersions.length > 0
+            };
+        }
+
+        return { enabled: false, snapshot: false, changes: false };
+    };
+
+    const getRestoreSubModeCountsByType = (type) => {
+        if (type === 'versioned') {
+            return {
+                snapshot: versionedSnapshotVersions.length,
+                changes: versionedChangesVersions.length
+            };
+        }
+        if (type === 'overwrite') {
+            return {
+                snapshot: overwriteSnapshotVersions.length,
+                changes: overwriteChangesVersions.length
+            };
+        }
+        return { snapshot: 0, changes: 0 };
+    };
+
+    const resolveFirstAvailableRestoreSubMode = (type) => {
+        const availability = getRestoreSubModeAvailabilityByType(type);
+        if (availability.snapshot) return 'snapshot';
+        if (availability.changes) return 'changes';
+        return 'snapshot';
+    };
+
+    const currentRestoreSubModeByType = {
+        versioned: resolveFirstAvailableRestoreSubMode('versioned'),
+        overwrite: resolveFirstAvailableRestoreSubMode('overwrite')
+    };
+
+    const getCurrentRestoreSubMode = (type = currentVersionType) => {
+        if (type !== 'versioned' && type !== 'overwrite') return 'snapshot';
+        return currentRestoreSubModeByType[type] || 'snapshot';
+    };
+
+    const isChangesSubModeActive = (type = currentVersionType) => {
+        if (isLocalFileSelection) return false;
+        if (type !== 'versioned' && type !== 'overwrite') return false;
+        return getCurrentRestoreSubMode(type) === 'changes';
+    };
+
+    const resolveFirstAvailableVersionType = () => {
+        if (isLocalFileSelection) return 'versioned';
+        if (versionedVersions.length > 0) return 'versioned';
+        if (overwriteVersions.length > 0) return 'overwrite';
+        if (manualExportVersions.length > 0) return 'manual_export';
+        return 'versioned';
+    };
+
+    const getVersionsByType = (type) => {
+        if (isLocalFileSelection) return unifiedFileSelectionVersions;
+        if (type === 'versioned') {
+            const subMode = getCurrentRestoreSubMode('versioned');
+            if (subMode === 'changes') {
+                if (currentVersionedIndexFilter === 'indexed') return versionedChangesIndexedVersions;
+                if (currentVersionedIndexFilter === 'non_indexed') return versionedChangesNonIndexedVersions;
+                return versionedChangesVersions;
+            }
+            if (currentVersionedIndexFilter === 'indexed') return versionedSnapshotIndexedVersions;
+            if (currentVersionedIndexFilter === 'non_indexed') return versionedSnapshotNonIndexedVersions;
+            return versionedSnapshotVersions;
+        }
+        if (type === 'overwrite') {
+            const subMode = getCurrentRestoreSubMode('overwrite');
+            return subMode === 'changes' ? overwriteChangesVersions : overwriteSnapshotVersions;
+        }
+        if (type === 'manual_export') return manualExportVersions;
+        return versionedVersions;
+    };
+
+    let currentVersionType = resolveFirstAvailableVersionType();
 
     const getVisibleColumnCount = () => 7;
 
     // Paginated rendering (default: 10 per page)
     const RESTORE_PAGE_SIZE = 10;
-    let currentHistoryPage = 1;
-    let currentSnapshotPage = 1;
-    let pageComputeToken = 0;
+    const currentPageByType = {
+        versioned: 1,
+        overwrite: 1,
+        manual_export: 1
+    };
 
-    let cachedLang = 'zh_CN';
+    let cachedLang = document.documentElement?.getAttribute('lang') === 'en' ? 'en' : 'zh_CN';
+
+    const localizeRestoreDisplayText = (input, lang) => {
+        const text = String(input || '');
+        if (!text) return '';
+        if (lang !== 'en') return text;
+
+        return text
+            .replace(/当前变化/g, 'Current Changes')
+            .replace(/书签变化/g, 'Bookmark Changes')
+            .replace(/覆盖/g, 'Overwrite')
+            .replace(/版本化/g, 'Versioned')
+            .replace(/简略/g, 'Simple')
+            .replace(/详细/g, 'Detailed')
+            .replace(/集合/g, 'Collection');
+    };
 
     const getVersionTypeLabel = (lang, type) => {
         const isEn = lang === 'en';
-        return isEn ? 'Restore Versions' : '恢复版本';
+        if (type === 'overwrite') return isEn ? 'Overwrite' : '覆盖';
+        if (type === 'manual_export') return isEn ? 'Manual Export' : '手动导出';
+        return isEn ? 'Versioned' : '多版本';
     };
 
     const updateTitleText = (lang, type) => {
         const isEn = lang === 'en';
         const sourceLabel = source === 'webdav' ? 'WebDAV' : (source === 'github' ? 'GitHub' : (isEn ? 'Local' : '本地'));
+
+        if (isLocalFileSelection) {
+            if (title) {
+                title.textContent = isEn
+                    ? `Restore from ${sourceLabel} · Files`
+                    : `从 ${sourceLabel} 恢复 · 文件`;
+            }
+            return;
+        }
+
         const typeLabel = getVersionTypeLabel(lang, type);
         if (title) {
             title.textContent = isEn
@@ -8485,6 +9446,19 @@ function showRestoreModal(versions, source) {
         }
     });
 
+    const getRestoreConfirmIdleText = (lang = cachedLang) => {
+        const isEn = lang === 'en';
+        if (isChangesSubModeActive(currentVersionType)) {
+            return isEn ? 'Import Merge' : '导入合并';
+        }
+        return isEn ? 'Restore' : '恢复';
+    };
+
+    const updateRestoreConfirmIdleText = (lang = cachedLang) => {
+        if (!confirmButton) return;
+        confirmButton.textContent = getRestoreConfirmIdleText(lang);
+    };
+
     const setRestoreModalI18n = async () => {
         const lang = await getPreferredLang();
         cachedLang = lang;
@@ -8493,11 +9467,11 @@ function showRestoreModal(versions, source) {
         updateTitleText(lang, currentVersionType);
 
         if (thSeq) thSeq.textContent = isEn ? 'Seq' : '序号';
-        if (thNote) thNote.textContent = isEn ? 'Note' : '备注';
+        if (thNote) thNote.textContent = isEn ? 'Note/File Name' : '备注/文件名';
         if (thHash) thHash.textContent = isEn ? 'Hash' : '哈希值';
         if (thTime) thTime.textContent = isEn ? 'Time' : '时间';
         if (thStats) thStats.textContent = isEn ? 'Record delta' : '记录变化';
-        if (thStatsCurrent) thStatsCurrent.textContent = isEn ? 'Impact' : '对当前影响';
+        if (thViewMode) thViewMode.textContent = isEn ? 'View' : '视图';
 
         // Header tooltips
         if (thStatsCell) {
@@ -8505,31 +9479,87 @@ function showRestoreModal(versions, source) {
                 ? 'Changes inside this backup history record (compared to the previous record)'
                 : '该备份记录自身的变化（相较上一条记录）';
         }
-        if (thStatsCurrentCell) {
-            thStatsCurrentCell.title = isEn
-                ? 'Impact if you restore this version (compared to your current browser bookmarks)'
-                : '如果恢复到该版本，相较当前浏览器书签将产生的变化';
+        if (thViewModeCell) {
+            thViewModeCell.title = isEn
+                ? 'Changes-view mode options for import merge (Simple / Detailed / Collection).'
+                : '导入合并可用的变化视图模式（简略 / 详细 / 集合）。';
         }
 
-        if (versionTypeHistoryText) {
-            const label = isEn ? 'Restore Versions' : '恢复版本';
-            versionTypeHistoryText.textContent = `${label} (${historyVersions.length})`;
+        if (versionTypeVersionedText) {
+            versionTypeVersionedText.textContent = `${isEn ? 'Versioned' : '多版本'} (${versionedVersions.length})`;
         }
-        if (versionTypeSnapshotText) {
-            versionTypeSnapshotText.textContent = '';
+        if (versionTypeOverwriteText) {
+            versionTypeOverwriteText.textContent = `${isEn ? 'Overwrite' : '覆盖'} (${overwriteVersions.length})`;
         }
-        if (versionTypeHistoryLabelWrap) {
-            versionTypeHistoryLabelWrap.title = isEn
-                ? 'Unified restore list (snapshot + history + current changes metadata).'
-                : '统一恢复列表（快照 + 历史 + 当前变化元数据）。';
+        if (versionTypeManualExportText) {
+            versionTypeManualExportText.textContent = `${isEn ? 'Manual Export' : '手动导出'} (${manualExportVersions.length})`;
         }
-        if (versionTypeSnapshotLabelWrap) {
-            versionTypeSnapshotLabelWrap.title = '';
+
+        const subModeCounts = getRestoreSubModeCountsByType(currentVersionType);
+        if (restoreSubModeSnapshotText) {
+            restoreSubModeSnapshotText.textContent = `${isEn ? 'Snapshot' : '快照'} (${subModeCounts.snapshot})`;
+        }
+        if (restoreSubModeChangesText) {
+            restoreSubModeChangesText.textContent = `${isEn ? 'Changes' : '变化'} (${subModeCounts.changes})`;
+        }
+
+        if (versionedIndexFilterIndexedText) {
+            const isVersionedChangesMode = !isLocalFileSelection
+                && currentVersionType === 'versioned'
+                && getCurrentRestoreSubMode('versioned') === 'changes';
+            const indexedCount = isVersionedChangesMode
+                ? versionedChangesIndexedVersions.length
+                : versionedSnapshotIndexedVersions.length;
+            versionedIndexFilterIndexedText.textContent = `${isEn ? 'Indexed' : '索引项'} (${indexedCount})`;
+        }
+        if (versionedIndexFilterNonIndexedText) {
+            const isVersionedChangesMode = !isLocalFileSelection
+                && currentVersionType === 'versioned'
+                && getCurrentRestoreSubMode('versioned') === 'changes';
+            const nonIndexedCount = isVersionedChangesMode
+                ? versionedChangesNonIndexedVersions.length
+                : versionedSnapshotNonIndexedVersions.length;
+            versionedIndexFilterNonIndexedText.textContent = `${isEn ? 'Non-indexed' : '非索引项'} (${nonIndexedCount})`;
+        }
+        if (versionTypeVersionedLabelWrap) {
+            versionTypeVersionedLabelWrap.title = isEn
+                ? 'Versioned records in snapshot/versioned folders.'
+                : '版本化目录中的记录。';
+        }
+        if (versionTypeOverwriteLabelWrap) {
+            versionTypeOverwriteLabelWrap.title = isEn
+                ? 'Overwrite records in overwrite folder.'
+                : '覆盖目录中的记录。';
+        }
+        if (versionTypeManualExportLabelWrap) {
+            versionTypeManualExportLabelWrap.title = isEn
+                ? 'Manual export records in Manual Export folder.'
+                : '手动导出目录中的记录。';
+        }
+        if (restoreSubModeSnapshotLabelWrap) {
+            restoreSubModeSnapshotLabelWrap.title = isEn
+                ? 'Snapshot entries (normal restore list).'
+                : '快照条目（普通恢复列表）。';
+        }
+        if (restoreSubModeChangesLabelWrap) {
+            restoreSubModeChangesLabelWrap.title = isEn
+                ? 'Changes entries (Import Merge only).'
+                : '变化条目（仅导入合并）。';
+        }
+        if (versionedIndexFilterIndexedLabelWrap) {
+            versionedIndexFilterIndexedLabelWrap.title = isEn
+                ? 'Show versioned entries matched by restore index.'
+                : '仅显示已匹配恢复索引的多版本记录。';
+        }
+        if (versionedIndexFilterNonIndexedLabelWrap) {
+            versionedIndexFilterNonIndexedLabelWrap.title = isEn
+                ? 'Show versioned entries not included in restore index.'
+                : '仅显示未进入恢复索引的多版本记录。';
         }
 
         cancelButton.textContent = isEn ? 'Cancel' : '取消';
         // 主按钮点击后进入二级确认弹窗
-        confirmButton.textContent = isEn ? 'Restore' : '恢复';
+        updateRestoreConfirmIdleText(lang);
 
         if (pageHint) {
             pageHint.textContent = isEn
@@ -8553,6 +9583,7 @@ function showRestoreModal(versions, source) {
         // Merge view mode toggle texts
         if (mergeViewModeSimpleText) mergeViewModeSimpleText.textContent = isEn ? 'Simple' : '简略';
         if (mergeViewModeDetailedText) mergeViewModeDetailedText.textContent = isEn ? 'Detailed' : '详细';
+        if (mergeViewModeCollectionText) mergeViewModeCollectionText.textContent = isEn ? 'Collection' : '集合';
         if (mergeViewModeSimpleWrap) {
             mergeViewModeSimpleWrap.title = isEn
                 ? 'Simple: import only branches that changed.'
@@ -8563,6 +9594,11 @@ function showRestoreModal(versions, source) {
                 ? 'Detailed: WYSIWYG (imports only expanded folders / changed paths).'
                 : '详细：所见即所得（仅导入展开的文件夹内容/有变化的路径）。';
         }
+        if (mergeViewModeCollectionWrap) {
+            mergeViewModeCollectionWrap.title = isEn
+                ? 'Collection: import grouped folders by Added / Deleted / Moved / Modified.'
+                : '集合：按增加 / 删除 / 移动 / 修改分组导入。';
+        }
 
         if (strategyOverwriteLabelWrap) {
             strategyOverwriteLabelWrap.title = isEn
@@ -8571,13 +9607,17 @@ function showRestoreModal(versions, source) {
         }
         if (strategyMergeLabelWrap) {
             strategyMergeLabelWrap.title = isEn
-                ? 'Import Merge: import into a new folder under bookmark roots (no deletion). For Backup History, it imports the changes view (titles prefixed with [+]/[-]/[~]/[↔]).'
-                : '导入合并：导入到书签树的新文件夹（不删除现有书签）。备份历史会导入“差异视图”（标题带 [+]/[-]/[~]/[↔] 前缀）。';
+                ? 'Import Merge: import into a new folder under bookmark roots (no deletion). If this record has a changes-view artifact, it imports “changes view (Simple/Detailed/Collection)” (titles prefixed with [+]/[-]/[~]/[>>]); otherwise it imports snapshot.'
+                : '导入合并：导入到书签树的新文件夹（不删除现有书签）。若该记录包含变化视图产物，则导入“变化视图（简略/详细/集合）”（标题带 [+]/[-]/[~]/[>>] 前缀）；否则导入快照。';
         }
         if (strategyPatchLabelWrap) {
             strategyPatchLabelWrap.title = isEn
                 ? 'Patch Restore: apply add/delete/move/modify by strict bookmark ID matching, preserving IDs when possible. If matching fails, fallback to overwrite restore.'
                 : '补丁恢复：按书签 ID 严格匹配执行增删移改，尽量保留原 ID。若匹配失败，可降级为覆盖恢复。';
+        }
+
+        if (typeof renderVersionTable === 'function') {
+            renderVersionTable(getVersionsByType(currentVersionType));
         }
     };
 
@@ -8591,43 +9631,226 @@ function showRestoreModal(versions, source) {
     // - { id, title }
     const importTargetByType = { history: null, snapshot: null };
 
-    // Diff vs current-browser cache (computed on-demand per selected row)
-    // - key: version.id
-    // - value: { success:boolean, diffSummary?:object, error?:string }
-    const diffVsCurrentCache = new Map();
-    const diffVsCurrentPending = new Map();
-
     // Local restore payload cache (avoid re-reading same file repeatedly)
     // - key: `${sourceType}|${localFileKey}`
     const localPayloadCache = new Map();
 
+    const getStatsMagnitude = (stats) => {
+        const s = stats || {};
+        return Math.abs(Number(s.bookmarkAdded || 0))
+            + Math.abs(Number(s.bookmarkDeleted || 0))
+            + Math.abs(Number(s.folderAdded || 0))
+            + Math.abs(Number(s.folderDeleted || 0))
+            + Math.abs(Number(s.movedCount || 0))
+            + Math.abs(Number(s.modifiedCount || 0));
+    };
+
     const buildStatsHtml = (stats, { zeroAsCheck = false } = {}) => {
         const rawStats = stats || {};
         const s = normalizeOverwriteDiffSummaryForDisplay(rawStats);
-        const bmAdded = Number(s.bookmarkAdded || 0);
-        const bmDeleted = Number(s.bookmarkDeleted || 0);
-        const folderAdded = Number(s.folderAdded || 0);
-        const folderDeleted = Number(s.folderDeleted || 0);
 
-        const items = [];
-        if (bmAdded) items.push(`<span><span class='pos'>+${bmAdded}</span> B</span>`);
-        if (bmDeleted) items.push(`<span><span class='neg'>-${bmDeleted}</span> B</span>`);
-        if (folderAdded) items.push(`<span><span class='pos'>+${folderAdded}</span> F</span>`);
-        if (folderDeleted) items.push(`<span><span class='neg'>-${folderDeleted}</span> F</span>`);
+        const bmAdded = Math.abs(Number(s.bookmarkAdded || 0));
+        const bmDeleted = Math.abs(Number(s.bookmarkDeleted || 0));
+        const folderAdded = Math.abs(Number(s.folderAdded || 0));
+        const folderDeleted = Math.abs(Number(s.folderDeleted || 0));
+        const movedCount = Math.abs(Number(s.movedCount || 0));
+        const modifiedCount = Math.abs(Number(s.modifiedCount || 0));
 
-        if (items.length === 0) {
+        const magnitude = bmAdded + bmDeleted + folderAdded + folderDeleted + movedCount + modifiedCount;
+        if (magnitude === 0) {
             return zeroAsCheck
                 ? "<span class='pos'>✓</span>"
                 : "<span style='opacity: 0.65;'>—</span>";
         }
-        return items.join('');
+
+        const buildPairGroup = (label, added, deleted) => {
+            const pairParts = [];
+            if (added > 0) pairParts.push(`<span class='pos'>+${added}</span>`);
+            if (deleted > 0) pairParts.push(`<span class='neg'>-${deleted}</span>`);
+            if (pairParts.length === 0) return '';
+            return `<span class='stats-group'><span class='stats-label'>${label}</span>${pairParts.join("<span class='stats-pair-sep'>/</span>")}</span>`;
+        };
+
+        const firstLineItems = [
+            buildPairGroup('B', bmAdded, bmDeleted),
+            buildPairGroup('F', folderAdded, folderDeleted)
+        ].filter(Boolean);
+
+        const secondLineItems = [];
+        if (movedCount > 0) {
+            secondLineItems.push(`<span class='stats-group'><span class='move'><span class='move-symbol'>&gt;&gt;</span>${movedCount}</span></span>`);
+        }
+        if (modifiedCount > 0) {
+            secondLineItems.push(`<span class='stats-group'><span class='mod'>~${modifiedCount}</span></span>`);
+        }
+
+        const lines = [];
+        if (firstLineItems.length > 0) {
+            lines.push(`<span class='stats-line'>${firstLineItems.join("<span class='stats-sep'> / </span>")}</span>`);
+        }
+        if (secondLineItems.length > 0) {
+            lines.push(`<span class='stats-line'>${secondLineItems.join("<span class='stats-sep'> / </span>")}</span>`);
+        }
+
+        if (lines.length === 0) {
+            return zeroAsCheck
+                ? "<span class='pos'>✓</span>"
+                : "<span style='opacity: 0.65;'>—</span>";
+        }
+
+        return `<span class='stats-lines'>${lines.join('')}</span>`;
+    };
+
+    const parseIndexChangesToStatsFallback = (changesText) => {
+        const text = String(changesText || '').trim();
+        if (!text) return null;
+
+        const lower = text.toLowerCase();
+        if (lower === '-' || lower === 'no changes' || text.includes('无变化')) {
+            return {
+                bookmarkAdded: 0,
+                bookmarkDeleted: 0,
+                folderAdded: 0,
+                folderDeleted: 0,
+                movedCount: 0,
+                modifiedCount: 0
+            };
+        }
+
+        const parseSignedPair = (labelPattern) => {
+            const reg = new RegExp(`${labelPattern}[^\\n|,;]*`, 'i');
+            const seg = reg.exec(text);
+            if (!seg) return { add: 0, del: 0 };
+
+            const str = String(seg[0] || '');
+            let add = 0;
+            let del = 0;
+
+            const signed = str.match(/[+-]\s*\d+/g) || [];
+            signed.forEach((part) => {
+                const value = Number(String(part || '').replace(/\s+/g, ''));
+                if (!Number.isFinite(value)) return;
+                if (value >= 0) add += value;
+                else del += Math.abs(value);
+            });
+
+            return { add, del };
+        };
+
+        const parseSingle = (labelPattern) => {
+            const reg = new RegExp(`${labelPattern}[^\\d]*(\\d+)`, 'i');
+            const match = reg.exec(text);
+            return match ? Number(match[1] || 0) : 0;
+        };
+
+        const bm = parseSignedPair('(?:书签|bookmark|bkm)');
+        const fd = parseSignedPair('(?:文件夹|folder|fld)');
+        const moved = parseSingle('(?:移动|moved?)');
+        const modified = parseSingle('(?:修改|modified?)');
+
+        const magnitude = bm.add + bm.del + fd.add + fd.del + moved + modified;
+        if (magnitude <= 0) return null;
+
+        return {
+            bookmarkAdded: bm.add,
+            bookmarkDeleted: bm.del,
+            folderAdded: fd.add,
+            folderDeleted: fd.del,
+            movedCount: moved,
+            modifiedCount: modified
+        };
+    };
+
+    const normalizeMergeViewMode = (mode) => {
+        const lower = String(mode || '').toLowerCase();
+        if (lower === 'detailed') return 'detailed';
+        if (lower === 'simple') return 'simple';
+        if (lower === 'collection') return 'collection';
+        return '';
+    };
+
+    const getMergeViewModeAvailability = (version) => {
+        const restoreRef = version?.restoreRef || {};
+        const artifact = restoreRef?.changesArtifact;
+        if (!artifact || typeof artifact !== 'object') {
+            return { supported: false, simple: false, detailed: false, collection: false };
+        }
+
+        const modeSet = new Set();
+        const collectMode = (mode) => {
+            const normalized = normalizeMergeViewMode(mode);
+            if (normalized) modeSet.add(normalized);
+        };
+
+        collectMode(artifact.preferredMode);
+        collectMode(artifact.mode);
+
+        if (Array.isArray(artifact.availableModes)) {
+            artifact.availableModes.forEach((mode) => collectMode(mode));
+        }
+
+        if (artifact.modes && typeof artifact.modes === 'object') {
+            Object.keys(artifact.modes).forEach((mode) => collectMode(mode));
+        }
+
+        if (modeSet.size === 0) {
+            return { supported: true, simple: true, detailed: false, collection: false };
+        }
+
+        const hasDetailed = modeSet.has('detailed');
+        const hasSimple = modeSet.has('simple');
+        const hasCollection = modeSet.has('collection');
+        return {
+            supported: hasSimple || hasDetailed || hasCollection,
+            simple: hasSimple,
+            detailed: hasDetailed,
+            collection: hasCollection
+        };
+    };
+
+    const collectLocalChangesArtifactRefs = (restoreRef) => {
+        const artifact = restoreRef?.changesArtifact;
+        if (!artifact || typeof artifact !== 'object') return [];
+
+        const refs = [];
+        const seen = new Set();
+
+        const addRef = (mode, raw) => {
+            const entry = raw && typeof raw === 'object' ? raw : {};
+            const modeTag = normalizeMergeViewMode(mode || entry.mode);
+            const localFileKey = entry.localFileKey || artifact.localFileKey || '';
+            const fallbackKey = entry.fileUrl || artifact.fileUrl || entry.name || artifact.name || '';
+            const identity = `${modeTag || ''}|${localFileKey || fallbackKey}`;
+            if (!identity || seen.has(identity)) return;
+            seen.add(identity);
+            refs.push({
+                mode: modeTag,
+                localFileKey: localFileKey || '',
+                fallbackKey: fallbackKey || ''
+            });
+        };
+
+        if (artifact.modes && typeof artifact.modes === 'object') {
+            Object.entries(artifact.modes).forEach(([modeKey, modeEntry]) => {
+                addRef(modeKey, modeEntry);
+            });
+        }
+
+        addRef(artifact.preferredMode || artifact.mode, artifact);
+
+        return refs;
     };
 
     const buildLocalPayloadIfNeeded = async (restoreRef) => {
         if (!restoreRef || restoreRef.source !== 'local') return null;
 
         const fileKey = restoreRef.localFileKey;
-        const cacheKey = `${restoreRef.sourceType || 'unknown'}|${fileKey || ''}`;
+        const changeRefs = collectLocalChangesArtifactRefs(restoreRef);
+        const changeRefKey = changeRefs
+            .map((entry) => `${entry.mode || ''}:${entry.localFileKey || entry.fallbackKey || ''}`)
+            .sort()
+            .join(',');
+        const cacheKey = `${restoreRef.sourceType || 'unknown'}|${fileKey || ''}|${changeRefKey}`;
         if (localPayloadCache.has(cacheKey)) {
             return localPayloadCache.get(cacheKey);
         }
@@ -8646,122 +9869,163 @@ function showRestoreModal(versions, source) {
             payload = { text };
         }
 
+        if (changeRefs.length > 0) {
+            const changesArtifactTextByMode = {};
+            const changesArtifactTextByLocalKey = {};
+
+            for (const entry of changeRefs) {
+                const mode = entry.mode || '';
+                const changeLocalFileKey = entry.localFileKey || '';
+                if (!changeLocalFileKey) continue;
+
+                if (typeof changesArtifactTextByLocalKey[changeLocalFileKey] === 'string') {
+                    if (mode && typeof changesArtifactTextByMode[mode] !== 'string') {
+                        changesArtifactTextByMode[mode] = changesArtifactTextByLocalKey[changeLocalFileKey];
+                    }
+                    continue;
+                }
+
+                const changeFileObj = localRestoreFileMap.get(changeLocalFileKey);
+                if (!changeFileObj) continue;
+
+                const changeText = await changeFileObj.text();
+                if (!changeText) continue;
+
+                changesArtifactTextByLocalKey[changeLocalFileKey] = changeText;
+                if (mode && typeof changesArtifactTextByMode[mode] !== 'string') {
+                    changesArtifactTextByMode[mode] = changeText;
+                }
+            }
+
+            if (Object.keys(changesArtifactTextByMode).length > 0) {
+                payload.changesArtifactTextByMode = changesArtifactTextByMode;
+            }
+            if (Object.keys(changesArtifactTextByLocalKey).length > 0) {
+                payload.changesArtifactTextByLocalKey = changesArtifactTextByLocalKey;
+            }
+
+            if (typeof payload.changesArtifactText !== 'string') {
+                const firstModeKey = Object.keys(changesArtifactTextByMode)[0];
+                if (firstModeKey) {
+                    payload.changesArtifactText = changesArtifactTextByMode[firstModeKey];
+                } else {
+                    const firstLocalKey = Object.keys(changesArtifactTextByLocalKey)[0];
+                    if (firstLocalKey) {
+                        payload.changesArtifactText = changesArtifactTextByLocalKey[firstLocalKey];
+                    }
+                }
+            }
+        }
+
         localPayloadCache.set(cacheKey, payload);
         return payload;
     };
 
-    const getDiffSummaryAgainstCurrent = async (version) => {
-        const key = String(version?.id || '');
-        if (!key) {
-            return { success: false, error: 'Missing version id' };
-        }
-
-        if (diffVsCurrentCache.has(key)) {
-            return diffVsCurrentCache.get(key);
-        }
-
-        if (diffVsCurrentPending.has(key)) {
-            return await diffVsCurrentPending.get(key);
-        }
-
-        const task = (async () => {
-            try {
-                const restoreRef = version?.restoreRef;
-                if (!restoreRef) {
-                    return { success: false, error: 'Missing restoreRef' };
-                }
-
-                // Local restore: always pass payload on first try to avoid noisy
-                // "Missing local HTML data" errors from background preflight calls.
-                let localPayload = null;
-                if (restoreRef.source === 'local') {
-                    localPayload = await buildLocalPayloadIfNeeded(restoreRef);
-                }
-
-                const requestPayload = { restoreRef };
-                if (localPayload) {
-                    requestPayload.localPayload = localPayload;
-                }
-
-                const res = await callBackgroundFunction('computeRestoreDiffSummaryAgainstCurrent', requestPayload);
-
-                if (!res || res.success !== true) {
-                    return { success: false, error: res?.error || 'Unknown error' };
-                }
-
-                const rawDiffSummary = res.diffSummary || null;
-                const normalizedDiffSummary = rawDiffSummary
-                    ? normalizeOverwriteDiffSummaryForDisplay(rawDiffSummary)
-                    : rawDiffSummary;
-
-                return { success: true, diffSummary: normalizedDiffSummary };
-            } catch (e) {
-                return { success: false, error: e?.message || 'Unknown error' };
-            }
-        })();
-
-        diffVsCurrentPending.set(key, task);
-        const result = await task;
-        diffVsCurrentPending.delete(key);
-        if (result && result.success === true) {
-            diffVsCurrentCache.set(key, result);
-        }
-        return result;
-    };
-
     const getSelectedMergeViewMode = () => {
         if (mergeViewModeDetailedRadio && mergeViewModeDetailedRadio.checked) return 'detailed';
+        if (mergeViewModeCollectionRadio && mergeViewModeCollectionRadio.checked) return 'collection';
         return 'simple';
     };
 
-    const updateMergeViewModeUi = () => {
-        const restoreSourceType = selectedVersion?.restoreRef?.sourceType || selectedVersion?.sourceType || '';
-        const supportMergeViewMode = restoreSourceType === 'json' || restoreSourceType === 'zip';
-        const shouldShow = strategyMergeRadio && strategyMergeRadio.checked && supportMergeViewMode;
-        if (mergeViewModeSegment) {
-            mergeViewModeSegment.style.display = shouldShow ? 'block' : 'none';
-        }
-
-        const disabled = !shouldShow || selectedVersion?.canRestore === false;
-        if (mergeViewModeSimpleRadio) mergeViewModeSimpleRadio.disabled = disabled;
-        if (mergeViewModeDetailedRadio) mergeViewModeDetailedRadio.disabled = disabled;
-        if (mergeViewModeGroup) mergeViewModeGroup.classList.toggle('disabled', disabled);
+    const getMergeViewModeText = (mode, isEn) => {
+        const normalized = normalizeMergeViewMode(mode) || 'simple';
+        if (normalized === 'detailed') return isEn ? 'Detailed' : '详细';
+        if (normalized === 'collection') return isEn ? 'Collection' : '集合';
+        return isEn ? 'Simple' : '简略';
     };
 
-    const updateStatsVsCurrentForRow = async (row, version) => {
-        if (!row || !version) return;
+    const resolvePreferredMergeViewMode = (version) => {
+        const availability = getMergeViewModeAvailability(version);
+        if (!availability.supported) return '';
 
-        const cell = row.querySelector('.restore-stats-current');
-        if (!cell) return;
+        const artifact = version?.restoreRef?.changesArtifact || {};
+        const candidates = [artifact.preferredMode, artifact.mode, 'simple', 'detailed', 'collection'];
+        for (const candidate of candidates) {
+            const normalized = normalizeMergeViewMode(candidate);
+            if (!normalized) continue;
+            if (availability[normalized]) return normalized;
+        }
+        return '';
+    };
 
-        const isEn = cachedLang === 'en';
-        if (version?.canRestore === false) {
-            cell.innerHTML = "<span style='opacity: 0.65;'>—</span>";
+    const setPreferredMergeViewModeForVersion = (version, mode) => {
+        const normalized = normalizeMergeViewMode(mode);
+        if (!normalized) return;
+        const artifact = version?.restoreRef?.changesArtifact;
+        if (!artifact || typeof artifact !== 'object') return;
+        artifact.preferredMode = normalized;
+    };
+
+    const applyPreferredMergeViewModeToRadios = (version) => {
+        const preferredMode = resolvePreferredMergeViewMode(version);
+        if (!preferredMode) return;
+
+        if (preferredMode === 'detailed' && mergeViewModeDetailedRadio) {
+            mergeViewModeDetailedRadio.checked = true;
             return;
         }
-
-        const key = String(version?.id || '');
-        const cached = key ? diffVsCurrentCache.get(key) : null;
-        if (cached && cached.success && cached.diffSummary) {
-            cell.innerHTML = buildStatsHtml(cached.diffSummary, { zeroAsCheck: true });
+        if (preferredMode === 'collection' && mergeViewModeCollectionRadio) {
+            mergeViewModeCollectionRadio.checked = true;
             return;
         }
-        if (cached && cached.success && !cached.diffSummary) {
-            cell.innerHTML = "<span class='pos'>✓</span>";
-            return;
+        if (mergeViewModeSimpleRadio) {
+            mergeViewModeSimpleRadio.checked = true;
         }
-        cell.innerHTML = `<span style='opacity: 0.65;'>${isEn ? 'Computing...' : '计算中...'}</span>`;
+    };
 
-        const result = await getDiffSummaryAgainstCurrent(version);
-        if (!cell.isConnected) return;
+    const updateMergeViewModeUi = () => {
+        const availability = getMergeViewModeAvailability(selectedVersion);
+        const shouldShow = strategyMergeRadio && strategyMergeRadio.checked && availability.supported;
 
-        if (result && result.success && result.diffSummary) {
-            cell.innerHTML = buildStatsHtml(result.diffSummary, { zeroAsCheck: true });
-            return;
+        const disabled = !shouldShow || selectedVersion?.canRestore === false;
+        const simpleDisabled = disabled || !availability.simple;
+        const detailedDisabled = disabled || !availability.detailed;
+        const collectionDisabled = disabled || !availability.collection;
+
+        if (mergeViewModeSimpleWrap) mergeViewModeSimpleWrap.style.display = simpleDisabled ? 'none' : '';
+        if (mergeViewModeDetailedWrap) mergeViewModeDetailedWrap.style.display = detailedDisabled ? 'none' : '';
+        if (mergeViewModeCollectionWrap) mergeViewModeCollectionWrap.style.display = collectionDisabled ? 'none' : '';
+
+        const hasVisibleMode = !simpleDisabled || !detailedDisabled || !collectionDisabled;
+        if (mergeViewModeSegment) {
+            mergeViewModeSegment.style.display = (shouldShow && hasVisibleMode) ? 'block' : 'none';
         }
 
-        const err = result?.error ? escapeHtml(String(result.error)) : '';
-        cell.innerHTML = `<span style='opacity: 0.65;' title="${err}">${isEn ? 'Failed (click retry)' : '失败(点行重试)'}</span>`;
+        if (mergeViewModeSimpleRadio) mergeViewModeSimpleRadio.disabled = simpleDisabled;
+        if (mergeViewModeDetailedRadio) mergeViewModeDetailedRadio.disabled = detailedDisabled;
+        if (mergeViewModeCollectionRadio) mergeViewModeCollectionRadio.disabled = collectionDisabled;
+
+        if (!disabled && hasVisibleMode) {
+            const selectedMode = getSelectedMergeViewMode();
+            const selectedDisabled = (selectedMode === 'simple' && simpleDisabled)
+                || (selectedMode === 'detailed' && detailedDisabled)
+                || (selectedMode === 'collection' && collectionDisabled);
+
+            if (selectedDisabled) {
+                if (!simpleDisabled && mergeViewModeSimpleRadio) {
+                    mergeViewModeSimpleRadio.checked = true;
+                } else if (!detailedDisabled && mergeViewModeDetailedRadio) {
+                    mergeViewModeDetailedRadio.checked = true;
+                } else if (!collectionDisabled && mergeViewModeCollectionRadio) {
+                    mergeViewModeCollectionRadio.checked = true;
+                }
+            }
+
+            const noSelection = !mergeViewModeSimpleRadio?.checked
+                && !mergeViewModeDetailedRadio?.checked
+                && !mergeViewModeCollectionRadio?.checked;
+            if (noSelection) {
+                if (!simpleDisabled && mergeViewModeSimpleRadio) {
+                    mergeViewModeSimpleRadio.checked = true;
+                } else if (!detailedDisabled && mergeViewModeDetailedRadio) {
+                    mergeViewModeDetailedRadio.checked = true;
+                } else if (!collectionDisabled && mergeViewModeCollectionRadio) {
+                    mergeViewModeCollectionRadio.checked = true;
+                }
+            }
+        }
+
+        if (mergeViewModeGroup) mergeViewModeGroup.classList.toggle('disabled', disabled);
     };
 
     const applyDefaultStrategyForType = (type) => {
@@ -8774,7 +10038,7 @@ function showRestoreModal(versions, source) {
     const applyColumnVisibilityForType = (type) => {
         if (thHashCell) thHashCell.style.display = '';
         if (thStatsCell) thStatsCell.style.display = '';
-        if (thStatsCurrentCell) thStatsCurrentCell.style.display = '';
+        if (thViewModeCell) thViewModeCell.style.display = '';
     };
 
     const applyTablePresentationForType = (type) => {
@@ -8808,7 +10072,168 @@ function showRestoreModal(versions, source) {
         labelWrap.style.cursor = disabled ? 'not-allowed' : 'pointer';
     };
 
+    const getVersionedIndexFilterAvailability = () => {
+        const isChangesMode = isChangesSubModeActive('versioned');
+        const indexedCount = isChangesMode
+            ? versionedChangesIndexedVersions.length
+            : versionedSnapshotIndexedVersions.length;
+        const nonIndexedCount = isChangesMode
+            ? versionedChangesNonIndexedVersions.length
+            : versionedSnapshotNonIndexedVersions.length;
+
+        return {
+            indexed: indexedCount > 0,
+            non_indexed: nonIndexedCount > 0
+        };
+    };
+
+    const updateRestoreSubModeUi = () => {
+        if (!restoreSubModeSegment) return;
+
+        if (isLocalFileSelection) {
+            restoreSubModeSegment.style.display = 'none';
+            return;
+        }
+
+        const availability = getRestoreSubModeAvailabilityByType(currentVersionType);
+        if (!availability.enabled) {
+            restoreSubModeSegment.style.display = 'none';
+            return;
+        }
+
+        const hasAny = availability.snapshot || availability.changes;
+        if (!hasAny) {
+            restoreSubModeSegment.style.display = 'none';
+            return;
+        }
+
+        const isEn = cachedLang === 'en';
+        const counts = getRestoreSubModeCountsByType(currentVersionType);
+        if (restoreSubModeSnapshotText) {
+            restoreSubModeSnapshotText.textContent = `${isEn ? 'Snapshot' : '快照'} (${counts.snapshot})`;
+        }
+        if (restoreSubModeChangesText) {
+            restoreSubModeChangesText.textContent = `${isEn ? 'Changes' : '变化'} (${counts.changes})`;
+        }
+
+        restoreSubModeSegment.style.display = 'inline-flex';
+
+        if (restoreSubModeSnapshotRadio) {
+            restoreSubModeSnapshotRadio.disabled = !availability.snapshot;
+        }
+        if (restoreSubModeChangesRadio) {
+            restoreSubModeChangesRadio.disabled = !availability.changes;
+        }
+
+        setLabelDisabled(restoreSubModeSnapshotLabelWrap, !availability.snapshot);
+        setLabelDisabled(restoreSubModeChangesLabelWrap, !availability.changes);
+
+        let resolvedMode = getCurrentRestoreSubMode(currentVersionType);
+        if (resolvedMode !== 'snapshot' && resolvedMode !== 'changes') {
+            resolvedMode = resolveFirstAvailableRestoreSubMode(currentVersionType);
+        }
+
+        if (resolvedMode === 'snapshot' && !availability.snapshot) {
+            resolvedMode = availability.changes ? 'changes' : 'snapshot';
+        }
+        if (resolvedMode === 'changes' && !availability.changes) {
+            resolvedMode = availability.snapshot ? 'snapshot' : 'changes';
+        }
+
+        currentRestoreSubModeByType[currentVersionType] = resolvedMode;
+
+        if (restoreSubModeSnapshotRadio) {
+            restoreSubModeSnapshotRadio.checked = resolvedMode === 'snapshot';
+        }
+        if (restoreSubModeChangesRadio) {
+            restoreSubModeChangesRadio.checked = resolvedMode === 'changes';
+        }
+    };
+
+    const updateVersionedIndexFilterUi = () => {
+        if (!versionedIndexFilterSegment) return;
+
+        if (isLocalFileSelection) {
+            versionedIndexFilterSegment.style.display = 'none';
+            return;
+        }
+
+        const isVersionedType = currentVersionType === 'versioned';
+        if (!isVersionedType) {
+            versionedIndexFilterSegment.style.display = 'none';
+            return;
+        }
+
+        const isEn = cachedLang === 'en';
+        const isChangesMode = isChangesSubModeActive('versioned');
+        const indexedCount = isChangesMode
+            ? versionedChangesIndexedVersions.length
+            : versionedSnapshotIndexedVersions.length;
+        const nonIndexedCount = isChangesMode
+            ? versionedChangesNonIndexedVersions.length
+            : versionedSnapshotNonIndexedVersions.length;
+        if (versionedIndexFilterIndexedText) {
+            versionedIndexFilterIndexedText.textContent = `${isEn ? 'Indexed' : '索引项'} (${indexedCount})`;
+        }
+        if (versionedIndexFilterNonIndexedText) {
+            versionedIndexFilterNonIndexedText.textContent = `${isEn ? 'Non-indexed' : '非索引项'} (${nonIndexedCount})`;
+        }
+
+        const availability = getVersionedIndexFilterAvailability();
+        const hasAny = availability.indexed || availability.non_indexed;
+
+        if (!hasAny) {
+            versionedIndexFilterSegment.style.display = 'none';
+            return;
+        }
+
+        versionedIndexFilterSegment.style.display = 'flex';
+
+        if (versionedIndexFilterIndexedRadio) {
+            versionedIndexFilterIndexedRadio.disabled = !availability.indexed;
+        }
+        if (versionedIndexFilterNonIndexedRadio) {
+            versionedIndexFilterNonIndexedRadio.disabled = !availability.non_indexed;
+        }
+
+        setLabelDisabled(versionedIndexFilterIndexedLabelWrap, !availability.indexed);
+        setLabelDisabled(versionedIndexFilterNonIndexedLabelWrap, !availability.non_indexed);
+
+        if (currentVersionedIndexFilter !== 'indexed' && currentVersionedIndexFilter !== 'non_indexed') {
+            currentVersionedIndexFilter = resolveFirstAvailableVersionedIndexFilter();
+        }
+
+        if (currentVersionedIndexFilter === 'indexed' && !availability.indexed) {
+            currentVersionedIndexFilter = availability.non_indexed ? 'non_indexed' : 'indexed';
+        }
+        if (currentVersionedIndexFilter === 'non_indexed' && !availability.non_indexed) {
+            currentVersionedIndexFilter = availability.indexed ? 'indexed' : 'non_indexed';
+        }
+
+        if (versionedIndexFilterIndexedRadio) {
+            versionedIndexFilterIndexedRadio.checked = currentVersionedIndexFilter === 'indexed';
+        }
+        if (versionedIndexFilterNonIndexedRadio) {
+            versionedIndexFilterNonIndexedRadio.checked = currentVersionedIndexFilter === 'non_indexed';
+        }
+    };
+
     const getStrategyAvailabilityForType = (type) => {
+        if (isChangesSubModeActive(type)) {
+            return { overwrite: false, merge: true, patch: false };
+        }
+
+        const isSnapshotSubModeOnMainTypes = !isLocalFileSelection
+            && (type === 'versioned' || type === 'overwrite')
+            && getCurrentRestoreSubMode(type) === 'snapshot';
+        if (isSnapshotSubModeOnMainTypes) {
+            return { overwrite: true, merge: false, patch: true };
+        }
+
+        const sourceType = String(selectedVersion?.sourceType || selectedVersion?.restoreRef?.sourceType || '').toLowerCase();
+        if (sourceType === 'changes_artifact') {
+            return { overwrite: false, merge: true, patch: false };
+        }
         if (type === 'snapshot') {
             return { overwrite: true, merge: true, patch: true };
         }
@@ -8818,6 +10243,11 @@ function showRestoreModal(versions, source) {
     const updateStrategyAvailabilityUi = () => {
         const canRestore = selectedVersion?.canRestore !== false;
         const avail = getStrategyAvailabilityForType(currentVersionType);
+        const forceImportMergeOnly = isChangesSubModeActive(currentVersionType);
+
+        if (strategySegment) {
+            strategySegment.style.display = forceImportMergeOnly ? 'none' : 'inline-flex';
+        }
 
         // Visibility
         if (strategyOverwriteLabelWrap) strategyOverwriteLabelWrap.style.display = avail.overwrite ? '' : 'none';
@@ -8846,6 +10276,7 @@ function showRestoreModal(versions, source) {
         setLabelDisabled(strategyOverwriteLabelWrap, strategyOverwriteRadio?.disabled);
         setLabelDisabled(strategyMergeLabelWrap, strategyMergeRadio?.disabled);
         setLabelDisabled(strategyPatchLabelWrap, strategyPatchRadio?.disabled);
+        updateRestoreConfirmIdleText(cachedLang);
     };
 
     const setEmptyTableMessage = (message) => {
@@ -8865,11 +10296,10 @@ function showRestoreModal(versions, source) {
         if (!pagination || !pageInput || !totalPagesEl || !prevPageBtn || !nextPageBtn) return;
 
         const totalPages = Math.max(1, Math.ceil(Number(totalRecords || 0) / RESTORE_PAGE_SIZE));
-        const current = (currentVersionType === 'snapshot') ? currentSnapshotPage : currentHistoryPage;
+        const current = currentPageByType[currentVersionType] || 1;
         const safeCurrent = Math.min(Math.max(1, current), totalPages);
 
-        if (currentVersionType === 'snapshot') currentSnapshotPage = safeCurrent;
-        else currentHistoryPage = safeCurrent;
+        currentPageByType[currentVersionType] = safeCurrent;
 
         if (totalPages <= 1) {
             pagination.style.display = 'none';
@@ -8883,44 +10313,25 @@ function showRestoreModal(versions, source) {
         nextPageBtn.disabled = safeCurrent >= totalPages;
     };
 
-    const getCurrentPage = () => (currentVersionType === 'snapshot' ? currentSnapshotPage : currentHistoryPage);
-
-    const computeVsCurrentForPage = (pairs) => {
-        const list = Array.isArray(pairs) ? pairs : [];
-        if (list.length === 0) return;
-
-        const token = ++pageComputeToken;
-        const concurrency = 2;
-        let cursor = 0;
-
-        const worker = async () => {
-            while (cursor < list.length) {
-                if (token !== pageComputeToken) return;
-                const idx = cursor++;
-                const item = list[idx];
-                if (!item || !item.row || !item.row.isConnected) continue;
-                await updateStatsVsCurrentForRow(item.row, item.version);
-            }
-        };
-
-        Promise.all(Array.from({ length: concurrency }, worker)).catch(() => { });
-    };
+    const getCurrentPage = () => currentPageByType[currentVersionType] || 1;
+    const displayedSeqByVersionId = new Map();
 
     const renderVersionTable = (list) => {
         const prevSelectedId = selectedVersion?.id != null ? String(selectedVersion.id) : null;
 
         tableBody.innerHTML = '';
         selectedVersion = null;
+        displayedSeqByVersionId.clear();
 
         applyColumnVisibilityForType(currentVersionType);
         applyTablePresentationForType(currentVersionType);
-        const isSnapshotMode = currentVersionType === 'snapshot';
+        const isSnapshotMode = false;
 
         const allItems = Array.isArray(list) ? list : [];
         updatePaginationUi(allItems.length);
 
         if (allItems.length === 0) {
-            setEmptyTableMessage('No versions found / 未找到可恢复版本');
+            setEmptyTableMessage(cachedLang === 'en' ? 'No versions found' : '未找到可恢复版本');
             confirmButton.disabled = true;
             strategyOverwriteRadio.disabled = true;
             strategyMergeRadio.disabled = true;
@@ -8930,8 +10341,7 @@ function showRestoreModal(versions, source) {
 
         const totalPages = Math.max(1, Math.ceil(allItems.length / RESTORE_PAGE_SIZE));
         const currentPage = Math.min(Math.max(1, getCurrentPage()), totalPages);
-        if (currentVersionType === 'snapshot') currentSnapshotPage = currentPage;
-        else currentHistoryPage = currentPage;
+        currentPageByType[currentVersionType] = currentPage;
 
         const startIndex = (currentPage - 1) * RESTORE_PAGE_SIZE;
         const endIndex = Math.min(startIndex + RESTORE_PAGE_SIZE, allItems.length);
@@ -8944,6 +10354,8 @@ function showRestoreModal(versions, source) {
             nonOverwriteCount += 1;
             nonOverwriteOrderByIndex.set(index, nonOverwriteCount);
         });
+
+        const canUseOriginalSeq = currentVersionType === 'versioned';
 
         const clearSelection = () => {
             Array.from(tableBody.querySelectorAll("tr[data-selected='1']")).forEach((tr) => {
@@ -8966,10 +10378,112 @@ function showRestoreModal(versions, source) {
             confirmButton.disabled = !canRestore;
             strategyGroup.classList.toggle('disabled', !canRestore);
             updateStrategyAvailabilityUi();
+            applyPreferredMergeViewModeToRadios(version);
             updateMergeViewModeUi();
         };
 
-        const rowPairs = [];
+        const createViewModeCell = (version, folderType) => {
+            const td = document.createElement('td');
+            td.style.whiteSpace = 'nowrap';
+            const availability = getMergeViewModeAvailability(version);
+            if (!availability.supported) {
+                td.innerHTML = "<span style='opacity: 0.6;'>-</span>";
+                return td;
+            }
+
+            const isEn = cachedLang === 'en';
+            const availableModes = ['simple', 'detailed', 'collection'].filter((mode) => availability[mode]);
+            const preferredMode = resolvePreferredMergeViewMode(version) || availableModes[0] || 'simple';
+
+            const createModeBadge = (mode, { active = false, clickable = false } = {}) => {
+                const badge = document.createElement(clickable ? 'button' : 'span');
+                if (clickable) {
+                    badge.type = 'button';
+                    badge.style.cursor = 'pointer';
+                    badge.style.display = 'inline-flex';
+                    badge.style.alignItems = 'center';
+                    badge.style.justifyContent = 'center';
+                    badge.style.alignSelf = 'flex-start';
+                }
+                badge.textContent = getMergeViewModeText(mode, isEn);
+                badge.style.fontSize = '10px';
+                badge.style.padding = '1px 5px';
+                badge.style.border = '1px solid var(--theme-border-primary)';
+                badge.style.borderRadius = '999px';
+                badge.style.background = active ? 'rgba(79, 195, 247, 0.12)' : 'var(--theme-bg-secondary)';
+                badge.style.borderColor = active ? 'var(--theme-link-color, #4fc3f7)' : 'var(--theme-border-primary)';
+                badge.style.color = active ? 'var(--theme-link-color, #4fc3f7)' : 'var(--theme-text-secondary)';
+                badge.style.whiteSpace = 'nowrap';
+                return badge;
+            };
+
+            if (folderType !== 'overwrite') {
+                const staticWrap = document.createElement('div');
+                staticWrap.style.display = 'inline-flex';
+                staticWrap.style.flexWrap = 'nowrap';
+                staticWrap.style.gap = '4px';
+                staticWrap.style.alignItems = 'center';
+                staticWrap.style.whiteSpace = 'nowrap';
+
+                if (availableModes.length === 0) {
+                    td.innerHTML = "<span style='opacity: 0.6;'>-</span>";
+                    return td;
+                }
+
+                const badge = createModeBadge(preferredMode, { active: true, clickable: false });
+                staticWrap.appendChild(badge);
+
+                td.appendChild(staticWrap);
+                return td;
+            }
+
+            const optionsWrap = document.createElement('div');
+            optionsWrap.style.display = 'inline-flex';
+            optionsWrap.style.flexDirection = 'column';
+            optionsWrap.style.flexWrap = 'nowrap';
+            optionsWrap.style.alignItems = 'flex-start';
+            optionsWrap.style.gap = '4px';
+            optionsWrap.style.minWidth = '0';
+            optionsWrap.style.width = 'fit-content';
+            optionsWrap.style.whiteSpace = 'nowrap';
+
+            const buttonsByMode = new Map();
+
+            const refreshModeButtons = () => {
+                const preferred = resolvePreferredMergeViewMode(version) || preferredMode;
+                buttonsByMode.forEach((btn, mode) => {
+                    const active = preferred === mode;
+                    btn.style.borderColor = active ? 'var(--theme-link-color, #4fc3f7)' : 'var(--theme-border-primary)';
+                    btn.style.color = active ? 'var(--theme-link-color, #4fc3f7)' : 'var(--theme-text-secondary)';
+                    btn.style.background = active ? 'rgba(79, 195, 247, 0.12)' : 'var(--theme-bg-secondary)';
+                });
+            };
+
+            availableModes.forEach((mode) => {
+                const btn = createModeBadge(mode, { active: mode === preferredMode, clickable: true });
+
+                btn.addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    setPreferredMergeViewModeForVersion(version, mode);
+                    refreshModeButtons();
+
+                    const selectedId = selectedVersion?.id != null ? String(selectedVersion.id) : '';
+                    const currentId = version?.id != null ? String(version.id) : '';
+                    if (selectedId && selectedId === currentId) {
+                        applyPreferredMergeViewModeToRadios(version);
+                        updateMergeViewModeUi();
+                    }
+                });
+
+                buttonsByMode.set(mode, btn);
+                optionsWrap.appendChild(btn);
+            });
+
+            refreshModeButtons();
+            td.appendChild(optionsWrap);
+            return td;
+        };
+
         const rowMap = new Map(); // id -> { row, version, radioId }
         let firstSelectable = null;
 
@@ -8979,7 +10493,6 @@ function showRestoreModal(versions, source) {
 
             const canRestore = version?.canRestore !== false;
             const folderType = detectRestoreFolderType(version);
-            const note = String(version?.note || '').trim();
             const fingerprint = String(version?.fingerprint || '').slice(0, 7);
             const fingerprintDisplay = fingerprint ? `#${fingerprint}` : '';
             const displayTime = String(version?.displayTime || '');
@@ -8987,12 +10500,17 @@ function showRestoreModal(versions, source) {
             const nonOverwriteSeq = nonOverwriteOrderByIndex.get(globalIndex) || 1;
             const fallbackDescendingSeq = Math.max(1, nonOverwriteCount - nonOverwriteSeq + 1);
 
+            const rawSeq = Number.parseInt(String(version?.seqNumber == null ? '' : version.seqNumber).trim(), 10);
+            const hasRawSeq = Number.isFinite(rawSeq) && rawSeq > 0;
+            const shouldUseIndexSeq = canUseOriginalSeq && hasRawSeq && hasIndexBackedSeq(version);
             let seq = folderType === 'overwrite'
                 ? '0'
-                : (version?.seqNumber != null ? String(version.seqNumber) : String(fallbackDescendingSeq));
+                : (shouldUseIndexSeq ? String(rawSeq) : String(fallbackDescendingSeq));
 
-            const fileName = String(version?.originalFile || version?.restoreRef?.originalFile || '').trim();
-            const displayNote = isHtml ? (fileName || note || '') : (note || '');
+            const displayNote = resolveRestoreDisplayName(version, {
+                preferChangesFileName: isChangesSubModeActive(currentVersionType),
+                lang: cachedLang
+            });
 
             const row = document.createElement('tr');
             if (!canRestore) row.style.opacity = '0.7';
@@ -9034,32 +10552,69 @@ function showRestoreModal(versions, source) {
 
             const tdTime = document.createElement('td');
             tdTime.className = 'restore-cell-mono';
-            tdTime.textContent = displayTime;
+            tdTime.style.whiteSpace = 'normal';
+            tdTime.style.lineHeight = '1.2';
+            const timeMatch = /^(\d{4}[-/]\d{2}[-/]\d{2})[ T](\d{2}:\d{2}:\d{2})$/.exec(displayTime);
+            if (timeMatch) {
+                const dateLine = document.createElement('div');
+                dateLine.textContent = timeMatch[1];
+                dateLine.style.display = 'block';
+                dateLine.style.fontSize = '11px';
+                dateLine.style.color = 'var(--theme-text-primary)';
+
+                const clockLine = document.createElement('div');
+                clockLine.textContent = timeMatch[2];
+                clockLine.style.display = 'block';
+                clockLine.style.fontSize = '10px';
+                clockLine.style.color = 'var(--theme-text-secondary)';
+
+                tdTime.appendChild(dateLine);
+                tdTime.appendChild(clockLine);
+            } else {
+                tdTime.textContent = displayTime;
+            }
 
             let tdStats = null;
-            let tdStatsCurrent = null;
+            let tdViewMode = null;
             if (!isSnapshotMode) {
                 tdStats = document.createElement('td');
                 const statsDiv = document.createElement('div');
                 statsDiv.className = 'restore-stats';
-                statsDiv.innerHTML = buildStatsHtml(version?.stats, { zeroAsCheck: true });
+
+                const statsSource = version?.stats || {};
+                const statsMagnitude = getStatsMagnitude(statsSource);
+                const indexChangesText = String(version?.restoreRef?.indexChanges || '').trim();
+                const indexChangesLower = indexChangesText.toLowerCase();
+                const indexHasText = indexChangesText.length > 0;
+                const indexExplicitNoChange = indexHasText
+                    && (indexChangesText === '-'
+                    || indexChangesText.includes('无变化')
+                    || indexChangesLower === 'no changes');
+                const indexHasChangeText = indexHasText && !indexExplicitNoChange;
+                const fallbackStats = indexHasChangeText
+                    ? parseIndexChangesToStatsFallback(indexChangesText)
+                    : null;
+                const fallbackMagnitude = fallbackStats
+                    ? getStatsMagnitude(fallbackStats)
+                    : 0;
+
+                if (statsMagnitude > 0) {
+                    statsDiv.innerHTML = buildStatsHtml(version?.stats, { zeroAsCheck: false });
+                } else if (fallbackMagnitude > 0) {
+                    statsDiv.innerHTML = buildStatsHtml(fallbackStats, { zeroAsCheck: false });
+                    statsDiv.title = indexChangesText;
+                } else if (indexExplicitNoChange) {
+                    statsDiv.innerHTML = buildStatsHtml(version?.stats, { zeroAsCheck: true });
+                } else {
+                    statsDiv.innerHTML = buildStatsHtml(version?.stats, { zeroAsCheck: false });
+                    if (indexHasChangeText) {
+                        statsDiv.innerHTML = `<span style='opacity:0.85; color: var(--theme-warning-color, #ff9800); font-weight: 700;'>●</span>`;
+                        statsDiv.title = indexChangesText;
+                    }
+                }
                 tdStats.appendChild(statsDiv);
 
-                tdStatsCurrent = document.createElement('td');
-                const statsCurrentDiv = document.createElement('div');
-                statsCurrentDiv.className = 'restore-stats restore-stats-current';
-                statsCurrentDiv.title = cachedLang === 'en'
-                    ? 'Computing impact vs current browser bookmarks'
-                    : '正在计算对当前浏览器书签的影响';
-                statsCurrentDiv.innerHTML = cachedLang === 'en'
-                    ? "<span style='opacity: 0.55;'>Queued</span>"
-                    : "<span style='opacity: 0.55;'>排队中</span>";
-                statsCurrentDiv.style.cursor = 'pointer';
-                statsCurrentDiv.addEventListener('click', (e) => {
-                    e.stopPropagation();
-                    updateStatsVsCurrentForRow(row, version).catch(() => { });
-                });
-                tdStatsCurrent.appendChild(statsCurrentDiv);
+                tdViewMode = createViewModeCell(version, folderType);
             }
 
             row.appendChild(tdSelect);
@@ -9068,7 +10623,7 @@ function showRestoreModal(versions, source) {
             if (tdHash) row.appendChild(tdHash);
             row.appendChild(tdTime);
             if (tdStats) row.appendChild(tdStats);
-            if (tdStatsCurrent) row.appendChild(tdStatsCurrent);
+            if (tdViewMode) row.appendChild(tdViewMode);
 
             row.addEventListener('click', () => {
                 selectRow(row, version, radioId);
@@ -9079,11 +10634,11 @@ function showRestoreModal(versions, source) {
             const vid = version?.id != null ? String(version.id) : '';
             if (vid) {
                 rowMap.set(vid, { row, version, radioId });
+                displayedSeqByVersionId.set(vid, seq);
             }
             if (!firstSelectable) {
                 firstSelectable = { row, version, radioId };
             }
-            rowPairs.push({ row, version });
         });
 
         // Selection (preserve previous if it exists on this page)
@@ -9093,36 +10648,140 @@ function showRestoreModal(versions, source) {
             selectRow(toSelect.row, toSelect.version, toSelect.radioId);
         }
 
-        // Auto compute "impact" column for current page
-        computeVsCurrentForPage(rowPairs);
     };
 
-    const hasHistory = historyVersions.length > 0;
+    const getVersionTypeAvailability = () => {
+        if (isLocalFileSelection) {
+            return {
+                versioned: unifiedFileSelectionVersions.length > 0,
+                overwrite: false,
+                manual_export: false
+            };
+        }
+
+        return {
+            versioned: versionedVersions.length > 0,
+            overwrite: overwriteVersions.length > 0,
+            manual_export: manualExportVersions.length > 0
+        };
+    };
+
+    const switchVersionType = (nextType, { force = false } = {}) => {
+        const availability = getVersionTypeAvailability();
+        let resolvedType = String(nextType || '').trim();
+        if (!availability[resolvedType]) {
+            resolvedType = resolveFirstAvailableVersionType();
+        }
+        if (!force && resolvedType === currentVersionType) {
+            return;
+        }
+
+        currentVersionType = resolvedType;
+        updateTitleText(cachedLang, currentVersionType);
+
+        if (versionTypeVersionedRadio) versionTypeVersionedRadio.checked = currentVersionType === 'versioned';
+        if (versionTypeOverwriteRadio) versionTypeOverwriteRadio.checked = currentVersionType === 'overwrite';
+        if (versionTypeManualExportRadio) versionTypeManualExportRadio.checked = currentVersionType === 'manual_export';
+
+        updateRestoreSubModeUi();
+        applyDefaultStrategyForType(currentVersionType);
+        updateStrategyAvailabilityUi();
+        updateMergeViewModeUi();
+        updateVersionedIndexFilterUi();
+        renderVersionTable(getVersionsByType(currentVersionType));
+    };
 
     if (versionTypeSegment) {
-        versionTypeSegment.style.display = 'none';
+        versionTypeSegment.style.display = isLocalFileSelection ? 'none' : 'flex';
     }
 
-    if (versionTypeHistoryRadio) {
-        versionTypeHistoryRadio.disabled = true;
-        versionTypeHistoryRadio.checked = true;
-        versionTypeHistoryRadio.onchange = null;
-    }
-    if (versionTypeSnapshotRadio) {
-        versionTypeSnapshotRadio.disabled = true;
-        versionTypeSnapshotRadio.checked = false;
-        versionTypeSnapshotRadio.onchange = null;
-    }
-    setLabelDisabled(versionTypeHistoryLabelWrap, true);
-    setLabelDisabled(versionTypeSnapshotLabelWrap, true);
+    const availability = getVersionTypeAvailability();
 
-    currentVersionType = 'history';
+    if (versionTypeVersionedRadio) {
+        versionTypeVersionedRadio.disabled = !availability.versioned;
+        versionTypeVersionedRadio.onchange = () => {
+            if (!versionTypeVersionedRadio.checked) return;
+            switchVersionType('versioned');
+        };
+    }
+    if (versionTypeOverwriteRadio) {
+        versionTypeOverwriteRadio.disabled = !availability.overwrite;
+        versionTypeOverwriteRadio.onchange = () => {
+            if (!versionTypeOverwriteRadio.checked) return;
+            switchVersionType('overwrite');
+        };
+    }
+    if (versionTypeManualExportRadio) {
+        versionTypeManualExportRadio.disabled = !availability.manual_export;
+        versionTypeManualExportRadio.onchange = () => {
+            if (!versionTypeManualExportRadio.checked) return;
+            switchVersionType('manual_export');
+        };
+    }
+
+    if (restoreSubModeSnapshotRadio) {
+        restoreSubModeSnapshotRadio.onchange = () => {
+            if (!restoreSubModeSnapshotRadio.checked) return;
+            if (currentVersionType !== 'versioned' && currentVersionType !== 'overwrite') return;
+            if (getCurrentRestoreSubMode(currentVersionType) === 'snapshot') return;
+            currentRestoreSubModeByType[currentVersionType] = 'snapshot';
+            currentPageByType[currentVersionType] = 1;
+            updateRestoreSubModeUi();
+            updateVersionedIndexFilterUi();
+            updateStrategyAvailabilityUi();
+            updateMergeViewModeUi();
+            renderVersionTable(getVersionsByType(currentVersionType));
+        };
+    }
+
+    if (restoreSubModeChangesRadio) {
+        restoreSubModeChangesRadio.onchange = () => {
+            if (!restoreSubModeChangesRadio.checked) return;
+            if (currentVersionType !== 'versioned' && currentVersionType !== 'overwrite') return;
+            if (getCurrentRestoreSubMode(currentVersionType) === 'changes') return;
+            currentRestoreSubModeByType[currentVersionType] = 'changes';
+            currentPageByType[currentVersionType] = 1;
+            updateRestoreSubModeUi();
+            updateVersionedIndexFilterUi();
+            updateStrategyAvailabilityUi();
+            updateMergeViewModeUi();
+            renderVersionTable(getVersionsByType(currentVersionType));
+        };
+    }
+
+    if (versionedIndexFilterIndexedRadio) {
+        versionedIndexFilterIndexedRadio.onchange = () => {
+            if (!versionedIndexFilterIndexedRadio.checked) return;
+            if (currentVersionedIndexFilter === 'indexed') return;
+            currentVersionedIndexFilter = 'indexed';
+            currentPageByType.versioned = 1;
+            updateVersionedIndexFilterUi();
+            renderVersionTable(getVersionsByType(currentVersionType));
+        };
+    }
+
+    if (versionedIndexFilterNonIndexedRadio) {
+        versionedIndexFilterNonIndexedRadio.onchange = () => {
+            if (!versionedIndexFilterNonIndexedRadio.checked) return;
+            if (currentVersionedIndexFilter === 'non_indexed') return;
+            currentVersionedIndexFilter = 'non_indexed';
+            currentPageByType.versioned = 1;
+            updateVersionedIndexFilterUi();
+            renderVersionTable(getVersionsByType(currentVersionType));
+        };
+    }
+
+    setLabelDisabled(versionTypeVersionedLabelWrap, !availability.versioned);
+    setLabelDisabled(versionTypeOverwriteLabelWrap, !availability.overwrite);
+    setLabelDisabled(versionTypeManualExportLabelWrap, !availability.manual_export);
+
+    currentVersionType = resolveFirstAvailableVersionType();
 
     const goToPage = (page) => {
-        const items = historyVersions;
+        const items = getVersionsByType(currentVersionType);
         const totalPages = Math.max(1, Math.ceil((items?.length || 0) / RESTORE_PAGE_SIZE));
         const next = Math.min(Math.max(1, Number(page) || 1), totalPages);
-        currentHistoryPage = next;
+        currentPageByType[currentVersionType] = next;
         renderVersionTable(items);
     };
 
@@ -9148,14 +10807,12 @@ function showRestoreModal(versions, source) {
         };
     }
 
-    renderVersionTable(historyVersions);
+    switchVersionType(currentVersionType, { force: true });
 
     modal.style.display = 'flex';
 
     const closeModal = () => {
         modal.style.display = 'none';
-        // Cancel any in-flight "vs current" computations
-        pageComputeToken += 1;
     };
 
     closeButton.onclick = closeModal;
@@ -9177,7 +10834,7 @@ function showRestoreModal(versions, source) {
         updateMergeViewModeUi();
     };
 
-    const showRestoreConfirmModal = async ({ version, strategy, restoreRef, localPayload }) => {
+    const showRestoreConfirmModal = async ({ version, strategy, restoreRef, localPayload, forceChangesArtifact = false }) => {
         const confirmModal = document.getElementById('restoreConfirmModal');
         const confirmTitle = document.getElementById('restoreConfirmTitle');
         const confirmSummary = document.getElementById('restoreConfirmSummary');
@@ -9247,17 +10904,27 @@ function showRestoreModal(versions, source) {
         const fingerprint = String(version?.fingerprint || '').slice(0, 12);
         const fingerprintDisplay = fingerprint ? `#${fingerprint}` : '';
         const displayTime = String(version?.displayTime || '');
-        const rawNote = String(version?.note || '').trim();
         const isHtml = isHtmlVersion(version);
-        const fileName = String(version?.originalFile || version?.restoreRef?.originalFile || '').trim();
-        const note = isHtml ? (fileName || rawNote || '') : rawNote;
-        const versionTypeLabel = getVersionTypeLabel(lang, isHtml ? 'snapshot' : 'history');
+        const note = resolveRestoreDisplayName(version, {
+            preferChangesFileName: forceChangesArtifact === true,
+            lang
+        });
+        const versionTypeLabel = getVersionTypeLabel(lang, detectRestoreFolderType(version));
+        const mergeViewAvailability = getMergeViewModeAvailability(version);
+        const forceChangesViewMode = forceChangesArtifact === true;
+        const hasChangesArtifactRef = !!(restoreRef?.changesArtifact || version?.restoreRef?.changesArtifact);
+        const supportsMergeChangesView = forceChangesViewMode
+            ? hasChangesArtifactRef
+            : mergeViewAvailability.supported;
+        const blockConfirmDueToMissingChangesSource = strategy === 'merge'
+            && forceChangesViewMode
+            && !supportsMergeChangesView;
         const strategyText = (() => {
             if (strategy === 'overwrite') return isEn ? 'Overwrite (Replace)' : '覆盖（替换）';
             if (strategy === 'patch') return isEn ? 'Patch Restore' : '补丁恢复';
             return isEn ? 'Import Merge' : '导入合并';
         })();
-        const importTypeKey = isHtml ? 'snapshot' : 'history';
+        const importTypeKey = isSnapshotLikeVersion(version) ? 'snapshot' : 'history';
 
         const titleForMain = () => {
             return isEn ? 'Confirm Restore' : '确认恢复';
@@ -9370,6 +11037,45 @@ function showRestoreModal(versions, source) {
                     resolve([]);
                 }
             });
+        };
+
+        const fetchBookmarkNodeById = (nodeId) => {
+            return new Promise((resolve) => {
+                try {
+                    chrome.bookmarks.get(String(nodeId), (nodes) => {
+                        if (chrome.runtime.lastError) {
+                            resolve(null);
+                            return;
+                        }
+                        const node = Array.isArray(nodes) ? nodes[0] : null;
+                        resolve(node || null);
+                    });
+                } catch (_) {
+                    resolve(null);
+                }
+            });
+        };
+
+        const buildImportTargetIdChain = async (targetId) => {
+            const chain = [];
+            const visited = new Set();
+            let currentId = String(targetId || '').trim();
+
+            while (currentId && currentId !== '0' && !visited.has(currentId)) {
+                visited.add(currentId);
+                const node = await fetchBookmarkNodeById(currentId);
+                if (!node) break;
+
+                const nodeId = String(node.id || '').trim();
+                if (!nodeId || nodeId === '0') break;
+                chain.push(nodeId);
+
+                const parentId = String(node.parentId || '').trim();
+                if (!parentId || parentId === nodeId) break;
+                currentId = parentId;
+            }
+
+            return chain.reverse();
         };
 
         const ensureImportTargetChildrenLoaded = async (folderId) => {
@@ -9567,6 +11273,17 @@ function showRestoreModal(versions, source) {
             });
         };
 
+        const findImportTargetNodeElById = (nodeId) => {
+            if (!importTargetList || !nodeId) return null;
+            const allNodes = importTargetList.querySelectorAll('.import-target-tree-node');
+            for (const nodeEl of allNodes) {
+                if (String(nodeEl?.dataset?.id || '') === String(nodeId)) {
+                    return nodeEl;
+                }
+            }
+            return null;
+        };
+
         const expandImportTargetNode = async (nodeEl) => {
             if (!nodeEl) return;
             const childrenEl = nodeEl.querySelector(':scope > .import-target-tree-children');
@@ -9612,6 +11329,38 @@ function showRestoreModal(versions, source) {
             markSelectedImportTargetRows();
         };
 
+        const revealSelectedImportTargetPath = async () => {
+            const selected = getPendingImportTargetSelection();
+            const selectedId = String(selected?.id || '').trim();
+            if (!selectedId) return;
+
+            const chain = await buildImportTargetIdChain(selectedId);
+            if (!Array.isArray(chain) || chain.length === 0) return;
+
+            for (let index = 0; index < chain.length - 1; index += 1) {
+                const chainNodeId = chain[index];
+                const nodeEl = findImportTargetNodeElById(chainNodeId);
+                if (!nodeEl) break;
+
+                const childrenEl = nodeEl.querySelector(':scope > .import-target-tree-children');
+                if (!childrenEl) continue;
+
+                if (childrenEl.hidden || childrenEl.dataset.loaded !== 'true') {
+                    await expandImportTargetNode(nodeEl);
+                }
+            }
+
+            markSelectedImportTargetRows();
+
+            const selectedNodeEl = findImportTargetNodeElById(selectedId);
+            const selectedRow = selectedNodeEl
+                ? selectedNodeEl.querySelector(':scope > .import-target-tree-row')
+                : null;
+            if (selectedRow && typeof selectedRow.scrollIntoView === 'function') {
+                selectedRow.scrollIntoView({ block: 'nearest' });
+            }
+        };
+
         const updateImportTargetHint = () => {
             if (!importTargetHint) return;
             if (strategy !== 'merge') {
@@ -9638,9 +11387,13 @@ function showRestoreModal(versions, source) {
                 : null;
             if (importTargetTitle) importTargetTitle.textContent = isEn ? 'Select Import Location' : '选择导入位置';
             if (importTargetDesc) {
-                importTargetDesc.textContent = isEn
+                const currentPath = String(currentImportTargetSelection?.path || currentImportTargetSelection?.title || '').trim();
+                const baseText = isEn
                     ? 'Browse any folder. Subfolders load when expanded.'
                     : '可选择任意文件夹作为导入位置，子文件夹按展开加载。';
+                importTargetDesc.textContent = currentPath
+                    ? (isEn ? `${baseText} Current: ${currentPath}` : `${baseText} 当前：${currentPath}`)
+                    : baseText;
             }
             if (importTargetAutoButton) {
                 importTargetAutoButton.textContent = isEn ? 'Auto' : '自动选择';
@@ -9684,6 +11437,7 @@ function showRestoreModal(versions, source) {
 
             try {
                 await renderRootImportTargetTree();
+                await revealSelectedImportTargetPath();
                 markSelectedImportTargetRows();
             } catch (_) {
                 setImportTargetListMessage(
@@ -9711,12 +11465,26 @@ function showRestoreModal(versions, source) {
             { key: isEn ? 'Note' : '备注', val: note || '-' }
         ];
 
-        if (strategy === 'merge' && !isHtml) {
+        if (strategy === 'merge') {
+            const selectedImportTarget = getImportTargetSelection();
+            const importTargetText = selectedImportTarget
+                ? String(selectedImportTarget.path || selectedImportTarget.title || '').trim()
+                : '';
+            rows.push({
+                key: isEn ? 'Import To' : '导入位置',
+                val: importTargetText || (isEn ? 'Auto' : '自动')
+            });
+        }
+
+        if (strategy === 'merge' && supportsMergeChangesView) {
             const mergeMode = getSelectedMergeViewMode();
-            const mergeModeText = mergeMode === 'detailed'
-                ? (isEn ? 'Detailed' : '详细')
-                : (isEn ? 'Simple' : '简略');
+            const mergeModeText = getMergeViewModeText(mergeMode, isEn);
             rows.push({ key: isEn ? 'View' : '视图', val: mergeModeText });
+        } else if (strategy === 'merge') {
+            rows.push({
+                key: isEn ? 'View' : '视图',
+                val: isEn ? 'No changes view (switch may be off)' : '未记录变化（可能开关关闭）'
+            });
         }
 
         if ((strategy === 'overwrite' || strategy === 'patch') && !isHtml) {
@@ -9751,14 +11519,20 @@ function showRestoreModal(versions, source) {
         } else {
             confirmWarning.classList.add('info');
             confirmBtn.classList.add('primary');
-            if (!isHtml) {
+            if (supportsMergeChangesView) {
                 confirmWarning.textContent = isEn
-                    ? 'Import merge: imports this record’s “changes view” into a new folder under bookmark roots (no deletion; titles prefixed with [+]/[-]/[~]/[↔]).'
-                    : '导入合并：导入该记录的「差异视图」到书签树的新文件夹（不删除现有书签；标题带 [+]/[-]/[~]/[↔] 前缀）。';
+                    ? 'Import merge: imports this record\'s “changes view (Simple/Detailed/Collection)” into a new folder under bookmark roots (no deletion; titles prefixed with [+]/[-]/[~]/[>>]).'
+                    : '导入合并：导入该记录的「变化视图（简略/详细/集合）」到书签树的新文件夹（不删除现有书签；标题带 [+]/[-]/[~]/[>>] 前缀）。';
+            } else if (forceChangesViewMode) {
+                confirmWarning.textContent = isEn
+                    ? 'Changes file is missing for this record. Merge changes mode cannot continue.'
+                    : '该记录缺少“当前变化”文件，变化模式下无法继续导入合并。';
             } else {
-                confirmWarning.textContent = isEn
-                    ? 'Import merge: imports the snapshot into a new folder under bookmark roots (no deletion).'
-                    : '导入合并：导入该版本快照到书签树的新文件夹（不删除现有书签）。';
+                if (isEn) {
+                    confirmWarning.textContent = 'Import merge: no changes-view artifact found (switch may be off), so it imports the whole version as merge input (no deletion).';
+                } else {
+                    confirmWarning.innerHTML = '导入合并：<span style="color: var(--warning); font-weight: 700;">未记录变化</span>（可能记录变化开关关闭），将把<span style="color: var(--warning); font-weight: 700;">整个版本</span>作为导入合并进入（不删除现有书签）。';
+                }
             }
         }
 
@@ -9771,9 +11545,158 @@ function showRestoreModal(versions, source) {
         const isOverwritePreview = (strategy === 'overwrite');
         const isPatchPreview = (strategy === 'patch');
         const isMergePreview = (strategy === 'merge');
-        const isMergeHistorySource = isMergePreview && !isHtml && (restoreRef?.sourceType === 'json' || restoreRef?.sourceType === 'zip');
+        const isMergeChangesSource = isMergePreview && (forceChangesViewMode || supportsMergeChangesView);
+        const getRestorePreviewMeta = (mergeChangesSource = isMergeChangesSource, mergeMode = getSelectedMergeViewMode()) => {
+            if (isOverwritePreview) {
+                return {
+                    modalTitle: isEn ? 'Overwrite Restore Preview' : '覆盖恢复预览',
+                    loadingText: isEn ? 'Generating overwrite restore preview...' : '正在生成覆盖恢复预览...',
+                    treeTitle: isEn ? 'Overwrite Restore Result (Temporary Cache)' : '覆盖恢复结果（临时缓存）'
+                };
+            }
+
+            if (isPatchPreview) {
+                return {
+                    modalTitle: isEn ? 'Patch Restore Preview' : '补丁恢复预览',
+                    loadingText: isEn ? 'Generating patch restore preview...' : '正在生成补丁恢复预览...',
+                    treeTitle: isEn ? 'Patch Restore Result (Temporary Cache)' : '补丁恢复结果（临时缓存）'
+                };
+            }
+
+            if (mergeChangesSource) {
+                const mergeModeText = getMergeViewModeText(mergeMode, isEn);
+                return {
+                    modalTitle: isEn ? `Import Merge Preview (${mergeModeText})` : `导入合并预览（${mergeModeText}）`,
+                    loadingText: isEn ? `Generating import merge preview (${mergeModeText})...` : `正在生成导入合并预览（${mergeModeText}）...`,
+                    treeTitle: isEn ? `Import Merge Preview (${mergeModeText})` : `导入合并预览（${mergeModeText}）`
+                };
+            }
+
+            return {
+                modalTitle: isEn ? 'Import Merge Preview (Whole Version)' : '导入合并预览（整个版本）',
+                loadingText: isEn ? 'Generating import merge preview (whole version)...' : '正在生成导入合并预览（整个版本）...',
+                treeTitle: isEn ? 'Import Merge Preview (Whole Version)' : '导入合并预览（整个版本）'
+            };
+        };
 
         let overwritePreviewCache = null; // { diffSummary, currentTree, targetTree, changeEntries }
+        let importPathNodeSeed = 0;
+
+        const formatMergeImportTimestamp = (dateValue = new Date()) => {
+            const date = dateValue instanceof Date ? dateValue : new Date(dateValue);
+            const y = date.getFullYear();
+            const m = String(date.getMonth() + 1).padStart(2, '0');
+            const d = String(date.getDate()).padStart(2, '0');
+            const hh = String(date.getHours()).padStart(2, '0');
+            const mm = String(date.getMinutes()).padStart(2, '0');
+            const ss = String(date.getSeconds()).padStart(2, '0');
+            return `${y}-${m}-${d} ${hh}:${mm}:${ss}`;
+        };
+
+        const buildImportMergeRootTitle = (options = {}) => {
+            const importKind = options && options.importKind === 'changes' ? 'changes' : 'snapshot';
+            const viewMode = options && (options.viewMode === 'simple' || options.viewMode === 'detailed')
+                ? options.viewMode
+                : null;
+            const meta = options && options.meta && typeof options.meta === 'object'
+                ? options.meta
+                : null;
+
+            const viewLabel = viewMode === 'detailed'
+                ? (isEn ? 'Detailed' : '详细')
+                : (isEn ? 'Simple' : '简略');
+            const modeSuffix = viewMode ? ` (${viewLabel})` : '';
+            const seqText = meta && meta.seqNumber != null ? String(meta.seqNumber) : '-';
+            const fingerprint = meta && meta.fingerprint
+                ? ` [${String(meta.fingerprint).slice(0, 7)}]`
+                : '';
+            const timestamp = formatMergeImportTimestamp(new Date());
+
+            if (importKind === 'changes') {
+                return isEn
+                    ? `Imported Changes${modeSuffix} - #${seqText}${fingerprint} - ${timestamp}`
+                    : `导入变化${modeSuffix} - #${seqText}${fingerprint} - ${timestamp}`;
+            }
+
+            return isEn ? `Imported - ${timestamp}` : `导入 - ${timestamp}`;
+        };
+
+        const getImportTargetPathParts = () => {
+            if (!isMergePreview) return [];
+
+            const selectedImportTarget = getImportTargetSelection();
+            const pathText = selectedImportTarget
+                ? String(selectedImportTarget.path || selectedImportTarget.title || '').trim()
+                : '';
+
+            const parts = pathText
+                ? pathText.split(/\s*\/\s*/).map((part) => String(part || '').trim()).filter(Boolean)
+                : [];
+
+            if (parts.length > 0) return parts;
+            return [isEn ? 'Auto (Bookmark Root)' : '自动（书签根目录）'];
+        };
+
+        const injectImportTargetPathIntoTree = (treeInput, options = {}) => {
+            if (!isMergePreview || !treeInput) return treeInput;
+
+            const pathParts = getImportTargetPathParts();
+            if (!Array.isArray(pathParts) || pathParts.length === 0) return treeInput;
+
+            const sourceRoots = Array.isArray(treeInput) ? treeInput.filter(Boolean) : [treeInput];
+            if (!sourceRoots.length) return treeInput;
+
+            const mergedChildren = [];
+            sourceRoots.forEach((rootNode) => {
+                if (rootNode && Array.isArray(rootNode.children)) {
+                    mergedChildren.push(...rootNode.children);
+                }
+            });
+
+            const baseRoot = sourceRoots[0] && typeof sourceRoots[0] === 'object'
+                ? sourceRoots[0]
+                : { id: '0', title: 'root', children: [] };
+
+            const nodePrefix = `__import_path_${Date.now()}_${importPathNodeSeed++}`;
+            const labelPrefix = isEn ? 'Import To' : '导入位置';
+            const firstNode = {
+                id: `${nodePrefix}_0`,
+                title: `${labelPrefix} / ${pathParts[0]}`,
+                children: [],
+                isImportPathContext: true
+            };
+
+            let cursor = firstNode;
+            for (let index = 1; index < pathParts.length; index += 1) {
+                const segment = String(pathParts[index] || '').trim();
+                if (!segment) continue;
+
+                const childNode = {
+                    id: `${nodePrefix}_${index}`,
+                    title: segment,
+                    children: [],
+                    isImportPathContext: true
+                };
+                cursor.children = [childNode];
+                cursor = childNode;
+            }
+
+            const importRootNode = {
+                id: `${nodePrefix}_import_root`,
+                title: buildImportMergeRootTitle(options),
+                children: mergedChildren,
+                isImportResultRoot: true
+            };
+
+            cursor.children = [importRootNode];
+
+            const wrappedRoot = {
+                ...baseRoot,
+                children: [firstNode]
+            };
+
+            return Array.isArray(treeInput) ? [wrappedRoot] : wrappedRoot;
+        };
 
         const showMainView = () => {
             isInPreview = false;
@@ -9792,24 +11715,22 @@ function showRestoreModal(versions, source) {
             isInPreview = true;
             mainView.style.display = 'none';
             previewView.style.display = 'flex';
-            confirmTitle.textContent = isEn ? 'Preview' : '预览';
-
-            const loadingText = isMergeHistorySource
-                ? (isEn ? 'Generating import preview...' : '正在生成导入预览...')
-                : (isEn ? 'Generating detailed preview...' : '正在生成详细预览...');
+            const selectedMergeMode = getSelectedMergeViewMode();
+            const previewMetaBeforeRender = getRestorePreviewMeta(isMergeChangesSource, selectedMergeMode);
+            confirmTitle.textContent = previewMetaBeforeRender.modalTitle;
 
             previewContent.innerHTML = `<div class="loading" style="padding: 40px; color: var(--text-secondary); text-align: center;">
                 <i class="fas fa-spinner fa-spin" style="font-size: 24px; margin-bottom: 20px; opacity: 0.5;"></i><br>
-                ${loadingText}
+                ${previewMetaBeforeRender.loadingText}
             </div>`;
 
-            // Import-merge preview (history sources: json/zip)
-            if (isMergeHistorySource) {
+            // Import-merge preview (changes view source: current changes artifact)
+            if (isMergeChangesSource) {
                 try {
                     const res = await callBackgroundFunction('buildMergeRestorePreview', {
                         restoreRef,
                         localPayload,
-                        mergeViewMode: getSelectedMergeViewMode()
+                        mergeViewMode: selectedMergeMode
                     });
 
                     if (!res || res.success !== true) {
@@ -9817,14 +11738,21 @@ function showRestoreModal(versions, source) {
                         return;
                     }
 
-                    const vm = res.viewMode === 'detailed' ? 'detailed' : 'simple';
+                    const vm = normalizeMergeViewMode(res.viewMode) || 'simple';
                     const customTitle = isEn
-                        ? `Import Merge Preview (${vm === 'detailed' ? 'Detailed' : 'Simple'})`
-                        : `导入合并预览（${vm === 'detailed' ? '详细' : '简略'}）`;
+                        ? `Import Merge Preview (${getMergeViewModeText(vm, true)})`
+                        : `导入合并预览（${getMergeViewModeText(vm, false)}）`;
+                    confirmTitle.textContent = customTitle;
 
-                    const treeHtml = generateImportMergePreviewTreeHtml(res.tree, {
+                    const previewTree = injectImportTargetPathIntoTree(res.tree, {
+                        importKind: 'changes',
+                        viewMode: vm,
+                        meta: res.meta
+                    });
+                    const treeHtml = generateImportMergePreviewTreeHtml(previewTree, {
                         maxDepth: 2,
-                        customTitle
+                        customTitle,
+                        importResultView: true
                     }, lang);
 
                     previewContent.innerHTML = treeHtml || `<div style="padding: 20px; color: var(--text-tertiary); text-align: center;">No Data</div>`;
@@ -9875,12 +11803,21 @@ function showRestoreModal(versions, source) {
                     }
                 }
 
+                if (isMergePreview) {
+                    treeToRender = injectImportTargetPathIntoTree(treeToRender, {
+                        importKind: 'snapshot'
+                    });
+                }
+
                 const previewKey = `restore-preview-${Date.now()}`;
+                const previewMeta = getRestorePreviewMeta(false, selectedMergeMode);
+                confirmTitle.textContent = previewMeta.modalTitle;
                 const treeHtml = generateHistoryTreeHtml(treeToRender, changeMap, 'detailed', {
                     maxDepth: 1,
                     lazyDepth: 1,
                     lazyKey: previewKey,
-                    customTitle: isEn ? 'Restored Bookmark Tree (Temporary Cache)' : '恢复后的书签树（临时缓存）'
+                    customTitle: previewMeta.treeTitle,
+                    hideModeLabel: true
                 }, lang);
 
                 const bodyHtml = treeHtml || `<div style="padding: 20px; color: var(--text-tertiary); text-align: center;">No Data</div>`;
@@ -9954,64 +11891,17 @@ function showRestoreModal(versions, source) {
             }
 
             if (changes.hasNoChange) {
-                diffSummary.innerHTML = `<span style="color: var(--text-tertiary);"><i class="fas fa-check-circle"></i> ${isEn ? 'Identical quantity & structure' : '数量与结构一致'}</span>`;
+                const noChangeText = isMergePreview
+                    ? (isEn ? 'Current browser and target snapshot are identical in quantity & structure' : '当前浏览器与目标快照数量与结构一致')
+                    : (isEn ? 'Identical quantity & structure' : '数量与结构一致');
+                diffSummary.innerHTML = `<span style="color: var(--text-tertiary);"><i class="fas fa-check-circle"></i> ${noChangeText}</span>`;
                 return;
             }
 
-            const prefix = isEn ? 'Different from current: ' : '相较当前: ';
+            const prefix = isMergePreview
+                ? (isEn ? 'Current browser vs target snapshot: ' : '当前浏览器 vs 目标快照: ')
+                : (isEn ? 'Different from current: ' : '相较当前: ');
             const html = renderCommitStatsInline(changes, lang);
-            diffSummary.innerHTML = `
-                <div style="display: flex; align-items: center; justify-content: flex-start; gap: 8px; flex-wrap: wrap;">
-                    <span style="font-size: 13px; color: var(--text-secondary);">${prefix}</span>
-                    ${html}
-                </div>
-            `;
-        };
-
-        const renderMergeDiffSummaryHtml = () => {
-            if (!diffSummary) return;
-
-            const s = (version && version.stats) ? version.stats : {};
-
-            const bookmarkAdded = Number(s.bookmarkAdded || 0);
-            const bookmarkDeleted = Number(s.bookmarkDeleted || 0);
-            const folderAdded = Number(s.folderAdded || 0);
-            const folderDeleted = Number(s.folderDeleted || 0);
-            const movedTotal = Number(s.movedCount || 0);
-            const modifiedTotal = Number(s.modifiedCount || 0);
-
-            const hasNumericalChange = bookmarkAdded > 0 || bookmarkDeleted > 0 || folderAdded > 0 || folderDeleted > 0;
-            const hasStructuralChange = movedTotal > 0 || modifiedTotal > 0;
-            const hasNoChange = !hasNumericalChange && !hasStructuralChange;
-
-            if (hasNoChange) {
-                diffSummary.innerHTML = `<span style="color: var(--text-tertiary);"><i class="fas fa-check-circle"></i> ${isEn ? 'No changes' : '无变化'}</span>`;
-                return;
-            }
-
-            const changes = {
-                bookmarkAdded,
-                bookmarkDeleted,
-                folderAdded,
-                folderDeleted,
-                bookmarkMoved: movedTotal > 0,
-                folderMoved: false,
-                bookmarkModified: modifiedTotal > 0,
-                folderModified: false,
-                bookmarkMovedCount: movedTotal,
-                folderMovedCount: 0,
-                bookmarkModifiedCount: modifiedTotal,
-                folderModifiedCount: 0,
-                hasNumericalChange,
-                hasStructuralChange,
-                hasNoChange,
-                isFirst: false,
-                isRestoreHiddenStats: false
-            };
-
-            const prefix = isEn ? 'Different from previous: ' : '相较上一条: ';
-            const html = renderCommitStatsInline(changes, lang);
-
             diffSummary.innerHTML = `
                 <div style="display: flex; align-items: center; justify-content: flex-start; gap: 8px; flex-wrap: wrap;">
                     <span style="font-size: 13px; color: var(--text-secondary);">${prefix}</span>
@@ -10021,7 +11911,7 @@ function showRestoreModal(versions, source) {
         };
 
         const runOverwritePreflight = async () => {
-            if (!isOverwritePreview && !isPatchPreview) return;
+            if (!isOverwritePreview && !isPatchPreview && !isMergePreview) return;
             if (!diffBar || !diffSummary) return;
             if (!restoreRef) {
                 diffBar.style.display = 'flex';
@@ -10029,10 +11919,17 @@ function showRestoreModal(versions, source) {
                 return;
             }
 
+            if (isMergeChangesSource) {
+                diffBar.style.display = 'flex';
+                diffSummary.innerHTML = `<span style="color: var(--text-secondary);">${isEn ? 'Changes-view merge selected. Preview renders the current-changes tree.' : '已选择变化视图导入；预览将渲染当前变化树。'}</span>`;
+                if (previewButton) previewButton.style.display = 'inline-flex';
+                return;
+            }
+
             diffBar.style.display = 'flex';
             diffSummary.textContent = isEn ? 'Computing diff...' : '正在计算差异...';
 
-            // patch / overwrite keep confirm enabled
+            // keep confirm enabled
             confirmBtn.disabled = false;
 
             try {
@@ -10061,29 +11958,22 @@ function showRestoreModal(versions, source) {
         if (diffBar) diffBar.style.display = shouldShowDiffBar ? 'flex' : 'none';
 
         if (diffSummary) {
-            if (isOverwritePreview || isPatchPreview) {
+            if (isOverwritePreview || isPatchPreview || isMergePreview) {
                 diffSummary.textContent = isEn ? 'Computing diff...' : '正在计算差异...';
-            } else if (isMergePreview) {
-                // filled below
-                diffSummary.textContent = '';
             } else {
                 diffSummary.textContent = '';
             }
         }
 
         if (previewButton) {
-            // Patch/overwrite: show after preflight; merge: show immediately.
-            previewButton.style.display = isMergePreview ? 'inline-flex' : 'none';
+            // Show after preflight to keep summary/preview consistent.
+            previewButton.style.display = 'none';
         }
 
         if (importTargetButton) {
             importTargetButton.style.display = isMergePreview ? 'inline-flex' : 'none';
         }
         updateImportTargetHint();
-
-        if (isMergePreview) {
-            renderMergeDiffSummaryHtml();
-        }
 
         if (previewButton) {
             previewButton.addEventListener('click', () => {
@@ -10124,11 +12014,11 @@ function showRestoreModal(versions, source) {
             });
         }
 
-        confirmBtn.disabled = false;
+        confirmBtn.disabled = blockConfirmDueToMissingChangesSource;
 
         confirmModal.style.display = 'flex';
 
-        if (isOverwritePreview || isPatchPreview) {
+        if (isOverwritePreview || isPatchPreview || isMergePreview) {
             runOverwritePreflight().catch(() => { });
         }
 
@@ -10145,6 +12035,44 @@ function showRestoreModal(versions, source) {
             };
 
             const onConfirm = () => {
+                if (source === 'local' && localSelectionMeta && localSelectionMeta.mode === 'folder') {
+                    if (!localSelectionMeta.hasDirectoryEntries) {
+                        const msg = isEn
+                            ? 'Temporary check failed: current selection is not a folder (missing directory structure). Please reselect via “Choose Folder”.'
+                            : '临时校验失败：当前选择不是文件夹（缺少目录结构）。请通过“选择文件夹”重新选择后再恢复。';
+                        alert(msg);
+                        return;
+                    }
+
+                    const selectedFolderType = detectRestoreFolderType(version);
+                    const selectedSnapshotKey = String(restoreRef?.snapshotKey || version?.restoreRef?.snapshotKey || '').trim().toLowerCase();
+                    const selectedSourceType = String(
+                        restoreRef?.sourceType
+                        || version?.sourceType
+                        || version?.restoreRef?.sourceType
+                        || ''
+                    ).trim().toLowerCase();
+                    const indexSnapshotKeys = Array.isArray(localSelectionMeta.indexSnapshotKeys)
+                        ? localSelectionMeta.indexSnapshotKeys
+                        : [];
+                    const shouldEnforceIndexKeyCheck = selectedFolderType === 'versioned';
+                    const bypassSnapshotKeyCheck = !shouldEnforceIndexKeyCheck
+                        || selectedSourceType === 'changes_artifact'
+                        || selectedSnapshotKey === '__overwrite__'
+                        || selectedSnapshotKey.startsWith('__changes_artifact_');
+
+                    if (!bypassSnapshotKeyCheck
+                        && selectedSnapshotKey
+                        && indexSnapshotKeys.length > 0
+                        && !indexSnapshotKeys.includes(selectedSnapshotKey)) {
+                        const msg = isEn
+                            ? 'Temporary check failed: selected version key is not found in the selected folder index. Please reselect folder and retry.'
+                            : '临时校验失败：所选版本键未出现在当前文件夹索引中，请重新选择文件夹后重试。';
+                        alert(msg);
+                        return;
+                    }
+                }
+
                 cleanup();
                 if (importTargetModal) importTargetModal.style.display = 'none';
                 resolve(true);
@@ -10163,9 +12091,12 @@ function showRestoreModal(versions, source) {
     };
 
     confirmButton.onclick = async () => {
-        const strategy = (strategyPatchRadio && strategyPatchRadio.checked)
-            ? 'patch'
-            : ((strategyMergeRadio && strategyMergeRadio.checked) ? 'merge' : 'overwrite');
+        const forceChangesArtifact = isChangesSubModeActive(currentVersionType);
+        const strategy = forceChangesArtifact
+            ? 'merge'
+            : ((strategyPatchRadio && strategyPatchRadio.checked)
+                ? 'patch'
+                : ((strategyMergeRadio && strategyMergeRadio.checked) ? 'merge' : 'overwrite'));
         let restoringTextTimer = null;
 
         try {
@@ -10177,23 +12108,13 @@ function showRestoreModal(versions, source) {
             }
 
             const restoreRef = selectedVersion.restoreRef;
+            if (forceChangesArtifact && !restoreRef?.changesArtifact) {
+                throw new Error('Changes artifact missing for selected record');
+            }
+
             let localPayload = null;
             if (restoreRef?.source === 'local') {
-                const fileKey = restoreRef.localFileKey;
-                const fileObj = fileKey ? localRestoreFileMap.get(fileKey) : null;
-                if (!fileObj) {
-                    throw new Error('Local file handle expired. Please reselect the folder.');
-                }
-                if (restoreRef.sourceType === 'zip') {
-                    const arrayBuffer = await fileObj.arrayBuffer();
-                    localPayload = { arrayBuffer };
-                } else if (restoreRef.sourceType === 'json') {
-                    const text = await fileObj.text();
-                    localPayload = { text };
-                } else if (restoreRef.sourceType === 'html') {
-                    const text = await fileObj.text();
-                    localPayload = { text };
-                }
+                localPayload = await buildLocalPayloadIfNeeded(restoreRef);
             }
 
             // 二级确认：弹窗确认，再执行恢复
@@ -10201,7 +12122,8 @@ function showRestoreModal(versions, source) {
                 version: selectedVersion,
                 strategy,
                 restoreRef,
-                localPayload
+                localPayload,
+                forceChangesArtifact
             });
 
             if (!ok) {
@@ -10230,7 +12152,8 @@ function showRestoreModal(versions, source) {
             const restorePayload = { restoreRef, strategy, localPayload };
             if (strategy === 'merge') {
                 restorePayload.mergeViewMode = getSelectedMergeViewMode();
-                const importTypeKey = isHtmlVersion(selectedVersion) ? 'snapshot' : 'history';
+                restorePayload.forceChangesArtifact = forceChangesArtifact;
+                const importTypeKey = isSnapshotLikeVersion(selectedVersion) ? 'snapshot' : 'history';
                 const sel = importTargetByType[importTypeKey];
                 if (sel && sel.id) {
                     restorePayload.importParentId = String(sel.id);
@@ -10287,11 +12210,18 @@ function showRestoreModal(versions, source) {
                 // Restore should be recorded as a backup (create a restore record in history)
                 try {
                     const selectedFolderType = detectRestoreFolderType(selectedVersion);
-                    const seqNumberRaw = selectedVersion?.seqNumber;
-                    const seqNumberForRecord = selectedFolderType === 'overwrite' ? '0' : seqNumberRaw;
+                    const selectedVersionId = selectedVersion?.id != null ? String(selectedVersion.id) : '';
+                    const displayedSeqFromTable = selectedVersionId
+                        ? String(displayedSeqByVersionId.get(selectedVersionId) || '').trim()
+                        : '';
+                    const fallbackSeq = selectedVersion?.seqNumber != null ? String(selectedVersion.seqNumber) : '';
+                    const resolvedSeq = selectedFolderType === 'overwrite'
+                        ? '0'
+                        : (displayedSeqFromTable || fallbackSeq || '');
+                    const seqNumberForRecord = resolvedSeq;
                     const seqNumberDisplay = selectedFolderType === 'overwrite'
                         ? '0'
-                        : (seqNumberRaw != null ? String(seqNumberRaw) : '');
+                        : resolvedSeq;
                     const displayTime = selectedVersion?.displayTime || '';
                     const restoreTime = selectedVersion?.recordTime || selectedVersion?.restoreRef?.recordTime || '';
                     const restoreNote = isEn
@@ -10305,6 +12235,8 @@ function showRestoreModal(versions, source) {
                         sourceTime: restoreTime,
                         sourceNote: selectedVersion?.note || '',
                         sourceFingerprint: selectedVersion?.fingerprint || '',
+                        sourceSnapshotKey: selectedVersion?.restoreRef?.snapshotKey || '',
+                        sourceOverwriteMode: selectedFolderType === 'overwrite' ? 'overwrite' : 'versioned',
                         strategy: appliedStrategy
                     }, (backupResult) => {
                         // 优先在恢复后立刻拉起一次刷新；若后台稍后写入，storage 监听会再补一轮。
@@ -10370,10 +12302,10 @@ function showRestoreModal(versions, source) {
             cancelButton.disabled = false;
             try {
                 const lang = await getPreferredLang();
-                const isEn = lang === 'en';
-                confirmButton.textContent = isEn ? 'Restore' : '恢复';
+                cachedLang = lang;
+                updateRestoreConfirmIdleText(lang);
             } catch (_) {
-                confirmButton.textContent = 'Restore';
+                updateRestoreConfirmIdleText(cachedLang);
             }
         }
     };
@@ -11475,6 +13407,27 @@ function buildAmbiguityPreviewTrees({ matchReport, currentTree, targetTree, user
 function generateImportMergePreviewTreeHtml(treeRoot, options = {}, lang = 'zh_CN') {
     const isZh = lang === 'zh_CN';
     const maxDepth = typeof options.maxDepth === 'number' ? options.maxDepth : 3;
+    const importResultView = options.importResultView === true;
+
+    const resolveNodeChangeType = (node) => {
+        if (node && node.isImportPathContext === true) return '';
+
+        const direct = String(node?.changeType || '').trim().toLowerCase();
+        if (importResultView && node && node.isImportResultRoot === true) return 'added';
+        if (direct) return direct;
+
+        const title = String(node?.title || '').trim();
+        if (!title) return '';
+
+        if (/^\[\+\]\s*/.test(title)) return 'added';
+        if (/^\[-\]\s*/.test(title)) return 'deleted';
+        if (/^\[~>>\]\s*/i.test(title)) return 'modified+moved';
+        if (/^\[>>\]\s*/i.test(title)) return 'moved';
+        if (/^\[~\]\s*/.test(title)) return 'modified';
+        return '';
+    };
+
+    const sanitizeImportResultTitle = (rawTitle) => String(rawTitle || '').trim();
 
     const getChangeMeta = (changeType) => {
         if (!changeType) return { changeClass: '', statusIcon: '' };
@@ -11512,10 +13465,12 @@ function generateImportMergePreviewTreeHtml(treeRoot, options = {}, lang = 'zh_C
     let modifiedBookmarks = 0;
     let movedFolders = 0;
     let movedBookmarks = 0;
+    let importResultFolders = 0;
+    let importResultBookmarks = 0;
 
     const countChanges = (node) => {
         if (!node) return;
-        const changeType = node.changeType || '';
+        const changeType = resolveNodeChangeType(node);
         const types = String(changeType).split('+').filter(Boolean);
         const isFolder = !node.url && Array.isArray(node.children);
 
@@ -11537,8 +13492,26 @@ function generateImportMergePreviewTreeHtml(treeRoot, options = {}, lang = 'zh_C
         }
     };
 
+    const countImportResultNodes = (node) => {
+        if (!node) return;
+        const isPathContext = node && node.isImportPathContext === true;
+        const isFolder = !node.url && Array.isArray(node.children);
+
+        if (!isPathContext) {
+            if (isFolder) importResultFolders += 1;
+            else importResultBookmarks += 1;
+        }
+
+        if (Array.isArray(node.children)) {
+            node.children.forEach(countImportResultNodes);
+        }
+    };
+
     if (treeRoot && Array.isArray(treeRoot.children)) {
         treeRoot.children.forEach(countChanges);
+        if (importResultView) {
+            treeRoot.children.forEach(countImportResultNodes);
+        }
     }
 
     const formatCount = (folders, bookmarks) => {
@@ -11554,10 +13527,20 @@ function generateImportMergePreviewTreeHtml(treeRoot, options = {}, lang = 'zh_C
     const modifiedTotal = modifiedFolders + modifiedBookmarks;
     const movedTotal = movedFolders + movedBookmarks;
 
-    if (addedTotal > 0) legendItems.push(`<span class="legend-item"><span class="legend-dot added"></span><span class="legend-count">:${formatCount(addedFolders, addedBookmarks)}</span></span>`);
-    if (deletedTotal > 0) legendItems.push(`<span class="legend-item"><span class="legend-dot deleted"></span><span class="legend-count">:${formatCount(deletedFolders, deletedBookmarks)}</span></span>`);
-    if (movedTotal > 0) legendItems.push(`<span class="legend-item"><span class="legend-dot moved"></span><span class="legend-count">:${movedTotal}</span></span>`);
-    if (modifiedTotal > 0) legendItems.push(`<span class="legend-item"><span class="legend-dot modified"></span><span class="legend-count">:${modifiedTotal}</span></span>`);
+    if (importResultView) {
+        const importResultTotal = importResultFolders + importResultBookmarks;
+        if (importResultTotal > 0) {
+            const importBreakdown = formatCount(importResultFolders, importResultBookmarks);
+            const importLabel = isZh ? '导入新增预估' : 'Import estimate';
+            const importText = importBreakdown || String(importResultTotal);
+            legendItems.push(`<span class="legend-item"><span class="legend-dot added"></span><span class="legend-count">${importLabel}: ${importText}</span></span>`);
+        }
+    } else {
+        if (addedTotal > 0) legendItems.push(`<span class="legend-item"><span class="legend-dot added"></span><span class="legend-count">:${formatCount(addedFolders, addedBookmarks)}</span></span>`);
+        if (deletedTotal > 0) legendItems.push(`<span class="legend-item"><span class="legend-dot deleted"></span><span class="legend-count">:${formatCount(deletedFolders, deletedBookmarks)}</span></span>`);
+        if (movedTotal > 0) legendItems.push(`<span class="legend-item"><span class="legend-dot moved"></span><span class="legend-count">:${movedTotal}</span></span>`);
+        if (modifiedTotal > 0) legendItems.push(`<span class="legend-item"><span class="legend-dot modified"></span><span class="legend-count">:${modifiedTotal}</span></span>`);
+    }
 
     const legend = legendItems.join('');
     const safeTitle = (t) => escapeHtml(String(t == null ? '' : t));
@@ -11565,12 +13548,13 @@ function generateImportMergePreviewTreeHtml(treeRoot, options = {}, lang = 'zh_C
     const renderNode = (node, level = 0) => {
         if (!node) return '';
 
-        const title = safeTitle(node.title || (isZh ? '(无标题)' : '(Untitled)'));
+        const cleanTitle = sanitizeImportResultTitle(node.title || '');
+        const title = safeTitle(cleanTitle || (isZh ? '(无标题)' : '(Untitled)'));
         const url = node.url ? String(node.url) : '';
         const isFolder = !url && Array.isArray(node.children);
         const hasChildren = isFolder && node.children.length > 0;
 
-        const { changeClass, statusIcon } = getChangeMeta(node.changeType);
+        const { changeClass, statusIcon } = getChangeMeta(resolveNodeChangeType(node));
         const shouldExpand = level < maxDepth;
 
         if (isFolder) {
@@ -12238,6 +14222,8 @@ document.addEventListener('DOMContentLoaded', function () {
     const restoreWebDAVBtn = document.getElementById('restoreFromWebDAVBtn');
     const restoreGitHubBtn = document.getElementById('restoreFromGitHubBtn');
     const restoreLocalBtn = document.getElementById('restoreFromLocalBtn');
+    const restoreLocalFolderQuickBtn = document.getElementById('restoreFromLocalFolderQuickBtn');
+    const restoreLocalFileQuickBtn = document.getElementById('restoreFromLocalFileQuickBtn');
 
     if (restoreWebDAVBtn && !restoreWebDAVBtn.hasAttribute('data-listener-attached')) {
         restoreWebDAVBtn.addEventListener('click', () => handleRestoreFromCloud('webdav'));
@@ -12248,9 +14234,11 @@ document.addEventListener('DOMContentLoaded', function () {
         restoreGitHubBtn.setAttribute('data-listener-attached', 'true');
     }
     if (restoreLocalBtn && !restoreLocalBtn.hasAttribute('data-listener-attached')) {
-        restoreLocalBtn.addEventListener('click', () => handleRestoreFromCloud('local'));
+        restoreLocalBtn.addEventListener('click', () => triggerLocalRestorePicker('folder'));
         restoreLocalBtn.setAttribute('data-listener-attached', 'true');
     }
+    bindLocalQuickAction(restoreLocalFolderQuickBtn, 'folder');
+    bindLocalQuickAction(restoreLocalFileQuickBtn, 'file');
 
     // 初始化上传按钮图标与恢复面板显示
     updateUploadButtonIcons();
@@ -12271,87 +14259,211 @@ document.addEventListener('DOMContentLoaded', function () {
 
     // [New] 同步与恢复帮助按钮
     const syncRestoreHelpBtn = document.getElementById('syncRestoreHelpBtn');
+    const restoreModalHelpBtn = document.getElementById('restoreModalHelpBtn');
     let syncRestoreHelpTooltip = null;
+    let restoreModalHelpTooltip = null;
 
-    if (syncRestoreHelpBtn) {
-        syncRestoreHelpBtn.addEventListener('mouseenter', () => {
-            if (!syncRestoreHelpTooltip) {
-                syncRestoreHelpTooltip = document.createElement('div');
-                syncRestoreHelpTooltip.style.cssText = `
-                    position: fixed;
-                    z-index: 99999;
-                    background-color: var(--theme-bg-elevated);
-                    border: 1px solid var(--theme-border-primary);
-                    border-radius: 8px;
-                    padding: 12px;
-                    box-shadow: 0 8px 24px rgba(0,0,0,0.25);
-                    width: 320px;
-                    pointer-events: none;
-                    opacity: 0;
-                    transform: translateY(10px);
-                    transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
-                `;
+    const buildHelpDialog = ({ title = '', contentHtml = '', width = 520, close }) => {
+        const overlay = document.createElement('div');
+        overlay.style.cssText = `
+            position: fixed;
+            inset: 0;
+            z-index: 100000;
+            background: rgba(0,0,0,0.35);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 12px;
+        `;
 
-                // 获取当前语言
-                chrome.storage.local.get(['preferredLang', 'currentLang'], (res) => {
-                    const lang = res?.currentLang || res?.preferredLang || 'zh_CN';
-                    const isEn = lang === 'en';
+        const panel = document.createElement('div');
+        panel.style.cssText = `
+            position: relative;
+            width: min(${Math.max(360, Number(width) || 520)}px, calc(100vw - 24px));
+            max-height: calc(100vh - 24px);
+            display: flex;
+            flex-direction: column;
+            background: var(--theme-bg-elevated);
+            border: 1px solid var(--theme-border-primary);
+            border-radius: 10px;
+            box-shadow: 0 10px 28px rgba(0,0,0,0.3);
+            overflow: hidden;
+        `;
 
-                    syncRestoreHelpTooltip.innerHTML = `
-                        <div style="display: flex; flex-direction: column; gap: 8px;">
-                            <div style="font-weight: 700; font-size: 13px; color: var(--theme-text-primary);">
-                                ${isEn ? '📂 Restore Guide' : '📂 恢复说明'}
-                            </div>
-                            <div style="font-size: 11px; color: var(--theme-text-secondary); line-height: 1.55; padding: 6px 8px; background: var(--theme-bg-secondary); border-radius: 6px;">
-                                ${isEn
-        ? '• Overwrite Restore: deletes current bookmarks, then rebuilds from the target snapshot. Bookmark IDs will change and may affect features like Records/Recommendations<br>• Patch Restore: applies add/delete/move/modify by strict bookmark ID matching and preserves IDs when possible; fallback to overwrite if matching fails<br>• Import Merge: imports into a new folder and keeps existing bookmarks'
-        : '• 覆盖恢复：先删除当前书签，再按目标快照重建。Bookmark ID 会变化，可能影响书签记录、书签推荐等功能<br>• 补丁恢复：按书签 ID 严格匹配执行增删移改，尽量保留原 ID；匹配失败可改用覆盖恢复<br>• 导入合并：导入到新文件夹，保留现有书签'}
-                            </div>
+        const header = document.createElement('div');
+        header.style.cssText = 'display:flex;align-items:center;padding:10px 40px 10px 12px;border-bottom:1px solid var(--theme-border-primary);';
 
-                            <div style="font-size: 10px; color: var(--theme-warning-color); padding: 6px 8px; background: rgba(255, 152, 0, 0.08); border-radius: 4px;">
-                                ${isEn ? 'Scanned version list is temporary cache.' : '扫描出的版本列表是临时缓存。'}
-                            </div>
-                        </div>
-                    `;
-                    document.body.appendChild(syncRestoreHelpTooltip);
+        const titleEl = document.createElement('div');
+        titleEl.textContent = String(title || 'Help');
+        titleEl.style.cssText = 'font-size:13px;font-weight:700;color:var(--theme-text-primary);';
 
-                    // 计算位置
-                    const rect = syncRestoreHelpBtn.getBoundingClientRect();
-                    let top = rect.bottom + 8;
-                    let left = rect.left - 100;
+        const closeBtn = document.createElement('button');
+        closeBtn.type = 'button';
+        closeBtn.innerHTML = '<i class="fas fa-times"></i>';
+        closeBtn.style.cssText = 'position:absolute;top:8px;right:8px;width:26px;height:26px;border:none;border-radius:6px;background:var(--theme-bg-secondary);color:var(--theme-text-secondary);cursor:pointer;display:inline-flex;align-items:center;justify-content:center;';
+        closeBtn.addEventListener('click', (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            if (typeof close === 'function') close();
+        });
 
-                    if (top + syncRestoreHelpTooltip.offsetHeight + 12 > window.innerHeight) {
-                        top = rect.top - syncRestoreHelpTooltip.offsetHeight - 8;
-                    }
-                    if (left + syncRestoreHelpTooltip.offsetWidth + 10 > window.innerWidth) {
-                        left = window.innerWidth - syncRestoreHelpTooltip.offsetWidth - 10;
-                    }
-                    if (left < 10) left = 10;
+        header.appendChild(titleEl);
 
-                    syncRestoreHelpTooltip.style.top = top + 'px';
-                    syncRestoreHelpTooltip.style.left = left + 'px';
+        const body = document.createElement('div');
+        body.style.cssText = 'padding:12px;overflow:auto;display:flex;flex-direction:column;gap:8px;';
+        body.innerHTML = contentHtml;
 
-                    requestAnimationFrame(() => {
-                        if (syncRestoreHelpTooltip) {
-                            syncRestoreHelpTooltip.style.opacity = '1';
-                            syncRestoreHelpTooltip.style.transform = 'translateY(0)';
-                        }
-                    });
-                });
+        panel.appendChild(header);
+        panel.appendChild(closeBtn);
+        panel.appendChild(body);
+        overlay.appendChild(panel);
+
+        overlay.addEventListener('click', (e) => {
+            if (e.target === overlay && typeof close === 'function') {
+                close();
             }
         });
 
-        syncRestoreHelpBtn.addEventListener('mouseleave', () => {
+        return overlay;
+    };
+
+    const removeSyncRestoreHelpTooltip = () => {
+        if (!syncRestoreHelpTooltip) return;
+        const tooltipToRemove = syncRestoreHelpTooltip;
+        syncRestoreHelpTooltip = null;
+        tooltipToRemove.remove();
+    };
+
+    const getRestoreStructureExample = (isEn) => {
+        const lines = isEn
+            ? [
+                'Bookmark Backup/',
+                '├─ Manual Export (Optional)/',
+                '│  ├─ Current Changes/',
+                '│  │  └─ bookmark-changes-simple.json (Optional)',
+                '│  └─ Backup_History/',
+                '│     └─ bookmark_detailed_20260225_123456.html',
+                '├─ Overwrite/',
+                '│  ├─ overwrite-notes-log.md',
+                '│  ├─ bookmark_backup.html',
+                '│  └─ bookmark-changes-simple.json (Optional)',
+                '└─ Versioned/',
+                '   ├─ backup-history-log.md',
+                '   └─ 20260225_123456_abcd1234/',
+                '      ├─ 20260225_123456_abcd1234.html',
+                '      └─ bookmark-changes_simple_20260225_123456_abcd1234.json (Optional)'
+            ]
+            : [
+                '书签备份/',
+                '├─ 手动导出（可选）/',
+                '│  ├─ 当前变化/',
+                '│  │  └─ 书签变化_简略_20260225_123456.json',
+                '│  └─ 备份历史/',
+                '│     └─ 书签_详细_20260225_123456.html',
+                '├─ 覆盖/',
+                '│  ├─ 覆盖备注log.md',
+                '│  ├─ bookmark_backup.html',
+                '│  └─ bookmark-changes-simple.json（可选）',
+                '└─ 版本化/',
+                '   ├─ 备份历史log.md',
+                '   └─ 20260225_123456_abcd1234/',
+                '      ├─ 20260225_123456_abcd1234.html',
+                '      └─ 书签变化_简略_20260225_123456_abcd1234.json（可选）'
+            ];
+        return lines.join('\n');
+    };
+
+    const showSyncRestoreHelpTooltip = () => {
+        if (syncRestoreHelpTooltip || !syncRestoreHelpBtn) return;
+
+        chrome.storage.local.get(['preferredLang', 'currentLang'], (res) => {
+            const lang = res?.currentLang || res?.preferredLang || 'zh_CN';
+            const isEn = lang === 'en';
+            const structureExample = getRestoreStructureExample(isEn);
+
+            syncRestoreHelpTooltip = buildHelpDialog({
+                width: 520,
+                title: isEn ? 'Local Restore Guide' : '本地恢复说明',
+                close: removeSyncRestoreHelpTooltip,
+                contentHtml: `
+                    <div style="font-size: 11px; color: var(--theme-text-secondary); line-height: 1.55; padding: 6px 8px; background: var(--theme-bg-secondary); border-radius: 6px;">
+                        ${isEn
+                    ? '• Folder mode (recommended): choose <span style="color: var(--theme-warning-color); font-weight: 700;">Bookmark Backup</span> first (exact English name)<br>• Directory-scan trigger folders: <span style="color: var(--theme-warning-color); font-weight: 700;">Bookmark Backup / Overwrite / Versioned / Manual Export</span>; these map to secondary restore groups<br>• If you pick other folders (e.g. a specific version folder), restore list is built by directly matching files instead of full grouped directory scan<br>• File mode supports HTML compatibility: <span style="color: var(--theme-warning-color); font-weight: 700;">.html / .htm / .xhtml bookmark-format HTML</span> are accepted as restore snapshots (fallback compatible)<br>• Restore index location is unified to <span style="color: var(--theme-warning-color); font-weight: 700;">Versioned/backup-history-log.md</span><br>• overwrite-notes-log is display-only and not used as restore index; selecting Current Changes allows Import Merge only'
+                    : '• 文件夹模式（推荐）：优先选择 <span style="color: var(--theme-warning-color); font-weight: 700;">书签备份</span>，或英文精确名称 <span style="color: var(--theme-warning-color); font-weight: 700;">Bookmark Backup</span><br>• 会触发目录扫描的文件夹：<span style="color: var(--theme-warning-color); font-weight: 700;">书签备份 / 覆盖 / 版本化 / 手动导出</span>，并映射到恢复二级 UI 对应分组<br>• 若选择其他文件夹（例如某个具体版本目录），则按文件直接匹配并展示恢复列表，不走完整分组目录扫描<br>• 文件模式支持 HTML 兼容：<span style="color: var(--theme-warning-color); font-weight: 700;">.html / .htm / .xhtml 书签格式 HTML</span> 均可作为恢复快照（通用兜底）<br>• 恢复索引位置统一为 <span style="color: var(--theme-warning-color); font-weight: 700;">版本化/备份历史log.md</span><br>• 覆盖备注log仅用于展示，不参与恢复索引；若选择“当前变化”，仅允许导入合并'}
+                    </div>
+                    <div style="font-size: 10px; color: var(--theme-text-secondary); padding: 6px 8px; background: var(--theme-bg-tertiary, rgba(255,255,255,0.04)); border-radius: 6px;">
+                        ${isEn ? 'Example structure (Cloud 1 / Cloud 2 / Local)' : '示例结构（云端1 / 云端2 / 本地通用）'}
+                    </div>
+                    <pre style="margin: 0; font-size: 10px; line-height: 1.45; color: var(--theme-text-secondary); padding: 8px; background: var(--theme-bg-secondary); border-radius: 6px; border: 1px dashed var(--theme-border-primary); white-space: pre; overflow-x: auto;">${structureExample}</pre>
+                    <div style="font-size: 10px; color: var(--theme-info-color, #4FC3F7); padding: 6px 8px; background: rgba(79, 195, 247, 0.08); border-radius: 4px;">
+                        ${isEn ? 'Local scan only reads required files; it does not upload to cloud.' : '本地扫描只读取必要文件，不会上传到云端。'}
+                    </div>
+                `
+            });
+
+            document.body.appendChild(syncRestoreHelpTooltip);
+        });
+    };
+
+    const removeRestoreModalHelpTooltip = () => {
+        if (!restoreModalHelpTooltip) return;
+        const tooltipToRemove = restoreModalHelpTooltip;
+        restoreModalHelpTooltip = null;
+        tooltipToRemove.remove();
+    };
+
+    const showRestoreModalHelpTooltip = () => {
+        if (restoreModalHelpTooltip || !restoreModalHelpBtn) return;
+
+        chrome.storage.local.get(['preferredLang', 'currentLang'], (res) => {
+            const lang = res?.currentLang || res?.preferredLang || 'zh_CN';
+            const isEn = lang === 'en';
+            const structureExample = getRestoreStructureExample(isEn);
+
+            restoreModalHelpTooltip = buildHelpDialog({
+                width: 560,
+                title: isEn ? 'Restore Strategy Guide' : '恢复策略说明',
+                close: removeRestoreModalHelpTooltip,
+                contentHtml: `
+                    <div style="font-size: 11px; color: var(--theme-text-secondary); line-height: 1.55; padding: 6px 8px; background: var(--theme-bg-secondary); border-radius: 6px;">
+                        ${isEn
+                    ? '• Overwrite Restore: deletes current bookmarks, then rebuilds from the target snapshot. Bookmark IDs may change<br>• Patch Restore: applies add/delete/move/modify by strict ID matching and preserves IDs when possible<br>• Import Merge: imports into a new folder and keeps existing bookmarks'
+                    : '• 覆盖恢复：先删除当前书签，再按目标快照重建，Bookmark ID 可能变化<br>• 补丁恢复：按书签 ID 严格匹配执行增删移改，尽量保留原 ID<br>• 导入合并：导入到新文件夹，保留现有书签'}
+                    </div>
+                    <div style="font-size: 10px; color: var(--theme-text-secondary); padding: 6px 8px; background: var(--theme-bg-tertiary, rgba(255,255,255,0.04)); border-radius: 6px;">
+                        ${isEn ? 'Reference structure (Cloud 1 / Cloud 2 / Local)' : '参考结构（云端1 / 云端2 / 本地通用）'}
+                    </div>
+                    <pre style="margin: 0; font-size: 10px; line-height: 1.45; color: var(--theme-text-secondary); padding: 8px; background: var(--theme-bg-secondary); border-radius: 6px; border: 1px dashed var(--theme-border-primary); white-space: pre; overflow-x: auto;">${structureExample}</pre>
+                    <div style="font-size: 10px; color: var(--theme-warning-color); padding: 6px 8px; background: rgba(255, 152, 0, 0.08); border-radius: 4px;">
+                        ${isEn ? 'The scanned version list is temporary cache for this popup session.' : '扫描出的版本列表是本次弹窗会话的临时缓存。'}
+                    </div>
+                `
+            });
+
+            document.body.appendChild(restoreModalHelpTooltip);
+        });
+    };
+
+    if (syncRestoreHelpBtn) {
+        syncRestoreHelpBtn.addEventListener('click', (e) => {
+            e.preventDefault();
+            e.stopPropagation();
             if (syncRestoreHelpTooltip) {
-                syncRestoreHelpTooltip.style.opacity = '0';
-                syncRestoreHelpTooltip.style.transform = 'translateY(5px)';
+                removeSyncRestoreHelpTooltip();
+            } else {
+                showSyncRestoreHelpTooltip();
+            }
+        });
+    }
 
-                const tooltipToRemove = syncRestoreHelpTooltip;
-                syncRestoreHelpTooltip = null;
-
-                setTimeout(() => {
-                    tooltipToRemove.remove();
-                }, 200);
+    if (restoreModalHelpBtn) {
+        restoreModalHelpBtn.addEventListener('click', (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            if (restoreModalHelpTooltip) {
+                removeRestoreModalHelpTooltip();
+            } else {
+                showRestoreModalHelpTooltip();
             }
         });
     }

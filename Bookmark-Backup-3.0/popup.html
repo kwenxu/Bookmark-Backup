@@ -2712,7 +2712,7 @@
 
         .settings-split-container {
             display: grid;
-            grid-template-columns: 1fr 1fr;
+            grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
             gap: 15px;
             align-items: stretch;
         }
@@ -2721,6 +2721,8 @@
             display: flex;
             flex-direction: column;
             gap: 8px;
+            min-width: 0;
+            max-width: 100%;
             min-height: 0;
             height: auto;
             margin-top: 0;
@@ -2732,6 +2734,7 @@
             display: flex;
             flex-direction: column;
             flex: 0 0 auto;
+            min-width: 0;
             min-height: 0;
             height: auto;
             margin-bottom: 0;
@@ -2926,6 +2929,7 @@
         }
         .restore-actions-list {
             width: 100%;
+            min-width: 0;
             display: flex;
             flex-direction: column;
             gap: 6px;
@@ -2936,6 +2940,7 @@
             align-items: center;
             gap: 8px;
             width: 100%;
+            min-width: 0;
             padding: 7px 10px;
             background: rgba(255, 255, 255, 0.05);
             border: 1px solid var(--theme-border-primary);
@@ -2977,7 +2982,9 @@
             display: inline-flex;
             align-items: center;
             gap: 6px;
+            flex: 1 1 auto;
             min-width: 0;
+            overflow: hidden;
         }
 
         .restore-folder-hint {
@@ -2986,6 +2993,73 @@
             opacity: 0.85;
             line-height: 1.2;
             white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        .restore-local-quick-actions {
+            display: inline-flex;
+            align-items: center;
+            gap: 4px;
+            margin-left: 6px;
+            flex: 0 0 auto;
+        }
+
+        .restore-local-mini-btn {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            min-width: 20px;
+            height: 20px;
+            padding: 0 4px;
+            border: 1px solid var(--theme-border-secondary);
+            border-radius: 6px;
+            background: var(--theme-bg-secondary);
+            color: var(--theme-text-secondary);
+            cursor: pointer;
+            transition: all 0.18s ease;
+            font-size: 11px;
+            line-height: 1;
+            user-select: none;
+        }
+
+        .restore-local-mini-btn i {
+            font-size: 11px;
+        }
+
+        .restore-local-mini-btn:hover,
+        .restore-local-mini-btn:focus-visible {
+            color: var(--theme-text-primary);
+            border-color: var(--theme-link-color);
+            background: rgba(255, 255, 255, 0.12);
+            outline: none;
+        }
+
+        #restoreFromLocalBtn .restore-action-status-dot {
+            margin-left: 6px;
+        }
+
+        #restoreFromLocalBtn {
+            display: grid;
+            grid-template-columns: 16px minmax(0, 1fr) auto auto;
+            align-items: center;
+            column-gap: 6px;
+        }
+
+        #restoreFromLocalBtn .restore-label-inline {
+            min-width: 0;
+        }
+
+        #restoreFromLocalBtn .restore-folder-hint {
+            display: none;
+        }
+
+        #restoreFromLocalBtn .restore-local-quick-actions {
+            margin-left: 0;
+        }
+
+        #restoreFromLocalBtn .restore-action-status-dot {
+            margin-left: 0;
         }
 
         .restore-icon-webdav {
@@ -3055,7 +3129,7 @@
         /* ========================= */
         #restoreVersionTable th,
         #restoreVersionTable td {
-            padding: 10px 12px;
+            padding: 8px 8px;
             border-bottom: 1px solid var(--theme-border-primary);
             font-size: 12px;
             color: var(--theme-text-primary);
@@ -3064,7 +3138,7 @@
 
         #restoreVersionTable.snapshot-mode th,
         #restoreVersionTable.snapshot-mode td {
-            padding: 8px 10px;
+            padding: 7px 8px;
         }
 
         #restoreVersionTable thead th {
@@ -3100,11 +3174,42 @@
 
         #restoreVersionTable .restore-note {
             font-weight: 600;
-            font-size: 13px;
+            font-size: 12px;
+            display: block;
             white-space: nowrap;
-            overflow: hidden;
+            overflow-x: hidden;
+            overflow-y: hidden;
             text-overflow: ellipsis;
-            max-width: 240px;
+            max-width: 210px;
+            scrollbar-width: none;
+        }
+
+        #restoreVersionTable .restore-note:hover {
+            overflow-x: auto;
+            text-overflow: clip;
+            scrollbar-width: thin;
+            scrollbar-color: rgba(120, 120, 120, 0.55) transparent;
+        }
+
+        #restoreVersionTable .restore-note::-webkit-scrollbar {
+            height: 0;
+        }
+
+        #restoreVersionTable .restore-note:hover::-webkit-scrollbar {
+            height: 4px;
+        }
+
+        #restoreVersionTable .restore-note::-webkit-scrollbar-track {
+            background: transparent;
+        }
+
+        #restoreVersionTable .restore-note::-webkit-scrollbar-thumb {
+            background: rgba(120, 120, 120, 0.55);
+            border-radius: 999px;
+        }
+
+        #restoreVersionTable .restore-note::-webkit-scrollbar-thumb:hover {
+            background: rgba(120, 120, 120, 0.75);
         }
 
         #restoreVersionTable .restore-folder-badge {
@@ -3132,10 +3237,50 @@
         #restoreVersionTable .restore-stats {
             display: flex;
             align-items: center;
-            gap: 8px;
+            gap: 5px;
             flex-wrap: wrap;
             color: var(--theme-text-secondary);
+            line-height: 1.25;
         }
+
+        #restoreVersionTable .restore-stats .stats-lines {
+            display: inline-flex;
+            flex-direction: column;
+            align-items: flex-start;
+            gap: 2px;
+        }
+
+        #restoreVersionTable .restore-stats .stats-line {
+            display: inline-flex;
+            align-items: center;
+            gap: 4px;
+            white-space: nowrap;
+        }
+
+        #restoreVersionTable .restore-stats .stats-group {
+            display: inline-flex;
+            align-items: center;
+            gap: 2px;
+            white-space: nowrap;
+        }
+
+        #restoreVersionTable .restore-stats .stats-label {
+            color: var(--theme-text-secondary);
+            opacity: 0.92;
+        }
+
+        #restoreVersionTable .restore-stats .stats-sep {
+            color: var(--theme-text-tertiary);
+            opacity: 0.7;
+            font-weight: 500;
+        }
+        #restoreVersionTable .restore-stats .stats-pair-sep {
+            color: var(--theme-text-tertiary);
+            opacity: 0.75;
+            margin: 0 1px;
+            font-weight: 500;
+        }
+
 
         #restoreVersionTable .restore-stats .pos {
             color: #4CAF50;
@@ -3148,12 +3293,17 @@
         }
 
         #restoreVersionTable .restore-stats .move {
-            color: #4FC3F7;
+            color: #2196F3;
             font-weight: 600;
         }
 
+        #restoreVersionTable .restore-stats .move-symbol {
+            margin-right: 1px;
+            font-weight: 700;
+        }
+
         #restoreVersionTable .restore-stats .mod {
-            color: #FFB74D;
+            color: #FF9800;
             font-weight: 600;
         }
 
@@ -3235,6 +3385,12 @@
             line-height: 1.5;
             position: relative;
             top: 10px;
+        }
+
+        .restore-modal-header-actions {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
         }
 
         .popup-modal-close {
@@ -4440,24 +4596,63 @@
 
         .versioned-log-panel {
             margin-top: 2px;
-            border: 1px solid rgba(13, 110, 253, 0.36);
-            background: rgba(13, 110, 253, 0.08);
-            border-radius: 8px;
-            padding: 6px 8px;
+            border: none;
+            background: transparent;
+            border-radius: 0;
+            padding: 4px 0 1px;
             display: flex;
             flex-direction: row;
             align-items: center;
-            justify-content: center;
-            gap: 6px;
+            justify-content: space-between;
+            gap: 8px;
             flex-wrap: nowrap;
+            width: 100%;
+            min-height: 22px;
         }
 
         .versioned-log-title {
-            font-size: 12px;
-            font-weight: 600;
-            color: #0d6efd;
-            line-height: 1.35;
+            display: inline-flex;
+            align-items: center;
+            min-width: 60px;
+            font-size: 11px;
+            font-weight: 400;
+            color: var(--theme-text-secondary);
+            line-height: 1;
             white-space: nowrap;
+        }
+
+        .versioned-log-right {
+            display: inline-flex;
+            align-items: center;
+            justify-content: flex-end;
+            gap: 10px;
+            margin-left: auto;
+            flex-wrap: nowrap;
+            min-width: 0;
+        }
+
+        .versioned-log-enable-wrap {
+            display: inline-flex;
+            align-items: center;
+            gap: 0;
+            cursor: pointer;
+            user-select: none;
+            height: 18px;
+            position: relative;
+            top: 2px;
+        }
+
+        .versioned-log-enable-wrap input[type="checkbox"] {
+            margin: 0;
+            width: 15px;
+            height: 15px;
+            cursor: pointer;
+            accent-color: #0d6efd;
+            transform: translateY(1px);
+        }
+
+        html[data-theme="dark"] .versioned-log-enable-wrap input[type="checkbox"] {
+            accent-color: #72a9ff;
         }
 
         .versioned-log-desc {
@@ -4470,10 +4665,27 @@
             display: inline-flex;
             align-items: center;
             gap: 5px;
-            font-size: 11px;
+            font-size: 10px;
             color: var(--theme-text-primary);
             flex-wrap: nowrap;
             white-space: nowrap;
+        }
+
+        .versioned-log-control.disabled {
+            opacity: 0.55;
+            pointer-events: none;
+        }
+
+        .versioned-log-panel.force-versioned .versioned-log-enable-wrap {
+            display: none;
+        }
+
+        .versioned-log-panel.force-versioned .versioned-log-right {
+            gap: 0;
+        }
+
+        .versioned-log-panel.force-versioned .versioned-log-control {
+            margin-left: auto;
         }
 
         .versioned-log-spinner {
@@ -4562,7 +4774,20 @@
         }
 
         #backupStrategySection.compact #versionedLogPanel {
-            display: none !important;
+            display: flex !important;
+        }
+
+        #backupStrategySection.compact #manualExportCloudUploadPanel {
+            display: flex !important;
+        }
+
+        .manual-export-cloud-panel {
+            margin-top: 2px;
+        }
+
+        .manual-export-cloud-switch {
+            margin-left: 0;
+            margin-top: 0;
         }
     </style>
 </head>
@@ -4783,8 +5008,10 @@
                     </div>
                 </div>
 
-                <!-- 隐藏的文件输入框 (用于本地恢复) -->
+                <!-- 隐藏的文件输入框 (用于本地恢复：目录优先) -->
                 <input type="file" id="localRestoreInput" style="display: none;" webkitdirectory directory>
+                <!-- 隐藏的文件输入框 (用于本地恢复：单独文件) -->
+                <input type="file" id="localRestoreFileInput" style="display: none;" multiple accept=".html,.htm,.xhtml,.json,.md,.markdown,text/html,application/xhtml+xml,application/json,text/markdown,text/plain">
 
                 <!-- 分隔线 -->
                 <div style="border-top: 1px solid var(--theme-border-primary); margin: 6px 0;"></div>
@@ -4987,21 +5214,35 @@
                                 </div>
 
                                 <div id="versionedLogPanel" class="versioned-log-panel">
-                                    <div class="versioned-log-title" id="versionedLogTitle">备份历史log</div>
-                                    <div class="versioned-log-control">
-                                        <span id="versionedLogEveryPrefix">每</span>
-                                        <div class="versioned-log-spinner">
-                                            <button type="button" id="versionedLogEveryDownBtn" class="versioned-log-step-btn" aria-label="减少次数" title="减少次数">
-                                                <i class="fas fa-chevron-down"></i>
-                                            </button>
-                                            <input type="text" inputmode="numeric" maxlength="2" id="versionedLogEveryInput" value="1">
-                                            <button type="button" id="versionedLogEveryUpBtn" class="versioned-log-step-btn" aria-label="增加次数" title="增加次数">
-                                                <i class="fas fa-chevron-up"></i>
-                                            </button>
+                                    <span class="versioned-log-title" id="versionedLogTitle">备份历史log（索引）</span>
+                                    <div class="versioned-log-right">
+                                        <div class="versioned-log-control" id="versionedLogControl">
+                                            <span id="versionedLogEveryPrefix">每备份</span>
+                                            <div class="versioned-log-spinner">
+                                                <button type="button" id="versionedLogEveryDownBtn" class="versioned-log-step-btn" aria-label="减少次数" title="减少次数">
+                                                    <i class="fas fa-chevron-down"></i>
+                                                </button>
+                                                <input type="text" inputmode="numeric" maxlength="2" id="versionedLogEveryInput" value="1">
+                                                <button type="button" id="versionedLogEveryUpBtn" class="versioned-log-step-btn" aria-label="增加次数" title="增加次数">
+                                                    <i class="fas fa-chevron-up"></i>
+                                                </button>
+                                            </div>
+                                            <span id="versionedLogEverySuffix">次更新</span>
                                         </div>
-                                        <span id="versionedLogEverySuffix">次自动更新覆盖</span>
+                                        <label class="versioned-log-enable-wrap" for="versionedLogEnabled" title="Enable">
+                                            <input type="checkbox" id="versionedLogEnabled" checked>
+                                        </label>
                                     </div>
                                 </div>
+
+                                <div id="manualExportCloudUploadPanel" class="setting-row manual-export-cloud-panel">
+                                    <span class="setting-label" id="manualExportCloudUploadTitle">手动导出上传至云端</span>
+                                    <label class="switch manual-export-cloud-switch" style="margin: 0;">
+                                        <input type="checkbox" id="manualExportCloudUploadEnabled">
+                                        <span class="slider"></span>
+                                    </label>
+                                </div>
+
                             </div>
                         </div>
                     </div>
@@ -5039,6 +5280,14 @@
                                         <span class="restore-label-inline">
                                             <span class="restore-label">Local</span>
                                             <span id="restoreLocalFolderHint" class="restore-folder-hint">（请选择父文件夹：书签备份）</span>
+                                        </span>
+                                        <span class="restore-local-quick-actions">
+                                            <span id="restoreFromLocalFileQuickBtn" class="restore-local-mini-btn" tabindex="0" role="button" aria-label="选择文件（支持多选）" title="选择文件（支持多选）">
+                                                <i class="fas fa-file-alt"></i>
+                                            </span>
+                                            <span id="restoreFromLocalFolderQuickBtn" class="restore-local-mini-btn" tabindex="0" role="button" aria-label="选择文件夹" title="选择文件夹">
+                                                <i class="fas fa-folder-open"></i>
+                                            </span>
                                         </span>
                                         <span id="restoreFromLocalStatusDot" class="restore-action-status-dot not-configured" aria-hidden="true"></span>
                                     </button>
@@ -5488,26 +5737,72 @@
             style="width: 720px; max-width: calc(100% - 24px); display: flex; flex-direction: column; max-height: 90vh; position: relative; top: auto; right: auto; margin: 0; box-shadow: 0 6px 18px rgba(0,0,0,0.15); border-radius: 12px; padding: 0;">
             <div class="restore-modal-header">
                 <h3 id="restoreModalTitle" class="restore-modal-title">Restore History</h3>
-                <button id="closeRestoreModal" class="popup-modal-close" aria-label="Close">
-                    <i class="fas fa-times"></i>
-                </button>
+                <div class="restore-modal-header-actions">
+                    <button id="restoreModalHelpBtn" class="sync-restore-help-btn" aria-label="Help" title="Help">
+                        <i class="fas fa-question-circle"></i>
+                    </button>
+                    <button id="closeRestoreModal" class="popup-modal-close" aria-label="Close">
+                        <i class="fas fa-times"></i>
+                    </button>
+                </div>
             </div>
 
             <div class="modal-body" style="overflow-y: auto; flex: 1; padding: 12px 16px;">
-                <div id="restoreVersionTypeSegment" style="display: none; justify-content: flex-start; margin-bottom: 10px;">
+                <div id="restoreVersionTypeSegment" style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px; margin-bottom: 10px;">
                     <div id="restoreVersionTypeGroup" class="restore-strategy-group">
-                        <label class="restore-strategy-label" title="" id="restoreVersionTypeHistoryLabelWrap">
-                            <input type="radio" name="restoreVersionType" id="restoreVersionTypeHistory" value="history" checked>
-                            <div class="restore-strategy-option" id="restoreVersionTypeHistoryLabel">
+                        <label class="restore-strategy-label" title="" id="restoreVersionTypeVersionedLabelWrap">
+                            <input type="radio" name="restoreVersionType" id="restoreVersionTypeVersioned" value="versioned" checked>
+                            <div class="restore-strategy-option" id="restoreVersionTypeVersionedLabel">
                                 <span class="restore-strategy-icon">✓</span>
-                                <span id="restoreVersionTypeHistoryText">Restore Versions</span>
+                                <span id="restoreVersionTypeVersionedText">多版本</span>
                             </div>
                         </label>
-                        <label class="restore-strategy-label" title="" id="restoreVersionTypeSnapshotLabelWrap">
-                            <input type="radio" name="restoreVersionType" id="restoreVersionTypeSnapshot" value="snapshot">
-                            <div class="restore-strategy-option" id="restoreVersionTypeSnapshotLabel">
+                        <label class="restore-strategy-label" title="" id="restoreVersionTypeOverwriteLabelWrap">
+                            <input type="radio" name="restoreVersionType" id="restoreVersionTypeOverwrite" value="overwrite">
+                            <div class="restore-strategy-option" id="restoreVersionTypeOverwriteLabel">
                                 <span class="restore-strategy-icon">✓</span>
-                                <span id="restoreVersionTypeSnapshotText"></span>
+                                <span id="restoreVersionTypeOverwriteText">覆盖</span>
+                            </div>
+                        </label>
+                        <label class="restore-strategy-label" title="" id="restoreVersionTypeManualExportLabelWrap">
+                            <input type="radio" name="restoreVersionType" id="restoreVersionTypeManualExport" value="manual_export">
+                            <div class="restore-strategy-option" id="restoreVersionTypeManualExportLabel">
+                                <span class="restore-strategy-icon">✓</span>
+                                <span id="restoreVersionTypeManualExportText">手动导出</span>
+                            </div>
+                        </label>
+                    </div>
+
+                    <div id="restoreSubModeSegment" class="restore-strategy-group" style="display: none; margin-left: auto;">
+                        <label class="restore-strategy-label" title="" id="restoreSubModeSnapshotLabelWrap">
+                            <input type="radio" name="restoreSubMode" id="restoreSubModeSnapshot" value="snapshot" checked>
+                            <div class="restore-strategy-option" id="restoreSubModeSnapshotLabel">
+                                <span class="restore-strategy-icon">✓</span>
+                                <span id="restoreSubModeSnapshotText">快照</span>
+                            </div>
+                        </label>
+                        <label class="restore-strategy-label" title="" id="restoreSubModeChangesLabelWrap">
+                            <input type="radio" name="restoreSubMode" id="restoreSubModeChanges" value="changes">
+                            <div class="restore-strategy-option" id="restoreSubModeChangesLabel">
+                                <span class="restore-strategy-icon">✓</span>
+                                <span id="restoreSubModeChangesText">变化</span>
+                            </div>
+                        </label>
+                    </div>
+
+                    <div id="restoreVersionedIndexFilterSegment" class="restore-strategy-group" style="display: none;">
+                        <label class="restore-strategy-label" title="" id="restoreVersionedIndexFilterIndexedLabelWrap">
+                            <input type="radio" name="restoreVersionedIndexFilter" id="restoreVersionedIndexFilterIndexed" value="indexed" checked>
+                            <div class="restore-strategy-option" id="restoreVersionedIndexFilterIndexedLabel">
+                                <span class="restore-strategy-icon">✓</span>
+                                <span id="restoreVersionedIndexFilterIndexedText">索引项</span>
+                            </div>
+                        </label>
+                        <label class="restore-strategy-label" title="" id="restoreVersionedIndexFilterNonIndexedLabelWrap">
+                            <input type="radio" name="restoreVersionedIndexFilter" id="restoreVersionedIndexFilterNonIndexed" value="non_indexed">
+                            <div class="restore-strategy-option" id="restoreVersionedIndexFilterNonIndexedLabel">
+                                <span class="restore-strategy-icon">✓</span>
+                                <span id="restoreVersionedIndexFilterNonIndexedText">非索引项</span>
                             </div>
                         </label>
                     </div>
@@ -5518,13 +5813,13 @@
                     <table id="restoreVersionTable" style="width: 100%; border-collapse: collapse;">
                         <thead>
                             <tr>
-                                <th style="text-align: center; width: 40px;"></th>
-                                <th style="text-align: center; width: 54px;"><span id="restoreThSeq">序号</span></th>
+                                <th style="text-align: center; width: 34px;"></th>
+                                <th style="text-align: center; width: 48px;"><span id="restoreThSeq">序号</span></th>
                                 <th style="text-align: left;"><span id="restoreThNote">备注</span></th>
-                                <th style="text-align: left; width: 74px;"><span id="restoreThHash">哈希值</span></th>
-                                <th style="text-align: left; width: 130px;"><span id="restoreThTime">时间</span></th>
-                                <th style="text-align: left; width: 150px;"><span id="restoreThStats">记录变化</span></th>
-                                <th style="text-align: left; width: 150px;"><span id="restoreThStatsCurrent">对当前影响</span></th>
+                                <th style="text-align: left; width: 68px;"><span id="restoreThHash">哈希值</span></th>
+                                <th style="text-align: left; width: 116px;"><span id="restoreThTime">时间</span></th>
+                                <th style="text-align: left; width: 132px;"><span id="restoreThStats">记录变化</span></th>
+                                <th style="text-align: left; width: 102px;"><span id="restoreThViewMode">视图</span></th>
                             </tr>
                         </thead>
                         <tbody id="restoreVersionTableBody">
@@ -5610,6 +5905,13 @@
                                     <span id="restoreMergeViewModeDetailedText">Detailed</span>
                                 </div>
                             </label>
+                            <label class="restore-strategy-label" title="" id="restoreMergeViewModeCollectionWrap">
+                                <input type="radio" name="restoreMergeViewMode" id="restoreMergeViewModeCollection" value="collection">
+                                <div class="restore-strategy-option" id="restoreMergeViewModeCollectionLabel">
+                                    <span class="restore-strategy-icon">✓</span>
+                                    <span id="restoreMergeViewModeCollectionText">Collection</span>
+                                </div>
+                            </label>
                         </div>
                     </div>
 
@@ -5622,7 +5924,7 @@
     <!-- Restore 二级确认对话框 -->
     <div id="restoreConfirmModal" class="modal">
         <div class="modal-content"
-            style="position: relative; top: auto; right: auto; margin: 0; width: 500px; max-width: calc(100% - 24px); box-shadow: var(--shadow-lg); border-radius: 12px; padding: 0; overflow: hidden;">
+            style="position: relative; top: auto; right: auto; margin: 0; width: 560px; max-width: calc(100% - 24px); box-shadow: var(--shadow-lg); border-radius: 12px; padding: 0; overflow: hidden;">
 
             <div class="modal-header compact"
                 style="display: flex; align-items: center; justify-content: space-between; padding: 12px 20px; border-bottom: 1px solid var(--border-color); background: var(--bg-elevated);">

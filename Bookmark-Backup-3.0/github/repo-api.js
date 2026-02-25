@@ -202,53 +202,79 @@ export async function upsertRepoFile({ token, owner, repo, branch, path, message
   const encodedPath = encodeGitHubPath(trimmedPath);
   const urlBase = `${GITHUB_API_BASE_URL}/repos/${encodeURIComponent(trimmedOwner)}/${encodeURIComponent(trimmedRepo)}/contents/${encodedPath}`;
 
-  let existingSha = null;
-  try {
+  const loadExistingSha = async () => {
     const existingUrl = trimmedBranch ? `${urlBase}?ref=${encodeURIComponent(trimmedBranch)}` : urlBase;
     const existing = await githubRequestJson(existingUrl, {
       headers: { Authorization: authHeader }
     });
     if (existing && typeof existing === 'object' && existing.sha && existing.type === 'file') {
-      existingSha = String(existing.sha);
+      return String(existing.sha);
     }
+    return null;
+  };
+
+  let existingSha = null;
+  try {
+    existingSha = await loadExistingSha();
   } catch (error) {
     if (Number(error?.status) !== 404) {
       return { success: false, error: normalizeGitHubError(error) };
     }
   }
 
-  const payload = {
-    message: safeMessage,
-    content: safeContentBase64
-  };
-  if (trimmedBranch) {
-    payload.branch = trimmedBranch;
-  }
-  if (existingSha) {
-    payload.sha = existingSha;
-  }
-
-  try {
-    const json = await githubRequestJson(urlBase, {
-      method: 'PUT',
-      headers: {
-        Authorization: authHeader,
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify(payload)
-    });
-
-    const content = json && typeof json.content === 'object' && json.content ? json.content : null;
-    const commit = json && typeof json.commit === 'object' && json.commit ? json.commit : null;
-
-    return {
-      success: true,
-      created: !existingSha,
-      path: content && content.path ? String(content.path) : trimmedPath,
-      htmlUrl: content && content.html_url ? String(content.html_url) : null,
-      commitSha: commit && commit.sha ? String(commit.sha) : null
+  for (let attempt = 0; attempt < 3; attempt++) {
+    const payload = {
+      message: safeMessage,
+      content: safeContentBase64
     };
-  } catch (error) {
-    return { success: false, error: normalizeGitHubError(error) };
+    if (trimmedBranch) {
+      payload.branch = trimmedBranch;
+    }
+    if (existingSha) {
+      payload.sha = existingSha;
+    }
+
+    try {
+      const json = await githubRequestJson(urlBase, {
+        method: 'PUT',
+        headers: {
+          Authorization: authHeader,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify(payload)
+      });
+
+      const content = json && typeof json.content === 'object' && json.content ? json.content : null;
+      const commit = json && typeof json.commit === 'object' && json.commit ? json.commit : null;
+
+      return {
+        success: true,
+        created: !existingSha,
+        path: content && content.path ? String(content.path) : trimmedPath,
+        htmlUrl: content && content.html_url ? String(content.html_url) : null,
+        commitSha: commit && commit.sha ? String(commit.sha) : null
+      };
+    } catch (error) {
+      const status = Number(error?.status);
+      const messageText = String(error?.message || '').toLowerCase();
+      const isShaConflict = status === 409
+        || (status === 422 && (messageText.includes('sha') || messageText.includes('conflict') || messageText.includes('does not match')));
+
+      if (!isShaConflict || attempt >= 2) {
+        return { success: false, error: normalizeGitHubError(error) };
+      }
+
+      try {
+        existingSha = await loadExistingSha();
+      } catch (refreshError) {
+        if (Number(refreshError?.status) === 404) {
+          existingSha = null;
+        } else {
+          return { success: false, error: normalizeGitHubError(refreshError) };
+        }
+      }
+    }
   }
+
+  return { success: false, error: 'GitHub 写入失败（未知冲突）' };
 }

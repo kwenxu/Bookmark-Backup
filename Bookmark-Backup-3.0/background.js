@@ -124,6 +124,21 @@ function getCurrentChangesFolderByLang(lang) {
     return lang === 'zh_CN' ? '当前变化' : 'Current Changes';
 }
 
+function getManualExportParentFolderByLang(lang) {
+    return lang === 'zh_CN' ? '手动导出' : 'Manual Export';
+}
+
+function getManualExportHistoryFolderByLang(lang) {
+    const parent = getManualExportParentFolderByLang(lang);
+    const leaf = lang === 'zh_CN' ? '备份历史' : 'Backup_History';
+    return `${parent}/${leaf}`;
+}
+
+function getManualExportCurrentChangesFolderByLang(lang) {
+    const parent = getManualExportParentFolderByLang(lang);
+    return `${parent}/${getCurrentChangesFolderByLang(lang)}`;
+}
+
 function getOverwriteFolderByLang(lang) {
     return lang === 'zh_CN' ? '覆盖' : 'Overwrite';
 }
@@ -163,6 +178,33 @@ function computeSyncFingerprintByTime(syncTime) {
 function normalizeSyncFingerprint(value) {
     const text = String(value || '').trim().toLowerCase();
     return /^[0-9a-f]{6,12}$/i.test(text) ? text : '';
+}
+
+function normalizeOverwriteMode(value) {
+    return String(value || '').trim().toLowerCase() === 'overwrite'
+        ? 'overwrite'
+        : 'versioned';
+}
+
+function buildSnapshotKeyByTimeAndFingerprint(time, fingerprint) {
+    const normalizedFingerprint = normalizeSyncFingerprint(fingerprint);
+    if (!normalizedFingerprint) return '';
+
+    const date = new Date(time);
+    if (!Number.isFinite(date.getTime())) return '';
+
+    const timePart = formatSyncTimeForFileName(date.toISOString());
+    return `${timePart}_${normalizedFingerprint}`.toLowerCase();
+}
+
+function resolveSnapshotKeyForRecord(record = {}) {
+    const overwriteMode = normalizeOverwriteMode(record?.overwriteMode);
+    if (overwriteMode === 'overwrite') return '__overwrite__';
+
+    const explicit = parseSnapshotKeyFromText(record?.snapshotKey || '');
+    if (explicit) return explicit;
+
+    return buildSnapshotKeyByTimeAndFingerprint(record?.time, record?.fingerprint);
 }
 
 function buildSnapshotNamingContext(options = {}) {
@@ -250,9 +292,9 @@ function resolveExportSubFolderByKey(folderKey, lang) {
         case 'backup_versioned':
             return `${getBackupFolderByLang(lang)}/${getVersionedFolderByLang(lang)}`;
         case 'history':
-            return getHistoryFolderByLang(lang);
+            return getManualExportHistoryFolderByLang(lang);
         case 'current_changes':
-            return getCurrentChangesFolderByLang(lang);
+            return getManualExportCurrentChangesFolderByLang(lang);
         case 'backup_history':
             return lang === 'zh_CN' ? '备份历史' : 'Backup_History';
         default:
@@ -278,6 +320,14 @@ let folderModified = false;
 let hasInitializedBackupReminder = false;
 // 添加一个变量来标记是否正在进行备份
 let isSyncing = false;
+// 实时自动备份：单消费者队列（避免频繁变更时并发/冲突）
+let realtimeAutoBackupQueuePending = false;
+let realtimeAutoBackupQueueReason = null;
+let realtimeAutoBackupQueueRunning = false;
+// 远程恢复扫描短缓存：避免设置页频繁打开时重复全量拉目录
+const REMOTE_RESTORE_SCAN_CACHE_TTL_MS = 60000;
+const remoteRestoreScanCache = new Map(); // key -> { time, files }
+const remoteRestoreIndexCache = new Map(); // key -> { time, result }
 let bookmarkChangeTimeout = null;
 // 添加一个变量标记是否是从syncDownloadState调用的onCreated处理
 let isProcessingHistoricalDownloads = false;
@@ -1857,7 +1907,7 @@ browserAPI.runtime.onMessage.addListener((message, sender, sendResponse) => {
 
                     // 构建WebDAV路径 - 使用统一文件夹结构（根据语言动态选择）
                     const serverAddress = config.serverAddress.replace(/\/+$/, '/');
-                    const historyFolder = getHistoryFolderByLang(lang);
+                    const historyFolder = resolveExportSubFolderByKey('history', lang);
                     const exportRootFolder = getExportRootFolderByLang(lang);
                     const folderPath = `${exportRootFolder}/${historyFolder}/`;
                     const fullUrl = `${serverAddress}${folderPath}${fileName}`;
@@ -1989,7 +2039,7 @@ browserAPI.runtime.onMessage.addListener((message, sender, sendResponse) => {
 
                     // 执行下载 - 使用统一文件夹结构（根据语言动态选择）
                     const lang = message.lang || await getCurrentLang();
-                    const localHistoryFolder = getHistoryFolderByLang(lang);
+                    const localHistoryFolder = resolveExportSubFolderByKey('history', lang);
                     const exportRootFolder = getExportRootFolderByLang(lang);
                     const downloadId = await new Promise((resolve, reject) => {
                         browserAPI.downloads.download({
@@ -2026,6 +2076,24 @@ browserAPI.runtime.onMessage.addListener((message, sender, sendResponse) => {
                     const fileName = String(message.fileName || '').trim();
                     const folderKey = String(message.folderKey || '').trim();
                     const contentType = message.contentType;
+
+                    // 手动导出上传云端开关（仅影响 Manual Export 路径）
+                    const manualExportCloudFolderKeys = new Set(['history', 'current_changes']);
+                    if (manualExportCloudFolderKeys.has(folderKey)) {
+                        const cfg = await browserAPI.storage.local.get(['manualExportCloudUploadEnabled']);
+                        const enabled = cfg?.manualExportCloudUploadEnabled === true;
+                        if (!enabled) {
+                            sendResponse({
+                                success: true,
+                                skipped: true,
+                                manualExportCloudUploadDisabled: true,
+                                webdav: { success: false, skipped: true, reason: 'manual_export_cloud_upload_disabled' },
+                                githubRepo: { success: false, skipped: true, reason: 'manual_export_cloud_upload_disabled' }
+                            });
+                            return;
+                        }
+                    }
+
                     // 支持两种方式传递二进制数据：
                     // 1. contentArrayBuffer - 直接传递 ArrayBuffer（可能在某些情况下丢失）
                     // 2. contentBase64Binary - Base64 编码的二进制数据（推荐，可靠传递）
@@ -2178,6 +2246,18 @@ browserAPI.runtime.onMessage.addListener((message, sender, sendResponse) => {
                     const sourceNote = message.sourceNote || '';
                     const strategy = message.strategy || 'overwrite';
                     const sourceFingerprint = message.sourceFingerprint || '';
+                    const sourceSnapshotKeyRaw = String(message.sourceSnapshotKey || '').trim().toLowerCase();
+                    const sourceSnapshotKey = sourceSnapshotKeyRaw === '__overwrite__'
+                        ? '__overwrite__'
+                        : parseSnapshotKeyFromText(sourceSnapshotKeyRaw);
+                    const sourceOverwriteMode = normalizeOverwriteMode(
+                        message.sourceOverwriteMode
+                        || (sourceSnapshotKey === '__overwrite__' ? 'overwrite' : 'versioned')
+                    );
+                    const normalizedStrategy = String(strategy || 'overwrite').trim().toLowerCase();
+                    const restoreRecordOverwriteMode = normalizedStrategy === 'merge'
+                        ? 'versioned'
+                        : sourceOverwriteMode;
 
                     const {
                         syncHistory: historyBeforeRestoreRecord = [],
@@ -2221,9 +2301,173 @@ browserAPI.runtime.onMessage.addListener((message, sender, sendResponse) => {
                         } catch (_) { }
                     }
 
-                    // 恢复/覆盖/导入合并：始终写入一条独立历史记录（不依赖外部备份配置）。
+                    // 恢复/覆盖/导入合并：先等待书签树稳定，再落地“快照文件”，避免拿到恢复前/中间态。
                     const syncTime = new Date().toISOString();
-                    await updateSyncStatus('local', syncTime, 'success', '', 'manual', null);
+                    const snapshotNaming = buildSnapshotNamingContext({ syncTime });
+                    const getBookmarkTreeStabilitySignature = (tree) => {
+                        const roots = Array.isArray(tree) ? tree : [];
+                        const root = roots[0] && typeof roots[0] === 'object' ? roots[0] : null;
+                        const rootChildren = Array.isArray(root?.children) ? root.children : [];
+                        const rootChildSignature = rootChildren
+                            .map((child) => `${String(child?.id || '')}:${Array.isArray(child?.children) ? child.children.length : 0}`)
+                            .join('|');
+                        return `${countAllBookmarks(tree)}::${countAllFolders(tree)}::${rootChildSignature}`;
+                    };
+                    const captureStableBookmarks = async () => {
+                        let latestTree = await new Promise((resolve) => {
+                            browserAPI.bookmarks.getTree((items) => resolve(items));
+                        });
+                        let latestSignature = getBookmarkTreeStabilitySignature(latestTree);
+                        let stableRounds = 0;
+                        const startedAt = Date.now();
+
+                        while ((Date.now() - startedAt) < 1800) {
+                            await new Promise((resolve) => setTimeout(resolve, 120));
+                            const nextTree = await new Promise((resolve) => {
+                                browserAPI.bookmarks.getTree((items) => resolve(items));
+                            });
+                            const nextSignature = getBookmarkTreeStabilitySignature(nextTree);
+                            if (nextSignature === latestSignature) {
+                                stableRounds += 1;
+                                latestTree = nextTree;
+                                if (stableRounds >= 2) {
+                                    break;
+                                }
+                                continue;
+                            }
+
+                            stableRounds = 0;
+                            latestTree = nextTree;
+                            latestSignature = nextSignature;
+                        }
+
+                        return latestTree;
+                    };
+                    const bookmarks = await captureStableBookmarks();
+
+                    const webDAVconfig = await browserAPI.storage.local.get(['serverAddress', 'username', 'password', 'webDAVEnabled']);
+                    const webDAVConfigured = !!(webDAVconfig.serverAddress && webDAVconfig.username && webDAVconfig.password);
+                    const webDAVEnabled = webDAVconfig.webDAVEnabled !== false;
+
+                    const githubRepoConfig = await browserAPI.storage.local.get([
+                        'githubRepoToken',
+                        'githubRepoOwner',
+                        'githubRepoName',
+                        'githubRepoEnabled'
+                    ]);
+                    const githubRepoConfigured = !!(
+                        githubRepoConfig &&
+                        githubRepoConfig.githubRepoToken &&
+                        githubRepoConfig.githubRepoOwner &&
+                        githubRepoConfig.githubRepoName
+                    );
+                    const githubRepoEnabled = githubRepoConfig.githubRepoEnabled !== false;
+
+                    const localConfig = await browserAPI.storage.local.get(['defaultDownloadEnabled']);
+                    const localBackupConfigured = localConfig.defaultDownloadEnabled === true;
+
+                    let webDAVSuccess = false;
+                    let githubRepoSuccess = false;
+                    let localSuccess = false;
+                    const uploadErrors = [];
+
+                    if (webDAVConfigured && webDAVEnabled) {
+                        try {
+                            const uploadResult = await uploadBookmarks(bookmarks, {
+                                ...snapshotNaming,
+                                overwriteMode: restoreRecordOverwriteMode
+                            });
+                            if (uploadResult?.success) {
+                                webDAVSuccess = true;
+                            } else if (!uploadResult?.webDAVNotConfigured) {
+                                uploadErrors.push(uploadResult?.error || 'WebDAV上传失败');
+                            }
+                        } catch (uploadError) {
+                            uploadErrors.push(uploadError?.message || 'WebDAV上传失败');
+                        }
+                    }
+
+                    if (githubRepoConfigured && githubRepoEnabled) {
+                        try {
+                            const uploadResult = await uploadBookmarksToGitHubRepo(bookmarks, {
+                                ...snapshotNaming,
+                                overwriteMode: restoreRecordOverwriteMode
+                            });
+                            if (uploadResult?.success) {
+                                githubRepoSuccess = true;
+                            } else if (!uploadResult?.repoNotConfigured && !uploadResult?.repoDisabled) {
+                                uploadErrors.push(uploadResult?.error || 'GitHub仓库上传失败');
+                            }
+                        } catch (uploadError) {
+                            uploadErrors.push(uploadError?.message || 'GitHub仓库上传失败');
+                        }
+                    }
+
+                    const tryLocalSnapshotUpload = async ({ forceEnable = false } = {}) => {
+                        try {
+                            const localResult = await uploadBookmarksToLocal(bookmarks, {
+                                ...snapshotNaming,
+                                overwriteMode: restoreRecordOverwriteMode,
+                                forceEnable
+                            });
+                            return localResult?.success !== false;
+                        } catch (uploadError) {
+                            const suffix = forceEnable ? '（兜底）' : '';
+                            uploadErrors.push(`本地快照备份失败${suffix}: ${uploadError?.message || '未知错误'}`);
+                            return false;
+                        }
+                    };
+
+                    if (localBackupConfigured) {
+                        localSuccess = await tryLocalSnapshotUpload({ forceEnable: false });
+                        if (!localSuccess) {
+                            try { await new Promise(resolve => setTimeout(resolve, 120)); } catch (_) { }
+                            localSuccess = await tryLocalSnapshotUpload({ forceEnable: false });
+                        }
+                    }
+
+                    // 兜底：若三端都未成功，强制尝试一次本地快照，避免“只有当前变化无快照”。
+                    if (!localSuccess && !webDAVSuccess && !githubRepoSuccess) {
+                        localSuccess = await tryLocalSnapshotUpload({ forceEnable: true });
+                    }
+
+                    let restoreSyncDirection = 'none';
+                    if (localSuccess && webDAVSuccess && githubRepoSuccess) {
+                        restoreSyncDirection = 'webdav_github_local';
+                    } else if (localSuccess && webDAVSuccess) {
+                        restoreSyncDirection = 'webdav_local';
+                    } else if (localSuccess && githubRepoSuccess) {
+                        restoreSyncDirection = 'github_repo_local';
+                    } else if (localSuccess) {
+                        restoreSyncDirection = 'local';
+                    } else if (webDAVSuccess && githubRepoSuccess) {
+                        restoreSyncDirection = 'cloud';
+                    } else if (webDAVSuccess) {
+                        restoreSyncDirection = 'webdav';
+                    } else if (githubRepoSuccess) {
+                        restoreSyncDirection = 'github_repo';
+                    } else {
+                        restoreSyncDirection = 'none';
+                    }
+
+                    const restoreErrorMessage = uploadErrors.length > 0 ? uploadErrors.join('; ') : '';
+                    if (restoreSyncDirection === 'none') {
+                        throw new Error(`恢复记录快照导出失败: ${restoreErrorMessage || '未能写入任何快照目标'}`);
+                    }
+                    await updateSyncStatus(
+                        restoreSyncDirection,
+                        syncTime,
+                        'success',
+                        restoreErrorMessage,
+                        'manual',
+                        null,
+                        snapshotNaming.fingerprint,
+                        {
+                            overwriteMode: restoreRecordOverwriteMode,
+                            skipAutoArtifacts: true,
+                            localBookmarks: bookmarks
+                        }
+                    );
 
                     const { syncHistory = [] } = await browserAPI.storage.local.get(['syncHistory']);
                     if (syncHistory.length > 0) {
@@ -2232,13 +2476,20 @@ browserAPI.runtime.onMessage.addListener((message, sender, sendResponse) => {
 
                         const targetRecord = syncHistory[targetIndex];
                         if (targetRecord) {
+                            const normalizedOverwriteMode = normalizedStrategy === 'merge'
+                                ? 'versioned'
+                                : sourceOverwriteMode;
+
                             targetRecord.type = 'restore';
+                            targetRecord.overwriteMode = normalizedOverwriteMode;
                             if (note) targetRecord.note = note;
                             targetRecord.restoreInfo = {
                                 sourceSeqNumber,
                                 sourceTime,
                                 sourceNote,
                                 sourceFingerprint,
+                                sourceSnapshotKey: sourceSnapshotKey || null,
+                                sourceOverwriteMode,
                                 strategy,
                                 baselineTime
                             };
@@ -2297,6 +2548,23 @@ browserAPI.runtime.onMessage.addListener((message, sender, sendResponse) => {
 
                             syncHistory[targetIndex] = targetRecord;
                             await browserAPI.storage.local.set({ syncHistory });
+
+                            try {
+                                const activeLang = await getCurrentLang();
+
+                                // 恢复记录只保留：
+                                // 1. 快照文件
+                                // 2. 备份历史 log
+                                // 不再为恢复记录额外导出“当前变化”文件，
+                                // 避免 HTML 恢复 / 二级 UI 恢复后生成误导性的 changes 产物。
+                                await syncVersionedInfoLogIfNeeded({
+                                    lang: activeLang,
+                                    overwriteMode: restoreRecordOverwriteMode,
+                                    syncHistory
+                                });
+                            } catch (postSyncError) {
+                                console.warn('[triggerRestoreBackup] 恢复后同步备份历史log失败:', postSyncError);
+                            }
                         }
                     }
 
@@ -2617,7 +2885,7 @@ browserAPI.runtime.onMessage.addListener((message, sender, sendResponse) => {
                             // 确定备份方向
                             let syncDirection = 'none';
                             if (localSuccess && webDAVSuccess && githubRepoSuccess) {
-                                syncDirection = 'cloud_local';
+                                syncDirection = 'webdav_github_local';
                             } else if (localSuccess && webDAVSuccess) {
                                 syncDirection = 'webdav_local';
                             } else if (localSuccess && githubRepoSuccess) {
@@ -3680,6 +3948,55 @@ try {
     }
 } catch (_) { }
 
+function delayMs(ms) {
+    return new Promise((resolve) => setTimeout(resolve, Math.max(0, Number(ms) || 0)));
+}
+
+async function flushRealtimeAutoBackupQueue() {
+    if (realtimeAutoBackupQueueRunning) return;
+    realtimeAutoBackupQueueRunning = true;
+
+    try {
+        while (realtimeAutoBackupQueuePending) {
+            const reason = realtimeAutoBackupQueueReason;
+            realtimeAutoBackupQueuePending = false;
+            realtimeAutoBackupQueueReason = null;
+
+            const result = await syncBookmarks(false, null, false, reason || null);
+
+            const isBusyError = String(result?.error || '').includes('已有备份操作正在进行');
+            if (isBusyError) {
+                realtimeAutoBackupQueuePending = true;
+                await delayMs(500);
+                continue;
+            }
+
+            try {
+                updateBadgeAfterSync(!!result?.success);
+            } catch (_) { }
+
+            if (result?.success) {
+                try {
+                    await updateAndCacheAnalysis();
+                } catch (_) { }
+            }
+        }
+    } finally {
+        realtimeAutoBackupQueueRunning = false;
+    }
+}
+
+function enqueueRealtimeAutoBackup(reason = null) {
+    realtimeAutoBackupQueuePending = true;
+    if (reason) {
+        realtimeAutoBackupQueueReason = reason;
+    }
+
+    flushRealtimeAutoBackupQueue().catch((error) => {
+        console.warn('[RealtimeAutoBackupQueue] flush failed:', error);
+    });
+}
+
 // 处理书签变化的函数
 async function handleBookmarkChange() {
     try {
@@ -3740,17 +4057,7 @@ async function handleBookmarkChange() {
             // 仅在自动备份模式且备份模式为"实时"时才立即触发自动备份
             // 常规时间和特定时间模式下，备份由定时器触发，而非书签变化立即触发
             if (autoSync && backupMode === 'realtime') {
-                syncBookmarks(false, null, false, null).then(result => { // 传递完整参数
-                    // 在备份完成后调用 updateBadgeAfterSync
-                    updateBadgeAfterSync(result.success);
-                    // 如果成功，则更新缓存
-                    if (result.success) {
-                        updateAndCacheAnalysis();
-                    }
-                }).catch(error => {
-                    // 备份失败也要更新角标为错误状态
-                    updateBadgeAfterSync(false);
-                });
+                enqueueRealtimeAutoBackup('realtime_change');
             }
         } catch (error) {
         }
@@ -3778,6 +4085,7 @@ async function uploadBookmarks(bookmarks, options = {}) {
 
     // 获取覆盖策略设置
     const { overwriteMode = 'versioned' } = await browserAPI.storage.local.get(['overwriteMode']);
+    const effectiveOverwriteMode = normalizeOverwriteMode(options.overwriteMode || overwriteMode);
 
     const serverAddress = config.serverAddress.replace(/\/+$/, '/');
     const exportRootFolder = await getExportRootFolder();
@@ -3791,70 +4099,17 @@ async function uploadBookmarks(bookmarks, options = {}) {
 
     // 根据覆盖策略决定文件名与目录
     let fileName = snapshotFileName;
-    let folderPath = `${exportRootFolder}/${versionedSubFolder}/${snapshotFolderName}/`;
-    if (overwriteMode === 'overwrite') {
+    let folderPath = `${exportRootFolder}/${versionedSubFolder}/${snapshotFolderName}`;
+    if (effectiveOverwriteMode === 'overwrite') {
         fileName = getOverwriteSnapshotFileName();
-        folderPath = `${exportRootFolder}/${overwriteSubFolder}/`;
+        folderPath = `${exportRootFolder}/${overwriteSubFolder}`;
     }
-    const fullUrl = `${serverAddress}${folderPath}${fileName}`;
-    const folderUrl = `${serverAddress}${folderPath}`;
-    const parentFolderUrl = `${serverAddress}${exportRootFolder}/`;
+    const fullUrl = buildWebDAVResourceUrl(serverAddress, `${folderPath}/${fileName}`);
 
     const authHeader = 'Basic ' + safeBase64(`${config.username}:${config.password}`);
 
     try {
-        // 检查并创建父文件夹（如果不存在）
-        const checkParentResponse = await fetch(parentFolderUrl, {
-            method: 'PROPFIND',
-            headers: {
-                'Authorization': authHeader,
-                'Depth': '0',
-                'Content-Type': 'application/xml'
-            },
-            body: '<?xml version="1.0" encoding="utf-8"?><propfind xmlns="DAV:"><prop><resourcetype/></prop></propfind>'
-        });
-
-        if (checkParentResponse.status === 404) {
-            // 创建父文件夹
-            const mkcolParentResponse = await fetch(parentFolderUrl, {
-                method: 'MKCOL',
-                headers: { 'Authorization': authHeader }
-            });
-            if (!mkcolParentResponse.ok && mkcolParentResponse.status !== 405) {
-                throw new Error(`创建父文件夹失败: ${mkcolParentResponse.status} - ${mkcolParentResponse.statusText}`);
-            }
-        } else if (checkParentResponse.status === 401) {
-            throw new Error('WebDAV认证失败，请检查账号密码是否正确');
-        }
-
-        // 检查子文件夹是否存在
-        const checkFolderResponse = await fetch(folderUrl, {
-            method: 'PROPFIND',
-            headers: {
-                'Authorization': authHeader,
-                'Depth': '0',
-                'Content-Type': 'application/xml'
-            },
-            body: '<?xml version="1.0" encoding="utf-8"?><propfind xmlns="DAV:"><prop><resourcetype/></prop></propfind>'
-        });
-
-        // 处理各种可能的错误情况
-        if (checkFolderResponse.status === 401) {
-            throw new Error('WebDAV认证失败，请检查账号密码是否正确');
-        } else if (checkFolderResponse.status === 404) {
-            const mkcolResponse = await fetch(folderUrl, {
-                method: 'MKCOL',
-                headers: {
-                    'Authorization': authHeader
-                }
-            });
-
-            if (!mkcolResponse.ok && mkcolResponse.status !== 405) {
-                throw new Error(`创建文件夹失败: ${mkcolResponse.status} - ${mkcolResponse.statusText}`);
-            }
-        } else if (!checkFolderResponse.ok) {
-            throw new Error(`检查文件夹失败: ${checkFolderResponse.status} - ${checkFolderResponse.statusText}`);
-        }
+        await ensureWebDAVCollectionPathExists(serverAddress, folderPath, authHeader, '创建文件夹失败');
 
         // 将书签数据转换为Edge格式的HTML
         const htmlContent = convertToEdgeHTML(bookmarks);
@@ -3921,16 +4176,17 @@ async function uploadBookmarksToGitHubRepo(bookmarks, options = {}) {
 
     // 获取覆盖策略设置
     const { overwriteMode = 'versioned' } = await browserAPI.storage.local.get(['overwriteMode']);
+    const effectiveOverwriteMode = normalizeOverwriteMode(options.overwriteMode || overwriteMode);
 
     const naming = buildSnapshotNamingContext(options);
-    const baseFileName = overwriteMode === 'overwrite'
+    const baseFileName = effectiveOverwriteMode === 'overwrite'
         ? getOverwriteSnapshotFileName()
         : (String(options.snapshotFileName || naming.snapshotName).trim() || naming.snapshotName);
     const snapshotFolderName = String(options.snapshotFolderName || naming.snapshotFolder).trim() || naming.snapshotFolder;
     const lang = await getCurrentLang();
 
     const versionedSubFolder = getVersionedFolderByLang(lang);
-    const folderKey = overwriteMode === 'overwrite'
+    const folderKey = effectiveOverwriteMode === 'overwrite'
         ? 'backup_root_overwrite'
         : `backup_root/${versionedSubFolder}/${snapshotFolderName}`;
 
@@ -3960,14 +4216,43 @@ async function uploadBookmarksToGitHubRepo(bookmarks, options = {}) {
 
 function sanitizeGitHubRepoPathPart(part) {
     let s = String(part == null ? '' : part);
+    // 去掉包裹引号，避免 GitHub 路径出现 "中文" 这种目录名
+    const pairs = [
+        ['"', '"'],
+        ["'", "'"],
+        ['`', '`'],
+        ['“', '”'],
+        ['‘', '’']
+    ];
+    for (let i = 0; i < 3; i++) {
+        const trimmed = s.trim();
+        const hit = pairs.find(([l, r]) => trimmed.startsWith(l) && trimmed.endsWith(r));
+        if (!hit) {
+            s = trimmed;
+            break;
+        }
+        s = trimmed.slice(1, -1);
+    }
+    s = s.replace(/["'`“”‘’]/g, '');
     s = s.replace(/[\x00-\x1F\x7F]/g, ''); // 移除控制字符
     s = s.replace(/[\\/]/g, '_'); // 防止注入路径分隔符
     s = s.replace(/\s+/g, ' ').trim();
     return s;
 }
 
-function buildGitHubRepoFilePath({ basePath, lang, folderKey, fileName }) {
+function normalizeGitHubBasePath(basePath) {
     const baseRaw = String(basePath || '').trim().replace(/^\/+/, '').replace(/\/+$/, '');
+    if (!baseRaw) return '';
+    return baseRaw
+        .split('/')
+        .filter(Boolean)
+        .map(sanitizeGitHubRepoPathPart)
+        .filter(Boolean)
+        .join('/');
+}
+
+function buildGitHubRepoFilePath({ basePath, lang, folderKey, fileName }) {
+    const baseRaw = normalizeGitHubBasePath(basePath);
     const baseParts = baseRaw
         ? baseRaw.split('/').filter(Boolean).map(sanitizeGitHubRepoPathPart).filter(Boolean)
         : [];
@@ -4242,8 +4527,12 @@ function buildCurrentChangesExportTree(bookmarkTree, changeMap, options = {}) {
             const types = changeType ? changeType.split('+') : [];
             const isFolder = !node.url && Array.isArray(node.children);
 
-            if (types.includes('added')) appendEntry('added', node, changeType);
-            if (types.includes('deleted')) appendEntry('deleted', node, changeType);
+            if (types.includes('added')) {
+                appendEntry('added', node, changeType, { includeDescendants: isFolder });
+            }
+            if (types.includes('deleted')) {
+                appendEntry('deleted', node, changeType, { includeDescendants: isFolder });
+            }
 
             const isMoved = types.includes('moved');
             const isModified = types.includes('modified');
@@ -4426,6 +4715,7 @@ function formatVersionedInfoLogDirection(value, lang = 'zh_CN') {
         cloud: '云端',
         local: '本地',
         both: '云端+本地',
+        webdav_github_local: '云端1+云端2+本地',
         webdav_local: '云端1+本地',
         github_repo_local: '云端2+本地',
         gist_local: '云端3+本地',
@@ -4440,6 +4730,7 @@ function formatVersionedInfoLogDirection(value, lang = 'zh_CN') {
         cloud: 'Cloud',
         local: 'Local',
         both: 'Cloud+Local',
+        webdav_github_local: 'Cloud1+Cloud2+Local',
         webdav_local: 'Cloud1+Local',
         github_repo_local: 'Cloud2+Local',
         gist_local: 'Cloud3+Local',
@@ -4467,6 +4758,14 @@ function formatVersionedInfoLogType(value, lang = 'zh_CN') {
     };
     const mapped = (lang === 'zh_CN' ? mapZh : mapEn)[key];
     return mapped || String(value || '-');
+}
+
+function formatVersionedInfoLogStrategy(record, lang = 'zh_CN') {
+    const overwriteMode = normalizeOverwriteMode(record?.overwriteMode);
+    if (overwriteMode === 'overwrite') {
+        return lang === 'zh_CN' ? '覆盖' : 'Overwrite';
+    }
+    return lang === 'zh_CN' ? '多版本' : 'Versioned';
 }
 
 function formatVersionedInfoLogChanges(record, lang = 'zh_CN') {
@@ -4522,9 +4821,15 @@ function formatVersionedInfoLogChanges(record, lang = 'zh_CN') {
     return parts.join(' / ') || (lang === 'zh_CN' ? '无变化' : 'No changes');
 }
 
-function shouldIncludeVersionedInfoLogRecord(record) {
+function shouldIncludeVersionedInfoLogRecord(record, options = {}) {
+    const targetMode = normalizeOverwriteMode(options?.targetMode || record?.overwriteMode || 'versioned');
     const status = String(record?.status || '').toLowerCase();
     if (status && status !== 'success') {
+        return true;
+    }
+
+    // 多版本恢复索引：成功记录默认全部保留，避免“实际版本很多但索引行很少”
+    if (targetMode === 'versioned' && status === 'success') {
         return true;
     }
 
@@ -4556,52 +4861,448 @@ function shouldIncludeVersionedInfoLogRecord(record) {
     );
 }
 
-function buildVersionedInfoLogMarkdown(records, lang = 'zh_CN') {
+function normalizeVersionedInfoLogBaselineAnchor(marker) {
+    const snapshotKey = String(parseSnapshotKeyFromText(marker?.snapshotKey || marker?.anchorSnapshotKey || '') || '')
+        .trim()
+        .toLowerCase();
+
+    return snapshotKey && snapshotKey !== '__overwrite__'
+        ? snapshotKey
+        : '';
+}
+
+function buildVersionedInfoLogBaselineAnchorKey(marker) {
+    const snapshotKey = normalizeVersionedInfoLogBaselineAnchor(marker || {});
+    return snapshotKey ? `snapshot:${snapshotKey}` : '';
+}
+
+function formatVersionedInfoLogBaselineAnchor(marker, lang = 'zh_CN') {
     const isZh = lang === 'zh_CN';
-    const list = (Array.isArray(records) ? records : [])
-        .filter(shouldIncludeVersionedInfoLogRecord)
+    const snapshotKey = normalizeVersionedInfoLogBaselineAnchor(marker || {});
+    if (!snapshotKey) {
+        return isZh ? '未绑定快照键' : 'Unanchored snapshot';
+    }
+    return snapshotKey;
+}
+
+function pickVersionedInfoLogBaselineAnchorFromSyncHistory(syncHistory, targetMode = 'versioned') {
+    const list = Array.isArray(syncHistory) ? syncHistory : [];
+    const normalizedTargetMode = normalizeOverwriteMode(targetMode || 'versioned');
+
+    for (let i = list.length - 1; i >= 0; i--) {
+        const record = list[i];
+        if (!record || typeof record !== 'object') continue;
+
+        const status = String(record?.status || '').trim().toLowerCase();
+        if (status && status !== 'success') continue;
+
+        const recordMode = normalizeOverwriteMode(record?.overwriteMode || 'versioned');
+        if (recordMode !== normalizedTargetMode) continue;
+
+        const snapshotKey = normalizedTargetMode === 'overwrite'
+            ? '__overwrite__'
+            : String(parseSnapshotKeyFromText(resolveSnapshotKeyForRecord(record) || '') || '')
+                .trim()
+                .toLowerCase();
+
+        if (!snapshotKey || snapshotKey === '__overwrite__') {
+            continue;
+        }
+
+        const timeRaw = String(record?.time || '').trim();
+        const time = Number.isFinite(Date.parse(timeRaw)) ? new Date(timeRaw).toISOString() : '';
+
+        return {
+            snapshotKey,
+            time
+        };
+    }
+
+    return null;
+}
+
+function normalizeVersionedInfoLogBaselineMarkers(value) {
+    if (!Array.isArray(value)) return [];
+
+    const list = [];
+    for (const item of value) {
+        const reasonRaw = String(item?.reason || '').trim().toLowerCase();
+        const reason = reasonRaw || 'unknown';
+
+        const timeRaw = String(item?.time || '').trim();
+        const time = Number.isFinite(Date.parse(timeRaw)) ? new Date(timeRaw).toISOString() : '';
+
+        const snapshotKey = normalizeVersionedInfoLogBaselineAnchor(item || {});
+        if (!snapshotKey) {
+            continue;
+        }
+
+        list.push({ reason, time, snapshotKey });
+    }
+
+    list.sort((a, b) => String(b?.snapshotKey || '').localeCompare(String(a?.snapshotKey || '')));
+
+    const deduped = [];
+    const seen = new Set();
+
+    for (const item of list) {
+        const anchorKey = buildVersionedInfoLogBaselineAnchorKey(item);
+        const uniqKey = `${item.reason}|${anchorKey}`;
+        if (seen.has(uniqKey)) continue;
+        seen.add(uniqKey);
+        deduped.push(item);
+    }
+
+    return deduped.slice(0, 30);
+}
+
+function appendVersionedInfoLogBaselineMarker(existing, marker) {
+    const list = normalizeVersionedInfoLogBaselineMarkers(existing);
+    const reason = String(marker?.reason || '').trim().toLowerCase() || 'unknown';
+
+    const timeRaw = String(marker?.time || '').trim();
+    const timeMs = Date.parse(timeRaw);
+    const time = Number.isFinite(timeMs) ? new Date(timeMs).toISOString() : '';
+
+    const snapshotKey = normalizeVersionedInfoLogBaselineAnchor(marker || {});
+    if (!snapshotKey) {
+        return list;
+    }
+
+    const incomingAnchorKey = buildVersionedInfoLogBaselineAnchorKey({ snapshotKey });
+    const duplicated = list.some((item) => {
+        if (item.reason !== reason) return false;
+        const existingAnchorKey = buildVersionedInfoLogBaselineAnchorKey(item);
+        return existingAnchorKey === incomingAnchorKey;
+    });
+
+    if (duplicated) return list;
+
+    return normalizeVersionedInfoLogBaselineMarkers([
+        {
+            reason,
+            time,
+            snapshotKey
+        },
+        ...list
+    ]);
+}
+
+function formatVersionedInfoLogBaselineReason(reason, lang = 'zh_CN') {
+    const isZh = lang === 'zh_CN';
+    const key = String(reason || '').trim().toLowerCase();
+    if (key === 'clear_history') {
+        return isZh ? '清除记录后重建基线' : 'Baseline rebuilt after clearing records';
+    }
+    if (key === 'initialize') {
+        return isZh ? '初始化后建立基线' : 'Baseline initialized after reset';
+    }
+    if (key === 'switch_back_versioned') {
+        return isZh ? '从覆盖模式切回多版本' : 'Switched from overwrite mode back to versioned';
+    }
+    return isZh ? '基线更新' : 'Baseline updated';
+}
+
+function buildVersionedInfoLogMarkdown(records, lang = 'zh_CN', options = {}) {
+    const isZh = lang === 'zh_CN';
+    const targetMode = normalizeOverwriteMode(options?.targetMode || 'versioned');
+    const isOverwriteLog = targetMode === 'overwrite';
+    const baselineMarkers = normalizeVersionedInfoLogBaselineMarkers(options?.baselineMarkers);
+
+    const modeScopedList = (Array.isArray(records) ? records : [])
+        .filter((record) => normalizeOverwriteMode(record?.overwriteMode) === targetMode)
         .slice()
         .sort((a, b) => new Date(b?.time).getTime() - new Date(a?.time).getTime())
         .slice(0, 300);
 
+    let list = modeScopedList
+        .filter((record) => shouldIncludeVersionedInfoLogRecord(record, { targetMode }))
+        .slice(0, 300);
+
+    // 首次备份 / 清空记录后首条备份如果“无变化”，也要保留一条，避免日志看起来是空的
+    if (!list.length && modeScopedList.length > 0) {
+        list = [modeScopedList[0]];
+    }
+
     const lines = [];
-    lines.push(isZh ? '# 备份历史log（实时备注）' : '# Backup History Log (Real-time Notes)');
+    lines.push(isOverwriteLog
+        ? (isZh ? '# 覆盖备注log（仅展示）' : '# Overwrite Notes Log (Display Only)')
+        : (isZh ? '# 备份历史log（实时备注）' : '# Backup History Log (Real-time Notes)'));
     lines.push('');
     lines.push(`${isZh ? '生成时间' : 'Generated at'}: ${formatVersionedInfoLogTime(new Date().toISOString())}`);
-    lines.push(isZh ? '说明：此文件会按设定次数自动覆盖更新。' : 'Note: this file is auto-updated by configured overwrite interval.');
+    lines.push(isOverwriteLog
+        ? (isZh ? '说明：此文件仅用于覆盖模式备注展示，不参与恢复索引。' : 'Note: this file is for overwrite-mode notes display only and is not used as a restore index.')
+        : (isZh ? '说明：此文件用于多版本恢复索引与备注展示。' : 'Note: this file is used for versioned restore indexing and notes display.'));
+
+    if (!isOverwriteLog && baselineMarkers.length > 0) {
+        lines.push('');
+        lines.push(isZh ? '## 基线分界线' : '## Baseline Boundaries');
+        baselineMarkers.forEach((marker) => {
+            const reasonText = formatVersionedInfoLogBaselineReason(marker.reason, lang);
+            const anchorText = formatVersionedInfoLogBaselineAnchor(marker, lang);
+            lines.push(`- ${anchorText} · ${reasonText}`);
+        });
+    }
+
     lines.push('');
     lines.push(isZh
-        ? '| 序号 | 备注 | 时间 | 哈希 | 状态 | 方向 | 类型 | 变化 |'
-        : '| Seq | Note | Time | Hash | Status | Direction | Type | Changes |');
-    lines.push('|---|---|---|---|---|---|---|---|');
+        ? '| 序号 | 备注 | 时间 | 哈希 | 状态 | 方向 | 方向键 | 类型 | 策略 | 快照键 | 变化 |'
+        : '| Seq | Note | Time | Hash | Status | Direction | DirectionKey | Type | Strategy | SnapshotKey | Changes |');
+    lines.push('|---|---|---|---|---|---|---|---|---|---|---|');
 
     for (const record of list) {
         const seq = record?.seqNumber != null ? String(record.seqNumber) : '-';
         const note = escapeVersionedInfoLogCell(record?.note || '');
         const time = escapeVersionedInfoLogCell(formatVersionedInfoLogTime(record?.time));
-        const hash = escapeVersionedInfoLogCell(record?.fingerprint ? String(record.fingerprint).slice(0, 8) : '-');
+        const hash = escapeVersionedInfoLogCell(record?.fingerprint ? String(record.fingerprint) : '-');
         const status = escapeVersionedInfoLogCell(record?.status || '-');
         const direction = escapeVersionedInfoLogCell(formatVersionedInfoLogDirection(record?.direction, lang));
+        const directionKey = escapeVersionedInfoLogCell(String(record?.direction || '').trim() || '-');
         const type = escapeVersionedInfoLogCell(formatVersionedInfoLogType(record?.type, lang));
+        const strategy = escapeVersionedInfoLogCell(formatVersionedInfoLogStrategy(record, lang));
+        const snapshotKey = escapeVersionedInfoLogCell(resolveSnapshotKeyForRecord(record) || '-');
         const changes = escapeVersionedInfoLogCell(formatVersionedInfoLogChanges(record, lang));
-        lines.push(`| ${seq} | ${note} | ${time} | ${hash} | ${status} | ${direction} | ${type} | ${changes} |`);
+        lines.push(`| ${seq} | ${note} | ${time} | ${hash} | ${status} | ${direction} | ${directionKey} | ${type} | ${strategy} | ${snapshotKey} | ${changes} |`);
     }
 
     return lines.join('\n');
 }
 
-async function syncVersionedInfoLogIfNeeded({ lang = 'zh_CN', overwriteMode = 'versioned', syncHistory = [] } = {}) {
-    if (overwriteMode !== 'versioned') {
-        return { success: false, skipped: true, reason: 'overwrite_mode' };
+function extractVersionedInfoLogTableParts(markdownText) {
+    const lines = String(markdownText || '').split(/\r?\n/);
+    const headerIndex = lines.findIndex((line) => String(line || '').trim().startsWith('|'));
+    if (headerIndex < 0) {
+        return {
+            preludeLines: lines,
+            rowLines: []
+        };
     }
 
+    const dividerIndex = (headerIndex + 1 < lines.length && String(lines[headerIndex + 1] || '').trim().startsWith('|'))
+        ? (headerIndex + 1)
+        : headerIndex;
+
+    const preludeLines = lines.slice(0, dividerIndex + 1);
+    const rowLines = lines
+        .slice(dividerIndex + 1)
+        .map((line) => String(line || '').trim())
+        .filter((line) => line.startsWith('|'));
+
+    return {
+        preludeLines,
+        rowLines
+    };
+}
+
+function parseVersionedInfoLogRowTimeMs(rowLine) {
+    const cells = splitVersionedInfoLogRowCells(rowLine);
+    const rawTime = String(cells[2] || '').trim();
+    if (!rawTime || rawTime === '-') return 0;
+
+    const normalized = /^\d{4}-\d{2}-\d{2}\s+\d{2}:\d{2}:\d{2}$/.test(rawTime)
+        ? rawTime.replace(/\s+/, 'T')
+        : rawTime;
+
+    const ms = Date.parse(normalized);
+    return Number.isFinite(ms) ? ms : 0;
+}
+
+function buildVersionedInfoLogRowMergeKey(rowLine) {
+    const cells = splitVersionedInfoLogRowCells(rowLine);
+    const valueAt = (index) => String(cells[index] || '').trim().toLowerCase();
+
+    const snapshotKey = valueAt(9);
+    const hash = valueAt(3);
+    const time = valueAt(2);
+    const directionKey = valueAt(6);
+    const strategy = valueAt(8);
+
+    if (snapshotKey || hash) {
+        return `${snapshotKey}|${hash}|${time}|${directionKey}|${strategy}`;
+    }
+
+    const note = valueAt(1);
+    return `${time}|${directionKey}|${strategy}|${note}`;
+}
+
+function mergeVersionedInfoLogMarkdown(existingText, generatedText, options = {}) {
+    const maxRows = Number.isFinite(Number(options?.maxRows))
+        ? Math.max(1, Number(options.maxRows))
+        : 300;
+
+    const existing = extractVersionedInfoLogTableParts(existingText);
+    const generated = extractVersionedInfoLogTableParts(generatedText);
+
+    const preludeLines = generated.preludeLines.length > 0
+        ? generated.preludeLines
+        : existing.preludeLines;
+
+    const mergedRows = [];
+    const seen = new Set();
+
+    const appendRows = (rows) => {
+        (Array.isArray(rows) ? rows : []).forEach((line) => {
+            const row = String(line || '').trim();
+            if (!row.startsWith('|')) return;
+            const key = buildVersionedInfoLogRowMergeKey(row);
+            if (seen.has(key)) return;
+            seen.add(key);
+            mergedRows.push(row);
+        });
+    };
+
+    // 新内容优先，再补旧内容
+    appendRows(generated.rowLines);
+    appendRows(existing.rowLines);
+
+    mergedRows.sort((a, b) => {
+        const diff = parseVersionedInfoLogRowTimeMs(b) - parseVersionedInfoLogRowTimeMs(a);
+        if (diff !== 0) return diff;
+        return a.localeCompare(b);
+    });
+
+    const limitedRows = mergedRows.slice(0, maxRows);
+    return [...preludeLines, ...limitedRows].join('\n');
+}
+
+async function fetchBestExistingVersionedInfoLogText({ cachedMarkdown = '' } = {}) {
+    const candidates = [];
+
+    if (String(cachedMarkdown || '').trim()) {
+        candidates.push(String(cachedMarkdown || ''));
+    }
+
+    try {
+        const settings = await browserAPI.storage.local.get([
+            'serverAddress',
+            'username',
+            'password',
+            'webDAVEnabled',
+            'githubRepoToken',
+            'githubRepoOwner',
+            'githubRepoName',
+            'githubRepoBranch',
+            'githubRepoBasePath',
+            'githubRepoEnabled'
+        ]);
+
+        const tasks = [];
+        if (
+            settings.webDAVEnabled !== false
+            && settings.serverAddress
+            && settings.username
+            && settings.password
+        ) {
+            tasks.push(fetchRemoteVersionedInfoLog('webdav', settings));
+        }
+
+        if (
+            settings.githubRepoEnabled !== false
+            && settings.githubRepoToken
+            && settings.githubRepoOwner
+            && settings.githubRepoName
+            && settings.githubRepoBranch
+        ) {
+            tasks.push(fetchRemoteVersionedInfoLog('github', settings));
+        }
+
+        if (tasks.length > 0) {
+            const settled = await Promise.allSettled(tasks);
+            settled.forEach((item) => {
+                if (item.status !== 'fulfilled') return;
+                const text = String(item.value?.text || '').trim();
+                if (!text) return;
+                if (item.value?.indexFound !== true) return;
+                candidates.push(text);
+            });
+        }
+    } catch (_) { }
+
+    if (candidates.length === 0) return '';
+
+    let best = '';
+    let bestScore = -1;
+    candidates.forEach((text) => {
+        const rows = parseVersionedInfoLogMarkdown(text);
+        const score = (Array.isArray(rows) ? rows.length : 0) * 100000 + String(text || '').length;
+        if (score > bestScore) {
+            bestScore = score;
+            best = text;
+        }
+    });
+
+    return best;
+}
+
+async function syncVersionedInfoLogIfNeeded({ lang = 'zh_CN', overwriteMode = 'versioned', syncHistory = [] } = {}) {
     const state = await browserAPI.storage.local.get([
+        'versionedInfoLogEnabled',
         'versionedInfoLogEvery',
         'versionedInfoLogCounter',
-        'defaultDownloadEnabled'
+        'defaultDownloadEnabled',
+        'cachedRecordAfterClear',
+        'versionedInfoLogLastMarkdown',
+        'versionedInfoLogBaselineMarkers',
+        'lastSyncedOverwriteMode'
     ]);
 
-    const every = clampVersionedInfoLogEvery(state.versionedInfoLogEvery);
+    const normalizedOverwriteMode = normalizeOverwriteMode(overwriteMode);
+    const forceVersionedPolicy = normalizedOverwriteMode === 'versioned';
+    const shouldUploadOverwriteNotesLog = normalizedOverwriteMode === 'overwrite';
+    const isInitialSyncHistory = Array.isArray(syncHistory) && syncHistory.length <= 1;
+    const shouldPreserveAndMergeVersionedLog = normalizedOverwriteMode === 'versioned' && isInitialSyncHistory;
+    const previousMode = normalizeOverwriteMode(state.lastSyncedOverwriteMode);
+    const hasClearBaseline = !!(state.cachedRecordAfterClear && (state.cachedRecordAfterClear.bookmarkTree || state.cachedRecordAfterClear.time));
+
+    let baselineMarkers = normalizeVersionedInfoLogBaselineMarkers(state.versionedInfoLogBaselineMarkers);
+    let baselineMarkersChanged = false;
+
+    let baselineReason = '';
+    if (normalizedOverwriteMode === 'versioned' && previousMode === 'overwrite') {
+        baselineReason = 'switch_back_versioned';
+    } else if (normalizedOverwriteMode === 'versioned' && isInitialSyncHistory && hasClearBaseline) {
+        baselineReason = 'clear_history';
+    } else if (normalizedOverwriteMode === 'versioned' && isInitialSyncHistory) {
+        baselineReason = 'initialize';
+    }
+
+    if (baselineReason) {
+        const baselineAnchor = pickVersionedInfoLogBaselineAnchorFromSyncHistory(syncHistory, 'versioned');
+        const nextMarkers = appendVersionedInfoLogBaselineMarker(baselineMarkers, {
+            reason: baselineReason,
+            time: baselineAnchor?.time || new Date().toISOString(),
+            snapshotKey: baselineAnchor?.snapshotKey || ''
+        });
+        if (JSON.stringify(nextMarkers) !== JSON.stringify(baselineMarkers)) {
+            baselineMarkers = nextMarkers;
+            baselineMarkersChanged = true;
+        }
+    }
+
+    const persistModeState = async (extra = {}) => {
+        const payload = {
+            lastSyncedOverwriteMode: normalizedOverwriteMode,
+            ...extra
+        };
+        if (baselineMarkersChanged && !Object.prototype.hasOwnProperty.call(payload, 'versionedInfoLogBaselineMarkers')) {
+            payload.versionedInfoLogBaselineMarkers = baselineMarkers;
+        }
+        try {
+            await browserAPI.storage.local.set(payload);
+        } catch (_) { }
+    };
+
+    const enabled = forceVersionedPolicy
+        ? true
+        : (state.versionedInfoLogEnabled !== false);
+    if (!enabled) {
+        await persistModeState();
+        return { success: false, skipped: true, reason: 'disabled' };
+    }
+
+    const every = (forceVersionedPolicy || isInitialSyncHistory)
+        ? 1
+        : clampVersionedInfoLogEvery(state.versionedInfoLogEvery);
     const currentCounter = Number.isFinite(Number(state.versionedInfoLogCounter))
         ? Number(state.versionedInfoLogCounter)
         : 0;
@@ -4609,60 +5310,134 @@ async function syncVersionedInfoLogIfNeeded({ lang = 'zh_CN', overwriteMode = 'v
 
     if (nextCounter < every) {
         await browserAPI.storage.local.set({
+            versionedInfoLogEnabled: true,
             versionedInfoLogEvery: every,
-            versionedInfoLogCounter: nextCounter
+            versionedInfoLogCounter: nextCounter,
+            lastSyncedOverwriteMode: normalizedOverwriteMode,
+            ...(baselineMarkersChanged ? { versionedInfoLogBaselineMarkers: baselineMarkers } : {})
         });
         return { success: true, skipped: true, counter: nextCounter, every };
     }
 
     await browserAPI.storage.local.set({
+        versionedInfoLogEnabled: true,
         versionedInfoLogEvery: every,
         versionedInfoLogCounter: 0
     });
 
-    const content = buildVersionedInfoLogMarkdown(syncHistory, lang);
-    const fileName = lang === 'zh_CN' ? '备份历史log.md' : 'backup-history-log.md';
+    const versionedFileName = lang === 'zh_CN' ? '备份历史log.md' : 'backup-history-log.md';
+    const overwriteNotesFileName = lang === 'zh_CN' ? '覆盖备注log.md' : 'overwrite-notes-log.md';
+    const generatedVersionedContent = buildVersionedInfoLogMarkdown(syncHistory, lang, {
+        targetMode: 'versioned',
+        baselineMarkers
+    });
+    const overwriteNotesContent = buildVersionedInfoLogMarkdown(syncHistory, lang, { targetMode: 'overwrite' });
 
-    const [webdav, githubRepo] = await Promise.all([
-        uploadExportFileToWebDAV({
-            lang,
-            folderKey: 'backup_root',
-            fileName,
-            content,
-            contentType: 'text/markdown;charset=utf-8'
-        }),
-        uploadExportFileToGitHubRepo({
-            lang,
-            folderKey: 'backup_root',
-            fileName,
-            content
-        })
-    ]);
+    let versionedContent = generatedVersionedContent;
+    if (shouldPreserveAndMergeVersionedLog) {
+        const existingText = await fetchBestExistingVersionedInfoLogText({
+            cachedMarkdown: state.versionedInfoLogLastMarkdown
+        });
+        if (String(existingText || '').trim()) {
+            versionedContent = mergeVersionedInfoLogMarkdown(existingText, generatedVersionedContent, { maxRows: 300 });
+        }
+    }
 
-    const localEnabled = state.defaultDownloadEnabled === true;
-    let local = { success: false, skipped: true, error: 'Local backup disabled' };
+    const uploadMarkdownLogFile = async ({ fileName, content, folderKey = 'backup_root' }) => {
+        const [webdav, githubRepo] = await Promise.all([
+            uploadExportFileToWebDAV({
+                lang,
+                folderKey,
+                fileName,
+                content,
+                contentType: 'text/markdown;charset=utf-8'
+            }),
+            uploadExportFileToGitHubRepo({
+                lang,
+                folderKey,
+                fileName,
+                content
+            })
+        ]);
 
-    if (localEnabled) {
-        const dataUrl = `data:text/markdown;charset=utf-8,${encodeURIComponent(content)}`;
-        const exportRootFolder = getExportRootFolderByLang(lang);
-        local = await new Promise((resolve) => {
-            browserAPI.downloads.download({
-                url: dataUrl,
-                filename: `${exportRootFolder}/${fileName}`,
-                saveAs: false,
-                conflictAction: 'overwrite'
-            }, (downloadId) => {
-                if (browserAPI.runtime?.lastError) {
-                    resolve({ success: false, error: browserAPI.runtime.lastError.message });
-                } else {
-                    resolve({ success: true, downloadId });
-                }
+        const localEnabled = state.defaultDownloadEnabled === true;
+        let local = { success: false, skipped: true, error: 'Local backup disabled' };
+
+        if (localEnabled) {
+            const dataUrl = `data:text/markdown;charset=utf-8,${encodeURIComponent(content)}`;
+            const exportRootFolder = getExportRootFolderByLang(lang);
+            const exportSubFolder = resolveExportSubFolderByKey(folderKey, lang);
+            const relativePath = exportSubFolder
+                ? `${exportRootFolder}/${exportSubFolder}/${fileName}`
+                : `${exportRootFolder}/${fileName}`;
+            local = await new Promise((resolve) => {
+                browserAPI.downloads.download({
+                    url: dataUrl,
+                    filename: relativePath,
+                    saveAs: false,
+                    conflictAction: 'overwrite'
+                }, (downloadId) => {
+                    if (browserAPI.runtime?.lastError) {
+                        resolve({ success: false, error: browserAPI.runtime.lastError.message });
+                    } else {
+                        resolve({ success: true, downloadId });
+                    }
+                });
             });
+        }
+
+        const success = (webdav?.success === true) || (githubRepo?.success === true) || (local?.success === true);
+        return { success, webdav, githubRepo, local, fileName };
+    };
+
+    const versionedResult = await uploadMarkdownLogFile({
+        fileName: versionedFileName,
+        content: versionedContent,
+        folderKey: 'backup_root_versioned'
+    });
+
+    let overwriteNotesResult = {
+        success: false,
+        skipped: true,
+        reason: shouldUploadOverwriteNotesLog ? 'not-run' : 'skip-in-versioned-mode',
+        fileName: overwriteNotesFileName
+    };
+
+    // 仅在“覆盖模式”时上传覆盖备注log；选择多版本时默认不上传该文件
+    if (shouldUploadOverwriteNotesLog) {
+        overwriteNotesResult = await uploadMarkdownLogFile({
+            fileName: overwriteNotesFileName,
+            content: overwriteNotesContent,
+            folderKey: 'backup_root_overwrite'
         });
     }
 
-    const success = (webdav?.success === true) || (githubRepo?.success === true) || (local?.success === true);
-    return { success, skipped: false, webdav, githubRepo, local, fileName, every };
+    const success = versionedResult?.success === true || overwriteNotesResult?.success === true;
+
+    if (versionedResult?.success === true) {
+        try {
+            await browserAPI.storage.local.set({
+                versionedInfoLogLastMarkdown: versionedContent,
+                lastSyncedOverwriteMode: normalizedOverwriteMode,
+                ...(baselineMarkersChanged ? { versionedInfoLogBaselineMarkers: baselineMarkers } : {})
+            });
+        } catch (_) { }
+    } else {
+        await persistModeState();
+    }
+
+    return {
+        success,
+        skipped: false,
+        every,
+        fileName: versionedFileName,
+        overwriteFileName: overwriteNotesFileName,
+        webdav: versionedResult?.webdav,
+        githubRepo: versionedResult?.githubRepo,
+        local: versionedResult?.local,
+        versioned: versionedResult,
+        overwriteNotes: overwriteNotesResult
+    };
 }
 
 async function buildCurrentChangesSnapshotArtifacts({ localBookmarks, syncTime, lang, explicitMovedIds, previousBookmarks = null, usePreviousBookmarks = false, forceFormats = null, forceModes = null, forceEnabled = null, forceExpandedIds = null }) {
@@ -5038,7 +5813,8 @@ async function exportCurrentChangesArchiveToCloud(options = {}) {
 }
 
 async function ensureWebDAVCollectionExists(url, authHeader, errorPrefix) {
-    const checkResponse = await fetch(url, {
+    const requestUrl = normalizeWebDAVFetchUrl(url);
+    const checkResponse = await fetch(requestUrl, {
         method: 'PROPFIND',
         headers: {
             'Authorization': authHeader,
@@ -5052,19 +5828,106 @@ async function ensureWebDAVCollectionExists(url, authHeader, errorPrefix) {
         throw new Error('WebDAV认证失败，请检查账号密码是否正确');
     }
 
-    if (checkResponse.status === 404) {
-        const mkcolResponse = await fetch(url, {
+    const ensureWithMkcol = async () => {
+        const mkcolResponse = await fetch(requestUrl, {
             method: 'MKCOL',
             headers: { 'Authorization': authHeader }
         });
+
+        if (mkcolResponse.status === 401) {
+            throw new Error('WebDAV认证失败，请检查账号密码是否正确');
+        }
+
+        if (mkcolResponse.status === 403) {
+            throw new Error('WebDAV拒绝访问（403），请检查权限或路径是否正确');
+        }
+
+        if (mkcolResponse.status === 409) {
+            throw new Error(`${errorPrefix}: 409 - Conflict（请检查父目录是否存在或权限不足）`);
+        }
+
         if (!mkcolResponse.ok && mkcolResponse.status !== 405) {
             throw new Error(`${errorPrefix}: ${mkcolResponse.status} - ${mkcolResponse.statusText}`);
         }
+    };
+
+    if (checkResponse.status === 404) {
+        await ensureWithMkcol();
+        return;
+    }
+
+    if (checkResponse.status === 405) {
+        // 某些 WebDAV 服务不支持 PROPFIND，降级使用 MKCOL 幂等确认
+        await ensureWithMkcol();
         return;
     }
 
     if (!checkResponse.ok) {
         throw new Error(`${errorPrefix}: ${checkResponse.status} - ${checkResponse.statusText}`);
+    }
+}
+
+function normalizeWebDAVPathSegments(pathLike) {
+    return String(pathLike || '')
+        .replace(/^\/+/, '')
+        .replace(/\/+$/, '')
+        .split('/')
+        .map((segment) => String(segment || '').trim())
+        .filter(Boolean);
+}
+
+function encodeWebDAVPathSegment(segment) {
+    const raw = String(segment || '').trim();
+    if (!raw) return '';
+    try {
+        return encodeURIComponent(decodeURIComponent(raw));
+    } catch (_) {
+        return encodeURIComponent(raw);
+    }
+}
+
+function buildWebDAVResourceUrl(serverAddress, pathLike, { collection = false } = {}) {
+    const base = String(serverAddress || '').trim().replace(/\/+$/, '/') || '';
+    const encodedPath = normalizeWebDAVPathSegments(pathLike)
+        .map((segment) => encodeWebDAVPathSegment(segment))
+        .join('/');
+
+    if (!encodedPath) {
+        return base;
+    }
+
+    return collection
+        ? `${base}${encodedPath}/`
+        : `${base}${encodedPath}`;
+}
+
+function normalizeWebDAVFetchUrl(urlLike) {
+    const raw = String(urlLike || '').trim();
+    if (!raw) return raw;
+
+    try {
+        const parsed = new URL(raw);
+        const encodedPath = String(parsed.pathname || '')
+            .split('/')
+            .map((segment) => encodeWebDAVPathSegment(segment))
+            .join('/');
+
+        parsed.pathname = encodedPath || '/';
+        return parsed.toString();
+    } catch (_) {
+        return raw;
+    }
+}
+
+async function ensureWebDAVCollectionPathExists(serverAddress, pathLike, authHeader, errorPrefix) {
+    const segments = normalizeWebDAVPathSegments(pathLike);
+    if (segments.length === 0) return;
+
+    const currentSegments = [];
+    for (const segment of segments) {
+        currentSegments.push(segment);
+        const collectionUrl = buildWebDAVResourceUrl(serverAddress, currentSegments.join('/'), { collection: true });
+        await ensureWebDAVCollectionExists(collectionUrl, authHeader, errorPrefix);
     }
 }
 
@@ -5080,17 +5943,14 @@ async function uploadExportFileToWebDAV({ lang, folderKey, fileName, content, co
     const serverAddress = config.serverAddress.replace(/\/+$/, '/');
     const exportRootFolder = getExportRootFolderByLang(lang);
     const exportSubFolder = resolveExportSubFolderByKey(folderKey, lang);
-    const folderPath = `${exportRootFolder}/${exportSubFolder}/`;
+    const folderPath = `${exportRootFolder}/${exportSubFolder}`;
 
-    const fullUrl = `${serverAddress}${folderPath}${fileName}`;
-    const folderUrl = `${serverAddress}${folderPath}`;
-    const parentFolderUrl = `${serverAddress}${exportRootFolder}/`;
+    const fullUrl = buildWebDAVResourceUrl(serverAddress, `${folderPath}/${fileName}`);
 
     const authHeader = 'Basic ' + safeBase64(`${config.username}:${config.password}`);
 
     try {
-        await ensureWebDAVCollectionExists(parentFolderUrl, authHeader, '创建父文件夹失败');
-        await ensureWebDAVCollectionExists(folderUrl, authHeader, '创建导出文件夹失败');
+        await ensureWebDAVCollectionPathExists(serverAddress, folderPath, authHeader, '创建导出文件夹失败');
 
         const response = await fetch(fullUrl, {
             method: 'PUT',
@@ -5223,8 +6083,9 @@ async function uploadBookmarksToLocal(bookmarks, options = {}) {
 
     // 仅支持默认下载方式（浏览器下载目录）
     const defaultDownloadEnabled = config.defaultDownloadEnabled === true;
+    const forceEnable = options.forceEnable === true;
 
-    if (!defaultDownloadEnabled) {
+    if (!defaultDownloadEnabled && !forceEnable) {
         throw new Error("本地备份未启用或路径未配置");
     }
 
@@ -5233,9 +6094,10 @@ async function uploadBookmarksToLocal(bookmarks, options = {}) {
 
         // 获取覆盖策略设置
         const { overwriteMode = 'versioned' } = await browserAPI.storage.local.get(['overwriteMode']);
+        const effectiveOverwriteMode = normalizeOverwriteMode(options.overwriteMode || overwriteMode);
 
         const naming = buildSnapshotNamingContext(options);
-        const fileName = overwriteMode === 'overwrite'
+        const fileName = effectiveOverwriteMode === 'overwrite'
             ? getOverwriteSnapshotFileName()
             : (String(options.snapshotFileName || naming.snapshotName).trim() || naming.snapshotName);
         const snapshotFolderName = String(options.snapshotFolderName || naming.snapshotFolder).trim() || naming.snapshotFolder;
@@ -5251,7 +6113,7 @@ async function uploadBookmarksToLocal(bookmarks, options = {}) {
         const currentLang = await getCurrentLang();
         const overwriteSubFolder = getOverwriteFolderByLang(currentLang);
         const versionedSubFolder = getVersionedFolderByLang(currentLang);
-        const relativePath = overwriteMode === 'overwrite'
+        const relativePath = effectiveOverwriteMode === 'overwrite'
             ? `${exportRootFolder}/${overwriteSubFolder}/${fileName}`
             : `${exportRootFolder}/${versionedSubFolder}/${snapshotFolderName}/${fileName}`;
 
@@ -5294,7 +6156,7 @@ async function uploadBookmarksToLocal(bookmarks, options = {}) {
                     url: dataUrl,
                     filename: relativePath,
                     saveAs: false,
-                    conflictAction: overwriteMode === 'overwrite' ? 'overwrite' : 'uniquify'
+                    conflictAction: effectiveOverwriteMode === 'overwrite' ? 'overwrite' : 'uniquify'
                 }, (id) => {
                     if (browserAPI.runtime.lastError) {
                         reject(new Error(browserAPI.runtime.lastError.message));
@@ -5541,14 +6403,15 @@ async function exportHistoryToTxt(records, lang) {
                 local: "Local",
                 upload: "Cloud",
                 cloud: "Cloud 1, Cloud 2",
-                webdav: "Cloud 1 (WebDAV)",
-                github_repo: "Cloud 2 (GitHub Repo)",
-                gist: "Cloud 2 (GitHub Repo)", // legacy
+                webdav: "Cloud 1",
+                github_repo: "Cloud 2",
+                gist: "Cloud 2", // legacy
+                webdav_github_local: "Cloud 1, Cloud 2, Local",
                 cloud_local: "Cloud 1, Cloud 2, Local",
-                webdav_local: "Cloud 1 (WebDAV), Local",
-                github_repo_local: "Cloud 2 (GitHub Repo), Local",
-                gist_local: "Cloud 2 (GitHub Repo), Local", // legacy
-                both: "Cloud 1 (WebDAV), Local",
+                webdav_local: "Cloud 1, Local",
+                github_repo_local: "Cloud 2, Local",
+                gist_local: "Cloud 2, Local", // legacy
+                both: "Cloud 1, Local",
                 none: "None",
                 download: "Local"
             },
@@ -5578,14 +6441,15 @@ async function exportHistoryToTxt(records, lang) {
                 local: "本地",
                 upload: "云端",
                 cloud: "云端1, 云端2",
-                webdav: "云端1(WebDAV)",
-                github_repo: "云端2(GitHub仓库)",
-                gist: "云端2(GitHub仓库)", // legacy
+                webdav: "云端1",
+                github_repo: "云端2",
+                gist: "云端2", // legacy
+                webdav_github_local: "云端1, 云端2, 本地",
                 cloud_local: "云端1, 云端2, 本地",
-                webdav_local: "云端1(WebDAV), 本地",
-                github_repo_local: "云端2(GitHub仓库), 本地",
-                gist_local: "云端2(GitHub仓库), 本地", // legacy
-                both: "云端1(WebDAV), 本地",
+                webdav_local: "云端1, 本地",
+                github_repo_local: "云端2, 本地",
+                gist_local: "云端2, 本地", // legacy
+                both: "云端1, 本地",
                 none: "无",
                 download: "本地"
             },
@@ -5774,65 +6638,12 @@ async function exportHistoryToTxt(records, lang) {
             const serverAddress = config.serverAddress.replace(/\/+$/, '/');
             const archiveHistoryFolder = await getHistoryFolder();
             const exportRootFolder = await getExportRootFolder();
-            const folderPath = `${exportRootFolder}/${archiveHistoryFolder}/`; // 使用统一的文件夹结构（根据语言动态选择）
-            const fullUrl = `${serverAddress}${folderPath}${fileName}`;
-            const folderUrl = `${serverAddress}${folderPath}`;
-            const parentFolderUrl = `${serverAddress}${exportRootFolder}/`;
+            const folderPath = `${exportRootFolder}/${archiveHistoryFolder}`; // 使用统一的文件夹结构（根据语言动态选择）
+            const fullUrl = buildWebDAVResourceUrl(serverAddress, `${folderPath}/${fileName}`);
 
             const authHeader = 'Basic ' + safeBase64(`${config.username}:${config.password}`);
 
-            // 检查并创建父文件夹（如果不存在）
-            const checkParentResponse = await fetch(parentFolderUrl, {
-                method: 'PROPFIND',
-                headers: {
-                    'Authorization': authHeader,
-                    'Depth': '0',
-                    'Content-Type': 'application/xml'
-                },
-                body: '<?xml version="1.0" encoding="utf-8"?><propfind xmlns="DAV:"><prop><resourcetype/></prop></propfind>'
-            });
-
-            if (checkParentResponse.status === 404) {
-                // 创建父文件夹
-                const mkcolParentResponse = await fetch(parentFolderUrl, {
-                    method: 'MKCOL',
-                    headers: { 'Authorization': authHeader }
-                });
-                if (!mkcolParentResponse.ok && mkcolParentResponse.status !== 405) {
-                    exportResults.push(`创建父文件夹失败: ${mkcolParentResponse.status} - ${mkcolParentResponse.statusText}`);
-                }
-            } else if (checkParentResponse.status === 401) {
-                exportResults.push('WebDAV认证失败，请检查账号密码是否正确');
-            }
-
-            // 检查子文件夹是否存在
-            const checkFolderResponse = await fetch(folderUrl, {
-                method: 'PROPFIND',
-                headers: {
-                    'Authorization': authHeader,
-                    'Depth': '0',
-                    'Content-Type': 'application/xml'
-                },
-                body: '<?xml version="1.0" encoding="utf-8"?><propfind xmlns="DAV:"><prop><resourcetype/></prop></propfind>'
-            });
-
-            // 处理各种可能的错误情况
-            if (checkFolderResponse.status === 401) {
-                exportResults.push('WebDAV认证失败，请检查账号密码是否正确');
-            } else if (checkFolderResponse.status === 404) {
-                const mkcolResponse = await fetch(folderUrl, {
-                    method: 'MKCOL',
-                    headers: {
-                        'Authorization': authHeader
-                    }
-                });
-
-                if (!mkcolResponse.ok && mkcolResponse.status !== 405) {
-                    exportResults.push(`创建历史记录文件夹失败: ${mkcolResponse.status} - ${mkcolResponse.statusText}`);
-                }
-            } else if (!checkFolderResponse.ok) {
-                exportResults.push(`检查历史记录文件夹失败: ${checkFolderResponse.status} - ${checkFolderResponse.statusText}`);
-            }
+            await ensureWebDAVCollectionPathExists(serverAddress, folderPath, authHeader, '创建历史记录文件夹失败');
 
             // 上传TXT内容
             const response = await fetch(fullUrl, {
@@ -5846,7 +6657,6 @@ async function exportHistoryToTxt(records, lang) {
             });
 
             if (!response.ok) {
-                const responseText = await response.text();
                 exportResults.push(`上传历史记录到WebDAV失败: ${response.status} - ${response.statusText}`);
             } else {
                 webDAVSuccess = true;
@@ -6240,6 +7050,26 @@ function generateFullBookmarkTreeJson(record, historyViewSettings, lang = 'zh_CN
             return item;
         }
 
+        const restoreStrategy = String(record?.restoreInfo?.strategy || '').trim().toLowerCase();
+        const normalizedOverwriteMode = normalizeOverwriteMode(
+            record?.overwriteMode
+            || (restoreStrategy === 'overwrite' ? 'overwrite' : 'versioned')
+        );
+        const snapshotKey = resolveSnapshotKeyForRecord({
+            ...(record || {}),
+            overwriteMode: normalizedOverwriteMode
+        });
+        const snapshotName = String(
+            record?.snapshotName
+            || (normalizedOverwriteMode === 'overwrite'
+                ? getOverwriteSnapshotFileName()
+                : (snapshotKey ? `${snapshotKey}.html` : ''))
+        ).trim() || null;
+        const snapshotFolderName = String(
+            record?.snapshotFolderName
+            || (normalizedOverwriteMode === 'overwrite' ? '__overwrite__' : (snapshotKey || ''))
+        ).trim() || null;
+
         const exportData = {
             title: isZh ? '书签变化导出' : 'Bookmark Changes Export',
             _exportInfo: {
@@ -6249,6 +7079,10 @@ function generateFullBookmarkTreeJson(record, historyViewSettings, lang = 'zh_CN
                 seqNumber: record?.seqNumber,
                 fingerprint: record?.fingerprint,
                 stats: stats,
+                overwriteMode: normalizedOverwriteMode,
+                snapshotKey: snapshotKey || null,
+                snapshotName,
+                snapshotFolderName,
                 // 恢复支持：保存展开状态
                 expandedIds: expandedIds,
                 viewMode: hasExpandedState ? 'detailed' : 'auto'
@@ -6494,6 +7328,26 @@ async function exportSyncHistoryToCloud(options = {}) {
                         continue;
                     }
 
+                    const restoreStrategy = String(record?.restoreInfo?.strategy || '').trim().toLowerCase();
+                    const normalizedOverwriteMode = normalizeOverwriteMode(
+                        record?.overwriteMode
+                        || (restoreStrategy === 'overwrite' ? 'overwrite' : 'versioned')
+                    );
+                    const snapshotKey = resolveSnapshotKeyForRecord({
+                        ...(record || {}),
+                        overwriteMode: normalizedOverwriteMode
+                    });
+                    const snapshotName = String(
+                        record?.snapshotName
+                        || (normalizedOverwriteMode === 'overwrite'
+                            ? getOverwriteSnapshotFileName()
+                            : (snapshotKey ? `${snapshotKey}.html` : ''))
+                    ).trim() || null;
+                    const snapshotFolderName = String(
+                        record?.snapshotFolderName
+                        || (normalizedOverwriteMode === 'overwrite' ? '__overwrite__' : (snapshotKey || ''))
+                    ).trim() || null;
+
                     mergedRecords.push({
                         _exportInfo: {
                             backupTime: record?.time || null,
@@ -6501,7 +7355,13 @@ async function exportSyncHistoryToCloud(options = {}) {
                             note: record?.note || null,
                             seqNumber: record?.seqNumber || null,
                             fingerprint: record?.fingerprint || null,
-                            stats: record?.bookmarkStats || {}
+                            stats: record?.bookmarkStats || {},
+                            overwriteMode: normalizedOverwriteMode,
+                            snapshotKey: snapshotKey || null,
+                            snapshotName,
+                            snapshotFolderName,
+                            strategy: restoreStrategy || null,
+                            type: record?.type || null
                         },
                         _rawBookmarkTree: bookmarkTree
                     });
@@ -6584,16 +7444,13 @@ async function downloadsEraseSafe(query) {
 async function uploadHistoryBinaryToWebDAV(base64Content, fileName, rootFolder, subFolder, settings) {
     try {
         const serverAddress = settings.serverAddress.replace(/\/+$/, '/');
-        const folderPath = `${rootFolder}/${subFolder}/`;
-        const fullUrl = `${serverAddress}${folderPath}${fileName}`;
-        const folderUrl = `${serverAddress}${folderPath}`;
-        const parentUrl = `${serverAddress}${rootFolder}/`;
+        const folderPath = `${rootFolder}/${subFolder}`;
+        const fullUrl = buildWebDAVResourceUrl(serverAddress, `${folderPath}/${fileName}`);
 
         const authHeader = 'Basic ' + safeBase64(`${settings.username}:${settings.password}`);
 
         // 确保文件夹存在
-        await ensureWebDAVCollectionExists(parentUrl, authHeader, '创建父文件夹失败');
-        await ensureWebDAVCollectionExists(folderUrl, authHeader, '创建备份历史文件夹失败');
+        await ensureWebDAVCollectionPathExists(serverAddress, folderPath, authHeader, '创建备份历史文件夹失败');
 
         // 将 Base64 转换为 ArrayBuffer
         const binaryString = atob(base64Content);
@@ -6744,16 +7601,13 @@ async function downloadHistoryBinaryLocal(blob, fileName, rootFolder, subFolder,
 async function uploadHistoryToWebDAV(content, fileName, rootFolder, subFolder, settings) {
     try {
         const serverAddress = settings.serverAddress.replace(/\/+$/, '/');
-        const folderPath = `${rootFolder}/${subFolder}/`;
-        const fullUrl = `${serverAddress}${folderPath}${fileName}`;
-        const folderUrl = `${serverAddress}${folderPath}`;
-        const parentUrl = `${serverAddress}${rootFolder}/`;
+        const folderPath = `${rootFolder}/${subFolder}`;
+        const fullUrl = buildWebDAVResourceUrl(serverAddress, `${folderPath}/${fileName}`);
 
         const authHeader = 'Basic ' + safeBase64(`${settings.username}:${settings.password}`);
 
         // 确保文件夹存在
-        await ensureWebDAVCollectionExists(parentUrl, authHeader, '创建父文件夹失败');
-        await ensureWebDAVCollectionExists(folderUrl, authHeader, '创建备份历史文件夹失败');
+        await ensureWebDAVCollectionPathExists(serverAddress, folderPath, authHeader, '创建备份历史文件夹失败');
 
         // 上传文件
         const contentType = fileName.endsWith('.json') ? 'application/json' : 'text/html';
@@ -6967,6 +7821,27 @@ async function syncBookmarks(isManual = false, direction = null, isSwitchToAutoB
             return { success: false, error: '自动备份已关闭' };
         }
 
+        // 自动备份（非手动、非切换）前置检查：若无变化则直接跳过，避免生成“无变化”冗余备份记录
+        if (!isManual && !isSwitchToAutoBackup) {
+            try {
+                const changeCheck = await checkBookmarkChangesForAutoBackup();
+                if (changeCheck && changeCheck.success === true && changeCheck.hasChanges === false) {
+                    return {
+                        success: true,
+                        skipped: true,
+                        noChanges: true,
+                        webDAVSuccess: false,
+                        githubRepoSuccess: false,
+                        localSuccess: false,
+                        localFileName: null,
+                        error: null
+                    };
+                }
+            } catch (_) {
+                // ignore and continue backup flow
+            }
+        }
+
         // 获取本地书签
         const localBookmarks = await new Promise((resolve) => {
             browserAPI.bookmarks.getTree((bookmarks) => resolve(bookmarks));
@@ -7071,7 +7946,7 @@ async function syncBookmarks(isManual = false, direction = null, isSwitchToAutoB
             syncStatus = 'success';
             syncSuccess = true;
             if (localSuccess && webDAVSuccess && githubRepoSuccess) {
-                syncDirection = 'cloud_local';
+                syncDirection = 'webdav_github_local';
             } else if (localSuccess && webDAVSuccess) {
                 syncDirection = 'webdav_local';
             } else if (localSuccess && githubRepoSuccess) {
@@ -7090,7 +7965,16 @@ async function syncBookmarks(isManual = false, direction = null, isSwitchToAutoB
         }
 
         // 更新备份状态
-        await updateSyncStatus(syncDirection, syncTime, syncStatus, errorMessage, syncType, autoBackupReason, snapshotNaming.fingerprint);
+        await updateSyncStatus(
+            syncDirection,
+            syncTime,
+            syncStatus,
+            errorMessage,
+            syncType,
+            autoBackupReason,
+            snapshotNaming.fingerprint,
+            { localBookmarks }
+        );
 
         // 如果备份成功，并且是手动备份或切换到自动模式触发的备份，则清除活动标志
         if (syncSuccess && (isManual || isSwitchToAutoBackup)) {
@@ -8238,9 +9122,9 @@ async function updateBookmarks(bookmarksData) {
 }
 
 // 更新备份状态的辅助函数
-async function updateSyncStatus(direction, time, status = 'success', errorMessage = '', syncType = 'auto', autoBackupReason = null, snapshotFingerprint = '') {
+async function updateSyncStatus(direction, time, status = 'success', errorMessage = '', syncType = 'auto', autoBackupReason = null, snapshotFingerprint = '', options = {}) {
     // <--- Log 11
-    console.log('[updateSyncStatus] 参数:', { direction, time, status, errorMessage, syncType, autoBackupReason, snapshotFingerprint });
+    console.log('[updateSyncStatus] 参数:', { direction, time, status, errorMessage, syncType, autoBackupReason, snapshotFingerprint, overwriteMode: options?.overwriteMode });
 
     try {
         const { syncHistory = [], lastBookmarkData = null, lastSyncOperations = {}, preferredLang = 'zh_CN', currentLang = '', recentMovedIds = [], recentModifiedIds = [], recentAddedIds = [], overwriteMode = 'versioned' } = await browserAPI.storage.local.get([
@@ -8281,31 +9165,43 @@ async function updateSyncStatus(direction, time, status = 'success', errorMessag
         let folderDiff = 0;
         let localBookmarks = null; // 声明在外部作用域，以便在 newSyncRecord 中使用
 
-        if (status === 'success' && (direction === 'upload' || direction === 'download' || direction === 'webdav' || direction === 'github_repo' || direction === 'gist' || direction === 'cloud' || direction === 'webdav_local' || direction === 'github_repo_local' || direction === 'gist_local' || direction === 'cloud_local' || direction === 'local' || direction === 'both')) {
-            localBookmarks = await new Promise((resolve) => {
-                browserAPI.bookmarks.getTree((bookmarks) => resolve(bookmarks));
-            });
+        if (status === 'success' && (direction === 'upload' || direction === 'download' || direction === 'webdav' || direction === 'github_repo' || direction === 'gist' || direction === 'cloud' || direction === 'webdav_github_local' || direction === 'webdav_local' || direction === 'github_repo_local' || direction === 'gist_local' || direction === 'cloud_local' || direction === 'local' || direction === 'both')) {
+            localBookmarks = Array.isArray(options?.localBookmarks) && options.localBookmarks.length
+                ? options.localBookmarks
+                : await new Promise((resolve) => {
+                    browserAPI.bookmarks.getTree((bookmarks) => resolve(bookmarks));
+                });
 
             const prevBookmarkCount = lastBookmarkData ? lastBookmarkData.bookmarkCount : 0;
             const prevFolderCount = lastBookmarkData ? lastBookmarkData.folderCount : 0;
 
             const currentBookmarkCount = countAllBookmarks(localBookmarks);
             const currentFolderCount = countAllFolders(localBookmarks);
+            const hasLastSnapshotTree = Array.isArray(lastBookmarkData?.bookmarkTree)
+                && lastBookmarkData.bookmarkTree.length > 0;
 
             bookmarkDiff = currentBookmarkCount - prevBookmarkCount;
             folderDiff = currentFolderCount - prevFolderCount;
 
-            // 如果是第一次备份（没有历史数据），不显示差异，保持为0
-            if (!lastBookmarkData || (!lastBookmarkData.bookmarkCount && !lastBookmarkData.folderCount)) {
+            // 首次备份（或基准缺失）：diff 保持 0，但“新增”要写入日志，避免首条日志为空
+            if (!hasLastSnapshotTree) {
                 bookmarkDiff = 0;
                 folderDiff = 0;
+                bookmarkAdded = currentBookmarkCount;
+                folderAdded = currentFolderCount;
+                bookmarkDeleted = 0;
+                folderDeleted = 0;
+                movedCount = 0;
+                modifiedCount = 0;
+                addedCount = bookmarkAdded + folderAdded;
+                deletedCount = 0;
             }
 
             // 计算净变化（与上次备份的 bookmarkTree 对比）：
             // - 支持“+/-同时存在但净差为0”的显示
             // - 支持“移动/修改后又改回去”自动归零
             try {
-                if (lastBookmarkData && lastBookmarkData.bookmarkTree) {
+                if (hasLastSnapshotTree) {
                     const explicitMovedIdSet = new Set(
                         (Array.isArray(recentMovedIds) ? recentMovedIds : [])
                             .map(r => r && r.id)
@@ -8469,6 +9365,8 @@ async function updateSyncStatus(direction, time, status = 'success', errorMessag
         // 这样“恢复列表哈希值”与磁盘上的快照哈希始终一致（尤其是首次备份/清空后首次备份）
         const normalizedSnapshotFingerprint = normalizeSyncFingerprint(snapshotFingerprint);
         const fingerprint = normalizedSnapshotFingerprint || computeSyncFingerprintByTime(time);
+        const effectiveOverwriteMode = normalizeOverwriteMode(options?.overwriteMode || overwriteMode);
+        const snapshotKey = buildSnapshotKeyByTimeAndFingerprint(time, fingerprint);
 
         // 生成默认备注（区分中英文）
         let defaultNote = '';
@@ -8496,11 +9394,19 @@ async function updateSyncStatus(direction, time, status = 'success', errorMessag
             nextSeqNumber = maxSeq + 1;
         }
 
+        const snapshotName = effectiveOverwriteMode === 'overwrite'
+            ? getOverwriteSnapshotFileName()
+            : `${snapshotKey}.html`;
+        const snapshotFolderName = effectiveOverwriteMode === 'overwrite'
+            ? '__overwrite__'
+            : snapshotKey;
+
         const newSyncRecord = {
             time: time,
             seqNumber: nextSeqNumber, // 永久序号，部分删除后不会重置
             direction: direction,
             type: syncType, // 存储键值: 'auto', 'manual', 'auto_switch'
+            overwriteMode: effectiveOverwriteMode,
             status: status,
             errorMessage: errorMessage,
             bookmarkStats: bookmarkStats,
@@ -8513,7 +9419,10 @@ async function updateSyncStatus(direction, time, status = 'success', errorMessag
                 : defaultNote,
             // bookmarkTree 不再存放在索引记录中
             hasData: shouldSaveTree,
-            fingerprint: fingerprint
+            fingerprint: fingerprint,
+            snapshotKey: effectiveOverwriteMode === 'overwrite' ? '__overwrite__' : snapshotKey,
+            snapshotName,
+            snapshotFolderName
         };
 
         // 独立保存书签树数据
@@ -8541,14 +9450,14 @@ async function updateSyncStatus(direction, time, status = 'success', errorMessag
         };
 
         if (status === 'success' &&
-            (direction === 'upload' || direction === 'webdav' || direction === 'github_repo' || direction === 'gist' || direction === 'cloud' || direction === 'webdav_local' || direction === 'github_repo_local' || direction === 'gist_local' || direction === 'cloud_local' || direction === 'local' || direction === 'both')) {
+            (direction === 'upload' || direction === 'webdav' || direction === 'github_repo' || direction === 'gist' || direction === 'cloud' || direction === 'webdav_github_local' || direction === 'webdav_local' || direction === 'github_repo_local' || direction === 'gist_local' || direction === 'cloud_local' || direction === 'local' || direction === 'both')) {
             updateData.lastBookmarkUpdate = time;
         }
 
         await browserAPI.storage.local.set(updateData);
 
         const isInitSync = (!syncHistory || syncHistory.length === 0) && newSyncRecord.isFirstBackup; // More precise check for initial sync completion effect
-        if (isInitSync && status === 'success' && (direction === 'upload' || direction === 'webdav' || direction === 'github_repo' || direction === 'gist' || direction === 'cloud' || direction === 'webdav_local' || direction === 'github_repo_local' || direction === 'gist_local' || direction === 'cloud_local' || direction === 'local' || direction === 'both')) {
+        if (isInitSync && status === 'success' && (direction === 'upload' || direction === 'webdav' || direction === 'github_repo' || direction === 'gist' || direction === 'cloud' || direction === 'webdav_github_local' || direction === 'webdav_local' || direction === 'github_repo_local' || direction === 'gist_local' || direction === 'cloud_local' || direction === 'local' || direction === 'both')) {
             await browserAPI.storage.local.set({ isInitialized: true });
 
             await browserAPI.storage.local.set({
@@ -8565,9 +9474,10 @@ async function updateSyncStatus(direction, time, status = 'success', errorMessag
         }
 
         // 备份成功后自动同步“当前变化”归档
-        if (status === 'success') {
+        const skipAutoArtifacts = options && options.skipAutoArtifacts === true;
+        if (status === 'success' && !skipAutoArtifacts) {
             try {
-                const overwriteStrategy = overwriteMode === 'overwrite' ? 'overwrite' : 'versioned';
+                const overwriteStrategy = effectiveOverwriteMode === 'overwrite' ? 'overwrite' : 'versioned';
 
                 const [archiveResult, versionedLogResult] = await Promise.allSettled([
                     exportCurrentChangesArchiveToCloud({
@@ -10039,7 +10949,7 @@ browserAPI.tabs.onUpdated.addListener(async (tabId, changeInfo, tab) => {
 
 // [New] 获取远程文件列表 (WebDAV/GitHub)
 // 说明：用于“恢复/同步”扫描；会返回 ZIP / HTML / 合并历史(JSON) 的候选文件。
-async function listRemoteFiles(source) {
+async function listRemoteFiles(source, options = {}) {
     try {
         const lang = await getCurrentLang();
         const settings = await browserAPI.storage.local.get([
@@ -10048,6 +10958,57 @@ async function listRemoteFiles(source) {
         ]);
 
         const files = [];
+        const useIndexOptimizedScan = options?.useIndexOptimizedScan === true;
+        const indexedSnapshotKeyList = Array.from(new Set(
+            (Array.isArray(options?.indexedSnapshotKeys) ? options.indexedSnapshotKeys : [])
+                .map((key) => parseSnapshotKeyFromText(key || ''))
+                .map((key) => String(key || '').trim().toLowerCase())
+                .filter((key) => key && key !== '__overwrite__')
+        )).slice(0, 300);
+        const indexedSnapshotKeyHash = indexedSnapshotKeyList.length > 0
+            ? `${indexedSnapshotKeyList.length}:${indexedSnapshotKeyList[0]}:${indexedSnapshotKeyList[indexedSnapshotKeyList.length - 1]}`
+            : 'none';
+
+        const cloneRestoreFiles = (list) => (Array.isArray(list) ? list : []).map((item) => ({ ...item }));
+        const buildRemoteScanCacheKey = () => {
+            if (source === 'webdav') {
+                const serverAddress = String(settings.serverAddress || '').trim();
+                const username = String(settings.username || '').trim();
+                if (!serverAddress || !username) return '';
+                const scanMode = useIndexOptimizedScan ? 'idx' : 'full';
+                return `webdav|${serverAddress}|${username}|${scanMode}|${indexedSnapshotKeyHash}`;
+            }
+
+            if (source === 'github') {
+                const owner = String(settings.githubRepoOwner || '').trim();
+                const repo = String(settings.githubRepoName || '').trim();
+                const branch = String(settings.githubRepoBranch || '').trim();
+                const basePath = String(settings.githubRepoBasePath || '').trim();
+                const tokenPreview = String(settings.githubRepoToken || '').slice(0, 8);
+                if (!owner || !repo || !branch) return '';
+                const scanMode = useIndexOptimizedScan ? 'idx' : 'full';
+                return `github|${owner}|${repo}|${branch}|${basePath}|${tokenPreview}|${scanMode}|${indexedSnapshotKeyHash}`;
+            }
+
+            return '';
+        };
+
+        const remoteScanCacheKey = buildRemoteScanCacheKey();
+        if (remoteScanCacheKey) {
+            const cached = remoteRestoreScanCache.get(remoteScanCacheKey);
+            const cachedTime = Number(cached?.time) || 0;
+            if (cached && Date.now() - cachedTime <= REMOTE_RESTORE_SCAN_CACHE_TTL_MS) {
+                return cloneRestoreFiles(cached.files);
+            }
+        }
+
+        const commitRemoteScanCache = (list) => {
+            if (!remoteScanCacheKey) return;
+            remoteRestoreScanCache.set(remoteScanCacheKey, {
+                time: Date.now(),
+                files: cloneRestoreFiles(list)
+            });
+        };
 
         const exportRootFolderCandidates = Array.from(new Set(getAllExportRootFolderCandidates().map(s => String(s || '').trim()).filter(Boolean)));
         const backupFolderCandidates = Array.from(new Set([
@@ -10059,32 +11020,65 @@ async function listRemoteFiles(source) {
             'BookmarkBackup',
             'bookmarkbackup'
         ].map(s => String(s || '').trim()).filter(Boolean)));
-        const historyRootFolderCandidates = Array.from(new Set([
-            resolveExportSubFolderByKey('backup_history', 'zh_CN'),
-            resolveExportSubFolderByKey('backup_history', 'en')
-        ].map(s => String(s || '').trim()).filter(Boolean)));
-        const historyAutoArchiveFolderCandidates = Array.from(new Set([
-            getHistoryFolderByLang('zh_CN'),
-            getHistoryFolderByLang('en')
-        ].map(s => String(s || '').trim()).filter(Boolean)));
         const overwriteFolderCandidates = Array.from(new Set(getOverwriteFolderCandidates()));
         const versionedFolderCandidates = Array.from(new Set(getVersionedFolderCandidates()));
-        const snapshotFolderNameReg = /^\d{8}_\d{6}_[0-9a-f]{6,12}$/i;
+        const manualExportParentFolderCandidates = Array.from(new Set([
+            getManualExportParentFolderByLang('zh_CN'),
+            getManualExportParentFolderByLang('en'),
+            'manual export',
+            'manual_export',
+            'manual-export'
+        ].map(s => String(s || '').trim()).filter(Boolean)));
+        const snapshotFolderNameReg = /^\d{8}_\d{4}(?:\d{2})?(?:_[0-9a-f]{6,12})?$/i;
+        const MANUAL_EXPORT_FOLDER_SEGMENTS = new Set(['手动导出', 'manual export', 'manual_export', 'manual-export']);
+        const MANUAL_HISTORY_FOLDER_SEGMENTS = new Set([
+            '备份历史',
+            'backup history',
+            'backup_history',
+            'backup-history',
+            'bookmarks history',
+            'bookmarks_history',
+            'bookmarks-history'
+        ]);
+        const versionedInfoLogFileNameSet = new Set(
+            getVersionedInfoLogFileNameCandidates()
+                .map((name) => String(name || '').trim().toLowerCase())
+                .filter(Boolean)
+        );
+        const versionedFolderNameSet = new Set(
+            getVersionedFolderCandidates()
+                .map((name) => String(name || '').trim().toLowerCase())
+                .filter(Boolean)
+        );
 
         function isBackupHtmlName(name) {
             const n = String(name || '');
             const nLower = n.toLowerCase();
 
-            if (/^\d{8}_\d{6}_[0-9a-f]{6,12}\.html$/i.test(nLower)) return true;
-            if (/^(?:backup_)?\d{8}_\d{6}\.html$/.test(nLower)) return true;
-            if (nLower === 'bookmark_backup.html') return true;
+            if (/^\d{8}_\d{4}(?:\d{2})?_[0-9a-f]{6,12}\.(?:html?|xhtml)$/i.test(nLower)) return true;
+            if (/^(?:backup_)?\d{8}_\d{4}(?:\d{2})?\.(?:html?|xhtml)$/i.test(nLower)) return true;
+            if (nLower === 'bookmark_backup.html' || nLower === 'bookmark_backup.htm' || nLower === 'bookmark_backup.xhtml') return true;
 
             // Compatibility: user-renamed but still clearly bookmark backup HTML
-            if (nLower.endsWith('.html') && (nLower.includes('bookmark_backup') || nLower.includes('bookmark backup'))) {
+            if (/\.(?:html?|xhtml)$/i.test(nLower) && (nLower.includes('bookmark_backup') || nLower.includes('bookmark backup'))) {
                 return true;
             }
 
             return false;
+        }
+
+        function hasCurrentChangesNameHint(fileName) {
+            const name = String(fileName || '').trim();
+            if (!name) return false;
+            const lower = name.toLowerCase();
+            return lower.includes('current_changes')
+                || lower.includes('current-changes')
+                || lower.includes('bookmark-changes')
+                || lower.includes('bookmark_changes')
+                || lower.includes('bookmark changes')
+                || name.includes('当前变化')
+                || name.includes('书签变化')
+                || name.includes('变化');
         }
 
         function splitPathSegments(pathText) {
@@ -10111,14 +11105,74 @@ async function listRemoteFiles(source) {
             const name = String(fileName || '').trim();
             if (!name) return false;
             if (isBackupHtmlName(name)) return false;
-            if (!/\.(json|html)$/i.test(name)) return false;
+            if (!/\.(json|html?|xhtml)$/i.test(name)) return false;
 
-            // 主恢复检测：优先按目录（快照目录/覆盖目录）识别
+            const folderSegments = splitPathSegments(folderPath).map(part => String(part || '').trim().toLowerCase());
+            const inCurrentChangesFolder = folderSegments.some((part) => (
+                part === '当前变化'
+                || part === 'current changes'
+                || part === 'current_changes'
+                || part === 'current-changes'
+            ));
+
+            if (inCurrentChangesFolder) return true;
+            if (hasCurrentChangesNameHint(name)) return true;
+            return false;
+        }
+
+        function shouldTreatAsSnapshotHtml({ fileName, folderPath = '', snapshotFolder = '' }) {
+            const name = String(fileName || '').trim();
+            if (!name) return false;
+            if (!/\.(html?|xhtml)$/i.test(name)) return false;
+
+            if (shouldTreatAsCurrentChangesArtifact({
+                fileName: name,
+                folderPath,
+                snapshotFolder
+            })) {
+                return false;
+            }
+
+            if (isBackupHtmlName(name)) return true;
             return isInSnapshotOrOverwriteFolder(folderPath, snapshotFolder);
         }
 
+        function shouldTreatAsManualHistoryArtifact({ fileName, folderPath = '' }) {
+            const name = String(fileName || '').trim();
+            if (!name) return false;
+            if (!/\.(json|html|xhtml)$/i.test(name)) return false;
+
+            const folderSegments = splitPathSegments(folderPath).map(part => String(part || '').trim().toLowerCase());
+            const inManualExportFolder = folderSegments.some((part) => MANUAL_EXPORT_FOLDER_SEGMENTS.has(part));
+            const inManualHistoryFolder = folderSegments.some((part) => MANUAL_HISTORY_FOLDER_SEGMENTS.has(part));
+
+            return inManualExportFolder && inManualHistoryFolder;
+        }
+
+        function pushIndexMarkdownCandidateIfMatched({ fileName, fileUrl, sourceType, folderPath = '', manifestMode = '' }) {
+            const normalizedName = String(fileName || '').trim();
+            if (!normalizedName) return;
+            if (!versionedInfoLogFileNameSet.has(normalizedName.toLowerCase())) return;
+
+            // 统一规则：索引仅位于“版本化/Versioned”目录。
+            // 旧位置（根目录/覆盖等）不再纳入索引候选。
+            const pathSegmentsLower = splitPathSegments(folderPath).map((part) => String(part || '').trim().toLowerCase());
+            const inVersionedFolder = pathSegmentsLower.some((part) => versionedFolderNameSet.has(part));
+            if (!inVersionedFolder) return;
+
+            files.push({
+                name: normalizedName,
+                url: fileUrl,
+                source: sourceType,
+                type: 'index_markdown',
+                folderPath: String(folderPath || '').trim(),
+                manifestMode: String(manifestMode || '').trim()
+            });
+        }
+
         async function webdavPropfind(folderUrl, authHeader, options = {}) {
-            const response = await fetch(folderUrl, {
+            const requestUrl = normalizeWebDAVFetchUrl(folderUrl);
+            const response = await fetch(requestUrl, {
                 method: 'PROPFIND',
                 headers: {
                     'Authorization': authHeader,
@@ -10129,6 +11183,7 @@ async function listRemoteFiles(source) {
             });
 
             if (response.status === 404) return [];
+            if (response.status === 405) return [];
             if (!response.ok) {
                 throw new Error(`WebDAV Error: ${response.status}`);
             }
@@ -10152,6 +11207,124 @@ async function listRemoteFiles(source) {
             return entries;
         }
 
+        const webdavPropfindCache = new Map();
+        async function webdavPropfindCached(folderUrl, authHeader, options = {}) {
+            const requestUrl = normalizeWebDAVFetchUrl(folderUrl);
+            const onlyCollections = options?.onlyCollections === true;
+            const cacheKey = `${requestUrl}|${onlyCollections ? 'collections' : 'files'}`;
+
+            if (webdavPropfindCache.has(cacheKey)) {
+                const cachedPromise = webdavPropfindCache.get(cacheKey);
+                const cachedResult = await cachedPromise;
+                return Array.isArray(cachedResult) ? cachedResult.slice() : [];
+            }
+
+            const task = webdavPropfind(folderUrl, authHeader, options)
+                .then((result) => Array.isArray(result) ? result : [])
+                .catch((error) => {
+                    webdavPropfindCache.delete(cacheKey);
+                    throw error;
+                });
+
+            webdavPropfindCache.set(cacheKey, task);
+            const finalResult = await task;
+            return finalResult.slice();
+        }
+
+        function decodeXmlEntities(value) {
+            return String(value || '')
+                .replace(/&amp;/g, '&')
+                .replace(/&lt;/g, '<')
+                .replace(/&gt;/g, '>')
+                .replace(/&quot;/g, '"')
+                .replace(/&#39;/g, "'");
+        }
+
+        function normalizeWebDavPathname(pathname) {
+            return String(pathname || '')
+                .split('?')[0]
+                .split('#')[0]
+                .replace(/\/{2,}/g, '/')
+                .trim();
+        }
+
+        async function webdavPropfindTree(folderUrl, authHeader) {
+            const requestUrl = normalizeWebDAVFetchUrl(folderUrl);
+            const response = await fetch(requestUrl, {
+                method: 'PROPFIND',
+                headers: {
+                    'Authorization': authHeader,
+                    'Depth': 'infinity',
+                    'Content-Type': 'application/xml'
+                },
+                body: '<?xml version="1.0" encoding="utf-8"?><propfind xmlns="DAV:"><prop><href/><displayname/><resourcetype/></prop></propfind>'
+            });
+
+            if (response.status === 404) return null;
+            if (!response.ok) {
+                throw new Error(`WebDAV Tree Error: ${response.status}`);
+            }
+
+            const rootPathnameRaw = (() => {
+                try {
+                    return new URL(requestUrl).pathname || '/';
+                } catch (_) {
+                    return '/';
+                }
+            })();
+            let rootPathname = normalizeWebDavPathname(rootPathnameRaw);
+            try {
+                rootPathname = decodeURIComponent(rootPathname);
+            } catch (_) { }
+            rootPathname = normalizeWebDavPathname(rootPathname).replace(/\/+$/, '');
+
+            const text = await response.text();
+            const entries = [];
+            const responseReg = /<(?:d:)?response>([\s\S]*?)<\/(?:d:)?response>/gi;
+            let match;
+
+            while ((match = responseReg.exec(text)) !== null) {
+                const content = String(match[1] || '');
+                const hrefMatch = /<(?:d:)?href>([\s\S]*?)<\/(?:d:)?href>/i.exec(content);
+                if (!hrefMatch) continue;
+
+                const hrefRaw = decodeXmlEntities(hrefMatch[1]);
+                let pathname = '';
+                try {
+                    pathname = new URL(hrefRaw, requestUrl).pathname || '';
+                } catch (_) {
+                    pathname = hrefRaw;
+                }
+
+                try {
+                    pathname = decodeURIComponent(pathname);
+                } catch (_) { }
+
+                const normalizedPathname = normalizeWebDavPathname(pathname).replace(/\/+$/, '');
+                if (!normalizedPathname) continue;
+                if (normalizedPathname === rootPathname) continue;
+
+                let relativePath = '';
+                if (!rootPathname) {
+                    relativePath = normalizedPathname.replace(/^\/+/, '');
+                } else if (normalizedPathname.startsWith(`${rootPathname}/`)) {
+                    relativePath = normalizedPathname.slice(rootPathname.length + 1).replace(/^\/+/, '');
+                } else {
+                    continue;
+                }
+
+                if (!relativePath) continue;
+
+                const isCollection = /<(?:d:)?collection\s*\/?>/i.test(content);
+                entries.push({
+                    relativePath,
+                    isCollection
+                });
+            }
+
+            return entries;
+        }
+
         // WebDAV
         if (source === 'webdav') {
             const serverAddress = (settings.serverAddress || '').replace(/\/+$/, '/');
@@ -10159,128 +11332,247 @@ async function listRemoteFiles(source) {
 
             const authHeader = 'Basic ' + safeBase64(`${settings.username || ''}:${settings.password || ''}`);
 
-            // 1) 合并历史：Backup_History/backup_history.json（兼容旧格式）
-            for (const exportRootFolder of exportRootFolderCandidates) {
-                for (const historyRootFolder of historyRootFolderCandidates) {
+            const buildFolderPathFromRelativePath = (relativePath) => {
+                const normalized = String(relativePath || '').replace(/^\/+/, '').replace(/\/{2,}/g, '/');
+                if (!normalized || !normalized.includes('/')) return '';
+                return normalized.slice(0, normalized.lastIndexOf('/'));
+            };
+
+            const buildFileNameFromRelativePath = (relativePath) => {
+                const normalized = String(relativePath || '').replace(/^\/+/, '').replace(/\/{2,}/g, '/');
+                if (!normalized) return '';
+                const parts = splitPathSegments(normalized);
+                return parts.length > 0 ? String(parts[parts.length - 1] || '').trim() : '';
+            };
+
+            try {
+                const treeFilePaths = [];
+                let treeScanSupported = false;
+
+                await runBatchedTasks(exportRootFolderCandidates, async (exportRootFolder) => {
+                    const rootFolder = String(exportRootFolder || '').trim();
+                    if (!rootFolder) return 0;
+
+                    const rootUrl = `${serverAddress}${rootFolder}/`;
                     try {
-                        const historyRootUrl = `${serverAddress}${exportRootFolder}/${historyRootFolder}/`;
-                        const names = await webdavPropfind(historyRootUrl, authHeader);
-                        for (const name of names) {
-                            if (name === 'backup_history.json') {
-                                files.push({ name, url: historyRootUrl + name, source: 'webdav', type: 'merged_history' });
-                            } else if (name.endsWith('.zip')) {
-                                // 兼容：部分版本把 ZIP 放在备份历史根目录
-                                files.push({ name, url: historyRootUrl + name, source: 'webdav', type: 'zip' });
-                            }
+                        const treeEntries = await webdavPropfindTree(rootUrl, authHeader);
+                        if (!Array.isArray(treeEntries)) return 0;
+                        treeScanSupported = true;
+
+                        for (const entry of treeEntries) {
+                            if (!entry || entry.isCollection) continue;
+                            const childPath = String(entry.relativePath || '').replace(/^\/+/, '').replace(/\/{2,}/g, '/');
+                            if (!childPath) continue;
+                            treeFilePaths.push(`${rootFolder}/${childPath}`);
                         }
-                    } catch (e) {
-                        console.warn('[listRemoteFiles] Scan history root failed:', e);
+
+                        return treeEntries.length;
+                    } catch (error) {
+                        console.warn('[listRemoteFiles] WebDAV tree scan failed for root:', rootFolder, error);
+                        return 0;
                     }
+                }, 3);
+
+                if (treeScanSupported) {
+                    const dedupPaths = Array.from(new Set(
+                        treeFilePaths
+                            .map((path) => String(path || '').replace(/^\/+/, '').replace(/\/{2,}/g, '/').trim())
+                            .filter(Boolean)
+                    ));
+
+                    for (const relativePath of dedupPaths) {
+                        const fileName = buildFileNameFromRelativePath(relativePath);
+                        if (!fileName) continue;
+
+                        const folderPath = buildFolderPathFromRelativePath(relativePath);
+                        const snapshotFolder = parseSnapshotKeyFromText(folderPath || relativePath || fileName || '');
+                        const fileUrl = buildWebDAVResourceUrl(serverAddress, relativePath);
+
+                        pushIndexMarkdownCandidateIfMatched({
+                            fileName,
+                            fileUrl,
+                            sourceType: 'webdav',
+                            folderPath,
+                            manifestMode: 'tree'
+                        });
+
+                        if (shouldTreatAsSnapshotHtml({
+                            fileName,
+                            folderPath,
+                            snapshotFolder: snapshotFolder || ''
+                        })) {
+                            files.push({
+                                name: fileName,
+                                url: fileUrl,
+                                source: 'webdav',
+                                type: 'html_backup',
+                                snapshotFolder: snapshotFolder || '',
+                                folderPath,
+                                manifestMode: 'tree'
+                            });
+                            continue;
+                        }
+
+                        if (shouldTreatAsCurrentChangesArtifact({
+                            fileName,
+                            folderPath,
+                            snapshotFolder: snapshotFolder || ''
+                        }) || shouldTreatAsManualHistoryArtifact({
+                            fileName,
+                            folderPath
+                        })) {
+                            files.push({
+                                name: fileName,
+                                url: fileUrl,
+                                source: 'webdav',
+                                type: 'changes_artifact',
+                                snapshotFolder: snapshotFolder || '',
+                                folderPath,
+                                manifestMode: 'tree'
+                            });
+                        }
+                    }
+
+                    const treeSnapshotCandidateCount = files.filter((item) => item
+                        && item.source === 'webdav'
+                        && (item.type === 'html_backup' || item.type === 'changes_artifact')
+                        && String(item.manifestMode || '').trim().toLowerCase() === 'tree').length;
+
+                    // 部分 WebDAV 服务对 Depth: infinity 响应不完整（仅返回根层 log 文件）。
+                    // 这种情况下回退到目录扫描，避免“多版本/非索引项”丢失。
+                    if (treeSnapshotCandidateCount === 0) {
+                        throw new Error('WebDAV tree manifest missing snapshot candidates; fallback to directory scan');
+                    }
+
+                    const deduped = Array.from(new Map(files.map(f => [`${f.source}|${f.type}|${f.url}`, f])).values());
+                    commitRemoteScanCache(deduped);
+                    return deduped;
                 }
+            } catch (treeScanError) {
+                console.warn('[listRemoteFiles] WebDAV tree scan fallback to directory scan:', treeScanError);
             }
 
-            // 2) ZIP：备份历史/自动备份归档
-            for (const exportRootFolder of exportRootFolderCandidates) {
-                for (const historyAutoArchiveFolder of historyAutoArchiveFolderCandidates) {
-                    try {
-                        const folderUrl = `${serverAddress}${exportRootFolder}/${historyAutoArchiveFolder}/`;
-                        const names = await webdavPropfind(folderUrl, authHeader);
-                        for (const name of names) {
-                            if (name.endsWith('.zip')) {
-                                files.push({ name, url: folderUrl + name, source: 'webdav', type: 'zip' });
-                            }
-                        }
-                    } catch (e) {
-                        console.warn('[listRemoteFiles] Scan auto-archive failed:', e);
-                    }
-                }
-            }
-
-            // 3) 兼容旧结构：书签备份目录下直放 HTML
-            for (const exportRootFolder of exportRootFolderCandidates) {
-                for (const backupFolder of backupFolderCandidates) {
-                    try {
-                        const htmlFolderUrl = `${serverAddress}${exportRootFolder}/${backupFolder}/`;
-                        const names = await webdavPropfind(htmlFolderUrl, authHeader);
-                        for (const name of names) {
-                            if (isBackupHtmlName(name)) {
-                                files.push({ name, url: htmlFolderUrl + name, source: 'webdav', type: 'html_backup', folderPath: `${exportRootFolder}/${backupFolder}` });
-                            }
-                        }
-                    } catch (e) {
-                        console.warn('[listRemoteFiles] Scan HTML folder failed:', e);
-                    }
-                }
-            }
-
-            // 3.1) 新结构：导出根目录下直放 HTML（无“书签备份”中间层）
-            for (const exportRootFolder of exportRootFolderCandidates) {
-                try {
-                    const htmlFolderUrl = `${serverAddress}${exportRootFolder}/`;
-                    const names = await webdavPropfind(htmlFolderUrl, authHeader);
-                    for (const name of names) {
-                        if (isBackupHtmlName(name)) {
-                            files.push({ name, url: htmlFolderUrl + name, source: 'webdav', type: 'html_backup', folderPath: `${exportRootFolder}` });
-                        }
-                    }
-                } catch (e) {
-                    console.warn('[listRemoteFiles] Scan root HTML folder failed:', e);
-                }
-            }
-
-            // 4) 新结构：书签备份/{时间+哈希}/
-            for (const exportRootFolder of exportRootFolderCandidates) {
-                for (const backupFolder of backupFolderCandidates) {
-                    try {
-                        const parentUrl = `${serverAddress}${exportRootFolder}/${backupFolder}/`;
-                        const names = await webdavPropfind(parentUrl, authHeader, { onlyCollections: true });
-                        for (const folderName of names) {
-                            if (!snapshotFolderNameReg.test(folderName)) continue;
-                            try {
-                                const childUrl = `${parentUrl}${folderName}/`;
-                                const childNames = await webdavPropfind(childUrl, authHeader);
-                                for (const childName of childNames) {
-                                    if (isBackupHtmlName(childName)) {
-                                        files.push({
-                                            name: childName,
-                                            url: childUrl + childName,
-                                            source: 'webdav',
-                                            type: 'html_backup',
-                                            snapshotFolder: folderName,
-                                            folderPath: `${exportRootFolder}/${backupFolder}/${folderName}`
-                                        });
-                                    } else if (shouldTreatAsCurrentChangesArtifact({
-                                        fileName: childName,
-                                        folderPath: `${exportRootFolder}/${backupFolder}/${folderName}`,
-                                        snapshotFolder: folderName
-                                    })) {
-                                        files.push({
-                                            name: childName,
-                                            url: childUrl + childName,
-                                            source: 'webdav',
-                                            type: 'changes_artifact',
-                                            snapshotFolder: folderName,
-                                            folderPath: `${exportRootFolder}/${backupFolder}/${folderName}`
-                                        });
-                                    }
+            if (!useIndexOptimizedScan) {
+                // 1) 兼容旧结构：书签备份目录下直放 HTML
+                for (const exportRootFolder of exportRootFolderCandidates) {
+                    for (const backupFolder of backupFolderCandidates) {
+                        try {
+                            const htmlFolderUrl = `${serverAddress}${exportRootFolder}/${backupFolder}/`;
+                            const names = await webdavPropfindCached(htmlFolderUrl, authHeader);
+                            for (const name of names) {
+                                pushIndexMarkdownCandidateIfMatched({
+                                    fileName: name,
+                                    fileUrl: htmlFolderUrl + name,
+                                    sourceType: 'webdav',
+                                    folderPath: `${exportRootFolder}/${backupFolder}`
+                                });
+                                if (shouldTreatAsSnapshotHtml({
+                                    fileName: name,
+                                    folderPath: `${exportRootFolder}/${backupFolder}`,
+                                    snapshotFolder: ''
+                                })) {
+                                    files.push({ name, url: htmlFolderUrl + name, source: 'webdav', type: 'html_backup', folderPath: `${exportRootFolder}/${backupFolder}` });
                                 }
-                            } catch (_) { }
+                            }
+                        } catch (e) {
+                            console.warn('[listRemoteFiles] Scan HTML folder failed:', e);
+                        }
+                    }
+                }
+
+                // 1.1) 新结构：导出根目录下直放 HTML（无“书签备份”中间层）
+                for (const exportRootFolder of exportRootFolderCandidates) {
+                    try {
+                        const htmlFolderUrl = `${serverAddress}${exportRootFolder}/`;
+                        const names = await webdavPropfindCached(htmlFolderUrl, authHeader);
+                        for (const name of names) {
+                            pushIndexMarkdownCandidateIfMatched({
+                                fileName: name,
+                                fileUrl: htmlFolderUrl + name,
+                                sourceType: 'webdav',
+                                folderPath: `${exportRootFolder}`
+                            });
+                            if (shouldTreatAsSnapshotHtml({
+                                fileName: name,
+                                folderPath: `${exportRootFolder}`,
+                                snapshotFolder: ''
+                            })) {
+                                files.push({ name, url: htmlFolderUrl + name, source: 'webdav', type: 'html_backup', folderPath: `${exportRootFolder}` });
+                            }
                         }
                     } catch (e) {
-                        console.warn('[listRemoteFiles] Scan snapshot folders failed:', e);
+                        console.warn('[listRemoteFiles] Scan root HTML folder failed:', e);
+                    }
+                }
+
+                // 2) 新结构：书签备份/{时间+哈希}/
+                for (const exportRootFolder of exportRootFolderCandidates) {
+                    for (const backupFolder of backupFolderCandidates) {
+                        try {
+                            const parentUrl = `${serverAddress}${exportRootFolder}/${backupFolder}/`;
+                            const names = await webdavPropfindCached(parentUrl, authHeader, { onlyCollections: true });
+                            for (const folderName of names) {
+                                if (!snapshotFolderNameReg.test(folderName)) continue;
+                                try {
+                                    const childUrl = `${parentUrl}${folderName}/`;
+                                    const childNames = await webdavPropfindCached(childUrl, authHeader);
+                                    for (const childName of childNames) {
+                                        if (shouldTreatAsSnapshotHtml({
+                                            fileName: childName,
+                                            folderPath: `${exportRootFolder}/${backupFolder}/${folderName}`,
+                                            snapshotFolder: folderName
+                                        })) {
+                                            files.push({
+                                                name: childName,
+                                                url: childUrl + childName,
+                                                source: 'webdav',
+                                                type: 'html_backup',
+                                                snapshotFolder: folderName,
+                                                folderPath: `${exportRootFolder}/${backupFolder}/${folderName}`
+                                            });
+                                        } else if (shouldTreatAsCurrentChangesArtifact({
+                                            fileName: childName,
+                                            folderPath: `${exportRootFolder}/${backupFolder}/${folderName}`,
+                                            snapshotFolder: folderName
+                                        })) {
+                                            files.push({
+                                                name: childName,
+                                                url: childUrl + childName,
+                                                source: 'webdav',
+                                                type: 'changes_artifact',
+                                                snapshotFolder: folderName,
+                                                folderPath: `${exportRootFolder}/${backupFolder}/${folderName}`
+                                            });
+                                        }
+                                    }
+                                } catch (_) { }
+                            }
+                        } catch (e) {
+                            console.warn('[listRemoteFiles] Scan snapshot folders failed:', e);
+                        }
                     }
                 }
             }
 
-            // 5) 覆盖模式：书签备份/覆盖/
+            // 3) 覆盖模式：书签备份/覆盖/
             for (const exportRootFolder of exportRootFolderCandidates) {
                 for (const backupFolder of backupFolderCandidates) {
                     for (const overwriteFolder of overwriteFolderCandidates) {
                         try {
                             const folderUrl = `${serverAddress}${exportRootFolder}/${backupFolder}/${overwriteFolder}/`;
-                            const names = await webdavPropfind(folderUrl, authHeader);
+                            const names = await webdavPropfindCached(folderUrl, authHeader);
                             for (const name of names) {
-                                if (isBackupHtmlName(name)) {
+                                pushIndexMarkdownCandidateIfMatched({
+                                    fileName: name,
+                                    fileUrl: folderUrl + name,
+                                    sourceType: 'webdav',
+                                    folderPath: `${exportRootFolder}/${backupFolder}/${overwriteFolder}`
+                                });
+                                if (shouldTreatAsSnapshotHtml({
+                                    fileName: name,
+                                    folderPath: `${exportRootFolder}/${backupFolder}/${overwriteFolder}`,
+                                    snapshotFolder: overwriteFolder
+                                })) {
                                     files.push({
                                         name,
                                         url: folderUrl + name,
@@ -10309,14 +11601,24 @@ async function listRemoteFiles(source) {
                 }
             }
 
-            // 5.1) 覆盖模式（新结构）：导出根目录/覆盖
+            // 3.1) 覆盖模式（新结构）：导出根目录/覆盖
             for (const exportRootFolder of exportRootFolderCandidates) {
                 for (const overwriteFolder of overwriteFolderCandidates) {
                     try {
                         const folderUrl = `${serverAddress}${exportRootFolder}/${overwriteFolder}/`;
-                        const names = await webdavPropfind(folderUrl, authHeader);
+                        const names = await webdavPropfindCached(folderUrl, authHeader);
                         for (const name of names) {
-                            if (isBackupHtmlName(name)) {
+                            pushIndexMarkdownCandidateIfMatched({
+                                fileName: name,
+                                fileUrl: folderUrl + name,
+                                sourceType: 'webdav',
+                                folderPath: `${exportRootFolder}/${overwriteFolder}`
+                            });
+                            if (shouldTreatAsSnapshotHtml({
+                                fileName: name,
+                                folderPath: `${exportRootFolder}/${overwriteFolder}`,
+                                snapshotFolder: overwriteFolder
+                            })) {
                                 files.push({
                                     name,
                                     url: folderUrl + name,
@@ -10344,72 +11646,34 @@ async function listRemoteFiles(source) {
                 }
             }
 
-            // 4.1) 新结构：导出根目录/{时间+哈希}/
-            for (const exportRootFolder of exportRootFolderCandidates) {
-                try {
-                    const parentUrl = `${serverAddress}${exportRootFolder}/`;
-                    const names = await webdavPropfind(parentUrl, authHeader, { onlyCollections: true });
-                    for (const folderName of names) {
-                        if (!snapshotFolderNameReg.test(folderName)) continue;
-                        try {
-                            const childUrl = `${parentUrl}${folderName}/`;
-                            const childNames = await webdavPropfind(childUrl, authHeader);
-                            for (const childName of childNames) {
-                                if (isBackupHtmlName(childName)) {
-                                    files.push({
-                                        name: childName,
-                                        url: childUrl + childName,
-                                        source: 'webdav',
-                                        type: 'html_backup',
-                                        snapshotFolder: folderName,
-                                        folderPath: `${exportRootFolder}/${folderName}`
-                                    });
-                                } else if (shouldTreatAsCurrentChangesArtifact({
-                                    fileName: childName,
-                                    folderPath: `${exportRootFolder}/${folderName}`,
-                                    snapshotFolder: folderName
-                                })) {
-                                    files.push({
-                                        name: childName,
-                                        url: childUrl + childName,
-                                        source: 'webdav',
-                                        type: 'changes_artifact',
-                                        snapshotFolder: folderName,
-                                        folderPath: `${exportRootFolder}/${folderName}`
-                                    });
-                                }
-                            }
-                        } catch (_) { }
-                    }
-                } catch (e) {
-                    console.warn('[listRemoteFiles] Scan root snapshot folders failed:', e);
-                }
-            }
-
-            // 4.2) 版本化模式（新结构）：导出根目录/版本化/{时间+哈希}/
-            for (const exportRootFolder of exportRootFolderCandidates) {
-                for (const versionedFolder of versionedFolderCandidates) {
+            if (!useIndexOptimizedScan) {
+                // 2.1) 新结构：导出根目录/{时间+哈希}/
+                for (const exportRootFolder of exportRootFolderCandidates) {
                     try {
-                        const parentUrl = `${serverAddress}${exportRootFolder}/${versionedFolder}/`;
-                        const names = await webdavPropfind(parentUrl, authHeader, { onlyCollections: true });
+                        const parentUrl = `${serverAddress}${exportRootFolder}/`;
+                        const names = await webdavPropfindCached(parentUrl, authHeader, { onlyCollections: true });
                         for (const folderName of names) {
                             if (!snapshotFolderNameReg.test(folderName)) continue;
                             try {
                                 const childUrl = `${parentUrl}${folderName}/`;
-                                const childNames = await webdavPropfind(childUrl, authHeader);
+                                const childNames = await webdavPropfindCached(childUrl, authHeader);
                                 for (const childName of childNames) {
-                                    if (isBackupHtmlName(childName)) {
+                                    if (shouldTreatAsSnapshotHtml({
+                                        fileName: childName,
+                                        folderPath: `${exportRootFolder}/${folderName}`,
+                                        snapshotFolder: folderName
+                                    })) {
                                         files.push({
                                             name: childName,
                                             url: childUrl + childName,
                                             source: 'webdav',
                                             type: 'html_backup',
                                             snapshotFolder: folderName,
-                                            folderPath: `${exportRootFolder}/${versionedFolder}/${folderName}`
+                                            folderPath: `${exportRootFolder}/${folderName}`
                                         });
                                     } else if (shouldTreatAsCurrentChangesArtifact({
                                         fileName: childName,
-                                        folderPath: `${exportRootFolder}/${versionedFolder}/${folderName}`,
+                                        folderPath: `${exportRootFolder}/${folderName}`,
                                         snapshotFolder: folderName
                                     })) {
                                         files.push({
@@ -10418,17 +11682,214 @@ async function listRemoteFiles(source) {
                                             source: 'webdav',
                                             type: 'changes_artifact',
                                             snapshotFolder: folderName,
-                                            folderPath: `${exportRootFolder}/${versionedFolder}/${folderName}`
+                                            folderPath: `${exportRootFolder}/${folderName}`
                                         });
                                     }
                                 }
                             } catch (_) { }
                         }
-                    } catch (_) { }
+                    } catch (e) {
+                        console.warn('[listRemoteFiles] Scan root snapshot folders failed:', e);
+                    }
+                }
+
+                // 4.2) 版本化模式（新结构）：导出根目录/版本化/{时间+哈希}/
+                for (const exportRootFolder of exportRootFolderCandidates) {
+                    for (const versionedFolder of versionedFolderCandidates) {
+                        try {
+                            const parentUrl = `${serverAddress}${exportRootFolder}/${versionedFolder}/`;
+                            const names = await webdavPropfindCached(parentUrl, authHeader, { onlyCollections: true });
+                            for (const folderName of names) {
+                                if (!snapshotFolderNameReg.test(folderName)) continue;
+                                try {
+                                    const childUrl = `${parentUrl}${folderName}/`;
+                                    const childNames = await webdavPropfindCached(childUrl, authHeader);
+                                    for (const childName of childNames) {
+                                        if (shouldTreatAsSnapshotHtml({
+                                            fileName: childName,
+                                            folderPath: `${exportRootFolder}/${versionedFolder}/${folderName}`,
+                                            snapshotFolder: folderName
+                                        })) {
+                                            files.push({
+                                                name: childName,
+                                                url: childUrl + childName,
+                                                source: 'webdav',
+                                                type: 'html_backup',
+                                                snapshotFolder: folderName,
+                                                folderPath: `${exportRootFolder}/${versionedFolder}/${folderName}`
+                                            });
+                                        } else if (shouldTreatAsCurrentChangesArtifact({
+                                            fileName: childName,
+                                            folderPath: `${exportRootFolder}/${versionedFolder}/${folderName}`,
+                                            snapshotFolder: folderName
+                                        })) {
+                                            files.push({
+                                                name: childName,
+                                                url: childUrl + childName,
+                                                source: 'webdav',
+                                                type: 'changes_artifact',
+                                                snapshotFolder: folderName,
+                                                folderPath: `${exportRootFolder}/${versionedFolder}/${folderName}`
+                                            });
+                                        }
+                                    }
+                                } catch (_) { }
+                            }
+                        } catch (_) { }
+                    }
+                }
+            } else {
+                const scannedSnapshotParents = new Set();
+
+                const scanSnapshotParentWebdav = async (parentFolderPath) => {
+                    const normalizedParent = String(parentFolderPath || '').replace(/^\/+/, '').replace(/\/+$/, '');
+                    if (!normalizedParent || scannedSnapshotParents.has(normalizedParent)) return;
+                    scannedSnapshotParents.add(normalizedParent);
+
+                    let folderNames = [];
+                    try {
+                        const parentUrl = `${serverAddress}${normalizedParent}/`;
+                        folderNames = await webdavPropfindCached(parentUrl, authHeader, { onlyCollections: true });
+                    } catch (_) {
+                        folderNames = [];
+                    }
+
+                    for (const folderNameRaw of folderNames) {
+                        const folderName = splitPathSegments(String(folderNameRaw || '')).pop() || String(folderNameRaw || '').trim();
+                        if (!snapshotFolderNameReg.test(folderName || '')) continue;
+
+                        const folderPath = `${normalizedParent}/${folderName}`;
+                        const inferredHtmlName = `${folderName}.html`;
+                        files.push({
+                            name: inferredHtmlName,
+                            url: `${serverAddress}${folderPath}/${inferredHtmlName}`,
+                            source: 'webdav',
+                            type: 'html_backup',
+                            snapshotFolder: folderName,
+                            folderPath
+                        });
+                    }
+                };
+
+                const snapshotParentPaths = [];
+                for (const exportRootFolder of exportRootFolderCandidates) {
+                    for (const versionedFolder of versionedFolderCandidates) {
+                        snapshotParentPaths.push(`${exportRootFolder}/${versionedFolder}`);
+                    }
+                    for (const backupFolder of backupFolderCandidates) {
+                        snapshotParentPaths.push(`${exportRootFolder}/${backupFolder}`);
+                    }
+                    snapshotParentPaths.push(`${exportRootFolder}`);
+                }
+
+                await runBatchedTasks(snapshotParentPaths, async (parentPath) => {
+                    await scanSnapshotParentWebdav(parentPath);
+                    return 1;
+                }, 10);
+            }
+
+            // 4.3) 手动导出（新结构）：导出根目录/手动导出/当前变化/
+            const normalizeRemoteFolderPath = (value) => String(value || '')
+                .replace(/^\/+/, '')
+                .replace(/\/+$/, '')
+                .replace(/\/{2,}/g, '/');
+
+            const pushManualExportArtifactIfMatched = ({ fileName, folderPath, fileUrl }) => {
+                const normalizedFolderPath = normalizeRemoteFolderPath(folderPath);
+                if (!normalizedFolderPath) return;
+
+                if (shouldTreatAsCurrentChangesArtifact({
+                    fileName,
+                    folderPath: normalizedFolderPath,
+                    snapshotFolder: ''
+                }) || shouldTreatAsManualHistoryArtifact({
+                    fileName,
+                    folderPath: normalizedFolderPath
+                })) {
+                    files.push({
+                        name: fileName,
+                        url: fileUrl,
+                        source: 'webdav',
+                        type: 'changes_artifact',
+                        snapshotFolder: '',
+                        folderPath: normalizedFolderPath
+                    });
+                }
+            };
+
+            const scanManualExportTreeWebdav = async (rootFolderPath, maxDepth = 3) => {
+                const normalizedRoot = normalizeRemoteFolderPath(rootFolderPath);
+                if (!normalizedRoot) return;
+
+                const visited = new Set();
+                const queue = [{ folderPath: normalizedRoot, depth: 0 }];
+
+                while (queue.length > 0) {
+                    const current = queue.shift();
+                    const currentPath = normalizeRemoteFolderPath(current?.folderPath || '');
+                    if (!currentPath || visited.has(currentPath)) continue;
+                    visited.add(currentPath);
+
+                    const currentUrl = `${serverAddress}${currentPath}/`;
+
+                    let childNames = [];
+                    try {
+                        childNames = await webdavPropfindCached(currentUrl, authHeader);
+                    } catch (_) {
+                        childNames = [];
+                    }
+
+                    for (const childNameRaw of childNames) {
+                        const childName = splitPathSegments(String(childNameRaw || '')).pop() || String(childNameRaw || '').trim();
+                        if (!childName) continue;
+                        const fileUrl = `${currentUrl}${childName}`;
+                        pushManualExportArtifactIfMatched({
+                            fileName: childName,
+                            folderPath: currentPath,
+                            fileUrl
+                        });
+                    }
+
+                    if (current.depth >= maxDepth) continue;
+
+                    let childFolders = [];
+                    try {
+                        childFolders = await webdavPropfindCached(currentUrl, authHeader, { onlyCollections: true });
+                    } catch (_) {
+                        childFolders = [];
+                    }
+
+                    const currentLeaf = String(currentPath.split('/').filter(Boolean).pop() || '').trim().toLowerCase();
+                    for (const childFolderRaw of childFolders) {
+                        const childFolderRawText = String(childFolderRaw || '').trim();
+                        const childFolder = splitPathSegments(childFolderRawText).pop() || childFolderRawText;
+                        const childFolderLower = String(childFolder || '').trim().toLowerCase();
+                        if (!childFolderLower || childFolderLower === '.' || childFolderLower === '..') continue;
+                        if (childFolderLower === currentLeaf) continue;
+
+                        const nextPath = normalizeRemoteFolderPath(`${currentPath}/${childFolder}`);
+                        if (!nextPath || visited.has(nextPath)) continue;
+                        queue.push({ folderPath: nextPath, depth: current.depth + 1 });
+                    }
+                }
+            };
+
+            const manualScanRootsWebdav = [];
+            for (const exportRootFolder of exportRootFolderCandidates) {
+                for (const manualParentFolder of manualExportParentFolderCandidates) {
+                    manualScanRootsWebdav.push(`${exportRootFolder}/${manualParentFolder}`);
                 }
             }
+            await runBatchedTasks(manualScanRootsWebdav, async (rootFolderPath) => {
+                try {
+                    await scanManualExportTreeWebdav(rootFolderPath, useIndexOptimizedScan ? 0 : 3);
+                } catch (_) { }
+                return 1;
+            }, 6);
             // 去重（同一个文件可能在不同语言路径被重复扫描到）
-            return Array.from(new Map(files.map(f => [`${f.source}|${f.type}|${f.url}`, f])).values());
+            const deduped = Array.from(new Map(files.map(f => [`${f.source}|${f.type}|${f.url}`, f])).values());
+            commitRemoteScanCache(deduped);
+            return deduped;
         }
 
         // GitHub
@@ -10437,9 +11898,8 @@ async function listRemoteFiles(source) {
             const owner = settings.githubRepoOwner;
             const repo = settings.githubRepoName;
             const branch = settings.githubRepoBranch;
-            const basePath = (settings.githubRepoBasePath || '').replace(/^\/+/, '').replace(/\/+$/, '');
+            const basePath = normalizeGitHubBasePath(settings.githubRepoBasePath || '');
             const prefix = basePath ? `${basePath}/` : '';
-
             if (!token || !owner || !repo || !branch) return [];
 
             function encodeGitHubPath(path) {
@@ -10464,131 +11924,288 @@ async function listRemoteFiles(source) {
                 return Array.isArray(data) ? data : [];
             }
 
-            // 1) 合并历史：Backup_History/backup_history.json（兼容旧格式）
-            for (const exportRootFolder of exportRootFolderCandidates) {
-                for (const historyRootFolder of historyRootFolderCandidates) {
-                    try {
-                        const historyRootPath = `${prefix}${exportRootFolder}/${historyRootFolder}`;
-                        const items = await listGitHubDir(historyRootPath);
-                        for (const item of items) {
-                            if (item.type !== 'file') continue;
-                            if (item.name === 'backup_history.json') {
-                                files.push({ name: item.name, url: item.download_url || item.url, source: 'github', type: 'merged_history' });
-                            } else if (item.name.endsWith('.zip')) {
-                                files.push({ name: item.name, url: item.download_url || item.url, source: 'github', type: 'zip' });
-                            }
-                        }
-                    } catch (e) {
-                        console.warn('[listRemoteFiles] Scan history root GitHub failed:', e);
-                    }
+            const listGitHubDirCache = new Map();
+            async function listGitHubDirCached(dirPath) {
+                const normalizedDirPath = String(dirPath || '').trim();
+                if (listGitHubDirCache.has(normalizedDirPath)) {
+                    const cachedPromise = listGitHubDirCache.get(normalizedDirPath);
+                    const cachedResult = await cachedPromise;
+                    return Array.isArray(cachedResult) ? cachedResult.slice() : [];
                 }
+
+                const task = listGitHubDir(normalizedDirPath)
+                    .then((result) => Array.isArray(result) ? result : [])
+                    .catch((error) => {
+                        listGitHubDirCache.delete(normalizedDirPath);
+                        throw error;
+                    });
+
+                listGitHubDirCache.set(normalizedDirPath, task);
+                const finalResult = await task;
+                return finalResult.slice();
             }
 
-            // 2) ZIP：备份历史/自动备份归档
-            for (const exportRootFolder of exportRootFolderCandidates) {
-                for (const historyAutoArchiveFolder of historyAutoArchiveFolderCandidates) {
-                    try {
-                        const autoArchivePath = `${prefix}${exportRootFolder}/${historyAutoArchiveFolder}`;
-                        const items = await listGitHubDir(autoArchivePath);
-                        for (const item of items) {
-                            if (item.type === 'file' && item.name.endsWith('.zip')) {
-                                files.push({ name: item.name, url: item.download_url || item.url, source: 'github', type: 'zip' });
-                            }
-                        }
-                    } catch (e) {
-                        console.warn('[listRemoteFiles] Scan auto-archive GitHub failed:', e);
-                    }
+            const stripBasePathFromRepoPath = (repoPathText) => {
+                const normalizedRepoPath = String(repoPathText || '').replace(/^\/+/, '').replace(/\/{2,}/g, '/');
+                if (!normalizedRepoPath) return '';
+                if (!basePath) return normalizedRepoPath;
+
+                const normalizedBasePath = String(basePath || '').replace(/^\/+/, '').replace(/\/+$/, '').replace(/\/{2,}/g, '/');
+                if (!normalizedBasePath) return normalizedRepoPath;
+
+                if (normalizedRepoPath === normalizedBasePath) return '';
+                if (normalizedRepoPath.startsWith(`${normalizedBasePath}/`)) {
+                    return normalizedRepoPath.slice(normalizedBasePath.length + 1);
                 }
+                return null;
+            };
+
+            const exportRootSetLower = new Set(
+                exportRootFolderCandidates
+                    .map((name) => String(name || '').trim().toLowerCase())
+                    .filter(Boolean)
+            );
+
+            const isPathUnderExportRoot = (pathText) => {
+                const parts = splitPathSegments(pathText);
+                if (!parts.length) return false;
+                return exportRootSetLower.has(String(parts[0] || '').trim().toLowerCase());
+            };
+
+            const buildFolderPathFromRelativePath = (relativePath) => {
+                const normalized = String(relativePath || '').replace(/^\/+/, '').replace(/\/{2,}/g, '/');
+                if (!normalized || !normalized.includes('/')) return '';
+                return normalized.slice(0, normalized.lastIndexOf('/'));
+            };
+
+            const buildFileNameFromRelativePath = (relativePath) => {
+                const normalized = String(relativePath || '').replace(/^\/+/, '').replace(/\/{2,}/g, '/');
+                if (!normalized) return '';
+                const parts = splitPathSegments(normalized);
+                return parts.length > 0 ? String(parts[parts.length - 1] || '').trim() : '';
+            };
+
+            const listGitHubRepoTreeRecursive = async () => {
+                const treeApiUrl = `https://api.github.com/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/git/trees/${encodeURIComponent(branch)}?recursive=1`;
+                const response = await fetch(treeApiUrl, {
+                    headers: {
+                        'Authorization': `token ${token}`,
+                        'Accept': 'application/vnd.github+json'
+                    }
+                });
+                if (!response.ok) {
+                    throw new Error(`GitHub tree API error: ${response.status}`);
+                }
+                const data = await response.json();
+                if (!data || !Array.isArray(data.tree)) {
+                    throw new Error('GitHub tree API returned invalid payload');
+                }
+                return data;
+            };
+
+            try {
+                const treeData = await listGitHubRepoTreeRecursive();
+                if (treeData && treeData.truncated !== true) {
+                    for (const node of treeData.tree) {
+                        if (!node || node.type !== 'blob') continue;
+
+                        const repoPath = String(node.path || '').replace(/^\/+/, '').replace(/\/{2,}/g, '/');
+                        if (!repoPath) continue;
+
+                        const relativePath = stripBasePathFromRepoPath(repoPath);
+                        if (relativePath == null || !relativePath) continue;
+                        if (!isPathUnderExportRoot(relativePath)) continue;
+
+                        const fileName = buildFileNameFromRelativePath(relativePath);
+                        if (!fileName) continue;
+
+                        const folderPath = buildFolderPathFromRelativePath(relativePath);
+                        const snapshotFolder = parseSnapshotKeyFromText(folderPath || relativePath || fileName || '');
+                        const fileUrl = buildGitHubContentsApiUrlForRestore({ owner, repo, branch, path: repoPath });
+
+                        pushIndexMarkdownCandidateIfMatched({
+                            fileName,
+                            fileUrl,
+                            sourceType: 'github',
+                            folderPath,
+                            manifestMode: 'tree'
+                        });
+
+                        if (shouldTreatAsSnapshotHtml({
+                            fileName,
+                            folderPath,
+                            snapshotFolder: snapshotFolder || ''
+                        })) {
+                            files.push({
+                                name: fileName,
+                                url: fileUrl,
+                                source: 'github',
+                                type: 'html_backup',
+                                snapshotFolder: snapshotFolder || '',
+                                folderPath,
+                                manifestMode: 'tree'
+                            });
+                            continue;
+                        }
+
+                        if (shouldTreatAsCurrentChangesArtifact({
+                            fileName,
+                            folderPath,
+                            snapshotFolder: snapshotFolder || ''
+                        }) || shouldTreatAsManualHistoryArtifact({
+                            fileName,
+                            folderPath
+                        })) {
+                            files.push({
+                                name: fileName,
+                                url: fileUrl,
+                                source: 'github',
+                                type: 'changes_artifact',
+                                snapshotFolder: snapshotFolder || '',
+                                folderPath,
+                                manifestMode: 'tree'
+                            });
+                        }
+                    }
+
+                    const deduped = Array.from(new Map(files.map(f => [`${f.source}|${f.type}|${f.url}`, f])).values());
+                    commitRemoteScanCache(deduped);
+                    return deduped;
+                }
+            } catch (treeScanError) {
+                console.warn('[listRemoteFiles] GitHub tree scan fallback to directory scan:', treeScanError);
             }
 
-            // 3) 兼容旧结构：书签备份目录下直放 HTML
-            for (const exportRootFolder of exportRootFolderCandidates) {
-                for (const backupFolder of backupFolderCandidates) {
-                    try {
-                        const backupPath = `${prefix}${exportRootFolder}/${backupFolder}`;
-                        const items = await listGitHubDir(backupPath);
-                        for (const item of items) {
-                            if (item.type === 'file' && isBackupHtmlName(item.name)) {
-                                files.push({ name: item.name, url: item.download_url || item.url, source: 'github', type: 'html_backup', folderPath: `${exportRootFolder}/${backupFolder}` });
-                            }
-                        }
-                    } catch (e) {
-                        console.warn('[listRemoteFiles] Scan HTML GitHub failed:', e);
-                    }
-                }
-            }
-
-            // 3.1) 新结构：导出根目录下直放 HTML（无“书签备份”中间层）
-            for (const exportRootFolder of exportRootFolderCandidates) {
-                try {
-                    const backupPath = `${prefix}${exportRootFolder}`;
-                    const items = await listGitHubDir(backupPath);
-                    for (const item of items) {
-                        if (item.type === 'file' && isBackupHtmlName(item.name)) {
-                            files.push({ name: item.name, url: item.download_url || item.url, source: 'github', type: 'html_backup', folderPath: `${exportRootFolder}` });
-                        }
-                    }
-                } catch (e) {
-                    console.warn('[listRemoteFiles] Scan root HTML GitHub failed:', e);
-                }
-            }
-
-            // 4) 新结构：书签备份/{时间+哈希}/
-            for (const exportRootFolder of exportRootFolderCandidates) {
-                for (const backupFolder of backupFolderCandidates) {
-                    try {
-                        const parentPath = `${prefix}${exportRootFolder}/${backupFolder}`;
-                        const parentItems = await listGitHubDir(parentPath);
-                        for (const folder of parentItems) {
-                            if (folder.type !== 'dir') continue;
-                            if (!snapshotFolderNameReg.test(folder.name || '')) continue;
-                            try {
-                                const folderPath = `${parentPath}/${folder.name}`;
-                                const leafItems = await listGitHubDir(folderPath);
-                                for (const leaf of leafItems) {
-                                    if (leaf.type !== 'file') continue;
-                                    if (isBackupHtmlName(leaf.name)) {
-                                        files.push({
-                                            name: leaf.name,
-                                            url: leaf.download_url || leaf.url,
-                                            source: 'github',
-                                            type: 'html_backup',
-                                            snapshotFolder: folder.name,
-                                            folderPath
-                                        });
-                                    } else if (shouldTreatAsCurrentChangesArtifact({
-                                        fileName: leaf.name,
-                                        folderPath,
-                                        snapshotFolder: folder.name
-                                    })) {
-                                        files.push({
-                                            name: leaf.name,
-                                            url: leaf.download_url || leaf.url,
-                                            source: 'github',
-                                            type: 'changes_artifact',
-                                            snapshotFolder: folder.name,
-                                            folderPath
-                                        });
-                                    }
+            {
+                // 1) 兼容旧结构：书签备份目录下直放 HTML
+                for (const exportRootFolder of exportRootFolderCandidates) {
+                    for (const backupFolder of backupFolderCandidates) {
+                        try {
+                            const backupPath = `${prefix}${exportRootFolder}/${backupFolder}`;
+                            const items = await listGitHubDirCached(backupPath);
+                            for (const item of items) {
+                                if (item.type === 'file') {
+                                    pushIndexMarkdownCandidateIfMatched({
+                                        fileName: item.name,
+                                        fileUrl: item.url || item.download_url,
+                                        sourceType: 'github',
+                                        folderPath: `${exportRootFolder}/${backupFolder}`
+                                    });
                                 }
-                            } catch (_) { }
+                                if (item.type === 'file' && shouldTreatAsSnapshotHtml({
+                                    fileName: item.name,
+                                    folderPath: `${exportRootFolder}/${backupFolder}`,
+                                    snapshotFolder: ''
+                                })) {
+                                    files.push({ name: item.name, url: item.download_url || item.url, source: 'github', type: 'html_backup', folderPath: `${exportRootFolder}/${backupFolder}` });
+                                }
+                            }
+                        } catch (e) {
+                            console.warn('[listRemoteFiles] Scan HTML GitHub failed:', e);
+                        }
+                    }
+                }
+
+                // 1.1) 新结构：导出根目录下直放 HTML（无“书签备份”中间层）
+                for (const exportRootFolder of exportRootFolderCandidates) {
+                    try {
+                        const backupPath = `${prefix}${exportRootFolder}`;
+                        const items = await listGitHubDirCached(backupPath);
+                        for (const item of items) {
+                            if (item.type === 'file') {
+                                pushIndexMarkdownCandidateIfMatched({
+                                    fileName: item.name,
+                                    fileUrl: item.url || item.download_url,
+                                    sourceType: 'github',
+                                    folderPath: `${exportRootFolder}`
+                                });
+                            }
+                            if (item.type === 'file' && shouldTreatAsSnapshotHtml({
+                                fileName: item.name,
+                                folderPath: `${exportRootFolder}`,
+                                snapshotFolder: ''
+                            })) {
+                                files.push({ name: item.name, url: item.download_url || item.url, source: 'github', type: 'html_backup', folderPath: `${exportRootFolder}` });
+                            }
                         }
                     } catch (e) {
-                        console.warn('[listRemoteFiles] Scan snapshot folders GitHub failed:', e);
+                        console.warn('[listRemoteFiles] Scan root HTML GitHub failed:', e);
+                    }
+                }
+
+                if (!useIndexOptimizedScan) {
+                    // 2) 新结构：书签备份/{时间+哈希}/
+                    for (const exportRootFolder of exportRootFolderCandidates) {
+                        for (const backupFolder of backupFolderCandidates) {
+                            try {
+                                const parentPath = `${prefix}${exportRootFolder}/${backupFolder}`;
+                                const parentItems = await listGitHubDirCached(parentPath);
+                                for (const folder of parentItems) {
+                                    if (folder.type !== 'dir') continue;
+                                    if (!snapshotFolderNameReg.test(folder.name || '')) continue;
+                                    try {
+                                        const folderPath = `${parentPath}/${folder.name}`;
+                                        const leafItems = await listGitHubDirCached(folderPath);
+                                        for (const leaf of leafItems) {
+                                            if (leaf.type !== 'file') continue;
+                                            if (shouldTreatAsSnapshotHtml({
+                                                fileName: leaf.name,
+                                                folderPath,
+                                                snapshotFolder: folder.name
+                                            })) {
+                                                files.push({
+                                                    name: leaf.name,
+                                                    url: leaf.download_url || leaf.url,
+                                                    source: 'github',
+                                                    type: 'html_backup',
+                                                    snapshotFolder: folder.name,
+                                                    folderPath
+                                                });
+                                            } else if (shouldTreatAsCurrentChangesArtifact({
+                                                fileName: leaf.name,
+                                                folderPath,
+                                                snapshotFolder: folder.name
+                                            })) {
+                                                files.push({
+                                                    name: leaf.name,
+                                                    url: leaf.download_url || leaf.url,
+                                                    source: 'github',
+                                                    type: 'changes_artifact',
+                                                    snapshotFolder: folder.name,
+                                                    folderPath
+                                                });
+                                            }
+                                        }
+                                    } catch (_) { }
+                                }
+                            } catch (e) {
+                                console.warn('[listRemoteFiles] Scan snapshot folders GitHub failed:', e);
+                            }
+                        }
                     }
                 }
             }
 
-            // 5) 覆盖模式：书签备份/覆盖/
+            // 3) 覆盖模式：书签备份/覆盖/
             for (const exportRootFolder of exportRootFolderCandidates) {
                 for (const backupFolder of backupFolderCandidates) {
                     for (const overwriteFolder of overwriteFolderCandidates) {
                         try {
                             const folderPath = `${prefix}${exportRootFolder}/${backupFolder}/${overwriteFolder}`;
-                            const items = await listGitHubDir(folderPath);
+                            const items = await listGitHubDirCached(folderPath);
                             for (const item of items) {
                                 if (item.type !== 'file') continue;
-                                if (isBackupHtmlName(item.name)) {
+                                pushIndexMarkdownCandidateIfMatched({
+                                    fileName: item.name,
+                                    fileUrl: item.url || item.download_url,
+                                    sourceType: 'github',
+                                    folderPath
+                                });
+                                if (shouldTreatAsSnapshotHtml({
+                                    fileName: item.name,
+                                    folderPath,
+                                    snapshotFolder: overwriteFolder
+                                })) {
                                     files.push({
                                         name: item.name,
                                         url: item.download_url || item.url,
@@ -10617,15 +12234,25 @@ async function listRemoteFiles(source) {
                 }
             }
 
-            // 5.1) 覆盖模式（新结构）：导出根目录/覆盖
+            // 3.1) 覆盖模式（新结构）：导出根目录/覆盖
             for (const exportRootFolder of exportRootFolderCandidates) {
                 for (const overwriteFolder of overwriteFolderCandidates) {
                     try {
                         const folderPath = `${prefix}${exportRootFolder}/${overwriteFolder}`;
-                        const items = await listGitHubDir(folderPath);
+                        const items = await listGitHubDirCached(folderPath);
                         for (const item of items) {
                             if (item.type !== 'file') continue;
-                            if (isBackupHtmlName(item.name)) {
+                            pushIndexMarkdownCandidateIfMatched({
+                                fileName: item.name,
+                                fileUrl: item.url || item.download_url,
+                                sourceType: 'github',
+                                folderPath
+                            });
+                            if (shouldTreatAsSnapshotHtml({
+                                fileName: item.name,
+                                folderPath,
+                                snapshotFolder: overwriteFolder
+                            })) {
                                 files.push({
                                     name: item.name,
                                     url: item.download_url || item.url,
@@ -10653,65 +12280,25 @@ async function listRemoteFiles(source) {
                 }
             }
 
-            // 4.1) 新结构：导出根目录/{时间+哈希}/
-            for (const exportRootFolder of exportRootFolderCandidates) {
-                try {
-                    const parentPath = `${prefix}${exportRootFolder}`;
-                    const parentItems = await listGitHubDir(parentPath);
-                    for (const folder of parentItems) {
-                        if (folder.type !== 'dir') continue;
-                        if (!snapshotFolderNameReg.test(folder.name || '')) continue;
-                        try {
-                            const folderPath = `${parentPath}/${folder.name}`;
-                            const leafItems = await listGitHubDir(folderPath);
-                            for (const leaf of leafItems) {
-                                if (leaf.type !== 'file') continue;
-                                if (isBackupHtmlName(leaf.name)) {
-                                    files.push({
-                                        name: leaf.name,
-                                        url: leaf.download_url || leaf.url,
-                                        source: 'github',
-                                        type: 'html_backup',
-                                        snapshotFolder: folder.name,
-                                        folderPath
-                                    });
-                                } else if (shouldTreatAsCurrentChangesArtifact({
-                                    fileName: leaf.name,
-                                    folderPath,
-                                    snapshotFolder: folder.name
-                                })) {
-                                    files.push({
-                                        name: leaf.name,
-                                        url: leaf.download_url || leaf.url,
-                                        source: 'github',
-                                        type: 'changes_artifact',
-                                        snapshotFolder: folder.name,
-                                        folderPath
-                                    });
-                                }
-                            }
-                        } catch (_) { }
-                    }
-                } catch (e) {
-                    console.warn('[listRemoteFiles] Scan root snapshot folders GitHub failed:', e);
-                }
-            }
-
-            // 4.2) 版本化模式（新结构）：导出根目录/版本化/{时间+哈希}/
-            for (const exportRootFolder of exportRootFolderCandidates) {
-                for (const versionedFolder of versionedFolderCandidates) {
+            if (!useIndexOptimizedScan) {
+                // 2.1) 新结构：导出根目录/{时间+哈希}/
+                for (const exportRootFolder of exportRootFolderCandidates) {
                     try {
-                        const parentPath = `${prefix}${exportRootFolder}/${versionedFolder}`;
-                        const parentItems = await listGitHubDir(parentPath);
+                        const parentPath = `${prefix}${exportRootFolder}`;
+                        const parentItems = await listGitHubDirCached(parentPath);
                         for (const folder of parentItems) {
                             if (folder.type !== 'dir') continue;
                             if (!snapshotFolderNameReg.test(folder.name || '')) continue;
                             try {
                                 const folderPath = `${parentPath}/${folder.name}`;
-                                const leafItems = await listGitHubDir(folderPath);
+                                const leafItems = await listGitHubDirCached(folderPath);
                                 for (const leaf of leafItems) {
                                     if (leaf.type !== 'file') continue;
-                                    if (isBackupHtmlName(leaf.name)) {
+                                    if (shouldTreatAsSnapshotHtml({
+                                        fileName: leaf.name,
+                                        folderPath,
+                                        snapshotFolder: folder.name
+                                    })) {
                                         files.push({
                                             name: leaf.name,
                                             url: leaf.download_url || leaf.url,
@@ -10737,11 +12324,206 @@ async function listRemoteFiles(source) {
                                 }
                             } catch (_) { }
                         }
-                    } catch (_) { }
+                    } catch (e) {
+                        console.warn('[listRemoteFiles] Scan root snapshot folders GitHub failed:', e);
+                    }
+                }
+
+                // 4.2) 版本化模式（新结构）：导出根目录/版本化/{时间+哈希}/
+                for (const exportRootFolder of exportRootFolderCandidates) {
+                    for (const versionedFolder of versionedFolderCandidates) {
+                        try {
+                            const parentPath = `${prefix}${exportRootFolder}/${versionedFolder}`;
+                            const parentItems = await listGitHubDirCached(parentPath);
+                            for (const folder of parentItems) {
+                                if (folder.type !== 'dir') continue;
+                                if (!snapshotFolderNameReg.test(folder.name || '')) continue;
+                                try {
+                                    const folderPath = `${parentPath}/${folder.name}`;
+                                    const leafItems = await listGitHubDirCached(folderPath);
+                                    for (const leaf of leafItems) {
+                                        if (leaf.type !== 'file') continue;
+                                        if (shouldTreatAsSnapshotHtml({
+                                            fileName: leaf.name,
+                                            folderPath,
+                                            snapshotFolder: folder.name
+                                        })) {
+                                            files.push({
+                                                name: leaf.name,
+                                                url: leaf.download_url || leaf.url,
+                                                source: 'github',
+                                                type: 'html_backup',
+                                                snapshotFolder: folder.name,
+                                                folderPath
+                                            });
+                                        } else if (shouldTreatAsCurrentChangesArtifact({
+                                            fileName: leaf.name,
+                                            folderPath,
+                                            snapshotFolder: folder.name
+                                        })) {
+                                            files.push({
+                                                name: leaf.name,
+                                                url: leaf.download_url || leaf.url,
+                                                source: 'github',
+                                                type: 'changes_artifact',
+                                                snapshotFolder: folder.name,
+                                                folderPath
+                                            });
+                                        }
+                                    }
+                                } catch (_) { }
+                            }
+                        } catch (_) { }
+                    }
+                }
+            } else {
+                const scannedSnapshotParents = new Set();
+
+                const scanSnapshotParentGitHub = async (parentFolderPath) => {
+                    const normalizedParent = String(parentFolderPath || '').replace(/^\/+/, '').replace(/\/+$/, '');
+                    if (!normalizedParent || scannedSnapshotParents.has(normalizedParent)) return;
+                    scannedSnapshotParents.add(normalizedParent);
+
+                    let parentItems = [];
+                    try {
+                        parentItems = await listGitHubDirCached(normalizedParent);
+                    } catch (_) {
+                        parentItems = [];
+                    }
+
+                    for (const item of parentItems) {
+                        if (!item || item.type !== 'dir') continue;
+                        const snapshotKey = String(item.name || '').trim();
+                        if (!snapshotFolderNameReg.test(snapshotKey)) continue;
+
+                        const folderPath = String(item.path || `${normalizedParent}/${snapshotKey}`).replace(/^\/+/, '').replace(/\/+$/, '');
+                        const inferredHtmlName = `${snapshotKey}.html`;
+                        const inferredFilePath = `${folderPath}/${inferredHtmlName}`;
+                        files.push({
+                            name: inferredHtmlName,
+                            url: buildGitHubContentsApiUrlForRestore({ owner, repo, branch, path: inferredFilePath }),
+                            source: 'github',
+                            type: 'html_backup',
+                            snapshotFolder: snapshotKey,
+                            folderPath
+                        });
+                    }
+                };
+
+                const snapshotParentPaths = [];
+                for (const exportRootFolder of exportRootFolderCandidates) {
+                    for (const versionedFolder of versionedFolderCandidates) {
+                        snapshotParentPaths.push(`${prefix}${exportRootFolder}/${versionedFolder}`);
+                    }
+                    snapshotParentPaths.push(`${prefix}${exportRootFolder}`);
+                }
+
+                const beforeScanCount = files.length;
+                await runBatchedTasks(snapshotParentPaths, async (parentPath) => {
+                    await scanSnapshotParentGitHub(parentPath);
+                    return 1;
+                }, 6);
+
+                if (files.length <= beforeScanCount) {
+                    const legacySnapshotParentPaths = [];
+                    for (const exportRootFolder of exportRootFolderCandidates) {
+                        for (const backupFolder of backupFolderCandidates) {
+                            legacySnapshotParentPaths.push(`${prefix}${exportRootFolder}/${backupFolder}`);
+                        }
+                    }
+
+                    await runBatchedTasks(legacySnapshotParentPaths, async (parentPath) => {
+                        await scanSnapshotParentGitHub(parentPath);
+                        return 1;
+                    }, 4);
                 }
             }
 
-            return Array.from(new Map(files.map(f => [`${f.source}|${f.type}|${f.url}`, f])).values());
+            // 4.3) 手动导出（新结构）：导出根目录/手动导出/当前变化/
+            const normalizeRemoteFolderPath = (value) => String(value || '')
+                .replace(/^\/+/, '')
+                .replace(/\/+$/, '')
+                .replace(/\/{2,}/g, '/');
+
+            const pushManualExportArtifactIfMatched = ({ fileName, folderPath, fileUrl }) => {
+                const normalizedFolderPath = normalizeRemoteFolderPath(folderPath);
+                if (!normalizedFolderPath) return;
+
+                if (shouldTreatAsCurrentChangesArtifact({
+                    fileName,
+                    folderPath: normalizedFolderPath,
+                    snapshotFolder: ''
+                }) || shouldTreatAsManualHistoryArtifact({
+                    fileName,
+                    folderPath: normalizedFolderPath
+                })) {
+                    files.push({
+                        name: fileName,
+                        url: fileUrl,
+                        source: 'github',
+                        type: 'changes_artifact',
+                        snapshotFolder: '',
+                        folderPath: normalizedFolderPath
+                    });
+                }
+            };
+
+            const scanManualExportTreeGitHub = async (rootFolderPath, maxDepth = 3) => {
+                const normalizedRoot = normalizeRemoteFolderPath(rootFolderPath);
+                if (!normalizedRoot) return;
+
+                const visited = new Set();
+                const queue = [{ folderPath: normalizedRoot, depth: 0 }];
+
+                while (queue.length > 0) {
+                    const current = queue.shift();
+                    const currentPath = normalizeRemoteFolderPath(current?.folderPath || '');
+                    if (!currentPath || visited.has(currentPath)) continue;
+                    visited.add(currentPath);
+
+                    let items = [];
+                    try {
+                        items = await listGitHubDirCached(currentPath);
+                    } catch (_) {
+                        items = [];
+                    }
+
+                    for (const item of items) {
+                        if (!item || !item.name) continue;
+                        if (item.type === 'file') {
+                            pushManualExportArtifactIfMatched({
+                                fileName: item.name,
+                                folderPath: currentPath,
+                                fileUrl: item.download_url || item.url
+                            });
+                            continue;
+                        }
+
+                        if (item.type === 'dir' && current.depth < maxDepth) {
+                            const nextPath = normalizeRemoteFolderPath(item.path || `${currentPath}/${item.name}`);
+                            if (!nextPath || visited.has(nextPath)) continue;
+                            queue.push({ folderPath: nextPath, depth: current.depth + 1 });
+                        }
+                    }
+                }
+            };
+
+            const manualScanRootsGitHub = [];
+            for (const exportRootFolder of exportRootFolderCandidates) {
+                for (const manualParentFolder of manualExportParentFolderCandidates) {
+                    manualScanRootsGitHub.push(`${prefix}${exportRootFolder}/${manualParentFolder}`);
+                }
+            }
+            await runBatchedTasks(manualScanRootsGitHub, async (rootFolderPath) => {
+                try {
+                    await scanManualExportTreeGitHub(rootFolderPath, 3);
+                } catch (_) { }
+                return 1;
+            }, 4);
+
+            const deduped = Array.from(new Map(files.map(f => [`${f.source}|${f.type}|${f.url}`, f])).values());
+            commitRemoteScanCache(deduped);
+            return deduped;
         }
 
         return [];
@@ -10768,8 +12550,36 @@ async function downloadRemoteFile({ url, source }) {
             headers['Accept'] = 'application/vnd.github.v3.raw';
         }
 
-        const response = await fetch(url, { headers });
+        const requestUrl = source === 'webdav'
+            ? normalizeWebDAVFetchUrl(url)
+            : url;
+
+        const response = await fetch(requestUrl, { headers });
         if (!response.ok) throw new Error(`Download Failed: ${response.status}`);
+
+        if (source === 'github') {
+            const contentType = String(response.headers.get('content-type') || '').toLowerCase();
+            const isContentsApiResponse = String(requestUrl || '').includes('/repos/') && String(requestUrl || '').includes('/contents/');
+
+            if (isContentsApiResponse && contentType.includes('application/json')) {
+                const jsonText = await response.text();
+                const parsed = safeParseJson(jsonText);
+                const encodedContent = typeof parsed?.content === 'string' ? String(parsed.content || '').replace(/\s+/g, '') : '';
+                const encoding = String(parsed?.encoding || '').toLowerCase();
+
+                if (encodedContent && encoding === 'base64') {
+                    const binary = atob(encodedContent);
+                    const bytes = new Uint8Array(binary.length);
+                    for (let i = 0; i < binary.length; i++) {
+                        bytes[i] = binary.charCodeAt(i);
+                    }
+                    return new Blob([bytes]);
+                }
+
+                return new Blob([jsonText], { type: 'text/plain;charset=utf-8' });
+            }
+        }
+
         return await response.blob();
     } catch (e) {
         console.error('[downloadRemoteFile] Failed:', e);
@@ -10960,19 +12770,32 @@ function buildRestoreStats(bookmarkStats) {
 
 function parseSnapshotKeyFromText(input) {
     const text = String(input || '');
-    const match = /(\d{8}_\d{6}_[0-9a-f]{6,12})/i.exec(text);
-    return match ? String(match[1]).toLowerCase() : '';
+    const fullMatch = /(\d{8}_\d{4}(?:\d{2})?_[0-9a-f]{6,12})/i.exec(text);
+    if (fullMatch) return String(fullMatch[1]).toLowerCase();
+
+    const legacyMatch = /(?:backup_)?(\d{8}_\d{4}(?:\d{2})?)(?!_[0-9a-f]{6,12})/i.exec(text);
+    return legacyMatch ? String(legacyMatch[1]).toLowerCase() : '';
+}
+
+function parseSnapshotFingerprintFromKey(snapshotKey) {
+    const key = String(snapshotKey || '').trim().toLowerCase();
+    if (!key || key === '__overwrite__') return '';
+    const match = /^\d{8}_\d{4}(?:\d{2})?_([0-9a-f]{6,12})$/i.exec(key);
+    return match ? normalizeSyncFingerprint(match[1]) : '';
 }
 
 function parseSnapshotTimeMsFromKey(snapshotKey) {
     const key = String(snapshotKey || '').trim();
     if (!key) return null;
-    const match = /^(\d{8})_(\d{6})_[0-9a-f]{6,12}$/i.exec(key);
+    const match = /^(\d{8})_(\d{4}(?:\d{2})?)(?:_[0-9a-f]{6,12})?$/i.exec(key);
     if (!match) return null;
 
     const ds = match[1];
-    const ts = match[2];
-    const iso = `${ds.substring(0, 4)}-${ds.substring(4, 6)}-${ds.substring(6, 8)}T${ts.substring(0, 2)}:${ts.substring(2, 4)}:${ts.substring(4, 6)}`;
+    const tsRaw = match[2];
+    const hh = tsRaw.substring(0, 2);
+    const mi = tsRaw.substring(2, 4);
+    const ss = tsRaw.length >= 6 ? tsRaw.substring(4, 6) : '00';
+    const iso = `${ds.substring(0, 4)}-${ds.substring(4, 6)}-${ds.substring(6, 8)}T${hh}:${mi}:${ss}`;
     return parseTimeToMs(iso);
 }
 
@@ -11128,7 +12951,7 @@ function getRestoreStatsMagnitude(stats) {
         + Number(stats.modifiedCount || 0);
 }
 
-function buildCurrentChangesArtifactMatchKey(fileLike) {
+function buildCurrentChangesArtifactMatchKey(fileLike, options = {}) {
     if (!fileLike) return '';
 
     const keyByFolder = parseSnapshotKeyFromText(fileLike.snapshotFolder || '');
@@ -11144,7 +12967,75 @@ function buildCurrentChangesArtifactMatchKey(fileLike) {
         return '__overwrite__';
     }
 
+    const allowStandalone = options?.allowStandalone === true;
+    if (allowStandalone) {
+        const localFileKey = String(fileLike.localFileKey || '').trim();
+        const fileUrl = String(fileLike.fileUrl || '').trim();
+        const fileName = String(fileLike.name || '').trim();
+        const localIdentity = localFileKey || fileUrl || fileName;
+        if (localIdentity) {
+            const lastModified = Number.isFinite(Number(fileLike.lastModified))
+                ? Number(fileLike.lastModified)
+                : 0;
+            const fingerprint = computeSyncFingerprintByTime(`${localIdentity}|${lastModified}`);
+            return `__changes_artifact_${fingerprint}`;
+        }
+    }
+
     return '';
+}
+
+function normalizeCurrentChangesArtifactMode(mode) {
+    const lower = String(mode || '').toLowerCase();
+    if (lower === 'detailed') return 'detailed';
+    if (lower === 'collection') return 'collection';
+    if (lower === 'simple') return 'simple';
+    return '';
+}
+
+function getCurrentChangesArtifactModeEntryForRestore(restoreRef, requestedMode = null) {
+    const artifact = restoreRef?.changesArtifact;
+    if (!artifact || typeof artifact !== 'object') return null;
+
+    const requested = normalizeCurrentChangesArtifactMode(requestedMode);
+    const preferred = normalizeCurrentChangesArtifactMode(artifact.preferredMode || artifact.mode);
+
+    const rawModes = (artifact.modes && typeof artifact.modes === 'object') ? artifact.modes : null;
+    if (rawModes) {
+        const availableModes = ['detailed', 'simple', 'collection'];
+
+        const resolveMode = (() => {
+            if (requested && rawModes[requested]) return requested;
+            if (preferred && rawModes[preferred]) return preferred;
+
+            for (const mode of availableModes) {
+                if (rawModes[mode]) return mode;
+            }
+
+            const first = Object.keys(rawModes).find(Boolean);
+            return first || null;
+        })();
+
+        if (!resolveMode) return null;
+        const entry = rawModes[resolveMode] || {};
+        return {
+            mode: resolveMode,
+            format: String(entry.format || artifact.format || '').toLowerCase(),
+            name: String(entry.name || artifact.name || '').trim(),
+            fileUrl: entry.fileUrl || artifact.fileUrl || null,
+            localFileKey: entry.localFileKey || artifact.localFileKey || null,
+            source: entry.source || artifact.source || restoreRef?.source || ''
+        };
+    }
+
+    return {
+        mode: requested || preferred || 'simple',
+        format: String(artifact.format || '').toLowerCase(),
+        name: String(artifact.name || '').trim(),
+        fileUrl: artifact.fileUrl || null,
+        localFileKey: artifact.localFileKey || null,
+        source: artifact.source || restoreRef?.source || ''
+    };
 }
 
 function normalizeRestoreVersionMeta(meta) {
@@ -11172,6 +13063,41 @@ function buildRestoreVersionFromExportData(exportData, { source, originalFile, f
     const note = exportInfo.note || exportData?.note || '';
     const fingerprint = exportInfo.fingerprint || exportData?.fingerprint || '';
     const stats = buildRestoreStats(exportInfo.stats || exportData?.bookmarkStats || exportData?.stats || null);
+    const explicitSnapshotName = String(
+        exportInfo.snapshotName
+        || exportInfo.snapshot_file_name
+        || exportData?.snapshotName
+        || exportData?.snapshot_file_name
+        || ''
+    ).trim();
+    const explicitSnapshotFolderName = String(
+        exportInfo.snapshotFolderName
+        || exportInfo.snapshot_folder_name
+        || exportInfo.snapshotFolder
+        || exportData?.snapshotFolderName
+        || exportData?.snapshot_folder_name
+        || exportData?.snapshotFolder
+        || ''
+    ).trim();
+    const rawSnapshotKey = String(exportInfo.snapshotKey || exportData?.snapshotKey || '').trim().toLowerCase();
+    const explicitSnapshotKey = rawSnapshotKey === '__overwrite__'
+        ? '__overwrite__'
+        : parseSnapshotKeyFromText(rawSnapshotKey);
+    const overwriteMode = normalizeOverwriteMode(
+        exportInfo.overwriteMode
+        || exportData?.overwriteMode
+        || (explicitSnapshotKey === '__overwrite__' ? 'overwrite' : 'versioned')
+    );
+    const derivedSnapshotKey = overwriteMode === 'overwrite'
+        ? '__overwrite__'
+        : (explicitSnapshotKey || buildSnapshotKeyByTimeAndFingerprint(timeStr || timeMs || '', fingerprint));
+    const snapshotName = explicitSnapshotName
+        || (overwriteMode === 'overwrite'
+            ? getOverwriteSnapshotFileName()
+            : (derivedSnapshotKey ? `${derivedSnapshotKey}.html` : ''));
+    const snapshotFolderName = explicitSnapshotFolderName
+        || (overwriteMode === 'overwrite' ? '__overwrite__' : (derivedSnapshotKey || ''));
+    const displayOriginalFile = String(snapshotName || originalFile || '').trim() || originalFile;
 
     const idBase = `${source}:${originalFile}:${zipEntryName || ''}:${timeMs || timeStr || recordIndex || ''}:${fingerprint || ''}`;
 
@@ -11179,12 +13105,18 @@ function buildRestoreVersionFromExportData(exportData, { source, originalFile, f
         source,
         sourceType: zipEntryName ? 'zip' : 'json',
         originalFile,
+        sourceFile: originalFile,
         fileUrl: fileUrl || null,
         localFileKey: localFileKey || null,
         zipEntryName: zipEntryName || null,
         recordIndex: typeof recordIndex === 'number' ? recordIndex : null,
         recordTime: timeStr || null,
-        fingerprint: fingerprint || null
+        fingerprint: fingerprint || null,
+        snapshotKey: derivedSnapshotKey || null,
+        snapshotName: snapshotName || null,
+        snapshotFolder: snapshotFolderName || null,
+        snapshotFolderName: snapshotFolderName || null,
+        overwriteMode
     };
 
     return normalizeRestoreVersionMeta({
@@ -11197,7 +13129,7 @@ function buildRestoreVersionFromExportData(exportData, { source, originalFile, f
         stats,
         source,
         sourceType: zipEntryName ? 'zip' : 'json',
-        originalFile,
+        originalFile: displayOriginalFile,
         restoreRef,
         canRestore: true
     });
@@ -11216,11 +13148,14 @@ function buildRestoreVersionFromHtmlFile({ source, originalFile, fileUrl, localF
 
     let timeMs = parseSnapshotTimeMsFromKey(snapshotKey);
     if (!timeMs) {
-        const nameMatch = /(?:backup_)?(\d{8})_(\d{6})/i.exec(name || '');
+        const nameMatch = /(?:backup_)?(\d{8})_(\d{4}(?:\d{2})?)/i.exec(name || '');
         if (nameMatch) {
             const ds = nameMatch[1];
-            const ts = nameMatch[2];
-            const iso = `${ds.substring(0, 4)}-${ds.substring(4, 6)}-${ds.substring(6, 8)}T${ts.substring(0, 2)}:${ts.substring(2, 4)}:${ts.substring(4, 6)}`;
+            const tsRaw = nameMatch[2];
+            const hh = tsRaw.substring(0, 2);
+            const mi = tsRaw.substring(2, 4);
+            const ss = tsRaw.length >= 6 ? tsRaw.substring(4, 6) : '00';
+            const iso = `${ds.substring(0, 4)}-${ds.substring(4, 6)}-${ds.substring(6, 8)}T${hh}:${mi}:${ss}`;
             timeMs = parseTimeToMs(iso);
         }
     }
@@ -11228,9 +13163,7 @@ function buildRestoreVersionFromHtmlFile({ source, originalFile, fileUrl, localF
         timeMs = lastModifiedMs;
     }
 
-    const fingerprint = snapshotKey
-        ? snapshotKey.split('_').pop() || ''
-        : '';
+    const fingerprint = parseSnapshotFingerprintFromKey(snapshotKey);
 
     const restoreRef = {
         source,
@@ -11311,6 +13244,10 @@ function parseRestoreVersionsFromMergedHistoryJsonText(text, { source, originalF
             note: item.note,
             fingerprint: item.fingerprint,
             seqNumber: item.seqNumber,
+            overwriteMode: item.overwriteMode,
+            snapshotKey: item.snapshotKey,
+            snapshotName: item.snapshotName,
+            snapshotFolderName: item.snapshotFolderName,
             bookmarkStats: item.bookmarkStats || item.stats || null,
             _rawBookmarkTree: item.bookmarkTree || item._rawBookmarkTree || null,
             _exportInfo: {
@@ -11318,7 +13255,11 @@ function parseRestoreVersionsFromMergedHistoryJsonText(text, { source, originalF
                 note: item.note,
                 seqNumber: item.seqNumber,
                 fingerprint: item.fingerprint,
-                stats: item.bookmarkStats || item.stats || null
+                stats: item.bookmarkStats || item.stats || null,
+                overwriteMode: item.overwriteMode || null,
+                snapshotKey: item.snapshotKey || null,
+                snapshotName: item.snapshotName || null,
+                snapshotFolderName: item.snapshotFolderName || null
             }
         };
 
@@ -11367,6 +13308,754 @@ async function parseRestoreVersionsFromZipBlob(zipBlob, { source, originalFile, 
     return versions;
 }
 
+function getVersionedInfoLogFileNameCandidates() {
+    return [
+        '备份历史log.md',
+        'backup-history-log.md'
+    ];
+}
+
+function splitVersionedInfoLogRowCells(line) {
+    const text = String(line || '').replace(/^\uFEFF/, '').trim();
+    if (!text.startsWith('|')) return [];
+
+    const cells = [];
+    let current = '';
+    for (let i = 0; i < text.length; i++) {
+        const char = text[i];
+        const prev = i > 0 ? text[i - 1] : '';
+        if (char === '|' && prev !== '\\') {
+            cells.push(current);
+            current = '';
+            continue;
+        }
+        current += char;
+    }
+    cells.push(current);
+
+    if (cells.length > 0) cells.shift();
+    if (text.endsWith('|') && cells.length > 0) cells.pop();
+
+    return cells
+        .map(cell => String(cell || '').replace(/\\\|/g, '|').replace(/\\\\/g, '\\').trim());
+}
+
+function normalizeVersionedInfoLogHeaderKey(value) {
+    const raw = String(value || '').trim();
+    const lower = raw.toLowerCase().replace(/\s+/g, '');
+
+    if (raw.includes('序号') || lower === 'seq') return 'seq';
+    if (raw.includes('备注') || lower === 'note' || lower === 'notes' || lower === 'comment' || lower === 'comments' || lower === 'remark' || lower === 'remarks') return 'note';
+    if (raw.includes('时间') || lower === 'time') return 'time';
+    if (raw.includes('哈希') || lower === 'hash' || lower === 'fingerprint') return 'hash';
+    if (raw.includes('状态') || lower === 'status') return 'status';
+    if (raw.includes('方向键') || lower === 'directionkey' || lower === 'sourcekey') return 'directionKey';
+    if (raw.includes('方向') || lower === 'direction') return 'direction';
+    if (raw.includes('类型') || lower === 'type') return 'type';
+    if (raw.includes('策略') || lower === 'strategy' || lower === 'overwritemode') return 'strategy';
+    if (raw.includes('快照键') || lower === 'snapshotkey' || lower === 'snapshot') return 'snapshotKey';
+    if (raw.includes('变化') || lower === 'changes' || lower === 'change' || lower === 'delta' || lower === 'deltas') return 'changes';
+
+    return lower || raw;
+}
+
+function parseVersionedInfoLogMarkdown(text) {
+    const normalizedText = String(text || '').replace(/^\uFEFF/, '');
+    const lines = normalizedText.split(/\r?\n/);
+    let headerKeys = null;
+    const entries = [];
+
+    for (const line of lines) {
+        const trimmed = String(line || '').trim();
+        if (!trimmed.startsWith('|')) continue;
+
+        const cells = splitVersionedInfoLogRowCells(trimmed);
+        if (!cells.length) continue;
+
+        const isDivider = cells.every(cell => /^:?-{3,}:?$/.test(String(cell || '').trim()));
+        if (isDivider) continue;
+
+        if (!headerKeys) {
+            headerKeys = cells.map(normalizeVersionedInfoLogHeaderKey);
+            continue;
+        }
+
+        const row = {};
+        headerKeys.forEach((key, index) => {
+            row[key] = String(cells[index] == null ? '' : cells[index]).trim();
+        });
+        entries.push(row);
+    }
+
+    return entries;
+}
+
+function parseVersionedInfoLogChangesToStats(changesText) {
+    const raw = String(changesText || '').trim();
+    if (!raw || raw === '-') return buildRestoreStats(null);
+
+    const lower = raw.toLowerCase();
+    if (lower === 'no changes' || raw.includes('无变化')) {
+        return buildRestoreStats(null);
+    }
+
+    const stats = {
+        bookmarkAdded: 0,
+        bookmarkDeleted: 0,
+        folderAdded: 0,
+        folderDeleted: 0,
+        movedCount: 0,
+        modifiedCount: 0
+    };
+
+    let matched = false;
+    const normalized = raw
+        .replace(/[，；;]/g, '/')
+        .replace(/\s+/g, ' ')
+        .trim();
+    const segments = normalized
+        .split(/\s+\/\s+|[|,]/)
+        .map((seg) => String(seg || '').trim())
+        .filter(Boolean);
+
+    const parseAddDeleteFromLabel = (labelPattern, addKey, deleteKey) => {
+        const reg = new RegExp(labelPattern, 'i');
+        for (const seg of segments) {
+            if (!reg.test(seg)) continue;
+
+            const signedParts = seg.match(/[+-]\s*\d+/g) || [];
+            if (signedParts.length > 0) {
+                for (const part of signedParts) {
+                    const value = Number(String(part || '').replace(/\s+/g, ''));
+                    if (!Number.isFinite(value)) continue;
+                    if (value >= 0) {
+                        stats[addKey] += value;
+                    } else {
+                        stats[deleteKey] += Math.abs(value);
+                    }
+                    matched = true;
+                }
+                continue;
+            }
+
+            const pair = /(\d+)\s*\/\s*(\d+)/.exec(seg);
+            if (pair) {
+                stats[addKey] += Number(pair[1] || 0);
+                stats[deleteKey] += Number(pair[2] || 0);
+                matched = true;
+                continue;
+            }
+
+            const plus = /\+\s*(\d+)/.exec(seg);
+            if (plus) {
+                stats[addKey] += Number(plus[1] || 0);
+                matched = true;
+            }
+            const minus = /-\s*(\d+)/.exec(seg);
+            if (minus) {
+                stats[deleteKey] += Number(minus[1] || 0);
+                matched = true;
+            }
+        }
+    };
+
+    parseAddDeleteFromLabel('(?:书签|bookmark|bkm)', 'bookmarkAdded', 'bookmarkDeleted');
+    parseAddDeleteFromLabel('(?:文件夹|folder|fld)', 'folderAdded', 'folderDeleted');
+
+    const parseSingleCount = (labelPattern, key) => {
+        const reg = new RegExp(`${labelPattern}[^\d]*(\\d+)`, 'i');
+        for (const seg of segments) {
+            const segMatch = reg.exec(seg);
+            if (!segMatch) continue;
+            const value = Number(segMatch[1] || 0);
+            if (!Number.isFinite(value)) continue;
+            stats[key] += value;
+            matched = true;
+        }
+    };
+
+    parseSingleCount('(?:移动|moved?)', 'movedCount');
+    parseSingleCount('(?:修改|modified?)', 'modifiedCount');
+
+    if (!matched) {
+        const fallback = parseCurrentChangesStatsFromCountsLine(raw);
+        if (fallback && getRestoreStatsMagnitude(fallback) > 0) {
+            return fallback;
+        }
+        return buildRestoreStats(null);
+    }
+
+    return buildRestoreStats(stats);
+}
+
+function parseVersionedInfoLogTimeToMs(value) {
+    const raw = String(value || '').trim();
+    if (!raw || raw === '-') return null;
+
+    let ms = parseTimeToMs(raw);
+    if (Number.isFinite(ms)) return ms;
+
+    const normalized = raw
+        .replace(/\//g, '-')
+        .replace(/\s+/, 'T');
+    ms = parseTimeToMs(normalized);
+    if (Number.isFinite(ms)) return ms;
+
+    return null;
+}
+
+function normalizeDirectionKeyFromVersionedInfoLogEntry(entry) {
+    const explicit = String(entry?.directionKey || '').trim().toLowerCase();
+    if (explicit) return explicit;
+
+    const direction = String(entry?.direction || '').trim().toLowerCase();
+    if (!direction) return '';
+
+    const hasWebDavLike = direction.includes('webdav') || direction.includes('cloud1') || direction.includes('云端1');
+    const hasGitHubLike = direction.includes('github') || direction.includes('cloud2') || direction.includes('云端2');
+    const hasLocalLike = direction.includes('local') || direction.includes('本地');
+
+    if (hasWebDavLike && hasGitHubLike && hasLocalLike) return 'webdav_github_local';
+    if (hasWebDavLike) return 'webdav';
+    if (hasGitHubLike) return 'github_repo';
+    if (direction.includes('cloud+local') || direction.includes('云端+本地')) return 'cloud_local';
+    if (direction.includes('cloud') || direction.includes('云端')) return 'cloud';
+    if (hasLocalLike) return 'local';
+    if (direction.includes('upload') || direction.includes('上传')) return 'upload';
+
+    return '';
+}
+
+function shouldUseVersionedInfoLogEntryForSource(entry, source) {
+    if (!entry || typeof entry !== 'object') return false;
+
+    const status = String(entry.status || '').trim().toLowerCase();
+    if (status && status !== 'success') return false;
+
+    const directionKey = normalizeDirectionKeyFromVersionedInfoLogEntry(entry);
+    if (!directionKey) return true;
+
+    const webdavAllowed = new Set(['webdav', 'webdav_local', 'github_repo_local', 'webdav_github_local', 'cloud', 'cloud_local', 'both', 'upload']);
+    const githubAllowed = new Set(['github_repo', 'github_repo_local', 'webdav_local', 'webdav_github_local', 'cloud', 'cloud_local', 'both', 'upload']);
+
+    if (source === 'webdav') return webdavAllowed.has(directionKey);
+    if (source === 'github') return githubAllowed.has(directionKey);
+    return true;
+}
+
+function resolveOverwriteModeFromVersionedInfoLogEntry(entry) {
+    const strategyText = String(entry?.strategy || '').trim().toLowerCase();
+    if (strategyText.includes('overwrite') || strategyText.includes('覆盖')) return 'overwrite';
+    if (strategyText.includes('versioned') || strategyText.includes('版本化') || strategyText.includes('多版本')) return 'versioned';
+
+    const snapshotText = String(entry?.snapshotKey || '').trim().toLowerCase();
+    if (snapshotText === '__overwrite__') return 'overwrite';
+
+    return 'versioned';
+}
+
+function resolveSnapshotKeyFromVersionedInfoLogEntry(entry, overwriteMode) {
+    if (normalizeOverwriteMode(overwriteMode) === 'overwrite') return '__overwrite__';
+
+    const fromColumn = parseSnapshotKeyFromText(entry?.snapshotKey || '');
+    if (fromColumn) return fromColumn;
+
+    const fingerprint = normalizeSyncFingerprint(String(entry?.hash || '').replace(/^#/, ''));
+    const timeMs = parseVersionedInfoLogTimeToMs(entry?.time || '');
+    if (fingerprint && Number.isFinite(timeMs)) {
+        return buildSnapshotKeyByTimeAndFingerprint(timeMs, fingerprint);
+    }
+
+    return '';
+}
+
+function getBackupFolderCandidatesForRestore() {
+    return Array.from(new Set([
+        getBackupFolderByLang('zh_CN'),
+        getBackupFolderByLang('en'),
+        'Bookmark_Backup',
+        'bookmark_backup',
+        'BookmarkBackup',
+        'bookmarkbackup'
+    ].map(s => String(s || '').trim()).filter(Boolean)));
+}
+
+function buildRemoteSnapshotPathCandidatesFromIndexEntry({ overwriteMode, snapshotKey }) {
+    const normalizedOverwriteMode = normalizeOverwriteMode(overwriteMode);
+    const exportRoots = Array.from(new Set(getAllExportRootFolderCandidates().map(s => String(s || '').trim()).filter(Boolean)));
+    const overwriteFolders = Array.from(new Set(getOverwriteFolderCandidates().map(s => String(s || '').trim()).filter(Boolean)));
+    const versionedFolders = Array.from(new Set(getVersionedFolderCandidates().map(s => String(s || '').trim()).filter(Boolean)));
+    const backupFolders = getBackupFolderCandidatesForRestore();
+    const paths = [];
+
+    const pushPath = (path) => {
+        const normalized = String(path || '').replace(/^\/+/, '').replace(/\/+/g, '/');
+        if (!normalized) return;
+        paths.push(normalized);
+    };
+
+    if (normalizedOverwriteMode === 'overwrite') {
+        const fileName = getOverwriteSnapshotFileName();
+        for (const root of exportRoots) {
+            for (const overwriteFolder of overwriteFolders) {
+                pushPath(`${root}/${overwriteFolder}/${fileName}`);
+            }
+            for (const backupFolder of backupFolders) {
+                for (const overwriteFolder of overwriteFolders) {
+                    pushPath(`${root}/${backupFolder}/${overwriteFolder}/${fileName}`);
+                }
+            }
+        }
+    } else {
+        const rawSnapshotKey = String(snapshotKey || '').trim().toLowerCase();
+        const key = parseSnapshotKeyFromText(rawSnapshotKey);
+        const stampMatch = /(\d{8}_\d{4}(?:\d{2})?)/.exec(rawSnapshotKey);
+        const legacyStamp = stampMatch ? String(stampMatch[1]).toLowerCase() : '';
+        const folderNameCandidates = Array.from(new Set([key, legacyStamp].filter(Boolean)));
+        if (!folderNameCandidates.length) return [];
+        const fileNameCandidates = Array.from(new Set(
+            ['html', 'htm', 'xhtml'].flatMap((ext) => ([
+                key ? `${key}.${ext}` : '',
+                legacyStamp ? `${legacyStamp}.${ext}` : '',
+                legacyStamp ? `backup_${legacyStamp}.${ext}` : ''
+            ])).filter(Boolean)
+        ));
+
+        for (const root of exportRoots) {
+            for (const folderName of folderNameCandidates) {
+                for (const fileName of fileNameCandidates) {
+                    for (const versionedFolder of versionedFolders) {
+                        pushPath(`${root}/${versionedFolder}/${folderName}/${fileName}`);
+                    }
+                    for (const backupFolder of backupFolders) {
+                        pushPath(`${root}/${backupFolder}/${folderName}/${fileName}`);
+                    }
+                    pushPath(`${root}/${folderName}/${fileName}`);
+                }
+            }
+        }
+    }
+
+    return Array.from(new Set(paths));
+}
+
+function buildGitHubContentsApiUrlForRestore({ owner, repo, branch, path }) {
+    const encodedPath = String(path || '')
+        .split('/')
+        .filter(Boolean)
+        .map((segment) => encodeURIComponent(segment))
+        .join('/');
+    return `https://api.github.com/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/contents/${encodedPath}?ref=${encodeURIComponent(branch)}`;
+}
+
+function buildRemoteFileUrlCandidatesForIndexEntry({ source, settings, relativePaths }) {
+    const list = Array.isArray(relativePaths) ? relativePaths : [];
+    if (list.length === 0) return [];
+
+    if (source === 'webdav') {
+        const serverAddress = String(settings?.serverAddress || '').replace(/\/+$/, '/');
+        if (!serverAddress) return [];
+        return list.map((path) => buildWebDAVResourceUrl(serverAddress, path));
+    }
+
+    if (source === 'github') {
+        const owner = settings?.githubRepoOwner;
+        const repo = settings?.githubRepoName;
+        const branch = settings?.githubRepoBranch;
+        const basePath = normalizeGitHubBasePath(settings?.githubRepoBasePath || '');
+        if (!owner || !repo || !branch) return [];
+
+        return list.map((path) => {
+            const fullPath = basePath ? `${basePath}/${path}` : path;
+            return buildGitHubContentsApiUrlForRestore({ owner, repo, branch, path: fullPath });
+        });
+    }
+
+    return [];
+}
+
+async function fetchRemoteVersionedInfoLog(source, settings, options = {}) {
+    const exportRoots = Array.from(new Set(getAllExportRootFolderCandidates().map(s => String(s || '').trim()).filter(Boolean)));
+    const fileNames = getVersionedInfoLogFileNameCandidates();
+    const versionedFolders = Array.from(new Set(getVersionedFolderCandidates().map((name) => String(name || '').trim()).filter(Boolean)));
+    const folderSuffixes = Array.from(new Set([
+        ...versionedFolders,
+        ''
+    ]));
+
+    const emptyResult = { indexFound: false, text: '', fileName: '', url: '' };
+    const cloneResult = (result) => {
+        const normalized = result && typeof result === 'object' ? result : emptyResult;
+        return {
+            indexFound: normalized.indexFound === true,
+            text: String(normalized.text || ''),
+            fileName: String(normalized.fileName || ''),
+            url: String(normalized.url || '')
+        };
+    };
+
+    const buildCacheKey = () => {
+        if (source === 'webdav') {
+            const serverAddress = String(settings?.serverAddress || '').trim();
+            const username = String(settings?.username || '').trim();
+            if (!serverAddress || !username) return '';
+            return `idxlog|webdav|${serverAddress}|${username}`;
+        }
+
+        if (source === 'github') {
+            const tokenPreview = String(settings?.githubRepoToken || '').slice(0, 8);
+            const owner = String(settings?.githubRepoOwner || '').trim();
+            const repo = String(settings?.githubRepoName || '').trim();
+            const branch = String(settings?.githubRepoBranch || '').trim();
+            const basePath = normalizeGitHubBasePath(settings?.githubRepoBasePath || '');
+            if (!owner || !repo || !branch) return '';
+            return `idxlog|github|${owner}|${repo}|${branch}|${basePath}|${tokenPreview}`;
+        }
+
+        return '';
+    };
+
+    const cacheKey = buildCacheKey();
+    if (cacheKey) {
+        const cached = remoteRestoreIndexCache.get(cacheKey);
+        const cachedTime = Number(cached?.time) || 0;
+        if (cached && Date.now() - cachedTime <= REMOTE_RESTORE_SCAN_CACHE_TTL_MS) {
+            return cloneResult(cached.result);
+        }
+    }
+
+    const commitCache = (result) => {
+        if (!cacheKey) return;
+        remoteRestoreIndexCache.set(cacheKey, {
+            time: Date.now(),
+            result: cloneResult(result)
+        });
+    };
+
+    const normalizeVersionedInfoLogText = (inputText) => {
+        const normalized = String(inputText || '').replace(/^\uFEFF/, '');
+        if (!normalized.trim()) return '';
+        const entries = parseVersionedInfoLogMarkdown(normalized);
+        return entries.length > 0 ? normalized : '';
+    };
+
+    const decodeBase64Utf8 = (base64Text) => {
+        const raw = String(base64Text || '').replace(/\s+/g, '');
+        if (!raw) return '';
+        try {
+            const binary = atob(raw);
+            const bytes = new Uint8Array(binary.length);
+            for (let i = 0; i < binary.length; i++) {
+                bytes[i] = binary.charCodeAt(i);
+            }
+            return new TextDecoder('utf-8').decode(bytes);
+        } catch (_) {
+            return '';
+        }
+    };
+
+    const normalizeGitHubRawText = (rawText) => {
+        const text = String(rawText || '');
+        const trimmed = text.trim();
+        if (!trimmed) return '';
+
+        if (!trimmed.startsWith('{')) {
+            return text;
+        }
+
+        const parsed = safeParseJson(trimmed);
+        if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+            return text;
+        }
+
+        const content = typeof parsed.content === 'string' ? parsed.content : '';
+        if (!content) {
+            return text;
+        }
+
+        const encoding = String(parsed.encoding || '').trim().toLowerCase();
+        if (encoding === 'base64') {
+            const decoded = decodeBase64Utf8(content);
+            if (decoded) return decoded;
+        }
+
+        return String(content || '');
+    };
+
+    const preloadedIndexCandidates = Array.isArray(options?.preloadedIndexCandidates)
+        ? options.preloadedIndexCandidates.filter((item) => item && item.type === 'index_markdown' && item.source === source)
+        : [];
+    const directoryManifestProvided = options?.directoryManifestProvided === true;
+
+    if (preloadedIndexCandidates.length > 0) {
+        const dedupCandidates = Array.from(new Map(preloadedIndexCandidates
+            .map((item) => [String(item.url || '').trim(), item])
+            .filter(([url]) => !!url)
+        ).values());
+
+        for (const candidate of dedupCandidates) {
+            const url = String(candidate.url || '').trim();
+            if (!url) continue;
+
+            try {
+                const blob = await downloadRemoteFile({ url, source });
+                const rawText = await blob.text();
+                const normalizedRaw = source === 'github'
+                    ? normalizeGitHubRawText(rawText)
+                    : rawText;
+                const text = normalizeVersionedInfoLogText(normalizedRaw);
+                if (!text) continue;
+
+                const result = {
+                    indexFound: true,
+                    text,
+                    fileName: String(candidate.name || '').trim(),
+                    url
+                };
+                commitCache(result);
+                return cloneResult(result);
+            } catch (_) { }
+        }
+    }
+
+    if (directoryManifestProvided && preloadedIndexCandidates.length === 0) {
+        commitCache(emptyResult);
+        return cloneResult(emptyResult);
+    }
+
+    if (source === 'webdav') {
+        const serverAddress = String(settings?.serverAddress || '').replace(/\/+$/, '/');
+        const username = settings?.username;
+        const password = settings?.password;
+        if (!serverAddress || !username || !password) {
+            commitCache(emptyResult);
+            return cloneResult(emptyResult);
+        }
+
+        const authHeader = 'Basic ' + safeBase64(`${username}:${password}`);
+        for (const root of exportRoots) {
+            for (const folderSuffix of folderSuffixes) {
+                const prefix = folderSuffix ? `${root}/${folderSuffix}` : root;
+                for (const fileName of fileNames) {
+                    const url = buildWebDAVResourceUrl(serverAddress, `${prefix}/${fileName}`);
+                    try {
+                        const response = await fetch(url, {
+                            method: 'GET',
+                            headers: { 'Authorization': authHeader }
+                        });
+                        if (response.status === 404) continue;
+                        if (!response.ok) continue;
+                        const rawText = await response.text();
+                        const text = normalizeVersionedInfoLogText(rawText);
+                        if (!text) continue;
+                        const result = { indexFound: true, text, fileName, url };
+                        commitCache(result);
+                        return cloneResult(result);
+                    } catch (_) { }
+                }
+            }
+        }
+        commitCache(emptyResult);
+        return cloneResult(emptyResult);
+    }
+
+    if (source === 'github') {
+        const token = settings?.githubRepoToken;
+        const owner = settings?.githubRepoOwner;
+        const repo = settings?.githubRepoName;
+        const branch = settings?.githubRepoBranch;
+        const basePath = normalizeGitHubBasePath(settings?.githubRepoBasePath || '');
+        if (!token || !owner || !repo || !branch) {
+            commitCache(emptyResult);
+            return cloneResult(emptyResult);
+        }
+
+        for (const root of exportRoots) {
+            for (const folderSuffix of folderSuffixes) {
+                const prefix = folderSuffix ? `${root}/${folderSuffix}` : root;
+                for (const fileName of fileNames) {
+                    const relativePath = basePath ? `${basePath}/${prefix}/${fileName}` : `${prefix}/${fileName}`;
+                    const url = buildGitHubContentsApiUrlForRestore({ owner, repo, branch, path: relativePath });
+                    try {
+                        const response = await fetch(url, {
+                            method: 'GET',
+                            headers: {
+                                'Authorization': `token ${token}`,
+                                'Accept': 'application/vnd.github.v3.raw'
+                            }
+                        });
+                        if (response.status === 404) continue;
+                        if (!response.ok) continue;
+                        const rawText = await response.text();
+                        const normalizedRaw = normalizeGitHubRawText(rawText);
+                        const text = normalizeVersionedInfoLogText(normalizedRaw);
+                        if (!text) continue;
+                        const result = { indexFound: true, text, fileName, url };
+                        commitCache(result);
+                        return cloneResult(result);
+                    } catch (_) { }
+                }
+            }
+        }
+    }
+
+    commitCache(emptyResult);
+    return cloneResult(emptyResult);
+}
+
+async function scanAndParseRemoteRestoreSourceByVersionedLog(source, options = {}) {
+    const settings = await browserAPI.storage.local.get([
+        'serverAddress',
+        'username',
+        'password',
+        'githubRepoToken',
+        'githubRepoOwner',
+        'githubRepoName',
+        'githubRepoBranch',
+        'githubRepoBasePath'
+    ]);
+
+    const logResult = await fetchRemoteVersionedInfoLog(source, settings, {
+        preloadedIndexCandidates: options?.preloadedIndexCandidates,
+        directoryManifestProvided: options?.directoryManifestProvided
+    });
+    const hasVersionedIndex = !!logResult?.indexFound;
+
+    if (!hasVersionedIndex) {
+        return {
+            success: true,
+            indexFound: false,
+            sourceType: 'html',
+            versions: [],
+            artifacts: { currentChangesCount: 0, fromIndex: true }
+        };
+    }
+
+    const versions = [];
+
+    if (hasVersionedIndex) {
+        const entries = parseVersionedInfoLogMarkdown(logResult.text || '');
+        for (const entry of entries) {
+            if (!shouldUseVersionedInfoLogEntryForSource(entry, source)) continue;
+
+            const overwriteMode = resolveOverwriteModeFromVersionedInfoLogEntry(entry);
+            if (overwriteMode === 'overwrite') continue;
+            const snapshotKey = resolveSnapshotKeyFromVersionedInfoLogEntry(entry, overwriteMode);
+            if (!snapshotKey) continue;
+
+            const relativePathCandidates = buildRemoteSnapshotPathCandidatesFromIndexEntry({ overwriteMode, snapshotKey });
+            const urlCandidates = buildRemoteFileUrlCandidatesForIndexEntry({
+                source,
+                settings,
+                relativePaths: relativePathCandidates
+            });
+
+            const timeMs = parseVersionedInfoLogTimeToMs(entry.time);
+            const seqNum = Number.parseInt(String(entry.seq || '').replace(/^#/, '').trim(), 10);
+            const seqNumber = Number.isFinite(seqNum) ? seqNum : null;
+            const note = String(entry.note || '').trim();
+            const fingerprint = normalizeSyncFingerprint(String(entry.hash || '').replace(/^#/, '').trim());
+            const statsFromIndex = parseVersionedInfoLogChangesToStats(entry.changes || '');
+            const fileName = overwriteMode === 'overwrite'
+                ? getOverwriteSnapshotFileName()
+                : `${snapshotKey}.html`;
+            const firstPath = relativePathCandidates[0] || '';
+            const folderPath = firstPath.includes('/')
+                ? firstPath.slice(0, firstPath.lastIndexOf('/'))
+                : '';
+            const recordTime = Number.isFinite(timeMs)
+                ? new Date(timeMs).toISOString()
+                : (String(entry.time || '').trim() || null);
+
+            const restoreRef = {
+                source,
+                sourceType: 'html',
+                originalFile: fileName,
+                fileUrl: urlCandidates[0] || null,
+                fileCandidates: urlCandidates,
+                localFileKey: null,
+                recordIndex: null,
+                recordTime,
+                fingerprint: fingerprint || null,
+                snapshotKey: overwriteMode === 'overwrite' ? '__overwrite__' : snapshotKey,
+                snapshotFolder: overwriteMode === 'overwrite' ? '__overwrite__' : snapshotKey,
+                folderPath: folderPath || null,
+                overwriteMode,
+                indexChanges: String(entry?.changes || '').trim(),
+                indexStats: statsFromIndex,
+                indexMatched: true
+            };
+
+            versions.push(normalizeRestoreVersionMeta({
+                id: `index:${source}:${overwriteMode}:${snapshotKey || '__overwrite__'}:${timeMs || entry.time || ''}:${fingerprint || ''}`,
+                time: Number.isFinite(timeMs) ? timeMs : null,
+                displayTime: Number.isFinite(timeMs) ? formatDateTime(timeMs) : String(entry.time || ''),
+                seqNumber,
+                note,
+                fingerprint,
+                stats: statsFromIndex,
+                source,
+                sourceType: 'html',
+                originalFile: fileName,
+                restoreRef,
+                canRestore: urlCandidates.length > 0
+            }));
+        }
+    }
+
+    if (versions.length === 0) {
+        return {
+            success: true,
+            indexFound: true,
+            sourceType: 'html',
+            versions: [],
+            artifacts: { currentChangesCount: 0, fromIndex: true },
+            indexMeta: {
+                fileName: logResult?.fileName || '',
+                url: logResult?.url || '',
+                versionedLogFileName: logResult?.fileName || '',
+                versionedLogUrl: logResult?.url || ''
+            }
+        };
+    }
+
+    const sorted = dedupeAndSortRestoreVersions(versions);
+    const filtered = [];
+    let hasOverwrite = false;
+    for (const version of sorted) {
+        const snapshotKey = String(version?.restoreRef?.snapshotKey || '').toLowerCase();
+        const sourceType = String(version?.restoreRef?.sourceType || version?.sourceType || '').toLowerCase();
+        const isHtmlSnapshot = sourceType === 'html';
+        if (isHtmlSnapshot && snapshotKey === '__overwrite__') {
+            if (hasOverwrite) continue;
+            hasOverwrite = true;
+        }
+        filtered.push(version);
+    }
+
+    const currentChangesCount = filtered.filter((item) => String(item?.sourceType || '').toLowerCase() === 'changes_artifact').length;
+    const responseSourceType = filtered.some((item) => String(item?.sourceType || '').toLowerCase() === 'changes_artifact')
+        ? 'mixed'
+        : 'html';
+
+    return {
+        success: true,
+        indexFound: true,
+        sourceType: responseSourceType,
+        versions: filtered,
+        artifacts: {
+            currentChangesCount,
+            fromIndex: true
+        },
+        indexMeta: {
+            fileName: logResult?.fileName || '',
+            url: logResult?.url || '',
+            versionedLogFileName: logResult?.fileName || '',
+            versionedLogUrl: logResult?.url || ''
+        }
+    };
+}
+
 function dedupeAndSortRestoreVersions(versions) {
     const map = new Map();
     for (const v of versions || []) {
@@ -11374,7 +14063,45 @@ function dedupeAndSortRestoreVersions(versions) {
         map.set(v.id, v);
     }
     const list = Array.from(map.values());
-    list.sort((a, b) => (b.time || 0) - (a.time || 0));
+
+    const parseSeqNumber = (value) => {
+        const raw = String(value ?? '').trim().replace(/^#/, '');
+        if (!raw) return null;
+        const num = Number(raw);
+        return Number.isFinite(num) && num > 0 ? num : null;
+    };
+
+    const hasIndexOrder = (item) => {
+        if (!item || typeof item !== 'object') return false;
+        const seq = parseSeqNumber(item?.seqNumber);
+        if (seq == null) return false;
+        const id = String(item?.id || '').trim();
+        const restoreRef = item?.restoreRef || {};
+        return restoreRef?.indexMatched === true || id.startsWith('index:');
+    };
+
+    list.sort((a, b) => {
+        const aIndexed = hasIndexOrder(a);
+        const bIndexed = hasIndexOrder(b);
+        if (aIndexed !== bIndexed) return aIndexed ? -1 : 1;
+
+        const aSeq = parseSeqNumber(a?.seqNumber);
+        const bSeq = parseSeqNumber(b?.seqNumber);
+        if (aIndexed && bIndexed && aSeq != null && bSeq != null && aSeq !== bSeq) {
+            return bSeq - aSeq;
+        }
+
+        const timeDiff = (Number(b?.time) || 0) - (Number(a?.time) || 0);
+        if (timeDiff !== 0) return timeDiff;
+
+        if (aSeq != null && bSeq != null && aSeq !== bSeq) {
+            return bSeq - aSeq;
+        }
+        if (aSeq != null && bSeq == null) return -1;
+        if (aSeq == null && bSeq != null) return 1;
+
+        return 0;
+    });
     return list;
 }
 
@@ -11383,62 +14110,343 @@ function dedupeAndSortRestoreVersions(versions) {
 async function scanAndParseRestoreSource(source, localFiles = null) {
     try {
         let candidates = [];
+        let remoteIndexScan = null;
 
         if (source === 'local') {
             candidates = Array.isArray(localFiles) ? localFiles : [];
         } else {
-            candidates = await listRemoteFiles(source);
+            const useIndexOptimizedScan = source === 'github';
+            const indexedSnapshotKeys = [];
+            candidates = await listRemoteFiles(source, { useIndexOptimizedScan, indexedSnapshotKeys });
+            const hasTreeManifest = candidates.some((item) => String(item?.manifestMode || '').trim().toLowerCase() === 'tree');
+
+            remoteIndexScan = await scanAndParseRemoteRestoreSourceByVersionedLog(source, {
+                preloadedIndexCandidates: candidates,
+                // 仅 GitHub 的树清单可视为“完整索引视图”；WebDAV 保留兜底探测，避免服务端树返回不全导致漏索引
+                directoryManifestProvided: source === 'github' && hasTreeManifest
+            });
         }
+
+        let localIndexOrder = [];
+        let localIndexMeta = null;
+        const localIndexEntryBySnapshotKey = new Map();
+        const localIndexEntryByFingerprint = new Map();
+
+        if (source === 'local') {
+            const indexCandidates = candidates
+                .filter((f) => f
+                    && (f.type === 'index_markdown' || f.type === 'index_json')
+                    && String(f.text || '').trim())
+                .slice()
+                .sort((a, b) => {
+                    const am = Number.isFinite(Number(a?.lastModified)) ? Number(a.lastModified) : 0;
+                    const bm = Number.isFinite(Number(b?.lastModified)) ? Number(b.lastModified) : 0;
+                    return bm - am;
+                });
+
+            const seenKeys = new Set();
+            const pushLocalIndexEntry = ({
+                overwriteMode,
+                snapshotKey,
+                seqNumber,
+                note,
+                timeRaw,
+                timeMs,
+                fingerprint,
+                stats,
+                changesRaw
+            } = {}) => {
+                const normalizedOverwriteMode = normalizeOverwriteMode(overwriteMode);
+                if (normalizedOverwriteMode === 'overwrite') return;
+
+                const normalizedKey = String(snapshotKey || '')
+                    .trim()
+                    .toLowerCase();
+                if (!normalizedKey) return;
+
+                if (!seenKeys.has(normalizedKey)) {
+                    seenKeys.add(normalizedKey);
+                    localIndexOrder.push(normalizedKey);
+                }
+
+                if (localIndexEntryBySnapshotKey.has(normalizedKey)) {
+                    return;
+                }
+
+                const parsedTimeMs = Number.isFinite(Number(timeMs))
+                    ? Number(timeMs)
+                    : parseVersionedInfoLogTimeToMs(timeRaw);
+                const normalizedTimeRaw = String(timeRaw || '').trim();
+                const recordTime = Number.isFinite(parsedTimeMs)
+                    ? new Date(parsedTimeMs).toISOString()
+                    : (normalizedTimeRaw || null);
+
+                const normalizedFingerprint = normalizeSyncFingerprint(String(fingerprint || '').replace(/^#/, '').trim());
+
+                const normalizedEntry = {
+                    snapshotKey: normalizedKey,
+                    overwriteMode: normalizedOverwriteMode,
+                    seqNumber: Number.isFinite(Number(seqNumber)) ? Number(seqNumber) : null,
+                    note: String(note || '').trim(),
+                    timeRaw: normalizedTimeRaw,
+                    timeMs: Number.isFinite(parsedTimeMs) ? parsedTimeMs : null,
+                    recordTime,
+                    fingerprint: normalizedFingerprint,
+                    stats: buildRestoreStats(stats || null),
+                    changesRaw: String(changesRaw || '').trim()
+                };
+
+                localIndexEntryBySnapshotKey.set(normalizedKey, normalizedEntry);
+                if (normalizedFingerprint && !localIndexEntryByFingerprint.has(normalizedFingerprint)) {
+                    localIndexEntryByFingerprint.set(normalizedFingerprint, normalizedEntry);
+                }
+            };
+
+            for (const indexFile of indexCandidates) {
+                if (!localIndexMeta) {
+                    localIndexMeta = {
+                        fileName: String(indexFile.name || ''),
+                        localFileKey: indexFile.localFileKey || null,
+                        indexType: String(indexFile.type || ''),
+                        entryCount: 0,
+                        snapshotKeys: []
+                    };
+                }
+
+                if (indexFile.type === 'index_markdown') {
+                    const entries = parseVersionedInfoLogMarkdown(indexFile.text || '');
+                    for (const entry of entries) {
+                        const overwriteMode = resolveOverwriteModeFromVersionedInfoLogEntry(entry);
+                        const snapshotKey = resolveSnapshotKeyFromVersionedInfoLogEntry(entry, overwriteMode);
+                        const seqNum = Number.parseInt(String(entry?.seq || '').replace(/^#/, '').trim(), 10);
+                        pushLocalIndexEntry({
+                            overwriteMode,
+                            snapshotKey,
+                            seqNumber: Number.isFinite(seqNum) ? seqNum : null,
+                            note: entry?.note,
+                            timeRaw: entry?.time,
+                            timeMs: parseVersionedInfoLogTimeToMs(entry?.time),
+                            fingerprint: entry?.hash,
+                            stats: parseVersionedInfoLogChangesToStats(entry?.changes || ''),
+                            changesRaw: entry?.changes || ''
+                        });
+                    }
+                    continue;
+                }
+
+                if (indexFile.type === 'index_json') {
+                    const parsed = safeParseJson(indexFile.text || '');
+                    const records = Array.isArray(parsed?.records) ? parsed.records : [];
+                    const fileOverwriteMode = normalizeOverwriteMode(parsed?.overwriteMode || '');
+
+                    for (const record of records) {
+                        const explicitOverwriteMode = normalizeOverwriteMode(
+                            record?.overwriteMode || record?.snapshot?.folderType || ''
+                        );
+                        const recordOverwriteMode = explicitOverwriteMode
+                            || (String(record?.snapshotKey || '').trim().toLowerCase() === '__overwrite__'
+                                ? 'overwrite'
+                                : (fileOverwriteMode || 'versioned'));
+                        const snapshotKeyCandidate = parseSnapshotKeyFromText(
+                            record?.snapshotKey
+                            || record?.snapshot?.relativePath
+                            || record?.snapshot?.fileName
+                            || ''
+                        );
+                        const snapshotKey = recordOverwriteMode === 'overwrite' ? '__overwrite__' : snapshotKeyCandidate;
+                        const rawStats = record?.stats || record?.bookmarkStats || null;
+                        const normalizedStats = buildRestoreStats(rawStats);
+                        const derivedChangesRaw = getRestoreStatsMagnitude(normalizedStats) > 0
+                            ? buildCurrentChangesStatsLine(normalizedStats, 'zh_CN')
+                            : '无变化';
+                        const timeRaw = record?.time || record?.backupTime || '';
+                        const parsedTimeMs = parseVersionedInfoLogTimeToMs(timeRaw);
+                        const seqNum = Number.isFinite(Number(record?.seqNumber)) ? Number(record.seqNumber) : null;
+                        let fingerprint = normalizeSyncFingerprint(String(record?.fingerprint || '').replace(/^#/, '').trim());
+                        if (!fingerprint && snapshotKey && snapshotKey !== '__overwrite__') {
+                            fingerprint = parseSnapshotFingerprintFromKey(snapshotKey);
+                        }
+
+                        pushLocalIndexEntry({
+                            overwriteMode: recordOverwriteMode,
+                            snapshotKey,
+                            seqNumber: seqNum,
+                            note: record?.note,
+                            timeRaw,
+                            timeMs: parsedTimeMs,
+                            fingerprint,
+                            stats: normalizedStats,
+                            changesRaw: derivedChangesRaw
+                        });
+                    }
+                }
+            }
+
+            if (localIndexMeta) {
+                localIndexMeta.entryCount = localIndexOrder.length;
+                localIndexMeta.snapshotKeys = localIndexOrder.slice();
+            }
+        }
+
+        const applyLocalIndexMetadataToVersion = (version, snapshotKey = '') => {
+            if (source !== 'local' || !version) return version;
+
+            const normalizedKey = String(snapshotKey || version?.restoreRef?.snapshotKey || '')
+                .trim()
+                .toLowerCase();
+            const explicitFingerprint = normalizeSyncFingerprint(String(version?.fingerprint || '').replace(/^#/, '').trim());
+            let indexEntry = normalizedKey
+                ? localIndexEntryBySnapshotKey.get(normalizedKey)
+                : null;
+
+            if (!indexEntry && explicitFingerprint) {
+                indexEntry = localIndexEntryByFingerprint.get(explicitFingerprint) || null;
+            }
+
+            if (!indexEntry) {
+                const versionTimeMs = Number(version?.time);
+                if (Number.isFinite(versionTimeMs)) {
+                    const byTime = Array.from(localIndexEntryBySnapshotKey.values()).filter((entry) => {
+                        const entryTimeMs = Number(entry?.timeMs);
+                        return Number.isFinite(entryTimeMs) && Math.abs(entryTimeMs - versionTimeMs) <= 1000;
+                    });
+                    if (byTime.length === 1) {
+                        indexEntry = byTime[0];
+                    }
+                }
+            }
+
+            if (!indexEntry) return version;
+
+            const indexStats = buildRestoreStats(indexEntry.stats || null);
+            const indexChangesRaw = String(indexEntry.changesRaw || '').trim();
+            const indexHasExplicitChanges = indexChangesRaw.length > 0;
+            const currentStatsMagnitude = getRestoreStatsMagnitude(version?.stats || null);
+
+            if (indexHasExplicitChanges || currentStatsMagnitude <= 0) {
+                version.stats = indexStats;
+            }
+
+            if (indexEntry.seqNumber != null) {
+                version.seqNumber = indexEntry.seqNumber;
+            }
+
+            if ((!version.fingerprint || !String(version.fingerprint).trim()) && indexEntry.fingerprint) {
+                version.fingerprint = indexEntry.fingerprint;
+            }
+
+            const indexNote = String(indexEntry.note || '').trim();
+            if (indexNote) {
+                version.note = indexNote;
+            }
+
+            if (!Number.isFinite(Number(version.time)) && Number.isFinite(Number(indexEntry.timeMs))) {
+                version.time = Number(indexEntry.timeMs);
+                version.displayTime = formatDateTime(Number(indexEntry.timeMs));
+            } else if (!String(version.displayTime || '').trim() && String(indexEntry.timeRaw || '').trim()) {
+                version.displayTime = String(indexEntry.timeRaw || '').trim();
+            }
+
+            version.restoreRef = {
+                ...(version.restoreRef || {}),
+                snapshotKey: version?.restoreRef?.snapshotKey || indexEntry.snapshotKey || null,
+                snapshotFolder: version?.restoreRef?.snapshotFolder || indexEntry.snapshotKey || null,
+                overwriteMode: version?.restoreRef?.overwriteMode || indexEntry.overwriteMode || 'versioned',
+                recordTime: version?.restoreRef?.recordTime || indexEntry.recordTime,
+                indexChanges: indexChangesRaw || String(version?.restoreRef?.indexChanges || '').trim(),
+                indexStats,
+                indexMatched: true
+            };
+
+            return version;
+        };
+
+        const OVERWRITE_FOLDER_SEGMENTS = new Set(['覆盖', 'overwrite']);
+        const VERSIONED_FOLDER_SEGMENTS = new Set(['版本化', '多版本', 'versioned', 'versioning']);
+        const MANUAL_EXPORT_FOLDER_SEGMENTS = new Set(['手动导出', 'manual export', 'manual_export', 'manual-export']);
+        const MANUAL_HISTORY_FOLDER_SEGMENTS = new Set([
+            '备份历史',
+            'backup history',
+            'backup_history',
+            'backup-history',
+            'bookmarks history',
+            'bookmarks_history',
+            'bookmarks-history'
+        ]);
+        const CURRENT_CHANGES_FOLDER_SEGMENTS = new Set(['当前变化', 'current changes', 'current_changes', 'current-changes']);
+
+        const normalizePathTextForSegments = (value) => {
+            const raw = String(value || '').trim();
+            if (!raw) return '';
+
+            const withoutQuery = raw.split('?')[0].split('#')[0];
+            try {
+                return decodeURIComponent(withoutQuery);
+            } catch (_) {
+                return withoutQuery;
+            }
+        };
+
+        const splitPathSegmentsLower = (value) => {
+            return normalizePathTextForSegments(value)
+                .replace(/\\/g, '/')
+                .split('/')
+                .map(part => String(part || '').trim().toLowerCase())
+                .filter(Boolean);
+        };
+
+        const detectFolderTypeByPathValues = (values) => {
+            let hasManualExport = false;
+            let hasVersioned = false;
+            let hasManualHistoryOrCurrentChanges = false;
+
+            for (const value of values || []) {
+                const segments = splitPathSegmentsLower(value);
+                if (segments.some(seg => OVERWRITE_FOLDER_SEGMENTS.has(seg))) {
+                    return 'overwrite';
+                }
+                if (segments.some(seg => MANUAL_EXPORT_FOLDER_SEGMENTS.has(seg))) {
+                    hasManualExport = true;
+                }
+                if (segments.some(seg => VERSIONED_FOLDER_SEGMENTS.has(seg))) {
+                    hasVersioned = true;
+                }
+                if (segments.some(seg => MANUAL_HISTORY_FOLDER_SEGMENTS.has(seg) || CURRENT_CHANGES_FOLDER_SEGMENTS.has(seg))) {
+                    hasManualHistoryOrCurrentChanges = true;
+                }
+            }
+
+            if (hasManualExport) return 'manual_export';
+            if (hasVersioned) return 'versioned';
+            if (hasManualHistoryOrCurrentChanges) return 'manual_export';
+            return '';
+        };
+
+        const detectFolderTypeByMetaLike = (metaLike = {}, options = {}) => {
+            const values = [
+                metaLike?.snapshotFolder,
+                metaLike?.folderPath,
+                metaLike?.localFileKey,
+                metaLike?.fileUrl,
+                metaLike?.originalFile,
+                metaLike?.name
+            ];
+            const fromPath = detectFolderTypeByPathValues(values);
+            if (fromPath) return fromPath;
+
+            if (options?.includeSnapshotFallback === false) {
+                return '';
+            }
+
+            const snapshotKey = String(metaLike?.snapshotKey || '').trim().toLowerCase();
+            if (snapshotKey === '__overwrite__') return 'overwrite';
+            if (snapshotKey && snapshotKey !== '__overwrite__') return 'versioned';
+            return '';
+        };
 
         const allVersions = [];
         const htmlVersionBySnapshotKey = new Map();
-
-        const mergedJsonCandidates = candidates.filter(f => f && f.type === 'merged_history');
-        for (const file of mergedJsonCandidates) {
-            try {
-                let text = '';
-                if (source === 'local') {
-                    text = String(file.text || '');
-                } else {
-                    const blob = await downloadRemoteFile({ url: file.url, source });
-                    text = await blob.text();
-                }
-                const versions = parseRestoreVersionsFromMergedHistoryJsonText(text, {
-                    source,
-                    originalFile: file.name,
-                    fileUrl: file.url || null,
-                    localFileKey: file.localFileKey || null
-                });
-                allVersions.push(...versions);
-                console.log(`[scanAndParseRestoreSource] Parsed ${versions.length} versions from ${file.name}`);
-            } catch (e) {
-                console.warn('[scanAndParseRestoreSource] Failed to parse merged history:', file.name, e);
-            }
-        }
-
-        const zipCandidates = candidates.filter(f => f && f.type === 'zip');
-        for (const file of zipCandidates) {
-            try {
-                let blob;
-                if (source === 'local') {
-                    const ab = file.arrayBuffer;
-                    if (!ab) continue;
-                    blob = new Blob([ab], { type: 'application/zip' });
-                } else {
-                    blob = await downloadRemoteFile({ url: file.url, source });
-                }
-                const versions = await parseRestoreVersionsFromZipBlob(blob, {
-                    source,
-                    originalFile: file.name,
-                    fileUrl: file.url || null,
-                    localFileKey: file.localFileKey || null
-                });
-                allVersions.push(...versions);
-                console.log(`[scanAndParseRestoreSource] Parsed ${versions.length} versions from ZIP ${file.name}`);
-            } catch (e) {
-                console.warn('[scanAndParseRestoreSource] Failed to parse ZIP:', file.name, e);
-            }
-        }
+        const scannedHtmlVersions = [];
 
         const htmlCandidates = candidates.filter(f => f && f.type === 'html_backup');
         for (const f of htmlCandidates) {
@@ -11453,9 +14461,15 @@ async function scanAndParseRestoreSource(source, localFiles = null) {
                     snapshotFolder: f.snapshotFolder || '',
                     folderPath: f.folderPath || ''
                 });
+                const snapshotKey = String(
+                    version?.restoreRef?.snapshotKey
+                    || parseSnapshotKeyFromText(f.snapshotFolder || f.folderPath || f.name || '')
+                    || ''
+                ).trim().toLowerCase();
+                applyLocalIndexMetadataToVersion(version, snapshotKey);
                 allVersions.push(version);
+                scannedHtmlVersions.push(version);
 
-                const snapshotKey = version?.restoreRef?.snapshotKey || parseSnapshotKeyFromText(f.snapshotFolder || f.folderPath || f.name || '');
                 if (snapshotKey) {
                     const existing = htmlVersionBySnapshotKey.get(snapshotKey);
                     const existingTime = typeof existing?.time === 'number' ? existing.time : -1;
@@ -11470,28 +14484,27 @@ async function scanAndParseRestoreSource(source, localFiles = null) {
         }
 
         const changesArtifactCandidates = candidates.filter(f => f && f.type === 'changes_artifact');
-        const bestArtifactBySnapshotKey = new Map();
+        const artifactBundleBySnapshotKey = new Map();
 
         for (const file of changesArtifactCandidates) {
             try {
-                const snapshotKey = buildCurrentChangesArtifactMatchKey(file);
+                const inferredFolderType = detectFolderTypeByMetaLike(file, { includeSnapshotFallback: false });
+                const snapshotKey = String(buildCurrentChangesArtifactMatchKey(file, {
+                    allowStandalone: source === 'local' || inferredFolderType === 'manual_export'
+                }) || '').trim().toLowerCase();
                 if (!snapshotKey) continue;
 
                 let text = '';
                 if (source === 'local') {
-                    text = String(file.text || '');
-                    if (!text && file.localFileKey) {
-                        continue;
-                    }
-                } else {
-                    const blob = await downloadRemoteFile({ url: file.url, source });
-                    text = await blob.text();
+                    text = typeof file.text === 'string' ? String(file.text || '') : '';
                 }
 
                 const lowerName = String(file.name || '').toLowerCase();
                 const format = lowerName.endsWith('.html') ? 'html' : 'json';
-                const mode = parseCurrentChangesArtifactModeFromName(file.name) || 'simple';
-                const stats = parseCurrentChangesArtifactStatsFromText(text, { isHtml: format === 'html' }) || buildRestoreStats(null);
+                const mode = normalizeCurrentChangesArtifactMode(parseCurrentChangesArtifactModeFromName(file.name) || 'simple') || 'simple';
+                const stats = text
+                    ? (parseCurrentChangesArtifactStatsFromText(text, { isHtml: format === 'html' }) || buildRestoreStats(null))
+                    : buildRestoreStats(null);
 
                 const modePriority = mode === 'detailed'
                     ? 100
@@ -11501,66 +14514,368 @@ async function scanAndParseRestoreSource(source, localFiles = null) {
                     + (format === 'json' ? 5 : 0)
                     + Math.min(getRestoreStatsMagnitude(stats), 9999) / 10000;
 
-                const existing = bestArtifactBySnapshotKey.get(snapshotKey);
-                if (!existing || priority >= existing.priority) {
-                    bestArtifactBySnapshotKey.set(snapshotKey, {
+                const entry = {
+                    snapshotKey,
+                    mode,
+                    format,
+                    stats,
+                    name: file.name,
+                    source,
+                    fileUrl: file.url || null,
+                    localFileKey: file.localFileKey || null,
+                    snapshotFolder: file.snapshotFolder || '',
+                    folderPath: file.folderPath || '',
+                    folderType: inferredFolderType,
+                    priority
+                };
+
+                if (!artifactBundleBySnapshotKey.has(snapshotKey)) {
+                    artifactBundleBySnapshotKey.set(snapshotKey, {
                         snapshotKey,
-                        mode,
-                        format,
-                        stats,
-                        name: file.name,
-                        priority
+                        modes: {},
+                        best: null
                     });
+                }
+
+                const bundle = artifactBundleBySnapshotKey.get(snapshotKey);
+                const existingModeEntry = bundle.modes[mode];
+                if (!existingModeEntry || priority >= existingModeEntry.priority) {
+                    bundle.modes[mode] = entry;
+                }
+
+                if (!bundle.best || priority >= bundle.best.priority) {
+                    bundle.best = entry;
                 }
             } catch (e) {
                 console.warn('[scanAndParseRestoreSource] Failed to parse current changes artifact:', file?.name, e);
             }
         }
 
-        for (const [snapshotKey, artifact] of bestArtifactBySnapshotKey.entries()) {
-            const version = htmlVersionBySnapshotKey.get(snapshotKey);
-            if (!version) continue;
+        for (const [snapshotKey, bundle] of artifactBundleBySnapshotKey.entries()) {
+            const artifact = bundle?.best || null;
+            if (!artifact) continue;
 
-            version.stats = artifact.stats || version.stats;
-            version.restoreRef = {
-                ...(version.restoreRef || {}),
-                snapshotKey,
-                changesArtifact: {
-                    name: artifact.name,
-                    mode: artifact.mode,
-                    format: artifact.format
-                }
-            };
+            const modeEntries = {};
+            const rawModes = bundle?.modes || {};
+            Object.keys(rawModes).forEach((modeKey) => {
+                const modeEntry = rawModes[modeKey];
+                if (!modeEntry) return;
+                modeEntries[modeKey] = {
+                    mode: modeEntry.mode,
+                    format: modeEntry.format,
+                    name: modeEntry.name,
+                    source: modeEntry.source,
+                    fileUrl: modeEntry.fileUrl || null,
+                    localFileKey: modeEntry.localFileKey || null,
+                    snapshotFolder: modeEntry.snapshotFolder || '',
+                    folderPath: modeEntry.folderPath || '',
+                    folderType: modeEntry.folderType || ''
+                };
+            });
 
+            const availableModes = Object.keys(modeEntries);
             const notePrefix = artifact.mode === 'detailed'
                 ? (artifact.format === 'json' ? 'Current Changes (Detailed JSON)' : 'Current Changes (Detailed HTML)')
                 : (artifact.mode === 'collection'
                     ? (artifact.format === 'json' ? 'Current Changes (Collection JSON)' : 'Current Changes (Collection HTML)')
                     : (artifact.format === 'json' ? 'Current Changes (Simple JSON)' : 'Current Changes (Simple HTML)'));
-            version.note = String(version.note || '').trim() || notePrefix;
+
+            const version = htmlVersionBySnapshotKey.get(snapshotKey);
+            const artifactFolderType = String(artifact.folderType || '').trim();
+            const versionFolderType = detectFolderTypeByMetaLike(version?.restoreRef || version || {});
+            const canMergeByFolderType = !!artifactFolderType
+                && !!versionFolderType
+                && artifactFolderType === versionFolderType;
+
+            if (version && canMergeByFolderType) {
+                version.stats = artifact.stats || version.stats;
+                version.restoreRef = {
+                    ...(version.restoreRef || {}),
+                    snapshotKey,
+                    changesArtifact: {
+                        name: artifact.name,
+                        mode: artifact.mode,
+                        preferredMode: artifact.mode,
+                        format: artifact.format,
+                        source: artifact.source || source,
+                        fileUrl: artifact.fileUrl || null,
+                        localFileKey: artifact.localFileKey || null,
+                        snapshotFolder: artifact.snapshotFolder || '',
+                        folderPath: artifact.folderPath || '',
+                        folderType: artifact.folderType || '',
+                        availableModes,
+                        modes: modeEntries
+                    }
+                };
+
+                version.note = String(version.note || '').trim() || notePrefix;
+                continue;
+            }
+
+            const snapshotTimeMs = parseSnapshotTimeMsFromKey(snapshotKey);
+            const fingerprint = parseSnapshotFingerprintFromKey(snapshotKey);
+            const recordTime = Number.isFinite(snapshotTimeMs)
+                ? new Date(snapshotTimeMs).toISOString()
+                : null;
+            const canRestore = source === 'local'
+                ? !!artifact.localFileKey
+                : !!artifact.fileUrl;
+
+            const standaloneVersion = normalizeRestoreVersionMeta({
+                id: `${source}:changes:${snapshotKey}:${artifact.localFileKey || artifact.fileUrl || artifact.name || ''}`,
+                time: Number.isFinite(snapshotTimeMs) ? snapshotTimeMs : null,
+                displayTime: Number.isFinite(snapshotTimeMs) ? formatDateTime(snapshotTimeMs) : (artifact.name || ''),
+                seqNumber: null,
+                note: notePrefix,
+                fingerprint,
+                stats: artifact.stats || buildRestoreStats(null),
+                source,
+                sourceType: 'changes_artifact',
+                originalFile: artifact.name || '',
+                restoreRef: {
+                    source,
+                    sourceType: 'changes_artifact',
+                    originalFile: artifact.name || '',
+                    fileUrl: artifact.fileUrl || null,
+                    localFileKey: artifact.localFileKey || null,
+                    recordIndex: null,
+                    recordTime,
+                    fingerprint: fingerprint || null,
+                    snapshotKey: snapshotKey || null,
+                    snapshotFolder: artifact.snapshotFolder || null,
+                    folderPath: artifact.folderPath || '',
+                    changesArtifact: {
+                        name: artifact.name,
+                        mode: artifact.mode,
+                        preferredMode: artifact.mode,
+                        format: artifact.format,
+                        source: artifact.source || source,
+                        fileUrl: artifact.fileUrl || null,
+                        localFileKey: artifact.localFileKey || null,
+                        snapshotFolder: artifact.snapshotFolder || '',
+                        folderPath: artifact.folderPath || '',
+                        folderType: artifact.folderType || '',
+                        availableModes,
+                        modes: modeEntries
+                    }
+                },
+                canRestore
+            });
+            applyLocalIndexMetadataToVersion(standaloneVersion, snapshotKey);
+            allVersions.push(standaloneVersion);
+        }
+
+        if (source !== 'local' && remoteIndexScan?.indexFound) {
+            const indexVersions = Array.isArray(remoteIndexScan?.versions)
+                ? remoteIndexScan.versions.filter((item) => item && typeof item === 'object')
+                : [];
+            const existingIds = new Set((allVersions || []).map((item) => String(item?.id || '')).filter(Boolean));
+            let skippedStaleIndexCount = 0;
+
+            const normalizeRemoteFileLocatorForCompare = (value) => {
+                const raw = String(value || '').trim();
+                if (!raw) return '';
+
+                const stripped = raw.split('#')[0].split('?')[0];
+                if (!stripped) return '';
+
+                try {
+                    const parsedUrl = new URL(stripped);
+                    let pathname = String(parsedUrl.pathname || '');
+                    try {
+                        pathname = decodeURIComponent(pathname);
+                    } catch (_) { }
+                    pathname = pathname.replace(/\\{2,}/g, '/').replace(/\/{2,}/g, '/').replace(/\/+$/, '');
+                    return `${parsedUrl.protocol}//${parsedUrl.host}${pathname}`;
+                } catch (_) {
+                    return stripped.replace(/\\{2,}/g, '/').replace(/\/{2,}/g, '/').replace(/\/+$/, '');
+                }
+            };
+
+            const scannedRemoteFileLocatorSet = new Set();
+            const scannedRemoteSnapshotKeySet = new Set();
+
+            for (const item of candidates || []) {
+                const normalizedUrl = normalizeRemoteFileLocatorForCompare(item?.url || item?.fileUrl || '');
+                if (normalizedUrl) {
+                    scannedRemoteFileLocatorSet.add(normalizedUrl);
+                }
+
+                const snapshotKey = String(parseSnapshotKeyFromText(item?.snapshotFolder || item?.folderPath || item?.name || '') || '')
+                    .trim()
+                    .toLowerCase();
+                if (snapshotKey) {
+                    scannedRemoteSnapshotKeySet.add(snapshotKey);
+                }
+            }
+
+            const hasScannedRemoteFileForIndexVersion = (indexVersion) => {
+                const indexSnapshotKey = String(indexVersion?.restoreRef?.snapshotKey || '')
+                    .trim()
+                    .toLowerCase();
+                if (indexSnapshotKey && scannedRemoteSnapshotKeySet.has(indexSnapshotKey)) {
+                    return true;
+                }
+
+                const candidateUrls = [];
+                if (Array.isArray(indexVersion?.restoreRef?.fileCandidates)) {
+                    candidateUrls.push(...indexVersion.restoreRef.fileCandidates);
+                }
+                if (indexVersion?.restoreRef?.fileUrl) {
+                    candidateUrls.push(indexVersion.restoreRef.fileUrl);
+                }
+
+                for (const url of candidateUrls) {
+                    const normalizedUrl = normalizeRemoteFileLocatorForCompare(url);
+                    if (!normalizedUrl) continue;
+                    if (scannedRemoteFileLocatorSet.has(normalizedUrl)) {
+                        return true;
+                    }
+                }
+
+                return false;
+            };
+
+            const findScannedHtmlVersionByIndex = (indexVersion) => {
+                const snapshotKey = String(indexVersion?.restoreRef?.snapshotKey || '')
+                    .trim()
+                    .toLowerCase();
+                if (snapshotKey && htmlVersionBySnapshotKey.has(snapshotKey)) {
+                    return htmlVersionBySnapshotKey.get(snapshotKey) || null;
+                }
+
+                const indexFingerprint = normalizeSyncFingerprint(String(indexVersion?.fingerprint || '').replace(/^#/, '').trim());
+                if (!indexFingerprint) return null;
+
+                for (const candidate of scannedHtmlVersions) {
+                    const candidateFingerprint = normalizeSyncFingerprint(String(candidate?.fingerprint || '').replace(/^#/, '').trim());
+                    if (candidateFingerprint && candidateFingerprint === indexFingerprint) {
+                        return candidate;
+                    }
+                }
+
+                const indexTimeMs = Number(indexVersion?.time);
+                if (Number.isFinite(indexTimeMs)) {
+                    const byTime = scannedHtmlVersions.filter((candidate) => {
+                        const candidateTimeMs = Number(candidate?.time);
+                        return Number.isFinite(candidateTimeMs) && Math.abs(candidateTimeMs - indexTimeMs) <= 1000;
+                    });
+                    if (byTime.length === 1) {
+                        return byTime[0];
+                    }
+                }
+
+                return null;
+            };
+
+            const applyRemoteIndexMetadataToScannedVersion = (scannedVersion, indexVersion) => {
+                if (!scannedVersion || !indexVersion) return;
+
+                const indexStats = buildRestoreStats(indexVersion?.stats || indexVersion?.restoreRef?.indexStats || null);
+                const scannedStats = buildRestoreStats(scannedVersion?.stats || null);
+                const indexChangesText = String(indexVersion?.restoreRef?.indexChanges || '').trim();
+                const indexHasExplicitChanges = indexChangesText.length > 0;
+
+                if (indexHasExplicitChanges || getRestoreStatsMagnitude(scannedStats) <= 0) {
+                    scannedVersion.stats = indexStats;
+                }
+
+                if (indexVersion.seqNumber != null) {
+                    scannedVersion.seqNumber = indexVersion.seqNumber;
+                }
+
+                if ((!scannedVersion.fingerprint || !String(scannedVersion.fingerprint).trim())
+                    && String(indexVersion?.fingerprint || '').trim()) {
+                    scannedVersion.fingerprint = String(indexVersion.fingerprint || '').trim();
+                }
+
+                const indexNote = String(indexVersion.note || '').trim();
+                if (indexNote) {
+                    scannedVersion.note = indexNote;
+                }
+
+                if (!Number.isFinite(Number(scannedVersion.time)) && Number.isFinite(Number(indexVersion.time))) {
+                    scannedVersion.time = Number(indexVersion.time);
+                    scannedVersion.displayTime = formatDateTime(Number(indexVersion.time));
+                } else if (!String(scannedVersion.displayTime || '').trim() && String(indexVersion.displayTime || '').trim()) {
+                    scannedVersion.displayTime = String(indexVersion.displayTime || '').trim();
+                }
+
+                const fallbackRecordTime = Number.isFinite(Number(indexVersion?.time))
+                    ? new Date(Number(indexVersion.time)).toISOString()
+                    : null;
+
+                scannedVersion.restoreRef = {
+                    ...(scannedVersion.restoreRef || {}),
+                    snapshotKey: scannedVersion?.restoreRef?.snapshotKey || indexVersion?.restoreRef?.snapshotKey || null,
+                    snapshotFolder: scannedVersion?.restoreRef?.snapshotFolder || indexVersion?.restoreRef?.snapshotFolder || null,
+                    overwriteMode: scannedVersion?.restoreRef?.overwriteMode || indexVersion?.restoreRef?.overwriteMode || 'versioned',
+                    recordTime: scannedVersion?.restoreRef?.recordTime
+                        || indexVersion?.restoreRef?.recordTime
+                        || fallbackRecordTime,
+                    indexChanges: indexChangesText || String(scannedVersion?.restoreRef?.indexChanges || '').trim(),
+                    indexStats,
+                    indexMatched: true
+                };
+            };
+
+            for (const indexVersion of indexVersions) {
+                const scannedVersion = findScannedHtmlVersionByIndex(indexVersion);
+                if (scannedVersion) {
+                    applyRemoteIndexMetadataToScannedVersion(scannedVersion, indexVersion);
+                    continue;
+                }
+
+                const hasBackingRemoteFile = hasScannedRemoteFileForIndexVersion(indexVersion);
+                if (!hasBackingRemoteFile) {
+                    skippedStaleIndexCount += 1;
+                    continue;
+                }
+
+                const normalizedIndexVersion = normalizeRestoreVersionMeta(indexVersion);
+                const indexVersionId = String(normalizedIndexVersion?.id || '').trim();
+                if (!indexVersionId || existingIds.has(indexVersionId)) {
+                    continue;
+                }
+
+                allVersions.push(normalizedIndexVersion);
+                existingIds.add(indexVersionId);
+            }
+
+            if (skippedStaleIndexCount > 0) {
+                console.log(`[scanAndParseRestoreSource] Skip stale index-only entries for ${source}: ${skippedStaleIndexCount}`);
+            }
         }
 
         const normalized = dedupeAndSortRestoreVersions(allVersions);
 
-        console.log(`[scanAndParseRestoreSource] Total versions found: ${normalized.length}`);
+        const orderedVersions = normalized;
 
-        let primarySourceType = 'mixed';
-        if (mergedJsonCandidates.length > 0 && zipCandidates.length === 0 && htmlCandidates.length === 0) {
-            primarySourceType = 'json';
-        } else if (zipCandidates.length > 0 && mergedJsonCandidates.length === 0 && htmlCandidates.length === 0) {
-            primarySourceType = 'zip';
-        } else if (htmlCandidates.length > 0 && mergedJsonCandidates.length === 0 && zipCandidates.length === 0) {
-            primarySourceType = 'html';
-        }
+        console.log(`[scanAndParseRestoreSource] Total versions found: ${orderedVersions.length}`);
 
-        return {
+        const primarySourceType = orderedVersions.some((item) => String(item?.sourceType || '').toLowerCase() === 'changes_artifact')
+            ? 'mixed'
+            : 'html';
+        const useLocalIndex = source === 'local' && localIndexOrder.length > 0;
+        const useRemoteIndex = source !== 'local' && remoteIndexScan?.indexFound === true;
+
+        const response = {
             success: true,
             sourceType: primarySourceType,
-            versions: normalized,
+            versions: orderedVersions,
             artifacts: {
-                currentChangesCount: changesArtifactCandidates.length
+                currentChangesCount: changesArtifactCandidates.length,
+                fromIndex: useLocalIndex || useRemoteIndex
             }
         };
+
+        if (useLocalIndex && localIndexMeta) {
+            response.indexMeta = localIndexMeta;
+        } else if (useRemoteIndex && remoteIndexScan?.indexMeta) {
+            response.indexMeta = remoteIndexScan.indexMeta;
+        }
+
+        return response;
     } catch (e) {
         console.error('[scanAndParseRestoreSource] Failed:', e);
         return { success: false, error: e.message };
@@ -12773,14 +16088,16 @@ const RESTORE_SOURCE_CACHE_MAX = 8;
 const restoreSourceCache = {
     mergedJson: new Map(), // key -> { ts, value:{ records } }
     zipFiles: new Map(),   // key -> { ts, value:{ files } }
-    htmlText: new Map()    // key -> { ts, value:{ text } }
+    htmlText: new Map(),   // key -> { ts, value:{ text } }
+    changesArtifactText: new Map() // key -> { ts, value:{ text } }
 };
 
 // Prevent duplicate download/parse/unzip under concurrency
 const restoreSourcePending = {
     mergedJson: new Map(), // key -> Promise<{ records:Array }>
     zipFiles: new Map(),   // key -> Promise<{ files:Array }>
-    htmlText: new Map()    // key -> Promise<{ text:string }>
+    htmlText: new Map(),   // key -> Promise<{ text:string }>
+    changesArtifactText: new Map() // key -> Promise<{ text:string }>
 };
 
 function getRestoreSourceCacheKey(restoreRef) {
@@ -12956,9 +16273,30 @@ async function getHtmlTextCached(restoreRef, localPayload) {
             text = String(localPayload?.text || '');
             if (!text) throw new Error('Missing local HTML data');
         } else {
-            if (!restoreRef.fileUrl) throw new Error('Missing fileUrl');
-            const blob = await downloadRemoteFile({ url: restoreRef.fileUrl, source: restoreRef.source });
-            text = await blob.text();
+            const candidateUrls = Array.from(new Set([
+                restoreRef.fileUrl,
+                ...(Array.isArray(restoreRef.fileCandidates) ? restoreRef.fileCandidates : [])
+            ].filter(Boolean)));
+
+            if (candidateUrls.length === 0) throw new Error('Missing fileUrl');
+
+            let lastError = null;
+            for (const url of candidateUrls) {
+                try {
+                    const blob = await downloadRemoteFile({ url, source: restoreRef.source });
+                    text = await blob.text();
+                    if (restoreRef.fileUrl !== url) {
+                        restoreRef.fileUrl = url;
+                    }
+                    break;
+                } catch (error) {
+                    lastError = error;
+                }
+            }
+
+            if (!text) {
+                throw lastError || new Error('Failed to download restore HTML');
+            }
         }
         restoreCacheSet(restoreSourceCache.htmlText, cacheKey, { text });
         return { text };
@@ -12971,6 +16309,195 @@ async function getHtmlTextCached(restoreRef, localPayload) {
     } finally {
         restoreSourcePending.htmlText.delete(cacheKey);
     }
+}
+
+async function getCurrentChangesArtifactTextCached(restoreRef, localPayload, requestedMode = null) {
+    const entry = getCurrentChangesArtifactModeEntryForRestore(restoreRef, requestedMode);
+    if (!entry) {
+        throw new Error('No current changes artifact metadata found');
+    }
+
+    const artifactRef = {
+        sourceType: 'changes_artifact',
+        source: entry.source || restoreRef?.source || '',
+        fileUrl: entry.fileUrl || null,
+        localFileKey: entry.localFileKey || null,
+        originalFile: entry.name || ''
+    };
+
+    const cacheKey = getRestoreSourceCacheKey(artifactRef);
+    const cached = restoreCacheGet(restoreSourceCache.changesArtifactText, cacheKey);
+    if (cached && typeof cached.text === 'string' && cached.text) {
+        return {
+            text: cached.text,
+            mode: entry.mode,
+            format: entry.format
+        };
+    }
+
+    if (restoreSourcePending.changesArtifactText.has(cacheKey)) {
+        const pending = restoreSourcePending.changesArtifactText.get(cacheKey);
+        const res = await pending;
+        return {
+            text: res && typeof res.text === 'string' ? res.text : '',
+            mode: entry.mode,
+            format: entry.format
+        };
+    }
+
+    const task = (async () => {
+        let text = '';
+        const source = artifactRef.source || restoreRef?.source || '';
+
+        if (source === 'local') {
+            const byMode = localPayload?.changesArtifactTextByMode;
+            if (entry.mode && byMode && typeof byMode[entry.mode] === 'string') {
+                text = String(byMode[entry.mode] || '');
+            }
+
+            if (!text && entry.localFileKey && localPayload?.changesArtifactTextByLocalKey) {
+                const byKey = localPayload.changesArtifactTextByLocalKey;
+                const keyText = byKey && typeof byKey[entry.localFileKey] === 'string'
+                    ? String(byKey[entry.localFileKey] || '')
+                    : '';
+                if (keyText) text = keyText;
+            }
+
+            if (!text && typeof localPayload?.changesArtifactText === 'string') {
+                text = String(localPayload.changesArtifactText || '');
+            }
+
+            if (!text) {
+                throw new Error('Missing local current changes artifact data');
+            }
+        } else {
+            if (!artifactRef.fileUrl) throw new Error('Missing current changes artifact fileUrl');
+            const blob = await downloadRemoteFile({ url: artifactRef.fileUrl, source });
+            text = await blob.text();
+        }
+
+        restoreCacheSet(restoreSourceCache.changesArtifactText, cacheKey, { text });
+        return { text };
+    })();
+
+    restoreSourcePending.changesArtifactText.set(cacheKey, task);
+    try {
+        const res = await task;
+        return {
+            text: res && typeof res.text === 'string' ? res.text : '',
+            mode: entry.mode,
+            format: entry.format
+        };
+    } finally {
+        restoreSourcePending.changesArtifactText.delete(cacheKey);
+    }
+}
+
+function parseCurrentChangesArtifactPayloadText(text, formatHint = '') {
+    const hint = String(formatHint || '').toLowerCase();
+
+    if (hint === 'html') {
+        const payload = parseCurrentChangesArtifactJsonFromHtml(text);
+        if (payload && typeof payload === 'object') return payload;
+    }
+
+    try {
+        const payload = safeParseJson(text);
+        if (payload && typeof payload === 'object') return payload;
+    } catch (_) { }
+
+    const payloadFromHtml = parseCurrentChangesArtifactJsonFromHtml(text);
+    if (payloadFromHtml && typeof payloadFromHtml === 'object') return payloadFromHtml;
+
+    return null;
+}
+
+function isCurrentChangesArtifactMetaNode(node) {
+    const title = String(node?.title || '').trim();
+    if (!title) return false;
+
+    const lower = title.toLowerCase();
+    return title.includes('前缀说明') ||
+        lower.includes('prefix legend');
+}
+
+function normalizeCurrentChangesArtifactTreeNode(node) {
+    if (!node || typeof node !== 'object') return null;
+
+    const title = String(node.title || '').trim();
+    const normalizedType = String(node.type || '').trim();
+    const normalizedChangeType = String(node.changeType || '').trim();
+    const hasUrl = typeof node.url === 'string' && String(node.url || '').trim().length > 0;
+    if (hasUrl) {
+        const url = String(node.url || '').trim();
+        if (!url || url === 'about:blank') return null;
+        return {
+            title: title || url,
+            url,
+            ...(normalizedType ? { type: normalizedType } : {}),
+            ...(normalizedChangeType ? { changeType: normalizedChangeType } : {})
+        };
+    }
+
+    const childList = Array.isArray(node.children)
+        ? node.children
+            .map(child => normalizeCurrentChangesArtifactTreeNode(child))
+            .filter(Boolean)
+        : [];
+
+    if (!title && childList.length === 0) return null;
+
+    return {
+        title: title || '(Untitled)',
+        children: childList,
+        ...(normalizedType ? { type: normalizedType } : {}),
+        ...(normalizedChangeType ? { changeType: normalizedChangeType } : {})
+    };
+}
+
+function isCurrentChangesArtifactImportableTreeNode(node) {
+    if (!node || typeof node !== 'object') return false;
+
+    const url = String(node.url || '').trim();
+    if (url && url !== 'about:blank') return true;
+
+    if (isCurrentChangesArtifactMetaNode(node)) return false;
+
+    const changeType = String(node.changeType || '').trim();
+    if (changeType) return true;
+
+    const children = Array.isArray(node.children) ? node.children : [];
+    return children.some((child) => isCurrentChangesArtifactImportableTreeNode(child));
+}
+
+function normalizeCurrentChangesArtifactNodesForRestore(nodes) {
+    return (Array.isArray(nodes) ? nodes : [])
+        .map(node => normalizeCurrentChangesArtifactTreeNode(node))
+        .filter(Boolean)
+        .filter(node => isCurrentChangesArtifactImportableTreeNode(node));
+}
+
+function buildCurrentChangesArtifactTreeForRestore(payload) {
+    const rootChildrenRaw = Array.isArray(payload?.children) ? payload.children : [];
+    const primaryNodes = rootChildrenRaw.filter(node => !isCurrentChangesArtifactMetaNode(node));
+
+    let normalizedChildren = normalizeCurrentChangesArtifactNodesForRestore(primaryNodes);
+
+    if (normalizedChildren.length === 0) {
+        const nestedFallbackNodes = [];
+        for (const node of rootChildrenRaw) {
+            const children = Array.isArray(node?.children) ? node.children : [];
+            if (children.length > 0) {
+                nestedFallbackNodes.push(...children);
+            }
+        }
+        normalizedChildren = normalizeCurrentChangesArtifactNodesForRestore(nestedFallbackNodes);
+    }
+
+    return {
+        title: 'root',
+        children: normalizedChildren
+    };
 }
 
 async function extractBookmarkTreeForRestore(restoreRef, localPayload) {
@@ -13048,357 +16575,57 @@ async function extractBookmarkTreeForRestore(restoreRef, localPayload) {
     throw new Error(`Unsupported sourceType: ${restoreRef.sourceType}`);
 }
 
-function getExportInfoFromHistoryRecord(record) {
-    return record?._exportInfo || record?.exportInfo || record?.export_info || null;
-}
-
-function getHistoryRecordTimeString(record) {
-    const info = getExportInfoFromHistoryRecord(record);
-    return info?.backupTime || record?.time || null;
-}
-
-function getHistoryRecordSeqNumber(record) {
-    const info = getExportInfoFromHistoryRecord(record);
-    return info?.seqNumber || record?.seqNumber || null;
-}
-
-function getHistoryRecordNote(record) {
-    const info = getExportInfoFromHistoryRecord(record);
-    return info?.note || record?.note || '';
-}
-
-function getHistoryRecordFingerprint(record) {
-    const info = getExportInfoFromHistoryRecord(record);
-    return info?.fingerprint || record?.fingerprint || '';
-}
-
-function getHistoryRecordStats(record) {
-    const info = getExportInfoFromHistoryRecord(record);
-    return info?.stats || record?.bookmarkStats || record?.stats || null;
-}
-
-function getHistoryRecordTree(record) {
-    return record?._rawBookmarkTree || record?.bookmarkTree || null;
-}
-
-function isHistoryRecordSuccess(record) {
-    const info = getExportInfoFromHistoryRecord(record);
-    const status = record?.status || info?.status || null;
-    if (!status) return true;
-    return status === 'success';
-}
-
-function findHistoryRecordIndexByRestoreRef(records, restoreRef) {
-    if (!Array.isArray(records)) return -1;
-
-    const idx = typeof restoreRef?.recordIndex === 'number' ? restoreRef.recordIndex : null;
-    if (idx != null && idx >= 0 && idx < records.length) return idx;
-
-    const recordTime = restoreRef?.recordTime ? String(restoreRef.recordTime) : null;
-    if (!recordTime) return -1;
-
-    return records.findIndex(r => {
-        const t = getHistoryRecordTimeString(r);
-        return t && String(t) === recordTime;
-    });
-}
-
-function buildChronologicalHistoryRecordList(records) {
-    const list = [];
-    for (const r of records || []) {
-        if (!r) continue;
-        const timeStr = getHistoryRecordTimeString(r);
-        const tree = getHistoryRecordTree(r);
-        if (!timeStr || !tree) continue;
-
-        const timeKey = String(timeStr);
-        const timeMs = parseTimeToMs(timeKey) || 0;
-        const seqNumber = getHistoryRecordSeqNumber(r);
-        const seq = (typeof seqNumber === 'number' && Number.isFinite(seqNumber)) ? seqNumber : null;
-
-        list.push({ record: r, timeStr: timeKey, timeMs, seq });
-    }
-
-    list.sort((a, b) => {
-        if (a.seq != null && b.seq != null) return a.seq - b.seq;
-        return a.timeMs - b.timeMs;
-    });
-
-    return list;
-}
-
-function findPreviousHistoryRecordChronologically(records, currentTimeStr) {
-    const list = buildChronologicalHistoryRecordList(records);
-    const key = currentTimeStr != null ? String(currentTimeStr) : '';
-    const idx = list.findIndex(item => item.timeStr === key);
-    if (idx <= 0) return null;
-
-    for (let i = idx - 1; i >= 0; i--) {
-        const record = list[i]?.record;
-        if (!record) continue;
-        if (isHistoryRecordSuccess(record)) return record;
-    }
-
-    return null;
-}
-
-async function resolveHistoryViewModeAndExpansion(recordTime, requestedMode) {
-    let mode = requestedMode;
-    let expandedIds = null;
-
-    try {
-        const res = await browserAPI.storage.local.get(['historyViewSettings']);
-        const settings = res?.historyViewSettings || null;
-        const timeKey = recordTime != null ? String(recordTime) : null;
-
-        if (mode !== 'simple' && mode !== 'detailed') {
-            const storedMode = timeKey && settings?.recordModes ? settings.recordModes[timeKey] : null;
-            const defaultMode = settings?.defaultMode || null;
-            mode = storedMode || defaultMode || 'simple';
-        }
-
-        if (mode !== 'simple' && mode !== 'detailed') mode = 'simple';
-
-        if (mode === 'detailed' && timeKey) {
-            const ids = settings?.recordExpandedStates ? settings.recordExpandedStates[timeKey] : null;
-            if (Array.isArray(ids) && ids.length > 0) {
-                expandedIds = new Set(ids.map(id => String(id)));
-            }
-        }
-    } catch (_) {
-        if (mode !== 'simple' && mode !== 'detailed') mode = 'simple';
-    }
-
-    return { mode, expandedIds };
-}
-
-function buildHistoryChangesViewTree(bookmarkTree, changeMap, options = {}) {
-    const mode = options?.mode === 'detailed' ? 'detailed' : 'simple';
-    const expandedIds = options?.expandedIds instanceof Set ? options.expandedIds : null;
-    const useWysiwygExpansion = mode === 'detailed' && expandedIds && expandedIds.size > 0;
-
-    const safeTitle = (t) => {
-        const title = String(t || '').trim();
-        return title ? title : '(Untitled)';
-    };
-
-    const hasChangesRecursive = (node) => {
-        if (!node) return false;
-        if (node.id && changeMap && changeMap.has(node.id)) return true;
-        if (Array.isArray(node.children)) {
-            return node.children.some(child => hasChangesRecursive(child));
-        }
-        return false;
-    };
-
-    const getPrefixForChange = (change) => {
-        if (!change || !change.type) return '';
-        const types = String(change.type).split('+');
-        if (types.includes('added')) return '[+] ';
-        if (types.includes('deleted')) return '[-] ';
-        if (types.includes('modified') && types.includes('moved')) return '[~↔] ';
-        if (types.includes('modified')) return '[~] ';
-        if (types.includes('moved')) return '[↔] ';
-        return '';
-    };
-
-    const extractTree = (node) => {
-        if (!node) return null;
-
-        const nodeHasChanges = hasChangesRecursive(node);
-        if (mode !== 'detailed' && !nodeHasChanges) return null;
-
-        const title = safeTitle(node.title);
-        const url = node.url || '';
-        const isFolder = !url && Array.isArray(node.children);
-
-        const change = node.id ? changeMap.get(node.id) : null;
-        const changeType = (change && change.type) ? String(change.type) : '';
-        const prefix = getPrefixForChange(change);
-
-        const item = {
-            title: prefix + title,
-            ...(changeType ? { changeType } : {})
-        };
-
-        if (url) {
-            item.url = url;
-            item.type = 'bookmark';
-            return item;
-        }
-
-        if (isFolder) {
-            item.type = 'folder';
-            let shouldRecurse = false;
-            if (mode === 'detailed') {
-                shouldRecurse = useWysiwygExpansion ? expandedIds.has(String(node.id)) : nodeHasChanges;
-            } else {
-                shouldRecurse = true;
-            }
-
-            if (shouldRecurse) {
-                item.children = node.children
-                    .map(child => extractTree(child))
-                    .filter(Boolean);
-            } else {
-                item.children = [];
-            }
-        }
-
-        return item;
-    };
-
-    const nodes = Array.isArray(bookmarkTree) ? bookmarkTree : [bookmarkTree];
-    const children = [];
-    nodes.forEach(node => {
-        if (!node || !Array.isArray(node.children)) return;
-        node.children.forEach(child => {
-            const extracted = extractTree(child);
-            if (extracted) children.push(extracted);
-        });
-    });
-
-    return { title: 'root', children };
-}
-
 async function extractHistoryChangesViewTreeForRestore(restoreRef, localPayload, options = {}) {
-    const sourceType = restoreRef?.sourceType;
-    if (sourceType !== 'json' && sourceType !== 'zip') {
-        throw new Error(`Changes view is only supported for history sources (json/zip), got: ${sourceType}`);
+    if (!restoreRef?.changesArtifact) {
+        throw new Error('Changes view requires current changes artifact metadata');
     }
 
-    let records = [];
-    let currentRecord = null;
+    const requestedMode = (options?.viewMode === 'simple' || options?.viewMode === 'detailed' || options?.viewMode === 'collection')
+        ? options.viewMode
+        : null;
 
-    if (sourceType === 'json') {
-        let text = '';
-        if (restoreRef.source === 'local') {
-            text = String(localPayload?.text || '');
-        } else {
-            if (!restoreRef.fileUrl) throw new Error('Missing fileUrl');
-            const blob = await downloadRemoteFile({ url: restoreRef.fileUrl, source: restoreRef.source });
-            text = await blob.text();
-        }
-
-        const parsed = JSON.parse(text);
-        const rawRecords = Array.isArray(parsed) ? parsed : (Array.isArray(parsed?.records) ? parsed.records : []);
-        if (!Array.isArray(rawRecords) || rawRecords.length === 0) {
-            throw new Error('Merged history format not supported');
-        }
-
-        const idx = findHistoryRecordIndexByRestoreRef(rawRecords, restoreRef);
-        if (idx < 0 || !rawRecords[idx]) throw new Error('Target history record not found in merged JSON');
-
-        records = rawRecords;
-        currentRecord = rawRecords[idx];
-    } else {
-        // zip
-        let zipBlob;
-        if (restoreRef.source === 'local') {
-            const ab = localPayload?.arrayBuffer;
-            if (!ab) throw new Error('Missing local ZIP data');
-            zipBlob = new Blob([ab], { type: 'application/zip' });
-        } else {
-            if (!restoreRef.fileUrl) throw new Error('Missing fileUrl');
-            zipBlob = await downloadRemoteFile({ url: restoreRef.fileUrl, source: restoreRef.source });
-        }
-
-        const files = await unzipStore(zipBlob);
-        const parsedRecords = [];
-
-        for (const f of files) {
-            if (!f?.name || !f.name.endsWith('.json')) continue;
-            try {
-                const data = JSON.parse(f.content);
-                const timeStr = getHistoryRecordTimeString(data);
-                const tree = getHistoryRecordTree(data);
-                if (!timeStr || !tree) continue;
-                parsedRecords.push({ data, zipEntryName: f.name, timeStr: String(timeStr) });
-            } catch (_) { }
-        }
-
-        if (parsedRecords.length === 0) throw new Error('No valid history records found in ZIP');
-
-        // Find current record
-        let idx = -1;
-        if (restoreRef.zipEntryName) {
-            idx = parsedRecords.findIndex(r => r.zipEntryName === restoreRef.zipEntryName);
-        }
-        if (idx < 0 && restoreRef.recordTime) {
-            const key = String(restoreRef.recordTime);
-            idx = parsedRecords.findIndex(r => r.timeStr === key);
-        }
-        if (idx < 0) throw new Error('Target history record not found in ZIP');
-
-        records = parsedRecords.map(r => r.data);
-        currentRecord = parsedRecords[idx].data;
+    const artifactData = await getCurrentChangesArtifactTextCached(restoreRef, localPayload, requestedMode);
+    const payload = parseCurrentChangesArtifactPayloadText(artifactData?.text || '', artifactData?.format || '');
+    if (!payload || typeof payload !== 'object') {
+        throw new Error('Current changes artifact payload parse failed');
     }
 
-    const recordTime = getHistoryRecordTimeString(currentRecord) || restoreRef.recordTime || null;
-    if (!recordTime) throw new Error('Selected record has no recordTime');
-
-    const previousRecord = findPreviousHistoryRecordChronologically(records, recordTime);
-
-    const currentTree = getHistoryRecordTree(currentRecord);
-    if (!currentTree) throw new Error('Selected history record has no bookmark tree');
-
-    const prevTree = previousRecord ? getHistoryRecordTree(previousRecord) : null;
-
-    let treeToExport = currentTree;
-    let changeMap = new Map();
-
-    if (prevTree) {
-        const stats = getHistoryRecordStats(currentRecord) || {};
-        const explicitMovedIdSet = Array.isArray(stats.explicitMovedIds) ? stats.explicitMovedIds : null;
-
-        changeMap = detectTreeChangesFastBg(prevTree, currentTree, {
-            explicitMovedIdSet
-        });
-
-        let hasDeleted = false;
-        for (const [, change] of changeMap) {
-            if (change?.type && String(change.type).includes('deleted')) {
-                hasDeleted = true;
-                break;
-            }
-        }
-        if (hasDeleted) {
-            try {
-                treeToExport = rebuildTreeWithDeletedBg(prevTree, currentTree, changeMap);
-            } catch (_) {
-                treeToExport = currentTree;
-            }
-        }
-    } else {
-        const allNodes = flattenBookmarkTreeBg(currentTree);
-        allNodes.forEach(item => {
-            if (item.id) changeMap.set(item.id, { type: 'added' });
-        });
+    const tree = buildCurrentChangesArtifactTreeForRestore(payload);
+    if (!tree || !Array.isArray(tree.children) || tree.children.length === 0) {
+        throw new Error('Current changes artifact contains no importable nodes');
     }
 
-    const { mode, expandedIds } = await resolveHistoryViewModeAndExpansion(recordTime, options.viewMode);
-    const tree = buildHistoryChangesViewTree(treeToExport, changeMap, { mode, expandedIds });
+    const normalizedMode = normalizeCurrentChangesArtifactMode(artifactData?.mode || requestedMode || 'simple');
+    const viewMode = normalizedMode === 'detailed'
+        ? 'detailed'
+        : (normalizedMode === 'collection' ? 'collection' : 'simple');
 
     const meta = {
-        recordTime: String(recordTime),
-        seqNumber: getHistoryRecordSeqNumber(currentRecord),
-        note: getHistoryRecordNote(currentRecord),
-        fingerprint: getHistoryRecordFingerprint(currentRecord)
+        recordTime: restoreRef?.recordTime ? String(restoreRef.recordTime) : null,
+        seqNumber: null,
+        note: String(restoreRef?.changesArtifact?.name || restoreRef?.originalFile || '').trim(),
+        fingerprint: restoreRef?.fingerprint || null
     };
 
-    return { tree, viewMode: mode, meta };
+    return { tree, viewMode, meta };
 }
 
-async function restoreSelectedVersion({ restoreRef, strategy, localPayload, mergeViewMode, manualMatches, importParentId }) {
+async function restoreSelectedVersion({ restoreRef, strategy, localPayload, mergeViewMode, manualMatches, importParentId, forceChangesArtifact }) {
     try {
         isBookmarkRestoring = true;
         try {
             await browserAPI.storage.local.set({ bookmarkRestoringFlag: true });
         } catch (_) { }
 
-        const normalizedStrategy = String(strategy || 'overwrite').toLowerCase() === 'merge'
+        const sourceType = String(restoreRef?.sourceType || '').toLowerCase();
+
+        let normalizedStrategy = String(strategy || 'overwrite').toLowerCase() === 'merge'
             ? 'merge'
             : (String(strategy || 'overwrite').toLowerCase() === 'patch' ? 'patch' : 'overwrite');
+
+        if (sourceType === 'changes_artifact' && normalizedStrategy !== 'merge') {
+            normalizedStrategy = 'merge';
+        }
 
         try {
             const preRestoreTree = await browserAPI.bookmarks.getTree();
@@ -13419,17 +16646,43 @@ async function restoreSelectedVersion({ restoreRef, strategy, localPayload, merg
         let tree = null;
         let mergeOptions = null;
 
-        // Merge（导入合并）：对于备份历史（json/zip），默认导入“差异视图”；HTML 快照则导入快照。
-        if (normalizedStrategy === 'merge' && (restoreRef?.sourceType === 'json' || restoreRef?.sourceType === 'zip')) {
-            const viewMode = (mergeViewMode === 'simple' || mergeViewMode === 'detailed') ? mergeViewMode : null;
-            const extracted = await extractHistoryChangesViewTreeForRestore(restoreRef, localPayload, { viewMode });
-            tree = extracted.tree;
-            mergeOptions = {
-                importKind: 'changes',
-                viewMode: extracted.viewMode,
-                meta: extracted.meta,
-                importParentId: importParentId || null
-            };
+        // Merge（导入合并）：
+        // - 普通模式：有变化产物则导入变化，否则回退快照。
+        // - 变化模式(forceChangesArtifact)：必须导入变化，禁止静默回退快照。
+        const forceChangesViewForMerge = normalizedStrategy === 'merge' && forceChangesArtifact === true;
+        const canUseChangesViewForMerge = normalizedStrategy === 'merge'
+            && (forceChangesViewForMerge || !!restoreRef?.changesArtifact);
+
+        if (forceChangesViewForMerge && !restoreRef?.changesArtifact) {
+            return { success: false, error: 'Changes artifact missing for merge changes mode' };
+        }
+
+        if (canUseChangesViewForMerge) {
+            const viewMode = (mergeViewMode === 'simple' || mergeViewMode === 'detailed' || mergeViewMode === 'collection')
+                ? mergeViewMode
+                : null;
+            try {
+                const extracted = await extractHistoryChangesViewTreeForRestore(restoreRef, localPayload, { viewMode });
+                tree = extracted.tree;
+                mergeOptions = {
+                    importKind: 'changes',
+                    viewMode: extracted.viewMode,
+                    meta: extracted.meta,
+                    importParentId: importParentId || null
+                };
+            } catch (mergeExtractError) {
+                if (forceChangesViewForMerge) {
+                    console.error('[restoreSelectedVersion] changes artifact extract failed in forced changes mode:', mergeExtractError);
+                    return {
+                        success: false,
+                        error: `Changes artifact extract failed: ${mergeExtractError?.message || 'Unknown error'}`
+                    };
+                }
+
+                console.warn('[restoreSelectedVersion] changes artifact extract failed, fallback to snapshot merge:', mergeExtractError);
+                tree = await extractBookmarkTreeForRestore(restoreRef, localPayload);
+                mergeOptions = { importKind: 'snapshot', importParentId: importParentId || null };
+            }
         } else {
             tree = await extractBookmarkTreeForRestore(restoreRef, localPayload);
             if (normalizedStrategy === 'merge') {
@@ -13518,7 +16771,13 @@ async function buildOverwriteRestorePreview({ restoreRef, localPayload, strategy
             return { success: false, error: 'Missing restoreRef' };
         }
 
-        const tree = await extractBookmarkTreeForRestore(restoreRef, localPayload);
+        let tree = null;
+        if (String(restoreRef?.sourceType || '').toLowerCase() === 'changes_artifact') {
+            const extracted = await extractHistoryChangesViewTreeForRestore(restoreRef, localPayload, {});
+            tree = extracted?.tree || null;
+        } else {
+            tree = await extractBookmarkTreeForRestore(restoreRef, localPayload);
+        }
         if (!tree) {
             return { success: false, error: 'No bookmark tree data found for selected version' };
         }
@@ -13619,7 +16878,9 @@ async function buildMergeRestorePreview({ restoreRef, localPayload, mergeViewMod
             return { success: false, error: 'Missing restoreRef' };
         }
 
-        const viewMode = (mergeViewMode === 'simple' || mergeViewMode === 'detailed') ? mergeViewMode : null;
+        const viewMode = (mergeViewMode === 'simple' || mergeViewMode === 'detailed' || mergeViewMode === 'collection')
+            ? mergeViewMode
+            : null;
         const extracted = await extractHistoryChangesViewTreeForRestore(restoreRef, localPayload, { viewMode });
         return {
             success: true,

@@ -1736,17 +1736,17 @@ const TYPE_MAPPINGS = {
  * 备份方向关键词映射
  */
 const DIRECTION_MAPPINGS = {
-    '本地': ['local', 'webdav_local', 'github_repo_local', 'cloud_local'],
-    'local': ['local', 'webdav_local', 'github_repo_local', 'cloud_local'],
-    '云端': ['upload', 'webdav', 'github_repo', 'cloud', 'webdav_local', 'github_repo_local', 'cloud_local'],
-    'cloud': ['upload', 'webdav', 'github_repo', 'cloud', 'webdav_local', 'github_repo_local', 'cloud_local'],
-    '云端1': ['webdav', 'webdav_local'],
-    'cloud1': ['webdav', 'webdav_local'],
-    'webdav': ['webdav', 'webdav_local'],
-    '云端2': ['github_repo', 'github_repo_local'],
-    'cloud2': ['github_repo', 'github_repo_local'],
-    'github': ['github_repo', 'github_repo_local'],
-    'repo': ['github_repo', 'github_repo_local'],
+    '本地': ['local', 'webdav_local', 'github_repo_local', 'webdav_github_local', 'cloud_local'],
+    'local': ['local', 'webdav_local', 'github_repo_local', 'webdav_github_local', 'cloud_local'],
+    '云端': ['upload', 'webdav', 'github_repo', 'cloud', 'webdav_local', 'github_repo_local', 'webdav_github_local', 'cloud_local'],
+    'cloud': ['upload', 'webdav', 'github_repo', 'cloud', 'webdav_local', 'github_repo_local', 'webdav_github_local', 'cloud_local'],
+    '云端1': ['webdav', 'webdav_local', 'webdav_github_local'],
+    'cloud1': ['webdav', 'webdav_local', 'webdav_github_local'],
+    'webdav': ['webdav', 'webdav_local', 'webdav_github_local'],
+    '云端2': ['github_repo', 'github_repo_local', 'webdav_github_local'],
+    'cloud2': ['github_repo', 'github_repo_local', 'webdav_github_local'],
+    'github': ['github_repo', 'github_repo_local', 'webdav_github_local'],
+    'repo': ['github_repo', 'github_repo_local', 'webdav_github_local'],
 };
 
 /**

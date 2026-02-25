@@ -567,7 +567,7 @@
                                     <div id="restoreStrategyGroup" class="restore-strategy-group">
                                         <label class="restore-strategy-label" title="" id="restoreStrategyOverwriteLabelWrap">
                                             <input type="radio" name="restoreStrategy" id="restoreStrategyOverwrite"
-                                                value="overwrite" checked>
+                                                value="overwrite">
                                             <div class="restore-strategy-option" id="restoreStrategyOverwriteLabel">
                                                 <span class="restore-strategy-icon">✓</span>
                                                 <span>覆盖</span>
@@ -580,6 +580,15 @@
                                             <div class="restore-strategy-option" id="restoreStrategyMergeLabel">
                                                 <span class="restore-strategy-icon">✓</span>
                                                 <span>导入合并</span>
+                                            </div>
+                                        </label>
+                                        <div class="restore-strategy-divider" aria-hidden="true"></div>
+                                        <label class="restore-strategy-label" title="" id="restoreStrategyPatchLabelWrap">
+                                            <input type="radio" name="restoreStrategy" id="restoreStrategyPatch"
+                                                value="patch" checked>
+                                            <div class="restore-strategy-option" id="restoreStrategyPatchLabel">
+                                                <span class="restore-strategy-icon">✓</span>
+                                                <span>补丁恢复</span>
                                             </div>
                                         </label>
                                     </div>

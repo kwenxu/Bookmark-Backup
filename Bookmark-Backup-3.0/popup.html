@@ -4192,6 +4192,48 @@
             margin-left: auto;
         }
 
+        #restoreConfirmModal .path-badges {
+            display: inline-flex;
+            align-items: center;
+            gap: 4px;
+            height: 24px;
+            padding: 0 6px;
+            border-radius: 6px;
+            background: rgba(108, 117, 125, 0.08);
+            border: 1px solid rgba(108, 117, 125, 0.18);
+            box-sizing: border-box;
+        }
+
+        #restoreConfirmModal .path-dot {
+            color: #6c757d;
+            font-weight: 700;
+            line-height: 1;
+        }
+
+        #restoreConfirmModal .path-symbol {
+            display: inline-block;
+            font-weight: 800;
+            font-size: 13px;
+            line-height: 1;
+            font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+        }
+
+        #restoreConfirmModal .path-symbol.added {
+            color: var(--git-added);
+        }
+
+        #restoreConfirmModal .path-symbol.deleted {
+            color: var(--git-deleted);
+        }
+
+        #restoreConfirmModal .path-symbol.modified {
+            color: var(--git-modified);
+        }
+
+        #restoreConfirmModal .path-symbol.moved {
+            color: var(--git-moved);
+        }
+
         #restoreConfirmModal .tree-children {
             margin-left: 12px;
             display: none;
@@ -4202,8 +4244,10 @@
         }
 
         #restoreConfirmModal .history-tree-container .tree-children {
-            margin-left: 16px;
-            padding-left: 12px;
+            --tree-toggle-center: 16px;
+            --tree-children-indent: 12px;
+            margin-left: var(--tree-toggle-center);
+            padding-left: var(--tree-children-indent);
             position: relative;
             border-left: 1px solid var(--border-color);
         }
@@ -4212,21 +4256,26 @@
             position: relative;
         }
 
-        #restoreConfirmModal .history-tree-container .tree-children>.tree-node::before {
+        #restoreConfirmModal .history-tree-container .tree-children>.tree-node>.tree-item {
+            position: relative;
+        }
+
+        #restoreConfirmModal .history-tree-container .tree-children>.tree-node>.tree-item::before {
             content: '';
             position: absolute;
-            left: -12px;
-            top: 14px;
-            width: 12px;
+            left: calc(-1 * var(--tree-children-indent));
+            top: 50%;
+            width: calc(var(--tree-children-indent) + var(--tree-toggle-center));
             height: 1px;
+            transform: translateY(-50%);
             background: var(--border-color);
         }
 
         #restoreConfirmModal .history-tree-container .tree-children>.tree-node:last-child::after {
             content: '';
             position: absolute;
-            left: -13px;
-            top: 14px;
+            left: calc(-1 * var(--tree-children-indent) - 1px);
+            top: 50%;
             bottom: 0;
             width: 1px;
             background: var(--bg-secondary);
@@ -4938,7 +4987,7 @@
                                 </div>
 
                                 <div id="versionedLogPanel" class="versioned-log-panel">
-                                    <div class="versioned-log-title" id="versionedLogTitle">多版本log</div>
+                                    <div class="versioned-log-title" id="versionedLogTitle">备份历史log</div>
                                     <div class="versioned-log-control">
                                         <span id="versionedLogEveryPrefix">每</span>
                                         <div class="versioned-log-spinner">
@@ -5519,7 +5568,7 @@
                         <div id="restoreStrategyGroup" class="restore-strategy-group disabled">
                             <label class="restore-strategy-label" title="" id="restoreStrategyOverwriteLabelWrap">
                                 <input type="radio" name="restoreStrategy" id="restoreStrategyOverwrite"
-                                    value="overwrite" checked disabled>
+                                    value="overwrite" disabled>
                                 <div class="restore-strategy-option" id="restoreStrategyOverwriteLabel">
                                     <span class="restore-strategy-icon">✓</span>
                                     <span>Overwrite</span>
@@ -5531,6 +5580,14 @@
                                 <div class="restore-strategy-option" id="restoreStrategyMergeLabel">
                                     <span class="restore-strategy-icon">✓</span>
                                     <span>Merge</span>
+                                </div>
+                            </label>
+                            <label class="restore-strategy-label" title="" id="restoreStrategyPatchLabelWrap">
+                                <input type="radio" name="restoreStrategy" id="restoreStrategyPatch" value="patch"
+                                    checked disabled>
+                                <div class="restore-strategy-option" id="restoreStrategyPatchLabel">
+                                    <span class="restore-strategy-icon">✓</span>
+                                    <span>Patch Restore</span>
                                 </div>
                             </label>
                         </div>

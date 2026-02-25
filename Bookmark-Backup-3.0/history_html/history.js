@@ -2573,9 +2573,23 @@ function initClearBackupHistoryModal() {
                 }
 
                 try {
+                    await refreshHistoryIndexPage({ page: currentHistoryPage });
                     renderHistoryView();
                 } catch (e) {
-                    console.warn('[executeDelete] renderHistoryView failed:', e);
+                    console.warn('[executeDelete] 历史分页索引刷新/渲染失败，使用本地倒序回退:', e);
+                    const localHistory = Array.isArray(syncHistory) ? syncHistory.slice() : [];
+                    const sortedLocal = sortHistoryRecordsByTimeDesc(localHistory);
+                    const totalRecords = sortedLocal.length;
+                    const totalPages = Math.max(1, Math.ceil(totalRecords / HISTORY_PAGE_SIZE));
+                    currentHistoryPage = clampHistoryPage(currentHistoryPage, totalPages);
+                    const pageStart = (currentHistoryPage - 1) * HISTORY_PAGE_SIZE;
+                    syncHistory = sortedLocal.slice(pageStart, pageStart + HISTORY_PAGE_SIZE);
+                    historyIndexMeta = { totalRecords, totalPages };
+                    try {
+                        renderHistoryView();
+                    } catch (renderError) {
+                        console.warn('[executeDelete] renderHistoryView failed:', renderError);
+                    }
                 }
 
                 const successTextFunc = i18n.clearBackupHistorySuccess[currentLang];
@@ -3727,6 +3741,19 @@ async function executeRevert(strategy) {
                 if (currentView === 'current-changes') {
                     await renderCurrentChangesViewWithRetry(1, true);
                 } else if (currentView === 'history') {
+                    try {
+                        await refreshHistoryIndexPage({ page: currentHistoryPage });
+                    } catch (pageError) {
+                        console.warn('[executeRevert] 历史分页索引刷新失败，使用本地倒序回退:', pageError);
+                        const localHistory = Array.isArray(syncHistory) ? syncHistory.slice() : [];
+                        const sortedLocal = sortHistoryRecordsByTimeDesc(localHistory);
+                        const totalRecords = sortedLocal.length;
+                        const totalPages = Math.max(1, Math.ceil(totalRecords / HISTORY_PAGE_SIZE));
+                        currentHistoryPage = clampHistoryPage(currentHistoryPage, totalPages);
+                        const pageStart = (currentHistoryPage - 1) * HISTORY_PAGE_SIZE;
+                        syncHistory = sortedLocal.slice(pageStart, pageStart + HISTORY_PAGE_SIZE);
+                        historyIndexMeta = { totalRecords, totalPages };
+                    }
                     await renderHistoryView();
                 }
                 try {
@@ -3894,7 +3921,7 @@ async function ensureSyncHistorySeqNumbersPersisted(historyRecords) {
     if (!hasAnyMissing) return records;
 
     // One-time migration: assign missing seqNumber in time-ascending order without changing existing ones.
-    const sorted = records.slice().sort((a, b) => Number(a?.time || 0) - Number(b?.time || 0));
+    const sorted = records.slice().sort((a, b) => getHistoryRecordTimeMs(a) - getHistoryRecordTimeMs(b));
     const used = new Set();
     for (const r of sorted) {
         const seq = Number(r?.seqNumber);
@@ -7504,6 +7531,22 @@ function clampHistoryPage(page, totalPages = null) {
     return Math.min(raw, maxPages);
 }
 
+function getHistoryRecordTimeMs(record) {
+    const timeRaw = record && record.time != null ? record.time : 0;
+    const numeric = Number(timeRaw);
+    if (Number.isFinite(numeric)) return numeric;
+
+    const parsed = Date.parse(String(timeRaw || ''));
+    if (Number.isFinite(parsed)) return parsed;
+
+    return 0;
+}
+
+function sortHistoryRecordsByTimeDesc(records) {
+    const list = Array.isArray(records) ? records.slice() : [];
+    return list.sort((a, b) => getHistoryRecordTimeMs(b) - getHistoryRecordTimeMs(a));
+}
+
 async function fetchHistoryPageData(page = 1, pageSize = HISTORY_PAGE_SIZE) {
     const safePageSize = Math.max(1, Number(pageSize) || HISTORY_PAGE_SIZE);
     const safePage = clampHistoryPage(page);
@@ -7645,7 +7688,10 @@ function renderHistoryView() {
 
     currentHistoryPage = clampHistoryPage(currentHistoryPage, totalPages);
     const startIndex = (currentHistoryPage - 1) * HISTORY_PAGE_SIZE;
-    const pageRecords = syncHistory;
+    const sortedRecords = sortHistoryRecordsByTimeDesc(syncHistory);
+    const pageRecords = (syncHistory.length > HISTORY_PAGE_SIZE && syncHistory.length === totalRecords)
+        ? sortedRecords.slice(startIndex, startIndex + HISTORY_PAGE_SIZE)
+        : sortedRecords;
 
     // 更新分页控件 UI
     if (pagination) {
@@ -7998,9 +8044,9 @@ function closeRestoreModal() {
 
 function getSelectedRestoreStrategy() {
     const selected = document.querySelector('input[name="restoreStrategy"]:checked');
-    const value = selected && selected.value ? String(selected.value) : 'overwrite';
-    if (value === 'merge' || value === 'overwrite') return value;
-    return 'overwrite';
+    const value = selected && selected.value ? String(selected.value) : 'patch';
+    if (value === 'merge' || value === 'overwrite' || value === 'patch') return value;
+    return 'patch';
 }
 
 function updateRestoreWarning(strategy) {
@@ -8033,6 +8079,15 @@ function updateRestoreWarning(strategy) {
         boxBorder = '1px solid var(--info)';
         iconColor = 'var(--info)';
         iconClass = 'fas fa-info-circle';
+    } else if (strategy === 'patch') {
+        title = isZh ? '提示' : 'Note';
+        text = isZh
+            ? '补丁恢复：按书签 ID 严格匹配执行增删移改，尽量保留现有书签 ID。若遇到类型冲突或无法匹配，建议改用覆盖恢复。'
+            : 'Patch restore: applies add/delete/move/modify by strict bookmark ID matching to preserve existing IDs when possible. If type mismatch or mapping failure occurs, use overwrite restore.';
+        boxBg = 'var(--info-light)';
+        boxBorder = '1px solid var(--info)';
+        iconColor = 'var(--info)';
+        iconClass = 'fas fa-wrench';
     }
 
     titleEl.textContent = title;
@@ -8413,12 +8468,14 @@ function lockRestoreStrategy(lock) {
     const strategyGroup = document.getElementById('restoreStrategyGroup');
     const strategyOverwriteRadio = document.getElementById('restoreStrategyOverwrite');
     const strategyMergeRadio = document.getElementById('restoreStrategyMerge');
+    const strategyPatchRadio = document.getElementById('restoreStrategyPatch');
     if (strategyGroup) {
         if (lock) strategyGroup.classList.add('disabled');
         else strategyGroup.classList.remove('disabled');
     }
     if (strategyOverwriteRadio) strategyOverwriteRadio.disabled = !!lock;
     if (strategyMergeRadio) strategyMergeRadio.disabled = !!lock;
+    if (strategyPatchRadio) strategyPatchRadio.disabled = !!lock;
 }
 
 function summarizeChangeMap(changeMap) {
@@ -9698,16 +9755,22 @@ async function buildRestoreDiffSummary(record, strategy = 'overwrite') {
     const rawChangeMap = await detectTreeChangesFast(currentTree, targetTree, {
         useGlobalExplicitMovedIds: false
     });
-    const normalizedStrategy = strategy === 'merge' ? 'merge' : 'overwrite';
+    const normalizedStrategy = strategy === 'merge' || strategy === 'patch' ? strategy : 'overwrite';
     const changeMap = normalizedStrategy === 'overwrite'
         ? normalizeChangeMapForOverwriteAddDeleteOnly(rawChangeMap)
         : rawChangeMap;
-    const { added, deleted } = summarizeChangeMap(changeMap);
+    const { added, deleted, moved, modified } = summarizeChangeMap(changeMap);
     const isZh = currentLang === 'zh_CN';
-    const html = `
+    let html = `
         <span>${isZh ? '新增' : 'Added'}: <strong>${added}</strong></span>
         <span style="margin-left:8px;">${isZh ? '删除' : 'Deleted'}: <strong>${deleted}</strong></span>
     `;
+    if (normalizedStrategy === 'patch') {
+        html += `
+        <span style="margin-left:8px;">${isZh ? '移动' : 'Moved'}: <strong>${moved}</strong></span>
+        <span style="margin-left:8px;">${isZh ? '修改' : 'Modified'}: <strong>${modified}</strong></span>
+    `;
+    }
     return { html, changeMap, currentTree, targetTree };
 }
 
@@ -9760,11 +9823,16 @@ async function switchToRestorePreview(currentTree, targetTree, changeMap, option
     </div>`;
 
     try {
+        const normalizedStrategy = options && options.strategy === 'patch'
+            ? 'patch'
+            : (options && options.strategy === 'overwrite' ? 'overwrite' : 'merge');
         let map = changeMap;
         if (!map) {
             map = await detectTreeChangesFast(currentTree, targetTree, { useGlobalExplicitMovedIds: false });
         }
-        map = normalizeChangeMapForOverwriteAddDeleteOnly(map);
+        if (normalizedStrategy === 'overwrite') {
+            map = normalizeChangeMapForOverwriteAddDeleteOnly(map);
+        }
 
         let treeToRender = targetTree;
         let hasDeleted = false;
@@ -10067,6 +10135,7 @@ function updateRestoreModalI18n() {
 
     setStrategyLabel('restoreStrategyOverwriteLabel', isZh ? '覆盖' : 'Overwrite');
     setStrategyLabel('restoreStrategyMergeLabel', isZh ? '导入合并' : 'Import Merge');
+    setStrategyLabel('restoreStrategyPatchLabel', isZh ? '补丁恢复' : 'Patch Restore');
 
     const overwriteWrap = document.getElementById('restoreStrategyOverwriteLabelWrap');
     if (overwriteWrap) {
@@ -10080,6 +10149,13 @@ function updateRestoreModalI18n() {
         mergeWrap.title = isZh
             ? '导入合并：导入该记录的「差异视图」到书签树的新文件夹（不删除现有书签；标题带 [+]/[-]/[~]/[↔] 前缀）。'
             : 'Import Merge: import this record’s changes view into a new folder under bookmark roots (no deletion; titles prefixed with [+]/[-]/[~]/[↔]).';
+    }
+
+    const patchWrap = document.getElementById('restoreStrategyPatchLabelWrap');
+    if (patchWrap) {
+        patchWrap.title = isZh
+            ? '补丁恢复：按书签 ID 严格匹配执行增删移改，尽量保留原 ID；若无法匹配可改用覆盖恢复。'
+            : 'Patch Restore: strict ID-based add/delete/move/modify to preserve IDs when possible; fallback to overwrite when matching fails.';
     }
 
     updateRestoreWarning(getSelectedRestoreStrategy());
@@ -10225,11 +10301,11 @@ async function showRestoreModal(record, displayTitle) {
     };
 
     // 默认策略
-    const overwriteRadio = document.getElementById('restoreStrategyOverwrite');
-    if (overwriteRadio) overwriteRadio.checked = true;
-    await updateRestoreComparisonByStrategy('overwrite');
-    updateRestoreWarning('overwrite');
-    updateRestoreImportTargetHint('overwrite');
+    const patchRadio = document.getElementById('restoreStrategyPatch');
+    if (patchRadio) patchRadio.checked = true;
+    await updateRestoreComparisonByStrategy('patch');
+    updateRestoreWarning('patch');
+    updateRestoreImportTargetHint('patch');
     lockRestoreStrategy(false);
     setRestoreDiffBarVisible(false);
 
@@ -10331,7 +10407,7 @@ function initRestoreModalEvents() {
 async function executeRestore(strategy, confirmBtn, cancelBtn) {
     if (!currentRestoreRecord) return;
 
-    if (strategy !== 'overwrite' && strategy !== 'merge') {
+    if (strategy !== 'overwrite' && strategy !== 'merge' && strategy !== 'patch') {
         strategy = 'overwrite';
     }
 
@@ -10347,7 +10423,9 @@ async function executeRestore(strategy, confirmBtn, cancelBtn) {
         if (confirmBtn) {
             confirmBtn.textContent = strategy === 'merge'
                 ? (currentLang === 'zh_CN' ? '确认导入合并' : 'Confirm Import Merge')
-                : (currentLang === 'zh_CN' ? '确认覆盖恢复' : 'Confirm Overwrite');
+                : (strategy === 'patch'
+                    ? (currentLang === 'zh_CN' ? '确认补丁恢复' : 'Confirm Patch Restore')
+                    : (currentLang === 'zh_CN' ? '确认覆盖恢复' : 'Confirm Overwrite'));
         }
         try {
             const previewBtn = document.getElementById('restorePreviewBtn');
@@ -10378,11 +10456,15 @@ async function executeRestore(strategy, confirmBtn, cancelBtn) {
     const isZh = currentLang === 'zh_CN';
     const startText = strategy === 'merge'
         ? (isZh ? '正在准备导入合并...' : 'Preparing import merge...')
-        : (isZh ? '正在准备覆盖恢复...' : 'Preparing overwrite restore...');
+        : (strategy === 'patch'
+            ? (isZh ? '正在准备补丁恢复...' : 'Preparing patch restore...')
+            : (isZh ? '正在准备覆盖恢复...' : 'Preparing overwrite restore...'));
 
     setRestoreProgress(0, startText);
 
     let result = null;
+    let appliedStrategy = strategy;
+    let patchFallbackUsed = false;
     let restoreBackupResp = null;
     let restoreBaselineCaptured = false;
 
@@ -10413,6 +10495,31 @@ async function executeRestore(strategy, confirmBtn, cancelBtn) {
             result = await executeOverwriteRestore(bookmarkTree);
         } else if (strategy === 'merge') {
             result = await executeMergeRestore(bookmarkTree, { importParentId: restoreImportTarget?.id || null });
+        } else if (strategy === 'patch') {
+            setRestoreProgress(10, isZh ? '正在应用补丁恢复...' : 'Applying patch restore...');
+            try {
+                const patchRes = await browserAPI.runtime.sendMessage({
+                    action: 'restoreToHistoryRecord',
+                    time: currentRestoreRecord.time,
+                    strategy: 'patch'
+                });
+                if (!patchRes || patchRes.success !== true) {
+                    throw new Error((patchRes && patchRes.error) ? String(patchRes.error) : (isZh ? '补丁恢复失败' : 'Patch restore failed'));
+                }
+                result = patchRes;
+            } catch (patchError) {
+                const fallbackMsg = isZh
+                    ? `补丁恢复失败：${patchError && patchError.message ? patchError.message : patchError}\n\n是否改用覆盖恢复继续？`
+                    : `Patch restore failed: ${patchError && patchError.message ? patchError.message : patchError}\n\nDo you want to continue with overwrite restore?`;
+                const shouldFallback = window.confirm(fallbackMsg);
+                if (!shouldFallback) {
+                    throw patchError;
+                }
+                patchFallbackUsed = true;
+                appliedStrategy = 'overwrite';
+                setRestoreProgress(16, isZh ? '补丁恢复失败，正在切换覆盖恢复...' : 'Patch restore failed, switching to overwrite restore...');
+                result = await executeOverwriteRestore(bookmarkTree);
+            }
         } else {
             throw new Error(`Unknown restore strategy: ${strategy}`);
         }
@@ -10422,15 +10529,20 @@ async function executeRestore(strategy, confirmBtn, cancelBtn) {
         const restoreNote = (() => {
             const timeText = formatTime(currentRestoreRecord.time);
             const seqText = currentRestoreRecord.seqNumber;
-            if (strategy === 'overwrite') {
+            if (appliedStrategy === 'overwrite') {
                 return isZh
                     ? `覆盖恢复至 #${seqText} (${timeText})`
                     : `Overwrite restored to #${seqText} (${timeText})`;
             }
-            if (strategy === 'merge') {
+            if (appliedStrategy === 'merge') {
                 return isZh
                     ? `导入合并自 #${seqText} (${timeText})`
                     : `Import merged from #${seqText} (${timeText})`;
+            }
+            if (appliedStrategy === 'patch') {
+                return isZh
+                    ? `补丁恢复至 #${seqText} (${timeText})`
+                    : `Patch restored to #${seqText} (${timeText})`;
             }
             return isZh
                 ? `恢复至 #${seqText} (${timeText})`
@@ -10445,7 +10557,7 @@ async function executeRestore(strategy, confirmBtn, cancelBtn) {
                 sourceTime: currentRestoreRecord.time,
                 sourceNote: currentRestoreRecord.note || '',
                 sourceFingerprint: currentRestoreRecord.fingerprint || '',
-                strategy
+                strategy: appliedStrategy
             });
         } catch (e) {
             restoreBackupResp = null;
@@ -10462,18 +10574,32 @@ async function executeRestore(strategy, confirmBtn, cancelBtn) {
 
         let successMsg = isZh ? '恢复成功！' : 'Restore successful!';
 
-        if (strategy === 'overwrite') {
+        if (appliedStrategy === 'overwrite') {
             const created = Number.isFinite(Number(result?.created)) ? Number(result.created) : 0;
             const deleted = Number.isFinite(Number(result?.deleted)) ? Number(result.deleted) : 0;
             successMsg = isZh
                 ? `覆盖恢复成功！创建 ${created} 个节点，删除 ${deleted} 个节点`
                 : `Overwrite restore successful! Created ${created} nodes, removed ${deleted} nodes`;
-        } else if (strategy === 'merge') {
+        } else if (appliedStrategy === 'merge') {
             const created = Number.isFinite(Number(result?.created)) ? Number(result.created) : 0;
             const folderTitle = result?.folderTitle ? String(result.folderTitle) : '';
             successMsg = isZh
                 ? `导入合并完成！已导入 ${created} 个节点${folderTitle ? `（${folderTitle}）` : ''}`
                 : `Import merge completed! Imported ${created} nodes${folderTitle ? ` (${folderTitle})` : ''}`;
+        } else if (appliedStrategy === 'patch') {
+            const created = Number.isFinite(Number(result?.created)) ? Number(result.created) : 0;
+            const removed = Number.isFinite(Number(result?.removed)) ? Number(result.removed) : 0;
+            const moved = Number.isFinite(Number(result?.moved)) ? Number(result.moved) : 0;
+            const updated = Number.isFinite(Number(result?.updated)) ? Number(result.updated) : 0;
+            successMsg = isZh
+                ? `补丁恢复完成！新增 ${created}、删除 ${removed}、移动 ${moved}、修改 ${updated}`
+                : `Patch restore completed! Added ${created}, removed ${removed}, moved ${moved}, updated ${updated}`;
+        }
+
+        if (patchFallbackUsed) {
+            successMsg += isZh
+                ? '（补丁失败后已降级为覆盖恢复）'
+                : ' (Patch failed and fell back to overwrite restore)';
         }
 
         showToast(successMsg);
@@ -10489,6 +10615,19 @@ async function executeRestore(strategy, confirmBtn, cancelBtn) {
             closeRestoreModal();
             try {
                 await loadAllData({ skipRender: true });
+                try {
+                    await refreshHistoryIndexPage({ page: currentHistoryPage });
+                } catch (pageError) {
+                    console.warn('[executeRestore] 历史分页索引刷新失败，使用本地倒序回退:', pageError);
+                    const localHistory = Array.isArray(syncHistory) ? syncHistory.slice() : [];
+                    const sortedLocal = sortHistoryRecordsByTimeDesc(localHistory);
+                    const totalRecords = sortedLocal.length;
+                    const totalPages = Math.max(1, Math.ceil(totalRecords / HISTORY_PAGE_SIZE));
+                    currentHistoryPage = clampHistoryPage(currentHistoryPage, totalPages);
+                    const pageStart = (currentHistoryPage - 1) * HISTORY_PAGE_SIZE;
+                    syncHistory = sortedLocal.slice(pageStart, pageStart + HISTORY_PAGE_SIZE);
+                    historyIndexMeta = { totalRecords, totalPages };
+                }
                 renderHistoryView();
             } catch (_) { }
         }, 1200);
@@ -14279,7 +14418,7 @@ function renderTreeNodeWithChanges(node, level = 0, maxDepth = 50, visitedIds = 
                     if (mask & 1) pathBadges += '<span class="path-symbol added" title="+">+</span>';
                     if (mask & 2) pathBadges += '<span class="path-symbol deleted" title="-">-</span>';
                     if (mask & 4) pathBadges += '<span class="path-symbol modified" title="~">~</span>';
-                    if (mask & 8) pathBadges += '<span class="path-symbol moved" title=">>">>></span>';
+                    if (mask & 8) pathBadges += '<span class="path-symbol moved" title=">>">></span>';
                 }
                 pathBadges += '</span>';
                 statusIcon += pathBadges;
@@ -14332,7 +14471,7 @@ function renderTreeNodeWithChanges(node, level = 0, maxDepth = 50, visitedIds = 
                     if (mask & 1) pathBadges += '<span class="path-symbol added" title="+">+</span>';
                     if (mask & 2) pathBadges += '<span class="path-symbol deleted" title="-">-</span>';
                     if (mask & 4) pathBadges += '<span class="path-symbol modified" title="~">~</span>';
-                    if (mask & 8) pathBadges += '<span class="path-symbol moved" title=">>">>></span>';
+                    if (mask & 8) pathBadges += '<span class="path-symbol moved" title=">>">></span>';
                 }
                 pathBadges += '</span>';
                 statusIcon += pathBadges;
@@ -16011,7 +16150,7 @@ function generateHistoryTreeHtml(bookmarkTree, changeMap, mode, recordOrOptions)
                 if (mask & 1) pathBadges += '<span class="path-symbol added" title="+">+</span>';
                 if (mask & 2) pathBadges += '<span class="path-symbol deleted" title="-">-</span>';
                 if (mask & 4) pathBadges += '<span class="path-symbol modified" title="~">~</span>';
-                if (mask & 8) pathBadges += '<span class="path-symbol moved" title=">>">>></span>';
+                if (mask & 8) pathBadges += '<span class="path-symbol moved" title=">>">></span>';
                 pathBadges += '</span>';
                 statusIcon += pathBadges;
             }
@@ -16024,7 +16163,7 @@ function generateHistoryTreeHtml(bookmarkTree, changeMap, mode, recordOrOptions)
                 if (mask & 1) pathBadges += '<span class="path-symbol added" title="+">+</span>';
                 if (mask & 2) pathBadges += '<span class="path-symbol deleted" title="-">-</span>';
                 if (mask & 4) pathBadges += '<span class="path-symbol modified" title="~">~</span>';
-                if (mask & 8) pathBadges += '<span class="path-symbol moved" title=">>">>></span>';
+                if (mask & 8) pathBadges += '<span class="path-symbol moved" title=">>">></span>';
             }
             pathBadges += '</span>';
             statusIcon = pathBadges;
@@ -16815,7 +16954,7 @@ function handleStorageChange(changes, namespace) {
                         } catch (pageError) {
                             console.warn('[存储监听] 历史增量回退分页失败，使用本地倒序回退:', pageError);
                             const localHistory = Array.isArray(syncHistory) ? syncHistory.slice() : [];
-                            const sortedLocal = localHistory.sort((a, b) => Number(b?.time || 0) - Number(a?.time || 0));
+                            const sortedLocal = sortHistoryRecordsByTimeDesc(localHistory);
                             const totalRecords = sortedLocal.length;
                             const totalPages = Math.max(1, Math.ceil(totalRecords / HISTORY_PAGE_SIZE));
                             currentHistoryPage = clampHistoryPage(currentHistoryPage, totalPages);
@@ -16848,7 +16987,7 @@ function handleStorageChange(changes, namespace) {
                 } catch (pageError) {
                     console.warn('[存储监听] 历史视图分页刷新失败，使用本地倒序回退:', pageError);
                     const localHistory = Array.isArray(syncHistory) ? syncHistory.slice() : [];
-                    const sortedLocal = localHistory.sort((a, b) => Number(b?.time || 0) - Number(a?.time || 0));
+                    const sortedLocal = sortHistoryRecordsByTimeDesc(localHistory);
                     const totalRecords = sortedLocal.length;
                     const totalPages = Math.max(1, Math.ceil(totalRecords / HISTORY_PAGE_SIZE));
                     currentHistoryPage = clampHistoryPage(currentHistoryPage, totalPages);
@@ -17300,7 +17439,7 @@ function sanitizeFilenameSegment(text) {
 
 function buildSequenceMapFromHistory(historyRecords) {
     const records = Array.isArray(historyRecords) ? historyRecords.slice() : [];
-    records.sort((a, b) => Number(a?.time || 0) - Number(b?.time || 0));
+    records.sort((a, b) => getHistoryRecordTimeMs(a) - getHistoryRecordTimeMs(b));
     const map = new Map();
     const used = new Set();
     for (const r of records) {

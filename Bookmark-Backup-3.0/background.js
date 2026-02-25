@@ -2390,9 +2390,10 @@ browserAPI.runtime.onMessage.addListener((message, sender, sendResponse) => {
 
                     if (appliedStrategy === 'patch') {
                         try {
-                            patchResult = await executePatchBookmarkRevert(tree, {
+                            patchResult = await executePatchBookmarkWithAutoRollback(tree, {
                                 baselineTimestamp: lastBookmarkData.timestamp,
-                                preferredLang
+                                preferredLang,
+                                operation: 'revert'
                             });
                         } catch (patchError) {
                             if (requestedStrategy === 'patch') {
@@ -2400,16 +2401,20 @@ browserAPI.runtime.onMessage.addListener((message, sender, sendResponse) => {
                             }
                             console.warn('[revertAllToLastBackup] Patch revert failed, fallback to overwrite:', patchError);
                             appliedStrategy = 'overwrite';
+                            await executeBookmarkOperationWithAutoRollback(async () => {
+                                await restoreSnapshotTree(tree, {
+                                    baselineTimestamp: lastBookmarkData.timestamp,
+                                    preferredLang
+                                });
+                            }, { preferredLang });
+                        }
+                    } else {
+                        await executeBookmarkOperationWithAutoRollback(async () => {
                             await restoreSnapshotTree(tree, {
                                 baselineTimestamp: lastBookmarkData.timestamp,
                                 preferredLang
                             });
-                        }
-                    } else {
-                        await restoreSnapshotTree(tree, {
-                            baselineTimestamp: lastBookmarkData.timestamp,
-                            preferredLang
-                        });
+                        }, { preferredLang });
                     }
 
                     sendResponse({
@@ -2435,7 +2440,8 @@ browserAPI.runtime.onMessage.addListener((message, sender, sendResponse) => {
             (async () => {
                 try {
                     const recordTime = message.time;
-                    const strategy = message.strategy || 'overwrite';
+                    const strategy = String(message.strategy || 'overwrite').toLowerCase();
+                    const normalizedStrategy = strategy === 'merge' || strategy === 'patch' ? strategy : 'overwrite';
                     const { preferredLang = 'zh_CN' } = await browserAPI.storage.local.get(['preferredLang']);
                     if (!recordTime) {
                         sendResponse({ success: false, error: preferredLang === 'en' ? 'Missing record time' : '缺少记录时间' });
@@ -2461,7 +2467,7 @@ browserAPI.runtime.onMessage.addListener((message, sender, sendResponse) => {
                         return;
                     }
 
-                    const mode = strategy === 'merge' ? 'merge' : 'overwrite';
+                    const mode = normalizedStrategy === 'merge' ? 'merge' : 'overwrite';
 
                     if (!hasBookmarkTreeContent(tree)) {
                         if (mode === 'merge') {
@@ -2479,16 +2485,30 @@ browserAPI.runtime.onMessage.addListener((message, sender, sendResponse) => {
 
                     assertBookmarkTreeContent(tree, preferredLang, mode);
 
-                    if (strategy === 'merge') {
-                        await mergeSnapshotTree(tree, { preferredLang });
-                    } else {
-                        await restoreSnapshotTree(tree, {
+                    if (normalizedStrategy === 'merge') {
+                        await executeBookmarkOperationWithAutoRollback(async () => {
+                            await mergeSnapshotTree(tree, { preferredLang });
+                        }, { preferredLang });
+                        sendResponse({ success: true, strategy: 'merge' });
+                        return;
+                    } else if (normalizedStrategy === 'patch') {
+                        const patchResult = await executePatchBookmarkWithAutoRollback(tree, {
                             baselineTimestamp: record.time,
-                            preferredLang
+                            preferredLang,
+                            operation: 'restore'
                         });
+                        sendResponse({ success: true, strategy: 'patch', ...(patchResult || {}) });
+                        return;
+                    } else {
+                        await executeBookmarkOperationWithAutoRollback(async () => {
+                            await restoreSnapshotTree(tree, {
+                                baselineTimestamp: record.time,
+                                preferredLang
+                            });
+                        }, { preferredLang });
+                        sendResponse({ success: true, strategy: 'overwrite' });
+                        return;
                     }
-
-                    sendResponse({ success: true });
                 } catch (error) {
                     sendResponse({ success: false, error: error && error.message ? error.message : String(error) });
                 }
@@ -3400,7 +3420,8 @@ browserAPI.runtime.onMessage.addListener((message, sender, sendResponse) => {
         } else if (message.action === 'buildOverwriteRestorePreview') {
             buildOverwriteRestorePreview({
                 restoreRef: message.restoreRef,
-                localPayload: message.localPayload
+                localPayload: message.localPayload,
+                strategy: message.strategy
             })
                 .then(result => sendResponse(result))
                 .catch(err => sendResponse({ success: false, error: err?.message || String(err) }));
@@ -4544,7 +4565,7 @@ function buildVersionedInfoLogMarkdown(records, lang = 'zh_CN') {
         .slice(0, 300);
 
     const lines = [];
-    lines.push(isZh ? '# 多版本信息log（实时备注）' : '# Versioned Info Log (Real-time Notes)');
+    lines.push(isZh ? '# 备份历史log（实时备注）' : '# Backup History Log (Real-time Notes)');
     lines.push('');
     lines.push(`${isZh ? '生成时间' : 'Generated at'}: ${formatVersionedInfoLogTime(new Date().toISOString())}`);
     lines.push(isZh ? '说明：此文件会按设定次数自动覆盖更新。' : 'Note: this file is auto-updated by configured overwrite interval.');
@@ -4600,7 +4621,7 @@ async function syncVersionedInfoLogIfNeeded({ lang = 'zh_CN', overwriteMode = 'v
     });
 
     const content = buildVersionedInfoLogMarkdown(syncHistory, lang);
-    const fileName = lang === 'zh_CN' ? '多版本信息log.md' : 'versioned-info-log.md';
+    const fileName = lang === 'zh_CN' ? '备份历史log.md' : 'backup-history-log.md';
 
     const [webdav, githubRepo] = await Promise.all([
         uploadExportFileToWebDAV({
@@ -7874,10 +7895,82 @@ async function executePatchBookmarkRevert(snapshotTree, options = {}) {
     return { created, removed, moved, updated };
 }
 
+function buildAutoRollbackUserError(preferredLang, operationMsg) {
+    return preferredLang === 'en'
+        ? `Sorry, failed. But data safety first: rollback is already completed by overwrite. Please use overwrite revert/restore (data preserved, ID may not be preserved). Original error: ${operationMsg}`
+        : `抱歉，失败。但为保存数据已覆盖式回退，建议使用覆盖撤销/恢复（当前数据优先：保数据不保ID）。原始错误：${operationMsg}`;
+}
+
+function buildAutoRollbackFailureError(preferredLang, operationMsg, rollbackMsg) {
+    return preferredLang === 'en'
+        ? `Operation failed: ${operationMsg}. Auto rollback by temporary snapshot failed. Please try again later. Recommend overwrite revert/restore. Rollback error: ${rollbackMsg}`
+        : `执行失败：${operationMsg}。自动用临时快照做一次覆盖回退失败。请稍后重试，建议使用覆盖撤销/恢复。回退错误：${rollbackMsg}`;
+}
+
+async function executeBookmarkOperationWithAutoRollback(operationExecutor, options = {}) {
+    const { preferredLang = 'zh_CN' } = options;
+    const rollbackSnapshot = await browserAPI.bookmarks.getTree();
+
+    try {
+        return await operationExecutor();
+    } catch (operationError) {
+        const operationMsg = operationError && operationError.message ? operationError.message : String(operationError);
+
+        let rollbackFinalError = null;
+        for (let attempt = 0; attempt < 2; attempt += 1) {
+            try {
+                await restoreSnapshotTree(rollbackSnapshot, {
+                    baselineTimestamp: new Date().toISOString(),
+                    preferredLang,
+                    allowEmpty: true,
+                    strictDelete: true
+                });
+                rollbackFinalError = null;
+                break;
+            } catch (rollbackError) {
+                rollbackFinalError = rollbackError;
+            }
+        }
+
+        if (rollbackFinalError) {
+            const rollbackMsg = rollbackFinalError && rollbackFinalError.message
+                ? rollbackFinalError.message
+                : String(rollbackFinalError);
+            throw new Error(buildAutoRollbackFailureError(preferredLang, operationMsg, rollbackMsg));
+        }
+
+        throw new Error(buildAutoRollbackUserError(preferredLang, operationMsg));
+    }
+}
+
+async function executePatchBookmarkWithAutoRollback(snapshotTree, options = {}) {
+    const {
+        baselineTimestamp,
+        preferredLang = 'zh_CN'
+    } = options;
+
+    return await executeBookmarkOperationWithAutoRollback(async () => {
+        return await executePatchBookmarkRevert(snapshotTree, {
+            baselineTimestamp,
+            preferredLang
+        });
+    }, { preferredLang });
+}
+
 // 通用恢复：将当前书签恢复到指定快照树
 async function restoreSnapshotTree(snapshotTree, options = {}) {
-    const { baselineTimestamp, preferredLang = 'zh_CN' } = options;
-    assertBookmarkTreeContent(snapshotTree, preferredLang, 'overwrite');
+    const {
+        baselineTimestamp,
+        preferredLang = 'zh_CN',
+        allowEmpty = false,
+        strictDelete = false
+    } = options;
+
+    if (!allowEmpty) {
+        assertBookmarkTreeContent(snapshotTree, preferredLang, 'overwrite');
+    } else if (!isBookmarkTreeShapeValid(snapshotTree)) {
+        throw new Error(preferredLang === 'en' ? 'Invalid snapshot data' : '快照数据无效');
+    }
 
     // 获取当前整棵书签
     const currentTree = await new Promise((resolve) => {
@@ -7926,6 +8019,7 @@ async function restoreSnapshotTree(snapshotTree, options = {}) {
     };
 
     // 删除所有根下节点（分批并发）
+    const deleteFailures = [];
     for (const root of currentRoots) {
         if (!root || !root.id) continue;
         const children = (root.children && root.children.length > 0) ? [...root.children] : [];
@@ -7936,8 +8030,24 @@ async function restoreSnapshotTree(snapshotTree, options = {}) {
                 } else {
                     await browserAPI.bookmarks.remove(child.id);
                 }
-            } catch (_) { }
+            } catch (e) {
+                deleteFailures.push({
+                    id: child?.id ? String(child.id) : '',
+                    error: e && e.message ? String(e.message) : String(e)
+                });
+            }
         }, 10);
+    }
+
+    if (deleteFailures.length > 0) {
+        const first = deleteFailures[0];
+        const detail = first ? `${first.id || '-'}: ${first.error || ''}` : '';
+        if (strictDelete) {
+            throw new Error(preferredLang === 'en'
+                ? `Overwrite delete phase failed on ${deleteFailures.length} node(s). ${detail}`
+                : `覆盖删除阶段失败，共 ${deleteFailures.length} 个节点删除失败。${detail}`);
+        }
+        console.warn('[restoreSnapshotTree] Delete phase has failures:', deleteFailures.length, detail);
     }
 
     // 恢复：按根匹配并分批创建
@@ -8487,10 +8597,10 @@ async function updateSyncStatus(direction, time, status = 'success', errorMessag
                 if (versionedLogResult.status === 'fulfilled') {
                     const result = versionedLogResult.value;
                     if (result && result.success === true && result.skipped !== true) {
-                        console.log('[updateSyncStatus] 多版本信息log已更新');
+                        console.log('[updateSyncStatus] 备份历史log已更新');
                     }
                 } else {
-                    console.warn('[updateSyncStatus] 多版本信息log更新失败:', versionedLogResult.reason);
+                    console.warn('[updateSyncStatus] 备份历史log更新失败:', versionedLogResult.reason);
                 }
             } catch (e) {
                 console.warn('[updateSyncStatus] 触发当前变化自动归档失败:', e);
@@ -13286,9 +13396,9 @@ async function restoreSelectedVersion({ restoreRef, strategy, localPayload, merg
             await browserAPI.storage.local.set({ bookmarkRestoringFlag: true });
         } catch (_) { }
 
-        if (strategy === 'patch') {
-            return { success: false, error: 'Patch merge is not available in this restore flow.' };
-        }
+        const normalizedStrategy = String(strategy || 'overwrite').toLowerCase() === 'merge'
+            ? 'merge'
+            : (String(strategy || 'overwrite').toLowerCase() === 'patch' ? 'patch' : 'overwrite');
 
         try {
             const preRestoreTree = await browserAPI.bookmarks.getTree();
@@ -13310,7 +13420,7 @@ async function restoreSelectedVersion({ restoreRef, strategy, localPayload, merg
         let mergeOptions = null;
 
         // Merge（导入合并）：对于备份历史（json/zip），默认导入“差异视图”；HTML 快照则导入快照。
-        if (strategy === 'merge' && (restoreRef?.sourceType === 'json' || restoreRef?.sourceType === 'zip')) {
+        if (normalizedStrategy === 'merge' && (restoreRef?.sourceType === 'json' || restoreRef?.sourceType === 'zip')) {
             const viewMode = (mergeViewMode === 'simple' || mergeViewMode === 'detailed') ? mergeViewMode : null;
             const extracted = await extractHistoryChangesViewTreeForRestore(restoreRef, localPayload, { viewMode });
             tree = extracted.tree;
@@ -13322,7 +13432,7 @@ async function restoreSelectedVersion({ restoreRef, strategy, localPayload, merg
             };
         } else {
             tree = await extractBookmarkTreeForRestore(restoreRef, localPayload);
-            if (strategy === 'merge') {
+            if (normalizedStrategy === 'merge') {
                 mergeOptions = { importKind: 'snapshot', importParentId: importParentId || null };
             }
         }
@@ -13334,7 +13444,7 @@ async function restoreSelectedVersion({ restoreRef, strategy, localPayload, merg
         const lang = await getCurrentLang();
 
         if (!hasBookmarkTreeContent(tree)) {
-            if (strategy === 'merge') {
+            if (normalizedStrategy === 'merge') {
                 return { success: false, error: buildEmptySnapshotError(lang, 'merge') };
             }
 
@@ -13352,10 +13462,12 @@ async function restoreSelectedVersion({ restoreRef, strategy, localPayload, merg
             };
         }
 
-        assertBookmarkTreeContent(tree, lang, strategy === 'merge' ? 'merge' : 'overwrite');
+        assertBookmarkTreeContent(tree, lang, normalizedStrategy === 'merge' ? 'merge' : 'overwrite');
 
-        if (strategy === 'overwrite') {
-            const result = await executeOverwriteBookmarkRestore(tree);
+        if (normalizedStrategy === 'overwrite') {
+            const result = await executeBookmarkOperationWithAutoRollback(async () => {
+                return await executeOverwriteBookmarkRestore(tree);
+            }, { preferredLang: lang });
 
             // Restore should be treated as “initialized” (equivalent to first backup)
             await browserAPI.storage.local.set({ initialized: true });
@@ -13363,7 +13475,22 @@ async function restoreSelectedVersion({ restoreRef, strategy, localPayload, merg
             return { success: true, strategy: 'overwrite', ...result };
         }
 
-        const result = await executeMergeBookmarkRestore(tree, mergeOptions);
+        if (normalizedStrategy === 'patch') {
+            const patchResult = await executePatchBookmarkWithAutoRollback(tree, {
+                baselineTimestamp: restoreRef?.recordTime || restoreRef?.time || null,
+                preferredLang: lang,
+                operation: 'restore'
+            });
+
+            // Restore should be treated as “initialized” (equivalent to first backup)
+            await browserAPI.storage.local.set({ initialized: true });
+
+            return { success: true, strategy: 'patch', ...(patchResult || {}) };
+        }
+
+        const result = await executeBookmarkOperationWithAutoRollback(async () => {
+            return await executeMergeBookmarkRestore(tree, mergeOptions);
+        }, { preferredLang: lang });
 
         // Restore should be treated as “initialized” (equivalent to first backup)
         await browserAPI.storage.local.set({ initialized: true });
@@ -13385,7 +13512,7 @@ async function restoreSelectedVersion({ restoreRef, strategy, localPayload, merg
 
 // [New] Overwrite preview data builder (Current Browser -> Selected Snapshot)
 // Returns { diffSummary, currentTree, targetTree, changeEntries }
-async function buildOverwriteRestorePreview({ restoreRef, localPayload }) {
+async function buildOverwriteRestorePreview({ restoreRef, localPayload, strategy }) {
     try {
         if (!restoreRef) {
             return { success: false, error: 'Missing restoreRef' };
@@ -13420,7 +13547,10 @@ async function buildOverwriteRestorePreview({ restoreRef, localPayload }) {
 
         ensureRestoreTreeIds(targetTree);
 
-        const diffSummary = computeBookmarkGitDiffSummary(currentTree, targetTree);
+        const normalizedStrategy = String(strategy || 'overwrite').toLowerCase() === 'patch' ? 'patch' : 'overwrite';
+        const diffSummary = normalizedStrategy === 'patch'
+            ? computeIdStrictRevertDiffSummary(currentTree, targetTree)
+            : computeBookmarkGitDiffSummary(currentTree, targetTree);
         const changeMap = detectTreeChangesFastBg(currentTree, targetTree, { explicitMovedIdSet: null });
         const changeEntries = Array.from(changeMap.entries()).map(([id, change]) => [String(id), change]);
 

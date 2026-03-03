@@ -48,6 +48,20 @@ let historyViewSettingsSaveTimeout = null; // 防抖保存定时器
 const HISTORY_DETAIL_MODE_PREFIX = 'historyDetailMode:';
 const HISTORY_DETAIL_EXPANDED_PREFIX = 'historyDetailExpanded:';
 
+function normalizeHistoryDetailMode(mode, fallback = 'simple') {
+    const value = String(mode || '').toLowerCase();
+    if (value === 'detailed') return 'detailed';
+    if (value === 'collection') return 'collection';
+    return fallback;
+}
+
+function getHistoryDetailModeLabel(mode, isZh = currentLang === 'zh_CN') {
+    const normalized = normalizeHistoryDetailMode(mode);
+    if (normalized === 'detailed') return isZh ? '详细' : 'Detailed';
+    if (normalized === 'collection') return isZh ? '集合' : 'Collection';
+    return isZh ? '简略' : 'Simple';
+}
+
 /**
  * 从 chrome.storage.local 加载视图设置
  * @returns {Promise<Object>} 视图设置对象
@@ -63,10 +77,21 @@ async function loadHistoryViewSettings() {
             return;
         }
         browserAPI.storage.local.get(['historyViewSettings'], result => {
-            historyViewSettings = result.historyViewSettings || {
+            const rawSettings = result.historyViewSettings || {
                 defaultMode: 'simple',
                 recordModes: {},
                 recordExpandedStates: {}
+            };
+            const normalizedRecordModes = {};
+            Object.entries(rawSettings.recordModes || {}).forEach(([recordTime, mode]) => {
+                normalizedRecordModes[String(recordTime)] = normalizeHistoryDetailMode(mode);
+            });
+            historyViewSettings = {
+                defaultMode: normalizeHistoryDetailMode(rawSettings.defaultMode),
+                recordModes: normalizedRecordModes,
+                recordExpandedStates: (rawSettings && typeof rawSettings.recordExpandedStates === 'object' && rawSettings.recordExpandedStates)
+                    ? rawSettings.recordExpandedStates
+                    : {}
             };
             historyDetailMode = historyViewSettings.defaultMode || 'simple';
             console.log('[历史视图设置] 已加载:', {
@@ -132,8 +157,8 @@ async function migrateHistoryViewSettingsFromLocalStorage() {
     try {
         // 迁移全局默认模式
         const defaultMode = localStorage.getItem('historyDetailMode');
-        if (defaultMode === 'simple' || defaultMode === 'detailed') {
-            newSettings.defaultMode = defaultMode;
+        if (defaultMode === 'simple' || defaultMode === 'detailed' || defaultMode === 'collection') {
+            newSettings.defaultMode = normalizeHistoryDetailMode(defaultMode);
         }
 
         // 遍历 localStorage，找出所有历史相关的 key
@@ -145,8 +170,8 @@ async function migrateHistoryViewSettingsFromLocalStorage() {
             if (key.startsWith(HISTORY_DETAIL_MODE_PREFIX)) {
                 const recordTime = key.replace(HISTORY_DETAIL_MODE_PREFIX, '');
                 const mode = localStorage.getItem(key);
-                if (mode === 'simple' || mode === 'detailed') {
-                    newSettings.recordModes[recordTime] = mode;
+                if (mode === 'simple' || mode === 'detailed' || mode === 'collection') {
+                    newSettings.recordModes[recordTime] = normalizeHistoryDetailMode(mode);
                 }
             }
 
@@ -172,7 +197,7 @@ async function migrateHistoryViewSettingsFromLocalStorage() {
 
         // 更新全局变量
         historyViewSettings = newSettings;
-        historyDetailMode = newSettings.defaultMode;
+        historyDetailMode = normalizeHistoryDetailMode(newSettings.defaultMode);
 
         console.log('[迁移] 历史视图设置迁移完成');
         console.log('[迁移] 迁移的数据:', {
@@ -806,7 +831,9 @@ function __getTreeExpandStateStorageKey(treeContainer) {
     try {
         const previewRoot = treeContainer && treeContainer.closest ? treeContainer.closest('#changesTreePreviewInline') : null;
         if (previewRoot) {
-            const mode = previewRoot.classList && previewRoot.classList.contains('compact-mode') ? 'compact' : 'detailed';
+            const mode = previewRoot.classList && previewRoot.classList.contains('collection-mode')
+                ? 'collection'
+                : (previewRoot.classList && previewRoot.classList.contains('compact-mode') ? 'compact' : 'detailed');
             return `changesPreviewExpandedNodes:${mode}`;
         }
     } catch (_) { }
@@ -1282,6 +1309,10 @@ const i18n = {
     historyDetailModeDetailed: {
         'zh_CN': '详细',
         'en': 'Detailed'
+    },
+    historyDetailModeCollection: {
+        'zh_CN': '集合',
+        'en': 'Collection'
     },
     revertConfirmTitle: {
         'zh_CN': '确认撤销全部变化？',
@@ -1785,13 +1816,12 @@ document.addEventListener('DOMContentLoaded', async () => {
         }
     }
 
-    // 使用智能等待：尝试渲染，如果数据不完整则等待后重试
-    // 初始化时强制刷新缓存，确保显示最新数据
+    // 使用智能等待：优先复用缓存；若首轮结果不完整，重试流程会自动转为强制刷新
     console.log('[初始化] 开始渲染当前视图:', currentView);
 
     // 根据当前视图渲染
     if (currentView === 'current-changes') {
-        await renderCurrentChangesViewWithRetry(3, true);
+        await renderCurrentChangesViewWithRetry(3, false);
     } else {
         await renderCurrentView();
 
@@ -2039,10 +2069,14 @@ function applyLanguage() {
     if (historyDetailModeSimpleText) historyDetailModeSimpleText.textContent = i18n.historyDetailModeSimple[currentLang];
     const historyDetailModeDetailedText = document.getElementById('historyDetailModeDetailedText');
     if (historyDetailModeDetailedText) historyDetailModeDetailedText.textContent = i18n.historyDetailModeDetailed[currentLang];
+    const historyDetailModeCollectionText = document.getElementById('historyDetailModeCollectionText');
+    if (historyDetailModeCollectionText) historyDetailModeCollectionText.textContent = i18n.historyDetailModeCollection[currentLang];
     const historyDetailModeSimpleModalText = document.getElementById('historyDetailModeSimpleModalText');
     if (historyDetailModeSimpleModalText) historyDetailModeSimpleModalText.textContent = i18n.historyDetailModeSimple[currentLang];
     const historyDetailModeDetailedModalText = document.getElementById('historyDetailModeDetailedModalText');
     if (historyDetailModeDetailedModalText) historyDetailModeDetailedModalText.textContent = i18n.historyDetailModeDetailed[currentLang];
+    const historyDetailModeCollectionModalText = document.getElementById('historyDetailModeCollectionModalText');
+    if (historyDetailModeCollectionModalText) historyDetailModeCollectionModalText.textContent = i18n.historyDetailModeCollection[currentLang];
 
     const modalTitle = document.getElementById('modalTitle');
     if (modalTitle) modalTitle.textContent = i18n.modalTitle[currentLang];
@@ -4512,7 +4546,11 @@ function renderCurrentView() {
     switch (currentView) {
         case 'current-changes':
             // 使用带重试 + 合并请求的渲染函数，避免多次抖动
-            renderCurrentChangesViewWithRetry(1, false);
+            {
+                const forceRefresh = currentChangesNeedsRefreshOnNextOpen === true;
+                currentChangesNeedsRefreshOnNextOpen = false;
+                renderCurrentChangesViewWithRetry(1, forceRefresh);
+            }
             break;
         case 'history':
             renderHistoryView();
@@ -4611,9 +4649,38 @@ function __flushCurrentChangesScrollState() {
 function __getChangesPreviewMode() {
     try {
         const root = document.getElementById('changesTreePreviewInline');
+        if (root && root.classList && root.classList.contains('collection-mode')) return 'collection';
         return root && root.classList && root.classList.contains('compact-mode') ? 'compact' : 'detailed';
     } catch (_) {
         return 'detailed';
+    }
+}
+
+function normalizeCurrentChangesPreviewMode(mode, fallback = 'detailed') {
+    const value = String(mode || '').toLowerCase();
+    if (value === 'compact' || value === 'simple') return 'compact';
+    if (value === 'collection') return 'collection';
+    return (String(fallback || '').toLowerCase() === 'simple') ? 'compact' : fallback;
+}
+
+function applyCurrentChangesPreviewModeUi(treePreviewContainer, modeToggleRoot, mode) {
+    if (!treePreviewContainer) return;
+    const normalized = normalizeCurrentChangesPreviewMode(mode);
+    const toggleRoot = modeToggleRoot || document.getElementById('currentChangesModeToggle');
+
+    treePreviewContainer.classList.remove('compact-mode', 'collection-mode');
+    if (normalized === 'compact') {
+        treePreviewContainer.classList.add('compact-mode');
+    } else if (normalized === 'collection') {
+        treePreviewContainer.classList.add('collection-mode');
+    }
+
+    if (toggleRoot) {
+        const modeButtons = toggleRoot.querySelectorAll('.current-changes-mode-btn[data-mode]');
+        modeButtons.forEach(btn => {
+            const buttonMode = normalizeCurrentChangesPreviewMode(btn.dataset.mode);
+            btn.classList.toggle('active', buttonMode === normalized);
+        });
     }
 }
 
@@ -4631,6 +4698,7 @@ function __getChangesPreviewScrollStorageKey() {
 let isRenderingCurrentChangesView = false;
 let pendingCurrentChangesRender = null;
 let pendingCurrentChangesEventTimer = null;
+let currentChangesNeedsRefreshOnNextOpen = false;
 
 // 最新的 current changes 数据（供“原地刷新 / 导出”等复用，避免闭包抓到旧数据）
 let latestCurrentChangesData = null;
@@ -4903,6 +4971,38 @@ function scheduleCurrentChangesRerender(reason = '') {
             scheduleCachedCurrentTreeSnapshotRefresh(reason);
         } catch (_) { }
     }, 350);
+}
+
+function tryScheduleRealtimeCurrentChangesRefresh(reason = '') {
+    if (!viewerInitialized) return false;
+    if (revertInProgress) return false;
+    if (currentView !== 'current-changes') return false;
+    try {
+        if (document.visibilityState && document.visibilityState !== 'visible') return false;
+    } catch (_) {
+        return false;
+    }
+
+    scheduleCurrentChangesRerender(reason || 'realtime');
+    currentChangesNeedsRefreshOnNextOpen = false;
+    return true;
+}
+
+function markCurrentChangesDataStale(reason = '') {
+    cachedCurrentChanges = null;
+    cachedBookmarkTree = null;
+    currentChangesNeedsRefreshOnNextOpen = true;
+    if (pendingCurrentChangesEventTimer) {
+        clearTimeout(pendingCurrentChangesEventTimer);
+        pendingCurrentChangesEventTimer = null;
+    }
+    if (reason) {
+        console.log('[当前变化缓存] 已标记失效:', reason);
+    }
+
+    // 页面处于可见且当前就在“当前变化”视图时，走实时刷新。
+    // 页面不可见时仅保留脏标记，待 visibility/focus 恢复后再刷新。
+    tryScheduleRealtimeCurrentChangesRefresh(reason ? `${reason}:live` : 'stale:live');
 }
 
 function highlightTreeNodesByChangeTypeInContainer(changeType, container, options = {}) {
@@ -5513,6 +5613,48 @@ function __restoreChangesPreviewBodyScroll(previewBody, targetTop) {
     });
 }
 
+async function renderCurrentChangesCollectionPreview(changeData, targetContainer) {
+    const isZh = currentLang === 'zh_CN';
+
+    try {
+        await ensureChangesPreviewTreeDataLoaded({ requireDiffMap: true });
+    } catch (_) { }
+
+    const changeMap = treeChangeMap instanceof Map ? treeChangeMap : new Map();
+    const currentTree = Array.isArray(cachedCurrentTree) ? cachedCurrentTree : [];
+    const oldTree = Array.isArray(cachedOldTree) ? cachedOldTree : null;
+
+    let treeToRender = currentTree;
+    if (oldTree && currentTree && changeMap.size > 0) {
+        try {
+            if (hasDeletedChangeInMap(changeMap)) {
+                treeToRender = rebuildTreeWithDeleted(oldTree, currentTree, changeMap);
+            }
+        } catch (_) {
+            treeToRender = currentTree;
+        }
+    }
+
+    const normalizedStats = normalizeCurrentChangesExportStatsManual(changeData || {});
+    const lang = isZh ? 'zh_CN' : 'en';
+    const collectionChildren = buildCurrentChangesExportTreeManual(treeToRender, changeMap, {
+        mode: 'collection',
+        lang,
+        stats: normalizedStats
+    });
+
+    const collectionHtml = renderCollectionTreeHtmlForRecord(collectionChildren, {
+        recordTime: 'current-changes-collection',
+        lazyKey: 'current-changes-collection',
+        customTitle: isZh ? '当前变化' : 'Current Changes',
+        customLabel: isZh ? '集合' : 'Collection',
+        hideSectionTitle: true
+    });
+
+    targetContainer.innerHTML = collectionHtml;
+    bindRestorePreviewTreeEvents(targetContainer, 'current-changes-collection');
+}
+
 // 渲染书签树映射预览（完全克隆永久栏目）
 // 渲染书签树映射预览（优化版：独立渲染稀疏树，不克隆内容）
 async function renderChangesTreePreview(changeData) {
@@ -5524,6 +5666,12 @@ async function renderChangesTreePreview(changeData) {
 
     try {
         console.log('[书签树映射预览] 开始...');
+
+        if (__getChangesPreviewMode() === 'collection') {
+            await renderCurrentChangesCollectionPreview(changeData, targetContainer);
+            try { targetContainer.style.visibility = ''; } catch (_) { }
+            return;
+        }
 
         let lastScrollTop = getChangesPreviewScrollTop();
         const existingPreviewBody = targetContainer.querySelector('.changes-preview-readonly .permanent-section-body');
@@ -5744,6 +5892,7 @@ async function renderChangesTreePreview(changeData) {
     } catch (error) {
         console.error('[书签树映射预览] 失败:', error);
         targetContainer.innerHTML = '';
+        try { targetContainer.style.visibility = ''; } catch (_) { }
     }
 }
 
@@ -5955,26 +6104,32 @@ async function renderCurrentChangesView(forceRefresh = false, options = {}) {
             html += `<span class="legend-item"><span class="legend-dot modified"></span>${currentLang === 'zh_CN' ? '修改' : 'Modified'}</span>`;
             html += '</span>';
             html += '<span class="diff-header-spacer"></span>';
+            html += '<div class="current-changes-header-actions">';
+            html += `<div class="current-changes-mode-toggle" id="currentChangesModeToggle" role="group" aria-label="${currentLang === 'zh_CN' ? '当前变化视图模式' : 'Current changes view mode'}">`;
+            html += `<button type="button" class="current-changes-mode-btn" id="currentChangesModeCompactBtn" data-mode="compact" title="${currentLang === 'zh_CN' ? '简略模式' : 'Simple mode'}">`;
+            html += '<svg class="icon-compact" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="4" y1="9" x2="20" y2="9"/><line x1="4" y1="15" x2="20" y2="15"/><circle cx="2" cy="9" r="1.5" fill="currentColor" stroke="none"/><circle cx="2" cy="15" r="1.5" fill="currentColor" stroke="none"/></svg>';
+            html += `<span>${currentLang === 'zh_CN' ? '简略' : 'Simple'}</span>`;
+            html += '</button>';
+            html += `<button type="button" class="current-changes-mode-btn" id="currentChangesModeDetailedBtn" data-mode="detailed" title="${currentLang === 'zh_CN' ? '详细模式' : 'Detailed mode'}">`;
+            html += '<svg class="icon-detail" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="4" y1="6" x2="20" y2="6"/><line x1="4" y1="10" x2="20" y2="10"/><line x1="4" y1="14" x2="20" y2="14"/><line x1="4" y1="18" x2="20" y2="18"/></svg>';
+            html += `<span>${currentLang === 'zh_CN' ? '详细' : 'Detailed'}</span>`;
+            html += '</button>';
+            html += `<button type="button" class="current-changes-mode-btn" id="currentChangesModeCollectionBtn" data-mode="collection" title="${currentLang === 'zh_CN' ? '集合模式' : 'Collection mode'}">`;
+            html += '<svg class="icon-collection" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7h16"/><path d="M4 12h16"/><path d="M4 17h16"/><circle cx="2" cy="7" r="1.5" fill="currentColor" stroke="none"/><circle cx="2" cy="12" r="1.5" fill="currentColor" stroke="none"/><circle cx="2" cy="17" r="1.5" fill="currentColor" stroke="none"/></svg>';
+            html += `<span>${currentLang === 'zh_CN' ? '集合' : 'Collection'}</span>`;
+            html += '</button>';
+            html += '</div>';
             // 导出按钮
             html += `<button class="diff-edit-btn icon-only" id="exportChangesBtn">`;
             html += '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>';
             html += `<span class="btn-tooltip">${currentLang === 'zh_CN' ? '导出变化' : 'Export Changes'}</span>`;
-            html += '</button>';
-            // 详略切换按钮 - 使用两个SVG图标，根据状态显示不同图标
-            // 详细模式图标：4条横线（表示展开全部）
-            // 简略模式图标：2条横线（表示只显示变化）
-            html += `<button class="diff-edit-btn icon-only" id="toggleTreeDetailBtn">`;
-            // 默认显示详细模式图标（4条横线）
-            html += '<svg class="icon-detail" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="4" y1="6" x2="20" y2="6"/><line x1="4" y1="10" x2="20" y2="10"/><line x1="4" y1="14" x2="20" y2="14"/><line x1="4" y1="18" x2="20" y2="18"/></svg>';
-            // 简略模式图标（2条横线+高亮）- 默认隐藏
-            html += '<svg class="icon-compact" style="display:none" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="4" y1="9" x2="20" y2="9"/><line x1="4" y1="15" x2="20" y2="15"/><circle cx="2" cy="9" r="1.5" fill="currentColor" stroke="none"/><circle cx="2" cy="15" r="1.5" fill="currentColor" stroke="none"/></svg>';
-            html += `<span class="btn-tooltip" id="toggleTreeDetailTooltip">${currentLang === 'zh_CN' ? '切换为简略' : 'Switch to compact'}</span>`;
             html += '</button>';
             // 全部撤销按钮
             html += `<button class="diff-edit-btn icon-only" id="revertAllCurrentBtn">`;
             html += '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"></path><path d="M3 3v5h5"></path></svg>';
             html += `<span class="btn-tooltip">${currentLang === 'zh_CN' ? '全部撤销' : 'Revert All'}</span>`;
             html += '</button>';
+            html += '</div>';
             html += '</div>';
 
             // diff 主体
@@ -6076,11 +6231,11 @@ async function renderCurrentChangesView(forceRefresh = false, options = {}) {
                 // 保存展开函数的引用，供渲染后调用
                 let expandFoldersRef = null;
 
-                // 详略切换按钮逻辑
-                const toggleTreeDetailBtn = document.getElementById('toggleTreeDetailBtn');
+                // 当前变化视图模式切换逻辑
+                const modeToggleRoot = document.getElementById('currentChangesModeToggle');
                 const treePreviewContainer = document.getElementById('changesTreePreviewInline');
 
-                if (toggleTreeDetailBtn && treePreviewContainer) {
+                if (modeToggleRoot && treePreviewContainer) {
                     const expandFoldersWithChanges = (forceCollapseChangedFolders = false) => {
                         const changeClasses = ['.tree-change-added', '.tree-change-deleted', '.tree-change-modified', '.tree-change-moved', '.tree-change-mixed'];
                         const selector = changeClasses.join(', ');
@@ -6185,42 +6340,14 @@ async function renderCurrentChangesView(forceRefresh = false, options = {}) {
                     };
                     expandFoldersRef = expandFoldersWithChanges;
 
-                    // 初始化状态：读取存储的模式（默认为详细模式 'detailed'）
-                    const savedMode = lastData.currentChangesViewMode || 'detailed';
-                    const isCompactInit = savedMode === 'compact';
+                    const savedMode = normalizeCurrentChangesPreviewMode(lastData.currentChangesViewMode);
+                    applyCurrentChangesPreviewModeUi(treePreviewContainer, modeToggleRoot, savedMode);
 
-                    // 辅助函数：更新图标显示
-                    const updateDetailToggleIcon = (isCompact) => {
-                        const iconDetail = toggleTreeDetailBtn.querySelector('.icon-detail');
-                        const iconCompact = toggleTreeDetailBtn.querySelector('.icon-compact');
-                        if (isCompact) {
-                            // 简略模式：显示简略图标，隐藏详细图标
-                            if (iconDetail) iconDetail.style.display = 'none';
-                            if (iconCompact) iconCompact.style.display = 'block';
-                        } else {
-                            // 详细模式：显示详细图标，隐藏简略图标
-                            if (iconDetail) iconDetail.style.display = 'block';
-                            if (iconCompact) iconCompact.style.display = 'none';
-                        }
-                    };
+                    const switchCurrentChangesPreviewMode = async (targetMode) => {
+                        const nextMode = normalizeCurrentChangesPreviewMode(targetMode);
+                        const previousMode = __getChangesPreviewMode();
+                        if (previousMode === nextMode) return;
 
-                    // 获取tooltip元素
-                    const toggleTooltip = document.getElementById('toggleTreeDetailTooltip');
-
-                    if (isCompactInit) {
-                        treePreviewContainer.classList.add('compact-mode');
-                        toggleTreeDetailBtn.classList.add('active');
-                        if (toggleTooltip) toggleTooltip.textContent = currentLang === 'zh_CN' ? '切换为详细' : 'Switch to detailed';
-                        updateDetailToggleIcon(true);
-                    } else {
-                        treePreviewContainer.classList.remove('compact-mode');
-                        toggleTreeDetailBtn.classList.remove('active');
-                        if (toggleTooltip) toggleTooltip.textContent = currentLang === 'zh_CN' ? '切换为简略' : 'Switch to compact';
-                        updateDetailToggleIcon(false);
-                    }
-
-                    // 绑定点击事件
-                    toggleTreeDetailBtn.addEventListener('click', () => {
                         // 模式切换前：先保存旧模式的滚动/展开状态（同一个 DOM 容器会复用）
                         try {
                             const previewBody = treePreviewContainer.querySelector('.changes-preview-readonly .permanent-section-body');
@@ -6236,31 +6363,15 @@ async function renderCurrentChangesView(forceRefresh = false, options = {}) {
                             if (previewTree) saveTreeExpandState(previewTree);
                         } catch (_) { }
 
-                        const isCompact = treePreviewContainer.classList.contains('compact-mode');
-                        // 切换状态
-                        if (isCompact) {
-                            // 当前是简略，切换到详细
-                            treePreviewContainer.classList.remove('compact-mode');
-                            toggleTreeDetailBtn.classList.remove('active');
-                            if (toggleTooltip) toggleTooltip.textContent = currentLang === 'zh_CN' ? '切换为简略' : 'Switch to compact';
-                            updateDetailToggleIcon(false);
-                            // 保存状态
-                            browserAPI.storage.local.set({ currentChangesViewMode: 'detailed' });
+                        applyCurrentChangesPreviewModeUi(treePreviewContainer, modeToggleRoot, nextMode);
+                        browserAPI.storage.local.set({ currentChangesViewMode: nextMode });
 
-                        } else {
-                            // 当前是详细，切换到简略
-                            treePreviewContainer.classList.add('compact-mode');
-                            toggleTreeDetailBtn.classList.add('active');
-                            if (toggleTooltip) toggleTooltip.textContent = currentLang === 'zh_CN' ? '切换为详细' : 'Switch to detailed';
-                            updateDetailToggleIcon(true);
-                            // 保存状态
-                            browserAPI.storage.local.set({ currentChangesViewMode: 'compact' });
-                        }
+                        const needsRerender = previousMode === 'collection' || nextMode === 'collection';
 
                         // 模式切换后：恢复新模式的滚动/展开记忆
                         try {
                             const previewTree = treePreviewContainer.querySelector('#preview_bookmarkTree');
-                            if (previewTree) {
+                            if (!needsRerender && previewTree) {
                                 // 清空旧模式展开状态
                                 previewTree.querySelectorAll('.tree-children.expanded').forEach(el => el.classList.remove('expanded'));
                                 previewTree.querySelectorAll('.tree-toggle.expanded').forEach(el => el.classList.remove('expanded'));
@@ -6272,6 +6383,15 @@ async function renderCurrentChangesView(forceRefresh = false, options = {}) {
                                 restoreTreeExpandState(previewTree);
                             }
                         } catch (_) { }
+
+                        if (needsRerender) {
+                            try {
+                                await renderChangesTreePreview(changeData);
+                                if (nextMode === 'compact') {
+                                    try { await maybeAutoExpandCurrentChangesCompactPreview(); } catch (_) { }
+                                }
+                            } catch (_) { }
+                        }
 
                         try {
                             const previewBody = treePreviewContainer.querySelector('.changes-preview-readonly .permanent-section-body');
@@ -6285,6 +6405,12 @@ async function renderCurrentChangesView(forceRefresh = false, options = {}) {
                         try {
                             restoreCurrentChangesContentScrollPosition();
                         } catch (_) { }
+                    };
+
+                    modeToggleRoot.querySelectorAll('.current-changes-mode-btn[data-mode]').forEach(button => {
+                        button.addEventListener('click', async () => {
+                            await switchCurrentChangesPreviewMode(button.dataset.mode);
+                        });
                     });
                 }
 
@@ -7767,10 +7893,8 @@ function renderHistoryView() {
         // 模式显示文本
         const savedMode = getRecordDetailMode(record.time);
         const defaultMode = historyDetailMode || 'simple';
-        const mode = savedMode || defaultMode;
-        const modeText = mode === 'simple'
-            ? (currentLang === 'zh_CN' ? '简略' : 'Simple')
-            : (currentLang === 'zh_CN' ? '详细' : 'Detailed');
+        const mode = normalizeHistoryDetailMode(savedMode || defaultMode);
+        const modeText = getHistoryDetailModeLabel(mode);
 
         let displayTitle = getUnifiedHistoryRecordNote(record, currentLang);
         if (isRestore && record.restoreInfo && (!displayTitle || !String(displayTitle).trim())) {
@@ -8075,6 +8199,10 @@ function getRestoreMergeViewModeAvailability(record = currentRestoreRecord) {
     }
 
     if (record.isFirstBackup === true) {
+        return { supported: true, simple: true, detailed: true, collection: true };
+    }
+
+    if (record.hasChangeData === true || String(record.changeDataKey || '').trim() !== '') {
         return { supported: true, simple: true, detailed: true, collection: true };
     }
 
@@ -11565,10 +11693,12 @@ let lastTreeSnapshotVersion = null; // 上次快照版本（来自 background �
 let cachedCurrentTreeIndex = null; // id -> node（懒加载用，按需构建）
 let cachedRenderTreeIndex = null; // id -> node（懒加载用，包含 deleted 合并树）
 const detailChangeCache = new Map(); // key(recordTime:mode) -> { treeToRender, changeMap, ts }
+const recordChangeDataCache = new Map(); // key(recordTime) -> persisted changes_data payload
 const DETAIL_CHANGE_CACHE_MAX = 20;
 
 function getDetailChangeCacheKey(recordTime, mode) {
-    return `${String(recordTime)}:${mode === 'detailed' ? 'detailed' : 'simple'}`;
+    const normalizedMode = normalizeHistoryDetailMode(mode);
+    return `${String(recordTime)}:${normalizedMode}`;
 }
 
 function getDetailChangeCache(recordTime, mode) {
@@ -11595,6 +11725,7 @@ function setDetailChangeCache(recordTime, mode, payload) {
 
 function clearDetailChangeCache() {
     detailChangeCache.clear();
+    recordChangeDataCache.clear();
 }
 
 let __canvasPermanentHintSet = null;
@@ -13617,9 +13748,24 @@ if (!window.__currentChangesScrollStateFlushBound) {
         try {
             if (document.visibilityState === 'hidden') {
                 __flushCurrentChangesScrollState();
+                return;
+            }
+            if (document.visibilityState === 'visible' && currentChangesNeedsRefreshOnNextOpen) {
+                tryScheduleRealtimeCurrentChangesRefresh('visibility-visible');
             }
         } catch (_) { }
     });
+
+    const tryRefreshCurrentChangesWhenFocused = () => {
+        try {
+            if (!currentChangesNeedsRefreshOnNextOpen) return;
+            if (document.visibilityState !== 'visible') return;
+            tryScheduleRealtimeCurrentChangesRefresh('window-focus-visible');
+        } catch (_) { }
+    };
+
+    window.addEventListener('focus', tryRefreshCurrentChangesWhenFocused);
+    window.addEventListener('pageshow', tryRefreshCurrentChangesWhenFocused);
 }
 
 // 快速检测书签树变动（性能优化版 + 智能移动检测）
@@ -15290,22 +15436,23 @@ async function applyIncrementalMoveToTree(id, moveInfo) {
 // =============================================================================
 
 function getRecordDetailMode(recordTime) {
-    if (!recordTime) return historyDetailMode || 'simple';
+    if (!recordTime) return normalizeHistoryDetailMode(historyDetailMode || 'simple');
     // 从统一存储对象中读取
     if (historyViewSettings && historyViewSettings.recordModes) {
         const mode = historyViewSettings.recordModes[String(recordTime)];
-        if (mode) return mode;
+        if (mode) return normalizeHistoryDetailMode(mode);
     }
-    return historyDetailMode || 'simple';
+    return normalizeHistoryDetailMode(historyDetailMode || 'simple');
 }
 
 function setRecordDetailMode(recordTime, mode) {
     if (!recordTime || !mode) return;
+    const normalizedMode = normalizeHistoryDetailMode(mode);
     // 确保 historyViewSettings 已初始化
     if (!historyViewSettings) {
         historyViewSettings = { defaultMode: 'simple', recordModes: {}, recordExpandedStates: {} };
     }
-    historyViewSettings.recordModes[String(recordTime)] = mode;
+    historyViewSettings.recordModes[String(recordTime)] = normalizedMode;
     // 异步保存（带防抖）
     saveHistoryViewSettings();
 }
@@ -15475,15 +15622,13 @@ function applyRecordExpandedState(recordTime, treeContainer) {
 function updateDetailModalToggleUI(mode) {
     const simpleBtn = document.getElementById('historyDetailModeSimpleModal');
     const detailedBtn = document.getElementById('historyDetailModeDetailedModal');
-    if (!simpleBtn || !detailedBtn) return;
+    const collectionBtn = document.getElementById('historyDetailModeCollectionModal');
+    if (!simpleBtn || !detailedBtn || !collectionBtn) return;
 
-    if (mode === 'detailed') {
-        simpleBtn.classList.remove('active');
-        detailedBtn.classList.add('active');
-    } else {
-        simpleBtn.classList.add('active');
-        detailedBtn.classList.remove('active');
-    }
+    const normalized = normalizeHistoryDetailMode(mode);
+    simpleBtn.classList.toggle('active', normalized === 'simple');
+    detailedBtn.classList.toggle('active', normalized === 'detailed');
+    collectionBtn.classList.toggle('active', normalized === 'collection');
 }
 
 
@@ -15493,41 +15638,33 @@ function updateHistoryListItemMode(recordTime, mode) {
 
     const tooltip = item.querySelector('.action-btn.detail-btn .btn-tooltip');
     if (!tooltip) return;
-    tooltip.textContent = mode === 'simple'
-        ? (currentLang === 'zh_CN' ? '简略' : 'Simple')
-        : (currentLang === 'zh_CN' ? '详细' : 'Detailed');
+    tooltip.textContent = getHistoryDetailModeLabel(mode);
 }
 
 function initDetailModalActions() {
     const simpleBtn = document.getElementById('historyDetailModeSimpleModal');
     const detailedBtn = document.getElementById('historyDetailModeDetailedModal');
+    const collectionBtn = document.getElementById('historyDetailModeCollectionModal');
     const exportBtn = document.getElementById('detailExportChangesBtn');
 
-    if (simpleBtn && !simpleBtn.hasAttribute('data-listener-attached')) {
-        simpleBtn.addEventListener('click', () => {
+    const bindModeButton = (button, targetMode) => {
+        if (!button || button.hasAttribute('data-listener-attached')) return;
+        button.addEventListener('click', () => {
             if (!currentDetailRecordTime) return;
-            if (currentDetailRecordMode === 'simple') return;
-            currentDetailRecordMode = 'simple';
-            setRecordDetailMode(currentDetailRecordTime, 'simple');
-            updateDetailModalToggleUI('simple');
-            updateHistoryListItemMode(currentDetailRecordTime, 'simple');
-            if (currentDetailRecord) renderDetailModalContent(currentDetailRecord, 'simple');
+            const normalizedMode = normalizeHistoryDetailMode(targetMode);
+            if (normalizeHistoryDetailMode(currentDetailRecordMode) === normalizedMode) return;
+            currentDetailRecordMode = normalizedMode;
+            setRecordDetailMode(currentDetailRecordTime, normalizedMode);
+            updateDetailModalToggleUI(normalizedMode);
+            updateHistoryListItemMode(currentDetailRecordTime, normalizedMode);
+            if (currentDetailRecord) renderDetailModalContent(currentDetailRecord, normalizedMode);
         });
-        simpleBtn.setAttribute('data-listener-attached', 'true');
-    }
+        button.setAttribute('data-listener-attached', 'true');
+    };
 
-    if (detailedBtn && !detailedBtn.hasAttribute('data-listener-attached')) {
-        detailedBtn.addEventListener('click', () => {
-            if (!currentDetailRecordTime) return;
-            if (currentDetailRecordMode === 'detailed') return;
-            currentDetailRecordMode = 'detailed';
-            setRecordDetailMode(currentDetailRecordTime, 'detailed');
-            updateDetailModalToggleUI('detailed');
-            updateHistoryListItemMode(currentDetailRecordTime, 'detailed');
-            if (currentDetailRecord) renderDetailModalContent(currentDetailRecord, 'detailed');
-        });
-        detailedBtn.setAttribute('data-listener-attached', 'true');
-    }
+    bindModeButton(simpleBtn, 'simple');
+    bindModeButton(detailedBtn, 'detailed');
+    bindModeButton(collectionBtn, 'collection');
 
     if (exportBtn && !exportBtn.hasAttribute('data-listener-attached')) {
         exportBtn.addEventListener('click', () => {
@@ -15550,17 +15687,19 @@ function renderDetailModalContent(record, mode) {
     const body = document.getElementById('modalBody');
     if (!body) return;
 
+    const normalizedMode = normalizeHistoryDetailMode(mode || getRecordDetailMode(record?.time));
+
     body.innerHTML = `<div class="loading">${i18n.loading[currentLang]}</div>`;
 
-    generateDetailContent(record, mode).then(html => {
+    generateDetailContent(record, normalizedMode).then(html => {
         body.innerHTML = html;
 
         setTimeout(() => {
             initDetailModalActions();
-            updateDetailModalToggleUI(mode);
+            updateDetailModalToggleUI(normalizedMode);
             const treeContainer = body.querySelector('.history-tree-container');
             if (treeContainer) {
-                if (mode === 'detailed') {
+                if (normalizedMode === 'detailed') {
                     if (hasRecordExpandedState(record.time)) {
                         applyRecordExpandedState(record.time, treeContainer);
                     }
@@ -15595,7 +15734,7 @@ function renderDetailModalContent(record, mode) {
                             }
                         }
 
-                        if (mode === 'detailed') {
+                        if (normalizedMode === 'detailed') {
                             const nodeId = treeItem.getAttribute('data-node-id');
                             if (nodeId) saveRecordExpandedState(record.time, nodeId, isExpanding);
                         }
@@ -15607,8 +15746,11 @@ function renderDetailModalContent(record, mode) {
                                 children.dataset.childrenLoaded === 'false' &&
                                 treeItem.dataset &&
                                 treeItem.dataset.nodeId) {
+                                const lazyKey = treeContainer.dataset && treeContainer.dataset.lazyKey
+                                    ? treeContainer.dataset.lazyKey
+                                    : String(record.time);
                                 const ctx = window.__historyTreeLazyContexts instanceof Map
-                                    ? window.__historyTreeLazyContexts.get(String(record.time))
+                                    ? window.__historyTreeLazyContexts.get(String(lazyKey))
                                     : null;
                                 if (ctx && typeof ctx.renderChildren === 'function') {
                                     const html = ctx.renderChildren(
@@ -15694,66 +15836,14 @@ function renderDetailModalContent(record, mode) {
                 // 异步初始化搜索（需要 changeMap）
                 (async () => {
                     try {
-                        // 获取变化数据（与 generateTreeBasedChanges 相同的逻辑）
-                        if (!record.bookmarkTree && (record.hasData || record.status === 'success')) {
-                            try {
-                                const tree = await getBackupDataLazy(record.time);
-                                if (tree) record.bookmarkTree = tree;
-                            } catch (_) { }
-                        }
-                        if (!record.bookmarkTree) {
+                        const prepared = await prepareDataForExport(record);
+                        const treeToSearch = prepared?.treeToExport || record.bookmarkTree;
+                        const changeMap = prepared?.changeMap instanceof Map ? prepared.changeMap : new Map();
+
+                        if (!treeToSearch) {
                             console.log('[Search] Phase 2.5: No bookmarkTree in record');
                             searchBtn.style.display = 'none';
                             return;
-                        }
-
-                        // 找到上一条记录
-                        const recordIndex = syncHistory.findIndex(r => r.time === record.time);
-                        let previousRecord = null;
-                        if (recordIndex > 0) {
-                            for (let i = recordIndex - 1; i >= 0; i--) {
-                                if (syncHistory[i].status === 'success' && (syncHistory[i].bookmarkTree || syncHistory[i].hasData)) {
-                                    previousRecord = syncHistory[i];
-                                    break;
-                                }
-                            }
-                        }
-
-                        // 如果没有上一条记录，尝试从缓存获取
-                        if (!previousRecord && recordIndex === 0) {
-                            try {
-                                const cachedData = await new Promise(resolve => {
-                                    browserAPI.storage.local.get('cachedRecordAfterClear', result => {
-                                        resolve(result.cachedRecordAfterClear);
-                                    });
-                                });
-                                if (cachedData && cachedData.bookmarkTree) {
-                                    previousRecord = cachedData;
-                                }
-                            } catch (e) { }
-                        }
-
-                        // 计算变化
-                        let changeMap = new Map();
-                        if (previousRecord && !previousRecord.bookmarkTree && (previousRecord.hasData || previousRecord.status === 'success')) {
-                            try {
-                                const prevTree = await getBackupDataLazy(previousRecord.time);
-                                if (prevTree) previousRecord.bookmarkTree = prevTree;
-                            } catch (_) { }
-                        }
-                        if (previousRecord && previousRecord.bookmarkTree) {
-                            changeMap = await detectTreeChangesFast(previousRecord.bookmarkTree, record.bookmarkTree, {
-                                useGlobalExplicitMovedIds: false,
-                                explicitMovedIdSet: (record.bookmarkStats && Array.isArray(record.bookmarkStats.explicitMovedIds))
-                                    ? record.bookmarkStats.explicitMovedIds
-                                    : null
-                            });
-                        } else if (record.isFirstBackup) {
-                            // 首次备份：全部是新增
-                            const allNodes = flattenBookmarkTree(record.bookmarkTree);
-                            allNodes.forEach(item => {
-                                if (item.id) changeMap.set(item.id, { type: 'added' });
-                            });
                         }
 
                         // 检查是否有变化可搜索
@@ -15768,8 +15858,8 @@ function renderDetailModalContent(record, mode) {
                             initHistoryDetailSearch(
                                 record,
                                 changeMap,
-                                record.bookmarkTree,
-                                previousRecord ? previousRecord.bookmarkTree : null,
+                                treeToSearch,
+                                null,
                                 modalContent
                             );
                         }
@@ -15884,58 +15974,46 @@ function closeModal() {
 function initHistoryDetailModeToggle() {
     const simpleBtn = document.getElementById('historyDetailModeSimple');
     const detailedBtn = document.getElementById('historyDetailModeDetailed');
+    const collectionBtn = document.getElementById('historyDetailModeCollection');
 
-    if (!simpleBtn || !detailedBtn) return;
+    if (!simpleBtn || !detailedBtn || !collectionBtn) return;
 
-    // 恢复保存的模式状态
-    if (historyDetailMode === 'detailed') {
-        simpleBtn.classList.remove('active');
-        detailedBtn.classList.add('active');
-    } else {
-        simpleBtn.classList.add('active');
-        detailedBtn.classList.remove('active');
-    }
+    const updateToggleState = (mode) => {
+        const normalized = normalizeHistoryDetailMode(mode);
+        simpleBtn.classList.toggle('active', normalized === 'simple');
+        detailedBtn.classList.toggle('active', normalized === 'detailed');
+        collectionBtn.classList.toggle('active', normalized === 'collection');
+    };
 
-    // 点击事件
-    simpleBtn.addEventListener('click', () => {
-        if (historyDetailMode === 'simple') return;
-        historyDetailMode = 'simple';
+    const applyMode = (mode) => {
+        const normalized = normalizeHistoryDetailMode(mode);
+        if (normalizeHistoryDetailMode(historyDetailMode) === normalized) return;
+        historyDetailMode = normalized;
+
         if (historyViewSettings) {
-            historyViewSettings.defaultMode = 'simple';
+            historyViewSettings.defaultMode = normalized;
             saveHistoryViewSettings();
         }
-        simpleBtn.classList.add('active');
-        detailedBtn.classList.remove('active');
-        // 全局覆盖：同步更新每条记录的持久化模式
-        try {
-            (syncHistory || []).forEach(r => setRecordDetailMode(r?.time, 'simple'));
-        } catch (_) { }
-        // 立即刷新列表（未保存单条模式的记录会跟随全局模式）
-        try { renderHistoryView(); } catch (_) { }
-    });
 
-    detailedBtn.addEventListener('click', () => {
-        if (historyDetailMode === 'detailed') return;
-        historyDetailMode = 'detailed';
-        if (historyViewSettings) {
-            historyViewSettings.defaultMode = 'detailed';
-            saveHistoryViewSettings();
-        }
-        detailedBtn.classList.add('active');
-        simpleBtn.classList.remove('active');
-        // 全局覆盖：同步更新每条记录的持久化模式
+        updateToggleState(normalized);
+
         try {
-            (syncHistory || []).forEach(r => setRecordDetailMode(r?.time, 'detailed'));
+            (syncHistory || []).forEach(r => setRecordDetailMode(r?.time, normalized));
         } catch (_) { }
-        // 立即刷新列表（未保存单条模式的记录会跟随全局模式）
         try { renderHistoryView(); } catch (_) { }
-    });
+    };
+
+    updateToggleState(historyDetailMode);
+
+    simpleBtn.addEventListener('click', () => applyMode('simple'));
+    detailedBtn.addEventListener('click', () => applyMode('detailed'));
+    collectionBtn.addEventListener('click', () => applyMode('collection'));
 }
 
 // 生成详情内容（异步）
 async function generateDetailContent(record, mode) {
     const stats = record.bookmarkStats || {};
-    const detailMode = mode || getRecordDetailMode(record.time);
+    const detailMode = normalizeHistoryDetailMode(mode || getRecordDetailMode(record.time));
 
     let html = '';
 
@@ -15982,6 +16060,17 @@ async function generateDetailContent(record, mode) {
                                 <line x1="4" y1="18" x2="20" y2="18" />
                             </svg>
                             <span id="historyDetailModeDetailedModalText">${currentLang === 'zh_CN' ? '详细' : 'Detailed'}</span>
+                        </button>
+                        <button id="historyDetailModeCollectionModal" class="toggle-btn ${detailMode === 'collection' ? 'active' : ''}" data-mode="collection" title="${currentLang === 'zh_CN' ? '集合模式' : 'Collection mode'}">
+                            <svg class="icon-collection" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                <path d="M4 7h16" />
+                                <path d="M4 12h16" />
+                                <path d="M4 17h16" />
+                                <circle cx="2" cy="7" r="1.5" fill="currentColor" stroke="none" />
+                                <circle cx="2" cy="12" r="1.5" fill="currentColor" stroke="none" />
+                                <circle cx="2" cy="17" r="1.5" fill="currentColor" stroke="none" />
+                            </svg>
+                            <span id="historyDetailModeCollectionModalText">${currentLang === 'zh_CN' ? '集合' : 'Collection'}</span>
                         </button>
                     </div>
                 </div>
@@ -16061,6 +16150,129 @@ async function ensureRecordBookmarkTree(record) {
     return record.bookmarkTree || null;
 }
 
+async function getRecordChangeDataLazy(recordTime) {
+    const timeKey = String(recordTime || '').trim();
+    if (!timeKey) return null;
+    if (recordChangeDataCache.has(timeKey)) {
+        return recordChangeDataCache.get(timeKey);
+    }
+
+    const storageKey = `changes_data_${timeKey}`;
+    const payload = await new Promise(resolve => {
+        browserAPI.storage.local.get([storageKey], (result) => {
+            if (browserAPI.runtime.lastError) {
+                resolve(null);
+                return;
+            }
+            const value = result ? result[storageKey] : null;
+            resolve(value && typeof value === 'object' ? value : null);
+        });
+    });
+
+    recordChangeDataCache.set(timeKey, payload || null);
+    return payload || null;
+}
+
+function deserializeRecordChangeMap(changeData) {
+    const map = new Map();
+    const entries = Array.isArray(changeData?.changeEntries) ? changeData.changeEntries : [];
+    entries.forEach(entry => {
+        if (!Array.isArray(entry) || entry.length < 2) return;
+        const id = entry[0];
+        if (id == null) return;
+        map.set(String(id), entry[1] || {});
+    });
+    return map;
+}
+
+function hasDeletedChangeInMap(changeMap) {
+    if (!(changeMap instanceof Map) || changeMap.size === 0) return false;
+    for (const [, change] of changeMap) {
+        if (change?.type && String(change.type).includes('deleted')) return true;
+    }
+    return false;
+}
+
+function cloneSerializableData(value) {
+    if (value == null) return value;
+    try {
+        return JSON.parse(JSON.stringify(value));
+    } catch (_) {
+        return value;
+    }
+}
+
+function inferCollectionGroupChangeTypeFromTitle(title) {
+    const text = String(title || '').trim();
+    if (!text) return '';
+    if (text.startsWith('[+]')) return 'added';
+    if (text.startsWith('[-]')) return 'deleted';
+    if (text.startsWith('[>>]')) return 'moved';
+    if (text.startsWith('[~]')) return 'modified';
+    return '';
+}
+
+function buildCollectionViewNodesWithIds(nodes, prefix = 'collection') {
+    const walk = (items, parentPath, depth = 0) => {
+        if (!Array.isArray(items)) return [];
+        return items
+            .map((item, index) => {
+                if (!item || typeof item !== 'object') return null;
+                const currentPath = `${parentPath}-${index}`;
+                const copied = { ...item };
+                if (!copied.id) copied.id = currentPath;
+                if (depth === 0 && !copied.changeType) {
+                    const inferredType = inferCollectionGroupChangeTypeFromTitle(copied.title);
+                    if (inferredType) {
+                        copied.changeType = inferredType;
+                        copied.collectionGroup = true;
+                    }
+                }
+                if (Array.isArray(copied.children)) {
+                    copied.children = walk(copied.children, currentPath, depth + 1);
+                }
+                return copied;
+            })
+            .filter(Boolean);
+    };
+
+    return walk(cloneSerializableData(nodes) || [], prefix, 0);
+}
+
+function renderCollectionTreeHtmlForRecord(collectionChildren, options = {}) {
+    const list = Array.isArray(collectionChildren) ? collectionChildren : [];
+    if (!list.length) {
+        return `
+            <div class="detail-section">
+                <div class="detail-empty">
+                    <i class="fas fa-check-circle"></i>
+                    ${currentLang === 'zh_CN' ? '无变化' : 'No changes'}
+                </div>
+            </div>
+        `;
+    }
+
+    const recordTime = options.recordTime != null ? String(options.recordTime) : '';
+    const lazyKey = options.lazyKey != null ? String(options.lazyKey) : `${recordTime}:collection`;
+    const isZh = currentLang === 'zh_CN';
+    const root = {
+        id: `${lazyKey}:root`,
+        title: 'root',
+        children: buildCollectionViewNodesWithIds(list, `${lazyKey}:node`)
+    };
+
+    return generateHistoryTreeHtml(root, new Map(), 'detailed', {
+        recordTime: recordTime || lazyKey,
+        lazyKey,
+        expandDepth: 1,
+        customTitle: options.customTitle || (isZh ? '书签变化' : 'Bookmark Changes'),
+        customLabel: options.customLabel || (isZh ? '集合' : 'Collection'),
+        hideLegend: true,
+        collectionView: true,
+        hideSectionTitle: options.hideSectionTitle === true
+    });
+}
+
 async function getPreviousHistoryRecordMeta(recordTime) {
     return await new Promise((resolve) => {
         browserAPI.runtime.sendMessage({ action: 'getPreviousHistoryRecord', time: recordTime }, (response) => {
@@ -16076,12 +16288,17 @@ async function getPreviousHistoryRecordMeta(recordTime) {
 
 // 生成树形视图的变化详情
 async function generateTreeBasedChanges(record, mode) {
-    console.log('[树形视图] ========== 开始生成详细变化 ==========');
-    console.log('[树形视图] 记录时间:', record.time);
-    console.log('[树形视图] 显示模式:', mode);
-
-    const cachedDetail = getDetailChangeCache(record.time, mode);
+    const detailMode = normalizeHistoryDetailMode(mode);
+    const cachedDetail = getDetailChangeCache(record.time, detailMode);
     if (cachedDetail && cachedDetail.treeToRender && cachedDetail.changeMap instanceof Map) {
+        if (detailMode === 'collection') {
+            const collectionChildren = Array.isArray(cachedDetail.collectionChildren) ? cachedDetail.collectionChildren : [];
+            return renderCollectionTreeHtmlForRecord(collectionChildren, {
+                recordTime: record.time,
+                lazyKey: `${record.time}:collection`
+            });
+        }
+
         if (cachedDetail.changeMap.size === 0) {
             return `
             <div class="detail-section">
@@ -16093,126 +16310,65 @@ async function generateTreeBasedChanges(record, mode) {
         `;
         }
 
-        return generateHistoryTreeHtml(cachedDetail.treeToRender, cachedDetail.changeMap, mode, record.time);
+        return generateHistoryTreeHtml(cachedDetail.treeToRender, cachedDetail.changeMap, detailMode, record.time);
     }
 
-    // Split storage：按需加载 bookmarkTree
     await ensureRecordBookmarkTree(record);
-
-    // 检查当前记录是否有 bookmarkTree
     if (!record.bookmarkTree) {
-        console.log('[树形视图] ❌ 当前记录没有 bookmarkTree（可能是旧记录或保存失败）');
         return null;
     }
 
-    // 找到上一条记录进行对比
-    const recordIndex = syncHistory.findIndex(r => String(r.time) === String(record.time));
-    console.log('[树形视图] 记录索引:', recordIndex);
+    const prepared = await prepareDataForExport(record);
+    const treeToRender = prepared?.treeToExport || record.bookmarkTree;
+    const changeMap = prepared?.changeMap instanceof Map ? prepared.changeMap : new Map();
 
-    // 分页模式下，当前页不一定包含“上一条记录”，优先走 background 的全量索引定位。
-    let previousRecord = null;
-    try {
-        previousRecord = await getPreviousHistoryRecordMeta(record.time);
-    } catch (_) {
-        previousRecord = null;
-    }
+    if (detailMode === 'collection') {
+        let collectionChildren = Array.isArray(prepared?.changeData?.collectionChildren)
+            ? prepared.changeData.collectionChildren
+            : null;
 
-    // 回退：兼容旧行为（当后台接口不可用时）
-    if (!previousRecord && recordIndex > 0) {
-        for (let i = recordIndex - 1; i >= 0; i--) {
-            if (syncHistory[i].status === 'success' && (syncHistory[i].bookmarkTree || syncHistory[i].hasData)) {
-                previousRecord = syncHistory[i];
-                break;
-            }
-        }
-    }
-
-    // 如果找不到上一条记录，尝试从 cachedRecordAfterClear 获取（清空历史后的第一条记录）
-    if (!previousRecord) {
-        try {
-            const cachedData = await new Promise(resolve => {
-                browserAPI.storage.local.get('cachedRecordAfterClear', result => {
-                    resolve(result.cachedRecordAfterClear);
-                });
+        if (!collectionChildren) {
+            const statsSource = prepared?.changeData?.stats || record?.bookmarkStats || {};
+            const normalizedStats = normalizeCurrentChangesExportStatsManual({ stats: statsSource });
+            const lang = currentLang === 'zh_CN' ? 'zh_CN' : 'en';
+            collectionChildren = buildCurrentChangesExportTreeManual(treeToRender, changeMap, {
+                mode: 'collection',
+                lang,
+                stats: normalizedStats
             });
-            if (cachedData && cachedData.bookmarkTree) {
-                console.log('[树形视图] 使用 cachedRecordAfterClear 作为对比基准');
-                previousRecord = cachedData;
-            }
-        } catch (e) {
-            console.warn('[树形视图] 获取 cachedRecordAfterClear 失败:', e);
         }
-    }
 
-    // 使用与「当前变化」相同的 detectTreeChangesFast 函数计算变化
-    let changeMap = new Map();
-    let treeToRender = record.bookmarkTree;
-
-    // Split storage：上一条记录如果没有 bookmarkTree，也需要按需加载
-    if (previousRecord && !previousRecord.bookmarkTree && (previousRecord.hasData || previousRecord.status === 'success')) {
-        try {
-            const prevTree = await getBackupDataLazy(previousRecord.time);
-            if (prevTree) previousRecord.bookmarkTree = prevTree;
-        } catch (e) {
-            console.warn('[树形视图] 按需加载上一条 bookmarkTree 失败:', e);
-        }
-    }
-
-    if (previousRecord && previousRecord.bookmarkTree) {
-        console.log('[树形视图] 找到上一条记录:', previousRecord.time);
-        changeMap = await detectTreeChangesFast(previousRecord.bookmarkTree, record.bookmarkTree, {
-            useGlobalExplicitMovedIds: false,
-            explicitMovedIdSet: (record && record.bookmarkStats && Array.isArray(record.bookmarkStats.explicitMovedIds))
-                ? record.bookmarkStats.explicitMovedIds
-                : null
+        const safeCollectionChildren = Array.isArray(collectionChildren) ? collectionChildren : [];
+        setDetailChangeCache(record.time, detailMode, {
+            treeToRender,
+            changeMap,
+            collectionChildren: safeCollectionChildren
         });
 
-        // 关键：如果有删除的节点，需要重建树结构（与"当前变化"一致）
-        let hasDeleted = false;
-        for (const [, change] of changeMap) {
-            if (change.type && change.type.includes('deleted')) {
-                hasDeleted = true;
-                break;
-            }
-        }
-        if (hasDeleted) {
-            try {
-                treeToRender = rebuildTreeWithDeleted(previousRecord.bookmarkTree, record.bookmarkTree, changeMap);
-                console.log('[树形视图] 已重建包含删除节点的树');
-            } catch (error) {
-                console.error('[树形视图] 重建树失败:', error);
-                treeToRender = record.bookmarkTree;
-            }
-        }
-    } else if (record.isFirstBackup) {
-        console.log('[树形视图] 第一次备份，所有书签都是新增');
-        // 第一次备份，所有书签都是新增
-        const allNodes = flattenBookmarkTree(record.bookmarkTree);
-        allNodes.forEach(item => {
-            if (item.id) changeMap.set(item.id, { type: 'added' });
+        return renderCollectionTreeHtmlForRecord(safeCollectionChildren, {
+            recordTime: record.time,
+            lazyKey: `${record.time}:collection`
         });
-    } else {
-        // 例如：用户清空了备份历史后，这条记录变成"第一条记录"，但它并不是"首次备份"，也没有缓存可对比
-        return `
-            <div class="detail-section">
-                <div class="detail-empty">
-                    <i class="fas fa-info-circle"></i>
-                    ${currentLang === 'zh_CN'
-                ? '无法计算变化：缺少上一条可对比的备份记录（上一条记录可能来自旧版本，或你刚清空了备份历史）'
-                : 'Cannot compute changes: no previous backup record to compare (the previous record may be from an older version, or you may have just cleared the backup history).'}
-                </div>
-            </div>
-        `;
     }
 
-    console.log('[树形视图] 变化统计: changeMap.size =', changeMap.size);
-
-    setDetailChangeCache(record.time, mode, {
+    setDetailChangeCache(record.time, detailMode, {
         treeToRender,
         changeMap
     });
 
     if (changeMap.size === 0) {
+        if (prepared?.missingComparisonBase) {
+            return `
+            <div class="detail-section">
+                <div class="detail-empty">
+                    <i class="fas fa-info-circle"></i>
+                    ${currentLang === 'zh_CN'
+                    ? '无法计算变化：缺少上一条可对比的备份记录（上一条记录可能来自旧版本，或你刚清空了备份历史）'
+                    : 'Cannot compute changes: no previous backup record to compare (the previous record may be from an older version, or you may have just cleared the backup history).'}
+                </div>
+            </div>
+        `;
+        }
         return `
             <div class="detail-section">
                 <div class="detail-empty">
@@ -16223,8 +16379,7 @@ async function generateTreeBasedChanges(record, mode) {
         `;
     }
 
-    // 生成树形 HTML（使用重建后的树）
-    return generateHistoryTreeHtml(treeToRender, changeMap, mode, record.time);
+    return generateHistoryTreeHtml(treeToRender, changeMap, detailMode, record.time);
 }
 
 // 计算两个书签树之间的变化
@@ -16329,6 +16484,8 @@ function generateHistoryTreeHtml(bookmarkTree, changeMap, mode, recordOrOptions)
     const customLabel = typeof options.customLabel === 'string' ? options.customLabel : null;
     const hideLegend = options.hideLegend === true;
     const hideModeLabel = options.hideModeLabel === true;
+    const collectionView = options.collectionView === true;
+    const hideSectionTitle = options.hideSectionTitle === true;
 
     // Backup history tree lazy context (per record).
     // This lets us lazily render children only when a folder is expanded.
@@ -16474,14 +16631,16 @@ function generateHistoryTreeHtml(bookmarkTree, changeMap, mode, recordOrOptions)
 
         const isFolder = !node.url && node.children;
         const idStr = node.id != null ? String(node.id) : '';
-        const selfChanged = !!(changeMap && changeMap.has(node.id));
+        const nodeChangeType = typeof node.changeType === 'string' ? String(node.changeType) : '';
+        const isCollectionGroupNode = node.collectionGroup === true;
+        const selfChanged = !!((changeMap && changeMap.has(node.id)) || nodeChangeType);
         const hasDescendantChanged = !!(isFolder && idStr && hintSet && hintSet.has(idStr));
 
         // 简略模式下只显示有变化的节点（自身变化 or 属于变化路径祖先）
         const shouldInclude = mode === 'detailed' || forceInclude || selfChanged || hasDescendantChanged;
         if (!shouldInclude) return '';
 
-        const change = changeMap.get(node.id);
+        const change = changeMap.get(node.id) || (nodeChangeType ? { type: nodeChangeType } : null);
         let changeClass = '';
         let statusIcon = '';
         const isDeletedFolder = !!(isFolder && change && typeof change.type === 'string' && change.type.split('+').includes('deleted'));
@@ -16559,6 +16718,7 @@ function generateHistoryTreeHtml(bookmarkTree, changeMap, mode, recordOrOptions)
         const title = escapeHtml(node.title || (isZh ? '(无标题)' : '(Untitled)'));
         const hasChildren = isFolder && node.children && node.children.length > 0;
         const nextUnderDeletedAncestor = underDeletedAncestor || isDeletedFolder;
+        const extraNodeClass = isCollectionGroupNode ? 'collection-group-node' : '';
 
         // 展开逻辑（与“当前变化”对齐）：
         // - 详细模式：默认不自动展开（靠路径徽标提示；用户可手动展开）
@@ -16599,7 +16759,7 @@ function generateHistoryTreeHtml(bookmarkTree, changeMap, mode, recordOrOptions)
 
             return `
                 <div class="tree-node">
-                    <div class="tree-item ${changeClass}" data-node-id="${node.id}" data-node-type="folder" data-node-level="${level}">
+                    <div class="tree-item ${changeClass} ${extraNodeClass}" data-node-id="${node.id}" data-node-type="folder" data-node-level="${level}">
                         <span class="tree-toggle ${shouldExpand ? 'expanded' : ''}"><i class="fas fa-chevron-right"></i></span>
                         <i class="tree-icon fas fa-folder${shouldExpand ? '-open' : ''}"></i>
                         <span class="tree-label">${title}</span>
@@ -16725,22 +16885,26 @@ function generateHistoryTreeHtml(bookmarkTree, changeMap, mode, recordOrOptions)
     const titleText = escapeHtml(customTitle || (isZh ? '书签变化' : 'Bookmark Changes'));
     const detailLabel = customLabel != null
         ? customLabel
-        : (mode === 'detailed' ? (isZh ? '详细' : 'Detailed') : (isZh ? '简略' : 'Simple'));
+        : (mode === 'detailed'
+            ? (isZh ? '详细' : 'Detailed')
+            : (mode === 'collection' ? (isZh ? '集合' : 'Collection') : (isZh ? '简略' : 'Simple')));
     const modeLabelHtml = hideModeLabel || !detailLabel
         ? ''
         : `<span class="detail-mode-label">(${escapeHtml(detailLabel)})</span>`;
+    const collectionAttr = collectionView ? ' data-collection-view="true"' : '';
     const lazyAttr = lazyKey ? ` data-lazy-key="${escapeHtml(lazyKey)}"` : '';
 
     return `
         <div class="detail-section">
+            ${hideSectionTitle ? '' : `
             <div class="detail-section-title detail-section-title-with-legend">
                 <span class="detail-title-left">
                     ${titleText}
                     ${modeLabelHtml}
                 </span>
                 <span class="detail-title-legend">${legend}</span>
-            </div>
-            <div class="history-tree-container bookmark-tree" data-tree-readonly="true"${lazyAttr}>
+            </div>`}
+            <div class="history-tree-container bookmark-tree" data-tree-readonly="true"${collectionAttr}${lazyAttr}>
                 <div class="history-tree-root-children">
                     ${treeContent}
                 </div>
@@ -17509,15 +17673,8 @@ async function flushPendingAddRemoveEvents(reason = '') {
             });
 
             clearCanvasLazyChangeHints('bulk-add-remove');
-
-            if (currentView === 'current-changes') {
-                if (pendingCurrentChangesEventTimer) {
-                    clearTimeout(pendingCurrentChangesEventTimer);
-                    pendingCurrentChangesEventTimer = null;
-                }
-                await renderCurrentChangesViewWithRetry(1, true);
-                scheduleCachedCurrentTreeSnapshotRefresh('bulk-add-remove');
-            }
+            markCurrentChangesDataStale(reason || 'bulk-add-remove');
+            scheduleCachedCurrentTreeSnapshotRefresh('bulk-add-remove');
             return;
         }
 
@@ -17529,9 +17686,7 @@ async function flushPendingAddRemoveEvents(reason = '') {
             }
         }
 
-        if (currentView === 'current-changes') {
-            scheduleCurrentChangesRerender(reason || 'add-remove-batch');
-        }
+        markCurrentChangesDataStale(reason || 'add-remove-batch');
     } finally {
         addRemoveFlushInProgress = false;
         if (addRemoveFlushQueued) {
@@ -17591,9 +17746,7 @@ browserAPI.bookmarks.onChanged.addListener(async (id, changeInfo) => {
                 scheduleCachedCurrentTreeSnapshotRefresh('onChanged-fast-fallback');
             }
             clearCanvasLazyChangeHints('onChanged');
-            if (currentView === 'current-changes') {
-                scheduleCurrentChangesRerender('onChanged');
-            }
+            markCurrentChangesDataStale('onChanged');
         } catch (e) {
             // 仅记录错误，不触发完全刷新以避免页面闪烁和滚动位置丢失
             console.warn('[书签监听] onChanged 处理异常:', e);
@@ -17615,9 +17768,7 @@ browserAPI.bookmarks.onMoved.addListener(async (id, moveInfo) => {
             }
 
             clearCanvasLazyChangeHints('onMoved');
-            if (currentView === 'current-changes') {
-                scheduleCurrentChangesRerender('onMoved');
-            }
+            markCurrentChangesDataStale('onMoved');
         } catch (e) {
             // 仅记录错误，不触发完全刷新以避免页面闪烁和滚动位置丢失
             console.warn('[书签监听] onMoved 处理异常:', e);
@@ -18681,60 +18832,9 @@ async function showHistoryExportChangesModal(recordTime, options = {}) {
         return;
     }
 
-    // 找到上一条记录进行对比
-    const recordIndex = syncHistory.findIndex(r => r.time === recordTime);
-    let previousRecord = null;
-    if (recordIndex > 0) {
-        for (let i = recordIndex - 1; i >= 0; i--) {
-            if (syncHistory[i].status === 'success' && (syncHistory[i].bookmarkTree || syncHistory[i].hasData)) {
-                previousRecord = syncHistory[i];
-                break;
-            }
-        }
-    }
-
-    // 计算变化 - 使用与"当前变化"相同的 detectTreeChangesFast
-    let changeMap = new Map();
-    let treeToExport = record.bookmarkTree;
-
-    if (previousRecord && !previousRecord.bookmarkTree && (previousRecord.hasData || previousRecord.status === 'success')) {
-        try {
-            const prevTree = await getBackupDataLazy(previousRecord.time);
-            if (prevTree) previousRecord.bookmarkTree = prevTree;
-        } catch (_) { }
-    }
-    if (previousRecord && previousRecord.bookmarkTree) {
-        changeMap = await detectTreeChangesFast(previousRecord.bookmarkTree, record.bookmarkTree, {
-            useGlobalExplicitMovedIds: false,
-            explicitMovedIdSet: (record && record.bookmarkStats && Array.isArray(record.bookmarkStats.explicitMovedIds))
-                ? record.bookmarkStats.explicitMovedIds
-                : null
-        });
-
-        // 关键：如果有删除的节点，需要重建树结构（与"当前变化"一致）
-        let hasDeleted = false;
-        for (const [, change] of changeMap) {
-            if (change.type && change.type.includes('deleted')) {
-                hasDeleted = true;
-                break;
-            }
-        }
-        if (hasDeleted) {
-            try {
-                treeToExport = rebuildTreeWithDeleted(previousRecord.bookmarkTree, record.bookmarkTree, changeMap);
-                console.log('[showHistoryExportChangesModal] 已重建包含删除节点的树');
-            } catch (error) {
-                console.error('[showHistoryExportChangesModal] 重建树失败:', error);
-                treeToExport = record.bookmarkTree;
-            }
-        }
-    } else if (record.isFirstBackup) {
-        // 第一次备份，所有书签都是新增
-        const allNodes = flattenBookmarkTree(record.bookmarkTree);
-        allNodes.forEach(item => {
-            if (item.id) changeMap.set(item.id, { type: 'added' });
-        });
-    }
+    const prepared = await prepareDataForExport(record);
+    const changeMap = prepared?.changeMap instanceof Map ? prepared.changeMap : new Map();
+    const treeToExport = prepared?.treeToExport || record.bookmarkTree;
 
     console.log('[showHistoryExportChangesModal] 变化统计:', changeMap.size);
 
@@ -18753,7 +18853,10 @@ async function showHistoryExportChangesModal(recordTime, options = {}) {
         if (formatHtml) formatHtml.checked = true;
 
         // 使用当前备份历史的详略模式
-        const modeValue = preferredMode || getRecordDetailMode(recordTime) || historyDetailMode || 'simple';
+        const modeValue = normalizeRestoreMergeViewMode(preferredMode)
+            || normalizeRestoreMergeViewMode(getRecordDetailMode(recordTime))
+            || normalizeRestoreMergeViewMode(historyDetailMode)
+            || 'simple';
         const modeRadio = modal.querySelector(`input[name="exportChangesMode"][value="${modeValue}"]`);
         if (modeRadio) modeRadio.checked = true;
 
@@ -21484,7 +21587,7 @@ function renderGlobalExportPage() {
 
         const savedMode = getRecordDetailMode(record.time);
         const defaultMode = historyDetailMode || 'simple';
-        const mode = savedMode || defaultMode;
+        const mode = normalizeHistoryDetailMode(savedMode || defaultMode);
 
         const isChecked = globalExportSelectedState[record.time] !== false;
 
@@ -21501,6 +21604,7 @@ function renderGlobalExportPage() {
             <div class="global-export-toggle-group" data-time="${record.time}">
                 <button class="global-export-toggle-btn ${mode === 'simple' ? 'active' : ''}" data-value="simple">${currentLang === 'zh_CN' ? '简略' : 'Simple'}</button>
                 <button class="global-export-toggle-btn ${mode === 'detailed' ? 'active' : ''}" data-value="detailed">${currentLang === 'zh_CN' ? '详细' : 'Detailed'}</button>
+                <button class="global-export-toggle-btn ${mode === 'collection' ? 'active' : ''}" data-value="collection">${currentLang === 'zh_CN' ? '集合' : 'Collection'}</button>
             </div>
             </td>
             <td>
@@ -21652,13 +21756,15 @@ async function startGlobalExport() {
                 // 获取保存的视图模式
                 const savedMode = getRecordDetailMode(record.time);
                 const defaultMode = historyDetailMode || 'simple';
-                const mode = savedMode || defaultMode;
+                const mode = normalizeHistoryDetailMode(savedMode || defaultMode);
 
                 const dateStr = formatTimeForFilename(record.time); // 备份时间（本地时间）
                 // Sanitize note for filename use
                 const cleanNote = record.note ? record.note.replace(/[\\/:*?"<>|]/g, '_').replace(/\s+/g, '_') : '';
                 const fingerprint = record.fingerprint ? `_${record.fingerprint.substring(0, 8)}` : '';
-                const modeStr = mode === 'simple' ? (currentLang === 'zh_CN' ? '_简略' : '_Simple') : (currentLang === 'zh_CN' ? '_详细' : '_Detailed');
+                const modeStr = mode === 'detailed'
+                    ? (currentLang === 'zh_CN' ? '_详细' : '_Detailed')
+                    : (mode === 'collection' ? (currentLang === 'zh_CN' ? '_集合' : '_Collection') : (currentLang === 'zh_CN' ? '_简略' : '_Simple'));
                 const defaultPrefix = currentLang === 'zh_CN' ? '书签' : 'bookmark';
 
                 const baseName = cleanNote
@@ -21734,7 +21840,7 @@ async function startGlobalExport() {
                 // 获取保存的视图模式
                 const savedMode = getRecordDetailMode(record.time);
                 const defaultMode = historyDetailMode || 'simple';
-                const mode = savedMode || defaultMode;
+                const mode = normalizeHistoryDetailMode(savedMode || defaultMode);
 
                 // 1. 获取该记录的处理后树（带 [+] [-] 前缀）
                 const processedTree = await getProcessedTreeForRecord(record, mode);
@@ -21744,7 +21850,7 @@ async function startGlobalExport() {
                 // 改为 Note + Hash + Mode + Time 格式
                 const fingerprint = record.fingerprint ? ` [${record.fingerprint.substring(0, 8)}]` : '';
                 const titlePrefix = record.note ? record.note : (currentLang === 'zh_CN' ? '备份' : 'Backup');
-                const modeLabel = mode === 'simple' ? (currentLang === 'zh_CN' ? '简略' : 'Simple') : (currentLang === 'zh_CN' ? '详细' : 'Detailed');
+                const modeLabel = getHistoryDetailModeLabel(mode);
 
                 const seqNumber = seqMap.get(String(record.time));
                 const seqStr = Number.isFinite(seqNumber) ? String(seqNumber).padStart(seqWidth, '0') : '00';
@@ -22028,9 +22134,58 @@ async function prepareDataForExport(record) {
     let changeMap = new Map();
     await ensureRecordBookmarkTree(record);
     if (!record.bookmarkTree) {
-        return { treeToExport: null, changeMap };
+        return { treeToExport: null, changeMap, changeData: null, missingComparisonBase: false };
     }
-    const recordIndex = syncHistory.findIndex(r => r.time === record.time);
+
+    const persistedChangeData = await getRecordChangeDataLazy(record.time);
+    if (persistedChangeData && Array.isArray(persistedChangeData.changeEntries)) {
+        changeMap = deserializeRecordChangeMap(persistedChangeData);
+
+        let treeToExport = Array.isArray(persistedChangeData.treeWithDeleted) && persistedChangeData.treeWithDeleted.length
+            ? cloneSerializableData(persistedChangeData.treeWithDeleted)
+            : record.bookmarkTree;
+
+        const shouldTryRebuildDeleted = hasDeletedChangeInMap(changeMap) && !(Array.isArray(persistedChangeData.treeWithDeleted) && persistedChangeData.treeWithDeleted.length);
+        if (shouldTryRebuildDeleted) {
+            let previousRecord = null;
+            try {
+                previousRecord = await getPreviousHistoryRecordMeta(record.time);
+            } catch (_) {
+                previousRecord = null;
+            }
+
+            if (!previousRecord) {
+                const recordIndex = syncHistory.findIndex(r => String(r.time) === String(record.time));
+                if (recordIndex > 0) {
+                    for (let i = recordIndex - 1; i >= 0; i--) {
+                        if (syncHistory[i].status === 'success' && (syncHistory[i].bookmarkTree || syncHistory[i].hasData)) {
+                            previousRecord = syncHistory[i];
+                            break;
+                        }
+                    }
+                }
+            }
+
+            if (previousRecord && !previousRecord.bookmarkTree && (previousRecord.hasData || previousRecord.status === 'success')) {
+                try {
+                    const prevTree = await getBackupDataLazy(previousRecord.time);
+                    if (prevTree) previousRecord.bookmarkTree = prevTree;
+                } catch (_) { }
+            }
+
+            if (previousRecord && previousRecord.bookmarkTree) {
+                try {
+                    treeToExport = rebuildTreeWithDeleted(previousRecord.bookmarkTree, record.bookmarkTree, changeMap);
+                } catch (_) {
+                    treeToExport = record.bookmarkTree;
+                }
+            }
+        }
+
+        return { treeToExport, changeMap, changeData: persistedChangeData, missingComparisonBase: false };
+    }
+
+    const recordIndex = syncHistory.findIndex(r => String(r.time) === String(record.time));
     let previousRecord = null;
     if (recordIndex > 0) {
         for (let i = recordIndex - 1; i >= 0; i--) {
@@ -22076,9 +22231,16 @@ async function prepareDataForExport(record) {
         allNodes.forEach(item => {
             if (item.id) changeMap.set(item.id, { type: 'added' });
         });
+    } else {
+        return {
+            treeToExport: record.bookmarkTree,
+            changeMap,
+            changeData: null,
+            missingComparisonBase: true
+        };
     }
 
-    return { treeToExport, changeMap };
+    return { treeToExport, changeMap, changeData: null, missingComparisonBase: false };
 }
 
 // 重构：原有的 HTML 生成函数调用
@@ -22097,7 +22259,13 @@ async function generateExportHtmlContentForGlobal(record, mode) {
 // 辅助：获取处理过的树（带前缀，已过滤）供合并使用
 async function getProcessedTreeForRecord(record, mode) {
     const normalizedMode = normalizeRestoreMergeViewMode(mode) || 'simple';
-    const { treeToExport, changeMap } = await prepareDataForExport(record);
+    const { treeToExport, changeMap, changeData } = await prepareDataForExport(record);
+
+    if (normalizedMode === 'collection' && Array.isArray(changeData?.collectionChildren)) {
+        return {
+            children: cloneSerializableData(changeData.collectionChildren) || []
+        };
+    }
 
     // 在详细模式下，尝试获取存储的展开状态（WYSIWYG）
     let expandedIds = null;

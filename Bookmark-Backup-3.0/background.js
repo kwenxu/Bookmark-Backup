@@ -68,6 +68,8 @@ const badgeTextMap = { // 添加角标文本的国际化映射对象 - 在文件
         'en': '!'
     }
 };
+const BOOKMARK_CHANGES_DIRTY_KEY = 'bookmarkChangesDirty';
+const ANALYSIS_QUICK_REOPEN_CACHE_MS = 2000;
 
 // Unified Export Folder Paths - 统一的导出文件夹路径（根据语言动态选择）
 // const EXPORT_ROOT_FOLDER = 'Bookmark Backup';  // 父文件夹保持英文 - REMOVED
@@ -335,6 +337,29 @@ let isProcessingHistoricalDownloads = false;
 const extensionStartupTime = Date.now();
 // 智能缓存书签分析结果
 let cachedBookmarkAnalysis = null;
+
+function buildDirtyChangeDescription(preferredLang = 'zh_CN') {
+    return preferredLang === 'en'
+        ? '(Bookmark changes detected)'
+        : '（检测到书签变更）';
+}
+
+async function getBookmarkChangesDirty() {
+    try {
+        const data = await browserAPI.storage.local.get([BOOKMARK_CHANGES_DIRTY_KEY]);
+        return data?.[BOOKMARK_CHANGES_DIRTY_KEY] === true;
+    } catch (_) {
+        return false;
+    }
+}
+
+async function setBookmarkChangesDirty(isDirty) {
+    try {
+        await browserAPI.storage.local.set({
+            [BOOKMARK_CHANGES_DIRTY_KEY]: isDirty === true
+        });
+    } catch (_) { }
+}
 
 // 角标闪烁动画相关变量（用于初始化上传等操作的进度指示）
 let badgeBlinkIntervalId = null;
@@ -793,7 +818,7 @@ async function migrateToSplitStorage() {
 async function removeBackupDataByTimes(times) {
     const keys = (Array.isArray(times) ? times : [])
         .filter(t => t !== undefined && t !== null && String(t).trim() !== '')
-        .map(t => `backup_data_${t}`);
+        .flatMap(t => [`backup_data_${t}`, `changes_data_${t}`]);
     if (keys.length > 0) {
         await browserAPI.storage.local.remove(keys);
     }
@@ -882,8 +907,6 @@ browserAPI.runtime.onStartup.addListener(async () => {
 
     // 使用主动查询方法同步下载状态，避免大量onCreated日志
     syncDownloadState();
-    // 首次启动时预热缓存
-    await updateAndCacheAnalysis();
 
     // 浏览器启动后，直接初始化定时器系统（包含遗漏检查）
     try {
@@ -2631,6 +2654,8 @@ browserAPI.runtime.onMessage.addListener((message, sender, sendResponse) => {
                             sendResponse({ success: false, error: buildEmptySnapshotError(preferredLang, 'revert') });
                             return;
                         }
+                        await setBookmarkChangesDirty(false);
+                        await setBadge();
                         sendResponse({ success: true, skipped: true, message: buildEmptySnapshotNoopMessage(preferredLang, 'revert'), strategy: 'overwrite' });
                         return;
                     }
@@ -2747,6 +2772,8 @@ browserAPI.runtime.onMessage.addListener((message, sender, sendResponse) => {
                             throw new Error(buildEmptySnapshotError(preferredLang, 'overwrite'));
                         }
 
+                        await setBookmarkChangesDirty(false);
+                        await setBadge();
                         sendResponse({ success: true, skipped: true, message: buildEmptySnapshotNoopMessage(preferredLang, 'overwrite') });
                         return;
                     }
@@ -4018,39 +4045,54 @@ async function handleBookmarkChange() {
                 return;
             }
             // 读取自动模式和自动备份定时器设置
-            const { autoSync = true, autoBackupTimerSettings } = await browserAPI.storage.local.get(['autoSync', 'autoBackupTimerSettings']);
+            const {
+                autoSync = true,
+                autoBackupTimerSettings,
+                [BOOKMARK_CHANGES_DIRTY_KEY]: bookmarkChangesDirty = false
+            } = await browserAPI.storage.local.get([
+                'autoSync',
+                'autoBackupTimerSettings',
+                BOOKMARK_CHANGES_DIRTY_KEY
+            ]);
             const backupMode = autoBackupTimerSettings?.backupMode || 'regular';
+            const dirtyBefore = bookmarkChangesDirty === true;
+            const dirtyBecameTrue = !dirtyBefore;
 
             // 更新最后书签变更时间（无论模式如何）
-            await browserAPI.storage.local.set({
+            const updatePayload = {
                 lastBookmarkChangeTime: Date.now()
-            });
+            };
             // 只有在手动备份模式下才设置活动标志
             if (!autoSync) {
-                await browserAPI.storage.local.set({ hasBookmarkActivitySinceLastCheck: true });
+                updatePayload.hasBookmarkActivitySinceLastCheck = true;
+            }
+            if (dirtyBecameTrue) {
+                updatePayload[BOOKMARK_CHANGES_DIRTY_KEY] = true;
+            }
+            await browserAPI.storage.local.set(updatePayload);
+            if (dirtyBecameTrue) {
+                cachedBookmarkAnalysis = null;
             }
 
-            // 先更新分析缓存，再更新角标：
-            // - 避免 setBadge() 读到旧的 cachedBookmarkAnalysis，导致“移动/修改（数量不变）时角标不变黄”
-            // - updateAndCacheAnalysis() 会把 lastSyncOperations 的最新标记纳入分析，并广播给前端
-            try {
-                await updateAndCacheAnalysis();
-            } catch (_) {
-                // 出错时不阻塞角标更新：setBadge 内部会自行兜底为红色/错误角标
+            // 非实时模式下，角标只在“第一次脏变化”时变黄；后续变化不重复刷新。
+            if (dirtyBecameTrue) {
+                await setBadge();
             }
-
-            // 更新角标（无论模式如何）
-            await setBadge(); // 使用新的不带参数的setBadge
 
             // 向Popup页面发送消息，通知书签已更改
-            try {
-                const response = await browserAPI.runtime.sendMessage({ action: "bookmarkChanged" });
-                if (!response || !response.success) {
-                }
-            } catch (error) {
-                // 如果Popup页面未打开，会抛出错误，忽略即可
-                if (error.message && error.message.includes('Receiving end does not exist')) {
-                } else {
+            if (dirtyBecameTrue) {
+                try {
+                    const response = await browserAPI.runtime.sendMessage({
+                        action: "bookmarkChanged",
+                        dirtyBecameTrue: true
+                    });
+                    if (!response || !response.success) {
+                    }
+                } catch (error) {
+                    // 如果Popup页面未打开，会抛出错误，忽略即可
+                    if (error.message && error.message.includes('Receiving end does not exist')) {
+                    } else {
+                    }
                 }
             }
 
@@ -5649,6 +5691,82 @@ async function buildCurrentChangesSnapshotArtifacts({ localBookmarks, syncTime, 
     }
 
     return artifacts;
+}
+
+function serializeHistoryRecordChangeEntries(changeMap) {
+    if (!(changeMap instanceof Map) || changeMap.size === 0) {
+        return [];
+    }
+
+    const entries = [];
+    changeMap.forEach((change, id) => {
+        if (id == null) return;
+        entries.push([String(id), change || {}]);
+    });
+    return entries;
+}
+
+async function buildHistoryRecordChangePayload({ recordTime, lang, previousBookmarks, currentBookmarks, explicitMovedIds = null, stats = null }) {
+    if (!Array.isArray(currentBookmarks) || currentBookmarks.length === 0) {
+        return null;
+    }
+
+    const normalizedLang = lang === 'en' ? 'en' : 'zh_CN';
+    const explicitMovedIdSet = new Set(
+        (Array.isArray(explicitMovedIds) ? explicitMovedIds : [])
+            .map(v => String(v || '').trim())
+            .filter(Boolean)
+    );
+
+    let changeMap = new Map();
+    let treeToRender = currentBookmarks;
+    let hasDeleted = false;
+
+    if (Array.isArray(previousBookmarks) && previousBookmarks.length > 0) {
+        changeMap = detectTreeChangesFastBg(previousBookmarks, currentBookmarks, {
+            explicitMovedIdSet: explicitMovedIdSet.size > 0 ? explicitMovedIdSet : null
+        });
+
+        for (const [, change] of changeMap) {
+            if (change?.type && String(change.type).includes('deleted')) {
+                hasDeleted = true;
+                break;
+            }
+        }
+
+        if (hasDeleted) {
+            try {
+                treeToRender = rebuildTreeWithDeletedBg(previousBookmarks, currentBookmarks, changeMap);
+            } catch (_) {
+                treeToRender = currentBookmarks;
+            }
+        }
+    } else {
+        const allNodes = flattenBookmarkTreeBg(currentBookmarks);
+        allNodes.forEach(item => {
+            if (!item?.id) return;
+            changeMap.set(String(item.id), { type: 'added' });
+        });
+    }
+
+    const safeStats = stats && typeof stats === 'object' ? { ...stats } : {};
+    const collectionChildren = buildCurrentChangesExportTree(treeToRender, changeMap, {
+        mode: 'collection',
+        lang: normalizedLang,
+        stats: safeStats
+    });
+
+    return {
+        schemaVersion: 1,
+        source: 'backup-success',
+        recordTime: recordTime != null ? String(recordTime) : '',
+        generatedAt: new Date().toISOString(),
+        stats: safeStats,
+        hasDeleted,
+        changeEntries: serializeHistoryRecordChangeEntries(changeMap),
+        collectionChildren: Array.isArray(collectionChildren) ? collectionChildren : [],
+        treeWithDeleted: hasDeleted && Array.isArray(treeToRender) ? treeToRender : null
+    };
 }
 
 async function buildCurrentChangesManualExportArtifact({ mode, format, lang, explicitMovedIds = null, localBookmarks = null, syncTime = null, previousBookmarks = null, usePreviousBookmarks = false, forceExpandedIds = null }) {
@@ -8773,6 +8891,7 @@ async function executePatchBookmarkRevert(snapshotTree, options = {}) {
     try {
         await browserAPI.storage.local.remove('hasBookmarkActivitySinceLastCheck');
     } catch (_) { }
+    await setBookmarkChangesDirty(false);
     await updateAndCacheAnalysis();
     await setBadge();
 
@@ -8972,6 +9091,7 @@ async function restoreSnapshotTree(snapshotTree, options = {}) {
         try {
             await browserAPI.storage.local.remove(['current-changes-cache:v1']);
         } catch (_) { }
+        await setBookmarkChangesDirty(false);
     } catch (e) {
         // 不影响主流程
     }
@@ -9044,6 +9164,7 @@ async function mergeSnapshotTree(snapshotTree, options = {}) {
     try {
         await browserAPI.storage.local.remove(['current-changes-cache:v1']);
     } catch (_) { }
+    await setBookmarkChangesDirty(true);
     try {
         await updateAndCacheAnalysis();
         await setBadge();
@@ -9350,6 +9471,10 @@ async function updateSyncStatus(direction, time, status = 'success', errorMessag
             try {
                 await browserAPI.storage.local.remove(['current-changes-cache:v1']);
             } catch (_) { }
+            await setBookmarkChangesDirty(false);
+            try {
+                await browserAPI.storage.local.remove('hasBookmarkActivitySinceLastCheck');
+            } catch (_) { }
 
             resetOperationStatus();
 
@@ -9360,6 +9485,24 @@ async function updateSyncStatus(direction, time, status = 'success', errorMessag
 
         // 只为成功的备份保存 bookmarkTree（用于生成历史详情）
         const shouldSaveTree = status === 'success';
+        let recordChangeDataPayload = null;
+        const changeDataKey = `changes_data_${time}`;
+
+        if (shouldSaveTree && Array.isArray(localBookmarks) && localBookmarks.length) {
+            try {
+                recordChangeDataPayload = await buildHistoryRecordChangePayload({
+                    recordTime: time,
+                    lang: activeLang,
+                    previousBookmarks: lastBookmarkData?.bookmarkTree || null,
+                    currentBookmarks: localBookmarks,
+                    explicitMovedIds: explicitMovedIdListForRecord,
+                    stats: bookmarkStats
+                });
+            } catch (changePayloadError) {
+                console.warn('[updateSyncStatus] 构建历史变化数据失败:', changePayloadError);
+                recordChangeDataPayload = null;
+            }
+        }
 
         // 统一哈希规则：历史记录 fingerprint 与快照文件夹/文件名使用同一算法
         // 这样“恢复列表哈希值”与磁盘上的快照哈希始终一致（尤其是首次备份/清空后首次备份）
@@ -9419,16 +9562,24 @@ async function updateSyncStatus(direction, time, status = 'success', errorMessag
                 : defaultNote,
             // bookmarkTree 不再存放在索引记录中
             hasData: shouldSaveTree,
+            hasChangeData: !!recordChangeDataPayload,
+            changeDataKey: recordChangeDataPayload ? changeDataKey : '',
+            changeDataSchemaVersion: recordChangeDataPayload?.schemaVersion || 0,
             fingerprint: fingerprint,
             snapshotKey: effectiveOverwriteMode === 'overwrite' ? '__overwrite__' : snapshotKey,
             snapshotName,
             snapshotFolderName
         };
 
-        // 独立保存书签树数据
+        // 独立保存书签树和对应变化数据
         if (shouldSaveTree && localBookmarks) {
-            const treeKey = `backup_data_${time}`;
-            await browserAPI.storage.local.set({ [treeKey]: localBookmarks });
+            const splitDataToStore = {
+                [`backup_data_${time}`]: localBookmarks
+            };
+            if (recordChangeDataPayload) {
+                splitDataToStore[changeDataKey] = recordChangeDataPayload;
+            }
+            await browserAPI.storage.local.set(splitDataToStore);
         }
 
         let currentSyncHistory = [...syncHistory, newSyncRecord];
@@ -9682,19 +9833,24 @@ let autoBackupTimerRunning = false;
 // 修改 setBadge 函数
 async function setBadge() { // 不再接收 status 参数
     try {
-        // 首先获取当前模式
-        const { autoSync } = await browserAPI.storage.local.get({ autoSync: true });
+        const {
+            autoSync = true,
+            preferredLang = 'zh_CN',
+            autoBackupTimerSettings,
+            [BOOKMARK_CHANGES_DIRTY_KEY]: bookmarkChangesDirty = false
+        } = await browserAPI.storage.local.get({
+            autoSync: true,
+            preferredLang: 'zh_CN',
+            autoBackupTimerSettings: null,
+            [BOOKMARK_CHANGES_DIRTY_KEY]: false
+        });
 
         let badgeText = '';
         let badgeColor = '';
-        let hasChanges = false;
+        const hasChanges = bookmarkChangesDirty === true;
 
         if (autoSync) {
             // 自动备份模式
-            const { preferredLang = 'zh_CN', autoBackupTimerSettings } = await browserAPI.storage.local.get([
-                'preferredLang',
-                'autoBackupTimerSettings'
-            ]);
             badgeText = badgeTextMap['auto'][preferredLang] || '自';
 
             // 获取备份模式
@@ -9704,29 +9860,6 @@ async function setBadge() { // 不再接收 status 参数
                 // 实时备份：绿色角标（会在备份时闪烁）
                 badgeColor = '#00FF00'; // 亮绿色
             } else {
-                // 常规时间/特定时间：检查是否有变化
-                const stats = await getBackupStatsInternal();
-
-                if (stats && stats.success && stats.stats) {
-                    // 任何数量或结构的变化都算作变化
-                    if (
-                        stats.stats.bookmarkDiff !== 0 ||
-                        stats.stats.folderDiff !== 0 ||
-                        (typeof stats.stats.bookmarkAdded === 'number' && stats.stats.bookmarkAdded > 0) ||
-                        (typeof stats.stats.bookmarkDeleted === 'number' && stats.stats.bookmarkDeleted > 0) ||
-                        (typeof stats.stats.folderAdded === 'number' && stats.stats.folderAdded > 0) ||
-                        (typeof stats.stats.folderDeleted === 'number' && stats.stats.folderDeleted > 0) ||
-                        (typeof stats.stats.movedCount === 'number' && stats.stats.movedCount > 0) ||
-                        (typeof stats.stats.modifiedCount === 'number' && stats.stats.modifiedCount > 0) ||
-                        stats.stats.bookmarkMoved ||
-                        stats.stats.bookmarkModified ||
-                        stats.stats.folderMoved ||
-                        stats.stats.folderModified
-                    ) {
-                        hasChanges = true;
-                    }
-                }
-
                 if (hasChanges) {
                     badgeColor = '#FFFF00'; // 黄色，表示有变动
 
@@ -9785,31 +9918,7 @@ async function setBadge() { // 不再接收 status 参数
             }
         } else {
             // 手动模式
-            const { preferredLang = 'zh_CN' } = await browserAPI.storage.local.get(['preferredLang']);
             badgeText = badgeTextMap['manual'][preferredLang] || '手';
-
-            // 在手动模式下，检查是否有变化
-            const stats = await getBackupStatsInternal();
-
-            if (stats) {
-                // 任何数量或结构的变化都算作变化
-                if (
-                    stats.stats.bookmarkDiff !== 0 ||
-                    stats.stats.folderDiff !== 0 ||
-                    (typeof stats.stats.bookmarkAdded === 'number' && stats.stats.bookmarkAdded > 0) ||
-                    (typeof stats.stats.bookmarkDeleted === 'number' && stats.stats.bookmarkDeleted > 0) ||
-                    (typeof stats.stats.folderAdded === 'number' && stats.stats.folderAdded > 0) ||
-                    (typeof stats.stats.folderDeleted === 'number' && stats.stats.folderDeleted > 0) ||
-                    (typeof stats.stats.movedCount === 'number' && stats.stats.movedCount > 0) ||
-                    (typeof stats.stats.modifiedCount === 'number' && stats.stats.modifiedCount > 0) ||
-                    stats.stats.bookmarkMoved ||
-                    stats.stats.bookmarkModified ||
-                    stats.stats.folderMoved ||
-                    stats.stats.folderModified
-                ) {
-                    hasChanges = true;
-                }
-            }
 
             if (hasChanges) {
                 badgeColor = '#FFFF00'; // 黄色，表示有变动
@@ -9900,23 +10009,9 @@ async function updateBadgeAfterSync(success) {
         } catch (badgeError) {
         }
     } else {
-        // 备份成功，检查是否有变化
+        // 备份成功后优先读取 dirty 标记，避免再次触发昂贵分析
         try {
-            const stats = await getBackupStatsInternal(); // 获取最新统计信息
-            const hasChanges = (
-                (stats.stats.bookmarkDiff !== 0) ||
-                (stats.stats.folderDiff !== 0) ||
-                (typeof stats.stats.bookmarkAdded === 'number' && stats.stats.bookmarkAdded > 0) ||
-                (typeof stats.stats.bookmarkDeleted === 'number' && stats.stats.bookmarkDeleted > 0) ||
-                (typeof stats.stats.folderAdded === 'number' && stats.stats.folderAdded > 0) ||
-                (typeof stats.stats.folderDeleted === 'number' && stats.stats.folderDeleted > 0) ||
-                (typeof stats.stats.movedCount === 'number' && stats.stats.movedCount > 0) ||
-                (typeof stats.stats.modifiedCount === 'number' && stats.stats.modifiedCount > 0) ||
-                stats.stats.bookmarkMoved ||
-                stats.stats.folderMoved ||
-                stats.stats.bookmarkModified ||
-                stats.stats.folderModified
-            );
+            const hasChanges = await getBookmarkChangesDirty();
 
             if (hasChanges) {
                 // 有变化，执行闪烁
@@ -10542,12 +10637,42 @@ async function analyzeBookmarkChanges() {
 // 添加一个内部函数来获取备份统计信息，以便在 background.js 内部调用
 async function getBackupStatsInternal() {
     try {
-        const { lastSyncTime } = await browserAPI.storage.local.get(['lastSyncTime']);
-        // 优先使用缓存，如果缓存不存在（例如首次运行），则触发一次分析和缓存
-        const stats = cachedBookmarkAnalysis || await updateAndCacheAnalysis();
+        const store = await browserAPI.storage.local.get([
+            'lastSyncTime',
+            'lastBookmarkData',
+            'lastBookmarkChangeTime',
+            'cachedBookmarkAnalysisSnapshot',
+            'cachedBookmarkAnalysisSnapshotTime',
+            'cachedBookmarkAnalysisSnapshotMeta'
+        ]);
+        const lastSyncTime = store?.lastSyncTime || null;
+
+        let stats = cachedBookmarkAnalysis;
+        if (!stats) {
+            const persistedSnapshot = store?.cachedBookmarkAnalysisSnapshot || null;
+            const snapshotTime = Number(store?.cachedBookmarkAnalysisSnapshotTime || 0);
+            const snapshotMeta = store?.cachedBookmarkAnalysisSnapshotMeta || null;
+            const baselineTs = store?.lastBookmarkData?.timestamp || null;
+            const lastChangeTime = typeof store?.lastBookmarkChangeTime === 'number'
+                ? store.lastBookmarkChangeTime
+                : 0;
+
+            const metaMatched = !!(snapshotMeta &&
+                snapshotMeta.lastBookmarkDataTimestamp === baselineTs &&
+                Number(snapshotMeta.lastBookmarkChangeTime || 0) === lastChangeTime);
+            const withinQuickWindow = snapshotTime > 0 &&
+                (Date.now() - snapshotTime) <= ANALYSIS_QUICK_REOPEN_CACHE_MS;
+
+            if (persistedSnapshot && (metaMatched || withinQuickWindow)) {
+                stats = persistedSnapshot;
+                cachedBookmarkAnalysis = persistedSnapshot;
+            } else {
+                stats = await updateAndCacheAnalysis();
+            }
+        }
 
         const response = {
-            lastSyncTime: lastSyncTime || null,
+            lastSyncTime,
             stats: stats,
             success: true
         };
@@ -10562,6 +10687,21 @@ async function getBackupStatsInternal() {
 // 为自动备份定时器提供的书签变化检测接口
 async function checkBookmarkChangesForAutoBackup() {
     try {
+        const { autoBackupTimerSettings, preferredLang = 'zh_CN' } = await browserAPI.storage.local.get([
+            'autoBackupTimerSettings',
+            'preferredLang'
+        ]);
+        const backupMode = autoBackupTimerSettings?.backupMode || 'regular';
+
+        if (backupMode !== 'realtime') {
+            const hasChanges = await getBookmarkChangesDirty();
+            return {
+                success: true,
+                hasChanges,
+                changeDescription: hasChanges ? buildDirtyChangeDescription(preferredLang) : ''
+            };
+        }
+
         const stats = await getBackupStatsInternal();
 
         if (!stats || !stats.success || !stats.stats) {
@@ -10572,8 +10712,6 @@ async function checkBookmarkChangesForAutoBackup() {
                 error: '无法获取备份统计信息'
             };
         }
-
-        const { preferredLang = 'zh_CN' } = await browserAPI.storage.local.get(['preferredLang']);
 
         // 检查是否有任何变化（支持“+/-同时存在但净差为0”的场景）
         const hasChanges = (
@@ -10792,9 +10930,20 @@ async function updateAndCacheAnalysis() {
 
         // 将摘要快照持久化到 storage（供提醒系统/页面在缓存未命中时兜底使用）
         try {
+            const snapshotMetaStore = await browserAPI.storage.local.get([
+                'lastBookmarkData',
+                'lastBookmarkChangeTime'
+            ]);
+            const snapshotMeta = {
+                lastBookmarkDataTimestamp: snapshotMetaStore?.lastBookmarkData?.timestamp || null,
+                lastBookmarkChangeTime: typeof snapshotMetaStore?.lastBookmarkChangeTime === 'number'
+                    ? snapshotMetaStore.lastBookmarkChangeTime
+                    : 0
+            };
             await browserAPI.storage.local.set({
                 cachedBookmarkAnalysisSnapshot: analysis,
-                cachedBookmarkAnalysisSnapshotTime: Date.now()
+                cachedBookmarkAnalysisSnapshotTime: Date.now(),
+                cachedBookmarkAnalysisSnapshotMeta: snapshotMeta
             });
         } catch (_) { }
 

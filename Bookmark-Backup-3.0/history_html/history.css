@@ -2998,6 +2998,50 @@ a.tree-label.tree-bookmark-link:hover {
     font-weight: 500;
 }
 
+/* 集合视图：分组标题与条目统一做水平居中对齐 */
+.history-tree-container[data-collection-view="true"] .tree-item {
+    align-items: center;
+}
+
+.history-tree-container[data-collection-view="true"] .tree-item .tree-toggle,
+.history-tree-container[data-collection-view="true"] .tree-item .tree-icon,
+.history-tree-container[data-collection-view="true"] .tree-item .change-badges {
+    margin-top: 0;
+}
+
+.history-tree-container[data-collection-view="true"] .tree-item[data-node-type="folder"] > .tree-icon {
+    transform: translateY(1px);
+}
+
+/* 集合视图：图标/折叠箭头跟随变化类型着色，和文字保持一致 */
+.history-tree-container[data-collection-view="true"] .tree-item.tree-change-added > .tree-toggle,
+.history-tree-container[data-collection-view="true"] .tree-item.tree-change-added > .tree-icon {
+    color: #28a745;
+}
+
+.history-tree-container[data-collection-view="true"] .tree-item.tree-change-deleted > .tree-toggle,
+.history-tree-container[data-collection-view="true"] .tree-item.tree-change-deleted > .tree-icon {
+    color: #dc3545;
+}
+
+.history-tree-container[data-collection-view="true"] .tree-item.tree-change-modified > .tree-toggle,
+.history-tree-container[data-collection-view="true"] .tree-item.tree-change-modified > .tree-icon {
+    color: #fd7e14;
+}
+
+.history-tree-container[data-collection-view="true"] .tree-item.tree-change-moved > .tree-toggle,
+.history-tree-container[data-collection-view="true"] .tree-item.tree-change-moved > .tree-icon,
+.history-tree-container[data-collection-view="true"] .tree-item.tree-change-mixed > .tree-toggle,
+.history-tree-container[data-collection-view="true"] .tree-item.tree-change-mixed > .tree-icon {
+    color: #0d6efd;
+}
+
+/* 集合分组标题只要颜色，不要删除态的删除线和透明度 */
+.history-tree-container[data-collection-view="true"] .tree-item.collection-group-node.tree-change-deleted > .tree-label {
+    text-decoration: none;
+    opacity: 1;
+}
+
 /* 多个变化标记的容器 */
 .change-badges {
     display: inline-flex;
@@ -4384,6 +4428,82 @@ a.tree-label.tree-bookmark-link:hover {
 
 .diff-header-spacer {
     flex: 1;
+}
+
+.current-changes-header-actions {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 8px;
+    flex-wrap: wrap;
+}
+
+.current-changes-mode-toggle {
+    display: inline-flex;
+    align-items: center;
+    gap: 2px;
+    background: var(--bg-tertiary);
+    border: 1px solid var(--border-color);
+    border-radius: 6px;
+    padding: 2px;
+}
+
+.current-changes-mode-btn {
+    appearance: none;
+    border: none;
+    background: transparent;
+    color: var(--text-secondary);
+    border-radius: 4px;
+    padding: 4px 8px;
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    font-size: 12px;
+    line-height: 1.2;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+
+.current-changes-mode-btn svg {
+    width: 14px;
+    height: 14px;
+    flex-shrink: 0;
+}
+
+.current-changes-mode-btn:hover {
+    background: rgba(0, 0, 0, 0.05);
+    color: var(--text-primary);
+}
+
+.current-changes-mode-btn.active {
+    background: var(--bg-elevated);
+    color: var(--accent-primary);
+    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.1);
+    font-weight: 600;
+}
+
+[data-theme="dark"] .current-changes-mode-toggle {
+    background: rgba(255, 255, 255, 0.05);
+    border-color: rgba(255, 255, 255, 0.1);
+}
+
+[data-theme="dark"] .current-changes-mode-btn:hover {
+    background: rgba(255, 255, 255, 0.08);
+}
+
+[data-theme="dark"] .current-changes-mode-btn.active {
+    background: #3e4042;
+}
+
+@media (max-width: 900px) {
+    .current-changes-mode-btn span {
+        display: none;
+    }
+
+    .current-changes-mode-btn {
+        padding: 4px 6px;
+    }
 }
 
 .diff-edit-btn {

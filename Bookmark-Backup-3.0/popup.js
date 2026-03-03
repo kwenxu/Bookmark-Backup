@@ -2880,8 +2880,8 @@ function updateLastSyncInfo(passedLang) { // Added passedLang parameter
             lastBackupTimeSpan.style.color = '#007AFF';
         }
 
-        // 更新书签数量统计
-        updateBookmarkCountDisplay(passedLang); // Pass passedLang along
+        // 更新书签数量统计（去抖）
+        scheduleBookmarkCountDisplayRefresh({ passedLang, delay: 60 });
 
         // 更新备份方向
         const syncDirectionSpan = document.getElementById('syncDirection');
@@ -2938,6 +2938,19 @@ function updateLastSyncInfo(passedLang) { // Added passedLang parameter
  * 更新书签数量统计显示。
  * @param {string} [passedLang] - 可选参数，用于指定语言。
  */
+let bookmarkCountDisplayRefreshTimer = null;
+function scheduleBookmarkCountDisplayRefresh({ passedLang, delay = 160 } = {}) {
+    if (bookmarkCountDisplayRefreshTimer) {
+        clearTimeout(bookmarkCountDisplayRefreshTimer);
+    }
+    bookmarkCountDisplayRefreshTimer = setTimeout(() => {
+        bookmarkCountDisplayRefreshTimer = null;
+        try {
+            updateBookmarkCountDisplay(passedLang);
+        } catch (_) { }
+    }, Math.max(0, Number(delay) || 0));
+}
+
 function updateBookmarkCountDisplay(passedLang) {
     const getLangPromise = passedLang
         ? Promise.resolve(passedLang)
@@ -4243,7 +4256,7 @@ function handleAutoSyncToggle(event) {
                 // 无法获取统计：直接切换到自动
                 chrome.runtime.sendMessage({ action: 'toggleAutoSync', enabled: isChecked }, () => {
                     // 即使失败，仍尝试更新UI显示
-                    setTimeout(() => { try { updateBookmarkCountDisplay(); } catch (e) { } }, 120);
+                    scheduleBookmarkCountDisplayRefresh({ delay: 120 });
                 });
                 return; // 阻断默认流程
             }
@@ -4265,10 +4278,10 @@ function handleAutoSyncToggle(event) {
                         // 刷新备份历史
                         updateSyncHistory();
                         // 稍候刷新右侧状态卡片/“需要更新的”
-                        setTimeout(() => { try { updateBookmarkCountDisplay(); } catch (e) { } }, 120);
+                        scheduleBookmarkCountDisplayRefresh({ delay: 120 });
                         // 切换备份成功后再正式切到自动模式，避免并发触发自动备份
                         chrome.runtime.sendMessage({ action: 'toggleAutoSync', enabled: true }, () => {
-                            setTimeout(() => { try { updateBookmarkCountDisplay(); } catch (e) { } }, 120);
+                            scheduleBookmarkCountDisplayRefresh({ delay: 120 });
                         });
                     } else {
                         showStatus('切换备份失败: ' + (syncResponse?.error || '未知错误'), 'error');
@@ -4290,7 +4303,7 @@ function handleAutoSyncToggle(event) {
             } else {
                 // 没有变化：直接切到自动模式
                 chrome.runtime.sendMessage({ action: 'toggleAutoSync', enabled: true }, () => {
-                    setTimeout(() => { try { updateBookmarkCountDisplay(); } catch (e) { } }, 120);
+                    scheduleBookmarkCountDisplayRefresh({ delay: 120 });
                 });
             }
         });
@@ -4384,7 +4397,7 @@ function handleAutoSyncToggle(event) {
 
             // 延迟更新状态卡片，确保所有状态更新完成后再刷新显示
             setTimeout(() => {
-                updateBookmarkCountDisplay();
+                scheduleBookmarkCountDisplayRefresh({ delay: 80 });
             }, 100);
 
             if (wasChecked && !currentAutoSyncState) {
@@ -4447,7 +4460,7 @@ function handleAutoSyncToggle(event) {
             }
 
             // 即使切换失败，也尝试更新显示以反映当前的实际状态
-            updateBookmarkCountDisplay();
+            scheduleBookmarkCountDisplayRefresh({ delay: 60 });
         }
     });
 }
@@ -14867,8 +14880,10 @@ document.addEventListener('DOMContentLoaded', function () {
     // 监听来自后台的书签变化消息和获取变化描述请求
     chrome.runtime.onMessage.addListener(function (message, sender, sendResponse) {
         if (message && message.action === "bookmarkChanged") {
-            // 更新书签计数和状态显示
-            updateBookmarkCountDisplay();
+            // 仅在首次变脏/恢复后触发状态卡片刷新，避免每次书签事件都重算
+            if (message.dirtyBecameTrue === true || message.source === 'restore' || message.forceRefresh === true) {
+                scheduleBookmarkCountDisplayRefresh({ delay: 120 });
+            }
             // 返回成功响应
             sendResponse({ success: true });
             return true;
@@ -15362,7 +15377,7 @@ document.addEventListener('DOMContentLoaded', function () {
     // 在popup打开时，主动刷新一次状态卡片，确保显示最新的变化状态
     // 延迟执行以确保所有初始化完成
     setTimeout(() => {
-        updateBookmarkCountDisplay();
+        scheduleBookmarkCountDisplayRefresh({ delay: 80 });
     }, 300);
 });
 

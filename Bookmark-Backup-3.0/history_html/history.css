@@ -1230,6 +1230,23 @@ body {
     transform: none;
 }
 
+#restoreVersionInfo .restore-target-hash {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: 1px 8px;
+    border-radius: 6px;
+    border: 1px solid var(--accent-primary);
+    background: var(--accent-light);
+    color: var(--accent-primary);
+    font-family: 'Courier New', monospace;
+    font-size: 12px;
+    font-weight: 700;
+    letter-spacing: 0.3px;
+    line-height: 1.2;
+    margin-right: 2px;
+}
+
 .action-btn .btn-tooltip {
     position: absolute;
     top: calc(100% + 8px);
@@ -1756,7 +1773,14 @@ body {
 }
 
 /* 警告/说明（放在操作区分割线下方） */
-#restoreModal .restore-warning,
+#restoreModal .restore-warning {
+    margin: 0;
+    padding: 10px;
+    border-radius: 8px;
+    background: var(--info-light);
+    border: 1px solid var(--info);
+}
+
 #revertModal .restore-warning {
     margin: 0;
     padding: 10px;
@@ -1765,9 +1789,101 @@ body {
     border: 1px solid var(--warning);
 }
 
-#restoreModal .restore-warning i,
+#restoreModal .restore-warning i {
+    color: var(--info);
+}
+
 #revertModal .restore-warning i {
     color: var(--warning);
+}
+
+#restoreModal .restore-warning-layout {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+#restoreModal .restore-warning-icon {
+    margin-top: 0;
+    transform: translateY(0px);
+    font-size: 13px;
+    flex: 0 0 auto;
+}
+
+#restoreModal .restore-warning-content {
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    gap: 8px;
+    font-size: 12px;
+    color: var(--text-primary);
+    min-width: 0;
+    flex-wrap: wrap;
+}
+
+#restoreModal .restore-warning-headline {
+    display: inline-flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 4px;
+    line-height: 1.35;
+    white-space: normal;
+    max-width: 100%;
+}
+
+#restoreModal #restoreWarningText {
+    margin-left: 0;
+    white-space: normal;
+    word-break: break-word;
+}
+
+#restoreModal .restore-threshold-label {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 12px;
+    color: var(--text-secondary);
+}
+
+#restoreModal .restore-threshold-inline {
+    margin-left: 0;
+    display: inline-flex;
+    align-items: center;
+    white-space: nowrap;
+}
+
+#restoreModal .restore-threshold-label input {
+    width: 56px;
+    height: 24px;
+    border-radius: 6px;
+    border: 1px solid var(--border-color);
+    background: var(--bg-secondary);
+    color: var(--text-primary);
+    text-align: center;
+    padding: 0 4px;
+}
+
+#restoreModal .restore-threshold-label input:disabled {
+    opacity: 0.7;
+}
+
+#restoreModal .restore-threshold-unit {
+    font-size: 11px;
+    color: var(--text-tertiary);
+}
+
+#restoreModal #restorePatchThresholdInput,
+#revertModal #revertPatchThresholdInput {
+    appearance: textfield;
+    -moz-appearance: textfield;
+}
+
+#restoreModal #restorePatchThresholdInput::-webkit-outer-spin-button,
+#restoreModal #restorePatchThresholdInput::-webkit-inner-spin-button,
+#revertModal #revertPatchThresholdInput::-webkit-outer-spin-button,
+#revertModal #revertPatchThresholdInput::-webkit-inner-spin-button {
+    -webkit-appearance: none;
+    margin: 0;
 }
 
 /* 进度区域 - 更紧凑 */
@@ -1871,19 +1987,24 @@ body {
     font-size: 12px;
     color: var(--text-primary);
     min-width: 0;
-    flex-wrap: nowrap;
+    flex-wrap: wrap;
 }
 
 #revertModal .revert-warning-headline {
     display: inline-flex;
     align-items: center;
+    flex-wrap: wrap;
     gap: 4px;
-    line-height: 1.2;
-    white-space: nowrap;
+    line-height: 1.35;
+    white-space: normal;
+    max-width: 100%;
+    min-width: 0;
 }
 
 #revertModal #revertWarningText {
     margin-left: 0;
+    white-space: normal;
+    word-break: break-word;
 }
 
 #revertModal .revert-threshold-inline {
@@ -1917,6 +2038,24 @@ body {
 #restoreModal #restoreStrategySegment {
     display: inline-flex;
     align-items: center;
+    gap: 8px;
+}
+
+#restoreModal .restore-strategy-segment {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+}
+
+#restoreModal .restore-strategy-center-divider {
+    width: 1px;
+    height: 26px;
+    background: var(--border-color);
+    opacity: 0.9;
+}
+
+#restoreModal .restore-strategy-group-single .restore-strategy-option {
+    padding: 0 11px;
 }
 
 #restoreModal .restore-strategy-group,
@@ -2094,6 +2233,36 @@ body {
 
 #restoreModal #restorePreviewContent {
     padding: 8px 20px !important;
+}
+
+/* 恢复预览（导入合并/覆盖）：文件夹统一中性色；补丁恢复保留增删改移颜色 */
+#restoreModal #restorePreviewContent[data-preview-strategy="merge"] .tree-item[data-node-type="folder"] > .tree-label,
+#restoreModal #restorePreviewContent[data-preview-strategy="merge"] .tree-item[data-node-type="folder"] > a.tree-label,
+#restoreModal #restorePreviewContent[data-preview-strategy="overwrite"] .tree-item[data-node-type="folder"] > .tree-label,
+#restoreModal #restorePreviewContent[data-preview-strategy="overwrite"] .tree-item[data-node-type="folder"] > a.tree-label {
+    color: var(--text-primary) !important;
+    text-decoration: none !important;
+    opacity: 1 !important;
+    background: none !important;
+    -webkit-text-fill-color: currentColor !important;
+    font-weight: inherit !important;
+}
+
+#restoreModal #restorePreviewContent .tree-item.import-result-root-node > .tree-label,
+#restoreModal #restorePreviewContent .tree-item.import-result-root-node > a.tree-label,
+#restoreModal #restorePreviewContent .tree-item[data-import-result-root="true"] > .tree-label,
+#restoreModal #restorePreviewContent .tree-item[data-import-result-root="true"] > a.tree-label {
+    color: #28a745 !important;
+    font-weight: 600 !important;
+}
+
+#restoreModal #restorePreviewContent .tree-item[data-node-type="folder"] > .tree-toggle {
+    color: var(--text-tertiary) !important;
+}
+
+#restoreModal #restorePreviewContent .tree-item[data-node-type="folder"] > .tree-icon {
+    color: var(--text-secondary) !important;
+    transform: translateY(1px);
 }
 
 #revertModal #revertPreviewView {

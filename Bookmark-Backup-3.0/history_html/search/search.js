@@ -2685,6 +2685,23 @@ function locateNodeInHistoryDetailPreview(nodeId, treeContainer, options = {}) {
 
 // ==================== Phase 2.5: 激活搜索结果 ====================
 
+function closeHistoryDetailSearchBox(modalContainer, options = {}) {
+    if (!modalContainer) return;
+    const { clearInput = false } = options;
+
+    const searchContainer = modalContainer.querySelector('.detail-search-container');
+    const searchBtn = modalContainer.querySelector('.detail-search-btn');
+    if (searchContainer) searchContainer.classList.remove('visible');
+    if (searchBtn) searchBtn.classList.remove('active');
+
+    hideHistoryDetailSearchPanel(modalContainer);
+
+    if (clearInput) {
+        const searchInput = modalContainer.querySelector('.detail-search-input');
+        if (searchInput) searchInput.value = '';
+    }
+}
+
 /**
  * 激活历史详情搜索结果
  * @param {number} index - 结果索引
@@ -2697,12 +2714,8 @@ function activateHistoryDetailSearchResult(index, modalContainer) {
     const item = historyDetailSearchState.results[idx];
     if (!item) return;
 
-    // 隐藏搜索结果面板
-    hideHistoryDetailSearchPanel(modalContainer);
-
-    // 清空搜索输入框
-    const searchInput = modalContainer?.querySelector('.detail-search-input');
-    if (searchInput) searchInput.value = '';
+    // 选中后关闭搜索弹窗，避免遮挡详情树
+    closeHistoryDetailSearchBox(modalContainer, { clearInput: true });
 
     // 定位到目标节点
     const treeContainer = modalContainer?.querySelector('.history-tree-container');
@@ -2787,7 +2800,8 @@ function initHistoryDetailSearch(record, changeMap, currentTree, oldTree, modalC
 
         if (!isVisible) {
             if (e.key === 'Escape') {
-                hideHistoryDetailSearchPanel(modalContainer);
+                e.preventDefault();
+                closeHistoryDetailSearchBox(modalContainer);
             }
             return;
         }
@@ -2809,7 +2823,7 @@ function initHistoryDetailSearch(record, changeMap, currentTree, oldTree, modalC
         }
         if (e.key === 'Escape') {
             e.preventDefault();
-            hideHistoryDetailSearchPanel(modalContainer);
+            closeHistoryDetailSearchBox(modalContainer);
         }
     };
 
@@ -2872,9 +2886,7 @@ function cleanupHistoryDetailSearch(recordTime, modalContainer) {
 
     // 隐藏搜索面板
     if (modalContainer) {
-        hideHistoryDetailSearchPanel(modalContainer);
-        const searchInput = modalContainer.querySelector('.detail-search-input');
-        if (searchInput) searchInput.value = '';
+        closeHistoryDetailSearchBox(modalContainer, { clearInput: true });
     }
 
     // 清除缓存
@@ -2901,16 +2913,17 @@ function toggleHistoryDetailSearchBox(modalContainer) {
 
     const searchContainer = modalContainer.querySelector('.detail-search-container');
     const searchInput = modalContainer.querySelector('.detail-search-input');
+    const searchBtn = modalContainer.querySelector('.detail-search-btn');
 
     if (!searchContainer) return;
 
     const isVisible = searchContainer.classList.contains('visible');
 
     if (isVisible) {
-        searchContainer.classList.remove('visible');
-        hideHistoryDetailSearchPanel(modalContainer);
+        closeHistoryDetailSearchBox(modalContainer);
     } else {
         searchContainer.classList.add('visible');
+        if (searchBtn) searchBtn.classList.add('active');
         if (searchInput) {
             setTimeout(() => searchInput.focus(), 100);
         }

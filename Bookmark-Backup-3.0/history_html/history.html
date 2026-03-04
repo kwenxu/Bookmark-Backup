@@ -429,7 +429,7 @@
 
     <!-- 书签恢复确认弹窗 -->
     <div id="restoreModal" class="modal content-center">
-        <div class="modal-content" style="max-width: 500px;">
+        <div class="modal-content" style="max-width: 640px;">
             <div class="modal-header compact">
 
                 <h3 id="restoreModalTitle">恢复到对应版本</h3>
@@ -545,11 +545,18 @@
                         <!-- 操作按钮（与主 UI 保持一致：三种策略 + 一个恢复按钮） -->
                         <div class="modal-footer">
                             <div class="restore-warning">
-                                <div style="display: flex; align-items: flex-start; gap: 8px;">
-                                    <i class="fas fa-exclamation-triangle" style="margin-top: 1px; font-size: 13px;"></i>
-                                    <div style="font-size: 12px; color: var(--text-primary); line-height: 1.4;">
-                                        <strong id="restoreWarningTitle">警告</strong>
-                                        <span id="restoreWarningText" style="margin-left: 4px;">请先选择恢复方式，查看对应说明。</span>
+                                <div class="restore-warning-layout">
+                                    <i class="fas fa-exclamation-triangle restore-warning-icon"></i>
+                                    <div class="restore-warning-content">
+                                        <div class="restore-warning-headline">
+                                            <strong id="restoreWarningTitle">警告</strong>
+                                            <span id="restoreWarningText">请先选择恢复方式，查看对应说明。</span>
+                                        </div>
+                                        <label id="restoreThresholdLabel" class="restore-threshold-label restore-threshold-inline" style="display: none;">
+                                            <span id="restoreThresholdText">智能阈值</span>
+                                            <input type="number" id="restorePatchThresholdInput" min="1" max="99" step="1" value="40">
+                                            <span class="restore-threshold-unit">%</span>
+                                        </label>
                                     </div>
                                 </div>
                             </div>
@@ -576,8 +583,17 @@
                             <div id="restoreImportTargetHint" class="restore-import-target-hint" style="display: none;"></div>
 
                             <div class="restore-footer-actions">
-                                <div id="restoreStrategySegment" style="display: inline-flex; align-items: center;">
+                                <div id="restoreStrategySegment" class="restore-strategy-segment" style="display: inline-flex; align-items: center;">
                                     <div id="restoreStrategyGroup" class="restore-strategy-group">
+                                        <label class="restore-strategy-label" title="" id="restoreStrategyAutoLabelWrap">
+                                            <input type="radio" name="restoreStrategy" id="restoreStrategyAuto"
+                                                value="auto">
+                                            <div class="restore-strategy-option" id="restoreStrategyAutoLabel">
+                                                <span class="restore-strategy-icon">✓</span>
+                                                <span>自动</span>
+                                            </div>
+                                        </label>
+                                        <div class="restore-strategy-divider" aria-hidden="true"></div>
                                         <label class="restore-strategy-label" title="" id="restoreStrategyOverwriteLabelWrap">
                                             <input type="radio" name="restoreStrategy" id="restoreStrategyOverwrite"
                                                 value="overwrite">
@@ -587,21 +603,23 @@
                                             </div>
                                         </label>
                                         <div class="restore-strategy-divider" aria-hidden="true"></div>
-                                        <label class="restore-strategy-label" title="" id="restoreStrategyMergeLabelWrap">
-                                            <input type="radio" name="restoreStrategy" id="restoreStrategyMerge"
-                                                value="merge">
-                                            <div class="restore-strategy-option" id="restoreStrategyMergeLabel">
-                                                <span class="restore-strategy-icon">✓</span>
-                                                <span>导入合并</span>
-                                            </div>
-                                        </label>
-                                        <div class="restore-strategy-divider" aria-hidden="true"></div>
                                         <label class="restore-strategy-label" title="" id="restoreStrategyPatchLabelWrap">
                                             <input type="radio" name="restoreStrategy" id="restoreStrategyPatch"
                                                 value="patch" checked>
                                             <div class="restore-strategy-option" id="restoreStrategyPatchLabel">
                                                 <span class="restore-strategy-icon">✓</span>
                                                 <span>补丁恢复</span>
+                                            </div>
+                                        </label>
+                                    </div>
+                                    <div id="restoreStrategyCenterDivider" class="restore-strategy-center-divider" aria-hidden="true"></div>
+                                    <div id="restoreStrategyMergeGroup" class="restore-strategy-group restore-strategy-group-single">
+                                        <label class="restore-strategy-label" title="" id="restoreStrategyMergeLabelWrap">
+                                            <input type="radio" name="restoreStrategy" id="restoreStrategyMerge"
+                                                value="merge">
+                                            <div class="restore-strategy-option" id="restoreStrategyMergeLabel">
+                                                <span class="restore-strategy-icon">✓</span>
+                                                <span>导入合并</span>
                                             </div>
                                         </label>
                                     </div>

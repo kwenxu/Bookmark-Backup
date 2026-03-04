@@ -2464,8 +2464,21 @@
             transition: background-color 0.3s ease, border-color 0.3s ease, box-shadow 0.3s ease;
         }
 
+        .status-card #statusCardChevron {
+            transition: opacity 0.2s ease;
+        }
+
         .status-card.has-changes {
             align-items: center !important;
+        }
+
+        .status-card.is-loading #statusCardText {
+            opacity: 0.75;
+            transform: translateY(1px);
+        }
+
+        .status-card.is-loading #statusCardChevron {
+            opacity: 0;
         }
 
         .status-card-change-summary {
@@ -2499,6 +2512,9 @@
             display: flex;
             align-items: center;
             justify-content: center;
+            opacity: 1;
+            transform: translateY(0);
+            transition: opacity 0.2s ease, transform 0.2s ease, color 0.2s ease;
         }
 
         /* 右侧状态卡片：根据模式着色 */
@@ -3129,7 +3145,7 @@
         /* ========================= */
         #restoreVersionTable th,
         #restoreVersionTable td {
-            padding: 8px 8px;
+            padding: 8px 6px;
             border-bottom: 1px solid var(--theme-border-primary);
             font-size: 12px;
             color: var(--theme-text-primary);
@@ -3138,7 +3154,7 @@
 
         #restoreVersionTable.snapshot-mode th,
         #restoreVersionTable.snapshot-mode td {
-            padding: 7px 8px;
+            padding: 7px 6px;
         }
 
         #restoreVersionTable thead th {
@@ -3159,6 +3175,16 @@
             background: var(--theme-hover-bg);
         }
 
+        #restoreVersionTable tbody tr.restore-group-separator,
+        #restoreVersionTable tbody tr.restore-group-separator:hover {
+            background: transparent;
+        }
+
+        #restoreVersionTable tbody tr.restore-group-separator td {
+            padding: 0;
+            border-bottom: 0;
+        }
+
         #restoreVersionTable tbody tr[data-selected="1"] {
             background: var(--theme-selected-item-bg);
         }
@@ -3172,44 +3198,89 @@
             color: var(--theme-text-secondary);
         }
 
+        #restoreVersionTable td.restore-cell-select {
+            width: 22px;
+            padding-left: 4px;
+            padding-right: 2px;
+        }
+
+        #restoreVersionTable td.restore-cell-seq {
+            width: 42px;
+            padding-left: 3px;
+            padding-right: 4px;
+        }
+
+        #restoreVersionTable td.restore-cell-note {
+            padding-left: 4px;
+            padding-right: 4px;
+        }
+
+        #restoreVersionTable td.restore-cell-hash {
+            width: 64px;
+            min-width: 64px;
+            padding-left: 4px;
+            padding-right: 7px;
+            text-align: left;
+            white-space: nowrap;
+        }
+
+        #restoreVersionTable td.restore-cell-time {
+            width: 102px;
+            min-width: 102px;
+            padding-left: 8px;
+            padding-right: 3px;
+            text-align: left;
+        }
+
+        #restoreVersionTable td.restore-cell-stats {
+            width: 108px;
+            min-width: 108px;
+            padding-left: 6px;
+            padding-right: 0;
+            text-align: left;
+        }
+
+        #restoreVersionTable td.restore-cell-view {
+            width: 70px;
+            min-width: 70px;
+            padding-left: 0;
+            padding-right: 0;
+            text-align: center;
+        }
+
+        #restoreVersionTable .restore-select-radio {
+            margin: 0;
+        }
+
+        #restoreVersionTable td.restore-cell-time > div {
+            margin-left: 0;
+            text-align: left;
+        }
+
+        #restoreVersionTable td.restore-cell-view > * {
+            margin-left: auto;
+            margin-right: auto;
+            text-align: center;
+        }
+
         #restoreVersionTable .restore-note {
             font-weight: 600;
             font-size: 12px;
-            display: block;
-            white-space: nowrap;
-            overflow-x: hidden;
-            overflow-y: hidden;
+            display: -webkit-box;
+            line-height: 1.35;
+            white-space: normal;
+            overflow: hidden;
             text-overflow: ellipsis;
-            max-width: 210px;
-            scrollbar-width: none;
+            overflow-wrap: anywhere;
+            word-break: break-word;
+            max-width: 186px;
+            max-height: calc(1.35em * 2);
+            -webkit-line-clamp: 2;
+            -webkit-box-orient: vertical;
         }
 
         #restoreVersionTable .restore-note:hover {
-            overflow-x: auto;
-            text-overflow: clip;
-            scrollbar-width: thin;
-            scrollbar-color: rgba(120, 120, 120, 0.55) transparent;
-        }
-
-        #restoreVersionTable .restore-note::-webkit-scrollbar {
-            height: 0;
-        }
-
-        #restoreVersionTable .restore-note:hover::-webkit-scrollbar {
-            height: 4px;
-        }
-
-        #restoreVersionTable .restore-note::-webkit-scrollbar-track {
-            background: transparent;
-        }
-
-        #restoreVersionTable .restore-note::-webkit-scrollbar-thumb {
-            background: rgba(120, 120, 120, 0.55);
-            border-radius: 999px;
-        }
-
-        #restoreVersionTable .restore-note::-webkit-scrollbar-thumb:hover {
-            background: rgba(120, 120, 120, 0.75);
+            color: var(--theme-text-primary);
         }
 
         #restoreVersionTable .restore-folder-badge {
@@ -3237,10 +3308,12 @@
         #restoreVersionTable .restore-stats {
             display: flex;
             align-items: center;
-            gap: 5px;
+            justify-content: flex-start;
+            gap: 3px;
             flex-wrap: wrap;
             color: var(--theme-text-secondary);
             line-height: 1.25;
+            margin-left: 0;
         }
 
         #restoreVersionTable .restore-stats .stats-lines {
@@ -3253,14 +3326,19 @@
         #restoreVersionTable .restore-stats .stats-line {
             display: inline-flex;
             align-items: center;
-            gap: 4px;
+            justify-content: flex-start;
+            gap: 3px;
             white-space: nowrap;
+        }
+
+        #restoreVersionTable .restore-stats .stats-line.stats-line-split {
+            white-space: normal;
         }
 
         #restoreVersionTable .restore-stats .stats-group {
             display: inline-flex;
             align-items: center;
-            gap: 2px;
+            gap: 1px;
             white-space: nowrap;
         }
 
@@ -3277,7 +3355,7 @@
         #restoreVersionTable .restore-stats .stats-pair-sep {
             color: var(--theme-text-tertiary);
             opacity: 0.75;
-            margin: 0 1px;
+            margin: 0;
             font-weight: 500;
         }
 
@@ -3330,6 +3408,72 @@
 
         .restore-modal-action-btn.secondary:hover:not(:disabled) {
             background-color: var(--theme-hover-bg);
+            color: var(--theme-text-primary);
+        }
+
+
+        .restore-modal-action-btn.secondary.active {
+            background-color: rgba(79, 195, 247, 0.12);
+            color: var(--theme-link-color, #4fc3f7);
+            border-color: var(--theme-link-color, #4fc3f7);
+        }
+
+
+        .restore-inline-search {
+            display: none;
+            align-items: center;
+            position: relative;
+            width: 240px;
+            max-width: min(240px, 48vw);
+            flex: 0 1 240px;
+        }
+
+        .restore-inline-search.visible {
+            display: inline-flex;
+        }
+
+        .restore-inline-search-input {
+            width: 100%;
+            height: 34px;
+            padding: 0 30px 0 10px;
+            border-radius: 8px;
+            border: 1px solid var(--theme-input-border, var(--theme-border-primary));
+            background: var(--theme-input-bg, var(--theme-bg-secondary));
+            color: var(--theme-text-primary);
+            font-size: 13px;
+            outline: none;
+            box-sizing: border-box;
+        }
+
+        .restore-inline-search-input:focus {
+            border-color: var(--theme-input-focus-border, var(--theme-link-color, #4fc3f7));
+            box-shadow: 0 0 0 3px var(--theme-input-focus-shadow, rgba(79, 195, 247, 0.12));
+        }
+
+        .restore-inline-search-clear {
+            position: absolute;
+            right: 8px;
+            top: 50%;
+            transform: translateY(-50%);
+            width: 18px;
+            height: 18px;
+            padding: 0;
+            border: none;
+            background: transparent;
+            color: var(--theme-text-secondary);
+            display: none;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            border-radius: 50%;
+        }
+
+        .restore-inline-search-clear.visible {
+            display: inline-flex;
+        }
+
+        .restore-inline-search-clear:hover {
+            background: var(--theme-hover-bg);
             color: var(--theme-text-primary);
         }
 
@@ -3420,6 +3564,24 @@
         #restoreStrategySegment {
             display: inline-flex;
             align-items: center;
+            gap: 8px;
+        }
+
+        #restoreStrategySegment.restore-strategy-segment {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .restore-strategy-center-divider {
+            width: 1px;
+            height: 26px;
+            background-color: var(--theme-border-primary);
+            opacity: 0.9;
+        }
+
+        .restore-strategy-group-single .restore-strategy-option {
+            padding: 0 11px;
         }
 
         .restore-strategy-group {
@@ -3531,12 +3693,37 @@
             color: var(--theme-text-secondary);
         }
 
+        .restore-summary-time-meta {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            flex-wrap: wrap;
+        }
+
+        .restore-summary-hash {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            padding: 1px 8px;
+            border-radius: 6px;
+            border: 1px solid var(--theme-accent-color, #1976d2);
+            background: rgba(25, 118, 210, 0.12);
+            color: var(--theme-accent-color, #1976d2);
+            font-family: 'SF Mono', 'Monaco', 'Consolas', monospace;
+            font-size: 12px;
+            font-weight: 700;
+            line-height: 1.2;
+            letter-spacing: 0.2px;
+        }
+
         .restore-confirm-warning {
             margin-top: 10px;
             padding: 8px 10px;
             border-radius: 8px;
             font-size: 13px;
             line-height: 1.25;
+            white-space: normal;
+            word-break: break-word;
         }
 
         .restore-confirm-warning.danger {
@@ -3555,6 +3742,57 @@
             border-left: 3px solid var(--theme-warning-color);
             background-color: rgba(255, 152, 0, 0.12);
             color: var(--theme-text-primary);
+        }
+
+        .restore-confirm-threshold {
+            margin-top: 8px;
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            font-size: 12px;
+            color: var(--theme-text-secondary);
+            padding: 4px 8px;
+            border: 1px solid var(--theme-border-primary);
+            border-radius: 8px;
+            background: var(--theme-bg-secondary);
+        }
+
+        .restore-confirm-threshold input {
+            width: 56px;
+            height: 24px;
+            border-radius: 6px;
+            border: 1px solid var(--theme-border-primary);
+            background: var(--theme-bg-primary);
+            color: var(--theme-text-primary);
+            text-align: center;
+            padding: 0 4px;
+            font-size: 12px;
+        }
+
+        #restoreConfirmThresholdInput {
+            appearance: textfield;
+            -moz-appearance: textfield;
+        }
+
+        #restoreConfirmThresholdInput::-webkit-inner-spin-button,
+        #restoreConfirmThresholdInput::-webkit-outer-spin-button {
+            -webkit-appearance: none !important;
+            appearance: none;
+            margin: 0 !important;
+            width: 0 !important;
+            height: 0 !important;
+            opacity: 0 !important;
+            background: transparent !important;
+        }
+
+        .restore-confirm-threshold input:disabled {
+            opacity: 0.7;
+            cursor: not-allowed;
+        }
+
+        .restore-confirm-threshold-unit {
+            font-size: 11px;
+            color: var(--theme-text-tertiary, var(--theme-text-secondary));
         }
 
         .restore-modal-action-btn.danger {
@@ -3741,6 +3979,12 @@
             color: var(--text-tertiary);
         }
 
+        #restoreConfirmModal .restore-summary-hash {
+            border: 1px solid var(--accent-primary);
+            background: var(--accent-light);
+            color: var(--accent-primary);
+        }
+
         #restoreConfirmModal .restore-confirm-warning.danger {
             border-left: 3px solid var(--error);
             background-color: var(--error-light);
@@ -3773,6 +4017,36 @@
             border: none;
             padding: 0;
             background: transparent;
+        }
+
+        /* 恢复预览（导入合并/覆盖）：文件夹统一中性色；补丁恢复保留增删改移颜色 */
+        #restoreConfirmModal #restorePreviewContent[data-preview-strategy="merge"] .tree-item[data-node-type="folder"] > .tree-label,
+        #restoreConfirmModal #restorePreviewContent[data-preview-strategy="merge"] .tree-item[data-node-type="folder"] > a.tree-label,
+        #restoreConfirmModal #restorePreviewContent[data-preview-strategy="overwrite"] .tree-item[data-node-type="folder"] > .tree-label,
+        #restoreConfirmModal #restorePreviewContent[data-preview-strategy="overwrite"] .tree-item[data-node-type="folder"] > a.tree-label {
+            color: var(--text-primary) !important;
+            text-decoration: none !important;
+            opacity: 1 !important;
+            background: none !important;
+            -webkit-text-fill-color: currentColor !important;
+            font-weight: inherit !important;
+        }
+
+        #restoreConfirmModal #restorePreviewContent .tree-item.import-result-root-node > .tree-label,
+        #restoreConfirmModal #restorePreviewContent .tree-item.import-result-root-node > a.tree-label,
+        #restoreConfirmModal #restorePreviewContent .tree-item[data-import-result-root="true"] > .tree-label,
+        #restoreConfirmModal #restorePreviewContent .tree-item[data-import-result-root="true"] > a.tree-label {
+            color: #28a745 !important;
+            font-weight: 600 !important;
+        }
+
+        #restoreConfirmModal #restorePreviewContent .tree-item[data-node-type="folder"] > .tree-toggle {
+            color: var(--text-tertiary) !important;
+        }
+
+        #restoreConfirmModal #restorePreviewContent .tree-item[data-node-type="folder"] > .tree-icon {
+            color: var(--text-secondary) !important;
+            transform: translateY(1px);
         }
 
         #restoreConfirmModal #closeRestoreConfirmModal:hover {
@@ -5813,13 +6087,13 @@
                     <table id="restoreVersionTable" style="width: 100%; border-collapse: collapse;">
                         <thead>
                             <tr>
-                                <th style="text-align: center; width: 34px;"></th>
-                                <th style="text-align: center; width: 48px;"><span id="restoreThSeq">序号</span></th>
+                                <th style="text-align: center; width: 30px;"></th>
+                                <th style="text-align: center; width: 44px;"><span id="restoreThSeq">序号</span></th>
                                 <th style="text-align: left;"><span id="restoreThNote">备注</span></th>
-                                <th style="text-align: left; width: 68px;"><span id="restoreThHash">哈希值</span></th>
-                                <th style="text-align: left; width: 116px;"><span id="restoreThTime">时间</span></th>
-                                <th style="text-align: left; width: 132px;"><span id="restoreThStats">记录变化</span></th>
-                                <th style="text-align: left; width: 102px;"><span id="restoreThViewMode">视图</span></th>
+                                <th style="text-align: left; width: 64px;"><span id="restoreThHash">哈希值</span></th>
+                                <th style="text-align: left; width: 102px;"><span id="restoreThTime">时间</span></th>
+                                <th style="text-align: left; width: 108px;"><span id="restoreThStats">记录变化</span></th>
+                                <th style="text-align: center; width: 70px;"><span id="restoreThViewMode">视图</span></th>
                             </tr>
                         </thead>
                         <tbody id="restoreVersionTableBody">
@@ -5858,31 +6132,47 @@
 
             <div class="restore-modal-footer">
                 <div class="restore-modal-actions">
+                    <div id="restoreInlineSearchWrap" class="restore-inline-search" hidden>
+                        <input id="restoreInlineSearchInput" class="restore-inline-search-input" type="text" autocomplete="off">
+                        <button id="restoreInlineSearchClear" class="restore-inline-search-clear" type="button" aria-label="Clear search">×</button>
+                    </div>
+                    <button id="searchRestoreBtnRef" class="restore-modal-action-btn secondary" title="Search">Search</button>
                     <button id="cancelRestoreBtnRef" class="restore-modal-action-btn secondary">Cancel</button>
-                    <div id="restoreStrategySegment">
+                    <div id="restoreStrategySegment" class="restore-strategy-segment">
                         <div id="restoreStrategyGroup" class="restore-strategy-group disabled">
+                            <label class="restore-strategy-label" title="" id="restoreStrategyAutoLabelWrap" style="display: none;">
+                                <input type="radio" name="restoreStrategy" id="restoreStrategyAuto"
+                                    value="auto" disabled>
+                                <div class="restore-strategy-option" id="restoreStrategyAutoLabel">
+                                    <span class="restore-strategy-icon">✓</span>
+                                    <span>Auto</span>
+                                </div>
+                            </label>
                             <label class="restore-strategy-label" title="" id="restoreStrategyOverwriteLabelWrap">
                                 <input type="radio" name="restoreStrategy" id="restoreStrategyOverwrite"
-                                    value="overwrite" disabled>
+                                    value="overwrite" checked disabled>
                                 <div class="restore-strategy-option" id="restoreStrategyOverwriteLabel">
                                     <span class="restore-strategy-icon">✓</span>
                                     <span>Overwrite</span>
                                 </div>
                             </label>
+                            <label class="restore-strategy-label" title="" id="restoreStrategyPatchLabelWrap" style="display: none;">
+                                <input type="radio" name="restoreStrategy" id="restoreStrategyPatch" value="patch"
+                                    disabled>
+                                <div class="restore-strategy-option" id="restoreStrategyPatchLabel">
+                                    <span class="restore-strategy-icon">✓</span>
+                                    <span>Patch Restore</span>
+                                </div>
+                            </label>
+                        </div>
+                        <div id="restoreStrategyCenterDivider" class="restore-strategy-center-divider" aria-hidden="true"></div>
+                        <div id="restoreStrategyMergeGroup" class="restore-strategy-group restore-strategy-group-single disabled">
                             <label class="restore-strategy-label" title="" id="restoreStrategyMergeLabelWrap">
                                 <input type="radio" name="restoreStrategy" id="restoreStrategyMerge" value="merge"
                                     disabled>
                                 <div class="restore-strategy-option" id="restoreStrategyMergeLabel">
                                     <span class="restore-strategy-icon">✓</span>
                                     <span>Merge</span>
-                                </div>
-                            </label>
-                            <label class="restore-strategy-label" title="" id="restoreStrategyPatchLabelWrap">
-                                <input type="radio" name="restoreStrategy" id="restoreStrategyPatch" value="patch"
-                                    checked disabled>
-                                <div class="restore-strategy-option" id="restoreStrategyPatchLabel">
-                                    <span class="restore-strategy-icon">✓</span>
-                                    <span>Patch Restore</span>
                                 </div>
                             </label>
                         </div>
@@ -5915,7 +6205,7 @@
                         </div>
                     </div>
 
-                    <button id="confirmRestoreBtnRef" class="restore-modal-action-btn primary" disabled>Restore</button>
+                    <button id="confirmRestoreBtnRef" class="restore-modal-action-btn primary" disabled>覆盖恢复</button>
                 </div>
             </div>
         </div>
@@ -5924,7 +6214,7 @@
     <!-- Restore 二级确认对话框 -->
     <div id="restoreConfirmModal" class="modal">
         <div class="modal-content"
-            style="position: relative; top: auto; right: auto; margin: 0; width: 560px; max-width: calc(100% - 24px); box-shadow: var(--shadow-lg); border-radius: 12px; padding: 0; overflow: hidden;">
+            style="position: relative; top: auto; right: auto; margin: 0; width: 640px; max-width: calc(100% - 24px); box-shadow: var(--shadow-lg); border-radius: 12px; padding: 0; overflow: hidden;">
 
             <div class="modal-header compact"
                 style="display: flex; align-items: center; justify-content: space-between; padding: 12px 20px; border-bottom: 1px solid var(--border-color); background: var(--bg-elevated);">
@@ -5943,6 +6233,11 @@
             <div id="restoreConfirmMainView" style="display: block; padding: 12px 20px 14px; box-sizing: border-box;">
                 <div id="restoreConfirmSummary" class="restore-confirm-summary"></div>
                 <div id="restoreConfirmWarning" class="restore-confirm-warning"></div>
+                <div id="restoreConfirmThresholdWrap" class="restore-confirm-threshold" style="display: none;">
+                    <span id="restoreConfirmThresholdText">智能阈值</span>
+                    <input type="number" id="restoreConfirmThresholdInput" min="1" max="99" step="1" value="40">
+                    <span class="restore-confirm-threshold-unit">%</span>
+                </div>
 
                 <!-- Diff bar + preview -->
                 <div id="restoreDiffBar" class="restore-diff-bar" style="display: none;">

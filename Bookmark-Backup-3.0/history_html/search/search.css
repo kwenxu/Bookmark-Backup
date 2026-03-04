@@ -428,43 +428,57 @@
 
 /* 搜索按钮（在导出按钮左侧） */
 .detail-search-btn {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    width: 32px;
-    height: 32px;
-    border: none;
-    border-radius: 6px;
-    background: transparent;
-    color: var(--text-secondary);
-    cursor: pointer;
-    transition: all 0.15s ease;
+    /* Base frame uses .action-btn.compact to match Export button */
+    padding: 5px 8px;
+    min-width: 28px;
+    height: 28px;
 }
 
 .detail-search-btn:hover {
-    background: var(--bg-tertiary);
-    color: var(--text-primary);
+    background: var(--accent-light);
+    color: var(--accent-primary);
+    border-color: var(--accent-primary);
 }
 
 .detail-search-btn.active {
     background: var(--accent-light);
     color: var(--accent-primary);
+    border-color: var(--accent-primary);
 }
 
 .detail-search-btn i {
-    font-size: 14px;
+    font-size: 12px;
 }
 
-/* 搜索容器（默认隐藏，点击按钮后显示） */
+/* 搜索容器（和导出变化弹窗一致的遮罩+弹框） */
 .detail-search-container {
     display: none;
-    position: relative;
-    margin-top: 12px;
-    padding: 0 16px;
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.5);
+    z-index: 22050;
+    align-items: center;
+    justify-content: center;
+    padding: 16px;
+    box-sizing: border-box;
 }
 
 .detail-search-container.visible {
-    display: block;
+    display: flex;
+}
+
+.detail-search-modal-panel.modal-content {
+    width: min(420px, 100%);
+    max-width: 420px;
+    max-height: min(80vh, 640px);
+}
+
+.detail-search-modal-body {
+    padding: 16px 20px;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    overflow: hidden;
 }
 
 /* 搜索输入框包装器 */
@@ -506,21 +520,17 @@
 
 /* 搜索结果面板（模态框内） */
 .detail-search-results-panel {
-    /* In-flow panel: avoid covering the tree below while searching */
     position: relative;
-    top: 0;
-    left: 0;
-    right: 0;
-    margin-top: 8px;
+    margin-top: 0;
     background: var(--bg-elevated);
     border: 1px solid var(--border-color);
     border-radius: 10px;
     box-shadow: var(--shadow-lg);
-    max-height: 280px;
+    max-height: 360px;
     overflow-y: auto;
     overflow-x: hidden;
     display: none;
-    z-index: 1;
+    min-height: 0;
 }
 
 .detail-search-results-panel.visible {
@@ -650,7 +660,7 @@
 
 /* 暗色主题适配 */
 [data-theme="dark"] .detail-search-btn:hover {
-    background: var(--bg-secondary);
+    background: var(--accent-light);
 }
 
 [data-theme="dark"] .detail-search-results-panel {

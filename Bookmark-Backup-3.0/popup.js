@@ -1137,6 +1137,8 @@ async function initializeWebDAVConfigSection() {
                     configStatus.classList.add('configured');
                 }
 
+                updateRestorePanelStatus();
+
                 // 保存后自动折叠
                 setTimeout(() => {
                     setWebdavConfigPanelOpen(false, { persist: true });
@@ -1168,6 +1170,7 @@ async function initializeWebDAVConfigSection() {
                 const result = await testWebdavConnection({ serverAddress, username, password });
                 if (result && result.success === true) {
                     showStatus('WebDAV连接测试成功', 'success', 2400);
+                    updateRestorePanelStatus({ type: 'manual-refresh' });
                 } else {
                     showStatus(`WebDAV连接测试失败: ${result?.error || '未知错误'}`, 'error', 4500);
                 }
@@ -1288,6 +1291,7 @@ async function initializeGitHubRepoConfigSection() {
                 }
 
                 loadAndDisplayGitHubRepoConfig();
+                updateRestorePanelStatus();
 
                 setTimeout(() => {
                     setGitHubRepoConfigPanelOpen(false, { persist: true });
@@ -1319,6 +1323,7 @@ async function initializeGitHubRepoConfigSection() {
                 const result = await testGitHubRepoConnection({ token, owner, repo, branch, basePath });
                 if (result && result.success === true) {
                     showStatus('GitHub仓库连接测试成功', 'success', 2400);
+                    updateRestorePanelStatus({ type: 'manual-refresh' });
 
                     // 在信息框中展示更直观的 Base Path 含义与写入预览（不保存）
                     try {
@@ -1835,7 +1840,6 @@ async function loadAndDisplayWebDAVConfig() {
             configStatus.classList.remove('configured');
             configStatus.classList.add('not-configured');
         }
-
     } catch (error) {
         // 确保UI处于未配置状态
         serverAddressInput.value = '';
@@ -1845,6 +1849,7 @@ async function loadAndDisplayWebDAVConfig() {
         configStatus.classList.remove('configured');
         configStatus.classList.add('not-configured');
     }
+    updateRestorePanelStatus();
 }
 
 /**
@@ -1979,6 +1984,7 @@ async function loadAndDisplayGitHubRepoConfig() {
         configStatus.classList.remove('configured');
         configStatus.classList.add('not-configured');
     }
+    updateRestorePanelStatus();
 }
 
 /**
@@ -2880,8 +2886,8 @@ function updateLastSyncInfo(passedLang) { // Added passedLang parameter
             lastBackupTimeSpan.style.color = '#007AFF';
         }
 
-        // 更新书签数量统计（去抖）
-        scheduleBookmarkCountDisplayRefresh({ passedLang, delay: 60 });
+        // 更新书签数量统计（立即刷新，不走防抖等待）
+        scheduleBookmarkCountDisplayRefresh({ passedLang, delay: 0 });
 
         // 更新备份方向
         const syncDirectionSpan = document.getElementById('syncDirection');
@@ -2939,19 +2945,147 @@ function updateLastSyncInfo(passedLang) { // Added passedLang parameter
  * @param {string} [passedLang] - 可选参数，用于指定语言。
  */
 let bookmarkCountDisplayRefreshTimer = null;
+let bookmarkCountDisplayRequestSeq = 0;
+const BOOKMARK_STATUS_ERROR_GRACE_MS = 320;
+const POPUP_BOOKMARK_UI_MUTE_KEYS = ['bookmarkRestoringFlag', 'bookmarkImportingFlag', 'bookmarkBulkChangeFlag', 'canvasMarkerBulkMode'];
+const POPUP_CANVAS_MARKER_BULK_MODE_TTL_MS = 10 * 60 * 1000;
+let popupBookmarkUiMuteState = {
+    restoring: false,
+    importing: false,
+    bulk: false,
+    marker: false,
+    markerSource: '',
+    markerReason: ''
+};
+
+function normalizePopupCanvasMarkerBulkMode(value) {
+    const state = value && typeof value === 'object' ? value : null;
+    const startedAt = Number(state?.startedAt || 0);
+    const active = state?.active === true
+        && !(startedAt > 0 && (Date.now() - startedAt) > POPUP_CANVAS_MARKER_BULK_MODE_TTL_MS);
+    return {
+        active,
+        source: String(state?.source || '').trim(),
+        reason: String(state?.reason || '').trim()
+    };
+}
+
+function setPopupBookmarkUiMuteStateFromStore(store = {}) {
+    const markerState = normalizePopupCanvasMarkerBulkMode(store?.canvasMarkerBulkMode);
+    popupBookmarkUiMuteState = {
+        restoring: store?.bookmarkRestoringFlag === true,
+        importing: store?.bookmarkImportingFlag === true,
+        bulk: store?.bookmarkBulkChangeFlag === true,
+        marker: markerState.active === true,
+        markerSource: markerState.source,
+        markerReason: markerState.reason
+    };
+    return popupBookmarkUiMuteState;
+}
+
+function applyPopupBookmarkUiMuteStateChanges(changes = {}) {
+    const nextState = { ...popupBookmarkUiMuteState };
+    if (Object.prototype.hasOwnProperty.call(changes, 'bookmarkRestoringFlag')) {
+        nextState.restoring = changes.bookmarkRestoringFlag?.newValue === true;
+    }
+    if (Object.prototype.hasOwnProperty.call(changes, 'bookmarkImportingFlag')) {
+        nextState.importing = changes.bookmarkImportingFlag?.newValue === true;
+    }
+    if (Object.prototype.hasOwnProperty.call(changes, 'bookmarkBulkChangeFlag')) {
+        nextState.bulk = changes.bookmarkBulkChangeFlag?.newValue === true;
+    }
+    if (Object.prototype.hasOwnProperty.call(changes, 'canvasMarkerBulkMode')) {
+        const markerState = normalizePopupCanvasMarkerBulkMode(changes.canvasMarkerBulkMode?.newValue);
+        nextState.marker = markerState.active === true;
+        nextState.markerSource = markerState.source;
+        nextState.markerReason = markerState.reason;
+    }
+    popupBookmarkUiMuteState = nextState;
+    return popupBookmarkUiMuteState;
+}
+
+function isPopupBookmarkUiMuted() {
+    return popupBookmarkUiMuteState.restoring === true
+        || popupBookmarkUiMuteState.importing === true
+        || popupBookmarkUiMuteState.bulk === true
+        || popupBookmarkUiMuteState.marker === true;
+}
+
+function getPopupBookmarkUiMuteTexts(lang) {
+    const markerLabel = `${popupBookmarkUiMuteState.markerSource} ${popupBookmarkUiMuteState.markerReason}`.trim().toLowerCase();
+    const isRestore = popupBookmarkUiMuteState.restoring
+        || markerLabel.includes('restore');
+    const isImport = popupBookmarkUiMuteState.importing
+        || markerLabel.includes('import');
+
+    if (lang === 'en') {
+        if (isRestore) {
+            return {
+                detailText: 'Restore in progress...',
+                statusText: 'Restore is running. Change detection is muted until it finishes.'
+            };
+        }
+        if (isImport) {
+            return {
+                detailText: 'Import in progress...',
+                statusText: 'Import is running. Change detection is muted until it finishes.'
+            };
+        }
+        return {
+            detailText: 'Bulk update in progress...',
+            statusText: 'Bulk bookmark changes are in progress. Change detection is muted until completion.'
+        };
+    }
+
+    if (isRestore) {
+        return {
+            detailText: '恢复中...',
+            statusText: '恢复正在进行，已暂时屏蔽变化检测；完成后会自动刷新。'
+        };
+    }
+    if (isImport) {
+        return {
+            detailText: '导入中...',
+            statusText: '导入正在进行，已暂时屏蔽变化检测；完成后会自动刷新。'
+        };
+    }
+    return {
+        detailText: '批量处理中...',
+        statusText: '书签正在批量变更，已暂时屏蔽变化检测；完成后会自动刷新。'
+    };
+}
+
+try {
+    chrome.storage.local.get(POPUP_BOOKMARK_UI_MUTE_KEYS, (result) => {
+        setPopupBookmarkUiMuteStateFromStore(result || {});
+    });
+} catch (_) { }
+
 function scheduleBookmarkCountDisplayRefresh({ passedLang, delay = 160 } = {}) {
     if (bookmarkCountDisplayRefreshTimer) {
         clearTimeout(bookmarkCountDisplayRefreshTimer);
+        bookmarkCountDisplayRefreshTimer = null;
     }
+    const normalizedDelay = Math.max(0, Number(delay) || 0);
+    if (normalizedDelay === 0) {
+        try {
+            updateBookmarkCountDisplay(passedLang);
+        } catch (_) { }
+        return;
+    }
+
     bookmarkCountDisplayRefreshTimer = setTimeout(() => {
         bookmarkCountDisplayRefreshTimer = null;
         try {
             updateBookmarkCountDisplay(passedLang);
         } catch (_) { }
-    }, Math.max(0, Number(delay) || 0));
+    }, normalizedDelay);
 }
 
 function updateBookmarkCountDisplay(passedLang) {
+    const currentRequestSeq = ++bookmarkCountDisplayRequestSeq;
+    const isCurrentRequest = () => currentRequestSeq === bookmarkCountDisplayRequestSeq;
+
     const getLangPromise = passedLang
         ? Promise.resolve(passedLang)
         : new Promise(resolve => chrome.storage.local.get(['preferredLang'], result => resolve(result.preferredLang || 'zh_CN')));
@@ -2969,6 +3103,10 @@ function updateBookmarkCountDisplay(passedLang) {
 
     Promise.all([getLangPromise, getAutoSyncStatePromise])
         .then(([currentLang, isAutoSyncEnabled]) => {
+            if (!isCurrentRequest()) {
+                return;
+            }
+
             const bookmarkCountSpan = document.getElementById('bookmarkCount');
             const statusCard = document.getElementById('change-description-row');
             const changeDescriptionContainer = document.getElementById('statusCardText') || statusCard;
@@ -2978,20 +3116,26 @@ function updateBookmarkCountDisplay(passedLang) {
                 return;
             }
 
-            const applyStatusCardDisplay = ({ html, hasChanges, showChevron }) => {
+            const applyStatusCardDisplay = ({ html, hasChanges, showChevron, keepLoading = false }) => {
+                if (!isCurrentRequest()) {
+                    return;
+                }
+
                 changeDescriptionContainer.innerHTML = html;
-                statusCard.classList.toggle('has-changes', Boolean(hasChanges));
+                statusCard.classList.toggle('is-loading', Boolean(keepLoading));
+                if (!keepLoading) {
+                    statusCard.classList.toggle('has-changes', Boolean(hasChanges));
+                    updateStatusCardOverlayButtonsVisibility({
+                        isAutoSyncEnabled,
+                        hasChanges: Boolean(hasChanges)
+                    });
 
-                updateStatusCardOverlayButtonsVisibility({
-                    isAutoSyncEnabled,
-                    hasChanges: Boolean(hasChanges)
-                });
-
-                if (statusCardChevron) {
-                    const shouldShowChevron = (typeof showChevron === 'boolean')
-                        ? showChevron
-                        : Boolean(hasChanges);
-                    statusCardChevron.style.display = shouldShowChevron ? '' : 'none';
+                    if (statusCardChevron) {
+                        const shouldShowChevron = (typeof showChevron === 'boolean')
+                            ? showChevron
+                            : Boolean(hasChanges);
+                        statusCardChevron.style.display = shouldShowChevron ? '' : 'none';
+                    }
                 }
             };
 
@@ -3066,9 +3210,49 @@ function updateBookmarkCountDisplay(passedLang) {
                 return `<div class="status-card-change-summary"><div${styleAttr}>${safeText}</div></div>`;
             };
 
+            if (isPopupBookmarkUiMuted()) {
+                const muteTexts = getPopupBookmarkUiMuteTexts(currentLang);
+                if (bookmarkCountSpan) {
+                    bookmarkCountSpan.innerHTML = `<span style="color: var(--theme-text-secondary);">${muteTexts.detailText}</span>`;
+                }
+                applyStatusCardDisplay({
+                    html: buildStatusCardMessageHTML(muteTexts.statusText, 'color: var(--theme-text-secondary);'),
+                    hasChanges: false,
+                    showChevron: false
+                });
+                return;
+            }
+
+            const showSoftUnavailableState = ({ detailText, statusText }) => {
+                setTimeout(() => {
+                    if (!isCurrentRequest()) {
+                        return;
+                    }
+                    if (bookmarkCountSpan) {
+                        bookmarkCountSpan.innerHTML = `<span style="color: var(--theme-text-secondary);">${detailText}</span>`;
+                    }
+                    applyStatusCardDisplay({
+                        html: buildStatusCardMessageHTML(statusText, 'color: var(--theme-text-secondary);'),
+                        hasChanges: false,
+                        showChevron: false
+                    });
+                }, BOOKMARK_STATUS_ERROR_GRACE_MS);
+            };
+
             // 获取国际化标签 (确保 window.i18nLabels 已由 applyLocalizedContent 设置)
             const i18nBookmarksLabel = window.i18nLabels?.bookmarksLabel || (currentLang === 'en' ? "bookmarks" : "个书签");
             const i18nFoldersLabel = window.i18nLabels?.foldersLabel || (currentLang === 'en' ? "folders" : "个文件夹");
+
+            const loadingText = currentLang === 'en' ? 'Computing...' : '计算中...';
+            if (bookmarkCountSpan) {
+                bookmarkCountSpan.innerHTML = `<span style="color: var(--theme-text-secondary);">${loadingText}</span>`;
+            }
+            applyStatusCardDisplay({
+                html: buildStatusCardMessageHTML(loadingText, 'color: var(--theme-text-secondary);'),
+                hasChanges: false,
+                showChevron: false,
+                keepLoading: true
+            });
 
             if (isAutoSyncEnabled) {
                 // 设置右侧状态卡片为自动模式样式
@@ -3077,6 +3261,10 @@ function updateBookmarkCountDisplay(passedLang) {
                 // --- 自动同步模式 ---
                 // 1. 更新 "当前数量/结构:" (Details)
                 chrome.runtime.sendMessage({ action: "getBackupStats" }, backupResponse => {
+                    if (!isCurrentRequest()) {
+                        return;
+                    }
+
                     if (backupResponse && backupResponse.success && backupResponse.stats) {
                         const currentBookmarkCount = backupResponse.stats.bookmarkCount || 0;
                         const currentFolderCount = backupResponse.stats.folderCount || 0;
@@ -3097,7 +3285,7 @@ function updateBookmarkCountDisplay(passedLang) {
                         }
                     } else {
                         if (bookmarkCountSpan) {
-                            bookmarkCountSpan.innerHTML = `<span style="color: orange;">${currentLang === 'en' ? 'Counts unavailable' : '数量暂无法获取'}</span>`;
+                            bookmarkCountSpan.innerHTML = `<span style="color: var(--theme-text-secondary);">${currentLang === 'en' ? 'Counts unavailable' : '数量暂无法获取'}</span>`;
                         }
                     }
                 });
@@ -3107,6 +3295,10 @@ function updateBookmarkCountDisplay(passedLang) {
                     const backupMode = result.autoBackupTimerSettings?.backupMode || 'regular';
 
                     chrome.runtime.sendMessage({ action: "getBackupStats" }, backupResponse => {
+                        if (!isCurrentRequest()) {
+                            return;
+                        }
+
                         let statusText = '';
 
                         if (backupMode === 'realtime') {
@@ -3140,6 +3332,9 @@ function updateBookmarkCountDisplay(passedLang) {
                                     });
                                 })
                             ]).then(([syncHistory, cachedRecordFromStorage, recentIds]) => {
+                                if (!isCurrentRequest()) {
+                                    return;
+                                }
                                 if (!backupResponse || !backupResponse.success || !backupResponse.stats) {
                                     const noChangeText = currentLang === 'en' ? 'No changes' : '无变化';
                                     applyStatusCardDisplay({ html: buildStatusCardMessageHTML(noChangeText), hasChanges: false });
@@ -3401,6 +3596,10 @@ function updateBookmarkCountDisplay(passedLang) {
                         });
                     })
                 ]).then(([backupResponse, syncHistory, cachedRecordFromStorage, recentIds]) => {
+                    if (!isCurrentRequest()) {
+                        return;
+                    }
+
                     // 更新 "当前数量/结构:" (Details)
                     const currentBookmarkCount = backupResponse.stats.bookmarkCount || 0;
                     const currentFolderCount = backupResponse.stats.folderCount || 0;
@@ -3634,32 +3833,39 @@ function updateBookmarkCountDisplay(passedLang) {
                     }
                     // --- 结束原有的手动模式差异计算和显示逻辑 ---
                 }).catch(manualError => {
-                    if (bookmarkCountSpan) {
-                        bookmarkCountSpan.innerHTML = `<span style="color: red;">${currentLang === 'en' ? 'Details load failed' : '详情加载失败'}</span>`;
-                    }
-                    if (changeDescriptionContainer) {
-                        const errorText = currentLang === 'en' ? 'Change details unavailable' : '变动详情无法加载';
-                        applyStatusCardDisplay({ html: buildStatusCardMessageHTML(errorText, 'color: red;'), hasChanges: false });
-                    }
+                    console.warn('updateBookmarkCountDisplay(manual) failed:', manualError);
+                    showSoftUnavailableState({
+                        detailText: currentLang === 'en' ? 'Temporarily unavailable' : '暂时不可用',
+                        statusText: currentLang === 'en' ? 'Change details temporarily unavailable' : '变动详情暂时不可用'
+                    });
                 });
             }
         })
         .catch(initialError => {
+            if (!isCurrentRequest()) {
+                return;
+            }
+
             const bookmarkCountSpan = document.getElementById('bookmarkCount');
             const statusCard = document.getElementById('change-description-row');
             const changeDescriptionContainer = document.getElementById('statusCardText') || statusCard;
             const statusCardChevron = document.getElementById('statusCardChevron');
             const autoSyncToggle2 = document.getElementById('autoSyncToggle2');
             const isAutoSyncEnabled = autoSyncToggle2 ? autoSyncToggle2.checked : true;
+            const fallbackLang = passedLang === 'en' ? 'en' : 'zh_CN';
+            const loadingText = fallbackLang === 'en' ? 'Computing...' : '计算中...';
+            const unavailableText = fallbackLang === 'en' ? 'Temporarily unavailable' : '暂时不可用';
+            const unavailableDetailText = fallbackLang === 'en' ? 'Change details temporarily unavailable' : '变动详情暂时不可用';
 
             if (bookmarkCountSpan) {
-                bookmarkCountSpan.innerHTML = `<span style="color: red;">${'加载失败'}</span>`;
+                bookmarkCountSpan.innerHTML = `<span style="color: var(--theme-text-secondary);">${loadingText}</span>`;
             }
             if (changeDescriptionContainer) {
-                changeDescriptionContainer.innerHTML = '';
+                changeDescriptionContainer.innerHTML = `<div class="status-card-change-summary"><div style="color: var(--theme-text-secondary);">${loadingText}</div></div>`;
             }
             if (statusCard) {
                 statusCard.classList.remove('has-changes');
+                statusCard.classList.add('is-loading');
             }
             if (statusCardChevron) {
                 statusCardChevron.style.display = 'none';
@@ -3669,6 +3875,23 @@ function updateBookmarkCountDisplay(passedLang) {
                 isAutoSyncEnabled,
                 hasChanges: false
             });
+
+            setTimeout(() => {
+                if (!isCurrentRequest()) {
+                    return;
+                }
+                if (bookmarkCountSpan) {
+                    bookmarkCountSpan.innerHTML = `<span style="color: var(--theme-text-secondary);">${unavailableText}</span>`;
+                }
+                if (changeDescriptionContainer) {
+                    changeDescriptionContainer.innerHTML = `<div class="status-card-change-summary"><div style="color: var(--theme-text-secondary);">${unavailableDetailText}</div></div>`;
+                }
+                if (statusCard) {
+                    statusCard.classList.remove('is-loading');
+                }
+            }, BOOKMARK_STATUS_ERROR_GRACE_MS);
+
+            console.warn('updateBookmarkCountDisplay(initial) failed:', initialError);
         });
 }
 
@@ -8408,8 +8631,9 @@ async function collectLocalRestoreCandidates(files, { allowStandalone = false } 
 
     const isVersionedInfoLogName = (name) => {
         const lower = String(name || '').trim().toLowerCase();
-        return lower === '备份历史log.md'
-            || lower === 'backup-history-log.md';
+        if (!lower) return false;
+        return /^备份历史log(?:[_-].+)?\.md$/i.test(lower)
+            || /^backup-history-log(?:[_-].+)?\.md$/i.test(lower);
     };
 
     const isVersionedInfoLogJsonName = (name) => {
@@ -8794,12 +9018,17 @@ function showRestoreModal(versions, source) {
     const confirmBtn = document.getElementById('confirmRestoreBtnRef');
     const strategySegment = document.getElementById('restoreStrategySegment');
     const strategyGroup = document.getElementById('restoreStrategyGroup');
+    const strategyMergeGroup = document.getElementById('restoreStrategyMergeGroup');
+    const strategyCenterDivider = document.getElementById('restoreStrategyCenterDivider');
+    const strategyAutoRadio = document.getElementById('restoreStrategyAuto');
     const strategyOverwriteRadio = document.getElementById('restoreStrategyOverwrite');
     const strategyMergeRadio = document.getElementById('restoreStrategyMerge');
     const strategyPatchRadio = document.getElementById('restoreStrategyPatch');
+    const strategyAutoLabel = document.getElementById('restoreStrategyAutoLabel');
     const strategyOverwriteLabel = document.getElementById('restoreStrategyOverwriteLabel');
     const strategyMergeLabel = document.getElementById('restoreStrategyMergeLabel');
     const strategyPatchLabel = document.getElementById('restoreStrategyPatchLabel');
+    const strategyAutoLabelWrap = document.getElementById('restoreStrategyAutoLabelWrap');
     const strategyOverwriteLabelWrap = document.getElementById('restoreStrategyOverwriteLabelWrap');
     const strategyMergeLabelWrap = document.getElementById('restoreStrategyMergeLabelWrap');
     const strategyPatchLabelWrap = document.getElementById('restoreStrategyPatchLabelWrap');
@@ -8817,6 +9046,10 @@ function showRestoreModal(versions, source) {
     const mergeViewModeDetailedWrap = document.getElementById('restoreMergeViewModeDetailedWrap');
     const mergeViewModeCollectionWrap = document.getElementById('restoreMergeViewModeCollectionWrap');
 
+    const searchBtn = document.getElementById('searchRestoreBtnRef');
+    const restoreSearchWrap = document.getElementById('restoreInlineSearchWrap');
+    const restoreSearchInput = document.getElementById('restoreInlineSearchInput');
+    const restoreSearchClear = document.getElementById('restoreInlineSearchClear');
     const cancelBtn = document.getElementById('cancelRestoreBtnRef');
     const closeBtn = document.getElementById('closeRestoreModal');
     const title = document.getElementById('restoreModalTitle');
@@ -8869,7 +9102,7 @@ function showRestoreModal(versions, source) {
     const localSelectionMeta = source === 'local' ? (lastLocalRestoreSelectionMeta || null) : null;
     const isLocalFileSelection = source === 'local' && localSelectionMeta?.mode === 'file';
 
-    if (!modal || !tableBody || !confirmBtn || !strategyGroup || !strategyOverwriteRadio || !strategyMergeRadio || !strategyPatchRadio || !cancelBtn || !closeBtn) {
+    if (!modal || !tableBody || !confirmBtn || !strategyGroup || !strategyMergeGroup || !strategyAutoRadio || !strategyOverwriteRadio || !strategyMergeRadio || !strategyPatchRadio || !cancelBtn || !closeBtn) {
         console.warn('[showRestoreModal] Missing modal DOM nodes');
         return;
     }
@@ -8882,10 +9115,13 @@ function showRestoreModal(versions, source) {
     };
 
     const confirmButton = resetBtn(confirmBtn);
+    const searchButton = resetBtn(searchBtn);
     const cancelButton = resetBtn(cancelBtn);
     const closeButton = resetBtn(closeBtn);
 
     const allVersions = Array.isArray(versions) ? versions : [];
+    let restoreSearchQuery = '';
+    let isRestoreSearchOpen = false;
     const isSnapshotLikeVersion = (v) => {
         const st = String(v?.sourceType || v?.restoreRef?.sourceType || '').toLowerCase();
         return st === 'html' || st === 'json' || st === 'zip';
@@ -9154,32 +9390,25 @@ function showRestoreModal(versions, source) {
     };
 
     const resolveRestoreDisplayName = (version, { preferChangesFileName = false, lang = cachedLang } = {}) => {
-        const fileName = preferChangesFileName
-            ? (resolveChangesDisplayFileName(version) || resolveSnapshotDisplayFileName(version))
-            : (resolveSnapshotDisplayFileName(version) || resolveChangesDisplayFileName(version));
-        if (preferChangesFileName) {
-            return localizeRestoreDisplayText(fileName || '-', lang);
-        }
         const rawNote = String(version?.note || '').trim();
         const noteLooksMeaningful = !!rawNote
             && !/^html\s*snapshot$/i.test(rawNote)
             && !/^current changes\b/i.test(rawNote);
-        const noteLooksLikeRestoreAction = /^(?:恢复至|覆盖恢复至|补丁恢复至|导入合并自|restored to|overwrite restored to|patch restored to|import merged from)(?:$|\s|[#:（(])/i.test(rawNote);
         const restoreRef = version?.restoreRef || {};
-        const seq = parseSeqNumber(version?.seqNumber);
         const id = String(version?.id || '').trim();
-        const isIndexBacked = seq != null
-            && seq > 0
-            && (
-                restoreRef?.indexMatched === true
-                || id.startsWith('index:')
-                || String(restoreRef?.indexChanges || '').trim().length > 0
-                || !!(restoreRef?.indexStats && typeof restoreRef.indexStats === 'object')
-            );
+        const isIndexBacked = restoreRef?.indexMatched === true
+            || id.startsWith('index:')
+            || String(restoreRef?.indexChanges || '').trim().length > 0
+            || !!(restoreRef?.indexStats && typeof restoreRef.indexStats === 'object');
 
-        const displayRaw = (isIndexBacked && noteLooksMeaningful && !noteLooksLikeRestoreAction)
-            ? rawNote
-            : (fileName || rawNote || '-');
+        if (isIndexBacked && noteLooksMeaningful) {
+            return localizeRestoreDisplayText(rawNote, lang);
+        }
+
+        const fileName = preferChangesFileName
+            ? (resolveChangesDisplayFileName(version) || resolveSnapshotDisplayFileName(version))
+            : (resolveSnapshotDisplayFileName(version) || resolveChangesDisplayFileName(version));
+        const displayRaw = fileName || rawNote || '-';
         return localizeRestoreDisplayText(displayRaw, lang);
     };
     const sortByTimeDesc = (list) => {
@@ -9236,6 +9465,123 @@ function showRestoreModal(versions, source) {
         return [...indexed, ...nonIndexed];
     };
 
+    const normalizeRestoreGroupSortText = (value) => {
+        return String(value || '')
+            .trim()
+            .toLowerCase()
+            .replace(/[_-]+/g, ' ')
+            .replace(/\s+/g, ' ');
+    };
+
+    const buildRestoreSortGroupDescriptor = (version) => {
+        const groupMeta = version?.groupMeta || version?.restoreRef?.groupMeta || null;
+        if (!groupMeta || typeof groupMeta !== 'object') return null;
+
+        const instanceId = String(groupMeta.instanceId || '').trim().toLowerCase();
+        const browserLabel = normalizeRestoreGroupSortText(groupMeta.browserLabel || '');
+        const sourceLabel = normalizeRestoreGroupSortText(groupMeta.sourceLabel || version?.source || '');
+        const topKey = instanceId
+            ? `instance:${instanceId}`
+            : (sourceLabel ? `source:${sourceLabel}` : '');
+        const browserKey = browserLabel
+            ? `browser:${browserLabel}`
+            : '';
+        const segmentKind = String(groupMeta.segmentKind || '').trim().toLowerCase() === 'archive'
+            ? 'archive'
+            : 'current';
+        const startToken = String(groupMeta.startToken || '').trim();
+        const endToken = String(groupMeta.endToken || '').trim();
+        const segmentKey = String(groupMeta.lineKey || `${segmentKind}|${startToken}|${endToken}`).trim();
+
+        return {
+            topKey,
+            browserKey,
+            segmentKey,
+            segmentKind,
+            startToken,
+            endToken
+        };
+    };
+
+    const sortByVersionedHierarchy = (list) => {
+        const baseOrdered = sortByIndexThenTime(Array.isArray(list) ? [...list] : []);
+        const baseIndexById = new Map();
+        const topOrder = new Map();
+        const browserOrderByTop = new Map();
+        let topCounter = 0;
+
+        baseOrdered.forEach((item, index) => {
+            const id = String(item?.id || '').trim();
+            if (id) {
+                baseIndexById.set(id, index);
+            }
+
+            const descriptor = buildRestoreSortGroupDescriptor(item);
+            if (!descriptor) return;
+
+            if (descriptor.topKey && !topOrder.has(descriptor.topKey)) {
+                topOrder.set(descriptor.topKey, topCounter++);
+            }
+
+            if (descriptor.topKey && descriptor.browserKey) {
+                if (!browserOrderByTop.has(descriptor.topKey)) {
+                    browserOrderByTop.set(descriptor.topKey, new Map());
+                }
+                const browserOrder = browserOrderByTop.get(descriptor.topKey);
+                if (!browserOrder.has(descriptor.browserKey)) {
+                    browserOrder.set(descriptor.browserKey, browserOrder.size);
+                }
+            }
+        });
+
+        const getBaseIndex = (item) => {
+            const id = String(item?.id || '').trim();
+            return baseIndexById.has(id) ? baseIndexById.get(id) : Number.MAX_SAFE_INTEGER;
+        };
+
+        return baseOrdered.slice().sort((a, b) => {
+            const fallback = getBaseIndex(a) - getBaseIndex(b);
+            const aDesc = buildRestoreSortGroupDescriptor(a);
+            const bDesc = buildRestoreSortGroupDescriptor(b);
+            if (!aDesc || !bDesc) return fallback;
+
+            if (aDesc.topKey && bDesc.topKey && aDesc.topKey !== bDesc.topKey) {
+                const aTop = topOrder.get(aDesc.topKey);
+                const bTop = topOrder.get(bDesc.topKey);
+                if (Number.isFinite(aTop) && Number.isFinite(bTop) && aTop !== bTop) {
+                    return aTop - bTop;
+                }
+            }
+
+            if (aDesc.topKey === bDesc.topKey && aDesc.browserKey && bDesc.browserKey && aDesc.browserKey !== bDesc.browserKey) {
+                const browserOrder = browserOrderByTop.get(aDesc.topKey) || new Map();
+                const aBrowser = browserOrder.get(aDesc.browserKey);
+                const bBrowser = browserOrder.get(bDesc.browserKey);
+                if (Number.isFinite(aBrowser) && Number.isFinite(bBrowser) && aBrowser !== bBrowser) {
+                    return aBrowser - bBrowser;
+                }
+            }
+
+            if (aDesc.topKey === bDesc.topKey && aDesc.browserKey === bDesc.browserKey) {
+                const aSegmentRank = aDesc.segmentKind === 'current' ? 0 : 1;
+                const bSegmentRank = bDesc.segmentKind === 'current' ? 0 : 1;
+                if (aSegmentRank !== bSegmentRank) {
+                    return aSegmentRank - bSegmentRank;
+                }
+
+                if (aDesc.segmentKey !== bDesc.segmentKey) {
+                    const endDiff = String(bDesc.endToken || '').localeCompare(String(aDesc.endToken || ''));
+                    if (endDiff !== 0) return endDiff;
+
+                    const startDiff = String(bDesc.startToken || '').localeCompare(String(aDesc.startToken || ''));
+                    if (startDiff !== 0) return startDiff;
+                }
+            }
+
+            return fallback;
+        });
+    };
+
     const sortedVersions = sortByTimeDesc([...allVersions]);
     const unifiedFileSelectionVersions = isLocalFileSelection
         ? sortByTimeDesc([...sortedVersions])
@@ -9258,7 +9604,7 @@ function showRestoreModal(versions, source) {
     }
 
     // 多版本：索引内版本按索引序号；索引外版本按时间
-    const orderedVersioned = sortByIndexThenTime(versionedVersions);
+    const orderedVersioned = sortByVersionedHierarchy(versionedVersions);
     versionedVersions.length = 0;
     versionedVersions.push(...orderedVersioned);
 
@@ -9394,6 +9740,712 @@ function showRestoreModal(versions, source) {
 
     const getVisibleColumnCount = () => 7;
 
+    const normalizeRestoreSearchInputText = (value) => {
+        return String(value || '')
+            .replace(/[０-９Ａ-Ｚａ-ｚ]/g, (ch) => String.fromCharCode(ch.charCodeAt(0) - 0xFEE0))
+            .replace(/＃/g, '#')
+            .replace(/[：]/g, ':')
+            .replace(/[－–—]/g, '-')
+            .replace(/[／]/g, '/')
+            .replace(/[．]/g, '.')
+            .replace(/～/g, '~')
+            .replace(/至/g, '到')
+            .replace(/\s+/g, ' ')
+            .trim()
+            .toLowerCase();
+    };
+
+    const getRestoreSearchTerms = () => {
+        return normalizeRestoreSearchInputText(restoreSearchQuery || '')
+            .split(/\s+/)
+            .map((item) => String(item || '').trim())
+            .filter(Boolean);
+    };
+
+    const updateRestoreSearchButtonUi = (lang = cachedLang) => {
+        if (!searchButton) return;
+        const isEn = lang === 'en';
+        const query = String(restoreSearchQuery || '').trim();
+        const isVisible = isRestoreSearchOpen || query.length > 0;
+        searchButton.textContent = isEn ? 'Search' : '搜索';
+        searchButton.classList.toggle('active', isVisible);
+        searchButton.title = query
+            ? (isEn
+                ? `Current search: ${query}`
+                : `当前搜索：${query}`)
+            : (isEn ? 'Search current restore list' : '搜索当前恢复列表');
+
+        if (restoreSearchWrap) {
+            restoreSearchWrap.hidden = !isVisible;
+            restoreSearchWrap.classList.toggle('visible', isVisible);
+        }
+        if (restoreSearchInput) {
+            restoreSearchInput.placeholder = isEn
+                ? 'Seq / Note/File / Hash / Time / View'
+                : '序号 / 备注或文件名 / 哈希 / 时间 / 视图';
+            if (restoreSearchInput.value !== query) {
+                restoreSearchInput.value = query;
+            }
+        }
+        if (restoreSearchClear) {
+            restoreSearchClear.classList.toggle('visible', query.length > 0);
+            restoreSearchClear.title = isEn ? 'Clear search' : '清除搜索';
+            restoreSearchClear.setAttribute('aria-label', isEn ? 'Clear search' : '清除搜索');
+        }
+    };
+
+    const applyRestoreSearchQuery = (nextQuery, { focusInput = false, lang = cachedLang } = {}) => {
+        restoreSearchQuery = String(nextQuery || '').trim();
+        if (restoreSearchQuery) {
+            isRestoreSearchOpen = true;
+        }
+        currentPageByType[currentVersionType] = 1;
+        updateRestoreSearchButtonUi(lang);
+        renderVersionTable(getVersionsByType(currentVersionType));
+        if (focusInput && restoreSearchInput) {
+            requestAnimationFrame(() => {
+                try {
+                    restoreSearchInput.focus();
+                    restoreSearchInput.select();
+                } catch (_) { }
+            });
+        }
+    };
+
+    const toggleRestoreSearch = async (forceOpen = null) => {
+        const lang = cachedLang || await getPreferredLang();
+        const nextOpen = forceOpen == null ? !isRestoreSearchOpen : !!forceOpen;
+        if (!nextOpen && String(restoreSearchQuery || '').trim()) {
+            restoreSearchQuery = '';
+            currentPageByType[currentVersionType] = 1;
+            renderVersionTable(getVersionsByType(currentVersionType));
+        }
+        isRestoreSearchOpen = nextOpen;
+        updateRestoreSearchButtonUi(lang);
+        if (nextOpen && restoreSearchInput) {
+            requestAnimationFrame(() => {
+                try { restoreSearchInput.focus(); } catch (_) { }
+            });
+        }
+    };
+
+    const buildRestoreDisplaySeqContext = (list, type = currentVersionType) => {
+        const nonOverwriteOrderByIndex = new Map();
+        let nonOverwriteCount = 0;
+        (Array.isArray(list) ? list : []).forEach((item, index) => {
+            if (detectRestoreFolderType(item) === 'overwrite') return;
+            nonOverwriteCount += 1;
+            nonOverwriteOrderByIndex.set(index, nonOverwriteCount);
+        });
+        return {
+            nonOverwriteOrderByIndex,
+            nonOverwriteCount,
+            canUseOriginalSeq: type === 'versioned'
+        };
+    };
+
+    const resolveRestoreDisplaySeq = (version, index, seqContext) => {
+        const folderType = detectRestoreFolderType(version);
+        const rawSeq = Number.parseInt(String(version?.seqNumber == null ? '' : version.seqNumber).trim(), 10);
+        const hasRawSeq = Number.isFinite(rawSeq) && rawSeq > 0;
+        const shouldUseIndexSeq = !!(seqContext?.canUseOriginalSeq) && hasRawSeq && hasIndexBackedSeq(version);
+        const nonOverwriteSeq = seqContext?.nonOverwriteOrderByIndex?.get(index) || 1;
+        const fallbackDescendingSeq = Math.max(1, Number(seqContext?.nonOverwriteCount || 0) - nonOverwriteSeq + 1);
+        if (folderType === 'overwrite') return '0';
+        return shouldUseIndexSeq ? String(rawSeq) : String(fallbackDescendingSeq);
+    };
+
+    const collectRestoreViewSearchTexts = (version) => {
+        const texts = [];
+        const artifact = version?.restoreRef?.changesArtifact;
+        if (!artifact || typeof artifact !== 'object') return texts;
+
+        const modeMap = {
+            simple: ['simple', '简略'],
+            detailed: ['detailed', '详细'],
+            collection: ['collection', '集合']
+        };
+        const seen = new Set();
+        const pushMode = (value) => {
+            const normalized = String(value || '').trim().toLowerCase();
+            if (!modeMap[normalized] || seen.has(normalized)) return;
+            seen.add(normalized);
+            texts.push(...modeMap[normalized]);
+        };
+
+        pushMode(artifact.preferredMode);
+        pushMode(artifact.mode);
+        if (artifact.modes && typeof artifact.modes === 'object') {
+            Object.keys(artifact.modes).forEach(pushMode);
+        }
+        return texts;
+    };
+
+    const buildRestoreDateKey = (year, month, day) => {
+        const y = String(year || '').trim();
+        const m = String(month || '').trim().padStart(2, '0');
+        const d = String(day || '').trim().padStart(2, '0');
+        if (!/^\d{4}$/.test(y) || !/^\d{2}$/.test(m) || !/^\d{2}$/.test(d)) return '';
+        return `${y}-${m}-${d}`;
+    };
+
+    const getRestoreDateKeyFromDate = (date) => {
+        if (!(date instanceof Date) || Number.isNaN(date.getTime())) return '';
+        return buildRestoreDateKey(date.getFullYear(), date.getMonth() + 1, date.getDate());
+    };
+
+    const parseRestoreDisplayTimeMeta = (value) => {
+        const normalized = normalizeRestoreSearchInputText(value);
+        if (!normalized) return null;
+
+        const dateMatch = normalized.match(/(\d{4})[-./](\d{1,2})[-./](\d{1,2})/);
+        if (!dateMatch) return null;
+
+        const year = dateMatch[1];
+        const month = dateMatch[2].padStart(2, '0');
+        const day = dateMatch[3].padStart(2, '0');
+        const dateKey = buildRestoreDateKey(year, month, day);
+        if (!dateKey) return null;
+
+        const timeMatch = normalized.match(/(?:^|\s)(\d{1,2}):(\d{2})(?::(\d{2}))?/);
+        const hour = timeMatch ? timeMatch[1].padStart(2, '0') : '';
+        const minute = timeMatch ? timeMatch[2].padStart(2, '0') : '';
+        const second = timeMatch && timeMatch[3] ? timeMatch[3].padStart(2, '0') : '';
+
+        return {
+            normalized,
+            year,
+            month,
+            day,
+            dateKey,
+            dateCompact: `${year}${month}${day}`,
+            monthKey: `${year}-${month}`,
+            monthCompact: `${year}${month}`,
+            monthDayCompact: `${month}${day}`,
+            hour,
+            minute,
+            second,
+            timeKey: hour && minute ? `${hour}:${minute}${second ? `:${second}` : ''}` : '',
+            timeCompact: hour && minute ? `${hour}${minute}${second || ''}` : ''
+        };
+    };
+
+    const parseRestoreSearchDateQuery = (query) => {
+        const q = normalizeRestoreSearchInputText(query);
+        if (!q) return null;
+
+        const now = new Date();
+        const currentYear = String(now.getFullYear());
+
+        if (['今天', 'today'].includes(q)) {
+            const key = getRestoreDateKeyFromDate(now);
+            if (!key) return null;
+            const parts = key.split('-');
+            return { type: 'day', key, y: parts[0], m: parts[1], d: parts[2] };
+        }
+        if (['昨天', 'yesterday'].includes(q)) {
+            const date = new Date(now);
+            date.setDate(date.getDate() - 1);
+            const key = getRestoreDateKeyFromDate(date);
+            if (!key) return null;
+            const parts = key.split('-');
+            return { type: 'day', key, y: parts[0], m: parts[1], d: parts[2] };
+        }
+        if (['前天', 'day before yesterday'].includes(q)) {
+            const date = new Date(now);
+            date.setDate(date.getDate() - 2);
+            const key = getRestoreDateKeyFromDate(date);
+            if (!key) return null;
+            const parts = key.split('-');
+            return { type: 'day', key, y: parts[0], m: parts[1], d: parts[2] };
+        }
+
+        if (/^\d{8}$/.test(q)) {
+            const y = q.substring(0, 4);
+            const m = q.substring(4, 6);
+            const d = q.substring(6, 8);
+            return { type: 'day', key: `${y}-${m}-${d}`, y, m, d };
+        }
+
+        if (/^\d{4}$/.test(q)) {
+            const value = Number.parseInt(q, 10);
+            const isLikelyYear = value >= 2000 && value <= 2100;
+            const m = q.substring(0, 2);
+            const d = q.substring(2, 4);
+            const monthNum = Number.parseInt(m, 10);
+            const dayNum = Number.parseInt(d, 10);
+            const isValidMmdd = monthNum >= 1 && monthNum <= 12 && dayNum >= 1 && dayNum <= 31;
+            if (!isLikelyYear && isValidMmdd) {
+                return { type: 'day', key: `${currentYear}-${m}-${d}`, y: currentYear, m, d, assumedYear: true };
+            }
+        }
+
+        if (/^\d{6}$/.test(q)) {
+            const y = q.substring(0, 4);
+            const m = q.substring(4, 6);
+            return { type: 'month', key: `${y}-${m}`, y, m };
+        }
+
+        const sepMatch = q.match(/^(\d{4})[-./](\d{1,2})[-./](\d{1,2})$/);
+        if (sepMatch) {
+            const y = sepMatch[1];
+            const m = sepMatch[2].padStart(2, '0');
+            const d = sepMatch[3].padStart(2, '0');
+            return { type: 'day', key: `${y}-${m}-${d}`, y, m, d };
+        }
+
+        const mdMatch = q.match(/^(\d{1,2})[-./](\d{1,2})$/);
+        if (mdMatch) {
+            const m = mdMatch[1].padStart(2, '0');
+            const d = mdMatch[2].padStart(2, '0');
+            return { type: 'day', key: `${currentYear}-${m}-${d}`, y: currentYear, m, d, assumedYear: true };
+        }
+
+        const mdLooseMatch = q.match(/^(\d{2})\s*(?:[、，,]|\s+)\s*(\d{2})$/);
+        if (mdLooseMatch) {
+            const monthNum = Number.parseInt(mdLooseMatch[1], 10);
+            const dayNum = Number.parseInt(mdLooseMatch[2], 10);
+            if (monthNum >= 1 && monthNum <= 12 && dayNum >= 1 && dayNum <= 31) {
+                const m = String(monthNum).padStart(2, '0');
+                const d = String(dayNum).padStart(2, '0');
+                return { type: 'day', key: `${currentYear}-${m}-${d}`, y: currentYear, m, d, assumedYear: true };
+            }
+        }
+
+        if (/^(0[1-9]|1[0-2])$/.test(q)) {
+            return { type: 'month', key: `${currentYear}-${q}`, y: currentYear, m: q, assumedYear: true };
+        }
+
+        const ymMatch = q.match(/^(\d{4})[-./](\d{1,2})$/);
+        if (ymMatch) {
+            const y = ymMatch[1];
+            const m = ymMatch[2].padStart(2, '0');
+            return { type: 'month', key: `${y}-${m}`, y, m };
+        }
+
+        if (/^\d{4}$/.test(q)) {
+            return { type: 'year', key: q, y: q };
+        }
+
+        const cnFullMatch = q.match(/^(\d{4})年(\d{1,2})月(\d{1,2})[日号]?$/);
+        if (cnFullMatch) {
+            const y = cnFullMatch[1];
+            const m = cnFullMatch[2].padStart(2, '0');
+            const d = cnFullMatch[3].padStart(2, '0');
+            return { type: 'day', key: `${y}-${m}-${d}`, y, m, d };
+        }
+
+        const cnMonthDayMatch = q.match(/^(\d{1,2})月\s*(\d{1,2})[日号]?$/);
+        if (cnMonthDayMatch) {
+            const m = cnMonthDayMatch[1].padStart(2, '0');
+            const d = cnMonthDayMatch[2].padStart(2, '0');
+            return { type: 'day', key: `${currentYear}-${m}-${d}`, y: currentYear, m, d, assumedYear: true };
+        }
+
+        const cnYearMonthMatch = q.match(/^(\d{4})年(\d{1,2})月?$/);
+        if (cnYearMonthMatch) {
+            const y = cnYearMonthMatch[1];
+            const m = cnYearMonthMatch[2].padStart(2, '0');
+            return { type: 'month', key: `${y}-${m}`, y, m };
+        }
+
+        const cnMonthMatch = q.match(/^(\d{1,2})月$/);
+        if (cnMonthMatch) {
+            const m = cnMonthMatch[1].padStart(2, '0');
+            return { type: 'month', key: `${currentYear}-${m}`, y: currentYear, m, assumedYear: true };
+        }
+
+        const rangeMatch1 = q.match(/^(\d{4})\s*[-~到]\s*(\d{4})$/);
+        if (rangeMatch1) {
+            const start = rangeMatch1[1];
+            const end = rangeMatch1[2];
+            const startM = Number.parseInt(start.substring(0, 2), 10);
+            const startD = Number.parseInt(start.substring(2, 4), 10);
+            const endM = Number.parseInt(end.substring(0, 2), 10);
+            const endD = Number.parseInt(end.substring(2, 4), 10);
+            if (startM >= 1 && startM <= 12 && startD >= 1 && startD <= 31 && endM >= 1 && endM <= 12 && endD >= 1 && endD <= 31) {
+                return {
+                    type: 'range',
+                    startKey: `${currentYear}-${String(startM).padStart(2, '0')}-${String(startD).padStart(2, '0')}`,
+                    endKey: `${currentYear}-${String(endM).padStart(2, '0')}-${String(endD).padStart(2, '0')}`,
+                    assumedYear: true
+                };
+            }
+        }
+
+        const rangeMatch2 = q.match(/^(\d{1,2})[-./](\d{1,2})\s*[-~到]\s*(\d{1,2})[-./](\d{1,2})$/);
+        if (rangeMatch2) {
+            const startM = Number.parseInt(rangeMatch2[1], 10);
+            const startD = Number.parseInt(rangeMatch2[2], 10);
+            const endM = Number.parseInt(rangeMatch2[3], 10);
+            const endD = Number.parseInt(rangeMatch2[4], 10);
+            if (startM >= 1 && startM <= 12 && startD >= 1 && startD <= 31 && endM >= 1 && endM <= 12 && endD >= 1 && endD <= 31) {
+                return {
+                    type: 'range',
+                    startKey: `${currentYear}-${String(startM).padStart(2, '0')}-${String(startD).padStart(2, '0')}`,
+                    endKey: `${currentYear}-${String(endM).padStart(2, '0')}-${String(endD).padStart(2, '0')}`,
+                    assumedYear: true
+                };
+            }
+        }
+
+        const rangeMatch3 = q.match(/^(\d{8})\s*[-~到]\s*(\d{8})$/);
+        if (rangeMatch3) {
+            const start = rangeMatch3[1];
+            const end = rangeMatch3[2];
+            return {
+                type: 'range',
+                startKey: `${start.substring(0, 4)}-${start.substring(4, 6)}-${start.substring(6, 8)}`,
+                endKey: `${end.substring(0, 4)}-${end.substring(4, 6)}-${end.substring(6, 8)}`
+            };
+        }
+
+        return null;
+    };
+
+    const doesRestoreTimeMatchDateQuery = (timeMeta, dateMeta) => {
+        if (!timeMeta || !timeMeta.dateKey || !dateMeta || !dateMeta.type) return false;
+
+        if (dateMeta.type === 'day') {
+            return timeMeta.dateKey === String(dateMeta.key || '').trim();
+        }
+        if (dateMeta.type === 'month') {
+            return timeMeta.monthKey === String(dateMeta.key || '').trim();
+        }
+        if (dateMeta.type === 'year') {
+            return timeMeta.year === String(dateMeta.key || dateMeta.y || '').trim();
+        }
+        if (dateMeta.type === 'range') {
+            let startKey = String(dateMeta.startKey || '').trim();
+            let endKey = String(dateMeta.endKey || '').trim();
+            if (!startKey || !endKey) return false;
+            if (endKey < startKey) {
+                const temp = startKey;
+                startKey = endKey;
+                endKey = temp;
+            }
+            return timeMeta.dateKey >= startKey && timeMeta.dateKey <= endKey;
+        }
+        return false;
+    };
+
+    const collectRestoreTimeSearchTexts = (displayTime) => {
+        const baseText = String(displayTime || '').trim();
+        if (!baseText) return [];
+
+        const meta = parseRestoreDisplayTimeMeta(baseText);
+        if (!meta) {
+            return [baseText];
+        }
+
+        const monthNumber = String(Number.parseInt(meta.month, 10));
+        const dayNumber = String(Number.parseInt(meta.day, 10));
+        const texts = [
+            baseText,
+            meta.dateKey,
+            meta.dateCompact,
+            meta.monthKey,
+            meta.monthCompact,
+            meta.monthDayCompact,
+            `${meta.year}/${meta.month}/${meta.day}`,
+            `${meta.year}.${meta.month}.${meta.day}`,
+            `${meta.year}/${meta.month}`,
+            `${meta.year}.${meta.month}`,
+            `${meta.month}-${meta.day}`,
+            `${meta.month}/${meta.day}`,
+            `${meta.month}.${meta.day}`,
+            `${monthNumber}-${dayNumber}`,
+            `${monthNumber}/${dayNumber}`,
+            `${monthNumber}.${dayNumber}`,
+            `${meta.year}年${meta.month}月${meta.day}日`,
+            `${meta.year}年${monthNumber}月${dayNumber}日`,
+            `${meta.year}年${meta.month}月`,
+            `${meta.year}年${monthNumber}月`,
+            `${meta.month}月${meta.day}日`,
+            `${monthNumber}月${dayNumber}日`,
+            `${meta.month}月${meta.day}号`,
+            `${monthNumber}月${dayNumber}号`,
+            `${meta.month}月`,
+            `${monthNumber}月`,
+            meta.year
+        ];
+
+        if (meta.timeKey) {
+            texts.push(meta.timeKey, meta.timeCompact);
+            if (meta.hour && meta.minute) {
+                texts.push(`${meta.hour}:${meta.minute}`, `${meta.hour}${meta.minute}`);
+            }
+        }
+
+        const todayKey = getRestoreDateKeyFromDate(new Date());
+        const yesterday = new Date();
+        yesterday.setDate(yesterday.getDate() - 1);
+        const yesterdayKey = getRestoreDateKeyFromDate(yesterday);
+        const dayBeforeYesterday = new Date();
+        dayBeforeYesterday.setDate(dayBeforeYesterday.getDate() - 2);
+        const dayBeforeYesterdayKey = getRestoreDateKeyFromDate(dayBeforeYesterday);
+
+        if (meta.dateKey === todayKey) {
+            texts.push('今天', 'today');
+        } else if (meta.dateKey === yesterdayKey) {
+            texts.push('昨天', 'yesterday');
+        } else if (meta.dateKey === dayBeforeYesterdayKey) {
+            texts.push('前天', 'day before yesterday');
+        }
+
+        return texts;
+    };
+
+    const collectRestoreSearchTexts = (version, index, seqContext, type = currentVersionType) => {
+        const preferChangesFileName = isChangesSubModeActive(type);
+        const seqText = resolveRestoreDisplaySeq(version, index, seqContext);
+        const displayText = resolveRestoreDisplayName(version, {
+            preferChangesFileName,
+            lang: cachedLang
+        });
+        const fingerprint = String(version?.fingerprint || '').trim();
+        const shortFingerprint = fingerprint ? `#${fingerprint.slice(0, 7)}` : '';
+        const shortFingerprintPlain = shortFingerprint.replace(/^#/, '');
+        const displayTime = String(version?.displayTime || '').trim();
+        return [
+            seqText,
+            `#${seqText}`,
+            displayText,
+            fingerprint,
+            shortFingerprint,
+            shortFingerprintPlain,
+            ...collectRestoreTimeSearchTexts(displayTime),
+            ...collectRestoreViewSearchTexts(version)
+        ]
+            .map((item) => normalizeRestoreSearchInputText(item))
+            .filter(Boolean);
+    };
+
+    const applyRestoreSearchFilter = (list, type = currentVersionType) => {
+        const items = Array.isArray(list) ? list : [];
+        const terms = getRestoreSearchTerms();
+        if (!terms.length) return items;
+
+        const seqContext = buildRestoreDisplaySeqContext(items, type);
+        return items.filter((version, index) => {
+            const haystack = collectRestoreSearchTexts(version, index, seqContext, type).join('\n');
+            const timeMeta = parseRestoreDisplayTimeMeta(version?.displayTime || '');
+            return terms.every((term) => {
+                const textMatched = haystack.includes(term);
+                const dateMeta = parseRestoreSearchDateQuery(term);
+                if (!dateMeta) return textMatched;
+                return textMatched || doesRestoreTimeMatchDateQuery(timeMeta, dateMeta);
+            });
+        });
+    };
+
+    const resolveRenderableVersions = (list, type = currentVersionType) => {
+        return applyRestoreSearchFilter(list, type);
+    };
+
+
+    const resolveRestoreVersionGroupMeta = (version) => {
+        const groupMeta = version?.groupMeta || version?.restoreRef?.groupMeta || null;
+        return groupMeta && typeof groupMeta === 'object' ? groupMeta : null;
+    };
+
+    const normalizeRestoreGroupDisplayText = (value) => {
+        return String(value || '')
+            .trim()
+            .replace(/[_-]+/g, ' ')
+            .replace(/\s+/g, ' ');
+    };
+
+    const buildRestoreVersionGroupHierarchy = (version) => {
+        const groupMeta = resolveRestoreVersionGroupMeta(version);
+        if (!groupMeta) return null;
+
+        const isEn = cachedLang === 'en';
+        const instanceId = String(groupMeta.instanceId || '').trim().toLowerCase();
+        const browserLabel = normalizeRestoreGroupDisplayText(groupMeta.browserLabel || '');
+        const sourceLabel = normalizeRestoreGroupDisplayText(groupMeta.sourceLabel || version?.source || '');
+        const segmentKind = String(groupMeta.segmentKind || '').trim().toLowerCase() === 'archive' ? 'archive' : 'current';
+        const startToken = String(groupMeta.startToken || '').trim();
+        const endToken = String(groupMeta.endToken || '').trim();
+        const rangeLabel = isEn
+            ? `${startToken || '-'} → ${endToken || '-'}`
+            : `${startToken || '-'}开始 → ${endToken || '-'}截止`;
+        const segmentLabel = isEn
+            ? `${segmentKind === 'archive' ? 'Archive' : 'Current'} · ${rangeLabel}`
+            : `${segmentKind === 'archive' ? '归档' : '当前'} · ${rangeLabel}`;
+        const topKey = instanceId
+            ? `instance:${instanceId}`
+            : (sourceLabel ? `source:${sourceLabel.toLowerCase()}` : '');
+        const topLabel = instanceId
+            ? instanceId
+            : sourceLabel;
+        const browserKey = browserLabel && browserLabel.toLowerCase() !== sourceLabel.toLowerCase()
+            ? `browser:${browserLabel.toLowerCase()}`
+            : '';
+        const identityKey = `${topKey || '__top__'}|${browserKey || '__browser__'}`;
+        const identityLabel = [browserLabel, topLabel].filter(Boolean).join(' · ') || browserLabel || topLabel || sourceLabel;
+        const segmentKey = String(groupMeta.lineKey || '').trim();
+        const segmentParentKey = identityKey;
+
+        return {
+            topKey,
+            topLabel,
+            browserKey,
+            browserLabel,
+            identityKey,
+            identityLabel,
+            segmentKey,
+            segmentLabel,
+            segmentParentKey
+        };
+    };
+
+    const buildRestoreGroupHierarchySummary = (list) => {
+        const topKeys = new Set();
+        const browserKeysByTop = new Map();
+        const segmentKeysByParent = new Map();
+
+        (Array.isArray(list) ? list : []).forEach((version) => {
+            const descriptor = buildRestoreVersionGroupHierarchy(version);
+            if (!descriptor) return;
+
+            if (descriptor.topKey) {
+                topKeys.add(descriptor.topKey);
+            }
+
+            if (descriptor.topKey && descriptor.browserKey) {
+                if (!browserKeysByTop.has(descriptor.topKey)) {
+                    browserKeysByTop.set(descriptor.topKey, new Set());
+                }
+                browserKeysByTop.get(descriptor.topKey).add(descriptor.browserKey);
+            }
+
+            if (descriptor.segmentKey) {
+                if (!segmentKeysByParent.has(descriptor.segmentParentKey)) {
+                    segmentKeysByParent.set(descriptor.segmentParentKey, new Set());
+                }
+                segmentKeysByParent.get(descriptor.segmentParentKey).add(descriptor.segmentKey);
+            }
+        });
+
+        return {
+            topCount: topKeys.size,
+            browserKeysByTop,
+            segmentKeysByParent
+        };
+    };
+
+    const getRestoreGroupSeparatorPayloads = (version, previousVersion, summary, globalIndex) => {
+        const descriptor = buildRestoreVersionGroupHierarchy(version);
+        if (!descriptor) return [];
+
+        const prevDescriptor = buildRestoreVersionGroupHierarchy(previousVersion);
+        const isFirstOverallItem = globalIndex === 0;
+        const showTop = descriptor.topKey
+            && summary.topCount > 1
+            && (isFirstOverallItem || !prevDescriptor || prevDescriptor.topKey !== descriptor.topKey);
+        const browserCount = descriptor.topKey
+            ? (summary.browserKeysByTop.get(descriptor.topKey)?.size || 0)
+            : 0;
+        const browserBoundaryChanged = isFirstOverallItem
+            || !prevDescriptor
+            || prevDescriptor.topKey !== descriptor.topKey
+            || prevDescriptor.browserKey !== descriptor.browserKey;
+        const showBrowser = descriptor.browserKey
+            && (showTop || (browserCount > 1 && browserBoundaryChanged));
+        const segmentCount = summary.segmentKeysByParent.get(descriptor.segmentParentKey)?.size || 0;
+        const showSegment = descriptor.segmentKey
+            && segmentCount > 1
+            && (isFirstOverallItem
+                || !prevDescriptor
+                || prevDescriptor.topKey !== descriptor.topKey
+                || prevDescriptor.browserKey !== descriptor.browserKey
+                || prevDescriptor.segmentKey !== descriptor.segmentKey);
+
+        const showIdentity = !!descriptor.identityLabel && (showTop || showBrowser);
+
+        const payloads = [];
+        if (showIdentity) {
+            payloads.push({ level: 'identity', lineKey: `identity:${descriptor.identityKey}`, label: descriptor.identityLabel });
+        }
+        if (showSegment && descriptor.segmentLabel) {
+            payloads.push({ level: 'segment', lineKey: `segment:${descriptor.segmentKey}`, label: descriptor.segmentLabel });
+        }
+        return payloads;
+    };
+
+    const appendRestoreGroupSeparatorRows = (payloads) => {
+        const list = (Array.isArray(payloads) ? payloads : [])
+            .filter((payload) => payload && payload.label);
+        if (list.length === 0) return;
+
+        const stackGap = 18;
+        const stackHeight = list.length > 1 ? (list.length - 1) * stackGap : 0;
+
+        const row = document.createElement('tr');
+        row.className = 'restore-group-separator';
+        row.style.pointerEvents = 'none';
+        row.style.height = `${stackHeight}px`;
+        row.style.lineHeight = '0';
+
+        const td = document.createElement('td');
+        td.colSpan = getVisibleColumnCount();
+        td.style.padding = '0';
+        td.style.border = '0';
+        td.style.height = `${stackHeight}px`;
+        td.style.position = 'relative';
+        td.style.overflow = 'visible';
+
+        const wrap = document.createElement('div');
+        wrap.style.position = 'relative';
+        wrap.style.height = `${stackHeight}px`;
+        wrap.style.overflow = 'visible';
+        wrap.style.margin = '0';
+
+        list.forEach((payload, index) => {
+            const topOffset = list.length > 1
+                ? `${index * stackGap}px`
+                : '-1px';
+
+            const line = document.createElement('div');
+            line.style.position = 'absolute';
+            line.style.left = '0';
+            line.style.right = '0';
+            line.style.top = topOffset;
+            line.style.borderTop = (payload.level === 'top' || payload.level === 'identity')
+                ? '2px solid rgba(79, 195, 247, 0.72)'
+                : (payload.level === 'browser'
+                    ? '1px solid rgba(79, 195, 247, 0.56)'
+                    : '1px solid rgba(79, 195, 247, 0.38)');
+
+            const label = document.createElement('span');
+            label.textContent = payload.label;
+            label.style.position = 'absolute';
+            label.style.left = '50%';
+            label.style.top = topOffset;
+            label.style.transform = 'translate(-50%, -50%)';
+            label.style.color = 'var(--theme-link-color, #4fc3f7)';
+            label.style.background = 'var(--theme-bg-primary)';
+            label.style.fontSize = (payload.level === 'top' || payload.level === 'identity')
+                ? '11px'
+                : (payload.level === 'browser' ? '10.5px' : '10px');
+            label.style.fontWeight = (payload.level === 'top' || payload.level === 'identity')
+                ? '700'
+                : (payload.level === 'browser' ? '650' : '500');
+            label.style.lineHeight = '1';
+            label.style.whiteSpace = 'nowrap';
+            label.style.padding = '0 6px';
+            label.style.zIndex = '1';
+
+            wrap.appendChild(line);
+            wrap.appendChild(label);
+        });
+
+        td.appendChild(wrap);
+        row.appendChild(td);
+        tableBody.appendChild(row);
+    };
+
     // Paginated rendering (default: 10 per page)
     const RESTORE_PAGE_SIZE = 10;
     const currentPageByType = {
@@ -9447,7 +10499,29 @@ function showRestoreModal(versions, source) {
         }
     };
 
-    let currentStrategy = strategyPatchRadio.checked ? 'patch' : (strategyMergeRadio.checked ? 'merge' : 'overwrite');
+    const RESTORE_PATCH_THRESHOLD_DEFAULT_PERCENT = 40;
+    const RESTORE_PATCH_THRESHOLD_MIN_PERCENT = 1;
+    const RESTORE_PATCH_THRESHOLD_MAX_PERCENT = 99;
+
+    const normalizeRestoreStrategyValue = (strategy) => {
+        const value = String(strategy || '').toLowerCase();
+        if (value === 'merge') return 'merge';
+        if (value === 'patch') return 'patch';
+        if (value === 'overwrite') return 'overwrite';
+        return 'auto';
+    };
+
+    const normalizeRestorePatchThresholdPercent = (value) => {
+        const num = Number(value);
+        if (!Number.isFinite(num)) return RESTORE_PATCH_THRESHOLD_DEFAULT_PERCENT;
+        return Math.min(
+            RESTORE_PATCH_THRESHOLD_MAX_PERCENT,
+            Math.max(RESTORE_PATCH_THRESHOLD_MIN_PERCENT, Math.round(num))
+        );
+    };
+
+    let restorePatchThresholdPercent = RESTORE_PATCH_THRESHOLD_DEFAULT_PERCENT;
+    let currentStrategy = strategyMergeRadio && strategyMergeRadio.checked ? 'merge' : 'overwrite';
 
     const getPreferredLang = () => new Promise(resolve => {
         try {
@@ -9464,7 +10538,7 @@ function showRestoreModal(versions, source) {
         if (isChangesSubModeActive(currentVersionType)) {
             return isEn ? 'Import Merge' : '导入合并';
         }
-        return isEn ? 'Restore' : '恢复';
+        return isEn ? 'Overwrite Restore' : '覆盖恢复';
     };
 
     const updateRestoreConfirmIdleText = (lang = cachedLang) => {
@@ -9570,6 +10644,7 @@ function showRestoreModal(versions, source) {
                 : '仅显示未进入恢复索引的多版本记录。';
         }
 
+        updateRestoreSearchButtonUi(lang);
         cancelButton.textContent = isEn ? 'Cancel' : '取消';
         // 主按钮点击后进入二级确认弹窗
         updateRestoreConfirmIdleText(lang);
@@ -9580,6 +10655,10 @@ function showRestoreModal(versions, source) {
                 : `${RESTORE_PAGE_SIZE}/页`;
         }
 
+        if (strategyAutoLabel) {
+            const span = strategyAutoLabel.querySelector('span:last-child');
+            if (span) span.textContent = isEn ? 'Auto' : '自动';
+        }
         if (strategyOverwriteLabel) {
             const span = strategyOverwriteLabel.querySelector('span:last-child');
             if (span) span.textContent = isEn ? 'Overwrite' : '覆盖';
@@ -9613,6 +10692,11 @@ function showRestoreModal(versions, source) {
                 : '集合：按增加 / 删除 / 移动 / 修改分组导入。';
         }
 
+        if (strategyAutoLabelWrap) {
+            strategyAutoLabelWrap.title = isEn
+                ? `Auto restore: use patch when change ratio is ≤${restorePatchThresholdPercent}%, otherwise overwrite.`
+                : `自动恢复：变化占比 ≤${restorePatchThresholdPercent}% 走补丁恢复，>${restorePatchThresholdPercent}% 走覆盖恢复。`;
+        }
         if (strategyOverwriteLabelWrap) {
             strategyOverwriteLabelWrap.title = isEn
                 ? 'Overwrite: delete current bookmarks, then rebuild from the target snapshot. Bookmark IDs will change and may affect features like Records/Recommendations.'
@@ -9625,8 +10709,13 @@ function showRestoreModal(versions, source) {
         }
         if (strategyPatchLabelWrap) {
             strategyPatchLabelWrap.title = isEn
-                ? 'Patch Restore: apply add/delete/move/modify by strict bookmark ID matching, preserving IDs when possible. If matching fails, fallback to overwrite restore.'
-                : '补丁恢复：按书签 ID 严格匹配执行增删移改，尽量保留原 ID。若匹配失败，可降级为覆盖恢复。';
+                ? 'Patch Restore:\nMatch by ID only; matching IDs support add/delete/move/modify, non-matching IDs are handled as delete/create.'
+                : '补丁恢复：\n仅按 ID 匹配；ID 匹配执行新增/删除/移动/修改，ID 不匹配时按删除/新增处理。';
+        }
+
+        const thresholdTextEl = document.getElementById('restoreConfirmThresholdText');
+        if (thresholdTextEl) {
+            thresholdTextEl.textContent = isEn ? 'Smart Threshold' : '智能阈值';
         }
 
         if (typeof renderVersionTable === 'function') {
@@ -9688,6 +10777,7 @@ function showRestoreModal(versions, source) {
             buildPairGroup('B', bmAdded, bmDeleted),
             buildPairGroup('F', folderAdded, folderDeleted)
         ].filter(Boolean);
+        const shouldSplitPairLines = [bmAdded, bmDeleted, folderAdded, folderDeleted].some((count) => count >= 10000);
 
         const secondLineItems = [];
         if (movedCount > 0) {
@@ -9699,7 +10789,13 @@ function showRestoreModal(versions, source) {
 
         const lines = [];
         if (firstLineItems.length > 0) {
-            lines.push(`<span class='stats-line'>${firstLineItems.join("<span class='stats-sep'> / </span>")}</span>`);
+            if (shouldSplitPairLines && firstLineItems.length > 1) {
+                firstLineItems.forEach((item) => {
+                    lines.push(`<span class='stats-line stats-line-split'>${item}</span>`);
+                });
+            } else {
+                lines.push(`<span class='stats-line'>${firstLineItems.join("<span class='stats-sep'> / </span>")}</span>`);
+            }
         }
         if (secondLineItems.length > 0) {
             lines.push(`<span class='stats-line'>${secondLineItems.join("<span class='stats-sep'> / </span>")}</span>`);
@@ -10042,10 +11138,12 @@ function showRestoreModal(versions, source) {
     };
 
     const applyDefaultStrategyForType = (type) => {
-        strategyOverwriteRadio.checked = false;
-        strategyMergeRadio.checked = false;
-        strategyPatchRadio.checked = true;
-        currentStrategy = 'patch';
+        const shouldUseMerge = isChangesSubModeActive(type);
+        strategyAutoRadio.checked = false;
+        strategyOverwriteRadio.checked = !shouldUseMerge;
+        strategyMergeRadio.checked = shouldUseMerge;
+        strategyPatchRadio.checked = false;
+        currentStrategy = shouldUseMerge ? 'merge' : 'overwrite';
     };
 
     const applyColumnVisibilityForType = (type) => {
@@ -10071,6 +11169,8 @@ function showRestoreModal(versions, source) {
     applyDefaultStrategyForType(currentVersionType);
 
     strategyGroup.classList.add('disabled');
+    strategyMergeGroup.classList.add('disabled');
+    strategyAutoRadio.disabled = true;
     strategyOverwriteRadio.disabled = true;
     strategyMergeRadio.disabled = true;
     strategyPatchRadio.disabled = true;
@@ -10083,6 +11183,27 @@ function showRestoreModal(versions, source) {
         if (!labelWrap) return;
         labelWrap.style.opacity = disabled ? '0.55' : '';
         labelWrap.style.cursor = disabled ? 'not-allowed' : 'pointer';
+    };
+
+    const setLabelVisibility = (labelWrap, visible) => {
+        if (!labelWrap) return;
+        labelWrap.style.display = visible ? '' : 'none';
+    };
+
+    const getVersionTypeCounts = () => {
+        if (isLocalFileSelection) {
+            return {
+                versioned: unifiedFileSelectionVersions.length,
+                overwrite: 0,
+                manual_export: 0
+            };
+        }
+
+        return {
+            versioned: versionedVersions.length,
+            overwrite: overwriteVersions.length,
+            manual_export: manualExportVersions.length
+        };
     };
 
     const getVersionedIndexFilterAvailability = () => {
@@ -10195,6 +11316,9 @@ function showRestoreModal(versions, source) {
         const availability = getVersionedIndexFilterAvailability();
         const hasAny = availability.indexed || availability.non_indexed;
 
+        setLabelVisibility(versionedIndexFilterIndexedLabelWrap, availability.indexed);
+        setLabelVisibility(versionedIndexFilterNonIndexedLabelWrap, availability.non_indexed);
+
         if (!hasAny) {
             versionedIndexFilterSegment.style.display = 'none';
             return;
@@ -10233,62 +11357,69 @@ function showRestoreModal(versions, source) {
 
     const getStrategyAvailabilityForType = (type) => {
         if (isChangesSubModeActive(type)) {
-            return { overwrite: false, merge: true, patch: false };
+            return { auto: false, overwrite: false, merge: true, patch: false };
         }
 
         const isSnapshotSubModeOnMainTypes = !isLocalFileSelection
             && (type === 'versioned' || type === 'overwrite')
             && getCurrentRestoreSubMode(type) === 'snapshot';
         if (isSnapshotSubModeOnMainTypes) {
-            return { overwrite: true, merge: false, patch: true };
+            return { auto: false, overwrite: true, merge: false, patch: false };
         }
 
         const sourceType = String(selectedVersion?.sourceType || selectedVersion?.restoreRef?.sourceType || '').toLowerCase();
         if (sourceType === 'changes_artifact') {
-            return { overwrite: false, merge: true, patch: false };
+            return { auto: false, overwrite: false, merge: true, patch: false };
         }
         if (type === 'snapshot') {
-            return { overwrite: true, merge: true, patch: true };
+            return { auto: false, overwrite: true, merge: true, patch: false };
         }
-        return { overwrite: true, merge: true, patch: true };
+        return { auto: false, overwrite: true, merge: true, patch: false };
     };
 
     const updateStrategyAvailabilityUi = () => {
         const canRestore = selectedVersion?.canRestore !== false;
         const avail = getStrategyAvailabilityForType(currentVersionType);
-        const forceImportMergeOnly = isChangesSubModeActive(currentVersionType);
 
         if (strategySegment) {
-            strategySegment.style.display = forceImportMergeOnly ? 'none' : 'inline-flex';
+            strategySegment.style.display = 'none';
         }
 
         // Visibility
+        if (strategyMergeGroup) strategyMergeGroup.style.display = avail.merge ? '' : 'none';
+        if (strategyCenterDivider) strategyCenterDivider.style.display = avail.merge ? '' : 'none';
+        if (strategyAutoLabelWrap) strategyAutoLabelWrap.style.display = avail.auto ? '' : 'none';
         if (strategyOverwriteLabelWrap) strategyOverwriteLabelWrap.style.display = avail.overwrite ? '' : 'none';
         if (strategyMergeLabelWrap) strategyMergeLabelWrap.style.display = avail.merge ? '' : 'none';
         if (strategyPatchLabelWrap) strategyPatchLabelWrap.style.display = avail.patch ? '' : 'none';
 
         // Ensure selected strategy is valid
         let desired = currentStrategy;
-        if (desired !== 'overwrite' && desired !== 'merge' && desired !== 'patch') desired = 'overwrite';
+        if (desired !== 'overwrite' && desired !== 'merge') desired = 'overwrite';
         if (!avail[desired]) {
             desired = avail.overwrite
                 ? 'overwrite'
-                : (avail.patch ? 'patch' : (avail.merge ? 'merge' : 'overwrite'));
+                : (avail.merge ? 'merge' : 'overwrite');
         }
 
+        if (strategyAutoRadio) strategyAutoRadio.checked = desired === 'auto';
         if (strategyOverwriteRadio) strategyOverwriteRadio.checked = desired === 'overwrite';
         if (strategyMergeRadio) strategyMergeRadio.checked = desired === 'merge';
         if (strategyPatchRadio) strategyPatchRadio.checked = desired === 'patch';
         currentStrategy = desired;
 
         // Disabled state
+        if (strategyAutoRadio) strategyAutoRadio.disabled = !canRestore || !avail.auto;
         if (strategyOverwriteRadio) strategyOverwriteRadio.disabled = !canRestore || !avail.overwrite;
         if (strategyMergeRadio) strategyMergeRadio.disabled = !canRestore || !avail.merge;
         if (strategyPatchRadio) strategyPatchRadio.disabled = !canRestore || !avail.patch;
 
+        setLabelDisabled(strategyAutoLabelWrap, strategyAutoRadio?.disabled);
         setLabelDisabled(strategyOverwriteLabelWrap, strategyOverwriteRadio?.disabled);
         setLabelDisabled(strategyMergeLabelWrap, strategyMergeRadio?.disabled);
         setLabelDisabled(strategyPatchLabelWrap, strategyPatchRadio?.disabled);
+        if (strategyGroup) strategyGroup.classList.toggle('disabled', !canRestore);
+        if (strategyMergeGroup) strategyMergeGroup.classList.toggle('disabled', !canRestore);
         updateRestoreConfirmIdleText(cachedLang);
     };
 
@@ -10340,15 +11471,20 @@ function showRestoreModal(versions, source) {
         applyTablePresentationForType(currentVersionType);
         const isSnapshotMode = false;
 
-        const allItems = Array.isArray(list) ? list : [];
+        const allItems = resolveRenderableVersions(Array.isArray(list) ? list : [], currentVersionType);
         updatePaginationUi(allItems.length);
 
         if (allItems.length === 0) {
-            setEmptyTableMessage(cachedLang === 'en' ? 'No versions found' : '未找到可恢复版本');
+            setEmptyTableMessage(getRestoreSearchTerms().length > 0
+                ? (cachedLang === 'en' ? 'No matching versions found' : '未找到匹配结果')
+                : (cachedLang === 'en' ? 'No versions found' : '未找到可恢复版本'));
             confirmButton.disabled = true;
+            strategyAutoRadio.disabled = true;
             strategyOverwriteRadio.disabled = true;
             strategyMergeRadio.disabled = true;
+            strategyPatchRadio.disabled = true;
             strategyGroup.classList.add('disabled');
+            strategyMergeGroup.classList.add('disabled');
             return;
         }
 
@@ -10359,16 +11495,11 @@ function showRestoreModal(versions, source) {
         const startIndex = (currentPage - 1) * RESTORE_PAGE_SIZE;
         const endIndex = Math.min(startIndex + RESTORE_PAGE_SIZE, allItems.length);
         const pageItems = allItems.slice(startIndex, endIndex);
+        const groupHierarchySummary = currentVersionType === 'versioned'
+            ? buildRestoreGroupHierarchySummary(allItems)
+            : null;
 
-        const nonOverwriteOrderByIndex = new Map();
-        let nonOverwriteCount = 0;
-        allItems.forEach((item, index) => {
-            if (detectRestoreFolderType(item) === 'overwrite') return;
-            nonOverwriteCount += 1;
-            nonOverwriteOrderByIndex.set(index, nonOverwriteCount);
-        });
-
-        const canUseOriginalSeq = currentVersionType === 'versioned';
+        const seqContext = buildRestoreDisplaySeqContext(allItems, currentVersionType);
 
         const clearSelection = () => {
             Array.from(tableBody.querySelectorAll("tr[data-selected='1']")).forEach((tr) => {
@@ -10390,6 +11521,7 @@ function showRestoreModal(versions, source) {
 
             confirmButton.disabled = !canRestore;
             strategyGroup.classList.toggle('disabled', !canRestore);
+            strategyMergeGroup.classList.toggle('disabled', !canRestore);
             updateStrategyAvailabilityUi();
             applyPreferredMergeViewModeToRadios(version);
             updateMergeViewModeUi();
@@ -10397,6 +11529,7 @@ function showRestoreModal(versions, source) {
 
         const createViewModeCell = (version, folderType) => {
             const td = document.createElement('td');
+            td.className = 'restore-cell-view';
             td.style.whiteSpace = 'nowrap';
             const availability = getMergeViewModeAvailability(version);
             if (!availability.supported) {
@@ -10416,11 +11549,11 @@ function showRestoreModal(versions, source) {
                     badge.style.display = 'inline-flex';
                     badge.style.alignItems = 'center';
                     badge.style.justifyContent = 'center';
-                    badge.style.alignSelf = 'flex-start';
+                    badge.style.alignSelf = 'center';
                 }
                 badge.textContent = getMergeViewModeText(mode, isEn);
                 badge.style.fontSize = '10px';
-                badge.style.padding = '1px 5px';
+                badge.style.padding = '1px 4px';
                 badge.style.border = '1px solid var(--theme-border-primary)';
                 badge.style.borderRadius = '999px';
                 badge.style.background = active ? 'rgba(79, 195, 247, 0.12)' : 'var(--theme-bg-secondary)';
@@ -10434,7 +11567,7 @@ function showRestoreModal(versions, source) {
                 const staticWrap = document.createElement('div');
                 staticWrap.style.display = 'inline-flex';
                 staticWrap.style.flexWrap = 'nowrap';
-                staticWrap.style.gap = '4px';
+                staticWrap.style.gap = '3px';
                 staticWrap.style.alignItems = 'center';
                 staticWrap.style.whiteSpace = 'nowrap';
 
@@ -10454,8 +11587,8 @@ function showRestoreModal(versions, source) {
             optionsWrap.style.display = 'inline-flex';
             optionsWrap.style.flexDirection = 'column';
             optionsWrap.style.flexWrap = 'nowrap';
-            optionsWrap.style.alignItems = 'flex-start';
-            optionsWrap.style.gap = '4px';
+            optionsWrap.style.alignItems = 'center';
+            optionsWrap.style.gap = '3px';
             optionsWrap.style.minWidth = '0';
             optionsWrap.style.width = 'fit-content';
             optionsWrap.style.whiteSpace = 'nowrap';
@@ -10510,36 +11643,39 @@ function showRestoreModal(versions, source) {
             const fingerprintDisplay = fingerprint ? `#${fingerprint}` : '';
             const displayTime = String(version?.displayTime || '');
             const isHtml = isHtmlVersion(version);
-            const nonOverwriteSeq = nonOverwriteOrderByIndex.get(globalIndex) || 1;
-            const fallbackDescendingSeq = Math.max(1, nonOverwriteCount - nonOverwriteSeq + 1);
-
-            const rawSeq = Number.parseInt(String(version?.seqNumber == null ? '' : version.seqNumber).trim(), 10);
-            const hasRawSeq = Number.isFinite(rawSeq) && rawSeq > 0;
-            const shouldUseIndexSeq = canUseOriginalSeq && hasRawSeq && hasIndexBackedSeq(version);
-            let seq = folderType === 'overwrite'
-                ? '0'
-                : (shouldUseIndexSeq ? String(rawSeq) : String(fallbackDescendingSeq));
+            const seq = resolveRestoreDisplaySeq(version, globalIndex, seqContext);
 
             const displayNote = resolveRestoreDisplayName(version, {
                 preferChangesFileName: isChangesSubModeActive(currentVersionType),
                 lang: cachedLang
             });
+            if (currentVersionType === 'versioned' && groupHierarchySummary) {
+                const previousVersion = globalIndex > 0 ? allItems[globalIndex - 1] : null;
+                const separatorPayloads = getRestoreGroupSeparatorPayloads(
+                    version,
+                    previousVersion,
+                    groupHierarchySummary,
+                    globalIndex
+                );
+                appendRestoreGroupSeparatorRows(separatorPayloads);
+            }
 
             const row = document.createElement('tr');
             if (!canRestore) row.style.opacity = '0.7';
 
             const tdSelect = document.createElement('td');
-            tdSelect.className = 'restore-cell-center';
+            tdSelect.className = 'restore-cell-center restore-cell-select';
             const radio = document.createElement('input');
             radio.type = 'radio';
             radio.name = 'restoreVersionSelect';
             radio.id = `rvs_${radioId}`;
             radio.checked = false;
+            radio.className = 'restore-select-radio';
             radio.style.cursor = 'pointer';
             tdSelect.appendChild(radio);
 
             const tdSeq = document.createElement('td');
-            tdSeq.className = 'restore-cell-center restore-cell-mono';
+            tdSeq.className = 'restore-cell-center restore-cell-mono restore-cell-seq';
             if (folderType === 'overwrite') {
                 const overwriteBadgeText = getRestoreFolderBadgeText(cachedLang, folderType);
                 const overwriteBadge = document.createElement('span');
@@ -10551,20 +11687,22 @@ function showRestoreModal(versions, source) {
             }
 
             const tdNote = document.createElement('td');
+            tdNote.className = 'restore-cell-note';
             const noteDiv = document.createElement('div');
             noteDiv.className = 'restore-note';
             noteDiv.textContent = displayNote;
+            noteDiv.title = displayNote === '-' ? '' : displayNote;
             tdNote.appendChild(noteDiv);
 
             let tdHash = null;
             if (!isSnapshotMode) {
                 tdHash = document.createElement('td');
-                tdHash.className = 'restore-cell-mono';
+                tdHash.className = 'restore-cell-mono restore-cell-hash';
                 tdHash.textContent = folderType === 'overwrite' ? '-' : fingerprintDisplay;
             }
 
             const tdTime = document.createElement('td');
-            tdTime.className = 'restore-cell-mono';
+            tdTime.className = 'restore-cell-mono restore-cell-time';
             tdTime.style.whiteSpace = 'normal';
             tdTime.style.lineHeight = '1.2';
             const timeMatch = /^(\d{4}[-/]\d{2}[-/]\d{2})[ T](\d{2}:\d{2}:\d{2})$/.exec(displayTime);
@@ -10591,6 +11729,7 @@ function showRestoreModal(versions, source) {
             let tdViewMode = null;
             if (!isSnapshotMode) {
                 tdStats = document.createElement('td');
+                tdStats.className = 'restore-cell-stats';
                 const statsDiv = document.createElement('div');
                 statsDiv.className = 'restore-stats';
 
@@ -10664,19 +11803,33 @@ function showRestoreModal(versions, source) {
     };
 
     const getVersionTypeAvailability = () => {
-        if (isLocalFileSelection) {
-            return {
-                versioned: unifiedFileSelectionVersions.length > 0,
-                overwrite: false,
-                manual_export: false
-            };
-        }
-
+        const counts = getVersionTypeCounts();
         return {
-            versioned: versionedVersions.length > 0,
-            overwrite: overwriteVersions.length > 0,
-            manual_export: manualExportVersions.length > 0
+            versioned: counts.versioned > 0,
+            overwrite: counts.overwrite > 0,
+            manual_export: counts.manual_export > 0
         };
+    };
+
+    const updateVersionTypeUi = () => {
+        const availability = getVersionTypeAvailability();
+
+        if (versionTypeVersionedRadio) versionTypeVersionedRadio.disabled = !availability.versioned;
+        if (versionTypeOverwriteRadio) versionTypeOverwriteRadio.disabled = !availability.overwrite;
+        if (versionTypeManualExportRadio) versionTypeManualExportRadio.disabled = !availability.manual_export;
+
+        setLabelVisibility(versionTypeVersionedLabelWrap, availability.versioned);
+        setLabelVisibility(versionTypeOverwriteLabelWrap, availability.overwrite);
+        setLabelVisibility(versionTypeManualExportLabelWrap, availability.manual_export);
+
+        setLabelDisabled(versionTypeVersionedLabelWrap, !availability.versioned);
+        setLabelDisabled(versionTypeOverwriteLabelWrap, !availability.overwrite);
+        setLabelDisabled(versionTypeManualExportLabelWrap, !availability.manual_export);
+
+        if (versionTypeSegment) {
+            const hasAny = availability.versioned || availability.overwrite || availability.manual_export;
+            versionTypeSegment.style.display = (!isLocalFileSelection && hasAny) ? 'flex' : 'none';
+        }
     };
 
     const switchVersionType = (nextType, { force = false } = {}) => {
@@ -10704,33 +11857,26 @@ function showRestoreModal(versions, source) {
         renderVersionTable(getVersionsByType(currentVersionType));
     };
 
-    if (versionTypeSegment) {
-        versionTypeSegment.style.display = isLocalFileSelection ? 'none' : 'flex';
-    }
-
-    const availability = getVersionTypeAvailability();
-
     if (versionTypeVersionedRadio) {
-        versionTypeVersionedRadio.disabled = !availability.versioned;
         versionTypeVersionedRadio.onchange = () => {
             if (!versionTypeVersionedRadio.checked) return;
             switchVersionType('versioned');
         };
     }
     if (versionTypeOverwriteRadio) {
-        versionTypeOverwriteRadio.disabled = !availability.overwrite;
         versionTypeOverwriteRadio.onchange = () => {
             if (!versionTypeOverwriteRadio.checked) return;
             switchVersionType('overwrite');
         };
     }
     if (versionTypeManualExportRadio) {
-        versionTypeManualExportRadio.disabled = !availability.manual_export;
         versionTypeManualExportRadio.onchange = () => {
             if (!versionTypeManualExportRadio.checked) return;
             switchVersionType('manual_export');
         };
     }
+
+    updateVersionTypeUi();
 
     if (restoreSubModeSnapshotRadio) {
         restoreSubModeSnapshotRadio.onchange = () => {
@@ -10784,18 +11930,14 @@ function showRestoreModal(versions, source) {
         };
     }
 
-    setLabelDisabled(versionTypeVersionedLabelWrap, !availability.versioned);
-    setLabelDisabled(versionTypeOverwriteLabelWrap, !availability.overwrite);
-    setLabelDisabled(versionTypeManualExportLabelWrap, !availability.manual_export);
-
     currentVersionType = resolveFirstAvailableVersionType();
 
     const goToPage = (page) => {
-        const items = getVersionsByType(currentVersionType);
+        const items = resolveRenderableVersions(getVersionsByType(currentVersionType), currentVersionType);
         const totalPages = Math.max(1, Math.ceil((items?.length || 0) / RESTORE_PAGE_SIZE));
         const next = Math.min(Math.max(1, Number(page) || 1), totalPages);
         currentPageByType[currentVersionType] = next;
-        renderVersionTable(items);
+        renderVersionTable(getVersionsByType(currentVersionType));
     };
 
     if (prevPageBtn) {
@@ -10822,10 +11964,68 @@ function showRestoreModal(versions, source) {
 
     switchVersionType(currentVersionType, { force: true });
 
+    if (searchButton) {
+        searchButton.onclick = () => {
+            toggleRestoreSearch();
+        };
+    }
+    if (restoreSearchInput) {
+        restoreSearchInput.oninput = () => {
+            applyRestoreSearchQuery(restoreSearchInput.value, { lang: cachedLang });
+        };
+        restoreSearchInput.onkeydown = (event) => {
+            if (event.key === 'Escape') {
+                event.preventDefault();
+                if (String(restoreSearchQuery || '').trim()) {
+                    applyRestoreSearchQuery('', { focusInput: true, lang: cachedLang });
+                    return;
+                }
+                isRestoreSearchOpen = false;
+                updateRestoreSearchButtonUi(cachedLang);
+                return;
+            }
+            if (event.key === 'Enter') {
+                event.preventDefault();
+                currentPageByType[currentVersionType] = 1;
+                renderVersionTable(getVersionsByType(currentVersionType));
+            }
+        };
+        restoreSearchInput.onblur = () => {
+            if (!String(restoreSearchQuery || '').trim()) {
+                isRestoreSearchOpen = false;
+                updateRestoreSearchButtonUi(cachedLang);
+            }
+        };
+    }
+    if (restoreSearchClear) {
+        restoreSearchClear.onclick = () => {
+            applyRestoreSearchQuery('', { focusInput: true, lang: cachedLang });
+        };
+    }
+    updateRestoreSearchButtonUi(cachedLang);
+
+    const setRestoreModalScrollTopButtonsHidden = (hidden) => {
+        isDialogOpen = !!hidden;
+        const scrollToTopFloating = document.getElementById('scrollToTopFloating');
+        const scrollToTopBtn = document.getElementById('scrollToTopBtn');
+        const scrollToTopEmbedded = document.getElementById('scrollToTopEmbedded');
+
+        if (hidden) {
+            if (scrollToTopFloating) scrollToTopFloating.style.display = 'none';
+            if (scrollToTopBtn) scrollToTopBtn.style.display = 'none';
+            if (scrollToTopEmbedded) scrollToTopEmbedded.style.display = 'none';
+            return;
+        }
+
+        window.dispatchEvent(new Event('scroll'));
+    };
+
     modal.style.display = 'flex';
+    setRestoreModalScrollTopButtonsHidden(true);
 
     const closeModal = () => {
         modal.style.display = 'none';
+        setRestoreModalScrollTopButtonsHidden(false);
     };
 
     closeButton.onclick = closeModal;
@@ -10841,12 +12041,6 @@ function showRestoreModal(versions, source) {
         updateStrategyAvailabilityUi();
         updateMergeViewModeUi();
     };
-    strategyPatchRadio.onchange = () => {
-        currentStrategy = 'patch';
-        updateStrategyAvailabilityUi();
-        updateMergeViewModeUi();
-    };
-
     const showRestoreConfirmModal = async ({ version, strategy, restoreRef, localPayload, forceChangesArtifact = false }) => {
         const confirmModal = document.getElementById('restoreConfirmModal');
         const confirmTitle = document.getElementById('restoreConfirmTitle');
@@ -10868,6 +12062,8 @@ function showRestoreModal(versions, source) {
         const previewBtn = document.getElementById('restorePreviewBtn');
         const importTargetBtn = document.getElementById('restoreImportTargetBtn');
         const importTargetHint = document.getElementById('restoreImportTargetHint');
+        const thresholdWrap = document.getElementById('restoreConfirmThresholdWrap');
+        const thresholdInput = document.getElementById('restoreConfirmThresholdInput');
 
         // Import target modal
         const importTargetModal = document.getElementById('importTargetModal');
@@ -10935,6 +12131,7 @@ function showRestoreModal(versions, source) {
         const strategyText = (() => {
             if (strategy === 'overwrite') return isEn ? 'Overwrite (Replace)' : '覆盖（替换）';
             if (strategy === 'patch') return isEn ? 'Patch Restore' : '补丁恢复';
+            if (strategy === 'auto') return isEn ? 'Auto Restore' : '自动恢复';
             return isEn ? 'Import Merge' : '导入合并';
         })();
         const importTypeKey = isSnapshotLikeVersion(version) ? 'snapshot' : 'history';
@@ -11471,10 +12668,16 @@ function showRestoreModal(versions, source) {
 
         // Compact summary (grid)
         const colon = isEn ? ':' : '：';
+        const timeWithHashHtml = `
+            <span class="restore-summary-time-meta">
+                <span class="restore-summary-hash" title="${escapeHtml(String(version?.fingerprint || '-') || '-')}">${escapeHtml(fingerprintDisplay || '-')}</span>
+                <span>${escapeHtml(displayTime || '-')}</span>
+            </span>
+        `;
         const rows = [
             { key: isEn ? 'Source' : '来源', val: sourceLabel },
             { key: isEn ? 'Type' : '类型', val: versionTypeLabel },
-            { key: isEn ? 'Time' : '时间', val: displayTime || '-', mono: true },
+            { key: isEn ? 'Time' : '时间', valHtml: timeWithHashHtml, mono: true },
             { key: isEn ? 'Note' : '备注', val: note || '-' }
         ];
 
@@ -11500,15 +12703,11 @@ function showRestoreModal(versions, source) {
             });
         }
 
-        if ((strategy === 'overwrite' || strategy === 'patch') && !isHtml) {
-            rows.push({ key: isEn ? 'Hash' : '哈希', val: fingerprintDisplay || '-', mono: true });
-        }
-
         rows.push({ key: isEn ? 'Strategy' : '方式', val: strategyText });
 
         confirmSummary.innerHTML = `<div class="restore-confirm-summary-grid">${rows.map((r) => {
             const key = escapeHtml(r.key);
-            const val = escapeHtml(r.val);
+            const val = typeof r.valHtml === 'string' ? r.valHtml : escapeHtml(r.val);
             const cls = r.mono ? 'restore-confirm-summary-val mono' : 'restore-confirm-summary-val';
             return `<div class="restore-confirm-summary-key">${key}${colon}</div><div class="${cls}">${val}</div>`;
         }).join('')}</div>`;
@@ -11517,8 +12716,19 @@ function showRestoreModal(versions, source) {
         confirmWarning.classList.remove('danger', 'info', 'warning');
         confirmBtn.classList.remove('danger', 'primary');
 
+        if (thresholdWrap) {
+            thresholdWrap.style.display = strategy === 'auto' ? 'inline-flex' : 'none';
+        }
+        if (thresholdInput) {
+            thresholdInput.value = String(restorePatchThresholdPercent);
+            thresholdInput.disabled = strategy !== 'auto';
+            thresholdInput.title = isEn
+                ? `Auto mode threshold. <= threshold uses patch; > threshold uses overwrite (current ${restorePatchThresholdPercent}%).`
+                : `自动模式阈值。<= 阈值走补丁，> 阈值走覆盖（当前 ${restorePatchThresholdPercent}%）。`;
+        }
+
         if (strategy === 'overwrite') {
-            confirmWarning.classList.add('warning');
+            confirmWarning.classList.add('info');
             confirmBtn.classList.add('primary');
             confirmWarning.textContent = isEn
                 ? 'Overwrite Restore deletes current bookmarks, then rebuilds from the target snapshot. Bookmark IDs will change and may affect features like Records/Recommendations.'
@@ -11526,9 +12736,15 @@ function showRestoreModal(versions, source) {
         } else if (strategy === 'patch') {
             confirmWarning.classList.add('info');
             confirmBtn.classList.add('primary');
+            confirmWarning.innerHTML = isEn
+                ? 'Patch restore note:<br>Match by ID only; matching IDs support add/delete/move/modify, non-matching IDs are handled as delete/create.'
+                : '补丁恢复说明：<br>仅按 ID 匹配；ID 匹配执行新增/删除/移动/修改，ID 不匹配时按删除/新增处理。';
+        } else if (strategy === 'auto') {
+            confirmWarning.classList.add('info');
+            confirmBtn.classList.add('primary');
             confirmWarning.textContent = isEn
-                ? 'Patch restore applies add/delete/move/modify by strict bookmark ID matching, preserving IDs when possible. If matching fails, you can fallback to overwrite restore.'
-                : '补丁恢复按书签 ID 严格匹配执行增删移改，尽量保留原 ID；若匹配失败，可降级为覆盖恢复。';
+                ? `Auto restore: uses patch when change ratio is ≤ ${restorePatchThresholdPercent}%, otherwise overwrite.`
+                : `自动恢复：变化占比 ≤ ${restorePatchThresholdPercent}% 走补丁恢复，> ${restorePatchThresholdPercent}% 走覆盖恢复。`;
         } else {
             confirmWarning.classList.add('info');
             confirmBtn.classList.add('primary');
@@ -11557,10 +12773,50 @@ function showRestoreModal(versions, source) {
         if (importTargetBtnText) importTargetBtnText.textContent = isEn ? 'Import Target' : '导入位置';
         const isOverwritePreview = (strategy === 'overwrite');
         const isPatchPreview = (strategy === 'patch');
+        const isAutoPreview = (strategy === 'auto');
         const isMergePreview = (strategy === 'merge');
         const isMergeChangesSource = isMergePreview && (forceChangesViewMode || supportsMergeChangesView);
-        const getRestorePreviewMeta = (mergeChangesSource = isMergeChangesSource, mergeMode = getSelectedMergeViewMode()) => {
-            if (isOverwritePreview) {
+        const ID_CHURN_PATCH_DISABLE_RATIO = 1;
+        let autoResolvedStrategy = 'patch';
+        let patchBlockedByIdChurn = false;
+        const getCurrentConfirmThresholdPercent = () => {
+            const normalized = normalizeRestorePatchThresholdPercent(
+                thresholdInput ? thresholdInput.value : restorePatchThresholdPercent
+            );
+            restorePatchThresholdPercent = normalized;
+            if (thresholdInput && String(thresholdInput.value) !== String(normalized)) {
+                thresholdInput.value = String(normalized);
+            }
+            return normalized;
+        };
+        const getEffectivePreviewStrategy = (previewResult = overwritePreviewCache) => {
+            if (!isAutoPreview) {
+                return isPatchPreview ? 'patch' : 'overwrite';
+            }
+            const resolved = normalizeRestoreStrategyValue(previewResult?.resolvedStrategy || autoResolvedStrategy);
+            return resolved === 'patch' ? 'patch' : 'overwrite';
+        };
+        const shouldDisablePatchByIdChurn = (previewResult = overwritePreviewCache) => {
+            if (!isPatchPreview) return false;
+            if (previewResult?.patchUnsupported === true) return true;
+            const ratio = Number(previewResult?.changeRatio);
+            return Number.isFinite(ratio) && ratio >= ID_CHURN_PATCH_DISABLE_RATIO;
+        };
+        const formatRestoreRatioPercentText = (ratioValue) => {
+            const ratio = Number(ratioValue);
+            if (!Number.isFinite(ratio)) return null;
+            const percent = Math.round(ratio * 1000) / 10;
+            if (!Number.isFinite(percent)) return null;
+            if (percent > 999.9) return '>=999.9';
+            return String(percent);
+        };
+        const getRestorePreviewMeta = (mergeChangesSource = isMergeChangesSource, mergeMode = getSelectedMergeViewMode(), resolvedStrategy = null) => {
+            const resolved = normalizeRestoreStrategyValue(resolvedStrategy || (isAutoPreview ? 'auto' : strategy));
+            const effectiveStrategy = isAutoPreview
+                ? (resolved === 'patch' ? 'patch' : 'overwrite')
+                : strategy;
+
+            if (effectiveStrategy === 'overwrite') {
                 return {
                     modalTitle: isEn ? 'Overwrite Restore Preview' : '覆盖恢复预览',
                     loadingText: isEn ? 'Generating overwrite restore preview...' : '正在生成覆盖恢复预览...',
@@ -11568,7 +12824,7 @@ function showRestoreModal(versions, source) {
                 };
             }
 
-            if (isPatchPreview) {
+            if (effectiveStrategy === 'patch') {
                 return {
                     modalTitle: isEn ? 'Patch Restore Preview' : '补丁恢复预览',
                     loadingText: isEn ? 'Generating patch restore preview...' : '正在生成补丁恢复预览...',
@@ -11593,6 +12849,7 @@ function showRestoreModal(versions, source) {
         };
 
         let overwritePreviewCache = null; // { diffSummary, currentTree, targetTree, changeEntries }
+        let mergePreviewCache = null; // { tree, viewMode, meta, preflightToken }
         let importPathNodeSeed = 0;
 
         const formatMergeImportTimestamp = (dateValue = new Date()) => {
@@ -11608,8 +12865,9 @@ function showRestoreModal(versions, source) {
 
         const buildImportMergeRootTitle = (options = {}) => {
             const importKind = options && options.importKind === 'changes' ? 'changes' : 'snapshot';
-            const viewMode = options && (options.viewMode === 'simple' || options.viewMode === 'detailed')
-                ? options.viewMode
+            const rawViewMode = String(options && options.viewMode ? options.viewMode : '').trim().toLowerCase();
+            const viewMode = (rawViewMode === 'simple' || rawViewMode === 'detailed' || rawViewMode === 'collection')
+                ? rawViewMode
                 : null;
             const meta = options && options.meta && typeof options.meta === 'object'
                 ? options.meta
@@ -11617,7 +12875,9 @@ function showRestoreModal(versions, source) {
 
             const viewLabel = viewMode === 'detailed'
                 ? (isEn ? 'Detailed' : '详细')
-                : (isEn ? 'Simple' : '简略');
+                : (viewMode === 'collection'
+                    ? (isEn ? 'Collection' : '集合')
+                    : (isEn ? 'Simple' : '简略'));
             const modeSuffix = viewMode ? ` (${viewLabel})` : '';
             const seqText = meta && meta.seqNumber != null ? String(meta.seqNumber) : '-';
             const fingerprint = meta && meta.fingerprint
@@ -11718,6 +12978,7 @@ function showRestoreModal(versions, source) {
             if (previewContent) {
                 previewContent.innerHTML = '';
                 previewContent.removeAttribute('data-loaded');
+                previewContent.removeAttribute('data-preview-strategy');
             }
             confirmTitle.textContent = titleForMain();
         };
@@ -11729,22 +12990,30 @@ function showRestoreModal(versions, source) {
             mainView.style.display = 'none';
             previewView.style.display = 'flex';
             const selectedMergeMode = getSelectedMergeViewMode();
-            const previewMetaBeforeRender = getRestorePreviewMeta(isMergeChangesSource, selectedMergeMode);
+            const previewMetaBeforeRender = getRestorePreviewMeta(isMergeChangesSource, selectedMergeMode, overwritePreviewCache?.resolvedStrategy || autoResolvedStrategy);
             confirmTitle.textContent = previewMetaBeforeRender.modalTitle;
 
             previewContent.innerHTML = `<div class="loading" style="padding: 40px; color: var(--text-secondary); text-align: center;">
                 <i class="fas fa-spinner fa-spin" style="font-size: 24px; margin-bottom: 20px; opacity: 0.5;"></i><br>
                 ${previewMetaBeforeRender.loadingText}
             </div>`;
+            previewContent.setAttribute('data-preview-strategy', isMergePreview ? 'merge' : (isPatchPreview ? 'patch' : 'overwrite'));
 
             // Import-merge preview (changes view source: current changes artifact)
             if (isMergeChangesSource) {
                 try {
-                    const res = await callBackgroundFunction('buildMergeRestorePreview', {
-                        restoreRef,
-                        localPayload,
-                        mergeViewMode: selectedMergeMode
-                    });
+                    let res = mergePreviewCache;
+                    const cachedMode = normalizeMergeViewMode(res?.viewMode || '');
+                    if (!res || cachedMode !== normalizeMergeViewMode(selectedMergeMode || '')) {
+                        res = await callBackgroundFunction('buildMergeRestorePreview', {
+                            restoreRef,
+                            localPayload,
+                            mergeViewMode: selectedMergeMode
+                        });
+                        if (res && res.success === true) {
+                            mergePreviewCache = res;
+                        }
+                    }
 
                     if (!res || res.success !== true) {
                         previewContent.innerHTML = `<div style="padding: 20px; color: var(--warning);">${isEn ? 'Preview failed: ' : '预览失败：'}${escapeHtml(res?.error || 'Unknown error')}</div>`;
@@ -11765,7 +13034,8 @@ function showRestoreModal(versions, source) {
                     const treeHtml = generateImportMergePreviewTreeHtml(previewTree, {
                         maxDepth: 2,
                         customTitle,
-                        importResultView: true
+                        importResultView: true,
+                        viewMode: vm
                     }, lang);
 
                     previewContent.innerHTML = treeHtml || `<div style="padding: 20px; color: var(--text-tertiary); text-align: center;">No Data</div>`;
@@ -11785,7 +13055,8 @@ function showRestoreModal(versions, source) {
                     res = await callBackgroundFunction('buildOverwriteRestorePreview', {
                         restoreRef,
                         localPayload,
-                        strategy
+                        strategy,
+                        thresholdPercent: getCurrentConfirmThresholdPercent()
                     });
                 }
 
@@ -11794,25 +13065,35 @@ function showRestoreModal(versions, source) {
                     return;
                 }
 
-                const rawChangeMap = new Map(Array.isArray(res.changeEntries) ? res.changeEntries : []);
-                const changeMap = isOverwritePreview
-                    ? convertChangeMapToAddDeleteOnly(rawChangeMap)
-                    : rawChangeMap;
-                let treeToRender = res.targetTree;
-
-                let hasDeleted = false;
-                for (const [, change] of changeMap.entries()) {
-                    if (change && typeof change.type === 'string' && change.type.includes('deleted')) {
-                        hasDeleted = true;
-                        break;
-                    }
+                if (isAutoPreview) {
+                    autoResolvedStrategy = normalizeRestoreStrategyValue(res?.resolvedStrategy || autoResolvedStrategy);
                 }
 
-                if (hasDeleted) {
-                    try {
-                        treeToRender = rebuildTreeWithDeleted(res.currentTree, res.targetTree, changeMap);
-                    } catch (_) {
-                        treeToRender = res.targetTree;
+                const rawChangeMap = new Map(Array.isArray(res.changeEntries) ? res.changeEntries : []);
+                const effectiveStrategy = getEffectivePreviewStrategy(res);
+                if (previewContent) {
+                    previewContent.setAttribute('data-preview-strategy', isMergePreview ? 'merge' : effectiveStrategy);
+                }
+                const renderPureSnapshot = effectiveStrategy === 'overwrite';
+                const changeMap = renderPureSnapshot
+                    ? new Map()
+                    : rawChangeMap;
+                let treeToRender = res.targetTree;
+                if (!renderPureSnapshot) {
+                    let hasDeleted = false;
+                    for (const [, change] of changeMap.entries()) {
+                        if (change && typeof change.type === 'string' && change.type.includes('deleted')) {
+                            hasDeleted = true;
+                            break;
+                        }
+                    }
+
+                    if (hasDeleted) {
+                        try {
+                            treeToRender = rebuildTreeWithDeleted(res.currentTree, res.targetTree, changeMap);
+                        } catch (_) {
+                            treeToRender = res.targetTree;
+                        }
                     }
                 }
 
@@ -11823,7 +13104,7 @@ function showRestoreModal(versions, source) {
                 }
 
                 const previewKey = `restore-preview-${Date.now()}`;
-                const previewMeta = getRestorePreviewMeta(false, selectedMergeMode);
+                const previewMeta = getRestorePreviewMeta(false, selectedMergeMode, res?.resolvedStrategy || autoResolvedStrategy);
                 confirmTitle.textContent = previewMeta.modalTitle;
                 const treeHtml = generateHistoryTreeHtml(treeToRender, changeMap, 'detailed', {
                     maxDepth: 1,
@@ -11861,8 +13142,11 @@ function showRestoreModal(versions, source) {
         const renderCurrentDiffSummaryHtml = (diffSummaryObj, changeEntries = null) => {
             if (!diffSummary) return;
 
+            const effectiveStrategy = getEffectivePreviewStrategy();
+            const treatAsOverwrite = isOverwritePreview || (isAutoPreview && effectiveStrategy === 'overwrite');
+            const treatAsPatch = isPatchPreview || (isAutoPreview && effectiveStrategy === 'patch');
             const rawDs = diffSummaryObj || {};
-            const ds = isOverwritePreview
+            const ds = treatAsOverwrite
                 ? normalizeOverwriteDiffSummaryForDisplay(rawDs)
                 : rawDs;
             const changes = {
@@ -11886,7 +13170,7 @@ function showRestoreModal(versions, source) {
             };
             changes.hasNoChange = !changes.hasNumericalChange && !changes.hasStructuralChange;
 
-            if (changes.hasNoChange && isPatchPreview) {
+            if (changes.hasNoChange && treatAsPatch) {
                 const patchSummary = summarizePatchChangeEntries(changeEntries);
                 const hasPatchDiff = (patchSummary.added + patchSummary.deleted + patchSummary.moved + patchSummary.modified) > 0;
                 if (hasPatchDiff) {
@@ -11911,6 +13195,12 @@ function showRestoreModal(versions, source) {
                 return;
             }
 
+            if (treatAsOverwrite) {
+                const overwriteText = isEn ? 'Overwrite preflight' : '覆盖恢复预演';
+                diffSummary.innerHTML = `<span style="font-size: 13px; color: var(--text-secondary);">${overwriteText}</span>`;
+                return;
+            }
+
             const prefix = isMergePreview
                 ? (isEn ? 'Current browser vs target snapshot: ' : '当前浏览器 vs 目标快照: ')
                 : (isEn ? 'Different from current: ' : '相较当前: ');
@@ -11924,7 +13214,7 @@ function showRestoreModal(versions, source) {
         };
 
         const runOverwritePreflight = async () => {
-            if (!isOverwritePreview && !isPatchPreview && !isMergePreview) return;
+            if (!isOverwritePreview && !isPatchPreview && !isAutoPreview && !isMergePreview) return;
             if (!diffBar || !diffSummary) return;
             if (!restoreRef) {
                 diffBar.style.display = 'flex';
@@ -11934,8 +13224,30 @@ function showRestoreModal(versions, source) {
 
             if (isMergeChangesSource) {
                 diffBar.style.display = 'flex';
-                diffSummary.innerHTML = `<span style="color: var(--text-secondary);">${isEn ? 'Changes-view merge selected. Preview renders the current-changes tree.' : '已选择变化视图导入；预览将渲染当前变化树。'}</span>`;
-                if (previewButton) previewButton.style.display = 'inline-flex';
+                diffSummary.textContent = isEn ? 'Preparing merge preflight...' : '正在准备导入合并预演...';
+                confirmBtn.disabled = !!blockConfirmDueToMissingChangesSource;
+                patchBlockedByIdChurn = false;
+                try {
+                    const selectedMergeMode = getSelectedMergeViewMode();
+                    const res = await callBackgroundFunction('buildMergeRestorePreview', {
+                        restoreRef,
+                        localPayload,
+                        mergeViewMode: selectedMergeMode
+                    });
+                    if (!res || res.success !== true) {
+                        mergePreviewCache = null;
+                        diffSummary.innerHTML = `<span style="color: var(--warning);">${isEn ? 'Preflight failed: ' : '预演失败：'}${escapeHtml(res?.error || 'Unknown error')}</span>`;
+                        return;
+                    }
+
+                    mergePreviewCache = res;
+                    const modeText = getMergeViewModeText(normalizeMergeViewMode(res.viewMode) || 'simple', isEn);
+                    diffSummary.innerHTML = `<span style="color: var(--text-secondary);">${isEn ? `Import merge preflight ready (${modeText}).` : `导入合并预演已就绪（${modeText}）。`}</span>`;
+                    if (previewButton) previewButton.style.display = 'inline-flex';
+                } catch (e) {
+                    mergePreviewCache = null;
+                    diffSummary.innerHTML = `<span style="color: var(--warning);">${isEn ? 'Preflight error: ' : '预演错误：'}${escapeHtml(e?.message || 'Unknown error')}</span>`;
+                }
                 return;
             }
 
@@ -11949,7 +13261,8 @@ function showRestoreModal(versions, source) {
                 const res = await callBackgroundFunction('buildOverwriteRestorePreview', {
                     restoreRef,
                     localPayload,
-                    strategy
+                    strategy,
+                    thresholdPercent: getCurrentConfirmThresholdPercent()
                 });
 
                 if (!res || res.success !== true) {
@@ -11958,20 +13271,72 @@ function showRestoreModal(versions, source) {
                 }
 
                 overwritePreviewCache = res;
+                patchBlockedByIdChurn = shouldDisablePatchByIdChurn(res);
+                if (isAutoPreview) {
+                    autoResolvedStrategy = normalizeRestoreStrategyValue(res?.resolvedStrategy || autoResolvedStrategy);
+                    const thresholdPercent = normalizeRestorePatchThresholdPercent(res?.thresholdPercent);
+                    const chosenText = autoResolvedStrategy === 'patch'
+                        ? (isEn ? 'Patch Restore' : '补丁恢复')
+                        : (isEn ? 'Overwrite Restore' : '覆盖恢复');
+                    if (res?.patchUnsupported === true) {
+                        confirmWarning.textContent = isEn
+                            ? `Auto restore: this source lacks stable Bookmark IDs, using ${chosenText}.`
+                            : `自动恢复：当前来源缺少稳定 Bookmark ID，已使用${chosenText}。`;
+                    } else {
+                        const ratioPercentText = formatRestoreRatioPercentText(res?.changeRatio);
+                        confirmWarning.textContent = ratioPercentText == null
+                            ? (isEn
+                                ? `Auto restore: threshold ${thresholdPercent}%, current ${chosenText}.`
+                                : `自动恢复：阈值 ${thresholdPercent}% ，当前 ${chosenText}。`)
+                            : (isEn
+                                ? `Auto restore: ratio ${ratioPercentText}%, threshold ${thresholdPercent}%, current ${chosenText}.`
+                                : `自动恢复：占比 ${ratioPercentText}% ，阈值 ${thresholdPercent}% ，当前 ${chosenText}。`);
+                    }
+                }
                 renderCurrentDiffSummaryHtml(res.diffSummary, res.changeEntries);
+
+                if (isPatchPreview && patchBlockedByIdChurn) {
+                    const disableLine1 = isEn
+                        ? 'Patch restore disabled.'
+                        : '已禁用补丁恢复。';
+                    const disableLine2 = (res?.patchUnsupported === true)
+                        ? (isEn
+                            ? 'This source does not provide stable Bookmark IDs. Patch restore is unavailable; use overwrite or auto.'
+                            : '当前来源不提供稳定 Bookmark ID，补丁恢复不可用。请使用覆盖恢复或自动模式。')
+                        : (() => {
+                            const ratioPercentText = formatRestoreRatioPercentText(res?.changeRatio);
+                            return isEn
+                                ? `Detected large ID churn${ratioPercentText == null ? '' : ` (${ratioPercentText}%)`}, likely after overwrite restore. Use overwrite or auto.`
+                                : `检测到大范围 ID 变化${ratioPercentText == null ? '' : `（${ratioPercentText}%）`}，通常由覆盖恢复导致。请切换到覆盖恢复或自动模式。`;
+                        })();
+                    confirmWarning.innerHTML = `
+                        <span style="color: var(--warning); font-weight: 700;">${escapeHtml(disableLine1)}</span><br>
+                        <span style="color: var(--warning); font-weight: 700;">${escapeHtml(disableLine2)}</span>
+                    `;
+                    if (diffSummary) {
+                        diffSummary.innerHTML = `
+                            <span style="color: var(--warning); font-weight: 700;">${escapeHtml(disableLine1)}</span><br>
+                            <span style="color: var(--warning);">${escapeHtml(disableLine2)}</span>
+                        `;
+                    }
+                    confirmBtn.disabled = true;
+                } else if (!patchBlockedByIdChurn) {
+                    confirmBtn.disabled = !!blockConfirmDueToMissingChangesSource;
+                }
 
                 if (previewButton) previewButton.style.display = 'inline-flex';
             } catch (e) {
+                patchBlockedByIdChurn = false;
                 diffSummary.innerHTML = `<span style="color: var(--warning);">${isEn ? 'Preflight error: ' : '预演错误：'}${escapeHtml(e?.message || 'Unknown error')}</span>`;
             }
         };
 
         // Init / reset UI
-        const shouldShowDiffBar = isOverwritePreview || isPatchPreview || isMergePreview;
+        const shouldShowDiffBar = isOverwritePreview || isPatchPreview || isAutoPreview || isMergePreview;
         if (diffBar) diffBar.style.display = shouldShowDiffBar ? 'flex' : 'none';
 
         if (diffSummary) {
-            if (isOverwritePreview || isPatchPreview || isMergePreview) {
+            if (isOverwritePreview || isPatchPreview || isAutoPreview || isMergePreview) {
                 diffSummary.textContent = isEn ? 'Computing diff...' : '正在计算差异...';
             } else {
                 diffSummary.textContent = '';
@@ -11987,6 +13352,28 @@ function showRestoreModal(versions, source) {
             importTargetButton.style.display = isMergePreview ? 'inline-flex' : 'none';
         }
         updateImportTargetHint();
+
+        if (thresholdInput) {
+            thresholdInput.oninput = () => {
+                const normalized = normalizeRestorePatchThresholdPercent(thresholdInput.value);
+                thresholdInput.value = String(normalized);
+                restorePatchThresholdPercent = normalized;
+                if (isAutoPreview) {
+                    confirmWarning.textContent = isEn
+                        ? `Auto restore: uses patch when change ratio is ≤ ${normalized}%, otherwise overwrite.`
+                        : `自动恢复：变化占比 ≤ ${normalized}% 走补丁恢复，> ${normalized}% 走覆盖恢复。`;
+                }
+            };
+            thresholdInput.onchange = () => {
+                const normalized = getCurrentConfirmThresholdPercent();
+                if (!isAutoPreview) return;
+                confirmWarning.textContent = isEn
+                    ? `Auto restore: uses patch when change ratio is ≤ ${normalized}%, otherwise overwrite.`
+                    : `自动恢复：变化占比 ≤ ${normalized}% 走补丁恢复，> ${normalized}% 走覆盖恢复。`;
+                overwritePreviewCache = null;
+                runOverwritePreflight().catch(() => { });
+            };
+        }
 
         if (previewButton) {
             previewButton.addEventListener('click', () => {
@@ -12031,9 +13418,106 @@ function showRestoreModal(versions, source) {
 
         confirmModal.style.display = 'flex';
 
-        if (isOverwritePreview || isPatchPreview || isMergePreview) {
+        if (isOverwritePreview || isPatchPreview || isAutoPreview || isMergePreview) {
             runOverwritePreflight().catch(() => { });
         }
+
+        const buildRestoreDiffSummaryPayload = (summary) => {
+            if (!summary || typeof summary !== 'object') return null;
+            const toCount = (value) => {
+                const numeric = Number(value);
+                if (!Number.isFinite(numeric) || numeric <= 0) return 0;
+                return Math.floor(numeric);
+            };
+
+            return {
+                bookmarkAdded: toCount(summary.bookmarkAdded),
+                bookmarkDeleted: toCount(summary.bookmarkDeleted),
+                folderAdded: toCount(summary.folderAdded),
+                folderDeleted: toCount(summary.folderDeleted),
+                movedCount: toCount(summary.movedCount),
+                modifiedCount: toCount(summary.modifiedCount),
+                movedBookmarkCount: toCount(summary.movedBookmarkCount),
+                movedFolderCount: toCount(summary.movedFolderCount),
+                modifiedBookmarkCount: toCount(summary.modifiedBookmarkCount),
+                modifiedFolderCount: toCount(summary.modifiedFolderCount),
+                bookmarkMoved: !!summary.bookmarkMoved,
+                folderMoved: !!summary.folderMoved,
+                bookmarkModified: !!summary.bookmarkModified,
+                folderModified: !!summary.folderModified
+            };
+        };
+
+        const buildRestoreExecutePreflightPayload = () => {
+            if (isMergePreview || isMergeChangesSource) {
+                if (!isMergeChangesSource) return null;
+                const mergePreview = mergePreviewCache;
+                const preflightToken = String(mergePreview?.preflightToken || '').trim();
+                if (!preflightToken) return null;
+                return {
+                    type: 'merge',
+                    mergePreflightToken: preflightToken,
+                    mergeViewMode: normalizeMergeViewMode(mergePreview?.viewMode || getSelectedMergeViewMode() || 'simple')
+                };
+            }
+
+            const preview = overwritePreviewCache;
+            if (!preview || preview.success === false) return null;
+
+            const requestedStrategy = normalizeRestoreStrategyValue(strategy);
+            const resolvedStrategy = normalizeRestoreStrategyValue(
+                preview?.resolvedStrategy || (isAutoPreview ? autoResolvedStrategy : strategy)
+            );
+            if (resolvedStrategy !== 'patch' && resolvedStrategy !== 'overwrite') {
+                return null;
+            }
+
+            const thresholdPercent = Number.isFinite(Number(preview?.thresholdPercent))
+                ? Number(preview.thresholdPercent)
+                : getCurrentConfirmThresholdPercent();
+
+            return {
+                recordTime: String(
+                    restoreRef?.recordTime
+                    || version?.recordTime
+                    || restoreRef?.time
+                    || version?.time
+                    || ''
+                ),
+                snapshotKey: String(
+                    restoreRef?.snapshotKey
+                    || version?.snapshotKey
+                    || version?.restoreRef?.snapshotKey
+                    || ''
+                ),
+                sourceType: String(
+                    restoreRef?.sourceType
+                    || version?.sourceType
+                    || version?.restoreRef?.sourceType
+                    || ''
+                ).toLowerCase(),
+                fingerprint: String(
+                    restoreRef?.fingerprint
+                    || version?.fingerprint
+                    || ''
+                ),
+                requestedStrategy,
+                resolvedStrategy,
+                changeRatio: Number.isFinite(Number(preview?.changeRatio))
+                    ? Number(preview.changeRatio)
+                    : null,
+                changeScore: Number.isFinite(Number(preview?.changeScore))
+                    ? Number(preview.changeScore)
+                    : 0,
+                baselineNodeCount: Number.isFinite(Number(preview?.baselineNodeCount)) && Number(preview.baselineNodeCount) > 0
+                    ? Number(preview.baselineNodeCount)
+                    : 1,
+                thresholdPercent: normalizeRestorePatchThresholdPercent(thresholdPercent),
+                patchUnsupported: preview?.patchUnsupported === true,
+                stableIdComparable: preview?.stableIdComparable !== false,
+                precomputedDiffSummary: buildRestoreDiffSummaryPayload(preview?.diffSummary || null)
+            };
+        };
 
         return await new Promise((resolve) => {
             const cleanup = () => {
@@ -12044,10 +13528,23 @@ function showRestoreModal(versions, source) {
             const onCancel = () => {
                 cleanup();
                 if (importTargetModal) importTargetModal.style.display = 'none';
-                resolve(false);
+                resolve({ confirmed: false, preflight: null });
             };
 
             const onConfirm = () => {
+                if (isPatchPreview && patchBlockedByIdChurn) {
+                    const isPatchUnsupported = overwritePreviewCache?.patchUnsupported === true;
+                    const msg = isPatchUnsupported
+                        ? (isEn
+                            ? 'Patch restore is unavailable for this source type (missing stable Bookmark IDs). Use overwrite or auto.'
+                            : '当前来源缺少稳定 Bookmark ID，补丁恢复不可用。请切换覆盖恢复或自动模式。')
+                        : (isEn
+                            ? 'Patch restore is disabled for this target due to large ID churn. Switch to overwrite or auto.'
+                            : '该目标存在大范围 ID 变化，已禁用补丁恢复。请切换覆盖恢复或自动模式。');
+                    alert(msg);
+                    return;
+                }
+
                 if (source === 'local' && localSelectionMeta && localSelectionMeta.mode === 'folder') {
                     if (!localSelectionMeta.hasDirectoryEntries) {
                         const msg = isEn
@@ -12088,7 +13585,10 @@ function showRestoreModal(versions, source) {
 
                 cleanup();
                 if (importTargetModal) importTargetModal.style.display = 'none';
-                resolve(true);
+                resolve({
+                    confirmed: true,
+                    preflight: buildRestoreExecutePreflightPayload()
+                });
             };
 
             cancelBtn.addEventListener('click', onCancel);
@@ -12107,9 +13607,7 @@ function showRestoreModal(versions, source) {
         const forceChangesArtifact = isChangesSubModeActive(currentVersionType);
         const strategy = forceChangesArtifact
             ? 'merge'
-            : ((strategyPatchRadio && strategyPatchRadio.checked)
-                ? 'patch'
-                : ((strategyMergeRadio && strategyMergeRadio.checked) ? 'merge' : 'overwrite'));
+            : ((strategyMergeRadio && strategyMergeRadio.checked) ? 'merge' : 'overwrite');
         let restoringTextTimer = null;
 
         try {
@@ -12131,7 +13629,7 @@ function showRestoreModal(versions, source) {
             }
 
             // 二级确认：弹窗确认，再执行恢复
-            const ok = await showRestoreConfirmModal({
+            const confirmResult = await showRestoreConfirmModal({
                 version: selectedVersion,
                 strategy,
                 restoreRef,
@@ -12139,18 +13637,28 @@ function showRestoreModal(versions, source) {
                 forceChangesArtifact
             });
 
-            if (!ok) {
+            if (!confirmResult || confirmResult.confirmed !== true) {
                 return;
             }
 
+            const restoreExecutePreflight = confirmResult && confirmResult.preflight && typeof confirmResult.preflight === 'object'
+                ? confirmResult.preflight
+                : null;
+            const restoreSessionId = `restore_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`;
+
             // 执行恢复：锁定按钮
             confirmButton.disabled = true;
+            strategyAutoRadio.disabled = true;
             strategyOverwriteRadio.disabled = true;
             strategyMergeRadio.disabled = true;
             strategyPatchRadio.disabled = true;
             strategyGroup.classList.add('disabled');
+            strategyMergeGroup.classList.add('disabled');
             closeButton.disabled = true;
             cancelButton.disabled = true;
+            if (searchButton) searchButton.disabled = true;
+            if (restoreSearchInput) restoreSearchInput.disabled = true;
+            if (restoreSearchClear) restoreSearchClear.disabled = true;
             const lang = await getPreferredLang();
             const isEn = lang === 'en';
             const restoringBaseText = isEn ? 'Restoring...' : '恢复中...';
@@ -12162,7 +13670,13 @@ function showRestoreModal(versions, source) {
             refreshRestoringText();
             restoringTextTimer = setInterval(refreshRestoringText, 1000);
 
-            const restorePayload = { restoreRef, strategy, localPayload };
+            const restorePayload = { restoreRef, strategy, localPayload, restoreSessionId };
+            if (strategy === 'auto') {
+                restorePayload.thresholdPercent = restorePatchThresholdPercent;
+            }
+            if (restoreExecutePreflight) {
+                restorePayload.preflight = restoreExecutePreflight;
+            }
             if (strategy === 'merge') {
                 restorePayload.mergeViewMode = getSelectedMergeViewMode();
                 restorePayload.forceChangesArtifact = forceChangesArtifact;
@@ -12173,9 +13687,13 @@ function showRestoreModal(versions, source) {
                 }
             }
 
-            let appliedStrategy = strategy;
+            let appliedStrategy = normalizeRestoreStrategyValue(strategy);
             let patchFallbackUsed = false;
             let restoreRes = await callBackgroundFunction('restoreSelectedVersion', restorePayload);
+            if (restoreRes && restoreRes.success === true) {
+                appliedStrategy = normalizeRestoreStrategyValue(restoreRes.strategy || appliedStrategy);
+                patchFallbackUsed = !!restoreRes.fallbackApplied;
+            }
 
             if ((!restoreRes || restoreRes.success !== true) && strategy === 'patch') {
                 const fallbackMsg = isEn
@@ -12185,10 +13703,19 @@ function showRestoreModal(versions, source) {
                 if (shouldFallback) {
                     patchFallbackUsed = true;
                     appliedStrategy = 'overwrite';
+                    const fallbackPreflight = restoreExecutePreflight
+                        ? {
+                            ...restoreExecutePreflight,
+                            requestedStrategy: 'overwrite',
+                            resolvedStrategy: 'overwrite'
+                        }
+                        : null;
                     restoreRes = await callBackgroundFunction('restoreSelectedVersion', {
                         restoreRef,
                         strategy: 'overwrite',
-                        localPayload
+                        localPayload,
+                        restoreSessionId,
+                        ...(fallbackPreflight ? { preflight: fallbackPreflight } : {})
                     });
                 }
             }
@@ -12202,12 +13729,22 @@ function showRestoreModal(versions, source) {
                         const suffix = patchFallbackUsed
                             ? (isEn ? ' (fallback from patch)' : '（由补丁恢复降级）')
                             : '';
+                        if (strategy === 'auto') {
+                            return isEn
+                                ? `SUCCESS: Auto restore completed (overwrite). Created ${restoreRes.created || 0} nodes.${suffix}`
+                                : `成功：自动恢复完成（覆盖）。创建 ${restoreRes.created || 0} 个节点。${suffix}`;
+                        }
                         return isEn
                             ? `SUCCESS: Restored (overwrite). Created ${restoreRes.created || 0} nodes.${suffix}`
                             : `成功：已恢复（覆盖）。创建 ${restoreRes.created || 0} 个节点。${suffix}`;
                     }
 
                     if (appliedStrategy === 'patch') {
+                        if (strategy === 'auto') {
+                            return isEn
+                                ? `SUCCESS: Auto restore completed (patch). Added ${restoreRes.created || 0}, removed ${restoreRes.removed || 0}, moved ${restoreRes.moved || 0}, updated ${restoreRes.updated || 0}.`
+                                : `成功：自动恢复完成（补丁）。新增 ${restoreRes.created || 0}、删除 ${restoreRes.removed || 0}、移动 ${restoreRes.moved || 0}、修改 ${restoreRes.updated || 0}。`;
+                        }
                         return isEn
                             ? `SUCCESS: Patch restore completed. Added ${restoreRes.created || 0}, removed ${restoreRes.removed || 0}, moved ${restoreRes.moved || 0}, updated ${restoreRes.updated || 0}.`
                             : `成功：补丁恢复完成。新增 ${restoreRes.created || 0}、删除 ${restoreRes.removed || 0}、移动 ${restoreRes.moved || 0}、修改 ${restoreRes.updated || 0}。`;
@@ -12250,7 +13787,9 @@ function showRestoreModal(versions, source) {
                         sourceFingerprint: selectedVersion?.fingerprint || '',
                         sourceSnapshotKey: selectedVersion?.restoreRef?.snapshotKey || '',
                         sourceOverwriteMode: selectedFolderType === 'overwrite' ? 'overwrite' : 'versioned',
-                        strategy: appliedStrategy
+                        strategy: appliedStrategy,
+                        restoreSessionId,
+                        precomputedDiffSummary: restoreExecutePreflight?.precomputedDiffSummary || null
                     }, (backupResult) => {
                         // 优先在恢复后立刻拉起一次刷新；若后台稍后写入，storage 监听会再补一轮。
                         schedulePopupHistoryRefresh(80);
@@ -12307,12 +13846,17 @@ function showRestoreModal(versions, source) {
                 restoringTextTimer = null;
             }
             confirmButton.disabled = false;
+            strategyAutoRadio.disabled = selectedVersion?.canRestore === false;
             strategyOverwriteRadio.disabled = selectedVersion?.canRestore === false;
             strategyMergeRadio.disabled = selectedVersion?.canRestore === false;
             strategyPatchRadio.disabled = selectedVersion?.canRestore === false;
             strategyGroup.classList.toggle('disabled', selectedVersion?.canRestore === false);
+            strategyMergeGroup.classList.toggle('disabled', selectedVersion?.canRestore === false);
             closeButton.disabled = false;
             cancelButton.disabled = false;
+            if (searchButton) searchButton.disabled = false;
+            if (restoreSearchInput) restoreSearchInput.disabled = false;
+            if (restoreSearchClear) restoreSearchClear.disabled = false;
             try {
                 const lang = await getPreferredLang();
                 cachedLang = lang;
@@ -13421,6 +14965,11 @@ function generateImportMergePreviewTreeHtml(treeRoot, options = {}, lang = 'zh_C
     const isZh = lang === 'zh_CN';
     const maxDepth = typeof options.maxDepth === 'number' ? options.maxDepth : 3;
     const importResultView = options.importResultView === true;
+    const previewViewMode = (() => {
+        const text = String(options && options.viewMode ? options.viewMode : '').trim().toLowerCase();
+        return (text === 'simple' || text === 'detailed' || text === 'collection') ? text : '';
+    })();
+    const suppressCollectionNodeMarkers = importResultView && previewViewMode === 'collection';
 
     const resolveNodeChangeType = (node) => {
         if (node && node.isImportPathContext === true) return '';
@@ -13567,7 +15116,13 @@ function generateImportMergePreviewTreeHtml(treeRoot, options = {}, lang = 'zh_C
         const isFolder = !url && Array.isArray(node.children);
         const hasChildren = isFolder && node.children.length > 0;
 
-        const { changeClass, statusIcon } = getChangeMeta(resolveNodeChangeType(node));
+        const isImportResultRootNode = node && node.isImportResultRoot === true;
+        const suppressNodeMarkers = suppressCollectionNodeMarkers && !isImportResultRootNode;
+        const { changeClass, statusIcon } = suppressNodeMarkers
+            ? { changeClass: '', statusIcon: '' }
+            : getChangeMeta(resolveNodeChangeType(node));
+        const extraNodeClass = isImportResultRootNode ? 'import-result-root-node' : '';
+        const treeItemClass = `${changeClass}${extraNodeClass ? ` ${extraNodeClass}` : ''}`.trim();
         const shouldExpand = level < maxDepth;
 
         if (isFolder) {
@@ -13577,7 +15132,7 @@ function generateImportMergePreviewTreeHtml(treeRoot, options = {}, lang = 'zh_C
 
             return `
                 <div class="tree-node">
-                    <div class="tree-item ${changeClass}" data-node-type="folder" data-node-level="${level}">
+                    <div class="tree-item ${treeItemClass}" data-node-type="folder" data-node-level="${level}" data-import-result-root="${isImportResultRootNode ? 'true' : 'false'}">
                         <span class="tree-toggle ${shouldExpand ? 'expanded' : ''}"><i class="fas fa-chevron-right"></i></span>
                         <i class="tree-icon fas fa-folder${shouldExpand ? '-open' : ''}"></i>
                         <span class="tree-label">${title}</span>
@@ -13593,7 +15148,7 @@ function generateImportMergePreviewTreeHtml(treeRoot, options = {}, lang = 'zh_C
         const favicon = getFaviconUrl(url);
         return `
             <div class="tree-node">
-                <div class="tree-item ${changeClass}" data-node-url="${escapeHtml(url)}" data-node-type="bookmark" data-node-level="${level}">
+                <div class="tree-item ${treeItemClass}" data-node-url="${escapeHtml(url)}" data-node-type="bookmark" data-node-level="${level}" data-import-result-root="${isImportResultRootNode ? 'true' : 'false'}">
                     <span class="tree-toggle" style="opacity: 0"></span>
                     ${favicon ? `<img class="tree-icon" src="${escapeHtml(favicon)}" alt="">` : `<i class="tree-icon fas fa-bookmark"></i>`}
                     <a href="${escapeHtml(url)}" target="_blank" class="tree-label tree-bookmark-link" rel="noopener noreferrer">${title}</a>
@@ -14361,7 +15916,7 @@ document.addEventListener('DOMContentLoaded', function () {
                 '│  ├─ bookmark_backup.html',
                 '│  └─ bookmark-changes-simple.json (Optional)',
                 '└─ Versioned/',
-                '   ├─ backup-history-log.md',
+                '   ├─ backup-history-log_from_20260305_090000_to_20260307_180000_Chrome_a3f2.md',
                 '   └─ 20260225_123456_abcd1234/',
                 '      ├─ 20260225_123456_abcd1234.html',
                 '      └─ bookmark-changes_simple_20260225_123456_abcd1234.json (Optional)'
@@ -14378,7 +15933,7 @@ document.addEventListener('DOMContentLoaded', function () {
                 '│  ├─ bookmark_backup.html',
                 '│  └─ bookmark-changes-simple.json（可选）',
                 '└─ 版本化/',
-                '   ├─ 备份历史log.md',
+                '   ├─ 备份历史log_20260305_090000开始_20260307_180000截止_Chrome_a3f2.md',
                 '   └─ 20260225_123456_abcd1234/',
                 '      ├─ 20260225_123456_abcd1234.html',
                 '      └─ 书签变化_简略_20260225_123456_abcd1234.json（可选）'
@@ -14401,8 +15956,8 @@ document.addEventListener('DOMContentLoaded', function () {
                 contentHtml: `
                     <div style="font-size: 11px; color: var(--theme-text-secondary); line-height: 1.55; padding: 6px 8px; background: var(--theme-bg-secondary); border-radius: 6px;">
                         ${isEn
-                    ? '• Folder mode (recommended): choose <span style="color: var(--theme-warning-color); font-weight: 700;">Bookmark Backup</span> first (exact English name)<br>• Directory-scan trigger folders: <span style="color: var(--theme-warning-color); font-weight: 700;">Bookmark Backup / Overwrite / Versioned / Manual Export</span>; these map to secondary restore groups<br>• If you pick other folders (e.g. a specific version folder), restore list is built by directly matching files instead of full grouped directory scan<br>• File mode supports HTML compatibility: <span style="color: var(--theme-warning-color); font-weight: 700;">.html / .htm / .xhtml bookmark-format HTML</span> are accepted as restore snapshots (fallback compatible)<br>• Restore index location is unified to <span style="color: var(--theme-warning-color); font-weight: 700;">Versioned/backup-history-log.md</span><br>• overwrite-notes-log is display-only and not used as restore index; selecting Current Changes allows Import Merge only'
-                    : '• 文件夹模式（推荐）：优先选择 <span style="color: var(--theme-warning-color); font-weight: 700;">书签备份</span>，或英文精确名称 <span style="color: var(--theme-warning-color); font-weight: 700;">Bookmark Backup</span><br>• 会触发目录扫描的文件夹：<span style="color: var(--theme-warning-color); font-weight: 700;">书签备份 / 覆盖 / 版本化 / 手动导出</span>，并映射到恢复二级 UI 对应分组<br>• 若选择其他文件夹（例如某个具体版本目录），则按文件直接匹配并展示恢复列表，不走完整分组目录扫描<br>• 文件模式支持 HTML 兼容：<span style="color: var(--theme-warning-color); font-weight: 700;">.html / .htm / .xhtml 书签格式 HTML</span> 均可作为恢复快照（通用兜底）<br>• 恢复索引位置统一为 <span style="color: var(--theme-warning-color); font-weight: 700;">版本化/备份历史log.md</span><br>• 覆盖备注log仅用于展示，不参与恢复索引；若选择“当前变化”，仅允许导入合并'}
+                    ? '• Folder mode (recommended): choose <span style="color: var(--theme-warning-color); font-weight: 700;">Bookmark Backup</span> first (exact English name)<br>• Directory-scan trigger folders: <span style="color: var(--theme-warning-color); font-weight: 700;">Bookmark Backup / Overwrite / Versioned / Manual Export</span>; these map to secondary restore groups<br>• If you pick other folders (e.g. a specific version folder), restore list is built by directly matching files instead of full grouped directory scan<br>• File mode supports HTML compatibility: <span style="color: var(--theme-warning-color); font-weight: 700;">.html / .htm / .xhtml bookmark-format HTML</span> are accepted as restore snapshots (fallback compatible)<br>• Restore index location is unified to <span style="color: var(--theme-warning-color); font-weight: 700;">Versioned/backup-history-log.md</span> and local archived files <span style="color: var(--theme-warning-color); font-weight: 700;">backup-history-log_from_*_to_*.md</span><br>• overwrite-notes-log is display-only and not used as restore index; selecting Current Changes allows Import Merge only'
+                    : '• 文件夹模式（推荐）：优先选择 <span style="color: var(--theme-warning-color); font-weight: 700;">书签备份</span>，或英文精确名称 <span style="color: var(--theme-warning-color); font-weight: 700;">Bookmark Backup</span><br>• 会触发目录扫描的文件夹：<span style="color: var(--theme-warning-color); font-weight: 700;">书签备份 / 覆盖 / 版本化 / 手动导出</span>，并映射到恢复二级 UI 对应分组<br>• 若选择其他文件夹（例如某个具体版本目录），则按文件直接匹配并展示恢复列表，不走完整分组目录扫描<br>• 文件模式支持 HTML 兼容：<span style="color: var(--theme-warning-color); font-weight: 700;">.html / .htm / .xhtml 书签格式 HTML</span> 均可作为恢复快照（通用兜底）<br>• 恢复索引位置统一为 <span style="color: var(--theme-warning-color); font-weight: 700;">版本化/备份历史log.md</span>，并兼容本地归档文件 <span style="color: var(--theme-warning-color); font-weight: 700;">备份历史log_*开始_*截止.md</span><br>• 覆盖备注log仅用于展示，不参与恢复索引；若选择“当前变化”，仅允许导入合并'}
                     </div>
                     <div style="font-size: 10px; color: var(--theme-text-secondary); padding: 6px 8px; background: var(--theme-bg-tertiary, rgba(255,255,255,0.04)); border-radius: 6px;">
                         ${isEn ? 'Example structure (Cloud 1 / Cloud 2 / Local)' : '示例结构（云端1 / 云端2 / 本地通用）'}
@@ -15331,6 +16886,29 @@ document.addEventListener('DOMContentLoaded', function () {
             }
         }
 
+        if (area === 'local') {
+            const muteKeysChanged = POPUP_BOOKMARK_UI_MUTE_KEYS.some((key) =>
+                Object.prototype.hasOwnProperty.call(changes, key)
+            );
+            if (muteKeysChanged) {
+                applyPopupBookmarkUiMuteStateChanges(changes);
+                scheduleBookmarkCountDisplayRefresh({ delay: 0 });
+            }
+
+            const restoreStatusKeys = [
+                'webDAVEnabled', 'githubRepoEnabled', 'defaultDownloadEnabled',
+                'serverAddress', 'username', 'password',
+                'githubRepoToken', 'githubRepoOwner', 'githubRepoName',
+                'customDownloadPath'
+            ];
+            const shouldRefreshRestoreStatus = restoreStatusKeys.some((key) =>
+                Object.prototype.hasOwnProperty.call(changes, key)
+            );
+            if (shouldRefreshRestoreStatus) {
+                updateUploadButtonIcons();
+            }
+        }
+
         if (area === 'local' && (changes.syncHistory || changes.lastSyncTime || changes.lastBookmarkUpdate)) {
             schedulePopupHistoryRefresh(120);
         }
@@ -15374,11 +16952,7 @@ document.addEventListener('DOMContentLoaded', function () {
         initializeLanguageSwitcher();
     }
 
-    // 在popup打开时，主动刷新一次状态卡片，确保显示最新的变化状态
-    // 延迟执行以确保所有初始化完成
-    setTimeout(() => {
-        scheduleBookmarkCountDisplayRefresh({ delay: 80 });
-    }, 300);
+    // popup 打开时不再额外延迟二次刷新，避免“计算中”重复闪动
 });
 
 // 添加备注对话框函数

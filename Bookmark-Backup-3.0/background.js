@@ -53,7 +53,6 @@ const browserAPI = (function () {
 })();
 
 // Global Constants
-const SYNC_LOCK_TIMEOUT = 30 * 1000;      // 30秒锁定超时
 const badgeTextMap = { // 添加角标文本的国际化映射对象 - 在文件顶部添加
     'auto': {
         'zh_CN': '自',
@@ -523,6 +522,29 @@ let folderModified = false;
 let hasInitializedBackupReminder = false;
 // 添加一个变量来标记是否正在进行备份
 let isSyncing = false;
+// Session lock: 防止 SW 重启后 isSyncing 丢失导致并发备份
+const SYNC_SESSION_LOCK_KEY = '__syncLock';
+const SYNC_SESSION_LOCK_TTL_MS = 120 * 1000; // 120 秒自动过期
+
+async function acquireSyncLock() {
+    try {
+        const data = await browserAPI.storage.session.get([SYNC_SESSION_LOCK_KEY]);
+        const existing = data?.[SYNC_SESSION_LOCK_KEY];
+        if (existing && (Date.now() - existing.time) < SYNC_SESSION_LOCK_TTL_MS) {
+            return false; // 有未过期的锁，拒绝
+        }
+        await browserAPI.storage.session.set({ [SYNC_SESSION_LOCK_KEY]: { time: Date.now() } });
+        return true;
+    } catch (_) {
+        return true; // session storage 不可用时降级放行
+    }
+}
+
+async function releaseSyncLock() {
+    try {
+        await browserAPI.storage.session.remove(SYNC_SESSION_LOCK_KEY);
+    } catch (_) { }
+}
 // 实时自动备份：单消费者队列（避免频繁变更时并发/冲突）
 let realtimeAutoBackupQueuePending = false;
 let realtimeAutoBackupQueueReason = null;
@@ -3946,9 +3968,10 @@ browserAPI.runtime.onMessage.addListener((message, sender, sendResponse) => {
                 // 估计默认下载路径（根据语言动态选择）
                 const exportRootFolder = await getExportRootFolder();
                 let defaultPath = '';
-                const isWindows = navigator.platform.indexOf('Win') > -1;
-                const isMac = navigator.platform.indexOf('Mac') > -1;
-                const isLinux = navigator.platform.indexOf('Linux') > -1;
+                const ua = navigator.userAgent || '';
+                const isWindows = ua.includes('Windows');
+                const isMac = ua.includes('Macintosh') || ua.includes('Mac OS');
+                const isLinux = ua.includes('Linux');
 
                 if (isWindows) {
                     defaultPath = `C:\\Users\\<username>\\Downloads\\${exportRootFolder}\\`;
@@ -8781,7 +8804,10 @@ async function exportSyncHistoryToCloud(options = {}) {
             });
 
             const exportTime = new Date().toISOString();
-            const mergedRecords = [];
+
+            // 流式构建 JSON：逐条加载书签树并序列化，避免同时持有所有树对象导致 OOM
+            const jsonParts = ['['];
+            let firstEntry = true;
 
             for (const record of sortedHistory) {
                 try {
@@ -8816,7 +8842,7 @@ async function exportSyncHistoryToCloud(options = {}) {
                         || (normalizedOverwriteMode === 'overwrite' ? '__overwrite__' : (snapshotKey || ''))
                     ).trim() || null;
 
-                    mergedRecords.push({
+                    const entry = {
                         _exportInfo: {
                             backupTime: record?.time || null,
                             exportTime: exportTime,
@@ -8832,14 +8858,21 @@ async function exportSyncHistoryToCloud(options = {}) {
                             type: record?.type || null
                         },
                         _rawBookmarkTree: bookmarkTree
-                    });
+                    };
+
+                    if (!firstEntry) jsonParts.push(',');
+                    jsonParts.push(JSON.stringify(entry));
+                    firstEntry = false;
+                    // entry 和 bookmarkTree 在下一次迭代时可被 GC 回收
                 } catch (recordError) {
                     console.error('[exportSyncHistoryToCloud] 合并历史记录处理失败:', record?.time, recordError);
                 }
             }
 
+            jsonParts.push(']');
+
             const fileName = 'backup_history.json';
-            const jsonContent = JSON.stringify(mergedRecords, null, 2);
+            const jsonContent = jsonParts.join('');
 
             if (webDAVConfigured && webDAVEnabled) {
                 tasks.push(uploadHistoryToWebDAV(jsonContent, fileName, exportRootFolder, historyFolder, settings));
@@ -9231,6 +9264,13 @@ async function syncBookmarks(isManual = false, direction = null, isSwitchToAutoB
         return { success: false, error: '已有备份操作正在进行' };
     }
 
+    // Session lock: 防止 SW 重启后内存锁丢失导致并发备份
+    const lockAcquired = await acquireSyncLock();
+    if (!lockAcquired) {
+        console.warn('[syncBookmarks] session lock 未释放，可能有未完成的备份（120s 内自动过期）');
+        return { success: false, error: '已有备份操作正在进行（session lock）' };
+    }
+
     isSyncing = true;
     try {
         // 结果对象，用于存储过程中的信息
@@ -9488,6 +9528,7 @@ async function syncBookmarks(isManual = false, direction = null, isSwitchToAutoB
         return { success: false, error: error.message || '备份失败' };
     } finally {
         isSyncing = false;
+        await releaseSyncLock();
     }
 }
 

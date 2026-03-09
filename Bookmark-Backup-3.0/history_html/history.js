@@ -365,6 +365,7 @@ let currentFilter = 'all';
 let currentTimeFilter = 'all'; // 'all', 'year', 'month', 'day'
 let allBookmarks = [];
 let syncHistory = [];
+let syncHistoryPageRecords = []; // 当前分页的显示切片，与 syncHistory（全量）分离
 let lastBackupTime = null;
 let currentBookmarkData = null;
 
@@ -2853,7 +2854,7 @@ function initClearBackupHistoryModal() {
                     const totalPages = Math.max(1, Math.ceil(totalRecords / HISTORY_PAGE_SIZE));
                     currentHistoryPage = clampHistoryPage(currentHistoryPage, totalPages);
                     const pageStart = (currentHistoryPage - 1) * HISTORY_PAGE_SIZE;
-                    syncHistory = sortedLocal.slice(pageStart, pageStart + HISTORY_PAGE_SIZE);
+                    syncHistoryPageRecords = sortedLocal.slice(pageStart, pageStart + HISTORY_PAGE_SIZE);
                     historyIndexMeta = { totalRecords, totalPages };
                     try {
                         renderHistoryView();
@@ -4040,7 +4041,7 @@ async function executeRevert(strategy) {
                         const totalPages = Math.max(1, Math.ceil(totalRecords / HISTORY_PAGE_SIZE));
                         currentHistoryPage = clampHistoryPage(currentHistoryPage, totalPages);
                         const pageStart = (currentHistoryPage - 1) * HISTORY_PAGE_SIZE;
-                        syncHistory = sortedLocal.slice(pageStart, pageStart + HISTORY_PAGE_SIZE);
+                        syncHistoryPageRecords = sortedLocal.slice(pageStart, pageStart + HISTORY_PAGE_SIZE);
                         historyIndexMeta = { totalRecords, totalPages };
                     }
                     await renderHistoryView();
@@ -4145,12 +4146,12 @@ function showRevertToast(isSuccess, message) {
         toast.style.backgroundColor = '#d4edda';
         toast.style.color = '#155724';
         toast.style.border = '1px solid #c3e6cb';
-        toast.innerHTML = `<i class="fas fa-check-circle" style="color: #28a745;"></i><span>${message}</span>`;
+        toast.innerHTML = `<i class="fas fa-check-circle" style="color: #28a745;"></i><span>${escapeHtml(message)}</span>`;
     } else {
         toast.style.backgroundColor = '#f8d7da';
         toast.style.color = '#721c24';
         toast.style.border = '1px solid #f5c6cb';
-        toast.innerHTML = `<i class="fas fa-exclamation-circle" style="color: #dc3545;"></i><span>${message}</span>`;
+        toast.innerHTML = `<i class="fas fa-exclamation-circle" style="color: #dc3545;"></i><span>${escapeHtml(message)}</span>`;
     }
 
     document.body.appendChild(toast);
@@ -8001,7 +8002,7 @@ async function refreshHistoryIndexPage(options = {}) {
     const { page = currentHistoryPage, pageSize = HISTORY_PAGE_SIZE } = options;
     const data = await fetchHistoryPageData(page, pageSize);
 
-    syncHistory = data.records;
+    syncHistoryPageRecords = data.records;
     currentHistoryPage = data.currentPage;
     historyIndexMeta = {
         totalRecords: data.totalRecords,
@@ -8083,7 +8084,7 @@ function renderHistoryView() {
     const prevBtn = document.getElementById('historyPrevPage');
     const nextBtn = document.getElementById('historyNextPage');
 
-    if (syncHistory.length === 0) {
+    if (syncHistoryPageRecords.length === 0) {
         if (container) {
             container.innerHTML = `
                 <div class="empty-state">
@@ -8098,15 +8099,15 @@ function renderHistoryView() {
 
     const totalRecords = Number.isFinite(Number(historyIndexMeta.totalRecords))
         ? Number(historyIndexMeta.totalRecords)
-        : syncHistory.length;
+        : syncHistoryPageRecords.length;
     const totalPages = Math.max(1, Number.isFinite(Number(historyIndexMeta.totalPages))
         ? Number(historyIndexMeta.totalPages)
         : Math.ceil(Math.max(1, totalRecords) / HISTORY_PAGE_SIZE));
 
     currentHistoryPage = clampHistoryPage(currentHistoryPage, totalPages);
     const startIndex = (currentHistoryPage - 1) * HISTORY_PAGE_SIZE;
-    const sortedRecords = sortHistoryRecordsByTimeDesc(syncHistory);
-    const pageRecords = (syncHistory.length > HISTORY_PAGE_SIZE && syncHistory.length === totalRecords)
+    const sortedRecords = sortHistoryRecordsByTimeDesc(syncHistoryPageRecords);
+    const pageRecords = (syncHistoryPageRecords.length > HISTORY_PAGE_SIZE && syncHistoryPageRecords.length === totalRecords)
         ? sortedRecords.slice(startIndex, startIndex + HISTORY_PAGE_SIZE)
         : sortedRecords;
 
@@ -8282,7 +8283,7 @@ function renderHistoryView() {
             e.stopPropagation();
             e.preventDefault();
             const recordTime = btn.dataset.time;
-            const record = syncHistory.find(r => r.time === recordTime);
+            const record = syncHistoryPageRecords.find(r => r.time === recordTime);
             if (record) showDetailModal(record);
         });
     });
@@ -8294,18 +8295,18 @@ function renderHistoryView() {
             e.preventDefault();
             const recordTime = btn.dataset.time;
             const displayTitle = btn.dataset.displayTitle;
-            const record = syncHistory.find(r => r.time === recordTime);
+            const record = syncHistoryPageRecords.find(r => r.time === recordTime);
             if (record) handleRestoreRecord(record, displayTitle || null);
         });
     });
 
-    // [New] 直接打开“详情搜索变化”UI
+    // [New] 直接打开”详情搜索变化”UI
     container.querySelectorAll('.action-btn.detail-search-open-btn').forEach(btn => {
         btn.addEventListener('click', (e) => {
             e.stopPropagation();
             e.preventDefault();
             const recordTime = btn.dataset.time;
-            const record = syncHistory.find(r => r.time === recordTime);
+            const record = syncHistoryPageRecords.find(r => r.time === recordTime);
             if (record) showDetailModal(record, { openDetailSearch: true });
         });
     });
@@ -8328,7 +8329,7 @@ function renderHistoryView() {
             if (e.target.closest('button') || e.target.closest('a') || e.target.closest('.commit-note-edit-btn')) return;
 
             const recordTime = item.dataset.recordTime;
-            const record = syncHistory.find(r => r.time === recordTime);
+            const record = syncHistoryPageRecords.find(r => r.time === recordTime);
             if (record) showDetailModal(record);
         });
     });
@@ -8382,7 +8383,7 @@ function initHistoryPagination() {
 
 // 编辑备注
 async function editCommitNote(recordTime) {
-    const record = syncHistory.find(r => r.time === recordTime);
+    const record = syncHistoryPageRecords.find(r => r.time === recordTime);
     if (!record) return;
 
     const currentNote = record.note || '';
@@ -12109,7 +12110,7 @@ async function executeRestore(strategy, confirmBtn, cancelBtn) {
                     const totalPages = Math.max(1, Math.ceil(totalRecords / HISTORY_PAGE_SIZE));
                     currentHistoryPage = clampHistoryPage(currentHistoryPage, totalPages);
                     const pageStart = (currentHistoryPage - 1) * HISTORY_PAGE_SIZE;
-                    syncHistory = sortedLocal.slice(pageStart, pageStart + HISTORY_PAGE_SIZE);
+                    syncHistoryPageRecords = sortedLocal.slice(pageStart, pageStart + HISTORY_PAGE_SIZE);
                     historyIndexMeta = { totalRecords, totalPages };
                 }
                 renderHistoryView();
@@ -12982,7 +12983,7 @@ let treeSnapshotRefreshing = false;
 let treeSnapshotRefreshQueued = false;
 
 async function refreshCachedCurrentTreeSnapshot(reason = '') {
-    if (!((currentView === 'current-changes' || currentView === 'current-changes') && CANVAS_PERMANENT_TREE_LAZY_ENABLED)) return;
+    if (!(currentView === 'current-changes' && CANVAS_PERMANENT_TREE_LAZY_ENABLED)) return;
     if (treeSnapshotRefreshing) {
         treeSnapshotRefreshQueued = true;
         return;
@@ -13012,7 +13013,7 @@ async function refreshCachedCurrentTreeSnapshot(reason = '') {
 }
 
 function scheduleCachedCurrentTreeSnapshotRefresh(reason = '') {
-    if (!((currentView === 'current-changes' || currentView === 'current-changes') && CANVAS_PERMANENT_TREE_LAZY_ENABLED)) return;
+    if (!(currentView === 'current-changes' && CANVAS_PERMANENT_TREE_LAZY_ENABLED)) return;
     if (pendingTreeSnapshotRefreshTimer) clearTimeout(pendingTreeSnapshotRefreshTimer);
     pendingTreeSnapshotRefreshTimer = setTimeout(() => {
         pendingTreeSnapshotRefreshTimer = null;
@@ -18780,7 +18781,7 @@ function handleStorageChange(changes, namespace) {
                             const totalPages = Math.max(1, Math.ceil(totalRecords / HISTORY_PAGE_SIZE));
                             currentHistoryPage = clampHistoryPage(currentHistoryPage, totalPages);
                             const pageStart = (currentHistoryPage - 1) * HISTORY_PAGE_SIZE;
-                            syncHistory = sortedLocal.slice(pageStart, pageStart + HISTORY_PAGE_SIZE);
+                            syncHistoryPageRecords = sortedLocal.slice(pageStart, pageStart + HISTORY_PAGE_SIZE);
                             historyIndexMeta = { totalRecords, totalPages };
                         }
                         await renderHistoryView();
@@ -18813,7 +18814,7 @@ function handleStorageChange(changes, namespace) {
                     const totalPages = Math.max(1, Math.ceil(totalRecords / HISTORY_PAGE_SIZE));
                     currentHistoryPage = clampHistoryPage(currentHistoryPage, totalPages);
                     const pageStart = (currentHistoryPage - 1) * HISTORY_PAGE_SIZE;
-                    syncHistory = sortedLocal.slice(pageStart, pageStart + HISTORY_PAGE_SIZE);
+                    syncHistoryPageRecords = sortedLocal.slice(pageStart, pageStart + HISTORY_PAGE_SIZE);
                     historyIndexMeta = { totalRecords, totalPages };
                 }
                 await renderHistoryView();

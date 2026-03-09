@@ -48,23 +48,6 @@
       "activeTab"
    ],
    "host_permissions": [
-      "https://*/*",
       "<all_urls>"
-   ],
-   "web_accessible_resources": [
-      {
-         "matches": [
-            "<all_urls>"
-         ],
-         "resources": [
-            "popup.html",
-            "icons/icon200.png",
-            "backup_reminder/notification_popup.html",
-            "history_html/history.html",
-            "history_html/history.css",
-            "history_html/history.js",
-            "history_html/history_bootstrap.js"
-         ]
-      }
    ]
 }

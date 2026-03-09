@@ -29,7 +29,9 @@ function encodeGitHubPath(path) {
     .join('/');
 }
 
-async function githubRequestJson(url, { method = 'GET', headers = {}, body } = {}) {
+async function githubRequestJson(url, { method = 'GET', headers = {}, body, _retryCount = 0 } = {}) {
+  const MAX_RETRIES = 2;
+
   const response = await fetch(url, {
     method,
     headers: {
@@ -39,6 +41,25 @@ async function githubRequestJson(url, { method = 'GET', headers = {}, body } = {
     },
     body
   });
+
+  // Rate limit / server error retry (429, 403 with rate limit, 5xx)
+  const status = response.status;
+  const isRateLimit = status === 429
+    || (status === 403 && (response.headers.get('X-RateLimit-Remaining') === '0'));
+  const isServerError = status >= 500 && status < 600;
+
+  if ((isRateLimit || isServerError) && _retryCount < MAX_RETRIES) {
+    let waitMs = (1 << _retryCount) * 1000; // exponential: 1s, 2s
+    const retryAfter = response.headers.get('Retry-After');
+    if (retryAfter) {
+      const parsed = Number(retryAfter);
+      if (Number.isFinite(parsed) && parsed > 0 && parsed <= 60) {
+        waitMs = parsed * 1000;
+      }
+    }
+    await new Promise(resolve => setTimeout(resolve, waitMs));
+    return githubRequestJson(url, { method, headers, body, _retryCount: _retryCount + 1 });
+  }
 
   const text = await response.text();
   let json = null;
@@ -51,9 +72,9 @@ async function githubRequestJson(url, { method = 'GET', headers = {}, body } = {
   if (!response.ok) {
     const error = new Error(
       (json && typeof json.message === 'string' && json.message) ||
-        `${response.status} ${response.statusText}`.trim()
+        `${status} ${response.statusText}`.trim()
     );
-    error.status = response.status;
+    error.status = status;
     error.response = json || text;
     throw error;
   }

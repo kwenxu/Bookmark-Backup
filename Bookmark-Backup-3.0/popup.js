@@ -2012,21 +2012,26 @@ function updateDownloadPathDisplay() {
     const downloadPathDisplay = document.getElementById('downloadPathDisplay');
     if (!downloadPathDisplay) return;
 
+    chrome.storage.local.get(['preferredLang'], function (langResult) {
+        const isEn = langResult?.preferredLang === 'en';
 
-    // 显示加载状态
-    downloadPathDisplay.textContent = "正在获取下载路径...";
-    downloadPathDisplay.style.color = "#666";
+        // 显示加载状态
+        downloadPathDisplay.textContent = isEn ? "Retrieving download path..." : "正在获取下载路径...";
+        downloadPathDisplay.style.color = "#666";
 
-    // 获取浏览器默认下载路径
-    chrome.runtime.sendMessage({ action: "getDownloadPath" }, function (response) {
-        if (response && response.path) {
-            // 显示估计的路径
-            downloadPathDisplay.textContent = response.path;
-            downloadPathDisplay.style.color = "var(--theme-text-secondary)";
-        } else {
-            downloadPathDisplay.textContent = "无法获取下载路径，请参考下方示例";
-            downloadPathDisplay.style.color = "var(--theme-text-secondary)";
-        }
+        // 获取浏览器默认下载路径
+        chrome.runtime.sendMessage({ action: "getDownloadPath" }, function (response) {
+            if (response && response.path) {
+                // 显示估计的路径
+                downloadPathDisplay.textContent = response.path;
+                downloadPathDisplay.style.color = "var(--theme-text-secondary)";
+            } else {
+                downloadPathDisplay.textContent = isEn
+                    ? "Unable to get download path, see example below"
+                    : "无法获取下载路径，请参考下方示例";
+                downloadPathDisplay.style.color = "var(--theme-text-secondary)";
+            }
+        });
     });
 }
 
@@ -2166,7 +2171,7 @@ function updateSyncHistory(passedLang) { // Added passedLang parameter
                     const recordTime = btn.getAttribute('data-record-time');
                     if (recordTime) {
                         const historyPageUrl = chrome.runtime.getURL('history_html/history.html') + `?view=history&record=${recordTime}&action=restore`;
-                        window.open(historyPageUrl, '_blank');
+                        safeCreateTab({ url: historyPageUrl });
                     }
                     return;
                 }
@@ -2177,7 +2182,7 @@ function updateSyncHistory(passedLang) { // Added passedLang parameter
                     const recordTime = btn.getAttribute('data-record-time');
                     if (recordTime) {
                         const historyPageUrl = chrome.runtime.getURL('history_html/history.html') + `?view=history&record=${recordTime}&action=detail-search`;
-                        window.open(historyPageUrl, '_blank');
+                        safeCreateTab({ url: historyPageUrl });
                     }
                     return;
                 }
@@ -2188,7 +2193,7 @@ function updateSyncHistory(passedLang) { // Added passedLang parameter
                     const recordTime = btn.getAttribute('data-record-time');
                     if (recordTime) {
                         const historyPageUrl = chrome.runtime.getURL('history_html/history.html') + `?view=history&record=${recordTime}&action=detail`;
-                        window.open(historyPageUrl, '_blank');
+                        safeCreateTab({ url: historyPageUrl });
                     }
                     return;
                 }
@@ -2199,7 +2204,7 @@ function updateSyncHistory(passedLang) { // Added passedLang parameter
                     const recordTime = item.getAttribute('data-record-time');
                     if (recordTime) {
                         const historyPageUrl = chrome.runtime.getURL('history_html/history.html') + `?view=history&record=${recordTime}`;
-                        window.open(historyPageUrl, '_blank');
+                        safeCreateTab({ url: historyPageUrl });
                     }
                 }
             });
@@ -2713,7 +2718,7 @@ function updateSyncHistory(passedLang) { // Added passedLang parameter
                 })();
                 if (displayNote) {
                     // 备注文本可点击，悬浮时出现虚线框
-                    noteHtml = `<div class="editable-note" data-record-time="${record.time}" style="margin-top: 4px; text-align: center; font-size: 12px; color: var(--theme-text-primary); max-width: 100%; overflow-wrap: break-word; word-wrap: break-word; word-break: break-all; cursor: pointer; padding: 2px 6px; border: 1px dashed transparent; border-radius: 3px; transition: border-color 0.2s;">${displayNote}</div>`;
+                    noteHtml = `<div class="editable-note" data-record-time="${record.time}" style="margin-top: 4px; text-align: center; font-size: 12px; color: var(--theme-text-primary); max-width: 100%; overflow-wrap: break-word; word-wrap: break-word; word-break: break-all; cursor: pointer; padding: 2px 6px; border: 1px dashed transparent; border-radius: 3px; transition: border-color 0.2s;">${escapeHtml(displayNote)}</div>`;
                 }
 
                 // 只保留两栏的样式
